@@ -2695,7 +2695,15 @@
     });
     Object.defineProperty(globalThis.PermissionStatus.prototype, 'state', {
       configurable: true,
-      get: function () { return this._zwPermState; },
+      // security-hardening M4：state 为**活值**——底层状态变化（__zwSetPermission /
+      // permissions.request）后既有 status 实例如实反映（change 事件通知语义的前提，
+      // spec PermissionStatus.state 为当前状态查询而非快照）。
+      get: function () {
+        if (typeof globalThis.__zwPermissionState === 'function') {
+          return globalThis.__zwPermissionState(this._zwPermName);
+        }
+        return this._zwPermState || 'prompt';
+      },
     });
     Object.defineProperty(globalThis.PermissionStatus.prototype, 'onchange', {
       configurable: true,
@@ -2806,7 +2814,13 @@
           if (state !== 'granted' && state !== 'denied' && state !== 'prompt') {
             return Promise.reject(new TypeError("Failed to set permission: unknown state '" + state + "'."));
           }
+          var prev = _permStates[String(name)];
           _permStates[String(name)] = state;
+          // security-hardening M4：状态实际变化 → change 通知（既有单例 status 的
+          // listener/onchange；helper 由 permissions IIFE 挂载，lazy 调用容忍求值序）。
+          if (prev !== state && typeof globalThis.__zwNotifyPermissionChange === 'function') {
+            try { globalThis.__zwNotifyPermissionChange(String(name)); } catch (_eN) {}
+          }
           return Promise.resolve();
         };
       }
@@ -3580,37 +3594,94 @@
         return _zwActiveEver === true;
       },
     },
-    // permissions（R2817 + WAB2-M2-s3 + WAB2-M3-s1）——权限查询（clipboard/geolocation 等
-    // feature-detect 配对）。headless 默认 state 'prompt'（中性，既非 granted 非 denied）；
-    // clipboard-read/clipboard-write/fullscreen 状态经 __zwSetPermission（runner testdriver
-    // set_permission stub）注入后由 __zwPermissionState 如实返回。WAB2-M3-s1：返回值升级为
-    // PermissionStatus 真实例（WPT permission 案 instanceof 断言）+ fullscreen 描述符的
-    // allowWithoutGesture 字典成员读取（getter 触发观测；false → TypeError——explainer 案
-    // 「allowWithoutGesture false is unsupported」）。完整权限语义层归 security-hardening DC-4。
-    permissions: {
-      query: function(desc) {
-        var name = (desc && desc.name) || '';
-        // fullscreen explainer：allowWithoutGesture 成员读取（getter 触发）；false 不支持 → TypeError。
-        if (desc != null && typeof desc === 'object' && name === 'fullscreen') {
-          var awg;
-          try { awg = desc.allowWithoutGesture; } catch (_eA) { awg = undefined; }
-          if (awg === false) {
-            return Promise.reject(new TypeError('Querying "fullscreen" permission with "allowWithoutGesture" false is unsupported.'));
+    // permissions（R2817 + WAB2-M2-s3 + WAB2-M3-s1 + security-hardening M4）——权限
+    // 查询/请求（clipboard/geolocation 等 feature-detect 配对）。headless 默认 state
+    // 'prompt'（中性，既非 granted 非 denied）；clipboard-read/clipboard-write/fullscreen
+    // 状态经 __zwSetPermission（runner testdriver set_permission stub）注入后由
+    // __zwPermissionState 如实返回。PermissionStatus 真实例（WPT permission 案
+    // instanceof 断言）+ fullscreen 描述符的 allowWithoutGesture 字典成员读取（getter
+    // 触发观测；false → TypeError——explainer 案「allowWithoutGesture false is
+    // unsupported」）。
+    // security-hardening M4（DC-2 Permissions 面）：①单例 status——spec
+    // §dom-permissions-query「identical descriptor → 同一 PermissionStatus 实例」，
+    // 亦是 change 事件通知锚点（query 前注册 listener 可达后续状态变化）；②change
+    // 派发——状态实际变化（__zwSetPermission/request）时对既有单例派 'change' Event
+    // + 调 onchange；③request(desc)——headless 语义：无提示 UI，'prompt' 自动授予
+    // （经 __zwSetPermission 走同一注册表 + 通知），'denied' 维持，resolve 同一单例；
+    // desc 必填成员校验（name 非字符串 → TypeError，spec 必选字典成员）。
+    // spec https://w3c.github.io/permissions/#permissions-interface。
+    permissions: (function () {
+      var _statuses = {};
+      function _getStatus(name) {
+        var s = _statuses[name];
+        if (!s) {
+          s = Object.create(globalThis.PermissionStatus && globalThis.PermissionStatus.prototype
+            ? globalThis.PermissionStatus.prototype
+            : Object.prototype);
+          s._zwPermName = name;
+          s._zwPermState = (typeof globalThis.__zwPermissionState === 'function')
+            ? globalThis.__zwPermissionState(name)
+            : 'prompt';
+          s._zwPermListeners = {};
+          _statuses[name] = s;
+        }
+        return s;
+      }
+      function _descriptorName(desc, method) {
+        if (desc == null || typeof desc !== 'object') {
+          throw new TypeError("Failed to execute '" + method + "' on 'Permissions': The provided value is not of type 'PermissionDescriptor'.");
+        }
+        if (typeof desc.name !== 'string' || desc.name === '') {
+          throw new TypeError("Failed to execute '" + method + "' on 'Permissions': required member name is undefined.");
+        }
+        return desc.name;
+      }
+      // M4：change 派发——'change' Event + listener/onchange（派发异常互不短路）。
+      globalThis.__zwNotifyPermissionChange = function (name) {
+        var s = _statuses[name];
+        if (!s) return;
+        var ev;
+        try { ev = new Event('change'); } catch (_eE) {
+          ev = { type: 'change', bubbles: false, cancelable: false, defaultPrevented: false };
+        }
+        ev.target = s;
+        var ls = s._zwPermListeners && s._zwPermListeners.change;
+        if (ls) {
+          for (var i = 0; i < ls.length; i++) { try { ls[i].call(s, ev); } catch (_eL) {} }
+        }
+        if (typeof s._zwPermOnChange === 'function') {
+          try { s._zwPermOnChange.call(s, ev); } catch (_eO) {}
+        }
+      };
+      return {
+        query: function (desc) {
+          // fullscreen explainer：allowWithoutGesture 成员读取（getter 触发）；false 不支持 → TypeError。
+          if (desc != null && typeof desc === 'object' && desc.name === 'fullscreen') {
+            var awg;
+            try { awg = desc.allowWithoutGesture; } catch (_eA) { awg = undefined; }
+            if (awg === false) {
+              return Promise.reject(new TypeError('Querying "fullscreen" permission with "allowWithoutGesture" false is unsupported.'));
+            }
           }
-        }
-        var state = 'prompt';
-        if (typeof globalThis.__zwPermissionState === 'function') {
-          state = globalThis.__zwPermissionState(name);
-        }
-        var status = Object.create(globalThis.PermissionStatus && globalThis.PermissionStatus.prototype
-          ? globalThis.PermissionStatus.prototype
-          : Object.prototype);
-        status._zwPermName = name;
-        status._zwPermState = state;
-        status._zwPermListeners = {};
-        return Promise.resolve(status);
-      },
-    },
+          var name;
+          try { name = _descriptorName(desc, 'query'); } catch (_eQ) { return Promise.reject(_eQ); }
+          return Promise.resolve(_getStatus(name));
+        },
+        // M4：request——headless 语义（无权限提示 UI）。'prompt' → 自动授予（经
+        // __zwSetPermission 落同一注册表并触发 change 通知）；'denied' 维持。
+        request: function (desc) {
+          var name;
+          try { name = _descriptorName(desc, 'request'); } catch (_eR) { return Promise.reject(_eR); }
+          var state = (typeof globalThis.__zwPermissionState === 'function')
+            ? globalThis.__zwPermissionState(name)
+            : 'prompt';
+          if (state === 'prompt' && typeof globalThis.__zwSetPermission === 'function') {
+            globalThis.__zwSetPermission(name, 'granted');
+          }
+          return Promise.resolve(_getStatus(name));
+        },
+      };
+    })(),
     // geolocation（R2820）——地理位置 API（地图/天气/本地化 feature-detect 后调 getCurrentPosition）。
     // headless 无真 GPS → fake 零坐标位置（latitude/longitude 0，accuracy Infinity = 无精度承诺），让
     // location 脚本走 success 路径不抛；getCurrentPosition/watchPosition 经 _defer microtask 异步调 success

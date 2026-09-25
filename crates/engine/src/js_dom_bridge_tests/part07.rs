@@ -1167,6 +1167,137 @@ fn test_modern_interaction_stubs_r2817() {
 }
 
 #[test]
+fn test_permissions_query_request_change_security_hardening_m4() {
+    // security-hardening M4（DC-2 Permissions 面）：navigator.permissions 单例 status +
+    // request headless 语义（'prompt'→自动授予、'denied' 维持）+ change 事件
+    // （listener + onchange）+ desc 必选成员校验。WAB2-M3-s1 既有 query/instanceof
+    // 行为零回归（ fullscreen allowWithoutGesture TypeError 保留）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① 单例：同 descriptor 两次 query 返回**同一** PermissionStatus 实例（spec
+    // identical descriptor 语义）+ instanceof 面。
+    sandbox
+        .execute(
+            "globalThis.__r = '';\
+             navigator.permissions.query({ name: 'geolocation' }).then(function(s1){\
+               navigator.permissions.query({ name: 'geolocation' }).then(function(s2){\
+                 globalThis.__r = (s1 === s2) + ':' + (s1 instanceof PermissionStatus) + ':' + s1.state;\
+               });\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r)").unwrap().value,
+        "true:true:prompt",
+        "query 同 descriptor 须返回同一 PermissionStatus 实例，初始 state 'prompt'"
+    );
+
+    // ② request headless 语义：'prompt' → 自动授予（query 如实反映授予后状态）。
+    sandbox
+        .execute(
+            "globalThis.__rq = '';\
+             navigator.permissions.request({ name: 'geolocation' }).then(function(s){\
+               navigator.permissions.query({ name: 'geolocation' }).then(function(q){\
+                 globalThis.__rq = s.state + ':' + q.state;\
+               });\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rq)").unwrap().value,
+        "granted:granted",
+        "request 须自动授予 'prompt' 权限且 query 反映 granted"
+    );
+
+    // ③ request 维持 'denied'（显式拒绝语义不自动翻转）。
+    sandbox
+        .execute(
+            "globalThis.__rd = '';\
+             globalThis.__zwSetPermission('camera', 'denied').then(function(){\
+               navigator.permissions.request({ name: 'camera' }).then(function(s){\
+                 globalThis.__rd = s.state;\
+               });\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rd)").unwrap().value,
+        "denied",
+        "request 对 'denied' 权限须维持 denied"
+    );
+
+    // ④ change 事件：listener + onchange 同收 'change' Event；state 活值如实。
+    sandbox
+        .execute(
+            "globalThis.__ev = [];\
+             navigator.permissions.query({ name: 'midi' }).then(function(s){\
+               s.addEventListener('change', function(e){\
+                 globalThis.__ev.push('listener:' + e.type + ':' + s.state + ':' + (e.target === s));\
+               });\
+               s.onchange = function(e){\
+                 globalThis.__ev.push('onchange:' + e.type);\
+               };\
+               globalThis.__zwSetPermission('midi', 'granted');\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.join('|')").unwrap().value,
+        "listener:change:granted:true|onchange:change",
+        "状态实际变化须派发 change（listener + onchange，e.target 为 status 单例，state 活值 granted）"
+    );
+
+    // ⑤ 同值重设不派发（状态实际变化才通知）。
+    sandbox
+        .execute(
+            "globalThis.__ev2 = 0;\
+             navigator.permissions.query({ name: 'midi' }).then(function(s){\
+               s.addEventListener('change', function(){ globalThis.__ev2 = globalThis.__ev2 + 1; });\
+               globalThis.__zwSetPermission('midi', 'granted');\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev2)").unwrap().value,
+        "0",
+        "同值重设不得派发 change"
+    );
+
+    // ⑥ desc 必选成员校验：query/request 非法 desc → rejected promise（TypeError）。
+    sandbox
+        .execute(
+            "globalThis.__err = '';\
+             navigator.permissions.query(null).then(function(){ globalThis.__err = 'resolved'; },\
+               function(e){ globalThis.__err = 'query:' + e.name; });",
+        )
+        .unwrap();
+    sandbox
+        .execute(
+            "navigator.permissions.request({}).then(function(){ globalThis.__err += '|resolved'; },\
+               function(e){ globalThis.__err += '|request:' + e.name; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__err)").unwrap().value,
+        "query:TypeError|request:TypeError",
+        "非法 desc 须 reject TypeError（必选成员 name）"
+    );
+}
+
+#[test]
 fn test_clipboard_write_read_round_trip_r2964() {
     // R2964：navigator.clipboard.writeText/readText 真实化（进程内 store 往返）。覆盖写入→读、覆盖写、
     // 非字符串归一、空默认。headless 无 OS 剪贴板——store 同页/同进程 write→read 通（复制按钮 + 粘贴检查）。
@@ -1430,6 +1561,9 @@ fn test_clipboard_permission_denied_and_validation_wab2m2s3() {
 
     // 默认 'prompt'（中性放行）；query 面如实反映注入态。镜像 permissions/readText-granted
     // （tryGrant → granted → readText 放行）路径。
+    // security-hardening M4：PermissionStatus.state 为活值 + query 单例（spec
+    // identical-descriptor 语义）——注入前状态须在**注入前**的 execute 捕获（同 execute
+    // 内注入先于微任务排空，活值读取会得 granted）。
     assert_eq!(
         sandbox
             .execute(
@@ -1437,7 +1571,17 @@ fn test_clipboard_permission_denied_and_validation_wab2m2s3() {
                  navigator.permissions.query({name:'clipboard-read'}).then(function(s){\
                    globalThis.__q.push('default:' + s.state);\
                  });\
-                 globalThis.__zwSetPermission('clipboard-read', 'granted');\
+                 void 0;",
+            )
+            .unwrap()
+            .value,
+        "undefined",
+        "default-state execute settles"
+    );
+    assert_eq!(
+        sandbox
+            .execute(
+                "globalThis.__zwSetPermission('clipboard-read', 'granted');\
                  navigator.permissions.query({name:'clipboard-read'}).then(function(s){\
                    globalThis.__q.push('after:' + s.state);\
                  });\
@@ -1447,7 +1591,7 @@ fn test_clipboard_permission_denied_and_validation_wab2m2s3() {
             .unwrap()
             .value,
         "undefined",
-        "setup execute settles"
+        "inject-state execute settles"
     );
     assert_eq!(
         sandbox.execute("globalThis.__q.join('|')").unwrap().value,

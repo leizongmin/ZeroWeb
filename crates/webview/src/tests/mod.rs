@@ -13,6 +13,8 @@ mod event_dispatch;
 mod final_coverage;
 mod indexed_db_owner;
 mod integration;
+// security-hardening M3：Mixed Content 分级阻止 + HSTS 响应注册（kill-switch 面）。
+mod mixed_content_gate;
 mod more_coverage;
 mod opfs_owner;
 mod service_worker_fetch;

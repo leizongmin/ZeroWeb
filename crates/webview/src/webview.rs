@@ -230,6 +230,15 @@ pub struct WebViewConfig {
     /// 行号，从**原始 case 源**预计算后经此传入（ordinal 对齐全量 script 序）。
     /// `None`（默认）→ 自算。
     pub csp_script_positions: Option<Vec<(u32, u32)>>,
+    /// Mixed Content 分级阻止开关（security-hardening M3；**default-on**）。
+    ///
+    /// 开启后：HTTPS 页面加载 HTTP 子资源按分级处理——阻塞型（script/style 等阻止
+    /// 加载）、可选阻塞型（img 等自动升级 HTTPS）；同时 HTTPS 导航响应的
+    /// `Strict-Transport-Security` 头注册进 HSTS store（后续导航/子资源强制升级）。
+    /// 仅影响安全页面（`https://`）上的 `http://` 子资源——file:// 页面零影响；
+    /// 运行时宿主可置 false 回退（kill-switch 语义，同 `csp_enforcement`；环境
+    /// `ZW_MIXED_CONTENT_ENFORCEMENT=0` 为默认值侧的回退入口）。
+    pub mixed_content_enforcement: bool,
 }
 
 impl Default for WebViewConfig {
@@ -247,6 +256,11 @@ impl Default for WebViewConfig {
             // kill-switch 语义保留——宿主可显式置 false 回退）。
             csp_enforcement: true,
             csp_script_positions: None,
+            // security-hardening M3：Mixed Content 分级阻止 default-on（仅影响
+            // https 页面的 http 子资源，file:// 工作区零影响）；kill-switch 语义
+            // 保留——宿主可显式置 false，或环境 `ZW_MIXED_CONTENT_ENFORCEMENT=0`
+            // 回退（A/B off 臂入口，照 `ZW_MO_HOST_TRIGGER` 先例）。
+            mixed_content_enforcement: std::env::var("ZW_MIXED_CONTENT_ENFORCEMENT").as_deref() != Ok("0"),
             external_script: None,
             script_source_fetcher: None,
             service_worker_script_fetcher: None,
@@ -1023,20 +1037,36 @@ impl WebView {
                 });
                 continue;
             }
+            // security-hardening M3：外链 stylesheet Mixed Content 检查点（阻塞型——
+            // HTTPS 页面 HTTP 样式表阻止加载；HSTS 预载域 HTTP 样式表升级后抓取）。
+            // 抓取/解析均以 fetch URL 为基准（升级后 url() 相对引用按升级 URL 解析）。
+            // spec https://w3c.github.io/webappsec-mixed-content/#should-block-fetch。
+            let fetch_url = if self.config.mixed_content_enforcement {
+                match self.security_context.check_resource_url(&abs, "style") {
+                    ResourceCheckResult::Allow => abs.clone(),
+                    ResourceCheckResult::Upgraded(upgraded) => upgraded,
+                    ResourceCheckResult::Blocked(reason) => {
+                        tracing::warn!("mixed content blocked stylesheet {abs}: {reason}");
+                        continue;
+                    }
+                }
+            } else {
+                abs.clone()
+            };
             // R34xx：headless/testharness 路径外链样式表经 image_source_fetcher 本地提供
             //（wpt-data 文件映射，与图片子资源同款；None → 回退 HTTP 网络）。
             let resp = if let Some(fetcher) = self.image_source_fetcher.as_ref()
-                && let Some(bytes) = fetcher(&abs)
+                && let Some(bytes) = fetcher(&fetch_url)
             {
                 Ok(HttpResponse {
                     status_code: 200,
                     headers: vec![("content-type".into(), "text/css".into())],
                     body: bytes,
-                    url: abs.clone(),
+                    url: fetch_url.clone(),
                     redirect_count: 0,
                 })
             } else {
-                self.resource_get(&abs, FetchPriority::CRITICAL, "style")
+                self.resource_get(&fetch_url, FetchPriority::CRITICAL, "style")
             };
             match resp {
                 Ok(resp) => {
@@ -1051,7 +1081,7 @@ impl WebView {
                     // combined 后按页面 URL 解析 → 外链 @font-face 字体/背景图 404
                     // （driving: 2d.text.variationSelectors 的 variation-sequences.css
                     // `url(../../resources/vs/...)` 字体引用）。data:/绝对/占位符不动。
-                    let css = crate::css_urls::absolutize_css_urls(&css, &abs);
+                    let css = crate::css_urls::absolutize_css_urls(&css, &fetch_url);
                     combined.push_str(&css);
                     combined.push('\n');
                 }
@@ -1136,6 +1166,23 @@ impl WebView {
                     Some(u) => u.to_string(),
                     None => src.to_string(),
                 };
+                // security-hardening M3：img Mixed Content 检查点（可选阻塞型——HTTPS
+                // 页面 HTTP 图片自动升级 HTTPS 后抓取；阻塞/HSTS 判定同走
+                // check_resource_url）。缓存键仍按 markup 可见的原始 abs（painter 按
+                // 原始 src 解析查找，升级键会失配）。spec
+                // https://w3c.github.io/webappsec-mixed-content/#should-block-fetch。
+                let fetch_url = if self.config.mixed_content_enforcement {
+                    match self.security_context.check_resource_url(&abs, "img") {
+                        ResourceCheckResult::Allow => abs.clone(),
+                        ResourceCheckResult::Upgraded(upgraded) => upgraded,
+                        ResourceCheckResult::Blocked(reason) => {
+                            tracing::warn!("mixed content blocked image {abs}: {reason}");
+                            continue;
+                        }
+                    }
+                } else {
+                    abs.clone()
+                };
                 // 性能门禁优化 S5（2026-08-08）：ImageCache 命中即跳过网络——DOM 变更后
                 // reload_html_after_script 每次全页同步重抓图片（webview.rs:452 每图
                 // 全新 TCP+TLS，UI 线程阻塞）是「日志资源请求不断」的最大来源。
@@ -1145,11 +1192,15 @@ impl WebView {
                     None => {
                         // R34xx：headless/testharness 路径经 image_source_fetcher 本地提供
                         //（wpt-data 文件映射）；None → 回退 HTTP 网络。
-                        let fetched = self.image_source_fetcher.as_ref().and_then(|f| f(&abs)).or_else(|| {
-                            self.resource_get(&abs, FetchPriority::MEDIUM, "image")
-                                .ok()
-                                .map(|resp| resp.body)
-                        });
+                        let fetched = self
+                            .image_source_fetcher
+                            .as_ref()
+                            .and_then(|f| f(&fetch_url))
+                            .or_else(|| {
+                                self.resource_get(&fetch_url, FetchPriority::MEDIUM, "image")
+                                    .ok()
+                                    .map(|resp| resp.body)
+                            });
                         let bytes = match fetched {
                             Some(bytes) => bytes,
                             None => {
@@ -1416,6 +1467,15 @@ impl WebView {
 
                 tracing::info!("Fetched {} bytes from {effective_url}", html.len());
 
+                // security-hardening M3：HSTS 响应头注册（按最终响应 URL 的 host；
+                // 重定向后以 `response.url` 为准）。
+                let final_url = if response.url.is_empty() {
+                    effective_url.as_str()
+                } else {
+                    response.url.as_str()
+                };
+                self.note_hsts_response(final_url, &response.headers);
+
                 // 抓取外链样式表（`<link rel="stylesheet">`），合并后注入级联。
                 let external_css = self.prepare_page_subresources(&html, &effective_url);
 
@@ -1480,6 +1540,9 @@ impl WebView {
         self.referrer = self.current_url.clone();
         self.current_url = Some(page_url.to_string());
         self.set_page_url_wire(page_url);
+        // security-hardening M3：页面源登记与 fetch_url 对齐——子资源 Mixed Content/
+        // HSTS 判定（prepare_page_subresources 侧）以页面源为前提。
+        self.security_context.set_page_origin(page_url);
         let external_css = self.prepare_page_subresources(html, page_url);
         let result = self.load_html(html, Some(&external_css));
         self.loading = false;
@@ -1804,6 +1867,33 @@ impl WebView {
     }
 
     /// 经统一资源加载器同步取得 HTTP 子资源；`file:` 保持本地读取语义。
+    /// security-hardening M3：HTTPS 导航响应的 HSTS 注册（`mixed_content_enforcement`
+    /// 门内——与 Mixed Content 分级阻止同一策略面）。解析最终响应 URL 的 host +
+    /// `Strict-Transport-Security` 头 → `register_hsts`；解析失败/非 HTTPS/无头
+    /// 静默跳过。spec https://w3c.github.io/webappsec-secure-contexts/ 与
+    /// https://tools.ietf.org/html/rfc6797#section-6.1（host 只认最终 URL）。
+    pub(crate) fn note_hsts_response(&mut self, final_url: &str, headers: &[(String, String)]) {
+        if !self.config.mixed_content_enforcement || !final_url.starts_with("https://") {
+            return;
+        }
+        let Some(value) = headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("strict-transport-security"))
+            .map(|(_, value)| value.clone())
+        else {
+            return;
+        };
+        let Some(host) = url::Url::parse(final_url)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_string))
+        else {
+            return;
+        };
+        if self.security_context.register_hsts(&host, &value) {
+            tracing::info!("HSTS registered for {host}: {value}");
+        }
+    }
+
     fn resource_get(&self, url: &str, priority: FetchPriority, destination: &str) -> Result<HttpResponse, NetError> {
         if is_file_url(url) {
             return self.http_client.get(url);
@@ -3116,6 +3206,34 @@ impl WebView {
         self.ensure_js_shim()?;
         for (script, script_index) in scripts {
             self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
+            // security-hardening M3：外链 script Mixed Content 检查点（阻塞型——HTTPS
+            // 页面 HTTP 脚本不执行；HSTS 预载域 HTTP 脚本升级 HTTPS 后执行，
+            // `mc_script_fetch_src` 携升级 URL 给 fetch 面）。内联脚本非混合内容不受检。
+            // spec https://w3c.github.io/webappsec-mixed-content/#should-block-fetch。
+            let mc_script_fetch_src: Option<String> = if self.config.mixed_content_enforcement {
+                let external_src = match &script {
+                    zero_engine::pipeline::PageScript::External(src)
+                    | zero_engine::pipeline::PageScript::ExternalModule(src) => Some(src.as_str()),
+                    _ => None,
+                };
+                match external_src {
+                    Some(src) => {
+                        let base = self.current_url.as_deref().unwrap_or("about:blank");
+                        let abs = resolve_document_url(base, src);
+                        match self.security_context.check_resource_url(&abs, "script") {
+                            ResourceCheckResult::Allow => None,
+                            ResourceCheckResult::Upgraded(upgraded) => Some(upgraded),
+                            ResourceCheckResult::Blocked(reason) => {
+                                tracing::warn!("mixed content blocked script {abs}: {reason}");
+                                continue;
+                            }
+                        }
+                    }
+                    None => None,
+                }
+            } else {
+                None
+            };
             // security-hardening M2-s1：CSP script 检查点（decision 先于 sandbox 借用
             // 计算，避免双重 self 借用）。被阻止的脚本跳过执行，并在其 script 元素上
             // 派发 securitypolicyviolation（元素缺失回落 document）。
@@ -3181,7 +3299,9 @@ impl WebView {
                     match &self.script_source_fetcher {
                         Some(fetch) => {
                             let page_url = self.current_url.as_deref().unwrap_or("about:blank");
-                            match fetch(page_url, &src) {
+                            // security-hardening M3：HSTS 升级 URL 就位时按升级 URL fetch。
+                            let fetch_src: &str = mc_script_fetch_src.as_deref().unwrap_or(src.as_str());
+                            match fetch(page_url, fetch_src) {
                                 Ok(code) => (code, false),
                                 Err(e) => {
                                     if strict {
@@ -3201,7 +3321,9 @@ impl WebView {
                     match &self.script_source_fetcher {
                         Some(fetch) => {
                             let page_url = self.current_url.as_deref().unwrap_or("about:blank");
-                            match fetch(page_url, &src) {
+                            // security-hardening M3：HSTS 升级 URL 就位时按升级 URL fetch。
+                            let fetch_src: &str = mc_script_fetch_src.as_deref().unwrap_or(src.as_str());
+                            match fetch(page_url, fetch_src) {
                                 Ok(code) => (code, true),
                                 Err(e) => {
                                     if strict {
