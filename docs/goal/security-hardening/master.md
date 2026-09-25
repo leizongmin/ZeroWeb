@@ -2,7 +2,7 @@
 
 **入口文档**: [../security-hardening.md](../security-hardening.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-25（R10：M5 收口第一批 — A/B 零回归门禁通过 + kill-switch default-on 落定 + reftest 202/202 + DC 逐项判定 + 挂账定稿；DC-2 尾项（Permissions JS 面/MC 子资源/HSTS 注册接线）= 下轮 M3/M4 补齐）
+**最后更新**: 2026-09-25（R11：M3/M4 补齐落库 — MC 子资源面接线 + HSTS 响应注册 + navigator.permissions JS 面/change 事件 + 单测；make test 全绿 + reftest 202/202 + clippy/fmt 干净；**余项 = CSP corpus 账册零丢失核验（TIME_LIMIT≥5400）+ MC/SC off 臂全量 evidence + DC-2 翻 ✅ 终判**）
 
 ---
 
@@ -57,12 +57,35 @@
 | P1 | zero-security CSP 现状盘点 | ✅ R1（见上「基线事实」） |
 | P2 | content-security-policy / mixed-content / secure-contexts 三 corpus 导入 + 基线 | ✅ R1（415+2+4 案执行；CSP subtests 16.3% 基线见 evidence/） |
 | P3 | CSP 主要指令引擎完整化 + report-only + 违规报告 | 🔄 M2-s1→s8 ✅ 检查点面收齐（script/style/img 元素+运行时+attr/connect/eval 全门禁 + hash 三算法 + 元素面口径 + GET 模板面 + corpus 第二批；全绿 74/445、subtests 174；余项全部记账/挂账，见 evidence/2026-09-25-m2-s8-csp-extensions.md） |
-| P4 | Mixed Content 分级阻止 + HSTS 接线 | ⏳ M3（mixed_content/checkpoint 接入子资源面；HSTS register 接 net 响应） |
-| P5 | Permissions API headless 语义层 + 事件 | ⏳ M4（navigator.permissions JS 面挂 PermissionManager） |
+| P4 | Mixed Content 分级阻止 + HSTS 接线 | ✅ R11（kill-switch `mixed_content_enforcement` default-on + env `ZW_MIXED_CONTENT_ENFORCEMENT=0` 回退；stylesheet/img/script 三面接 `check_resource_url`；`note_hsts_response` 挂 fetch_url——见 evidence/2026-09-25-m3-m4-wiring.md） |
+| P5 | Permissions API headless 语义层 + 事件 | ✅ R11（navigator.permissions 单例 status + state 活值 + change 派发 + request headless 语义 + desc 校验；WAB2 既有测试按意图适配——见 evidence/2026-09-25-m3-m4-wiring.md） |
 | P6 | kill-switch + A/B + default-on 决策 | ⏳ M5 |
 
 ## 已完成切片
 
+- **R11（2026-09-25）M3/M4 补齐**（evidence/2026-09-25-m3-m4-wiring.md）：
+  - **M3a Mixed Content 子资源面**：`WebViewConfig::mixed_content_enforcement`
+    （default-on；env `ZW_MIXED_CONTENT_ENFORCEMENT=0` 回退，照 `ZW_MO_HOST_TRIGGER`
+    先例）+ 三检查点接 `check_resource_url`——外链 stylesheet（Blockable 阻止；
+    Upgraded 按升级 URL 抓取与 url() 解析）、img（OptionallyBlockable 升级 HTTPS
+    抓取；**缓存键留 markup 原始 URL** 防 painter 失配）、外链 script/module
+    （Blockable 不执行；Upgraded 走升级 fetch）。`complete_fetched_page` 补
+    `set_page_origin` 与 fetch_url 对齐。零影响面：判定以 https 页面源为前提，
+    file:// 工作区结构性短路。
+  - **M3b HSTS 注册**：`note_hsts_response` 挂 `fetch_url` HTTPS 响应分支（按最终
+    响应 URL host 解析 `Strict-Transport-Security` → `register_hsts`）。
+  - **M4 navigator.permissions**（shim part02.js）：单例 status（spec
+    identical-descriptor）+ state 活值 getter + change 派发（`__zwSetPermission`/
+    request 状态实际变化时 listener+onchange，同值不派发）+ request headless 语义
+    （prompt 自动授予/denied 维持）+ desc 必选成员校验。JS 面挂 shim 权限注册表
+    （WAB2 clipboard/fullscreen 同一 store）；PermissionManager 保留 app UI 侧。
+    WAB2-M2-s3 既有测试按意图拆 execute 适配活值语义（期望串不变）。
+  - **单测**：webview `mixed_content_gate` 5 test + engine part07 1 test；engine
+    全量 2735 绿、`make test` 全绿、`make reftest` 202/202、clippy/fmt 干净。
+  - **运维记档**：CSP corpus 全量实际墙钟 >3600s（账册红案 ×30s 内部超时累加），
+    复跑须 `TIME_LIMIT>=5400`（Makefile 已透传；testharness-dom 先例）。本 clone 与
+    同 goal 后继会话并行碰撞 ×2（互杀 corpus run）——按 §9 让行不硬解，corpus
+    零丢失核验移交后继会话。
 - **R1（2026-09-24）M1 资产切片**：
   - `tests/wpt-runner/scripts/fetch-security-csp-subset.sh`（新增）：三 corpus 首批
     导入，sparse blob:none 浅克隆策略（逐文件 raw + contents API 枚举在本机网络下
@@ -142,12 +165,12 @@
 
 ## 下一步计划
 
-1. **M3 补齐（DC-2 尾项）**：①Mixed Content 子资源面接线（SecurityContext
-   check_resource_url 的 img/script/style 检查点串接 mixed_content 判定——语义已备）；
-   ②HSTS net 响应注册（register_hsts 挂 net 响应头解析）。
-2. **M4 Permissions**：navigator.permissions JS 面（query/state/request headless
-   语义挂 PermissionManager + change 事件）——为 web-api-batch2 Clipboard 供数。
-3. **M5 终判**：M3/M4 补齐后 DC-2 全 ✅ → goal DONE 判定（DC-1/3/4 已 ✅）。
+1. **M5 终判收口（R12，唯一余项）**：①CSP corpus 全量复跑（`make testharness-csp
+   TIME_LIMIT=5400`）→ 账册对比 m2-s8-final.json（74 全绿/445、subtests 174）零丢失；
+   ②`ZW_MIXED_CONTENT_ENFORCEMENT=0 make test` off 臂全量零 delta evidence（kill-switch
+   实效面，DC-3 letter）；③DC-2 Mixed Content/HSTS/Permissions 翻 ✅ → goal DONE 判定。
+2. **碰撞注意**：同 goal 后继会话已在跑 off 臂/reftest/smoke/corpus 序列
+   （systemd scope zw-r11-*）——接手前先 `git pull` + 查 `/tmp/zw-r11-*.log` 避免重复跑。
 
 **跨域记账（协调不硬改）**：
 - 外链 stylesheet ID 选择器应用缺口——pipeline/style 面预存（渲染流域 crates 域）。
@@ -185,9 +208,9 @@
 |--------|------|
 | M1 — 勘察 + WPT 导入与基线 | ✅ R1（2026-09-24，基线 16.3%） |
 | M2 — CSP 指令引擎完整化（接线） | ✅ s1-s8（74/445 零丢失，subtests 174=28.8%；检查点面收齐） |
-| M3 — Mixed Content + HSTS | ◐ 语义+单测 ✅（mixed_content.rs/hsts.rs）；导航面接线 ✅；**子资源面接线 + HSTS net 注册 = 下轮** |
-| M4 — Permissions 语义层 | ◐ PermissionManager 语义+单测 ✅；**navigator.permissions JS 面 + change 事件 = 下轮** |
-| M5 — 收口 | ◐ A/B 零回归门禁 ✅ + default-on 落定 ✅ + reftest ✅ + DC 逐项判定 ✅ + 挂账定稿 ✅（evidence/2026-09-25-m5-ab-default-on.md）；**终判待 M3/M4 补齐** |
+| M3 — Mixed Content + HSTS | ✅ R11（语义+单测 ✅；导航面 ✅；子资源面三检查点 + HSTS 响应注册 ✅——mixed-content corpus 2 案维持 infra 挂账：popups/模板/ResourceTiming） |
+| M4 — Permissions 语义层 | ✅ R11（PermissionManager 语义+单测 ✅；navigator.permissions query/request + 单例 + change 事件 + 活值 state ✅） |
+| M5 — 收口 | ◐ A/B 零回归门禁 ✅ + default-on 落定 ✅ + reftest ✅ + DC 逐项判定 ✅ + 挂账定稿 ✅（evidence/2026-09-25-m5-ab-default-on.md）；**余 = corpus 零丢失核验 + off 臂 evidence → DONE 终判** |
 
 ## 验证基线
 
