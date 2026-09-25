@@ -215,12 +215,13 @@ pub struct WebViewConfig {
     /// 的 `indexOf` while 自旋）不再卡死整个 runner/测试套件，而是返回
     /// `ScriptError::Timeout`。仅测试/headless 宿主应设置（真实浏览器语义不截断）。
     pub script_timeout_ms: u64,
-    /// 文档级 CSP 强制开关（security-hardening M2-s1，default **off** = kill-switch）。
+    /// 文档级 CSP 强制开关（security-hardening M2-s1；**default-on**——M5 A/B 零
+    /// 回归门禁后落定，见 evidence/2026-09-25-m5-ab-default-on.md）。
     ///
     /// 开启后：load 文档装配 `<meta http-equiv="content-security-policy">` 政策集，
-    /// 页面脚本执行前经 `SecurityContext::check_script` 检查（inline nonce / 外链
-    /// URL 源匹配），被阻止的脚本跳过执行并派发 `SecurityPolicyViolationEvent`。
-    /// 默认关闭 → 生产加载行为零变更（M5 A/B 零回归后再定 default-on）。
+    /// 页面脚本/图片/样式/connect 面检查点接入，被阻止资源跳过加载并派发
+    /// `SecurityPolicyViolationEvent`。无 CSP 文档零影响（装配/检查点均以政策存在
+    /// 为前提）；运行时宿主可置 false 回退（kill-switch 语义保留）。
     pub csp_enforcement: bool,
     /// script 内容位置表（security-hardening M2-s2，runner 专用覆盖面）。
     ///
@@ -242,8 +243,9 @@ impl Default for WebViewConfig {
             devtools: false,
             http_timeout_secs: None,
             script_timeout_ms: 0,
-            // security-hardening M2-s1：CSP 强制 default off（kill-switch，生产零变更）。
-            csp_enforcement: false,
+            // security-hardening M5：CSP 强制 default-on（A/B 零回归门禁后落定；
+            // kill-switch 语义保留——宿主可显式置 false 回退）。
+            csp_enforcement: true,
             csp_script_positions: None,
             external_script: None,
             script_source_fetcher: None,

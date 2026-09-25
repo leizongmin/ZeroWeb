@@ -2,7 +2,7 @@
 
 **入口文档**: [../security-hardening.md](../security-hardening.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-25（R9：M2-s8 运行时 img src-set 检查点 — 全绿 72→74 零丢失 / subtests 174=28.8%；M2 检查点面收齐，下轮 M5 收口）
+**最后更新**: 2026-09-25（R10：M5 收口第一批 — A/B 零回归门禁通过 + kill-switch default-on 落定 + reftest 202/202 + DC 逐项判定 + 挂账定稿；DC-2 尾项（Permissions JS 面/MC 子资源/HSTS 注册接线）= 下轮 M3/M4 补齐）
 
 ---
 
@@ -142,12 +142,12 @@
 
 ## 下一步计划
 
-1. **M5 收口（下一轮主战场）**：①DC-1~4 逐项判定（WPT 标尺 74/445 全绿 + 记账/挂账
-   清单核对；make test/clippy/fmt/reftest 门禁记录）；②kill-switch **default-on 决策
-   预备**——A/B 全量零回归门禁（production 默认 off 现状 → on 的行为变更走
-   event-loop-spec ② 先例：runner 实验臂证据已持续积累，A/B 门禁跑 make test 全量
-   对照）；③挂账定稿（fetch blocked 契约 / 外链 css ID 选择器 / report-uri /
-   inheritance/sandbox 深多进程面 / img location 模板族）。
+1. **M3 补齐（DC-2 尾项）**：①Mixed Content 子资源面接线（SecurityContext
+   check_resource_url 的 img/script/style 检查点串接 mixed_content 判定——语义已备）；
+   ②HSTS net 响应注册（register_hsts 挂 net 响应头解析）。
+2. **M4 Permissions**：navigator.permissions JS 面（query/state/request headless
+   语义挂 PermissionManager + change 事件）——为 web-api-batch2 Clipboard 供数。
+3. **M5 终判**：M3/M4 补齐后 DC-2 全 ✅ → goal DONE 判定（DC-1/3/4 已 ✅）。
 
 **跨域记账（协调不硬改）**：
 - 外链 stylesheet ID 选择器应用缺口——pipeline/style 面预存（渲染流域 crates 域）。
@@ -184,10 +184,10 @@
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — 勘察 + WPT 导入与基线 | ✅ R1（2026-09-24，基线 16.3%） |
-| M2 — CSP 指令引擎完整化（接线） | ✅ s1-s8（74/445 零丢失，subtests 174=28.8%；检查点面收齐）→ **M5 收口** |
-| M3 — Mixed Content + HSTS | ⏳ |
-| M4 — Permissions 语义层 | ⏳ |
-| M5 — 收口 | ⏳ |
+| M2 — CSP 指令引擎完整化（接线） | ✅ s1-s8（74/445 零丢失，subtests 174=28.8%；检查点面收齐） |
+| M3 — Mixed Content + HSTS | ◐ 语义+单测 ✅（mixed_content.rs/hsts.rs）；导航面接线 ✅；**子资源面接线 + HSTS net 注册 = 下轮** |
+| M4 — Permissions 语义层 | ◐ PermissionManager 语义+单测 ✅；**navigator.permissions JS 面 + change 事件 = 下轮** |
+| M5 — 收口 | ◐ A/B 零回归门禁 ✅ + default-on 落定 ✅ + reftest ✅ + DC 逐项判定 ✅ + 挂账定稿 ✅（evidence/2026-09-25-m5-ab-default-on.md）；**终判待 M3/M4 补齐** |
 
 ## 验证基线
 

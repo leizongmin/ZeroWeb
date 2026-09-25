@@ -66,10 +66,14 @@ document.addEventListener('securitypolicyviolation', function(e) {
     );
 }
 
-/// default（kill-switch off）零变更：同页全部脚本照常执行、无 violation。
+/// kill-switch off（显式 false）零变更：同页全部脚本照常执行、无 violation。
+/// M5 后 default-on——本测试验证宿主回退面（kill-switch 语义保留）。
 #[test]
 fn csp_gate_off_by_default_zero_delta_sh1_m2s1() {
-    let mut wv = WebView::new(WebViewConfig::default());
+    let mut wv = WebView::new(WebViewConfig {
+        csp_enforcement: false,
+        ..WebViewConfig::default()
+    });
     wv.load_html(
         r#"<html><head>
 <meta http-equiv="Content-Security-Policy" content="script-src 'nonce-ok'">
@@ -82,7 +86,7 @@ fn csp_gate_off_by_default_zero_delta_sh1_m2s1() {
     wv.run_page_scripts().expect("run page scripts");
     assert_eq!(wv.execute_script("String(globalThis.__blocked)").unwrap(), "1");
     assert_eq!(wv.execute_script("String(globalThis.__allowed)").unwrap(), "1");
-    // 装配面不激活：context 无政策（后台状态零残留）。
+    // 装配面不激活：kill-switch off 下 context 无政策（后台状态零残留）。
     assert!(!wv.security_context().has_document_csp());
 }
 
