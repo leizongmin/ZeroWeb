@@ -423,7 +423,7 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 |----|------|
 | 仓库代码 | ✅ Cargo workspace 32 个 member（22 库 + 7 应用 + 2 测试工具 + 1 开发工具，含 runtime-config、paint-convert、android-browser 与 media；全部有实质实现） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `make test` 全绿零失败（当前锚 19,451P/0F，R4762 轮口径；2026-09-18 静态统计 18,003 个 `#[test]`，运行时计数含参数化与集成 subtest） |
+| 测试状态 | ✅ `make test` 全绿零失败（当前锚 19,451P/0F，R4821 轮口径；2026-09-18 静态统计 18,003 个 `#[test]`，运行时计数含参数化与集成 subtest） |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（78+ 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|
