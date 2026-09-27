@@ -88,6 +88,17 @@ record-bench-baseline.sh（基线，手动）→ docs/perf/baselines/<platform_c
 - **自动收紧**（weekly CI `record-bench-trend.sh --auto-tighten`）：实测 p95 低于基线 →
   就地收紧（仅收紧永远合法，无需 justification）。
 
+**2026-09-28 CI 平台基线 re-capture 放行记录 + 7763 执行记录（用户批复，GB-20260919 征询扩围 + desktop-browser 合并征询合并裁决，「一次性基线重建放行」）**：
+- **放行内容**：CI benchmarks 陈旧平台基线 re-capture 扩围 **6973p-c / 9v74 / 7763** 三平台各自独立一次性 re-capture（`record-bench-baseline.sh --relax` 显式执行 + justification 记录批复依据），消除 2026-09-20 起 CI-GUARD 连续 16 轮同签名慢性 GATE FAIL（NEW=0、FAIL 集逐轮漂移、同 SHA 零代码变化下逐轮进出带、跨 15+ 个不同 head 含 pre-code/post-code 两代码面）造成的每轮预存 FAIL 噪声。
+- **证据链**：16 轮 FAIL 集互不重叠且复发核心成员（paint_complex/paint_simple/page/medium/layout_ms/first_paint_wall_ms）逐轮进出带；同 SHA rerun 孤峰定论多轮先例（第二十二/二十五轮等）；本地同代码同 gate GATE PASS 多轮旁证（R4653-R4656、R4819 等）；基线 auto-tighten 持续收紧方向（9v74 09-15、7763 09-19）对实测持续高于基线的核心成员无法自动收敛——平台调度绑定漂移 + 共享 runner 负载波，非代码回归。
+- **护栏**：① 各平台按各自 GATE FAIL 轮实测独立重建、不共用一组数 ② 沿用 GB-20260907 ④ 口径「重建后仍超预算者单列报告再议」③ **明确非放宽阈值**——绝对预算语义不动（`total_ms` hard tier 2000ms 绝对值、budget tier 公式均不变），仅基线参考值按各平台实测更新 ④ 执行轮须对各自原 GATE FAIL 报告本地复跑 `perf-gate.sh` 验证 NEW=0 收敛 ⑤ 执行归 perf-gate 政策域（CI-guard / ZRG 流按各自轮次执行），desktop-browser 流不触碰。
+- **执行记录（2026-09-28，7763 + 9v74，CI-GUARD 轮）**：
+  - **7763**（本批复第一次执行）：113 指标全量重建（报告 = run 36342776118 head `224bd90a4` GATE FAIL 轮实测 `benchmark_20260927_190125.json`，suspect=false、errors=0、config_hash 与原基线一致）。本轮 GATE FAIL 5 指标（NEW=0）：`paint_complex_page_500_elements` 1105954.39ns（对旧基线 1.39×）、`paint_simple_page_100_elements` 221332.82ns（1.40×）、`ipc_serialize_10000` 539795.55ns（1.42×）、`page/medium/layout_ms` 196.66ms（1.52×）、`page/medium/first_paint_wall_ms` 474.27ms（1.47×）——全为台账慢性复发核心成员。
+  - **9v74**（本批复第二次执行）：113 指标全量重建（报告 = 第 15 轮 run 36321096254 head `ee54787fb` GATE FAIL 轮实测 `benchmark_20260927_130447.json`，suspect=false、errors=0、config_hash 一致；原基线 8/31 捕获后仅 auto-tighten 增量收紧）。
+  - **验证（护栏④）**：两平台各自原 GATE FAIL 报告对新基线本地复跑 `perf-gate.sh` → **均 GATE PASS，各 113/113，NEW=0**，无残留超预算项（「重建后仍超预算者单列报告再议」检查通过——本轮无残留）。
+  - CI 侧验证待下一轮 dispatch 落 7763 / 9v74 后补记；**6973p-c 平台待其 GATE FAIL 轮落地后按同口径执行**（批复口径 = 按 GATE FAIL 实测重建，该平台现行为 09-07 GB-20260907② 重建基线且近期未命中 GATE FAIL 轮，无可取用实测报告，不预建）。
+- **恢复计划**：weekly / dispatch `--auto-tighten` 持续收紧（实测更优者就地收紧）；渲染性能回拉仍归 layout-perf-pullback 专项 / 渲染流内 walk perf 优化推进（auto-tighten 拒收回归值口径不变，重建不掩盖真实回归）。
+
 **2026-09-15 linux-x86_64 本地基线 re-capture 执行记录（R4376 渲染流，静默窗机器态漂移）**：
 - **触发**：R4376（回退链垂直度量 default-on）后连续 7 轮本地 bench-gate FAIL（4/10/15/2/1/12/11 个指标，失败集逐轮完全不同），归因机器态非代码——证据链：①clean-tree A/B（git stash 对照）`mb/zero-engine/compositing_layer_analysis_200` = 46.2µs vs 旧基线 34.6µs（+33%，无 diff 亦超）；②同负载 `ZW_FALLBACK_LINE_METRICS=0` 臂 11 指标超预算且全在无关域（security cors +68%/storage/render fills）；③双流并行（兄弟 clone reftest/render_bench 腿）持续在窗 load 1.3–6.3；④本 diff 真实 delta ≤1.7%（46.99 vs 46.22µs，含噪声）。
 - **执行**：静默窗（load 0.8–1.3）`bench-report.sh` 产 `benchmark_20260915_173121.json` → `record-bench-baseline.sh --relax`（113 指标，justification 记录本证据链）。**属重建基线非放宽阈值**（GB-20260821 口径）：budget 公式与 hard tier 不动。
