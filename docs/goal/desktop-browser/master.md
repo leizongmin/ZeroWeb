@@ -2,7 +2,7 @@
 
 **入口文档**: [../desktop-browser.md](../desktop-browser.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-27（M1 第二切片：三平台 CI 启动冒烟接线完成；DC-1 三条全数收口在望）
+**最后更新**: 2026-09-27（M1 Done：DC-1 三条全勾，CI run 36311188270 三平台启动冒烟取证闭环）
 
 ---
 
@@ -24,7 +24,7 @@
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | 真窗口端到端演示流（Linux）+ GPU 合成显示验收 | ✅ M1 首切片（三腿全绿，evidence/M1-real-window-main-path.md） |
-| P1' | macOS/Windows CI 启动冒烟（`--headless` CDP boot 探活步接进 ci.yml 矩阵） | ✅ 接线完成（2026-09-27：`matrix.launch_smoke` 步入 build-and-test 三平台条目 + scripts/browser-launch-smoke.sh，本地 Linux 全链路 PASS；CI 绿证据待下一次 workflow_dispatch 取证后正式关闭 DC-1 条目） |
+| P1' | macOS/Windows CI 启动冒烟（`--headless` CDP boot 探活步接进 ci.yml 矩阵） | ✅ Done（2026-09-27 CI run [36311188270](https://github.com/leizongmin/ZeroWeb/actions/runs/36311188270) 三平台 job 绿，launch smoke 两步全 ✓，DC-1 三条全勾） |
 | P2 | 标签族/地址栏/导航控制交互面 | ⏳ M2 |
 | P3 | 下载管理器交互面 | ⏳ M3 |
 | P4 | engine 文本搜索 API（Ctrl+F 依赖，最小面评估） | ⏳ M3 |
@@ -41,8 +41,10 @@
     本体 bin——测试链 lib 不产 bin；跑探活脚本）接入 build-and-test 的
     linux-x86_64 / macos-aarch64 / windows-x86_64 三条目；renderer/compositor/
     image-decoder 子进程 bin 由矩阵既有步骤产出到同目录（current_exe 上溯解析）
-  - 本地验证：Linux release 目录全链路 PASS；CI 侧 build-and-test 矩阵三平台全绿
-    （2026-09-26 run 36264551226 实测），绿证据待下一次 workflow_dispatch 取证
+  - 取证闭环：本地 Linux release 目录全链路 PASS；CI run
+    [36311188270](https://github.com/leizongmin/ZeroWeb/actions/runs/36311188270)
+    （commit 1e5d0477c）三平台 job 全绿 + launch smoke 两步全 ✓
+    （linux 3m45s / macos-arm64 4m29s / windows 7m9s）——DC-1 三条全勾
   - **跨流记账（CI benchmarks job 连日红）**：ci.yml 每日 workflow_dispatch 的
     benchmarks job「Run benchmarks and gate」连日 FAIL（2026-09-24 起连续观察，
     2026-09-26 run 36264551226 = 5 指标超预算：webview_load_html_with_css
@@ -67,12 +69,10 @@
 
 ## 下一步计划
 
-1. **M1 取证收口**：下一次 `workflow_dispatch`（用户/定时触发均可）取 build-and-test
-   三平台「Launch smoke」绿证据 → evidence 补 run 链接 → DC-1 三条全勾 → M1 Done
-2. **M2**：标签族（创建/关闭/切换/拖拽排序）+ 地址栏（自动补全/加载进度）+ 导航控制
+1. **M2**：标签族（创建/关闭/切换/拖拽排序）+ 地址栏（自动补全/加载进度）+ 导航控制
    （前进/后退/刷新/主页）演示流——复用 M1 的 gui_smoke 状态机扩展步骤，或以
    parity_smoke 场景 JSON 形态扩交互面
-3. **M3-M4**：按入口文档里程碑逐功能演示流（下载/查找/缩放联动/右键菜单/收藏/历史/设置）
+2. **M3-M4**：按入口文档里程碑逐功能演示流（下载/查找/缩放联动/右键菜单/收藏/历史/设置）
 
 **待用户决策清单**：
 - 正文空格塌缩（product 可见）已移交 rendering-compat 流（其 R4096-N font-stack 统一
@@ -85,7 +85,7 @@
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — 真窗口主链路验收 | 🔄 三条 DC-1 证据面全部落地（Linux 演示流 ✅ / GPU 记账 ✅ / 三平台启动冒烟接线 ✅）；余 CI workflow_dispatch 取证 → M1 Done |
+| M1 — 真窗口主链路验收 | ✅ Done（DC-1 三条全勾：Linux 演示流 + GPU 合成显示记账 + 三平台 CI 启动冒烟绿证据 run 36311188270） |
 | M2 — 导航与标签 | ⏳ |
 | M3 — 内容工具 | ⏳ |
 | M4 — 数据面 | ⏳ |
