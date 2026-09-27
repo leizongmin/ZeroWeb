@@ -138,4 +138,45 @@ impl BrowserApp {
             .map(|tab| self.tab_scroll_state(tab).y)
             .unwrap_or(0.0)
     }
+
+    /// 演示流用：根书签列表 `(title, url)` 快照。
+    pub fn smoke_bookmarks(&self) -> Vec<(String, String)> {
+        self.shell
+            .bookmarks()
+            .list_root()
+            .iter()
+            .map(|bm| (bm.title().to_string(), bm.url().to_string()))
+            .collect()
+    }
+
+    /// 演示流用：历史条目数。
+    pub fn smoke_history_len(&self) -> usize {
+        self.shell.history().len()
+    }
+
+    /// 演示流用：历史条目 URL 列表。
+    pub fn smoke_history_urls(&self) -> Vec<String> {
+        self.shell.history().iter().map(|e| e.url().to_string()).collect()
+    }
+
+    /// 演示流用：设置快照 `(search_engine, do_not_track, home_url, show_bookmarks_bar)`。
+    pub fn smoke_settings(&self) -> (String, bool, String, bool) {
+        let settings = self.shell.settings();
+        (
+            format!("{:?}", settings.search_engine),
+            settings.do_not_track,
+            settings.home_url.clone(),
+            settings.show_bookmarks_bar,
+        )
+    }
+
+    /// 演示流用：工具栏浏览器菜单（三点）按钮矩形（物理像素）。
+    pub fn smoke_toolbar_menu_button_rect(&self) -> (f32, f32, f32, f32) {
+        self.toolbar_menu_button_rect()
+    }
+
+    /// 演示流用：书签栏可见性（= 设置开关 && 根书签非空）。
+    pub fn smoke_bookmarks_bar_visible(&self) -> bool {
+        self.bookmarks_bar_visible()
+    }
 }

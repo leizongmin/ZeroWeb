@@ -27,6 +27,7 @@ mod app;
 mod clipboard;
 mod colors;
 mod compositor_client;
+mod data_smoke;
 mod download_smoke;
 mod favicon_fetch;
 mod fetch_proxy;
@@ -112,6 +113,8 @@ struct CliArgs {
     menu_zoom_smoke: Option<menu_zoom_smoke::MenuZoomSmokeConfig>,
     /// 显式启用页面查找真实窗口 smoke。
     find_smoke: Option<find_smoke::FindSmokeConfig>,
+    /// 显式启用数据面真实窗口 smoke。
+    data_smoke: Option<data_smoke::DataSmokeConfig>,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
@@ -149,6 +152,8 @@ fn parse_args_from(
     let mut menu_zoom_smoke_dir = None;
     let mut find_smoke_base = None;
     let mut find_smoke_dir = None;
+    let mut data_smoke_base = None;
+    let mut data_smoke_dir = None;
     let mut parity_scenario = None;
     let mut parity_output_dir = None;
 
@@ -372,6 +377,28 @@ fn parse_args_from(
                 })?));
         }
 
+        if let Some(value) = arg.strip_prefix("--data-smoke-base=") {
+            data_smoke_base = Some(value.to_string());
+        }
+
+        if arg == "--data-smoke-base" {
+            data_smoke_base = Some(
+                args.next()
+                    .ok_or_else(|| "--data-smoke-base requires an HTTP(S) origin".to_string())?,
+            );
+        }
+
+        if let Some(value) = arg.strip_prefix("--data-smoke-dir=") {
+            data_smoke_dir = Some(PathBuf::from(value));
+        }
+
+        if arg == "--data-smoke-dir" {
+            data_smoke_dir =
+                Some(PathBuf::from(args.next().ok_or_else(|| {
+                    "--data-smoke-dir requires a directory path".to_string()
+                })?));
+        }
+
         if let Some(value) = arg.strip_prefix("--parity-scenario=") {
             parity_scenario = Some(PathBuf::from(value));
         }
@@ -461,6 +488,13 @@ fn parse_args_from(
             return Err("--find-smoke-base and --find-smoke-dir must be provided together".to_string());
         }
     };
+    let data_smoke = match (data_smoke_base, data_smoke_dir) {
+        (Some(base), Some(output_dir)) => Some(data_smoke::DataSmokeConfig::new(base, output_dir)?),
+        (None, None) => None,
+        _ => {
+            return Err("--data-smoke-base and --data-smoke-dir must be provided together".to_string());
+        }
+    };
     let smoke_modes = usize::from(smoke_capture.is_some())
         + usize::from(gui_smoke.is_some())
         + usize::from(parity_smoke.is_some())
@@ -503,6 +537,7 @@ fn parse_args_from(
         download_smoke,
         menu_zoom_smoke,
         find_smoke,
+        data_smoke,
     })
 }
 
@@ -520,6 +555,8 @@ Options:
   --viewport-height=<px>         Headless/GUI smoke page viewport height (default: 600)
   --wpt-parity                   Match WPT/product-smoke: CPU renderer and 1.0 scale (make browser-cpu default)
   --smoke-capture=<png>          Capture the real presented window frame, emit region stats, then exit
+  --data-smoke-base=<url>        Data smoke: local fixture origin (http/https)
+  --data-smoke-dir=<dir>         Write data smoke step screenshots into this directory
   --find-smoke-base=<url>        Find smoke: local fixture origin (http/https)
   --find-smoke-dir=<dir>         Write find smoke step screenshots into this directory
   --menu-zoom-smoke-base=<url>   Menu/zoom smoke: local fixture origin (http/https)
@@ -1004,6 +1041,7 @@ fn main() {
     let mut download_smoke = cli.download_smoke.map(download_smoke::DownloadSmoke::new);
     let mut menu_zoom_smoke = cli.menu_zoom_smoke.map(menu_zoom_smoke::MenuZoomSmoke::new);
     let mut find_smoke = cli.find_smoke.map(find_smoke::FindSmoke::new);
+    let mut data_smoke = cli.data_smoke.map(data_smoke::DataSmoke::new);
 
     tracing::info!("Entering event loop...");
 
@@ -1071,6 +1109,13 @@ fn main() {
             app.shutdown_child_processes();
             std::process::exit(3);
         }
+        if let Some(smoke) = data_smoke.as_ref()
+            && let Err(error) = smoke.check_timeout()
+        {
+            tracing::error!("DATA_SMOKE_FAILURE error={error}");
+            app.shutdown_child_processes();
+            std::process::exit(3);
+        }
         if let Some(smoke) = addressbar_smoke.as_mut()
             && let Err(error) = smoke.sample_mid_load(&mut app)
         {
@@ -1094,6 +1139,7 @@ fn main() {
                     && download_smoke.is_none()
                     && menu_zoom_smoke.is_none()
                     && find_smoke.is_none()
+                    && data_smoke.is_none()
                 {
                     app.needs_redraw = false;
                 } else {
@@ -1166,6 +1212,9 @@ fn main() {
                                 if let Some(smoke) = find_smoke.as_mut() {
                                     smoke.start(&mut app);
                                 }
+                                if let Some(smoke) = data_smoke.as_mut() {
+                                    smoke.start(&mut app);
+                                }
                                 tracing::debug!(
                                     "Surface init — physical: {}x{}, logical: {}x{}, scale: {:.2}",
                                     physical_size.width,
@@ -1218,7 +1267,8 @@ fn main() {
                             || addressbar_smoke.is_some()
                             || download_smoke.is_some()
                             || menu_zoom_smoke.is_some()
-                            || find_smoke.is_some());
+                            || find_smoke.is_some()
+                            || data_smoke.is_some());
                     let presented_frame = if app.gpu_renderer_is_some() {
                         app.render_frame(app.physical_size.0, app.physical_size.1, true);
                         if capture_gpu_frame {
@@ -1384,6 +1434,22 @@ fn main() {
                             }
                         }
                     }
+                    if let (Some(smoke), Some(frame), Some(source)) =
+                        (data_smoke.as_mut(), presented_frame.as_ref(), presented_source)
+                    {
+                        match smoke.on_presented_frame(&mut app, frame, source) {
+                            Ok(true) => {
+                                app.shutdown_child_processes();
+                                std::process::exit(0);
+                            }
+                            Ok(false) => {}
+                            Err(error) => {
+                                tracing::error!("DATA_SMOKE_FAILURE error={error}");
+                                app.shutdown_child_processes();
+                                std::process::exit(3);
+                            }
+                        }
+                    }
                 }
             }
             AppEvent::Resized { width, height } if width > 0 && height > 0 => {
@@ -1533,7 +1599,8 @@ fn main() {
             || addressbar_smoke.is_some()
             || download_smoke.is_some()
             || menu_zoom_smoke.is_some()
-            || find_smoke.is_some())
+            || find_smoke.is_some()
+            || data_smoke.is_some())
             && (app.window_focused
                 || smoke_capture_path.is_some()
                 || gui_smoke.is_some()
@@ -1542,7 +1609,8 @@ fn main() {
                 || addressbar_smoke.is_some()
                 || download_smoke.is_some()
                 || menu_zoom_smoke.is_some()
-                || find_smoke.is_some())
+                || find_smoke.is_some()
+                || data_smoke.is_some())
             && let Some(ref win) = window
         {
             win.request_redraw();
