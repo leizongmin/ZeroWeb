@@ -58,6 +58,9 @@ pub(crate) enum AddressBarPageKind {
     Unknown,
 }
 
+/// 页面内查找单条匹配缓存：glyph 区间 + 文档坐标包围盒 `(x, top, w, h)`。
+pub(crate) type FindMatchRange = (std::ops::Range<usize>, (f32, f32, f32, f32));
+
 include!("app_types.rs");
 
 /// 浏览器应用状态
@@ -204,6 +207,11 @@ pub struct BrowserApp {
     download_panel_open: bool,
     /// 最近一次「在文件夹中显示」动作打开的目录（演示流断言面）。
     last_opened_download_dir: Option<String>,
+    /// 页面内查找（Ctrl+F）匹配缓存：glyph 区间 + 文档坐标包围盒，与
+    /// `find_matches_query` 同步失效（导航/关栏/换词）。
+    find_match_ranges: Vec<FindMatchRange>,
+    /// 匹配缓存对应的查询词。
+    find_matches_query: String,
     #[cfg(test)]
     compositor_status_override: Option<crate::compositor_client::CompositorStatus>,
 }
@@ -314,6 +322,8 @@ impl BrowserApp {
             favicon_fetch: FaviconFetchState::new(),
             download_panel_open: false,
             last_opened_download_dir: None,
+            find_match_ranges: Vec::new(),
+            find_matches_query: String::new(),
             permissions: zero_security::permission::PermissionManager::new(),
             #[cfg(test)]
             compositor_status_override: None,
@@ -435,6 +445,10 @@ impl BrowserApp {
             } else {
                 self.shell.set_tab_needs_attention(tab_id, true);
             }
+        }
+        if self.shell.find_state().is_active() && !self.find_input.is_empty() && self.find_match_ranges.is_empty() {
+            // 查找栏开着时页面（重）加载完成：对新内容重算匹配。
+            self.refresh_find_matches();
         }
         for (tab_id, error) in self.tabs.take_page_error_events() {
             self.shell.on_page_error(&error);
@@ -1666,6 +1680,9 @@ impl BrowserApp {
         self.shell.navigate(&url);
         self.address_bar.set_text(url.clone());
         self.autocomplete.clear();
+        // 导航后页面内容更替，查找匹配缓存失效（查找栏若仍开着，加载完成后重算）。
+        self.find_match_ranges.clear();
+        self.find_matches_query.clear();
 
         let tab_id = match self.shell.active_tab_id() {
             Some(id) => id,
@@ -2206,6 +2223,69 @@ impl BrowserApp {
         };
         let _ = std::fs::create_dir_all(&dir);
         dir
+    }
+
+    /// 重新计算页面内查找匹配（查找栏键入/切换选项/页面加载后调用）。
+    /// 匹配数写回 find_state（计数 UI 数据源），glyph 区间缓存供高亮与滚动定位。
+    pub(crate) fn refresh_find_matches(&mut self) {
+        if !self.shell.find_state().is_active() {
+            self.find_match_ranges.clear();
+            self.find_matches_query.clear();
+            return;
+        }
+        let query = self.find_input.clone();
+        if query.is_empty() {
+            self.find_match_ranges.clear();
+            self.find_matches_query.clear();
+            self.shell.find_set_matches(0);
+            self.needs_redraw = true;
+            return;
+        }
+        let case_sensitive = self.shell.find_state().case_sensitive();
+        let whole_word = self.shell.find_state().whole_word();
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            self.shell.find_set_matches(0);
+            return;
+        };
+        let Some(glyphs) = self.page_glyphs(tab_id) else {
+            self.shell.find_set_matches(0);
+            return;
+        };
+        let matches = crate::page_find::find_matches(&glyphs, &query, case_sensitive, whole_word);
+        self.shell.find_set_matches(matches.len());
+        self.find_matches_query = query;
+        self.find_match_ranges = matches.into_iter().map(|m| (m.glyph_range, m.rect)).collect();
+        self.needs_redraw = true;
+    }
+
+    /// 滚动当前匹配进入视口（find_next/previous 后调用）。
+    pub(crate) fn scroll_to_current_match(&mut self) {
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            return;
+        };
+        let current = self.shell.find_state().current_match();
+        if current == 0 {
+            return;
+        }
+        let Some((_, (x, top, w, h))) = self.find_match_ranges.get(current - 1) else {
+            return;
+        };
+        let (_x, top, _w, h) = (*x, *top, *w, *h);
+        let (width, height) = self.physical_size;
+        let layout = self.page_scroll_layout_for(tab_id, width, height);
+        let mut state = self.tab_scroll_state(tab_id);
+        // 匹配在视口上/下方时才滚动：滚到视口 25%/75% 参考线，尽量保留上下文。
+        let visible = state.y <= top && top + h <= state.y + layout.viewport_h;
+        if !visible {
+            let target = if state.y > top {
+                (top - layout.viewport_h * 0.25).max(0.0)
+            } else {
+                (top + h - layout.viewport_h * 0.75).max(0.0)
+            };
+            state.y = target.min(layout.max_scroll_y);
+            self.scroll.insert(tab_id, state);
+            self.needs_redraw = true;
+        }
     }
 
     /// 「在文件夹中显示」：打开下载目录（面板按钮触发；文件管理器随平台）。

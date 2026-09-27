@@ -71,12 +71,14 @@ impl BrowserApp {
             if !self.shell.find_state().is_active() && !self.last_find_query.is_empty() {
                 self.find_input = self.last_find_query.clone();
                 self.shell.find_start(&self.last_find_query.clone());
+                self.refresh_find_matches();
             } else if self.shell.find_state().is_active() {
                 if self.shift_pressed {
                     self.shell.find_previous();
                 } else {
                     self.shell.find_next();
                 }
+                self.scroll_to_current_match();
             }
             self.needs_redraw = true;
             return;
@@ -277,25 +279,31 @@ impl BrowserApp {
             "Enter" => {
                 if self.find_input.is_empty() {
                     self.shell.find_close();
+                    self.refresh_find_matches();
                 } else if self.shell.find_state().total_matches() == 0 {
                     self.shell.find_start(&self.find_input.clone());
+                    self.refresh_find_matches();
                 } else {
                     self.shell.find_next();
+                    self.scroll_to_current_match();
                 }
                 self.needs_redraw = true;
             }
             "Escape" => {
                 self.shell.find_close();
                 self.find_input.clear();
+                self.refresh_find_matches();
                 self.needs_redraw = true;
             }
             "Backspace" => {
                 self.find_input.pop();
                 if self.find_input.is_empty() {
                     self.shell.find_close();
+                    self.refresh_find_matches();
                 } else {
                     self.shell.find_start(&self.find_input);
                     self.last_find_query = self.find_input.clone();
+                    self.refresh_find_matches();
                 }
                 self.needs_redraw = true;
             }
@@ -304,6 +312,7 @@ impl BrowserApp {
                     self.find_input.push_str(&inserted);
                     self.shell.find_start(&self.find_input);
                     self.last_find_query = self.find_input.clone();
+                    self.refresh_find_matches();
                     self.needs_redraw = true;
                 }
             }
@@ -536,9 +545,11 @@ impl BrowserApp {
                     let find_active = self.shell.find_state().is_active();
                     if find_active && self.shift_pressed {
                         self.shell.find_previous();
+                        self.scroll_to_current_match();
                         self.needs_redraw = true;
                     } else if find_active {
                         self.shell.find_next();
+                        self.scroll_to_current_match();
                         self.needs_redraw = true;
                     }
                 }
@@ -651,6 +662,7 @@ impl BrowserApp {
             }
             "n" => {
                 self.shell.find_next();
+                self.scroll_to_current_match();
                 self.find_input = self.shell.find_state().query().to_string();
                 self.needs_redraw = true;
             }

@@ -1321,6 +1321,39 @@ impl BrowserApp {
         let radius = (self.effective_page_frame_radius() - border).max(0.0);
         let clip_rounded = Some((viewport_x, viewport_y, viewport_w, viewport_h, radius));
 
+        // 页面内查找高亮：全部匹配淡黄底，当前匹配橙底（绘制在页面 glyph 之前，
+        // 与选区高亮同款几何：glyph.x × s + content 偏移，字宽 × 0.55）。
+        if self.shell.find_state().is_active() && !self.find_match_ranges.is_empty() {
+            let current = self.shell.find_state().current_match();
+            for (idx, (range, _rect)) in self.find_match_ranges.iter().enumerate() {
+                let (fill, is_current) = if Some(idx + 1) == Some(current) {
+                    (self.chrome_palette.find_current_match_bg, true)
+                } else {
+                    (self.chrome_palette.find_other_match_bg, false)
+                };
+                for glyph in &page_primitives.glyphs[range.clone()] {
+                    let x = glyph.x * s + content_x_draw;
+                    let top = glyph.y * s + content_y_draw - glyph.font_size * s;
+                    let w = glyph.font_size * s * 0.55;
+                    let h = glyph.font_size * s;
+                    if top + h <= clip_top || top >= clip_bottom {
+                        continue;
+                    }
+                    if is_current {
+                        // 当前匹配加描边便于区分（1 物理像素内框 + 外框）。
+                        fills.push(rect_fill(
+                            x - 1.0,
+                            top - 1.0,
+                            w.max(1.0) + 2.0,
+                            h + 2.0,
+                            self.chrome_palette.find_current_match_border,
+                        ));
+                    }
+                    fills.push(rect_fill(x, top, w.max(1.0), h, fill));
+                }
+            }
+        }
+
         if let Some(sel) = self.page_selection.get(&tab_id)
             && !sel.is_collapsed()
         {

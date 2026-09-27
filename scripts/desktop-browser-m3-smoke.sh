@@ -161,3 +161,37 @@ done
 
 log "PASS (leg: menu-zoom-flow)"
 log "screenshots under $mz_dir/"
+
+# --- 腿 3：页面查找（Ctrl+F 键入 → 计数/高亮 → Enter 逐项滚动 → 关闭） ---------
+# 断言锚：FIND_SMOKE_STEP（seed-load/find-count/find-next/find-advance/find-closed）
+# + FIND_SMOKE_COMPLETE + 零 fallback。
+find_dir="$OUT_DIR/find-flow"
+find_log="$OUT_DIR/find-flow.log"
+rm -rf "$find_dir"
+mkdir -p "$find_dir"
+
+log "leg find-flow: renderer=gpu base=$BASE"
+LEG_ENV="RUST_LOG=info ZERO_BROWSER_PRODUCT_SMOKE=1 ZW_COMPOSITOR_BIN=$COMPOSITOR_BIN"
+LEG_ARGS="--renderer=gpu --scale=1 --viewport-width=1024 --viewport-height=700 --find-smoke-base=$BASE --find-smoke-dir=$find_dir"
+if [ "$USE_XVFB" = "1" ]; then
+    xvfb-run -a -s "-screen 0 1280x800x24" env $LEG_ENV \
+        "$GUARD" --time-limit 300 -- "$BIN" $LEG_ARGS >"$find_log" 2>&1
+else
+    env $LEG_ENV "$GUARD" --time-limit 300 -- "$BIN" $LEG_ARGS >"$find_log" 2>&1
+fi
+test $? -eq 0 || die "leg find-flow: browser exited non-zero (see $find_log)"
+
+for step in seed-load find-count find-next find-advance find-closed; do
+    grep -aq "FIND_SMOKE_STEP step=$step" "$find_log" || die "step $step not recorded (see $find_log)"
+done
+grep -aq "FIND_SMOKE_COMPLETE base=$BASE" "$find_log" || die "find flow did not complete"
+grep -aqE "FIND_SMOKE_FAILURE|MZ_SMOKE_FAILURE|SMOKE_FAILURE|panicked at" "$find_log" \
+    && die "failure marker found in find log"
+grep -aq "Compositor disconnected" "$find_log" \
+    && die "compositor disconnected (fallback path engaged)"
+for png in 01-find-count.png 02-find-next.png 03-find-closed.png; do
+    test -s "$find_dir/$png" || die "missing screenshot $png"
+done
+
+log "PASS (leg: find-flow)"
+log "screenshots under $find_dir/"

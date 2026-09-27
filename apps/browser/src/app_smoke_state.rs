@@ -119,4 +119,23 @@ impl BrowserApp {
     pub fn smoke_page_zoom(&self) -> f32 {
         self.shell.zoom()
     }
+
+    /// 演示流用：页面查找状态 `(active, query, current, total)`。
+    pub fn smoke_find_state(&self) -> (bool, String, usize, usize) {
+        let state = self.shell.find_state();
+        (
+            state.is_active(),
+            state.query().to_string(),
+            state.current_match(),
+            state.total_matches(),
+        )
+    }
+
+    /// 演示流用：活动标签页垂直滚动偏移（物理像素，滚动定位断言面）。
+    pub fn smoke_scroll_y(&self) -> f32 {
+        self.shell
+            .active_tab_id()
+            .map(|tab| self.tab_scroll_state(tab).y)
+            .unwrap_or(0.0)
+    }
 }

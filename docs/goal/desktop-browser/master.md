@@ -2,8 +2,8 @@
 
 **入口文档**: [../desktop-browser.md](../desktop-browser.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-27（M3-S2 落地：右键菜单 + 缩放联动演示流全绿 + 剪贴板 X11
-失主缺陷修复；M1/M2 Done 维持）
+**最后更新**: 2026-09-27（M3-S3 落地：页面查找最小真实链路 + 演示流全绿——M3 Done，
+DC-3 三条全勾；M1/M2 Done 维持）
 
 ---
 
@@ -27,13 +27,28 @@
 | P1 | 真窗口端到端演示流（Linux）+ GPU 合成显示验收 | ✅ M1 首切片（三腿全绿，evidence/M1-real-window-main-path.md） |
 | P1' | macOS/Windows CI 启动冒烟（`--headless` CDP boot 探活步接进 ci.yml 矩阵） | ✅ Done（2026-09-27 CI run [36311188270](https://github.com/leizongmin/ZeroWeb/actions/runs/36311188270) 三平台 job 绿，launch smoke 两步全 ✓，DC-1 三条全勾） |
 | P2 | 标签族/地址栏/导航控制交互面 | ✅ Done（M2-S1 多标签+导航控制 + M2-S2 地址栏键入/补全/加载指示，evidence/M2-{tabs-navigation,addressbar-autocomplete-loading}.md；主页按钮项并入 M4 设置流） |
-| P3 | 下载管理器交互面 | 🔄 M3-S1：attachment 拦截 → 落盘 → 记账 → 面板/下载页 → Show in folder 全链绿（evidence/M3-download-manager.md）；余分块进度采样/条目级动作挂账 |
-| P4 | engine 文本搜索 API（Ctrl+F 依赖，最小面评估） | ⏳ M3 |
+| P3 | 下载管理器交互面 | ✅ M3-S1：attachment 拦截 → 落盘 → 记账 → 面板/下载页 → Show in folder 全链绿（evidence/M3-download-manager.md）；余账（分块进度采样/条目级动作）挂 M5 收口评估 |
+| P4 | engine 文本搜索 API（Ctrl+F 依赖，最小面评估） | ✅ M3-S3：最小面评估定论=零 engine/renderer 改动（browser 侧 glyph 匹配闭环查找全链），engine 文本搜索 API 不再是本 goal 依赖项；连字完整匹配局限记账（evidence/M3-page-find.md §1） |
 | P5 | 缩放 viewport 联动（④ 桥遗产消费）+ 右键菜单 | ✅ M3-S2（Ctrl+± 缩放状态 + 页面区 reflow 像素断言 + 复位；右键菜单 Page/Selection 分发 + 检查元素入口 + 剪贴板读回，evidence/M3-context-menu-zoom.md） |
 | P6 | 收藏/历史/设置交互面 | ⏳ M4 |
 
 ## 已完成切片
 
+- **M3-S3（2026-09-27）页面查找真实链路 + 演示流（M3 收口）**：
+  - 基线：查找栏 UI/FindState 状态机/find_set_matches 全就位但零调用方（孤岛）。
+    最小面决策（执行协议授权）：零 engine/renderer 改动——browser 侧已有页面
+    glyph 图元（选区/命中测试同源），查找=glyph 序列匹配定位
+  - 资产：`apps/browser/src/page_find.rs`（纯函数匹配 + 5 单测）+
+    `refresh_find_matches`（计数写回）+ `scroll_to_current_match`（视口外滚至
+    25%/75% 参考线）+ 高亮绘制（全部匹配淡黄底/当前项橙底+描边，三主题配色）+
+    `apps/browser/src/find_smoke.rs` + m3 脚本第三腿 find-flow +
+    `examples/m3-downloads/find.html`（needle 恰 5 处含首屏外）
+  - 演示流断言：Ctrl+F 键入 → total==5 精确计数 → Enter 逐项（首屏内不滚动/
+    首屏外必滚 0→636.3）→ Escape 完全复位；三腿同轮 PASS + 复跑通过
+  - 已知局限记账：连字（fi/ff）glyph 多码点需 source cluster 恢复，本面按逐
+    glyph 码点匹配——ASCII 查询语义完整，连字语言完整匹配留 rendering-compat
+    语料评估
+  - 结果：[evidence/M3-page-find.md](evidence/M3-page-find.md)
 - **M3-S2（2026-09-27）右键上下文菜单 + 缩放联动演示流**：
   - 资产：`apps/browser/src/menu_zoom_smoke.rs`（--menu-zoom-smoke-base/-dir CLI）+
     smoke 只读面新增 context_menu/clipboard/zoom 访问器 + m3 脚本第二腿
@@ -124,13 +139,11 @@
 
 ## 下一步计划
 
-1. **M3 余项（P4 页面查找）**：Ctrl+F 查找栏 UI 与 find_state 已在（engine 侧搜索
-   通道存疑）——先核现状：真窗口里 Ctrl+F 键入后高亮/计数是否端到端可用；可用则
-   直接补查找演示流（P4 收口）；不可用则 engine 文本搜索 API 最小面评估（入口文档
-   执行协议：最小面自主做，超范围记「待用户决策」）
-2. **M4 数据面**：收藏（添加/删除/文件夹/收藏栏）/ 历史（记录/搜索/清除）/ 设置
+1. **M4 数据面**：收藏（添加/删除/文件夹/收藏栏）/ 历史（记录/搜索/清除）/ 设置
    （默认搜索引擎/主页/隐私）演示流；主页按钮项在此收口（先配 home_url 为本地
    fixture 再按 Alt+Home）
+2. **M3 余账（挂 M5 收口评估）**：分块下载进度采样（需流式传输）、下载条目级
+   「打开文件」动作、查找连字完整匹配（rendering-compat 语料）
 
 **待用户决策清单**：
 - 正文空格塌缩（product 可见）已移交 rendering-compat 流（其 R4096-N font-stack 统一
@@ -145,7 +158,7 @@
 |--------|------|
 | M1 — 真窗口主链路验收 | ✅ Done（DC-1 三条全勾：Linux 演示流 + GPU 合成显示记账 + 三平台 CI 启动冒烟绿证据 run 36311188270） |
 | M2 — 导航与标签 | ✅ Done（S1 多标签+导航控制 + S2 地址栏键入/补全/加载指示全绿；主页按钮项并入 M4 设置流记账） |
-| M3 — 内容工具 | 🔄 S1 下载管理器 + S2 右键菜单/缩放联动全绿；余页面查找（P4：先核 Ctrl+F 现状再定最小面/记决策） |
+| M3 — 内容工具 | ✅ Done（S1 下载管理器 + S2 右键菜单/缩放联动 + S3 页面查找全绿；DC-3 三条全勾） |
 | M4 — 数据面 | ⏳ |
 | M5 — 收口 | ⏳ |
 
@@ -154,8 +167,8 @@
 - 测试基线：`make test` 全绿（经 test-guard；2026-09-27 本轮复验，随提交记账刷新计数）
 - 演示流门禁：`bash scripts/desktop-browser-m1-smoke.sh` 三腿全绿（M1 守成门）+
   `bash scripts/desktop-browser-m2-smoke.sh` 双腿全绿（M2 守成门）+
-  `bash scripts/desktop-browser-m3-smoke.sh` 全绿（M3 守成门）——渲染/组合器/窗口/
-  标签·地址栏·导航·下载链路任何触碰后必跑
+  `bash scripts/desktop-browser-m3-smoke.sh` 三腿全绿（M3 守成门）——渲染/组合器/
+  窗口/标签·地址栏·导航·下载·菜单·缩放·查找链路任何触碰后必跑
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   演示流须可脚本重放才计入 evidence「绿」
 

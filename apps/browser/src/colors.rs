@@ -58,6 +58,12 @@ pub struct ChromePalette {
     pub find_match_text: Color,
     pub find_active_option_bg: Color,
     pub find_active_option_text: Color,
+    /// 页面内查找：非当前匹配淡黄底。
+    pub find_other_match_bg: Color,
+    /// 页面内查找：当前匹配橙底。
+    pub find_current_match_bg: Color,
+    /// 页面内查找：当前匹配描边。
+    pub find_current_match_border: Color,
     pub new_tab_button: Color,
     pub window_control_hover: Color,
     pub window_control_close_hover: Color,
@@ -144,6 +150,9 @@ impl ChromePalette {
             find_match_text: rgb(128, 134, 139),
             find_active_option_bg: rgb(26, 115, 232),
             find_active_option_text: rgb(255, 255, 255),
+            find_other_match_bg: rgba(255, 215, 90, 110),
+            find_current_match_bg: rgba(255, 150, 50, 160),
+            find_current_match_border: rgba(230, 120, 20, 220),
             new_tab_button: rgb(95, 99, 104),
             window_control_hover: rgb(197, 213, 237),
             window_control_close_hover: rgb(196, 43, 28),
@@ -216,6 +225,9 @@ impl ChromePalette {
             find_match_text: rgb(160, 160, 160),
             find_active_option_bg: rgb(138, 180, 248),
             find_active_option_text: rgb(32, 33, 36),
+            find_other_match_bg: rgba(255, 215, 90, 110),
+            find_current_match_bg: rgba(255, 150, 50, 160),
+            find_current_match_border: rgba(230, 120, 20, 220),
             new_tab_button: rgb(160, 160, 160),
             window_control_hover: rgb(60, 60, 60),
             window_control_close_hover: rgb(196, 43, 28),
