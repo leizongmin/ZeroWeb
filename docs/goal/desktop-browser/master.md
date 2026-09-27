@@ -165,7 +165,9 @@ M4 单腿）；挂账清单 7 项定稿见 M5-closure §4。
   专项为 user-gated 深结构批次）——本流仅记档，处置归该专项收口时定界
 - CI benchmarks job 连日红（perf-gate 5 指标超预算，CI 共享 runner 噪声域）：是否对
   CI runner 环境单独建基线或放宽阈值（record-bench-baseline.sh --relax），须 perf-gate
-  政策域拍板——本流不触碰
+  政策域拍板——本流不触碰。**已征询（2026-09-27 goal 决策巡检 msg
+  `om_x100b64a621fb8ca8c38f0e805172ce1`，与 GB-20260919 陈旧平台基线 re-capture
+  扩围同源合并征询；建议 = 批复一次性基线重建非放宽阈值）**
 
 ## 里程碑状态
 
