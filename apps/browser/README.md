@@ -24,6 +24,9 @@
 
 ```bash
 cargo run --bin zero-browser
+
+# desktop-browser goal 演示流守成门（M1–M4 四演示流，需 GUI 环境）
+bash scripts/desktop-browser-m1-smoke.sh
 ```
 
 ## 架构
@@ -46,6 +49,8 @@ zero-browser
 ├── favicon_fetch.rs     — favicon 抓取
 ├── service_worker_owner.rs — Service Worker 生命周期归属
 ├── pages.rs             — 内置页面（设置页等）
+├── page_find.rs         — 页面查找匹配（Ctrl+F 命中定位，纯函数 + 单测）
+├── *_smoke.rs           — 演示流 smoke 只读访问器（`scripts/desktop-browser-m1~m4-smoke.sh` 守成门驱动）
 ├── main.rs              — 应用入口
 └── lib.rs               — 库入口（供集成测试与 smoke 复用）
 ```
