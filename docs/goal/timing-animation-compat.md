@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active（2026-09-28 M1 落地启动——M1 四 corpus 导入基线 319/1376 + M2 计时面收敛完成（hr-time 10/15 + performance-timeline 36/44 + user-timing 561/570 + web-animations 52/963，合计 659/1592 = 41.4% 零回归）；M3-S1 WAAPI 构造器 + effect 桥已勘域待实施；控制面见 [master.md](timing-animation-compat/master.md)）
+**状态**: Done（2026-09-28 M4 收口——DC-1~4 全 ✅，收口快照 1107/1571 subtests = 70.5%（基线 319/1376 = 23.2%），reftest 691/691 零回归；控制面见 [master.md](timing-animation-compat/master.md)）
 **执行模式**: WPT 驱动（上游计时/动画面 corpus 为验收标尺）+ 语义修齐；
 定位为**轻量快赢切片**（不触布局/渲染计算，只做 JS API 面）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——计时与动画面）
