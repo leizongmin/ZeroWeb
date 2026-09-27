@@ -203,6 +203,21 @@ pub struct ProcessTabBackend {
     compositor_status: crate::compositor_client::CompositorStatus,
     /// Browser 窗口 GPU 渲染器是否可用（dma-buf 导入 vs RGBA 回退）。
     browser_gpu_present: bool,
+    /// 待落盘的附件下载（Content-Disposition: attachment 拦截；由 TabManager 转交
+    /// BrowserApp 消费——backend 不持有 shell/settings）。
+    pending_downloads: Vec<PendingAttachmentDownload>,
+}
+
+/// 拦截到的附件下载（应用层落盘 + 下载管理器记账的输入）。
+pub struct PendingAttachmentDownload {
+    /// 发起下载的标签。
+    pub tab_id: TabId,
+    /// 下载 URL。
+    pub url: String,
+    /// 解析出的文件名（Content-Disposition filename= → URL 末段 → download.bin）。
+    pub filename: String,
+    /// 响应体（整包，本地代理模型下一次到达）。
+    pub body: Vec<u8>,
 }
 
 #[cfg(test)]
@@ -289,6 +304,7 @@ impl ProcessTabBackend {
             pending_automation_responses: HashMap::new(),
             compositor_status: crate::compositor_client::status(),
             browser_gpu_present: false,
+            pending_downloads: Vec::new(),
         }
     }
 
@@ -713,8 +729,48 @@ impl ProcessTabBackend {
     fn drain_pending_fetches(&mut self) {
         for item in self.fetch_proxy.drain() {
             self.update_pending_indexed_db_navigation_from_fetch(item.tab_id, &item.headers);
+            if let Some(download) = Self::take_attachment_download(&item) {
+                // 附件响应不进渲染管线：拦截落盘，给 renderer 一个良性占位页
+                // （多进程边界内 browser 侧可独决，不外溢 net/renderer crate）。
+                self.pending_downloads.push(download);
+                let stub_headers = vec![("Content-Type".to_string(), "text/html; charset=utf-8".to_string())];
+                let stub_body = b"<!DOCTYPE html><title>Downloaded</title>".to_vec();
+                self.send_fetch_response_now(item.tab_id, item.request_id, item.status, stub_headers, stub_body);
+                continue;
+            }
             self.send_fetch_response_now(item.tab_id, item.request_id, item.status, item.headers, item.body);
         }
+    }
+
+    /// Content-Disposition: attachment 响应 → 附件下载（文件名解析含回退链）。
+    fn take_attachment_download(item: &crate::fetch_proxy::CompletedFetch) -> Option<PendingAttachmentDownload> {
+        let disposition = item
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-disposition"))
+            .map(|(_, value)| value.trim().to_string())?;
+        if !disposition.to_ascii_lowercase().starts_with("attachment") {
+            return None;
+        }
+        // 成功路径的响应已带 X-Zero-Final-URL（fetch_proxy 推入）。
+        let url = item
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("x-zero-final-url"))
+            .map(|(_, value)| value.clone())
+            .unwrap_or_default();
+        let filename = parse_attachment_filename(&disposition, &url);
+        Some(PendingAttachmentDownload {
+            tab_id: item.tab_id,
+            url,
+            filename,
+            body: item.body.clone(),
+        })
+    }
+
+    /// 取出待落盘的附件下载（TabManager 转交 BrowserApp 消费）。
+    pub fn take_pending_downloads(&mut self) -> Vec<PendingAttachmentDownload> {
+        std::mem::take(&mut self.pending_downloads)
     }
 
     fn handle_service_worker_request(
@@ -2375,4 +2431,39 @@ mod compositor_fallback_tests {
         assert!(snap.last_render.is_some(), "Legacy ViewPainted 应恢复页面渲染");
         assert!(snap.compositor_submission.is_none() || snap.should_composite_paint());
     }
+}
+
+/// 从 Content-Disposition 解析 filename，回退 URL 路径末段，再回退 download.bin。
+/// 拒绝路径分隔符与空值（信任边界：响应头来自外部服务器）。
+fn parse_attachment_filename(disposition: &str, url: &str) -> String {
+    let sanitize = |raw: &str| -> Option<String> {
+        let trimmed = raw.trim().trim_matches('"').trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let cleaned: String = trimmed
+            .chars()
+            .map(|c| if c == '/' || c == '\\' { '_' } else { c })
+            .collect();
+        if cleaned == "." || cleaned == ".." {
+            return None;
+        }
+        Some(cleaned)
+    };
+    for part in disposition.split(';') {
+        let Some((name, value)) = part.trim().split_once('=') else {
+            continue;
+        };
+        if name.trim().eq_ignore_ascii_case("filename")
+            && let Some(name) = sanitize(value)
+        {
+            return name;
+        }
+    }
+    if let Some(last) = url.split('/').next_back()
+        && let Some(name) = sanitize(last)
+    {
+        return name;
+    }
+    "download.bin".to_string()
 }

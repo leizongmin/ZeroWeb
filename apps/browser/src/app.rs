@@ -202,6 +202,8 @@ pub struct BrowserApp {
     favicon_fetch: FaviconFetchState,
     /// 是否显示下载浮动面板（也可因活动下载自动展开）。
     download_panel_open: bool,
+    /// 最近一次「在文件夹中显示」动作打开的目录（演示流断言面）。
+    last_opened_download_dir: Option<String>,
     #[cfg(test)]
     compositor_status_override: Option<crate::compositor_client::CompositorStatus>,
 }
@@ -311,6 +313,7 @@ impl BrowserApp {
             scrollbar_visible_until: None,
             favicon_fetch: FaviconFetchState::new(),
             download_panel_open: false,
+            last_opened_download_dir: None,
             permissions: zero_security::permission::PermissionManager::new(),
             #[cfg(test)]
             compositor_status_override: None,
@@ -441,6 +444,9 @@ impl BrowserApp {
             {
                 tab.set_loading(false);
             }
+        }
+        for download in self.tabs.take_pending_downloads() {
+            self.save_attachment_download(download);
         }
 
         // 检测后台标签 title 变化（如聊天应用收到消息改 title 加 "(3)"），
@@ -1545,6 +1551,21 @@ impl BrowserApp {
         (cx + cw - panel_w - margin, cy + ch - panel_h - margin, panel_w, panel_h)
     }
 
+    /// 下载面板「Show in folder」命中区（与渲染同源：面板可见且最近完成项存在时
+    /// 返回面板底部右侧条带矩形，物理像素）。None = 无可命中按钮。
+    pub(crate) fn download_panel_action_rect_for(&self, width: u32, height: u32) -> Option<(f32, f32, f32, f32)> {
+        if !self.should_show_download_panel() {
+            return None;
+        }
+        let has_completed = self.shell.downloads().iter().any(|d| d.is_completed());
+        if !has_completed {
+            return None;
+        }
+        let (px, py, pw, ph) = self.download_panel_rect_for(width, height);
+        let s = self.scale_factor;
+        Some((px, py + ph - 28.0 * s, pw, 28.0 * s))
+    }
+
     /// 地址栏页面类型（由 URL 推导，UI-agnostic 规则）。
     pub(crate) fn address_bar_page_kind(url: Option<&str>) -> AddressBarPageKind {
         match url {
@@ -2139,6 +2160,72 @@ impl BrowserApp {
     }
 
     /// 打开下载管理页面。
+    /// 附件下载落盘 + 下载管理器记账（backend 拦截 Content-Disposition: attachment 后
+    /// 经 TabManager 转交）。整包到达 → 进度两跳（0/N → N/N），状态链 Pending →
+    /// Downloading → Completed。
+    fn save_attachment_download(&mut self, download: crate::process_backend::PendingAttachmentDownload) {
+        let total = download.body.len() as u64;
+        let id = self
+            .shell
+            .downloads_mut()
+            .start_download(&download.url, &download.filename);
+        self.shell.downloads_mut().update_progress(id, 0, Some(total));
+        let path = self.download_target_dir().join(&download.filename);
+        let write_result = std::fs::write(&path, &download.body);
+        match write_result {
+            Ok(()) => {
+                self.shell.downloads_mut().mark_completed(id);
+                tracing::info!(
+                    "SMOKE_EVENT component=browser event=download_completed tab={} file={} bytes={} path={}",
+                    download.tab_id.0,
+                    download.filename,
+                    total,
+                    path.display()
+                );
+            }
+            Err(ref err) => {
+                self.shell.downloads_mut().mark_failed(id);
+                tracing::warn!("download write failed file={} err={err}", path.display());
+            }
+        }
+        // Chrome 语义：下载开始即弹出下载气泡。
+        self.download_panel_open = true;
+        self.needs_redraw = true;
+    }
+
+    /// 下载目标目录：设置优先，空值回退系统下载目录（不存在则创建）。
+    pub(crate) fn download_target_dir(&self) -> std::path::PathBuf {
+        let configured = self.shell.settings().download_directory.clone();
+        let dir = if configured.is_empty() {
+            let home = std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .unwrap_or_else(|_| ".".to_string());
+            std::path::PathBuf::from(home).join("Downloads")
+        } else {
+            std::path::PathBuf::from(configured)
+        };
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    }
+
+    /// 「在文件夹中显示」：打开下载目录（面板按钮触发；文件管理器随平台）。
+    pub(crate) fn show_download_in_folder(&mut self) {
+        let dir = self.download_target_dir();
+        #[cfg(target_os = "macos")]
+        let program = "open";
+        #[cfg(target_os = "windows")]
+        let program = "explorer";
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let program = "xdg-open";
+        let spawned = std::process::Command::new(program).arg(&dir).spawn().is_ok();
+        self.last_opened_download_dir = Some(dir.display().to_string());
+        tracing::info!(
+            "SMOKE_EVENT component=browser event=download_show_in_folder dir={} spawned={spawned}",
+            dir.display()
+        );
+        self.needs_redraw = true;
+    }
+
     pub fn open_downloads_page(&mut self) {
         let html = pages::generate_downloads_html(self.shell.downloads());
         self.open_internal_list_page("zero://downloads", html, "Downloads");

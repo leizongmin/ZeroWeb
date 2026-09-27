@@ -2063,6 +2063,35 @@ impl BrowserApp {
                 self.chrome_palette.download_bar_text,
                 glyphs,
             );
+        } else if let Some(done) = downloads.iter().filter(|d| d.is_completed()).last() {
+            // 无活动下载时展示最近完成项 + 「在文件夹中显示」入口（按钮矩形与
+            // download_panel_action_rect_for 同源计算，命中测试据此分发）。
+            let title_size = 12.0 * s;
+            let font_size = 11.0 * s;
+            self.draw_ui_text(
+                "Download complete",
+                panel_x + 12.0 * s,
+                panel_y + 10.0 * s,
+                title_size,
+                self.chrome_palette.download_bar_text,
+                glyphs,
+            );
+            self.draw_ui_text(
+                done.filename(),
+                panel_x + 12.0 * s,
+                panel_y + 28.0 * s,
+                font_size,
+                self.chrome_palette.download_bar_text,
+                glyphs,
+            );
+            self.draw_ui_text(
+                "Show in folder",
+                panel_x + panel_w - 12.0 * s - self.measure_ui_text_width("Show in folder", font_size),
+                panel_y + panel_h - 20.0 * s,
+                font_size,
+                self.chrome_palette.download_bar_text,
+                glyphs,
+            );
         }
     }
 }

@@ -50,4 +50,36 @@ impl BrowserApp {
     pub fn smoke_autocomplete_highlight(&self) -> Option<usize> {
         self.autocomplete.highlight_index()
     }
+
+    /// 演示流用：下载条目快照 `(url, filename, state, downloaded, total)`。
+    pub fn smoke_downloads(&self) -> Vec<(String, String, String, u64, Option<u64>)> {
+        self.shell
+            .downloads()
+            .iter()
+            .map(|d| {
+                (
+                    d.url().to_string(),
+                    d.filename().to_string(),
+                    format!("{:?}", d.state()),
+                    d.downloaded_bytes(),
+                    d.total_bytes(),
+                )
+            })
+            .collect()
+    }
+
+    /// 演示流用：下载目标目录（与落盘路径同源）。
+    pub fn smoke_download_dir(&self) -> String {
+        self.download_target_dir().display().to_string()
+    }
+
+    /// 演示流用：「在文件夹中显示」动作最近打开的目录。
+    pub fn smoke_last_opened_download_dir(&self) -> Option<String> {
+        self.last_opened_download_dir.clone()
+    }
+
+    /// 演示流用：下载面板是否可见（含活动下载自动展开语义）。
+    pub fn smoke_download_panel_visible(&self) -> bool {
+        self.should_show_download_panel()
+    }
 }

@@ -1041,6 +1041,19 @@ impl BrowserApp {
         let (content_x, content_y, content_w, content_h) = self.page_content_rect();
         let page_top = content_y;
 
+        // 下载面板「Show in folder」按钮命中（面板悬浮于页面区右下，先于页面派发）。
+        if button == "Left"
+            && pressed
+            && let Some((bx, by, bw, bh)) = self.download_panel_action_rect_for(self.physical_size.0, self.physical_size.1)
+            && x_f >= bx
+            && x_f < bx + bw
+            && y_f >= by
+            && y_f < by + bh
+        {
+            self.show_download_in_folder();
+            return;
+        }
+
         if y_f >= content_y
             && y_f < content_y + content_h
             && x_f >= content_x

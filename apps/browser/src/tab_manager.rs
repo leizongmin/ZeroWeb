@@ -55,6 +55,8 @@ pub struct TabManager {
     /// 当前渲染媒体类型（DC-12 @media print；transient 打印预览，非新 Tab 默认）。
     media_type: MediaType,
     pending_loaded: Vec<(TabId, String, String)>,
+    /// 待落盘的附件下载（backend 拦截，BrowserApp 消费落盘 + 记账）。
+    pending_downloads: Vec<crate::process_backend::PendingAttachmentDownload>,
     pending_errors: Vec<(TabId, String)>,
     poll_tick: u64,
     /// 是否允许 Tab worker 执行页面 JavaScript。
@@ -98,6 +100,7 @@ impl TabManager {
             color_scheme,
             media_type: MediaType::Screen,
             pending_loaded: Vec::new(),
+            pending_downloads: Vec::new(),
             pending_errors: Vec::new(),
             poll_tick: 0,
             javascript_enabled: true,
@@ -346,6 +349,7 @@ impl TabManager {
             changed |= backend.poll(&mut self.snapshots, &mut self.snapshot_seq, active_tab, poll_background);
             self.pending_loaded.extend(backend.take_page_loaded_events());
             self.pending_errors.extend(backend.take_page_error_events());
+            self.pending_downloads.extend(backend.take_pending_downloads());
             for (dispatch_id, default_allowed) in backend.take_dispatch_results() {
                 Self::resolve_dispatch(
                     &mut self.pending_dispatch,
@@ -984,6 +988,11 @@ impl TabManager {
     /// 取出待处理的页面加载完成事件。
     pub fn take_page_loaded_events(&mut self) -> Vec<(TabId, String, String)> {
         std::mem::take(&mut self.pending_loaded)
+    }
+
+    /// 取出待落盘的附件下载。
+    pub fn take_pending_downloads(&mut self) -> Vec<crate::process_backend::PendingAttachmentDownload> {
+        std::mem::take(&mut self.pending_downloads)
     }
 
     /// 取出待处理的页面加载失败事件。

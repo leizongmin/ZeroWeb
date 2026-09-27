@@ -2,8 +2,8 @@
 
 **入口文档**: [../desktop-browser.md](../desktop-browser.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-27（M2-S2 落地：地址栏键入导航/自动补全/加载指示演示流全绿
-——DC-2 收口；M1 Done 维持）
+**最后更新**: 2026-09-27（M3-S1 落地：下载管理器真实链路接线 + 演示流全绿；M1/M2
+Done 维持）
 
 ---
 
@@ -27,13 +27,25 @@
 | P1 | 真窗口端到端演示流（Linux）+ GPU 合成显示验收 | ✅ M1 首切片（三腿全绿，evidence/M1-real-window-main-path.md） |
 | P1' | macOS/Windows CI 启动冒烟（`--headless` CDP boot 探活步接进 ci.yml 矩阵） | ✅ Done（2026-09-27 CI run [36311188270](https://github.com/leizongmin/ZeroWeb/actions/runs/36311188270) 三平台 job 绿，launch smoke 两步全 ✓，DC-1 三条全勾） |
 | P2 | 标签族/地址栏/导航控制交互面 | ✅ Done（M2-S1 多标签+导航控制 + M2-S2 地址栏键入/补全/加载指示，evidence/M2-{tabs-navigation,addressbar-autocomplete-loading}.md；主页按钮项并入 M4 设置流） |
-| P3 | 下载管理器交互面 | ⏳ M3 |
+| P3 | 下载管理器交互面 | 🔄 M3-S1：attachment 拦截 → 落盘 → 记账 → 面板/下载页 → Show in folder 全链绿（evidence/M3-download-manager.md）；余分块进度采样/条目级动作挂账 |
 | P4 | engine 文本搜索 API（Ctrl+F 依赖，最小面评估） | ⏳ M3 |
 | P5 | 缩放 viewport 联动（④ 桥遗产消费）+ 右键菜单 | ⏳ M3（缩放的 Ctrl± 输入面已被 M1 腿消费，页面侧联动断言待 M3 收口） |
 | P6 | 收藏/历史/设置交互面 | ⏳ M4 |
 
 ## 已完成切片
 
+- **M3-S1（2026-09-27）下载管理器真实链路 + 演示流**：
+  - 基线事实：DownloadManager 此前为纯状态模型（无落盘/无触发/无打开目录动作）。
+    本切片补齐最小真实链路（全部 apps/browser，零 net/engine/renderer 改动——§9
+    边界内自决）：attachment 响应拦截（Content-Disposition 解析 + filename 清洗
+    信任边界）→ TabManager 转交（沿用 pending_loaded 模式）→ 落盘 + 管理器三态
+    记账 + 面板自动弹出；面板扩展最近完成项 + Show in folder 按钮（命中矩形与
+    渲染同源）；xdg-open/open/explorer 随平台打开下载目录
+  - 演示流：`apps/browser/src/download_smoke.rs` + `scripts/desktop-browser-m3-smoke.sh`
+    + `examples/m3-downloads/{page.html,file.zip}`；下载落盘隔离到演示流目录
+    （结束恢复用户设置空值）；磁盘文件与 fixture 逐字节 cmp
+  - 结果：download-flow 全绿 + 复跑通过；DC-3 第一条收口，映射与余账（分块进度
+    采样/条目级动作）见 [evidence/M3-download-manager.md](evidence/M3-download-manager.md)
 - **M2-S2（2026-09-27）地址栏真实窗口演示流**：
   - 资产：`apps/browser/src/addressbar_smoke.rs`（`--addressbar-smoke-base/-dir` CLI）
     + smoke 只读面新增 autocomplete 建议列表/高亮位访问器 + `examples/m2-tabs/slow.html`
@@ -98,12 +110,11 @@
 
 ## 下一步计划
 
-1. **M3 首切片**：下载管理器演示流（触发下载 / 进度 / 打开所在文件夹）——评估
-   下载触发路径（页面触发下载链接 → browser 下载面），本地 fixture + 真实输入路径，
-   形态复用 tab/addressbar smoke 状态机
-2. **M3 余项 / M4**：右键上下文菜单（复制/粘贴/检查元素入口）、缩放 viewport 联动
-   页面侧断言、engine 文本搜索 API 最小面评估（Ctrl+F）；收藏/历史/设置演示流
-   （M4，含主页按钮项：先配 home_url 为本地 fixture 再按 Alt+Home）
+1. **M3 第二切片**：右键上下文菜单演示流（复制/粘贴/检查元素入口）——context_menu
+   模型与 native 菜单渲染已在（M2 期间实测 tab 右键菜单可开），补页面区右键 +
+   菜单项点击断言流；缩放 viewport 联动页面侧断言（Ctrl± 后页面 reflow 像素断言）
+2. **M3 余项 / M4**：engine 文本搜索 API 最小面评估（Ctrl+F，P4）；收藏/历史/设置
+   演示流（M4，含主页按钮项：先配 home_url 为本地 fixture 再按 Alt+Home）
 
 **待用户决策清单**：
 - 正文空格塌缩（product 可见）已移交 rendering-compat 流（其 R4096-N font-stack 统一
@@ -118,7 +129,7 @@
 |--------|------|
 | M1 — 真窗口主链路验收 | ✅ Done（DC-1 三条全勾：Linux 演示流 + GPU 合成显示记账 + 三平台 CI 启动冒烟绿证据 run 36311188270） |
 | M2 — 导航与标签 | ✅ Done（S1 多标签+导航控制 + S2 地址栏键入/补全/加载指示全绿；主页按钮项并入 M4 设置流记账） |
-| M3 — 内容工具 | ⏳ |
+| M3 — 内容工具 | 🔄 S1 下载管理器全绿；余右键菜单/缩放联动/查找（P4 文本搜索 API 评估） |
 | M4 — 数据面 | ⏳ |
 | M5 — 收口 | ⏳ |
 
@@ -126,8 +137,9 @@
 
 - 测试基线：`make test` 全绿（经 test-guard；2026-09-27 本轮复验，随提交记账刷新计数）
 - 演示流门禁：`bash scripts/desktop-browser-m1-smoke.sh` 三腿全绿（M1 守成门）+
-  `bash scripts/desktop-browser-m2-smoke.sh` 双腿全绿（M2 守成门：tab-flow +
-  addressbar-flow）——渲染/组合器/窗口/标签·地址栏·导航链路任何触碰后必跑
+  `bash scripts/desktop-browser-m2-smoke.sh` 双腿全绿（M2 守成门）+
+  `bash scripts/desktop-browser-m3-smoke.sh` 全绿（M3 守成门）——渲染/组合器/窗口/
+  标签·地址栏·导航·下载链路任何触碰后必跑
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   演示流须可脚本重放才计入 evidence「绿」
 
