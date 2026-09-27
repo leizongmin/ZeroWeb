@@ -1,0 +1,1947 @@
+[
+  [
+    "user-timing/clearMarks.html",
+    [
+      {
+        "name": "First loop: checking entries after removing \"\". There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 0. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 1. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: marks that we cleared for \"\" should not exist anymore.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"1\". There should be 1 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"1\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"1\". Entry_list 0. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"1\". Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"1\". Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"1\". Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: marks that we cleared for \"1\" should not exist anymore.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"abc\". There should be 0 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"abc\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: marks that we cleared for \"abc\" should not exist anymore.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "No marks should exist after we clear all.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". There should be 4 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 0. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 1. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 2. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 2. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 2. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 2. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 3. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 3. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 3. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 3. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: marks that we cleared for \"\" should not exist anymore.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 0. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 1. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: marks that we cleared for \"1\" should not exist anymore.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"abc\". There should be 0 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"abc\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: marks that we cleared for \"abc\" should not exist anymore.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Nothing should happen if we clear a non-exist mark.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "No marks should exist when we clear all.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/clearMeasures.html",
+    [
+      {
+        "name": "user-timing/clearMeasures.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "user-timing/invoke_with_timing_attributes.html",
+    [
+      {
+        "name": "performance.mark should throw if used with timing attribute navigationStart",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute unloadEventStart",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute unloadEventEnd",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute redirectStart",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute redirectEnd",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute fetchStart",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute domainLookupStart",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute domainLookupEnd",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute connectStart",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute connectEnd",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute secureConnectionStart",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute requestStart",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute responseStart",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute responseEnd",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute domLoading",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute domInteractive",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute domContentLoadedEventStart",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute domContentLoadedEventEnd",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute domComplete",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute loadEventStart",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute loadEventEnd",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { window.performance.mark(attrName); }\" did not throw"
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute navigationStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute unloadEventStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute unloadEventEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute redirectStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute redirectEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute fetchStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute domainLookupStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute domainLookupEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute connectStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute connectEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute secureConnectionStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute requestStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute responseStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute responseEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute domLoading",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute domInteractive",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute domContentLoadedEventStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute domContentLoadedEventEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute domComplete",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute loadEventStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute loadEventEnd",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/invoke_without_parameter.html",
+    [
+      {
+        "name": "window.performance.mark() throws a TypeError exception when invoke without a parameter.",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function () { window.performance.mark() }\" did not throw"
+      },
+      {
+        "name": "window.performance.measure() throws a TypeError exception when invoke without a parameter.",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function () { window.performance.measure(); }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "user-timing/mark-measure-feature-detection.html",
+    [
+      {
+        "name": "Test PerformanceMark existence and feature detection",
+        "status": "Fail",
+        "message": "PerformanceMark is not defined"
+      },
+      {
+        "name": "Test PerformanceMeasure existence and feature detection",
+        "status": "Fail",
+        "message": "PerformanceMeasure is not defined"
+      }
+    ]
+  ],
+  [
+    "user-timing/mark.html",
+    [
+      {
+        "name": "There should be 0 marks",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.There should be 3 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 1. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 2. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 2. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 2. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 2. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".There should be 1 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"1\".There should be 1 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"1\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"1\".Entry_list 0. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"1\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"1\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"1\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"abc\".There should be 1 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"abc\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"abc\".Entry_list 0. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"abc\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"abc\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"abc\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.There should be 6 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 1. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 2. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 2. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 2. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 2. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 3. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 3. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 3. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 3. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 4. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 4. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 4. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 4. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 5. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 5. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 5. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 5. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 1. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 0. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 1. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 0. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 1. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 1. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 0. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 1. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 0. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 1. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/mark_exceptions.html",
+    [
+      {
+        "name": "window.performance.mark() throws a TypeError exception.",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() {\n        window.performance.mark();\n    }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"navigationStart\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"unloadEventStart\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"unloadEventEnd\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"redirectStart\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"redirectEnd\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"fetchStart\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"domainLookupStart\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"domainLookupEnd\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"connectStart\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"connectEnd\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"secureConnectionStart\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"requestStart\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"responseStart\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"responseEnd\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"domLoading\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"domInteractive\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"domContentLoadedEventStart\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"domContentLoadedEventEnd\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"domComplete\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"loadEventStart\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      },
+      {
+        "name": "window.performance.mark(\"loadEventEnd\") throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n            window.performance.mark(attrName);\n        }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "user-timing/measure-exceptions.html",
+    [
+      {
+        "name": "Passing 'unloadEventStart' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Should throw function \"()=>{\n                window.performance.measure(\"measuring\", name, \"mark\");\n            }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'unloadEventStart' does not exist.\" that is not a DOMException InvalidAccessError: property \"code\" is equal to undefined, expected 15"
+      },
+      {
+        "name": "Passing 'unloadEventEnd' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Should throw function \"()=>{\n                window.performance.measure(\"measuring\", name, \"mark\");\n            }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'unloadEventEnd' does not exist.\" that is not a DOMException InvalidAccessError: property \"code\" is equal to undefined, expected 15"
+      },
+      {
+        "name": "Passing 'redirectStart' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Should throw function \"()=>{\n                window.performance.measure(\"measuring\", name, \"mark\");\n            }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'redirectStart' does not exist.\" that is not a DOMException InvalidAccessError: property \"code\" is equal to undefined, expected 15"
+      },
+      {
+        "name": "Passing 'redirectEnd' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Should throw function \"()=>{\n                window.performance.measure(\"measuring\", name, \"mark\");\n            }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'redirectEnd' does not exist.\" that is not a DOMException InvalidAccessError: property \"code\" is equal to undefined, expected 15"
+      },
+      {
+        "name": "Passing 'secureConnectionStart' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Should throw function \"()=>{\n                window.performance.measure(\"measuring\", name, \"mark\");\n            }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'secureConnectionStart' does not exist.\" that is not a DOMException InvalidAccessError: property \"code\" is equal to undefined, expected 15"
+      },
+      {
+        "name": "Passing 'domInteractive' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Should throw function \"()=>{\n                window.performance.measure(\"measuring\", name, \"mark\");\n            }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'domInteractive' does not exist.\" that is not a DOMException InvalidAccessError: property \"code\" is equal to undefined, expected 15"
+      },
+      {
+        "name": "Passing 'domContentLoadedEventStart' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Should throw function \"()=>{\n                window.performance.measure(\"measuring\", name, \"mark\");\n            }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'domContentLoadedEventStart' does not exist.\" that is not a DOMException InvalidAccessError: property \"code\" is equal to undefined, expected 15"
+      },
+      {
+        "name": "Passing 'domContentLoadedEventEnd' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Should throw function \"()=>{\n                window.performance.measure(\"measuring\", name, \"mark\");\n            }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'domContentLoadedEventEnd' does not exist.\" that is not a DOMException InvalidAccessError: property \"code\" is equal to undefined, expected 15"
+      },
+      {
+        "name": "Passing 'domComplete' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Should throw function \"()=>{\n                window.performance.measure(\"measuring\", name, \"mark\");\n            }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'domComplete' does not exist.\" that is not a DOMException InvalidAccessError: property \"code\" is equal to undefined, expected 15"
+      },
+      {
+        "name": "Passing 'loadEventStart' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Should throw function \"()=>{\n                window.performance.measure(\"measuring\", name, \"mark\");\n            }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'loadEventStart' does not exist.\" that is not a DOMException InvalidAccessError: property \"code\" is equal to undefined, expected 15"
+      },
+      {
+        "name": "Passing 'loadEventEnd' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Should throw function \"()=>{\n                window.performance.measure(\"measuring\", name, \"mark\");\n            }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'loadEventEnd' does not exist.\" that is not a DOMException InvalidAccessError: property \"code\" is equal to undefined, expected 15"
+      },
+      {
+        "name": "Passing 51.15 as a mark to measure API should cause error.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Should throw function \"()=>{\n                window.performance.measure(\"measuring\", each, \"mark\");\n            }\" did not throw"
+      },
+      {
+        "name": "Passing DoesNotExist as a mark to measure API should cause error.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Should throw function \"()=>{\n                window.performance.measure(\"measuring\", each, \"mark\");\n            }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'DoesNotExist' does not exist.\" that is not a DOMException SyntaxError: property \"code\" is equal to undefined, expected 12"
+      }
+    ]
+  ],
+  [
+    "user-timing/measure.html",
+    [
+      {
+        "name": "window.performance is defined",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/measure_associated_with_navigation_timing.html",
+    [
+      {
+        "name": "user-timing/measure_associated_with_navigation_timing.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "user-timing/measure_exception.html",
+    [
+      {
+        "name": "Invocation of performance.measure() should throw TypeError Exception.",
+        "status": "Fail",
+        "message": "assert_throws_js: Invocation of performance.measure() should throw TypeError Exception. function \"function() {eval(func_str)}\" did not throw"
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception1\", \"NonExistMark1\") should throw SYNTAX_ERR Exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Invocation of performance.measure(\"Exception1\", \"NonExistMark1\") should throw SYNTAX_ERR Exception. function \"function() {eval(func_str)}\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'NonExistMark1' does not exist.\" that is not a DOMException SYNTAX_ERR: property \"code\" is equal to undefined, expected 12"
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception2\", \"NonExistMark1\", \"navigationStart\") should throw SYNTAX_ERR Exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Invocation of performance.measure(\"Exception2\", \"NonExistMark1\", \"navigationStart\") should throw SYNTAX_ERR Exception. function \"function() {eval(func_str)}\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'NonExistMark1' does not exist.\" that is not a DOMException SYNTAX_ERR: property \"code\" is equal to undefined, expected 12"
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception3\", \"navigationStart\", \"NonExistMark1\") should throw SYNTAX_ERR Exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Invocation of performance.measure(\"Exception3\", \"navigationStart\", \"NonExistMark1\") should throw SYNTAX_ERR Exception. function \"function() {eval(func_str)}\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'navigationStart' does not exist.\" that is not a DOMException SYNTAX_ERR: property \"code\" is equal to undefined, expected 12"
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception4\", \"NonExistMark1\", \"ExistMark\") should throw SYNTAX_ERR Exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Invocation of performance.measure(\"Exception4\", \"NonExistMark1\", \"ExistMark\") should throw SYNTAX_ERR Exception. function \"function() {eval(func_str)}\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'NonExistMark1' does not exist.\" that is not a DOMException SYNTAX_ERR: property \"code\" is equal to undefined, expected 12"
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception5\", \"ExistMark\", \"NonExistMark1\") should throw SYNTAX_ERR Exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Invocation of performance.measure(\"Exception5\", \"ExistMark\", \"NonExistMark1\") should throw SYNTAX_ERR Exception. function \"function() {eval(func_str)}\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'NonExistMark1' does not exist.\" that is not a DOMException SYNTAX_ERR: property \"code\" is equal to undefined, expected 12"
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception6\", \"NonExistMark1\", \"NonExistMark2\") should throw SYNTAX_ERR Exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Invocation of performance.measure(\"Exception6\", \"NonExistMark1\", \"NonExistMark2\") should throw SYNTAX_ERR Exception. function \"function() {eval(func_str)}\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'NonExistMark1' does not exist.\" that is not a DOMException SYNTAX_ERR: property \"code\" is equal to undefined, expected 12"
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception7\", \"redirectStart\") should throw INVALID_ACCESS_ERR Exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Invocation of performance.measure(\"Exception7\", \"redirectStart\") should throw INVALID_ACCESS_ERR Exception. function \"function() {eval(func_str)}\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'redirectStart' does not exist.\" that is not a DOMException INVALID_ACCESS_ERR: property \"code\" is equal to undefined, expected 15"
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception8\", {\"detail\": \"non-empty\"}) should throw TypeError Exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception9\", {\"start\": 1, \"duration\": 2, \"end\": 3}) should throw TypeError Exception.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/measure_exceptions_navigation_timing.html",
+    [
+      {
+        "name": "user-timing/measure_exceptions_navigation_timing.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "user-timing/measure_navigation_timing.html",
+    [
+      {
+        "name": "window.performance is defined",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/measures.html",
+    [
+      {
+        "name": "There should be 0 entries returned.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/user-timing-tojson.html",
+    [
+      {
+        "name": "Test toJSON() in PerformanceMark",
+        "status": "Fail",
+        "message": "assert_equals: expected \"function\" but got \"undefined\""
+      },
+      {
+        "name": "Test toJSON() in PerformanceMeasure",
+        "status": "Fail",
+        "message": "assert_equals: expected \"function\" but got \"undefined\""
+      }
+    ]
+  ],
+  [
+    "user-timing/buffered-flag.any.js",
+    [
+      {
+        "name": "user-timing/buffered-flag.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 1382], state={\"loaded\":true,\"pending\":2,\"phase\":4,\"tests\":2}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "user-timing/case-sensitivity.any.js",
+    [
+      {
+        "name": "getEntriesByType values are case sensitive",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/clear_all_marks.any.js",
+    [
+      {
+        "name": "Clearing all marks remove all of them.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/clear_all_measures.any.js",
+    [
+      {
+        "name": "Clearing all marks remove all of them.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/clear_non_existent_mark.any.js",
+    [
+      {
+        "name": "Clearing a non-existent mark doesn't affect existing marks",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/clear_non_existent_measure.any.js",
+    [
+      {
+        "name": "Clearing a non-existent measure doesn't affect existing measures",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/clear_one_mark.any.js",
+    [
+      {
+        "name": "Clearing an existent mark doesn't affect other existing marks",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/clear_one_measure.any.js",
+    [
+      {
+        "name": "Clearing an existent measure doesn't affect other existing measures",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/entry_type.any.js",
+    [
+      {
+        "name": "Validate the user timing entry type PerformanceMark",
+        "status": "Fail",
+        "message": "assert_equals: Class name of mark entry should be PerformanceMark. expected \"[object PerformanceMark]\" but got \"[object Object]\""
+      },
+      {
+        "name": "Validate the user timing entry type PerformanceMeasure",
+        "status": "Fail",
+        "message": "assert_equals: Class name of measure entry should be PerformanceMeasure. expected \"[object PerformanceMeasure]\" but got \"[object Object]\""
+      }
+    ]
+  ],
+  [
+    "user-timing/mark-entry-constructor.any.js",
+    [
+      {
+        "name": "Mark entry can be created by 'new PerformanceMark(string)'.",
+        "status": "Fail",
+        "message": "PerformanceMark is not defined"
+      },
+      {
+        "name": "Mark entry can be created by 'new PerformanceMark(string, {})'.",
+        "status": "Fail",
+        "message": "PerformanceMark is not defined"
+      },
+      {
+        "name": "Mark entry can be created by 'new PerformanceMark(string, {startTime})'.",
+        "status": "Fail",
+        "message": "PerformanceMark is not defined"
+      },
+      {
+        "name": "Mark entry can be created by 'new PerformanceMark(string, {detail})'.",
+        "status": "Fail",
+        "message": "PerformanceMark is not defined"
+      },
+      {
+        "name": "Mark entry can be created by 'new PerformanceMark(string, {startTime, detail})'.",
+        "status": "Fail",
+        "message": "PerformanceMark is not defined"
+      },
+      {
+        "name": "Using new PerformanceMark() shouldn't add the entry to performance timeline.",
+        "status": "Fail",
+        "message": "PerformanceMark is not defined"
+      }
+    ]
+  ],
+  [
+    "user-timing/mark-errors.any.js",
+    [
+      {
+        "name": "[performance.mark]: Number should be rejected as the mark-options.",
+        "status": "Fail",
+        "message": "assert_throws_js: Number passed as a dict argument should cause type-error. function \"function() { newMarkFunction(\"mark1\", 123); }\" did not throw"
+      },
+      {
+        "name": "[new PerformanceMark]: Number should be rejected as the mark-options.",
+        "status": "Fail",
+        "message": "assert_throws_js: Number passed as a dict argument should cause type-error. function \"function() { newMarkFunction(\"mark1\", 123); }\" threw object \"ReferenceError: PerformanceMark is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "[performance.mark]: NaN should be rejected as the mark-options.",
+        "status": "Fail",
+        "message": "assert_throws_js: NaN passed as a dict argument should cause type-error. function \"function() { newMarkFunction(\"mark1\", NaN); }\" did not throw"
+      },
+      {
+        "name": "[new PerformanceMark]: NaN should be rejected as the mark-options.",
+        "status": "Fail",
+        "message": "assert_throws_js: NaN passed as a dict argument should cause type-error. function \"function() { newMarkFunction(\"mark1\", NaN); }\" threw object \"ReferenceError: PerformanceMark is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "[performance.mark]: Infinity should be rejected as the mark-options.",
+        "status": "Fail",
+        "message": "assert_throws_js: Infinity passed as a dict argument should cause type-error. function \"function() { newMarkFunction(\"mark1\", Infinity); }\" did not throw"
+      },
+      {
+        "name": "[new PerformanceMark]: Infinity should be rejected as the mark-options.",
+        "status": "Fail",
+        "message": "assert_throws_js: Infinity passed as a dict argument should cause type-error. function \"function() { newMarkFunction(\"mark1\", Infinity); }\" threw object \"ReferenceError: PerformanceMark is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "[performance.mark]: String should be rejected as the mark-options.",
+        "status": "Fail",
+        "message": "assert_throws_js: String passed as a dict argument should cause type-error. function \"function() { newMarkFunction(\"mark1\", \"string\"); }\" did not throw"
+      },
+      {
+        "name": "[new PerformanceMark]: String should be rejected as the mark-options.",
+        "status": "Fail",
+        "message": "assert_throws_js: String passed as a dict argument should cause type-error. function \"function() { newMarkFunction(\"mark1\", \"string\"); }\" threw object \"ReferenceError: PerformanceMark is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "[performance.mark]: Negative startTime in mark-options should be rejected",
+        "status": "Fail",
+        "message": "assert_throws_js: Negative startTime should cause type-error. function \"function() { newMarkFunction(\"mark1\", {startTime: -1}); }\" did not throw"
+      },
+      {
+        "name": "[new PerformanceMark]: Negative startTime in mark-options should be rejected",
+        "status": "Fail",
+        "message": "assert_throws_js: Negative startTime should cause type-error. function \"function() { newMarkFunction(\"mark1\", {startTime: -1}); }\" threw object \"ReferenceError: PerformanceMark is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      }
+    ]
+  ],
+  [
+    "user-timing/mark-l3.any.js",
+    [
+      {
+        "name": "mark entries' detail and startTime are customizable.",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"null\" but got (undefined) undefined"
+      }
+    ]
+  ],
+  [
+    "user-timing/mark-measure-return-objects.any.js",
+    [
+      {
+        "name": "L3: performance.measure(name) should return an entry.",
+        "status": "Fail",
+        "message": "PerformanceMeasure is not defined"
+      },
+      {
+        "name": "L3: performance.measure(name, param1) should return an entry.",
+        "status": "Fail",
+        "message": "Failed to execute 'measure' on 'Performance': The mark '[object Object]' does not exist."
+      },
+      {
+        "name": "L3: performance.measure(name, param1, param2) should return an entry.",
+        "status": "Fail",
+        "message": "PerformanceMeasure is not defined"
+      },
+      {
+        "name": "L3: performance.mark(name) should return an entry.",
+        "status": "Fail",
+        "message": "PerformanceMark is not defined"
+      },
+      {
+        "name": "L3: performance.mark(name, param) should return an entry.",
+        "status": "Fail",
+        "message": "PerformanceMark is not defined"
+      }
+    ]
+  ],
+  [
+    "user-timing/mark.any.js",
+    [
+      {
+        "name": "Entry 0 is properly created",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 1 is properly created",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 0 has the proper name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 0 startTime is approximately correct (up to 20ms difference allowed)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 0 has the proper entryType",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 0 duration == 0",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getEntriesByName(\"mark\", \"mark\")[0] returns an object containing a \"mark\" mark",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The mark returned by getEntriesByName(\"mark\", \"mark\")[0] matches the mark returned by getEntriesByName(\"mark\")[0]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getEntries()[0] returns an object containing a \"mark\" mark",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The mark returned by getEntries()[0] matches the mark returned by getEntriesByName(\"mark\")[0]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getEntriesByType(\"mark\")[0] returns an object containing a \"mark\" mark",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The mark returned by getEntriesByType(\"mark\")[0] matches the mark returned by getEntriesByName(\"mark\")[0]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 1 has the proper name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 1 startTime is approximately correct (up to 20ms difference allowed)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 1 has the proper entryType",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 1 duration == 0",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getEntriesByName(\"mark\", \"mark\")[1] returns an object containing a \"mark\" mark",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The mark returned by getEntriesByName(\"mark\", \"mark\")[1] matches the mark returned by getEntriesByName(\"mark\")[1]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getEntries()[1] returns an object containing a \"mark\" mark",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The mark returned by getEntries()[1] matches the mark returned by getEntriesByName(\"mark\")[1]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getEntriesByType(\"mark\")[1] returns an object containing a \"mark\" mark",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The mark returned by getEntriesByType(\"mark\")[1] matches the mark returned by getEntriesByName(\"mark\")[1]",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/measure-l3.any.js",
+    [
+      {
+        "name": "When the end mark is given and the start is unprovided, the end time of the measure entry should be the end mark's time, the start time should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "When the start mark is given and the end is unprovided, the start time of the measure entry should be the start mark's time, the end should be now.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "When start and end mark are both given, the start time and end time of the measure entry should be the marks' time, repectively",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/measure-with-dict.any.js",
+    [
+      {
+        "name": "measure entries' detail and start/end are customizable",
+        "status": "Fail",
+        "message": "Failed to execute 'measure' on 'Performance': The mark 'null' does not exist."
+      },
+      {
+        "name": "measure should throw a TypeError when passed an invalid argument combination",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/measure_syntax_err.any.js",
+    [
+      {
+        "name": "Create a mark \"existing_mark\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self.performance.measure(\"measure\", \"mark\"), where \"mark\" is a non-existent mark, throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n       self.performance.measure(\"measure\", \"mark\");\n   }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'mark' does not exist.\" that is not a DOMException SyntaxError: property \"code\" is equal to undefined, expected 12"
+      },
+      {
+        "name": "self.performance.measure(\"measure\", \"mark\", \"existing_mark\"), where \"mark\" is a non-existent mark, throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n       self.performance.measure(\"measure\", \"mark\", \"existing_mark\");\n   }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'mark' does not exist.\" that is not a DOMException SyntaxError: property \"code\" is equal to undefined, expected 12"
+      },
+      {
+        "name": "self.performance.measure(\"measure\", \"existing_mark\", \"mark\"), where \"mark\" is a non-existent mark, throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n       self.performance.measure(\"measure\", \"existing_mark\", \"mark\");\n   }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'mark' does not exist.\" that is not a DOMException SyntaxError: property \"code\" is equal to undefined, expected 12"
+      },
+      {
+        "name": "self.performance.measure(\"measure\", \"mark\", \"mark\"), where \"mark\" is a non-existent mark, throws a SyntaxError exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n       self.performance.measure(\"measure\", \"mark\", \"mark\");\n   }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark 'mark' does not exist.\" that is not a DOMException SyntaxError: property \"code\" is equal to undefined, expected 12"
+      }
+    ]
+  ],
+  [
+    "user-timing/structured-serialize-detail.any.js",
+    [
+      {
+        "name": "The detail property in the mark constructor should be structured-clone.",
+        "status": "Fail",
+        "message": "PerformanceMark is not defined"
+      },
+      {
+        "name": "The detail property in the mark method should be structured-clone.",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'randomInfo')"
+      },
+      {
+        "name": "When accessing detail from a mark entry and the detail is not provided, just return a null value.",
+        "status": "Fail",
+        "message": "assert_equals: expected (object) null but got (undefined) undefined"
+      },
+      {
+        "name": "Mark: Throw an exception when the detail property cannot be structured-serialized.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Trying to structured-serialize a Symbol. function \"()=>{\n    new PerformanceMark(\"A\", { detail });\n  }\" threw object \"ReferenceError: PerformanceMark is not defined\" that is not a DOMException DataCloneError: property \"code\" is equal to undefined, expected 25"
+      },
+      {
+        "name": "The detail property in the measure method should be structured-clone.",
+        "status": "Fail",
+        "message": "Failed to execute 'measure' on 'Performance': The mark '[object Object]' does not exist."
+      },
+      {
+        "name": "The detail property in the measure method should be the same reference.",
+        "status": "Fail",
+        "message": "Failed to execute 'measure' on 'Performance': The mark '[object Object]' does not exist."
+      },
+      {
+        "name": "When accessing detail from a measure entry and the detail is not provided, just return a null value.",
+        "status": "Fail",
+        "message": "assert_equals: expected (object) null but got (undefined) undefined"
+      },
+      {
+        "name": "Measure: Throw an exception when the detail property cannot be structured-serialized.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Trying to structured-serialize a Symbol. function \"()=>{\n    performance.measure(\"A\", { start: 0, detail });\n  }\" threw object \"TypeError: Failed to execute 'measure' on 'Performance': The mark '[object Object]' does not exist.\" that is not a DOMException DataCloneError: property \"code\" is equal to undefined, expected 25"
+      },
+      {
+        "name": "The detail object is cloned when passed to mark API.",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'foo')"
+      }
+    ]
+  ],
+  [
+    "user-timing/supported-usertiming-types.any.js",
+    [
+      {
+        "name": "supportedEntryTypes contains 'mark' and 'measure'.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "user-timing/supported-usertiming-types.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 1410], state={\"loaded\":true,\"pending\":2,\"phase\":4,\"tests\":3}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "user-timing/user_timing_exists.any.js",
+    [
+      {
+        "name": "self.performance.mark is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self.performance.clearMarks is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self.performance.measure is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self.performance.clearMeasures is defined.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]

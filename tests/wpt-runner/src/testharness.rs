@@ -3021,6 +3021,266 @@ pub fn run_secure_contexts_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(
     run_corpus_subdirs(wpt_root, SECURE_CONTEXTS_SUBDIRS, filter, security_case_skipped)
 }
 
+// ══ timing-animation-compat goal（docs/goal/timing-animation-compat.md M1 / DC-1）══
+// 四 corpus（hr-time / performance-timeline / user-timing / web-animations）window
+// 可执行子集。fetch 侧 = `scripts/goals/10-timing-animation-compat.sh`（目录清单 +
+// .any.js 显式清单补拉），运行面 skip 规则与 fetch 清单同域双保险。.any.js 以 window
+// 变体执行（wasm/fs/indexeddb 先例：`// META: script=` 自动解析 + window wrapper）。
+
+/// hr-time corpus pinned upstream subset（计时面——performance.now 精度/单调性/
+/// timeOrigin）。
+pub const HR_TIME_SUBDIRS: &[&str] = &["hr-time"];
+
+/// performance-timeline corpus pinned upstream subset（PerformanceObserver/entry
+/// buffer 面）。
+pub const PERFORMANCE_TIMELINE_SUBDIRS: &[&str] = &["performance-timeline"];
+
+/// user-timing corpus pinned upstream subset（mark/measure/clear 面）。
+pub const USER_TIMING_SUBDIRS: &[&str] = &["user-timing"];
+
+/// web-animations corpus pinned upstream subset（WAAPI——Animation/KeyframeEffect/
+/// getAnimations API 面 + 时序模型语义）。responsive/ 与 crashtests/ 已 fetch 不扫描：
+/// 前者为 responsive reftest（动画渲染效果跨域记账 rendering-compat，fullscreen/
+/// rendering 先例），后者为崩溃面（web-components crashtests 先例）。
+pub const WEB_ANIMATIONS_SUBDIRS: &[&str] = &[
+    "web-animations/animation-model",
+    "web-animations/animation-trigger",
+    "web-animations/interfaces/Animatable",
+    "web-animations/interfaces/Animation",
+    "web-animations/interfaces/AnimationEffect",
+    "web-animations/interfaces/AnimationPlaybackEvent",
+    "web-animations/interfaces/Document",
+    "web-animations/interfaces/DocumentTimeline",
+    "web-animations/interfaces/KeyframeEffect",
+    "web-animations/interfaces/TimelineTrigger",
+    "web-animations/timing-model/animation-effects",
+    "web-animations/timing-model/animations",
+    "web-animations/timing-model/time-transformations",
+    "web-animations/timing-model/timelines",
+];
+
+/// 绝对路径 helper → wpt-data 本地文件映射（fetch 脚本补拉）。`inline_local_scripts`
+/// 只内联相对 src；上游整仓 serve 的绝对路径 helper（/common/ 通用资产、
+/// /web-animations/ 顶面 testcommon）经本表以 inline_extras 内联，本地文件缺失时
+/// 跳过该 extra（用例按真实缺口失败，不静默注入空）。
+const TIMING_ABSOLUTE_HELPERS: &[(&str, &str)] = &[
+    (
+        "/common/performance-timeline-utils.js",
+        "common/performance-timeline-utils.js",
+    ),
+    ("/web-animations/testcommon.js", "web-animations/testcommon.js"),
+];
+
+/// 收集用例引用的绝对路径 helper 的 inline_extras（只装被引用且已拉取的）。
+fn timing_absolute_helper_extras(wpt_root: &Path, source: &str) -> Vec<(String, String)> {
+    TIMING_ABSOLUTE_HELPERS
+        .iter()
+        .filter(|(src, _)| source.contains(src))
+        .filter_map(|(src, local)| {
+            std::fs::read_to_string(wpt_root.join(local))
+                .ok()
+                .map(|content| ((*src).to_string(), content))
+        })
+        .collect()
+}
+
+/// timing 四 corpus 共用扫描器：`.html` 用例直跑（[`run_corpus_subdirs`] 同款内容级
+/// skip）；`.any.js` 用例以 window 变体执行（[`run_wasm_cases`] 同款 META 解析 +
+/// wrapper）；绝对路径 helper 经 [`timing_absolute_helper_extras`] 内联。
+fn run_timing_subdirs(
+    wpt_root: &Path,
+    subdirs: &[&str],
+    filter: Option<&str>,
+    case_skipped: fn(&str, &str) -> bool,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                "resources/testharness.js".to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+    let mut cases = Vec::new();
+    for subdir in subdirs {
+        // 拉取面均为 flat 布局（子目录已显式列入 subdirs），无需递归。
+        let Ok(entries) = std::fs::read_dir(wpt_root.join(subdir)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                continue;
+            }
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            let is_html = file_name.ends_with(".html");
+            let is_any_js = file_name.ends_with(".any.js");
+            if !is_html && !is_any_js {
+                continue;
+            }
+            let relative = format!("{subdir}/{file_name}");
+            if filter.is_some_and(|filter| !relative.contains(filter)) {
+                continue;
+            }
+            let Ok(source) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if case_skipped(&relative, &source) {
+                continue;
+            }
+            let results = if is_any_js {
+                run_any_js_window_case(wpt_root, &relative, &source, &harness_source)
+            } else {
+                let extras = timing_absolute_helper_extras(wpt_root, &source);
+                let extra_refs = extras
+                    .iter()
+                    .map(|(src, body)| (src.as_str(), body.as_str()))
+                    .collect::<Vec<_>>();
+                run_testharness_html_inner(
+                    wpt_root,
+                    &relative,
+                    &source,
+                    &harness_source,
+                    &extra_refs,
+                    CORPUS_CASE_TIMEOUT,
+                )
+            };
+            cases.push((relative, results));
+        }
+    }
+    cases
+}
+
+/// `.any.js` 单案 window 变体执行（[`run_wasm_cases`] 同款：META script 自动解析 +
+/// [`any_js_window_wrapper`]；support 缺失按 Fail 记账不静默跳过）。
+fn run_any_js_window_case(
+    wpt_root: &Path,
+    relative: &str,
+    source: &str,
+    harness_source: &str,
+) -> Vec<HarnessSubtestResult> {
+    let case_dir = Path::new(relative).parent().unwrap_or_else(|| Path::new(""));
+    let mut support_sources = Vec::new();
+    for script in wpt_meta_scripts(relative, source) {
+        let support_path = if let Some(root_relative) = script.strip_prefix('/') {
+            wpt_root.join(root_relative)
+        } else {
+            wpt_root.join(case_dir).join(&script)
+        };
+        match std::fs::read_to_string(support_path) {
+            Ok(support) => support_sources.push((script, support)),
+            Err(error) => {
+                return vec![HarnessSubtestResult {
+                    name: format!("load support {script}"),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }];
+            }
+        }
+    }
+    let support_refs = support_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let html = any_js_window_wrapper(relative, &support_refs, source);
+    run_testharness_html(wpt_root, relative, &html, harness_source, CORPUS_CASE_TIMEOUT)
+}
+
+/// timing 四 corpus 共用基础筛减：`*-manual.html`（需真实用户交互，clipboard 先例）、
+/// `*-ref.html`/`*-notref.html`（reftest 参照页，observers 先例）、`idlharness.*`
+/// （依赖 /resources/WebIDLParser.js——上游 resources/webidl2 的 build 期生成资产，
+/// repo 内不存在，window 可执行面之外，clipboard idlharness 先例）。
+fn timing_base_case_skipped(relative: &str) -> bool {
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    name.ends_with("-manual.html")
+        || name.ends_with("-ref.html")
+        || name.ends_with("-notref.html")
+        || name.starts_with("idlharness.")
+}
+
+/// iframe 依赖面：literal `<iframe`（observers/clipboard 先例）或
+/// `document.createElement('iframe')` 动态形态（hr-time 跨 frame 测量、
+/// performance-timeline detached-frame）——runner 无多 frame 文档管道。
+fn timing_iframe_dependency(source: &str) -> bool {
+    source.contains("<iframe")
+        || source.contains("createElement('iframe')")
+        || source.contains("createElement(\"iframe\")")
+}
+
+/// worker 执行面：runner 无 worker 文档管道（security/clipboard 先例）。
+fn timing_worker_dependency(source: &str) -> bool {
+    source.contains("new Worker(") || source.contains("SharedWorker(")
+}
+
+/// hr-time 筛减：基础 + iframe 依赖。worker 内容放行——timeOrigin.html 首子测试为
+/// window timeOrigin 核心断言（DC-2 面），worker 子测试按真实缺口 Timeout/Fail
+/// 记账（evidence 注记）。
+fn hr_time_case_skipped(relative: &str, source: &str) -> bool {
+    timing_base_case_skipped(relative) || timing_iframe_dependency(source)
+}
+
+/// performance-timeline 筛减：基础 + iframe/worker + bfcache/navigationId 基建面
+/// （`helper.sub.js` + `/common/utils.js` dispatcher 跨窗会话机制在 window 可执行面
+/// 之外——navigation-compat 流域记账）。
+fn performance_timeline_case_skipped(relative: &str, source: &str) -> bool {
+    timing_base_case_skipped(relative)
+        || timing_iframe_dependency(source)
+        || timing_worker_dependency(source)
+        || source.contains("back-forward-cache/resources/helper.sub.js")
+}
+
+/// user-timing 筛减：基础 + iframe/worker（当前案面均不含，规则同域防上游漂移）。
+fn user_timing_case_skipped(relative: &str, source: &str) -> bool {
+    timing_base_case_skipped(relative) || timing_iframe_dependency(source) || timing_worker_dependency(source)
+}
+
+/// web-animations 筛减：基础 + iframe/worker + reftest-wait 渲染等待面
+/// （animation-model/side-effects-*——动画渲染效果跨域记账 rendering-compat，
+/// goal 边界：JS API 面 vs 渲染计算）。
+fn web_animations_case_skipped(relative: &str, source: &str) -> bool {
+    timing_base_case_skipped(relative)
+        || timing_iframe_dependency(source)
+        || timing_worker_dependency(source)
+        || source.contains("reftest-wait")
+}
+
+/// Run the pinned upstream hr-time window subset
+/// （timing-animation-compat goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_hr_time_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_timing_subdirs(wpt_root, HR_TIME_SUBDIRS, filter, hr_time_case_skipped)
+}
+
+/// Run the pinned upstream performance-timeline window subset
+/// （timing-animation-compat goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_performance_timeline_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_timing_subdirs(
+        wpt_root,
+        PERFORMANCE_TIMELINE_SUBDIRS,
+        filter,
+        performance_timeline_case_skipped,
+    )
+}
+
+/// Run the pinned upstream user-timing window subset
+/// （timing-animation-compat goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_user_timing_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_timing_subdirs(wpt_root, USER_TIMING_SUBDIRS, filter, user_timing_case_skipped)
+}
+
+/// Run the pinned upstream web-animations window subset
+/// （timing-animation-compat goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_web_animations_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_timing_subdirs(wpt_root, WEB_ANIMATIONS_SUBDIRS, filter, web_animations_case_skipped)
+}
+
 /// Run the fixed Service Worker M1 core testharness corpus.
 pub fn run_service_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_service_worker_case_set(wpt_root, filter, SERVICE_WORKER_CORE_CASES)

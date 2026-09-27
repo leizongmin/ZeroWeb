@@ -62,6 +62,14 @@ Commands:
                        (security-hardening goal M1 / DC-1)
   testharness-secure-contexts  Run imported Secure Contexts testharness cases
                        (security-hardening goal M1 / DC-1)
+  testharness-hr-time  Run imported hr-time testharness cases
+                       (timing-animation-compat goal M1 / DC-1)
+  testharness-performance-timeline  Run imported performance-timeline testharness cases
+                       (timing-animation-compat goal M1 / DC-1)
+  testharness-user-timing  Run imported user-timing testharness cases
+                       (timing-animation-compat goal M1 / DC-1)
+  testharness-web-animations  Run imported web-animations testharness cases
+                       (timing-animation-compat goal M1 / DC-1)
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
   testharness-service-workers-fetch  Run pinned Service Worker M2 fetch testharness cases
   testharness-service-workers-cache-storage  Run pinned Service Worker CacheStorage testharness cases
@@ -269,6 +277,10 @@ fn main() {
         "testharness-csp" => cmd_testharness_content_security_policy(&options, filter.as_deref()),
         "testharness-mixed-content" => cmd_testharness_mixed_content(&options, filter.as_deref()),
         "testharness-secure-contexts" => cmd_testharness_secure_contexts(&options, filter.as_deref()),
+        "testharness-hr-time" => cmd_testharness_hr_time(&options, filter.as_deref()),
+        "testharness-performance-timeline" => cmd_testharness_performance_timeline(&options, filter.as_deref()),
+        "testharness-user-timing" => cmd_testharness_user_timing(&options, filter.as_deref()),
+        "testharness-web-animations" => cmd_testharness_web_animations(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
         "testharness-service-workers-fetch" => cmd_testharness_service_workers_fetch(&options, filter.as_deref()),
         "testharness-service-workers-cache-storage" => {
@@ -1047,6 +1059,41 @@ fn cmd_testharness_mixed_content(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_secure_contexts(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_secure_contexts_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-hr-time` / `testharness-performance-timeline` / `testharness-user-timing`
+/// / `testharness-web-animations` 子命令 — 跑导入的上游计时/动画四 corpus window 可执行
+/// 子集（timing-animation-compat goal M1 / DC-1）。
+///
+/// 用例由 `tests/wpt-runner/scripts/goals/10-timing-animation-compat.sh` 按需拉到
+/// `wpt-data/`（gitignored）：`.html` 直跑 + `.any.js` 以 window 变体执行（wasm/fs
+/// 先例），运行面按内容规则筛减（manual/ref/iframe/worker/bfcache 基建/reftest-wait
+/// 渲染面——`*_case_skipped` 同域注释）。退出码：有用例非 Pass 或用例集为空 → 1
+/// （observers 先例）。基线首跑即便大量 Fail 也只用于记录通过率（agent 经 `--json`
+/// 捕获后写 evidence/），不作为 land 门禁。filter 按路径子串透传：
+/// make testharness-web-animations FILTER=KeyframeEffect。
+fn cmd_testharness_hr_time(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_hr_time_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_performance_timeline(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_performance_timeline_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_user_timing(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_user_timing_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_web_animations(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_web_animations_cases(wpt_root, filter)
     });
 }
 

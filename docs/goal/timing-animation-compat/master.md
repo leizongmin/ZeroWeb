@@ -2,7 +2,7 @@
 
 **入口文档**: [../timing-animation-compat.md](../timing-animation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-12（立项）
+**最后更新**: 2026-09-27（M1 落地：四 corpus 导入 + 通道 + 基线 + CSV 回填）
 
 ---
 
@@ -12,9 +12,25 @@
 user-timing/WAAPI 纯 JS API 面，不触布局/渲染计算，预期最快出数字。
 headless 帧驱动 opt-in（`__ZW_RAF_FRAME_DRIVEN`）是已知约束，如实标注不放容差。
 
+**M1 已落地（2026-09-27）**：四 corpus window 可执行子集导入 + runner 通道 + 基线。
+合计 **319/1376 = 23.2% subtests Pass**（135 案执行）：
+hr-time 7/15 + performance-timeline 19/44 + user-timing 241/354 + web-animations 52/963。
+基线 evidence：`evidence/2026-09-27-m1-{hr-time,performance-timeline,user-timing,web-animations}-baseline.{md,json}`；
+suites CSV planned 行已转数据行（active）。
+
+**通道基建（M1 交付物）**：
+- fetch：`tests/wpt-runner/scripts/goals/10-timing-animation-compat.sh`（DIRS 深面追加
+  web-animations/interfaces ×8 + timing-model ×4；`.any.js` 显式清单补拉 ×42——lib.sh
+  未动，排除 idlharness ×3〔WebIDLParser 为上游 build 期生成资产，raw 404〕）
+- runner：`testharness-{hr-time,performance-timeline,user-timing,web-animations}` 四
+  子命令（testharness.rs `run_timing_subdirs` 共用扫描器：`.html` 直跑 + `.any.js`
+  window 变体〔wasm/fs/indexeddb 先例〕+ 绝对路径 helper inline_extras）
+- Makefile：`fetch-wpt-timing-animation` + 四 testharness target（test-guard 包裹）
+
 **与兄弟 goal 的边界**：
 - rendering-compat — CSS animation/transition 渲染效果面归其；不碰
-  style-system/layout-engine/render-foundation 动画计算
+  style-system/layout-engine/render-foundation 动画计算（M1 已按此记账：
+  web-animations responsive/ + reftest-wait 面不扫描/跳过）
 - event-loop-spec（已归档）— rAF/微任务先例消费；IO/RO 已立账处不重复
 - keyboard-page-scrolling（已归档）— 帧驱动门控为消费事实，改动须跨流核对
 - 同批 net-api/navigation/workers — 无共享面
@@ -23,19 +39,26 @@ headless 帧驱动 opt-in（`__ZW_RAF_FRAME_DRIVEN`）是已知约束，如实�
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| P1 | 四 corpus（hr-time/performance-timeline/user-timing/web-animations）导入 + 基线 | ⏳ M1 纯资产 |
-| P2 | hr-time 精度/单调性/timeOrigin 语义 | ⏳ M2 |
-| P3 | user-timing mark/measure/getEntries* + PerformanceObserver 评估 | ⏳ M2 |
-| P4 | WAAPI Animation/KeyframeEffect/getAnimations/playState + promise 语义 | ⏳ M3 |
+| P1 | 四 corpus（hr-time/performance-timeline/user-timing/web-animations）导入 + 基线 | ✅ M1（2026-09-27，见上）|
+| P2 | hr-time 精度/单调性/timeOrigin 语义 | ⏳ M2（基线缺口：toJSON/EventTarget 继承/timeOrigin epoch/DocumentTimeline）|
+| P3 | user-timing mark/measure/getEntries* + PerformanceObserver 评估 | ⏳ M2（基线缺口：DOMException 校验簇 ~66、PerformanceMark/Measure 构造器、structured-clone detail、observer 派发时序 Timeout ×14）|
+| P4 | WAAPI Animation/KeyframeEffect/getAnimations/playState + promise 语义 | ⏳ M3（基线缺口：KeyframeEffect/Animation/DocumentTimeline 构造器三主簇 ~690 subtests——web-animations 52/963 低基线主因）|
 | P5 | resource-timing/navigation-timing 重入条件挂账 | ⏳ M4 |
 
 ## 已完成切片
 
-（立项轮，暂无）
+- **M1（2026-09-27）**：四 corpus 导入 + runner 通道 + 基线 319/1376（23.2%）+
+  suites CSV 回填。无源码语义改动（通道基建除外——wpt-runner 四子命令 +
+  goals/10 脚本扩展）。
 
 ## 下一步计划
 
-1. **M1**：四 corpus fetch 脚本 + 导入 + 基线（纯资产）+ suites CSV 回填
-2. **M2-M4**：按入口文档里程碑逐面收敛
+1. **M2**：计时面修齐——user-timing DOMException 参数校验簇（最大簇，与
+   performance-timeline measure 簇同修）→ PerformanceMark/PerformanceMeasure 构造器 +
+   detail structured-clone → PerformanceObserver 派发时序（Timeout ×14）→ hr-time
+   toJSON/EventTarget/timeOrigin epoch
+2. **M3**：WAAPI——Animation/KeyframeEffect/DocumentTimeline 构造器 + effect 属性桥 →
+   关键帧参数解析校验 → ready/finished promise（headless 帧精度如实标注）
+3. **M4**：DC 逐项判定 + resource-timing/navigation-timing 重入条件挂账定稿
 
-**待用户决策清单**：（空——启动顺序由用户点名）
+**待用户决策清单**：（空——无门控项）
