@@ -36,4 +36,18 @@ impl BrowserApp {
     pub fn smoke_navigation_epoch(&self, tab_id: zero_browser_shell::TabId) -> u64 {
         self.tabs.smoke_navigation_epoch(tab_id)
     }
+
+    /// 演示流用：当前补全建议 URL 列表（建议弹出的状态源）。
+    pub fn smoke_autocomplete_urls(&self) -> Vec<String> {
+        self.autocomplete
+            .suggestions
+            .iter()
+            .map(|s| s.url().to_string())
+            .collect()
+    }
+
+    /// 演示流用：当前补全高亮位（hovered 优先，其次键盘选中）。
+    pub fn smoke_autocomplete_highlight(&self) -> Option<usize> {
+        self.autocomplete.highlight_index()
+    }
 }

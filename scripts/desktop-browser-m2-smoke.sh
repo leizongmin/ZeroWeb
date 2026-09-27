@@ -32,13 +32,14 @@ fi
 test -x "$BIN" || die "missing $BIN"
 test -x "$GUARD" || die "missing $GUARD (run 'make test' once to build it)"
 
-# --- 本地 HTTP 服务 -----------------------------------------------------------
+# --- 本地 HTTP 服务（/slow.html 延迟响应，供加载指示腿采样） -------------------
 PORT_FILE=$(mktemp)
 python3 - "$FIXTURE_DIR" "$PORT_FILE" <<'PYEOF' &
 import functools
 import http.server
 import socketserver
 import sys
+import time
 
 root, port_file = sys.argv[1], sys.argv[2]
 
@@ -46,6 +47,11 @@ root, port_file = sys.argv[1], sys.argv[2]
 class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
+
+    def do_GET(self):
+        if self.path.split("?")[0] == "/slow.html":
+            time.sleep(1.5)
+        super().do_GET()
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
@@ -121,3 +127,38 @@ done
 
 log "PASS (leg: tab-flow)"
 log "screenshots under $leg_dir/"
+
+# --- 腿 2：地址栏（键入导航 / 自动补全 / 加载指示） ---------------------------
+# 断言锚：ADDR_SMOKE_STEP（seed-load/typed-url/typed-nav/suggest-popup/suggest-nav/
+# loading-indicator/slow-loaded）+ ADDR_SMOKE_COMPLETE + 零 fallback。
+addr_dir="$OUT_DIR/addressbar-flow"
+addr_log="$OUT_DIR/addressbar-flow.log"
+rm -rf "$addr_dir"
+mkdir -p "$addr_dir"
+
+log "leg addressbar-flow: renderer=gpu base=http://127.0.0.1:$PORT"
+LEG_ENV="RUST_LOG=info ZERO_BROWSER_PRODUCT_SMOKE=1 ZW_COMPOSITOR_BIN=$COMPOSITOR_BIN"
+LEG_ARGS="--renderer=gpu --scale=1 --viewport-width=1024 --viewport-height=700 --addressbar-smoke-base=http://127.0.0.1:$PORT --addressbar-smoke-dir=$addr_dir"
+if [ "$USE_XVFB" = "1" ]; then
+    xvfb-run -a -s "-screen 0 1280x800x24" env $LEG_ENV \
+        "$GUARD" --time-limit 300 -- "$BIN" $LEG_ARGS >"$addr_log" 2>&1
+else
+    env $LEG_ENV "$GUARD" --time-limit 300 -- "$BIN" $LEG_ARGS >"$addr_log" 2>&1
+fi
+test $? -eq 0 || die "leg addressbar-flow: browser exited non-zero (see $addr_log)"
+
+for step in seed-load typed-url typed-nav suggest-popup suggest-nav loading-indicator slow-loaded; do
+    grep -aq "step=$step" "$addr_log" || die "step $step not recorded (see $addr_log)"
+done
+grep -aq "ADDR_SMOKE_COMPLETE base=http://127.0.0.1:$PORT" "$addr_log" \
+    || die "addressbar flow did not complete (see $addr_log)"
+grep -aqE "ADDR_SMOKE_FAILURE|TAB_SMOKE_FAILURE|GUI_SMOKE_FAILURE|SMOKE_FAILURE|panicked at" "$addr_log" \
+    && die "failure marker found in addressbar log"
+grep -aq "Compositor disconnected" "$addr_log" \
+    && die "compositor disconnected (fallback path engaged)"
+for png in 01-typed-url.png 02-suggest-popup.png 03-suggest-loaded.png 04-loading.png 05-slow-loaded.png; do
+    test -s "$addr_dir/$png" || die "missing screenshot $png"
+done
+
+log "PASS (leg: addressbar-flow)"
+log "screenshots under $addr_dir/"

@@ -22,6 +22,7 @@
 // 尚未全量接线，存在未用方法/字段/变体；T4/T5 统一脚本/帧后评估删除或接线。
 #![allow(dead_code)]
 
+mod addressbar_smoke;
 mod app;
 mod clipboard;
 mod colors;
@@ -99,6 +100,8 @@ struct CliArgs {
     parity_smoke: Option<parity_smoke::ParitySmokeConfig>,
     /// 显式启用标签族/导航控制真实窗口 smoke。
     tab_smoke: Option<tab_smoke::TabSmokeConfig>,
+    /// 显式启用地址栏真实窗口 smoke。
+    addressbar_smoke: Option<addressbar_smoke::AddressbarSmokeConfig>,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
@@ -128,6 +131,8 @@ fn parse_args_from(
     let mut tab_smoke_url_one = None;
     let mut tab_smoke_url_two = None;
     let mut tab_smoke_dir = None;
+    let mut addressbar_smoke_base = None;
+    let mut addressbar_smoke_dir = None;
     let mut parity_scenario = None;
     let mut parity_output_dir = None;
 
@@ -263,6 +268,28 @@ fn parse_args_from(
                 })?));
         }
 
+        if let Some(value) = arg.strip_prefix("--addressbar-smoke-base=") {
+            addressbar_smoke_base = Some(value.to_string());
+        }
+
+        if arg == "--addressbar-smoke-base" {
+            addressbar_smoke_base = Some(
+                args.next()
+                    .ok_or_else(|| "--addressbar-smoke-base requires an HTTP(S) origin".to_string())?,
+            );
+        }
+
+        if let Some(value) = arg.strip_prefix("--addressbar-smoke-dir=") {
+            addressbar_smoke_dir = Some(PathBuf::from(value));
+        }
+
+        if arg == "--addressbar-smoke-dir" {
+            addressbar_smoke_dir =
+                Some(PathBuf::from(args.next().ok_or_else(|| {
+                    "--addressbar-smoke-dir requires a directory path".to_string()
+                })?));
+        }
+
         if let Some(value) = arg.strip_prefix("--parity-scenario=") {
             parity_scenario = Some(PathBuf::from(value));
         }
@@ -324,12 +351,23 @@ fn parse_args_from(
             );
         }
     };
+    let addressbar_smoke = match (addressbar_smoke_base, addressbar_smoke_dir) {
+        (Some(base), Some(output_dir)) => Some(addressbar_smoke::AddressbarSmokeConfig::new(base, output_dir)?),
+        (None, None) => None,
+        _ => {
+            return Err("--addressbar-smoke-base and --addressbar-smoke-dir must be provided together".to_string());
+        }
+    };
     let smoke_modes = usize::from(smoke_capture.is_some())
         + usize::from(gui_smoke.is_some())
         + usize::from(parity_smoke.is_some())
-        + usize::from(tab_smoke.is_some());
+        + usize::from(tab_smoke.is_some())
+        + usize::from(addressbar_smoke.is_some());
     if smoke_modes > 1 {
-        return Err("smoke capture, GUI smoke, parity smoke, and tab smoke are mutually exclusive".to_string());
+        return Err(
+            "smoke capture, GUI smoke, parity smoke, tab smoke, and addressbar smoke are mutually exclusive"
+                .to_string(),
+        );
     }
     if smoke_modes > 0 {
         if headless {
@@ -355,6 +393,7 @@ fn parse_args_from(
         gui_smoke,
         parity_smoke,
         tab_smoke,
+        addressbar_smoke,
     })
 }
 
@@ -372,6 +411,8 @@ Options:
   --viewport-height=<px>         Headless/GUI smoke page viewport height (default: 600)
   --wpt-parity                   Match WPT/product-smoke: CPU renderer and 1.0 scale (make browser-cpu default)
   --smoke-capture=<png>          Capture the real presented window frame, emit region stats, then exit
+  --addressbar-smoke-base=<url>  Addressbar smoke: local fixture origin (http/https)
+  --addressbar-smoke-dir=<dir>   Write addressbar smoke step screenshots into this directory
   --tab-smoke-url-one=<url>      Tab smoke: first tab target URL (http/https)
   --tab-smoke-url-two=<url>      Tab smoke: second tab target URL (http/https)
   --tab-smoke-dir=<dir>          Write tab smoke step screenshots into this directory
@@ -844,6 +885,7 @@ fn main() {
     let mut gui_smoke = cli.gui_smoke.map(gui_smoke::GuiSmoke::new);
     let mut parity_smoke = cli.parity_smoke.map(parity_smoke::ParitySmoke::new);
     let mut tab_smoke = cli.tab_smoke.map(tab_smoke::TabSmoke::new);
+    let mut addressbar_smoke = cli.addressbar_smoke.map(addressbar_smoke::AddressbarSmoke::new);
 
     tracing::info!("Entering event loop...");
 
@@ -883,6 +925,20 @@ fn main() {
             app.shutdown_child_processes();
             std::process::exit(3);
         }
+        if let Some(smoke) = addressbar_smoke.as_ref()
+            && let Err(error) = smoke.check_timeout()
+        {
+            tracing::error!("ADDR_SMOKE_FAILURE error={error}");
+            app.shutdown_child_processes();
+            std::process::exit(3);
+        }
+        if let Some(smoke) = addressbar_smoke.as_mut()
+            && let Err(error) = smoke.sample_mid_load(&mut app)
+        {
+            tracing::error!("ADDR_SMOKE_FAILURE error={error}");
+            app.shutdown_child_processes();
+            std::process::exit(3);
+        }
 
         app.poll_tab_fetch();
         app.expire_scrollbar_overlay();
@@ -895,6 +951,7 @@ fn main() {
                     && gui_smoke.is_none()
                     && parity_smoke.is_none()
                     && tab_smoke.is_none()
+                    && addressbar_smoke.is_none()
                 {
                     app.needs_redraw = false;
                 } else {
@@ -955,6 +1012,9 @@ fn main() {
                                 if let Some(smoke) = tab_smoke.as_mut() {
                                     smoke.start(&mut app);
                                 }
+                                if let Some(smoke) = addressbar_smoke.as_mut() {
+                                    smoke.start(&mut app);
+                                }
                                 tracing::debug!(
                                     "Surface init — physical: {}x{}, logical: {}x{}, scale: {:.2}",
                                     physical_size.width,
@@ -1001,7 +1061,10 @@ fn main() {
                     // 不能把新状态误配到刚呈现的上一张 framebuffer。
                     let presented_source = app.product_smoke_frame_source();
                     let capture_gpu_frame = app.gpu_renderer_is_some()
-                        && (smoke_capture_path.is_some() || gui_smoke.is_some() || tab_smoke.is_some());
+                        && (smoke_capture_path.is_some()
+                            || gui_smoke.is_some()
+                            || tab_smoke.is_some()
+                            || addressbar_smoke.is_some());
                     let presented_frame = if app.gpu_renderer_is_some() {
                         app.render_frame(app.physical_size.0, app.physical_size.1, true);
                         if capture_gpu_frame {
@@ -1098,6 +1161,22 @@ fn main() {
                             Ok(false) => {}
                             Err(error) => {
                                 tracing::error!("TAB_SMOKE_FAILURE error={error}");
+                                app.shutdown_child_processes();
+                                std::process::exit(3);
+                            }
+                        }
+                    }
+                    if let (Some(smoke), Some(frame), Some(source)) =
+                        (addressbar_smoke.as_mut(), presented_frame.as_ref(), presented_source)
+                    {
+                        match smoke.on_presented_frame(&mut app, frame, source) {
+                            Ok(true) => {
+                                app.shutdown_child_processes();
+                                std::process::exit(0);
+                            }
+                            Ok(false) => {}
+                            Err(error) => {
+                                tracing::error!("ADDR_SMOKE_FAILURE error={error}");
                                 app.shutdown_child_processes();
                                 std::process::exit(3);
                             }
@@ -1246,12 +1325,13 @@ fn main() {
             }
         }
 
-        if (app.needs_redraw || parity_smoke.is_some() || tab_smoke.is_some())
+        if (app.needs_redraw || parity_smoke.is_some() || tab_smoke.is_some() || addressbar_smoke.is_some())
             && (app.window_focused
                 || smoke_capture_path.is_some()
                 || gui_smoke.is_some()
                 || parity_smoke.is_some()
-                || tab_smoke.is_some())
+                || tab_smoke.is_some()
+                || addressbar_smoke.is_some())
             && let Some(ref win) = window
         {
             win.request_redraw();
