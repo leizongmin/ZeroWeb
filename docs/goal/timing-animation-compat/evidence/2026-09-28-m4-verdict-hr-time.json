@@ -1,0 +1,122 @@
+[
+  [
+    "hr-time/clamped-time-origin-isolated.https.html",
+    [
+      {
+        "name": "timeOrigins are clamped.",
+        "status": "Fail",
+        "message": "assert_equals: crossOriginIsolated is properly set expected true but got false"
+      }
+    ]
+  ],
+  [
+    "hr-time/cross-origin-isolated-timing-attack.https.html",
+    [
+      {
+        "name": "The recommended minimum resolution of the Performance interface has been set to 5 microseconds for cross-origin isolated contexts.",
+        "status": "Fail",
+        "message": "assert_equals: Document cross-origin isolated value matches expected true but got false"
+      }
+    ]
+  ],
+  [
+    "hr-time/performance-tojson.html",
+    [
+      {
+        "name": "Test performance.toJSON()",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "hr-time/raf-coarsened-time.https.html",
+    [
+      {
+        "name": "raf-coarsened-time",
+        "status": "Fail",
+        "message": "assert_approx_equals: timestamp should be coarsened expected a number but got a \"string\""
+      }
+    ]
+  ],
+  [
+    "hr-time/timeOrigin.html",
+    [
+      {
+        "name": "Window timeOrigin is close to Date.now() when there is no system clock adjustment.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "hr-time/timeOrigin.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 1886], state={\"loaded\":true,\"pending\":2,\"phase\":4,\"tests\":3}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "hr-time/timing-attack.html",
+    [
+      {
+        "name": "The recommended minimum resolution of the Performance interface has been set to 100 microseconds for cross-origin isolated contexts.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "hr-time/basic.any.js",
+    [
+      {
+        "name": "self.performance.now() is a function that returns a number",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self.performance.now() returns a positive number",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self.performance.now() difference is not negative",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Performance interface extends EventTarget.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "High resolution time has approximately the right relative magnitude",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "hr-time/monotonic-clock.any.js",
+    [
+      {
+        "name": "self.performance.now() returns a positive number",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self.performance.now() difference is not negative",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "hr-time/clamped-time-origin.html",
+    [
+      {
+        "name": "hr-time/clamped-time-origin.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 1073, 93], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ]
+]
