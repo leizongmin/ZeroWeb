@@ -891,6 +891,35 @@ fn ctrl_tab_cycles_to_next_tab() {
     assert_eq!(app.shell.active_tab_id().unwrap(), second);
 }
 
+/// Ctrl+Tab 切换后地址栏必须跟随活动标签（与点击/Ctrl+1~9 路径同款同步；
+/// M2 标签族演示流捕获的回归：cycle 路径漏掉 update_address_bar_from_active_tab）。
+#[test]
+fn ctrl_tab_updates_address_bar_to_active_tab() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let first = app.shell.active_tab_id().unwrap();
+    app.shell.navigate("http://one.test/a.html");
+    app.new_tab(Some("http://two.test/b.html"));
+    let second = app.shell.active_tab_id().unwrap();
+    assert_ne!(first, second);
+    // 新标签后地址栏显示第二个标签 URL。
+    assert_eq!(app.address_bar_text(), "http://two.test/b.html");
+
+    // Ctrl+Tab 切回第一个标签，地址栏必须跟随。
+    app.handle_key(BrowserApp::test_modifier_key_name(), true, None);
+    app.handle_key("Tab", true, None);
+    assert_eq!(app.shell.active_tab_id().unwrap(), first);
+    assert_eq!(
+        app.address_bar_text(),
+        "http://one.test/a.html",
+        "Ctrl+Tab 切换后地址栏应显示第一个标签的 URL"
+    );
+
+    // 再切回第二个标签同样跟随。
+    app.handle_key("Tab", true, None);
+    assert_eq!(app.shell.active_tab_id().unwrap(), second);
+    assert_eq!(app.address_bar_text(), "http://two.test/b.html");
+}
+
 /// Ctrl+H 应打开历史页。
 #[test]
 fn ctrl_h_opens_history_page() {

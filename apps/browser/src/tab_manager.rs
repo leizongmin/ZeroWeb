@@ -954,6 +954,11 @@ impl TabManager {
         self.snapshots.get(&tab_id).map(|s| s.navigation_epoch).unwrap_or(0)
     }
 
+    /// 演示流用（不带 cfg 门，release 真实窗口 smoke 可用）：标签最近快照的导航 epoch。
+    pub fn smoke_navigation_epoch(&self, tab_id: TabId) -> u64 {
+        self.snapshots.get(&tab_id).map(|s| s.navigation_epoch).unwrap_or(0)
+    }
+
     #[cfg(test)]
     pub fn clear_hit_test_for_test(&mut self, tab_id: TabId) {
         if let Some(snapshot) = self.snapshots.get_mut(&tab_id) {

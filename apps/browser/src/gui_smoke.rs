@@ -224,7 +224,11 @@ fn visible_page_stats(app: &BrowserApp, framebuffer: &FrameBuffer) -> Result<Opt
     Ok(Some(stats))
 }
 
-fn require_visual_change(before: Option<&RegionStats>, after: &RegionStats, action: &str) -> Result<(), String> {
+pub(crate) fn require_visual_change(
+    before: Option<&RegionStats>,
+    after: &RegionStats,
+    action: &str,
+) -> Result<(), String> {
     let before = before.ok_or_else(|| format!("{action} has no baseline frame"))?;
     let changed_samples = before
         .signature

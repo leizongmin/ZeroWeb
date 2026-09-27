@@ -2,7 +2,8 @@
 
 **入口文档**: [../desktop-browser.md](../desktop-browser.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-27（M1 Done：DC-1 三条全勾，CI run 36311188270 三平台启动冒烟取证闭环）
+**最后更新**: 2026-09-27（M2-S1 落地：标签族/导航控制真实窗口演示流全绿 + Ctrl+Tab
+地址栏跟随缺陷修复；M1 Done 维持）
 
 ---
 
@@ -25,7 +26,7 @@
 |---|------|------|
 | P1 | 真窗口端到端演示流（Linux）+ GPU 合成显示验收 | ✅ M1 首切片（三腿全绿，evidence/M1-real-window-main-path.md） |
 | P1' | macOS/Windows CI 启动冒烟（`--headless` CDP boot 探活步接进 ci.yml 矩阵） | ✅ Done（2026-09-27 CI run [36311188270](https://github.com/leizongmin/ZeroWeb/actions/runs/36311188270) 三平台 job 绿，launch smoke 两步全 ✓，DC-1 三条全勾） |
-| P2 | 标签族/地址栏/导航控制交互面 | ⏳ M2 |
+| P2 | 标签族/地址栏/导航控制交互面 | 🔄 M2-S1：多标签（创建/切换/拖拽/关闭）+ 导航控制（后退/前进/刷新）演示流全绿（evidence/M2-tabs-navigation.md）；余 M2-S2：地址栏键入导航/自动补全/加载进度 + 主页按钮（并入 M4 设置流先配 home_url） |
 | P3 | 下载管理器交互面 | ⏳ M3 |
 | P4 | engine 文本搜索 API（Ctrl+F 依赖，最小面评估） | ⏳ M3 |
 | P5 | 缩放 viewport 联动（④ 桥遗产消费）+ 右键菜单 | ⏳ M3（缩放的 Ctrl± 输入面已被 M1 腿消费，页面侧联动断言待 M3 收口） |
@@ -33,6 +34,21 @@
 
 ## 已完成切片
 
+- **M2-S1（2026-09-27）标签族/导航控制真实窗口演示流**：
+  - 资产：`apps/browser/src/tab_smoke.rs`（状态机，`--tab-smoke-url-one/-two/-dir`
+    CLI，与既有 smoke 模式互斥）+ `apps/browser/src/app_smoke_state.rs`（release 可用
+    的 smoke_* 状态只读面）+ `scripts/desktop-browser-m2-smoke.sh`（可重放入口）+
+    `examples/m2-tabs/{one,two}.html`
+  - 流程（全部真实输入路径）：Ctrl+T 新标签 → 第二标签导航 → Ctrl+Tab 切回 →
+    Alt+Left/Right 后退前进（真实历史条目）→ F5 刷新 epoch 断言 → 标签拖拽重排
+    （顺序 + 标签条像素签名可视变化）→ Ctrl+W 关闭
+  - **缺陷修复**：`cycle_active_tab` 补 `update_address_bar_from_active_tab` +
+    `on_active_tab_changed`（Ctrl+Tab 后地址栏跟随，与点标签/Ctrl+1~9 路径对齐）；
+    单测 `ctrl_tab_updates_address_bar_to_active_tab` 红→绿锚定
+  - 语义观察记档：启动欢迎页不进历史（不经 shell.navigate），后退从首个文档导航
+    起算——与 Chrome NTP 可回退不同，M4 复核
+  - 结果：全流程绿 + 复跑通过；DC-2 映射见
+    [evidence/M2-tabs-navigation.md](evidence/M2-tabs-navigation.md)
 - **M1-S2（2026-09-27）三平台 CI 启动冒烟接线**：
   - `scripts/browser-launch-smoke.sh`：headless CDP boot 探活（不开窗、runner 无需
     display；`/json/version` 断言 `Browser: ZeroWeb/` + `webSocketDebuggerUrl`，
@@ -69,9 +85,9 @@
 
 ## 下一步计划
 
-1. **M2**：标签族（创建/关闭/切换/拖拽排序）+ 地址栏（自动补全/加载进度）+ 导航控制
-   （前进/后退/刷新/主页）演示流——复用 M1 的 gui_smoke 状态机扩展步骤，或以
-   parity_smoke 场景 JSON 形态扩交互面
+1. **M2-S2**：地址栏演示流（键入 URL + Enter 导航 / 自动补全下拉弹出与选中 /
+   加载进度指示）——复用 tab_smoke 状态机扩展（地址栏点击聚焦 → 键入 → 补全断言 →
+   Enter）；主页按钮演示流并入 M4 设置流（先以设置面把 home_url 配为本地 fixture）
 2. **M3-M4**：按入口文档里程碑逐功能演示流（下载/查找/缩放联动/右键菜单/收藏/历史/设置）
 
 **待用户决策清单**：
@@ -86,7 +102,7 @@
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — 真窗口主链路验收 | ✅ Done（DC-1 三条全勾：Linux 演示流 + GPU 合成显示记账 + 三平台 CI 启动冒烟绿证据 run 36311188270） |
-| M2 — 导航与标签 | ⏳ |
+| M2 — 导航与标签 | 🔄 S1 全绿（多标签 + 导航控制，含 Ctrl+Tab 地址栏缺陷修复）；余 S2 地址栏键入/自动补全/加载进度 |
 | M3 — 内容工具 | ⏳ |
 | M4 — 数据面 | ⏳ |
 | M5 — 收口 | ⏳ |
@@ -94,8 +110,9 @@
 ## 验证基线
 
 - 测试基线：`make test` 全绿（经 test-guard；2026-09-27 本轮复验，随提交记账刷新计数）
-- 演示流门禁：`bash scripts/desktop-browser-m1-smoke.sh` 三腿全绿（M1 守成门，
-  渲染/组合器/窗口链路任何触碰后必跑）
+- 演示流门禁：`bash scripts/desktop-browser-m1-smoke.sh` 三腿全绿（M1 守成门）+
+  `bash scripts/desktop-browser-m2-smoke.sh` 全绿（M2 守成门）——渲染/组合器/窗口/
+  标签·导航链路任何触碰后必跑
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   演示流须可脚本重放才计入 evidence「绿」
 

@@ -2446,3 +2446,4 @@ include!("app_render_address.rs");
 // 拆分到独立文件以控制 app.rs 体积
 include!("app_platform.rs");
 include!("app_page_fonts.rs");
+include!("app_smoke_state.rs");

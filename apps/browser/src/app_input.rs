@@ -454,6 +454,10 @@ impl BrowserApp {
         let target = ids[next];
         self.shell.switch_tab(target);
         self.shell.set_tab_needs_attention(target, false);
+        // 与点击/Ctrl+1~9 切换路径同款同步：活动标签变更回调 + 地址栏跟手，
+        // 否则 Ctrl+Tab 后地址栏仍显示前一个标签的 URL（M2 演示流捕获）。
+        self.tabs.on_active_tab_changed(self.shell.active_tab_id());
+        self.update_address_bar_from_active_tab();
         // zoom 按标签存储——切换后按新活动标签重推 CSS 视口。
         self.sync_webview_viewport();
         self.needs_redraw = true;
