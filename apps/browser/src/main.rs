@@ -34,6 +34,7 @@ mod gui_smoke;
 mod headless;
 mod input_keys;
 mod layout;
+mod menu_zoom_smoke;
 mod page_scroll;
 mod page_selection;
 mod pages;
@@ -105,6 +106,8 @@ struct CliArgs {
     addressbar_smoke: Option<addressbar_smoke::AddressbarSmokeConfig>,
     /// 显式启用下载管理器真实窗口 smoke。
     download_smoke: Option<download_smoke::DownloadSmokeConfig>,
+    /// 显式启用右键菜单/缩放真实窗口 smoke。
+    menu_zoom_smoke: Option<menu_zoom_smoke::MenuZoomSmokeConfig>,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
@@ -138,6 +141,8 @@ fn parse_args_from(
     let mut addressbar_smoke_dir = None;
     let mut download_smoke_base = None;
     let mut download_smoke_dir = None;
+    let mut menu_zoom_smoke_base = None;
+    let mut menu_zoom_smoke_dir = None;
     let mut parity_scenario = None;
     let mut parity_output_dir = None;
 
@@ -317,6 +322,28 @@ fn parse_args_from(
                 })?));
         }
 
+        if let Some(value) = arg.strip_prefix("--menu-zoom-smoke-base=") {
+            menu_zoom_smoke_base = Some(value.to_string());
+        }
+
+        if arg == "--menu-zoom-smoke-base" {
+            menu_zoom_smoke_base = Some(
+                args.next()
+                    .ok_or_else(|| "--menu-zoom-smoke-base requires an HTTP(S) origin".to_string())?,
+            );
+        }
+
+        if let Some(value) = arg.strip_prefix("--menu-zoom-smoke-dir=") {
+            menu_zoom_smoke_dir = Some(PathBuf::from(value));
+        }
+
+        if arg == "--menu-zoom-smoke-dir" {
+            menu_zoom_smoke_dir =
+                Some(PathBuf::from(args.next().ok_or_else(|| {
+                    "--menu-zoom-smoke-dir requires a directory path".to_string()
+                })?));
+        }
+
         if let Some(value) = arg.strip_prefix("--parity-scenario=") {
             parity_scenario = Some(PathBuf::from(value));
         }
@@ -392,14 +419,24 @@ fn parse_args_from(
             return Err("--download-smoke-base and --download-smoke-dir must be provided together".to_string());
         }
     };
+    let menu_zoom_smoke = match (menu_zoom_smoke_base, menu_zoom_smoke_dir) {
+        (Some(base), Some(output_dir)) => Some(menu_zoom_smoke::MenuZoomSmokeConfig::new(base, output_dir)?),
+        (None, None) => None,
+        _ => {
+            return Err("--menu-zoom-smoke-base and --menu-zoom-smoke-dir must be provided together".to_string());
+        }
+    };
     let smoke_modes = usize::from(smoke_capture.is_some())
         + usize::from(gui_smoke.is_some())
         + usize::from(parity_smoke.is_some())
         + usize::from(tab_smoke.is_some())
         + usize::from(addressbar_smoke.is_some())
-        + usize::from(download_smoke.is_some());
+        + usize::from(download_smoke.is_some())
+        + usize::from(menu_zoom_smoke.is_some());
     if smoke_modes > 1 {
-        return Err("smoke capture, GUI smoke, parity smoke, tab smoke, addressbar smoke, and download smoke are mutually exclusive".to_string());
+        return Err(
+            "smoke modes (capture/gui/parity/tab/addressbar/download/menu-zoom) are mutually exclusive".to_string(),
+        );
     }
     if smoke_modes > 0 {
         if headless {
@@ -427,6 +464,7 @@ fn parse_args_from(
         tab_smoke,
         addressbar_smoke,
         download_smoke,
+        menu_zoom_smoke,
     })
 }
 
@@ -444,6 +482,8 @@ Options:
   --viewport-height=<px>         Headless/GUI smoke page viewport height (default: 600)
   --wpt-parity                   Match WPT/product-smoke: CPU renderer and 1.0 scale (make browser-cpu default)
   --smoke-capture=<png>          Capture the real presented window frame, emit region stats, then exit
+  --menu-zoom-smoke-base=<url>   Menu/zoom smoke: local fixture origin (http/https)
+  --menu-zoom-smoke-dir=<dir>    Write menu/zoom smoke step screenshots into this directory
   --download-smoke-base=<url>    Download smoke: local fixture origin (http/https)
   --download-smoke-dir=<dir>     Write download smoke step screenshots into this directory
   --addressbar-smoke-base=<url>  Addressbar smoke: local fixture origin (http/https)
@@ -922,6 +962,7 @@ fn main() {
     let mut tab_smoke = cli.tab_smoke.map(tab_smoke::TabSmoke::new);
     let mut addressbar_smoke = cli.addressbar_smoke.map(addressbar_smoke::AddressbarSmoke::new);
     let mut download_smoke = cli.download_smoke.map(download_smoke::DownloadSmoke::new);
+    let mut menu_zoom_smoke = cli.menu_zoom_smoke.map(menu_zoom_smoke::MenuZoomSmoke::new);
 
     tracing::info!("Entering event loop...");
 
@@ -975,6 +1016,13 @@ fn main() {
             app.shutdown_child_processes();
             std::process::exit(3);
         }
+        if let Some(smoke) = menu_zoom_smoke.as_ref()
+            && let Err(error) = smoke.check_timeout()
+        {
+            tracing::error!("MZ_SMOKE_FAILURE error={error}");
+            app.shutdown_child_processes();
+            std::process::exit(3);
+        }
         if let Some(smoke) = addressbar_smoke.as_mut()
             && let Err(error) = smoke.sample_mid_load(&mut app)
         {
@@ -996,6 +1044,7 @@ fn main() {
                     && tab_smoke.is_none()
                     && addressbar_smoke.is_none()
                     && download_smoke.is_none()
+                    && menu_zoom_smoke.is_none()
                 {
                     app.needs_redraw = false;
                 } else {
@@ -1062,6 +1111,9 @@ fn main() {
                                 if let Some(smoke) = download_smoke.as_mut() {
                                     smoke.start(&mut app);
                                 }
+                                if let Some(smoke) = menu_zoom_smoke.as_mut() {
+                                    smoke.start(&mut app);
+                                }
                                 tracing::debug!(
                                     "Surface init — physical: {}x{}, logical: {}x{}, scale: {:.2}",
                                     physical_size.width,
@@ -1112,7 +1164,8 @@ fn main() {
                             || gui_smoke.is_some()
                             || tab_smoke.is_some()
                             || addressbar_smoke.is_some()
-                            || download_smoke.is_some());
+                            || download_smoke.is_some()
+                            || menu_zoom_smoke.is_some());
                     let presented_frame = if app.gpu_renderer_is_some() {
                         app.render_frame(app.physical_size.0, app.physical_size.1, true);
                         if capture_gpu_frame {
@@ -1241,6 +1294,22 @@ fn main() {
                             Ok(false) => {}
                             Err(error) => {
                                 tracing::error!("DL_SMOKE_FAILURE error={error}");
+                                app.shutdown_child_processes();
+                                std::process::exit(3);
+                            }
+                        }
+                    }
+                    if let (Some(smoke), Some(frame), Some(source)) =
+                        (menu_zoom_smoke.as_mut(), presented_frame.as_ref(), presented_source)
+                    {
+                        match smoke.on_presented_frame(&mut app, frame, source) {
+                            Ok(true) => {
+                                app.shutdown_child_processes();
+                                std::process::exit(0);
+                            }
+                            Ok(false) => {}
+                            Err(error) => {
+                                tracing::error!("MZ_SMOKE_FAILURE error={error}");
                                 app.shutdown_child_processes();
                                 std::process::exit(3);
                             }
@@ -1393,14 +1462,16 @@ fn main() {
             || parity_smoke.is_some()
             || tab_smoke.is_some()
             || addressbar_smoke.is_some()
-            || download_smoke.is_some())
+            || download_smoke.is_some()
+            || menu_zoom_smoke.is_some())
             && (app.window_focused
                 || smoke_capture_path.is_some()
                 || gui_smoke.is_some()
                 || parity_smoke.is_some()
                 || tab_smoke.is_some()
                 || addressbar_smoke.is_some()
-                || download_smoke.is_some())
+                || download_smoke.is_some()
+                || menu_zoom_smoke.is_some())
             && let Some(ref win) = window
         {
             win.request_redraw();

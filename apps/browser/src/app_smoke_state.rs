@@ -82,4 +82,41 @@ impl BrowserApp {
     pub fn smoke_download_panel_visible(&self) -> bool {
         self.should_show_download_panel()
     }
+
+    /// 演示流用：上下文菜单是否可见。
+    pub fn smoke_context_menu_visible(&self) -> bool {
+        self.context_menu.visible
+    }
+
+    /// 演示流用：上下文菜单原点 `(x, y)`（可见时）。
+    pub fn smoke_context_menu_origin(&self) -> Option<(f32, f32)> {
+        self.context_menu
+            .visible
+            .then_some((self.context_menu.x, self.context_menu.y))
+    }
+
+    /// 演示流用：上下文菜单项 id 序列（与行序一致，分隔符以 "-" 占位）。
+    pub fn smoke_context_menu_item_ids(&self) -> Vec<String> {
+        self.context_menu
+            .items
+            .iter()
+            .map(|item| {
+                if item.is_separator() {
+                    "-".to_string()
+                } else {
+                    item.id().to_string()
+                }
+            })
+            .collect()
+    }
+
+    /// 演示流用：系统剪贴板文本（arboard；X11 selection 同进程读回）。
+    pub fn smoke_clipboard_text(&self) -> Option<String> {
+        crate::clipboard::read_text()
+    }
+
+    /// 演示流用：当前页面缩放（1.0 = 100%）。
+    pub fn smoke_page_zoom(&self) -> f32 {
+        self.shell.zoom()
+    }
 }

@@ -269,8 +269,9 @@ impl BrowserApp {
             "copy" => {
                 if context_type == ContextType::Editable {
                     let _ = self.address_bar.copy_selection();
-                } else {
-                    let _ = self.copy_page_selection();
+                } else if !self.copy_page_selection() {
+                    // 菜单打开时选区存在但提取不到文本（glyphs 未就绪/选区已清）。
+                    tracing::warn!("context menu page copy had no selection text");
                 }
             }
             "cut" if self.address_bar.cut_selection() => {
