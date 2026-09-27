@@ -2413,8 +2413,10 @@
   function _zw_structured_clone(val, seen) {
     if (val === null) return val;
     var t = typeof val;
-    if (t === 'function') throw new DOMException('function could not be cloned.', 'DataCloneError');
-    if (t === 'symbol') throw new DOMException('symbol could not be cloned.', 'DataCloneError');
+    // R9/R382 wrong-global 先例：globalThis 构造器优先（页面 instanceof 比对的是已发布全局）。
+    var _cloneDE = globalThis.DOMException || DOMException;
+    if (t === 'function') throw new _cloneDE('function could not be cloned.', 'DataCloneError');
+    if (t === 'symbol') throw new _cloneDE('symbol could not be cloned.', 'DataCloneError');
     if (t !== 'object') return val; // primitive（number/string/boolean/undefined/bigint）原样
     if (seen.has(val)) return seen.get(val); // 循环引用 → 已记忆的克隆
     if (val instanceof Date) { var d = new Date(val.getTime()); seen.set(val, d); return d; }

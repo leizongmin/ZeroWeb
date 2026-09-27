@@ -947,13 +947,86 @@
   var _perfEntries = [];
   var _perfMarks = {};
   var _perfObservers = [];
-  // 解析 measure 的 start/end 标记：undefined→（end 用 now / start 用 0）/ number→原值 / string→marks 表查
-  // （查无抛 TypeError，spec 一致：measure 引用未注册 mark 名应报错；正确用法先 mark 后 measure）。
-  function _resolveMarkTime(mark, isEnd) {
-    if (mark === undefined) return isEnd ? _perfNow() : 0;
-    if (typeof mark === 'number') return mark;
-    if (Object.prototype.hasOwnProperty.call(_perfMarks, mark)) return _perfMarks[mark];
-    throw new TypeError("Failed to execute 'measure' on 'Performance': The mark '" + mark + "' does not exist.");
+  // M2-S1（timing-animation-compat goal，2026-09-28）——mark/measure 异常语义（User
+  // Timing §3.1；WPT user-timing mark-errors / measure_syntax_err / measure-with-dict /
+  // measure-exceptions / mark_exceptions / mark-entry-constructor /
+  // structured-serialize-detail 勘域锚定）：
+  // - mark 名：缺参 TypeError；保留 timing 属性名 → SyntaxError DOMException
+  //   （code 12；空名不拒——L1 mark.html 以 '' 为合法名，corpus 无空名抛错断言）。
+  //   measure 的 name 不查保留表
+  //  - measure 的 start/end 位置实参按 (DOMString or options) union：**非 object 按
+  //   DOMString 转换后查 marks 表**（number 51.15 → "51.15" 查无 → SyntaxError，
+  //   measure-exceptions「number 按字符串不按数值」锚定）
+  // - marks 表查名：timing 属性名特例——navigationStart 恒可用（= time origin，本
+  //   shim 相对域 0）；其余 timing 值本引擎无导航时序管线恒 empty → InvalidAccessError
+  //  （code 15，measure-exceptions eventMarks ×11 锚定）；普通名查无 → SyntaxError
+  // - options dict（Web IDL dict 转换）：undefined/null 缺省；非 object → TypeError
+  //   （mark-errors：Number/NaN/Infinity/String 全 TypeError）；start+duration+end
+  //   三全 → TypeError（over-determination）；detail-only（无 start/end/duration）
+  //   → TypeError（measure-exceptions Exception8 Chromium 行为锚定）；3 参形态 dict
+  //   带 start/duration 再给 endOptions → TypeError；负值/NaN 时间 → TypeError
+  // - detail：structured clone（不可克隆 → DataCloneError code 25）；缺省 null
+  var _perfTimingAttributes = ['navigationStart', 'unloadEventStart', 'unloadEventEnd',
+    'redirectStart', 'redirectEnd', 'fetchStart', 'domainLookupStart', 'domainLookupEnd',
+    'connectStart', 'connectEnd', 'secureConnectionStart', 'requestStart', 'responseStart',
+    'responseEnd', 'domLoading', 'domInteractive', 'domContentLoadedEventStart',
+    'domContentLoadedEventEnd', 'domComplete', 'loadEventStart', 'loadEventEnd'];
+
+  function _perfDomException(message, name) {
+    // R9/R382 wrong-global 先例：**globalThis 优先**——词法裸名落 shim 闭包内构造器，
+    // 页面/testharness instanceof 比对的是已发布全局构造器，闭包内构造恒 wrong-global。
+    return new (globalThis.DOMException || DOMException || Error)(message, name);
+  }
+  function _perfIsTimingAttribute(name) {
+    return _perfTimingAttributes.indexOf(name) !== -1;
+  }
+  // mark 名校验：保留 timing 属性名 → SyntaxError（mark_exceptions /
+  // invoke_with_timing_attributes ×21 案断言）。**空名不拒**——L1 mark.html /
+  // clearMarks.html 以 `''` 为合法名（mark_names[0]），corpus 无空名抛错断言
+  // （L3 spec 空串条款无 WPT 锚，Chromium 实测接受空名）。
+  function _perfValidateMarkName(name) {
+    var s = String(name);
+    if (_perfIsTimingAttribute(s)) {
+      throw _perfDomException("Failed to execute 'mark' on 'Performance': '" + s + "' is not a valid mark name.", 'SyntaxError');
+    }
+    return s;
+  }
+  // options dict 转换（Web IDL）：undefined/null → null（成员全缺省）；非 object →
+  // TypeError（dict 实参只收 object）。
+  function _perfPrepareOptions(options, method) {
+    if (options === undefined || options === null) return null;
+    if (typeof options !== 'object') {
+      throw new TypeError("Failed to execute '" + method + "' on 'Performance': parameter 2 (" + "'options') is not an object.");
+    }
+    return options;
+  }
+  // detail structured clone（缺省 null；不可克隆 → DataCloneError，
+  // structured-serialize-detail 同簇）。
+  function _perfCloneDetail(options) {
+    if (options === null || options.detail === undefined || options.detail === null) return null;
+    return structuredClone(options.detail);
+  }
+  // marks 表查名（string 共用路径）：timing 属性名特例 navigationStart=0、其余
+  // InvalidAccessError；普通名查无 SyntaxError。
+  function _perfLookupMark(name) {
+    if (Object.prototype.hasOwnProperty.call(_perfMarks, name)) return _perfMarks[name];
+    if (_perfIsTimingAttribute(name)) {
+      if (name === 'navigationStart') return 0;
+      throw _perfDomException("Failed to execute 'measure' on 'Performance': The mark '" + name + "' is empty.", 'InvalidAccessError');
+    }
+    throw _perfDomException("Failed to execute 'measure' on 'Performance': The mark '" + name + "' does not exist.", 'SyntaxError');
+  }
+  // dict 成员解析（start/end/duration 均为 (DOMString or unrestricted double)）：
+  // undefined → fallback；number → 负值/NaN TypeError 后原值；其余 → 查 marks 表。
+  function _perfResolveMember(value, fallback) {
+    if (value === undefined) return fallback;
+    if (typeof value === 'number') {
+      if (isNaN(value) || value < 0) {
+        throw new TypeError('Failed to execute \'measure\' on \'Performance\': timestamps must not be negative or NaN.');
+      }
+      return value;
+    }
+    return _perfLookupMark(String(value));
   }
   // observer 派发用 entry list（getEntries/getEntriesByType/getEntriesByName over 传入快照）。
   function _makeObserverList(entries) {
@@ -993,17 +1066,76 @@
     now: _perfNow,
     // timeOrigin = 0（相对原点：now() 返自原点起 elapsed ms；绝对 epoch 语义未提供，文档记录）。
     timeOrigin: 0,
-    mark: function (name) {
-      var entry = { name: String(name), entryType: 'mark', startTime: _perfNow(), duration: 0 };
+    mark: function (name, markOptions) {
+      if (arguments.length < 1) {
+        throw new TypeError("Failed to execute 'mark' on 'Performance': 1 argument required, but only 0 present.");
+      }
+      var entry = new PerformanceMark(name, markOptions);
       _perfEntries.push(entry);
       _perfMarks[entry.name] = entry.startTime;
       _notifyEntry(entry);
       return entry;
     },
-    measure: function (name, startMark, endMark) {
-      var start = _resolveMarkTime(startMark, false);
-      var end = _resolveMarkTime(endMark, true);
-      var entry = { name: String(name), entryType: 'measure', startTime: start, duration: end - start };
+    // measure 三形态（User Timing §3.1.3）：measure(name) / measure(name, startMark) /
+    // measure(name, startOrOptions, endOptions)。startOrOptions 为 dict 时支持
+    // {start,end,duration,detail}（measure-with-dict 23 案）。
+    measure: function (name, startOrOptions, endOptions) {
+      if (arguments.length < 1) {
+        throw new TypeError("Failed to execute 'measure' on 'Performance': 1 argument required, but only 0 present.");
+      }
+      var start;
+      var end;
+      var detail = null;
+      if (endOptions !== undefined) {
+        // 3 参形态：dict 带 start/duration 再给 endOptions → TypeError（end 双写）；
+        // {} / null / undefined / 无 start·duration 成员的 dict → start 0
+        //（measure20-23「interpreted as start time being 0」）。
+        if (startOrOptions !== null && typeof startOrOptions === 'object'
+          && ('start' in startOrOptions || 'duration' in startOrOptions)) {
+          throw new TypeError("Failed to execute 'measure' on 'Performance': endOptions cannot be combined with options.start or options.duration.");
+        }
+        start = (startOrOptions === undefined || startOrOptions === null || typeof startOrOptions === 'object')
+          ? 0
+          : _perfLookupMark(String(startOrOptions));
+        end = _perfLookupMark(String(endOptions));
+      } else if (startOrOptions === undefined || startOrOptions === null) {
+        // 无 start 实参（或 null）：start 0、end now（measure1-3）。
+        start = 0;
+        end = _perfNow();
+      } else if (typeof startOrOptions === 'object') {
+        // dict 形态：{start, end, duration, detail}（成员可缺省）。
+        var o = _perfPrepareOptions(startOrOptions, 'measure');
+        var hasStart = o.start !== undefined;
+        var hasEnd = o.end !== undefined;
+        var hasDuration = o.duration !== undefined;
+        // over-determination（Exception9）与 detail-only（Exception8）→ TypeError。
+        if (hasStart && hasDuration && hasEnd) {
+          throw new TypeError("Failed to execute 'measure' on 'Performance': options.start, options.duration and options.end cannot be combined.");
+        }
+        if (!hasStart && !hasDuration && !hasEnd && o.detail !== undefined) {
+          throw new TypeError("Failed to execute 'measure' on 'Performance': one of options.start, options.end or options.duration is required.");
+        }
+        start = hasStart ? _perfResolveMember(o.start, 0) : 0;
+        var duration = hasDuration ? _perfResolveMember(o.duration, 0) : undefined;
+        if (hasEnd) {
+          end = _perfResolveMember(o.end, _perfNow());
+          // {duration(,end)}（无 start）：startTime = end - duration（measure19）。
+          if (hasDuration && !hasStart) start = end - duration;
+        } else if (hasDuration) {
+          end = hasStart ? start + duration : _perfNow();
+          // {duration} 单独：startTime = now - duration。
+          if (!hasStart) start = end - duration;
+        } else {
+          end = _perfNow();
+        }
+        detail = _perfCloneDetail(o);
+      } else {
+        // string（或按 DOMString 转换的其它非 object）→ marks 表查（number 51.15 →
+        // "51.15" 查无 SyntaxError）。
+        start = _perfLookupMark(String(startOrOptions));
+        end = _perfNow();
+      }
+      var entry = _perfMakeMeasure(name, start, end - start, detail);
       _perfEntries.push(entry);
       _notifyEntry(entry);
       return entry;
@@ -1030,6 +1162,52 @@
       });
     },
   };
+
+  // PerformanceMark（User Timing §2.1）——可构造接口：校验同 mark() 但**不入 entry
+  // buffer**（mark-entry-constructor：new PerformanceMark 不进 getEntriesByName）。
+  // startTime 缺省 now；detail 缺省 null（structured clone）。
+  function PerformanceMark(name, markOptions) {
+    if (!(this instanceof PerformanceMark)) {
+      throw new TypeError("Constructor PerformanceMark requires 'new'");
+    }
+    if (arguments.length < 1) {
+      throw new TypeError("Failed to construct 'PerformanceMark': 1 argument required, but only 0 present.");
+    }
+    var options = _perfPrepareOptions(markOptions, 'PerformanceMark');
+    this.name = _perfValidateMarkName(name);
+    this.entryType = 'mark';
+    this.startTime = (options && options.startTime !== undefined)
+      ? _perfResolveMember(options.startTime, _perfNow())
+      : _perfNow();
+    this.duration = 0;
+    this.detail = _perfCloneDetail(options);
+  }
+  PerformanceMark.prototype.toJSON = function () {
+    return { name: this.name, entryType: this.entryType, startTime: this.startTime, duration: this.duration, detail: this.detail };
+  };
+  try { PerformanceMark.prototype[Symbol.toStringTag] = 'PerformanceMark'; } catch (_e) {}
+  globalThis.PerformanceMark = PerformanceMark;
+
+  // PerformanceMeasure——接口对象仅 instanceof/toString 面（spec 无公开构造，
+  // instance 由 measure() 内部 _perfMakeMeasure 创建，直调 Illegal constructor）。
+  function PerformanceMeasure() {
+    throw new TypeError('Illegal constructor');
+  }
+  PerformanceMeasure.prototype.toJSON = function () {
+    return { name: this.name, entryType: this.entryType, startTime: this.startTime, duration: this.duration, detail: this.detail };
+  };
+  try { PerformanceMeasure.prototype[Symbol.toStringTag] = 'PerformanceMeasure'; } catch (_e) {}
+  globalThis.PerformanceMeasure = PerformanceMeasure;
+
+  function _perfMakeMeasure(name, startTime, duration, detail) {
+    var entry = Object.create(PerformanceMeasure.prototype);
+    entry.name = String(name);
+    entry.entryType = 'measure';
+    entry.startTime = startTime;
+    entry.duration = duration;
+    entry.detail = detail;
+    return entry;
+  }
 
   // PerformanceObserver（R2821）——观察 performance entry（mark/measure/longtask/paint/navigation/resource 等）。
   // observe({entryTypes:[...]} 或 {type:'...'}) 注册 entryType；新 entry 经 _notifyEntry 排队，每 observer 至多

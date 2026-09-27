@@ -752,13 +752,15 @@ fn test_performance_mark_measure_observer_r2821() {
     );
 
     // performance.measure 计算 duration = mark(b).start - mark(a).start（>=0）；从原点 measure duration>=0；
-    // 未知 mark 名抛 TypeError。
+    // 未知 mark 名抛 SyntaxError DOMException（User Timing §3.1.3——WPT user-timing
+    // measure_syntax_err.any / measure-exceptions 锚定 code 12；R2821 旧断言 TypeError 是
+    // 修齐前行为，M2-S1 timing-animation-compat 更新）。
     sandbox
         .execute(
             "globalThis.__ms = performance.measure('ab', 'a', 'b');\
              globalThis.__mo = performance.measure('from-origin').duration >= 0;\
              globalThis.__err = 'no';\
-             try { performance.measure('x', 'missing'); } catch(e){ globalThis.__err = (e instanceof TypeError) ? 'TypeError' : 'other'; }",
+             try { performance.measure('x', 'missing'); } catch(e){ globalThis.__err = (e instanceof DOMException && e.name === 'SyntaxError') ? 'SyntaxError' : 'other'; }",
         )
         .unwrap();
     assert_eq!(
@@ -776,8 +778,8 @@ fn test_performance_mark_measure_observer_r2821() {
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__err)").unwrap().value,
-        "TypeError",
-        "measure 引用未知 mark 名抛 TypeError"
+        "SyntaxError",
+        "measure 引用未知 mark 名抛 SyntaxError DOMException"
     );
 
     // clearMarks / clearMeasures 清 buffer。
