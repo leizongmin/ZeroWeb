@@ -4949,18 +4949,190 @@
 
   // getComputedTiming 归一化（AnimationEffect/getComputedTiming.html 勘域：fill 'auto'→
   // 'none'、duration 'auto'→0、endTime/activeDuration 展开、progress/currentIteration null）。
+  // M3-S2（Web Animations §4.9 calculations）：getComputedTiming 从持有 animation 的
+  // localTime（currentTime − startTime）解析 phase / progress / currentIteration——
+  // timing-model 用例（phases-and-states / current-iteration / simple-iteration-progress /
+  // transformed-progress / local-time）以 `animation.currentTime = X` 驱动后断言，纯函数
+  // 可解析、无需 vsync。无持有 animation（构造路径）→ progress/currentIteration null
+  //（§4.9.1 localTime null 语义，getComputedTiming.html 构造路径不检查此二字段）。
   function _zwEffComputedTiming(t) {
-    var duration = (t.duration === 'auto' || t.duration === undefined) ? 0 : t.duration;
-    var activeDuration = duration * t.iterations;
+    var duration = (t.duration === 'auto' || t.duration === undefined || t.duration === null) ? 0 : t.duration;
+    var iterations = t.iterations;
+    var activeDuration = duration * iterations;
     var endTime = t.delay + activeDuration + t.endDelay;
+    var fill = (t.fill === 'auto') ? 'none' : t.fill;
+
+    var localTime = null;
+    var anim = t._animation || null;
+    if (anim && anim.currentTime != null) {
+      localTime = anim.currentTime - (anim.startTime == null ? 0 : anim.startTime);
+    }
+
+    // §4.9.2 active time：before/after 相位仅 fill backwards/forwards/both 提供
+    // activeTime（0 / activeDuration），fill none → null（progress 随之 null——
+    // assert_phase 以「fill none 下 progress 是否 null」判相位）。
+    var activeTime = null;
+    if (localTime !== null) {
+      if (localTime < t.delay) {
+        if (fill === 'backwards' || fill === 'both') activeTime = 0;
+      } else if (localTime < t.delay + activeDuration) {
+        activeTime = localTime - t.delay;
+      } else if (localTime < endTime) {
+        if (fill === 'forwards' || fill === 'both') activeTime = activeDuration;
+      } else {
+        if (fill === 'forwards' || fill === 'both') activeTime = activeDuration;
+      }
+    }
+
+    // §4.9.3 overall/iteration progress + §4.9.4 current iteration。
+    var progress = null;
+    var currentIteration = null;
+    if (activeTime !== null) {
+      if (activeDuration === 0) {
+        // 零时长/零迭代：进度取 iterationStart 小数部（§zero-iterations play state）。
+        var startFrac = t.iterationStart % 1;
+        progress = (t.iterations === 0 && fill === 'none') ? null : startFrac;
+        currentIteration = Math.floor(t.iterationStart) + ((t.iterations === 0) ? 0 : (localTime >= t.delay ? t.iterations : 0));
+      } else {
+        var overall = (activeTime / duration) + t.iterationStart;
+        var idx = Math.floor(overall);
+        var frac = overall - idx;
+        // 方向（§4.9.3 directed progress；alternate 按迭代索引奇偶）。
+        var dir = t.direction;
+        var directed = frac;
+        if (dir === 'reverse') {
+          directed = 1 - frac;
+        } else if (dir === 'alternate' || dir === 'alternate-reverse') {
+          var even = (idx % 2 === 0);
+          if (dir === 'alternate') directed = even ? frac : 1 - frac;
+          else directed = even ? 1 - frac : frac;
+        }
+        progress = (frac === 0 && activeTime > 0) ? 1 : directed;
+        currentIteration = idx;
+      }
+    }
+
+    // §4.9.2 相位命名。
+    var phase;
+    if (localTime === null) phase = 'idle';
+    else if (localTime < t.delay) phase = 'before';
+    else if (localTime < t.delay + activeDuration) phase = 'active';
+    else phase = 'after';
+
     return {
-      startTime: 0, endTime: endTime, activeDuration: activeDuration,
+      startTime: anim ? (anim.startTime == null ? 0 : anim.startTime) : 0,
+      endTime: endTime, activeDuration: activeDuration,
       delay: t.delay, endDelay: t.endDelay,
-      fill: (t.fill === 'auto') ? 'none' : t.fill,
-      iterationStart: t.iterationStart, iterations: t.iterations,
+      fill: fill,
+      iterationStart: t.iterationStart, iterations: iterations,
       duration: duration, direction: t.direction, easing: t.easing,
-      progress: null, currentIteration: null,
+      progress: progress, currentIteration: currentIteration,
+      phase: phase,
+      localTime: localTime,
     };
+  }
+
+
+  // M3-S2（Web Animations §5.4.15 processing keyframes）：
+  // - **animatable 白名单**：property-indexed/sequence 解析只对可动画 CSS 属性读值
+  //   （getter 安全——processing-001「Accessor not called」断言非可动画属性 0 次访问）；
+  //   白名单外属性不读取、不落关键帧（spec：non-animatable dropped）
+  // - offset ∈ [0,1]（数字或 null）；easing 语法校验（gInvalidEasings 簇）；composite
+  //   ∈ {replace,add,accumulate,auto}——校验在**全部属性读取之后**统一抛 TypeError
+  //   （processing-002「All properties were read before throwing」断言）
+  var _zwAnimatableProps = {
+    'background-color': 1, 'background-position': 1, 'background-size': 1,
+    'block-size': 1, 'border-block-color': 1, 'border-block-end-color': 1,
+    'border-block-end-width': 1, 'border-block-start-color': 1,
+    'border-block-start-width': 1, 'border-block-width': 1,
+    'border-bottom-color': 1, 'border-bottom-left-radius': 1,
+    'border-bottom-right-radius': 1, 'border-bottom-width': 1,
+    'border-color': 1, 'border-end-end-radius': 1, 'border-end-start-radius': 1,
+    'border-inline-color': 1, 'border-inline-end-color': 1,
+    'border-inline-end-width': 1, 'border-inline-start-color': 1,
+    'border-inline-start-width': 1, 'border-inline-width': 1,
+    'border-left-color': 1, 'border-left-width': 1,
+    'border-radius': 1, 'border-right-color': 1, 'border-right-width': 1,
+    'border-start-end-radius': 1, 'border-start-start-radius': 1,
+    'border-top-color': 1, 'border-top-left-radius': 1,
+    'border-top-right-radius': 1, 'border-top-width': 1, 'border-width': 1,
+    'bottom': 1, 'caret-color': 1, 'clip': 1, 'clip-path': 1, 'color': 1,
+    'column-count': 1, 'column-gap': 1, 'column-rule': 1, 'column-rule-color': 1,
+    'column-rule-width': 1, 'column-width': 1, 'fill': 1, 'fill-opacity': 1,
+    'filter': 1, 'flex': 1, 'flex-basis': 1, 'flex-grow': 1, 'flex-shrink': 1,
+    'float': 0, 'font-size': 0, 'font-size-adjust': 1, 'font-stretch': 1,
+    'font-weight': 1, 'height': 1, 'inline-size': 1, 'inset': 1,
+    'inset-block': 1, 'inset-block-end': 1, 'inset-block-start': 1,
+    'inset-inline': 1, 'inset-inline-end': 1, 'inset-inline-start': 1,
+    'left': 1, 'letter-spacing': 1, 'line-height': 1, 'margin': 1,
+    'margin-block': 1, 'margin-block-end': 1, 'margin-block-start': 1,
+    'margin-bottom': 1, 'margin-inline': 1, 'margin-inline-end': 1,
+    'margin-inline-start': 1, 'margin-left': 1, 'margin-right': 1,
+    'margin-top': 1, 'mask': 1, 'mask-border': 1, 'max-block-size': 1,
+    'max-height': 1, 'max-inline-size': 1, 'max-width': 1, 'min-block-size': 1,
+    'min-height': 1, 'min-inline-size': 1, 'min-width': 1, 'object-position': 1,
+    'offset': 1, 'offset-anchor': 1, 'offset-distance': 1, 'offset-path': 1,
+    'offset-position': 1, 'offset-rotate': 1, 'opacity': 1, 'order': 1,
+    'outline': 1, 'outline-color': 1, 'outline-offset': 1, 'outline-width': 1,
+    'padding': 1, 'padding-block': 1, 'padding-block-end': 1,
+    'padding-block-start': 1, 'padding-bottom': 1, 'padding-inline': 1,
+    'padding-inline-end': 1, 'padding-inline-start': 1, 'padding-left': 1,
+    'padding-right': 1, 'padding-top': 1, 'perspective': 1,
+    'perspective-origin': 1, 'right': 1, 'rotate': 1, 'row-gap': 1, 'scale': 1,
+    'scroll-margin': 1, 'scroll-padding': 1, 'shape-image-threshold': 1,
+    'shape-margin': 1, 'shape-outside': 1, 'stop-color': 1, 'stop-opacity': 1,
+    'stroke': 1, 'stroke-color': 1, 'stroke-dasharray': 1, 'stroke-dashoffset': 1,
+    'stroke-miterlimit': 1, 'stroke-opacity': 1, 'stroke-width': 1,
+    'text-decoration': 1, 'text-decoration-color': 1, 'text-decoration-thickness': 1,
+    'text-emphasis': 1, 'text-emphasis-color': 1, 'text-indent': 1,
+    'text-shadow': 1, 'top': 1, 'transform': 1, 'transform-origin': 1,
+    'translate': 1, 'vertical-align': 1, 'visibility': 1, 'width': 1,
+    'word-spacing': 1, 'z-index': 1,
+  };
+
+  function _zwIsAnimatableProp(prop) {
+    var v = _zwAnimatableProps[prop];
+    if (v !== undefined) return !!v;
+    var kebab = (typeof _stylePropName === 'function') ? _stylePropName(prop) : prop;
+    return !!_zwAnimatableProps[kebab];
+  }
+
+  function _zwIsValidEasing(e) {
+    if (typeof e !== 'string') return false;
+    var s = e.trim();
+    if (s === 'linear' || s === 'ease' || s === 'ease-in' || s === 'ease-out'
+      || s === 'ease-in-out' || s === 'step-start' || s === 'step-end') return true;
+    var m = s.match(/^cubic-bezier\(([^)]*)\)$/);
+    if (m) {
+      var parts = m[1].split(',');
+      if (parts.length !== 4) return false;
+      var x1 = Number(parts[0].trim());
+      var x2 = Number(parts[2].trim());
+      var y1 = Number(parts[1].trim());
+      var y2 = Number(parts[3].trim());
+      return !(isNaN(x1) || isNaN(x2) || isNaN(y1) || isNaN(y2))
+        && x1 >= 0 && x1 <= 1 && x2 >= 0 && x2 <= 1;
+    }
+    m = s.match(/^steps\(([^)]*)\)$/);
+    if (m) {
+      var sp = m[1].split(',');
+      var n = Number(sp[0].trim());
+      if (sp.length > 2) return false;
+      if (!(n >= 1)) return false;
+      if (sp.length === 2) {
+        var kw = sp[1].trim();
+        if (kw !== 'jump-start' && kw !== 'jump-end' && kw !== 'jump-none'
+          && kw !== 'jump-both' && kw !== 'start' && kw !== 'end') return false;
+      }
+      return true;
+    }
+    m = s.match(/^linear\(([^)]*)\)$/);
+    if (m) return m[1].trim().length > 0;
+    return false;
+  }
+
+  function _zwIsValidComposite(v, allowAuto) {
+    return v === 'replace' || v === 'add' || v === 'accumulate' || (!!allowAuto && v === 'auto');
   }
 
   // 关键帧解析（§5.4.15 normalize）：数组形态（每项属性 dict + 可选 offset/easing/
@@ -4971,6 +5143,7 @@
     var i;
     var j;
     var prop;
+    var pendingError = null;
     if (keyframes == null) return out;
     if (Array.isArray(keyframes)) {
       for (i = 0; i < keyframes.length; i++) {
@@ -4979,23 +5152,34 @@
         for (prop in src) {
           if (!Object.prototype.hasOwnProperty.call(src, prop)) continue;
           if (prop === 'offset' || prop === 'easing' || prop === 'composite') continue;
+          if (!_zwIsAnimatableProp(prop)) continue;
           kf[prop] = String(src[prop]);
         }
         kf.offset = (src.offset == null) ? null : Number(src.offset);
+        if (kf.offset != null && (isNaN(kf.offset) || kf.offset < 0 || kf.offset > 1)) {
+          pendingError = pendingError || new TypeError('offset must be in the range [0, 1]');
+        }
         kf.computedOffset = (kf.offset == null || isNaN(kf.offset)) ? null : kf.offset;
         kf.easing = (src.easing != null) ? String(src.easing) : 'linear';
-        // composite 缺省 'auto'（spec getKeyframes 序列化——仅显式指定才落具体值）。
         kf.composite = (src.composite != null) ? String(src.composite) : 'auto';
+        if (!_zwIsValidEasing(kf.easing)) {
+          pendingError = pendingError || new TypeError("easing '" + kf.easing + "' is not a valid easing function");
+        }
+        if (!_zwIsValidComposite(kf.composite, true)) {
+          pendingError = pendingError || new TypeError("composite '" + kf.composite + "' is not valid");
+        }
         out.push(kf);
       }
     } else if (typeof keyframes === 'object') {
-      // property-indexed：数组值属性 → 跨度展开。
       var spans = 0;
       for (prop in keyframes) {
         if (!Object.prototype.hasOwnProperty.call(keyframes, prop)) continue;
         if (prop === 'offset' || prop === 'easing' || prop === 'composite') continue;
+        if (!_zwIsAnimatableProp(prop)) continue;
         if (Array.isArray(keyframes[prop]) && keyframes[prop].length > spans) {
           spans = keyframes[prop].length;
+        } else if (!Array.isArray(keyframes[prop])) {
+          spans = Math.max(spans, 1);
         }
       }
       if (spans === 0) spans = 1;
@@ -5007,30 +5191,71 @@
         for (prop in keyframes) {
           if (!Object.prototype.hasOwnProperty.call(keyframes, prop)) continue;
           if (prop === 'offset' || prop === 'easing' || prop === 'composite') continue;
+          if (!_zwIsAnimatableProp(prop)) continue;
           var v = keyframes[prop];
-          k2[prop] = String(Array.isArray(v) ? v[Math.min(i, v.length - 1)] : v);
+          if (Array.isArray(v)) {
+            var item = v[Math.min(i, v.length - 1)];
+            if (item === null || (typeof item !== 'string' && typeof item !== 'number')) {
+              pendingError = pendingError || new TypeError('keyframe property values must be strings or numbers');
+              item = '';
+            }
+            k2[prop] = String(item);
+          } else {
+            if (v === null || (typeof v !== 'string' && typeof v !== 'number')) {
+              pendingError = pendingError || new TypeError('keyframe property values must be strings or numbers');
+              v = '';
+            }
+            k2[prop] = String(v);
+          }
         }
-        k2.offset = (offsets && offsets[i] != null) ? Number(offsets[i]) : null;
+        var off = offsets ? offsets[i] : null;
+        if (off === undefined) off = null;
+        k2.offset = (off == null) ? null : Number(off);
+        if (k2.offset != null && (isNaN(k2.offset) || k2.offset < 0 || k2.offset > 1)) {
+          pendingError = pendingError || new TypeError('offset must be in the range [0, 1]');
+        }
         k2.computedOffset = (k2.offset == null || isNaN(k2.offset)) ? null : k2.offset;
-        k2.easing = (easings && easings[i] != null) ? String(easings[i]) : 'linear';
-        // composite 缺省 'auto'（同上）。
-        k2.composite = (composites && composites[i] != null) ? String(composites[i]) : 'auto';
+        var ea = easings ? easings[i] : undefined;
+        if (ea === undefined || ea === null) ea = 'linear';
+        k2.easing = String(ea);
+        if (!_zwIsValidEasing(k2.easing)) {
+          pendingError = pendingError || new TypeError("easing '" + k2.easing + "' is not a valid easing function");
+        }
+        var cp = composites ? composites[i] : undefined;
+        k2.composite = (cp === undefined || cp === null) ? 'auto' : String(cp);
+        if (!_zwIsValidComposite(k2.composite, true)) {
+          pendingError = pendingError || new TypeError("composite '" + k2.composite + "' is not valid");
+        }
         out.push(k2);
       }
+      // property-indexed 顶层 easing/composite 单值形态同样校验（processing-002：
+      // { easing: invalid } 与 { easing: invalid } + animatable 属性全读后抛）。
+      if (!pendingError && keyframes.easing != null && !Array.isArray(keyframes.easing)) {
+        if (!_zwIsValidEasing(String(keyframes.easing))) {
+          pendingError = new TypeError("easing '" + keyframes.easing + "' is not a valid easing function");
+        }
+      }
+      if (!pendingError && keyframes.composite != null && !Array.isArray(keyframes.composite)) {
+        if (!_zwIsValidComposite(String(keyframes.composite), false)) {
+          pendingError = new TypeError("composite '" + keyframes.composite + "' is not valid");
+        }
+      }
     }
-    // computedOffset 均分补齐（spec §5.4.15 step：null offset 区间均分，末帧恒 1）。
+    if (pendingError) {
+      out.length = 0;
+      throw pendingError;
+    }
+    // computedOffset 均分补齐（spec §5.4.15：null offset 区间均分，末帧恒 1）。
     var n = out.length;
     if (n > 0) {
-      // 显式锚点之间线性均分；无任何显式 offset → i/(n-1)（n=1 时 [0]）。
       var lastAnchor = -1;
-      var nextAnchor;
+      var gap;
       for (i = 0; i < n; i++) {
         if (out[i].computedOffset != null) {
-          // 回填上一锚点之后的 null 区间。
-          var gap = i - lastAnchor;
+          gap = i - lastAnchor;
           for (j = lastAnchor + 1; j < i; j++) {
-            out[j].computedOffset = out[lastAnchor].computedOffset == null
-              ? (gap > 0 ? j / gap * out[i].computedOffset : 0)
+            out[j].computedOffset = (lastAnchor < 0 || out[lastAnchor].computedOffset == null)
+              ? 0
               : out[lastAnchor].computedOffset + (out[i].computedOffset - out[lastAnchor].computedOffset) * (j - lastAnchor) / gap;
           }
           lastAnchor = i;
@@ -5045,9 +5270,7 @@
             ? 1
             : out[lastAnchor].computedOffset + (1 - out[lastAnchor].computedOffset) * (j - lastAnchor) / Math.max(gap, 1);
         }
-        if (out[n - 1].computedOffset == null) out[n - 1].computedOffset = 1;
       }
-      // 头部 null 锚（首帧无显式 offset 且无前置锚点）→ 0。
       if (out[0].computedOffset == null) out[0].computedOffset = 0;
     }
     return out;
@@ -5158,6 +5381,11 @@
     }
     this._effect = (effect === undefined) ? null : effect;
     this._timeline = (timeline === undefined) ? null : timeline;
+    // M3-S2：effect 的 timing 反向持有 animation——getComputedTiming 的 localTime 依赖
+    //（_zwEffComputedTiming(t) 读 t._animation）。
+    if (this._effect && typeof this._effect === 'object' && this._effect._timing) {
+      this._effect._timing._animation = this;
+    }
     this.id = '';
     this.startTime = null;
     this.currentTime = null;
@@ -5223,6 +5451,9 @@
     self._cancelled = false;
     self._playState = 'running';
     self._pending = false;
+    // startTime 保持 unresolved（spec：play-pending 未 resolve；M3-S2 回归勘定）——
+    // _zwEffComputedTiming 对 null startTime 按 0 处理，timing-model 用例显式设
+    // currentTime 后 localTime 与之同一坐标系。
     self._resolveReady(self);
     // headless 瞬间完成：microtask 后 finished + onfinish + 末态持久化。
     _defer(function () {
@@ -5262,7 +5493,15 @@
   Animation.prototype.getEffect = function () { return this._effect; };
   Object.defineProperty(Animation.prototype, 'effect', {
     get: function () { return this._effect; },
-    set: function (v) { this._effect = (v === undefined) ? null : v; },
+    set: function (v) {
+      if (this._effect && typeof this._effect === 'object' && this._effect._timing) {
+        this._effect._timing._animation = null;
+      }
+      this._effect = (v === undefined) ? null : v;
+      if (this._effect && typeof this._effect === 'object' && this._effect._timing) {
+        this._effect._timing._animation = this;
+      }
+    },
     configurable: true,
   });
   Object.defineProperty(Animation.prototype, 'timeline', {

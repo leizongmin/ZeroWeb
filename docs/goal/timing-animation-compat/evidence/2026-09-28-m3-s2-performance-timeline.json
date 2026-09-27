@@ -1,0 +1,342 @@
+[
+  [
+    "performance-timeline/buffered-does-not-sync-invoke.html",
+    [
+      {
+        "name": "Buffered PerformanceObservers should not invoke callbacks synchronously.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/navigation-id-initial-load.tentative.html",
+    [
+      {
+        "name": "performance-timeline/navigation-id-initial-load.tentative.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 1761], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "performance-timeline/po-observe.html",
+    [
+      {
+        "name": "performance-timeline/po-observe.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 1495, 2413], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "performance-timeline/buffered-flag-after-timeout.any.js",
+    [
+      {
+        "name": "PerformanceObserver with buffered flag sees entry after timeout",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/buffered-flag-observer.any.js",
+    [
+      {
+        "name": "PerformanceObserver with buffered flag should see past and future entries.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.js",
+    [
+      {
+        "name": "PerformanceObserver without buffered flag set to false cannot see past entries.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/case-sensitivity.any.js",
+    [
+      {
+        "name": "getEntriesByType values are case sensitive",
+        "status": "Fail",
+        "message": "assert_not_equals: Resource entries exist got disallowed value 0"
+      },
+      {
+        "name": "getEntriesByName values are case sensitive",
+        "status": "Fail",
+        "message": "assert_equals: Resource entry exist expected 1 but got 0"
+      },
+      {
+        "name": "observe() and case sensitivity for types/entryTypes and buffered.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/droppedentriescount.any.js",
+    [
+      {
+        "name": "Dropped entries count is 0 when there are no dropped entries of relevant type.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: performance.setResourceTimingBufferSize is not a function\""
+      },
+      {
+        "name": "Dropped entries correctly counted with multiple types.",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 0"
+      },
+      {
+        "name": "performance-timeline/droppedentriescount.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 3202], state={\"loaded\":true,\"pending\":3,\"phase\":4,\"tests\":5}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "performance-timeline/po-callback-mutate.any.js",
+    [
+      {
+        "name": "PerformanceObserver modifications inside callback should update filtering and not clear buffer",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/po-disconnect-removes-observed-types.any.js",
+    [
+      {
+        "name": "Types observed are forgotten when disconnect() is called.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/po-entries-sort.any.js",
+    [
+      {
+        "name": "getEntries, getEntriesByType, getEntriesByName sort order",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/po-getentries.any.js",
+    [
+      {
+        "name": "getEntries, getEntriesByType and getEntriesByName work",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/po-mark-measure.any.js",
+    [
+      {
+        "name": "entries are observable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "mark entries are observable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "measure entries are observable",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/po-observe-repeated-type.any.js",
+    [
+      {
+        "name": "Two calls of observe() with the same 'type' cause override.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/po-observe-type.any.js",
+    [
+      {
+        "name": "Calling observe() without 'type' or 'entryTypes' throws a TypeError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Calling observe() with entryTypes and then type should throw an InvalidModificationError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Calling observe() with type and then entryTypes should throw an InvalidModificationError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Calling observe() with type and entryTypes should throw a TypeError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing in unknown values to type does throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "observe() with different type values stacks.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/po-observe.any.js",
+    [
+      {
+        "name": "entryTypes must be a sequence or throw a TypeError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Empty sequence entryTypes does not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unknown entryTypes do not throw an exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Filter unsupported entryType entryType names within the entryTypes sequence",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check observer callback parameter and this values",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "replace observer if already present",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/po-takeRecords.any.js",
+    [
+      {
+        "name": "Test PerformanceObserver's takeRecords()",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/supportedEntryTypes.any.js",
+    [
+      {
+        "name": "supportedEntryTypes exists and returns entries in alphabetical order",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "supportedEntryTypes caches result",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/webtiming-resolution.any.js",
+    [
+      {
+        "name": "Verifies the resolution of performance.now() is at least 5 microseconds.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Verifies the resolution of entry.startTime is at least 5 microseconds.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/multiple-buffered-flag-observers.any.js",
+    [
+      {
+        "name": "Multiple PerformanceObservers with buffered flag see all entries",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/observer-buffered-false.any.js",
+    [
+      {
+        "name": "PerformanceObserver without buffered flag set to false cannot see past entries.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/performanceentry-tojson.any.js",
+    [
+      {
+        "name": "Test toJSON() in PerformanceEntry",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/po-disconnect.any.js",
+    [
+      {
+        "name": "disconnecting an unconnected observer is a no-op",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "disconnected callbacks must not be invoked",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "An observer disconnected after a mark must not have its callback invoked",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "performance-timeline/po-resource.html",
+    [
+      {
+        "name": "performance-timeline/po-resource.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 1495, 1352], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ]
+]
