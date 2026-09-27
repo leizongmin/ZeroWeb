@@ -2,7 +2,7 @@
 
 **入口文档**: [../timing-animation-compat.md](../timing-animation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-28（M3-S2 落地：timing-model 计算 + 关键帧校验，合计 1090/1575 = 69.2%）
+**最后更新**: 2026-09-28（M3-S3 落地：WAAPI 收口，合计 1108/1580 = 70.1%；M3 主体完成）
 
 ---
 
@@ -12,15 +12,19 @@
 user-timing/WAAPI 纯 JS API 面，不触布局/渲染计算，预期最快出数字。
 headless 帧驱动 opt-in（`__ZW_RAF_FRAME_DRIVEN`）是已知约束，如实标注不放容差。
 
-**M3-S2 已落地（2026-09-28）**：WAAPI timing-model 计算 + 关键帧解析校验——
-**web-animations 338→483P**，全四 corpus 合计 **1090/1575 = 69.2%**。实现
-（part03.js）：getComputedTiming 的 phase/progress/currentIteration 按 localTime
-解析（fill 门 activeTime + 方向化 progress + 迭代索引 + 零时长分支，effect-timing
-反向持有 animation——M3-S1 误挂 effect 对象的探针勘定）；animatable 白名单
-（非可动画属性 0 次值访问）+ offset/easing/composite 校验（全属性读取后统一抛
-TypeError）。余非 Pass 主簇：渲染效果断言 ~200（rendering-compat 域记账）、
-progress 边界/序列化归一 ~70（M3-S3）、播放状态机时序 ~24（headless 近似，DC-3
-如实标注）。见
+**M3-S3 已落地（2026-09-28）**：WAAPI 收口——**web-animations 483→502P**，全四
+corpus 合计 **1108/1580 = 70.1%**。实现（part03.js）：play() hold time（currentTime=0
+同步置位、startTime 保持 unresolved）、currentIteration 末迭代边界（iterations−1）、
+KeyframeEffect.target setter、updateTiming 有限/非负校验、commitStyles
+InvalidStateError 前置条件。**M3 主体完成**（52→502P，基线 9.7 倍）：构造器/时序
+模型/解析校验/hold time 语义面闭合。余量全分类：playState 派生重构与瞬间完成
+状态机冲突（300+ subtests 依赖，DC-3 如实标注）、渲染效果断言 ~200（rendering-compat
+域记账）、低密度边界/序列化精修。进一步收敛需渲染管线联动或异步状态机重构
+（深结构）。见
+[evidence/2026-09-28-m3-s3-waapi-closeout.md](evidence/2026-09-28-m3-s3-waapi-closeout.md)。
+
+**M3-S2（2026-09-28）**：timing-model 相位/进度 + 关键帧校验——web-animations
+338→483P。见
 [evidence/2026-09-28-m3-s2-timing-model.md](evidence/2026-09-28-m3-s2-timing-model.md)。
 
 **M3-S1（2026-09-28）**：WAAPI 构造器 + effect 桥——web-animations 52→338P
@@ -82,13 +86,15 @@ suites CSV planned 行已转数据行（active）。
 | P1 | 四 corpus（hr-time/performance-timeline/user-timing/web-animations）导入 + 基线 | ✅ M1（2026-09-27）|
 | P2 | hr-time 精度/单调性/timeOrigin 语义 | ✅ M2-S3（2026-09-28，10/15；余 = 隔离 infra ×2F〔跨域记账〕+ DocumentTimeline ×1F〔M3〕+ worker ×2T〔排除〕）|
 | P3 | user-timing mark/measure/getEntries* + PerformanceObserver 评估 | ✅ M2-S1/S2/S3（561/570 = 98.4%；余 = legacy ×8F + resource 域 ×1T）|
-| P4 | WAAPI Animation/KeyframeEffect/getAnimations/playState + promise 语义 | ◐ M3-S1/S2 ✅（2026-09-28 构造器 + timing-model 计算 483/946）；⏳ M3-S3 边界精修/序列化归一/播放时序近似面收口 |
+| P4 | WAAPI Animation/KeyframeEffect/getAnimations/playState + promise 语义 | ✅ M3-S1/S2/S3（2026-09-28，502/951；余 = playState 派生〔瞬间完成冲突，如实标注〕+ 渲染效果断言〔rendering-compat 记账〕+ 低密度边界精修）|
 | P5 | resource-timing/navigation-timing 重入条件挂账 | ⏳ M4（performance-timeline 余 ×8 + user-timing ×1 + user-timing navigation-timing 归入）|
 
 ## 已完成切片
 
+- **M3-S3（2026-09-28）**：WAAPI 收口（hold time/边界/校验/commitStyles）——
+  web-animations 483→502P，合计 1108/1580（70.1%）。M3 主体完成。
 - **M3-S2（2026-09-28）**：timing-model 相位/进度 + 关键帧校验——web-animations
-  338→483P，合计 1090/1575（69.2%）。零回归。
+  338→483P。
 - **M3-S1（2026-09-28）**：WAAPI 构造器 + effect 桥——web-animations 52→338P。
 - **M2-S3（2026-09-28）**：hr-time 语义修齐（toJSON/EventTarget/粗化网格/timeOrigin
   epoch）hr-time 7→10P。
@@ -100,13 +106,13 @@ suites CSV planned 行已转数据行（active）。
 
 ## 下一步计划
 
-1. **M3-S3（下一轮起点）**：WAAPI 收口——progress 边界精修（startTime 压线、
-   transformed-progress 方向化，~40）+ 关键帧序列化 CSS 值归一（canonical form，
-   ~30）+ 播放状态机近似面收口（playState/pending 时序，headless 约束内可修项）；
-   渲染效果断言 ~200 保持 rendering-compat 域记账。
-2. **M4**：DC 逐项判定 + resource-timing/navigation-timing 重入条件挂账定稿
-   （performance-timeline 余 ×8、user-timing ×1、hr-time 隔离 infra ×2、worker ×2
-   均已归入）。
+1. **M4（下一轮起点）**：收口判定——DC-1~4 逐项核验（DC-1 ✅ 四 corpus 导入 + 基线 +
+   CSV；DC-2 ✅ 计时面收敛；DC-3 WAAPI 语义面 ✅ + headless 帧精度如实标注 ✅；
+   DC-4 每轮 make test 全绿 + clippy + fmt + 零回归 ✅）+ resource-timing/
+   navigation-timing 重入条件挂账定稿（重入 = navigation-compat M2 落地后评估）
+   + master.md 收口判定与 DONE 输出。
+2. 残余优化面（不阻收口）：playState 派生重构（深结构，需与瞬间完成状态机协同
+   设计）、关键帧序列化 canonicalization、渲染效果断言（rendering-compat 域）。
 
 **待用户决策清单**：（空——无门控项）
 

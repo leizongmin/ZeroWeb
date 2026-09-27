@@ -5008,7 +5008,9 @@
           else directed = even ? 1 - frac : frac;
         }
         progress = (frac === 0 && activeTime > 0) ? 1 : directed;
-        currentIteration = idx;
+        // 边界：activeTime == activeDuration（after 相位 fill 门）→ 末迭代索引
+        // iterations − 1（§4.9.4 overallProgress 恰为 iterations 时索引取 iterations−1）。
+        currentIteration = (activeTime >= activeDuration) ? Math.max(iterations - 1, 0) : idx;
       }
     }
 
@@ -5315,6 +5317,40 @@
   };
   KeyframeEffect.prototype.updateTiming = function (options) {
     if (options != null && typeof options === 'object') {
+      // 数值校验（gBadDelayValues / gBadIterationStart / gBadIterations 簇）：
+      // delay/endDelay 须有限；iterationStart/iterations 须有限且 >= 0（NaN/±Infinity
+      // /负值 → TypeError）；duration 负值 → TypeError。
+      var nv;
+      if (options.delay != null) {
+        nv = Number(options.delay);
+        if (isNaN(nv) || nv === Infinity || nv === -Infinity) {
+          throw new TypeError('delay must be a finite number');
+        }
+      }
+      if (options.endDelay != null) {
+        nv = Number(options.endDelay);
+        if (isNaN(nv) || nv === Infinity || nv === -Infinity) {
+          throw new TypeError('endDelay must be a finite number');
+        }
+      }
+      if (options.iterationStart != null) {
+        nv = Number(options.iterationStart);
+        if (isNaN(nv) || nv === Infinity || nv === -Infinity || nv < 0) {
+          throw new TypeError('iterationStart must be a finite number >= 0');
+        }
+      }
+      if (options.iterations != null) {
+        nv = Number(options.iterations);
+        if (isNaN(nv) || nv === Infinity || nv === -Infinity || nv < 0) {
+          throw new TypeError('iterations must be a finite number >= 0');
+        }
+      }
+      if (options.duration != null && options.duration !== 'auto') {
+        nv = Number(options.duration);
+        if (isNaN(nv) || nv < 0) {
+          throw new TypeError('duration must be a non-negative number');
+        }
+      }
       if (options.delay != null) this._timing.delay = Number(options.delay);
       if (options.endDelay != null) this._timing.endDelay = Number(options.endDelay);
       if (options.fill != null) this._timing.fill = String(options.fill);
@@ -5328,6 +5364,7 @@
   };
   Object.defineProperty(KeyframeEffect.prototype, 'target', {
     get: function () { return this._timing.target || null; },
+    set: function (v) { this._timing.target = (v === undefined) ? null : v; },
     configurable: true,
   });
   Object.defineProperty(KeyframeEffect.prototype, 'composite', {
@@ -5451,9 +5488,11 @@
     self._cancelled = false;
     self._playState = 'running';
     self._pending = false;
-    // startTime 保持 unresolved（spec：play-pending 未 resolve；M3-S2 回归勘定）——
-    // _zwEffComputedTiming 对 null startTime 按 0 处理，timing-model 用例显式设
-    // currentTime 后 localTime 与之同一坐标系。
+    // startTime 保持 unresolved（spec：play-pending 未 resolve）——computed 侧按 0
+    // 处理；hold time：fresh play / finished 重播 → currentTime 0（updateTiming
+    // 「animation in progress」族依赖同步 hold time 0 + 局部 delay 推进）。
+    if (self.currentTime == null || self._playState === 'finished') self.currentTime = 0;
+    if (self._playState !== 'running') self._playState = 'running';
     self._resolveReady(self);
     // headless 瞬间完成：microtask 后 finished + onfinish + 末态持久化。
     _defer(function () {
@@ -5486,6 +5525,17 @@
     this.playbackRate = Number(rate);
   };
   Animation.prototype.commitStyles = function () {
+    // spec：commitStyles 需要关联 target 且（finished 时）fill forwards/both，否则
+    // InvalidStateError（commitStyles.html assert_throws_dom 簇）。
+    var fill = (this._effect && this._effect._timing) ? this._effect._timing.fill : 'auto';
+    var hasTarget = !!((this._effect && this._effect._timing && this._effect._timing.target)
+      || this._sel != null || this._handle != null);
+    if (this._playState === 'finished' && !(fill === 'forwards' || fill === 'both')) {
+      throw new (globalThis.DOMException || DOMException || Error)('commitStyles: animation is finished with a fill mode that is not forwards or both', 'InvalidStateError');
+    }
+    if (!hasTarget) {
+      throw new (globalThis.DOMException || DOMException || Error)('commitStyles: animation has no target element', 'InvalidStateError');
+    }
     this._applyEndState(true);
     this._committed = true;
   };

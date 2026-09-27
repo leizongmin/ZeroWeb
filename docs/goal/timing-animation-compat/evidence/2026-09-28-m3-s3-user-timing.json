@@ -1,0 +1,3027 @@
+[
+  [
+    "user-timing/clearMarks.html",
+    [
+      {
+        "name": "First loop: checking entries after removing \"\". There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 0. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 1. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: marks that we cleared for \"\" should not exist anymore.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"1\". There should be 1 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"1\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"1\". Entry_list 0. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"1\". Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"1\". Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"1\". Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: marks that we cleared for \"1\" should not exist anymore.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"abc\". There should be 0 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"abc\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: marks that we cleared for \"abc\" should not exist anymore.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "No marks should exist after we clear all.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". There should be 4 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 0. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 1. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 2. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 2. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 2. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 2. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 3. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 3. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 3. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 3. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: marks that we cleared for \"\" should not exist anymore.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 0. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 1. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"1\". Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: marks that we cleared for \"1\" should not exist anymore.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"abc\". There should be 0 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"abc\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: marks that we cleared for \"abc\" should not exist anymore.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Nothing should happen if we clear a non-exist mark.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "No marks should exist when we clear all.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/clearMeasures.html",
+    [
+      {
+        "name": "First loop: checking entries after removing \"\". There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entries in entrylist should be in order.",
+        "status": "Fail",
+        "message": "assert_true: First loop: checking entries after removing \"\". Entries in entrylist should be in order. expected true got false"
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 0. Entry \"2\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 1. Entry \"aaa\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 1. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 1. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"\". Entry_list 1. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: measure \"\" should not exist anymore after we cleared it.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"2\". There should be 1 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"2\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"2\". Entry_list 0. Entry \"aaa\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"2\". Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"2\". Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"2\". Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: measure \"2\" should not exist anymore after we cleared it.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"aaa\". There should be 0 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entries after removing \"aaa\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: measure \"aaa\" should not exist anymore after we cleared it.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "No measures should exist after we clear all (after first loop).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". There should be 4 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entries in entrylist should be in order.",
+        "status": "Fail",
+        "message": "assert_true: Second loop: checking entries after removing \"\". Entries in entrylist should be in order. expected true got false"
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 0. Entry \"2\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 1. Entry \"aaa\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 1. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 1. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 1. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 2. Entry \"2\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 2. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 2. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 2. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 3. Entry \"aaa\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 3. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 3. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"\". Entry_list 3. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: measure \"\" should not exist anymore after we cleared it.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"2\". There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"2\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"2\". Entry_list 0. Entry \"aaa\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"2\". Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"2\". Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"2\". Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"2\". Entry_list 1. Entry \"aaa\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"2\". Entry_list 1. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"2\". Entry_list 1. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"2\". Entry_list 1. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: measure \"2\" should not exist anymore after we cleared it.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"aaa\". There should be 0 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: checking entries after removing \"aaa\". Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop: measure \"aaa\" should not exist anymore after we cleared it.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Nothing should happen if we clear a non-exist measure",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "No measures should exist when we clear all (after second loop).",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/invoke_with_timing_attributes.html",
+    [
+      {
+        "name": "performance.mark should throw if used with timing attribute navigationStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute unloadEventStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute unloadEventEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute redirectStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute redirectEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute fetchStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute domainLookupStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute domainLookupEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute connectStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute connectEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute secureConnectionStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute requestStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute responseStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute responseEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute domLoading",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute domInteractive",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute domContentLoadedEventStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute domContentLoadedEventEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute domComplete",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute loadEventStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.mark should throw if used with timing attribute loadEventEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute navigationStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute unloadEventStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute unloadEventEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute redirectStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute redirectEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute fetchStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute domainLookupStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute domainLookupEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute connectStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute connectEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute secureConnectionStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute requestStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute responseStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute responseEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute domLoading",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute domInteractive",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute domContentLoadedEventStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute domContentLoadedEventEnd",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute domComplete",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute loadEventStart",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.measure should not throw if used with timing attribute loadEventEnd",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/invoke_without_parameter.html",
+    [
+      {
+        "name": "window.performance.mark() throws a TypeError exception when invoke without a parameter.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.measure() throws a TypeError exception when invoke without a parameter.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/mark-measure-feature-detection.html",
+    [
+      {
+        "name": "Test PerformanceMark existence and feature detection",
+        "status": "Fail",
+        "message": "assert_equals: performance.mark should be void in UserTiming L2. expected \"undefined\" but got \"object\""
+      },
+      {
+        "name": "Test PerformanceMeasure existence and feature detection",
+        "status": "Fail",
+        "message": "assert_equals: performance.measure should be void in UserTiming L2. expected \"undefined\" but got \"object\""
+      }
+    ]
+  ],
+  [
+    "user-timing/mark.html",
+    [
+      {
+        "name": "There should be 0 marks",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.There should be 3 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 1. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 2. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 2. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 2. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 2. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".There should be 1 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"1\".There should be 1 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"1\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"1\".Entry_list 0. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"1\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"1\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"1\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"abc\".There should be 1 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"abc\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"abc\".Entry_list 0. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"abc\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"abc\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"abc\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.There should be 6 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 1. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 2. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 2. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 2. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 2. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 3. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 3. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 3. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 3. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 4. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 4. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 4. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 4. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 5. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 5. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 5. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly marked entries.Entry_list 5. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 1. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entries of name \"\".Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 0. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 1. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entries of name \"1\".Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 0. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 1. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entries of name \"abc\".Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 1. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entries of name \"\".Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 0. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 1. Entry \"1\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entries of name \"1\".Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 0. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 0. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 0. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 0. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 1. Entry \"abc\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 1. entryType should be \"mark\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 1. startTime should greater than 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entries of name \"abc\".Entry_list 1. duration of mark should be 0.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/mark_exceptions.html",
+    [
+      {
+        "name": "window.performance.mark() throws a TypeError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"navigationStart\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"unloadEventStart\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"unloadEventEnd\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"redirectStart\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"redirectEnd\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"fetchStart\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"domainLookupStart\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"domainLookupEnd\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"connectStart\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"connectEnd\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"secureConnectionStart\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"requestStart\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"responseStart\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"responseEnd\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"domLoading\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"domInteractive\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"domContentLoadedEventStart\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"domContentLoadedEventEnd\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"domComplete\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"loadEventStart\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.mark(\"loadEventEnd\") throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/measure-exceptions.html",
+    [
+      {
+        "name": "Passing 'unloadEventStart' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing 'unloadEventEnd' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing 'redirectStart' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing 'redirectEnd' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing 'secureConnectionStart' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing 'domInteractive' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing 'domContentLoadedEventStart' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing 'domContentLoadedEventEnd' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing 'domComplete' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing 'loadEventStart' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing 'loadEventEnd' as a mark to measure API should cause error when the mark is empty.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing 51.15 as a mark to measure API should cause error.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing DoesNotExist as a mark to measure API should cause error.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/measure.html",
+    [
+      {
+        "name": "window.performance is defined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_no_end\")[0].name == \"measure_no_start_no_end\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_no_end\")[0].startTime is correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_no_end\")[0].entryType == \"measure\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_no_end\")[0].duration is approximately correct (up to 20ms difference allowed)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_start_no_end\")[0].name == \"measure_start_no_end\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_start_no_end\")[0].startTime is correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_start_no_end\")[0].entryType == \"measure\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_start_no_end\")[0].duration is approximately correct (up to 20ms difference allowed)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_start_end\")[0].name == \"measure_start_end\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_start_end\")[0].startTime is correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_start_end\")[0].entryType == \"measure\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_start_end\")[0].duration is approximately correct (up to 20ms difference allowed)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_end\")[0].name == \"measure_no_start_end\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_end\")[0].startTime is correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_end\")[0].entryType == \"measure\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_end\")[0].duration is approximately correct (up to 20ms difference allowed)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_no_end\")[1].name == \"measure_no_start_no_end\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_no_end\")[1].startTime is correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_no_end\")[1].entryType == \"measure\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_no_end\")[1].duration is approximately correct (up to 20ms difference allowed)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_no_end\", \"measure\")[0] returns an object containing the \"measure_no_start_no_end\" measure in the correct order, and its value matches the \"measure_no_start_no_end\" measure returned by window.performance.getEntriesByName(\"measure_no_start_no_end\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_start_no_end\", \"measure\")[0] returns an object containing the \"measure_start_no_end\" measure in the correct order, and its value matches the \"measure_start_no_end\" measure returned by window.performance.getEntriesByName(\"measure_start_no_end\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_start_end\", \"measure\")[0] returns an object containing the \"measure_start_end\" measure in the correct order, and its value matches the \"measure_start_end\" measure returned by window.performance.getEntriesByName(\"measure_start_end\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_end\", \"measure\")[0] returns an object containing the \"measure_no_start_end\" measure in the correct order, and its value matches the \"measure_no_start_end\" measure returned by window.performance.getEntriesByName(\"measure_no_start_end\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByName(\"measure_no_start_no_end\", \"measure\")[1] returns an object containing the \"measure_no_start_no_end\" measure in the correct order, and its value matches the \"measure_no_start_no_end\" measure returned by window.performance.getEntriesByName(\"measure_no_start_no_end\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntries() returns an object containing the \"measure_no_start_no_end\" measure, and it's value matches the measure returned by window.performance.getEntriesByName(\"measure_no_start_no_end\")[0].",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntries() returns an object containing the \"measure_start_no_end\" measure, and it's value matches the measure returned by window.performance.getEntriesByName(\"measure_start_no_end\")[0].",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntries() returns an object containing the \"measure_start_end\" measure, and it's value matches the measure returned by window.performance.getEntriesByName(\"measure_start_end\")[0].",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntries() returns an object containing the \"measure_no_start_end\" measure, and it's value matches the measure returned by window.performance.getEntriesByName(\"measure_no_start_end\")[0].",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntries() returns an object containing the \"measure_no_start_no_end\" measure, and it's value matches the measure returned by window.performance.getEntriesByName(\"measure_no_start_no_end\")[1].",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntries() returns an object containing all test measures in order.",
+        "status": "Fail",
+        "message": "assert_true: window.performance.getEntries() returns an object containing all test measures in order. expected true got false"
+      },
+      {
+        "name": "window.performance.getEntriesByType(\"measure\") returns an object containing the \"measure_no_start_no_end\" measure, and it's value matches the measure returned by window.performance.getEntriesByName(\"measure_no_start_no_end\")[0].",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByType(\"measure\") returns an object containing the \"measure_start_no_end\" measure, and it's value matches the measure returned by window.performance.getEntriesByName(\"measure_start_no_end\")[0].",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByType(\"measure\") returns an object containing the \"measure_start_end\" measure, and it's value matches the measure returned by window.performance.getEntriesByName(\"measure_start_end\")[0].",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByType(\"measure\") returns an object containing the \"measure_no_start_end\" measure, and it's value matches the measure returned by window.performance.getEntriesByName(\"measure_no_start_end\")[0].",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByType(\"measure\") returns an object containing the \"measure_no_start_no_end\" measure, and it's value matches the measure returned by window.performance.getEntriesByName(\"measure_no_start_no_end\")[1].",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.getEntriesByType(\"measure\") returns an object containing all test measures in order.",
+        "status": "Fail",
+        "message": "assert_true: window.performance.getEntriesByType(\"measure\") returns an object containing all test measures in order. expected true got false"
+      }
+    ]
+  ],
+  [
+    "user-timing/measure_associated_with_navigation_timing.html",
+    [
+      {
+        "name": "user-timing/measure_associated_with_navigation_timing.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "user-timing/measure_exception.html",
+    [
+      {
+        "name": "Invocation of performance.measure() should throw TypeError Exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception1\", \"NonExistMark1\") should throw SYNTAX_ERR Exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception2\", \"NonExistMark1\", \"navigationStart\") should throw SYNTAX_ERR Exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception3\", \"navigationStart\", \"NonExistMark1\") should throw SYNTAX_ERR Exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception4\", \"NonExistMark1\", \"ExistMark\") should throw SYNTAX_ERR Exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception5\", \"ExistMark\", \"NonExistMark1\") should throw SYNTAX_ERR Exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception6\", \"NonExistMark1\", \"NonExistMark2\") should throw SYNTAX_ERR Exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception7\", \"redirectStart\") should throw INVALID_ACCESS_ERR Exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception8\", {\"detail\": \"non-empty\"}) should throw TypeError Exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invocation of performance.measure(\"Exception9\", {\"start\": 1, \"duration\": 2, \"end\": 3}) should throw TypeError Exception.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/measure_exceptions_navigation_timing.html",
+    [
+      {
+        "name": "window.performance.measure(\"measure\", \"loadEventEnd\"), where \"loadEventEnd\" is a navigation timing attribute with a value of 0, throws a InvalidAccessError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.measure(\"measure\", \"loadEventEnd\", \"responseEnd\"), where \"loadEventEnd\" is a navigation timing attribute with a value of 0, throws a InvalidAccessError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.measure(\"measure\", \"navigationStart\", \"loadEventEnd\"), where \"loadEventEnd\" is a navigation timing attribute with a value of 0, throws a InvalidAccessError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.measure(\"measure\", \"loadEventEnd\", \"loadEventEnd\"), where \"loadEventEnd\" is a navigation timing attribute with a value of 0, throws a InvalidAccessError exception.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/measure_navigation_timing.html",
+    [
+      {
+        "name": "window.performance is defined",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/measures.html",
+    [
+      {
+        "name": "There should be 0 entries returned.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.There should be 3 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entries in entrylist should be in order.",
+        "status": "Fail",
+        "message": "assert_true: Checking all entries.Entries in entrylist should be in order. expected true got false"
+      },
+      {
+        "name": "Checking all entries.Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 1. Entry \"2\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 1. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 1. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 1. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 2. Entry \"aaa\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 2. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 2. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all entries.Entry_list 2. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".There should be 1 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"\".Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"2\".There should be 1 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"2\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"2\".Entry_list 0. Entry \"2\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"2\".Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"2\".Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"2\".Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"aaa\".There should be 1 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"aaa\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"aaa\".Entry_list 0. Entry \"aaa\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"aaa\".Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"aaa\".Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First loop: checking entry of name \"aaa\".Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.There should be 6 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entries in entrylist should be in order.",
+        "status": "Fail",
+        "message": "assert_true: Checking all doubly measured entries.Entries in entrylist should be in order. expected true got false"
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 1. Entry \"2\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 1. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 1. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 1. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 2. Entry \"aaa\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 2. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 2. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 2. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 3. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 3. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 3. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 3. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 4. Entry \"2\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 4. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 4. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 4. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 5. Entry \"aaa\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 5. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 5. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Checking all doubly measured entries.Entry_list 5. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entry of name \"\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entry of name \"\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entry of name \"\".Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entry of name \"\".Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entry of name \"\".Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entry of name \"\".Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entry of name \"\".Entry_list 1. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entry of name \"\".Entry_list 1. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entry of name \"\".Entry_list 1. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 0: checking entry of name \"\".Entry_list 1. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entry of name \"2\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entry of name \"2\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entry of name \"2\".Entry_list 0. Entry \"2\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entry of name \"2\".Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entry of name \"2\".Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entry of name \"2\".Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entry of name \"2\".Entry_list 1. Entry \"2\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entry of name \"2\".Entry_list 1. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entry of name \"2\".Entry_list 1. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 1: checking entry of name \"2\".Entry_list 1. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entry of name \"aaa\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entry of name \"aaa\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entry of name \"aaa\".Entry_list 0. Entry \"aaa\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entry of name \"aaa\".Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entry of name \"aaa\".Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entry of name \"aaa\".Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entry of name \"aaa\".Entry_list 1. Entry \"aaa\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entry of name \"aaa\".Entry_list 1. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entry of name \"aaa\".Entry_list 1. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 2: checking entry of name \"aaa\".Entry_list 1. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entry of name \"\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entry of name \"\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entry of name \"\".Entry_list 0. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entry of name \"\".Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entry of name \"\".Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entry of name \"\".Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entry of name \"\".Entry_list 1. Entry \"\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entry of name \"\".Entry_list 1. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entry of name \"\".Entry_list 1. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 3: checking entry of name \"\".Entry_list 1. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entry of name \"2\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entry of name \"2\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entry of name \"2\".Entry_list 0. Entry \"2\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entry of name \"2\".Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entry of name \"2\".Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entry of name \"2\".Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entry of name \"2\".Entry_list 1. Entry \"2\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entry of name \"2\".Entry_list 1. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entry of name \"2\".Entry_list 1. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 4: checking entry of name \"2\".Entry_list 1. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entry of name \"aaa\".There should be 2 entries.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entry of name \"aaa\".Entries in entrylist should be in order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entry of name \"aaa\".Entry_list 0. Entry \"aaa\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entry of name \"aaa\".Entry_list 0. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entry of name \"aaa\".Entry_list 0. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entry of name \"aaa\".Entry_list 0. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entry of name \"aaa\".Entry_list 1. Entry \"aaa\" should be one that we have set.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entry of name \"aaa\".Entry_list 1. entryType should be \"measure\".",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entry of name \"aaa\".Entry_list 1. startTime should be a number.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Second loop step 5: checking entry of name \"aaa\".Entry_list 1. duration should be a number.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/user-timing-tojson.html",
+    [
+      {
+        "name": "Test toJSON() in PerformanceMark",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test toJSON() in PerformanceMeasure",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/buffered-flag.any.js",
+    [
+      {
+        "name": "PerformanceObserver with buffered flag sees previous marks",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "PerformanceObserver with buffered flag sees previous measures",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/case-sensitivity.any.js",
+    [
+      {
+        "name": "getEntriesByType values are case sensitive",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/clear_all_marks.any.js",
+    [
+      {
+        "name": "Clearing all marks remove all of them.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/clear_all_measures.any.js",
+    [
+      {
+        "name": "Clearing all marks remove all of them.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/clear_non_existent_mark.any.js",
+    [
+      {
+        "name": "Clearing a non-existent mark doesn't affect existing marks",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/clear_non_existent_measure.any.js",
+    [
+      {
+        "name": "Clearing a non-existent measure doesn't affect existing measures",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/clear_one_mark.any.js",
+    [
+      {
+        "name": "Clearing an existent mark doesn't affect other existing marks",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/clear_one_measure.any.js",
+    [
+      {
+        "name": "Clearing an existent measure doesn't affect other existing measures",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/entry_type.any.js",
+    [
+      {
+        "name": "Validate the user timing entry type PerformanceMark",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Validate the user timing entry type PerformanceMeasure",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/mark-entry-constructor.any.js",
+    [
+      {
+        "name": "Mark entry can be created by 'new PerformanceMark(string)'.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Mark entry can be created by 'new PerformanceMark(string, {})'.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Mark entry can be created by 'new PerformanceMark(string, {startTime})'.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Mark entry can be created by 'new PerformanceMark(string, {detail})'.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Mark entry can be created by 'new PerformanceMark(string, {startTime, detail})'.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using new PerformanceMark() shouldn't add the entry to performance timeline.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/mark-errors.any.js",
+    [
+      {
+        "name": "[performance.mark]: Number should be rejected as the mark-options.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "[new PerformanceMark]: Number should be rejected as the mark-options.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "[performance.mark]: NaN should be rejected as the mark-options.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "[new PerformanceMark]: NaN should be rejected as the mark-options.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "[performance.mark]: Infinity should be rejected as the mark-options.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "[new PerformanceMark]: Infinity should be rejected as the mark-options.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "[performance.mark]: String should be rejected as the mark-options.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "[new PerformanceMark]: String should be rejected as the mark-options.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "[performance.mark]: Negative startTime in mark-options should be rejected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "[new PerformanceMark]: Negative startTime in mark-options should be rejected",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/mark-l3.any.js",
+    [
+      {
+        "name": "mark entries' detail and startTime are customizable.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/mark-measure-return-objects.any.js",
+    [
+      {
+        "name": "L3: performance.measure(name) should return an entry.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "L3: performance.measure(name, param1) should return an entry.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "L3: performance.measure(name, param1, param2) should return an entry.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "L3: performance.mark(name) should return an entry.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "L3: performance.mark(name, param) should return an entry.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/mark.any.js",
+    [
+      {
+        "name": "Entry 0 is properly created",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 1 is properly created",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 0 has the proper name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 0 startTime is approximately correct (up to 20ms difference allowed)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 0 has the proper entryType",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 0 duration == 0",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getEntriesByName(\"mark\", \"mark\")[0] returns an object containing a \"mark\" mark",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The mark returned by getEntriesByName(\"mark\", \"mark\")[0] matches the mark returned by getEntriesByName(\"mark\")[0]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getEntries()[0] returns an object containing a \"mark\" mark",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The mark returned by getEntries()[0] matches the mark returned by getEntriesByName(\"mark\")[0]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getEntriesByType(\"mark\")[0] returns an object containing a \"mark\" mark",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The mark returned by getEntriesByType(\"mark\")[0] matches the mark returned by getEntriesByName(\"mark\")[0]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 1 has the proper name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 1 startTime is approximately correct (up to 20ms difference allowed)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 1 has the proper entryType",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entry 1 duration == 0",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getEntriesByName(\"mark\", \"mark\")[1] returns an object containing a \"mark\" mark",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The mark returned by getEntriesByName(\"mark\", \"mark\")[1] matches the mark returned by getEntriesByName(\"mark\")[1]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getEntries()[1] returns an object containing a \"mark\" mark",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The mark returned by getEntries()[1] matches the mark returned by getEntriesByName(\"mark\")[1]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getEntriesByType(\"mark\")[1] returns an object containing a \"mark\" mark",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The mark returned by getEntriesByType(\"mark\")[1] matches the mark returned by getEntriesByName(\"mark\")[1]",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/measure-l3.any.js",
+    [
+      {
+        "name": "When the end mark is given and the start is unprovided, the end time of the measure entry should be the end mark's time, the start time should be 0.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "When the start mark is given and the end is unprovided, the start time of the measure entry should be the start mark's time, the end should be now.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "When start and end mark are both given, the start time and end time of the measure entry should be the marks' time, repectively",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/measure-with-dict.any.js",
+    [
+      {
+        "name": "measure should throw a TypeError when passed an invalid argument combination",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "measure entries' detail and start/end are customizable",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/measure_syntax_err.any.js",
+    [
+      {
+        "name": "Create a mark \"existing_mark\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self.performance.measure(\"measure\", \"mark\"), where \"mark\" is a non-existent mark, throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self.performance.measure(\"measure\", \"mark\", \"existing_mark\"), where \"mark\" is a non-existent mark, throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self.performance.measure(\"measure\", \"existing_mark\", \"mark\"), where \"mark\" is a non-existent mark, throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self.performance.measure(\"measure\", \"mark\", \"mark\"), where \"mark\" is a non-existent mark, throws a SyntaxError exception.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/structured-serialize-detail.any.js",
+    [
+      {
+        "name": "The detail property in the mark constructor should be structured-clone.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The detail property in the mark method should be structured-clone.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "When accessing detail from a mark entry and the detail is not provided, just return a null value.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Mark: Throw an exception when the detail property cannot be structured-serialized.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The detail property in the measure method should be structured-clone.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The detail property in the measure method should be the same reference.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "When accessing detail from a measure entry and the detail is not provided, just return a null value.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Measure: Throw an exception when the detail property cannot be structured-serialized.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The detail object is cloned when passed to mark API.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/supported-usertiming-types.any.js",
+    [
+      {
+        "name": "supportedEntryTypes contains 'mark' and 'measure'.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'mark' entries should be observable.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'measure' entries should be observable.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "user-timing/user_timing_exists.any.js",
+    [
+      {
+        "name": "self.performance.mark is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self.performance.clearMarks is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self.performance.measure is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self.performance.clearMeasures is defined.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]
