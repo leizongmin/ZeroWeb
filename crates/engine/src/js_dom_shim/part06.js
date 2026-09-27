@@ -2373,6 +2373,11 @@
       }
       return out;
     },
+    // M3-S1（Web Animations §6.2）：document.timeline 默认 DocumentTimeline 实例
+    //（originTime 0，currentTime = now()）；Animation.timeline 缺省回落同一实例。
+    get timeline() {
+      return _zwGetDocumentTimeline();
+    },
     // R2924 elementFromPoint：`document.elementFromPoint(x, y)` → 视口 CSS 像素 (x,y) 命中的最深元素。
     // 经 host `__zw_elementFromPoint(x, y)`（renderer/browser render 后 swap 进 HitTestCache）求命中选择器
     // → _wrapSelector。未注册（engine/reftest/polyfill 无渲染）/ 无命中 → null（spec）。

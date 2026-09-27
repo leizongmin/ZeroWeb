@@ -2,7 +2,7 @@
 
 **入口文档**: [../timing-animation-compat.md](../timing-animation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-28（M2-S3 落地：hr-time 语义修齐，合计 659/1592 = 41.4%）
+**最后更新**: 2026-09-28（M3-S1 落地：WAAPI 构造器 + effect 桥，合计 945/1582 = 59.7%）
 
 ---
 
@@ -12,11 +12,20 @@
 user-timing/WAAPI 纯 JS API 面，不触布局/渲染计算，预期最快出数字。
 headless 帧驱动 opt-in（`__ZW_RAF_FRAME_DRIVEN`）是已知约束，如实标注不放容差。
 
+**M3-S1 已落地（2026-09-28）**：WAAPI 构造器 + effect 桥——**web-animations
+52→338P**（~690 subtests 的 ReferenceError 三主簇闭合），全四 corpus 合计
+**945/1582 = 59.7%**。实现（part03.js + part06）：KeyframeEffect/Animation/
+DocumentTimeline 真接口实例 + document.timeline 默认实例 + el.animate 迁真实例
+（R2965 瞬间完成状态机保留、fill 门末态持久化、duration 兼容 getter）。headless
+帧精度约束如实标注（时序断言族 Fail/Timeout 不放容差）。余非 Pass 主簇：相位/进度
+算法 ~110 + 构造期样式副作用 ~48 + 关键帧参数校验 ~29（→M3-S2）+ 渲染效果断言
+~200（rendering-compat 域记账）。见
+[evidence/2026-09-28-m3-s1-waapi-constructors.md](evidence/2026-09-28-m3-s1-waapi-constructors.md)。
+
 **M2 全部落地（2026-09-28，S1+S2+S3 三切片）**：计时面（hr-time + performance-timeline +
-user-timing）收敛完成——合计 **659/1592 = 41.4%**（hr-time 10/15 + performance-timeline
-36/44 + user-timing 561/570 + web-animations 52/963 零回归）。余非 Pass 全分类：
+user-timing）收敛完成。余非 Pass 全分类：
 L1/L2 legacy 上游同失败、COOP/COEP 隔离 infra、worker 面、resource/navigation-timing
-排除域（→M4 挂账）、DocumentTimeline 缺失（→M3）。
+排除域（→M4 挂账）。
 
 **M2-S3（2026-09-28）**：hr-time——performance.toJSON + Navigation Timing L1 桩
 （unavailable=0、navigationStart 现场 epoch getter）+ Performance EventTarget 继承 +
@@ -68,13 +77,15 @@ suites CSV planned 行已转数据行（active）。
 | P1 | 四 corpus（hr-time/performance-timeline/user-timing/web-animations）导入 + 基线 | ✅ M1（2026-09-27）|
 | P2 | hr-time 精度/单调性/timeOrigin 语义 | ✅ M2-S3（2026-09-28，10/15；余 = 隔离 infra ×2F〔跨域记账〕+ DocumentTimeline ×1F〔M3〕+ worker ×2T〔排除〕）|
 | P3 | user-timing mark/measure/getEntries* + PerformanceObserver 评估 | ✅ M2-S1/S2/S3（561/570 = 98.4%；余 = legacy ×8F + resource 域 ×1T）|
-| P4 | WAAPI Animation/KeyframeEffect/getAnimations/playState + promise 语义 | ⏳ M3（KeyframeEffect/Animation/DocumentTimeline 构造器三主簇 ~690 subtests）|
+| P4 | WAAPI Animation/KeyframeEffect/getAnimations/playState + promise 语义 | ◐ M3-S1 ✅（2026-09-28 构造器+effect 桥 338/953）；⏳ M3-S2 timing-model 相位/进度 + 关键帧校验 |
 | P5 | resource-timing/navigation-timing 重入条件挂账 | ⏳ M4（performance-timeline 余 ×8 + user-timing ×1 + user-timing navigation-timing 归入）|
 
 ## 已完成切片
 
+- **M3-S1（2026-09-28）**：WAAPI 构造器 + effect 桥——web-animations 52→338P，
+  合计 945/1582（59.7%）。零回归 + engine R2965 单测全绿。
 - **M2-S3（2026-09-28）**：hr-time 语义修齐（toJSON/EventTarget/粗化网格/timeOrigin
-  epoch）10→15 P 案 7→10P；user-timing 561/570。合计 659/1592（41.4%）。零回归。
+  epoch）hr-time 7→10P。
 - **M2-S2（2026-09-28）**：PerformanceObserver 语义修齐——performance-timeline
   20→35P、user-timing observer Timeout 清零。
 - **M2-S1（2026-09-28）**：user-timing 异常语义簇修齐 241→518P（98.1%）。
@@ -83,30 +94,14 @@ suites CSV planned 行已转数据行（active）。
 
 ## 下一步计划
 
-1. **M3-S1（下一轮起点，已勘域）**：WAAPI 构造器 + effect 桥（part03.js
-   `_makeAnimation` 区升级为真接口实例；本引擎 `document.timeline` 现全缺）——
-   - `DocumentTimeline(options)`：`currentTime` getter = `_perfNow() - originTime`；
-     `document.timeline` 默认实例（originTime 0）——raf-coarsened-time（hr-time）同依赖
-   - `KeyframeEffect(target, keyframes, options)`：timing 字段（delay/endDelay/fill/
-     iterationStart/iterations/duration/direction/easing）+ composite/
-     iterationComposite/pseudoElement/target；`getTiming()`（原始值：fill 'auto'、
-     duration 'auto'）与 `getComputedTiming()`（归一化：fill→'none'、duration→0/number、
-     加 endTime/activeDuration/progress/currentIteration）；`getKeyframes()`/
-     `setKeyframes()`（property-indexed dict → 关键帧序列展开 + offset 均分）/
-     `updateTiming()` 局部更新
-   - `Animation(effect, timeline)`：`effect` get/set（默认 null）+ timeline
-     （默认 document.timeline）+ 现有瞬间完成状态机（running→finished + fill
-     forwards/both 末态持久化 + finished promise/onfinish）迁到真实例；playState/
-     currentTime/startTime/playbackRate/play/pause/finish/cancel/reverse/
-     updatePlaybackRate/commitStyles/persist/id/onfinish/oncancel/onremove/ready/finished
-   - `el.animate()` 返真 Animation（part04 签名不变）+ getAnimations 注册表兼容
-   - 期望面（interfaces/AnimationEffect/getComputedTiming 勘域）：无 options 时
-     computed {startTime:0, delay:0, endDelay:0, fill:'none', iterationStart:0,
-     iterations:1, duration:0, direction:'normal', easing:'linear'}
-   - headless 瞬间完成近似保持（DC-3 如实标注）：play/pause 时序断言族
-     （interfaces/Animation/play/pause/ready）预期 Fail/Timeout 不放容差
+1. **M3-S2（下一轮起点）**：WAAPI timing-model 相位/进度算法——getComputedTiming
+   的 progress/currentIteration 按 localTime=0 基线计算（before-phase 期望数值 0，
+   现 stub null，~110 subtests）+ KeyframeEffect 构造路径样式副作用排查
+   （「Accessor not called」~48）+ §5.4.15 关键帧参数校验 TypeError
+   （processing-a-keyframes-argument ~29）。
 2. **M4**：DC 逐项判定 + resource-timing/navigation-timing 重入条件挂账定稿
-   （performance-timeline 余 ×8、user-timing ×1、user-timing navigation-timing、
-   hr-time 隔离 infra ×2、worker ×2 均已归入）。
+   （performance-timeline 余 ×8、user-timing ×1、hr-time 隔离 infra ×2、worker ×2
+   均已归入）。
 
 **待用户决策清单**：（空——无门控项）
+

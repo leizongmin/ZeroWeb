@@ -4907,72 +4907,408 @@
     return (last && typeof last === 'object') ? last : null;
   }
 
-  function _makeAnimation(keyframes, options, sel, handle) {
-    var anim = {
-      playState: 'running',
-      currentTime: 0,
-      startTime: 0,
-      playbackRate: 1,
-      duration: 0,
-      id: '',
-      onfinish: null,
-      oncancel: null,
-      onremove: null,
-      _cancelled: false,
-      _committed: false,
-      play: function () { anim.playState = 'running'; },
-      pause: function () { anim.playState = 'paused'; },
-      cancel: function () { anim._cancelled = true; anim.playState = 'idle'; },
-      finish: function () { anim.playState = 'finished'; },
-      reverse: function () { anim.playbackRate = -anim.playbackRate; return anim; },
-      updatePlaybackRate: function (rate) { anim.playbackRate = rate; },
-      // commitStyles()：显式把当前态（headless 瞬间完成 = 末态）写入 inline style。spec 不依赖 fill——
-      // 调用即提交，用于动画移除前固化终态。多关键帧属性经 _applyKeyframeProps camelCase→kebab。
-      commitStyles: function () {
-        if (!anim._committed && anim._endState) {
-          _applyKeyframeProps(anim._endState, sel, handle);
-          anim._committed = true;
-        }
-      },
-      persist: function () {},
-      addEventListener: function () {},
-      removeEventListener: function () {},
-      dispatchEvent: function () { return true; },
+  // ══ M3-S1（timing-animation-compat goal，2026-09-28）——WAAPI 接口面 ══
+  // Web Animations §4 Effect / §5 Animation / §6.2 DocumentTimeline。既有 _makeAnimation
+  // plain-object 瞬间完成形态升级为真接口实例（`X is not defined` 三主簇 ~690 subtests：
+  // KeyframeEffect ~370 / effect 访问 ~256 / Animation ~64）。headless 无真时间轴——
+  // 播放语义保持「瞬间完成」近似（running→defer finished），时序断言族按真实缺口
+  // Fail/Timeout，不放容差（goal 契约 DC-3 如实标注）。
+
+  // EffectTiming 默认值（KeyframeEffectOptions / OptionalEffectTiming）。
+  function _zwEffBaseTiming() {
+    return {
+      delay: 0, endDelay: 0, fill: 'auto', iterationStart: 0, iterations: 1,
+      duration: 'auto', direction: 'normal', easing: 'linear',
     };
-    // options：number=duration(ms) / object={duration,id,fill,...}。提取 duration（finish 后 currentTime 用）+ id + fill。
-    var fill = 'auto';
+  }
+
+  // 解析 KeyframeEffectOptions（number = duration 简写 / dict）。
+  function _zwEffParseOptions(options, target) {
+    var t = _zwEffBaseTiming();
+    t.composite = 'replace';
+    if (target != null) t.target = target;
     if (options != null) {
-      if (typeof options === 'number') anim.duration = options;
-      else {
-        if (typeof options.duration === 'number') anim.duration = options.duration;
-        if (options.id != null) anim.id = String(options.id);
-        if (options.fill != null) fill = String(options.fill);
+      if (typeof options === 'number') {
+        t.duration = options;
+      } else if (typeof options === 'object') {
+        if (options.delay != null) t.delay = Number(options.delay);
+        if (options.endDelay != null) t.endDelay = Number(options.endDelay);
+        if (options.fill != null) t.fill = String(options.fill);
+        if (options.iterationStart != null) t.iterationStart = Number(options.iterationStart);
+        if (options.iterations != null) t.iterations = Number(options.iterations);
+        if (options.duration != null) t.duration = (options.duration === 'auto') ? 'auto' : Number(options.duration);
+        if (options.direction != null) t.direction = String(options.direction);
+        if (options.easing != null) t.easing = String(options.easing);
+        if (options.composite != null) t.composite = String(options.composite);
+        if (options.iterationComposite != null) t.iterationComposite = String(options.iterationComposite);
+        if (options.pseudoElement != null) t.pseudoElement = String(options.pseudoElement);
       }
     }
-    // 末态关键帧（finish/commitStyles 时应用）。fill ∈ {forwards, both} 时 finish 自动持久化（spec）；
-    // none / auto（auto 解析为 none，无父 group）不自动持久化——元素回归 underlying 值。
-    anim._endState = _endStateFromKeyframes(keyframes);
-    anim._persist = (fill === 'forwards' || fill === 'both');
-    var resolveFinish;
-    anim._finishedP = new Promise(function (r) { resolveFinish = r; });
-    Object.defineProperty(anim, 'finished', { get: function () { return anim._finishedP; } });
-    // headless 瞬间完成（无真时间轴）—— microtask 后 finished + onfinish（cancel 则 idle 不完成）。
-    // persist 时把末态写入 inline style（经样式管线可见）。已 commitStyles 则跳过重复写。
-    _defer(function () {
-      if (!anim._cancelled) {
-        anim.playState = 'finished';
-        anim.currentTime = anim.duration;
-        if (anim._persist && !anim._committed && anim._endState) {
-          _applyKeyframeProps(anim._endState, sel, handle);
-          anim._committed = true;
+    return t;
+  }
+
+  // getComputedTiming 归一化（AnimationEffect/getComputedTiming.html 勘域：fill 'auto'→
+  // 'none'、duration 'auto'→0、endTime/activeDuration 展开、progress/currentIteration null）。
+  function _zwEffComputedTiming(t) {
+    var duration = (t.duration === 'auto' || t.duration === undefined) ? 0 : t.duration;
+    var activeDuration = duration * t.iterations;
+    var endTime = t.delay + activeDuration + t.endDelay;
+    return {
+      startTime: 0, endTime: endTime, activeDuration: activeDuration,
+      delay: t.delay, endDelay: t.endDelay,
+      fill: (t.fill === 'auto') ? 'none' : t.fill,
+      iterationStart: t.iterationStart, iterations: t.iterations,
+      duration: duration, direction: t.direction, easing: t.easing,
+      progress: null, currentIteration: null,
+    };
+  }
+
+  // 关键帧解析（§5.4.15 normalize）：数组形态（每项属性 dict + 可选 offset/easing/
+  // composite）与 property-indexed 形态（属性 → 数组）统一展开为关键帧序列，
+  // offset 缺席按均分补 computedOffset；纯 offset/easing/composite 元键不落属性。
+  function _zwKfNormalize(keyframes) {
+    var out = [];
+    var i;
+    var j;
+    var prop;
+    if (keyframes == null) return out;
+    if (Array.isArray(keyframes)) {
+      for (i = 0; i < keyframes.length; i++) {
+        var src = (keyframes[i] && typeof keyframes[i] === 'object') ? keyframes[i] : {};
+        var kf = { offsets: null };
+        for (prop in src) {
+          if (!Object.prototype.hasOwnProperty.call(src, prop)) continue;
+          if (prop === 'offset' || prop === 'easing' || prop === 'composite') continue;
+          kf[prop] = String(src[prop]);
         }
-        resolveFinish(anim);
-        if (typeof anim.onfinish === 'function') {
-          try { anim.onfinish({ type: 'finish', target: anim, currentTime: anim.currentTime }); } catch (_e) {}
+        kf.offset = (src.offset == null) ? null : Number(src.offset);
+        kf.computedOffset = (kf.offset == null || isNaN(kf.offset)) ? null : kf.offset;
+        kf.easing = (src.easing != null) ? String(src.easing) : 'linear';
+        // composite 缺省 'auto'（spec getKeyframes 序列化——仅显式指定才落具体值）。
+        kf.composite = (src.composite != null) ? String(src.composite) : 'auto';
+        out.push(kf);
+      }
+    } else if (typeof keyframes === 'object') {
+      // property-indexed：数组值属性 → 跨度展开。
+      var spans = 0;
+      for (prop in keyframes) {
+        if (!Object.prototype.hasOwnProperty.call(keyframes, prop)) continue;
+        if (prop === 'offset' || prop === 'easing' || prop === 'composite') continue;
+        if (Array.isArray(keyframes[prop]) && keyframes[prop].length > spans) {
+          spans = keyframes[prop].length;
         }
       }
+      if (spans === 0) spans = 1;
+      var offsets = Array.isArray(keyframes.offset) ? keyframes.offset : null;
+      var easings = Array.isArray(keyframes.easing) ? keyframes.easing : null;
+      var composites = Array.isArray(keyframes.composite) ? keyframes.composite : null;
+      for (i = 0; i < spans; i++) {
+        var k2 = {};
+        for (prop in keyframes) {
+          if (!Object.prototype.hasOwnProperty.call(keyframes, prop)) continue;
+          if (prop === 'offset' || prop === 'easing' || prop === 'composite') continue;
+          var v = keyframes[prop];
+          k2[prop] = String(Array.isArray(v) ? v[Math.min(i, v.length - 1)] : v);
+        }
+        k2.offset = (offsets && offsets[i] != null) ? Number(offsets[i]) : null;
+        k2.computedOffset = (k2.offset == null || isNaN(k2.offset)) ? null : k2.offset;
+        k2.easing = (easings && easings[i] != null) ? String(easings[i]) : 'linear';
+        // composite 缺省 'auto'（同上）。
+        k2.composite = (composites && composites[i] != null) ? String(composites[i]) : 'auto';
+        out.push(k2);
+      }
+    }
+    // computedOffset 均分补齐（spec §5.4.15 step：null offset 区间均分，末帧恒 1）。
+    var n = out.length;
+    if (n > 0) {
+      // 显式锚点之间线性均分；无任何显式 offset → i/(n-1)（n=1 时 [0]）。
+      var lastAnchor = -1;
+      var nextAnchor;
+      for (i = 0; i < n; i++) {
+        if (out[i].computedOffset != null) {
+          // 回填上一锚点之后的 null 区间。
+          var gap = i - lastAnchor;
+          for (j = lastAnchor + 1; j < i; j++) {
+            out[j].computedOffset = out[lastAnchor].computedOffset == null
+              ? (gap > 0 ? j / gap * out[i].computedOffset : 0)
+              : out[lastAnchor].computedOffset + (out[i].computedOffset - out[lastAnchor].computedOffset) * (j - lastAnchor) / gap;
+          }
+          lastAnchor = i;
+        }
+      }
+      if (lastAnchor === -1) {
+        for (i = 0; i < n; i++) out[i].computedOffset = (n === 1) ? 1 : i / (n - 1);
+      } else {
+        gap = n - 1 - lastAnchor;
+        for (j = lastAnchor + 1; j < n; j++) {
+          out[j].computedOffset = (out[lastAnchor].computedOffset == null)
+            ? 1
+            : out[lastAnchor].computedOffset + (1 - out[lastAnchor].computedOffset) * (j - lastAnchor) / Math.max(gap, 1);
+        }
+        if (out[n - 1].computedOffset == null) out[n - 1].computedOffset = 1;
+      }
+      // 头部 null 锚（首帧无显式 offset 且无前置锚点）→ 0。
+      if (out[0].computedOffset == null) out[0].computedOffset = 0;
+    }
+    return out;
+  }
+
+  // KeyframeEffect（§4）——可构造接口：target/keyframes/timing + composite 面。
+  function KeyframeEffect(target, keyframes, options) {
+    if (!(this instanceof KeyframeEffect)) {
+      throw new TypeError("Constructor KeyframeEffect requires 'new'");
+    }
+    this._timing = _zwEffParseOptions(options, (target === undefined) ? null : target);
+    this._keyframes = _zwKfNormalize((keyframes === undefined) ? null : keyframes);
+    this._endState = _endStateFromKeyframes(keyframes);
+  }
+  KeyframeEffect.prototype.getTarget = function () { return this._timing.target || null; };
+  KeyframeEffect.prototype.getTiming = function () {
+    var t = this._timing;
+    return {
+      delay: t.delay, endDelay: t.endDelay, fill: t.fill,
+      iterationStart: t.iterationStart, iterations: t.iterations,
+      duration: t.duration, direction: t.direction, easing: t.easing,
+    };
+  };
+  KeyframeEffect.prototype.getComputedTiming = function () {
+    return _zwEffComputedTiming(this._timing);
+  };
+  KeyframeEffect.prototype.getKeyframes = function () {
+    // 输出快照（spec：每次新对象；computedOffset 必有）。
+    return this._keyframes.map(function (kf) {
+      var out = {};
+      for (var p in kf) {
+        if (!Object.prototype.hasOwnProperty.call(kf, p)) continue;
+        if (p === 'offsets') continue;
+        out[p] = kf[p];
+      }
+      return out;
     });
-    // R3067：入 per-element 动画注册表（elKey 复用 _elKey(sel,handle)），供 Element/Document.getAnimations() 查询。
+  };
+  KeyframeEffect.prototype.setKeyframes = function (keyframes) {
+    this._keyframes = _zwKfNormalize((keyframes === undefined) ? null : keyframes);
+    this._endState = _endStateFromKeyframes(keyframes);
+  };
+  KeyframeEffect.prototype.updateTiming = function (options) {
+    if (options != null && typeof options === 'object') {
+      if (options.delay != null) this._timing.delay = Number(options.delay);
+      if (options.endDelay != null) this._timing.endDelay = Number(options.endDelay);
+      if (options.fill != null) this._timing.fill = String(options.fill);
+      if (options.iterationStart != null) this._timing.iterationStart = Number(options.iterationStart);
+      if (options.iterations != null) this._timing.iterations = Number(options.iterations);
+      if (options.duration != null) this._timing.duration = (options.duration === 'auto') ? 'auto' : Number(options.duration);
+      if (options.direction != null) this._timing.direction = String(options.direction);
+      if (options.easing != null) this._timing.easing = String(options.easing);
+    }
+    return this.getTiming();
+  };
+  Object.defineProperty(KeyframeEffect.prototype, 'target', {
+    get: function () { return this._timing.target || null; },
+    configurable: true,
+  });
+  Object.defineProperty(KeyframeEffect.prototype, 'composite', {
+    get: function () { return this._timing.composite || 'replace'; },
+    set: function (v) { this._timing.composite = String(v); },
+    configurable: true,
+  });
+  Object.defineProperty(KeyframeEffect.prototype, 'iterationComposite', {
+    get: function () { return this._timing.iterationComposite || 'replace'; },
+    set: function (v) { this._timing.iterationComposite = String(v); },
+    configurable: true,
+  });
+  Object.defineProperty(KeyframeEffect.prototype, 'pseudoElement', {
+    get: function () { return this._timing.pseudoElement || null; },
+    set: function (v) { this._timing.pseudoElement = (v == null) ? null : String(v); },
+    configurable: true,
+  });
+  try { KeyframeEffect.prototype[Symbol.toStringTag] = 'KeyframeEffect'; } catch (_e) {}
+  globalThis.KeyframeEffect = KeyframeEffect;
+
+  // DocumentTimeline（§6.2）——currentTime = now() − originTime；document.timeline
+  // 默认实例（originTime 0）。raf-coarsened-time（hr-time）同依赖。
+  function DocumentTimeline(options) {
+    if (!(this instanceof DocumentTimeline)) {
+      throw new TypeError("Constructor DocumentTimeline requires 'new'");
+    }
+    this._originTime = (options && typeof options === 'object' && options.originTime != null)
+      ? Number(options.originTime) : 0;
+  }
+  DocumentTimeline.prototype.getCurrentTime = function () {
+    return (typeof _perfNow === 'function' ? _perfNow() : 0) - this._originTime;
+  };
+  Object.defineProperty(DocumentTimeline.prototype, 'currentTime', {
+    get: function () { return this.getCurrentTime(); },
+    configurable: true,
+  });
+  try { DocumentTimeline.prototype[Symbol.toStringTag] = 'DocumentTimeline'; } catch (_e) {}
+  globalThis.DocumentTimeline = DocumentTimeline;
+
+  // Animation（§5）——可构造接口。headless 瞬间完成状态机（R2965 语义迁移）：
+  // play()/animate 创建 → running → defer finished + 末态持久化（fill forwards/both）。
+  var _zwDefaultTimeline = null;
+  function _zwGetDocumentTimeline() {
+    if (_zwDefaultTimeline === null) _zwDefaultTimeline = new DocumentTimeline({ originTime: 0 });
+    return _zwDefaultTimeline;
+  }
+
+  function Animation(effect, timeline) {
+    if (!(this instanceof Animation)) {
+      throw new TypeError("Constructor Animation requires 'new'");
+    }
+    this._effect = (effect === undefined) ? null : effect;
+    this._timeline = (timeline === undefined) ? null : timeline;
+    this.id = '';
+    this.startTime = null;
+    this.currentTime = null;
+    this.playbackRate = 1;
+    this._playState = 'idle';
+    this._pending = false;
+    this._cancelled = false;
+    this._committed = false;
+    this.onfinish = null;
+    this.oncancel = null;
+    this.onremove = null;
+    this._appliedProps = null;
+    var self = this;
+    var resolveReady;
+    this._readyP = new Promise(function (r) { resolveReady = r; });
+    this._resolveReady = resolveReady;
+    var resolveFinish;
+    this._finishedP = new Promise(function (r) { resolveFinish = r; });
+    this._resolveFinish = resolveFinish;
+  }
+  Animation.prototype._applyEndState = function (force) {
+    var eff = this._effect;
+    var end = eff && eff._endState;
+    if (!end || this._committed) return;
+    // fill 门：finish 自动持久化仅 forwards/both（R2965 语义——none/auto 元素回归
+    // underlying 值）；commitStyles 不依赖 fill（force）。
+    var fill = (eff._timing && eff._timing.fill) || 'auto';
+    if (!force && !(fill === 'forwards' || fill === 'both')) return;
+    var sel = this._sel;
+    var handle = this._handle;
+    var target = (eff._timing && eff._timing.target) || null;
+    if (target) {
+      sel = target.__zwSelector || null;
+      handle = target.__zwHandle || null;
+    }
+    if (sel != null || handle != null) {
+      _applyKeyframeProps(end, sel, handle);
+      this._committed = true;
+    }
+  };
+  Animation.prototype._finishNow = function () {
+    var self = this;
+    self._playState = 'finished';
+    var dur = 0;
+    if (self._effect && self._effect._timing) {
+      var d = self._effect._timing.duration;
+      dur = (d === 'auto' || d === undefined) ? 0 : d;
+    }
+    self.currentTime = dur;
+    self._applyEndState(false);
+    self._resolveFinish(self);
+    if (typeof self.onfinish === 'function') {
+      try { self.onfinish({ type: 'finish', target: self, currentTime: self.currentTime }); } catch (_e) {}
+    }
+  };
+  Animation.prototype.play = function () {
+    var self = this;
+    if (self._playState === 'finished') {
+      // spec：重播重置 finished promise——headless 直接再走瞬间完成。
+      self._finishedP = new Promise(function (r) { self._resolveFinish = r; });
+      self._committed = false;
+    }
+    self._cancelled = false;
+    self._playState = 'running';
+    self._pending = false;
+    self._resolveReady(self);
+    // headless 瞬间完成：microtask 后 finished + onfinish + 末态持久化。
+    _defer(function () {
+      if (!self._cancelled && self._playState === 'running') self._finishNow();
+    });
+  };
+  Animation.prototype.pause = function () {
+    this._playState = 'paused';
+  };
+  Animation.prototype.cancel = function () {
+    this._cancelled = true;
+    this._playState = 'idle';
+    this.currentTime = null;
+    if (typeof this.oncancel === 'function') {
+      try { this.oncancel({ type: 'cancel', target: this }); } catch (_e) {}
+    }
+  };
+  Animation.prototype.finish = function () {
+    if (this.playbackRate < 0) {
+      throw new (globalThis.DOMException || DOMException || Error)('Cannot finish Animation with a negative playbackRate', 'InvalidStateError');
+    }
+    this._finishNow();
+  };
+  Animation.prototype.reverse = function () {
+    this.playbackRate = -this.playbackRate;
+    this.play();
+    return this;
+  };
+  Animation.prototype.updatePlaybackRate = function (rate) {
+    this.playbackRate = Number(rate);
+  };
+  Animation.prototype.commitStyles = function () {
+    this._applyEndState(true);
+    this._committed = true;
+  };
+  Animation.prototype.persist = function () {};
+  Animation.prototype.getEffect = function () { return this._effect; };
+  Object.defineProperty(Animation.prototype, 'effect', {
+    get: function () { return this._effect; },
+    set: function (v) { this._effect = (v === undefined) ? null : v; },
+    configurable: true,
+  });
+  Object.defineProperty(Animation.prototype, 'timeline', {
+    get: function () { return this._timeline || _zwGetDocumentTimeline(); },
+    set: function (v) { this._timeline = v; },
+    configurable: true,
+  });
+  Object.defineProperty(Animation.prototype, 'playState', {
+    get: function () { return this._playState; },
+    configurable: true,
+  });
+  Object.defineProperty(Animation.prototype, 'pending', {
+    get: function () { return this._pending; },
+    configurable: true,
+  });
+  // duration：非 spec 属性（spec 走 effect.getTiming().duration）——R2965 旧形态与
+  // 动画库（GSAP 等）消费兼容保留。
+  Object.defineProperty(Animation.prototype, 'duration', {
+    get: function () {
+      var d = (this._effect && this._effect._timing) ? this._effect._timing.duration : 'auto';
+      return (d === 'auto' || d === undefined) ? 0 : d;
+    },
+    configurable: true,
+  });
+  Object.defineProperty(Animation.prototype, 'ready', {
+    get: function () { return this._readyP; },
+    configurable: true,
+  });
+  Object.defineProperty(Animation.prototype, 'finished', {
+    get: function () { return this._finishedP; },
+    configurable: true,
+  });
+  try { Animation.prototype[Symbol.toStringTag] = 'Animation'; } catch (_e) {}
+  globalThis.Animation = Animation;
+
+  // el.animate 入口（R2965/R3067 消费签名不变）：真 Animation + KeyframeEffect，
+  // 创建即 play（瞬间完成），注册表供 Element/Document.getAnimations()。
+  function _makeAnimation(keyframes, options, sel, handle) {
+    var effectOptions = (options != null && typeof options === 'object') ? options
+      : (typeof options === 'number' ? { duration: options } : undefined);
+    var effect = new KeyframeEffect(null, keyframes, effectOptions);
+    var anim = new Animation(effect, _zwGetDocumentTimeline());
+    if (effectOptions && effectOptions.id != null) anim.id = String(effectOptions.id);
+    anim._sel = sel;
+    anim._handle = handle;
+    anim.play();
     var _akey = _elKey(sel, handle);
     (_elementAnimations[_akey] || (_elementAnimations[_akey] = [])).push(anim);
     return anim;
