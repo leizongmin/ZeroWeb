@@ -2,8 +2,8 @@
 
 **入口文档**: [../desktop-browser.md](../desktop-browser.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-27（M3-S3 落地：页面查找最小真实链路 + 演示流全绿——M3 Done，
-DC-3 三条全勾；M1/M2 Done 维持）
+**最后更新**: 2026-09-27（M4 落地：数据面演示流全绿（收藏/历史/设置/主页，profile
+隔离）——M4 Done，DC-4 三条全勾 + DC-2 主页按钮项补勾；M1/M2/M3 Done 维持）
 
 ---
 
@@ -30,10 +30,23 @@ DC-3 三条全勾；M1/M2 Done 维持）
 | P3 | 下载管理器交互面 | ✅ M3-S1：attachment 拦截 → 落盘 → 记账 → 面板/下载页 → Show in folder 全链绿（evidence/M3-download-manager.md）；余账（分块进度采样/条目级动作）挂 M5 收口评估 |
 | P4 | engine 文本搜索 API（Ctrl+F 依赖，最小面评估） | ✅ M3-S3：最小面评估定论=零 engine/renderer 改动（browser 侧 glyph 匹配闭环查找全链），engine 文本搜索 API 不再是本 goal 依赖项；连字完整匹配局限记账（evidence/M3-page-find.md §1） |
 | P5 | 缩放 viewport 联动（④ 桥遗产消费）+ 右键菜单 | ✅ M3-S2（Ctrl+± 缩放状态 + 页面区 reflow 像素断言 + 复位；右键菜单 Page/Selection 分发 + 检查元素入口 + 剪贴板读回，evidence/M3-context-menu-zoom.md） |
-| P6 | 收藏/历史/设置交互面 | ⏳ M4 |
+| P6 | 收藏/历史/设置交互面 | ✅ M4（Ctrl+D 添加/收藏栏打开/右键删除 + zero://history 记录/clear + 搜索引擎/do_not_track/home_url 设置 + Alt+Home 落地；XDG_CONFIG_HOME profile 隔离，evidence/M4-data-plane.md） |
 
 ## 已完成切片
 
+- **M4（2026-09-27）数据面演示流（收藏/历史/设置/主页）**：
+  - 资产：`apps/browser/src/data_smoke.rs`（--data-smoke-base/-dir CLI）+
+    smoke 只读面新增 bookmarks/history/settings/menu-button 访问器 +
+    `scripts/desktop-browser-m4-smoke.sh` + `examples/m4-data/page.html`
+  - 流程（真实输入路径）：Ctrl+D 添加书签（收藏栏呈现）→ 收藏栏条目点击打开 →
+    右键 Delete 删除 → zero://history 呈现/清除 → 搜索引擎切 DuckDuckGo →
+    do_not_track 开关 → home_url 设本地 fixture → Alt+Home 落地
+  - **profile 隔离（数据安全）**：leg 以 XDG_CONFIG_HOME=$leg_dir/profile 运行，
+    不读写用户真实数据；迭代期真实 profile 试跑写入的书签/开关残留已手动清理
+  - 产品行为记档：设置开关按设计跳转设置页（open_settings_page）；
+    zero://history 自我记录（断言锚 = fixture 条目清零非零长度）
+  - 结果：data-flow 全绿 + 复跑通过；DC-4 三条全勾 + DC-2 主页按钮项补勾；
+    [evidence/M4-data-plane.md](evidence/M4-data-plane.md)
 - **M3-S3（2026-09-27）页面查找真实链路 + 演示流（M3 收口）**：
   - 基线：查找栏 UI/FindState 状态机/find_set_matches 全就位但零调用方（孤岛）。
     最小面决策（执行协议授权）：零 engine/renderer 改动——browser 侧已有页面
@@ -139,11 +152,10 @@ DC-3 三条全勾；M1/M2 Done 维持）
 
 ## 下一步计划
 
-1. **M4 数据面**：收藏（添加/删除/文件夹/收藏栏）/ 历史（记录/搜索/清除）/ 设置
-   （默认搜索引擎/主页/隐私）演示流；主页按钮项在此收口（先配 home_url 为本地
-   fixture 再按 Alt+Home）
-2. **M3 余账（挂 M5 收口评估）**：分块下载进度采样（需流式传输）、下载条目级
-   「打开文件」动作、查找连字完整匹配（rendering-compat 语料）
+1. **M5 收口**：DC-1~5 逐项判定复核（DC-1/2/3/4 已全勾，DC-5 门禁随每切片验证）
+   + smoke 资产定稿 + 挂账清单定稿（分块下载进度/条目级动作/文件夹管理/历史搜索
+   UI/查找连字/m1-m3 脚本 profile 隔离回补）→ 目标 DONE 判定
+2. 守成态规划：M5 后转守成，守成门 = make test + m1/m2/m3/m4 四演示流脚本全绿
 
 **待用户决策清单**：
 - 正文空格塌缩（product 可见）已移交 rendering-compat 流（其 R4096-N font-stack 统一
@@ -159,7 +171,7 @@ DC-3 三条全勾；M1/M2 Done 维持）
 | M1 — 真窗口主链路验收 | ✅ Done（DC-1 三条全勾：Linux 演示流 + GPU 合成显示记账 + 三平台 CI 启动冒烟绿证据 run 36311188270） |
 | M2 — 导航与标签 | ✅ Done（S1 多标签+导航控制 + S2 地址栏键入/补全/加载指示全绿；主页按钮项并入 M4 设置流记账） |
 | M3 — 内容工具 | ✅ Done（S1 下载管理器 + S2 右键菜单/缩放联动 + S3 页面查找全绿；DC-3 三条全勾） |
-| M4 — 数据面 | ⏳ |
+| M4 — 数据面 | ✅ Done（收藏/历史/设置/主页全链绿，profile 隔离；DC-4 三条全勾） |
 | M5 — 收口 | ⏳ |
 
 ## 验证基线
@@ -167,8 +179,9 @@ DC-3 三条全勾；M1/M2 Done 维持）
 - 测试基线：`make test` 全绿（经 test-guard；2026-09-27 本轮复验，随提交记账刷新计数）
 - 演示流门禁：`bash scripts/desktop-browser-m1-smoke.sh` 三腿全绿（M1 守成门）+
   `bash scripts/desktop-browser-m2-smoke.sh` 双腿全绿（M2 守成门）+
-  `bash scripts/desktop-browser-m3-smoke.sh` 三腿全绿（M3 守成门）——渲染/组合器/
-  窗口/标签·地址栏·导航·下载·菜单·缩放·查找链路任何触碰后必跑
+  `bash scripts/desktop-browser-m3-smoke.sh` 三腿全绿（M3 守成门）+
+  `bash scripts/desktop-browser-m4-smoke.sh` 全绿（M4 守成门）——渲染/组合器/窗口/
+  标签·地址栏·导航·下载·菜单·缩放·查找·数据面链路任何触碰后必跑
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过；
   演示流须可脚本重放才计入 evidence「绿」
 
