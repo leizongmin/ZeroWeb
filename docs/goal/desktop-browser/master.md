@@ -2,8 +2,8 @@
 
 **入口文档**: [../desktop-browser.md](../desktop-browser.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-27（M3-S1 落地：下载管理器真实链路接线 + 演示流全绿；M1/M2
-Done 维持）
+**最后更新**: 2026-09-27（M3-S2 落地：右键菜单 + 缩放联动演示流全绿 + 剪贴板 X11
+失主缺陷修复；M1/M2 Done 维持）
 
 ---
 
@@ -29,11 +29,25 @@ Done 维持）
 | P2 | 标签族/地址栏/导航控制交互面 | ✅ Done（M2-S1 多标签+导航控制 + M2-S2 地址栏键入/补全/加载指示，evidence/M2-{tabs-navigation,addressbar-autocomplete-loading}.md；主页按钮项并入 M4 设置流） |
 | P3 | 下载管理器交互面 | 🔄 M3-S1：attachment 拦截 → 落盘 → 记账 → 面板/下载页 → Show in folder 全链绿（evidence/M3-download-manager.md）；余分块进度采样/条目级动作挂账 |
 | P4 | engine 文本搜索 API（Ctrl+F 依赖，最小面评估） | ⏳ M3 |
-| P5 | 缩放 viewport 联动（④ 桥遗产消费）+ 右键菜单 | ⏳ M3（缩放的 Ctrl± 输入面已被 M1 腿消费，页面侧联动断言待 M3 收口） |
+| P5 | 缩放 viewport 联动（④ 桥遗产消费）+ 右键菜单 | ✅ M3-S2（Ctrl+± 缩放状态 + 页面区 reflow 像素断言 + 复位；右键菜单 Page/Selection 分发 + 检查元素入口 + 剪贴板读回，evidence/M3-context-menu-zoom.md） |
 | P6 | 收藏/历史/设置交互面 | ⏳ M4 |
 
 ## 已完成切片
 
+- **M3-S2（2026-09-27）右键上下文菜单 + 缩放联动演示流**：
+  - 资产：`apps/browser/src/menu_zoom_smoke.rs`（--menu-zoom-smoke-base/-dir CLI）+
+    smoke 只读面新增 context_menu/clipboard/zoom 访问器 + m3 脚本第二腿
+    menu-zoom-flow + `examples/m3-downloads/menu.html`
+  - 流程（真实输入路径）：右键弹 Page 菜单（条目断言）→ reload 行点击（epoch 前进
+    + URL 不变）→ inspect 行点击（zero://inspect 新标签 + Ctrl+W 收尾）→ 拖拽选中
+    → Selection 菜单 copy（剪贴板读回 25 字节）→ Ctrl+＋（1.0→1.1 + 页面区 reflow
+    像素签名）→ Ctrl+0 复位
+  - **缺陷修复**：clipboard.rs 每次读写新建 arboard::Clipboard 即弃——X11 selection
+    所有权随实例存活，写完即失主（复制内容谁都读不回）；改进程内 OnceLock 保活
+    单实例。菜单行点击几何与渲染/命中测试同源（分隔行紧凑高度累积），均匀行高
+    公式点 inspect 行会落空且无报错——断言必须锚定动作副作用（方法论入 evidence）
+  - 结果：menu-zoom-flow 全绿 + 复跑通过（与 download-flow 同轮双 PASS）；
+    [evidence/M3-context-menu-zoom.md](evidence/M3-context-menu-zoom.md)
 - **M3-S1（2026-09-27）下载管理器真实链路 + 演示流**：
   - 基线事实：DownloadManager 此前为纯状态模型（无落盘/无触发/无打开目录动作）。
     本切片补齐最小真实链路（全部 apps/browser，零 net/engine/renderer 改动——§9
@@ -110,11 +124,13 @@ Done 维持）
 
 ## 下一步计划
 
-1. **M3 第二切片**：右键上下文菜单演示流（复制/粘贴/检查元素入口）——context_menu
-   模型与 native 菜单渲染已在（M2 期间实测 tab 右键菜单可开），补页面区右键 +
-   菜单项点击断言流；缩放 viewport 联动页面侧断言（Ctrl± 后页面 reflow 像素断言）
-2. **M3 余项 / M4**：engine 文本搜索 API 最小面评估（Ctrl+F，P4）；收藏/历史/设置
-   演示流（M4，含主页按钮项：先配 home_url 为本地 fixture 再按 Alt+Home）
+1. **M3 余项（P4 页面查找）**：Ctrl+F 查找栏 UI 与 find_state 已在（engine 侧搜索
+   通道存疑）——先核现状：真窗口里 Ctrl+F 键入后高亮/计数是否端到端可用；可用则
+   直接补查找演示流（P4 收口）；不可用则 engine 文本搜索 API 最小面评估（入口文档
+   执行协议：最小面自主做，超范围记「待用户决策」）
+2. **M4 数据面**：收藏（添加/删除/文件夹/收藏栏）/ 历史（记录/搜索/清除）/ 设置
+   （默认搜索引擎/主页/隐私）演示流；主页按钮项在此收口（先配 home_url 为本地
+   fixture 再按 Alt+Home）
 
 **待用户决策清单**：
 - 正文空格塌缩（product 可见）已移交 rendering-compat 流（其 R4096-N font-stack 统一
@@ -129,7 +145,7 @@ Done 维持）
 |--------|------|
 | M1 — 真窗口主链路验收 | ✅ Done（DC-1 三条全勾：Linux 演示流 + GPU 合成显示记账 + 三平台 CI 启动冒烟绿证据 run 36311188270） |
 | M2 — 导航与标签 | ✅ Done（S1 多标签+导航控制 + S2 地址栏键入/补全/加载指示全绿；主页按钮项并入 M4 设置流记账） |
-| M3 — 内容工具 | 🔄 S1 下载管理器全绿；余右键菜单/缩放联动/查找（P4 文本搜索 API 评估） |
+| M3 — 内容工具 | 🔄 S1 下载管理器 + S2 右键菜单/缩放联动全绿；余页面查找（P4：先核 Ctrl+F 现状再定最小面/记决策） |
 | M4 — 数据面 | ⏳ |
 | M5 — 收口 | ⏳ |
 
