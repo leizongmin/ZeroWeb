@@ -1028,17 +1028,31 @@
     }
     return _perfLookupMark(String(value));
   }
-  // observer 派发用 entry list（getEntries/getEntriesByType/getEntriesByName over 传入快照）。
+  // observer 派发用 entry list——真接口形态（PerformanceObserverEntryList global：
+  // po-observe「first callback parameter must be a PerformanceObserverEntryList
+  // instance」instanceof 断言 + Illegal constructor）。
+  function PerformanceObserverEntryList() {
+    throw new TypeError('Illegal constructor');
+  }
+  PerformanceObserverEntryList.prototype.getEntries = function () { return this._entries.slice(); };
+  PerformanceObserverEntryList.prototype.getEntriesByType = function (t) {
+    return this._entries.filter(function (e) { return e.entryType === t; });
+  };
+  PerformanceObserverEntryList.prototype.getEntriesByName = function (n, t) {
+    return this._entries.filter(function (e) { return e.name === n && (t === undefined || e.entryType === t); });
+  };
+  try { PerformanceObserverEntryList.prototype[Symbol.toStringTag] = 'PerformanceObserverEntryList'; } catch (_e) {}
+  globalThis.PerformanceObserverEntryList = PerformanceObserverEntryList;
+
   function _makeObserverList(entries) {
-    return {
-      getEntries: function () { return entries.slice(); },
-      getEntriesByType: function (t) {
-        return entries.filter(function (e) { return e.entryType === t; });
-      },
-      getEntriesByName: function (n, t) {
-        return entries.filter(function (e) { return e.name === n && (t === undefined || e.entryType === t); });
-      },
-    };
+    var list = Object.create(PerformanceObserverEntryList.prototype);
+    list._entries = entries.slice();
+    return list;
+  }
+  // 派发批按 startTime 升序（spec：observer queue sorted；stable 排序保同 startTime
+  // 插入序——po-entries-sort：origin 起点 measure(startTime 0) 先于后续 mark）。
+  function _sortedByStartTime(entries) {
+    return entries.slice().sort(function (a, b) { return a.startTime - b.startTime; });
   }
   // 新 entry 入 buffer 时，向所有 observe 该 entryType 的活跃 observer 排队，每 observer 至多一个 microtask flush
   // （去抖：pending 期间累积，单次 flush 一次性派发全部 buffered）。
@@ -1051,10 +1065,15 @@
           obs._pending = true;
           (function (o) {
             _defer(function () {
+              if (!o._pending) return; // disconnect 取消（po-disconnect）
               o._pending = false;
-              var recs = o._buffered;
+              var recs = _sortedByStartTime(o._buffered);
               o._buffered = [];
-              o._cb(_makeObserverList(recs));
+              // spec：callback(entries, observer, options)，this = observer——缺第二实参使
+              // 回调内 observer.disconnect()/observe() 取 undefined（M2-S2 Timeout
+              // 簇根因）；第三实参 options.droppedEntriesCount（droppedentriescount，
+              // 本引擎无 resource buffer 丢弃恒 0——resource-timing 排除域）。
+              o._cb.call(o, _makeObserverList(recs), o, { droppedEntriesCount: 0 });
             });
           })(obs);
         }
@@ -1219,18 +1238,79 @@
     this._buffered = [];
     this._pending = false;
   }
+  // M2-S2（timing-animation-compat）：observe 语义修齐——
+  // - 无 type 且无 entryTypes（含 {entryType:…} 拼写错）→ TypeError；type 与
+  //   entryTypes 同传 → TypeError；entryTypes 传 string（非 sequence）→ TypeError；
+  //   entryTypes 空序列 → 不抛（po-observe）
+  // - 同一 observer 在 type 形态与 entryTypes 形态间切换 → InvalidModificationError
+  //   DOMException（po-observe-type）；**type 形态叠加**（observe 不同 type 值会堆叠，
+  //   po-observe-type「with different type values stacks」）；**entryTypes 形态替换**
+  //   （replace observer if already present——po-observe / po-callback-mutate 链式
+  //   改过滤依赖）
+  // - `buffered: true`（type 单型形态）：observe 时回放 buffer 中**精确匹配 type**
+  //   的既有 entries（大小写敏感——case-sensitivity 锚定；po-observe.html /
+  //   buffered-flag-* / multiple-buffered-flag-observers 依赖）
   PerformanceObserver.prototype.observe = function (options) {
-    var t = (options && options.entryTypes)
-      ? options.entryTypes
-      : (options && options.type ? [options.type] : []);
-    for (var i = 0; i < t.length; i++) {
-      if (this._types.indexOf(t[i]) === -1) this._types.push(t[i]);
+    if (!options || typeof options !== 'object') {
+      throw new TypeError("Failed to execute 'observe' on 'PerformanceObserver': An observed type or entryTypes is required.");
+    }
+    var hasType = typeof options.type === 'string';
+    var hasEntryTypes = options.entryTypes !== undefined && options.entryTypes !== null;
+    if (hasType && hasEntryTypes) {
+      throw new TypeError("Failed to execute 'observe' on 'PerformanceObserver': type and entryTypes cannot be combined.");
+    }
+    if (hasEntryTypes && typeof options.entryTypes === 'string') {
+      throw new TypeError("Failed to execute 'observe' on 'PerformanceObserver': entryTypes must be a sequence.");
+    }
+    var list = hasType ? [options.type] : (hasEntryTypes ? options.entryTypes : null);
+    if (list === null) {
+      throw new TypeError("Failed to execute 'observe' on 'PerformanceObserver': An observed type or entryTypes is required.");
+    }
+    if (this._form === undefined) {
+      this._form = hasType;
+    } else if (this._form !== hasType) {
+      throw new (globalThis.DOMException || DOMException || Error)('Cannot switch between type and entryTypes forms.', 'InvalidModificationError');
+    }
+    if (hasType) {
+      // type 形态：叠加（已注册的 type 保留）。
+      if (this._types.indexOf(options.type) === -1) this._types.push(options.type);
+    } else {
+      // entryTypes 形态：替换既有过滤（queue 内已排队 entries 不清）。
+      this._types = [];
+      for (var i = 0; i < list.length; i++) {
+        if (this._types.indexOf(list[i]) === -1) this._types.push(list[i]);
+      }
     }
     if (_perfObservers.indexOf(this) === -1) _perfObservers.push(this);
+    if (hasType && options.buffered) {
+      var past = [];
+      for (var j = 0; j < _perfEntries.length; j++) {
+        if (_perfEntries[j].entryType === options.type) past.push(_perfEntries[j]);
+      }
+      if (past.length) {
+        for (var k = 0; k < past.length; k++) this._buffered.push(past[k]);
+        if (!this._pending) {
+          this._pending = true;
+          (function (o) {
+            _defer(function () {
+              if (!o._pending) return; // disconnect 取消（po-disconnect）
+              o._pending = false;
+              var recs = _sortedByStartTime(o._buffered);
+              o._buffered = [];
+              o._cb.call(o, _makeObserverList(recs), o, { droppedEntriesCount: 0 });
+            });
+          })(this);
+        }
+      }
+    }
   };
   PerformanceObserver.prototype.disconnect = function () {
     this._types = [];
     this._buffered = [];
+    // 取消已排队的 pending flush——mark 后同步 disconnect 时，_defer 闭包仍会触发，
+    // 回调不得再被调（po-disconnect「disconnected after a mark」）；flush 侧以
+    // _pending 为闸门（schedule 时置 true，disconnect 置 false → 闭包早返）。
+    this._pending = false;
     var idx = _perfObservers.indexOf(this);
     if (idx !== -1) _perfObservers.splice(idx, 1);
   };
