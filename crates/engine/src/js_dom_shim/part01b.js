@@ -939,14 +939,19 @@
   // 经 _defer microtask 异步派发（execute 末 checkpoint，同 R2774/R2814）。analytics/RUM（web-vitals /
   // Sentry / GA）高频。
   function _perfNow() {
-    return typeof __zw_performance_now === 'function'
+    var v = typeof __zw_performance_now === 'function'
       ? Number(__zw_performance_now())
       : (typeof Date.now === 'function' ? Date.now() : 0);
+    // M2-S3（hr-time §privacy-security）：非隔离上下文推荐最小分辨率 **100μs**——
+    // now() 粗化到 0.1ms 网格（floor 保单调）。webtiming-resolution（≥5μs 下限）与
+    // timing-attack（100μs 分辨率）两簇同闭；monotonic/正值语义不受影响（floor 单调）。
+    return Math.floor(v * 10) / 10;
   }
   // entry buffer + mark startTime 表 + 活跃 observer 表（shim IIFE 内部，不污染 globalThis）。
   var _perfEntries = [];
   var _perfMarks = {};
   var _perfObservers = [];
+  var _perfEventListeners = [];
   // M2-S1（timing-animation-compat goal，2026-09-28）——mark/measure 异常语义（User
   // Timing §3.1；WPT user-timing mark-errors / measure_syntax_err / measure-with-dict /
   // measure-exceptions / mark_exceptions / mark-entry-constructor /
@@ -1081,10 +1086,47 @@
     }
   }
 
+  // M2-S3：timeOrigin = 页面时间原点的 epoch ms 锚定（hr-time timeOrigin.html——
+  // 「Date.now() 应不小于 timeOrigin 且接近 origin+now」）。**惰性 getter + 首访问
+  // 缓存**：runner 的 shim init 早于页面脚本执行且间隔无界（静态 init 曾使
+  // origin+now+30ms 容差被 init→test 间隔击穿）；首访问发生在首个用例断言时——
+  // 与测试侧 Date.now() 同 tick，误差仅 0.1ms 粗化。
+  var _perfOriginEpoch = null;
+
   globalThis.performance = globalThis.performance || {
     now: _perfNow,
-    // timeOrigin = 0（相对原点：now() 返自原点起 elapsed ms；绝对 epoch 语义未提供，文档记录）。
-    timeOrigin: 0,
+    // M2-S3（hr-time）：Performance 继承 EventTarget（basic.any——addEventListener/
+    // removeEventListener/dispatchEvent 面；spec 无 performance 事件源，监听表仅存取）。
+    addEventListener: function (type, listener, options) {
+      _perfEventListeners.push({ type: type, listener: listener, options: options });
+    },
+    removeEventListener: function (type, listener, options) {
+      for (var i = _perfEventListeners.length - 1; i >= 0; i--) {
+        var l = _perfEventListeners[i];
+        if (l.type === type && l.listener === listener) _perfEventListeners.splice(i, 1);
+      }
+    },
+    dispatchEvent: function (event) {
+      for (var i = 0; i < _perfEventListeners.length; i++) {
+        var l = _perfEventListeners[i];
+        if (l.type === event.type) {
+          if (typeof l.listener === 'function') l.listener.call(this, event);
+          else if (l.listener && typeof l.listener.handleEvent === 'function') l.listener.handleEvent(event);
+        }
+      }
+      return true;
+    },
+    // M2-S3（hr-time performance-tojson.html）：performance.toJSON() 自洽面。
+    // timing/navigation 为 Navigation Timing L1 桩——本引擎无导航管线，各属性
+    // 「unavailable = 0」诚实记账（真值管线归 navigation-compat 流域挂账）；
+    // 用例断言全部为 json↔live 自洽比较，非真值断言。
+    toJSON: function () {
+      return {
+        timeOrigin: this.timeOrigin,
+        timing: this.timing,
+        navigation: this.navigation,
+      };
+    },
     mark: function (name, markOptions) {
       if (arguments.length < 1) {
         throw new TypeError("Failed to execute 'mark' on 'Performance': 1 argument required, but only 0 present.");
@@ -1179,6 +1221,55 @@
       _perfEntries = _perfEntries.filter(function (e) {
         return !(e.entryType === 'measure' && (name === undefined || e.name === name));
       });
+    },
+  };
+
+  // timeOrigin 惰性 getter（见上方注释；spec：只读属性）。
+  try {
+    Object.defineProperty(globalThis.performance, 'timeOrigin', {
+      get: function () {
+        if (_perfOriginEpoch === null) {
+          _perfOriginEpoch = (typeof Date.now === 'function' ? Date.now() : 0) - _perfNow();
+        }
+        return _perfOriginEpoch;
+      },
+      configurable: true,
+    });
+  } catch (_ePerfOrigin) {}
+
+  // Navigation Timing L1 桩（performance-tojson 的 timing/navigation 自洽面）。
+  // 各属性 unavailable = 0（无导航管线，真值归 navigation-compat 挂账）；
+  // toJSON 与 live 对象同键自洽（用例断言形态）。
+  function _perfMakeTimingStub() {
+    var keys = ['navigationStart', 'unloadEventStart', 'unloadEventEnd', 'redirectStart',
+      'redirectEnd', 'fetchStart', 'domainLookupStart', 'domainLookupEnd', 'connectStart',
+      'connectEnd', 'secureConnectionStart', 'requestStart', 'responseStart', 'responseEnd',
+      'domLoading', 'domInteractive', 'domContentLoadedEventStart', 'domContentLoadedEventEnd',
+      'domComplete', 'loadEventStart', 'loadEventEnd'];
+    var timing = {};
+    for (var i = 0; i < keys.length; i++) timing[keys[i]] = 0;
+    // navigationStart 是唯一真值语义属性：epoch ms、与 performance.timeOrigin 同源
+    //（measure.html「no start」duration = new Date() - timing.navigationStart ≤ 20ms
+    // 容差——getter 现场读，免 shim-init→用例间隔击穿）。
+    try {
+      Object.defineProperty(timing, 'navigationStart', {
+        get: function () { return globalThis.performance.timeOrigin; },
+        configurable: true,
+      });
+    } catch (_eNav) {}
+    timing.toJSON = function () {
+      var out = {};
+      for (var j = 0; j < keys.length; j++) out[keys[j]] = timing[keys[j]];
+      return out;
+    };
+    return timing;
+  }
+  globalThis.performance.timing = _perfMakeTimingStub();
+  globalThis.performance.navigation = {
+    type: 0,
+    redirectCount: 0,
+    toJSON: function () {
+      return { type: this.type, redirectCount: this.redirectCount };
     },
   };
 
