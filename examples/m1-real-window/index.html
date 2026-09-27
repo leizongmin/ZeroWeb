@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>M1 Real Window Demo Fixture</title>
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  section { min-height: 620px; padding: 32px; box-sizing: border-box; }
+  h1 { margin: 0 0 12px; }
+  .alpha { background: #e8f0fe; }
+  .beta { background: #fce8e6; }
+  .gamma { background: #e6f4ea; }
+  .delta { background: #fef7e0; }
+</style>
+</head>
+<body>
+<section class="alpha">
+  <h1>M1 Real Window Demo Fixture</h1>
+  <p>Section alpha: launch, load URL, first presented frame.</p>
+</section>
+<section class="beta">
+  <h2>Section beta</h2>
+  <p>Scroll input lands here; the compositor re-rasterizes the visible region.</p>
+</section>
+<section class="gamma">
+  <h2>Section gamma</h2>
+  <p>Zoom input (Ctrl +) reflows this text; the visual signature must change.</p>
+</section>
+<section class="delta">
+  <h2>Section delta</h2>
+  <p>Reload returns to the top of the document and re-publishes every frame.</p>
+</section>
+</body>
+</html>
