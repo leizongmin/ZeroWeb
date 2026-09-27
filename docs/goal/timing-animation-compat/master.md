@@ -83,12 +83,28 @@ suites CSV planned 行已转数据行（active）。
 
 ## 下一步计划
 
-1. **M3（下一轮起点）**：WAAPI——`Animation` / `KeyframeEffect` / `DocumentTimeline`
-   构造器 + `anim.effect` 属性桥（三主簇 ~690 subtests：`KeyframeEffect is not
-   defined` ~370 / `Cannot read properties of undefined`（effect 面）~256 /
-   `Animation is not defined` ~64）→ KeyframeEffect 关键帧参数解析校验
-   （processing-a-keyframes-argument 族）→ ready/finished promise 语义
-   （headless 瞬间完成近似，帧精度如实标注）。基线 52/963。
+1. **M3-S1（下一轮起点，已勘域）**：WAAPI 构造器 + effect 桥（part03.js
+   `_makeAnimation` 区升级为真接口实例；本引擎 `document.timeline` 现全缺）——
+   - `DocumentTimeline(options)`：`currentTime` getter = `_perfNow() - originTime`；
+     `document.timeline` 默认实例（originTime 0）——raf-coarsened-time（hr-time）同依赖
+   - `KeyframeEffect(target, keyframes, options)`：timing 字段（delay/endDelay/fill/
+     iterationStart/iterations/duration/direction/easing）+ composite/
+     iterationComposite/pseudoElement/target；`getTiming()`（原始值：fill 'auto'、
+     duration 'auto'）与 `getComputedTiming()`（归一化：fill→'none'、duration→0/number、
+     加 endTime/activeDuration/progress/currentIteration）；`getKeyframes()`/
+     `setKeyframes()`（property-indexed dict → 关键帧序列展开 + offset 均分）/
+     `updateTiming()` 局部更新
+   - `Animation(effect, timeline)`：`effect` get/set（默认 null）+ timeline
+     （默认 document.timeline）+ 现有瞬间完成状态机（running→finished + fill
+     forwards/both 末态持久化 + finished promise/onfinish）迁到真实例；playState/
+     currentTime/startTime/playbackRate/play/pause/finish/cancel/reverse/
+     updatePlaybackRate/commitStyles/persist/id/onfinish/oncancel/onremove/ready/finished
+   - `el.animate()` 返真 Animation（part04 签名不变）+ getAnimations 注册表兼容
+   - 期望面（interfaces/AnimationEffect/getComputedTiming 勘域）：无 options 时
+     computed {startTime:0, delay:0, endDelay:0, fill:'none', iterationStart:0,
+     iterations:1, duration:0, direction:'normal', easing:'linear'}
+   - headless 瞬间完成近似保持（DC-3 如实标注）：play/pause 时序断言族
+     （interfaces/Animation/play/pause/ready）预期 Fail/Timeout 不放容差
 2. **M4**：DC 逐项判定 + resource-timing/navigation-timing 重入条件挂账定稿
    （performance-timeline 余 ×8、user-timing ×1、user-timing navigation-timing、
    hr-time 隔离 infra ×2、worker ×2 均已归入）。
