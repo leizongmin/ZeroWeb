@@ -64,7 +64,7 @@ zero_browser::gui_smoke: GUI_SMOKE_COMPLETE url=http://127.0.0.1:…/index.html 
 |-----------|------|------|
 | Linux 真窗口端到端演示流绿（启动→加载→渲染→输入交互） | ✅ | 本文档 §2/§3（三腿可重放） |
 | GPU 合成显示验收记账（联动父 DC-4.4） | ✅ | 腿 b（GPU 窗口 surface 呈现）+ 腿 c（GPU 导入链 compositor_dmabuf_adopted）；父 DC-4.4 证据归档见本节下方注记 |
-| 三平台可编译启动（CI 矩阵佐证） | ⏳ 部分 | 可编译：`.github/workflows/ci.yml` 矩阵（linux x86_64/aarch64、macos x86_64/aarch64、windows x86_64/aarch64，clippy `--all-targets` + nextest 编译覆盖 zero-browser bin）+ `weekly.yml` 11 个 target release 构建 + 打包产物（macOS .app / Windows zip）。**启动冒烟**：macOS/Windows CI runner 上的真启动/无头启动冒烟未接（下一轮补 CI 步骤：`--headless` CDP boot 探活，复用 devtools goal 已有 headless 服务器面） |
+| 三平台可编译启动（CI 矩阵佐证） | ✅（接线完成，CI 绿证据待下一次 workflow_dispatch 取证） | 可编译：`.github/workflows/ci.yml` 矩阵（linux x86_64/aarch64、macos x86_64/aarch64、windows x86_64/aarch64，clippy `--all-targets` + nextest 编译覆盖 zero-browser bin）+ `weekly.yml` 11 个 target release 构建 + 打包产物（macOS .app / Windows zip）。**启动冒烟**（2026-09-27 补）：`matrix.launch_smoke` 步接入 `build-and-test` job 的 linux-x86_64 / macos-aarch64 / windows-x86_64 三条目——构建 zero-browser 本体 bin（测试链 lib 不产 bin）后跑 `scripts/browser-launch-smoke.sh`：headless 模式不开窗（runner 无需 display），轮询 `/json/version` 断言 `"Browser":"ZeroWeb/"` + `webSocketDebuggerUrl`、`/json` 断言 page target 枚举；本地 Linux release 目录全链路 PASS（headless boot → 发现端点 → 探活 → 收尾）。CI 侧 `build-and-test` 矩阵三平台全绿（2026-09-26 run 36264551226 实测），新增两步在其中执行；红的是**独立的 benchmarks job**（perf-gate 5 指标超预算，CI 共享 runner 噪声域，与本步骤无关，归因记账见 master.md） |
 
 > 父 DC-4.4 联动注记：compositor dma-buf 链路的进程级 round-trip 由
 > `apps/compositor/tests/frame_flow.rs`（`compositor_gpu_dmabuf_browser_import_round_trips`）

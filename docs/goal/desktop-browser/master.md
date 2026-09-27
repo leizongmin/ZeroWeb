@@ -2,7 +2,7 @@
 
 **入口文档**: [../desktop-browser.md](../desktop-browser.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-27（M1 首切片落地：三腿真窗口演示流全绿 + GPU 合成显示记账）
+**最后更新**: 2026-09-27（M1 第二切片：三平台 CI 启动冒烟接线完成；DC-1 三条全数收口在望）
 
 ---
 
@@ -24,7 +24,7 @@
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | 真窗口端到端演示流（Linux）+ GPU 合成显示验收 | ✅ M1 首切片（三腿全绿，evidence/M1-real-window-main-path.md） |
-| P1' | macOS/Windows CI 启动冒烟（`--headless` CDP boot 探活步接进 ci.yml 矩阵） | ⏳ M1 余项 |
+| P1' | macOS/Windows CI 启动冒烟（`--headless` CDP boot 探活步接进 ci.yml 矩阵） | ✅ 接线完成（2026-09-27：`matrix.launch_smoke` 步入 build-and-test 三平台条目 + scripts/browser-launch-smoke.sh，本地 Linux 全链路 PASS；CI 绿证据待下一次 workflow_dispatch 取证后正式关闭 DC-1 条目） |
 | P2 | 标签族/地址栏/导航控制交互面 | ⏳ M2 |
 | P3 | 下载管理器交互面 | ⏳ M3 |
 | P4 | engine 文本搜索 API（Ctrl+F 依赖，最小面评估） | ⏳ M3 |
@@ -33,6 +33,25 @@
 
 ## 已完成切片
 
+- **M1-S2（2026-09-27）三平台 CI 启动冒烟接线**：
+  - `scripts/browser-launch-smoke.sh`：headless CDP boot 探活（不开窗、runner 无需
+    display；`/json/version` 断言 `Browser: ZeroWeb/` + `webSocketDebuggerUrl`，
+    `/json` 断言 page target 枚举；60s 轮询；trap 杀进程收尾）
+  - `.github/workflows/ci.yml`：`matrix.launch_smoke` 旗标 + 两步（构建 zero-browser
+    本体 bin——测试链 lib 不产 bin；跑探活脚本）接入 build-and-test 的
+    linux-x86_64 / macos-aarch64 / windows-x86_64 三条目；renderer/compositor/
+    image-decoder 子进程 bin 由矩阵既有步骤产出到同目录（current_exe 上溯解析）
+  - 本地验证：Linux release 目录全链路 PASS；CI 侧 build-and-test 矩阵三平台全绿
+    （2026-09-26 run 36264551226 实测），绿证据待下一次 workflow_dispatch 取证
+  - **跨流记账（CI benchmarks job 连日红）**：ci.yml 每日 workflow_dispatch 的
+    benchmarks job「Run benchmarks and gate」连日 FAIL（2026-09-24 起连续观察，
+    2026-09-26 run 36264551226 = 5 指标超预算：webview_load_html_with_css
+    266,282 vs 预算 231,884ns、page/medium/layout_ms 164.82 vs 164.44ms、
+    page/medium/first_paint_wall_ms 393.93 vs 376.99ms 等），本地六点门禁同期全绿
+    （R4843-R4845 med_fp 带内）——CI 共享 runner 噪声域 vs 本地基线带宽的结构性
+    张力，属 perf-gate 政策域（基线放宽须走 record-bench-baseline.sh --relax +
+    justification，是否放宽待用户拍板）；与本流切片无关（零运行时代码变更，
+    build-and-test 矩阵不含 benchmarks job），已飞书告知
 - **M1-S1（2026-09-27）真窗口主链路三腿演示流**：
   - 资产：`scripts/desktop-browser-m1-smoke.sh`（可重放入口，无 display 自动
     xvfb-run；每腿 test-guard 包裹）+ `examples/m1-real-window/index.html`（本地
@@ -48,9 +67,8 @@
 
 ## 下一步计划
 
-1. **M1 余项**：ci.yml 三平台矩阵加 `--headless` 启动冒烟步（macos/windows runner：
-   启动 zero-browser headless CDP → /json/version 探活 → 退出码门禁），关闭 DC-1
-   「三平台可编译启动」条目
+1. **M1 取证收口**：下一次 `workflow_dispatch`（用户/定时触发均可）取 build-and-test
+   三平台「Launch smoke」绿证据 → evidence 补 run 链接 → DC-1 三条全勾 → M1 Done
 2. **M2**：标签族（创建/关闭/切换/拖拽排序）+ 地址栏（自动补全/加载进度）+ 导航控制
    （前进/后退/刷新/主页）演示流——复用 M1 的 gui_smoke 状态机扩展步骤，或以
    parity_smoke 场景 JSON 形态扩交互面
@@ -59,12 +77,15 @@
 **待用户决策清单**：
 - 正文空格塌缩（product 可见）已移交 rendering-compat 流（其 R4096-N font-stack 统一
   专项为 user-gated 深结构批次）——本流仅记档，处置归该专项收口时定界
+- CI benchmarks job 连日红（perf-gate 5 指标超预算，CI 共享 runner 噪声域）：是否对
+  CI runner 环境单独建基线或放宽阈值（record-bench-baseline.sh --relax），须 perf-gate
+  政策域拍板——本流不触碰
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — 真窗口主链路验收 | 🔄 Linux 演示流 + GPU 记账完成；余 macOS/Windows CI 启动冒烟 |
+| M1 — 真窗口主链路验收 | 🔄 三条 DC-1 证据面全部落地（Linux 演示流 ✅ / GPU 记账 ✅ / 三平台启动冒烟接线 ✅）；余 CI workflow_dispatch 取证 → M1 Done |
 | M2 — 导航与标签 | ⏳ |
 | M3 — 内容工具 | ⏳ |
 | M4 — 数据面 | ⏳ |

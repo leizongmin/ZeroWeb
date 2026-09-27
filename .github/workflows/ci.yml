@@ -38,6 +38,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
             v8_runtime: true
             release_build: true
+            launch_smoke: true
             features: ''
           - name: linux-x86_64-quickjs
             os: ubuntu-latest
@@ -68,12 +69,14 @@ jobs:
             target: aarch64-apple-darwin
             v8_runtime: true
             release_build: true
+            launch_smoke: true
             features: ''
           - name: windows-x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc
             v8_runtime: true
             release_build: true
+            launch_smoke: true
             features: ''
           - name: windows-aarch64
             os: windows-11-arm
@@ -408,6 +411,22 @@ jobs:
             -p zero-integration-tests \
             -p zero-wpt-runner \
             --target ${{ matrix.target }}
+
+      # DC-1（desktop-browser goal）三平台启动冒烟：headless CDP boot + 发现端点探活。
+      # headless 模式不开窗（runner 无需 display）；zero-renderer / zero-image-decoder /
+      # zero-compositor bin 已由上方步骤构建到 target/<triple>/debug/（子进程 bin 按
+      # current_exe 上溯查找），此处只补 zero-browser 本体 bin（测试链 lib 不产 bin）。
+      - name: Build zero-browser bin (launch smoke)
+        if: matrix.launch_smoke == true
+        timeout-minutes: 15
+        shell: bash
+        run: cargo build ${{ matrix.features }} --target ${{ matrix.target }} -p zero-browser --bin zero-browser
+
+      - name: Launch smoke (headless CDP boot)
+        if: matrix.launch_smoke == true
+        timeout-minutes: 5
+        shell: bash
+        run: bash scripts/browser-launch-smoke.sh "target/${{ matrix.target }}/debug"
 
       - name: Build release
         if: matrix.release_build != false && github.event_name == 'workflow_dispatch' && inputs.run_release_builds == true
