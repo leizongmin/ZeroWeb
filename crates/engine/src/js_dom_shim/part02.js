@@ -934,6 +934,13 @@
     return it;
   }
   // URLSearchParams 查询串解析（'a=1&b=2' / '?a=1' → [[k,v],...]），constructor 与 _zw_reinit 共用。
+  // net-api M3-S3：urlencoded percent-decode（urlencoded-parser——%XX → 字节、非法 %
+  // 序列字面保留、字节经 UTF-8 lossy 解码，**不抛**（decodeURIComponent 的 URIError
+  // 是 %FE%FF/%C2 面根因）；'+' → space）。复用 part01 _zwPercentDecodeBytes（同 IIFE）。
+  function _zw_usp_decode(part) {
+    var bytes = _zwPercentDecodeBytes(String(part).replace(/\+/g, ' '));
+    return new TextDecoder().decode(bytes);
+  }
   function _zw_usp_parse(s) {
     var out = [];
     if (typeof s !== 'string' || !s) return out;
@@ -945,7 +952,7 @@
       var eq = p.indexOf('=');
       var k = eq < 0 ? p : p.slice(0, eq);
       var v = eq < 0 ? '' : p.slice(eq + 1);
-      out.push([decodeURIComponent(k.replace(/\+/g, ' ')), decodeURIComponent(v.replace(/\+/g, ' '))]);
+      out.push([_zw_usp_decode(k), _zw_usp_decode(v)]);
     }
     return out;
   }
@@ -957,7 +964,18 @@
     if (typeof init === 'string') {
       this._p = _zw_usp_parse(init);
     } else if (typeof init === 'object') {
-      if (typeof init.forEach === 'function') {
+      if (Array.isArray(init)) {
+        // net-api M3-S3：sequence 形态（sequence<sequence<StringValue>>）——数组优先于
+        // forEach（Array.forEach 的 (val, index) 形态会把数组当 record 序列化成索引键）；
+        // 逐项须恰为二元组（spec，非二元组 → TypeError）。
+        for (var ai = 0; ai < init.length; ai++) {
+          var pair = init[ai];
+          if (!pair || !pair.length || pair.length !== 2) {
+            throw new TypeError('URLSearchParams init sequence item must have exactly 2 elements');
+          }
+          this._p.push([String(pair[0]), String(pair[1])]);
+        }
+      } else if (typeof init.forEach === 'function') {
         var self = this;
         init.forEach(function (val, key) { self._p.push([String(key), String(val)]); });
       } else {
@@ -971,7 +989,9 @@
     append: function (n, v) { this._p.push([String(n), String(v)]); this._changed(); },
     delete: function (n, v) {
       n = String(n);
-      if (arguments.length >= 2) {
+      // net-api M3-S3：第二参可选——显式 undefined = 未给（WebIDL optional；
+      // 「Two-argument delete() respects undefined」面）。
+      if (v !== undefined) {
         v = String(v);
         this._p = this._p.filter(function (p) { return !(p[0] === n && p[1] === v); });
       } else {
@@ -1006,9 +1026,21 @@
     // 内部：从查询串重载 _p（**不触发** _onchange）。URL.search/href setter 同步 searchParams 时调。
     _zw_reinit: function (s) { this._p = _zw_usp_parse(s); },
     forEach: function (cb, thisArg) { for (var i = 0; i < this._p.length; i++) cb.call(thisArg, this._p[i][1], this._p[i][0], this); },
-    entries: function () { return _zw_iter(this._p.map(function (p) { return [p[0], p[1]]; })); },
-    keys: function () { return _zw_iter(this._p.map(function (p) { return p[0]; })); },
-    values: function () { return _zw_iter(this._p.map(function (p) { return p[1]; })); },
+    // net-api M3-S3：live 光标迭代（每次 next 基于当前 _p——delete-during-iteration 面；
+    // 与 Headers live 语义同型）。
+    entries: function () {
+      var self = this;
+      return _zwHeadersLiveIter(function () { return self._p; }, function (p) { return [p[0], p[1]]; });
+    },
+    keys: function () {
+      var self = this;
+      return _zwHeadersLiveIter(function () { return self._p; }, function (p) { return p[0]; });
+    },
+    values: function () {
+      var self = this;
+      return _zwHeadersLiveIter(function () { return self._p; }, function (p) { return p[1]; });
+    },
+    get size() { return this._p.length; }, // net-api M3-S3：size getter（urlsearchparams-size）
     toString: function () {
       var out = [];
       for (var i = 0; i < this._p.length; i++) {
@@ -2614,6 +2646,19 @@
     if (typeof __zw_parse_url !== 'function') return false;
     return !!__zw_parse_url(String(url), base !== undefined ? String(base) : '');
   };
+  // net-api M3-S3：URL.parse 静态（url-statics-parse——解析成功返 URL 实例、失败返
+  // null，**不抛**；undefined 入参按 DOMString 转 'undefined' 走失败路径）。
+  if (!URL.parse) {
+    URL.parse = function (url, base) {
+      if (typeof __zw_parse_url !== 'function') return null;
+      var raw = __zw_parse_url(String(url), base !== undefined ? String(base) : '');
+      if (!raw) return null;
+      var parsed = null;
+      try { parsed = JSON.parse(raw); } catch (_eUrlParse) { return null; }
+      if (!parsed || !parsed.href) return null;
+      return new URL(parsed.href);
+    };
+  }
   globalThis.URL = globalThis.URL || URL;
 
   // URL.createObjectURL / revokeObjectURL——blob: URL 注册表（`<img src>` / `<a download>` /

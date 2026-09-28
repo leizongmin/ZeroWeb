@@ -3342,7 +3342,7 @@ pub(crate) fn set_url_part(prev_href: &str, part: &str, value: &str) -> String {
         "protocol" => url.set_scheme(value.trim_end_matches(':')).is_ok(),
         "hostname" => url.set_host(Some(value)).is_ok(),
         "host" => set_url_host_and_port(&mut url, value),
-        "port" => url.set_port(value.parse::<u16>().ok()).is_ok(),
+        "port" => set_url_port_stripping(&mut url, value),
         "pathname" => {
             url.set_path(value);
             true
@@ -3364,6 +3364,25 @@ pub(crate) fn set_url_part(prev_href: &str, part: &str, value: &str) -> String {
         _ => true, // 含 "href"（已整体重解析）
     };
     if ok { serialize_url(&url) } else { String::new() }
+}
+
+/// `port` setter（net-api M3-S3，URL spec §4.4 port setter + urlencoded 剥离语义）：
+/// 先剥除全部 TAB/LF/CR（spec integer 解析的 ASCII whitespace 剥离）；再取**最长 ASCII
+/// 数字前缀**（后续垃圾忽略——`90\x0000` → 90、`9000\x00` → 9000）；无数字或数值
+/// 超 u16 → setter 无操作（保留原 port，url-setters-stripping leading 非 strip 面）；
+/// scheme 默认端口归一由 url crate set_port 承接（http:80 → port null）。
+#[cfg(feature = "script-runtime")]
+fn set_url_port_stripping(url: &mut url::Url, value: &str) -> bool {
+    let stripped: String = value.chars().filter(|c| !matches!(*c, '\t' | '\n' | '\r')).collect();
+    let digits: String = stripped.chars().take_while(|c| c.is_ascii_digit()).collect();
+    // 无数字（前导非 strip 控制符）或数值越 u16 → setter 无操作（保留原 port）。
+    match digits.parse::<u16>() {
+        Ok(p) => {
+            let _ = url.set_port(Some(p));
+            true
+        }
+        Err(_) => true,
+    }
 }
 
 /// `host` setter 辅助：`host[:port]` 拆分（仅当 `:` 后全数字视为端口），分别 set_host + set_port。

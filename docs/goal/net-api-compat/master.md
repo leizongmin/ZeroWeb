@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-29（M3-S2 收口）
+**最后更新**: 2026-09-29（M3-S3 收口）
 
 ---
 
@@ -12,10 +12,10 @@
 WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 + 帧协议）。
 
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3-S1（73.6%）→
-M3-S2（2026-09-29）——**3946/5212 = 75.7%**（fetch 70.1% / xhr 53.2% / url 67.3% /
-mimesniff 100% / streams 42.5% / eventsource 6.2%）。下一切片 M3-S3（URL
-percent-encoding / default port / URL.parse）+ P7 续件（.asis / event-stream fixture
-评估）。
+M3-S2（75.7%）→ M3-S3（2026-09-29）——**4006/5212 = 76.9%**（fetch 70.1% / xhr 53.2% /
+url 79.1% / mimesniff 100% / streams 42.5% / eventsource 6.2%）。下一切片：M3 收尾
+（setters-stripping protocol/host c0 面 + a-element 装载诊断）与 M4（streams 底座 +
+WebSocket 挂账定稿 + DC 判定）。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -30,13 +30,20 @@ percent-encoding / default port / URL.parse）+ P7 续件（.asis / event-stream
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
 | P3 | XHR 状态机 + EventSource 解析/重连 | 🔶 M3 进行中——S1（header 校验）+ S2（responseType/同步/overrideMime）已收口（xhr 53.2%）；**残余：blob-range（27，blob:+Range）、progress 事件序、.asis/eventsource fixture 联动 P7** |
-| P4 | URL 边缘语义 + mimesniff 对齐 | 🔶 mimesniff 已收口（99.2%）；url 归 M3 |
+| P4 | URL 边缘语义 + mimesniff 对齐 | 🔶 mimesniff ✅ 100%；url 79.1%（S3 收口 USP 容错解码/URL.parse/port/live 迭代）——残余：setters-stripping protocol/host c0 面（62）+ a-element 装载诊断 |
 | P5 | streams 底座一致性（fetch body 依赖） | ⏳ M4（主簇：ReadableStream.from 32 / BYOB view 16 / queuing strategy 11 / pull 时机 8） |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
 | P7 | runner fixture 通道（.py 端点最小 fixture 集） | 🔶 首件已落（M3-S1 `inspect-headers.py`）；待评估：event-source.py / echo-content.py / delay.py 族（eventsource Timeout 23 / request-upload echo / xhr delay 簇公共解锁件） |
 
 ## 已完成切片
 
+- **M3-S3（2026-09-29）**：URL 修齐（4006/5212 = **76.9%**，Δ+60 零回归）。
+  urlencoded 容错 percent-decode（URIError 根因消除）+ USP sequence 构造（严格二元组）
+  + live 光标迭代/size getter/delete 可选参 + URL.parse 静态（16/16）+ host port
+  setter 剥离解析（setters-stripping 168→198/260）。残余记账：setters-stripping
+  protocol/host c0 面（62）、TextDecoder FFFD 合并（encoding 域相邻）、a-element
+  装载诊断、opaque-path search 序列化。见
+  [evidence/2026-09-29-m3-s3-url.md](evidence/2026-09-29-m3-s3-url.md)。
 - **M3-S2（2026-09-29）**：XHR 状态机主片（3946/5212 = **75.7%**，Δ+122 零回归）。
   responseType 状态机（responsetype.any **50/50**）+ 同步 XHR（host 同步契约 +
   `_zwFillFromResponse` 共享填充）+ overrideMimeType（octet-stream parse 回落 /
@@ -94,8 +101,9 @@ percent-encoding / default port / URL.parse）+ P7 续件（.asis / event-stream
 
 ## 下一步计划
 
-1. **M3-S3**：URL 修齐（percent-encoding 39 / default port ~40 / URL.parse 8）+
-   fetch 残余甄别（response-error 族 10）
+1. **M3 收尾**：setters-stripping protocol/host/hostname c0 面（62——scheme/host
+   setter 剥离语义）+ a-element 装载诊断（url corpus 页级 0/1 案）+ TextDecoder
+   FFFD 合并保真（与 encoding-compat 域协同）
 2. **M3-S4 评估**：blob-range（blob:+Range XHR 27）+ P7 续件（.asis 原始 HTTP
    fixture / event-source.py / echo-content.py——eventsource Timeout 23 / xhr delay 簇）
 3. **M4**：streams 底座（ReadableStream.from 32 / BYOB view 16 / queuing strategy 11 /
