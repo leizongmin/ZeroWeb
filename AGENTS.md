@@ -220,7 +220,7 @@ tools/
 - 运行并显示输出：`cargo test -- --nocapture`
 - 覆盖率报告：`./scripts/check-coverage.sh`
 
-**重要**：所有代码变更提交前必须执行 `cargo fmt`，并通过 `cargo test --workspace` 和 `cargo clippy --workspace --all-targets -- -D warnings`。
+**重要**：提交前按下文“提交前质量门禁”判断实际影响和检查范围。Rust 产品代码变更须通过格式、workspace 测试和严格 clippy；仅文档、Skill、官网或独立工具变更不触发浏览器全量检查。
 
 - **测试资产化（调研 P1/P4 成文，2026-08-07）**：渲染兼容性修复（CSS/布局/绘制/Web API 语义）必须附带对应 WPT/reftest 用例——优先执行 `make import-wpt TEST=<上游用例> REF=<参照页> NOTE="Rxxxx 修复"` 导入 `tests/wpt-runner` 常驻断言集并记入 `imported-tests.txt` 账本；无法导入上游用例时，至少补一个等价的本地 reftest/单测。依据：Ladybird CodePolicy「每修复/新特性必带测试 + 通过的新 WPT 测试导入常驻 CI」是其 WPT 通过数单向增长的机制（调研报告 §4.1、§5.2 P1/P4）。导入须连同修复同一提交，杜绝回头路。
 
@@ -240,12 +240,27 @@ tools/
 
 ### 提交前质量门禁
 
-文档与 GitHub 元数据豁免：当且仅当全部待提交文件都位于 `docs/**`、`.github/**`，或文件扩展名为 `.md` 时，可跳过 `cargo fmt`、`cargo clippy`、构建、测试、reftest、基准和覆盖率。豁免项目代码检查时，仍必须：
+**按实际影响选择检查，禁止因文件不在白名单、扩展名不是 `.md` 或准备提交，就自动执行浏览器全量检查。** 未改变浏览器产品代码、构建依赖或运行资源时，不执行无关的 `cargo fmt`、`cargo clippy`、浏览器构建、workspace 测试、reftest、基准和覆盖率。
+
+以下范围仅做与改动相关的验证，不触发浏览器全量门禁：
+
+| 范围 | 相关验证 |
+|---|---|
+| `docs/**`、`**/*.md`、`evolution-drafts/**` | 文档链接、结构及实际修改的数据/配置语法 |
+| `.agents/**`、`.claude/**`、`.trae/**`、`.cursorrules` | 规则与引用一致性、JSON/YAML；修改 Skill 脚本时仅运行受影响脚本的检查或测试 |
+| `website/**` | 官网 HTML/CSS/JS/JSON、资源链接；仅在页面行为变化需要时做官网预览或交互检查 |
+| `.github/**` | 工作流 YAML、CODEOWNERS 及变更的工作流/脚本逻辑 |
+| 根目录 `LICENSE`、`banner.svg`、`.gitignore` | 文本、SVG 或忽略规则；不因无 `.md` 后缀启动 Rust 检查 |
+
+目录豁免以未影响浏览器产品为前提：若文件被产品编译、运行或测试直接引用，按实际消费者做必要验证。`examples/**`、测试 fixture/基线、`scripts/**`、`tools/**`、`.config/**` 不整目录豁免，也不默认全量测试；先核对用途，独立工具只测工具，测试资产只跑受影响用例。`build-support/**` 中的产品构建代码、Cargo 依赖/feature 和产品运行资源变化须验证受影响的构建与行为。混合提交按其中实际产品变更决定门禁，不因附带文档或 Skill 扩大检查范围。
+
+已完成且适用于当前变更的检查直接复用；只有新改动、失败或新的影响证据才补测，不能为提交重复跑昂贵测试。上述豁免仍须：
+
 - 执行 `git diff --check`
 - 调用 `lei-pre-commit-guard` 并获得 **PASS**
-- 按变更类型执行相关 Markdown 链接、YAML、CODEOWNERS 或其他配置语法检查
+- 按变更类型执行上表中适用的检查，不为纯规则或文案修改启动浏览器
 
-只要待提交内容包含任一不符合上述范围的文件，就不适用豁免。执行 `git commit` 前，必须先在本地跑通 `cargo fmt` 和 `cargo clippy`，禁止跳过：
+涉及 Rust 产品代码变更时，提交前仍须通过 `cargo test --workspace` 及以下门禁：
 - `cargo fmt --all -- --check` 必须无 diff（有 diff 先 `cargo fmt --all` 修复再提交）
 - `cargo clippy --workspace --all-targets -- -D warnings` 必须无 warning/error（CI 用 `-D warnings` 强制，本地须同等严格）
 - 若默认 feature（v8）因环境（如缺 rusty_v8 预编译库）无法本地编译，至少在能编译的 feature 下跑 clippy（如 `--no-default-features --features quickjs`），并在提交说明中注明覆盖范围
