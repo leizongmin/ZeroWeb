@@ -4418,6 +4418,64 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
             if req.method != "GET" {
                 return Err(format!("method not supported: {}", req.method));
             }
+            if clean.ends_with("/inspect-headers.py") {
+                // net-api M3-S1 fixture：fetch/api/resources/inspect-headers.py（上游逐字
+                // 等价——https://github.com/web-platform-tests/wpt/blob/3159769/fetch/api/
+                // resources/inspect-headers.py）。?headers=a|b|c → 每个请求头存在则回
+                // `x-request-<name>: <value>`（多值 ', ' 合并）；?cors → AC 族 + expose；
+                // content-type: text/plain。header-values(-normalize) 回读面。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let mut headers: Vec<(String, String)> = Vec::new();
+                let checked: Vec<String> = wpt_query_value(query, "headers")
+                    .map(|names| {
+                        names
+                            .split('|')
+                            .map(|n| n.trim().to_lowercase())
+                            .filter(|n| !n.is_empty())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                for name in &checked {
+                    let value = req
+                        .headers
+                        .iter()
+                        .filter(|(n, _)| n.eq_ignore_ascii_case(name))
+                        .map(|(_, v)| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    if !value.is_empty() {
+                        headers.push((format!("x-request-{}", name), value));
+                    }
+                }
+                if wpt_query_value(query, "cors").is_some() {
+                    let origin = req
+                        .headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_else(|| "*".to_string());
+                    headers.push(("access-control-allow-origin".into(), origin));
+                    headers.push(("access-control-allow-credentials".into(), "true".into()));
+                    headers.push(("access-control-allow-methods".into(), "GET, POST, HEAD".into()));
+                    if !checked.is_empty() {
+                        let exposed = checked
+                            .iter()
+                            .map(|n| format!("x-request-{}", n))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        headers.push(("access-control-expose-headers".into(), exposed));
+                    }
+                }
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: String::new(),
+                    body_bytes: Some(Vec::new()),
+                });
+            }
             if clean == "fetch/api/resources/trickle.py" {
                 let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
                 let count = wpt_query_value(query, "count")

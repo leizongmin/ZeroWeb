@@ -51,6 +51,15 @@
       if (self.readyState !== 1) {
         throw new (globalThis.DOMException || Error)('The object is in an invalid state.', 'InvalidStateError');
       }
+      self._zwXhrSent = true; // net-api M3-S1：setRequestHeader 状态校验消费
+      // net-api M3-S1：send(body) body 类型校验（xhr.spec §4.7.2——SharedArrayBuffer /
+      // 其视图 → TypeError；send-data-sharedarraybuffer 面）。
+      if (body != null && typeof SharedArrayBuffer === 'function') {
+        var isSab = body instanceof SharedArrayBuffer ||
+          (typeof ArrayBuffer === 'function' && ArrayBuffer.isView && ArrayBuffer.isView(body) &&
+           body.buffer instanceof SharedArrayBuffer);
+        if (isSab) throw new TypeError('Cannot send a SharedArrayBuffer');
+      }
       var fetchFn = typeof self._zwXhrFetch === 'function' ? self._zwXhrFetch : globalThis.fetch;
       if (typeof fetchFn !== 'function') {
         self.status = 0;
@@ -121,8 +130,22 @@
         fire('loadend');
       }
     };
+    // net-api M3-S1：setRequestHeader（xhr.spec §4.6.3）——须 OPENED 且未发送
+    //（InvalidStateError）；name = header name token、value = header value（ByteString
+    // 无 NUL/LF/CR、无首尾 HTTP tab/space；先 Normalize 剥首尾）→ SyntaxError；
+    // 同名多值 combine ', '。复用 part02 Headers 校验 helper（同 IIFE 作用域）。
     self.setRequestHeader = function(name, value) {
-      self._zwXhrHeaders[String(name)] = String(value);
+      if (self.readyState !== 1 || self._zwXhrSent) {
+        throw new (globalThis.DOMException || Error)('The object is in an invalid state.', 'InvalidStateError');
+      }
+      name = String(name);
+      value = String(value).replace(/^[\t\n\r ]+/, '').replace(/[\t\n\r ]+$/, '');
+      if (!_zwIsValidHeaderName(name) || !_zwIsValidHeaderValue(value)) {
+        throw new (globalThis.DOMException || Error)('Invalid header name or value.', 'SyntaxError');
+      }
+      var ln = name.toLowerCase();
+      var existing = self._zwXhrHeaders[ln];
+      self._zwXhrHeaders[ln] = existing ? existing + ', ' + value : value;
     };
     self.getResponseHeader = function(name) {
       if (!self._zwXhrResponseHeaders || !name) return null;

@@ -1,0 +1,2787 @@
+[
+  [
+    "xhr/XMLHttpRequest-withCredentials.any.js",
+    [
+      {
+        "name": "default value is false, set value is true",
+        "status": "Fail",
+        "message": "assert_false: withCredentials defaults to false expected false got undefined"
+      },
+      {
+        "name": "can also be set in OPEN state",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting on synchronous XHR",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "setting withCredentials when not in UNSENT, OPENED state (asynchronous)",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { client.withCredentials = true }\" did not throw"
+      },
+      {
+        "name": "setting withCredentials when in DONE state (synchronous)",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { client.withCredentials = true }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "xhr/abort-after-receive.any.js",
+    [
+      {
+        "name": "abort-after-receive",
+        "status": "Fail",
+        "message": "assert_equals: expected 0 but got 4"
+      }
+    ]
+  ],
+  [
+    "xhr/abort-after-send.any.js",
+    [
+      {
+        "name": "abort-after-send",
+        "status": "Fail",
+        "message": "assert_equals: expected (object) null but got (undefined) undefined"
+      }
+    ]
+  ],
+  [
+    "xhr/abort-after-timeout.any.js",
+    [
+      {
+        "name": "abort-after-timeout",
+        "status": "Fail",
+        "message": "assert_true: xhr.timeout is not supported in this user agent expected true got false"
+      }
+    ]
+  ],
+  [
+    "xhr/abort-during-open.any.js",
+    [
+      {
+        "name": "XMLHttpRequest: abort() during OPEN",
+        "status": "Fail",
+        "message": "assert_unreached: Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/abort-during-readystatechange.any.js",
+    [
+      {
+        "name": "abort-during-readystatechange",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/abort-during-unsent.any.js",
+    [
+      {
+        "name": "abort-during-unsent",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/abort-during-upload.any.js",
+    [
+      {
+        "name": "abort-during-upload",
+        "status": "Fail",
+        "message": "assert_equals: expected \"loadstart(0,0,false)\" but got \"readystatechange(4)\""
+      }
+    ]
+  ],
+  [
+    "xhr/abort-event-abort.any.js",
+    [
+      {
+        "name": "abort-event-abort",
+        "status": "Fail",
+        "message": "assert_unreached: when abort() is called, state is OPENED with the send() flag being unset, must not fire abort event per spec Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/abort-event-listeners.any.js",
+    [
+      {
+        "name": "abort-event-listeners",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/abort-event-loadend.any.js",
+    [
+      {
+        "name": "abort-event-loadend",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "xhr/abort-progress-events.any.js",
+    [
+      {
+        "name": "Events must not fire when state is UNSENT after abort()",
+        "status": "Fail",
+        "message": "assert_equals: State should be UNSENT immediately after abort expected 0 but got 4"
+      },
+      {
+        "name": "Calling open/abort in readystatechange should not crash",
+        "status": "Fail",
+        "message": "The object is in an invalid state."
+      }
+    ]
+  ],
+  [
+    "xhr/abort-upload-event-abort.any.js",
+    [
+      {
+        "name": "XMLHttpRequest: The abort() method: Fire a progress event named abort on the XMLHttpRequestUpload object",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'onabort')"
+      }
+    ]
+  ],
+  [
+    "xhr/abort-upload-event-loadend.any.js",
+    [
+      {
+        "name": "XMLHttpRequest: The abort() method: Fire a progress event named loadend on the XMLHttpRequestUpload object",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'onloadend')"
+      }
+    ]
+  ],
+  [
+    "xhr/abort-with-error.any.js",
+    [
+      {
+        "name": "abort-with-error",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-and-redirects-async-same-origin.any.js",
+    [
+      {
+        "name": "Request without credentials is redirected to a cross-origin response with Access-Control-Allow-Origin=* (with star)",
+        "status": "Fail",
+        "message": "assert_false: expected false got true"
+      },
+      {
+        "name": "Request with credentials is redirected to a cross-origin response with Access-Control-Allow-Origin=* (with star)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Request without credentials is redirected to a cross-origin response with a specific Access-Control-Allow-Origin",
+        "status": "Fail",
+        "message": "assert_false: expected false got true"
+      },
+      {
+        "name": "Request with credentials is redirected to a cross-origin response with a specific Access-Control-Allow-Origin",
+        "status": "Fail",
+        "message": "assert_false: expected false got true"
+      },
+      {
+        "name": "Request without credentials is redirected to a cross-origin response with a specific Access-Control-Allow-Origin (no credentials)",
+        "status": "Fail",
+        "message": "assert_false: expected false got true"
+      },
+      {
+        "name": "Request with credentials is redirected to a cross-origin response with a specific Access-Control-Allow-Origin (no credentials)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-and-redirects-async.any.js",
+    [
+      {
+        "name": "Request is redirected without CORS headers to a response with Access-Control-Allow-Origin=*",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Request is redirected to a response with Access-Control-Allow-Origin=*",
+        "status": "Fail",
+        "message": "assert_false: expected false got true"
+      },
+      {
+        "name": "Request with user info is redirected to a response with Access-Control-Allow-Origin=*",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Request is redirect to a bad URL",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preflighted request is redirected to a response with Access-Control-Allow-Origin=*",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Preflighted request is redirected to a response with Access-Control-Allow-Origin=* and header allowed",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Request is redirected to a same-origin resource file",
+        "status": "Fail",
+        "message": "assert_false: expected false got true"
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-and-redirects.any.js",
+    [
+      {
+        "name": "Local sync redirect to remote origin",
+        "status": "Fail",
+        "message": "assert_equals: expected \"PASS: Cross-domain access allowed.\" but got \"\""
+      },
+      {
+        "name": "Local async redirect to remote origin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Remote sync redirect to local origin",
+        "status": "Fail",
+        "message": "assert_equals: expected \"PASS: Cross-domain access allowed.\" but got \"\""
+      },
+      {
+        "name": "Remote async redirect to local origin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Remote sync redirect to same remote origin",
+        "status": "Fail",
+        "message": "assert_equals: expected \"PASS: Cross-domain access allowed.\" but got \"\""
+      },
+      {
+        "name": "Remote async redirect to same remote origin",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-basic-allow-access-control-origin-header.any.js",
+    [
+      {
+        "name": "Access control test with origin header",
+        "status": "Fail",
+        "message": "assert_equals: expected \"PASS: Cross-domain access allowed.\\nHTTP_ORIGIN: http://wpt.test\" but got \"\""
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-basic-allow-async.any.js",
+    [
+      {
+        "name": "Basic async cross-origin XHR request",
+        "status": "Fail",
+        "message": "assert_equals: expected \"PASS: Cross-domain access allowed.\" but got \"\""
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-basic-allow-non-cors-safelisted-method-async.any.js",
+    [
+      {
+        "name": "Allow async PUT request",
+        "status": "Fail",
+        "message": "assert_unreached: Unexpected error. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-basic-allow-non-cors-safelisted-method.any.js",
+    [
+      {
+        "name": "Allow PUT request",
+        "status": "Fail",
+        "message": "assert_equals: expected \"PASS: Cross-domain access allowed.\\nPASS: PUT data received\" but got \"\""
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-basic-allow-preflight-cache-invalidation-by-header.any.js",
+    [
+      {
+        "name": "Preflight cache should be invalidated in presence of custom header",
+        "status": "Fail",
+        "message": "assert_unreached: FAIL: Network error. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-basic-allow-preflight-cache-invalidation-by-method.any.js",
+    [
+      {
+        "name": "Preflight cache should be invalidated by changed method",
+        "status": "Fail",
+        "message": "assert_unreached: FAIL: Network error. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-basic-allow-preflight-cache-timeout.any.js",
+    [
+      {
+        "name": "Preflight cache should be invalidated on timeout",
+        "status": "Fail",
+        "message": "assert_unreached: FAIL: Network error. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-basic-allow-preflight-cache.any.js",
+    [
+      {
+        "name": "Preflight cache should allow second request",
+        "status": "Fail",
+        "message": "assert_unreached: FAIL: Network error. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-basic-allow-star.any.js",
+    [
+      {
+        "name": "Allow star",
+        "status": "Fail",
+        "message": "assert_equals: expected \"PASS: Cross-domain access allowed.\" but got \"\""
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-basic-allow.any.js",
+    [
+      {
+        "name": "Allow basic",
+        "status": "Fail",
+        "message": "assert_equals: expected \"PASS: Cross-domain access allowed.\" but got \"\""
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-expose-headers-on-redirect.html",
+    [
+      {
+        "name": "XHR should respect access-control-expose-headers header on redirect",
+        "status": "Fail",
+        "message": "assert_unreached: Unexpected error. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-preflight-request-allow-headers-returns-star.any.js",
+    [
+      {
+        "name": "access-control-preflight-request-allow-headers-returns-star",
+        "status": "Fail",
+        "message": "assert_unreached: Error occurred. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/access-control-preflight-request-header-returns-origin.any.js",
+    [
+      {
+        "name": "access-control-preflight-request-header-returns-origin",
+        "status": "Fail",
+        "message": "assert_unreached: Error occurred. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/blob-range.any.js",
+    [
+      {
+        "name": "A simple blob range request.",
+        "status": "Fail",
+        "message": "assert_equals: HTTP status is 206 expected 206 but got 200"
+      },
+      {
+        "name": "A blob range request with no type.",
+        "status": "Fail",
+        "message": "assert_equals: HTTP status is 206 expected 206 but got 200"
+      },
+      {
+        "name": "A blob range request with no end.",
+        "status": "Fail",
+        "message": "assert_equals: HTTP status is 206 expected 206 but got 200"
+      },
+      {
+        "name": "A blob range request with no start.",
+        "status": "Fail",
+        "message": "assert_equals: HTTP status is 206 expected 206 but got 200"
+      },
+      {
+        "name": "A simple blob range request with whitespace.",
+        "status": "Fail",
+        "message": "assert_equals: HTTP status is 206 expected 206 but got 200"
+      },
+      {
+        "name": "Blob content with short content and a large range end",
+        "status": "Fail",
+        "message": "assert_equals: HTTP status is 206 expected 206 but got 200"
+      },
+      {
+        "name": "Blob content with short content and a range end matching content length",
+        "status": "Fail",
+        "message": "assert_equals: HTTP status is 206 expected 206 but got 200"
+      },
+      {
+        "name": "Blob range with whitespace before and after hyphen",
+        "status": "Fail",
+        "message": "assert_equals: HTTP status is 206 expected 206 but got 200"
+      },
+      {
+        "name": "Blob range with whitespace after hyphen",
+        "status": "Fail",
+        "message": "assert_equals: HTTP status is 206 expected 206 but got 200"
+      },
+      {
+        "name": "Blob range with whitespace around equals sign",
+        "status": "Fail",
+        "message": "assert_equals: HTTP status is 206 expected 206 but got 200"
+      },
+      {
+        "name": "Blob range with no value",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob range with incorrect range header",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob range with incorrect range header #2",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob range with incorrect range header #3",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob range request with multiple range values",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob range request with multiple range values and whitespace",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob range request with trailing comma",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob range with no start or end",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob range request with short range end",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob range start should be an ASCII digit",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob range should have a dash",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob range end should be an ASCII digit",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob range should include '-'",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob range should include '='",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob range should include 'bytes='",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob content with short content and a large range start",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      },
+      {
+        "name": "Blob content with short content and a range start matching the content length",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => xhr.send()\" did not throw"
+      }
+    ]
+  ],
+  [
+    "xhr/content-type-unmodified.any.js",
+    [
+      {
+        "name": "content-type-unmodified",
+        "status": "Fail",
+        "message": "assert_unreached: Error occurred. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/cookies.http.html",
+    [
+      {
+        "name": "xhr/cookies.http.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 1139], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/cors-expose-star.sub.any.js",
+    [
+      {
+        "name": "Basic Access-Control-Expose-Headers: * support",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"X\" but got (object) null"
+      },
+      {
+        "name": "* for credentialed fetches only matches literally",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "* can be one of several values",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"X\" but got (object) null"
+      }
+    ]
+  ],
+  [
+    "xhr/cors-upload.any.js",
+    [
+      {
+        "name": "xhr/cors-upload.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 4519], state={\"loaded\":true,\"pending\":2,\"phase\":4,\"tests\":2}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/event-abort.any.js",
+    [
+      {
+        "name": "event-abort",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/event-error-order.sub.html",
+    [
+      {
+        "name": "XMLHttpRequest: event - error (order of events)",
+        "status": "Fail",
+        "message": "assert_equals: expected \"loadstart(0,0,false)\" but got \"readystatechange(4)\""
+      }
+    ]
+  ],
+  [
+    "xhr/event-error.sub.any.js",
+    [
+      {
+        "name": "onerror should be called",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "error while reading body should report zeros for loaded and total",
+        "status": "Fail",
+        "message": "assert_equals: loaded expected (number) 0 but got (undefined) undefined"
+      }
+    ]
+  ],
+  [
+    "xhr/event-load.any.js",
+    [
+      {
+        "name": "event-load",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "xhr/event-loadend.any.js",
+    [
+      {
+        "name": "event-loadend",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "xhr/event-loadstart-upload.any.js",
+    [
+      {
+        "name": "event-loadstart-upload",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'onloadstart')"
+      }
+    ]
+  ],
+  [
+    "xhr/event-loadstart.any.js",
+    [
+      {
+        "name": "event-loadstart",
+        "status": "Fail",
+        "message": "assert_unreached: onloadstart not called after 500 ms Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/event-progress.any.js",
+    [
+      {
+        "name": "event-progress",
+        "status": "Fail",
+        "message": "assert_unreached: onprogress not called. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/event-readystate-sync-open.any.js",
+    [
+      {
+        "name": "XMLHttpRequest: open() call fires sync readystate event (sync)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XMLHttpRequest: open() call fires sync readystate event (async)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/event-readystatechange-loaded.any.js",
+    [
+      {
+        "name": "event-readystatechange-loaded",
+        "status": "Fail",
+        "message": "assert_greater_than: LOADING state change may be emitted multiple times expected a number greater than 1 but got 0"
+      }
+    ]
+  ],
+  [
+    "xhr/event-timeout-order.any.js",
+    [
+      {
+        "name": "event-timeout-order",
+        "status": "Fail",
+        "message": "assert_equals: expected \"loadstart(0,0,false)\" but got \"readystatechange(4)\""
+      }
+    ]
+  ],
+  [
+    "xhr/event-timeout.any.js",
+    [
+      {
+        "name": "event-timeout",
+        "status": "Fail",
+        "message": "assert_unreached: ontimeout not called. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/event-upload-progress-crossorigin.any.js",
+    [
+      {
+        "name": "Upload events registered on time (http://www1.wpt.test/xhr/resources/corsenabled.py)",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'onprogress')"
+      },
+      {
+        "name": "Upload events registered on time (resources/redirect.py?code=307&location=http://www1.wpt.test/xhr/resources/corsenabled.py)",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'onprogress')"
+      },
+      {
+        "name": "Upload events registered too late (http://www1.wpt.test/xhr/resources/corsenabled.py)",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'onloadstart')"
+      },
+      {
+        "name": "Upload events registered too late (resources/redirect.py?code=307&location=http://www1.wpt.test/xhr/resources/corsenabled.py)",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'onloadstart')"
+      }
+    ]
+  ],
+  [
+    "xhr/event-upload-progress.any.js",
+    [
+      {
+        "name": "Upload events registered on time (http://www1.wpt.test/xhr/resources/corsenabled.py)",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'onprogress')"
+      },
+      {
+        "name": "Upload events registered on time (resources/redirect.py?code=307&location=http://www1.wpt.test/xhr/resources/corsenabled.py)",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'onprogress')"
+      },
+      {
+        "name": "Upload events registered too late (http://www1.wpt.test/xhr/resources/corsenabled.py)",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'onloadstart')"
+      },
+      {
+        "name": "Upload events registered too late (resources/redirect.py?code=307&location=http://www1.wpt.test/xhr/resources/corsenabled.py)",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'onloadstart')"
+      }
+    ]
+  ],
+  [
+    "xhr/firing-events-http-content-length.html",
+    [
+      {
+        "name": "ProgressEvent: firing events for HTTP with Content-Length",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "xhr/firing-events-http-no-content-length.html",
+    [
+      {
+        "name": "ProgressEvent: firing events for HTTP with no Content-Length",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "xhr/formdata.html",
+    [
+      {
+        "name": "formdata.append() should throw if value is string and file name is given",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Newly created FormData contains entries added to \"formData\" IDL attribute of FormDataEvent.",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"vh1\" but got (object) null"
+      },
+      {
+        "name": "|new FormData()| in formdata event handler should throw",
+        "status": "Fail",
+        "message": "Cannot read properties of null (reading 'addEventListener')"
+      },
+      {
+        "name": "empty formdata",
+        "status": "Fail",
+        "message": "assert_equals: expected \"\\n\" but got \"\""
+      },
+      {
+        "name": "formdata with string",
+        "status": "Fail",
+        "message": "assert_equals: expected \"key=value,\\n\" but got \"\""
+      },
+      {
+        "name": "formdata with named string",
+        "status": "Fail",
+        "message": "assert_equals: expected \"\\nkey=kv.txt:text/plain:5,\" but got \"\""
+      },
+      {
+        "name": "formdata from form",
+        "status": "Fail",
+        "message": "assert_equals: expected \"key=value,\\n\" but got \"\""
+      },
+      {
+        "name": "formdata with blob",
+        "status": "Fail",
+        "message": "assert_equals: expected \"\\nkey=blob:text/x-value:5,\" but got \"\""
+      },
+      {
+        "name": "formdata with named blob",
+        "status": "Fail",
+        "message": "assert_equals: expected \"\\nkey=blob.txt:text/x-value:5,\" but got \"\""
+      }
+    ]
+  ],
+  [
+    "xhr/getallresponseheaders-after-reuse.html",
+    [
+      {
+        "name": "getAllResponseHeaders() must not return the previous response's headers",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: unexpected error loading resources/headers-basic.asis\""
+      }
+    ]
+  ],
+  [
+    "xhr/getresponseheader.any.js",
+    [
+      {
+        "name": "getResponseHeader('content-length') expects 0",
+        "status": "Fail",
+        "message": "assert_unreached: unexpected error Reached unreachable code"
+      },
+      {
+        "name": "getResponseHeader('content-length') expects 0, 0",
+        "status": "Fail",
+        "message": "assert_unreached: unexpected error Reached unreachable code"
+      },
+      {
+        "name": "getResponseHeader('double-trouble') expects , ",
+        "status": "Fail",
+        "message": "assert_unreached: unexpected error Reached unreachable code"
+      },
+      {
+        "name": "getResponseHeader('foo-test') expects 1, 2, 3",
+        "status": "Fail",
+        "message": "assert_unreached: unexpected error Reached unreachable code"
+      },
+      {
+        "name": "getResponseHeader('heya') expects , \u000b\f, 1, , , 2",
+        "status": "Fail",
+        "message": "assert_unreached: unexpected error Reached unreachable code"
+      },
+      {
+        "name": "getResponseHeader('www-authenticate') expects 1, 2, 3, 4",
+        "status": "Fail",
+        "message": "assert_unreached: unexpected error Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/historical.html",
+    [
+      {
+        "name": "Support for responseType = moz-blob",
+        "status": "Fail",
+        "message": "assert_equals: expected \"\" but got \"moz-blob\""
+      },
+      {
+        "name": "Support for responseType = moz-chunked-text",
+        "status": "Fail",
+        "message": "assert_equals: expected \"\" but got \"moz-chunked-text\""
+      },
+      {
+        "name": "Support for responseType = moz-chunked-arraybuffer",
+        "status": "Fail",
+        "message": "assert_equals: expected \"\" but got \"moz-chunked-arraybuffer\""
+      }
+    ]
+  ],
+  [
+    "xhr/json.any.js",
+    [
+      {
+        "name": "Ensure the correct JSON parser is used",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"b\", \"a\"] length 2, got […, \"7\", \"8\", \"9\", \"10\", \"11\", \"12\", \"13\", \"14\", \"15\", \"16\", \"17\", \"18\", \"19\", \"20\", \"21\", \"22\", \"23\", \"24\", \"25\", \"26\"] length 27"
+      },
+      {
+        "name": "xhr/json.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 750], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":2}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/loadstart-and-state.html",
+    [
+      {
+        "name": "open() during loadstart",
+        "status": "Fail",
+        "message": "assert_equals: expected \"BB-8\" but got \"R2-D2\""
+      },
+      {
+        "name": "xhr/loadstart-and-state.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 1051], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":2}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/over-1-meg.any.js",
+    [
+      {
+        "name": "xhr/over-1-meg.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 475], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/overridemimetype-blob.html",
+    [
+      {
+        "name": "1) MIME types need to be parsed and serialized: text/html;charset=gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "2) MIME types need to be parsed and serialized: TEXT/HTML;CHARSET=GBK",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "3) MIME types need to be parsed and serialized: text/html;charset=gbk(",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "4) MIME types need to be parsed and serialized: text/html;x=(;charset=gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "5) MIME types need to be parsed and serialized: text/html;charset=gbk;charset=windows-1255",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "6) MIME types need to be parsed and serialized: text/html;charset=();charset=GBK",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "7) MIME types need to be parsed and serialized: text/html;charset =gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "8) MIME types need to be parsed and serialized: text/html ;charset=gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "9) MIME types need to be parsed and serialized: text/html; charset=gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "10) MIME types need to be parsed and serialized: text/html;charset= gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "11) MIME types need to be parsed and serialized: text/html;charset= \"gbk\"",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "12) MIME types need to be parsed and serialized: text/html;charset=\u000bgbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "13) MIME types need to be parsed and serialized: text/html;charset=\fgbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "14) MIME types need to be parsed and serialized: text/html;\u000bcharset=gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "15) MIME types need to be parsed and serialized: text/html;\fcharset=gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "16) MIME types need to be parsed and serialized: text/html;charset='gbk'",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "17) MIME types need to be parsed and serialized: text/html;charset='gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "18) MIME types need to be parsed and serialized: text/html;charset=gbk'",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "19) MIME types need to be parsed and serialized: text/html;charset=';charset=GBK",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "20) MIME types need to be parsed and serialized: text/html;test;charset=gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "21) MIME types need to be parsed and serialized: text/html;test=;charset=gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "22) MIME types need to be parsed and serialized: text/html;';charset=gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "23) MIME types need to be parsed and serialized: text/html;\";charset=gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "24) MIME types need to be parsed and serialized: text/html ; ; charset=gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "25) MIME types need to be parsed and serialized: text/html;;;;charset=gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "26) MIME types need to be parsed and serialized: text/html;charset= \";charset=GBK",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "27) MIME types need to be parsed and serialized: text/html;charset=\";charset=foo\";charset=GBK",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "28) MIME types need to be parsed and serialized: text/html;charset=\"gbk\"",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "29) MIME types need to be parsed and serialized: text/html;charset=\"gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "30) MIME types need to be parsed and serialized: text/html;charset=gbk\"",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "31) MIME types need to be parsed and serialized: text/html;charset=\" gbk\"",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "32) MIME types need to be parsed and serialized: text/html;charset=\"gbk \"",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "33) MIME types need to be parsed and serialized: text/html;charset=\"\\ gbk\"",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "34) MIME types need to be parsed and serialized: text/html;charset=\"\\g\\b\\k\"",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "35) MIME types need to be parsed and serialized: text/html;charset=\"gbk\"x",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "36) MIME types need to be parsed and serialized: text/html;charset=\"\";charset=GBK",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "37) MIME types need to be parsed and serialized: text/html;charset=\";charset=GBK",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "38) MIME types need to be parsed and serialized: text/html;charset={gbk}",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "39) MIME types need to be parsed and serialized: text/html;0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789=x;charset=gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "40) MIME types need to be parsed and serialized: 0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789/0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "41) MIME types need to be parsed and serialized: text/html;a]=bar;b[=bar;c=bar",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "42) MIME types need to be parsed and serialized: text/html;valid=\";\";foo=bar",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "43) MIME types need to be parsed and serialized: text/html;in]valid=\";asd=foo\";foo=bar",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "44) MIME types need to be parsed and serialized: !#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz/!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz;!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz=!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "45) MIME types need to be parsed and serialized: x/x;x=\"\t !\\\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ ¡¢£¤¥¦§¨©ª«¬­®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿ\"",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "46) MIME types need to be parsed and serialized: x/x;test",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "47) MIME types need to be parsed and serialized: x/x;test=\"\\",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "48) MIME types need to be parsed and serialized: x/x;x= ",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "49) MIME types need to be parsed and serialized: x/x;x=\t",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "50) MIME types need to be parsed and serialized: x/x\n\r\t ;x=x",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "51) MIME types need to be parsed and serialized: \n\r\t x/x;x=x\n\r\t ",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "52) MIME types need to be parsed and serialized: x/x;\n\r\t x=x\n\r\t ;x=y",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "53) MIME types need to be parsed and serialized: text/html;test=ÿ;charset=gbk",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "54) MIME types need to be parsed and serialized: x/x;test=�;x=x",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "55) MIME types need to be parsed and serialized: \u000bx/x",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "56) MIME types need to be parsed and serialized: \fx/x",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "57) MIME types need to be parsed and serialized: x/x\u000b",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "58) MIME types need to be parsed and serialized: x/x\f",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "59) MIME types need to be parsed and serialized: ",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "60) MIME types need to be parsed and serialized: \t",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "61) MIME types need to be parsed and serialized: /",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "62) MIME types need to be parsed and serialized: bogus",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "63) MIME types need to be parsed and serialized: bogus/",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "64) MIME types need to be parsed and serialized: bogus/ ",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "65) MIME types need to be parsed and serialized: bogus/bogus/;",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "66) MIME types need to be parsed and serialized: </>",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "67) MIME types need to be parsed and serialized: (/)",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "68) MIME types need to be parsed and serialized: ÿ/ÿ",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "69) MIME types need to be parsed and serialized: text/html(;doesnot=matter",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "70) MIME types need to be parsed and serialized: {/}",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "71) MIME types need to be parsed and serialized: Ā/Ā",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "72) MIME types need to be parsed and serialized: text /html",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "73) MIME types need to be parsed and serialized: text/ html",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "74) MIME types need to be parsed and serialized: \"text/html\"",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      },
+      {
+        "name": "Loading data…",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "xhr/overridemimetype-blob.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 1737], state={\"loaded\":true,\"pending\":2,\"phase\":4,\"tests\":77}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/overridemimetype-done-state.any.js",
+    [
+      {
+        "name": "overridemimetype-done-state",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"\""
+      }
+    ]
+  ],
+  [
+    "xhr/overridemimetype-unsent-state-force-shiftjis.any.js",
+    [
+      {
+        "name": "XMLHttpRequest: overrideMimeType() in unsent state, enforcing Shift-JIS encoding",
+        "status": "Fail",
+        "message": "client.overrideMimeType is not a function"
+      }
+    ]
+  ],
+  [
+    "xhr/progressevent-constructor.html",
+    [
+      {
+        "name": "Default event values.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "There must not be a initProgressEvent().",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Basic test.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ECMAScript value conversion test.",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"null\" but got (object) null"
+      },
+      {
+        "name": "Positive integer number test.",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"null\" but got (object) null"
+      },
+      {
+        "name": "Zero test.",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"null\" but got (object) null"
+      },
+      {
+        "name": "Decimal number test.",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"null\" but got (object) null"
+      },
+      {
+        "name": "Mixed integer and decimal number test.",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"null\" but got (object) null"
+      },
+      {
+        "name": "Negative number.",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"null\" but got (object) null"
+      },
+      {
+        "name": "ProgressEventInit members must be matched case-sensitively.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/progressevent-interface.html",
+    [
+      {
+        "name": "The ProgressEvent interface",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 2"
+      },
+      {
+        "name": "interface prototype object",
+        "status": "Fail",
+        "message": "assert_equals: expected false but got true"
+      },
+      {
+        "name": "The ProgressEvent interface 1",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'enumerable')"
+      },
+      {
+        "name": "The ProgressEvent interface 2",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'enumerable')"
+      },
+      {
+        "name": "The ProgressEvent interface 3",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'enumerable')"
+      },
+      {
+        "name": "Interface objects properties should not be Enumerable",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"ProgressEvent\""
+      },
+      {
+        "name": "Should be able to delete ProgressEvent.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/request-content-length.any.js",
+    [
+      {
+        "name": "Uploads need to set the Content-Length header",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'onprogress')"
+      },
+      {
+        "name": "Fetched blob: URLs set the Content-Length header",
+        "status": "Fail",
+        "message": "assert_true: expected true got undefined"
+      }
+    ]
+  ],
+  [
+    "xhr/response-body-errors.any.js",
+    [
+      {
+        "name": "Synchronous XMLHttpRequest should throw on bad chunk",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => client.send()\" did not throw"
+      },
+      {
+        "name": "Asynchronous XMLHttpRequest should clear response on bad chunk",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/responseText-status.html",
+    [
+      {
+        "name": "xhr/responseText-status.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 453], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/responsetype.any.js",
+    [
+      {
+        "name": "Initial value of responseType",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set responseType to \"\" when readyState is UNSENT.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set responseType to \"\" when readyState is OPENED.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set responseType to \"\" when readyState is OPENED and the sync flag is set.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() {\n        xhr.responseType = type;\n      }\" did not throw"
+      },
+      {
+        "name": "Set responseType to \"\" when readyState is DONE and the sync flag is set.",
+        "status": "Fail",
+        "message": "assert_equals: expected 4 but got 1"
+      },
+      {
+        "name": "Set responseType to \"json\" when readyState is UNSENT.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set responseType to \"json\" when readyState is OPENED.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set responseType to \"json\" when readyState is OPENED and the sync flag is set.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() {\n        xhr.responseType = type;\n      }\" did not throw"
+      },
+      {
+        "name": "Set responseType to \"json\" when readyState is DONE and the sync flag is set.",
+        "status": "Fail",
+        "message": "assert_equals: expected 4 but got 1"
+      },
+      {
+        "name": "Set responseType to \"document\" when readyState is UNSENT.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set responseType to \"document\" when readyState is OPENED.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set responseType to \"document\" when readyState is OPENED and the sync flag is set.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() {\n        xhr.responseType = type;\n      }\" did not throw"
+      },
+      {
+        "name": "Set responseType to \"document\" when readyState is DONE and the sync flag is set.",
+        "status": "Fail",
+        "message": "assert_equals: expected 4 but got 1"
+      },
+      {
+        "name": "Set responseType to \"arraybuffer\" when readyState is UNSENT.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set responseType to \"arraybuffer\" when readyState is OPENED.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set responseType to \"arraybuffer\" when readyState is OPENED and the sync flag is set.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() {\n        xhr.responseType = type;\n      }\" did not throw"
+      },
+      {
+        "name": "Set responseType to \"arraybuffer\" when readyState is DONE and the sync flag is set.",
+        "status": "Fail",
+        "message": "assert_equals: expected 4 but got 1"
+      },
+      {
+        "name": "Set responseType to \"blob\" when readyState is UNSENT.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set responseType to \"blob\" when readyState is OPENED.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set responseType to \"blob\" when readyState is OPENED and the sync flag is set.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() {\n        xhr.responseType = type;\n      }\" did not throw"
+      },
+      {
+        "name": "Set responseType to \"blob\" when readyState is DONE and the sync flag is set.",
+        "status": "Fail",
+        "message": "assert_equals: expected 4 but got 1"
+      },
+      {
+        "name": "Set responseType to \"text\" when readyState is UNSENT.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set responseType to \"text\" when readyState is OPENED.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set responseType to \"text\" when readyState is OPENED and the sync flag is set.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() {\n        xhr.responseType = type;\n      }\" did not throw"
+      },
+      {
+        "name": "Set responseType to \"text\" when readyState is DONE and the sync flag is set.",
+        "status": "Fail",
+        "message": "assert_equals: expected 4 but got 1"
+      },
+      {
+        "name": "Set responseType to \"nosuchtype\" when readyState is UNSENT.",
+        "status": "Fail",
+        "message": "assert_equals: expected \"\" but got \"nosuchtype\""
+      },
+      {
+        "name": "Set responseType to \"nosuchtype\" when readyState is OPENED.",
+        "status": "Fail",
+        "message": "assert_equals: expected \"\" but got \"nosuchtype\""
+      },
+      {
+        "name": "Set responseType to \"nosuchtype\" when readyState is OPENED and the sync flag is set.",
+        "status": "Fail",
+        "message": "assert_equals: expected \"\" but got \"nosuchtype\""
+      },
+      {
+        "name": "Set responseType to \"nosuchtype\" when readyState is DONE and the sync flag is set.",
+        "status": "Fail",
+        "message": "assert_equals: expected 4 but got 1"
+      },
+      {
+        "name": "Set responseType to \"\" when readyState is DONE.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"\""
+      },
+      {
+        "name": "Set responseType to \"json\" when readyState is DONE.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"\""
+      },
+      {
+        "name": "Set responseType to \"document\" when readyState is DONE.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"\""
+      },
+      {
+        "name": "Set responseType to \"arraybuffer\" when readyState is DONE.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"\""
+      },
+      {
+        "name": "Set responseType to \"blob\" when readyState is DONE.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"\""
+      },
+      {
+        "name": "Set responseType to \"text\" when readyState is DONE.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"\""
+      },
+      {
+        "name": "Set responseType to \"nosuchtype\" when readyState is DONE.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"\""
+      },
+      {
+        "name": "xhr/responsetype.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 4204], state={\"loaded\":true,\"pending\":14,\"phase\":4,\"tests\":50}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/responseurl-after-abort.any.js",
+    [
+      {
+        "name": "abort() during DONE clears responseURL (sync)",
+        "status": "Fail",
+        "message": "assert_equals: expected 4 but got 1"
+      },
+      {
+        "name": "abort() during HEADERS_RECEIVED clears responseURL",
+        "status": "Fail",
+        "message": "assert_equals: responseURL expected \"\" but got \"https://wpt.test/xhr/resources/well-formed.xml\""
+      },
+      {
+        "name": "abort() during LOADING clears responseURL",
+        "status": "Fail",
+        "message": "assert_equals: responseURL expected \"\" but got \"https://wpt.test/xhr/resources/well-formed.xml\""
+      },
+      {
+        "name": "abort() during DONE clears responseURL (async)",
+        "status": "Fail",
+        "message": "assert_equals: expected 0 but got 4"
+      },
+      {
+        "name": "responseURL reflects the new response after abort() and reuse",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/responseurl.html",
+    [
+      {
+        "name": "404 response has proper responseURL",
+        "status": "Fail",
+        "message": "assert_equals: expected 404 but got 0"
+      },
+      {
+        "name": "Redirected response has proper responseURL",
+        "status": "Fail",
+        "message": "assert_equals: expected 200 but got 0"
+      }
+    ]
+  ],
+  [
+    "xhr/responsexml-invalid-type.html",
+    [
+      {
+        "name": "XMLHttpRequest: response with an invalid responseXML document",
+        "status": "Fail",
+        "message": "assert_equals: expected (object) null but got (undefined) undefined"
+      }
+    ]
+  ],
+  [
+    "xhr/security-consideration.sub.html",
+    [
+      {
+        "name": "ProgressEvent: security consideration",
+        "status": "Fail",
+        "message": "assert_equals: loaded is zero. expected (number) 0 but got (undefined) undefined"
+      }
+    ]
+  ],
+  [
+    "xhr/send-blob-with-no-mime-type.html",
+    [
+      {
+        "name": "Synchronous blob loading with no mime type [POST]",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"4\" but got (object) null"
+      },
+      {
+        "name": "Synchronous blob loading with no mime type [PUT]",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"4\" but got (object) null"
+      },
+      {
+        "name": "Synchronous blob loading with invalid mime type [POST]",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"4\" but got (object) null"
+      },
+      {
+        "name": "Synchronous blob loading with invalid mime type [PUT]",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"4\" but got (object) null"
+      },
+      {
+        "name": "Asynchronous blob loading with no mime type [POST]",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"4\" but got (object) null"
+      },
+      {
+        "name": "Asynchronous blob loading with no mime type [PUT]",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"4\" but got (object) null"
+      },
+      {
+        "name": "Asynchronous blob loading with invalid mime type [POST]",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"4\" but got (object) null"
+      },
+      {
+        "name": "Asynchronous blob loading with invalid mime type [PUT]",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"4\" but got (object) null"
+      }
+    ]
+  ],
+  [
+    "xhr/send-data-arraybuffer.any.js",
+    [
+      {
+        "name": "send-data-arraybuffer",
+        "status": "Fail",
+        "message": "assert_equals: expected 200 but got 0"
+      }
+    ]
+  ],
+  [
+    "xhr/send-data-arraybufferview.any.js",
+    [
+      {
+        "name": "xhr/send-data-arraybufferview.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=object, hook=function, scripts=[201271, 541], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/send-data-es-object.any.js",
+    [
+      {
+        "name": "object whose toString() returns a document, expected to throw",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function(){client.send(obj)}\" did not throw"
+      },
+      {
+        "name": "object whose toString() throws, expected to throw",
+        "status": "Fail",
+        "message": "assert_throws_exactly: function \"function(){client.send(obj)}\" did not throw"
+      },
+      {
+        "name": "xhr/send-data-es-object.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 2501], state={\"loaded\":true,\"pending\":9,\"phase\":4,\"tests\":11}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/send-data-formdata.any.js",
+    [
+      {
+        "name": "send-data-formdata",
+        "status": "Fail",
+        "message": "assert_equals: expected 200 but got 0"
+      }
+    ]
+  ],
+  [
+    "xhr/send-data-sharedarraybuffer.any.js",
+    [
+      {
+        "name": "sending a SharedArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sending a Int8Array backed by a SharedArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sending a Uint8Array backed by a SharedArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sending a Uint8ClampedArray backed by a SharedArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sending a Int16Array backed by a SharedArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sending a Uint16Array backed by a SharedArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sending a Int32Array backed by a SharedArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sending a Uint32Array backed by a SharedArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sending a BigInt64Array backed by a SharedArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sending a BigUint64Array backed by a SharedArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sending a Float16Array backed by a SharedArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sending a Float32Array backed by a SharedArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sending a Float64Array backed by a SharedArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sending a DataView backed by a SharedArrayBuffer",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/send-data-string-invalid-unicode.any.js",
+    [
+      {
+        "name": "invalid unicode '\\u{d83d}' should be fixed with replacement character",
+        "status": "Fail",
+        "message": "assert_unreached: no error should occur Reached unreachable code"
+      },
+      {
+        "name": "invalid unicode '\\u{d83d}ab' should be fixed with replacement character",
+        "status": "Fail",
+        "message": "assert_unreached: no error should occur Reached unreachable code"
+      },
+      {
+        "name": "invalid unicode 'a\\u{d83d}b' should be fixed with replacement character",
+        "status": "Fail",
+        "message": "assert_unreached: no error should occur Reached unreachable code"
+      },
+      {
+        "name": "invalid unicode 'ab\\u{d83d}' should be fixed with replacement character",
+        "status": "Fail",
+        "message": "assert_unreached: no error should occur Reached unreachable code"
+      },
+      {
+        "name": "invalid unicode '\\u{dc94}' should be fixed with replacement character",
+        "status": "Fail",
+        "message": "assert_unreached: no error should occur Reached unreachable code"
+      },
+      {
+        "name": "invalid unicode '\\u{dc94}ab' should be fixed with replacement character",
+        "status": "Fail",
+        "message": "assert_unreached: no error should occur Reached unreachable code"
+      },
+      {
+        "name": "invalid unicode 'a\\u{dc94}b' should be fixed with replacement character",
+        "status": "Fail",
+        "message": "assert_unreached: no error should occur Reached unreachable code"
+      },
+      {
+        "name": "invalid unicode 'ab\\u{dc94}' should be fixed with replacement character",
+        "status": "Fail",
+        "message": "assert_unreached: no error should occur Reached unreachable code"
+      },
+      {
+        "name": "valid unicode should be sent correctly",
+        "status": "Fail",
+        "message": "assert_unreached: no error should occur Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "xhr/send-send.any.js",
+    [
+      {
+        "name": "XMLHttpRequest: send() - send()",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { client.send(null) }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "xhr/send-usp.any.js",
+    [
+      {
+        "name": "Overall fetch with URLSearchParams",
+        "status": "Fail",
+        "message": "assert_unreached: Reached unreachable code"
+      },
+      {
+        "name": "XMLHttpRequest.send(URLSearchParams): POST uses the URLSearchParams MIME type when no Content-Type was set",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network error\""
+      },
+      {
+        "name": "XMLHttpRequest.send(URLSearchParams): POST keeps an author-set Content-Type",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network error\""
+      },
+      {
+        "name": "XMLHttpRequest.send(URLSearchParams): POST replaces the charset parameter of an author-set Content-Type",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network error\""
+      },
+      {
+        "name": "XMLHttpRequest.send(URLSearchParams): GET sends neither a body nor a Content-Type",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network error\""
+      },
+      {
+        "name": "XMLHttpRequest.send(URLSearchParams): HEAD sends neither a body nor a Content-Type",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network error\""
+      },
+      {
+        "name": "XMLHttpRequest.send(URLSearchParams): GET keeps an author-set Content-Type",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network error\""
+      },
+      {
+        "name": "xhr/send-usp.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 4003], state={\"loaded\":true,\"pending\":128,\"phase\":4,\"tests\":135}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/sync-no-progress.any.js",
+    [
+      {
+        "name": "progress event should not be fired by sync XHR",
+        "status": "Fail",
+        "message": "assert_true: load event should have fired expected true got false"
+      }
+    ]
+  ],
+  [
+    "xhr/sync-no-timeout.any.js",
+    [
+      {
+        "name": "Sync XHR should not have a timeout",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/sync-xhr-and-window-onload.html",
+    [
+      {
+        "name": "xhr/sync-xhr-and-window-onload.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 617], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/sync-xhr-supported-by-permissions-policy.tentative.html",
+    [
+      {
+        "name": "document.permissionsPolicy.features should advertise sync-xhr.",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'features')"
+      }
+    ]
+  ],
+  [
+    "xhr/template-element.html",
+    [
+      {
+        "name": "XMLHttpRequest: template element parsing",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'documentElement')"
+      },
+      {
+        "name": "XMLHttpRequest: template element parsing 1",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'documentElement')"
+      },
+      {
+        "name": "XMLHttpRequest: template element parsing 2",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'documentElement')"
+      }
+    ]
+  ],
+  [
+    "xhr/thrown-error-in-events.html",
+    [
+      {
+        "name": "errors thrown in XMLHttpRequest's load event (using addEventListener) goes to window.onerror",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "xhr/thrown-error-in-events.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 1012], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":2}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/timeout-multiple-fetches.html",
+    [
+      {
+        "name": "xhr/timeout-multiple-fetches.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 0, 0, 865], state={\"loaded\":true,\"pending\":2,\"phase\":4,\"tests\":2}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/xhr-authorization-redirect.any.js",
+    [
+      {
+        "name": "getAuthorizationHeaderValue - no redirection",
+        "status": "Fail",
+        "message": "assert_equals: expected \"Basic dXNlcjpwYXNz\" but got \"\""
+      },
+      {
+        "name": "getAuthorizationHeaderValue - same origin redirection",
+        "status": "Fail",
+        "message": "assert_equals: expected \"Basic dXNlcjpwYXNz\" but got \"\""
+      },
+      {
+        "name": "getAuthorizationHeaderValue - cross origin redirection",
+        "status": "Fail",
+        "message": "assert_equals: expected \"none\" but got \"\""
+      }
+    ]
+  ],
+  [
+    "xhr/xhr-timeout-longtask.any.js",
+    [
+      {
+        "name": "Long tasks should not trigger load timeout",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/xmlhttprequest-sync-block-defer-scripts-subframe.html",
+    [
+      {
+        "name": "xhr/xmlhttprequest-sync-block-defer-scripts-subframe.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script data:application/javascript,var%20x%20=%200;%20var%20xhr%20=%20new%20XMLHttpRequest();%20xhr.open('GET',%20'data:text/plain,aaa',%20false);%20xhr.send();%20x=1: script fetch failed: xhr/data:application/javascript,var%20x%20=%200;%20var%20xhr%20=%20new%20XMLHttpRequest();%20xhr.open('GET',%20'data:text/plain,aaa',%20false);%20xhr.send();%20x=1 (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "xhr/xmlhttprequest-sync-block-scripts.html",
+    [
+      {
+        "name": "Check that while a sync XHR is in flight async script loads don't complete and run script",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/xmlhttprequest-sync-default-permissions-policy.tentative.sub.html",
+    [
+      {
+        "name": "xhr/xmlhttprequest-sync-default-permissions-policy.tentative.sub.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script /permissions-policy/resources/permissions-policy.js: script fetch failed: permissions-policy/resources/permissions-policy.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "xhr/xmlhttprequest-sync-not-hang-scriptloader-subframe.html",
+    [
+      {
+        "name": "xhr/xmlhttprequest-sync-not-hang-scriptloader-subframe.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script data:application/javascript,createSecondScript(): script fetch failed: xhr/data:application/javascript,createSecondScript() (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "xhr/xmlhttprequest-timeout-aborted.html",
+    [
+      {
+        "name": "Timeout test: No events should fire for an unsent, unaborted request",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/xmlhttprequest-timeout-abortedonmain.html",
+    [
+      {
+        "name": "Timeout test: time to abort is 0, timeout set at 2000",
+        "status": "Fail",
+        "message": "assert_equals: expected \"abort\" but got \"error\""
+      },
+      {
+        "name": "Timeout test: time to abort is 1000, timeout set at 2000",
+        "status": "Fail",
+        "message": "assert_equals: expected \"abort\" but got \"error\""
+      }
+    ]
+  ],
+  [
+    "xhr/xmlhttprequest-timeout-overrides.html",
+    [
+      {
+        "name": "Timeout test: timeout disabled after initially set, original timeout at 5000, reset at 2000 to 0",
+        "status": "Fail",
+        "message": "assert_equals: expected \"load\" but got \"error\""
+      },
+      {
+        "name": "Timeout test: timeout overrides load after a delay, original timeout at 5000, reset at 1000 to 2000",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"error\""
+      }
+    ]
+  ],
+  [
+    "xhr/xmlhttprequest-timeout-overridesexpires.html",
+    [
+      {
+        "name": "Timeout test: timeout set to expiring value after load fires, original timeout at 5000, reset at 4000 to 1000",
+        "status": "Fail",
+        "message": "assert_equals: expected \"load\" but got \"error\""
+      },
+      {
+        "name": "Timeout test: timeout set to expired value before load fires, original timeout at 5000, reset at 2000 to 1100",
+        "status": "Fail",
+        "message": "assert_equals: expected \"timeout\" but got \"error\""
+      }
+    ]
+  ],
+  [
+    "xhr/xmlhttprequest-timeout-reused.html",
+    [
+      {
+        "name": "xhr/xmlhttprequest-timeout-reused.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=object, hook=function, scripts=[201271, 591], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "xhr/xmlhttprequest-timeout-simple.html",
+    [
+      {
+        "name": "Timeout test: no time out scheduled, load fires normally, timeout scheduled at 0",
+        "status": "Fail",
+        "message": "assert_equals: expected \"load\" but got \"error\""
+      },
+      {
+        "name": "Timeout test: load fires normally, timeout scheduled at 5000",
+        "status": "Fail",
+        "message": "assert_equals: expected \"load\" but got \"error\""
+      }
+    ]
+  ],
+  [
+    "xhr/xmlhttprequest-timeout-synconmain.html",
+    [
+      {
+        "name": "Timeout test: Synchronous XHR must not allow a timeout to be set - setting timeout must throw",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Timeout test: Synchronous XHR must not allow a timeout to be set - calling open() after timeout is set must throw",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "xhr/xmlhttprequest-timeout-twice.html",
+    [
+      {
+        "name": "Timeout test: load fires normally with no timeout set, twice, original timeout at 0, reset at 2000 to 0",
+        "status": "Fail",
+        "message": "assert_equals: expected \"load\" but got \"error\""
+      },
+      {
+        "name": "Timeout test: load fires normally with same timeout set twice, original timeout at 5000, reset at 2000 to 5000",
+        "status": "Fail",
+        "message": "assert_equals: expected \"load\" but got \"error\""
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/append-formelement.html",
+    [
+      {
+        "name": "testFormDataAppendToForm1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataAppendToForm2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataAppendToFormUndefined1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataAppendToFormUndefined2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataAppendToFormNull1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataAppendToFormNull2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataAppendToFormString",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => {fd.append('name', \"string\", 'filename')}\" did not throw"
+      },
+      {
+        "name": "testFormDataAppendToFormWrongPlatformObject",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => {fd.append('name', new URLSearchParams(), 'filename')}\" did not throw"
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/append.any.js",
+    [
+      {
+        "name": "testFormDataAppend1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataAppend2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataAppendUndefined1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataAppendUndefined2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataAppendNull1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataAppendNull2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataAppendEmptyBlob",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"blank.txt\" but got (undefined) undefined"
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/constructor-formelement.html",
+    [
+      {
+        "name": "test that FormData is correctly constructed from the form data set",
+        "status": "Fail",
+        "message": "assert_equals: input.name accepts unpaired surrogates expected \"submit-me-18-U+dc01\" but got \"submit-me-18-\\ufffd\""
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/constructor-submitter-coordinate.html",
+    [
+      {
+        "name": "The constructed FormData object should contain correct entries for Image Button submitter's dispatched coordinate",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"23\" but got (undefined) undefined"
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/constructor-submitter.html",
+    [
+      {
+        "name": "FormData construction should allow a null submitter",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FormData construction should allow an undefined form and an undefined submitter",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FormData construction should allow an undefined form and a null submitter",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FormData construction should throw a TypeError if a non-null submitter is not a submit button",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => new FormData(form, document.querySelector('[name=n1]'))\" did not throw"
+      },
+      {
+        "name": "FormData construction should throw a 'NotFoundError' DOMException if a non-null submitter is not owned by the form",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => new FormData(form, document.querySelector('[name=unassociated]'))\" did not throw"
+      },
+      {
+        "name": "The constructed FormData object should contain an in-tree-order entry for a named submit button submitter",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"n1\", \"named\", \"n3\"] length 3, got [\"n1\", \"n3\"] length 2"
+      },
+      {
+        "name": "The constructed FormData object should not contain an entry for an unnamed submit button submitter",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The constructed FormData object should contain in-tree-order entries for an activated Image Button submitter",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"n1\", \"namedImage.x\", \"namedImage.y\", \"n3\"] length 4, got [\"n1\", \"n3\"] length 2"
+      },
+      {
+        "name": "The constructed FormData object should contain in-tree-order entries for an unactivated Image Button submitter",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"n1\", \"unactivatedImage.x\", \"unactivatedImage.y\", \"n3\"] length 4, got [\"n1\", \"n3\"] length 2"
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/constructor.any.js",
+    [
+      {
+        "name": "Constructors should throw a type error",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => { new FormData(null); }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/delete-formelement.html",
+    [
+      {
+        "name": "testFormDataDeleteFromForm",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataDeleteFromFormNonExistentKey",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataDeleteFromFormOtherKey",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataDeleteFromEmptyForm",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/delete.any.js",
+    [
+      {
+        "name": "testFormDataDelete",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataDeleteNonExistentKey",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataDeleteOtherKey",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/foreach.any.js",
+    [
+      {
+        "name": "Iterator should return duplicate keys and non-deleted values",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Entries iterator should return duplicate keys and non-deleted values",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Keys iterator should return duplicates",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Values iterator should return non-deleted values",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/get-formelement.html",
+    [
+      {
+        "name": "testFormDataGetFromForm",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataGetFromFormNull",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataGetFromEmptyForm",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataGetAllFromForm",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataGetAllFromFormNull",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataGetAllFromEmptyForm",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/get.any.js",
+    [
+      {
+        "name": "testFormDataGet",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataGetNull1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataGetNull2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataGetAll",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataGetAllEmpty1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataGetAllEmpty2",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/has-formelement.html",
+    [
+      {
+        "name": "testFormDataHasFromForm",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataHasFromFormNull",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataHasFromEmptyForm",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/has.any.js",
+    [
+      {
+        "name": "testFormDataHas",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataHasEmpty1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataHasEmpty2",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/iteration.any.js",
+    [
+      {
+        "name": "Iteration skips elements removed while iterating",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"foo\", \"BAR\"] length 2, got [\"foo\", \"baz\", \"BAR\"] length 3"
+      },
+      {
+        "name": "Removing elements already iterated over causes an element to be skipped during iteration",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"foo\", \"baz\", \"quux\"] length 3, got [\"foo\", \"baz\", \"BAR\", \"quux\"] length 4"
+      },
+      {
+        "name": "Appending a value pair during iteration causes it to be reached during iteration",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"foo\", \"baz\", \"BAR\", \"quux\", \"X-yZ\"] length 5, got [\"foo\", \"baz\", \"BAR\", \"quux\"] length 4"
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/set-blob.any.js",
+    [
+      {
+        "name": "blob without type",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value object \"[object Object]\""
+      },
+      {
+        "name": "blob with type",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value object \"[object Object]\""
+      },
+      {
+        "name": "blob with custom name",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value object \"[object Object]\""
+      },
+      {
+        "name": "file without lastModified or custom name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "file with lastModified and custom name",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value object \"[object Object]\""
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/set-formelement.html",
+    [
+      {
+        "name": "testFormDataSetToForm1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataSetToForm2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataSetToFormUndefined1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataSetToFormUndefined2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataSetToFormNull1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataSetToFormNull2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataSetToFormString",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => {fd.set('name', \"string\", 'filename')}\" did not throw"
+      },
+      {
+        "name": "testFormDataSetToFormWrongPlatformObject",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => {fd.set('name', new URLSearchParams(), 'filename')}\" did not throw"
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/set.any.js",
+    [
+      {
+        "name": "testFormDataSet1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataSet2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataSetUndefined1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataSetUndefined2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataSetNull1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataSetNull2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testFormDataSetEmptyBlob",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "xhr/formdata/submitter-coordinate-value.html",
+    [
+      {
+        "name": "dispatched event coordinates should match user intention coordinates",
+        "status": "Fail",
+        "message": "assert_equals: there should be 2 X coordinates expected 2 but got 0"
+      }
+    ]
+  ]
+]
