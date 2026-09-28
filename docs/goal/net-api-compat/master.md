@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-29（M3-S3 收口）
+**最后更新**: 2026-09-29（M3 收口）
 
 ---
 
@@ -11,11 +11,13 @@
 **专项定位**：网络 API（fetch/XHR/URL/mimesniff/streams/EventSource）一致性收敛，
 WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 + 帧协议）。
 
-**当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3-S1（73.6%）→
-M3-S2（75.7%）→ M3-S3（2026-09-29）——**4006/5212 = 76.9%**（fetch 70.1% / xhr 53.2% /
-url 79.1% / mimesniff 100% / streams 42.5% / eventsource 6.2%）。下一切片：M3 收尾
-（setters-stripping protocol/host c0 面 + a-element 装载诊断）与 M4（streams 底座 +
-WebSocket 挂账定稿 + DC 判定）。
+**当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（S1 73.6% /
+S2 75.7% / S3 76.9% / 收尾 2026-09-29）——**8047/10786 = 74.6%**（**分母重锚**：
+helper 解锁页级 mega-case，分母 5212→10786；通过绝对数 4006→8047 = +4041，比率读数
+下降纯系分母诚实口径）。分 corpus：fetch 70.1% / xhr 53.2% / url 73.1% / mimesniff
+100% / streams 42.5% / eventsource 6.2%。下一切片 M4：streams 底座（ReadableStream.from
+32 / BYOB view 16 / queuing strategy 11 / pull 时机 8）+ WebSocket 二期挂账定稿 +
+DC 逐项判定收口。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -30,13 +32,25 @@ WebSocket 挂账定稿 + DC 判定）。
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
 | P3 | XHR 状态机 + EventSource 解析/重连 | 🔶 M3 进行中——S1（header 校验）+ S2（responseType/同步/overrideMime）已收口（xhr 53.2%）；**残余：blob-range（27，blob:+Range）、progress 事件序、.asis/eventsource fixture 联动 P7** |
-| P4 | URL 边缘语义 + mimesniff 对齐 | 🔶 mimesniff ✅ 100%；url 79.1%（S3 收口 USP 容错解码/URL.parse/port/live 迭代）——残余：setters-stripping protocol/host c0 面（62）+ a-element 装载诊断 |
+| P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.1%（新分母 6065——M3 收口 USP/URL.parse/port/live 迭代/UTF-8 解码器/helper 解锁）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | ⏳ M4（主簇：ReadableStream.from 32 / BYOB view 16 / queuing strategy 11 / pull 时机 8） |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
 | P7 | runner fixture 通道（.py 端点最小 fixture 集） | 🔶 首件已落（M3-S1 `inspect-headers.py`）；待评估：event-source.py / echo-content.py / delay.py 族（eventsource Timeout 23 / request-upload echo / xhr delay 簇公共解锁件） |
 
 ## 已完成切片
 
+- **M3 收尾（2026-09-29，M3 收口）**：helper 解锁 + 深水防护（**8047/10786 = 74.6%**，
+  分母重锚 5212→10786，pass 绝对 +4041）。`/common` subset-tests helpers +
+  a-element 资源补拉（url-constructor 815/893、a-element 414/892、a-element-origin
+  319/412 页级解锁）；WHATWG 逐字节 UTF-8 解码器（每无效子部分一 U+FFFD——
+  %FE%FF/%C2x 面）；protocol setter 剥离 + 失败无操作（URL spec scheme setter 失败
+  即 return）；url crate username()/password() panic 防护（serialize_url
+  catch_unwind——url-setters.any hostile 面，**整跑 abort 消除、url 全 corpus 首次
+  完整跑通**）；探针 JSON 孤代理转义消毒（urltestdata 代理串 → serde 拒绝面）。
+  1 处存量引擎测试随 spec 翻新（非法 protocol 由返空串改无操作）。残余记账：url
+  全量解析深水（IDNA/toASCII）、setters-stripping host c0 保留面（Chromium
+  bug-compat，url crate 不可表达）、eventsource/.asis/blob-range（P7 续件）。见
+  [evidence/2026-09-29-m3-finisher.md](evidence/2026-09-29-m3-finisher.md)。
 - **M3-S3（2026-09-29）**：URL 修齐（4006/5212 = **76.9%**，Δ+60 零回归）。
   urlencoded 容错 percent-decode（URIError 根因消除）+ USP sequence 构造（严格二元组）
   + live 光标迭代/size getter/delete 可选参 + URL.parse 静态（16/16）+ host port
@@ -101,12 +115,12 @@ WebSocket 挂账定稿 + DC 判定）。
 
 ## 下一步计划
 
-1. **M3 收尾**：setters-stripping protocol/host/hostname c0 面（62——scheme/host
-   setter 剥离语义）+ a-element 装载诊断（url corpus 页级 0/1 案）+ TextDecoder
-   FFFD 合并保真（与 encoding-compat 域协同）
-2. **M3-S4 评估**：blob-range（blob:+Range XHR 27）+ P7 续件（.asis 原始 HTTP
-   fixture / event-source.py / echo-content.py——eventsource Timeout 23 / xhr delay 簇）
-3. **M4**：streams 底座（ReadableStream.from 32 / BYOB view 16 / queuing strategy 11 /
-   pull 时机 8）+ WebSocket 二期挂账定稿 + DC 逐项判定收口
+1. **M4**：streams 底座（ReadableStream.from 32 / BYOB view 16 / queuing strategy 11 /
+   pull 时机 8——streams corpus 42.5% 的主簇）
+2. **M4 并轨**：P7 续件评估（.asis 原始 HTTP fixture / event-source.py /
+   echo-content.py——eventsource Timeout 23 / xhr delay 簇 / request-upload echo）
+   + blob-range（blob:+Range XHR 27）
+3. **收口判定**：WebSocket 二期挂账定稿 + DC 逐项判定（DC-1 helpers 账本核对 /
+   DC-4 make test+clippy+fmt 门禁与 reftest 零回归核对）
 
 **待用户决策清单**：（空）

@@ -337,24 +337,46 @@
     var s = '';
     var i = 0;
     var n = src.length;
+    // net-api 收尾：WHATWG UTF-8 解码器逐字节语义（encoding.spec §utf-8 decoder）——
+    // 每个最大无效子部分产 1 U+FFFD（%FE%FF → 2 个，非合并）；0xC0/0xC1/0xF5+ 非法
+    // 前导；0xE0/0xF0 次字节下界（long-form 排除）、0xED 上界（代理排除）、0xF4 上界
+    //（>U+10FFFF 排除）；越界第二字节 → 1 U+FFFD + 重处理该字节（urlencoded-parser
+    // %C2x 面）。
     while (i < n) {
-      var b = src[i];
-      if (b < 0x80) { s += String.fromCharCode(b); i += 1; }
-      else if (b < 0xc2) { s += '�'; i += 1; } // 非法前导字节 / 连续字节 → U+FFFD
-      else if (b < 0xe0) { // 2 字节
-        if (i + 1 >= n) break; // 不完整 → 缓存尾部
-        s += String.fromCharCode(((b & 0x1f) << 6) | (src[i + 1] & 0x3f)); i += 2;
-      } else if (b < 0xf0) { // 3 字节
-        if (i + 2 >= n) break;
-        s += String.fromCharCode(((b & 0x0f) << 12) | ((src[i + 1] & 0x3f) << 6) | (src[i + 2] & 0x3f)); i += 3;
-      } else { // 4 字节
-        if (i + 3 >= n) break;
-        var cp = ((b & 0x07) << 18) | ((src[i + 1] & 0x3f) << 12) | ((src[i + 2] & 0x3f) << 6) | (src[i + 3] & 0x3f);
-        cp -= 0x10000;
-        // R3012 bug fix：低代理须 10 位（& 0x3ff），旧 & 0x3f（6 位）致 astral char（如 emoji）解码错。
-        s += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff)); // astral → 代理对
-        i += 4;
+      var b0 = src[i];
+      if (b0 < 0x80) { s += String.fromCharCode(b0); i += 1; continue; }
+      var need = 0, cp = 0, lo1 = 0x80, hi1 = 0xbf;
+      if (b0 >= 0xc2 && b0 <= 0xdf) { need = 1; cp = b0 & 0x1f; }
+      else if (b0 >= 0xe0 && b0 <= 0xef) {
+        need = 2; cp = b0 & 0x0f;
+        if (b0 === 0xe0) lo1 = 0xa0;
+        else if (b0 === 0xed) hi1 = 0x9f;
+      } else if (b0 >= 0xf0 && b0 <= 0xf4) {
+        need = 3; cp = b0 & 0x07;
+        if (b0 === 0xf0) lo1 = 0x90;
+        else if (b0 === 0xf4) hi1 = 0x8f;
+      } else { s += '�'; i += 1; continue; }
+      if (i + need >= n) break; // 不完整尾部 → carry（flush 产 U+FFFD）
+      var b1 = src[i + 1];
+      if (b1 < lo1 || b1 > hi1) { s += '�'; i += 1; continue; }
+      cp = (cp << 6) | (b1 & 0x3f);
+      if (need >= 2) {
+        var b2 = src[i + 2];
+        if (b2 < 0x80 || b2 > 0xbf) { s += '�'; i += 1; continue; }
+        cp = (cp << 6) | (b2 & 0x3f);
       }
+      if (need >= 3) {
+        var b3 = src[i + 3];
+        if (b3 < 0x80 || b3 > 0xbf) { s += '�'; i += 1; continue; }
+        cp = (cp << 6) | (b3 & 0x3f);
+      }
+      if (cp >= 0x10000) {
+        cp -= 0x10000;
+        s += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff)); // astral → 代理对
+      } else {
+        s += String.fromCharCode(cp);
+      }
+      i += need + 1;
     }
     return { s: s, tail: i < n ? src.slice(i) : [] };
   }

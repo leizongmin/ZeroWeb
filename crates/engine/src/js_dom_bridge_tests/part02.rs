@@ -152,8 +152,13 @@ fn test_set_url_part_rust_r2780() {
     // href setter（整体替换）。
     let r = set_url_part("https://example.com/old", "href", "http://other.test/x?q=1");
     assert!(r.contains("\"host\":\"other.test\""), "href replace host: {r}");
-    // 非法 scheme 返空串（不 panic）。
-    assert_eq!(set_url_part("https://example.com/p", "protocol", "ht!tp"), "");
+    // 非法 scheme → **无操作**（net-api M3 收尾：URL spec scheme setter 失败即 return
+    // ——URL 不变也不抛；WPT url-setters-stripping leading-U+0000 面同判）。
+    let r = set_url_part("https://example.com/p", "protocol", "ht!tp");
+    assert!(
+        r.contains("\"protocol\":\"https:\"") && r.contains("\"href\":\"https://example.com/p\""),
+        "protocol setter failure no-op: {r}"
+    );
     // 非法 href 返空串。
     assert_eq!(set_url_part("https://example.com/p", "href", "not a url"), "");
     // 未知 part 不改 URL（返回原序列化）。

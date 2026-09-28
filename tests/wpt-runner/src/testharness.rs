@@ -5964,7 +5964,60 @@ fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {
              commands:(globalThis.__zw_td_queue||[]).splice(0)})",
         )
         .map_err(|error| error.to_string())?;
-    serde_json::from_str(&value).map_err(|error| format!("invalid harness probe: {error}: {value}"))
+    serde_json::from_str(&sanitize_lone_surrogate_escapes(&value))
+        .map_err(|error| format!("invalid harness probe: {error}: {value}"))
+}
+
+/// net-api 收尾：探针 JSON 中的**孤代理** `\uXXXX` 转义 → `�`。serde 严格拒绝孤
+/// 代理转义；urltestdata 含代理测试串（test 名经 V8 well-formed JSON.stringify 逃逸为
+/// 孤代理 `\uD800`-`\uDFFF` 形态）→ 探针解析全案失败（url-constructor/a-element）。
+/// 已知近似：字符串内的字面 `\\` 后随 `\uXXXX` 会被误判（本 face 诊断名容差可接受）。
+fn sanitize_lone_surrogate_escapes(json: &str) -> String {
+    let bytes = json.as_bytes();
+    let mut out = String::with_capacity(json.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 6 <= bytes.len() && bytes[i + 1] == b'u' {
+            // 字符边界守卫（guard 复核备注——病态多字节跟随 `\u` 时切片 panic 面消除）
+            if !json.is_char_boundary(i + 6) {
+                let ch = json[i..].chars().next().unwrap_or('\u{FFFD}');
+                out.push(ch);
+                i += ch.len_utf8();
+                continue;
+            }
+            let hex = &json[i + 2..i + 6];
+            if let Ok(cp) = u16::from_str_radix(hex, 16) {
+                if (0xD800..=0xDBFF).contains(&cp) {
+                    // 合法代理对（\uhigh\ulow 相邻）→ 原样保留 12 字节
+                    if i + 12 <= bytes.len()
+                        && json.is_char_boundary(i + 12)
+                        && bytes[i + 6] == b'\\'
+                        && bytes[i + 7] == b'u'
+                        && json[i + 8..i + 12].bytes().all(|b| b.is_ascii_hexdigit())
+                        && u16::from_str_radix(&json[i + 8..i + 12], 16)
+                            .map(|lo| (0xDC00..=0xDFFF).contains(&lo))
+                            .unwrap_or(false)
+                    {
+                        out.push_str(&json[i..i + 12]);
+                        i += 12;
+                        continue;
+                    }
+                    out.push_str("\\uFFFD");
+                    i += 6;
+                    continue;
+                }
+                if (0xDC00..=0xDFFF).contains(&cp) {
+                    out.push_str("\\uFFFD");
+                    i += 6;
+                    continue;
+                }
+            }
+        }
+        let ch = json[i..].chars().next().unwrap_or('\u{FFFD}');
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
 }
 
 fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) -> Option<String> {

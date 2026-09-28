@@ -3296,28 +3296,35 @@ pub(crate) fn parse_url_to_json(input: &str, base: Option<&str>) -> String {
 /// `parse_url_to_json` 与 [`set_url_part`] 共用——后者 mutate `Url` 后同样序列化。
 #[cfg(feature = "script-runtime")]
 fn serialize_url(url: &url::Url) -> String {
-    let scheme = url.scheme();
-    let hostname = url.host_str().unwrap_or("");
-    let port = url.port().map(|p| p.to_string()).unwrap_or_default();
-    let host = if port.is_empty() {
-        hostname.to_string()
-    } else {
-        format!("{hostname}:{port}")
-    };
-    format!(
-        r#"{{"protocol":{},"username":{},"password":{},"hostname":{},"port":{},"host":{},"origin":{},"pathname":{},"search":{},"hash":{},"href":{}}}"#,
-        json_str(&format!("{scheme}:")),
-        json_str(url.username()),
-        json_str(url.password().unwrap_or("")),
-        json_str(hostname),
-        json_str(&port),
-        json_str(&host),
-        json_str(&url.origin().ascii_serialization()),
-        json_str(url.path()),
-        json_str(&url.query().map(|q| format!("?{q}")).unwrap_or_default()),
-        json_str(&url.fragment().map(|f| format!("#{f}")).unwrap_or_default()),
-        json_str(url.as_str()),
-    )
+    // net-api 收尾：url crate 的 username()/password() getter 在 setter 后内部字节偏移
+    // 不一致时可 panic（url 2.5.8 lib.rs:2881 "byte range starts at 6 but ends at 4"
+    // ——url-setters.any hostile username/password 面）。捕获 → 空串（shim 抛 TypeError
+    // 单案收场，不连累整跑）。
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let scheme = url.scheme();
+        let hostname = url.host_str().unwrap_or("");
+        let port = url.port().map(|p| p.to_string()).unwrap_or_default();
+        let host = if port.is_empty() {
+            hostname.to_string()
+        } else {
+            format!("{hostname}:{port}")
+        };
+        format!(
+            r#"{{"protocol":{},"username":{},"password":{},"hostname":{},"port":{},"host":{},"origin":{},"pathname":{},"search":{},"hash":{},"href":{}}}"#,
+            json_str(&format!("{scheme}:")),
+            json_str(url.username()),
+            json_str(url.password().unwrap_or("")),
+            json_str(hostname),
+            json_str(&port),
+            json_str(&host),
+            json_str(&url.origin().ascii_serialization()),
+            json_str(url.path()),
+            json_str(&url.query().map(|q| format!("?{q}")).unwrap_or_default()),
+            json_str(&url.fragment().map(|f| format!("#{f}")).unwrap_or_default()),
+            json_str(url.as_str()),
+        )
+    }))
+    .unwrap_or_default()
 }
 
 /// URL 组件 setter（供 JS shim URL 属性 setter 经 `__zw_set_url_part` 回调消费）。
@@ -3339,7 +3346,18 @@ pub(crate) fn set_url_part(prev_href: &str, part: &str, value: &str) -> String {
         }
     };
     let ok = match part {
-        "protocol" => url.set_scheme(value.trim_end_matches(':')).is_ok(),
+        "protocol" => {
+            // net-api 收尾：protocol setter 剥离（url-setters-stripping——TAB/LF/CR 剥除、
+            // 尾 ':' 修剪、小写化；set_scheme 失败 → **无操作**（url 不变，leading U+0000
+            // 面期望原 scheme 保留，非 throw））。
+            let cleaned: String = value
+                .trim_end_matches(':')
+                .chars()
+                .filter(|c| !matches!(*c, '\t' | '\n' | '\r'))
+                .collect();
+            let _ = url.set_scheme(&cleaned.to_ascii_lowercase());
+            true
+        }
         "hostname" => url.set_host(Some(value)).is_ok(),
         "host" => set_url_host_and_port(&mut url, value),
         "port" => set_url_port_stripping(&mut url, value),
