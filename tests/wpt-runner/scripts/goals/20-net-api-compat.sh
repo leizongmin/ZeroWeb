@@ -39,6 +39,7 @@ DIRS=(
   "fetch/api/abort"
   "fetch/api/credentials"
   "fetch/api/resources"
+  "fetch/api/cors/resources"
   "fetch/data-urls"
   "fetch/data-urls/resources"
   "fetch/content-type"

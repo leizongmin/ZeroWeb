@@ -2280,10 +2280,11 @@ fn test_fetch_forbidden_headers_r3221_r3222() {
         "R3222: Content-Type 非禁止，须正常读"
     );
     // 迭代（entries）排除 Set-Cookie。
+    // net-api M2-S2：value pairs 按 name 升序（Fetch §5.1 sort-and-combine）。
     assert_eq!(
         sandbox.execute("String(globalThis.__names)").unwrap().value,
-        "content-type,access-control-allow-origin",
-        "R3222: 迭代须排除 Set-Cookie，并保留其他响应头"
+        "access-control-allow-origin,content-type",
+        "R3222: 迭代须排除 Set-Cookie，并保留其他响应头（sort-and-combine 升序）"
     );
     // Response.clone() 保 Set-Cookie（raw _h 拷贝 + 新 Response guard）。
     assert_eq!(
@@ -2414,8 +2415,8 @@ fn test_fetch_no_cors_request_from_url_object_is_opaque() {
     assert_eq!(got.first().map(|s| s.as_str()), Some("GET"));
     assert_eq!(got.get(1).map(|s| s.as_str()), Some("https://remote.example/resource.txt"));
     assert!(
-        got.get(2).is_some_and(|headers| headers.contains("foo\u{001e}bar")),
-        "fetch(Request(URL, no-cors)) should preserve request headers"
+        got.get(2).is_some_and(|headers| !headers.contains("foo\u{001e}bar")),
+        "fetch(Request(URL, no-cors)) drops non-CORS-safelisted headers (net-api M2-S2 guard request-no-cors)"
     );
     assert_eq!(
         sandbox.execute("globalThis.__opaqueMeta").unwrap().value,

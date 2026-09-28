@@ -1470,24 +1470,19 @@
   // 收集 headers 源（Object / [[k,v]] / Headers-like forEach）→ `name\x1evalue\x1e...` wire（空 → ''）。
   function _headersToWire(src) {
     if (!src) return '';
-    var pairs = [];
-    if (typeof src.forEach === 'function') {
-      src.forEach(function(v, k) { pairs.push([String(k), String(v)]); });
-    } else if (Array.isArray(src)) {
-      for (var i = 0; i < src.length; i++) {
-        var e = src[i];
-        if (Array.isArray(e)) pairs.push([String(e[0]), String(e[1])]);
-      }
-    } else {
-      for (var k in src) {
-        if (Object.prototype.hasOwnProperty.call(src, k)) pairs.push([String(k), String(src[k])]);
-      }
-    }
+    // M2-S2：经 guard-request Headers 归一（Fetch §5.1 fill 语义）——name/value 校验
+    //（非法 → TypeError 上抛 → fetch reject）、value Normalize、forbidden request-header
+    // 出口过滤（R3221 原语义由 guard 承接）。Headers-like/数组/dict 全走 fill。
+    var h = new Headers();
+    h._guard = 'request';
+    _fillHeaders(h, src);
     var out = '';
-    for (var j = 0; j < pairs.length; j++) {
-      // R3221：Fetch §3.4.4 出口过滤禁止请求头（JS 设的 Host/Content-Length/Cookie/Sec-*/Proxy-* 等永不到达 host）。
-      if (_zwIsForbiddenReqHeader(pairs[j][0].toLowerCase())) continue;
-      out += (out ? '\x1e' : '') + pairs[j][0] + '\x1e' + pairs[j][1];
+    for (var k in h._h) {
+      if (!Object.prototype.hasOwnProperty.call(h._h, k)) continue;
+      var vals = h._h[k];
+      for (var vi = 0; vi < vals.length; vi++) {
+        out += (out ? '\x1e' : '') + k + '\x1e' + vals[vi];
+      }
     }
     return out;
   }
@@ -1885,7 +1880,7 @@
   }
 
   if (!globalThis.fetch) {
-    globalThis.fetch = function(input, init) {
+    var _zwFetchMain = function(input, init) {
       init = init || {};
       var isObj = input && typeof input === 'object';
       var isRequestLike = isObj && input.url !== undefined;
@@ -2035,6 +2030,15 @@
           resolve(_makeResponse('__zw_fetch_error:throw'));
         }
       });
+    };
+    // M2-S2：fetch() 同步异常（Headers init 校验等——fetch 方法步骤 step 2 ctor throw →
+    // reject p，非同步抛出）→ 已拒绝 Promise。
+    globalThis.fetch = function (input, init) {
+      try {
+        return _zwFetchMain(input, init);
+      } catch (eSync) {
+        return Promise.reject(eSync);
+      }
     };
   }
 
@@ -2227,10 +2231,12 @@
     var requestUrl = _zwResolveFetchUrl(_zwFetchInputUrl(input));
     this.url = requestUrl;
     this.method = String(init.method || (isRequestLike ? input.method : '') || 'GET').toUpperCase();
+    var mode = String(init.mode || (isRequestLike ? input.mode : '') || 'cors');
     // R3223：request guard（Fetch §6.3 step 31-32）——guard 先于 fill 设，append 过滤禁止请求头
     //（Host/Content-Length/Cookie/Sec-*/Proxy-* 等不在 request.headers 暴露；闭合 R3222 已知限①）。
+    // M2-S2：mode no-cors → request-no-cors guard（safelist 写侧判定 + Range privileged 清除）。
     this.headers = new Headers();
-    this.headers._guard = 'request';
+    this.headers._guard = mode === 'no-cors' ? 'request-no-cors' : 'request';
     _fillHeaders(this.headers, init.headers != null ? init.headers : (isRequestLike ? input.headers : null));
     this.body = init.body != null ? String(init.body) : (isRequestLike && input.body != null ? String(input.body) : null);
     this._bodyUsed = false;

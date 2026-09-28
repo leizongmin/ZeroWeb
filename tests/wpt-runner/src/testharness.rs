@@ -5406,6 +5406,14 @@ fn prepare_harness_html(
 ) -> String {
     let reporter = r#"
 if (typeof setup === 'function') setup({output: false});
+// net-api M2-S2：self.GLOBAL 环境标记 shim（上游 testharnessreport.js 在 window 变体
+// 下定义 GLOBAL={isWorker,isWindow,isShadowRealm}——wpt-data 的 pinned 副本不含；
+// header-values 等用例经 self.GLOBAL.isWorker() 分支 window/xhr 面）。
+globalThis.GLOBAL = globalThis.GLOBAL || {
+  isWorker: function () { return false; },
+  isWindow: function () { return true; },
+  isShadowRealm: function () { return false; }
+};
 globalThis.__zw_harness_results = [];
 globalThis.__zw_harness_complete = false;
 add_result_callback(function(test) {

@@ -1480,25 +1480,27 @@ fn test_headers_r2794() {
         .unwrap();
     assert_eq!(sandbox.execute("c.getSetCookie().join('|')").unwrap().value, "a=1|b=2");
     // 迭代：[Symbol.iterator]=entries → spread 取 [k,v]，key 为小写。
+    // net-api M2-S2：value pairs 按 name 升序（Fetch §5.1 sort-and-combine——WPT
+    // header-setcookie「sorts before others」面），不再保插入序。
     sandbox.execute("var it = new Headers({'Z':'1','A':'2'});").unwrap();
     assert_eq!(
         sandbox
             .execute("[...it].map(function(p){return p[0]+'='+p[1];}).join(',')")
             .unwrap()
             .value,
-        "z=1,a=2"
+        "a=2,z=1"
     );
-    // forEach 回调。
+    // forEach 回调（M2-S2：forEach 走同一 sort-and-combine 序）。
     assert_eq!(
         sandbox
             .execute("(function(){var o=[];it.forEach(function(v,k){o.push(k+':'+v);});return o.join(',');})()")
             .unwrap()
             .value,
-        "z:1,a:2"
+        "a:2,z:1"
     );
-    // keys / values 迭代器。
-    assert_eq!(sandbox.execute("[...it.keys()].join(',')").unwrap().value, "z,a");
-    assert_eq!(sandbox.execute("[...it.values()].join(',')").unwrap().value, "1,2");
+    // keys / values 迭代器（M2-S2：同 sort-and-combine 升序）。
+    assert_eq!(sandbox.execute("[...it.keys()].join(',')").unwrap().value, "a,z");
+    assert_eq!(sandbox.execute("[...it.values()].join(',')").unwrap().value, "2,1");
 }
 
 #[test]

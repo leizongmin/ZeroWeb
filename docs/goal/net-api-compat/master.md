@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-28（M2-S1 收口）
+**最后更新**: 2026-09-28（M2-S2 收口）
 
 ---
 
@@ -11,9 +11,10 @@
 **专项定位**：网络 API（fetch/XHR/URL/mimesniff/streams/EventSource）一致性收敛，
 WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 + 帧协议）。
 
-**当前进度**：M1 完成（25.8% 基线）+ M2-S1 完成（2026-09-28）——**3349/5065 = 66.1%**
-（fetch 47.1% / xhr 23.4% / url 66.9% / mimesniff 99.2% / streams 42.9% / eventsource 6.2%）。
-下一切片 M2-S2（headers 面：值校验 + forbidden header + 构造校验）。
+**当前进度**：M1（25.8% 基线）+ M2-S1（66.1%）+ M2-S2（2026-09-28）——
+**3527/5193 = 67.9%**（fetch 53.7% / xhr 23.8% / url 67.3% / **mimesniff 100%** /
+streams 42.9% / eventsource 6.2%）。下一切片 M2-S3（response-stream-disturbed 簇）
+或并轨 M3（XHR 状态机——header-values 腿依赖）。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -26,7 +27,7 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
-| P2 | fetch/Request/Response/Headers/Body 语义收敛 | 🔶 M2 进行中——S1 已收口（scheme dispatch + data: processor + Body MIME，fetch 47.1%）；**S2 = headers 面**（值校验 15 + forbidden header 72 + headers 错误面 16 + 组合/迭代 10）；S3 = response-stream-disturbed 簇（33）+ request-upload/clone 流（14）；错误面余量 262→残余甄别 |
+| P2 | fetch/Request/Response/Headers/Body 语义收敛 | 🔶 M2 进行中——S1（scheme dispatch + data: + Body MIME）与 S2（Headers 校验 + guard + 迭代语义）已收口（fetch 53.7% / mimesniff 100%）；**S3 = response-stream-disturbed 簇（33）+ request-upload/clone 流（14）**；错误面余量甄别 |
 | P3 | XHR 状态机 + EventSource 解析/重连 | ⏳ M3（xhr 主簇：send 错误面 30；url 66.9% 修齐：percent-encoding 39 / default port ~40 / URL.parse 8；mimesniff ✅ 99.2%；eventsource 依赖 fixture 通道） |
 | P4 | URL 边缘语义 + mimesniff 对齐 | 🔶 mimesniff 已收口（99.2%）；url 归 M3 |
 | P5 | streams 底座一致性（fetch body 依赖） | ⏳ M4（主簇：ReadableStream.from 32 / BYOB view 16 / queuing strategy 11 / pull 时机 8） |
@@ -35,6 +36,15 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 
 ## 已完成切片
 
+- **M2-S2（2026-09-28）**：Headers 校验 + guard 完整化（3527/5193 = **67.9%**，Δ+178
+  零回归）。name/value 校验（TypeError）+ sequence 二元组 + ctor null/1 throw；
+  X-HTTP-Method-Override forbidden 值判定（get-decode-split quoted 感知）；request-no-cors
+  guard（CORS-safelisted 判定 + Range privileged 清除）；sort-and-combine 迭代（set-cookie
+  逐值 + live 光标 + %ArrayIteratorPrototype% 链）；fetch() 同步异常转 rejected Promise；
+  runner `self.GLOBAL` shim。mimesniff **100%**。3 处存量引擎测试期望随 spec 翻新
+  （sort-and-combine 升序 / no-cors 丢非 safelisted 头）。残余：XHR 腿归 M3、
+  headers-record Proxy 观测面（10）挂账。见
+  [evidence/2026-09-28-m2-s2-headers.md](evidence/2026-09-28-m2-s2-headers.md)。
 - **M2-S1（2026-09-28）**：fetch scheme dispatch + data: URL processor + Body MIME
   type（1297 → 3349 = **66.1%**，Δ+2052 零回归）。bad port 79 端口表（83/83）、
   data: processor + forgiving-base64 + MIME parse/serialize（154/154 + scheme-data
@@ -55,13 +65,12 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 
 ## 下一步计划
 
-1. **M2-S2**：headers 面修齐——Headers append/set 值校验（\x00/LF/CR/首尾空白 →
-   TypeError，mimesniff ×15）→ forbidden header 72 → headers 错误面 16 → 组合/迭代 10
-2. **M2-S3**：response-stream-disturbed 簇（disturbed/locked 语义 33）+ request-upload/
-   clone 流缓冲（14）
-3. **M3**：XHR 状态机/事件序 + EventSource + URL 修齐（percent-encoding / default
-   port / URL.parse）
-4. **M4**：streams 底座（ReadableStream.from/BYOB/queuing strategy）+ WebSocket
+1. **M2-S3**：response-stream-disturbed 簇（disturbed/locked 语义 33）+ request-upload/
+   clone 流缓冲（14）+ fetch 错误面余量甄别
+2. **M3**：XHR 状态机/事件序（setRequestHeader 校验——header-values 腿 64 subtest
+   依赖）+ EventSource（fixture 通道联动）+ URL 修齐（percent-encoding 39 / default
+   port ~40 / URL.parse 8）
+3. **M4**：streams 底座（ReadableStream.from/BYOB/queuing strategy）+ WebSocket
    二期挂账定稿 + DC 逐项判定收口
 
 **待用户决策清单**：（空）

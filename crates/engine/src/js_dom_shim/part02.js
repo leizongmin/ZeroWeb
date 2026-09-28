@@ -1137,6 +1137,98 @@
   function _hdrNorm(name) {
     return String(name).toLowerCase().trim();
   }
+  // ── net-api M2-S2：Headers 校验 + guard 完整化（Fetch §5.1）────────────────────
+  // header name = field-name token（HTTP token code point）；header value = ByteString
+  //（≤0xFF）且无 0x00/HTTP newline、无首尾 HTTP tab/space。name/value 非法 → TypeError
+  //（validate 阶段抛出，WPT headers-errors）；guard 阻断静默（append/set 返回、不抛）。
+  var _ZW_HDR_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+  function _zwIsByteString(s) {
+    for (var i = 0; i < s.length; i++) {
+      if (s.charCodeAt(i) > 0xFF) return false;
+    }
+    return true;
+  }
+  function _zwIsValidHeaderName(name) {
+    return _zwIsByteString(name) && _ZW_HDR_TOKEN.test(name);
+  }
+  // Normalize（Fetch §2.2）：去首尾 HTTP whitespace（LF/CR/TAB/SPACE；注意非 ASCII
+  // whitespace 集合——\x0c FF 不在内）。
+  function _zwNormalizeHeaderValue(value) {
+    return String(value).replace(/^[\t\n\r ]+/, '').replace(/[\t\n\r ]+$/, '');
+  }
+  function _zwIsValidHeaderValue(value) {
+    if (!_zwIsByteString(value)) return false;
+    if (/[\x00\n\r]/.test(value)) return false;
+    if (/^[\t ]|[\t ]$/.test(value)) return false;
+    return true;
+  }
+  // CORS-safelisted request-header（Fetch §2.2.2）——request-no-cors guard 写侧判定。
+  function _zwHasCorsUnsafeByte(value) {
+    for (var i = 0; i < value.length; i++) {
+      var c = value.charCodeAt(i);
+      if ((c < 0x20 && c !== 0x09) || c === 0x22 || c === 0x28 || c === 0x29 || c === 0x3A ||
+          c === 0x3C || c === 0x3E || c === 0x3F || c === 0x40 || c === 0x5B || c === 0x5C ||
+          c === 0x5D || c === 0x7B || c === 0x7D || c === 0x7F) return true;
+    }
+    return false;
+  }
+  function _zwIsCorsSafelistedReqHeader(ln, value) {
+    if (value.length > 128) return false;
+    if (ln === 'accept') return !_zwHasCorsUnsafeByte(value);
+    if (ln === 'accept-language' || ln === 'content-language') {
+      if (_zwHasCorsUnsafeByte(value)) return false;
+      for (var i = 0; i < value.length; i++) {
+        var c = value.charCodeAt(i);
+        var ok = (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A) ||
+                 c === 0x20 || c === 0x2A || c === 0x2C || c === 0x2D || c === 0x2E || c === 0x3B || c === 0x3D;
+        if (!ok) return false;
+      }
+      return true;
+    }
+    if (ln === 'content-type') {
+      if (_zwHasCorsUnsafeByte(value)) return false;
+      var m = _zwParseMimeType(value);
+      if (!m) return false;
+      var essence = m.type + '/' + m.subtype;
+      return essence === 'application/x-www-form-urlencoded' || essence === 'multipart/form-data' || essence === 'text/plain';
+    }
+    return false;
+  }
+  var _ZW_NO_CORS_SAFELISTED = { 'accept': 1, 'accept-language': 1, 'content-language': 1, 'content-type': 1 };
+  var _ZW_PRIVILEGED_NO_CORS = { 'range': 1 };
+  // get, decode, and split（Fetch §2.2.2——quoted-string 感知逗号切分；X-HTTP-Method-Override
+  // 族 forbidden 判定的值解析面）。返切分值数组。
+  function _zwGetDecodeSplit(value) {
+    value = String(value);
+    var values = [];
+    var temp = '';
+    var pos = 0;
+    for (;;) {
+      while (pos < value.length && value.charAt(pos) !== '"' && value.charAt(pos) !== ',') {
+        temp += value.charAt(pos); pos++;
+      }
+      if (pos < value.length && value.charAt(pos) === '"') {
+        pos++;
+        for (;;) {
+          while (pos < value.length && value.charAt(pos) !== '"' && value.charAt(pos) !== '\\') {
+            temp += value.charAt(pos); pos++;
+          }
+          if (pos >= value.length) break;
+          var qc = value.charAt(pos); pos++;
+          if (qc === '\\') {
+            if (pos >= value.length) { temp += '\\'; break; }
+            temp += value.charAt(pos); pos++;
+          } else break;
+        }
+        if (pos < value.length) continue;
+      }
+      temp = temp.replace(/^[\t\n\r ]+/, '').replace(/[\t\n\r ]+$/, '');
+      values.push(temp);
+      temp = '';
+      if (pos >= value.length) return values;
+      pos++; // past ','
+    }
+  }
   // R3221：Fetch §3.4.4 forbidden request-header names——JS 不可设（浏览器托管）。
   // `_headersToWire` 出口过滤，保证 JS 设的禁止头永不到达 host/服务器。ln 为已小写归一的 name。
   // https://fetch.spec.whatwg.org/#forbidden-header-name
@@ -1148,10 +1240,22 @@
     'origin': 1, 'referer': 1, 'te': 1, 'trailer': 1,
     'transfer-encoding': 1, 'upgrade': 1, 'via': 1
   };
-  function _zwIsForbiddenReqHeader(ln) {
+  function _zwIsForbiddenReqHeader(ln, value) {
     if (_ZW_FORBIDDEN_REQ_HEADERS[ln]) return true;
     // 前缀匹配（byte-case-insensitive，ln 已小写）：Proxy- / Sec-
-    return ln.slice(0, 6) === 'proxy-' || ln.slice(0, 4) === 'sec-';
+    if (ln.slice(0, 6) === 'proxy-' || ln.slice(0, 4) === 'sec-') return true;
+    // M2-S2：X-HTTP-Method(-Override) 族——value 经 get-decode-split 任一值为 forbidden
+    // method（CONNECT/TRACE/TRACK，byte-case-insensitive）→ forbidden（headers-forbidden-
+    // override 面——`r.headers.append(override, '\rtrace')` 须静默丢弃）。
+    if (ln === 'x-http-method-override' || ln === 'x-http-method' || ln === 'x-method-override') {
+      if (value == null) return false;
+      var parts = _zwGetDecodeSplit(value);
+      for (var i = 0; i < parts.length; i++) {
+        var p = parts[i].toUpperCase();
+        if (p === 'CONNECT' || p === 'TRACE' || p === 'TRACK') return true;
+      }
+    }
+    return false;
   }
   // R3222：Fetch §3.4.5 forbidden response-header names——response Headers 的 get/has/iterate 不暴露，
   // 但 getSetCookie 仍返 set-cookie 数组（spec 特例）。`_guard`='response' 由 Response ctor 设。
@@ -1159,18 +1263,54 @@
   function _hdrIsForbiddenResponse(ln) {
     return ln === 'set-cookie' || ln === 'set-cookie2';
   }
-  // R3223：Headers guard 写侧阻断（Fetch §5.2 append/set/delete step 3/5）——
-  // request guard 阻 forbidden request-header；response guard 阻 forbidden response-header；none 不阻。
-  function _hdrGuardBlocks(guard, ln) {
-    if (guard === 'request') return _zwIsForbiddenReqHeader(ln);
+  // R3223 + M2-S2：Headers guard 写侧阻断（Fetch §5.2）——request guard 阻 forbidden
+  // request-header（含 X-HTTP-Method-Override 值判定，需 value）；response guard 阻
+  // forbidden response-header；none 不阻。request-no-cors：append/set 非 CORS-safelisted
+  // 阻断（append 按 combine 后整体判定——调用方传 combine 值）、delete 非 safelisted 且非
+  // privileged 阻断。
+  function _hdrGuardBlocks(guard, ln, value) {
+    if (guard === 'request') return _zwIsForbiddenReqHeader(ln, value);
+    if (guard === 'request-no-cors') {
+      if (_ZW_PRIVILEGED_NO_CORS[ln]) return true; // privileged no-CORS（写侧恒阻）
+      if (value != null) return !_zwIsCorsSafelistedReqHeader(ln, value);
+      return !_ZW_NO_CORS_SAFELISTED[ln];
+    }
     if (guard === 'response') return _hdrIsForbiddenResponse(ln);
     return false;
+  }
+  // remove privileged no-CORS request-headers（Fetch §5.1——no-cors guard 变更后清 Range）。
+  function _zwRemovePrivilegedNoCors(h) {
+    if (h._guard === 'request-no-cors') delete h._h['range'];
+  }
+  // validate a header（Fetch §5.1）：name/value 非法 → TypeError（guard immutable → false）。
+  // 调用方在 normalize value 之后调用。
+  function _zwValidateHeader(name, value, guard) {
+    if (!_zwIsValidHeaderName(name)) throw new TypeError('Invalid header name: ' + name);
+    if (!_zwIsValidHeaderValue(value)) throw new TypeError('Invalid header value');
+    if (guard === 'immutable') return false;
+    return true;
   }
   // R3223：Headers fill——逐值 append（尊重目标 guard）。供 Headers ctor（guard none）与 Request ctor
   //（guard request）复用。Headers 实例源直接迭代内部 _h（Fetch §5.1「for each header in init's header list」
   // 指内部列表，含 response guard 隐藏的 Set-Cookie；目标 guard 决定是否过滤）。
   function _fillHeaders(h, init) {
     if (init == null) return;
+    // M2-S2：**自身** Symbol.iterator 优先（Web IDL sequence 判定先于 record——
+    // headers-basic「existing headers with custom iterator」在 Headers 实例上覆写
+    // own iterator；普通 Headers 走下方 _h 分支保内部列表语义含 guard 隐藏 set-cookie）。
+    if (typeof Symbol !== 'undefined' && init[Symbol.iterator] &&
+        Object.prototype.hasOwnProperty.call(init, Symbol.iterator) &&
+        typeof init[Symbol.iterator] === 'function') {
+      var it0 = init[Symbol.iterator]();
+      for (;;) {
+        var step0 = it0.next();
+        if (step0 && step0.done) break;
+        var p0 = step0.value;
+        if (!p0 || p0.length !== 2) throw new TypeError('Headers init sequence item must have exactly 2 elements');
+        h.append(p0[0], p0[1]);
+      }
+      return;
+    }
     if (init._h) {
       for (var k in init._h) {
         if (!Object.prototype.hasOwnProperty.call(init._h, k)) continue;
@@ -1180,10 +1320,27 @@
       return;
     }
     if (Array.isArray(init)) {
+      // M2-S2：sequence 形态逐项须恰为二元组（Fetch fill——size ≠ 2 → TypeError，
+      // headers-errors `new Headers([["name"]])` / 三元组用例）。
       for (var i = 0; i < init.length; i++) {
         var pair = init[i];
-        if (pair && pair.length >= 2) h.append(pair[0], pair[1]);
+        if (!pair || !pair.length || pair.length !== 2) {
+          throw new TypeError('Headers init sequence item must have exactly 2 elements');
+        }
+        h.append(pair[0], pair[1]);
       }
+    } else if (typeof Symbol !== 'undefined' && init[Symbol.iterator] && typeof init[Symbol.iterator] === 'function') {
+      // M2-S2：自定义 iterable（sequence 形态）。Headers 自身也带 Symbol.iterator
+      //（entries，非 own）——迭代产出 [k, v] 二元组走 append 同路。
+      var it = init[Symbol.iterator]();
+      for (;;) {
+        var step = it.next();
+        if (step && step.done) break;
+        var p = step.value;
+        if (!p || p.length !== 2) throw new TypeError('Headers init sequence item must have exactly 2 elements');
+        h.append(p[0], p[1]);
+      }
+      return;
     } else if (typeof init.forEach === 'function') {
       // Headers-like（forEach 回调 (value, name, headers)）。
       init.forEach(function (v, k) { h.append(k, v); });
@@ -1202,26 +1359,43 @@
   }
   globalThis.Headers = globalThis.Headers || function Headers(init) {
     if (!(this instanceof Headers)) return new Headers(init);
+    // M2-S2：Web IDL 可选参数语义——undefined 即缺省（不填充）；null / 非对象（1、字符串
+    // 等非 sequence/record）→ TypeError（headers-basic「with null/1 should throw」）。
+    if (init === null || (init !== undefined && typeof init !== 'object')) {
+      throw new TypeError('Headers init must be a sequence or record');
+    }
     this._h = {}; // lowername -> string[]（保 append 序与多值）
     this._guard = 'none'; // R3223：guard none/request/response（Fetch §5.1）；ctor 构造为 none（不过滤）
     if (init != null) _fillHeaders(this, init); // guard none → 不过滤禁止头
   };
   globalThis.Headers.prototype = {
+    // M2-S2：append/set/get/has/delete 全走 name/value 校验（非法 → TypeError）；
+    // value 先 Normalize（首尾 HTTP whitespace 剥除）再 validate；guard 阻断静默返回。
     append: function (name, value) {
-      name = _hdrNorm(name);
-      if (!name) return;
-      // R3223：guard 写侧阻断（request→forbidden req-header；response→forbidden resp-header）。
-      if (_hdrGuardBlocks(this._guard, name)) return;
-      (this._h[name] = this._h[name] || []).push(String(value));
+      name = String(name).toLowerCase();
+      value = _zwNormalizeHeaderValue(value);
+      if (!_zwValidateHeader(name, value, this._guard)) return;
+      // request-no-cors：combine 后整体 safelist 判定（spec append step 3）。
+      var checkValue = value;
+      if (this._guard === 'request-no-cors') {
+        var existing = this._h[name];
+        checkValue = existing && existing.length ? existing.join(', ') + ', ' + value : value;
+      }
+      if (_hdrGuardBlocks(this._guard, name, checkValue)) return;
+      (this._h[name] = this._h[name] || []).push(value);
+      _zwRemovePrivilegedNoCors(this);
     },
     delete: function (name) {
-      name = _hdrNorm(name);
+      name = String(name).toLowerCase();
+      if (!_zwIsValidHeaderName(name)) throw new TypeError('Invalid header name: ' + name);
       // R3223：禁止头经 guard 不可删（Fetch §5.4 delete step 3/5；request guard 下本就未存，response guard 护 Set-Cookie）。
       if (_hdrGuardBlocks(this._guard, name)) return;
       delete this._h[name];
+      _zwRemovePrivilegedNoCors(this);
     },
     get: function (name) {
-      name = _hdrNorm(name);
+      name = String(name).toLowerCase();
+      if (!_zwIsValidHeaderName(name)) throw new TypeError('Invalid header name: ' + name);
       // R3222：response guard 不暴露 Set-Cookie/Set-Cookie2（Fetch §3.4.5）。
       if (this._guard === 'response' && _hdrIsForbiddenResponse(name)) return null;
       var v = this._h[name];
@@ -1234,45 +1408,84 @@
       return v ? v.slice() : [];
     },
     has: function (name) {
-      name = _hdrNorm(name);
+      name = String(name).toLowerCase();
+      if (!_zwIsValidHeaderName(name)) throw new TypeError('Invalid header name: ' + name);
       if (this._guard === 'response' && _hdrIsForbiddenResponse(name)) return false;
       return Object.prototype.hasOwnProperty.call(this._h, name);
     },
     set: function (name, value) {
-      name = _hdrNorm(name);
-      if (!name) return;
-      // R3223：guard 写侧阻断（同 append）。
-      if (_hdrGuardBlocks(this._guard, name)) return;
-      this._h[name] = [String(value)];
+      name = String(name).toLowerCase();
+      value = _zwNormalizeHeaderValue(value);
+      if (!_zwValidateHeader(name, value, this._guard)) return;
+      // R3223：guard 写侧阻断（同 append；no-cors 按单值 safelist 判定——spec set step 3）。
+      if (_hdrGuardBlocks(this._guard, name, value)) return;
+      this._h[name] = [value];
+      _zwRemovePrivilegedNoCors(this);
+    },
+    // value pairs to iterate（sort-and-combine，Fetch §5.1）：除 set-cookie 外多值合并为
+    // 单对；set-cookie 各值独立成对（header-setcookie「iterator does not combine
+    // set-cookie」面）。response guard 下 set-cookie/set-cookie2 不暴露（R3222）。
+    _zwPairs: function () {
+      var out = [];
+      for (var k in this._h) {
+        if (!Object.prototype.hasOwnProperty.call(this._h, k)) continue;
+        if (this._guard === 'response' && _hdrIsForbiddenResponse(k)) continue;
+        var vals = this._h[k];
+        if (k === 'set-cookie') {
+          for (var vi = 0; vi < vals.length; vi++) out.push([k, vals[vi]]);
+        } else {
+          out.push([k, vals.join(', ')]);
+        }
+      }
+      // sort-and-combine（Fetch §5.1）：value pairs 按 name 升序（byte less than；
+      // set-cookie 多值同序名稳定——ES2019 sort 稳定性保持 append 序）。
+      out.sort(function (a, b) { return a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : 0); });
+      return out;
     },
     forEach: function (cb, thisArg) {
-      for (var k in this._h) {
-        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._guard === 'response' && _hdrIsForbiddenResponse(k))) cb.call(thisArg, this._h[k].join(', '), k, this);
-      }
+      var pairs = this._zwPairs();
+      for (var i = 0; i < pairs.length; i++) cb.call(thisArg, pairs[i][1], pairs[i][0], this);
     },
     entries: function () {
-      var out = [];
-      for (var k in this._h) {
-        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._guard === 'response' && _hdrIsForbiddenResponse(k))) out.push([k, this._h[k].join(', ')]);
-      }
-      return _zw_iter(out);
+      var self = this;
+      return _zwHeadersLiveIter(function () { return self._zwPairs(); }, function (p) { return [p[0], p[1]]; });
     },
     keys: function () {
-      var out = [];
-      for (var k in this._h) {
-        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._guard === 'response' && _hdrIsForbiddenResponse(k))) out.push(k);
-      }
-      return _zw_iter(out);
+      var self = this;
+      return _zwHeadersLiveIter(function () { return self._zwPairs(); }, function (p) { return p[0]; });
     },
     values: function () {
-      var out = [];
-      for (var k in this._h) {
-        if (Object.prototype.hasOwnProperty.call(this._h, k) && !(this._guard === 'response' && _hdrIsForbiddenResponse(k))) out.push(this._h[k].join(', '));
-      }
-      return _zw_iter(out);
+      var self = this;
+      return _zwHeadersLiveIter(function () { return self._zwPairs(); }, function (p) { return p[1]; });
     }
   };
   // 自身可迭代（for (const [k,v] of headers)）：[Symbol.iterator] → entries。
+  // M2-S2：iterator 原型链对齐 %ArrayIteratorPrototype% 链（headers-basic
+  // checkIteratorProperties——next 可写/可枚举/可配置 + 外层 proto === 迭代器迭代器原型）
+  // + **live 语义**（每次 next 基于当前 header list 重算 pairs——header-setcookie
+  // 「iterator is correctly updated with set-cookie changes」光标推进面）。
+  var _ZW_HEADERS_ITER_PROTO = (typeof Symbol !== 'undefined')
+    ? Object.create(Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]())))
+    : Object.prototype;
+  if (typeof Symbol !== 'undefined') {
+    Object.defineProperty(_ZW_HEADERS_ITER_PROTO, 'next', {
+      writable: true, enumerable: true, configurable: true,
+      value: function () { return { done: true, value: undefined }; }
+    });
+  }
+  function _zwHeadersLiveIter(getPairs, pick) {
+    var pos = 0;
+    var it = Object.create(_ZW_HEADERS_ITER_PROTO);
+    it.next = function () {
+      var pairs = getPairs();
+      if (pos >= pairs.length) return { done: true, value: undefined };
+      var value = pick(pairs[pos]);
+      pos++;
+      return { done: false, value: value };
+    };
+    if (typeof Symbol !== 'undefined') it[Symbol.iterator] = function () { return it; };
+    return it;
+  }
   if (typeof Symbol !== 'undefined') {
     globalThis.Headers.prototype[Symbol.iterator] = globalThis.Headers.prototype.entries;
     if (Symbol.toStringTag) {
