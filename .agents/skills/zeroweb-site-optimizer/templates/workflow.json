@@ -5,6 +5,7 @@
   "contract_ref": null,
   "checkpoint_ref": null,
   "verification_mode": "independent",
+  "delivery_mode": "auto_merge",
   "goals": [
     {
       "id": "primary-journey",
@@ -20,10 +21,13 @@
       "description": "探索主任务，建立对照和最小复现",
       "status": "pending",
       "pause_reason": null,
-      "evidence": null
+      "evidence": null,
+      "repairs_task_id": null,
+      "delivery": null
     }
   ],
   "operations": [],
   "final_acceptance": null,
+  "recovery_ref": null,
   "stop_reason": null
 }

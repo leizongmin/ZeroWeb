@@ -8,14 +8,15 @@ JSON 负责核对身份、预算与逐项门禁。两者不一致时先纠正，
 
 ## 合约与身份
 
-- run ID / 启动时间 / 截止时间 / 请求与授权来源：
+- run ID / 启动时间 / 截止时间（默认 null，无总限时）/ 请求与授权来源：
 - 启动合约确认时间/原始用户批准引用（或有效调度任务来源）：
-- 逐项已批准/已拒绝/未请求：本地修改、测试、commit、push、PR、脱敏截图、工具准备：
+- 逐项已批准/已拒绝/未请求：本地修改、测试、commit、push、PR、自审返修、自动合并、脱敏截图、工具准备：
 - 交付仓库/base/head 生成规则 / Draft 或普通 PR 策略 / 明确不执行的副作用：
 - 能力缺失、单簇停滞、门禁失败、预算耗尽的既定分流/停止策略：
 - 网站入口 / 同源边界 / 用户任务 / 允许的副作用：
 - 输入类型（网址/目标/两者）/ 原目标 / 代表站点选择依据 / 冻结合约引用：
 - verification_mode / 独立上下文与持续续行能力 / 实际宿主 ID / 缺口：
+- delivery_mode（默认方案 auto_merge，按实际授权冻结）/ repo / 集成分支 / 合并方式：
 - 墙钟、候选、探索、模型费用/词元上限 / 收尾预留 / 当前累计：
 - worktree / branch / base SHA / profile / display / 端口：
 - original / best / trial 的 SHA 或 patch hash、二进制 hash、构建参数：
@@ -38,6 +39,11 @@ JSON 负责核对身份、预算与逐项门禁。两者不一致时先纠正，
 - 本轮重规划原因 / 新假设或前置能力 / 保留的历史任务：
 - 当前 operation ID / 实际 worker 或 reviewer ID / intended-running-completed：
 - 恢复时宿主查询结果 / 是否复用在途任务 / 消费与预留对账：
+- 基础设施恢复回执 / 被解除的 revision / 核验时间与原始证据（不适用于人工/安全停止）：
+- 当前任务 PR / 精确 head、base / 审查回执与未解决问题 / 返修后的新审查：
+- merge 意图与实际服务端终态 / merge commit / 集成 smoke 与新 best：
+- 集成失败的 repairs_task_id / 新 PR / 原任务重验 / 下游解锁条件：
+- 本次阶段成果 / 剩余目标 / 已继续派发的下一任务或真实阻塞：
 
 ## 冻结任务覆盖
 
@@ -84,6 +90,7 @@ JSON 负责核对身份、预算与逐项门禁。两者不一致时先纠正，
 - 停止原因与依据 / 累计成本 / 下一轮建议：
 - 最新 best 整体任务验收 / 逐 goal PASS、FAIL、INCONCLUSIVE、SKIPPED / 原报告引用：
 - 最终验收者身份及实际独立性 / 未决操作与 trial / verify-workflow 结论：
+- final_acceptance 操作 ID（task_id=null）/ 派发时 best 与合约摘要 / 终态及结果：
 - 本地提交、推送、PR 的真实状态及用户授权来源：
 - 每张附件的场景/前后角色/版本/相对路径/尺寸/SHA-256/脱敏范围/持久 URL：
 - PR description 前后图片引用 / 最终正文备份 / 附件下载与实际呈现核验：

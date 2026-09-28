@@ -27,8 +27,10 @@
 1. 有未决操作先查实际宿主状态，接续或收回，不重复派发。
 2. 选择未暂停且依赖全为 done 的任务；默认串行，一个实施者或验证者在途。
 3. 内层执行入口的探索、复现、通用修复、回归、原站对照与候选门禁。
-4. accept 后更新 best，复测受影响的已通过用户任务；失败与成本原样保留。
-5. 更新任务证据和剩余依赖，再领取下一项。全部任务 done 时做整体验收。
+4. accept 后更新 best，复测受影响的已通过用户任务；将可验收切片提交为任务 PR。
+   新上下文 reviewer 自审完整变更，有问题则同一 PR 返修、重验、重审。
+5. 主控按 github-delivery 合并并验证集成版本后标 done，报告阶段成果并立即领取
+   下一项，不等待用户回复。全部任务 done 时在最新集成版本做整体验收。
 6. 整体验收发现缺陷，追加关联原目标的修复任务；保留原 done 历史，继续循环。
 
 同簇连续两次无新证据，暂停该簇并尝试新假设、规范研究、最小复现、前置能力拆分
@@ -43,10 +45,16 @@
 先核对实际工具 schema 和可用能力，不臆造 spawn/wait/cancel 参数。持续运行需要
 宿主在目标未完成时继续当前任务，支持有界等待、停止、进程回收和检查点恢复。
 有 Goal/自动续行能力且已获授权时复用；没有时在当前前台会话继续执行。
+启动长期目标时，在宿主允许且用户明确要求长期目标的前提下建立该目标；只改本 skill
+不创建运行目标。上下文将满时先保存检查点和精确下一动作，再交接到新上下文继续，
+不能用“已有阶段成果”“建议下一步”作为目标未完成时的正常结束。
 会话退出、宿主失联或无法续行时保存下一动作并如实报告停止/unknown，不声称后台
 仍会运行，也不为此自动安装 cron 或 tmux 控制器。
 
 宿主允许独立子 Agent 时，优先总控加新上下文 worker/reviewer，默认不并行重型任务。
+每个实施任务完成后关闭其已结束上下文，下一任务使用新 worker；审查使用未参与实现
+的新 reviewer。优先串行复用一个专属实施 worktree，每项从最新集成 SHA 建任务分支，
+避免不断堆积 worktree、浏览器和构建进程。主控负责规划、账本、合并与停止。
 总控独占 workflow/checkpoint 写入权；worker 只写自己的产物与候选，reviewer 不改产品。
 每个任务包包括：原授权引用、目标与任务 ID、精确 best、专属目录/分支、剩余总预算
 与本步上界、验证方式、证据位置、禁止事项。新 worker 不继承整段实现推理，
@@ -56,6 +64,8 @@
 像素和性能回归，明确不声称独立体验收益。用户要求独立验收时使用 `independent`，
 缺能力阻塞该验收，不在运行中悄悄降级。总体验收在最新 best 重新走完整任务，
 不能将各切片的 PASS 相加；仅有截图不能证明交互目标。
+verification_mode 控制产品验收；auto_merge 的代码审查始终需要独立上下文，
+不能用 deterministic 绕过。能力暂不可用时先做独立可推进工作，再按真实缺口处理。
 
 ## 状态与单写者
 
@@ -68,31 +78,99 @@
 使用 [workflow 模板](../templates/workflow.json)。contract_ref、checkpoint_ref 必须换成
 真实文件引用，模板本身不能通过。checkpoint 快照与 workflow 放同一运行根目录，
 内部证据均相对此根解析；不要把副本放到 worker 目录另建预算。
+初始 original/best/trial 都为 null 时，可凭真实 manifest 一次性记录 original=best，
+trial 保持 null；这是原始基线，即使原站目标失败也能保存，失败门禁原样保留。
+之后 original 不可更改，任何新 best 仍须通过候选门禁，不能重复走初始化路径。
 
 | 字段 | 契约 |
 |---|---|
 | schema_version / run_id / revision | 1、与 checkpoint 一致、从 1 单调加 1 |
 | contract_ref / checkpoint_ref | 不可变合约及本次 checkpoint 的 `{path, sha256}` |
 | verification_mode | 启动冻结 independent 或 deterministic |
+| delivery_mode | auto_merge（默认方案）、pr_only 或 local；以实际授权冻结，旧记录缺省为 local |
 | goals | 唯一 id、description、verification；全部必需且不可普通修订 |
-| tasks | 唯一 id、goal_ids、depends_on、description、status、pause_reason、evidence |
+| tasks | 唯一 id、goal_ids、depends_on、description、status、pause_reason、evidence、repairs_task_id、delivery |
 | operations | 唯一 id、task_id、kind、status、executor_ref、result |
 | final_acceptance | 最新整体验收报告引用；尚未验证为 null |
+| recovery_ref | 可选，默认为 null；本次解除基础设施阻塞的证据引用，见下文 |
 | stop_reason | null 或入口列出的停止原因；不得因新会话清除 |
 
-任务阶段：`pending → implementing → verifying → done`；
-验证失败走 `verifying → needs_fix → implementing`。研究/无改动任务同样提交证据，
-不制造空提交。阶段之外的局部暂停用 pause_reason，保留阶段；done 必须有 evidence，
+默认任务阶段：`pending → implementing → verifying → pr_review → merging → integrating → done`。
+验证或审查失败走 `verifying|pr_review → needs_fix → implementing`，仍修同一 PR。
+head/base 漂移时回 pr_review；合并结果未知保持 merging，先查服务端。
+local 模式 verifying 后可 done；pr_only 在独立审查通过后从 pr_review 到 done，
+不调用合并。研究/确认无需改动的任务用 delivery={kind:"no_change",reason:"实际原因"}，
+在 verifying 后凭原站/研究证据 done，不制造空 PR，也不能给有代码改动的任务套此豁免。
+阶段之外的局部暂停用 pause_reason，保留阶段；done 必须有 evidence，
 不可重写，新增缺陷另建任务。新任务只能 pending，不能删历史任务。只有 pending
 任务允许重新排序依赖，依赖必须无环且每个目标至少有任务覆盖。
 实施前重新核对完整原始合约，task.evidence 指向任务结果及相应候选、门禁和原站证据，
 不能只放“已完成”文本。原始记录的真实性由总控核验。
 
-operation.kind 为 implement/review，status 为 intended/running/completed：
+operation.kind 为 implement/review/publish/merge/integrate/final_acceptance，
+status 为 intended/running/completed：
 先持久化 intended，取得真实宿主 ID 后写 running；结束后写 completed 和不可变
 result。失败也是 completed，但结果明确失败，不据此将任务记 done。
 当前 Agent 自行执行时 executor_ref 使用可核对的宿主任务身份，同样记录开始/结束。
 completed 后不能改 result，重试用新 ID。结果未知时保留未决操作。
+publish 在 verifying、代码 review 在 pr_review、merge 在 merging、integrate 在
+integrating 派发；本地验证 review 可在 verifying。合并操作的 subject 必须保存
+delivery 中的 repo/pr/base_branch/base_sha/head_sha，持久化后不得改写。
+子任务工具不支持某种角色时用当前主控实际宿主身份执行其获准操作，不虚构 child ID。
+final_acceptance 是目标级操作，task_id=null；不重开或篡改 done 任务来派发最终验收。
+subject 固定为 `{manifest_sha256,contract_sha256}`，分别绑定派发时的 best 与合约。
+全部任务 done、无未验证 trial、best 门禁通过后才能先写 intended；然后记录实际
+验收者 ID、running、completed 和结果。结果的 subject、contract_sha256、reviewer ID
+须与操作一致，并将结果引用写入 workflow.final_acceptance。失败也保留完整终态；
+重试用新操作 ID。中断后先接续该操作，不能重复派发。
+
+### PR 证据与合并后返修
+
+有代码改动的远端任务 delivery 使用：
+
+```json
+{
+  "kind": "pr", "repo": "owner/repository", "pr": 123,
+  "base_branch": "已授权集成分支", "base_sha": "完整 Git SHA", "head_sha": "完整 Git SHA",
+  "candidate_manifest": null,
+  "review": null, "merge": null, "integration": null
+}
+```
+
+candidate_manifest 与三项回执均为运行目录内 `{path,sha256}`。候选 manifest 须明确
+source_sha、base_sha、dirty_patch；前两项分别等于 PR head/base，dirty_patch=null
+表示验证的是干净提交。沿用现有构建清单的二进制、features 等证据，字段不同则生成
+引用原清单摘要的适配清单，禁止猜填。尚未取得候选身份时引用可为 null，但不能合并。
+review.subject 绑定此清单摘要；合并派发还要求 checkpoint.candidate_manifest 是
+同一清单且门禁通过。仅重做 review、不重验新 head，不能借用旧候选的 PASS。
+历史任务保留自己的清单，不随全局 best 更新。旧记录缺少这些身份时补采/重验，
+不能把旧通过证据直接改绑当前 PR。
+
+回执公共字段为 schema_version=1、task_id、
+artifacts（非空原始证据引用）。审查和合并报告还须包含同一精确 PR 的五项身份字段：
+
+- review：verdict=PASS 或 CHANGES_REQUIRED、open_findings 数组、
+  subject（候选 manifest 摘要）、reviewer={executor_ref,independent}。
+  合并前须 PASS、零未解决问题、新上下文且不是
+  总控或实施者。返修和 base/head 漂移后重新生成报告；旧报告保留，不能重绑 SHA。
+- merge：confirmed=true、commit（服务端确认的完整合并 SHA）、
+  review_sha256（使用的 review 引用摘要）。未知结果保持引用 null、操作未决；
+  明确未合并则完成失败操作并回 pr_review，不能把失败回执放入成功 merge 字段。
+- integration：status=PASS/FAIL/INCONCLUSIVE、commit（实际验证的集成 SHA）、
+  merge_commit、contains_merge（真实 Git 包含关系）、subject（集成 manifest SHA）。
+  主控核对实际构建、smoke、受影响任务及原始门禁；进入 done 时 subject 必须是
+  当时通过门禁的新 best。历史 done 的证据保留原身份，不要求跟随后续 best 改写。
+
+集成验证失败时，原任务保持 integrating 并记录暂停原因，另建 pending 返修任务，
+repairs_task_id 指向原任务；返修任务不得直接或间接依赖未完成的原任务。
+从最新 integration 创建新分支/PR，不重开或继续提交到已合并分支。修复 PR 合并并
+验证后，重新验证原任务，替换其 integration 引用并解除暂停，再记 done。
+原任务的 merge 身份与回执不可修改。其下游一直等待原任务 done。
+整体验收失败同样追加任务，关联原 goals，保留已 done 的历史。
+
+检查器核对结构、摘要、状态转换和回执身份，不查询 GitHub 或判断报告是否造假。
+CI、保护规则、PR 当前状态、原始日志语义和上下文独立性仍由主控实查；
+不得把本地 review 回执伪装成 GitHub required approval。
 
 首次建立后，每次保存必须带上一个不可变 workflow 快照：
 
@@ -127,10 +205,21 @@ continue、wait_or_recover、estimate_budget、verify_executor、final_acceptanc
 | PR 创建/合并结果未知 | 查询服务端真实状态，确认前不重复写入、不派发依赖项 |
 | 用户停止或预算不足 | 先保存停止屏障，再取消/收回已有任务，保全 best 与证据 |
 
+infrastructure_blocked 可在能力恢复后沿原合约续跑：先核对并收回全部未决操作，
+确认执行者 running、剩余额度可用，再保存新的 recovery_ref 报告：
+schema_version=1、run_id、previous_revision（此次被解除的 workflow 修订号）、
+resolved=true、checked_at（带时区时间）及非空 artifacts。核验时间须位于前后
+checkpoint.updated_at 之间。先单独保存清除停止原因的快照，下一修订才能派发工作。
+旧恢复回执不能复用；预算和权限不变。user_stopped/safety_blocked 不走此路径，
+仍需用户明确授权修订；预算耗尽等其他停止原因也不能借恢复回执清除。
+
 新调用前检查“下一完整步骤＋预留”，不得真正超支后才停止；运行中以剩余预算设置
 超时，时间到限立即收回。停止时允许记录已有操作的终态、清理和保存，不允许新
 实施/审查/合并调用。状态询问回复后继续仍活跃的原任务；明确“只查询、不恢复”
 则只读，用户停止优先。可恢复阻塞在原预算内处理，无法解除才形成硬停止。
+候选/探索次数达限只禁止新增实施或探索；在途操作先接续，已有候选仍可验证、审查、
+交付和集成，全部任务 done 后仍可最终验收。需要新候选返修时才按 iteration_limit
+收尾。时间/费用限制和人工停止对上述交付步骤仍有效，不因限次后的收尾而扩大额度。
 
 ## 整体验收报告
 

@@ -1,6 +1,6 @@
-# GitHub PR 前后截图交付
+# 阶段 PR、自审与自动合并
 
-启动合约包含 GitHub 交付时，在前置能力预检和最终交付时读取；仅讨论或编辑 skill
+启动合约包含 GitHub 交付时，在前置能力预检及每项任务交付时读取；仅讨论或编辑 skill
 不启动网站优化。先按 [启动授权](intake.md) 收齐权限与工具缺口处理策略，交付阶段
 复用原授权，不重新询问 commit/push/PR/脱敏截图许可。
 参考 ZeroSeed 的原生附件流程，使用 ZeroWeb 既有 GUI/CDP 与生产帧证据，不引入
@@ -76,20 +76,26 @@ PR description 是评审入口：按问题 ID/任务场景说明原行为、新�
 - PR 正文及附件映射保留本地备份；清理 worktree 前先归档仍需保留的证据并核验。
   图片交付完成不改变原实验停止原因，也不授权自动合并或发布。
 
-## 可选的任务 PR 与集成循环
+## 默认的任务 PR 与集成循环
 
-默认在专属分支累积 best，整轮结束后按授权交付，不要求每个候选创建 PR。
-只有本轮明确授权自动合并时才启用以下流程；它仍受同一总预算、独立审查和停止屏障约束。
+默认按一个可独立验收的切片创建任务 PR，不等全站目标完成才交付，也不每个候选都
+创建 PR。沿用已明确的整轮自动合并授权；仅本地或 PR-only 限制优先。
+无总限时持续循环，有明确总额度时遵循原账本；单步超时、独立审查和停止屏障始终有效。
 
 1. 启动冻结真实 repo/remote、integration 分支、最终交付位置、合并方式和权限来源；
    主控持有集成权限，worker 只能交付自己的任务分支。默认串行复用专属 worktree，
    每项从精确 integration SHA 开始；不切换或覆盖用户工作区。
 2. 未发布分支提交后 rebase 最新 integration 并验证；已发布分支用普通 merge
    集成更新，不 force push。以精确 head/base 保存测试、原站前后证据和独立 review。
-3. 新上下文 reviewer 只读完整 diff、冻结目标、任务证据与原始门禁，返回结论；
-   不改产品、不代替 GitHub 批准、不自批自合。独立上下文或真实 CI 缺口阻塞合并，
+3. PR 创建后派发新上下文 reviewer，只读精确 base/head 的完整 diff、冻结目标、
+   任务证据与原始门禁，检查真实 bug、必要功能完整性、回归和范围外变更，返回
+   PASS/CHANGES_REQUIRED、问题位置和依据。主控安排同一 PR 返修，复用仍有效检查，
+   对新 head 重验和重新独立审查，直到无未解决问题；不能仅删除审查发现。
+   reviewer 不改产品、不代替 GitHub 批准、不自行合并。独立上下文或真实 CI 缺口阻塞合并，
    可继续不依赖该合并的已授权工作，不能降级自动合并标准。
 4. 合并前重查远端 head/base、CI、保护规则、可合并状态、停止屏障与本轮授权。
+   按 workflow 核对 candidate_manifest 的 source_sha/base_sha/dirty_patch、review.subject
+   及 checkpoint 当前门禁身份；新 head 的审查不能代替新 head 的实际验证。
    版本变化使受影响验证/review 失效。必须通过仓库门禁与原生保护，不以管理员绕过、
    review 文本或本地脚本 PASS 代替。审批/评论等对他人的消息不从 merge 权限推导。
 5. 主控在运行目录保存不可变 merge 意图（唯一 operation ID、repo/PR、head/base），
@@ -97,9 +103,11 @@ PR description 是评审入口：按问题 ID/任务场景说明原行为、新�
    关系后保存结果；没有确认前不重试合并、不派发依赖任务。
 6. fetch 并在受控集成工作区快进，完成集成 smoke 和受影响用户任务验证后才能将
    对应 workflow task 标 done。以集成产物建立新 best，旧证据保持原身份；集成失败
-   保留阶段并返修。重新规划下一项，最终仍须从最新 integration 做整体验收。
+   保留 integrating，按 workflow 新建 repairs_task_id 返修任务和新 PR，避免依赖死锁。
+   验证通过后报告 PR、实际改善和剩余目标，并立即派发下一项，不等待用户说“继续”。
+   最终仍须从最新 integration 做完整原站整体验收；失败则追加修复任务再循环。
 
-GitHub 与 merge receipts 保存于私有运行目录，workflow 的任务 evidence 引用它们。
-本版 workflow operations 只校验 implement/review，不声称机器已验证 GitHub 合并；
-主控恢复前必须核对所有未决 merge receipts 与真实服务端状态。不能把远端能力缺失
+GitHub 与 merge receipts 保存于私有运行目录，字段和机器检查统一见 workflow 的
+“PR 证据与合并后返修”；operations 包含 publish/merge/integrate，合并意图先持久化。
+检查器只核验回执结构与身份，主控恢复前必须核对未决操作与真实服务端状态。不能把远端能力缺失
 变成再次启动已完成网站优化的理由。仅 push/PR 授权时止于对应交付，不进入本合并循环。

@@ -15,7 +15,7 @@
 
 推荐默认值见入口。时间从首次预检开始累计，构建、重试、等待均计入；候选无论
 accept/reject/inconclusive 都计数。初次等待必要授权不计入尚未开始的运行预算。
-用户或宿主更短限制优先，明确批准的更长预算可替换默认值；resume 沿用原截止时间与
+默认没有总限时，deadline_at 显式为 null；用户或宿主限制优先。resume 沿用原截止时间与
 累计账本，新预算必须来自用户或有效调度任务，不能靠换 run ID、后台循环获得。
 费用/词元有上限时一起记录，工具不提供用量则记 unknown，不声称满足可审计费用上限；
 不自行调用额外付费模型或扩额度。
@@ -24,7 +24,9 @@ accept/reject/inconclusive 都计数。初次等待必要授权不计入尚未�
 估计未知先诊断成本，不开始产品修改；剩余预算不足则保全复现、依赖链和未覆盖任务。
 具体秒数计算由下面的 budget 契约与 verify-run 实现，不能固定按最小预留假定来得及。
 
-- 时间采用带时区 ISO 8601。预算截止时间从首次启动沿用，用户延长须在 run.md 记授权。
+- 时间采用带时区 ISO 8601；deadline_at 另允许 null，表示没有总墙钟限额，不是未知。
+  缺少字段仍为格式错误。有限截止时间从首次启动沿用，延长或改为 null 须记授权修订，
+  不能因新默认值迁移掉旧限制。
 - `activity.state` 为 `running|awaiting_user|stopped|unknown`；running 需要 executor
   的 `kind`（`host_task|owned_process`）、`ref`（工具任务 ID 或 PID 加启动身份）和
   `checked_at`。退出回复前核对宿主是否还会执行；有浏览器残留不代表 Agent 正在优化。
@@ -33,10 +35,13 @@ accept/reject/inconclusive 都计数。初次等待必要授权不计入尚未�
 - `budget` 保存累计候选/探索计数；验证成本未知用 null。收尾预留为
   `max(1200, validation_estimate_seconds + handoff_seconds)` 秒，未知或预算不足时
   `can_start_candidate` 为 false。下一完整步骤的成本存 next_step_estimate_seconds，
-  必须满足剩余时间至少为下一步骤加收尾预留；它包含该步实际执行/验证，预留覆盖
+  有总限时时必须满足剩余时间至少为下一步骤加收尾预留；无总限时 remaining_seconds
+  输出 null，仍要求已估计单步成本并受命令超时保护。它包含该步实际执行/验证，预留覆盖
   后续必要收尾，已完成且有效的检查不重复计费。每步开始前重估，不能只检查“还有20分钟”。
   candidate_limit / exploration_period_limit 为 null 表示没有独立次数上限；
   数值表示用户或原合约指定上限。旧运行保持旧上限，不能迁移时自动清除。
+  can_start_candidate 只判断新候选，不能用它禁止既有候选的验证/交付；
+  workflow 对这些步骤单独核对运行状态与时间/费用预算，在途操作继续核对终态。
   此值只判预算，不授予修改权限或解除 GUI 等阻塞。
 - 可选 `resources` 为词元或费用信封数组，每项 unit（如 tokens 或 USD）唯一，
   字段为 limit、used、reserved、next_step_estimate、handoff_reserve；单位由合约冻结。
@@ -48,7 +53,12 @@ accept/reject/inconclusive 都计数。初次等待必要授权不计入尚未�
   实际费用准确。无费用/词元限制时 resources=[]，不声称已核验未设置的额度。
 - `versions` 的 original/best/trial 为对应构建 manifest 的 SHA-256（未建立时 null）。
   manifest 记录源码 SHA、脏树 patch 摘要、features/构建参数与二进制摘要；复用现有
-  版本清单。候选 manifest 引用见下文；门禁尚未通过不能更新 best。
+  版本清单。版本均为 null 时，可凭真实 manifest 首次记录 original=best 基线，
+  原站失败门禁保留；这不代表修复通过。其后晋升 best 必须通过门禁。
+  自动合并所用清单还须按 workflow 绑定干净 PR head/base，与 review 及当前门禁一致。
+- `delivery_scope` 在整轮冻结：阶段自动合并使用约定仓库和集成分支，例如
+  integration:owner/repo:integration；具体任务分支和 PR 记在 workflow.delivery。
+  不随每次换任务分支改预算身份。旧运行原 scope 继续保留，不能迁移豁免到其他目标。
 
 在仓库根目录执行（不启动产品或重型测试）：
 

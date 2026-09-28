@@ -14,6 +14,7 @@ async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'zeroweb-skill-eval-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const state = JSON.parse(await readFile(new URL('../templates/checkpoint.json', import.meta.url)));
+  state.deadline_at = '2026-01-01T02:00:00Z';
   state.activity = { state: 'running', executor: { kind: 'host_task', ref: 'synthetic-task' },
     checked_at: state.updated_at };
   state.budget.validation_estimate_seconds = 900;
@@ -104,6 +105,22 @@ test('resume near deadline preserves trial and refuses another candidate', async
   const saved = JSON.parse(await readFile(checkpoint));
   assert.equal(saved.versions.best, 'a'.repeat(64));
   assert.equal(saved.versions.trial, f.state.versions.trial);
+});
+
+test('no total deadline continues after days while explicit limits still apply', async t => {
+  const f = await fixture(t);
+  f.state.deadline_at = null;
+  let result = await verifyRun(await f.flush(), Date.parse('2026-01-04T00:00:00Z'));
+  assert.equal(result.remaining_seconds, null);
+  assert.equal(result.can_start_candidate, true);
+  f.state.budget.candidate_limit = 0;
+  assert.equal((await f.check()).can_start_candidate, false);
+  f.state.budget.candidate_limit = null;
+  f.state.budget.resources = [{ unit: 'tokens', limit: 100, used: 90, reserved: 0,
+    next_step_estimate: 20, handoff_reserve: 10 }];
+  assert.equal((await f.check()).can_start_candidate, false);
+  delete f.state.deadline_at;
+  await assert.rejects(f.check(), /timestamp/);
 });
 
 test('unknown or larger measured validation cost reserves enough time', async t => {

@@ -49,9 +49,10 @@ export async function verifyRun(checkpointPath, now = Date.now()) {
   requireValue(state.schema_version === 1 && nonempty(state.run_id)
     && nonempty(state.delivery_scope) && nonempty(state.next_action), 'Invalid checkpoint identity');
   const started = timestamp(state.started_at);
-  const deadline = timestamp(state.deadline_at);
+  const deadline = state.deadline_at === null ? null : timestamp(state.deadline_at);
   const updated = timestamp(state.updated_at);
-  requireValue(started <= updated && started < deadline && updated <= now, 'Invalid checkpoint chronology');
+  requireValue(started <= updated && (deadline === null || started < deadline) && updated <= now,
+    'Invalid checkpoint chronology');
   const activity = state.activity;
   requireValue(activity && ['running', 'awaiting_user', 'stopped', 'unknown'].includes(activity.state),
     'Invalid activity state');
@@ -89,12 +90,13 @@ export async function verifyRun(checkpointPath, now = Date.now()) {
         || (Number.isFinite(resource[key]) && resource[key] >= 0)), 'Invalid resource budget');
   }
   const reserve = estimate === null ? null : Math.max(1200, estimate + budget.handoff_seconds);
-  const remaining = Math.max(0, Math.floor((deadline - now) / 1000));
+  // 无总限时仍估算步骤成本并保留费用、次数及宿主停止约束。
+  const remaining = deadline === null ? null : Math.max(0, Math.floor((deadline - now) / 1000));
   const budgetKnown = reserve !== null && stepEstimate !== null
     && resources.every(item => item.used !== null && item.next_step_estimate !== null);
   const iterationAvailable = (budget.candidate_limit === null || budget.candidates_used < budget.candidate_limit)
     && (budget.exploration_period_limit === null || budget.exploration_periods_used < budget.exploration_period_limit);
-  const budgetAvailable = budgetKnown && remaining >= reserve + stepEstimate
+  const budgetAvailable = budgetKnown && (remaining === null || remaining >= reserve + stepEstimate)
     && resources.every(item =>
       item.used + item.reserved + item.next_step_estimate + item.handoff_reserve <= item.limit);
   requireValue(state.versions && ['original', 'best', 'trial'].every(key =>
