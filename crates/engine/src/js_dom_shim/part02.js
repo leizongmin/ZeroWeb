@@ -418,7 +418,15 @@
   // pipeTo(WritableStream) / pipeThrough({writable,readable})（R2969）。WritableStream/TransformStream 见下。
   // tee()（分叉两独立分支）R2971。
   var _RS_DONE = { done: true, value: undefined };
-  function _rs_chunk(value) { return { done: false, value: value }; }
+  if (typeof Object.setPrototypeOf === 'function') Object.setPrototypeOf(_RS_DONE, null); // net-api M2-S3：防 then 投毒（见 _rs_chunk）
+  // net-api M2-S3：read-result 对象以 **null 原型** 发布——Object.prototype.then 投毒
+  //（response-stream-with-broken-then）经 thenable adoption 劫持 Promise resolution，
+  // 裸字面量原型链上查得注入 then。
+  function _rs_chunk(value) {
+    var out = { done: false, value: value };
+    if (typeof Object.setPrototypeOf === 'function') Object.setPrototypeOf(out, null);
+    return out;
+  }
   // R3010：strategy → { highWaterMark, size } 解析 + chunk size 计算（spec 背压计量）。无 strategy 时 hwm=1、
   // size 恒 1（CountQueuingStrategy 默认）。size 抛错 / 非有限正数 → 回退 1（spec 应抛 RangeError，headless best-effort）。
   function _zw_streamHwm(strategy) {
@@ -447,6 +455,9 @@
     var pulling = false;
     var self = this;
     this._locked = false;
+    // net-api M2-S3：disturbed 标记（spec §3.6——read() 首调 / cancel 即 disturbed；
+    // Response/Request consume body 的 unusable 判定消费此标记）。
+    this._disturbed = false;
 
     function enqueueChunk(chunk) {
       if (state !== 'readable') return;
@@ -496,6 +507,7 @@
       self._locked = true;
       return {
         read: function () {
+          self._disturbed = true; // net-api M2-S3：read 即 disturbed（spec §3.6）
           return new Promise(function (resolve, reject) {
             if (state === 'errored') { reject(errorVal); return; }
             // 先 drain 已 enqueue chunk（即便流已 close，剩余 chunk 须先派发，spec §3.5 close 后仍可读余 chunk）。
@@ -512,7 +524,7 @@
             flushPull();
           });
         },
-        cancel: function (reason) { return self.cancel(reason); },
+        cancel: function (reason) { self._disturbed = true; return self.cancel(reason); },
         releaseLock: function () { self._locked = false; },
         get closed() {
           if (state === 'closed') return Promise.resolve();
@@ -522,6 +534,7 @@
       };
     };
     this.cancel = function (reason) {
+      self._disturbed = true; // net-api M2-S3：cancel 即 disturbed（body.cancel 直调路径）
       if (self._locked) return Promise.reject(new TypeError('Cannot cancel: ReadableStream is locked'));
       return self._doCancel(reason);
     };

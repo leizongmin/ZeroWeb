@@ -384,11 +384,12 @@ fn test_request_body_readers_r2982() {
         "Request.arrayBuffer('AB')[0]=65 ('A')"
     );
 
-    // formData()：urlencoded 解析（+ → space，% 解码）。
+    // formData()：urlencoded 解析（+ → space，% 解码）。net-api M2-S3：formData 须
+    // urlencoded/multipart essence（spec——无 Content-Type → TypeError），测试补头。
     sandbox
         .execute(
             "globalThis.__fdA = null; globalThis.__fdC = null;\
-             new Request('/api', { method:'POST', body:'a=1&c=hello+world' })\
+             new Request('/api', { method:'POST', body:'a=1&c=hello+world', headers:{'Content-Type':'application/x-www-form-urlencoded'} })\
                .formData().then(function(fd){ globalThis.__fdA = fd.get('a'); globalThis.__fdC = fd.get('c'); });",
         )
         .unwrap();
@@ -438,10 +439,11 @@ fn test_request_body_readers_r2982() {
     );
 
     // 对称性：Response.formData 经抽出 helper 仍正确（回归守卫——_zwParseFormUrlencoded 提取后 Response 不退化）。
+    // net-api M2-S3：formData 须 urlencoded essence（spec），测试补头。
     sandbox
         .execute(
             "globalThis.__rfd = null;\
-             new Response('x=42').formData().then(function(fd){ globalThis.__rfd = fd.get('x'); });",
+             new Response('x=42', { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }).formData().then(function(fd){ globalThis.__rfd = fd.get('x'); });",
         )
         .unwrap();
     assert_eq!(

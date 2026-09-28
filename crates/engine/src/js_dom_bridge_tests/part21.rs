@@ -420,6 +420,7 @@ fn test_cache_api_page_shim_host_roundtrip() {
                var responses = values[1];\
                var requests = values[2];\
                var filteredRequests = values[3];\
+               var responseClone = response.clone();\
                return response.text().then(function (body) {\
                  globalThis.__cacheDone = [\
                    String(response instanceof Response),\
@@ -438,9 +439,9 @@ fn test_cache_api_page_shim_host_roundtrip() {
                    String(response.status),\
                    response.statusText,\
                    response.type,\
-                   response.clone().type,\
+                   responseClone.type,\
                    response.url,\
-                   response.clone().url,\
+                   responseClone.url,\
                    response.headers.get('content-type'),\
                    body\
                  ].join('|');\

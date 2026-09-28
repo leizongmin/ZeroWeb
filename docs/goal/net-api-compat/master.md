@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-28（M2-S2 收口）
+**最后更新**: 2026-09-28（M2-S3 收口）
 
 ---
 
@@ -11,10 +11,11 @@
 **专项定位**：网络 API（fetch/XHR/URL/mimesniff/streams/EventSource）一致性收敛，
 WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 + 帧协议）。
 
-**当前进度**：M1（25.8% 基线）+ M2-S1（66.1%）+ M2-S2（2026-09-28）——
-**3527/5193 = 67.9%**（fetch 53.7% / xhr 23.8% / url 67.3% / **mimesniff 100%** /
-streams 42.9% / eventsource 6.2%）。下一切片 M2-S3（response-stream-disturbed 簇）
-或并轨 M3（XHR 状态机——header-values 腿依赖）。
+**当前进度**：M1（25.8% 基线）+ M2-S1（66.1%）+ M2-S2（67.9%）+ M2-S3（2026-09-28）——
+**3682/5198 = 70.8%**（fetch 62.7% / xhr 23.8% / url 67.3% / mimesniff 100% /
+streams 42.5% / eventsource 6.2%）。M2 面主体收敛完成；下一切片并轨 M3（XHR 状态机
+——setRequestHeader 校验解锁 header-values 腿 64）+ fetch 残余甄别（response-error 族
+/ .py fixture 通道 P7）。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -27,7 +28,7 @@ streams 42.9% / eventsource 6.2%）。下一切片 M2-S3（response-stream-distu
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
-| P2 | fetch/Request/Response/Headers/Body 语义收敛 | 🔶 M2 进行中——S1（scheme dispatch + data: + Body MIME）与 S2（Headers 校验 + guard + 迭代语义）已收口（fetch 53.7% / mimesniff 100%）；**S3 = response-stream-disturbed 簇（33）+ request-upload/clone 流（14）**；错误面余量甄别 |
+| P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
 | P3 | XHR 状态机 + EventSource 解析/重连 | ⏳ M3（xhr 主簇：send 错误面 30；url 66.9% 修齐：percent-encoding 39 / default port ~40 / URL.parse 8；mimesniff ✅ 99.2%；eventsource 依赖 fixture 通道） |
 | P4 | URL 边缘语义 + mimesniff 对齐 | 🔶 mimesniff 已收口（99.2%）；url 归 M3 |
 | P5 | streams 底座一致性（fetch body 依赖） | ⏳ M4（主簇：ReadableStream.from 32 / BYOB view 16 / queuing strategy 11 / pull 时机 8） |
@@ -36,6 +37,18 @@ streams 42.9% / eventsource 6.2%）。下一切片 M2-S3（response-stream-distu
 
 ## 已完成切片
 
+- **M2-S3（2026-09-28）**：consume body 统一层 + 流 disturbed/locked 语义（3682/5198 =
+  **70.8%**，Δ+155 零 pass 回归）。`_zwConsumeBodyBytes`（unusable 拒绝 / 用户流源
+  error+chunk 类型传播 / 字节路径 + 消费后锁定扰动）；Response(ReadableStream) 源 +
+  read/cancel 反向标记 bodyUsed；clone() unusable TypeError + 最小 tee（原分支引用 +
+  结构化克隆拷贝 + cancel 隔离）；formData essence 白名单 + RFC2046 分隔符行校验；
+  body 派生默认 Content-Type；then 投毒防护（null 原型 read-result + 字节结果自有
+  then:undefined）；bytes() 补全。disturbed-1..6 全绿、error-from-stream 14/14、
+  bad-chunk 6/6、clone 5→20/21、form-data 7→13/14、request-consume 14→43/45。
+  5 处存量引擎测试随 consume-once 语义翻新（clone 先于消费 / formData 补 essence 头）。
+  门禁注记：make test 两轮各触在册争用窗 flaky 族（stale_etag / skip_waiting——与本
+  轮零涉），隔离复跑双绿 + 空闲全量 68 套全绿收口（R4867 判例同型）。见
+  [evidence/2026-09-28-m2-s3-body-streams.md](evidence/2026-09-28-m2-s3-body-streams.md)。
 - **M2-S2（2026-09-28）**：Headers 校验 + guard 完整化（3527/5193 = **67.9%**，Δ+178
   零回归）。name/value 校验（TypeError）+ sequence 二元组 + ctor null/1 throw；
   X-HTTP-Method-Override forbidden 值判定（get-decode-split quoted 感知）；request-no-cors
@@ -65,12 +78,13 @@ streams 42.9% / eventsource 6.2%）。下一切片 M2-S3（response-stream-distu
 
 ## 下一步计划
 
-1. **M2-S3**：response-stream-disturbed 簇（disturbed/locked 语义 33）+ request-upload/
-   clone 流缓冲（14）+ fetch 错误面余量甄别
-2. **M3**：XHR 状态机/事件序（setRequestHeader 校验——header-values 腿 64 subtest
-   依赖）+ EventSource（fixture 通道联动）+ URL 修齐（percent-encoding 39 / default
-   port ~40 / URL.parse 8）
-3. **M4**：streams 底座（ReadableStream.from/BYOB/queuing strategy）+ WebSocket
-   二期挂账定稿 + DC 逐项判定收口
+1. **M3**：XHR 状态机/事件序（setRequestHeader 值校验——header-values 腿 64 subtest
+   依赖；send 错误面 30）+ EventSource（与 P7 fixture 通道联动评估）+ URL 修齐
+   （percent-encoding 39 / default port ~40 / URL.parse 8）
+2. **M3 并轨**：fetch 残余甄别（response-error 族 10 / 错误面余量）+ P7 runner
+   fixture 通道（.py 端点最小 fixture 集——eventsource Timeout 23 / request-upload
+   echo / xhr delay 簇公共解锁件）
+3. **M4**：streams 底座（ReadableStream.from 32 / BYOB view 16 / queuing strategy 11 /
+   pull 时机 8）+ WebSocket 二期挂账定稿 + DC 逐项判定收口
 
 **待用户决策清单**：（空）

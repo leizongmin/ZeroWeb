@@ -1064,9 +1064,10 @@ fn test_response_request_constructors_r2968() {
              globalThis.__hdr = r.headers.get('X-Test');\
              globalThis.__hdrHas = r.headers.has('X-Test');\
              globalThis.__bodyIsStream = (r.body instanceof ReadableStream);\
+             globalThis.__cloneOk = (r.clone() instanceof Response) && r.clone().status === 201;\
+             var rj = r.clone();\
              r.text().then(function(t){ globalThis.__text = t; });\
-             r.json().then(function(j){ globalThis.__json = j.a; });\
-             globalThis.__cloneOk = (r.clone() instanceof Response) && r.clone().status === 201;",
+             rj.json().then(function(j){ globalThis.__json = j.a; });",
         )
         .unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__isResp)").unwrap().value, "true", "new Response → instanceof Response");
@@ -1086,7 +1087,8 @@ fn test_response_request_constructors_r2968() {
         "Response.body 为 ReadableStream"
     );
     assert_eq!(sandbox.execute("String(globalThis.__text)").unwrap().value, "{\"a\":1}", "text() 返 body");
-    assert_eq!(sandbox.execute("String(globalThis.__json)").unwrap().value, "1", "json() 解析 body");
+    // net-api M2-S3：body 消费一次语义——json() 经 clone 读（r 已被 text() 消费）。
+    assert_eq!(sandbox.execute("String(globalThis.__json)").unwrap().value, "1", "json() 经 clone 解析 body");
     assert_eq!(sandbox.execute("String(globalThis.__cloneOk)").unwrap().value, "true", "clone() 返 Response + 保留 status");
     sandbox
         .execute(
@@ -1834,9 +1836,11 @@ fn test_blob_stream_response_body_readers_r2978() {
     );
 
     // Response.formData()：application/x-www-form-urlencoded 解析（+ → space，% 解码）。
+    // net-api M2-S3：formData 须 urlencoded/multipart essence（spec——缺失 → TypeError），
+    // 测试补头。
     sandbox
         .execute(
-            "new Response('a=1&b=two&c=hello+world').formData().then(function(fd){\
+            "new Response('a=1&b=two&c=hello+world', { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }).formData().then(function(fd){\
                globalThis.__fdA = fd.get('a');\
                globalThis.__fdB = fd.get('b');\
                globalThis.__fdC = fd.get('c');\
@@ -2334,9 +2338,10 @@ fn test_fetch_response_final_url_and_blob_mime_type() {
     sandbox
         .execute(
             "fetch('/asset.html').then(async function(r){\
+               var rc = r.clone();\
                var b1 = await r.blob();\
-               r.headers.set('content-type', 'text/plain');\
-               var b2 = await r.blob();\
+               rc.headers.set('content-type', 'text/plain');\
+               var b2 = await rc.blob();\
                globalThis.__fetchMeta = [\
                  r.url,\
                  r.type,\
@@ -2344,7 +2349,7 @@ fn test_fetch_response_final_url_and_blob_mime_type() {
                  String(r.headers.get('x-zero-response-type')),\
                  b1.type,\
                  b2.type,\
-                 r.clone().url\
+                 rc.url\
                ].join('|');\
              });",
         )

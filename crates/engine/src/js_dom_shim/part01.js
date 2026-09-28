@@ -1462,10 +1462,149 @@
       : _bodyToStream(source);
     var originalGetReader = stream.getReader;
     stream.getReader = function () {
-      _zwMarkBodyUsed(target);
+      // net-api M2-S3：getReader 仅锁定不标记 bodyUsed（spec bodyUsed = stream.disturbed；
+      // disturbed-1 getReader+releaseLock 后消费须可用——unusable 判定走 _locked/_disturbed）。
       return originalGetReader.apply(stream, arguments);
     };
     return stream;
+  }
+  // net-api M2-S3：用户 ReadableStream 作为 Request/Response body——read/cancel 反向
+  // 标记 target bodyUsed（response-stream-disturbed-6 经 bodyUsed 观测流消费）。
+  function _zwWireStreamToBody(target, stream) {
+    var origGetReader = stream.getReader;
+    stream.getReader = function () {
+      var reader = origGetReader.apply(stream, arguments);
+      var origRead = reader.read;
+      reader.read = function () { _zwMarkBodyUsed(target); return origRead.apply(reader, arguments); };
+      var origCancel = reader.cancel;
+      reader.cancel = function () { _zwMarkBodyUsed(target); return origCancel.apply(reader, arguments); };
+      return reader;
+    };
+    var origCancel = stream.cancel;
+    stream.cancel = function () { _zwMarkBodyUsed(target); return origCancel.apply(stream, arguments); };
+  }
+  // net-api M2-S3：最小 stream tee（pull-ahead 全缓冲）——Response.clone() 流源分叉。
+  // clone 时刻起异步读全量源 → 两分支各自满队列（enqueueChunk 直解 waiting read）；
+  // 分支 cancel 仅停派发本分支（隔离——「Cancelling stream should not affect cloned
+  // one」）；源 error → 未取消分支 error。语义近似（非 lazy/零背压），teed 断言面覆盖。
+  function _zwTeeStreamEager(src) {
+    var reader = src.getReader();
+    var chunks = [];
+    var finished = false;
+    var branches = [];
+    function distribute() {
+      for (var i = 0; i < branches.length; i++) {
+        var br = branches[i];
+        if (br.cancelled || !br.controller) continue;
+          while (br.sent < chunks.length) {
+          // net-api M2-S3：原分支（i=0）保持**原 chunk 引用**（teed 断言 assert_equals
+          // 同一对象）；克隆分支为**独立拷贝**（structureClone 语义——assert_not_equals
+          // 原缓冲 + 原型保型）。
+          var chunk = chunks[br.sent];
+          br.controller.enqueue(i === 0 ? chunk : _zwCloneStreamChunk(chunk));
+          br.sent++;
+        }
+        if (finished) {
+          if (br.errorVal !== undefined) br.controller.error(br.errorVal);
+          else br.controller.close();
+        }
+      }
+    }
+    (function readAll() {
+      reader.read().then(function (r) {
+        if (r.done) { finished = true; distribute(); return; }
+        chunks.push(r.value);
+        distribute();
+        readAll();
+      }, function (e) {
+        finished = true;
+        for (var i = 0; i < branches.length; i++) branches[i].errorVal = e;
+        distribute();
+      });
+    })();
+    function makeBranch() {
+      var br = { cancelled: false, controller: null, errorVal: undefined, sent: 0 };
+      branches.push(br);
+      var stream = new ReadableStream({
+        start: function (controller) {
+          br.controller = controller;
+          if (chunks.length || finished) distribute();
+        },
+        pull: function () {} // 分发全在 start/distribute（全缓冲，无背压）
+      });
+      var origCancel = stream.cancel;
+      stream.cancel = function (reason) {
+        br.cancelled = true;
+        return origCancel.call(stream, reason);
+      };
+      return stream;
+    }
+    return [makeBranch(), makeBranch()];
+  }
+  // net-api M2-S3：字节结果防 Object.prototype.then 投毒（response-stream-with-broken-then
+  // ——typed array 原型链查得注入 then → Promise resolution 被 thenable adoption 劫持）。
+  // 自有 then:undefined 截断原型查找。
+  function _zwBytesThenableSafe(bytes) {
+    try { Object.defineProperty(bytes, 'then', { value: undefined, writable: true, enumerable: false, configurable: true }); } catch (_e) {}
+    return bytes;
+  }
+  // net-api M2-S3：流 chunk 结构化克隆（response-clone「structureClone for teed」——
+  // 分支字节须为独立拷贝且保型：typed array → slice；DataView → 同 buffer 区间重建；
+  // ArrayBuffer → slice(0)）。
+  function _zwCloneStreamChunk(chunk) {
+    try {
+      if (typeof DataView === 'function' && chunk instanceof DataView) {
+        return new DataView(chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength), 0, chunk.byteLength);
+      }
+      if (typeof chunk.slice === 'function') return chunk.slice();
+    } catch (_e) {}
+    return chunk;
+  }
+  // net-api M2-S3：consume body 统一字节路径（Body mixin——text/json/blob/arrayBuffer/
+  // bytes/formData 共用）。https://fetch.spec.whatwg.org/#concept-body-consume-body：
+  // ① unusable（已消费或 body stream disturbed/locked）→ reject TypeError；
+  // ② 用户 ReadableStream 源 → 读全量 chunk（error 传播；非 Uint8Array chunk → TypeError，
+  //    response-stream-bad-chunk 面）；
+  // ③ 字节/文本源 → _bodyBytes / UTF-8(_bodyText)。
+  // 消费即标记 bodyUsed；字节/文本源消费后补建锁定+扰动 stream（disturbed-5：
+  // 消费后 body.getReader() 须 throw）。body 为 null → 空字节（可重复消费，spec null body）。
+  function _zwConsumeBodyBytes(target) {
+    var streamSrc = target._zwBodyStream;
+    var streamState = streamSrc || target._bs;
+    if (target._bodyUsed || (streamState && (streamState._disturbed || streamState._locked))) {
+      return Promise.reject(new TypeError('Body is unusable'));
+    }
+    _zwMarkBodyUsed(target);
+    var bodyError = _zwBodyErrorPromise(target);
+    if (bodyError) return bodyError;
+    if (streamSrc) {
+      var reader = streamSrc.getReader();
+      var chunks = [];
+      function pump() {
+        return reader.read().then(function (r) {
+          if (r.done) {
+            var total = 0;
+            for (var i = 0; i < chunks.length; i++) total += chunks[i].length;
+            var out = new Uint8Array(total);
+            var off = 0;
+            for (var j = 0; j < chunks.length; j++) { out.set(chunks[j], off); off += chunks[j].length; }
+            return _zwBytesThenableSafe(out);
+          }
+          if (!(r.value instanceof Uint8Array)) {
+            return Promise.reject(new TypeError('ReadableStream chunk is not a Uint8Array'));
+          }
+          chunks.push(r.value);
+          return pump();
+        });
+      }
+      return pump();
+    }
+    if (!target._bodyNull && !target._bs) {
+      target._bs = _zwCreateBodyStream(target);
+    }
+    if (target._bs) { target._bs._locked = true; target._bs._disturbed = true; }
+    var bytes = target._bodyBytes != null ? target._bodyBytes : _zw_utf8_encode(target._bodyText == null ? '' : String(target._bodyText));
+    return Promise.resolve(_zwBytesThenableSafe(bytes));
   }
   // 收集 headers 源（Object / [[k,v]] / Headers-like forEach）→ `name\x1evalue\x1e...` wire（空 → ''）。
   function _headersToWire(src) {
@@ -2070,9 +2209,32 @@
     if (!boundary) return fd;
     var delimiter = '--' + boundary;
     var parts = String(bodyText == null ? '' : bodyText).split(delimiter);
+    // net-api M2-S3：RFC 2046 分隔符行规则——每个 `--boundary` 须行首（串首 / 前置
+    // CRLF / closing 自身 `--` 前缀）；closing 缺失 → TypeError（response-form-data
+    // 「Validate buggy form data」面：empty=分隔符前置非 CRLF、cr*=LF 前置、
+    // boundary=缺 closing）。
+    var scanIdx = String(bodyText == null ? '' : bodyText).indexOf(delimiter);
+    while (scanIdx >= 0) {
+      if (scanIdx > 0) {
+        var prev2 = String(bodyText).slice(scanIdx - 2, scanIdx);
+        if (prev2 !== '\r\n' && prev2 !== '--') throw new TypeError('Invalid multipart/form-data boundary line');
+      }
+      scanIdx = String(bodyText).indexOf(delimiter, scanIdx + delimiter.length);
+    }
+    // net-api M2-S3：无 multipart 分隔结构（无 boundary 分隔符——空 body / 非 multipart
+    // 内容）→ TypeError（spec multipart 解析失败；consume-empty「multipart error case」）。
+    // 仅 closing（`--B--`）→ 空 FormData。
+    if (parts.length < 2) throw new TypeError('Invalid multipart/form-data body');
+    var sawClosing = false;
     for (var i = 1; i < parts.length; i++) {
       var part = parts[i];
-      if (part.indexOf('--') === 0) break;
+      if (part.indexOf('--') === 0) {
+        // net-api M2-S3：closing 后仅容 \r\n（`--B--` 后残留垃圾 → TypeError）。
+        var tail = part.slice(2).replace(/^[\r\n]+/, '').replace(/[\r\n]+$/, '');
+        if (tail !== '' || i !== parts.length - 1) throw new TypeError('Invalid multipart/form-data epilogue');
+        sawClosing = true;
+        break;
+      }
       if (part.indexOf('\r\n') === 0) part = part.slice(2);
       var headerEnd = part.indexOf('\r\n\r\n');
       if (headerEnd < 0) continue;
@@ -2082,6 +2244,7 @@
       var nameMatch = headerText.match(/(?:^|\r\n)content-disposition:[^\r\n]*\bname="([^"]*)"/i);
       if (nameMatch) fd.append(nameMatch[1], content);
     }
+    if (!sawClosing) throw new TypeError('Missing multipart/form-data close-delimiter');
     return fd;
   }
   function _zwResponseBodyBytes(body) {
@@ -2110,75 +2273,119 @@
     this._bodyNull = body == null;
     // R3021/R35xx：BufferSource body（二进制 response）→ 存 _bodyBytes，_bodyText = TextDecoder 解码（供 text()）；
     // 字符串/其他 body → _bodyText 原样，_bodyBytes=null（blob()/arrayBuffer() 回落 UTF-8 编码文本）。
-    var responseBodyBytes = _zwResponseBodyBytes(body);
-    if (responseBodyBytes != null) {
-      this._bodyBytes = responseBodyBytes;
-      this._bodyText = new TextDecoder().decode(responseBodyBytes);
-    } else if ((typeof Blob === 'function' && body instanceof Blob) || (typeof FormData === 'function' && body instanceof FormData)) {
-      this._bodyBytes = _zwBodyBytesAndContentType(body, this.headers);
-      this._bodyText = new TextDecoder().decode(this._bodyBytes);
-    } else {
+    // net-api M2-S3：ReadableStream body → 保留流对象（body getter 返回原流；消费经
+    // _zwConsumeBodyBytes 流路径——error/chunk 类型传播，disturbed-2..6/error-from-stream 面）。
+    if (typeof ReadableStream === 'function' && body instanceof ReadableStream) {
+      this._zwBodyStream = body;
       this._bodyBytes = null;
-      this._bodyText = body == null ? '' : String(body);
+      this._bodyText = '';
+      _zwWireStreamToBody(this, body);
+    } else {
+      var responseBodyBytes = _zwResponseBodyBytes(body);
+      if (responseBodyBytes != null) {
+        this._bodyBytes = responseBodyBytes;
+        this._bodyText = new TextDecoder().decode(responseBodyBytes);
+      } else if ((typeof Blob === 'function' && body instanceof Blob) || (typeof FormData === 'function' && body instanceof FormData)) {
+        this._bodyBytes = _zwBodyBytesAndContentType(body, this.headers);
+        this._bodyText = new TextDecoder().decode(this._bodyBytes);
+      } else {
+        this._bodyBytes = null;
+        this._bodyText = body == null ? '' : String(body);
+        // net-api M2-S3：body 派生默认 Content-Type（spec initialize——extract 的 body
+        // with type 不在 header list 时 append）：URLSearchParams → urlencoded；字符串 →
+        // text/plain;charset=UTF-8（response-consume「URLSearchParams to formData」面）。
+        if (typeof URLSearchParams === 'function' && body instanceof URLSearchParams) {
+          if (!this.headers.has('content-type')) this.headers.set('content-type', 'application/x-www-form-urlencoded;charset=UTF-8');
+        } else if (body != null) {
+          if (!this.headers.has('content-type')) this.headers.set('content-type', 'text/plain;charset=UTF-8');
+        }
+      }
     }
     var self = this;
     // body 为 ReadableStream（lazy，单 chunk + close，复用 _bodyToStream）。二进制 body 时 chunk 为 _bodyBytes
-    // 字节；文本 body 同 R2967（UTF-8 文本 chunk）。
+    // 字节；文本 body 同 R2967（UTF-8 文本 chunk）。M2-S3：用户流源直接返回原流对象。
     Object.defineProperty(this, 'body', {
-      get: function () { if (self._bodyNull) return null; if (!self._bs) self._bs = _zwCreateBodyStream(self); return self._bs; },
+      get: function () {
+        if (self._bodyNull) return null;
+        if (self._zwBodyStream) return self._zwBodyStream;
+        if (!self._bs) self._bs = _zwCreateBodyStream(self);
+        return self._bs;
+      },
       configurable: true
     });
     Object.defineProperty(this, 'bodyUsed', {
-      get: function () { return !!self._bodyUsed; },
+      // net-api M2-S3：bodyUsed = 已消费或 body stream disturbed（spec——body.cancel 直调
+      // 不落 _bodyUsed；response-clone「Cancelling stream should not affect cloned one」）。
+      get: function () {
+        var s = self._zwBodyStream || self._bs;
+        return !!self._bodyUsed || !!(s && s._disturbed);
+      },
       configurable: true
     });
+    // net-api M2-S3：consume 方法统一走 _zwConsumeBodyBytes（unusable 判定 / 用户流
+    // 源 error+chunk 类型传播 / 字节路径 + 消费后 stream 锁定扰动）。
     this.text = function () {
-      _zwMarkBodyUsed(self);
-      return _zwBodyErrorPromise(self) || Promise.resolve(self._bodyText);
+      return _zwConsumeBodyBytes(self).then(function (b) { return new TextDecoder().decode(b); });
     };
     this.json = function () {
-      _zwMarkBodyUsed(self);
-      return _zwBodyErrorPromise(self) || Promise.resolve(JSON.parse(self._bodyText));
+      return _zwConsumeBodyBytes(self).then(function (b) { return JSON.parse(new TextDecoder().decode(b)); });
     };
-    // R2978/R3021：补全 Response body-consumption 表面（spec：text/json/blob/arrayBuffer/formData）。
-    // blob()：body 包成 Blob（二进制 body 用 _bodyBytes 字节保真）；arrayBuffer()：二进制 body 返 _bodyBytes，
-    // 文本 body UTF-8 编码；formData()：application/x-www-form-urlencoded 解析。
     this.blob = function () {
-      _zwMarkBodyUsed(self);
-      var bodyError = _zwBodyErrorPromise(self);
-      if (bodyError) return bodyError;
-      // net-api M2-S1：Blob type = get the MIME type（parse+serialize，非 raw header 值）。
-      var contentType = _zwBodyMimeType(self.headers) || '';
-      return Promise.resolve(new Blob([self._bodyBytes != null ? self._bodyBytes : self._bodyText], { type: contentType }));
+      return _zwConsumeBodyBytes(self).then(function (b) {
+        return new Blob([b], { type: _zwBodyMimeType(self.headers) || '' });
+      });
     };
     this.arrayBuffer = function () {
-      _zwMarkBodyUsed(self);
-      var bodyError = _zwBodyErrorPromise(self);
-      if (bodyError) return bodyError;
-      if (self._bodyBytes != null) {
-        var cp = new Uint8Array(self._bodyBytes.length);
-        for (var j = 0; j < self._bodyBytes.length; j++) cp[j] = self._bodyBytes[j];
-        return Promise.resolve(cp);
-      }
-      var bytes = _zw_utf8_encode(self._bodyText);
-      var arr = new Uint8Array(bytes.length);
-      for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
-      return Promise.resolve(arr);
+      return _zwConsumeBodyBytes(self).then(function (b) {
+        var cp = new Uint8Array(b.length);
+        for (var j = 0; j < b.length; j++) cp[j] = b[j];
+        return _zwBytesThenableSafe(cp); // 已知限制（R2978 注记保留）：返 Uint8Array（spec ArrayBuffer），既有接口形态
+      });
+    };
+    // net-api M2-S3：bytes()（Body mixin——response-error-from-stream/bad-chunk 族经
+    // response.bytes 消费）。
+    this.bytes = function () {
+      return _zwConsumeBodyBytes(self);
     };
     this.formData = function () {
-      _zwMarkBodyUsed(self);
-      var bodyError = _zwBodyErrorPromise(self);
-      if (bodyError) return bodyError;
-      var contentType = self.headers && typeof self.headers.get === 'function'
-        ? (self.headers.get('content-type') || '')
-        : '';
-      var boundaryMatch = contentType.match(/multipart\/form-data\s*;\s*boundary=([^;]+)/i);
-      if (boundaryMatch) return Promise.resolve(_zwParseFormMultipart(self._bodyText, boundaryMatch[1].replace(/^"|"$/g, '')));
-      return Promise.resolve(_zwParseFormUrlencoded(self._bodyText));
+      return _zwConsumeBodyBytes(self).then(function (b) {
+        var text = new TextDecoder().decode(b);
+        var contentType = _zwBodyMimeType(self.headers) || '';
+        var boundaryMatch = contentType.match(/multipart\/form-data\s*;\s*boundary=([^;]+)/i);
+        if (boundaryMatch) return _zwParseFormMultipart(text, boundaryMatch[1].replace(/^"|"$/g, ''));
+        var essence = contentType.split(';')[0].trim().toLowerCase();
+        // spec formData：essence 非 multipart/urlencoded（含缺 Content-Type）→ TypeError
+        if (essence !== 'application/x-www-form-urlencoded') {
+          throw new TypeError('Body is not form data');
+        }
+        return _zwParseFormUrlencoded(text);
+      });
     };
     this.clone = function () {
       // R3021：二进制 body（_bodyBytes）须克隆保真，否则 clone().arrayBuffer() 退化为文本 UTF-8 编码。
       if (self.type === 'error') return globalThis.Response.error();
+      // net-api M2-S3：unusable（已消费 / body stream disturbed|locked）→ TypeError
+      //（spec clone——「Cannot clone a disturbed response」）。
+      var cloneBs = self._zwBodyStream || self._bs;
+      if (self._bodyUsed || (cloneBs && (cloneBs._disturbed || cloneBs._locked))) {
+        throw new TypeError('Cannot clone a disturbed response');
+      }
+      // net-api M2-S3：流源 clone → tee（双分支同字节 + cancel 隔离）——原响应/克隆各自
+      // 持一分支（read/cancel 反向标记各归其主）。
+      if (self._zwBodyStream) {
+        var teed = _zwTeeStreamEager(self._zwBodyStream);
+        self._zwBodyStream = teed[0];
+        _zwWireStreamToBody(self, teed[0]);
+        var streamCloned = new Response(teed[1], { status: self.status, statusText: self.statusText, headers: self.headers });
+        streamCloned.type = self.type;
+        streamCloned.url = self.url;
+        streamCloned._zwOpaqueStatus = self._zwOpaqueStatus;
+        streamCloned._zwOpaqueStatusText = self._zwOpaqueStatusText;
+        streamCloned._zwOpaqueHeaders = self._zwOpaqueHeaders;
+        streamCloned._zwOpaqueBodyText = self._zwOpaqueBodyText;
+        streamCloned._zwOpaqueBodyBytes = self._zwOpaqueBodyBytes;
+        return streamCloned;
+      }
       var bodyArg = self._bodyBytes != null ? self._bodyBytes : self._bodyText;
       var cloned = new Response(bodyArg, { status: self.status, statusText: self.statusText, headers: self.headers });
       cloned.type = self.type;
@@ -2239,8 +2446,13 @@
     this.headers._guard = mode === 'no-cors' ? 'request-no-cors' : 'request';
     _fillHeaders(this.headers, init.headers != null ? init.headers : (isRequestLike ? input.headers : null));
     this.body = init.body != null ? String(init.body) : (isRequestLike && input.body != null ? String(input.body) : null);
+    this._bodyText = this.body; // net-api M2-S3：consume 字节路径与 Response 对齐（_bodyText 源）
     this._bodyUsed = false;
     this._bodyNull = this.body == null;
+    // net-api M2-S3：BufferSource body → _bodyBytes（spec extract——request 消费面
+    // text/json/bytes/blob/arrayBuffer 按 _bodyBytes 保真，非 String(ArrayBuffer)）。
+    var reqRawBody = init.body != null ? init.body : (isRequestLike && input.body != null ? input.body : null);
+    this._bodyBytes = _zwResponseBodyBytes(reqRawBody);
     this.cache = init.cache || (isRequestLike ? input.cache : '') || 'default';
     this.mode = init.mode || (isRequestLike ? input.mode : '') || 'cors';
     this.redirect = init.redirect || (isRequestLike ? input.redirect : '') || 'follow';
@@ -2263,17 +2475,40 @@
       get: function () { return !!self._bodyUsed; },
       configurable: true
     });
-    this.text = function () { _zwMarkBodyUsed(self); return Promise.resolve(self.body == null ? '' : String(self.body)); };
-    this.json = function () { _zwMarkBodyUsed(self); return Promise.resolve(JSON.parse(self.body == null ? '' : String(self.body))); };
-    this.blob = function () { _zwMarkBodyUsed(self); return Promise.resolve(new Blob([self.body == null ? '' : String(self.body)], { type: _zwBodyMimeType(self.headers) || '' })); };
-    this.arrayBuffer = function () {
-      _zwMarkBodyUsed(self);
-      var bytes = _zw_utf8_encode(self.body == null ? '' : String(self.body));
-      var arr = new Uint8Array(bytes.length);
-      for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
-      return Promise.resolve(arr);
+    // net-api M2-S3：consume 方法统一走 _zwConsumeBodyBytes（对称 Response——unusable
+    // 判定 / _bodyBytes 保真 / 消费后 stream 锁定扰动）。
+    this.text = function () {
+      return _zwConsumeBodyBytes(self).then(function (b) { return new TextDecoder().decode(b); });
     };
-    this.formData = function () { _zwMarkBodyUsed(self); return Promise.resolve(_zwParseFormUrlencoded(self.body)); };
+    this.json = function () {
+      return _zwConsumeBodyBytes(self).then(function (b) { return JSON.parse(new TextDecoder().decode(b)); });
+    };
+    this.blob = function () {
+      return _zwConsumeBodyBytes(self).then(function (b) {
+        return new Blob([b], { type: _zwBodyMimeType(self.headers) || '' });
+      });
+    };
+    this.arrayBuffer = function () {
+      return _zwConsumeBodyBytes(self).then(function (b) {
+        var arr = new Uint8Array(b.length);
+        for (var k = 0; k < b.length; k++) arr[k] = b[k];
+        return _zwBytesThenableSafe(arr); // 已知限制（R2982 注记保留）：返 Uint8Array（spec ArrayBuffer）
+      });
+    };
+    this.bytes = function () { return _zwConsumeBodyBytes(self); };
+    this.formData = function () {
+      return _zwConsumeBodyBytes(self).then(function (b) {
+        var text = new TextDecoder().decode(b);
+        var contentType = _zwBodyMimeType(self.headers) || '';
+        var boundaryMatch = contentType.match(/multipart\/form-data\s*;\s*boundary=([^;]+)/i);
+        if (boundaryMatch) return _zwParseFormMultipart(text, boundaryMatch[1].replace(/^"|"$/g, ''));
+        var essence = contentType.split(';')[0].trim().toLowerCase();
+        if (essence !== 'application/x-www-form-urlencoded') {
+          throw new TypeError('Body is not form data');
+        }
+        return _zwParseFormUrlencoded(text);
+      });
+    };
   };
   globalThis.Request.prototype.clone = function () {
     return new Request(this.url, {
