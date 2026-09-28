@@ -1,0 +1,3292 @@
+[
+  [
+    "streams/queuing-strategies.any.js",
+    [
+      {
+        "name": "streams/queuing-strategies.any.js",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: page script: CountQueuingStrategy is not defined"
+      }
+    ]
+  ],
+  [
+    "streams/piping/abort.any.js",
+    [
+      {
+        "name": "streams/piping/abort.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 21101], state={\"loaded\":true,\"pending\":33,\"phase\":4,\"tests\":33}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/piping/close-propagation-backward.any.js",
+    [
+      {
+        "name": "streams/piping/close-propagation-backward.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 7212], state={\"loaded\":true,\"pending\":16,\"phase\":4,\"tests\":16}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/piping/close-propagation-forward.any.js",
+    [
+      {
+        "name": "Closing must be propagated forward: starts closed; preventClose omitted; fulfilled close promise",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "streams/piping/close-propagation-forward.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 20973], state={\"loaded\":true,\"pending\":29,\"phase\":4,\"tests\":30}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/piping/error-propagation-backward.any.js",
+    [
+      {
+        "name": "streams/piping/error-propagation-backward.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 23330], state={\"loaded\":true,\"pending\":35,\"phase\":4,\"tests\":35}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/piping/error-propagation-forward.any.js",
+    [
+      {
+        "name": "streams/piping/error-propagation-forward.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 21663], state={\"loaded\":true,\"pending\":32,\"phase\":4,\"tests\":32}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/piping/flow-control.any.js",
+    [
+      {
+        "name": "Piping from a non-empty ReadableStream into a WritableStream that does not desire chunks",
+        "status": "Fail",
+        "message": "CountQueuingStrategy is not defined"
+      },
+      {
+        "name": "Piping from a non-empty ReadableStream into a WritableStream that does not desire chunks, but then does",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Piping from an empty ReadableStream into a WritableStream that does not desire chunks, but then the readable stream becomes non-empty and the writable stream starts desiring chunks",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Piping from a ReadableStream to a WritableStream that desires more chunks before finishing with previous ones",
+        "status": "Fail",
+        "message": "CountQueuingStrategy is not defined"
+      },
+      {
+        "name": "Piping to a WritableStream that does not consume the writes fast enough exerts backpressure on the ReadableStream",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/piping/general-addition.any.js",
+    [
+      {
+        "name": "enqueue() must not synchronously call write algorithm",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/piping/general.any.js",
+    [
+      {
+        "name": "Piping must lock both the ReadableStream and WritableStream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Piping finishing must unlock both the ReadableStream and WritableStream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "pipeTo must check the brand of its ReadableStream this value",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'apply')"
+      },
+      {
+        "name": "pipeTo must check the brand of its WritableStream argument",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'apply')"
+      },
+      {
+        "name": "pipeTo must fail if the ReadableStream is locked, and not lock the WritableStream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "pipeTo must fail if the WritableStream is locked, and not lock the ReadableStream",
+        "status": "Fail",
+        "message": "assert_false: the ReadableStream must still be unlocked expected false got true"
+      },
+      {
+        "name": "Piping from a ReadableStream from which lots of chunks are synchronously readable",
+        "status": "Fail",
+        "message": "CountQueuingStrategy is not defined"
+      },
+      {
+        "name": "Piping from a ReadableStream for which a chunk becomes asynchronously readable after the pipeTo",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "streams/piping/general.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 8621], state={\"loaded\":true,\"pending\":6,\"phase\":4,\"tests\":14}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/piping/multiple-propagation.any.js",
+    [
+      {
+        "name": "Piping from an errored readable stream to an erroring writable stream",
+        "status": "Fail",
+        "message": "promise_rejects_exactly: pipeTo must reject with the writable stream's error function \"function() { throw e; }\" threw object \"error1: error1!\" but we expected it to throw object \"error2: error2!\""
+      },
+      {
+        "name": "Piping from an errored readable stream to an errored writable stream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Piping from an errored readable stream to an erroring writable stream; preventAbort = true",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [] length 0, got [\"abort\", object \"error1: error1!\"] length 2"
+      },
+      {
+        "name": "Piping from an errored readable stream to an errored writable stream; preventAbort = true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Piping from an errored readable stream to a closing writable stream",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"abort\", object \"error1: error1!\"] length 2, got [\"close\"] length 1"
+      },
+      {
+        "name": "Piping from an errored readable stream to a closed writable stream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Piping from a closed readable stream to an erroring writable stream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Piping from a closed readable stream to an errored writable stream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Piping from a closed readable stream to a closed writable stream",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/piping/pipe-through.any.js",
+    [
+      {
+        "name": "pipeThrough should not call pipeTo on this",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "pipeThrough should not call pipeTo on the ReadableStream prototype",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "pipeThrough should brand-check this and not allow 'null'",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'bind')"
+      },
+      {
+        "name": "pipeThrough should brand-check readable and not allow 'null'",
+        "status": "Fail",
+        "message": "assert_false: writable should not have been accessed expected false got true"
+      },
+      {
+        "name": "pipeThrough should brand-check this and not allow 'undefined'",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'bind')"
+      },
+      {
+        "name": "pipeThrough should brand-check readable and not allow 'undefined'",
+        "status": "Fail",
+        "message": "assert_false: writable should not have been accessed expected false got true"
+      },
+      {
+        "name": "pipeThrough should brand-check this and not allow '0'",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'bind')"
+      },
+      {
+        "name": "pipeThrough should brand-check readable and not allow '0'",
+        "status": "Fail",
+        "message": "assert_false: writable should not have been accessed expected false got true"
+      },
+      {
+        "name": "pipeThrough should brand-check this and not allow 'NaN'",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'bind')"
+      },
+      {
+        "name": "pipeThrough should brand-check readable and not allow 'NaN'",
+        "status": "Fail",
+        "message": "assert_false: writable should not have been accessed expected false got true"
+      },
+      {
+        "name": "pipeThrough should brand-check this and not allow 'true'",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'bind')"
+      },
+      {
+        "name": "pipeThrough should brand-check readable and not allow 'true'",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should brand-check readable function \"() => rs.pipeThrough({\n        get writable() {\n          writableGetterCalled = true;\n          return new WritableStream();\n        },\n        readable\n      })\" did not throw"
+      },
+      {
+        "name": "pipeThrough should brand-check this and not allow 'ReadableStream'",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'bind')"
+      },
+      {
+        "name": "pipeThrough should brand-check readable and not allow 'ReadableStream'",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should brand-check readable function \"() => rs.pipeThrough({\n        get writable() {\n          writableGetterCalled = true;\n          return new WritableStream();\n        },\n        readable\n      })\" did not throw"
+      },
+      {
+        "name": "pipeThrough should brand-check this and not allow '[object Object]'",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'bind')"
+      },
+      {
+        "name": "pipeThrough should brand-check readable and not allow '[object Object]'",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should brand-check readable function \"() => rs.pipeThrough({\n        get writable() {\n          writableGetterCalled = true;\n          return new WritableStream();\n        },\n        readable\n      })\" did not throw"
+      },
+      {
+        "name": "pipeThrough should brand-check writable and not allow 'null'",
+        "status": "Fail",
+        "message": "assert_true: readable should have been accessed expected true got false"
+      },
+      {
+        "name": "pipeThrough should brand-check writable and not allow 'undefined'",
+        "status": "Fail",
+        "message": "assert_true: readable should have been accessed expected true got false"
+      },
+      {
+        "name": "pipeThrough should brand-check writable and not allow '0'",
+        "status": "Fail",
+        "message": "assert_true: readable should have been accessed expected true got false"
+      },
+      {
+        "name": "pipeThrough should brand-check writable and not allow 'NaN'",
+        "status": "Fail",
+        "message": "assert_true: readable should have been accessed expected true got false"
+      },
+      {
+        "name": "pipeThrough should brand-check writable and not allow 'true'",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should brand-check writable function \"() => rs.pipeThrough({\n      get readable() {\n        readableGetterCalled = true;\n        return new ReadableStream();\n      },\n      writable\n    })\" did not throw"
+      },
+      {
+        "name": "pipeThrough should brand-check writable and not allow 'WritableStream'",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should brand-check writable function \"() => rs.pipeThrough({\n      get readable() {\n        readableGetterCalled = true;\n        return new ReadableStream();\n      },\n      writable\n    })\" did not throw"
+      },
+      {
+        "name": "pipeThrough should brand-check writable and not allow '[object Object]'",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should brand-check writable function \"() => rs.pipeThrough({\n      get readable() {\n        readableGetterCalled = true;\n        return new ReadableStream();\n      },\n      writable\n    })\" did not throw"
+      },
+      {
+        "name": "pipeThrough should rethrow errors from accessing readable or writable",
+        "status": "Fail",
+        "message": "assert_throws_exactly: pipeThrough should rethrow the error thrown by the writable getter function \"() => ReadableStream.prototype.pipeThrough.call(rs, throwingWritable, {})\" threw object \"TypeError: Cannot read properties of undefined (reading 'call')\" but we expected it to throw object \"custom\""
+      },
+      {
+        "name": "invalid values of signal should throw; specifically 'null'",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should throw function \"() => rs.pipeThrough(uninterestingReadableWritablePair(), { signal })\" did not throw"
+      },
+      {
+        "name": "invalid values of signal should throw; specifically '0'",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should throw function \"() => rs.pipeThrough(uninterestingReadableWritablePair(), { signal })\" did not throw"
+      },
+      {
+        "name": "invalid values of signal should throw; specifically 'NaN'",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should throw function \"() => rs.pipeThrough(uninterestingReadableWritablePair(), { signal })\" did not throw"
+      },
+      {
+        "name": "invalid values of signal should throw; specifically 'true'",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should throw function \"() => rs.pipeThrough(uninterestingReadableWritablePair(), { signal })\" did not throw"
+      },
+      {
+        "name": "invalid values of signal should throw; specifically 'AbortSignal'",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should throw function \"() => rs.pipeThrough(uninterestingReadableWritablePair(), { signal })\" did not throw"
+      },
+      {
+        "name": "invalid values of signal should throw; specifically '[object Object]'",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should throw function \"() => rs.pipeThrough(uninterestingReadableWritablePair(), { signal })\" did not throw"
+      },
+      {
+        "name": "pipeThrough should accept a real AbortSignal",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "pipeThrough should throw if this is locked",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should throw function \"() => rs.pipeThrough(uninterestingReadableWritablePair())\" did not throw"
+      },
+      {
+        "name": "pipeThrough should throw if writable is locked",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should throw function \"() => rs.pipeThrough({writable, readable})\" did not throw"
+      },
+      {
+        "name": "pipeThrough should not care if readable is locked",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "pipeThrough() should throw if an option getter grabs a writer",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should throw function \"() => rs.pipeThrough({readable, writable}, {\n    get preventAbort() {\n      writable.getWriter();\n    }\n  })\" did not throw"
+      },
+      {
+        "name": "pipeThrough() should not throw if option is null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "pipeThrough() should not throw if signal is undefined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "pipeThrough() should throw if readable/writable getters throw",
+        "status": "Fail",
+        "message": "assert_equals: expected \"readable threw\" but got \"writable threw\""
+      },
+      {
+        "name": "Piping through a duck-typed pass-through transform stream should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Piping through a transform errored on the writable end does not cause an unhandled promise rejection",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "preventCancel should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "preventClose should work",
+        "status": "Fail",
+        "message": "assert_array_equals: writable should not be closed lengths differ, expected array [] length 0, got [\"close\"] length 1"
+      },
+      {
+        "name": "preventAbort should work",
+        "status": "Fail",
+        "message": "assert_array_equals: writable should not be aborted lengths differ, expected array [] length 0, got [\"abort\", undefined] length 2"
+      }
+    ]
+  ],
+  [
+    "streams/piping/then-interception.any.js",
+    [
+      {
+        "name": "piping should not be observable",
+        "status": "Fail",
+        "message": "assert_array_equals: nothing should have been intercepted lengths differ, expected array [] length 0, got [\"a\"] length 1"
+      },
+      {
+        "name": "tee should not be observable",
+        "status": "Fail",
+        "message": "assert_array_equals: nothing should have been intercepted lengths differ, expected array [] length 0, got [\"a\", 1] length 2"
+      }
+    ]
+  ],
+  [
+    "streams/piping/throwing-options.any.js",
+    [
+      {
+        "name": "pipeThrough should stop after getting preventAbort throws",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should throw function \"() => new ReadableStream().pipeThrough(new TransformStream(), options)\" did not throw"
+      },
+      {
+        "name": "pipeThrough should stop after getting preventCancel throws",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should throw function \"() => new ReadableStream().pipeThrough(new TransformStream(), options)\" did not throw"
+      },
+      {
+        "name": "pipeThrough should stop after getting preventClose throws",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should throw function \"() => new ReadableStream().pipeThrough(new TransformStream(), options)\" did not throw"
+      },
+      {
+        "name": "pipeThrough should stop after getting signal throws",
+        "status": "Fail",
+        "message": "assert_throws_js: pipeThrough should throw function \"() => new ReadableStream().pipeThrough(new TransformStream(), options)\" did not throw"
+      },
+      {
+        "name": "streams/piping/throwing-options.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 1836], state={\"loaded\":true,\"pending\":4,\"phase\":4,\"tests\":8}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/piping/transform-streams.any.js",
+    [
+      {
+        "name": "Piping through an identity transform stream should close the destination when the source closes",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/readable-byte-streams/bad-buffers-and-views.any.js",
+    [
+      {
+        "name": "ReadableStream with byte source: enqueuing an already-detached buffer throws",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source: enqueuing a zero-length buffer throws",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source: enqueuing a zero-length view on a non-zero-length buffer throws",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source: respond() throws if the BYOB request's buffer has been detached (in the readable state)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: respond() throws if the BYOB request's buffer has been detached (in the closed state)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: respondWithNewView() throws if the supplied view's buffer has been detached (in the readable state)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source: respondWithNewView() throws if the supplied view's buffer is zero-length (in the readable state)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source: respondWithNewView() throws if the supplied view is zero-length on a non-zero-length buffer (in the readable state)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: respondWithNewView() throws if the supplied view has a different offset (in the readable state)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: respondWithNewView() throws if the supplied view has a different offset (in the closed state)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: respondWithNewView() throws if the supplied view's buffer has a different length (in the readable state)",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => c.byobRequest.respondWithNewView(view)\" threw object \"TypeError: Cannot read properties of undefined (reading 'respondWithNewView')\" (\"TypeError\") expected instance of function \"function RangeError() { [native code] }\" (\"RangeError\")"
+      },
+      {
+        "name": "ReadableStream with byte source: respondWithNewView() throws if the supplied view's buffer has a different length (autoAllocateChunkSize)",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => c.byobRequest.respondWithNewView(view)\" threw object \"TypeError: Cannot read properties of undefined (reading 'respondWithNewView')\" (\"TypeError\") expected instance of function \"function RangeError() { [native code] }\" (\"RangeError\")"
+      },
+      {
+        "name": "ReadableStream with byte source: respondWithNewView() throws if the supplied view has a larger length (in the readable state)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: respondWithNewView() throws if the supplied view's buffer has been detached (in the closed state)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source: respondWithNewView() throws if the supplied view's buffer is zero-length (in the closed state)",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => c.byobRequest.respondWithNewView(view)\" threw object \"TypeError: Cannot read properties of undefined (reading 'respondWithNewView')\" (\"TypeError\") expected instance of function \"function RangeError() { [native code] }\" (\"RangeError\")"
+      },
+      {
+        "name": "ReadableStream with byte source: respondWithNewView() throws if the supplied view is non-zero-length (in the closed state)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: respondWithNewView() throws if the supplied view's buffer has a different length (in the closed state)",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => c.byobRequest.respondWithNewView(view)\" threw object \"TypeError: Cannot read properties of undefined (reading 'respondWithNewView')\" (\"TypeError\") expected instance of function \"function RangeError() { [native code] }\" (\"RangeError\")"
+      },
+      {
+        "name": "ReadableStream with byte source: enqueue() throws if the BYOB request's buffer has been detached (in the readable state)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: enqueue() throws if the BYOB request's buffer has been detached (in the closed state)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: read()ing from a closed stream still transfers the buffer",
+        "status": "Fail",
+        "message": "assert_true: The value read must be a Uint8Array expected true got false"
+      },
+      {
+        "name": "ReadableStream with byte source: read()ing from a stream with queued chunks still transfers the buffer",
+        "status": "Fail",
+        "message": "assert_equals: the original buffer must be detached expected 0 but got 3"
+      },
+      {
+        "name": "streams/readable-byte-streams/bad-buffers-and-views.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 12966], state={\"loaded\":true,\"pending\":3,\"phase\":4,\"tests\":24}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/readable-byte-streams/construct-byob-request.any.js",
+    [
+      {
+        "name": "streams/readable-byte-streams/construct-byob-request.any.js",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: page script: ReadableByteStreamController is not defined"
+      }
+    ]
+  ],
+  [
+    "streams/readable-byte-streams/enqueue-with-detached-buffer.any.js",
+    [
+      {
+        "name": "enqueue after detaching byobRequest.view.buffer should throw",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      }
+    ]
+  ],
+  [
+    "streams/readable-byte-streams/general.any.js",
+    [
+      {
+        "name": "getReader({mode: \"byob\"}) throws on non-bytes streams",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => new ReadableStream().getReader({ mode: 'byob' })\" did not throw"
+      },
+      {
+        "name": "ReadableStream with byte source can be constructed with no errors",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getReader({mode}) must perform ToString()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source: start() throws an exception",
+        "status": "Fail",
+        "message": "assert_throws_js: start() can throw an exception with type: bytes function \"() => new ReadableStream({ start() { throw new Error(); }, type:'bytes' })\" did not throw"
+      },
+      {
+        "name": "ReadableStream with byte source: desiredSize when closed",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source: desiredSize when errored",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source: pull() function is not callable",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw function \"() => new ReadableStream({\n    pull: 'foo',\n    type: 'bytes'\n  })\" did not throw"
+      },
+      {
+        "name": "ReadableStream with byte source: Throw if close()-ed more than once",
+        "status": "Fail",
+        "message": "assert_throws_js: controller.close() must throw function \"() => controller.close()\" did not throw"
+      },
+      {
+        "name": "ReadableStream with byte source: Throw on enqueue() after close()",
+        "status": "Fail",
+        "message": "assert_throws_js: controller.close() must throw function \"() => controller.enqueue(view)\" did not throw"
+      },
+      {
+        "name": "ReadableStream with byte source: autoAllocateChunkSize cannot be 0",
+        "status": "Fail",
+        "message": "assert_throws_js: controller cannot be setup with autoAllocateChunkSize = 0 function \"() => new ReadableStream({ autoAllocateChunkSize: 0, type: 'bytes' })\" did not throw"
+      },
+      {
+        "name": "ReadableStreamBYOBReader can be constructed directly",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStreamBYOBReader constructor requires a ReadableStream argument",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor must throw function \"() => new ReadableStreamBYOBReader({})\" did not throw"
+      },
+      {
+        "name": "ReadableStreamBYOBReader constructor requires an unlocked ReadableStream",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor must throw function \"() => new ReadableStreamBYOBReader(stream)\" did not throw"
+      },
+      {
+        "name": "ReadableStreamBYOBReader constructor requires a ReadableStream with type \"bytes\"",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor must throw function \"() => new ReadableStreamBYOBReader(stream)\" did not throw"
+      },
+      {
+        "name": "ReadableStream constructor should not accept a strategy with a size defined if type is \"bytes\"",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw for size function function \"() => new ReadableStream({ type: 'bytes' }, {\n    size() {\n      return 1;\n    }\n  })\" did not throw"
+      },
+      {
+        "name": "streams/readable-byte-streams/general.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 107125], state={\"loaded\":true,\"pending\":86,\"phase\":4,\"tests\":101}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/readable-byte-streams/non-transferable-buffers.any.js",
+    [
+      {
+        "name": "ReadableStream with byte source: enqueue() with a non-transferable buffer",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => controller.enqueue(view)\" did not throw"
+      },
+      {
+        "name": "ReadableStream with byte source: read() with a non-transferable buffer",
+        "status": "Fail",
+        "message": "assert_unreached: pull() should not be called Reached unreachable code"
+      },
+      {
+        "name": "ReadableStream with byte source: fill() with a non-transferable buffer",
+        "status": "Fail",
+        "message": "assert_unreached: pull() should not be called Reached unreachable code"
+      },
+      {
+        "name": "ReadableStream with byte source: respondWithNewView() with a non-transferable buffer",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/readable-byte-streams/patched-global.any.js",
+    [
+      {
+        "name": "Patched then() sees byobRequest after filling all pending pull-into descriptors",
+        "status": "Fail",
+        "message": "assert_equals: byobRequest should be null after filling both views expected (object) null but got (undefined) undefined"
+      }
+    ]
+  ],
+  [
+    "streams/readable-byte-streams/read-min.any.js",
+    [
+      {
+        "name": "ReadableStream with byte source: read({ min }) rejects if min is 0",
+        "status": "Fail",
+        "message": "assert_unreached: pull() should not be called Reached unreachable code"
+      },
+      {
+        "name": "ReadableStream with byte source: read({ min }) rejects if min is negative",
+        "status": "Fail",
+        "message": "assert_unreached: pull() should not be called Reached unreachable code"
+      },
+      {
+        "name": "ReadableStream with byte source: read({ min }) rejects if min is larger than view's length (Uint8Array)",
+        "status": "Fail",
+        "message": "assert_unreached: pull() should not be called Reached unreachable code"
+      },
+      {
+        "name": "ReadableStream with byte source: read({ min }) rejects if min is larger than view's length (Uint16Array)",
+        "status": "Fail",
+        "message": "assert_unreached: pull() should not be called Reached unreachable code"
+      },
+      {
+        "name": "ReadableStream with byte source: read({ min }) rejects if min is larger than view's length (DataView)",
+        "status": "Fail",
+        "message": "assert_unreached: pull() should not be called Reached unreachable code"
+      },
+      {
+        "name": "ReadableStream with byte source: read({ min }), then read()",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: read({ min }) with a DataView",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: enqueue(), then read({ min })",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: read({ min: 3 }) on a 3-byte Uint8Array, then multiple enqueue() up to 3 bytes",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: read({ min: 3 }) on a 5-byte Uint8Array, then multiple enqueue() up to 3 bytes",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: read({ min: 3 }) on a 5-byte Uint8Array, then multiple enqueue() up to 4 bytes",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'view')"
+      },
+      {
+        "name": "ReadableStream with byte source: enqueue(), read({ min }) partially, then read()",
+        "status": "Fail",
+        "message": "assert_unreached: pull() should not be called Reached unreachable code"
+      },
+      {
+        "name": "streams/readable-byte-streams/read-min.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 36749], state={\"loaded\":true,\"pending\":12,\"phase\":4,\"tests\":24}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/readable-byte-streams/respond-after-enqueue.any.js",
+    [
+      {
+        "name": "byobRequest.respond() after enqueue() should not crash",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "byobRequest.respond() with cached byobRequest after enqueue() should not crash",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "byobRequest.respond() after enqueue() with double read should not crash",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of undefined (reading 'respond')\""
+      }
+    ]
+  ],
+  [
+    "streams/readable-byte-streams/tee.any.js",
+    [
+      {
+        "name": "ReadableStream teeing with byte source: rs.tee() returns an array of two ReadableStreams",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSTeeCancel with ReadableStream teeing with byte source",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream teeing with byte source: should be able to read one branch to the end without affecting the other",
+        "status": "Fail",
+        "message": "assert_equals: value type is object expected \"object\" but got \"undefined\""
+      },
+      {
+        "name": "ReadableStream teeing with byte source: chunks should be cloned for each branch",
+        "status": "Fail",
+        "message": "assert_not_equals: chunks should have different buffers got disallowed value object \"[object ArrayBuffer]\""
+      },
+      {
+        "name": "ReadableStream teeing with byte source: chunks for BYOB requests from branch 1 should be cloned to branch 2",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of undefined (reading 'view')\""
+      },
+      {
+        "name": "ReadableStream teeing with byte source: errors in the source should propagate to both branches",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "ReadableStream teeing with byte source: canceling branch1 should not impact branch2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream teeing with byte source: canceling branch2 should not impact branch1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "streams/readable-byte-streams/tee.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 67952], state={\"loaded\":true,\"pending\":32,\"phase\":4,\"tests\":40}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/readable-byte-streams/templated.any.js",
+    [
+      {
+        "name": "Running templatedRSEmpty with ReadableStream with byte source (empty)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source (empty): instances have the correct methods and properties",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source (empty): calling getReader with invalid arguments should throw appropriate errors",
+        "status": "Fail",
+        "message": "assert_throws_js: empty string mode should throw function \"() => rs.getReader({ mode: '' })\" did not throw"
+      },
+      {
+        "name": "Running templatedRSEmptyReader with ReadableStream with byte source (empty) default reader",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source (empty) default reader: instances have the correct methods and properties",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source (empty) default reader: locked should be true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source (empty) default reader: read() should return distinct promises each time",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source (empty) default reader: getReader() again on the stream should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source (empty) default reader: releasing the lock should cause locked to become false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSEmptyReader with ReadableStream with byte source (empty) BYOB reader",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source (empty) BYOB reader: instances have the correct methods and properties",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source (empty) BYOB reader: locked should be true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source (empty) BYOB reader: read() should return distinct promises each time",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source (empty) BYOB reader: getReader() again on the stream should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source (empty) BYOB reader: releasing the lock should cause locked to become false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSThrowAfterCloseOrError with ReadableStream with byte source",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source (empty) default reader: read() should never settle",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream with byte source (empty) default reader: two read()s should both never settle",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "streams/readable-byte-streams/templated.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 26489], state={\"loaded\":true,\"pending\":16,\"phase\":4,\"tests\":34}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/async-iterator.any.js",
+    [
+      {
+        "name": "Async iterator instances should have the correct list of properties",
+        "status": "Fail",
+        "message": "s.values is not a function"
+      },
+      {
+        "name": "values() throws if there's already a lock",
+        "status": "Fail",
+        "message": "s.values is not a function"
+      },
+      {
+        "name": "return() should unlock the stream synchronously when preventCancel = false",
+        "status": "Fail",
+        "message": "rs.values is not a function"
+      },
+      {
+        "name": "return() should unlock the stream synchronously when preventCancel = true",
+        "status": "Fail",
+        "message": "rs.values is not a function"
+      },
+      {
+        "name": "Async-iterating a push source",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Async-iterating a pull source",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Async-iterating a push source with undefined values",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Async-iterating a pull source with undefined values",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Async-iterating a pull source manually",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: CountQueuingStrategy is not defined\""
+      },
+      {
+        "name": "Async-iterating an errored stream throws",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Async-iterating a closed stream never executes the loop body, but works fine",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Async-iterating an empty but not closed/errored stream never executes the loop body and stalls the async function",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Async-iterating a partially consumed stream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cancellation behavior when throwing inside loop body; preventCancel = false",
+        "status": "Fail",
+        "message": "assert_array_equals: cancel() should be called lengths differ, expected array [\"pull\", \"cancel\", undefined] length 3, got [] length 0"
+      },
+      {
+        "name": "Cancellation behavior when throwing inside loop body; preventCancel = true",
+        "status": "Fail",
+        "message": "assert_array_equals: cancel() should not be called lengths differ, expected array [\"pull\"] length 1, got [] length 0"
+      },
+      {
+        "name": "Cancellation behavior when breaking inside loop body; preventCancel = false",
+        "status": "Fail",
+        "message": "assert_array_equals: cancel() should be called lengths differ, expected array [\"pull\", \"cancel\", undefined] length 3, got [] length 0"
+      },
+      {
+        "name": "Cancellation behavior when breaking inside loop body; preventCancel = true",
+        "status": "Fail",
+        "message": "assert_array_equals: cancel() should not be called lengths differ, expected array [\"pull\"] length 1, got [] length 0"
+      },
+      {
+        "name": "Cancellation behavior when returning inside loop body; preventCancel = false",
+        "status": "Fail",
+        "message": "assert_array_equals: cancel() should be called lengths differ, expected array [\"pull\", \"cancel\", undefined] length 3, got [] length 0"
+      },
+      {
+        "name": "Cancellation behavior when returning inside loop body; preventCancel = true",
+        "status": "Fail",
+        "message": "assert_array_equals: cancel() should not be called lengths differ, expected array [\"pull\"] length 1, got [] length 0"
+      },
+      {
+        "name": "Cancellation behavior when manually calling return(); preventCancel = false",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: s.values is not a function\""
+      },
+      {
+        "name": "Cancellation behavior when manually calling return(); preventCancel = true",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: s.values is not a function\""
+      },
+      {
+        "name": "next() rejects if the stream errors",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "return() does not rejects if the stream has not errored yet",
+        "status": "Fail",
+        "message": "assert_equals: value expected (string) \"return value\" but got (undefined) undefined"
+      },
+      {
+        "name": "return() rejects if the stream has errored",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "next() that succeeds; next() that reports an error; next()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: error1\""
+      },
+      {
+        "name": "next() that succeeds; next() that reports an error(); next() [no awaiting]",
+        "status": "Fail",
+        "message": "assert_equals: 3rd next() promise status expected \"fulfilled\" but got \"rejected\""
+      },
+      {
+        "name": "next() that succeeds; next() that reports an error(); return()",
+        "status": "Fail",
+        "message": "assert_equals: return() value expected (string) \"return value\" but got (undefined) undefined"
+      },
+      {
+        "name": "next() that succeeds; next() that reports an error(); return() [no awaiting]",
+        "status": "Fail",
+        "message": "assert_equals: return() value expected (string) \"return value\" but got (undefined) undefined"
+      },
+      {
+        "name": "next() that succeeds; return()",
+        "status": "Fail",
+        "message": "assert_equals: return() value expected (string) \"return value\" but got (undefined) undefined"
+      },
+      {
+        "name": "next() that succeeds; return() [no awaiting]",
+        "status": "Fail",
+        "message": "assert_equals: return() value expected (string) \"return value\" but got (undefined) undefined"
+      },
+      {
+        "name": "return(); next()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: rs.values is not a function\""
+      },
+      {
+        "name": "return(); next() [no awaiting]",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: rs.values is not a function\""
+      },
+      {
+        "name": "return(); next() with delayed cancel()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: rs.values is not a function\""
+      },
+      {
+        "name": "return(); next() with delayed cancel() [no awaiting]",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: rs.values is not a function\""
+      },
+      {
+        "name": "return(); return()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: rs.values is not a function\""
+      },
+      {
+        "name": "return(); return() [no awaiting]",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: rs.values is not a function\""
+      },
+      {
+        "name": "Acquiring a reader after exhaustively async-iterating a stream",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot get a Reader: ReadableStream is locked\""
+      },
+      {
+        "name": "Acquiring a reader after return()ing from a stream that errors",
+        "status": "Fail",
+        "message": "assert_equals: return() value expected (string) \"return value\" but got (undefined) undefined"
+      },
+      {
+        "name": "Acquiring a reader after partially async-iterating a stream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Acquiring a reader and reading the remaining chunks after partially async-iterating a stream with preventCancel = true",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: s.values(...) is not a function or its return value is not async iterable\""
+      },
+      {
+        "name": "close() while next() is pending",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/bad-strategies.any.js",
+    [
+      {
+        "name": "Readable stream: throwing strategy.size getter",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Readable stream: throwing strategy.highWaterMark getter",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Readable stream: invalid strategy.highWaterMark",
+        "status": "Fail",
+        "message": "assert_throws_js: construction should throw a RangeError for -1 function \"() => {\n      new ReadableStream({}, {\n        size() {\n          return 1;\n        },\n        highWaterMark\n      });\n    }\" did not throw"
+      },
+      {
+        "name": "Readable stream: strategy.size errors the stream and then throws",
+        "status": "Fail",
+        "message": "assert_throws_exactly: enqueue should re-throw the error function \"() => controller.enqueue('a')\" did not throw"
+      },
+      {
+        "name": "Readable stream: strategy.size errors the stream and then returns Infinity",
+        "status": "Fail",
+        "message": "assert_throws_js: enqueue should throw a RangeError function \"() => controller.enqueue('a')\" did not throw"
+      },
+      {
+        "name": "Readable stream: throwing strategy.size method",
+        "status": "Fail",
+        "message": "assert_equals: closed should reject with the error expected object \"Error: a unique string\" but got object \"Error: assert_throws_exactly: enqueue should throw the error function \"() => c.enqueue('a')\" did not throw\""
+      },
+      {
+        "name": "Readable stream: invalid strategy.size return value",
+        "status": "Fail",
+        "message": "assert_equals: closed should reject with the error for NaN expected (undefined) undefined but got (object) object \"Error: assert_equals: enqueue should throw a RangeError for NaN expected \"RangeError\" but got \"Error\"\""
+      },
+      {
+        "name": "streams/readable-streams/bad-strategies.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 4645], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":8}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/bad-underlying-sources.any.js",
+    [
+      {
+        "name": "Underlying source start: throwing getter",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Underlying source start: throwing method",
+        "status": "Fail",
+        "message": "assert_throws_exactly: constructing the stream should re-throw the error function \"() => {\n    new ReadableStream({\n      start() {\n        throw theError;\n      }\n    });\n  }\" did not throw"
+      },
+      {
+        "name": "Underlying source: throwing pull getter (initial pull)",
+        "status": "Fail",
+        "message": "assert_throws_exactly: constructor should throw function \"() => new ReadableStream({\n    get pull() {\n      throw theError;\n    }\n  })\" did not throw"
+      },
+      {
+        "name": "Underlying source cancel: throwing getter",
+        "status": "Fail",
+        "message": "assert_throws_exactly: constructor should throw function \"() => new ReadableStream({\n    get cancel() {\n      throw theError;\n    }\n  })\" did not throw"
+      },
+      {
+        "name": "streams/readable-streams/bad-underlying-sources.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 9643], state={\"loaded\":true,\"pending\":18,\"phase\":4,\"tests\":22}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/cancel.any.js",
+    [
+      {
+        "name": "ReadableStream cancellation: cancel(reason) should pass through the given reason to the underlying source",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "streams/readable-streams/cancel.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 14663], state={\"loaded\":true,\"pending\":10,\"phase\":4,\"tests\":11}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/constructor.any.js",
+    [
+      {
+        "name": "underlyingSource argument should be converted after queuingStrategy argument",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/count-queuing-strategy-integration.any.js",
+    [
+      {
+        "name": "Can construct a readable stream with a valid CountQueuingStrategy",
+        "status": "Fail",
+        "message": "CountQueuingStrategy is not defined"
+      },
+      {
+        "name": "Correctly governs a ReadableStreamController's desiredSize property (HWM = 0)",
+        "status": "Fail",
+        "message": "CountQueuingStrategy is not defined"
+      },
+      {
+        "name": "Correctly governs a ReadableStreamController's desiredSize property (HWM = 1)",
+        "status": "Fail",
+        "message": "CountQueuingStrategy is not defined"
+      },
+      {
+        "name": "Correctly governs a ReadableStreamController's desiredSize property (HWM = 4)",
+        "status": "Fail",
+        "message": "CountQueuingStrategy is not defined"
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/default-reader.any.js",
+    [
+      {
+        "name": "ReadableStreamDefaultReader constructor should get a ReadableStream object as argument",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => new ReadableStreamDefaultReader('potato')\" threw object \"ReferenceError: ReadableStreamDefaultReader is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "ReadableStreamDefaultReader closed should always return the same promise object",
+        "status": "Fail",
+        "message": "ReadableStreamDefaultReader is not defined"
+      },
+      {
+        "name": "Constructing a ReadableStreamDefaultReader directly should fail if the stream is already locked (via direct construction)",
+        "status": "Fail",
+        "message": "ReadableStreamDefaultReader is not defined"
+      },
+      {
+        "name": "Getting a ReadableStreamDefaultReader via getReader should fail if the stream is already locked (via direct construction)",
+        "status": "Fail",
+        "message": "ReadableStreamDefaultReader is not defined"
+      },
+      {
+        "name": "Constructing a ReadableStreamDefaultReader directly should fail if the stream is already locked (via getReader)",
+        "status": "Fail",
+        "message": "assert_throws_js: constructing directly should fail function \"() => new ReadableStreamDefaultReader(rs)\" threw object \"ReferenceError: ReadableStreamDefaultReader is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "Getting a ReadableStreamDefaultReader via getReader should fail if the stream is already locked (via getReader)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing a ReadableStreamDefaultReader directly should be OK if the stream is closed",
+        "status": "Fail",
+        "message": "ReadableStreamDefaultReader is not defined"
+      },
+      {
+        "name": "Constructing a ReadableStreamDefaultReader directly should be OK if the stream is errored",
+        "status": "Fail",
+        "message": "ReadableStreamDefaultReader is not defined"
+      },
+      {
+        "name": "getReader() should call ToString() on mode",
+        "status": "Fail",
+        "message": "assert_throws_js: getReader() should throw function \"() => rs.getReader({ mode })\" did not throw"
+      },
+      {
+        "name": "Reading from a reader for an empty stream will wait until a chunk is available",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "cancel() on a reader does not release the reader",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot cancel: ReadableStream is locked\""
+      },
+      {
+        "name": "streams/readable-streams/default-reader.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 19274], state={\"loaded\":true,\"pending\":18,\"phase\":4,\"tests\":29}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/floating-point-total-queue-size.any.js",
+    [
+      {
+        "name": "Floating point arithmetic must manifest near NUMBER.MAX_SAFE_INTEGER (total ends up positive)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Floating point arithmetic must manifest near 0 (total ends up positive, but clamped)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Floating point arithmetic must manifest near 0 (total ends up positive, and not clamped)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Floating point arithmetic must manifest near 0 (total ends up zero)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/from.any.js",
+    [
+      {
+        "name": "ReadableStream.from throws on invalid iterables; specifically null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream.from throws on invalid iterables; specifically undefined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream.from throws on invalid iterables; specifically 0",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream.from throws on invalid iterables; specifically NaN",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream.from throws on invalid iterables; specifically true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream.from throws on invalid iterables; specifically {}",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream.from throws on invalid iterables; specifically Object.create(null)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream.from throws on invalid iterables; specifically a function",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream.from throws on invalid iterables; specifically a symbol",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream.from throws on invalid iterables; specifically a string",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream.from throws on invalid iterables; specifically an object with a non-callable @@iterator method",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream.from throws on invalid iterables; specifically an object with a non-callable @@asyncIterator method",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream.from throws on invalid iterables; specifically an object with an @@iterator method returning a non-object",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream.from throws on invalid iterables; specifically an object with an @@asyncIterator method returning a non-object",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream.from re-throws errors from calling the @@iterator method",
+        "status": "Fail",
+        "message": "assert_throws_exactly: from() should re-throw the error function \"() => ReadableStream.from(iterable)\" threw object \"TypeError: ReadableStream.from is not a function\" but we expected it to throw object \"Error: a unique string\""
+      },
+      {
+        "name": "ReadableStream.from re-throws errors from calling the @@asyncIterator method",
+        "status": "Fail",
+        "message": "assert_throws_exactly: from() should re-throw the error function \"() => ReadableStream.from(iterable)\" threw object \"TypeError: ReadableStream.from is not a function\" but we expected it to throw object \"Error: a unique string\""
+      },
+      {
+        "name": "ReadableStream.from ignores @@iterator if @@asyncIterator exists",
+        "status": "Fail",
+        "message": "assert_throws_exactly: from() should re-throw the error function \"() => ReadableStream.from(iterable)\" threw object \"TypeError: ReadableStream.from is not a function\" but we expected it to throw object \"Error: a unique string\""
+      },
+      {
+        "name": "ReadableStream.from ignores a null @@asyncIterator",
+        "status": "Fail",
+        "message": "assert_throws_exactly: from() should re-throw the error function \"() => ReadableStream.from(iterable)\" threw object \"TypeError: ReadableStream.from is not a function\" but we expected it to throw object \"Error: a unique string\""
+      },
+      {
+        "name": "ReadableStream.from accepts an array of values",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from accepts an array of promises",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from accepts an array iterator",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from accepts a Set",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from accepts a Set iterator",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from accepts a sync generator",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from accepts an async generator",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from accepts a sync iterable of values",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from accepts a sync iterable of promises",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from accepts a sync iterable with a function iterator",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from accepts an async iterable",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from accepts an async iterable with a function iterator",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from accepts a ReadableStream",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from accepts a ReadableStream async iterator",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from accepts an empty iterable",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: stream errors when next() rejects",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: stream errors when next() throws synchronously",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: stream errors when next() returns a non-object",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: stream errors when next() fulfills with a non-object",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: stream stalls when next() never settles",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: calls next() after first read()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: cancelling the returned stream calls and awaits return()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: return() is not called when iterator completes normally",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: cancel() resolves when return() method is missing",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: cancel() rejects when return() is not a method",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: cancel() rejects when return() rejects",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: cancel() rejects when return() throws synchronously",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: cancel() rejects when return() fulfills with a non-object",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: reader.read() inside next()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: reader.cancel() inside next()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from: reader.cancel() inside return()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      },
+      {
+        "name": "ReadableStream.from(array), push() to array while reading",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ReadableStream.from is not a function\""
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/garbage-collection.any.js",
+    [
+      {
+        "name": "ReadableStreamController methods should continue working properly when scripts lose their reference to the readable stream",
+        "status": "Fail",
+        "message": "assert_throws_js: close should throw a TypeError the second time function \"() => controller.close()\" did not throw"
+      },
+      {
+        "name": "streams/readable-streams/garbage-collection.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 5653], state={\"loaded\":true,\"pending\":4,\"phase\":4,\"tests\":5}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/general.any.js",
+    [
+      {
+        "name": "ReadableStream can be constructed with no errors",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream can't be constructed with garbage",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw when the source is null function \"() => new ReadableStream(null)\" did not throw"
+      },
+      {
+        "name": "ReadableStream can't be constructed with an invalid type",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw when the type is null function \"() => new ReadableStream({ type: null })\" did not throw"
+      },
+      {
+        "name": "ReadableStream constructor should throw for non-function start arguments",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw when start is not a function function \"() => {\n    new ReadableStream({ start: 'potato' });\n  }\" did not throw"
+      },
+      {
+        "name": "ReadableStream constructor will not tolerate initial garbage as cancel argument",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw function \"() => new ReadableStream({ cancel: '2' })\" did not throw"
+      },
+      {
+        "name": "ReadableStream constructor will not tolerate initial garbage as pull argument",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw function \"() => new ReadableStream({ pull: { } })\" did not throw"
+      },
+      {
+        "name": "ReadableStream start should be called with the proper thisArg",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream start controller parameter should be extensible",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "default ReadableStream getReader() should only accept mode:undefined",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => (new ReadableStream()).getReader({ mode: 'potato' })\" did not throw"
+      },
+      {
+        "name": "ReadableStream: enqueue should throw when the stream is readable but draining",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "ReadableStream: enqueue should throw when the stream is closed",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "ReadableStream: desiredSize when closed",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream: desiredSize when errored",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Subclassing ReadableStream should work",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'get')"
+      },
+      {
+        "name": "ReadableStream strategies: the default strategy should give desiredSize of 1 to start, decreasing by 1 per enqueue",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream should be able to call start method within prototype chain of its source",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream start should be able to return a promise",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "streams/readable-streams/general.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 30933], state={\"loaded\":true,\"pending\":21,\"phase\":4,\"tests\":38}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/owning-type-message-port.tentative.any.js",
+    [
+      {
+        "name": "Transferred MessageChannel works as expected",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value object \"[object Object]\""
+      },
+      {
+        "name": "Second branch of owning ReadableStream tee should end up into errors with transfer only values",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/owning-type-video-frame.tentative.any.js",
+    [
+      {
+        "name": "ReadableStream of type owning should close serialized chunks",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: VideoFrame is not defined\""
+      },
+      {
+        "name": "ReadableStream of type owning should transfer JS chunks with transferred values",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: VideoFrame is not defined\""
+      },
+      {
+        "name": "ReadableStream of type owning should error when trying to enqueue not serializable values",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: VideoFrame is not defined\""
+      },
+      {
+        "name": "ReadableStream of type owning should clone serializable objects when teeing",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: VideoFrame is not defined\""
+      },
+      {
+        "name": "ReadableStream of type owning should clone JS Objects with serializables when teeing",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: VideoFrame is not defined\""
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/owning-type.tentative.any.js",
+    [
+      {
+        "name": "ReadableStream can be constructed with owning type",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream of type owning should call start with a ReadableStreamDefaultController",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "ReadableStream should be able to call enqueue with an empty transfer list",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream should check transfer parameter",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream of type owning should transfer enqueued chunks",
+        "status": "Fail",
+        "message": "assert_equals: expected 0 but got 8"
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/patched-global.any.js",
+    [
+      {
+        "name": "streams/readable-streams/patched-global.any.js",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: page script: Cannot read properties of undefined (reading 'get')"
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/reentrant-strategies.any.js",
+    [
+      {
+        "name": "enqueue() inside size() should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "close() inside size() should not crash",
+        "status": "Fail",
+        "message": "assert_array_equals: array should contain no chunks lengths differ, expected array [] length 0, got [\"a\"] length 1"
+      },
+      {
+        "name": "close request inside size() should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "error() inside size() should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "desiredSize inside size() should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "cancel() inside size() should work",
+        "status": "Fail",
+        "message": "assert_throws_js: enqueue() should throw function \"() => controller.enqueue()\" did not throw"
+      },
+      {
+        "name": "pipeTo() inside size() should behave as expected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "read() inside of size() should behave as expected",
+        "status": "Fail",
+        "message": "assert_false: expected false got true"
+      },
+      {
+        "name": "getReader() inside size() should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "tee() inside size() should work",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/tee.any.js",
+    [
+      {
+        "name": "ReadableStream teeing: rs.tee() returns an array of two ReadableStreams",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSTeeCancel with ReadableStream teeing",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStreamTee should not use a modified ReadableStream constructor from the global object",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'call')"
+      },
+      {
+        "name": "streams/readable-streams/tee.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 47542], state={\"loaded\":true,\"pending\":23,\"phase\":4,\"tests\":26}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/readable-streams/templated.any.js",
+    [
+      {
+        "name": "Running templatedRSEmpty with ReadableStream (empty)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (empty): instances have the correct methods and properties",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (empty): calling getReader with invalid arguments should throw appropriate errors",
+        "status": "Fail",
+        "message": "assert_throws_js: empty string mode should throw function \"() => rs.getReader({ mode: '' })\" did not throw"
+      },
+      {
+        "name": "Running templatedRSEmptyReader with ReadableStream (empty) reader",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (empty) reader: instances have the correct methods and properties",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (empty) reader: locked should be true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (empty) reader: read() should return distinct promises each time",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (empty) reader: getReader() again on the stream should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (empty) reader: releasing the lock should cause locked to become false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSClosed with ReadableStream (closed via call in start)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (closed via call in start): locked should be false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (closed via call in start): getReader() should be OK",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (closed via call in start): should be able to acquire multiple readers if they are released in succession",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (closed via call in start): should not be able to acquire a second reader if we don't release the first one",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSClosedReader with ReadableStream reader (closed before getting reader)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSClosedReader with ReadableStream reader (closed after getting reader)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSClosed with ReadableStream (closed via cancel)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (closed via cancel): locked should be false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (closed via cancel): getReader() should be OK",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (closed via cancel): should be able to acquire multiple readers if they are released in succession",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (closed via cancel): should not be able to acquire a second reader if we don't release the first one",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSClosedReader with ReadableStream reader (closed via cancel after getting reader)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSErrored with ReadableStream (errored via call in start)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (errored via call in start): locked should be false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSErroredSyncOnly with ReadableStream (errored via call in start)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (errored via call in start): should not be able to obtain additional readers if we don't release the first lock",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSErrored with ReadableStream (errored via returning a rejected promise in start)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (errored via returning a rejected promise in start): locked should be false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSErroredReader with ReadableStream (errored via returning a rejected promise in start) reader",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSErroredReader with ReadableStream reader (errored before getting reader)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSErroredReader with ReadableStream reader (errored after getting reader)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSTwoChunksOpenReader with ReadableStream (two chunks enqueued, still open) reader",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (two chunks enqueued, still open) reader: read() should return distinct promises each time",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSTwoChunksClosedReader with ReadableStream (two chunks enqueued, then closed) reader",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Running templatedRSThrowAfterCloseOrError with ReadableStream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (empty) reader: read() should never settle",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ReadableStream (empty) reader: two read()s should both never settle",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "streams/readable-streams/templated.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 29434], state={\"loaded\":true,\"pending\":54,\"phase\":4,\"tests\":91}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/transform-streams/backpressure.any.js",
+    [
+      {
+        "name": "backpressure allows no transforms with a default identity transform and no reader",
+        "status": "Fail",
+        "message": "assert_array_equals: transform should not be called lengths differ, expected array [] length 0, got [\"transform\", \"a\"] length 2"
+      },
+      {
+        "name": "backpressure only allows one transform() with a identity transform with a readable HWM of 1 and no reader",
+        "status": "Fail",
+        "message": "assert_array_equals: transform should be called once lengths differ, expected array [\"transform\", \"a\"] length 2, got [\"transform\", \"a\", \"transform\", \"b\"] length 4"
+      },
+      {
+        "name": "transform() should keep being called as long as there is no backpressure",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "writes should resolve as soon as transform completes",
+        "status": "Fail",
+        "message": "assert_array_equals: the first write should have resolved lengths differ, expected array [\"a\"] length 1, got [\"a\", \"b\", \"closed\"] length 3"
+      },
+      {
+        "name": "calling pull() before the first write() with backpressure should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "transform() should be able to read the chunk it just enqueued",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blocking transform() should cause backpressure",
+        "status": "Fail",
+        "message": "CountQueuingStrategy is not defined"
+      },
+      {
+        "name": "streams/transform-streams/backpressure.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 11877], state={\"loaded\":true,\"pending\":7,\"phase\":4,\"tests\":14}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/transform-streams/cancel.any.js",
+    [
+      {
+        "name": "cancelling the readable side should call transformer.cancel()",
+        "status": "Fail",
+        "message": "assert_equals: transformer.cancel() should be called with the passed reason expected (object) object \"error1: bad things are happening!\" but got (undefined) undefined"
+      },
+      {
+        "name": "cancelling the readable side should reject if transformer.cancel() throws",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: readable.cancel() should reject with thrownError Reached unreachable code"
+      },
+      {
+        "name": "aborting the writable side should call transformer.abort()",
+        "status": "Fail",
+        "message": "assert_equals: transformer.abort() should be called with the passed reason expected (object) object \"error1: bad things are happening!\" but got (undefined) undefined"
+      },
+      {
+        "name": "aborting the writable side should reject if transformer.cancel() throws",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: writable.abort() should reject with thrownError Reached unreachable code"
+      },
+      {
+        "name": "closing the writable side should reject if a parallel transformer.cancel() throws",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ts.writable.close is not a function\""
+      },
+      {
+        "name": "readable.cancel() and a parallel writable.close() should reject if a transformer.cancel() calls controller.error()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ts.writable.close is not a function\""
+      },
+      {
+        "name": "writable.abort() and readable.cancel() should reject if a transformer.cancel() calls controller.error()",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: cancelPromise should reject with thrownError Reached unreachable code"
+      },
+      {
+        "name": "readable.cancel() should not call cancel() when flush() is already called from writable.close()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ts.writable.close is not a function\""
+      },
+      {
+        "name": "readable.cancel() should not call cancel() again when already called from writable.abort()",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 0"
+      },
+      {
+        "name": "writable.close() should not call flush() when cancel() is already called from readable.cancel()",
+        "status": "Fail",
+        "message": "assert_true: cancel() was called expected true got false"
+      },
+      {
+        "name": "writable.abort() should not call cancel() again when already called from readable.cancel()",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "streams/transform-streams/errors.any.js",
+    [
+      {
+        "name": "errored TransformStream should not enqueue new chunks",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TransformStream constructor should throw when start does",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw function \"() => new TransformStream({\n    start() { throw new URIError('start thrown error'); },\n    transform() {}\n  })\" did not throw"
+      },
+      {
+        "name": "when strategy.size throws inside start(), the constructor should throw the same error",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw the same error strategy.size throws function \"() => new TransformStream({\n    start(c) {\n      c.enqueue('a');\n    },\n    transform() {}\n  }, undefined, strategy)\" did not throw"
+      },
+      {
+        "name": "when strategy.size calls controller.error() then throws, the constructor should throw the first error",
+        "status": "Fail",
+        "message": "assert_throws_js: the first error should be thrown function \"() => new TransformStream({\n    start(c) {\n      controller = c;\n      c.enqueue('a');\n    },\n    transform() {}\n  }, undefined, strategy)\" did not throw"
+      },
+      {
+        "name": "streams/transform-streams/errors.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 15013], state={\"loaded\":true,\"pending\":17,\"phase\":4,\"tests\":21}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/transform-streams/flush.any.js",
+    [
+      {
+        "name": "TransformStream flush is called immediately when the writable is closed, if no writes are queued",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TransformStream flush is called after all queued writes finish, once the writable is closed",
+        "status": "Fail",
+        "message": "assert_false: closing the writable does not immediately call flush if writes are not finished expected false got true"
+      },
+      {
+        "name": "TransformStream flush gets a chance to enqueue more into the readable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TransformStream flush gets a chance to enqueue more into the readable, and can then async close",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "error() during flush should cause writer.close() to reject",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: close() should reject Reached unreachable code"
+      },
+      {
+        "name": "closing the writable side should call transformer.flush() and a parallel readable.cancel() should not reject",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: ts.writable.close is not a function\""
+      }
+    ]
+  ],
+  [
+    "streams/transform-streams/general.any.js",
+    [
+      {
+        "name": "TransformStream can be constructed with a transform function",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TransformStream can be constructed with no transform function",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TransformStream writable starts in the writable state",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "enqueue() should throw after controller.terminate()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "controller.terminate() should do nothing the second time it is called",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "specifying a defined readableType should throw",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw function \"() => new TransformStream({ readableType: 'bytes' })\" did not throw"
+      },
+      {
+        "name": "specifying a defined writableType should throw",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw function \"() => new TransformStream({ writableType: 'bytes' })\" did not throw"
+      },
+      {
+        "name": "Subclassing TransformStream should work",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'get')"
+      },
+      {
+        "name": "Identity TransformStream: can read from readable what is put into writable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Uppercaser sync TransformStream: can read from readable transformed version of what is put into writable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Uppercaser-doubler sync TransformStream: can read both chunks put into the readable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Uppercaser async TransformStream: can read from readable transformed version of what is put into writable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Uppercaser-doubler async TransformStream: can read both chunks put into the readable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TransformStream: by default, closing the writable closes the readable (when there are no queued writes)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TransformStream: by default, closing the writable waits for transforms to finish before closing both",
+        "status": "Fail",
+        "message": "assert_equals: readable is not closed after a tick expected false but got true"
+      },
+      {
+        "name": "TransformStream: by default, closing the writable closes the readable after sync enqueues and async done",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TransformStream: by default, closing the writable closes the readable after async enqueues and async done",
+        "status": "Fail",
+        "message": "assert_array_equals: both enqueued chunks can be read from the readable lengths differ, expected array [\"x\", \"y\"] length 2, got [] length 0"
+      },
+      {
+        "name": "Transform stream should call transformer methods as methods",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "methods should not not have .apply() or .call() called",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TransformStream start, transform, and flush should be strictly ordered",
+        "status": "Fail",
+        "message": "assert_true: transform() should not be called until the promise returned from start() has resolved expected true got false"
+      },
+      {
+        "name": "it should be possible to call transform() synchronously",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "closing the writable should close the readable when there are no queued chunks, even with backpressure",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "enqueue() should throw after readable.cancel()",
+        "status": "Fail",
+        "message": "assert_throws_js: enqueue should throw function \"() => controller.enqueue()\" did not throw"
+      },
+      {
+        "name": "terminate() should abort writable immediately after readable.cancel()",
+        "status": "Fail",
+        "message": "controller.terminate is not a function"
+      },
+      {
+        "name": "terminate() should do nothing after readable.cancel() resolves",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: controller.terminate is not a function\""
+      },
+      {
+        "name": "start() should not be called twice",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/transform-streams/lipfuzz.any.js",
+    [
+      {
+        "name": "testing \"\" (length 1)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"\" (length 0)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{{in1}}\" (length 1)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"z{{in1}}\" (length 1)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{{in1}}q\" (length 1)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{{in1}}{{in1}\" (length 1)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{{in1}}{{in1},}\" (length 2)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{{in1,}}\" (length 2)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{{,in1}}\" (length 2)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{,{in1}}\" (length 2)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{{,in1}\" (length 2)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{\" (length 1)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{,\" (length 2)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{,{,i,n,1,},}\" (length 7)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{{in1}}{{in2}}{{in1}}\" (length 1)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{{wrong}}\" (length 1)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{{wron,g}}\" (length 2)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{{quine}}\" (length 1)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{{bogusPartial}}\" (length 1)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "testing \"{{bogusPartial}}}\" (length 1)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/transform-streams/patched-global.any.js",
+    [
+      {
+        "name": "TransformStream constructor should not call setters for highWaterMark or size",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "TransformStream should use the original value of ReadableStream and WritableStream",
+        "status": "Fail",
+        "message": "Called the global ReadableStream constructor"
+      }
+    ]
+  ],
+  [
+    "streams/transform-streams/properties.any.js",
+    [
+      {
+        "name": "transformer method start should be called with the right number of arguments",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "transformer method start should be called even when it's located on the prototype chain",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "transformer method transform should be called with the right number of arguments",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "transformer method transform should be called even when it's located on the prototype chain",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "transformer method flush should be called with the right number of arguments",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "transformer method flush should be called even when it's located on the prototype chain",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/transform-streams/reentrant-strategies.any.js",
+    [
+      {
+        "name": "enqueue() inside size() should work",
+        "status": "Fail",
+        "message": "assert_array_equals: array should contain two chunks lengths differ, expected array [\"b\", \"a\"] length 2, got [\"a\"] length 1"
+      },
+      {
+        "name": "streams/transform-streams/reentrant-strategies.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 19834], state={\"loaded\":true,\"pending\":10,\"phase\":4,\"tests\":11}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/transform-streams/strategies.any.js",
+    [
+      {
+        "name": "writableStrategy highWaterMark should work",
+        "status": "Fail",
+        "message": "assert_equals: desiredSize should be 17 expected 17 but got 1"
+      },
+      {
+        "name": "default writable strategy should be equivalent to { highWaterMark: 1 }",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "a RangeError should be thrown for an invalid highWaterMark",
+        "status": "Fail",
+        "message": "assert_throws_js: should throw RangeError for negative writableHighWaterMark function \"() => new TransformStream(undefined, { highWaterMark: -1 })\" did not throw"
+      },
+      {
+        "name": "writableStrategy highWaterMark should be converted to a number",
+        "status": "Fail",
+        "message": "assert_equals: writable HWM is 42 expected 42 but got 1"
+      },
+      {
+        "name": "readableStrategy highWaterMark should be converted to a number",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "readableStrategy highWaterMark should work",
+        "status": "Fail",
+        "message": "assert_array_equals: transform() should have been called 9 times lengths differ, expected array [\"transform\", 0, \"transform\", 1, \"transform\", 2, \"transform\", 3, \"transform\", 4, \"transform\", 5, \"transform\", 6, \"transform\", 7, \"transform\", 8] length 18, got [\"transform\", 0, \"transform\", 1, \"transform\", 2, \"transform\", 3, \"transform\", 4, \"transform\", 5, \"transform\", 6, \"transform\", 7, \"transform\", 8, \"transform\", 9] length 20"
+      },
+      {
+        "name": "writable should have the correct size() function",
+        "status": "Fail",
+        "message": "assert_true: writableStrategy.size() should have been called expected true got false"
+      },
+      {
+        "name": "default readable strategy should be equivalent to { highWaterMark: 0 }",
+        "status": "Fail",
+        "message": "assert_equals: desiredSize should be 0 expected (number) 0 but got (undefined) undefined"
+      },
+      {
+        "name": "a bad readableStrategy size function should cause writer.write() to reject on an identity transform",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: write should reject Reached unreachable code"
+      },
+      {
+        "name": "a bad readableStrategy size function should error the stream on enqueue even when transformer.transform() catches the exception",
+        "status": "Fail",
+        "message": "assert_throws_js: enqueue should throw function \"() => controller.enqueue(chunk)\" did not throw"
+      }
+    ]
+  ],
+  [
+    "streams/transform-streams/terminate.any.js",
+    [
+      {
+        "name": "controller.enqueue() should throw after controller.terminate()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "controller.terminate() should error pipeTo()",
+        "status": "Fail",
+        "message": "assert_array_equals: transform() should have seen no chunks lengths differ, expected array [] length 0, got [\"transform\", 0] length 2"
+      },
+      {
+        "name": "controller.terminate() should prevent remaining chunks from being processed",
+        "status": "Fail",
+        "message": "assert_array_equals: transform() should have seen one chunk lengths differ, expected array [\"transform\", 0] length 2, got [\"transform\", 0, \"transform\", 1] length 4"
+      },
+      {
+        "name": "controller.error() after controller.terminate() with queued chunk should error the readable",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: abort() should reject with a TypeError Reached unreachable code"
+      },
+      {
+        "name": "controller.error() after controller.terminate() without queued chunk should do nothing",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: abort() should reject with a TypeError Reached unreachable code"
+      },
+      {
+        "name": "streams/transform-streams/terminate.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 7817], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":6}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/aborting.any.js",
+    [
+      {
+        "name": "WritableStreamDefaultController.signal",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Aborting a WritableStream before it starts should cause the writer's unsettled ready promise to reject",
+        "status": "Fail",
+        "message": "assert_unreached: write() should not be called Reached unreachable code"
+      },
+      {
+        "name": "Aborting a WritableStream should cause the writer's fulfilled ready promise to reset to a rejected one",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "abort() on a released writer rejects",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: abort() should reject with a TypeError Reached unreachable code"
+      },
+      {
+        "name": "Aborting a WritableStream immediately prevents future writes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Aborting a WritableStream prevents further writes after any that are in progress",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"write\", 1, \"abort\", object \"error1: error1\"] length 4, got [\"write\", 1, \"write\", 2, \"write\", 3, \"abort\", object \"error1: error1\"] length 8"
+      },
+      {
+        "name": "Fulfillment value of writer.abort() call must be undefined even if the underlying sink returns a non-undefined value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "WritableStream if sink's abort throws, the promise returned by writer.abort() rejects",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: rejection reason of abortPromise must be the error thrown by abort Reached unreachable code"
+      },
+      {
+        "name": "WritableStream if sink's abort throws, the promise returned by multiple writer.abort()s is the same and rejects",
+        "status": "Fail",
+        "message": "assert_equals: the promises must be the same expected object \"[object Promise]\" but got object \"[object Promise]\""
+      },
+      {
+        "name": "WritableStream if sink's abort throws, the promise returned by ws.abort() rejects",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: rejection reason of abortPromise must be the error thrown by abort Reached unreachable code"
+      },
+      {
+        "name": "WritableStream if sink's abort throws, for an abort performed during a write, the promise returned by ws.abort() rejects",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: rejection reason of abortPromise must be the error thrown by abort Reached unreachable code"
+      },
+      {
+        "name": "Aborting a WritableStream passes through the given reason",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Aborting a WritableStream puts it in an errored state with the error passed to abort()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "streams/writable-streams/aborting.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 54803], state={\"loaded\":true,\"pending\":52,\"phase\":4,\"tests\":65}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/bad-strategies.any.js",
+    [
+      {
+        "name": "Writable stream: throwing strategy.size getter",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "reject any non-function value for strategy.size",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => {\n    new WritableStream({}, { size: 'a string' });\n  }\" did not throw"
+      },
+      {
+        "name": "Writable stream: throwing strategy.highWaterMark getter",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Writable stream: invalid strategy.highWaterMark",
+        "status": "Fail",
+        "message": "assert_throws_js: construction should throw a RangeError for -1 function \"() => {\n      new WritableStream({}, {\n        size() {\n          return 1;\n        },\n        highWaterMark\n      });\n    }\" did not throw"
+      },
+      {
+        "name": "Writable stream: invalid size beats invalid highWaterMark",
+        "status": "Fail",
+        "message": "assert_throws_js: WritableStream constructor should throw a TypeError function \"() => new WritableStream(undefined, {\n    size: 'not a function',\n    highWaterMark: NaN\n  })\" did not throw"
+      },
+      {
+        "name": "Writable stream: throwing strategy.size method",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: write should reject with the thrown error Reached unreachable code"
+      },
+      {
+        "name": "Writable stream: invalid strategy.size return value",
+        "status": "Fail",
+        "message": "assert_unreached: write must reject Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/bad-underlying-sinks.any.js",
+    [
+      {
+        "name": "start: errors in start cause WritableStream constructor to throw",
+        "status": "Fail",
+        "message": "assert_throws_exactly: constructor should throw same error as throwing start method function \"() => {\n    new WritableStream({\n      start() {\n        throw error1;\n      }\n    });\n  }\" did not throw"
+      },
+      {
+        "name": "close: throwing getter should cause constructor to throw",
+        "status": "Fail",
+        "message": "assert_throws_exactly: constructor should throw function \"() => new WritableStream({\n    get close() {\n      throw error1;\n    }\n  })\" did not throw"
+      },
+      {
+        "name": "write: throwing getter should cause write() and closed to reject",
+        "status": "Fail",
+        "message": "assert_throws_exactly: constructor should throw function \"() => new WritableStream({\n    get write() {\n      throw error1;\n    }\n  })\" did not throw"
+      },
+      {
+        "name": "start: non-function start method",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw function \"() => new WritableStream({\n    start: 'test'\n  })\" did not throw"
+      },
+      {
+        "name": "write: non-function write method",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw function \"() => new WritableStream({\n    write: 'test'\n  })\" did not throw"
+      },
+      {
+        "name": "close: non-function close method",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw function \"() => new WritableStream({\n    close: 'test'\n  })\" did not throw"
+      },
+      {
+        "name": "abort: non-function abort method with .apply",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw function \"() => new WritableStream({\n    abort: { apply() {} }\n  })\" did not throw"
+      },
+      {
+        "name": "abort: throwing getter should cause abort() and closed to reject",
+        "status": "Fail",
+        "message": "assert_throws_exactly: constructor should throw function \"() => new WritableStream({\n    get abort() {\n      throw error1;\n    }\n  })\" did not throw"
+      },
+      {
+        "name": "streams/writable-streams/bad-underlying-sinks.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 10755], state={\"loaded\":true,\"pending\":6,\"phase\":4,\"tests\":14}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/byte-length-queuing-strategy.any.js",
+    [
+      {
+        "name": "Closing a writable stream with in-flight writes below the high water mark delays the close call properly",
+        "status": "Fail",
+        "message": "ByteLengthQueuingStrategy is not defined"
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/close.any.js",
+    [
+      {
+        "name": "fulfillment value of writer.close() call must be undefined even if the underlying sink returns a non-undefined value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "when sink calls error asynchronously while sink close is in-flight, the stream should not become errored",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "when sink calls error synchronously while closing, the stream should not become errored",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "when the sink throws during close, and the close is requested while a write is still in-flight, the stream should become errored during the close",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: closed must reject with the error Reached unreachable code"
+      },
+      {
+        "name": "releaseLock on a stream with a pending write in which the stream has been errored",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "releaseLock on a stream with a pending close in which controller.error() was called",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "when close is called on a WritableStream in writable state, ready should return a fulfilled promise",
+        "status": "Fail",
+        "message": "assert_equals: desiredSize should be still 1 expected 1 but got 0"
+      },
+      {
+        "name": "streams/writable-streams/close.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 18543], state={\"loaded\":true,\"pending\":19,\"phase\":4,\"tests\":26}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/constructor.any.js",
+    [
+      {
+        "name": "WritableStream should be constructible with no arguments",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "WritableStream can't be constructed with a defined type",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw function \"() => new WritableStream({ type: 'bytes' })\" did not throw"
+      },
+      {
+        "name": "underlyingSink argument should be converted after queuingStrategy argument",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "WritableStream instances should have standard methods and properties",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "WritableStreamDefaultController constructor should throw",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw a TypeError exception function \"() => new WritableStreamDefaultController({})\" did not throw"
+      },
+      {
+        "name": "WritableStreamDefaultController constructor should throw when passed an initialised WritableStream",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw a TypeError exception function \"() => new WritableStreamDefaultController(stream)\" did not throw"
+      },
+      {
+        "name": "WritableStreamDefaultWriter should throw unless passed a WritableStream",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw a TypeError exception function \"() => new WritableStreamDefaultWriter({})\" did not throw"
+      },
+      {
+        "name": "WritableStreamDefaultWriter constructor should throw when stream argument is locked",
+        "status": "Fail",
+        "message": "assert_throws_js: constructor should throw a TypeError exception function \"() => new WritableStreamDefaultWriter(stream)\" did not throw"
+      },
+      {
+        "name": "controller argument should be passed to start method",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "controller argument should be passed to write method",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"error1: error1\""
+      },
+      {
+        "name": "controller argument should not be passed to close method",
+        "status": "Fail",
+        "message": "assert_array_equals: no arguments should be passed to close lengths differ, expected array [] length 0, got [object \"[object Object]\"] length 1"
+      },
+      {
+        "name": "highWaterMark should be reflected to desiredSize",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "WritableStream should be writable and ready should fulfill immediately if the strategy does not apply backpressure",
+        "status": "Fail",
+        "message": "assert_equals: desiredSize should be Infinity expected Infinity but got 1"
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/count-queuing-strategy.any.js",
+    [
+      {
+        "name": "Can construct a writable stream with a valid CountQueuingStrategy",
+        "status": "Fail",
+        "message": "CountQueuingStrategy is not defined"
+      },
+      {
+        "name": "Correctly governs the value of a WritableStream's state property (HWM = 0)",
+        "status": "Fail",
+        "message": "CountQueuingStrategy is not defined"
+      },
+      {
+        "name": "Correctly governs the value of a WritableStream's state property (HWM = 4)",
+        "status": "Fail",
+        "message": "CountQueuingStrategy is not defined"
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/error.any.js",
+    [
+      {
+        "name": "controller.error() on erroring stream should not throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "controller.error() should error the stream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "surplus calls to controller.error() should be a no-op",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "controller.error() on errored stream should not throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "controller.error() on closed stream should not throw",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/floating-point-total-queue-size.any.js",
+    [
+      {
+        "name": "Floating point arithmetic must manifest near NUMBER.MAX_SAFE_INTEGER (total ends up positive)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Floating point arithmetic must manifest near 0 (total ends up positive, but clamped)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Floating point arithmetic must manifest near 0 (total ends up positive, and not clamped)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Floating point arithmetic must manifest near 0 (total ends up zero)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/garbage-collection.any.js",
+    [
+      {
+        "name": "A WritableStream and its writer should not be garbage collected while there is a write promise pending",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/general.any.js",
+    [
+      {
+        "name": "desiredSize on a released writer",
+        "status": "Fail",
+        "message": "assert_throws_js: desiredSize should throw a TypeError function \"() => writer.desiredSize\" did not throw"
+      },
+      {
+        "name": "desiredSize initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "desiredSize on a writer for an errored stream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ws.getWriter() on a closing WritableStream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ws.getWriter() on an aborted WritableStream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Subclassing WritableStream should work",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'get')"
+      },
+      {
+        "name": "the locked getter should return true if the stream has a writer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "desiredSize on a writer for a closed stream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ws.getWriter() on a closed WritableStream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ws.getWriter() on an errored WritableStream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "streams/writable-streams/general.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 8371], state={\"loaded\":true,\"pending\":6,\"phase\":4,\"tests\":16}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/reentrant-strategy.any.js",
+    [
+      {
+        "name": "writes should be written in the standard order",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "writer.write() promises should resolve in the standard order",
+        "status": "Fail",
+        "message": "assert_array_equals: events should happen in standard order expected property 10 to be \"writer.write done\" but got \"sink.write\" (expected array [\"size\", 2, \"size\", 1, \"size\", 0, \"sink.write\", 0, \"sink.write\", 1, \"writer.write done\", 0, \"sink.write\", 2, \"writer.write done\", 1, \"writer.write done\", 2] got [\"size\", 2, \"size\", 1, \"size\", 0, \"sink.write\", 0, \"sink.write\", 1, \"sink.write\", 2, \"writer.write done\", 0, \"writer.write done\", 1, \"writer.write done\", 2])"
+      },
+      {
+        "name": "streams/writable-streams/reentrant-strategy.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 10515], state={\"loaded\":true,\"pending\":5,\"phase\":4,\"tests\":7}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/start.any.js",
+    [
+      {
+        "name": "underlying sink's write or close should not be called if start throws",
+        "status": "Fail",
+        "message": "assert_throws_exactly: constructor should throw passedError function \"() => {\n    // recordingWritableStream cannot be used here because the exception in the\n    // constructor prevents assigning the object to a variable.\n    new WritableStream({\n      start() {\n        throw passedError;\n      },\n      write() {\n        writeCalled = true;\n      },\n      close() {\n        closeCalled = true;\n      }\n    });\n  }\" did not throw"
+      },
+      {
+        "name": "underlying sink's write should not be called until start finishes",
+        "status": "Fail",
+        "message": "assert_array_equals: write should not be called until start promise resolves lengths differ, expected array [] length 0, got [\"write\", \"a\"] length 2"
+      },
+      {
+        "name": "underlying sink's close should not be called until start finishes",
+        "status": "Fail",
+        "message": "assert_equals: desiredSize should be 1 expected 1 but got 0"
+      },
+      {
+        "name": "underlying sink's write or close should not be invoked if the promise returned by start is rejected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "streams/writable-streams/start.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[200820, 9562], state={\"loaded\":true,\"pending\":4,\"phase\":4,\"tests\":8}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/properties.any.js",
+    [
+      {
+        "name": "sink method start should be called with the right number of arguments",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sink method start should be called even when it's located on the prototype chain",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sink method write should be called with the right number of arguments",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sink method write should be called even when it's located on the prototype chain",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sink method close should be called with the right number of arguments",
+        "status": "Fail",
+        "message": "assert_equals: close should be called with 0 arguments expected 0 but got 1"
+      },
+      {
+        "name": "sink method close should be called even when it's located on the prototype chain",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sink method abort should be called with the right number of arguments",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sink method abort should be called even when it's located on the prototype chain",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "streams/writable-streams/write.any.js",
+    [
+      {
+        "name": "WritableStream should complete asynchronous writes before close resolves",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "WritableStream should complete synchronous writes before close resolves",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fulfillment value of ws.write() call should be undefined even if the underlying sink returns a non-undefined value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "WritableStream should transition to waiting until write is acknowledged",
+        "status": "Fail",
+        "message": "assert_true: writePromise should be fulfilled before writer.ready expected true got false"
+      },
+      {
+        "name": "when write returns a rejected promise, queued writes and close should be cleared",
+        "status": "Fail",
+        "message": "assert_equals: there should be still 1 rejector expected 1 but got 2"
+      },
+      {
+        "name": "when sink's write throws an error, the stream should become errored and the promise should reject",
+        "status": "Fail",
+        "message": "promise_rejects_js: close() should be rejected function \"function() { throw e; }\" threw object \"error1: error1\" (\"error1\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "writer.write(), ready and closed reject with the error passed to controller.error() made before sink.write rejection",
+        "status": "Fail",
+        "message": "promise_rejects_exactly: write() should reject with the error returned from the sink's write method  function \"function() { throw e; }\" threw object \"error1: error1\" but we expected it to throw object \"error2: error2\""
+      },
+      {
+        "name": "a large queue of writes should be processed completely",
+        "status": "Fail",
+        "message": "assert_equals: should have called sink's write once expected 1 but got 1000"
+      },
+      {
+        "name": "WritableStreamDefaultWriter should work when manually constructed",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'then')"
+      },
+      {
+        "name": "returning a thenable from write() should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "failing DefaultWriter constructor should not release an existing writer",
+        "status": "Fail",
+        "message": "assert_throws_js: should not be able to construct on locked stream function \"() => new WritableStreamDefaultWriter(stream)\" did not throw"
+      },
+      {
+        "name": "write() on a stream with HWM 0 should not cause the ready Promise to resolve",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: ready should be rejected Reached unreachable code"
+      },
+      {
+        "name": "writing to a released writer should reject the returned promise",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: write should reject Reached unreachable code"
+      }
+    ]
+  ]
+]

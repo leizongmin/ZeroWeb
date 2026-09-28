@@ -7,6 +7,9 @@
 # 子目录扩充：fetch_dir_html 只列目录 top-level（GitHub 未认证 API 60 req/h 速率
 # 限制，递归易触限）；大域（fetch/ svg/ 等）子目录按各 goal M1 rally 轮照
 # fetch-dom-subset.sh SUBDIRS 先例追加。
+# 拉取扩展（2026-09-28，net-api-compat M1）：.json 数据依赖（mimesniff mime-types.json、
+# url toascii.json 等 testharness 用例 fetch 的数据资产）与 .any.js window 变体
+# opt-in（GOAL_PULL_ANY_JS=1）、GITHUB_TOKEN 认证列目录。
 
 WPT_REV="315976933870b34d6ea30e3f6643403edae678ba"
 # REPO_ROOT 由本库自行推导（lib 位于 tests/wpt-runner/scripts/goals/，4 层到仓库根），
@@ -16,6 +19,13 @@ REPO_ROOT="$(cd "${LIB_DIR}/../../../.." && pwd)"
 WPT_DATA="${REPO_ROOT}/tests/wpt-runner/wpt-data"
 RAW_ROOT="https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}"
 API_ROOT="https://api.github.com/repos/web-platform-tests/wpt/contents"
+# GitHub API 认证（可选）：设 GITHUB_TOKEN 时列目录带 Bearer 头——未认证 60 req/h
+# 对大域多目录 goal（net-api 六 corpus）一轮拉不完；认证 5000 req/h。raw 拉取
+# （raw.githubusercontent.com）不走该配额，不受影响。
+GH_API_AUTH=()
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  GH_API_AUTH=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+fi
 
 fetch_raw() {
   local relative="$1"
@@ -57,6 +67,7 @@ fetch_dir_html() {
   # 列目录失败（403 限流/网络）优雅降级：跳过该目录不中止，重跑幂等续拉。
   if ! listing=$(curl --fail --location --silent --show-error --retry 3 \
     --connect-timeout 8 --max-time 30 \
+    "${GH_API_AUTH[@]}" \
     "${API_ROOT}/${dir}?ref=${WPT_REV}" \
     | python3 -c 'import json,sys
 for entry in json.load(sys.stdin):
@@ -74,11 +85,19 @@ for entry in json.load(sys.stdin):
         fi
         ;;
       file)
-        # 拉 .html 用例 + .js 依赖；排除 .worker.js / .any.js 变体（需 dedicated
-        # worker / wrapper harness，runner 形态支持由各 goal M1 rally 轮评估）。
+        # 拉 .html 用例 + .js 依赖；排除 .worker.js（需 dedicated worker harness，
+        # runner 无 worker 文档管道）。.any.js 默认排除，goal 脚本设
+        # GOAL_PULL_ANY_JS=1 时拉取——runner 侧 any_js_window_wrapper window 变体
+        # 执行已支持（fs/wasm/timing 先例；streams/ 等以 .any.js 为唯一形态的域
+        # 必须拉，否则语料为空）。
         case "${name}" in
-          *.worker.js | *.any.js) ;;
-          *.html | *.js | *.xml | *.xhtml | *.svg)
+          *.worker.js) ;;
+          *.any.js)
+            if [[ "${GOAL_PULL_ANY_JS:-0}" == "1" ]]; then
+              fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+            fi
+            ;;
+          *.html | *.js | *.json | *.xml | *.xhtml | *.svg)
             fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
             ;;
         esac

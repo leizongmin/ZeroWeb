@@ -70,6 +70,9 @@ Commands:
                        (timing-animation-compat goal M1 / DC-1)
   testharness-web-animations  Run imported web-animations testharness cases
                        (timing-animation-compat goal M1 / DC-1)
+  testharness-net-api  Run pinned net-API six-corpus (fetch/xhr/url/mimesniff/
+                       streams/eventsource) window testharness cases
+                       (net-api-compat goal M1 / DC-1)
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
   testharness-service-workers-fetch  Run pinned Service Worker M2 fetch testharness cases
   testharness-service-workers-cache-storage  Run pinned Service Worker CacheStorage testharness cases
@@ -281,6 +284,7 @@ fn main() {
         "testharness-performance-timeline" => cmd_testharness_performance_timeline(&options, filter.as_deref()),
         "testharness-user-timing" => cmd_testharness_user_timing(&options, filter.as_deref()),
         "testharness-web-animations" => cmd_testharness_web_animations(&options, filter.as_deref()),
+        "testharness-net-api" => cmd_testharness_net_api(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
         "testharness-service-workers-fetch" => cmd_testharness_service_workers_fetch(&options, filter.as_deref()),
         "testharness-service-workers-cache-storage" => {
@@ -1094,6 +1098,20 @@ fn cmd_testharness_user_timing(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_web_animations(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_web_animations_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-net-api` 子命令 — 跑导入的 net-API 六 corpus（fetch/xhr/url/mimesniff/
+/// streams/eventsource）window 可执行子集（net-api-compat goal M1 / DC-1——基线）。
+///
+/// 用例由 `tests/wpt-runner/scripts/goals/20-net-api-compat.sh` 按需拉到 `wpt-data/`
+/// （gitignored）。退出码：有用例非 Pass 或用例集为空 → 1（与 testharness-fs 一致）。
+/// 基线首跑即便大量 Fail 也只用于记录通过率（agent 经 `--format json` 捕获后写
+/// evidence/），不作为 land 门禁。filter 按路径子串透传：make testharness-net-api
+/// FILTER=fetch/（按 corpus 分类跑/出数）。
+fn cmd_testharness_net_api(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_net_api_cases(wpt_root, filter)
     });
 }
 

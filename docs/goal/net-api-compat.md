@@ -2,7 +2,8 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active（已立项，未启动——启动顺序由用户点名）
+**状态**: Active（M1 基线已落 2026-09-28，六 corpus 1297/5019 = 25.8%——控制面见
+`net-api-compat/master.md`，当前推进 M2）
 **执行模式**: WPT 驱动（上游网络面 corpus 为验收标尺）+ 语义修齐；
 照 event-loop-spec / web-components / web-api-batch2 通用打法
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络 API 面）

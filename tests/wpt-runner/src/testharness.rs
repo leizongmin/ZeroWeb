@@ -3281,6 +3281,133 @@ pub fn run_web_animations_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(S
     run_timing_subdirs(wpt_root, WEB_ANIMATIONS_SUBDIRS, filter, web_animations_case_skipped)
 }
 
+// ── net-api-compat goal（docs/goal/net-api-compat.md M1 / DC-1）：六 corpus window
+// 可执行子集（fetch / xhr / url / mimesniff / streams / eventsource）。拉取面 =
+// tests/wpt-runner/scripts/goals/20-net-api-compat.sh（DIRS 与本表同域双保险）。
+
+/// net-api 六 corpus pinned subset directories（fetch 脚本 DIRS 同域——M2/M3 语义簇 +
+/// 自包含面；server-handler .py 重依赖 / 策略头面 / HTTP 栈面 / 新 API 面显式不拉，
+/// fetch 脚本头注释逐域记账）。
+pub const NET_API_CORPUS_SUBDIRS: &[&str] = &[
+    "fetch/api/headers",
+    "fetch/api/request",
+    "fetch/api/response",
+    "fetch/api/body",
+    "fetch/api/basic",
+    "fetch/api/abort",
+    "fetch/api/credentials",
+    "fetch/data-urls",
+    "fetch/content-type",
+    "fetch/content-length",
+    "fetch/h1-parsing",
+    "fetch/images",
+    "fetch/redirects",
+    "xhr",
+    "xhr/formdata",
+    "url",
+    "mimesniff/mime-types",
+    "streams",
+    "streams/piping",
+    "streams/readable-byte-streams",
+    "streams/readable-streams",
+    "streams/transform-streams",
+    "streams/writable-streams",
+    "eventsource",
+];
+
+/// net-api 六 corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
+/// - `*/resources/`（helper 资产——fetch/api/resources、xhr/resources、url/resources、
+///   eventsource/resources、streams/resources 等，META script / inline 消费不按案跑）
+/// - `*-manual.html`（需真实用户交互，clipboard/security 先例）
+/// - `idlharness.*`（/resources/WebIDLParser.js 为 build 期生成资产，repo 内不存在，
+///   timing 先例）
+/// - source 含 `<iframe` / `createElement('iframe')`——iframe 依赖面（runner 无多
+///   frame 文档管道，observers/timing 先例）
+/// - source 含 `new Worker(` / `SharedWorker(` / `navigator.serviceWorker`——worker
+///   执行面（runner 无 worker 文档管道，security/timing 先例）
+fn net_api_case_skipped(relative: &str, source: &str) -> bool {
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    if name.ends_with("-manual.html") || name.starts_with("idlharness.") {
+        return true;
+    }
+    if relative.contains("/resources/") {
+        return true;
+    }
+    source.contains("<iframe")
+        || source.contains("createElement('iframe')")
+        || source.contains("createElement(\"iframe\")")
+        || source.contains("new Worker(")
+        || source.contains("SharedWorker(")
+        || source.contains("navigator.serviceWorker")
+}
+
+/// net-api 六 corpus 扫描执行（`run_timing_subdirs` 同构：flat 布局 .html + .any.js
+/// window 变体；timing 专用的 absolute-helper extras 分支不适用 net 面——.html 案
+/// 直接 [`run_testharness_html`]）。
+fn run_net_api_subdirs(
+    wpt_root: &Path,
+    subdirs: &[&str],
+    filter: Option<&str>,
+    case_skipped: fn(&str, &str) -> bool,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                "resources/testharness.js".to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+    let mut cases = Vec::new();
+    for subdir in subdirs {
+        // 拉取面均为 flat 布局（子目录已显式列入 NET_API_CORPUS_SUBDIRS），无需递归。
+        let Ok(entries) = std::fs::read_dir(wpt_root.join(subdir)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                continue;
+            }
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            let is_html = file_name.ends_with(".html");
+            let is_any_js = file_name.ends_with(".any.js");
+            if !is_html && !is_any_js {
+                continue;
+            }
+            let relative = format!("{subdir}/{file_name}");
+            if filter.is_some_and(|filter| !relative.contains(filter)) {
+                continue;
+            }
+            let Ok(source) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if case_skipped(&relative, &source) {
+                continue;
+            }
+            let results = if is_any_js {
+                run_any_js_window_case(wpt_root, &relative, &source, &harness_source)
+            } else {
+                run_testharness_html(wpt_root, &relative, &source, &harness_source, CORPUS_CASE_TIMEOUT)
+            };
+            cases.push((relative, results));
+        }
+    }
+    cases
+}
+
+/// Run the pinned upstream net-API six-corpus window subset
+/// （net-api-compat goal M1 / DC-1）。filter 按路径子串过滤（如 `fetch/`、`xhr/`、
+/// `streams/`——基线按 corpus 分类）。
+pub fn run_net_api_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_net_api_subdirs(wpt_root, NET_API_CORPUS_SUBDIRS, filter, net_api_case_skipped)
+}
+
 /// Run the fixed Service Worker M1 core testharness corpus.
 pub fn run_service_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_service_worker_case_set(wpt_root, filter, SERVICE_WORKER_CORE_CASES)
