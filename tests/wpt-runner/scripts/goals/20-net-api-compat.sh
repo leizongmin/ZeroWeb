@@ -40,6 +40,7 @@ DIRS=(
   "fetch/api/credentials"
   "fetch/api/resources"
   "fetch/data-urls"
+  "fetch/data-urls/resources"
   "fetch/content-type"
   "fetch/content-length"
   "fetch/h1-parsing"

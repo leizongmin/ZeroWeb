@@ -1618,6 +1618,272 @@
     for (var i = 0; i < parts.length; i++) arr[i] = parseInt(parts[i], 10) & 0xFF;
     return arr;
   }
+
+  // ── M2-S1（net-api-compat）：fetch scheme dispatch ─────────────────────────────
+  // https://fetch.spec.whatwg.org/#main-fetch step 12 + #scheme-fetch + #data-urls +
+  // #port-blocking。data:/blob:/bad-port/其余非 HTTP(S) scheme 在 shim 侧分派（runner
+  // 与浏览器共享路径，zero-net 协议栈不触）；http/https 返 null 落 host 桥原路径。
+  // network error → fetch reject TypeError（此前 unknown scheme resolve status-0 响应，
+  // 错误面不可观察——WPT request-bad-port/scheme-* 断言 reject）。
+
+  // https://fetch.spec.whatwg.org/#bad-port §2.9 表（完整 79 端口列——与 WPT
+  // request-bad-port.any.js BLOCKED_PORTS_LIST 同源）。
+  var _ZW_BAD_PORTS = ',0,1,7,9,11,13,15,17,19,20,21,22,23,25,37,42,43,53,69,77,79,87,95,101,102,103,104,109,110,111,113,115,117,119,123,135,137,139,143,161,179,389,427,465,512,513,514,515,526,530,531,532,540,548,554,556,563,587,601,636,989,990,993,995,1719,1720,1723,2049,3659,4045,4190,5060,5061,6000,6566,6665,6666,6667,6668,6669,6679,6697,10080,';
+  function _zwFetchBadPort(port) {
+    return _ZW_BAD_PORTS.indexOf(',' + port + ',') >= 0;
+  }
+  // HTTP token code point / quoted-string token code point（mimesniff §3）。
+  var _ZW_MIME_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+  var _ZW_MIME_QS_TOKEN = /^[\t\u0020-\u007e\u0080-\u00ff]*$/;
+  function _zwStripHttpWs(s) {
+    return String(s).replace(/^[\t\n\r ]+/, '').replace(/[\t\n\r ]+$/, '');
+  }
+  // https://mimesniff.spec.whatwg.org/#parse-a-mime-type §4.4（含 parameter 循环全分支：
+  // 无 '=' 名丢弃 / ';' 空名跳过 / quoted-string 提取 / token 值空串跳过 / 首-'+lowercase 名）。
+  // 失败返 null；成功 { type, subtype, params: [[name, value], ...]（保序）}。
+  function _zwParseMimeType(input) {
+    input = _zwStripHttpWs(input);
+    var slash = input.indexOf('/');
+    if (slash < 0) return null;
+    var type = input.slice(0, slash);
+    var rest = input.slice(slash + 1);
+    var semi = rest.indexOf(';');
+    var subtype = semi >= 0 ? rest.slice(0, semi) : rest;
+    subtype = subtype.replace(/[\t\n\r ]+$/, '');
+    if (!_ZW_MIME_TOKEN.test(type) || subtype === '' || !_ZW_MIME_TOKEN.test(subtype)) return null;
+    var params = [];
+    function _paramGet(name) {
+      for (var i = 0; i < params.length; i++) if (params[i][0] === name) return params[i][1];
+      return null;
+    }
+    var pos = semi >= 0 ? semi : input.length;
+    while (pos < input.length) {
+      pos++; // past ';'
+      while (pos < input.length && /[\t\n\r ]/.test(input.charAt(pos))) pos++;
+      var nameEnd = pos;
+      while (nameEnd < input.length && input.charAt(nameEnd) !== ';' && input.charAt(nameEnd) !== '=') nameEnd++;
+      var paramName = input.slice(pos, nameEnd).toLowerCase();
+      pos = nameEnd;
+      var parameterValue = null;
+      if (pos < input.length) {
+        if (input.charAt(pos) === ';') continue; // 名后无 '='（下一 ';'）→ 参数丢弃
+        pos++; // past '='
+        if (pos >= input.length) break; // '=' 后到串尾 → break（参数丢弃）
+        if (input.charAt(pos) === '"') {
+          // collect an HTTP quoted string（fetch §2.2，extract-value）
+          pos++;
+          var val = '';
+          for (;;) {
+            while (pos < input.length && input.charAt(pos) !== '"' && input.charAt(pos) !== '\\') {
+              val += input.charAt(pos); pos++;
+            }
+            if (pos >= input.length) break;
+            var qc = input.charAt(pos); pos++;
+            if (qc === '\\') {
+              if (pos >= input.length) { val += '\\'; break; }
+              val += input.charAt(pos); pos++;
+            } else break; // '"'
+          }
+          parameterValue = val;
+          while (pos < input.length && input.charAt(pos) !== ';') pos++;
+        } else {
+          var vEnd = pos;
+          while (vEnd < input.length && input.charAt(vEnd) !== ';') vEnd++;
+          var v = input.slice(pos, vEnd).replace(/[\t\n\r ]+$/, '');
+          pos = vEnd;
+          if (v === '') continue; // token 值空串 → 参数丢弃
+          parameterValue = v;
+        }
+      }
+      if (parameterValue !== null && paramName !== '' && _ZW_MIME_TOKEN.test(paramName) &&
+          _ZW_MIME_QS_TOKEN.test(parameterValue) && _paramGet(paramName) === null) {
+        params.push([paramName, parameterValue]);
+      }
+    }
+    return { type: type.toLowerCase(), subtype: subtype.toLowerCase(), params: params };
+  }
+  // https://mimesniff.spec.whatwg.org/#serialize-a-mime-type §4.5（值非 token/空 → 引号包裹 + 转义）。
+  function _zwSerializeMimeType(mime) {
+    var out = mime.type + '/' + mime.subtype;
+    for (var i = 0; i < mime.params.length; i++) {
+      var name = mime.params[i][0], value = mime.params[i][1];
+      out += ';' + name + '=';
+      if (value === '' || !_ZW_MIME_TOKEN.test(value)) {
+        out += '"' + value.replace(/["\\]/g, '\\$&') + '"';
+      } else {
+        out += value;
+      }
+    }
+    return out;
+  }
+  // percent-decode（URL §percent-decode：%HH 十六进制字节；非法序列字面保留；非 ASCII 字符
+  // UTF-8 编码（surrogate pair 感知）——data: body 原始字符经此得字节序列）。
+  function _zwPercentDecodeBytes(s) {
+    var out = [];
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c === 0x25 && i + 2 < s.length) {
+        var h = s.slice(i + 1, i + 3);
+        if (/^[0-9A-Fa-f]{2}$/.test(h)) {
+          out.push(parseInt(h, 16)); i += 2; continue;
+        }
+      }
+      if (c < 0x80) { out.push(c); continue; }
+      var bytes;
+      if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length && s.charCodeAt(i + 1) >= 0xDC00 && s.charCodeAt(i + 1) <= 0xDFFF) {
+        bytes = _zw_utf8_encode(s.slice(i, i + 2)); i++;
+      } else {
+        bytes = _zw_utf8_encode(s.charAt(i));
+      }
+      for (var j = 0; j < bytes.length; j++) out.push(bytes[j]);
+    }
+    return new Uint8Array(out);
+  }
+  // https://infra.spec.whatwg.org/#forgiving-base64-decode（ASCII whitespace 精确集
+  // \t\n\f\r space；padding 与余数须精确匹配——WPT base64.json 77 向量校准：'ab=' 失败、
+  // 'ab==' 通过、'abc=' 通过）。失败返 null；成功 Uint8Array。
+  function _zwForgivingBase64Decode(data) {
+    data = String(data).replace(/[\t\n\x0c\r ]+/g, '');
+    var core = data.replace(/=+$/, '');
+    var pad = data.length - core.length;
+    var m = core.length % 4;
+    if (m === 1) return null;
+    var need = m === 2 ? 2 : (m === 3 ? 1 : 0);
+    // padding 须为 0 或恰为 need（'ab' 通过 / 'ab=' 失败 / 'ab==' 通过——base64.json 校准）
+    if (!(pad === 0 || pad === need)) return null;
+    if (/[^A-Za-z0-9+/]/.test(core)) return null;
+    var out = [];
+    var i = 0;
+    while (i < core.length) {
+      var n = Math.min(4, core.length - i);
+      var b0 = _ZW_B64URL.indexOf(core.charAt(i));
+      var b1 = n > 1 ? _ZW_B64URL.indexOf(core.charAt(i + 1)) : 0;
+      var b2 = n > 2 ? _ZW_B64URL.indexOf(core.charAt(i + 2)) : 0;
+      var b3 = n > 3 ? _ZW_B64URL.indexOf(core.charAt(i + 3)) : 0;
+      out.push((b0 << 2) | (b1 >> 4));
+      if (n > 2) out.push(((b1 & 15) << 4) | (b2 >> 2));
+      if (n > 3) out.push(((b2 & 3) << 6) | b3);
+      i += 4;
+    }
+    return new Uint8Array(out);
+  }
+  var _ZW_B64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  // https://fetch.spec.whatwg.org/#dom-body-blob —— blob() 的 Blob type = get the MIME type
+  //（§3.5 extract a MIME type：逐值 parse，failure 或 essence "*/*" 跳过、取最后成功者、
+  // charset 跨值携带）+ serialize。failure → null（Blob type 空串）。Headers.get 合并形态
+  // 以 ", " 切分（quoted-string 内逗号形态 corpus 未涉，近似注记）。
+  function _zwBodyMimeType(headers) {
+    var raw = (headers && typeof headers.get === 'function') ? headers.get('content-type') : null;
+    if (raw == null) return null;
+    var values = String(raw).split(', ');
+    var mimeType = null;
+    var essence = null;
+    var charset = null;
+    function _paramOf(mime, name) {
+      for (var i = 0; i < mime.params.length; i++) if (mime.params[i][0] === name) return mime.params[i][1];
+      return null;
+    }
+    for (var i = 0; i < values.length; i++) {
+      var temp = _zwParseMimeType(values[i]);
+      if (!temp || (temp.type === '*' && temp.subtype === '*')) continue;
+      if (!essence || (temp.type + '/' + temp.subtype) !== essence) {
+        charset = _paramOf(temp, 'charset');
+      } else if (_paramOf(temp, 'charset') === null && charset !== null) {
+        temp.params.push(['charset', charset]);
+      }
+      mimeType = temp;
+      essence = temp.type + '/' + temp.subtype;
+    }
+    return mimeType ? _zwSerializeMimeType(mimeType) : null;
+  }
+  // https://fetch.spec.whatwg.org/#data-urls §6 data: URL processor。输入为 fetch 已解析的
+  // data: URL 串；失败返 null（scheme fetch → network error）。opaque path 序列化语义：
+  // C0 控制与非 ASCII 字符 UTF-8 百分号编码（data-urls.json 基线：空格/引号不编码、
+  // FF→%0c、†→%e2%80%a0——与 URL parser 路径行为对齐），fragment 排除。
+  function _zwDataURLProcessor(rawUrl) {
+    var s = rawUrl.slice(5); // strip 'data:'（scheme 大小写已由 dispatch 归一判定）
+    var hash = s.indexOf('#');
+    if (hash >= 0) s = s.slice(0, hash);
+    var encoded = '';
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c >= 0x20 && c <= 0x7e) { encoded += s.charAt(i); continue; }
+      var bytes;
+      if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length && s.charCodeAt(i + 1) >= 0xDC00 && s.charCodeAt(i + 1) <= 0xDFFF) {
+        bytes = _zw_utf8_encode(s.slice(i, i + 2)); i++;
+      } else {
+        bytes = _zw_utf8_encode(s.charAt(i));
+      }
+      for (var j = 0; j < bytes.length; j++) {
+        encoded += '%' + ('0' + bytes[j].toString(16)).slice(-2).toUpperCase();
+      }
+    }
+    var comma = encoded.indexOf(',');
+    if (comma < 0) return null; // 无 ',' → failure
+    var mime = encoded.slice(0, comma).replace(/^[\t\n\x0c\r ]+/, '').replace(/[\t\n\x0c\r ]+$/, '');
+    var body = _zwPercentDecodeBytes(encoded.slice(comma + 1));
+    if (/;\x20*base64$/i.test(mime)) {
+      var strBody = '';
+      for (var k = 0; k < body.length; k++) strBody += String.fromCharCode(body[k]); // isomorphic decode
+      var decoded = _zwForgivingBase64Decode(strBody);
+      if (decoded === null) return null; // base64 失败 → failure（fetch reject）
+      body = decoded;
+      mime = mime.slice(0, mime.length - 6).replace(/\x20+$/, '');
+      mime = mime.slice(0, mime.length - 1); // remove last ';'
+    }
+    if (mime.charAt(0) === ';') mime = 'text/plain' + mime;
+    // parse 失败 → 默认 text/plain;charset=US-ASCII（spec step 14，非 failure）
+    var parsed = _zwParseMimeType(mime);
+    var contentType = parsed ? _zwSerializeMimeType(parsed) : 'text/plain;charset=US-ASCII';
+    return { contentType: contentType, body: body };
+  }
+  // scheme dispatch（main fetch §4.1 step 12 首个匹配语句语义）。返回：
+  //   null            → http/https（无 bad port）落 host 桥原路径
+  //   {reject:true}   → network error（fetch reject TypeError）
+  //   {response}      → data:/blob: scheme fetch 响应（new Response 路由，instanceof Response）
+  function _zwFetchSchemeDispatch(url, method) {
+    var m = /^([A-Za-z][A-Za-z0-9+.\-]*):/.exec(url);
+    if (!m) return null;
+    var scheme = m[1].toLowerCase();
+    if (scheme === 'http' || scheme === 'https') {
+      // §2.9 port blocking：HTTP(S) scheme 且显式 port 命中 bad port 表 → network error。
+      var pm = /^https?:\/\/[^\/?#]*:(\d{1,5})(?=[\/?#]|$)/i.exec(url);
+      if (pm && _zwFetchBadPort(pm[1])) return { reject: true };
+      return null;
+    }
+    if (scheme === 'data') {
+      // Request 构造的 URL parse 失败 → TypeError（data://test:test/ 形态——host parser
+      // 未注册时跳过校验（lenient 兼容旧环境））。
+      if (typeof __zw_parse_url === 'function' && !URL.canParse(url)) return { reject: true };
+      var data = _zwDataURLProcessor(url);
+      if (!data) return { reject: true };
+      // main fetch §4.1 step 22：HEAD/CONNECT → internal response body null。
+      var dBody = (method === 'HEAD' || method === 'CONNECT') ? null : data.body;
+      var dresp = new Response(dBody, { status: 200, statusText: 'OK', headers: { 'content-type': data.contentType } });
+      dresp.type = 'basic';
+      dresp.url = url;
+      return { response: dresp };
+    }
+    if (scheme === 'blob') {
+      // https://fetch.spec.whatwg.org/#scheme-fetch blob:——非 GET → network error；
+      // blob URL entry（同源 + store 命中）→ 200 + Content-Length/Content-Type。
+      if (String(method).toUpperCase() !== 'GET') return { reject: true };
+      var origin = (globalThis.location && globalThis.location.origin) || '';
+      var om = /^([^\/]+:\/\/[^\/]*)\//.exec(url.slice(5));
+      var blob = (om && om[1] === origin && Object.prototype.hasOwnProperty.call(_zwBlobStore, url))
+        ? _zwBlobStore[url] : null;
+      if (!blob) return { reject: true };
+      var bytes = _zw_blobBytes(blob);
+      var headers = { 'content-length': String(bytes.length), 'content-type': blob.type || '' };
+      var bresp = new Response(bytes, { status: 200, statusText: 'OK', headers: headers });
+      bresp.type = 'basic';
+      bresp.url = url;
+      return { response: bresp };
+    }
+    // about:（opaque origin 非同源）/ file:（scheme fetch 未定义）/其余 scheme → network error。
+    return { reject: true };
+  }
+
   if (!globalThis.fetch) {
     globalThis.fetch = function(input, init) {
       init = init || {};
@@ -1667,6 +1933,14 @@
         // signal 已 aborted → 同步 reject（spec：fetch 入口检查 signal.aborted）。
         if (signal && signal._aborted) {
           reject(signal.reason);
+          return;
+        }
+        // M2-S1（net-api-compat）：scheme dispatch（main fetch §4.1 step 12）——data:/blob:
+        // scheme fetch + bad port / 非 HTTP(S) scheme network error。命中即短路 host 派发。
+        var _schemeHit = _zwFetchSchemeDispatch(url, method);
+        if (_schemeHit) {
+          if (_schemeHit.reject) reject(new TypeError('Failed to fetch'));
+          else resolve(_schemeHit.response);
           return;
         }
         globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
@@ -1869,9 +2143,8 @@
       _zwMarkBodyUsed(self);
       var bodyError = _zwBodyErrorPromise(self);
       if (bodyError) return bodyError;
-      var contentType = self.headers && typeof self.headers.get === 'function'
-        ? (self.headers.get('content-type') || '')
-        : '';
+      // net-api M2-S1：Blob type = get the MIME type（parse+serialize，非 raw header 值）。
+      var contentType = _zwBodyMimeType(self.headers) || '';
       return Promise.resolve(new Blob([self._bodyBytes != null ? self._bodyBytes : self._bodyText], { type: contentType }));
     };
     this.arrayBuffer = function () {
@@ -1986,7 +2259,7 @@
     });
     this.text = function () { _zwMarkBodyUsed(self); return Promise.resolve(self.body == null ? '' : String(self.body)); };
     this.json = function () { _zwMarkBodyUsed(self); return Promise.resolve(JSON.parse(self.body == null ? '' : String(self.body))); };
-    this.blob = function () { _zwMarkBodyUsed(self); return Promise.resolve(new Blob([self.body == null ? '' : String(self.body)])); };
+    this.blob = function () { _zwMarkBodyUsed(self); return Promise.resolve(new Blob([self.body == null ? '' : String(self.body)], { type: _zwBodyMimeType(self.headers) || '' })); };
     this.arrayBuffer = function () {
       _zwMarkBodyUsed(self);
       var bytes = _zw_utf8_encode(self.body == null ? '' : String(self.body));

@@ -1330,7 +1330,13 @@
     var size = 0;
     for (var i = 0; i < parts.length; i++) size += Blob._partSize(parts[i]);
     this.size = size;
-    this.type = (options && options.type != null) ? String(options.type).toLowerCase() : '';
+    // net-api M2-S1：type 经 MIME parse 失败 → 空串，成功 → 序列化形态（FileAPI Blob
+    // constructor + mimesniff mime-types.json——'x/x; bonus=x' → 'x/x;bonus=x'、
+    // charset=" gbk" 引号保留）。_zwParseMimeType/_zwSerializeMimeType 为 part01 同
+    // IIFE 作用域共享函数。
+    var typeRaw = (options && options.type != null) ? String(options.type) : '';
+    var typeParsed = _zwParseMimeType(typeRaw);
+    this.type = typeParsed ? _zwSerializeMimeType(typeParsed) : '';
   };
   // part 字节长：string→UTF-8；ArrayBuffer/TypedArray/DataView→byteLength；Blob→size；余 0。
   globalThis.Blob._partSize = function (p) {
