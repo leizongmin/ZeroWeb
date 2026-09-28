@@ -10871,7 +10871,8 @@
         }
         for (var iS = 0; iS < chainS.length; iS++) {
           var pS = chainS[iS];
-          this[pS[0]] = o[pS[1]] != null ? o[pS[1]] : pS[2];
+          // net-api M3-S2：第 4 元为可选 IDL 转换器（ProgressEvent double/boolean 面）。
+          this[pS[0]] = o[pS[1]] != null ? (pS.length > 3 ? pS[3](o[pS[1]]) : o[pS[1]]) : pS[2];
         }
         // R150：显式 offset init 印章（dispatch 期 offsetX 计算的跳过条件）。
         if (o.offsetX != null || o.offsetY != null) this._zwOffsetInit = true;
@@ -10892,7 +10893,8 @@
       for (var i = 0; i < chain.length; i++) {
         var p = chain[i];
         // != null：null/undefined 用默认（spec init dict 缺省 → 默认值；显式 null → 默认，spec LegacyNull 不适用事件 init）。
-        ev[p[0]] = o[p[1]] != null ? o[p[1]] : p[2];
+        // net-api M3-S2：第 4 元为可选 IDL 转换器（ProgressEvent double/boolean 面）。
+        ev[p[0]] = o[p[1]] != null ? (p.length > 3 ? p[3](o[p[1]]) : o[p[1]]) : p[2];
       }
       // R150：显式 offset init 印章（dispatch 期 offsetX 计算的跳过条件）。
       if (o.offsetX != null || o.offsetY != null) ev._zwOffsetInit = true;
@@ -11134,8 +11136,13 @@
     ['key', 'key', null], ['newValue', 'newValue', null], ['oldValue', 'oldValue', null],
     ['url', 'url', ''], ['storageArea', 'storageArea', null],
   ]);
+  // net-api M3-S2：init dict 经 IDL 转换（unrestricted double → Number、boolean →
+  // Boolean——progressevent-constructor「ECMAScript value conversion」面；
+  // 'lengthcomputable' 小写键不匹配 → 默认 false，大小写敏感保留）。
   _defineEventSubclass('ProgressEvent', 'Event', [
-    ['lengthComputable', 'lengthComputable', false], ['loaded', 'loaded', 0], ['total', 'total', 0],
+    ['lengthComputable', 'lengthComputable', false, function (v) { return Boolean(v); }],
+    ['loaded', 'loaded', 0, function (v) { var n = Number(v); return isNaN(n) ? 0 : n; }],
+    ['total', 'total', 0, function (v) { var n = Number(v); return isNaN(n) ? 0 : n; }],
   ]);
   _defineEventSubclass('TransitionEvent', 'Event', [
     ['propertyName', 'propertyName', ''], ['elapsedTime', 'elapsedTime', 0], ['pseudoElement', 'pseudoElement', ''],

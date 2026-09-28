@@ -4,6 +4,9 @@
     self.response = '';
     self.responseURL = '';
     self.responseType = '';
+    // net-api M3-S2：responseXML 恒 null（XML 文档解析未实现——spec 非 document
+    // responseType 恒 null；overridemimetype-done-state 面）。
+    self.responseXML = null;
     self.onreadystatechange = null;
     self.onload = null;
     self.onerror = null;
@@ -35,6 +38,9 @@
     self.open = function(method, url, _async, username, password) {
       self._zwXhrMethod = String(method || 'GET').toUpperCase();
       self._zwXhrUrl = resolveXhrUrl(url);
+      // net-api M3-S2：sync 标记（xhr.spec——_async === false 即同步 XHR；send 经 host
+      // 同步契约直返（runner），DONE 同步到达）。
+      self._zwXhrAsync = !(_async === false);
       // https://xhr.spec.whatwg.org/#the-open()-method
       if (username !== undefined || password !== undefined) {
         try {
@@ -45,7 +51,108 @@
         } catch (_eXhrCredentialsUrl) {}
       }
       self._zwXhrAborted = false;
+      self._zwXhrSent = false;
+      self._zwXhrOverrideMime = null;
+      self._zwXhrOverrideCharset = null;
       changeReadyState(1);
+    };
+    // net-api M3-S2：responseType 状态机（xhr.spec §4.6.6）——枚举外忽略（nosuchtype 面）；
+    // LOADING/DONE → InvalidStateError；sync 标记 + OPENED → InvalidAccessError。
+    var _ZW_XHR_RT_ENUM = { '': 1, 'text': 1, 'json': 1, 'arraybuffer': 1, 'blob': 1, 'document': 1 };
+    Object.defineProperty(self, 'responseType', {
+      get: function () { return self._zwXhrResponseType || ''; },
+      set: function (v) {
+        v = String(v);
+        if (!_ZW_XHR_RT_ENUM[v]) return;
+        if (self.readyState === 3 || self.readyState === 4) {
+          throw new (globalThis.DOMException || Error)('responseType cannot be set after LOADING/DONE.', 'InvalidStateError');
+        }
+        if (self._zwXhrAsync === false && self.readyState === 1) {
+          throw new (globalThis.DOMException || Error)('responseType cannot be set on a sync XHR at OPENED.', 'InvalidAccessError');
+        }
+        self._zwXhrResponseType = v;
+      },
+      configurable: true
+    });
+    // net-api M3-S2：overrideMimeType（xhr.spec §4.6.5）——LOADING/DONE → InvalidStateError；
+    // MIME parse 失败 → text/plain 回落；charset 参数 → 响应解码覆盖。
+    self.overrideMimeType = function(mime) {
+      if (self.readyState === 3 || self.readyState === 4) {
+        throw new (globalThis.DOMException || Error)('overrideMimeType cannot be set after LOADING/DONE.', 'InvalidStateError');
+      }
+      var parsed = _zwParseMimeType(String(mime));
+      // xhr.spec §3.6.7：parse 失败 → application/octet-stream（非 text/plain）。
+      self._zwXhrOverrideMime = parsed ? _zwSerializeMimeType(parsed) : 'application/octet-stream';
+      self._zwXhrOverrideCharset = null;
+      if (parsed) {
+        for (var pi = 0; pi < parsed.params.length; pi++) {
+          if (parsed.params[pi][0] === 'charset') self._zwXhrOverrideCharset = parsed.params[pi][1];
+        }
+      }
+    };
+    // net-api M3-S2：响应填充共享路径（async .then 与 sync __zw_fetch 同构）。
+    // responseType 效果：json → 解析（失败 null）；arraybuffer → Uint8Array；blob →
+    // Blob（type = final MIME——CT 解析，null 回落 override，仍 null → text/xml，
+    // xhr.spec §4.7.3 text/xml 回落）；text/'' → responseText。
+    self._zwFillFromResponse = function(response, bytesOverride) {
+      if (self._zwXhrAborted) return;
+      if (!response || response.status === 0 || response.type === 'error') {
+        self.status = 0;
+        self.statusText = '';
+        self.responseText = '';
+        self.response = '';
+        changeReadyState(4);
+        fire('error');
+        fire('loadend');
+        return;
+      }
+      self.status = response.status | 0;
+      self.statusText = String(response.statusText || '');
+      self.responseURL = String(response.url || self._zwXhrUrl || '');
+      self._zwXhrResponseHeaders = {};
+      if (response.headers && typeof response.headers.forEach === 'function') {
+        response.headers.forEach(function(value, name) {
+          self._zwXhrResponseHeaders[String(name).toLowerCase()] = String(value);
+        });
+      }
+      changeReadyState(2);
+      var bytes = bytesOverride != null ? bytesOverride
+        : (response._bodyBytes != null ? response._bodyBytes
+        : _zw_utf8_encode(response._bodyText == null ? '' : String(response._bodyText)));
+      var text = new TextDecoder().decode(bytes);
+      var overrideCharset = self._zwXhrOverrideCharset;
+      if (overrideCharset) {
+        // xhr.spec get a final encoding：override encoding 优先于 response charset
+        //（overridemimetype-unsent「enforcing Shift-JIS」面）。
+        try { text = new TextDecoder(overrideCharset).decode(bytes); } catch (_eXhrCharset) {}
+      }
+      self.responseText = text;
+      var rt = self._zwXhrResponseType || '';
+      if (rt === 'json') {
+        var parsedJson = null;
+        try { parsedJson = JSON.parse(text); } catch (_eXhrJson) {}
+        self.response = parsedJson;
+      } else if (rt === 'arraybuffer') {
+        var ab = new Uint8Array(bytes.length);
+        for (var ai = 0; ai < bytes.length; ai++) ab[ai] = bytes[ai];
+        self.response = ab;
+      } else if (rt === 'blob') {
+        // xhr.spec get a final MIME type：override 非空 → 逐字使用（含 parse 失败的
+        // octet-stream 回落）；否则 response MIME（CT 提取，失败 → text/xml 回落）。
+        var finalMime = self._zwXhrOverrideMime;
+        if (!finalMime) {
+          var ctRaw = self._zwXhrResponseHeaders['content-type'];
+          var ctParsed = ctRaw ? _zwParseMimeType(ctRaw) : null;
+          finalMime = ctParsed ? _zwSerializeMimeType(ctParsed) : 'text/xml';
+        }
+        self.response = new Blob([bytes], { type: finalMime });
+      } else {
+        self.response = text;
+      }
+      changeReadyState(3);
+      changeReadyState(4);
+      fire('load');
+      fire('loadend');
     };
     self.send = function(body) {
       if (self.readyState !== 1) {
@@ -60,6 +167,17 @@
            body.buffer instanceof SharedArrayBuffer);
         if (isSab) throw new TypeError('Cannot send a SharedArrayBuffer');
       }
+      // net-api M3-S2：同步 XHR（open async=false）——host `__zw_fetch` 同步契约直返
+      //（runner 路径；异步 host 回空 wire → error 路径，浏览器同步 XHR 已知限制）。
+      if (self._zwXhrAsync === false && typeof globalThis.__zw_fetch === 'function') {
+        var syncWire = globalThis.__zw_fetch(
+          '__zwxhr:sync', self._zwXhrMethod, self._zwXhrUrl,
+          _headersToWire(self._zwXhrHeaders), body == null ? '' : String(body),
+          '', '', 'cors', 'follow', 'same-origin');
+        var syncResp = _makeResponseFromWire(syncWire);
+        self._zwFillFromResponse(syncResp, null);
+        return;
+      }
       var fetchFn = typeof self._zwXhrFetch === 'function' ? self._zwXhrFetch : globalThis.fetch;
       if (typeof fetchFn !== 'function') {
         self.status = 0;
@@ -72,41 +190,7 @@
       // https://xhr.spec.whatwg.org/#the-send()-method
       fetchFn(self._zwXhrUrl, { method: self._zwXhrMethod, headers: self._zwXhrHeaders, body: body })
         .then(function(response) {
-          if (self._zwXhrAborted) return;
-          if (!response || response.status === 0 || response.type === 'error') {
-            self.status = 0;
-            self.statusText = '';
-            self.responseText = '';
-            self.response = '';
-            changeReadyState(4);
-            fire('error');
-            fire('loadend');
-            return;
-          }
-          self.status = response.status | 0;
-          self.statusText = String(response.statusText || '');
-          self.responseURL = String(response.url || self._zwXhrUrl || '');
-          self._zwXhrResponseHeaders = {};
-          if (response.headers && typeof response.headers.forEach === 'function') {
-            response.headers.forEach(function(value, name) {
-              self._zwXhrResponseHeaders[String(name).toLowerCase()] = String(value);
-            });
-          }
-          changeReadyState(2);
-          var textPromise = typeof response.text === 'function'
-            ? response.text()
-            : Promise.resolve(response._bodyText || '');
-          return textPromise.then(function(text) {
-            if (self._zwXhrAborted) return;
-            self.responseText = String(text == null ? '' : text);
-            self.response = self.responseType === '' || self.responseType === 'text'
-              ? self.responseText
-              : self.responseText;
-            changeReadyState(3);
-            changeReadyState(4);
-            fire('load');
-            fire('loadend');
-          });
+          self._zwFillFromResponse(response, null);
         }, function() {
           if (self._zwXhrAborted) return;
           self.status = 0;
@@ -149,7 +233,10 @@
     };
     self.getResponseHeader = function(name) {
       if (!self._zwXhrResponseHeaders || !name) return null;
-      return self._zwXhrResponseHeaders[String(name).toLowerCase()] || null;
+      // net-api M3-S2：空值头返回 ''（`|| null` 会把合法空值吞成 null——getresponseheader
+      // 「content-length expects 0」形态）。
+      var ln = String(name).toLowerCase();
+      return Object.prototype.hasOwnProperty.call(self._zwXhrResponseHeaders, ln) ? self._zwXhrResponseHeaders[ln] : null;
     };
     self.getAllResponseHeaders = function() { return ''; };
   };
@@ -7338,7 +7425,9 @@
   function _makeEvent(type, options) {
     options = options || {};
     var ev = {
-      type: type,
+      // net-api M3-S2：type 为 DOMString（`new ProgressEvent(null)` → 'null'——
+      // progressevent-constructor 转换面）。
+      type: String(type),
       bubbles: !!options.bubbles,
       cancelable: !!options.cancelable,
       // js-dom M4 R114：EventInit.composed（spec dom-event-constructors——`new Event(t,

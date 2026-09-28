@@ -4397,7 +4397,18 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
             let path_part = path_part.strip_prefix('/').unwrap_or(path_part);
             let clean = path_part.split(['?', '#']).next().unwrap_or(path_part);
             if clean.is_empty() {
-                return Err("empty path".to_string());
+                // net-api M3-S2 fixture：站点根（wpt.test /）——responsetype DONE 腿
+                // `open('get', '/')` 须非空响应体；通用最小根页。
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: "wpt.test root\n".to_string(),
+                    body_bytes: Some(b"wpt.test root\n".to_vec()),
+                });
             }
             if clean == "service-workers/service-worker/resources/fetch-with-body-worker.py" {
                 // https://github.com/web-platform-tests/wpt/blob/04067ce9c7c2165e71ad7d0dde10a4c5cb394a83/service-workers/service-worker/resources/fetch-with-body-worker.py
@@ -4417,6 +4428,34 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
             }
             if req.method != "GET" {
                 return Err(format!("method not supported: {}", req.method));
+            }
+            if clean.ends_with("/status.py") && clean.starts_with("xhr/") {
+                // net-api M3-S2 fixture：xhr/resources/status.py（上游逐字等价——
+                // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
+                // status.py）。?code=（默认 200）&text=（默认 OMG）&content=&type=
+                // → 自定义状态行 + Content-Type + body。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let code: u16 = wpt_query_value(query, "code")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(200);
+                let text = wpt_query_value(query, "text").unwrap_or_else(|| "OMG".into());
+                // net-api M3-S2：content 保留原始字节（%XX → byte——shift-jis 等非 UTF-8
+                // 测试载荷经 body_bytes 保真，不落 lossy UTF-8）。
+                let content_bytes: Vec<u8> = wpt_query_value(query, "content")
+                    .map(|v| percent_encoding::percent_decode_str(&v).collect())
+                    .unwrap_or_default();
+                let ctype = wpt_query_value(query, "type").unwrap_or_default();
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), ctype));
+                headers.push(("x-request-method".into(), req.method.clone()));
+                wpt_add_fetch_metadata(&mut headers, req, code);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: code,
+                    status_text: text,
+                    headers,
+                    body: String::from_utf8_lossy(&content_bytes).into_owned(),
+                    body_bytes: Some(content_bytes),
+                });
             }
             if clean.ends_with("/inspect-headers.py") {
                 // net-api M3-S1 fixture：fetch/api/resources/inspect-headers.py（上游逐字

@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-29（M3-S1 收口）
+**最后更新**: 2026-09-29（M3-S2 收口）
 
 ---
 
@@ -11,10 +11,11 @@
 **专项定位**：网络 API（fetch/XHR/URL/mimesniff/streams/EventSource）一致性收敛，
 WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 + 帧协议）。
 
-**当前进度**：M1（25.8%）→ M2 主体收口（S1 66.1% / S2 67.9% / S3 70.8%）→
-M3-S1（2026-09-29）——**3824/5198 = 73.6%**（fetch 70.1% / xhr 27.0% / url 67.3% /
-mimesniff 100% / streams 42.5% / eventsource 6.2%）。下一切片 M3-S2（XHR responsetype
-状态机 + progress 事件序）与 M3-S3（URL percent-encoding / default port / URL.parse）。
+**当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3-S1（73.6%）→
+M3-S2（2026-09-29）——**3946/5212 = 75.7%**（fetch 70.1% / xhr 53.2% / url 67.3% /
+mimesniff 100% / streams 42.5% / eventsource 6.2%）。下一切片 M3-S3（URL
+percent-encoding / default port / URL.parse）+ P7 续件（.asis / event-stream fixture
+评估）。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -28,7 +29,7 @@ mimesniff 100% / streams 42.5% / eventsource 6.2%）。下一切片 M3-S2（XHR 
 |---|------|------|
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
-| P3 | XHR 状态机 + EventSource 解析/重连 | 🔶 M3 进行中——S1 已收口（setRequestHeader 校验 + SAB 守卫，xhr 27.0%）；**S2 = responsetype 状态机（24）+ overridemimetype（74）+ blob-range（27）+ progress 事件序**；eventsource 依赖 P7 event-stream fixture |
+| P3 | XHR 状态机 + EventSource 解析/重连 | 🔶 M3 进行中——S1（header 校验）+ S2（responseType/同步/overrideMime）已收口（xhr 53.2%）；**残余：blob-range（27，blob:+Range）、progress 事件序、.asis/eventsource fixture 联动 P7** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | 🔶 mimesniff 已收口（99.2%）；url 归 M3 |
 | P5 | streams 底座一致性（fetch body 依赖） | ⏳ M4（主簇：ReadableStream.from 32 / BYOB view 16 / queuing strategy 11 / pull 时机 8） |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
@@ -36,6 +37,15 @@ mimesniff 100% / streams 42.5% / eventsource 6.2%）。下一切片 M3-S2（XHR 
 
 ## 已完成切片
 
+- **M3-S2（2026-09-29）**：XHR 状态机主片（3946/5212 = **75.7%**，Δ+122 零回归）。
+  responseType 状态机（responsetype.any **50/50**）+ 同步 XHR（host 同步契约 +
+  `_zwFillFromResponse` 共享填充）+ overrideMimeType（octet-stream parse 回落 /
+  charset 优先 / final MIME text/xml 回落——overridemimetype-blob **77/77**、
+  done-state 1/1）+ responseType 效果（json/arraybuffer/blob）+ getResponseHeader
+  空值修复 + ProgressEvent init IDL 转换（**10/10**）+ P7 续件（status.py 原始字节
+  content + 站点根页）。残余记账：shift-jis 解码归 encoding-compat goal、IDL
+  interface 保真挂账、.asis fixture 待评估。见
+  [evidence/2026-09-29-m3-s2-xhr-state.md](evidence/2026-09-29-m3-s2-xhr-state.md)。
 - **M3-S1（2026-09-29）**：XHR setRequestHeader 校验 + SAB send 守卫 + P7 fixture
   首件（3824/5198 = **73.6%**，Δ+142 零回归）。setRequestHeader：OPENED/未发送状态校验
   （InvalidStateError）+ name/value 校验（SyntaxError，先 Normalize 后 validate）+
@@ -84,13 +94,11 @@ mimesniff 100% / streams 42.5% / eventsource 6.2%）。下一切片 M3-S2（XHR 
 
 ## 下一步计划
 
-1. **M3-S2**：XHR responsetype 状态机（24）+ overridemimetype（74）+ blob-range（27）+
-   progress 事件序（12）
-2. **M3-S3**：URL 修齐（percent-encoding 39 / default port ~40 / URL.parse 8）+
+1. **M3-S3**：URL 修齐（percent-encoding 39 / default port ~40 / URL.parse 8）+
    fetch 残余甄别（response-error 族 10）
-3. **P7 续**：event-source.py / echo-content.py / delay.py fixture 评估（eventsource
-   Timeout 23 / request-upload echo / xhr delay 簇）
-4. **M4**：streams 底座（ReadableStream.from 32 / BYOB view 16 / queuing strategy 11 /
+2. **M3-S4 评估**：blob-range（blob:+Range XHR 27）+ P7 续件（.asis 原始 HTTP
+   fixture / event-source.py / echo-content.py——eventsource Timeout 23 / xhr delay 簇）
+3. **M4**：streams 底座（ReadableStream.from 32 / BYOB view 16 / queuing strategy 11 /
    pull 时机 8）+ WebSocket 二期挂账定稿 + DC 逐项判定收口
 
 **待用户决策清单**：（空）
