@@ -138,7 +138,13 @@ pub fn ensure_v8_initialized() {
 pub type UncaughtReport = (String, u32, u32);
 
 thread_local! {
-    static UNCAUGHT_REPORTS: std::cell::RefCell<Vec<UncaughtReport>> = const { std::cell::RefCell::new(Vec::new()) };
+    // 报告以 `Option` 存储：retraction（见下）置 None，排空时过滤。
+    static UNCAUGHT_REPORTS: std::cell::RefCell<Vec<Option<UncaughtReport>>> = const { std::cell::RefCell::new(Vec::new()) };
+    // 待定 rejection 的 promise 身份 → UNCAUGHT_REPORTS 下标。同 execute 内
+    // 后挂 handler 时按 promise 身份撤回报告；`take_uncaught_reports` 排空即清，
+    // 故跨 execute 才挂 handler 的报告照常上报（Chrome 语义：微任务检查点末
+    // 仍无 handler 才上报）。
+    static PENDING_REJECTS: std::cell::RefCell<Vec<(v8::Global<v8::Promise>, usize)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// promise-reject 回调入口（值传参，V8 要求）。
@@ -146,16 +152,45 @@ unsafe extern "C" fn promise_reject_callback_entry(msg: v8::PromiseRejectMessage
     promise_reject_callback(&msg);
 }
 
-/// promise-reject 回调：`PromiseRejectWithNoHandler`（未处理 rejection）。
+/// promise-reject 回调：`PromiseRejectWithNoHandler`（未处理 rejection）与
+/// `PromiseHandlerAddedAfterReject`（撤回，见下）。
+///
 /// 报告文本对齐 Chrome console 形态：`Uncaught (in promise) <原因>`（原因经
 /// `Value::to_string`）+ 原因 Error 对象的创建时符号化栈（读 `.stack` 属性——
 /// `Object::get` 沿原型链查找，继承 accessor 值亦得；去掉原因头行后拼接）。
 /// 行/列保持 0：上报点 JS 栈已空（rejection 自已完成的微任务浮出），
 /// `Exception::create_message` 的 current-stack 路径取不到帧，创建时栈仅以
 /// `.stack` 文本形态可得——结构化 stackTrace 挂后续切片。
+///
+/// 撤回语义（对齐 Chrome 同 execute 已处理 rejection 报 0）：
+/// https://html.spec.whatwg.org/multipage/webappapis.html#about-to-be-notified-promises
+/// —— rejection 只在微任务检查点末仍无 handler 才上报。V8 的 reject 回调在
+/// reject 时刻即发 `PromiseRejectWithNoHandler`（此时 `.then`/`.catch` 尚未挂），
+/// 立即上报会把随后同 execute 内挂上 handler 的 rejection 误报为 uncaught
+/// （baidu live：`new Image()` 解码管线 reject 后同步 `.then(…, fail)` 仍被报）。
+/// 故 reject 时先暂存 promise 身份；V8 随后发 `PromiseHandlerAddedAfterReject`
+/// 时按身份撤回。跨 execute 才挂 handler 的报告照常上报（排空即清暂存）。
 fn promise_reject_callback(msg: &v8::PromiseRejectMessage) {
-    if msg.get_event() != v8::PromiseRejectEvent::PromiseRejectWithNoHandler {
-        return;
+    // 非「未处理 reject / 追加 handler」事件（已 settle 后的 reject/resolve）不涉报告。
+    match msg.get_event() {
+        v8::PromiseRejectEvent::PromiseRejectWithNoHandler => {}
+        v8::PromiseRejectEvent::PromiseHandlerAddedAfterReject => {
+            v8::callback_scope!(unsafe scope, msg);
+            let promise = v8::Global::new(scope, msg.get_promise());
+            PENDING_REJECTS.with(|p| {
+                let mut pending = p.borrow_mut();
+                if let Some(pos) = pending.iter().position(|(id, _)| *id == promise) {
+                    let (_, idx) = pending.remove(pos);
+                    UNCAUGHT_REPORTS.with(|q| {
+                        if let Some(slot) = q.borrow_mut().get_mut(idx) {
+                            *slot = None;
+                        }
+                    });
+                }
+            });
+            return;
+        }
+        _ => return,
     }
     // SAFETY: promise-reject 回调在 V8 持锁 isolate 内被调用，`&PromiseRejectMessage`
     // 是 CallbackScope 的文档化引导参数（v8 scope.rs `NewCallbackScope` impl）。
@@ -186,7 +221,14 @@ fn promise_reject_callback(msg: &v8::PromiseRejectMessage) {
             }
         }
     }
-    UNCAUGHT_REPORTS.with(|q| q.borrow_mut().push((text, 0, 0)));
+    UNCAUGHT_REPORTS.with(|q| {
+        let mut reports = q.borrow_mut();
+        reports.push(Some((text, 0, 0)));
+        PENDING_REJECTS.with(|p| {
+            p.borrow_mut()
+                .push((v8::Global::new(tc, msg.get_promise()), reports.len() - 1));
+        });
+    });
 }
 
 enum WatchdogMsg {
@@ -709,6 +751,12 @@ impl Drop for V8Sandbox {
         // IsolateHandle 对即将销毁的 isolate 调 terminate_execution），再释放
         // isolate 与 context。
         clear_host_callbacks();
+        // 未处理 rejection 撤回暂存持有本 isolate 的 `Global<Promise>` 句柄；
+        // 若 drop 前未排空（异常路径/测试直落），残留句柄会在同线程下一个
+        // sandbox 的事件比较中触碰已销毁 isolate（"Handle hosted by disposed
+        // Isolate" panic，extern "C" 回调内不可 unwind → abort）。排空即清 +
+        // drop 即清双保险。
+        PENDING_REJECTS.with(|p| p.borrow_mut().clear());
         if let Some(tx) = &self.watchdog_tx {
             let _ = tx.send(WatchdogMsg::Stop);
         }
@@ -742,7 +790,9 @@ impl crate::Sandbox for V8Sandbox {
     /// R-baidu2/P3 slice-2：取走未捕获异常报告（message listener + promise-reject
     /// 回调经 isolate slot 收集）。
     fn take_uncaught_reports(&mut self) -> Vec<(String, u32, u32)> {
-        UNCAUGHT_REPORTS.with(|q| std::mem::take(&mut *q.borrow_mut()))
+        // 排空即过检查点：撤回暂存一并清（此后才挂 handler 的 rejection 照常上报）。
+        PENDING_REJECTS.with(|p| p.borrow_mut().clear());
+        UNCAUGHT_REPORTS.with(|q| std::mem::take(&mut *q.borrow_mut()).into_iter().flatten().collect())
     }
 
     fn config(&self) -> &SandboxConfig {
@@ -824,11 +874,11 @@ mod tests {
     #[test]
     fn test_promise_reject_event_filter_and_ordering() {
         // 事件过滤 + 多 rejection 顺序。V8 时序：NoHandler 在 reject 即时触发
-        // （reject 点 has_handler() 已定），先于同脚本内 .catch 挂接——故
-        // 「先 reject 后挂 handler」场景本实现仍报 1 条（Chrome 经 spec
-        // about-to-be-notified 撤报为 0，撤报机制挂后续切片）。本测试钉的是：
+        // （reject 点 has_handler() 已定），先于同脚本内 .catch 挂接。撤回机制
+        // 覆盖同 execute 场景（见 retraction 测试）；本测试钉的是跨 execute 边界：
         // ① HandlerAdded 事件不得产生第二条报告（防双报守卫核心面）；
-        // ② 同一 execute 内多个未处理 rejection 按创建顺序各报一条。
+        // ② 跨 execute 才挂 handler → 报告已在上一轮排空，不重复不追报；
+        // ③ 同一 execute 内多个未处理 rejection 按创建顺序各报一条。
         use crate::Sandbox;
         let mut sandbox = V8Sandbox::with_config(crate::SandboxConfig {
             persistent_context: true,
@@ -855,6 +905,86 @@ mod tests {
         assert_eq!(reports.len(), 2, "two unhandled rejections: {:?}", reports);
         assert_eq!(reports[0].0, "Uncaught (in promise) first");
         assert_eq!(reports[1].0, "Uncaught (in promise) second");
+    }
+
+    #[test]
+    fn test_promise_reject_same_execute_handler_retracts_report() {
+        // 撤回语义（about-to-be-notified retraction，R-baidu7）：同 execute 内
+        // reject 后挂上 handler（.catch / .then 任一 reaction）→ 撤回不上报
+        //（Chrome 报 0）。baidu live 根因：R56h 运行时 img 解码管线
+        // createImageBitmap(blob) reject 后同步 .then(onF, onR) 派 error 事件——
+        // 撤回机制前被误报 3 条 uncaught rejection。
+        use crate::Sandbox;
+        let mut sandbox = V8Sandbox::new().unwrap();
+        // 同步挂 .catch 具名 handler。
+        sandbox
+            .execute("Promise.reject('handled-catch').catch(function () {}); 0")
+            .expect("execute should succeed");
+        assert!(
+            sandbox.take_uncaught_reports().is_empty(),
+            "同 execute 挂 .catch → 撤回，不报"
+        );
+        // .then 仅 onFulfilled（无 rejection reaction）→ 不撤回。V8 粒度：仅
+        // rejection reaction 挂接才发 HandlerAdded——与 Chrome 可观察行为一致：
+        // rejected promise 上仅挂 fulfillment reaction 时派生 promise 采用
+        // rejection，其自身 NoHandler 照报（同因文本）。
+        sandbox
+            .execute("Promise.reject('handled-then').then(function () {}); 0")
+            .expect("execute should succeed");
+        let reports = sandbox.take_uncaught_reports();
+        assert_eq!(
+            reports.len(),
+            1,
+            "仅 fulfillment reaction → 派生 promise rejection 照报: {:?}",
+            reports
+        );
+        assert_eq!(reports[0].0, "Uncaught (in promise) handled-then");
+        // 微任务内才挂 handler（execute 末 perform_microtask_checkpoint 先于
+        // 排空）→ 撤回。
+        sandbox
+            .execute(
+                "var p = Promise.reject('handled-late'); \
+                 Promise.resolve().then(function () { p.catch(function () {}); }); 0",
+            )
+            .expect("execute should succeed");
+        assert!(
+            sandbox.take_uncaught_reports().is_empty(),
+            "同 execute 微任务内挂 handler → 撤回，不报"
+        );
+        // 对照组：未挂 handler 照报（防撤回过宽）。
+        sandbox
+            .execute("Promise.reject('still-unhandled'); 0")
+            .expect("execute should succeed");
+        let reports = sandbox.take_uncaught_reports();
+        assert_eq!(reports.len(), 1, "未挂 handler 照报: {:?}", reports);
+        assert_eq!(reports[0].0, "Uncaught (in promise) still-unhandled");
+    }
+
+    #[test]
+    fn test_promise_reject_pending_cleared_on_sandbox_drop() {
+        // R-baidu7 回归（wpt-runner storage_cases_execute_scripts_r3081 abort）：
+        // sandbox 1 未排空即 drop，其撤回暂存持有指向已销毁 isolate 的
+        // `Global<Promise>` 句柄；同线程 sandbox 2 的 HandlerAdded 事件比较触碰
+        // 死句柄 → "Handle hosted by disposed Isolate" panic（extern "C" 回调
+        // 内不可 unwind → abort）。sandbox Drop 即清暂存必须兜住，且 sandbox 2
+        // 的同 execute 撤回照常生效。
+        use crate::Sandbox;
+        {
+            let mut s1 = V8Sandbox::new().unwrap();
+            s1.execute("Promise.reject('dangling'); 0")
+                .expect("execute should succeed");
+            // 故意不排空报告——模拟异常路径（报告队列经 thread_local 存续，
+            // 字符串无 isolate 句柄，泄漏属既有行为，此处不断言）。
+        }
+        let mut s2 = V8Sandbox::new().unwrap();
+        s2.execute("Promise.reject('fresh').catch(function () {}); 0")
+            .expect("execute should succeed (no disposed-isolate panic)");
+        let reports = s2.take_uncaught_reports();
+        assert!(
+            !reports.iter().any(|r| r.0.contains("fresh")),
+            "sandbox 2 同 execute 撤回照常生效: {:?}",
+            reports
+        );
     }
 
     #[test]
