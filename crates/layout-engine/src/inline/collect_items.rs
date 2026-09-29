@@ -342,6 +342,9 @@ impl InlineFormattingContext {
                         if styles
                             .get(&child_id)
                             .is_some_and(|s| matches!(s.display, DisplayValue::None))
+                            // paint Path B（空 styles）下 author 规则的 display:none
+                            // 由 caller 注入集判定（同 vertical_walk_nodes 模式）。
+                            || self.display_none_walk_nodes.contains(&child_id)
                             || (styles.is_empty() && Self::ua_hidden_without_styles(elem_data.local_name()))
                         {
                             continue;

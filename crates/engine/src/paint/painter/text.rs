@@ -10,7 +10,7 @@ use zero_layout_engine::inline_finalization::{
     resolve_text_group_align, resolve_text_indent, resolve_word_break_mode, subtree_font_differs_from,
     subtree_has_block_elem, subtree_has_text_decoration,
 };
-use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, NodeIdMap};
+use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, NodeIdMap, NodeIdSet};
 use zero_render_foundation::color::Color;
 use zero_render_foundation::font::TextDirection;
 use zero_render_foundation::geometry::Rect;
@@ -1305,6 +1305,9 @@ impl super::Painter {
                     .with_vertical_walk_nodes(box_node.inline_vertical_nodes.clone())
                     // R4312：块级元素子信号——walk 块子门同通道恢复。
                     .with_block_child_walk_nodes(box_node.inline_block_child_nodes.clone())
+                    // display:none 元素信号（CSS2 §9.3 / CSS Display 3 §2.1）——Path B
+                    // （空 styles）下 author 规则隐藏子门，防 none 文本泄入父 IFC。
+                    .with_display_none_walk_nodes(collect_display_none_walk_nodes(box_node, doc, styles))
                     // R3840：元素级 bidi-override 恢复（layout 期按文本节点 id 存储）。
                     .with_text_node_bidi_overrides(box_node.text_node_bidi_overrides.clone())
                     // R3778：run 级有效 white-space 覆盖——inline 包裹层声明的 pre 等在
@@ -3323,6 +3326,31 @@ pub(super) fn mark_inline_wrapper_chain_painted(
         painted.insert(id);
         stack.extend(doc.child_nodes(id));
     }
+}
+
+/// 收集 `box_node` 对应 DOM 子树内 display:none 的元素节点集——paint Path B（空
+/// styles 重跑 IFC）下隐藏子门的判定信号。CSS2 §9.3 / CSS Display 3 §2.1：display:none
+/// 子树不生成任何盒。须沿 **DOM 子树**遍历（盒树里 inline none 元素无独立 LayoutBox，
+/// 盒遍历会漏）；none 节点整棵剪枝（collect 的 continue 本就跳过整棵）。layout 趟有
+/// styles 直判，不消费此集。
+fn collect_display_none_walk_nodes(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: Option<&HashMap<NodeId, ComputedStyle>>,
+) -> NodeIdSet {
+    let (Some(root), Some(styles)) = (box_node.node_id, styles) else {
+        return NodeIdSet::default();
+    };
+    let mut out = NodeIdSet::default();
+    let mut stack: Vec<NodeId> = doc.child_nodes(root);
+    while let Some(id) = stack.pop() {
+        if styles.get(&id).is_some_and(|s| matches!(s.display, DisplayValue::None)) {
+            out.insert(id);
+            continue; // 子树剪枝：hidden 后代无需入集
+        }
+        stack.extend(doc.child_nodes(id));
+    }
+    out
 }
 
 /// R4332（css-break 3 §5.2 / CSS2.1 §8.5.3）：按 inline owner 计算各片段的（首, 末）旗标。

@@ -69,6 +69,10 @@ pub struct InlineFormattingContext {
     /// R4312：含块级元素子的 inline 元素集合——FLAT_CHILD_WALK 块子门在 paint
     /// Path B（空 styles）下的判定信号。见 `LayoutBox.inline_block_child_nodes`。
     pub block_child_walk_nodes: NodeIdSet,
+    /// display:none 元素集合——FLAT_CHILD_WALK 隐藏子门在 paint Path B（空 styles）
+    /// 下的判定信号（layout IFC 有 styles 直判不消费）。CSS2 §9.3 / CSS Display 3
+    /// §2.1：display:none 子树不生成任何盒，其文本不得泄入父 IFC。
+    pub display_none_walk_nodes: NodeIdSet,
     /// R3840：paint Path B 恢复元素级 `unicode-bidi: bidi-override`（key = inline
     /// owner 元素 NodeId，value = 方向 rtl?）。layout 期经
     /// `LayoutBox.text_node_bidi_overrides` 存储。
@@ -330,6 +334,7 @@ impl InlineFormattingContext {
             plaintext_bidi_overrides: NodeIdSet::default(),
             vertical_walk_nodes: NodeIdSet::default(),
             block_child_walk_nodes: NodeIdSet::default(),
+            display_none_walk_nodes: NodeIdSet::default(),
             text_node_bidi_overrides: NodeIdMap::default(),
             text_align_last: None,
             break_word: false,
@@ -479,6 +484,12 @@ impl InlineFormattingContext {
     /// 设置 inline-block 元素的预计算尺寸（来自 LayoutBox / taffy 布局结果）。
     pub fn with_inline_block_sizes(mut self, sizes: HashMap<NodeId, (f32, f32)>) -> Self {
         self.inline_block_sizes = sizes;
+        self
+    }
+
+    /// 设置 display:none 元素集（见字段文档）。
+    pub fn with_display_none_walk_nodes(mut self, nodes: NodeIdSet) -> Self {
+        self.display_none_walk_nodes = nodes;
         self
     }
 

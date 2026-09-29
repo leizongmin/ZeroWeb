@@ -410,3 +410,37 @@ fn test_quotes_no_node_id_no_panic() {
     painter.paint(&layout, &styles, None);
     // 不应崩溃
 }
+
+/// CSS2 §9.3 / CSS Display 3 §2.1：display:none 子树不生成任何盒——其文本不得
+/// 出现在绘制图元。回归背景：布局趟把 none 元素折为 0×0 Display::None 叶保留
+/// 在盒树，绘制趟（含 paint Path B 空 styles 重跑 IFC）曾把 author 规则隐藏的
+/// 文本画在盒位置，与后随兄弟叠字（baidu 顶栏右上叠字最小复现）。
+#[test]
+fn display_none_subtree_text_not_painted() {
+    let html = r#"<html><head><style>.hidden { display: none; }</style></head>
+<body style="margin:0"><div>BEFORE</div><div class="hidden">SECRET</div><div>TAIL<span class="hidden">INNER</span></div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let sheet = zero_css_parser::Parser::parse_stylesheet(".hidden { display: none; }");
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[sheet]);
+    let mut engine = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let mut painter = Painter::new();
+    painter.paint(&result.root, &styles, Some(&doc));
+
+    let text: String = painter
+        .primitives()
+        .glyphs
+        .iter()
+        .filter_map(|g| char::from_u32(g.glyph_id))
+        .collect();
+    assert!(!text.contains("SECRET"), "块级 display:none 文本不应绘制，实际: {text}");
+    assert!(
+        !text.contains("INNER"),
+        "inline display:none 文本不应绘制，实际: {text}"
+    );
+    assert!(text.contains("BEFORE"), "正常块文本应绘制，实际: {text}");
+    assert!(text.contains("TAIL"), "正常 inline 文本应绘制，实际: {text}");
+}

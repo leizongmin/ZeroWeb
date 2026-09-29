@@ -362,6 +362,20 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><div style=\"display:flex;width:200px;height:50px;\"><div style=\"flex:1;background:red;\"></div><div style=\"flex:1;background:blue;\"></div></div></body></html>",
         is_match: true,
     },
+    // CSS2 §9.3 / CSS Display 3 §2.1：display:none 子树不生成任何盒——文本（块级
+    // 与 inline 均含）不得绘制。回归背景：布局趟折 0×0 Display::None 叶保留盒树，
+    // 绘制趟（含 Path B 空 styles 重跑 IFC）曾把 author 规则隐藏文本画在盒位置，
+    // 与后随兄弟叠字（baidu 顶栏右上叠字最小复现）。
+    // 隐藏文本刻意长（~700 字符，Path B 空 styles 按 UA 默认字号布局）：泄漏墨迹
+    // 须明显超过 Layout 类默认容差 1%（负控制实测 21 字符仅 0.12%，会被放行；
+    // ~350 字符 1.33%，对跨平台字体回退差异裕度不足，翻倍留裕）。
+    InlineReftestDef {
+        id: "css-display/none-text-not-painted",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>.h { display: none; }</style></head><body style=\"margin:0\"><div>VISIBLE-TEXT</div><div class=\"h\">LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK LEAKBLOCK</div><div>TAIL<span class=\"h\">LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE LEAKLINE</span></div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div>VISIBLE-TEXT</div><div>TAIL</div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {
