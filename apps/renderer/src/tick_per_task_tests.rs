@@ -172,3 +172,57 @@ fn dynamic_external_scripts_host_fetch_fires_element_error_event() {
         "取回失败 → 元素 error 事件一次（R2944 镜像按 src 绝对 URL 匹配；createElement 产物经 __zw_handle_for_selector 反查命中 handle 监听）"
     );
 }
+
+#[test]
+fn dynamic_external_scripts_host_fetch_success_fires_load_event_and_executes() {
+    // R-baidu8 review m1：成功路径（取回 Ok → execute_script_direct → 元素 load 事件）
+    // 的 runtime 级回归钉。stub 注入 Ok 应答；onload 计数与脚本全局副作用双断言。
+    let html = r#"<html><head><script>
+      var s = document.createElement('script');
+      s.src = '/ok.js';
+      s.onload = function () { globalThis.__okLoad = (globalThis.__okLoad | 0) + 1; };
+      s.onerror = function () { globalThis.__okErr = (globalThis.__okErr | 0) + 1; };
+      document.head.appendChild(s);
+    </script></head><body></body></html>"#;
+    let url = "https://zero.test/dynamic-scripts-ok";
+    let mut runtime = RendererRuntime::new(9112);
+    runtime.compositor_publish = None;
+    runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
+    runtime.stub_network = true;
+    runtime.current_url = Some(url.to_string());
+    runtime.cached_html = html.to_string();
+    runtime.webview.as_mut().unwrap().load_html(html, None);
+    {
+        let mut ctx = PageScriptContext {
+            html: &mut runtime.cached_html,
+            url,
+            js_worker: &runtime.js_worker,
+            webview: runtime.webview.as_mut(),
+        };
+        page_scripts::run_page_scripts(&mut ctx, true, |_url| Err::<String, String>("no fetch".into()));
+        let _ = page_scripts::drain_pending_dom_mutations(&mut ctx);
+    }
+    runtime.stub_fetch_responses.insert(
+        "https://zero.test/ok.js".to_string(),
+        Ok("globalThis.__okExec = 1;".to_string()),
+    );
+    runtime.execute_new_dynamic_scripts();
+    assert!(runtime.pending_dynamic_scripts.is_some(), "动态外链脚本入队");
+    runtime.tick_dynamic_scripts().expect("tick dynamic scripts");
+    assert!(runtime.pending_dynamic_scripts.is_none(), "stub 即刻 Ok → 队列排空");
+    let load = runtime
+        .js_worker
+        .execute_script_direct("String(globalThis.__okLoad | 0)")
+        .unwrap();
+    assert_eq!(load.trim(), "1", "取回成功 → 元素 load 事件一次（R2944 镜像）");
+    let exec = runtime
+        .js_worker
+        .execute_script_direct("String(globalThis.__okExec | 0)")
+        .unwrap();
+    assert_eq!(exec.trim(), "1", "取回的源码已执行（execute_script_direct）");
+    let err = runtime
+        .js_worker
+        .execute_script_direct("String(globalThis.__okErr | 0)")
+        .unwrap();
+    assert_eq!(err.trim(), "0", "成功路径不派元素 error 事件");
+}

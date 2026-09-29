@@ -57,23 +57,32 @@ impl PendingScriptPrefetch {
 
         let mut changed = false;
         self.inflight.retain(|(url, rx)| {
-            if let Ok(result) = rx.try_recv() {
-                match result {
-                    Ok(text) => {
-                        for spec in extract_module_import_specifiers(&text) {
-                            let dep = resolve_document_url(url, &spec);
-                            if self.seen.insert(dep.clone()) {
-                                self.queue.push_back(dep);
+            match rx.try_recv() {
+                Ok(result) => {
+                    match result {
+                        Ok(text) => {
+                            for spec in extract_module_import_specifiers(&text) {
+                                let dep = resolve_document_url(url, &spec);
+                                if self.seen.insert(dep.clone()) {
+                                    self.queue.push_back(dep);
+                                }
                             }
+                            self.cache.insert(url.clone(), text);
                         }
-                        self.cache.insert(url.clone(), text);
+                        Err(e) => tracing::warn!("script prefetch {url}: {e}"),
                     }
-                    Err(e) => tracing::warn!("script prefetch {url}: {e}"),
+                    changed = true;
+                    false
                 }
-                changed = true;
-                false
-            } else {
-                true
+                // Sender 随导航边界 / StopLoading 的 `inflight_fetches.clear()` 被丢弃 →
+                // 通道关闭。必须视作 Err 完成并移除条目：否则条目永滞 inflight，
+                // `is_active()` 恒真，队列永不收口。
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    tracing::warn!("script prefetch {url}: fetch channel closed");
+                    changed = true;
+                    false
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => true,
             }
         });
         changed
@@ -134,14 +143,22 @@ impl PendingDynamicScripts {
         }
 
         self.inflight.retain(|(url, rx)| {
-            if let Ok(result) = rx.try_recv() {
-                match &result {
-                    Ok(text) => on_complete(url, Ok(text)),
-                    Err(e) => on_complete(url, Err(e)),
+            match rx.try_recv() {
+                Ok(result) => {
+                    match &result {
+                        Ok(text) => on_complete(url, Ok(text)),
+                        Err(e) => on_complete(url, Err(e)),
+                    }
+                    false
                 }
-                false
-            } else {
-                true
+                // Sender 随导航边界 / StopLoading 的 `inflight_fetches.clear()` 被丢弃 →
+                // 通道关闭。视作 Err 完成回调并移除条目，避免 `is_active()` 恒真、
+                // 队列永久卡死（renderer 进程生命周期内 tick 分支常开）。
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    on_complete(url, Err("fetch channel closed"));
+                    false
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => true,
             }
         });
     }
@@ -150,7 +167,7 @@ impl PendingDynamicScripts {
 #[cfg(test)]
 mod dynamic_scripts_tests {
     use super::*;
-    use std::sync::mpsc::channel;
+    use std::sync::mpsc::{Sender, channel};
 
     /// 测试宿主：预置逐 URL 应答（Err 优先），未命中 URL 即刻 Err。
     struct ScriptStubHost {
@@ -220,15 +237,20 @@ mod dynamic_scripts_tests {
         assert!(!pending.is_active(), "全部完成 → 队列排空");
     }
 
-    /// 测试宿主：永不完成（receiver 无发送）——验证并行上限与 inflight 停留。
-    struct HangingHost;
+    /// 测试宿主：永不完成——保活 Sender（rx 停留 Empty 而非 Disconnected），
+    /// 验证并行上限与 inflight 停留。
+    struct HangingHost {
+        held: Vec<Sender<Result<String, String>>>,
+    }
     impl AsyncFetchHost for HangingHost {
         fn fetch_text_meta(&mut self, _: &str, _: ResourceFetchMeta) -> Receiver<Result<String, String>> {
-            let (_tx, rx) = channel();
+            let (tx, rx) = channel();
+            self.held.push(tx);
             rx
         }
 
         fn fetch_bytes_meta(&mut self, _: &str, _: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
+            // 本测试面只经 text 通路；bytes 通道不保活（即刻断开无碍）。
             let (_tx, rx) = channel();
             rx
         }
@@ -240,7 +262,7 @@ mod dynamic_scripts_tests {
         for i in 0..6 {
             pending.push(format!("https://zero.test/{i}.js"));
         }
-        let mut host = HangingHost;
+        let mut host = HangingHost { held: Vec::new() };
         let mut started = 0usize;
         pending.tick(&mut host, 4, |_, _| {
             started += 1;
@@ -248,5 +270,40 @@ mod dynamic_scripts_tests {
         assert_eq!(started, 0, "无完成则无回调");
         assert_eq!(pending.queue.len(), 2, "每 tick 新请求钳到 max_parallel=4");
         assert!(pending.is_active(), "4 inflight + 2 queued");
+    }
+
+    /// Sender 被丢弃（导航边界 / StopLoading 清 inflight_fetches）→ 通道关闭；
+    /// tick 须把 Disconnected 收敛为 Err 完成回调并移除条目，避免队列永不收口。
+    #[test]
+    fn dynamic_scripts_disconnected_channel_completes_with_err() {
+        // 只构造 inflight 条目（不经 push——queue 里的条目会被 fill 循环重新签发，
+        // 干扰「断开收敛」断言）。Sender 端即刻丢弃，模拟导航边界 / StopLoading 的
+        // inflight_fetches.clear() 语义。
+        let mut pending = PendingDynamicScripts {
+            queue: std::collections::VecDeque::new(),
+            inflight: Vec::new(),
+        };
+        let rx = {
+            let (tx, rx) = channel();
+            drop(tx);
+            rx
+        };
+        pending.inflight.push(("https://zero.test/gone.js".into(), rx));
+        assert!(pending.is_active());
+        let mut host = HangingHost { held: Vec::new() };
+        let completions: std::sync::Mutex<Vec<(String, Result<String, String>)>> = std::sync::Mutex::new(Vec::new());
+        {
+            let completions = &completions;
+            pending.tick(&mut host, 4, |url, result| {
+                completions.lock().unwrap().push((
+                    url.to_string(),
+                    result.map(|t| t.to_string()).map_err(|e| e.to_string()),
+                ));
+            });
+        }
+        let done = completions.into_inner().unwrap();
+        assert_eq!(done.len(), 1, "Disconnected → 一次 Err 完成回调：{done:?}");
+        assert!(done[0].1.is_err(), "Disconnected 收敛为 Err：{done:?}");
+        assert!(!pending.is_active(), "断开条目移除 → 队列收口");
     }
 }

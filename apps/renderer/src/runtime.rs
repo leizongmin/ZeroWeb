@@ -209,6 +209,8 @@ pub(crate) struct RendererRuntime {
     pump_clock: std::sync::Arc<AtomicU64>,
     /// in-process 测试无 browser 进程时，避免阻塞 IPC / 子资源永久 pending。
     stub_network: bool,
+    /// [`StubAsyncFetchHost`] 的预置应答表（测试注入 Ok 应答，如动态脚本成功路径）。
+    stub_fetch_responses: HashMap<String, Result<String, String>>,
     /// P1a Slice 2b：observer host-tick 重入守卫——`publish_webview` 末尾触发 tick，tick 回调
     /// 若改 DOM → rerender → 再次 `publish_webview`；depth>0 时跳过 tick，防 tick→rerender→tick
     /// 链（observer 仅在 cross/size-change 时派发，本身收敛；此守卫为兜底，单次外部触发最多 2 次 publish）。
@@ -407,6 +409,7 @@ impl RendererRuntime {
             executed_external_scripts: HashSet::new(),
             inflight_fetches: InflightIpcFetches::new(),
             stub_network: false,
+            stub_fetch_responses: HashMap::new(),
             observer_tick_depth: 0,
             form_controls: FormControlStateStore::new(),
             pending_resource_errors: Vec::new(),
@@ -527,7 +530,7 @@ impl RendererRuntime {
 
         const SCRIPT_PREFETCH_PARALLEL: usize = 4;
         let _changed = if self.stub_network {
-            let mut host = StubAsyncFetchHost;
+            let mut host = StubAsyncFetchHost::default();
             prefetch.tick(&mut host, SCRIPT_PREFETCH_PARALLEL)
         } else {
             let outbound = &mut self.outbound;
@@ -605,7 +608,9 @@ impl RendererRuntime {
         const DYNAMIC_SCRIPT_PARALLEL: usize = 4;
         let mut completions: Vec<(String, Result<String, String>)> = Vec::new();
         if self.stub_network {
-            let mut host = StubAsyncFetchHost;
+            let mut host = StubAsyncFetchHost {
+                responses: self.stub_fetch_responses.clone(),
+            };
             pending.tick(&mut host, DYNAMIC_SCRIPT_PARALLEL, |url, result| {
                 completions.push((url.to_string(), result.map(str::to_string).map_err(str::to_string)));
             });
@@ -1675,7 +1680,7 @@ impl RendererRuntime {
             let font_id = self.font_id;
             text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
                 if self.stub_network {
-                    let mut host = StubAsyncFetchHost;
+                    let mut host = StubAsyncFetchHost::default();
                     let changed = pending.load.tick(webview, &mut host, budget_ms);
                     return changed
                         && webview.last_render().is_some()
@@ -1763,7 +1768,7 @@ impl RendererRuntime {
         {
             let webview = self.webview.as_mut().expect("webview");
             if self.stub_network {
-                let mut host = StubAsyncFetchHost;
+                let mut host = StubAsyncFetchHost::default();
                 pending.load.begin_noncritical_fetches(webview, &mut host);
             } else {
                 let mut host =
@@ -1964,6 +1969,10 @@ impl RendererRuntime {
     ) -> Result<(), String> {
         self.reset_document_fonts();
         self.pending_script_prefetch = None;
+        // 动态脚本队列随文档释放：其 inflight Receiver 的 Sender 在 inflight_fetches.clear()
+        // 中被丢弃，滞留队列会因通道断开永不收口（tick 视 Disconnected 为完成，见
+        // PendingDynamicScripts::tick）。
+        self.pending_dynamic_scripts = None;
         self.executed_external_scripts.clear();
         self.inflight_fetches.clear();
         self.js_worker.reset_document_state();
@@ -2035,6 +2044,9 @@ impl RendererRuntime {
         self.pending_frame_network_fetch = false;
         self.pending_load = None;
         self.pending_script_prefetch = None;
+        // 动态脚本队列随导航释放（同 run_staged_load：Sender 被 inflight_fetches.clear()
+        // 丢弃，滞留条目依赖 tick 的 Disconnected 完成路径收口，这里直接清队）。
+        self.pending_dynamic_scripts = None;
         self.executed_external_scripts.clear();
         self.inflight_fetches.clear();
         self.js_worker.reset_document_state();

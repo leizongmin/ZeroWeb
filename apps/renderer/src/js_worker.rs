@@ -657,6 +657,9 @@ fn js_worker_main(
     // **正置**表（webview selector_handle_map 的倒置镜像，生产方 =
     // page_scripts::apply_recorded_mutations 的 handle_selectors merge）——反查按值匹配
     //（表随 createElement 数量线性，宿主派发低频，O(n) 扫描可接受）。
+    // 已知边界：多个 handle 映射到同一 selector 时，HashMap 迭代序不定 → 命中任意一个
+    //（webview 正置表为 last-write-wins，语义不同但同属「多孪生元素未定义锚定」；如需
+    // 确定性，须在 merge 时维护 selector→handle 索引）。
     // 缺此注册时 renderer 宿主派发对动态创建元素恒 miss。
     {
         let sel_map = Arc::clone(&handle_selector_map);
