@@ -652,6 +652,9 @@ pub struct IpcHitTestCache {
     pub nodes: Vec<(u64, IpcHitTestNodeMeta)>,
     /// 父节点 `(child, parent)`。
     pub parents: Vec<(u64, u64)>,
+    /// computed visibility hidden/collapse 的元素 id（命中穿透；布局保留）。
+    #[serde(default)]
+    pub hidden_nodes: Vec<u64>,
 }
 
 impl Default for PaintSnapshotParams {

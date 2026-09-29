@@ -488,6 +488,7 @@ fn hit_test_cache_to_ipc(cache: HitTestCache) -> IpcHitTestCache {
             .into_iter()
             .map(|(child, parent)| (node_id_to_u64(child), node_id_to_u64(parent)))
             .collect(),
+        hidden_nodes: snap.hidden_nodes,
     }
 }
 
