@@ -94,3 +94,58 @@ fn no_injection_keeps_legacy_collection() {
         "缺省（未注入）应保持旧行为收集，实际: {text}"
     );
 }
+
+/// Path B + 注入集，**嵌套**形状（PR #39 审查发现 #1）：隐藏 span 在可见 inline
+/// （b）内部，FLAT_CHILD_WALK 子循环折回 text_content 前须被注入集门住。
+#[test]
+fn display_none_nested_inline_text_excluded_via_walk_nodes() {
+    let doc = parse_html("<p>TAIL<b>BOLD<span>X-SECRET</span>IBLE</b>TAIL2</p>");
+    let p = body_paragraph(&doc);
+    let b = first_element_child(&doc, p).expect("b 应存在");
+    let span = first_element_child(&doc, b).expect("span 应存在");
+
+    let mut hidden = NodeIdSet::default();
+    hidden.insert(span);
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.display_none_walk_nodes = hidden;
+    ctx.layout(&doc, p, &HashMap::new());
+
+    let text = fragments_text(&ctx);
+    assert!(!text.contains("X-SECRET"), "嵌套隐藏 span 文本不应收集，实际: {text}");
+    assert!(
+        text.contains("BOLD") && text.contains("IBLE"),
+        "外层可见 inline 文本应保留，实际: {text}"
+    );
+    assert!(text.contains("TAIL"), "前后兄弟文本应保留，实际: {text}");
+}
+
+/// layout 趟（styles 非空）嵌套形状：span 计入 `has_block_level_child` 的
+/// 非 inline 白名单（None 不在 inline 集）→ b 被排除出 walk，落
+/// `build_flatten_run_for_element` 吸收——`collect_text_excluding` 的
+/// display:none 剪枝（styles 直判）为本例有效防线（首版仅补 walk 门时
+/// 本例仍泄漏，暴露该第二路径）。
+#[test]
+fn display_none_nested_inline_text_excluded_with_styles() {
+    let doc = parse_html("<p>TAIL<b>BOLD<span>X-SECRET</span>IBLE</b>TAIL2</p>");
+    let p = body_paragraph(&doc);
+    let b = first_element_child(&doc, p).expect("b 应存在");
+    let span = first_element_child(&doc, b).expect("span 应存在");
+
+    let mut styles = HashMap::new();
+    styles.insert(p, style(DisplayValue::Block, PositionValue::Static));
+    styles.insert(b, style(DisplayValue::Inline, PositionValue::Static));
+    styles.insert(span, style(DisplayValue::None, PositionValue::Static));
+
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.layout(&doc, p, &styles);
+
+    let text = fragments_text(&ctx);
+    assert!(
+        !text.contains("X-SECRET"),
+        "styles 直判嵌套隐藏 span 不应收集，实际: {text}"
+    );
+    assert!(
+        text.contains("BOLD") && text.contains("IBLE") && text.contains("TAIL"),
+        "可见文本应保留，实际: {text}"
+    );
+}

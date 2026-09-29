@@ -1223,17 +1223,35 @@ impl InlineFormattingContext {
         }
     }
 
-    /// 递归收集 `id` 子树的所有文本，跳过 `local_name` 在 `exclude` 中的元素子树。
+    /// 递归收集 `id` 子树的所有文本，跳过 `local_name` 在 `exclude` 中的元素子树，
+    /// 并跳过 display:none 元素子树（CSS2 §9.3 / CSS Display 3 §2.1：none 不生成
+    /// 任何盒，其文本不得经扁平化吸收泄入 run——嵌套在可见 inline 内的隐藏子经
+    /// `build_flatten_run_for_element` 吸收路径的泄漏，PR #39 审查发现 #1）。判定
+    /// 双通道同 collect 主路径：layout 趟 `styles` 直判；paint Path B（空 styles）
+    /// 由 `none_nodes` 注入集判定。
     ///
     /// R1022：用于 `<ruby>` —— 收集 rb 文本作 inline 文本，排除 `<rt>`/`<rp>`
     /// （rt 文本在 paint 期作 zero-width annotation 上移到 rb 之上，不参与 inline 流）。
-    fn collect_text_excluding(doc: &Document, id: NodeId, exclude: &[&str]) -> String {
+    fn collect_text_excluding(
+        doc: &Document,
+        id: NodeId,
+        exclude: &[&str],
+        styles: &HashMap<NodeId, ComputedStyle>,
+        none_nodes: &NodeIdSet,
+    ) -> String {
         let mut out = String::new();
-        Self::collect_text_excluding_inner(doc, id, exclude, &mut out);
+        Self::collect_text_excluding_inner(doc, id, exclude, styles, none_nodes, &mut out);
         out
     }
 
-    fn collect_text_excluding_inner(doc: &Document, id: NodeId, exclude: &[&str], out: &mut String) {
+    fn collect_text_excluding_inner(
+        doc: &Document,
+        id: NodeId,
+        exclude: &[&str],
+        styles: &HashMap<NodeId, ComputedStyle>,
+        none_nodes: &NodeIdSet,
+        out: &mut String,
+    ) {
         for child_id in doc.child_nodes(id) {
             if let Some(node) = doc.get(child_id) {
                 match &node.kind {
@@ -1242,7 +1260,15 @@ impl InlineFormattingContext {
                         if exclude.iter().any(|e| elem.local_name().eq_ignore_ascii_case(e)) {
                             continue;
                         }
-                        Self::collect_text_excluding_inner(doc, child_id, exclude, out);
+                        // display:none 子树整棵剪枝（hidden 后代的文本同样不得吸收）。
+                        if styles
+                            .get(&child_id)
+                            .is_some_and(|s| matches!(s.display, DisplayValue::None))
+                            || none_nodes.contains(&child_id)
+                        {
+                            continue;
+                        }
+                        Self::collect_text_excluding_inner(doc, child_id, exclude, styles, none_nodes, out);
                     }
                     _ => {}
                 }

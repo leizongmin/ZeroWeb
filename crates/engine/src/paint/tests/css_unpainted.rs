@@ -444,3 +444,81 @@ fn display_none_subtree_text_not_painted() {
     assert!(text.contains("BEFORE"), "正常块文本应绘制，实际: {text}");
     assert!(text.contains("TAIL"), "正常 inline 文本应绘制，实际: {text}");
 }
+
+/// 同上，**嵌套**形状（PR #39 审查发现 #1）：隐藏 span 在可见 inline（b）内部，
+/// 绘制趟 Path B 的注入集收集走 DOM 子树，flat walk 折回前须被门住——锚定
+/// 非直子泄漏不再发生。
+#[test]
+fn display_none_nested_inline_text_not_painted() {
+    let html = r#"<html><head><style>.hidden { display: none; }</style></head>
+<body style="margin:0"><div>BEFORE</div><div>TAIL<b>BOLD<span class="hidden">NESTED</span>AFTER</b>TAIL2</div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let sheet = zero_css_parser::Parser::parse_stylesheet(".hidden { display: none; }");
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[sheet]);
+    let mut engine = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let mut painter = Painter::new();
+    painter.paint(&result.root, &styles, Some(&doc));
+
+    let text: String = painter
+        .primitives()
+        .glyphs
+        .iter()
+        .filter_map(|g| char::from_u32(g.glyph_id))
+        .collect();
+    assert!(
+        !text.contains("NESTED"),
+        "嵌套 inline display:none 文本不应绘制，实际: {text}"
+    );
+    assert!(
+        text.contains("BOLD") && text.contains("AFTER"),
+        "外层可见 inline 文本应绘制，实际: {text}"
+    );
+    assert!(
+        text.contains("BEFORE") && text.contains("TAIL"),
+        "兄弟文本应绘制，实际: {text}"
+    );
+}
+
+/// 同 display_none_subtree_text_not_painted，但走**脏矩形路径** `paint_in_rect`
+/// ——浏览器增量重绘走此路径（baidu 右上叠字实际表现通道），守卫与主路径同步
+///（R3768/R3769 教训）。钉住两条绘制路由的端到端清洁等价。注：负控制（仅撤
+/// painter 守卫）本测试仍绿——收集层门（walk/flatten 排除）是这些形状的有效
+/// 防线，painter 守卫为纵深防御（收集门失效时二道拦截），其独立判别由 reftest
+/// 负控制（撤全部修复 1.70% FAIL）覆盖。
+#[test]
+fn display_none_subtree_not_painted_in_rect() {
+    let html = r#"<html><head><style>.hidden { display: none; }</style></head>
+<body style="margin:0"><div>BEFORE</div><div class="hidden">SECRET</div><div>TAIL<span class="hidden">INNER</span></div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let sheet = zero_css_parser::Parser::parse_stylesheet(".hidden { display: none; }");
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[sheet]);
+    let mut engine = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let mut painter = Painter::new();
+    let dirty = zero_render_foundation::geometry::Rect::new(0.0, 0.0, 800.0, 600.0);
+    painter.paint_in_rect(&result.root, &styles, &dirty, Some(&doc));
+
+    let text: String = painter
+        .primitives()
+        .glyphs
+        .iter()
+        .filter_map(|g| char::from_u32(g.glyph_id))
+        .collect();
+    assert!(
+        !text.contains("SECRET"),
+        "脏矩形路径块级 display:none 文本不应绘制，实际: {text}"
+    );
+    assert!(
+        !text.contains("INNER"),
+        "脏矩形路径 inline display:none 文本不应绘制，实际: {text}"
+    );
+    assert!(text.contains("BEFORE"), "正常块文本应绘制，实际: {text}");
+    assert!(text.contains("TAIL"), "正常 inline 文本应绘制，实际: {text}");
+}
