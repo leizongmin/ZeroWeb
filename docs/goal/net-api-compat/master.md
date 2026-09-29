@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-30（M4-S8 收口）
+**最后更新**: 2026-09-30（M4-S9 收口）
 
 ---
 
@@ -14,10 +14,10 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
-M4-S8（2026-09-30）——**8625/11232 = 76.8%**（fetch 69.6% / xhr 53.2% / url 73.1% /
-mimesniff 100% / streams **80.9%**（825/1020——tee composite cancel + 源 error 前向 +
-prototype 方法委托，tee 两页页级 Timeout 全解除）/ eventsource 6.2%）。下一切片
-M4-S9：byte tee 深水（ReadableByteStreamTee——分支字节流身份 + chunk 克隆）+ pipeTo
+M4-S8（76.8%）→ M4-S9（2026-09-30）——**8626/11205 = 77.0%**（fetch 69.6% / xhr 53.2% /
+url 73.1% / mimesniff 100% / streams **83.2%**（826/993——byte tee 分支字节流身份 +
+双分支 chunk 克隆）/ eventsource 6.2%）。下一切片 M4-S10：源侧 BYOB pull 切换
+（spec ReadableByteStreamTee pullWithBYOBReader——tee byte 深水余量）+ pipeTo
 read-ahead 泵；transfer/detach 族结构性挂账（需宿主 V8 detach）。并轨 P7 fixture 续件
 与 DC 判定收口。
 
@@ -35,12 +35,17 @@ read-ahead 泵；transfer/detach 族结构性挂账（需宿主 V8 detach）。�
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
 | P3 | XHR 状态机 + EventSource 解析/重连 | 🔶 M3 进行中——S1（header 校验）+ S2（responseType/同步/overrideMime）已收口（xhr 53.2%）；**残余：blob-range（27，blob:+Range）、progress 事件序、.asis/eventsource fixture 联动 P7** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.1%（新分母 6065——M3 收口 USP/URL.parse/port/live 迭代/UTF-8 解码器/helper 解锁）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
-| P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S8 收口（80.9%——tee composite cancel + 源 error 前向 + prototype 方法委托，tee 两页页级 Timeout 全解除）；**M4-S9 残余：byte tee 深水（ReadableByteStreamTee 31 腿）+ pipeTo read-ahead 泵（3 腿）+ sink.abort 事件序（1 腿）；transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿）** |
+| P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S9 收口（83.2%——byte tee 分支字节流身份 + 双分支 chunk 克隆）；**M4-S10 残余：源侧 BYOB pull 切换（pullWithBYOBReader——byte tee 深水余量 + leg13 起挂起腿）+ pipeTo read-ahead 泵（3 腿）+ sink.abort 事件序（1 腿）；transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿）** |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
 | P7 | runner fixture 通道（.py 端点最小 fixture 集） | 🔶 首件已落（M3-S1 `inspect-headers.py`）；待评估：event-source.py / echo-content.py / delay.py 族（eventsource Timeout 23 / request-upload echo / xhr delay 簇公共解锁件） |
 
 ## 已完成切片
 
+- **M4-S9（2026-09-30）**：Byte tee 分支字节流身份 + 双分支 chunk 克隆（**8626/11205 =
+  77.0%**，streams 825/1020 → 826/993 = 83.2%；byte tee 页 9/40→10/13 记录窗收敛）。
+  分支 `type: 'bytes'`（byob reader/pull-into 在分支可用——byte tee 31 腿公共前置）+
+  spec ReadableByteStreamTee 双分支克隆（原 buffer 属源）。make test 全绿 + clippy/fmt
+  干净。见 [evidence/2026-09-30-m4-s9-byte-tee.md](evidence/2026-09-30-m4-s9-byte-tee.md)。
 - **M4-S8（2026-09-30）**：Tee 复合 cancel + 源 error 前向 + prototype 方法委托
   （**8625/11232 = 76.8%**，streams 794/971 → 825/1020 = 80.9%，Δ+31；tee 两页页级
   Timeout 全解除、零 pass 回归）。分支 cancel 聚合（[reason1, reason2] 双序面）+
@@ -190,9 +195,10 @@ read-ahead 泵；transfer/detach 族结构性挂账（需宿主 V8 detach）。�
 
 ## 下一步计划
 
-1. **M4-S9 byte tee 深水**：ReadableByteStreamTee（分支字节流身份 + chunk 克隆 +
-   tee×byob 组合——byte tee 31 腿）+ pipeTo read-ahead 泵（3 腿）+ sink.abort 事件序
-   （1 腿）
+1. **M4-S10 源侧 BYOB pull 切换**：spec ReadableByteStreamTee pullWithBYOBReader
+   （tee 源 reader 分支 byob 读时切 byob 模式 + pull-into 前向——byte tee 深水余量 +
+   'chunks for BYOB requests from branch 1 should be cloned to branch 2' 面）+
+   pipeTo read-ahead 泵（3 腿）+ sink.abort 事件序（1 腿）
 2. **结构性挂账**：缓冲 transfer/detach 族（spec TransferArrayBuffer——需宿主 V8
    detach 能力，JS 层不可表达——bad-buffers 10 腿 + non-transferable 4 腿）
 3. **M4 并轨**：P7 续件评估（.asis / event-source.py / echo-content.py）+ blob-range

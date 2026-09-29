@@ -1310,28 +1310,44 @@
         return teeCancelPromise;
       }
       var _zwRsCtorForTee = self.constructor; // 捕获原构造器（页面改全局后 tee 不受扰面）
-      function makeBranch() {
+      var teeIsByte = !!self._zwIsByteStream; // net-api M4-S9：字节源 tee → 分支字节流身份
+      function makeBranch(bi) {
         var pos = 0;
         var teeCtl = null; // start 构造期内执行——经外捕获后再挂（branch 自引用 TDZ 面）
-        var branch = new _zwRsCtorForTee({
+        var desc = {
           start: function (controller) {
             teeCtl = controller;
           },
           pull: function (controller) {
-            if (pos < buffer.length) { controller.enqueue(buffer[pos++]); return; }
+            if (pos < buffer.length) {
+              // spec ReadableByteStreamTee——**两分支均收 chunk 克隆**（原 buffer 属源；
+              // 「chunks should be cloned for each branch」双缓冲独立面）。
+              var out = buffer[pos++];
+              controller.enqueue((teeIsByte && out instanceof Uint8Array)
+                ? (function () { var cl = new Uint8Array(out.byteLength); cl.set(out); return cl; })()
+                : out);
+              return;
+            }
             if (sourceDone) { controller.close(); return; }
             if (sourceError) { controller.error(sourceError); return; }
             pullOnce().then(function (r) {
-              if (r.done) controller.close();
-              else if (pos < buffer.length) controller.enqueue(buffer[pos++]);
+              if (r.done) { controller.close(); return; }
+              if (pos < buffer.length) {
+                var out2 = buffer[pos++];
+                controller.enqueue((teeIsByte && out2 instanceof Uint8Array)
+                  ? (function () { var cl2 = new Uint8Array(out2.byteLength); cl2.set(out2); return cl2; })()
+                  : out2);
+              }
             }, function (e) { controller.error(e); });
           }
-        });
+        };
+        if (teeIsByte) desc.type = 'bytes'; // 分支字节流身份——byob reader/pull-into 面
+        var branch = new _zwRsCtorForTee(desc);
         branch._teeController = teeCtl;
         return branch;
       }
       var teeControllers = [];
-      var b1 = makeBranch(), b2 = makeBranch();
+      var b1 = makeBranch(1), b2 = makeBranch(2);
       teeControllers.push(b1._teeController, b2._teeController);
       // net-api M4-S8：spec tee 步骤 19——reader.closedPromise rejection → **立即** error 两分支
       //（不待分支 pull；pullOnce 的 sourceError 面只在 pull 时暴露）。
