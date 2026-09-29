@@ -16,16 +16,16 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
 M4-S8（76.8%）→ M4-S9（2026-09-30）——**8626/11205 = 77.0%**（fetch 69.6% / xhr 53.2% /
 url 73.1% / mimesniff 100% / streams **83.2%**（826/993——byte tee 分支字节流身份 +
-双分支 chunk 克隆）/ eventsource 6.2%）。**M4-S10 尝试记录（2026-09-30，三版均未收口回退）**：①源 reader 切 byob
-（release/重取）——cancel 聚合腿挂起（closedP 拒绝 × tee error-forward 交互）；②内部
-_zwReadInto + 分支路由——挂起点移至 templatedRSTeeCancel；③V3（_zwReadInto 原语 +
-started 门路由 + 克隆直 enqueue 对侧 controller）——'chunks for BYOB ... cloned to
-branch 2' 腿仍 'byobRequest null.view'（源 pull 在 pullIntos 空时序窗口触发——
-rs-start/分支路由/克隆 enqueue 的微任务序组合仍未收敛）。三版均回退至 M4-S9 树（make
-test 全绿复核，streams 基线 826/993 不变）。**结论**：byte tee 源侧 byob pull 需 spec
-级 ReadableByteStreamTee 端口（源 reader 双模/描述符所有权/克隆管线一体重做），JS 补
-丁式逐点修不可收敛——升级为专设切片（需完整预算）。并轨 P7 fixture 续件与 DC 判定
-收口。
+双分支 chunk 克隆）/ eventsource 6.2%）。**M4-S10 尝试记录（2026-09-30，四版均未收口回退）**：①源 reader 切 byob
+（release/重取）——cancel 聚合腿挂起；②内部 _zwReadInto + 分支路由——挂起点移至
+templatedRSTeeCancel；③V3（_zwReadInto 原语 + started 门路由 + 克隆直 enqueue）——
+byobRequest null.view 仍现；④V4 spec 级 ReadableByteStreamTee 端口（源 reader
+default/BYOB 双模切换 + reading 串行/readAgain + 分支 pull-into 视图直入源 byob 读 +
+RespondWithNewView 回提交 + current-reader 判别 forward）——byob 分支首读 PEND（源
+byob 读未回填，疑 pull-into 描述符缓冲写面/微任务序深交互）。四版均回退至 M4-S9 树
+（make test 全绿复核，streams 基线 826/993 不变）。**结论**：byte tee 源侧 byob 需以
+完整预算专设 session（探针逐 hop 验证源 byob 读回填链路后落地）——非碎片轮次可收敛。
+并轨 P7 fixture 续件与 DC 判定收口。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
