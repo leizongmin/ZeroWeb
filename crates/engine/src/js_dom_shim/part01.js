@@ -1244,9 +1244,19 @@
   // 全局 queueMicrotask（probe 确认 undefined），用 `Promise.resolve().then` polyfill——V8 在 execute
   // 末 perform_microtask_checkpoint 派发，同 spec「当前 task 末、下 task 前」语义。亦使上方 _defer
   // 走真 queueMicrotask 分支（行为同 Promise.then fallback，零变化）。
+  // R-baidu-storm（2026-09-29）：`Promise` 必须是 shim 初始化时捕获的**原生构造器**，禁止调用时
+  // 全局查找——站点 Promise polyfill（如 baidu core-js）会替换 globalThis.Promise 且其内部调度
+  // （yc）经 globalThis.queueMicrotask 再入：调用时查找形成 queueMicrotask → 站点 Promise.resolve →
+  // 站点 resolve/Xp → 站点调度器 → queueMicrotask 的同步互递归（storm 现场 JIT 栈实证：每圈
+  // Xp→queueMicrotask→es 消耗 ~0x4d8 原生栈，直至 Runtime_StackGuardWithGap → GC → RangeError
+  // 被站点 catch 后重试 → 单核 CPU 风暴、renderer 主循环楔死）。spec：queueMicrotask 直接入
+  // microtask 队列，不经任何站点可替换的 promise 机制
+  // （https://html.spec.whatwg.org/multipage/timers-and-processes.html#microtask-queuing）。
+  var _zwNativePromiseCtor = typeof Promise === 'function' ? Promise : null;
   globalThis.queueMicrotask = globalThis.queueMicrotask || function (cb) {
     if (typeof cb !== 'function') throw new TypeError('queueMicrotask: callback not callable');
-    Promise.resolve().then(cb);
+    if (!_zwNativePromiseCtor) throw new TypeError('queueMicrotask: no native Promise available');
+    _zwNativePromiseCtor.resolve().then(cb);
   };
 
   // 单次脚本执行内 microtask 派发上限（避免 setTimeout 轮询在 checkpoint 中无限链式调度）。

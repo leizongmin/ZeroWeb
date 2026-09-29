@@ -685,6 +685,84 @@ fn test_submit_event_submitter_r2984() {
 }
 
 #[test]
+fn test_promise_rejection_event_ctor_r_baidu_storm() {
+    // R-baidu-storm（2026-09-29）：PromiseRejectionEvent 全局构造器缺失。站点 Promise polyfill
+    // （baidu core-js）以 `isCallable(globalThis.PromiseRejectionEvent)` 判定原生 Promise 完备
+    // （unhandledrejection 支持）；缺失时 CONSTRUCTOR forced 替换 globalThis.Promise 为 wrapped
+    // polyfill 实现，其 wrapped 内部状态机制（then 经 newPromiseCapability/Ec 造裸内部状态对象、
+    // 采纳链经 Qc(t)=t.then 再入）与本引擎 queueMicrotask 载体叠加形成微任务自馈环：每圈
+    // cs(resolve)→Hc(ctor)→Sc(state init)→yc(queueMicrotask) 构造新 promise + WeakMap 簿记，
+    // 直至 V8 堆耗尽 FatalProcessOutOfMemory（renderer int3 abort，baidu 加载 ~10-30s 必现）。
+    // 修复：shim 暴露 PromiseRejectionEvent（extends Event + .promise/.reason）——检测翻转为
+    // native Promise 沿用，与 Chrome 行为一致。spec：
+    // https://html.spec.whatwg.org/multipage/webappapis.html#promiserejectionevent-interface
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // core-js 检测轴心：全局可调用性（isCallable）——本修复的直接判据。
+    assert_eq!(
+        sandbox.execute("typeof PromiseRejectionEvent").unwrap().value,
+        "function",
+        "PromiseRejectionEvent 是 function（core-js isCallable 检测通过）"
+    );
+
+    // 构造：new PromiseRejectionEvent(type, {promise, reason})——promise/reason 载荷。
+    sandbox
+        .execute(
+            "globalThis.__ev = new PromiseRejectionEvent('unhandledrejection', {\
+             promise: Promise.resolve(1), reason: new TypeError('boom')});",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.type").unwrap().value,
+        "unhandledrejection",
+        "事件 type 透传"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__ev instanceof Event)")
+            .unwrap()
+            .value,
+        "true",
+        "instanceof Event（spec：PromiseRejectionEvent : Event）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__ev.promise instanceof Promise)")
+            .unwrap()
+            .value,
+        "true",
+        "event.promise 携带触发拒绝的 Promise"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.reason.message").unwrap().value,
+        "boom",
+        "event.reason 携带拒绝原因"
+    );
+
+    // 省略 options：promise 缺省 null（WebIDL [LegacyUnforgeable] 属性 WebIDL 中 promise 为必需，
+    // 但 polyfill 场景仅检测可调用性；构造器宽松缺省即可，reason 缺省 undefined）。
+    sandbox
+        .execute("globalThis.__ev2 = new PromiseRejectionEvent('rejectionhandled', {});")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev2.promise)").unwrap().value,
+        "null",
+        "promise 缺省 null"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ev2.reason)").unwrap().value,
+        "undefined",
+        "reason 缺省 undefined"
+    );
+}
+
+#[test]
 fn test_canvas_get_transform_dommatrix_r2985() {
     // R2985：Canvas getTransform/resetTransform + DOMMatrix/DOMPoint。此前 shim Canvas 仅有 setTransform/
     // transform，**无 getTransform（返 undefined）/ resetTransform**——读当前矩阵（hit-testing / transform-aware

@@ -965,6 +965,57 @@ fn test_queue_microtask_r2774() {
 }
 
 #[test]
+fn test_queue_microtask_site_promise_replacement_r_baidu_storm() {
+    // R-baidu-storm（2026-09-29）：queueMicrotask 载体不得依赖**调用时**的 globalThis.Promise。
+    // baidu core-js polyfill 替换 globalThis.Promise 且其内部调度（yc）经 globalThis.queueMicrotask
+    // 再入：旧实现 `Promise.resolve().then(cb)` 走调用时全局查找 → queueMicrotask → 站点
+    // Promise.resolve → 站点调度器 → queueMicrotask 的同步互递归（storm 现场 JIT 栈实证：每圈
+    // Xp→queueMicrotask→es 消耗原生栈，直至 StackGuard → GC → RangeError 被站点 catch 后重试 →
+    // 单核 CPU 风暴、renderer 主循环楔死）。spec：queueMicrotask 直接入 microtask 队列
+    // （https://html.spec.whatwg.org/multipage/timers-and-processes.html#microtask-queuing），
+    // 不经任何站点可替换的 promise 机制。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // 毒化：模拟 baidu core-js——Promise 构造器 resolve 路径经 queueMicrotask 再入。
+    // 旧实现下首次 queueMicrotask 即进入无限同步递归（栈溢出 → execute Err）。
+    sandbox
+        .execute(
+            r#"
+            globalThis.__ran = false;
+            globalThis.__reentered = 0;
+            var _q = queueMicrotask;
+            globalThis.Promise = function P(exec) {
+              exec(function (v) { _q(function () { globalThis.__reentered += 1; }); },
+                  function () {});
+            };
+            globalThis.Promise.resolve = function (v) {
+              return new globalThis.Promise(function (res) { res(v); });
+            };
+            globalThis.Promise.prototype.then = function (f) {
+              _q(f);
+              return globalThis.Promise.resolve();
+            };
+            queueMicrotask(function () { globalThis.__ran = true; });
+            'queued';
+            "#,
+        )
+        .unwrap();
+    // callback 恰在本 execute 末 checkpoint 派发一次；站点毒化 Promise 未被 queueMicrotask 触达
+    //（__reentered 恒 0——旧实现此断言前 execute 已栈溢出）。
+    assert_eq!(sandbox.execute("String(globalThis.__ran)").unwrap().value, "true");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__reentered)").unwrap().value,
+        "0"
+    );
+}
+
+#[test]
 fn test_clone_node_e2e() {
     // cloneNode(deep) 复用既有回调组合：create(tag) + 逐属性 set_attr_handle + (deep) set_inner_html_handle。
     use std::sync::{Arc, Mutex};
@@ -2266,6 +2317,8 @@ fn test_fragment_flatten_all_insertion_paths_e2e() {
 
     // before(fragment)：fragment 子作 #t 前兄弟。
     mutations.lock().unwrap().clear();
+    // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
+    crate::js_dom_bridge::bump_mut_drain_gen();
     sandbox
         .execute(
             "var f2=document.createDocumentFragment();\
@@ -2282,6 +2335,8 @@ fn test_fragment_flatten_all_insertion_paths_e2e() {
 
     // after(fragment)：fragment 子作 #t 后兄弟。
     mutations.lock().unwrap().clear();
+    // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
+    crate::js_dom_bridge::bump_mut_drain_gen();
     sandbox
         .execute(
             "var f3=document.createDocumentFragment();\
@@ -2298,6 +2353,8 @@ fn test_fragment_flatten_all_insertion_paths_e2e() {
 
     // replaceChild(fragment, old)：fragment 子替换 #t（old=#t）。
     mutations.lock().unwrap().clear();
+    // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
+    crate::js_dom_bridge::bump_mut_drain_gen();
     sandbox
         .execute(
             "var f4=document.createDocumentFragment();\

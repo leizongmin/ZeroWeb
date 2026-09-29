@@ -9430,6 +9430,8 @@
     try { if (typeof globalThis.__zwPa2ClearRemovedTables === 'function') globalThis.__zwPa2ClearRemovedTables(); } catch (_ePa2rst) {}
     try { if (typeof globalThis._zwChildBaseInvalidateAll === 'function') globalThis._zwChildBaseInvalidateAll(); } catch (_e358cb) {}
     try { if (typeof globalThis._zwSiblingBaseInvalidateAll === 'function') globalThis._zwSiblingBaseInvalidateAll(); } catch (_e358sb) {}
+    // R-baidu3：批量 tag 缓存随快照换代作废（sel→元素绑定可能变化）。
+    _zwTagCache = null;
   };
   // R379/pa2b（js-dom M4）：**apply 代际换代钩子**——host `apply_pending_shared_mutations`
   // 完成后调用（pending-apply RFC pa2 的 host→shim 回调链半边）。与
@@ -9503,6 +9505,8 @@
     try { if (typeof globalThis.__zwPa2ClearRemovedTables === 'function') globalThis.__zwPa2ClearRemovedTables(); } catch (_ePa2agb) {}
     try { if (typeof globalThis._zwChildBaseInvalidateAll === 'function') globalThis._zwChildBaseInvalidateAll(); } catch (_ePa2ci) {}
     try { if (typeof globalThis._zwSiblingBaseInvalidateAll === 'function') globalThis._zwSiblingBaseInvalidateAll(); } catch (_ePa2si) {}
+    // R-baidu3：批量 tag 缓存随 apply 代际作废（同 sel 重绑定新元素窗口不服务旧 tag）。
+    _zwTagCache = null;
   };
   // R51c：pending added 按 id 索引（querySelector('#id') host-miss 回落 O(1)；invalidate
   // 记账时维护——added 入对桶、对冲剔除时同步删）。
@@ -10393,12 +10397,30 @@
     var nsWant = nsMode ? (nsArg == null ? '' : String(nsArg)) : null;
     var htmlDoc = (htmlCtx === undefined) ? true : !!htmlCtx;
     var inputLower = _zwAsciiLower(String(input));
+    // R-baidu3：'*' 快道——非 NS getElementsByTagName('*') 按 spec 匹配子树全部
+    // 元素节点（qualifiedName '*' 无比较步骤），逐元素 ns/tagName 读纯浪费
+    // （baidu scanAndDoRender 每次 resolve 全树枚举 × 2 万元素 × 1 宿主回调 =
+    // CPU 自旋主源）。nsWant==='*' 时 ns 同样不参与匹配（只 localName/无比较），
+    // 一并免读。nodeType 过滤保持。
+    // https://dom.spec.whatwg.org/#dom-element-getelementsbytagname
+    if ((!nsMode && String(input) === '*') || (nsMode && nsWant === '*' && String(input) === '*')) {
+      // 已过滤数组（视图戳快道产物）直接复用——免每次 2 万元素拷贝（GC 风暴源头之一）。
+      if (_zwAllArrays.has(els)) return els;
+      var outStar = [];
+      for (var _si = 0; _si < els.length; _si++) {
+        var _se = els[_si];
+        if (_se && _se.nodeType === 1) outStar.push(_se);
+      }
+      return outStar;
+    }
     var out = [];
+    // ns 惰性读：仅 nsWant==='*' 以外的 NS 变体与非 NS 分支需要 ns（isHtml 折叠）。
+    var needNs = !(nsMode && nsWant === '*');
     for (var i = 0; i < els.length; i++) {
       var el = els[i];
       if (!el || el.nodeType !== 1) continue;
       var ns = null;
-      try { ns = el.namespaceURI; } catch (_e) {}
+      if (needNs) { try { ns = el.namespaceURI; } catch (_e) {} }
       // R330：HTML-ness 折叠只看查询上下文文档（htmlDoc）；元素的 ns 参与匹配
       // 语义——非 HTML ns 元素（含 createElementNS('', …) 的 no namespace）恒
       // 精确比较（'a' 不被 'A' 命中）。HTML ns 元素在 HTML 文档上下文才折叠；
@@ -10452,11 +10474,50 @@
     return out;
   }
 
+  // R-baidu3：批量 tag 缓存（sel → tag 小写）。由 _zwDocAllElements 经
+  // __zw_query_all_tagged 一次往返灌入；_realTag sel 命中直接返回（免逐元素宿主
+  // 回调——jQuery/Sizzle getElementsByTagName('*') 枚举逐元素打 __zw_get_tag 是
+  // exec 超时风暴源头，baidu 页单事件 6 万+ 次）。有效性印章 = (apply 代际,
+  // pending added/removed 长度)——与 host 侧视图键（epoch+count）同保守级：
+  // apply 换代 / 结构性记账变化即作废（同 sel 重绑定新元素的窗口不服务旧 tag）。
+  // 只正缓存枚举命中的 sel；miss 走原回落链（pending/动态元素语义不变）。
+  var _zwTagCache = null;
+  function _zwTagCacheSet(map) {
+    _zwTagCache = {
+      gen: _zwApplyGeneration(),
+      added: _zwPendingAdded.length,
+      removed: _zwPendingRemoved.length,
+      map: map
+    };
+  }
+  globalThis._zwTagCacheClear = function () { _zwTagCache = null; };
+
+  // R-baidu3：快照代理列表缓存——tagged payload 内容相同 ⇒ 同一宿主视图 ⇒
+  // 枚举结果逐元素相同，直接复用上次的代理数组（baidu 每次异步 resolve 重扫
+  // 全树：2 万 _wrapSelector/次纯 JS 构建 = 宿主回调清零后的剩余自旋主源）。
+  // 缓存键即 payload 字符串本身（宿主 O(1) 命中返回同内容 payload）；不服务
+  // 任何宿主视图之外的形态，pending 动态子仍每次调用重算——与逐次重建的
+  // 现行为产出一致，纯提速。
+  var _zwDocAllSnapEls = null;
+  var _zwDocAllSnapStamp = null;
+  // 枚举数组标记（WeakSet——不可见、无 own 属性）：'*' 快道对已过滤数组免拷贝复用。
+  var _zwAllArrays = new WeakSet();
+
   // js-dom M4 R120：文档级全元素枚举（document.getElementsByTagName(/NS) 的数据源）——
   // 快照 `__zw_query_all('*')`（host 树）∪ `_zwPendingAdded` 动态子（同步脚本内 appendChild
   // 的 handle 子不在快照——WPT「live collection」length 断言）。快照可能不支持 '*' → 回落
   // documentElement/body 的 _descendantElements 并集。返回去重文档序数组。
   function _zwDocAllElements() {
+    // R-baidu3 视图戳快道：戳不变 ⇒ 宿主视图未变 ⇒ 快照段（代理数组/tag 表）
+    // 与上次逐元素等价。pending 动态子为空时直接复用缓存数组（零分配——每次
+    // resolve 重扫 2 万元素的数组/Map/400KB payload 字符串分配是 V8 主 GC 风暴
+    // 的源头）；有 pending 子仍走逐元素合并（语义同旧路径）。
+    var _stamp = (typeof __zw_dom_view_stamp === 'function') ? String(__zw_dom_view_stamp() || '') : '';
+    var _pendingEmpty = (typeof _zwPendingAdded === 'undefined' || !_zwPendingAdded || _zwPendingAdded.length === 0);
+    if (_stamp && _pendingEmpty && _zwDocAllSnapEls && _zwDocAllSnapStamp === _stamp) {
+      _zwTagCacheSet(_zwDocAllSnapEls.tmap);
+      return _zwDocAllSnapEls.els;
+    }
     var out = [];
     var seen = new Map();
     var push = function (el) {
@@ -10468,11 +10529,54 @@
     };
     var snapCount = 0;
     try {
-      var all = (typeof __zw_query_all === 'function') ? String(__zw_query_all('*') || '') : '';
-      var sels = all ? all.split('|').filter(Boolean) : [];
-      snapCount = sels.length;
-      for (var i = 0; i < sels.length; i++) {
-        try { push(_wrapSelector(sels[i])); } catch (_e) {}
+      // R-baidu3：优先 tagged 形态（sel\x1ftag 记录）——一次往返取全量 sel+tag，灌
+      // _zwTagCache 供 _realTag 零往返命中。宿主未提供 tagged 回调 → 旧
+      // __zw_query_all 形态（纯 sel）原样回落。
+      var tagged = (typeof __zw_query_all_tagged === 'function') ? String(__zw_query_all_tagged('*') || '') : '';
+      if (tagged && _zwDocAllSnapEls && _zwDocAllSnapEls.payload === tagged) {
+        // payload 内容相同 ⇒ 同一宿主视图：复用代理列表 + tag 表（纯提速，见上注）。
+        // R-baidu3：**先盖 tag 缓存章再 push**——push 逐元素读 nodeType → getPrototypeOf
+        // trap → _realTag。若先 push 后盖章，pending 记账在本 scan 前生长（页面
+        // createElement/appendChild 不改宿主视图 ⇒ payload 不变 ⇒ 走本快道）时，旧章的
+        // added/removed 印章失配 ⇒ 每次 _realTag miss 回落 __zw_get_tag 宿主往返
+        //（baidu scanAndDoRender 每次重扫 2 万元素 × 数百次 resolve = 15s 自旋主源）。
+        // tag 表内容只随宿主视图变（payload 相同即新鲜），与 pending 长度无关——
+        // pending 元素走 handle 链（sel=null 不查本表），不受本章影响。
+        _zwTagCacheSet(_zwDocAllSnapEls.tmap);
+        snapCount = _zwDocAllSnapEls.els.length;
+        for (var ci = 0; ci < _zwDocAllSnapEls.els.length; ci++) {
+          push(_zwDocAllSnapEls.els[ci]);
+        }
+      } else {
+        var all = tagged || ((typeof __zw_query_all === 'function') ? String(__zw_query_all('*') || '') : '');
+        var sels = all ? all.split('|').filter(Boolean) : [];
+        snapCount = sels.length;
+        var _tmap = null;
+        if (tagged) {
+          _tmap = new Map();
+          for (var ti = 0; ti < sels.length; ti++) {
+            var _sep = sels[ti].indexOf('\x1f');
+            if (_sep < 0) continue;
+            _tmap.set(sels[ti].slice(0, _sep), sels[ti].slice(_sep + 1));
+          }
+          _zwTagCacheSet(_tmap);
+        }
+        var _built = [];
+        for (var i = 0; i < sels.length; i++) {
+          var _one = sels[i];
+          var _sp = _one.indexOf('\x1f');
+          if (_sp >= 0) _one = _one.slice(0, _sp);
+          try {
+            var _px = _wrapSelector(_one);
+            push(_px);
+            _built.push(_px);
+          } catch (_e) {}
+        }
+        if (tagged) {
+          _zwDocAllSnapEls = { payload: tagged, els: _built, tmap: _tmap };
+          _zwDocAllSnapStamp = _stamp;
+          _zwAllArrays.add(_built);
+        }
       }
     } catch (_eA) {}
     // 快照不支持 '*'（返回空）→ 回落 documentElement + html/body 子树（与 pending 并存——
@@ -11893,6 +11997,24 @@
   SubmitEvent.prototype.constructor = SubmitEvent;
   globalThis.SubmitEvent = globalThis.SubmitEvent || SubmitEvent;
 
+  // PromiseRejectionEvent——unhandledrejection / rejectionhandled 事件。extends Event，加
+  // promise（触发拒绝的 Promise）+ reason（拒绝原因）。除事件载体外，全局**可调用性**本身有
+  // 兼容效应：站点 Promise polyfill（如 core-js）以 `isCallable(globalThis.PromiseRejectionEvent)`
+  // 判定原生 Promise 完备（unhandledrejection 支持）；缺失时 forced 替换 globalThis.Promise 为
+  // polyfill 包装实现，其 wrapped 内部状态机制与本引擎 queueMicrotask 载体叠加可形成微任务风暴
+  // （R-baidu-storm，2026-09-29：baidu 页 core-js wrapped Promise 微任务自馈环 → V8 堆 OOM abort）。
+  // https://html.spec.whatwg.org/multipage/webappapis.html#promiserejectionevent-interface
+  function PromiseRejectionEvent(type, options) {
+    var ev = _makeEvent(type, options);
+    Object.setPrototypeOf(ev, PromiseRejectionEvent.prototype);
+    ev.promise = options && options.promise !== undefined ? options.promise : null;
+    ev.reason = options && options.reason;
+    return ev;
+  }
+  PromiseRejectionEvent.prototype = Object.create(Event.prototype);
+  PromiseRejectionEvent.prototype.constructor = PromiseRejectionEvent;
+  globalThis.PromiseRejectionEvent = globalThis.PromiseRejectionEvent || PromiseRejectionEvent;
+
   // MessagePort——消息端口（MessageChannel 双端口之一，部分库经此做结构化通信）。extends EventTarget
   //（R2779）。postMessage 经 structuredClone（R2773）深拷贝消息 + queueMicrotask（R2774）**异步**派发
   // 'message' 事件到配对端口（spec 为 task；sandbox 经 execute 末 microtask checkpoint 派发，下 execute
@@ -11908,6 +12030,12 @@
     this._zwSwWorker = null;
     this._zwSwDetached = false;
     this._zwSwQueue = [];
+    // R-baidu4：本地端口对的消息队列。spec：端口未启用（未 start()/onmessage）时 postMessage 的消息
+    // 排队保留，启用后按序投递（https://html.spec.whatwg.org/multipage/web-messaging.html#message-ports，
+    // "enable port" / port message queue）。此前直接 queueMicrotask 派发——先 post 后 listen（跨 execute）
+    // 消息永久丢失，站点 loader（baidu ESL 通道等待）超时重试 → 无限循环。
+    this._zwQueue = [];
+    this._zwStarted = false; // spec "port is enabled"：start() 或 onmessage setter 置位
   }
   MessagePort.prototype = Object.create(EventTarget.prototype);
   MessagePort.prototype.constructor = MessagePort;
@@ -11933,6 +12061,11 @@
     }
     var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
     var other = this._other;
+    // R-baidu4：对端未启用 → 消息入队保留（spec port message queue），启用后按序投递。
+    if (!other._zwStarted) {
+      other._zwQueue.push(new MessageEvent('message', { data: data, origin: '' }));
+      return;
+    }
     if (typeof queueMicrotask === 'function') {
       queueMicrotask(function () {
         if (other._closed) return;
@@ -11941,16 +12074,29 @@
     }
   };
   MessagePort.prototype.start = function () {
-    if (!this._zwSwQueue || this._zwSwQueue.length === 0) return;
+    this._zwStarted = true;
     var port = this;
-    var queued = this._zwSwQueue.splice(0, this._zwSwQueue.length);
-    queueMicrotask(function() {
-      for (var i = 0; i < queued.length; i++) port.dispatchEvent(queued[i]);
-    });
+    if (this._zwSwQueue && this._zwSwQueue.length > 0) {
+      var swQueued = this._zwSwQueue.splice(0, this._zwSwQueue.length);
+      queueMicrotask(function() {
+        for (var i = 0; i < swQueued.length; i++) port.dispatchEvent(swQueued[i]);
+      });
+    }
+    // R-baidu4：启用时排空本地待投递队列（保序）。
+    if (this._zwQueue.length > 0) {
+      var queued = this._zwQueue.splice(0, this._zwQueue.length);
+      queueMicrotask(function() {
+        for (var i = 0; i < queued.length; i++) {
+          if (port._closed) return;
+          port.dispatchEvent(queued[i]);
+        }
+      });
+    }
   };
   MessagePort.prototype.close = function () {
     this._closed = true;
     this._zwSwWorker = null;
+    this._zwQueue.length = 0;
     if (this._other) this._other._other = null; // 断开配对
     this._other = null;
   };

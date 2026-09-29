@@ -388,6 +388,9 @@ impl RendererJsWorker {
         if let Ok(mut mutations) = self.mutations.lock() {
             mutations.clear();
         }
+        // R-baidu3：drain 代际递增——查询视图增量链（query_view_entry prev_base）
+        // 只在本批（无 drain）内成立。
+        zero_engine::js_dom_bridge::bump_mut_drain_gen();
         if let Ok(mut loads) = self.font_loads.lock() {
             loads.clear();
         }
@@ -835,6 +838,9 @@ fn js_worker_main(
                     refresh_worker_native_dom_source(&mut *sandbox, &html, &mut native_installed);
                     *snap = html;
                 }
+                // R358/R3243：就地换代（Arc 被回调捕获不可换装）→ bump 宿主视图缓存代际，
+                // 防同 count 查询命中换代前解析的视图文档/备忘。
+                zero_engine::js_dom_bridge::bump_dom_view_gen();
                 if let Ok(mut u) = page_url.lock() {
                     *u = url;
                 }

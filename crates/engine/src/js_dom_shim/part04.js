@@ -4939,6 +4939,37 @@ return _tplContent;
                   globalThis._zwRanScripts[child.__zwHandle] = true;
                   (0, eval).call(globalThis, _r387src);
                 }
+                // R387b（site-compat baidu-20260929-r1）：**动态 src 脚本加载**——src 型脚本
+                //（textContent 空）入文档后按 spec「prepare the script element」抓源执行：
+                // 复用页面 fetch 通道取源码（classic script 无 CORS 读限制；跨域 CDN 脚本
+                // 是 AMD 加载器常态），执行完成后派 'load'、fetch 失败派 'error'（spec：
+                // load 在脚本处理完成后触发，error 仅 fetch 失败触发）。缺此通道时 AMD
+                // 加载器（esl/requirejs/systemjs）注入的模块 script 永不加载，模块图不闭合、
+                // require 回调静默挂起（baidu esl 实证）。run-once 标记与内联同表防重插重跑；
+                // 抓取+执行天然异步（spec 动态脚本 force-async 默认语义），不阻塞解析。
+                // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+                // FIXME(CSP): spec 要求 script-src 指令约束脚本 fetch；fetch 通道当前不区分
+                // destination，CSP 对齐留待 fetch destination 元数据切片。
+                else if (!(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
+                  var _r387url = '';
+                  try {
+                    _r387url = String(child.src || (child.getAttribute && child.getAttribute('src')) || '');
+                  } catch (_e387u) {}
+                  if (_r387url && typeof fetch === 'function') {
+                    if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
+                    globalThis._zwRanScripts[child.__zwHandle] = true;
+                    var _r387el = child;
+                    fetch(_r387url).then(function (_r) {
+                      if (!_r.ok && _r.status) throw new Error('HTTP ' + _r.status);
+                      return _r.text();
+                    }).then(function (_code) {
+                      if (_code) (0, eval).call(globalThis, _code);
+                      try { _r387el.dispatchEvent(new Event('load')); } catch (_e387l) {}
+                    }).catch(function () {
+                      try { _r387el.dispatchEvent(new Event('error')); } catch (_e387e2) {}
+                    });
+                  }
+                }
               } catch (_e387run) {
                 if (typeof globalThis._zwReportListenerError === 'function') {
                   try { globalThis._zwReportListenerError(_e387run, null); } catch (_e387rp) {}

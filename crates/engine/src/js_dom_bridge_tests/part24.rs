@@ -2469,6 +2469,8 @@ fn test_children_live_collection_and_snapshot_reset_r358() {
         let mut snap = dom_html.lock().unwrap();
         *snap = "<html><body><div id='sc'><div id='w'><span>A</span><span>B</span></div></div></body></html>".to_string();
     }
+    // R358/R3243：就地换代（Arc 被回调捕获不可换装）→ bump 宿主视图缓存代际。
+    crate::js_dom_bridge::bump_dom_view_gen();
     sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();").unwrap();
     // Turn 2: 新快照读 #sc.children —— stale 桶条目不得并入（R2930 哨兵 shim 级等价）。
     sandbox

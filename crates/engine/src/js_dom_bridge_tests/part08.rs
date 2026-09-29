@@ -1432,6 +1432,8 @@ fn test_element_animate_real_playback_r2965() {
 
     // ② commitStyles() 不依赖 fill：fill 默认 none（不自动持久化），但 commitStyles 显式提交末态。
     mutations.lock().unwrap().clear();
+    // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
+    crate::js_dom_bridge::bump_mut_drain_gen();
     sandbox
         .execute(
             "var a2 = document.querySelector('#b').animate([{color:'red'},{color:'blue'}], 100);\
@@ -1447,6 +1449,8 @@ fn test_element_animate_real_playback_r2965() {
 
     // ③ fill:'none'（默认）→ finish 后不持久化（无末态 SetStyle）。
     mutations.lock().unwrap().clear();
+    // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
+    crate::js_dom_bridge::bump_mut_drain_gen();
     sandbox
         .execute(
             "document.querySelector('#c').animate([{opacity:0},{opacity:1}], {duration:50, fill:'none'});",
@@ -1465,6 +1469,8 @@ fn test_element_animate_real_playback_r2965() {
 
     // ④ 空关键帧 → 无末态可应用（commitStyles no-op 不抛，无 SetStyle）。
     mutations.lock().unwrap().clear();
+    // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
+    crate::js_dom_bridge::bump_mut_drain_gen();
     sandbox
         .execute(
             "var a4 = document.querySelector('#e').animate([], 30);\

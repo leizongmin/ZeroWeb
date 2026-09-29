@@ -1541,6 +1541,8 @@ fn test_expando_non_primitive_properties_r3042() {
 
     // ④ expando 非内容属性——不发 attributes MO 记录，且 apply_mutations 不写垃圾属性。
     mutations.lock().unwrap().clear();
+    // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
+    crate::js_dom_bridge::bump_mut_drain_gen();
     sandbox
         .execute(
             "var mo = new MutationObserver(function(){});\

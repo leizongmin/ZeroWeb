@@ -579,6 +579,8 @@ fn test_js_focus_emits_focus_changed_mutation() {
     );
 
     mutations.lock().unwrap().clear();
+    // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
+    crate::js_dom_bridge::bump_mut_drain_gen();
     sandbox.execute("globalThis.__i.blur();").unwrap();
     let recorded = mutations.lock().unwrap().clone();
     assert_eq!(
@@ -590,6 +592,8 @@ fn test_js_focus_emits_focus_changed_mutation() {
     // blur 后重新 focus 是焦点真变（1 个 mutation）；已聚焦元素重复 focus() 是 no-op
     //（spec：不重派 focus）——不额外产生 mutation。
     mutations.lock().unwrap().clear();
+    // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
+    crate::js_dom_bridge::bump_mut_drain_gen();
     sandbox
         .execute(
             "globalThis.__i.focus();\
@@ -3218,6 +3222,8 @@ fn test_stylesheets_rule_style_r2810() {
 
     // set 既有属性：style.color='blue' → 同一 rule.cssText 反映 'color: blue' + flush 写回（SetText）。
     mutations.lock().unwrap().clear();
+    // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
+    crate::js_dom_bridge::bump_mut_drain_gen();
     sandbox
         .execute("globalThis.__st.color = 'blue'; globalThis.__rc = __rule.cssText;")
         .unwrap();

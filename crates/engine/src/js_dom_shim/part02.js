@@ -5050,19 +5050,72 @@
   }
   globalThis.Option = globalThis.Option || Option;
 
+  // `Storage` 接口对象（R4875）——HTML Web Storage 规范要求全局暴露 Storage 构造器；
+  // 站点脚本以 `Storage` 标识符作为 DI token / `instanceof Storage` / Storage.prototype
+  // 方法补丁引用（缺失时类定义期 ReferenceError 中止整段脚本，baidu aas.js 判例）。
+  // localStorage/sessionStorage 为 Storage 实例；named property 即存储项（spec supported
+  // property names），经 Proxy 拦截。简化（FIXME）：接口成员（prototype）查找先于 named
+  // item，与 WebIDL legacy platform object 的 [[Get]] 顺序相反（仅当存储项与成员同名时可见）。
+  // https://html.spec.whatwg.org/multipage/webstorage.html#the-storage-interface
+  function Storage() {
+    throw new globalThis.TypeError("Illegal constructor");
+  }
+  Storage.prototype.key = function key(index) {
+    var keys = Object.keys(this.__zwItems || {});
+    return index >= 0 && index < keys.length ? keys[index] : null;
+  };
+  Storage.prototype.getItem = function getItem(key) {
+    var items = this.__zwItems || {};
+    return Object.prototype.hasOwnProperty.call(items, key) ? items[key] : null;
+  };
+  Storage.prototype.setItem = function setItem(key, value) {
+    this.__zwItems[String(key)] = String(value);
+  };
+  Storage.prototype.removeItem = function removeItem(key) {
+    delete this.__zwItems[String(key)];
+  };
+  Storage.prototype.clear = function clear() {
+    var items = this.__zwItems || {};
+    for (var k in items) { delete items[k]; }
+  };
+  Object.defineProperty(Storage.prototype, 'length', {
+    get: function() { return Object.keys(this.__zwItems || {}).length; },
+    configurable: true,
+    enumerable: true
+  });
+  globalThis.Storage = globalThis.Storage || Storage;
+
   function _createStorage() {
-    var _data = {};
-    return {
-      getItem: function(key) { return _data.hasOwnProperty(key) ? _data[key] : null; },
-      setItem: function(key, value) { _data[String(key)] = String(value); },
-      removeItem: function(key) { delete _data[String(key)]; },
-      clear: function() { _data = {}; },
-      key: function(index) {
-        var keys = Object.keys(_data);
-        return index >= 0 && index < keys.length ? keys[index] : null;
+    var target = Object.create(globalThis.Storage.prototype);
+    target.__zwItems = {};
+    return new Proxy(target, {
+      get: function(t, p) {
+        if (p === '__zwItems') return t.__zwItems;
+        if (p in globalThis.Storage.prototype) return t[p];
+        if (typeof p === 'string' && Object.prototype.hasOwnProperty.call(t.__zwItems, p)) return t.__zwItems[p];
+        return undefined;
       },
-      get length() { return Object.keys(_data).length; }
-    };
+      set: function(t, p, v) {
+        if (p in globalThis.Storage.prototype || typeof p !== 'string') { t[p] = v; return true; }
+        t.__zwItems[p] = String(v);
+        return true;
+      },
+      has: function(t, p) {
+        return (p in globalThis.Storage.prototype) ||
+          (typeof p === 'string' && Object.prototype.hasOwnProperty.call(t.__zwItems, p));
+      },
+      deleteProperty: function(t, p) {
+        if (typeof p === 'string' && !(p in globalThis.Storage.prototype)) delete t.__zwItems[p];
+        return true;
+      },
+      ownKeys: function(t) { return Object.keys(t.__zwItems); },
+      getOwnPropertyDescriptor: function(t, p) {
+        if (typeof p === 'string' && Object.prototype.hasOwnProperty.call(t.__zwItems, p)) {
+          return { configurable: true, enumerable: true, writable: true, value: t.__zwItems[p] };
+        }
+        return undefined;
+      }
+    });
   }
 
   globalThis.localStorage = _createStorage();

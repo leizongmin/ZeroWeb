@@ -164,7 +164,11 @@ fn r3254_e2_slice13_apply_generation_invalidates_removed_compensation() {
         )
         .unwrap();
         *dom_html.lock().unwrap() = new_html;
+        // R358/R3243：测试模拟就地换代 → 同步 bump 宿主视图缓存代际。
+        crate::js_dom_bridge::bump_dom_view_gen();
         mutations.lock().unwrap().clear();
+        // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
+        crate::js_dom_bridge::bump_mut_drain_gen();
         sandbox
             .execute("if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();")
             .unwrap();

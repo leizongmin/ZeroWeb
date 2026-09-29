@@ -374,6 +374,8 @@ mod tests {
         // html1: <div id='a'>——首查询触发 parse + 缓存。
         let html1 = "<html><body><div id='a'>A</div></body></html>";
         *dom_html.lock().unwrap() = html1.to_string();
+        // R358/R3243：测试模拟就地换代 → 同步 bump 宿主视图缓存代际。
+        crate::js_dom_bridge::bump_dom_view_gen();
         let id_a = find_by_selector(&parse_html(html1), "#a").expect("#a in html1");
         snapshot
             .lock()
@@ -384,6 +386,8 @@ mod tests {
         // html2: <span id='b'>（结构不同）→ 缓存须失效重 parse。
         let html2 = "<html><body><span id='b'>B</span></body></html>";
         *dom_html.lock().unwrap() = html2.to_string();
+        // R358/R3243：测试模拟就地换代 → 同步 bump 宿主视图缓存代际。
+        crate::js_dom_bridge::bump_dom_view_gen();
         let id_b = find_by_selector(&parse_html(html2), "#b").expect("#b in html2");
         let mut snap = snapshot.lock().unwrap();
         snap.clear();

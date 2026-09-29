@@ -588,6 +588,8 @@ impl WebView {
             executor.set_dom_snapshot(&self.cached_html, self.current_url.as_deref().unwrap_or("about:blank"));
             let mutations = executor.mutations();
             mutations.lock().unwrap_or_else(|error| error.into_inner()).clear();
+            // R-baidu3：drain 代际递增——查询视图增量链只在无 drain 的批内成立。
+            zero_engine::js_dom_bridge::bump_mut_drain_gen();
             let value = executor.execute_script_direct(script).map_err(WebViewError::Script)?;
             let recorded = mutations.lock().unwrap_or_else(|error| error.into_inner()).clone();
             let result = self.apply_dom_script_result(value, recorded)?;
@@ -625,6 +627,8 @@ impl WebView {
         let recorded = mutations.lock().unwrap_or_else(|error| error.into_inner()).clone();
         let result = self.apply_dom_script_result(value, recorded)?;
         *dom_html.lock().unwrap_or_else(|error| error.into_inner()) = self.cached_html.clone();
+        // R358/R3243：快照就地刷新 → bump 宿主视图缓存代际（同 count 查询防 stale 视图）。
+        zero_engine::js_dom_bridge::bump_dom_view_gen();
         // R348：**恢复共享 mutation 队列绑定**——上面的 register_dom_callbacks 用本函数
         // 自建的 fresh `mutations` Arc 覆盖了沙箱级 `__zw_*` 回调的捕获（同名单重注册
         // 后者胜），此后页面脚本的所有 DOM 写入都进了这个私有队列，而
