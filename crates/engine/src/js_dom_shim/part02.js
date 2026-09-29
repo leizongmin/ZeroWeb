@@ -484,21 +484,52 @@
     }
     return out;
   }
+  // net-api M4-S5：ReadableStreamDefaultController 全局类——spec 不可构造（构造即 TypeError；
+  // controller 对象经 proto.constructor 暴露同一函数——writable constructor 页 `c.constructor`
+  // 面）。实例链：ReadableStream 构造时 Object.create(controllerProto)。
+  function ReadableStreamDefaultController() {
+    throw new TypeError('Illegal constructor');
+  }
+  globalThis.ReadableStreamDefaultController = globalThis.ReadableStreamDefaultController || ReadableStreamDefaultController;
   globalThis.ReadableStream = globalThis.ReadableStream || function ReadableStream(underlyingSource, _strategy) {
     if (!(this instanceof ReadableStream)) return new ReadableStream(underlyingSource, _strategy);
+    // net-api M4-S5：WebIDL object 转换——显式 null → TypeError（「constructor should throw when
+    // the source is null」面）；undefined（含缺省）→ null = 无源流（M4-S4 判例）；其余非 object
+    //（原语）→ TypeError（「can't be constructed with garbage」面）。
+    if (underlyingSource === null || (underlyingSource !== undefined &&
+        typeof underlyingSource !== 'object' && typeof underlyingSource !== 'function')) {
+      throw new TypeError("Failed to construct 'ReadableStream': underlyingSource must be an object.");
+    }
     // net-api M4-S4：构造 dictionary 转换序——strategy dictionary 转换（成员 getter 读取 + size
-    // 可调用校验）**先于构造步骤**（含 source.type 读取）；source null/undefined → {}（WebIDL
-    // object 转换 null/undefined → null = 无源流——M4-S1 回退注记 'start' of undefined 簇根因面，
-    // 非严格校验对象）。start/pull/cancel 保持 typeof 守卫宽松形态（M4-S1 判例）。
+    // 可调用校验）**先于构造步骤**（含 source.type 读取）。
     var strat = _zwStrategyDict(_strategy);
-    var source = (underlyingSource === undefined || underlyingSource === null) ? {} : underlyingSource;
+    var source = underlyingSource === undefined ? {} : underlyingSource;
     // net-api M4-S4：UnderlyingSource dictionary 转换——start/pull/cancel 成员**构造时一次读取**
     //（定义序，getter 抛错同步传播出构造器——bad-underlying-sources「throwing getter」面），
     // 算法缓存（「second pull does not result in a second get」面）；回调 this = underlyingSource。
+    // net-api M4-S5：callback 类型转换——非 null/undefined 且非函数 → TypeError（general
+    // 「will not tolerate initial garbage as start/pull/cancel argument」面；WebIDL callback
+    // 接受 null/undefined = absent）。
     var srcStart = source.start;
     var srcPull = source.pull;
     var srcCancel = source.cancel;
-    this._zwIsByteStream = source.type === 'bytes';
+    if ((srcStart !== undefined && srcStart !== null && typeof srcStart !== 'function') ||
+        (srcPull !== undefined && srcPull !== null && typeof srcPull !== 'function') ||
+        (srcCancel !== undefined && srcCancel !== null && typeof srcCancel !== 'function')) {
+      throw new TypeError("Failed to construct 'ReadableStream': start/pull/cancel must be functions or undefined.");
+    }
+    // net-api M4-S5：ReadableStreamType enum 转换（定义序在 cancel 后——ToString 抛错传播；
+    // 非 'bytes' → TypeError——general「can't be constructed with an invalid type」面）。
+    var rawType = source.type;
+    if (rawType !== undefined) {
+      var typeStr = String(rawType);
+      if (typeStr !== 'bytes') {
+        throw new TypeError("Failed to construct 'ReadableStream': invalid type.");
+      }
+      this._zwIsByteStream = true;
+    } else {
+      this._zwIsByteStream = false;
+    }
     // spec 构造步骤 4.1：bytes 流禁 strategy size（RangeError）；ExtractHighWaterMark——bytes 默认 0 /
     // default 默认 1（NaN/负数 → RangeError，+∞ 允许——bad-strategies「invalid strategy.highWaterMark」面）。
     if (this._zwIsByteStream && strat.size !== undefined) {
@@ -584,26 +615,31 @@
         if (pullAgain) { pullAgain = false; Promise.resolve().then(flushPull); }
       }
     }
-    var controller = {
-      get desiredSize() {
-        // spec：readable → hwm - queueTotalSize；closed → 0；errored → null。
+    // net-api M4-S5：controller 原型面（general「start controller parameter should be
+    // extensible」——proto own props 恰 close/constructor/desiredSize/enqueue/error）。
+    var controllerProto = { constructor: ReadableStreamDefaultController };
+    Object.defineProperty(controllerProto, 'desiredSize', {
+      // spec：readable → hwm - queueTotalSize；closed → 0；errored → null。
+      get: function () {
         if (state === 'errored') return null;
         if (state === 'closed') return 0;
         return hwm - queueTotalSize;
       },
-      enqueue: enqueueChunk,
-      close: function () {
-        // net-api M4-S4：spec §close——CanCloseOrEnqueue 假 → TypeError（bad-underlying-sources
-        // 「close twice / close after cancel / close after error」面）；queue 非空 → closeRequested
-        //（read drain 面排空后真关），空 → 即关。
-        if (state !== 'readable' || closeRequested) {
-          throw new TypeError('Cannot close a readable stream that is ' + (closeRequested ? 'closing' : state));
-        }
-        if (queue.length > 0) { closeRequested = true; return; }
-        closeStream();
-      },
-      error: errorStream
+      enumerable: true, configurable: true
+    });
+    controllerProto.enqueue = enqueueChunk;
+    controllerProto.close = function () {
+      // net-api M4-S4：spec §close——CanCloseOrEnqueue 假 → TypeError（bad-underlying-sources
+      // 「close twice / close after cancel / close after error」面）；queue 非空 → closeRequested
+      //（read drain 面排空后真关），空 → 即关。
+      if (state !== 'readable' || closeRequested) {
+        throw new TypeError('Cannot close a readable stream that is ' + (closeRequested ? 'closing' : state));
+      }
+      if (queue.length > 0) { closeRequested = true; return; }
+      closeStream();
     };
+    controllerProto.error = errorStream;
+    var controller = Object.create(controllerProto);
     // net-api M4-S4：spec §ReadableStreamCancel——disturbed；closed → resolved；errored →
     // reject storedError（「return() rejects if the stream has errored」面）；否则 close +
     // CancelSteps（await source.cancel——fulfillment → undefined、rejection 传播）。
@@ -636,7 +672,13 @@
     this.getReader = function (options) {
       // net-api M4-S1：byob reader 仅字节流（readable-byte-streams「getReader({mode:
       // 'byob'}) throws on non-bytes streams」面）。
-      if (options != null && typeof options === 'object' && options.mode === 'byob' && !self._zwIsByteStream) {
+      // net-api M4-S5：ReadableStreamReaderMode enum 转换（undefined/null → 缺省；非 'byob'
+      // → TypeError——general「getReader() should only accept mode:undefined」面）。
+      var modeVal = (options != null && typeof options === 'object') ? options.mode : undefined;
+      if (modeVal !== undefined && modeVal !== null && String(modeVal) !== 'byob') {
+        throw new TypeError("Failed to execute 'getReader' on 'ReadableStream': invalid mode.");
+      }
+      if (modeVal === 'byob' && !self._zwIsByteStream) {
         throw new TypeError('byob reader requires a ReadableStream with type "bytes"');
       }
       // net-api M4-S3：byob reader 专设（M4-S2 首版 waiting 路径 4.2GB 爆涨根因对策）——
@@ -646,7 +688,7 @@
       // 视图），填充路径永远不与 done 哨兵混淆；④ 零填充仅在 close 后（spec——read(view)
       // 最小填充契约：有数据必填 ≥1 字节）。
       // net-api M4-S3：byob 形态判定（mode==='byob' 且已过字节流守卫）。
-      var byob = !!(options != null && typeof options === 'object' && options.mode === 'byob');
+      var byob = modeVal === 'byob';
       if (self._locked) throw new TypeError('Cannot get a Reader: ReadableStream is locked');
       self._locked = true;
       // net-api M4-S4：本 reader 的 closedPromise（waiter 登记——close/error/release 驱动 settle；
@@ -768,8 +810,12 @@
       if (self._locked) return Promise.reject(new TypeError('Cannot cancel: ReadableStream is locked'));
       return cancelInternal(reason);
     };
-    Object.defineProperty(this, 'locked', { get: function () { return self._locked; } });
     this._zwRsBrand = true; // net-api M4-S1：pipeTo/pipeThrough brand 校验锚
+    // net-api M4-S5：TransformStream SourcePull 背压观察锚（state/closeRequested/desired/readRequests
+    // ——HasBackpressure = !ShouldCallPull 精确形）。
+    this._zwRsProbe = function () {
+      return { state: state, closeRequested: closeRequested, desired: hwm - queueTotalSize, readRequests: waiting.length };
+    };
     // net-api M4-S4：values(options) / @@asyncIterator(options)（spec §4.2.5 + WebIDL async
     // iterator 机制）——getReader 锁定（locked → 同步 TypeError）；[[OngoingPromise]] 串行
     //（前序 next/return 未决则链后——「return(); next() [no awaiting]」resolve 序锚）；next
@@ -1010,13 +1056,22 @@
       Promise.resolve().then(function () { started = true; flushPull(); });
     }
   };
+  // net-api M4-S5：locked accessor 上移 prototype（general「Subclassing ReadableStream」面
+  // ——Object.getOwnPropertyDescriptor(ReadableStream.prototype, 'locked').get 品牌访问 +
+  // subclass 实例共享 getter）。
+  Object.defineProperty(globalThis.ReadableStream.prototype, 'locked', {
+    get: function () { return this._locked; },
+    enumerable: true, configurable: true
+  });
   // fetch 响应体字符串 → ReadableStream：单 UTF-8 Uint8Array chunk 后 close（headless finite-body 模型，
   // 整体 body 已就绪）。复用 _zw_utf8_encode；空 body → 直接 close（零 chunk）。定义在 part01 _makeResponse
   // 之前调用（runtime），ReadableStream（part02）+ _zw_utf8_encode（part02）在 IIFE 同作用域已就绪。
   function _bodyToStream(src) {
     // R3021：src 可为 Uint8Array（二进制 response body）→ 直接 enqueue 字节；字符串 → UTF-8 编码 Uint8Array chunk。
+    // net-api M4-S5：source **null 原型**（stream-safe-creation 页——Object.prototype.type/start
+    // 投毒不得触及内部流创建；自有 start 遮蔽 + 无自有 type → 构造器成员读取免疫）。
     var isBytes = src instanceof Uint8Array;
-    return new ReadableStream({
+    var sourceObj = {
       start: function (controller) {
         if (isBytes) {
           if (src.length > 0) controller.enqueue(src);
@@ -1031,8 +1086,25 @@
         }
         controller.close();
       }
-    });
+    };
+    if (typeof Object.setPrototypeOf === 'function') Object.setPrototypeOf(sourceObj, null);
+    return new ReadableStream(sourceObj);
   }
+
+  // net-api M4-S5：WritableStreamDefaultController / WritableStreamDefaultWriter 全局类
+  //（spec——controller 不可构造（构造即 TypeError）；writer 构造须 WritableStream（brand）
+  // 且未锁定 → SetUp（getWriter 同一工厂：locked → TypeError））。
+  function WritableStreamDefaultController() {
+    throw new TypeError('Illegal constructor');
+  }
+  function WritableStreamDefaultWriter(stream) {
+    if (!stream || !stream._zwWsBrand) {
+      throw new TypeError("Failed to construct 'WritableStreamDefaultWriter': stream must be a WritableStream.");
+    }
+    return stream.getWriter(); // locked → getWriter TypeError；未锁 → 标准 writer
+  }
+  globalThis.WritableStreamDefaultController = globalThis.WritableStreamDefaultController || WritableStreamDefaultController;
+  globalThis.WritableStreamDefaultWriter = globalThis.WritableStreamDefaultWriter || WritableStreamDefaultWriter;
 
   // ── P1a WritableStream（Streams API write 侧，R2969）──
   // ReadableStream 的写入配对（pipeTo 目标 / TransformStream 写侧 / 自定义 sink）。控制器模型：
@@ -1050,7 +1122,17 @@
     // TypeError（conversion 阶段）先于 hwm RangeError（「invalid size beats invalid highWaterMark」
     // ——WebIDL 成员定义序转换序）。
     var strat = _zwStrategyDict(_strategy);
-    var sink = (underlyingSink === undefined || underlyingSink === null) ? {} : underlyingSink;
+    // net-api M4-S5：WebIDL object 转换（readable 同口径——null/原语 → TypeError）。
+    if (underlyingSink === null || (underlyingSink !== undefined &&
+        typeof underlyingSink !== 'object' && typeof underlyingSink !== 'function')) {
+      throw new TypeError("Failed to construct 'WritableStream': underlyingSink must be an object.");
+    }
+    var sink = underlyingSink === undefined ? {} : underlyingSink;
+    // net-api M4-S5：UnderlyingSink type 成员保留面——存在即 RangeError（spec 构造步骤 3，
+    // 「can't be constructed with a defined type」面）。
+    if (sink.type !== undefined) {
+      throw new RangeError("Failed to construct 'WritableStream': type is reserved.");
+    }
     var state = 'writable';     // writable | closed | errored
     var errorVal = undefined;
     var self = this;
@@ -1063,6 +1145,7 @@
     var hwm = _zwExtractHwm(strat.hwmValue, 1);
     var sizeFn = strat.size !== undefined ? strat.size : null;
     var queueTotalSize = 0;
+    var inFlightWrite = null;    // net-api M4-S5：当前 in-flight write 请求（spec [[inFlightWriteRequest]]）
     var resolveReady = null;     // ready 阻塞态时的 resolver（desiredSize<=0）；null = ready 已 resolve 态
     var readyPromise = Promise.resolve();
     // ready 在 desiredSize>0 时 resolve（背压释放）；desiredSize<=0 时挂起（背压门控）。
@@ -1077,20 +1160,31 @@
       if (state === 'errored' || state === 'closed') return;
       errorVal = e;
       state = 'errored';
-      // controller.error → 拒绝所有 pending write + closed（spec：error 使所有未完成 write reject）。
-      while (pendingWrites.length > 0) pendingWrites.shift().reject(e);
+      // net-api M4-S5：spec FinishErroring——拒绝 [[writeRequests]]（queued）；**in-flight
+      // write 请求不在其列**（由 sink.write 完成面收尾：正常完成 → fulfill——constructor 页
+      // 「controller.error() in write() should error the stream」write fulfill 面）。
+      for (var i = pendingWrites.length - 1; i >= 0; i--) {
+        if (pendingWrites[i] === inFlightWrite) continue;
+        pendingWrites[i].reject(e);
+        pendingWrites.splice(i, 1);
+      }
       rejectClosed(e);
     }
-    var controller = { error: errorStream };
+    // net-api M4-S5：controller 构造器身份（writable constructor 页 `c.constructor` 面——
+    // new WritableStreamDefaultController(stream) 须 TypeError）。
+    var controller = { error: errorStream, constructor: WritableStreamDefaultController };
     this._controller = controller;
     // net-api M4-S4：pipeTo dest 首查锚（state/error 内部读取——spec「closing propagated
     // backward」：dest 已 closed/errored → 源 cancel + 拒绝）。
     this._zwWsProbe = function () { return { state: state, error: errorVal }; };
+    // net-api M4-S5：TransformStream readable.cancel/transform 拒绝 → error writable 锚。
+    this._zwWsErrorFn = errorStream;
 
     this.getWriter = function () {
       if (self._locked) throw new TypeError('Cannot get a Writer: WritableStream is locked');
       self._locked = true;
       return {
+        constructor: WritableStreamDefaultWriter, // net-api M4-S5：构造器身份（writer.constructor 面）
         get closed() {
           if (state === 'closed') return Promise.resolve();
           if (state === 'errored') return Promise.reject(errorVal);
@@ -1129,23 +1223,24 @@
             var entry = { resolve: resolve, reject: reject, size: sz };
             pendingWrites.push(entry);
             try {
+              inFlightWrite = entry;
               Promise.resolve(sink.write ? sink.write(chunk, controller) : undefined)
                 .then(function () {
-                  // sink.write 完成：若期间 controller.error 已拒绝本 entry（state errored），跳过；
-                  // 否则 FIFO 取本 entry resolve（多 write 串行完成，顺序匹配）+ 释放对应 size（背压释放）。
-                  if (state === 'errored') return;
-                  if (pendingWrites.length > 0) {
-                    var done = pendingWrites.shift();
-                    queueTotalSize -= done.size;
-                    if (queueTotalSize < 0) queueTotalSize = 0;
-                    updateReady();
-                    done.resolve(undefined);
-                  }
+                  // net-api M4-S5：in-flight write 正常完成 → **本 write 请求 resolve**（即使
+                  // 期间 controller.error 已 error 流——in-flight 不被 FinishErroring 拒绝）。
+                  inFlightWrite = null;
+                  var idx = pendingWrites.indexOf(entry);
+                  if (idx >= 0) pendingWrites.splice(idx, 1);
+                  queueTotalSize -= entry.size;
+                  if (queueTotalSize < 0) queueTotalSize = 0;
+                  updateReady();
+                  entry.resolve(undefined);
                 },
                 function (e) {
                   // net-api M4-S4：sink.write 拒绝 → 本 write 请求拒绝 + 流 error
                   //（spec in-flight write 失败面——error-propagation-backward 页；旧形态仅 error
                   // 不 reject entry → write 永挂）。
+                  inFlightWrite = null;
                   var idx = pendingWrites.indexOf(entry);
                   if (idx >= 0) pendingWrites.splice(idx, 1);
                   queueTotalSize -= entry.size;
@@ -1154,7 +1249,7 @@
                   entry.reject(e);
                   errorStream(e);
                 });
-            } catch (e) { errorStream(e); reject(e); }
+            } catch (e) { inFlightWrite = null; errorStream(e); entry.reject(e); }
           });
         },
         close: function () {
@@ -1165,7 +1260,9 @@
           // 残余 pending write 视为完成（headless 串行 sink，正常此时已空，best-effort resolve）。
           while (pendingWrites.length > 0) pendingWrites.shift().resolve(undefined);
           try {
-            Promise.resolve(sink.close ? sink.close(controller) : undefined)
+            // net-api M4-S5：sink.close 无参调用（properties 页「close should be called with
+            // 0 arguments」面——spec UnderlyingSinkCloseCallback()）。
+            Promise.resolve(sink.close ? sink.close() : undefined)
               .then(function () { resolveClosed(undefined); },
                     function (e) { errorStream(e); });
           } catch (e) { errorStream(e); }
@@ -1194,6 +1291,11 @@
       }
     }
   };
+  // net-api M4-S5：locked accessor 上移 prototype（readable 同口径——subclass/品牌访问面）。
+  Object.defineProperty(globalThis.WritableStream.prototype, 'locked', {
+    get: function () { return this._locked; },
+    enumerable: true, configurable: true
+  });
 
   // ── P1a TransformStream（Streams API transform，R2969）──
   // {readable, writable} 配对：writable.write(chunk) → transformer.transform(chunk, controller) →
@@ -1278,35 +1380,189 @@
       }, { highWaterMark: 0 });
     };
   }
-  globalThis.TransformStream = globalThis.TransformStream || function TransformStream(transformer, _strategy) {
-    if (!(this instanceof TransformStream)) return new TransformStream(transformer, _strategy);
-    var tx = transformer || {};
-    var enqueueToR, closeR, errorR;
-    var transformController = {
-      enqueue: function (chunk) { if (enqueueToR) enqueueToR(chunk); },
-      close: function () { if (closeR) closeR(); },
-      error: function (e) { if (errorR) errorR(e); }
-    };
+  // net-api M4-S5：TransformStreamDefaultController 全局类（不可构造——spec）。
+  function TransformStreamDefaultController() {
+    throw new TypeError('Illegal constructor');
+  }
+  globalThis.TransformStreamDefaultController = globalThis.TransformStreamDefaultController || TransformStreamDefaultController;
+  // net-api M4-S5：TransformStream spec 化重做（spec §6.2——InitializeTransformStream +
+  // DefaultSink/DefaultSource + backpressure 机制）——
+  // ① 构造：transformer dictionary（readableType/writableType → RangeError）+ writable/readable
+  //   策略分离（writable 默认 hwm 1、readable 默认 hwm 0 + size 算法透传）；
+  // ② backpressure：[[backpressureChangePromise]]——初始 true；SinkWrite 背压门控（等 change
+  //   promise 再 transform）+ **写链逐写串行**（spec AdvanceQueueIfNeeded 等价——sink.write 事件
+  //   即时、transform 串行）；SourcePull 置 false 并返回新 change promise（翻转回 true 时完成）；
+  //   ControllerEnqueue 背压 false→true 翻转观察；
+  // ③ 传播：transform/flush 拒绝 → 双侧 error；readable cancel → cancel 算法后 error writable；
+  //   terminate → close readable + error writable。
+  globalThis.TransformStream = globalThis.TransformStream || function TransformStream(transformer, _writableStrategy, _readableStrategy) {
+    if (!(this instanceof TransformStream)) return new TransformStream(transformer, _writableStrategy, _readableStrategy);
+    var tx = (transformer === undefined || transformer === null) ? {} : transformer;
+    if (tx.readableType !== undefined) throw new RangeError('TransformStream: readableType is reserved.');
+    if (tx.writableType !== undefined) throw new RangeError('TransformStream: writableType is reserved.');
+    var wStrat = _zwStrategyDict(_writableStrategy);
+    var rStrat = _zwStrategyDict(_readableStrategy);
+    var writableHwm = _zwExtractHwm(wStrat.hwmValue, 1);
+    var readableHwm = _zwExtractHwm(rStrat.hwmValue, 0);
     var self = this;
+
+    // ── backpressure 机制 ──
+    var backpressure = true;
+    var changePromise = null;
+    function setBackpressure(bp) {
+      // spec：resolve 旧 promise + 换新（初始/翻转各一）。
+      if (changePromise && changePromise._zwResolve) { var r = changePromise._zwResolve; changePromise._zwResolve = null; r(); }
+      var res = null;
+      var p = new Promise(function (rs) { res = rs; });
+      p._zwResolve = res;
+      changePromise = p;
+      backpressure = bp;
+    }
+    setBackpressure(true);
+
+    var enqueueToR, closeR, errorR;
+    function transformError(e) {
+      // spec TransformError：error readable + ErrorWritableAndUnblockWrite(writable, e)。
+      if (errorR) errorR(e);
+      errorWritableAndUnblock(e);
+    }
+    function closeReadableSafe() {
+      // net-api M4-S5：controller.close 在已关/排空关面抛 TypeError——spec DefaultControllerClose
+      // 对非可关态静默返回（terminate after readable.cancel 面）。
+      var probe = (self.readable && typeof self.readable._zwRsProbe === 'function') ? self.readable._zwRsProbe() : null;
+      if (probe && probe.state === 'readable' && !probe.closeRequested && closeR) closeR();
+    }
+    function errorWritableAndUnblock(e) {
+      // 惰性解析（tx.start 即刻 terminate 面——构造期 self.writable 尚未赋值）。
+      var ws = self.writable;
+      if (ws && typeof ws._zwWsErrorFn === 'function') ws._zwWsErrorFn(e);
+      if (backpressure) setBackpressure(false); // spec UnblockWrite
+    }
+    function performTransform(chunk) {
+      // spec PerformTransform：transformAlgorithm 拒绝 → TransformError + 重抛。
+      var p;
+      try {
+        p = (typeof tx.transform === 'function')
+          ? Promise.resolve(tx.transform(chunk, transformController))
+          : (transformController.enqueue(chunk), Promise.resolve()); // 恒等
+      } catch (eT) { p = Promise.reject(eT); }
+      return p.then(function () {}, function (rT) { transformError(rT); throw rT; });
+    }
+    var sinkWriteQueue = Promise.resolve(); // 逐写串行（spec 写队列推进等价）
+    function sinkWrite(chunk) {
+      var run = sinkWriteQueue.then(function () {
+        // spec SinkWrite：backpressure → 等 changePromise（捕获当前）后 transform；醒来后
+        // writable 已 errored → 抛 storedError（terminate/error 期间挂起写的收尾面）。
+        if (backpressure) {
+          var bp = changePromise;
+          return Promise.resolve(bp).then(function () {
+            var probe = (self.writable && typeof self.writable._zwWsProbe === 'function') ? self.writable._zwWsProbe() : null;
+            if (probe && probe.state === 'errored') throw probe.error;
+            return performTransform(chunk);
+          });
+        }
+        return performTransform(chunk);
+      });
+      sinkWriteQueue = run.then(function () {}, function () {});
+      return run;
+    }
+    // net-api M4-S5：transformer start promise 门（spec——transform/flush 不早于 start 完成；
+    // 「start, transform, and flush should be strictly ordered」面）。
+    var startPromise = null;
+
+    var transformController = {
+      constructor: TransformStreamDefaultController,
+      enqueue: function (chunk) {
+        // spec TS ControllerEnqueue：readable enqueue 异常 → TransformErrorWritableAndUnblock
+        // + 抛 storedError；背压 false→true 翻转观察（HasBackpressure = !ShouldCallPull）。
+        try { enqueueToR(chunk); } catch (eEnq) { transformError(eEnq); throw eEnq; }
+        var probe = (self.readable && typeof self.readable._zwRsProbe === 'function') ? self.readable._zwRsProbe() : null;
+        var shouldPull = !!probe && probe.state === 'readable' && !probe.closeRequested &&
+          (probe.readRequests > 0 || probe.desired > 0);
+        var bp = !shouldPull;
+        if (bp !== backpressure && bp === true) setBackpressure(true);
+      },
+      error: function (e) { transformError(e); },
+      close: function () { closeReadableSafe(); }, // 内部兼容别名（flush 后关 readable）
+      terminate: function () {
+        // spec Terminate：close readable + error writable(TypeError)。
+        closeReadableSafe();
+        errorWritableAndUnblock(new TypeError('TransformStream terminated'));
+      }
+    };
+
+    // net-api M4-S5：tx.start 恰调一次（readable start 内）；start promise 同时门控写链
+    //（transform/flush 不早于 start 完成）。
     this.readable = new ReadableStream({
       start: function (controller) {
         enqueueToR = controller.enqueue;
         closeR = controller.close;
         errorR = controller.error;
-        if (typeof tx.start === 'function') tx.start(transformController);
-      }
-    });
-    this.writable = new WritableStream({
-      write: function (chunk) {
-        if (typeof tx.transform === 'function') tx.transform(chunk, transformController);
-        else transformController.enqueue(chunk); // 恒等
+        try {
+          startPromise = Promise.resolve(typeof tx.start === 'function' ? tx.start(transformController) : undefined);
+        } catch (eStart) {
+          startPromise = Promise.reject(eStart);
+        }
       },
-      close: function () {
-        if (typeof tx.flush === 'function') tx.flush(transformController);
-        transformController.close();
+      pull: function () {
+        // spec SourcePull：置 false（释放写侧）+ 返回新 change promise（下一次翻回 true 时完成）。
+        setBackpressure(false);
+        return changePromise;
+      },
+      cancel: function (reason) {
+        // spec SourceCancel：cancel 算法 → ErrorIfNeeded(writable, reason) + UnblockWrite。
+        var p;
+        try {
+          p = (typeof tx.cancel === 'function') ? Promise.resolve(tx.cancel(reason)) : Promise.resolve();
+        } catch (eC) { p = Promise.reject(eC); }
+        return p.then(function () { errorWritableAndUnblock(reason); },
+                      function (rC) { errorWritableAndUnblock(rC); throw rC; });
       }
-    });
+    }, { highWaterMark: readableHwm, size: rStrat.size !== undefined ? rStrat.size : undefined });
+
+    this.writable = new WritableStream({
+      write: function (chunk) { return sinkWrite(chunk); },
+      close: function () {
+        // spec SinkClose：写链排空 → flush → 关 readable（flush 拒绝 → 双侧 error + 重抛）。
+        var fin = sinkWriteQueue.then(function () {
+          var p;
+          try {
+            p = (typeof tx.flush === 'function') ? Promise.resolve(tx.flush(transformController)) : Promise.resolve();
+          } catch (eF) { p = Promise.reject(eF); }
+          return p.then(function () { closeReadableSafe(); },
+                        function (rF) { transformError(rF); throw rF; });
+        });
+        sinkWriteQueue = fin.then(function () {}, function () {});
+        return fin;
+      },
+      abort: function (reason) {
+        // spec SinkAbort：cancel 算法 → error readable(reason)/r。
+        var p;
+        try {
+          p = (typeof tx.cancel === 'function') ? Promise.resolve(tx.cancel(reason)) : Promise.resolve();
+        } catch (eA) { p = Promise.reject(eA); }
+        return p.then(function () { if (errorR) errorR(reason); },
+                      function (rA) { if (errorR) errorR(rA); throw rA; });
+      }
+    }, { highWaterMark: writableHwm, size: wStrat.size !== undefined ? wStrat.size : undefined });
+    // start promise 门挂到写链头部（start 拒绝 → 写侧后续全部拒绝 + 双侧 error——spec 由
+    // startPromise rejection → TransformError 传播）。
+    startPromise.then(function () {}, function (eStart2) { transformError(eStart2); });
+    sinkWriteQueue = sinkWriteQueue.then(function () { return startPromise; }, function () { return startPromise; });
   };
+  // net-api M4-S5：readable/writable prototype accessor（general「Subclassing TransformStream」
+  // 面——getOwnPropertyDescriptor(...).get 品牌访问）。**必须带 setter**（写回 _zw 槽）——getter-only
+  // 形态下 sloppy 构造器的 `this.readable = ...` 静默失效（实例属性永不落位）。
+  Object.defineProperty(globalThis.TransformStream.prototype, 'readable', {
+    get: function () { return this._zwReadable; },
+    set: function (v) { this._zwReadable = v; },
+    enumerable: true, configurable: true
+  });
+  Object.defineProperty(globalThis.TransformStream.prototype, 'writable', {
+    get: function () { return this._zwWritable; },
+    set: function (v) { this._zwWritable = v; },
+    enumerable: true, configurable: true
+  });
 
   // ── P1a TextEncoderStream / TextDecoderStream（编码转换流，R2970）──
   // spec 通用编码转换流（Generic Transform Stream），常与 `response.body.pipeThrough(new TextDecoderStream())`

@@ -1233,7 +1233,8 @@ fn test_writable_stream_r2969() {
     );
     assert_eq!(sandbox.execute("String(globalThis.__closedOk)").unwrap().value, "yes", "writer.close 后 closed Promise resolve");
 
-    // 错误传播：controller.error → 该 write reject + closed reject。
+    // 错误传播：controller.error（sink.write 内）→ **in-flight write 正常 resolve**（spec
+    // FinishErroring 不拒绝 in-flight 请求——M4-S5 随 writable constructor WPT 翻新）+ closed reject。
     sandbox
         .execute(
             "var ws2 = new WritableStream({ write: function(chunk, c){ c.error(new Error('boom')); } });\
@@ -1245,7 +1246,7 @@ fn test_writable_stream_r2969() {
         )
         .unwrap();
     let write_err = sandbox.execute("String(globalThis.__writeErr)").unwrap().value;
-    assert!(write_err.contains("boom"), "controller.error → write reject（含 Error 消息），got: {write_err}");
+    assert_eq!(write_err, "resolved", "controller.error → in-flight write resolve（spec M4-S5），got: {write_err}");
     let closed_err = sandbox.execute("String(globalThis.__closedErr)").unwrap().value;
     assert!(closed_err.contains("boom"), "controller.error → closed reject（含 Error 消息），got: {closed_err}");
 

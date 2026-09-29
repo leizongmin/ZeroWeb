@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-29（M4-S4 收口）
+**最后更新**: 2026-09-29（M4-S5 收口）
 
 ---
 
@@ -13,12 +13,12 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
-M4-S3（74.7%）→ M4-S4（2026-09-29）——**8344/11014 = 75.8%**（fetch 70.2% /
-xhr 53.2% / url 73.1% / mimesniff 100% / streams **66.6%**（548/823——M4-S1 两处
-回退重做收口：async-iterator 41/41 全绿、策略/构造/控制器语义簇解锁）/ eventsource
-6.2%）。下一切片 M4-S5：transform/writable 深状态机（页级 Timeout 11 页）+
-general 严格校验重做（start/pull/cancel callback + type/mode enum——M4-S1 根因已解）；
-并轨 P7 fixture 续件与 DC 判定收口。
+M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（2026-09-29）——**8433/11101 = 76.0%**（fetch
+70.3% / xhr 53.2% / url 73.1% / mimesniff 100% / streams **69.8%**（635/910——transform
+spec 化 + writable in-flight 语义 + 严格校验重做收口，页级 Timeout 11→1）/ eventsource
+6.2%）。下一切片 M4-S6：writable erroring 状态机（aborting 39 腿）+ byob controller
+深路径（bad-buffers/read-min）+ transform cancel 余量；并轨 P7 fixture 续件与 DC
+判定收口。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -34,12 +34,24 @@ general 严格校验重做（start/pull/cancel callback + type/mode enum——M4
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
 | P3 | XHR 状态机 + EventSource 解析/重连 | 🔶 M3 进行中——S1（header 校验）+ S2（responseType/同步/overrideMime）已收口（xhr 53.2%）；**残余：blob-range（27，blob:+Range）、progress 事件序、.asis/eventsource fixture 联动 P7** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.1%（新分母 6065——M3 收口 USP/URL.parse/port/live 迭代/UTF-8 解码器/helper 解锁）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
-| P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S4 收口（66.6%——values() 完整语义 41/41 + 构造 dictionary 转换序 + closedPromise 全局化 + pull/控制器语义 + pipeTo options/signal + OOM 根因修复）；**M4-S5 残余：transform 深状态机（backpressureChangePromise/flush/terminate）+ writable aborting/start + byob controller 语义（页级 Timeout 11 页）+ general 严格校验重做** |
+| P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S5 收口（69.8%——M4-S4 values()/构造转换序之上：TransformStream spec 化重做（backpressure 机制/传播语义，页级 Timeout 5 页全解除）+ writable in-flight 语义 + 构造严格校验重做（general 38/38、writable constructor 13/13）+ 内部流创建投毒免疫）；**M4-S6 残余：writable erroring 状态机（aborting 39 腿）+ byob controller 深路径（bad-buffers/read-min）+ transform cancel 余量 + readable-streams/tee 页级 Timeout 1 页** |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
 | P7 | runner fixture 通道（.py 端点最小 fixture 集） | 🔶 首件已落（M3-S1 `inspect-headers.py`）；待评估：event-source.py / echo-content.py / delay.py 族（eventsource Timeout 23 / request-upload echo / xhr delay 簇公共解锁件） |
 
 ## 已完成切片
 
+- **M4-S5（2026-09-29）**：TransformStream spec 化重做 + writable in-flight 语义 +
+  构造严格校验重做（**8433/11101 = 76.0%**，streams 548/823 → 635/910 = 69.8%，
+  Δ+89 pass；页级 Timeout 11→1）。TS backpressure 机制（backpressureChangePromise/
+  写链串行/SourcePull/Enqueue 翻转观察——spec §6.2）+ 传播语义（cancel/abort/terminate/
+  start 门控）+ 策略分离（writable hwm 1 / readable hwm 0）；writable
+  `[[inFlightWriteRequest]]`（error 时 in-flight write fulfill、queued reject——writable
+  constructor 13/13 全绿）；严格校验重做（object/null 转换 + type/mode enum + callback
+  转换 + 全局 Writer/Controller 类 + locked 上移 prototype——readable general **38/38**
+  全绿）；`_bodyToStream` null 原型投毒免疫（fetch +2）。owning-type -2 记账
+  （tentative 'owning' type 改 spec 严格拒绝）。make test 全绿（1 处存量桥测随 spec
+  翻新）+ clippy/fmt 干净。见
+  [evidence/2026-09-29-m4-s5-transform-writable-strict.md](evidence/2026-09-29-m4-s5-transform-writable-strict.md)。
 - **M4-S4（2026-09-29）**：M4-S1 两处回退专设重做 + 随基线甄别展开的构造/控制器语义簇
   （**8344/11014 = 75.8%**，streams 271/598 → 548/823 = 66.6%，Δ+281 pass）。values()/
   @@asyncIterator 完整语义（**async-iterator 41/41 全绿**——OngoingPromise 串行 /
@@ -152,16 +164,14 @@ general 严格校验重做（start/pull/cancel callback + type/mode enum——M4
 
 ## 下一步计划
 
-1. **M4-S5 streams 深状态机**：transform 侧 backpressure（backpressureChangePromise）/
-   flush/errors/reentrant/terminate + writable aborting/start/close/reentrant + byob
-   controller 语义（byobRequest.view/respond/零长度-detached enqueue TypeError）——
-   页级 Timeout 11 页甄别与解锁（挂死腿即挂账，不阻全量）
-2. **general 严格校验重做**：start/pull/cancel callback 可调用 TypeError + type/mode
-   enum 校验（M4-S1 回退面——undefined-source 根因已解，'potato' 簇可安全重做）
-3. **M4 并轨**：P7 续件评估（.asis 原始 HTTP fixture / event-source.py /
+1. **M4-S6 writable erroring 状态机**：aborting 39 腿（erroring 态/ready 拒绝时序/
+   abort 期间 write-close 语义）+ byob controller 深路径（bad-buffers 15 腿/
+   read-min 9 腿——byobRequest.view/respond/零长度-detached enqueue TypeError）+
+   transform cancel 余量（8 腿）+ readable-streams/tee 页级 Timeout 甄别
+2. **M4 并轨**：P7 续件评估（.asis 原始 HTTP fixture / event-source.py /
    echo-content.py——eventsource Timeout 23 / xhr delay 簇 / request-upload echo）
    + blob-range（blob:+Range XHR 27）
-4. **收口判定**：WebSocket 二期挂账定稿 + DC 逐项判定（DC-1 helpers 账本核对 /
+3. **收口判定**：WebSocket 二期挂账定稿 + DC 逐项判定（DC-1 helpers 账本核对 /
    DC-4 make test+clippy+fmt 门禁与 reftest 零回归核对）
 
 **待用户决策清单**：（空）
