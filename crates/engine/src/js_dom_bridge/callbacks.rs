@@ -117,6 +117,7 @@ fn with_query_view_doc<R>(
             && Arc::ptr_eq(&key.dom_arc, html)
             && Arc::ptr_eq(&key.mut_arc, mutations)
             && key.count == count
+            && key.drain_gen == MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed)
             && key.view_gen == view_gen
         {
             return f(doc);
@@ -133,7 +134,6 @@ fn with_query_view_doc<R>(
             })
             .unwrap_or(0);
         let chain_hit = prev_count > 0;
-        eprintln!("ZWDV rebuild prev={prev_count} count={count} chain={chain_hit}");
         // 结构级 mutation 子集（见 register_dom_callbacks 处 R57 文档——属性级/handle
         // 链/Remove/SetInnerHtml 不应用）。Remove 排除：被移除元素的 proxy 属性读取
         //（old.id / removedNodes[].tagName——R3029/replace_child_e2e）须回落快照；且
@@ -418,6 +418,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             let count = m.lock().unwrap_or_else(|e| e.into_inner()).len();
+            let drain_gen = MUT_DRAIN_GEN.load(Ordering::Relaxed);
             let view_gen = DOM_VIEW_GEN.load(Ordering::Relaxed);
             if let Some(hit) = TAGGED_ALL_CACHE.with(|slot| {
                 slot.borrow()
@@ -426,8 +427,9 @@ pub fn register_dom_callbacks(
                         Arc::ptr_eq(&k.0, &html)
                             && Arc::ptr_eq(&k.1, &m)
                             && k.2 == count
-                            && k.3 == view_gen
-                            && k.4 == sel
+                            && k.3 == drain_gen
+                            && k.4 == view_gen
+                            && k.5 == sel
                     })
                     .map(|(_, payload)| payload.clone())
             }) {
@@ -436,7 +438,7 @@ pub fn register_dom_callbacks(
             let payload = with_query_view_doc(&html, &m, |doc| query_all_tagged_list_doc(doc, &sel));
             TAGGED_ALL_CACHE.with(|slot| {
                 *slot.borrow_mut() = Some((
-                    (Arc::clone(&html), Arc::clone(&m), count, view_gen, sel),
+                    (Arc::clone(&html), Arc::clone(&m), count, drain_gen, view_gen, sel),
                     payload.clone(),
                 ));
             });
@@ -874,12 +876,17 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             let count = m.lock().unwrap_or_else(|e| e.into_inner()).len();
+            let drain_gen = MUT_DRAIN_GEN.load(Ordering::Relaxed);
             let view_gen = DOM_VIEW_GEN.load(Ordering::Relaxed);
             if let Some(tag) = TAG_MEMO.with(|slot| {
                 slot.borrow()
                     .as_ref()
                     .filter(|(k, _)| {
-                        Arc::ptr_eq(&k.0, &html) && Arc::ptr_eq(&k.1, &m) && k.2 == count && k.3 == view_gen
+                        Arc::ptr_eq(&k.0, &html)
+                            && Arc::ptr_eq(&k.1, &m)
+                            && k.2 == count
+                            && k.3 == drain_gen
+                            && k.4 == view_gen
                     })
                     .and_then(|(_, map)| map.get(&sel).cloned())
             }) {
@@ -891,11 +898,18 @@ pub fn register_dom_callbacks(
                 let stale = guard
                     .as_ref()
                     .map(|(k, _)| {
-                        !(Arc::ptr_eq(&k.0, &html) && Arc::ptr_eq(&k.1, &m) && k.2 == count && k.3 == view_gen)
+                        !(Arc::ptr_eq(&k.0, &html)
+                            && Arc::ptr_eq(&k.1, &m)
+                            && k.2 == count
+                            && k.3 == drain_gen
+                            && k.4 == view_gen)
                     })
                     .unwrap_or(true);
                 if stale {
-                    *guard = Some(((Arc::clone(&html), Arc::clone(&m), count, view_gen), HashMap::new()));
+                    *guard = Some((
+                        (Arc::clone(&html), Arc::clone(&m), count, drain_gen, view_gen),
+                        HashMap::new(),
+                    ));
                 }
                 guard.as_mut().expect("entry ensured").1.insert(sel, tag.clone());
             });
@@ -2397,17 +2411,18 @@ fn with_query_doc_live_aware<R>(html: &str, live_ok: bool, f: impl FnOnce(&zero_
 // 使旧 epoch 地址不可复用（ABA 免疫，见 QueryViewEntry 文档）。
 thread_local! {
     static TAG_MEMO: std::cell::RefCell<
-        Option<((Arc<std::sync::Mutex<String>>, Arc<std::sync::Mutex<Vec<DomMutation>>>, usize, usize), std::collections::HashMap<String, String>)>,
+        Option<((Arc<std::sync::Mutex<String>>, Arc<std::sync::Mutex<Vec<DomMutation>>>, usize, usize, usize), std::collections::HashMap<String, String>)>,
     > = const { std::cell::RefCell::new(None) };
 }
 
 // __zw_query_all_tagged 的 payload 单条目缓存（R-baidu3）：(dom_arc, mut_arc, count,
-// sel) → payload。视图键恒等式同 QueryViewEntry（epoch Arc 身份 + 队列长度唯一决定
-// 视图输入）；sel 或视图变化即换条目。jQuery/Sizzle 每事件多次
+// drain_gen, sel) → payload。视图键恒等式同 QueryViewEntry（epoch Arc 身份 + 队列长度
+// + drain 代际唯一决定视图输入——drain 后重长到同 count 内容可不同，缺 drain_gen 会
+// 命中 pre-drain 条目）；sel 或视图变化即换条目。jQuery/Sizzle 每事件多次
 // getElementsByTagName('*')，同视图重枚举免 O(匹配数) 的重复 sel+tag 构建。
 thread_local! {
     static TAGGED_ALL_CACHE: std::cell::RefCell<
-        Option<((Arc<std::sync::Mutex<String>>, Arc<std::sync::Mutex<Vec<DomMutation>>>, usize, usize, String), String)>,
+        Option<((Arc<std::sync::Mutex<String>>, Arc<std::sync::Mutex<Vec<DomMutation>>>, usize, usize, usize, String), String)>,
     > = const { std::cell::RefCell::new(None) };
 }
 

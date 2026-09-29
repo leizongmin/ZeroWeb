@@ -7916,16 +7916,13 @@
   // 仅安装合法标识符 id；不覆盖已存在全局（避免 shadow `document`/`window` 等真实 global）。
   function _installNamedAccess() {
     try {
-      var __t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
       var ids = __zw_collect_ids();
       if (!ids) return;
-      var __n = 0;
       ids.split('|').forEach(function(id) {
         if (!id || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id)) return;
         if (globalThis[id] !== undefined) return;
         var el = globalThis.document.getElementById(id);
         if (el) globalThis[id] = el;
-        __n++;
       });
     } catch (_e) {}
   }

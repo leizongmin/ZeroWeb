@@ -407,3 +407,60 @@ fn test_query_view_doc_drain_regrowth_gen_r_baidu3() {
         "drain 重建后批 1 烘焙项与批 2 插入必须并存（代际项防 stale 链）"
     );
 }
+
+/// MUT_DRAIN_GEN 精确命中碰撞（drain 代际回归补测试）：drain（clear + bump
+/// drain 代际，**不**换代）后队列以**不同内容**重长回**恰好旧 count**——
+/// 精确命中缺 drain_gen 项会把 pre-drain 视图原样端出（旧条目复活、新条目
+/// 丢失）。生产形态：drain 站点三件套里 clear/bump 与 apply/快照换代之间的
+/// 窗口内，查询落在重长回同 count 的时刻。drain_gen 必须进精确命中键。
+///
+/// 关键构造：drain 后的**首个**视图读必须落在重长后的 count 上——插入走裸
+/// host 回调 `__zw_insert_adjacent_html`（纯 mutation push，零查询副作用）。
+/// proxy 级 `insertAdjacentHTML` 的解析机械（`_zwFragmentAdded`/`_makeProxy`）
+/// 会在 push **前**触发一次 count=0 视图读，先把条目重建到 (0, 新 drain 代际)、
+/// 掩盖碰撞窗口——碰撞只在窗口内首个视图读就落在同 count 查询上时显形。
+#[test]
+fn test_query_view_doc_drain_exact_count_collision_r_baidu3() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><ul id='a'></ul><ul id='b'></ul></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // 批 1：裸回调插入 x1（纯 push）→ 查询烘焙视图（count=1，pre-drain 基座含 x1）。
+    sandbox
+        .execute(
+            "globalThis.__zw_insert_adjacent_html('#a', 'beforeend', '<li>x1</li>');\
+             globalThis.__n1 = document.querySelectorAll('#a li').length;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__n1").unwrap().value, "1");
+    // drain：清队列 + bump drain 代际，不换代（生产 drain 站点 clear/bump 与
+    // apply/快照换代之间的窗口形态；快照内容保持原样——x1 仅存在于旧视图）。
+    mutations.lock().unwrap().clear();
+    crate::js_dom_bridge::bump_mut_drain_gen();
+    // 批 2：裸回调插入 y1（重长回恰好旧 count=1，纯 push 零查询）→ drain 后首个
+    // 视图读就是紧随的 count=1 查询。端出 pre-drain 视图的失败形态：
+    // #b li=0（y1 丢）且 #a li=1（x1 复活）。
+    sandbox
+        .execute(
+            "globalThis.__zw_insert_adjacent_html('#b', 'beforeend', '<li>y1</li>');\
+             globalThis.__n2 = document.querySelectorAll('#b li').length + ':' + document.querySelectorAll('#a li').length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__n2").unwrap().value,
+        "1:0",
+        "drain 后同 count 精确命中不得端出 pre-drain 视图（y1 须可见、x1 不得复活）"
+    );
+}
