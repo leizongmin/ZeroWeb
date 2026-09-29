@@ -531,10 +531,13 @@
     };
     this.getReader = function (options) {
       // net-api M4-S1：byob reader 仅字节流（readable-byte-streams「getReader({mode:
-      // 'byob'}) throws on non-bytes streams」面）；byob 读 view 面后续切片。
+      // 'byob'}) throws on non-bytes streams」面）。
       if (options != null && typeof options === 'object' && options.mode === 'byob' && !self._zwIsByteStream) {
         throw new TypeError('byob reader requires a ReadableStream with type "bytes"');
       }
+      // net-api M4-S2 回退注记：byob read(view) 首版在 waiting 路径触发内存爆涨
+      //（4.2GB test-guard 拦截——view 形态 × `_bodyToStream` 单 chunk 源的组合未甄别
+      // 完整），回退默认读取形态；BYOB reader（view 跟踪/最小填充契约）待专设切片。
       if (self._locked) throw new TypeError('Cannot get a Reader: ReadableStream is locked');
       self._locked = true;
       return {
@@ -542,13 +545,12 @@
           self._disturbed = true; // net-api M2-S3：read 即 disturbed（spec §3.6）
           return new Promise(function (resolve, reject) {
             if (state === 'errored') { reject(errorVal); return; }
-            // 先 drain 已 enqueue chunk（即便流已 close，剩余 chunk 须先派发，spec §3.5 close 后仍可读余 chunk）。
             if (queue.length > 0) {
               var entry = queue.shift();
               queueTotalSize -= entry.size;
               if (queueTotalSize < 0) queueTotalSize = 0;
               resolve(_rs_chunk(entry.chunk));
-              flushPull(); // R3010：drain 释放余量 → 按 desiredSize 重 pull
+              flushPull();
               return;
             }
             if (state === 'closed') { resolve(_RS_DONE); return; }
