@@ -6,25 +6,30 @@
 ## 保存与恢复
 
 复制 [模板](../templates/checkpoint.json) 到运行目录的 `checkpoint.json`，替换示例
-身份和时间。JSON 写到同目录临时文件，解析并校验后原子 rename；保留前一份检查点。
+身份和时间；默认 deadline_at 必须按实际 started_at 加 7d 生成，不照抄示例日期。
+JSON 写到同目录临时文件，解析并校验后原子 rename；保留前一份检查点。
 单个 Agent 写入，证据文件使用唯一名称。`workflow.json` 引用本次不可变快照，
 管理冻结目标与任务；`run.md` 展示覆盖图、问题池和决策历史，不另维护消费数字。
 整体完成与相邻状态检查遵循 [目标契约](workflow.md)。
 
 ### 预算记账
 
-推荐默认值见入口。时间从首次预检开始累计，构建、重试、等待均计入；候选无论
-accept/reject/inconclusive 都计数。初次等待必要授权不计入尚未开始的运行预算。
-默认没有总限时，deadline_at 显式为 null；用户或宿主限制优先。resume 沿用原截止时间与
+推荐默认值见入口。总时间默认 7d，从确认后的首次运行预检到当前的墙钟差计算，
+构建、重试、暂停、等待和离线均计入，不仅累计活跃执行耗时；初次等待启动确认不计入。
+一个 PR 为一次迭代，候选的 accept/reject/inconclusive 只作过程统计，不折算为 PR 次数。
+默认 deadline_at=started_at+604800 秒；用户或宿主限制优先。resume 沿用原截止时间与
 累计账本，新预算必须来自用户或有效调度任务，不能靠换 run ID、后台循环获得。
-费用/词元有上限时一起记录，工具不提供用量则记 unknown，不声称满足可审计费用上限；
+仅用户或宿主明确 token/费用上限时一起记录，默认不采集 token 预算；
+有上限但工具不提供用量则记 unknown，不声称满足可审计费用上限；
 不自行调用额外付费模型或扩额度。
 
 预检读取近期同环境门禁耗时，执行后更新估计；修复范围扩大时重新估算。
 估计未知先诊断成本，不开始产品修改；剩余预算不足则保全复现、依赖链和未覆盖任务。
 具体秒数计算由下面的 budget 契约与 verify-run 实现，不能固定按最小预留假定来得及。
 
-- 时间采用带时区 ISO 8601；deadline_at 另允许 null，表示没有总墙钟限额，不是未知。
+- 时间采用带时区 ISO 8601；elapsed_seconds 为当前时间减 started_at，
+  不因 activity、暂停或恢复而扣除时间。deadline_at 另允许 null，用于明确不限时的合约
+  或旧运行，表示没有总墙钟限额，不是未知。
   缺少字段仍为格式错误。有限截止时间从首次启动沿用，延长或改为 null 须记授权修订，
   不能因新默认值迁移掉旧限制。
 - `activity.state` 为 `running|awaiting_user|stopped|unknown`；running 需要 executor
@@ -32,7 +37,12 @@ accept/reject/inconclusive 都计数。初次等待必要授权不计入尚未�
   `checked_at`。退出回复前核对宿主是否还会执行；有浏览器残留不代表 Agent 正在优化。
 - 校验器只显示最后一次活动记录，不查询进程或调度器，输出始终声明
   `live_verified: false`。回答“正在跑”前另查拥有的工具任务；失联写 unknown。
-- `budget` 保存累计候选/探索计数；验证成本未知用 null。收尾预留为
+- `budget.pr_iteration_limit` 为非负整数或 null（默认不限）；已用次数由 workflow
+  中已核验的 PR 仓库/编号去重计算，不另建可重置计数器。PR 创建经服务端确认即计一次，
+  Draft、关闭或放弃的 PR 也保留；同 PR 的提交/返修/重审不增次，新 PR 另计。
+  旧快照缺字段按 null 兼容，须核对原合约，有明确上限时补齐。仅本地模式 PR 计次
+  不适用，不把候选数代入；无代码改动的验证任务不计次。
+- `budget` 另保存累计候选/探索过程计数；验证成本未知用 null。收尾预留为
   `max(1200, validation_estimate_seconds + handoff_seconds)` 秒，未知或预算不足时
   `can_start_candidate` 为 false。下一完整步骤的成本存 next_step_estimate_seconds，
   有总限时时必须满足剩余时间至少为下一步骤加收尾预留；无总限时 remaining_seconds
@@ -40,7 +50,9 @@ accept/reject/inconclusive 都计数。初次等待必要授权不计入尚未�
   后续必要收尾，已完成且有效的检查不重复计费。每步开始前重估，不能只检查“还有20分钟”。
   candidate_limit / exploration_period_limit 为 null 表示没有独立次数上限；
   数值表示用户或原合约指定上限。旧运行保持旧上限，不能迁移时自动清除。
-  can_start_candidate 只判断新候选，不能用它禁止既有候选的验证/交付；
+  candidate_available 与 can_start_candidate 仅判断候选侧限制，PR 迭代限制由
+  verify-workflow 结合任务身份核对，不能只凭 can_start_candidate 开启新 PR 的工作；
+  也不能用它禁止既有候选的验证/交付。
   workflow 对这些步骤单独核对运行状态与时间/费用预算，在途操作继续核对终态。
   此值只判预算，不授予修改权限或解除 GUI 等阻塞。
 - 可选 `resources` 为词元或费用信封数组，每项 unit（如 tokens 或 USD）唯一，

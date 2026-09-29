@@ -56,6 +56,7 @@ test('complete evidence passes, but never proves a live task', async t => {
   assert.equal(result.target_verdict, 'PASS');
   assert.equal(result.can_start_candidate, true);
   assert.equal(result.live_verified, false);
+  assert.equal(result.elapsed_seconds, 600);
 });
 
 test('exit zero with a skipped comparison is not green', async t => {
@@ -112,6 +113,7 @@ test('no total deadline continues after days while explicit limits still apply',
   f.state.deadline_at = null;
   let result = await verifyRun(await f.flush(), Date.parse('2026-01-04T00:00:00Z'));
   assert.equal(result.remaining_seconds, null);
+  assert.equal(result.elapsed_seconds, 3 * 86400);
   assert.equal(result.can_start_candidate, true);
   f.state.budget.candidate_limit = 0;
   assert.equal((await f.check()).can_start_candidate, false);

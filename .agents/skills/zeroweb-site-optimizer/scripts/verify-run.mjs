@@ -73,6 +73,9 @@ export async function verifyRun(checkpointPath, now = Date.now()) {
   requireValue(['candidate_limit', 'exploration_period_limit'].every(key =>
     budget[key] === null || (Number.isSafeInteger(budget[key]) && budget[key] >= 0)),
   'Invalid budget limits');
+  const prLimit = budget.pr_iteration_limit ?? null;
+  requireValue(prLimit === null || (Number.isSafeInteger(prLimit) && prLimit >= 0),
+    'Invalid PR iteration limit');
   const estimate = budget.validation_estimate_seconds;
   requireValue(estimate === null || (Number.isSafeInteger(estimate) && estimate >= 0),
     'Invalid validation estimate');
@@ -94,7 +97,7 @@ export async function verifyRun(checkpointPath, now = Date.now()) {
   const remaining = deadline === null ? null : Math.max(0, Math.floor((deadline - now) / 1000));
   const budgetKnown = reserve !== null && stepEstimate !== null
     && resources.every(item => item.used !== null && item.next_step_estimate !== null);
-  const iterationAvailable = (budget.candidate_limit === null || budget.candidates_used < budget.candidate_limit)
+  const candidateAvailable = (budget.candidate_limit === null || budget.candidates_used < budget.candidate_limit)
     && (budget.exploration_period_limit === null || budget.exploration_periods_used < budget.exploration_period_limit);
   const budgetAvailable = budgetKnown && (remaining === null || remaining >= reserve + stepEstimate)
     && resources.every(item =>
@@ -156,9 +159,10 @@ export async function verifyRun(checkpointPath, now = Date.now()) {
     : gates.some(gate => gate.waived) ? 'ready_with_waivers' : 'ready';
   return {
     schema_version: 1, run_id: state.run_id, activity_record: activity, live_verified: false,
+    elapsed_seconds: Math.floor((now - started) / 1000),
     remaining_seconds: remaining, reserve_seconds: reserve,
-    budget_known: budgetKnown, budget_available: budgetAvailable, iteration_available: iterationAvailable,
-    can_start_candidate: activity.state === 'running' && budgetAvailable && iterationAvailable,
+    budget_known: budgetKnown, budget_available: budgetAvailable, candidate_available: candidateAvailable,
+    can_start_candidate: activity.state === 'running' && budgetAvailable && candidateAvailable,
     target_verdict: targetVerdict, delivery_verdict: deliveryVerdict, gates,
   };
 }

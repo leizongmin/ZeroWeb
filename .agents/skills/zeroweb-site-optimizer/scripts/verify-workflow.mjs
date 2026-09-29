@@ -30,6 +30,17 @@ function strings(items) {
   return Array.isArray(items) && items.every(text) && new Set(items).size === items.length;
 }
 
+/** PR 以仓库和编号去重；同一 PR 的候选、提交和返修不重复计次。 */
+function prIdentity(delivery) {
+  return `${delivery.repo.toLowerCase()}#${delivery.pr}`;
+}
+
+/** 达到 PR 上限后仍允许已有 PR 收尾和无需代码改动的验证。 */
+function withinPrBudget(current, task) {
+  return (current.state.delivery_mode ?? 'local') === 'local'
+    || current.prAvailable || ['pr', 'no_change'].includes(task?.delivery?.kind);
+}
+
 /** 读取不可变检查点引用，复用候选检查器的路径、摘要和门禁核验。 */
 async function load(file, now) {
   const root = path.dirname(await realpath(file));
@@ -120,6 +131,10 @@ async function load(file, now) {
       deliveries.set(task.id, await verifyDelivery(root, task, state, checkpoint));
     }
   }
+  const prUsed = deliveryMode === 'local' ? 0 : new Set(state.tasks
+    .filter(task => task.delivery?.kind === 'pr').map(task => prIdentity(task.delivery))).size;
+  const prLimit = checkpoint.budget.pr_iteration_limit ?? null;
+  const prAvailable = prLimit === null || prUsed < prLimit;
   let recovery = null;
   if (state.recovery_ref != null) {
     recovery = await readJson(await evidence(root, state.recovery_ref));
@@ -158,7 +173,8 @@ async function load(file, now) {
     finalPassed = finalCurrent && report.checks.every(check => check.status === 'PASS')
       && operationMatches && (state.verification_mode === 'deterministic' || independent);
   }
-  return { root, state, checkpoint, gates, finalPassed, finalCurrent, deliveries, recovery };
+  return { root, state, checkpoint, gates, finalPassed, finalCurrent, deliveries, recovery,
+    prUsed, prLimit, prAvailable };
 }
 
 /** 校验相邻快照的不可回退历史；预算/范围扩展须先核验单独的授权修订。 */
@@ -183,9 +199,11 @@ function transition(previous, current) {
   requireValue(before.started_at === after.started_at && before.deadline_at === after.deadline_at
     && before.delivery_scope === after.delivery_scope
     && Date.parse(after.updated_at) >= Date.parse(before.updated_at), 'Budget identity changed');
-  for (const key of ['candidate_limit', 'exploration_period_limit']) {
-    requireValue(before.budget[key] === after.budget[key], 'Budget limit changed');
+  for (const key of ['candidate_limit', 'exploration_period_limit', 'pr_iteration_limit']) {
+    requireValue((before.budget[key] ?? null) === (after.budget[key] ?? null), 'Budget limit changed');
   }
+  requireValue(current.prUsed <= previous.prUsed || current.prLimit === null
+    || current.prUsed <= current.prLimit, 'PR iteration limit exceeded');
   for (const key of ['candidates_used', 'exploration_periods_used']) {
     requireValue(after.budget[key] >= before.budget[key], 'Budget counter decreased');
   }
@@ -225,6 +243,8 @@ function transition(previous, current) {
       'Active dependencies changed');
     requireValue(old.delivery?.kind !== 'pr' || task.delivery?.kind === 'pr',
       'PR task cannot become no-change work');
+    requireValue(old.delivery?.kind !== 'pr'
+      || prIdentity(old.delivery) === prIdentity(task.delivery), 'PR identity changed');
     if (task.status === 'done' && old.status !== 'done' && b.delivery_mode === 'auto_merge'
       && task.delivery?.kind === 'pr') {
       requireValue(old.status === 'integrating'
@@ -262,9 +282,11 @@ function transition(previous, current) {
     requireValue(!a.operations.some(op => op.status !== 'completed'), 'Recover unresolved operation first');
     const op = added[0];
     requireValue(after.activity.state === 'running' && current.gates.budget_available
-      && (op.kind !== 'implement' || current.gates.iteration_available),
+      && (op.kind !== 'implement' || current.gates.candidate_available),
     'Dispatch budget or activity unavailable');
     const task = b.tasks.find(item => item.id === op.task_id);
+    requireValue(!['implement', 'publish'].includes(op.kind) || withinPrBudget(current, task),
+      'PR iteration limit prevents new work');
     const expectedStage = { implement: 'implementing', review: task?.status === 'pr_review'
       ? 'pr_review' : 'verifying', publish: 'verifying', merge: 'merging', integrate: 'integrating' };
     requireValue(op.status === 'intended' && op.executor_ref === null && op.result === null,
@@ -307,7 +329,8 @@ export async function verifyWorkflow(file, previousFile = null, now = Date.now()
     && gates.delivery_verdict === 'ready';
   requireValue(state.stop_reason !== 'completed' || completed, 'Missing completion evidence');
   const ready = state.tasks.filter(task => task.status !== 'done' && task.pause_reason === null
-    && (gates.iteration_available || ['verifying', 'pr_review', 'merging', 'integrating'].includes(task.status))
+    && (gates.candidate_available || ['verifying', 'pr_review', 'merging', 'integrating'].includes(task.status))
+    && withinPrBudget(current, task)
     && task.depends_on.every(id => state.tasks.find(item => item.id === id).status === 'done'));
   let next;
   let reason = state.stop_reason;
@@ -322,12 +345,17 @@ export async function verifyWorkflow(file, previousFile = null, now = Date.now()
   else if (checkpoint.activity.state !== 'running') next = 'verify_executor';
   else if (ready.length) next = 'continue';
   else if (state.tasks.every(task => task.status === 'done') && !finalCurrent) next = 'final_acceptance';
-  else if (!gates.iteration_available) { next = 'stop'; reason = 'iteration_limit'; }
+  else if (!gates.candidate_available
+    || ((state.delivery_mode ?? 'local') !== 'local' && !current.prAvailable)) {
+    next = 'stop'; reason = 'iteration_limit';
+  }
   else next = 'replan';
   return {
     schema_version: 1, run_id: state.run_id, revision: state.revision,
     goal_verdict: completed ? 'PASS' : 'INCOMPLETE', next, reason,
     ready_tasks: next === 'continue' ? ready.map(task => task.id) : [],
+    pr_iterations_used: current.prUsed, pr_iteration_limit: current.prLimit,
+    pr_iteration_available: current.prAvailable,
     live_verified: false, delivery_verdict: gates.delivery_verdict,
   };
 }

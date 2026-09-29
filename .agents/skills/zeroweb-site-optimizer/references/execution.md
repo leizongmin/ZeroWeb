@@ -91,7 +91,7 @@ RSS/CPU 覆盖 browser、renderer、compositor 等本任务进程树；不将单
 命令行或环境变量。收集系统负载用聚合指标，不读取其他 Agent 的凭据或任务正文。
 
 构建产物通过 Cargo artifact 输出或已核对的明确路径绑定，不按最新文件名猜测 feature
-变体。运行中的资源包裹器使用冻结副本，避免并行 Make 重建自身；本 worktree 的重型
+变体。运行中的资源包裹器使用冻结副本，避免并行 Make 重建自身；当前工作区的重型
 入口串行协调。每次截图/报告使用独立目录，及时保全工具默认输出，不能覆盖失败证据。
 
 LCP、CLS、Event Timing 等只在双方真实支持且语义可比时采集；不支持记 unavailable。

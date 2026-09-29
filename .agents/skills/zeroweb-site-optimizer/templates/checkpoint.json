@@ -3,11 +3,12 @@
   "run_id": "example-run",
   "delivery_scope": "integration:example/repository:integration",
   "started_at": "2026-01-01T00:00:00Z",
-  "deadline_at": null,
+  "deadline_at": "2026-01-08T00:00:00Z",
   "updated_at": "2026-01-01T00:00:00Z",
   "activity": { "state": "stopped", "executor": null, "checked_at": null },
   "next_action": "Estimate validation cost and freeze the required checks before starting a candidate.",
   "budget": {
+    "pr_iteration_limit": null,
     "validation_estimate_seconds": null,
     "next_step_estimate_seconds": null,
     "handoff_seconds": 300,

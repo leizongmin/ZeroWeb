@@ -8,7 +8,9 @@ JSON 负责核对身份、预算与逐项门禁。两者不一致时先纠正，
 
 ## 合约与身份
 
-- run ID / 启动时间 / 截止时间（默认 null，无总限时）/ 请求与授权来源：
+- run ID / 启动时间 / 截止时间（默认启动后 7d，含暂停、等待与离线）/ 请求与授权来源：
+- 最终启动参数摘要（目标/范围/完成条件、worktree/工作区/base/分支、预算、交付、验证、工具与异常）：
+- 逐项确认结果与来源 / 整体确认消息或明确采用全部默认参数的引用 / 恢复时沿用的原合约：
 - 启动合约确认时间/原始用户批准引用（或有效调度任务来源）：
 - 逐项已批准/已拒绝/未请求：本地修改、测试、commit、push、PR、自审返修、自动合并、脱敏截图、工具准备：
 - 交付仓库/base/head 生成规则 / Draft 或普通 PR 策略 / 明确不执行的副作用：
@@ -17,8 +19,11 @@ JSON 负责核对身份、预算与逐项门禁。两者不一致时先纠正，
 - 输入类型（网址/目标/两者）/ 原目标 / 代表站点选择依据 / 冻结合约引用：
 - verification_mode / 独立上下文与持续续行能力 / 实际宿主 ID / 缺口：
 - delivery_mode（默认方案 auto_merge，按实际授权冻结）/ repo / 集成分支 / 合并方式：
-- 墙钟、候选、探索、模型费用/词元上限 / 收尾预留 / 当前累计：
-- worktree / branch / base SHA / profile / display / 端口：
+- 总时间上限 / 已过墙钟时间 / PR 迭代上限（默认不限，一个 PR 一次）/ 已用 PR 次数（从 workflow 展示，本地不适用）：
+- 候选/探索过程统计 / 明确约定的额外限制（含 token/费用，无则不设）/ 收尾预留：
+- 当前工作区 / branch / remote / base 分支（默认 main）/ fetch 时间与 base SHA：
+- 复用的构建目录与配置 / 冻结基线二进制位置 / 新建 worktree 的明确用户要求（若有）：
+- profile / display / 端口：
 - original / best / trial 的 SHA 或 patch hash、二进制 hash、构建参数：
 - Chrome/Chromium、Firefox、ZeroWeb 版本 / OS / GPU / 字体 / viewport / DPR：
 - locale / theme / reduced motion / 缓存 / 网络 / 账号状态：

@@ -341,9 +341,14 @@ async function remoteFixture(t) {
   return { ...f, task, identity, receipt, validateCandidate, review, merge, integrate };
 }
 
-test('long-running default continues without resetting earlier explicit deadline', async t => {
+test('default seven-day wall clock includes downtime and preserves explicit old deadlines', async t => {
   const f = await fixture(t);
-  assert.equal(f.cp.deadline_at, null);
+  assert.equal(Date.parse(f.cp.deadline_at) - Date.parse(f.cp.started_at), 7 * 86400000);
+  assert.equal((await verifyWorkflow(await f.flush(), null,
+    Date.parse('2026-01-04T00:00:00Z'))).next, 'continue');
+  assert.equal((await verifyWorkflow(await f.flush(), null,
+    Date.parse('2026-01-08T00:00:00Z'))).reason, 'budget_exhausted');
+  f.cp.deadline_at = null;
   assert.equal((await verifyWorkflow(await f.flush(), null,
     Date.parse('2026-02-01T00:00:00Z'))).next, 'continue');
   f.cp.deadline_at = '2026-01-01T02:00:00Z';
@@ -355,6 +360,7 @@ test('long-running default continues without resetting earlier explicit deadline
 
 test('review findings lead to repair and fresh review of the same PR', async t => {
   const f = await remoteFixture(t);
+  f.cp.budget.pr_iteration_limit = 1;
   await f.review({ verdict: 'CHANGES_REQUIRED', open_findings: ['Navigation regression'] });
   assert.equal((await f.check()).next, 'continue');
   let previous = await f.flush();
@@ -385,6 +391,116 @@ test('review findings lead to repair and fresh review of the same PR', async t =
     status: 'intended', executor_ref: null, result: null, subject: f.identity() });
   assert.equal((await f.check(previous)).next, 'wait_or_recover');
   assert.equal(f.task.delivery.pr, 1);
+  assert.equal((await f.check()).pr_iterations_used, 1);
+});
+
+test('PR cap blocks new work but allows implementation and publication within the same PR', async t => {
+  const f = await remoteFixture(t);
+  f.cp.budget.pr_iteration_limit = 1;
+  f.task.status = 'needs_fix';
+  f.workflow.tasks[1].depends_on = [];
+  let result = await f.check();
+  assert.equal(result.pr_iterations_used, 1);
+  assert.equal(result.pr_iteration_available, false);
+  assert.deepEqual(result.ready_tasks, [f.task.id]);
+  let previous = await f.flush();
+  f.workflow.revision++;
+  f.task.status = 'implementing';
+  f.workflow.operations.push({ id: 'repair', task_id: f.task.id, kind: 'implement',
+    status: 'intended', executor_ref: null, result: null });
+  assert.equal((await f.check(previous)).next, 'wait_or_recover');
+  f.workflow.operations[0].status = 'completed';
+  f.workflow.operations[0].executor_ref = 'worker';
+  f.workflow.operations[0].result = f.raw;
+  previous = await f.flush();
+  f.workflow.revision++;
+  f.task.status = 'verifying';
+  f.workflow.operations.push({ id: 'update-pr', task_id: f.task.id, kind: 'publish',
+    status: 'intended', executor_ref: null, result: null });
+  assert.equal((await f.check(previous)).next, 'wait_or_recover');
+});
+
+for (const kind of ['implement', 'publish']) {
+  test(`PR cap rejects dispatch for a new PR: ${kind}`, async t => {
+    const f = await remoteFixture(t);
+    f.cp.budget.pr_iteration_limit = 1;
+    f.task.pause_reason = 'Waiting for review';
+    const task = f.workflow.tasks[1];
+    task.depends_on = [];
+    task.status = kind === 'publish' ? 'verifying' : 'pending';
+    assert.equal((await f.check()).reason, 'iteration_limit');
+    const previous = await f.flush();
+    f.workflow.revision++;
+    if (kind === 'implement') task.status = 'implementing';
+    f.workflow.operations.push({ id: 'new-pr', task_id: task.id, kind,
+      status: 'intended', executor_ref: null, result: null });
+    await assert.rejects(f.check(previous), /PR iteration limit/);
+  });
+}
+
+test('distinct PRs count once and cannot exceed the cap during creation', async t => {
+  const f = await remoteFixture(t);
+  f.cp.budget.pr_iteration_limit = 1;
+  f.task.status = 'verifying';
+  const task = f.workflow.tasks[1];
+  task.status = 'verifying';
+  task.depends_on = [];
+  const previous = await f.flush();
+  f.workflow.revision++;
+  task.delivery = { ...f.task.delivery, repo: 'EXAMPLE/browser' };
+  assert.equal((await f.check(previous)).pr_iterations_used, 1);
+  task.delivery.pr = 2;
+  await assert.rejects(f.check(previous), /PR iteration limit/);
+  f.cp.budget.pr_iteration_limit = 2;
+  assert.equal((await f.check()).pr_iterations_used, 2);
+});
+
+for (const mutation of ['limit', 'pr', 'repo', 'remove']) {
+  test(`PR iteration history cannot be reset: ${mutation}`, async t => {
+    const f = await remoteFixture(t);
+    f.cp.budget.pr_iteration_limit = 2;
+    f.task.status = 'verifying';
+    const previous = await f.flush();
+    f.workflow.revision++;
+    if (mutation === 'limit') f.cp.budget.pr_iteration_limit = null;
+    if (mutation === 'pr') f.task.delivery.pr = 2;
+    if (mutation === 'repo') f.task.delivery.repo = 'example/other';
+    if (mutation === 'remove') f.task.delivery = null;
+    await assert.rejects(f.check(previous), /Budget limit|PR identity|PR task/);
+  });
+}
+
+test('local work has no PR iterations; old snapshots without a PR limit remain valid', async t => {
+  const f = await fixture(t);
+  f.cp.budget.pr_iteration_limit = 0;
+  assert.equal((await f.check()).pr_iterations_used, 0);
+  assert.equal((await f.check()).next, 'continue');
+  delete f.cp.budget.pr_iteration_limit;
+  assert.equal((await f.check()).pr_iteration_limit, null);
+  f.cp.budget.pr_iteration_limit = -1;
+  await assert.rejects(f.check(), /PR iteration limit/);
+});
+
+test('PR cap permits no-change validation and goal-level final acceptance', async t => {
+  const f = await remoteFixture(t);
+  f.cp.budget.pr_iteration_limit = 1;
+  await f.review();
+  await f.merge();
+  await f.integrate();
+  const task = f.workflow.tasks[1];
+  task.delivery = { kind: 'no_change', reason: 'Reading already works' };
+  task.depends_on = [];
+  task.status = 'verifying';
+  assert.ok((await f.check()).ready_tasks.includes(task.id));
+  await f.finish();
+  f.workflow.final_acceptance = null;
+  assert.equal((await f.check()).next, 'final_acceptance');
+  const previous = await f.flush();
+  f.workflow.revision++;
+  f.workflow.operations.push({ id: 'final', task_id: null, kind: 'final_acceptance', status: 'intended',
+    executor_ref: null, result: null,
+    subject: { manifest_sha256: f.cp.versions.best, contract_sha256: f.workflow.contract_ref.sha256 } });
+  assert.equal((await f.check(previous)).next, 'wait_or_recover');
 });
 
 for (const change of ['head_sha', 'base_sha', 'implementer', 'controller', 'findings']) {
