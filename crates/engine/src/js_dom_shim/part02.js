@@ -814,7 +814,7 @@
     // net-api M4-S5：TransformStream SourcePull 背压观察锚（state/closeRequested/desired/readRequests
     // ——HasBackpressure = !ShouldCallPull 精确形）。
     this._zwRsProbe = function () {
-      return { state: state, closeRequested: closeRequested, desired: hwm - queueTotalSize, readRequests: waiting.length };
+      return { state: state, closeRequested: closeRequested, desired: hwm - queueTotalSize, readRequests: waiting.length, error: errorVal };
     };
     // net-api M4-S4：values(options) / @@asyncIterator(options)（spec §4.2.5 + WebIDL async
     // iterator 机制）——getReader 锁定（locked → 同步 TypeError）；[[OngoingPromise]] 串行
@@ -891,7 +891,8 @@
       var opts;
       try { opts = _zwReadPipeOptions(options); }
       catch (eOpts) { return Promise.reject(eOpts); }
-      if (opts.signal != null && (typeof opts.signal !== 'object' || typeof opts.signal.aborted !== 'boolean')) {
+      if (opts.signal !== undefined &&
+          (typeof opts.signal !== 'object' || opts.signal === null || typeof opts.signal.aborted !== 'boolean')) {
         return Promise.reject(new TypeError('pipeTo: signal must be an AbortSignal'));
       }
       return pipeToImpl(dest, opts);
@@ -904,17 +905,96 @@
       var preventCancel = opts.preventCancel;
       var preventClose = opts.preventClose;
       var signal = opts.signal;
-      // net-api M4-S4：dest 首查（spec「closing/error propagated backward」——已 closed/errored →
-      // 源 cancel（preventCancel 门控）+ 拒绝 TypeError/storedError）。
-      var probe = typeof dest._zwWsProbe === 'function' ? dest._zwWsProbe() : null;
-      if (probe && probe.state !== 'writable') {
-        var errDest = probe.state === 'errored' ? probe.error : new TypeError('Destination writable stream is closed or closing');
-        if (!preventCancel) { try { cancelInternal(errDest); } catch (_eDc) {} }
+      // net-api M4-S6：signal 优先——pre-aborted 即执行 abortAlgorithm 动作集（spec 步骤 14
+      // 先于条件 1-4：'abort signal takes priority over closed/errored readable' 面）。
+      function abortAction(err) {
+        // spec 步骤 14 动作——dest writable 才 abort；否则 resolved。
+        var wsp3 = dest._zwWsProbe ? dest._zwWsProbe() : null;
+        if (wsp3 && wsp3.state === 'writable') return writer.abort(err);
+        return Promise.resolve();
+      }
+      function cancelAction(err) {
+        // spec 步骤 14 动作——source readable 才 cancel；否则 resolved（errored readable 面）。
+        var rsp3 = self._zwRsProbe ? self._zwRsProbe() : null;
+        if (rsp3 && rsp3.state === 'readable') return cancelInternal(err);
+        return Promise.resolve();
+      }
+      function gatherActions(err) {
+        // spec：wait for all actions + abort 拒绝优先（「a rejection from underlyingSink.abort()
+        // should be preferred to one from underlyingSource.cancel()」面）。
+        // net-api M4-S6：动作**并行发起**（同一跳同步依次调用——sink.abort 先于 source.cancel
+        // 的调用序 = 「abort() should be called before cancel()」事件序；且 cancel 先于后续
+        // pull 拒绝 error 源——「even with pending pull」面的时序）+ 等全部稳定后按优先序取错
+        //（abort 拒绝优先——the preferred 面）。
+        var aAbort = null, aCancel = null;
+        if (!preventAbort) {
+          try { aAbort = abortAction(err); } catch (eGa1) { aAbort = Promise.reject(eGa1); }
+        }
+        if (!preventCancel) {
+          try { aCancel = cancelAction(err); } catch (eGa2) { aCancel = Promise.reject(eGa2); }
+        }
+        var list = [];
+        if (aAbort) list.push(aAbort);
+        if (aCancel) list.push(aCancel);
+        return Promise.all(list.map(function (pp) {
+          return Promise.resolve(pp).then(function () { return null; }, function (eGa3) { return eGa3; });
+        })).then(function (errs) {
+          if (aAbort && errs[0]) throw errs[0];
+          if (aCancel && errs[1]) throw errs[1];
+        });
+      }
+      if (signal != null && signal.aborted) {
+        var sigErr = signal.reason;
+        return gatherActions(sigErr).then(function () { return finishEarly(sigErr); },
+                                         function (eSg3) { return finishEarly(eSg3); });
+      }
+      // net-api M4-S4/M4-S6：首查按 spec 条件**优先序**（ReadableStreamPipeTo 条件 1-4）——
+      // ① 源已 errored（WritableStreamAbort 语义：erroring dest 以其 storedError 反噬——
+      // 'errored readable → erroring writable' 面）；② dest 已 errored（preventCancel 门控源
+      // cancel）；③ 源已 closed（WriterCloseWithErrorPropagation）；④ dest closed/closing/
+      // erroring（TypeError/storedError + 源 cancel）。multiple-propagation 组合面。
+      var rsProbe = self._zwRsProbe ? self._zwRsProbe() : null;
+      var wsProbe = dest._zwWsProbe ? dest._zwWsProbe() : null;
+      function finishEarly(err) {
         try { reader.releaseLock(); } catch (_eDr) {}
         try { writer.releaseLock(); } catch (_eDw) {}
-        return Promise.reject(errDest);
+        return err === undefined ? Promise.resolve() : Promise.reject(err);
+      }
+      if (rsProbe && rsProbe.state === 'errored') {
+        var srcErr = rsProbe.error;
+        if (preventAbort) return finishEarly(srcErr);
+        // spec 条件 1——shutdown with action of WritableStreamAbort(dest, srcErr)：dest erroring
+        // 时该动作以 dest storedError 拒绝 → 反噬为 pipeTo 拒绝值（multiple-propagation 面）。
+        var ap;
+        try { ap = writer.abort(srcErr); } catch (eAb4) { ap = Promise.reject(eAb4); }
+        return ap.then(function () { return finishEarly(srcErr); },
+                       function (eAb5) { return finishEarly(eAb5); });
+      }
+      if (wsProbe && wsProbe.state === 'errored') {
+        var dstErr = wsProbe.error;
+        if (!preventCancel) { try { cancelInternal(dstErr); } catch (_eDc2) {} }
+        return finishEarly(dstErr);
+      }
+      if (rsProbe && rsProbe.state === 'closed') {
+        // 条件 3——源已 closed：preventClose → shutdown；否则 WriterCloseWithErrorPropagation
+        //（dest closing/closed → resolved；errored → 以 storedError reject；否则 writer.close()）。
+        if (preventClose) return finishEarly(undefined);
+        var wsp2 = dest._zwWsProbe ? dest._zwWsProbe() : null;
+        var cp;
+        if (wsp2 && (wsp2.closing || wsp2.state === 'closed')) cp = Promise.resolve();
+        else if (wsp2 && wsp2.state === 'errored') cp = Promise.reject(wsp2.error);
+        else { try { cp = writer.close(); } catch (eWc3) { cp = Promise.reject(eWc3); } }
+        return cp.then(function () { return finishEarly(undefined); },
+                       function (eCp) { return finishEarly(eCp); });
+      }
+      if (wsProbe && (wsProbe.state === 'closed' || wsProbe.state === 'erroring' || wsProbe.closing)) {
+        var errDest = (wsProbe.state === 'erroring') ? wsProbe.error : new TypeError('Destination writable stream is closed or closing');
+        if (!preventCancel) { try { cancelInternal(errDest); } catch (_eDc3) {} }
+        return finishEarly(errDest);
       }
       var finished = false;
+      var shuttingDown = false;
+      var currentWrite = null; // 最近 in-flight write（shutdown 先排空——spec wait-until-written）
       var onAbort = null;
       return new Promise(function (resolve, reject) {
         function finish(err) {
@@ -923,21 +1003,21 @@
           if (onAbort) { try { signal.removeEventListener('abort', onAbort); } catch (_eFin) {} }
           try { reader.releaseLock(); } catch (_e) {}
           try { writer.releaseLock(); } catch (_e) {}
-          if (err) reject(err); else resolve(undefined);
+          if (err !== undefined) reject(err); else resolve(undefined);
         }
         function abortAlgorithm() {
-          // spec §ReadableStreamPipeTo 步骤 14：preventAbort/preventCancel 门控动作集 → 稳定后
-          // 以 signal.reason 收尾。
+          // spec §ReadableStreamPipeTo 步骤 14 + shutdown-with-action：**先排空 in-flight 写**
+          //（wait until every chunk read has been written）再执行 preventAbort/preventCancel 门控
+          // 动作集，以 signal.reason 收尾（「abort should not be called while write is in-flight」/
+          // 「all pending writes should complete on abort」面）。
           if (finished) return;
+          shuttingDown = true; // 停读（shutdown must stop activity）
           var err = signal.reason;
-          var actions = [];
-          if (!preventAbort) {
-            try { actions.push(dest.abort(err)); } catch (eAb) { actions.push(Promise.reject(eAb)); }
+          function runActions() {
+            return gatherActions(err);
           }
-          if (!preventCancel) {
-            try { actions.push(cancelInternal(err)); } catch (eCa) { actions.push(Promise.reject(eCa)); }
-          }
-          Promise.all(actions).then(function () { finish(err); }, function (e2) { finish(e2); });
+          Promise.resolve(currentWrite).then(runActions, runActions).then(function () { finish(err); },
+                                                                       function (e2) { finish(e2); });
         }
         if (signal != null) {
           if (signal.aborted) { abortAlgorithm(); return; }
@@ -971,8 +1051,8 @@
             });
           }, function (e) {
             if (finished) return;
-            // spec：源 error → abort dest（preventAbort 门控）；以源错误收尾。
-            if (!preventAbort) { try { dest.abort(e); } catch (_e) {} }
+            // spec：源 error → abort dest（preventAbort 门控；writer 入口——内部直调）。
+            if (!preventAbort) { try { writer.abort(e); } catch (_e) {} }
             finish(e);
           });
         }
@@ -993,7 +1073,8 @@
       if (!transform.writable._zwWsBrand) throw new TypeError('pipeThrough: writable is not a WritableStream');
       if (transform.writable.locked) throw new TypeError('pipeThrough: writable is locked');
       var opts = _zwReadPipeOptions(options);
-      if (opts.signal != null && (typeof opts.signal !== 'object' || typeof opts.signal.aborted !== 'boolean')) {
+      if (opts.signal !== undefined &&
+          (typeof opts.signal !== 'object' || opts.signal === null || typeof opts.signal.aborted !== 'boolean')) {
         throw new TypeError('pipeThrough: signal must be an AbortSignal');
       }
       var p = pipeToImpl(transform.writable, opts);
@@ -1128,169 +1209,358 @@
       throw new TypeError("Failed to construct 'WritableStream': underlyingSink must be an object.");
     }
     var sink = underlyingSink === undefined ? {} : underlyingSink;
-    // net-api M4-S5：UnderlyingSink type 成员保留面——存在即 RangeError（spec 构造步骤 3，
-    // 「can't be constructed with a defined type」面）。
+    // net-api M4-S5：UnderlyingSink type 成员保留面——存在即 RangeError（spec 构造步骤 3）。
     if (sink.type !== undefined) {
       throw new RangeError("Failed to construct 'WritableStream': type is reserved.");
     }
-    var state = 'writable';     // writable | closed | errored
-    var errorVal = undefined;
     var self = this;
     this._locked = false;
     this._zwWsBrand = true; // net-api M4-S1：pipeTo/pipeThrough brand 校验锚
-    var resolveClosed, rejectClosed;
-    var closedP = new Promise(function (res, rej) { resolveClosed = res; rejectClosed = rej; });
-    var pendingWrites = [];       // FIFO {resolve, reject, size}：待 sink.write 完成的 write
-    // R3010：背压计量——hwm + size 函数 + queueTotalSize（desiredSize = hwm - queueTotalSize）+ ready Promise。
+    // ── net-api M4-S6：spec §5.2/5.4/5.5 状态机（slot 对应 [[state]]/[[queue]]/
+    // [[writeRequests]]/[[inFlightWriteRequest]]/[[closeRequest]]/[[inFlightCloseRequest]]/
+    // [[pendingAbortRequest]]/[[backpressure]]/[[storedError]]）──
+    var state = 'writable';          // writable | erroring | closed | errored
+    var storedError = undefined;
+    var queue = [];                  // {chunk, size}（close 哨兵 size 0）
+    var queueTotalSize = 0;
+    var closeRequest = undefined;    // deferred（writer.close 的 promise）
+    var inFlightCloseRequest = undefined;
+    var inFlightWriteRequest = undefined;
+    var writeRequests = [];          // {resolve, reject, size}
+    var pendingAbortRequest = undefined;
+    var started = false;
+    var backpressure = false;
     var hwm = _zwExtractHwm(strat.hwmValue, 1);
     var sizeFn = strat.size !== undefined ? strat.size : null;
-    var queueTotalSize = 0;
-    var inFlightWrite = null;    // net-api M4-S5：当前 in-flight write 请求（spec [[inFlightWriteRequest]]）
-    var resolveReady = null;     // ready 阻塞态时的 resolver（desiredSize<=0）；null = ready 已 resolve 态
-    var readyPromise = Promise.resolve();
-    // ready 在 desiredSize>0 时 resolve（背压释放）；desiredSize<=0 时挂起（背压门控）。
-    function updateReady() {
-      if (hwm - queueTotalSize > 0) {
-        if (resolveReady) { var r = resolveReady; resolveReady = null; readyPromise = Promise.resolve(); r(); }
-      } else if (!resolveReady) {
-        readyPromise = new Promise(function (res) { resolveReady = res; });
+    var sinkWriteFn = (typeof sink.write === 'function') ? sink.write : null;
+    var sinkCloseFn = (typeof sink.close === 'function') ? sink.close : null;
+    var sinkAbortFn = (typeof sink.abort === 'function') ? sink.abort : null;
+    var closeAlgorithmLive = true;
+    var CLOSE_SENTINEL = { __zwCloseSentinel: true };
+    // deferred 工厂（promise + resolve/reject + pending 标记——writer closed/ready 用）。
+    function mkDeferred() {
+      var d = { pending: true, resolve: null, reject: null, promise: null };
+      d.promise = new Promise(function (r, j) { d.resolve = r; d.reject = j; });
+      return d;
+    }
+    function makeRejected(e) {
+      var p = new Promise(function (_r, rej) { rej(e); });
+      try { p.then(function () {}, function () {}); } catch (_e) {} // 已发布拒绝标记 handled
+      return p;
+    }
+    var writerClosed = null, writerReady = null; // deferred | null（release 后仍留 rejected 形）
+    function ensureReadyRejected(e) {
+      // spec EnsureReadyPromiseRejected——pending → reject；已 settle → 替换；标记 handled。
+      if (!writerReady) { writerReady = makeRejected(e); return; }
+      if (writerReady.pending) { writerReady.reject(e); writerReady.pending = false; }
+      else writerReady = { pending: false, promise: makeRejected(e) };
+    }
+    function ensureClosedRejected(e) {
+      if (!writerClosed) { writerClosed = makeRejected(e); return; }
+      if (writerClosed.pending) { writerClosed.reject(e); writerClosed.pending = false; }
+      else writerClosed = { pending: false, promise: makeRejected(e) };
+    }
+
+    function errorSteps() { queue = []; queueTotalSize = 0; } // spec [[ErrorSteps]]
+    function abortSteps(reason) {
+      // spec [[AbortSteps]]——abort 算法。
+      if (!sinkAbortFn) return Promise.resolve();
+      try { return Promise.resolve(sinkAbortFn.call(sink, reason)); }
+      catch (eAb) { return Promise.reject(eAb); }
+    }
+    function clearAlgorithms() {
+      // spec ClearAlgorithms——算法引用清除（close 算法置否 + write/abort 引用清空）。
+      closeAlgorithmLive = false;
+      sinkWriteFn = null;
+      sinkCloseFn = null;
+      sinkAbortFn = null;
+    }
+    function rejectCloseAndClosedIfNeeded() {
+      // spec RejectCloseAndClosedPromiseIfNeeded——state 须 errored。
+      if (closeRequest !== undefined) {
+        closeRequest.reject(storedError);
+        closeRequest = undefined;
+      }
+      if (writerClosed) {
+        if (writerClosed.pending) { writerClosed.reject(storedError); writerClosed.pending = false; }
+        else writerClosed = { pending: false, promise: makeRejected(storedError) };
       }
     }
-    function errorStream(e) {
-      if (state === 'errored' || state === 'closed') return;
-      errorVal = e;
+    function hasOperationMarkedInFlight() {
+      return inFlightWriteRequest !== undefined || inFlightCloseRequest !== undefined;
+    }
+    function dealWithRejection(error) {
+      // spec DealWithRejection——writable → StartErroring；erroring → FinishErroring。
+      if (state === 'writable') startErroring(error);
+      else finishErroring();
+    }
+    function startErroring(reason) {
+      // spec StartErroring——writable → erroring + ready 拒绝；无 in-flight 且已 start → 收尾。
+      storedError = reason;
+      state = 'erroring';
+      if (writerReady) ensureReadyRejected(reason);
+      if (!hasOperationMarkedInFlight() && started) finishErroring();
+    }
+    function finishErroring() {
+      // spec FinishErroring——errored + 拒绝 queued 写 + abort 请求收尾。
       state = 'errored';
-      // net-api M4-S5：spec FinishErroring——拒绝 [[writeRequests]]（queued）；**in-flight
-      // write 请求不在其列**（由 sink.write 完成面收尾：正常完成 → fulfill——constructor 页
-      // 「controller.error() in write() should error the stream」write fulfill 面）。
-      for (var i = pendingWrites.length - 1; i >= 0; i--) {
-        if (pendingWrites[i] === inFlightWrite) continue;
-        pendingWrites[i].reject(e);
-        pendingWrites.splice(i, 1);
+      errorSteps();
+      for (var i = 0; i < writeRequests.length; i++) writeRequests[i].reject(storedError);
+      writeRequests = [];
+      if (pendingAbortRequest === undefined) { rejectCloseAndClosedIfNeeded(); return; }
+      var abortRequest = pendingAbortRequest;
+      pendingAbortRequest = undefined;
+      if (abortRequest.wasAlreadyErroring) {
+        abortRequest.reject(storedError);
+        rejectCloseAndClosedIfNeeded();
+        return;
       }
-      rejectClosed(e);
+      abortSteps(abortRequest.reason).then(function () {
+        abortRequest.resolve(undefined);
+        rejectCloseAndClosedIfNeeded();
+      }, function (rAb) {
+        abortRequest.reject(rAb);
+        rejectCloseAndClosedIfNeeded();
+      });
     }
-    // net-api M4-S5：controller 构造器身份（writable constructor 页 `c.constructor` 面——
-    // new WritableStreamDefaultController(stream) 须 TypeError）。
-    var controller = { error: errorStream, constructor: WritableStreamDefaultController };
+    function desiredSize() {
+      if (state === 'errored' || state === 'erroring') return null;
+      if (state === 'closed') return 0;
+      return hwm - queueTotalSize;
+    }
+    function getBackpressure() { return desiredSize() <= 0; }
+    function updateBackpressure(bp) {
+      // spec UpdateBackpressure——writer 存在且翻转 → ready 挂起/释放。
+      if (writerReady && bp !== backpressure) {
+        if (bp) writerReady = mkDeferred();
+        else if (writerReady.pending) { var dR = writerReady; writerReady = { pending: false, promise: Promise.resolve() }; dR.resolve(undefined); }
+      }
+      backpressure = bp;
+    }
+    function closeQueuedOrInFlight() {
+      return closeRequest !== undefined || inFlightCloseRequest !== undefined;
+    }
+    function finishInFlightWrite() {
+      // spec FinishInFlightWrite——resolve in-flight 请求 + **DequeueValue**（队首出队——
+      // 缺此步队列不排空，close 哨兵永不推进/同一 chunk 重写死循环）+ 背压更新 + 续推。
+      inFlightWriteRequest.resolve(undefined);
+      inFlightWriteRequest = undefined;
+      var done = queue.shift();
+      if (done) {
+        queueTotalSize -= done.size;
+        if (queueTotalSize < 0) queueTotalSize = 0;
+      }
+      if (!closeQueuedOrInFlight() && state === 'writable') updateBackpressure(getBackpressure());
+      advanceQueueIfNeeded();
+    }
+    function finishInFlightWriteWithError(error) {
+      inFlightWriteRequest.reject(error);
+      inFlightWriteRequest = undefined;
+      if (state === 'writable') clearAlgorithms(); // spec——仅 writable 清算法（erroring 保留 abort 算法）
+      dealWithRejection(error);
+    }
+    function finishInFlightClose() {
+      inFlightCloseRequest.resolve(undefined);
+      inFlightCloseRequest = undefined;
+      if (state === 'erroring') {
+        // spec 步骤 5——erroring → storedError 清除 + **abort 请求 resolve**（close 成功即
+        // abort 满足；resolve 序：closeRequest 先于 abort 请求——「close before abort」事件序面）。
+        storedError = undefined;
+        if (pendingAbortRequest !== undefined) {
+          pendingAbortRequest.resolve(undefined);
+          pendingAbortRequest = undefined;
+        }
+      }
+      state = 'closed';
+      queue = []; queueTotalSize = 0;
+      if (writerClosed) { if (writerClosed.pending) { var dC = writerClosed; writerClosed.pending = false; dC.resolve(undefined); } }
+    }
+    function finishInFlightCloseWithError(error) {
+      inFlightCloseRequest.reject(error);
+      inFlightCloseRequest = undefined;
+      if (pendingAbortRequest !== undefined) {
+        pendingAbortRequest.reject(error);
+        pendingAbortRequest = undefined;
+      }
+      dealWithRejection(error);
+    }
+    function advanceQueueIfNeeded() {
+      // spec AdvanceQueueIfNeeded——started 门 + erroring 分流 + 队首处理（close 哨兵/写）。
+      if (!started) return;
+      if (inFlightWriteRequest !== undefined) return;
+      if (state === 'erroring') { finishErroring(); return; }
+      if (queue.length === 0) return;
+      var head = queue[0];
+      if (head === CLOSE_SENTINEL) processClose();
+      else processWrite(head.chunk);
+    }
+    function processClose() {
+      // spec ProcessClose——MarkCloseRequestInFlight + close 算法 + ClearAlgorithms。
+      inFlightCloseRequest = closeRequest;
+      closeRequest = undefined;
+      queue.shift();
+      var p;
+      try { p = (closeAlgorithmLive && sinkCloseFn) ? Promise.resolve(sinkCloseFn.call(sink)) : Promise.resolve(); }
+      catch (eCl) { p = Promise.reject(eCl); }
+      clearAlgorithms();
+      p.then(function () { finishInFlightClose(); },
+             function (rCl) { finishInFlightCloseWithError(rCl); });
+    }
+    function processWrite(chunk) {
+      // spec ProcessWrite——MarkFirstWriteRequestInFlight + write 算法（串行推进）。
+      inFlightWriteRequest = writeRequests.shift();
+      var p;
+      try { p = sinkWriteFn ? Promise.resolve(sinkWriteFn.call(sink, chunk, controller)) : Promise.resolve(); }
+      catch (eWr) { p = Promise.reject(eWr); }
+      p.then(function () { finishInFlightWrite(); },
+             function (rWr) { finishInFlightWriteWithError(rWr); });
+    }
+    function controllerWrite(chunk, chunkSize) {
+      // spec ControllerWrite——EnqueueValueWithSize（非法 size → ErrorIfNeeded）+ 背压 + 续推。
+      if (typeof chunkSize !== 'number' || chunkSize !== chunkSize || chunkSize < 0 || chunkSize === Infinity) {
+        var reSize = new RangeError('Invalid chunk size');
+        errorIfNeeded(reSize);
+        return;
+      }
+      queue.push({ chunk: chunk, size: chunkSize });
+      queueTotalSize += chunkSize;
+      if (!closeQueuedOrInFlight() && state === 'writable') updateBackpressure(getBackpressure());
+      advanceQueueIfNeeded();
+    }
+    function errorIfNeeded(e) {
+      if (state === 'writable') startErroring(e);
+    }
+    // spec [[controller]]——signal（AbortSignal——stream.abort 同步 signal 面）+ error。
+    var abortSignal = new AbortSignal();
+    var controller = {
+      constructor: WritableStreamDefaultController,
+      get signal() { return abortSignal; },
+      error: function (eCtl) {
+        // spec ControllerError——非 writable 返回；ClearAlgorithms + StartErroring。
+        if (state !== 'writable') return;
+        clearAlgorithms();
+        startErroring(eCtl);
+      }
+    };
     this._controller = controller;
-    // net-api M4-S4：pipeTo dest 首查锚（state/error 内部读取——spec「closing propagated
-    // backward」：dest 已 closed/errored → 源 cancel + 拒绝）。
-    this._zwWsProbe = function () { return { state: state, error: errorVal }; };
-    // net-api M4-S5：TransformStream readable.cancel/transform 拒绝 → error writable 锚。
-    this._zwWsErrorFn = errorStream;
+    // net-api M4-S4：pipeTo dest 首查锚；net-api M4-S5：TS error 锚（DealWithRejection 同型）。
+    this._zwWsProbe = function () { return { state: state, error: storedError, closing: closeQueuedOrInFlight() }; };
+    this._zwWsErrorFn = function (e) { dealWithRejection(e); };
 
     this.getWriter = function () {
       if (self._locked) throw new TypeError('Cannot get a Writer: WritableStream is locked');
+      // spec SetUpWritableStreamDefaultWriter——按状态建 closed/ready promise。
+      writerClosed = mkDeferred();
+      if (state === 'writable') {
+        writerReady = (!closeQueuedOrInFlight() && backpressure) ? mkDeferred() : { pending: false, promise: Promise.resolve() };
+      } else if (state === 'erroring') {
+        var dEr = mkDeferred(); dEr.reject(storedError); dEr.pending = false;
+        try { dEr.promise.then(function () {}, function () {}); } catch (_eE1) {}
+        writerReady = { pending: false, promise: dEr.promise };
+      } else if (state === 'closed') {
+        writerClosed.pending = false; writerClosed.resolve(undefined);
+        writerReady = { pending: false, promise: Promise.resolve() };
+      } else { // errored
+        writerClosed = { pending: false, promise: makeRejected(storedError) };
+        writerReady = { pending: false, promise: makeRejected(storedError) };
+      }
       self._locked = true;
+      var released = false; // net-api M4-S6：release 后 write/close/abort → TypeError（spec [[stream]] undefined 面）
       return {
-        constructor: WritableStreamDefaultWriter, // net-api M4-S5：构造器身份（writer.constructor 面）
-        get closed() {
-          if (state === 'closed') return Promise.resolve();
-          if (state === 'errored') return Promise.reject(errorVal);
-          return closedP;
-        },
-        get ready() {
-          // R3010：spec 背压门控——errored→reject；closed→resolve；否则 readyPromise（desiredSize<=0 时挂起）。
-          if (state === 'errored') return Promise.reject(errorVal);
-          if (state === 'closed') return Promise.resolve();
-          return readyPromise;
-        },
-        get desiredSize() {
-          // spec：writable→hwm-queueTotalSize；errored→null；closed→0。
-          if (state === 'errored') return null;
-          if (state === 'closed') return 0;
-          return hwm - queueTotalSize;
-        },
+        constructor: WritableStreamDefaultWriter, // net-api M4-S5：构造器身份
+        get closed() { return writerClosed.promise; },
+        get ready() { return writerReady.promise; },
+        get desiredSize() { return desiredSize(); },
         write: function (chunk) {
-          if (state === 'errored') return Promise.reject(errorVal);
-          if (state === 'closed') return Promise.reject(new TypeError('Cannot write to a closed WritableStream'));
-          // net-api M4-S4：spec §ControllerWrite——size 抛错/非法返回（NaN/负数/±∞）→ error 流 +
-          // write reject（「Writable stream: throwing strategy.size method」/「invalid size return
-          // value」面——旧 _zw_streamSize 吞错回退 1 与 spec 背离）。
+          // spec WriterWrite——released → TypeError；errored/erroring → storedError；
+          // closing/closed → TypeError；size 异常 → error 流 + reject（WPT observable 同型）。
+          if (released) return Promise.reject(new TypeError('WritableStreamDefaultWriter: stream is undefined'));
           var sz;
           try { sz = (typeof sizeFn === 'function') ? sizeFn(chunk) : 1; }
-          catch (eSize) { errorStream(eSize); return Promise.reject(eSize); }
-          if (typeof sz !== 'number' || sz !== sz || sz < 0 || sz === Infinity) {
-            var reSize = new RangeError('Invalid chunk size');
-            errorStream(reSize);
-            return Promise.reject(reSize);
+          catch (eSize) { errorIfNeeded(eSize); return Promise.reject(eSize); }
+          if (state === 'errored') return Promise.reject(storedError);
+          if (closeQueuedOrInFlight() || state === 'closed') {
+            return Promise.reject(new TypeError('Cannot write to a closing or closed WritableStream'));
           }
-          // R3010：入队前累计 size（背压在 pending write 期间生效，desiredSize 降，ready 挂起）。
-          queueTotalSize += sz;
-          updateReady();
-          return new Promise(function (resolve, reject) {
-            var entry = { resolve: resolve, reject: reject, size: sz };
-            pendingWrites.push(entry);
-            try {
-              inFlightWrite = entry;
-              Promise.resolve(sink.write ? sink.write(chunk, controller) : undefined)
-                .then(function () {
-                  // net-api M4-S5：in-flight write 正常完成 → **本 write 请求 resolve**（即使
-                  // 期间 controller.error 已 error 流——in-flight 不被 FinishErroring 拒绝）。
-                  inFlightWrite = null;
-                  var idx = pendingWrites.indexOf(entry);
-                  if (idx >= 0) pendingWrites.splice(idx, 1);
-                  queueTotalSize -= entry.size;
-                  if (queueTotalSize < 0) queueTotalSize = 0;
-                  updateReady();
-                  entry.resolve(undefined);
-                },
-                function (e) {
-                  // net-api M4-S4：sink.write 拒绝 → 本 write 请求拒绝 + 流 error
-                  //（spec in-flight write 失败面——error-propagation-backward 页；旧形态仅 error
-                  // 不 reject entry → write 永挂）。
-                  inFlightWrite = null;
-                  var idx = pendingWrites.indexOf(entry);
-                  if (idx >= 0) pendingWrites.splice(idx, 1);
-                  queueTotalSize -= entry.size;
-                  if (queueTotalSize < 0) queueTotalSize = 0;
-                  updateReady();
-                  entry.reject(e);
-                  errorStream(e);
-                });
-            } catch (e) { inFlightWrite = null; errorStream(e); entry.reject(e); }
-          });
+          if (state === 'erroring') return Promise.reject(storedError);
+          var entry = mkDeferred();
+          writeRequests.push({ resolve: entry.resolve, reject: entry.reject, size: sz });
+          controllerWrite(chunk, sz);
+          return entry.promise;
         },
         close: function () {
-          if (state === 'errored') return Promise.reject(errorVal);
-          if (state === 'closed') return Promise.resolve();
-          state = 'closed';
-          queueTotalSize = 0; // R3010：close 后 desiredSize=0（closed 态），清背压计量。
-          // 残余 pending write 视为完成（headless 串行 sink，正常此时已空，best-effort resolve）。
-          while (pendingWrites.length > 0) pendingWrites.shift().resolve(undefined);
-          try {
-            // net-api M4-S5：sink.close 无参调用（properties 页「close should be called with
-            // 0 arguments」面——spec UnderlyingSinkCloseCallback()）。
-            Promise.resolve(sink.close ? sink.close() : undefined)
-              .then(function () { resolveClosed(undefined); },
-                    function (e) { errorStream(e); });
-          } catch (e) { errorStream(e); }
-          return closedP;
+          // spec WriterClose——released → TypeError；其余走共享 WritableStreamClose。
+          if (released) return Promise.reject(new TypeError('WritableStreamDefaultWriter: stream is undefined'));
+          return streamClose(true);
         },
-        abort: function (reason) { return self.abort(reason); },
-        releaseLock: function () { self._locked = false; }
+        abort: function (reason) {
+          if (released) return Promise.reject(new TypeError('WritableStreamDefaultWriter: stream is undefined'));
+          return doAbort(reason);
+        },
+        releaseLock: function () {
+          if (!self._locked) return;
+          self._locked = false;
+          released = true;
+          // spec WriterRelease——ready/closed 转 TypeError 拒绝（已发布面标记 handled）。
+          ensureReadyRejected(new TypeError('WritableStreamDefaultWriter released lock'));
+          ensureClosedRejected(new TypeError('WritableStreamDefaultWriter released lock'));
+        }
       };
     };
-    this.abort = function (reason) {
-      if (state === 'closed') return Promise.resolve();
-      errorVal = reason;
-      state = 'errored';
-      try { if (sink.abort) sink.abort(reason); } catch (_e) {}
-      rejectClosed(reason);
-      return Promise.resolve(undefined);
-    };
-    Object.defineProperty(this, 'locked', { get: function () { return self._locked; } });
-    // start：spec——startResult thenable 拒绝 → 流 error（error-propagation-backward「starts
-    // errored」面；旧形态忽略返回值 → ws 恒 writable → pipeTo 首查不中 → 源读永挂）。
-    if (typeof sink.start === 'function') {
-      var wsStartResult;
-      try { wsStartResult = sink.start(controller); } catch (_eWsStart) { errorStream(_eWsStart); wsStartResult = undefined; }
-      if (wsStartResult && typeof wsStartResult.then === 'function') {
-        Promise.resolve(wsStartResult).then(function () {}, function (eWsStart2) { errorStream(eWsStart2); });
+    function streamClose(skipLockedCheck) {
+      // net-api M4-S6：spec WritableStreamClose 共享体——stream 入口 locked → TypeError
+      //（writer 入口已持锁，跳过）；CloseQueuedOrInFlight/closed/errored → TypeError；
+      // erroring 不就地拒（closeRequest 经 FinishErroring 以 storedError reject）。
+      if (!skipLockedCheck && self._locked) return Promise.reject(new TypeError('Cannot close a WritableStream that is locked'));
+      if (closeQueuedOrInFlight() || state === 'closed' || state === 'errored') {
+        return Promise.reject(new TypeError('Cannot close a closing, closed or errored WritableStream'));
       }
+      var d = mkDeferred();
+      closeRequest = d;
+      // spec WritableStreamClose 步骤 8——backpressure → resolve writer.ready。
+      if (writerReady && backpressure && state === 'writable' && writerReady.pending) {
+        var dR = writerReady; writerReady = { pending: false, promise: Promise.resolve() }; dR.resolve(undefined);
+      }
+      queue.push(CLOSE_SENTINEL);
+      advanceQueueIfNeeded();
+      return d.promise;
     }
+    this.close = function () { return streamClose(); };
+    function doAbort(reason) {
+      // spec WritableStreamAbort——closed/errored → resolve；**同步 signal abort**；再核状态；
+      // pendingAbortRequest 在 → 返回其 promise；否则建 pendingAbortRequest + StartErroring
+      //（与 close 排队/in-flight **共存**：close 成功 → FinishInFlightClose resolve abort 请求
+      //（「ignore the abort attempt」面）；close 失败 → FinishInFlightCloseWithError 以 close
+      // 错误 reject（「abort rejected with the rejection returned from close」面））。
+      if (state === 'closed' || state === 'errored') return Promise.resolve();
+      _zw_abort_signal(abortSignal, reason);
+      if (state === 'closed' || state === 'errored') return Promise.resolve();
+      if (pendingAbortRequest !== undefined) return pendingAbortRequest.promise;
+      var wasAlreadyErroring = state === 'erroring';
+      var abortReason = wasAlreadyErroring ? undefined : reason;
+      var dAb = mkDeferred();
+      pendingAbortRequest = { promise: dAb.promise, resolve: dAb.resolve, reject: dAb.reject, reason: abortReason, wasAlreadyErroring: wasAlreadyErroring };
+      if (!wasAlreadyErroring) startErroring(abortReason);
+      return dAb.promise;
+    }
+    this.abort = function (reason) {
+      if (self._locked) return Promise.reject(new TypeError('Cannot abort a WritableStream that is locked'));
+      return doAbort(reason);
+    };
+    // start：spec SetUp——[[started]] 在 startPromise 稳定后置位；拒绝 → started 置位 +
+    // DealWithRejection（「sink abort() should not be called until sink start() is done」面）。
+    var startResult;
+    try { startResult = sink.start ? sink.start.call(sink, controller) : undefined; }
+    catch (_eWsStart) { startErroring(_eWsStart); startResult = undefined; }
+    Promise.resolve(startResult).then(function () {
+      started = true;
+      advanceQueueIfNeeded();
+    }, function (eStart2) {
+      started = true;
+      dealWithRejection(eStart2);
+    });
   };
+
   // net-api M4-S5：locked accessor 上移 prototype（readable 同口径——subclass/品牌访问面）。
   Object.defineProperty(globalThis.WritableStream.prototype, 'locked', {
     get: function () { return this._locked; },
@@ -1457,7 +1727,7 @@
           var bp = changePromise;
           return Promise.resolve(bp).then(function () {
             var probe = (self.writable && typeof self.writable._zwWsProbe === 'function') ? self.writable._zwWsProbe() : null;
-            if (probe && probe.state === 'errored') throw probe.error;
+            if (probe && (probe.state === 'errored' || probe.state === 'erroring')) throw probe.error;
             return performTransform(chunk);
           });
         }

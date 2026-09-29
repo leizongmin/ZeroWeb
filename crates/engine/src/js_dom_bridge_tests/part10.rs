@@ -1267,14 +1267,15 @@ fn test_writable_stream_r2969() {
         "已 locked 时 getWriter 抛 TypeError（spec）"
     );
 
-    // abort：sink.abort 调用 + closed reject。
+    // abort：sink.abort 调用 + closed reject（spec M4-S6——sink.abort 在 started 稳定/erroring
+    // 收尾后**异步**调用，故于 abort promise 的 then 内读取）。
     sandbox
         .execute(
             "var aborted = null;\
              var ws4 = new WritableStream({ abort: function(r){ aborted = String(r); } });\
              var w4 = ws4.getWriter();\
-             w4.abort('stop').then(function(){ globalThis.__abortRet = 'resolved'; });\
-             globalThis.__abortedReason = (function(){ return aborted; })();",
+             w4.abort('stop').then(function(){ globalThis.__abortRet = 'resolved';\
+               globalThis.__abortedReason = String(aborted); });",
         )
         .unwrap();
     assert_eq!(
@@ -1282,8 +1283,6 @@ fn test_writable_stream_r2969() {
         "resolved",
         "writer.abort 返 resolved Promise"
     );
-    // aborted 在 microtask 后才设（abort 同步调 sink.abort，但同步闭包读需 re-execute 读全局）
-    sandbox.execute("globalThis.__abortedReason = globalThis.__abortedReason;").unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__abortedReason)").unwrap().value,
         "stop",
