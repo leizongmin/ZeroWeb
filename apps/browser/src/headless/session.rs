@@ -9,13 +9,12 @@ use zero_net::cookie::CookieStore;
 use zero_net::{HttpClient, HttpMethod, HttpRequest};
 #[cfg(not(test))]
 use zero_protocol::message::{
-    AutomationOperation, AutomationRequest, AutomationResult, FetchParams, FramePublishMode, IndexedDbResponseParams,
-    IpcMessage, IpcMessageKind, LoadHtmlParams,
+    AutomationOperation, AutomationRequest, AutomationResult, FetchParams, FramePublishMode, LoadHtmlParams,
 };
 use zero_protocol::message::{
-    AutomationValue, ImeEventParams, ImeEventType, IpcColorScheme, IpcMediaType, KeyboardEventParams,
-    KeyboardEventType, MouseEventParams, MouseEventType, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams,
-    SetViewportParams,
+    AutomationValue, ImeEventParams, ImeEventType, IndexedDbResponseParams, IpcColorScheme, IpcMediaType, IpcMessage,
+    IpcMessageKind, KeyboardEventParams, KeyboardEventType, MouseEventParams, MouseEventType, ScrollEventParams,
+    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams,
 };
 #[cfg(not(test))]
 use zero_protocol::process::RendererHandle;
@@ -238,6 +237,19 @@ pub(super) fn headless_indexed_db_unavailable_error() -> String {
     "UnknownError: IndexedDB is unavailable in headless mode".to_string()
 }
 
+/// headless 对 `IndexedDbRequest` 的错误应答消息：id 原样回带（renderer router
+/// 按 id 匹配 pending 等待者），`response: None + error: Some` 组合经
+/// `response_result` 统一映射为宿主错误。纯函数以便单测 pin 应答形状。
+pub(super) fn headless_indexed_db_response_for(request_id: u64) -> IpcMessage {
+    IpcMessage {
+        id: request_id,
+        kind: IpcMessageKind::IndexedDbResponse(IndexedDbResponseParams {
+            response: None,
+            error: Some(headless_indexed_db_unavailable_error()),
+        }),
+    }
+}
+
 /// 进程级共享系统字体表作基表（与 BrowserApp/renderer 枚举同源 → 数字 ID 对齐）；
 /// 首次解析 ~0.5s 后进程内缓存，会话构建均摊免费。
 fn new_session_paint_fonts() -> zero_paint_convert::fonts::PaintFonts {
@@ -441,16 +453,8 @@ impl HeadlessSession {
             // `:` 解析 name 抛 DOMException，factory.open 转为 request 的 error 事件，
             // spec: https://www.w3.org/TR/IndexedDB/#open-a-database-request）。
             IpcMessageKind::IndexedDbRequest(_) => {
-                let response = IndexedDbResponseParams {
-                    response: None,
-                    error: Some(headless_indexed_db_unavailable_error()),
-                };
-                self.renderer
-                    .send(IpcMessage {
-                        id: message.id,
-                        kind: IpcMessageKind::IndexedDbResponse(response),
-                    })
-                    .map_err(|error| error.to_string())?;
+                let response = headless_indexed_db_response_for(message.id);
+                self.renderer.send(response).map_err(|error| error.to_string())?;
                 Ok(None)
             }
             _ => Ok(None),
