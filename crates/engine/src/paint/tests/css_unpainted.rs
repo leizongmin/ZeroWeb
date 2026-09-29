@@ -445,9 +445,11 @@ fn display_none_subtree_text_not_painted() {
     assert!(text.contains("TAIL"), "正常 inline 文本应绘制，实际: {text}");
 }
 
-/// 同上，**嵌套**形状（PR #39 审查发现 #1）：隐藏 span 在可见 inline（b）内部，
-/// 绘制趟 Path B 的注入集收集走 DOM 子树，flat walk 折回前须被门住——锚定
-/// 非直子泄漏不再发生。
+/// 同上，**嵌套**形状（PR #39 审查发现 #1）：隐藏 span 在可见 inline（b）内部。
+/// layout 期 b 已入 `inline_block_child_nodes` 存储信号（非 inline 白名单与
+/// `has_block_level_child` 同表、含 None）→ Path B 下 b 同样不走 walk，实际生效
+/// 门是 flatten 吸收路径的 `collect_text_excluding` 剪枝（注入集通道）；walk 子
+/// 循环门由 layout 嵌套例 #1 钉住。本例锚定非直子泄漏端到端不再发生。
 #[test]
 fn display_none_nested_inline_text_not_painted() {
     let html = r#"<html><head><style>.hidden { display: none; }</style></head>
@@ -488,7 +490,7 @@ fn display_none_nested_inline_text_not_painted() {
 ///（R3768/R3769 教训）。钉住两条绘制路由的端到端清洁等价。注：负控制（仅撤
 /// painter 守卫）本测试仍绿——收集层门（walk/flatten 排除）是这些形状的有效
 /// 防线，painter 守卫为纵深防御（收集门失效时二道拦截），其独立判别由 reftest
-/// 负控制（撤全部修复 1.70% FAIL）覆盖。
+/// 负控制（撤全部修复 3.19% FAIL，15,319px）覆盖。
 #[test]
 fn display_none_subtree_not_painted_in_rect() {
     let html = r#"<html><head><style>.hidden { display: none; }</style></head>

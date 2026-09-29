@@ -366,7 +366,8 @@ const REFTESTS: &[InlineReftestDef] = &[
     // 与 inline 均含）不得绘制。回归背景：布局趟折 0×0 Display::None 叶保留盒树，
     // 绘制趟（含 Path B 空 styles 重跑 IFC）曾把 author 规则隐藏文本画在盒位置，
     // 与后随兄弟叠字（baidu 顶栏右上叠字最小复现）。
-    // 隐藏文本刻意长（~2200 字符，Path B 空 styles 按 UA 默认字号布局）：泄漏墨迹
+    // 隐藏文本刻意长（69×LEAKBLOCK + 55×LEAKLINE + 23×NESTLEAK ≈ 1.4k 字符，
+    // Path B 空 styles 按 UA 默认字号布局）：泄漏墨迹
     // 须明显超过 Layout 类默认容差 1%（负控制实测 21 字符仅 0.12%，会被放行）。
     // 三形状齐备：块级直子 / inline 直子 / 嵌套（可见 inline 内的隐藏 i，锚定
     // FLAT_CHILD_WALK 子循环门与 flatten 吸收路径排除）。嵌套泄漏与可见字重叠
