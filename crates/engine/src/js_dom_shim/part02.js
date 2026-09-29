@@ -990,6 +990,14 @@
       return cancelInternal(reason);
     };
     this._zwRsBrand = true; // net-api M4-S1：pipeTo/pipeThrough brand 校验锚
+    // net-api M4-S8：实例闭包别名（prototype 委托锚——`ReadableStream.prototype.getReader`
+    // 可被页面捕获后 .call(rs) 调用——tee 页 modified-constructor 面）。
+    this._zwGetReaderFn = this.getReader;
+    this._zwCancelFn = this.cancel;
+    this._zwValuesFn = this.values;
+    this._zwTeeFn = this.tee;
+    this._zwPipeToFn = this.pipeTo;
+    this._zwPipeThroughFn = this.pipeThrough;
     // net-api M4-S5：TransformStream SourcePull 背压观察锚（state/closeRequested/desired/readRequests
     // ——HasBackpressure = !ShouldCallPull 精确形）。
     this._zwRsProbe = function () {
@@ -1284,9 +1292,31 @@
         }
         return readPromise;
       }
+      // net-api M4-S8：composite cancel（spec ReadableStreamDefaultTee cancel1/2Algorithm）——
+      // 分支 cancel 记 reason；双 canceled → 源 cancel([reason1, reason2])；单 canceled →
+      // cancelPromise 挂至对侧（「canceling both branches should aggregate」双序面）。
+      var canceled1 = false, canceled2 = false;
+      var teeReason1, teeReason2;
+      var teeCancelResolve = null;
+      var teeCancelPromise = new Promise(function (r) { teeCancelResolve = r; });
+      function teeCancelBranch(which, reason) {
+        if (which === 1) { canceled1 = true; teeReason1 = reason; }
+        else { canceled2 = true; teeReason2 = reason; }
+        if (canceled1 && canceled2) {
+          var p = self._doCancel([teeReason1, teeReason2]);
+          teeCancelResolve(p);
+          return p;
+        }
+        return teeCancelPromise;
+      }
+      var _zwRsCtorForTee = self.constructor; // 捕获原构造器（页面改全局后 tee 不受扰面）
       function makeBranch() {
         var pos = 0;
-        return new ReadableStream({
+        var teeCtl = null; // start 构造期内执行——经外捕获后再挂（branch 自引用 TDZ 面）
+        var branch = new _zwRsCtorForTee({
+          start: function (controller) {
+            teeCtl = controller;
+          },
           pull: function (controller) {
             if (pos < buffer.length) { controller.enqueue(buffer[pos++]); return; }
             if (sourceDone) { controller.close(); return; }
@@ -1297,8 +1327,39 @@
             }, function (e) { controller.error(e); });
           }
         });
+        branch._teeController = teeCtl;
+        return branch;
       }
-      return [makeBranch(), makeBranch()];
+      var teeControllers = [];
+      var b1 = makeBranch(), b2 = makeBranch();
+      teeControllers.push(b1._teeController, b2._teeController);
+      // net-api M4-S8：spec tee 步骤 19——reader.closedPromise rejection → **立即** error 两分支
+      //（不待分支 pull；pullOnce 的 sourceError 面只在 pull 时暴露）。
+      try {
+        reader.closed.then(function () {}, function (eTee) {
+          for (var ti = 0; ti < teeControllers.length; ti++) {
+            try { teeControllers[ti].error(eTee); } catch (_eTc2) {}
+          }
+          try { teeCancelResolve(Promise.resolve()); } catch (_eTc3) {}
+        });
+      } catch (_eTeeFwd) {}
+      // 分支 cancel 包装——spec cancel1/2Algorithm：先关本分支（cancelInternal——closed 态、
+      // closed promise resolve），双 canceled → 源 composite cancel（[reason1, reason2]）；
+      // 单 canceled → 返回 teeCancelPromise（挂至对侧）。
+      (function () {
+        var oc1 = b1.cancel, oc2 = b2.cancel;
+        b1.cancel = function (reason) {
+          var own = oc1.call(b1, reason); // 关本分支
+          var agg = teeCancelBranch(1, reason);
+          return Promise.all([own, agg]).then(function () {}, function (eTc) { throw eTc; });
+        };
+        b2.cancel = function (reason) {
+          var own = oc2.call(b2, reason);
+          var agg = teeCancelBranch(2, reason);
+          return Promise.all([own, agg]).then(function () {}, function (eTc) { throw eTc; });
+        };
+      })();
+      return [b1, b2];
     };
     // start：spec SetUp——start 同步调用（**同步抛错冒出构造器**——§4.2.3「Any thrown exceptions
     // will be re-thrown by the ReadableStream() constructor」）；startPromise（resolved with
@@ -1323,6 +1384,20 @@
     get: function () { return this._locked; },
     enumerable: true, configurable: true
   });
+  // net-api M4-S8：prototype 方法委托（页面捕获 `prototype.getReader` 后 .call(rs) 面——
+  // 方法本为实例闭包，委托转发到实例别名）。
+  (function () {
+    var proto = globalThis.ReadableStream.prototype;
+    var methods = { getReader: '_zwGetReaderFn', cancel: '_zwCancelFn', values: '_zwValuesFn', tee: '_zwTeeFn', pipeTo: '_zwPipeToFn', pipeThrough: '_zwPipeThroughFn' };
+    for (var m in methods) {
+      (function (name, slot) {
+        Object.defineProperty(proto, name, {
+          value: function () { return this[slot].apply(this, arguments); },
+          writable: true, enumerable: true, configurable: true
+        });
+      })(m, methods[m]);
+    }
+  })();
   // fetch 响应体字符串 → ReadableStream：单 UTF-8 Uint8Array chunk 后 close（headless finite-body 模型，
   // 整体 body 已就绪）。复用 _zw_utf8_encode；空 body → 直接 close（零 chunk）。定义在 part01 _makeResponse
   // 之前调用（runtime），ReadableStream（part02）+ _zw_utf8_encode（part02）在 IIFE 同作用域已就绪。
