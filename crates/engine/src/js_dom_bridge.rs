@@ -1646,6 +1646,28 @@ pub fn query_all_selector_list_doc(doc: &Document, selector: &str) -> String {
         .join("|")
 }
 
+/// R-baidu3：[`query_all_selector_list_doc`] 的批量 tag 形态——同一遍
+/// `query_selector_all` 逐 id 读 local_name，返 `sel\x1ftag|sel\x1ftag|…` 记录流
+///（`\x1f` 不出现在引擎生成的唯一选择器中）。`getElementsByTagName('*')` 全文档
+/// 枚举（jQuery/Sizzle）原本逐元素读 tagName 打一次 `__zw_get_tag` 宿主回调
+///（baidu 页单事件 6 万+ 次往返 → exec 超时风暴）；shim 经本回调一次往返建
+/// sel→tag 本地缓存，枚举内属性读零宿主往返。
+pub fn query_all_tagged_list_doc(doc: &Document, selector: &str) -> String {
+    let root = doc.root();
+    doc.query_selector_all(root, zero_dom::trim_ascii_ws(selector))
+        .into_iter()
+        .filter_map(|id| {
+            let sel = unique_selector_for_node(doc, id)?;
+            let tag = match doc.get(id)?.kind {
+                zero_dom::NodeKind::Element(ref e) => e.local_name().to_string(),
+                _ => return None,
+            };
+            Some(format!("{sel}\x1f{tag}"))
+        })
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
 /// `DOMParser` 元素查询 → JSON 数组（R2790）。解析**任意 HTML 串** + 跑 selector，返匹配元素的
 /// 只读快照。与 [`query_match_selector`] 关键不同：解析出的文档**不在 dom_html 快照中**，唯一选择器
 /// 无处落地（selector 须在 dom_html 内解析），故这里返**完整元素数据**（tag/id/cls/text/outer/attrs），

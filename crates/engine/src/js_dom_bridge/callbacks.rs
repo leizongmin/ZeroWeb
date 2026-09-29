@@ -9,11 +9,41 @@ use super::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// 查询视图缓存：(源快照串, 队列长度) → applied 视图。队列不变且快照不变 → 命中
-///（同一脚本批内大量查询只 parse+apply 一次——FV M3 的 fresh-copy 方案每查询全量
-/// re-parse 曾致 engine 单测 10min+ 超时）。快照/队列任一变化 → 重算（host 每
-/// execute 换新 dom_html Arc，队列清空/增长均触发）。
-type QueryViewCache = std::sync::Arc<std::sync::Mutex<Option<(String, usize, String)>>>;
+thread_local! {
+    /// 查询视图缓存（R-baidu3 文档直读 + O(1) 命中键）。
+    ///
+    /// `view_doc` 承载**已应用视图的解析文档**：查询闭包直接在它上执行，消掉
+    /// 字符串视图的每步 `outer_html` serialize + `parse_html` re-parse 往返。
+    /// 内容恒等式 = `parse(snap)` + 队列 `[0..count)` 内全部 InsertAdjacentHtml
+    /// 烘焙（与 R57 字符串路径同一 [`apply_dom_mutations`] applier，只省序列化
+    /// 往返）。单条目——文档换代/队列清空即整体换血，无跨视图污染。
+    ///
+    /// **thread_local 而非共享 `Arc<Mutex>`**：`zero_dom::Document` 非 Send
+    ///（tendril NonAtomic / observer `dyn Fn`），进不得 sandbox 回调的 Send 捕获
+    /// 边界；而同 epoch 视图文档只被创建它的 V8 线程读写（回调与注册同线程，
+    /// 与 [`LIVE_QUERY_DOC`] 同一约束面），thread_local 即正确归属。
+    ///
+    /// 命中键 = `(dom_arc, mut_arc, count, drain_gen, view_gen)`——registration epoch 内
+    /// `dom_html` 内容不可变（写入点只有注册时初值与 R348 重绑，两者都安装
+    /// **新 Arc**），`mutations` 只增不减 ⇒ 键相同 ⇒ 查询视图输入逐字节相同
+    ///（R-baidu2 的 `src == *snap` 全文比较被此恒等式取代，baidu 类 436KB 页面
+    /// 每回调省一次 O(html_len) memcmp）。**键存 Arc 克隆而非 `Arc::as_ptr`**——
+    /// 条目持有引用使旧 epoch 的分配地址不可能被复用（ABA 免疫；裸指针键在跨
+    /// 注册地址复用时会服务 stale 视图）。
+    static VIEW_DOC_CACHE:
+        RefCell<Option<(ViewDocKey, zero_dom::Document)>> = const { RefCell::new(None) };
+}
+
+/// [`VIEW_DOC_CACHE`] 条目键（命中判定字段 + 增量链前提）。
+struct ViewDocKey {
+    dom_arc: Arc<std::sync::Mutex<String>>,
+    mut_arc: Arc<std::sync::Mutex<Vec<DomMutation>>>,
+    count: usize,
+    /// 条目构建时的 drain 代际（[`MUT_DRAIN_GEN`]）——增量链的成立前提。
+    drain_gen: usize,
+    /// 条目构建时的快照换代代际（[`DOM_VIEW_GEN`]）——就地换代后旧条目/旧链作废。
+    view_gen: usize,
+}
 
 /// R57（FV M3）：查询前把 pending mutations 应用到**快照副本**——同批 mutation
 ///（insertAdjacentHTML 等）未应用时查询快照 stale（form-requestsubmit 的
@@ -31,56 +61,151 @@ type QueryViewCache = std::sync::Arc<std::sync::Mutex<Option<(String, usize, Str
 ///   由 shim 侧本地 registry 回落（R51c：querySelector('#fresh') === el 须同一 proxy
 ///   身份——host 命中会包成 sel-based proxy 破坏 `===`）。
 ///
-/// 返回 `(查询视图 html, live_ok)`——`live_ok` = 视图无 pending structural
-/// mutations（js-dom M1 L2 R102：live_ok 时查询可直读已发布的 live doc，见
-/// [`with_query_doc_live_aware`]）。
-fn apply_pending_query_html(
+/// R-baidu3 文档直读形态：在缓存条目维护的**已应用视图文档**上执行查询闭包
+/// `f`（消字符串视图的 serialize + re-parse 往返）。`live_ok` = 队列无 pending
+/// structural mutations（js-dom M1 L2 R102：live_ok 时查询可直读已发布的 live
+/// doc，见 [`with_query_doc_live_aware`]）。
+///
+/// 重入约束：`f` 在持有 cache 锁期间执行——`f` 必须是纯文档遍历（不得再入
+/// `__zw_*` 查询回调；与 [`with_query_doc`] 的 thread_local 借用同一约束面）。
+fn with_query_view_doc<R>(
     html: &Arc<std::sync::Mutex<String>>,
     mutations: &Arc<std::sync::Mutex<Vec<DomMutation>>>,
-    cache: &QueryViewCache,
-) -> (String, bool) {
+    f: impl FnOnce(&zero_dom::Document) -> R,
+) -> R {
     let count = mutations.lock().unwrap_or_else(|e| e.into_inner()).len();
-    // 缓存命中：队列长度一致 + 源快照未变（host 换新 dom_html 时快照内容变）。
-    // 命中视图若为「无 structural 应用」形态（缓存第三元 == 源快照），live_ok 同样成立。
-    {
-        let cache_guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((src, c, applied)) = cache_guard.as_ref()
-            && *c == count
-        {
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            if *src == *snap {
-                return (applied.clone(), applied == &*snap);
-            }
+    // live_ok 判定：队列 [0..count) 无 pending structural mutations——与 R57 字符串
+    // 路径的 structural.is_empty()/base_live 传播逐点一致（结构性插入一旦入队即
+    // false；全空即 true）。true 且 live doc 已发布 → 闭包直读 live（js-dom M1 L2
+    // R102，[`with_query_doc_live_aware`] 同语义），视图文档根本不用建。
+    let live_ok = {
+        let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
+        !mut_guard[..count]
+            .iter()
+            .any(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
+    };
+    // FnOnce 单次调用：live 命中即消费；miss 时经 Option 还回落。
+    let mut f = Some(f);
+    if live_ok {
+        let live_hit = LIVE_QUERY_DOC.with(|slot| {
+            slot.borrow()
+                .as_ref()
+                .and_then(|rc| rc.try_borrow().ok())
+                .and_then(|doc| f.take().map(|f| f(&doc)))
+        });
+        if let Some(r) = live_hit {
+            return r;
         }
     }
-    let snap = html.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
-    if count == 0 {
-        let mut cache_guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-        *cache_guard = Some((snap.clone(), 0, snap.clone()));
-        return (snap, true);
-    }
-    // 结构级 mutation 子集（见函数文档——属性级/handle 链/Remove/SetInnerHtml 不应用）。
-    // Remove 排除：被移除元素的 proxy 属性读取（old.id / removedNodes[].tagName——
-    // R3029/replace_child_e2e）须回落快照；且 R47 断言 remove 后 querySelector 仍命中。
-    // SetInnerHtml/SetOuterHtml 排除同理（R3029：innerHTML= 替换后 removedNodes[] 的
-    // tagName 读旧子——应用后旧子消失回落启发式错值）；form-requestsubmit 的需求
-    //（同批 insertAdjacentHTML 后 querySelector 命中）由 InsertAdjacentHtml 覆盖。
-    let structural: Vec<DomMutation> = mut_guard
-        .iter()
-        .filter(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
-        .cloned()
-        .collect();
-    let applied = if structural.is_empty() {
-        snap.clone()
-    } else {
-        apply_mutations_to_html(&snap, &structural).unwrap_or_else(|_| snap.clone())
-    };
-    let live_ok = structural.is_empty();
-    drop(mut_guard);
-    let mut cache_guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-    *cache_guard = Some((snap, count, applied.clone()));
-    (applied, live_ok)
+    let f = f.expect("live miss path: f not consumed");
+    let view_gen = DOM_VIEW_GEN.load(std::sync::atomic::Ordering::Relaxed);
+    // R-baidu3 增量视图维护（文档直读形态）：同 epoch（Arc 身份相同）且队列只增长
+    //（count > 上一条目的 count，drain 代际未变）时，从**上一条目的 view_doc**原地
+    // 只应用新增区间 [prev_count, count) 的 structural mutations。baidu 加载期
+    // loader 每次插入推进 count，字符串路径每步 parse(732KB)+serialize 全量重放
+    // × 数百步 = 宿主侧 15s 重解析风暴主力（V8 GC 风暴清零后的残余 CPU 自旋）；
+    // 文档路径每步只 parse 插入片段本身。顺序应用可结合 ⇒ 结果与全量重放逐节点
+    // 一致。队列清空（drain_gen 递增）或换 epoch → 全量重建基座。
+    //
+    // O(1) 命中：epoch Arc 身份 + 队列长度唯一决定视图输入（见 [`VIEW_DOC_CACHE`]
+    // 文档的不变式）。Arc::ptr_eq 对着条目持有的克隆比较——旧 epoch 的条目活着
+    // 时地址不可能被新 Arc 复用（ABA 免疫）。借用跨 `f`：同 [`with_query_doc`]
+    // 的 thread_local 约束面（`f` 纯文档遍历，不得再入查询回调）。
+    VIEW_DOC_CACHE.with(|slot| {
+        let mut cache_guard = slot.borrow_mut();
+        if let Some((key, doc)) = cache_guard.as_ref()
+            && Arc::ptr_eq(&key.dom_arc, html)
+            && Arc::ptr_eq(&key.mut_arc, mutations)
+            && key.count == count
+            && key.drain_gen == MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed)
+            && key.view_gen == view_gen
+        {
+            return f(doc);
+        }
+        let prev_count = cache_guard
+            .as_ref()
+            .and_then(|(key, _)| {
+                (Arc::ptr_eq(&key.dom_arc, html)
+                    && Arc::ptr_eq(&key.mut_arc, mutations)
+                    && count > key.count
+                    && key.drain_gen == MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed)
+                    && key.view_gen == view_gen)
+                    .then_some(key.count)
+            })
+            .unwrap_or(0);
+        let chain_hit = prev_count > 0;
+        // 结构级 mutation 子集（见 register_dom_callbacks 处 R57 文档——属性级/handle
+        // 链/Remove/SetInnerHtml 不应用）。Remove 排除：被移除元素的 proxy 属性读取
+        //（old.id / removedNodes[].tagName——R3029/replace_child_e2e）须回落快照；且
+        // R47 断言 remove 后 querySelector 仍命中。SetInnerHtml/SetOuterHtml 排除同理
+        //（R3029：innerHTML= 替换后 removedNodes[] 的 tagName 读旧子）；form-
+        // requestsubmit 的需求（同批 insertAdjacentHTML 后 querySelector 命中）由
+        // InsertAdjacentHtml 覆盖。
+        let structural: Vec<DomMutation> = {
+            let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
+            mut_guard[prev_count..count]
+                .iter()
+                .filter(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
+                .cloned()
+                .collect()
+        };
+        // 增量步：条目已归我们所有（take 出来原地改，零 clone）；否则全新 parse 基座。
+        let mut doc = if chain_hit {
+            cache_guard.take().expect("chain_hit implies entry").1
+        } else {
+            parse_html(&html.lock().unwrap_or_else(|e| e.into_inner()))
+        };
+        if !structural.is_empty() {
+            // apply 失败回落：增量步保留旧基座（缺新增插入——字符串路径
+            // `unwrap_or(base)` 同型；全量步回落未应用 parse——`unwrap_or_else(|_| snap)`
+            // 同型）。当前元素属性由 `__zw_has_attr_lw` latest-wins 兜底。
+            let _ = apply_dom_mutations(&mut doc, &structural);
+        }
+        *cache_guard = Some((
+            ViewDocKey {
+                dom_arc: Arc::clone(html),
+                mut_arc: Arc::clone(mutations),
+                count,
+                drain_gen: MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed),
+                view_gen,
+            },
+            doc,
+        ));
+        f(&cache_guard.as_ref().expect("entry stored").1)
+    })
+}
+
+/// R-baidu3：注册代际计数器——`register_dom_callbacks` 每次（每 execute 重注册）递增。
+/// 视图戳的 ABA 防御项：旧 epoch 的 dom_html Arc 释放后新 Arc 落到同地址时，
+/// (ptr, count) 可能碰撞；epoch 项保证跨注册永不碰撞（见 `__zw_dom_view_stamp`）。
+static REG_EPOCH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// R-baidu3：mutations 队列 drain 代际——队列排空站点（渲染进程 js_worker、
+/// webview user_actions、renderer page_scripts `apply_recorded_mutations` 等，
+/// [`bump_mut_drain_gen`] 调用点为权威清单）时递增。drain ⇒ bump 是全视图缓存
+/// 键（[`VIEW_DOC_CACHE`]/TAG_MEMO/TAGGED_ALL_CACHE/`__zw_dom_view_stamp`）的
+/// 不变式前提：drain 后同批重新增长回旧 count 时 (ptr, count) 键会被误判为
+/// 「只增长」/「精确命中」，没有 gen 项会把 pre-drain 视图端出（错视图）。
+/// 未配对 view_gen 换代的 drain 站点（不推快照的排空路径）必须直接 bump 本代际。
+pub static MUT_DRAIN_GEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// mutations 队列 drain 站点调用（见 [`MUT_DRAIN_GEN`]）。
+pub fn bump_mut_drain_gen() {
+    MUT_DRAIN_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// R358/R3243：dom_html 快照**就地换代**代际——快照写入点（renderer `SetDomSnapshot`
+/// 的 `*snap = html`、webview user_actions 批末 `*dom_html.lock() = cached_html`、R348
+/// 重绑刷新）调用 [`bump_dom_view_gen`]。快照 Arc 被回调闭包捕获（Box<dyn Fn> 不可达
+/// ⇒ 无法换装新 Arc），内容更新只能就地写 ⇒ `(dom_arc, count)` 键对换代视而不见：
+/// 换代后同 count 查询命中换代前解析的视图（R358 `children[0].id` 读到旧 span、
+/// R3243 insertRow 行数取自旧视图）。代际项进全部宿主侧视图/备忘缓存键（视图文档、
+/// TAG_MEMO、TAGGED_ALL_CACHE、NS_MEMO、`__zw_dom_view_stamp`），换代即整体失效。
+pub static DOM_VIEW_GEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// dom_html 快照就地写入站点调用（见 [`DOM_VIEW_GEN`]）。
+pub fn bump_dom_view_gen() {
+    DOM_VIEW_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
@@ -113,7 +238,6 @@ pub fn register_dom_callbacks(
     // 生命周期内唯一（导航换页由 `__zw_reset_form_state` 侧 JS 态负责，host 侧计数
     // 复用无害——旧页 handle 不再被引用）。
     // R57（FV M3）：查询视图缓存（同一 execute 内共享——dom_html Arc + 队列同源）。
-    let view_cache: QueryViewCache = Arc::new(Mutex::new(None));
 
     // js-dom M4 R55：注册即 dom_html 换代（dispatch_event 每次重注册拿最新 cached_html 的快照
     // Arc）→ JS 侧基底缓存全量失效（childNodes `_zwChildBaseCache` / sibling `_zwSiblingBaseCache`，
@@ -226,7 +350,6 @@ pub fn register_dom_callbacks(
         .cloned()
         .unwrap_or_else(|| std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())));
     let rs_html = Arc::clone(dom_html);
-    let rs_qv = Arc::clone(&view_cache);
     let rs_mut = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_getBoundingClientRect",
@@ -248,8 +371,7 @@ pub fn register_dom_callbacks(
             let node_id = match node_id {
                 Some(id) => id,
                 None => {
-                    let (snap, live_ok) = apply_pending_query_html(&rs_html, &rs_mut, &rs_qv);
-                    let hit = with_query_doc_live_aware(&snap, live_ok, |doc| {
+                    let hit = with_query_view_doc(&rs_html, &rs_mut, |doc| {
                         crate::js_dom_bridge::find_by_selector(doc, sel).map(crate::hit_test::node_id_to_u64)
                     });
                     match hit {
@@ -268,25 +390,61 @@ pub fn register_dom_callbacks(
 
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_query_match",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc_live_aware(&snap, live_ok, |doc| query_match_selector_doc(doc, &sel))
+            with_query_view_doc(&html, &m, |doc| query_match_selector_doc(doc, &sel))
         }),
     );
 
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_query_all",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc_live_aware(&snap, live_ok, |doc| query_all_selector_list_doc(doc, &sel))
+            with_query_view_doc(&html, &m, |doc| query_all_selector_list_doc(doc, &sel))
+        }),
+    );
+
+    // R-baidu3：`__zw_query_all` 的批量 tag 形态——`getElementsByTagName('*')` 全文档
+    // 枚举（jQuery/Sizzle）逐元素读 tagName 原本打一次 `__zw_get_tag` 宿主回调
+    //（baidu 页单事件 6 万+ 次往返 → exec 超时风暴）；本回调一次往返返回
+    // `sel\x1ftag|…`，shim 侧建 sel→tag 缓存（`_realTag` 命中零往返）。payload 按视图
+    // 键单条目缓存——同视图内重复枚举零重算（jQuery 每事件多次 gETN('*')）。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_query_all_tagged",
+        Box::new(move |args| {
+            let sel = args.first().map(String::from).unwrap_or_default();
+            let count = m.lock().unwrap_or_else(|e| e.into_inner()).len();
+            let drain_gen = MUT_DRAIN_GEN.load(Ordering::Relaxed);
+            let view_gen = DOM_VIEW_GEN.load(Ordering::Relaxed);
+            if let Some(hit) = TAGGED_ALL_CACHE.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .filter(|(k, _)| {
+                        Arc::ptr_eq(&k.0, &html)
+                            && Arc::ptr_eq(&k.1, &m)
+                            && k.2 == count
+                            && k.3 == drain_gen
+                            && k.4 == view_gen
+                            && k.5 == sel
+                    })
+                    .map(|(_, payload)| payload.clone())
+            }) {
+                return hit;
+            }
+            let payload = with_query_view_doc(&html, &m, |doc| query_all_tagged_list_doc(doc, &sel));
+            TAGGED_ALL_CACHE.with(|slot| {
+                *slot.borrow_mut() = Some((
+                    (Arc::clone(&html), Arc::clone(&m), count, drain_gen, view_gen, sel),
+                    payload.clone(),
+                ));
+            });
+            payload
         }),
     );
 
@@ -509,41 +667,35 @@ pub fn register_dom_callbacks(
     // （spec：仅后代，不含元素自身）。elem_sel = 元素唯一选择器，区别于文档作用域的 query_match/all。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_query_match_sub",
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let sel = args.get(1).map(String::from).unwrap_or_default();
             // js-dom M1 L2 R103：helper 类查询 live 化（_doc 变体）。
-            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc_live_aware(&snap, live_ok, |doc| query_match_in_subtree_doc(doc, &elem_sel, &sel))
+            with_query_view_doc(&html, &m, |doc| query_match_in_subtree_doc(doc, &elem_sel, &sel))
         }),
     );
 
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_query_all_sub",
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let sel = args.get(1).map(String::from).unwrap_or_default();
-            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc_live_aware(&snap, live_ok, |doc| query_all_in_subtree_doc(doc, &elem_sel, &sel))
+            with_query_view_doc(&html, &m, |doc| query_all_in_subtree_doc(doc, &elem_sel, &sel))
         }),
     );
 
     // Form-associated listed controls，按 form owner 过滤并保持文档序。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_form_controls",
         Box::new(move |args| {
             let form = args.first().map(String::from).unwrap_or_default();
-            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc_live_aware(&snap, live_ok, |doc| form_control_selectors_doc(doc, &form).join("|"))
+            with_query_view_doc(&html, &m, |doc| form_control_selectors_doc(doc, &form).join("|"))
         }),
     );
 
@@ -551,13 +703,11 @@ pub fn register_dom_callbacks(
     // previousElementSibling/nextElementSibling（兄弟对）、contains（后代判定）。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_element_children",
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
-            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc_live_aware(&snap, live_ok, |doc| element_children_selectors_doc(doc, &elem_sel))
+            with_query_view_doc(&html, &m, |doc| element_children_selectors_doc(doc, &elem_sel))
         }),
     );
 
@@ -658,13 +808,11 @@ pub fn register_dom_callbacks(
     // `element.parentNode` / `parentElement`——元素父唯一选择器（修正旧 stub 恒返 body）。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_parent",
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
-            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc_live_aware(&snap, live_ok, |doc| parent_selector_for_doc(doc, &elem_sel))
+            with_query_view_doc(&html, &m, |doc| parent_selector_for_doc(doc, &elem_sel))
         }),
     );
 
@@ -683,7 +831,6 @@ pub fn register_dom_callbacks(
 
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_get_attr",
         Box::new(move |args| {
@@ -693,8 +840,7 @@ pub fn register_dom_callbacks(
             // R57（FV M3）：快照读用 applied view——同批插入（insertAdjacentHTML 等）的
             // 元素属性可见（type/required 等约束读取；SetFormValue 在 apply 中 no-op——
             // .value= 不脏污 defaultValue 语义保持）。
-            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc_live_aware(&snap, live_ok, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
+            with_query_view_doc(&html, &m, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
         }),
     );
 
@@ -705,7 +851,6 @@ pub fn register_dom_callbacks(
     //（R57 FV M3：同批插入元素的结构属性可见）。闭合 removeAttribute 后 getAttribute 仍返旧值的 stale gap（R2993）。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_get_attr_lw",
         Box::new(move |args| {
@@ -717,38 +862,127 @@ pub fn register_dom_callbacks(
                 return ov.unwrap_or_default();
             }
             drop(list);
-            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc_live_aware(&snap, live_ok, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
+            with_query_view_doc(&html, &m, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
         }),
     );
 
     // P1a form input：真实 tag 名查询（shim `_tagFromSel` 对 id-only 选择器等仅启发式猜测，
     // `__zw_text_input` 需真实 tag 判 INPUT/TEXTAREA）。
+    // R-baidu3：`__zw_get_tag` 是 jQuery/Sizzle 风暴的最热回调（单事件 6 万+ 次），
+    // 走两层 O(1) 化——TAG_MEMO 备忘（同视图键 sel 直接命中）→ with_query_view_doc
+    // （epoch 键 O(1) 视图文档命中 + live 直读）。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_get_tag",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc_live_aware(&snap, live_ok, |doc| query_tag_from_html_doc(doc, &sel))
+            let count = m.lock().unwrap_or_else(|e| e.into_inner()).len();
+            let drain_gen = MUT_DRAIN_GEN.load(Ordering::Relaxed);
+            let view_gen = DOM_VIEW_GEN.load(Ordering::Relaxed);
+            if let Some(tag) = TAG_MEMO.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .filter(|(k, _)| {
+                        Arc::ptr_eq(&k.0, &html)
+                            && Arc::ptr_eq(&k.1, &m)
+                            && k.2 == count
+                            && k.3 == drain_gen
+                            && k.4 == view_gen
+                    })
+                    .and_then(|(_, map)| map.get(&sel).cloned())
+            }) {
+                return tag;
+            }
+            let tag = with_query_view_doc(&html, &m, |doc| query_tag_from_html_doc(doc, &sel));
+            TAG_MEMO.with(|slot| {
+                let mut guard = slot.borrow_mut();
+                let stale = guard
+                    .as_ref()
+                    .map(|(k, _)| {
+                        !(Arc::ptr_eq(&k.0, &html)
+                            && Arc::ptr_eq(&k.1, &m)
+                            && k.2 == count
+                            && k.3 == drain_gen
+                            && k.4 == view_gen)
+                    })
+                    .unwrap_or(true);
+                if stale {
+                    *guard = Some((
+                        (Arc::clone(&html), Arc::clone(&m), count, drain_gen, view_gen),
+                        HashMap::new(),
+                    ));
+                }
+                guard.as_mut().expect("entry ensured").1.insert(sel, tag.clone());
+            });
+            tag
         }),
     );
 
     // R185（js-dom M4）：sel 元素的 namespace 查询（svg/MathML 等非 HTML ns 的
     // namespaceURI getter + cloneNode ns 保留）。
+    // R-baidu3：NS_MEMO 备忘 + 快照零拷贝借用（原实现每次 436KB clone——风暴路径
+    // getPrototypeOf 8 万次/事件的内存 churn 主力之一）。
+    // R-baidu3 视图戳：`__zw_dom_view_stamp` → "epoch:ptr:count:drain:gen" 小字符串，
+    // 同视图恒同串。shim 侧全树枚举（baidu scanAndDoRender 每次 resolve 重扫）以它为
+    // 缓存键：戳不变 ⇒ 视图未变 ⇒ 直接复用上次枚举的代理数组/tag 表，**免 400KB
+    // payload 调用与 2 万代理重建**（V8 主 GC 风暴——MarkCompact 100% CPU 自旋百秒
+    // 级——的分配源头）。ptr 项 = dom_html Arc 身份（同注册内换代必换 Arc）；count 项
+    // = mutations 尾长；epoch 项 = REG_EPOCH（跨注册 Arc 地址复用 ABA 防御）；drain 项
+    // = MUT_DRAIN_GEN（drain 后重长回同 count 内容可不同——与视图缓存精确命中键同
+    // 族，缺项会把 pre-drain 枚举当同视图复用）；gen 项 = DOM_VIEW_GEN（就地换代必
+    // 换——R358/R3243，Arc 身份对 `*snap = html` 视而不见）。
+    {
+        let html = Arc::clone(dom_html);
+        let m = Arc::clone(mutations);
+        let epoch = REG_EPOCH.fetch_add(1, Ordering::Relaxed);
+        sandbox.register_callback(
+            "__zw_dom_view_stamp",
+            Box::new(move |_args| {
+                let ptr = Arc::as_ptr(&html) as usize;
+                let count = m.lock().unwrap_or_else(|e| e.into_inner()).len();
+                let drain_gen = MUT_DRAIN_GEN.load(Ordering::Relaxed);
+                let view_gen = DOM_VIEW_GEN.load(Ordering::Relaxed);
+                format!("{epoch:x}:{ptr:x}:{count}:{drain_gen:x}:{view_gen}")
+            }),
+        );
+    }
     let html = Arc::clone(dom_html);
     sandbox.register_callback(
         "__zw_get_ns",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            // R185 修正：**纯快照查询**——不走 apply_pending_query_html（live 视图构建有
+            let view_gen = DOM_VIEW_GEN.load(Ordering::Relaxed);
+            if let Some(ns) = NS_MEMO.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .filter(|(k, _)| Arc::ptr_eq(&k.0, &html) && k.1 == view_gen)
+                    .and_then(|(_, map)| map.get(&sel).cloned())
+            }) {
+                return ns;
+            }
+            // R185 修正：**纯快照查询**——不走 with_query_view_doc（live 视图构建有
             // 状态副作用：namespaceURI getter 会在 live-collection 过滤（getElementsByTagName
             // 的 matches）中被调用，pending-apply 会消费 mutation 队列破坏查询状态，
             // Attr-prefix g 元素丢失实证）。ns 对静态解析元素恒定，快照足够。
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            with_query_doc(&snap, |doc| query_ns_from_html_doc(doc, &sel))
+            // 快照经 MutexGuard 直接借用进 with_query_doc（回调闭包与 doc 查询路径
+            // 均不再锁 dom_html，无重入死锁面），免 436KB clone。
+            let ns = {
+                let snap_guard = html.lock().unwrap_or_else(|e| e.into_inner());
+                with_query_doc(&snap_guard, |doc| query_ns_from_html_doc(doc, &sel))
+            };
+            NS_MEMO.with(|slot| {
+                let mut guard = slot.borrow_mut();
+                if guard
+                    .as_ref()
+                    .map(|(k, _)| !(Arc::ptr_eq(&k.0, &html) && k.1 == view_gen))
+                    .unwrap_or(true)
+                {
+                    *guard = Some(((Arc::clone(&html), view_gen), HashMap::new()));
+                }
+                guard.as_mut().expect("entry ensured").1.insert(sel, ns.clone());
+            });
+            ns
         }),
     );
 
@@ -810,15 +1044,13 @@ pub fn register_dom_callbacks(
     // __zw_get_attr——SetFormValue no-op），latest-wins 见 `__zw_has_attr_lw`（hasAttribute 专用）。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_has_attr",
         Box::new(move |args| {
             if args.len() < 2 {
                 return "0".to_string();
             }
-            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
-            if with_query_doc_live_aware(&snap, live_ok, |doc| {
+            if with_query_view_doc(&html, &m, |doc| {
                 find_by_selector(doc, &args[0])
                     .map(|n| doc.get_attribute(n, &args[1]).is_some())
                     .unwrap_or(false)
@@ -836,7 +1068,6 @@ pub fn register_dom_callbacks(
     // hasAttribute 恒 true 的 stale gap（R2993 latent）。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_has_attr_lw",
         Box::new(move |args| {
@@ -848,8 +1079,7 @@ pub fn register_dom_callbacks(
                 return if ov.is_some() { "1" } else { "0" }.to_string();
             }
             drop(list);
-            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
-            if with_query_doc_live_aware(&snap, live_ok, |doc| {
+            if with_query_view_doc(&html, &m, |doc| {
                 find_by_selector(doc, &args[0])
                     .map(|n| doc.get_attribute(n, &args[1]).is_some())
                     .unwrap_or(false)
@@ -965,14 +1195,12 @@ pub fn register_dom_callbacks(
 
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_get_text",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             // R57（FV M3）：applied view——同批插入元素的结构文本可见。
-            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc_live_aware(&snap, live_ok, |doc| query_text_from_html_doc(doc, &sel))
+            with_query_view_doc(&html, &m, |doc| query_text_from_html_doc(doc, &sel))
         }),
     );
 
@@ -983,7 +1211,6 @@ pub fn register_dom_callbacks(
     // MutationObserver characterDataOldValue mutate 前 old-value 读（镜像 `__zw_get_attr_lw`）。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_get_text_lw",
         Box::new(move |args| {
@@ -993,9 +1220,9 @@ pub fn register_dom_callbacks(
                 return t;
             }
             {
-                // 作用域收窄：snap guard（html 锁）须在 apply_pending_query_html 前释放——
-                // 该函数内部会再锁 html（std Mutex 非重入，持锁调用即自死锁——FV M3 实测
-                // textContent= 后 getter 挂起）。
+                // 作用域收窄：snap guard（html 锁）须在查询视图构建（会再锁 html——
+                // std Mutex 非重入，持锁调用即自死锁——FV M3 实测 textContent= 后
+                // getter 挂起）前释放。
                 let snap = html.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(text) = query_text_from_pending_mutations(&snap, &list, &sel) {
                     return text;
@@ -1003,8 +1230,7 @@ pub fn register_dom_callbacks(
             }
             drop(list);
             // R57（FV M3）：applied view——同批插入元素的结构文本可见。
-            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc_live_aware(&snap, live_ok, |doc| query_text_from_html_doc(doc, &sel))
+            with_query_view_doc(&html, &m, |doc| query_text_from_html_doc(doc, &sel))
         }),
     );
 
@@ -1937,7 +2163,7 @@ thread_local! {
     /// Document 含 Cell（非 Send，见错误 `std::cell::Cell<usize> cannot be shared`——
     /// 事件监听器/observer 存储）→ 只能 thread_local（JS 执行线程内复用，跨线程各自
     /// 缓存；回调闭包 'static 可直接访问静态）。
-    static QUERY_DOC_CACHE: std::cell::RefCell<Option<(String, zero_dom::Document)>> =
+    static QUERY_DOC_CACHE: std::cell::RefCell<Option<(Arc<String>, zero_dom::Document)>> =
         const { std::cell::RefCell::new(None) };
     /// R-baidu2 查询重解析风暴预算（见 [`query_reparse_guard`]）。
     static QUERY_REPARSE: std::cell::RefCell<Option<QueryReparseGuard>> = const { std::cell::RefCell::new(None) };
@@ -2149,7 +2375,7 @@ fn with_query_doc<R>(html: &str, f: impl FnOnce(&zero_dom::Document) -> R) -> R 
                         .get_or_insert_with(|| QueryReparseGuard::new(parse_start))
                         .record(parse_start, cost)
                 });
-                *guard = Some((html.to_string(), doc));
+                *guard = Some((Arc::new(html.to_string()), doc));
             }
         }
         let doc = &guard.as_ref().expect("cache populated").1;
@@ -2158,7 +2384,7 @@ fn with_query_doc<R>(html: &str, f: impl FnOnce(&zero_dom::Document) -> R) -> R 
 }
 
 /// js-dom M1 L2（R102）：live 感知的查询执行——`live_ok`（= 本查询视图无 pending
-/// structural mutations，`apply_pending_query_html` 判定）且 live doc 已发布时直接读
+/// structural mutations，`with_query_view_doc` 判定）且 live doc 已发布时直接读
 /// live（消 re-parse），否则原快照路径。查询语义等价前提：apply 后 webview 同步
 /// `cached_html` 与 live（`apply_pending_shared_mutations` 的 outer_html 快照），
 /// 无 pending 时两者内容一致。
@@ -2178,6 +2404,41 @@ fn with_query_doc_live_aware<R>(html: &str, live_ok: bool, f: impl FnOnce(&zero_
         }
     }
     with_query_doc(html, f.expect("live miss path: f not consumed"))
+}
+
+// __zw_get_tag 热路径备忘缓存（R-baidu3）：`(视图键, sel) → tag`。视图键 =
+// (dom_arc, mut_arc, count, drain_gen, view_gen)（与 QueryViewEntry 命中键同一
+// 恒等式）——键内 sel→tag 是查询视图的纯函数。jQuery/Sizzle 每次选择器操作经
+// getElementsByTagName('*') 全文档枚举，每个元素 proxy 属性读（tagName/localName/…）
+// 都打一次 __zw_get_tag 宿主回调；备忘把重复 sel 的宿主往返（含 find_by_selector
+// 文档遍历）塌缩为每视图一次。R348 重绑换 dom_html Arc / mutation 追加 → 键变化
+// → 旧表整体作废（无跨视图污染）。键存 Arc 克隆（非裸指针）——条目持有引用
+// 使旧 epoch 地址不可复用（ABA 免疫，见 QueryViewEntry 文档）。
+thread_local! {
+    static TAG_MEMO: std::cell::RefCell<
+        Option<((Arc<std::sync::Mutex<String>>, Arc<std::sync::Mutex<Vec<DomMutation>>>, usize, usize, usize), std::collections::HashMap<String, String>)>,
+    > = const { std::cell::RefCell::new(None) };
+}
+
+// __zw_query_all_tagged 的 payload 单条目缓存（R-baidu3）：(dom_arc, mut_arc, count,
+// drain_gen, view_gen, sel) → payload。视图键恒等式同 QueryViewEntry（epoch Arc 身份 + 队列长度
+// + drain 代际唯一决定视图输入——drain 后重长到同 count 内容可不同，缺 drain_gen 会
+// 命中 pre-drain 条目）；sel 或视图变化即换条目。jQuery/Sizzle 每事件多次
+// getElementsByTagName('*')，同视图重枚举免 O(匹配数) 的重复 sel+tag 构建。
+thread_local! {
+    static TAGGED_ALL_CACHE: std::cell::RefCell<
+        Option<((Arc<std::sync::Mutex<String>>, Arc<std::sync::Mutex<Vec<DomMutation>>>, usize, usize, usize, String), String)>,
+    > = const { std::cell::RefCell::new(None) };
+}
+
+// __zw_get_ns 的 sel→ns 备忘（R-baidu3）：键 = dom_html epoch Arc——R185 语义下 ns
+// 是**纯快照**函数（不走视图重放），epoch 内快照不可变（见 QueryViewEntry 不变式）
+// ⇒ epoch 键即可。风暴路径：proxy getPrototypeOf（HTMLElement/SVGElement 原型选择）
+// 每元素属性读触发 ns 查询（baidu 单事件 8 万次/事件，旧实现每次 436KB 快照 clone +
+// 全文缓存键比较 → 内存churn 风暴主力之一）。键存 Arc 克隆（ABA 免疫）。
+thread_local! {
+    static NS_MEMO: std::cell::RefCell<Option<((Arc<std::sync::Mutex<String>>, usize), std::collections::HashMap<String, String>)>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(test)]

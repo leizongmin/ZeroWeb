@@ -7611,6 +7611,20 @@
     return low === local;
   }
   function _realTag(sel, handle) {
+    // R-baidu3：批量 tag 缓存命中（part05 _zwTagCache——getElementsByTagName('*')
+    // 枚举时经 __zw_query_all_tagged 灌入）。印章 = (apply 代际, pending 记账长度)，
+    // 不符即走原链——apply 后同 sel 重绑定新元素的窗口不服务旧 tag，语义与逐元素
+    // 宿主查询一致。只正缓存枚举命中的 sel，miss 不缓存。
+    if (sel && _zwTagCache) {
+      try {
+        if (_zwTagCache.gen === _zwApplyGeneration()
+            && _zwTagCache.added === _zwPendingAdded.length
+            && _zwTagCache.removed === _zwPendingRemoved.length) {
+          var _tct = _zwTagCache.map.get(String(sel));
+          if (_tct) return _zwAsciiUpper(_tct);
+        }
+      } catch (_eTagCache) {}
+    }
     if (sel && typeof __zw_get_tag === 'function') {
       try { var t = __zw_get_tag(sel); if (t) return _zwAsciiUpper(t); } catch (_e) {}
     }

@@ -2109,6 +2109,8 @@ fn test_canvas_float16_overlay_roundtrip_r34xx() {
     // getContext 走 part04 DOM canvas 路径，须与 standalone 同语义记录覆盖层）。
     *dom_html.lock().unwrap() =
         "<html><body><canvas id=\"c\" width=\"100\" height=\"50\"></canvas></body></html>".to_string();
+    // R358/R3243：测试模拟就地换代 → 同步 bump 宿主视图缓存代际。
+    crate::js_dom_bridge::bump_dom_view_gen();
     sandbox
         .execute(
             "globalThis.__dc = document.getElementById('c');\

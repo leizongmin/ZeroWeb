@@ -386,6 +386,8 @@ fn test_node_is_connected_and_has_child_nodes_r2922() {
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__connBefore").unwrap().value, "true");
     *dom_html.lock().unwrap() = "<html><body><span id='empty'></span></body></html>".to_string();
+    // R358/R3243：测试模拟就地换代 → 同步 bump 宿主视图缓存代际。
+    crate::js_dom_bridge::bump_dom_view_gen();
     sandbox
         .execute("globalThis.__connAfter = globalThis.__dRef.isConnected;")
         .unwrap();

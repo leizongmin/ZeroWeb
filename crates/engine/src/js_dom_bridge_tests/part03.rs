@@ -427,6 +427,8 @@ fn test_style_proxy_methods() {
 
     // cssText set → 整体替换（原 color: red 应消失）。
     mutations.lock().unwrap().clear();
+    // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
+    crate::js_dom_bridge::bump_mut_drain_gen();
     sandbox
         .execute("document.querySelector('#d').style.cssText = 'margin: 0; padding: 5px';")
         .unwrap();
@@ -869,6 +871,8 @@ fn test_toggle_attribute() {
 
     // 连续双 toggle（无 force）：朴素实现都读 stale 都加 → 残留；enqueue-时解析正确复合 → net 移除。
     mutations.lock().unwrap().clear();
+    // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
+    crate::js_dom_bridge::bump_mut_drain_gen();
     sandbox
         .execute(
             "document.querySelector('#d').toggleAttribute('x');\n\
@@ -885,6 +889,8 @@ fn test_toggle_attribute() {
 
     // force=true 强加（即便存在也保留）。
     mutations.lock().unwrap().clear();
+    // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
+    crate::js_dom_bridge::bump_mut_drain_gen();
     sandbox
         .execute("document.querySelector('#d').toggleAttribute('aria-label', true);")
         .unwrap();
@@ -1082,6 +1088,8 @@ fn test_get_computed_style_cache_invalidation() {
     *dom_html.lock().unwrap() = "<html><body><div id=\"d\"></div>\
         <style>#d { display: none }</style></body></html>"
         .to_string();
+    // R358/R3243：测试模拟就地换代 → 同步 bump 宿主视图缓存代际。
+    crate::js_dom_bridge::bump_dom_view_gen();
     sandbox
         .execute("globalThis.__v2 = getComputedStyle(document.querySelector('#d')).display;")
         .unwrap();
