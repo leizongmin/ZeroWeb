@@ -1212,28 +1212,32 @@ impl RenderPipeline {
     pub fn hit_test_link(&self, x: f32, y: f32) -> Option<String> {
         let doc = self.cached_doc.as_ref()?.borrow();
         let layout = self.cached_layout.as_ref()?;
-        hit_test::hit_test_link(&doc, &layout.root, x, y)
+        hit_test::hit_test_link(&doc, &layout.root, &self.cached_styles, x, y)
     }
 
     /// 命中测试图片，返回 `src`（文档原始值）。
     pub fn hit_test_image(&self, x: f32, y: f32) -> Option<String> {
         let doc = self.cached_doc.as_ref()?.borrow();
         let layout = self.cached_layout.as_ref()?;
-        hit_test::hit_test_image(&doc, &layout.root, x, y)
+        hit_test::hit_test_image(&doc, &layout.root, &self.cached_styles, x, y)
     }
 
     /// 命中测试元素，返回点击位置处最深元素及其布局盒。
     pub fn hit_test_element(&self, x: f32, y: f32) -> Option<hit_test::ElementHit> {
         let doc = self.cached_doc.as_ref()?.borrow();
         let layout = self.cached_layout.as_ref()?;
-        hit_test::hit_test_element(&doc, &layout.root, x, y)
+        hit_test::hit_test_element(&doc, &layout.root, &self.cached_styles, x, y)
     }
 
     /// 构建主线程只读命中测试快照（与当前缓存 DOM/布局一致）。
     pub fn build_hit_test_cache(&self) -> Option<hit_test::HitTestCache> {
         let doc = self.cached_doc.as_ref()?.borrow();
         let layout = self.cached_layout.as_ref()?;
-        Some(hit_test::HitTestCache::from_document(&doc, &layout.root))
+        Some(hit_test::HitTestCache::from_document(
+            &doc,
+            &layout.root,
+            &self.cached_styles,
+        ))
     }
 
     /// 取缓存 live Document 的共享句柄（`Rc<RefCell<Document>>` 克隆）。

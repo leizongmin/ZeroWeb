@@ -5,6 +5,28 @@ use std::collections::{HashMap, HashSet};
 use slotmap::{Key, KeyData};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
+use zero_style_system::ComputedStyle;
+use zero_style_system::property::types::VisibilityValue;
+
+/// 元素 computed visibility 是否不可见（Hidden/Collapse，与绘制侧 painter 谓词一致）：
+/// 不可见盒不绘制、命中穿透（布局保留——gBCR/布局不受影响）。
+/// https://drafts.csswg.org/css-visibility/#visibility
+fn is_hidden_style(styles: &HashMap<NodeId, ComputedStyle>, node: NodeId) -> bool {
+    styles
+        .get(&node)
+        .is_some_and(|style| matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse))
+}
+
+/// 命中遍历共享上下文：查询点 + 不可见谓词。
+///
+/// CSS Visibility：hidden/collapse 盒不参与命中，但后代显式 `visibility: visible` 仍可命中
+/// ——递归不剪枝，仅剥夺盒自身的候选资格。 https://drafts.csswg.org/css-visibility/#visibility
+struct HitWalk<'a> {
+    point_x: f32,
+    point_y: f32,
+    /// 盒 node_id → 是否不可见。live 树按 computed style 判定；缓存树按构建期集合判定。
+    is_hidden: &'a dyn Fn(NodeId) -> bool,
+}
 
 /// 主线程只读命中测试快照（由 tab worker 在推送快照时构建）。
 #[derive(Debug, Clone)]
@@ -13,6 +35,9 @@ pub struct HitTestCache {
     doc_root: NodeId,
     nodes: HashMap<NodeId, HitTestNodeMeta>,
     parents: HashMap<NodeId, NodeId>,
+    /// 构建期 computed visibility hidden/collapse 的元素（快照导出为 `hidden_nodes`，
+    /// 跨进程恢复后语义一致）。
+    hidden: HashSet<NodeId>,
 }
 
 #[derive(Debug, Clone)]
@@ -28,7 +53,10 @@ struct HitTestNodeMeta {
 
 impl HitTestCache {
     /// 从管线缓存的 DOM 与布局树构建命中测试快照。
-    pub fn from_document(doc: &Document, layout_root: &LayoutBox) -> Self {
+    ///
+    /// `styles` 用于构建期标记 computed visibility hidden/collapse 的元素（命中穿透，
+    /// 见 [`HitWalk`]）；布局树原样保留（hidden 元素仍参与布局，gBCR 返回真实 rect）。
+    pub fn from_document(doc: &Document, layout_root: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> Self {
         let mut nodes = HashMap::new();
         let mut parents = HashMap::new();
         collect_hit_test_nodes(layout_root, doc, &mut nodes, &mut parents);
@@ -37,27 +65,52 @@ impl HitTestCache {
             doc_root: doc.root(),
             nodes,
             parents,
+            hidden: styles
+                .iter()
+                .filter(|(id, style)| {
+                    matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse)
+                        && doc
+                            .get(**id)
+                            .is_some_and(|data| matches!(data.kind, NodeKind::Element(_)))
+                })
+                .map(|(id, _)| *id)
+                .collect(),
         }
     }
 
     /// 命中测试链接，返回 `href`（若存在）。
     pub fn hit_test_link(&self, x: f32, y: f32) -> Option<String> {
+        let walk = HitWalk {
+            point_x: x,
+            point_y: y,
+            is_hidden: &|n| self.hidden.contains(&n),
+        };
         let mut best = (0, self.doc_root);
-        deepest_node_at(&self.layout_root, 0.0, 0.0, x, y, 0, &mut best);
+        deepest_node_at(&self.layout_root, 0.0, 0.0, 0, &mut best, &walk);
         find_link_href_cached(best.1, &self.nodes, &self.parents)
     }
 
     /// 命中测试图片，返回 `src`（若点中 img 或其子元素）。
     pub fn hit_test_image(&self, x: f32, y: f32) -> Option<String> {
+        let walk = HitWalk {
+            point_x: x,
+            point_y: y,
+            is_hidden: &|n| self.hidden.contains(&n),
+        };
         let mut best = (0, self.doc_root);
-        deepest_node_at(&self.layout_root, 0.0, 0.0, x, y, 0, &mut best);
+        deepest_node_at(&self.layout_root, 0.0, 0.0, 0, &mut best, &walk);
         find_image_src_cached(best.1, &self.nodes, &self.parents)
     }
 
     /// 命中测试元素，返回最深元素及其布局盒。
     pub fn hit_test_element(&self, x: f32, y: f32) -> Option<ElementHit> {
+        let walk = HitWalk {
+            point_x: x,
+            point_y: y,
+            is_hidden: &|n| self.hidden.contains(&n),
+        };
         let mut best = (0, self.doc_root);
-        deepest_node_at(&self.layout_root, 0.0, 0.0, x, y, 0, &mut best);
+        deepest_node_at(&self.layout_root, 0.0, 0.0, 0, &mut best, &walk);
         element_hit_from_cache(&self.layout_root, best.1, &self.nodes, &self.parents)
     }
 
@@ -68,8 +121,13 @@ impl HitTestCache {
     /// [`HitTestCache::hit_test_element`]（=`elementFromPoint`）即本序列的首元素。z-index/绝对定位
     /// 的精确绘制序未建模（树深近似，见 elementFromPoint 已知限制）。
     pub fn elements_at_point(&self, x: f32, y: f32) -> Vec<ElementHit> {
+        let walk = HitWalk {
+            point_x: x,
+            point_y: y,
+            is_hidden: &|n| self.hidden.contains(&n),
+        };
         let mut hits: Vec<(usize, NodeId)> = Vec::new();
-        collect_nodes_at(&self.layout_root, 0.0, 0.0, x, y, 0, &mut hits);
+        collect_nodes_at(&self.layout_root, 0.0, 0.0, 0, &mut hits, &walk);
         // 深度降序：最前/最深在前（sort_by_key + Reverse 稳定，同深保文档序）。
         hits.sort_by_key(|b| std::cmp::Reverse(b.0));
         let mut seen: HashSet<NodeId> = HashSet::new();
@@ -108,6 +166,7 @@ impl HitTestCache {
                 })
                 .collect(),
             parents: self.parents.iter().map(|(c, p)| (*c, *p)).collect(),
+            hidden_nodes: self.hidden.iter().map(|id| node_id_to_u64(*id)).collect(),
         }
     }
 
@@ -134,6 +193,7 @@ impl HitTestCache {
                 })
                 .collect(),
             parents: snap.parents.into_iter().collect(),
+            hidden: snap.hidden_nodes.into_iter().map(node_id_from_u64).collect(),
         }
     }
 
@@ -211,6 +271,8 @@ pub struct HitTestCacheSnapshot {
     pub nodes: Vec<(NodeId, HitTestNodeSnapshot)>,
     /// 父节点索引。
     pub parents: Vec<(NodeId, NodeId)>,
+    /// computed visibility hidden/collapse 的元素（[`node_id_to_u64`] 编码；命中穿透）。
+    pub hidden_nodes: Vec<u64>,
 }
 
 fn layout_snapshot_from_box(layout: &LayoutBox) -> HitTestLayoutSnapshot {
@@ -386,23 +448,27 @@ fn deepest_node_at(
     layout: &LayoutBox,
     abs_x: f32,
     abs_y: f32,
-    point_x: f32,
-    point_y: f32,
     depth: usize,
     best: &mut (usize, NodeId),
+    walk: &HitWalk,
 ) {
     let box_x = abs_x + layout.x;
     let box_y = abs_y + layout.y;
-    let contains =
-        point_x >= box_x && point_y >= box_y && point_x < box_x + layout.width && point_y < box_y + layout.height;
+    let contains = walk.point_x >= box_x
+        && walk.point_y >= box_y
+        && walk.point_x < box_x + layout.width
+        && walk.point_y < box_y + layout.height;
 
     // S12（cdp-protocol hit-target）：**不按祖先包含剪枝**——祖先盒不包含点仍继续下探，
     // 只把「盒包含点」的节点记入候选。祖先盒可能小于溢出的子内容（实测：body 高 6px、
     // 按钮 24.6px 溢出——按钮在自身中心 elementFromPoint 返 html 兜底）；真浏览器按绘制
     // 盒命中，溢出内容（overflow:visible）可命中。overflow:hidden 的裁剪语义未建模
     //（FIXME：被裁剪子盒在此近似下仍可命中，边缘语义偏差可接受）。
+    // CSS Visibility：hidden/collapse 盒不绘制，剥夺候选资格但继续下探（后代显式
+    // visible 仍可命中）。https://drafts.csswg.org/css-visibility/#visibility
     if contains
         && let Some(node_id) = layout.node_id
+        && !(walk.is_hidden)(node_id)
         && depth >= best.0
     {
         *best = (depth, node_id);
@@ -410,36 +476,40 @@ fn deepest_node_at(
 
     let (child_x, child_y) = child_origin(layout, box_x, box_y);
     for child in &layout.children {
-        deepest_node_at(child, child_x, child_y, point_x, point_y, depth + 1, best);
+        deepest_node_at(child, child_x, child_y, depth + 1, best, walk);
     }
 }
 
-/// 收集所有包含 `(point_x, point_y)` 的盒节点（含深度），供 [`HitTestCache::elements_at_point`]。
+/// 收集所有包含 `(walk.point_x, walk.point_y)` 的盒节点（含深度），供 [`HitTestCache::elements_at_point`]。
 /// 镜像 [`deepest_node_at`] 的包含判定与坐标累积（同 `LayoutBox` 坐标相对父内容区须累积），
 /// 但收集全部命中盒而非仅最深。点不在盒内则不递归（与 `deepest_node_at` 一致）。
 fn collect_nodes_at(
     layout: &LayoutBox,
     abs_x: f32,
     abs_y: f32,
-    point_x: f32,
-    point_y: f32,
     depth: usize,
     out: &mut Vec<(usize, NodeId)>,
+    walk: &HitWalk,
 ) {
     let box_x = abs_x + layout.x;
     let box_y = abs_y + layout.y;
-    let contains =
-        point_x >= box_x && point_y >= box_y && point_x < box_x + layout.width && point_y < box_y + layout.height;
+    let contains = walk.point_x >= box_x
+        && walk.point_y >= box_y
+        && walk.point_x < box_x + layout.width
+        && walk.point_y < box_y + layout.height;
 
     // S12：同 deepest_node_at——不按祖先包含剪枝（溢出子内容可命中），仅记录包含点
-    // 的盒（elementsAtPoint 序列语义不变）。
-    if contains && let Some(node_id) = layout.node_id {
+    // 的盒（elementsAtPoint 序列语义不变）；hidden/collapse 盒剥夺候选资格。
+    if contains
+        && let Some(node_id) = layout.node_id
+        && !(walk.is_hidden)(node_id)
+    {
         out.push((depth, node_id));
     }
 
     let (child_x, child_y) = child_origin(layout, box_x, box_y);
     for child in &layout.children {
-        collect_nodes_at(child, child_x, child_y, point_x, point_y, depth + 1, out);
+        collect_nodes_at(child, child_x, child_y, depth + 1, out, walk);
     }
 }
 
@@ -592,23 +662,57 @@ fn element_hit_from_node(doc: &Document, layout: &LayoutBox, node: NodeId) -> Op
 }
 
 /// 在文档布局中命中测试链接，返回 `href`（若存在）。
-pub fn hit_test_link(doc: &Document, layout: &LayoutBox, x: f32, y: f32) -> Option<String> {
+/// `styles` 供 visibility 命中穿透判定（hidden 盒不参与命中，见 [`HitWalk`]）。
+pub fn hit_test_link(
+    doc: &Document,
+    layout: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    x: f32,
+    y: f32,
+) -> Option<String> {
+    let walk = HitWalk {
+        point_x: x,
+        point_y: y,
+        is_hidden: &|n| is_hidden_style(styles, n),
+    };
     let mut best = (0, doc.root());
-    deepest_node_at(layout, 0.0, 0.0, x, y, 0, &mut best);
+    deepest_node_at(layout, 0.0, 0.0, 0, &mut best, &walk);
     find_link_href(doc, best.1)
 }
 
 /// 在文档布局中命中测试图片，返回 `src`（文档原始值，未绝对化）。
-pub fn hit_test_image(doc: &Document, layout: &LayoutBox, x: f32, y: f32) -> Option<String> {
+pub fn hit_test_image(
+    doc: &Document,
+    layout: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    x: f32,
+    y: f32,
+) -> Option<String> {
+    let walk = HitWalk {
+        point_x: x,
+        point_y: y,
+        is_hidden: &|n| is_hidden_style(styles, n),
+    };
     let mut best = (0, doc.root());
-    deepest_node_at(layout, 0.0, 0.0, x, y, 0, &mut best);
+    deepest_node_at(layout, 0.0, 0.0, 0, &mut best, &walk);
     find_image_src(doc, best.1)
 }
 
 /// 在文档布局中命中测试元素，返回最深元素及其布局盒。
-pub fn hit_test_element(doc: &Document, layout: &LayoutBox, x: f32, y: f32) -> Option<ElementHit> {
+pub fn hit_test_element(
+    doc: &Document,
+    layout: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    x: f32,
+    y: f32,
+) -> Option<ElementHit> {
+    let walk = HitWalk {
+        point_x: x,
+        point_y: y,
+        is_hidden: &|n| is_hidden_style(styles, n),
+    };
     let mut best = (0, doc.root());
-    deepest_node_at(layout, 0.0, 0.0, x, y, 0, &mut best);
+    deepest_node_at(layout, 0.0, 0.0, 0, &mut best, &walk);
     element_hit_from_node(doc, layout, best.1)
 }
 
@@ -666,7 +770,7 @@ mod tests {
             ..LayoutBox::default()
         });
         root.children.push(fieldset_box);
-        let cache = HitTestCache::from_document(&doc, &root);
+        let cache = HitTestCache::from_document(&doc, &root, &HashMap::new());
 
         let hit = cache.hit_test_element(42.0, 53.0).expect("input hit");
         assert_eq!(hit.id.as_deref(), Some("target"));
@@ -689,7 +793,7 @@ mod tests {
             </a>
         </body></html>"#;
         let (doc, layout) = render(html, "a { background-color: #eeeeee; }");
-        let href = hit_test_link(&doc, &layout.root, 50.0, 20.0);
+        let href = hit_test_link(&doc, &layout.root, &HashMap::new(), 50.0, 20.0);
         assert_eq!(href.as_deref(), Some("https://example.com"));
     }
 
@@ -702,7 +806,7 @@ mod tests {
             </a>
         </body></html>"#;
         let (doc, layout) = render(html, "");
-        assert!(hit_test_link(&doc, &layout.root, 900.0, 20.0).is_none());
+        assert!(hit_test_link(&doc, &layout.root, &HashMap::new(), 900.0, 20.0).is_none());
     }
 
     /// 测试点击非链接元素返回 None。
@@ -712,7 +816,7 @@ mod tests {
             <div style="display: block; width: 200px; height: 40px;">Not a link</div>
         </body></html>"#;
         let (doc, layout) = render(html, "");
-        assert!(hit_test_link(&doc, &layout.root, 50.0, 20.0).is_none());
+        assert!(hit_test_link(&doc, &layout.root, &HashMap::new(), 50.0, 20.0).is_none());
     }
 
     // ── 嵌套链接测试 ──
@@ -726,7 +830,7 @@ mod tests {
             </div>
         </body></html>"#;
         let (doc, layout) = render(html, "");
-        let href = hit_test_link(&doc, &layout.root, 30.0, 30.0);
+        let href = hit_test_link(&doc, &layout.root, &HashMap::new(), 30.0, 30.0);
         assert_eq!(href.as_deref(), Some("/page"));
     }
 
@@ -741,7 +845,7 @@ mod tests {
             </div>
         </body></html>"#;
         let (doc, layout) = render(html, "");
-        let href = hit_test_link(&doc, &layout.root, 20.0, 20.0);
+        let href = hit_test_link(&doc, &layout.root, &HashMap::new(), 20.0, 20.0);
         assert!(href.is_some(), "深层嵌套链接应能被命中");
     }
 
@@ -756,10 +860,10 @@ mod tests {
         </body></html>"#;
         let (doc, layout) = render(html, "");
 
-        let href1 = hit_test_link(&doc, &layout.root, 50.0, 10.0);
+        let href1 = hit_test_link(&doc, &layout.root, &HashMap::new(), 50.0, 10.0);
         assert_eq!(href1.as_deref(), Some("/first"));
 
-        let href2 = hit_test_link(&doc, &layout.root, 50.0, 40.0);
+        let href2 = hit_test_link(&doc, &layout.root, &HashMap::new(), 50.0, 40.0);
         assert_eq!(href2.as_deref(), Some("/second"));
     }
 
@@ -772,7 +876,7 @@ mod tests {
             <a href="" style="display: block; width: 200px; height: 40px;">Empty</a>
         </body></html>"#;
         let (doc, layout) = render(html, "");
-        assert!(hit_test_link(&doc, &layout.root, 50.0, 20.0).is_none());
+        assert!(hit_test_link(&doc, &layout.root, &HashMap::new(), 50.0, 20.0).is_none());
     }
 
     /// 测试 href="#" 的链接不应被返回。
@@ -782,7 +886,7 @@ mod tests {
             <a href="#" style="display: block; width: 200px; height: 40px;">Hash</a>
         </body></html>"##;
         let (doc, layout) = render(html, "");
-        assert!(hit_test_link(&doc, &layout.root, 50.0, 20.0).is_none());
+        assert!(hit_test_link(&doc, &layout.root, &HashMap::new(), 50.0, 20.0).is_none());
     }
 
     /// 测试 href 只含空格的链接不应被返回。
@@ -792,7 +896,7 @@ mod tests {
             <a href="  " style="display: block; width: 200px; height: 40px;">Whitespace</a>
         </body></html>"#;
         let (doc, layout) = render(html, "");
-        assert!(hit_test_link(&doc, &layout.root, 50.0, 20.0).is_none());
+        assert!(hit_test_link(&doc, &layout.root, &HashMap::new(), 50.0, 20.0).is_none());
     }
 
     /// 测试点击元素边界（恰好包含）和边界外（恰好不包含）。
@@ -805,14 +909,14 @@ mod tests {
         let (doc, layout) = render(html, "");
 
         // 元素内部（包含左上角，含 body 8px margin 偏移）
-        assert!(hit_test_link(&doc, &layout.root, 8.0, 8.0).is_some());
+        assert!(hit_test_link(&doc, &layout.root, &HashMap::new(), 8.0, 8.0).is_some());
 
         // 元素内部（接近右下角但不超出）
-        let near_edge = hit_test_link(&doc, &layout.root, 107.0, 57.0);
+        let near_edge = hit_test_link(&doc, &layout.root, &HashMap::new(), 107.0, 57.0);
         assert!(near_edge.is_some());
 
         // 元素外部（body margin 区域，不应命中链接）
-        assert!(hit_test_link(&doc, &layout.root, 0.0, 0.0).is_none());
+        assert!(hit_test_link(&doc, &layout.root, &HashMap::new(), 0.0, 0.0).is_none());
     }
 
     /// 测试链接文本包含子元素（如 span）时命中测试仍正确。
@@ -824,7 +928,7 @@ mod tests {
             </a>
         </body></html>"#;
         let (doc, layout) = render(html, "");
-        let href = hit_test_link(&doc, &layout.root, 50.0, 20.0);
+        let href = hit_test_link(&doc, &layout.root, &HashMap::new(), 50.0, 20.0);
         assert_eq!(href.as_deref(), Some("/with-span"));
     }
 
@@ -837,7 +941,7 @@ mod tests {
             </div>
         </body></html>"#;
         let (doc, layout) = render(html, "");
-        let href = hit_test_link(&doc, &layout.root, 120.0, 60.0);
+        let href = hit_test_link(&doc, &layout.root, &HashMap::new(), 120.0, 60.0);
         assert_eq!(href.as_deref(), Some("/abs"));
     }
 
@@ -846,7 +950,7 @@ mod tests {
     fn hit_test_empty_body() {
         let html = "<html><body></body></html>";
         let (doc, layout) = render(html, "");
-        assert!(hit_test_link(&doc, &layout.root, 100.0, 100.0).is_none());
+        assert!(hit_test_link(&doc, &layout.root, &HashMap::new(), 100.0, 100.0).is_none());
     }
 
     // ── deepest_node_at 直接测试 ──
@@ -864,8 +968,14 @@ mod tests {
         let (doc, layout) = render(html, "");
 
         // 点击内部 span 的位置
+        let styles = HashMap::new();
+        let walk = HitWalk {
+            point_x: 10.0,
+            point_y: 10.0,
+            is_hidden: &|n| is_hidden_style(&styles, n),
+        };
         let mut best = (0usize, doc.root());
-        deepest_node_at(&layout.root, 0.0, 0.0, 10.0, 10.0, 0, &mut best);
+        deepest_node_at(&layout.root, 0.0, 0.0, 0, &mut best, &walk);
         // 应该找到一个节点（不一定是 span，取决于布局结果，但深度 > 0）
         assert!(best.0 > 0, "应命中嵌套元素，深度 > 0");
     }
@@ -877,7 +987,7 @@ mod tests {
             <a href="/test" style="display: block; width: 200px; height: 40px;">Link</a>
         </body></html>"#;
         let (doc, layout) = render(html, "");
-        assert!(hit_test_link(&doc, &layout.root, -10.0, -10.0).is_none());
+        assert!(hit_test_link(&doc, &layout.root, &HashMap::new(), -10.0, -10.0).is_none());
     }
 
     /// 元素命中测试返回标签与属性。
@@ -887,7 +997,7 @@ mod tests {
             r#"<html><body><div id="main" class="box" style="width:100px;height:40px">Hello</div></body></html>"#;
         let css = "div { display: block; }";
         let (doc, layout) = render(html, css);
-        let hit = hit_test_element(&doc, &layout.root, 10.0, 10.0).expect("element");
+        let hit = hit_test_element(&doc, &layout.root, &HashMap::new(), 10.0, 10.0).expect("element");
         assert_eq!(hit.tag_name, "div");
         assert_eq!(hit.id.as_deref(), Some("main"));
         assert_eq!(hit.class_name.as_deref(), Some("box"));
@@ -901,7 +1011,7 @@ mod tests {
     fn hit_test_element_returns_wrapped_text_input() {
         let html = r#"<html><body style="margin:0"><label>Name <input id="name" style="display:block;width:160px;height:32px"></label></body></html>"#;
         let (doc, layout) = render(html, "");
-        let hit = hit_test_element(&doc, &layout.root, 10.0, 25.0).expect("input element");
+        let hit = hit_test_element(&doc, &layout.root, &HashMap::new(), 10.0, 25.0).expect("input element");
         assert_eq!(hit.tag_name, "input");
         assert_eq!(hit.id.as_deref(), Some("name"));
     }
@@ -912,7 +1022,115 @@ mod tests {
             <a href="/page?foo=bar#section" style="display: block; width: 200px; height: 40px;">Link</a>
         </body></html>"#;
         let (doc, layout) = render(html, "");
-        let href = hit_test_link(&doc, &layout.root, 50.0, 20.0);
+        let href = hit_test_link(&doc, &layout.root, &HashMap::new(), 50.0, 20.0);
         assert_eq!(href.as_deref(), Some("/page?foo=bar#section"));
+    }
+
+    /// 辅助函数：render + 保留 computed style 图（visibility 用例需要）。
+    fn render_with_styles(
+        html: &str,
+        css: &str,
+    ) -> (
+        Document,
+        zero_layout_engine::LayoutResult,
+        HashMap<NodeId, ComputedStyle>,
+    ) {
+        let doc = zero_dom::parse_html(html);
+        let stylesheets = vec![Parser::parse_stylesheet(css)];
+        let mut style_system = StyleSystem::new();
+        style_system.set_viewport(800.0, 600.0);
+        let styles = style_system.compute_styles(&doc, &stylesheets);
+        let mut layout_engine = LayoutEngine::new(800.0, 600.0);
+        let layout = layout_engine.compute(&doc, &styles);
+        (doc, layout, styles)
+    }
+
+    /// CSS Visibility：hidden 覆盖盒不参与命中，点击穿透到下层可见链接（free-fn 路径，
+    /// renderer 真实输入 + elementFromPoint 消费）。复现 html5test.com 落地页：
+    /// 后绘制 hidden 公告 P 覆盖可见链接，深度打平时（修复前）后绘制者赢 → 命中 P。
+    /// https://drafts.csswg.org/css-visibility/#visibility
+    #[test]
+    fn hit_passes_through_hidden_overlay_to_visible_link() {
+        let html = r#"<html><body>
+            <a id="link" href="/p2" style="position:absolute; left:10px; top:10px; width:100px; height:40px;">go</a>
+            <p id="cover" style="position:absolute; left:0px; top:0px; width:200px; height:100px; visibility:hidden;">notice</p>
+        </body></html>"#;
+        let (doc, layout, styles) = render_with_styles(html, "");
+        let hit = hit_test_element(&doc, &layout.root, &styles, 50.0, 30.0).expect("hit link");
+        assert_eq!(hit.id.as_deref(), Some("link"), "hidden 覆盖盒应被跳过，命中链接");
+        assert_eq!(
+            hit_test_link(&doc, &layout.root, &styles, 50.0, 30.0).as_deref(),
+            Some("/p2"),
+            "hidden 覆盖下链接默认动作可达"
+        );
+    }
+
+    /// 缓存路径（elementFromPoint/elementsFromPoint 消费）：from_document 构建期记录
+    /// hidden 集合，缓存查询同样穿透；hidden 集合随 snapshot/from_snapshot 跨进程一致。
+    #[test]
+    fn cache_hit_test_skips_hidden_overlay() {
+        let html = r#"<html><body>
+            <a id="link" href="/p2" style="position:absolute; left:10px; top:10px; width:100px; height:40px;">go</a>
+            <p id="cover" style="position:absolute; left:0px; top:0px; width:200px; height:100px; visibility:hidden;">notice</p>
+        </body></html>"#;
+        let (doc, layout, styles) = render_with_styles(html, "");
+        let cache = HitTestCache::from_document(&doc, &layout.root, &styles);
+        let hit = cache.hit_test_element(50.0, 30.0).expect("hit link");
+        assert_eq!(hit.id.as_deref(), Some("link"));
+        let stack = cache.elements_at_point(50.0, 30.0);
+        assert!(!stack.is_empty());
+        assert_eq!(stack[0].id.as_deref(), Some("link"), "elementsAtPoint 首元素应为链接");
+        // 跨进程快照往返后语义一致（browser tab_js_worker 消费此形态）。
+        let restored = HitTestCache::from_snapshot(cache.snapshot());
+        assert_eq!(
+            restored.hit_test_element(50.0, 30.0).expect("hit link").id.as_deref(),
+            Some("link")
+        );
+    }
+
+    /// hidden 祖先 + 显式 `visibility: visible` 后代：后代仍可命中（CSS 允许 hidden
+    /// 祖先下 visible 后代可见绘制）；且布局保留——hidden 元素 gBCR rect 不丢失。
+    #[test]
+    fn visible_descendant_of_hidden_ancestor_still_hit() {
+        let html = r#"<html><body>
+            <div id="panel" style="position:absolute; left:0px; top:0px; width:200px; height:100px; visibility:hidden;">
+                <a id="link" href="/p2" style="position:absolute; left:10px; top:10px; width:100px; height:40px; visibility:visible;">go</a>
+            </div>
+        </body></html>"#;
+        let (doc, layout, styles) = render_with_styles(html, "");
+        let hit = hit_test_element(&doc, &layout.root, &styles, 50.0, 30.0).expect("hit link");
+        assert_eq!(hit.id.as_deref(), Some("link"), "显式 visible 后代仍可命中");
+        // 布局保留：hidden 祖先的 rect 仍可查（gBCR 消费 fill_layout_rect_snapshot）。
+        let cache = HitTestCache::from_document(&doc, &layout.root, &styles);
+        let rects = crate::rect_bridge::new_layout_rect_snapshot();
+        cache.fill_layout_rect_snapshot(&rects);
+        let panel = doc.get_element_by_id("panel").expect("panel");
+        assert!(
+            rects.lock().unwrap().contains_key(&node_id_to_u64(panel)),
+            "hidden 元素布局 rect 不应丢失（gBCR 保真）"
+        );
+    }
+
+    /// `visibility: collapse` 与 hidden 同义处理（与绘制侧 painter 谓词一致）。
+    #[test]
+    fn visibility_collapse_skipped_like_hidden() {
+        let html = r#"<html><body>
+            <a id="link" href="/p2" style="position:absolute; left:10px; top:10px; width:100px; height:40px;">go</a>
+            <p id="cover" style="position:absolute; left:0px; top:0px; width:200px; height:100px; visibility:collapse;">notice</p>
+        </body></html>"#;
+        let (doc, layout, styles) = render_with_styles(html, "");
+        let hit = hit_test_element(&doc, &layout.root, &styles, 50.0, 30.0).expect("hit link");
+        assert_eq!(hit.id.as_deref(), Some("link"));
+    }
+
+    /// 链接自身 hidden（无可见后代）时不可点击：hit_test_link 返 None（可见内容缺失，
+    /// 无可激活目标）。
+    #[test]
+    fn hidden_link_itself_not_clickable() {
+        let html = r#"<html><body>
+            <a id="link" href="/p2" style="position:absolute; left:10px; top:10px; width:100px; height:40px; visibility:hidden;">go</a>
+        </body></html>"#;
+        let (doc, layout, styles) = render_with_styles(html, "");
+        assert!(hit_test_link(&doc, &layout.root, &styles, 50.0, 30.0).is_none());
     }
 }

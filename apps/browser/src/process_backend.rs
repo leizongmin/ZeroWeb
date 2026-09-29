@@ -2161,6 +2161,7 @@ mod navigation_contract_tests {
             ))
             .collect(),
             parents: Default::default(),
+            hidden_nodes: Vec::new(),
         });
 
         ProcessTabBackend::apply_inbound_message(
