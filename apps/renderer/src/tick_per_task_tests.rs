@@ -121,3 +121,54 @@ fn tick_combined_mode_default_does_not_call_tick_once() {
         .unwrap();
     assert_eq!(delivered.trim(), "1/1", "双 observer 初通知均可达");
 }
+
+#[test]
+fn dynamic_external_scripts_host_fetch_fires_element_error_event() {
+    // R-baidu8：动态外链脚本走宿主取回（PendingDynamicScripts + ResourceFetchMeta::SCRIPT，
+    // no-cors 脚本语义），不再用页面 fetch()（cors 语义）+ eval——无 ACAO 脚本源在页面 fetch
+    // 下永远失败。stub network 取回失败 → 元素 error 事件（R2944 镜像，shim 按 src 绝对 URL
+    // 匹配派发）+ 队列排空。
+    let html = r#"<html><head><script>
+      var s = document.createElement('script');
+      s.src = '/dyn.js';
+      s.onerror = function () { globalThis.__dynErr = (globalThis.__dynErr | 0) + 1; };
+      document.head.appendChild(s);
+    </script></head><body></body></html>"#;
+    let url = "https://zero.test/dynamic-scripts";
+    let mut runtime = RendererRuntime::new(9111);
+    runtime.compositor_publish = None;
+    runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
+    runtime.stub_network = true;
+    runtime.current_url = Some(url.to_string());
+    runtime.cached_html = html.to_string();
+    runtime.webview.as_mut().unwrap().load_html(html, None);
+    {
+        let mut ctx = PageScriptContext {
+            html: &mut runtime.cached_html,
+            url,
+            js_worker: &runtime.js_worker,
+            webview: runtime.webview.as_mut(),
+        };
+        page_scripts::run_page_scripts(&mut ctx, true, |_url| Err::<String, String>("no fetch".into()));
+        // 页面脚本 appendChild 的 <script src="/dyn.js"> 落定（真实流程由主循环每轮
+        // drain_pending_script_mutations 驱动；run_page_scripts chunk 内已即时 apply 时此调用 no-op）。
+        let _ = page_scripts::drain_pending_dom_mutations(&mut ctx);
+    }
+    assert!(
+        runtime.cached_html.contains("/dyn.js"),
+        "appendChild mutation 落定到 cached_html（动态脚本提取源）"
+    );
+    runtime.execute_new_dynamic_scripts();
+    assert!(runtime.pending_dynamic_scripts.is_some(), "动态外链脚本入队");
+    runtime.tick_dynamic_scripts().expect("tick dynamic scripts");
+    assert!(runtime.pending_dynamic_scripts.is_none(), "stub 即刻 Err → 队列排空");
+    let fired = runtime
+        .js_worker
+        .execute_script_direct("String(globalThis.__dynErr | 0)")
+        .unwrap();
+    assert_eq!(
+        fired.trim(),
+        "1",
+        "取回失败 → 元素 error 事件一次（R2944 镜像按 src 绝对 URL 匹配；createElement 产物经 __zw_handle_for_selector 反查命中 handle 监听）"
+    );
+}

@@ -13,7 +13,7 @@ use crate::{compositor_publish_thread, error_page, ipc_indexed_db, page_scripts,
 
 use crate::js_worker::RendererJsWorker;
 use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, run_page_scripts};
-use crate::script_prefetch::PendingScriptPrefetch;
+use crate::script_prefetch::{PendingDynamicScripts, PendingScriptPrefetch};
 use crate::service_worker_host;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -197,6 +197,8 @@ pub(crate) struct RendererRuntime {
     pending_load: Option<PendingLoad>,
     /// 页面 HTML/CSS/图片加载完成后的非阻塞脚本预取。
     pending_script_prefetch: Option<PendingScriptPrefetch>,
+    /// 运行中页面插入的动态外链脚本宿主取回队列（完成回调里执行 + 派 load/error）。
+    pending_dynamic_scripts: Option<PendingDynamicScripts>,
     /// 本文档中已经开始执行的外链脚本绝对 URL（含解析期与动态插入脚本）。
     executed_external_scripts: HashSet<String>,
     /// 进行中的非阻塞 IPC fetch（request_id → Receiver 完成端）。
@@ -401,6 +403,7 @@ impl RendererRuntime {
             sent_image_keys: std::collections::HashSet::new(),
             pending_load: None,
             pending_script_prefetch: None,
+            pending_dynamic_scripts: None,
             executed_external_scripts: HashSet::new(),
             inflight_fetches: InflightIpcFetches::new(),
             stub_network: false,
@@ -566,11 +569,13 @@ impl RendererRuntime {
         Ok(())
     }
 
-    /// 启动由运行中页面插入的经典外链脚本。
+    /// 启动由运行中页面插入的经典外链脚本的宿主侧取回（纯入队）。
     ///
     /// https://html.spec.whatwg.org/multipage/scripting.html#the-script-element
-    /// 脚本元素连入 document 后须取回并执行。当前多进程加载器只预取初始 HTML 中的
-    /// `<script>`，故这里复用页面 worker 已有的 fetch 宿主异步取回后在同一全局执行；其
+    /// 脚本元素连入 document 后须取回并执行。script 取回是资源取回（no-cors 语义），不经
+    /// 页面 `fetch()`（cors 语义 + CORS 检查——无 ACAO 的脚本源在此路径下永远失败，baidu
+    /// a.js live）。经与初始脚本相同的宿主通路（`PendingDynamicScripts` + IpcAsyncFetchHost
+    /// `ResourceFetchMeta::SCRIPT`）取回，`tick_dynamic_scripts` 完成后执行并派 load/error。
     /// 产生的 DOM 变更由下一轮 `drain_pending_script_mutations` 提交。
     fn execute_new_dynamic_scripts(&mut self) {
         let Some(base_url) = self.current_url.as_deref() else {
@@ -584,16 +589,63 @@ impl RendererRuntime {
             if !self.executed_external_scripts.insert(url.clone()) {
                 continue;
             }
-            // 诊断保真：catch 序列化失败原因（Error → stack || message）并携带目标
-            // URL——Error 对象序列化后是空壳（无 message/栈），动态脚本加载失败无法
-            // 定位（baidu live）。
-            let loader = format!(
-                "fetch({url:?}).then(function(response) {{ return response.text(); }}).then(function(source) {{ (0, eval)(source); }}).catch(function(error) {{ console.error('dynamic script load failed', {url:?}, error && (error.stack || error.message) || String(error)); }});"
-            );
-            if let Err(error) = self.js_worker.execute_script_direct(&loader) {
-                tracing::warn!(%url, "dynamic script loader setup failed: {error}");
+            self.pending_dynamic_scripts
+                .get_or_insert_with(PendingDynamicScripts::new)
+                .push(url);
+        }
+    }
+
+    /// 非阻塞推进动态外链脚本取回；完成即执行并派元素级 load/error 事件。
+    fn tick_dynamic_scripts(&mut self) -> Result<(), String> {
+        self.drain_inflight_fetch_responses();
+        let Some(mut pending) = self.pending_dynamic_scripts.take() else {
+            return Ok(());
+        };
+
+        const DYNAMIC_SCRIPT_PARALLEL: usize = 4;
+        let mut completions: Vec<(String, Result<String, String>)> = Vec::new();
+        if self.stub_network {
+            let mut host = StubAsyncFetchHost;
+            pending.tick(&mut host, DYNAMIC_SCRIPT_PARALLEL, |url, result| {
+                completions.push((url.to_string(), result.map(str::to_string).map_err(str::to_string)));
+            });
+        } else {
+            let outbound = &mut self.outbound;
+            let next_fetch_id = &mut self.next_fetch_id;
+            let inflight = &mut self.inflight_fetches;
+            let mut host = IpcAsyncFetchHost::new(outbound, next_fetch_id, inflight);
+            pending.tick(&mut host, DYNAMIC_SCRIPT_PARALLEL, |url, result| {
+                completions.push((url.to_string(), result.map(str::to_string).map_err(str::to_string)));
+            });
+        }
+        if pending.is_active() {
+            self.pending_dynamic_scripts = Some(pending);
+        }
+
+        if !completions.is_empty() {
+            // R2944 匹配面刷新：元素级 load/error 派发按宿主快照匹配（`__zw_query_all` 读
+            // worker 持有的 dom_html 快照），mutation 落定（drain_pending_script_mutations）
+            // 不自动换代快照——派发/执行前刷到当前 cached_html，动态插入的元素才可见
+            //（镜像 run_page_scripts 每 chunk 执行前 set_dom_snapshot 的语义）。
+            let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+            self.js_worker.set_dom_snapshot(&self.cached_html, &current_url);
+        }
+
+        for (url, result) in completions {
+            match result {
+                Ok(source) => match self.js_worker.execute_script_direct(&source) {
+                    Ok(_) => page_scripts::dispatch_script_event(&self.js_worker, &url, "load"),
+                    // spec：脚本执行/解析错误走 window 错误报告，不派元素 error 事件。
+                    Err(error) => tracing::warn!(%url, "dynamic script execute failed: {error}"),
+                },
+                Err(error) => {
+                    // 取回失败 → 元素 error 事件（R2944 镜像；shim 按 src 绝对 URL 匹配派发）。
+                    tracing::warn!(%url, "dynamic script load failed: {error}");
+                    page_scripts::dispatch_script_event(&self.js_worker, &url, "error");
+                }
             }
         }
+        Ok(())
     }
 
     /// 请求发布当前页面帧。输入事务内只累计失效，在最外层边界实际发送一次。
@@ -2649,7 +2701,10 @@ impl RendererRuntime {
         tracing::info!("渲染进程 {} 启动，等待 IPC 消息...", self.renderer_id);
 
         loop {
-            if self.pending_load.is_some() || self.pending_script_prefetch.is_some() {
+            if self.pending_load.is_some()
+                || self.pending_script_prefetch.is_some()
+                || self.pending_dynamic_scripts.is_some()
+            {
                 self.drain_inflight_fetch_responses();
                 if self.pending_load.is_some()
                     && let Err(e) = self.tick_pending_load()
@@ -2668,6 +2723,16 @@ impl RendererRuntime {
                         return Ok(());
                     }
                     tracing::error!("脚本预取 tick 错误: {e}");
+                }
+                // R-baidu8：动态外链脚本宿主取回推进（完成即执行 + 派 load/error）。
+                if self.pending_dynamic_scripts.is_some()
+                    && let Err(e) = self.tick_dynamic_scripts()
+                {
+                    if browser_ipc_disconnected(&e) {
+                        tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                        return Ok(());
+                    }
+                    tracing::error!("动态脚本取回 tick 错误: {e}");
                 }
             }
 
