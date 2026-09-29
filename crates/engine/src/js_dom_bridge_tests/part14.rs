@@ -934,6 +934,114 @@ fn test_canvas_create_image_bitmap_sources_r3310() {
 }
 
 #[test]
+fn test_canvas_create_image_bitmap_img_source_r_baidu7() {
+    // R-baidu7：createImageBitmap HTMLImageElement 源（spec CanvasImageSource，
+    // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#createimagebitmap）。
+    // baidu live fetch→img→createImageBitmap 管线 ×3 unhandled rejection 主根因：
+    // _zwImageBitmapSourceToWire 缺元素分支 → null → "不支持的 source 或解码失败"
+    //（live probe：同图 Blob 源 OK、元素源 FAIL——解码能力在，元素 wire 编码缺失）。
+    // 修复镜像 drawImage img 源 G5 路径（__zw_get_image_wire）。断言面：
+    // ① 已加载 img（stub 尺寸查询 naturalWidth>0）resolve；② drawImage(bitmap) 真栅格；
+    // ③ 未加载 img（naturalWidth=0）→ 现行通用拒绝（spec broken→InvalidStateError/
+    // await-load 挂 shim FIXME）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='dst' width='10' height='10'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // host 桩（webview 运行时同位注册）：尺寸查询（naturalWidth 面）+ wire 编码
+    //（1×1 红 = "1:1;255,0,0,255"，与 getImageData wire 同形——host image_cache 出口）。
+    sandbox.register_callback(
+        "__zw_get_image_size",
+        Box::new(|args| {
+            if args.first().map(String::as_str) == Some("red.png") {
+                "1,1".to_string()
+            } else {
+                String::new()
+            }
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_get_image_wire",
+        Box::new(|args| {
+            if args.first().map(String::as_str) == Some("red.png") {
+                "1:1;255,0,0,255".to_string()
+            } else {
+                String::new()
+            }
+        }),
+    );
+
+    sandbox
+        .execute(
+            "var img = new Image();\
+             img.src = 'red.png';\
+             globalThis.__natW = String(img.naturalWidth);\
+             createImageBitmap(img).then(function (bm) {\
+               globalThis.__bmW = String(bm.width);\
+               var ctx = document.getElementById('dst').getContext('2d');\
+               ctx.drawImage(bm, 0, 0);\
+               var px = ctx.getImageData(0, 0, 1, 1).data;\
+               globalThis.__red = String(px[0] + ',' + px[1] + ',' + px[2]);\
+               globalThis.__state = 'ok';\
+             }, function (err) {\
+               globalThis.__state = 'reject:' + String(err && err.message ? err.message : err);\
+             });\
+             var img2 = new Image();\
+             img2.src = 'missing.png';\
+             createImageBitmap(img2).then(function () {\
+               globalThis.__missState = 'ok';\
+             }, function (err) {\
+               globalThis.__missState = 'reject:' + String(err && err.message ? err.message : err);\
+             });",
+        )
+        .unwrap();
+    // microtask 排空（createImageBitmap Promise 链 1-2 轮，镜像 R3309 drain 模式）。
+    sandbox.execute("globalThis.__noop = 1;").unwrap();
+    sandbox.execute("globalThis.__noop = 2;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("globalThis.__natW").unwrap().value,
+        "1",
+        "已加载 img 的 naturalWidth 经 host 尺寸查询为 1"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__state").unwrap().value,
+        "ok",
+        "createImageBitmap(已加载 img) 应 resolve（元素分支 → __zw_get_image_wire）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__bmW").unwrap().value,
+        "1",
+        "ImageBitmap.width = 1（wire 维度）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__red").unwrap().value,
+        "255,0,0",
+        "drawImage(bitmap from img) 真栅格——红色像素"
+    );
+    assert!(
+        sandbox
+            .execute("globalThis.__missState")
+            .unwrap()
+            .value
+            .starts_with("reject:"),
+        "未加载 img（naturalWidth=0）→ 通用拒绝路径"
+    );
+}
+
+#[test]
 fn test_canvas_create_image_bitmap_crop_r3311() {
     // R3311：createImageBitmap options（sx/sy/sw/sh source 裁剪）——ImageBitmap 面收尾切片。
     // R3309/R3310 defer 项。spec `createImageBitmap(source, sx, sy, sw, sh)` 取 source 子矩形。
