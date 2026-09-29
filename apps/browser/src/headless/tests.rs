@@ -1854,3 +1854,21 @@ fn paint_frame_fonts_import_downloaded_bytes_and_rewrite_surface_local_ids() {
         "rejected frame must keep last good registry"
     );
 }
+
+/// IndexedDbRequest 在 headless 中必须以带错误的 IndexedDbResponse 快速应答，
+/// 而非静默丢弃：renderer 的 `__zw_idb` 宿主桥同步阻塞等待应答（recv_timeout 20s），
+/// 丢弃会让 worker 线程挂起至 execute 看门狗终止整个脚本、微任务队列全部丢失。
+/// 本测试 pin 错误串的 wire 契约（shim `_zwIDBHostCall` 按首个 `:` 解析
+/// DOMException name，factory.open 转为 request 的 error 事件）。
+#[test]
+fn test_indexed_db_unavailable_error_wire_shape() {
+    let error = super::session::headless_indexed_db_unavailable_error();
+    let separator = error
+        .find(':')
+        .expect("error must carry '<DOMException name>: <message>' wire shape");
+    assert_eq!(&error[..separator], "UnknownError", "shim maps name to DOMException");
+    assert!(
+        !error[separator + 1..].trim().is_empty(),
+        "message must be non-empty for diagnosability"
+    );
+}

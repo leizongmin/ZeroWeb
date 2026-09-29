@@ -9,8 +9,8 @@ use zero_net::cookie::CookieStore;
 use zero_net::{HttpClient, HttpMethod, HttpRequest};
 #[cfg(not(test))]
 use zero_protocol::message::{
-    AutomationOperation, AutomationRequest, AutomationResult, FetchParams, FramePublishMode, IpcMessage,
-    IpcMessageKind, LoadHtmlParams,
+    AutomationOperation, AutomationRequest, AutomationResult, FetchParams, FramePublishMode, IndexedDbResponseParams,
+    IpcMessage, IpcMessageKind, LoadHtmlParams,
 };
 use zero_protocol::message::{
     AutomationValue, ImeEventParams, ImeEventType, IpcColorScheme, IpcMediaType, KeyboardEventParams,
@@ -231,6 +231,13 @@ impl HeadlessSession {
     }
 }
 
+/// headless 会话对 `IndexedDbRequest` 的统一错误应答串。wire 契约：
+/// `"<DOMException name>: <message>"`——shim `_zwIDBHostCall` 按首个 `:` 解析
+/// DOMException name 并抛出，factory.open 转为 request 的 error 事件。
+pub(super) fn headless_indexed_db_unavailable_error() -> String {
+    "UnknownError: IndexedDB is unavailable in headless mode".to_string()
+}
+
 /// 进程级共享系统字体表作基表（与 BrowserApp/renderer 枚举同源 → 数字 ID 对齐）；
 /// 首次解析 ~0.5s 后进程内缓存，会话构建均摊免费。
 fn new_session_paint_fonts() -> zero_paint_convert::fonts::PaintFonts {
@@ -420,6 +427,28 @@ impl HeadlessSession {
                     .send(IpcMessage {
                         id: message.id,
                         kind: IpcMessageKind::ServiceWorkerResponse(ServiceWorkerResponseParams { result }),
+                    })
+                    .map_err(|error| error.to_string())?;
+                Ok(None)
+            }
+            // IndexedDbRequest 必须应答：renderer 的 `__zw_idb` 宿主桥在
+            // `IndexedDbRequest` 发出后同步阻塞等待 `IndexedDbResponse`（recv_timeout
+            // 20s）。若落入 catch-all 静默丢弃，renderer worker 线程挂起至 execute
+            // 看门狗（TAB_JS_EXEC_TIMEOUT_MS）终止整个脚本，微任务队列随之丢失——
+            // 页面所有 pending 回调（IDB onsuccess/onerror 及排队其后的任务）永不触发。
+            // headless 无存储后端，按 Indexed DB 规范的错误路径快速失败：错误串遵循
+            // `"<DOMException name>: <message>"` wire 契约（shim `_zwIDBHostCall` 按首个
+            // `:` 解析 name 抛 DOMException，factory.open 转为 request 的 error 事件，
+            // spec: https://www.w3.org/TR/IndexedDB/#open-a-database-request）。
+            IpcMessageKind::IndexedDbRequest(_) => {
+                let response = IndexedDbResponseParams {
+                    response: None,
+                    error: Some(headless_indexed_db_unavailable_error()),
+                };
+                self.renderer
+                    .send(IpcMessage {
+                        id: message.id,
+                        kind: IpcMessageKind::IndexedDbResponse(response),
                     })
                     .map_err(|error| error.to_string())?;
                 Ok(None)
