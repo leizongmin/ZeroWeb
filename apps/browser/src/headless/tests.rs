@@ -3,6 +3,7 @@
 use super::*;
 
 use serde_json::Value;
+use zero_protocol::message::{IndexedDbResponseParams, IpcMessage, IpcMessageKind};
 
 #[test]
 fn test_server_new() {
@@ -1852,5 +1853,43 @@ fn paint_frame_fonts_import_downloaded_bytes_and_rewrite_surface_local_ids() {
         paint_fonts.loader.get_font_data(glyphs[0].font_id),
         Some(ahem.as_slice()),
         "rejected frame must keep last good registry"
+    );
+}
+
+/// IndexedDbRequest 在 headless 中必须以带错误的 IndexedDbResponse 快速应答，
+/// 而非静默丢弃：renderer 的 `__zw_idb` 宿主桥同步阻塞等待应答（recv_timeout 20s），
+/// 丢弃会让 worker 线程挂起至 execute 看门狗终止整个脚本、微任务队列全部丢失。
+/// 本测试 pin 错误串的 wire 契约（shim `_zwIDBHostCall` 按首个 `:` 解析
+/// DOMException name，factory.open 转为 request 的 error 事件）。
+#[test]
+fn test_indexed_db_unavailable_error_wire_shape() {
+    let error = super::session::headless_indexed_db_unavailable_error();
+    let separator = error
+        .find(':')
+        .expect("error must carry '<DOMException name>: <message>' wire shape");
+    assert_eq!(&error[..separator], "UnknownError", "shim maps name to DOMException");
+    assert!(
+        !error[separator + 1..].trim().is_empty(),
+        "message must be non-empty for diagnosability"
+    );
+}
+
+/// 应答形状回归钉（测试有效性审查 F1）：id 必须原样回带（renderer router 按
+/// id 匹配 pending 等待者，ipc_indexed_db.rs），kind 必须是 IndexedDbResponse，
+/// 字段组合必须是 `response: None + error: Some`（经 response_result 统一映射
+/// 为宿主错误）。应答臂被删除或改坏 id 回带时本测试失败。
+#[test]
+fn test_indexed_db_response_carries_id_and_error_shape() {
+    let request_id = 0x8000_0000_0000_0000;
+    let message = super::session::headless_indexed_db_response_for(request_id);
+    assert_eq!(message.id, request_id, "id must be echoed for pending-router match");
+    let IpcMessageKind::IndexedDbResponse(params) = message.kind else {
+        panic!("kind must be IndexedDbResponse");
+    };
+    assert!(params.response.is_none(), "headless has no storage backend");
+    assert_eq!(
+        params.error.as_deref(),
+        Some(super::session::headless_indexed_db_unavailable_error().as_str()),
+        "error must carry the unified headless unavailability error"
     );
 }
