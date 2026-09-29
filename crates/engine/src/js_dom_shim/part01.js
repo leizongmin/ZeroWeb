@@ -2090,6 +2090,20 @@
           else resolve(_schemeHit.response);
           return;
         }
+        // https://fetch.spec.whatwg.org/#append-a-request-origin-header — HTTP-network fetch
+        // 托管注入 `Origin`：response tainting 为 "cors"（跨域 cors fetch）→ append 序列化的
+        // 文档 origin。此前缺失该头时，条件性 ACAO 服务端（请求无 Origin 即省略
+        // access-control-allow-origin，如 baidu hectorstatic）的响应被判 CORS 失败（live：
+        // 页面跨域 fetch 全部 `Failed to fetch`，Chrome 同请求成功）。页面 JS 不可自设 Origin
+        //（forbidden request-header，_headersToWire 的 request guard 已过滤），此追加为实现侧行为。
+        // same-origin cors fetch response tainting 为 basic → 不追加（spec/Chrome 一致）。
+        // FIXME(#append-a-request-origin-header)：非 GET/HEAD 的非 cors 分支（按 referrer
+        // policy 序列化，可能为 "null"）尚未实现。
+        var _zwReqOrigin = _zwUrlOrigin(url);
+        var _zwDocOrigin = _zwUrlOrigin(_zwCurrentHref());
+        if (mode === 'cors' && _zwReqOrigin && _zwDocOrigin && _zwReqOrigin !== _zwDocOrigin && !_zwHasHeader(headersWire, 'origin')) {
+          headersWire = _zwAddHeader(headersWire, 'origin', _zwDocOrigin);
+        }
         globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
         var id = '__zwfid:' + globalThis.__zw_fetch_counter;
         var settled = false;

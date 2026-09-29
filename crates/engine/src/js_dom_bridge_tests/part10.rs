@@ -1189,6 +1189,82 @@ fn test_response_request_constructors_r2968() {
 }
 
 #[test]
+fn test_fetch_appends_cross_origin_request_origin() {
+    // https://fetch.spec.whatwg.org/#append-a-request-origin-header — HTTP-network fetch
+    // 托管注入 `Origin`：跨域 cors fetch 由实现 append 文档 origin。此前缺失该头时，条件性
+    // ACAO 服务端（请求无 Origin 即省略 access-control-allow-origin，如 baidu hectorstatic）
+    // 的响应被判 CORS 失败（live：跨域 fetch 全部 `Failed to fetch`，Chrome 同请求成功）。
+    // same-origin cors fetch（response tainting basic）不追加；页面伪造 Origin 被 request
+    // guard 剥离（R3221 forbidden），实现补文档 origin——页面不可注入伪造 Origin 值。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.register_callback(
+        "__zw_get_page_url",
+        Box::new(|_args: &[String]| "https://www.example.test/page.html".to_string()),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let cap = Arc::clone(&captured);
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            // args: [id, method, url, headersWire, body, ...]——__zw_fetch 在 Promise executor
+            // 内同步调用，fetch() 返回时参数已捕获。
+            cap.lock()
+                .unwrap()
+                .push(args.get(3).cloned().unwrap_or_default());
+            String::new()
+        }),
+    );
+
+    // headersWire（\x1e 分隔 name/value 对）even-index 是否含 origin 项。
+    let has_origin_header = |wire: &str| -> bool {
+        wire.split('\x1e')
+            .enumerate()
+            .any(|(i, part)| i % 2 == 0 && part.eq_ignore_ascii_case("origin"))
+    };
+
+    sandbox.execute("fetch('https://api.example.org/data');").unwrap();
+    sandbox.execute("fetch('https://www.example.test/data');").unwrap();
+    sandbox
+        .execute(
+            "fetch('https://api.example.org/data2', { headers: { 'Origin': 'https://evil.example' } });",
+        )
+        .unwrap();
+
+    let wires = captured.lock().unwrap().clone();
+    assert_eq!(wires.len(), 3, "__zw_fetch 三次同步触发");
+    assert!(
+        has_origin_header(&wires[0]),
+        "跨域 cors fetch 须追加 Origin：{:?}",
+        wires[0]
+    );
+    assert!(
+        wires[0].contains("origin\x1ehttps://www.example.test"),
+        "Origin 值 = 文档 origin：{:?}",
+        wires[0]
+    );
+    assert!(
+        !has_origin_header(&wires[1]),
+        "same-origin cors fetch 不追加 Origin（response tainting basic）：{:?}",
+        wires[1]
+    );
+    assert!(
+        has_origin_header(&wires[2])
+            && wires[2].contains("origin\x1ehttps://www.example.test")
+            && !wires[2].contains("evil.example"),
+        "页面伪造 Origin 被 guard 剥离，实现补文档 origin：{:?}",
+        wires[2]
+    );
+}
+
+#[test]
 fn test_writable_stream_r2969() {
     // R2969：WritableStream（Streams API write 侧）。sink {start, write, close, abort} 钩子 +
     // writer.write/close/abort/releaseLock/closed/ready/desiredSize + locked 守卫 + 错误传播
