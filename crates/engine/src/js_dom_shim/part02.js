@@ -465,7 +465,12 @@
   }
   globalThis.ReadableStream = globalThis.ReadableStream || function ReadableStream(underlyingSource, _strategy) {
     if (!(this instanceof ReadableStream)) return new ReadableStream(underlyingSource, _strategy);
+    // net-api M4-S1：**构造校验回退注记**——start/pull/cancel/type 严格校验（M4-S1 初版）
+    // 在 templated/default-reader/piping 家族引入回归（页面 test-utils 工厂传 undefined/
+    // 非 spec 形态源——'start' of undefined 簇），回退宽松形态（underlyingSource || {}）。
+    // 严格校验后续切片按 spec dictionary 转换序重做。
     var source = underlyingSource || {};
+    this._zwIsByteStream = source.type === 'bytes';
     // R3010：背压计量——hwm + size 函数 + queueTotalSize（desiredSize = hwm - queueTotalSize）。
     var hwm = _zw_streamHwm(_strategy);
     var sizeFn = (_strategy && typeof _strategy.size === 'function') ? _strategy.size : null;
@@ -524,7 +529,12 @@
       if (typeof source.cancel === 'function') { try { source.cancel(reason); } catch (_e) {} }
       return Promise.resolve(undefined);
     };
-    this.getReader = function () {
+    this.getReader = function (options) {
+      // net-api M4-S1：byob reader 仅字节流（readable-byte-streams「getReader({mode:
+      // 'byob'}) throws on non-bytes streams」面）；byob 读 view 面后续切片。
+      if (options != null && typeof options === 'object' && options.mode === 'byob' && !self._zwIsByteStream) {
+        throw new TypeError('byob reader requires a ReadableStream with type "bytes"');
+      }
       if (self._locked) throw new TypeError('Cannot get a Reader: ReadableStream is locked');
       self._locked = true;
       return {
@@ -561,8 +571,11 @@
       return self._doCancel(reason);
     };
     Object.defineProperty(this, 'locked', { get: function () { return self._locked; } });
-    // async iterator（for await of）：自动 getReader，逐 chunk 迭代，结束/提前 return 时 releaseLock。
-    // 流已 locked → getReader 抛 TypeError（caller 应先 releaseLock 或换流）。
+    this._zwRsBrand = true; // net-api M4-S1：pipeTo/pipeThrough brand 校验锚
+    // net-api M4-S1 回退注记：values() 命名方法两版实现（常规 IteratorResult 版 /
+    // 旧闭包别名版）均在 async-iterator 页面挂 settle（leg 9 起 33 pending）——完整
+    // values 语义（preventCancel/return-across-pending/lock 交互）待 M4 后续切片，
+    // 暂维持 [Symbol.asyncIterator] 旧闭包（页面完整跑通 41 腿基线）。
     this[Symbol.asyncIterator] = function () {
       var reader = self.getReader();
       return {
@@ -574,8 +587,14 @@
     // → abort dest + reject。全程持 reader/writer 锁，完成后释放。preventCancel/preventClose/preventAbort
     // options 近似忽略（headless 默认全 false，spec 默认行为）。
     this.pipeTo = function (dest, _options) {
-      if (!dest || typeof dest.getWriter !== 'function') {
+      // net-api M4-S1：brand/locked 校验（piping/general「brand」+「locked 不锁源」面
+      // ——dest 已锁 → 先 reject 且**不锁** self）。
+      if (!this || !this._zwRsBrand) return Promise.reject(new TypeError('pipeTo: Illegal invocation'));
+      if (!dest || !dest._zwWsBrand) {
         return Promise.reject(new TypeError('pipeTo: destination is not a WritableStream'));
+      }
+      if (dest.locked) {
+        return Promise.reject(new TypeError('pipeTo: destination WritableStream is locked'));
       }
       var reader, writer;
       try { reader = self.getReader(); writer = dest.getWriter(); }
@@ -605,9 +624,13 @@
     // R2969 pipeThrough({writable, readable})：fire-and-forget pipeTo(transform.writable)，返 transform.readable。
     // 不 await pipeTo（spec：pipeThrough 立即返 readable，管道后台驱动）。
     this.pipeThrough = function (transform, _options) {
+      // net-api M4-S1：brand 校验（pipe-through「must check the brand」面）。
+      if (!this || !this._zwRsBrand) throw new TypeError('pipeThrough: Illegal invocation');
       if (!transform || !transform.writable || !transform.readable) {
         throw new TypeError('pipeThrough: {writable, readable} required');
       }
+      if (!transform.writable._zwWsBrand) throw new TypeError('pipeThrough: writable is not a WritableStream');
+      if (transform.writable.locked) throw new TypeError('pipeThrough: writable is locked');
       self.pipeTo(transform.writable, _options);
       return transform.readable;
     };
@@ -696,6 +719,7 @@
     var errorVal = undefined;
     var self = this;
     this._locked = false;
+    this._zwWsBrand = true; // net-api M4-S1：pipeTo/pipeThrough brand 校验锚
     var resolveClosed, rejectClosed;
     var closedP = new Promise(function (res, rej) { resolveClosed = res; rejectClosed = rej; });
     var pendingWrites = [];       // FIFO {resolve, reject, size}：待 sink.write 完成的 write
@@ -811,6 +835,61 @@
   // 无 transform fn → 恒等（chunk 直 enqueue）。controller.enqueue/close/error 转发到 readable 的 controller。
   // 用于 pipeThrough 管道（如 response.body.pipeThrough(new TextDecoderStream()) 解码——TextDecoderStream
   // 本身属 follow-up，本切片提供 TransformStream 基座）。
+  // ── net-api M4-S1：queuing strategies + ReadableStream.from ──────────────────
+  // CountQueuingStrategy / ByteLengthQueuingStrategy（spec §queuing——构造存 highWaterMark
+  //（init dict → unrestricted double，缺省 NaN 面 corpus 不涉），size 为方法）。
+  // _zw_streamHwm 读 strategy.highWaterMark（number）→ 两策略即插即用。
+  globalThis.CountQueuingStrategy = globalThis.CountQueuingStrategy || function CountQueuingStrategy(init) {
+    if (!(this instanceof CountQueuingStrategy)) return new CountQueuingStrategy(init);
+    this.highWaterMark = (init && init.highWaterMark != null) ? Number(init.highWaterMark) : 0;
+    var self = this;
+    this.size = function () { return 1; };
+  };
+  globalThis.ByteLengthQueuingStrategy = globalThis.ByteLengthQueuingStrategy || function ByteLengthQueuingStrategy(init) {
+    if (!(this instanceof ByteLengthQueuingStrategy)) return new ByteLengthQueuingStrategy(init);
+    this.highWaterMark = (init && init.highWaterMark != null) ? Number(init.highWaterMark) : 0;
+    var self = this;
+    this.size = function (chunk) {
+      // spec：Get(chunk, "byteLength")→Number（非 byteLength 形态 → NaN——管道背压
+      // 面按 _zw_streamSize 回退 1）。
+      return chunk && chunk.byteLength != null ? Number(chunk.byteLength) : NaN;
+    };
+  };
+  // ReadableStream.from（spec §rs.from——async-iterable → ReadableStream）。getMethod/
+  // 迭代器获取错误**同步重抛**（from re-throws 面）；@@asyncIterator 优先、回落
+  // @@iterator（同步迭代器经 Promise 适配）；pull 逐 next（done → close）；error 传播
+  // controller.error；cancel → 调迭代器 return（best-effort）。
+  if (!ReadableStream.from) {
+    ReadableStream.from = function (source) {
+      var itFn = (source != null && source[Symbol.asyncIterator] !== undefined)
+        ? source[Symbol.asyncIterator] : undefined;
+      var isAsync = typeof itFn === 'function';
+      if (!isAsync) {
+        itFn = (source != null && source[Symbol.iterator] !== undefined) ? source[Symbol.iterator] : undefined;
+        if (typeof itFn !== 'function') {
+          throw new TypeError('ReadableStream.from: source is not async-iterable');
+        }
+      }
+      var iterator = itFn.call(source);
+      return new ReadableStream({
+        pull: function (controller) {
+          var p;
+          try { p = isAsync ? iterator.next() : Promise.resolve(iterator.next()); }
+          catch (_eFromNext) { controller.error(_eFromNext); return; }
+          return Promise.resolve(p).then(function (r) {
+            if (r.done) { controller.close(); return; }
+            controller.enqueue(r.value);
+          }, function (e) { controller.error(e); });
+        },
+        cancel: function () {
+          try {
+            if (typeof iterator.return === 'function') return Promise.resolve(iterator.return());
+          } catch (_eFromReturn) {}
+          return Promise.resolve();
+        }
+      });
+    };
+  }
   globalThis.TransformStream = globalThis.TransformStream || function TransformStream(transformer, _strategy) {
     if (!(this instanceof TransformStream)) return new TransformStream(transformer, _strategy);
     var tx = transformer || {};

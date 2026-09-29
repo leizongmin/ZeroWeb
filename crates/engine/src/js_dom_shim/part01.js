@@ -1461,6 +1461,7 @@
         })
       : _bodyToStream(source);
     var originalGetReader = stream.getReader;
+    stream._zwIsByteStream = true; // net-api M4-S1：response body 为字节流（fetch spec——byob getReader 面）
     stream.getReader = function () {
       // net-api M2-S3：getReader 仅锁定不标记 bodyUsed（spec bodyUsed = stream.disturbed；
       // disturbed-1 getReader+releaseLock 后消费须可用——unusable 判定走 _locked/_disturbed）。
