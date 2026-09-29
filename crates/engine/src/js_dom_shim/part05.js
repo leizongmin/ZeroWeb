@@ -6506,6 +6506,19 @@
       }
       return wire;
     }
+    // HTMLImageElement：无 getContext + naturalWidth>0（已加载）→ __zw_get_image_wire
+    //（host 按 src 查 image_cache/现场抓取解码——镜像 drawImage img 源 G5 路径，R-baidu7：
+    // baidu fetch→img→createImageBitmap 管线元素源此前落 null → "不支持的 source" rejection）。
+    // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#createimagebitmap
+    // FIXME: spec 对未完全可解码源要求等待加载（img not complete → await load）、
+    // 破损态 → InvalidStateError；本切片 naturalWidth=0 落入通用 null 拒绝路径。
+    if (typeof src.getContext !== 'function' && typeof src.naturalWidth === 'number' && src.naturalWidth > 0) {
+      if (typeof __zw_get_image_wire !== 'function') return null;
+      var imgSrc = (src.getAttribute ? String(src.getAttribute('src') || '') : '') || String(src.src || '');
+      if (!imgSrc) return null;
+      var iwire = String(__zw_get_image_wire(imgSrc));
+      return iwire ? iwire : null;
+    }
     // HTMLCanvasElement：有 getContext（canvas 元素）。经 getImageData 取全 canvas wire（镜像 drawImage canvas 源）。
     if (typeof src.getContext === 'function') {
       if (typeof __zw_canvas_op !== 'function') return null;
