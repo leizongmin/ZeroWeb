@@ -449,37 +449,78 @@
     if (typeof Object.setPrototypeOf === 'function') Object.setPrototypeOf(out, null);
     return out;
   }
-  // R3010：strategy → { highWaterMark, size } 解析 + chunk size 计算（spec 背压计量）。无 strategy 时 hwm=1、
-  // size 恒 1（CountQueuingStrategy 默认）。size 抛错 / 非有限正数 → 回退 1（spec 应抛 RangeError，headless best-effort）。
-  function _zw_streamHwm(strategy) {
-    return (strategy && typeof strategy.highWaterMark === 'number' && isFinite(strategy.highWaterMark))
-      ? strategy.highWaterMark : 1;
-  }
-  function _zw_streamSize(sizeFn, chunk) {
-    var sz = 1;
-    if (typeof sizeFn === 'function') {
-      try { sz = sizeFn(chunk); } catch (_e) { sz = 1; }
+  // net-api M4-S4：QueuingStrategy dictionary 转换（spec 构造 dictionary 转换序——成员读取
+  //（highWaterMark → size 定义序，getter 抛错同步传播）+ size callback 可调用校验（非函数 →
+  // TypeError）**先于构造步骤**；NaN/负数 RangeError 归 ExtractHighWaterMark（构造步骤内，
+  // 晚于 type:'bytes' 的 size-exists 检查）。bad-strategies / writable bad-strategies 面锚。
+  function _zwStrategyDict(strategy) {
+    if (strategy == null) return { hwmValue: undefined, size: undefined };
+    var hwmValue = strategy.highWaterMark;
+    var size = strategy.size;
+    if (size !== undefined && typeof size !== 'function') {
+      throw new TypeError("The queuing strategy's 'size' property must be a function.");
     }
-    if (typeof sz !== 'number' || !isFinite(sz) || sz < 0) sz = 1;
-    return sz;
+    return { hwmValue: hwmValue, size: size };
+  }
+  // net-api M4-S4：ExtractHighWaterMark（spec §7.4——NaN/负数 → RangeError；+∞ 允许；缺省 → defaultHWM）。
+  function _zwExtractHwm(hwmValue, defaultHwm) {
+    if (hwmValue === undefined) return defaultHwm;
+    var v = Number(hwmValue);
+    if (v !== v || v < 0) {
+      throw new RangeError("The provided strategy's 'highWaterMark' must be a non-negative number.");
+    }
+    return v;
+  }
+  // net-api M4-S4：StreamPipeOptions 序贯读取（preventAbort → preventCancel → preventClose →
+  // signal——throwing-options 页 touched 序锚；getter 抛错向调用方传播：pipeTo 转 rejected
+  // promise、pipeThrough 同步 throw）。提取后传 impl（getter 恰触一次——touched 恰等断言面）。
+  function _zwReadPipeOptions(options) {
+    var out = { preventAbort: false, preventCancel: false, preventClose: false, signal: undefined };
+    if (options != null && typeof options === 'object') {
+      out.preventAbort = !!(options.preventAbort);
+      out.preventCancel = !!(options.preventCancel);
+      out.preventClose = !!(options.preventClose);
+      out.signal = options.signal;
+    }
+    return out;
   }
   globalThis.ReadableStream = globalThis.ReadableStream || function ReadableStream(underlyingSource, _strategy) {
     if (!(this instanceof ReadableStream)) return new ReadableStream(underlyingSource, _strategy);
-    // net-api M4-S1：**构造校验回退注记**——start/pull/cancel/type 严格校验（M4-S1 初版）
-    // 在 templated/default-reader/piping 家族引入回归（页面 test-utils 工厂传 undefined/
-    // 非 spec 形态源——'start' of undefined 簇），回退宽松形态（underlyingSource || {}）。
-    // 严格校验后续切片按 spec dictionary 转换序重做。
-    var source = underlyingSource || {};
+    // net-api M4-S4：构造 dictionary 转换序——strategy dictionary 转换（成员 getter 读取 + size
+    // 可调用校验）**先于构造步骤**（含 source.type 读取）；source null/undefined → {}（WebIDL
+    // object 转换 null/undefined → null = 无源流——M4-S1 回退注记 'start' of undefined 簇根因面，
+    // 非严格校验对象）。start/pull/cancel 保持 typeof 守卫宽松形态（M4-S1 判例）。
+    var strat = _zwStrategyDict(_strategy);
+    var source = (underlyingSource === undefined || underlyingSource === null) ? {} : underlyingSource;
+    // net-api M4-S4：UnderlyingSource dictionary 转换——start/pull/cancel 成员**构造时一次读取**
+    //（定义序，getter 抛错同步传播出构造器——bad-underlying-sources「throwing getter」面），
+    // 算法缓存（「second pull does not result in a second get」面）；回调 this = underlyingSource。
+    var srcStart = source.start;
+    var srcPull = source.pull;
+    var srcCancel = source.cancel;
     this._zwIsByteStream = source.type === 'bytes';
-    // R3010：背压计量——hwm + size 函数 + queueTotalSize（desiredSize = hwm - queueTotalSize）。
-    var hwm = _zw_streamHwm(_strategy);
-    var sizeFn = (_strategy && typeof _strategy.size === 'function') ? _strategy.size : null;
+    // spec 构造步骤 4.1：bytes 流禁 strategy size（RangeError）；ExtractHighWaterMark——bytes 默认 0 /
+    // default 默认 1（NaN/负数 → RangeError，+∞ 允许——bad-strategies「invalid strategy.highWaterMark」面）。
+    if (this._zwIsByteStream && strat.size !== undefined) {
+      throw new RangeError('ReadableStream with type "bytes" cannot have a strategy with a "size" member');
+    }
+    var hwm = _zwExtractHwm(strat.hwmValue, this._zwIsByteStream ? 0 : 1);
+    var sizeFn = strat.size !== undefined ? strat.size : null;
     var queue = [];              // 已 enqueue 待消费 { chunk, size }
     var queueTotalSize = 0;
     var state = 'readable';      // readable | closed | errored
     var errorVal = undefined;
     var waiting = [];            // 待 read() 的 {resolve, reject}
     var pulling = false;
+    var pullAgain = false;
+    var closeRequested = false;  // close() 时 queue 非空 → 排空后真关（spec closeRequested）
+    var started = false;
+    // net-api M4-S4：reader.[[closedPromise]] 全局化——**每次 getReader 访问 closed 都新建
+    // 永挂 Promise** 的旧形态（closed getter fresh-promise）使「先取 closed、后 error/cancel」
+    // 的腿永不 settle（bad-strategies / bad-underlying-sources / default-reader 页级 Timeout
+    // 根因）。waiters 列表：closeStream resolve 全部、errorStream reject 全部、releaseLock
+    // 摘除并按 spec GenericRelease 拒 TypeError（readable 态）。
+    var closedWaiters = [];
     var self = this;
     this._locked = false;
     // net-api M2-S3：disturbed 标记（spec §3.6——read() 首调 / cancel 即 disturbed；
@@ -487,31 +528,61 @@
     this._disturbed = false;
 
     function enqueueChunk(chunk) {
-      if (state !== 'readable') return;
-      var sz = _zw_streamSize(sizeFn, chunk);
-      // 有等待中的 read → 直接 resolve（零拷贝绕 queue，不计 queueTotalSize）；否则入队 + 累计 size。
-      if (waiting.length > 0) waiting.shift().resolve(_rs_chunk(chunk));
-      else { queue.push({ chunk: chunk, size: sz }); queueTotalSize += sz; }
+      // net-api M4-S4：spec §ReadableStreamDefaultControllerEnqueue——CanCloseOrEnqueue
+      //（readable + 非 closeRequested）假 → TypeError（bad-underlying-sources「enqueue on a
+      // canceled/closed stream should throw」面）；有等待 read → FulfillReadRequest（跳过 size
+      // 计算）；size 抛错 → Error(controller, e) + 重抛（「strategy.size errors the stream and
+      // then throws」）；size 非法返回（NaN/负数/±∞）→ RangeError + error 流；末尾 CallPullIfNeeded。
+      if (state !== 'readable' || closeRequested) {
+        throw new TypeError('Cannot enqueue a chunk into a ' + (closeRequested ? 'closing' : state) + ' readable stream');
+      }
+      if (waiting.length > 0) { waiting.shift().resolve(_rs_chunk(chunk)); flushPull(); return; }
+      var sz;
+      try { sz = (typeof sizeFn === 'function') ? sizeFn(chunk) : 1; }
+      catch (eSize) { errorStream(eSize); throw eSize; }
+      if (typeof sz !== 'number' || sz !== sz || sz < 0 || sz === Infinity) {
+        var reSize = new RangeError('Invalid chunk size');
+        errorStream(reSize);
+        throw reSize;
+      }
+      queue.push({ chunk: chunk, size: sz });
+      queueTotalSize += sz;
+      flushPull();
     }
     function closeStream() {
       if (state !== 'readable') return;
       state = 'closed';
       while (waiting.length > 0) waiting.shift().resolve(_RS_DONE);
+      while (closedWaiters.length > 0) closedWaiters.shift().resolve();
     }
     function errorStream(e) {
       if (state !== 'readable') return;
       errorVal = e;
       state = 'errored';
       while (waiting.length > 0) waiting.shift().reject(e);
+      while (closedWaiters.length > 0) closedWaiters.shift().reject(e);
     }
     function flushPull() {
-      // R3010：readable + 有 pull + desiredSize > 0（queue 有余量）→ 触发一次（pulling 守卫防重入）。
-      // desiredSize <= 0（背压）时不 pull，待 read drain 释放余量后再触发。pull 可 enqueue/close/error。
-      if (pulling || state !== 'readable' || typeof source.pull !== 'function') return;
-      if (hwm - queueTotalSize <= 0) return; // 背压：queue 已达/超 hwm，不 pull
+      // net-api M4-S4：spec §CallPullIfNeeded——started + readable + 非 closeRequested +
+      //（有等待 read 请求**或** desiredSize>0——hwm 0 策略 read 请求优先面）；pulling → 置
+      // pullAgain；pull 同步完成时 pullAgain 经**微任务**重拉（spec upon-fulfillment 语义，
+      // 避免零 size 源同步递归栈爆）。
+      if (!started || state !== 'readable' || closeRequested) return;
+      if (typeof srcPull !== 'function') return;
+      if (waiting.length === 0 && hwm - queueTotalSize <= 0) return;
+      if (pulling) { pullAgain = true; return; } // spec：pull 期间 → pullAgain（完成后续拉）
       pulling = true;
-      try { source.pull(controller); } catch (_e) { errorStream(_e); }
-      pulling = false;
+      var result;
+      try { result = srcPull.call(source, controller); } catch (ePull) { pulling = false; errorStream(ePull); return; }
+      if (result && typeof result.then === 'function') {
+        Promise.resolve(result).then(function () {
+          pulling = false;
+          if (pullAgain) { pullAgain = false; flushPull(); }
+        }, function (ePull) { pulling = false; pullAgain = false; errorStream(ePull); });
+      } else {
+        pulling = false;
+        if (pullAgain) { pullAgain = false; Promise.resolve().then(flushPull); }
+      }
     }
     var controller = {
       get desiredSize() {
@@ -521,14 +592,47 @@
         return hwm - queueTotalSize;
       },
       enqueue: enqueueChunk,
-      close: closeStream,
+      close: function () {
+        // net-api M4-S4：spec §close——CanCloseOrEnqueue 假 → TypeError（bad-underlying-sources
+        // 「close twice / close after cancel / close after error」面）；queue 非空 → closeRequested
+        //（read drain 面排空后真关），空 → 即关。
+        if (state !== 'readable' || closeRequested) {
+          throw new TypeError('Cannot close a readable stream that is ' + (closeRequested ? 'closing' : state));
+        }
+        if (queue.length > 0) { closeRequested = true; return; }
+        closeStream();
+      },
       error: errorStream
     };
+    // net-api M4-S4：spec §ReadableStreamCancel——disturbed；closed → resolved；errored →
+    // reject storedError（「return() rejects if the stream has errored」面）；否则 close +
+    // CancelSteps（await source.cancel——fulfillment → undefined、rejection 传播）。
+    function cancelInternal(reason) {
+      self._disturbed = true;
+      if (state === 'closed') return Promise.resolve();
+      if (state === 'errored') return Promise.reject(errorVal);
+      return self._doCancel(reason);
+    }
     this._doCancel = function (reason) {
       closeStream();
-      if (typeof source.cancel === 'function') { try { source.cancel(reason); } catch (_e) {} }
-      return Promise.resolve(undefined);
+      var p;
+      if (typeof srcCancel === 'function') {
+        try { p = Promise.resolve(srcCancel.call(source, reason)); } catch (eCancel) { p = Promise.reject(eCancel); }
+      } else { p = Promise.resolve(); }
+      return p.then(function () {}); // fulfillment → undefined；rejection 传播（cancel 回调抛错面）
     };
+    // net-api M4-S4：spec GenericRelease——解锁 + waiter 摘除；readable 态 closed promise 转
+    // TypeError 拒绝（「released reader appears errored」面）；closed/errored 态已 settle 不动。
+    function releaseReaderLock(entry, closedP) {
+      if (!self._locked) return;
+      self._locked = false;
+      var idx = closedWaiters.indexOf(entry);
+      if (idx >= 0) closedWaiters.splice(idx, 1);
+      if (state === 'readable') {
+        entry.reject(new TypeError('ReadableStream reader released lock'));
+        try { closedP.catch(function () {}); } catch (_eRel) {} // 已发布 promise 的拒绝标记 handled（runner unhandled-rejection 面）
+      }
+    }
     this.getReader = function (options) {
       // net-api M4-S1：byob reader 仅字节流（readable-byte-streams「getReader({mode:
       // 'byob'}) throws on non-bytes streams」面）。
@@ -545,6 +649,14 @@
       var byob = !!(options != null && typeof options === 'object' && options.mode === 'byob');
       if (self._locked) throw new TypeError('Cannot get a Reader: ReadableStream is locked');
       self._locked = true;
+      // net-api M4-S4：本 reader 的 closedPromise（waiter 登记——close/error/release 驱动 settle；
+      // 取 reader 时流已 closed/errored → 立即 settle——spec GenericInitialize）。
+      var resolveClosedP, rejectClosedP;
+      var closedP = new Promise(function (res, rej) { resolveClosedP = res; rejectClosedP = rej; });
+      var closedEntry = { resolve: resolveClosedP, reject: rejectClosedP };
+      if (state === 'closed') resolveClosedP();
+      else if (state === 'errored') rejectClosedP(errorVal);
+      else closedWaiters.push(closedEntry);
       if (byob) {
         var byobPending = null;   // 上一 fill 余量（Uint8Array，reader 独占）
         var byobDone = false;
@@ -591,6 +703,9 @@
               flushPull();
               return;
             }
+            // net-api M4-S4：closeRequested 排空 → 真关（spec PullSteps 步骤 2.2——byob 侧
+            // _bodyToStream enqueue+close 面，缺此腿第二读挂起）。
+            if (closeRequested && queue.length === 0) closeStream();
             try {
               var want = view ? view.byteLength : 0;
               if (!(want >= 0)) want = 0;
@@ -608,64 +723,116 @@
         };
         return {
           read: byobViewRead,
-          cancel: function (reason) { self._disturbed = true; byobDone = true; return self.cancel(reason); },
-          releaseLock: function () { self._locked = false; },
-          get closed() {
-            if (state === 'closed') return Promise.resolve();
-            if (state === 'errored') return Promise.reject(errorVal);
-            return new Promise(function () {});
-          }
+          // net-api M4-S4：reader.cancel 走 cancelInternal（spec GenericCancel——active reader
+          // 无 locked TypeError；旧路径 reader.cancel→self.cancel 恒被 locked 拒绝）。
+          cancel: function (reason) { return cancelInternal(reason); },
+          releaseLock: function () { releaseReaderLock(closedEntry, closedP); },
+          get closed() { return closedP; }
         };
       }
+      var readRaw = function () {
+        self._disturbed = true; // net-api M2-S3：read 即 disturbed（spec §3.6）
+        return new Promise(function (resolve, reject) {
+          if (state === 'errored') { reject(errorVal); return; }
+          if (queue.length > 0) {
+            var entry = queue.shift();
+            queueTotalSize -= entry.size;
+            if (queueTotalSize < 0) queueTotalSize = 0;
+            resolve(_rs_chunk(entry.chunk));
+            // net-api M4-S4：closeRequested 排空 → 真关，否则 CallPullIfNeeded（spec PullSteps）。
+            if (closeRequested && queue.length === 0) closeStream();
+            else flushPull();
+            return;
+          }
+          if (state === 'closed') { resolve(_RS_DONE); return; }
+          waiting.push({ resolve: resolve, reject: reject });
+          flushPull();
+        });
+      };
       return {
+        // net-api M4-S4：author read() 结果 %Object.prototype% 形态（spec read-request 步骤
+        // ——async-iterator/default-reader 页 [[Prototype]] 断言面）；内部消费（consume/pipe/
+        // tee）走 _zwReadRaw（null 原型保留——M2-S3 then 投毒防线：Object.prototype.then 注入
+        // 经 Promise resolution thenable adoption 劫持内部读循环）。
         read: function () {
-          self._disturbed = true; // net-api M2-S3：read 即 disturbed（spec §3.6）
-          return new Promise(function (resolve, reject) {
-            if (state === 'errored') { reject(errorVal); return; }
-            if (queue.length > 0) {
-              var entry = queue.shift();
-              queueTotalSize -= entry.size;
-              if (queueTotalSize < 0) queueTotalSize = 0;
-              resolve(_rs_chunk(entry.chunk));
-              flushPull();
-              return;
-            }
-            if (state === 'closed') { resolve(_RS_DONE); return; }
-            waiting.push({ resolve: resolve, reject: reject });
-            flushPull();
-          });
+          return readRaw().then(function (r) { return { value: r.value, done: r.done }; });
         },
-        cancel: function (reason) { self._disturbed = true; return self.cancel(reason); },
-        releaseLock: function () { self._locked = false; },
-        get closed() {
-          if (state === 'closed') return Promise.resolve();
-          if (state === 'errored') return Promise.reject(errorVal);
-          return new Promise(function () {}); // 永挂（headless 无外部 close，read 侧驱动 close）
-        }
+        _zwReadRaw: readRaw,
+        cancel: function (reason) { return cancelInternal(reason); },
+        releaseLock: function () { releaseReaderLock(closedEntry, closedP); },
+        get closed() { return closedP; }
       };
     };
     this.cancel = function (reason) {
       self._disturbed = true; // net-api M2-S3：cancel 即 disturbed（body.cancel 直调路径）
       if (self._locked) return Promise.reject(new TypeError('Cannot cancel: ReadableStream is locked'));
-      return self._doCancel(reason);
+      return cancelInternal(reason);
     };
     Object.defineProperty(this, 'locked', { get: function () { return self._locked; } });
     this._zwRsBrand = true; // net-api M4-S1：pipeTo/pipeThrough brand 校验锚
-    // net-api M4-S1 回退注记：values() 命名方法两版实现（常规 IteratorResult 版 /
-    // 旧闭包别名版）均在 async-iterator 页面挂 settle（leg 9 起 33 pending）——完整
-    // values 语义（preventCancel/return-across-pending/lock 交互）待 M4 后续切片，
-    // 暂维持 [Symbol.asyncIterator] 旧闭包（页面完整跑通 41 腿基线）。
-    this[Symbol.asyncIterator] = function () {
-      var reader = self.getReader();
-      return {
-        next: function () { return reader.read(); },
-        return: function () { try { reader.releaseLock(); } catch (_e) {} return Promise.resolve(_RS_DONE); }
+    // net-api M4-S4：values(options) / @@asyncIterator(options)（spec §4.2.5 + WebIDL async
+    // iterator 机制）——getReader 锁定（locked → 同步 TypeError）；[[OngoingPromise]] 串行
+    //（前序 next/return 未决则链后——「return(); next() [no awaiting]」resolve 序锚）；next
+    // close/error steps 均 release（exhaustive 迭代后可再 getReader）；return：preventCancel
+    // 假 → cancelInternal（errored → reject storedError）+ **同步 release**（「return() should
+    // unlock the stream synchronously」面）+ cancel promise 稳定后 fulfill {value, done:true}；
+    // 迭代结果 %Object.prototype% 字面量（assert_iter_result [[Prototype]] 断言）。
+    this.values = function (options) {
+      var iteratorReader = self.getReader();
+      var preventCancel = !!(options != null && typeof options === 'object' && options.preventCancel);
+      var isDone = false;
+      var ongoing = null;
+      function queueOp(steps) {
+        var p = ongoing !== null ? ongoing.then(steps, steps) : steps();
+        ongoing = p.then(function () {}, function () {});
+        return p;
+      }
+      function nextSteps() {
+        if (isDone) return Promise.resolve({ value: undefined, done: true });
+        return iteratorReader._zwReadRaw().then(function (r) {
+          if (r.done) {
+            isDone = true;
+            try { iteratorReader.releaseLock(); } catch (_e) {}
+            return { value: undefined, done: true };
+          }
+          return { value: r.value, done: false };
+        }, function (e) {
+          isDone = true;
+          try { iteratorReader.releaseLock(); } catch (_e) {}
+          throw e;
+        });
+      }
+      function returnSteps(value) {
+        if (isDone) return Promise.resolve({ value: value, done: true });
+        isDone = true;
+        var cancelP = preventCancel ? Promise.resolve() : cancelInternal(value);
+        try { iteratorReader.releaseLock(); } catch (_e) {}
+        return cancelP.then(function () { return { value: value, done: true }; });
+      }
+      var proto = {
+        next: function () { return queueOp(nextSteps); },
+        return: function (value) { return queueOp(function () { return returnSteps(value); }); }
       };
+      try {
+        // %AsyncIteratorPrototype% 继承（引擎 async generator 原型链两跳——values 页
+        // prototype 链断言；grandparent 供 @@asyncIterator，proto 自身 own props 仅 next/return）。
+        Object.setPrototypeOf(proto, Object.getPrototypeOf(Object.getPrototypeOf((async function* () {}).prototype)));
+      } catch (_eAip) {
+        Object.setPrototypeOf(proto, { [Symbol.asyncIterator]: function () { return this; } });
+      }
+      return Object.create(proto);
     };
-    // R2969 pipeTo(dest)：逐 chunk 从 self 读 → 写入 dest WritableStream，dest 完成（close）；任一侧 error
-    // → abort dest + reject。全程持 reader/writer 锁，完成后释放。preventCancel/preventClose/preventAbort
-    // options 近似忽略（headless 默认全 false，spec 默认行为）。
-    this.pipeTo = function (dest, _options) {
+    this[Symbol.asyncIterator] = this.values;
+    // R2969 pipeTo(dest, options)：逐 chunk 从 self 读 → 写入 dest WritableStream，dest 完成（close）；
+    // 任一侧 error → abort dest + reject。全程持 reader/writer 锁，完成后释放。
+    // net-api M4-S4：StreamPipeOptions 完整化——① 成员序贯读取（preventAbort → preventCancel →
+    // preventClose → signal）在**rejected-promise 路径**（throwing-options pipeTo 页——
+    // promise_rejects_js 面）；② signal 校验（非 AbortSignal 形态 → TypeError reject，事件零触碰）；
+    // ③ aborted signal → abortAlgorithm（preventAbort/preventCancel 门控 dest.abort + source
+    // cancel，reject signal.reason——abort 页 pre-aborted 腿 + tee×无限源 pipeTo 的 OOM 根因面）；
+    // ④ preventClose（done 后不关 dest）/ preventAbort（源 error 后不 abort dest）/ preventCancel
+    // （dest error 后不 cancel 源）门控。
+    this.pipeTo = function (dest, options) {
       // net-api M4-S1：brand/locked 校验（piping/general「brand」+「locked 不锁源」面
       // ——dest 已锁 → 先 reject 且**不锁** self）。
       if (!this || !this._zwRsBrand) return Promise.reject(new TypeError('pipeTo: Illegal invocation'));
@@ -675,42 +842,116 @@
       if (dest.locked) {
         return Promise.reject(new TypeError('pipeTo: destination WritableStream is locked'));
       }
+      var opts;
+      try { opts = _zwReadPipeOptions(options); }
+      catch (eOpts) { return Promise.reject(eOpts); }
+      if (opts.signal != null && (typeof opts.signal !== 'object' || typeof opts.signal.aborted !== 'boolean')) {
+        return Promise.reject(new TypeError('pipeTo: signal must be an AbortSignal'));
+      }
+      return pipeToImpl(dest, opts);
+    };
+    function pipeToImpl(dest, opts) {
       var reader, writer;
       try { reader = self.getReader(); writer = dest.getWriter(); }
       catch (e) { return Promise.reject(e); }
+      var preventAbort = opts.preventAbort;
+      var preventCancel = opts.preventCancel;
+      var preventClose = opts.preventClose;
+      var signal = opts.signal;
+      // net-api M4-S4：dest 首查（spec「closing/error propagated backward」——已 closed/errored →
+      // 源 cancel（preventCancel 门控）+ 拒绝 TypeError/storedError）。
+      var probe = typeof dest._zwWsProbe === 'function' ? dest._zwWsProbe() : null;
+      if (probe && probe.state !== 'writable') {
+        var errDest = probe.state === 'errored' ? probe.error : new TypeError('Destination writable stream is closed or closing');
+        if (!preventCancel) { try { cancelInternal(errDest); } catch (_eDc) {} }
+        try { reader.releaseLock(); } catch (_eDr) {}
+        try { writer.releaseLock(); } catch (_eDw) {}
+        return Promise.reject(errDest);
+      }
+      var finished = false;
+      var onAbort = null;
       return new Promise(function (resolve, reject) {
         function finish(err) {
+          if (finished) return;
+          finished = true;
+          if (onAbort) { try { signal.removeEventListener('abort', onAbort); } catch (_eFin) {} }
           try { reader.releaseLock(); } catch (_e) {}
           try { writer.releaseLock(); } catch (_e) {}
           if (err) reject(err); else resolve(undefined);
         }
+        function abortAlgorithm() {
+          // spec §ReadableStreamPipeTo 步骤 14：preventAbort/preventCancel 门控动作集 → 稳定后
+          // 以 signal.reason 收尾。
+          if (finished) return;
+          var err = signal.reason;
+          var actions = [];
+          if (!preventAbort) {
+            try { actions.push(dest.abort(err)); } catch (eAb) { actions.push(Promise.reject(eAb)); }
+          }
+          if (!preventCancel) {
+            try { actions.push(cancelInternal(err)); } catch (eCa) { actions.push(Promise.reject(eCa)); }
+          }
+          Promise.all(actions).then(function () { finish(err); }, function (e2) { finish(e2); });
+        }
+        if (signal != null) {
+          if (signal.aborted) { abortAlgorithm(); return; }
+          if (typeof signal.addEventListener === 'function') {
+            onAbort = abortAlgorithm;
+            signal.addEventListener('abort', abortAlgorithm);
+          }
+        }
+        // net-api M4-S4：dest error 中途传播（writer.closed 拒绝 → cancel 源 + 收尾）。
+        try {
+          writer.closed.then(function () {}, function (eWc) {
+            if (finished) return;
+            if (!preventCancel) { try { cancelInternal(eWc); } catch (_eWc2) {} }
+            finish(eWc);
+          });
+        } catch (_eWcProbe) {}
         function pump() {
-          reader.read().then(function (r) {
-            if (r.done) { writer.close().then(function () { finish(); }, function (e) { finish(e); }); return; }
+          if (finished) return;
+          // net-api M4-S4：内部消费走 _zwReadRaw（null 原型——then 投毒防线，见 getReader 注）。
+          reader._zwReadRaw().then(function (r) {
+            if (finished) return;
+            if (r.done) {
+              if (preventClose) { finish(); return; }
+              writer.close().then(function () { finish(); }, function (e) { finish(e); });
+              return;
+            }
             writer.write(r.value).then(pump, function (e) {
-              try { reader.cancel(e); } catch (_e) {}
-              try { dest.abort(e); } catch (_e) {}
+              // spec：dest error → cancel 源（preventCancel 门控）；以 dest 错误收尾。
+              if (!preventCancel) { try { cancelInternal(e); } catch (_e) {} }
               finish(e);
             });
           }, function (e) {
-            try { dest.abort(e); } catch (_e) {}
+            if (finished) return;
+            // spec：源 error → abort dest（preventAbort 门控）；以源错误收尾。
+            if (!preventAbort) { try { dest.abort(e); } catch (_e) {} }
             finish(e);
           });
         }
         pump();
       });
-    };
+    }
     // R2969 pipeThrough({writable, readable})：fire-and-forget pipeTo(transform.writable)，返 transform.readable。
     // 不 await pipeTo（spec：pipeThrough 立即返 readable，管道后台驱动）。
-    this.pipeThrough = function (transform, _options) {
+    // net-api M4-S4：options **同步**序贯读取（throwing-options pipeThrough 页 assert_throws_js
+    // 面），提取值传 impl（getter 恰触一次）；补源锁定检查（spec 步骤 1）。
+    this.pipeThrough = function (transform, options) {
       // net-api M4-S1：brand 校验（pipe-through「must check the brand」面）。
       if (!this || !this._zwRsBrand) throw new TypeError('pipeThrough: Illegal invocation');
+      if (self._locked) throw new TypeError('pipeThrough: ReadableStream is locked');
       if (!transform || !transform.writable || !transform.readable) {
         throw new TypeError('pipeThrough: {writable, readable} required');
       }
       if (!transform.writable._zwWsBrand) throw new TypeError('pipeThrough: writable is not a WritableStream');
       if (transform.writable.locked) throw new TypeError('pipeThrough: writable is locked');
-      self.pipeTo(transform.writable, _options);
+      var opts = _zwReadPipeOptions(options);
+      if (opts.signal != null && (typeof opts.signal !== 'object' || typeof opts.signal.aborted !== 'boolean')) {
+        throw new TypeError('pipeThrough: signal must be an AbortSignal');
+      }
+      var p = pipeToImpl(transform.writable, opts);
+      try { p.catch(function () {}); } catch (_ePt) {} // spec：promise.[[PromiseIsHandled]] = true
       return transform.readable;
     };
     // R2971 tee()：分叉成两独立 ReadableStream（共享同一源）。buffer-based：共享 append-only buffer +
@@ -728,7 +969,8 @@
         if (sourceDone) return Promise.resolve({ done: true });
         if (sourceError) return Promise.reject(sourceError);
         if (!readPromise) {
-          readPromise = reader.read().then(function (r) {
+          // net-api M4-S4：内部消费走 _zwReadRaw（null 原型——then 投毒防线，见 getReader 注）。
+          readPromise = reader._zwReadRaw().then(function (r) {
             readPromise = null;
             if (r.done) sourceDone = true; else buffer.push(r.value);
             return r;
@@ -752,9 +994,20 @@
       }
       return [makeBranch(), makeBranch()];
     };
-    // start：同步源初始化（enqueue/close/error 可能在此调用，flush 已等待读者前的 chunk 入 queue）。
-    if (typeof source.start === 'function') {
-      try { source.start(controller); } catch (_e) { errorStream(_e); }
+    // start：spec SetUp——start 同步调用（**同步抛错冒出构造器**——§4.2.3「Any thrown exceptions
+    // will be re-thrown by the ReadableStream() constructor」）；startPromise（resolved with
+    // startResult）**fulfillment 后** started + CallPullIfNeeded（恒为微任务——「cancelling before
+    // start finishes should prevent pull」面 + recordingReadableStream 构造后同步补 events 字段
+    // 的面）；thenable start 拒绝 → error 流。异步拉链（pullAgain 微任务重拉）+ read 请求触发
+    //（PullSteps）——「next(); return() [no awaiting]」timesPulled===2 语义锚。
+    if (typeof srcStart === 'function') {
+      var startResult = srcStart.call(source, controller);
+      Promise.resolve(startResult).then(function () {
+        started = true;
+        flushPull();
+      }, function (eStart2) { errorStream(eStart2); });
+    } else {
+      Promise.resolve().then(function () { started = true; flushPull(); });
     }
   };
   // fetch 响应体字符串 → ReadableStream：单 UTF-8 Uint8Array chunk 后 close（headless finite-body 模型，
@@ -793,7 +1046,11 @@
   // writer.ready 在 desiredSize<=0 时挂起（背压门控）、>0 时 resolve（背压释放），生产者可 await ready 节流。
   globalThis.WritableStream = globalThis.WritableStream || function WritableStream(underlyingSink, _strategy) {
     if (!(this instanceof WritableStream)) return new WritableStream(underlyingSink, _strategy);
-    var sink = underlyingSink || {};
+    // net-api M4-S4：strategy dictionary 转换 + ExtractHighWaterMark（default 1）——size 非函数
+    // TypeError（conversion 阶段）先于 hwm RangeError（「invalid size beats invalid highWaterMark」
+    // ——WebIDL 成员定义序转换序）。
+    var strat = _zwStrategyDict(_strategy);
+    var sink = (underlyingSink === undefined || underlyingSink === null) ? {} : underlyingSink;
     var state = 'writable';     // writable | closed | errored
     var errorVal = undefined;
     var self = this;
@@ -803,8 +1060,8 @@
     var closedP = new Promise(function (res, rej) { resolveClosed = res; rejectClosed = rej; });
     var pendingWrites = [];       // FIFO {resolve, reject, size}：待 sink.write 完成的 write
     // R3010：背压计量——hwm + size 函数 + queueTotalSize（desiredSize = hwm - queueTotalSize）+ ready Promise。
-    var hwm = _zw_streamHwm(_strategy);
-    var sizeFn = (_strategy && typeof _strategy.size === 'function') ? _strategy.size : null;
+    var hwm = _zwExtractHwm(strat.hwmValue, 1);
+    var sizeFn = strat.size !== undefined ? strat.size : null;
     var queueTotalSize = 0;
     var resolveReady = null;     // ready 阻塞态时的 resolver（desiredSize<=0）；null = ready 已 resolve 态
     var readyPromise = Promise.resolve();
@@ -826,6 +1083,9 @@
     }
     var controller = { error: errorStream };
     this._controller = controller;
+    // net-api M4-S4：pipeTo dest 首查锚（state/error 内部读取——spec「closing propagated
+    // backward」：dest 已 closed/errored → 源 cancel + 拒绝）。
+    this._zwWsProbe = function () { return { state: state, error: errorVal }; };
 
     this.getWriter = function () {
       if (self._locked) throw new TypeError('Cannot get a Writer: WritableStream is locked');
@@ -851,8 +1111,18 @@
         write: function (chunk) {
           if (state === 'errored') return Promise.reject(errorVal);
           if (state === 'closed') return Promise.reject(new TypeError('Cannot write to a closed WritableStream'));
+          // net-api M4-S4：spec §ControllerWrite——size 抛错/非法返回（NaN/负数/±∞）→ error 流 +
+          // write reject（「Writable stream: throwing strategy.size method」/「invalid size return
+          // value」面——旧 _zw_streamSize 吞错回退 1 与 spec 背离）。
+          var sz;
+          try { sz = (typeof sizeFn === 'function') ? sizeFn(chunk) : 1; }
+          catch (eSize) { errorStream(eSize); return Promise.reject(eSize); }
+          if (typeof sz !== 'number' || sz !== sz || sz < 0 || sz === Infinity) {
+            var reSize = new RangeError('Invalid chunk size');
+            errorStream(reSize);
+            return Promise.reject(reSize);
+          }
           // R3010：入队前累计 size（背压在 pending write 期间生效，desiredSize 降，ready 挂起）。
-          var sz = _zw_streamSize(sizeFn, chunk);
           queueTotalSize += sz;
           updateReady();
           return new Promise(function (resolve, reject) {
@@ -872,8 +1142,19 @@
                     done.resolve(undefined);
                   }
                 },
-                function (e) { errorStream(e); });
-            } catch (e) { errorStream(e); }
+                function (e) {
+                  // net-api M4-S4：sink.write 拒绝 → 本 write 请求拒绝 + 流 error
+                  //（spec in-flight write 失败面——error-propagation-backward 页；旧形态仅 error
+                  // 不 reject entry → write 永挂）。
+                  var idx = pendingWrites.indexOf(entry);
+                  if (idx >= 0) pendingWrites.splice(idx, 1);
+                  queueTotalSize -= entry.size;
+                  if (queueTotalSize < 0) queueTotalSize = 0;
+                  updateReady();
+                  entry.reject(e);
+                  errorStream(e);
+                });
+            } catch (e) { errorStream(e); reject(e); }
           });
         },
         close: function () {
@@ -903,8 +1184,14 @@
       return Promise.resolve(undefined);
     };
     Object.defineProperty(this, 'locked', { get: function () { return self._locked; } });
+    // start：spec——startResult thenable 拒绝 → 流 error（error-propagation-backward「starts
+    // errored」面；旧形态忽略返回值 → ws 恒 writable → pipeTo 首查不中 → 源读永挂）。
     if (typeof sink.start === 'function') {
-      try { sink.start(controller); } catch (_e) { errorStream(_e); }
+      var wsStartResult;
+      try { wsStartResult = sink.start(controller); } catch (_eWsStart) { errorStream(_eWsStart); wsStartResult = undefined; }
+      if (wsStartResult && typeof wsStartResult.then === 'function') {
+        Promise.resolve(wsStartResult).then(function () {}, function (eWsStart2) { errorStream(eWsStart2); });
+      }
     }
   };
 
@@ -915,24 +1202,44 @@
   // 用于 pipeThrough 管道（如 response.body.pipeThrough(new TextDecoderStream()) 解码——TextDecoderStream
   // 本身属 follow-up，本切片提供 TransformStream 基座）。
   // ── net-api M4-S1：queuing strategies + ReadableStream.from ──────────────────
-  // CountQueuingStrategy / ByteLengthQueuingStrategy（spec §queuing——构造存 highWaterMark
-  //（init dict → unrestricted double，缺省 NaN 面 corpus 不涉），size 为方法）。
-  // _zw_streamHwm 读 strategy.highWaterMark（number）→ 两策略即插即用。
+  // CountQueuingStrategy / ByteLengthQueuingStrategy（spec §queuing）。
+  // net-api M4-S4：size 为**全局共享** size 函数（instances 同一函数——「size is the same
+  // function across all instances」面）；箭头函数形态——无 prototype 属性 + 不可 new
+  //（「size should not have a prototype property」/「size should not be a constructor」面），
+  // name/length 显式定（'size'/0|1）；ByteLength size = GetV(chunk, 'byteLength')（null/
+  // undefined chunk → TypeError；缺失 → undefined 原样返回，非 NaN）。
+  var _zwCountSizeFn = () => 1;
+  var _zwByteLengthSizeFn = (chunk) => {
+    if (chunk == null) throw new TypeError('chunk must be an object');
+    return chunk.byteLength;
+  };
+  try { Object.defineProperty(_zwCountSizeFn, 'name', { value: 'size' }); } catch (_eSizeName) {}
+  try { Object.defineProperty(_zwByteLengthSizeFn, 'name', { value: 'size' }); } catch (_eSizeName2) {}
   globalThis.CountQueuingStrategy = globalThis.CountQueuingStrategy || function CountQueuingStrategy(init) {
     if (!(this instanceof CountQueuingStrategy)) return new CountQueuingStrategy(init);
-    this.highWaterMark = (init && init.highWaterMark != null) ? Number(init.highWaterMark) : 0;
-    var self = this;
-    this.size = function () { return 1; };
+    // net-api M4-S4：QueuingStrategyInit required highWaterMark（非对象 init / 缺失成员 →
+    // TypeError——「strange arguments」面）；getter 抛错同步传播（throwing getter 面）。
+    if (init == null || typeof init !== 'object') {
+      throw new TypeError("Failed to construct 'CountQueuingStrategy': the provided value is not of type 'QueuingStrategyInit'.");
+    }
+    var hwmValue = init.highWaterMark;
+    if (hwmValue === undefined) {
+      throw new TypeError("Failed to construct 'CountQueuingStrategy': required member highWaterMark is undefined.");
+    }
+    this.highWaterMark = Number(hwmValue); // unrestricted double 转换（NaN/±0/负数均合法存储）
+    this.size = _zwCountSizeFn;
   };
   globalThis.ByteLengthQueuingStrategy = globalThis.ByteLengthQueuingStrategy || function ByteLengthQueuingStrategy(init) {
     if (!(this instanceof ByteLengthQueuingStrategy)) return new ByteLengthQueuingStrategy(init);
-    this.highWaterMark = (init && init.highWaterMark != null) ? Number(init.highWaterMark) : 0;
-    var self = this;
-    this.size = function (chunk) {
-      // spec：Get(chunk, "byteLength")→Number（非 byteLength 形态 → NaN——管道背压
-      // 面按 _zw_streamSize 回退 1）。
-      return chunk && chunk.byteLength != null ? Number(chunk.byteLength) : NaN;
-    };
+    if (init == null || typeof init !== 'object') {
+      throw new TypeError("Failed to construct 'ByteLengthQueuingStrategy': the provided value is not of type 'QueuingStrategyInit'.");
+    }
+    var hwmValue2 = init.highWaterMark;
+    if (hwmValue2 === undefined) {
+      throw new TypeError("Failed to construct 'ByteLengthQueuingStrategy': required member highWaterMark is undefined.");
+    }
+    this.highWaterMark = Number(hwmValue2);
+    this.size = _zwByteLengthSizeFn;
   };
   // ReadableStream.from（spec §rs.from——async-iterable → ReadableStream）。getMethod/
   // 迭代器获取错误**同步重抛**（from re-throws 面）；@@asyncIterator 优先、回落
@@ -950,6 +1257,8 @@
         }
       }
       var iterator = itFn.call(source);
+      // net-api M4-S4：spec CreateReadableStream(start, pull, cancel, **0**)——hwm 0（惰性拉，
+      // 构造即拉面回归防护）。
       return new ReadableStream({
         pull: function (controller) {
           var p;
@@ -966,7 +1275,7 @@
           } catch (_eFromReturn) {}
           return Promise.resolve();
         }
-      });
+      }, { highWaterMark: 0 });
     };
   }
   globalThis.TransformStream = globalThis.TransformStream || function TransformStream(transformer, _strategy) {

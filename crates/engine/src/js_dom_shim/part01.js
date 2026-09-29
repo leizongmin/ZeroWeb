@@ -1512,7 +1512,8 @@
       }
     }
     (function readAll() {
-      reader.read().then(function (r) {
+      // net-api M4-S4：内部消费走 _zwReadRaw（null 原型——then 投毒防线保留，part02 getReader 注）。
+      reader._zwReadRaw().then(function (r) {
         if (r.done) { finished = true; distribute(); return; }
         chunks.push(r.value);
         distribute();
@@ -1582,7 +1583,8 @@
       var reader = streamSrc.getReader();
       var chunks = [];
       function pump() {
-        return reader.read().then(function (r) {
+        // net-api M4-S4：内部消费走 _zwReadRaw（null 原型——then 投毒防线保留，part02 getReader 注）。
+        return reader._zwReadRaw().then(function (r) {
           if (r.done) {
             var total = 0;
             for (var i = 0; i < chunks.length; i++) total += chunks[i].length;
