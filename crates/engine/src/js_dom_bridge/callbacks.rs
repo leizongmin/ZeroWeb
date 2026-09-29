@@ -921,13 +921,15 @@ pub fn register_dom_callbacks(
     // namespaceURI getter + cloneNode ns 保留）。
     // R-baidu3：NS_MEMO 备忘 + 快照零拷贝借用（原实现每次 436KB clone——风暴路径
     // getPrototypeOf 8 万次/事件的内存 churn 主力之一）。
-    // R-baidu3 视图戳：`__zw_dom_view_stamp` → "epoch:ptr:count" 小字符串，同视图恒
-    // 同串。shim 侧全树枚举（baidu scanAndDoRender 每次 resolve 重扫）以它为缓存键：
-    // 戳不变 ⇒ 视图未变 ⇒ 直接复用上次枚举的代理数组/tag 表，**免 400KB payload
-    // 调用与 2 万代理重建**（V8 主 GC 风暴——MarkCompact 100% CPU 自旋百秒级——
-    // 的分配源头）。ptr 项 = dom_html Arc 身份（同注册内换代必换 Arc）；count 项 =
-    // mutations 尾长；epoch 项 = REG_EPOCH（跨注册 Arc 地址复用 ABA 防御）；gen 项 =
-    // DOM_VIEW_GEN（就地换代必换——R358/R3243，Arc 身份对 `*snap = html` 视而不见）。
+    // R-baidu3 视图戳：`__zw_dom_view_stamp` → "epoch:ptr:count:drain:gen" 小字符串，
+    // 同视图恒同串。shim 侧全树枚举（baidu scanAndDoRender 每次 resolve 重扫）以它为
+    // 缓存键：戳不变 ⇒ 视图未变 ⇒ 直接复用上次枚举的代理数组/tag 表，**免 400KB
+    // payload 调用与 2 万代理重建**（V8 主 GC 风暴——MarkCompact 100% CPU 自旋百秒
+    // 级——的分配源头）。ptr 项 = dom_html Arc 身份（同注册内换代必换 Arc）；count 项
+    // = mutations 尾长；epoch 项 = REG_EPOCH（跨注册 Arc 地址复用 ABA 防御）；drain 项
+    // = MUT_DRAIN_GEN（drain 后重长回同 count 内容可不同——与视图缓存精确命中键同
+    // 族，缺项会把 pre-drain 枚举当同视图复用）；gen 项 = DOM_VIEW_GEN（就地换代必
+    // 换——R358/R3243，Arc 身份对 `*snap = html` 视而不见）。
     {
         let html = Arc::clone(dom_html);
         let m = Arc::clone(mutations);
@@ -937,8 +939,9 @@ pub fn register_dom_callbacks(
             Box::new(move |_args| {
                 let ptr = Arc::as_ptr(&html) as usize;
                 let count = m.lock().unwrap_or_else(|e| e.into_inner()).len();
+                let drain_gen = MUT_DRAIN_GEN.load(Ordering::Relaxed);
                 let view_gen = DOM_VIEW_GEN.load(Ordering::Relaxed);
-                format!("{epoch:x}:{ptr:x}:{count}:{view_gen}")
+                format!("{epoch:x}:{ptr:x}:{count}:{drain_gen:x}:{view_gen}")
             }),
         );
     }

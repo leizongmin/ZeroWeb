@@ -464,3 +464,49 @@ fn test_query_view_doc_drain_exact_count_collision_r_baidu3() {
         "drain 后同 count 精确命中不得端出 pre-drain 视图（y1 须可见、x1 不得复活）"
     );
 }
+
+/// `__zw_dom_view_stamp` drain 代际（视图缓存键同族第四处）：shim 侧全树枚举
+/// 缓存（`_zwDocAllElements` 戳快道）以戳串为有效性键——drain（clear + bump
+/// drain 代际，不换代）后重长回恰好同 count 时，缺 drain 项戳不变，pre-drain
+/// 枚举（代理数组/tag 表）会被当同视图复用。戳必须含 drain 代际。
+#[test]
+fn test_dom_view_stamp_drain_gen_r_baidu3() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><ul id='a'></ul></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // 批 1：裸回调插入 x1（纯 push）→ 取戳（count=1，pre-drain）。
+    sandbox
+        .execute(
+            "globalThis.__zw_insert_adjacent_html('#a', 'beforeend', '<li>x1</li>');\
+             globalThis.__s1 = __zw_dom_view_stamp();",
+        )
+        .unwrap();
+    // drain：清队列 + bump drain 代际，不换代；再裸回调插入 y1 重长回恰好同 count。
+    mutations.lock().unwrap().clear();
+    crate::js_dom_bridge::bump_mut_drain_gen();
+    sandbox
+        .execute(
+            "globalThis.__zw_insert_adjacent_html('#a', 'beforeend', '<li>y1</li>');\
+             globalThis.__s2 = __zw_dom_view_stamp();",
+        )
+        .unwrap();
+    let s1 = sandbox.execute("globalThis.__s1").unwrap().value;
+    let s2 = sandbox.execute("globalThis.__s2").unwrap().value;
+    assert_ne!(
+        s1, s2,
+        "drain 后同 count 重长，视图戳必须变化（缺 drain 项端出 pre-drain 枚举缓存）"
+    );
+}
