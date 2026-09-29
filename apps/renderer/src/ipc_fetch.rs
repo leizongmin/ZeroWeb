@@ -278,13 +278,24 @@ impl AsyncFetchHost for IpcAsyncFetchHost<'_> {
     }
 }
 
-/// 无 browser 进程时的测试 stub：fetch 立即返回 Err，避免 AsyncPageLoad 永久 pending。
-pub struct StubAsyncFetchHost;
+/// 无 browser 进程时的测试 stub：未命中 [`StubAsyncFetchHost::responses`] 的 URL 立即
+/// Err（默认全 Err），避免 AsyncPageLoad 永久 pending；命中 URL 返回预置结果——供动态
+/// 脚本取回成功路径等 runtime 测试注入 Ok 应答。
+#[derive(Default)]
+pub struct StubAsyncFetchHost {
+    /// 预置应答表（URL → Ok(文本)/Err(原因)），未命中走 Err("stub network")。
+    pub responses: HashMap<String, Result<String, String>>,
+}
 
 impl AsyncFetchHost for StubAsyncFetchHost {
-    fn fetch_text_meta(&mut self, _: &str, _: ResourceFetchMeta) -> Receiver<Result<String, String>> {
+    fn fetch_text_meta(&mut self, url: &str, _: ResourceFetchMeta) -> Receiver<Result<String, String>> {
         let (tx, rx) = channel();
-        let _ = tx.send(Err("stub network".into()));
+        let _ = tx.send(
+            self.responses
+                .get(url)
+                .cloned()
+                .unwrap_or_else(|| Err("stub network".into())),
+        );
         rx
     }
 
@@ -563,7 +574,7 @@ mod tests {
 
     #[test]
     fn stub_async_fetch_host_returns_immediate_error() {
-        let mut host = StubAsyncFetchHost;
+        let mut host = StubAsyncFetchHost::default();
         let rx = host.fetch_text("https://example.com/x");
         assert!(rx.try_recv().unwrap().is_err());
     }

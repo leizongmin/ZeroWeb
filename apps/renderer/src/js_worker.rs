@@ -650,6 +650,33 @@ fn js_worker_main(
     let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // js-dom R100/R145 identity 桥（renderer 侧）：`__zw_handle_for_selector` selector→handle
+    // 反查——createElement/cloneNode 产物（__zwHandle 锚定 listener store）在宿主按 selector
+    // 派发（R2944 元素级 load/error、宿主事件）时经此命中 handle key。镜像 webview
+    // `register_identity_bridge_callback`。worker 的 `handle_selector_map` 是 handle→selector
+    // **正置**表（webview selector_handle_map 的倒置镜像，生产方 =
+    // page_scripts::apply_recorded_mutations 的 handle_selectors merge）——反查按值匹配
+    //（表随 createElement 数量线性，宿主派发低频，O(n) 扫描可接受）。
+    // 已知边界：多个 handle 映射到同一 selector 时，HashMap 迭代序不定 → 命中任意一个
+    //（webview 正置表为 last-write-wins，语义不同但同属「多孪生元素未定义锚定」；如需
+    // 确定性，须在 merge 时维护 selector→handle 索引）。
+    // 缺此注册时 renderer 宿主派发对动态创建元素恒 miss。
+    {
+        let sel_map = Arc::clone(&handle_selector_map);
+        sandbox.register_callback(
+            "__zw_handle_for_selector",
+            Box::new(move |args: &[String]| -> String {
+                let sel = args.first().map(String::as_str).unwrap_or("");
+                sel_map
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .iter()
+                    .find(|(_, mapped_sel)| mapped_sel.as_str() == sel)
+                    .map(|(handle, _)| handle.clone())
+                    .unwrap_or_default()
+            }),
+        );
+    }
     // S11（cdp-protocol value-only console 面）：覆盖引擎的 `__zw_console_log`（后注册者
     // 胜——execute 边界按注册序 re-bind 全局），tracing 行为保持 + 逐条推入共享队列供
     // renderer 主循环 drain → browser/headless（`Runtime.consoleAPICalled` 事件源）。

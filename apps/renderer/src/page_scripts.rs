@@ -282,7 +282,7 @@ fn dispatch_link_event(js_worker: &RendererJsWorker, url: &str, ty: &str) {
 
 /// R2944 mirror：派发外部 `<script src>` 元素级 load/error 事件进 shim。经 `script_dispatch_script_event`
 /// 生成 `__zw_dispatch_script_event(url, type)`——shim 按 src 绝对 URL 匹配 `<script>` 元素 proxy 派发。best-effort。
-fn dispatch_script_event(js_worker: &RendererJsWorker, url: &str, ty: &str) {
+pub(crate) fn dispatch_script_event(js_worker: &RendererJsWorker, url: &str, ty: &str) {
     let report = script_dispatch_script_event(url, ty);
     if let Err(e) = js_worker.execute_script_direct(&report) {
         warn!("dispatch script event ({ty} {url}): {e}");
