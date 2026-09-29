@@ -1,5 +1,6 @@
 如无特别要求，默认使用中文来编写文档和注释，执行日志和反馈给用户的信息（包括警告、报错等）则应该使用英文。
 Rally 本来就是跨轮次、跨 session 的长期执行循环。遇到需要多轮推进的架构任务时，不要把“需要多会话/长期推进”当成需要用户决策的阻塞；应更新对应的状态文档/控制面（例如 goal 的 master.md），并在最终一行输出 `CONTINUE: <下一步>` 把明确下一步传给后续轮次。
+更新 goal 的 `master.md` 时，先检查开头的状态、卡点和下一步是否仍准确，再按 `AGENTS.md` 的写作准则只记本轮变化与证据。没有状态变化时不要追加一段重复的“守成”叙述；现有任务要求保留的记录仍须保留，并写得简短。
 有阶段性进展时应该及时在当前的分支提交代码并推送到远端，也要及时拉取远端的更新并rebase。
 单个代码文件一般不要超过2000行，如果超过了应该考虑合理拆分成多个文件。
 跑测试或 WPT reftest 时必须用 `make test` / `make reftest`，禁止裸跑 `cargo test` 或 `cargo run --bin zero-wpt-runner -- reftest`：入口会先在**不设内存阈值**的阶段完成编译，再以 `scripts/test-guard.rs` 包裹测试/runner 的执行阶段；内存型 bug（如无限循环 realloc）只会被杀掉测试进程树，不会触发系统 OOM 连累整个 tmux session / rally 流程。阈值/兜底见 docs/rally/oom-guard.md。
@@ -8,6 +9,7 @@ Linux 下长期 agent/rally 或双 clone 并行开发时，先用 `make dev-guar
 - legacy HTML 产品 smoke（DC-13 Tier 1，HTML 3.2/4 + CSS1/2）：`make product-smoke-legacy`（42 fixture vs chrome-127 oracle，trend-only exit 0）。diff% 为 font-wall 趋势数据；**struct-check FAIL 是「待查清单」诊断入口，不阻 CI**——run-all.sh 现打印 issue 详情（sibling overlap / collapsed / text concatenation）。历史 known struct FAIL = 37-form-controls（Phase A 阻塞，**R2156 slice 1 + R2162 slice 2 default-on 后已 struct PASS 3.85%**，非再 FAIL；R2163 实测 legacy 51/51 struct PASS）。涉及 UA 样式 / 表单 / legacy 元素变更时跑，防结构性退化藏匿（曾抓到 R1651 center / R1653 caption / R1657 noframes / R1669 area+frame+keygen / R1675 datalist+source+track 等真 bug）。
 
 7. 取得重大进展或遇到卡点（如需用户决策、长时间阻塞、无法继续推进）时，应及时通过飞书 CLI 以应用机器人身份通知本人，消息需说明具体的进展或卡点信息。此通知仅为告知，不要因此阻塞或改变后续工作流程。命令：`SELF=$(lark-cli auth list | python3 -c "import sys,json;print(json.load(sys.stdin)[0]['userOpenId'])") && lark-cli im +messages-send --user-id "$SELF" --text "<具体内容>" --as bot`。
+   通知先说结果或卡点，再说影响和下一步；没有影响或下一步时省略，不贴长测试日志。例如：“返回列表后内容空白的问题已修复，原网站复测通过。PR #123 正在审查。”遇到阻塞可写：“页面截图上传失败，PR 暂不能交付。我会核对上传结果后只补缺失的图片。”
 
 8. **并行开发（双独立 clone + 同一 main）**：两条 rally 流各跑一个独立 clone（勿同仓多 worktree）；push 前必 `git pull --rebase`（non-fast-forward 常态，自主 rebase、禁强推），commit 小而频繁。
 
