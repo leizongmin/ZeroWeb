@@ -1,3 +1,8 @@
+---
+date: 2026-09-29
+modules: engine,webview
+---
+
 # baidu core-js wrapped Promise 微任务自馈环 → V8 堆 OOM abort
 
 ## 问题描述

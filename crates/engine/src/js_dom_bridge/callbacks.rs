@@ -23,7 +23,7 @@ thread_local! {
     /// 边界；而同 epoch 视图文档只被创建它的 V8 线程读写（回调与注册同线程，
     /// 与 [`LIVE_QUERY_DOC`] 同一约束面），thread_local 即正确归属。
     ///
-    /// 命中键 = `(dom_arc, mut_arc, count, drain_gen)`——registration epoch 内
+    /// 命中键 = `(dom_arc, mut_arc, count, drain_gen, view_gen)`——registration epoch 内
     /// `dom_html` 内容不可变（写入点只有注册时初值与 R348 重绑，两者都安装
     /// **新 Arc**），`mutations` 只增不减 ⇒ 键相同 ⇒ 查询视图输入逐字节相同
     ///（R-baidu2 的 `src == *snap` 全文比较被此恒等式取代，baidu 类 436KB 页面
@@ -180,11 +180,13 @@ fn with_query_view_doc<R>(
 /// (ptr, count) 可能碰撞；epoch 项保证跨注册永不碰撞（见 `__zw_dom_view_stamp`）。
 static REG_EPOCH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-/// R-baidu3：mutations 队列 drain 代际——批末 `mutations.clear()`（渲染进程
-/// js_worker / webview user_actions 两处）时递增。增量视图链（[`with_query_view_doc`]
-/// 的 prev_base）只在 gen 相同（本轮批内无 drain）时成立：drain 后同批重新增长
-/// 越过旧 count 时 (ptr, count) 键会被误判为「只增长」，没有 gen 项会把新队列的
-/// 前段当成已应用基座（错视图）。
+/// R-baidu3：mutations 队列 drain 代际——队列排空站点（渲染进程 js_worker、
+/// webview user_actions、renderer page_scripts `apply_recorded_mutations` 等，
+/// [`bump_mut_drain_gen`] 调用点为权威清单）时递增。drain ⇒ bump 是全视图缓存
+/// 键（[`VIEW_DOC_CACHE`]/TAG_MEMO/TAGGED_ALL_CACHE/`__zw_dom_view_stamp`）的
+/// 不变式前提：drain 后同批重新增长回旧 count 时 (ptr, count) 键会被误判为
+/// 「只增长」/「精确命中」，没有 gen 项会把 pre-drain 视图端出（错视图）。
+/// 未配对 view_gen 换代的 drain 站点（不推快照的排空路径）必须直接 bump 本代际。
 pub static MUT_DRAIN_GEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// mutations 队列 drain 站点调用（见 [`MUT_DRAIN_GEN`]）。
@@ -2405,8 +2407,8 @@ fn with_query_doc_live_aware<R>(html: &str, live_ok: bool, f: impl FnOnce(&zero_
 }
 
 // __zw_get_tag 热路径备忘缓存（R-baidu3）：`(视图键, sel) → tag`。视图键 =
-// (dom_arc, mut_arc, count)（与 QueryViewEntry 命中键同一恒等式）——键内
-// sel→tag 是查询视图的纯函数。jQuery/Sizzle 每次选择器操作经
+// (dom_arc, mut_arc, count, drain_gen, view_gen)（与 QueryViewEntry 命中键同一
+// 恒等式）——键内 sel→tag 是查询视图的纯函数。jQuery/Sizzle 每次选择器操作经
 // getElementsByTagName('*') 全文档枚举，每个元素 proxy 属性读（tagName/localName/…）
 // 都打一次 __zw_get_tag 宿主回调；备忘把重复 sel 的宿主往返（含 find_by_selector
 // 文档遍历）塌缩为每视图一次。R348 重绑换 dom_html Arc / mutation 追加 → 键变化
@@ -2419,7 +2421,7 @@ thread_local! {
 }
 
 // __zw_query_all_tagged 的 payload 单条目缓存（R-baidu3）：(dom_arc, mut_arc, count,
-// drain_gen, sel) → payload。视图键恒等式同 QueryViewEntry（epoch Arc 身份 + 队列长度
+// drain_gen, view_gen, sel) → payload。视图键恒等式同 QueryViewEntry（epoch Arc 身份 + 队列长度
 // + drain 代际唯一决定视图输入——drain 后重长到同 count 内容可不同，缺 drain_gen 会
 // 命中 pre-drain 条目）；sel 或视图变化即换条目。jQuery/Sizzle 每事件多次
 // getElementsByTagName('*')，同视图重枚举免 O(匹配数) 的重复 sel+tag 构建。

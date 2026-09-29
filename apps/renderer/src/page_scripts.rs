@@ -803,6 +803,12 @@ fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &str) -> Opti
     if recorded.is_empty() {
         return None;
     }
+    // PR #33 返修（review minor）：drain ⇒ bump_mut_drain_gen 不变式普遍成立——
+    // 本站 drain 后不推快照（`ZW_RENDERER_TICK_PER_TASK=1` 的 tick_observers_with
+    // per-task 循环排空队列直接下一轮 execute），无配对 view_gen 换代；不 bump 则
+    // 下一轮查询恰落同 count 时视图缓存精确命中会端出 pre-drain 视图。其余 drain
+    // 站点均有配对 set_dom_snapshot（view_gen 换代）兜底，本站补行使不变式无条件。
+    zero_engine::js_dom_bridge::bump_mut_drain_gen();
     // R3254-M7'：JS focus()/blur() 是宿主状态变更（不写 DOM、不经渲染管线）——分离到
     // worker 的 focus 队列，renderer 事件循环在事务边界 drain 同步 retained 焦点状态。
     let focus_changes: Vec<Option<String>> = recorded
