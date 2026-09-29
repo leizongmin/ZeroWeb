@@ -672,7 +672,11 @@
       while (waiting.length > 0) waiting.shift().reject(e);
       // net-api M4-S7：pending pull-into 描述符 error steps（「read({min}), then error()」面）。
       while (pullIntos.length > 0) pullIntos.shift().reject(e);
-      while (closedWaiters.length > 0) closedWaiters.shift().reject(e);
+      while (closedWaiters.length > 0) {
+        var cwE = closedWaiters.shift();
+        if (typeof cwE.markHandled === 'function') cwE.markHandled(); // spec ReadableStreamError 步骤 7
+        cwE.reject(e);
+      }
     }
     function flushPull() {
       // net-api M4-S4：spec §CallPullIfNeeded——started + readable + 非 closeRequested +
@@ -768,10 +772,20 @@
               if (!v2 || typeof v2.byteLength !== 'number' || v2.byteLength === 0) {
                 throw new TypeError('respondWithNewView: view must be non-zero-length');
               }
-              if (v2.buffer.byteLength !== d.byteLength) {
+              if (state === 'closed' && v2.byteLength !== 0) throw new TypeError('closed stream requires zero-length view');
+              // net-api M4-S10：spec RespondWithNewView 校验（steps 7-9）——① 描述符写入偏移
+              // = 视图偏移（RangeError——'byobRequest.view.subarray(1,2)' 错位面）；② 描述符
+              // **缓冲**字节长 = 视图缓冲字节长（原实现对描述符视图长比较——分支 tee 把整缓冲
+              // 分支视图（byteLength 1 / buffer 3）回提交被误拒）；③ 已填 + 视图长 ≤ 描述符长。
+              if (d.byteOffset + d.bytesFilled !== v2.byteOffset) {
+                throw new RangeError('respondWithNewView: view byteOffset mismatch');
+              }
+              if (d.buffer.byteLength !== v2.buffer.byteLength) {
                 throw new RangeError('respondWithNewView: view buffer length mismatch');
               }
-              if (state === 'closed' && v2.byteLength !== 0) throw new TypeError('closed stream requires zero-length view');
+              if (d.bytesFilled + v2.byteLength > d.byteLength) {
+                throw new RangeError('respondWithNewView: view exceeds pull-into capacity');
+              }
               d.buffer = v2.buffer;
               d.byteOffset = v2.byteOffset;
               d.bytesFilled = v2.byteLength;
@@ -820,7 +834,15 @@
       return self._doCancel(reason);
     }
     this._doCancel = function (reason) {
-      closeStream();
+      // net-api M4-S10：cancel 的 pull-into close steps **given undefined**（spec
+      // ReadableStreamCancel 步骤 6——缓冲丢弃，read 兑现 {value: undefined, done: true}；
+      // 原 closeStream() 无参把已填视图交还——'canceling both branches in sequence with
+      // delay' 断言 value undefined 面）。
+      closeStream(true);
+      // spec ReadableStreamCancel 步骤 3——errored → reject storedError（tee composite cancel
+      // 的 cancelPromise 兑现值采用该 rejection——'erroring a teed stream should properly
+      // handle canceled branches' 双页断言面：分支 cancel 须以源错误拒绝）。
+      if (state === 'errored') return Promise.reject(errorVal);
       var p;
       if (typeof srcCancel === 'function') {
         try { p = Promise.resolve(srcCancel.call(source, reason)); } catch (eCancel) { p = Promise.reject(eCancel); }
@@ -839,6 +861,119 @@
         try { closedP.catch(function () {}); } catch (_eRel) {} // 已发布 promise 的拒绝标记 handled（runner unhandled-rejection 面）
       }
     }
+    // net-api M4-S10：BYOB read-into 原语上移构造器作用域（原 byob reader 闭包内 readInto——
+    // 只引用构造器级状态 queue/pullIntos/state/closeStream/flushPull，无 reader 本地态）——
+    // 同一实现同时服务 ① byob reader 的公开 read(view) 与 ② tee 的源侧 byob 读
+    //（spec ReadableByteStreamTee pullWithBYOBReader——分支 pull-into 视图直入源 pull-into，
+    // 源 enqueue/respond 经分支缓冲物理写入后 respond 回填分支描述符）。
+    // spec 校验链：零长度视图/缓冲 → TypeError；min 0/非有限/负 → TypeError（0 明确 TypeError、
+    // 缺省 1）；min > 视图长 → RangeError（按元素计）；errored → reject storedError。
+    // 队列可满足 → 跨 chunk 拷贝填充 + commit；不足且 closeRequested 排空 → close steps；
+    // 否则 pull-into 描述符入列（FIFO）→ flushPull → 源经 byobRequest.respond/enqueue 填充。
+    function byobReadInto(view, options, request) {
+      // net-api M4-S10：request（read-into request steps 形，tee 源侧 byob 读用）——给定时
+      // resolve/reject 以 request steps 包装（chunk/close/error），兑现与 promise 形同点：
+      // steps 在队列填充/commitDescriptor 的**同一同步步内**执行，投递微任务先于后续
+      // flushPull → pull throw 的前向 reaction 排队（同 _zwReadRawSteps 注）。
+      self._disturbed = true;
+      var minRaw = (options != null && typeof options === 'object') ? options.min : undefined;
+      var min = 1;
+      if (minRaw !== undefined) {
+        var mn = Number(minRaw);
+        if (mn !== mn || mn === Infinity || mn === -Infinity || mn < 0) {
+          return Promise.reject(new TypeError('invalid min'));
+        }
+        min = Math.floor(mn);
+        if (min === 0) return Promise.reject(new TypeError('min must be non-zero'));
+      }
+      if (!view || typeof view.byteLength !== 'number' || view.byteLength === 0) {
+        return Promise.reject(new TypeError('view must be non-zero-length'));
+      }
+      var isDataView = (typeof DataView === 'function') && view instanceof DataView;
+      var elementSize = isDataView ? 1 : (view.BYTES_PER_ELEMENT || 1);
+      var viewLen = isDataView ? view.byteLength : view.length;
+      if (min > viewLen) return Promise.reject(new RangeError('min exceeds view length'));
+      var minBytes = min * elementSize;
+      var resD = null, rejD = null;
+      var dPromise;
+      if (request) {
+        // net-api M4-S10：steps 形（tee 源侧）——request.chunkSteps/closeSteps/errorSteps。
+        resD = function (r) { if (r.done) request.closeSteps(r.value); else request.chunkSteps(r.value); };
+        rejD = function (e) { request.errorSteps(e); };
+      } else {
+        dPromise = new Promise(function (r, j) { resD = r; rejD = j; });
+      }
+      if (state === 'errored') { rejD(errorVal); return dPromise; }
+      var total = 0;
+      while (total < view.byteLength && queue.length > 0) {
+        var entry = queue.shift();
+        queueTotalSize -= entry.size;
+        if (queueTotalSize < 0) queueTotalSize = 0;
+        var srcR = entry.chunk instanceof Uint8Array ? entry.chunk : new Uint8Array(0);
+        var take = Math.min(view.byteLength - total, srcR.length);
+        try {
+          new Uint8Array(view.buffer, view.byteOffset + total, take).set(srcR.subarray(0, take));
+        } catch (_eFill2) {
+          return Promise.reject(new TypeError('read: buffer fill failed (' + _eFill2.message + ')'));
+        }
+        total += take;
+        if (take < srcR.length) {
+          var rest = srcR.subarray(take);
+          queue.unshift({ chunk: rest, size: rest.length });
+          queueTotalSize += rest.length;
+        }
+      }
+      function outView() {
+        try {
+          return isDataView ? new DataView(view.buffer, view.byteOffset, total)
+                            : new view.constructor(view.buffer, view.byteOffset, total / elementSize);
+        } catch (_eOut) { return new Uint8Array(0); }
+      }
+      if (total >= minBytes || total >= view.byteLength) {
+        if (closeRequested && queue.length === 0) closeStream(false);
+        resD({ value: outView(), done: false });
+        return dPromise;
+      }
+      if (state === 'closed' || (closeRequested && queue.length === 0)) {
+        if (closeRequested && queue.length === 0) closeStream(false);
+        // net-api M4-S10：close steps 经 resD 包装（request 形 → closeSteps——缓冲回交视图）。
+        resD({ value: total > 0 ? outView() : (isDataView ? new DataView(view.buffer, view.byteOffset, 0) : new view.constructor(view.buffer, view.byteOffset, 0)), done: true });
+        return dPromise;
+      }
+      pullIntos.push({
+        buffer: view.buffer, byteOffset: view.byteOffset, byteLength: view.byteLength,
+        bytesFilled: total, min: minBytes, resolve: resD, reject: rejD,
+        viewCtor: view.constructor, isDataView: isDataView, elementSize: elementSize
+      });
+      flushPull();
+      return dPromise;
+    }
+    this._zwByobReadRaw = byobReadInto; // net-api M4-S10：tee 源侧 byob 读入口（see above）
+    // net-api M4-S10：spec ReadableStreamDefaultReaderRead 的 **read request steps 形**——
+    // tee 源默认读用。与 promise 形（_zwReadRaw + .then）的本质差异：chunk/close steps 在
+    // dequeue **同一同步步内**执行——tee 的投递微任务此刻入队，先于同一同步体内后续
+    // flushPull → pull throw → errorStream → closedPromise 前向的 reaction（promise 形的
+    // .then 注册晚于整个同步体，投递反应恒排在前向之后——'errors in the source should
+    // propagate to both branches' 双块队列源 'b' 投递被覆盖的根因）。
+    this._zwReadRawSteps = function (readRequest) {
+      self._disturbed = true;
+      if (state === 'errored') { readRequest.errorSteps(errorVal); return; }
+      if (queue.length > 0) {
+        var entry = queue.shift();
+        queueTotalSize -= entry.size;
+        if (queueTotalSize < 0) queueTotalSize = 0;
+        readRequest.chunkSteps(entry.chunk);
+        if (closeRequested && queue.length === 0) closeStream();
+        else flushPull();
+        return;
+      }
+      if (state === 'closed') { readRequest.closeSteps(); return; }
+      waiting.push({
+        resolve: function (v) { if (v.done) readRequest.closeSteps(); else readRequest.chunkSteps(v.value); },
+        reject: function (e) { readRequest.errorSteps(e); }
+      });
+      flushPull();
+    };
     this.getReader = function (options) {
       // net-api M4-S1：byob reader 仅字节流（readable-byte-streams「getReader({mode:
       // 'byob'}) throws on non-bytes streams」面）。
@@ -866,84 +1001,21 @@
       var resolveClosedP, rejectClosedP;
       var closedP = new Promise(function (res, rej) { resolveClosedP = res; rejectClosedP = rej; });
       var closedEntry = { resolve: resolveClosedP, reject: rejectClosedP };
+      // net-api M4-S10：spec ReadableStreamError 步骤 7——closedPromise 拒绝时标记
+      // [[PromiseIsHandled]] = true（页面未访问 .closed 的 reader 不产生 unhandled
+      // rejection——tee 页 'errors in the source should propagate to both branches' 的
+      // 'Unhandled rejection' 失败根因：分支 closedP 在测试挂 handler 前已拒绝）。
+      closedEntry.markHandled = function () {
+        try { closedP.catch(function () {}); } catch (_eMh) {}
+      };
       if (state === 'closed') resolveClosedP();
       else if (state === 'errored') rejectClosedP(errorVal);
       else closedWaiters.push(closedEntry);
       if (byob) {
-        // net-api M4-S7：BYOB read **pull-into 描述符化**（spec §4.5/§4.9.5 子集）——
-        // ① read(view, {min}) 校验链（零长度视图/缓冲 → TypeError；min 0/负 → TypeError；
-        //    min > 视图长 → RangeError；min 按元素计，字节目标 = min × elementSize）；
-        // ② 队列可满足 → 跨 chunk 拷贝填充（余量回队）+ commit（同缓冲新视图 done:false）；
-        // ③ 不足且 closed/closeRequested → close steps（部分填充视图 done:true）；
-        // ④ 否则 pull-into 描述符入列（FIFO）→ flushPull → 源经 byobRequest.respond/enqueue
-        //    填充（最小填充契约：filled >= min 才 commit）。
-        function readInto(view, options) {
-          self._disturbed = true;
-          var minRaw = (options != null && typeof options === 'object') ? options.min : undefined;
-          var min = 1;
-          if (minRaw !== undefined) {
-            var mn = Number(minRaw);
-            if (mn !== mn || mn === Infinity || mn === -Infinity || mn < 0) {
-              return Promise.reject(new TypeError('invalid min'));
-            }
-            min = Math.floor(mn);
-            if (min === 0) return Promise.reject(new TypeError('min must be non-zero'));
-          }
-          if (!view || typeof view.byteLength !== 'number' || view.byteLength === 0) {
-            return Promise.reject(new TypeError('view must be non-zero-length'));
-          }
-          var isDataView = (typeof DataView === 'function') && view instanceof DataView;
-          var elementSize = isDataView ? 1 : (view.BYTES_PER_ELEMENT || 1);
-          var viewLen = isDataView ? view.byteLength : view.length;
-          if (min > viewLen) return Promise.reject(new RangeError('min exceeds view length'));
-          var minBytes = min * elementSize;
-          if (state === 'errored') return Promise.reject(errorVal);
-          var resD = null, rejD = null;
-          var dPromise = new Promise(function (r, j) { resD = r; rejD = j; });
-          var total = 0;
-          while (total < view.byteLength && queue.length > 0) {
-            var entry = queue.shift();
-            queueTotalSize -= entry.size;
-            if (queueTotalSize < 0) queueTotalSize = 0;
-            var srcR = entry.chunk instanceof Uint8Array ? entry.chunk : new Uint8Array(0);
-            var take = Math.min(view.byteLength - total, srcR.length);
-            try {
-              new Uint8Array(view.buffer, view.byteOffset + total, take).set(srcR.subarray(0, take));
-            } catch (_eFill2) {
-              return Promise.reject(new TypeError('read: buffer fill failed (' + _eFill2.message + ')'));
-            }
-            total += take;
-            if (take < srcR.length) {
-              var rest = srcR.subarray(take);
-              queue.unshift({ chunk: rest, size: rest.length });
-              queueTotalSize += rest.length;
-            }
-          }
-          function outView() {
-            try {
-              return isDataView ? new DataView(view.buffer, view.byteOffset, total)
-                                : new view.constructor(view.buffer, view.byteOffset, total / elementSize);
-            } catch (_eOut) { return new Uint8Array(0); }
-          }
-          if (total >= minBytes || total >= view.byteLength) {
-            if (closeRequested && queue.length === 0) closeStream(false);
-            resD({ value: outView(), done: false });
-            return dPromise;
-          }
-          if (state === 'closed' || (closeRequested && queue.length === 0)) {
-            if (closeRequested && queue.length === 0) closeStream(false);
-            return Promise.resolve({ value: total > 0 ? outView() : (isDataView ? new DataView(view.buffer, view.byteOffset, 0) : new view.constructor(view.buffer, view.byteOffset, 0)), done: true });
-          }
-          pullIntos.push({
-            buffer: view.buffer, byteOffset: view.byteOffset, byteLength: view.byteLength,
-            bytesFilled: total, min: minBytes, resolve: resD, reject: rejD,
-            viewCtor: view.constructor, isDataView: isDataView, elementSize: elementSize
-          });
-          flushPull();
-          return dPromise;
-        }
+        // net-api M4-S7：BYOB read **pull-into 描述符化**（spec §4.5/§4.9.5 子集）——实现体
+        // net-api M4-S10 上移为构造器级 byobReadInto（同实现服务 tee 源侧 byob 读），此处仅委托。
         return {
-          read: readInto,
+          read: byobReadInto,
           // net-api M4-S4：reader.cancel 走 cancelInternal（spec GenericCancel——close steps
           // given undefined 由 closeStream(byCancel) 面）。
           cancel: function (reason) { return cancelInternal(reason); },
@@ -1268,33 +1340,30 @@
       try { p.catch(function () {}); } catch (_ePt) {} // spec：promise.[[PromiseIsHandled]] = true
       return transform.readable;
     };
-    // R2971 tee()：分叉成两独立 ReadableStream（共享同一源）。buffer-based：共享 append-only buffer +
-    // 去重源读（readPromise 并发拉源仅一次）+ 每分支 pos（已消费偏移）。分支 pull：buffer 有 chunk → 发；
-    // 否则去重拉源 → 入 buffer 后发；源 close/error → 同步到两分支。源须未 locked（tee 持源 reader）。
-    // 内存：buffer 随两分支消费速率差增长（慢分支拖累快分支的已读 chunk 保留），headless finite 流可接受。
+    // net-api M4-S10：R2971 tee() 重做为 spec ReadableByteStreamTee 结构（spec §4.9.1——
+    // 替换原 buffer-based 简化模型：共享 append-only buffer + 分支 pull 取数无法表达字节流
+    // tee 的读计数/BYOB 前向/readAgain 语义）。核心件：
+    // ① reading 串行门 + readAgainForBranch1/2（spec pull1/pull2Algorithm 步骤 1——读在飞时
+    //    分支 pull 只置旗标；chunk/close steps 微任务**开头**复位旗标、末尾按旗标续拉——
+    //    「should only pull enough to fill the emptiest queue」pull 计数面）；
+    // ② pullWithDefaultReader——源默认读（read request steps 形 _zwReadRawSteps——steps 在
+    //    dequeue 同步步内取到，投递微任务先于后续 pull throw 的前向 reaction 入队），chunk
+    //    steps 微任务内双分支 enqueue（字节源 clone——M4-S9 克隆面）、close steps 双分支关流
+    //    （分支控制器 close 即缓冲回交——spec respond(0) 等价）+ cancelPromise 兑现；
+    // ③ pullWithBYOBReader(view, forBranch2)——**源侧 BYOB 读**：分支 byobRequest 视图直入
+    //    self._zwByobReadRaw（源 pull-into 描述符即分支缓冲——源 enqueue/respond 物理写入
+    //    分支缓冲，源 pull 的 byobRequest.view 非空）；chunk steps：对 byob 分支
+    //    respondWithNewView(chunk)（字节物理已在分支缓冲——新视图回提交）、对另一分支
+    //    enqueue 克隆；close steps：双分支关流（缓冲回交）+ cancelPromise 兑现；
+    // ④ 错误传播维持 M4-S8 reader.closed rejection 前向（单 reader 不切换——spec 双 reader
+    //    切换 + forwardReaderError current-reader 判别在本实现不需要：无切换即无旧 reader
+    //    假拒绝）；composite cancel 维持 M4-S8。
     this.tee = function () {
       if (self._locked) throw new TypeError('Cannot tee: ReadableStream is locked');
       var reader = self.getReader();
-      var buffer = [];            // 共享已读 chunk（append-only，两分支按 pos 各自消费）
-      var sourceDone = false;
-      var sourceError = null;
-      var readPromise = null;     // 去重：并发 pull 共享同一源读 Promise
-      function pullOnce() {
-        if (sourceDone) return Promise.resolve({ done: true });
-        if (sourceError) return Promise.reject(sourceError);
-        if (!readPromise) {
-          // net-api M4-S4：内部消费走 _zwReadRaw（null 原型——then 投毒防线，见 getReader 注）。
-          readPromise = reader._zwReadRaw().then(function (r) {
-            readPromise = null;
-            if (r.done) sourceDone = true; else buffer.push(r.value);
-            return r;
-          }, function (e) { readPromise = null; sourceError = e; throw e; });
-        }
-        return readPromise;
-      }
-      // net-api M4-S8：composite cancel（spec ReadableStreamDefaultTee cancel1/2Algorithm）——
-      // 分支 cancel 记 reason；双 canceled → 源 cancel([reason1, reason2])；单 canceled →
-      // cancelPromise 挂至对侧（「canceling both branches should aggregate」双序面）。
+      var reading = false;                    // spec：源读（默认/BYOB）在飞旗标
+      var readAgainForBranch1 = false;
+      var readAgainForBranch2 = false;
       var canceled1 = false, canceled2 = false;
       var teeReason1, teeReason2;
       var teeCancelResolve = null;
@@ -1309,72 +1378,177 @@
         }
         return teeCancelPromise;
       }
+      function resolveCancelIfAny() {
+        // spec chunk/close steps 末步——单侧未取消即兑现 cancelPromise（'canceling branch1
+        // should finish when branch2 reads until end of stream' 挂账腿解锁面）。
+        if (!canceled1 || !canceled2) teeCancelResolve(Promise.resolve());
+      }
       var _zwRsCtorForTee = self.constructor; // 捕获原构造器（页面改全局后 tee 不受扰面）
       var teeIsByte = !!self._zwIsByteStream; // net-api M4-S9：字节源 tee → 分支字节流身份
       function makeBranch(bi) {
-        var pos = 0;
         var teeCtl = null; // start 构造期内执行——经外捕获后再挂（branch 自引用 TDZ 面）
         var desc = {
           start: function (controller) {
             teeCtl = controller;
           },
-          pull: function (controller) {
-            if (pos < buffer.length) {
-              // spec ReadableByteStreamTee——**两分支均收 chunk 克隆**（原 buffer 属源；
-              // 「chunks should be cloned for each branch」双缓冲独立面）。
-              var out = buffer[pos++];
-              controller.enqueue((teeIsByte && out instanceof Uint8Array)
-                ? (function () { var cl = new Uint8Array(out.byteLength); cl.set(out); return cl; })()
-                : out);
-              return;
-            }
-            if (sourceDone) { controller.close(); return; }
-            if (sourceError) { controller.error(sourceError); return; }
-            pullOnce().then(function (r) {
-              if (r.done) { controller.close(); return; }
-              if (pos < buffer.length) {
-                var out2 = buffer[pos++];
-                controller.enqueue((teeIsByte && out2 instanceof Uint8Array)
-                  ? (function () { var cl2 = new Uint8Array(out2.byteLength); cl2.set(out2); return cl2; })()
-                  : out2);
-              }
-            }, function (e) { controller.error(e); });
-          }
+          pull: function () { return pullForBranch(bi); },
+          // net-api M4-S10：分支 cancel 算法 = tee composite cancel（spec cancel1/2Algorithm
+          // 即分支 controller 的 [[cancelAlgorithm]]——stream.cancel 与 reader.cancel 同经
+          // cancelInternal→_doCancel→srcCancel 单路走 teeCancelBranch，取代 M4-S8 的
+          // stream.cancel 实例包装——reader.cancel 也要复合取消语义的腿面）。
+          cancel: function (reason) { return teeCancelBranch(bi, reason); }
         };
         if (teeIsByte) desc.type = 'bytes'; // 分支字节流身份——byob reader/pull-into 面
         var branch = new _zwRsCtorForTee(desc);
         branch._teeController = teeCtl;
         return branch;
       }
-      var teeControllers = [];
+      function cloneChunk(out) {
+        // spec CloneAsUint8Array 子集（字节源 tee 双分支独立缓冲——M4-S9 面）。
+        if (!(teeIsByte && out instanceof Uint8Array)) return out;
+        var cl = new Uint8Array(out.byteLength);
+        cl.set(out);
+        return cl;
+      }
+      function clonePreserveView(out) {
+        // net-api M4-S10：spec 分支1 侧等价形——源 chunk 经 TransferArrayBuffer 换**新
+        // ArrayBuffer 对象**但保留同一内存/byteOffset/length（'reading an array with a byte
+        // offset should clone correctly' 断言 view1.byteOffset === 2 + buffer 身份换新）。
+        // 本实现无 buffer transfer——新缓冲全量拷贝后按原偏移/长度重建视图。
+        if (!(teeIsByte && out instanceof Uint8Array)) return out;
+        try {
+          var buf2 = new ArrayBuffer(out.buffer.byteLength);
+          new Uint8Array(buf2).set(new Uint8Array(out.buffer));
+          return new out.constructor(buf2, out.byteOffset, out.length);
+        } catch (_eCpv) { return cloneChunk(out); }
+      }
+      function tryCloseCtl(ctl) {
+        // spec `! ReadableByteStreamControllerClose`——已关/closing 静默（本实现 close 抛
+        // TypeError，须吞）；字节分支有 pending pull-into 时 close 即缓冲回交
+        //（spec close steps 的 respond(0)/respondWithNewView 等价）。
+        try { ctl.close(); } catch (_eTc) {}
+      }
+      function tryEnqueueCtl(ctl, chunk) {
+        // spec `! Enqueue`——closeRequested/非 readable 静默。
+        try { ctl.enqueue(chunk); } catch (_eTe) {}
+      }
+      function respondToByobCtl(ctl, chunk) {
+        // spec chunk steps——respondWithNewView(chunk)（chunk 即源读兑现的分支缓冲视图）。
+        try {
+          var req = ctl.byobRequest;
+          if (req) req.respondWithNewView(chunk);
+        } catch (_eRb) {
+          try { ctl.error(_eRb); } catch (_eRb2) {}
+        }
+      }
       var b1 = makeBranch(1), b2 = makeBranch(2);
-      teeControllers.push(b1._teeController, b2._teeController);
+      var b1ctl = b1._teeController, b2ctl = b2._teeController;
+      // ---- spec pullWithDefaultReader（源默认读路径）----
+      function pullWithDefaultReader() {
+        // net-api M4-S10：源默认读走 read request steps 形（_zwReadRawSteps）——chunk/close
+        // steps 在 dequeue 同步步内取到、其投递微任务（spec「queue a microtask」——错误检测
+        // 时序：成功读的投递须排在异步错误前向之后排队、但**先于**已入队的前向 reaction 执行）
+        // 先于同一同步体内后续 pull throw 的前向入队。
+        self._zwReadRawSteps({
+          chunkSteps: function (chunk1) {
+            Promise.resolve().then(function () {
+              readAgainForBranch1 = false;
+              readAgainForBranch2 = false;
+              var chunk2 = (!canceled1 && !canceled2) ? cloneChunk(chunk1) : chunk1;
+              // net-api M4-S9：字节源 tee **两分支均收克隆**（spec 靠 TransferArrayBuffer 让
+              // branch1 的 chunk 换新缓冲对象满足 buffer 身份断言；本实现无 buffer transfer，
+              // branch1 用换新缓冲保偏移视图、branch2 用内容克隆——'chunks should be cloned
+              // for each branch' + 'byte offset should clone correctly' 双断言面）。
+              if (teeIsByte && !canceled1) chunk1 = clonePreserveView(chunk1);
+              if (!canceled1) tryEnqueueCtl(b1ctl, chunk1);
+              if (!canceled2) tryEnqueueCtl(b2ctl, chunk2);
+              reading = false;
+              if (readAgainForBranch1) pullForBranch(1);
+              else if (readAgainForBranch2) pullForBranch(2);
+            });
+          },
+          closeSteps: function () {
+            reading = false;
+            if (!canceled1) tryCloseCtl(b1ctl);
+            if (!canceled2) tryCloseCtl(b2ctl);
+            resolveCancelIfAny();
+          },
+          errorSteps: function () {
+            reading = false; // spec errorSteps——错误经 reader.closed 拒绝前向（M4-S8）双分支 error
+          }
+        });
+      }
+      // ---- spec pullWithBYOBReader（源侧 BYOB 读路径——M4-S10 专设）----
+      function pullWithBYOBReader(view, forBranch2) {
+        // net-api M4-S10：源侧 BYOB 读走 read-into request steps 形（byobReadInto 第三参）——
+        // steps 在队列填充/commit 同步步内取到，投递微任务先于后续 pull throw 的前向入队。
+        self._zwByobReadRaw(view, { min: 1 }, {
+          chunkSteps: function (chunk) {
+            Promise.resolve().then(function () {
+              var byobCtl = forBranch2 ? b2ctl : b1ctl;
+              var otherCtl = forBranch2 ? b1ctl : b2ctl;
+              var byobCanceled = forBranch2 ? canceled2 : canceled1;
+              var otherCanceled = forBranch2 ? canceled1 : canceled2;
+              readAgainForBranch1 = false;
+              readAgainForBranch2 = false;
+              if (!otherCanceled) {
+                var cloned = cloneChunk(chunk);
+                if (!byobCanceled) respondToByobCtl(byobCtl, chunk);
+                tryEnqueueCtl(otherCtl, cloned);
+              } else if (!byobCanceled) {
+                respondToByobCtl(byobCtl, chunk);
+              }
+              reading = false;
+              if (readAgainForBranch1) pullForBranch(1);
+              else if (readAgainForBranch2) pullForBranch(2);
+            });
+          },
+          closeSteps: function () {
+            // close steps——读入请求以 close steps 兑现（byobReadInto 的 closed/
+            // closeRequested 路径或源 closeStream 已交还缓冲）；双分支关流。
+            var byobCtl = forBranch2 ? b2ctl : b1ctl;
+            var otherCtl = forBranch2 ? b1ctl : b2ctl;
+            var byobCanceled = forBranch2 ? canceled2 : canceled1;
+            var otherCanceled = forBranch2 ? canceled1 : canceled2;
+            reading = false;
+            if (!byobCanceled) tryCloseCtl(byobCtl);
+            if (!otherCanceled) tryCloseCtl(otherCtl);
+            resolveCancelIfAny();
+          },
+          errorSteps: function () {
+            reading = false; // spec errorSteps——错误经 reader.closed 拒绝前向双分支 error
+          }
+        });
+      }
+      // ---- spec pull1/pull2Algorithm（分支 pull 入口）----
+      function pullForBranch(bi) {
+        if (reading) {
+          if (bi === 2) readAgainForBranch2 = true;
+          else readAgainForBranch1 = true;
+          return; // spec：resolved promise（分支 flushPull 同步完成等价）
+        }
+        reading = true;
+        var byobRequest = null;
+        if (teeIsByte) {
+          var ctl = (bi === 2) ? b2ctl : b1ctl;
+          try { byobRequest = ctl ? ctl.byobRequest : null; } catch (_eBr) { byobRequest = null; }
+        }
+        if (byobRequest == null) pullWithDefaultReader();
+        else pullWithBYOBReader(byobRequest.view, bi === 2);
+      }
       // net-api M4-S8：spec tee 步骤 19——reader.closedPromise rejection → **立即** error 两分支
-      //（不待分支 pull；pullOnce 的 sourceError 面只在 pull 时暴露）。
+      //（不待分支 pull；单 reader 不切换——本实现无旧 reader 假拒绝面）。
       try {
         reader.closed.then(function () {}, function (eTee) {
-          for (var ti = 0; ti < teeControllers.length; ti++) {
-            try { teeControllers[ti].error(eTee); } catch (_eTc2) {}
-          }
-          try { teeCancelResolve(Promise.resolve()); } catch (_eTc3) {}
+          try {
+            try { b1ctl.error(eTee); } catch (_eTc2) {}
+            try { b2ctl.error(eTee); } catch (_eTc3) {}
+          } catch (_eTc4) {}
+          try { teeCancelResolve(Promise.resolve()); } catch (_eTc5) {}
         });
       } catch (_eTeeFwd) {}
-      // 分支 cancel 包装——spec cancel1/2Algorithm：先关本分支（cancelInternal——closed 态、
-      // closed promise resolve），双 canceled → 源 composite cancel（[reason1, reason2]）；
-      // 单 canceled → 返回 teeCancelPromise（挂至对侧）。
-      (function () {
-        var oc1 = b1.cancel, oc2 = b2.cancel;
-        b1.cancel = function (reason) {
-          var own = oc1.call(b1, reason); // 关本分支
-          var agg = teeCancelBranch(1, reason);
-          return Promise.all([own, agg]).then(function () {}, function (eTc) { throw eTc; });
-        };
-        b2.cancel = function (reason) {
-          var own = oc2.call(b2, reason);
-          var agg = teeCancelBranch(2, reason);
-          return Promise.all([own, agg]).then(function () {}, function (eTc) { throw eTc; });
-        };
-      })();
+      // net-api M4-S10：分支 cancel 包装已撤——cancel 语义由 desc.cancel（= teeCancelBranch）
+      // 单路承载（stream.cancel / reader.cancel 同经 cancelInternal → _doCancel → srcCancel）。
       return [b1, b2];
     };
     // start：spec SetUp——start 同步调用（**同步抛错冒出构造器**——§4.2.3「Any thrown exceptions
