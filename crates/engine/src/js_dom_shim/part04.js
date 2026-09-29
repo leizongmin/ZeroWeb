@@ -7415,15 +7415,19 @@ return _tplContent;
           }
         }
         // R-baidu5：form 提交默认动作导航（spec §4.10.22 的导航步骤 + §4.10.22.2 entry
-        // list 构造子集）。requestSubmit / submit 按钮 click 默认动作 / form.submit()
+        // list 构造子集，https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
+        // 及 https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-entry-list）。
+        // requestSubmit / submit 按钮 click 默认动作 / form.submit()
         // 三入口共享。GET（application/x-www-form-urlencoded）全路径：action 解析
-        //（submitter formaction > form action 属性 > 文档地址）→ entry list → query 拼接
+        //（submitter formaction > form action 属性 > 文档地址）→ entry list → query 替换
         // → __zw_request_navigate 真导航（host fetch+重载，R3058 契约）+ _pushHistNav
         // 内存历史（与 location.assign 同型）。
         // 最小子集边界（FIXME 挂账，非本切片）：method=POST（宿主导航契约
         // __zw_request_navigate 仅收 URL，无 method/body 面）；target ≠ _self；fieldset
         // disabled 传播；input type=file entry（无文件选择实现）；enctype=text/plain/
-        // multipart；formmethod=dialog。
+        // multipart；formmethod=dialog；submitter formaction=''（spec → 文档地址，
+        // 现回落 form action）；BUTTON submitter 无 value 属性缺省 entry（spec 追加
+        // 空值 entry，现跳过）；宿主激活 + JS submit() 双通道去重（review m3b）。
         function _zwFormSubmitNavigate(fSel, fHandle, submitter) {
           try {
             if (typeof __zw_request_navigate !== 'function') return;
@@ -7465,7 +7469,11 @@ return _tplContent;
                     if (_c.checked) _pairs.push([_nm, _c.getAttribute('value') != null ? _c.getAttribute('value') : 'on']);
                   } else if (_ty === 'submit' || _ty === 'image') {
                     // 仅 submitter 按钮贡献（spec：submitter entry）；其余 submit 按钮跳过。
-                    if (_zwIsSubmitterControl(_c, submitter)) _pairs.push([_nm, _c.getAttribute('value')]);
+                    // value 属性缺省 → ''（review M2：getAttribute 缺省返 null，直传会
+                    // 经 String(null) 序列化出字面量 "null"，兄弟分支同守卫）。
+                    if (_zwIsSubmitterControl(_c, submitter)) {
+                      _pairs.push([_nm, _c.getAttribute('value') != null ? _c.getAttribute('value') : '']);
+                    }
                   } else if (_ty === 'button' || _ty === 'reset') {
                     // 非提交按钮不贡献。
                   } else if (_ty === 'file') {
@@ -7476,11 +7484,26 @@ return _tplContent;
                 } else if (_tg === 'TEXTAREA') {
                   _pairs.push([_nm, _c.value != null ? _c.value : '']);
                 } else if (_tg === 'SELECT') {
+                  // review M3/m1：entry 取 selectedness 为真**且非 disabled** 的 option；
+                  // 全未选中（无 selected 属性）→ spec select 默认选中语义回落首个非
+                  // disabled option（单选；与仓库 Rust 孪生 collect_form_data 首项回落
+                  // 对齐，js_dom_bridge.rs）。
                   var _opts = _c.options;
+                  var _selPushed = 0;
                   for (var _oi = 0; _opts && _oi < _opts.length; _oi++) {
                     var _op = _opts[_oi];
-                    if (_op && _op.selected) {
+                    if (_op && _op.selected && !_op.disabled) {
                       _pairs.push([_nm, _op.getAttribute('value') != null ? _op.getAttribute('value') : (_op.textContent || '')]);
+                      _selPushed++;
+                    }
+                  }
+                  if (_selPushed === 0 && _opts && _opts.length > 0) {
+                    for (var _fi = 0; _fi < _opts.length; _fi++) {
+                      var _fp = _opts[_fi];
+                      if (_fp && !_fp.disabled) {
+                        _pairs.push([_nm, _fp.getAttribute('value') != null ? _fp.getAttribute('value') : (_fp.textContent || '')]);
+                        break;
+                      }
                     }
                   }
                 } else if (_tg === 'BUTTON') {
@@ -7504,12 +7527,11 @@ return _tplContent;
             for (var _si = 0; _si < _pairs.length; _si++) {
               _body += (_si ? '&' : '') + _encPair(_pairs[_si][0], _pairs[_si][1]);
             }
-            // ⑤ mutate action URL：既有 query 以 '&' 拼接，无则新起（spec §4.10.22 步骤 26-27
-            // GET 形态）。entry list 空 → query 保持。
-            var _oldQ = _u.search ? _u.search.slice(1) : '';
-            if (_body !== '') {
-              try { _u.search = _oldQ ? (_oldQ + '&' + _body) : _body; } catch (_eQ) {}
-            }
+            // ⑤ mutate action URL（review M1）：spec §4.10.22 GET 分支 "Set parsed
+            // action's query component to query"——query **整体替换**（真实浏览器
+            // action="/s?src=1" GET 提交 → "/s?x=1"，action 既有 query 丢失是知名
+            // 行为）；entry list 空 → query 清空。
+            try { _u.search = _body; } catch (_eQ) {}
             var _abs = _u.href;
             // ⑥ 导航：内存历史 push + host 真导航（同 URL = 重载语义，resubmit 同型）。
             if (typeof _pushHistNav === 'function') {
@@ -7529,8 +7551,8 @@ return _tplContent;
         // R3048：HTMLFormElement 方法——reset/requestSubmit/submit。旧缺（get trap 未拦 → `form.reset()` 抛
         // not-a-function 中断脚本）。reset：dispatch cancelable 'reset' 事件，未 preventDefault 则把控件恢复
         // defaultValue/defaultChecked/defaultSelected（经既有 setter，revert 表单状态）。requestSubmit：dispatch
-        // submit SubmitEvent（cancelable，含 submitter）；submit：spec 不发事件直接导航，headless 无导航 → no-op
-        //（防抛错，documented）。仅 FORM gate；非 form 透传 undefined。
+        // submit SubmitEvent（cancelable，含 submitter）；submit：spec 不发事件直接走提交导航（R-baidu5
+        // _zwFormSubmitNavigate，submit 派发窗口内短路防双导航）。仅 FORM gate；非 form 透传 undefined。
         if (_realTag(sel, handle) === 'FORM' && (prop === 'reset' || prop === 'requestSubmit' || prop === 'submit')) {
           if (prop === 'reset') {
             return function () {
@@ -7605,7 +7627,16 @@ return _tplContent;
           } else { // submit
             // spec form.submit()：不发 submit 事件、不做交互校验，直接走提交导航步骤
             //（submitter = null）。旧 no-op（R-baidu5 前置）：URL 不变。
-            return function () { _zwFormSubmitNavigate(sel, handle, null); };
+            // review m3a：submit 派发窗口内调用（如 onsubmit="form.submit()"）→ 短路，
+            // 由外层默认动作统一导航一次（spec ongoing submission 语义近似；否则内层
+            // 立即入队 + 外层 _notCanceled 再入队 = 双导航）。已知边界（FIXME 挂账，
+            // review m3b）：宿主 P1a 激活的 submit 按钮 click 中页面 listener 再调
+            // submit()/requestSubmit() 时，JS 通道与宿主 form_navigation_intent 通道
+            // 无去重，双导航——留待 runtime 侧同 URL 去重收口。
+            return function () {
+              if (_zwSubmitBusy) return;
+              _zwFormSubmitNavigate(sel, handle, null);
+            };
           }
         }
         // 布局测量 API：`el.getBoundingClientRect()` 返真实 DOMRect（P1a gBCR path C）。
