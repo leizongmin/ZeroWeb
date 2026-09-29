@@ -11830,8 +11830,56 @@
         + "}"
         + "try{eval(__zwWorkerBindings);}catch(_e){}";
     }
-    // 执行 worker 脚本（data: URL inline 或外链 fetch）。new Function 包影子声明，bare 赋值设局部，执行后同步 onmessage。
+    // 执行 worker 脚本（data: URL inline / blob: 注册表 / 外链 fetch）。new Function 包影子声明，bare 赋值设局部，执行后同步 onmessage。
     var scriptSrc = _zwDecodeWorkerScript(url);
+    // blob: worker 脚本——内容在页内 _zwBlobStore（URL.createObjectURL 注册表），net/fetch 不解析
+    // blob:（见 part02 createObjectURL 已知限制），此前落 __zw_fetch_script 静默取不到 → worker 不执行
+    // 且无 onmessage/onerror。同源校验镜像 fetch hook 的 blob 分支（part01 scheme-fetch blob:）。
+    // https://w3c.github.io/FileAPI/#blob-url-scheme-fetch
+    if (scriptSrc === null && typeof _zwBlobStore === 'object' && _zwBlobStore !== null
+        && String(url).indexOf('blob:') === 0) {
+      var blobUrl = String(url);
+      // store 精确命中先行（opaque origin 'null' 形态 blob:null/N 无 // 可解析）；origin 可解析时
+      // 再校验同源（跨源 blob URL → 拒绝，走 fetch 失败语义）。
+      var blobScript = Object.prototype.hasOwnProperty.call(_zwBlobStore, blobUrl)
+        ? _zwBlobStore[blobUrl] : null;
+      if (blobScript) {
+        var blobUrlMatch = /^([^\/]+:\/\/[^\/]*)\//.exec(blobUrl.slice(5));
+        var blobOrigin = (globalThis.location && globalThis.location.origin) || '';
+        if (blobUrlMatch && blobUrlMatch[1] !== blobOrigin) blobScript = null;
+      }
+      if (blobScript) {
+        // Blob._parts 拼源码：string 原样；typed array/arrayBuffer 按 byte 拼接（worker 脚本以
+        // string part 为主流形态，byte part 覆盖 Blob(slice/聚合) 来源）。
+        var blobParts = blobScript._parts || [];
+        var blobSource = '';
+        for (var bp = 0; bp < blobParts.length; bp++) {
+          var part = blobParts[bp];
+          if (typeof part === 'string') {
+            blobSource += part;
+          } else if (part && part.length !== undefined) {
+            for (var pb = 0; pb < part.length; pb += 0x8000) {
+              blobSource += String.fromCharCode.apply(null, part.subarray ? part.subarray(pb, pb + 0x8000) : []);
+            }
+          } else if (part && part.byteLength !== undefined) {
+            var partBytes = new Uint8Array(part);
+            for (var pb2 = 0; pb2 < partBytes.length; pb2 += 0x8000) {
+              blobSource += String.fromCharCode.apply(null, partBytes.subarray(pb2, pb2 + 0x8000));
+            }
+          }
+        }
+        scriptSrc = blobSource;
+      } else {
+        // blob URL 查无此 blob（revoke 后使用 / 跨源）→ fetch 失败语义：异步 error 事件。
+        // https://html.spec.whatwg.org/worker-processing-model step 7（fetch 失败 → error event）
+        if (typeof queueMicrotask === 'function') {
+          queueMicrotask(function () {
+            if (main._terminated) return;
+            main.dispatchEvent(new Event('error', { message: 'Worker script blob URL could not be resolved: ' + blobUrl }));
+          });
+        }
+      }
+    }
     // R3091：外链 worker URL（非 data:）—— 若 host 注册了 __zw_fetch_script（backed by ScriptSourceFetcher），
     // fetch worker 源后同 IIFE 影子执行；未注册 → scriptSrc 仍 null（API 表面可用，worker 不执行，R3080 兼容）。
     if (scriptSrc === null && typeof __zw_fetch_script === 'function') {
