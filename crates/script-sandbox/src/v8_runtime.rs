@@ -147,14 +147,42 @@ unsafe extern "C" fn promise_reject_callback_entry(msg: v8::PromiseRejectMessage
 }
 
 /// promise-reject 回调：`PromiseRejectWithNoHandler`（未处理 rejection）。
-/// v8-150 的 PromiseRejectMessage 无 NewCallbackScope 之外的 scope 构造路径，
-/// rejection 原因文本提取需 isolate slot 体系——本切片仅上报事件级信息
-/// （pageerror 可触发），原因文本提取挂后续切片。
+/// 报告文本对齐 Chrome console 形态：`Uncaught (in promise) <原因>`（原因经
+/// `Value::to_string`）+ 原因 Error 对象的创建时符号化栈（读 `.stack` 自有属性，
+/// 去掉原因头行后拼接）。行/列保持 0：上报点 JS 栈已空（rejection 自已完成的
+/// 微任务浮出），`Exception::create_message` 的 current-stack 路径取不到帧，
+/// 创建时栈仅以 `.stack` 文本形态可得——结构化 stackTrace 挂后续切片。
 fn promise_reject_callback(msg: &v8::PromiseRejectMessage) {
     if msg.get_event() != v8::PromiseRejectEvent::PromiseRejectWithNoHandler {
         return;
     }
-    UNCAUGHT_REPORTS.with(|q| q.borrow_mut().push(("unhandled promise rejection".to_string(), 0, 0)));
+    // SAFETY: promise-reject 回调在 V8 持锁 isolate 内被调用，`&PromiseRejectMessage`
+    // 是 CallbackScope 的文档化引导参数（v8 scope.rs `NewCallbackScope` impl）。
+    v8::callback_scope!(unsafe scope, msg);
+    let mut text = "unhandled promise rejection".to_string();
+    if let Some(value) = msg.get_value() {
+        if let Some(reason) = value.to_string(scope) {
+            text = format!("Uncaught (in promise) {}", reason.to_rust_string_lossy(scope));
+        }
+        if let Ok(obj) = value.try_cast::<v8::Object>() {
+            v8::tc_scope!(let tc, scope);
+            if let Some(key) = v8::String::new(tc, "stack")
+                && let Some(stack) = obj.get(tc, key.into())
+                && !tc.has_caught()
+                && stack.is_string()
+            {
+                let stack_s = stack
+                    .to_string(tc)
+                    .map(|s| s.to_rust_string_lossy(tc))
+                    .unwrap_or_default();
+                if let Some((_head, frames)) = stack_s.split_once('\n') {
+                    text.push('\n');
+                    text.push_str(frames);
+                }
+            }
+        }
+    }
+    UNCAUGHT_REPORTS.with(|q| q.borrow_mut().push((text, 0, 0)));
 }
 
 enum WatchdogMsg {
@@ -748,8 +776,9 @@ mod tests {
 
     #[test]
     fn test_unhandled_promise_rejection_collected() {
-        // R-baidu2/P3 slice-2：未处理 rejection 经 promise-reject 回调收集
-        // （事件级信息；原因文本提取挂后续切片）。
+        // R-baidu2/P3 slice-2：未处理 rejection 经 promise-reject 回调收集。
+        // 诊断保真切片（2026-09-29）：原因文本（Chrome console 形态）+ `.stack`
+        // 创建时符号化栈帧；行/列保持 0（上报点 JS 栈已空，见回调注释）。
         use crate::Sandbox;
         let mut sandbox = V8Sandbox::new().unwrap();
         let r = sandbox
@@ -758,10 +787,34 @@ mod tests {
         assert!(r.value.contains("42"), "tail expression: {:?}", r.value);
         let reports = sandbox.take_uncaught_reports();
         assert_eq!(reports.len(), 1, "one unhandled rejection: {:?}", reports);
-        assert_eq!(reports[0].0, "unhandled promise rejection");
-        assert_eq!(reports[0].1, 0);
+        assert!(
+            reports[0].0.starts_with("Uncaught (in promise) Error: boom"),
+            "reason text (Chrome console form): {:?}",
+            reports[0].0
+        );
+        assert!(
+            reports[0].0.contains("\n    at "),
+            "symbolized creation stack frames: {:?}",
+            reports[0].0
+        );
+        assert_eq!((reports[0].1, reports[0].2), (0, 0));
         // 排空后为空（幂等）。
         assert!(sandbox.take_uncaught_reports().is_empty());
+    }
+
+    #[test]
+    fn test_unhandled_promise_rejection_non_error_reason() {
+        // 非 Error 原因（字符串）无 `.stack` → 原因文本照报、行/列保持 0
+        //（事件级信息下限，不因原因类型降级为丢报）。
+        use crate::Sandbox;
+        let mut sandbox = V8Sandbox::new().unwrap();
+        sandbox
+            .execute("Promise.reject('str-bang'); 7")
+            .expect("execute should succeed (rejection is async-surface)");
+        let reports = sandbox.take_uncaught_reports();
+        assert_eq!(reports.len(), 1, "one unhandled rejection: {:?}", reports);
+        assert_eq!(reports[0].0, "Uncaught (in promise) str-bang");
+        assert_eq!((reports[0].1, reports[0].2), (0, 0));
     }
 
     #[test]
