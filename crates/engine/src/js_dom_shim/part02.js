@@ -535,11 +535,88 @@
       if (options != null && typeof options === 'object' && options.mode === 'byob' && !self._zwIsByteStream) {
         throw new TypeError('byob reader requires a ReadableStream with type "bytes"');
       }
-      // net-api M4-S2 回退注记：byob read(view) 首版在 waiting 路径触发内存爆涨
-      //（4.2GB test-guard 拦截——view 形态 × `_bodyToStream` 单 chunk 源的组合未甄别
-      // 完整），回退默认读取形态；BYOB reader（view 跟踪/最小填充契约）待专设切片。
+      // net-api M4-S3：byob reader 专设（M4-S2 首版 waiting 路径 4.2GB 爆涨根因对策）——
+      // ① 余量存 **reader 本地 `pending`**（不回 queue、不 unshift——queue/pull 双通道
+      // 复制面消除）；② fill 全程 try/catch（detached buffer 等 view 构造 TypeError →
+      // reject，探针不挂）；③ done 判定按**标记**（`_RS_DONE` 恒等或 done:true 非字节
+      // 视图），填充路径永远不与 done 哨兵混淆；④ 零填充仅在 close 后（spec——read(view)
+      // 最小填充契约：有数据必填 ≥1 字节）。
+      // net-api M4-S3：byob 形态判定（mode==='byob' 且已过字节流守卫）。
+      var byob = !!(options != null && typeof options === 'object' && options.mode === 'byob');
       if (self._locked) throw new TypeError('Cannot get a Reader: ReadableStream is locked');
       self._locked = true;
+      if (byob) {
+        var byobPending = null;   // 上一 fill 余量（Uint8Array，reader 独占）
+        var byobDone = false;
+        var byobViewRead = function (view) {
+          self._disturbed = true;
+          // done 短路仅在 reader 已标记 done 时——closed 流的**已排队数据仍可读**
+          // （_bodyToStream start 即 close，数据在 queue——M3 consume-stream 面）。
+          if (byobDone) {
+            var z = view && view.buffer !== undefined ? new Uint8Array(view.buffer, view.byteOffset, 0) : new Uint8Array(0);
+            return Promise.resolve({ done: true, value: z });
+          }
+          return new Promise(function (resolve, reject) {
+            if (state === 'errored') { reject(errorVal); return; }
+            var src = byobPending;
+            if (!src && queue.length > 0) {
+              var entry = queue.shift();
+              queueTotalSize -= entry.size;
+              if (queueTotalSize < 0) queueTotalSize = 0;
+              src = entry.chunk instanceof Uint8Array ? entry.chunk : _zw_utf8_encode(String(entry.chunk));
+            }
+            if (!src) {
+              // 无 pending/queue：closed → done（_bodyToStream start 即 close，排空后
+              // 第二读到此）；readable → 等 pull（chunk 到达经下方 resolve 填 view，
+              // 余量进 byobPending——**不回 queue**，pull 双通道复制面消除）。
+              if (state === 'closed') {
+                byobDone = true;
+                var zdone = view && view.buffer !== undefined ? new Uint8Array(view.buffer, view.byteOffset, 0) : new Uint8Array(0);
+                resolve({ done: true, value: zdone });
+                return;
+              }
+              waiting.push({
+                resolve: function (chunk) {
+                  if (chunk === _RS_DONE || (chunk && typeof chunk === 'object' && chunk.done === true && !(chunk instanceof Uint8Array))) {
+                    byobDone = true;
+                    var zc = view && view.buffer !== undefined ? new Uint8Array(view.buffer, view.byteOffset, 0) : new Uint8Array(0);
+                    resolve({ done: true, value: zc });
+                    return;
+                  }
+                  byobPending = chunk instanceof Uint8Array ? chunk : new Uint8Array(_zw_utf8_encode(String(chunk)));
+                  byobViewRead(view).then(resolve, reject);
+                },
+                reject: reject
+              });
+              flushPull();
+              return;
+            }
+            try {
+              var want = view ? view.byteLength : 0;
+              if (!(want >= 0)) want = 0;
+              var take = src.length < want ? src.length : want;
+              var out = new Uint8Array(view.buffer, view.byteOffset, take);
+              for (var fi = 0; fi < take; fi++) out[fi] = src[fi];
+              byobPending = take < src.length ? src.slice(take) : null;
+              // spec：有填充必返 chunk（done=false）——done 仅在**无数据可填**时
+              // （closed 且无 pending/queue）由下一次 read 报告。
+              resolve(_rs_chunk(out));
+            } catch (_eByobFill) {
+              reject(new TypeError('byob read: invalid view (' + _eByobFill.message + ')'));
+            }
+          });
+        };
+        return {
+          read: byobViewRead,
+          cancel: function (reason) { self._disturbed = true; byobDone = true; return self.cancel(reason); },
+          releaseLock: function () { self._locked = false; },
+          get closed() {
+            if (state === 'closed') return Promise.resolve();
+            if (state === 'errored') return Promise.reject(errorVal);
+            return new Promise(function () {});
+          }
+        };
+      }
       return {
         read: function () {
           self._disturbed = true; // net-api M2-S3：read 即 disturbed（spec §3.6）

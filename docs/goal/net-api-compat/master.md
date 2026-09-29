@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-29（M4-S2 收口）
+**最后更新**: 2026-09-29（M4-S3 收口）
 
 ---
 
@@ -12,11 +12,11 @@
 WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 + 帧协议）。
 
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
-75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（2026-09-29，零净
-变化）——**8063/10789 = 74.7%**（fetch 70.0% / xhr 53.2% / url 73.1% / mimesniff
-100% / streams 45.3% / eventsource 6.2%）。下一切片 M4-S3：BYOB reader 专设切片
-（view 跟踪/最小填充契约/内存画像——首版 4.2GB 爆涨面根因分解）+ values() 完整
-语义专设；并轨 P7 fixture 续件与 DC 判定收口。
+75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
+M4-S3（2026-09-29）——**8063/10789 = 74.7%**（fetch 70.0%（consume-stream byob
+腿全绿 15/15）/ xhr 53.2% / url 73.1% / mimesniff 100% / streams 45.3%（全量复核
+零回归）/ eventsource 6.2%）。下一切片 M4-S4：values() 完整语义 + 构造 dictionary
+转换序重做；并轨 P7 fixture 续件与 DC 判定收口。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -32,12 +32,19 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
 | P3 | XHR 状态机 + EventSource 解析/重连 | 🔶 M3 进行中——S1（header 校验）+ S2（responseType/同步/overrideMime）已收口（xhr 53.2%）；**残余：blob-range（27，blob:+Range）、progress 事件序、.asis/eventsource fixture 联动 P7** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.1%（新分母 6065——M3 收口 USP/URL.parse/port/live 迭代/UTF-8 解码器/helper 解锁）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
-| P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S1 首片收口（45.3%）+ M4-S2 byob 甄别回退（零净变化）——**M4-S3 专设切片：BYOB reader（view 跟踪/最小填充/内存画像）+ values() 完整语义 + 构造 dictionary 转换序** |
+| P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S1 底座（45.3%）+ M4-S3 BYOB reader 收口（response body byob 腿全绿）——**M4-S4 残余：values() 完整语义 + 构造 dictionary 转换序** |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
 | P7 | runner fixture 通道（.py 端点最小 fixture 集） | 🔶 首件已落（M3-S1 `inspect-headers.py`）；待评估：event-source.py / echo-content.py / delay.py 族（eventsource Timeout 23 / request-upload echo / xhr delay 簇公共解锁件） |
 
 ## 已完成切片
 
+- **M4-S3（2026-09-29）**：BYOB reader 专设重做（streams 全量复核**零回归** 271/598、
+  fetch consume-stream **15/15 全绿**——M4-S2 回退的 6 条 byob 腿全部解锁）。
+  reader 本地 `byobPending` 余量（queue/pull 双通道复制面消除——M4-S2 4.2GB 爆涨
+  根因）；done 语义三足（填充即返 chunk / 排空后 closed → done / waiting 自定义
+  resolve 重入 byobViewRead + close 哨兵）；fill try/catch。M4-S2 的 closed-check
+  丢失与 waiting 盲区两处回退伤一并治愈。见
+  [evidence/2026-09-29-m4-s2-byob-reader.md](evidence/2026-09-29-m4-s2-byob-reader.md)。
 - **M4-S2（2026-09-29，零净变化）**：byob read(view) 首版甄别与回退。queue 路径
   探针单读通过，但 waiting 路径 × `_bodyToStream` 单 chunk 源 × `_RS_DONE` 填充
   退化组合触发 **4.2GB 内存爆涨**（test-guard 拦截）；修复尝试后仍挂 → 回退默认
