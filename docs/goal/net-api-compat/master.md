@@ -16,12 +16,14 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
 M4-S8（76.8%）→ M4-S9（2026-09-30）——**8626/11205 = 77.0%**（fetch 69.6% / xhr 53.2% /
 url 73.1% / mimesniff 100% / streams **83.2%**（826/993——byte tee 分支字节流身份 +
-双分支 chunk 克隆）/ eventsource 6.2%）。**M4-S10 尝试记录（2026-09-30，未收口回退）**：源侧 BYOB pull 切换首版（tee 源
-reader 切 byob + pull-into 前向 + branchPending 队列）实现后 byte tee 页引入挂起
-（templatedRSTeeCancel cancel 聚合腿）——已回退至 M4-S9 树（make test 全绿复核）。
-根因待查：分支 pull-into 与源 byob 读的 settle 顺序交互。下一切片 M4-S10 重做该面 +
-pipeTo read-ahead 泵；transfer/detach 族结构性挂账（需宿主 V8 detach）。并轨 P7
-fixture 续件与 DC 判定收口。
+双分支 chunk 克隆）/ eventsource 6.2%）。**M4-S10 尝试记录（2026-09-30，两版均未收口回退）**：①首版源 reader 切 byob +
+release/重取——byte tee cancel 聚合腿挂起（closedP 拒绝与 tee error-forward 交互）；
+②重做版改内部 _zwReadInto（无 reader 切换）+ 分支 pull-into 路由 + branchPending 队
+列——'chunks for BYOB requests from branch 1' 腿推进至路由生效，但挂起点移至
+templatedRSTeeCancel（分支 pull-into 与源 byob 读的 settle 顺序交互未收敛）。两版均
+回退至 M4-S9 树（make test 全绿复核，streams 基线 826/993 不变）。**后续甄别锚**：
+源 started 门与分支 pull 路由的微任务序（rs-start 先于 b1-start——pull 空手而归面）
++ cancel 聚合与 in-flight readInto 的交互。并轨 P7 fixture 续件与 DC 判定收口。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
