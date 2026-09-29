@@ -175,6 +175,8 @@ fn promise_reject_callback(msg: &v8::PromiseRejectMessage) {
     match msg.get_event() {
         v8::PromiseRejectEvent::PromiseRejectWithNoHandler => {}
         v8::PromiseRejectEvent::PromiseHandlerAddedAfterReject => {
+            // SAFETY: 同下 NoHandler 分支——promise-reject 回调在 V8 持锁 isolate
+            // 内被调用，`&PromiseRejectMessage` 是 CallbackScope 的文档化引导参数。
             v8::callback_scope!(unsafe scope, msg);
             let promise = v8::Global::new(scope, msg.get_promise());
             PENDING_REJECTS.with(|p| {
