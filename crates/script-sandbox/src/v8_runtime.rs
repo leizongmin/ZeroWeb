@@ -133,8 +133,8 @@ pub fn ensure_v8_initialized() {
     });
 }
 
-/// R-baidu2/P3 slice-2：未捕获异常报告收集（isolate message listener +
-/// promise-reject 回调写入；`take_uncaught_reports` 在 JS 执行线程排空）。
+/// R-baidu2/P3 slice-2：未捕获异常报告收集（promise-reject 回调写入
+/// [`UNCAUGHT_REPORTS`] thread_local；`take_uncaught_reports` 在 JS 执行线程排空）。
 pub type UncaughtReport = (String, u32, u32);
 
 thread_local! {
@@ -147,14 +147,46 @@ unsafe extern "C" fn promise_reject_callback_entry(msg: v8::PromiseRejectMessage
 }
 
 /// promise-reject 回调：`PromiseRejectWithNoHandler`（未处理 rejection）。
-/// v8-150 的 PromiseRejectMessage 无 NewCallbackScope 之外的 scope 构造路径，
-/// rejection 原因文本提取需 isolate slot 体系——本切片仅上报事件级信息
-/// （pageerror 可触发），原因文本提取挂后续切片。
+/// 报告文本对齐 Chrome console 形态：`Uncaught (in promise) <原因>`（原因经
+/// `Value::to_string`）+ 原因 Error 对象的创建时符号化栈（读 `.stack` 属性——
+/// `Object::get` 沿原型链查找，继承 accessor 值亦得；去掉原因头行后拼接）。
+/// 行/列保持 0：上报点 JS 栈已空（rejection 自已完成的微任务浮出），
+/// `Exception::create_message` 的 current-stack 路径取不到帧，创建时栈仅以
+/// `.stack` 文本形态可得——结构化 stackTrace 挂后续切片。
 fn promise_reject_callback(msg: &v8::PromiseRejectMessage) {
     if msg.get_event() != v8::PromiseRejectEvent::PromiseRejectWithNoHandler {
         return;
     }
-    UNCAUGHT_REPORTS.with(|q| q.borrow_mut().push(("unhandled promise rejection".to_string(), 0, 0)));
+    // SAFETY: promise-reject 回调在 V8 持锁 isolate 内被调用，`&PromiseRejectMessage`
+    // 是 CallbackScope 的文档化引导参数（v8 scope.rs `NewCallbackScope` impl）。
+    v8::callback_scope!(unsafe scope, msg);
+    // 原因 to_string / .stack 读取均可触发用户 JS（toString/valueOf/getter），
+    // 统一入 TryCatch：异常就地吞掉（报告回退事件级文本），不泄漏进外层 execute。
+    v8::tc_scope!(let tc, scope);
+    let mut text = "unhandled promise rejection".to_string();
+    if let Some(value) = msg.get_value() {
+        if let Some(reason) = value.to_string(tc)
+            && !tc.has_caught()
+        {
+            text = format!("Uncaught (in promise) {}", reason.to_rust_string_lossy(tc));
+        }
+        if let Ok(obj) = value.try_cast::<v8::Object>()
+            && let Some(key) = v8::String::new(tc, "stack")
+            && !tc.has_caught()
+            && let Some(stack) = obj.get(tc, key.into())
+            && stack.is_string()
+        {
+            let stack_s = stack
+                .to_string(tc)
+                .map(|s| s.to_rust_string_lossy(tc))
+                .unwrap_or_default();
+            if let Some((_head, frames)) = stack_s.split_once('\n') {
+                text.push('\n');
+                text.push_str(frames);
+            }
+        }
+    }
+    UNCAUGHT_REPORTS.with(|q| q.borrow_mut().push((text, 0, 0)));
 }
 
 enum WatchdogMsg {
@@ -748,8 +780,9 @@ mod tests {
 
     #[test]
     fn test_unhandled_promise_rejection_collected() {
-        // R-baidu2/P3 slice-2：未处理 rejection 经 promise-reject 回调收集
-        // （事件级信息；原因文本提取挂后续切片）。
+        // R-baidu2/P3 slice-2：未处理 rejection 经 promise-reject 回调收集。
+        // 诊断保真切片（2026-09-29）：原因文本（Chrome console 形态）+ `.stack`
+        // 创建时符号化栈帧；行/列保持 0（上报点 JS 栈已空，见回调注释）。
         use crate::Sandbox;
         let mut sandbox = V8Sandbox::new().unwrap();
         let r = sandbox
@@ -758,10 +791,70 @@ mod tests {
         assert!(r.value.contains("42"), "tail expression: {:?}", r.value);
         let reports = sandbox.take_uncaught_reports();
         assert_eq!(reports.len(), 1, "one unhandled rejection: {:?}", reports);
-        assert_eq!(reports[0].0, "unhandled promise rejection");
-        assert_eq!(reports[0].1, 0);
+        assert!(
+            reports[0].0.starts_with("Uncaught (in promise) Error: boom"),
+            "reason text (Chrome console form): {:?}",
+            reports[0].0
+        );
+        assert!(
+            reports[0].0.contains("\n    at "),
+            "symbolized creation stack frames: {:?}",
+            reports[0].0
+        );
+        assert_eq!((reports[0].1, reports[0].2), (0, 0));
         // 排空后为空（幂等）。
         assert!(sandbox.take_uncaught_reports().is_empty());
+    }
+
+    #[test]
+    fn test_unhandled_promise_rejection_non_error_reason() {
+        // 非 Error 原因（字符串）无 `.stack` → 原因文本照报、行/列保持 0
+        //（事件级信息下限，不因原因类型降级为丢报）。
+        use crate::Sandbox;
+        let mut sandbox = V8Sandbox::new().unwrap();
+        sandbox
+            .execute("Promise.reject('str-bang'); 7")
+            .expect("execute should succeed (rejection is async-surface)");
+        let reports = sandbox.take_uncaught_reports();
+        assert_eq!(reports.len(), 1, "one unhandled rejection: {:?}", reports);
+        assert_eq!(reports[0].0, "Uncaught (in promise) str-bang");
+        assert_eq!((reports[0].1, reports[0].2), (0, 0));
+    }
+
+    #[test]
+    fn test_promise_reject_event_filter_and_ordering() {
+        // 事件过滤 + 多 rejection 顺序。V8 时序：NoHandler 在 reject 即时触发
+        // （reject 点 has_handler() 已定），先于同脚本内 .catch 挂接——故
+        // 「先 reject 后挂 handler」场景本实现仍报 1 条（Chrome 经 spec
+        // about-to-be-notified 撤报为 0，撤报机制挂后续切片）。本测试钉的是：
+        // ① HandlerAdded 事件不得产生第二条报告（防双报守卫核心面）；
+        // ② 同一 execute 内多个未处理 rejection 按创建顺序各报一条。
+        use crate::Sandbox;
+        let mut sandbox = V8Sandbox::with_config(crate::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        sandbox
+            .execute("globalThis.__p = Promise.reject('r'); 0")
+            .expect("execute should succeed");
+        assert_eq!(
+            sandbox.take_uncaught_reports().len(),
+            1,
+            "reject 即时上报（V8 NoHandler 时序，先于 .catch）"
+        );
+        sandbox
+            .execute("globalThis.__p.catch(function () {}); 0")
+            .expect("execute should succeed");
+        let reports = sandbox.take_uncaught_reports();
+        assert!(reports.is_empty(), "HandlerAdded 不得追加上报: {:?}", reports);
+        sandbox
+            .execute("Promise.reject('first'); Promise.reject('second'); 0")
+            .expect("execute should succeed (rejections are async-surface)");
+        let reports = sandbox.take_uncaught_reports();
+        assert_eq!(reports.len(), 2, "two unhandled rejections: {:?}", reports);
+        assert_eq!(reports[0].0, "Uncaught (in promise) first");
+        assert_eq!(reports[1].0, "Uncaught (in promise) second");
     }
 
     #[test]
