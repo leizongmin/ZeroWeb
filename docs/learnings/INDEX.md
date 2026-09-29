@@ -183,8 +183,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（16）
+## Platform — 平台与环境相关经验（17）
 
+- 2026-09-30 [ZeroWeb CDP live 调试坑点（/json/new、Page.reload、renderer stderr 环、探针退化）](platform/2026-09/2026-09-30-zeroweb-cdp-live-debug-quirks.md) — apps/renderer,apps/browser,crates/protocol
 - 2026-09-14 [renderer 死锁诊断：ptrace 受限 + test-guard 禁 core 下的取证方法，与 baidu 主循环冻结的根因链](platform/2026-09/2026-09-14-renderer-wedge-diagnosis-core-dump.md) — apps/renderer, apps/browser, crates/engine, crates/paint-convert
 - 2026-09-05 [HarmonyOS ELF 签名工具可能重写可加载段](platform/2026-09/2026-09-05-harmonyos-elf-signer-segment-rewrite.md) — release, npm-cli, harmonyos
 - 2026-08-18 [git worktree 共享 CARGO_TARGET_DIR 导致构建指纹污染](platform/2026-08/2026-08-18-worktree-shared-target-dir-fingerprint-collision.md) — 工具链 / cargo / git worktree / 性能 A/B 验证
