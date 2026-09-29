@@ -1872,6 +1872,104 @@ fn test_js_cross_document_navigation_r3058() {
 }
 
 #[test]
+fn test_form_submit_default_navigation_r_baidu5() {
+    // R-baidu5：form 默认提交导航（spec HTML §4.10.22 提交算法的导航步骤 + §4.10.22.2
+    // entry list 构造子集）。旧实现 submit 派发后停止（headless 无导航 documented
+    // no-op）→ baidu 搜索框输入 + #su 点击 submit 触发但 URL 不变（站内搜索主任务
+    // 阻断根因）。断言面：① requestSubmit() → submit 事件触发 + GET urlencoded entry
+    // list 拼接 action URL 导航投递（checkbox 勾选 value||'on'、select selected option
+    // value、tree order、无名按钮不贡献 entry）；② preventDefault 取消默认动作 →
+    // 事件触发但零投递；③ requestSubmit(submitter) → submitter formaction 覆盖 action；
+    // ④ form.submit() → 不发 submit 事件、直接导航；⑤ 既有 query '&' 追加 + 属性
+    // 默认 value；⑥ method 属性缺失默认 GET（live baidu form 形态）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id='f' action='/search' method='get'>\
+         <input id='kw' name='q'>\
+         <input id='cb' type='checkbox' name='c' checked>\
+         <select id='s' name='s'><option value='1'>one</option><option value='2' selected>two</option></select>\
+         <button id='su' type='submit' formaction='/s2'>go</button>\
+         </form>\
+         <form id='g' action='/s?src=1' method='get'><input id='gx' name='x' value='1'></form>\
+         <form id='h' action='/n'><input id='hx' name='y' value='9'></form></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let nav_bridge = crate::NavigationBridge::new();
+    let nav_queue = nav_bridge.queue();
+    nav_bridge.register(&mut sandbox);
+    let drain = || nav_queue.lock().map(|mut q| std::mem::take(&mut *q)).unwrap_or_default();
+    sandbox
+        .execute(
+            "globalThis.__fired = 0;\
+             globalThis.__cancel = false;\
+             var __f = document.getElementById('f');\
+             __f.addEventListener('submit', function (e) { globalThis.__fired++; if (globalThis.__cancel) e.preventDefault(); });\
+             document.getElementById('kw').value = 'zw';",
+        )
+        .unwrap();
+
+    // ① requestSubmit()：submit 触发 + 默认动作导航（q=zw&c=on&s=2，tree order，
+    // checkbox 勾选取 value||'on'，select 取 selected option 的 value）。
+    sandbox.execute("__f.requestSubmit();").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__fired").unwrap().value, "1", "requestSubmit → submit 事件触发");
+    assert_eq!(
+        drain(),
+        vec!["https://example.com/search?q=zw&c=on&s=2".to_string()],
+        "requestSubmit 默认动作 → GET entry list 拼接 action URL 投递"
+    );
+
+    // ② preventDefault：事件触发但默认动作取消 → 零投递。
+    sandbox.execute("globalThis.__cancel = true; globalThis.__fired = 0; __f.requestSubmit();").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__fired").unwrap().value, "1", "preventDefault 下 submit 事件仍触发");
+    assert!(drain().is_empty(), "preventDefault 取消默认动作 → 不投递导航");
+
+    // ③ requestSubmit(submitter)：submitter formaction 覆盖 form action；无名按钮不贡献 entry。
+    sandbox.execute("globalThis.__cancel = false; globalThis.__fired = 0; __f.requestSubmit(document.getElementById('su'));").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__fired").unwrap().value, "1", "requestSubmit(submitter) → submit 触发");
+    assert_eq!(
+        drain(),
+        vec!["https://example.com/s2?q=zw&c=on&s=2".to_string()],
+        "submitter formaction 覆盖 action → 导航到 /s2"
+    );
+
+    // ④ form.submit()：不发 submit 事件，直接走提交导航（form action，非 submitter 的）。
+    sandbox.execute("globalThis.__fired = 0; __f.submit();").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__fired").unwrap().value, "0", "form.submit() 不发 submit 事件");
+    assert_eq!(
+        drain(),
+        vec!["https://example.com/search?q=zw&c=on&s=2".to_string()],
+        "form.submit() 直接导航（form action）"
+    );
+
+    // ⑤ 邻近边界：action 既有 query → entry list 以 '&' 追加（不清空既有参数）；
+    // input 未用户编辑 → value 回退属性默认值。
+    sandbox.execute("document.getElementById('g').submit();").unwrap();
+    assert_eq!(
+        drain(),
+        vec!["https://example.com/s?src=1&x=1".to_string()],
+        "action 既有 query 以 & 追加 entry list"
+    );
+
+    // ⑥ method 属性缺失 → 默认 GET（spec §4.10.22 步骤 4-7 归一；baidu 首页 form
+    // 即无 method 属性——live 验证暴露的精确缺口形态）。
+    sandbox.execute("document.getElementById('h').submit();").unwrap();
+    assert_eq!(
+        drain(),
+        vec!["https://example.com/n?y=9".to_string()],
+        "method 缺失默认 GET → 导航投递"
+    );
+}
+
+#[test]
 fn test_history_reset_on_navigation_r3059() {
     // R3059：__zw_reset_history 导航后重置 _hist_entries（闭合 SPA-then-redirect stale）。
     // 旧页 pushState/hash-setter 残留 entry → 新页 location.href/history 误读。host set_dom_snapshot(url 变化)

@@ -7400,14 +7400,131 @@ return _tplContent;
               } catch (_e4) {}
               if (_firstInv != null) return; // 中止提交（interactive validation 失败）
             }
-            // dispatch submit SubmitEvent（cancelable，含 submitter）；headless 无导航（documented）。
+            // dispatch submit SubmitEvent（cancelable，含 submitter）。
             var _sev;
             try { _sev = new SubmitEvent('submit', { bubbles: true, cancelable: true, submitter: submitter || null }); }
             catch (_e) { _sev = new Event('submit', { bubbles: true, cancelable: true }); }
-            _dispatchWithBubble(fKey, fSel, fHandle, _sev);
+            var _notCanceled = _dispatchWithBubble(fKey, fSel, fHandle, _sev);
+            // spec §4.10.22 form submission algorithm：submit 未取消 → 默认动作 = 构造
+            // entry list + 导航到 mutated action URL。旧实现 headless 无导航（documented
+            // no-op）——baidu 搜索框输入 + #su 点击 submit 触发但 URL 不变（站内搜索
+            // 主任务阻断根因，R-baidu5）。
+            if (_notCanceled !== false) _zwFormSubmitNavigate(fSel, fHandle, submitter);
           } finally {
             _zwSubmitBusy = false;
           }
+        }
+        // R-baidu5：form 提交默认动作导航（spec §4.10.22 的导航步骤 + §4.10.22.2 entry
+        // list 构造子集）。requestSubmit / submit 按钮 click 默认动作 / form.submit()
+        // 三入口共享。GET（application/x-www-form-urlencoded）全路径：action 解析
+        //（submitter formaction > form action 属性 > 文档地址）→ entry list → query 拼接
+        // → __zw_request_navigate 真导航（host fetch+重载，R3058 契约）+ _pushHistNav
+        // 内存历史（与 location.assign 同型）。
+        // 最小子集边界（FIXME 挂账，非本切片）：method=POST（宿主导航契约
+        // __zw_request_navigate 仅收 URL，无 method/body 面）；target ≠ _self；fieldset
+        // disabled 传播；input type=file entry（无文件选择实现）；enctype=text/plain/
+        // multipart；formmethod=dialog。
+        function _zwFormSubmitNavigate(fSel, fHandle, submitter) {
+          try {
+            if (typeof __zw_request_navigate !== 'function') return;
+            var _base = String(globalThis.location.href || 'about:blank');
+            // ① action：submitter formaction > form action 属性 > 文档地址（spec：无
+            // action 属性 → 文档地址；空串 resolve 即 base）。
+            var _actionRaw = null;
+            try { if (submitter) _actionRaw = submitter.getAttribute('formaction'); } catch (_eA1) {}
+            if (_actionRaw == null || _actionRaw === '') {
+              _actionRaw = fHandle ? __zw_get_attr_handle(fHandle, 'action') : __zw_get_attr(fSel, 'action');
+            }
+            var _u = null;
+            try { _u = new URL(_actionRaw == null ? '' : String(_actionRaw), _base); } catch (_eA2) { return; }
+            // ② method：submitter formmethod > form method 属性 > GET（大小写不敏感）。
+            var _method = '';
+            try { if (submitter) _method = String(submitter.getAttribute('formmethod') || ''); } catch (_eM1) {}
+            if (_method === '') {
+              try { _method = String(fHandle ? __zw_get_attr_handle(fHandle, 'method') : __zw_get_attr(fSel, 'method') || ''); } catch (_eM2) {}
+            }
+            _method = _method.toLowerCase();
+            // spec §4.10.22 步骤 4-7：method 归一——get→GET；非 post/dialog（含缺失、
+            // 未知值）→ 默认 GET。baidu 首页 form 无 method 属性即走此默认。本切片仅
+            // 实现 GET 导航；post/dialog 排除（FIXME 函数头边界）。
+            if (_method === 'post' || _method === 'dialog') return;
+            // ③ entry list（tree order，_formControls；spec §4.10.22.2 子集）。
+            var _ctrls = _formControls(fSel);
+            var _pairs = [];
+            for (var _ei = 0; _ctrls && _ei < _ctrls.length; _ei++) {
+              var _c = _ctrls[_ei];
+              try {
+                var _nm = _c.getAttribute('name');
+                if (_nm == null || _nm === '') continue;           // 无 name 不贡献 entry
+                if (_c.getAttribute('disabled') != null) continue; // disabled 控件跳过
+                var _tg = String(_c.tagName || '').toUpperCase();
+                if (_tg === 'INPUT') {
+                  var _ty = String(_c.getAttribute('type') || 'text').toLowerCase();
+                  if (_ty === 'checkbox' || _ty === 'radio') {
+                    // 未勾选不贡献；勾选取 value 属性，缺省 'on'。
+                    if (_c.checked) _pairs.push([_nm, _c.getAttribute('value') != null ? _c.getAttribute('value') : 'on']);
+                  } else if (_ty === 'submit' || _ty === 'image') {
+                    // 仅 submitter 按钮贡献（spec：submitter entry）；其余 submit 按钮跳过。
+                    if (_zwIsSubmitterControl(_c, submitter)) _pairs.push([_nm, _c.getAttribute('value')]);
+                  } else if (_ty === 'button' || _ty === 'reset') {
+                    // 非提交按钮不贡献。
+                  } else if (_ty === 'file') {
+                    continue; // FIXME: file entry（无文件选择实现）
+                  } else {
+                    _pairs.push([_nm, _c.value != null ? _c.value : '']);
+                  }
+                } else if (_tg === 'TEXTAREA') {
+                  _pairs.push([_nm, _c.value != null ? _c.value : '']);
+                } else if (_tg === 'SELECT') {
+                  var _opts = _c.options;
+                  for (var _oi = 0; _opts && _oi < _opts.length; _oi++) {
+                    var _op = _opts[_oi];
+                    if (_op && _op.selected) {
+                      _pairs.push([_nm, _op.getAttribute('value') != null ? _op.getAttribute('value') : (_op.textContent || '')]);
+                    }
+                  }
+                } else if (_tg === 'BUTTON') {
+                  // 仅 submitter BUTTON 贡献（type=submit 默认）；value 属性缺省跳过。
+                  if (_zwIsSubmitterControl(_c, submitter) && _c.getAttribute('value') != null) {
+                    _pairs.push([_nm, _c.getAttribute('value')]);
+                  }
+                }
+                // OUTPUT/KEYGEN/FIELDSET 不贡献（fieldset disabled 传播 FIXME）。
+              } catch (_eC) {}
+            }
+            // ④ urlencoded 序列化（spec serialize urlencoded：换行归一 \r\n → 百分号编码 →
+            // 空格 '+'；encodeURIComponent 除 `*`-集合差异与 spec 编码集一致）。
+            function _encPair(n, v) {
+              function enc(s) {
+                return encodeURIComponent(String(s).replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\r\n')).replace(/%20/g, '+');
+              }
+              return enc(n) + '=' + enc(v);
+            }
+            var _body = '';
+            for (var _si = 0; _si < _pairs.length; _si++) {
+              _body += (_si ? '&' : '') + _encPair(_pairs[_si][0], _pairs[_si][1]);
+            }
+            // ⑤ mutate action URL：既有 query 以 '&' 拼接，无则新起（spec §4.10.22 步骤 26-27
+            // GET 形态）。entry list 空 → query 保持。
+            var _oldQ = _u.search ? _u.search.slice(1) : '';
+            if (_body !== '') {
+              try { _u.search = _oldQ ? (_oldQ + '&' + _body) : _body; } catch (_eQ) {}
+            }
+            var _abs = _u.href;
+            // ⑥ 导航：内存历史 push + host 真导航（同 URL = 重载语义，resubmit 同型）。
+            if (typeof _pushHistNav === 'function') {
+              try { _pushHistNav(_abs, _base); } catch (_eH) {}
+            }
+            __zw_request_navigate(_abs);
+          } catch (_eNav) {}
+        }
+        // submitter 身份比对（sel/handle 双路径，requestSubmit 归属检查同型）。
+        function _zwIsSubmitterControl(c, submitter) {
+          if (!submitter) return false;
+          try {
+            var _ss = submitter.__zwSelector, _sh = submitter.__zwHandle;
+            return (_ss != null && _ss === c.__zwSelector) || (_sh != null && _sh === c.__zwHandle);
+          } catch (_eS) { return false; }
         }
         // R3048：HTMLFormElement 方法——reset/requestSubmit/submit。旧缺（get trap 未拦 → `form.reset()` 抛
         // not-a-function 中断脚本）。reset：dispatch cancelable 'reset' 事件，未 preventDefault 则把控件恢复
@@ -7486,7 +7603,9 @@ return _tplContent;
               _zwRunFormSubmit(key, sel, handle, submitter);
             };
           } else { // submit
-            return function () {}; // spec form.submit() 不发事件直接导航；headless 无导航 → no-op（防抛错）
+            // spec form.submit()：不发 submit 事件、不做交互校验，直接走提交导航步骤
+            //（submitter = null）。旧 no-op（R-baidu5 前置）：URL 不变。
+            return function () { _zwFormSubmitNavigate(sel, handle, null); };
           }
         }
         // 布局测量 API：`el.getBoundingClientRect()` 返真实 DOMRect（P1a gBCR path C）。
