@@ -29,7 +29,7 @@
 2. 选择未暂停且依赖全为 done 的任务；默认串行，一个实施者或验证者在途。
 3. 内层执行入口的探索、复现、通用修复、回归、原站对照与候选门禁。
 4. accept 后更新 best，复测受影响的已通过用户任务；将可验收切片提交为任务 PR。
-   新上下文 reviewer 自审完整变更，有问题则同一 PR 返修、重验、重审。
+   按 [双审查](independent-review.md) 完成两个独立首轮，再同一 PR 返修、重验和非作者复核。
 5. 主控按 github-delivery 合并并验证集成版本后标 done，报告阶段成果并立即领取
    下一项，不等待用户回复。全部任务 done 时在最新集成版本做整体验收。
 6. 整体验收发现缺陷，追加关联原目标的修复任务；保留原 done 历史，继续循环。
@@ -53,13 +53,15 @@
 仍会运行，也不为此自动安装 cron 或 tmux 控制器。
 
 宿主允许独立子 Agent 时，优先总控加新上下文 worker/reviewer，默认不并行重型任务。
-每个实施任务完成后关闭其已结束上下文，下一任务使用新 worker；审查使用未参与实现
-的新 reviewer。默认串行复用当前工作区及构建缓存，不为 worker 新建 worktree；
+每个实施任务完成后关闭其已结束上下文，下一任务使用新 worker；首轮审查使用未参与
+实现的新 reviewer。定向复核按补丁非作者安排，最终汇总者不得参与该运行的任何实施；
+具体身份要求按双审查契约执行。默认串行复用当前工作区及构建缓存，不为 worker 新建 worktree；
 首个开发分支按入口从最新 main（或明确约定的 base）创建，后续已合并任务按
 github-delivery 同步集成版本再建下一任务分支。主控负责规划、账本、合并与停止。
 local/pr_only 模式的成果尚未集成时，后续工作沿用当前 best 及其分支；需要拆分 PR
 则记录依赖和实际 base，不能重新从 main 起步丢掉已有成果。恢复时继续原任务分支。
-总控独占 workflow/checkpoint 写入权；worker 只写自己的产物与候选，reviewer 不改产品。
+总控独占 workflow/checkpoint 写入权；worker 只写自己的产物与候选，review operation
+只读源码。测试角色需补测试时另领 implement operation，记录作者后按双审查契约安排非作者复核。
 每个任务包包括：原授权引用、目标与任务 ID、精确 best、当前工作区/任务分支、剩余总预算
 与本步上界、验证方式、证据位置、禁止事项。新 worker 不继承整段实现推理，
 不重新发默认预算或向用户重问已有权限。角色名称不同不证明上下文独立。
@@ -68,7 +70,7 @@ local/pr_only 模式的成果尚未集成时，后续工作沿用当前 best 及
 像素和性能回归，明确不声称独立体验收益。用户要求独立验收时使用 `independent`，
 缺能力阻塞该验收，不在运行中悄悄降级。总体验收在最新 best 重新走完整任务，
 不能将各切片的 PASS 相加；仅有截图不能证明交互目标。
-verification_mode 控制产品验收；auto_merge 的代码审查始终需要独立上下文，
+verification_mode 控制产品验收；任务 PR 的适用双审查始终需要独立上下文，
 不能用 deterministic 绕过。能力暂不可用时先做独立可推进工作，再按真实缺口处理。
 
 ## 状态与单写者
@@ -160,8 +162,10 @@ artifacts（非空原始证据引用）。审查和合并报告还须包含同�
 
 - review：verdict=PASS 或 CHANGES_REQUIRED、open_findings 数组、
   subject（候选 manifest 摘要）、reviewer={executor_ref,independent}。
-  合并前须 PASS、零未解决问题、新上下文且不是
-  总控或实施者。返修和 base/head 漂移后重新生成报告；旧报告保留，不能重绑 SHA。
+  交付前须 PASS、零未解决阻断项，汇总 reviewer 不是总控或该运行的任何实施者。
+  适用双审查时，artifacts 引用两份独立首轮、发现处置及必要的非作者补丁复核；
+  各首轮与复核分别作为串行 review operation 保存，不能把首轮单独填为 delivery.review。
+  返修和 base/head 漂移后定向复核并生成当前版本的汇总报告；旧报告保留，不能重绑 SHA。
 - merge：confirmed=true、commit（服务端确认的完整合并 SHA）、
   review_sha256（使用的 review 引用摘要）。未知结果保持引用 null、操作未决；
   明确未合并则完成失败操作并回 pr_review，不能把失败回执放入成功 merge 字段。
@@ -179,7 +183,7 @@ repairs_task_id 指向原任务；返修任务不得直接或间接依赖未完�
 整体验收失败同样追加任务，关联原 goals，保留已 done 的历史。
 
 检查器核对结构、摘要、状态转换和回执身份，不查询 GitHub 或判断报告是否造假。
-CI、保护规则、PR 当前状态、原始日志语义和上下文独立性仍由主控实查；
+双角色报告齐全、非作者复核、CI、保护规则、PR 当前状态、原始日志语义和上下文独立性仍由主控实查；
 不得把本地 review 回执伪装成 GitHub required approval。
 
 首次建立后，每次保存必须带上一个不可变 workflow 快照：

@@ -94,15 +94,17 @@ PR description 是评审入口：按问题 ID/任务场景说明原行为、新�
    不自动 stash、覆盖或另建 worktree；只有用户明确要求才创建 worktree。
 2. 未发布分支提交后 rebase 最新 integration 并验证；已发布分支用普通 merge
    集成更新，不 force push。以精确 head/base 保存测试、原站前后证据和独立 review。
-3. PR 创建后派发新上下文 reviewer，只读精确 base/head 的完整 diff、冻结目标、
-   任务证据与原始门禁，检查真实 bug、必要功能完整性、回归和范围外变更，返回
-   PASS/CHANGES_REQUIRED、问题位置和依据。主控安排同一 PR 返修，复用仍有效检查，
-   对新 head 重验和重新独立审查，直到无未解决问题；不能仅删除审查发现。
-   reviewer 不改产品、不代替 GitHub 批准、不自行合并。独立上下文或真实 CI 缺口阻塞合并，
-   可继续不依赖该合并的已授权工作，不能降级自动合并标准。
+3. PR 创建后按 [双审查](independent-review.md) 串行派发测试有效性与缺陷两个
+   新上下文，首轮只读同一精确 base/head 的完整变更，不继承作者推理、不互看结论。
+   两份首轮归档后安排同一 PR 返修；复用仍有效检查，由非作者复核新增补丁和受影响
+   行为，生成当前 head 的汇总回执。不得删掉发现，或把任一首轮 PASS 当最终批准。
+   首轮 reviewer 不改产品，补丁另作实施任务；不代替 GitHub 批准或自行合并。
+   必需双审查证据、独立上下文或真实 CI 缺口阻塞交付就绪；可继续不依赖该交付的
+   已授权工作。pr_only 同样完成适用双审查，但不执行合并。
 4. 合并前重查远端 head/base、CI、保护规则、可合并状态、停止屏障与本轮授权。
    按 workflow 核对 candidate_manifest 的 source_sha/base_sha/dirty_patch、review.subject
    及 checkpoint 当前门禁身份；新 head 的审查不能代替新 head 的实际验证。
+   主控实际读取汇总 artifacts 中两份首轮、发现处置及非作者复核；检查器不校验双报告齐全。
    版本变化使受影响验证/review 失效。必须通过仓库门禁与原生保护，不以管理员绕过、
    review 文本或本地脚本 PASS 代替。审批/评论等对他人的消息不从 merge 权限推导。
 5. 主控在运行目录保存不可变 merge 意图（唯一 operation ID、repo/PR、head/base），
