@@ -41,6 +41,8 @@ fn test_form_submit_default_navigation_r_baidu5() {
          <form id='v' action='/v' method='get'><input id='vsub' type='submit' name='vn'></form>\
          <form id='u' action='/u' method='get'>\
          <select id='us' name='u1'><option value='a'>A</option><option value='b'>B</option></select></form>\
+         <form id='w' action='/w' method='get'><button id='wsub' type='submit' name='wb'>go</button></form>\
+         <form id='i' action='/i' method='get'><input id='isub' type='image' name='img' src='/pixel.png'></form>\
          </body></html>"
             .to_string(),
     ));
@@ -149,5 +151,23 @@ fn test_form_submit_default_navigation_r_baidu5() {
         drain(),
         vec!["https://example.com/u?u1=a".to_string()],
         "select 无显式 selected → 首个非 disabled option 回落"
+    );
+
+    // ⑫ BUTTON submitter 无 value 属性 → 空串 entry（二轮 review minor 2：spec/
+    // Chrome/Rust 孪生同口径，非跳过）。
+    sandbox.execute("document.getElementById('w').requestSubmit(document.getElementById('wsub'));").unwrap();
+    assert_eq!(
+        drain(),
+        vec!["https://example.com/w?wb=".to_string()],
+        "BUTTON submitter 无 value → 空串 entry"
+    );
+
+    // ⑬ image submitter → name.x/name.y 坐标对（二轮 review minor 3：spec §4.10.22.2
+    // 形状，非指针激活坐标 0,0；不产 name= 基础伪 entry）。
+    sandbox.execute("document.getElementById('i').requestSubmit(document.getElementById('isub'));").unwrap();
+    assert_eq!(
+        drain(),
+        vec!["https://example.com/i?img.x=0&img.y=0".to_string()],
+        "image submitter → name.x/name.y 坐标对 entry"
     );
 }

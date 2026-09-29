@@ -7426,8 +7426,9 @@ return _tplContent;
         // __zw_request_navigate 仅收 URL，无 method/body 面）；target ≠ _self；fieldset
         // disabled 传播；input type=file entry（无文件选择实现）；enctype=text/plain/
         // multipart；formmethod=dialog；submitter formaction=''（spec → 文档地址，
-        // 现回落 form action）；BUTTON submitter 无 value 属性缺省 entry（spec 追加
-        // 空值 entry，现跳过）；宿主激活 + JS submit() 双通道去重（review m3b）。
+        // 现回落 form action）；宿主激活 + JS submit() 双通道去重（review m3b）；
+        // handle 身份（纯 createElement）form 的 _formControls 空列表 → 空 entry
+        // list 导航（共享 helper 既有局限，二轮 review note）。
         function _zwFormSubmitNavigate(fSel, fHandle, submitter) {
           try {
             if (typeof __zw_request_navigate !== 'function') return;
@@ -7472,7 +7473,15 @@ return _tplContent;
                     // value 属性缺省 → ''（review M2：getAttribute 缺省返 null，直传会
                     // 经 String(null) 序列化出字面量 "null"，兄弟分支同守卫）。
                     if (_zwIsSubmitterControl(_c, submitter)) {
-                      _pairs.push([_nm, _c.getAttribute('value') != null ? _c.getAttribute('value') : '']);
+                      if (_ty === 'image') {
+                        // type=image submitter 贡献 name.x/name.y 坐标对（spec
+                        // §4.10.22.2；非指针激活坐标 0,0——requestSubmit/submit() 语义；
+                        // 二轮 review minor 3：不得产出 name= 基础伪 entry）。
+                        _pairs.push([_nm + '.x', '0']);
+                        _pairs.push([_nm + '.y', '0']);
+                      } else {
+                        _pairs.push([_nm, _c.getAttribute('value') != null ? _c.getAttribute('value') : '']);
+                      }
                     }
                   } else if (_ty === 'button' || _ty === 'reset') {
                     // 非提交按钮不贡献。
@@ -7497,7 +7506,9 @@ return _tplContent;
                       _selPushed++;
                     }
                   }
-                  if (_selPushed === 0 && _opts && _opts.length > 0) {
+                  // 回落仅限单选（二轮 review minor 1：multiple 无选中 → spec/孪生均
+                  // 零 entry，不产伪首项）。
+                  if (_selPushed === 0 && !(_c.getAttribute('multiple') != null) && _opts && _opts.length > 0) {
                     for (var _fi = 0; _fi < _opts.length; _fi++) {
                       var _fp = _opts[_fi];
                       if (_fp && !_fp.disabled) {
@@ -7507,9 +7518,11 @@ return _tplContent;
                     }
                   }
                 } else if (_tg === 'BUTTON') {
-                  // 仅 submitter BUTTON 贡献（type=submit 默认）；value 属性缺省跳过。
-                  if (_zwIsSubmitterControl(_c, submitter) && _c.getAttribute('value') != null) {
-                    _pairs.push([_nm, _c.getAttribute('value')]);
+                  // 仅 submitter BUTTON 贡献（type=submit 默认）；value 属性缺省 →
+                  // 空串 entry（二轮 review minor 2：spec/Chrome/Rust 孪生
+                  // unwrap_or_default 同口径，与 INPUT 分支一致）。
+                  if (_zwIsSubmitterControl(_c, submitter)) {
+                    _pairs.push([_nm, _c.getAttribute('value') != null ? _c.getAttribute('value') : '']);
                   }
                 }
                 // OUTPUT/KEYGEN/FIELDSET 不贡献（fieldset disabled 传播 FIXME）。
@@ -7630,9 +7643,11 @@ return _tplContent;
             // review m3a：submit 派发窗口内调用（如 onsubmit="form.submit()"）→ 短路，
             // 由外层默认动作统一导航一次（spec ongoing submission 语义近似；否则内层
             // 立即入队 + 外层 _notCanceled 再入队 = 双导航）。已知边界（FIXME 挂账，
-            // review m3b）：宿主 P1a 激活的 submit 按钮 click 中页面 listener 再调
-            // submit()/requestSubmit() 时，JS 通道与宿主 form_navigation_intent 通道
-            // 无去重，双导航——留待 runtime 侧同 URL 去重收口。
+            // review m3b，二轮修正触发点）：真正双通道窗口是宿主 HtmlUserAction::Submit
+            //（Enter 隐式提交，plan_submit → 宿主 SubmitForm effect）路径中 submit
+            // listener 再调 submit()/requestSubmit()——JS 通道与宿主通道无去重，双导航；
+            // 宿主对 submit 按钮的 Activate 是纯 click（ActionTargetState::Generic，无
+            // submit effect）不入此窗口。留待 runtime 侧同 URL 去重收口。
             return function () {
               if (_zwSubmitBusy) return;
               _zwFormSubmitNavigate(sel, handle, null);
