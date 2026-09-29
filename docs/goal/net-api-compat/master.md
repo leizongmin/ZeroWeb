@@ -16,10 +16,12 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
 M4-S8（76.8%）→ M4-S9（2026-09-30）——**8626/11205 = 77.0%**（fetch 69.6% / xhr 53.2% /
 url 73.1% / mimesniff 100% / streams **83.2%**（826/993——byte tee 分支字节流身份 +
-双分支 chunk 克隆）/ eventsource 6.2%）。下一切片 M4-S10：源侧 BYOB pull 切换
-（spec ReadableByteStreamTee pullWithBYOBReader——tee byte 深水余量）+ pipeTo
-read-ahead 泵；transfer/detach 族结构性挂账（需宿主 V8 detach）。并轨 P7 fixture 续件
-与 DC 判定收口。
+双分支 chunk 克隆）/ eventsource 6.2%）。**M4-S10 尝试记录（2026-09-30，未收口回退）**：源侧 BYOB pull 切换首版（tee 源
+reader 切 byob + pull-into 前向 + branchPending 队列）实现后 byte tee 页引入挂起
+（templatedRSTeeCancel cancel 聚合腿）——已回退至 M4-S9 树（make test 全绿复核）。
+根因待查：分支 pull-into 与源 byob 读的 settle 顺序交互。下一切片 M4-S10 重做该面 +
+pipeTo read-ahead 泵；transfer/detach 族结构性挂账（需宿主 V8 detach）。并轨 P7
+fixture 续件与 DC 判定收口。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -195,10 +197,9 @@ read-ahead 泵；transfer/detach 族结构性挂账（需宿主 V8 detach）。�
 
 ## 下一步计划
 
-1. **M4-S10 源侧 BYOB pull 切换**：spec ReadableByteStreamTee pullWithBYOBReader
-   （tee 源 reader 分支 byob 读时切 byob 模式 + pull-into 前向——byte tee 深水余量 +
-   'chunks for BYOB requests from branch 1 should be cloned to branch 2' 面）+
-   pipeTo read-ahead 泵（3 腿）+ sink.abort 事件序（1 腿）
+1. **M4-S10 源侧 BYOB pull 切换（重做）**：首版挂起根因甄别（分支 pull-into 与源
+   byob 读 settle 顺序）→ 重做 pullWithBYOBReader 子集 + pipeTo read-ahead 泵（3 腿）
+   + sink.abort 事件序（1 腿）
 2. **结构性挂账**：缓冲 transfer/detach 族（spec TransferArrayBuffer——需宿主 V8
    detach 能力，JS 层不可表达——bad-buffers 10 腿 + non-transferable 4 腿）
 3. **M4 并轨**：P7 续件评估（.asis / event-source.py / echo-content.py）+ blob-range
