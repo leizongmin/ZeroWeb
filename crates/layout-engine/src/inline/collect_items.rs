@@ -342,6 +342,9 @@ impl InlineFormattingContext {
                         if styles
                             .get(&child_id)
                             .is_some_and(|s| matches!(s.display, DisplayValue::None))
+                            // paint Path B（空 styles）下 author 规则的 display:none
+                            // 由 caller 注入集判定（同 vertical_walk_nodes 模式）。
+                            || self.display_none_walk_nodes.contains(&child_id)
                             || (styles.is_empty() && Self::ua_hidden_without_styles(elem_data.local_name()))
                         {
                             continue;
@@ -1012,7 +1015,13 @@ impl InlineFormattingContext {
         // local_name=="ruby" 走排除表，其余元素（rbc/rb 基容器、包裹 span）走
         // doc.text_content 把 rt 注音并进 run 文本（improperly-contained-annotation：
         // rbc flatten run="BA" 宽 55.6 vs ruby 26.7，6.5 remeasure 母子宽倒挂实证）。
-        let text = Self::collect_text_excluding(doc, child_id, &["rt", "rp", "rtc"]);
+        let text = Self::collect_text_excluding(
+            doc,
+            child_id,
+            &["rt", "rp", "rtc"],
+            styles,
+            &self.display_none_walk_nodes,
+        );
         let trimmed = if run_preserves {
             text
         } else if run_ws.is_some_and(|ws| ws.break_at_newline) {
@@ -1451,6 +1460,18 @@ impl InlineFormattingContext {
                     // walk 递归经 text_content 折回同样会把 Path B 下无 styles 的
                     // script/style 等源文本吸收进 pending。
                     if styles.is_empty() && Self::ua_hidden_without_styles(elem_data.local_name()) {
+                        continue;
+                    }
+                    // CSS2 §9.3 / CSS Display 3 §2.1：display:none 不生成任何盒——嵌套在
+                    // 可见 inline 内的隐藏子（`<b>VIS<span display:none>X</span>IBLE</b>`）
+                    // 经 text_content 折回同样泄入 run，判定与主路径直子分支同源：layout
+                    // 趟 styles 直判；paint Path B（空 styles）由 caller 注入集判定。须先于
+                    // br/折回臂（none 子树的 br 与文本都不得产出）。
+                    if styles
+                        .get(&gc)
+                        .is_some_and(|s| matches!(s.display, DisplayValue::None))
+                        || self.display_none_walk_nodes.contains(&gc)
+                    {
                         continue;
                     }
                     // R4331（CSS2 §9.2.1 / HTML br 元素）：`<br>` 强制换行条目与主
@@ -2119,14 +2140,14 @@ mod r4395_rtc_annotation_tests {
             r#"<html><body><rbc>B<rt>A</rt></rbc></body></html>"#,
         );
         let rbc = doc.get_elements_by_tag_name("rbc")[0];
-        let text = InlineFormattingContext::collect_text_excluding(&doc, rbc, &["rt", "rp", "rtc"]);
+        let text = InlineFormattingContext::collect_text_excluding(&doc, rbc, &["rt", "rp", "rtc"], &HashMap::new(), &NodeIdSet::default());
         assert_eq!(text, "B", "rbc 收集 = base 文本，rt 排除");
         // 包裹 span 形态：嵌套 ruby 的注音同样排除。
         let doc = zero_dom::parse_html(
             r#"<html><body><span>x<ruby>y<rt>z</rt></ruby></span></body></html>"#,
         );
         let span = doc.get_elements_by_tag_name("span")[0];
-        let text = InlineFormattingContext::collect_text_excluding(&doc, span, &["rt", "rp", "rtc"]);
+        let text = InlineFormattingContext::collect_text_excluding(&doc, span, &["rt", "rp", "rtc"], &HashMap::new(), &NodeIdSet::default());
         assert_eq!(text, "xy", "span 收集排除嵌套 rt");
     }
 
@@ -2140,7 +2161,7 @@ mod r4395_rtc_annotation_tests {
         let ruby = doc.get_elements_by_tag_name("ruby")[0];
         // InlineFormattingContext::collect_text_excluding 为 base run 收集入口
         //（collect 主路径同参调用 &["rt", "rp", "rtc"]）。
-        let base = InlineFormattingContext::collect_text_excluding(&doc, ruby, &["rt", "rp", "rtc"]);
+        let base = InlineFormattingContext::collect_text_excluding(&doc, ruby, &["rt", "rp", "rtc"], &HashMap::new(), &NodeIdSet::default());
         assert_eq!(base, "東南", "base = rb 文本，rt/rtc 子树排除");
     }
 }

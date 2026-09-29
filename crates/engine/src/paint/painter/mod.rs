@@ -1605,6 +1605,14 @@ impl Painter {
             return;
         }
 
+        // CSS2 §9.3 / CSS Display 3 §2.1：display:none 不生成任何盒——与主路径
+        // paint_node_inner 同款守卫（R3768/R3769 教训：跳过链两路径须同步加）。
+        if let Some(style) = box_node.node_id.and_then(|id| styles.get(&id))
+            && matches!(style.display, DisplayValue::None)
+        {
+            return;
+        }
+
         // R3768：跨块盒 line-clamp 中被「跳过」的 in-flow 子盒（clamp point 之后）——
         // 布局期几何已清零并标记，paint 整子树跳过（否则其背景/边框/文本照绘，如
         // line-clamp-008 的 `.red` 盒与 table）。
@@ -1956,6 +1964,15 @@ impl Painter {
         doc: Option<&Document>,
         is_root_scope: bool,
     ) {
+        // CSS2 §9.3 / CSS Display 3 §2.1：display:none 不生成任何盒——布局趟折为
+        // 0×0 Display::None 叶（tree.rs build_subtree），绘制趟整子树跳过（文本/
+        // 背景均不渲染），否则 0×0 盒的文本画在盒位置与后随兄弟叠字。styles 缺失
+        // 时无从判定，保持旧路径。脏矩形路径 paint_node_in_rect 同款守卫。
+        if let Some(style) = box_node.node_id.and_then(|id| styles.get(&id))
+            && matches!(style.display, DisplayValue::None)
+        {
+            return;
+        }
         // R2197 Phase A slice 3：orphan inline LayoutBox（paint_skip_nodes）跳过递归绘制。
         // 其文本/背景已由父 IFC 片段绘制（R639 part2），此处跳过避免双绘 + 避免 approximate
         // 几何盒被当独立盒误绘。default 空集 → 不触发，零行为变更。

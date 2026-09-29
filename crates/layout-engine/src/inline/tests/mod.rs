@@ -3,6 +3,7 @@
 mod advanced;
 mod advanced_float_tab;
 mod basic;
+mod display_none_leak;
 mod edge_cases;
 mod plaintext;
 mod r1975_vertical_ifc_inf_probe;
