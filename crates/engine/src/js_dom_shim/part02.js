@@ -484,6 +484,24 @@
     }
     return out;
   }
+  // net-api M4-S7：ReadableStreamBYOBReader / ReadableStreamBYOBRequest 全局类——
+  // reader 构造须字节流（brand + type 校验 + locked → TypeError，getReader 同厂）；
+  // request 不可构造（构造即 TypeError）。
+  function ReadableStreamBYOBRequest() {
+    throw new TypeError('Illegal constructor');
+  }
+  function ReadableStreamBYOBReader(stream) {
+    if (!stream || !stream._zwRsBrand) {
+      throw new TypeError("Failed to construct 'ReadableStreamBYOBReader': stream must be a ReadableStream.");
+    }
+    if (!stream._zwIsByteStream) {
+      throw new TypeError('BYOB reader requires a ReadableStream with type "bytes"');
+    }
+    return stream.getReader({ mode: 'byob' }); // locked → getReader TypeError
+  }
+  globalThis.ReadableStreamBYOBRequest = globalThis.ReadableStreamBYOBRequest || ReadableStreamBYOBRequest;
+  globalThis.ReadableStreamBYOBReader = globalThis.ReadableStreamBYOBReader || ReadableStreamBYOBReader;
+
   // net-api M4-S5：ReadableStreamDefaultController 全局类——spec 不可构造（构造即 TypeError；
   // controller 对象经 proto.constructor 暴露同一函数——writable constructor 页 `c.constructor`
   // 面）。实例链：ReadableStream 构造时 Object.create(controllerProto)。
@@ -504,6 +522,11 @@
     // 可调用校验）**先于构造步骤**（含 source.type 读取）。
     var strat = _zwStrategyDict(_strategy);
     var source = underlyingSource === undefined ? {} : underlyingSource;
+    // net-api M4-S7：autoAllocateChunkSize === 0 → TypeError（spec——0 非法，
+    // byte-streams/general「autoAllocateChunkSize cannot be 0」面）。
+    if (source.autoAllocateChunkSize === 0) {
+      throw new TypeError('autoAllocateChunkSize cannot be 0');
+    }
     // net-api M4-S4：UnderlyingSource dictionary 转换——start/pull/cancel 成员**构造时一次读取**
     //（定义序，getter 抛错同步传播出构造器——bad-underlying-sources「throwing getter」面），
     // 算法缓存（「second pull does not result in a second get」面）；回调 this = underlyingSource。
@@ -537,6 +560,8 @@
     }
     var hwm = _zwExtractHwm(strat.hwmValue, this._zwIsByteStream ? 0 : 1);
     var sizeFn = strat.size !== undefined ? strat.size : null;
+    var aacs = (this._zwIsByteStream && typeof source.autoAllocateChunkSize === 'number' && source.autoAllocateChunkSize > 0)
+      ? source.autoAllocateChunkSize : 0; // net-api M4-S7：autoAllocateChunkSize（benign byobRequest 面）
     var queue = [];              // 已 enqueue 待消费 { chunk, size }
     var queueTotalSize = 0;
     var state = 'readable';      // readable | closed | errored
@@ -567,6 +592,44 @@
       if (state !== 'readable' || closeRequested) {
         throw new TypeError('Cannot enqueue a chunk into a ' + (closeRequested ? 'closing' : state) + ' readable stream');
       }
+      if (self._zwIsByteStream) {
+        // net-api M4-S7：spec 字节流 enqueue——零长度视图/零长缓冲 → TypeError（bad-buffers
+        // 「enqueuing a zero-length buffer throws」面）；pending pull-into → 填头描述符
+        //（跨描述符续填 + 余量回队）；无 pull-into → 常规队列（字节 size——hwm 默认 0）。
+        if (!chunk || typeof chunk.byteLength !== 'number' || chunk.byteLength === 0) {
+          throw new TypeError('Cannot enqueue a zero-length view');
+        }
+        // spec FulfillReadRequest——默认 reader 等待读直接喂 chunk（跳过则队列无界增长——
+        // respond-after-enqueue 页内存爆涨根因）。
+        if (waiting.length > 0) { waiting.shift().resolve(_rs_chunk(chunk)); flushPull(); return; }
+        var srcB = chunk instanceof Uint8Array ? chunk : null;
+        if (pullIntos.length > 0) {
+          var srcE = srcB || new Uint8Array(0);
+          while (srcE !== null && srcE.length > 0 && pullIntos.length > 0) {
+            var dFill = pullIntos[0];
+            var spaceF = dFill.byteLength - dFill.bytesFilled;
+            var takeF = Math.min(spaceF, srcE.length);
+            try {
+              new Uint8Array(dFill.buffer, dFill.byteOffset + dFill.bytesFilled, takeF).set(srcE.subarray(0, takeF));
+            } catch (_eFill) { throw new TypeError('enqueue: buffer fill failed (' + _eFill.message + ')'); }
+            dFill.bytesFilled += takeF;
+            srcE = takeF < srcE.length ? srcE.subarray(takeF) : null;
+            if (dFill.bytesFilled >= dFill.min) {
+              pullIntos.shift();
+              commitDescriptor(dFill);
+            }
+          }
+          if (srcE) { queue.push({ chunk: srcE, size: srcE.length }); queueTotalSize += srcE.length; }
+          // spec Enqueue 步骤 12——CallPullIfNeeded（部分填充未达 min → 续拉补齐：
+          // 「multiple enqueue() up to 3 bytes」pullCount===2 面）。
+          flushPull();
+          return;
+        }
+        queue.push({ chunk: srcB || chunk, size: chunk.byteLength });
+        queueTotalSize += chunk.byteLength;
+        flushPull();
+        return;
+      }
       if (waiting.length > 0) { waiting.shift().resolve(_rs_chunk(chunk)); flushPull(); return; }
       var sz;
       try { sz = (typeof sizeFn === 'function') ? sizeFn(chunk) : 1; }
@@ -580,17 +643,35 @@
       queueTotalSize += sz;
       flushPull();
     }
-    function closeStream() {
+    var pullIntos = []; // net-api M4-S7：BYOB pull-into 描述符 FIFO {buffer,byteOffset,byteLength,bytesFilled,min,resolve,viewCtor,isDataView,elementSize}
+    function closeStream(byCancel) {
       if (state !== 'readable') return;
       state = 'closed';
       while (waiting.length > 0) waiting.shift().resolve(_RS_DONE);
       while (closedWaiters.length > 0) closedWaiters.shift().resolve();
+      // net-api M4-S7：字节流 close——pending pull-into close steps（spec：普通 close 交还
+      // 已填视图/空视图 done:true；**cancel 路径 close steps given undefined**——spec
+      // ReadableStreamCancel 步骤 6）。
+      while (pullIntos.length > 0) {
+        var dClose = pullIntos.shift();
+        var vClose;
+        if (byCancel) vClose = undefined;
+        else {
+          try {
+            vClose = dClose.isDataView ? new DataView(dClose.buffer, dClose.byteOffset, dClose.bytesFilled)
+                                       : new dClose.viewCtor(dClose.buffer, dClose.byteOffset, dClose.bytesFilled / dClose.elementSize);
+          } catch (_eCdB) { vClose = undefined; }
+        }
+        dClose.resolve({ value: vClose, done: true });
+      }
     }
     function errorStream(e) {
       if (state !== 'readable') return;
       errorVal = e;
       state = 'errored';
       while (waiting.length > 0) waiting.shift().reject(e);
+      // net-api M4-S7：pending pull-into 描述符 error steps（「read({min}), then error()」面）。
+      while (pullIntos.length > 0) pullIntos.shift().reject(e);
       while (closedWaiters.length > 0) closedWaiters.shift().reject(e);
     }
     function flushPull() {
@@ -600,7 +681,8 @@
       // 避免零 size 源同步递归栈爆）。
       if (!started || state !== 'readable' || closeRequested) return;
       if (typeof srcPull !== 'function') return;
-      if (waiting.length === 0 && hwm - queueTotalSize <= 0) return;
+      // net-api M4-S7：pull-into 描述符亦触发（spec ShouldCallPull——BYOB read-into-requests > 0）。
+      if (waiting.length === 0 && pullIntos.length === 0 && hwm - queueTotalSize <= 0) return;
       if (pulling) { pullAgain = true; return; } // spec：pull 期间 → pullAgain（完成后续拉）
       pulling = true;
       var result;
@@ -615,9 +697,97 @@
         if (pullAgain) { pullAgain = false; Promise.resolve().then(flushPull); }
       }
     }
+    // net-api M4-S7：pull-into 描述符 commit（chunk steps——同缓冲新视图 done:false）+
+    // 排空后续（drain-close 或续拉）。
+    function commitDescriptor(d) {
+      var vi = pullIntos.indexOf(d);
+      if (vi >= 0) pullIntos.splice(vi, 1);
+      var out;
+      try {
+        out = d.isDataView ? new DataView(d.buffer, d.byteOffset, d.bytesFilled)
+                           : new d.viewCtor(d.buffer, d.byteOffset, d.bytesFilled / d.elementSize);
+      } catch (_eCmt) { out = new Uint8Array(0); }
+      d.resolve({ value: out, done: false });
+      if (closeRequested && queue.length === 0) closeStream(false);
+      else flushPull();
+    }
     // net-api M4-S5：controller 原型面（general「start controller parameter should be
     // extensible」——proto own props 恰 close/constructor/desiredSize/enqueue/error）。
     var controllerProto = { constructor: ReadableStreamDefaultController };
+    if (self._zwIsByteStream) {
+      // net-api M4-S7：ReadableByteStreamController.byobRequest（spec §4.7.3——pending
+      // pull-into 非空时返回 BYOBRequest：view = 构造于 buffer 已填偏移之后的余量视图；
+      // respond(n) 最小填充契约：filled >= min 才 commit，closed 态零写入收尾）。
+      Object.defineProperty(controllerProto, 'byobRequest', {
+        get: function () {
+          if (pullIntos.length === 0) {
+            // net-api M4-S7：autoAllocateChunkSize benign 形（respond-after-enqueue 3 腿——
+            // 默认读走队列直填，byobRequest 非空可安全 respond/no-op，不参与填充）。
+            if (aacs > 0) {
+              var benignBuffer = new ArrayBuffer(aacs);
+              var benignView = new Uint8Array(benignBuffer);
+              return {
+                get view() { return benignView; },
+                respond: function () { flushPull(); },
+                respondWithNewView: function () { flushPull(); }
+              };
+            }
+            return null;
+          }
+          var d = pullIntos[0];
+          var rem = d.byteLength - d.bytesFilled;
+          var view;
+          try {
+            view = d.isDataView ? new DataView(d.buffer, d.byteOffset + d.bytesFilled, rem)
+                                : new d.viewCtor(d.buffer, d.byteOffset + d.bytesFilled, rem / d.elementSize);
+          } catch (_eBv) { return null; }
+          return {
+            get view() { return view; },
+            respond: function (bytesWritten) {
+              if (state === 'errored') throw new TypeError('Controller is errored');
+              if (d.bytesFilled + bytesWritten > d.byteLength) {
+                throw new RangeError('bytesWritten exceeds view capacity');
+              }
+              d.bytesFilled += bytesWritten;
+              if (state === 'closed') {
+                if (bytesWritten !== 0) throw new TypeError('closed stream requires zero bytesWritten');
+                pullIntos.splice(pullIntos.indexOf(d), 1);
+                var vCl;
+                try {
+                  vCl = d.isDataView ? new DataView(d.buffer, d.byteOffset, d.bytesFilled)
+                                     : new d.viewCtor(d.buffer, d.byteOffset, d.bytesFilled / d.elementSize);
+                } catch (_eCl2) { vCl = undefined; }
+                d.resolve({ value: vCl, done: true });
+                return;
+              }
+              if (d.bytesFilled >= d.min) commitDescriptor(d);
+              else flushPull(); // 未达 min → 续拉（源可再 respond——「pull must have been called 3 times」面）
+            },
+            respondWithNewView: function (v2) {
+              if (state === 'errored') throw new TypeError('Controller is errored');
+              if (!v2 || typeof v2.byteLength !== 'number' || v2.byteLength === 0) {
+                throw new TypeError('respondWithNewView: view must be non-zero-length');
+              }
+              if (v2.buffer.byteLength !== d.byteLength) {
+                throw new RangeError('respondWithNewView: view buffer length mismatch');
+              }
+              if (state === 'closed' && v2.byteLength !== 0) throw new TypeError('closed stream requires zero-length view');
+              d.buffer = v2.buffer;
+              d.byteOffset = v2.byteOffset;
+              d.bytesFilled = v2.byteLength;
+              if (state === 'closed') {
+                pullIntos.splice(pullIntos.indexOf(d), 1);
+                d.resolve({ value: v2, done: true });
+                return;
+              }
+              if (d.bytesFilled >= d.min) commitDescriptor(d);
+              else flushPull();
+            }
+          };
+        },
+        enumerable: true, configurable: true
+      });
+    }
     Object.defineProperty(controllerProto, 'desiredSize', {
       // spec：readable → hwm - queueTotalSize；closed → 0；errored → null。
       get: function () {
@@ -700,73 +870,82 @@
       else if (state === 'errored') rejectClosedP(errorVal);
       else closedWaiters.push(closedEntry);
       if (byob) {
-        var byobPending = null;   // 上一 fill 余量（Uint8Array，reader 独占）
-        var byobDone = false;
-        var byobViewRead = function (view) {
+        // net-api M4-S7：BYOB read **pull-into 描述符化**（spec §4.5/§4.9.5 子集）——
+        // ① read(view, {min}) 校验链（零长度视图/缓冲 → TypeError；min 0/负 → TypeError；
+        //    min > 视图长 → RangeError；min 按元素计，字节目标 = min × elementSize）；
+        // ② 队列可满足 → 跨 chunk 拷贝填充（余量回队）+ commit（同缓冲新视图 done:false）；
+        // ③ 不足且 closed/closeRequested → close steps（部分填充视图 done:true）；
+        // ④ 否则 pull-into 描述符入列（FIFO）→ flushPull → 源经 byobRequest.respond/enqueue
+        //    填充（最小填充契约：filled >= min 才 commit）。
+        function readInto(view, options) {
           self._disturbed = true;
-          // done 短路仅在 reader 已标记 done 时——closed 流的**已排队数据仍可读**
-          // （_bodyToStream start 即 close，数据在 queue——M3 consume-stream 面）。
-          if (byobDone) {
-            var z = view && view.buffer !== undefined ? new Uint8Array(view.buffer, view.byteOffset, 0) : new Uint8Array(0);
-            return Promise.resolve({ done: true, value: z });
+          var minRaw = (options != null && typeof options === 'object') ? options.min : undefined;
+          var min = 1;
+          if (minRaw !== undefined) {
+            var mn = Number(minRaw);
+            if (mn !== mn || mn === Infinity || mn === -Infinity || mn < 0) {
+              return Promise.reject(new TypeError('invalid min'));
+            }
+            min = Math.floor(mn);
+            if (min === 0) return Promise.reject(new TypeError('min must be non-zero'));
           }
-          return new Promise(function (resolve, reject) {
-            if (state === 'errored') { reject(errorVal); return; }
-            var src = byobPending;
-            if (!src && queue.length > 0) {
-              var entry = queue.shift();
-              queueTotalSize -= entry.size;
-              if (queueTotalSize < 0) queueTotalSize = 0;
-              src = entry.chunk instanceof Uint8Array ? entry.chunk : _zw_utf8_encode(String(entry.chunk));
-            }
-            if (!src) {
-              // 无 pending/queue：closed → done（_bodyToStream start 即 close，排空后
-              // 第二读到此）；readable → 等 pull（chunk 到达经下方 resolve 填 view，
-              // 余量进 byobPending——**不回 queue**，pull 双通道复制面消除）。
-              if (state === 'closed') {
-                byobDone = true;
-                var zdone = view && view.buffer !== undefined ? new Uint8Array(view.buffer, view.byteOffset, 0) : new Uint8Array(0);
-                resolve({ done: true, value: zdone });
-                return;
-              }
-              waiting.push({
-                resolve: function (chunk) {
-                  if (chunk === _RS_DONE || (chunk && typeof chunk === 'object' && chunk.done === true && !(chunk instanceof Uint8Array))) {
-                    byobDone = true;
-                    var zc = view && view.buffer !== undefined ? new Uint8Array(view.buffer, view.byteOffset, 0) : new Uint8Array(0);
-                    resolve({ done: true, value: zc });
-                    return;
-                  }
-                  byobPending = chunk instanceof Uint8Array ? chunk : new Uint8Array(_zw_utf8_encode(String(chunk)));
-                  byobViewRead(view).then(resolve, reject);
-                },
-                reject: reject
-              });
-              flushPull();
-              return;
-            }
-            // net-api M4-S4：closeRequested 排空 → 真关（spec PullSteps 步骤 2.2——byob 侧
-            // _bodyToStream enqueue+close 面，缺此腿第二读挂起）。
-            if (closeRequested && queue.length === 0) closeStream();
+          if (!view || typeof view.byteLength !== 'number' || view.byteLength === 0) {
+            return Promise.reject(new TypeError('view must be non-zero-length'));
+          }
+          var isDataView = (typeof DataView === 'function') && view instanceof DataView;
+          var elementSize = isDataView ? 1 : (view.BYTES_PER_ELEMENT || 1);
+          var viewLen = isDataView ? view.byteLength : view.length;
+          if (min > viewLen) return Promise.reject(new RangeError('min exceeds view length'));
+          var minBytes = min * elementSize;
+          if (state === 'errored') return Promise.reject(errorVal);
+          var resD = null, rejD = null;
+          var dPromise = new Promise(function (r, j) { resD = r; rejD = j; });
+          var total = 0;
+          while (total < view.byteLength && queue.length > 0) {
+            var entry = queue.shift();
+            queueTotalSize -= entry.size;
+            if (queueTotalSize < 0) queueTotalSize = 0;
+            var srcR = entry.chunk instanceof Uint8Array ? entry.chunk : new Uint8Array(0);
+            var take = Math.min(view.byteLength - total, srcR.length);
             try {
-              var want = view ? view.byteLength : 0;
-              if (!(want >= 0)) want = 0;
-              var take = src.length < want ? src.length : want;
-              var out = new Uint8Array(view.buffer, view.byteOffset, take);
-              for (var fi = 0; fi < take; fi++) out[fi] = src[fi];
-              byobPending = take < src.length ? src.slice(take) : null;
-              // spec：有填充必返 chunk（done=false）——done 仅在**无数据可填**时
-              // （closed 且无 pending/queue）由下一次 read 报告。
-              resolve(_rs_chunk(out));
-            } catch (_eByobFill) {
-              reject(new TypeError('byob read: invalid view (' + _eByobFill.message + ')'));
+              new Uint8Array(view.buffer, view.byteOffset + total, take).set(srcR.subarray(0, take));
+            } catch (_eFill2) {
+              return Promise.reject(new TypeError('read: buffer fill failed (' + _eFill2.message + ')'));
             }
+            total += take;
+            if (take < srcR.length) {
+              var rest = srcR.subarray(take);
+              queue.unshift({ chunk: rest, size: rest.length });
+              queueTotalSize += rest.length;
+            }
+          }
+          function outView() {
+            try {
+              return isDataView ? new DataView(view.buffer, view.byteOffset, total)
+                                : new view.constructor(view.buffer, view.byteOffset, total / elementSize);
+            } catch (_eOut) { return new Uint8Array(0); }
+          }
+          if (total >= minBytes || total >= view.byteLength) {
+            if (closeRequested && queue.length === 0) closeStream(false);
+            resD({ value: outView(), done: false });
+            return dPromise;
+          }
+          if (state === 'closed' || (closeRequested && queue.length === 0)) {
+            if (closeRequested && queue.length === 0) closeStream(false);
+            return Promise.resolve({ value: total > 0 ? outView() : (isDataView ? new DataView(view.buffer, view.byteOffset, 0) : new view.constructor(view.buffer, view.byteOffset, 0)), done: true });
+          }
+          pullIntos.push({
+            buffer: view.buffer, byteOffset: view.byteOffset, byteLength: view.byteLength,
+            bytesFilled: total, min: minBytes, resolve: resD, reject: rejD,
+            viewCtor: view.constructor, isDataView: isDataView, elementSize: elementSize
           });
-        };
+          flushPull();
+          return dPromise;
+        }
         return {
-          read: byobViewRead,
-          // net-api M4-S4：reader.cancel 走 cancelInternal（spec GenericCancel——active reader
-          // 无 locked TypeError；旧路径 reader.cancel→self.cancel 恒被 locked 拒绝）。
+          read: readInto,
+          // net-api M4-S4：reader.cancel 走 cancelInternal（spec GenericCancel——close steps
+          // given undefined 由 closeStream(byCancel) 面）。
           cancel: function (reason) { return cancelInternal(reason); },
           releaseLock: function () { releaseReaderLock(closedEntry, closedP); },
           get closed() { return closedP; }

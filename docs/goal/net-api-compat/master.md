@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-29（M4-S6 收口）
+**最后更新**: 2026-09-29（M4-S7 收口）
 
 ---
 
@@ -13,12 +13,12 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
-M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（2026-09-29）——**8572/11162 =
-76.8%**（fetch 70.3% / xhr 53.2% / url 73.1% / mimesniff 100% / streams **79.7%**
-（774/971——WritableStream 状态机 spec 化重做：erroring/abort/写队列/close sentinel，
-aborting 65/65 全绿、close 26/26 全绿）/ eventsource 6.2%）。下一切片 M4-S7：pipeTo
-read-ahead 泵 + byob controller 深路径（bad-buffers/read-min）+ tee 页级 Timeout；
-并轨 P7 fixture 续件与 DC 判定收口。
+M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（2026-09-29）
+——**8594/11183 = 76.8%**（fetch 69.6%（分母 1766 重锚，pass 1229）/ xhr 53.2% /
+url 73.1% / mimesniff 100% / streams **81.8%**（794/971——BYOB pull-into 描述符化 +
+byobRequest/respond/read({min})，read-min 16/24、bad-buffers 11/21）/ eventsource
+6.2%）。下一切片 M4-S8：缓冲 transfer/detach 族（bad-buffers 10 腿——真 detach 能力
+甄别）+ pipeTo read-ahead 泵 + byte tee 分支身份；并轨 P7 fixture 续件与 DC 判定收口。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -34,12 +34,22 @@ read-ahead 泵 + byob controller 深路径（bad-buffers/read-min）+ tee 页级
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
 | P3 | XHR 状态机 + EventSource 解析/重连 | 🔶 M3 进行中——S1（header 校验）+ S2（responseType/同步/overrideMime）已收口（xhr 53.2%）；**残余：blob-range（27，blob:+Range）、progress 事件序、.asis/eventsource fixture 联动 P7** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.1%（新分母 6065——M3 收口 USP/URL.parse/port/live 迭代/UTF-8 解码器/helper 解锁）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
-| P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S6 收口（79.7%——WritableStream 状态机 spec 化：erroring/abort/写队列/close sentinel，aborting 65/65 全绿 + close 26/26 全绿 + piping 条件优先序/信号时序）；**M4-S7 残余：pipeTo read-ahead 泵（3 腿）+ sink.abort 事件序甄别（1 腿）+ tee×abort 组合（1 腿）+ byob controller 深路径（bad-buffers/read-min）+ readable-streams/tee 页级 Timeout 1 页** |
+| P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S7 收口（81.8%——BYOB pull-into 描述符化：byobRequest.view/respond/read({min}) 校验链/最小填充契约/队列容量填充；bad-buffers 11/21、read-min 16/24）；**M4-S8 残余：缓冲 transfer/detach 族（bad-buffers 10 腿 + non-transferable 4 腿——真 detach 能力甄别）+ byte tee 分支身份（2 腿）+ pipeTo read-ahead 泵（3 腿）+ sink.abort 事件序（1 腿）+ readable-streams/tee 页级 Timeout 1 页** |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
 | P7 | runner fixture 通道（.py 端点最小 fixture 集） | 🔶 首件已落（M3-S1 `inspect-headers.py`）；待评估：event-source.py / echo-content.py / delay.py 族（eventsource Timeout 23 / request-upload echo / xhr delay 簇公共解锁件） |
 
 ## 已完成切片
 
+- **M4-S7（2026-09-29）**：BYOB controller 深路径（**8594/11183 = 76.8%**，streams
+  774/971 → 794/971 = 81.8%，Δ+20；全量丢腿仅 1 记账）。BYOB read **pull-into 描述符
+  化**（read(view,{min}) 校验链/队列容量填充+余量回队/最小填充契约/close-partial/
+  error-reject）；ReadableByteStreamController.byobRequest（view/respond 续拉/
+  respondWithNewView RangeError 校验/flushPull 纳入 pull-into 条件——read-min 挂死
+  根因）；autoAllocateChunkSize benign 形 + ===0 TypeError；字节流 enqueue（零长度
+  TypeError/描述符填充/尾随续拉/等待读直喂——内存爆涨根因修复）；字节流 close 双模
+  （普通交还已填视图/cancel given undefined）；全局 BYOBReader/BYOBRequest 类。make
+  test 全绿 + clippy/fmt 干净。见
+  [evidence/2026-09-29-m4-s7-byob-controller.md](evidence/2026-09-29-m4-s7-byob-controller.md)。
 - **M4-S6（2026-09-29）**：WritableStream spec 状态机重做（**8572/11162 = 76.8%**，
   streams 635/910 → 774/971 = 79.7%，Δ+139；六 corpus 全量零 pass 回归）。erroring/
   abort/写队列/close sentinel 全 slot 化（aborting **65/65 全绿**——abort 信号同步/
@@ -173,10 +183,10 @@ read-ahead 泵 + byob controller 深路径（bad-buffers/read-min）+ tee 页级
 
 ## 下一步计划
 
-1. **M4-S7 pipeTo read-ahead 泵 + byob controller**：pipeTo 背压前读（'all pending
-   writes should complete on abort' 3 腿 + flow-control 余量）+ byob controller 深路径
-   （bad-buffers 15 腿/read-min 9 腿——byobRequest.view/respond/零长度-detached
-   enqueue TypeError）+ tee×abort 组合（1 腿）+ readable-streams/tee 页级 Timeout 甄别
+1. **M4-S8 缓冲 transfer/detach 族 + byte tee**：spec TransferArrayBuffer 语义（真
+   detach 能力甄别——structuredClone transfer / postMessage 路径；bad-buffers 10 腿 +
+   non-transferable 4 腿）+ byte tee 分支字节流身份（tee×byob 2 腿）+ pipeTo
+   read-ahead 泵（3 腿）+ readable-streams/tee 页级 Timeout 甄别
 2. **M4 并轨**：P7 续件评估（.asis 原始 HTTP fixture / event-source.py /
    echo-content.py——eventsource Timeout 23 / xhr delay 簇 / request-upload echo）
    + blob-range（blob:+Range XHR 27）
