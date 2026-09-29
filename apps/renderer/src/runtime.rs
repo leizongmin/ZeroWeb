@@ -585,8 +585,8 @@ impl RendererRuntime {
                 continue;
             }
             // 诊断保真：catch 序列化失败原因（Error → stack || message）并携带目标
-            // URL，否则 CDP console 只见 "[object Object]"，动态脚本加载失败无法定位
-            //（baidu live）。
+            // URL——Error 对象序列化后是空壳（无 message/栈），动态脚本加载失败无法
+            // 定位（baidu live）。
             let loader = format!(
                 "fetch({url:?}).then(function(response) {{ return response.text(); }}).then(function(source) {{ (0, eval)(source); }}).catch(function(error) {{ console.error('dynamic script load failed', {url:?}, error && (error.stack || error.message) || String(error)); }});"
             );
