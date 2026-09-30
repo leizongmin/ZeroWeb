@@ -389,9 +389,12 @@ impl InlineFormattingContext {
                         // float），误落 inline 递归 → float 后代文本被容器行盒重排到容器
                         // 流位（百度热榜行：float a 的标题文本被 li 的 IFC 吸到 float 下方
                         // 第二行基线），且 painted_inline_nodes 去重随后抑制 float 盒自身
-                        // 的正确 Path B 绘制。float 真值由 painter 注入 `float_child_nodes`
-                        // （painter 按 computed styles 注入）；FloatAnchor 语义同
-                        // R3784 有 styles 臂（断行同 BlockBreak + 记录行内流锚 y）。
+                        // 的正确 Path B 绘制。float 真值由 painter 注入
+                        // `float_child_nodes`（按 computed styles 注入，且镜像上方 OOF
+                        // skip 臂前置条件排除 position abs/fixed 交集——§9.7 abs 时
+                        // float 计算为 none，其定位/绘制归 abspos pass；vertical 模式
+                        // 例外同镜像）；FloatAnchor 语义同 R3784 有 styles 臂（断行同
+                        // BlockBreak + 记录行内流锚 y）。
                         if styles.is_empty()
                             && self
                                 .float_child_nodes

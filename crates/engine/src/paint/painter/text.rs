@@ -1390,6 +1390,13 @@ impl super::Painter {
                 // 臂），不再把 float 子树 inline 内容吸收进容器 IFC（误吸收使容器把
                 // float 后代文本重排到自身流位，并经 painted_inline_nodes 去重抑制
                 // float 盒自身的正确绘制）。layout 侧 IFC（有 styles）行为不变。
+                // 前置条件镜像 layout 期 OOF skip 臂（collect_items CSS2 §9.7 注释）：
+                // position abs/fixed 交集子不发 FloatAnchor（§9.7 规定 abs 时 float
+                // 计算为 none，其定位/绘制归 abspos pass，Path B 强制断行会与 layout
+                // 期静默 skip 错行）；vertical 模式例外同镜像（abs 臂在 vertical 下本
+                // 就不跳过，vertical-rl 的 abs 依赖 IFC 内测量）。kill-switch
+                // ZW_IFC_SKIP_OOF=0 旧径不镜像（skip_oof 为 pub(super) 不可达，Path B
+                // 空 styles 对 abs 的无分类属既有缺口，范围外）。
                 let float_ids: std::collections::HashSet<zero_dom::NodeId> = styles
                     .map(|s| {
                         box_node
@@ -1398,7 +1405,15 @@ impl super::Painter {
                             .filter_map(|c| {
                                 let id = c.node_id?;
                                 s.get(&id)
-                                    .is_some_and(|cs| !matches!(cs.float, zero_css_parser::values::FloatValue::None))
+                                    .is_some_and(|cs| {
+                                        !matches!(cs.float, zero_css_parser::values::FloatValue::None)
+                                            && (ctx.vertical
+                                                || !matches!(
+                                                    cs.position,
+                                                    zero_css_parser::values::PositionValue::Absolute
+                                                        | zero_css_parser::values::PositionValue::Fixed
+                                                ))
+                                    })
                                     .then_some(id)
                             })
                             .collect()

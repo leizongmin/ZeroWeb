@@ -276,7 +276,9 @@ pub struct InlineFormattingContext {
     /// paint Path B 空 styles 无法识别 float 子（collect_inline_items 的 float 臂
     /// 需真实 styles），缺失时 float 子树 inline 内容被误吸收进容器 IFC
     ///（CSS2 §9.5 float 脱离常规流，其内容在 float 自身 BFC 内排版，不得参与
-    /// 容器行内流）。注入后与 R3784 有 styles 臂同发 FloatAnchor。
+    /// 容器行内流）。注入集镜像 layout 期 OOF skip 臂前置条件排除 position
+    /// abs/fixed 交集（§9.7 abs 时 float 计算为 none，归 abspos pass；vertical
+    /// 例外同镜像）。注入后与 R3784 有 styles 臂同发 FloatAnchor。
     pub float_child_nodes: Option<std::collections::HashSet<zero_dom::NodeId>>,
     /// R4330：并入 run-in 的分裂边框载荷（collect 后处理折入前/末 run 水平 margin
     /// 完成推进 + paint 侧绘条几何）。
