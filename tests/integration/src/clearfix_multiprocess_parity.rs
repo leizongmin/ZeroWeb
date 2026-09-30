@@ -10,6 +10,18 @@
 //! 若 IPC 边界失真（rect/颜色/draw_order 漂移）此处即红，把分叉钉在边界而非
 //! 布局核心。布局核心本身由 clearfix_webview_layout 与 reftest
 //! `css-float/clearfix-after-nested-float-clear` 锚定。
+//!
+//! 覆盖边界（PR #43 双审查实测定级）：本测试为**进程内**函数组合，snapshot 按
+//! 值传递，**不含 serde wire 序列化与真实 renderer 子进程路径**（mailbox/epoch
+//! 门控/sent_keys 无自动化，属既有空白）。能捕获：编码/解码两侧 fill 映射回归
+//! 与 draw_order 变体映射漂移（双向）；不能捕获：wire 序列化回归（protocol 对
+//! `ViewPainted` 填充 payload 的 wire 往返全仓无在册测试，低成本补法=serde
+//! 填充 payload 往返断言）与子进程布局重算差异（此类由 slice7 共享布局核心
+//! 修复及上述锚测试覆盖）。
+//!
+//! 「P2 == P1 全等」仅对 **fills 子集与 draw_order** 成立：解码侧按构造对
+//! shadow inset/clip、glyph bitmap、image source 有意有损（R4059/R4139），
+//! 不参与指纹；未来扩展 fixture 图元类时勿假设全等断言适用。
 
 use zero_paint_convert::to_render_primitives;
 use zero_render_foundation::primitive::RenderPrimitives;
