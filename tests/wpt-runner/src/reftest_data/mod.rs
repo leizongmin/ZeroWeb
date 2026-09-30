@@ -15,6 +15,7 @@ mod css_position;
 mod css_table;
 mod css_text;
 mod css_text_decor;
+mod css_values;
 mod css_writing_modes;
 
 use crate::manifest::ReftestReference;
@@ -87,6 +88,7 @@ fn all_reftests() -> Vec<&'static InlineReftestDef> {
     all.extend(css_text::reftests().iter());
     all.extend(css_fonts::reftests().iter());
     all.extend(css_text_decor::reftests().iter());
+    all.extend(css_values::reftests().iter());
     all.extend(css_writing_modes::reftests().iter());
     all
 }
