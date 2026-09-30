@@ -2494,6 +2494,14 @@
             reject(signal.reason);
           });
         }
+        // net-api M4-S20：delay.py shim 侧延迟（runner 同步契约下 host sleep 冻结 JS——
+        // timeout 计时器不可竞争；改 shim setTimeout 延迟 host 发题，页面计时器窗口照常泵送）。
+        var _delayMs = 0;
+        if (url && String(url).indexOf('delay.py') >= 0) {
+          var _dm = /[?&]ms=(\d+)/.exec(String(url));
+          if (_dm) _delayMs = Math.min(parseInt(_dm[1], 10) || 0, 30000);
+        }
+        var _issueFetch = function () {
         try {
           var _sync = __zw_fetch(
             id,
@@ -2527,6 +2535,12 @@
         } catch (_e) {
           if (!settled) { settled = true; delete globalThis.__zw_pending[id]; }
           resolve(_makeResponse('__zw_fetch_error:throw'));
+        }
+        };
+        if (_delayMs > 0) {
+          setTimeout(_issueFetch, _delayMs);
+        } else {
+          _issueFetch();
         }
       });
     };

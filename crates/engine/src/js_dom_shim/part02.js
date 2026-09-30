@@ -2619,12 +2619,15 @@
     var n = String(name);
     if (value != null && value instanceof Blob) {
       var fn = filename != null ? String(filename) : (value.name != null ? String(value.name) : 'blob');
-      // net-api M4-S19：Blob/File 值 → File 化副本（spec：entry value 为新 File——File 值
-      // 同转换；name = filename ?? value.name、type 透传、lastModified 保真；get 恒返同一
-      // 实例）。
+      // net-api M4-S20：spec 转换规则——Blob（非 File）→ 新 File；File + filename →
+      // 按新名复制（lastModified 保真）；File 无 filename → 原对象保留（foreach 身份面）。
       if (typeof File === 'function') {
-        value = new File([value], fn, { type: value.type || '', lastModified: value.lastModified });
-        return [n, value, undefined];
+        var isFile = value instanceof File;
+        if (!isFile || filename != null) {
+          value = new File([value], fn, { type: value.type || '', lastModified: value.lastModified });
+          return [n, value, undefined];
+        }
+        return [n, value, fn];
       }
       return [n, value, fn];
     }
@@ -2776,8 +2779,15 @@
       if (!found) out.push(entry);
       this._p = out;
     },
+    // net-api M4-S20：forEach 走迭代器（WebIDL live 语义——迭代中 delete 的移位跳过面
+    // 与 entries 迭代一致）。
     forEach: function (cb, thisArg) {
-      for (var i = 0; i < this._p.length; i++) cb.call(thisArg, this._p[i][1], this._p[i][0], this);
+      var it = this.entries();
+      var r = it.next();
+      while (!r.done) {
+        cb.call(thisArg, r.value[1], r.value[0], this);
+        r = it.next();
+      }
     },
     // net-api M4-S19：live cursor 迭代（WebIDL value pairs iterator——迭代中 delete 使
     // 后续元素前移被跳过、append 元素可达；formdata-iteration 三面）。

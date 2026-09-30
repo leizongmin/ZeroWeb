@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-30（M4-S19 收口——FormData 面，xhr 84.3%）
+**最后更新**: 2026-09-30（M4-S20 收口——timeout 族 + 404 语义，xhr 88.2%）
 
 ---
 
@@ -14,14 +14,15 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
-M4-S8（76.8%）→ … → M4-S17（78.9%）→ M4-S18（79.0%）→ M4-S19（2026-09-30）——
-**9000/11369 = 79.2%**（fetch 70.2% / xhr **84.3%**（494/586——FormData 面 +17）/
-url 73.1% / mimesniff 100% / streams 88.6% / eventsource 100%）。
-**M4-S19 收口**：FormData 面（live cursor 迭代 + Blob/File → File 化副本 +
-(form, submitter) 双参构造与校验 + form= 关联文档树序枚举 + FormDataEvent）+
-upload.py multipart 回显 fixture。**eval 序根因记账**：part02 引用 part05 才定义的
-Event → shim 装载中止（webdriver「document is not defined」五连），二分定位迁块修复。
-见 [evidence/2026-09-30-m4-s19-formdata.md](evidence/2026-09-30-m4-s19-formdata.md)。
+M4-S8（76.8%）→ … → M4-S18（79.0%）→ M4-S19（79.2%）→ M4-S20（2026-09-30）——
+**9042/11366 = 79.6%**（fetch 71.4%（+22——文件缺失 404 语义连带解锁）/ xhr
+**88.2%**（514/583——timeout 族 + ES object 面 +20）/ url 73.1% / mimesniff 100% /
+streams 88.6% / eventsource 100%）。
+**M4-S20 收口**：timeout IDL（sync setter/open → InvalidStateError）+ timeout
+计时器（TimeoutError request error steps）+ delay.py shim 侧延迟（host sleep 冻结
+JS 根因绕开）+ ES object 面（send 同步 String 化上抛 + toStringTag 品牌化）+
+forEach live 化 + File 转换规则 spec 化 + 文件缺失 404 语义。见
+[evidence/2026-09-30-m4-s20-timeout.md](evidence/2026-09-30-m4-s20-timeout.md)。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -35,7 +36,7 @@ Event → shim 装载中止（webdriver「document is not defined」五连），
 |---|------|------|
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
-| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **84.3%**——状态机/事件/redirect/preflight/expose/FormData 面全 spec 化）——**残余：runner scheme 不匹配族（4）、formdata 坐标/populateForm 依赖（4）、responseXML/XML 文档面、send(ES object) 簇** |
+| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **88.2%**——状态机/事件/redirect/preflight/expose/FormData/timeout 面 spec 化）——**残余：responseXML/XML 文档面（engine XML DOM 深度）、populateForm 助手依赖、image 坐标、runner scheme 不匹配族** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.1%（新分母 6065——M3 收口 USP/URL.parse/port/live 迭代/UTF-8 解码器/helper 解锁）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S11 收口（88.6%——piping 簇 spec 化重做，pipe-through/general/error-propagation 全绿）；**残余：flow-control 2 腿（背压编排计时精度）；transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿）** |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
@@ -43,6 +44,16 @@ Event → shim 装载中止（webdriver「document is not defined」五连），
 
 ## 已完成切片
 
+- **M4-S20（2026-09-30）**：timeout 族 + 404 语义 + ES object 面（**9042/11366 =
+  79.6%**，xhr 494/586 → 514/583 = 88.2%，Δ+20 + fetch +22 零回归）。shim：timeout
+  IDL（sync setter/open → InvalidStateError）+ 计时器（TimeoutError request error
+  steps：DONE + reset + fire('timeout') + loadend）+ delay.py shim 侧延迟（host
+  sleep 冻结 JS 根因绕开——setTimeout 延迟 host 发题）+ ES object（send 同步 String
+  化上抛 + XHR/ReadableStream toStringTag 品牌化置 part06 尾段）+ FormData.forEach
+  live 化 + File 转换规则 spec 化（File+filename 复制/File 无 filename 保留）。runner：
+  文件缺失 → 404 响应（HTTP 语义——fetch 连带 +22）+ delay.py/image.gif fixture。
+  存量 encoding.py.bak 断言随语义翻新。make test 全绿（19518P）+ clippy/fmt 干净。见
+  [evidence/2026-09-30-m4-s20-timeout.md](evidence/2026-09-30-m4-s20-timeout.md)。
 - **M4-S19（2026-09-30）**：FormData 面收口（**9000/11369 = 79.2%**，xhr 477/586 →
   494/586 = 84.3%，Δ+17 零回归）。shim：live cursor 迭代（WebIDL value pairs）+
   Blob/File → File 化副本（filename ?? name、lastModified 保真）+ (form, submitter)
@@ -305,9 +316,10 @@ Event → shim 装载中止（webdriver「document is not defined」五连），
 
 ## 下一步计划
 
-1. **XHR 长尾收口**：responseXML/XML 文档面（template-element 族）、send(ES
-   object) TypeError 簇、json responseType 深水面——xhr 84.3% 残余；fetch/api/cors
-   域重入维持 API 限流阻断面（下轮续评估）
+1. **XHR 深水面评估**：responseXML/XML 文档面（engine XML DOM 深度——template-
+   element 族 3 腿）、populateForm 助手依赖（getElementsByName/insertAdjacentHTML
+   面）、send(ES object) 零散腿——成本/收益评估后定实施序；fetch/api/cors 域重入
+   维持 API 限流阻断面
 2. **M4 残余**：flow-control 2 腿（背压编排计时精度——泵 pull 粒度对齐 StepTracker
    编排步进）
 3. **结构性挂账**：缓冲 transfer/detach 族（spec TransferArrayBuffer——需宿主 V8

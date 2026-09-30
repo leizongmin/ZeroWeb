@@ -4673,6 +4673,40 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(Vec::new()),
                 });
             }
+            if clean.starts_with("xhr/") && clean.ends_with("/image.gif") {
+                // net-api M4-S20 fixture：xhr/resources/image.gif（responseurl 重定向
+                // 目标——1×1 GIF 43 字节标准头尾）。
+                let body: Vec<u8> = vec![
+                    0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0xff, 0xff, 0xff, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44,
+                    0x01, 0x00, 0x3b,
+                ];
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "image/gif".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: String::new(),
+                    body_bytes: Some(body),
+                });
+            }
+            if clean.ends_with("/delay.py") {
+                // net-api M4-S20 fixture：xhr/resources/delay.py（上游行为等价——?ms= 延迟
+                // 后回 text/plain "TEST"；延迟由 shim 侧 setTimeout 实现——runner 同步契约
+                // 下 host sleep 冻结 JS，此处立即应答）。
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: "TEST".to_string(),
+                    body_bytes: Some(b"TEST".to_vec()),
+                });
+            }
             if clean == "xhr/resources/top.txt" {
                 // net-api M4-S18 fixture：xhr/resources/top.txt（cors-expose-star 载体，
                 // ?pipe=header(...) 管道头经既有 wpt_pipe_headers 处理）。
@@ -5468,7 +5502,7 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                         body_bytes: Some(body.0),
                     })
                 }
-                Err(e) => {
+                Err(_e) => {
                     if clean.starts_with("service-workers/service-worker/resources/") && clean.ends_with(".html") {
                         let status = 404;
                         let mut headers = vec![("content-type".into(), "text/html".into())];
@@ -5481,7 +5515,18 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                             body_bytes: Some(Vec::new()),
                         });
                     }
-                    Err(format!("not found: {clean} ({e})"))
+                    // net-api M4-S20：文件缺失 → 404 响应（HTTP 语义——缺文件非网络错误；
+                    // responseurl.html「404 response has proper responseURL」面）。
+                    let mut headers404: Vec<(String, String)> = Vec::new();
+                    headers404.push(("content-type".into(), "text/plain".into()));
+                    wpt_add_fetch_metadata(&mut headers404, req, 404);
+                    Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 404,
+                        status_text: "Not Found".to_string(),
+                        headers: headers404,
+                        body: String::new(),
+                        body_bytes: Some(Vec::new()),
+                    })
                 }
             }
         },
@@ -8239,8 +8284,11 @@ async_test(function(test) {
         // 缺 label → 空 charset（上游 escape(None) 同型）。
         let resp_none = handler(&make_req("https://wpt.test/dom/nodes/encoding.py")).unwrap();
         assert_eq!(resp_none.body, "<!doctype html><meta charset=\"\">");
-        // 非 .py 路径仍走静态文件（root 不存在 → 错误）。
-        assert!(handler(&make_req("https://wpt.test/dom/nodes/encoding.py.bak")).is_err());
+        // 非 .py 路径仍走静态文件（root 不存在 → M4-S20 起 404 响应——HTTP 语义：
+        // 缺文件是 404 应答而非网络错误，且 .bak 不落入 encoding 处理臂）。
+        let resp_bak = handler(&make_req("https://wpt.test/dom/nodes/encoding.py.bak"));
+        assert!(resp_bak.is_ok());
+        assert_eq!(resp_bak.unwrap().status, 404);
     }
 
     #[test]

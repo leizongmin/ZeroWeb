@@ -16,6 +16,22 @@
     self._zwReqGen = 0;
     // net-api M4-S16：withCredentials（xhr.spec——默认 false；setter 在非 UNSENT/OPENED
     // 态抛 InvalidStateError——「setting withCredentials when not in UNSENT, OPENED state」面）。
+    // net-api M4-S20：timeout IDL（xhr.spec §the-timeout-attribute——默认 0；setter 于
+    // sync XHR（document 语境）→ InvalidStateError；async 任意态可设/可中途改）。
+    var _zwTimeoutMs = 0;
+    Object.defineProperty(self, 'timeout', {
+      get: function () { return _zwTimeoutMs; },
+      set: function (v) {
+        if (self._zwXhrAsync === false) {
+          throw new (globalThis.DOMException || Error)(
+            'The object does not support the operation.', 'InvalidStateError');
+        }
+        var n = Number(v);
+        _zwTimeoutMs = isNaN(n) || n < 0 ? 0 : n;
+      },
+      enumerable: true,
+      configurable: true,
+    });
     var _zwWithCreds = false;
     Object.defineProperty(self, 'withCredentials', {
       get: function () { return _zwWithCreds; },
@@ -87,6 +103,12 @@
       // net-api M3-S2：sync 标记（xhr.spec——_async === false 即同步 XHR；send 经 host
       // 同步契约直返（runner），DONE 同步到达）。
       self._zwXhrAsync = !(_async === false);
+      // net-api M4-S20：open() 于 sync XHR 且 timeout ≠ 0 → InvalidStateError（xhr.spec
+      // open 步骤——synconmain「calling open() after timeout is set must throw」面）。
+      if (!self._zwXhrAsync && _zwTimeoutMs > 0 && typeof window !== 'undefined') {
+        throw new (globalThis.DOMException || Error)(
+          'The object does not support the operation.', 'InvalidStateError');
+      }
       // https://xhr.spec.whatwg.org/#the-open()-method
       if (username !== undefined || password !== undefined) {
         try {
@@ -405,6 +427,32 @@
         return;
       }
       // https://xhr.spec.whatwg.org/#the-send()-method
+      // net-api M4-S20：timeout 计时器（spec：timeout 非零且到达 → abort + request error
+      // steps for TimeoutError——DONE + readystatechange + fire('timeout') + loadend；
+      // 迟到响应由 _zwXhrAborted/gen 守卫丢弃）。
+      if (_zwTimeoutMs > 0) {
+        var timeoutGen = self._zwReqGen;
+        setTimeout(function () {
+          if (timeoutGen !== self._zwReqGen || self._zwXhrAborted || self.readyState === 4) return;
+          self._zwXhrAborted = true;
+          changeReadyState(4);
+          self.status = 0;
+          self.statusText = '';
+          self.responseText = '';
+          self.response = '';
+          self.responseURL = '';
+          self._zwXhrResponseHeaders = {};
+          fire('timeout');
+          fire('loadend');
+        }, _zwTimeoutMs);
+      }
+      // net-api M4-S20：非标准 body 类型 send 时即 String 化（转换异常——toString 抛出/
+      // 返回对象——从 send 同步上抛，send-data-es-object 面）。
+      if (body != null && !(typeof Blob === 'function' && body instanceof Blob) &&
+          !(typeof FormData === 'function' && body instanceof FormData) &&
+          !(typeof URLSearchParams === 'function' && body instanceof URLSearchParams)) {
+        body = String(body);
+      }
       fetchFn(self._zwXhrUrl, { method: self._zwXhrMethod, headers: self._zwXhrHeaders, body: body,
         credentials: _zwWithCreds ? 'include' : 'same-origin' })
         .then(function(response) {

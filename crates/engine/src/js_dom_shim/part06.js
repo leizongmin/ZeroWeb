@@ -78,6 +78,22 @@
   EventSource.prototype.CLOSED = 2;
   globalThis.EventSource = globalThis.EventSource || EventSource;
 
+  // net-api M4-S20：品牌化 String 面（send-data-es-object——send(XHR 实例/ReadableStream)
+  // → '[object XMLHttpRequest]'/'[object ReadableStream]'；置于 part06 尾段——全部
+  // 构造器已定义）。
+  if (typeof Symbol !== 'undefined' && Symbol.toStringTag) {
+    try {
+      if (globalThis.XMLHttpRequest && globalThis.XMLHttpRequest.prototype) {
+        Object.defineProperty(globalThis.XMLHttpRequest.prototype, Symbol.toStringTag,
+          { value: 'XMLHttpRequest', configurable: true });
+      }
+      if (globalThis.ReadableStream && globalThis.ReadableStream.prototype) {
+        Object.defineProperty(globalThis.ReadableStream.prototype, Symbol.toStringTag,
+          { value: 'ReadableStream', configurable: true });
+      }
+    } catch (_eBrandTag) {}
+  }
+
   // CSS——CSS 命名空间（escape 选择器转义 + supports 特性检测）。escape 纯 JS（CSSOM escape 算法，
   // 本地 Chromium 150 oracle 锚定）；supports 委托 host `__zw_css_supports`（known-property gate +
   // apply，两参声明 / 单参条件 not/括号/声明/and/or/嵌套——R2951 经 css-parser parse_supports_condition
