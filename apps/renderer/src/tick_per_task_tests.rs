@@ -252,3 +252,33 @@ fn observer_tick_preserves_pending_async_mutations_t8() {
         "异步 turn 的 pending mutation 应在 observer tick 后落 host，而非被 pre-clear 销毁"
     );
 }
+
+// t8 返修（defect-r1 D1）：导航 reset 竞态窗——主线程 reset_document_state 的队列清空之后、
+// worker 处理 ResetDocumentState 之前，旧页脚本/timer 回调仍可写入（worker 串行保证 arm
+// 执行时旧页已结束）。滞留写入会被新文档的 tick/drain apply（跨文档污染）。本测让旧页
+// 脚本横跨 reset 窗口落两笔写：a 在主清队前（被主清队消费）、b 在主清队后 arm 前（竞态窗），
+// 断言 reset 返回后队列无残留。变异判别：移除 arm 侧清队 → b 滞留 → 本测转红。
+#[test]
+fn reset_clears_writes_landed_after_main_thread_clear_d1() {
+    let runtime = runtime_with_observer_page(9114);
+    let worker = &runtime.js_worker;
+    std::thread::scope(|s| {
+        let script = s.spawn(|| {
+            worker.execute_script_direct(
+                "document.getElementById('t1').setAttribute('data-d1','a'); var __s = Date.now(); while (Date.now() - __s < 150); document.getElementById('t1').setAttribute('data-d1','b');",
+            )
+        });
+        // 旧页脚本进入忙等（a 已落队）后 reset：主清队消费 a；b 在 150ms 忙等结束时落队，
+        // 早于 reset arm（排在此后的脚本命令完成之后），恰落在竞态窗内。
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        worker.reset_document_state();
+        script.join().expect("script thread").expect("execute ok");
+    });
+    let queue = worker.mutations();
+    let pending = queue.lock().unwrap_or_else(|e| e.into_inner());
+    assert!(
+        pending.is_empty(),
+        "reset 返回后队列不得残留竞态窗内落队的旧页写入（跨导航污染源），实际 {} 条",
+        pending.len()
+    );
+}
