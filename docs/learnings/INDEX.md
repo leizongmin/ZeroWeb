@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（114）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（115）
 
+- 2026-09-30 [cargo test --workspace 深嵌套渲染单测栈溢出：feature 统一改变栈帧量级，单包复现会误导归因](bugs/2026-09/2026-09-30-ws-feature-unification-stack-overflow.md) — engine,paint,layout-engine
 - 2026-09-30 [reftest 负控制假绿：断言「不绘制」的最小复现须把泄漏信号放大过分类容差](bugs/2026-09/2026-09-30-reftest-negative-control-false-green.md) — wpt-runner,engine,layout-engine
 - 2026-09-29 [baidu core-js wrapped Promise 微任务自馈环 → V8 堆 OOM abort](bugs/2026-09/2026-09-29-baidu-corejs-promise-storm.md) — engine,webview
 - 2026-09-18 [reftest 测试页自带页内参照标记——探针归因链必须先读源码](bugs/2026-09/2026-09-18-reftest-page-embeds-own-reference.md) — layout-engine, engine, wpt-runner
