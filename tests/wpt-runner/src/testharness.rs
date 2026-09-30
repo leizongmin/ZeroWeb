@@ -4426,6 +4426,133 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(body.as_bytes().to_vec()),
                 });
             }
+            if clean.starts_with("xhr/") && clean.ends_with("/corsenabled.py") {
+                // net-api M4-S16 fixture：xhr/resources/corsenabled.py（上游逐字等价——
+                // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
+                // corsenabled.py）。CORS 全开（ACAO * + ACAC + methods/headers/expose）+
+                // X-Request-* 探针头 + ?delay=；体 "Test"。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let mut headers: Vec<(String, String)> = vec![
+                    ("access-control-allow-origin".into(), "*".into()),
+                    ("access-control-allow-credentials".into(), "true".into()),
+                    ("access-control-allow-methods".into(), "GET, POST, PUT, FOO".into()),
+                    ("access-control-allow-headers".into(), "x-test, x-foo".into()),
+                    (
+                        "access-control-expose-headers".into(),
+                        "x-request-method, x-request-content-type, x-request-query, x-request-content-length, x-request-data".into(),
+                    ),
+                ];
+                let delay_ms = wpt_query_value(query, "delay")
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(0)
+                    .min(10_000);
+                if delay_ms > 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                }
+                let req_header = |name: &str| -> Option<String> {
+                    req.headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                        .map(|(_, v)| v.clone())
+                };
+                headers.push(("x-request-method".into(), req.method.clone()));
+                let req_query = path_part
+                    .split_once('?')
+                    .map(|(_, q)| q.to_string())
+                    .unwrap_or_default();
+                headers.push((
+                    "x-request-query".into(),
+                    if req_query.is_empty() { "NO".into() } else { req_query },
+                ));
+                headers.push((
+                    "x-request-content-length".into(),
+                    req_header("content-length").unwrap_or_else(|| "NO".into()),
+                ));
+                headers.push((
+                    "x-request-content-type".into(),
+                    req_header("content-type").unwrap_or_else(|| "NO".into()),
+                ));
+                headers.push((
+                    "x-request-data".into(),
+                    req.body_bytes
+                        .as_ref()
+                        .map(|b| String::from_utf8_lossy(b).into_owned())
+                        .unwrap_or_default(),
+                ));
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: "Test".to_string(),
+                    body_bytes: Some(b"Test".to_vec()),
+                });
+            }
+            if clean.starts_with("xhr/") && clean.ends_with("/redirect.py") {
+                // net-api M4-S16 fixture：xhr/resources/redirect.py（上游逐字等价——
+                // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
+                // redirect.py）。?code=（默认 302）+ ?location=（缺省本路径?followed）；
+                // ?followed= → 200 "MAGIC HAPPENED"（Content:Type 破损头照抄——上游语义）；
+                // 否则 → code + Location + "TEST"。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let code: u16 = wpt_query_value(query, "code")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(302);
+                let followed = wpt_query_value(query, "followed").is_some();
+                if followed {
+                    let mut headers: Vec<(String, String)> = Vec::new();
+                    headers.push(("content:type".into(), "text/plain".into()));
+                    wpt_add_fetch_metadata(&mut headers, req, 200);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 200,
+                        status_text: "OK".to_string(),
+                        headers,
+                        body: "MAGIC HAPPENED".to_string(),
+                        body_bytes: Some(b"MAGIC HAPPENED".to_vec()),
+                    });
+                }
+                let location = wpt_query_value(query, "location").unwrap_or_else(|| format!("{}?followed", clean));
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("location".into(), location));
+                wpt_add_fetch_metadata(&mut headers, req, code);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: code,
+                    status_text: wpt_status_text(code).to_string(),
+                    headers,
+                    body: "TEST".to_string(),
+                    body_bytes: Some(b"TEST".to_vec()),
+                });
+            }
+            if clean.starts_with("xhr/") && clean.ends_with("/well-formed.xml") {
+                // net-api M4-S16 fixture：xhr/resources/well-formed.xml（上游逐字——
+                // responseurl-after-abort 的 HEADERS_RECEIVED/LOADING abort 时序载体）。
+                let body = "<html xmlns=\"http://www.w3.org/1999/xhtml\">\n  <p id=\"n&#49;\">1</p>\n  <p xmlns=\"namespacesarejuststrings\" id=\"n2\">2</p>\n</html>\n".to_string();
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "application/xml".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("xhr/") && clean.ends_with("/pass.txt") {
+                // net-api M4-S16 fixture：xhr/resources/pass.txt（abort-progress-events
+                // 的 send+abort 竞态载体——内容不断言，请求须可进入在飞态）。
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: "PASS\n".to_string(),
+                    body_bytes: Some(b"PASS\n".to_vec()),
+                });
+            }
             if clean.starts_with("xhr/") && clean.ends_with("/content.py") {
                 // net-api M4-S15 fixture：xhr/resources/content.py（上游逐字等价——
                 // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/

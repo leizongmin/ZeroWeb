@@ -11268,14 +11268,50 @@
     ['key', 'key', null], ['newValue', 'newValue', null], ['oldValue', 'oldValue', null],
     ['url', 'url', ''], ['storageArea', 'storageArea', null],
   ]);
-  // net-api M3-S2：init dict 经 IDL 转换（unrestricted double → Number、boolean →
-  // Boolean——progressevent-constructor「ECMAScript value conversion」面；
-  // 'lengthcomputable' 小写键不匹配 → 默认 false，大小写敏感保留）。
-  _defineEventSubclass('ProgressEvent', 'Event', [
-    ['lengthComputable', 'lengthComputable', false, function (v) { return Boolean(v); }],
-    ['loaded', 'loaded', 0, function (v) { var n = Number(v); return isNaN(n) ? 0 : n; }],
-    ['total', 'total', 0, function (v) { var n = Number(v); return isNaN(n) ? 0 : n; }],
-  ]);
+  // net-api M4-S16：ProgressEvent 专设定义（原 _defineEventSubclass 泛型形态——
+  // progressevent-interface WebIDL interface-object 保真面：①prototype 属性描述符
+  // non-writable/non-enum/non-config ②attribute getter-only（enumerable+configurable，
+  // 严格模式赋值 TypeError）③接口对象 global 属性 non-enumerable）。
+  // init dict IDL 转换维持 M3-S2 语义（unrestricted double → Number/NaN→0、boolean →
+  // Boolean、大小写敏感键）。
+  function ProgressEvent(type, options = undefined) {
+    var ev = _makeEvent(type, options);
+    Object.setPrototypeOf(ev, ProgressEvent.prototype);
+    var opts = options || {};
+    var loaded = Number(opts.loaded);
+    var total = Number(opts.total);
+    ev._zwLoaded = isNaN(loaded) ? 0 : loaded;
+    ev._zwTotal = isNaN(total) ? 0 : total;
+    ev._zwLengthComputable = Boolean(opts.lengthComputable);
+    ev._zwBubbles = !!opts.bubbles;
+    ev._zwCancelable = !!opts.cancelable;
+    delete ev.bubbles;      // own 值属性 → 原型 getter（attribute 保真）
+    delete ev.cancelable;
+    return ev;
+  }
+  ProgressEvent.prototype = Object.create(Event.prototype);
+  ProgressEvent.prototype.constructor = ProgressEvent;
+  ['lengthComputable', 'loaded', 'total', 'bubbles', 'cancelable'].forEach(function (name) {
+    var store = '_zw' + name.charAt(0).toUpperCase() + name.slice(1);
+    Object.defineProperty(ProgressEvent.prototype, name, {
+      // WebIDL attribute getter：this 非本接口实例（如 prototype 自身）→ TypeError
+      //（progressevent-interface attribute 面的 brand check）。
+      get: function () {
+        if (!(this instanceof ProgressEvent)) {
+          throw new TypeError('Illegal invocation');
+        }
+        return this[store];
+      },
+      enumerable: true,
+      configurable: true,
+    });
+  });
+  Object.defineProperty(ProgressEvent, 'prototype', {
+    value: ProgressEvent.prototype, writable: false, enumerable: false, configurable: false,
+  });
+  Object.defineProperty(globalThis, 'ProgressEvent', {
+    value: ProgressEvent, writable: true, enumerable: false, configurable: true,
+  });
   _defineEventSubclass('TransitionEvent', 'Event', [
     ['propertyName', 'propertyName', ''], ['elapsedTime', 'elapsedTime', 0], ['pseudoElement', 'pseudoElement', ''],
   ]);

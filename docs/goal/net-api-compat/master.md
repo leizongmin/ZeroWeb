@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-30（M4-S15 收口——XHR send 簇，xhr 73.9%）
+**最后更新**: 2026-09-30（M4-S16 收口——XHR 状态与事件，xhr 78.2%）
 
 ---
 
@@ -14,15 +14,14 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
-M4-S8（76.8%）→ … → M4-S13（77.7%）→ M4-S14（78.0%）→ M4-S15（2026-09-30）——
-**8935/11369 = 78.6%**（fetch 69.9%（+6 附带解锁）/ xhr **73.9%**（433/586——send
-簇 +166）/ url 73.1% / mimesniff 100% / streams 88.6% / eventsource 100%）。
-**M4-S15 收口**：content.py/.asis fixture 通道 + URLSearchParams 序列化 spec 化
-（encodeURIComponent 漏 !'()~）+ type-less Blob 无 CT 派生 + UA Content-Length 补齐
-+ XHR send GET/HEAD 体丢弃 & USP charset 替换 + 同步体类型分发（原 String(Blob)
-线上垃圾）。getresponseheader/send-usp/send-data-invalid-unicode/send-blob-no-mime
-四页全绿。见
-[evidence/2026-09-30-m4-s15-xhr-send.md](evidence/2026-09-30-m4-s15-xhr-send.md)。
+M4-S8（76.8%）→ … → M4-S14（78.0%）→ M4-S15（78.6%）→ M4-S16（2026-09-30）——
+**8961/11370 = 78.8%**（fetch 69.9% / xhr **78.2%**（459/587——状态与事件簇 +26）/
+url 73.1% / mimesniff 100% / streams 88.6% / eventsource 100%）。
+**M4-S16 收口**：abort() spec 化（request error steps + 静默 UNSENT）+ 请求代际守卫
+（abort/复用后晚到响应隔离）+ `xhr.upload`（loadstart/progress 同步派发）+
+withCredentials IDL setter + ProgressEvent WebIDL interface-object 保真（专设定义）。
+五页 27 腿全绿。见
+[evidence/2026-09-30-m4-s16-xhr-state.md](evidence/2026-09-30-m4-s16-xhr-state.md)。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -36,14 +35,25 @@ M4-S8（76.8%）→ … → M4-S13（77.7%）→ M4-S14（78.0%）→ M4-S15（2
 |---|------|------|
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
-| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr 73.9%——headers/responseType/sync/overrideMime/blob-range/send 簇）——**残余：progress/upload 事件序（xhr.upload 缺失）、WebIDL interface 保真（progressevent-interface）、abort 态重置、formdata submitter 族、redirect.py 依赖面** |
+| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr 78.2%——headers/responseType/sync/overrideMime/blob-range/send 簇/**abort 重置/upload 事件/ProgressEvent IDL**）——**残余：formdata submitter 族（13）、redirect 跟随链、responseXML/XML 文档面、send(ES object) 簇（128 腿）** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.1%（新分母 6065——M3 收口 USP/URL.parse/port/live 迭代/UTF-8 解码器/helper 解锁）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S11 收口（88.6%——piping 簇 spec 化重做，pipe-through/general/error-propagation 全绿）；**残余：flow-control 2 腿（背压编排计时精度）；transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿）** |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
-| P7 | runner fixture 通道（.py 端点最小 fixture 集） | 🔶 M4-S15 续件已落（xhr `content.py` 回显端点 + `*.asis` 原始 HTTP 通道 6 文件；累计含 M4-S12/13 eventsource 族 + M3 inspect-headers.py / status.py / trickle.py）；待评估：fetch/api/resources/cors.py 多模式端点 + OPTIONS preflight（fetch/api/cors 域独立切片）、xhr `corsenabled.py`/`redirect.py`（upload-progress 族）、echo-content.py / delay.py 族 |
+| P7 | runner fixture 通道（.py 端点最小 fixture 集） | 🔶 M4-S16 续件已落（xhr `corsenabled.py` / `redirect.py` / `well-formed.xml` / `pass.txt`；累计含 M4-S15 content.py + .asis 通道 + M4-S12/13 eventsource 族 + M3 inspect-headers.py / status.py / trickle.py）；待评估：fetch/api/resources/cors.py 多模式端点 + OPTIONS preflight（fetch/api/cors 域独立切片）、echo-content.py / delay.py 族 |
 
 ## 已完成切片
 
+- **M4-S16（2026-09-30）**：XHR 状态与事件（**8961/11370 = 78.8%**，xhr 433/586 →
+  459/587 = 78.2%，Δ+26 零回归）。abort() spec 化（request error steps：DONE +
+  readystatechange 先于响应重置 → abort + loadend → 静默 UNSENT；DONE → UNSENT +
+  reset 无事件；重置含 responseURL/响应头表）+ 请求代际守卫（`_zwReqGen`——abort/
+  复用后晚到响应隔离）+ `xhr.upload`（XMLHttpRequestUpload + send 有体时同步
+  loadstart/progress，total = 体字节长）+ withCredentials IDL setter（send() flag
+  已置 → InvalidStateError）+ ProgressEvent 专设定义（length 1 / prototype 描述符 /
+  getter-only + brand check / global non-enumerable）。五页 27 腿全绿；fixture：
+  corsenabled.py / redirect.py / well-formed.xml / pass.txt。make test 全绿（19508P）
+  + clippy/fmt 干净。见
+  [evidence/2026-09-30-m4-s16-xhr-state.md](evidence/2026-09-30-m4-s16-xhr-state.md)。
 - **M4-S15（2026-09-30）**：XHR send 簇 + content.py/.asis fixture 通道（**8935/11369
   = 78.6%**，xhr 267/451 → 433/586 = 73.9%（分母含 send-usp 128 子案细粒度化），
   Δ+166 + fetch +6 附带解锁，零回归）。fixture：`content.py` 回显端点（POST 面，
@@ -263,9 +273,9 @@ M4-S8（76.8%）→ … → M4-S13（77.7%）→ M4-S14（78.0%）→ M4-S15（2
 
 ## 下一步计划
 
-1. **XHR 残余**：progress/upload 事件序（`xhr.upload` + upload 事件——依赖
-   corsenabled.py/redirect.py fixture）+ responseurl-after-abort（abort 态重置）
-   + formdata submitter 族——xhr 73.9% 残余（153 腿）
+1. **XHR 残余**：formdata submitter 族（FormData(form, submitter)——13 腿）+
+   redirect 跟随链（access-control-and-redirects 面）+ responseXML/XML 文档面 +
+   send(ES object) TypeError 簇——xhr 78.2% 残余（128 腿）
 2. **M4 残余**：flow-control 2 腿（背压编排计时精度——泵 pull 粒度对齐 StepTracker
    编排步进）
 3. **结构性挂账**：缓冲 transfer/detach 族（spec TransferArrayBuffer——需宿主 V8

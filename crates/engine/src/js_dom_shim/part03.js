@@ -13,6 +13,52 @@
     self.onloadend = null;
     self._et_listeners = {};
     self._zwXhrMethod = 'GET';
+    self._zwReqGen = 0;
+    // net-api M4-S16：withCredentials（xhr.spec——默认 false；setter 在非 UNSENT/OPENED
+    // 态抛 InvalidStateError——「setting withCredentials when not in UNSENT, OPENED state」面）。
+    var _zwWithCreds = false;
+    Object.defineProperty(self, 'withCredentials', {
+      get: function () { return _zwWithCreds; },
+      set: function (v) {
+        // spec：state 非 UNSENT/OPENED，**或 send() flag 已置** → InvalidStateError。
+        if ((self.readyState !== 0 && self.readyState !== 1) || self._zwXhrSent) {
+          throw new (globalThis.DOMException || Error)(
+            'The object is in an invalid state.', 'InvalidStateError');
+        }
+        _zwWithCreds = Boolean(v);
+      },
+      enumerable: true,
+      configurable: true,
+    });
+    // net-api M4-S16：xhr.upload（XMLHttpRequestUpload，EventTarget 形——spec §7.2）。
+    // upload 事件（loadstart/progress）在 send() 有体时同步派发（finite 模型；晚注册
+    // 不可见——event-upload-progress「registered too late」面）。
+    self._zwUpload = (function () {
+      var listeners = {};
+      var upload = {};
+      upload._zwDispatch = function (type, ev) {
+        ev.target = upload;
+        ev.currentTarget = upload;
+        var arr = (listeners[type] || []).slice();
+        for (var i = 0; i < arr.length; i++) {
+          if (typeof arr[i] === 'function') { try { arr[i].call(upload, ev); } catch (_eUd) {} }
+        }
+        var h = upload['on' + type];
+        if (typeof h === 'function') { try { h.call(upload, ev); } catch (_eUh) {} }
+      };
+      upload.addEventListener = function (type, cb) {
+        if (typeof type !== 'string' || cb == null) return;
+        (listeners[type] = listeners[type] || []).push(cb);
+      };
+      upload.removeEventListener = function (type, cb) {
+        var arr = listeners[type];
+        if (!arr) return;
+        var i = arr.indexOf(cb);
+        if (i >= 0) arr.splice(i, 1);
+      };
+      return upload;
+    })();
+    self.upload = self._zwUpload;
     self._zwXhrUrl = '';
     self._zwXhrHeaders = {};
     self._zwXhrAborted = false;
@@ -159,6 +205,9 @@
         throw new (globalThis.DOMException || Error)('The object is in an invalid state.', 'InvalidStateError');
       }
       self._zwXhrSent = true; // net-api M3-S1：setRequestHeader 状态校验消费
+      // net-api M4-S16：请求代际标记（abort/复用后晚到响应不再回填——spec abort the fetch；
+      // responseurl-after-abort「new response after abort() and reuse」面的竞态根因）。
+      var reqGen = ++self._zwReqGen;
       // net-api M3-S1：send(body) body 类型校验（xhr.spec §4.7.2——SharedArrayBuffer /
       // 其视图 → TypeError；send-data-sharedarraybuffer 面）。
       if (body != null && typeof SharedArrayBuffer === 'function') {
@@ -166,6 +215,24 @@
           (typeof ArrayBuffer === 'function' && ArrayBuffer.isView && ArrayBuffer.isView(body) &&
            body.buffer instanceof SharedArrayBuffer);
         if (isSab) throw new TypeError('Cannot send a SharedArrayBuffer');
+      }
+      // net-api M4-S16：upload loadstart/progress（xhr.spec——async 且 body 非 null 时于
+      // send 步骤派发；finite 模型同步一次到位，lengthComputable true + total = 体字节长）。
+      if (self._zwXhrAsync !== false && body != null && self._zwUpload) {
+        var ulen = 0;
+        try {
+          if (typeof Blob === 'function' && body instanceof Blob) {
+            ulen = _zw_blobBytes(body).length;
+          } else if (typeof FormData === 'function' && body instanceof FormData) {
+            ulen = new TextEncoder().encode(body._zwMultipart().body).length;
+          } else {
+            ulen = new TextEncoder().encode(String(body)).length;
+          }
+        } catch (_eUlen) { ulen = 0; }
+        self._zwUpload._zwDispatch('loadstart',
+          new ProgressEvent('loadstart', { lengthComputable: true, loaded: 0, total: ulen }));
+        self._zwUpload._zwDispatch('progress',
+          new ProgressEvent('progress', { lengthComputable: true, loaded: ulen, total: ulen }));
       }
       // net-api M3-S2：同步 XHR（open async=false）——host `__zw_fetch` 同步契约直返
       //（runner 路径；异步 host 回空 wire → error 路径，浏览器同步 XHR 已知限制）。
@@ -245,8 +312,10 @@
       // https://xhr.spec.whatwg.org/#the-send()-method
       fetchFn(self._zwXhrUrl, { method: self._zwXhrMethod, headers: self._zwXhrHeaders, body: body })
         .then(function(response) {
+          if (reqGen !== self._zwReqGen) return; // 晚到响应（abort/复用后）→ 丢弃
           self._zwFillFromResponse(response, null);
         }, function() {
+          if (reqGen !== self._zwReqGen) return;
           if (self._zwXhrAborted) return;
           self.status = 0;
           self.statusText = '';
@@ -257,16 +326,36 @@
           fire('loadend');
         });
     };
+    // net-api M4-S16：abort() spec 化（xhr.spec §the-abort()-method + §request error
+    // steps）——①OPENED+sent/HEADERS_RECEIVED/LOADING → request error steps（DONE +
+    // readystatechange 先于响应重置，随后 abort + loadend；响应置 network error：status
+    // 0 / 头清空 / responseURL ''）②DONE → 置 UNSENT + reset，**不派发任何事件**（spec
+    // 仅改状态；abort-progress-events「no events fire in UNSENT」面）。
     self.abort = function() {
       self._zwXhrAborted = true;
-      if (self.readyState !== 0 && self.readyState !== 4) {
+      var st = self.readyState;
+      if ((st === 1 && self._zwXhrSent) || st === 2 || st === 3) {
+        changeReadyState(4); // request error steps 步骤 1：DONE + readystatechange
+        self._zwXhrSent = false;
         self.status = 0;
         self.statusText = '';
         self.responseText = '';
         self.response = '';
-        changeReadyState(4);
+        self.responseURL = '';
+        self._zwXhrResponseHeaders = {};
         fire('abort');
         fire('loadend');
+        // spec 步骤 3：request error steps 后 state 已 DONE → 置 UNSENT（静默——
+        // abort-progress-events「State should be UNSENT immediately after abort」面）。
+        self.readyState = 0;
+      } else if (st === 4) {
+        self.status = 0;
+        self.statusText = '';
+        self.responseText = '';
+        self.response = '';
+        self.responseURL = '';
+        self._zwXhrResponseHeaders = {};
+        self.readyState = 0; // UNSENT 直赋——spec 不派发 readystatechange
       }
     };
     // net-api M3-S1：setRequestHeader（xhr.spec §4.6.3）——须 OPENED 且未发送
