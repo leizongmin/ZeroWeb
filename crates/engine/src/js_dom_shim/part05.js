@@ -6883,6 +6883,20 @@
   if (!globalThis.OffscreenCanvas) {
     globalThis.OffscreenCanvas = OffscreenCanvas;
   }
+  // R49xx：CanvasRenderingContext2D 全局构造器急切注册——此前仅由 _zwMakeCtx2d 首调
+  // 懒创建（本文件下方），页面首次 getContext('2d') 前 `typeof CanvasRenderingContext2D`
+  // 恒 'undefined'、直接引用抛 ReferenceError → typeof 门控的 canvas 特性检测误判
+  // 不支持（html5test canvas.context、Modernizr 式探针——业界标准检测写法）。
+  // spec：支持某接口的 realm 上接口对象随全局对象暴露（Chrome/Gecko 皆急切）；
+  // 同族 CanvasPattern/CanvasGradient/Path2D/CanvasFilter/OffscreenCanvas 本文件
+  // 均已急切注册，唯 CTR 例外。https://webidl.spec.whatwg.org/#es-interfaces
+  if (!globalThis.CanvasRenderingContext2D) {
+    globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {};
+    Object.defineProperty(CanvasRenderingContext2D, 'prototype', {
+      writable: false,
+      configurable: false
+    });
+  }
   // R34xx：WebIDL 参数语义——缺省（undefined/null）→ TypeError（missingargs：
   // 2d.conformance.requirements.missingargs）；非有限（NaN/±Infinity）数值 → 方法忽略
   //（spec：各方法 "If any of the arguments are infinite or NaN, then return"——
@@ -6901,8 +6915,9 @@
     return true;
   }
   function _zwMakeCtx2d(h) {
-    // R34xx：构造器须先于实例创建（原型链 Object.create；定义在函数体中部——
-    // 首调时提前确保存在；prototype 属性不可写/不可删，spec）。
+    // R34xx：构造器须先于实例创建（原型链 Object.create；prototype 属性不可写/
+    // 不可删，spec）。R49xx 起全局注册已提前到上方急切段（typeof 检测面），
+    // 此处保留幂等兜底（急切段执行后被页面 delete 之类移除全局时的再注册路径）。
     if (!globalThis.CanvasRenderingContext2D) {
       globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {};
       Object.defineProperty(CanvasRenderingContext2D, 'prototype', {
