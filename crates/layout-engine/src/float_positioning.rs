@@ -2481,7 +2481,14 @@ pub(crate) fn adjust_float_positions_with_context(
                 && !crate::margin_collapse::establishes_bfc(child)
             {
                 let cy = child.y;
-                let (nl, nr) = nested_float_bottoms(child, cy, content_y_offset);
+                // R4235 帧约定：content-rel 模式（default-on）下 child.y 已是内容盒相对，
+                // active_*_float_bottom 同帧（direct float 子的 child_bottom = y+h+mb 不减
+                // offset）——嵌套收集须同帧（offset 0），否则带 border/padding-top 的容器
+                // 嵌套浮动底边整体虚减 content_y_offset，后续 clear 兄弟 clearance 不足、
+                // 停在 float 底边之上（baidu hotsearch wrapper pt:21 → ::after 落 93 应 114）。
+                // border-rel 兼容模式（ZW_FLOAT_CLAMP_CONTENT_REL=0）保留旧 offset 换算。
+                // https://www.w3.org/TR/CSS22/visuren.html#clearance
+                let (nl, nr) = nested_float_bottoms(child, cy, if clamp_content_rel { 0.0 } else { content_y_offset });
                 if nl > 0.0 {
                     nested_left_bottom = nested_left_bottom.max(nl);
                 }
@@ -2612,11 +2619,23 @@ pub(crate) fn adjust_float_positions_with_context(
                 // 有子，empty-gate 排除 containment math 但仍须 sibling-shift）+ negative clearance
                 //（hypothetical>clear_bottom，clearance 仍 stop collapse per 014 assert）。
                 // sibling-shift leak 公式按 declared_margin_bottom 自门控（027 #div2 declared mb 安全）。
+                // clearance_active 语义 =「in-flow clearance/containment 机制对本容器生效」，
+                // 故仅统计会被子循环流内 clearance 分支处理的子（block-level、非 float、
+                // 非定位）。float 子自身的 clear 由 Phase 1 float 摆位解决（CSS2 §9.5.1），
+                // 不产生流内 clearance 链——旧实现把 float 子的 clear 也计入，容器被误标
+                // 后 R1319 sibling-shift 把后续兄弟的合法 clearance 当「泄漏」撤销
+                //（clearfix 伪元素 + float 行热榜形状：wrapper::after 被拉回 float 容器底，
+                // 容器高度塌回 0/63，后续内容整体叠压，baidu hotsearch 叠字根因）。
+                // https://www.w3.org/TR/CSS22/visuren.html#clearance
                 let has_clear_child = box_node.children.iter().any(|c| {
-                    !matches!(
-                        c.clear,
-                        ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd
-                    )
+                    c.is_block_level
+                        && !c.is_absolute
+                        && !c.is_fixed
+                        && matches!(c.float, FloatValue::None)
+                        && !matches!(
+                            c.clear,
+                            ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd
+                        )
                 });
                 if has_clear_child {
                     box_node.clearance_active = true;

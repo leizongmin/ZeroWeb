@@ -103,6 +103,9 @@ mod real_website_compat;
 mod webview_product_smoke;
 
 #[cfg(test)]
+mod clearfix_webview_layout;
+
+#[cfg(test)]
 mod product_level_smoke;
 
 #[cfg(test)]

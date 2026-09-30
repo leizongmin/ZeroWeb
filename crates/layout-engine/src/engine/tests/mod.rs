@@ -75,6 +75,7 @@ fn find_absolute_position_by_node_id_inner(
 }
 
 mod anonymous_flex_item_tests;
+mod clearfix_nested_float_clearance_tests;
 mod coverage;
 mod downloaded_font_metrics;
 mod incremental_parity_experiment;
