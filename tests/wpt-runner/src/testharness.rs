@@ -4566,6 +4566,46 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(body.into_bytes()),
                 });
             }
+            if clean.starts_with("eventsource/") && clean.ends_with("/cors.py") {
+                // net-api M4-S13 fixture：eventsource/resources/cors.py（上游逐字等价——
+                // https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/resources/
+                // cors.py）。ACAO ← ?origin=（缺省回显请求 Origin 头）+ ACAC ← ?credentials=
+                // （默认 true）；?run=cache-control → text/event-stream + cache-control
+                // 模板体（回显请求 Cache-Control 头）。其余 run 值上游返空体。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let req_origin = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default();
+                let acao = wpt_query_value(query, "origin").unwrap_or(req_origin);
+                let acac = wpt_query_value(query, "credentials").unwrap_or_else(|| "true".into());
+                let run = wpt_query_value(query, "run").unwrap_or_default();
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("access-control-allow-origin".into(), acao));
+                headers.push(("access-control-allow-credentials".into(), acac));
+                let body = if run == "cache-control" {
+                    headers.push(("content-type".into(), "text/event-stream".into()));
+                    let echoed = req
+                        .headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case("cache-control"))
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_default();
+                    format!("data: {}\n\n", echoed)
+                } else {
+                    String::new()
+                };
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
             if clean.ends_with("/inspect-headers.py") {
                 // net-api M3-S1 fixture：fetch/api/resources/inspect-headers.py（上游逐字
                 // 等价——https://github.com/web-platform-tests/wpt/blob/3159769/fetch/api/

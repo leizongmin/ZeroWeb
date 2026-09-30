@@ -1,0 +1,337 @@
+[
+ [
+  "eventsource/event-data.any.js",
+  [
+   {
+    "name": "event-data",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/eventsource-constructor-empty-url.any.js",
+  [
+   {
+    "name": "EventSource constructor with an empty url.",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/eventsource-constructor-url-bogus.any.js",
+  [
+   {
+    "name": "eventsource-constructor-url-bogus",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/eventsource-eventtarget.any.js",
+  [
+   {
+    "name": "eventsource-eventtarget",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/eventsource-onmessage-trusted.any.js",
+  [
+   {
+    "name": "EventSource message events are trusted",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/eventsource-onmessage.any.js",
+  [
+   {
+    "name": "eventsource-onmessage",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/eventsource-onopen.any.js",
+  [
+   {
+    "name": "eventsource-onopen",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/eventsource-prototype.any.js",
+  [
+   {
+    "name": "eventsource-prototype",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-bom-2.any.js",
+  [
+   {
+    "name": "format-bom-2",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-bom.any.js",
+  [
+   {
+    "name": "format-bom",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-comments.any.js",
+  [
+   {
+    "name": "format-comments",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-data-before-final-empty-line.any.js",
+  [
+   {
+    "name": "format-data-before-final-empty-line",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-field-data.any.js",
+  [
+   {
+    "name": "format-field-data",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-field-event-empty.any.js",
+  [
+   {
+    "name": "format-field-event-empty",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-field-event.any.js",
+  [
+   {
+    "name": "format-field-event",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-field-id-2.any.js",
+  [
+   {
+    "name": "format-field-id-2",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-field-id.any.js",
+  [
+   {
+    "name": "format-field-id",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-field-parsing.any.js",
+  [
+   {
+    "name": "format-field-parsing",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-field-retry-bogus.any.js",
+  [
+   {
+    "name": "format-field-retry-bogus",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-field-retry-empty.any.js",
+  [
+   {
+    "name": "format-field-retry-empty",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-field-retry.any.js",
+  [
+   {
+    "name": "format-field-retry",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-field-unknown.any.js",
+  [
+   {
+    "name": "format-field-unknown",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-leading-space.any.js",
+  [
+   {
+    "name": "format-leading-space",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-mime-bogus.any.js",
+  [
+   {
+    "name": "format-mime-bogus",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-mime-trailing-semicolon.any.js",
+  [
+   {
+    "name": "format-mime-trailing-semicolon",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-mime-valid-bogus.any.js",
+  [
+   {
+    "name": "format-mime-valid-bogus",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-newlines.any.js",
+  [
+   {
+    "name": "format-newlines",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-null-character.any.js",
+  [
+   {
+    "name": "format-null-character",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/format-utf-8.any.js",
+  [
+   {
+    "name": "format-utf-8",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/request-accept.any.js",
+  [
+   {
+    "name": "request-accept",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/request-cache-control.any.js",
+  [
+   {
+    "name": "resources/cache-control.event_stream?pipe=sub1",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "https://www2.wpt.test/eventsource/resources/cors.py?run=cache-control1",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "resources/cache-control.event_stream?pipe=sub2",
+    "status": "Pass",
+    "message": null
+   },
+   {
+    "name": "https://www2.wpt.test/eventsource/resources/cors.py?run=cache-control2",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ],
+ [
+  "eventsource/eventsource-url.any.js",
+  [
+   {
+    "name": "eventsource-url",
+    "status": "Pass",
+    "message": null
+   }
+  ]
+ ]
+]

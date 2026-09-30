@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-30（M4-S12 收口）
+**最后更新**: 2026-09-30（M4-S13 收口——eventsource 100%）
 
 ---
 
@@ -14,17 +14,14 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
-M4-S8（76.8%）→ M4-S9（77.0%）→ M4-S10（77.1%）→ M4-S11（77.5%）→
-M4-S12（2026-09-30）——**8734/11233 = 77.8%**（fetch 69.6% / xhr 53.2% / url 73.1% /
-mimesniff 100% / streams 88.6% / eventsource **97.1%**（33/34——EventSource spec 化
-重做 + P7 fixture 续件：message.py 族 runner 内置 + 重连语义 + Last-Event-ID 内部
-wire 旁路））。**M4-S12 收口**：eventsource 2/32 → 33/34（+31），32 页中 31 页全绿；
-五 corpus 全量复核零回归。核心根因修齐：①Last-Event-ID 非 ASCII 值过公共 ByteString
-校验被拒 → 重连死循环（`__zwInternalHeadersWire` 内部直设旁路）②last event ID 缓冲
-逐流重置 + 以源上 string 播种（跨连接延续）③末尾行终止符 split 产物误派发
-④WebIDL 常量挂 prototype（重赋值后）。残余：request-cache-control 跨域半（www2 +
-cors.py——跨源基础设施）。见
-[evidence/2026-09-30-m4-s12-eventsource.md](evidence/2026-09-30-m4-s12-eventsource.md)。
+M4-S8（76.8%）→ M4-S9（77.0%）→ M4-S10（77.1%）→ M4-S11（77.5%）→ M4-S12
+（77.8%）→ M4-S13（2026-09-30）——**8736/11234 = 77.7%**（fetch 69.6% / xhr 53.2% /
+url 73.1% / mimesniff 100% / streams 88.6% / eventsource **100%**（35/35——**六
+corpus 首个收口**：cors.py fixture + runner 多源跨域链路零改动即通））。
+**M4-S13 收口**：request-cache-control 跨域半（www2.wpt.test）两案转绿，页 4/4；
+五 corpus 全量复核零回归。fetch/api/cors 域评估定谳：独立切片（多模式 cors.py +
+OPTIONS preflight——runner 现拒非 GET + engine preflight 语义）。见
+[evidence/2026-09-30-m4-s13-eventsource.md](evidence/2026-09-30-m4-s13-eventsource.md)。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -38,14 +35,22 @@ cors.py——跨源基础设施）。见
 |---|------|------|
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
-| P3 | XHR 状态机 + EventSource 解析/重连 | 🔶 EventSource 主体收口（M4-S12——97.1%，重连/Last-Event-ID/MIME 门/解析全 spec 化；**残余：request-cache-control 跨域半**，www2 多源 + cors.py 并轨跨源基础设施切片）；XHR 侧 S1+S2 已收口（xhr 53.2%）——**残余：blob-range（27，blob:+Range）、progress 事件序、.asis fixture 联动 P7** |
+| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ **EventSource 100% 收口**（M4-S13——35/35，重连/Last-Event-ID/MIME 门/解析/跨源全 spec 化）；XHR 侧 S1+S2 已收口（xhr 53.2%）——**残余：blob-range（27，blob:+Range）、progress 事件序、.asis fixture 联动 P7** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.1%（新分母 6065——M3 收口 USP/URL.parse/port/live 迭代/UTF-8 解码器/helper 解锁）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S11 收口（88.6%——piping 簇 spec 化重做，pipe-through/general/error-propagation 全绿）；**残余：flow-control 2 腿（背压编排计时精度）；transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿）** |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
-| P7 | runner fixture 通道（.py 端点最小 fixture 集） | 🔶 M4-S12 续件已落（eventsource `message.py` / `message2.py` / `last-event-id.py` / `*.event_stream` 模板回显，累计含 M3-S1 `inspect-headers.py`、M3-S2 `status.py`、`trickle.py`）；待评估：`cors.py`（eventsource 跨域半 + fetch/api/cors 域公共解锁件）、echo-content.py / delay.py 族（request-upload echo / xhr delay 簇）、.asis 原始 HTTP |
+| P7 | runner fixture 通道（.py 端点最小 fixture 集） | 🔶 M4-S13 续件已落（eventsource `cors.py`——跨域半解锁；累计含 M4-S12 message.py 族 + M3 inspect-headers.py / status.py / trickle.py）；待评估：fetch/api/resources/cors.py 多模式端点 + OPTIONS preflight（fetch/api/cors 域独立切片，评估结论见 M4-S13 evidence）、echo-content.py / delay.py 族、.asis 原始 HTTP |
 
 ## 已完成切片
 
+- **M4-S13（2026-09-30）**：eventsource 跨源半 + cors.py fixture（**8736/11234 =
+  77.7%**，eventsource 33/34 → **35/35 = 100%**——六 corpus 首个收口，Δ+2 零回归）。
+  runner 内置 `eventsource/resources/cors.py`（ACAO 回显 Origin + ACAC + `run=
+  cache-control` 模板体——上游逐字等价）；跨域链路（runner path 匹配 origin 无关 +
+  shim fetch Origin 注入/ACAO 过滤）零改动即通——request-cache-control 页 4/4。
+  fetch/api/cors 域评估定谳：独立切片（多模式 cors.py + OPTIONS preflight 双前置）。
+  make test 全绿（19506P）+ clippy/fmt 干净 + 五 corpus 逐字节同值。见
+  [evidence/2026-09-30-m4-s13-eventsource.md](evidence/2026-09-30-m4-s13-eventsource.md)。
 - **M4-S12（2026-09-30）**：EventSource spec 化重做 + P7 fixture 续件（**8734/11233 =
   77.8%**，eventsource 2/32 → 33/34 = 97.1%，Δ+31 零回归；32 页 31 页全绿）。
   runner 内置 fixture：message.py（mime/message/newline/sleep）/ message2.py（一轮
@@ -238,15 +243,14 @@ cors.py——跨源基础设施）。见
 
 ## 下一步计划
 
-1. **eventsource 残余 + 跨源基础设施**：request-cache-control 跨域半（www2 第二源 +
-   `cors.py` fixture + EventSource 跨域 CORS 检查）——与 fetch/api/cors 域（现按记账
-   不拉）并轨评估 runner 多源能力，一次落地双解锁
+1. **XHR 残余**：blob-range（blob:+Range XHR 27 腿——blob store 分支 + Range 头
+   处理）与 progress 事件序——xhr 53.2% 主体残余簇
 2. **M4 残余**：flow-control 2 腿（背压编排计时精度——泵 pull 粒度对齐 StepTracker
    编排步进）
 3. **结构性挂账**：缓冲 transfer/detach 族（spec TransferArrayBuffer——需宿主 V8
    detach 能力，JS 层不可表达——bad-buffers 10 腿 + non-transferable 4 腿）
-4. **M4 并轨**：P7 续件评估（.asis 原始 HTTP fixture / echo-content.py / delay.py
-   族——xhr delay 簇 / request-upload echo）+ blob-range（blob:+Range XHR 27）
+4. **P7 续件**：fetch/api/cors 域（多模式 cors.py + OPTIONS preflight——评估定谳见
+   M4-S13 evidence）/ .asis 原始 HTTP fixture / echo-content.py / delay.py 族
 5. **收口判定**：WebSocket 二期挂账定稿 + DC 逐项判定（DC-1 helpers 账本核对 /
    DC-4 make test+clippy+fmt 门禁与 reftest 零回归核对）
 
