@@ -1062,14 +1062,6 @@
       return cancelInternal(reason);
     };
     this._zwRsBrand = true; // net-api M4-S1：pipeTo/pipeThrough brand 校验锚
-    // net-api M4-S8：实例闭包别名（prototype 委托锚——`ReadableStream.prototype.getReader`
-    // 可被页面捕获后 .call(rs) 调用——tee 页 modified-constructor 面）。
-    this._zwGetReaderFn = this.getReader;
-    this._zwCancelFn = this.cancel;
-    this._zwValuesFn = this.values;
-    this._zwTeeFn = this.tee;
-    this._zwPipeToFn = this.pipeTo;
-    this._zwPipeThroughFn = this.pipeThrough;
     // net-api M4-S5：TransformStream SourcePull 背压观察锚（state/closeRequested/desired/readRequests
     // ——HasBackpressure = !ShouldCallPull 精确形）。
     this._zwRsProbe = function () {
@@ -1137,6 +1129,17 @@
     // cancel，reject signal.reason——abort 页 pre-aborted 腿 + tee×无限源 pipeTo 的 OOM 根因面）；
     // ④ preventClose（done 后不关 dest）/ preventAbort（源 error 后不 abort dest）/ preventCancel
     // （dest error 后不 cancel 源）门控。
+    // R2969 pipeTo(dest, options)：spec ReadableStreamPipeTo 适配实现。
+    // net-api M4-S11：重做为 spec 收尾机——shutdown / shutdown-with-action / finalize 三段：
+    // ① 动作经 **currentWrite 稳定 + 微任务跳**后才执行（构造即首查时 sink start 尚未
+    //    started——跳后 started 置位，abort 动作的 sink.abort 同步落地先于 cancel 动作——
+    //    'abort() should be called before cancel()' 事件序面；写由写完成驱动续泵）；
+    // ② 动作拒绝优先于原错误（shutdown with action 的 rejection → finalize(newError)——
+    //    'rejected cancel/abort promise' 双向传播面）；
+    // ③ read-ahead 泵（背压门控：desiredSize ≤ 0/null 不读——spec Backpressure 约束；
+    //    写完成续泵——'chunks should continue to be enqueued until the HWM is reached' 面）；
+    // ④ finalize(err, errGiven) 显式区分「无错误」与「错误值 undefined」——undefined 拒绝
+    //    面修复。
     this.pipeTo = function (dest, options) {
       // net-api M4-S1：brand/locked 校验（piping/general「brand」+「locked 不锁源」面
       // ——dest 已锁 → 先 reject 且**不锁** self）。
@@ -1160,34 +1163,79 @@
       var reader, writer;
       try { reader = self.getReader(); writer = dest.getWriter(); }
       catch (e) { return Promise.reject(e); }
+      self._disturbed = true; // spec 步骤 11——pipeTo **同步**置 disturbed（response-stream-disturbed-by-pipe 面）
       var preventAbort = opts.preventAbort;
       var preventCancel = opts.preventCancel;
       var preventClose = opts.preventClose;
       var signal = opts.signal;
-      // net-api M4-S6：signal 优先——pre-aborted 即执行 abortAlgorithm 动作集（spec 步骤 14
-      // 先于条件 1-4：'abort signal takes priority over closed/errored readable' 面）。
+
+      var shuttingDown = false;
+      var currentWrite = null; // 最近发出的写 promise——排队写按序完成，末位稳定即全体稳定
+      var finished = false;
+      var onAbort = null;
+      var resolveP, rejectP;
+      var promise = new Promise(function (res, rej) { resolveP = res; rejectP = rej; });
+
+      function finalize(err, errGiven) {
+        if (finished) return;
+        finished = true;
+        if (onAbort) { try { signal.removeEventListener('abort', onAbort); } catch (_eFin) {} }
+        try { reader.releaseLock(); } catch (_eDr) {}
+        try { writer.releaseLock(); } catch (_eDw) {}
+        if (errGiven) rejectP(err); else resolveP(undefined);
+      }
+      function shutdownWithAction(action, originalError, originalGiven) {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        if (onAbort) { try { signal.removeEventListener('abort', onAbort); } catch (_eSw) {} onAbort = null; }
+        function runAction() { return action ? action(originalError) : undefined; }
+        // spec Shutdown with an action 步骤 3 门控——dest **writable 且非 closing** 才有
+        // 「排在飞写」等待（微任务跳——跳后 started 置位、abort 动作的 sink.abort 同步先于
+        // cancel——事件序面）；erroring/closed 时动作**同步**执行（erroring 的 abort 须抢在
+        // start 微任务的 FinishErroring 前发起——wasAlreadyErroring 路径以 storedError 拒绝
+        // =「Trying to abort a stream that is erroring will give the writable's error」面）。
+        var wsp0 = dest._zwWsProbe ? dest._zwWsProbe() : null;
+        var p;
+        if (wsp0 && wsp0.state === 'writable' && !wsp0.closing) {
+          p = Promise.resolve(currentWrite).then(runAction, runAction);
+        } else {
+          try { p = runAction(); } catch (_eSw2) { p = Promise.reject(_eSw2); }
+        }
+        Promise.resolve(p).then(function () { finalize(originalError, originalGiven); },
+                                function (newError) { finalize(newError, true); });
+      }
+      function shutdown(err, errGiven) {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        if (onAbort) { try { signal.removeEventListener('abort', onAbort); } catch (_eSd) {} onAbort = null; }
+        Promise.resolve(currentWrite).then(function () { finalize(err, errGiven); });
+      }
+      // spec 步骤 14 动作——dest writable 才 abort / source readable 才 cancel；否则 resolved。
       function abortAction(err) {
-        // spec 步骤 14 动作——dest writable 才 abort；否则 resolved。
         var wsp3 = dest._zwWsProbe ? dest._zwWsProbe() : null;
-        if (wsp3 && wsp3.state === 'writable') return writer.abort(err);
+        // net-api M4-S11：erroring 态同样执行 abort（spec WritableStreamAbort 断言 writable
+        // 或 erroring——erroring 时 wasAlreadyErroring 路径不给 sink.abort、以 storedError
+        // 拒绝 abort 请求——'Trying to abort a stream that is erroring will give the
+        // writable's error' multiple-propagation 面）。
+        if (wsp3 && (wsp3.state === 'writable' || wsp3.state === 'erroring')) return writer.abort(err);
         return Promise.resolve();
       }
       function cancelAction(err) {
-        // spec 步骤 14 动作——source readable 才 cancel；否则 resolved（errored readable 面）。
         var rsp3 = self._zwRsProbe ? self._zwRsProbe() : null;
         if (rsp3 && rsp3.state === 'readable') return cancelInternal(err);
         return Promise.resolve();
       }
-      function gatherActions(err) {
-        // spec：wait for all actions + abort 拒绝优先（「a rejection from underlyingSink.abort()
-        // should be preferred to one from underlyingSource.cancel()」面）。
-        // net-api M4-S6：动作**并行发起**（同一跳同步依次调用——sink.abort 先于 source.cancel
-        // 的调用序 = 「abort() should be called before cancel()」事件序；且 cancel 先于后续
-        // pull 拒绝 error 源——「even with pending pull」面的时序）+ 等全部稳定后按优先序取错
-        //（abort 拒绝优先——the preferred 面）。
+      // net-api M4-S11：signal 路径的 abort 动作 **writable-only**（spec 步骤 14 动作文本——
+      // 非 writable 即 resolved；erroring dest 的 wasAlreadyErroring 拒绝不得劫持 signal.reason
+      // ——'abort signal takes priority over errored writable' AbortError 面）。条件 1 路径
+      // （源错误传播）的 abortAction 覆盖 erroring（见上）。
+      function signalActions(err) {
         var aAbort = null, aCancel = null;
         if (!preventAbort) {
-          try { aAbort = abortAction(err); } catch (eGa1) { aAbort = Promise.reject(eGa1); }
+          try {
+            var wspS = dest._zwWsProbe ? dest._zwWsProbe() : null;
+            aAbort = (wspS && wspS.state === 'writable') ? writer.abort(err) : Promise.resolve();
+          } catch (eGa1) { aAbort = Promise.reject(eGa1); }
         }
         if (!preventCancel) {
           try { aCancel = cancelAction(err); } catch (eGa2) { aCancel = Promise.reject(eGa2); }
@@ -1202,144 +1250,157 @@
           if (aCancel && errs[1]) throw errs[1];
         });
       }
-      if (signal != null && signal.aborted) {
-        var sigErr = signal.reason;
-        return gatherActions(sigErr).then(function () { return finishEarly(sigErr); },
-                                         function (eSg3) { return finishEarly(eSg3); });
+      // spec WriterCloseWithErrorPropagation 动作（closing/closed → resolved；errored → 拒绝）。
+      function writerCloseAction() {
+        var wsp2 = dest._zwWsProbe ? dest._zwWsProbe() : null;
+        if (wsp2 && (wsp2.closing || wsp2.state === 'closed')) return Promise.resolve();
+        if (wsp2 && wsp2.state === 'errored') return Promise.reject(wsp2.error);
+        return writer.close();
       }
-      // net-api M4-S4/M4-S6：首查按 spec 条件**优先序**（ReadableStreamPipeTo 条件 1-4）——
-      // ① 源已 errored（WritableStreamAbort 语义：erroring dest 以其 storedError 反噬——
-      // 'errored readable → erroring writable' 面）；② dest 已 errored（preventCancel 门控源
-      // cancel）；③ 源已 closed（WriterCloseWithErrorPropagation）；④ dest closed/closing/
-      // erroring（TypeError/storedError + 源 cancel）。multiple-propagation 组合面。
+      function abortAlgorithm() {
+        // spec 步骤 14——signal.reason 收尾 + 动作集（先排空在读块）。
+        shutdownWithAction(signalActions, signal.reason, true);
+      }
+      if (signal != null) {
+        if (signal.aborted) { abortAlgorithm(); return promise; }
+        if (typeof signal.addEventListener === 'function') {
+          onAbort = abortAlgorithm;
+          signal.addEventListener('abort', abortAlgorithm);
+        }
+      }
+      // dest error 中途传播（back——cancel 动作 + dest stored error；cancel 拒绝优先）。
+      try {
+        writer.closed.then(function () {}, function (eWc) {
+          shutdownWithAction(preventCancel ? null : cancelAction, eWc, true);
+        });
+      } catch (_eWcProbe) {}
+      // spec 条件 1-4 首查——**经 shutdown-with-action**（动作拒绝优先于原错误传播；微任务
+      // 跳后动作才执行）。
       var rsProbe = self._zwRsProbe ? self._zwRsProbe() : null;
       var wsProbe = dest._zwWsProbe ? dest._zwWsProbe() : null;
-      function finishEarly(err) {
-        try { reader.releaseLock(); } catch (_eDr) {}
-        try { writer.releaseLock(); } catch (_eDw) {}
-        return err === undefined ? Promise.resolve() : Promise.reject(err);
-      }
       if (rsProbe && rsProbe.state === 'errored') {
-        var srcErr = rsProbe.error;
-        if (preventAbort) return finishEarly(srcErr);
-        // spec 条件 1——shutdown with action of WritableStreamAbort(dest, srcErr)：dest erroring
-        // 时该动作以 dest storedError 拒绝 → 反噬为 pipeTo 拒绝值（multiple-propagation 面）。
-        var ap;
-        try { ap = writer.abort(srcErr); } catch (eAb4) { ap = Promise.reject(eAb4); }
-        return ap.then(function () { return finishEarly(srcErr); },
-                       function (eAb5) { return finishEarly(eAb5); });
+        shutdownWithAction(preventAbort ? null : abortAction, rsProbe.error, true);
+        return promise;
       }
       if (wsProbe && wsProbe.state === 'errored') {
-        var dstErr = wsProbe.error;
-        if (!preventCancel) { try { cancelInternal(dstErr); } catch (_eDc2) {} }
-        return finishEarly(dstErr);
+        shutdownWithAction(preventCancel ? null : cancelAction, wsProbe.error, true);
+        return promise;
       }
       if (rsProbe && rsProbe.state === 'closed') {
-        // 条件 3——源已 closed：preventClose → shutdown；否则 WriterCloseWithErrorPropagation
-        //（dest closing/closed → resolved；errored → 以 storedError reject；否则 writer.close()）。
-        if (preventClose) return finishEarly(undefined);
-        var wsp2 = dest._zwWsProbe ? dest._zwWsProbe() : null;
-        var cp;
-        if (wsp2 && (wsp2.closing || wsp2.state === 'closed')) cp = Promise.resolve();
-        else if (wsp2 && wsp2.state === 'errored') cp = Promise.reject(wsp2.error);
-        else { try { cp = writer.close(); } catch (eWc3) { cp = Promise.reject(eWc3); } }
-        return cp.then(function () { return finishEarly(undefined); },
-                       function (eCp) { return finishEarly(eCp); });
+        if (preventClose) { shutdown(undefined, false); return promise; }
+        shutdownWithAction(writerCloseAction, undefined, false);
+        return promise;
       }
       if (wsProbe && (wsProbe.state === 'closed' || wsProbe.state === 'erroring' || wsProbe.closing)) {
-        var errDest = (wsProbe.state === 'erroring') ? wsProbe.error : new TypeError('Destination writable stream is closed or closing');
-        if (!preventCancel) { try { cancelInternal(errDest); } catch (_eDc3) {} }
-        return finishEarly(errDest);
+        var destClosedErr = (wsProbe.state === 'erroring') ? wsProbe.error : new TypeError('Destination writable stream is closed or closing');
+        shutdownWithAction(preventCancel ? null : cancelAction, destClosedErr, true);
+        return promise;
       }
-      var finished = false;
-      var shuttingDown = false;
-      var currentWrite = null; // 最近 in-flight write（shutdown 先排空——spec wait-until-written）
-      var onAbort = null;
-      return new Promise(function (resolve, reject) {
-        function finish(err) {
-          if (finished) return;
-          finished = true;
-          if (onAbort) { try { signal.removeEventListener('abort', onAbort); } catch (_eFin) {} }
-          try { reader.releaseLock(); } catch (_e) {}
-          try { writer.releaseLock(); } catch (_e) {}
-          if (err !== undefined) reject(err); else resolve(undefined);
-        }
-        function abortAlgorithm() {
-          // spec §ReadableStreamPipeTo 步骤 14 + shutdown-with-action：**先排空 in-flight 写**
-          //（wait until every chunk read has been written）再执行 preventAbort/preventCancel 门控
-          // 动作集，以 signal.reason 收尾（「abort should not be called while write is in-flight」/
-          // 「all pending writes should complete on abort」面）。
-          if (finished) return;
-          shuttingDown = true; // 停读（shutdown must stop activity）
-          var err = signal.reason;
-          function runActions() {
-            return gatherActions(err);
+      // net-api M4-S11：源状态监视——read-ahead 泵存在**无在飞读窗口**（背压门控停读），
+      // 源 close/error 不能只靠读兑现暴露：reader.closed 兑现 → 条件 3（关 dest）；
+      // 拒绝 → 条件 1（abort dest）。**pendingRead 在飞门控**：读在飞时其兑现/拒绝路径
+      //（r.done / read 拒绝）已覆盖同一传播，监视器不得抢先关流（背压窗口读出的 chunk
+      // 会被 shuttingDown 门控丢弃——'does not desire chunks, but then does' 丢 b 根因）。
+      var pendingRead = null;
+      var activeOps = 0; // net-api M4-S11：在飞管线索（读→写链）计数——源 close 监视仅在静默时动作
+      try {
+        reader.closed.then(function () {
+          if (activeOps > 0 || shuttingDown || finished) return;
+          if (!preventClose) shutdownWithAction(writerCloseAction, undefined, false);
+          else shutdown(undefined, false);
+        }, function (eRs) {
+          if (activeOps > 0 && pendingRead) return; // 在飞读的拒绝路径自会 sourceErrored
+          shutdownWithAction(preventAbort ? null : abortAction, eRs, true);
+        });
+      } catch (_eRsProbe) {}
+      // net-api M4-S11：背压解除唤醒——页自持 writer 的写在飞时 desiredSize ≤ 0，其完成
+      // （updateBackpressure → ready 兑现）须驱动泵续读（flow-control 'does not desire
+      // chunks, but then does' 挂死根因）。ready 每次转移换新 promise，按身份判重避免
+      // 已兑现 promise 上的自旋。
+      var lastReady = null;
+      function watchReady() {
+        if (shuttingDown || finished) return;
+        var r;
+        try { r = writer.ready; } catch (_eWr) { return; }
+        if (r === lastReady) return;
+        lastReady = r;
+        r.then(function () { pump(); watchReady(); }, function () {});
+      }
+      watchReady();
+      // read-ahead 泵——背压门控（desiredSize ≤ 0/null 不读——spec Backpressure 约束）；
+      // 写完成续泵（背压解除驱动）；源 done → WriterCloseWithErrorPropagation 动作。
+      function pump() {
+        if (shuttingDown || finished) return;
+        var desired;
+        try { desired = writer.desiredSize; } catch (_eDs) { return; }
+        if (desired !== null && desired <= 0) return;
+        // net-api M4-S4：内部消费走 _zwReadRaw（null 原型——then 投毒防线，见 getReader 注）。
+        activeOps++;
+        pendingRead = reader._zwReadRaw();
+        pendingRead.then(function (r) {
+          pendingRead = null;
+          if (shuttingDown || finished) { activeOps--; return; }
+          if (r.done) {
+            activeOps--;
+            if (!preventClose) shutdownWithAction(writerCloseAction, undefined, false);
+            else shutdown(undefined, false);
+            return;
           }
-          Promise.resolve(currentWrite).then(runActions, runActions).then(function () { finish(err); },
-                                                                       function (e2) { finish(e2); });
-        }
-        if (signal != null) {
-          if (signal.aborted) { abortAlgorithm(); return; }
-          if (typeof signal.addEventListener === 'function') {
-            onAbort = abortAlgorithm;
-            signal.addEventListener('abort', abortAlgorithm);
+          var w;
+          try { w = writer.write(r.value); } catch (eW3) {
+            activeOps--;
+            shutdownWithAction(preventCancel ? null : cancelAction, eW3, true);
+            return;
           }
-        }
-        // net-api M4-S4：dest error 中途传播（writer.closed 拒绝 → cancel 源 + 收尾）。
-        try {
-          writer.closed.then(function () {}, function (eWc) {
-            if (finished) return;
-            if (!preventCancel) { try { cancelInternal(eWc); } catch (_eWc2) {} }
-            finish(eWc);
+          currentWrite = w;
+          w.then(function () { activeOps--; pump(); }, function (e) {
+            activeOps--;
+            shutdownWithAction(preventCancel ? null : cancelAction, e, true);
           });
-        } catch (_eWcProbe) {}
-        function pump() {
-          if (finished) return;
-          // net-api M4-S4：内部消费走 _zwReadRaw（null 原型——then 投毒防线，见 getReader 注）。
-          reader._zwReadRaw().then(function (r) {
-            if (finished) return;
-            if (r.done) {
-              if (preventClose) { finish(); return; }
-              writer.close().then(function () { finish(); }, function (e) { finish(e); });
-              return;
-            }
-            writer.write(r.value).then(pump, function (e) {
-              // spec：dest error → cancel 源（preventCancel 门控）；以 dest 错误收尾。
-              if (!preventCancel) { try { cancelInternal(e); } catch (_e) {} }
-              finish(e);
-            });
-          }, function (e) {
-            if (finished) return;
-            // spec：源 error → abort dest（preventAbort 门控；writer 入口——内部直调）。
-            if (!preventAbort) { try { writer.abort(e); } catch (_e) {} }
-            finish(e);
-          });
-        }
-        pump();
-      });
+          pump(); // read-ahead（仍按 desired 门控）
+        }, function (e) {
+          pendingRead = null;
+          activeOps--;
+          shutdownWithAction(preventAbort ? null : abortAction, e, true);
+        });
+      }
+      pump();
+      return promise;
     }
-    // R2969 pipeThrough({writable, readable})：fire-and-forget pipeTo(transform.writable)，返 transform.readable。
-    // 不 await pipeTo（spec：pipeThrough 立即返 readable，管道后台驱动）。
-    // net-api M4-S4：options **同步**序贯读取（throwing-options pipeThrough 页 assert_throws_js
-    // 面），提取值传 impl（getter 恰触一次）；补源锁定检查（spec 步骤 1）。
+    // R2969 pipeThrough({writable, readable})：fire-and-forget pipeTo(transform.writable)，返
+    // transform.readable。net-api M4-S11：成员读取序按 WebIDL ReadableWritablePair 定义序——
+    // **readable 先于 writable**（brand-check readable 失败时 writable getter 不得被触；
+    // 'should throw if readable/writable getters throw' 断言 readable 错误先抛面）+ 成员
+    // 品牌校验（非 ReadableStream/WritableStream → TypeError）+ options 读取**之后**复核
+    // writable 锁定（option getter 抓 writer → TypeError 面）。
     this.pipeThrough = function (transform, options) {
-      // net-api M4-S1：brand 校验（pipe-through「must check the brand」面）。
       if (!this || !this._zwRsBrand) throw new TypeError('pipeThrough: Illegal invocation');
       if (self._locked) throw new TypeError('pipeThrough: ReadableStream is locked');
-      if (!transform || !transform.writable || !transform.readable) {
-        throw new TypeError('pipeThrough: {writable, readable} required');
-      }
-      if (!transform.writable._zwWsBrand) throw new TypeError('pipeThrough: writable is not a WritableStream');
-      if (transform.writable.locked) throw new TypeError('pipeThrough: writable is locked');
+      var readable = transform ? transform.readable : undefined; // getter 恰触一次
+      if (!readable || !readable._zwRsBrand) throw new TypeError('pipeThrough: readable is not a ReadableStream');
+      var writable = transform.writable; // getter 恰触一次
+      if (!writable || !writable._zwWsBrand) throw new TypeError('pipeThrough: writable is not a WritableStream');
       var opts = _zwReadPipeOptions(options);
       if (opts.signal !== undefined &&
           (typeof opts.signal !== 'object' || opts.signal === null || typeof opts.signal.aborted !== 'boolean')) {
         throw new TypeError('pipeThrough: signal must be an AbortSignal');
       }
-      var p = pipeToImpl(transform.writable, opts);
+      if (writable.locked) throw new TypeError('pipeThrough: writable is locked');
+      var p = pipeToImpl(writable, opts);
       try { p.catch(function () {}); } catch (_ePt) {} // spec：promise.[[PromiseIsHandled]] = true
-      return transform.readable;
+      return readable;
     };
+    // net-api M4-S8/M4-S11：实例闭包别名（prototype 委托锚——`ReadableStream.prototype.X`
+    // 可被页面捕获后 .call(rs) 调用）。**必须在全部方法定义之后赋值**——别名捕获 `this.X`
+    // 时原型委托已存在，若先于方法定义赋值会捕获到委托自身（proto 委托 → 别名 → 委托
+    // 自递归——'pipeTo must check the brand of its WritableStream argument' 的 Maximum
+    // call stack 根因）。
+    this._zwGetReaderFn = this.getReader;
+    this._zwCancelFn = this.cancel;
+    this._zwValuesFn = this.values;
+    this._zwTeeFn = this.tee;
+    this._zwPipeToFn = this.pipeTo;
+    this._zwPipeThroughFn = this.pipeThrough;
     // net-api M4-S10：R2971 tee() 重做为 spec ReadableByteStreamTee 结构（spec §4.9.1——
     // 替换原 buffer-based 简化模型：共享 append-only buffer + 分支 pull 取数无法表达字节流
     // tee 的读计数/BYOB 前向/readAgain 语义）。核心件：
@@ -1582,7 +1643,17 @@
     for (var m in methods) {
       (function (name, slot) {
         Object.defineProperty(proto, name, {
-          value: function () { return this[slot].apply(this, arguments); },
+          // net-api M4-S11：非流 this（prototype 方法被 .call/apply/bind 到裸对象）——实例
+          // 别名缺失时不得崩溃：pipeTo 按品牌语义返回 rejected promise，其余同步抛
+          // TypeError（'pipeTo must check the brand of its ReadableStream this value' 面）。
+          value: function () {
+            var fn = this[slot];
+            if (typeof fn !== 'function') {
+              if (slot === '_zwPipeToFn') return Promise.reject(new TypeError('pipeTo: Illegal invocation'));
+              throw new TypeError('Illegal invocation');
+            }
+            return fn.apply(this, arguments);
+          },
           writable: true, enumerable: true, configurable: true
         });
       })(m, methods[m]);

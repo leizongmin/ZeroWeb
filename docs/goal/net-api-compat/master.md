@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-30（M4-S10 收口）
+**最后更新**: 2026-09-30（M4-S11 收口）
 
 ---
 
@@ -14,15 +14,16 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
-M4-S8（76.8%）→ M4-S9（77.0%）→ M4-S10（2026-09-30）——**8662/11232 = 77.1%**
-（fetch 69.6% / xhr 53.2% / url 73.1% / mimesniff 100% / streams **84.5%**
-（862/1020——byte tee 源侧 BYOB pull + spec ReadableByteStreamTee 结构重做）/ eventsource 6.2%）。
-**M4-S10 收口**：tee() 重做为 spec 结构（reading/readAgain 旗标 + steps 形源读 +
-pullWithBYOBReader 分支 pull-into 直入源 byob 读）；V1-V4 四版回退的真因在探针 session
-定位为 ①双 reader 切换触发 M4-S8 closed 拒绝前向（解法：不切换 reader——byob read 原语
-上移构造器级）与 ②promise 形投递反应晚于错误前向入队（解法：steps 形内部读 API，投递
-微任务在 dequeue 同步步内排队）。byte tee 页 10/40+页级 Timeout → **40/40 零超时**。
-见 [evidence/2026-09-30-m4-s10-byte-tee-byob.md](evidence/2026-09-30-m4-s10-byte-tee-byob.md)。
+M4-S8（76.8%）→ M4-S9（77.0%）→ M4-S10（77.1%）→ M4-S11（2026-09-30）——
+**8703/11231 = 77.5%**（fetch 69.6% / xhr 53.2% / url 73.1% / mimesniff 100% /
+streams **88.6%**（903/1019——pipeTo/pipeThrough spec 化重做：shutdown-with-action +
+read-ahead 背压泵 + 错误优先序 + pipeThrough 成员序）/ eventsource 6.2%）。
+**M4-S11 收口**：piping 簇 +41 零回归（pipe-through 43/43、error-propagation 双页全绿、
+general 14/14、multiple-propagation 9/9）。核心根因修齐：①收尾动作的执行时序
+（writable 分支排在飞写后微任务跳；erroring 同步执行）②在飞管线索门控
+（pendingRead/activeOps——背压窗口读出未写 chunk 不被 shuttingDown 丢弃）③
+pipeThrough 成员读取序 ④原型委托自递归。残余 flow-control 2 腿（背压编排计时精度）。
+见 [evidence/2026-09-30-m4-s11-pipe-to.md](evidence/2026-09-30-m4-s11-pipe-to.md)。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -38,12 +39,26 @@ pullWithBYOBReader 分支 pull-into 直入源 byob 读）；V1-V4 四版回退�
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
 | P3 | XHR 状态机 + EventSource 解析/重连 | 🔶 M3 进行中——S1（header 校验）+ S2（responseType/同步/overrideMime）已收口（xhr 53.2%）；**残余：blob-range（27，blob:+Range）、progress 事件序、.asis/eventsource fixture 联动 P7** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.1%（新分母 6065——M3 收口 USP/URL.parse/port/live 迭代/UTF-8 解码器/helper 解锁）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
-| P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S10 收口（84.5%——byte tee 源侧 BYOB pull + spec ReadableByteStreamTee 结构，byte tee 页 40/40）；**残余：pipeTo read-ahead 泵（3 腿）+ sink.abort 事件序（1 腿）；transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿）** |
+| P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S11 收口（88.6%——piping 簇 spec 化重做，pipe-through/general/error-propagation 全绿）；**残余：flow-control 2 腿（背压编排计时精度）；transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿）** |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
 | P7 | runner fixture 通道（.py 端点最小 fixture 集） | 🔶 首件已落（M3-S1 `inspect-headers.py`）；待评估：event-source.py / echo-content.py / delay.py 族（eventsource Timeout 23 / request-upload echo / xhr delay 簇公共解锁件） |
 
 ## 已完成切片
 
+- **M4-S11（2026-09-30）**：pipeTo/pipeThrough spec 化重做（**8703/11231 = 77.5%**，
+  streams 862/1020 → 903/1019 = 88.6%，Δ+41 零回归）。shutdown/shutdown-with-action/
+  finalize 三段收尾机（动作执行时序按 dest 态分支——writable 排在飞写后微任务跳、
+  erroring 同步执行；动作拒绝优先于原错误；finalize 显式 errGiven 区分 undefined 拒绝）；
+  read-ahead 泵（desiredSize 背压门控 + writer.ready 级联续泵）+ 源状态监视
+  （reader.closed 兑现/拒绝 → 条件 3/1，pendingRead/activeOps 在飞门控防已读 chunk 丢弃）；
+  pipeTo 同步置 disturbed（spec 步骤 11）；abortAction 覆盖 dest erroring +
+  signal 路径 writable-only 分离；pipeThrough 成员读取序 = WebIDL 定义序（readable 先）
+  + 品牌校验 + options 后复核锁定；原型委托防自递归（别名赋值移至方法定义后——
+  'Maximum call stack size exceeded' 根因）。piping 簇 186→227：pipe-through 43/43、
+  error-propagation-forward 32/32、general 14/14、error-propagation-backward 35/35、
+  multiple-propagation 9/9 全绿。删除前轮未提交探针残留页 zz-abort-probe.any.js。
+  make test 全绿（1 处在册 stale_etag 争用窗 flaky 隔离复跑绿 + 全量复跑收口）+
+  clippy/fmt 干净。见 [evidence/2026-09-30-m4-s11-pipe-to.md](evidence/2026-09-30-m4-s11-pipe-to.md)。
 - **M4-S10（2026-09-30）**：Byte tee 源侧 BYOB pull + tee() spec 结构重做（**8662/11232 =
   77.1%**，streams 826/993 → 862/1020 = 84.5%，Δ+36 零回归；byte tee 页 10/40+页级
   Timeout → **40/40 零超时**）。tee() 重做 spec ReadableByteStreamTee（reading/readAgain
@@ -209,7 +224,8 @@ pullWithBYOBReader 分支 pull-into 直入源 byob 读）；V1-V4 四版回退�
 
 ## 下一步计划
 
-1. **M4 残余 streams 腿**：pipeTo read-ahead 泵（3 腿）+ sink.abort 事件序（1 腿）
+1. **M4 残余**：flow-control 2 腿（背压编排计时精度——泵 pull 粒度对齐 StepTracker
+   编排步进）
 2. **结构性挂账**：缓冲 transfer/detach 族（spec TransferArrayBuffer——需宿主 V8
    detach 能力，JS 层不可表达——bad-buffers 10 腿 + non-transferable 4 腿）
 3. **M4 并轨**：P7 续件评估（.asis 原始 HTTP fixture / event-source.py /
