@@ -20,6 +20,7 @@ zero-canvas = { workspace = true }
 zero-wasm-sandbox = { workspace = true }
 zero-webview = { workspace = true }
 zero-render-foundation = { workspace = true }
+zero-paint-convert = { workspace = true }
 zero-script-sandbox = { workspace = true, default-features = false }
 zero-browser-shell = { workspace = true }
 zero-browser = { path = "../../apps/browser", default-features = false, features = ["test-support"] }

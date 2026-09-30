@@ -19,6 +19,9 @@ mod service_worker_host;
 mod text_metrics;
 
 pub use runtime::{parse_renderer_launch, run_desktop_role};
+// 生产编码入口导出：集成测试钉住「renderer 编码 → IPC 图元快照 → browser 解码」
+// 边界保真（多进程/单进程一致性常驻断言，见 tests/integration clearfix_multiprocess_parity）。
+pub use paint_export::paint_snapshot_from_primitives;
 
 // macos_app 经 `super::RendererRuntime` 引用；仅 macOS 编译该模块，故 cfg 门控防 linux dead_code。
 #[cfg(target_os = "macos")]
