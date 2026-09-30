@@ -383,3 +383,97 @@ fn test_shim_plain_mid_remove_no_handle_ghost_t7() {
         "plain 中间节点摘除须把 t7 挂载的 handle 后代同步摘出 host\n{out}"
     );
 }
+
+// ── canvas 接口全局急切注册（R49xx，siteopt r2/t3） ──
+
+#[test]
+fn test_canvas_ctr_global_eager_registration() {
+    // R49xx：CanvasRenderingContext2D 全局构造器此前仅由 _zwMakeCtx2d 首调懒创建，
+    // 页面首次 getContext('2d') 前 `typeof CanvasRenderingContext2D` 恒 'undefined'、
+    // 直接引用抛 ReferenceError → typeof 门控的 canvas 特性检测误判不支持
+    //（html5test canvas.context：`canvas.getContext && typeof CanvasRenderingContext2D
+    // != 'undefined' && canvas.getContext('2d') instanceof CanvasRenderingContext2D`）。
+    // spec：支持某接口的 realm 上接口对象随全局对象暴露。
+    // https://webidl.spec.whatwg.org/#es-interfaces
+    // 本测断言（均不预先 getContext）：① typeof = 'function'；② 全局不可枚举覆盖面
+    // （引用可用 + prototype 不可写）；③ instanceof 通路（首次 getContext 即链上）；
+    // ④ 与懒注册等价性（getContext 前 typeof 与 after 一致）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① shim 装载后（无任何 getContext 调用）typeof 即为 'function'。
+    sandbox
+        .execute("globalThis.__typeofBefore = String(typeof CanvasRenderingContext2D);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__typeofBefore").unwrap().value,
+        "function",
+        "首次 getContext 前 typeof CanvasRenderingContext2D 应为 'function'（急切注册）"
+    );
+
+    // ② 引用可用 + prototype 属性不可写/不可删（与懒注册同规格）。
+    sandbox
+        .execute(
+            "globalThis.__nameOk = String(CanvasRenderingContext2D.name);\
+             var desc = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D, 'prototype');\
+             globalThis.__protoLocked = String(desc && !desc.writable && !desc.configurable);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__nameOk").unwrap().value,
+        "CanvasRenderingContext2D",
+        "全局引用可用（此前抛 ReferenceError）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__protoLocked").unwrap().value,
+        "true",
+        "prototype 属性不可写/不可删（spec 接口对象规格）"
+    );
+
+    // ③ html5test 判定式全通路：同一表达式在零预热 realm 上应为 true。
+    sandbox
+        .execute(
+            "var c = document.createElement('canvas');\
+             globalThis.__html5testStyle = String(!!(c.getContext && typeof CanvasRenderingContext2D != 'undefined' && c.getContext('2d') instanceof CanvasRenderingContext2D));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__html5testStyle").unwrap().value,
+        "true",
+        "html5test 式 typeof 门控检测应判定支持"
+    );
+
+    // ④ 懒注册兜底等价性：急切注册后 _zwMakeCtx2d 不重复定义（幂等）——
+    // 注册后 getContext 返回的 ctx 仍 instanceof 该全局。
+    sandbox
+        .execute(
+            "var ctx = document.createElement('canvas').getContext('2d');\
+             globalThis.__ctxInstanceof = String(ctx instanceof CanvasRenderingContext2D);\
+             globalThis.__ctorStable = String(typeof CanvasRenderingContext2D === 'function');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ctxInstanceof").unwrap().value,
+        "true",
+        "getContext 返回的 ctx 应 instanceof 急切注册的全局构造器"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ctorStable").unwrap().value,
+        "true",
+        "getContext 后构造器仍稳定存在（幂等兜底不覆盖）"
+    );
+}
