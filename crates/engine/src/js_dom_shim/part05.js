@@ -9641,11 +9641,17 @@
   // ① mutSel 非空 → `__zw_contains('html', mutSel)`（host 快照一查，含自身）；
   // ② mutHandle（handle 父）→ 沿 `_zwNodeParent` **一跳一跳**上行（每跳是挂载当时刚记账的
   //    链，不会断），遇 parentSel 走 ①；无链（detachedDiv/foreignDoc 系容器根）→ false。
+  // t7（js-dom P15 修复）：③ plainParent 链可爬——plain 父上的 handle 子（innerHTML 解析
+  //    容器上 appendChild，html5test.co ResultsTable 建表形态）此前 `return false` 判为
+  //    脱离文档，同 turn getElementById 的 findPendingId 兜底全部 miss（挂载点实际在文档
+  //    内）。现沿 plainParent 的 parentNode 链上行到最近 sel/handle 祖先继续判定
+  //    （spec concept-node-pre-insert：插入后节点必须在树中，可经 getElementById 观察）。
+  //    guard 8→24：每级 plain 爬升各耗一跳。
   // 过滤只作用于**并入**（detached/foreign 容器子树不进文档级集合——spec：getElementsByTagName
   // 只返主文档节点）；els 快照基线与 removed 剔除路径完全不动（R50 own-props 语义零影响）。
   function _zwMutationInDoc(mutSel, mutHandle) {
     var s = mutSel || null, h = mutHandle || null, guard = 0;
-    while (guard++ < 8) {
+    while (guard++ < 24) {
       if (s) {
         if (s === 'html' || s === 'body' || s === 'head') return true;
         if (typeof __zw_contains === 'function') {
@@ -9658,6 +9664,15 @@
       if (!link) return false;
       if (link.parentSel) { s = link.parentSel; h = null; continue; }
       if (link.parentHandle) { h = link.parentHandle; continue; }
+      if (link.plainParent) {
+        // plain 段爬升：plainParent 本身无 sel/handle，沿 parentNode 链找最近锚祖先。
+        var t7Anc = link.plainParent, t7G = 0;
+        while (t7Anc && !t7Anc.__zwSelector && !t7Anc.__zwHandle && t7G++ < 32) t7Anc = t7Anc.parentNode;
+        if (!t7Anc) return false;
+        if (t7Anc.__zwSelector) { s = t7Anc.__zwSelector; h = null; }
+        else { h = t7Anc.__zwHandle; }
+        continue;
+      }
       return false;
     }
     return false;

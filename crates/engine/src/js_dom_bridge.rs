@@ -194,6 +194,29 @@ pub enum DomMutation {
         /// 子节点句柄。
         child_handle: String,
     },
+    /// t7（js-dom P15 修复）：`plainAncestor.appendChild(handleChild)` — 父在 host 无直接锚
+    /// （`innerHTML` 解析出的 plain 视图，无 handle/sel），以「parentNode 链上最近 sel/handle
+    /// 祖先锚 + child-index 路径」寻址。spec
+    /// https://dom.spec.whatwg.org/#concept-node-pre-insert ：插入后节点必须在树中；
+    /// plain 父 append 此前不发任何 host mutation，live Document 永久缺该子树
+    /// （getElementById/querySelectorAll/渲染全部不可见）。
+    AppendChildByHandlePath {
+        /// 锚祖先句柄（parentNode 链上最近的 handle 节点）。
+        parent_handle: String,
+        /// 自锚下行的 child-index 路径（每级按 childNodes 全节点序，与 `__zw_child_nodes` JSON 序一致）。
+        path: Vec<u32>,
+        /// 子节点句柄。
+        child_handle: String,
+    },
+    /// t7：[`Self::AppendChildByHandlePath`] 的选择器锚对偶（锚祖先是 markup/sel 代理）。
+    AppendChildBySelPath {
+        /// 锚祖先选择器。
+        parent_selector: String,
+        /// 自锚下行的 child-index 路径（口径同 [`Self::AppendChildByHandlePath`]）。
+        path: Vec<u32>,
+        /// 子节点句柄。
+        child_handle: String,
+    },
     /// `parent.insertBefore(child, ref)` — 父节点为选择器，参考节点为选择器。
     InsertBefore {
         /// 父节点选择器。
@@ -424,6 +447,19 @@ pub fn find_all_selectors(doc: &Document, selector: &str) -> Vec<String> {
         .into_iter()
         .filter_map(|id| stable_selector_for_node(doc, id))
         .collect()
+}
+
+/// t7（js-dom P15 修复）：自锚节点沿 child-index 路径下行，返回路径终点节点。
+/// 每级索引按 childNodes 全节点序（与 shim `__zw_child_nodes` JSON 序一致，
+/// 同 [`DomMutation::SetChildText`] 的 child_index 口径）。任一级越界返 None
+/// ——调用方按 R125 selector-miss 口径 lenient no-op：host 与 JS 世界的解析
+/// 视图分歧时跳过该 append（即修复前形态），不中止整批。
+fn walk_child_path(doc: &Document, anchor: NodeId, path: &[u32]) -> Option<NodeId> {
+    let mut cur = anchor;
+    for &idx in path {
+        cur = doc.child_nodes(cur).get(idx as usize).copied()?;
+    }
+    Some(cur)
 }
 
 /// R3254-L7：CSS 标识符转义（id/class 进入选择器前）——非 `[a-zA-Z0-9_-]` 字符加 `\` 前缀，
@@ -755,6 +791,23 @@ pub fn apply_dom_mutations_full(
                 });
                 continue;
             }
+            // t7（js-dom P15 修复）：路径锚 handle 跨批未入 ephemeral/NodeIds 表时，经持久
+            // 表翻译成 selector 锚对偶（镜像上方 AppendChildByHandle→AppendChild 翻译口径）。
+            DomMutation::AppendChildByHandlePath {
+                ref parent_handle,
+                ref path,
+                ref child_handle,
+            } if !handles.contains_key(parent_handle)
+                && !handles.contains_key(child_handle)
+                && persistent_sel(parent_handle).is_some() =>
+            {
+                pending.push_front(DomMutation::AppendChildBySelPath {
+                    parent_selector: persistent_sel(parent_handle).unwrap_or_default(),
+                    path: path.clone(),
+                    child_handle: child_handle.clone(),
+                });
+                continue;
+            }
             other => other,
         };
         match mutation {
@@ -888,6 +941,44 @@ pub fn apply_dom_mutations_full(
                     .get(&parent_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
+                let child = handles
+                    .get(&child_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                doc.append_child(parent, child).map_err(|e| e.to_string())?;
+            }
+            // t7（js-dom P15 修复）：plain 祖先上的 append 以「锚 + child-index 路径」落 host。
+            // 锚 handle/路径解析失败 → lenient no-op（R125 口径：host 与 JS 解析视图分歧
+            // 不中止整批，跳过即修复前形态）；子 handle 悬垂仍硬错（与 AppendChildByHandle
+            // 同口径，暴露真 bug）。
+            DomMutation::AppendChildByHandlePath {
+                parent_handle,
+                path,
+                child_handle,
+            } => {
+                let Some(anchor) = handles.get(&parent_handle).copied() else {
+                    continue;
+                };
+                let Some(parent) = walk_child_path(doc, anchor, &path) else {
+                    continue;
+                };
+                let child = handles
+                    .get(&child_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
+                doc.append_child(parent, child).map_err(|e| e.to_string())?;
+            }
+            DomMutation::AppendChildBySelPath {
+                parent_selector,
+                path,
+                child_handle,
+            } => {
+                let Some(anchor) = find_by_selector(doc, &parent_selector) else {
+                    continue;
+                };
+                let Some(parent) = walk_child_path(doc, anchor, &path) else {
+                    continue;
+                };
                 let child = handles
                     .get(&child_handle)
                     .copied()
