@@ -258,6 +258,9 @@ fn observer_tick_preserves_pending_async_mutations_t8() {
 // 执行时旧页已结束）。滞留写入会被新文档的 tick/drain apply（跨文档污染）。本测让旧页
 // 脚本横跨 reset 窗口落两笔写：a 在主清队前（被主清队消费）、b 在主清队后 arm 前（竞态窗），
 // 断言 reset 返回后队列无残留。变异判别：移除 arm 侧清队 → b 滞留 → 本测转红。
+// 时序 margin（testval-r2 F1）：120ms spawn 前置 + 600ms 忙等——全模块 6 路并行 V8 负载下
+// spawn 延迟远小于前置量；极端 CI 延迟的退化方向是 reset 先于脚本入队（execute 报错）或
+// 双写均落主清队前被兜底消费（假通过），无假红方向。
 #[test]
 fn reset_clears_writes_landed_after_main_thread_clear_d1() {
     let runtime = runtime_with_observer_page(9114);
@@ -265,12 +268,12 @@ fn reset_clears_writes_landed_after_main_thread_clear_d1() {
     std::thread::scope(|s| {
         let script = s.spawn(|| {
             worker.execute_script_direct(
-                "document.getElementById('t1').setAttribute('data-d1','a'); var __s = Date.now(); while (Date.now() - __s < 150); document.getElementById('t1').setAttribute('data-d1','b');",
+                "document.getElementById('t1').setAttribute('data-d1','a'); var __s = Date.now(); while (Date.now() - __s < 600); document.getElementById('t1').setAttribute('data-d1','b');",
             )
         });
-        // 旧页脚本进入忙等（a 已落队）后 reset：主清队消费 a；b 在 150ms 忙等结束时落队，
+        // 旧页脚本进入忙等（a 已落队）后 reset：主清队消费 a；b 在 600ms 忙等结束时落队，
         // 早于 reset arm（排在此后的脚本命令完成之后），恰落在竞态窗内。
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(120));
         worker.reset_document_state();
         script.join().expect("script thread").expect("execute ok");
     });
