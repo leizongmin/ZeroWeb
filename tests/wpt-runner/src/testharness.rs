@@ -4426,6 +4426,156 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(body.as_bytes().to_vec()),
                 });
             }
+            if clean.starts_with("xhr/") && clean.ends_with("/access-control-basic-allow-star.py") {
+                // net-api M4-S17 fixture：xhr/resources/access-control-basic-allow-star.py
+                //（上游逐字等价——ACAO * + PASS 体）。
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                headers.push(("access-control-allow-origin".into(), "*".into()));
+                let body = "PASS: Cross-domain access allowed.".to_string();
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("xhr/")
+                && (clean.ends_with("/access-control-basic-allow.py")
+                    || clean.ends_with("/access-control-basic-allow-no-credentials.py"))
+            {
+                // net-api M4-S17 fixture：xhr/resources/access-control-basic-allow.py 与
+                // access-control-basic-allow-no-credentials.py（上游逐字等价——ACAO 回显
+                // 请求 Origin；allow 变体另带 ACAC true，no-credentials 变体不带）。
+                let origin = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_else(|| "*".to_string());
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                headers.push(("access-control-allow-origin".into(), origin));
+                if clean.ends_with("/access-control-basic-allow.py") {
+                    headers.push(("access-control-allow-credentials".into(), "true".into()));
+                }
+                let body = "PASS: Cross-domain access allowed.".to_string();
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("xhr/") && clean.ends_with("/redirect-cors.py") {
+                // net-api M4-S17 fixture：xhr/resources/redirect-cors.py（上游行为等价——
+                // GET → 302 + Location；?allow_origin= 回显 Origin、?allow_header= 透传
+                // ACAH；OPTIONS preflight 面待 engine preflight 语义，此实现 GET 面）。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let location = wpt_query_value(query, "location").unwrap_or_default();
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("location".into(), location));
+                if wpt_query_value(query, "allow_origin").is_some() {
+                    let origin = req
+                        .headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_default();
+                    headers.push(("access-control-allow-origin".into(), origin));
+                }
+                if let Some(allow_header) = wpt_query_value(query, "allow_header") {
+                    headers.push(("access-control-allow-headers".into(), allow_header));
+                }
+                wpt_add_fetch_metadata(&mut headers, req, 302);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 302,
+                    status_text: wpt_status_text(302).to_string(),
+                    headers,
+                    body: String::new(),
+                    body_bytes: Some(Vec::new()),
+                });
+            }
+            if clean.starts_with("fetch/api/resources/") && clean.ends_with("/redirect.py") {
+                // net-api M4-S17 fixture：fetch/api/resources/redirect.py（上游行为等价，
+                // 取 xhr-authorization-redirect / 跨源重定向簇的实施面——stash/token/
+                // referrer-policy 面不实施）：ACAO 回显 Origin（无 Origin → *）+ ACAC
+                // true + ?redirect_status=（默认 302）+ Location（附全量 query + count 计数）。
+                static REDIRECT_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                let count = REDIRECT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let status: u16 = wpt_query_value(query, "redirect_status")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(302);
+                let origin = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+                    .map(|(_, v)| v.clone());
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                headers.push(("cache-control".into(), "no-cache".into()));
+                headers.push((
+                    "access-control-allow-origin".into(),
+                    origin.clone().unwrap_or_else(|| "*".into()),
+                ));
+                if origin.is_some() {
+                    headers.push(("access-control-allow-credentials".into(), "true".into()));
+                }
+                if let Some(location) = wpt_query_value(query, "location") {
+                    let sep = if location.contains('?') { '&' } else { '?' };
+                    headers.push(("location".into(), format!("{}{}count={}", location, sep, count)));
+                }
+                wpt_add_fetch_metadata(&mut headers, req, status);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text: wpt_status_text(status).to_string(),
+                    headers,
+                    body: String::new(),
+                    body_bytes: Some(Vec::new()),
+                });
+            }
+            if clean.ends_with("/dump-authorization-header.py") {
+                // net-api M4-S17 fixture：fetch/api/resources/dump-authorization-header.py
+                //（上游逐字等价——回显 Authorization 或 "none"；带 Origin → ACAO 回显 +
+                // ACAC true + ACAH Authorization）。
+                let origin = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+                    .map(|(_, v)| v.clone());
+                let auth = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("authorization"))
+                    .map(|(_, v)| v.clone());
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/html".into()));
+                headers.push(("cache-control".into(), "no-cache".into()));
+                match origin {
+                    Some(o) => {
+                        headers.push(("access-control-allow-origin".into(), o));
+                        headers.push(("access-control-allow-credentials".into(), "true".into()));
+                    }
+                    None => {
+                        headers.push(("access-control-allow-origin".into(), "*".into()));
+                    }
+                }
+                headers.push(("access-control-allow-headers".into(), "Authorization".into()));
+                let body = auth.unwrap_or_else(|| "none".into());
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
             if clean.starts_with("xhr/") && clean.ends_with("/corsenabled.py") {
                 // net-api M4-S16 fixture：xhr/resources/corsenabled.py（上游逐字等价——
                 // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/

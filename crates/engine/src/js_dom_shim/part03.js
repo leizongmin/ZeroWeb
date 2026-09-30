@@ -292,13 +292,46 @@
           }
           syncHeaders = _zwAddHeader(syncHeaders, 'content-length', String(syncCl));
         }
-        var syncWire = globalThis.__zw_fetch(
-          '__zwxhr:sync', self._zwXhrMethod, self._zwXhrUrl,
-          syncHeaders, syncBody,
-          '', '', 'cors', 'follow', 'same-origin');
-        var syncResp = _makeResponseFromWire(syncWire);
-        self._zwFillFromResponse(syncResp, null);
-        return;
+        // net-api M4-S17：同步路径 redirect 跟随（与异步同规——301/302 POST→GET、303
+        // GET 丢体、307/308 保持；上限 20；跨源跳带文档 Origin）。
+        var syncWire = '';
+        var syncUrl = self._zwXhrUrl;
+        var syncMethod = self._zwXhrMethod;
+        var syncHops = 0;
+        for (;;) {
+          syncWire = globalThis.__zw_fetch(
+            '__zwxhr:sync', syncMethod, syncUrl,
+            syncHeaders, syncBody,
+            '', '', 'cors', 'follow', _zwWithCreds ? 'include' : 'same-origin');
+          var syncProbe = _makeResponseFromWire(syncWire);
+          var syncLoc = null;
+          if (_zwFetchRedirectStatus(syncProbe.status) && syncProbe.headers &&
+              typeof syncProbe.headers.get === 'function') {
+            syncLoc = syncProbe.headers.get('Location');
+          }
+          if (!syncLoc || syncHops >= 20) {
+            if (syncHops > 0 && syncLoc === null) {
+              try { syncProbe.url = syncUrl; } catch (_eSyncUrl) {}
+              self._zwFillFromResponse(syncProbe, null);
+              return;
+            }
+            self._zwFillFromResponse(syncProbe, null);
+            return;
+          }
+          var syncNext = syncUrl;
+          try { syncNext = new globalThis.URL(syncLoc, syncUrl).href; } catch (_eSyncLoc) {}
+          if (syncProbe.status === 303 || ((syncProbe.status === 301 || syncProbe.status === 302) && syncMethod === 'POST')) {
+            syncMethod = 'GET';
+            syncBody = '';
+          }
+          var syncDocOrigin = _zwUrlOrigin(_zwCurrentHref());
+          if (syncNext && _zwUrlOrigin(syncNext) !== syncDocOrigin && syncDocOrigin &&
+              !_zwHasHeader(syncHeaders, 'origin')) {
+            syncHeaders = _zwAddHeader(syncHeaders, 'origin', syncDocOrigin);
+          }
+          syncUrl = syncNext;
+          syncHops++;
+        }
       }
       var fetchFn = typeof self._zwXhrFetch === 'function' ? self._zwXhrFetch : globalThis.fetch;
       if (typeof fetchFn !== 'function') {
@@ -310,7 +343,8 @@
         return;
       }
       // https://xhr.spec.whatwg.org/#the-send()-method
-      fetchFn(self._zwXhrUrl, { method: self._zwXhrMethod, headers: self._zwXhrHeaders, body: body })
+      fetchFn(self._zwXhrUrl, { method: self._zwXhrMethod, headers: self._zwXhrHeaders, body: body,
+        credentials: _zwWithCreds ? 'include' : 'same-origin' })
         .then(function(response) {
           if (reqGen !== self._zwReqGen) return; // 晚到响应（abort/复用后）→ 丢弃
           self._zwFillFromResponse(response, null);

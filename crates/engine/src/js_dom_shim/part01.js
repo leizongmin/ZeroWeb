@@ -1714,7 +1714,7 @@
     response._bodyNull = true;
     return response;
   }
-  function _zwFetchApplyFilteredResponse(response, requestUrl, mode, redirect) {
+  function _zwFetchApplyFilteredResponse(response, requestUrl, mode, redirect, credentials) {
     // https://fetch.spec.whatwg.org/#concept-filtered-response-basic
     // https://fetch.spec.whatwg.org/#concept-filtered-response-cors
     // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque
@@ -1729,9 +1729,15 @@
       return _zwFetchMakeOpaqueLike(response, 'opaque');
     }
     if (mode === 'cors' && responseOrigin !== requestOrigin && response && response.headers && typeof response.headers.get === 'function') {
-      // https://fetch.spec.whatwg.org/#cors-check
+      // https://fetch.spec.whatwg.org/#cors-check——credentials mode 'include' 时通配
+      // `*` 不可用且须 ACAC true（access-control-and-redirects with-credentials 面）。
       var allowOrigin = response.headers.get('access-control-allow-origin');
-      if (allowOrigin !== '*' && allowOrigin !== requestOrigin) {
+      var allowCreds = response.headers.get('access-control-allow-credentials');
+      if (credentials === 'include') {
+        if (allowOrigin !== requestOrigin || String(allowCreds).toLowerCase() !== 'true') {
+          throw new TypeError('Failed to fetch');
+        }
+      } else if (allowOrigin !== '*' && allowOrigin !== requestOrigin) {
         throw new TypeError('Failed to fetch');
       }
     }
@@ -2201,12 +2207,13 @@
           swFetchBridgeFired = true;
           try { __zw_sw_fetch_body_cancel(String(response.__zwSwFetchId), ''); } catch (_eSwCancel) {}
         };
-        var finishFetch = function(raw) {
+        var finishFetch = function(raw, hopUrl) {
           var response = _makeResponseFromWire(raw);
           if (typeof globalThis.__zwServiceWorkerFetchSettled === 'function') {
             try { globalThis.__zwServiceWorkerFetchSettled(); } catch (_eSwFetchSettled) {}
           }
-          response = _zwFetchApplyFilteredResponse(response, url, mode, redirect);
+          response = _zwFetchApplyFilteredResponse(response, hopUrl || url, mode, redirect, credentials);
+          if (hopUrl) response.url = hopUrl;
           if (response && response.__zwSwFetchId) {
             // https://fetch.spec.whatwg.org/#dom-body-cancel — 页面 cancel 流时
             // 浏览器取消响应体获取（SW 场景反传到 worker stream cancel 回调）。
@@ -2229,14 +2236,108 @@
           }
           return response;
         };
-        var settleFetch = function(raw) {
+        // net-api M4-S17：redirect 跟随循环（fetch spec §redirect status——301/302 POST→GET、
+        // 303 → GET 丢体、307/308 保方法体；上限 20；每跳对跨源响应用 cors check 门控；
+        // 手动模式不跟随——redirect='manual' 落 opaqueredirect 既有面）。
+        var finishHop = function(raw, hopUrl) {
+          var response = _makeResponseFromWire(raw);
+          if (typeof globalThis.__zwServiceWorkerFetchSettled === 'function') {
+            try { globalThis.__zwServiceWorkerFetchSettled(); } catch (_eSwFetchSettled) {}
+          }
+          response = _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials);
+          response.url = hopUrl;
+          return response;
+        };
+        var hopHeaders = function(wire) {
+          // 逐跳剥离 content-length（body 变更后重算——旧值会让下一跳 wire 头过期）。
+          var parts = wire ? wire.split('\x1e') : [];
+          var out = '';
+          for (var i = 0; i + 1 < parts.length; i += 2) {
+            if (String(parts[i]).toLowerCase() === 'content-length') continue;
+            out = out ? out + '\x1e' + parts[i] + '\x1e' + parts[i + 1] : parts[i] + '\x1e' + parts[i + 1];
+          }
+          return out;
+        };
+        var hopCount = 0;
+        var settleFetch = function(raw, hopUrl, hopMethod, hopBody, hopWire, currentId) {
           if (settled) return;
+          var response = _makeResponseFromWire(raw);
+          var loc = null;
+          if (_zwFetchRedirectStatus(response.status) && redirect !== 'manual' &&
+              response.headers && typeof response.headers.get === 'function') {
+            loc = response.headers.get('Location');
+          }
+          if (loc && hopCount < 20) {
+            // 每跳 CORS 门控（跨源重定向响应本身须过 cors check——fetch spec）。
+            try {
+              _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials);
+            } catch (eHop) {
+              settled = true;
+              delete globalThis.__zw_pending[id];
+              reject(eHop);
+              return;
+            }
+            var nextUrl = hopUrl;
+            try { nextUrl = new URL(loc, hopUrl).href; } catch (_eHopLoc) {}
+            var nextMethod = hopMethod;
+            var nextBody = hopBody;
+            if (response.status === 303 || ((response.status === 301 || response.status === 302) && hopMethod === 'POST')) {
+              nextMethod = 'GET';
+              nextBody = null;
+            }
+            var nextWire = hopHeaders(hopWire);
+            // https://fetch.spec.whatwg.org/#append-a-request-origin-header——跨源跳转
+            // 请求须带文档 Origin（access-control-basic-allow 的 Origin 回显门控）。
+            var _hopDocOrigin = _zwUrlOrigin(_zwCurrentHref());
+            if (mode === 'cors' && nextUrl && _zwUrlOrigin(nextUrl) !== _hopDocOrigin &&
+                _hopDocOrigin && !_zwHasHeader(nextWire, 'origin')) {
+              nextWire = _zwAddHeader(nextWire, 'origin', _hopDocOrigin);
+            }
+            if (nextBody != null) {
+              var hopLen = 0;
+              if (nextBody.indexOf('__zw_bytes:') === 0) {
+                hopLen = nextBody.slice('__zw_bytes:'.length).split(',').length;
+              } else {
+                hopLen = new TextEncoder().encode(nextBody).length;
+              }
+              nextWire = _zwAddHeader(nextWire, 'content-length', String(hopLen));
+            }
+            hopCount++;
+            if (signal && signal._aborted) {
+              settled = true;
+              delete globalThis.__zw_pending[id];
+              reject(signal.reason);
+              return;
+            }
+            globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
+            var hopId = '__zwfid:' + globalThis.__zw_fetch_counter;
+            globalThis.__zw_pending[hopId] = function(rawNext) {
+              settleFetch(rawNext, nextUrl, nextMethod, nextBody, nextWire, hopId);
+            };
+            try {
+              var hopSync = __zw_fetch(hopId, nextMethod, nextUrl, nextWire,
+                nextBody == null ? '' : nextBody, '', '', mode, redirect, credentials);
+              // 同步返回契约（headless webview fetch_handler 直返 wire）——本跳就地结算；
+              // 异步契约（fetch_bridge 返 ""）→ 等 __zwResolveCallback。双结算由 settled 防护。
+              if (typeof hopSync === 'string' &&
+                  (hopSync.indexOf('__zwfr:') === 0 || hopSync.indexOf('__zw_fetch_error:') === 0)) {
+                settleFetch(hopSync, nextUrl, nextMethod, nextBody, nextWire, hopId);
+              }
+            } catch (_eHopFetch) {
+              settled = true;
+              delete globalThis.__zw_pending[hopId];
+              reject(new TypeError('Failed to fetch'));
+            }
+            return;
+          }
           settled = true;
-          delete globalThis.__zw_pending[id];
-          try { resolve(finishFetch(raw)); } catch (error) { reject(error); }
+          delete globalThis.__zw_pending[currentId || id];
+          try {
+            resolve(finishFetch(raw, hopUrl));
+          } catch (error) { reject(error); }
         };
         globalThis.__zw_pending[id] = function(raw) {
-          settleFetch(raw);
+          settleFetch(raw, url, method, body, headersWire, id);
         };
         if (signal) {
           signal.addEventListener('abort', function() {
@@ -2270,10 +2371,10 @@
               // Headless 同步 host response 也必须给同一 task 内的 abort() 抢先拒绝机会。
               var _syncRaw = _sync;
               _defer(function() {
-                settleFetch(_syncRaw);
+                settleFetch(_syncRaw, url, method, body, headersWire, id);
               });
             } else {
-              settleFetch(_sync);
+              settleFetch(_sync, url, method, body, headersWire, id);
             }
           }
         } catch (_e) {

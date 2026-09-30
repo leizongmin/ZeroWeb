@@ -533,16 +533,19 @@ fn test_fetch_passes_request_credentials_to_host() {
                 args.get(2).cloned().unwrap_or_default(),
                 args.get(9).cloned().unwrap_or_default()
             ));
-            "__zwfr:200\x1fOK\x1fAccess-Control-Allow-Origin\x1e*\x1fbody".to_string()
+            "__zwfr:200\x1fOK\x1f\x1fbody".to_string()
         }),
     );
 
     sandbox
         .execute(
+            // M4-S17：改相对 URL——本测断言 credentials 透传管路（非 CORS 判定面）；
+            // credentials check 语义落地后，裸 sandbox（doc origin ''）下的跨源 URL
+            // 无法构造自洽 CORS 场景，同源相对路径绕开 cors 分支保持管路断言原义。
             "Promise.all([\
-               fetch('https://example.com/default'),\
-               fetch(new Request('https://example.com/request', { credentials: 'omit' })),\
-               fetch('https://example.com/init', { credentials: 'include' })\
+               fetch('/default'),\
+               fetch(new Request('/request', { credentials: 'omit' })),\
+               fetch('/init', { credentials: 'include' })\
              ]).then(function() { globalThis.__credentialsDone = 'done'; });",
         )
         .unwrap();
@@ -554,9 +557,9 @@ fn test_fetch_passes_request_credentials_to_host() {
     assert_eq!(
         calls.lock().unwrap().as_slice(),
         &[
-            "https://example.com/default|same-origin".to_string(),
-            "https://example.com/request|omit".to_string(),
-            "https://example.com/init|include".to_string(),
+            "/default|same-origin".to_string(),
+            "/request|omit".to_string(),
+            "/init|include".to_string(),
         ]
     );
 }
