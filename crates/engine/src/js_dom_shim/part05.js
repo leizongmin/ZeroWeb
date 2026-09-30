@@ -11315,6 +11315,19 @@
   _defineEventSubclass('TransitionEvent', 'Event', [
     ['propertyName', 'propertyName', ''], ['elapsedTime', 'elapsedTime', 0], ['pseudoElement', 'pseudoElement', ''],
   ]);
+
+  // net-api M4-S19：FormDataEvent（HTML spec §the-formdataevent-interface）——'formdata'
+  // 事件载体（new FormData(form) / form 提交构条目时派发；e.formData 可变）。
+  function FormDataEvent(type, options) {
+    var ev = _makeEvent(type, options);
+    Object.setPrototypeOf(ev, FormDataEvent.prototype);
+    ev.formData = (options && options.formData) ? options.formData : new globalThis.FormData();
+    return ev;
+  }
+  FormDataEvent.prototype = Object.create(Event.prototype);
+  FormDataEvent.prototype.constructor = FormDataEvent;
+  globalThis.FormDataEvent = globalThis.FormDataEvent || FormDataEvent;
+
   _defineEventSubclass('AnimationEvent', 'Event', [
     ['animationName', 'animationName', ''], ['elapsedTime', 'elapsedTime', 0], ['pseudoElement', 'pseudoElement', ''],
   ]);

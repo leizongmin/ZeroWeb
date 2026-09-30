@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-30（M4-S18 收口——CORS-preflight，xhr 81.4%）
+**最后更新**: 2026-09-30（M4-S19 收口——FormData 面，xhr 84.3%）
 
 ---
 
@@ -14,14 +14,14 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
-M4-S8（76.8%）→ … → M4-S16（78.8%）→ M4-S17（78.9%）→ M4-S18（2026-09-30）——
-**8983/11369 = 79.0%**（fetch 70.2%（+1）/ xhr **81.4%**（477/586——preflight 簇
-+6）/ url 73.1% / mimesniff 100% / streams 88.6% / eventsource 100%）。
-**M4-S18 收口**：CORS-preflight（非 safelisted → OPTIONS ACRM/ACAH，2xx + ACAO/
-ACAM/ACAH 覆盖判定，异步 + 同步双路）+ cors-filtered-response 暴露头过滤（Set-Cookie
-恒排除、`*` 通配 include 仅字面）+ 文档 origin 门控（裸 sandbox 无 CORS 执行语境）+
-runner OPTIONS handler。见
-[evidence/2026-09-30-m4-s18-preflight.md](evidence/2026-09-30-m4-s18-preflight.md)。
+M4-S8（76.8%）→ … → M4-S17（78.9%）→ M4-S18（79.0%）→ M4-S19（2026-09-30）——
+**9000/11369 = 79.2%**（fetch 70.2% / xhr **84.3%**（494/586——FormData 面 +17）/
+url 73.1% / mimesniff 100% / streams 88.6% / eventsource 100%）。
+**M4-S19 收口**：FormData 面（live cursor 迭代 + Blob/File → File 化副本 +
+(form, submitter) 双参构造与校验 + form= 关联文档树序枚举 + FormDataEvent）+
+upload.py multipart 回显 fixture。**eval 序根因记账**：part02 引用 part05 才定义的
+Event → shim 装载中止（webdriver「document is not defined」五连），二分定位迁块修复。
+见 [evidence/2026-09-30-m4-s19-formdata.md](evidence/2026-09-30-m4-s19-formdata.md)。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -35,7 +35,7 @@ runner OPTIONS handler。见
 |---|------|------|
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
-| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **81.4%**——状态机/事件/redirect/preflight/expose 全 spec 化）——**残余：runner scheme 不匹配族（4，页面 https vs WPT http origin——需多 scheme 页面能力）、formdata submitter 族（13）、responseXML/XML 文档面、send(ES object) 簇** |
+| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **84.3%**——状态机/事件/redirect/preflight/expose/FormData 面全 spec 化）——**残余：runner scheme 不匹配族（4）、formdata 坐标/populateForm 依赖（4）、responseXML/XML 文档面、send(ES object) 簇** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.1%（新分母 6065——M3 收口 USP/URL.parse/port/live 迭代/UTF-8 解码器/helper 解锁）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S11 收口（88.6%——piping 簇 spec 化重做，pipe-through/general/error-propagation 全绿）；**残余：flow-control 2 腿（背压编排计时精度）；transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿）** |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
@@ -43,6 +43,16 @@ runner OPTIONS handler。见
 
 ## 已完成切片
 
+- **M4-S19（2026-09-30）**：FormData 面收口（**9000/11369 = 79.2%**，xhr 477/586 →
+  494/586 = 84.3%，Δ+17 零回归）。shim：live cursor 迭代（WebIDL value pairs）+
+  Blob/File → File 化副本（filename ?? name、lastModified 保真）+ (form, submitter)
+  双参构造（TypeError/NotFoundError 校验、文档树序 + form owner 过滤枚举、`_elKey`
+  稳定身份、image x/y、append filename 校验）+ FormDataEvent（**eval 序根因**：
+  初置 part02 引用 part05 的 Event → ReferenceError 装载中止 → webdriver
+  「document is not defined」五连；二分定位迁 part05 修复）+ 重入 InvalidStateError。
+  fixture：upload.py multipart 解析回显（boundary off-by-one 探针定位）。make test
+  全绿（19518P）+ clippy/fmt 干净。见
+  [evidence/2026-09-30-m4-s19-formdata.md](evidence/2026-09-30-m4-s19-formdata.md)。
 - **M4-S18（2026-09-30）**：CORS-preflight + 暴露头过滤（**8983/11369 = 79.0%**，
   xhr 471/586 → 477/586 = 81.4%，Δ+6 + fetch +1 零回归）。shim：preflight（非
   safelisted cors 请求 → OPTIONS ACRM/ACAH + Origin，2xx + ACAO/ACAM/ACAH 覆盖
@@ -295,9 +305,9 @@ runner OPTIONS handler。见
 
 ## 下一步计划
 
-1. **fetch/api/cors 域重入评估**：preflight/OPTIONS/expose 三前置已落——评估域页
-   拉取（.any.js 面 + fetch/api/resources/cors.py 多模式端点实施量）；XHR 残余
-   formdata submitter 族（13）与 send(ES object) 簇并轨
+1. **XHR 长尾收口**：responseXML/XML 文档面（template-element 族）、send(ES
+   object) TypeError 簇、json responseType 深水面——xhr 84.3% 残余；fetch/api/cors
+   域重入维持 API 限流阻断面（下轮续评估）
 2. **M4 残余**：flow-control 2 腿（背压编排计时精度——泵 pull 粒度对齐 StepTracker
    编排步进）
 3. **结构性挂账**：缓冲 transfer/detach 族（spec TransferArrayBuffer——需宿主 V8

@@ -2619,34 +2619,130 @@
     var n = String(name);
     if (value != null && value instanceof Blob) {
       var fn = filename != null ? String(filename) : (value.name != null ? String(value.name) : 'blob');
+      // net-api M4-S19：Blob/File 值 → File 化副本（spec：entry value 为新 File——File 值
+      // 同转换；name = filename ?? value.name、type 透传、lastModified 保真；get 恒返同一
+      // 实例）。
+      if (typeof File === 'function') {
+        value = new File([value], fn, { type: value.type || '', lastModified: value.lastModified });
+        return [n, value, undefined];
+      }
       return [n, value, fn];
     }
     return [n, String(value), undefined];
   }
-  globalThis.FormData = globalThis.FormData || function FormData(form) {
-    if (!(this instanceof FormData)) return new FormData(form);
+  // net-api M4-S19：(form, submitter) 双参构造（HTML spec §constructing-the-form-data-set）
+  // ——submitter 校验（非 submit 按钮 → TypeError；非本 form 属主 → NotFoundError）+
+  // submitter 条目按树序插入（image 按钮 → name.x/name.y）+ 'formdata' 事件派发
+  //（FormDataEvent——e.formData 可变、构造结果≠事件对象、重入构造 → InvalidStateError）。
+  globalThis.FormData = globalThis.FormData || function FormData(form, submitter) {
+    if (!(this instanceof FormData)) return new FormData(form, submitter);
     this._p = [];
-    if (form != null && typeof form === 'object' && typeof form.querySelectorAll === 'function') {
-      // best-effort form 字段枚举；失败静默（不抛、不破坏脚本）。
+    if (form == null) {
+      if (submitter != null) {
+        throw new TypeError("Failed to construct 'FormData': submitter was specified but form was not");
+      }
+      return;
+    }
+    if (typeof form !== 'object' || typeof form.querySelectorAll !== 'function') return;
+    // submitter 校验（spec：非 submit 按钮 → TypeError；非本 form 属主 → NotFoundError）。
+    if (submitter != null && typeof submitter === 'object') {
+      var sTag = String(submitter._realTag || submitter.tagName || '').toLowerCase();
+      var sType = String((submitter.getAttribute ? submitter.getAttribute('type') : submitter.type) || '').toLowerCase();
+      var isButton = (sTag === 'input' && (sType === 'submit' || sType === 'button' || sType === 'image')) ||
+        (sTag === 'button' && (sType === '' || sType === 'submit'));
+      if (!isButton) {
+        throw new TypeError("Failed to construct 'FormData': the provided submitter is not a submit button");
+      }
+      var owner = null;
       try {
-        var fields = form.querySelectorAll('input, select, textarea');
+        var formAttr = submitter.getAttribute ? submitter.getAttribute('form') : null;
+        if (formAttr) {
+          owner = (typeof document !== 'undefined' && document.getElementById)
+            ? document.getElementById(formAttr) : null;
+        } else if (typeof submitter.closest === 'function') {
+          owner = submitter.closest('form');
+        }
+      } catch (_eOwn) {}
+      if (owner !== form) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to construct 'FormData': the provided submitter isn't owned by this form", 'NotFoundError');
+      }
+    }
+    if (form.__zwFormDataConstructing) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to construct 'FormData': FormData is already being constructed", 'InvalidStateError');
+    }
+    form.__zwFormDataConstructing = true;
+    try {
+      // best-effort form 字段枚举（文档树序 + form owner 过滤——form= 属性关联的
+      // 站外元素同入列，outerNamed 面；submit 按钮仅 submitter 本尊入列）。
+      try {
+        var fields = (typeof document !== 'undefined' && document.querySelectorAll)
+          ? document.querySelectorAll('input, select, textarea, button')
+          : form.querySelectorAll('input, select, textarea, button');
+        var subKey = null;
+        if (submitter != null && typeof _elKey === 'function') {
+          try { subKey = _elKey(submitter.__zwSelector || null, submitter.__zwHandle || null); } catch (_eSk) {}
+        }
         for (var i = 0; i < fields.length; i++) {
           var f = fields[i];
+          // form owner 判定：form= 属性 → getElementById；否则 closest('form')。
+          var owner = null;
+          try {
+            var formAttr = f.getAttribute ? f.getAttribute('form') : null;
+            if (formAttr) {
+              owner = (typeof document !== 'undefined' && document.getElementById)
+                ? document.getElementById(formAttr) : null;
+            } else if (typeof f.closest === 'function') {
+              owner = f.closest('form');
+            }
+          } catch (_eOwn2) {}
+          if (owner !== form) continue;
           var name = f.getAttribute ? f.getAttribute('name') : f.name;
           if (!name) continue;
           var type = ((f.getAttribute ? f.getAttribute('type') : f.type) || '').toLowerCase();
-          if (type === 'checkbox' || type === 'radio') {
+          var tag = String(f._realTag || f.tagName || '').toLowerCase();
+          var fKey = null;
+          try { fKey = (typeof _elKey === 'function') ? _elKey(f.__zwSelector || null, f.__zwHandle || null) : null; } catch (_eFk) {}
+          var isSub = (subKey !== null && fKey !== null && subKey === fKey) || (f === submitter);
+          if (tag === 'input' && (type === 'submit' || type === 'button')) {
+            if (isSub) this._p.push([String(name), f.value != null ? String(f.value) : '', undefined]);
+          } else if (tag === 'input' && type === 'image') {
+            if (isSub) {
+              this._p.push([String(name) + '.x', '0', undefined]);
+              this._p.push([String(name) + '.y', '0', undefined]);
+            }
+          } else if (tag === 'button') {
+            if (isSub) this._p.push([String(name), f.value != null ? String(f.value) : '', undefined]);
+          } else if (type === 'checkbox' || type === 'radio') {
             if (f.checked) this._p.push([String(name), f.value != null ? String(f.value) : 'on', undefined]);
           } else if (type !== 'file' && type !== 'submit' && type !== 'button' && type !== 'reset' && type !== 'image') {
             this._p.push([String(name), f.value != null ? String(f.value) : '', undefined]);
           }
         }
       } catch (_e) { /* best-effort：枚举失败则按空 FormData */ }
+      // 'formdata' 事件派发（e.formData 可变——handler 内增删条目对构造结果可见；
+      // 构造结果为事件对象的副本）。
+      try {
+        if (typeof FormDataEvent === 'function' && typeof form.dispatchEvent === 'function') {
+          var evFd = new FormData();
+          for (var ci = 0; ci < this._p.length; ci++) evFd._p.push(this._p[ci]);
+          var ev = new FormDataEvent('formdata', { formData: evFd });
+          form.dispatchEvent(ev);
+          this._p = evFd._p.slice();
+        }
+      } catch (_eFde) {}
+    } finally {
+      form.__zwFormDataConstructing = false;
     }
   };
   globalThis.FormData.prototype = {
     append: function (name, value, filename) {
-      // R3014：Blob/File 值保真（_zwFdEntry）；filename 仅对 Blob 有意义（spec）。
+      // net-api M4-S19：filename 仅对 Blob 值合法——非 Blob 值带 filename → TypeError
+      //（spec append 步骤；testFormDataAppendToFormString/WrongPlatformObject 面）。
+      if (filename != null && !(value instanceof Blob)) {
+        throw new TypeError("Failed to execute 'append' on 'FormData': parameter 2 is not of type 'Blob'");
+      }
       this._p.push(_zwFdEntry(name, value, filename));
     },
     delete: function (name) {
@@ -2683,9 +2779,38 @@
     forEach: function (cb, thisArg) {
       for (var i = 0; i < this._p.length; i++) cb.call(thisArg, this._p[i][1], this._p[i][0], this);
     },
-    entries: function () { return _zw_iter(this._p.map(function (e) { return [e[0], e[1]]; })); },
-    keys: function () { return _zw_iter(this._p.map(function (e) { return e[0]; })); },
-    values: function () { return _zw_iter(this._p.map(function (e) { return e[1]; })); },
+    // net-api M4-S19：live cursor 迭代（WebIDL value pairs iterator——迭代中 delete 使
+    // 后续元素前移被跳过、append 元素可达；formdata-iteration 三面）。
+    entries: function () {
+      var self = this; var i = 0;
+      var it = { next: function () {
+        if (i >= self._p.length) return { done: true, value: undefined };
+        var e = self._p[i]; i++;
+        return { done: false, value: [e[0], e[1]] };
+      } };
+      if (typeof Symbol !== 'undefined' && Symbol.iterator) it[Symbol.iterator] = function () { return it; };
+      return it;
+    },
+    keys: function () {
+      var self = this; var i = 0;
+      var it = { next: function () {
+        if (i >= self._p.length) return { done: true, value: undefined };
+        var e = self._p[i]; i++;
+        return { done: false, value: e[0] };
+      } };
+      if (typeof Symbol !== 'undefined' && Symbol.iterator) it[Symbol.iterator] = function () { return it; };
+      return it;
+    },
+    values: function () {
+      var self = this; var i = 0;
+      var it = { next: function () {
+        if (i >= self._p.length) return { done: true, value: undefined };
+        var e = self._p[i]; i++;
+        return { done: false, value: e[1] };
+      } };
+      if (typeof Symbol !== 'undefined' && Symbol.iterator) it[Symbol.iterator] = function () { return it; };
+      return it;
+    },
     // R3014：multipart/form-data 序列化——返 { body: Uint8Array, contentType }。boundary 唯一；
     // 字符串值→text part；Blob/File→file part（filename + Content-Type + _zw_blobBytes 字节）。
     // 供 fetch FormData body 接线（part01）+ 手动构建 multipart body。文本内容经 UTF-8 wire 保真。

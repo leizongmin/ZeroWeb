@@ -4426,6 +4426,103 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(body.as_bytes().to_vec()),
                 });
             }
+            if clean.starts_with("xhr/") && clean.ends_with("/upload.py") {
+                // net-api M4-S19 fixture：xhr/resources/upload.py（上游行为等价——
+                // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
+                // upload.py）。解析 multipart/form-data 体：无 filename 的 part 按名排序
+                // 输出 `key=value,`，随后 `\n`，再 filename part 按名排序输出
+                // `key=filename:ctype:len,`。
+                let boundary = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("content-type"))
+                    .and_then(|(_, v)| {
+                        let lower = v.to_lowercase();
+                        lower
+                            .find("boundary=")
+                            .map(|idx| v[idx + 9..].trim().trim_matches('"').to_string())
+                    })
+                    .unwrap_or_default();
+                let body = req.body_bytes.clone().unwrap_or_default();
+                let mut text_parts: Vec<(String, String)> = Vec::new();
+                let mut file_parts: Vec<(String, String, String, usize)> = Vec::new();
+                if !boundary.is_empty() && !body.is_empty() {
+                    let delim = format!("--{}", boundary);
+                    let delim_bytes = delim.as_bytes();
+                    let mut segments: Vec<&[u8]> = Vec::new();
+                    let mut start = 0;
+                    for i in 0..body.len() {
+                        if body[i..].starts_with(delim_bytes) {
+                            if i >= start + 2 {
+                                segments.push(&body[start..i]);
+                            }
+                            start = i + delim_bytes.len();
+                        }
+                    }
+                    for seg in segments {
+                        // 每段：前导 \r\n + 头部 + \r\n\r\n + 体（尾随 \r\n 去除）。
+                        let seg = seg.strip_prefix(b"\r\n").unwrap_or(seg);
+                        let sep = match seg.windows(4).position(|w| w == b"\r\n\r\n") {
+                            Some(pos) => pos,
+                            None => continue,
+                        };
+                        let head = String::from_utf8_lossy(&seg[..sep]).to_lowercase();
+                        let mut value = &seg[sep + 4..];
+                        if value.ends_with(b"\r\n") {
+                            value = &value[..value.len() - 2];
+                        }
+                        let mut name = String::new();
+                        let mut filename: Option<String> = None;
+                        let mut ctype = String::new();
+                        for line in head.split("\r\n") {
+                            if let Some(cd) = line.strip_prefix("content-disposition:") {
+                                for attr in cd.split(';') {
+                                    let attr = attr.trim();
+                                    if let Some(nv) = attr.strip_prefix("name=") {
+                                        name = nv.trim_matches('"').to_string();
+                                    } else if let Some(fv) = attr.strip_prefix("filename=") {
+                                        filename = Some(fv.trim_matches('"').to_string());
+                                    }
+                                }
+                            } else if let Some(ct) = line.strip_prefix("content-type:") {
+                                ctype = ct.trim().to_string();
+                            }
+                        }
+                        if name.is_empty() {
+                            continue;
+                        }
+                        match filename {
+                            Some(fname) => file_parts.push((
+                                name,
+                                fname,
+                                if ctype.is_empty() { "None".into() } else { ctype },
+                                value.len(),
+                            )),
+                            None => text_parts.push((name, String::from_utf8_lossy(value).into_owned())),
+                        }
+                    }
+                }
+                text_parts.sort_by(|a, b| a.0.cmp(&b.0));
+                file_parts.sort_by(|a, b| a.0.cmp(&b.0));
+                let mut content = String::new();
+                for (k, v) in &text_parts {
+                    content.push_str(&format!("{}={},", k, v));
+                }
+                content.push('\n');
+                for (k, f, ct, len) in &file_parts {
+                    content.push_str(&format!("{}={}:{}:{},", k, f, ct, len));
+                }
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: content.clone(),
+                    body_bytes: Some(content.into_bytes()),
+                });
+            }
             if clean.starts_with("xhr/") && clean.ends_with("/access-control-basic-allow-star.py") {
                 // net-api M4-S17 fixture：xhr/resources/access-control-basic-allow-star.py
                 //（上游逐字等价——ACAO * + PASS 体）。
