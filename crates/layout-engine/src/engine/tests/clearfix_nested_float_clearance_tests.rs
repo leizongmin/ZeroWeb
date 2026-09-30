@@ -13,7 +13,7 @@
 //! §9.5.2（clearance）、§10.6.3（auto 高度只计 in-flow 子）。
 
 use super::*;
-use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, LengthValue};
+use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, LengthValue, PositionValue};
 use zero_style_system::ComputedStyle;
 
 /// 嵌套浮动 + 流内 clear 兄弟核心结构：
@@ -83,8 +83,17 @@ fn float_child_clear_does_not_undo_sibling_clearance() {
     );
 }
 
-/// R1392 帧修复：wrapper 带 padding-top:21 时嵌套浮动底边须按 content-rel 收集
-///（36），不得虚减 content_y_offset。流内 cleared 兄弟据此落 36。
+/// R1392 帧修复：wrapper 带 padding-top:21 时嵌套浮动底边须按 content-rel 收集，
+/// 不得虚减 content_y_offset。撤修复实测回归形 = 21 附近（clearance 被整体虚减
+/// 一个 padding 分量），本断言防止该帧错位回归。
+///
+/// FIXME(R1392 余项，已记账后续切片)：36 是**当前实现**钉值，不是规范终值。按
+/// CSS2 §9.5.1/§9.5.2，float 在页面坐标系占 21..57（wrapper pt:21 + float 36h），
+/// 流内 cleared 兄弟应落 **57**；当前 `nested_float_bottoms` 累加嵌套浮动底边漏加
+/// 中间容器自身 border+padding 分量（本例 21），cleared 落 36 与 float 叠压 21px。
+/// 旁证：同几何下 wrapper 改 overflow:hidden（BFC）后兄弟落 57（双审查实测）。
+/// baidu 实际形状中间 UL 无 border/padding，不受此余项影响。修复该余项时必须把
+/// 本断言更新为 57 并删除本 FIXME。
 #[test]
 fn nested_float_bottom_respects_content_frame() {
     let (doc, styles, cleared) = build_float_clear_then_cleared(21.0);
@@ -92,10 +101,80 @@ fn nested_float_bottom_respects_content_frame() {
     let result = engine.compute(&doc, &styles);
 
     let cleared_box = find_child_by_node_id(&result.root, cleared).expect("cleared found");
-    // float 底 content-rel = 36。帧错位回归形（撤修复实测）= 21 附近。
+    // 撤 R1392 帧修复 = 21 附近；当前实现（含已知余项）= 36；规范终值 = 57。
     assert!(
         (cleared_box.y - 36.0).abs() < 1.0,
-        "嵌套浮动底边应按 content-rel 收集（cleared y≈36），实际 y={}",
+        "嵌套浮动底边 content-rel 收集（R1392 帧修复钉值，规范终值 57 见 FIXME），实际 y={}",
         cleared_box.y
     );
+}
+
+/// R1323 收窄排除臂钉住（PR #42 双审查发现 3）：wrapper 内 float 子与**不应计入
+/// `has_clear_child` producer 的子**（absolute/fixed 定位、非 block-level）同带
+/// clear:both 时，wrapper 不得被标 clearance_active，流内 cleared 兄弟的
+/// clearance（落 float 底 36）不得被 R1319 sibling-shift 撤销。
+///
+/// 毒药回归形 = 任一臂被误计入 producer → sibling-shift 把兄弟 clearance 当
+/// 「泄漏」拉回 wrapper 流内底（≤ 21 附近），断言 y > 30 变红。
+#[test]
+fn excluded_child_clear_does_not_mark_clearance_active() {
+    for arm in ["absolute", "fixed", "inline-block"] {
+        let (mut doc, body) = make_doc_with_body();
+        let outer = doc.create_element("div");
+        doc.append_child(body, outer).unwrap();
+        let wrapper = doc.create_element("div");
+        doc.append_child(outer, wrapper).unwrap();
+        let fl = doc.create_element("div");
+        doc.append_child(wrapper, fl).unwrap();
+        let noise = doc.create_element("div");
+        doc.append_child(wrapper, noise).unwrap();
+        let cleared = doc.create_element("div");
+        doc.append_child(outer, cleared).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut o = ComputedStyle::default();
+        o.display = DisplayValue::Block;
+        o.width = LengthValue::Px(400.0);
+        styles.insert(outer, o);
+
+        let mut w = ComputedStyle::default();
+        w.display = DisplayValue::Block;
+        styles.insert(wrapper, w);
+
+        let mut f = ComputedStyle::default();
+        f.display = DisplayValue::Block;
+        f.float = FloatValue::Left;
+        f.clear = ClearValue::Both;
+        f.width = LengthValue::Px(100.0);
+        f.height = LengthValue::Px(36.0);
+        styles.insert(fl, f);
+
+        // 排除臂子：带 clear:both，但按 R1323 不计入 has_clear_child。
+        let mut n = ComputedStyle::default();
+        n.display = DisplayValue::Block;
+        n.clear = ClearValue::Both;
+        match arm {
+            "absolute" => n.position = PositionValue::Absolute,
+            "fixed" => n.position = PositionValue::Fixed,
+            _ => n.display = DisplayValue::InlineBlock,
+        }
+        styles.insert(noise, n);
+
+        let mut c = ComputedStyle::default();
+        c.display = DisplayValue::Block;
+        c.clear = ClearValue::Both;
+        c.height = LengthValue::Px(10.0);
+        styles.insert(cleared, c);
+
+        let mut engine = LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+
+        let cleared_box =
+            find_child_by_node_id(&result.root, cleared).unwrap_or_else(|| panic!("{arm}: cleared found"));
+        assert!(
+            cleared_box.y > 30.0,
+            "{arm} 子的 clear 不应触发 sibling-shift 撤销兄弟 clearance（应 y≈36），实际 y={}",
+            cleared_box.y
+        );
+    }
 }

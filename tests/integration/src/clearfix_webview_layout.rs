@@ -44,6 +44,8 @@ fn webview_clearfix_row2_clearance_and_wrapper_height() {
     // wrapper::after clearance 底 114 → wrapper 高 21+114=135 → lime y=228。
     let silvers = silver_rows(&result.primitives().fills);
     assert_eq!(silvers.len(), 4, "应有 4 块 369×36 银色行块");
+    // 注：row2@192 断言在修复前代码上也通过（双审查实测），不具判别力，仅作形状
+    // 完整性护栏；本用例的判别断言是下方 lime@228（依赖 wrapper 高 135 撑起）。
     assert!(
         silvers.iter().any(|s| (s.1 - 192.0).abs() < 2.0),
         "row2 应落 y≈192（clear:both 换行），实际 {silvers:?}"
