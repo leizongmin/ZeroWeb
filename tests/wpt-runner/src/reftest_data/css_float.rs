@@ -363,6 +363,20 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><div style=\"width:300px;height:100px;\"><div style=\"float:left;width:50px;height:50px;margin:20px;background:red;\"></div><div style=\"float:left;width:50px;height:50px;background:blue;\"></div></div></body></html>",
         is_match: true,
     },
+    // ── ::after clearfix + 仅含浮动的 UL（baidu 热榜叠字回归，R1323/R1392）──
+    // test 页为 baidu 同款机制形状：wrapper（定宽居中 + padding-top）> 标题 +
+    // UL（高 0，float li 全溢出，odd 行 clear:both）+ ::after clear:both 收尾。
+    // 机制失效时（float 子的 clear 误置 clearance_active → R1319 把 ::after 的
+    // 合法 clearance 拉回 UL 底）wrapper 塌缩（135→84），后续 lime 块叠压银色
+    // 行（信号 ~8%，远超 Layout 1% 容差）。ref 页同视觉但容器显式内容高 114px
+    //（content-box，border-box=135）绕过机制。无文本，排除字体噪声。
+    InlineReftestDef {
+        id: "css-float/clearfix-after-nested-float-clear",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0}.w{position:relative;margin:93px auto 0;padding-top:21px;width:760px}.w::after{content:\"\";display:block;clear:both}.t{height:24px;margin-bottom:18px;background:yellow}.ul{list-style:none;padding:0;margin:0}.li{float:left;width:369px;height:36px;background:silver}.li.odd{clear:both;margin-right:20px}.after{height:40px;background:lime}</style></head><body><div class=\"w\"><div class=\"t\"></div><ul class=\"ul\"><li class=\"li odd\"></li><li class=\"li\"></li><li class=\"li odd\"></li><li class=\"li\"></li></ul></div><div class=\"after\"></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0}.w{position:relative;margin:93px auto 0;padding-top:21px;width:760px;height:114px}.t{height:24px;margin-bottom:18px;background:yellow}.ul{list-style:none;padding:0;margin:0}.li{float:left;width:369px;height:36px;background:silver}.li.odd{clear:both;margin-right:20px}.after{height:40px;background:lime}</style></head><body><div class=\"w\"><div class=\"t\"></div><ul class=\"ul\"><li class=\"li odd\"></li><li class=\"li\"></li><li class=\"li odd\"></li><li class=\"li\"></li></ul></div><div class=\"after\"></div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {

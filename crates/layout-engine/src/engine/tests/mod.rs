@@ -75,6 +75,8 @@ fn find_absolute_position_by_node_id_inner(
 }
 
 mod anonymous_flex_item_tests;
+#[cfg(test)]
+mod clearfix_nested_float_clearance_tests;
 mod coverage;
 mod downloaded_font_metrics;
 mod incremental_parity_experiment;
@@ -96,7 +98,6 @@ mod r1382_float_anon_table_tests;
 mod r1389_clear_no_float_context_tests;
 #[cfg(test)]
 mod r1390_table_cell_bfc_float_tests;
-#[cfg(test)]
 mod r1393_adjoining_float_clearance_tests;
 #[cfg(test)]
 mod r1398_abspos_cb_border_tests;
