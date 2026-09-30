@@ -1021,10 +1021,11 @@ fn test_convert_max_length_clamp_only_min_definite_fails_open() {
     );
 }
 
-/// 负数 definite 臂钳 0（width/max 不接受负值）：min(50% - 500px, -20px) 的
-/// definite 臂 = -20 → bound 钳 0。
+/// 负数 definite 臂钉值 0（width/max used 值不接受负值）：min(50% - 500px, -20px)
+/// 的 definite 臂 = -20 → bound 钳 0。钉值口径：负控制下旧回退路径对同输入同样给
+/// length(0.0)（新旧行为在此重合、负控制不红），本臂钉钳制语义、非新旧行为判别臂。
 #[test]
-fn test_convert_dimension_negative_bound_clamps_to_zero() {
+fn test_convert_dimension_negative_bound_pins_to_zero() {
     use zero_css_parser::values::{CalcExpr, CalcOp};
     let calc = LengthValue::Calc(Box::new(CalcExpr::Min(vec![
         CalcExpr::BinaryOp(
@@ -1037,6 +1038,40 @@ fn test_convert_dimension_negative_bound_clamps_to_zero() {
     assert_eq!(
         convert_length_to_dimension(&calc, 100.0, 600.0),
         taffy::style::Dimension::length(0.0)
+    );
+}
+
+/// clamp MIN>MAX 退化档（css-values-4 §8.3：clamp(MIN,VAL,MAX)=max(MIN,min(VAL,MAX))，
+/// MIN>MAX 时结果取 MIN）：clamp(300px, 50%, 100px) → 上界 max(MIN,MAX)=300，与
+/// MIN 臂重合即精确值（求值侧 types.rs 退化语义 val.min(max).max(min) 同为 MIN）。
+#[test]
+fn test_convert_max_length_clamp_min_gt_max_degenerates_to_min() {
+    use zero_css_parser::values::CalcExpr;
+    let clamp = CalcExpr::Clamp {
+        min: s11_len_px(300.0),
+        val: Box::new(CalcExpr::Length(LengthValue::Percentage(50.0))),
+        max: s11_len_px(100.0),
+    };
+    let calc = LengthValue::Calc(Box::new(clamp));
+    assert_eq!(
+        convert_max_length_to_dimension(&calc, 800.0, 600.0),
+        taffy::style::Dimension::length(300.0)
+    );
+}
+
+/// 嵌套数学函数（解析层 CalcParser::parse_factor 支持嵌套 min/max/clamp，AST 此处
+/// 按既有各臂口径直接构造）：min(max(100px, 200px), 50%) 内层 max 全 definite 可求值
+/// = 200，外层上界 = min(200)；真结果 min(200, 50%CB) ≤ 200，上界成立。
+#[test]
+fn test_convert_max_length_nested_min_max_inner_definite() {
+    use zero_css_parser::values::CalcExpr;
+    let calc = LengthValue::Calc(Box::new(CalcExpr::Min(vec![
+        CalcExpr::Max(vec![*s11_len_px(100.0), *s11_len_px(200.0)]),
+        CalcExpr::Length(LengthValue::Percentage(50.0)),
+    ])));
+    assert_eq!(
+        convert_max_length_to_dimension(&calc, 800.0, 600.0),
+        taffy::style::Dimension::length(200.0)
     );
 }
 

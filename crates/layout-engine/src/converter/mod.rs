@@ -864,6 +864,8 @@ pub(crate) fn convert_length_to_lp(value: &LengthValue, vw: f32, vh: f32) -> taf
         LengthValue::Auto => length(0.0_f32), // 不接受 auto 的属性，auto 视为 0
         // Calc 表达式：提取百分比部分（与 convert_length_to_dimension 一致），
         // 非百分比 calc 回退 0.0。此前 calc() 被静默丢弃为 0.0（padding/border/gap 失效）。
+        // FIXME: min()/max()/clamp() 形态未接入 convert_calc_dimension 降级（padding/
+        // border/gap 消费方挂账），数学函数形态维持百分比提取 + 0 回退。
         LengthValue::Calc(expr) => {
             if let Some(pct) = extract_calc_percentage(expr) {
                 taffy::style::LengthPercentage::percent(pct as f32 / 100.0)
@@ -906,6 +908,8 @@ fn convert_length_to_lpa(
         // Calc 表达式：提取 P% ± Npx 的百分比部分（与 convert_length_to_dimension 一致）。
         // calc(50% - 0px) → Percent(0.5)；px 偏移量由布局后处理（同 dimension 路径注释）。
         // 此前 margin/inset 的 calc() 被静默丢弃为 0.0（grid-calc-margin 等用例）。
+        // FIXME: min()/max()/clamp() 形态未接入 convert_calc_dimension 降级（margin/
+        // inset 消费方挂账），数学函数形态维持百分比提取 + 0 回退。
         LengthValue::Calc(expr) => {
             if let Some(pct) = extract_calc_percentage(expr) {
                 taffy::style::LengthPercentageAuto::percent(pct as f32 / 100.0)
@@ -1689,11 +1693,8 @@ pub fn resolve_grid_placement(
     (rs, re, cs, ce)
 }
 
-/// 尝试从 calc 表达式中提取百分比值。
+/// 将 calc/数学函数表达式降级为 taffy Dimension（width/height/max/min 尺寸侧共用）。
 ///
-/// 对于 `calc(100% - 6px)` 这样的简单模式，提取出 `100.0`。
-/// 这使得 taffy 能使用百分比进行布局。
-/// 仅支持 `P% - Npx`、`P% + Npx`、`Npx - P%`、纯 `P%` 模式。
 /// CSS Values §8.3/§8.4 min()/max()/clamp() 在 taffy Dimension 上的降级表示。
 ///
 /// taffy `Dimension` 无 calc 组合表示（R4136 同源约束），converter 需把数学函数
@@ -1715,6 +1716,7 @@ pub fn resolve_grid_placement(
 /// lp/lpa（padding/margin/inset）消费方未接入本降级，维持百分比提取 + 0 回退。
 // https://drafts.csswg.org/css-values-4/#min-max-func
 // https://drafts.csswg.org/css-values-4/#clamp-func
+// https://www.w3.org/TR/CSS22/visudet.html#float-width
 fn convert_calc_dimension(expr: &zero_css_parser::values::CalcExpr, vw: f32, vh: f32) -> taffy::style::Dimension {
     use zero_css_parser::values::CalcExpr;
     if let Some(pct) = extract_calc_percentage(expr) {
@@ -1751,6 +1753,9 @@ fn extract_calc_definite_upper_bound(expr: &zero_css_parser::values::CalcExpr, v
         zero_css_parser::values::eval_calc_with_context(e, &ctx)
     };
     match expr {
+        // FIXME: 百分比臂绑定档此处只给保守上界，非精确 used 值——`min(300px, 25%+100px)`
+        // 于 CB=400px 真值 200px，当前取 definite 臂 min = 300px（偏宽，窄容器可水平溢出）。
+        // 精确值需布局期按包含块解析百分比臂（css-values-4 §11 求值时机），挂账未来切片。
         CalcExpr::Min(args) => args.iter().filter_map(definite_px).reduce(f64::min),
         CalcExpr::Clamp { min, max, .. } => {
             let mx = definite_px(max)?;
