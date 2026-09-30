@@ -80,7 +80,17 @@ fn test_worker_blob_url_script_executes_and_missing_blob_fires_error() {
              globalThis.__p11revoked = 'none';\
              w2.onerror = function () { globalThis.__p11revoked = 'onerror'; };\
              w2.onmessage = function () { globalThis.__p11revoked = 'onmessage'; };\
-             w2.postMessage(1);",
+             w2.postMessage(1);\
+             var src3 = 'var T=\"\u{2713}\";self.onmessage=function(e){postMessage(e.data+T)};';\
+             var bytes3 = new TextEncoder().encode(src3);\
+             var w3 = new Worker(URL.createObjectURL(new Blob([bytes3], { type: 'text/javascript' })));\
+             globalThis.__p11bytes = 'none';\
+             w3.onmessage = function (ev) { globalThis.__p11bytes = ev.data; };\
+             w3.postMessage('done');\
+             var w4 = new Worker(URL.createObjectURL(new Blob([new Blob([src3])])));\
+             globalThis.__p11nested = 'none';\
+             w4.onmessage = function (ev) { globalThis.__p11nested = ev.data; };\
+             w4.postMessage('done');",
         )
         .unwrap();
     sandbox.execute("1;").unwrap();
@@ -94,5 +104,15 @@ fn test_worker_blob_url_script_executes_and_missing_blob_fires_error() {
         sandbox.execute("String(globalThis.__p11revoked)").unwrap().value,
         "onerror",
         "revoke 后的 blob URL：fetch 失败语义 → worker error 事件（非静默无回调）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__p11bytes)").unwrap().value,
+        "done\u{2713}",
+        "TypedArray part（含多字节 UTF-8 ✓）按 UTF-8 解码执行，非 Latin-1 乱码"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__p11nested)").unwrap().value,
+        "done\u{2713}",
+        "嵌套 Blob part 递归物化，不静默丢弃"
     );
 }
