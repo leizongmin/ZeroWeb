@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（113）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（114）
 
+- 2026-09-30 [reftest 负控制假绿：断言「不绘制」的最小复现须把泄漏信号放大过分类容差](bugs/2026-09/2026-09-30-reftest-negative-control-false-green.md) — wpt-runner,engine,layout-engine
 - 2026-09-29 [baidu core-js wrapped Promise 微任务自馈环 → V8 堆 OOM abort](bugs/2026-09/2026-09-29-baidu-corejs-promise-storm.md) — engine,webview
 - 2026-09-18 [reftest 测试页自带页内参照标记——探针归因链必须先读源码](bugs/2026-09/2026-09-18-reftest-page-embeds-own-reference.md) — layout-engine, engine, wpt-runner
 - 2026-09-16 [双端同时漏采导致一致性比较假通过](bugs/2026-09/2026-09-16-parity-missing-evidence-false-pass.md) — browser,chrome-parity
@@ -121,8 +122,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（15）
+## Patterns — 可复用代码模式与最佳实践（16）
 
+- 2026-09-30 [ZW_IPC_TRACE：跨进程 IPC 消息级的帧级诊断](patterns/2026-09/2026-09-30-zw-ipc-trace-frame-diagnostic.md) — zero-protocol,apps/browser,apps/renderer
 - 2026-09-13 [Node 父进程内嵌服务 + execFileSync 子进程 = 双向死锁](patterns/2026-09/2026-09-13-node-sync-child-exec-deadlocks-inprocess-server.md) — tests/playwright-matrix
 - 2026-09-04 [collapse 边框中心线迁移：taffy 拉伸伪影 × paint 盒内绘制模型的双耦合面](patterns/2026-09/2026-09-04-collapse-border-centerline-migration.md) — layout-engine, engine
 - 2026-08-22 [Storage root layout compatibility](patterns/2026-08/2026-08-22-storage-root-layout-compatibility.md) — storage, webview
@@ -183,9 +185,12 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（17）
+## Platform — 平台与环境相关经验（20）
 
 - 2026-09-30 [ZeroWeb CDP live 调试坑点（/json/new、Page.reload、renderer stderr 环、探针退化）](platform/2026-09/2026-09-30-zeroweb-cdp-live-debug-quirks.md) — apps/renderer,apps/browser,crates/protocol
+- 2026-09-30 [`rm -rf wpt-data` 重新克隆会静默丢掉 git-ignored 的 media 子集，`make test` 才暴露](platform/2026-09/2026-09-30-wpt-data-reclone-drops-ignored-media-subset.md) — tests/wpt-runner,crates/media
+- 2026-09-30 [git worktree 里构建 rusty_v8：`.cargo/rusty_v8/archive` 符号链接不随 worktree 继承](platform/2026-09/2026-09-30-worktree-rusty-v8-archive-symlink.md) — build-support,crates/script-sandbox
+- 2026-09-30 [`gh pr edit --body-file` 二次编辑会覆盖 `--attach` 已重写的附件 URL](platform/2026-09/2026-09-30-gh-pr-edit-body-file-overwrites-attach-urls.md) — ""
 - 2026-09-14 [renderer 死锁诊断：ptrace 受限 + test-guard 禁 core 下的取证方法，与 baidu 主循环冻结的根因链](platform/2026-09/2026-09-14-renderer-wedge-diagnosis-core-dump.md) — apps/renderer, apps/browser, crates/engine, crates/paint-convert
 - 2026-09-05 [HarmonyOS ELF 签名工具可能重写可加载段](platform/2026-09/2026-09-05-harmonyos-elf-signer-segment-rewrite.md) — release, npm-cli, harmonyos
 - 2026-08-18 [git worktree 共享 CARGO_TARGET_DIR 导致构建指纹污染](platform/2026-08/2026-08-18-worktree-shared-target-dir-fingerprint-collision.md) — 工具链 / cargo / git worktree / 性能 A/B 验证
