@@ -377,6 +377,20 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><head><style>body{margin:0}.w{position:relative;margin:93px auto 0;padding-top:21px;width:760px;height:114px}.t{height:24px;margin-bottom:18px;background:yellow}.ul{list-style:none;padding:0;margin:0}.li{float:left;width:369px;height:36px;background:silver}.li.odd{clear:both;margin-right:20px}.after{height:40px;background:lime}</style></head><body><div class=\"w\"><div class=\"t\"></div><ul class=\"ul\"><li class=\"li odd\"></li><li class=\"li\"></li><li class=\"li odd\"></li><li class=\"li\"></li></ul></div><div class=\"after\"></div></body></html>",
         is_match: true,
     },
+    // ── R1392 余项：中间非 BFC 容器自身 border/padding 分量（嵌套浮动底边虚减）──
+    // test 页为机制形状：outer > wrapper（border-top:5 + padding-top:16，非 BFC）
+    // > float(369×36)，outer > cleared(clear:both)。按 CSS2 §9.5.2 clear 须让位嵌套
+    // 浮动底边 21+36=57；余项在时 cleared 落 36，lime（36..116）与银色浮动带
+    //（21..57）叠压 21px（信号 ~6.6%，远超 Layout 1% 容差）。ref 页把 wrapper 改
+    // overflow:hidden（BFC 容纳浮动，wrapper 高 57）且 cleared 去掉 clear——同视觉
+    // 绕过机制。无文本，排除字体噪声。
+    InlineReftestDef {
+        id: "css-float/nested-float-clear-middle-frame",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0}.outer{width:760px}.w{border-top:5px solid #cc0000;padding-top:16px}.f{float:left;width:369px;height:36px;background:silver}.after{clear:both;height:80px;background:lime}</style></head><body><div class=\"outer\"><div class=\"w\"><div class=\"f\"></div></div><div class=\"after\"></div></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0}.outer{width:760px}.w{overflow:hidden;border-top:5px solid #cc0000;padding-top:16px}.f{float:left;width:369px;height:36px;background:silver}.after{height:80px;background:lime}</style></head><body><div class=\"outer\"><div class=\"w\"><div class=\"f\"></div></div><div class=\"after\"></div></div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {
