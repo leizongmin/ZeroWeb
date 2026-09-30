@@ -391,6 +391,23 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><head><style>body{margin:0}.outer{width:760px}.w{overflow:hidden;border-top:5px solid #cc0000;padding-top:16px}.f{float:left;width:369px;height:36px;background:silver}.after{height:80px;background:lime}</style></head><body><div class=\"outer\"><div class=\"w\"><div class=\"f\"></div></div><div class=\"after\"></div></div></body></html>",
         is_match: true,
     },
+    // ── slice10：float 子 + inline 兄弟共存容器不吸收 float 子树文本（百度热榜
+    // 残余叠字回归，paint Path B）──
+    // test 页为触发形状：li(float) > [a(float, overflow:hidden, [i(inline-block),
+    // span(inline 标题文本)]), mark(inline-block)]。机制失效时 paint Path B 空
+    // styles 无法识别 float 子 → collector 把 a 子树的标题文本吸收进 li 的 IFC，
+    // 重排到 float 下方第二行（fs40/lh90 时基线 65→~155，Δ≈90px，Ahem 墨块
+    // 信号 ~4%，远超 Layout 1% 容差），且 painted_inline_nodes 去重抑制 a 盒
+    // 自身正确绘制（CSS2 §9.5 float 脱离常规流）。ref 页去掉 mark 兄弟——
+    // 活体单因子实验（repro4 r3a vs r3f）已证该兄弟是触发器：无 mark 时同一
+    // 形状文本恒在正确基线。Ahem 字体（ascent=0.8em 确定性度量）排除字体噪声。
+    InlineReftestDef {
+        id: "css-float/float-child-inline-sibling-no-text-absorption",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0;font-family:Ahem}.ul{list-style:none;margin:0;padding:0;width:760px}.li{float:left;clear:both;width:400px;height:90px;line-height:90px;font-size:12px;white-space:nowrap}.a{float:left;display:block;width:400px;height:90px;line-height:90px;font-size:14px;overflow:hidden;white-space:nowrap}.i{display:inline-block;width:30px;height:30px;line-height:30px;font-size:30px}.t{display:inline;line-height:90px;font-size:40px;color:black}.mk{display:inline-block;width:10px;height:40px;margin-left:4px}</style></head><body><ul class=\"ul\"><li class=\"li\"><a class=\"a\"><i class=\"i\"></i><span class=\"t\">XXXX</span></a><span class=\"mk\"></span></li></ul></body></html>",
+        ref_html: "<html><head><style>body{margin:0;font-family:Ahem}.ul{list-style:none;margin:0;padding:0;width:760px}.li{float:left;clear:both;width:400px;height:90px;line-height:90px;font-size:12px;white-space:nowrap}.a{float:left;display:block;width:400px;height:90px;line-height:90px;font-size:14px;overflow:hidden;white-space:nowrap}.i{display:inline-block;width:30px;height:30px;line-height:30px;font-size:30px}.t{display:inline;line-height:90px;font-size:40px;color:black}.mk{display:inline-block;width:10px;height:40px;margin-left:4px}</style></head><body><ul class=\"ul\"><li class=\"li\"><a class=\"a\"><i class=\"i\"></i><span class=\"t\">XXXX</span></a></li></ul></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {

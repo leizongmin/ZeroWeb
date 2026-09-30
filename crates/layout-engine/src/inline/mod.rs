@@ -271,6 +271,13 @@ pub struct InlineFormattingContext {
     /// LayoutBox.children 的 is_block_level 子注入）——paint Path B 空 styles
     /// 无法重判块级性（页样式可把 div 转 inline），由布局侧供真值。
     pub block_child_nodes: Option<std::collections::HashSet<zero_dom::NodeId>>,
+    /// slice10：布局期已分类的 float 子 dom id 集（painter 从真实 computed styles
+    /// 注入——LayoutBox.float 会被 float/margin 后处理清零，样式才是权威源）——
+    /// paint Path B 空 styles 无法识别 float 子（collect_inline_items 的 float 臂
+    /// 需真实 styles），缺失时 float 子树 inline 内容被误吸收进容器 IFC
+    ///（CSS2 §9.5 float 脱离常规流，其内容在 float 自身 BFC 内排版，不得参与
+    /// 容器行内流）。注入后与 R3784 有 styles 臂同发 FloatAnchor。
+    pub float_child_nodes: Option<std::collections::HashSet<zero_dom::NodeId>>,
     /// R4330：并入 run-in 的分裂边框载荷（collect 后处理折入前/末 run 水平 margin
     /// 完成推进 + paint 侧绘条几何）。
     pub run_in_border: Option<crate::types::RunInBorder>,
@@ -378,6 +385,7 @@ impl InlineFormattingContext {
             fragment_node_ids: None,
             run_in_prepended: None,
             block_child_nodes: None,
+            float_child_nodes: None,
             run_in_border: None,
             font_metric_provider: None,
             advance_source: None,
@@ -413,6 +421,12 @@ impl InlineFormattingContext {
     /// R4339：注入布局期分类的块级子集（paint Path B 块级判定真值源）。
     pub fn set_block_child_nodes(&mut self, ids: std::collections::HashSet<zero_dom::NodeId>) {
         self.block_child_nodes = Some(ids);
+    }
+
+    /// slice10：注入布局期分类的 float 子集（paint Path B float 子判定真值源，
+    /// CSS2 §9.5 out-of-flow；见 `float_child_nodes` 字段注释）。
+    pub fn set_float_child_nodes(&mut self, ids: std::collections::HashSet<zero_dom::NodeId>) {
+        self.float_child_nodes = Some(ids);
     }
 
     /// 设置文本对齐方式。

@@ -23,6 +23,7 @@ mod r4059_shadow_clip_tests;
 mod r4068_bfc_empty_child_margin_tests;
 mod r4073_abspos_intrinsic_pct_box_side_tests;
 mod r4074_ar_transfer_ife_reclaim_tests;
+mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
 mod visual_inline;
