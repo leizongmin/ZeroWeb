@@ -2487,6 +2487,7 @@ pub(crate) fn adjust_float_positions_with_context(
                 // 嵌套浮动底边整体虚减 content_y_offset，后续 clear 兄弟 clearance 不足、
                 // 停在 float 底边之上（baidu hotsearch wrapper pt:21 → ::after 落 93 应 114）。
                 // border-rel 兼容模式（ZW_FLOAT_CLAMP_CONTENT_REL=0）保留旧 offset 换算。
+                // https://www.w3.org/TR/CSS22/visuren.html#clearance
                 let (nl, nr) = nested_float_bottoms(child, cy, if clamp_content_rel { 0.0 } else { content_y_offset });
                 if nl > 0.0 {
                     nested_left_bottom = nested_left_bottom.max(nl);

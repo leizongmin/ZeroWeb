@@ -84,7 +84,7 @@ fn float_child_clear_does_not_undo_sibling_clearance() {
 }
 
 /// R1392 帧修复：wrapper 带 padding-top:21 时嵌套浮动底边须按 content-rel 收集
-///（36），不得虚减 content_y_offset（15）。流内 cleared 兄弟据此落 36。
+///（36），不得虚减 content_y_offset。流内 cleared 兄弟据此落 36。
 #[test]
 fn nested_float_bottom_respects_content_frame() {
     let (doc, styles, cleared) = build_float_clear_then_cleared(21.0);
@@ -92,7 +92,7 @@ fn nested_float_bottom_respects_content_frame() {
     let result = engine.compute(&doc, &styles);
 
     let cleared_box = find_child_by_node_id(&result.root, cleared).expect("cleared found");
-    // float 底 content-rel = 36。帧错位回归形 = 36 − 21 = 15 附近。
+    // float 底 content-rel = 36。帧错位回归形（撤修复实测）= 21 附近。
     assert!(
         (cleared_box.y - 36.0).abs() < 1.0,
         "嵌套浮动底边应按 content-rel 收集（cleared y≈36），实际 y={}",
