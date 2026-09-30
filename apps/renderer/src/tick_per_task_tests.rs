@@ -226,3 +226,29 @@ fn dynamic_external_scripts_host_fetch_success_fires_load_event_and_executes() {
         .unwrap();
     assert_eq!(err.trim(), "0", "成功路径不派元素 error 事件");
 }
+
+// t8/P16：observer tick 不得清空异步 turn 的 pending mutation——tick_observers_with 在每次
+// 帧发布末尾运行，与定时器 resolve 等异步 turn 共享 worker mutation 队列；旧实现的
+// set_dom_snapshot+clear 把「已入队尚未 drain」的写入（html5test.co 完成回调的
+// contents/loading 样式写入）在下一帧渲染前整批销毁。修复后 pending 与 observer 写入一并落 host。
+// 变异判别：恢复 pre-clear → pending 被清空 → host 无 data-t8，本测转红。
+#[test]
+fn observer_tick_preserves_pending_async_mutations_t8() {
+    let mut runtime = runtime_with_observer_page(9113);
+    // 模拟异步 turn（定时器回调）已写队列、尚未 drain。
+    runtime
+        .js_worker
+        .execute_script_direct("document.getElementById('t1').setAttribute('data-t8','pending-async');")
+        .unwrap();
+    let mut ctx = PageScriptContext {
+        html: &mut runtime.cached_html,
+        url: "https://zero.test/tick-per-task",
+        js_worker: &runtime.js_worker,
+        webview: Some(runtime.webview.as_mut().unwrap()),
+    };
+    page_scripts::tick_observers_with(&mut ctx, false);
+    assert!(
+        runtime.cached_html.contains("data-t8"),
+        "异步 turn 的 pending mutation 应在 observer tick 后落 host，而非被 pre-clear 销毁"
+    );
+}
