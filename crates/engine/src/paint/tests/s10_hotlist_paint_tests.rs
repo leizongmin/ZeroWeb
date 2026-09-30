@@ -27,16 +27,25 @@ const TITLE_STYLE: &str = "display:inline;line-height:36px;font-size:16px;color:
 const MARK: &str =
     "<span style=\"display:inline-block;vertical-align:middle;width:4px;height:16px;margin-left:4px;\"></span>";
 
-fn row_html(mark: bool) -> String {
+fn li_shell(inner: &str) -> String {
     format!(
         "<html><body><ul style=\"list-style:none;margin:0;padding:0;width:760px;\">\
-<li style=\"float:left;width:369px;height:36px;line-height:36px;font-size:12px;white-space:nowrap;clear:both;\">\
-<a style=\"{A_STYLE}\">\
+<li style=\"float:left;width:369px;height:36px;line-height:36px;font-size:12px;white-space:nowrap;clear:both;\">{inner}</li></ul></body></html>"
+    )
+}
+
+fn a_html() -> String {
+    format!(
+        "<a style=\"{A_STYLE}\">\
 <i style=\"{ICON_STYLE}\"></i>\
 <span style=\"{TITLE_STYLE}\">TITLE</span>\
-</a>{mark_html}</li></ul></body></html>",
-        mark_html = if mark { MARK } else { "" }
+</a>"
     )
+}
+
+fn row_html(mark: bool) -> String {
+    let mark_html = if mark { MARK } else { "" };
+    li_shell(&format!("{}{}", a_html(), mark_html))
 }
 
 fn title_glyph_baselines(html: &str) -> Vec<f32> {
@@ -75,5 +84,21 @@ fn s10_hotlist_float_only_row_baseline_unchanged() {
     assert!(ys.len() >= 2, "TITLE 含两个 T，应有 ≥2 个 glyph：{ys:?}");
     for (i, y) in ys.iter().enumerate() {
         assert!((23.0..27.0).contains(y), "TITLE glyph[{i}] 基线应 ≈24.85：{y}");
+    }
+}
+
+/// 邻近变体臂（审查 TE-2）：mark 兄弟在 float a **之前**（DOM 序相反）。
+/// 触发面相同——容器仍同时含 float 子与 inline 级兄弟，paint_text 照常运行；
+/// 行内序不同不得改变 float 子树不入容器 IFC 的语义（CSS2 §9.5）。
+#[test]
+fn s10_hotlist_mark_before_float_no_text_absorption() {
+    let html = li_shell(&format!("{}{}", MARK, a_html()));
+    let ys = title_glyph_baselines(&html);
+    assert!(ys.len() >= 2, "TITLE 含两个 T，应有 ≥2 个 glyph：{ys:?}");
+    for (i, y) in ys.iter().enumerate() {
+        assert!(
+            (23.0..27.0).contains(y),
+            "TITLE glyph[{i}] 基线应 ≈24.85（mark 前置变体同语义）：{y}"
+        );
     }
 }
