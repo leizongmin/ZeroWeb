@@ -8042,9 +8042,14 @@ return _tplContent;
               _ihRemoved = _ihHc ? _ihHc.slice() : [];
             }
             _zwRemoveIframeWindowClientsForNodes(_ihRemoved);
-            var _ihAdded = _zwFragmentAdded(value, handle);
             // spec `LegacyNullToEmptyString`：null → 空串（清子），非写 "null" 文本；undefined 仍 ToString。
             var _ihVal = value === null ? '' : String(value);
+            // t7-r2（defect D1）：本地解析视图与 host 同源——host `replace_inner_html`
+            // 先 trim 再 fragment 解析（前导/尾随空白文本节点 host 侧不存在），视图若用
+            // 原文解析会在前导空白 markup 下多计首文本子，plain 父 append 的 child-index
+            // 路径整体 +1 错位（walk 错落下一兄弟或越界 lenient 静默丢）。视图用 trim 后
+            // 串构建，与 host 树逐子对齐。
+            var _ihAdded = _zwFragmentAdded(_ihVal.trim(), handle);
             if (handle) __zw_set_inner_html_handle(handle, _ihVal);
             else __zw_set_inner_html(sel, _ihVal);
             // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml

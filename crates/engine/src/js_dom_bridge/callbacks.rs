@@ -1822,6 +1822,44 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // t7（js-dom P15 修复）：plain 祖先 append 的路径寻址回调——path 由 shim 以
+    // 逗号连接的 child-index 串传入（如 "0,2,1"），此处解析为 Vec<u32>。
+    let parse_child_path =
+        |s: &str| -> Vec<u32> { s.split(',').filter_map(|p| p.trim().parse::<u32>().ok()).collect() };
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_append_child_handle_path",
+        Box::new(move |args| {
+            if args.len() >= 3 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::AppendChildByHandlePath {
+                        parent_handle: args[0].clone(),
+                        path: parse_child_path(&args[1]),
+                        child_handle: args[2].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_append_child_sel_path",
+        Box::new(move |args| {
+            if args.len() >= 3 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::AppendChildBySelPath {
+                        parent_selector: args[0].clone(),
+                        path: parse_child_path(&args[1]),
+                        child_handle: args[2].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
     let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_insert_before",

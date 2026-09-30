@@ -384,6 +384,8 @@ fn is_structural_mutation(m: &DomMutation) -> bool {
         m,
         DomMutation::AppendChild { .. }
             | DomMutation::AppendChildByHandle { .. }
+            | DomMutation::AppendChildByHandlePath { .. }
+            | DomMutation::AppendChildBySelPath { .. }
             | DomMutation::InsertBefore { .. }
             | DomMutation::InsertBeforeByHandle { .. }
             | DomMutation::InsertBeforeByHandleHandle { .. }

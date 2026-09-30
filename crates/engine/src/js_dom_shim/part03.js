@@ -1441,6 +1441,47 @@
       Object.defineProperty(node, 'parentNode', { value: parent, writable: true, configurable: true });
     } catch (_eFpl) { try { node.parentNode = parent; } catch (_eFpl2) {} }
   }
+  // t7（js-dom P15 修复，对偶面）：plain 父摘除 handle 子时同步摘 host——append 侧
+  // （plain appendChild 的 t7 段）已把该子树落 host，摘除不发 wire 会在 live Document
+  // 残留幽灵节点（spec concept-node-pre-remove：移除后节点不在树中，getElementById/
+  // 渲染不可见）。detached/未入档 handle 在 apply 侧 lenient no-op（RemoveHandle 无父
+  // 即跳过），安全覆盖 template/shadow/detached 形态。`__zw_remove_handle` +
+  // `_zwMarkRemovedHandle` 与 handle 父 removeChild 陷阱（part04 R140 段）同口径；
+  // `_mo_notify(null,null)` 让 pending 表对冲消零（append+remove 不留 pending 残留）。
+  // 消费点：plain removeChild / innerHTML= setter / replaceChildren / replaceChild 旧子。
+  // t7-r2（defect D2）：c 无 handle（plain 容器）时递归收集子树内 handle 后代逐一摘
+  // ——t7 append 侧可能已把 handle 子孙挂进 host 的 plain 容器内部（深度 ≥2），宿主
+  // 侧对 plain 容器无整子树移除通路，须按 handle 逐个摘。handle 根（c.__zwHandle）
+  // 宿主整子树随移除，无需递归（遍历在 handle 节点处不下钻）。
+  function _zwT7EmitHostRemove(c, prev, next) {
+    if (!c || typeof __zw_remove_handle !== 'function') return;
+    var _t7Targets = [];
+    if (c.__zwHandle) {
+      _t7Targets.push(c);
+    } else {
+      var _t7Stack = [c], _t7G = 0;
+      while (_t7Stack.length && _t7G++ < 4096) {
+        var _t7N = _t7Stack.pop();
+        if (!_t7N) continue;
+        if (_t7N.__zwHandle) { _t7Targets.push(_t7N); continue; }
+        var _t7Kids = _t7N.childNodes;
+        if (_t7Kids) for (var _t7K = 0; _t7K < _t7Kids.length; _t7K++) _t7Stack.push(_t7Kids[_t7K]);
+      }
+    }
+    if (!_t7Targets.length) return;
+    for (var _t7I = 0; _t7I < _t7Targets.length; _t7I++) {
+      try { __zw_remove_handle(_t7Targets[_t7I].__zwHandle); } catch (_eT7rh) {}
+      if (typeof _zwMarkRemovedHandle === 'function') { try { _zwMarkRemovedHandle(_t7Targets[_t7I].__zwHandle); } catch (_eT7mk) {} }
+    }
+    if (typeof _mo_notify === 'function') {
+      try {
+        _mo_notify(null, null, {
+          type: 'childList', addedNodes: [], removedNodes: [c],
+          previousSibling: prev || null, nextSibling: next || null,
+        });
+      } catch (_eT7rn) {}
+    }
+  }
   // WC-M3 切片 3（spec slotchange，https://html.spec.whatwg.org/multipage/dom.html#
   // htmlslotelement）：plain 世界（轻量 shadow / _zwMEl 克隆树）的 slotchange 微任务派发
   // ——与 part05 handle 域 __zwQueueSlotchangeForRoot 同构：变异后从容器上溯找 shadow
@@ -9509,6 +9550,8 @@
     };
     node.replaceChildren = function () {
       for (var e = 0; e < arguments.length; e++) _r117MVal(arguments[e]);
+      // t7（js-dom P15 修复，对偶面）：旧 handle 子同步摘 host（同 innerHTML= setter）。
+      for (var _t7o2 = 0; _t7o2 < node.childNodes.length; _t7o2++) _zwT7EmitHostRemove(node.childNodes[_t7o2], null, null);
       node.childNodes.length = 0;
       node.append.apply(node, arguments);
     };
@@ -9760,6 +9803,9 @@
       // parentNode 残留旧父，slots-fallback 'Remove a slot' 的 s1.assignedNodes()
       // 上溯死树仍命中 c1——spec：slot 出 shadow 树后分配清空）。
       _zwForceParentLink(c, null);
+      // t7（js-dom P15 修复，对偶面）：host 对偶摘除（见 _zwT7EmitHostRemove）——
+      // append 侧已把该子落 host，摘除不发 wire 会残留幽灵节点。
+      _zwT7EmitHostRemove(c, node.childNodes[i - 1], node.childNodes[i]);
       // WC-M3 切片 3：plain 世界 slotchange 微任务（slottable 出宿主/slot 出树）。
       if (typeof globalThis.__zwQueuePlainSlotchange === 'function') globalThis.__zwQueuePlainSlotchange(node);
       // WC-M3 切片 4：manual 树的移除 slotchange（可见列表 diff）。
@@ -10000,6 +10046,56 @@
           _zwNodeParent[c.__zwHandle] = { parentSel: null, parentHandle: null, plainParent: node, nextSibling: null };
         }
       }
+      // t7（js-dom P15 修复）：plain 父上的 handle 子 append 必须落 host——此前只记 R180
+      // plainParent 反链（纯 JS 世界），live Document 永久缺该子树：getElementById/
+      // querySelectorAll/渲染全部不可见（spec concept-node-pre-insert：插入后节点必须在
+      // 树中；html5test.co ResultsTable 在 innerHTML 解析容器上 appendChild 建表即此形态，
+      // hideChildren 的 getElementById null 崩掉整个 showResults）。
+      // 三件套：① 发 host mutation（最近 sel/handle 锚祖先 + child-index 路径寻址，apply
+      // 时按锚解析下行）；② 经 _mo_notify 汇流点入 pending 表（同 turn getElementById 的
+      // findPendingId 兜底可见；null 目标——plain 父无 sel/handle，桶记账自然跳过）；
+      // ③ 重盖 plainParent 反链（_mo_notify 的 R51 段会重写 _zwNodeParent，保留 plain
+      // 父槽供 _zwMutationInDoc 爬链）。
+      if (c && c.__zwHandle) {
+        try {
+          var _t7Chain = [];
+          var _t7Cur = node;
+          var _t7G = 0;
+          while (_t7Cur && !_t7Cur.__zwHandle && !_t7Cur.__zwSelector && _t7G++ < 64) {
+            _t7Chain.push(_t7Cur);
+            _t7Cur = _t7Cur.parentNode;
+          }
+          if (_t7Cur && (_t7Cur.__zwHandle || _t7Cur.__zwSelector)) {
+            var _t7Path = [];
+            for (var _t7I = _t7Chain.length - 1; _t7I >= 0; _t7I--) {
+              var _t7Par = _t7I === _t7Chain.length - 1 ? _t7Cur : _t7Chain[_t7I + 1];
+              var _t7Idx = _t7Par && _t7Par.childNodes ? _t7Par.childNodes.indexOf(_t7Chain[_t7I]) : -1;
+              if (_t7Idx < 0) { _t7Path = null; break; }
+              _t7Path.push(_t7Idx);
+            }
+            if (_t7Path) {
+              if (_t7Cur.__zwHandle && typeof __zw_append_child_handle_path === 'function') {
+                __zw_append_child_handle_path(_t7Cur.__zwHandle, _t7Path.join(','), c.__zwHandle);
+              } else if (_t7Cur.__zwSelector && typeof __zw_append_child_sel_path === 'function') {
+                __zw_append_child_sel_path(_t7Cur.__zwSelector, _t7Path.join(','), c.__zwHandle);
+              }
+              if (typeof _mo_notify === 'function') {
+                try {
+                  _mo_notify(null, null, {
+                    type: 'childList',
+                    addedNodes: [c],
+                    removedNodes: [],
+                    previousSibling: node.childNodes.length >= 2 ? node.childNodes[node.childNodes.length - 2] : null,
+                    nextSibling: null,
+                  });
+                } catch (_eT7mn) {}
+                // _mo_notify 的 R51 段按 (sel,handle) 重写反链——恢复 plainParent 槽。
+                try { if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent && _zwNodeParent[c.__zwHandle]) _zwNodeParent[c.__zwHandle].plainParent = node; } catch (_eT7rp) {}
+              }
+            }
+          }
+        } catch (_eT7pp) {}
+      }
       // WC-M3 切片 3：plain 世界 slotchange 微任务（host light 子增删改变分配）。
       if (typeof globalThis.__zwQueuePlainSlotchange === 'function') globalThis.__zwQueuePlainSlotchange(node);
       return c;
@@ -10071,6 +10167,9 @@
       // R127：replace-with-self 短路（spec「node is child」——`a.replaceChild(b, b)` 不动）。
       if (n === o) return o;
       node.childNodes[i] = n;
+      // t7（js-dom P15 修复，对偶面）：被替换的旧 handle 子同步摘 host。替换位的新节点
+      // host 落地属 insertBefore 对偶后续切片（与修复前一致——摘除面不残留幽灵即可）。
+      _zwT7EmitHostRemove(o, node.childNodes[i - 1], node.childNodes[i + 1]);
       // WC-M3 切片 3：反链强写（同 insertBefore——getter-only accessor 裸赋值被吞）。
       _zwForceParentLink(n, node);
       _zwForceParentLink(o, null);
@@ -10088,6 +10187,10 @@
       set: function (v) {
         var kids = [];
         try { kids = _zwMBuildBodyTree(String(v == null ? '' : v)).childNodes; } catch (_e181p) { kids = []; }
+        // t7（js-dom P15 修复，对偶面）：被整体替换的旧 handle 子同步摘 host——append
+        // 侧已落 host 的子若只清 JS 世界会残留幽灵。新解析子仍为 plain 视图（host 落地
+        // 属 insertBefore 对偶后续切片，与修复前一致）。
+        for (var _t7o = 0; _t7o < node.childNodes.length; _t7o++) _zwT7EmitHostRemove(node.childNodes[_t7o], null, null);
         node.childNodes = kids;
         for (var _r181i = 0; _r181i < kids.length; _r181i++) {
           try { kids[_r181i].parentNode = node; } catch (_e181pp) {}
