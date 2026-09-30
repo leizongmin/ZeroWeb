@@ -458,12 +458,15 @@ fn test_canvas_ctr_global_eager_registration() {
     );
 
     // ④ 懒注册兜底等价性：急切注册后 _zwMakeCtx2d 不重复定义（幂等）——
-    // 注册后 getContext 返回的 ctx 仍 instanceof 该全局。
+    // 捕获 getContext 前的构造器引用，断言 ctx 原型恒等该引用
+    //（若懒块守卫被删导致重复定义，instanceof/typeof 仍真，唯引用恒等可抓）。
     sandbox
         .execute(
-            "var ctx = document.createElement('canvas').getContext('2d');\
+            "globalThis.__ctorBefore = CanvasRenderingContext2D;\
+             var ctx = document.createElement('canvas').getContext('2d');\
              globalThis.__ctxInstanceof = String(ctx instanceof CanvasRenderingContext2D);\
-             globalThis.__ctorStable = String(typeof CanvasRenderingContext2D === 'function');",
+             globalThis.__ctorStable = String(typeof CanvasRenderingContext2D === 'function');\
+             globalThis.__ctorIdentity = String(Object.getPrototypeOf(ctx) === CanvasRenderingContext2D.prototype && CanvasRenderingContext2D === globalThis.__ctorBefore);",
         )
         .unwrap();
     assert_eq!(
@@ -475,5 +478,10 @@ fn test_canvas_ctr_global_eager_registration() {
         sandbox.execute("globalThis.__ctorStable").unwrap().value,
         "true",
         "getContext 后构造器仍稳定存在（幂等兜底不覆盖）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ctorIdentity").unwrap().value,
+        "true",
+        "ctx 原型应恒等 getContext 前捕获的构造器引用（无重复定义）"
     );
 }

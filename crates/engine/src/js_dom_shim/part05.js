@@ -6917,7 +6917,7 @@
   function _zwMakeCtx2d(h) {
     // R34xx：构造器须先于实例创建（原型链 Object.create；prototype 属性不可写/
     // 不可删，spec）。R49xx 起全局注册已提前到上方急切段（typeof 检测面），
-    // 此处保留幂等兜底（独立 execute_script 等未走急切段的入口）。
+    // 此处保留幂等兜底（急切段执行后被页面 delete 之类移除全局时的再注册路径）。
     if (!globalThis.CanvasRenderingContext2D) {
       globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {};
       Object.defineProperty(CanvasRenderingContext2D, 'prototype', {
