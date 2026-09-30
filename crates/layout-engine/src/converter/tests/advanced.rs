@@ -879,3 +879,200 @@ fn test_parse_grid_auto_tracks_multiple() {
     let result = parse_grid_auto_tracks(&Some("100px auto 1fr".to_string()));
     assert_eq!(result.len(), 3);
 }
+
+// ── slice11（css-values-4 §8.3/§8.4 min()/max()/clamp() Dimension 降级）─────────
+
+/// 构造 CalcExpr::Length 的辅助。
+fn s11_len_px(v: f64) -> Box<zero_css_parser::values::CalcExpr> {
+    Box::new(zero_css_parser::values::CalcExpr::Length(LengthValue::Px(v)))
+}
+
+/// baidu 形态钉值：max-width `min(284px, 100% - 24px)` → definite 臂上界 284。
+/// 修复前 extract_calc_percentage 不认 Min → 回退 length(0.0)，float shrink-to-fit
+/// 收缩 0 宽（行标题不可见）。definite 臂绑定档（CB ≥ 308 时 used 值即 284）精确。
+#[test]
+fn test_convert_max_length_min_mixed_percentage_definite_bound() {
+    use zero_css_parser::values::{CalcExpr, CalcOp};
+    let min_expr = CalcExpr::Min(vec![
+        CalcExpr::Length(LengthValue::Px(284.0)),
+        CalcExpr::BinaryOp(
+            Box::new(CalcExpr::Length(LengthValue::Percentage(100.0))),
+            CalcOp::Subtract,
+            s11_len_px(24.0),
+        ),
+    ]);
+    let calc = LengthValue::Calc(Box::new(min_expr));
+    assert_eq!(
+        convert_max_length_to_dimension(&calc, 800.0, 600.0),
+        taffy::style::Dimension::length(284.0)
+    );
+}
+
+/// width 侧同臂：min() 混合百分比 → definite 上界（float shrink-to-fit 与 max 钳制
+/// 共用 Dimension 转换）。
+#[test]
+fn test_convert_length_min_mixed_percentage_definite_bound() {
+    use zero_css_parser::values::{CalcExpr, CalcOp};
+    let calc = LengthValue::Calc(Box::new(CalcExpr::Min(vec![
+        CalcExpr::Length(LengthValue::Px(284.0)),
+        CalcExpr::BinaryOp(
+            Box::new(CalcExpr::Length(LengthValue::Percentage(100.0))),
+            CalcOp::Subtract,
+            s11_len_px(24.0),
+        ),
+    ])));
+    assert_eq!(
+        convert_length_to_dimension(&calc, 800.0, 600.0),
+        taffy::style::Dimension::length(284.0)
+    );
+    // min-width 侧经 convert_min_length_to_dimension 代理同享
+    assert_eq!(
+        convert_min_length_to_dimension(&calc, 800.0, 600.0),
+        taffy::style::Dimension::length(284.0)
+    );
+}
+
+/// clamp(0px, 100% - 24px, 284px)：结果 ≤ max(MIN, MAX)（css-values-4 §11）→
+/// 上界 = max(0, 284) = 284（MIN ≤ MAX 常规档与 MIN>MAX 退化档同式覆盖）。
+#[test]
+fn test_convert_max_length_clamp_definite_max_bound() {
+    use zero_css_parser::values::{CalcExpr, CalcOp};
+    let clamp = CalcExpr::Clamp {
+        min: s11_len_px(0.0),
+        val: Box::new(CalcExpr::BinaryOp(
+            Box::new(CalcExpr::Length(LengthValue::Percentage(100.0))),
+            CalcOp::Subtract,
+            s11_len_px(24.0),
+        )),
+        max: s11_len_px(284.0),
+    };
+    let calc = LengthValue::Calc(Box::new(clamp));
+    assert_eq!(
+        convert_max_length_to_dimension(&calc, 800.0, 600.0),
+        taffy::style::Dimension::length(284.0)
+    );
+}
+
+/// definite 臂求值含视口单位：min(284px, 90vw) 在 vw=800 → min(284, 720)=284；
+/// vw=300 → min(284, 270)=270（视口上下文进入 definite 臂求值）。
+#[test]
+fn test_convert_max_length_min_viewport_definite_arm() {
+    use zero_css_parser::values::CalcExpr;
+    let calc = LengthValue::Calc(Box::new(CalcExpr::Min(vec![
+        CalcExpr::Length(LengthValue::Px(284.0)),
+        CalcExpr::Length(LengthValue::Vw(90.0)),
+    ])));
+    assert_eq!(
+        convert_max_length_to_dimension(&calc, 800.0, 600.0),
+        taffy::style::Dimension::length(284.0)
+    );
+    assert_eq!(
+        convert_max_length_to_dimension(&calc, 300.0, 600.0),
+        taffy::style::Dimension::length(270.0)
+    );
+}
+
+/// max(200px, 50%)：结果 ≥ 各臂无上界 → fail-open Auto（不钳制；映射 0 会让
+/// shrink-to-fit 收缩为不可见宽）。
+#[test]
+fn test_convert_max_length_max_no_upper_bound_fails_open() {
+    use zero_css_parser::values::CalcExpr;
+    let calc = LengthValue::Calc(Box::new(CalcExpr::Max(vec![
+        CalcExpr::Length(LengthValue::Px(200.0)),
+        CalcExpr::Length(LengthValue::Percentage(50.0)),
+    ])));
+    assert_eq!(
+        convert_max_length_to_dimension(&calc, 800.0, 600.0),
+        taffy::style::Dimension::auto()
+    );
+}
+
+/// min(100% - 24px, 50%)：无 definite 臂 → 无上界可推 → fail-open Auto。
+#[test]
+fn test_convert_max_length_min_without_definite_arg_fails_open() {
+    use zero_css_parser::values::{CalcExpr, CalcOp};
+    let calc = LengthValue::Calc(Box::new(CalcExpr::Min(vec![
+        CalcExpr::BinaryOp(
+            Box::new(CalcExpr::Length(LengthValue::Percentage(100.0))),
+            CalcOp::Subtract,
+            s11_len_px(24.0),
+        ),
+        CalcExpr::Length(LengthValue::Percentage(50.0)),
+    ])));
+    assert_eq!(
+        convert_max_length_to_dimension(&calc, 800.0, 600.0),
+        taffy::style::Dimension::auto()
+    );
+}
+
+/// clamp 仅 MIN 臂 definite（MAX 百分比）：无上界 → Auto（MAX 可任意大）。
+#[test]
+fn test_convert_max_length_clamp_only_min_definite_fails_open() {
+    use zero_css_parser::values::CalcExpr;
+    let clamp = CalcExpr::Clamp {
+        min: s11_len_px(100.0),
+        val: Box::new(CalcExpr::Length(LengthValue::Percentage(50.0))),
+        max: Box::new(CalcExpr::Length(LengthValue::Percentage(90.0))),
+    };
+    let calc = LengthValue::Calc(Box::new(clamp));
+    assert_eq!(
+        convert_max_length_to_dimension(&calc, 800.0, 600.0),
+        taffy::style::Dimension::auto()
+    );
+}
+
+/// 负数 definite 臂钳 0（width/max 不接受负值）：min(50% - 500px, -20px) 的
+/// definite 臂 = -20 → bound 钳 0。
+#[test]
+fn test_convert_dimension_negative_bound_clamps_to_zero() {
+    use zero_css_parser::values::{CalcExpr, CalcOp};
+    let calc = LengthValue::Calc(Box::new(CalcExpr::Min(vec![
+        CalcExpr::BinaryOp(
+            Box::new(CalcExpr::Length(LengthValue::Percentage(50.0))),
+            CalcOp::Subtract,
+            s11_len_px(500.0),
+        ),
+        CalcExpr::Length(LengthValue::Px(-20.0)),
+    ])));
+    assert_eq!(
+        convert_length_to_dimension(&calc, 100.0, 600.0),
+        taffy::style::Dimension::length(0.0)
+    );
+}
+
+/// 既有 fail-closed 面保持：Number-only 表达式（无长度分量）→ 0；简单 P%±Npx →
+/// 百分比（既有 post-process 通道不变）。
+#[test]
+fn test_convert_dimension_legacy_faces_unchanged() {
+    use zero_css_parser::values::{CalcExpr, CalcOp};
+    // Number-only → 0（css-values §8.5：Number 非 <length>）
+    let num = LengthValue::Calc(Box::new(CalcExpr::Number(42.0)));
+    assert_eq!(
+        convert_max_length_to_dimension(&num, 800.0, 600.0),
+        taffy::style::Dimension::length(0.0)
+    );
+    assert_eq!(
+        convert_length_to_dimension(&num, 800.0, 600.0),
+        taffy::style::Dimension::length(0.0)
+    );
+    // 简单 P% ± Npx → 百分比（post-process 通道）
+    let simple = LengthValue::Calc(Box::new(CalcExpr::BinaryOp(
+        Box::new(CalcExpr::Length(LengthValue::Percentage(100.0))),
+        CalcOp::Subtract,
+        s11_len_px(6.0),
+    )));
+    assert_eq!(
+        convert_length_to_dimension(&simple, 800.0, 600.0),
+        taffy::style::Dimension::percent(1.0)
+    );
+    // 纯 definite min()（无百分比）正常在 computed 阶段已解析为 Px；若仍到达
+    // converter（防御面），definite 臂推导同样给出精确 min(300,200)=200
+    let definite_min = LengthValue::Calc(Box::new(CalcExpr::Min(vec![
+        CalcExpr::Length(LengthValue::Px(300.0)),
+        CalcExpr::Length(LengthValue::Px(200.0)),
+    ])));
+    assert_eq!(
+        convert_max_length_to_dimension(&definite_min, 800.0, 600.0),
+        taffy::style::Dimension::length(200.0)
+    );
+}

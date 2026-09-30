@@ -786,15 +786,8 @@ fn convert_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taffy::
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::Dimension::percent((*v / 100.0) as f32),
         LengthValue::Auto => taffy::style::Dimension::auto(),
-        // Calc 表达式：尝试提取简单的 P% ± Npx 模式，转为百分比。
-        // calc(100% - 6px) → Percent(1.0)。精确的 px 偏移量在布局后处理中处理。
-        LengthValue::Calc(expr) => {
-            if let Some(pct) = extract_calc_percentage(expr) {
-                taffy::style::Dimension::percent(pct as f32 / 100.0)
-            } else {
-                length(0.0_f32)
-            }
-        }
+        // Calc 表达式：按 CSS Values 求值时机降级（见 convert_calc_dimension）。
+        LengthValue::Calc(expr) => convert_calc_dimension(expr, vw, vh),
         // fit-content() 将内部值转换为 dimension
         LengthValue::FitContent(inner) => convert_length_to_dimension(inner, vw, vh),
         // min-content/max-content：塌缩为 0（与旧「resolve 为 Px(0)」行为中性），
@@ -828,15 +821,9 @@ fn convert_max_length_to_dimension(value: &LengthValue, vw: f32, vh: f32) -> taf
         LengthValue::Ch(v) => length(*v as f32),
         LengthValue::Percentage(v) => taffy::style::Dimension::percent((*v / 100.0) as f32),
         LengthValue::Auto => taffy::style::Dimension::auto(),
-        // Calc 表达式：提取百分比部分（与 convert_length_to_dimension 一致），
-        // 非百分比 calc 回退 0.0。此前 calc() 被静默丢弃为 0.0（max-width/max-height 失效）。
-        LengthValue::Calc(expr) => {
-            if let Some(pct) = extract_calc_percentage(expr) {
-                taffy::style::Dimension::percent(pct as f32 / 100.0)
-            } else {
-                length(0.0_f32)
-            }
-        }
+        // Calc 表达式：按 CSS Values 求值时机降级（与 convert_length_to_dimension
+        // 共用 convert_calc_dimension——max 侧 Auto 语义 = 不钳制，同函数覆盖）。
+        LengthValue::Calc(expr) => convert_calc_dimension(expr, vw, vh),
         LengthValue::FitContent(inner) => convert_max_length_to_dimension(inner, vw, vh),
         // R4224（css-sizing-4 #stretch-fit-sizing + csswg #11044）：max 侧 stretch = CB
         // content 尺寸（margin ignoring）——百分比不扣 margin 同语义；CB 尺寸 indefinite
@@ -1700,6 +1687,118 @@ pub fn resolve_grid_placement(
     let cs = resolve_named_area(&style.grid_column_start, parent_areas, "col-start");
     let ce = resolve_named_area(&style.grid_column_end, parent_areas, "col-end");
     (rs, re, cs, ce)
+}
+
+/// 尝试从 calc 表达式中提取百分比值。
+///
+/// 对于 `calc(100% - 6px)` 这样的简单模式，提取出 `100.0`。
+/// 这使得 taffy 能使用百分比进行布局。
+/// 仅支持 `P% - Npx`、`P% + Npx`、`Npx - P%`、纯 `P%` 模式。
+/// CSS Values §8.3/§8.4 min()/max()/clamp() 在 taffy Dimension 上的降级表示。
+///
+/// taffy `Dimension` 无 calc 组合表示（R4136 同源约束），converter 需把数学函数
+/// 降为单一 Length/Percent/Auto。按 CSS Values 求值时机分层：
+/// 1. 简单 `P% ± Npx`（含裸 `P%`）→ `Percent(P)`：taffy 百分比按包含块解析，px 偏移
+///    由布局后处理补齐（width/height/margin 既有通道，`apply_calc_size_adjustments`）。
+/// 2. min()/clamp() 含百分比 → definite 臂推导钳制上界（css-values-4 §8.3/§8.4：
+///    min 结果 ≤ 各臂、clamp 结果 ≤ max(MIN, MAX)）：definite 臂绑定档精确
+///    （`min(284px, 100% - 24px)` 防御式 cap 形态，used 值 = 284px），百分比臂绑定
+///    档偏宽（不裁内容的安全方向）。
+/// 3. 其余含百分比数学函数形态（max()/无 definite 臂的 min/clamp）→ `Auto`
+///    fail-open：max 侧无上界可钳；映射 0 会让 shrink-to-fit 收缩为不可见宽
+///    （CSS2 §10.3.5 浮动 width:auto 收缩受 max-width 钳制，0 上界即 0 宽）。
+/// 4. 不含百分比的退化表达式（Number-only 等）维持既有 fail-closed 0——此类
+///    无百分比表达式正常已在 style-system computed 阶段整体解析为 Px。
+///
+/// em/rem 等字体相对 definite 臂在无字体上下文时不求值（按 unknown 臂跳过）。
+/// 剩余面：min()/max() 百分比臂绑定档的精确 used 值（需布局期按包含块解析，挂账）；
+/// lp/lpa（padding/margin/inset）消费方未接入本降级，维持百分比提取 + 0 回退。
+// https://drafts.csswg.org/css-values-4/#min-max-func
+// https://drafts.csswg.org/css-values-4/#clamp-func
+fn convert_calc_dimension(expr: &zero_css_parser::values::CalcExpr, vw: f32, vh: f32) -> taffy::style::Dimension {
+    use zero_css_parser::values::CalcExpr;
+    if let Some(pct) = extract_calc_percentage(expr) {
+        return taffy::style::Dimension::percent(pct as f32 / 100.0);
+    }
+    if let Some(bound) = extract_calc_definite_upper_bound(expr, vw, vh) {
+        return length(bound.max(0.0) as f32);
+    }
+    if matches!(expr, CalcExpr::Min(_) | CalcExpr::Max(_) | CalcExpr::Clamp { .. }) {
+        return taffy::style::Dimension::auto();
+    }
+    length(0.0_f32)
+}
+
+/// 推导 min()/clamp() 混合百分比表达式的 definite 上界（px）。
+///
+/// definite 臂 = 不含百分比且含长度分量（Number-only 非 `<length>`，css-values §8.5
+/// 类型检查跳过）且可求值（视口上下文可用；em/rem 无字体上下文不求值）。
+/// - `Min(args)`：结果 ≤ 每个 definite 臂 → 上界 = min(definite 臂)。
+/// - `Clamp { min, max, .. }`：结果 ≤ max(MIN, MAX)（css-values-4 §11）→ 仅 MAX 臂
+///   definite 时有上界；MIN definite 单独无上界（MAX 百分比可任意大）。
+/// - `Max(args)`：结果 ≥ 各臂，无上界 → None。
+fn extract_calc_definite_upper_bound(expr: &zero_css_parser::values::CalcExpr, vw: f32, vh: f32) -> Option<f64> {
+    use zero_css_parser::values::{CalcContext, CalcExpr};
+    let definite_px = |e: &CalcExpr| -> Option<f64> {
+        if calc_expr_contains_percentage(e) || !calc_expr_has_length(e) {
+            return None;
+        }
+        let ctx = CalcContext {
+            viewport_width: Some(f64::from(vw)),
+            viewport_height: Some(f64::from(vh)),
+            ..Default::default()
+        };
+        zero_css_parser::values::eval_calc_with_context(e, &ctx)
+    };
+    match expr {
+        CalcExpr::Min(args) => args.iter().filter_map(definite_px).reduce(f64::min),
+        CalcExpr::Clamp { min, max, .. } => {
+            let mx = definite_px(max)?;
+            Some(match definite_px(min) {
+                Some(mn) => mn.max(mx),
+                None => mx,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// calc 表达式是否含百分比叶子（与 style-system computed 的判定同语义：含百分比的
+/// 表达式无法在计算值阶段完全解析，保留到布局层）。
+fn calc_expr_contains_percentage(expr: &zero_css_parser::values::CalcExpr) -> bool {
+    use zero_css_parser::values::{CalcExpr, LengthValue};
+    match expr {
+        CalcExpr::Number(_) => false,
+        CalcExpr::Length(lv) => matches!(lv, LengthValue::Percentage(_)),
+        CalcExpr::BinaryOp(left, _, right) => {
+            calc_expr_contains_percentage(left) || calc_expr_contains_percentage(right)
+        }
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_contains_percentage),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_contains_percentage(min)
+                || calc_expr_contains_percentage(val)
+                || calc_expr_contains_percentage(max)
+        }
+        CalcExpr::UnaryOp(_, inner) => calc_expr_contains_percentage(inner),
+        CalcExpr::BinaryMathOp(_, a, b) => calc_expr_contains_percentage(a) || calc_expr_contains_percentage(b),
+    }
+}
+
+/// calc 表达式是否含非百分比长度叶子（css-values §8.5：`<number>` 不是
+/// `<length>`，Number-only 表达式不能作长度分量消费）。
+fn calc_expr_has_length(expr: &zero_css_parser::values::CalcExpr) -> bool {
+    use zero_css_parser::values::{CalcExpr, LengthValue};
+    match expr {
+        CalcExpr::Number(_) => false,
+        CalcExpr::Length(lv) => !matches!(lv, LengthValue::Percentage(_)),
+        CalcExpr::BinaryOp(left, _, right) => calc_expr_has_length(left) || calc_expr_has_length(right),
+        CalcExpr::Min(args) | CalcExpr::Max(args) => args.iter().any(calc_expr_has_length),
+        CalcExpr::Clamp { min, val, max } => {
+            calc_expr_has_length(min) || calc_expr_has_length(val) || calc_expr_has_length(max)
+        }
+        CalcExpr::UnaryOp(_, inner) => calc_expr_has_length(inner),
+        CalcExpr::BinaryMathOp(_, a, b) => calc_expr_has_length(a) || calc_expr_has_length(b),
+    }
 }
 
 /// 尝试从 calc 表达式中提取百分比值。
