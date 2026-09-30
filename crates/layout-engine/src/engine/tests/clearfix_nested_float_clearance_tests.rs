@@ -83,17 +83,20 @@ fn float_child_clear_does_not_undo_sibling_clearance() {
     );
 }
 
-/// R1392 帧修复：wrapper 带 padding-top:21 时嵌套浮动底边须按 content-rel 收集，
-/// 不得虚减 content_y_offset。撤修复实测回归形 = 21 附近（clearance 被整体虚减
-/// 一个 padding 分量），本断言防止该帧错位回归。
+/// R1392 帧修复：wrapper 带 padding-top:21 时嵌套浮动底边须按 content-rel 收集
+/// （36），不得虚减 content_y_offset。
+///
+/// 判别力口径（PR #42 二次复核逐项变异实测）：撤 R1323 producer 收窄 → 本断言红
+///（y=21，毒药经 padding 变体显形，与单测#1 同源）；**仅撤 R1392 帧参在本形状被
+/// 掩蔽（仍 36、绿）**——本断言不作为帧参单独回退的守护。
 ///
 /// FIXME(R1392 余项，已记账后续切片)：36 是**当前实现**钉值，不是规范终值。按
 /// CSS2 §9.5.1/§9.5.2，float 在页面坐标系占 21..57（wrapper pt:21 + float 36h），
 /// 流内 cleared 兄弟应落 **57**；当前 `nested_float_bottoms` 累加嵌套浮动底边漏加
 /// 中间容器自身 border+padding 分量（本例 21），cleared 落 36 与 float 叠压 21px。
-/// 旁证：同几何下 wrapper 改 overflow:hidden（BFC）后兄弟落 57（双审查实测）。
-/// baidu 实际形状中间 UL 无 border/padding，不受此余项影响。修复该余项时必须把
-/// 本断言更新为 57 并删除本 FIXME。
+/// 旁证：同几何下 wrapper 改 overflow:hidden（BFC）后兄弟落 57（双审查实测；
+/// 二次复核经余项修复探针直接实证 57）。baidu 实际形状中间 UL 无 border/padding，
+/// 不受此余项影响。修复该余项时必须把本断言更新为 57 并删除本 FIXME。
 #[test]
 fn nested_float_bottom_respects_content_frame() {
     let (doc, styles, cleared) = build_float_clear_then_cleared(21.0);
@@ -101,7 +104,7 @@ fn nested_float_bottom_respects_content_frame() {
     let result = engine.compute(&doc, &styles);
 
     let cleared_box = find_child_by_node_id(&result.root, cleared).expect("cleared found");
-    // 撤 R1392 帧修复 = 21 附近；当前实现（含已知余项）= 36；规范终值 = 57。
+    // 撤 R1323 producer = 21（红）；当前实现（含已知余项）= 36；规范终值 = 57。
     assert!(
         (cleared_box.y - 36.0).abs() < 1.0,
         "嵌套浮动底边 content-rel 收集（R1392 帧修复钉值，规范终值 57 见 FIXME），实际 y={}",
@@ -114,8 +117,11 @@ fn nested_float_bottom_respects_content_frame() {
 /// clear:both 时，wrapper 不得被标 clearance_active，流内 cleared 兄弟的
 /// clearance（落 float 底 36）不得被 R1319 sibling-shift 撤销。
 ///
-/// 毒药回归形 = 任一臂被误计入 producer → sibling-shift 把兄弟 clearance 当
-/// 「泄漏」拉回 wrapper 流内底（≤ 21 附近），断言 y > 30 变红。
+/// 判别力口径（PR #42 二次复核逐臂变异实测）：absolute/fixed 臂几何显形——臂被
+/// 误计入 producer → sibling-shift 把 cleared 塌回 0，`y > 30` 变红；inline-block
+/// 臂几何无症状（wrapper 被浮体撑高后 sibling-shift 拉回目标恰等于 clearance
+/// 目标，y 恒 36）——以 `clearance_active` flag 直钉判别（臂被误计入 → flag=true
+/// 变红）。
 #[test]
 fn excluded_child_clear_does_not_mark_clearance_active() {
     for arm in ["absolute", "fixed", "inline-block"] {
@@ -168,6 +174,14 @@ fn excluded_child_clear_does_not_mark_clearance_active() {
 
         let mut engine = LayoutEngine::new(800.0, 600.0);
         let result = engine.compute(&doc, &styles);
+
+        // flag 直钉（inline-block 臂唯一判别通道，见函数注释判别力口径）。
+        let wrapper_box =
+            find_child_by_node_id(&result.root, wrapper).unwrap_or_else(|| panic!("{arm}: wrapper found"));
+        assert!(
+            !wrapper_box.clearance_active,
+            "{arm} 子的 clear 不应把 wrapper 标为 clearance_active"
+        );
 
         let cleared_box =
             find_child_by_node_id(&result.root, cleared).unwrap_or_else(|| panic!("{arm}: cleared found"));
