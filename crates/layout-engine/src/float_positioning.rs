@@ -1342,7 +1342,8 @@ pub(crate) fn mark_anonymous_table_roots(
 /// clear 失效（adjoining-float-before-clearance：float 嵌在 wrapper 内，clear:left 看不到它）。
 /// BFC 后代建立独立浮动上下文（其内 float 不外溢），递归在 BFC 边界停止。
 ///
-/// `child_border_y` = child 的 border-box 顶，相对外层 border-box（累加祖先 y）。
+/// `child_border_y` = child 的 y 值累加基点：content-rel 模式（默认）下为
+/// content-box 相对，border-rel 兼容模式下为 border-box 相对（R1324/R4235 帧约定）。
 /// `outer_content_y_offset` = 外层 border→content 偏移，用于换算 content-relative。
 ///
 /// R1392 余项：content-rel 模式（R1324/R4235）下所有子 y 均为 content-box 相对，
@@ -1354,7 +1355,8 @@ fn nested_float_bottoms(child: &LayoutBox, child_border_y: f32, outer_content_y_
     use zero_css_parser::values::FloatValue;
     let mut left = 0.0f32;
     let mut right = 0.0f32;
-    // 下降基点：child 的 content-box 原点，相对外层 border-box。
+    // 下降基点：child 的 content-box 原点（content-rel 模式相对外层 content-box；
+    // border-rel 模式 child y 已含 frame，基点即 child 的 border-box 顶）。
     let child_content_y = child_border_y
         + if *FLOAT_CLAMP_CONTENT_REL {
             child.border_top + child.padding_top

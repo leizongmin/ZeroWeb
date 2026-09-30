@@ -110,9 +110,10 @@ fn nested_float_bottom_respects_content_frame() {
 }
 
 /// R1392 余项多臂矩阵：外层 padding-top {0,30} × 中间容器 frame {无, border-top:21,
-/// padding-top:21}，证明中间 frame 分量修复不是只对原始样例（pt:21）有效，也不依赖
-/// 外层是否带 padding。期望：中间无 frame → 底边 = float 高 36（修复加 0，不回归）；
-/// 中间有任一 frame 分量 → 底边 = 21+36 = 57。
+/// padding-top:21, border-top:5+padding-top:16 组合}，证明中间 frame 分量修复不是
+/// 只对原始样例（pt:21）有效，也不依赖外层是否带 padding。期望：中间无 frame →
+/// 底边 = float 高 36（修复加 0，不回归）；中间有任一 frame 分量（含组合）→
+/// 底边 = frame 和 + 36 = 57。
 ///
 /// 本组浮子**不带 clear**（隔离 R1392：clearance_active 不被置位，R1323 由上面
 /// 两个毒药形状测试单独守护）。
@@ -123,6 +124,7 @@ fn nested_float_bottom_includes_middle_frame_multi_arm() {
         (0.0, 0.0, 0.0, 36.0),
         (0.0, 21.0, 0.0, 57.0),
         (0.0, 0.0, 21.0, 57.0),
+        (0.0, 5.0, 16.0, 57.0), // border+padding 同容器组合（返修建议臂）：5+16=21
         (30.0, 0.0, 0.0, 36.0),
         (30.0, 0.0, 21.0, 57.0),
     ];
@@ -177,6 +179,72 @@ fn nested_float_bottom_includes_middle_frame_multi_arm() {
             y = cleared_box.y
         );
     }
+}
+
+/// R1393 gate 翻 true 场景钉值（返修 F3，PR #45 双审查建议）：容器无直接 float
+/// 子，非 BFC 中间容器带 frame 且内嵌**零高** float。撤本片修复时 :1799 gate 的
+/// `nested_float_bottoms(c, 0.0, 0.0)` 底边 = 0 → gate false（R1389 按无 float
+/// context 处理）；修复后底边 = frame 21 > 0 → gate 翻 true，路由进主 clearance
+/// 路径。
+///
+/// 规范推导（CSS2 §9.5.1/§9.5.2/§10.6.3）：
+/// - 零高 float 占位 = wrapper padding-top 21 + 0 = 21；
+/// - cleared 自然位置 = wrapper border-box 高 21（auto 高只计 in-flow 子，
+///   float 不计入，wrapper 高 = padding 21）；
+/// - clearance = max(0, 21 − 21) = 0 → cleared 落 **21**。
+///
+/// 判别力口径：退化形状下两条路由几何同为 21（gate 翻 true 前后底边恰等于
+/// cleared 自然位置）。本测试钉的是 gate 翻 true 后主 clearance 路径**不双计
+/// 中间 frame**——若把嵌套底边 21 再叠加 frame 会落 42（红）；对「gate 是否翻
+/// true」本身无几何判别力（撤修复亦 21，实测在案）。
+#[test]
+fn adjoining_gate_flip_zero_height_float_with_middle_frame() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let wrapper = doc.create_element("div");
+    doc.append_child(container, wrapper).unwrap();
+    let fl = doc.create_element("div");
+    doc.append_child(wrapper, fl).unwrap();
+    let cleared = doc.create_element("div");
+    doc.append_child(container, cleared).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut k = ComputedStyle::default();
+    k.display = DisplayValue::Block;
+    k.width = LengthValue::Px(400.0);
+    styles.insert(container, k);
+
+    let mut w = ComputedStyle::default();
+    w.display = DisplayValue::Block;
+    w.padding_top = LengthValue::Px(21.0);
+    styles.insert(wrapper, w);
+
+    // 零高 float，不带 clear（gate 只看嵌套 float 存在性，clear 会牵入 R1323）。
+    let mut f = ComputedStyle::default();
+    f.display = DisplayValue::Block;
+    f.float = FloatValue::Left;
+    f.width = LengthValue::Px(50.0);
+    f.height = LengthValue::Px(0.0);
+    styles.insert(fl, f);
+
+    let mut c = ComputedStyle::default();
+    c.display = DisplayValue::Block;
+    c.clear = ClearValue::Both;
+    c.height = LengthValue::Px(10.0);
+    styles.insert(cleared, c);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let cleared_box = find_child_by_node_id(&result.root, cleared).expect("cleared found");
+    // 双计 frame → 42（红）；漏收底边路由错且出负 clearance → <21（红）。
+    assert!(
+        (cleared_box.y - 21.0).abs() < 1.0,
+        "gate 翻 true 后主 clearance 路径：零高 float 底边 21 = 自然位置 21 → clearance 0 \
+         落 21（双计 frame 会落 42），实际 y={}",
+        cleared_box.y
+    );
 }
 
 /// R1392 余项两级下降：中间容器嵌套两层非 BFC frame（wrapper pt:8 > inner pt:8 >
