@@ -11830,8 +11830,42 @@
         + "}"
         + "try{eval(__zwWorkerBindings);}catch(_e){}";
     }
-    // 执行 worker 脚本（data: URL inline 或外链 fetch）。new Function 包影子声明，bare 赋值设局部，执行后同步 onmessage。
+    // 执行 worker 脚本（data: URL inline / blob: 注册表 / 外链 fetch）。new Function 包影子声明，bare 赋值设局部，执行后同步 onmessage。
     var scriptSrc = _zwDecodeWorkerScript(url);
+    // blob: worker 脚本——内容在页内 _zwBlobStore（URL.createObjectURL 注册表），net/fetch 不解析
+    // blob:（见 part02 createObjectURL 已知限制），此前落 __zw_fetch_script 静默取不到 → worker 不执行
+    // 且无 onmessage/onerror。origin 可解析的 blob: URL 拒跨源；opaque origin 形态（blob:null/N
+    // 无 // 可解析）按 FileAPI 同 opaque origin 语义放行——fetch hook 对该形态直接拒绝，两处刻意分叉。
+    // https://w3c.github.io/FileAPI/#blob-url-scheme-fetch
+    if (scriptSrc === null && typeof _zwBlobStore === 'object' && _zwBlobStore !== null
+        && String(url).indexOf('blob:') === 0) {
+      var blobUrl = String(url);
+      // store 精确命中先行（opaque origin 'null' 形态 blob:null/N 无 // 可解析）；origin 可解析时
+      // 再校验同源（跨源 blob URL → 拒绝，走 fetch 失败语义）。
+      var blobScript = Object.prototype.hasOwnProperty.call(_zwBlobStore, blobUrl)
+        ? _zwBlobStore[blobUrl] : null;
+      if (blobScript) {
+        var blobUrlMatch = /^([^\/]+:\/\/[^\/]*)\//.exec(blobUrl.slice(5));
+        var blobOrigin = (globalThis.location && globalThis.location.origin) || '';
+        if (blobUrlMatch && blobUrlMatch[1] !== blobOrigin) blobScript = null;
+      }
+      if (blobScript) {
+        // Blob 全 part 字节物化（_zw_blobBytes 递归处理 string/TypedArray/DataView/ArrayBuffer/
+        // 嵌套 Blob part）后按 UTF-8 解码为脚本源——与 blob.text() 同一解码，避免 byte part
+        // 经逐字节 fromCharCode 退化为 Latin-1 乱码。
+        // https://w3c.github.io/FileAPI/#blob-url-scheme-fetch（取全字节，脚本按 UTF-8 解码）
+        scriptSrc = _zw_utf8_decode(_zw_blobBytes(blobScript));
+      } else {
+        // blob URL 查无此 blob（revoke 后使用 / 跨源）→ fetch 失败语义：异步 error 事件。
+        // https://html.spec.whatwg.org/worker-processing-model step 7（fetch 失败 → error event）
+        if (typeof queueMicrotask === 'function') {
+          queueMicrotask(function () {
+            if (main._terminated) return;
+            main.dispatchEvent(new Event('error', { message: 'Worker script blob URL could not be resolved: ' + blobUrl }));
+          });
+        }
+      }
+    }
     // R3091：外链 worker URL（非 data:）—— 若 host 注册了 __zw_fetch_script（backed by ScriptSourceFetcher），
     // fetch worker 源后同 IIFE 影子执行；未注册 → scriptSrc 仍 null（API 表面可用，worker 不执行，R3080 兼容）。
     if (scriptSrc === null && typeof __zw_fetch_script === 'function') {

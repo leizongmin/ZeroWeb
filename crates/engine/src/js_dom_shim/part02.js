@@ -6731,7 +6731,11 @@
     var queue = _zwIDBConnectionQueues[name];
     if (!queue || queue.running || !queue.requests.length) return;
     queue.running = true;
+    // finish 幂等（本次运行内一次性）：回调先自行 done 再抛时，兜底 finish 不得重复出队。
+    var finished = false;
     var finish = function () {
+      if (finished) return;
+      finished = true;
       queue.requests.shift();
       queue.running = false;
       queue.retry = null;
@@ -6741,7 +6745,14 @@
         delete _zwIDBConnectionQueues[name];
       }
     };
-    queue.requests[0](finish, queue);
+    // 回调同步抛（如 host 不可达时 capabilities 探测抛 DOMException）不得楔死连接队列：
+    // 推进队列后重抛，保持异常对页面可见（否则 queue.running 恒 true，同名后续请求永不结算）。
+    try {
+      queue.requests[0](finish, queue);
+    } catch (callbackError) {
+      finish();
+      throw callbackError;
+    }
   }
 
   function _zwIDBEnqueueConnectionRequest(name, operation) {
@@ -10062,22 +10073,33 @@
             done();
           }, 0);
         };
-        if (_zwIDBUsesHostConnections()) {
-          _zwIDBWaitForHostConnections(req, name, null, function (hostOldVersion) {
-            oldVersion = hostOldVersion;
+        // https://w3c.github.io/IndexedDB/#deleting-a-database——删除前置步骤失败（host 不可达时
+        // capabilities 探测同步抛 DOMException）→ error 事件送达 request，而非异常逃逸致请求无事件。
+        try {
+          if (_zwIDBUsesHostConnections()) {
+            _zwIDBWaitForHostConnections(req, name, null, function (hostOldVersion) {
+              oldVersion = hostOldVersion;
+              performDeletion();
+            });
+          } else if (state) {
+            _zwIDBWaitForConnections(
+              req,
+              state,
+              oldVersion,
+              null,
+              queue,
+              performDeletion
+            );
+          } else {
             performDeletion();
-          });
-        } else if (state) {
-          _zwIDBWaitForConnections(
-            req,
-            state,
-            oldVersion,
-            null,
-            queue,
-            performDeletion
-          );
-        } else {
-          performDeletion();
+          }
+        } catch (setupError) {
+          req.error = setupError;
+          var setupErrorEvent = new _zwIDBEvent('error', req);
+          setupErrorEvent.bubbles = true;
+          setupErrorEvent.cancelable = true;
+          _zwIDBDispatch(req, 'error', undefined, setupErrorEvent);
+          setTimeout(done, 0);
         }
       });
       return req;
