@@ -184,10 +184,50 @@
           return;
         }
       }
+      // xhr.spec send()：GET/HEAD → data 置 null（无体、无派生 CT——send-usp GET/HEAD
+      // 「sends neither a body nor a Content-Type」面）；USP 体 + 作者 CT 带 charset →
+      // charset 替换为 UTF-8（「replaces the charset parameter」面）。同步/异步两路共用
+      //（置于 sync 分派之前）。
+      if (self._zwXhrMethod === 'GET' || self._zwXhrMethod === 'HEAD') {
+        body = null;
+      } else if (typeof URLSearchParams === 'function' && body instanceof URLSearchParams) {
+        var uspCt = self._zwXhrHeaders['content-type'];
+        if (uspCt && /;[ \t]*charset=/i.test(uspCt)) {
+          self._zwXhrHeaders['content-type'] = uspCt.replace(/;[ \t]*charset=[^;]*/i, ';charset=UTF-8');
+        }
+      }
       if (self._zwXhrAsync === false && typeof globalThis.__zw_fetch === 'function') {
+      // net-api M4-S15：同步体类型分发对齐异步路径（R3014/R3020）——Blob/FormData 经
+        // byte-wire 二进制保真（原 String(body) → '[object Blob]' 线上垃圾）+ 派生 CT +
+        // UA Content-Length。
+        var syncBody = '';
+        var syncHeaders = _headersToWire(self._zwXhrHeaders);
+        if (body instanceof Blob) {
+          syncBody = _zwEncodeBytesPrefix(_zw_blobBytes(body));
+          if ((body.type || '') && !_zwHasHeader(syncHeaders, 'content-type')) {
+            syncHeaders = _zwAddHeader(syncHeaders, 'content-type', body.type);
+          }
+        } else if (typeof FormData === 'function' && body instanceof FormData) {
+          var syncMp = body._zwMultipart();
+          syncBody = _zwEncodeBytesPrefix(syncMp.body);
+          if (!_zwHasHeader(syncHeaders, 'content-type')) {
+            syncHeaders = _zwAddHeader(syncHeaders, 'content-type', syncMp.contentType);
+          }
+        } else if (body != null) {
+          syncBody = String(body);
+        }
+        if (syncBody && !_zwHasHeader(syncHeaders, 'content-length')) {
+          var syncCl = 0;
+          if (syncBody.indexOf('__zw_bytes:') === 0) {
+            syncCl = syncBody.slice('__zw_bytes:'.length).split(',').length;
+          } else {
+            syncCl = new TextEncoder().encode(syncBody).length;
+          }
+          syncHeaders = _zwAddHeader(syncHeaders, 'content-length', String(syncCl));
+        }
         var syncWire = globalThis.__zw_fetch(
           '__zwxhr:sync', self._zwXhrMethod, self._zwXhrUrl,
-          _headersToWire(self._zwXhrHeaders), body == null ? '' : String(body),
+          syncHeaders, syncBody,
           '', '', 'cors', 'follow', 'same-origin');
         var syncResp = _makeResponseFromWire(syncWire);
         self._zwFillFromResponse(syncResp, null);

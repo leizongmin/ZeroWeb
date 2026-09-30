@@ -4426,6 +4426,63 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(body.as_bytes().to_vec()),
                 });
             }
+            if clean.starts_with("xhr/") && clean.ends_with("/content.py") {
+                // net-api M4-S15 fixture：xhr/resources/content.py（上游逐字等价——
+                // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
+                // content.py）。回显请求体（?content= 覆写）+ Content-type text/plain
+                //（?response_charset_label= 追加 ;charset=）+ X-Request-Method/Query/
+                // Content-Length/Content-Type 请求探针头。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let mut headers: Vec<(String, String)> = Vec::new();
+                let ctype = match wpt_query_value(query, "response_charset_label") {
+                    Some(label) => format!("text/plain;charset={}", label),
+                    None => "text/plain".to_string(),
+                };
+                headers.push(("content-type".into(), ctype));
+                headers.push(("x-request-method".into(), req.method.clone()));
+                let req_query = path_part
+                    .split_once('?')
+                    .map(|(_, q)| q.to_string())
+                    .unwrap_or_default();
+                headers.push((
+                    "x-request-query".into(),
+                    if req_query.is_empty() { "NO".into() } else { req_query },
+                ));
+                let req_header = |name: &str| -> Option<String> {
+                    req.headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                        .map(|(_, v)| v.clone())
+                };
+                headers.push((
+                    "x-request-content-length".into(),
+                    req_header("content-length").unwrap_or_else(|| "NO".into()),
+                ));
+                headers.push((
+                    "x-request-content-type".into(),
+                    req_header("content-type").unwrap_or_else(|| "NO".into()),
+                ));
+                let body = wpt_query_value(query, "content").unwrap_or_else(|| {
+                    let bytes_body = req
+                        .body_bytes
+                        .as_ref()
+                        .map(|b| String::from_utf8_lossy(b).into_owned())
+                        .unwrap_or_default();
+                    if bytes_body.is_empty() {
+                        req.body.clone().unwrap_or_default()
+                    } else {
+                        bytes_body
+                    }
+                });
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
             if req.method != "GET" {
                 return Err(format!("method not supported: {}", req.method));
             }
@@ -4561,6 +4618,67 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
                     status: 200,
                     status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("xhr/") && clean.ends_with(".asis") {
+                // net-api M4-S15 fixture：xhr/resources/*.asis 原始 HTTP 响应文件（上游
+                // 逐字嵌入——https://github.com/web-platform-tests/wpt/blob/3159769/xhr/
+                // resources/*.asis；wptserve 原样发送文件字节，行尾 LF 解析宽松）。
+                // 解析：首行状态行，后续非空行 `name: value` 头（空值合法），其余为体。
+                let raw = match clean.rsplit('/').next().unwrap_or("") {
+                    "header-content-length.asis" => "HTTP/1.0 200 NANANA\nCONTENT-LENGTH:  0\n",
+                    "header-content-length-twice.asis" => {
+                        "HTTP/1.0 200 NANANA\nCONTENT-LENGTH:  0\ncontent-length:\t 0\n"
+                    }
+                    "headers-double-empty.asis" => "HTTP/1.1 444 HI\ndouble-trouble:\ndouble-trouble:\n",
+                    "headers-basic.asis" => "HTTP/1.1 280 HELLO\nfoo-test: 1\nfoo-test: 2\nfoo-test: 3\n",
+                    "headers-some-are-empty.asis" => {
+                        "HTTP/1.0 200 MEH\nHEYA:\t \nHEYA: \u{000B}\u{000C}\nHEYA: 1\t\nHEYA:\nHEYA:\t\nHEYA: \t2\n"
+                    }
+                    "headers-www-authenticate.asis" => {
+                        "HTTP/1.1 280 HELLO\nwww-authenticate: 1\nwww-authenticate: 2\nwww-authenticate: 3, 4\n"
+                    }
+                    _ => {
+                        return Err(format!("fixture not embedded: {}", clean));
+                    }
+                };
+                let mut lines = raw.lines();
+                let status_line = lines.next().unwrap_or("HTTP/1.0 200 OK");
+                let mut parts = status_line.splitn(3, ' ');
+                let _http = parts.next().unwrap_or("HTTP/1.0");
+                let status: u16 = parts.next().unwrap_or("200").parse().unwrap_or(200);
+                let status_text = parts.next().unwrap_or("").to_string();
+                let mut headers: Vec<(String, String)> = Vec::new();
+                let mut body_lines: Vec<&str> = Vec::new();
+                let mut in_body = false;
+                for line in lines {
+                    if in_body {
+                        body_lines.push(line);
+                        continue;
+                    }
+                    if line.is_empty() {
+                        in_body = true;
+                        continue;
+                    }
+                    if let Some((name, value)) = line.split_once(':') {
+                        headers.push((
+                            name.to_lowercase(),
+                            value.strip_prefix(' ').unwrap_or(value).to_string(),
+                        ));
+                    }
+                }
+                let body = if body_lines.is_empty() {
+                    String::new()
+                } else {
+                    format!("{}\n", body_lines.join("\n"))
+                };
+                wpt_add_fetch_metadata(&mut headers, req, status);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text,
                     headers,
                     body: body.clone(),
                     body_bytes: Some(body.into_bytes()),

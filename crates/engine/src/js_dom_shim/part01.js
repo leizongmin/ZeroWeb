@@ -2115,6 +2115,9 @@
       }
       var redirect = String(init.redirect || (isRequestLike ? input.redirect : '') || 'follow');
       var body = '';
+      // UA 内部 Content-Length（HTTP 语义；forbidden request-header 名单内 JS 不可自设，
+      // fetch 层对已知字节体统一补齐——xhr send-blob content.py 回显断言面）。
+      var _zwCtHeaderDone = false;
       // R3014/R3015/R3020：body 类型分发——FormData（multipart）/ URLSearchParams（urlencoded）/ Blob（字节）/
       // string（原样）。各专用类型在用户未设 Content-Type 时设默认值（缺省 Content-Type 不覆写用户显式值）。
       // 文本（URLSearchParams/string）经 UTF-8 wire 保真；二进制（FormData multipart / Blob）经 byte-wire 全保真。
@@ -2128,9 +2131,20 @@
         if (!_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'content-type', 'application/x-www-form-urlencoded;charset=UTF-8');
       } else if (rawBody instanceof Blob) {
         body = _zwEncodeBytesPrefix(_zw_blobBytes(rawBody)); // R3020：Blob 字节 byte-wire（二进制保真）
-        if (!_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'content-type', rawBody.type || 'application/octet-stream');
+        // fetch spec body init：仅 Blob.type 非空才派生 Content-Type（type-less blob 无
+        // 默认——send-blob-with-no-mime-type 的 X-Request-Content-Type: NO 断言面）。
+        if ((rawBody.type || '') && !_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'content-type', rawBody.type);
       } else if (rawBody != null) {
         body = String(rawBody);
+      }
+      if (body && !_zwHasHeader(headersWire, 'content-length')) {
+        var _zwClLen = 0;
+        if (body.indexOf('__zw_bytes:') === 0) {
+          _zwClLen = body.slice('__zw_bytes:'.length).split(',').length;
+        } else {
+          _zwClLen = new TextEncoder().encode(body).length;
+        }
+        headersWire = _zwAddHeader(headersWire, 'content-length', String(_zwClLen));
       }
       if (typeof __zw_fetch !== 'function') {
         return Promise.resolve(_makeResponse('__zw_fetch_error:no-handler'));

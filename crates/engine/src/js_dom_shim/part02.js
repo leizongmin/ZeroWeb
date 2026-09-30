@@ -2486,6 +2486,27 @@
     }
     return out;
   }
+  // https://url.spec.whatwg.org/#concept-urlencoded-serializer——`*`/`-`/`.`/`_`/字
+  // 数字直出、0x20→'+'、其余 %XX 大写（encodeURIComponent 会漏 !'() 与 ~——send-usp
+  // 0x21/0x27/0x28/0x29 断言面）。
+  function _zwUrlencodedEncode(s) {
+    var str = String(s);
+    var bytes = new TextEncoder().encode(str);
+    var out = '';
+    for (var i = 0; i < bytes.length; i++) {
+      var b = bytes[i];
+      if (b === 0x20) {
+        out += '+';
+      } else if ((b >= 0x30 && b <= 0x39) || (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) ||
+                 b === 0x2A || b === 0x2D || b === 0x2E || b === 0x5F) {
+        out += String.fromCharCode(b);
+      } else {
+        var hex = b.toString(16).toUpperCase();
+        out += '%' + (hex.length < 2 ? '0' + hex : hex);
+      }
+    }
+    return out;
+  }
   globalThis.URLSearchParams = globalThis.URLSearchParams || function URLSearchParams(init) {
     if (!(this instanceof URLSearchParams)) return new URLSearchParams(init);
     this._p = [];
@@ -2574,7 +2595,7 @@
     toString: function () {
       var out = [];
       for (var i = 0; i < this._p.length; i++) {
-        out.push(encodeURIComponent(this._p[i][0]).replace(/%20/g, '+') + '=' + encodeURIComponent(this._p[i][1]).replace(/%20/g, '+'));
+        out.push(_zwUrlencodedEncode(this._p[i][0]) + '=' + _zwUrlencodedEncode(this._p[i][1]));
       }
       return out.join('&');
     }
