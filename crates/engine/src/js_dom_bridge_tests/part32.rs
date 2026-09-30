@@ -267,3 +267,119 @@ fn test_shim_plain_parent_append_host_visible_t7() {
         "两子应嵌在解析子 div 内且保序\n{out}"
     );
 }
+
+// ── ③ 返修轮回归（defect D1/D2，review/t7-defect-r1.json） ──
+
+#[test]
+fn test_shim_innerhtml_leading_ws_path_align_t7() {
+    // D1：innerHTML 前导空白 markup 下 host trim 解析 vs 本地视图原文解析错位——
+    // 修复前 child-index 整体 +1：walk 错落下一兄弟（a 内 append 落进 b）或越界
+    // lenient 静默丢（末元素形态）。修复后视图用 trim 后串构建，与 host 逐子对齐。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"results\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var host = document.getElementById('results');\
+             host.innerHTML = '\\n<div class=\"a\"></div>\\n<div class=\"b\"></div>';\
+             var b = host.childNodes[host.childNodes.length - 1];\
+             var cat = document.createElement('div');\
+             cat.id = 'ws-cat';\
+             b.appendChild(cat);\
+             globalThis.__wsGEBI = document.getElementById('ws-cat') !== null;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__wsGEBI)").unwrap().value,
+        "true",
+        "前导空白 markup 下同 turn gEBI 应命中（findPendingId 兜底）"
+    );
+
+    // 落 host：ws-cat 必须落在 .b 内。修复前视图多计前导文本子 → index 整体 +1，
+    // walk 越界 lenient 静默丢（ws-cat 不出现在 host）。
+    let queue = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap_or_else(|e| e.into_inner()), &queue)
+        .unwrap();
+    let b_seg = out
+        .split("<div class=\"b\">")
+        .nth(1)
+        .unwrap_or("")
+        .split("</div>")
+        .next()
+        .unwrap_or("");
+    assert!(
+        b_seg.contains("ws-cat"),
+        "ws-cat 应落在 .b 内（前导空白不产生索引错位/静默丢弃）\n{out}"
+    );
+}
+
+#[test]
+fn test_shim_plain_mid_remove_no_handle_ghost_t7() {
+    // D2：plain 容器内部 t7 落 host 的 handle 后代（深度 ≥2），plain 中间节点摘除时
+    // 必须同步摘 host——修复前对冲只认直接 handle 子（无 handle 早退不递归），深层
+    // 后代残留 host → apply 后 gEBI 幽灵命中（id_map 未清）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"results\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var host = document.getElementById('results');\
+             host.innerHTML = '<div class=\"list\"><div class=\"item\"></div></div>';\
+             var list = host.firstChild;\
+             var item = list.firstChild;\
+             var row = document.createElement('div');\
+             row.id = 'row-deep';\
+             item.appendChild(row);\
+             globalThis.__deepBefore = document.getElementById('row-deep') !== null;\
+             list.removeChild(item);\
+             globalThis.__deepAfter = document.getElementById('row-deep') === null;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__deepBefore)").unwrap().value,
+        "true",
+        "plain 中间节点内 append 后同 turn gEBI 应命中"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__deepAfter)").unwrap().value,
+        "true",
+        "plain 中间节点摘除后同 turn gEBI 应为 null（handle 后代已标记移除）"
+    );
+
+    // 落 host：apply 后序列化不含 row-deep（深层 handle 随 plain 摘除同步出 host）。
+    let queue = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap_or_else(|e| e.into_inner()), &queue)
+        .unwrap();
+    assert!(
+        !out.contains("row-deep"),
+        "plain 中间节点摘除须把 t7 挂载的 handle 后代同步摘出 host\n{out}"
+    );
+}

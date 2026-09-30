@@ -1409,10 +1409,30 @@
   // `_zwMarkRemovedHandle` 与 handle 父 removeChild 陷阱（part04 R140 段）同口径；
   // `_mo_notify(null,null)` 让 pending 表对冲消零（append+remove 不留 pending 残留）。
   // 消费点：plain removeChild / innerHTML= setter / replaceChildren / replaceChild 旧子。
+  // t7-r2（defect D2）：c 无 handle（plain 容器）时递归收集子树内 handle 后代逐一摘
+  // ——t7 append 侧可能已把 handle 子孙挂进 host 的 plain 容器内部（深度 ≥2），宿主
+  // 侧对 plain 容器无整子树移除通路，须按 handle 逐个摘。handle 根（c.__zwHandle）
+  // 宿主整子树随移除，无需递归（遍历在 handle 节点处不下钻）。
   function _zwT7EmitHostRemove(c, prev, next) {
-    if (!c || !c.__zwHandle || typeof __zw_remove_handle !== 'function') return;
-    try { __zw_remove_handle(c.__zwHandle); } catch (_eT7rh) {}
-    if (typeof _zwMarkRemovedHandle === 'function') { try { _zwMarkRemovedHandle(c.__zwHandle); } catch (_eT7mk) {} }
+    if (!c || typeof __zw_remove_handle !== 'function') return;
+    var _t7Targets = [];
+    if (c.__zwHandle) {
+      _t7Targets.push(c);
+    } else {
+      var _t7Stack = [c], _t7G = 0;
+      while (_t7Stack.length && _t7G++ < 4096) {
+        var _t7N = _t7Stack.pop();
+        if (!_t7N) continue;
+        if (_t7N.__zwHandle) { _t7Targets.push(_t7N); continue; }
+        var _t7Kids = _t7N.childNodes;
+        if (_t7Kids) for (var _t7K = 0; _t7K < _t7Kids.length; _t7K++) _t7Stack.push(_t7Kids[_t7K]);
+      }
+    }
+    if (!_t7Targets.length) return;
+    for (var _t7I = 0; _t7I < _t7Targets.length; _t7I++) {
+      try { __zw_remove_handle(_t7Targets[_t7I].__zwHandle); } catch (_eT7rh) {}
+      if (typeof _zwMarkRemovedHandle === 'function') { try { _zwMarkRemovedHandle(_t7Targets[_t7I].__zwHandle); } catch (_eT7mk) {} }
+    }
     if (typeof _mo_notify === 'function') {
       try {
         _mo_notify(null, null, {
