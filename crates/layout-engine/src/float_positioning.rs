@@ -1344,16 +1344,30 @@ pub(crate) fn mark_anonymous_table_roots(
 ///
 /// `child_border_y` = child 的 border-box 顶，相对外层 border-box（累加祖先 y）。
 /// `outer_content_y_offset` = 外层 border→content 偏移，用于换算 content-relative。
+///
+/// R1392 余项：content-rel 模式（R1324/R4235）下所有子 y 均为 content-box 相对，
+/// 递归下降时 c_border_y 除累加 child 的 y 外还须加上 child 自身的 border_top +
+/// padding_top（frame 分量），否则中间非 BFC 容器的 frame 把嵌套浮动底边虚减，
+/// 后续 clear 兄弟与嵌套浮动叠压。border-rel 兼容模式 child y 已含 frame，不重复加。
+/// https://www.w3.org/TR/CSS22/visuren.html#clearance
 fn nested_float_bottoms(child: &LayoutBox, child_border_y: f32, outer_content_y_offset: f32) -> (f32, f32) {
     use zero_css_parser::values::FloatValue;
     let mut left = 0.0f32;
     let mut right = 0.0f32;
+    // 下降基点：child 的 content-box 原点，相对外层 border-box。
+    let child_content_y = child_border_y
+        + if *FLOAT_CLAMP_CONTENT_REL {
+            child.border_top + child.padding_top
+        } else {
+            0.0
+        };
     for c in &child.children {
         if c.is_absolute || c.is_fixed {
             continue;
         }
-        // c.y 相对 child 的 border-box 原点；累加到外层 border-relative。
-        let c_border_y = child_border_y + c.y;
+        // content-rel 模式 c.y 相对 child 的 content-box 原点（border-rel 模式相对
+        // border-box 原点，此时 child_content_y == child_border_y）。
+        let c_border_y = child_content_y + c.y;
         if !matches!(c.float, FloatValue::None) {
             let bottom = c_border_y - outer_content_y_offset + c.height + c.margin_bottom;
             match c.float {
