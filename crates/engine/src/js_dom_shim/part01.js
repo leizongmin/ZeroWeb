@@ -1988,7 +1988,40 @@
   //   null            → http/https（无 bad port）落 host 桥原路径
   //   {reject:true}   → network error（fetch reject TypeError）
   //   {response}      → data:/blob: scheme fetch 响应（new Response 路由，instanceof Response）
-  function _zwFetchSchemeDispatch(url, method) {
+  // net-api M4-S14：wire 头取值（\x1e 对，name 大小写不敏感；首值——setRequestHeader
+  // combine 已合并多值）。
+  function _zwGetWireHeader(wire, name) {
+    if (!wire) return null;
+    var parts = wire.split('\x1e');
+    var ln = String(name).toLowerCase();
+    for (var i = 0; i + 1 < parts.length; i += 2) {
+      if (String(parts[i]).toLowerCase() === ln) return parts[i + 1];
+    }
+    return null;
+  }
+  // https://fetch.spec.whatwg.org/#extract-a-range-header-value——HTTP byte-range 单区间
+  // 提取（OWS 容差，测试面向 bytes= \t9-21 / bytes=5 - 10 / bytes=-\t 5 / bytes \t =\t 6-）。
+  // 多区间（逗号）/单位非 bytes/起点缺失/起点>终点 → failure（blob scheme fetch → network
+  // error，spec blob-url-scheme step 12；不支持的 Range 不回落 200——现 spec 语义）。
+  function _zwExtractBlobRange(value) {
+    if (value == null) return null;
+    var v = String(value);
+    if (v.indexOf(',') >= 0) return null; // 多区间 / 尾逗号 → failure
+    var startForm = /^[ \t]*bytes[ \t]*=[ \t]*(\d+)[ \t]*-(?:[ \t]*(\d+))?[ \t]*$/.exec(v);
+    var suffixForm = /^[ \t]*bytes[ \t]*=[ \t]*-[ \t]*(\d+)[ \t]*$/.exec(v);
+    if (startForm) {
+      var s = parseInt(startForm[1], 10);
+      var e = startForm[2] !== undefined ? parseInt(startForm[2], 10) : null;
+      if (e !== null && s > e) return null;
+      return { start: s, end: e };
+    }
+    if (suffixForm) {
+      // 后缀 -N：末 N 字节（N ≥ size → 全体；起点在 scheme fetch 步骤按 size 钳制）。
+      return { suffix: parseInt(suffixForm[1], 10) };
+    }
+    return null;
+  }
+  function _zwFetchSchemeDispatch(url, method, headersWire) {
     var m = /^([A-Za-z][A-Za-z0-9+.\-]*):/.exec(url);
     if (!m) return null;
     var scheme = m[1].toLowerCase();
@@ -2021,6 +2054,36 @@
         ? _zwBlobStore[url] : null;
       if (!blob) return { reject: true };
       var bytes = _zw_blobBytes(blob);
+      // blob-url-scheme step 11-13：Range 头——**头存在**而提取 failure（malformed/
+      // 多区间/起点缺失）→ network error（xhr blob-range unsupported 族；无 200 回落——
+      // 现 spec 语义）；提取成功 → 206 切片响应（Content-Range/Content-Length）；头
+      // 缺省 → 200 全量。
+      var rangeHeader = _zwGetWireHeader(headersWire, 'range');
+      var rangeVal = rangeHeader != null ? _zwExtractBlobRange(rangeHeader) : null;
+      if (rangeHeader != null && rangeVal === null) return { reject: true };
+      if (rangeVal !== null) {
+        var total = bytes.length;
+        var rStart;
+        var rEnd;
+        if (rangeVal.suffix !== undefined) {
+          rStart = rangeVal.suffix >= total ? 0 : total - rangeVal.suffix;
+          rEnd = total - 1;
+        } else {
+          rStart = rangeVal.start;
+          if (rStart >= total) return { reject: true };
+          rEnd = (rangeVal.end === null || rangeVal.end >= total) ? total - 1 : rangeVal.end;
+        }
+        var slice = bytes.slice(rStart, rEnd + 1);
+        var rHeaders = {
+          'content-length': String(slice.length),
+          'content-type': blob.type || '',
+          'content-range': 'bytes ' + rStart + '-' + rEnd + '/' + total,
+        };
+        var rresp = new Response(slice, { status: 206, statusText: 'Partial Content', headers: rHeaders });
+        rresp.type = 'basic';
+        rresp.url = url;
+        return { response: rresp };
+      }
       var headers = { 'content-length': String(bytes.length), 'content-type': blob.type || '' };
       var bresp = new Response(bytes, { status: 200, statusText: 'OK', headers: headers });
       bresp.type = 'basic';
@@ -2092,7 +2155,7 @@
         }
         // M2-S1（net-api-compat）：scheme dispatch（main fetch §4.1 step 12）——data:/blob:
         // scheme fetch + bad port / 非 HTTP(S) scheme network error。命中即短路 host 派发。
-        var _schemeHit = _zwFetchSchemeDispatch(url, method);
+        var _schemeHit = _zwFetchSchemeDispatch(url, method, headersWire);
         if (_schemeHit) {
           if (_schemeHit.reject) reject(new TypeError('Failed to fetch'));
           else resolve(_schemeHit.response);

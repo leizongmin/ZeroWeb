@@ -169,6 +169,21 @@
       }
       // net-api M3-S2：同步 XHR（open async=false）——host `__zw_fetch` 同步契约直返
       //（runner 路径；异步 host 回空 wire → error 路径，浏览器同步 XHR 已知限制）。
+      // net-api M4-S14：同步 XHR scheme 分派先行（data:/blob: shim 侧 store 视角——
+      // host 同步契约不知 shim blob store）。reject → 同步抛 NetworkError（xhr.spec
+      // 同步 send 网络错误——blob-range unsupported 族断言面）；命中 → 本地填充返回。
+      if (self._zwXhrAsync === false) {
+        var schemeHit = _zwFetchSchemeDispatch(self._zwXhrUrl, self._zwXhrMethod,
+          _headersToWire(self._zwXhrHeaders));
+        if (schemeHit) {
+          if (schemeHit.reject) {
+            throw new (globalThis.DOMException || Error)(
+              'A network error occurred.', 'NetworkError');
+          }
+          self._zwFillFromResponse(schemeHit.response, null);
+          return;
+        }
+      }
       if (self._zwXhrAsync === false && typeof globalThis.__zw_fetch === 'function') {
         var syncWire = globalThis.__zw_fetch(
           '__zwxhr:sync', self._zwXhrMethod, self._zwXhrUrl,
@@ -238,7 +253,18 @@
       var ln = String(name).toLowerCase();
       return Object.prototype.hasOwnProperty.call(self._zwXhrResponseHeaders, ln) ? self._zwXhrResponseHeaders[ln] : null;
     };
-    self.getAllResponseHeaders = function() { return ''; };
+    // xhr.spec §4.6.5 getAllResponseHeaders：响应头列表逐项 `name: value\r\n` 拼接
+    //（列表序；空值头照序列化——blob-range 的 `content-type: `（type 缺省 Blob）断言面）。
+    self.getAllResponseHeaders = function() {
+      if (!self._zwXhrResponseHeaders) return '';
+      var out = '';
+      for (var k in self._zwXhrResponseHeaders) {
+        if (Object.prototype.hasOwnProperty.call(self._zwXhrResponseHeaders, k)) {
+          out += k + ': ' + self._zwXhrResponseHeaders[k] + '\r\n';
+        }
+      }
+      return out;
+    };
   };
   // https://xhr.spec.whatwg.org/#states
   globalThis.XMLHttpRequest.UNSENT = 0;
