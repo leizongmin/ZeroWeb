@@ -1346,24 +1346,30 @@ fn test_eventsource_r2961() {
         .execute(
             "globalThis.__es = []; globalThis.__open = 'no'; globalThis.__err = 'no';\
              globalThis.fetch = function(url, init) {\
-               return Promise.resolve({ ok: true, status: 200, text: function() { return Promise.resolve(globalThis.__BODY); } });\
+               return Promise.resolve({ ok: true, status: 200,\
+                 headers: { get: function(name) { return name.toLowerCase() === 'content-type' ? 'text/event-stream' : null; } },\
+                 text: function() { return Promise.resolve(globalThis.__BODY); } });\
              };\
              globalThis.__BODY = 'data: hello\\n\\ndata: world\\n\\nevent: custom\\ndata: payload\\n\\n: comment\\ndata: a\\ndata: b\\n\\n';\
              var es = new EventSource('https://example.com/stream');\
              es.onopen = function() { globalThis.__open = 'yes'; };\
-             es.onmessage = function(e) { globalThis.__es.push('msg:' + e.data); };\
-             es.addEventListener('custom', function(e) { globalThis.__es.push('custom:' + e.data); });\
+             es.onmessage = function(e) { globalThis.__es.push('msg:' + e.data); if (globalThis.__es.length >= 4) es.close(); };\
+             es.addEventListener('custom', function(e) { globalThis.__es.push('custom:' + e.data); if (globalThis.__es.length >= 4) es.close(); });\
              es.onerror = function() { globalThis.__err = 'yes'; };",
         )
         .unwrap();
-    // fetch 链在 execute 末 microtask 排空 → onopen + 解析派发 + onerror（finite stream 结束）。
+    // fetch 链在 execute 末 microtask 排空 → onopen + 解析派发 + reestablish error（连接关闭
+    // → reestablish；handler 收满 4 事件即 close() 终止重连——test sandbox 的 setTimeout
+    // 零延迟泵送，不断开则 fetch/派发循环风暴）。
     assert_eq!(sandbox.execute("String(globalThis.__open)").unwrap().value, "yes");
     assert_eq!(
         sandbox.execute("globalThis.__es.join('|')").unwrap().value,
         "msg:hello|msg:world|custom:payload|msg:a\nb"
     );
-    assert_eq!(sandbox.execute("String(globalThis.__err)").unwrap().value, "yes");
-    // readyState：finite stream 结束后 CLOSED（2）。
+    // close()（handler 收满即关）= spec 静默中止——reestablish 不再执行，error 不派发
+    //（error 路径由下方 test 5 reestablish + 无 fetch failConnection 两腿覆盖）。
+    assert_eq!(sandbox.execute("String(globalThis.__err)").unwrap().value, "no");
+    // readyState：连接关闭后 reestablish → CONNECTING（重连中）；close() 后 CLOSED（2）。
     assert_eq!(
         sandbox
             .execute("String(typeof EventSource !== 'undefined' ? 1 : 0)")
@@ -1378,7 +1384,7 @@ fn test_eventsource_r2961() {
             "globalThis.__es2 = [];\
              globalThis.__BODY = 'id:42\\ndata:nospace\\n\\nid:43\\ndata: second\\n\\n';\
              var es2 = new EventSource('https://example.com/s');\
-             es2.onmessage = function(e) { globalThis.__es2.push(e.lastEventId + ':' + e.data); };",
+             es2.onmessage = function(e) { globalThis.__es2.push(e.lastEventId + ':' + e.data); if (globalThis.__es2.length >= 2) es2.close(); };",
         )
         .unwrap();
     assert_eq!(
@@ -1404,6 +1410,33 @@ fn test_eventsource_r2961() {
         "closed"
     );
 
+    // M4-S12 重连语义：连接关闭 → reestablish 重连，请求带 `Last-Event-ID`（已派发提交的
+    // last event ID string——经 __zwInternalHeadersWire 内部直设 wire，绕公共 ByteString
+    // 校验）。test sandbox 零延迟泵送 setTimeout → 重连立即发生，断言 ≥2 次调用 + 第二次
+    // 带 id（循环风暴无碍 ≥ 断言稳定性）。
+    sandbox
+        .execute(
+            "globalThis.__calls = [];\
+             globalThis.fetch = function(url, init) {\
+               globalThis.__calls.push(String((init && init.__zwInternalHeadersWire) || ''));\
+               return Promise.resolve({ ok: true, status: 200,\
+                 headers: { get: function(name) { return name.toLowerCase() === 'content-type' ? 'text/event-stream' : null; } },\
+                 text: function() { return Promise.resolve('id:42\\ndata:x\\n\\n'); } });\
+             };\
+             globalThis.__err5 = 'no';\
+             var es5 = new EventSource('https://example.com/r');\
+             es5.onmessage = function() {};\
+             es5.onerror = function() { globalThis.__err5 = 'yes'; };",
+        )
+        .unwrap();
+    let calls = sandbox
+        .execute("String(globalThis.__calls.length >= 2 && globalThis.__calls[1] === 'last-event-id\\x1e42' ? 'ok' : globalThis.__calls.join('|'))")
+        .unwrap()
+        .value;
+    assert_eq!(calls, "ok");
+    // reestablish 步骤 1：置 CONNECTING + fire error（每次重连周期）。
+    assert_eq!(sandbox.execute("String(globalThis.__err5)").unwrap().value, "yes");
+
     // 无 fetch（host 未注册且无覆写）→ onerror（不悬挂）。
     let mut nf = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
         persistent_context: true,
@@ -1411,6 +1444,17 @@ fn test_eventsource_r2961() {
     })
     .unwrap();
     nf.execute(generate_js_dom_shim()).unwrap();
+    // M4-S12：EventSource 构造器经 new URL 解析（spec base 解析 + SyntaxError 面）——裸
+    // sandbox 无 __zw_parse_url 回调会连 URL 构造都不可用，注册 DOM 回调补齐解析通道。
+    {
+        let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+        let dom_html: Arc<Mutex<String>> =
+            Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+        let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+        let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+            std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+        register_dom_callbacks(&mut nf, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    }
     // shim 自带 fetch（返 no-handler Response），EventSource 拿到 !ok → onerror。
     nf.execute(
         "globalThis.__nferr='no'; var es=new EventSource('https://example.com/n'); es.onerror=function(){globalThis.__nferr='yes';};",

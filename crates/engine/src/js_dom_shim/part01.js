@@ -2042,6 +2042,14 @@
       // https://fetch.spec.whatwg.org/#concept-request-credentials-mode
       var credentials = String(init.credentials || (isRequestLike ? input.credentials : '') || 'same-origin');
       var headersWire = _headersToWire(init.headers) || (isRequestLike ? _headersToWire(input.headers) : '');
+      // net-api M4-S12：内部直设头 wire 旁路（`init.__zwInternalHeadersWire`，\x1e 对齐
+      // headersWire 格式）。spec 场景：SSE EventSource 于 request header list **内部直设**
+      // `Last-Event-ID`（HTML §9.2.2——值为任意 UTF-8 串，不经 JS 可见的 ByteString 校验；
+      // 公共 init.headers 路径维持 Fetch 校验不变，fetch header-values TypeError 面零回退）。
+      if (init && typeof init.__zwInternalHeadersWire === 'string' && init.__zwInternalHeadersWire) {
+        headersWire = headersWire ? headersWire + '\x1e' + init.__zwInternalHeadersWire
+                                  : init.__zwInternalHeadersWire;
+      }
       var redirect = String(init.redirect || (isRequestLike ? input.redirect : '') || 'follow');
       var body = '';
       // R3014/R3015/R3020：body 类型分发——FormData（multipart）/ URLSearchParams（urlencoded）/ Blob（字节）/

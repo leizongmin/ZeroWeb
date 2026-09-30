@@ -12251,23 +12251,94 @@
   // 经 fetch（R2923）拉 event-stream 全 body 后按 text/event-stream 解析（HTML spec §9.2）：字段
   // data/event/id/retry，空行派发累积事件，`:` 行注释，BOM 去除，CRLF/LF/CR 分行。readyState + onopen/
   // onmessage/onerror + addEventListener。**headless 有限流**：fetch 取整 body 后解析派发全部事件（真浏览器
-  // 持续流式逐块派发；本实现 finite-stream 一次派发——headless 加载期足够）。自动重连/Last-Event-ID 记录
-  // 但不重连（headless 无长连接）。https://html.spec.whatwg.org/multipage/server-sent-events.html
+  // 持续流式逐块派发；本实现 finite-stream 一次派发）。连接处理按 spec §9.2.3 分派：status ≠ 200 或
+  // Content-Type 非 text/event-stream → fail the connection（CLOSED + error，不再重连）；网络错误或 body
+  // 结束 → reestablish（CONNECTING + error + 等重连时间后带 Last-Event-ID 重连，§9.2.4）。
+  // https://html.spec.whatwg.org/multipage/server-sent-events.html
   function EventSource(url, options) {
-    this.url = String(url);
+    // spec 构造（§9.2.2）：url = parse(url, API base URL)——失败抛 SyntaxError DOMException；
+    // url 属性 = 序列化（constructor-empty-url / constructor-url-bogus 断言面）。
+    // base URL：location.href 兜底 about:blank；href getter 在无宿主 DOM 桥环境（裸 sandbox）
+    // 可抛——一并兜住（spec base 取 settings object 的 API base URL；about:blank 为合理回退）。
+    var base = 'about:blank';
+    try {
+      if (typeof location !== 'undefined' && location && location.href) base = String(location.href);
+    } catch (e) {}
+    var resolved;
+    try {
+      resolved = new URL(String(url), base);
+    } catch (e) {
+      // globalThis.DOMException（host/先行注入的原生构造器）优先——词法 `DOMException` 落
+      // shim 闭包内构造器时，抛出实例的原型≠页面 global（WPT assert_throws_dom
+      // 「threw an exception from the wrong global」）。同 part02 SyntaxError 先例。
+      var DE = (typeof globalThis.DOMException === 'function') ? globalThis.DOMException : DOMException;
+      throw new DE('Invalid URL', 'SyntaxError');
+    }
+    this.url = resolved.href;
     this.readyState = EventSource.CONNECTING;
     this.withCredentials = !!(options && options.withCredentials);
     this.onopen = null; this.onmessage = null; this.onerror = null;
     this._listeners = {};
     this._lastEventId = '';
+    this._retryMs = 0; // reconnection time（retry 字段更新；0 = 走默认 5000——spec UA-defined）
     this._closed = false;
     var self = this;
-    Promise.resolve().then(function () {
-      if (self._closed || typeof fetch !== 'function') throw new Error('no fetch');
-      return fetch(self.url, { headers: { 'Accept': 'text/event-stream' } });
-    }).then(function (resp) {
-      if (!resp || !resp.ok) throw new Error('EventSource fetch failed');
-      return resp.text();
-    }).then(function (text) {
+    function failConnection() {
+      // spec fail the connection：readyState ≠ CLOSED 时置 CLOSED + fire error，之后不再重连。
       if (self._closed) return;
-
+      self.readyState = EventSource.CLOSED;
+      self._dispatch('error', null);
+    }
+    function reestablish() {
+      // spec reestablish the connection：置 CONNECTING + fire error，等重连时间后重连。
+      if (self._closed) return;
+      self.readyState = EventSource.CONNECTING;
+      self._dispatch('error', null);
+      setTimeout(connect, self._retryMs || 5000);
+    }
+    function connect() {
+      if (self._closed) return;
+      if (typeof fetch !== 'function') { reestablish(); return; }
+      var headers = { 'Accept': 'text/event-stream', 'Cache-Control': 'no-cache' };
+      var init = { headers: headers };
+      // §9.2.4：Last-Event-ID 于 request header list 内部直设（任意 UTF-8 串）——经
+      // __zwInternalHeadersWire 旁路（公共 init.headers 的 ByteString 校验会拒绝 >U+00FF）。
+      if (self._lastEventId) {
+        init.__zwInternalHeadersWire = 'last-event-id\x1e' + self._lastEventId;
+      }
+      var p;
+      try {
+        p = fetch(self.url, init);
+      } catch (e) {
+        reestablish();
+        return;
+      }
+      p.then(function (resp) {
+        if (self._closed) return;
+        if (!resp || resp.status !== 200) {
+          failConnection(); // spec：status ≠ 200 → fail
+          return undefined;
+        }
+        // Content-Type essence 判定（参数——charset/尾 `;`——忽略）。host wire 响应 headers 为
+        // Headers 实例（R2977）；错误兜底路径为 plain object（无 get，status 已先挡）。
+        var hd = resp.headers;
+        var ctype = '';
+        if (hd && typeof hd.get === 'function') ctype = String(hd.get('Content-Type') || '');
+        if (ctype.split(';')[0].trim().toLowerCase() !== 'text/event-stream') {
+          failConnection(); // spec：MIME 非 text/event-stream → fail
+          return undefined;
+        }
+        return resp.text().then(function (text) {
+          if (self._closed) return;
+          // announce the connection（OPEN + open）
+          self.readyState = EventSource.OPEN;
+          self._dispatch('open', null);
+          self._process(text);
+          reestablish(); // body 结束 = 连接关闭（有限流模型）→ reestablish
+        });
+      }, function () {
+        reestablish(); // network error → reestablish（futile 判定不做——headless 本地服务稳定）
+      }).catch(function () {
+        failConnection();
+      });
+    }

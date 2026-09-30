@@ -1,17 +1,4 @@
-      self.readyState = EventSource.OPEN;
-      self._dispatch('open', null);
-      self._process(text);
-      // finite stream 结束：真浏览器 spec 在连接关闭后重连（retry）；headless 视为结束 → onerror + CLOSED。
-      if (!self._closed) {
-        self.readyState = EventSource.CLOSED;
-        self._dispatch('error', null);
-      }
-    }).catch(function () {
-      if (!self._closed) {
-        self.readyState = EventSource.CLOSED;
-        self._dispatch('error', null);
-      }
-    });
+    connect();
   }
   EventSource.CONNECTING = 0;
   EventSource.OPEN = 1;
@@ -29,7 +16,9 @@
       if (i >= 0) arr.splice(i, 1);
     },
     _dispatch: function (type, event) {
-      var ev = event || new Event(type);
+      // UA 派发（spec announce/fail/reestablish）→ isTrusted=true（__zwTrusted 内部口，
+      // 页面脚本不可经构造器置位）。
+      var ev = event || new Event(type, { __zwTrusted: true });
       ev.type = type;
       ev.target = this;
       var handler = this['on' + type];
@@ -37,20 +26,31 @@
       var arr = this._listeners[type];
       if (arr) for (var i = 0; i < arr.length; i++) { try { arr[i].call(this, ev); } catch (_e) {} }
     },
-    // text/event-stream 解析（HTML spec §9.2.6）：去 BOM → CRLF/CR/LF 分行 → 空行派发 → 字段 data/event/id。
+    // text/event-stream 解析（HTML spec §9.2.5/§9.2.6 interpret）：去 BOM → CRLF/CR/LF 分行 →
+    // 空行派发（仅当 data 缓冲非空）→ 字段 data/event/id/retry（id 缓冲逐流重置，派发时
+    // 提交 _lastEventId；retry 仅全 ASCII 数字接受）。`lastEventId`/`origin` 进 MessageEvent，
+    // UA 派发 isTrusted=true。
     _process: function (text) {
-      var lines = String(text).replace(/^\uFEFF/, '').split(/\r\n|\r|\n/);
-      var data = [], eventType = '', id = '';
+      var raw = String(text).replace(/^\uFEFF/, '');
+      // 末尾有行终止符时，split 产生的末个 '' 是终结符产物而非空行——弹掉（spec ABNF：
+      // field 自带 end-of-line；`data:x\n` 无派发空行，`data:x\n\n` 才派发）。
+      var endsWithEol = /\r\n|\r|\n$/.test(raw);
+      var lines = raw.split(/\r\n|\r|\n/);
+      if (endsWithEol && lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+      // last event ID 缓冲以源上 last event ID string 播种（重连后延续——服务端按
+      // Last-Event-ID 续流；仅本流内派发提交的 string 可见，未派发的 id 缓冲随流丢弃）。
+      var data = [], eventType = '', idBuf = this._lastEventId || '';
       for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
         if (line === '') {
-          if (data.length > 0 || eventType !== '') {
-            if (id !== '') this._lastEventId = id;
-            var evData = data.join('\n');
-            this._dispatch(eventType || 'message',
-              new MessageEvent(eventType || 'message', { data: evData, lastEventId: this._lastEventId, origin: this.url }));
+          if (data.length > 0) {
+            this._lastEventId = idBuf; // spec：派发时 last event ID string ← 缓冲
+            var evType = eventType || 'message';
+            this._dispatch(evType,
+              new MessageEvent(evType, { __zwTrusted: true, data: data.join('\n'),
+                lastEventId: this._lastEventId, origin: this.url }));
           }
-          data = []; eventType = '';
+          data = []; eventType = ''; // spec：缓冲空也清 event type 缓冲
           continue;
         }
         var colon = line.indexOf(':');
@@ -63,11 +63,19 @@
         } else { field = line; value = ''; }
         if (field === 'data') data.push(value);
         else if (field === 'event') eventType = value;
-        else if (field === 'id') id = value;
-        // retry / 未知字段忽略
+        else if (field === 'id') { if (value.indexOf('\x00') < 0) idBuf = value; }
+        else if (field === 'retry') {
+          if (/^[0-9]+$/.test(value)) this._retryMs = parseInt(value, 10); // '03000'→3000、'1000x'/空忽略
+        }
+        // 未知字段忽略
       }
     }
   };
+  // WebIDL：常量同时挂 interface prototype object（`source.OPEN` / `this.CLOSED` 断言面——
+  // onopen / format-mime-* 页经实例读常量）。须在上方 prototype 整体重赋值之后挂，否则被抹去。
+  EventSource.prototype.CONNECTING = 0;
+  EventSource.prototype.OPEN = 1;
+  EventSource.prototype.CLOSED = 2;
   globalThis.EventSource = globalThis.EventSource || EventSource;
 
   // CSS——CSS 命名空间（escape 选择器转义 + supports 特性检测）。escape 纯 JS（CSSOM escape 算法，

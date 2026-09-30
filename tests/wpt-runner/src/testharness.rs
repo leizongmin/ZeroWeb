@@ -4457,6 +4457,115 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(content_bytes),
                 });
             }
+            if clean.starts_with("eventsource/") && clean.ends_with("/message.py") {
+                // net-api M4-S12 fixture：eventsource/resources/message.py（上游逐字等价——
+                // https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/resources/
+                // message.py）。?mime=（默认 text/event-stream）&message=（默认 data: data）
+                // &newline=none（尾 \n\n 省略）&sleep=（ms）→ SSE 单响应。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let mime = wpt_query_value(query, "mime").unwrap_or_else(|| "text/event-stream".into());
+                let message = wpt_query_value(query, "message").unwrap_or_else(|| "data: data".into());
+                let newline = if wpt_query_value(query, "newline").as_deref() == Some("none") {
+                    ""
+                } else {
+                    "\n\n"
+                };
+                let sleep_ms = wpt_query_value(query, "sleep")
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(0)
+                    .min(10_000);
+                if sleep_ms > 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+                }
+                let body = format!("{}{}\n", message, newline);
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), mime));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("eventsource/") && clean.ends_with("/message2.py") {
+                // net-api M4-S12 fixture：eventsource/resources/message2.py（上游为无限循环
+                // 流式写——headless 有限流模型取一轮循环体即覆盖页面断言的前三个事件；
+                // https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/resources/
+                // message2.py）。
+                let body = "data:msg\ndata: msg\n\n:\nfalsefield:msg\n\nfalsefield:msg\n\n\
+                            Data:data\n\ndata\n\ndata:end\n\n"
+                    .to_string();
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/event-stream".into()));
+                headers.push(("cache-control".into(), "no-cache".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("eventsource/") && clean.ends_with("/last-event-id.py") {
+                // net-api M4-S12 fixture：eventsource/resources/last-event-id.py（上游逐字
+                // 等价——https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/
+                // resources/last-event-id.py）。带 Last-Event-ID 请求头则回 `data: <id>`，
+                // 否则回 `id: <idvalue 默认 …>\nretry: 200\ndata: hello`（重连面）。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let last_id = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("last-event-id"))
+                    .map(|(_, v)| v.as_str())
+                    .unwrap_or("");
+                let body = if !last_id.is_empty() {
+                    format!("data: {}\n\n", last_id)
+                } else {
+                    let idvalue = wpt_query_value(query, "idvalue").unwrap_or_else(|| "\u{2026}".into());
+                    format!("id: {}\nretry: 200\ndata: hello\n\n", idvalue)
+                };
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/event-stream".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("eventsource/") && clean.ends_with(".event_stream") {
+                // net-api M4-S12 fixture：eventsource/resources/accept.event_stream 与
+                // cache-control.event_stream（上游为 wptserve 模板文件
+                // `data: {{headers[<name>]}}`——按文件名回显对应请求头；
+                // https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/resources/）。
+                let header_name = clean
+                    .rsplit('/')
+                    .next()
+                    .and_then(|f| f.strip_suffix(".event_stream"))
+                    .unwrap_or("accept");
+                let echoed = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case(header_name))
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default();
+                let body = format!("data: {}\n\n", echoed);
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/event-stream".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
             if clean.ends_with("/inspect-headers.py") {
                 // net-api M3-S1 fixture：fetch/api/resources/inspect-headers.py（上游逐字
                 // 等价——https://github.com/web-platform-tests/wpt/blob/3159769/fetch/api/
