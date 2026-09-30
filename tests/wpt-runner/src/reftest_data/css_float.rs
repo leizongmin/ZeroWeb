@@ -391,6 +391,30 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><head><style>body{margin:0}.outer{width:760px}.w{overflow:hidden;border-top:5px solid #cc0000;padding-top:16px}.f{float:left;width:369px;height:36px;background:silver}.after{height:80px;background:lime}</style></head><body><div class=\"outer\"><div class=\"w\"><div class=\"f\"></div></div><div class=\"after\"></div></div></body></html>",
         is_match: true,
     },
+    // ── slice10：float 子 + inline 兄弟共存容器不吸收 float 子树文本（百度热榜
+    // 残余叠字回归，paint Path B）──
+    // test 页为触发形状：li(float) ×3 行 > [a(float, overflow:hidden,
+    // [i(inline-block), span.t(inline CJK 标题文本)]), mark(inline-block)]。
+    // 机制失效时 paint Path B 空 styles 无法识别 float 子 → collector 把 a 子树
+    // 的标题文本吸收进 li 的 IFC，重排到 float 下方第二行（strut 模型推算：
+    // 首行基线 ≈57，缺陷位 ≈147 = 57+90，近似口径），且 painted_inline_nodes
+    // 去重抑制 a 盒自身正确绘制（CSS2 §9.5 float 脱离常规流）。ref 页去掉
+    // mark 兄弟——活体单因子实验（repro4 r3a vs r3f）已证该兄弟是触发器：
+    // 无 mark 时同一形状文本恒在正确基线。
+    // 判别信号（TE-1 返修）：吸收缺陷只错位 Path B glyph run（非文本盒经盒树
+    // 正常绘制、两页同位零 diff，实测结构色块方案假绿 0.80%/0.20%）——故信号
+    // 用 CJK 系统回退字（Noto Sans CJK，依赖面与既有 css-text/cjk-line-break
+    // 相同）：fs40 × 9 字/行 × 3 行，密集中文墨块在 ref（行 1）与 test（错位
+    // 行 2）两处互斥出现，diff 由墨迹面积主导且与 Ahem 无关（撤 Ahem 实测
+    // 同值红）；3 行累计裕度 ≥3× 于 Layout 1% 容差。双变异负控制实测见
+    // diag/evidence/slice10/reftest-negative-control-{a,b,c,r}-rework.log。
+    InlineReftestDef {
+        id: "css-float/float-child-inline-sibling-no-text-absorption",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0}.ul{list-style:none;margin:0;padding:0;width:760px}.li{float:left;clear:both;width:400px;height:90px;line-height:90px;font-size:12px;white-space:nowrap}.a{float:left;display:block;width:400px;height:90px;line-height:90px;font-size:14px;overflow:hidden;white-space:nowrap}.i{display:inline-block;width:30px;height:30px;line-height:30px;font-size:30px}.t{display:inline;line-height:90px;font-size:40px;color:black}.mk{display:inline-block;width:10px;height:40px;margin-left:4px}</style></head><body><ul class=\"ul\"><li class=\"li\"><a class=\"a\"><i class=\"i\"></i><span class=\"t\">热榜行文本吸收缺陷</span></a><span class=\"mk\"></span></li><li class=\"li\"><a class=\"a\"><i class=\"i\"></i><span class=\"t\">热榜行文本吸收缺陷</span></a><span class=\"mk\"></span></li><li class=\"li\"><a class=\"a\"><i class=\"i\"></i><span class=\"t\">热榜行文本吸收缺陷</span></a><span class=\"mk\"></span></li></ul></body></html>",
+        ref_html: "<html><head><style>body{margin:0}.ul{list-style:none;margin:0;padding:0;width:760px}.li{float:left;clear:both;width:400px;height:90px;line-height:90px;font-size:12px;white-space:nowrap}.a{float:left;display:block;width:400px;height:90px;line-height:90px;font-size:14px;overflow:hidden;white-space:nowrap}.i{display:inline-block;width:30px;height:30px;line-height:30px;font-size:30px}.t{display:inline;line-height:90px;font-size:40px;color:black}.mk{display:inline-block;width:10px;height:40px;margin-left:4px}</style></head><body><ul class=\"ul\"><li class=\"li\"><a class=\"a\"><i class=\"i\"></i><span class=\"t\">热榜行文本吸收缺陷</span></a></li><li class=\"li\"><a class=\"a\"><i class=\"i\"></i><span class=\"t\">热榜行文本吸收缺陷</span></a></li><li class=\"li\"><a class=\"a\"><i class=\"i\"></i><span class=\"t\">热榜行文本吸收缺陷</span></a></li></ul></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {

@@ -1383,6 +1383,45 @@ impl super::Painter {
                         ctx.set_block_child_nodes(block_ids);
                     }
                 }
+                // slice10（CSS2 §9.5 float out-of-flow）：Path B 空 styles 无法识别
+                // float 子——从真实 computed styles 注入 float 子真值集（box.float
+                // 会被 float/margin 后处理清零，样式为权威源），使
+                // collect_inline_items 对 float 子发 FloatAnchor（同 R3784 有 styles
+                // 臂），不再把 float 子树 inline 内容吸收进容器 IFC（误吸收使容器把
+                // float 后代文本重排到自身流位，并经 painted_inline_nodes 去重抑制
+                // float 盒自身的正确绘制）。layout 侧 IFC（有 styles）行为不变。
+                // 前置条件镜像 layout 期 OOF skip 臂（collect_items CSS2 §9.7 注释）：
+                // position abs/fixed 交集子不发 FloatAnchor（§9.7 规定 abs 时 float
+                // 计算为 none，其定位/绘制归 abspos pass，Path B 强制断行会与 layout
+                // 期静默 skip 错行）；vertical 模式例外同镜像（abs 臂在 vertical 下本
+                // 就不跳过，vertical-rl 的 abs 依赖 IFC 内测量）。kill-switch
+                // ZW_IFC_SKIP_OOF=0 旧径不镜像（skip_oof 为 pub(super) 不可达，Path B
+                // 空 styles 对 abs 的无分类属既有缺口，范围外）。
+                let float_ids: std::collections::HashSet<zero_dom::NodeId> = styles
+                    .map(|s| {
+                        box_node
+                            .children
+                            .iter()
+                            .filter_map(|c| {
+                                let id = c.node_id?;
+                                s.get(&id)
+                                    .is_some_and(|cs| {
+                                        !matches!(cs.float, zero_css_parser::values::FloatValue::None)
+                                            && (ctx.vertical
+                                                || !matches!(
+                                                    cs.position,
+                                                    zero_css_parser::values::PositionValue::Absolute
+                                                        | zero_css_parser::values::PositionValue::Fixed
+                                                ))
+                                    })
+                                    .then_some(id)
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if !float_ids.is_empty() {
+                    ctx.set_float_child_nodes(float_ids);
+                }
                 ctx.layout(doc, node_id, &HashMap::new());
                 // R4417：Path B（空 styles 重跑）无行数语义（resolve_line_clamp 对
                 // line-clamp:Auto 恒 None，paint 侧 style 亦不可用）——按盒存 cap 补

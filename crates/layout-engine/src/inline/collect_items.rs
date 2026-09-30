@@ -382,6 +382,29 @@ impl InlineFormattingContext {
                             continue;
                         }
 
+                        // slice10：空 styles（paint Path B）float 子臂——CSS2 §9.5 float
+                        // 脱离常规流，其子树 inline 内容在 float 自身 BFC 内排版，不得
+                        // 吸收进容器 IFC。空 styles 下既有 float 臂（下方 is_block_level
+                        // 分支内）不可达：float 子不满足块级回退（block_child_nodes 不含
+                        // float），误落 inline 递归 → float 后代文本被容器行盒重排到容器
+                        // 流位（百度热榜行：float a 的标题文本被 li 的 IFC 吸到 float 下方
+                        // 第二行基线），且 painted_inline_nodes 去重随后抑制 float 盒自身
+                        // 的正确 Path B 绘制。float 真值由 painter 注入
+                        // `float_child_nodes`（按 computed styles 注入，且镜像上方 OOF
+                        // skip 臂前置条件排除 position abs/fixed 交集——§9.7 abs 时
+                        // float 计算为 none，其定位/绘制归 abspos pass；vertical 模式
+                        // 例外同镜像）；FloatAnchor 语义同 R3784 有 styles 臂（断行同
+                        // BlockBreak + 记录行内流锚 y）。
+                        if styles.is_empty()
+                            && self
+                                .float_child_nodes
+                                .as_ref()
+                                .is_some_and(|ids| ids.contains(&child_id))
+                        {
+                            items.push(InlineItem::FloatAnchor(child_id));
+                            continue;
+                        }
+
                         // CSS 2.1 §9.2.1.1 匿名块盒生成：
                         // 当 inline 元素包含 block-level 子元素时，inline 元素
                         // 被拆分为匿名块盒。这里简化处理：如果子元素是 block-level
