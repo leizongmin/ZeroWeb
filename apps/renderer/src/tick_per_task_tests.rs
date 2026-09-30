@@ -226,3 +226,62 @@ fn dynamic_external_scripts_host_fetch_success_fires_load_event_and_executes() {
         .unwrap();
     assert_eq!(err.trim(), "0", "成功路径不派元素 error 事件");
 }
+
+// t8/P16：observer tick 不得清空异步 turn 的 pending mutation——tick_observers_with 在每次
+// 帧发布末尾运行，与定时器 resolve 等异步 turn 共享 worker mutation 队列；旧实现的
+// set_dom_snapshot+clear 把「已入队尚未 drain」的写入（html5test.co 完成回调的
+// contents/loading 样式写入）在下一帧渲染前整批销毁。修复后 pending 与 observer 写入一并落 host。
+// 变异判别：恢复 pre-clear → pending 被清空 → host 无 data-t8，本测转红。
+#[test]
+fn observer_tick_preserves_pending_async_mutations_t8() {
+    let mut runtime = runtime_with_observer_page(9113);
+    // 模拟异步 turn（定时器回调）已写队列、尚未 drain。
+    runtime
+        .js_worker
+        .execute_script_direct("document.getElementById('t1').setAttribute('data-t8','pending-async');")
+        .unwrap();
+    let mut ctx = PageScriptContext {
+        html: &mut runtime.cached_html,
+        url: "https://zero.test/tick-per-task",
+        js_worker: &runtime.js_worker,
+        webview: Some(runtime.webview.as_mut().unwrap()),
+    };
+    page_scripts::tick_observers_with(&mut ctx, false);
+    assert!(
+        runtime.cached_html.contains("data-t8"),
+        "异步 turn 的 pending mutation 应在 observer tick 后落 host，而非被 pre-clear 销毁"
+    );
+}
+
+// t8 返修（defect-r1 D1）：导航 reset 竞态窗——主线程 reset_document_state 的队列清空之后、
+// worker 处理 ResetDocumentState 之前，旧页脚本/timer 回调仍可写入（worker 串行保证 arm
+// 执行时旧页已结束）。滞留写入会被新文档的 tick/drain apply（跨文档污染）。本测让旧页
+// 脚本横跨 reset 窗口落两笔写：a 在主清队前（被主清队消费）、b 在主清队后 arm 前（竞态窗），
+// 断言 reset 返回后队列无残留。变异判别：移除 arm 侧清队 → b 滞留 → 本测转红。
+// 时序 margin（testval-r2 F1）：120ms spawn 前置 + 600ms 忙等——全模块 6 路并行 V8 负载下
+// spawn 延迟远小于前置量；极端 CI 延迟的退化方向是 reset 先于脚本入队（execute 报错）或
+// 双写均落主清队前被兜底消费（假通过），无假红方向。
+#[test]
+fn reset_clears_writes_landed_after_main_thread_clear_d1() {
+    let runtime = runtime_with_observer_page(9114);
+    let worker = &runtime.js_worker;
+    std::thread::scope(|s| {
+        let script = s.spawn(|| {
+            worker.execute_script_direct(
+                "document.getElementById('t1').setAttribute('data-d1','a'); var __s = Date.now(); while (Date.now() - __s < 600); document.getElementById('t1').setAttribute('data-d1','b');",
+            )
+        });
+        // 旧页脚本进入忙等（a 已落队）后 reset：主清队消费 a；b 在 600ms 忙等结束时落队，
+        // 早于 reset arm（排在此后的脚本命令完成之后），恰落在竞态窗内。
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        worker.reset_document_state();
+        script.join().expect("script thread").expect("execute ok");
+    });
+    let queue = worker.mutations();
+    let pending = queue.lock().unwrap_or_else(|e| e.into_inner());
+    assert!(
+        pending.is_empty(),
+        "reset 返回后队列不得残留竞态窗内落队的旧页写入（跨导航污染源），实际 {} 条",
+        pending.len()
+    );
+}

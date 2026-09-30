@@ -924,6 +924,15 @@ fn js_worker_main(
                 // A cross-document navigation creates a new global object. Keeping the
                 // renderer worker is an implementation detail, not page-visible state.
                 sandbox.reset_context();
+                // t8 返修（defect-r1 D1）：reset 竞态窗加固——主线程 `reset_document_state`
+                // 已先清一次队列，但 worker 串行处理下，旧页脚本/timer 回调
+                // （ResolveAsyncCallback 的 microtask checkpoint）可能在其之后、本 arm 之前
+                // 继续写入；本 arm 执行时旧页执行已全部结束，此处再清一次，确保跨导航残留
+                // mutation 不被新文档的 tick/drain apply（跨文档污染）。
+                // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
+                if let Ok(mut pending) = mutations.lock() {
+                    pending.clear();
+                }
                 // js-dom R386：QuickJS context 丢弃即释放其对象——绑定线程局部
                 // （NODE_OBJECTS 等 Persistent）持已释放对象引用（webview Drop R3334/R74
                 // 同族悬垂），须随 context 重建清空；下一快照换代全量重 install。

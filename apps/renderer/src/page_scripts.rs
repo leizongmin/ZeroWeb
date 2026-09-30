@@ -374,11 +374,14 @@ fn tick_per_task_enabled() -> bool {
 /// `ZW_RENDERER_TICK_PER_TASK`，测试双模式直设避免进程级 env 竞态）。
 pub fn tick_observers_with(ctx: &mut PageScriptContext<'_>, per_task: bool) -> bool {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+    // t8/P16：不 pre-clear——本函数在每次帧发布（publish_webview → tick_observers_inner）
+    // 末尾运行，而 mutation 队列与异步 turn（TimerBridge 定时器 resolve、CDP evaluate 等）
+    // 共享：上一 turn 已入队尚未 drain 的合法写入（如 html5test.co 完成回调的
+    // contents/loading 样式写入）会在下一帧渲染前被这里清空，永滞丢失。renderer 侧
+    // apply_recorded_mutations 已是 drain（consume-once），pre-clear 无重放可防，纯销毁。
+    // 保留 pending → 下方 observer 执行后的 apply 把「异步 turn 写入 + observer 写入」
+    // 一并按序落 host（spec：rendering 更新前不丢弃 pending task 的 DOM 变更）。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering
     // event-loop-spec M3-S2：per-task 模式——每次 execute 只 schedule 首个活跃 observer
     //（`__zw_observers_tick_once`，其回调在本 execute 末 checkpoint 派发）→ 一 observer
     // 一 task 一 checkpoint（spec event loop processing model step 3-6），消除「IO/RO/rAF
