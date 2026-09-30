@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-30（M4-S17 收口——redirect 跟随，xhr 80.4%）
+**最后更新**: 2026-09-30（M4-S18 收口——CORS-preflight，xhr 81.4%）
 
 ---
 
@@ -14,14 +14,14 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
-M4-S8（76.8%）→ … → M4-S15（78.6%）→ M4-S16（78.8%）→ M4-S17（2026-09-30）——
-**8976/11369 = 78.9%**（fetch 70.1%（+3）/ xhr **80.4%**（471/586——redirect 簇
-+12）/ url 73.1% / mimesniff 100% / streams 88.6% / eventsource 100%）。
-**M4-S17 收口**：redirect 跟随循环（301/302 POST→GET、303 GET、307/308 保持；20 跳
-上限；同步返回契约就地结算——headless `__zw_fetch` 直返 wire，跳发挂等 resolver 为
-挂死根因）+ 逐跳 CORS 门控 + 跨源跳 Origin 注入 + credentials-aware cors check
-（include 拒 ACAO `*`）+ 同步 XHR redirect 循环 + XHR credentials 接线。见
-[evidence/2026-09-30-m4-s17-redirect.md](evidence/2026-09-30-m4-s17-redirect.md)。
+M4-S8（76.8%）→ … → M4-S16（78.8%）→ M4-S17（78.9%）→ M4-S18（2026-09-30）——
+**8983/11369 = 79.0%**（fetch 70.2%（+1）/ xhr **81.4%**（477/586——preflight 簇
++6）/ url 73.1% / mimesniff 100% / streams 88.6% / eventsource 100%）。
+**M4-S18 收口**：CORS-preflight（非 safelisted → OPTIONS ACRM/ACAH，2xx + ACAO/
+ACAM/ACAH 覆盖判定，异步 + 同步双路）+ cors-filtered-response 暴露头过滤（Set-Cookie
+恒排除、`*` 通配 include 仅字面）+ 文档 origin 门控（裸 sandbox 无 CORS 执行语境）+
+runner OPTIONS handler。见
+[evidence/2026-09-30-m4-s18-preflight.md](evidence/2026-09-30-m4-s18-preflight.md)。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -35,14 +35,25 @@ M4-S8（76.8%）→ … → M4-S15（78.6%）→ M4-S16（78.8%）→ M4-S17（2
 |---|------|------|
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
-| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **80.4%**——状态机/事件/redirect 跟随全 spec 化）——**残余：CORS-preflight（OPTIONS，4 腿 + fetch/api/cors 域）、暴露头过滤（3）、formdata submitter 族（13）、responseXML/XML 文档面、send(ES object) 簇** |
+| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **81.4%**——状态机/事件/redirect/preflight/expose 全 spec 化）——**残余：runner scheme 不匹配族（4，页面 https vs WPT http origin——需多 scheme 页面能力）、formdata submitter 族（13）、responseXML/XML 文档面、send(ES object) 簇** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.1%（新分母 6065——M3 收口 USP/URL.parse/port/live 迭代/UTF-8 解码器/helper 解锁）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S11 收口（88.6%——piping 簇 spec 化重做，pipe-through/general/error-propagation 全绿）；**残余：flow-control 2 腿（背压编排计时精度）；transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿）** |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
-| P7 | runner fixture 通道（.py 端点最小 fixture 集） | 🔶 M4-S17 续件已落（access-control-basic-allow 族 / redirect-cors.py / fetch 域 redirect.py + dump-authorization-header.py；累计 15+ 端点）；待评估：OPTIONS preflight handler 支持（redirect-cors/corsenabled 的 OPTIONS 分支已预留）、echo-content.py / delay.py 族 |
+| P7 | runner fixture 通道（.py 端点最小 fixture 集） | ✅ M4-S18 OPTIONS handler 支持落地（fixture 自派派 + 统一 200 兜底；redirect-cors/fetch redirect.py 的 OPTIONS 分支启用）；累计 18+ 端点；待评估：fetch/api/cors 域页拉取（三前置已落）、echo-content.py / delay.py 族 |
 
 ## 已完成切片
 
+- **M4-S18（2026-09-30）**：CORS-preflight + 暴露头过滤（**8983/11369 = 79.0%**，
+  xhr 471/586 → 477/586 = 81.4%，Δ+6 + fetch +1 零回归）。shim：preflight（非
+  safelisted cors 请求 → OPTIONS ACRM/ACAH + Origin，2xx + ACAO/ACAM/ACAH 覆盖
+  判定，异步 + 同步双路）+ cors-filtered-response 暴露头过滤（safelisted + ACXH
+  白名单、Set-Cookie 恒排除、`*` 通配 include 仅字面）+ 文档 origin 门控
+  （`_zwHasRealPageOrigin`——裸 sandbox 无 CORS 执行语境，存量管路桥测零翻新回绿）+
+  redirect 链补强（跨源跳丢 Authorization / 同步逐跳门控 + 入口 Origin）。runner：
+  OPTIONS handler（非 GET 拒绝后移 + fixture 自派派 + 200 兜底）+ redirect-cors/
+  fetch redirect.py OPTIONS 分支 + top.txt。make test 全绿（19518P）+ clippy/fmt
+  干净。见
+  [evidence/2026-09-30-m4-s18-preflight.md](evidence/2026-09-30-m4-s18-preflight.md)。
 - **M4-S17（2026-09-30）**：redirect 跟随 + credentials-aware CORS（**8976/11369 =
   78.9%**，xhr 459/587 → 471/586 = 80.4%，Δ+12 + fetch +3 零回归）。shim：redirect
   循环（301/302 POST→GET、303 GET、307/308 保持；20 跳；逐跳 content-length 重算；
@@ -284,9 +295,9 @@ M4-S8（76.8%）→ … → M4-S15（78.6%）→ M4-S16（78.8%）→ M4-S17（2
 
 ## 下一步计划
 
-1. **CORS-preflight 切片**：engine OPTIONS preflight 语义 + runner OPTIONS 支持
-   （handler 现拒非 GET）——解锁 preflighted 重定向面（4 腿）与 fetch/api/cors 域
-   重入；附带 cors-filtered-response 暴露头过滤（3 腿）
+1. **fetch/api/cors 域重入评估**：preflight/OPTIONS/expose 三前置已落——评估域页
+   拉取（.any.js 面 + fetch/api/resources/cors.py 多模式端点实施量）；XHR 残余
+   formdata submitter 族（13）与 send(ES object) 簇并轨
 2. **M4 残余**：flow-control 2 腿（背压编排计时精度——泵 pull 粒度对齐 StepTracker
    编排步进）
 3. **结构性挂账**：缓冲 transfer/detach 族（spec TransferArrayBuffer——需宿主 V8

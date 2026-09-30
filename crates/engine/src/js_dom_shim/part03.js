@@ -292,6 +292,50 @@
           }
           syncHeaders = _zwAddHeader(syncHeaders, 'content-length', String(syncCl));
         }
+        // net-api M4-S18：同步入口 Origin 注入（跨源时——镜像异步入口注入面；
+        // redirect-cors/allow 族的 Origin 回显门控依赖）。
+        if (_zwUrlOrigin(self._zwXhrUrl) !== _zwUrlOrigin(_zwCurrentHref()) &&
+            _zwUrlOrigin(_zwCurrentHref()) && !_zwHasHeader(syncHeaders, 'origin')) {
+          syncHeaders = _zwAddHeader(syncHeaders, 'origin', _zwUrlOrigin(_zwCurrentHref()));
+        }
+        // net-api M4-S18：同步路径 CORS-preflight（与异步同规——非 safelisted cors 请求
+        // 先 OPTIONS，2xx + ACAM/ACAH 覆盖才继续）。
+        if (typeof _zwFetchNeedsPreflight === 'function' && self._zwXhrMethod !== 'OPTIONS' &&
+            _zwFetchNeedsPreflight(self._zwXhrMethod, syncHeaders) &&
+            _zwUrlOrigin(self._zwXhrUrl) !== _zwUrlOrigin(_zwCurrentHref()) &&
+            _zwUrlOrigin(_zwCurrentHref())) {
+          var preDocOrigin = _zwUrlOrigin(_zwCurrentHref());
+          var preHeaders = syncHeaders;
+          if (!_zwHasHeader(preHeaders, 'origin')) {
+            preHeaders = _zwAddHeader(preHeaders, 'origin', preDocOrigin);
+          }
+          preHeaders = _zwAddHeader(preHeaders, 'access-control-request-method', self._zwXhrMethod);
+          var preNames = [];
+          var preParts = syncHeaders ? syncHeaders.split('\x1e') : [];
+          for (var pi = 0; pi + 1 < preParts.length; pi += 2) {
+            var pn = String(preParts[pi]).toLowerCase();
+            if (pn === 'origin' || pn === 'content-length' || pn === 'accept' ||
+                pn === 'accept-language' || pn === 'content-language' ||
+                pn.indexOf('access-control-') === 0 || pn === 'referer' ||
+                pn === 'last-event-id' || pn === 'range') {
+              continue;
+            }
+            if (preNames.indexOf(pn) < 0) preNames.push(pn);
+          }
+          if (preNames.length > 0) {
+            preHeaders = _zwAddHeader(preHeaders, 'access-control-request-headers', preNames.sort().join(', '));
+          }
+          var preWire = globalThis.__zw_fetch(
+            '__zwxhr:pre', 'OPTIONS', self._zwXhrUrl, preHeaders, '',
+            '', '', 'cors', 'follow', _zwWithCreds ? 'include' : 'same-origin');
+          var preResp = _makeResponseFromWire(preWire);
+          var preOrigin = response_headers_get(preResp, 'access-control-allow-origin');
+          var preOk = preResp.status >= 200 && preResp.status < 300 &&
+            (preOrigin === preDocOrigin || preOrigin === '*');
+          if (!preOk) {
+            throw new (globalThis.DOMException || Error)('Failed to fetch', 'NetworkError');
+          }
+        }
         // net-api M4-S17：同步路径 redirect 跟随（与异步同规——301/302 POST→GET、303
         // GET 丢体、307/308 保持；上限 20；跨源跳带文档 Origin）。
         var syncWire = '';
@@ -318,8 +362,26 @@
             self._zwFillFromResponse(syncProbe, null);
             return;
           }
+          // 逐跳 CORS 门控（与异步同规——跨源跳响应须过 cors check）。
+          try {
+            _zwFetchApplyFilteredResponse(syncProbe, syncUrl, 'cors', 'follow',
+              _zwWithCreds ? 'include' : 'same-origin');
+          } catch (_eSyncHopCors) {
+            throw new (globalThis.DOMException || Error)('Failed to fetch', 'NetworkError');
+          }
           var syncNext = syncUrl;
           try { syncNext = new globalThis.URL(syncLoc, syncUrl).href; } catch (_eSyncLoc) {}
+          // 跨源跳 → 丢弃 Authorization（fetch spec）。
+          if (syncNext && _zwUrlOrigin(syncNext) !== _zwUrlOrigin(syncUrl)) {
+            var dropParts = syncHeaders ? syncHeaders.split('\x1e') : [];
+            var keptSync = '';
+            for (var di = 0; di + 1 < dropParts.length; di += 2) {
+              if (String(dropParts[di]).toLowerCase() === 'authorization') continue;
+              keptSync = keptSync ? keptSync + '\x1e' + dropParts[di] + '\x1e' + dropParts[di + 1]
+                                  : dropParts[di] + '\x1e' + dropParts[di + 1];
+            }
+            syncHeaders = keptSync;
+          }
           if (syncProbe.status === 303 || ((syncProbe.status === 301 || syncProbe.status === 302) && syncMethod === 'POST')) {
             syncMethod = 'GET';
             syncBody = '';

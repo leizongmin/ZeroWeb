@@ -4477,15 +4477,39 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 // ACAH；OPTIONS preflight 面待 engine preflight 语义，此实现 GET 面）。
                 let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
                 let location = wpt_query_value(query, "location").unwrap_or_default();
+                let origin = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default();
                 let mut headers: Vec<(String, String)> = Vec::new();
+                if req.method == "OPTIONS" {
+                    // 上游语义：preflight 不重定向（redirect_preflight 才 302）+ ACAM/Max-Age。
+                    headers.push(("access-control-allow-methods".into(), "GET".into()));
+                    headers.push(("access-control-max-age".into(), "1".into()));
+                    if wpt_query_value(query, "allow_origin").is_some() {
+                        headers.push(("access-control-allow-origin".into(), origin));
+                    }
+                    if let Some(allow_header) = wpt_query_value(query, "allow_header") {
+                        headers.push(("access-control-allow-headers".into(), allow_header));
+                    }
+                    let preflight_redirect = wpt_query_value(query, "redirect_preflight").is_some();
+                    let status: u16 = if preflight_redirect { 302 } else { 200 };
+                    if preflight_redirect {
+                        headers.push(("location".into(), location));
+                    }
+                    wpt_add_fetch_metadata(&mut headers, req, status);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status,
+                        status_text: wpt_status_text(status).to_string(),
+                        headers,
+                        body: String::new(),
+                        body_bytes: Some(Vec::new()),
+                    });
+                }
                 headers.push(("location".into(), location));
                 if wpt_query_value(query, "allow_origin").is_some() {
-                    let origin = req
-                        .headers
-                        .iter()
-                        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
-                        .map(|(_, v)| v.clone())
-                        .unwrap_or_default();
                     headers.push(("access-control-allow-origin".into(), origin));
                 }
                 if let Some(allow_header) = wpt_query_value(query, "allow_header") {
@@ -4526,6 +4550,19 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 if origin.is_some() {
                     headers.push(("access-control-allow-credentials".into(), "true".into()));
                 }
+                if req.method == "OPTIONS" {
+                    if let Some(allow_headers) = wpt_query_value(query, "allow_headers") {
+                        headers.push(("access-control-allow-headers".into(), allow_headers));
+                    }
+                    wpt_add_fetch_metadata(&mut headers, req, 200);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 200,
+                        status_text: "OK".to_string(),
+                        headers,
+                        body: String::new(),
+                        body_bytes: Some(Vec::new()),
+                    });
+                }
                 if let Some(location) = wpt_query_value(query, "location") {
                     let sep = if location.contains('?') { '&' } else { '?' };
                     headers.push(("location".into(), format!("{}{}count={}", location, sep, count)));
@@ -4537,6 +4574,21 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     headers,
                     body: String::new(),
                     body_bytes: Some(Vec::new()),
+                });
+            }
+            if clean == "xhr/resources/top.txt" {
+                // net-api M4-S18 fixture：xhr/resources/top.txt（cors-expose-star 载体，
+                // ?pipe=header(...) 管道头经既有 wpt_pipe_headers 处理）。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let mut headers = wpt_pipe_headers(query);
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: "top\n".to_string(),
+                    body_bytes: Some(b"top\n".to_vec()),
                 });
             }
             if clean.ends_with("/dump-authorization-header.py") {
@@ -4679,6 +4731,7 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 // responseurl-after-abort 的 HEADERS_RECEIVED/LOADING abort 时序载体）。
                 let body = "<html xmlns=\"http://www.w3.org/1999/xhtml\">\n  <p id=\"n&#49;\">1</p>\n  <p xmlns=\"namespacesarejuststrings\" id=\"n2\">2</p>\n</html>\n".to_string();
                 let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("access-control-allow-origin".into(), "*".into()));
                 headers.push(("content-type".into(), "application/xml".into()));
                 wpt_add_fetch_metadata(&mut headers, req, 200);
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
@@ -4692,7 +4745,10 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
             if clean.starts_with("xhr/") && clean.ends_with("/pass.txt") {
                 // net-api M4-S16 fixture：xhr/resources/pass.txt（abort-progress-events
                 // 的 send+abort 竞态载体——内容不断言，请求须可进入在飞态）。
+                // M4-S18：ACAO *（runner 页面 https 而 get-host-info HTTP_ORIGIN 为 http——
+                // 跨 scheme hop 的 cors check 放行面，runner 环境适配）。
                 let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("access-control-allow-origin".into(), "*".into()));
                 headers.push(("content-type".into(), "text/plain".into()));
                 wpt_add_fetch_metadata(&mut headers, req, 200);
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
@@ -4759,9 +4815,6 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body: body.clone(),
                     body_bytes: Some(body.into_bytes()),
                 });
-            }
-            if req.method != "GET" {
-                return Err(format!("method not supported: {}", req.method));
             }
             if clean.ends_with("/status.py") && clean.starts_with("xhr/") {
                 // net-api M3-S2 fixture：xhr/resources/status.py（上游逐字等价——
@@ -4999,6 +5052,33 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     headers,
                     body: body.clone(),
                     body_bytes: Some(body.into_bytes()),
+                });
+            }
+            // net-api M4-S18：非 GET 放行至各 fixture 自行分派（corsenabled/redirect-cors
+            // 的 OPTIONS preflight 分支）后兜底拒绝——preflight OPTIONS 不再被 blanket 拒。
+            if req.method != "GET" && req.method != "OPTIONS" {
+                return Err(format!("method not supported: {}", req.method));
+            }
+            if req.method == "OPTIONS" {
+                // 无 OPTIONS 分支的端点：统一 200 + 空（preflight 判定交给 shim 侧
+                // ACAM/ACAH 检查）。
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push((
+                    "access-control-allow-origin".into(),
+                    req.headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_else(|| "*".into()),
+                ));
+                headers.push(("access-control-allow-methods".into(), "GET, POST, HEAD, OPTIONS".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: String::new(),
+                    body_bytes: Some(Vec::new()),
                 });
             }
             if clean.ends_with("/inspect-headers.py") {

@@ -1728,7 +1728,7 @@
     if (mode === 'no-cors' && responseOrigin !== requestOrigin) {
       return _zwFetchMakeOpaqueLike(response, 'opaque');
     }
-    if (mode === 'cors' && responseOrigin !== requestOrigin && response && response.headers && typeof response.headers.get === 'function') {
+    if (mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.get === 'function') {
       // https://fetch.spec.whatwg.org/#cors-check——credentials mode 'include' 时通配
       // `*` 不可用且须 ACAC true（access-control-and-redirects with-credentials 面）。
       var allowOrigin = response.headers.get('access-control-allow-origin');
@@ -1741,18 +1741,101 @@
         throw new TypeError('Failed to fetch');
       }
     }
+    if (mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.forEach === 'function') {
+      // https://fetch.spec.whatwg.org/#concept-filtered-response-cors——cors 响应仅暴露
+      // CORS-safelisted 响应头 + Access-Control-Expose-Headers 白名单；Set-Cookie 恒排除；
+      // `*` 通配（credentials mode include 下仅字面匹配——cors-expose-star 页）。
+      var safelisted = { 'cache-control': 1, 'content-language': 1, 'content-length': 1,
+        'content-type': 1, 'expires': 1, 'last-modified': 1, 'pragma': 1 };
+      var exposedRaw = response.headers.get('access-control-expose-headers') || '';
+      var exposedList = {};
+      var exposedStar = false;
+      var items = String(exposedRaw).replace(/\\,/g, '\u0000').split(',');
+      for (var i = 0; i < items.length; i++) {
+        var name = items[i].replace(/\u0000/g, ',').trim().toLowerCase();
+        if (name === '*') { exposedStar = true; continue; }
+        if (name) exposedList[name] = 1;
+      }
+      if (credentials === 'include') {
+        exposedStar = false; // include 下 `*` 不通配
+        // 但字面名为 `*` 的头仍可暴露（cors-expose-star credentialed 面）。
+        for (var si = 0; si < items.length; si++) {
+          if (items[si].replace(/\u0000/g, ',').trim() === '*') exposedList['*'] = 1;
+        }
+      }
+      var kept = [];
+      response.headers.forEach(function (value, name) {
+        var ln = String(name).toLowerCase();
+        if (ln === 'set-cookie' || ln.indexOf('access-control-') === 0) return;
+        if (safelisted[ln]) { kept.push([name, value]); return; }
+        if (exposedStar || exposedList[ln]) kept.push([name, value]);
+      });
+      var filteredHeaders = new Headers();
+      for (var k = 0; k < kept.length; k++) {
+        try { filteredHeaders.append(kept[k][0], kept[k][1]); } catch (_eFh) {}
+      }
+      response.headers = filteredHeaders;
+    }
     if (!response.type || response.type === 'default') {
       response.type = responseOrigin !== requestOrigin ? 'cors' : 'basic';
     }
     return response;
   }
 
+  // https://fetch.spec.whatwg.org/#cors-request——CORS-safelisted 判定（method 白名单 +
+  // 头名单 + Content-Type 安全 MIME）。非 safelisted → cors 请求须 preflight（OPTIONS）。
+  // net-api M4-S18：文档 origin 可用性（about:-scheme / 空 → 无 CORS 执行语境——裸
+  // sandbox 管路测试语义；真实页面恒有 origin）。preflight 与 cors check/filter 门控。
+  function _zwHasRealPageOrigin() {
+    var href = _zwCurrentHref();
+    return !!href && String(href).indexOf('about:') !== 0 && _zwUrlOrigin(href) !== '';
+  }
+  function _zwFetchIsSafelistedMethod(method) {
+    var m = String(method).toUpperCase();
+    return m === 'GET' || m === 'HEAD' || m === 'POST';
+  }
+  function _zwFetchNeedsPreflight(method, headersWire) {
+    if (!_zwFetchIsSafelistedMethod(method)) return true;
+    var parts = headersWire ? headersWire.split('\x1e') : [];
+    var ctValue = null;
+    for (var i = 0; i + 1 < parts.length; i += 2) {
+      var ln = String(parts[i]).toLowerCase();
+      if (ln === 'content-type') { ctValue = parts[i + 1]; continue; }
+      if (ln === 'accept' || ln === 'accept-language' || ln === 'content-language' ||
+          ln === 'user-agent' || ln.indexOf('access-control-') === 0 || ln === 'origin' ||
+          ln === 'content-length' || ln === 'referer' || ln === 'last-event-id') {
+        continue; // UA 内部头/安全名单头——非 CORS 变量
+      }
+      if (ln === 'range') continue; // 简化：range 不触发 preflight
+      return true; // 自定义头 → preflight
+    }
+    if (ctValue !== null) {
+      var essence = String(ctValue).split(';')[0].trim().toLowerCase();
+      if (essence !== 'application/x-www-form-urlencoded' &&
+          essence !== 'multipart/form-data' && essence !== 'text/plain') {
+        return true;
+      }
+    }
+    return false;
+  }
   // R2923 fetch 完整化：`fetch(input, init)` 透传 method/headers/body → host 返 status/headers/body。
   // input = URL 字符串或 Request-like（.url/.method/.headers/.body）；init = { method, headers, body }。
   // method 默认 GET；GET/HEAD 无 body。`__zw_fetch` 未注册（engine/reftest/polyfill 无 host fetch handler）
   // 时 resolve ok:false Response（stub，避免悬挂，零回归）。
   // R3020：Blob/FormData 二进制 body 经 `_zwEncodeBytesPrefix`（`__zw_bytes:` + csv-decimal）传 host，
   // host 解码为 Vec<u8> 闭合二进制保真（旧 TextDecoder.decode 对非 UTF-8 字节 lossy，破坏 0xFF/0x00）。
+  function response_headers_get(resp, name) {
+    if (!resp || !resp.headers) return null;
+    if (typeof resp.headers.get === 'function') return resp.headers.get(name);
+    var ln = String(name).toLowerCase();
+    for (var k in resp.headers) {
+      if (Object.prototype.hasOwnProperty.call(resp.headers, k) && k.toLowerCase() === ln) {
+        var v = resp.headers[k];
+        return Array.isArray(v) ? v.join(', ') : v;
+      }
+    }
+    return null;
+  }
   function _zwEncodeBytesPrefix(bytes) {
     var s = '__zw_bytes:';
     for (var i = 0; i < bytes.length; i++) {
@@ -2181,6 +2264,58 @@
           else resolve(_schemeHit.response);
           return;
         }
+        // net-api M4-S18：CORS-preflight（fetch spec §cors-preflight-fetch）——非 safelisted
+        // cors 请求先发 OPTIONS（ACRM/ACAH + Origin），2xx + ACAM/ACAH 覆盖 → 继续；
+        // 失败 → network error。
+        if (mode === 'cors' && _zwFetchNeedsPreflight(method, headersWire) &&
+            _zwHasRealPageOrigin() && _zwUrlOrigin(url) !== _zwUrlOrigin(_zwCurrentHref())) {
+          var preDocOrigin = _zwUrlOrigin(_zwCurrentHref());
+          var preHeaders = headersWire;
+          if (!_zwHasHeader(preHeaders, 'origin')) {
+            preHeaders = _zwAddHeader(preHeaders, 'origin', preDocOrigin);
+          }
+          preHeaders = _zwAddHeader(preHeaders, 'access-control-request-method', method);
+          var preNames = [];
+          var preParts = headersWire ? headersWire.split('\x1e') : [];
+          for (var pi = 0; pi + 1 < preParts.length; pi += 2) {
+            var pn = String(preParts[pi]).toLowerCase();
+            if (pn === 'origin' || pn === 'content-length' || pn === 'accept' ||
+                pn === 'accept-language' || pn === 'content-language' ||
+                pn.indexOf('access-control-') === 0 || pn === 'referer' ||
+                pn === 'last-event-id' || pn === 'range') {
+              continue;
+            }
+            if (preNames.indexOf(pn) < 0) preNames.push(pn);
+          }
+          if (preNames.length > 0) {
+            preHeaders = _zwAddHeader(preHeaders, 'access-control-request-headers', preNames.sort().join(', '));
+          }
+          globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
+          var preWire = __zw_fetch(
+            '__zwfid:pre' + globalThis.__zw_fetch_counter,
+            'OPTIONS', url, preHeaders, '', '', '', mode, redirect, credentials);
+          var preResp = _makeResponseFromWire(preWire);
+          var preOrigin = response_headers_get(preResp, 'access-control-allow-origin');
+          var preMethods = response_headers_get(preResp, 'access-control-allow-methods');
+          var preAllowedHdrs = response_headers_get(preResp, 'access-control-allow-headers');
+          var preOk = (preResp.status >= 200 && preResp.status < 300) &&
+            (preOrigin === preDocOrigin || (preOrigin === '*' && credentials !== 'include'));
+          if (preOk && preMethods && preMethods !== '*' &&
+              String(preMethods).toLowerCase().split(',').indexOf(method.toLowerCase()) < 0) {
+            preOk = false;
+          }
+          if (preOk && preAllowedHdrs && preAllowedHdrs !== '*') {
+            var allowed = String(preAllowedHdrs).toLowerCase().split(',')
+              .map(function (s) { return s.trim(); });
+            for (var ai = 0; ai < preNames.length; ai++) {
+              if (allowed.indexOf(preNames[ai]) < 0) { preOk = false; break; }
+            }
+          }
+          if (!preOk) {
+            reject(new TypeError('Failed to fetch'));
+            return;
+          }
+        }
         // https://fetch.spec.whatwg.org/#append-a-request-origin-header — HTTP-network fetch
         // 托管注入 `Origin`：response tainting 为 "cors"（跨域 cors fetch）→ append 序列化的
         // 文档 origin。此前缺失该头时，条件性 ACAO 服务端（请求无 Origin 即省略
@@ -2286,6 +2421,18 @@
               nextBody = null;
             }
             var nextWire = hopHeaders(hopWire);
+            // fetch spec：跨源重定向 → Authorization 头丢弃（xhr-authorization-redirect
+            // 「cross origin redirection」期望 'none' 面）。
+            if (nextUrl && _zwUrlOrigin(nextUrl) !== _zwUrlOrigin(hopUrl)) {
+              var dropParts = nextWire ? nextWire.split('\x1e') : [];
+              var keptWire = '';
+              for (var di = 0; di + 1 < dropParts.length; di += 2) {
+                if (String(dropParts[di]).toLowerCase() === 'authorization') continue;
+                keptWire = keptWire ? keptWire + '\x1e' + dropParts[di] + '\x1e' + dropParts[di + 1]
+                                    : dropParts[di] + '\x1e' + dropParts[di + 1];
+              }
+              nextWire = keptWire;
+            }
             // https://fetch.spec.whatwg.org/#append-a-request-origin-header——跨源跳转
             // 请求须带文档 Origin（access-control-basic-allow 的 Origin 回显门控）。
             var _hopDocOrigin = _zwUrlOrigin(_zwCurrentHref());
