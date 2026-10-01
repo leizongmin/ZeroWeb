@@ -306,9 +306,9 @@ mod tests {
     /// slice13（CSS2 §10.6.2）：inline 盒 gBCR y/h 上报 = content area（主字体 A+D +
     /// padding/border，与 line-height 无关）。布局树 y/h 保持行盒几何（流 bookkeeping/
     /// 绘制不动，见 inline_finalization 记录处）；sync 记录 `inline_reported_rect`，
-    /// rect 桥（gBCR 单一出口）据此填表。**命中面不消费上报值**（slice13 返修）：
-    /// 快照 y/height 保持行盒几何，上报值随 `reported` 字段单独携带、只回流到本填表
-    /// 路径与主进程 fill_layout_rect_snapshot 方法路径。
+    /// rect 桥（gBCR 单一出口）据此填表。slice15（R4384）起命中面经 `hit_extent`
+    /// 同消费上报值（快照 y/height 字段本身仍为行盒树几何，作子盒坐标累积锚，
+    /// 上报值随 `reported` 字段单独携带）。
     /// 负控制：记录缺席（跨行 wrap / kill-switch `ZW_INLINE_CONTENT_AREA=0`）时回退
     /// 布局树行盒几何（旧行为）。
     /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
@@ -343,11 +343,11 @@ mod tests {
         let cache = HitTestCache::from_document(&doc, &layout, &HashMap::new());
         let snap = cache.snapshot();
         let span_snap = &snap.layout_root.children[0];
-        // 命中面字段 = 行盒树几何（slice13 返修：快照不烘上报值）。
-        assert_eq!(span_snap.y, 0.0, "快照 y = 布局树行盒几何（命中面）");
-        assert_eq!(span_snap.height, 23.0, "快照 h = 布局树行盒几何（命中面）");
+        // 快照 y/height = 行盒树几何（子盒坐标累积锚；命中面消费 reported，见 hit_extent）。
+        assert_eq!(span_snap.y, 0.0, "快照 y = 布局树行盒几何");
+        assert_eq!(span_snap.height, 23.0, "快照 h = 布局树行盒几何");
         assert_eq!(span_snap.x, 0.0, "x 无上报覆写 = 布局值");
-        // 上报值单独携带（仅 rect 桥消费）。
+        // 上报值单独携带（rect 桥 gBCR 与命中面同消费）。
         assert_eq!(span_snap.reported, Some((5.0, 15.132)), "上报值随 reported 字段走");
 
         // rect 桥填表：gBCR 读到的即上报值；无记录的盒（容器）= 行盒几何（负控制臂）。

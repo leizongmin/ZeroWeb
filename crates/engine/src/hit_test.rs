@@ -8,6 +8,34 @@ use zero_layout_engine::LayoutBox;
 use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::VisibilityValue;
 
+/// slice15（R4384）：inline 命中面 kill-switch（默认开，"0" 回退布局树行盒几何）。
+/// 关断后命中遍历忽略 `inline_reported_rect`，恢复 slice13 返修语义（行盒几何命中面）。
+/// 进程级稳定开关，公开边界读一次（LazyLock 快照），不进逐节点热路径。
+static INLINE_HIT_SURFACE_ON: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_INLINE_HIT_SURFACE").as_deref() != Ok("0"));
+
+/// 命中包含判定消费的 `(y, h)`（父内容区坐标系，与 `LayoutBox.y` 同帧）。
+///
+/// slice15（R4384）：inline 非替换盒（layout 侧已记录 `inline_reported_rect` 时）命中面 =
+/// **上报 border box**（content area 主字体 A+D ± padding/border，不含 leading）——与 gBCR
+/// 面同源（同一字段，slice13 端到端）。活体实证 Chrome inline 命中面 = content area：
+/// 行距 gap 带命中包含块、content 带内命中锚本体（slice13 rework-chrome-gap-*.json +
+/// slice15 逐点差异表，diag/evidence/slice15/）。此前读树行盒几何（含上 half-leading、
+/// vertical-align 不感知），行距宽的页面命中区大于视觉区。
+/// 规范：css-ui-4 §6.2 pointer-events——命中域 = 元素生成的盒（普通 hit-testing 规范
+/// 明确 open issue 未成文）；Chrome 对 inline 的实现 = 逐 fragment border box
+///（content area ± padding/border，CSS2 §10.6.2 content area 与 §10.8.1 leading 属行盒）。
+/// 其余盒（reported 缺席：块级/替换/跨行 wrap 并集）回退树几何。
+/// https://drafts.csswg.org/css-ui-4/#hit-testing
+/// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+fn hit_extent(layout: &LayoutBox) -> (f32, f32) {
+    if *INLINE_HIT_SURFACE_ON && let Some((reported_y, reported_h)) = layout.inline_reported_rect {
+        (reported_y, reported_h)
+    } else {
+        (layout.y, layout.height)
+    }
+}
+
 /// 元素 computed visibility 是否不可见（Hidden/Collapse，与绘制侧 painter 谓词一致）：
 /// 不可见盒不绘制、命中穿透（布局保留——gBCR/布局不受影响）。
 /// https://drafts.csswg.org/css-visibility/#visibility
@@ -217,9 +245,9 @@ fn fill_rect_from_layout_box(
 ) {
     // slice13（CSS2 §10.6.2）：inline 盒 gBCR 上报 y/h = content area（主字体 A+D +
     // padding/border）。布局树 y/h 保持行盒几何，sync 记录 `inline_reported_rect`，
-    // 此处（gBCR rect 桥直填路径）消费上报值；命中面（deepest_node_at/collect_nodes_at）
-    // 只读布局树 y/h（slice13 返修：快照构建已回退树几何，单/多进程命中同几何）。
-    // 子盒偏移仍按布局 y 累计（子盒 y 存于布局坐标系，上报覆写只作用于本盒 rect）。
+    // 此处（gBCR rect 桥直填路径）消费上报值；slice15 起（R4384）命中面
+    //（deepest_node_at/collect_nodes_at 经 hit_extent）同消费上报值——命中面与 gBCR
+    // 面同源。子盒偏移仍按布局 y 累计（子盒 y 存于布局坐标系，上报覆写只作用于本盒 rect）。
     // https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
     let (reported_y, reported_h) = box_node.inline_reported_rect.unwrap_or((box_node.y, box_node.height));
     let box_x = abs_x + box_node.x;
@@ -247,10 +275,9 @@ pub struct HitTestLayoutSnapshot {
     /// 盒高。
     pub height: f32,
     /// slice13：inline 盒 gBCR 上报 (y, h)（content area，与 `LayoutBox` 同坐标约定——
-    /// 相对父内容区）。**仅 rect 桥（gBCR）消费**；命中面读 `y`/`height` 布局树行盒
-    /// 几何（与 `from_document` 单进程路径一致，半 leading 空隙带可命中）。注：活体
-    /// 实证 Chrome inline 命中面=content area（gap 带命中包含块），行盒命中与 Chrome
-    /// 的差异 pre-existing，挂账 R4384。
+    /// 相对父内容区）。slice15（R4384）起 gBCR 面（rect 桥）与命中面（hit_extent）同消费
+    /// 此字段——命中面 = 上报 border box，与 Chrome 一致（gap 带命中包含块）。
+    /// `y`/`height` 字段保持布局树行盒几何（子盒坐标累积锚）。
     /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
     pub reported: Option<(f32, f32)>,
     /// 子盒。
@@ -300,10 +327,9 @@ fn layout_snapshot_from_box_with_offset(
 ) -> HitTestLayoutSnapshot {
     // slice13（CSS2 §10.6.2）：inline 非替换盒 getBoundingClientRect y/h 上报语义 =
     // content area（主字体 A+D + padding/border，与 line-height 无关）。快照 y/height
-    // **保持布局树行盒几何**（命中面与 from_document 单进程路径同几何——半 leading
-    // 空隙带可命中；Chrome 实证命中面=content area，行盒命中差异 pre-existing，
-    // 挂账 R4384）；上报值随 `reported` 字段单独携带，仅 rect 桥（gBCR）消费。
-    // 跨行 wrap 并集语义挂账。
+    // **保持布局树行盒几何**（子盒坐标累积锚）；slice15（R4384）起上报值随 `reported`
+    // 字段携带，rect 桥（gBCR）与命中遍历（hit_extent）同消费——单/多进程命中面与
+    // gBCR 面同源、同 Chrome。跨行 wrap 并集语义挂账。
     // https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
     HitTestLayoutSnapshot {
         node_id: layout.node_id,
@@ -329,7 +355,8 @@ fn layout_box_from_snapshot(snapshot: &HitTestLayoutSnapshot) -> LayoutBox {
         height: snapshot.height,
         // 上报值物化回 LayoutBox（坐标约定不变，相对父内容区）——主进程
         // fill_layout_rect_snapshot（gBCR 直填方法路径）据此填 rect 表，与渲染进程
-        // live 树同值；命中遍历（deepest_node_at）只读 y/height 树几何，不受影响。
+        // live 树同值；slice15 起命中遍历（hit_extent）同消费——快照往返后命中面
+        // 与 gBCR 面仍同源。
         inline_reported_rect: snapshot.reported,
         children: snapshot.children.iter().map(layout_box_from_snapshot).collect(),
         ..LayoutBox::default()
@@ -480,10 +507,15 @@ fn deepest_node_at(
 ) {
     let box_x = abs_x + layout.x;
     let box_y = abs_y + layout.y;
+    // slice15（R4384）：包含判定消费命中面 `hit_extent`（inline = 上报 border box，与
+    // gBCR 面同源）；子盒坐标累积仍走布局树 y（`child_origin`，与 fill_rect_from_layout_box
+    // 同款——子盒 y 存于布局坐标系，命中面覆写只作用于本盒）。
+    let (hit_y, hit_h) = hit_extent(layout);
+    let hit_top = abs_y + hit_y;
     let contains = walk.point_x >= box_x
-        && walk.point_y >= box_y
+        && walk.point_y >= hit_top
         && walk.point_x < box_x + layout.width
-        && walk.point_y < box_y + layout.height;
+        && walk.point_y < hit_top + hit_h;
 
     // S12（cdp-protocol hit-target）：**不按祖先包含剪枝**——祖先盒不包含点仍继续下探，
     // 只把「盒包含点」的节点记入候选。祖先盒可能小于溢出的子内容（实测：body 高 6px、
@@ -519,10 +551,14 @@ fn collect_nodes_at(
 ) {
     let box_x = abs_x + layout.x;
     let box_y = abs_y + layout.y;
+    // slice15（R4384）：同 deepest_node_at——包含判定消费命中面（inline = 上报 border box），
+    // 子盒累积走布局树 y。
+    let (hit_y, hit_h) = hit_extent(layout);
+    let hit_top = abs_y + hit_y;
     let contains = walk.point_x >= box_x
-        && walk.point_y >= box_y
+        && walk.point_y >= hit_top
         && walk.point_x < box_x + layout.width
-        && walk.point_y < box_y + layout.height;
+        && walk.point_y < hit_top + hit_h;
 
     // S12：同 deepest_node_at——不按祖先包含剪枝（溢出子内容可命中），仅记录包含点
     // 的盒（elementsAtPoint 序列语义不变）；hidden/collapse 盒剥夺候选资格。
@@ -814,7 +850,7 @@ mod tests {
     ///（子盒 y 存于布局坐标系，覆写只作用于本盒）。
     /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
     #[test]
-    fn inline_reported_rect_overrides_gcr_rect_only() {
+    fn inline_reported_rect_drives_gcr_direct_fill() {
         let doc = zero_dom::parse_html(r#"<body><div><span id="tgt">更多</span></div></body>"#);
         let body = doc.get_elements_by_tag_name("body")[0];
         let span = doc.get_element_by_id("tgt").expect("target span");
@@ -853,22 +889,26 @@ mod tests {
         );
     }
 
-    /// slice13 返修（major-1/B1）：命中面回退树几何——快照路径（from_snapshot，
-    /// 多进程主进程点击/elementFromPoint 消费）与文档路径（from_document，渲染进程
-    /// 内部命中）对同一几何输入命中结果一致；inline 半 leading 空隙带点击仍命中锚。
-    /// baidu 导航锚实测形态：行盒 abs y=19/h=23、上报 abs y=24/h=15.132——返修前
-    /// 上报值烘进命中盒，空隙带 [19,24)（~5px）点击由命中锚翻转为命中父容器（链接
-    /// 点击失效）；返修后命中带 = 行盒（活体三方对照：ZW orig/返修 gap 带均命中
-    /// 锚，Chrome 命中包含块——inline 命中面=content area，行盒命中差异 pre-existing
-    /// 挂账 R4384，见 diag/evidence/slice13/rework-chrome-gap-pure.json 等归档）。
-    /// 上报值随快照 `reported` 字段单独走：跨快照往返后主进程 gBCR（rect 桥方法
-    /// 路径）仍为 content area——命中面与 gBCR 面解耦。
+    /// slice15（R4384）：命中面 = inline 上报 border box（`inline_reported_rect`，与
+    /// gBCR 面同源）——快照路径（from_snapshot，多进程主进程点击/elementFromPoint 消费）
+    /// 与文档路径（from_document，渲染进程内部命中）对同一几何输入命中结果一致；
+    /// inline 半 leading 空隙带命中**父容器**（div），content 带内命中锚本体。
+    /// baidu 导航锚实测形态：行盒 abs y=19/h=23、上报 abs y=24/h=15.132——空隙带
+    /// [19,24)（~5px）由 slice13 返修的「命中锚（行盒语义）」翻转为「命中父容器」。
+    /// 翻转依据：Chrome 活体实证 inline 命中面 = content area（±padding/border），
+    /// gap 带命中包含块（slice13 rework-chrome-gap-pure.json + slice15 逐点差异表
+    /// diag/evidence/slice15/s15-before-*.json）；slice13 钉测试
+    /// `slice13rw_hit_band_uses_tree_geometry_snapshot_parity_with_document` 按新语义
+    /// 处置（gap 带断言翻转，快照字段断言保留），无静默放松。
+    /// 快照 `y`/`height` 字段仍为树行盒几何（子盒坐标累积锚），上报值随 `reported`
+    /// 字段单独走：跨快照往返后主进程 gBCR（rect 桥方法路径）仍为 content area。
+    /// 负控制：`ZW_INLINE_HIT_SURFACE=0`（kill-switch 回退树几何）下 gap 带断言显红。
     /// 装置为手工构造（fixture 直填 reported）——验证消费管道本身，生产值生成由
-    /// inline_finalization 单测 + 下方端到端测试覆盖；reported 手填故两态
-    ///（kill-switch）无差别。
+    /// inline_finalization 单测 + 下方端到端测试覆盖。
     /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+    /// https://drafts.csswg.org/css-ui-4/#hit-testing
     #[test]
-    fn slice13rw_hit_band_uses_tree_geometry_snapshot_parity_with_document() {
+    fn slice15_hit_band_uses_reported_border_box_snapshot_parity_with_document() {
         let doc = zero_dom::parse_html(r#"<html><body><div><a id="nav" href="/more">更多</a></div></body></html>"#);
         let body = doc.get_elements_by_tag_name("body")[0];
         let div = doc.get_elements_by_tag_name("div").first().copied();
@@ -898,7 +938,7 @@ mod tests {
         });
         let live = HitTestCache::from_document(&doc, &root, &HashMap::new());
 
-        // 快照字段：y/h = 行盒树几何（命中面），上报值随 reported 单独携带。
+        // 快照字段：y/h = 行盒树几何（子盒累积锚，不变），上报值随 reported 单独携带。
         let snap = live.snapshot();
         let a_snap = &snap.layout_root.children[0].children[0];
         assert_eq!((a_snap.y, a_snap.height), (0.0, 23.0), "快照 y/h = 行盒树几何");
@@ -906,34 +946,44 @@ mod tests {
 
         let restored = HitTestCache::from_snapshot(snap);
 
-        // 空隙带（半 leading，abs y∈[19,24) ∪ [39.13,42)）与 content 带内命中一致：
-        // from_document 与 from_snapshot 同结果（消单/多进程命中几何分歧）。
+        // 空隙带（半 leading，abs y∈[19,24) ∪ [39.13,42)）：不命中锚（命中面 = 上报
+        // border box [24,39.13)），from_document 与 from_snapshot 同结果。
         for (x, y, label) in [
             (5.0, 21.0, "上空隙带（行盒顶~content 顶）"),
             (5.0, 40.5, "下空隙带（content 底~行盒底）"),
-            (5.0, 30.0, "content 带内"),
         ] {
             assert_eq!(
-                live.hit_test_link(x, y).as_deref(),
-                Some("/more"),
-                "{label}: from_document 应命中锚"
+                live.hit_test_link(x, y),
+                None,
+                "{label}: from_document 不命中锚（gap 带命中父容器）"
             );
             assert_eq!(
-                restored.hit_test_link(x, y).as_deref(),
-                Some("/more"),
-                "{label}: from_snapshot 应命中锚（树几何，与 from_document 一致）"
+                restored.hit_test_link(x, y),
+                None,
+                "{label}: from_snapshot 不命中锚（与 from_document 一致）"
             );
+            let hit = live.hit_test_element(x, y).expect("element hit");
             assert_eq!(
-                live.hit_test_element(x, y).expect("element hit").id.as_deref(),
-                Some("nav"),
-                "{label}: from_document elementFromPoint 命中锚"
+                hit.tag_name, "div",
+                "{label}: from_document elementFromPoint 命中父容器"
             );
-            assert_eq!(
-                restored.hit_test_element(x, y).expect("element hit").id.as_deref(),
-                Some("nav"),
-                "{label}: from_snapshot elementFromPoint 命中锚"
-            );
+            assert_eq!(hit.id, None, "{label}: 父容器无 id（非锚）");
+            let restored_hit = restored.hit_test_element(x, y).expect("element hit");
+            assert_eq!(restored_hit.tag_name, "div", "{label}: from_snapshot 命中父容器");
         }
+        // content 带内命中锚（两路径一致）。
+        assert_eq!(live.hit_test_link(5.0, 30.0).as_deref(), Some("/more"));
+        assert_eq!(restored.hit_test_link(5.0, 30.0).as_deref(), Some("/more"));
+        assert_eq!(
+            live.hit_test_element(5.0, 30.0).expect("element hit").id.as_deref(),
+            Some("nav"),
+            "content 带内 elementFromPoint 命中锚"
+        );
+        assert_eq!(
+            restored.hit_test_element(5.0, 30.0).expect("element hit").id.as_deref(),
+            Some("nav"),
+            "content 带内 from_snapshot elementFromPoint 命中锚"
+        );
         // 行盒外不命中锚（负控制）。
         assert_eq!(live.hit_test_link(5.0, 50.0), None);
         assert_eq!(restored.hit_test_link(5.0, 50.0), None);
@@ -950,45 +1000,110 @@ mod tests {
         );
     }
 
-    /// slice13 返修端到端（真实管线）：同一渲染产物上 gBCR 面（content area）与
-    /// 命中面（行盒含半 leading）解耦——13px/23px inline 锚 gBCR h≈15.13，而空隙带
-    /// 点击仍命中锚。负控制：`ZW_INLINE_CONTENT_AREA=0` 下上报缺席 → gBCR 断言显红
-    ///（回退行盒 h=23，差 7.87px，容差 0.5 → 裕度 15.7×）；命中面断言两态同绿
-    ///（命中面读树几何，不依赖 kill-switch）。
+    /// slice15（R4384）：命中面含 padding/border——上报 border box 超出旧树 content
+    /// 带的 padding/border 区仍命中锚（Chrome 同：border box 命中域），而行盒 leading
+    /// 区（树几何含、上报不含）不再命中锚。装置手填 reported=[2.0,31.0) vs 树
+    /// [0,23.0)：y=0.5 ∈ 树 ∉ 上报 → 不命中（slice13 旧行盒语义命中，翻转点）；
+    /// y=29.0 ∈ 上报 ∉ 树 → 命中（slice13 树语义不命中，扩展点）。
+    /// 负控制：`ZW_INLINE_HIT_SURFACE=0` 下两断言均显红（回退树几何）。
+    /// https://drafts.csswg.org/css-ui-4/#hit-testing
     #[test]
-    fn slice13rw_reported_rect_hit_vs_gcr_end_to_end() {
+    fn slice15_hit_surface_extends_to_reported_padding_border() {
+        let doc = zero_dom::parse_html(r#"<html><body><div><a id="nav" href="/more">更多</a></div></body></html>"#);
+        let body = doc.get_elements_by_tag_name("body")[0];
+        let anchor = doc.get_element_by_id("nav").expect("nav anchor");
+        let mut root = LayoutBox {
+            node_id: Some(body),
+            width: 800.0,
+            height: 600.0,
+            ..LayoutBox::default()
+        };
+        root.children.push(LayoutBox {
+            node_id: doc.get_elements_by_tag_name("div").first().copied(),
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 40.0,
+            children: vec![LayoutBox {
+                inline_reported_rect: Some((2.0, 29.0)),
+                node_id: Some(anchor),
+                x: 0.0,
+                y: 0.0,
+                width: 46.0,
+                height: 23.0,
+                ..LayoutBox::default()
+            }],
+            ..LayoutBox::default()
+        });
+        let live = HitTestCache::from_document(&doc, &root, &HashMap::new());
+        let restored = HitTestCache::from_snapshot(live.snapshot());
+
+        // leading 区（树含、上报不含）不命中锚——slice13 行盒语义翻转点。
+        assert_eq!(
+            live.hit_test_link(5.0, 0.5),
+            None,
+            "行盒 leading 区不命中锚（上报面外）"
+        );
+        assert_eq!(restored.hit_test_link(5.0, 0.5), None);
+        // padding/border 区（上报含、树 content 不含）命中锚——border box 命中域。
+        assert_eq!(
+            live.hit_test_link(5.0, 29.0).as_deref(),
+            Some("/more"),
+            "上报 padding/border 区命中锚"
+        );
+        assert_eq!(restored.hit_test_link(5.0, 29.0).as_deref(), Some("/more"));
+        // 上报面外不命中。
+        assert_eq!(live.hit_test_link(5.0, 31.0), None);
+        assert_eq!(restored.hit_test_link(5.0, 31.0), None);
+    }
+
+    /// 从布局树定位锚盒几何（相对父内容区 + 绝对，与命中遍历同坐标累积）。
+    /// slice15 端到端与突变重排用例共用，提升为测试模块级 helper。
+    fn find_abs(
+        layout: &LayoutBox,
+        id: NodeId,
+        ax: f32,
+        ay: f32,
+    ) -> Option<(f32, f32, f32, f32, f32, Option<(f32, f32)>)> {
+        let bx = ax + layout.x;
+        let by = ay + layout.y;
+        if layout.node_id == Some(id) {
+            return Some((
+                layout.y,
+                bx,
+                by,
+                layout.width,
+                layout.height,
+                layout.inline_reported_rect,
+            ));
+        }
+        let (cx, cy) = child_origin(layout, bx, by);
+        for child in &layout.children {
+            if let Some(found) = find_abs(child, id, cx, cy) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    /// slice15 端到端（真实管线，R4384）：同一渲染产物上命中面 = gBCR 面（同源，
+    /// 均消费 `inline_reported_rect`）——13px/23px inline 锚 gBCR h≈15.13，空隙带
+    ///（半 leading）不再命中锚、命中父容器（div，无 href → link None）。
+    /// slice13 返修钉「空隙带命中锚」按新语义处置（断言翻转 Some→None），依据：
+    /// Chrome 活体 gap 带命中包含块（slice13 rework-chrome-baidu-gapband.json 与
+    /// slice15 逐点差异表）。负控制（双向）：`ZW_INLINE_HIT_SURFACE=0`（命中面
+    /// kill-switch 回退树几何）下 gap 带断言显红（命中回 `/more`，slice13 语义）；
+    /// `ZW_INLINE_CONTENT_AREA=0`（layout 侧上报缺席）下本测红于前置断言
+    /// `reported.expect`（生产侧回退行盒 h=23，差 7.87px，容差 0.5 → 裕度 15.7×）。
+    /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+    /// https://drafts.csswg.org/css-ui-4/#hit-testing
+    #[test]
+    fn slice15_reported_hit_surface_matches_gcr_end_to_end() {
         let html = r#"<html><body>
             <div style="line-height: 23px;"><a id="nav" href="/more" style="font-size: 13px;">更多</a></div>
         </body></html>"#;
         let (doc, layout, _styles) = render_with_styles(html, "");
         let anchor = doc.get_element_by_id("nav").expect("nav anchor");
-        // 从布局树定位锚盒几何（相对父内容区 + 绝对，与命中遍历同坐标累积）。
-        fn find_abs(
-            layout: &LayoutBox,
-            id: NodeId,
-            ax: f32,
-            ay: f32,
-        ) -> Option<(f32, f32, f32, f32, f32, Option<(f32, f32)>)> {
-            let bx = ax + layout.x;
-            let by = ay + layout.y;
-            if layout.node_id == Some(id) {
-                return Some((
-                    layout.y,
-                    bx,
-                    by,
-                    layout.width,
-                    layout.height,
-                    layout.inline_reported_rect,
-                ));
-            }
-            let (cx, cy) = child_origin(layout, bx, by);
-            for child in &layout.children {
-                if let Some(found) = find_abs(child, id, cx, cy) {
-                    return Some(found);
-                }
-            }
-            None
-        }
         let (rel_y, abs_x, abs_y, abs_w, abs_h, reported) =
             find_abs(&layout.root, anchor, 0.0, 0.0).expect("anchor box in layout tree");
         // 上报前提：单行 inline 已记录 content area（dormant 常数臂，kill-switch 默认开），
@@ -1009,9 +1124,9 @@ mod tests {
         let content_y = abs_y + gap + 2.0;
         for (cache, label) in [(&live, "from_document"), (&restored, "from_snapshot")] {
             assert_eq!(
-                cache.hit_test_link(abs_x + 5.0, gap_y).as_deref(),
-                Some("/more"),
-                "{label}: 空隙带（行盒顶+{:.1}px）应命中锚",
+                cache.hit_test_link(abs_x + 5.0, gap_y),
+                None,
+                "{label}: 空隙带（行盒顶+{:.1}px）命中父容器，不命中锚",
                 gap * 0.5
             );
             assert_eq!(
@@ -1025,6 +1140,9 @@ mod tests {
                 "{label}: 行盒外不应命中锚"
             );
         }
+        // gap 带 elementFromPoint = 父容器（Chrome 同：包含块）。
+        let gap_hit = live.hit_test_element(abs_x + 5.0, gap_y).expect("gap band hit");
+        assert_eq!(gap_hit.tag_name, "div", "gap 带 elementFromPoint 命中包含块 div");
 
         // gBCR 面：rect 表 = content area（abs = 树行盒顶 + 空隙带高）。
         let rects = crate::rect_bridge::new_layout_rect_snapshot();
@@ -1038,6 +1156,60 @@ mod tests {
             rect.1,
             rect.3,
             abs_y
+        );
+    }
+
+    /// slice15 × slice14（R4384）：textContent 突变 → 重排后命中面仍 = 上报 border box。
+    /// 突变触发的重排若让命中面回落行盒树几何，gap 带会重新命中锚（静默回归；活体
+    /// baidu 已证不再命中：diag/evidence/slice15/s15-after-baidu-gap.json），此处补
+    /// 常驻钉。管线与 [`render_with_styles`] 相同（renderer 实际突变重排路径）。
+    /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+    /// https://drafts.csswg.org/css-ui-4/#hit-testing
+    #[test]
+    fn slice15_hit_surface_stays_reported_after_textcontent_mutation() {
+        let html = r#"<html><body>
+            <div style="line-height: 23px;"><a id="nav" href="/more" style="font-size: 13px;">更多</a></div>
+        </body></html>"#;
+        let mut doc = zero_dom::parse_html(html);
+        let anchor = doc.get_element_by_id("nav").expect("nav anchor");
+        doc.set_text_content(anchor, "热榜");
+
+        let stylesheets = vec![Parser::parse_stylesheet("")];
+        let mut style_system = StyleSystem::new();
+        style_system.set_viewport(800.0, 600.0);
+        let styles = style_system.compute_styles(&doc, &stylesheets);
+        let mut layout_engine = LayoutEngine::new(800.0, 600.0);
+        let layout = layout_engine.compute(&doc, &styles);
+
+        let (rel_y, abs_x, abs_y, _abs_w, abs_h, reported) =
+            find_abs(&layout.root, anchor, 0.0, 0.0).expect("anchor box in relayout tree");
+        // 突变重排后上报仍要生产：单行 inline 记录 content area（gap 带存在才可判别）。
+        let (rep_y, rep_h) = reported.expect("突变重排后单行 inline 仍应记录上报矩形");
+        let gap = rep_y - rel_y;
+        assert!(gap > 2.5, "用例前提：突变后半 leading 空隙带应存在（gap={}）", gap);
+        assert!(
+            (rep_h - 13.0 * (0.928 + 0.236)).abs() < 0.5,
+            "用例前提：上报 h 应为 content area 15.132，实际 {}",
+            rep_h
+        );
+        assert!((abs_h - 23.0).abs() < 0.5, "用例前提：树行盒高 23，实际 {}", abs_h);
+
+        let cache = HitTestCache::from_document(&doc, &layout.root, &HashMap::new());
+        let gap_y = abs_y + gap * 0.5;
+        assert_eq!(
+            cache.hit_test_link(abs_x + 5.0, gap_y),
+            None,
+            "突变重排后 gap 带不命中锚（链接动作 None）"
+        );
+        let gap_hit = cache.hit_test_element(abs_x + 5.0, gap_y).expect("gap band hit");
+        assert_eq!(
+            gap_hit.tag_name, "div",
+            "突变重排后 gap 带 elementFromPoint 命中父容器 div"
+        );
+        assert_eq!(
+            cache.hit_test_link(abs_x + 5.0, abs_y + gap + 2.0).as_deref(),
+            Some("/more"),
+            "突变重排后 content 带仍命中锚"
         );
     }
 
