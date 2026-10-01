@@ -248,7 +248,9 @@ pub struct HitTestLayoutSnapshot {
     pub height: f32,
     /// slice13：inline 盒 gBCR 上报 (y, h)（content area，与 `LayoutBox` 同坐标约定——
     /// 相对父内容区）。**仅 rect 桥（gBCR）消费**；命中面读 `y`/`height` 布局树行盒
-    /// 几何（与 `from_document` 单进程路径一致，半 leading 空隙带可命中，Chrome 语义）。
+    /// 几何（与 `from_document` 单进程路径一致，半 leading 空隙带可命中）。注：活体
+    /// 实证 Chrome inline 命中面=content area（gap 带命中包含块），行盒命中与 Chrome
+    /// 的差异 pre-existing，挂账 R4384。
     /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
     pub reported: Option<(f32, f32)>,
     /// 子盒。
@@ -299,8 +301,9 @@ fn layout_snapshot_from_box_with_offset(
     // slice13（CSS2 §10.6.2）：inline 非替换盒 getBoundingClientRect y/h 上报语义 =
     // content area（主字体 A+D + padding/border，与 line-height 无关）。快照 y/height
     // **保持布局树行盒几何**（命中面与 from_document 单进程路径同几何——半 leading
-    // 空隙带可命中，Chrome inline 命中按行盒含 leading）；上报值随 `reported` 字段
-    // 单独携带，仅 rect 桥（gBCR）消费。跨行 wrap 并集语义挂账。
+    // 空隙带可命中；Chrome 实证命中面=content area，行盒命中差异 pre-existing，
+    // 挂账 R4384）；上报值随 `reported` 字段单独携带，仅 rect 桥（gBCR）消费。
+    // 跨行 wrap 并集语义挂账。
     // https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
     HitTestLayoutSnapshot {
         node_id: layout.node_id,
@@ -855,8 +858,9 @@ mod tests {
     /// 内部命中）对同一几何输入命中结果一致；inline 半 leading 空隙带点击仍命中锚。
     /// baidu 导航锚实测形态：行盒 abs y=19/h=23、上报 abs y=24/h=15.132——返修前
     /// 上报值烘进命中盒，空隙带 [19,24)（~5px）点击由命中锚翻转为命中父容器（链接
-    /// 点击失效）；返修后命中带 = 行盒（Chrome inline 命中按行盒含 leading 语义，
-    /// 见 diag/evidence/slice13/rework-chrome-gap-band-hit.json 活体对照）。
+    /// 点击失效）；返修后命中带 = 行盒（活体三方对照：ZW orig/返修 gap 带均命中
+    /// 锚，Chrome 命中包含块——inline 命中面=content area，行盒命中差异 pre-existing
+    /// 挂账 R4384，见 diag/evidence/slice13/rework-chrome-gap-pure.json 等归档）。
     /// 上报值随快照 `reported` 字段单独走：跨快照往返后主进程 gBCR（rect 桥方法
     /// 路径）仍为 content area——命中面与 gBCR 面解耦。
     /// 装置为手工构造（fixture 直填 reported）——验证消费管道本身，生产值生成由
