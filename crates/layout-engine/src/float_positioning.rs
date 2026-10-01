@@ -271,13 +271,34 @@ pub(crate) fn shrink_pure_text_floats(
         .and_then(|_| adjusted_text_max_width(dom_id, doc, styles, advance_source?, font_resolver?));
     let text_max_w =
         adjusted_text_max_w.unwrap_or_else(|| crate::intrinsic_sizing::text_content_max_width(dom_id, doc, styles));
+    // R4920（css-sizing-3 §max-content + CSS2 §10.3.5 shrink-to-fit）：float preferred
+    // width = 文本 max-content（R4919 per-font walk）+ **inline-level 子 margin-box 水平
+    // 求和**（定宽原子 inline-block 族 + 纯 inline 子 frame/margin；其文本已在 text_max_w
+    // 内，勿双计）。baidu「换一换」float（a.hot-refresh）内 i.c-icon（inline-block
+    // width:16px）+ span（margin-left:2px）：Σ = 16+2+42 = 60。taffy native float 收缩
+    // 用**块流 max-content = max(子 margin-box)**（ZW 把 inline 子映射为 taffy Block
+    // 节点，块流竖排取 max 语义，且 inline 子不经 measure 闭包）= max(16, 44) = 44 →
+    // float 窄于单行真值 60 → 内层 IFC 把「一换」折到第二行竖排（实证）。故 taffy 估值
+    // < Σ 时须**扩**到 Σ（块流取 max 与 IFC 求和的真实偏差）；taffy 估值 ≥ Σ 时照旧收缩。
+    // adjusted_text_max_w 臂（font-size-adjust 语境）已断言无元素子，Σ=0 恒不触发扩臂。
+    // kill-switch `ZW_FLOAT_INLINE_SUM=0` 回退「只缩不扩」。
+    let non_text_w = if adjusted_text_max_w.is_none() {
+        crate::intrinsic_sizing::inline_children_non_text_width(dom_id, doc, styles)
+    } else {
+        0.0
+    };
+    let content_max_w = text_max_w + non_text_w;
     let shrink_border_box =
-        text_max_w + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+        content_max_w + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
     // 仅当内容确实更窄时才收缩（对内容更宽或显式宽度为 no-op）。
     let expanded_adjusted_text = adjusted_text_max_w.is_some() && shrink_border_box > box_node.width;
-    if adjusted_text_max_w.is_some() || shrink_border_box < box_node.width {
+    let expand_inline_sum = adjusted_text_max_w.is_none()
+        && non_text_w > 0.0
+        && shrink_border_box > box_node.width
+        && std::env::var("ZW_FLOAT_INLINE_SUM").as_deref() != Ok("0");
+    if adjusted_text_max_w.is_some() || shrink_border_box < box_node.width || expand_inline_sum {
         box_node.width = shrink_border_box;
-        box_node.content_width = text_max_w;
+        box_node.content_width = content_max_w;
     }
     if expanded_adjusted_text {
         let (_, line_height) = crate::inline::resolve_font_metrics(styles.get(&dom_id));

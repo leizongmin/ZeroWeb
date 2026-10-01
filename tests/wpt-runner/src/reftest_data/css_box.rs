@@ -393,6 +393,27 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><div style=\"width:100px;height:100px;border:20px solid black;background:red;\"></div></body></html>",
         is_match: false,
     },
+    // ── slice12（R4919）：inline-block 收缩到 fit-content 时后代文本按自身
+    // font-size 量测（baidu 顶部导航「更多」竖排簇）──
+    // 回归形态：容器 12px ⊃ 锚 13px 文本「更多」——intrinsic walk 把后代文本
+    // 误按容器字号量测（24 vs 真值 26，css-sizing-3 intrinsic size）→ 收缩过窄
+    // → 文本折行竖排。形态：.nav-item inline-block（继承 36px）> a 39px 拉丁
+    // 双词组（即 12⊃13 的等比放大——runner 字体环境无 CJK 字形，信号由可见
+    // 字形/背景承载；bar + 大 line-height 使折行信号 ≥5× Layout 1% 阈值）。
+    // 邻臂（.big 同字号 inline-block，无嵌套字体分裂）与主臂同排——R4919 关断
+    // 下仍正确量测恒单行 = 邻近变体负控制。ref 页 .nav-item 加
+    // white-space:nowrap 钳单行；修复态两页逐像素相等。
+    // 负控制（800×600=480000px，Layout 阈值 1%，本套件实测口径）：default 0 diff；
+    // ZW_INTRINSIC_PERFONT=0 → 88854px = 18.51%（18.5×）。
+    // 文件孪生（make reftest-upstream 域 + 几何 dump 用）：
+    // tests/wpt-runner/local-reftests/css/css-sizing/intrinsic-nested-font-inline-block-zw-001*.html。
+    InlineReftestDef {
+        id: "css-box/intrinsic-nested-font-inline-block-zw-001",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0;font:36px/46px Arial,sans-serif}.row{margin:8px}.nav-item{display:inline-block;background:#3fbf3f}.nav-item a{font-size:39px;line-height:138px;color:#222}.big{font-size:39px;line-height:138px;background:#e6a23c}</style></head><body><div class=\"row\"><span class=\"nav-item\"><a>abcdef ghijkl</a></span><span class=\"nav-item big\" style=\"margin-left:40px\">abcdef ghijkl</span></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0;font:36px/46px Arial,sans-serif}.row{margin:8px}.nav-item{display:inline-block;background:#3fbf3f;white-space:nowrap}.nav-item a{font-size:39px;line-height:138px;color:#222}.big{font-size:39px;line-height:138px;background:#e6a23c}</style></head><body><div class=\"row\"><span class=\"nav-item\"><a>abcdef ghijkl</a></span><span class=\"nav-item big\" style=\"margin-left:40px\">abcdef ghijkl</span></div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {

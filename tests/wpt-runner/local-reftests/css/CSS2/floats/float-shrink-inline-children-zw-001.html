@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="match" href="float-shrink-inline-children-zw-001-ref.html">
+<title>float shrink-to-fit sums inline-level children (baidu 换一换 hot-refresh shape)</title>
+<!-- 本地自建 reftest（上游无同型案，2026-10-01 R4920/R4920b）：float 收缩到
+     fit-content 时 inline-level 子（atomic inline-block 图标 + inline 文本 span）
+     须水平求和单行排布（CSS2 §9.4.1/§9.5 float 建立 IFC；css-sizing-3
+     shrink-to-fit）。回归形态：R4920——taffy 块流 max(子 margin-box) 低估于
+     Σ（baidu 实证 44 < 60）→ float 过窄 → 文本溢出折行竖排；R4920b——
+     definite height float 的子保持块堆叠两行。
+     形态取 baidu 热榜「换一换」float 结构（.hot-refresh float + definite height +
+     .c-icon atomic inline-block + .hot-refresh-text inline span ml2，字号按比例
+     放大 14→42px：reftest runner 字体环境无 CJK 字形（glyph 不落像素），信号
+     须由可见字形/背景承载；放大使折行 bar 面积 ≥1% 阈值 5× 量级）。
+     臂 1（nb 邻近变体）：纯文本 float——Σ = max-child 无需扩臂，两 kill-switch
+     下均须保持单行（放独立 header：float 相互定位对 header 内邻居敏感，隔离后
+     其位置对 test/ref 恒一致）。臂 2（主臂）：icon+span 完整形态。
+     ref 页 float 去掉 definite height（R4920b 重测 gate 只钳 definite-height
+     float，auto 高容器走常规重测恒单行）+ white-space:nowrap（无论收缩宽是否
+     正确都强制单行，R4920 参照）；修复后两页逐像素相等。kill-switch 复现红：
+     ZW_FLOAT_INLINE_SUM=0（R4920）/ ZW_FLOAT_DEFINITE_H_REMEASURE=0（R4920b）。
+     账本：tests/wpt-runner/imported-tests.txt；wpt-data 为独立 repo（gitignored），
+     重拉后按主仓 tests/wpt-runner/local-reftests/ 同路径文件恢复并重跑
+     make import-wpt 重建 manifest。本页另有内联孪生（make reftest 常驻集）：
+     tests/wpt-runner/src/reftest_data/css_float.rs
+     id css-float/float-shrink-inline-children-zw-001——两处需同步维护。 -->
+<style>
+body { margin: 0; font: 13px/23px Arial, sans-serif; }
+.header { margin: 8px; padding: 4px; }
+.hot-refresh { float: right; height: 48px; }
+.hot-refresh-text { font-size: 42px; line-height: 42px; margin-left: 2px; background: #3fbf3f; }
+.c-icon { display: inline-block; width: 48px; height: 48px; background: #4e6ef2; }
+</style>
+</head>
+<body>
+<div class="header"><a class="hot-refresh"><span class="hot-refresh-text" style="background:#e6a23c">refresh swap</span></a></div>
+<div class="header"><a class="hot-refresh"><i class="c-icon"></i><span class="hot-refresh-text">ab cdefghijklmnopqrstuvwxyzabcd</span></a></div>
+</body>
+</html>

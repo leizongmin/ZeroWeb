@@ -3057,7 +3057,15 @@ pub(crate) fn remeasure_inline_only_containers(
             && !inside_float_subtree)
         && let Some(dom_id) = box_node.node_id
         && let Some(style) = styles.get(&dom_id)
-        && matches!(style.height, LengthValue::Auto)
+        // R4920b（CSS2 §9.4.1/§9.5：float 建立 IFC，inline-level 子按行内流排布）：
+        // definite height 的 **float 自身**也须重测——其 inline-level 子（atomic icon +
+        // inline span）旧被 Auto gate 排除在本重测外，保持 taffy 块堆叠两行（baidu
+        // 「换一换」float height:16px 实证：icon 第 1 行、span y=16 第 2 行，Chrome 单行）。
+        // float 内容行内流与容器显式高正交：下方高度回写以 height_auto 钳制，
+        // 显式高度不被内容行数覆写（§10.5）。kill-switch `ZW_FLOAT_DEFINITE_H_REMEASURE=0`。
+        && (matches!(style.height, LengthValue::Auto)
+            || (!matches!(box_node.float, FloatValue::None)
+                && std::env::var("ZW_FLOAT_DEFINITE_H_REMEASURE").as_deref() != Ok("0")))
     {
         let container_width = box_node.content_width;
         let is_vertical = matches!(
@@ -3191,12 +3199,15 @@ pub(crate) fn remeasure_inline_only_containers(
         } else {
             full_height
         };
-        if content_height > box_node.content_height {
+        // R4920b：definite height float（新增放行臂）内容行数不得覆写显式高度（CSS2 §10.5）
+        //——仅 height:auto 容器双向回写；definite height 只做上方子盒行位同步。
+        let height_auto = matches!(style.height, LengthValue::Auto);
+        if height_auto && content_height > box_node.content_height {
             // 如果 IFC 计算的高度大于 taffy 的高度，更新容器高度
             let diff = content_height - box_node.content_height;
             box_node.content_height = content_height;
             box_node.height += diff;
-        } else if content_height < box_node.content_height {
+        } else if height_auto && content_height < box_node.content_height {
             // 纯 inline-level 容器且非特殊布局容器：允许减小高度。
             // taffy 将 inline 元素映射为 Block，会错误地包含 inline 元素的垂直 margin，
             // 而 CSS 2.1 规定 inline 元素的 margin-top/margin-bottom 不影响行盒高度。

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>inline-block nested font-size shrink-to-fit (ref: white-space:nowrap)</title>
+<!-- 与 intrinsic-nested-font-inline-block-zw-001.html 同型；唯一差异 .nav-item 加
+     white-space:nowrap——无论收缩宽是否正确都强制单行，作为参照。 -->
+<style>
+body { margin: 0; font: 36px/46px Arial, sans-serif; }
+.row { margin: 8px; }
+.nav-item { display: inline-block; background: #3fbf3f; white-space: nowrap; }
+.nav-item a { font-size: 39px; line-height: 138px; color: #222; }
+.big { font-size: 39px; line-height: 138px; background: #e6a23c; }
+</style>
+</head>
+<body>
+<div class="row"><span class="nav-item"><a>abcdef ghijkl</a></span><span class="nav-item big" style="margin-left:40px">abcdef ghijkl</span></div>
+</body>
+</html>

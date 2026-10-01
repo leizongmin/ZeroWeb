@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="match" href="intrinsic-nested-font-inline-block-zw-001-ref.html">
+<title>inline-block shrink-to-fit measures descendant text at its own font-size (baidu 更多 nav shape)</title>
+<!-- 本地自建 reftest（上游无同型案，2026-10-01 R4919）：width:auto 的
+     inline-block 收缩到 fit-content 时，嵌套更大 font-size 的后代文本须按自身
+     字号量测 max-content（css-sizing-3 intrinsic size；容器 36px ⊃ 锚 39px 文本，
+     即 baidu 导航 12px ⊃ 13px 的等比放大）。回归形态：后代文本误按容器字号
+     量测（baidu「更多」26 真值 vs 24 误值）→ 收缩过窄 → 文本折行竖排。
+     文本用拉丁双词组替换 CJK——reftest runner 字体环境无 CJK 字形（glyph 不落
+     像素），信号须由可见字形/背景承载。信号构造：主臂 inline-block 带
+     background bar + 大 line-height（138px），折行使 bar 向下伸出一行
+     （~217×138 ≈ 30k px ≈ 6% > 5× 1% 阈值）；邻臂（同字号 .big，无嵌套字体
+     分裂，R4919 关断下仍正确量测）与主臂同排放置——折行只向下伸展，邻臂
+     在右侧不受影响（邻近变体负控制：两状态恒单行）。ref 页对 .nav-item 加
+     white-space:nowrap 钳单行；修复后两页逐像素相等。kill-switch 复现红：
+     ZW_INTRINSIC_PERFONT=0。账本：tests/wpt-runner/imported-tests.txt；
+     wpt-data 为独立 repo（gitignored），重拉后按主仓
+     tests/wpt-runner/local-reftests/ 同路径文件恢复并重跑 make import-wpt
+     重建 manifest。本页另有内联孪生（make reftest 常驻集）：
+     tests/wpt-runner/src/reftest_data/css_box.rs
+     id css-box/intrinsic-nested-font-inline-block-zw-001——两处需同步维护。 -->
+<style>
+body { margin: 0; font: 36px/46px Arial, sans-serif; }
+.row { margin: 8px; }
+.nav-item { display: inline-block; background: #3fbf3f; }
+.nav-item a { font-size: 39px; line-height: 138px; color: #222; }
+.big { font-size: 39px; line-height: 138px; background: #e6a23c; }
+</style>
+</head>
+<body>
+<div class="row"><span class="nav-item"><a>abcdef ghijkl</a></span><span class="nav-item big" style="margin-left:40px">abcdef ghijkl</span></div>
+</body>
+</html>

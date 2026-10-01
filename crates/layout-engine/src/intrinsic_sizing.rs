@@ -850,8 +850,70 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
         font_id,
         tab,
         &mut segments,
+        per_font_intrinsic_on(),
     );
     segments.into_iter().fold(0.0f32, f32::max)
+}
+
+/// R4919：per-element 字体语境 intrinsic 测量开关（default-on；`ZW_INTRINSIC_PERFONT=0`
+/// 回退「整棵子树沿用容器 font」旧行为，供回归归因 A/B）。
+fn per_font_intrinsic_on() -> bool {
+    std::env::var("ZW_INTRINSIC_PERFONT").as_deref() != Ok("0")
+}
+
+/// R4920（css-sizing-3 §max-content + CSS2 §10.3.5 shrink-to-fit preferred width）：
+/// float 纯文本臂的**非文本**子贡献——定宽原子 inline 子（inline-block 族，CSS width
+/// definite）贡献盒宽 + margin-box；纯 inline 子贡献 frame + margin（其文本由
+/// text_content_max_width 的 DOM walk 计入，frame/margin 在此单边入账勿双计）。
+/// 走 **DOM 直子**（与 measure_text_content 的 ib_sizes 同口径——float 的 LayoutBox
+/// children 不含折叠进 IFC 的 inline 子）。auto 宽原子子不计宽（taffy 首趟拉伸伪影
+/// R4032 语境；under-measure 安全方向，真值按内容递归测独立子问题）。
+/// baidu「换一换」float（a.hot-refresh）内 i.c-icon（inline-block width:16px）+
+/// span margin-left:2px 漏计入 → float 收缩到 42 < 单行真值 60 → 内层 IFC 把
+/// 「一换」折到第二行竖排（实证）。
+pub(crate) fn inline_children_non_text_width(
+    dom_id: NodeId,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> f32 {
+    let mut sum = 0.0f32;
+    for child in doc.child_nodes(dom_id) {
+        let Some(cs) = styles.get(&child) else {
+            continue;
+        };
+        let resolve = |v: &LengthValue| resolve_intrinsic_real_length(v, cs).unwrap_or(0.0);
+        match cs.display {
+            DisplayValue::InlineBlock
+            | DisplayValue::InlineFlex
+            | DisplayValue::InlineGrid
+            | DisplayValue::InlineTable => {
+                let w = resolve(&cs.width);
+                let ml = resolve(&cs.margin_left);
+                let mr = resolve(&cs.margin_right);
+                sum += (w + ml + mr).max(0.0);
+            }
+            DisplayValue::Inline => {
+                // border-style None/Hidden 不渲染边框——UA initial border-width=medium(3px)
+                // 恒在场（inline_finalization border_w 同口径），须按 style 门控。
+                let border_w = |w: &LengthValue, s: &zero_style_system::property::types::BorderStyleValue| -> f32 {
+                    match s {
+                        zero_style_system::property::types::BorderStyleValue::None
+                        | zero_style_system::property::types::BorderStyleValue::Hidden => 0.0,
+                        _ => resolve(w),
+                    }
+                };
+                let frame = resolve(&cs.padding_left)
+                    + resolve(&cs.padding_right)
+                    + border_w(&cs.border_left_width, &cs.border_left_style)
+                    + border_w(&cs.border_right_width, &cs.border_right_style);
+                let ml = resolve(&cs.margin_left);
+                let mr = resolve(&cs.margin_right);
+                sum += (frame + ml + mr).max(0.0);
+            }
+            _ => {}
+        }
+    }
+    sum
 }
 
 /// R4416（CSS Text 3 §4.1.3）：tab 度量对 (unit, space_advance)——unit = 下一 tab stop
@@ -957,6 +1019,7 @@ fn text_max_width_walk(
     font_id: Option<u32>,
     tab: (f32, f32),
     segments: &mut Vec<f32>,
+    per_font: bool,
 ) {
     let Some(node) = doc.get(node_id) else { return };
     match &node.kind {
@@ -972,23 +1035,46 @@ fn text_max_width_walk(
                 let child_ws = child_style
                     .map(|s| s.white_space.clone())
                     .unwrap_or_else(|| white_space.clone());
+                // R4919（css-sizing-3 #max-content-inline-size）：max-content 的 inline 文本段
+                // 按**该段自身**的 computed font 度量——旧实现整棵子树沿用容器 font_size/
+                // is_ahem（font_id 已按子刷新，R4043），嵌套异字号（如 12px 容器 > 13px 锚）
+                // 被低估 → shrink-to-fit 盒窄于真实内容 → 内层 IFC 按真实字体二次布局折行
+                //（baidu「更多」「换一换」竖排实证）。子无样式条目（styles=None 的 fragment
+                // 语境，R4367）沿用父语境不变。`ZW_INTRINSIC_PERFONT=0` 回退旧行为。
+                let (child_fs, child_ahem, child_font_id) = match child_style.filter(|_| per_font) {
+                    Some(cs) => {
+                        let (fs, _) = crate::inline::resolve_font_metrics(Some(cs));
+                        (
+                            fs,
+                            cs.font_family
+                                .iter()
+                                .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")),
+                            intrinsic_font_id(Some(cs)).or(font_id),
+                        )
+                    }
+                    // R4043 近似沿用：嵌套异字体后代按容器 font_id 计（本域已排除出
+                    // stored IFC；原子后代宽由调用方 LayoutBox 分支负责）。
+                    None => (
+                        font_size,
+                        is_ahem,
+                        child_style.and_then(|cs| intrinsic_font_id(Some(cs))).or(font_id),
+                    ),
+                };
                 // R4416：tab 度量随 white_space 同点解析（子样式覆盖，否则继承）。
                 let child_tab = child_style
-                    .map(|cs| intrinsic_tab_metrics(Some(cs), font_size, is_ahem, font_id))
+                    .map(|cs| intrinsic_tab_metrics(Some(cs), child_fs, child_ahem, child_font_id))
                     .unwrap_or(tab);
-                // R4043 近似沿用：嵌套异字体后代按容器 font_id 计（本域已排除出
-                // stored IFC；原子后代宽由调用方 LayoutBox 分支负责）。
-                let child_font_id = child_style.and_then(|cs| intrinsic_font_id(Some(cs))).or(font_id);
                 text_max_width_walk(
                     child,
                     doc,
-                    font_size,
-                    is_ahem,
+                    child_fs,
+                    child_ahem,
                     &child_ws,
                     styles,
                     child_font_id,
                     child_tab,
                     segments,
+                    per_font,
                 );
             }
         }
@@ -1028,7 +1114,16 @@ fn dom_inline_text_max_width(box_node: &LayoutBox, doc: &Document, styles: &Hash
         is_ahem,
         font_id,
     };
-    dom_inline_text_walk(id, doc, styles, &white_space, tab, &mut segments, &mut state);
+    dom_inline_text_walk(
+        id,
+        doc,
+        styles,
+        &white_space,
+        tab,
+        &mut segments,
+        &mut state,
+        per_font_intrinsic_on(),
+    );
     segments.into_iter().fold(0.0f32, f32::max)
 }
 
@@ -1084,6 +1179,7 @@ fn walk_collapsible_text(content: &str, segments: &mut [f32], state: &mut DomWal
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn dom_inline_text_walk(
     node_id: NodeId,
     doc: &Document,
@@ -1092,6 +1188,7 @@ fn dom_inline_text_walk(
     tab: (f32, f32),
     segments: &mut Vec<f32>,
     state: &mut DomWalkState,
+    per_font: bool,
 ) {
     for child in doc.child_nodes(node_id) {
         let Some(node) = doc.get(child) else { continue };
@@ -1206,10 +1303,31 @@ fn dom_inline_text_walk(
                     .get(&child)
                     .map(|s| s.white_space.clone())
                     .unwrap_or_else(|| white_space.clone());
-                // R4416：tab 度量随 white_space 同点解析（子样式覆盖，否则继承）。
-                let child_tab = styles
-                    .get(&child)
-                    .map(|s| intrinsic_tab_metrics(Some(s), state.font_size, state.is_ahem, state.font_id))
+                let cs_child = styles.get(&child);
+                // R4919（css-sizing-3 #max-content-inline-size）：max-content 的 inline 文本段
+                // 按**该段自身** computed font 度量——旧实现整棵 DOM 子树沿用容器
+                // font_size/is_ahem/font_id，嵌套异字号（如 baidu .mnav 12px 容器 > a.s-bri
+                // 13px 锚）被低估（2×12=24 < 真实 26）→ shrink-to-fit 盒窄于内容 → 内层 IFC
+                // 按真实字体二次布局折行竖排（「更多」「换一换」竖排实证）。子无样式条目沿用
+                // 父语境；`ZW_INTRINSIC_PERFONT=0` 回退旧行为（回归归因 A/B）。
+                // 边界折叠空格的 advance 记在 flush 落点语境（近似，跨异字号边界 ±1px 级）。
+                let (child_fs, child_ahem, child_fid) = match cs_child.filter(|_| per_font) {
+                    Some(s) => {
+                        let (fs, _) = crate::inline::resolve_font_metrics(Some(s));
+                        (
+                            fs,
+                            s.font_family
+                                .iter()
+                                .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")),
+                            intrinsic_font_id(Some(s)),
+                        )
+                    }
+                    None => (state.font_size, state.is_ahem, state.font_id),
+                };
+                // R4416：tab 度量随 white_space 同点解析（子样式覆盖，否则继承）；R4919 起
+                // 随子字体语境。
+                let child_tab = cs_child
+                    .map(|s| intrinsic_tab_metrics(Some(s), child_fs, child_ahem, child_fid))
                     .unwrap_or(tab);
                 // R4357：ruby 注释行宽参与——max-content 侧与 collect run margin 同模型，
                 // extra（box − base）计入段宽（两侧不同步则 intrinsic 与行宽分裂，
@@ -1230,7 +1348,15 @@ fn dom_inline_text_walk(
                         // 15/15 → max-content 95 < 行宽 100，尾部 あ 折行）。
                         state.flush_space(segments);
                         let start_w = *segments.last().expect("segments 非空");
-                        dom_inline_text_walk(child, doc, styles, &child_ws, child_tab, segments, state);
+                        // R4919：ruby base 段同 per-element 字体语境（见上注）。
+                        let (prev_fs, prev_ahem, prev_fid) = (state.font_size, state.is_ahem, state.font_id);
+                        state.font_size = child_fs;
+                        state.is_ahem = child_ahem;
+                        state.font_id = child_fid;
+                        dom_inline_text_walk(child, doc, styles, &child_ws, child_tab, segments, state, per_font);
+                        state.font_size = prev_fs;
+                        state.is_ahem = prev_ahem;
+                        state.font_id = prev_fid;
                         // R4415：base 内尾随空格在 pads 前入账——base_w = 完整折叠 base 宽
                         //（含前后边缘空格 advance，与 collect 侧 collapsed 口径同源）。
                         // ref 页形态（空格在 base 内）旧序把尾随空格漏到 pads 之后
@@ -1258,7 +1384,16 @@ fn dom_inline_text_walk(
                         continue;
                     }
                 }
-                dom_inline_text_walk(child, doc, styles, &child_ws, child_tab, segments, state);
+                // R4919：per-element 字体语境换入/换出（见上注）——递归以子语境度量，返回
+                // 恢复父语境（边界 pending 空格折叠态不随字体语境切换）。
+                let (prev_fs, prev_ahem, prev_fid) = (state.font_size, state.is_ahem, state.font_id);
+                state.font_size = child_fs;
+                state.is_ahem = child_ahem;
+                state.font_id = child_fid;
+                dom_inline_text_walk(child, doc, styles, &child_ws, child_tab, segments, state, per_font);
+                state.font_size = prev_fs;
+                state.is_ahem = prev_ahem;
+                state.font_id = prev_fid;
             }
             _ => {}
         }
@@ -1305,6 +1440,9 @@ pub(crate) fn fragment_inline_max_width(
             font_id,
             tab,
             &mut segments,
+            // R4919：fragment 语境无样式表可用（styles=None，R4367）——per-element 字体
+            // 语境无从解析，维持 split inline 自身 font 近似。
+            false,
         );
     }
     segments.into_iter().fold(0.0f32, f32::max)
@@ -2662,6 +2800,141 @@ AAAA</div></body></html>"#,
             r#"<html><body><div id="t">XYZ <ruby><rb>ABC</rb><rt>x</rt></ruby> XYZ</div></body></html>"#,
             "t",
             "XYZ ABC XYZ",
+        );
+    }
+
+    // ── R4919：max-content 文本段按自身 computed font 度量（嵌套异字号） ──
+    // R4919（css-sizing-3 #max-content-inline-size）
+
+    /// 嵌套异字号：容器 12px > 子 13px，max-content = 2×13=26（旧实现 2×12=24 低估
+    /// → shrink-to-fit 盒窄于内容 → 内层 IFC 二次折行竖排，baidu「更多」实证）。
+    #[test]
+    fn r4919_nested_font_size_measured_at_own_font() {
+        let doc = zero_dom::parse_html(
+            r#"<html><body><div id="t" style="font-size:12px"><a style="font-size:13px">更多</a></div></body></html>"#,
+        );
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let tid = doc.get_element_by_id("t").expect("target #t");
+        let w = text_content_max_width(tid, &doc, &styles);
+        assert!(
+            (w - 26.0).abs() < 1.0,
+            "nested 13px text must measure 2×13=26 at its own font, got {w}"
+        );
+    }
+
+    // ── R4920：float 纯文本臂的非文本子贡献（定宽原子 inline + inline frame/margin）──
+    // R4920（css-sizing-3 §max-content + CSS2 §10.3.5）
+
+    /// a.hot-refresh 形态：float 内 inline-block(width:16px) + span(margin-left:2px)，
+    /// 非文本贡献 = 16+2=18（旧实现 0 → float 收缩过窄二次折行「换一换」竖排实证）。
+    #[test]
+    fn r4920_float_inline_children_non_text_width() {
+        let doc = zero_dom::parse_html(
+            r#"<html><body><a id="t" style="float:right"><i id="c" style="display:inline-block; width:16px; height:16px"></i><span id="s" style="margin-left:2px">换一换</span></a></body></html>"#,
+        );
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let tid = doc.get_element_by_id("t").expect("target #t");
+        let w = inline_children_non_text_width(tid, &doc, &styles);
+        assert!(
+            (w - 18.0).abs() < 1.0,
+            "non-text contribution = icon 16 + span margin 2, got {w}"
+        );
+    }
+
+    /// R4919 端到端（inline-block shrink 臂）：12px inline-block 容器内 13px `<a>更多</a>`，
+    /// `block_max_content_width`（经 dom_inline_text_max_width）= 26（旧 24 → 收缩盒窄于
+    /// 内层 IFC 行宽 26 → 「多」折行竖排，baidu 顶部导航实证）。
+    #[test]
+    fn r4919_inline_block_shrink_measures_descendant_font() {
+        let w = compute_block_max_content(
+            r#"<html><body><div id="t" style="font-size:12px"><a style="font-size:13px">更多</a></div></body></html>"#,
+            "t",
+        );
+        let w = w.expect("inline-block target found");
+        assert!(
+            (w - 26.0).abs() < 1.0,
+            "max-content must measure 2×13=26 at descendant font, got {w}"
+        );
+    }
+
+    /// R4920 级联镜像：browser 同形 author stylesheet（class 选择器）下非文本贡献仍 = 18。
+    #[test]
+    fn r4920_cascade_stylesheet_shape() {
+        let css = ".hot-refresh{float:right;height:16px}.c-icon{display:inline-block;width:16px;height:16px}.hot-refresh-text{font-size:14px;line-height:14px;margin-left:2px}";
+        let doc = zero_dom::parse_html(
+            r#"<html><head><style>.hot-refresh{float:right;height:16px}.c-icon{display:inline-block;width:16px;height:16px}.hot-refresh-text{font-size:14px;line-height:14px;margin-left:2px}</style></head><body><a id="t" class="hot-refresh"><i class="c-icon"></i><span class="hot-refresh-text">换一换</span></a></body></html>"#,
+        );
+        let ss = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[ss]);
+        let tid = doc.get_element_by_id("t").expect("target #t");
+        let mut shape = String::new();
+        for child in doc.child_nodes(tid) {
+            if let Some(cs) = styles.get(&child) {
+                shape.push_str(&format!(
+                    "[{:?} d={:?} w={:?}]",
+                    doc.get(child).map(|n| match &n.kind {
+                        zero_dom::NodeKind::Element(e) => e.tag_name().clone(),
+                        _ => "other".to_string(),
+                    }),
+                    cs.display,
+                    cs.width
+                ));
+            } else {
+                shape.push_str("[no-style]");
+            }
+        }
+        let w = inline_children_non_text_width(tid, &doc, &styles);
+        assert!((w - 18.0).abs() < 1.0, "cascade non_text={w}, children={shape}");
+    }
+
+    /// R4920/R4920b 端到端：float 内 inline-level 子 margin-box 水平求和（Σ=16+2+42=60）
+    /// 须**扩**过 taffy 块流 max（子 margin-box）= max(16, 44) = 44 的低估
+    /// （css-sizing-3 §shrink-to-fit），且 definite height（16px）的 float 自身子仍按
+    /// 行内流单行排布（CSS2 §9.4.1/§9.5；§10.5 显式高不被内容行数覆写）——
+    /// baidu「换一换」float 收缩过窄二次折行竖排实证。
+    /// 负控制：`ZW_FLOAT_INLINE_SUM=0` → 宽 44（R4920 红）；`ZW_FLOAT_DEFINITE_H_REMEASURE=0`
+    /// → 宽 60 但 icon/text 两行（R4920b 红）。
+    #[test]
+    fn r4920_float_inline_sum_expands_taffy_max_child_estimate() {
+        let css = ".hot-refresh{float:right;height:16px}.c-icon{display:inline-block;width:16px;height:16px}.hot-refresh-text{font-size:14px;line-height:14px;margin-left:2px}";
+        let doc = zero_dom::parse_html(
+            r#"<html><head><style>.hot-refresh{float:right;height:16px}.c-icon{display:inline-block;width:16px;height:16px}.hot-refresh-text{font-size:14px;line-height:14px;margin-left:2px}</style></head><body><div class="hdr" style="width:784px"><a id="t" class="hot-refresh"><i id="ico" class="c-icon"></i><span id="txt" class="hot-refresh-text">换一换</span></a></div></body></html>"#,
+        );
+        let ss = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[ss]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let float_box = find("t", &doc, &result.root).expect("float #t found");
+        assert!(
+            (float_box.width - 60.0).abs() < 1.0,
+            "float width must expand to inline-sum 60 (taffy max-child 44), got {}",
+            float_box.width
+        );
+        let ico = find("ico", &doc, &result.root).expect("icon #ico found");
+        let txt = find("txt", &doc, &result.root).expect("text #txt found");
+        assert!(
+            (txt.y - ico.y).abs() < 1.0,
+            "float 内 inline-level 子须单行排布（R4920b definite-height float 重测），got icon y={} text y={}",
+            ico.y,
+            txt.y
         );
     }
 }
