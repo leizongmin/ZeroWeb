@@ -2286,3 +2286,74 @@ fn test_interval_rearm_stops_on_clear_from_within_callback_p20() {
         "外部 clearInterval 后（pending 项删除）后续 fire 不再触发"
     );
 }
+
+#[test]
+fn test_timer_clear_interchange_stops_both_families_dn1() {
+    // D-N1（siteopt t6，2026-10-01）：clearTimeout/clearInterval 句柄互换必须双向生效。
+    // 旧实现 clear 双函数各只删本族 key（`__zwtid:` vs `__zwint:`），clearTimeout 止不住
+    // interval（P20 修复后该 interval 因 `__zwint:` 项未删而继续 re-arm）。HTML spec 中
+    // 两族共享同一活动定时器列表、句柄可互换。
+    // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    // 记录式 host stub（同 P20 测试泵——经真实 __zwResolveCallback 驱动 delete-before-call 时序）。
+    sandbox
+        .execute(
+            "globalThis.__zw_pending = {};\
+             globalThis.__zw_armed = [];\
+             globalThis.__zw_setTimeout = function(id, delay) {\
+               globalThis.__zw_armed.push(id); };\
+             globalThis.__zw_fire = function() {\
+               var armed = globalThis.__zw_armed; globalThis.__zw_armed = [];\
+               for (var i = 0; i < armed.length; i++) {\
+                 globalThis.__zwResolveCallback(armed[i], ''); } };",
+        )
+        .unwrap();
+    sandbox
+        .execute(
+            "globalThis.__t = [];\
+             var i1 = setInterval(function () { globalThis.__t.push('i1'); }, 10);\
+             clearTimeout(i1);\
+             var s1 = setTimeout(function () { globalThis.__t.push('s1'); }, 10);\
+             clearInterval(s1);\
+             var i2 = setInterval(function () { globalThis.__t.push('i2'); }, 10);\
+             clearInterval(i2);\
+             var s2 = setTimeout(function () { globalThis.__t.push('s2'); }, 10);\
+             var i3;\
+             i3 = setInterval(function () {\
+               globalThis.__t.push('i3'); clearTimeout(i3); }, 10);",
+        )
+        .unwrap();
+    // 初始 arm：i1/s1/i2/s2/i3 各注册一条 host 定时器（armed 是注册记录，clear 只删 pending 项）。
+    assert_eq!(
+        sandbox.execute("globalThis.__zw_armed.length").unwrap().value,
+        "5",
+        "初始：5 个定时器各注册一条 host 定时器"
+    );
+    // 第 1 tick：i1（clearTimeout 互换清）不触发；s1（clearInterval 互换清）不触发；
+    // i2（同族清，不回归面）不触发；s2（未清对照）正常触发；i3 触发后回调内
+    // clearTimeout(自身) 互换清 → 占位项被删 → 不得 re-arm。
+    sandbox.execute("globalThis.__zw_fire();").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__t.join(',')").unwrap().value,
+        "s2,i3",
+        "第 1 tick：仅 s2/i3 触发——互换清两方向 + 同族清均生效"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__zw_armed.length").unwrap().value,
+        "0",
+        "第 1 tick 后：i3 回调内 clearTimeout(自身) 必须终止 re-arm（互换版 P20 断言）"
+    );
+    // 第 2 tick：i3 僵尸不得复活，s2 单发不重放。
+    sandbox.execute("globalThis.__zw_fire();").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__t.join(',')").unwrap().value,
+        "s2,i3",
+        "第 2 tick：无任何复活/重放"
+    );
+}
