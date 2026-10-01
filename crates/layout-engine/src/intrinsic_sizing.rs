@@ -851,6 +851,51 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
         tab,
         &mut segments,
         per_font_intrinsic_on(),
+        // 既有消费方（float 垂直臂/legend/leaf intrinsic/单测）维持旧口径——原子 gate
+        // 仅在「Σ 侧同时计盒宽」的 float 纯文本臂（text_content_max_width_scoped）启用。
+        false,
+    );
+    segments.into_iter().fold(0.0f32, f32::max)
+}
+
+/// R4921 scoped 变体：`stop_at_definite_atomic = true` 时对**定宽**原子 inline 子停止
+/// 文本递归。仅供 float 纯文本收缩臂（float_positioning shrink_pure_text_floats）使用
+/// ——该臂的 Σ 侧 `inline_children_non_text_width` 同时计原子盒外尺寸，walk 再递归内文
+/// 即双计（R4920 组合新引入过测，实证 float 180 vs 规范真值 100）。其余 `text_content_
+/// max_width` 消费方（legend/leaf intrinsic/垂直 float 臂）无 Σ 配对侧，维持旧 walk
+/// 口径（其原子形态的既有欠测/过测与本修复无关，不扩波及面）。
+pub(crate) fn text_content_max_width_scoped(
+    node_id: NodeId,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    stop_at_definite_atomic: bool,
+) -> f32 {
+    let style = styles.get(&node_id);
+    let (font_size, _line_height) = crate::inline::resolve_font_metrics(style);
+    let is_ahem = style.is_some_and(|s| {
+        s.font_family
+            .iter()
+            .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"))
+    });
+    let white_space = styles
+        .get(&node_id)
+        .map(|s| s.white_space.clone())
+        .unwrap_or(WhiteSpaceValue::Normal);
+    let font_id = intrinsic_font_id(styles.get(&node_id));
+    let tab = intrinsic_tab_metrics(styles.get(&node_id), font_size, is_ahem, font_id);
+    let mut segments: Vec<f32> = vec![0.0];
+    text_max_width_walk(
+        node_id,
+        doc,
+        font_size,
+        is_ahem,
+        &white_space,
+        Some(styles),
+        font_id,
+        tab,
+        &mut segments,
+        per_font_intrinsic_on(),
+        stop_at_definite_atomic,
     );
     segments.into_iter().fold(0.0f32, f32::max)
 }
@@ -884,6 +929,10 @@ pub(crate) fn inline_children_non_text_width(
         let resolve = |v: &LengthValue| resolve_intrinsic_real_length(v, cs).unwrap_or(0.0);
         match cs.display {
             DisplayValue::InlineBlock
+            // R4921 注记：InlineFlex/InlineGrid/InlineTable 三臂在唯一调用路径（float
+            // 纯文本臂）不可达——该三 display 经 engine.rs（is_block_level 判定）使
+            // has_block_or_replaced 早退。保留为防御口径（调用方扩展时与 InlineBlock
+            // 同语义），与 dom walk 原子 gate 四族对齐，非死代码删除对象。
             | DisplayValue::InlineFlex
             | DisplayValue::InlineGrid
             | DisplayValue::InlineTable => {
@@ -1020,6 +1069,7 @@ fn text_max_width_walk(
     tab: (f32, f32),
     segments: &mut Vec<f32>,
     per_font: bool,
+    stop_at_definite_atomic: bool,
 ) {
     let Some(node) = doc.get(node_id) else { return };
     match &node.kind {
@@ -1032,6 +1082,33 @@ fn text_max_width_walk(
         zero_dom::NodeKind::Element(_) => {
             for child in doc.child_nodes(node_id) {
                 let child_style = styles.and_then(|m| m.get(&child));
+                // R4921（css-sizing-3 §max-content：原子 inline 子贡献盒外尺寸，其内文在
+                // 原子盒内自行折行不外溢）：**定宽**原子 inline 子停止文本递归——盒宽由
+                // float 臂 Σ 侧 inline_children_non_text_width 单边入账，此处再递归内文即
+                // 双计（实证：float > inline-block(100px) > 文本 → walk 计内文 80 + Σ 计
+                // 盒宽 100 = 180 vs 规范真值 100，R4920 组合新引入的过测）。与 dom walk
+                // 的原子 gate（dom_inline_text_walk「replaced / inline-block 族停止…避免
+                // 文本双计」）同语义口径；本 walk 折叠臂在文本节点侧整段计宽（含边缘空格），
+                // 文本与原子间折叠空格已入账——dom walk flush_space 落点同向。
+                // **仅定宽**（width resolve definite）：auto/百分比宽原子不定宽，Σ 侧计 0
+                //（欠测安全向，R4032 语境），内文仍由此 walk 近似其 max-content（既有口径
+                // 不变）——定宽 gate 才是双计的精确面，gate 全体原子会使 auto 形态欠测
+                //（float > inline-block(auto) > 文本收缩到 0 回归）。
+                // 仅 float 纯文本臂经 text_content_max_width_scoped 启用（其余消费方无 Σ
+                // 配对侧，维持旧口径）；`ZW_INTRINSIC_ATOMIC_GATE=0` 回退（回归归因 A/B）。
+                if stop_at_definite_atomic
+                    && let Some(cs) = child_style
+                    && matches!(
+                        cs.display,
+                        DisplayValue::InlineBlock
+                            | DisplayValue::InlineFlex
+                            | DisplayValue::InlineGrid
+                            | DisplayValue::InlineTable
+                    )
+                    && resolve_intrinsic_real_length(&cs.width, cs).is_some()
+                {
+                    continue;
+                }
                 let child_ws = child_style
                     .map(|s| s.white_space.clone())
                     .unwrap_or_else(|| white_space.clone());
@@ -1075,6 +1152,7 @@ fn text_max_width_walk(
                     child_tab,
                     segments,
                     per_font,
+                    stop_at_definite_atomic,
                 );
             }
         }
@@ -1442,6 +1520,9 @@ pub(crate) fn fragment_inline_max_width(
             &mut segments,
             // R4919：fragment 语境无样式表可用（styles=None，R4367）——per-element 字体
             // 语境无从解析，维持 split inline 自身 font 近似。
+            // R4921：原子 gate 需查子 display/width（styles=None 无从解析）且 split inline
+            // 片段无 Σ 配对侧——恒关。
+            false,
             false,
         );
     }
@@ -2935,6 +3016,136 @@ AAAA</div></body></html>"#,
             "float 内 inline-level 子须单行排布（R4920b definite-height float 重测），got icon y={} text y={}",
             ico.y,
             txt.y
+        );
+    }
+
+    // ── R4921：定宽原子 inline 子停止文本递归（Σ 双计修复）──
+    // R4921（css-sizing-3 §max-content：原子 inline 贡献盒外尺寸，内文在原子盒内自行
+    // 折行不外溢）
+
+    /// major-1 钉（端到端）：float(width:auto) 内 span(display:inline-block;
+    /// width:100px) 带文本——float 首选宽 = 原子 margin-box = 100（内文在原子盒内
+    /// 折行不外溢）。
+    /// 回归形态：R4920 Σ 侧计盒宽 100 + walk 递归内文 ≈80 = 180 过测（修复前该形态
+    /// 欠测 80 → 方向由欠转超）。负控制：`ZW_INTRINSIC_ATOMIC_GATE=0` → walk 复计内文
+    /// → float 过 100（红）；`ZW_FLOAT_INLINE_SUM=0` → Σ=0 → 收缩塌 0（红，异签名）。
+    #[test]
+    fn r4921_float_definite_atomic_no_text_double_count() {
+        let css = ".fa{float:right}.ibx{display:inline-block;width:100px}";
+        let doc = zero_dom::parse_html(
+            r#"<html><head><style>.fa{float:right}.ibx{display:inline-block;width:100px}</style></head><body><div class="hdr" style="width:784px"><a id="t" class="fa"><span id="ibx" class="ibx">0123456789 abcdefghij</span></a></div></body></html>"#,
+        );
+        let ss = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[ss]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let float_box = find("t", &doc, &result.root).expect("float #t found");
+        assert!(
+            (float_box.width - 100.0).abs() < 1.0,
+            "float width must equal definite atomic margin-box 100 (inner text must not double-count), got {}",
+            float_box.width
+        );
+    }
+
+    /// auto 宽原子形态不变式：float > inline-block(width:auto) > 文本——Σ 侧计 0
+    ///（欠测安全向），内文由 walk 单边计入 → float = 文本 max-content。gate 不得触及
+    /// 本形态（定宽 gate 才是双计精确面；gate 全体原子会收缩塌 0）。
+    #[test]
+    fn r4921_float_auto_atomic_text_single_source() {
+        let css = ".fa{float:right}.iby{display:inline-block}";
+        let doc = zero_dom::parse_html(
+            r#"<html><head><style>.fa{float:right}.iby{display:inline-block}</style></head><body><div class="hdr" style="width:784px"><a id="t" class="fa"><span id="iby" class="iby">northern light</span></a></div></body></html>"#,
+        );
+        let ss = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[ss]);
+        let iby_id = doc.get_element_by_id("iby").expect("span #iby");
+        let expected = text_content_max_width(iby_id, &doc, &styles);
+        assert!(expected > 0.0, "auto atomic text must measure > 0");
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let float_box = find("t", &doc, &result.root).expect("float #t found");
+        assert!(
+            (float_box.width - expected).abs() < 1.0,
+            "float width must equal auto-atomic text max-content {expected} (single-source, gate must not fire), got {}",
+            float_box.width
+        );
+    }
+
+    /// F5-①（per-font walk 三层嵌套）：36px 容器 > 39px 中层 > 42px 叶文本——
+    /// max-content 按叶自身 font 度量（2×42=84；旧整树容器口径 2×36=72）。
+    #[test]
+    fn r4919_per_font_three_level_nesting() {
+        let doc = zero_dom::parse_html(
+            r#"<html><body><div id="t" style="font-size:36px"><span style="font-size:39px"><a style="font-size:42px">更多</a></span></div></body></html>"#,
+        );
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let tid = doc.get_element_by_id("t").expect("target #t");
+        let w = text_content_max_width(tid, &doc, &styles);
+        assert!(
+            (w - 84.0).abs() < 1.0,
+            "3-level nested text must measure 2×42=84 at leaf font, got {w}"
+        );
+    }
+
+    /// F5-②（R4920b 放行臂 float-only 排除面钉）：definite-height **inline-block**
+    ///（非 float）不入 inline-only 重测放行——其 inline-level 子保持 taffy 块堆叠
+    ///（icon 行 1 / 文本行 2，y 差 = icon 高 16）。钉排除面防未来改动误伤非 float；
+    /// 块堆叠本身是 inline-block IFC 的挂账缺陷（slice12 前余项，vd 臂实证），此处
+    /// 钉排除边界非背书堆叠——未来切片修复 inline-block IFC 时须同步更新本钉。
+    #[test]
+    fn r4921_definite_height_non_float_excluded_from_remeasure() {
+        let css = ".ib{display:inline-block;height:16px}.c-icon{display:inline-block;width:16px;height:16px}.t{font-size:14px;line-height:14px;margin-left:2px}";
+        let doc = zero_dom::parse_html(
+            r#"<html><head><style>.ib{display:inline-block;height:16px}.c-icon{display:inline-block;width:16px;height:16px}.t{font-size:14px;line-height:14px;margin-left:2px}</style></head><body><div style="width:784px"><span id="t" class="ib"><i id="ico" class="c-icon"></i><span id="txt" class="t">换一换</span></span></div></body></html>"#,
+        );
+        let ss = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[ss]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let ico = find("ico", &doc, &result.root).expect("icon #ico found");
+        let txt = find("txt", &doc, &result.root).expect("text #txt found");
+        let dy = txt.y - ico.y;
+        assert!(
+            (dy - 16.0).abs() < 1.0,
+            "non-float definite-height inline-block must stay excluded from remeasure (children block-stacked, y diff = icon 16), got {dy}"
         );
     }
 }

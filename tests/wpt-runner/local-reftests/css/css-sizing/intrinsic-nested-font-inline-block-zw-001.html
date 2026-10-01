@@ -13,8 +13,9 @@
      像素），信号须由可见字形/背景承载。信号构造：主臂 inline-block 带
      background bar + 大 line-height（138px），折行使 bar 向下伸出一行
      （~217×138 ≈ 30k px ≈ 6% > 5× 1% 阈值）；邻臂（同字号 .big，无嵌套字体
-     分裂，R4919 关断下仍正确量测）与主臂同排放置——折行只向下伸展，邻臂
-     在右侧不受影响（邻近变体负控制：两状态恒单行）。ref 页对 .nav-item 加
+     分裂，R4919 关断下仍正确量测）与主臂同排放置——其自身量测免疫恒单行，
+     但主臂折行会经基线对齐纵向推移邻臂（差值含该位移贡献）；邻近变体负控制
+     判别口径 = 两状态恒单行，非「位置不受影响」。ref 页对 .nav-item 加
      white-space:nowrap 钳单行；修复后两页逐像素相等。kill-switch 复现红：
      ZW_INTRINSIC_PERFONT=0。账本：tests/wpt-runner/imported-tests.txt；
      wpt-data 为独立 repo（gitignored），重拉后按主仓

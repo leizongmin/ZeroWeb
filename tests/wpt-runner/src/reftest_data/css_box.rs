@@ -400,9 +400,11 @@ const REFTESTS: &[InlineReftestDef] = &[
     // → 文本折行竖排。形态：.nav-item inline-block（继承 36px）> a 39px 拉丁
     // 双词组（即 12⊃13 的等比放大——runner 字体环境无 CJK 字形，信号由可见
     // 字形/背景承载；bar + 大 line-height 使折行信号 ≥5× Layout 1% 阈值）。
-    // 邻臂（.big 同字号 inline-block，无嵌套字体分裂）与主臂同排——R4919 关断
-    // 下仍正确量测恒单行 = 邻近变体负控制。ref 页 .nav-item 加
-    // white-space:nowrap 钳单行；修复态两页逐像素相等。
+    // 邻臂（.big 同字号 inline-block，无嵌套字体分裂）与主臂同排——其自身量测免疫
+    //（R4919 关断下仍按 39px 量测）恒单行；但主臂折行会经基线对齐**纵向推移**邻臂
+    //（88854px 差值含该位移贡献）——邻近变体负控制判别口径 = 两状态恒单行，非
+    // 「位置不受影响」。ref 页 .nav-item 加 white-space:nowrap 钳单行；修复态两页
+    // 逐像素相等。
     // 负控制（800×600=480000px，Layout 阈值 1%，本套件实测口径）：default 0 diff；
     // ZW_INTRINSIC_PERFONT=0 → 88854px = 18.51%（18.5×）。
     // 文件孪生（make reftest-upstream 域 + 几何 dump 用）：

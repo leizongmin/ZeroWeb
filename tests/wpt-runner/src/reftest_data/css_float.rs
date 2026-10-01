@@ -439,6 +439,30 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><head><style>body{margin:0;font:13px/23px Arial,sans-serif}.header{margin:8px;padding:4px}.hot-refresh{float:right;white-space:nowrap}.hot-refresh-text{font-size:42px;line-height:42px;margin-left:2px;background:#3fbf3f}.c-icon{display:inline-block;width:48px;height:48px;background:#4e6ef2}</style></head><body><div class=\"header\"><a class=\"hot-refresh\"><span class=\"hot-refresh-text\" style=\"background:#e6a23c\">refresh swap</span></a></div><div class=\"header\"><a class=\"hot-refresh\"><i class=\"c-icon\"></i><span class=\"hot-refresh-text\">ab cdefghijklmnopqrstuvwxyzabcd</span></a></div></body></html>",
         is_match: true,
     },
+    // ── slice12 rework（R4921）：float 内**带文本的定宽**原子 inline 子——Σ 单边入账
+    // 盒宽，walk 停止内文递归（major-1 钉）──
+    // 回归形态（R4920 组合新引入过测）：walk 递归计原子内文 ≈T + Σ 计盒宽 120 → float
+    // T+120 ≈ 400 过宽（ref 真值 120，方向由修复前欠测 −20 翻 +280）。规范：原子 inline
+    // 的 max-content 贡献 = 盒外尺寸（css-sizing-3），内文在原子盒内自行折行不外溢。
+    // 形态：.fa float(auto) > .ibx inline-block(width:120px, 文本折两行)；ref 页对 .fa
+    // 加 width:120px（definite → 跳过收缩臂，对全部 kill-switch 免疫的参照）。邻臂
+    // .fb > .iby（width:auto 原子带文）——Σ 侧计 0、内文由 walk 单边计入，gate 不得
+    // 触及（定宽 gate 才是双计精确面）；test/ref 两页同 HTML 恒相等 = 邻近变体负控制。
+    // 负控制矩阵（800×600=480000px，Layout 阈值 1%）：default 0 diff；
+    // ZW_INTRINSIC_ATOMIC_GATE=0 → walk 复计内文 float ≈400 显红；
+    // ZW_FLOAT_INLINE_SUM=0 → Σ=0 收缩塌 0 显红（异签名）；本形态对
+    // ZW_FLOAT_DEFINITE_H_REMEASURE=0 与 ZW_INTRINSIC_PERFONT=0 免疫（auto 高 float /
+    // 无嵌套字体分裂，参照构造成立）。精确像素数见
+    // diag/evidence/slice12/rework-negative-control-reftest-red.log。
+    // 文件孪生（make reftest-upstream 域）：
+    // tests/wpt-runner/local-reftests/css/CSS2/floats/float-shrink-definite-atomic-text-zw-002*.html。
+    InlineReftestDef {
+        id: "css-float/float-shrink-definite-atomic-text-zw-002",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0;font:13px/23px Arial,sans-serif}.header{margin:8px;padding:4px;outline:1px solid #ccc}.fa{float:right;background:#3fbf3f}.ibx{display:inline-block;width:120px;font-size:24px;line-height:48px;background:#e6a23c}.fb{float:right;background:#3fbf3f}.iby{display:inline-block;font-size:24px;line-height:48px;background:#e6a23c}</style></head><body><div class=\"header\">Header one <a class=\"fa\"><span class=\"ibx\">rad maca sine fala poco</span></a></div><div class=\"header\">Header two <a class=\"fb\"><span class=\"iby\">northern light</span></a></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0;font:13px/23px Arial,sans-serif}.header{margin:8px;padding:4px;outline:1px solid #ccc}.fa{float:right;background:#3fbf3f;width:120px}.ibx{display:inline-block;width:120px;font-size:24px;line-height:48px;background:#e6a23c}.fb{float:right;background:#3fbf3f}.iby{display:inline-block;font-size:24px;line-height:48px;background:#e6a23c}</style></head><body><div class=\"header\">Header one <a class=\"fa\"><span class=\"ibx\">rad maca sine fala poco</span></a></div><div class=\"header\">Header two <a class=\"fb\"><span class=\"iby\">northern light</span></a></div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {

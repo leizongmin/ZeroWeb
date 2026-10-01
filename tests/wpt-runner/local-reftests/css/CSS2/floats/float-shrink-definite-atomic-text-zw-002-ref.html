@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>float-shrink-definite-atomic-text-zw-002 ref</title>
+<!-- 参照页：test 页 + .fa width:120px（definite float 跳过收缩臂，对全部
+     kill-switch 免疫）。与修复态 test 页逐像素相等（float 内容宽同为 120，
+     .ibx 内文折行一致）。同账本/孪生口径见 test 页注释。 -->
+<style>
+body { margin: 0; font: 13px/23px Arial, sans-serif; }
+.header { margin: 8px; padding: 4px; outline: 1px solid #ccc; }
+.fa { float: right; background: #3fbf3f; width: 120px; }
+.ibx { display: inline-block; width: 120px; font-size: 24px; line-height: 48px; background: #e6a23c; }
+.fb { float: right; background: #3fbf3f; }
+.iby { display: inline-block; font-size: 24px; line-height: 48px; background: #e6a23c; }
+</style>
+</head>
+<body>
+<div class="header">Header one <a class="fa"><span class="ibx">rad maca sine fala poco</span></a></div>
+<div class="header">Header two <a class="fb"><span class="iby">northern light</span></a></div>
+</body>
+</html>
