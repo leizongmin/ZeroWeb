@@ -1621,6 +1621,38 @@ fn test_element_gbcr_real_layout_rect_beats_text_registry_slice14() {
         "textContent= 注册后 gBCR 仍返真实布局 rect（不被文本注册表劫持）"
     );
 
+    // M-T1：innerHTML= 独立注册写入点（part04 纯文本路径 _zwRegisterTextEl）——
+    // 注册后 gBCR 同样须返真实布局 rect（与 textContent= 写入点同语义）。
+    sandbox
+        .execute(
+            "el.innerHTML = 'plain text';\
+             var b2 = el.getBoundingClientRect();\
+             globalThis.__g2 = [b2.x, b2.y, b2.width, b2.height].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__g2)").unwrap().value,
+        "10,20,100,50",
+        "innerHTML= 注册后 gBCR 仍返真实布局 rect（不被文本注册表劫持）"
+    );
+
+    // M-T2：注册后 gBCR 与 getClientRects 同源不变量——R2828 的同源断言只覆盖
+    // 未注册元素，而注册表劫持正是从两 API 分叉暴露的（gBCR 0 基文本量盒、
+    // getClientRects 真实 rect）。
+    sandbox
+        .execute(
+            "var cr = el.getClientRects();\
+             var b3 = el.getBoundingClientRect();\
+             globalThis.__same2 = cr.length === 1 && cr[0].x === b3.x\
+               && cr[0].width === b3.width && cr[0].height === b3.height;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__same2)").unwrap().value,
+        "true",
+        "已注册（selector-identity）元素 gBCR 与 getClientRects[0] 同源（真实 rect）"
+    );
+
     // R34xx 原始受众不受影响：detached created 元素（handle 身份，无布局 rect）
     // 仍返本地 0 基文本几何（x=y=0 且有文本宽度）。
     sandbox
