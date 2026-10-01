@@ -1057,6 +1057,35 @@ mod tests {
         assert_eq!(restored.hit_test_link(5.0, 31.0), None);
     }
 
+    /// 从布局树定位锚盒几何（相对父内容区 + 绝对，与命中遍历同坐标累积）。
+    /// slice15 端到端与突变重排用例共用，提升为测试模块级 helper。
+    fn find_abs(
+        layout: &LayoutBox,
+        id: NodeId,
+        ax: f32,
+        ay: f32,
+    ) -> Option<(f32, f32, f32, f32, f32, Option<(f32, f32)>)> {
+        let bx = ax + layout.x;
+        let by = ay + layout.y;
+        if layout.node_id == Some(id) {
+            return Some((
+                layout.y,
+                bx,
+                by,
+                layout.width,
+                layout.height,
+                layout.inline_reported_rect,
+            ));
+        }
+        let (cx, cy) = child_origin(layout, bx, by);
+        for child in &layout.children {
+            if let Some(found) = find_abs(child, id, cx, cy) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
     /// slice15 端到端（真实管线，R4384）：同一渲染产物上命中面 = gBCR 面（同源，
     /// 均消费 `inline_reported_rect`）——13px/23px inline 锚 gBCR h≈15.13，空隙带
     ///（半 leading）不再命中锚、命中父容器（div，无 href → link None）。
@@ -1075,33 +1104,6 @@ mod tests {
         </body></html>"#;
         let (doc, layout, _styles) = render_with_styles(html, "");
         let anchor = doc.get_element_by_id("nav").expect("nav anchor");
-        // 从布局树定位锚盒几何（相对父内容区 + 绝对，与命中遍历同坐标累积）。
-        fn find_abs(
-            layout: &LayoutBox,
-            id: NodeId,
-            ax: f32,
-            ay: f32,
-        ) -> Option<(f32, f32, f32, f32, f32, Option<(f32, f32)>)> {
-            let bx = ax + layout.x;
-            let by = ay + layout.y;
-            if layout.node_id == Some(id) {
-                return Some((
-                    layout.y,
-                    bx,
-                    by,
-                    layout.width,
-                    layout.height,
-                    layout.inline_reported_rect,
-                ));
-            }
-            let (cx, cy) = child_origin(layout, bx, by);
-            for child in &layout.children {
-                if let Some(found) = find_abs(child, id, cx, cy) {
-                    return Some(found);
-                }
-            }
-            None
-        }
         let (rel_y, abs_x, abs_y, abs_w, abs_h, reported) =
             find_abs(&layout.root, anchor, 0.0, 0.0).expect("anchor box in layout tree");
         // 上报前提：单行 inline 已记录 content area（dormant 常数臂，kill-switch 默认开），
@@ -1154,6 +1156,60 @@ mod tests {
             rect.1,
             rect.3,
             abs_y
+        );
+    }
+
+    /// slice15 × slice14（R4384）：textContent 突变 → 重排后命中面仍 = 上报 border box。
+    /// 突变触发的重排若让命中面回落行盒树几何，gap 带会重新命中锚（静默回归；活体
+    /// baidu 已证不再命中：diag/evidence/slice15/s15-after-baidu-gap.json），此处补
+    /// 常驻钉。管线与 [`render_with_styles`] 相同（renderer 实际突变重排路径）。
+    /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+    /// https://drafts.csswg.org/css-ui-4/#hit-testing
+    #[test]
+    fn slice15_hit_surface_stays_reported_after_textcontent_mutation() {
+        let html = r#"<html><body>
+            <div style="line-height: 23px;"><a id="nav" href="/more" style="font-size: 13px;">更多</a></div>
+        </body></html>"#;
+        let mut doc = zero_dom::parse_html(html);
+        let anchor = doc.get_element_by_id("nav").expect("nav anchor");
+        doc.set_text_content(anchor, "热榜");
+
+        let stylesheets = vec![Parser::parse_stylesheet("")];
+        let mut style_system = StyleSystem::new();
+        style_system.set_viewport(800.0, 600.0);
+        let styles = style_system.compute_styles(&doc, &stylesheets);
+        let mut layout_engine = LayoutEngine::new(800.0, 600.0);
+        let layout = layout_engine.compute(&doc, &styles);
+
+        let (rel_y, abs_x, abs_y, _abs_w, abs_h, reported) =
+            find_abs(&layout.root, anchor, 0.0, 0.0).expect("anchor box in relayout tree");
+        // 突变重排后上报仍要生产：单行 inline 记录 content area（gap 带存在才可判别）。
+        let (rep_y, rep_h) = reported.expect("突变重排后单行 inline 仍应记录上报矩形");
+        let gap = rep_y - rel_y;
+        assert!(gap > 2.5, "用例前提：突变后半 leading 空隙带应存在（gap={}）", gap);
+        assert!(
+            (rep_h - 13.0 * (0.928 + 0.236)).abs() < 0.5,
+            "用例前提：上报 h 应为 content area 15.132，实际 {}",
+            rep_h
+        );
+        assert!((abs_h - 23.0).abs() < 0.5, "用例前提：树行盒高 23，实际 {}", abs_h);
+
+        let cache = HitTestCache::from_document(&doc, &layout.root, &HashMap::new());
+        let gap_y = abs_y + gap * 0.5;
+        assert_eq!(
+            cache.hit_test_link(abs_x + 5.0, gap_y),
+            None,
+            "突变重排后 gap 带不命中锚（链接动作 None）"
+        );
+        let gap_hit = cache.hit_test_element(abs_x + 5.0, gap_y).expect("gap band hit");
+        assert_eq!(
+            gap_hit.tag_name, "div",
+            "突变重排后 gap 带 elementFromPoint 命中父容器 div"
+        );
+        assert_eq!(
+            cache.hit_test_link(abs_x + 5.0, abs_y + gap + 2.0).as_deref(),
+            Some("/more"),
+            "突变重排后 content 带仍命中锚"
         );
     }
 

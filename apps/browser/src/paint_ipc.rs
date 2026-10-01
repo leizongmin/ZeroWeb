@@ -130,21 +130,43 @@ mod tests {
                     width: 10.0,
                     height: 10.0,
                     reported: None,
-                    children: Vec::new(),
+                    children: vec![IpcHitTestLayoutNode {
+                        node_id: Some(2),
+                        x: 0.0,
+                        y: 0.0,
+                        width: 10.0,
+                        height: 10.0,
+                        reported: Some((3.5, 15.13)),
+                        children: Vec::new(),
+                    }],
                 },
-                nodes: std::iter::once((
-                    1,
-                    IpcHitTestNodeMeta {
-                        tag_name: "a".to_string(),
-                        id: None,
-                        class_name: None,
-                        selector: "a".to_string(),
-                        href: Some("https://example.com".to_string()),
-                        src: None,
-                    },
-                ))
+                nodes: [
+                    (
+                        1,
+                        IpcHitTestNodeMeta {
+                            tag_name: "div".to_string(),
+                            id: None,
+                            class_name: None,
+                            selector: "div".to_string(),
+                            href: None,
+                            src: None,
+                        },
+                    ),
+                    (
+                        2,
+                        IpcHitTestNodeMeta {
+                            tag_name: "a".to_string(),
+                            id: None,
+                            class_name: None,
+                            selector: "a".to_string(),
+                            href: Some("https://example.com".to_string()),
+                            src: None,
+                        },
+                    ),
+                ]
+                .into_iter()
                 .collect(),
-                parents: Default::default(),
+                parents: [(2, 1)].into_iter().collect(),
                 hidden_nodes: Vec::new(),
             }),
             ..Default::default()
@@ -154,18 +176,32 @@ mod tests {
 
         assert!(snap.last_render.is_some(), "frame data should still be applied");
         assert_eq!(snap.document_generation, 9);
-        let hit = snap
+        // slice15（R4384）：IPC wire 的 reported 字段必须往返保留且被命中面消费——
+        // 主进程点击路由（hit_test_element）命中 inline 子元素时消费其上报 border box
+        //（与 gBCR 面同源）。判别装置：锚（节点 2）上报带 [3.5,18.63) vs 树带 [0,10)，
+        // y=1.0 仅树带（gap 带 → 命中父容器 1）、y=5.0 两带皆含（命中锚 2）——wire
+        // 丢字段会静默回落树几何并在 y=1.0 误命中锚。
+        let cache = snap
             .hit_test
             .as_ref()
-            .and_then(|cache| cache.hit_test_element(1.0, 1.0))
-            .expect("hit");
+            .expect("browser should restore hit-test cache from IPC snapshot");
+        let restored_layout = cache.snapshot().layout_root;
+        assert_eq!(
+            restored_layout.children.first().map(|n| n.reported),
+            Some(Some((3.5, 15.13))),
+            "IPC 往返必须保留 reported 字段（命中面/点击路由消费）"
+        );
+        let gap_hit = cache.hit_test_element(1.0, 1.0).expect("fallback hit");
+        assert_eq!(
+            gap_hit.node_handle,
+            zero_engine::node_id_to_u64(zero_engine::node_id_from_u64(1)),
+            "gap 带（上报带外/树带内）命中父容器，不命中锚"
+        );
+        let hit = cache.hit_test_element(1.0, 5.0).expect("hit");
         assert_eq!(
             hit.node_handle,
-            zero_engine::node_id_to_u64(zero_engine::node_id_from_u64(1))
-        );
-        assert!(
-            snap.hit_test.is_some(),
-            "browser should restore hit-test cache from IPC snapshot"
+            zero_engine::node_id_to_u64(zero_engine::node_id_from_u64(2)),
+            "上报 border box 带内命中锚本体"
         );
     }
 

@@ -2147,21 +2147,43 @@ mod navigation_contract_tests {
                 width: 100.0,
                 height: 100.0,
                 reported: None,
-                children: Vec::new(),
+                children: vec![IpcHitTestLayoutNode {
+                    node_id: Some(2),
+                    x: 0.0,
+                    y: 0.0,
+                    width: 100.0,
+                    height: 10.0,
+                    reported: Some((3.5, 15.13)),
+                    children: Vec::new(),
+                }],
             },
-            nodes: std::iter::once((
-                1,
-                IpcHitTestNodeMeta {
-                    tag_name: "a".to_string(),
-                    id: None,
-                    class_name: None,
-                    selector: "a".to_string(),
-                    href: Some("https://example.com".to_string()),
-                    src: None,
-                },
-            ))
+            nodes: [
+                (
+                    1,
+                    IpcHitTestNodeMeta {
+                        tag_name: "div".to_string(),
+                        id: None,
+                        class_name: None,
+                        selector: "div".to_string(),
+                        href: None,
+                        src: None,
+                    },
+                ),
+                (
+                    2,
+                    IpcHitTestNodeMeta {
+                        tag_name: "a".to_string(),
+                        id: None,
+                        class_name: None,
+                        selector: "a".to_string(),
+                        href: Some("https://example.com".to_string()),
+                        src: None,
+                    },
+                ),
+            ]
+            .into_iter()
             .collect(),
-            parents: Default::default(),
+            parents: [(2, 1)].into_iter().collect(),
             hidden_nodes: Vec::new(),
         });
 
@@ -2189,7 +2211,29 @@ mod navigation_contract_tests {
         );
         assert_eq!(snap.document_height, Some(1200.0));
         assert!(snap.document_width.is_some());
-        assert!(snap.hit_test.is_some());
+        // slice15（R4384）：CompositorFrame 的 hit_test wire 载荷必须保留 reported 字段
+        // 且命中面消费之（主进程点击路由与 gBCR 面同源）。判别装置：锚（节点 2）上报带
+        // [3.5,18.63) vs 树带 [0,10)，y=1.0 仅树带（gap 带 → 命中父容器 1）、y=5.0 两带
+        // 皆含（命中锚 2）——wire 丢字段会静默回落树几何并在 y=1.0 误命中锚。
+        let cache = snap.hit_test.as_ref().expect("hit test cache restored");
+        let restored_layout = cache.snapshot().layout_root;
+        assert_eq!(
+            restored_layout.children.first().map(|n| n.reported),
+            Some(Some((3.5, 15.13))),
+            "CompositorFrame 往返必须保留 reported 字段（命中面/点击路由消费）"
+        );
+        let gap_hit = cache.hit_test_element(1.0, 1.0).expect("fallback hit");
+        assert_eq!(
+            gap_hit.node_handle,
+            zero_engine::node_id_to_u64(zero_engine::node_id_from_u64(1)),
+            "gap 带（上报带外/树带内）命中父容器，不命中锚"
+        );
+        let hit = cache.hit_test_element(1.0, 5.0).expect("hit");
+        assert_eq!(
+            hit.node_handle,
+            zero_engine::node_id_to_u64(zero_engine::node_id_from_u64(2)),
+            "上报 border box 带内命中锚本体"
+        );
         // compositor 模式同步解码全文档图元（滚动时显示侧回落图元平移路径）
         let render = snap.last_render.as_ref().expect("compositor paint decodes primitives");
         assert_eq!(render.primitives.fills.len(), 1, "page fills decoded from paint");
