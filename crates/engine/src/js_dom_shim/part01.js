@@ -1794,6 +1794,49 @@
     var m = String(method).toUpperCase();
     return m === 'GET' || m === 'HEAD' || m === 'POST';
   }
+  // net-api M4-S22：CORS-preflight cache（fetch spec §cors-preflight-cache）——条目
+  // {key=(目标 origin|credentials), methods, headers, star, expires}。命中：未过期 +
+  // method ∈ methods + 每个自定义头 ∈ headers（star 通配）。
+  var _zwPreflightCache = [];
+  function _zwPreflightCacheHit(key, method, headerNames) {
+    var nowMs = Date.now();
+    for (var i = _zwPreflightCache.length - 1; i >= 0; i--) {
+      var e = _zwPreflightCache[i];
+      if (e.expires < nowMs) { _zwPreflightCache.splice(i, 1); continue; }
+      if (e.key !== key) continue;
+      if (e.methods.indexOf(String(method).toLowerCase()) < 0) continue;
+      var ok = true;
+      for (var j = 0; j < headerNames.length; j++) {
+        if (!e.star && e.headers.indexOf(headerNames[j]) < 0) { ok = false; break; }
+      }
+      if (ok) return true;
+    }
+    return false;
+  }
+  function _zwPreflightCacheStore(key, methodsRaw, headersRaw, maxAge, method) {
+    var methods = [];
+    if (methodsRaw && methodsRaw !== '*') {
+      var mp = String(methodsRaw).toLowerCase().split(',');
+      for (var i = 0; i < mp.length; i++) {
+        var t = mp[i].trim();
+        if (t && methods.indexOf(t) < 0) methods.push(t);
+      }
+    }
+    var lm = String(method).toLowerCase();
+    if (methods.indexOf(lm) < 0) methods.push(lm); // 保底：本次请求方法可复用
+    var star = String(headersRaw).trim() === '*';
+    var headers = [];
+    if (headersRaw && !star) {
+      var hp = String(headersRaw).toLowerCase().split(',');
+      for (var j = 0; j < hp.length; j++) {
+        var h = hp[j].trim();
+        if (h && headers.indexOf(h) < 0) headers.push(h);
+      }
+    }
+    var ma = isFinite(maxAge) && maxAge > 0 ? maxAge : 5; // spec default max-age 5s
+    _zwPreflightCache.push({ key: key, methods: methods, headers: headers,
+      star: star, expires: Date.now() + ma * 1000 });
+  }
   function _zwFetchNeedsPreflight(method, headersWire) {
     if (!_zwFetchIsSafelistedMethod(method)) return true;
     var parts = headersWire ? headersWire.split('\x1e') : [];
@@ -2272,31 +2315,39 @@
           else resolve(_schemeHit.response);
           return;
         }
+        // net-api M4-S22：CORS-preflight cache（fetch spec §cors-preflight-cache）——
+        // (目标 origin, credentials) 键缓存 ACAM/ACAH + Max-Age 过期；命中（method ∈
+        // ACAM 且自定义头 ⊆ ACAH——`*` 通配）则跳过 OPTIONS（preflight-cache「second
+        // request without preflight」面；invalidation by method/header、timeout 过期面）。
+        var _preNames = [];
+        var _preParts = headersWire ? headersWire.split('\x1e') : [];
+        for (var pi = 0; pi + 1 < _preParts.length; pi += 2) {
+          var pn = String(_preParts[pi]).toLowerCase();
+          if (pn === 'origin' || pn === 'content-length' || pn === 'accept' ||
+              pn === 'accept-language' || pn === 'content-language' ||
+              pn.indexOf('access-control-') === 0 || pn === 'referer' ||
+              pn === 'last-event-id' || pn === 'range') {
+            continue;
+          }
+          if (_preNames.indexOf(pn) < 0) _preNames.push(pn);
+        }
         // net-api M4-S18：CORS-preflight（fetch spec §cors-preflight-fetch）——非 safelisted
         // cors 请求先发 OPTIONS（ACRM/ACAH + Origin），2xx + ACAM/ACAH 覆盖 → 继续；
-        // 失败 → network error。
+        // 失败 → network error。M4-S22：cache 命中（ACAM/ACAH 覆盖当前 method/自定义头，
+        // Max-Age 未过期）→ 跳过 OPTIONS。
         if (mode === 'cors' && _zwFetchNeedsPreflight(method, headersWire) &&
             _zwHasRealPageOrigin() && _zwUrlOrigin(url) !== _zwUrlOrigin(_zwCurrentHref())) {
           var preDocOrigin = _zwUrlOrigin(_zwCurrentHref());
+          if (!_zwPreflightCacheHit(
+                _zwUrlOrigin(url) + '|' + (credentials === 'include' ? 'i' : 's'),
+                method, _preNames)) {
           var preHeaders = headersWire;
           if (!_zwHasHeader(preHeaders, 'origin')) {
             preHeaders = _zwAddHeader(preHeaders, 'origin', preDocOrigin);
           }
           preHeaders = _zwAddHeader(preHeaders, 'access-control-request-method', method);
-          var preNames = [];
-          var preParts = headersWire ? headersWire.split('\x1e') : [];
-          for (var pi = 0; pi + 1 < preParts.length; pi += 2) {
-            var pn = String(preParts[pi]).toLowerCase();
-            if (pn === 'origin' || pn === 'content-length' || pn === 'accept' ||
-                pn === 'accept-language' || pn === 'content-language' ||
-                pn.indexOf('access-control-') === 0 || pn === 'referer' ||
-                pn === 'last-event-id' || pn === 'range') {
-              continue;
-            }
-            if (preNames.indexOf(pn) < 0) preNames.push(pn);
-          }
-          if (preNames.length > 0) {
-            preHeaders = _zwAddHeader(preHeaders, 'access-control-request-headers', preNames.sort().join(', '));
+          if (_preNames.length > 0) {
+            preHeaders = _zwAddHeader(preHeaders, 'access-control-request-headers', _preNames.sort().join(', '));
           }
           globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
           var preWire = __zw_fetch(
@@ -2309,19 +2360,27 @@
           var preOk = (preResp.status >= 200 && preResp.status < 300) &&
             (preOrigin === preDocOrigin || (preOrigin === '*' && credentials !== 'include'));
           if (preOk && preMethods && preMethods !== '*' &&
-              String(preMethods).toLowerCase().split(',').indexOf(method.toLowerCase()) < 0) {
+              String(preMethods).toLowerCase().split(',').map(function (s) { return s.trim(); })
+                .indexOf(method.toLowerCase()) < 0) {
             preOk = false;
           }
           if (preOk && preAllowedHdrs && preAllowedHdrs !== '*') {
             var allowed = String(preAllowedHdrs).toLowerCase().split(',')
               .map(function (s) { return s.trim(); });
-            for (var ai = 0; ai < preNames.length; ai++) {
-              if (allowed.indexOf(preNames[ai]) < 0) { preOk = false; break; }
+            for (var ai = 0; ai < _preNames.length; ai++) {
+              if (allowed.indexOf(_preNames[ai]) < 0) { preOk = false; break; }
             }
           }
           if (!preOk) {
             reject(new TypeError('Failed to fetch'));
             return;
+          }
+          // net-api M4-S22：preflight 成功 → 缓存（Max-Age 缺省 5s——spec default；
+          // cache.py 10s / timeout.py 1s / invalidation.py 10s 面）。
+          var preMaxAge = parseInt(response_headers_get(preResp, 'access-control-max-age') || '', 10);
+          _zwPreflightCacheStore(
+            _zwUrlOrigin(url) + '|' + (credentials === 'include' ? 'i' : 's'),
+            preMethods, preAllowedHdrs, preMaxAge, method);
           }
         }
         // https://fetch.spec.whatwg.org/#append-a-request-origin-header — HTTP-network fetch
@@ -2422,6 +2481,12 @@
             }
             var nextUrl = hopUrl;
             try { nextUrl = new URL(loc, hopUrl).href; } catch (_eHopLoc) {}
+            // net-api M4-S22：fetch spec HTTP-redirect fetch——Location URL 带 credentials
+            //（userinfo）且 credentials mode 非 include → 升级 include（后续 cors check 按
+            // include 判定：ACAO `*` 失效——access-control-and-redirects-async user-info 面）。
+            if (credentials !== 'include' && /^https?:\/\/[^\/?#]+@/i.test(String(nextUrl))) {
+              credentials = 'include';
+            }
             var nextMethod = hopMethod;
             var nextBody = hopBody;
             if (response.status === 303 || ((response.status === 301 || response.status === 302) && hopMethod === 'POST')) {
