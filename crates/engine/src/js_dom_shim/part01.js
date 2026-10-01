@@ -1806,19 +1806,42 @@
   // net-api M4-S24：preflight 自定义头收集（origin/content-length/accept/UA 族/
   // access-control-*/referer/last-event-id/range 为 safelisted 或 UA 内部头——不入
   // ACRH 覆盖检查；content-type 走 essence safelist 判定，亦不入）。
+  // net-api M4-S26：CORS 变量头名单（fetch spec CORS-safelisted request-header 值面）——
+  // accept/accept-language/content-language/content-type **值条件安全名单**（值破格即
+  // 入列——长度 <128、无 forbidden 字节、accept 无 `"`、CT essence 三形），range 恒入列
+  // （强制 preflight 面），accept-language/content-language 2024 spec 移出安全名单恒入列；
+  // origin/content-length/access-control-*/referer/last-event-id/user-agent 恒跳过。
+  // preflight 触发与 ACRH/ACAH 覆盖检查共用本名单（单一事实源）。
   function _zwPreNamesOf(headersWire) {
     var names = [];
     var parts = headersWire ? headersWire.split('\x1e') : [];
+    var FORBIDDEN = /[\u0000-\u0008\u0010-\u001F\u007F]/;
+    var push = function (n) {
+      if (names.indexOf(n) < 0) names.push(n);
+    };
     for (var i = 0; i + 1 < parts.length; i += 2) {
       var ln = String(parts[i]).toLowerCase();
-      if (ln === 'origin' || ln === 'content-length' || ln === 'accept' ||
-          ln === 'accept-language' || ln === 'content-language' ||
+      var val = String(parts[i + 1]);
+      if (ln === 'origin' || ln === 'content-length' ||
           ln.indexOf('access-control-') === 0 || ln === 'referer' ||
-          ln === 'last-event-id' || ln === 'range' || ln === 'content-type' ||
-          ln === 'user-agent') {
+          ln === 'last-event-id' || ln === 'user-agent') {
         continue;
       }
-      if (names.indexOf(ln) < 0) names.push(ln);
+      if (ln === 'accept') {
+        if (val.length >= 128 || FORBIDDEN.test(val) || val.indexOf('"') >= 0) push(ln);
+        continue;
+      }
+      if (ln === 'content-type') {
+        var essence = val.split(';')[0].trim().toLowerCase();
+        if (essence !== 'application/x-www-form-urlencoded' &&
+            essence !== 'multipart/form-data' && essence !== 'text/plain') {
+          push(ln);
+        } else if (val.length >= 128 || FORBIDDEN.test(val)) {
+          push(ln);
+        }
+        continue;
+      }
+      push(ln); // accept-language/content-language/range/其余自定义头
     }
     return names;
   }
@@ -1870,27 +1893,7 @@
   }
   function _zwFetchNeedsPreflight(method, headersWire) {
     if (!_zwFetchIsSafelistedMethod(method)) return true;
-    var parts = headersWire ? headersWire.split('\x1e') : [];
-    var ctValue = null;
-    for (var i = 0; i + 1 < parts.length; i += 2) {
-      var ln = String(parts[i]).toLowerCase();
-      if (ln === 'content-type') { ctValue = parts[i + 1]; continue; }
-      if (ln === 'accept' || ln === 'accept-language' || ln === 'content-language' ||
-          ln === 'user-agent' || ln.indexOf('access-control-') === 0 || ln === 'origin' ||
-          ln === 'content-length' || ln === 'referer' || ln === 'last-event-id') {
-        continue; // UA 内部头/安全名单头——非 CORS 变量
-      }
-      if (ln === 'range') continue; // 简化：range 不触发 preflight
-      return true; // 自定义头 → preflight
-    }
-    if (ctValue !== null) {
-      var essence = String(ctValue).split(';')[0].trim().toLowerCase();
-      if (essence !== 'application/x-www-form-urlencoded' &&
-          essence !== 'multipart/form-data' && essence !== 'text/plain') {
-        return true;
-      }
-    }
-    return false;
+    return _zwPreNamesOf(headersWire).length > 0; // net-api M4-S26：单一事实源
   }
   // R2923 fetch 完整化：`fetch(input, init)` 透传 method/headers/body → host 返 status/headers/body。
   // input = URL 字符串或 Request-like（.url/.method/.headers/.body）；init = { method, headers, body }。
@@ -2394,10 +2397,13 @@
           if (!_zwPreflightCacheHit(
                 _zwUrlOrigin(url) + '|' + (credentials === 'include' ? 'i' : 's'),
                 method, _preNames)) {
-          var preHeaders = headersWire;
-          if (!_zwHasHeader(preHeaders, 'origin')) {
-            preHeaders = _zwAddHeader(preHeaders, 'origin', preDocOrigin);
-          }
+          // net-api M4-S26：preflight 请求头取**最小集**（origin + ACRM + Accept: */* +
+          // ACRH + referer——spec §cors-preflight-fetch，OPTIONS 不转发原请求自定义头；
+          // 转发会使原 accept 值遮蔽 UA Accept: */*，preflight.py 校验误拒——accept 值
+          // 规则腿根因）。
+          var preHeaders = '';
+          preHeaders = _zwAddHeader(preHeaders, 'origin', preDocOrigin);
+          if (_zwRefOut) preHeaders = _zwAddHeader(preHeaders, 'referer', _zwRefOut);
           preHeaders = _zwAddHeader(preHeaders, 'access-control-request-method', method);
           // net-api M4-S23：preflight 请求带 `Accept: */*`（浏览器行为；上游 preflight.py
           // 校验该头——缺失 → 400 Invalid access in preflight）。
@@ -2635,18 +2641,13 @@
                   _zwUrlOrigin(nextUrl) + '|' + (credentials === 'include' ? 'i' : 's'),
                   nextMethod, _rpNames)) {
               var rpDocOrigin = _zwHopOriginOpaque ? 'null' : _zwUrlOrigin(_zwCurrentHref());
-              var rpParts = nextWire ? nextWire.split('\x1e') : [];
-              var rpBase = '';
-              for (var ri = 0; ri + 1 < rpParts.length; ri += 2) {
-                if (String(rpParts[ri]).toLowerCase() === 'origin') continue;
-                rpBase = rpBase ? rpBase + '\x1e' + rpParts[ri] + '\x1e' + rpParts[ri + 1]
-                                : rpParts[ri] + '\x1e' + rpParts[ri + 1];
-              }
-              var rpHeaders = _zwAddHeader(rpBase, 'origin', rpDocOrigin);
+              // 最小集（同上——不转发原请求自定义头）。
+              var rpHeaders = _zwAddHeader('', 'origin', rpDocOrigin);
+              if (_zwRefOut) rpHeaders = _zwAddHeader(rpHeaders, 'referer', _zwRefOut);
               rpHeaders = _zwAddHeader(rpHeaders, 'access-control-request-method', nextMethod);
               rpHeaders = _zwAddHeader(rpHeaders, 'accept', '*/*');
               var _rpAcrh = [];
-              var _rpParts = rpBase ? rpBase.split('\x1e') : [];
+              var _rpParts = nextWire ? nextWire.split('\x1e') : [];
               for (var rbi = 0; rbi + 1 < _rpParts.length; rbi += 2) {
                 var rbn = String(_rpParts[rbi]).toLowerCase();
                 if (_rpNames.indexOf(rbn) >= 0 && String(_rpParts[rbi + 1]).trim() !== '' &&
