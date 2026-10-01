@@ -756,6 +756,10 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
         line_baseline_y: f32,
         first_x: f32,
         first_y: f32,
+        /// slice16：首片段高（= run 行盒高）。元素自身基线（CSS2 §10.8.1 va 对齐后）
+        /// = first_y + first_frag_h——va=baseline 时片段底被 `apply_vertical_alignment`
+        /// 对齐行主基线，本式与 line_y + line_baseline_y 逐字节同值。
+        first_frag_h: f32,
         first_w: f32,
         first_ml: f32,
         first_pl: f32,
@@ -781,6 +785,7 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
                 line_baseline_y: line.baseline_y,
                 first_x: run.x,
                 first_y: y,
+                first_frag_h: run.height,
                 first_w: run.width,
                 first_ml: run.margin_left,
                 first_pl: run.padding_left,
@@ -860,7 +865,21 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
                         let m = handle.line_metrics(&style.font_family, font_size)?;
                         let a = m.ascent;
                         let d = -m.descent;
-                        Some((agg.line_y + agg.line_baseline_y - a, a + d, true))
+                        // slice16：锚 y 与 dormant 常数臂同式取**元素自身基线**
+                        //（CSS2 §10.8.1，见下臂注释）——va=baseline 时
+                        // `apply_vertical_alignment` 把片段底对齐行主基线
+                        //（run.y = baseline_y − run.height），own_baseline ≡ 行主基线，
+                        // 本臂 R4383 判例行为逐字节不变；va≠baseline 时补上布局已施加
+                        // 的位移（slice13 i1/slice15 va-middle ~7px 挂账在活体
+                        // provider 臂复现，本行即活体修复面）。count==1 gate 不变。
+                        // slice16 va 项同受 ZW_INLINE_CONTENT_AREA 门控：关断 = 本臂
+                        // 逐字节回退 slice13 口径（行主基线锚），维持 minor-2 回退承诺。
+                        let anchor_y = if content_area_dormant_on {
+                            agg.first_y + agg.first_frag_h
+                        } else {
+                            agg.line_y + agg.line_baseline_y
+                        };
+                        Some((anchor_y - a, a + d, true))
                     })
                     .flatten();
                 // slice13 dormant 常数臂（锚定值**只记录不上树**）：生产
@@ -874,18 +893,26 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
                 // − ascent（1.164−0.928=0.236 / 1.0−0.8=0.2）；line-height:normal
                 // 时 content 高 = fs×1.164 = 旧行盒并集高，仅 y 由行盒顶收敛到基线锚
                 //（半 leading≈0.082fs 内）。
-                // 锚定用**行主基线** `agg.line_baseline_y`，未计元素自身 vertical-align
-                // 偏移（活体 v6 middle 残差 1.87px vs Chrome，超出纯字体常数残差口径
-                // ——信息级 i1，挂账 R4384）。常数对非 DejaVu 字体失真方向（信息级
-                // i2，挂账 R4384：DejaVu 精确；Liberation/Arial hhea A+D≈1.117em
-                // 高估 ~0.6px@13px；CJK 回落 NotoSansCJK normal 比 1.450 低估
-                // ~4px@13px 级）。
+                // 锚定用**元素自身基线**（CSS2 §10.8.1 vertical-align：元素基线按 va
+                // 与行对齐后，content box = 自身基线 − ascent）。slice16 前=行主基线
+                // `agg.line_baseline_y`，未计元素自身 va 偏移（slice13 信息级 i1/
+                // slice15 va-middle 差 ~7px 挂账）。自身基线 = first_y + first_frag_h：
+                // `apply_vertical_alignment` 把 va=baseline 的片段底对齐行主基线
+                //（run.y = baseline_y − run.height），本式与旧行主基线锚**逐字节同值**；
+                // va≠baseline 时恰好补上布局已施加的位移（sub/super ±0.3em、middle
+                // 行盒居中、top/bottom 贴行盒缘）。va 放置公式本身的 Chrome 残差
+                //（top/bottom 行盒缘语义、middle 父 x-height 语义）属 va 放置轴，
+                // 随 reported 面同源镜像、不在本切片展开。
+                // 常数对非 DejaVu 字体失真方向（信息级 i2，挂账 R4384：DejaVu 精确；
+                // Liberation/Arial hhea A+D≈1.117em 高估 ~0.6px@13px；CJK 回落
+                // NotoSansCJK normal 比 1.450 低估 ~4px@13px 级）。
                 // false = 锚定值**只记录不上树**（inline_reported_rect，仅 rect 桥
-                // gBCR 面消费；命中面读树几何）——布局树保持行盒几何，流 bookkeeping
-                //（R4500 收缩回收/兄弟位移/绘制）不串位（r3773 实证：锚定 y 入树会把
-                // 行盒顶消费成流顶，clamp 容器 128→136）。行盒/绘制面差异挂账
-                //（R4384「默认字体锚定轴 = normal 行高真实化」）。
+                // gBCR 面消费；命中面 slice15 起同源消费本记录）——布局树保持行盒
+                // 几何，流 bookkeeping（R4500 收缩回收/兄弟位移/绘制）不串位（r3773
+                // 实证：锚定 y 入树会把行盒顶消费成流顶，clamp 容器 128→136）。
+                // 行盒/绘制面差异挂账（R4384「默认字体锚定轴 = normal 行高真实化」）。
                 // https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+                // https://www.w3.org/TR/CSS22/visudet.html#propdef-vertical-align
                 let content_anchored = provider_anchored.or_else(|| {
                     (agg.single_line && content_area_dormant_on).then(|| {
                         let (font_size, _) = crate::inline::resolve_font_metrics_with_provider(
@@ -899,7 +926,8 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
                         let (ascent_ratio, descent_ratio) = if is_ahem { (0.8, 0.2) } else { (0.928, 0.236) };
                         let a = font_size * ascent_ratio;
                         let d = font_size * descent_ratio;
-                        (agg.line_y + agg.line_baseline_y - a, a + d, false)
+                        let own_baseline = agg.first_y + agg.first_frag_h;
+                        (own_baseline - a, a + d, false)
                     })
                 });
                 // 上报矩形（含 padding/border 的 border-box）：入树臂与记录臂同值。
