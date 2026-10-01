@@ -499,6 +499,7 @@ fn hit_test_layout_to_ipc(node: &HitTestLayoutSnapshot) -> IpcHitTestLayoutNode 
         y: node.y,
         width: node.width,
         height: node.height,
+        reported: node.reported,
         children: node.children.iter().map(hit_test_layout_to_ipc).collect(),
     }
 }

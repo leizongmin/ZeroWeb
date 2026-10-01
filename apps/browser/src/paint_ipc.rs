@@ -101,6 +101,7 @@ fn ipc_layout_to_snapshot(node: &IpcHitTestLayoutNode) -> Option<HitTestLayoutSn
         y: node.y,
         width: node.width,
         height: node.height,
+        reported: node.reported,
         children,
     })
 }
@@ -128,6 +129,7 @@ mod tests {
                     y: 0.0,
                     width: 10.0,
                     height: 10.0,
+                    reported: None,
                     children: Vec::new(),
                 },
                 nodes: std::iter::once((

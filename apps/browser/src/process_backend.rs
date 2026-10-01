@@ -2146,6 +2146,7 @@ mod navigation_contract_tests {
                 y: 0.0,
                 width: 100.0,
                 height: 100.0,
+                reported: None,
                 children: Vec::new(),
             },
             nodes: std::iter::once((

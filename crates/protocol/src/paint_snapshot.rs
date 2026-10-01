@@ -618,6 +618,11 @@ pub struct IpcHitTestLayoutNode {
     pub width: f32,
     /// 盒高。
     pub height: f32,
+    /// slice13：inline 盒 gBCR 上报 (y, h)（content area，LayoutBox 同坐标约定，
+    /// 相对父内容区）；命中面不消费（y/height 保持布局树行盒几何）。
+    /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+    #[serde(default)]
+    pub reported: Option<(f32, f32)>,
     /// 子盒。
     pub children: Vec<IpcHitTestLayoutNode>,
 }
