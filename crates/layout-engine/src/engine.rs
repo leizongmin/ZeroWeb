@@ -2388,6 +2388,7 @@ impl LayoutEngine {
         }
 
         LayoutBox {
+            inline_reported_rect: None,
             node_id: dom_id,
             x,
             y,

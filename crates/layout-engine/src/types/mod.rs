@@ -97,6 +97,12 @@ pub struct NestedSpannerChildFrag {
 /// 布局盒 — 一个元素在页面上的几何位置与绘制信息（含 R4330 run-in 分裂边框载荷）。
 #[derive(Debug, Clone)]
 pub struct LayoutBox {
+    /// slice13：getBoundingClientRect 上报语义（CSS2 §10.6.2）——inline 非替换盒
+    /// content area = 主字体 A+D（与 line-height 无关），Some((y, h)) 为**上报用**
+    /// border-box 矩形（含 padding/border）。布局树 y/h 保持行盒几何（流.bookkeeping
+    /// 与 paint 不变），仅 hit-test/rect 快照层消费本值。
+    /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+    pub inline_reported_rect: Option<(f32, f32)>,
     /// 对应的 DOM 节点 ID。
     pub node_id: Option<NodeId>,
     /// 盒子的位置（相对于父元素的内容区域）。
@@ -630,6 +636,7 @@ impl LayoutBox {
 impl Default for LayoutBox {
     fn default() -> Self {
         Self {
+            inline_reported_rect: None,
             node_id: None,
             writing_mode_sideways_lr: false,
             x: 0.0,

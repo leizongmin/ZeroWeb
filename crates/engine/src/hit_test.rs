@@ -215,12 +215,18 @@ fn fill_rect_from_layout_box(
     abs_y: f32,
     map: &mut HashMap<u64, crate::rect_bridge::Rect4>,
 ) {
+    // slice13（CSS2 §10.6.2）：inline 盒 gBCR 上报 y/h = content area（主字体 A+D +
+    // padding/border）。布局树 y/h 保持行盒几何，sync 记录 `inline_reported_rect`，
+    // 此处（gBCR 直填路径）与快照构建路径（layout_snapshot_from_box）同源消费。
+    // 子盒偏移仍按布局 y 累计（子盒 y 存于布局坐标系，上报覆写只作用于本盒 rect）。
+    // https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+    let (reported_y, reported_h) = box_node.inline_reported_rect.unwrap_or((box_node.y, box_node.height));
     let box_x = abs_x + box_node.x;
-    let box_y = abs_y + box_node.y;
+    let box_y = abs_y + reported_y;
     if let Some(id) = box_node.node_id {
-        map.insert(node_id_to_u64(id), (box_x, box_y, box_node.width, box_node.height));
+        map.insert(node_id_to_u64(id), (box_x, box_y, box_node.width, reported_h));
     }
-    let (child_x, child_y) = child_origin(box_node, box_x, box_y);
+    let (child_x, child_y) = child_origin(box_node, box_x, abs_y + box_node.y);
     for child in &box_node.children {
         fill_rect_from_layout_box(child, child_x, child_y, map);
     }
@@ -284,12 +290,18 @@ fn layout_snapshot_from_box_with_offset(
     parent_content_x: f32,
     parent_content_y: f32,
 ) -> HitTestLayoutSnapshot {
+    // slice13（CSS2 §10.6.2）：inline 非替换盒 getBoundingClientRect y/h 上报语义 =
+    // content area（主字体 A+D + padding/border，与 line-height 无关）。布局树 y/h
+    // 保持行盒几何（流 bookkeeping/绘制不动，见 inline_finalization 记录处），快照层
+    // 在此消费记录值——rect 桥（gBCR）与命中测试同源。跨行 wrap 并集语义挂账。
+    // https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+    let (reported_y, reported_h) = layout.inline_reported_rect.unwrap_or((layout.y, layout.height));
     HitTestLayoutSnapshot {
         node_id: layout.node_id,
         x: layout.x + parent_content_x,
-        y: layout.y + parent_content_y,
+        y: reported_y + parent_content_y,
         width: layout.width,
-        height: layout.height,
+        height: reported_h,
         children: layout
             .children
             .iter()
@@ -780,6 +792,51 @@ mod tests {
         cache.fill_layout_rect_snapshot(&snapshot);
         let rects = snapshot.lock().expect("rect snapshot");
         assert_eq!(rects[&node_id_to_u64(input)], (41.0, 52.0, 100.0, 40.0));
+    }
+
+    /// slice13（CSS2 §10.6.2）：`HitTestCache::fill_layout_rect_snapshot`（gBCR 直填
+    /// 路径，webview/tab_worker 消费）同样消费 `inline_reported_rect` 上报值——布局树
+    /// y/h 保持行盒几何，仅 rect 上报变为 content area。子盒 rect 仍按布局帧累计
+    ///（子盒 y 存于布局坐标系，覆写只作用于本盒）。
+    /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+    #[test]
+    fn inline_reported_rect_overrides_gcr_rect_only() {
+        let doc = zero_dom::parse_html(r#"<body><div><span id="tgt">更多</span></div></body>"#);
+        let body = doc.get_elements_by_tag_name("body")[0];
+        let span = doc.get_element_by_id("tgt").expect("target span");
+        let mut root = LayoutBox {
+            node_id: Some(body),
+            width: 800.0,
+            height: 600.0,
+            ..LayoutBox::default()
+        };
+        root.children.push(LayoutBox {
+            node_id: doc.get_elements_by_tag_name("div").first().copied(),
+            x: 0.0,
+            y: 10.0,
+            width: 800.0,
+            height: 23.0,
+            children: vec![LayoutBox {
+                // 布局树行盒几何（y=0 行盒顶、h=23 行高）+ 上报记录（content area）。
+                inline_reported_rect: Some((5.0, 15.132)),
+                node_id: Some(span),
+                x: 0.0,
+                y: 0.0,
+                width: 26.0,
+                height: 23.0,
+                ..LayoutBox::default()
+            }],
+            ..LayoutBox::default()
+        });
+        let cache = HitTestCache::from_document(&doc, &root, &HashMap::new());
+        let snapshot = crate::rect_bridge::new_layout_rect_snapshot();
+        cache.fill_layout_rect_snapshot(&snapshot);
+        let rects = snapshot.lock().expect("rect snapshot");
+        assert_eq!(
+            rects[&node_id_to_u64(span)],
+            (0.0, 15.0, 26.0, 15.132),
+            "gBCR 直填路径上报 content area（div y=10 + 上报 y=5）"
+        );
     }
 
     // ── 基础命中测试 ──

@@ -297,6 +297,60 @@ mod tests {
         );
     }
 
+    /// slice13（CSS2 §10.6.2）：inline 盒 gBCR y/h 上报 = content area（主字体 A+D +
+    /// padding/border，与 line-height 无关）。布局树 y/h 保持行盒几何（流 bookkeeping/
+    /// 绘制不动，见 inline_finalization 记录处）；sync 记录 `inline_reported_rect`，
+    /// hit-test 快照层消费，rect 桥（gBCR 单一出口）据此填表。
+    /// 负控制：记录缺席（跨行 wrap / kill-switch `ZW_INLINE_CONTENT_AREA=0`）时回退
+    /// 布局树行盒几何（旧行为）。
+    /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+    #[test]
+    fn test_inline_reported_rect_flows_to_gcr_snapshot() {
+        use crate::hit_test::HitTestCache;
+        use zero_layout_engine::LayoutBox;
+
+        let mut doc = zero_dom::Document::new();
+        let container = doc.create_element("div");
+        let span = doc.create_element("span");
+        doc.append_child(container, span).unwrap();
+
+        // 布局树：span y=0（行盒顶）h=23（行高）；上报记录 = content area（5, 15.132）。
+        let layout = LayoutBox {
+            node_id: Some(container),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 23.0,
+            children: vec![LayoutBox {
+                inline_reported_rect: Some((5.0, 15.132)),
+                node_id: Some(span),
+                x: 0.0,
+                y: 0.0,
+                width: 26.0,
+                height: 23.0,
+                ..LayoutBox::default()
+            }],
+            ..LayoutBox::default()
+        };
+        let cache = HitTestCache::from_document(&doc, &layout, &HashMap::new());
+        let snap = cache.snapshot();
+        let span_snap = &snap.layout_root.children[0];
+        assert_eq!(span_snap.y, 5.0, "快照 y = 上报 content area 顶");
+        assert_eq!(span_snap.height, 15.132, "快照 h = 上报 content area 高");
+        assert_eq!(span_snap.x, 0.0, "x 无上报覆写 = 布局值");
+
+        // rect 桥填表：gBCR 读到的即上报值；无记录的盒（容器）= 行盒几何（负控制臂）。
+        let rect_snap = new_layout_rect_snapshot();
+        fill_layout_rect_snapshot(&snap.layout_root, &rect_snap);
+        let map = rect_snap.lock().unwrap();
+        assert_eq!(map.get(&node_id_to_u64(span)), Some(&(0.0, 5.0, 26.0, 15.132)));
+        assert_eq!(
+            map.get(&node_id_to_u64(container)),
+            Some(&(0.0, 0.0, 200.0, 23.0)),
+            "无 inline_reported_rect 记录的盒回退布局树几何"
+        );
+    }
+
     /// gBCR path (C) 的地基：同一 HTML 字符串两次 fresh `parse_html` 对同一 selector 返回相同 NodeId。
     ///
     /// 渲染管线每次 render 都 fresh-parse 同一 html 字符串（`pipeline_budget.rs:106/197`），
