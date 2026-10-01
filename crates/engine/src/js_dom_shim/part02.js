@@ -1343,6 +1343,10 @@
       // 写完成续泵（背压解除驱动）；源 done → WriterCloseWithErrorPropagation 动作。
       function pump() {
         if (shuttingDown || finished) return;
+        // net-api M4-S28：读在飞时不再入泵（spec pipeTo 逐 chunk read→write→背压检查
+        // 串行——watchReady/write 完成路径重入会并发双读，读请求超额消费背压余量——
+        // flow-control「desires more chunks before finishing」面：desired 2 被双读打穿）。
+        if (pendingRead) return;
         var desired;
         try { desired = writer.desiredSize; } catch (_eDs) { return; }
         if (desired !== null && desired <= 0) return;

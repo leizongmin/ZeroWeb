@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-01（M4-S27 双评估记账——cookie 腿回流 + scheme 对齐前置条件定稿，零代码实施）
+**最后更新**: 2026-10-01（M4-S28 收口——flow-control 背压编排串行读门，streams 88.7%，flow-control 5/5 全绿）
 
 ---
 
@@ -14,11 +14,12 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
-M4-S8（76.8%）→ … → M4-S24（79.5%）→ M4-S25（79.6%）→ M4-S26（2026-10-01）——
-**9290/11658 = 79.7%**（fetch **1491/2081 = 71.6%**；+9 零回归 + 2 腿 spec 必要
-回归记账——accept-language/content-language 移出安全名单的 stale-failing 面；xhr
-557/584 / mimesniff 100% / streams 88.6% / url 73.0% 持平 / eventsource 33/34——
-request-cache-control 页全量争用超时、隔离复跑绿）。
+M4-S8（76.8%）→ … → M4-S25（79.6%）→ M4-S26（79.7%）→ M4-S27（评估记账）→
+M4-S28（2026-10-01）——**9292/11659 = 79.7%**（streams **905/1020 = 88.7%**，
+flow-control **5/5 全绿**——M4-S11 挂账清偿，+2 零回归；fetch 1491/2081 / xhr
+557/584 / mimesniff 100% / url 73.0% 持平 / eventsource 33/34——request-cache-
+control 页全量争用超时、隔离复跑绿）。**M4 里程碑除结构性挂账（V8 detach）外
+全部清偿**。
 **M4-S23 收口**：fetch/api/cors 域导入（M1 记账重入条件兑现）+ shim preflight 语义
 修齐（Accept: */*、ACAM/ACAH 覆盖判定 spec 化、Max-Age 0 不缓存、跨源请求重定向跨源
 → Origin opaque + 跳间 Origin 替换）+ preflight.py/clean-stash.py fixture（须置于
@@ -40,12 +41,19 @@ S18 泛化 OPTIONS 兜底门之前——假阴性根因）+ redirect.py 对齐�
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口 + M4-S23 cors 域导入（fetch **1449/2081 = 69.6%** / mimesniff 100%）；残余：cors 域重定向再 preflight 族 ~15、credentials/cookie 管道腿、response-error 族（10） |
 | P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **95.5%**——状态机/事件序/upload ProgressEvent/preflight cache/redirect/preflight/expose/FormData/timeout 面 spec 化）——**残余：page-scheme 失配 2（http vs https 宇宙——需 runner 页面 scheme 对齐）、sync XHR 结构面 4、XML 文档面（engine XML DOM 深度——template-element 族）、bad-chunk 注入 2、formdata FormDataEvent/submitter 族 5、timeout 族 3** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.0%（新分母 6058）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
-| P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S11 收口（88.6%——piping 簇 spec 化重做，pipe-through/general/error-propagation 全绿）；**残余：flow-control 2 腿（背压编排计时精度）；transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿）** |
+| P5 | streams 底座一致性（fetch body 依赖） | ✅ M4-S11 收口（88.6%）+ M4-S28 flow-control 清偿（**88.7%**，piping 全绿含 flow-control 5/5）；**残余：transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿，JS 层不可表达）** |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
 | P7 | runner fixture 通道（.py 端点最小 fixture 集） | ✅ 累计 24+ 端点（M4-S21 增 echo-headers/xhr trickle/form/echo-content-type/access-control-origin-header/over-1-meg.txt）；待评估：fetch/api/cors 域页拉取（三前置已落）、preflight cache 族 fixture 深化 |
 
 ## 已完成切片
 
+- **M4-S28（2026-10-01）**：flow-control 背压编排（**9292/11659 = 79.7%**，
+  streams 903→**905 = 88.7%**，flow-control **5/5 全绿**，+2 零回归）。shim：
+  pipeTo 泵**串行读门**（`pendingRead` 在飞时不再入泵——watchReady/write 完成路径
+  重入并发双读、超额消费背压余量，pump 日志探针定位；spec pipeTo 逐 chunk
+  read→write→desiredSize 检查串行）。M4-S11 flow-control 挂账清偿；M4 里程碑除
+  结构性挂账（V8 detach）外全部清偿。make test 全绿（19547P）+ clippy/fmt 干净。
+  见 [evidence/2026-10-01-m4-s28-flow-control.md](evidence/2026-10-01-m4-s28-flow-control.md)。
 - **M4-S27（2026-10-01，双评估记账零实施）**：① cors 域 credentials/cookie 腿
   ~13（需真实 cookie jar + Authorization 重定向保留流——HTTP 栈/存储状态面非本
   goal 范围）→ 回流 storage goal / security-hardening 邻域；② runner 页面 scheme
@@ -384,8 +392,10 @@ S18 泛化 OPTIONS 兜底门之前——假阴性根因）+ redirect.py 对齐�
 
 ## 下一步计划
 
-1. **streams flow-control 2 腿**（背压编排计时精度——泵 pull 粒度对齐 StepTracker
-   编排步进）
+1. **收口判定评估**：DC-1~4 逐项核对（六 corpus 账本核对 / make test+clippy+fmt
+   门禁 / reftest 零回归核对）+ WebSocket 二期挂账定稿——结构性残余（V8 detach 14
+   腿、cookie jar 13 腿、page-scheme 2 前置）均为跨域记账项，评估是否满足收口或
+   维持 Active
 2. **scheme 对齐两前置审计**（重入条件，见 M4-S27 evidence）：url shim 文档基址
    回退审计（a-element about:blank 面 ×20）+ credentials/Authorization 流程审计
    （×21）→ 完成后翻页面锚 http 入袋 +29（含两腿长挂账）页面锚 `https://wpt.test` vs WPT 宇宙
