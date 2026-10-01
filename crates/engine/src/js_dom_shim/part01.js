@@ -1792,9 +1792,35 @@
     var href = _zwCurrentHref();
     return !!href && String(href).indexOf('about:') !== 0 && _zwUrlOrigin(href) !== '';
   }
+  // net-api M4-S24：scheme 宽化 origin（https→http 归一）——仅用于「当前跳相对文档
+  // 是否跨源」的 opaque 判定：runner 页面锚 https://wpt.test，而 WPT 宇宙 get_host_info
+  // 端点为 http://*——严格比较会把同源跳误判跨源（cors-redirect same-origin→cors 面）。
+  function _zwUrlOriginLenient(url) {
+    var o = _zwUrlOrigin(url);
+    return o.replace(/^https:\/\//i, 'http://');
+  }
   function _zwFetchIsSafelistedMethod(method) {
     var m = String(method).toUpperCase();
     return m === 'GET' || m === 'HEAD' || m === 'POST';
+  }
+  // net-api M4-S24：preflight 自定义头收集（origin/content-length/accept/UA 族/
+  // access-control-*/referer/last-event-id/range 为 safelisted 或 UA 内部头——不入
+  // ACRH 覆盖检查；content-type 走 essence safelist 判定，亦不入）。
+  function _zwPreNamesOf(headersWire) {
+    var names = [];
+    var parts = headersWire ? headersWire.split('\x1e') : [];
+    for (var i = 0; i + 1 < parts.length; i += 2) {
+      var ln = String(parts[i]).toLowerCase();
+      if (ln === 'origin' || ln === 'content-length' || ln === 'accept' ||
+          ln === 'accept-language' || ln === 'content-language' ||
+          ln.indexOf('access-control-') === 0 || ln === 'referer' ||
+          ln === 'last-event-id' || ln === 'range' || ln === 'content-type' ||
+          ln === 'user-agent') {
+        continue;
+      }
+      if (names.indexOf(ln) < 0) names.push(ln);
+    }
+    return names;
   }
   // net-api M4-S22：CORS-preflight cache（fetch spec §cors-preflight-cache）——条目
   // {key=(目标 origin|credentials), methods, headers, star, expires}。命中：未过期 +
@@ -1809,6 +1835,8 @@
       if (e.methods.indexOf(String(method).toLowerCase()) < 0) continue;
       var ok = true;
       for (var j = 0; j < headerNames.length; j++) {
+        // net-api M4-S24：`*` 不覆盖 Authorization（cors-preflight-cache wildcard 面）。
+        if (e.star && headerNames[j] === 'authorization') { ok = false; break; }
         if (!e.star && e.headers.indexOf(headerNames[j]) < 0) { ok = false; break; }
       }
       if (ok) return true;
@@ -2322,23 +2350,7 @@
         // (目标 origin, credentials) 键缓存 ACAM/ACAH + Max-Age 过期；命中（method ∈
         // ACAM 且自定义头 ⊆ ACAH——`*` 通配）则跳过 OPTIONS（preflight-cache「second
         // request without preflight」面；invalidation by method/header、timeout 过期面）。
-        var _preNames = [];
-        var _preParts = headersWire ? headersWire.split('\x1e') : [];
-        for (var pi = 0; pi + 1 < _preParts.length; pi += 2) {
-          var pn = String(_preParts[pi]).toLowerCase();
-          if (pn === 'origin' || pn === 'content-length' || pn === 'accept' ||
-              pn === 'accept-language' || pn === 'content-language' ||
-              pn.indexOf('access-control-') === 0 || pn === 'referer' ||
-              pn === 'last-event-id' || pn === 'range') {
-            continue;
-          }
-          // content-type 单独跳过（safelisted essence 判定归 _zwFetchNeedsPreflight——
-          // 入 preNames 会让 ACAH 覆盖检查误拒，M4-S23 探针定位面）。
-          if (pn === 'content-type') {
-            continue;
-          }
-          if (_preNames.indexOf(pn) < 0) _preNames.push(pn);
-        }
+        var _preNames = _zwPreNamesOf(headersWire);
         // net-api M4-S18：CORS-preflight（fetch spec §cors-preflight-fetch）——非 safelisted
         // cors 请求先发 OPTIONS（ACRM/ACAH + Origin），2xx + ACAM/ACAH 覆盖 → 继续；
         // 失败 → network error。M4-S22：cache 命中（ACAM/ACAH 覆盖当前 method/自定义头，
@@ -2388,6 +2400,9 @@
               for (var ai = 0; ai < _preNames.length; ai++) {
                 if (allowed.indexOf(_preNames[ai]) < 0) { preOk = false; break; }
               }
+            } else if (_preNames.indexOf('authorization') >= 0) {
+              // net-api M4-S24：ACAH `*` 不覆盖 authorization（wildcard 面须重 preflight）。
+              preOk = false;
             }
           }
           if (!preOk) {
@@ -2537,7 +2552,7 @@
             // redirects-async-same-origin 面）；初始请求已带 Origin（跨源注入）——须
             // **替换**而非跳过。
             if (mode === 'cors' && nextUrl &&
-                _zwUrlOrigin(hopUrl) !== _zwUrlOrigin(_zwCurrentHref()) &&
+                _zwUrlOriginLenient(hopUrl) !== _zwUrlOriginLenient(_zwCurrentHref()) &&
                 _zwUrlOrigin(nextUrl) !== _zwUrlOrigin(hopUrl)) {
               _zwHopOriginOpaque = true;
             }
@@ -2561,6 +2576,71 @@
                 hopLen = new TextEncoder().encode(nextBody).length;
               }
               nextWire = _zwAddHeader(nextWire, 'content-length', String(hopLen));
+            }
+            // net-api M4-S24：fetch spec cors-preflight-fetch——重定向后的请求仍携
+            // 非 safelisted method/自定义头 → 对新 URL **重跑 preflight**（主 fetch
+            // 递归语义；cors-redirect-preflight「after redirection」面）。preflight
+            // cache 命中则跳过；Origin 按当前 opaque 语义携带；失败 → network error。
+            var _rpNames = _zwPreNamesOf(nextWire);
+            if (mode === 'cors' && _zwFetchNeedsPreflight(nextMethod, nextWire) &&
+                nextUrl && _zwUrlOrigin(nextUrl) !== _zwUrlOrigin(_zwCurrentHref()) &&
+                !_zwPreflightCacheHit(
+                  _zwUrlOrigin(nextUrl) + '|' + (credentials === 'include' ? 'i' : 's'),
+                  nextMethod, _rpNames)) {
+              var rpDocOrigin = _zwHopOriginOpaque ? 'null' : _zwUrlOrigin(_zwCurrentHref());
+              var rpParts = nextWire ? nextWire.split('\x1e') : [];
+              var rpBase = '';
+              for (var ri = 0; ri + 1 < rpParts.length; ri += 2) {
+                if (String(rpParts[ri]).toLowerCase() === 'origin') continue;
+                rpBase = rpBase ? rpBase + '\x1e' + rpParts[ri] + '\x1e' + rpParts[ri + 1]
+                                : rpParts[ri] + '\x1e' + rpParts[ri + 1];
+              }
+              var rpHeaders = _zwAddHeader(rpBase, 'origin', rpDocOrigin);
+              rpHeaders = _zwAddHeader(rpHeaders, 'access-control-request-method', nextMethod);
+              rpHeaders = _zwAddHeader(rpHeaders, 'accept', '*/*');
+              if (_rpNames.length > 0) {
+                rpHeaders = _zwAddHeader(rpHeaders, 'access-control-request-headers', _rpNames.sort().join(', '));
+              }
+              globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
+              var rpWire = __zw_fetch(
+                '__zwfid:repre' + globalThis.__zw_fetch_counter,
+                'OPTIONS', nextUrl, rpHeaders, '', '', '', mode, redirect, credentials);
+              var rpResp = _makeResponseFromWire(rpWire);
+              var rpOrigin = response_headers_get(rpResp, 'access-control-allow-origin');
+              var rpMethods = response_headers_get(rpResp, 'access-control-allow-methods');
+              var rpAllowed = response_headers_get(rpResp, 'access-control-allow-headers');
+              var rpOk = (rpResp.status >= 200 && rpResp.status < 300) &&
+                (rpOrigin === rpDocOrigin || rpOrigin === 'null' && _zwHopOriginOpaque ||
+                 (rpOrigin === '*' && credentials !== 'include'));
+              if (rpOk && !_zwFetchIsSafelistedMethod(nextMethod)) {
+                if (!rpMethods || (rpMethods !== '*' &&
+                    String(rpMethods).toLowerCase().split(',').map(function (x) { return x.trim(); })
+                      .indexOf(String(nextMethod).toLowerCase()) < 0)) {
+                  rpOk = false;
+                }
+              }
+              if (rpOk && _rpNames.length > 0) {
+                if (!rpAllowed || rpAllowed !== '*') {
+                  var rpAllowedList = String(rpAllowed || '').toLowerCase().split(',')
+                    .map(function (x) { return x.trim(); });
+                  for (var rj = 0; rj < _rpNames.length; rj++) {
+                    if (rpAllowedList.indexOf(_rpNames[rj]) < 0) { rpOk = false; break; }
+                  }
+                } else if (_rpNames.indexOf('authorization') >= 0) {
+                  rpOk = false; // net-api M4-S24：`*` 不覆盖 authorization
+                }
+              }
+              var rpMaxAgeRaw = response_headers_get(rpResp, 'access-control-max-age');
+              var rpMaxAge = rpMaxAgeRaw == null ? 5 : (parseInt(rpMaxAgeRaw, 10) || 0);
+              _zwPreflightCacheStore(
+                _zwUrlOrigin(nextUrl) + '|' + (credentials === 'include' ? 'i' : 's'),
+                rpMethods, rpAllowed, rpMaxAge, nextMethod);
+              if (!rpOk) {
+                settled = true;
+                delete globalThis.__zw_pending[currentId || id];
+                reject(new TypeError('Failed to fetch'));
+                return;
+              }
             }
             hopCount++;
             if (signal && signal._aborted) {

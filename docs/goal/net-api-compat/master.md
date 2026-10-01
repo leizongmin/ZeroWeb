@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-01（M4-S23 收口——fetch/api/cors 域导入 + preflight 语义修齐，+191 腿零回归）
+**最后更新**: 2026-10-01（M4-S24 收口——重定向再 preflight + Origin opaque 修齐，fetch 70.5%）
 
 ---
 
@@ -14,10 +14,10 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
-M4-S8（76.8%）→ … → M4-S21（79.8%）→ M4-S22（79.9%）→ M4-S23（2026-10-01）——
-**9248/11658 = 79.3%**（分母 +320——cors 域 21 页 321 腿导入，域内新解锁 **+191 腿**
-零回归；fetch 1449/2081 / xhr 557/584 与 S22 持平 / mimesniff 100% / streams 88.6% /
-url 73.0% / eventsource 33/34——request-cache-control 页全量争用超时、隔离复跑绿）。
+M4-S8（76.8%）→ … → M4-S22（79.9%）→ M4-S23（79.3% 分母 +320）→ M4-S24
+（2026-10-01）——**9267/11658 = 79.5%**（+19 零回归；fetch **1468/2081 = 70.5%** /
+xhr 557/584 / mimesniff 100% / streams 88.6% / url 73.0% / eventsource 33/34——
+request-cache-control 页全量争用超时、隔离复跑绿）。
 **M4-S23 收口**：fetch/api/cors 域导入（M1 记账重入条件兑现）+ shim preflight 语义
 修齐（Accept: */*、ACAM/ACAH 覆盖判定 spec 化、Max-Age 0 不缓存、跨源请求重定向跨源
 → Origin opaque + 跳间 Origin 替换）+ preflight.py/clean-stash.py fixture（须置于
@@ -45,6 +45,14 @@ S18 泛化 OPTIONS 兜底门之前——假阴性根因）+ redirect.py 对齐�
 
 ## 已完成切片
 
+- **M4-S24（2026-10-01）**：重定向再 preflight + Origin opaque 修齐（**9267/11658 =
+  79.5%**，fetch 1449→**1468 = 70.5%**，+19 零回归）。shim：hop 循环重定向后对
+  新 URL 重跑 preflight（主 fetch 递归语义——ACAO 含 opaque `null` 形态/ACAM/ACAH
+  覆盖 + cache + 失败拒绝；`_zwPreNamesOf` 抽取共享）+「当前跳相对文档跨源」改
+  scheme 宽化比较（runner https 页锚 vs WPT http 宇宙——same-origin 跳误判跨源
+  根因，cors-redirect same-origin→cors 5 腿）+ ACAH `*` 不覆盖 authorization
+  （主/hop 检查 + cache 命中三处）。make test 全绿（19538P）+ clippy/fmt 干净。见
+  [evidence/2026-10-01-m4-s24-redirect-repreflight.md](evidence/2026-10-01-m4-s24-redirect-repreflight.md)。
 - **M4-S23（2026-10-01）**：fetch/api/cors 域导入 + preflight 语义修齐（**9248/11658
   = 79.3%**，分母 +320；域内 **+191 腿零回归**，fetch 1258→1449）。shim：preflight
   带 Accept: */* + ACAM/ACAH 覆盖判定 spec 化（缺 → 拒）+ Max-Age 0 不缓存（max_age=0
@@ -349,9 +357,8 @@ S18 泛化 OPTIONS 兜底门之前——假阴性根因）+ redirect.py 对齐�
 
 ## 下一步计划
 
-1. **cors 域重定向再 preflight**（fetch spec cors-preflight-fetch 递归主 fetch——
-   重定向后携非 safelisted 头须对新 URL 重跑 preflight；shim hop 循环未递归——
-   cors-redirect-preflight「after preflight failed」族 ~15 腿）：spec 重读后专设
+1. **cors 域 Referer 面**（cors-preflight-referrer ~10 腿）：preflight 请求带文档
+   Referer（x-preflight-referrer 回读；referrer-policy 变体评估深水）
 2. **runner 页面 scheme 对齐评估**：页面锚 `https://wpt.test` vs WPT 宇宙
    `http://wpt.test`——同源判定/Origin 回显跨 scheme 失配 2 腿（redirects-async
    same-origin leg / access-control-origin-header）；改法 = testharness.rs 34 处 +
