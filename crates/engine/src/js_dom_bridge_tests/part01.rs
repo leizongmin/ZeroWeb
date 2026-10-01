@@ -2240,34 +2240,38 @@ fn test_interval_rearm_stops_on_clear_from_within_callback_p20() {
              var h3 = setInterval(function () {\
                globalThis.__t.push('t3'); throw new Error('boom'); }, 10);\
              var h4 = setInterval(function () { globalThis.__t.push('t4'); }, 10);\
-             clearInterval(h4);",
+             clearInterval(h4);\
+             var h5 = setInterval(function () { globalThis.__t.push('t5'); }, 10);\
+             globalThis.__zw_pending['__zwint:' + h5] = function () { globalThis.__t.push('t5x'); };",
         )
         .unwrap();
-    // 初始 arm：4 个 interval 各注册一条 host 定时器（armed 是注册记录——外部 clearInterval
+    // 初始 arm：5 个 interval 各注册一条 host 定时器（armed 是注册记录——外部 clearInterval
     // 只删 pending 项，host 侧记录仍在，到期 resolve 查无 pending 即 no-op）。
     assert_eq!(
         sandbox.execute("globalThis.__zw_armed.length").unwrap().value,
-        "4",
-        "初始：t1-t4 各注册一条 host 定时器"
+        "5",
+        "初始：t1-t5 各注册一条 host 定时器"
     );
-    // 第 1 tick：t1 回调内自清 → 不得 re-arm；t2 正常续；t3 抛异常仍续；t4 不触发。
+    // 第 1 tick：t1 回调内自清 → 不得 re-arm；t2 正常续；t3 抛异常仍续；t4 不触发；
+    // t5 的 pending 项被替换（站点接管）→ resolve 调替换函数 t5x（wrapper 不执行），
+    // arm 链随之终止且恰触发一次（行为钉住——修复前后同形，testval 首轮 TV-N1）。
     sandbox.execute("globalThis.__zw_fire();").unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__t.join(',')").unwrap().value,
-        "t1,t2,t3",
-        "第 1 tick：t1/t2/t3 各触发一次，t4（提前清）不触发"
+        "t1,t2,t3,t5x",
+        "第 1 tick：t1/t2/t3 各触发一次，t4（提前清）不触发，t5（被替换）走 t5x"
     );
     assert_eq!(
         sandbox.execute("globalThis.__zw_armed.length").unwrap().value,
         "2",
         "第 1 tick 后：仅 t2/t3 re-arm——t1 回调内自清必须终止（P20 主断言）"
     );
-    // 第 2 tick：t1 僵尸不得复活。
+    // 第 2 tick：t1 僵尸不得复活；t5x 恰 1 次（替换后 arm 链死，不随 tick 重放）。
     sandbox.execute("globalThis.__zw_fire();").unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__t.join(',')").unwrap().value,
-        "t1,t2,t3,t2,t3",
-        "第 2 tick：t2/t3 正常重复触发，t1 僵尸未复活"
+        "t1,t2,t3,t5x,t2,t3",
+        "第 2 tick：t2/t3 正常重复触发，t1 僵尸未复活，t5x 不再出现"
     );
     // 外部 clearInterval 收尾：清 t2/t3 后（pending 项删除）后续 fire 不再触发。
     assert_eq!(
@@ -2278,7 +2282,7 @@ fn test_interval_rearm_stops_on_clear_from_within_callback_p20() {
             )
             .unwrap()
             .value,
-        "5",
+        "6",
         "外部 clearInterval 后（pending 项删除）后续 fire 不再触发"
     );
 }
