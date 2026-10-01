@@ -3032,16 +3032,28 @@
     var hostSt = _zwHostSetTimeout();
     if (hostSt) {
       // host 路径：回调内 re-arm 实现重复触发（host 仅实现单次定时器）。
+      // P20（2026-10-01）：arm() 原为无条件 re-arm——`__zwResolveCallback` 先 delete 再调用，
+      // 回调内 clearInterval(handle) 删到的只是空位，随后 arm() 照样重新占位+重注册，
+      // interval 成僵尸（实站采样 interval 20s 自清后 100s 仍 pending，
+      // evidence/t4-batch3-partial-reconstructed/run15）。
+      // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+      // 重复间隔语义：本 tick 的清除信号 = fn 执行期间 pending 项被删。故 wrapper 进入时先
+      // 重新占位（resolve 已删本项），fn 返回后项仍是本 wrapper 才续 arm；被清（undefined）
+      // 或被替换（站点接管）则终止。回调异常不取消 interval（catch 后项仍在，照常续）。
       var arm = function() {
-        globalThis.__zw_pending[id] = function() {
+        var wrapper = function() {
+          globalThis.__zw_pending[id] = wrapper;
           try {
             if (typeof globalThis.__zwBeforeTimerTask === 'function') {
               globalThis.__zwBeforeTimerTask();
             }
             fn();
           } catch (_e) {}
-          arm();
+          if (globalThis.__zw_pending[id] === wrapper) {
+            arm();
+          }
         };
+        globalThis.__zw_pending[id] = wrapper;
         try { hostSt(id, ms); }
         catch (_e) { delete globalThis.__zw_pending[id]; }
       };
