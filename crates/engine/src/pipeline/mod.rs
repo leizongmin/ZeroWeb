@@ -1763,22 +1763,24 @@ impl RenderPipeline {
             self.cached_css_text = None;
         }
         // 增量分层（mutation 全部同类时走轻量路径，否则全量兜底）：
-        // 1. SetText-only → compute_incremental 增量布局（已验证与全量一致）
-        // 2. SetStyle/RemoveStyle 布局无关属性（paint-only 白名单）→ 布局不变，
+        // 1. SetStyle/RemoveStyle 布局无关属性（paint-only 白名单）→ 布局不变，
         //    复用 cached_layout 只重 style + paint（省 100% 布局）
-        // 3. 其他（布局属性/结构变更）→ 全量布局（taffy style 单节点更新为后续专项）
-        let all_text_only = mutations.iter().all(Self::is_text_only_mutation);
-        let all_paint_only = !all_text_only && mutations.iter().all(Self::is_paint_only_mutation);
+        // 2. 其他（含 SetText/结构变更）→ 全量布局（taffy style 单节点更新为后续专项）
+        //
+        // SetText 曾走 compute_incremental 增量布局（M3-S9 ea2bd91a1，"与全量一致"
+        // 的验证只覆盖双块无定位页）。slice14 实证该臂产出错误几何：compute_incremental
+        // 复用 taffy 缓存、不跑全量 compute 的后处理族——compute_final_inline_layouts
+        //（inline 锚 reported rect 丢失 → gBCR 回退行盒全宽）、margin 折叠逃逸 + abs
+        // 定位修正（abs 兄弟整体 +margin 漂移）、float/root-margin 等——突变后的布局与
+        // 同页静态渲染不一致（repro：s14-a-unrelated，abs 兄弟 +10、锚 gBCR
+        // (0,10,800,23)）。撤用该臂：SetText 与结构变更同走快照全量重建，保证突变后
+        // 布局 ≡ 同内容静态加载（DOM Standard §mutation-algorithms：突变生效后，渲染
+        // 与几何查询须反映突变后 DOM；https://dom.spec.whatwg.org/#mutation-algorithms）。
+        // 重新启用前置条件见 incremental_parity_experiment 头注（后处理族补齐）。
+        let all_paint_only = mutations.iter().all(Self::is_paint_only_mutation);
         // 增量分支：borrow RefCell（&mut self 方法与 Ref borrow 不冲突——后者借堆 RefCell 非字段），
         // 工作后 drop borrow 再把 doc_rc 放回；repaint 分支：先放回 doc_rc 再 repaint（它 take 自字段）。
-        let result = if all_text_only {
-            let r = {
-                let doc = doc_rc.borrow();
-                self.incremental_paint_after_text_mutations(&doc, mutations, css)
-            };
-            self.cached_doc = Some(doc_rc);
-            r
-        } else if all_form_value_only {
+        let result = if all_form_value_only {
             let r = {
                 let doc = doc_rc.borrow();
                 self.paint_form_value_mutations(&doc, mutations)
@@ -1845,12 +1847,6 @@ impl RenderPipeline {
             .into_iter()
             .filter_map(|(selector, value)| doc.query_selector(doc.root(), &selector).map(|node| (node, value)))
             .collect();
-    }
-
-    /// mutation 是否为纯文本变更（SetText 的 CSS-selector 变体——handle 变体无法
-    /// 在 pipeline 侧定位节点，走全量）。
-    fn is_text_only_mutation(m: &crate::js_dom_bridge::DomMutation) -> bool {
-        matches!(m, crate::js_dom_bridge::DomMutation::SetText { .. })
     }
 
     /// 当前值不改变文本输入框的外部几何；没有依赖 `value` 的选择器时可只重绘。
@@ -2067,100 +2063,6 @@ impl RenderPipeline {
             },
             PipelineTimings {
                 style_count: 1,
-                paint_count: 1,
-                ..Default::default()
-            },
-            RenderStats::default(),
-            canvas_images,
-        ))
-    }
-
-    /// 文本变更增量渲染：全量 style + 脏标记文本节点 → `compute_incremental` +
-    /// 全量 paint（仅布局增量——样式/绘制增量是 M3-S9 后续切片）。
-    fn incremental_paint_after_text_mutations(
-        &mut self,
-        doc: &Document,
-        mutations: &[crate::js_dom_bridge::DomMutation],
-        css: &str,
-    ) -> Option<RenderResult> {
-        let stylesheets = collect_stylesheets(doc, css);
-        self.style_system
-            .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
-        // 增量样式：只重算 SetText 目标节点子树（base = cached_styles）。
-        let changed: Vec<NodeId> = mutations
-            .iter()
-            .filter_map(|m| match m {
-                crate::js_dom_bridge::DomMutation::SetText { selector, .. } => {
-                    doc.query_selector(doc.root(), selector.trim())
-                }
-                _ => None,
-            })
-            .collect();
-        if self.cached_styles.is_empty() {
-            let s = self.style_system.compute_styles(doc, &stylesheets);
-            self.cached_styles = s;
-        } else {
-            self.style_system
-                .compute_styles_incremental(doc, &stylesheets, &changed, &mut self.cached_styles);
-        }
-        let (img_sizes, _img_ratios, _img_no_ratio) = self.build_img_intrinsic_all(doc);
-        let mut tracker = zero_layout_engine::LayoutDirtyTracker::new();
-        for m in mutations {
-            if let crate::js_dom_bridge::DomMutation::SetText { selector, .. } = m
-                && let Some(id) = doc.query_selector(doc.root(), selector.trim())
-            {
-                tracker.mark_dirty(id);
-            }
-        }
-        let (layout, _stats) =
-            self.layout_engine
-                .compute_incremental(doc, &self.cached_styles, &mut tracker, &img_sizes);
-        let mut painter = Painter::new();
-        painter.skip_indicators = self.skip_indicators;
-        painter.image_sizes.clone_from(&self.image_sizes);
-        painter.image_solid_colors.clone_from(&self.image_solid_colors);
-        painter.image_natural_sizes.clone_from(&self.image_natural_sizes);
-        painter.image_no_ratio_keys = self.image_no_ratio.clone();
-        painter.image_ratio_keys = self.image_ratios.clone();
-        painter.set_form_control_values(self.form_control_values.clone());
-        painter.set_form_control_compositions(self.form_control_compositions.clone());
-        painter.set_focused_node(
-            self.focused_selector
-                .as_deref()
-                .and_then(|selector| doc.query_selector(doc.root(), selector)),
-        );
-        painter.set_font_resolver(self.font_resolver.clone());
-        painter.set_scroll_offsets(self.scroll_offsets.clone());
-        painter.set_document_url(self.document_url.as_deref());
-        painter.viewport_w = self.viewport_width;
-        painter.viewport_h = self.viewport_height;
-        painter.paint(&layout.root, &self.cached_styles, Some(doc));
-        let canvas_images = painter.canvas_images.clone();
-        let primitives = painter.into_primitives();
-        self.cached_layout = Some(LayoutResult {
-            root: layout.root.clone(),
-            viewport_width: layout.viewport_width,
-            viewport_height: layout.viewport_height,
-            paint_skip_node_ids: layout.paint_skip_node_ids.clone(),
-        });
-        let dirty_nodes: Vec<NodeId> = mutations
-            .iter()
-            .filter_map(|m| match m {
-                crate::js_dom_bridge::DomMutation::SetText { selector, .. } => {
-                    doc.query_selector(doc.root(), selector.trim())
-                }
-                _ => None,
-            })
-            .collect();
-        let dirty_rects =
-            layout_dirty_rects_for_nodes(&layout.root, &dirty_nodes, self.viewport_width, self.viewport_height);
-        Some(make_render_result(
-            primitives,
-            dirty_rects,
-            layout,
-            PipelineTimings {
-                style_count: 1,
-                layout_count: 1,
                 paint_count: 1,
                 ..Default::default()
             },

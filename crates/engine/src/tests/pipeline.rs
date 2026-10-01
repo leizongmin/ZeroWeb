@@ -1584,30 +1584,100 @@ This JPEG is decoded by the built-in libjpeg.</P>
     );
 }
 
-/// M3-S9：render_with_dom_mutations——SetText 走增量布局（compute_incremental），
-/// 免 parse（HTML 往返消除），返回 HTML 快照与活 DOM 一致。
+/// M3-S9：render_with_dom_mutations——SetText 后布局几何与同内容静态渲染一致。
+///
+/// slice14 回归：SetText 曾走 compute_incremental 增量臂（M3-S9 ea2bd91a1），
+/// 该臂不跑全量 compute 的后处理族——abs 兄弟整体 +margin 漂移、inline 锚
+/// reported rect 丢失（gBCR 回退行盒全宽）。现 SetText 与结构变更同走快照
+/// 全量重建，本测试钉死「突变前后未涉元素几何不变 + 锚 reported rect 保留」。
+/// DOM Standard §mutation-algorithms：突变生效后渲染与几何查询须反映突变后 DOM。
+/// https://dom.spec.whatwg.org/#mutation-algorithms
 #[test]
-fn render_with_dom_mutations_text_uses_incremental_layout() {
+fn render_with_dom_mutations_text_keeps_unrelated_geometry_consistent() {
+    // 复刻 slice14 最小复现形态：relative 包块内 inline 锚（13px/23px）+
+    // 三个 absolute 兄弟；突变目标 #result 与锚无子树交集。
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
-    let html = r#"<html><body><div id="a" style="width:100px">short</div><div id="b">B</div></body></html>"#;
+    let html = r##"<html><head><style>
+body { margin: 0; }
+.case { margin: 10px 0; position: relative; }
+.case a { display: inline; font: 13px/23px Arial, sans-serif; }
+#below { position: absolute; left: 10px; top: 40px; width: 300px; height: 30px; }
+#done { position: absolute; left: 0; top: 200px; }
+#result { position: absolute; left: 0; top: 260px; }
+</style></head><body>
+<div class="case"><a id="nav" href="#done">更多</a></div>
+<div id="below">below</div>
+<div id="done">DONE</div>
+<pre id="result">PENDING</pre>
+</body></html>"##;
     let _ = pipeline.render_html(html, "");
 
+    // 突变前几何（selector → (x, gBCR-y绝对, width, gBCR-height, reported绝对)）。
+    let collect =
+        |pipeline: &RenderPipeline| -> std::collections::HashMap<String, (f32, f32, f32, f32, Option<(f32, f32)>)> {
+            let layout = pipeline.layout().expect("layout cached");
+            let doc = pipeline.cached_doc.as_ref().expect("doc cached").borrow();
+            let mut out = std::collections::HashMap::new();
+            for sel in ["#nav", "#below", "#done", "#result"] {
+                let nid = doc.query_selector(doc.root(), sel).expect(sel);
+                let geometry = find_layout_box_geometry(&layout.root, nid, 0.0).expect(sel);
+                out.insert(sel.to_string(), geometry);
+            }
+            out
+        };
+    let before = collect(&pipeline);
+
     let m = crate::js_dom_bridge::DomMutation::SetText {
-        selector: "#a".to_string(),
-        text: "much longer text now".to_string(),
+        selector: "#result".to_string(),
+        text: "x".to_string(),
     };
     let (result, snapshot, _handles) = pipeline
         .render_with_dom_mutations(std::slice::from_ref(&m), "")
         .expect("mutations applied");
     let snapshot = snapshot.expect("text mutation changes HTML");
-    // 活 DOM + HTML 快照一致（免 parse 路径）
-    assert!(snapshot.contains("much longer text now"), "snapshot: {snapshot}");
-    // 布局盒反映新文本（增量布局已重算 #a 及祖先的几何）
+    // 活 DOM + HTML 快照一致
+    assert!(snapshot.contains(">x</pre>"), "snapshot: {snapshot}");
     let doc = pipeline.cached_doc.as_ref().expect("doc cached").borrow();
-    let a = doc.query_selector(doc.root(), "#a").expect("#a");
-    assert_eq!(doc.text_content(a).as_deref(), Some("much longer text now"));
-    // 布局结果非空（增量路径产出 LayoutResult）
+    let pre = doc.query_selector(doc.root(), "#result").expect("#result");
+    assert_eq!(doc.text_content(pre).as_deref(), Some("x"));
+    // 布局结果非空
     assert!(!result.layout.snapshot().is_empty(), "layout snapshot empty");
+
+    // 突变后：未涉元素（#nav/#below/#done）几何逐值不变；#result 仅文本换新，
+    // abs 几何（x/width）不变。锚 reported rect 保留（非 None 回退）。
+    let after = collect(&pipeline);
+    for sel in ["#nav", "#below", "#done"] {
+        assert_eq!(before[sel], after[sel], "{sel} geometry must be stable across SetText");
+    }
+    assert_eq!(after["#result"].0, before["#result"].0, "#result x stable");
+    assert_eq!(after["#result"].1, before["#result"].1, "#result y stable");
+    assert!(
+        after["#nav"].4.is_some(),
+        "inline anchor reported rect must survive text-mutation relayout"
+    );
+}
+
+/// 沿布局树找 node_id 盒，返回 (x, gBCR-y绝对, width, gBCR-height, reported绝对)。
+///
+/// reported 与盒 y 同为「相对父内容区」约定（slice13），此处一并换算为绝对值
+///（gBCR 面消费语义 = rect 桥 `reported.unwrap_or((y, height))` 的绝对化结果）。
+fn find_layout_box_geometry(
+    node: &LayoutBox,
+    id: zero_dom::NodeId,
+    offset_y: f32,
+) -> Option<(f32, f32, f32, f32, Option<(f32, f32)>)> {
+    let abs_y = offset_y + node.y;
+    if node.node_id == Some(id) {
+        let reported_abs = node.inline_reported_rect.map(|(ry, rh)| (ry + offset_y, rh));
+        let (gy, gh) = reported_abs.unwrap_or((abs_y, node.height));
+        return Some((node.x, gy, node.width, gh, reported_abs));
+    }
+    for child in &node.children {
+        if let Some(found) = find_layout_box_geometry(child, id, abs_y) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 /// Structural DOM mutations must rebuild the layout tree so descendant text is painted.

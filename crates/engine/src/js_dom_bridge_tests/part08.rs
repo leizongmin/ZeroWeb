@@ -1573,6 +1573,75 @@ fn test_element_get_client_rects_r2828() {
 }
 
 #[test]
+fn test_element_gbcr_real_layout_rect_beats_text_registry_slice14() {
+    // slice14：textContent=/innerHTML= 会把元素注册进 R34xx 文本几何注册表
+    //（part06 _zwRegisterTextEl）。旧 gBCR 先查注册表 → 已渲染元素被 0 基文本量盒
+    //（[0,0,文字宽,ascent+descent]）劫持，与真实布局不一致——页面脚本先 textContent=
+    // 再读 gBCR 定位即坏。CSSOM View spec：gBCR 返回布局盒——真实 rect 优先，
+    // 注册表本地几何仅兜底无布局元素（created/detached，R34xx 原始受众）。
+    // https://drafts.csswg.org/cssom-view/#dom-element-getboundingclientrect
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id='d'></div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // mock rect bridge（同 R2828 测试）：selector → 真实布局 rect "10,20,100,50"；
+    // handle（'__' 前缀，detached）→ 空串（无 layout）。
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(|args| match args.first() {
+            Some(s) if s.starts_with("__") => String::new(),
+            _ => "10,20,100,50".to_string(),
+        }),
+    );
+
+    // textContent= 触发 R34xx 注册（part04 setter 内 _zwRegisterTextEl），随后 gBCR
+    // 仍须返真实布局 rect（不被文本注册表劫持）。
+    sandbox
+        .execute(
+            "var el = document.querySelector('#d');\
+             el.textContent = 'hello';\
+             var b = el.getBoundingClientRect();\
+             globalThis.__g = [b.x, b.y, b.width, b.height].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__g)").unwrap().value,
+        "10,20,100,50",
+        "textContent= 注册后 gBCR 仍返真实布局 rect（不被文本注册表劫持）"
+    );
+
+    // R34xx 原始受众不受影响：detached created 元素（handle 身份，无布局 rect）
+    // 仍返本地 0 基文本几何（x=y=0 且有文本宽度）。
+    sandbox
+        .execute(
+            "var c = document.createElement('div');\
+             c.textContent = 'hi';\
+             var r = c.getBoundingClientRect();\
+             globalThis.__c = [r.x, r.y, r.width, r.height].join(',');",
+        )
+        .unwrap();
+    let created = sandbox.execute("String(globalThis.__c)").unwrap().value;
+    let parts: Vec<&str> = created.split(',').collect();
+    assert_eq!(parts.first().copied(), Some("0"), "detached 注册元素 gBCR x=0（本地几何）：{created}");
+    assert_eq!(parts.get(1).copied(), Some("0"), "detached 注册元素 gBCR y=0（本地几何）：{created}");
+    assert!(
+        parts.get(2).and_then(|w| w.parse::<f64>().ok()).is_some_and(|w| w > 0.0),
+        "detached 注册元素 gBCR 有文本宽度（R34xx 本地几何兜底保留）：{created}"
+    );
+}
+
+#[test]
 fn test_form_elements_r2829() {
     // R2829：form.elements（HTMLFormControlsCollection）+ form.length + namedItem。表单序列化/校验库
     //（jQuery serialize / FormData / 校验库迭代）高频。仅 HTMLFormElement（gate）；非 form → undefined。
