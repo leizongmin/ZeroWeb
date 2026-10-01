@@ -1358,7 +1358,9 @@
       ok: ok,
       status: ok ? 200 : 0,
       statusText: ok ? 'OK' : 'Error',
-      headers: {},
+      // net-api M4-S23：headers 统一 Headers 实例（原 {} 裸对象——resp.headers.get 面
+      // TypeError：cors 域错误路径响应头读回 9 腿根因）。
+      headers: new Headers(),
       // R2967：body 为 ReadableStream（lazy，单 UTF-8 chunk + close）。网络错误（ok:false）→ null（spec）。
       get body() {
         if (!ok) return null;
@@ -1833,7 +1835,8 @@
         if (h && headers.indexOf(h) < 0) headers.push(h);
       }
     }
-    var ma = isFinite(maxAge) && maxAge > 0 ? maxAge : 5; // spec default max-age 5s
+    var ma = isFinite(maxAge) ? maxAge : 5; // spec default max-age 5s（头缺失时）
+    if (ma <= 0) return; // net-api M4-S23：Max-Age 0/负 → 不可缓存（cors 域 max_age=0 用例面）
     _zwPreflightCache.push({ key: key, methods: methods, headers: headers,
       star: star, expires: Date.now() + ma * 1000 });
   }
@@ -2329,6 +2332,11 @@
               pn === 'last-event-id' || pn === 'range') {
             continue;
           }
+          // content-type 单独跳过（safelisted essence 判定归 _zwFetchNeedsPreflight——
+          // 入 preNames 会让 ACAH 覆盖检查误拒，M4-S23 探针定位面）。
+          if (pn === 'content-type') {
+            continue;
+          }
           if (_preNames.indexOf(pn) < 0) _preNames.push(pn);
         }
         // net-api M4-S18：CORS-preflight（fetch spec §cors-preflight-fetch）——非 safelisted
@@ -2346,6 +2354,9 @@
             preHeaders = _zwAddHeader(preHeaders, 'origin', preDocOrigin);
           }
           preHeaders = _zwAddHeader(preHeaders, 'access-control-request-method', method);
+          // net-api M4-S23：preflight 请求带 `Accept: */*`（浏览器行为；上游 preflight.py
+          // 校验该头——缺失 → 400 Invalid access in preflight）。
+          preHeaders = _zwAddHeader(preHeaders, 'accept', '*/*');
           if (_preNames.length > 0) {
             preHeaders = _zwAddHeader(preHeaders, 'access-control-request-headers', _preNames.sort().join(', '));
           }
@@ -2359,25 +2370,35 @@
           var preAllowedHdrs = response_headers_get(preResp, 'access-control-allow-headers');
           var preOk = (preResp.status >= 200 && preResp.status < 300) &&
             (preOrigin === preDocOrigin || (preOrigin === '*' && credentials !== 'include'));
-          if (preOk && preMethods && preMethods !== '*' &&
-              String(preMethods).toLowerCase().split(',').map(function (s) { return s.trim(); })
-                .indexOf(method.toLowerCase()) < 0) {
-            preOk = false;
+          // net-api M4-S23：ACAM/ACAH 覆盖判定 spec 化——非 safelisted method 须 ACAM
+          // 覆盖（缺 ACAM → 拒——preflight「server refuses」面：上游 preflight.py 无
+          // allow_methods 时不出 ACAM，浏览器须拒）；`*` 通配 method（无凭据）。
+          if (preOk && !_zwFetchIsSafelistedMethod(method)) {
+            if (!preMethods || (preMethods !== '*' &&
+                String(preMethods).toLowerCase().split(',').map(function (s) { return s.trim(); })
+                  .indexOf(method.toLowerCase()) < 0)) {
+              preOk = false;
+            }
           }
-          if (preOk && preAllowedHdrs && preAllowedHdrs !== '*') {
-            var allowed = String(preAllowedHdrs).toLowerCase().split(',')
-              .map(function (s) { return s.trim(); });
-            for (var ai = 0; ai < _preNames.length; ai++) {
-              if (allowed.indexOf(_preNames[ai]) < 0) { preOk = false; break; }
+          // 自定义头须 ACAH 覆盖（缺 ACAH → 拒；`*` 通配——authorization 例外面记账）。
+          if (preOk && _preNames.length > 0) {
+            if (!preAllowedHdrs || preAllowedHdrs !== '*') {
+              var allowed = String(preAllowedHdrs || '').toLowerCase().split(',')
+                .map(function (s) { return s.trim(); });
+              for (var ai = 0; ai < _preNames.length; ai++) {
+                if (allowed.indexOf(_preNames[ai]) < 0) { preOk = false; break; }
+              }
             }
           }
           if (!preOk) {
             reject(new TypeError('Failed to fetch'));
             return;
           }
-          // net-api M4-S22：preflight 成功 → 缓存（Max-Age 缺省 5s——spec default；
+          // net-api M4-S22：preflight 成功 → 缓存（Max-Age 头缺省 5s——spec default；
+          // 头存在时逐字采用（含 0 = 立即过期不可缓存——cors 域 max_age=0 用例面）；
           // cache.py 10s / timeout.py 1s / invalidation.py 10s 面）。
-          var preMaxAge = parseInt(response_headers_get(preResp, 'access-control-max-age') || '', 10);
+          var preMaxAgeRaw = response_headers_get(preResp, 'access-control-max-age');
+          var preMaxAge = preMaxAgeRaw == null ? 5 : (parseInt(preMaxAgeRaw, 10) || 0);
           _zwPreflightCacheStore(
             _zwUrlOrigin(url) + '|' + (credentials === 'include' ? 'i' : 's'),
             preMethods, preAllowedHdrs, preMaxAge, method);
@@ -2461,6 +2482,7 @@
           return out;
         };
         var hopCount = 0;
+        var _zwHopOriginOpaque = false; // net-api M4-S23：跨源重定向 → Origin opaque
         var settleFetch = function(raw, hopUrl, hopMethod, hopBody, hopWire, currentId) {
           if (settled) return;
           var response = _makeResponseFromWire(raw);
@@ -2508,10 +2530,28 @@
             }
             // https://fetch.spec.whatwg.org/#append-a-request-origin-header——跨源跳转
             // 请求须带文档 Origin（access-control-basic-allow 的 Origin 回显门控）。
+            // net-api M4-S23：HTTP-redirect fetch——**跨源请求**被重定向跨源（当前跳
+            // origin ≠ 文档 origin 且 Location origin ≠ 当前跳 origin）→ request's origin
+            // 置 opaque（"null"——cors-redirect「cors to another cors / cors to same
+            // origin」面；same-origin→cross-origin 保留文档 Origin——xhr
+            // redirects-async-same-origin 面）；初始请求已带 Origin（跨源注入）——须
+            // **替换**而非跳过。
+            if (mode === 'cors' && nextUrl &&
+                _zwUrlOrigin(hopUrl) !== _zwUrlOrigin(_zwCurrentHref()) &&
+                _zwUrlOrigin(nextUrl) !== _zwUrlOrigin(hopUrl)) {
+              _zwHopOriginOpaque = true;
+            }
             var _hopDocOrigin = _zwUrlOrigin(_zwCurrentHref());
             if (mode === 'cors' && nextUrl && _zwUrlOrigin(nextUrl) !== _hopDocOrigin &&
-                _hopDocOrigin && !_zwHasHeader(nextWire, 'origin')) {
-              nextWire = _zwAddHeader(nextWire, 'origin', _hopDocOrigin);
+                _hopDocOrigin) {
+              var oParts = nextWire ? nextWire.split('\x1e') : [];
+              var keptO = '';
+              for (var oi = 0; oi + 1 < oParts.length; oi += 2) {
+                if (String(oParts[oi]).toLowerCase() === 'origin') continue;
+                keptO = keptO ? keptO + '\x1e' + oParts[oi] + '\x1e' + oParts[oi + 1]
+                              : oParts[oi] + '\x1e' + oParts[oi + 1];
+              }
+              nextWire = _zwAddHeader(keptO, 'origin', _zwHopOriginOpaque ? 'null' : _hopDocOrigin);
             }
             if (nextBody != null) {
               var hopLen = 0;

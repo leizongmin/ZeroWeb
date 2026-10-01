@@ -3301,6 +3301,7 @@ pub const NET_API_CORPUS_SUBDIRS: &[&str] = &[
     "fetch/api/basic",
     "fetch/api/abort",
     "fetch/api/credentials",
+    "fetch/api/cors",
     "fetch/data-urls",
     "fetch/content-type",
     "fetch/content-length",
@@ -4402,7 +4403,26 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
         move |req: &zero_engine::fetch_bridge::FetchRequest| {
             let path_part = wpt_url_path(&req.url);
             let path_part = path_part.strip_prefix('/').unwrap_or(path_part);
-            let clean = path_part.split(['?', '#']).next().unwrap_or(path_part);
+            // net-api M4-S23：路径点段归一（上游 wptserve/URL 语义——`/a/../b` 即 `/b`。
+            // cors 域以 `dirname(page)/../resources/x.py` 形态构造端点 URL——不归一则
+            // fixture 分支失配（clean 带 `cors/..`），静态读库才由文件系统隐式归一）。
+            let (raw_path, path_query) = path_part.split_once('?').unwrap_or((path_part, ""));
+            let mut norm_segments: Vec<&str> = Vec::new();
+            for segment in raw_path.split(['?', '#']).next().unwrap_or(raw_path).split('/') {
+                match segment {
+                    ".." => {
+                        norm_segments.pop();
+                    }
+                    "." => {}
+                    s => norm_segments.push(s),
+                }
+            }
+            let path_part = if path_query.is_empty() {
+                norm_segments.join("/")
+            } else {
+                format!("{}?{}", norm_segments.join("/"), path_query)
+            };
+            let clean = path_part.split(['?', '#']).next().unwrap_or(&path_part);
             if clean.is_empty() {
                 // net-api M3-S2 fixture：站点根（wpt.test /）——responsetype DONE 腿
                 // `open('get', '/')` 须非空响应体；通用最小根页。
@@ -4759,10 +4779,13 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 });
             }
             if clean.starts_with("fetch/api/resources/") && clean.ends_with("/redirect.py") {
-                // net-api M4-S17 fixture：fetch/api/resources/redirect.py（上游行为等价，
-                // 取 xhr-authorization-redirect / 跨源重定向簇的实施面——stash/token/
-                // referrer-policy 面不实施）：ACAO 回显 Origin（无 Origin → *）+ ACAC
-                // true + ?redirect_status=（默认 302）+ Location（附全量 query + count 计数）。
+                // net-api M4-S17/S23 fixture：fetch/api/resources/redirect.py（上游行为
+                // 等价）：ACAO 回显 Origin（无 Origin → *）+ ACAC（Origin 在时）+
+                // ?redirect_status=（默认 302）+ Location（**附全量原 query + count**——
+                // 上游 urlencode(url_parameters) 语义，M4-S23 对齐）。OPTIONS 分支：
+                // 无 ?redirect_preflight → 200 不重定向（preflight 须不跟随——
+                // cors-preflight-redirect 面）；有 → **落穿重定向逻辑返回 redirect_status**
+                //（上游同构——preflight 命中重定向 → fetch 判失败）。
                 static REDIRECT_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
                 let count = REDIRECT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                 let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
@@ -4788,18 +4811,34 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     if let Some(allow_headers) = wpt_query_value(query, "allow_headers") {
                         headers.push(("access-control-allow-headers".into(), allow_headers));
                     }
-                    wpt_add_fetch_metadata(&mut headers, req, 200);
-                    return Ok(zero_engine::fetch_bridge::FetchResponse {
-                        status: 200,
-                        status_text: "OK".to_string(),
-                        headers,
-                        body: String::new(),
-                        body_bytes: Some(Vec::new()),
-                    });
+                    if wpt_query_value(query, "redirect_preflight").is_none() {
+                        wpt_add_fetch_metadata(&mut headers, req, 200);
+                        return Ok(zero_engine::fetch_bridge::FetchResponse {
+                            status: 200,
+                            status_text: "OK".to_string(),
+                            headers,
+                            body: String::new(),
+                            body_bytes: Some(Vec::new()),
+                        });
+                    }
+                    // redirect_preflight → 落穿：preflight 响应带重定向（fetch 侧拒绝）。
                 }
                 if let Some(location) = wpt_query_value(query, "location") {
+                    // 上游：Location 保留全量原 query（urlencode(url_parameters)）+ count。
                     let sep = if location.contains('?') { '&' } else { '?' };
-                    headers.push(("location".into(), format!("{}{}count={}", location, sep, count)));
+                    let mut carried: Vec<String> = Vec::new();
+                    for pair in query.split('&') {
+                        if pair.is_empty() {
+                            continue;
+                        }
+                        let (k, _) = pair.split_once('=').unwrap_or((pair, ""));
+                        if k == "location" {
+                            continue;
+                        }
+                        carried.push(pair.to_string());
+                    }
+                    carried.push(format!("count={}", count));
+                    headers.push(("location".into(), format!("{}{}{}", location, sep, carried.join("&"))));
                 }
                 wpt_add_fetch_metadata(&mut headers, req, status);
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
@@ -5672,6 +5711,177 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     headers,
                     body: body.clone(),
                     body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean == "fetch/api/resources/clean-stash.py" {
+                // net-api M4-S23 fixture：fetch/api/resources/clean-stash.py（上游逐字
+                // 等价——stash take 命中 → "1"，否则 "0"；恒 200）。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let token = wpt_query_value(query, "token").unwrap_or_default();
+                let had = WPT_TOKEN_STASH.lock().ok().and_then(|mut s| s.remove(&token)).is_some();
+                let mut headers: Vec<(String, String)> = vec![("content-type".into(), "text/plain".into())];
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                let body = if had { "1" } else { "0" };
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.to_string(),
+                    body_bytes: Some(body.as_bytes().to_vec()),
+                });
+            }
+            if clean == "fetch/api/resources/preflight.py" {
+                // net-api M4-S23 fixture：fetch/api/resources/preflight.py（上游行为
+                // 等价——?origin= 多 ACAO、?clear-stash=、?credentials=、OPTIONS 分支
+                // （ACRM/Accept 校验 + allow_methods/allow_headers/max_age/preflight_
+                // status + stash 记录 did-preflight/ACRH/referrer/UA）、实际请求分支
+                // x-did-preflight 等暴露头回读；stash 取后回存上游 take-then-put 语义）。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let qval = |name: &str| wpt_query_value(query, name);
+                let req_header = |name: &str| -> Option<String> {
+                    req.headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                        .map(|(_, v)| v.clone())
+                };
+                let token = qval("token").unwrap_or_default();
+                let mut headers: Vec<(String, String)> = vec![("content-type".into(), "text/plain".into())];
+                if let Some(origin_list) = qval("origin") {
+                    for o in origin_list.split(", ") {
+                        headers.push(("access-control-allow-origin".into(), o.to_string()));
+                    }
+                } else {
+                    headers.push(("access-control-allow-origin".into(), "*".into()));
+                }
+                if qval("clear-stash").is_some() {
+                    let had = WPT_TOKEN_STASH.lock().ok().and_then(|mut s| s.remove(&token)).is_some();
+                    wpt_add_fetch_metadata(&mut headers, req, 200);
+                    let body = if had { "1" } else { "0" };
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 200,
+                        status_text: "OK".to_string(),
+                        headers,
+                        body: body.to_string(),
+                        body_bytes: Some(body.as_bytes().to_vec()),
+                    });
+                }
+                if qval("credentials").is_some() {
+                    headers.push(("access-control-allow-credentials".into(), "true".into()));
+                }
+                // stash dict 四字段定序编码：preflight\x1fcontrol_request_headers\x1f
+                // preflight_referrer\x1fpreflight_user_agent（None → "\u{0}"哨兵）。
+                const NONE_SENTINEL: &str = "\u{0}";
+                let encode = |c: &str, r: &str, u: &str| format!("1\x1f{}\x1f{}\x1f{}", c, r, u);
+                if req.method == "OPTIONS" {
+                    if req_header("access-control-request-method").is_none() {
+                        wpt_add_fetch_metadata(&mut headers, req, 400);
+                        return Ok(zero_engine::fetch_bridge::FetchResponse {
+                            status: 400,
+                            status_text: wpt_status_text(400).to_string(),
+                            headers,
+                            body: "ERROR: No access-control-request-method in preflight!".to_string(),
+                            body_bytes: Some(b"ERROR: No access-control-request-method in preflight!".to_vec()),
+                        });
+                    }
+                    if req_header("accept").map(|v| v.trim() != "*/*").unwrap_or(true) {
+                        wpt_add_fetch_metadata(&mut headers, req, 400);
+                        return Ok(zero_engine::fetch_bridge::FetchResponse {
+                            status: 400,
+                            status_text: wpt_status_text(400).to_string(),
+                            headers,
+                            body: "ERROR: Invalid access in preflight!".to_string(),
+                            body_bytes: Some(b"ERROR: Invalid access in preflight!".to_vec()),
+                        });
+                    }
+                    let control_headers = if qval("control_request_headers").is_some() {
+                        req_header("access-control-request-headers").unwrap_or_else(|| NONE_SENTINEL.into())
+                    } else {
+                        NONE_SENTINEL.into()
+                    };
+                    if let Some(ma) = qval("max_age") {
+                        headers.push(("access-control-max-age".into(), ma));
+                    }
+                    if let Some(ah) = qval("allow_headers") {
+                        headers.push(("access-control-allow-headers".into(), ah));
+                    }
+                    if let Some(am) = qval("allow_methods") {
+                        headers.push(("access-control-allow-methods".into(), am));
+                    }
+                    let status: u16 = qval("preflight_status").and_then(|v| v.parse().ok()).unwrap_or(200);
+                    let dict = encode(
+                        &control_headers,
+                        &req_header("referer").unwrap_or_default(),
+                        &req_header("user-agent").unwrap_or_default(),
+                    );
+                    if let Ok(mut stash) = WPT_TOKEN_STASH.lock() {
+                        stash.insert(token, dict);
+                    }
+                    wpt_add_fetch_metadata(&mut headers, req, status);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status,
+                        status_text: wpt_status_text(status).to_string(),
+                        headers,
+                        body: String::new(),
+                        body_bytes: Some(Vec::new()),
+                    });
+                }
+                // 实际请求分支：stash 取后回存（上游 take-then-put）。
+                let stored = WPT_TOKEN_STASH.lock().ok().and_then(|mut s| s.remove(&token));
+                let (preflight_flag, control_headers, preflight_referrer, preflight_ua) = match stored {
+                    Some(dict) => {
+                        let parts: Vec<&str> = dict.split('\x1f').collect();
+                        (
+                            parts.first().copied().unwrap_or("0").to_string(),
+                            parts.get(1).copied().unwrap_or(NONE_SENTINEL).to_string(),
+                            parts.get(2).copied().unwrap_or_default().to_string(),
+                            parts.get(3).copied().unwrap_or_default().to_string(),
+                        )
+                    }
+                    None => ("0".to_string(), NONE_SENTINEL.to_string(), String::new(), String::new()),
+                };
+                if qval("checkUserAgentHeaderInPreflight").is_some() {
+                    let ua = req_header("user-agent").unwrap_or_default();
+                    if ua != preflight_ua {
+                        wpt_add_fetch_metadata(&mut headers, req, 400);
+                        return Ok(zero_engine::fetch_bridge::FetchResponse {
+                            status: 400,
+                            status_text: wpt_status_text(400).to_string(),
+                            headers,
+                            body: "ERROR: No user-agent header in preflight".to_string(),
+                            body_bytes: Some(b"ERROR: No user-agent header in preflight".to_vec()),
+                        });
+                    }
+                }
+                headers.push((
+                    "access-control-expose-headers".into(),
+                    "x-did-preflight, x-control-request-headers, x-referrer, x-preflight-referrer, x-origin".into(),
+                ));
+                headers.push(("x-did-preflight".into(), preflight_flag.clone()));
+                if control_headers != NONE_SENTINEL {
+                    headers.push(("x-control-request-headers".into(), control_headers.clone()));
+                }
+                headers.push(("x-preflight-referrer".into(), preflight_referrer.clone()));
+                headers.push(("x-referrer".into(), req_header("referer").unwrap_or_default()));
+                headers.push(("x-origin".into(), req_header("origin").unwrap_or_default()));
+                if let Ok(mut stash) = WPT_TOKEN_STASH.lock() {
+                    stash.insert(
+                        token,
+                        format!(
+                            "{}\x1f{}\x1f{}\x1f{}",
+                            preflight_flag.clone(),
+                            control_headers.clone(),
+                            preflight_referrer.clone(),
+                            preflight_ua.clone()
+                        ),
+                    );
+                }
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: String::new(),
+                    body_bytes: Some(Vec::new()),
                 });
             }
             // net-api M4-S18：非 GET 放行至各 fixture 自行分派（corsenabled/redirect-cors

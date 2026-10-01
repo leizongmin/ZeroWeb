@@ -11,7 +11,8 @@
 # skip 规则排除，双保险）。
 #
 # **显式不拉（记账，重入条件见括号）**：
-# - fetch/api/cors|redirect|urls|scheme（wptserve .py 端点重依赖——runner fixture 通道扩展后）
+# - fetch/api/redirect|urls|scheme（wptserve .py 端点重依赖——runner fixture 通道扩展后；
+#   cors 域 M4-S23 起拉取——preflight cache/OPTIONS 三前置已落）
 # - fetch/api/policies|metadata|cross-origin-resource-policy|local-network-access|security
 #   （策略/头面——security-hardening goal 域）
 # - fetch/http-cache|stale-while-revalidate|content-encoding|connection-pool|range|nosniff|orb|corb
@@ -39,6 +40,7 @@ DIRS=(
   "fetch/api/abort"
   "fetch/api/credentials"
   "fetch/api/resources"
+  "fetch/api/cors"
   "fetch/api/cors/resources"
   "fetch/data-urls"
   "fetch/data-urls/resources"
