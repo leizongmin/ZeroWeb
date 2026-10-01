@@ -24,8 +24,9 @@ use zero_script_sandbox::{
 use crate::ipc_service_worker::ServiceWorkerIpcClient;
 
 // P7b：15s 在真实站点长回调上误杀（html5test.co 出分后站点回调单次 execute >15s 被
-// 看门狗强停 → pageerror「Execution timeout」+ 回调副作用截断，旅程窗口实测 5/7 触发；
-// Chrome 同页无硬杀）。30s 保留死循环防护（真死循环 tab 仍可恢复）同时覆盖实测长尾。
+// 看门狗强停 → pageerror「Execution timeout」+ 回调副作用截断，修复前旅程窗口 7 跑
+// 5 命中、全数据集 5/8；Chrome 同页无硬杀）。30s 保留死循环防护（真死循环 tab 仍可
+// 恢复）同时覆盖实测长尾。
 const TAB_JS_EXEC_TIMEOUT_MS: u64 = 30_000;
 const TAB_JS_CHANNEL_TIMEOUT: Duration = Duration::from_millis(TAB_JS_EXEC_TIMEOUT_MS + 5_000);
 
@@ -3662,6 +3663,17 @@ mod tests {
         assert_eq!(
             annotate_timeout_error("ReferenceError: x is not defined", "x()"),
             "ReferenceError: x is not defined"
+        );
+    }
+
+    #[test]
+    fn tab_js_exec_timeout_pinned_with_channel_order() {
+        // P7b 回归钉：阈值回退（如回 15s 误杀长回调）或 CHANNEL 次序被改走样
+        // 必须在此变红——核心行为的常驻自动化防线（testval 首轮 B1/B6 缺口）。
+        assert_eq!(TAB_JS_EXEC_TIMEOUT_MS, 30_000);
+        assert_eq!(
+            TAB_JS_CHANNEL_TIMEOUT,
+            Duration::from_millis(TAB_JS_EXEC_TIMEOUT_MS + 5_000)
         );
     }
 }
