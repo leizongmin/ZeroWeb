@@ -72,7 +72,6 @@ goal 的划界线，双向记账；与其他 goal 无共享面。
       （2026-10-02 M3 满足——99.96%；孤立代理 → U+FFFD、encodeInto spec 语义、
       BOM 拆分嗅探/fatal/ignoreBOM、streams 93.9%；残差 5 记账 transfer 结构面 ×4 +
       encoding_rs 契约 ×1，evidence/2026-10-02-m3-textencoder-modes-streams.md）
-- [ ] **DC-3**：TextEncoder UTF-8 语义 + BOM/ fatal/ ignore 模式 + 编码往返修齐
 - [x] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
       （2026-10-02——make test 68 suites 全绿、clippy 零告警、fmt 零 diff、
       make reftest 700/700 不一致 0；判定见 evidence/2026-10-02-m4-dc-verdict.md）
