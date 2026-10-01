@@ -2,8 +2,10 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active（M1 基线已落 2026-09-28，六 corpus 1297/5019 = 25.8%——控制面见
-`net-api-compat/master.md`，当前推进 M2）
+**状态**: Completed（2026-10-01 收口——六 corpus 9292/11659 = 79.7%，DC-1~4
+逐项核对通过；控制面见 `net-api-compat/master.md`，收口判定见
+`net-api-compat/evidence/2026-10-01-m4-s29-closure.md`；结构性残余与 WebSocket
+二期为跨域记账项，重入条件在案）
 **执行模式**: WPT 驱动（上游网络面 corpus 为验收标尺）+ 语义修齐；
 照 event-loop-spec / web-components / web-api-batch2 通用打法
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络 API 面）

@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-01（M4-S28 收口——flow-control 背压编排串行读门，streams 88.7%，flow-control 5/5 全绿）
+**最后更新**: 2026-10-01（M4-S29 **收口判定**——DC-1~4 全满足，目标 Completed）
 
 ---
 
@@ -14,12 +14,13 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
-M4-S8（76.8%）→ … → M4-S25（79.6%）→ M4-S26（79.7%）→ M4-S27（评估记账）→
-M4-S28（2026-10-01）——**9292/11659 = 79.7%**（streams **905/1020 = 88.7%**，
-flow-control **5/5 全绿**——M4-S11 挂账清偿，+2 零回归；fetch 1491/2081 / xhr
-557/584 / mimesniff 100% / url 73.0% 持平 / eventsource 33/34——request-cache-
-control 页全量争用超时、隔离复跑绿）。**M4 里程碑除结构性挂账（V8 detach）外
-全部清偿**。
+M4-S8（76.8%）→ … → M4-S26（79.7%）→ M4-S27（评估记账）→ M4-S28（79.7%）→
+**M4-S29 收口判定（2026-10-01）——DC-1~4 全满足，目标 Completed**。终态
+**9292/11659 = 79.7%**（M1 基线 1297/5019 = 25.8%）：fetch 71.6% / xhr 95.4% /
+url 73.0% / mimesniff 100% / streams 88.7% / eventsource 100%（隔离跑）。门禁：
+make test 19547P/0F + clippy -D warnings + fmt 干净 + **reftest 700/700 = 100%**
+（收口核对实跑，零渲染回归）。收口判定逐项核对见
+[evidence/2026-10-01-m4-s29-closure.md](evidence/2026-10-01-m4-s29-closure.md)。
 **M4-S23 收口**：fetch/api/cors 域导入（M1 记账重入条件兑现）+ shim preflight 语义
 修齐（Accept: */*、ACAM/ACAH 覆盖判定 spec 化、Max-Age 0 不缓存、跨源请求重定向跨源
 → Origin opaque + 跳间 Origin 替换）+ preflight.py/clean-stash.py fixture（须置于
@@ -392,13 +393,12 @@ S18 泛化 OPTIONS 兜底门之前——假阴性根因）+ redirect.py 对齐�
 
 ## 下一步计划
 
-1. **收口判定评估**：DC-1~4 逐项核对（六 corpus 账本核对 / make test+clippy+fmt
-   门禁 / reftest 零回归核对）+ WebSocket 二期挂账定稿——结构性残余（V8 detach 14
-   腿、cookie jar 13 腿、page-scheme 2 前置）均为跨域记账项，评估是否满足收口或
-   维持 Active
-2. **scheme 对齐两前置审计**（重入条件，见 M4-S27 evidence）：url shim 文档基址
-   回退审计（a-element about:blank 面 ×20）+ credentials/Authorization 流程审计
-   （×21）→ 完成后翻页面锚 http 入袋 +29（含两腿长挂账）页面锚 `https://wpt.test` vs WPT 宇宙
+目标已收口（Completed，2026-10-01）。重入条件在案：
+1. **scheme 对齐两前置审计**（+29 连带入袋，见 M4-S27 evidence）：url shim 文档
+   基址回退审计（a-element about:blank 面 ×20）+ credentials/Authorization 流程
+   审计（×21）→ 完成后翻页面锚 http
+2. **结构性残余跨域认领**：V8 detach transfer/detach 14 腿（engine 宿主能力）、
+   cookie jar credentials ~13 腿（storage goal）、WebSocket 二期 P6（用户点名）页面锚 `https://wpt.test` vs WPT 宇宙
    `http://wpt.test`——同源判定/Origin 回显跨 scheme 失配 2 腿（redirects-async
    same-origin leg / access-control-origin-header）；改法 = testharness.rs 34 处 +
    shim iframe 解析 1 处统一 http——跨切面，先评估回归面再动
