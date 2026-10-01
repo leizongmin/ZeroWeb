@@ -23,8 +23,22 @@ use zero_script_sandbox::{
 
 use crate::ipc_service_worker::ServiceWorkerIpcClient;
 
-const TAB_JS_EXEC_TIMEOUT_MS: u64 = 15_000;
+// P7b：15s 在真实站点长回调上误杀（html5test.co 出分后站点回调单次 execute >15s 被
+// 看门狗强停 → pageerror「Execution timeout」+ 回调副作用截断，旅程窗口实测 5/7 触发；
+// Chrome 同页无硬杀）。30s 保留死循环防护（真死循环 tab 仍可恢复）同时覆盖实测长尾。
+const TAB_JS_EXEC_TIMEOUT_MS: u64 = 30_000;
 const TAB_JS_CHANNEL_TIMEOUT: Duration = Duration::from_millis(TAB_JS_EXEC_TIMEOUT_MS + 5_000);
+
+/// 看门狗超时错误附加脚本上下文（长度+头部片段）——页面回调超时（P7b 家族）定性
+/// 需要脚本身份；`ScriptError` 本体不携带脚本信息（沙箱边界隔离），只能在 worker
+/// 侧错误转字符串时附加。非超时错误原样透传（不污染既有错误文本消费方）。
+fn annotate_timeout_error(message: &str, script: &str) -> String {
+    if !message.contains("Execution timeout") {
+        return message.to_string();
+    }
+    let head: String = script.chars().take(80).collect();
+    format!("{message} [script_len={} head={head:?}]", script.len())
+}
 
 /// P1a gBCR kill-switch：默认 on；`ZW_REAL_RECT=0` 关闭 RectBridge（`__zw_getBoundingClientRect`
 /// 不注册 → shim 回落零 rect = 当前行为，零回归）。snapshot 为空 / identity 未命中同样回落零 rect。
@@ -809,7 +823,21 @@ fn js_worker_main(
                 #[cfg(test)]
                 execution_count.fetch_add(1, Ordering::Relaxed);
                 let full = format!("__zw_begin_script && __zw_begin_script();\n{script}");
-                let result = sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string());
+                let exec_started = std::time::Instant::now();
+                let result = sandbox
+                    .execute(&full)
+                    .map(|r| r.value)
+                    .map_err(|e| annotate_timeout_error(&e.to_string(), &script));
+                // P7b 可观测性：长执行（>1s）记耗时与脚本长度——页面回调超时定性
+                // 需要执行面数据（此前 ScriptErrorParams 只有页面 URL 无脚本上下文）。
+                if exec_started.elapsed() >= std::time::Duration::from_secs(1) {
+                    tracing::warn!(
+                        target: "js_worker",
+                        elapsed_ms = exec_started.elapsed().as_millis() as u64,
+                        script_len = script.len(),
+                        "slow js execute"
+                    );
+                }
                 // R-baidu2/P3：未捕获脚本错误统一在此汇出（页面脚本/定时器/事件回调
                 // 的异常都经某次 execute 的 Err 冒出）→ `Runtime.exceptionThrown`。
                 if let Err(ref message) = result {
@@ -3617,5 +3645,23 @@ mod tests {
         let r = wait_for_global(&worker, "__seen", 1000);
         assert_eq!(r, "attributes:class");
         worker.shutdown();
+    }
+
+    #[test]
+    fn timeout_error_annotation_includes_script_context() {
+        // P7b：超时错误必须带脚本身份（长度+头部），否则页面回调超时无法定位。
+        let m = annotate_timeout_error("Execution timeout: 30000ms", "detect(); // site callback");
+        assert!(m.starts_with("Execution timeout: 30000ms"), "{m}");
+        assert!(m.contains("script_len=26"), "{m}");
+        assert!(m.contains("\"detect(); // site callback\""), "{m}");
+    }
+
+    #[test]
+    fn non_timeout_error_passes_through_untouched() {
+        // 非超时错误原样透传——不污染既有错误文本消费方。
+        assert_eq!(
+            annotate_timeout_error("ReferenceError: x is not defined", "x()"),
+            "ReferenceError: x is not defined"
+        );
     }
 }
