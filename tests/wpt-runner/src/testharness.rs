@@ -4523,6 +4523,136 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(content.into_bytes()),
                 });
             }
+            if clean.starts_with("xhr/") && clean.ends_with("/form.py") {
+                // net-api M4-S21 fixture：xhr/resources/form.py（上游行为等价——multipart
+                // 体按文档序回显 `name:value;`；text part 提取与 upload.py 同型）。
+                let boundary = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("content-type"))
+                    .and_then(|(_, v)| {
+                        let lower = v.to_lowercase();
+                        lower
+                            .find("boundary=")
+                            .map(|idx| v[idx + 9..].trim().trim_matches('"').to_string())
+                    })
+                    .unwrap_or_default();
+                let body = req.body_bytes.clone().unwrap_or_default();
+                let mut content = String::new();
+                if !boundary.is_empty() && !body.is_empty() {
+                    let delim = format!("--{}", boundary);
+                    let delim_bytes = delim.as_bytes();
+                    let mut segments: Vec<&[u8]> = Vec::new();
+                    let mut start = 0;
+                    for i in 0..body.len() {
+                        if body[i..].starts_with(delim_bytes) {
+                            if i >= start + 2 {
+                                segments.push(&body[start..i]);
+                            }
+                            start = i + delim_bytes.len();
+                        }
+                    }
+                    for seg in segments {
+                        let seg = seg.strip_prefix(b"\r\n").unwrap_or(seg);
+                        let sep = match seg.windows(4).position(|w| w == b"\r\n\r\n") {
+                            Some(pos) => pos,
+                            None => continue,
+                        };
+                        let head = String::from_utf8_lossy(&seg[..sep]).to_lowercase();
+                        let mut value = &seg[sep + 4..];
+                        if value.ends_with(b"\r\n") {
+                            value = &value[..value.len() - 2];
+                        }
+                        let mut name = String::new();
+                        let mut has_filename = false;
+                        for line in head.split("\r\n") {
+                            if let Some(cd) = line.strip_prefix("content-disposition:") {
+                                for attr in cd.split(';') {
+                                    let attr = attr.trim();
+                                    if let Some(nv) = attr.strip_prefix("name=") {
+                                        name = nv.trim_matches('"').to_string();
+                                    } else if attr.starts_with("filename=") {
+                                        has_filename = true;
+                                    }
+                                }
+                            }
+                        }
+                        // 上游 form.py 对 text part 回显（file part 跳过——本次用例无）。
+                        if !name.is_empty() && !has_filename {
+                            content.push_str(&format!("{}:{};", name, String::from_utf8_lossy(value)));
+                        }
+                    }
+                }
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: content.clone(),
+                    body_bytes: Some(content.into_bytes()),
+                });
+            }
+            if clean.starts_with("xhr/") && clean.ends_with("/echo-content-type.py") {
+                // net-api M4-S21 fixture：xhr/resources/echo-content-type.py（上游行为
+                // 等价——回显请求 Content-Type 头，content-type-unmodified 面）。
+                let ct = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("content-type"))
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default();
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: ct.clone(),
+                    body_bytes: Some(ct.into_bytes()),
+                });
+            }
+            if clean.starts_with("xhr/") && clean.ends_with("/access-control-origin-header.py") {
+                // net-api M4-S21 fixture：xhr/resources/access-control-origin-header.py
+                //（上游行为等价——ACAO 回显 Origin + body "PASS: Cross-domain access
+                // allowed.\nHTTP_ORIGIN: <origin>"，access-control-basic-allow- 面）。
+                let origin = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default();
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                headers.push(("access-control-allow-origin".into(), origin.clone()));
+                headers.push(("access-control-allow-credentials".into(), "true".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                let body = format!("PASS: Cross-domain access allowed.\nHTTP_ORIGIN: {}", origin);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("xhr/") && clean.ends_with("/over-1-meg.txt") {
+                // net-api M4-S21 fixture：xhr/resources/over-1-meg.txt（上游行为等价——
+                // 1.16MB "abcd" 重复体，over-1-meg 面）。
+                let body = "abcd".repeat(290_000);
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
             if clean.starts_with("xhr/") && clean.ends_with("/access-control-basic-allow-star.py") {
                 // net-api M4-S17 fixture：xhr/resources/access-control-basic-allow-star.py
                 //（上游逐字等价——ACAO * + PASS 体）。
@@ -4692,6 +4822,39 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(body),
                 });
             }
+            if clean.ends_with("/echo-headers.py") {
+                // net-api M4-S21 fixture：request-content-length 载体——回显全部请求头
+                // 为 `Name: value` 行（request-content-length.any.js 断言
+                // responseText 含 `Content-Length: <len>`）。
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                let mut body = String::new();
+                for (n, v) in &req.headers {
+                    // HTTP 头名 HTTP 风格大写（`Content-Length: N` 大小写敏感 includes 面）。
+                    let mut title = String::new();
+                    let mut cap = true;
+                    for ch in n.chars() {
+                        if cap {
+                            title.extend(ch.to_uppercase());
+                            cap = false;
+                        } else {
+                            title.push(ch);
+                            if ch == '-' {
+                                cap = true;
+                            }
+                        }
+                    }
+                    body.push_str(&format!("{}: {}\n", title, v));
+                }
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
             if clean.ends_with("/delay.py") {
                 // net-api M4-S20 fixture：xhr/resources/delay.py（上游行为等价——?ms= 延迟
                 // 后回 text/plain "TEST"；延迟由 shim 侧 setTimeout 实现——runner 同步契约
@@ -4705,6 +4868,31 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     headers,
                     body: "TEST".to_string(),
                     body_bytes: Some(b"TEST".to_vec()),
+                });
+            }
+            if clean == "xhr/resources/trickle.py" {
+                // net-api M4-S21 fixture：xhr/resources/trickle.py（上游行为等价——count 块
+                // × 每块 13 字节（与 fetch/api/resources/trickle.py 同 "TEST_TRICKLE\n" 块形，
+                // 单测锚定该体）；specifylength=1 时补 Content-Length: <total>。逐块延迟
+                // 由 finite 模型折叠——响应一次到位，progress 事件由 shim fill 侧派发）。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let count = wpt_query_value(query, "count")
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .unwrap_or(10)
+                    .min(128);
+                let body = "TEST_TRICKLE\n".repeat(count);
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                if path_part.contains("specifylength=1") {
+                    headers.push(("content-length".into(), (count * 13).to_string()));
+                }
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
                 });
             }
             if clean == "xhr/resources/top.txt" {

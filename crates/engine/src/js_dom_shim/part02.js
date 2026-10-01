@@ -409,6 +409,7 @@
     this.fatal = false;
     this.ignoreBOM = false;
     this._carry = []; // R3012：stream:true 跨 chunk 不完整尾部（下块前缀拼接补全多字节序列）
+    this._zwBomPending = true; // net-api M4-S21：BOM 剥除仅限流首
   };
   globalThis.TextDecoder.prototype = {
     encoding: 'utf-8',
@@ -416,6 +417,8 @@
     ignoreBOM: false,
     // R3012：decode(buf, {stream})。stream:true → 不完整尾部入 _carry 待下块（不 flush）；stream:false（缺省）
     // → flush：残余不完整 → 1 U+FFFD，重置 _carry。valid 完整输入行为同旧。
+    // net-api M4-S21：UTF-8 decode 剥首部 BOM（encoding spec UTF-8 decode——ignoreBOM=false
+    // 缺省；xhr json.any.js data: URL BOM 面与 fetch text() 一致形态）。
     decode: function (buf, options) {
       var bytes;
       if (buf == null) bytes = new Uint8Array(0);
@@ -423,6 +426,15 @@
       else if (buf && typeof buf.length === 'number') bytes = buf; // TypedArray / array-like
       else if (buf && buf.buffer) bytes = new Uint8Array(buf.buffer);
       else bytes = new Uint8Array(0);
+      if (this._zwBomPending) {
+        this._zwBomPending = false;
+        if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+          // host wire 传入 array-like（无 subarray）——泛型拷贝剥 BOM。
+          var trimmed = new Uint8Array(bytes.length - 3);
+          for (var bi = 3; bi < bytes.length; bi++) trimmed[bi - 3] = bytes[bi];
+          bytes = trimmed;
+        }
+      }
       var r = _zw_utf8_decode_stream(bytes, this._carry);
       if (options && options.stream === true) { this._carry = r.tail; return r.s; }
       this._carry = []; // flush 重置
@@ -2769,6 +2781,10 @@
       return false;
     },
     set: function (name, value, filename) {
+      // net-api M4-S20：filename 仅对 Blob 值合法（set 同 append——set-formelement 面）。
+      if (filename != null && !(value instanceof Blob)) {
+        throw new TypeError("Failed to execute 'set' on 'FormData': parameter 2 is not of type 'Blob'");
+      }
       // R3014：Blob/File 值保真；替换所有同名 entry（首个替换为新值，余删除），无则追加。
       var entry = _zwFdEntry(name, value, filename);
       var found = false; var out = [];

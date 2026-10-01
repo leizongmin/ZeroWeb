@@ -2223,6 +2223,14 @@
         // fetch spec body init：仅 Blob.type 非空才派生 Content-Type（type-less blob 无
         // 默认——send-blob-with-no-mime-type 的 X-Request-Content-Type: NO 断言面）。
         if ((rawBody.type || '') && !_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'content-type', rawBody.type);
+      } else if (typeof ArrayBuffer !== 'undefined' && rawBody instanceof ArrayBuffer) {
+        // net-api M4-S21：ArrayBuffer 体 byte-wire（XMLHttpRequestBodyInit /
+        // fetch body init 合法体——send-data-arraybuffer 面）。
+        body = _zwEncodeBytesPrefix(new Uint8Array(rawBody));
+      } else if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(rawBody)) {
+        // net-api M4-S21：ArrayBufferView 体 byte-wire（byteOffset/byteLength 视口保真——
+        // send-data-arraybufferview 面）。
+        body = _zwEncodeBytesPrefix(new Uint8Array(rawBody.buffer, rawBody.byteOffset, rawBody.byteLength));
       } else if (rawBody != null) {
         body = String(rawBody);
       }
@@ -2497,9 +2505,16 @@
         // net-api M4-S20：delay.py shim 侧延迟（runner 同步契约下 host sleep 冻结 JS——
         // timeout 计时器不可竞争；改 shim setTimeout 延迟 host 发题，页面计时器窗口照常泵送）。
         var _delayMs = 0;
-        if (url && String(url).indexOf('delay.py') >= 0) {
-          var _dm = /[?&]ms=(\d+)/.exec(String(url));
-          if (_dm) _delayMs = Math.min(parseInt(_dm[1], 10) || 0, 30000);
+        if (url) {
+          var _us = String(url);
+          var _dm = /[?&]ms=(\d+)/.exec(_us);
+          if (_dm && _us.indexOf('delay.py') >= 0) {
+            _delayMs = Math.min(parseInt(_dm[1], 10) || 0, 30000);
+          } else {
+            // wptserve trickle 语法：trickle(d1) / trickle(1)——字母前缀可选。
+            var _tp = /[?&]pipe=trickle\((?:[a-z]+)?(\d+)\)/.exec(_us);
+            if (_tp) _delayMs = Math.min(parseInt(_tp[1], 10) * 1000 || 0, 30000);
+          }
         }
         var _issueFetch = function () {
         try {

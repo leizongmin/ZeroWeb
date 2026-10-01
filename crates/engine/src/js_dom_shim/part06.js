@@ -26,12 +26,13 @@
       var arr = this._listeners[type];
       if (arr) for (var i = 0; i < arr.length; i++) { try { arr[i].call(this, ev); } catch (_e) {} }
     },
-    // text/event-stream 解析（HTML spec §9.2.5/§9.2.6 interpret）：去 BOM → CRLF/CR/LF 分行 →
+    // text/event-stream 解析（HTML spec §9.2.5/§9.2.6 interpret）：CRLF/CR/LF 分行 →
     // 空行派发（仅当 data 缓冲非空）→ 字段 data/event/id/retry（id 缓冲逐流重置，派发时
     // 提交 _lastEventId；retry 仅全 ASCII 数字接受）。`lastEventId`/`origin` 进 MessageEvent，
-    // UA 派发 isTrusted=true。
+    // UA 派发 isTrusted=true。流首 BOM 由 UTF-8 decode 剥除（net-api M4-S21——format-bom-2
+    // 面：仅首 BOM 剥除，次 BOM 属行名使行无效）。
     _process: function (text) {
-      var raw = String(text).replace(/^\uFEFF/, '');
+      var raw = String(text);
       // 末尾有行终止符时，split 产生的末个 '' 是终结符产物而非空行——弹掉（spec ABNF：
       // field 自带 end-of-line；`data:x\n` 无派发空行，`data:x\n\n` 才派发）。
       var endsWithEol = /\r\n|\r|\n$/.test(raw);

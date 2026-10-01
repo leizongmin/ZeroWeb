@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-30（M4-S20 收口——timeout 族 + 404 语义，xhr 88.2%）
+**最后更新**: 2026-10-01（M4-S21 收口——XHR upload ProgressEvent 面，xhr 93.5%）
 
 ---
 
@@ -14,15 +14,19 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
-M4-S8（76.8%）→ … → M4-S18（79.0%）→ M4-S19（79.2%）→ M4-S20（2026-09-30）——
-**9042/11366 = 79.6%**（fetch 71.4%（+22——文件缺失 404 语义连带解锁）/ xhr
-**88.2%**（514/583——timeout 族 + ES object 面 +20）/ url 73.1% / mimesniff 100% /
-streams 88.6% / eventsource 100%）。
-**M4-S20 收口**：timeout IDL（sync setter/open → InvalidStateError）+ timeout
-计时器（TimeoutError request error steps）+ delay.py shim 侧延迟（host sleep 冻结
-JS 根因绕开）+ ES object 面（send 同步 String 化上抛 + toStringTag 品牌化）+
-forEach live 化 + File 转换规则 spec 化 + 文件缺失 404 语义。见
-[evidence/2026-09-30-m4-s20-timeout.md](evidence/2026-09-30-m4-s20-timeout.md)。
+M4-S8（76.8%）→ … → M4-S19（79.2%）→ M4-S20（79.6%）→ M4-S21（2026-10-01）——
+**9047/11337 = 79.8%**（xhr **93.5%**（545/583——upload ProgressEvent 面 +31 全
+corpus 零回归）/ fetch 71.5% / url 73.0% / mimesniff 100% / streams 88.6% /
+eventsource 35/35 = 100%）。
+**M4-S21 收口**：send() invoked 状态机（send 重入/11.6 return/abort/error/timeout
+撤销）+ upload listener flag 快照（too-late 不回溯）+ upload 事件 finite 模型重做
+（loadstart 同步、transmission 挂 fetch 成功路、error 路径 upload.{event}+loadend）
++ error/loadend ProgressEvent 化 (0,0,false) + 响应事件 Content-Length 语义
+（fill 补 progress + load/loadend 按 CL 取 total）+ GET/HEAD 体前置置 null +
+ArrayBuffer 体 byte-wire + responseType document 非 XML → null + TextDecoder UTF-8
+decode 剥流首 BOM（EventSource 双剥误伤修复归位 35/35）。runner fixture 六件 +
+前轮探针残留三页清理。见
+[evidence/2026-10-01-m4-s21-xhr-upload.md](evidence/2026-10-01-m4-s21-xhr-upload.md)。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
@@ -36,14 +40,27 @@ forEach live 化 + File 转换规则 spec 化 + 文件缺失 404 语义。见
 |---|------|------|
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口（S1 scheme dispatch + S2 Headers 校验 + S3 consume body 层；fetch 62.7% / mimesniff 100%）；残余：response-error 族（10）、request-upload echo（.py——P7）、错误面余量甄别 → 并轨 M3/P7 处理 |
-| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **88.2%**——状态机/事件/redirect/preflight/expose/FormData/timeout 面 spec 化）——**残余：responseXML/XML 文档面（engine XML DOM 深度）、populateForm 助手依赖、image 坐标、runner scheme 不匹配族** |
-| P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.1%（新分母 6065——M3 收口 USP/URL.parse/port/live 迭代/UTF-8 解码器/helper 解锁）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
+| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **93.5%**——状态机/事件序/upload ProgressEvent/redirect/preflight/expose/FormData/timeout 面 spec 化）——**残余：preflight cache 族 ~11、sync XHR 结构面 4、XML 文档面（engine XML DOM 深度——template-element 族）、bad-chunk 注入 2、formdata FormDataEvent/submitter 族 5、timeout 族 3** |
+| P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.0%（新分母 6058）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | 🔶 M4-S11 收口（88.6%——piping 簇 spec 化重做，pipe-through/general/error-propagation 全绿）；**残余：flow-control 2 腿（背压编排计时精度）；transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿）** |
 | P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
-| P7 | runner fixture 通道（.py 端点最小 fixture 集） | ✅ M4-S18 OPTIONS handler 支持落地（fixture 自派派 + 统一 200 兜底；redirect-cors/fetch redirect.py 的 OPTIONS 分支启用）；累计 18+ 端点；待评估：fetch/api/cors 域页拉取（三前置已落）、echo-content.py / delay.py 族 |
+| P7 | runner fixture 通道（.py 端点最小 fixture 集） | ✅ 累计 24+ 端点（M4-S21 增 echo-headers/xhr trickle/form/echo-content-type/access-control-origin-header/over-1-meg.txt）；待评估：fetch/api/cors 域页拉取（三前置已落）、preflight cache 族 fixture 深化 |
 
 ## 已完成切片
 
+- **M4-S21（2026-10-01）**：XHR upload ProgressEvent 面 + send() invoked 状态机
+  （**9047/11337 = 79.8%**，xhr 514/583 → **545/583 = 93.5%**，Δ+31 全 corpus 零
+  回归；eventsource 双剥 BOM 误伤即修归位 35/35）。shim：send 重入 InvalidStateError
+  + 11.6 return（loadstart handler abort/open 面——重入递归页 Timeout 根因）+
+  upload listener flag 快照 + upload loadstart 同步/transmission 挂 fetch 成功路 +
+  error 路径 upload.{event}+loadend（request error steps 步骤 6）+ error/loadend
+  ProgressEvent (0,0,false) + fill 补 progress + load/loadend 按 Content-Length 取
+  total + LOADING rs 双发 + GET/HEAD 体前置置 null + ArrayBuffer 体 byte-wire +
+  responseType document 非 XML → null + TextDecoder UTF-8 decode 剥流首 BOM
+  （EventSource `_process` 原地 replace 移除）。fixture 六件（echo-headers/xhr
+  trickle/form/echo-content-type/access-control-origin-header/over-1-meg.txt）+
+  探针残留三页清理。make test 全绿（19533P）+ clippy/fmt 干净。见
+  [evidence/2026-10-01-m4-s21-xhr-upload.md](evidence/2026-10-01-m4-s21-xhr-upload.md)。
 - **M4-S20（2026-09-30）**：timeout 族 + 404 语义 + ES object 面（**9042/11366 =
   79.6%**，xhr 494/586 → 514/583 = 88.2%，Δ+20 + fetch +22 零回归）。shim：timeout
   IDL（sync setter/open → InvalidStateError）+ 计时器（TimeoutError request error
@@ -316,16 +333,20 @@ forEach live 化 + File 转换规则 spec 化 + 文件缺失 404 语义。见
 
 ## 下一步计划
 
-1. **XHR 深水面评估**：responseXML/XML 文档面（engine XML DOM 深度——template-
-   element 族 3 腿）、populateForm 助手依赖（getElementsByName/insertAdjacentHTML
-   面）、send(ES object) 零散腿——成本/收益评估后定实施序；fetch/api/cors 域重入
-   维持 API 限流阻断面
+1. **XHR preflight cache 族**：access-control-basic-allow-preflight-cache*（5）+
+   access-control-preflight-request-*（2）+ access-control-and-redirects-async（2）
+   + expose-headers-on-redirect（1）+ cors-upload（页 Timeout）——preflight 结果
+   缓存（spec cache pane：ACAM/ACAH 更新、invalidation by method/header、timeout）
+   + corsenabled.py OPTIONS 分支深化；P7 续件随行
 2. **M4 残余**：flow-control 2 腿（背压编排计时精度——泵 pull 粒度对齐 StepTracker
    编排步进）
 3. **结构性挂账**：缓冲 transfer/detach 族（spec TransferArrayBuffer——需宿主 V8
-   detach 能力，JS 层不可表达——bad-buffers 10 腿 + non-transferable 4 腿）
+   detach 能力，JS 层不可表达——bad-buffers 10 腿 + non-transferable 4 腿）；
+   sync XHR 窗口 onload 阻塞语义 4 腿；bad-chunk 注入（需 .asis + chunked 解析面）；
+   formdata FormDataEvent.entries live 面 + submitter 坐标族 5 腿；XML 文档解析
+   （engine XML DOM——template-element 族）
 4. **P7 续件**：fetch/api/cors 域（多模式 cors.py + OPTIONS preflight——评估定谳见
-   M4-S13 evidence）/ .asis 原始 HTTP fixture / echo-content.py / delay.py 族
+   M4-S13 evidence）/ .asis 原始 HTTP fixture
 5. **收口判定**：WebSocket 二期挂账定稿 + DC 逐项判定（DC-1 helpers 账本核对 /
    DC-4 make test+clippy+fmt 门禁与 reftest 零回归核对）
 
