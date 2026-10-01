@@ -137,12 +137,14 @@ mod tests {
             y: 0.0,
             width: 800.0,
             height: 600.0,
+            reported: None,
             children: vec![HitTestLayoutSnapshot {
                 node_id: Some(id2),
                 x: 10.0,
                 y: 20.0,
                 width: 100.0,
                 height: 50.0,
+                reported: None,
                 children: vec![],
             }],
         };

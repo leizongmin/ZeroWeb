@@ -127,7 +127,10 @@ pub fn fill_layout_rect_snapshot(root: &HitTestLayoutSnapshot, snapshot: &Layout
 
 fn fill_rect_recursive(node: &HitTestLayoutSnapshot, map: &mut HashMap<u64, Rect4>) {
     if let Some(id) = node.node_id {
-        map.insert(node_id_to_u64(id), (node.x, node.y, node.width, node.height));
+        // slice13（CSS2 §10.6.2）：gBCR rect 桥填表消费上报值（content area）；
+        // 快照 y/height 保持布局树行盒几何（命中面字段），不在此消费。
+        let (reported_y, reported_h) = node.reported.unwrap_or((node.y, node.height));
+        map.insert(node_id_to_u64(id), (node.x, reported_y, node.width, reported_h));
     }
     for child in &node.children {
         fill_rect_recursive(child, map);
@@ -265,6 +268,7 @@ mod tests {
             y: 0.0,
             width: 800.0,
             height: 600.0,
+            reported: None,
             children: vec![
                 HitTestLayoutSnapshot {
                     node_id: Some(id2),
@@ -272,6 +276,7 @@ mod tests {
                     y: 20.0,
                     width: 100.0,
                     height: 50.0,
+                    reported: None,
                     children: vec![],
                 },
                 HitTestLayoutSnapshot {
@@ -281,6 +286,7 @@ mod tests {
                     y: 5.0,
                     width: 5.0,
                     height: 5.0,
+                    reported: None,
                     children: vec![],
                 },
             ],
@@ -300,7 +306,9 @@ mod tests {
     /// slice13（CSS2 §10.6.2）：inline 盒 gBCR y/h 上报 = content area（主字体 A+D +
     /// padding/border，与 line-height 无关）。布局树 y/h 保持行盒几何（流 bookkeeping/
     /// 绘制不动，见 inline_finalization 记录处）；sync 记录 `inline_reported_rect`，
-    /// hit-test 快照层消费，rect 桥（gBCR 单一出口）据此填表。
+    /// rect 桥（gBCR 单一出口）据此填表。**命中面不消费上报值**（slice13 返修）：
+    /// 快照 y/height 保持行盒几何，上报值随 `reported` 字段单独携带、只回流到本填表
+    /// 路径与主进程 fill_layout_rect_snapshot 方法路径。
     /// 负控制：记录缺席（跨行 wrap / kill-switch `ZW_INLINE_CONTENT_AREA=0`）时回退
     /// 布局树行盒几何（旧行为）。
     /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
@@ -335,9 +343,12 @@ mod tests {
         let cache = HitTestCache::from_document(&doc, &layout, &HashMap::new());
         let snap = cache.snapshot();
         let span_snap = &snap.layout_root.children[0];
-        assert_eq!(span_snap.y, 5.0, "快照 y = 上报 content area 顶");
-        assert_eq!(span_snap.height, 15.132, "快照 h = 上报 content area 高");
+        // 命中面字段 = 行盒树几何（slice13 返修：快照不烘上报值）。
+        assert_eq!(span_snap.y, 0.0, "快照 y = 布局树行盒几何（命中面）");
+        assert_eq!(span_snap.height, 23.0, "快照 h = 布局树行盒几何（命中面）");
         assert_eq!(span_snap.x, 0.0, "x 无上报覆写 = 布局值");
+        // 上报值单独携带（仅 rect 桥消费）。
+        assert_eq!(span_snap.reported, Some((5.0, 15.132)), "上报值随 reported 字段走");
 
         // rect 桥填表：gBCR 读到的即上报值；无记录的盒（容器）= 行盒几何（负控制臂）。
         let rect_snap = new_layout_rect_snapshot();
@@ -526,6 +537,7 @@ mod tests {
                 y: 0.0,
                 width: 100.0,
                 height: 100.0,
+                reported: None,
                 children: vec![],
             },
             &snap,
@@ -539,6 +551,7 @@ mod tests {
                 y: 5.0,
                 width: 50.0,
                 height: 50.0,
+                reported: None,
                 children: vec![],
             },
             &snap,

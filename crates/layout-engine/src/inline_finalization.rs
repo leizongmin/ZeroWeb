@@ -18,7 +18,10 @@ use crate::{NodeIdMap, NodeIdSet};
 use zero_style_system::WritingModeValue;
 use zero_style_system::property::types::ColumnSpanComputedValue;
 
-/// slice13：inline 盒 content area 锚定的 dormant 常数回退开关（默认开，"0" 回退旧行盒几何）。
+/// slice13：inline 盒 content area **dormant 常数上报臂**开关（默认开，"0" 关断）。
+/// 门控范围（slice13 返修起）：仅 dormant 常数臂（`inline_reported_rect` 记录 +
+/// 锚定值只记录不上树）；R4383 provider 臂（count==1 锚定入树）是既有行为，
+/// **不受本开关门控**——关断即两臂均逐字节旧行为。
 /// CSS2 §10.6.2：inline 非替换盒 content area = 主字体 ascent+descent，与 line-height 无关。
 /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
 static CONTENT_AREA_DORMANT_ON: std::sync::LazyLock<bool> =
@@ -820,11 +823,13 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
         };
 
         if !agg.text_empty {
+            // slice13 挂账（信息级 i4）：排除面——vertical writing / 相对定位 / 含块级子
+            // 容器（pure_inline_container=false）中的 inline 不进本分支，上报缺席
+            //（gBCR 仍报行盒几何）。同类语义面未修未挂账，备查（R4384 轴邻接项）。
             if !child.is_replaced && frag_pos_on && pure_inline_container && !vertical && !child.is_relative {
                 let metrics = extract_inline_visual_metrics(style);
                 child.x = agg.min_x - agg.first_ml - agg.first_pl - metrics.border_left;
-                // R4379/R4383：同线（slice13 起含同线多 run——CJK 逐字分词/拉丁多词）
-                // inline 的盒垂直锚 = **primary 字体 content area 锚行基线**
+                // R4379/R4383：inline 的盒垂直锚 = **primary 字体 content area 锚行基线**
                 // （CSS2 §10.6.2：inline 非替换盒的 content area = 元素自身字体的
                 // A+D——**与 line-height 无关**，半 leading 属行盒不属 inline 盒）。
                 // R4379 版多加了 hl = (L−(A_p+D_p))/2 半 leading 项——在 004（normal
@@ -835,39 +840,58 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
                 //（行盒顶）在行盒被回退度量撑开（R4374）后随 max-ascent 漂移、各
                 // span 错位成多边形。跨行多片段仍走 union + R639/R4332
                 // per-fragment 行盒顶锚路径（chromium slice 语义，slice13 挂账）。
-                let content_anchored = (agg.single_line && content_area_dormant_on)
+                //
+                // slice13 返修：入树锚定面（本 provider 臂）gate 恢复 count==1
+                //（R4383 既有行为不动）——single_line 扩臂曾同样作用于本臂，使 dormant
+                // webfont/enabled 的**单行多 run** inline 由 union 变锚定入树（r3773 型
+                // 流记账风险面扩大）。扩臂仅作用于下方 dormant 常数臂（上报值不入树，
+                // 无流记账风险）。本臂不受 ZW_INLINE_CONTENT_AREA 门控：kill-switch
+                // 关断 = 两臂均逐字节旧行为（含本臂 count==1 锚定，minor-2 回退口径）。
+                let provider_anchored = (agg.count == 1)
                     .then(|| {
+                        let handle = inline_ctx.font_metric_provider.as_ref()?;
                         let (font_size, _) = crate::inline::resolve_font_metrics_with_provider(
                             Some(style),
                             inline_ctx.font_metric_provider.as_ref(),
                         );
-                        // R4383 首选：provider 真实行度量（enabled 路径 / webfont）。
-                        // true = 锚定值**入布局树**（R4383 判例：enabled 模式布局/绘制
-                        // 已按 content area 校准，行为不变）。
-                        if let Some(handle) = inline_ctx.font_metric_provider.as_ref()
-                            && let Some(m) = handle.line_metrics(&style.font_family, font_size)
-                        {
-                            let a = m.ascent;
-                            let d = -m.descent;
-                            return Some((agg.line_y + agg.line_baseline_y - a, a + d, true));
-                        }
-                        // slice13 dormant 常数回退：生产（ZW_PERFONT_LINEHEIGHT 未激活）下
-                        // `FontMetricMap::line_metrics` 对系统字体返 None（dormant 只供
-                        // webfont，R4383 A/B 判例），旧代码直接回落行盒几何（y=行盒顶、
-                        // h=行高并集）——Chrome 语义是 content area（CSS2 §10.6.2：inline
-                        // 非替换盒 content area = 元素主字体 A+D，与 line-height 无关；
-                        // css-inline/CSS2 §10.8 line height calculations）。此处用引擎
-                        // dormant 自身常数合成 content area（与行盒 strut 同源：ascent
-                        // ratio 0.928/0.8（R990）+ descent = NORMAL/AHEM_LINE_HEIGHT_RATIO
-                        // − ascent（1.164−0.928=0.236 / 1.0−0.8=0.2）；line-height:normal
-                        // 时 content 高 = fs×1.164 = 旧行盒并集高，仅 y 由行盒顶收敛到
-                        // 基线锚（半 leading≈0.082fs 内）。
-                        // false = 锚定值**只记录不上树**（inline_reported_rect，hit-test/
-                        // rect 快照层消费）——布局树保持行盒几何，流 bookkeeping（R4500
-                        // 收缩回收/兄弟位移/绘制）不串位（r3773 实证：锚定 y 入树会把
-                        // 行盒顶消费成流顶，clamp 容器 128→136）。行盒/绘制面差异挂账
-                        //（R4384「默认字体锚定轴 = normal 行高真实化」）。
-                        // https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+                        // R4383：provider 真实行度量（enabled 路径 / webfont）锚定值
+                        // **入布局树**（R4383 判例：enabled 模式布局/绘制已按 content
+                        // area 校准，行为不变）。
+                        let m = handle.line_metrics(&style.font_family, font_size)?;
+                        let a = m.ascent;
+                        let d = -m.descent;
+                        Some((agg.line_y + agg.line_baseline_y - a, a + d, true))
+                    })
+                    .flatten();
+                // slice13 dormant 常数臂（锚定值**只记录不上树**）：生产
+                //（ZW_PERFONT_LINEHEIGHT 未激活）下 `FontMetricMap::line_metrics` 对
+                // 系统字体返 None（dormant 只供 webfont，R4383 A/B 判例），旧代码直接
+                // 回落行盒几何（y=行盒顶、h=行高并集）——Chrome 语义是 content area
+                //（CSS2 §10.6.2：inline 非替换盒 content area = 元素主字体 A+D，与
+                // line-height 无关；css-inline/CSS2 §10.8 line height calculations）。
+                // 此处用引擎 dormant 自身常数合成 content area（与行盒 strut 同源：
+                // ascent ratio 0.928/0.8（R990）+ descent = NORMAL/AHEM_LINE_HEIGHT_RATIO
+                // − ascent（1.164−0.928=0.236 / 1.0−0.8=0.2）；line-height:normal
+                // 时 content 高 = fs×1.164 = 旧行盒并集高，仅 y 由行盒顶收敛到基线锚
+                //（半 leading≈0.082fs 内）。
+                // 锚定用**行主基线** `agg.line_baseline_y`，未计元素自身 vertical-align
+                // 偏移（活体 v6 middle 残差 1.87px vs Chrome，超出纯字体常数残差口径
+                // ——信息级 i1，挂账 R4384）。常数对非 DejaVu 字体失真方向（信息级
+                // i2，挂账 R4384：DejaVu 精确；Liberation/Arial hhea A+D≈1.117em
+                // 高估 ~0.6px@13px；CJK 回落 NotoSansCJK normal 比 1.450 低估
+                // ~4px@13px 级）。
+                // false = 锚定值**只记录不上树**（inline_reported_rect，仅 rect 桥
+                // gBCR 面消费；命中面读树几何）——布局树保持行盒几何，流 bookkeeping
+                //（R4500 收缩回收/兄弟位移/绘制）不串位（r3773 实证：锚定 y 入树会把
+                // 行盒顶消费成流顶，clamp 容器 128→136）。行盒/绘制面差异挂账
+                //（R4384「默认字体锚定轴 = normal 行高真实化」）。
+                // https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+                let content_anchored = provider_anchored.or_else(|| {
+                    (agg.single_line && content_area_dormant_on).then(|| {
+                        let (font_size, _) = crate::inline::resolve_font_metrics_with_provider(
+                            Some(style),
+                            inline_ctx.font_metric_provider.as_ref(),
+                        );
                         let is_ahem = style
                             .font_family
                             .iter()
@@ -875,20 +899,26 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
                         let (ascent_ratio, descent_ratio) = if is_ahem { (0.8, 0.2) } else { (0.928, 0.236) };
                         let a = font_size * ascent_ratio;
                         let d = font_size * descent_ratio;
-                        Some((agg.line_y + agg.line_baseline_y - a, a + d, false))
+                        (agg.line_y + agg.line_baseline_y - a, a + d, false)
                     })
-                    .flatten();
-                // 上报矩形（含 padding/border 的 border-box）：入树臂与记录臂同值。
-                child.inline_reported_rect = content_anchored.map(|(top, content, _)| {
-                    (
-                        top - metrics.padding_top - metrics.border_top,
-                        content
-                            + metrics.padding_top
-                            + metrics.padding_bottom
-                            + metrics.border_top
-                            + metrics.border_bottom,
-                    )
                 });
+                // 上报矩形（含 padding/border 的 border-box）：入树臂与记录臂同值。
+                // 仅 slice13 语义受 kill-switch 门控——关断时不记录（旧行为无此字段；
+                // provider 臂树值本就是 content area，gBCR 读树几何语义不变）。
+                child.inline_reported_rect = if content_area_dormant_on {
+                    content_anchored.map(|(top, content, _)| {
+                        (
+                            top - metrics.padding_top - metrics.border_top,
+                            content
+                                + metrics.padding_top
+                                + metrics.padding_bottom
+                                + metrics.border_top
+                                + metrics.border_bottom,
+                        )
+                    })
+                } else {
+                    None
+                };
                 child.y = match content_anchored {
                     Some((top, _, true)) => top - metrics.padding_top - metrics.border_top,
                     _ => agg.line_y - metrics.padding_top - metrics.border_top,

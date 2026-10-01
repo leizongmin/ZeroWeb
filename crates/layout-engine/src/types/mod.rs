@@ -99,8 +99,8 @@ pub struct NestedSpannerChildFrag {
 pub struct LayoutBox {
     /// slice13：getBoundingClientRect 上报语义（CSS2 §10.6.2）——inline 非替换盒
     /// content area = 主字体 A+D（与 line-height 无关），Some((y, h)) 为**上报用**
-    /// border-box 矩形（含 padding/border）。布局树 y/h 保持行盒几何（流.bookkeeping
-    /// 与 paint 不变），仅 hit-test/rect 快照层消费本值。
+    /// border-box 矩形（含 padding/border）。布局树 y/h 保持行盒几何（流 bookkeeping
+    /// 与 paint 不变），仅 rect 桥（gBCR 面消费；命中面读树几何，slice13 返修）。
     /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
     pub inline_reported_rect: Option<(f32, f32)>,
     /// 对应的 DOM 节点 ID。

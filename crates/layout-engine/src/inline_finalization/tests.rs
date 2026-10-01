@@ -9,7 +9,7 @@ use zero_css_parser::values::{DisplayValue, LengthValue};
 use zero_dom::Document;
 use zero_style_system::property::{
     BorderStyleValue, ColumnCountComputedValue, ColumnFillComputedValue, DirectionValue, LineHeightValue,
-    TextAlignLastValue, TextAlignValue, WhiteSpaceValue,
+    TextAlignLastValue, TextAlignValue, VerticalAlignValue, WhiteSpaceValue,
 };
 
 #[test]
@@ -1022,5 +1022,370 @@ fn slice13_multiline_wrapped_inline_keeps_union_path() {
         "树 y 保持首行行盒顶（union 旧行为），实际 {}（首行顶 {}）",
         child.y,
         context.lines[0].y
+    );
+}
+
+// ── slice13 返修：provider 臂 gate 恢复 count==1（R4383 既有行为不动，single_line
+// 扩臂仅限 dormant 常数上报臂）+ S1/S3/S4 钉测试 ──
+
+/// slice13 返修测试装置：dormant webfont provider（`line_metrics_enabled=false` +
+/// `is_web_font=true` → `downloaded_line_metrics` 返 Some，R4383 dormant 判例路径）。
+/// 比率 0.6/−0.1（≠常数 0.928/0.236，供区分 provider 臂与常数臂）。
+fn slice13rw_webfont_provider(family: &str) -> std::rc::Rc<dyn crate::inline::FontMetricProvider> {
+    use std::rc::Rc;
+    let entries = std::collections::HashMap::from([(
+        family.to_string(),
+        zero_render_foundation::font::FontFamilyMetrics {
+            font_id: 1,
+            is_web_font: true,
+            ascent: 0.6,
+            descent: -0.1,
+            line_gap: 0.0,
+            ex_height: 0.5,
+            cap_height: 0.7,
+            ch_width: 0.6,
+            ic_width: 1.0,
+            size_adjust: 1.0,
+        },
+    )]);
+    Rc::new(crate::inline::FontMetricMap::new(entries, false))
+}
+
+/// slice13 返修钉测试（minor-1/B2）：provider 活跃（dormant webfont）+ **单行多 run**
+/// inline → 保持 union 行盒几何（入树锚定 gate 恢复 count==1——single_line 扩臂曾同样
+/// 作用于 provider 臂，使此形态由 union 变锚定入树，r3773 型流记账风险面扩大）；
+/// 上报走 dormant 常数臂（provider 度量不出现在任何出口：树 h=23 ≠ provider 9.1，
+/// 上报 h=15.132 ≠ provider 9.1）。
+#[test]
+fn slice13rw_provider_single_line_multi_run_keeps_union_tree() {
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("更多");
+    doc.append_child(container, span).unwrap();
+    doc.append_child(span, text).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(container, ComputedStyle::default());
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    span_style.font_size = LengthValue::Px(13.0);
+    span_style.line_height = LineHeightValue::Length(LengthValue::Px(23.0));
+    span_style.font_family = vec!["WebFont".to_string()];
+    styles.insert(span, span_style);
+
+    let provider = slice13rw_webfont_provider("WebFont");
+    let mut context = InlineFormattingContext::new(200.0);
+    context = context.with_font_metric_provider(provider);
+    context.layout(&doc, container, &styles);
+    // 用例前提：单行多 run（CJK 逐字分词，同 baidu 导航锚形态）。
+    let run_count = context
+        .lines
+        .iter()
+        .flat_map(|l| l.runs.iter())
+        .filter(|r| r.node_id == span)
+        .count();
+    assert!(run_count >= 2, "用例前提：span 应拆多 run（实际 {}）", run_count);
+    assert_eq!(context.lines.len(), 1, "用例前提：单行");
+
+    let mut root = LayoutBox {
+        node_id: Some(container),
+        children: vec![LayoutBox {
+            node_id: Some(span),
+            x: 0.0,
+            y: 0.0,
+            width: 26.0,
+            height: 23.0,
+            ..LayoutBox::default()
+        }],
+        ..LayoutBox::default()
+    };
+    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    let child = &root.children[0];
+    let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
+    // 树 = union 行盒几何（provider 度量 0.6/−0.1 的锚定 y = baseline−0.6fs、
+    // content h = 0.7fs = 9.1 均不入树）。
+    assert!(
+        (child.y - line_y).abs() < 0.5,
+        "单行多 run + provider：树 y 保持行盒顶（不入树锚定），实际 {}（行顶 {}）",
+        child.y,
+        line_y
+    );
+    assert!(
+        (child.height - 23.0).abs() < 0.5,
+        "单行多 run + provider：树 h 保持行盒 23（≠ provider content 9.1），实际 {}",
+        child.height
+    );
+    // 上报 = dormant 常数臂（15.132，非 provider 9.1）。
+    let reported = child.inline_reported_rect.expect("单行多 run 上报走常数臂");
+    assert!(
+        (reported.1 - 13.0 * (0.928 + 0.236)).abs() < 0.5,
+        "上报 h 应为常数臂 content area 15.132（非 provider 0.7fs=9.1），实际 {}",
+        reported.1
+    );
+    assert!(
+        (reported.0 - (line_y + baseline_y - 13.0 * 0.928)).abs() < 0.5,
+        "上报顶 = 常数臂基线锚，实际 {}（行顶 {} 基线 {}）",
+        reported.0,
+        line_y,
+        baseline_y
+    );
+}
+
+/// slice13 返修（minor-2）：provider 臂 count==1 锚定**入树**保持（R4383 既有行为）。
+/// 本测试不读 `inline_reported_rect`——在 `ZW_INLINE_CONTENT_AREA=0` 负控制复跑下
+/// 必须保持绿（kill-switch 关断 = 两臂逐字节旧行为，含本臂锚定）。
+#[test]
+fn slice13rw_provider_count1_anchor_in_tree_preserved() {
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("x");
+    doc.append_child(container, span).unwrap();
+    doc.append_child(span, text).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(container, ComputedStyle::default());
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    span_style.font_size = LengthValue::Px(13.0);
+    span_style.line_height = LineHeightValue::Length(LengthValue::Px(23.0));
+    span_style.font_family = vec!["WebFont".to_string()];
+    styles.insert(span, span_style);
+
+    let provider = slice13rw_webfont_provider("WebFont");
+    let mut context = InlineFormattingContext::new(200.0);
+    context = context.with_font_metric_provider(provider);
+    context.layout(&doc, container, &styles);
+    assert_eq!(context.lines.len(), 1, "用例前提：单行");
+
+    let mut root = LayoutBox {
+        node_id: Some(container),
+        children: vec![LayoutBox {
+            node_id: Some(span),
+            x: 0.0,
+            y: 0.0,
+            width: 26.0,
+            height: 23.0,
+            ..LayoutBox::default()
+        }],
+        ..LayoutBox::default()
+    };
+    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    let child = &root.children[0];
+    let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
+    // count==1 + provider：锚定**入树**（y = baseline − 0.6fs，h = 0.7fs = 9.1，
+    // R4383 判例行为不变；≠ union 行盒 y=行顶/h=23）。
+    assert!(
+        (child.y - (line_y + baseline_y - 13.0 * 0.6)).abs() < 0.5,
+        "provider count==1 锚定入树保持：y = baseline − 0.6fs，实际 {}（基线 {}）",
+        child.y,
+        baseline_y
+    );
+    assert!(
+        (child.height - 13.0 * 0.7).abs() < 0.5,
+        "provider count==1 锚定入树保持：h = 0.7fs = 9.1（非 23），实际 {}",
+        child.height
+    );
+    assert!(
+        (child.content_height - 13.0 * 0.7).abs() < 0.5,
+        "content_height 同步锚定"
+    );
+}
+
+/// slice13 返修（S1）：padding/border 非零上报臂——reported 为 **border-box**
+///（content area 顶上移 padding_top+border_top，高加四项加算）；树 y 仍按行盒几何
+///（dormant 常数臂不入树，仅上报带 padding/border）。
+#[test]
+fn slice13rw_reported_rect_is_border_box_with_padding_border() {
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("Pad");
+    doc.append_child(container, span).unwrap();
+    doc.append_child(span, text).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(container, ComputedStyle::default());
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    span_style.font_size = LengthValue::Px(13.0);
+    span_style.line_height = LineHeightValue::Length(LengthValue::Px(23.0));
+    // padding-top 4 / padding-bottom 2 / border-top 3 / border-bottom 1（实线抑制
+    // none 语义不触发——border-style 显式 solid）。
+    span_style.padding_top = LengthValue::Px(4.0);
+    span_style.padding_bottom = LengthValue::Px(2.0);
+    span_style.border_top_width = LengthValue::Px(3.0);
+    span_style.border_top_style = BorderStyleValue::Solid;
+    span_style.border_bottom_width = LengthValue::Px(1.0);
+    span_style.border_bottom_style = BorderStyleValue::Solid;
+    styles.insert(span, span_style);
+
+    let mut context = InlineFormattingContext::new(200.0);
+    context.layout(&doc, container, &styles);
+
+    let mut root = LayoutBox {
+        node_id: Some(container),
+        children: vec![LayoutBox {
+            node_id: Some(span),
+            x: 0.0,
+            y: 0.0,
+            width: 30.0,
+            height: 23.0,
+            ..LayoutBox::default()
+        }],
+        ..LayoutBox::default()
+    };
+    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    let child = &root.children[0];
+    let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
+    let reported = child
+        .inline_reported_rect
+        .expect("padding/border inline 应记录上报矩形");
+    // content h = 15.132；border-box h = 15.132 + 4 + 2 + 3 + 1 = 25.132。
+    assert!(
+        (reported.1 - (13.0 * (0.928 + 0.236) + 4.0 + 2.0 + 3.0 + 1.0)).abs() < 0.5,
+        "上报 h = content area + padding/border 四项（border-box 语义），实际 {}",
+        reported.1
+    );
+    // 上报顶 = content area 顶（baseline − A）再上移 padding_top + border_top。
+    assert!(
+        (reported.0 - (line_y + baseline_y - 13.0 * 0.928 - 4.0 - 3.0)).abs() < 0.5,
+        "上报顶 = baseline − A − padding_top − border_top，实际 {}（基线 {}）",
+        reported.0,
+        baseline_y
+    );
+    // 树几何仍按旧公式（行盒顶 − padding/border，h = 行盒并集 + padding/border）。
+    assert!(
+        (child.y - (line_y - 7.0)).abs() < 0.5,
+        "树 y = 行盒顶 − 4 − 3，实际 {}",
+        child.y
+    );
+    assert!(
+        (child.height - 33.0).abs() < 0.5,
+        "树 h = 行盒 23 + 10，实际 {}",
+        child.height
+    );
+}
+
+/// slice13 返修（S4）：排除面负臂——relative 定位 / vertical writing 的 inline 不进
+/// 上报分支：`inline_reported_rect` 保持 None（快照/gBCR 回退行盒几何），树几何原样
+///（分支整体跳过，无任何覆写）。含块级子容器（pure_inline_container=false）共享
+/// 同一 guard，见 sync 实现注释（信息级 i4 挂账备查）。
+#[test]
+fn slice13rw_excluded_inline_reports_none_and_keeps_geometry() {
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("更多");
+    doc.append_child(container, span).unwrap();
+    doc.append_child(span, text).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(container, ComputedStyle::default());
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    span_style.font_size = LengthValue::Px(13.0);
+    span_style.line_height = LineHeightValue::Length(LengthValue::Px(23.0));
+    styles.insert(span, span_style);
+
+    let mut context = InlineFormattingContext::new(200.0);
+    context.layout(&doc, container, &styles);
+
+    let make_root = || LayoutBox {
+        node_id: Some(container),
+        children: vec![LayoutBox {
+            node_id: Some(span),
+            x: 1.0,
+            y: 7.0,
+            width: 26.0,
+            height: 20.0,
+            ..LayoutBox::default()
+        }],
+        ..LayoutBox::default()
+    };
+
+    // relative 臂：child.is_relative = true → 分支跳过。
+    let mut root_rel = make_root();
+    root_rel.children[0].is_relative = true;
+    sync_inline_child_boxes_from_ifc(&mut root_rel, &context, &styles);
+    let child = &root_rel.children[0];
+    assert!(child.inline_reported_rect.is_none(), "relative inline 不记录上报矩形");
+    assert_eq!(
+        (child.x, child.y, child.width, child.height),
+        (1.0, 7.0, 26.0, 20.0),
+        "排除面树几何原样"
+    );
+
+    // vertical 臂：IFC vertical writing → 分支跳过（同一 guard 的另一输入）。
+    let mut context_v = InlineFormattingContext::new(200.0);
+    context_v.layout(&doc, container, &styles);
+    context_v.vertical = true;
+    let mut root_v = make_root();
+    sync_inline_child_boxes_from_ifc(&mut root_v, &context_v, &styles);
+    let child = &root_v.children[0];
+    assert!(child.inline_reported_rect.is_none(), "vertical inline 不记录上报矩形");
+    assert_eq!(
+        (child.x, child.y, child.width, child.height),
+        (1.0, 7.0, 26.0, 20.0),
+        "排除面树几何原样"
+    );
+}
+
+/// slice13 返修（S3 挂账钉）：vertical-align:middle 元素的上报仍锚**行主基线**
+///（`agg.line_baseline_y`），未计元素自身 va 偏移——活体 v6（middle）残差 1.87px
+/// vs Chrome（信息级 i1，挂账 R4384）。本测试钉现值防无声漂移；后续切片若修 va 面，
+/// 此处显红即为提醒。
+#[test]
+fn slice13rw_va_middle_pins_line_baseline_anchor() {
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("More");
+    doc.append_child(container, span).unwrap();
+    doc.append_child(span, text).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(container, ComputedStyle::default());
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    span_style.font_size = LengthValue::Px(13.0);
+    span_style.line_height = LineHeightValue::Length(LengthValue::Px(23.0));
+    span_style.vertical_align = VerticalAlignValue::Middle;
+    styles.insert(span, span_style);
+
+    let mut context = InlineFormattingContext::new(200.0);
+    context.layout(&doc, container, &styles);
+
+    let mut root = LayoutBox {
+        node_id: Some(container),
+        children: vec![LayoutBox {
+            node_id: Some(span),
+            x: 0.0,
+            y: 0.0,
+            width: 30.0,
+            height: 23.0,
+            ..LayoutBox::default()
+        }],
+        ..LayoutBox::default()
+    };
+    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    let child = &root.children[0];
+    let (line_y, line_baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
+    let reported = child
+        .inline_reported_rect
+        .expect("va:middle 单行 inline 应记录上报矩形");
+    // 现值：行主基线锚（非元素自身 va 偏移后的基线）。残差口径见注释（i1 挂账）。
+    assert!(
+        (reported.0 - (line_y + line_baseline_y - 13.0 * 0.928)).abs() < 0.5,
+        "va:middle 上报顶 = 行主基线 − A（现口径），实际 {}（行顶 {} 行基线 {}）",
+        reported.0,
+        line_y,
+        line_baseline_y
+    );
+    assert!(
+        (reported.1 - 13.0 * (0.928 + 0.236)).abs() < 0.5,
+        "va:middle 上报高 = 自身字体 content area，实际 {}",
+        reported.1
     );
 }

@@ -52,6 +52,7 @@ fn sample_frame() -> zero_page_runtime::FrameModel {
                 y: 0.0,
                 width: 800.0,
                 height: 900.0,
+                reported: None,
                 children: Vec::new(),
             },
             nodes: vec![(

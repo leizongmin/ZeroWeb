@@ -217,7 +217,8 @@ fn fill_rect_from_layout_box(
 ) {
     // slice13（CSS2 §10.6.2）：inline 盒 gBCR 上报 y/h = content area（主字体 A+D +
     // padding/border）。布局树 y/h 保持行盒几何，sync 记录 `inline_reported_rect`，
-    // 此处（gBCR 直填路径）与快照构建路径（layout_snapshot_from_box）同源消费。
+    // 此处（gBCR rect 桥直填路径）消费上报值；命中面（deepest_node_at/collect_nodes_at）
+    // 只读布局树 y/h（slice13 返修：快照构建已回退树几何，单/多进程命中同几何）。
     // 子盒偏移仍按布局 y 累计（子盒 y 存于布局坐标系，上报覆写只作用于本盒 rect）。
     // https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
     let (reported_y, reported_h) = box_node.inline_reported_rect.unwrap_or((box_node.y, box_node.height));
@@ -245,6 +246,11 @@ pub struct HitTestLayoutSnapshot {
     pub width: f32,
     /// 盒高。
     pub height: f32,
+    /// slice13：inline 盒 gBCR 上报 (y, h)（content area，与 `LayoutBox` 同坐标约定——
+    /// 相对父内容区）。**仅 rect 桥（gBCR）消费**；命中面读 `y`/`height` 布局树行盒
+    /// 几何（与 `from_document` 单进程路径一致，半 leading 空隙带可命中，Chrome 语义）。
+    /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+    pub reported: Option<(f32, f32)>,
     /// 子盒。
     pub children: Vec<HitTestLayoutSnapshot>,
 }
@@ -291,17 +297,18 @@ fn layout_snapshot_from_box_with_offset(
     parent_content_y: f32,
 ) -> HitTestLayoutSnapshot {
     // slice13（CSS2 §10.6.2）：inline 非替换盒 getBoundingClientRect y/h 上报语义 =
-    // content area（主字体 A+D + padding/border，与 line-height 无关）。布局树 y/h
-    // 保持行盒几何（流 bookkeeping/绘制不动，见 inline_finalization 记录处），快照层
-    // 在此消费记录值——rect 桥（gBCR）与命中测试同源。跨行 wrap 并集语义挂账。
+    // content area（主字体 A+D + padding/border，与 line-height 无关）。快照 y/height
+    // **保持布局树行盒几何**（命中面与 from_document 单进程路径同几何——半 leading
+    // 空隙带可命中，Chrome inline 命中按行盒含 leading）；上报值随 `reported` 字段
+    // 单独携带，仅 rect 桥（gBCR）消费。跨行 wrap 并集语义挂账。
     // https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
-    let (reported_y, reported_h) = layout.inline_reported_rect.unwrap_or((layout.y, layout.height));
     HitTestLayoutSnapshot {
         node_id: layout.node_id,
         x: layout.x + parent_content_x,
-        y: reported_y + parent_content_y,
+        y: layout.y + parent_content_y,
         width: layout.width,
-        height: reported_h,
+        height: layout.height,
+        reported: layout.inline_reported_rect,
         children: layout
             .children
             .iter()
@@ -317,6 +324,10 @@ fn layout_box_from_snapshot(snapshot: &HitTestLayoutSnapshot) -> LayoutBox {
         y: snapshot.y,
         width: snapshot.width,
         height: snapshot.height,
+        // 上报值物化回 LayoutBox（坐标约定不变，相对父内容区）——主进程
+        // fill_layout_rect_snapshot（gBCR 直填方法路径）据此填 rect 表，与渲染进程
+        // live 树同值；命中遍历（deepest_node_at）只读 y/height 树几何，不受影响。
+        inline_reported_rect: snapshot.reported,
         children: snapshot.children.iter().map(layout_box_from_snapshot).collect(),
         ..LayoutBox::default()
     }
@@ -836,6 +847,193 @@ mod tests {
             rects[&node_id_to_u64(span)],
             (0.0, 15.0, 26.0, 15.132),
             "gBCR 直填路径上报 content area（div y=10 + 上报 y=5）"
+        );
+    }
+
+    /// slice13 返修（major-1/B1）：命中面回退树几何——快照路径（from_snapshot，
+    /// 多进程主进程点击/elementFromPoint 消费）与文档路径（from_document，渲染进程
+    /// 内部命中）对同一几何输入命中结果一致；inline 半 leading 空隙带点击仍命中锚。
+    /// baidu 导航锚实测形态：行盒 abs y=19/h=23、上报 abs y=24/h=15.132——返修前
+    /// 上报值烘进命中盒，空隙带 [19,24)（~5px）点击由命中锚翻转为命中父容器（链接
+    /// 点击失效）；返修后命中带 = 行盒（Chrome inline 命中按行盒含 leading 语义，
+    /// 见 diag/evidence/slice13/rework-chrome-gap-band-hit.json 活体对照）。
+    /// 上报值随快照 `reported` 字段单独走：跨快照往返后主进程 gBCR（rect 桥方法
+    /// 路径）仍为 content area——命中面与 gBCR 面解耦。
+    /// 装置为手工构造（fixture 直填 reported）——验证消费管道本身，生产值生成由
+    /// inline_finalization 单测 + 下方端到端测试覆盖；reported 手填故两态
+    ///（kill-switch）无差别。
+    /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+    #[test]
+    fn slice13rw_hit_band_uses_tree_geometry_snapshot_parity_with_document() {
+        let doc = zero_dom::parse_html(r#"<html><body><div><a id="nav" href="/more">更多</a></div></body></html>"#);
+        let body = doc.get_elements_by_tag_name("body")[0];
+        let div = doc.get_elements_by_tag_name("div").first().copied();
+        let anchor = doc.get_element_by_id("nav").expect("nav anchor");
+        let mut root = LayoutBox {
+            node_id: Some(body),
+            width: 800.0,
+            height: 600.0,
+            ..LayoutBox::default()
+        };
+        root.children.push(LayoutBox {
+            node_id: div,
+            x: 0.0,
+            y: 19.0,
+            width: 800.0,
+            height: 23.0,
+            children: vec![LayoutBox {
+                inline_reported_rect: Some((5.0, 15.132)),
+                node_id: Some(anchor),
+                x: 0.0,
+                y: 0.0,
+                width: 26.0,
+                height: 23.0,
+                ..LayoutBox::default()
+            }],
+            ..LayoutBox::default()
+        });
+        let live = HitTestCache::from_document(&doc, &root, &HashMap::new());
+
+        // 快照字段：y/h = 行盒树几何（命中面），上报值随 reported 单独携带。
+        let snap = live.snapshot();
+        let a_snap = &snap.layout_root.children[0].children[0];
+        assert_eq!((a_snap.y, a_snap.height), (0.0, 23.0), "快照 y/h = 行盒树几何");
+        assert_eq!(a_snap.reported, Some((5.0, 15.132)), "上报值随 reported 字段携带");
+
+        let restored = HitTestCache::from_snapshot(snap);
+
+        // 空隙带（半 leading，abs y∈[19,24) ∪ [39.13,42)）与 content 带内命中一致：
+        // from_document 与 from_snapshot 同结果（消单/多进程命中几何分歧）。
+        for (x, y, label) in [
+            (5.0, 21.0, "上空隙带（行盒顶~content 顶）"),
+            (5.0, 40.5, "下空隙带（content 底~行盒底）"),
+            (5.0, 30.0, "content 带内"),
+        ] {
+            assert_eq!(
+                live.hit_test_link(x, y).as_deref(),
+                Some("/more"),
+                "{label}: from_document 应命中锚"
+            );
+            assert_eq!(
+                restored.hit_test_link(x, y).as_deref(),
+                Some("/more"),
+                "{label}: from_snapshot 应命中锚（树几何，与 from_document 一致）"
+            );
+            assert_eq!(
+                live.hit_test_element(x, y).expect("element hit").id.as_deref(),
+                Some("nav"),
+                "{label}: from_document elementFromPoint 命中锚"
+            );
+            assert_eq!(
+                restored.hit_test_element(x, y).expect("element hit").id.as_deref(),
+                Some("nav"),
+                "{label}: from_snapshot elementFromPoint 命中锚"
+            );
+        }
+        // 行盒外不命中锚（负控制）。
+        assert_eq!(live.hit_test_link(5.0, 50.0), None);
+        assert_eq!(restored.hit_test_link(5.0, 50.0), None);
+
+        // gBCR 面经快照往返保真：主进程方法路径（fill_layout_rect_snapshot）在
+        // from_snapshot 物化树上消费 reported——锚 rect = (0, 19+5, 26, 15.132)。
+        let rects = crate::rect_bridge::new_layout_rect_snapshot();
+        restored.fill_layout_rect_snapshot(&rects);
+        let map = rects.lock().expect("rect snapshot");
+        assert_eq!(
+            map.get(&node_id_to_u64(anchor)),
+            Some(&(0.0, 24.0, 26.0, 15.132)),
+            "gBCR 面经快照往返仍上报 content area（多进程主进程路径）"
+        );
+    }
+
+    /// slice13 返修端到端（真实管线）：同一渲染产物上 gBCR 面（content area）与
+    /// 命中面（行盒含半 leading）解耦——13px/23px inline 锚 gBCR h≈15.13，而空隙带
+    /// 点击仍命中锚。负控制：`ZW_INLINE_CONTENT_AREA=0` 下上报缺席 → gBCR 断言显红
+    ///（回退行盒 h=23，差 7.87px，容差 0.5 → 裕度 15.7×）；命中面断言两态同绿
+    ///（命中面读树几何，不依赖 kill-switch）。
+    #[test]
+    fn slice13rw_reported_rect_hit_vs_gcr_end_to_end() {
+        let html = r#"<html><body>
+            <div style="line-height: 23px;"><a id="nav" href="/more" style="font-size: 13px;">更多</a></div>
+        </body></html>"#;
+        let (doc, layout, _styles) = render_with_styles(html, "");
+        let anchor = doc.get_element_by_id("nav").expect("nav anchor");
+        // 从布局树定位锚盒几何（相对父内容区 + 绝对，与命中遍历同坐标累积）。
+        fn find_abs(
+            layout: &LayoutBox,
+            id: NodeId,
+            ax: f32,
+            ay: f32,
+        ) -> Option<(f32, f32, f32, f32, f32, Option<(f32, f32)>)> {
+            let bx = ax + layout.x;
+            let by = ay + layout.y;
+            if layout.node_id == Some(id) {
+                return Some((
+                    layout.y,
+                    bx,
+                    by,
+                    layout.width,
+                    layout.height,
+                    layout.inline_reported_rect,
+                ));
+            }
+            let (cx, cy) = child_origin(layout, bx, by);
+            for child in &layout.children {
+                if let Some(found) = find_abs(child, id, cx, cy) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        let (rel_y, abs_x, abs_y, abs_w, abs_h, reported) =
+            find_abs(&layout.root, anchor, 0.0, 0.0).expect("anchor box in layout tree");
+        // 上报前提：单行 inline 已记录 content area（dormant 常数臂，kill-switch 默认开），
+        // 且上报顶在树行盒顶之下（空隙带存在）。
+        let (rep_y, rep_h) = reported.expect("单行 inline 应记录上报矩形");
+        let gap = rep_y - rel_y;
+        assert!(gap > 2.5, "用例前提：半 leading 空隙带应存在（gap={}）", gap);
+        assert!(
+            (rep_h - 13.0 * (0.928 + 0.236)).abs() < 0.5,
+            "用例前提：上报 h 应为 content area 15.132，实际 {}",
+            rep_h
+        );
+        assert!((abs_h - 23.0).abs() < 0.5, "用例前提：树行盒高 23，实际 {}", abs_h);
+
+        let live = HitTestCache::from_document(&doc, &layout.root, &HashMap::new());
+        let restored = HitTestCache::from_snapshot(live.snapshot());
+        let gap_y = abs_y + gap * 0.5;
+        let content_y = abs_y + gap + 2.0;
+        for (cache, label) in [(&live, "from_document"), (&restored, "from_snapshot")] {
+            assert_eq!(
+                cache.hit_test_link(abs_x + 5.0, gap_y).as_deref(),
+                Some("/more"),
+                "{label}: 空隙带（行盒顶+{:.1}px）应命中锚",
+                gap * 0.5
+            );
+            assert_eq!(
+                cache.hit_test_link(abs_x + 5.0, content_y).as_deref(),
+                Some("/more"),
+                "{label}: content 带内应命中锚"
+            );
+            assert_eq!(
+                cache.hit_test_link(abs_x + 5.0, abs_y + abs_h + 2.0),
+                None,
+                "{label}: 行盒外不应命中锚"
+            );
+        }
+
+        // gBCR 面：rect 表 = content area（abs = 树行盒顶 + 空隙带高）。
+        let rects = crate::rect_bridge::new_layout_rect_snapshot();
+        live.fill_layout_rect_snapshot(&rects);
+        let map = rects.lock().expect("rect snapshot");
+        let rect = map.get(&node_id_to_u64(anchor)).copied().expect("anchor rect");
+        assert_eq!(rect.2, abs_w, "gBCR 宽 = 布局宽");
+        assert!(
+            (rect.1 - (abs_y + gap)).abs() < 0.5 && (rect.3 - rep_h).abs() < 0.5,
+            "gBCR y/h = content area（y={}, h={}；树行盒顶 {}）",
+            rect.1,
+            rect.3,
+            abs_y
         );
     }
 
