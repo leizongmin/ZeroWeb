@@ -3066,11 +3066,17 @@
   };
   // clearTimeout/clearInterval：删 pending 项——即便 host 子线程后到 resolve，
   // `__zwResolveCallback` 见无 pending 即 no-op（setInterval 的 re-arm 链亦在此断开）。
+  // D-N1（2026-10-01）：两族句柄可互换（共享 `_timerId` 单调句柄空间，同一 handle 只会被
+  // 一族注册，双删无误伤）。此前 key 空间分离导致 clearTimeout 止不住 interval（P20 修复后
+  // 因 `__zwint:` 项未删而继续 re-arm）——HTML spec 中两族共享同一活动定时器列表。
+  // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
   globalThis.clearTimeout = function(handle) {
     delete globalThis.__zw_pending[_timerIdKey(handle)];
+    delete globalThis.__zw_pending[_intervalIdKey(handle)];
   };
   globalThis.clearInterval = function(handle) {
     delete globalThis.__zw_pending[_intervalIdKey(handle)];
+    delete globalThis.__zw_pending[_timerIdKey(handle)];
   };
   // requestIdleCallback/cancelIdleCallback：镜像 setTimeout 机制（host __zw_setTimeout + pending 表；
   // 无 host → _defer 微任务，同 setTimeout fallback）。回调传 IdleDeadline（didTimeout/timeRemaining
