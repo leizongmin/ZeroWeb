@@ -303,11 +303,13 @@
   globalThis.AbortController = globalThis.AbortController || AbortController;
   globalThis.AbortSignal = globalThis.AbortSignal || AbortSignal;
 
-  // TextEncoder/TextDecoder——UTF-8 编解码（fetch body / 字符串↔字节互转高频）。纯 JS UTF-8
-  //（BMP + astral 经代理对；fatal=false 容错，非法序列替 U+FFFD）。仅支持 UTF-8（最通用，
-  // spec TextEncoder 恒 utf-8；TextDecoder 标签忽略恒按 utf-8 解，非 utf-8 label 为已知限制）。
+  // TextEncoder/TextDecoder——UTF-8 编解码（fetch body / 字符串↔字节互转高频）。纯 JS UTF-8。
+  // encoding-compat M3：编码按 spec #utf-8-encoder——孤立代理（高低皆）→ U+FFFD（旧版
+  // CESU-8 式直编代理字节）；解码按 spec #utf-8-decoder 逐字节状态机（非法续字节 U+FFFD +
+  // 重处理该字节；不完整序列跨 chunk 驻留 state；fatal → TypeError）+ BOM 前缀嗅探机
+  //（EF BB BF 可跨 chunk 拆分，失配退回为内容）。
   function _zw_utf8_encode(str) {
-    str = String(str);
+    str = String(str == null ? '' : str);
     var bytes = [];
     for (var i = 0; i < str.length; i++) {
       var c = str.charCodeAt(i);
@@ -320,87 +322,158 @@
         var lo = str.charCodeAt(++i);
         var cp = 0x10000 + ((c & 0x3ff) << 10) + (lo & 0x3ff);
         bytes.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
+      } else if ((c >= 0xd800 && c <= 0xdfff)) {
+        // 孤立代理（spec #utf-8-encoder：surrogate → error → U+FFFD）
+        bytes.push(0xef, 0xbf, 0xbd);
       } else {
         bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
       }
     }
     return bytes;
   }
-  // R3012：UTF-8 流式解码——返回 { s: 已解码串, tail: 末尾不完整序列字节（待下块前缀拼接）}。
-  // carry = 上一块的不完整尾部（前缀）。多字节序列跨 chunk 边界时，末尾不完整字节入 tail，下块 carry 拼接后
-  // 补全解码——不再读越界（旧 _zw_utf8_decode 对 truncated 序列读 undefined 字节产垃圾）。
-  // valid 完整输入的解码逻辑与旧版逐字节一致（同 U+FFFD 容错 0x80-0xc1 非法前导/连续字节）。
-  function _zw_utf8_decode_stream(bytes, carry) {
-    var src = [];
-    if (carry && carry.length) { for (var c = 0; c < carry.length; c++) src.push(carry[c]); }
-    if (bytes) { for (var b = 0; b < bytes.length; b++) src.push(bytes[b]); }
+  // encoding-compat M3：WHATWG UTF-8 解码状态机（encoding.spec §utf-8 decoder）——逐字节
+  // 消费；非法续字节 → U+FFFD + 重处理该字节（spec「prepend b to ioQueue」，i 不前进）；
+  // 不完整序列跨 chunk 驻留 state（stream 面）；fatal=true → malformed 处 TypeError
+  //（调用方捕获后重置状态——spec fatal 错误后本序列作废）。旧版前置整序列检查会吞
+  // 尾部 ASCII（F0 9F 41 → 仅 FFFD 丢 A）且错误子部分合并，eof/mistakes 两案面不达。
+  // state = { need, cp, lo, hi } 由调用方持有（跨 decode({stream:true}) 调用驻留）。
+  function _zw_utf8_decode_state(bytes, state, fatal) {
     var s = '';
+    var n = bytes.length;
     var i = 0;
-    var n = src.length;
-    // net-api 收尾：WHATWG UTF-8 解码器逐字节语义（encoding.spec §utf-8 decoder）——
-    // 每个最大无效子部分产 1 U+FFFD（%FE%FF → 2 个，非合并）；0xC0/0xC1/0xF5+ 非法
-    // 前导；0xE0/0xF0 次字节下界（long-form 排除）、0xED 上界（代理排除）、0xF4 上界
-    //（>U+10FFFF 排除）；越界第二字节 → 1 U+FFFD + 重处理该字节（urlencoded-parser
-    // %C2x 面）。
     while (i < n) {
-      var b0 = src[i];
-      if (b0 < 0x80) { s += String.fromCharCode(b0); i += 1; continue; }
-      var need = 0, cp = 0, lo1 = 0x80, hi1 = 0xbf;
-      if (b0 >= 0xc2 && b0 <= 0xdf) { need = 1; cp = b0 & 0x1f; }
-      else if (b0 >= 0xe0 && b0 <= 0xef) {
-        need = 2; cp = b0 & 0x0f;
-        if (b0 === 0xe0) lo1 = 0xa0;
-        else if (b0 === 0xed) hi1 = 0x9f;
-      } else if (b0 >= 0xf0 && b0 <= 0xf4) {
-        need = 3; cp = b0 & 0x07;
-        if (b0 === 0xf0) lo1 = 0x90;
-        else if (b0 === 0xf4) hi1 = 0x8f;
-      } else { s += '�'; i += 1; continue; }
-      if (i + need >= n) break; // 不完整尾部 → carry（flush 产 U+FFFD）
-      var b1 = src[i + 1];
-      if (b1 < lo1 || b1 > hi1) { s += '�'; i += 1; continue; }
-      cp = (cp << 6) | (b1 & 0x3f);
-      if (need >= 2) {
-        var b2 = src[i + 2];
-        if (b2 < 0x80 || b2 > 0xbf) { s += '�'; i += 1; continue; }
-        cp = (cp << 6) | (b2 & 0x3f);
-      }
-      if (need >= 3) {
-        var b3 = src[i + 3];
-        if (b3 < 0x80 || b3 > 0xbf) { s += '�'; i += 1; continue; }
-        cp = (cp << 6) | (b3 & 0x3f);
-      }
-      if (cp >= 0x10000) {
-        cp -= 0x10000;
-        s += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff)); // astral → 代理对
+      var b = bytes[i] & 0xFF;
+      if (state.need === 0) {
+        if (b <= 0x7F) {
+          s += String.fromCharCode(b);
+        } else if (b >= 0xC2 && b <= 0xDF) {
+          state.need = 1; state.cp = b & 0x1F; state.lo = 0x80; state.hi = 0xBF;
+        } else if (b >= 0xE0 && b <= 0xEF) {
+          state.need = 2; state.cp = b & 0x0F;
+          state.lo = (b === 0xE0) ? 0xA0 : 0x80; // long-form 排除
+          state.hi = (b === 0xED) ? 0x9F : 0xBF; // 代理排除
+        } else if (b >= 0xF0 && b <= 0xF4) {
+          state.need = 3; state.cp = b & 0x07;
+          state.lo = (b === 0xF0) ? 0x90 : 0x80;
+          state.hi = (b === 0xF4) ? 0x8F : 0xBF; // >U+10FFFF 排除
+        } else {
+          // 非法前导（0x80-0xC1 / 0xF5+）：字节已消费，产 1 U+FFFD / fatal。
+          if (fatal) throw new TypeError('Failed to decode: the encoded data is not valid.');
+          s += '�';
+        }
+        i += 1;
+      } else if (b < state.lo || b > state.hi) {
+        // 非续字节：重置 + 1 U+FFFD + 重处理该字节（i 不前进——spec prepend b to ioQueue）。
+        state.need = 0; state.lo = 0x80; state.hi = 0xBF;
+        if (fatal) throw new TypeError('Failed to decode: the encoded data is not valid.');
+        s += '�';
       } else {
-        s += String.fromCharCode(cp);
+        state.cp = (state.cp << 6) | (b & 0x3F);
+        state.need -= 1;
+        state.lo = 0x80; state.hi = 0xBF;
+        if (state.need === 0) {
+          var cp = state.cp;
+          if (cp >= 0x10000) {
+            cp -= 0x10000;
+            s += String.fromCharCode(0xD800 + (cp >> 10), 0xDC00 + (cp & 0x3FF));
+          } else {
+            s += String.fromCharCode(cp);
+          }
+        }
+        i += 1;
       }
-      i += need + 1;
     }
-    return { s: s, tail: i < n ? src.slice(i) : [] };
+    return s;
   }
-  // 单次（flush）解码：valid 完整输入行为同旧；truncated 尾部 → 1 U+FFFD（旧读越界产垃圾，现 spec 容错）。
+  function _zw_utf8_state_new() { return { need: 0, cp: 0, lo: 0x80, hi: 0xBF }; }
+  // BOM 前缀嗅探机（utf-8 JS 路径，ignoreBOM=false）：EF BB BF 可跨 chunk 拆分——
+  // 缓冲 ≤3 字节，匹配 → 剥除（缓冲丢弃）；失配 → 缓冲退回为内容 + 嗅探关闭（spec：
+  // BOM 嗅探仅限流首）。ignoreBOM=true 时不启用（BOM 按内容解出 U+FEFF）。
+  function _zw_u8_bom_feed(dec, bytes) {
+    if (!dec._zwSniffOn) return bytes;
+    var out = [];
+    var n = bytes.length;
+    for (var i = 0; i < n; i++) {
+      var b = bytes[i] & 0xFF;
+      var bl = dec._zwSniffBuf.length;
+      if ((bl === 0 && b === 0xEF) || (bl === 1 && b === 0xBB) || (bl === 2 && b === 0xBF)) {
+        if (bl === 2) {
+          // BOM 剥除——本调用余下字节全部按内容（嗅探仅流首，循环即止）。
+          dec._zwSniffBuf = [];
+          dec._zwSniffOn = false;
+          for (var r = i + 1; r < n; r++) out.push(bytes[r] & 0xFF);
+          return out;
+        }
+        dec._zwSniffBuf.push(b);
+      } else {
+        for (var j = 0; j < bl; j++) out.push(dec._zwSniffBuf[j]); // 失配退回为内容
+        dec._zwSniffBuf = [];
+        dec._zwSniffOn = false;
+        for (var k = i; k < n; k++) out.push(bytes[k] & 0xFF); // 余下字节内容直通
+        return out;
+      }
+    }
+    return out;
+  }
+  // 单次（flush）解码：truncated 尾部 → 1 U+FFFD（blob text / worker blob script 消费）。
   function _zw_utf8_decode(bytes) {
-    var r = _zw_utf8_decode_stream(bytes, null);
-    return r.tail.length ? r.s + '�' : r.s;
+    var state = _zw_utf8_state_new();
+    var s = _zw_utf8_decode_state(bytes, state, false);
+    return state.need > 0 ? s + '�' : s;
   }
   globalThis.TextEncoder = globalThis.TextEncoder || function TextEncoder() {
     if (!(this instanceof TextEncoder)) return new TextEncoder();
   };
   globalThis.TextEncoder.prototype = {
     encoding: 'utf-8',
+    // spec #dom-textencoder-encode：str 缺省 ""（api-basics Default inputs 面）。
     encode: function (str) {
-      var bytes = _zw_utf8_encode(str);
+      var bytes = _zw_utf8_encode(str == null ? '' : str);
       var arr = new Uint8Array(bytes.length);
       for (var k = 0; k < bytes.length; k++) arr[k] = bytes[k];
       return arr;
     },
+    // spec #dom-textencoder-encodeinto：read = 消费的 UTF-16 码元数（destination 容不
+    // 下下一字符时停在字符边界），written = 写入字节数（字符永不劈开——容量不足整字符
+    // 即停）。孤立代理先折算 U+FFFD（同 encode）。非 TypedArray/array-like dst → TypeError。
     encodeInto: function (str, dst) {
-      var bytes = _zw_utf8_encode(str);
-      var m = Math.min(bytes.length, dst.length);
-      for (var k = 0; k < m; k++) dst[k] = bytes[k];
-      return { read: str.length, written: m };
+      // destination 仅 Uint8Array（含 SAB 背书——spec BufferSource 限定；Int8Array 等
+      // 其他 TypedArray → TypeError，encodeInto Invalid destination 面）。
+      if (!(typeof Uint8Array !== 'undefined' && dst instanceof Uint8Array)) {
+        throw new TypeError("Failed to execute 'encodeInto' on 'TextEncoder': parameter 2 is not of type 'Uint8Array'.");
+      }
+      str = String(str == null ? '' : str);
+      var read = 0, written = 0;
+      var i = 0;
+      var len = dst.length;
+      while (i < str.length) {
+        var c = str.charCodeAt(i);
+        var cp, units;
+        if (c >= 0xD800 && c <= 0xDBFF) {
+          var lo = str.charCodeAt(i + 1);
+          if (lo >= 0xDC00 && lo <= 0xDFFF) { cp = 0x10000 + ((c & 0x3FF) << 10) + (lo & 0x3FF); units = 2; }
+          else { cp = 0xFFFD; units = 1; } // 孤立高代理
+        } else if (c >= 0xDC00 && c <= 0xDFFF) {
+          cp = 0xFFFD; units = 1; // 孤立低代理
+        } else {
+          cp = c; units = 1;
+        }
+        var need = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+        if (written + need > len) break; // destination 容不下整字符 → 停在字符边界
+        if (need === 1) dst[written] = cp;
+        else if (need === 2) {
+          dst[written] = 0xC0 | (cp >> 6); dst[written + 1] = 0x80 | (cp & 0x3F);
+        } else if (need === 3) {
+          dst[written] = 0xE0 | (cp >> 12); dst[written + 1] = 0x80 | ((cp >> 6) & 0x3F); dst[written + 2] = 0x80 | (cp & 0x3F);
+        } else {
+          dst[written] = 0xF0 | (cp >> 18); dst[written + 1] = 0x80 | ((cp >> 12) & 0x3F);
+          dst[written + 2] = 0x80 | ((cp >> 6) & 0x3F); dst[written + 3] = 0x80 | (cp & 0x3F);
+        }
+        i += units;
+        read = i;
+        written += need;
+      }
+      return { read: read, written: written };
     }
   };
   // TextDecoder（encoding-compat M2）——labels 标签匹配 + legacy 编码解码。
@@ -412,7 +485,7 @@
   // host 有状态 decoder（`__zw_text_decoder_new/decode`——跨 decode({stream}) 调用驻留
   // 半截多字节 lead 与 iso-2022-jp ESC 模式机；BOM 剥除/ignoreBOM 语义在 host decoder
   // 构造选型）。host 未注册（engine/reftest/polyfill 无 script-runtime）→ 留守 utf-8
-  // 纯 JS 路径（下方 _zw_utf8_decode_stream），label 校验降级为不抛（零回归）。
+  // 纯 JS 路径（下方 _zw_utf8_decode_state），label 校验降级为不抛（零回归）。
   globalThis.TextDecoder = globalThis.TextDecoder || function TextDecoder(label, options) {
     if (!(this instanceof TextDecoder)) return new TextDecoder(label, options);
     var raw = label == null ? '' : String(label);
@@ -429,8 +502,11 @@
     this.encoding = name;
     this.fatal = !!(options && options.fatal);
     this.ignoreBOM = !!(options && options.ignoreBOM);
-    this._carry = []; // R3012：stream:true 跨 chunk 不完整尾部（下块前缀拼接补全多字节序列）——utf-8 JS 路径
-    this._zwBomPending = true; // net-api M4-S21：BOM 剥除仅限流首（utf-8 JS 路径）
+    // utf-8 JS 路径状态：spec #utf-8-decoder 状态机 + BOM 前缀嗅探机（M3——跨 chunk
+    // 序列驻留 / BOM 拆分，替代旧 _carry 字节尾 + 单次首块 BOM 检查）。
+    this._zwU8State = _zw_utf8_state_new();
+    this._zwSniffOn = !this.ignoreBOM;
+    this._zwSniffBuf = [];
     // legacy host decoder handle（非 utf-8 且 host 可用）——null = 降级 utf-8 路径。
     this._zwLegacyHandle = (name !== 'utf-8' && typeof __zw_text_decoder_new === 'function')
       ? __zw_text_decoder_new(name, this.ignoreBOM ? '1' : '0')
@@ -451,7 +527,11 @@
       var bytes;
       if (buf == null) bytes = new Uint8Array(0);
       else if (buf instanceof ArrayBuffer) bytes = new Uint8Array(buf);
-      else if (buf && typeof buf.length === 'number') bytes = buf; // TypedArray / array-like
+      else if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(buf)) {
+        // TypedArray / DataView：respect 视图 byteOffset/byteLength（fatal DataView 子视图
+        // 面——取全 buffer 会把截断序列当完整序列）。
+        bytes = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+      } else if (buf && typeof buf.length === 'number') bytes = buf; // array-like
       else if (buf && buf.buffer) bytes = new Uint8Array(buf.buffer);
       else bytes = new Uint8Array(0);
       if (this._zwLegacyHandle != null) {
@@ -474,19 +554,46 @@
         if (!streamFlag) this._zwDone = true;
         return out.text;
       }
-      if (this._zwBomPending) {
-        this._zwBomPending = false;
-        if (!this.ignoreBOM && bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
-          // host wire 传入 array-like（无 subarray）——泛型拷贝剥 BOM。
-          var trimmed = new Uint8Array(bytes.length - 3);
-          for (var bi = 3; bi < bytes.length; bi++) trimmed[bi - 3] = bytes[bi];
-          bytes = trimmed;
+      // utf-8 JS 路径：BOM 前缀嗅探（可跨 chunk）→ 逐字节状态机（fatal → TypeError）。
+      var streamFlag8 = options && options.stream === true;
+      if (this._zwSniffOn || (!streamFlag8 && this._zwSniffBuf.length)) {
+        // 嗅探期（流首）或 flush 收尾：过普通数组（TypedArray 无 push；稳态嗅探关闭零开销）。
+        var arr8 = [];
+        for (var bi8 = 0; bi8 < bytes.length; bi8++) arr8.push(bytes[bi8] & 0xFF);
+        if (this._zwSniffOn) {
+          arr8 = _zw_u8_bom_feed(this, arr8);
+          if (!streamFlag8 && this._zwSniffOn && this._zwSniffBuf.length) {
+            // flush：未完成 BOM 前缀退回为内容（非完整 BOM 不剥）。
+            for (var sb8 = 0; sb8 < this._zwSniffBuf.length; sb8++) arr8.push(this._zwSniffBuf[sb8]);
+            this._zwSniffBuf = [];
+            this._zwSniffOn = false;
+          }
+        }
+        bytes = arr8;
+      }
+      try {
+        var s8 = _zw_utf8_decode_state(bytes, this._zwU8State, this.fatal);
+        if (streamFlag8) return s8;
+        if (this._zwU8State.need > 0) {
+          // flush：残余不完整序列 → fatal throw / 1 U+FFFD。
+          if (this.fatal) throw new TypeError('Failed to decode: the encoded data is not valid.');
+          s8 += '�';
+        }
+        return s8;
+      } catch (e8) {
+        // fatal 错误：本序列作废——重置（含 stream 面；错误后调用方拿到 TypeError）。
+        this._zwU8State = _zw_utf8_state_new();
+        this._zwSniffOn = !this.ignoreBOM;
+        this._zwSniffBuf = [];
+        throw e8;
+      } finally {
+        if (!streamFlag8) {
+          // spec：非 stream decode() 重置序列状态（正常 flush 完成）。
+          this._zwU8State = _zw_utf8_state_new();
+          this._zwSniffOn = !this.ignoreBOM;
+          this._zwSniffBuf = [];
         }
       }
-      var r = _zw_utf8_decode_stream(bytes, this._carry);
-      if (options && options.stream === true) { this._carry = r.tail; return r.s; }
-      this._carry = []; // flush 重置
-      return r.tail.length ? r.s + '�' : r.s;
     }
   };
   // array-like（无 join 的 host wire 形态）→ csv 十进制串（__zw_text_decoder_decode 字节 wire）。
@@ -2154,6 +2261,20 @@
     get: function () { return this._locked; },
     enumerable: true, configurable: true
   });
+  // encoding-compat M3：prototype.getWriter 委托（readable-writable-properties 品牌面——
+  // `WritableStream.prototype.getWriter.call(ws)` 需原型方法；ReadableStream 侧 M4-S8
+  // 已有同款委托，WritableStream 侧此前缺）。非流 this → TypeError（品牌语义，readable
+  // 侧同口径）。
+  Object.defineProperty(globalThis.WritableStream.prototype, 'getWriter', {
+    value: function () {
+      var fn = (this != null) ? this.getWriter : null;
+      if (typeof fn !== 'function' || !Object.prototype.hasOwnProperty.call(this, 'getWriter')) {
+        throw new TypeError("Failed to execute 'getWriter' on 'WritableStream': Illegal invocation.");
+      }
+      return Object.getOwnPropertyDescriptor(this, 'getWriter').value.call(this);
+    },
+    enumerable: true, configurable: true, writable: true
+  });
 
   // ── P1a TransformStream（Streams API transform，R2969）──
   // {readable, writable} 配对：writable.write(chunk) → transformer.transform(chunk, controller) →
@@ -2433,23 +2554,60 @@
   globalThis.TextEncoderStream = globalThis.TextEncoderStream || function TextEncoderStream() {
     if (!(this instanceof TextEncoderStream)) return new TextEncoderStream();
     var enc = new TextEncoder();
+    // encoding-compat M3：跨 chunk UTF-16 边界驻留——chunk 末尾孤立高代理（astral 字符
+    // 被 chunk 边界切开）待下块成对后再编码（spec TransformStreamEncode）；尾部空 chunk
+    // 忽略（不产空输出 chunk——encode-utf8「trailing empty chunk」面）。
+    var pending = '';
     TransformStream.call(this, {
-      transform: function (chunk, controller) { controller.enqueue(enc.encode(String(chunk))); }
+      transform: function (chunk, controller) {
+        // spec：chunk USVString 全量 ToString 转换（undefined → "undefined"——encode-bad-chunks 面）。
+        var s = pending + String(chunk);
+        pending = '';
+        if (s.length) {
+          var last = s.charCodeAt(s.length - 1);
+          if (last >= 0xD800 && last <= 0xDBFF) {
+            pending = s.charAt(s.length - 1);
+            s = s.slice(0, -1);
+          }
+        }
+        if (s) controller.enqueue(enc.encode(s));
+      },
+      flush: function (controller) {
+        if (pending) { controller.enqueue(enc.encode(pending)); pending = ''; }
+      }
     });
     this.encoding = 'utf-8';
   };
   globalThis.TextEncoderStream.prototype = Object.create(globalThis.TransformStream.prototype);
   globalThis.TextEncoderStream.prototype.constructor = globalThis.TextEncoderStream;
-  globalThis.TextDecoderStream = globalThis.TextDecoderStream || function TextDecoderStream(label) {
-    if (!(this instanceof TextDecoderStream)) return new TextDecoderStream(label);
-    var dec = new TextDecoder(label);
+  globalThis.TextDecoderStream = globalThis.TextDecoderStream || function TextDecoderStream(label, options) {
+    if (!(this instanceof TextDecoderStream)) return new TextDecoderStream(label, options);
+    // encoding-compat M3：options（fatal/ignoreBOM）转发 TextDecoder（decode-attributes
+    // IDL 反射面 + decode-ignore-bom 语义面）；label 默认 "utf-8"（spec TextDecoderStream
+    // 构造器——`new TextDecoderStream()` 合法，而 `new TextDecoderStream('')` 经
+    // get-an-encoding 失败抛 RangeError——与 TextDecoder 的 "" 默认不同面）。host 缺席时
+    // 降级放行（零回归）。
+    var rawLabel = label === undefined ? 'utf-8' : String(label);
+    var dec;
+    if (typeof __zw_text_encoding_of === 'function') {
+      var canonical = __zw_text_encoding_of(rawLabel);
+      if (canonical === '' || canonical === 'replacement') {
+        throw new RangeError("Failed to construct 'TextDecoderStream': The encoding label provided ('" + rawLabel + "') is invalid.");
+      }
+      dec = new TextDecoder(canonical, options);
+    } else {
+      dec = new TextDecoder(rawLabel, options); // host 缺席降级（旧形态，label 不校验）
+    }
     TransformStream.call(this, {
       transform: function (chunk, controller) {
+        if (!(chunk instanceof ArrayBuffer || (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(chunk)))) {
+          throw new TypeError("Failed to execute 'transform' on 'TextDecoderStream': the provided chunk is not a BufferSource.");
+        }
         var s = dec.decode(chunk, { stream: true }); // R3012：stream:true 跨 chunk 状态
-        if (s) controller.enqueue(s); // 空 string（chunk 末切多字节前导字节，缓存在 _carry）跳过，避免空 chunk
+        if (s) controller.enqueue(s); // 空 string（chunk 末切多字节前导字节，缓存于状态机）跳过，避免空 chunk
       },
       flush: function (controller) {
-        var s = dec.decode(); // flush 残余（stream:false，不完整 → U+FFFD；完整输入通常 ''）
+        var s = dec.decode(); // flush 残余（stream:false；fatal → TypeError → TransformError）
         if (s) controller.enqueue(s);
       }
     });

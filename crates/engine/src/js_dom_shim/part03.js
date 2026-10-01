@@ -209,18 +209,28 @@
       var bytes = bytesOverride != null ? bytesOverride
         : (response._bodyBytes != null ? response._bodyBytes
         : _zw_utf8_encode(response._bodyText == null ? '' : String(response._bodyText)));
-      var text = new TextDecoder().decode(bytes);
       var overrideCharset = self._zwXhrOverrideCharset;
-      if (overrideCharset) {
-        // xhr.spec get a final encoding：override encoding 优先于 response charset
-        //（overridemimetype-unsent「enforcing Shift-JIS」面）。encoding-compat M2：
-        // final encoding = replacement（csiso2022kr/hz-gb-2312/iso-2022-cn 族——
-        // TextDecoder 构造面拒绝该编码）→ spec replacement 输出：非空输入恰一 U+FFFD。
-        if (typeof __zw_text_encoding_of === 'function' && __zw_text_encoding_of(overrideCharset) === 'replacement') {
-          text = bytes.length ? '�' : '';
-        } else {
-          try { text = new TextDecoder(overrideCharset).decode(bytes); } catch (_eXhrCharset) {}
-        }
+      // encoding-compat M3：xhr.spec get a final encoding + Encoding #decode 的 BOM 嗅探
+      // 序——响应字节首部 BOM（UTF-8/UTF-16LE/BE）优先于 override/response charset 定
+      // 解码器（unsupported-encodings：override=utf-32 表外回退后 FF FE BOM → utf-16le
+      // 面）。replacement（csiso2022kr 族）按 final encoding = replacement 语义整段单
+      // U+FFFD（M2 面）。
+      var bomEnc = (bytes[0] === 0xFF && bytes[1] === 0xFE) ? 'utf-16le'
+        : (bytes[0] === 0xFE && bytes[1] === 0xFF) ? 'utf-16be'
+        : (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) ? 'utf-8' : null;
+      var replacementFace = typeof __zw_text_encoding_of === 'function' && overrideCharset
+        && __zw_text_encoding_of(overrideCharset) === 'replacement';
+      var text;
+      if (replacementFace) {
+        text = bytes.length ? '�' : '';
+      } else if (bomEnc) {
+        text = new TextDecoder(bomEnc).decode(bytes);
+      } else if (overrideCharset) {
+        // override encoding 优先于 response charset（overridemimetype「enforcing
+        // Shift-JIS」面）；表外 override → 回落 UTF-8。
+        try { text = new TextDecoder(overrideCharset).decode(bytes); } catch (_eXhrCharset) { text = new TextDecoder().decode(bytes); }
+      } else {
+        text = new TextDecoder().decode(bytes);
       }
       self.responseText = text;
       var rt = self._zwXhrResponseType || '';

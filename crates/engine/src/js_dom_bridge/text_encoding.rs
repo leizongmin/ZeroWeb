@@ -1,4 +1,5 @@
-//! TextDecoder legacy 编码 host 面（encoding-compat M2）。
+//! TextDecoder legacy 编码 host 面（encoding-compat M2 labels 全表 + legacy 解码；
+//! M3 增补空 chunk 直通 guard——encoding_rs 0.8.35 空输入调用丢驻留 lead）。
 //! 经 encoding_rs（WHATWG encoding 标准 tables 的生成实现，zero-net 同款工作区依赖）——
 //! labels 标签匹配（trim ASCII whitespace + ASCII case-insensitive 全表）与解码器
 //!（单字节 28 编码 / GBK / GB18030 / Big5 / Shift_JIS / EUC-JP / EUC-KR /
@@ -86,6 +87,12 @@ pub fn text_decoder_new(label: &str, ignore_bom: bool) -> String {
 /// 使用）→ 返空串（透明降级，与丢跨块状态的上界行为一致）。
 pub fn text_decoder_decode(handle: u64, bytes_csv: &str, fatal: bool, last: bool) -> String {
     let data = bytes_from_csv(bytes_csv);
+    // encoding_rs 0.8.35 空输入调用会丢弃驻留 lead（big5/shift_jis/euc-kr stream 空 chunk
+    // 实证：hold [0x87] → 空 chunk → [0x40] 得 "@" 而非 "䏰"；flush（last=true）面不受
+    // 影响）——空块非 flush 直通为无输出。
+    if data.is_empty() && !last {
+        return "{\"text\":\"\",\"err\":0}".to_string();
+    }
     let mut table = decoder_table().lock().unwrap_or_else(|e| e.into_inner());
     // 逐出/未知 handle → 透明重建（无 slot 元数据可循时——不应发生——按 utf-8 语义空转）。
     if !table.slots.contains_key(&handle) {
@@ -111,7 +118,7 @@ pub fn text_decoder_decode(handle: u64, bytes_csv: &str, fatal: bool, last: bool
 mod tests {
     use super::*;
 
-    fn decode_text(handle: &str, csv: &str, fatal: bool, last: bool) -> (String, bool) {
+    pub(super) fn decode_text(handle: &str, csv: &str, fatal: bool, last: bool) -> (String, bool) {
         let out = text_decoder_decode(handle.parse().unwrap(), csv, fatal, last);
         let text_start = out.find("\"text\":").unwrap() + 7;
         // json_str 输出带引号（内部引号已转义）——剥首尾引号取原文。
@@ -266,5 +273,32 @@ mod tests {
         }
         let out = text_decoder_decode(first.parse().unwrap(), "65", false, true);
         assert!(out.contains("\"err\":0"), "{out}");
+    }
+}
+
+#[cfg(test)]
+mod stream_empty_chunk_guard {
+    use super::tests::decode_text;
+    use super::*;
+
+    /// encoding_rs 0.8.35 空输入调用会丢弃驻留 lead（big5 hold [0x87] → 空 chunk →
+    /// [0x40] 得 "@" 而非 "䏰"）——host 对「空块非 flush」直通为无输出（flush 面不受
+    /// 影响，产出替换字符）。锁定 guard 行为防回退。
+    #[test]
+    fn test_empty_chunk_guard_and_flush() {
+        let handle = text_decoder_new("big5", false);
+        let (a, _) = decode_text(&handle, "135", false, false); // lead 驻留
+        assert_eq!(a, "");
+        let (b, _) = decode_text(&handle, "", false, false); // 空 chunk 非 flush → 直通
+        assert_eq!(b, "");
+        let (c, _) = decode_text(&handle, "64", false, false); // lead 仍驻留——成对成功
+        assert_eq!(c, "\u{43f0}", "空 chunk 不得丢弃驻留 lead");
+        // flush（last=true）空输入：驻留半截 → 替换字符（guard 不影响 flush 语义）。
+        let handle2 = text_decoder_new("big5", false);
+        let (d, _) = decode_text(&handle2, "135", false, false);
+        assert_eq!(d, "");
+        let (e, err) = decode_text(&handle2, "", false, true);
+        assert_eq!(e, "\u{fffd}");
+        assert!(!err);
     }
 }
