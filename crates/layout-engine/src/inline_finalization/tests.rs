@@ -1332,12 +1332,14 @@ fn slice13rw_excluded_inline_reports_none_and_keeps_geometry() {
     );
 }
 
-/// slice13 返修（S3 挂账钉）：vertical-align:middle 元素的上报仍锚**行主基线**
-///（`agg.line_baseline_y`），未计元素自身 va 偏移——活体 v6（middle）残差 1.87px
-/// vs Chrome（信息级 i1，挂账 R4384）。本测试钉现值防无声漂移；后续切片若修 va 面，
-/// 此处显红即为提醒。
+/// slice16（R4384 va 轴）：vertical-align:middle 元素的上报锚**元素自身基线**
+///（va 对齐后）——`apply_vertical_alignment` 把 middle 片段行盒居中
+///（run.y = (行高−run高)/2），元素基线 = run.y + run.height。slice13 返修时的
+/// 行主基线锚钉（slice13rw_va_middle_pins_line_baseline_anchor）按其注释预告
+/// 在本切片翻转：旧行为（行主基线锚）= 5.0，新行为（自身基线锚）= 10.94。
+/// 修前（≤slice15）本测试显红即为 RED 钉兑现。
 #[test]
-fn slice13rw_va_middle_pins_line_baseline_anchor() {
+fn slice16_va_middle_pins_own_baseline_anchor() {
     let mut doc = Document::new();
     let container = doc.create_element("div");
     let span = doc.create_element("span");
@@ -1371,21 +1373,344 @@ fn slice13rw_va_middle_pins_line_baseline_anchor() {
     };
     sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
     let child = &root.children[0];
-    let (line_y, line_baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
+    let line_y = context.lines[0].y;
     let reported = child
         .inline_reported_rect
         .expect("va:middle 单行 inline 应记录上报矩形");
-    // 现值：行主基线锚（非元素自身 va 偏移后的基线）。残差口径见注释（i1 挂账）。
+    // 自身基线锚：middle 片段行盒居中 → run.y = 0（run 高 = 行高 = 23）、元素基线 =
+    // 23；content 顶 = 23 − 13×0.928 = 10.94。旧行为（行主基线锚）= 行顶 + strut
+    // 基线 17.06 − 12.06 = 5.0（偏 5.94，修前本断言显红）。
+    let frag = &context.lines[0].runs[0];
     assert!(
-        (reported.0 - (line_y + line_baseline_y - 13.0 * 0.928)).abs() < 0.5,
-        "va:middle 上报顶 = 行主基线 − A（现口径），实际 {}（行顶 {} 行基线 {}）",
+        (reported.0 - (line_y + frag.y + frag.height - 13.0 * 0.928)).abs() < 0.5,
+        "va:middle 上报顶 = 元素自身基线 − A，实际 {}（片段顶 {} 片段高 {} 行顶 {}）",
         reported.0,
-        line_y,
-        line_baseline_y
+        frag.y,
+        frag.height,
+        line_y
+    );
+    assert!(
+        (reported.0 - 10.94).abs() < 0.5,
+        "va:middle 上报顶显值钉 10.94（自身基线 23 − A 12.064），实际 {}",
+        reported.0
     );
     assert!(
         (reported.1 - 13.0 * (0.928 + 0.236)).abs() < 0.5,
         "va:middle 上报高 = 自身字体 content area，实际 {}",
         reported.1
+    );
+}
+
+/// slice16（R4384 va 轴）provider 臂：count==1 + webfont provider + va:middle——
+/// 树锚与上报锚同取**元素自身基线**（slice16 同式扩展；活体 bundled 字体路径即本臂，
+/// slice13 i1/slice15 va-middle ~7px 挂账在活体复现于此）。va=baseline 时
+/// `apply_vertical_alignment` 片段底 ≡ 行主基线，本式与 R4383 旧行为逐字节同值
+///（`slice13rw_provider_count1_anchor_in_tree_preserved` 即该退化对照，保持绿）。
+/// 修前本测试显红（旧行为锚行主基线，偏 own_baseline − 行主基线）。
+#[test]
+fn slice16_provider_arm_va_middle_pins_own_baseline_anchor() {
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("More");
+    doc.append_child(container, span).unwrap();
+    doc.append_child(span, text).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(container, ComputedStyle::default());
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    span_style.font_size = LengthValue::Px(13.0);
+    span_style.line_height = LineHeightValue::Length(LengthValue::Px(23.0));
+    span_style.font_family = vec!["WebFont".to_string()];
+    span_style.vertical_align = VerticalAlignValue::Middle;
+    styles.insert(span, span_style);
+
+    let provider = slice13rw_webfont_provider("WebFont");
+    let mut context = InlineFormattingContext::new(200.0);
+    context = context.with_font_metric_provider(provider);
+    context.layout(&doc, container, &styles);
+    assert_eq!(context.lines.len(), 1, "用例前提：单行");
+
+    let mut root = LayoutBox {
+        node_id: Some(container),
+        children: vec![LayoutBox {
+            node_id: Some(span),
+            x: 0.0,
+            y: 0.0,
+            width: 30.0,
+            height: 23.0,
+            ..LayoutBox::default()
+        }],
+        ..LayoutBox::default()
+    };
+    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    let child = &root.children[0];
+    let line_y = context.lines[0].y;
+    let frag = &context.lines[0].runs[0];
+    // 装置比率 ascent 0.6 / descent −0.1（≠常数 0.928/0.236，区分两臂）：
+    // 自身基线 = 片段底 = frag.y + frag.height；content 顶 = 自身基线 − 0.6×13。
+    let own_baseline = line_y + frag.y + frag.height;
+    let expected_top = own_baseline - 13.0 * 0.6;
+    // 区分性前提：middle 自身基线 ≠ 行主基线（否则本测试不构成修前红/修后绿）。
+    assert!(
+        (own_baseline - (line_y + context.lines[0].baseline_y)).abs() > 0.5,
+        "用例前提：va:middle 自身基线 {} 应偏离行主基线 {}",
+        own_baseline,
+        line_y + context.lines[0].baseline_y
+    );
+    // 树锚（provider 臂入树，R4383 gate 不变）：y = 自身基线 − 0.6fs、h = 0.7fs。
+    assert!(
+        (child.y - expected_top).abs() < 0.5,
+        "provider 臂 va:middle 树 y = 自身基线 − 0.6fs = {}，实际 {}（自身基线 {}）",
+        expected_top,
+        child.y,
+        own_baseline
+    );
+    assert!(
+        (child.height - 13.0 * 0.7).abs() < 0.5,
+        "provider 臂树 h 保持 content area 0.7fs = 9.1，实际 {}",
+        child.height
+    );
+    // 上报矩形同源（border-box 顶 = content 顶，无 padding/border）。
+    let reported = child
+        .inline_reported_rect
+        .expect("provider 臂 va:middle 应记录上报矩形");
+    assert!(
+        (reported.0 - expected_top).abs() < 0.5,
+        "provider 臂 va:middle 上报顶 = 自身基线 − 0.6fs = {}，实际 {}",
+        expected_top,
+        reported.0
+    );
+    assert!(
+        (reported.1 - 13.0 * 0.7).abs() < 0.5,
+        "provider 臂上报高 = provider content area 0.7fs，实际 {}",
+        reported.1
+    );
+}
+
+/// slice16（R4384 va 轴）sub/super 偏移钉：元素自身基线随 va 平移 ±0.3em——上报顶
+/// 相对 baseline 对照臂精确位移 ±3.9px（fs=13）。`apply_vertical_alignment` 的
+/// sub/super 位移参与行盒基线（Baseline|Sub|Super 同臂），基线分量同消、位移量
+/// 是构造精确值。修前（行主基线锚）两臂上报顶同值 → Δ=0，本测试显红（RED 钉）。
+#[test]
+fn slice16_va_sub_super_shift_own_baseline_by_03em() {
+    for (va, expected_delta) in [(VerticalAlignValue::Sub, 3.9_f32), (VerticalAlignValue::Super, -3.9)] {
+        let build = |va: &VerticalAlignValue| {
+            let mut doc = Document::new();
+            let container = doc.create_element("div");
+            let span = doc.create_element("span");
+            let text = doc.create_text_node("More");
+            doc.append_child(container, span).unwrap();
+            doc.append_child(span, text).unwrap();
+            let mut styles = HashMap::new();
+            styles.insert(container, ComputedStyle::default());
+            let mut span_style = ComputedStyle::default();
+            span_style.display = DisplayValue::Inline;
+            span_style.font_size = LengthValue::Px(13.0);
+            span_style.line_height = LineHeightValue::Length(LengthValue::Px(23.0));
+            span_style.vertical_align = va.clone();
+            styles.insert(span, span_style);
+            let mut context = InlineFormattingContext::new(200.0);
+            context.layout(&doc, container, &styles);
+            let mut root = LayoutBox {
+                node_id: Some(container),
+                children: vec![LayoutBox {
+                    node_id: Some(span),
+                    x: 0.0,
+                    y: 0.0,
+                    width: 30.0,
+                    height: 23.0,
+                    ..LayoutBox::default()
+                }],
+                ..LayoutBox::default()
+            };
+            sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+            root.children[0]
+                .inline_reported_rect
+                .expect("单行 inline 应记录上报矩形")
+        };
+        let baseline = build(&VerticalAlignValue::Baseline);
+        let shifted = build(&va);
+        assert!(
+            (shifted.0 - baseline.0 - expected_delta).abs() < 0.1,
+            "va:{va:?} 上报顶相对 baseline 臂应精确平移 {expected_delta:+}px，实际 {} − {}",
+            shifted.0,
+            baseline.0
+        );
+        assert!(
+            (shifted.1 - baseline.1).abs() < 0.01,
+            "va:{va:?} 上报高与 baseline 臂同（content area 不随 va 变），实际 {} vs {}",
+            shifted.1,
+            baseline.1
+        );
+    }
+}
+
+/// slice16：va ∈ {top, bottom, text-top, text-bottom} 上报锚 = 元素自身基线
+///（片段顶 + 片段高，`apply_vertical_alignment` 贴行盒缘/居中语义的镜像）。
+/// 修前上报锚行主基线（strut 17.06 值域）≠ 片段底（top/text-top = 片段高 23、
+/// bottom/text-bottom ≥ 行高），本组显红（RED 钉）。行盒缘语义 vs Chrome 残差
+///（top/bottom 对齐边、text-top/bottom 父字体语义）属 va 放置轴，挂账 R4384。
+#[test]
+fn slice16_va_top_bottom_texttop_textbottom_anchor_own_baseline() {
+    for va in [
+        VerticalAlignValue::Top,
+        VerticalAlignValue::Bottom,
+        VerticalAlignValue::TextTop,
+        VerticalAlignValue::TextBottom,
+    ] {
+        let mut doc = Document::new();
+        let container = doc.create_element("div");
+        let span = doc.create_element("span");
+        let text = doc.create_text_node("More");
+        doc.append_child(container, span).unwrap();
+        doc.append_child(span, text).unwrap();
+        let mut styles = HashMap::new();
+        styles.insert(container, ComputedStyle::default());
+        let mut span_style = ComputedStyle::default();
+        span_style.display = DisplayValue::Inline;
+        span_style.font_size = LengthValue::Px(13.0);
+        span_style.line_height = LineHeightValue::Length(LengthValue::Px(23.0));
+        span_style.vertical_align = va.clone();
+        styles.insert(span, span_style);
+        let mut context = InlineFormattingContext::new(200.0);
+        context.layout(&doc, container, &styles);
+        let mut root = LayoutBox {
+            node_id: Some(container),
+            children: vec![LayoutBox {
+                node_id: Some(span),
+                x: 0.0,
+                y: 0.0,
+                width: 30.0,
+                height: 23.0,
+                ..LayoutBox::default()
+            }],
+            ..LayoutBox::default()
+        };
+        sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+        let child = &root.children[0];
+        let line_y = context.lines[0].y;
+        let frag = &context.lines[0].runs[0];
+        let reported = child.inline_reported_rect.expect("单行 inline 应记录上报矩形");
+        assert!(
+            (reported.0 - (line_y + frag.y + frag.height - 13.0 * 0.928)).abs() < 0.5,
+            "va:{va:?} 上报顶 = 元素自身基线（片段顶 {} + 片段高 {}）− A，实际 {}（行顶 {}）",
+            frag.y,
+            frag.height,
+            reported.0,
+            line_y
+        );
+        // 对照（RED 方向）：行主基线锚（旧行为）≠ 自身基线锚。
+        assert!(
+            (line_y + context.lines[0].baseline_y - reported.0).abs() > 0.5,
+            "va:{va:?} 自身基线应偏离行主基线（否则本钉无判别力）：行基线 {} vs 上报顶 {}",
+            context.lines[0].baseline_y,
+            reported.0
+        );
+    }
+}
+
+/// slice16 不回退钉（对照臂）：vertical-align:baseline（默认）上报锚 = 行主基线
+/// − A，**逐字节同值**（slice13 语义不动）。自身基线式在 baseline 臂退化为
+/// first_y + first_frag_h = line_y + line_baseline_y（片段底 = 行主基线）。
+#[test]
+fn slice16_va_baseline_arm_pins_line_baseline_anchor_unchanged() {
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("更多");
+    doc.append_child(container, span).unwrap();
+    doc.append_child(span, text).unwrap();
+    let mut styles = HashMap::new();
+    styles.insert(container, ComputedStyle::default());
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    span_style.font_size = LengthValue::Px(13.0);
+    span_style.line_height = LineHeightValue::Length(LengthValue::Px(23.0));
+    styles.insert(span, span_style);
+    let mut context = InlineFormattingContext::new(200.0);
+    context.layout(&doc, container, &styles);
+    let mut root = LayoutBox {
+        node_id: Some(container),
+        children: vec![LayoutBox {
+            node_id: Some(span),
+            x: 0.0,
+            y: 0.0,
+            width: 26.0,
+            height: 23.0,
+            ..LayoutBox::default()
+        }],
+        ..LayoutBox::default()
+    };
+    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    let child = &root.children[0];
+    let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
+    let reported = child.inline_reported_rect.expect("单行 inline 应记录上报矩形");
+    // slice13 原式逐字节保留：baseline 臂 first_y + first_frag_h ≡ line_y + baseline_y。
+    assert!(
+        (reported.0 - (line_y + baseline_y - 13.0 * 0.928)).abs() < 0.5,
+        "baseline 臂上报顶 = 行主基线 − A（slice13 语义不动），实际 {}（行顶 {} 基线 {}）",
+        reported.0,
+        line_y,
+        baseline_y
+    );
+    // 构造同值性（本切片修复式的退化路径）：片段底 == 行主基线。
+    let frag = &context.lines[0].runs[0];
+    assert!(
+        (line_y + frag.y + frag.height - (line_y + baseline_y)).abs() < 0.001,
+        "baseline 臂片段底应精确等于行主基线（修复式退化判据），实际 {} vs {}",
+        frag.y + frag.height,
+        baseline_y
+    );
+}
+
+/// slice16 挂账钉（轴邻接，不修）：vertical-align 长度/百分比值在 CSS 解析层未实现
+///（`parse_vertical_align` 无 Length/Percentage 臂 → None → 回落默认 baseline），
+/// 上报与 baseline 臂同值。本钉钉住回落行为防无声漂移；实现 <length>/<percentage>
+/// va 值轴时本钉翻红即为提醒（届时两臂应差 3px / 50%×line-height）。
+/// https://www.w3.org/TR/CSS22/visudet.html#propdef-vertical-align
+#[test]
+fn slice16_va_length_percentage_unparsed_falls_back_to_baseline() {
+    // 样式表声明 `vertical-align: 3px` / `50%` 时 `parse_vertical_align` 返 None →
+    // ComputedStyle 保持默认 Baseline——两形态同一回落路径，与显式 baseline 臂同值。
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    let span = doc.create_element("span");
+    let text = doc.create_text_node("更多");
+    doc.append_child(container, span).unwrap();
+    doc.append_child(span, text).unwrap();
+    let mut styles = HashMap::new();
+    styles.insert(container, ComputedStyle::default());
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    span_style.font_size = LengthValue::Px(13.0);
+    span_style.line_height = LineHeightValue::Length(LengthValue::Px(23.0));
+    // FIXME(CSS2 §10.8.1 <length>/<percentage>): 解析层无长度/百分比 va 臂，
+    // ComputedStyle 保持默认 Baseline——回落行为钉（非语义修复）。
+    styles.insert(span, span_style);
+    let mut context = InlineFormattingContext::new(200.0);
+    context.layout(&doc, container, &styles);
+    let mut root = LayoutBox {
+        node_id: Some(container),
+        children: vec![LayoutBox {
+            node_id: Some(span),
+            x: 0.0,
+            y: 0.0,
+            width: 26.0,
+            height: 23.0,
+            ..LayoutBox::default()
+        }],
+        ..LayoutBox::default()
+    };
+    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    let reported = root.children[0]
+        .inline_reported_rect
+        .expect("单行 inline 应记录上报矩形");
+    let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
+    assert!(
+        (reported.0 - (line_y + baseline_y - 13.0 * 0.928)).abs() < 0.5,
+        "长度/百分比 va 回落 baseline 臂：上报顶 = 行主基线 − A，实际 {}",
+        reported.0
     );
 }
