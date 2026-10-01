@@ -269,15 +269,49 @@ pub(crate) fn shrink_pure_text_floats(
         .get(&dom_id)
         .filter(|style| !matches!(style.font_size_adjust, zero_style_system::FontSizeAdjustValue::None))
         .and_then(|_| adjusted_text_max_width(dom_id, doc, styles, advance_source?, font_resolver?));
-    let text_max_w =
-        adjusted_text_max_w.unwrap_or_else(|| crate::intrinsic_sizing::text_content_max_width(dom_id, doc, styles));
+    // R4921（css-sizing-3 §max-content）：定宽原子 inline 子停止文本递归——本臂 Σ 侧
+    // inline_children_non_text_width 已计其盒外尺寸，旧 walk 再递归内文即双计（实证：
+    // float > inline-block(100px) > 文本 → 80+100=180 vs 规范真值 100，R4920 组合新
+    // 引入的过测；auto/百分比宽原子不定宽不受 gate，内文仍由 walk 计入单边口径）。
+    // gate 仅本臂启用——text_content_max_width 其余消费方（legend/leaf/垂直 float 臂）
+    // 无 Σ 配对侧，维持旧口径不扩波及面。kill-switch `ZW_INTRINSIC_ATOMIC_GATE=0` 回退。
+    let text_max_w = adjusted_text_max_w.unwrap_or_else(|| {
+        crate::intrinsic_sizing::text_content_max_width_scoped(
+            dom_id,
+            doc,
+            styles,
+            std::env::var("ZW_INTRINSIC_ATOMIC_GATE").as_deref() != Ok("0"),
+        )
+    });
+    // R4920（css-sizing-3 §max-content + CSS2 §10.3.5 shrink-to-fit）：float preferred
+    // width = 文本 max-content（R4919 per-font walk；R4921 起定宽原子内文经 gate 排除）
+    // + **inline-level 子 margin-box 水平求和**（定宽原子 inline-block 族 + 纯 inline 子
+    // frame/margin；纯 inline 子文本仍在 text_max_w 内，勿双计）。baidu「换一换」float
+    //（a.hot-refresh）内 i.c-icon（inline-block width:16px）+ span（margin-left:2px）：
+    // Σ = 16+2+42 = 60。taffy native float 收缩用**块流 max-content = max(子 margin-box)**
+    //（ZW 把 inline 子映射为 taffy Block 节点，块流竖排取 max 语义，且 inline 子不经
+    // measure 闭包）= max(16, 44) = 44 → float 窄于单行真值 60 → 内层 IFC 把「一换」折
+    // 到第二行竖排（实证）。故 taffy 估值 < Σ 时须**扩**到 Σ（块流取 max 与 IFC 求和的
+    // 真实偏差）；taffy 估值 ≥ Σ 时照旧收缩。adjusted_text_max_w 臂（font-size-adjust
+    // 语境）已断言无元素子，Σ=0 恒不触发扩臂。
+    // kill-switch `ZW_FLOAT_INLINE_SUM=0` = R4920 逐字节回退：Σ 不计入（收缩阈值还原为
+    // text_max_w+frame）且扩臂关（R4921 gate 不受本开关影响，其归因用
+    // `ZW_INTRINSIC_ATOMIC_GATE`）。
+    let non_text_w = if adjusted_text_max_w.is_none() && std::env::var("ZW_FLOAT_INLINE_SUM").as_deref() != Ok("0") {
+        crate::intrinsic_sizing::inline_children_non_text_width(dom_id, doc, styles)
+    } else {
+        0.0
+    };
+    let content_max_w = text_max_w + non_text_w;
     let shrink_border_box =
-        text_max_w + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
-    // 仅当内容确实更窄时才收缩（对内容更宽或显式宽度为 no-op）。
+        content_max_w + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+    // 仅当内容确实更窄时才收缩（对内容更宽或显式宽度为 no-op）。扩臂开关已在 non_text_w
+    // 处统一门控（关断 Σ=0 → `non_text_w > 0.0` 恒 false），此处不再重复读环境。
     let expanded_adjusted_text = adjusted_text_max_w.is_some() && shrink_border_box > box_node.width;
-    if adjusted_text_max_w.is_some() || shrink_border_box < box_node.width {
+    let expand_inline_sum = adjusted_text_max_w.is_none() && non_text_w > 0.0 && shrink_border_box > box_node.width;
+    if adjusted_text_max_w.is_some() || shrink_border_box < box_node.width || expand_inline_sum {
         box_node.width = shrink_border_box;
-        box_node.content_width = text_max_w;
+        box_node.content_width = content_max_w;
     }
     if expanded_adjusted_text {
         let (_, line_height) = crate::inline::resolve_font_metrics(styles.get(&dom_id));

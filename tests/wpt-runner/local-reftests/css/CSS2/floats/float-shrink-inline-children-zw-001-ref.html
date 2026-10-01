@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>float shrink-to-fit sums inline-level children (ref: auto height + nowrap)</title>
+<!-- 与 float-shrink-inline-children-zw-001.html 同型；参照页 float 两处差异
+     （双 kill-switch 免疫的参照构造）：① 去掉 height:48px——R4920b 重测 gate
+     只钳 definite-height float，auto 高容器走常规重测恒单行（主臂行盒由
+     inline 内容决定，修复态与 test 页显式 48px 渲染逐像素一致，已实证）；
+     ② white-space:nowrap——无论 float 收缩宽是否正确都强制单行（R4920 参照）。 -->
+<style>
+body { margin: 0; font: 13px/23px Arial, sans-serif; }
+.header { margin: 8px; padding: 4px; }
+.hot-refresh { float: right; white-space: nowrap; }
+.hot-refresh-text { font-size: 42px; line-height: 42px; margin-left: 2px; background: #3fbf3f; }
+.c-icon { display: inline-block; width: 48px; height: 48px; background: #4e6ef2; }
+</style>
+</head>
+<body>
+<div class="header"><a class="hot-refresh"><span class="hot-refresh-text" style="background:#e6a23c">refresh swap</span></a></div>
+<div class="header"><a class="hot-refresh"><i class="c-icon"></i><span class="hot-refresh-text">ab cdefghijklmnopqrstuvwxyzabcd</span></a></div>
+</body>
+</html>

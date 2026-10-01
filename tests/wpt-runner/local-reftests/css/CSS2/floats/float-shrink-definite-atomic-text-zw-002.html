@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="match" href="float-shrink-definite-atomic-text-zw-002-ref.html">
+<title>float with text-bearing definite-width atomic inline child measures atomic margin-box once (R4921)</title>
+<!-- 本地自建 reftest（上游无同型案，2026-10-01 R4921 返修）：float(width:auto) 内
+     带文本的定宽原子 inline 子（inline-block width:120px，内文在原子盒内自行折行
+     不外溢）——float 首选宽 = 原子 margin-box = 120（css-sizing-3 max-content）。
+     回归形态（R4920 Σ 组合新引入过测）：text walk 递归计原子内文 + Σ 计盒宽 =
+     双计 → float ≈400 过宽（major-1，方向由修复前欠测翻超测）。修法：
+     text_max_width_walk 对定宽原子停止文本递归（text_content_max_width_scoped，
+     仅 float 纯文本臂启用），kill-switch ZW_INTRINSIC_ATOMIC_GATE=0。
+     信号构造：原子带 24px/48px 文本折两行 + float 绿背景条——gate 关断时 float
+     过宽绿条显红；ref 页 .fa 加 width:120px（definite → 跳过收缩臂，对全部
+     kill-switch 免疫的参照）。邻臂 .fb > .iby（width:auto 原子带文）= 邻近变体
+     负控制（Σ 侧计 0、内文 walk 单边计入，gate 不得触及；两页同 HTML 恒相等）。
+     负控制矩阵：default 0 diff；ZW_INTRINSIC_ATOMIC_GATE=0 显红（float 过宽）；
+     ZW_FLOAT_INLINE_SUM=0 显红（Σ=0 收缩塌 0，异签名）；对
+     ZW_FLOAT_DEFINITE_H_REMEASURE=0 / ZW_INTRINSIC_PERFONT=0 免疫。精确像素数：
+     diag/evidence/slice12/rework-negative-control-reftest-red.log。
+     账本：tests/wpt-runner/imported-tests.txt；wpt-data 为独立 repo（gitignored），
+     重拉后按主仓 tests/wpt-runner/local-reftests/ 同路径文件恢复并重跑
+     make import-wpt 重建 manifest。本页另有内联孪生（make reftest 常驻集）：
+     tests/wpt-runner/src/reftest_data/css_float.rs
+     id css-float/float-shrink-definite-atomic-text-zw-002——两处需同步维护。 -->
+<style>
+body { margin: 0; font: 13px/23px Arial, sans-serif; }
+.header { margin: 8px; padding: 4px; outline: 1px solid #ccc; }
+.fa { float: right; background: #3fbf3f; }
+.ibx { display: inline-block; width: 120px; font-size: 24px; line-height: 48px; background: #e6a23c; }
+.fb { float: right; background: #3fbf3f; }
+.iby { display: inline-block; font-size: 24px; line-height: 48px; background: #e6a23c; }
+</style>
+</head>
+<body>
+<div class="header">Header one <a class="fa"><span class="ibx">rad maca sine fala poco</span></a></div>
+<div class="header">Header two <a class="fb"><span class="iby">northern light</span></a></div>
+</body>
+</html>
