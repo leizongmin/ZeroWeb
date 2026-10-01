@@ -689,7 +689,8 @@ pub fn apply_dom_mutations_full(
     // 第二条失配 → 旧 `?` 硬错中止整批（WPT MutationObserver-attributes "apply mutations:
     // set_attr: no match" 整用例崩）。spec 语义：两 mutation 引用同一元素，都应生效。apply 成功
     // 改 id 后，把**剩余队列**中 `#旧id` 前缀 selector 重写为 `#新id`（仅此元素失配的根因是本批
-    // 前序改名，其他 stale selector 仍走原错误路径不掩盖真 bug）。SetText 的 lenient no-op（R3076）
+    // 前序改名，其他 stale selector 仍走原错误路径不掩盖真 bug——siteopt t4 P19 起「原错误
+    // 路径」改为 lenient warn+跳过，见 SetAttr arm）。SetText 的 lenient no-op（R3076）
     // 保持不变。
     let mut pending: std::collections::VecDeque<DomMutation> = mutations.iter().cloned().collect();
     // R361（js-dom M4）：**批内 detach→insert 移动语义的 detached-stash**——同一 dispatch
@@ -818,19 +819,22 @@ pub fn apply_dom_mutations_full(
                 // 焦点状态由宿主（renderer）消费，不写 DOM。
             }
             DomMutation::SetAttr { selector, name, value } => {
-                // M3 扩批 XLVI（2026-09-04）：同批 detach→setAttr 失配走 stash lenient
-                // 跳过（R361 同源——「removeChild 后 video.src= 重设」排 SetAttr wire 时
-                // 目标已 detach；spec detached 元素 setAttribute 有效但 host 档无此节点，
-                // JS 侧 attr instance/expando 已记账，这里跳过应用保整批继续）。未命中
-                // stash 维持原 Err（真 stale selector 不掩盖）。
+                // siteopt t4（2026-10-01）P19：selector 失配 lenient warn+跳过，不再 Err。
+                // 旧政策（M3 扩批 XLVI：stash 命中跳过、未命中 Err「不掩盖真 stale
+                // selector」；R45：改名追链后「其他 stale selector 仍走原错误路径」）被
+                // 实站证据推翻——html5test.co showResults 的内容 mutation 批内一条失配
+                // 即 Err 中止整批，drain 已消费不可重放（page_scripts apply_recorded_
+                // mutations warn+丢弃），页面永卡空结果（实站采样 ~3-5% 卡死，run15/17/
+                // 33/34）。不变式：真实浏览器无"批"语义，逐 op 独立 apply；selector 失配
+                // = JS 视图与 host 快照视图分歧（实现间隙），页面 JS 调用本身已成功，
+                // 不该被实现间隙惩罚而丢失整批无关记录（R3076 SetText / R125 AppendChild
+                // / R100 SetTextOnHandle 同一不变式的推广）。悬垂 handle（unknown
+                // handle）与 doc 结构性错误仍硬错（暴露真 bug，T7 口径不变）。
                 // https://github.com/whatwg/dom/issues/1017
-                if find_by_selector(doc, &selector).is_none() {
-                    if detached_stash.contains_key(selector.as_str()) {
-                        continue;
-                    }
-                    return Err(format!("set_attr: no match for {selector}"));
-                }
-                let node = find_by_selector(doc, &selector).expect("checked above");
+                let Some(node) = find_by_selector(doc, &selector) else {
+                    tracing::warn!("apply DOM mutations: set_attr selector no match, skipped: {selector}");
+                    continue;
+                };
                 doc.set_attribute(node, &name, &value);
                 // id 改名 → 追链重写剩余 mutation 的 `#旧id` selector（属性名 effective 已小写）。
                 if name.eq_ignore_ascii_case("id") {
@@ -838,14 +842,11 @@ pub fn apply_dom_mutations_full(
                 }
             }
             DomMutation::RemoveAttr { selector, name } => {
-                // M3 扩批 XLVI：同 SetAttr——同批 detach 后的 remove_attr lenient 跳过。
-                if find_by_selector(doc, &selector).is_none() {
-                    if detached_stash.contains_key(selector.as_str()) {
-                        continue;
-                    }
-                    return Err(format!("remove_attr: no match for {selector}"));
-                }
-                let node = find_by_selector(doc, &selector).expect("checked above");
+                // siteopt t4 P19：失配 lenient warn+跳过（不变式见 SetAttr arm）。
+                let Some(node) = find_by_selector(doc, &selector) else {
+                    tracing::warn!("apply DOM mutations: remove_attr selector no match, skipped: {selector}");
+                    continue;
+                };
                 doc.remove_attribute(node, &name);
             }
             DomMutation::SetText { selector, text } => {
@@ -857,8 +858,13 @@ pub fn apply_dom_mutations_full(
                 }
             }
             DomMutation::SetInnerHtml { selector, html } => {
-                let node = find_by_selector(doc, &selector)
-                    .ok_or_else(|| format!("set_inner_html: no match for {selector}"))?;
+                // siteopt t4 P19：失配 lenient warn+跳过（不变式见 SetAttr arm）——
+                // html5test.co showResults 首写 #score 即走本变体。replace_inner_html
+                // 内部解析/结构错误仍硬错。
+                let Some(node) = find_by_selector(doc, &selector) else {
+                    tracing::warn!("apply DOM mutations: set_inner_html selector no match, skipped: {selector}");
+                    continue;
+                };
                 replace_inner_html(doc, node, &html)?;
             }
             DomMutation::SetStyle {
@@ -866,13 +872,19 @@ pub fn apply_dom_mutations_full(
                 property,
                 value,
             } => {
-                let node =
-                    find_by_selector(doc, &selector).ok_or_else(|| format!("set_style: no match for {selector}"))?;
+                // siteopt t4 P19：失配 lenient warn+跳过（不变式见 SetAttr arm）。
+                let Some(node) = find_by_selector(doc, &selector) else {
+                    tracing::warn!("apply DOM mutations: set_style selector no match, skipped: {selector}");
+                    continue;
+                };
                 apply_style_property(doc, node, &property, &value);
             }
             DomMutation::RemoveStyle { selector, property } => {
-                let node =
-                    find_by_selector(doc, &selector).ok_or_else(|| format!("remove_style: no match for {selector}"))?;
+                // siteopt t4 P19：失配 lenient warn+跳过（不变式见 SetAttr arm）。
+                let Some(node) = find_by_selector(doc, &selector) else {
+                    tracing::warn!("apply DOM mutations: remove_style selector no match, skipped: {selector}");
+                    continue;
+                };
                 apply_remove_style(doc, node, &property);
             }
             DomMutation::Remove { selector } => {
@@ -990,14 +1002,20 @@ pub fn apply_dom_mutations_full(
                 child_handle,
                 ref_selector,
             } => {
-                let parent = find_by_selector(doc, &parent_selector)
-                    .ok_or_else(|| format!("insert_before: no parent match for {parent_selector}"))?;
+                // siteopt t4 P19：parent/ref selector 失配 lenient warn+跳过（不变式见
+                // SetAttr arm）；child 悬垂 handle 仍硬错。
+                let Some(parent) = find_by_selector(doc, &parent_selector) else {
+                    tracing::warn!("apply DOM mutations: insert_before parent no match, skipped: {parent_selector}");
+                    continue;
+                };
                 let child = handles
                     .get(&child_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
-                let ref_node = find_by_selector(doc, &ref_selector)
-                    .ok_or_else(|| format!("insert_before: no ref match for {ref_selector}"))?;
+                let Some(ref_node) = find_by_selector(doc, &ref_selector) else {
+                    tracing::warn!("apply DOM mutations: insert_before ref no match, skipped: {ref_selector}");
+                    continue;
+                };
                 doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
             }
             DomMutation::InsertBeforeByHandle {
@@ -1013,8 +1031,11 @@ pub fn apply_dom_mutations_full(
                     .get(&child_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
-                let ref_node = find_by_selector(doc, &ref_selector)
-                    .ok_or_else(|| format!("insert_before: no ref match for {ref_selector}"))?;
+                // siteopt t4 P19：ref selector 失配 lenient warn+跳过（不变式见 SetAttr arm）。
+                let Some(ref_node) = find_by_selector(doc, &ref_selector) else {
+                    tracing::warn!("apply DOM mutations: insert_before ref no match, skipped: {ref_selector}");
+                    continue;
+                };
                 doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
             }
             // js-dom M3 R101：全 handle 形态 insertBefore（见 enum 变体文档）。ref 在
@@ -1073,8 +1094,11 @@ pub fn apply_dom_mutations_full(
                 child_index,
                 text,
             } => {
-                let parent = find_by_selector(doc, &parent_selector)
-                    .ok_or_else(|| format!("set_child_text: no parent match for {parent_selector}"))?;
+                // siteopt t4 P19：parent selector 失配 lenient warn+跳过（不变式见 SetAttr arm）。
+                let Some(parent) = find_by_selector(doc, &parent_selector) else {
+                    tracing::warn!("apply DOM mutations: set_child_text parent no match, skipped: {parent_selector}");
+                    continue;
+                };
                 match doc.child_nodes(parent).get(child_index).copied() {
                     Some(child) => {
                         doc.set_text_content(child, &text);
@@ -1121,14 +1145,23 @@ pub fn apply_dom_mutations_full(
             }
             DomMutation::SelectOption { selector, value } => {
                 // P1a select：编程设 select.value——mark 匹配 option selected，deselect 兄弟。
-                let sel = find_by_selector(doc, &selector)
-                    .ok_or_else(|| format!("select_option: no match for {selector}"))?;
+                // siteopt t4 P19：select/option 失配 lenient warn+跳过（不变式见 SetAttr
+                // arm；真实浏览器 `select.value = '无此项'` 静默置空不抛错）。
+                let Some(sel) = find_by_selector(doc, &selector) else {
+                    tracing::warn!("apply DOM mutations: select_option selector no match, skipped: {selector}");
+                    continue;
+                };
                 let options = doc.query_selector_all(sel, "option");
-                let target = options
+                let Some(target) = options
                     .iter()
                     .copied()
                     .find(|opt| option_value(doc, *opt).as_str() == value.as_str())
-                    .ok_or_else(|| format!("select_option: no option with value {value}"))?;
+                else {
+                    tracing::warn!(
+                        "apply DOM mutations: select_option no option with value {value}, skipped: {selector}"
+                    );
+                    continue;
+                };
                 for opt in options {
                     if opt == target {
                         doc.set_attribute(opt, "selected", "");
@@ -1142,8 +1175,11 @@ pub fn apply_dom_mutations_full(
                 position,
                 html,
             } => {
-                let node = find_by_selector(doc, &selector)
-                    .ok_or_else(|| format!("insert_adjacent_html: no match for {selector}"))?;
+                // siteopt t4 P19：失配 lenient warn+跳过（不变式见 SetAttr arm）。
+                let Some(node) = find_by_selector(doc, &selector) else {
+                    tracing::warn!("apply DOM mutations: insert_adjacent_html selector no match, skipped: {selector}");
+                    continue;
+                };
                 insert_adjacent_html(doc, node, &position, &html)?;
             }
             DomMutation::InsertAdjacentText {
@@ -1151,8 +1187,11 @@ pub fn apply_dom_mutations_full(
                 position,
                 text,
             } => {
-                let node = find_by_selector(doc, &selector)
-                    .ok_or_else(|| format!("insert_adjacent_text: no match for {selector}"))?;
+                // siteopt t4 P19：失配 lenient warn+跳过（不变式见 SetAttr arm）。
+                let Some(node) = find_by_selector(doc, &selector) else {
+                    tracing::warn!("apply DOM mutations: insert_adjacent_text selector no match, skipped: {selector}");
+                    continue;
+                };
                 // 字面 Text 节点（不解析 HTML）。
                 let tn = doc.create_text_node(text.as_str());
                 insert_nodes_at_position(doc, &[tn], node, &position)?;
@@ -1162,8 +1201,14 @@ pub fn apply_dom_mutations_full(
                 position,
                 child_handle,
             } => {
-                let node = find_by_selector(doc, &selector)
-                    .ok_or_else(|| format!("insert_adjacent_element: no match for {selector}"))?;
+                // siteopt t4 P19：失配 lenient warn+跳过（不变式见 SetAttr arm）；
+                // child 悬垂 handle 仍硬错。
+                let Some(node) = find_by_selector(doc, &selector) else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_adjacent_element selector no match, skipped: {selector}"
+                    );
+                    continue;
+                };
                 let child = handles
                     .get(&child_handle)
                     .copied()
@@ -1179,19 +1224,37 @@ pub fn apply_dom_mutations_full(
                 position,
                 child_selector,
             } => {
-                let node = find_by_selector(doc, &selector)
-                    .ok_or_else(|| format!("insert_adjacent_sel_element: no match for {selector}"))?;
+                // siteopt t4 P19：失配 lenient warn+跳过（不变式见 SetAttr arm）。
+                let Some(node) = find_by_selector(doc, &selector) else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_adjacent_sel_element selector no match, skipped: {selector}"
+                    );
+                    continue;
+                };
                 let child = match find_by_selector(doc, &child_selector) {
                     Some(c) => c,
                     // R361：child 失配（同批前序 Remove 已 detach）→ stash 复用该 NodeId
                     //（移动语义——spec removeChild+appendChild 引用同一节点对象）。
-                    None => detached_stash
-                        .remove(child_selector.as_str())
-                        .ok_or_else(|| format!("insert_adjacent_sel_element: no child match for {child_selector}"))?,
+                    // siteopt t4 P19：stash 也未命中 → lenient warn+跳过（原硬错同被推翻）。
+                    None => match detached_stash.remove(child_selector.as_str()) {
+                        Some(id) => id,
+                        None => {
+                            tracing::warn!(
+                                "apply DOM mutations: insert_adjacent_sel_element child no match, skipped: {child_selector}"
+                            );
+                            continue;
+                        }
+                    },
                 };
                 insert_nodes_at_position(doc, &[child], node, &position)?;
             }
             DomMutation::SetOuterHtml { selector, html } => {
+                // siteopt t4 P19：失配 lenient warn+跳过（不变式见 SetAttr arm）；预检
+                // replace_outer_html 内部的 selector Err，结构性 no-parent 错误仍硬错。
+                if find_by_selector(doc, &selector).is_none() {
+                    tracing::warn!("apply DOM mutations: set_outer_html selector no match, skipped: {selector}");
+                    continue;
+                }
                 replace_outer_html(doc, &selector, &html)?;
             }
             DomMutation::CreateDocumentFragment { handle } => {
@@ -1202,8 +1265,13 @@ pub fn apply_dom_mutations_full(
                 parent_selector,
                 fragment_handle,
             } => {
-                let parent = find_by_selector(doc, &parent_selector)
-                    .ok_or_else(|| format!("append_fragment_children: no parent match for {parent_selector}"))?;
+                // siteopt t4 P19：parent selector 失配 lenient warn+跳过（不变式见 SetAttr arm）。
+                let Some(parent) = find_by_selector(doc, &parent_selector) else {
+                    tracing::warn!(
+                        "apply DOM mutations: append_fragment_children parent no match, skipped: {parent_selector}"
+                    );
+                    continue;
+                };
                 move_fragment_children(doc, parent, &fragment_handle, None, &handles)?;
             }
             DomMutation::AppendFragmentChildrenByHandle {
@@ -1221,10 +1289,18 @@ pub fn apply_dom_mutations_full(
                 fragment_handle,
                 ref_selector,
             } => {
-                let parent = find_by_selector(doc, &parent_selector)
-                    .ok_or_else(|| format!("insert_fragment_before: no parent match for {parent_selector}"))?;
-                let ref_node = find_by_selector(doc, &ref_selector)
-                    .ok_or_else(|| format!("insert_fragment_before: no ref match for {ref_selector}"))?;
+                // siteopt t4 P19：parent/ref selector 失配 lenient warn+跳过（不变式见
+                // SetAttr arm）；fragment 悬垂 handle 仍硬错。
+                let Some(parent) = find_by_selector(doc, &parent_selector) else {
+                    tracing::warn!(
+                        "apply DOM mutations: insert_fragment_before parent no match, skipped: {parent_selector}"
+                    );
+                    continue;
+                };
+                let Some(ref_node) = find_by_selector(doc, &ref_selector) else {
+                    tracing::warn!("apply DOM mutations: insert_fragment_before ref no match, skipped: {ref_selector}");
+                    continue;
+                };
                 move_fragment_children(doc, parent, &fragment_handle, Some(ref_node), &handles)?;
             }
             DomMutation::InsertFragmentBeforeByHandle {
@@ -1236,8 +1312,11 @@ pub fn apply_dom_mutations_full(
                     .get(&parent_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
-                let ref_node = find_by_selector(doc, &ref_selector)
-                    .ok_or_else(|| format!("insert_fragment_before: no ref match for {ref_selector}"))?;
+                // siteopt t4 P19：ref selector 失配 lenient warn+跳过（不变式见 SetAttr arm）。
+                let Some(ref_node) = find_by_selector(doc, &ref_selector) else {
+                    tracing::warn!("apply DOM mutations: insert_fragment_before ref no match, skipped: {ref_selector}");
+                    continue;
+                };
                 move_fragment_children(doc, parent, &fragment_handle, Some(ref_node), &handles)?;
             }
         }
