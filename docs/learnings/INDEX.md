@@ -5,8 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（115）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（117）
 
+- 2026-10-02 [textContent= 突变后 gBCR 返回文本量盒——写路径注册副作用劫持读路径语义](bugs/2026-10/2026-10-02-textcontent-mutation-gbcr-identity-hijack.md) — engine
+- 2026-10-01 [改了 js_dom_shim 却在实站看不到效果——只重编 zero-browser 不重编 zero-renderer](bugs/2026-10/2026-10-01-zero-renderer-stale-binary.md) — apps/renderer,crates/engine
 - 2026-09-30 [cargo test --workspace 深嵌套渲染单测栈溢出：feature 统一改变栈帧量级，单包复现会误导归因](bugs/2026-09/2026-09-30-ws-feature-unification-stack-overflow.md) — engine,paint,layout-engine
 - 2026-09-30 [reftest 负控制假绿：断言「不绘制」的最小复现须把泄漏信号放大过分类容差](bugs/2026-09/2026-09-30-reftest-negative-control-false-green.md) — wpt-runner,engine,layout-engine
 - 2026-09-29 [baidu core-js wrapped Promise 微任务自馈环 → V8 堆 OOM abort](bugs/2026-09/2026-09-29-baidu-corejs-promise-storm.md) — engine,webview
@@ -186,8 +188,10 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（20）
+## Platform — 平台与环境相关经验（22）
 
+- 2026-10-01 [renderer 进程 tracing 日志不落浏览器 stderr（内存环形缓冲）](platform/2026-10/2026-10-01-renderer-stderr-ring-buffer.md) — protocol, renderer
+- 2026-10-01 [playwright page.screenshot 在 ZeroWeb 重量级结果页需 15s+，自设 10s 超时必失败](platform/2026-10/2026-10-01-playwright-screenshot-heavy-page-timeout.md) — render-foundation, testing
 - 2026-09-30 [ZeroWeb CDP live 调试坑点（/json/new、Page.reload、renderer stderr 环、探针退化）](platform/2026-09/2026-09-30-zeroweb-cdp-live-debug-quirks.md) — apps/renderer,apps/browser,crates/protocol
 - 2026-09-30 [`rm -rf wpt-data` 重新克隆会静默丢掉 git-ignored 的 media 子集，`make test` 才暴露](platform/2026-09/2026-09-30-wpt-data-reclone-drops-ignored-media-subset.md) — tests/wpt-runner,crates/media
 - 2026-09-30 [git worktree 里构建 rusty_v8：`.cargo/rusty_v8/archive` 符号链接不随 worktree 继承](platform/2026-09/2026-09-30-worktree-rusty-v8-archive-symlink.md) — build-support,crates/script-sandbox
