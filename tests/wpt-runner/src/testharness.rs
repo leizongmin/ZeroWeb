@@ -3347,10 +3347,71 @@ fn net_api_case_skipped(relative: &str, source: &str) -> bool {
         || source.contains("navigator.serviceWorker")
 }
 
-/// net-api 六 corpus 扫描执行（`run_timing_subdirs` 同构：flat 布局 .html + .any.js
-/// window 变体；timing 专用的 absolute-helper extras 分支不适用 net 面——.html 案
-/// 直接 [`run_testharness_html`]）。
-fn run_net_api_subdirs(
+/// encoding corpus pinned subset directories（fetch 脚本 DIRS 同域——JS API 面
+/// textdecoder/textencoder/streams 变体 + legacy-mb 七编码资产（M2 解码表参照）；
+/// 文档级嗅探面 / .py 服务器端点显式不跑，fetch 脚本头注释逐域记账）。
+pub const ENCODING_CORPUS_SUBDIRS: &[&str] = &[
+    "encoding",
+    "encoding/streams",
+    "encoding/legacy-mb-japanese/euc-jp",
+    "encoding/legacy-mb-japanese/iso-2022-jp",
+    "encoding/legacy-mb-japanese/shift_jis",
+    "encoding/legacy-mb-korean/euc-kr",
+    "encoding/legacy-mb-schinese/gbk",
+    "encoding/legacy-mb-schinese/gb18030",
+    "encoding/legacy-mb-tchinese/big5",
+];
+
+/// encoding corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
+/// - `encoding/legacy-mb-*/*.html` 不跑——decode 族为 iframe 子文档解码面（runner
+///   无多 frame 文档管道），encode-form/encode-href 族为 document 编码耦合的 form
+///   提交/URL 序列化面；目录照拉：`*-decoder.any.js`（gbk/gb18030 TextDecoder
+///   pointer 数组案——DC-2 可执行载体）照跑，index .js 为 M2 数据资产，net-api
+///   「resources 只拉 helper 不按案跑」先例
+/// - `*/resources/`（helper 资产 + BOM/UTF-32 子文档——decode-common/encodings.js 等
+///   按 META script 消费，不按案跑）
+/// - `*-manual.html` / `*-ref.html` / `*-notref.html` / `idlharness.*`（net-api/
+///   timing 先例；eof-* 族 test 页经 rel=match 规则、ref 页经后缀规则）
+/// - `.https.html`（secure-context + SharedArrayBuffer 面——window http 通道之外，
+///   clipboard 先例）
+/// - 文档级编码嗅探面（goal 排除——`document.characterSet` 断言的 bom-handling/
+///   sniffing/utf-32 族、`<meta charset>` 文档编码耦合的 big5/iso-2022-jp-encoder
+///   URL 序列化面、`rel=match` 的 eof-* reftest 页；挂账 html-syntax-compat，M4 定稿）
+/// - iframe 依赖面（utf-32/remove-only-one-bom 动态形态——runner 无多 frame 文档
+///   管道，net-api 先例）
+/// - worker 执行面（net-api 先例）
+fn encoding_case_skipped(relative: &str, source: &str) -> bool {
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    if relative.starts_with("encoding/legacy-mb-") && relative.ends_with(".html") {
+        return true;
+    }
+    if name.ends_with("-manual.html")
+        || name.ends_with("-ref.html")
+        || name.ends_with("-notref.html")
+        || name.ends_with(".https.html")
+        || name.starts_with("idlharness.")
+    {
+        return true;
+    }
+    if relative.contains("/resources/") {
+        return true;
+    }
+    source.contains("document.characterSet")
+        || source.contains("<meta charset")
+        || source.contains("rel=match")
+        || source.contains("rel=\"match\"")
+        || source.contains("<iframe")
+        || source.contains("createElement('iframe')")
+        || source.contains("createElement(\"iframe\")")
+        || source.contains("new Worker(")
+        || source.contains("SharedWorker(")
+        || source.contains("navigator.serviceWorker")
+}
+
+/// flat 布局 corpus 通用扫描执行，.html + .any.js window 变体双形态（web-api-batch2
+/// [`run_corpus_subdirs`] 为 html-only 变体；timing 专用的 absolute-helper extras
+/// 分支不适用 net/encoding 面——.html 案直接 [`run_testharness_html`]）。
+fn run_any_js_corpus_subdirs(
     wpt_root: &Path,
     subdirs: &[&str],
     filter: Option<&str>,
@@ -3411,7 +3472,14 @@ fn run_net_api_subdirs(
 /// （net-api-compat goal M1 / DC-1）。filter 按路径子串过滤（如 `fetch/`、`xhr/`、
 /// `streams/`——基线按 corpus 分类）。
 pub fn run_net_api_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_net_api_subdirs(wpt_root, NET_API_CORPUS_SUBDIRS, filter, net_api_case_skipped)
+    run_any_js_corpus_subdirs(wpt_root, NET_API_CORPUS_SUBDIRS, filter, net_api_case_skipped)
+}
+
+/// Run the pinned upstream encoding window subset
+/// （encoding-compat goal M1 / DC-1）。filter 按路径子串过滤（如 `textdecoder-`、
+/// `streams/`、`legacy-mb-japanese/`——基线按域分类）。
+pub fn run_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_any_js_corpus_subdirs(wpt_root, ENCODING_CORPUS_SUBDIRS, filter, encoding_case_skipped)
 }
 
 /// Run the fixed Service Worker M1 core testharness corpus.

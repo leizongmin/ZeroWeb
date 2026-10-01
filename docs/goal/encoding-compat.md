@@ -1,8 +1,8 @@
 # 编码兼容 — TextEncoder / TextDecoder / encoding 标签
 
-**版本**: v1.0
-**日期**: 2026-09-12
-**状态**: Active（已立项，未启动——启动顺序由用户点名）
+**版本**: v1.1
+**日期**: 2026-09-12（立项）| 2026-10-01（M1 基线落账）
+**状态**: Active（M1 完成——268/4403 = 6.1% 基线；推进 M2 标签表 + legacy 解码）
 **执行模式**: WPT 驱动（上游 encoding/ corpus 为验收标尺）+ 语义修齐；
 轻量快赢切片
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编码面）
@@ -61,8 +61,8 @@ goal 的划界线，双向记账；与其他 goal 无共享面。
 
 ## Done Criteria
 
-- [ ] **DC-1**：encoding/ corpus 可执行子集导入 + 分类基线落 evidence/ + suites CSV
-      planned 行转数据行
+- [x] **DC-1**：encoding/ corpus 可执行子集导入 + 分类基线落 evidence/ + suites CSV
+      planned 行转数据行（2026-10-01，evidence/2026-10-01-m1-baseline.md——268/4403 = 6.1%）
 - [ ] **DC-2**：labels 标签匹配全表 + TextDecoder legacy 编码（windows-125x/GBK/
       Shift_JIS/EUC-KR/ISO-2022-JP 等）解码语义修齐，通过率可追踪提升
 - [ ] **DC-3**：TextEncoder UTF-8 语义 + BOM/ fatal/ ignore 模式 + 编码往返修齐
