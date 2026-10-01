@@ -1452,7 +1452,8 @@ fn test_apply_detached_stash_move_semantics_r361() {
 /// siteopt t4（2026-10-01）P19：批内单记录 selector 失配不再中止整批——html5test.co
 /// showResults 的内容 mutation 批（innerHTML/createElement/attr 混合）一条失配即旧
 /// `?` 硬错 Err 中止，drain 已消费不可重放（调用方整批丢弃），页面永卡空结果（实站
-/// 采样 ~3-5% 卡死，run15/17/33/34）。新版失配记录 warn+跳过，后续记录照常落地
+/// 采样 ~3-5% 卡死，五份样本 run15(重建)/17/24/33/34）。新版失配记录 warn+跳过，
+/// 后续记录照常落地
 ///（R3076 SetText「视图分歧不中止整批」不变式推广至全部 selector 失配位点；悬垂
 /// handle 与 doc 结构性错误仍硬错）。
 #[test]
@@ -1515,5 +1516,29 @@ fn test_apply_selector_miss_does_not_abort_batch_p19() {
     assert!(
         style.contains("visibility"),
         "P19 失配记录后的有效 SetStyle 必须照常落地，实际 style={style:?}"
+    );
+}
+
+/// siteopt t4（2026-10-01）P19 配套：新 lenient 位点内的悬垂 handle 契约——parent
+/// selector 命中但 child handle 悬垂时，InsertBefore 仍必须硬错（handle 表不一致是
+/// 引擎自身 bug，无浏览器语义可依，不得随 selector 失配 lenient 化被吞掉）。钉住
+/// SetAttr arm 注释与 P19 任务书宣称的「悬垂 handle 仍硬错」边界（testval 缺口① /
+/// defect N3）。
+#[test]
+fn test_apply_dangling_child_handle_stays_hard_error_p19() {
+    use crate::js_dom_bridge::{DomMutation, apply_dom_mutations_full};
+    let html = "<html><body><div id='score'></div><div id='panel'></div></body></html>";
+    let mutations = vec![DomMutation::InsertBefore {
+        // parent 命中（非失配路径）——确保 Err 只能来自悬垂 child handle。
+        parent_selector: "#score".to_string(),
+        child_handle: "__never_created".to_string(),
+        ref_selector: "#panel".to_string(),
+    }];
+    let mut doc = zero_dom::parse_html(html);
+    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None);
+    let err = result.expect_err("悬垂 child handle 必须硬错，不得被 P19 lenient 化吞掉");
+    assert!(
+        err.contains("unknown child handle"),
+        "硬错必须是 handle 表悬垂（unknown child handle），实际: {err}"
     );
 }

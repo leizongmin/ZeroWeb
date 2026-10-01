@@ -824,8 +824,9 @@ pub fn apply_dom_mutations_full(
                 // selector」；R45：改名追链后「其他 stale selector 仍走原错误路径」）被
                 // 实站证据推翻——html5test.co showResults 的内容 mutation 批内一条失配
                 // 即 Err 中止整批，drain 已消费不可重放（page_scripts apply_recorded_
-                // mutations warn+丢弃），页面永卡空结果（实站采样 ~3-5% 卡死，run15/17/
-                // 33/34）。不变式：真实浏览器无"批"语义，逐 op 独立 apply；selector 失配
+                // mutations warn+丢弃），页面永卡空结果（实站采样 ~3-5% 卡死，五份样本
+                // run15(重建)/17/24/33/34）。不变式：真实浏览器无"批"语义，逐 op 独立
+                // apply；selector 失配
                 // = JS 视图与 host 快照视图分歧（实现间隙），页面 JS 调用本身已成功，
                 // 不该被实现间隙惩罚而丢失整批无关记录（R3076 SetText / R125 AppendChild
                 // / R100 SetTextOnHandle 同一不变式的推广）。悬垂 handle（unknown
@@ -1146,7 +1147,9 @@ pub fn apply_dom_mutations_full(
             DomMutation::SelectOption { selector, value } => {
                 // P1a select：编程设 select.value——mark 匹配 option selected，deselect 兄弟。
                 // siteopt t4 P19：select/option 失配 lenient warn+跳过（不变式见 SetAttr
-                // arm；真实浏览器 `select.value = '无此项'` 静默置空不抛错）。
+                // arm）。已知偏差（defect N2）：value-miss 时本实现保留原选中项，真实
+                // 浏览器 `select.value = '无此项'` 是置空（selectedIndex=-1、deselect
+                // 全部）——此处只做温和化未做置空对齐，精确语义留待后续补 deselect 半步。
                 let Some(sel) = find_by_selector(doc, &selector) else {
                     tracing::warn!("apply DOM mutations: select_option selector no match, skipped: {selector}");
                     continue;
