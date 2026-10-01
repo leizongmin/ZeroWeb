@@ -1666,51 +1666,100 @@ fn slice16_va_baseline_arm_pins_line_baseline_anchor_unchanged() {
 }
 
 /// slice16 挂账钉（轴邻接，不修）：vertical-align 长度/百分比值在 CSS 解析层未实现
-///（`parse_vertical_align` 无 Length/Percentage 臂 → None → 回落默认 baseline），
-/// 上报与 baseline 臂同值。本钉钉住回落行为防无声漂移；实现 <length>/<percentage>
-/// va 值轴时本钉翻红即为提醒（届时两臂应差 3px / 50%×line-height）。
+///（`parse_vertical_align` 无 Length/Percentage 臂 → None），声明经**真实解析路径**
+///（css-parser 样式表 → style-system 层叠/computed → inline_finalization 消费）后
+/// ComputedStyle 保持默认 Baseline，上报与 baseline 臂同值。
+/// 判别性（S1 收尾，slice16 评审）：改写前钉手工构造 `ComputedStyle::default()`、
+/// 声明从未过解析器——解析层加 Length 臂本钉仍绿，不判别。改写后：
+/// ① 解析/应用层任一层实现 Length/Percentage → computed 变体断言翻红 +
+///   两案 reported 偏离基线锚且互相分叉翻红（届时本钉应改写为语义钉：两臂差
+///   3px / 50%×line-height）；
+/// ② 回落失效（computed 默认被写坏/应用层误写）→ computed 变体断言翻红。
 /// https://www.w3.org/TR/CSS22/visudet.html#propdef-vertical-align
 #[test]
 fn slice16_va_length_percentage_unparsed_falls_back_to_baseline() {
-    // 样式表声明 `vertical-align: 3px` / `50%` 时 `parse_vertical_align` 返 None →
-    // ComputedStyle 保持默认 Baseline——两形态同一回落路径，与显式 baseline 臂同值。
-    let mut doc = Document::new();
-    let container = doc.create_element("div");
-    let span = doc.create_element("span");
-    let text = doc.create_text_node("更多");
-    doc.append_child(container, span).unwrap();
-    doc.append_child(span, text).unwrap();
-    let mut styles = HashMap::new();
-    styles.insert(container, ComputedStyle::default());
-    let mut span_style = ComputedStyle::default();
-    span_style.display = DisplayValue::Inline;
-    span_style.font_size = LengthValue::Px(13.0);
-    span_style.line_height = LineHeightValue::Length(LengthValue::Px(23.0));
-    // FIXME(CSS2 §10.8.1 <length>/<percentage>): 解析层无长度/百分比 va 臂，
-    // ComputedStyle 保持默认 Baseline——回落行为钉（非语义修复）。
-    styles.insert(span, span_style);
-    let mut context = InlineFormattingContext::new(200.0);
-    context.layout(&doc, container, &styles);
-    let mut root = LayoutBox {
-        node_id: Some(container),
-        children: vec![LayoutBox {
-            node_id: Some(span),
-            x: 0.0,
-            y: 0.0,
-            width: 26.0,
-            height: 23.0,
-            ..LayoutBox::default()
-        }],
-        ..LayoutBox::default()
-    };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
-    let reported = root.children[0]
-        .inline_reported_rect
-        .expect("单行 inline 应记录上报矩形");
-    let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
+    use zero_css_parser::Parser;
+    use zero_style_system::StyleSystem;
+
+    // 真实路径：HTML 解析 → 样式表（.va-len=3px / .va-pct=50% 直接命中锚元素，
+    // 不经继承语义）→ compute_styles 层叠出 computed map。
+    let doc = zero_dom::parse_html(
+        r##"<html><body>
+<div class="case"><a class="va-len" href="#x">更多</a></div>
+<div class="case"><a class="va-pct" href="#x">更多</a></div>
+</body></html>"##,
+    );
+    let sheet = Parser::parse_stylesheet(
+        ".case { line-height: 23px; } .case a { font-size: 13px; } \
+         .va-len { vertical-align: 3px; } .va-pct { vertical-align: 50%; }",
+    );
+    let mut style_system = StyleSystem::new();
+    let styles = style_system.compute_styles(&doc, &[sheet]);
+
+    let anchors = doc.get_elements_by_tag_name("a");
+    assert_eq!(anchors.len(), 2, "用例前提：两案各一锚");
+    let containers = doc.get_elements_by_tag_name("div");
+    assert!(containers.len() >= 2, "用例前提：两案容器");
+    let (a_len, a_pct) = (anchors[0], anchors[1]);
+    // 用例前提自检：锚经 UA 默认为 inline（前提破坏时本钉显红而非静默漂移）。
+    let len_style = styles.get(&a_len).expect("va-len 锚应有 computed");
+    let pct_style = styles.get(&a_pct).expect("va-pct 锚应有 computed");
     assert!(
-        (reported.0 - (line_y + baseline_y - 13.0 * 0.928)).abs() < 0.5,
-        "长度/百分比 va 回落 baseline 臂：上报顶 = 行主基线 − A，实际 {}",
-        reported.0
+        matches!(len_style.display, DisplayValue::Inline),
+        "用例前提：va-len 锚应为 inline，实际 {:?}",
+        len_style.display
+    );
+    // 判别断言①（回落钉本体）：3px / 50% 均未解析 → computed 保持 Baseline。
+    // 解析层/应用层未来实现 Length/Percentage 臂，或默认回落被破坏，此处翻红。
+    assert!(
+        matches!(len_style.vertical_align, VerticalAlignValue::Baseline),
+        "vertical-align:3px 应回落 Baseline（解析层无 Length 臂），实际 {:?}",
+        len_style.vertical_align
+    );
+    assert!(
+        matches!(pct_style.vertical_align, VerticalAlignValue::Baseline),
+        "vertical-align:50% 应回落 Baseline（解析层无 Percentage 臂），实际 {:?}",
+        pct_style.vertical_align
+    );
+
+    // 消费面：回落 Baseline ⇒ 几何与显式 baseline 臂逐字节同式（行主基线 − A），
+    // 且两案互相无分叉（实现 Length/Percentage 后两案应偏离基线锚且彼此不同）。
+    let mut anchor_ys = Vec::new();
+    for i in 0..2 {
+        let (anchor, container) = (anchors[i], containers[i]);
+        let mut context = InlineFormattingContext::new(200.0);
+        context.layout(&doc, container, &styles);
+        assert_eq!(context.lines.len(), 1, "用例前提：单行");
+        let mut root = LayoutBox {
+            node_id: Some(container),
+            children: vec![LayoutBox {
+                node_id: Some(anchor),
+                x: 0.0,
+                y: 0.0,
+                width: 26.0,
+                height: 23.0,
+                ..LayoutBox::default()
+            }],
+            ..LayoutBox::default()
+        };
+        sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+        let reported = root.children[0]
+            .inline_reported_rect
+            .expect("单行 inline 应记录上报矩形");
+        let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
+        anchor_ys.push(reported.0 - (line_y + baseline_y));
+        assert!(
+            (reported.0 - (line_y + baseline_y - 13.0 * 0.928)).abs() < 0.5,
+            "长度/百分比 va 回落 baseline 臂：上报顶 = 行主基线 − A，实际 {}",
+            reported.0
+        );
+    }
+    // 判别断言②：两案回落同路径 → 相对行主基线的偏移逐字节相同；
+    // 实现 <length>/<percentage> 后 3px 与 50%×line-height 位移不同，此处翻红。
+    assert!(
+        (anchor_ys[0] - anchor_ys[1]).abs() < 0.001,
+        "3px 与 50% 均回落 baseline：两案偏移应同值，实际 {} vs {}",
+        anchor_ys[0],
+        anchor_ys[1]
     );
 }
