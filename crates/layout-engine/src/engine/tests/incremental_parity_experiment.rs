@@ -5,7 +5,13 @@
 //!
 //! 结论（2026-08-09）：
 //! - **文本/内容变更可增量**：`text_change_incremental_matches_full` 证明增量 == 全量
-//!   （measure 回调消费新 styles，经 mark_dirty 重算）。
+//!   （measure 回调消费新 styles，经 mark_dirty 重算）。——该结论**仅对双块无定位页
+//!   成立**。slice14（2026-10-01）实证含 absolute 定位 / inline 锚页面增量 ≠ 全量：
+//!   compute_incremental 复用 taffy 缓存、不跑全量 compute 的后处理族
+//!   （compute_final_inline_layouts 的 reported rect、margin 折叠逃逸 + abs 修正、
+//!   float/root-margin 等），pipeline 已撤用该臂（SetText 与结构变更同走快照全量
+//!   重建，见 render_with_dom_mutations_persistent 注释）。重新启用前置条件：
+//!   本实验补齐上述后处理族的 parity 用例并全绿。
 //! - **样式属性变更不可增量**：`compute_incremental` 的 taffy 树样式是树构建时快照的
 //!   （mark_dirty 只重算布局，不更新 taffy style）——增量保留旧值
 //!   （`style_change_incremental_keeps_old_taffy_style_boundary` 文档化该边界）。

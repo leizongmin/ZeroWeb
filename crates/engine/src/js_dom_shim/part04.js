@@ -7663,7 +7663,16 @@ return _tplContent;
         // offsetWidth/offsetHeight/clientWidth/Top/Left 等布局几何属性从同一 rect 派生（见 get trap 末段）。
         if (prop === 'getBoundingClientRect') {
           return function() {
-            // R34xx：注册的纯文本元素 → 本地 0 基几何（测试归一化绝对位置）。
+            // slice14：真实布局 rect 优先。textContent=/innerHTML= 会把 selector-identity
+            // 元素注册进 R34xx 文本几何注册表（part06 _zwRegisterTextEl），旧序先查注册表，
+            // 已渲染元素的 gBCR 被 0 基文本量盒（[0,0,文字宽,ascent+descent]）劫持——突变
+            // 后布局正确而 gBCR 错（页面脚本先 textContent= 再读 gBCR 定位即坏）。CSSOM
+            // View spec：gBCR 返回布局盒；注册表本地几何仅兜底 created/detached 无布局
+            // 元素（R34xx 原始受众，_domRectFromId 未命中时）。
+            // https://drafts.csswg.org/cssom-view/#dom-element-getboundingclientrect
+            var _zwLayoutR = _domRectFromId(sel || handle);
+            if (_zwLayoutR) return _zwLayoutR;
+            // R34xx：注册的纯文本元素（无布局 rect）→ 本地 0 基几何（测试归一化绝对位置）。
             if (typeof _zwTextElBoundingRect === 'function') {
               var _zwR = _zwTextElBoundingRect(sel, handle);
               if (_zwR) return _zwR;
@@ -7671,7 +7680,7 @@ return _tplContent;
             // identity = selector（querySelector/getElementById 元素）或 handle（createElement
             // 元素，path A）。sel 空时用 handle，host RectBridge handler 查持久 handle→selector map
             // 解析；map 未命中/未注册 → 空串 → 零 rect（= 旧行为，零回归）。
-            return _domRectFromId(sel || handle) || _makeDomRect(0, 0, 0, 0);
+            return _zwLayoutR || _makeDomRect(0, 0, 0, 0);
           };
         }
         // `el.getClientRects()`（R2828）——DOMRectList（浮层定位库 popper.js/tether 取 [0] 测量）。
