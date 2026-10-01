@@ -17,6 +17,7 @@ html5ever 底座不动，缺口在桥接/序列化侧；js-dom R373 parse-positi
 | P2 | 解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐 | ⏳ M2 |
 | P3 | 序列化边缘（XMLSerializer/HTML serializer） | ⏳ M3 |
 | P4 | html/dom 接口语义 + createContextualFragment 补面 | ⏳ M3 |
+| P5 | 文档级编码嗅探（`<meta charset`/BOM 嗅探 → 文档解码，document.characterSet）——encoding-compat goal M4 转入（双向记账，2026-10-02）：其 JS API 面（TextDecoder/labels/legacy 解码 99.96%）已收，document 解码面归本 goal | ⏳ 与 P1 corpus 同批（encoding/ 域 bom-handling/eof-*/utf-32*/sniffing 案面已拉至 wpt-data，可随本 goal M1 一并基线） |
 
 ## 已完成切片
 
