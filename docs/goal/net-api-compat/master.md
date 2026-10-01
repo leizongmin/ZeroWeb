@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-01（M4-S24 收口——重定向再 preflight + Origin opaque 修齐，fetch 70.5%）
+**最后更新**: 2026-10-01（M4-S25 收口——Referer 面 + ACRH 语义，fetch 71.3%，cors-preflight-referrer 全绿）
 
 ---
 
@@ -14,8 +14,8 @@ WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 +
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
 M4-S3（74.7%）→ M4-S4（75.8%）→ M4-S5（76.0%）→ M4-S6（76.8%）→ M4-S7（76.8%）→
-M4-S8（76.8%）→ … → M4-S22（79.9%）→ M4-S23（79.3% 分母 +320）→ M4-S24
-（2026-10-01）——**9267/11658 = 79.5%**（+19 零回归；fetch **1468/2081 = 70.5%** /
+M4-S8（76.8%）→ … → M4-S23（79.3% 分母 +320）→ M4-S24（79.5%）→ M4-S25
+（2026-10-01）——**9283/11658 = 79.6%**（+16 零回归；fetch **1484/2081 = 71.3%** /
 xhr 557/584 / mimesniff 100% / streams 88.6% / url 73.0% / eventsource 33/34——
 request-cache-control 页全量争用超时、隔离复跑绿）。
 **M4-S23 收口**：fetch/api/cors 域导入（M1 记账重入条件兑现）+ shim preflight 语义
@@ -45,6 +45,14 @@ S18 泛化 OPTIONS 兜底门之前——假阴性根因）+ redirect.py 对齐�
 
 ## 已完成切片
 
+- **M4-S25（2026-10-01）**：cors 域 Referer 面（**9283/11658 = 79.6%**，fetch
+  1468→**1484 = 71.3%**，+16 零回归；cors-preflight-referrer **12 腿全绿**）。shim：
+  fetch 消费 referrerPolicy/referrer 计算 Referer（origin-only 走 scheme 宽化——
+  HTTP_ORIGIN 期望面；注入先于 preflight 构建——首版位置错误致 x-preflight-referrer
+  恒 ''）+ ACRH 空值头过滤 + 无非空自定义头时整体省略（「should be omitted」面——
+  恒携带首版 7 腿回归即改）。runner：preflight.py control_request_headers 缺省
+  b"" 恒发射。make test 全绿（19538P）+ clippy/fmt 干净。见
+  [evidence/2026-10-01-m4-s25-referrer.md](evidence/2026-10-01-m4-s25-referrer.md)。
 - **M4-S24（2026-10-01）**：重定向再 preflight + Origin opaque 修齐（**9267/11658 =
   79.5%**，fetch 1449→**1468 = 70.5%**，+19 零回归）。shim：hop 循环重定向后对
   新 URL 重跑 preflight（主 fetch 递归语义——ACAO 含 opaque `null` 形态/ACAM/ACAH
@@ -357,8 +365,8 @@ S18 泛化 OPTIONS 兜底门之前——假阴性根因）+ redirect.py 对齐�
 
 ## 下一步计划
 
-1. **cors 域 Referer 面**（cors-preflight-referrer ~10 腿）：preflight 请求带文档
-   Referer（x-preflight-referrer 回读；referrer-policy 变体评估深水）
+1. **Headers 非法头名校验**（cors-preflight-not-cors-safelisted「accept/」族 ~8 腿）：
+   非法名应 TypeError 而非静默丢弃（M2-S2 Headers 校验补 bail 集）
 2. **runner 页面 scheme 对齐评估**：页面锚 `https://wpt.test` vs WPT 宇宙
    `http://wpt.test`——同源判定/Origin 回显跨 scheme 失配 2 腿（redirects-async
    same-origin leg / access-control-origin-header）；改法 = testharness.rs 34 处 +

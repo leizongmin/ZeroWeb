@@ -2351,6 +2351,39 @@
         // ACAM 且自定义头 ⊆ ACAH——`*` 通配）则跳过 OPTIONS（preflight-cache「second
         // request without preflight」面；invalidation by method/header、timeout 过期面）。
         var _preNames = _zwPreNamesOf(headersWire);
+        // net-api M4-S25：Referer 注入（fetch spec determine request's referrer）——
+        // init.referrerPolicy + init.referrer 计算外发值；JS 不可自设（forbidden），
+        // guard 过滤后追加；**须先于 preflight 构建**（preHeaders 派生自 headersWire，
+        // x-preflight-referrer 回读面）。cross-origin 缺省（''/strict-origin-when-
+        // cross-origin）/origin/origin-when-cross-origin/strict-origin → origin-only
+        // （scheme 宽化——runner https 页锚 vs WPT http 宇宙，HTTP_ORIGIN 期望面）；
+        // no-referrer-when-downgrade / unsafe-url → 全 URL；no-referrer → 不发送。
+        var _zwRefOut = null;
+        if (mode === 'cors') {
+          var _refPolicy = String(init.referrerPolicy != null ? init.referrerPolicy
+            : (isRequestLike && input.referrerPolicy != null ? input.referrerPolicy : '') || '');
+          var _refInit = init.referrer != null ? init.referrer
+            : (isRequestLike && input.referrer != null ? input.referrer : null);
+          if (_refPolicy !== 'no-referrer') {
+            var _refUrl = _zwCurrentHref();
+            if (_refInit && typeof _refInit === 'string' && _refInit !== '') {
+              try { _refUrl = new URL(_refInit, _zwCurrentHref()).href; } catch (_eRefUrl) {}
+            }
+            var _tgtCross = _zwUrlOrigin(url) !== _zwUrlOrigin(_zwCurrentHref());
+            var _originOnly = _zwUrlOriginLenient(_zwCurrentHref()) + '/';
+            if (_refPolicy === 'origin' || _refPolicy === 'strict-origin') {
+              _zwRefOut = _originOnly;
+            } else if (_refPolicy === 'no-referrer-when-downgrade' || _refPolicy === 'unsafe-url') {
+              _zwRefOut = _refUrl;
+            } else if (_refPolicy === '' || _refPolicy === 'strict-origin-when-cross-origin' ||
+                       _refPolicy === 'origin-when-cross-origin') {
+              _zwRefOut = _tgtCross ? _originOnly : _refUrl;
+            }
+            if (_zwRefOut && !_zwHasHeader(headersWire, 'referer')) {
+              headersWire = _zwAddHeader(headersWire, 'referer', _zwRefOut);
+            }
+          }
+        }
         // net-api M4-S18：CORS-preflight（fetch spec §cors-preflight-fetch）——非 safelisted
         // cors 请求先发 OPTIONS（ACRM/ACAH + Origin），2xx + ACAM/ACAH 覆盖 → 继续；
         // 失败 → network error。M4-S22：cache 命中（ACAM/ACAH 覆盖当前 method/自定义头，
@@ -2369,8 +2402,21 @@
           // net-api M4-S23：preflight 请求带 `Accept: */*`（浏览器行为；上游 preflight.py
           // 校验该头——缺失 → 400 Invalid access in preflight）。
           preHeaders = _zwAddHeader(preHeaders, 'accept', '*/*');
-          if (_preNames.length > 0) {
-            preHeaders = _zwAddHeader(preHeaders, 'access-control-request-headers', _preNames.sort().join(', '));
+          // net-api M4-S25：ACRH 恒携带（空值头入 preNames 触发 preflight 但不列入
+          // ACRH 值——cors-preflight-referrer「ACRH value expected ''」面）。
+          var _acrhNames = [];
+          var _acrhParts = headersWire ? headersWire.split('\x1e') : [];
+          for (var abi = 0; abi + 1 < _acrhParts.length; abi += 2) {
+            var abn = String(_acrhParts[abi]).toLowerCase();
+            if (_preNames.indexOf(abn) >= 0 && String(_acrhParts[abi + 1]).trim() !== '' &&
+                _acrhNames.indexOf(abn) < 0) {
+              _acrhNames.push(abn);
+            }
+          }
+          if (_acrhNames.length > 0) {
+            // net-api M4-S25：无非空自定义头时 ACRH 须**省略**（cors-preflight
+            // 「should be omitted」面）；空值头触发 preflight 但不入 ACRH 值。
+            preHeaders = _zwAddHeader(preHeaders, 'access-control-request-headers', _acrhNames.sort().join(', '));
           }
           globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
           var preWire = __zw_fetch(
@@ -2433,6 +2479,7 @@
         if (mode === 'cors' && _zwReqOrigin && _zwDocOrigin && _zwReqOrigin !== _zwDocOrigin && !_zwHasHeader(headersWire, 'origin')) {
           headersWire = _zwAddHeader(headersWire, 'origin', _zwDocOrigin);
         }
+
         globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
         var id = '__zwfid:' + globalThis.__zw_fetch_counter;
         var settled = false;
@@ -2598,8 +2645,17 @@
               var rpHeaders = _zwAddHeader(rpBase, 'origin', rpDocOrigin);
               rpHeaders = _zwAddHeader(rpHeaders, 'access-control-request-method', nextMethod);
               rpHeaders = _zwAddHeader(rpHeaders, 'accept', '*/*');
-              if (_rpNames.length > 0) {
-                rpHeaders = _zwAddHeader(rpHeaders, 'access-control-request-headers', _rpNames.sort().join(', '));
+              var _rpAcrh = [];
+              var _rpParts = rpBase ? rpBase.split('\x1e') : [];
+              for (var rbi = 0; rbi + 1 < _rpParts.length; rbi += 2) {
+                var rbn = String(_rpParts[rbi]).toLowerCase();
+                if (_rpNames.indexOf(rbn) >= 0 && String(_rpParts[rbi + 1]).trim() !== '' &&
+                    _rpAcrh.indexOf(rbn) < 0) {
+                  _rpAcrh.push(rbn);
+                }
+              }
+              if (_rpAcrh.length > 0) {
+                rpHeaders = _zwAddHeader(rpHeaders, 'access-control-request-headers', _rpAcrh.sort().join(', '));
               }
               globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
               var rpWire = __zw_fetch(

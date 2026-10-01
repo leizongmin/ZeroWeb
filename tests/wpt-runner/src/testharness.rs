@@ -5793,10 +5793,12 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                             body_bytes: Some(b"ERROR: Invalid access in preflight!".to_vec()),
                         });
                     }
+                    // control_request_headers 旗标在 → 存 ACRH（头缺席 → None 哨兵，
+                    // 不发射）；旗标不在 → 缺省 b""（恒发射空值——上游默认字典同形）。
                     let control_headers = if qval("control_request_headers").is_some() {
                         req_header("access-control-request-headers").unwrap_or_else(|| NONE_SENTINEL.into())
                     } else {
-                        NONE_SENTINEL.into()
+                        String::new()
                     };
                     if let Some(ma) = qval("max_age") {
                         headers.push(("access-control-max-age".into(), ma));
@@ -5837,7 +5839,9 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                             parts.get(3).copied().unwrap_or_default().to_string(),
                         )
                     }
-                    None => ("0".to_string(), NONE_SENTINEL.to_string(), String::new(), String::new()),
+                    // net-api M4-S25：control_request_headers 缺省 b""（非 None）——
+                    // x-control-request-headers 恒发射（上游默认字典同形）。
+                    None => ("0".to_string(), String::new(), String::new(), String::new()),
                 };
                 if qval("checkUserAgentHeaderInPreflight").is_some() {
                     let ua = req_header("user-agent").unwrap_or_default();
