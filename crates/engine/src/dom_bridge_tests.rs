@@ -1448,3 +1448,97 @@ fn test_apply_detached_stash_move_semantics_r361() {
     let moved = find_by_selector(&doc, "#other #target");
     assert!(moved.is_some(), "R361 target 应已在 #other 子树内（移动语义落地）");
 }
+
+/// siteopt t4（2026-10-01）P19：批内单记录 selector 失配不再中止整批——html5test.co
+/// showResults 的内容 mutation 批（innerHTML/createElement/attr 混合）一条失配即旧
+/// `?` 硬错 Err 中止，drain 已消费不可重放（调用方整批丢弃），页面永卡空结果（实站
+/// 采样 ~3-5% 卡死，五份样本 run15(重建)/17/24/33/34）。新版失配记录 warn+跳过，
+/// 后续记录照常落地
+///（R3076 SetText「视图分歧不中止整批」不变式推广至全部 selector 失配位点；悬垂
+/// handle 与 doc 结构性错误仍硬错）。
+#[test]
+fn test_apply_selector_miss_does_not_abort_batch_p19() {
+    use crate::js_dom_bridge::{DomMutation, apply_dom_mutations_full, find_by_selector};
+    let html = "<html><body><div id='score'></div><div id='panel'></div></body></html>";
+    let mutations = vec![
+        // ① 失配：innerHTML 写入 host 视图不存在的元素（JS 视图与 host 快照分歧形态）
+        DomMutation::SetInnerHtml {
+            selector: "#ghost".to_string(),
+            html: "<p>x</p>".to_string(),
+        },
+        // ② 失配：style 类变体同一不变式
+        DomMutation::SetStyle {
+            selector: "#ghost".to_string(),
+            property: "display".to_string(),
+            value: "none".to_string(),
+        },
+        // ③ 失配：attr 类变体（M3-XLVI 时代对未命中 stash 的此形态维持 Err）
+        DomMutation::SetAttr {
+            selector: "#ghost".to_string(),
+            name: "class".to_string(),
+            value: "c".to_string(),
+        },
+        // ④ 失配：insert 类 parent 失配（在 child handle 解析前即 warn+continue）
+        DomMutation::InsertBefore {
+            parent_selector: "#ghost".to_string(),
+            child_handle: "__h1".to_string(),
+            ref_selector: "#score".to_string(),
+        },
+        // ⑤ 有效：失配之后的记录必须照常落地（旧版被 ① 中止 → ④⑤ 全部丢弃）
+        DomMutation::SetInnerHtml {
+            selector: "#score".to_string(),
+            html: "314 out of 555".to_string(),
+        },
+        // ⑥ 有效：style 类
+        DomMutation::SetStyle {
+            selector: "#panel".to_string(),
+            property: "visibility".to_string(),
+            value: "visible".to_string(),
+        },
+    ];
+    let mut doc = zero_dom::parse_html(html);
+    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None);
+    assert!(
+        result.is_ok(),
+        "P19 失配记录应 warn+跳过而非中止整批: {:?}",
+        result.err()
+    );
+    // ⑤ 落地：#score 内容已写入（html5test showResults 首写 #score 即此形态）。
+    let score = find_by_selector(&doc, "#score").expect("#score 应存在");
+    assert_eq!(
+        doc.inner_html(score),
+        "314 out of 555",
+        "P19 失配记录后的有效 innerHTML 必须照常落地（旧版整批丢弃）"
+    );
+    // ⑥ 落地：style 类变更到达 host。
+    let panel = find_by_selector(&doc, "#panel").expect("#panel 应存在");
+    let style = doc.get_attribute(panel, "style").unwrap_or_default();
+    assert!(
+        style.contains("visibility"),
+        "P19 失配记录后的有效 SetStyle 必须照常落地，实际 style={style:?}"
+    );
+}
+
+/// siteopt t4（2026-10-01）P19 配套：新 lenient 位点内的悬垂 handle 契约——parent
+/// selector 命中但 child handle 悬垂时，InsertBefore 仍必须硬错（handle 表不一致是
+/// 引擎自身 bug，无浏览器语义可依，不得随 selector 失配 lenient 化被吞掉）。钉住
+/// SetAttr arm 注释与 P19 任务书宣称的「悬垂 handle 仍硬错」边界（testval 缺口① /
+/// defect N3）。
+#[test]
+fn test_apply_dangling_child_handle_stays_hard_error_p19() {
+    use crate::js_dom_bridge::{DomMutation, apply_dom_mutations_full};
+    let html = "<html><body><div id='score'></div><div id='panel'></div></body></html>";
+    let mutations = vec![DomMutation::InsertBefore {
+        // parent 命中（非失配路径）——确保 Err 只能来自悬垂 child handle。
+        parent_selector: "#score".to_string(),
+        child_handle: "__never_created".to_string(),
+        ref_selector: "#panel".to_string(),
+    }];
+    let mut doc = zero_dom::parse_html(html);
+    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None);
+    let err = result.expect_err("悬垂 child handle 必须硬错，不得被 P19 lenient 化吞掉");
+    assert!(
+        err.contains("unknown child handle"),
+        "硬错必须是 handle 表悬垂（unknown child handle），实际: {err}"
+    );
+}
