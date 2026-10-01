@@ -2,7 +2,7 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-01（M4-S26 收口——CORS-safelisted 值面 preflight 规则，fetch 71.6%，not-cors-safelisted 9 腿全绿）
+**最后更新**: 2026-10-01（M4-S27 双评估记账——cookie 腿回流 + scheme 对齐前置条件定稿，零代码实施）
 
 ---
 
@@ -46,6 +46,15 @@ S18 泛化 OPTIONS 兜底门之前——假阴性根因）+ redirect.py 对齐�
 
 ## 已完成切片
 
+- **M4-S27（2026-10-01，双评估记账零实施）**：① cors 域 credentials/cookie 腿
+  ~13（需真实 cookie jar + Authorization 重定向保留流——HTTP 栈/存储状态面非本
+  goal 范围）→ 回流 storage goal / security-hardening 邻域；② runner 页面 scheme
+  对齐（https→http）全量实测——**解锁 +29**（两腿长挂账 + cors-origin/cors-basic
+  端口协议变体 + url http: 形态）vs **耦合回归 −41**（url a-element about:blank
+  基址回退 ×20 + credentials userinfo 流 ×21），净 −12 → 记账不定稿，重入条件 =
+  url shim 文档基址回退审计 + credentials/Authorization 流程审计两前置完成。
+  试验已回退（零代码残留）。门禁沿用 M4-S26。见
+  [evidence/2026-10-01-m4-s27-scheme-assessment.md](evidence/2026-10-01-m4-s27-scheme-assessment.md)。
 - **M4-S26（2026-10-01）**：CORS-safelisted request-header 值面（**9290/11658 =
   79.7%**，fetch 1484→**1491 = 71.6%**；not-cors-safelisted **9 腿全绿** + 2 腿
   spec 必要回归记账）。shim：`_zwPreNamesOf` 重写为 CORS 变量头单一事实源
@@ -375,10 +384,11 @@ S18 泛化 OPTIONS 兜底门之前——假阴性根因）+ redirect.py 对齐�
 
 ## 下一步计划
 
-1. **cors 域 credentials/cookie 管道腿**（cors-cookies* / cors-redirect-credentials
-   ~7 腿）：cookie 管道 stash 形态评估——非本 goal cookie jar 面，评估后定实施或
-   记账回流
-2. **runner 页面 scheme 对齐评估**：页面锚 `https://wpt.test` vs WPT 宇宙
+1. **streams flow-control 2 腿**（背压编排计时精度——泵 pull 粒度对齐 StepTracker
+   编排步进）
+2. **scheme 对齐两前置审计**（重入条件，见 M4-S27 evidence）：url shim 文档基址
+   回退审计（a-element about:blank 面 ×20）+ credentials/Authorization 流程审计
+   （×21）→ 完成后翻页面锚 http 入袋 +29（含两腿长挂账）页面锚 `https://wpt.test` vs WPT 宇宙
    `http://wpt.test`——同源判定/Origin 回显跨 scheme 失配 2 腿（redirects-async
    same-origin leg / access-control-origin-header）；改法 = testharness.rs 34 处 +
    shim iframe 解析 1 处统一 http——跨切面，先评估回归面再动
