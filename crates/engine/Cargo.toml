@@ -33,6 +33,9 @@ getrandom = { workspace = true }
 png = { workspace = true }
 flate2 = "1"
 unicode-bidi = { workspace = true }
+# encoding-compat M2：TextDecoder legacy 解码 + labels 标签表（encoding 标准 tables——
+# encoding_rs 即 WHATWG 编码表生成实现，zero-net 同款工作区依赖）。
+encoding_rs = { workspace = true }
 
 # P1b S1 原生 DOM 绑定（feature-gated v8）。与 script-sandbox 同版本同 feature 对齐，
 # Cargo 去重同一 v8 crate 实例。quickjs 模式下不启用（本 crate 原生绑定仅 V8）。

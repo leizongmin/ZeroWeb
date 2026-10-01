@@ -2586,3 +2586,152 @@ __st.push('B:html=' + div2.innerHTML);
     let st = sandbox.execute("String(globalThis.__st)").unwrap().value;
     println!("[PROBE-DEL] {st}");
 }
+
+#[test]
+fn test_text_decoder_legacy_labels_encoding_compat_m2() {
+    // encoding-compat M2：TextDecoder labels 标签匹配 + legacy 编码解码（host
+    // __zw_text_* 面）。验：标签大小写/whitespace trample 全表匹配 → .encoding 规范名；
+    // 未知标签 / replacement 编码构造 → RangeError；windows-1252 / GBK / GB18030 /
+    // iso-2022-jp / utf-16le 解码真值；fatal malformed → TypeError；ignoreBOM 保留
+    // U+FEFF；stream:true 跨调用模式机驻留。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 标签全表匹配：trample + 大小写不敏感（spec get-an-encoding-by-label）。
+    assert_eq!(
+        sandbox.execute("new TextDecoder('  windows-1252\t').encoding").unwrap().value,
+        "windows-1252"
+    );
+    assert_eq!(
+        sandbox.execute("new TextDecoder('CP1252').encoding").unwrap().value,
+        "windows-1252"
+    );
+    assert_eq!(sandbox.execute("new TextDecoder('GBK').encoding").unwrap().value, "gbk");
+    assert_eq!(sandbox.execute("new TextDecoder('Shift_JIS').encoding").unwrap().value, "shift_jis");
+    // utf-16 标签 → utf-16le 规范名（spec：BOM 嗅探缺省语义）。
+    assert_eq!(sandbox.execute("new TextDecoder('utf-16').encoding").unwrap().value, "utf-16le");
+    // 未知标签 → RangeError。
+    assert!(sandbox
+        .execute("try { new TextDecoder('invalid-invalidLabel'); 'no-throw' } catch (e) { e.constructor.name + ':' + (e instanceof RangeError) }")
+        .unwrap()
+        .value
+        .contains("RangeError:true"));
+    // NUL 污染标签 → RangeError（api-invalid-label 面）。
+    assert_eq!(
+        sandbox
+            .execute("try { new TextDecoder('\\0unicode-1-1-utf-8'); 'no-throw' } catch (e) { e instanceof RangeError }")
+            .unwrap()
+            .value,
+        "true"
+    );
+    // replacement 编码构造 → RangeError（api-replacement-encodings 面）。
+    assert_eq!(
+        sandbox
+            .execute("try { new TextDecoder('csiso2022kr'); 'no-throw' } catch (e) { e instanceof RangeError }")
+            .unwrap()
+            .value,
+        "true"
+    );
+
+    // legacy 解码真值：windows-1252 0x80 → €（单字节表）。
+    assert_eq!(
+        sandbox
+            .execute("new TextDecoder('windows-1252').decode(new Uint8Array([0x41,0x80]))")
+            .unwrap()
+            .value,
+        "A€"
+    );
+    // GBK 双字节：0x81 0x40 → U+4E02（index-gbk[0]）。
+    assert_eq!(
+        sandbox
+            .execute("new TextDecoder('GBK').decode(new Uint8Array([0x81,0x40])).charCodeAt(0).toString(16)")
+            .unwrap()
+            .value,
+        "4e02"
+    );
+    // GB18030 四字节线性指针 0 → U+0080。
+    assert_eq!(
+        sandbox
+            .execute("new TextDecoder('gb18030').decode(new Uint8Array([0x81,0x30,0x81,0x30])).charCodeAt(0)")
+            .unwrap()
+            .value,
+        "128"
+    );
+    // iso-2022-jp ESC ( B 回 ASCII + ESC $ B 双字节（WPT iso-2022-jp-decoder 向量）。
+    assert_eq!(
+        sandbox
+            .execute("new TextDecoder('ISO-2022-JP').decode(new Uint8Array([0x1b,0x28,0x42,0x50]))")
+            .unwrap()
+            .value,
+        "P"
+    );
+    // utf-16le + BOM 剥除（spec decode-BOM）；ignoreBOM 保留 U+FEFF。
+    assert_eq!(
+        sandbox
+            .execute("new TextDecoder('utf-16le').decode(new Uint8Array([0xff,0xfe,0x7a,0]))")
+            .unwrap()
+            .value,
+        "z"
+    );
+    assert_eq!(
+        sandbox
+            .execute("new TextDecoder('utf-16le',{ignoreBOM:true}).decode(new Uint8Array([0xff,0xfe,0x7a,0])).charCodeAt(0).toString(16)")
+            .unwrap()
+            .value,
+        "feff"
+    );
+
+    // fatal：utf-16be 孤立尾字节 → TypeError；错误后 decoder 重建可复用（spec reset）。
+    assert_eq!(
+        sandbox
+            .execute("var fd = new TextDecoder('utf-16be',{fatal:true}); try { fd.decode(new Uint8Array([0,0xa2,0x7a])); 'no-throw' } catch (e) { e.constructor.name }")
+            .unwrap()
+            .value,
+        "TypeError"
+    );
+    assert_eq!(
+        sandbox
+            .execute("fd.decode(new Uint8Array([0,0xa2]))")
+            .unwrap()
+            .value,
+        "¢"
+    );
+
+    // stream:true 跨 decode 调用：iso-2022-jp 模式机驻留（首块 ESC ( B 不 flush，次块裸 0x50 仍 ASCII）。
+    assert_eq!(
+        sandbox
+            .execute("var sd = new TextDecoder('ISO-2022-JP'); sd.decode(new Uint8Array([0x1b,0x28,0x42]),{stream:true}) + sd.decode(new Uint8Array([0x50]))")
+            .unwrap()
+            .value,
+        "P"
+    );
+    // 非 stream flush 后重置（下轮 decode 序列全新状态）。
+    assert_eq!(
+        sandbox
+            .execute("var rd = new TextDecoder('windows-1252'); rd.decode(new Uint8Array([0x41])) + rd.decode(new Uint8Array([0x41]))")
+            .unwrap()
+            .value,
+        "AA"
+    );
+
+    // UTF-8 主干零回归（host 未触路径——纯 JS 快路仍剥 BOM）。
+    assert_eq!(
+        sandbox
+            .execute("new TextDecoder().decode(new Uint8Array([0xef,0xbb,0xbf,0x7a]))")
+            .unwrap()
+            .value,
+        "z"
+    );
+}

@@ -403,13 +403,39 @@
       return { read: str.length, written: m };
     }
   };
-  globalThis.TextDecoder = globalThis.TextDecoder || function TextDecoder() {
-    if (!(this instanceof TextDecoder)) return new TextDecoder();
-    this.encoding = 'utf-8';
-    this.fatal = false;
-    this.ignoreBOM = false;
-    this._carry = []; // R3012：stream:true 跨 chunk 不完整尾部（下块前缀拼接补全多字节序列）
-    this._zwBomPending = true; // net-api M4-S21：BOM 剥除仅限流首
+  // TextDecoder（encoding-compat M2）——labels 标签匹配 + legacy 编码解码。
+  // https://encoding.spec.whatwg.org/#dom-textdecoder
+  // 构造：label（缺省 utf-8）经 host `__zw_text_encoding_of` 查全表（trim ASCII
+  // whitespace + ASCII case-insensitive）；未知标签 → RangeError（spec：get an encoding
+  // by label failure）；replacement 编码 → RangeError（spec：replacement 不可经 decoder
+  // 构造——XHR final-encoding 解码面在 part03 走 host 单 U+FFFD 路径）。非 utf-8 编码走
+  // host 有状态 decoder（`__zw_text_decoder_new/decode`——跨 decode({stream}) 调用驻留
+  // 半截多字节 lead 与 iso-2022-jp ESC 模式机；BOM 剥除/ignoreBOM 语义在 host decoder
+  // 构造选型）。host 未注册（engine/reftest/polyfill 无 script-runtime）→ 留守 utf-8
+  // 纯 JS 路径（下方 _zw_utf8_decode_stream），label 校验降级为不抛（零回归）。
+  globalThis.TextDecoder = globalThis.TextDecoder || function TextDecoder(label, options) {
+    if (!(this instanceof TextDecoder)) return new TextDecoder(label, options);
+    var raw = label == null ? '' : String(label);
+    var name = 'utf-8';
+    if (raw !== '' && typeof __zw_text_encoding_of === 'function') {
+      name = __zw_text_encoding_of(raw);
+      if (name === '') {
+        throw new RangeError("Failed to construct 'TextDecoder': The encoding label provided ('" + raw + "') is invalid.");
+      }
+      if (name === 'replacement') {
+        throw new RangeError("Failed to construct 'TextDecoder': The encoding label provided ('" + raw + "') is invalid.");
+      }
+    }
+    this.encoding = name;
+    this.fatal = !!(options && options.fatal);
+    this.ignoreBOM = !!(options && options.ignoreBOM);
+    this._carry = []; // R3012：stream:true 跨 chunk 不完整尾部（下块前缀拼接补全多字节序列）——utf-8 JS 路径
+    this._zwBomPending = true; // net-api M4-S21：BOM 剥除仅限流首（utf-8 JS 路径）
+    // legacy host decoder handle（非 utf-8 且 host 可用）——null = 降级 utf-8 路径。
+    this._zwLegacyHandle = (name !== 'utf-8' && typeof __zw_text_decoder_new === 'function')
+      ? __zw_text_decoder_new(name, this.ignoreBOM ? '1' : '0')
+      : null;
+    this._zwDone = false; // 上轮 flush 收尾标记（host decoder finished，下一 decode 序列重建）
   };
   globalThis.TextDecoder.prototype = {
     encoding: 'utf-8',
@@ -419,6 +445,8 @@
     // → flush：残余不完整 → 1 U+FFFD，重置 _carry。valid 完整输入行为同旧。
     // net-api M4-S21：UTF-8 decode 剥首部 BOM（encoding spec UTF-8 decode——ignoreBOM=false
     // 缺省；xhr json.any.js data: URL BOM 面与 fetch text() 一致形态）。
+    // encoding-compat M2：非 utf-8 编码走 host 有状态 decoder（`last` = !stream；fatal
+    // malformed → TypeError 并重建 handle——spec fatal 错误后 decoder 不再可用）。
     decode: function (buf, options) {
       var bytes;
       if (buf == null) bytes = new Uint8Array(0);
@@ -426,9 +454,29 @@
       else if (buf && typeof buf.length === 'number') bytes = buf; // TypedArray / array-like
       else if (buf && buf.buffer) bytes = new Uint8Array(buf.buffer);
       else bytes = new Uint8Array(0);
+      if (this._zwLegacyHandle != null) {
+        var streamFlag = options && options.stream === true;
+        // spec：非 stream decode() 重置解码器状态——host decoder 上轮 flush 后已
+        // finished（encoding_rs 契约禁复用），新一轮重建 handle。
+        if (this._zwDone) {
+          this._zwLegacyHandle = __zw_text_decoder_new(this.encoding, this.ignoreBOM ? '1' : '0');
+          this._zwDone = false;
+        }
+        var legacyFatal = this.fatal ? '1' : '0';
+        var last = streamFlag ? '0' : '1';
+        var csv = typeof bytes.join === 'function' ? bytes.join(',') : _zwBytesCsv(bytes);
+        var out = JSON.parse(__zw_text_decoder_decode(this._zwLegacyHandle, csv, legacyFatal, last));
+        if (out.err) {
+          // spec fatal：错误后 decoder 不再可用——重建 handle 丢弃损坏状态。
+          this._zwLegacyHandle = __zw_text_decoder_new(this.encoding, this.ignoreBOM ? '1' : '0');
+          throw new TypeError("Failed to decode: the encoded data is not valid.");
+        }
+        if (!streamFlag) this._zwDone = true;
+        return out.text;
+      }
       if (this._zwBomPending) {
         this._zwBomPending = false;
-        if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+        if (!this.ignoreBOM && bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
           // host wire 传入 array-like（无 subarray）——泛型拷贝剥 BOM。
           var trimmed = new Uint8Array(bytes.length - 3);
           for (var bi = 3; bi < bytes.length; bi++) trimmed[bi - 3] = bytes[bi];
@@ -441,6 +489,15 @@
       return r.tail.length ? r.s + '�' : r.s;
     }
   };
+  // array-like（无 join 的 host wire 形态）→ csv 十进制串（__zw_text_decoder_decode 字节 wire）。
+  function _zwBytesCsv(bytes) {
+    var s = '';
+    for (var i = 0; i < bytes.length; i++) {
+      if (i > 0) s += ',';
+      s += (bytes[i] & 0xFF);
+    }
+    return s;
+  }
 
   // ── P1a ReadableStream（Streams API，R2967）──
   // 通用读取流抽象。核心动机：fetch `response.body`（此前全缺——仅有 text()/json() 整体读），

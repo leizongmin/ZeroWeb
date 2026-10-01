@@ -213,8 +213,14 @@
       var overrideCharset = self._zwXhrOverrideCharset;
       if (overrideCharset) {
         // xhr.spec get a final encoding：override encoding 优先于 response charset
-        //（overridemimetype-unsent「enforcing Shift-JIS」面）。
-        try { text = new TextDecoder(overrideCharset).decode(bytes); } catch (_eXhrCharset) {}
+        //（overridemimetype-unsent「enforcing Shift-JIS」面）。encoding-compat M2：
+        // final encoding = replacement（csiso2022kr/hz-gb-2312/iso-2022-cn 族——
+        // TextDecoder 构造面拒绝该编码）→ spec replacement 输出：非空输入恰一 U+FFFD。
+        if (typeof __zw_text_encoding_of === 'function' && __zw_text_encoding_of(overrideCharset) === 'replacement') {
+          text = bytes.length ? '�' : '';
+        } else {
+          try { text = new TextDecoder(overrideCharset).decode(bytes); } catch (_eXhrCharset) {}
+        }
       }
       self.responseText = text;
       var rt = self._zwXhrResponseType || '';

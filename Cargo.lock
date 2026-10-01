@@ -6912,6 +6912,7 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "criterion",
+ "encoding_rs",
  "flate2",
  "getrandom 0.3.4",
  "png 0.18.1",

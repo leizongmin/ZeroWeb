@@ -548,6 +548,36 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // `new TextDecoder(label)`（encoding-compat M2）——labels 标签匹配 + legacy 编码解码
+    // host 面（encoding_rs WHATWG tables；模块 doc 记架构）。encoding_of 返规范名
+    // （未知 → 空串 shim RangeError；"replacement" → shim 拒绝构造，XHR 解码面照用）。
+    // decoder_new 建有状态 decoder 返 handle（跨 decode({stream}) 调用驻留半截多字节
+    // lead / iso-2022-jp ESC 模式机）；decoder_decode 字节 csv → JSON {text, err}
+    // （err = fatal malformed，shim 抛 TypeError）。未注册时（engine/reftest/polyfill
+    // 无 script-runtime 或 shim 先于注册）shim 留守 utf-8 纯 JS 路径，零回归。
+    sandbox.register_callback(
+        "__zw_text_encoding_of",
+        Box::new(|args: &[String]| -> String { text_encoding_of(args.first().map(String::as_str).unwrap_or("")) }),
+    );
+    sandbox.register_callback(
+        "__zw_text_decoder_new",
+        Box::new(|args: &[String]| -> String {
+            let label = args.first().map(String::as_str).unwrap_or("");
+            let ignore_bom = args.get(1).map(String::as_str) == Some("1");
+            text_decoder_new(label, ignore_bom)
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_text_decoder_decode",
+        Box::new(|args: &[String]| -> String {
+            let handle: u64 = args.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+            let data = args.get(1).map(String::as_str).unwrap_or("");
+            let fatal = args.get(2).map(String::as_str) == Some("1");
+            let last = args.get(3).map(String::as_str) != Some("0"); // 缺省 flush
+            text_decoder_decode(handle, data, fatal, last)
+        }),
+    );
+
     // `crypto.subtle.sign/verify("HMAC", ...)`（R2955）——HMAC-SHA-1/256/384/512。
     // arg[0]=hash 名（"SHA-256"），arg[1]=key 字节 csv，arg[2]=data 字节 csv。返 MAC csv（unsupported → 空）。
     sandbox.register_callback(

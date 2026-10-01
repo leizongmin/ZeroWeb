@@ -29,6 +29,11 @@ pub use crypto::*;
 mod compress;
 pub use compress::*;
 
+// TextDecoder legacy 编码 host 实现（encoding-compat M2，labels 全表 + 多字节解码经 encoding_rs）。
+// 复用 crypto byte wire + json_str 文本 wire。
+mod text_encoding;
+pub use text_encoding::*;
+
 // Canvas 2D host 操作派发（R2974 从本文件拆出，控制主文件行数）。纯 zero_canvas 类型，无 DOM/选择器依赖。
 mod canvas;
 pub use canvas::*;
