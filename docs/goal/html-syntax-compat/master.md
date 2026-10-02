@@ -13,7 +13,8 @@
 通道外 48 案分账 + 失败聚类）。
 
 基线形状：html/dom reflection 面强（74.7%，js-dom 遗产）；**html/syntax/parsing
-1.5% 为 M2 主缺口**——named-character-references NCR 查表面（~2231 子测试）+
+1.5% 为 M2 主缺口**——named-character-references NCR 表 0/2231（根因已定位：
+`dummy.innerHTML = entity` 桥接直通不展开，修复点在 shim 解析桥而非 html5ever）+
 树构造边缘（the-end/zero/cdata/foreign 族）；serializer 面 escaping 0/9 +
 serializing-xml-fragments 1/112 归 M3。
 
@@ -37,8 +38,9 @@ serializing-xml-fragments 1/112 归 M3。
 
 ## 下一步计划
 
-1. **M2**：解析树一致性逐簇修齐——先 NCR 查表面（最大单簇 ~2231 子测试），再树构造
-   边缘（the-end/zero/cdata-in-integration-point/foreign getElementsByTagName 族），
-   按 evidence 失败聚类逐簇销账。
+1. **M2**：解析树一致性逐簇修齐——首簇 NCR 表（0/2231，innerHTML 桥接直通：共享
+   路径一处修齐带动全簇 + innerHTML/insertAdjacentHTML/DOMParser 全接口面），再树
+   构造边缘（the-end/zero/cdata-in-integration-point/foreign getElementsByTagName
+   族），按 evidence 失败聚类逐簇销账。
 
 **待用户决策清单**：（空）
