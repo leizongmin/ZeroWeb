@@ -14,8 +14,17 @@
 //! 4. `multiple_navigations_evaluate_works`——相邻变体：两次导航后 evaluate 正常
 //!    （连续导航不残留旧文档状态）。
 //! 5. `iframe_page_frame_attached_events`——iframe 页 frameAttached 即时路径。
-//! 6. `busy_iframe_page_evaluate_works`——忙臂 iframe 页导航即时返回 + 臂后
-//!    evaluate 通道可用（忙臂页放弃 frame 元数据，evaluate 语义不丢）。
+//! 6. `busy_iframe_page_evaluate_works`——忙臂 iframe 页导航即时返回 + 臂中发送
+//!    evaluate（臂后应答）通道必答（忙臂页放弃 frame 元数据，evaluate 语义不丢）。
+//! 7. `kill_switch_env_off_keeps_frame_attached_on_busy_iframe_page`——kill-switch
+//!    `ZW_CDP_NAV_IFRAME_PROBE_ASYNC=0`（子进程 env 注入）回落旧阻塞探测：忙臂
+//!    iframe 页 frameAttached 事件在（旧行为面常驻判别）。
+//! 8. `default_async_probe_gives_up_frame_attached_on_busy_iframe_page`——默认
+//!    异步探测忙臂页放弃 frame 元数据：frameAttached 不发（负向判别，base 上
+//!    此断言翻红——旧路径事件在）。
+//! 9. `cross_connection_stays_responsive_during_busy_navigation`——跨连接停摆
+//!    症状面：conn A 忙导航占位期间，conn B 新连接 Page.enable 在 1.5s 窗内可达
+//!    （base 上复用循环被冻结 ~臂长，B 不可达翻红——s20 原始症状防回归）。
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -113,8 +122,15 @@ impl Drop for BrowserProcess {
     }
 }
 
-/// 启动 zero-browser --headless 并等待 CDP 发现端点就绪。
+/// 启动 zero-browser --headless 并等待 CDP 发现端点就绪（默认环境）。
 fn spawn_browser() -> (u16, BrowserProcess) {
+    spawn_browser_with_env(&[])
+}
+
+/// 启动 zero-browser --headless 并等待 CDP 发现端点就绪；`vars` 注入子进程环境
+///（kill-switch 等行为开关用子进程注入，不用 `std::env::set_var`——edition 2024
+/// unsafe 且与并行测试竞态）。
+fn spawn_browser_with_env(vars: &[(&str, &str)]) -> (u16, BrowserProcess) {
     // 端口预分配：先占住再释放（窗口期极小；发现端点轮询兜底）。
     let probe = TcpListener::bind("127.0.0.1:0").expect("bind probe port");
     let port = probe.local_addr().expect("addr").port();
@@ -133,11 +149,15 @@ fn spawn_browser() -> (u16, BrowserProcess) {
                 .join("zero-renderer")
         });
 
-    let child = Command::new(browser_bin)
-        .arg("--headless")
+    let mut cmd = Command::new(browser_bin);
+    cmd.arg("--headless")
         .arg(format!("--remote-debugging-port={port}"))
         .env("ZERO_STORAGE_DIR", &storage)
-        .env("ZERO_RENDERER_PATH", &renderer)
+        .env("ZERO_RENDERER_PATH", &renderer);
+    for (key, value) in vars {
+        cmd.env(key, value);
+    }
+    let child = cmd
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -172,20 +192,28 @@ struct CdpClient {
 
 impl CdpClient {
     fn connect(port: u16) -> Self {
+        Self::try_connect(port, Duration::from_millis(1400)).expect("ws handshake")
+    }
+
+    /// 带握手超时的连接：`handshake_timeout` 只约束 ws 握手阶段（mux 可能正被其他
+    /// 连接的命令占用——如跨连接停摆钉的判别窗），握手完成后回到 50ms 轮询读超时。
+    fn try_connect(port: u16, handshake_timeout: Duration) -> Result<Self, String> {
         // 预设读超时的 TCP 流交给 tungstenite（MaybeTlsStream 不透出 set_read_timeout）。
-        let stream = TcpStream::connect(("127.0.0.1", port)).expect("tcp connect");
-        stream
-            .set_read_timeout(Some(Duration::from_millis(50)))
-            .expect("read timeout");
+        let stream = TcpStream::connect(("127.0.0.1", port)).map_err(|e| format!("tcp connect: {e}"))?;
+        stream.set_read_timeout(Some(handshake_timeout)).expect("read timeout");
         stream
             .set_write_timeout(Some(Duration::from_secs(10)))
             .expect("write timeout");
-        let (ws, _resp) = tungstenite::client(format!("ws://127.0.0.1:{port}"), stream).expect("ws handshake");
-        Self {
+        let (ws, _resp) =
+            tungstenite::client(format!("ws://127.0.0.1:{port}"), stream).map_err(|e| format!("ws handshake: {e}"))?;
+        ws.get_ref()
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .expect("read timeout");
+        Ok(Self {
             ws,
             next_id: 0,
             pending_events: Vec::new(),
-        }
+        })
     }
 
     /// 发送命令（不等待——竞速/时序断言用）。
@@ -404,10 +432,98 @@ fn busy_iframe_page_evaluate_works() {
         "navigate blocked {:?} on busy iframe page",
         t0.elapsed()
     );
-    // 臂结束后（留余量）evaluate 通道可用且命中新文档。
+    // 臂中发送 evaluate（2500ms 臂未结束，求值排在忙臂后）：应答在臂后返回——通道必答语义。
     std::thread::sleep(Duration::from_millis(1500));
     let value = cdp
         .evaluate("String(document.title)", Duration::from_secs(10))
         .expect("evaluate after busy arm");
     assert_eq!(value, Value::from("S21 BusyFrames"));
+}
+
+/// kill-switch 常驻钉（env=0 侧）：`ZW_CDP_NAV_IFRAME_PROBE_ASYNC=0` 子进程注入
+/// 回落旧无界阻塞探测——忙臂 iframe 页的 frameAttached 事件在（旧行为面）。
+///
+/// 无严格计时断言（旧路径 navigate 会等臂长，属旧行为的一部分，不作断言）。
+/// 判别方向：若 kill-switch 失效（env=0 未回落旧路径），本钉在修复代码上翻红
+///（事件不再发出）。
+#[test]
+fn kill_switch_env_off_keeps_frame_attached_on_busy_iframe_page() {
+    let site = TestSite::spawn();
+    let (port, _browser) = spawn_browser_with_env(&[("ZW_CDP_NAV_IFRAME_PROBE_ASYNC", "0")]);
+    let mut cdp = CdpClient::connect(port);
+    cdp.call("Page.enable", serde_json::json!({}), Duration::from_secs(10))
+        .expect("Page.enable");
+    cdp.call(
+        "Page.navigate",
+        serde_json::json!({ "url": site.url("/busyframes?ms=2500") }),
+        Duration::from_secs(15),
+    )
+    .expect("navigate");
+    // 旧行为：探测在臂后同步应答（本页 1 iframe）→ frameAttached 必在。
+    cdp.wait_event("Page.frameAttached", Duration::from_secs(15))
+        .expect("frameAttached present under kill-switch (legacy blocking probe)");
+}
+
+/// kill-switch 常驻钉（默认侧，负向判别）：默认异步探测在忙臂页超界放弃——
+/// frameAttached 不发（迟发求值与导航管线 worker 快照安装竞态，宁缺勿错）。
+///
+/// 无严格计时断言；等待窗 5s 覆盖臂长（2500ms）+ 余量。base 上本钉翻红
+///（旧路径事件在）——翻红方向在 base 侧实证归档。
+#[test]
+fn default_async_probe_gives_up_frame_attached_on_busy_iframe_page() {
+    let site = TestSite::spawn();
+    let (port, _browser) = spawn_browser();
+    let mut cdp = CdpClient::connect(port);
+    cdp.call("Page.enable", serde_json::json!({}), Duration::from_secs(10))
+        .expect("Page.enable");
+    cdp.call(
+        "Page.navigate",
+        serde_json::json!({ "url": site.url("/busyframes?ms=2500") }),
+        Duration::from_secs(15),
+    )
+    .expect("navigate");
+    assert!(
+        cdp.wait_event("Page.frameAttached", Duration::from_secs(5)).is_err(),
+        "frameAttached must not be emitted when the bounded probe gives up on a busy arm"
+    );
+}
+
+/// 跨连接停摆症状面钉（s20 原始症状防回归）：conn A 忙导航占位期间，conn B
+/// 新连接在 1.5s 窗内可达（Page.enable 应答）。
+///
+/// base 行为：conn A 的 navigate 命令冻结单线程复用循环 ~臂长（3000ms 臂实测
+/// 3.2s+），conn B 的 ws 握手/Page.enable 全部排队 → 1.5s 窗内不可达翻红。
+/// 修复后 mux 不冻结：B 握手 + Page.enable 毫秒级。evaluate 仅作通道端到端
+/// 必答核对（臂后应答，无严格计时）；1.5s 窗为判别边界非性能断言。
+#[test]
+fn cross_connection_stays_responsive_during_busy_navigation() {
+    let site = TestSite::spawn();
+    let (port, _browser) = spawn_browser();
+    let mut conn_a = CdpClient::connect(port);
+    conn_a
+        .call("Page.enable", serde_json::json!({}), Duration::from_secs(10))
+        .expect("conn A Page.enable");
+    conn_a.send("Page.navigate", serde_json::json!({ "url": site.url("/busy?ms=3000") }));
+
+    // conn B 在 A 忙导航占位期新连接：握手（1.4s 上限）+ Page.enable（1.5s 判别窗）。
+    let t0 = Instant::now();
+    let mut conn_b = CdpClient::try_connect(port, Duration::from_millis(1400))
+        .expect("conn B handshake within the 1.5s window (mux not frozen)");
+    conn_b
+        .call("Page.enable", serde_json::json!({}), Duration::from_millis(1500))
+        .expect("conn B must answer Page.enable within the 1.5s window");
+    assert!(
+        t0.elapsed() < Duration::from_millis(1500),
+        "conn B setup took {:?} (mux frozen by conn A navigation?)",
+        t0.elapsed()
+    );
+
+    // 通道端到端必答：evaluate 臂后应答命中新文档（无严格计时断言）。
+    let value = conn_b
+        .evaluate("String(document.title)", Duration::from_secs(15))
+        .expect("conn B evaluate must answer");
+    assert_eq!(value, Value::from("S21 Busy 3000"));
+    conn_a
+        .wait_response(2, Duration::from_secs(15))
+        .expect("conn A navigate response");
 }
