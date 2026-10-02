@@ -21,6 +21,16 @@ fn pre_document_scripts_enabled() -> bool {
     !matches!(std::env::var("ZW_CDP_PREDOC_SCRIPTS").as_deref(), Ok("0"))
 }
 
+/// 导航事件族 iframe 探测脚本（`ExecuteScript` 函数体语义，S9 → 须带 return）。
+const NAV_IFRAME_PROBE_SCRIPT: &str = "return String(document.querySelectorAll('iframe').length)";
+
+/// 导航事件族 iframe 探测异步化开关（slice21 eval-wedge 修复）：默认 on——探测求值
+/// 有界等待，超界按 0 子帧放弃，不阻塞导航命令；`ZW_CDP_NAV_IFRAME_PROBE_ASYNC=0`
+/// 回落旧的无界阻塞探测（kill-switch 回退面，探测结果语义两侧一致）。
+fn navigation_iframe_probe_async() -> bool {
+    !matches!(std::env::var("ZW_CDP_NAV_IFRAME_PROBE_ASYNC").as_deref(), Ok("0"))
+}
+
 impl HeadlessServer {
     /// CDP Page.captureScreenshot — `{"data": "<base64 png>"}` 形状（区别于 BiDi 对象形）；
     /// 支持 clip 裁剪（原始 fb 行级裁剪）。format 仅支持 png（jpeg 编码器未接入）。
@@ -452,14 +462,24 @@ impl HeadlessServer {
         // 流域，见 master.md 维持挂起），frame url 停留 about:blank、无子帧
         // frameNavigated。ExecuteScript 为函数体语义（S9）→ 脚本须带 return。
         // 探测失败（renderer 不可达/非 String 返回）按 0 处理不阻塞导航事件族。
-        let iframe_count = session
-            .execute_script_typed("return String(document.querySelectorAll('iframe').length)")
-            .ok()
-            .and_then(|value| match value {
-                AutomationValue::String(text) => text.parse::<u32>().ok(),
-                _ => None,
-            })
-            .unwrap_or(0);
+        //
+        // slice21 eval-wedge 根因修复：探测求值**不得**阻塞导航命令——renderer 单 JS
+        // worker 忙于页面脚本臂时该求值排在其后，命令处理冻结单线程复用循环，冻结期
+        // 间所有连接的命令/事件停摆（导航后跨连接 evaluate 全数饿死）。默认走有界等待
+        // 探测（probe_iframes_deferred，超界按 0 子帧放弃）；kill-switch
+        // `ZW_CDP_NAV_IFRAME_PROBE_ASYNC=0` 回落旧的无界阻塞探测（逐字节旧行为面）。
+        let iframe_count = if navigation_iframe_probe_async() {
+            session.probe_iframes_deferred(NAV_IFRAME_PROBE_SCRIPT, std::time::Duration::from_millis(250))
+        } else {
+            session
+                .execute_script_typed(NAV_IFRAME_PROBE_SCRIPT)
+                .ok()
+                .and_then(|value| match value {
+                    AutomationValue::String(text) => text.parse::<u32>().ok(),
+                    _ => None,
+                })
+                .unwrap_or(0)
+        };
         for _ in 0..iframe_count {
             let n = session.next_frame_seq;
             session.next_frame_seq = session.next_frame_seq.wrapping_add(1).max(1);
