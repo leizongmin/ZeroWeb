@@ -5,6 +5,16 @@
 
 ## 当前状态
 
+**M4 片 b 第三波已落地（2026-10-05）**：URL/枚举 setter 分支前移到 expando
+判定之前（`IDL set to ""`/undefined/对象 attr 残留根因——expando 先行拦截吞写）
++ IMG.src/IFRAME.src 排除出统一分支（专面 fetch/error 派发与导航钩子依赖，
+r3284/r388 单测 bisect 实证）。embedded 尾 408F → 394F，全通道维持
+**59091/61303 = 96.39%**，M1 基线逐案 **0 回归**；DC-4 实测全绿（test 68
+suites——首跑 send_keys 3F 为负载敏感 flake 隔离复跑绿+全量复跑确认 / fmt /
+reftest 704/704）。残差归 M4 片 c：embedded 尾 394F（setAttribute undefined
+串写面）、obsolete ~400F、其余域尾。证据：
+[evidence/2026-10-05-m4c-tails.md](evidence/2026-10-05-m4c-tails.md)。
+
 **M4 片 b 第二波已落地（2026-10-05）**：canvas standalone 全局反射
 （title/lang/className/accessKey/autofocus/hidden/tabIndex + width/height
 > maxInt → default）+ URL/枚举 setter 统一分支（`_reflectedUrlAttr` 命中与
@@ -110,6 +120,9 @@ html5lib 3 案 document.write 管线面）。证据：
 
 ## 已完成切片
 
+- **M4 片 b 第三波（2026-10-05）**：URL/枚举 setter 前移 expando 前止损
+  （embedded 408→394F）+ IMG.src/IFRAME.src 专面排除（r3284/r388 bisect）；
+  96.39% 维持，0 回归；DC-4 全绿。证据 evidence/2026-10-05-m4c-tails.md。
 - **M4 片 b 第二波（2026-10-05）**：canvas standalone 全局反射 + URL/枚举
   setter 统一分支（IFRAME.src 排除保留导航钩子）+ iframe/embed width-height
   string 面收窄 + numeric getter maxInt 面；96.39%（+453），0 回归；DC-4 全绿。
