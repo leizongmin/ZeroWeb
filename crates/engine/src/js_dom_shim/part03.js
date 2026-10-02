@@ -8910,7 +8910,18 @@
   // 节点 → HTML 串（元素含属性 + 子树；文本转义；注释包裹）。供 innerHTML/outerHTML 序列化（反映 mutation）。
   function _zwMSerialize(node) {
     if (!node) return '';
-    if (node.nodeType === 3) return _zwMEscapeText(node.nodeValue);
+    if (node.nodeType === 3) {
+      // R5001 M3 片 a：noscript 条件 raw（spec serialising-html-fragments——parent
+      // 为 noscript 且对该节点 scripting enabled → literal）。宿主解析
+      // scripting=true 时 noscript 为 rawtext，本地视图文本数据本就字面；JS 侧
+      // 直出即与宿主序列化一致。显式 disabled 印记（`__zwTreeScripting === false`
+      // ——detached 文档树 build 时盖章，随 detached 面切片接通）保持转义；
+      // 未盖章树（主文档常态）默认 literal。
+      var _p5k = node.parentNode;
+      var _p5tag = _p5k ? String(_p5k.localName || _p5k.tagName || '').toLowerCase() : '';
+      if (_p5tag === 'noscript' && node.__zwTreeScripting !== false) return String(node.nodeValue);
+      return _zwMEscapeText(node.nodeValue);
+    }
     if (node.nodeType === 8) return '<!--' + node.nodeValue + '-->';
     if (node.nodeType !== 1) return '';
     var tag = node.localName || (node.tagName || '').toLowerCase();

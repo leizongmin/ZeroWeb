@@ -75,12 +75,14 @@ html5ever 0.29→0.39 升级候选架构片。
 
 1. **M3 片 a（进行中）**：noscript + scripting 旗标——zero-dom 核心已落
    （Document.scripting_enabled + html5ever TreeBuilderOpts + 序列化条件 raw 规则 +
-   engine 调用点分流：replace/insertAdjacent/outer 随文档旗标、template context
-   强制 disabled、DOMParser parse_html_with_scripting(false)；单测 2 绿 + serializing
-   邻面零回归）。**剩余 JS 本地视图面**：handle 容器/detached 文档的 innerHTML 读走
-   JS 序列化器（`_zwMSerialize`）+ 本地视图解析通道（child_nodes_json 默认
-   scripting=true）——escaping 9 断言中主文档宿主面语义已正确，JS 面改造随下片；
-   insertAdjacentHTML/document.write 面另有 detached 视图独立问题待诊。
+   engine 调用点分流；单测 2 绿 + serializing 邻面零回归）；JS 序列化器
+   `_zwMSerialize` noscript 条件 literal 已落（div.innerHTML 首绿 1/9）。
+   **剩余 8 失败全分类**：①detached 旗标通道 3 面（DOMParser/template/
+   createHTMLDocument——detached 文档 scripting=false 标记 + child_nodes_json
+   旗标参 + build 印章）；②缺失 API 2 面（Range.createContextualFragment = DC-3
+   明确项；detached doc.write）；③主文档视图更新 2 面（insertAdjacentHTML
+   afterbegin/document.write 后 firstChild null——handle 容器本地视图更新）；
+   ④XHR data: URL 1 面。
 2. **挂账随行**：bench-gate 等让复评（静窗）；html5ever 0.39 升级评估；P5 通道外
    19 案落地通道（reftest import 优先——charset/ 形态契合）。
 
