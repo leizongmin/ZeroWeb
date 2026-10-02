@@ -17,6 +17,7 @@
 //! （flat，奇偶配对）。错误 = `"__zw_fetch_error:"` 后接 msg（旧约定，shim 落 ok:false）。body 为末字段
 //! （取第 3 个 `\x1f` 之后全部），可含 `\x1f`；status/status_text/headersWire 不含控制分隔符。
 
+use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex};
 
 use zero_script_sandbox::Sandbox;
@@ -96,43 +97,77 @@ const BYTES_PREFIX: &str = "__zw_bytes:";
 /// 旧实现 `__zw_fetch` 每次 `std::thread::spawn` 一个抓取线程**无上限**——page-supplied
 /// `for(...) fetch(url)` 快速同步触发 N 次 spawn（每次跑阻塞 HTTP），可轻松 spawn 数万 OS 线程
 /// → 线程数/栈内存耗尽致进程崩溃（page-supplied DoS，与 R3399/R3400 同源）。本常量为每个
-/// `FetchBridge` 的并发抓取线程数设硬上限：回调同步获取 gate 许可（满则阻塞 = 对 JS worker 的
-/// 反压），acquire 后才 spawn，worker 完成后 release。`resolver.resolve` 是 fire-and-forget
-/// （投递 cmd 到 worker drain 循环，不重入），故 JS worker 在 gate 上阻塞时已完成的 worker 仍能
-/// resolve + release，不会死锁。值取 64：够覆盖正常并发 fetch（页面脚本极少同时 >64），又把
-/// 恶意洪水的线程数钳到常数级。
+/// `FetchBridge` 的并发抓取线程数设硬上限：回调提交抓取闭包时受 gate 名额约束（满载入队
+/// 接力，见 [`FetchGate`]）。值取 64：够覆盖正常并发 fetch，又把恶意洪水的线程数钳到常数级。
 const MAX_INFLIGHT_FETCH: usize = 64;
 
-/// R3401：fetch 并发抓取线程计数 gate（`Arc<(Mutex<usize>, Condvar)>`，count = 当前 inflight）。
-type FetchGate = Arc<(Mutex<usize>, Condvar)>;
+/// R3401（T2-PB1 重构）：pending 队列上限——满载 fetch 排队超过此数后，提交方回退阻塞
+/// 反压（防恶意页无限排队耗尽内存，保持 R3401 线程/内存双上界）。1024 远超正常页面
+/// 并发峰值（bilibili 启动约数百），正常页面永不可达。
+const PENDING_FETCH_CAP: usize = 1024;
 
-/// R3401：在 gate 上同步获取一个并发许可（count < [`MAX_INFLIGHT_FETCH`] 时返回，否则阻塞等待
-/// 至某个 worker release）。返回一个 [`FetchPermitGuard`]，Drop 时 release（count - 1 + notify）。
-/// 用作对 JS worker 的反压——page-supplied 洪水 fetch 被钳到 [`MAX_INFLIGHT_FETCH`] 并发线程。
-fn acquire_fetch_permit(gate: &FetchGate) -> FetchPermitGuard {
-    let (m, c) = &**gate;
-    let mut count = m.lock().expect("fetch gate lock");
-    while *count >= MAX_INFLIGHT_FETCH {
-        count = c.wait(count).expect("fetch gate wait");
-    }
-    *count += 1;
-    FetchPermitGuard { gate: Arc::clone(gate) }
+/// 满载时排队的待发起抓取闭包（完成侧接力 spawn）。
+type PendingLaunch = Box<dyn FnOnce() + Send + 'static>;
+
+/// R3401 gate 状态：inflight = 运行中的抓取闭包数（≤ [`MAX_INFLIGHT_FETCH`]）；
+/// pending = 满载时排队的待发起闭包。
+struct FetchGateState {
+    inflight: usize,
+    pending: VecDeque<PendingLaunch>,
 }
 
-/// R3401：并发许可 RAII 守卫——Drop 时 release gate（count - 1 + notify 等待的 acquire）。
-struct FetchPermitGuard {
+/// R3401：fetch 并发抓取线程数 gate。**满载不阻塞 JS worker 线程**（T2-PB1 根因修复）：
+/// 旧实现满载时 `__zw_fetch` 在 JS worker 线程上 condvar wait——整个 worker 冻结到并发
+/// 排空（bilibili 启动并发 >64 时，已入队的页面生命周期派发 Execute 被压 7-25s → 导航
+/// 15s 超时 ERR_FAILED）。改为 pending 队列 + 完成侧接力：满载请求入队立即返回；任一
+/// 抓取线程完成（resolve 后）在锁内把许可原子转移给队首并 spawn。pending 超
+/// [`PENDING_FETCH_CAP`] 时提交方回退阻塞反压（仅病态洪水可达）。
+type FetchGate = Arc<(Mutex<FetchGateState>, Condvar)>;
+
+/// R3401：提交一个抓取闭包。有空位 → 占名额并立即 spawn；满载且 pending 未超
+/// [`PENDING_FETCH_CAP`] → 入队立即返回（**不阻塞调用线程**——调用方是 JS worker）；
+/// pending 也满 → 阻塞等待空位（反压兜底）。
+fn submit_fetch_launch(gate: &FetchGate, launch: PendingLaunch) {
+    let (m, c) = &**gate;
+    let mut st = m.lock().expect("fetch gate lock");
+    loop {
+        if st.inflight < MAX_INFLIGHT_FETCH {
+            st.inflight += 1;
+            drop(st);
+            std::thread::spawn(launch);
+            return;
+        }
+        if st.pending.len() < PENDING_FETCH_CAP {
+            st.pending.push_back(launch);
+            return;
+        }
+        st = c.wait(st).expect("fetch gate wait");
+    }
+}
+
+/// R3401：抓取闭包的许可 RAII 守卫——Drop 时释放名额；若 pending 有排队闭包则把名额
+/// 原子转移给队首并 spawn（接力，并发数不变），否则真正释放并 notify 阻塞中的提交方
+/// （反压兜底路径）。
+struct FetchLaunchGuard {
     gate: FetchGate,
 }
 
-impl Drop for FetchPermitGuard {
+impl Drop for FetchLaunchGuard {
     fn drop(&mut self) {
         let (m, c) = &*self.gate;
-        if let Ok(mut count) = m.lock() {
-            if *count > 0 {
-                *count -= 1;
+        if let Ok(mut st) = m.lock() {
+            if st.inflight > 0 {
+                st.inflight -= 1;
             }
-            // notify_one 唤醒一个阻塞在 acquire 的调用（即便未成功锁也安全）。
-            c.notify_one();
+            if let Some(next) = st.pending.pop_front() {
+                st.inflight += 1; // 许可转移给接力请求，运行并发数不变
+                drop(st);
+                std::thread::spawn(next);
+            } else {
+                drop(st);
+                // 唤醒阻塞在 submit 的调用（反压兜底路径；无等待者时安全）。
+                c.notify_one();
+            }
         }
     }
 }
@@ -235,7 +270,13 @@ impl FetchBridge {
         Self {
             handler_cell: Arc::new(Mutex::new(None)),
             resolver,
-            inflight_gate: Arc::new((Mutex::new(0), Condvar::new())),
+            inflight_gate: Arc::new((
+                Mutex::new(FetchGateState {
+                    inflight: 0,
+                    pending: VecDeque::new(),
+                }),
+                Condvar::new(),
+            )),
         }
     }
 
@@ -248,13 +289,14 @@ impl FetchBridge {
     }
 
     /// 注册 `__zw_fetch(id, method, url, headersWire, body, clientId, referrer, mode, redirect, credentials)` 回调——JS `fetch(input, init)` 经 shim 调此。
-    /// **非阻塞（有界）**：回调锁内克隆 handler Option（`FetchHandler=Arc` 廉价）+ 同步获取并发许可
-    /// （满则阻塞 = 反压），acquire 后 `std::thread::spawn` 抓取（`h(&req)`）+ `resolver.resolve` 回投——
-    /// JS worker 不在单个 fetch 期间冻结。handler 未注入时子线程 resolve 错误标记。
+    /// **非阻塞（有界）**：回调锁内克隆 handler Option（`FetchHandler=Arc` 廉价）+ 提交抓取闭包
+    /// （有空位即 spawn；满载入队立即返回，**绝不在 JS worker 线程上阻塞**）——抓取（`h(&req)`）+
+    /// `resolver.resolve` 回投在闭包线程执行。handler 未注入时闭包 resolve 错误标记。
     ///
     /// R3401：并发抓取线程被 [`MAX_INFLIGHT_FETCH`] 钳到常数级——page-supplied `for(...) fetch()`
-    /// 洪水不再 spawn 无限线程（旧实现每次 spawn 一线程无上限 → 进程崩溃 DoS）。满时 JS worker 阻塞在
-    /// acquire，已完成的 worker 仍能 resolve（fire-and-forget 投递 cmd）+ release，不死锁。
+    /// 洪水不再 spawn 无限线程（旧实现每次 spawn 一线程无上限 → 进程崩溃 DoS）。T2-PB1：满载从
+    /// 「JS worker 阻塞在 acquire」改为 pending 队列 + 完成侧接力（见 [`FetchGate`]）——worker 冻结
+    /// 会连带压住已入队的生命周期派发 Execute（bilibili 导航 15s 超时根因）。
     pub fn register(&self, sandbox: &mut dyn Sandbox) {
         let handler_cell = Arc::clone(&self.handler_cell);
         let resolver = self.resolver.clone();
@@ -291,11 +333,12 @@ impl FetchBridge {
                 };
                 let handler_opt: Option<FetchHandler> = handler_cell.lock().ok().and_then(|c| c.as_ref().cloned());
                 let resolver = resolver.clone();
-                // R3401：获取并发许可（满则阻塞 = 反压）后 spawn；guard 移入 worker 闭包，
-                // 闭包结束（resolve 后）Drop 即 release。
-                let _permit = acquire_fetch_permit(&gate);
-                std::thread::spawn(move || {
-                    let _permit = _permit; // 保持许可到 resolve 完成（Drop release）
+                // R3401（T2-PB1）：不在 JS worker 线程上阻塞 acquire——满载时请求入队立即
+                // 返回（submit 内部分派）；许可由闭包内 guard 持有到 resolve 完成（Drop
+                // 释放并接力队首）。抓取线程数仍钳 MAX_INFLIGHT_FETCH。
+                let launch_gate = Arc::clone(&gate);
+                let launch: PendingLaunch = Box::new(move || {
+                    let _guard = FetchLaunchGuard { gate: launch_gate }; // 保持许可到 resolve 完成
                     let result = match handler_opt {
                         Some(h) => match h(&req) {
                             Ok(resp) => serialize_response(&resp),
@@ -305,6 +348,7 @@ impl FetchBridge {
                     };
                     resolver.resolve(&id, &result);
                 });
+                submit_fetch_launch(&gate, launch);
                 String::new()
             }),
         );
@@ -499,39 +543,124 @@ mod tests {
 
     // ── R3401：FetchBridge 并发抓取线程上限（防 page-supplied fetch 洪水 DoS）──
     // 旧实现每次 __zw_fetch spawn 一线程无上限；page-supplied for(...) fetch() 可 spawn 数万线程崩溃进程。
-    // gate 把并发钳到 MAX_INFLIGHT_FETCH；满则阻塞 acquire（反压）。
+    // gate 把并发钳到 MAX_INFLIGHT_FETCH；T2-PB1：满载不阻塞提交方（JS worker），排队 + 完成侧接力。
+
+    /// 构造一个持许可直至 `release` 置位的抓取闭包（gate 单测用；ran 计数完成数）。
+    fn parked_launch(
+        gate: &FetchGate,
+        release: Arc<std::sync::atomic::AtomicBool>,
+        ran: Arc<std::sync::atomic::AtomicUsize>,
+    ) -> PendingLaunch {
+        let gate = Arc::clone(gate);
+        Box::new(move || {
+            let _guard = FetchLaunchGuard { gate };
+            while !release.load(std::sync::atomic::Ordering::Acquire) {
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            ran.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        })
+    }
 
     #[test]
-    fn fetch_gate_caps_inflight_at_max_r3401() {
-        // gate 直接单测：MAX_INFLIGHT_FETCH 个 acquire 立即成功，第 MAX+1 个阻塞（持 permit 的
-        // 线程未 release 前 wait 不返回）。
-        let gate: FetchGate = Arc::new((Mutex::new(0), Condvar::new()));
-        let mut held: Vec<FetchPermitGuard> = Vec::with_capacity(MAX_INFLIGHT_FETCH);
-        // 拿满全部许可（不 release）。
-        for _ in 0..MAX_INFLIGHT_FETCH {
-            held.push(acquire_fetch_permit(&gate));
+    fn fetch_gate_queues_when_full_never_blocks_caller_t2pb1() {
+        // T2-PB1 回归钉（bilibili 导航 15s 超时根因）：gate 满载时 submit 立即返回（排队），
+        // **不阻塞调用线程**——旧实现 condvar wait 冻结 JS worker 7-25s，压住已入队的
+        // 生命周期派发 Execute → 导航超时。完成侧接力保序推进队列。
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        let gate: FetchGate = Arc::new((
+            Mutex::new(FetchGateState {
+                inflight: 0,
+                pending: VecDeque::new(),
+            }),
+            Condvar::new(),
+        ));
+        let release = Arc::new(AtomicBool::new(false));
+        let ran = Arc::new(AtomicUsize::new(0));
+        // MAX 个直接 spawn（占满 inflight），再 +5 排队——全部立即返回。
+        for _ in 0..(MAX_INFLIGHT_FETCH + 5) {
+            submit_fetch_launch(&gate, parked_launch(&gate, Arc::clone(&release), Arc::clone(&ran)));
         }
-        assert_eq!(*(gate.0.lock().unwrap()), MAX_INFLIGHT_FETCH);
+        {
+            let st = gate.0.lock().unwrap();
+            assert_eq!(st.inflight, MAX_INFLIGHT_FETCH, "inflight 占满");
+            assert_eq!(st.pending.len(), 5, "满载后 5 个应排队");
+        }
+        // 任一 release → guard Drop 接力队首，pending 逐个推进直至清空，inflight 归零。
+        release.store(true, Ordering::Release);
+        for _ in 0..200 {
+            let (inflight, pending) = {
+                let st = gate.0.lock().unwrap();
+                (st.inflight, st.pending.len())
+            };
+            if inflight == 0 && pending == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let st = gate.0.lock().unwrap();
+        assert_eq!(st.inflight, 0, "全部完成后 inflight 归零");
+        assert!(st.pending.is_empty(), "接力应清空 pending 队列");
+        assert_eq!(
+            ran.load(Ordering::SeqCst),
+            MAX_INFLIGHT_FETCH + 5,
+            "排队闭包必须经接力全部执行（不许静默丢弃）"
+        );
+    }
 
-        // 第 MAX+1 个 acquire 应阻塞——在另一线程尝试，短时间内（持 permit 未 release）不会返回。
+    #[test]
+    fn fetch_gate_falls_back_to_blocking_beyond_pending_cap_r3401() {
+        // R3401 内存上界钉：pending 超 PENDING_FETCH_CAP 后提交方回退阻塞（防恶意页无限
+        // 排队耗尽内存）；release 后阻塞方与队列一同推进清空。
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        let gate: FetchGate = Arc::new((
+            Mutex::new(FetchGateState {
+                inflight: 0,
+                pending: VecDeque::new(),
+            }),
+            Condvar::new(),
+        ));
+        let release = Arc::new(AtomicBool::new(false));
+        let ran = Arc::new(AtomicUsize::new(0));
+        let total = MAX_INFLIGHT_FETCH + PENDING_FETCH_CAP;
+        for _ in 0..total {
+            submit_fetch_launch(&gate, parked_launch(&gate, Arc::clone(&release), Arc::clone(&ran)));
+        }
+        {
+            let st = gate.0.lock().unwrap();
+            assert_eq!(st.inflight, MAX_INFLIGHT_FETCH);
+            assert_eq!(st.pending.len(), PENDING_FETCH_CAP);
+        }
+        // 第 MAX+CAP+1 个提交应阻塞——另一线程尝试，短时间内不返回。
         let gate_probe = Arc::clone(&gate);
+        let release_probe = Arc::clone(&release);
+        let ran_probe = Arc::clone(&ran);
         let probe = std::thread::spawn(move || {
-            let _g = acquire_fetch_permit(&gate_probe);
+            submit_fetch_launch(&gate_probe, parked_launch(&gate_probe, release_probe, ran_probe));
             true
         });
         std::thread::sleep(std::time::Duration::from_millis(100));
-        assert!(
-            !probe.is_finished(),
-            "满 gate 时 acquire 应阻塞（反压），但 probe 提前返回了"
+        assert!(!probe.is_finished(), "pending 满时 submit 应阻塞（R3401 反压兜底）");
+        // release → 全部推进（含阻塞的 probe 提交）→ inflight/pending 归零。
+        release.store(true, Ordering::Release);
+        assert!(probe.join().expect("probe submit after release"));
+        for _ in 0..600 {
+            let (inflight, pending) = {
+                let st = gate.0.lock().unwrap();
+                (st.inflight, st.pending.len())
+            };
+            if inflight == 0 && pending == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let st = gate.0.lock().unwrap();
+        assert_eq!(st.inflight, 0);
+        assert!(st.pending.is_empty());
+        assert_eq!(
+            ran.load(Ordering::SeqCst),
+            total + 1,
+            "阻塞回退的提交在 release 后应执行"
         );
-
-        // release 一个许可 → probe 应能 acquire 返回。
-        held.pop();
-        assert!(probe.join().expect("probe acquire after release"));
-
-        // 剩余 permit Drop 后 count 归零。
-        drop(held);
-        assert_eq!(*(gate.0.lock().unwrap()), 0);
     }
 
     #[test]

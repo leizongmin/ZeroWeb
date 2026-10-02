@@ -1,6 +1,7 @@
 //! 渲染进程页面脚本执行 — 加载完成后运行 `<script>` 并处理 DOM 事件。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::mpsc::Receiver;
 
 use tracing::warn;
 use zero_engine::{
@@ -15,6 +16,8 @@ use zero_engine::{
     script_set_control_checked, script_text_control_snapshot, script_text_delete, script_text_delete_without_event,
     script_text_input, script_text_input_without_event,
 };
+use zero_page_runtime::JsExecutor as _;
+use zero_protocol::message::{IpcMessage, IpcMessageKind};
 use zero_webview::ResourceElementEvent;
 #[cfg(test)]
 use zero_webview::ResourceElementOutcome;
@@ -76,20 +79,80 @@ pub struct PageScriptContext<'a> {
     pub webview: Option<&'a mut zero_webview::WebView>,
 }
 
-/// 按文档顺序执行页面脚本。
+/// 脚本阶段让路检查的入站面（P-B1 导航让路）。
+///
+/// `deferred` 是主循环的 staging 队列（`deferred_inbound`，非 fetch 消息暂存处）；
+/// 让路检查扫描它与 `inbound_rx`，遇文档替换型命令（导航/停止）即中止剩余脚本，
+/// 消息由调用方回灌队首优先派发，其余消息原序暂存回 `deferred`。
+pub struct ScriptPhaseYield<'a> {
+    /// 渲染进程入站消息通道。
+    pub inbound_rx: &'a Receiver<IpcMessage>,
+    /// 主循环 staging 队列（先于 `inbound_rx` 到达次序）。
+    pub deferred: &'a mut VecDeque<IpcMessage>,
+}
+
+/// 脚本阶段结果。
+pub struct ScriptPhaseResult {
+    /// 页面 HTML 因脚本变更已更新（语义同旧 `run_page_scripts` 返回值）。
+    pub changed: bool,
+    /// 让路时截获的文档替换型命令（剩余脚本被丢弃，调用方回灌队首优先派发）。
+    pub aborted: Option<IpcMessage>,
+}
+
+/// 按文档顺序执行页面脚本（不可让路版——测试/既有调用方语义不变；生产路径一律
+/// 走 [`run_page_scripts_interruptible`]）。
+#[cfg(test)]
 pub fn run_page_scripts<F: Fn(&str) -> Result<String, String>>(
     ctx: &mut PageScriptContext<'_>,
     javascript_enabled: bool,
     fetch_text: F,
 ) -> bool {
+    run_page_scripts_interruptible(ctx, javascript_enabled, fetch_text, None).changed
+}
+
+/// 按文档顺序执行页面脚本；`yield_to_commands` 提供时在脚本间检查入站导航命令
+/// 并让路中止（P-B1：同步脚本阶段可长达数秒——V8 执行 + 模块依赖同步取——
+/// 命令消息不得排队等整个阶段，2026-10-02 bilibili 二跳导航 15s 超时根因）。
+pub fn run_page_scripts_interruptible<F: Fn(&str) -> Result<String, String>>(
+    ctx: &mut PageScriptContext<'_>,
+    javascript_enabled: bool,
+    fetch_text: F,
+    mut yield_to_commands: Option<ScriptPhaseYield<'_>>,
+) -> ScriptPhaseResult {
     if !javascript_enabled || ctx.html.is_empty() || should_skip_scripts(ctx.url) {
-        return false;
+        return ScriptPhaseResult {
+            changed: false,
+            aborted: None,
+        };
     }
     let base = ctx.url.to_string();
     let original_html = ctx.html.clone();
     let mut html = ctx.html.clone();
 
-    for (script, script_index) in extract_page_scripts_indexed(&html) {
+    let scripts = extract_page_scripts_indexed(&html);
+
+    // 脚本批量渲染边界：同步脚本阶段的 DOM 变更在阶段结束时统一渲染一次
+    // （HTML Standard event loop「update the rendering」批量语义）。逐脚本
+    // 全量渲染 ~1s/次（169KB/数千节点页面 × 8 次）占死 renderer 主循环 9s+
+    // 是 2026-10-02 bilibili 二跳导航 15s 超时的根因。
+    if let Some(wv) = ctx.webview.as_deref_mut() {
+        wv.begin_script_batch();
+    }
+
+    for (script, script_index) in scripts {
+        // 脚本间让路检查：遇文档替换型命令即中止剩余脚本。批量边界一并关闭
+        // 但不渲染（旧文档即将被导航替换，渲染是纯浪费）；已执行脚本的产出
+        // 随文档换代作废——与导航打断图片加载阶段的既有语义一致。
+        if let Some(nav) = poll_script_abort(yield_to_commands.as_mut()) {
+            if let Some(wv) = ctx.webview.as_deref_mut() {
+                wv.abort_script_batch();
+            }
+            return ScriptPhaseResult {
+                changed: false,
+                aborted: Some(nav),
+            };
+        }
+
         let is_module = matches!(&script, PageScript::InlineModule(_) | PageScript::ExternalModule(_));
         let module_url = match &script {
             PageScript::ExternalModule(src) => resolve_document_url(&base, src),
@@ -112,7 +175,7 @@ pub fn run_page_scripts<F: Fn(&str) -> Result<String, String>>(
                         warn!("external script fetch {abs}: {e}");
                         // R2942 mirror：外部脚本 fetch 失败 → 即时派 window 'error'（脚本 fetch 同步失败，
                         // 早于后续脚本 onerror 注册即触发，匹配 real browser「fetch 失败即报」语义）。
-                        report_resource_error(ctx.js_worker, "script", &abs);
+                        report_resource_error(ctx.js_worker, "script", &abs, false);
                         // R2944 mirror：外部脚本元素 'error'（spec：script 元素 error 仅 fetch 失败触发）。
                         dispatch_script_event(ctx.js_worker, &abs, "error");
                         continue;
@@ -137,11 +200,61 @@ pub fn run_page_scripts<F: Fn(&str) -> Result<String, String>>(
         }
     }
 
+    // 批量边界统一渲染（begin_script_batch 的配对出口；best-effort，失败仅 warn）。
+    if let Some(wv) = ctx.webview.as_deref_mut()
+        && let Err(e) = wv.end_script_batch()
+    {
+        warn!("end script batch render: {e}");
+    }
+
     if html != original_html {
         *ctx.html = html;
-        return true;
+        return ScriptPhaseResult {
+            changed: true,
+            aborted: None,
+        };
     }
-    false
+    ScriptPhaseResult {
+        changed: false,
+        aborted: None,
+    }
+}
+
+/// 单次让路检查：扫 staging 队列与 inbound，取第一个文档替换型命令。
+///
+/// 其余消息（含命令前到达者）原序暂存回 `deferred`；截获的命令由调用方回灌队首，
+/// 跳到这些消息之前优先派发（导航先行的让路语义）。
+fn poll_script_abort(yield_to_commands: Option<&mut ScriptPhaseYield<'_>>) -> Option<IpcMessage> {
+    let y = yield_to_commands?;
+    let mut nav = None;
+    let mut kept = VecDeque::new();
+    while let Some(msg) = y.deferred.pop_front() {
+        if nav.is_none() && is_navigation_command(&msg) {
+            nav = Some(msg);
+        } else {
+            kept.push_back(msg);
+        }
+    }
+    if nav.is_none() {
+        while let Ok(msg) = y.inbound_rx.try_recv() {
+            if is_navigation_command(&msg) {
+                nav = Some(msg);
+                break;
+            }
+            kept.push_back(msg);
+        }
+    }
+    y.deferred.extend(kept);
+    nav
+}
+
+/// 让路判定：仅文档替换型命令中断脚本阶段（导航 / 停止加载 / 设置文档内容）；
+/// 其余命令（ExecuteScript 等查询执行）保持既有「阶段结束再处理」次序。
+fn is_navigation_command(msg: &IpcMessage) -> bool {
+    matches!(
+        msg.kind,
+        IpcMessageKind::Navigate(_) | IpcMessageKind::StopLoading | IpcMessageKind::LoadHtml(_)
+    )
 }
 
 /// R2940–R2944 mirror：页面脚本阶段收尾——派发页面生命周期 + 子资源/元素级事件进 shim，与 browser
@@ -167,7 +280,8 @@ pub fn finish_page_load(
     dispatch_page_lifecycle(js_worker, "DOMContentLoaded");
     // R2942：页面脚本注册 handler 后、window load 前派发资源 window 'error'。
     for (kind, url) in &resource_errors {
-        report_resource_error(js_worker, kind, url);
+        // t2-pb1 fix#5：load 前的导航里程碑派发走优先队列（脚本阶段的同类报告走普通队列）。
+        report_resource_error(js_worker, kind, url, true);
     }
     // FR-009：提交 img/media/source/track 状态并派发其规范事件。
     for event in &resource_events {
@@ -180,8 +294,25 @@ pub fn finish_page_load(
     // R2947：@font-face 加载 settle——派 FontFaceSet 'loadingdone'/'loadingerror' + 解析 document.fonts.ready。
     // 无 @font-face 页面（font_events 空）仍 settle（仅 resolve ready，不派事件）。
     // R2950：先把每个 @font-face 字体反映为 FontFace 对象加入 document.fonts（补全 set 语义），再 settle。
-    for (family, status) in &font_events {
-        dispatch_add_fontface(js_worker, family, status);
+    // t2-pb1 fix#6：批处理为单次执行——真实站点（bilibili 图标字体族）可达 216 个 @font-face，
+    // 逐条 round-trip（每条 ~60ms 队列/往返开销）在 DCL 后追加 13s，是导航 15s 超时的第二级
+    // 根因。try/catch 保每条隔离（与逐条 best-effort 等价：单条失败不阻断其余）。
+    if !font_events.is_empty() {
+        let batch: String = font_events
+            .iter()
+            .map(|(family, status)| {
+                format!(
+                    "try{{{}}}catch(_e){{}}",
+                    zero_engine::script_add_fontface(family, status)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        // t2-pb1 fix#12：fire-and-forget——批处理与随后的 settle/load 同在优先 FIFO，
+        // 提交顺序即执行顺序，主循环不等当前臂跑完。
+        if let Err(e) = js_worker.submit_script_priority(&batch) {
+            warn!("dispatch add fontface batch ({}): {e}", font_events.len());
+        }
     }
     let had_loaded = font_events.iter().any(|(_, t)| *t == "loaded");
     let had_error = font_events.iter().any(|(_, t)| *t == "error");
@@ -193,7 +324,9 @@ pub fn finish_page_load(
 fn dispatch_page_lifecycle(js_worker: &RendererJsWorker, event: &str) {
     let reflect = zero_engine::script_reflect_body_handlers();
     let dispatch = script_dispatch_dom_event("html", event, None);
-    if let Err(e) = js_worker.execute_script_direct(&format!("{reflect} {dispatch}")) {
+    // t2-pb1 fix#5/#12：生命周期派发走优先队列且不等待结果——页面回调单臂可达 28-30s
+    // （bilibili 实测），同步往返会让主循环停在当前臂后（Navigate IPC 饿死）。
+    if let Err(e) = js_worker.submit_script_priority(&format!("{reflect} {dispatch}")) {
         warn!("dispatch page lifecycle {event}: {e}");
     }
 }
@@ -207,7 +340,8 @@ pub fn dispatch_transition_events(js_worker: &RendererJsWorker, events: &[zero_e
     for ev in events {
         let ty = ev.kind.as_event_type();
         let script = zero_engine::script_dispatch_transition_event(&ev.selector, ty, &ev.property, ev.elapsed);
-        if let Err(e) = js_worker.execute_script_direct(&script) {
+        // t2-pb1 fix#12：best-effort 派发 fire-and-forget（主循环不等 worker 回合）。
+        if let Err(e) = js_worker.submit_script_priority(&script) {
             warn!("dispatch {ty} ({}): {e}", ev.selector);
         }
     }
@@ -222,7 +356,8 @@ pub fn dispatch_animation_events(js_worker: &RendererJsWorker, events: &[zero_en
     for ev in events {
         let ty = ev.kind.as_event_type();
         let script = zero_engine::script_dispatch_animation_event(&ev.selector, ty, &ev.name, ev.elapsed);
-        if let Err(e) = js_worker.execute_script_direct(&script) {
+        // t2-pb1 fix#12：best-effort 派发 fire-and-forget（主循环不等 worker 回合）。
+        if let Err(e) = js_worker.submit_script_priority(&script) {
             warn!("dispatch {ty} ({}): {e}", ev.selector);
         }
     }
@@ -242,17 +377,26 @@ fn report_uncaught_error(js_worker: &RendererJsWorker, source: &str, message: &s
         column_number: 0,
     });
     let report = script_report_error(message, source, 0, 0);
-    if let Err(e) = js_worker.execute_script_direct(&report) {
+    // t2-pb1 fix#12：best-effort 报告 fire-and-forget（主循环不等 worker 回合）。
+    if let Err(e) = js_worker.submit_script_priority(&report) {
         warn!("report uncaught script error: {e}");
     }
 }
 
 /// R2942 mirror：派发子资源 fetch/decode 失败的 window 'error' 事件进 shim（经 `__zw_report_error` hook →
 /// window.onerror legacy 5-arg + window 'error' ErrorEvent）。`kind` = "script" / "stylesheet" / "image"。best-effort。
-fn report_resource_error(js_worker: &RendererJsWorker, kind: &str, url: &str) {
+/// `priority`（t2-pb1 fix#5）：finish_page_load 内的派发走优先队列；脚本阶段的调用传 false（普通队列）。
+fn report_resource_error(js_worker: &RendererJsWorker, kind: &str, url: &str, priority: bool) {
     let msg = format!("Error loading {kind}: {url}");
     let report = script_report_error(&msg, url, 0, 0);
-    if let Err(e) = js_worker.execute_script_direct(&report) {
+    // t2-pb1 fix#12：priority 分支 fire-and-forget（finish_page_load 路径，主循环不等
+    // 当前臂）；非 priority 分支保持同步（脚本阶段内，需在阶段边界前排空）。
+    let result = if priority {
+        js_worker.submit_script_priority(&report).map(|_| String::new())
+    } else {
+        js_worker.execute_script_direct(&report)
+    };
+    if let Err(e) = result {
         warn!("report resource error ({kind} {url}): {e}");
     }
 }
@@ -266,7 +410,8 @@ fn dispatch_resource_element_event(js_worker: &RendererJsWorker, event: &Resourc
         event.natural_height,
         event.media_duration_ms,
     );
-    if let Err(e) = js_worker.execute_script_direct(&report) {
+    // t2-pb1 fix#5/#12：优先队列 + fire-and-forget（同 dispatch_page_lifecycle）。
+    if let Err(e) = js_worker.submit_script_priority(&report) {
         warn!("commit resource state ({} {}): {e}", event.tag, event.url);
     }
 }
@@ -275,7 +420,8 @@ fn dispatch_resource_element_event(js_worker: &RendererJsWorker, event: &Resourc
 /// `__zw_dispatch_link_event(url, type)`——shim 按 href 绝对 URL 匹配 `<link>` 元素 proxy 派发。best-effort。
 fn dispatch_link_event(js_worker: &RendererJsWorker, url: &str, ty: &str) {
     let report = script_dispatch_link_event(url, ty);
-    if let Err(e) = js_worker.execute_script_direct(&report) {
+    // t2-pb1 fix#5/#12：优先队列 + fire-and-forget（同 dispatch_page_lifecycle）。
+    if let Err(e) = js_worker.submit_script_priority(&report) {
         warn!("dispatch link event ({ty} {url}): {e}");
     }
 }
@@ -284,7 +430,10 @@ fn dispatch_link_event(js_worker: &RendererJsWorker, url: &str, ty: &str) {
 /// 生成 `__zw_dispatch_script_event(url, type)`——shim 按 src 绝对 URL 匹配 `<script>` 元素 proxy 派发。best-effort。
 pub(crate) fn dispatch_script_event(js_worker: &RendererJsWorker, url: &str, ty: &str) {
     let report = script_dispatch_script_event(url, ty);
-    if let Err(e) = js_worker.execute_script_direct(&report) {
+    // t2-pb1 fix#10/#12：宿主 tick 派发走优先队列且不等待结果——页面回调流饱和时
+    // 普通通道往返无界（bilibili 动态脚本逐个完成后的事件派发曾把主循环卡在
+    // tick_dynamic_scripts 内分钟级，导航 IPC 饿死），优先通道同步往返也要等当前臂。
+    if let Err(e) = js_worker.submit_script_priority(&report) {
         warn!("dispatch script event ({ty} {url}): {e}");
     }
 }
@@ -294,18 +443,10 @@ pub(crate) fn dispatch_script_event(js_worker: &RendererJsWorker, url: &str, ty:
 /// best-effort。无 @font-face 页面（had_loaded=had_error=false）仅解析 ready（字体集从不 loading）。
 fn dispatch_font_settle(js_worker: &RendererJsWorker, had_loaded: bool, had_error: bool) {
     let report = zero_engine::script_font_settle(had_loaded, had_error);
-    if let Err(e) = js_worker.execute_script_direct(&report) {
+    // t2-pb1 fix#5/#12：优先队列 + fire-and-forget（同 dispatch_page_lifecycle；
+    // 与字体批处理同通道 FIFO，提交顺序保持 批处理→settle）。
+    if let Err(e) = js_worker.submit_script_priority(&report) {
         warn!("dispatch font settle: {e}");
-    }
-}
-
-/// R2950 mirror：把已加载 @font-face 字体反映为 FontFace 对象加入 document.fonts。经
-/// `script_add_fontface` 生成 `__zw_add_fontface(family, status)`——shim 构造 FontFace(family) + 设
-/// status + add（按 family 去重）。best-effort。补全 FontFaceSet 语义（set 含文档 @font-face 字体）。
-fn dispatch_add_fontface(js_worker: &RendererJsWorker, family: &str, status: &str) {
-    let report = zero_engine::script_add_fontface(family, status);
-    if let Err(e) = js_worker.execute_script_direct(&report) {
-        warn!("dispatch add fontface ({status} {family}): {e}");
     }
 }
 
@@ -324,13 +465,20 @@ pub fn dispatch_dom_event(
         };
     }
     let script = script_dispatch_dom_event(selector, event_type, detail);
-    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    // t2-pb1 fix#13：用户事件派发走优先通道 + 有界等待（快照与脚本成对同通道 FIFO）。
+    // 普通通道同步往返在页面回调洪水下逐个等 28-30s 臂（b1 旅程实测：goto 前的鼠标
+    // 四连发让 Navigate IPC 滞留 106s）。超时按「结果未知」降级（默认动作放行、
+    // html 视为未变），脚本留队列照常执行。
+    ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
-    let result_str = match ctx.js_worker.execute_script_direct(&script) {
+    let result_str = match ctx
+        .js_worker
+        .execute_script_priority_bounded(&script, zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT)
+    {
         Ok(r) => r,
         Err(e) => {
             warn!("dispatch {event_type} on {selector}: {e}");
@@ -393,11 +541,13 @@ pub fn tick_observers_with(ctx: &mut PageScriptContext<'_>, per_task: bool) -> b
     if per_task {
         // 无状态游标协议：`tick_once(cursor)` schedule 首个活跃 observer 并返回下一
         // 游标，-1 = 耗尽（上限 64 轮防回调内重注册死循环）。
+        // t2-pb1 fix#7：宿主节拍 execute 走优先队列（主循环同步等 reply，不被页面
+        // 续体洪水压住——见 js_worker 分派环注释）。
         let mut cursor: i64 = 0;
         for _ in 0..64 {
             let res = ctx
                 .js_worker
-                .execute_script_direct(&format!(
+                .execute_script_direct_priority(&format!(
                     "(function(){{return String(globalThis.__zw_observers_tick_once({cursor}));}})()"
                 ))
                 .unwrap_or_else(|_| "-1".to_string());
@@ -409,13 +559,17 @@ pub fn tick_observers_with(ctx: &mut PageScriptContext<'_>, per_task: bool) -> b
             }
             cursor = next;
         }
-        let _ = ctx.js_worker.execute_script_direct(
+        // t2-pb1 fix#12：raf tick 结果被忽略 → fire-and-forget（主循环不等当前臂；
+        // observer 回调产生的 mutation 由下一次 apply 落定，至多滞后一帧）。
+        let _ = ctx.js_worker.submit_script_priority(
             "if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(globalThis.performance?performance.now():0);",
         );
         let html_snap = ctx.html.clone();
         return apply_recorded_mutations(ctx, &html_snap).is_some();
     }
-    let _ = ctx.js_worker.execute_script_direct(
+    // t2-pb1 fix#7/#12：合并 tick 也是主循环节拍，走优先队列且不等待结果（同上，
+    // observer/raf 回调 mutation 由下一次 apply 落定，至多滞后一帧）。
+    let _ = ctx.js_worker.submit_script_priority(
         "if(globalThis.__zw_observers_tick)globalThis.__zw_observers_tick();\
          if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(globalThis.performance?performance.now():0);",
     );
@@ -628,30 +782,37 @@ pub fn apply_set_hash_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) 
     let Some(hash) = anchor_hash_target(ctx.html, selector) else {
         return false;
     };
-    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    // t2-pb1 F7（首轮缺陷审查 2026-10-02）：点击默认动作路径改优先通道对（快照+脚本同
+    // 通道保序，fix#10 语义）+ 有界挂起（与 execute_automation_script_deferrable 同型）。
+    // 原 execute_script_direct 无界同步等待——worker 长臂（bilibili timer 级联 28-30s）
+    // 时点击处理阻塞 renderer 主循环、Navigate IPC 饿死（fix#15 同族）。挂起时脚本照常
+    // 执行，mutation 由下一入口 drain 落定。
+    ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
     // 调 location.hash = hash（R3006 全语义：hash 更新 + history entry + hashchange 派发经 _defer microtask）。
-    let _ = ctx
-        .js_worker
-        .execute_script_direct(&script_call_set_location_hash(&hash));
+    let _ = ctx.js_worker.execute_script_priority_deferrable(
+        &script_call_set_location_hash(&hash),
+        zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+    );
     let html_snap = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snap).is_some()
 }
 
 /// P1a 导航（R3057，闭合 R3052 限制②）：click 命中 `<a href="javascript:...">` → 在页面全局执行其 JS 体
 ///（real browser 语义：javascript: URL click 执行其体，返回值丢弃——非导航）。与 onclick handler 同一
-/// JS 执行通路（`execute_script_direct`，**非新增 eval 表面**，CSP `script-src` 统辖内联/eval 拦截）。
+/// JS 执行通路（worker 脚本命令，**非新增 eval 表面**，CSP `script-src` 统辖内联/eval 拦截）。
 /// 返回 JS 体执行是否改 DOM（调用方据此单次 rerender）。无 javascript: 目标 → false。
 pub fn apply_javascript_href(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
     // gate：`<a href="javascript:...">` 才执行（mirror apply_set_hash_on_click 防御性再校验 anchor_hash_target）。
     let Some(js) = anchor_javascript_target(ctx.html, selector) else {
         return false;
     };
-    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    // t2-pb1 F7：优先通道对 + 有界挂起（同 apply_set_hash_on_click 注）。
+    ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
         .lock()
@@ -659,7 +820,9 @@ pub fn apply_javascript_href(ctx: &mut PageScriptContext<'_>, selector: &str) ->
         .clear();
     // 执行 JS 体（空体 no-op）。js 为 href 解析后的原始 JS 源（HTML 已解码实体），不经转义——直接执行。
     if !js.is_empty() {
-        let _ = ctx.js_worker.execute_script_direct(&js);
+        let _ = ctx
+            .js_worker
+            .execute_script_priority_deferrable(&js, zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT);
     }
     let html_snap = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snap).is_some()
@@ -725,16 +888,53 @@ fn apply_state_script(ctx: &mut PageScriptContext<'_>, script: &str) -> bool {
 ///
 /// https://w3c.github.io/webdriver/#execute-script
 pub fn execute_automation_script(ctx: &mut PageScriptContext<'_>, script: &str) -> Result<(String, bool), String> {
-    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    // t2-pb1 fix#9：自动化求值走优先通道（快照+执行成对，同通道 FIFO 保持顺序）——宿主
+    // 发起的求值（CDP evaluate / Playwright title 等）不排在页面回调积压之后（bilibili
+    // timer 臂级联曾把 title 求值压 17.5s，连带饿死其后的导航 IPC）。
+    ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
         .lock()
         .unwrap_or_else(|error| error.into_inner())
         .clear();
-    let value = ctx.js_worker.execute_script_direct(script)?;
+    let value = ctx.js_worker.execute_script_direct_priority(script)?;
     let html_snapshot = ctx.html.clone();
     let changed = apply_recorded_mutations(ctx, &html_snapshot).is_some();
     Ok((value, changed))
+}
+
+/// t2-pb1 fix#15：[`execute_automation_script`] 的可挂起形态结果。
+pub enum AutomationEvalOutcome {
+    /// 同步完成（值 + 是否有 DOM 变更）。
+    Done(Result<(String, bool), String>),
+    /// 有界等待超时——脚本已提交优先队列照常执行，reply 通道交还调用方挂起续答。
+    Deferred(std::sync::mpsc::Receiver<Result<String, String>>),
+}
+
+/// t2-pb1 fix#15：[`execute_automation_script`] 的可挂起形态——宿主 Evaluate 家族
+/// （CDP evaluate / Playwright 注入与求值）专用。worker 被长臂（bilibili timer 回调
+/// 28-30s，纯 JS 执行墙）占住时，主循环至多等 [`zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT`]
+/// 即放行导航等 IPC；超时把 reply 通道交还（脚本已在优先队列，结果晚至；mutation
+/// 留待 checkpoint drain 落定，与异步回调同语义）。b1 旅程实测：settle 轮询 evaluate
+/// 在臂上同步等 21.6s，其后 0.2s 的 Navigate IPC 撞上 15s 看门狗（epoch2 ERR_FAILED）。
+pub fn execute_automation_script_deferrable(ctx: &mut PageScriptContext<'_>, script: &str) -> AutomationEvalOutcome {
+    ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clear();
+    match ctx
+        .js_worker
+        .execute_script_priority_deferrable(script, zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT)
+    {
+        Ok(value) => {
+            let html_snapshot = ctx.html.clone();
+            let changed = apply_recorded_mutations(ctx, &html_snapshot).is_some();
+            AutomationEvalOutcome::Done(value.map(|value| (value, changed)))
+        }
+        Err(rx) => AutomationEvalOutcome::Deferred(rx),
+    }
 }
 
 /// 提交已经由异步页面任务写入的 DOM 变更。
@@ -749,7 +949,13 @@ pub fn drain_pending_dom_mutations(ctx: &mut PageScriptContext<'_>) -> bool {
     if !ctx.js_worker.take_pending_async_callbacks() {
         return false;
     }
-    let _ = ctx.js_worker.execute_script_direct("");
+    // t2-pb1 fix#8：checkpoint 有界等待——页面回调积压（bilibili timer 臂级联 ~16s）时
+    // 不阻塞 renderer 主循环 15s+（导航 IPC 饿死 → 二跳 ERR_FAILED）。超时放弃本轮：
+    // 滞留空脚本为 worker 侧无害 no-op，ready 旗标由积压回调继续处理重新置位，下一轮
+    // 重试；回调产生的 mutation 在队列中累积，至下一次成功 checkpoint 一并应用。
+    let _ = ctx
+        .js_worker
+        .execute_script_direct_bounded("", std::time::Duration::from_millis(200));
     let html_snapshot = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snapshot).is_some()
 }
@@ -763,7 +969,10 @@ fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     fetch_text: &F,
     script_index: usize,
 ) -> Result<(), String> {
-    ctx.js_worker.set_dom_snapshot(html, ctx.url);
+    // t2-pb1 fix#10：脚本阶段走优先通道（快照+执行成对，同通道 FIFO 保持顺序）——解析期
+    // 脚本先于已排队的 timer/fetch 回调运行是真实浏览器语义（parser 优先于任务队列）；
+    // 页面回调流饱和时普通通道往返无界，脚本阶段曾单窗 9s+。
+    ctx.js_worker.set_dom_snapshot_priority(html, ctx.url);
     ctx.js_worker
         .mutations()
         .lock()
@@ -787,15 +996,16 @@ fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
 /// 成功 → `Ok(())`；抛错 → sentinel 读出消息 → `Err(msg)`（调用方 `run_page_scripts` 据此报 window.onerror）。
 /// 包装器 execute 不会抛（try-catch 兜底），随后的 sentinel 读取 execute 在干净 Isolate 上可靠。
 fn run_page_script_caught(js_worker: &RendererJsWorker, code: &str, script_index: usize) -> Result<(), String> {
-    let _ = js_worker.execute_script_direct(&script_run_classic_page(code, script_index));
-    match js_worker.execute_script_direct(&page_script_error_check()) {
+    // t2-pb1 fix#10：脚本阶段执行走优先通道（配对快照同为优先，见 execute_chunk）。
+    let _ = js_worker.execute_script_direct_priority(&script_run_classic_page(code, script_index));
+    match js_worker.execute_script_direct_priority(&page_script_error_check()) {
         Ok(v) if v.is_empty() => Ok(()),
         Ok(msg) => Err(msg),
         Err(e) => Err(e),
     }
 }
 
-fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &str) -> Option<String> {
+pub(crate) fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &str) -> Option<String> {
     let recorded = ctx
         .js_worker
         .mutations()
@@ -916,6 +1126,71 @@ mod tests {
             webview: None,
         };
         let _ = run_page_scripts(&mut ctx, true, |_u| Err::<String, String>("no external fetch".into()));
+    }
+
+    /// P-B1 导航让路：脚本间截获入站导航命令——首个脚本执行、其余中止，命令返回
+    /// 给调用方，其余消息（inbound 中的非命令消息）原序保留在 deferred。
+    /// 导航由首个脚本的 fetch 闭包注入（模拟脚本 1 执行期间导航到达）。
+    #[test]
+    fn run_page_scripts_yields_to_navigate_between_scripts() {
+        let mut worker = RendererJsWorker::spawn(160);
+        let html = "<html><body>\
+            <script src='https://example.com/a.js'></script>\
+            <script src='https://example.com/b.js'></script>\
+            </body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+
+        let mut buf = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut buf,
+            url: "https://example.com/page",
+            js_worker: &worker,
+            webview: None,
+        };
+        let (tx, rx) = std::sync::mpsc::channel::<IpcMessage>();
+        let tx_fetch = tx.clone();
+        let fetch = move |u: &str| -> Result<String, String> {
+            // 脚本取回期间入站两条消息：非命令在前、导航在后（到达序）。
+            let _ = tx_fetch.send(IpcMessage {
+                id: 1,
+                kind: IpcMessageKind::Heartbeat,
+            });
+            let _ = tx_fetch.send(IpcMessage {
+                id: 2,
+                kind: IpcMessageKind::Navigate(zero_protocol::message::NavigateParams {
+                    url: "https://example.com/next".into(),
+                    referrer: None,
+                    navigation_epoch: 7,
+                }),
+            });
+            if u.ends_with("a.js") {
+                Ok("globalThis.__s1 = 'ran';".into())
+            } else {
+                Ok("globalThis.__s2 = 'ran';".into())
+            }
+        };
+
+        let mut deferred: VecDeque<IpcMessage> = VecDeque::new();
+        let yield_to_commands = ScriptPhaseYield {
+            inbound_rx: &rx,
+            deferred: &mut deferred,
+        };
+        let result = run_page_scripts_interruptible(&mut ctx, true, fetch, Some(yield_to_commands));
+
+        assert!(result.aborted.is_some(), "导航命令应中止脚本阶段");
+        assert_eq!(result.aborted.as_ref().unwrap().id, 2, "截获的应是导航命令");
+        assert!(!result.changed);
+        // 首个脚本已在让路检查点后执行。
+        let s1 = wait_for_global(&worker, "__s1", 1000);
+        assert_eq!(s1, "ran", "首个脚本应在让路检查后执行");
+        // 后续脚本被丢弃（给足同步执行时间后仍未出现）。
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let s2 = wait_for_global(&worker, "__s2", 0);
+        assert_eq!(s2, "undefined", "导航让路后剩余脚本不得执行");
+        // 非命令消息原序保留（Heartbeat 自 inbound 扫入 kept 放回 deferred）。
+        assert_eq!(deferred.len(), 1, "暂存消息不得丢失");
+        assert_eq!(deferred.front().unwrap().id, 1);
+        worker.shutdown();
     }
 
     /// The renderer process must retain and paint nested content inserted by a page script.
@@ -1709,6 +1984,50 @@ mod tests {
         worker.shutdown();
     }
 
+    /// fix#18 回归钉（紧随 r2943）：优先通道 fire-and-forget 提交（DCL/img commit/load）
+    /// 紧随其后的普通通道探针不得越过它们——分派环 recv 醒来后必须再查优先通道
+    /// （check-then-block 竞态的常驻守卫；无此再查时探针在 worker 空闲轮询窗口内
+    /// 读到 `0|false|0|0|` 旧状态，r2943 类四例间歇性齐失败）。
+    #[test]
+    fn normal_probe_cannot_leapfrog_priority_lifecycle_dispatch() {
+        let mut worker = RendererJsWorker::spawn(190);
+        let html = "<html><body>\
+            <img id='i1' src='https://example.com/a.png'>\
+            <script>\
+              var img = document.querySelectorAll('img')[0];\
+              globalThis.__imgload = 0;globalThis.__imgOrder=[];\
+              document.addEventListener('DOMContentLoaded',function(){__imgOrder.push('dcl');});\
+              window.addEventListener('load',function(){__imgOrder.push('window');});\
+              img.addEventListener('load', function(){ globalThis.__imgload++;__imgOrder.push('img'); });\
+            </script>\
+            </body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        finish_page_load(
+            &worker,
+            Vec::new(),
+            vec![ResourceElementEvent {
+                tag: "img",
+                url: "https://example.com/a.png".to_string(),
+                outcome: ResourceElementOutcome::Loaded,
+                natural_width: 3,
+                natural_height: 2,
+                media_duration_ms: None,
+            }],
+            Vec::new(),
+            Vec::new(),
+        );
+        let probe = worker
+            .execute_script_direct(
+                "var probe=document.querySelectorAll('img')[0];\
+                 [globalThis.__imgload,probe.complete,probe.naturalWidth,probe.naturalHeight,\
+                  globalThis.__imgOrder.join(',')].join('|')",
+            )
+            .unwrap();
+        assert_eq!(probe, "1|true|3|2|dcl,img,window");
+        worker.shutdown();
+    }
+
     /// R2944 mirror：finish_page_load 派发 stylesheet (`<link>`) 元素级 load——经 __zw_dispatch_link_event
     /// 按 href 绝对 URL 匹配 `<link>` 元素 proxy 派发（link.onload 触发）。
     #[test]
@@ -2213,6 +2532,82 @@ mod tests {
             apply_javascript_href(&mut ctx, "#u")
         };
         assert!(!changed3, "非 javascript: href → gate 不命中，apply 返 false");
+        worker.shutdown();
+    }
+
+    /// t2-pb1 fix#15：`execute_automation_script_deferrable` Done 面——worker 空闲时
+    /// 有界等待内完成，返回值与同步路径同值同形（Deferred 挂起面由 js_worker
+    /// `execute_script_priority_deferrable_*` 三测试覆盖，挂起表续答在 automation
+    /// 层由 ev19 端到端覆盖）。
+    #[test]
+    fn automation_deferrable_done_matches_sync_shape() {
+        let mut worker = RendererJsWorker::spawn(81);
+        let mut html = String::from("<html><body><div id='a'>t</div></body></html>");
+        let mut ctx = PageScriptContext {
+            html: &mut html,
+            url: "about:blank",
+            js_worker: &worker,
+            webview: None,
+        };
+        match execute_automation_script_deferrable(&mut ctx, "String(40+2)") {
+            AutomationEvalOutcome::Done(Ok((value, _changed))) => assert_eq!(value, "42"),
+            AutomationEvalOutcome::Done(Err(e)) => panic!("worker 空闲时须成功，实际错误 {e}"),
+            AutomationEvalOutcome::Deferred(_) => panic!("worker 空闲时须同步完成，实际挂起"),
+        }
+        worker.shutdown();
+    }
+
+    /// t2-pb1 F4（首轮缺陷审查 2026-10-02）：挂起求值晚至完成后，其 DOM mutation
+    /// 滞留 worker 队列（期间无 checkpoint 会 apply 它们），补答侧的
+    /// `apply_recorded_mutations` 须能认领并落进宿主 HTML——此前补答路径不 apply，
+    /// 变更被下一脚本入口的 clear() 静默丢弃（数据丢失类缺陷）。
+    #[test]
+    fn automation_deferrable_mutations_survive_until_answer_applies() {
+        let mut worker = RendererJsWorker::spawn(82);
+        // 长臂占住 worker（公共 API：挂起的 deferrable 求值即臂）。
+        let busy_rx = match worker.execute_script_priority_deferrable(
+            "var s=0;for(var i=0;i<5e8;i++)s+=i;String(s)",
+            std::time::Duration::from_millis(1),
+        ) {
+            Err(rx) => rx,
+            _ => panic!("长臂入队应挂起"),
+        };
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        let mut html = String::from("<html><body><div id='a'>t</div></body></html>");
+        let mut ctx = PageScriptContext {
+            html: &mut html,
+            url: "about:blank",
+            js_worker: &worker,
+            webview: None,
+        };
+        // 长臂期间挂起的求值：改 DOM + 返回值。
+        let rx = match execute_automation_script_deferrable(
+            &mut ctx,
+            "document.getElementById('a').textContent = 'late'; 'ok'",
+        ) {
+            AutomationEvalOutcome::Deferred(rx) => rx,
+            _ => panic!("长臂期间应挂起"),
+        };
+        // 臂结束 → 挂起求值照常执行（先于其入队的快照已就位）。
+        let _ = busy_rx.recv_timeout(std::time::Duration::from_secs(35));
+        let value = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("挂起求值须晚至完成")
+            .expect("挂起求值须成功");
+        assert_eq!(value, "ok");
+        // 补答时点 mutation 仍滞留队列（此间无 checkpoint 会 apply 它们）。
+        let recorded_len = ctx
+            .js_worker
+            .mutations()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len();
+        assert!(recorded_len > 0, "挂起求值的 DOM mutation 须滞留队列待补答认领");
+        // 补答侧 apply（poll_deferred_automation_replies 的修复路径）→ 变更落宿主 HTML。
+        let html_snapshot = ctx.html.clone();
+        let applied = apply_recorded_mutations(&mut ctx, &html_snapshot);
+        assert!(applied.is_some(), "补答 apply 须产出新 HTML");
+        assert!(ctx.html.contains(">late<"), "挂起求值的 DOM 变更须落入宿主 HTML");
         worker.shutdown();
     }
 }

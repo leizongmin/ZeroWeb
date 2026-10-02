@@ -2276,6 +2276,30 @@
           return ov !== idText;
         } catch (_e) { return false; }
       }
+      // R5001 M3 片 a 收口（html-syntax-compat）：**同 turn 解析插入的 pending 节点优先**
+      // ——querySelector 的查询视图命中（host view doc 烘焙 InsertAdjacentHtml——R57）与
+      // child_nodes 读链（live doc，无 pending structural mutations）分裂：视图 wrapper 的
+      // 子树读（firstChild/childNodes）恒空（el.firstChild null，WPT escaping.html
+      // 'document.write on main document' 的 getElementById→firstChild 断链根因）。pending
+      // 节点是 `_zwFragmentAdded` 全子树本地视图（textContent/innerHTML/firstChild 一致可读）
+      // ——命中时优先返回。in-doc 门扩展到 `_zwSelPendingParent` 补偿槽（解析插入产物无
+      // sel/handle 身份，挂载点由 insertAdjacentHTML/innerHTML setter 的 R3254-K3/R304 记账）。
+      var pendingEarly = _zwPendingAddedById.get(idText);
+      if (pendingEarly && pendingEarly.length) {
+        for (var pei = 0; pei < pendingEarly.length; pei++) {
+          var pen = pendingEarly[pei];
+          if (!pen || _zwPRSet().has(pen) || _r125AncestorRemoved(pen)) continue;
+          var peSel = pen.__zwSelector || null;
+          var peH = pen.__zwHandle || null;
+          if (peH && _zwMutationInDoc(null, peH)) return pen;
+          if (peSel && _zwMutationInDoc(peSel, null)) return pen;
+          if (!peSel && !peH && pen._zwSelPendingParent) {
+            var pePl = pen._zwSelPendingParent;
+            if (pePl.parentSel && _zwMutationInDoc(pePl.parentSel, null)) return pen;
+            if (pePl.parentHandle && _zwMutationInDoc(null, pePl.parentHandle)) return pen;
+          }
+        }
+      }
       var hit = globalThis.document.querySelector('[id="' + idText.replace(/"/g, '\\"') + '"]');
       // R125：快照命中但元素已 remove（pending-removed 表）→ 继续找下一个（spec tree
       // order 的下一候选）——removeChild 的 Remove mutation 不入查询视图（R3029 removed
@@ -3550,10 +3574,19 @@
     // https://html.spec.whatwg.org/multipage/dynamic.html#dom-document-open
     // **简化语义（记录）**：open() 清空 body 内容并重置写缓冲；write()/writeln() 追加缓冲；
     // close() 把缓冲作为 body innerHTML 一次性应用（live host 解析 + 重排版，查询/渲染立即可见）。
-    // FIXME：head/title 剥离、unload/beforeunload 事件、未 open 先 write 的隐式 open、
-    // 多次 open 的再入清空——均未建模（PW setContent 消费面只需 body 内容替换）。
+    // R5001 M3 片 a 收口（html-syntax-compat）：**隐式 open 流**（spec #document-write-steps
+    // 步骤 9「insertion point undefined → document open steps」——runner 是后解析执行环境，
+    // 载入后脚本的 write 无 active parser；语义近似为 **append 流**而非 open 的 replace-all
+    // ——WPT ambiguous-ampersand 的 char-by-char write 期望静态内容存活 + 写入子树并存，
+    // 全 wipe 会使 network 基线 div 一并丢失）。实现：首次隐式 write 快照 body 基线，
+    // 每次 write 后 `body.innerHTML = 基线` + `insertAdjacentHTML('beforeend', 累计缓冲)`
+    // 同步重放——char-by-char 流的中间态树允许暂错（harness 读取点在全部 write 之后），
+    // 最终树 = 完整缓冲的 body context 解析（WPT escaping.html 'document.write on main
+    // document' 面：写入 div 的 noscript 按主文档 scripting enabled rawtext 直出）。
     open: function () {
+      globalThis.__zwDocWriteOpen = true;
       globalThis.__zwDocWriteBuffer = '';
+      globalThis.__zwDocWriteBase = null;
       try {
         var _dwoBody = globalThis.document.body;
         if (_dwoBody) _dwoBody.innerHTML = '';
@@ -3565,6 +3598,22 @@
       for (var _dwW = 0; _dwW < arguments.length; _dwW++) {
         globalThis.__zwDocWriteBuffer += String(arguments[_dwW] == null ? '' : arguments[_dwW]);
       }
+      // 显式 open/close 周期（PW setContent）维持原缓冲语义——close() 一次性应用。
+      if (globalThis.__zwDocWriteOpen === true) return;
+      // 隐式 open 流：基线快照（首 write 时）+ 累计缓冲同步重放（append 语义）。
+      if (typeof globalThis.__zwDocWriteBase !== 'string') {
+        try {
+          var _dwbBody0 = globalThis.document.body;
+          globalThis.__zwDocWriteBase = _dwbBody0 ? String(_dwbBody0.innerHTML) : '';
+        } catch (_eDwb0) { globalThis.__zwDocWriteBase = ''; }
+      }
+      try {
+        var _dwbBody = globalThis.document.body;
+        if (_dwbBody) {
+          _dwbBody.innerHTML = globalThis.__zwDocWriteBase;
+          _dwbBody.insertAdjacentHTML('beforeend', globalThis.__zwDocWriteBuffer);
+        }
+      } catch (_eDwb) {}
     },
     writeln: function () {
       var _dww = globalThis.document.write;
@@ -3574,6 +3623,8 @@
     close: function () {
       var _dwcHtml = globalThis.__zwDocWriteBuffer;
       globalThis.__zwDocWriteBuffer = null;
+      globalThis.__zwDocWriteOpen = false;
+      globalThis.__zwDocWriteBase = null;
       if (typeof _dwcHtml === 'string' && _dwcHtml !== '') {
         try {
           var _dwcBody = globalThis.document.body;
@@ -4661,6 +4712,93 @@
         if (toStart) { this.endContainer = this.startContainer; this.endOffset = this.startOffset; }
         else { this.startContainer = this.endContainer; this.startOffset = this.endOffset; }
         this.collapsed = true; this._mode = null; return this;
+      },
+      // R5001 M3 片 a 收口（html-syntax-compat DC-3）：`Range.createContextualFragment(string)`
+      //（spec https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html
+      // #dom-range-createcontextualfragment）——startContainer Element 或 Text/CDATASection
+      // 的 parentElement 为 context 元素；element null 或（HTML 文档 + local "html" + HTML ns）
+      // 回落新建 body context；经 host `__zw_parse_fragment_children` 片段解析（context tag +
+      // scripting 旗标随 range 所在文档）构建 DocumentFragment（节点 `_zwMBuildNode` 产物，
+      // inert 文档逐节点 `__zwTreeScripting=false` 印章 → noscript 序列化走转义分支）。
+      createContextualFragment: function (fragment) {
+        if (arguments.length === 0) {
+          throw new globalThis.TypeError(
+            "Failed to execute 'createContextualFragment' on 'Range': 1 argument required, but only 0 present.");
+        }
+        var node = this.startContainer;
+        var element = null;
+        if (node && node.nodeType === 1) element = node;
+        else if (node && (node.nodeType === 3 || node.nodeType === 4)) {
+          // Text / CDATASection → parent element（Comment 上游 2025 版已移出步骤 5——
+          // 非 Element parent 即回落 body context）。
+          try { element = node.parentElement || null; } catch (_eCcfPe) { element = null; }
+          if ((!element || element.nodeType !== 1) && node.parentNode && node.parentNode.nodeType === 1) {
+            element = node.parentNode;
+          }
+        }
+        // 步骤 6：element null 或（HTML 文档 + local "html" + HTML ns）→ body context。
+        var ctxTag = 'body';
+        if (element && element.nodeType === 1) {
+          var ln = String(element.localName || element.tagName || '').toLowerCase();
+          var ns = '';
+          try { ns = String(element.namespaceURI || ''); } catch (_eCcfNs) {}
+          if (ln && ln !== 'html') ctxTag = ln;
+        }
+        var doc = node
+          ? (node.nodeType === 9 ? node : (node.ownerDocument || globalThis.document))
+          : globalThis.document;
+        var scr = (doc && doc.__zwScriptingEnabled === false) ? '0' : '1';
+        var markup = String(fragment == null ? String(fragment) : fragment);
+        var frag = {
+          nodeType: 11,
+          nodeName: '#document-fragment',
+          childNodes: [],
+          parentNode: null,
+          ownerDocument: doc,
+          hasChildNodes: function () { return frag.childNodes.length > 0; },
+          get firstChild() { return frag.childNodes.length ? frag.childNodes[0] : null; },
+          get lastChild() { return frag.childNodes.length ? frag.childNodes[frag.childNodes.length - 1] : null; },
+          get textContent() {
+            var out = '';
+            (function walkCcf(n) {
+              var cs = n.childNodes || [];
+              for (var i = 0; i < cs.length; i++) {
+                var c = cs[i];
+                if (!c) continue;
+                if (c.nodeType === 3 || c.nodeType === 4 || c.nodeType === 8) {
+                  out += String(c.data != null ? c.data : (c.nodeValue != null ? c.nodeValue : ''));
+                } else walkCcf(c);
+              }
+            })(frag);
+            return out;
+          },
+          appendChild: function (c) { frag.childNodes.push(c); try { c.parentNode = frag; } catch (_eCcfAp) {} return c; },
+        };
+        if (typeof __zw_parse_fragment_children === 'function' && typeof _zwMBuildDeepEntry === 'function') {
+          try {
+            // 深 JSON 条目（host `fragment_children_json` 全子树直发——浅 selector 条目的
+            // shim 侧全文档 re-parse 定位在 fragment 树形下会错位，见彼处注释）。
+            var arr = JSON.parse(__zw_parse_fragment_children(markup, ctxTag, scr) || '[]');
+            for (var i = 0; i < arr.length; i++) {
+              if (!arr[i]) continue;
+              var built = _zwMBuildDeepEntry(arr[i], frag);
+              if (!built) continue;
+              // inert 文档（scr='0'）逐节点 `__zwTreeScripting=false` 印章——序列化器
+              // noscript 转义分支（与 `_zwMBuildBodyTree` 的 `_p5stamp` 同语义）。
+              if (scr === '0') {
+                (function stampCcf(n5c) {
+                  if (!n5c) return;
+                  try { n5c.__zwTreeScripting = false; } catch (_eCcfS0) {}
+                  var k5c = n5c.childNodes || [];
+                  for (var j5c = 0; j5c < k5c.length; j5c++) stampCcf(k5c[j5c]);
+                })(built);
+              }
+              try { if (!built.ownerDocument) built.ownerDocument = doc; } catch (_eCcfOd) {}
+              frag.childNodes.push(built);
+            }
+          } catch (_eCcf) {}
+        }
+        return frag;
       },
       _indexOf: function (parent, node) {
         var kids = parent && parent.childNodes;

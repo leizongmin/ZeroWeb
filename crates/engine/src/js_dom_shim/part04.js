@@ -4976,7 +4976,13 @@ return _tplContent;
                 // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
                 // FIXME(CSP): spec 要求 script-src 指令约束脚本 fetch；fetch 通道当前不区分
                 // destination，CSP 对齐留待 fetch destination 元数据切片。
-                else if (!(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
+                // t2-pb1 fix#19：嵌入方置 `__zwHostDynamicScripts` 时跳过本分支——renderer
+                // 路径的动态外链脚本由宿主通路取回（runtime execute_new_dynamic_scripts/
+                // tick_dynamic_scripts，no-cors 脚本语义 + 元素事件派发），shim 页面 fetch
+                //（cors 语义）再跑一遍会双执行/双事件（load+load、fetch 失败误派 load）。
+                // 未置旗标的嵌入方（browser 单进程路径）仍走本分支。
+                else if (!(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])
+                         && !globalThis.__zwHostDynamicScripts) {
                   var _r387url = '';
                   try {
                     _r387url = String(child.src || (child.getAttribute && child.getAttribute('src')) || '');
@@ -5593,6 +5599,52 @@ return _tplContent;
               _mo_notify(sel, handle, { type: 'childList', addedNodes: _r97Fb.slice(), removedNodes: [], previousSibling: null, nextSibling: refNode || null });
               var _r97Pb = _ceParentConnected(sel, handle);
               for (var _r97l = 0; _r97l < _r97Fb.length; _r97l++) _ceApplyConn(_r97Fb[_r97l], _r97Pb);
+              return newNode;
+            }
+            // R5001 M3 片 a 收口（html-syntax-compat）：plain 节点（_zwMEl 解析子——无
+            // handle 无 selector，nodeType 1/3/8）插入 handle 容器的带位变体（appendChild
+            // R84 分支的镜像：registry splice + parentNode/sibling 反链）。insertAdjacentHTML
+            // ('afterbegin') 的 handle-only 容器路径逐个 insertBefore 解析子——此前四分支
+            //（R334 sel 子 / R97 fragment / __zwHandle / R265 textEl）全 miss → 静默 no-op
+            //（div.firstChild 恒 null，WPT escaping.html 'div.insertAdjacentHTML' 根因）。
+            // https://dom.spec.whatwg.org/#concept-node-pre-insert
+            if (newNode && !newNode.__zwHandle && !newNode.__zwSelector && handle && newNode.nodeType) {
+              if (newNode === refNode) return newNode;
+              // 异父移动：先摘旧位（同容器/无父直接跳过——_zwFragmentAdded 产物的
+              // parentNode 是本容器 proxy 但未入 registry）。
+              try {
+                var _pnbOp = newNode.parentNode;
+                if (_pnbOp && _pnbOp !== _makeProxy(sel, handle) && typeof _pnbOp.removeChild === 'function') {
+                  _pnbOp.removeChild(newNode);
+                }
+              } catch (_ePnbRm) {}
+              if (!_handleChildren[handle]) _handleChildren[handle] = [];
+              var _pnbKids = _handleChildren[handle];
+              var _pnbI = _pnbKids.indexOf(newNode);
+              if (_pnbI >= 0) _pnbKids.splice(_pnbI, 1);
+              var _pnbAt = refNode ? _pnbKids.indexOf(refNode) : -1;
+              if (_pnbAt >= 0) _pnbKids.splice(_pnbAt, 0, newNode);
+              else _pnbKids.push(newNode);
+              // R84 同款反链（parentNode/sibling getter——appendChild plain 分支镜像）。
+              try {
+                var _pnbParent = _makeProxy(null, handle);
+                Object.defineProperty(newNode, 'parentNode', { get: function () { return _pnbParent; }, configurable: true });
+                Object.defineProperty(newNode, 'parentElement', { get: function () { return _pnbParent; }, configurable: true });
+                Object.defineProperty(newNode, 'previousSibling', { get: function () {
+                  var kids = _handleChildren[handle] || [];
+                  var i = kids.indexOf(newNode);
+                  return i > 0 ? kids[i - 1] : null;
+                }, configurable: true });
+                Object.defineProperty(newNode, 'nextSibling', { get: function () {
+                  var kids = _handleChildren[handle] || [];
+                  var i = kids.indexOf(newNode);
+                  return i >= 0 && i < kids.length - 1 ? kids[i + 1] : null;
+                }, configurable: true });
+              } catch (_ePnb84) {}
+              var _pnbPrev = _pnbAt > 0 ? _pnbKids[_pnbAt - 1] : null;
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: [newNode], removedNodes: [], previousSibling: _pnbPrev, nextSibling: refNode || null });
+              var _pnbPc = _ceParentConnected(sel, handle);
+              _ceApplyConn(newNode, _pnbPc);
               return newNode;
             }
             if (newNode && newNode.__zwHandle) {
@@ -7374,8 +7426,24 @@ return _tplContent;
         // 面惯用形态）。仅 FORM gate 且 prop 非保留名（length/elements/action 等已在前置
         // 分支返回，落到这里的是无匹配成员的任意键）；控件名/id 首匹配，未命中 → undefined
         //（回落 trap 后续通用路径）。驱动用例：WPT implicit-submission.optional.html。
+        // t2-pb1 fix#19（reset/requestSubmit/submit 豁免）+ F6 结论（首轮缺陷审查
+        // 2026-10-02 复核）：WebIDL named properties 对象位于接口原型之下
+        //（https://webidl.spec.whatwg.org/#idl-named-properties），命名控件不得遮蔽
+        // 接口成员。本 shim 的接口方法由 get trap **分支序**提供（原型空壳不挂方法），
+        // 豁免名单须恰好覆盖 named access gate **之后**仍有分支服务的成员：
+        // gate 前置分支（checkValidity/reportValidity/setCustomValidity/validity/
+        // validationMessage——CVA 段、length/elements/action、反射属性等）早已返回，
+        // 不受遮蔽影响（`<input name=checkValidity>` 时 form.checkValidity 仍是函数）；
+        // gate 之后仍服务的 **FORM 专属成员**仅 R3048 三方法（reset/requestSubmit/
+        // submit，本文件后段）——即本点名单。（gate 落空后其后的**通用元素分支**
+        // getBoundingClientRect/offset* 等，同名控件理论上可遮蔽——病态命名，超出
+        // 本点名单范围。）审查建议的「prop in HTMLFormElement.prototype」泛化不适用：空壳
+        // 原型不含 R3048 方法，`in` 判定为 false → `<button id=reset>` 重新遮蔽
+        // form.reset → 宿主 reset 脚本的 `typeof f.reset==='function'` guard 永假 →
+        // 表单重置整体静默 no-op（fix#19c 回归；form-interaction fixture 实测）。
         if (_realTag(sel, handle) === 'FORM' && typeof prop === 'string'
             && prop !== '' && prop !== 'item' && prop !== 'namedItem'
+            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
             && Object.prototype.hasOwnProperty.call(globalThis, 'HTMLFormElement')) {
           var _fna = _formControls(sel);
           for (var _fnai = 0; _fnai < _fna.length; _fnai++) {

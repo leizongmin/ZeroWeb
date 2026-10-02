@@ -5,9 +5,16 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（117）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（124）
 
 - 2026-10-02 [textContent= 突变后 gBCR 返回文本量盒——写路径注册副作用劫持读路径语义](bugs/2026-10/2026-10-02-textcontent-mutation-gbcr-identity-hijack.md) — engine
+- 2026-10-02 [日志写 stdout 管道无读取者：64KB 缓冲写满后全进程停摆](bugs/2026-10/2026-10-02-stdout-pipe-no-reader-logging-deadlock.md) — zero-browser
+- 2026-10-02 [renderer 主函数返回 ≠ 进程退出：join 长臂把退出拖成泄漏进程](bugs/2026-10/2026-10-02-renderer-exit-vs-join-long-arm.md) — zero-renderer
+- 2026-10-02 [JS worker 分派环 check-then-block 竞态：优先派发可被普通命令越过](bugs/2026-10/2026-10-02-js-worker-check-then-block-dispatch-race.md) — zero-renderer
+- 2026-10-02 [FORM named access 遮蔽接口内建方法：`<button id=reset>` 使 form.reset 静默失效](bugs/2026-10/2026-10-02-form-named-access-shadows-interface-builtins.md) — zero-engine
+- 2026-10-02 [动态外链脚本双路径并存：shim 页面 fetch 与宿主取回双执行/双事件](bugs/2026-10/2026-10-02-dynamic-external-script-dual-path-double-execution.md) — zero-engine, zero-renderer
+- 2026-10-02 [排空循环内重排队同通道命令：自馈送 100% CPU 永久自旋](bugs/2026-10/2026-10-02-drain-loop-self-feed-infinite-spin.md) — zero-renderer
+- 2026-10-02 [跨通道序缺陷：fire-and-forget 优先派发越过它依赖的普通通道状态设置](bugs/2026-10/2026-10-02-cross-channel-ordering-fire-and-forget-overtakes-setup.md) — zero-renderer
 - 2026-10-01 [改了 js_dom_shim 却在实站看不到效果——只重编 zero-browser 不重编 zero-renderer](bugs/2026-10/2026-10-01-zero-renderer-stale-binary.md) — apps/renderer,crates/engine
 - 2026-09-30 [cargo test --workspace 深嵌套渲染单测栈溢出：feature 统一改变栈帧量级，单包复现会误导归因](bugs/2026-09/2026-09-30-ws-feature-unification-stack-overflow.md) — engine,paint,layout-engine
 - 2026-09-30 [reftest 负控制假绿：断言「不绘制」的最小复现须把泄漏信号放大过分类容差](bugs/2026-09/2026-09-30-reftest-negative-control-false-green.md) — wpt-runner,engine,layout-engine

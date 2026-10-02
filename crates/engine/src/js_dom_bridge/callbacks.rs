@@ -483,6 +483,20 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // R5001 M3 片 a 收口（html-syntax-compat）：`Range.createContextualFragment`——
+    // markup 从 arg[0]，context tag 从 arg[1]（spec §8.5.7 的 context 元素），scripting
+    // 从 arg[2]（'0' = inert 文档）。返片段顶层子 JSON（`__zw_parse_html_child_nodes`
+    // foreign 分支同形态）。
+    sandbox.register_callback(
+        "__zw_parse_fragment_children",
+        Box::new(|args: &[String]| -> String {
+            let html = args.first().map(String::as_str).unwrap_or("");
+            let ctx_tag = args.get(1).map(String::as_str).unwrap_or("body");
+            let scripting = args.get(2).map(|s| s != "0").unwrap_or(true);
+            fragment_children_json(html, ctx_tag, scripting)
+        }),
+    );
+
     // `document.implementation.createHTMLDocument().body.childNodes`（R3016）——DOMPurify.sanitize 递归 walk
     // 的核心阻塞。与 `__zw_parse_html_query` 对称：html 从 arg[0]（detached 串，非 dom_html 快照），
     // elem_sel 从 arg[1]。返 child_nodes_json（element→{k:E,s:selector} / text→{k:T,v} / comment→{k:C,v}）。
@@ -493,8 +507,11 @@ pub fn register_dom_callbacks(
             let sel = args.get(1).map(String::as_str).unwrap_or("");
             // R5000 片 b：arg[2] 可选 context namespace（foreign context 的本地视图
             // 解析面——createElementNS 容器 innerHTML 的 CDATA/插入模式按 context）。
+            // R5001 M3 片 a：arg[3] 可选 scripting（'0' = detached/inert 文档——
+            // DOMParser/createHTMLDocument 本地视图，noscript 按 markup 解析）。
             let ctx_ns = args.get(2).map(String::as_str).filter(|s| !s.is_empty());
-            child_nodes_json_ctx(html, sel, ctx_ns)
+            let scripting = args.get(3).map(|s| s != "0").unwrap_or(true);
+            child_nodes_json_full(html, sel, ctx_ns, scripting)
         }),
     );
 

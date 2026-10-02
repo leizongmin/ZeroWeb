@@ -1914,3 +1914,67 @@ fn test_indexed_db_response_carries_id_and_error_shape() {
         "error must carry the unified headless unavailability error"
     );
 }
+
+/// P-B5 回归：部分 HTTP 请求（无 `\r\n\r\n` 终止符）不得把单线程 mux 切进阻塞读。
+/// 坏连接 A 发半截请求后保持打开（模拟 aborted keep-alive 轮询连接）；好连接 B 的
+/// 完整 /json/version 请求必须仍能在超时内被服务。修复前：A 在 `handle_http_discovery`
+/// 的阻塞 read 上无超时冻结整个 mux 循环，B 永久饿死（2026-10-02 navmatrix 首连
+/// wedge 实测）。终止符守护后 A 留在非阻塞 Peek 直至 5s 丢弃，B 即刻被服务。
+/// t2-pb1 F3（首轮缺陷审查 2026-10-02）+t2-pb1 测试缺口修订（首轮测试有效性审查）：
+/// 载荷为**含 `Upgrade: websocket` 头的半截 WS 升级请求**——真实阻塞场景。普通半截
+/// GET 在旧代码阻塞 read 立即读到已有字节→404，本不 wedge、对修复无判别力；半截
+/// WS 升级使 deadline 分支按 `is_ws_upgrade` 前缀切进阻塞握手（修复前 5.27s FAIL 实证）。
+/// 覆盖边界（t2-pb1 返修 N2/T1-G1，定向复核 2026-10-02）：本测试钉「Peek 窗存在」
+///（整体还原 F3 守卫时 FAIL 5.15s）——**不覆盖 F3 超期丢弃分支本身**：B 在 A 的
+/// 5s Peek 窗口内已被服务，仅中和 deadline 丢弃时本测试仍绿（PASS 0.04s）；双向
+/// 判别需 B 延迟至 deadline 之后连接（~+5.5s 常驻运行时，暂不值）。F3 超期丢弃属
+/// 纵深防御（`conn.alive = false` 无断言面），缺口在此声明。
+#[test]
+fn test_partial_request_does_not_wedge_mux() {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    let server = Arc::new(HeadlessServer::new(0, 800.0, 600.0));
+    let srv = Arc::clone(&server);
+    // run() 不返回；分离线程随测试进程退出回收（泄漏端口在本测试二进制内存续期无害）。
+    std::thread::spawn(move || {
+        let _ = srv.run();
+    });
+
+    // 等 bind 完成（run() 在 bind 后把实际地址回写 addr，port 0 → 实际端口）。
+    let addr = {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let guard = server.addr.lock().unwrap();
+            if guard.port() != 0 {
+                break *guard;
+            }
+            drop(guard);
+            assert!(Instant::now() < deadline, "server did not bind in time");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+
+    // A：部分 WS 升级请求（含 Upgrade 头、无 `\r\n\r\n` 终止符），保持打开——
+    // 不补发剩余字节、不关闭。
+    let mut stalled = TcpStream::connect(addr).expect("connect stalled conn");
+    stalled
+        .write_all(b"GET /devtools/page/abc HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n")
+        .expect("write partial ws upgrade");
+
+    // B：完整发现请求必须被服务（修复前此处永久饿死超时）。
+    let mut good = TcpStream::connect(addr).expect("connect good conn");
+    good.write_all(b"GET /json/version HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        .expect("write full request");
+    good.set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("set read timeout");
+    let mut buf = [0u8; 256];
+    let n = good.read(&mut buf).expect("read discovery response");
+    let response = String::from_utf8_lossy(&buf[..n]).to_string();
+    assert!(
+        response.starts_with("HTTP/1.1 200 OK"),
+        "discovery must be served while a partial request is pending, got: {response}"
+    );
+}

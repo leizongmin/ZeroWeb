@@ -312,7 +312,26 @@ impl HeadlessServer {
                     }
                     Ok(n) => {
                         let data = &buf[..n];
-                        if Self::is_http_get_request(data) {
+                        // P-B5：请求头收满（`\r\n\r\n` 终止符到达）才分类进阻塞服务窗口。
+                        // 分类只看前缀（"GET " / "Upgrade: websocket"），部分请求会把
+                        // 仍在传输途中的连接切进阻塞 read——aborted 的 keep-alive 轮询
+                        // 连接永不补发剩余字节时，该阻塞 read 无超时地冻住整个 mux
+                        // （含已建立 WS 的收发；2026-10-02 navmatrix 首连 wedge 实测：
+                        // 后续 HTTP 全部无人读取、WS 响应停发、客户端永久挂起）。
+                        // 终止符已在内核缓冲时，阻塞 read/WS 握手读立即完成。
+                        let head_complete = data.windows(4).any(|w| w == b"\r\n\r\n");
+                        if !head_complete {
+                            if std::time::Instant::now() <= *deadline {
+                                // 头未满且未超期：留在非阻塞 Peek，下一 tick 重试。
+                            } else {
+                                // t2-pb1 F3（首轮缺陷审查 2026-10-02）：超期且头仍未收满——
+                                // 对端静默的半截请求永不完整，丢弃连接而非按前缀分类。
+                                // 此前 deadline 分支按前缀分类：半截 "GET " 进无超时阻塞
+                                // read、半截 WS 升级进阻塞握手——wedge 仅从即刻推迟到 5s，
+                                // 与 P-B5 要修的单线程 mux 冻结同型（含已建立 WS 的收发停摆）。
+                                conn.alive = false;
+                            }
+                        } else if Self::is_http_get_request(data) {
                             // HTTP 快进快出：请求头已在内核缓冲，回阻塞模式同步读完
                             let _ = conn.stream.set_nonblocking(false);
                             conn.alive = false;

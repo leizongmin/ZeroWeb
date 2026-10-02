@@ -1513,6 +1513,57 @@ fn test_form_reset_submit_methods_r3048() {
 }
 
 #[test]
+fn test_form_named_access_shadowing_t2pb1() {
+    // t2-pb1 T2（首轮测试有效性审查缺口 D，2026-10-02）：FORM named access 遮蔽语义钉
+    //——审查变异核验证明既有测试对 fix#19 豁免名单改动全绿（无判别力）。三条不变式：
+    // ① 已实现接口成员不被命名控件遮蔽——get trap 前置分支先于 named access 返回
+    //（checkValidity/reportValidity 等 CVA 段在 gate 之前服务）；
+    // ② R3048 三方法（reset/requestSubmit/submit）在 gate **之后**服务，须点名单豁免
+    //——`<button id=reset>` 时 form.reset 仍是函数（fix#19c；移除豁免即被本测试击杀）；
+    // ③ 普通命名控件仍经 named access 直取（豁免不得扩大到非接口成员名）。
+    // 原型泛化（`prop in HTMLFormElement.prototype`）不适用：shim 原型是空壳，方法由
+    // trap 提供——`in` 判定对 reset 为 false 会回归 fix#19c（见 part04 gate 注释）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <form id='f1'><input name='checkValidity'></form>\
+         <form id='f2'><button id='reset' type='reset'>r</button></form>\
+         <form id='f3'><input name='requestSubmit'></form>\
+         <form id='f4'><button id='submit' type='submit'>s</button></form>\
+         <form id='f5'><input name='fooBar'></form>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var f1 = document.getElementById('f1'), f2 = document.getElementById('f2');\
+             var f3 = document.getElementById('f3'), f4 = document.getElementById('f4');\
+             var f5 = document.getElementById('f5');\
+             globalThis.__cv = typeof f1.checkValidity;\
+             globalThis.__rs = typeof f2.reset;\
+             globalThis.__rqs = typeof f3.requestSubmit;\
+             globalThis.__sb = typeof f4.submit;\
+             globalThis.__na = (f5.fooBar && f5.fooBar.tagName) || 'missing';",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__cv").unwrap().value, "function", "`<input name=checkValidity>` 不遮蔽 form.checkValidity（CVA 前置分支先于 named access 返回）");
+    assert_eq!(sandbox.execute("globalThis.__rs").unwrap().value, "function", "`<button id=reset>` 不遮蔽 form.reset（fix#19c 点名单豁免；移除豁免本断言即失败）");
+    assert_eq!(sandbox.execute("globalThis.__rqs").unwrap().value, "function", "`<input name=requestSubmit>` 不遮蔽 form.requestSubmit（fix#19 点名单豁免）");
+    assert_eq!(sandbox.execute("globalThis.__sb").unwrap().value, "function", "`<button id=submit>` 不遮蔽 form.submit（fix#19 点名单豁免）");
+    assert_eq!(sandbox.execute("globalThis.__na").unwrap().value, "INPUT", "普通命名控件仍经 named access 直取（f5.fooBar → 控件）");
+}
+
+#[test]
 fn test_textarea_default_value_r3049() {
     // R3049：textarea.defaultValue 追踪（闭合 R3048 限制①）。textarea.value ↔ live textContent，旧无独立初值缓存
     // → defaultValue 返 undefined、form.reset 不还原 textarea。本切片 _textareaDefault 惰性捕获初值。

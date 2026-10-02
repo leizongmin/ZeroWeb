@@ -323,6 +323,10 @@ fn render_result_to_webview(result: &RenderResult) -> WebViewRenderResult {
     }
 }
 
+/// [`WebView::apply_dom_mutations_and_render`] 的返回值：
+/// `(渲染结果（脚本批量 defer 时为 `None`）, 新 HTML 快照, handle→唯一选择器映射)`。
+type AppliedMutations = (Option<WebViewRenderResult>, String, HashMap<String, String>);
+
 /// WebView 事件回调。
 #[derive(Debug, Clone)]
 pub enum WebViewEvent {
@@ -533,6 +537,16 @@ pub struct WebView {
     webaudio: std::sync::Arc<std::sync::Mutex<crate::webaudio_registry::WebAudioRegistry>>,
     /// 已抓取图片的固有尺寸（url hash → (w,h)），resize/render 时回填 pipeline。
     cached_image_sizes: HashMap<u64, (f32, f32)>,
+    /// 脚本批量渲染进行中（`begin_script_batch`…`end_script_batch`）——apply 跳过
+    /// 渲染消费与图片子资源扫描，批量边界统一执行（见 [`Self::begin_script_batch`]）。
+    script_batch_active: bool,
+    /// t2-pb1 F2（首轮缺陷审查 2026-10-02）：本批是否 apply 过任何 DOM 变更。
+    /// `end_script_batch` 无变更时不重渲染——事件循环每 16ms tick 都会开/合批量边界，
+    /// 无脏标记时有内容页面每 tick 全量 render_html（解析+样式+布局+绘制）+ 图片
+    /// 子资源扫描（首页 tEvidence 2750ms→14997ms 回退根因）。
+    script_batch_dirty: bool,
+    /// 批量期间各次 apply 产出的 handle→唯一选择器累积（`end_script_batch` 重锚用）。
+    batch_handle_selectors: HashMap<String, String>,
     /// ratio-only 图片信号（url hash → width/height 比，CSS §10.3.2 仅 SVG 出现）。
     /// %-dim / viewBox-only SVG 无确定固有尺寸、仅有 viewBox 宽高比，布局仅设 aspect_ratio。
     cached_image_ratios: HashMap<u64, f32>,
@@ -668,6 +682,9 @@ impl WebView {
             media_source_provider: std::sync::Mutex::new(None),
             webaudio: std::sync::Arc::new(std::sync::Mutex::new(crate::webaudio_registry::WebAudioRegistry::new())),
             cached_image_sizes: HashMap::new(),
+            script_batch_active: false,
+            script_batch_dirty: false,
+            batch_handle_selectors: HashMap::new(),
             cached_image_ratios: HashMap::new(),
             cached_image_no_ratio: HashMap::new(),
             font_resolver: HashMap::new(),
@@ -956,15 +973,23 @@ impl WebView {
     /// 往返），但额外：① 同步 `cached_html`；② 刷新图片子资源（对齐
     /// `reload_html_after_script` 语义——新插入 `<img>`/CSS url() 需要固有尺寸）；
     /// ③ 返回 handle→唯一选择器映射（P1a gBCR path A，worker 持久 map）。
-    pub fn apply_dom_mutations_and_render(
-        &mut self,
-        mutations: &[DomMutation],
-    ) -> Result<(WebViewRenderResult, String, HashMap<String, String>), String> {
+    /// 脚本批量期间（[`Self::begin_script_batch`]）渲染被 defer，`RenderResult`
+    /// 为 `None`，由 [`Self::end_script_batch`] 在批量边界统一渲染。
+    pub fn apply_dom_mutations_and_render(&mut self, mutations: &[DomMutation]) -> Result<AppliedMutations, String> {
+        // t2-pb1 F2：批内 apply 置脏——`end_script_batch` 只在本批有变更时渲染。
+        if self.script_batch_active && !mutations.is_empty() {
+            self.script_batch_dirty = true;
+        }
         let (result, html_snapshot, handle_selectors) =
             self.pipeline.render_with_dom_mutations(mutations, &self.cached_css)?;
         // R1794：只有内容 DOM 改变才刷新图片子资源。文本控件当前值由 retained 状态持有，
         // 不改变 HTML 快照，也不应让每个字符重扫整页图片。
-        if let (Some(mutated), Some(page_url)) = (html_snapshot.as_deref(), self.current_url.clone()) {
+        // 脚本批量期间（`script_batch_active`）跳过图片扫描与渲染消费——渲染管线
+        // 由 `end_script_batch` 统一执行一次（HTML「update the rendering」批量语义，
+        // 2026-10-02 bilibili 取证：逐脚本全量渲染 ~1s/次 × 8 占死主循环 9s+）。
+        if !self.script_batch_active
+            && let (Some(mutated), Some(page_url)) = (html_snapshot.as_deref(), self.current_url.clone())
+        {
             let mut combined_css = self.cached_css.clone();
             combined_css.push('\n');
             combined_css.push_str(&extract_html_style_text(mutated));
@@ -982,9 +1007,72 @@ impl WebView {
         if let Some(mutated) = html_snapshot {
             self.cached_html = mutated;
         }
-        let render_result = render_result_to_webview(&result);
-        self.last_render = Some(render_result.clone());
+        if !handle_selectors.is_empty() {
+            self.batch_handle_selectors
+                .extend(handle_selectors.iter().map(|(h, s)| (h.clone(), s.clone())));
+        }
+        let render_result = result.as_ref().map(render_result_to_webview);
+        if let Some(render_result) = &render_result {
+            self.last_render = Some(render_result.clone());
+        }
         Ok((render_result, self.cached_html.clone(), handle_selectors))
+    }
+
+    /// 脚本批量渲染边界开始（HTML Standard event loop「update the rendering」批量
+    /// 语义——同步脚本阶段的 DOM 变更在批量边界统一渲染，不逐脚本全量
+    /// style/layout/paint）。批量期间 [`Self::apply_dom_mutations_and_render`] 只应用
+    /// DOM/更新快照/累积 handle 映射，跳过渲染管线与图片子资源扫描。
+    pub fn begin_script_batch(&mut self) {
+        self.script_batch_active = true;
+        self.script_batch_dirty = false;
+        self.batch_handle_selectors.clear();
+        self.pipeline.set_defer_render(true);
+    }
+
+    /// 脚本批量渲染边界结束：对本批 apply 过变更时统一渲染一次（含 handle
+    /// 重锚、表单 live value 保留与图片子资源扫描），消费 [`Self::begin_script_batch`]
+    /// 以来累积的全部 DOM 变更。批量未产生变更时仅复位开关——文档初渲染在装载时
+    ///（`last_render` 已是当前文档），事件循环 tick 的空批量不重渲染（t2-pb1 F2）。
+    /// 返回是否实际渲染（Ok(rendered)；测试与调用方可观测）。
+    pub fn end_script_batch(&mut self) -> Result<bool, String> {
+        self.script_batch_active = false;
+        self.pipeline.set_defer_render(false);
+        let reanchor: Vec<(String, String)> = self.batch_handle_selectors.drain().collect();
+        if !self.script_batch_dirty || self.cached_html.is_empty() {
+            return Ok(false);
+        }
+        self.script_batch_dirty = false;
+        let html = self.cached_html.clone();
+        let result = self
+            .pipeline
+            .render_after_deferred_batch(&html, &self.cached_css, &reanchor);
+        if let Some(page_url) = self.current_url.clone() {
+            let mut combined_css = self.cached_css.clone();
+            combined_css.push('\n');
+            combined_css.push_str(&extract_html_style_text(&html));
+            let css_image_urls = extract_css_image_urls(&combined_css);
+            let (image_sizes, image_ratios, image_no_ratio, image_natural_sizes) =
+                self.fetch_image_subresources(&html, &page_url, &css_image_urls);
+            self.cached_image_sizes = image_sizes.clone();
+            self.cached_image_ratios = image_ratios.clone();
+            self.cached_image_no_ratio = image_no_ratio.clone();
+            self.pipeline.set_image_sizes(image_sizes);
+            self.pipeline.set_image_natural_sizes(image_natural_sizes);
+            self.pipeline.set_image_ratios(image_ratios);
+            self.pipeline.set_image_no_ratio(image_no_ratio);
+        }
+        self.last_render = Some(render_result_to_webview(&result));
+        Ok(true)
+    }
+
+    /// 中止脚本批量渲染边界（导航让路，P-B1）：解除 defer、丢弃累积的 handle
+    /// 重锚表，但**不渲染**——剩余脚本已丢弃，旧文档即将被导航替换，批量边界
+    /// 渲染是纯浪费。与 [`Self::end_script_batch`] 二选一配对 `begin_script_batch`。
+    pub fn abort_script_batch(&mut self) {
+        self.script_batch_active = false;
+        self.script_batch_dirty = false;
+        self.batch_handle_selectors.clear();
+        self.pipeline.set_defer_render(false);
     }
 
     /// 从 URL 中提取 origin（scheme + host + port）。
@@ -1955,6 +2043,10 @@ impl WebView {
     /// 更新 `applied_mutations` 游标并同步 handle 映射（与
     /// [`Self::apply_pending_shared_mutations`] 同机制，按给定子集切分）。
     fn apply_mutations_subset(&mut self, subset: &[zero_engine::js_dom_bridge::DomMutation]) {
+        // t2-pb1 F2：共享队列路径（动画泵/tick observer）批内 apply 同样置脏。
+        if self.script_batch_active && !subset.is_empty() {
+            self.script_batch_dirty = true;
+        }
         if subset.is_empty() {
             return;
         }
@@ -3749,7 +3841,9 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         }
         self.applied_mutations += tail.len();
         self.merge_handle_selectors(&handles);
-        self.last_render = Some(render_result_to_webview(&render_result));
+        if let Some(render_result) = &render_result {
+            self.last_render = Some(render_result_to_webview(render_result));
+        }
         // R150：apply 后重渲染，布局已变——刷新 gBCR 快照。
         self.refresh_layout_rect_snapshot();
         // R379/pa2b（js-dom M4，pending-apply RFC）：apply 代际换代通知——host 真相
