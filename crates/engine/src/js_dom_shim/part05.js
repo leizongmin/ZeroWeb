@@ -538,8 +538,29 @@
               }
             } catch (_e) {}
           }
+        } else if (typeof _ZW_ARIA_ENUMS === 'object' && _ZW_ARIA_ENUMS.hasOwnProperty(p)) {
+          // R5009 片 e（M4 片 a）：ARIA enumerated setter（w3c/aria#2484）——null/
+          // undefined → removeAttribute（isNullable 全员）；其余（字符串/数字/布尔/
+          // 对象 ToPrimitive）逐字写 attr（getter 侧枚举归一）。独立分支置于 expando
+          // 判定之前——aria 名单内一切值形态都不过 expando。
+          var _arAttr5 = _ZW_ARIA_ENUMS[p].attr;
+          if (value === null || value === undefined) {
+            if (handle && typeof __zw_remove_attr_handle === 'function') {
+              __zw_remove_attr_handle(handle, _arAttr5);
+              if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, _arAttr5);
+            } else if (!handle && typeof __zw_remove_attr === 'function') {
+              __zw_remove_attr(sel, _arAttr5);
+            } else if (handle) {
+              try { __zw_remove_attr_handle(handle, _arAttr5); } catch (_eArRm) {}
+            }
+            moAttr = _arAttr5;
+          } else {
+            var _arVal = value === null ? '' : String(typeof value === 'object' && value !== null && typeof value.toString === 'function' ? value.toString() : value);
+            if (handle) { __zw_set_attr_handle(handle, _arAttr5, _arVal); moAttr = _arAttr5; }
+            else { __zw_set_attr(sel, _arAttr5, _arVal); moAttr = _arAttr5; }
+          }
         } else if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean'
-            && _reflectedStringAttr(p) === null && p !== 'href' && p !== 'size' && p !== 'label' && p !== 'as' && p !== 'crossorigin') {
+            && _reflectedStringAttr(p) === null && p !== 'href' && p !== 'size' && p !== 'label' && p !== 'as' && p !== 'crossorigin' && p !== 'span' && p !== 'scope' && p !== 'valign' && (typeof _ZW_ARIA_ENUMS === 'undefined' || !_ZW_ARIA_ENUMS.hasOwnProperty(p))) {
           // R3042：expando 属性（非原始值——function/object/array/null/undefined/symbol/bigint）。旧经 generic fallthrough
           // 写垃圾内容属性（`__zw_set_attr(sel, p, '[object Object]')` / 'function(){}'）且 get 读不回（undefined）。
           // real browser：expando 存于 JS 对象非内容属性。改存 per-element expando map（get trap 读回）。
@@ -613,7 +634,7 @@
           } else {
             _imFail();
           }
-        } else if (_reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label' || p === 'as' || p === 'crossorigin') {
+        } else if (_reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label' || p === 'as' || p === 'crossorigin' || p === 'span' || p === 'scope' || p === 'valign') {
           // R3069：reflected 原始属性——get trap 经 `_reflectedStringAttr`（type/name/placeholder/...）/ `_REFLECTED_UINT`
           //（colSpan/rowSpan/maxLength/cols/rows/start）/ `size` 专用分支读内容属性，故 set 须继续写属性（非 expando），
           // 否则 set 写 expando / get 读空属性 round-trip 断。复用 get trap 同源检测函数，自动一致（无静态名表维护）。
@@ -630,13 +651,35 @@
           // R5007 M3 片 c：[LegacyNullToEmptyString] 集（body 颜色族）null → ''，
           // 余 DOMString null → "null"（WebIDL 默认转换）。
           var _refVal = _reflectedStringNullEmpty(p) && value === null ? '' : String(value);
+          // R5009 片 e（M4 片 a）：col/colgroup.span IDL setter 数值归一（WebIDL
+          // unsigned long——"-0" → "0"；WPT 'IDL set to "-0"' getAttribute 期望 "0"）。
+          if (p === 'span' && (_realTag(sel, handle) === 'COL' || _realTag(sel, handle) === 'COLGROUP')) {
+            // clamped 写（harness idlDomExpected 实测口径）：Number → 逐字写入
+            //（0 → "0"、2147483647 → 原串、1001 → "1001"）；非有限/负/超 maxInt
+            // → default "1"（maxInt+1/maxUnsigned 簇）。getter 侧 clamp [1,1000]。
+            var _spNum = Number(value);
+            if (!isFinite(_spNum) || _spNum < 0 || _spNum > 2147483647) {
+              _refVal = '1';
+            } else {
+              _refVal = String(_spNum);
+            }
+          }
           // R5008 M3 片 d（html-syntax-compat）：UINT 反射 setter 数值归一（WebIDL
           // unsigned long——idlTests "-0" → attr "0"，String(-0) 恒 "0"）；limited
           //（min:1）set 0 抛 IndexSizeError（spec「On setting, if the value is zero,
           // fire an INDEX_SIZE_ERR exception」——WPT reflection 'IDL set to 0' 断言）。
           if (Object.prototype.hasOwnProperty.call(_REFLECTED_UINT, p)) {
             var _ruNum = Number(value);
-            if (_REFLECTED_UINT[p].min === 1 && _ruNum === 0) {
+            // R5009 片 e（M4 片 a）：limited-unsigned 仅 throwOnZero 条目（ol.start）
+            // IDL set 0 抛 IndexSizeError；clamped 面（colSpan/rowSpan）不抛——数值
+            // 归一写入（"-0" → "0"），getter 侧 clamp [min,max]。
+            // clamped 面（colSpan/rowSpan——max 有定义）越 maxInt → default
+            //（WPT 'IDL set to 2147483648' getAttribute 期望 "1"）；limited 面
+            //（start）> maxInt → d 同语义（idlDomExpected null → 断言跳过，无害）。
+            if (_ruNum > 2147483647 && _REFLECTED_UINT[p].max != null) {
+              _ruNum = 1;
+            }
+            if (_REFLECTED_UINT[p].throwOnZero && _ruNum === 0) {
               throw new (globalThis.DOMException || Error)(
                 'The value provided is 0, which is an invalid value for this attribute.', 'IndexSizeError');
             }

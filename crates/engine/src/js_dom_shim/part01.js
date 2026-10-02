@@ -569,8 +569,39 @@
   // spec reflected string 缺省空串）。1:1 小写名用 `_REFLECTED_STRING_FLAT`；camelCase→attr 映射用 `_REFLECTED_STRING_MAP`。
   // 数值型（size/maxLength/colSpan/rowSpan）+ 布尔型（required/readonly/multiple）spec 返 number/boolean，
   // 另列 follow-up（本切片仅 string）。
-  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox cite coords shape ping media align version background text link scroll color dirname border srcdoc integrity hreflang charset rev clear event for ';
+  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox cite coords shape ping media align version background text link scroll color dirname border srcdoc integrity hreflang charset rev clear event for frame rules summary width height cellPadding cellSpacing ch chOff headers abbr axis valign ';
+  // R5009 片 e（M4 片 a）：ARIA enumerated 反射表（elements-aria-enumerated.js）
+  // ——kw 白名单 / inv invalidVal / d defaultVal（null → missing 返 null，即
+  // isNullable）；setter（既有 aria 面的 expando 豁免 + 逐字写 attr）不变。
+  var _zwAriaExplicit = new Map(); // elKey → Set(attr)——IDL 显式 set 过（含 set null
+                                   // 移除）的 aria 属性；getter 据此区分「初始 unset →
+                                   // default」与「set null 移除 → null」（w3c/aria#2484
+                                   // default slots 语义）。
+  var _ZW_ARIA_ENUMS = {
+    ariaAtomic:            { attr: 'aria-atomic',            kw: { 'true': 1, 'false': 1 }, inv: 'false', d: null },
+    ariaAutoComplete:      { attr: 'aria-autocomplete',      kw: { 'inline': 1, 'list': 1, 'both': 1, 'none': 1 }, inv: 'none', d: 'none' },
+    ariaBusy:              { attr: 'aria-busy',              kw: { 'true': 1, 'false': 1 }, inv: 'false', d: 'false' },
+    ariaChecked:           { attr: 'aria-checked',           kw: { 'true': 1, 'false': 1, 'mixed': 1 }, inv: null, d: null },
+    ariaCurrent:           { attr: 'aria-current',           kw: { 'page': 1, 'step': 1, 'location': 1, 'date': 1, 'time': 1, 'true': 1, 'false': 1 }, inv: 'true', d: 'false' },
+    ariaDisabled:          { attr: 'aria-disabled',          kw: { 'true': 1, 'false': 1 }, inv: 'false', d: 'false' },
+    ariaExpanded:          { attr: 'aria-expanded',          kw: { 'true': 1, 'false': 1 }, inv: null, d: null },
+    ariaHasPopup:          { attr: 'aria-haspopup',          kw: { 'true': 1, 'false': 1, 'menu': 1, 'dialog': 1, 'listbox': 1, 'tree': 1, 'grid': 1 }, inv: 'false', d: null },
+    ariaHidden:            { attr: 'aria-hidden',            kw: { 'true': 1, 'false': 1 }, inv: 'false', d: 'false' },
+    ariaInvalid:           { attr: 'aria-invalid',           kw: { 'true': 1, 'false': 1, 'spelling': 1, 'grammar': 1 }, inv: 'true', d: 'false' },
+    ariaLive:              { attr: 'aria-live',              kw: { 'polite': 1, 'assertive': 1, 'off': 1 }, inv: 'off', d: 'off' },
+    ariaModal:             { attr: 'aria-modal',             kw: { 'true': 1, 'false': 1 }, inv: 'false', d: 'false' },
+    ariaMultiLine:         { attr: 'aria-multiline',         kw: { 'true': 1, 'false': 1 }, inv: 'false', d: 'false' },
+    ariaMultiSelectable:   { attr: 'aria-multiselectable',   kw: { 'true': 1, 'false': 1 }, inv: 'false', d: 'false' },
+    ariaOrientation:       { attr: 'aria-orientation',       kw: { 'horizontal': 1, 'vertical': 1 }, inv: null, d: null },
+    ariaPressed:           { attr: 'aria-pressed',           kw: { 'true': 1, 'false': 1, 'mixed': 1 }, inv: null, d: null },
+    ariaReadOnly:          { attr: 'aria-readonly',          kw: { 'true': 1, 'false': 1 }, inv: 'false', d: 'false' },
+    ariaRequired:          { attr: 'aria-required',          kw: { 'true': 1, 'false': 1 }, inv: 'false', d: 'false' },
+    ariaSelected:          { attr: 'aria-selected',          kw: { 'true': 1, 'false': 1 }, inv: null, d: null },
+    ariaSort:              { attr: 'aria-sort',              kw: { 'ascending': 1, 'descending': 1, 'other': 1, 'none': 1 }, inv: 'none', d: 'none' },
+  };
   // R5009 片 e：inputMode/enterKeyHint 全局枚举关键字集（missing/invalid → ''）。
+  var _ZW_SCOPE_KEYWORDS = { row: 1, col: 1, rowgroup: 1, colgroup: 1 };
+  var _ZW_VALIGN_KEYWORDS = { top: 1, middle: 1, bottom: 1, baseline: 1 };
   var _ZW_ENTER_KEY_HINT_KEYWORDS = {
     'enter': 1, 'done': 1, 'go': 1, 'next': 1, 'previous': 1, 'search': 1, 'send': 1,
   };
@@ -591,11 +622,11 @@
   // bgColor → vlink/alink/bgcolor）+ body margin 族（marginHeight 等 → 同名小写，
   // spec HTMLBodyElement DOMString 反射）+ marquee trueSpeed。WPT reflection-*
   // （sections/misc/obsolete/grouping/text）主导簇：旧读 undefined（表外）。
-  var _REFLECTED_STRING_MAP = { formAction: 'formaction', useMap: 'usemap', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for', referrerPolicy: 'referrerpolicy', dateTime: 'datetime', httpEquiv: 'http-equiv', vLink: 'vlink', aLink: 'alink', bgColor: 'bgcolor', marginHeight: 'marginheight', marginWidth: 'marginwidth', topMargin: 'topmargin', bottomMargin: 'bottommargin', leftMargin: 'leftmargin', rightMargin: 'rightmargin', trueSpeed: 'truespeed' };
+  var _REFLECTED_STRING_MAP = { formAction: 'formaction', useMap: 'usemap', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for', referrerPolicy: 'referrerpolicy', dateTime: 'datetime', httpEquiv: 'http-equiv', ch: 'char', chOff: 'charoff', cellPadding: 'cellpadding', cellSpacing: 'cellspacing', vAlign: 'valign', vLink: 'vlink', aLink: 'alink', bgColor: 'bgcolor', marginHeight: 'marginheight', marginWidth: 'marginwidth', topMargin: 'topmargin', bottomMargin: 'bottommargin', leftMargin: 'leftmargin', rightMargin: 'rightmargin', trueSpeed: 'truespeed' };
   // R5007 M3 片 c：[LegacyNullToEmptyString] DOMString 反射集（spec HTMLBodyElement 的
   // legacy 颜色族——null → ''，WPT reflection-* 'IDL set to null' getAttribute 期望 ""；
   // 其余 DOMString null → "null"）。
-  var _REFLECTED_STRING_NULL_EMPTY = ' text link vLink aLink bgColor ';
+  var _REFLECTED_STRING_NULL_EMPTY = ' text link vLink aLink bgColor cellPadding cellSpacing ';
   // R5009 片 e：URL 反射表（spec url 类型——非空解析绝对 URL，missing/空 → ''；
   // harness resolveUrl 经本引擎 detached-a 实现自洽）。getter 置于 R3037 前。
   var _REFLECTED_URL_TAGS = {
@@ -691,8 +722,8 @@
   // 边界 <1 值原样返，pragmatic 近似）。布尔型 spec 返 boolean（presence-based：属性存在 true / 缺省 false）。
   // 读旧恒 undefined。set 走既有 generic fallthrough（__zw_set_attr 写属性串），读 parseInt 往返（同 maxLength）。
   var _REFLECTED_UINT = {
-    colSpan: { a: 'colspan', d: 1, min: 1 },
-    rowSpan: { a: 'rowspan', d: 1, min: 1 },
+    colSpan: { a: 'colspan', d: 1, min: 1, max: 1000 },
+    rowSpan: { a: 'rowspan', d: 1, min: 0, max: 65534 },
     maxLength: { a: 'maxlength', d: -1 },
     minLength: { a: 'minlength', d: -1 },
     cols: { a: 'cols', d: 20 },
@@ -701,7 +732,9 @@
     // frameset.cols/rows 与 textarea.cols/rows 同 IDL 名异型——UINT 分支无 tag 门，
     // frameset 的 string 面走下方 frameset 专用 getter（无法仅靠表表达）。
     rows: { a: 'rows', d: 2 },
-    start: { a: 'start', d: 1, min: 1 },
+    // R5009 片 e（M4 片 a）：ol.start limited-unsigned（IDL set 0 抛 IndexSizeError
+    // ——throwOnZero 旗标仅此条目；colSpan/rowSpan 是 clamped 面，不抛）。
+    start: { a: 'start', d: 1, min: 1, throwOnZero: 1 },
   };
   // R5008 M3 片 d（html-syntax-compat）：spec「rules for parsing integers /
   // non-negative integers」——前导空白仅 \t\n\f\r 空格五类（\v/BOM/nbsp/各 Unicode
@@ -741,7 +774,7 @@
     async: 'async', defer: 'defer', nomodule: 'nomodule',
     autoplay: 'autoplay', controls: 'controls', loop: 'loop', muted: 'muted', playsInline: 'playsinline',
     reversed: 'reversed', isMap: 'ismap', itemScope: 'itemscope',
-    formNoValidate: 'formnovalidate', allowFullscreen: 'allowfullscreen', noModule: 'nomodule',
+    formNoValidate: 'formnovalidate', allowFullscreen: 'allowfullscreen', noModule: 'nomodule', noWrap: 'nowrap',
     noShade: 'noshade',
   };
   // R3039：查 _REFLECTED_BOOL 返内容属性名（readOnly→readonly 等），非 string/未命中 → null。供 set trap

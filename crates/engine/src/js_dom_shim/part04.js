@@ -23,6 +23,43 @@
           if (rlc && Object.prototype.hasOwnProperty.call(rlc, 'role')) return rlc['role'];
           return (handle ? __zw_get_attr_handle(handle, 'role') : __zw_get_attr(sel, 'role')) || '';
         }
+        // R5009 片 e（M4 片 a）：ARIA enumerated 反射（w3c/aria#2484 tentative——
+        // elements-aria-enumerated.js 表）。每属性：keywords 白名单 ascii 小写；
+        // missing → null（isNullable 全员）——**但 defaultVal 有值者返 default**
+        //（ariaAutoComplete/Busy/Current/Disabled/Hidden/Invalid/Live/Modal/
+        // MultiLine/MultiSelectable/ReadOnly/Required/Sort）；invalid → invalidVal。
+        // 置于既有 `_ariaAttrName` plain 面之前（枚举遮蔽）。
+        if (typeof prop === 'string' && prop.length > 4 && prop.charAt(0) === 'a' && prop.charAt(1) === 'r' && prop.charAt(2) === 'i' && _ZW_ARIA_ENUMS.hasOwnProperty(prop)) {
+          var _p5arDef = _ZW_ARIA_ENUMS[prop];
+          var _p5arAttr = _p5arDef.attr;
+          var _p5arHas = (handle
+            ? __zw_has_attr_handle(handle, _p5arAttr)
+            : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, _p5arAttr) : __zw_has_attr(sel, _p5arAttr))) === '1';
+          if (!_p5arHas) {
+            // R5009 片 e（M4 片 a）：set-then-remove → null（default slots 语义——
+            // 初始 unset → defaultVal；IDL 显式 set（含 set null 移除）后 missing →
+            // null，WPT aria-attribute-reflection-enumerated 'IDL set to null →
+            // IDL get null' 实证）。
+            try {
+              var _p5arEx = _zwAriaExplicit.get(key);
+              if (_p5arEx && _p5arEx.has(_p5arAttr)) return null;
+            } catch (_eArEx) {}
+            return (_p5arDef.d != null) ? _p5arDef.d : null;
+          }
+          try {
+            var _p5arEx2 = _zwAriaExplicit.get(key);
+            if (!_p5arEx2) { _p5arEx2 = new Set(); _zwAriaExplicit.set(key, _p5arEx2); }
+            _p5arEx2.add(_p5arAttr);
+          } catch (_eArEx2) {}
+          var _p5arRaw = String((handle
+            ? __zw_get_attr_handle(handle, _p5arAttr)
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _p5arAttr) : __zw_get_attr(sel, _p5arAttr))) == null
+            ? '' : (handle ? __zw_get_attr_handle(handle, _p5arAttr)
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _p5arAttr) : __zw_get_attr(sel, _p5arAttr))));
+          var _p5arLo = _p5arRaw.toLowerCase();
+          if (_p5arDef.kw.hasOwnProperty(_p5arLo)) return _p5arLo;
+          return _p5arDef.inv != null ? _p5arDef.inv : (_p5arDef.d != null ? _p5arDef.d : null);
+        }
         // `el.ariaXxx`——反射 aria-* 属性（ariaLabel↔aria-label, ariaLabelledBy↔aria-labelledby, ...）。
         // 经 `_ariaAttrName` 通用映射覆盖全部 aria IDL 属性；无 → ''。同步 set→get 优先读缓存。
         var _ariaName = _ariaAttrName(prop);
@@ -7983,6 +8020,36 @@ return _tplContent;
           var _p5imLo = String(_p5imRaw == null ? '' : _p5imRaw).toLowerCase();
           return (_ZW_INPUT_MODE_KEYWORDS.hasOwnProperty(_p5imLo)) ? _p5imLo : '';
         }
+        // R5009 片 e（M4 片 a）：tabular 反射——td/th.scope 枚举（verbatim setter +
+        // 合法关键字 ascii 小写 getter，invalid/missing → ''）；col/colgroup.span
+        // clamped unsigned（default 1，读侧 clamp [1,1000]；setter 逐字——WPT
+        // 'IDL set to 0' getAttribute 期望 "0"）；valign 枚举（top/middle/bottom/
+        // baseline，invalid → ''）。tabular 串面（frame/rules/summary/width/height/
+        // cellPadding/cellSpacing/ch/chOff/headers/abbr/axis）走 R3037 FLAT/MAP。
+        if (prop === 'scope' && (_realTag(sel, handle) === 'TD'
+            || _realTag(sel, handle) === 'TH' || _realTag(sel, handle) === 'TR'
+            || _realTag(sel, handle) === 'COL' || _realTag(sel, handle) === 'COLGROUP'
+            || _realTag(sel, handle) === 'THEAD' || _realTag(sel, handle) === 'TBODY'
+            || _realTag(sel, handle) === 'TFOOT')) {
+          var _p5scAttr = 'scope';
+          var _p5scRaw = handle
+            ? __zw_get_attr_handle(handle, _p5scAttr)
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _p5scAttr) : __zw_get_attr(sel, _p5scAttr));
+          var _p5scLo = String(_p5scRaw == null ? '' : _p5scRaw).toLowerCase();
+          var _p5scOk = _ZW_SCOPE_KEYWORDS;
+          return _p5scOk.hasOwnProperty(_p5scLo) ? _p5scLo : '';
+        }
+        if (prop === 'span' && (_realTag(sel, handle) === 'COL' || _realTag(sel, handle) === 'COLGROUP')) {
+          var _p5spRaw = handle
+            ? __zw_get_attr_handle(handle, 'span')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'span') : __zw_get_attr(sel, 'span'));
+          // R5009 片 e（M4 片 a）：clamped [1,1000] getter——spec nonneg 解析（任意
+          // 位宽），失败 → default 1；<1 → 1；>1000 → 1000（setAttribute(2147483647)
+          // → 1000 实证——无 maxInt 截断）。
+          var _p5spN = _zwParseSpecNonneg(String(_p5spRaw == null ? '' : _p5spRaw));
+          if (_p5spN == null || _p5spN < 1) return 1;
+          return (_p5spN > 1000) ? 1000 : _p5spN;
+        }
         // R5009 片 e：embedded 枚举/unsigned 反射——referrerPolicy（img/iframe/area/
         // link，含空关键字，invalid → ''）、decoding（img，invalid → auto）、loading
         //（img/iframe/video/audio，invalid → eager）；hspace/vspace unsigned（default 0
@@ -8177,8 +8244,17 @@ return _tplContent;
           // entry.d（spec 缺省；旧 parseInt 宽松吞 \v/BOM/nbsp，WPT reflection-*
           // 'setAttribute() to "7"' 期望 default 实证）。
           var _ruN = _zwParseSpecNonneg(String(_ruRaw == null ? '' : _ruRaw));
-          if (_ruN == null || _ruN > 2147483647) return _ruEntry.d;
-          if (_ruEntry.min != null && _ruN < _ruEntry.min) return _ruEntry.d;
+          // R5009 片 e（M4 片 a）：clamped 面（colSpan [1,1000]/rowSpan [0,65534]）
+          // **全部越界态 clamp**——> maxInt 亦 → max（harness domExpected 对 clamped
+          // 统一 clamp，WPT 'setAttribute(2147483648) → rowSpan 65534' 实证）；
+          // limited 面（start）> maxInt → d。
+          if (_ruN == null) return _ruEntry.d;
+          if (_ruEntry.max != null) {
+            if (_ruN < _ruEntry.min) return _ruEntry.min;
+            return (_ruN > _ruEntry.max) ? _ruEntry.max : _ruN;
+          }
+          if (_ruN > 2147483647) return _ruEntry.d;
+          if (_ruEntry.min != null && _ruN < _ruEntry.min) return _ruEntry.min;
           return _ruN;
         }
         // R3038/R3040：reflected boolean 属性读（_REFLECTED_BOOL 全表：required/readOnly/multiple/noValidate/
@@ -9028,6 +9104,28 @@ return _tplContent;
           // ariaXxx set——反射 aria-* 属性（ariaLabel→aria-label, ariaLabelledBy→aria-labelledby...）。
           // 通用映射覆盖全部 aria IDL 属性。同步缓存。
           var ariaAttr = _ariaAttrName(p);
+          // R5009 片 e（M4 片 a）：ARIA enumerated setter（_ZW_ARIA_ENUMS 名单）——
+          // null/undefined → removeAttribute（isNullable，WPT 'IDL set to null'
+          // getAttribute 期望 null）；余逐字写（getter 侧枚举归一）。置于 plain 面前
+          // （String(value) 曾把 null 写成 "null"）。
+          if (typeof _ZW_ARIA_ENUMS === 'object' && _ZW_ARIA_ENUMS.hasOwnProperty(p)) {
+            if (value === null || value === undefined) {
+              if (handle && typeof __zw_remove_attr_handle === 'function') {
+                __zw_remove_attr_handle(handle, ariaAttr);
+                if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, ariaAttr);
+              } else if (!handle && typeof __zw_remove_attr === 'function') {
+                __zw_remove_attr(sel, ariaAttr);
+              } else if (handle) {
+                try { __zw_remove_attr_handle(handle, ariaAttr); } catch (_eArRm2) {}
+              }
+              moAttr = ariaAttr;
+              return true;
+            }
+            if (handle) __zw_set_attr_handle(handle, ariaAttr, String(value));
+            else __zw_set_attr(sel, ariaAttr, String(value));
+            moAttr = ariaAttr;
+            return true;
+          }
           var arc2 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
           arc2[ariaAttr] = String(value);
           if (handle) __zw_set_attr_handle(handle, ariaAttr, String(value));

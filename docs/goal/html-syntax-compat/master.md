@@ -1,9 +1,21 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-04（M3 片 e——reflection 尾簇 89.54%）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-04（M4 片 a——tabular/aria 全绿 95.06%）
 
 ## 当前状态
+
+**M4 片 a 已落地（2026-10-04）**：reflection 尾残双域全绿——reflection-tabular
+**6116/6116**（串/映射扩表 + scope 枚举 + col/colgroup.span clamped 口径三轮
+收敛 + colSpan/rowSpan max clamp + 撤 min===1 全表 0 抛仅留 start throwOnZero）+
+aria-attribute-reflection-enumerated **1722/1722**（`_ZW_ARIA_ENUMS` 20 属性
+kw/inv/d 表 + gated getter + set-then-remove null 语义 `_zwAriaExplicit` +
+setter null/undefined → removeAttribute）。全通道 **58275/61303 = 95.06%**
+（+3387），M1 基线逐案 **0 回归**。DC-4 实测全绿（test 68 suites——首跑
+vue_e2e 3F 为 aria getter Symbol prop 未守卫，补 typeof 后复跑全绿 / fmt /
+reftest 704/704）。残差：embedded 尾 1180F、obsolete 403F、forms 尾 374F
+（均为混合个体面，非系统簇）；M4 片 b 逐簇收口。证据：
+[evidence/2026-10-04-m4a-tails.md](evidence/2026-10-04-m4a-tails.md)。
 
 **M3 片 e 已落地（2026-10-04）**：reflection 尾簇续——form 枚举/URL 面
 （form.action/formAction URL 解析、formMethod/formEnctype/form.autocomplete
@@ -68,12 +80,16 @@ html5lib 3 案 document.write 管线面）。证据：
 | P1 | html/syntax + html/dom corpus 导入 + 基线 | ✅ M1（2026-10-02，113 案 71.6%） |
 | P2 | 解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐 | ✅ **M2 收口（2026-10-02）**：五片落地（charref/foreign ns/CDATA/characterSet/生命周期），通道可执行面全绿 75.35%，DC-4 门禁实测齐（reftest 700/700）；残差分类记账（P5 通道外 19 案 + html5lib 管线面 3 案） |
 | P3 | 序列化边缘（XMLSerializer/HTML serializer） | ✅ **M3 片 b 落地（2026-10-03）**：serializing-html-fragments 域 **137/137 全绿**（template/processing-instructions/outerHTML canvas 面）+ serializing-xml-fragments 域 **112/112 全绿**（`_zwXMLSerialize` XML 序列化 + 读链视图文档对齐）；escaping.html 9/9（片 a）；残差：ambiguous-ampersand 读链 seam（挂账） |
-| P4 | html/dom 接口语义（createContextualFragment 已落 ✅） | 🔄 **M3 片 c 落地（2026-10-03）**：reflection 系统面修齐（全通道 82.18%，reflection-sections 全绿、text 97%、forms 85%）；残差归片 e：form 枚举/URL 面、embedded/tabular 尾簇、ARIA 枚举反射；**片 d 第一波 ✅（2026-10-03，83.83%）**：spec 严格解析 + BASE/LINK.href/crossOrigin/as/nonce + noShade |
+| P4 | html/dom 接口语义（createContextualFragment 已落 ✅） | 🔄 **M3 片 c 落地（2026-10-03）**：reflection 系统面修齐（全通道 82.18%，reflection-sections 全绿、text 97%、forms 85%）；**片 e ✅（2026-10-04，89.54%）**：form 枚举/URL 面 + URL 反射表 + embedded 枚举 + inputMode/enterKeyHint + canvas 属性方法面；**M4 片 a ✅（2026-10-04，95.06%）**：tabular 全绿 + aria-enumerated 全绿；残差：embedded/obsolete/forms 混合尾簇（片 b） |
 | P5 | 文档级编码嗅探（encoding-compat M4 转入） | 🔄 testharness 通道可执行面首片 ✅（sniff→Document label→characterSet 管线，2026-10-02）；📊 通道外案面仍记账：charset/ 7 案（reftest 形态）+ xmldecl/ 3 案（iframe 形态）+ the-input-byte-stream 9 案（HTTP 头形态）= 19 案 testharness 通道外记账；encoding/ 域 bom-handling/eof-*/sniffing 案面（已在 wpt-data，encoding 通道按 document.characterSet 规则 skip）尚未基线，落地通道（reftest import / 通道扩展）随 M2+ 定 |
 | — | render-blocking 机制面（62 案 19.3%） | 📊 M1 已基线；`blocking=render` 与渲染管线耦合，是否本 goal 修齐随 M3 碰头定 |
 
 ## 已完成切片
 
+- **M4 片 a（2026-10-04）**：tabular/aria 双域全绿——tabular 串/映射/枚举/
+  clamped 全套 + `_ZW_ARIA_ENUMS` 20 属性枚举反射（default-slots 语义）；
+  95.06%（+3387），0 回归；DC-4 全绿（vue_e2e Symbol prop 守卫修正后复绿）。
+  证据 evidence/2026-10-04-m4a-tails.md。
 - **M3 片 e（2026-10-04）**：reflection 尾簇——form 枚举/URL 面 + URL 反射表 +
   embedded 枚举 + 全局枚举 + canvas 属性方法面 + width/height string 收窄 +
   marquee 数值；89.54%（+3508），0 回归；DC-4 全绿。证据
@@ -124,10 +140,11 @@ html5lib 3 案 document.write 管线面）。证据：
 
 ## 下一步计划
 
-1. **M4 起（下一片）**：reflection 尾残——tabular 68%（table 章节集合面
-   tHead/tBodies/rows/cells——DOM 集合架构）、aria-enumerated 30% + aria 面
-   0/41、obsolete 尾 82%；render-blocking IDL 面随碰头定；P4 收口判定随
-   aria/tabular 碰头定。
+1. **M4 片 b（下一片）**：reflection 混合尾簇——embedded 尾 1180F（img.src
+   早分支遮蔽 URL 面/iframe.srcdoc/object.data 等）、obsolete 尾 403F、forms
+   尾 374F（input.size limited 面/progress 尾）、grouping 234F、misc 226F、
+   metadata 175F、name-content-attribute-and-property 123F；render-blocking
+   IDL 面随碰头定。
 2. **挂账随行**：bench-gate 等让复评（静窗）；html5ever 0.39 升级评估（顺带静态
    template noscript 解析面）；P5 通道外 19 案落地通道（reftest import 优先）；
    读一致性架构片余量（`__zw_child_nodes` live-aware——ambiguous-ampersand
