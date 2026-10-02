@@ -14,8 +14,8 @@ use std::sync::{Arc, Mutex};
 use zero_style_system::ComputedStyle;
 
 use zero_dom::{
-    Document, FocusManager, NodeId, NodeKind, parse_html, parse_html_fragment,
-    parse_html_fragment_with_scripting, parse_html_with_scripting,
+    Document, FocusManager, NodeId, NodeKind, parse_html, parse_html_fragment, parse_html_fragment_with_scripting,
+    parse_html_with_scripting,
 };
 #[cfg(feature = "script-runtime")]
 use zero_script_sandbox::Sandbox;
@@ -1454,9 +1454,7 @@ pub(crate) fn replace_inner_html(doc: &mut Document, parent: NodeId, html: &str)
     // R5001 M3 片 a：scripting 旗标——context 为 template 时 disabled（spec：template
     // content owner 文档无 browsing context），否则随目标文档旗标（noscript 解析/序列化
     // 分流——html-syntax-compat escaping 面）。
-    let scripting = if context_local.eq_ignore_ascii_case("template")
-        && context_ns == "http://www.w3.org/1999/xhtml"
-    {
+    let scripting = if context_local.eq_ignore_ascii_case("template") && context_ns == "http://www.w3.org/1999/xhtml" {
         false
     } else {
         doc.scripting_enabled()
@@ -1696,8 +1694,7 @@ fn insert_adjacent_html(doc: &mut Document, node: NodeId, position: &str, html: 
         _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
     };
     // R5001 M3 片 a：scripting 旗标随目标文档（template context 规则同 replace_inner_html）。
-    let scripting = !(context_local.eq_ignore_ascii_case("template")
-        && context_ns == "http://www.w3.org/1999/xhtml")
+    let scripting = !(context_local.eq_ignore_ascii_case("template") && context_ns == "http://www.w3.org/1999/xhtml")
         && doc.scripting_enabled();
     let frag_doc = parse_html_fragment_with_scripting(trimmed, &context_ns, &context_local, scripting);
     let kids = fragment_top_level_children(&frag_doc);
