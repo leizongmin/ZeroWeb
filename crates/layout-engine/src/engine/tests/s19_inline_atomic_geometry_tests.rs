@@ -104,3 +104,26 @@ fn s19_negative_hidden_input_has_no_box() {
         ),
     }
 }
+
+/// 守卫钉（S-TE1，pr61 testeff te1 形态）：被 R2156 skip 的 span 内**并置**可见
+/// input 与 display:none input——收集臂必须经 `DisplayValue::None => continue`
+/// 把隐藏分支挡在提升集之外（可见兄弟使 skip 谓词成立、下探真实可达）。
+/// 基线两态皆绿（base 整树 skip 隐藏臂同样无盒；head 靠收集守卫）——守卫回退
+///（隐藏臂被推入提升集获得 taffy 子树）时本钉变红，非 RED/GREEN 判别钉。
+#[test]
+fn s19_negative_hidden_inside_skipped_span_has_no_box() {
+    let html = r#"<html><body style="margin:0">
+<div><span><input id="vis" style="display:inline-block;width:120px;height:24px"><input id="hid" style="display:none;width:120px;height:24px"></span></div>
+</body></html>"#;
+    let (doc, root) = compute_root(html);
+    let found = find_by_id(&root, &doc, "hid");
+    match found {
+        None => {}
+        Some(b) => assert!(
+            b.width == 0.0 && b.height == 0.0,
+            "被 skip span 内 display:none input 不应有非零盒，实际 {}×{}",
+            b.width,
+            b.height
+        ),
+    }
+}
