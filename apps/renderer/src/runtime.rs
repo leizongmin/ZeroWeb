@@ -206,6 +206,9 @@ pub(crate) struct RendererRuntime {
     pending_dynamic_scripts: Option<PendingDynamicScripts>,
     /// 本文档中已经开始执行的外链脚本绝对 URL（含解析期与动态插入脚本）。
     executed_external_scripts: HashSet<String>,
+    /// CDP `Page.addScriptToEvaluateOnNewDocument` 已登记脚本（跨文档持久；每个新文档
+    /// 在页面脚本执行前整体执行——Chromium 语义，见 `after_page_html_loaded_with_cache`）。
+    pre_document_scripts: Vec<String>,
     /// 进行中的非阻塞 IPC fetch（request_id → Receiver 完成端）。
     inflight_fetches: InflightIpcFetches,
     /// media-playback D4（获点名 2026-09-05）：renderer 播放泵时钟原点（与桥 play
@@ -239,6 +242,18 @@ pub(crate) struct RendererRuntime {
     /// automation 请求互等死锁）。本字段仅持有托管句柄的生命周期（Drop 时停线程）。
     #[allow(dead_code)]
     service_worker_host: Arc<service_worker_host::RendererServiceWorkerHost>,
+}
+
+/// kill-switch 纯值核心（自 env 读取拆出以便值矩阵单测钉语义）：仅字面 `"0"` 关断；
+/// 未设 / 任意其他值（`"1"`、`"00"`、`"false"`…）一律 on。
+fn predoc_enabled_for(env_value: Option<&str>) -> bool {
+    !matches!(env_value, Some("0"))
+}
+
+/// CDP 预注入脚本 kill-switch：默认 on；`ZW_CDP_PREDOC_SCRIPTS=0` 关闭（renderer 忽略
+/// 登记列表，browser 侧回落导航后重放旧行为——零回归）。
+pub(crate) fn pre_document_scripts_enabled() -> bool {
+    predoc_enabled_for(std::env::var("ZW_CDP_PREDOC_SCRIPTS").as_deref().ok())
 }
 
 impl RendererRuntime {
@@ -413,6 +428,7 @@ impl RendererRuntime {
             pending_script_prefetch: None,
             pending_dynamic_scripts: None,
             executed_external_scripts: HashSet::new(),
+            pre_document_scripts: Vec::new(),
             inflight_fetches: InflightIpcFetches::new(),
             stub_network: false,
             stub_fetch_responses: HashMap::new(),
@@ -483,6 +499,33 @@ impl RendererRuntime {
         }))
     }
 
+    /// CDP `Page.addScriptToEvaluateOnNewDocument` 预注入执行（R5022）：
+    /// 每个新文档在**页面脚本执行前**运行全部已登记脚本。
+    ///
+    /// https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-addScriptToEvaluateOnNewDocument
+    /// ——「evaluated in the frame whenever the document is created」，Chromium 实现于任何
+    /// 页面脚本求值前（document readyState 仍为 loading）。旧实现于导航完成后在 browser 侧
+    /// 重放（readyState=complete、晚于页面脚本），世界可见时序与 Chromium 相反——依赖注入
+    /// 早于页面脚本（如站点 boot 插桩、框架 boot 探针）全部失真。kill-switch
+    /// `ZW_CDP_PREDOC_SCRIPTS=0` 关闭（回落 browser 侧导航后重放的旧行为）。
+    fn execute_pre_document_scripts(&mut self, js_enabled: bool, current_url: &str) {
+        if !pre_document_scripts_enabled() {
+            return;
+        }
+        // 与页面脚本同门槛：JS 关闭 / view-source 等跳过面不执行（无脚本执行面可注入）。
+        if !js_enabled || page_scripts::should_skip_scripts(current_url) {
+            return;
+        }
+        if self.pre_document_scripts.is_empty() {
+            return;
+        }
+        for script in self.pre_document_scripts.clone() {
+            if let Err(e) = self.js_worker.execute_script_direct(&script) {
+                tracing::warn!("pre-document script 执行失败: {e}");
+            }
+        }
+    }
+
     /// 页面脚本阶段（预取完成后）。返回 `false` = 阶段被导航命令让路中止（P-B1）：
     /// 命令已回灌 `deferred_inbound` 队首，收尾（动态脚本/发布/生命周期事件）全部跳过——
     /// 文档即将换代，对旧文档收尾是纯浪费。
@@ -491,6 +534,8 @@ impl RendererRuntime {
         let js_enabled = self.javascript_enabled;
         let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let skip = page_scripts::should_skip_scripts(&current_url);
+        // 预注入先于本阶段（P-B1 让路中止时注册表跨文档持久，新文档会再次执行）。
+        self.execute_pre_document_scripts(js_enabled, &current_url);
         let phase = {
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
@@ -2710,6 +2755,12 @@ impl RendererRuntime {
                 self.javascript_enabled = enabled;
                 Ok(())
             }
+            // CDP addScriptToEvaluateOnNewDocument：整体替换登记列表（浏览器侧每次登记
+            // 重发全量）。跨文档持久——不随导航清空（Chromium：注册对新文档持续生效）。
+            IpcMessageKind::PreDocumentScripts(params) => {
+                self.pre_document_scripts = params.sources;
+                Ok(())
+            }
             IpcMessageKind::SetFramePublishMode(mode) => {
                 self.frame_publish.set_mode(mode);
                 Ok(())
@@ -3287,6 +3338,9 @@ mod compositor_publish_tests;
 #[cfg(test)]
 #[path = "keyboard_input_tests.rs"]
 mod keyboard_input_tests;
+#[cfg(test)]
+#[path = "predoc_script_tests.rs"]
+mod predoc_script_tests;
 #[cfg(test)]
 #[path = "tick_per_task_tests.rs"]
 mod tick_per_task_tests;

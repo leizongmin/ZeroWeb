@@ -13,8 +13,8 @@ use zero_protocol::message::{
 };
 use zero_protocol::message::{
     AutomationValue, ImeEventParams, ImeEventType, IndexedDbResponseParams, IpcColorScheme, IpcMediaType, IpcMessage,
-    IpcMessageKind, KeyboardEventParams, KeyboardEventType, MouseEventParams, MouseEventType, ScrollEventParams,
-    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams,
+    IpcMessageKind, KeyboardEventParams, KeyboardEventType, MouseEventParams, MouseEventType, PreDocumentScriptsParams,
+    ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams,
 };
 #[cfg(not(test))]
 use zero_protocol::process::RendererHandle;
@@ -1011,6 +1011,22 @@ impl HeadlessSession {
             })
             .map_err(|error| error.to_string())
     }
+
+    /// CDP addScriptToEvaluateOnNewDocument → renderer PreDocumentScripts（全量列表，
+    /// renderer 整体替换；此后每个新文档在页面脚本执行前执行）。
+    pub(super) fn send_pre_document_scripts(&mut self) -> Result<(), String> {
+        let sources: Vec<String> = self
+            .injected_scripts
+            .iter()
+            .map(|script| script.source.clone())
+            .collect();
+        self.renderer
+            .send(IpcMessage {
+                id: 0,
+                kind: IpcMessageKind::PreDocumentScripts(PreDocumentScriptsParams { sources }),
+            })
+            .map_err(|error| error.to_string())
+    }
 }
 
 impl HeadlessSession {
@@ -1093,6 +1109,18 @@ impl HeadlessSession {
         Ok(())
     }
 
+    pub(super) fn send_pre_document_scripts(&mut self) -> Result<(), String> {
+        // T-S3 发送面守卫钉：测试进程内无 renderer——记录本应发出的登记列表
+        // （全量替换语义），由 headless/tests.rs 断言；删除 page.rs 发送调用点即红。
+        let sources = self
+            .injected_scripts
+            .iter()
+            .map(|script| script.source.clone())
+            .collect();
+        LAST_PREDOC_SEND.with(|slot| *slot.borrow_mut() = Some(sources));
+        Ok(())
+    }
+
     /// 测试进程内无 renderer：句柄桥操作不在此层执行（renderer 单测 + cdp-e2e
     /// 覆盖语义；此处仅保证编译面完整，dispatch 层形状断言用 -32000 传回）。
     pub(super) fn automation_request(
@@ -1101,4 +1129,12 @@ impl HeadlessSession {
     ) -> Result<zero_protocol::message::AutomationResult, String> {
         Err("renderer unavailable in unit tests".into())
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// T-S3 发送面钉记录器：最近一次 PreDocumentScripts 发送的登记 source 列表
+    /// （None = 复位后未发送）。headless/tests.rs 的发送面守卫钉消费并复位。
+    pub(super) static LAST_PREDOC_SEND: std::cell::RefCell<Option<Vec<String>>> =
+        const { std::cell::RefCell::new(None) };
 }

@@ -924,21 +924,27 @@ fn test_frame_detached_on_document_swap() {
 
 #[test]
 fn test_page_navigate_success_path_via_load_html_page() {
-    // 成功路径的事件族由 Playwright goto 冒烟验收；此处断言注入脚本在导航后重放的
-    // 存储面（emit_navigation_event_family 内部调用 replay）。
+    // 成功路径的事件族由 Playwright goto 冒烟验收；此处断言注入脚本登记存储面，以及
+    // 默认门（ZW_CDP_PREDOC_SCRIPTS 未设）下导航事件族不再重放——新文档预注入已由
+    // renderer `PreDocumentScripts` 路径接管（页面脚本前执行），重复重放会二次执行。
     let server = HeadlessServer::new(0, 800.0, 600.0);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let (result, _events) = server.dispatch_with_events(
         &mut session,
         "Page.addScriptToEvaluateOnNewDocument",
-        serde_json::json!({ "source": "1;" }),
+        serde_json::json!({ "source": "window.__s20 = (window.__s20 || 0) + 1;" }),
     );
     let identifier = result.unwrap()["identifier"].as_str().unwrap().to_string();
     assert!(identifier.starts_with("zw-script-"));
     assert_eq!(session.injected_scripts.len(), 1);
     assert_eq!(session.injected_scripts[0].identifier, identifier);
+    // 登记即对当前文档执行一次
+    assert_eq!(
+        session.execute_script_typed("String(window.__s20)").unwrap(),
+        zero_protocol::message::AutomationValue::String("1".into())
+    );
 
-    // 重放辅助直接调用（导航成功路径内部同样调用）
+    // 导航事件族：默认门下不重放（renderer 预注入接管）；事件族本身照常发出
     let mut nav_events = Vec::new();
     server.emit_navigation_event_family(
         &mut session,
@@ -949,6 +955,53 @@ fn test_page_navigate_success_path_via_load_html_page() {
         &mut nav_events,
     );
     assert!(nav_events.iter().any(|e| e.method == "Page.loadEventFired"));
+    assert_eq!(
+        session.execute_script_typed("String(window.__s20)").unwrap(),
+        zero_protocol::message::AutomationValue::String("1".into()),
+        "默认门下导航后不重放（预注入由 renderer 在页面脚本前执行）"
+    );
+
+    // kill-switch 关闭（ZW_CDP_PREDOC_SCRIPTS=0）→ 回落旧行为：导航后重放（二次执行）。
+    // env set_var 在并行测试下有竞态，回退路径经 replay_injected_scripts 结构保持 +
+    // 单测覆盖（本文件 browser 钉 + renderer predoc_script_tests）；无自动化 cdp-e2e
+    // predoc 资产。此处仅直调重放辅助验证旧路径本体未损坏。
+    server.replay_injected_scripts(&mut session);
+    assert_eq!(
+        session.execute_script_typed("String(window.__s20)").unwrap(),
+        zero_protocol::message::AutomationValue::String("2".into()),
+        "kill-switch 回退路径：重放辅助正常执行登记脚本"
+    );
+}
+
+#[test]
+fn test_predoc_registration_sends_renderer_ipc() {
+    // T-S3 发送面守卫钉：testeff 实证删掉 page.rs 发送调用点后既有 4 钉仍全绿
+    // （browser→renderer 发送面此前零覆盖）。本钉断言登记动作真实发出
+    // PreDocumentScripts IPC 且列表=已登记 sources（整体替换语义）。
+    // 判别结构：删除 page.rs `cmd_page_add_script_to_evaluate_on_new_document`
+    // 尾部发送调用点 → 记录器保持 None → 本钉红。两态皆绿属预期（守卫钉，
+    // 非 RED/GREEN 判别钉——base 无该 IPC 面，无从构造 RED 态）。
+    super::session::LAST_PREDOC_SEND.with(|slot| *slot.borrow_mut() = None);
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    server
+        .dispatch(
+            &mut session,
+            "Page.addScriptToEvaluateOnNewDocument",
+            serde_json::json!({ "source": "window.__t_s3 = 1;" }),
+        )
+        .unwrap();
+    super::session::LAST_PREDOC_SEND.with(|slot| {
+        let sent = slot
+            .borrow()
+            .clone()
+            .expect("登记动作必须发送 PreDocumentScripts IPC（发送面守卫）");
+        assert_eq!(
+            sent,
+            vec!["window.__t_s3 = 1;".to_string()],
+            "发送列表须等于登记 sources（全量替换语义）"
+        );
+    });
 }
 
 #[test]

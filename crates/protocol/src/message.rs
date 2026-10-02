@@ -35,6 +35,11 @@ pub enum IpcMessageKind {
     SetMediaType(SetMediaTypeParams),
     /// 更新页面 JavaScript 执行策略；不影响用户代理默认动作。
     SetJavascriptEnabled(bool),
+    /// CDP `Page.addScriptToEvaluateOnNewDocument` 预注入脚本登记（浏览器→渲染）。
+    ///
+    /// renderer 持久存储（整体替换），此后每个新文档在**页面脚本执行前**执行全部
+    /// 已登记脚本（Chromium 语义：文档创建时求值，早于任何页面脚本）。
+    PreDocumentScripts(PreDocumentScriptsParams),
     /// 更新页面绘制帧的 Browser IPC 发布模式。
     SetFramePublishMode(FramePublishMode),
     /// 请求 renderer 立即从当前页面状态重新发布一帧。
@@ -594,6 +599,13 @@ pub struct NavigateParams {
     /// 浏览器侧导航世代（`begin_navigation` 递增）；ViewPainted 须携带同值。
     #[serde(default)]
     pub navigation_epoch: u64,
+}
+
+/// CDP `Page.addScriptToEvaluateOnNewDocument` 预注入脚本登记参数（浏览器→渲染）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreDocumentScriptsParams {
+    /// 全量已登记脚本（renderer 侧整体替换既有列表）。
+    pub sources: Vec<String>,
 }
 
 /// 内联 HTML 加载参数（浏览器→渲染）。

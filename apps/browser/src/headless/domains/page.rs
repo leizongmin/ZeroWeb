@@ -15,6 +15,12 @@ use super::remote_object::framebuffer_to_png_base64;
 use crate::headless::protocol::{ProtocolError, ServerEvent};
 use crate::headless::session::{HeadlessSession, InjectedScript};
 
+/// CDP 预注入脚本 kill-switch：默认 on；`ZW_CDP_PREDOC_SCRIPTS=0` 时 browser 侧不推
+/// `PreDocumentScripts` IPC、导航后重放旧行为（renderer 侧同名开关对称忽略登记列表）。
+fn pre_document_scripts_enabled() -> bool {
+    !matches!(std::env::var("ZW_CDP_PREDOC_SCRIPTS").as_deref(), Ok("0"))
+}
+
 impl HeadlessServer {
     /// CDP Page.captureScreenshot — `{"data": "<base64 png>"}` 形状（区别于 BiDi 对象形）；
     /// 支持 clip 裁剪（原始 fb 行级裁剪）。format 仅支持 png（jpeg 编码器未接入）。
@@ -64,7 +70,9 @@ impl HeadlessServer {
     }
 
     /// Page.addScriptToEvaluateOnNewDocument — 登记并在**当前文档**立即执行；
-    /// 新文档加载后由导航路径重放（ZeroWeb 单引擎：主 world 执行，无 world 隔离）。
+    /// 后续新文档由 renderer 在页面脚本执行前执行（`PreDocumentScripts` IPC，Chromium
+    /// 语义——文档创建时求值）。`ZW_CDP_PREDOC_SCRIPTS=0` 时回落旧行为：导航完成后
+    /// browser 侧重放（readyState=complete，时序与 Chromium 相反）。
     pub(super) fn cmd_page_add_script_to_evaluate_on_new_document(
         &self,
         session: &mut HeadlessSession,
@@ -81,6 +89,10 @@ impl HeadlessServer {
             source,
             world_name,
         });
+        // 新文档预注入：推送全量登记列表（renderer 整体替换后逐文档执行）。
+        if pre_document_scripts_enabled() {
+            let _ = session.send_pre_document_scripts();
+        }
         Ok(serde_json::json!({ "identifier": identifier }))
     }
 
@@ -308,7 +320,11 @@ impl HeadlessServer {
     }
 
     /// 重放已登记的注入脚本（导航成功后调用；单条失败不阻断其余）。
-    pub(super) fn replay_injected_scripts(&self, session: &mut HeadlessSession) {
+    ///
+    /// 仅在 kill-switch `ZW_CDP_PREDOC_SCRIPTS=0` 时被调用（见
+    /// `emit_navigation_event_family`）——预注入走 renderer `PreDocumentScripts`
+    /// 路径后，导航完成时机的重放已被取代（时序与 Chromium 相反且会二次执行）。
+    pub(in crate::headless) fn replay_injected_scripts(&self, session: &mut HeadlessSession) {
         let sources: Vec<String> = session
             .injected_scripts
             .iter()
@@ -398,7 +414,12 @@ impl HeadlessServer {
             params: serde_json::json!({}),
             session_id: None,
         });
-        self.replay_injected_scripts(session);
+        // 预注入走 renderer PreDocumentScripts（页面脚本前执行）后，导航完成时机的
+        // 重放已被取代——重复执行会破坏非幂等插桩；kill-switch 关闭时保留旧行为
+        //（readyState=complete 重放，零回归回退面）。
+        if !pre_document_scripts_enabled() {
+            self.replay_injected_scripts(session);
+        }
         self.push_main_world_context_event(session, cdp_session, events);
         // 新文档后重发 world 级 context（如 Playwright utility world——title/evaluate
         // 管线在 utilityContext() 上等待，缺事件会永久挂起，2026-09-12 实测）
