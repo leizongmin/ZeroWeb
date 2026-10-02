@@ -1344,4 +1344,52 @@ mod tests {
         };
         handle
     }
+
+    /// t2-pb1 返修 N1（定向复核缺口，2026-10-02）：F4 补答接线真实路径钉。挂起求值
+    /// 晚至完成后，[`Self::poll_deferred_automation_replies`] 须在**真实补答路径**内
+    /// apply mutation 并落进 `cached_html`——此前 page_scripts 层测试手工复刻了补答侧
+    /// apply（不走 poll），revert automation.rs 的 poll 补答 hunk 时现存测试全绿
+    ///（假绿面）；本测试闭合该缺口：移除 poll 内 apply+sync tail 即红。
+    #[test]
+    fn deferred_reply_poll_applies_mutations_via_real_path() {
+        let mut rt = runtime();
+        // 长臂占住 worker（15e8：debug ~6s，确保后续脚本 2s 有界等待稳定超时挂起；
+        // 5e8 约 2.1s 与 USER_ACTION_SCRIPT_TIMEOUT 同量级，会漂移出假 Done 分支）。
+        let busy = rt
+            .js_worker
+            .execute_script_priority_deferrable(
+                "var s=0;for(var i=0;i<15e8;i++)s+=i;String(s)",
+                std::time::Duration::from_millis(1),
+            )
+            .expect_err("长臂应挂起");
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        // 挂起的自动化脚本：改 DOM + 返回值（入 pending 表，handle_automation_request
+        // 按长度差检测不回信）。
+        rt.handle_automation_request(
+            77,
+            AutomationRequest {
+                operation: AutomationOperation::ExecuteScript {
+                    script: "document.body.setAttribute('data-late','yes'); 'ok'".into(),
+                    arguments: vec![],
+                },
+            },
+        )
+        .expect("挂起路径应成功入队");
+        // 长臂完成 → worker 随后执行挂起求值（mutation 入共享队列、reply 投递 pending
+        // 通道）；poll 轮询到补答成功为止（eval 在长臂结束后才执行）。
+        let _ = busy.recv_timeout(std::time::Duration::from_secs(35));
+        let mut applied = false;
+        for _ in 0..100 {
+            rt.poll_deferred_automation_replies().expect("poll 补答");
+            if rt.cached_html.contains("data-late") {
+                applied = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(
+            applied,
+            "补答路径须 apply mutation 并落进 cached_html（F4 接线真实路径）"
+        );
+    }
 }

@@ -1903,6 +1903,11 @@ fn test_indexed_db_response_carries_id_and_error_shape() {
 /// 载荷为**含 `Upgrade: websocket` 头的半截 WS 升级请求**——真实阻塞场景。普通半截
 /// GET 在旧代码阻塞 read 立即读到已有字节→404，本不 wedge、对修复无判别力；半截
 /// WS 升级使 deadline 分支按 `is_ws_upgrade` 前缀切进阻塞握手（修复前 5.27s FAIL 实证）。
+/// 覆盖边界（t2-pb1 返修 N2/T1-G1，定向复核 2026-10-02）：本测试钉「Peek 窗存在」
+///（整体还原 F3 守卫时 FAIL 5.15s）——**不覆盖 F3 超期丢弃分支本身**：B 在 A 的
+/// 5s Peek 窗口内已被服务，仅中和 deadline 丢弃时本测试仍绿（PASS 0.04s）；双向
+/// 判别需 B 延迟至 deadline 之后连接（~+5.5s 常驻运行时，暂不值）。F3 超期丢弃属
+/// 纵深防御（`conn.alive = false` 无断言面），缺口在此声明。
 #[test]
 fn test_partial_request_does_not_wedge_mux() {
     use std::io::{Read, Write};

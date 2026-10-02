@@ -7388,8 +7388,10 @@ return _tplContent;
         // gate 前置分支（checkValidity/reportValidity/setCustomValidity/validity/
         // validationMessage——CVA 段、length/elements/action、反射属性等）早已返回，
         // 不受遮蔽影响（`<input name=checkValidity>` 时 form.checkValidity 仍是函数）；
-        // gate 之后服务的仅 R3048 三方法（reset/requestSubmit/submit，本文件后段）——
-        // 即本点名单。审查建议的「prop in HTMLFormElement.prototype」泛化不适用：空壳
+        // gate 之后仍服务的 **FORM 专属成员**仅 R3048 三方法（reset/requestSubmit/
+        // submit，本文件后段）——即本点名单。（gate 落空后其后的**通用元素分支**
+        // getBoundingClientRect/offset* 等，同名控件理论上可遮蔽——病态命名，超出
+        // 本点名单范围。）审查建议的「prop in HTMLFormElement.prototype」泛化不适用：空壳
         // 原型不含 R3048 方法，`in` 判定为 false → `<button id=reset>` 重新遮蔽
         // form.reset → 宿主 reset 脚本的 `typeof f.reset==='function'` guard 永假 →
         // 表单重置整体静默 no-op（fix#19c 回归；form-interaction fixture 实测）。
