@@ -7307,7 +7307,16 @@
     // 裸 `event.target` 断言面）。
     var _prevGlobalEvent = globalThis.event;
     globalThis.event = event;
-    event.target = target;
+    // R5000 片 d：target override 通道——UA 生命周期尾（the-end）的 window 通道
+    // load/pageshow 派发 spec 上 target 是 Document（非 window 视图）；派发前预写
+    // `_zwTargetOverride` 的事件在此保留预写值。
+    if (event && event._zwTargetOverride !== undefined) {
+      globalThis.__zwDwbOverrideHit = 'yes';
+      // keep pre-set target
+    } else {
+      globalThis.__zwDwbOverrideHit = 'no';
+      event.target = target;
+    }
     // R150（js-dom M4）：MouseEvent offsetX/offsetY 的 dispatch 期计算——spec CSSOM
     // View §dom-mouseevent-offsetx：offset = client 坐标 - target 的 padding 边缘
     //（本实现近似为 gBCR 左/上）。构造时**未显式给** offset init（真实浏览器 MouseEvent
@@ -7698,7 +7707,9 @@
         var _adjP = _makeProxy ? (_makeProxy(entry.adj.sel, entry.adj.handle) || target) : target;
         if (_adjP) _adjT = _adjP;
       }
-      try { event.target = _adjT; } catch (_e8t1) {}
+      // R5000 片 d：`_zwTargetOverride` 事件（UA 生命周期尾）不逐站 retarget——
+      // 预写 target（Document）全程保持。
+      if (!event || event._zwTargetOverride === undefined) { try { event.target = _adjT; } catch (_e8t1) {} }
       try { event.srcElement = _adjT; } catch (_e8t2) {}
       if (entry.rel) {
         try { event.relatedTarget = entry.rel; } catch (_e8rel) {}
@@ -7786,7 +7797,8 @@
       // html proxy——event.target 已在函数开头经 _makeProxy('html') 设为 html proxy，此处覆盖）。
       if (isDocTarget || isWinTarget) {
         var tgtObj = isDocTarget ? globalThis.document : globalThis;
-        event.target = tgtObj;
+        // R5000 片 d：override 事件保持预写 target（Document）。
+        if (event._zwTargetOverride === undefined) event.target = tgtObj;
         target = tgtObj;
       }
       event.currentTarget = target;
@@ -7855,7 +7867,8 @@
       // 五小步：clearTargets 时 relatedTarget 同置 null（spec dispatch 末段）。
       try {
         var _r114Post = (_r114PostRootEnd || _r114ClearTargets) ? null : (_r114PostAdj || target);
-        event.target = _r114Post;
+        // R5000 片 d：override 事件 dispatch 末段同样保持预写 target。
+        if (!event || event._zwTargetOverride === undefined) { event.target = _r114Post; }
         try { event.srcElement = _r114Post; } catch (_e8sr) {}
         if (_r114PostRootEnd || _r114ClearTargets) {
           try { event.relatedTarget = null; } catch (_e8relC) {}

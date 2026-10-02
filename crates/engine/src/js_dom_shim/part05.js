@@ -10866,6 +10866,9 @@
   (function () {
     var _r138EP = globalThis.Event && globalThis.Event.prototype;
     if (!_r138EP) return;
+    // R5000 片 d：Event.prototype[Symbol.toStringTag]='Event'（spec WebIDL 接口原型
+    // 标记——assert_class_string 的 [object Event] 面依赖；浏览器一致）。
+    try { if (typeof Symbol === 'function' && Symbol.toStringTag && !_r138EP[Symbol.toStringTag]) Object.defineProperty(_r138EP, Symbol.toStringTag, { value: 'Event' }); } catch (_e5000tt) {}
     var _r138Defs = {
       // WC-M3 切片 8 第二增量：closed shadow tree 隐藏（spec dom-event-composedpath
       // ——per-item 预计算 flags + level 计数；过滤实现见 part03 __zwCpClosedFilter）。
@@ -11048,6 +11051,9 @@
       return ev;
     };
     Ctor.prototype = Object.create(Parent.prototype);
+    // R5000 片 d：子类原型 toStringTag（spec WebIDL 接口标记——assert_class_string
+    // 的 [object PageTransitionEvent] 等面；closest tag 就近覆盖父 Event 标记）。
+    try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(Ctor.prototype, Symbol.toStringTag, { value: name }); } catch (_e5000st) {}
     Ctor.prototype.constructor = Ctor;
     globalThis[name] = Ctor;
     _eventSubclassProps[name] = [props, parentName];

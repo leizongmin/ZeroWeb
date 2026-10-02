@@ -4689,7 +4689,15 @@
   // 保证 listener 捕获，近似 load 后 pageshow 语义（persisted:false）。仅触发一次（_pageshowFired 守）。
   // PageTransitionEvent 在 ~5448 行 _defineEventSubclass 注册，_defer 回调运行时（全 shim 安装后）已就绪。
   var _pageshowFired = false;
+  // R5000 片 d（html-syntax-compat）：runner 生命周期尾（the-end）显式派发 pageshow
+  // 前调本钩子关闭首监听自派发路径（防双发）；非 runner 上下文（webview 直载页）钩子
+  // 语义不变。
+  globalThis.__zwMarkPageShowFired = function () { _pageshowFired = true; };
   function _maybeFirePageShow() {
+    // R5000 片 d：runner 生命周期尾接管 pageshow（__zwPageShowRunnerOwned 在
+    // runner 预热 execute 置位）——本钩子不再自派发（the-end 的 pageshow 序断言：
+    // 钩子 _defer 派发早于 load 即失序）。非 runner 上下文语义不变。
+    if (globalThis.__zwPageShowRunnerOwned) { _pageshowFired = true; return; }
     if (_pageshowFired) return;
     _pageshowFired = true;
     _defer(function () {

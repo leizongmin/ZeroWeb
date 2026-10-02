@@ -4080,6 +4080,7 @@
   // `_dispatchWithBubble(…, 'win')`：window 为 target（AT_TARGET 只触发 tgt='win' 槽位注册，含
   // window.addEventListener + on* handler 注册），path = [window]，返 `!defaultPrevented`（spec）。
   globalThis.dispatchEvent = function(event) {
+    globalThis.__zwDispatchImpl = 'part06-r5000';
     // R106：spec 入口守卫（同 document.dispatchEvent）。
     globalThis._zwDispatchGuard(event);
     // R139（js-dom M4）：window 'load' 派发前物化全部 named iframe 的

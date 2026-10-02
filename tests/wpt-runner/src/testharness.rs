@@ -6617,7 +6617,9 @@ fn run_testharness_html_inner(
     // 执行内同步调 video.play()——桥后装则 play 走 headless 分支、bridgeOn 永不置位，
     // 播放钟推进面失联）。execute_script 空转预热 = ensure_sandbox + ensure_js_shim
     //（install_playback_bridge 的回调注册前提）。
-    let _ = webview.execute_script("0;");
+    // R5000 片 d：runner 生命周期尾接管 pageshow（shim 首监听自派发钩子按此门让位
+    // ——the-end 的 DCL→load→pageshow 序断言依赖）。
+    let _ = webview.execute_script("0;globalThis.__zwPageShowRunnerOwned = true;");
     // M3 扩批 XVIII（2026-09-03，注册竞态消除）：媒体源按需供给方——宿主桥 play
     // 未命中（源未登记）时**同步**读 wpt-data 字节补登记，消除「重试等下一 probe
     // tick」的时序依赖（全套件并行负载下 tick 延迟放大，track-cues-enter-exit 的
@@ -6670,7 +6672,15 @@ fn run_testharness_html_inner(
     // 成为页面可见 DOM，污染 documentElement.outerHTML 精确断言）。时序不变：全部页面脚本
     // 之后同步执行。
     let _ = webview.execute_script(
-        "(function () {var mk = globalThis.__zwMakeTrustedEvent;document.dispatchEvent(mk ? mk('DOMContentLoaded') : new Event('DOMContentLoaded'));globalThis.dispatchEvent(mk ? mk('load') : new Event('load'));})();if (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.__zw_mark_harness_loaded();}",
+        // R5000 片 d（html-syntax-compat，spec the-end）：生命周期三事件单 timer 任务
+        // 内严格序 DCL → load → pageshow。①DCL 异步入队——defer 脚本已入队的 timer
+        // 任务先于 DCL 跑（WPT DOMContentLoaded-defer：defer 脚本队列任务执行时 DCL
+        // 不得已发）；②DCL bubbles:true（the-end 断言）；③load/pageshow 经 window
+        // 通道派发但 target=document（spec：Window load/pageshow 的 target 是
+        // Document——预写 target，shim dispatch 不覆写，part02 pageshow 同款先例）；
+        // ④pageshow bubbles+cancelable:true（whatwg#6794）+ PageTransitionEvent 原型
+        //（assert_class_string）；⑤关 shim 首监听自派发钩子防双发。
+        "(function () {var mk = globalThis.__zwMakeTrustedEvent;function protoLink(ev, proto) {try { if (proto && proto.prototype) Object.setPrototypeOf(ev, proto.prototype); } catch (_e5000pl) {}return ev;}setTimeout(function () {var dcl = protoLink(mk ? mk('DOMContentLoaded', { bubbles: true }) : new Event('DOMContentLoaded', { bubbles: true }), globalThis.Event);document.dispatchEvent(dcl);var load = protoLink(mk ? mk('load') : new Event('load'), globalThis.Event);try { load._zwTargetOverride = true; load.target = document; } catch (_e5000lt) {}globalThis.dispatchEvent(load);var ps = protoLink(mk ? mk('pageshow', { bubbles: true, cancelable: true }) : new Event('pageshow', { bubbles: true, cancelable: true }), globalThis.PageTransitionEvent);try { ps.persisted = false; } catch (_e5000pp) {}try { ps._zwTargetOverride = true; ps.target = document; } catch (_e5000pt) {}globalThis.dispatchEvent(ps);}, 0);})();if (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.__zw_mark_harness_loaded();}",
     );
     // M3 扩批（2026-09-02，fixture-mounted 播放切片）：播放宿主桥 + 媒体源登记。
     // 页面 <video>/<audio> src（经 extract_media_resources 提取、相对 case 目录解析）
