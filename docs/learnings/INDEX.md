@@ -5,10 +5,11 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（124）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（125）
 
 - 2026-10-02 [textContent= 突变后 gBCR 返回文本量盒——写路径注册副作用劫持读路径语义](bugs/2026-10/2026-10-02-textcontent-mutation-gbcr-identity-hijack.md) — engine
 - 2026-10-02 [日志写 stdout 管道无读取者：64KB 缓冲写满后全进程停摆](bugs/2026-10/2026-10-02-stdout-pipe-no-reader-logging-deadlock.md) — zero-browser
+- 2026-10-02 [共享 CARGO_TARGET_DIR 的 git worktree 会静默覆盖主树产物](bugs/2026-10/2026-10-02-shared-cargo-target-worktree-corruption.md) — infra/cargo, infra/worktree
 - 2026-10-02 [renderer 主函数返回 ≠ 进程退出：join 长臂把退出拖成泄漏进程](bugs/2026-10/2026-10-02-renderer-exit-vs-join-long-arm.md) — zero-renderer
 - 2026-10-02 [JS worker 分派环 check-then-block 竞态：优先派发可被普通命令越过](bugs/2026-10/2026-10-02-js-worker-check-then-block-dispatch-race.md) — zero-renderer
 - 2026-10-02 [FORM named access 遮蔽接口内建方法：`<button id=reset>` 使 form.reset 静默失效](bugs/2026-10/2026-10-02-form-named-access-shadows-interface-builtins.md) — zero-engine

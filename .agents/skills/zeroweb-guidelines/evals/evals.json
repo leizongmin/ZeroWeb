@@ -24,6 +24,12 @@
       "prompt": "JS shim 与 native DOM 截图相同，但 change 事件不同，可以只靠像素断言通过吗？",
       "expected_output": "不能；视觉与 DOM/API 可观察行为分别验证，事件差异仍失败，截图不能替代语义断言。",
       "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "为做父 SHA 与 HEAD 的性能对照，在 /tmp 起了 git worktree 并沿用主树 CARGO_TARGET_DIR，测完回主树继续增量编译，该流程有问题吗？",
+      "expected_output": "有；cargo 产物身份不含 worktree 源码差异，第二棵树编译会原地覆盖主树 rmeta/rlib 而 fingerprint 仍判 fresh，症状是伪测量值或下游 unresolved 符号且不指向污染源。跨树必须用独立 CARGO_TARGET_DIR，或回主树先对被污染 crate cargo clean -p。",
+      "files": []
     }
   ]
 }

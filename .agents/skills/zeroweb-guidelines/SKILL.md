@@ -1,6 +1,6 @@
 ---
 name: zeroweb-guidelines
-description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写、审查或重构样式、布局、字体、渲染、IPC、存储及测试代码，或排查性能与兼容性问题时使用。
+description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写、审查或重构样式、布局、字体、渲染、IPC、存储及测试代码，排查性能与兼容性问题，或跨 git worktree 共享构建产物时使用。
 ---
 
 # ZeroWeb 工程方法论
@@ -11,7 +11,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 
 - 触发后整个编码任务期间持续生效，不因多轮对话或任务切换遗忘；仅当用户明确说「跳过准则」时暂停，恢复编码后自动重新生效。
 - 动代码前按改动选择主题，CR 时对照触碰到的条目；先核对适用条件，不把局部经验扩展为无条件禁令。
-- **权衡**：这些不变式倾向谨慎而非速度。小改动不必全量过 26 条，自行判断。
+- **权衡**：这些不变式倾向谨慎而非速度。小改动不必全量过 27 条，自行判断。
 - 本 skill 是领域层，叠加在 AGENTS.md 编码准则 / `lei-code-guidelines`（行为层）之上，不复述其行为规则。
 
 | 改动入口 | 必读条目 |
@@ -21,7 +21,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 | 绘制 / 合成 / 帧复用 | #6–8、#12–14、#17 |
 | IPC / 同步脚本 / 宿主桥 | #12–15、#24–25 |
 | 存储 / 并发缓存 | #16、#19、#22 |
-| 性能 / 测试工具 | #9–11、#17–20、#23；shim 循环加 #26 |
+| 性能 / 测试工具 | #9–11、#17–20、#23、#27；shim 循环加 #26 |
 
 ## 与「简单至上」的关系
 
@@ -31,7 +31,7 @@ ZeroWeb 中一切来自网页的输入（HTML/CSS/JS 传值）都是**不可信�
 
 以下场景可临时放宽（合入 main 前必须恢复，放宽结束自动恢复全部）：
 
-- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型可先单跑看方向，合入前补全验证
+- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离可先单跑看方向，合入前补全验证
 - 紧急热修复且用户确认：#11 可先单跑，事后补同条件配对对照
 
 任何场景下不可放宽：#1、#2、#16、#21（信任边界与数据丢失）。
@@ -166,3 +166,9 @@ WebView 等嵌入宿主暴露给 JS shim 的能力桥（`__zw_*` callback/hook�
 js_dom_shim 中凡对象可能是 `_makeProxy`/`_wrapHandle` 产物，「属性读」即 get trap + 可能的 host 回调往返（`__zw_*`，µs 级），不是纯内存访问——代码看起来是纯 JS，成本完全不可见，扫描循环随条目累积二次方放大成文件级 Timeout（R350：Range-mutations 五用例 90s 只跑 28%，单操作微基准却全部「便宜」）。写 shim 扫描循环前必须先问：每条目读什么、读几次、读的对象属于哪个域；恒定键（尤其另一对象的键）必须读一次提出循环外（trap 域这是 50x 级差异，非常规微优化）；前置守卫本身含昂贵读（如 parentNode 上行）时改为「便宜键比对命中后才做守卫验证」。
 
 **验证方法陷阱**：单段微基准可能全部「不慢」（缓存/短路掩盖组合效应），需用等价轻量实现整体替换做 A/B 得到总量差（native 11.46ms vs stub 0.10ms），再逐段把原逻辑加回定位。
+
+### 27. 跨 worktree 禁止共享构建产物目录
+
+cargo 的产物身份（package ID / `-C metadata`）不区分 path 依赖在不同 worktree 的源码差异：共享同一 `CARGO_TARGET_DIR` 时，第二棵树编译同名 crate 会把第一棵树的 rmeta/rlib 原地覆盖，而 fingerprint 仍判「fresh」——后续编译静默链接到错误产物。症状（A/B 测出伪值、下游 crate `unresolved` 符号）从不指向污染源。跨树构建必须用独立 `CARGO_TARGET_DIR`；复用共享 target 时，返回主树先对在另一棵树编译过的 crate `cargo clean -p`，不信任增量结果。
+
+依据：[worktree 共享 target 指纹污染致 A/B 伪值](../../../docs/learnings/platform/2026-08/2026-08-18-worktree-shared-target-dir-fingerprint-collision.md)、[共享 CARGO_TARGET_DIR 静默覆盖主树产物](../../../docs/learnings/bugs/2026-10/2026-10-02-shared-cargo-target-worktree-corruption.md)。
