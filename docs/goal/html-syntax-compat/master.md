@@ -1,9 +1,21 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-04（M4 片 a——tabular/aria 全绿 95.06%）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-05（M4 片 b 第一波——混合尾簇 95.68%）
 
 ## 当前状态
+
+**M4 片 b 第一波已落地（2026-10-05）**：reflection 混合尾簇首批——数值 setter
+面（img/video width/height/hspace/vspace IDL set > maxInt → "0"）+ media falsy
+实例同步（video/audio.loop/defaultMuted——R122 短路根因）+ track 三面（kind
+missing/空串 has_attr 区分 subtitles/metadata、src 空 → ''、label/srclang 逐字）
++ FLAT/MAP/BOOL 扩表（scrolling/frameBorder/archive/code/standby/codeType/
+width/height string 面、valueType、declare/noHref）。全通道 **58638/61303 =
+95.65%**（+363），M1 基线逐案 **0 回归**；DC-4 实测全绿（test 68 suites——R388
+track missing 单测按 has_attr 区分更新 / fmt / reftest 704/704）。残差：embedded
+860F（iframe/embed/object width-height string 读侧遮蔽、URL 面 expando 泄漏）、
+obsolete ~400F、其余尾 ~900F——逐簇续片 b。证据：
+[evidence/2026-10-05-m4b-tails.md](evidence/2026-10-05-m4b-tails.md)。
 
 **M4 片 a 已落地（2026-10-04）**：reflection 尾残双域全绿——reflection-tabular
 **6116/6116**（串/映射扩表 + scope 枚举 + col/colgroup.span clamped 口径三轮
@@ -86,6 +98,9 @@ html5lib 3 案 document.write 管线面）。证据：
 
 ## 已完成切片
 
+- **M4 片 b 第一波（2026-10-05）**：数值 setter maxInt → 0 面 + media falsy
+  实例同步 + track kind/src/label 三面 + FLAT/MAP/BOOL 扩表；95.65%（+363），
+  0 回归；DC-4 全绿。证据 evidence/2026-10-05-m4b-tails.md。
 - **M4 片 a（2026-10-04）**：tabular/aria 双域全绿——tabular 串/映射/枚举/
   clamped 全套 + `_ZW_ARIA_ENUMS` 20 属性枚举反射（default-slots 语义）；
   95.06%（+3387），0 回归；DC-4 全绿（vue_e2e Symbol prop 守卫修正后复绿）。

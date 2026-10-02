@@ -569,7 +569,7 @@
   // spec reflected string 缺省空串）。1:1 小写名用 `_REFLECTED_STRING_FLAT`；camelCase→attr 映射用 `_REFLECTED_STRING_MAP`。
   // 数值型（size/maxLength/colSpan/rowSpan）+ 布尔型（required/readonly/multiple）spec 返 number/boolean，
   // 另列 follow-up（本切片仅 string）。
-  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox cite coords shape ping media align version background text link scroll color dirname border srcdoc integrity hreflang charset rev clear event for frame rules summary width height cellPadding cellSpacing ch chOff headers abbr axis valign ';
+  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox cite coords shape ping media align version background text link scroll color dirname border srcdoc integrity hreflang charset rev clear event for scrolling frameBorder archive code standby codeType width height frame rules summary width height cellPadding cellSpacing ch chOff headers abbr axis valign ';
   // R5009 片 e（M4 片 a）：ARIA enumerated 反射表（elements-aria-enumerated.js）
   // ——kw 白名单 / inv invalidVal / d defaultVal（null → missing 返 null，即
   // isNullable）；setter（既有 aria 面的 expando 豁免 + 逐字写 attr）不变。
@@ -622,7 +622,7 @@
   // bgColor → vlink/alink/bgcolor）+ body margin 族（marginHeight 等 → 同名小写，
   // spec HTMLBodyElement DOMString 反射）+ marquee trueSpeed。WPT reflection-*
   // （sections/misc/obsolete/grouping/text）主导簇：旧读 undefined（表外）。
-  var _REFLECTED_STRING_MAP = { formAction: 'formaction', useMap: 'usemap', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for', referrerPolicy: 'referrerpolicy', dateTime: 'datetime', httpEquiv: 'http-equiv', ch: 'char', chOff: 'charoff', cellPadding: 'cellpadding', cellSpacing: 'cellspacing', vAlign: 'valign', vLink: 'vlink', aLink: 'alink', bgColor: 'bgcolor', marginHeight: 'marginheight', marginWidth: 'marginwidth', topMargin: 'topmargin', bottomMargin: 'bottommargin', leftMargin: 'leftmargin', rightMargin: 'rightmargin', trueSpeed: 'truespeed' };
+  var _REFLECTED_STRING_MAP = { formAction: 'formaction', useMap: 'usemap', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for', referrerPolicy: 'referrerpolicy', dateTime: 'datetime', httpEquiv: 'http-equiv', valueType: 'valuetype', ch: 'char', chOff: 'charoff', cellPadding: 'cellpadding', cellSpacing: 'cellspacing', vAlign: 'valign', vLink: 'vlink', aLink: 'alink', bgColor: 'bgcolor', marginHeight: 'marginheight', marginWidth: 'marginwidth', topMargin: 'topmargin', bottomMargin: 'bottommargin', leftMargin: 'leftmargin', rightMargin: 'rightmargin', trueSpeed: 'truespeed' };
   // R5007 M3 片 c：[LegacyNullToEmptyString] DOMString 反射集（spec HTMLBodyElement 的
   // legacy 颜色族——null → ''，WPT reflection-* 'IDL set to null' getAttribute 期望 ""；
   // 其余 DOMString null → "null"）。
@@ -774,7 +774,7 @@
     async: 'async', defer: 'defer', nomodule: 'nomodule',
     autoplay: 'autoplay', controls: 'controls', loop: 'loop', muted: 'muted', playsInline: 'playsinline',
     reversed: 'reversed', isMap: 'ismap', itemScope: 'itemscope',
-    formNoValidate: 'formnovalidate', allowFullscreen: 'allowfullscreen', noModule: 'nomodule', noWrap: 'nowrap',
+    formNoValidate: 'formnovalidate', allowFullscreen: 'allowfullscreen', noModule: 'nomodule', noWrap: 'nowrap', declare: 'declare', noHref: 'nohref',
     noShade: 'noshade',
   };
   // R3039：查 _REFLECTED_BOOL 返内容属性名（readOnly→readonly 等），非 string/未命中 → null。供 set trap

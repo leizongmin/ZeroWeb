@@ -345,10 +345,18 @@
         // https://html.spec.whatwg.org/multipage/media.html#the-track-element
         if (resourceTag === 'TRACK') {
           if (prop === 'kind') {
+            // R5009 片 e（M4 片 b）：missing 与空串以 has_attr 区分（__zw_get_attr
+            // 缺省返 '' 不可判——R388 单测 missing 期望 'subtitles'，WPT
+            // reflection-embedded 'setAttribute("")' 期望 'metadata'）。
+            var _tkHas = (handle
+              ? __zw_has_attr_handle(handle, 'kind')
+              : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'kind') : __zw_has_attr(sel, 'kind'))) === '1';
             var _tkRaw = handle ? __zw_get_attr_handle(handle, 'kind') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'kind') : __zw_get_attr(sel, 'kind'));
+            if (!_tkHas) return 'subtitles';
             var _tk = String(_tkRaw == null ? '' : _tkRaw).toLowerCase();
-            return (_tk === 'subtitles' || _tk === 'captions' || _tk === 'descriptions' ||
-                    _tk === 'chapters' || _tk === 'metadata') ? _tk : (_tkRaw == null || _tkRaw === '' ? 'subtitles' : 'metadata');
+            var _tkValid = (_tk === 'subtitles' || _tk === 'captions' || _tk === 'descriptions' ||
+                    _tk === 'chapters' || _tk === 'metadata');
+            return _tkValid ? _tk : 'metadata';
           }
           if (prop === 'label' || prop === 'srclang') {
             var _tlRaw = handle ? __zw_get_attr_handle(handle, prop) : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop) : __zw_get_attr(sel, prop));
@@ -361,9 +369,10 @@
             var _tsHas = (handle ? __zw_has_attr_handle(handle, 'src') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src'))) === '1';
             if (!_tsHas) return '';
             var _tsRaw = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
-            // URL 属性：C0 control/space 首尾剥离（URL spec）后经 _zwResolveFetchUrl 解析 base
-            //（'' 也解析——空输入 + base = base 自身，与 a.href 同语义）。
-            var _tsClean = String(_tsRaw == null ? '' : _tsRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');
+            // R5009 片 e（M4 片 b）：空串 → ''（WPT url 型 resolveUrl 经 detached-a
+            // 组件读取回落原串——与 base/link.href 同口径）。
+            if (_tsRaw == null || _tsRaw === '') return '';
+            var _tsClean = String(_tsRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');
             return _zwResolveFetchUrl(_tsClean);
           }
         }

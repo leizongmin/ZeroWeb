@@ -164,7 +164,11 @@
             if (handle) { __zw_set_attr_handle(handle, 'loop', ''); moAttr = 'loop'; }
             else { __zw_set_attr(sel, 'loop', ''); moAttr = 'loop'; }
           } else if (handle && typeof __zw_remove_attr_handle === 'function') {
-            __zw_remove_attr_handle(handle, 'loop'); moAttr = 'loop';
+            __zw_remove_attr_handle(handle, 'loop');
+            // R5009 片 e（M4 片 b）：实例层同步（R122 短路——IDL falsy 移除后
+            // hasAttribute 恒 true，WPT reflection-embedded 'video.loop' 簇）。
+            if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, 'loop');
+            moAttr = 'loop';
           } else if (!handle && typeof __zw_remove_attr === 'function') {
             __zw_remove_attr(sel, 'loop'); moAttr = 'loop';
           }
@@ -183,6 +187,7 @@
               else { __zw_set_attr(sel, 'muted', ''); moAttr = 'muted'; }
             } else if (handle && typeof __zw_remove_attr_handle === 'function') {
               __zw_remove_attr_handle(handle, 'muted');
+              if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, 'muted');
             } else if (!handle && typeof __zw_remove_attr === 'function') {
               __zw_remove_attr(sel, 'muted'); moAttr = 'muted';
             }
@@ -211,6 +216,7 @@
               else { __zw_set_attr(sel, 'muted', ''); moAttr = 'muted'; }
             } else if (handle && typeof __zw_remove_attr_handle === 'function') {
               __zw_remove_attr_handle(handle, 'muted');
+              if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, 'muted');
             } else if (!handle && typeof __zw_remove_attr === 'function') {
               __zw_remove_attr(sel, 'muted'); moAttr = 'muted';
             }
@@ -283,7 +289,9 @@
           // 被静默吞（WPT event-with-related-target createFixedTestTree 的
           // `element.label = name` 站点身份全 undefined 根因）；gate 后非 TRACK label 落
           // R3069 反射分支（写 label 内容属性，get 侧 part04 对称读）。
-          var _tls = (value == null) ? '' : String(value);
+          // R5009 片 e（M4 片 b）：label/srclang 逐字（WPT 'IDL set to undefined →
+          // getAttribute "undefined"'——value==null 归 '' 曾吞 undefined/null 串面）。
+          var _tls = String(value);
           if (handle) { __zw_set_attr_handle(handle, p, _tls); moAttr = p; } // WC-M1 切片 4
           else { __zw_set_attr(sel, p, _tls); moAttr = p; }
         } else if (p === 'default' && _realTag(sel, handle) === 'TRACK') {
@@ -473,6 +481,9 @@
           // 200-2^32 → 200（mod 2^32）、'400x' → NaN → 0）；IMG/IFRAME 保持 parseInt（既有语义）。
           var wv = (_realTag(sel, handle) === 'CANVAS') ? _zwToUint32(value) : (function () {
             var pv = parseInt(value, 10);
+            // R5009 片 e（M4 片 b）：> maxInt → 0（WPT reflection-embedded
+            // 'img.width IDL set to 2147483648' getAttribute 期望 "0" 实证）。
+            if (!isNaN(pv) && pv > 2147483647) pv = 0;
             return (isNaN(pv) || pv < 0) ? 0 : pv;
           })();
           var wrc = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
@@ -683,6 +694,9 @@
               throw new (globalThis.DOMException || Error)(
                 'The value provided is 0, which is an invalid value for this attribute.', 'IndexSizeError');
             }
+            // R5009 片 e（M4 片 b）：unsigned 面 > maxInt → 0（WPT img.hspace
+            // 'IDL set to 2147483648' getAttribute 期望 "0" 实证——非 clamped 面）。
+            if (_ruNum > 2147483647) _ruNum = 0;
             _refVal = String(_ruNum);
           }
           if (handle) __zw_set_attr_handle(handle, _refAttr, _refVal);
