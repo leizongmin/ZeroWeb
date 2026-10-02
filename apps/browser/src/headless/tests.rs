@@ -924,21 +924,27 @@ fn test_frame_detached_on_document_swap() {
 
 #[test]
 fn test_page_navigate_success_path_via_load_html_page() {
-    // 成功路径的事件族由 Playwright goto 冒烟验收；此处断言注入脚本在导航后重放的
-    // 存储面（emit_navigation_event_family 内部调用 replay）。
+    // 成功路径的事件族由 Playwright goto 冒烟验收；此处断言注入脚本登记存储面，以及
+    // 默认门（ZW_CDP_PREDOC_SCRIPTS 未设）下导航事件族不再重放——新文档预注入已由
+    // renderer `PreDocumentScripts` 路径接管（页面脚本前执行），重复重放会二次执行。
     let server = HeadlessServer::new(0, 800.0, 600.0);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let (result, _events) = server.dispatch_with_events(
         &mut session,
         "Page.addScriptToEvaluateOnNewDocument",
-        serde_json::json!({ "source": "1;" }),
+        serde_json::json!({ "source": "window.__s20 = (window.__s20 || 0) + 1;" }),
     );
     let identifier = result.unwrap()["identifier"].as_str().unwrap().to_string();
     assert!(identifier.starts_with("zw-script-"));
     assert_eq!(session.injected_scripts.len(), 1);
     assert_eq!(session.injected_scripts[0].identifier, identifier);
+    // 登记即对当前文档执行一次
+    assert_eq!(
+        session.execute_script_typed("String(window.__s20)").unwrap(),
+        zero_protocol::message::AutomationValue::String("1".into())
+    );
 
-    // 重放辅助直接调用（导航成功路径内部同样调用）
+    // 导航事件族：默认门下不重放（renderer 预注入接管）；事件族本身照常发出
     let mut nav_events = Vec::new();
     server.emit_navigation_event_family(
         &mut session,
@@ -949,6 +955,21 @@ fn test_page_navigate_success_path_via_load_html_page() {
         &mut nav_events,
     );
     assert!(nav_events.iter().any(|e| e.method == "Page.loadEventFired"));
+    assert_eq!(
+        session.execute_script_typed("String(window.__s20)").unwrap(),
+        zero_protocol::message::AutomationValue::String("1".into()),
+        "默认门下导航后不重放（预注入由 renderer 在页面脚本前执行）"
+    );
+
+    // kill-switch 关闭（ZW_CDP_PREDOC_SCRIPTS=0）→ 回落旧行为：导航后重放（二次执行）。
+    // env set_var 在并行测试下有竞态，回退路径经 replay_injected_scripts 结构保持 +
+    // cdp-e2e 覆盖；此处仅直调重放辅助验证旧路径本体未损坏。
+    server.replay_injected_scripts(&mut session);
+    assert_eq!(
+        session.execute_script_typed("String(window.__s20)").unwrap(),
+        zero_protocol::message::AutomationValue::String("2".into()),
+        "kill-switch 回退路径：重放辅助正常执行登记脚本"
+    );
 }
 
 #[test]

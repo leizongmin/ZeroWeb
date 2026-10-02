@@ -13,8 +13,8 @@ use zero_protocol::message::{
 };
 use zero_protocol::message::{
     AutomationValue, ImeEventParams, ImeEventType, IndexedDbResponseParams, IpcColorScheme, IpcMediaType, IpcMessage,
-    IpcMessageKind, KeyboardEventParams, KeyboardEventType, MouseEventParams, MouseEventType, ScrollEventParams,
-    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams,
+    IpcMessageKind, KeyboardEventParams, KeyboardEventType, MouseEventParams, MouseEventType, PreDocumentScriptsParams,
+    ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams,
 };
 #[cfg(not(test))]
 use zero_protocol::process::RendererHandle;
@@ -913,6 +913,22 @@ impl HeadlessSession {
             })
             .map_err(|error| error.to_string())
     }
+
+    /// CDP addScriptToEvaluateOnNewDocument → renderer PreDocumentScripts（全量列表，
+    /// renderer 整体替换；此后每个新文档在页面脚本执行前执行）。
+    pub(super) fn send_pre_document_scripts(&mut self) -> Result<(), String> {
+        let sources: Vec<String> = self
+            .injected_scripts
+            .iter()
+            .map(|script| script.source.clone())
+            .collect();
+        self.renderer
+            .send(IpcMessage {
+                id: 0,
+                kind: IpcMessageKind::PreDocumentScripts(PreDocumentScriptsParams { sources }),
+            })
+            .map_err(|error| error.to_string())
+    }
 }
 
 impl HeadlessSession {
@@ -992,6 +1008,10 @@ impl HeadlessSession {
     }
 
     pub(super) fn send_set_media_type(&mut self, _print: bool) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub(super) fn send_pre_document_scripts(&mut self) -> Result<(), String> {
         Ok(())
     }
 
