@@ -107,6 +107,16 @@ pub(super) struct HeadlessSession {
     pub(super) fetch_scheduler: std::sync::Arc<std::sync::Mutex<zero_net::PerOriginFetchScheduler>>,
 }
 
+/// iframe 探测回执 → 子帧数（`return String(document.querySelectorAll('iframe').length)`
+/// 的 ExecuteScript 结果；解析失败按 0——探测为元数据面，不得因形状偏差阻塞事件族）。
+#[cfg(not(test))]
+fn iframe_count_from_result(response: &zero_protocol::AutomationResponse) -> u32 {
+    match &response.result {
+        Ok(AutomationResult::Value(AutomationValue::String(text))) => text.parse::<u32>().unwrap_or(0),
+        _ => 0,
+    }
+}
+
 /// 按帧更新下载字体注册表并重写 surface-local 数字 ID（compositor 主路径同序：
 /// update → remap → to_render_primitives）。校验失败保留上一帧可用 registry
 ///（信任边界：无效资源不得替换当前可用集合）。
@@ -879,6 +889,61 @@ impl HeadlessSession {
         response.result.map_err(|error| error.message)
     }
 
+    /// Page.navigate 事件族的 iframe 探测（slice21 eval-wedge 根因修复）。
+    ///
+    /// 探测求值不得阻塞导航命令：renderer 单 JS worker 正忙于页面脚本臂时，该求值
+    /// 排在其后，命令处理会阻塞整个单线程复用循环（其他连接的命令/事件全部停摆，
+    /// 导航后跨连接 evaluate 全数饿死）。策略：renderer 空闲时毫秒级往返，行为与
+    /// 旧同步探测一致；`bound` 内未应答则放弃本轮探测（按 0 个子帧处理）——迟到的
+    /// 求值与导航管线自身的 worker 快照安装存在竞态（执行时点文档可能仍是旧文档），
+    /// 迟发 frameAttached 不可靠，宁缺勿错；脚本臂阻塞页由此失去 frame 元数据
+    ///（修复前该形态直接楔死整个复用循环，严格更优）。
+    ///
+    /// 返回本轮可见子帧数（探测失败按 0，与旧路径 `.ok().unwrap_or(0)` 同语义）。
+    #[cfg(not(test))]
+    pub(super) fn probe_iframes_deferred(&mut self, script: &str, bound: std::time::Duration) -> u32 {
+        let request_id = self.next_request_id;
+        self.next_request_id = self.next_request_id.wrapping_add(1).max(1);
+        let sent = self.renderer.send(IpcMessage {
+            id: request_id,
+            kind: IpcMessageKind::AutomationRequest(AutomationRequest {
+                operation: AutomationOperation::ExecuteScript {
+                    script: script.to_string(),
+                    arguments: Vec::new(),
+                },
+            }),
+        });
+        if sent.is_err() {
+            return 0;
+        }
+        let deadline = std::time::Instant::now() + bound;
+        loop {
+            if std::time::Instant::now() >= deadline {
+                tracing::debug!(
+                    timeout_ms = bound.as_millis() as u64,
+                    "导航事件族 iframe 探测超界放弃（renderer 忙）"
+                );
+                return 0;
+            }
+            self.drain_fetch_completions();
+            match self.renderer.try_recv() {
+                Ok(Some(IpcMessage {
+                    id,
+                    kind: IpcMessageKind::AutomationResponse(response),
+                })) if id == request_id => return iframe_count_from_result(&response),
+                Ok(Some(message)) => {
+                    // 非本探测的消息照常分派（load 族/console/网络观测不丢）。
+                    if self.handle_renderer_message(message).is_err() {
+                        return 0;
+                    }
+                }
+                Ok(None) if !self.renderer.is_alive() => return 0,
+                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(2)),
+                Err(_) => return 0,
+            }
+        }
+    }
+
     /// CDP Input 域 → renderer IPC 发送辅助（见各 send_input_*）。
     pub(super) fn send_input_mouse(
         &mut self,
@@ -1053,6 +1118,15 @@ impl HeadlessSession {
 
 #[cfg(test)]
 impl HeadlessSession {
+    /// [`Self::probe_iframes_deferred`] 的进程内测试形态：无 renderer，直接在内存
+    /// WebView 上同步求值（有界等待/放弃语义由真实进程集成测试覆盖）。
+    pub(super) fn probe_iframes_deferred(&mut self, script: &str, _bound: std::time::Duration) -> u32 {
+        match self.webview.execute_script(script) {
+            Ok(text) => text.parse::<u32>().unwrap_or(0),
+            Err(_) => 0,
+        }
+    }
+
     /// 测试进程内无 renderer：Input 域 IPC 发送为 no-op（形状断言在域层单测覆盖）。
     pub(super) fn send_input_mouse(
         &mut self,
