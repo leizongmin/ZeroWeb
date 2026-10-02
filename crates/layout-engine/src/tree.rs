@@ -3591,7 +3591,7 @@ fn build_subtree(
                         }
                     }
 
-                    let mut children_with_order: Vec<(NodeId, i32, usize)> = Vec::new();
+                    let mut children_with_order: Vec<(NodeId, i32, usize, bool)> = Vec::new();
                     for &child_dom in &layout_children {
                         let child_data = doc.get(child_dom);
                         if child_data.is_some_and(|n| matches!(&n.kind, NodeKind::Element(_))) {
@@ -3672,7 +3672,7 @@ fn build_subtree(
                                 collect_atomic_inline_descendants(doc, styles, child_dom, &mut hoisted_atomic);
                                 for atomic_id in hoisted_atomic {
                                     let atomic_order = styles.get(&atomic_id).map_or(0, |s| s.order);
-                                    children_with_order.push((atomic_id, atomic_order, skip_index * 1000));
+                                    children_with_order.push((atomic_id, atomic_order, skip_index * 1000, true));
                                 }
                                 continue;
                             }
@@ -3685,7 +3685,7 @@ fn build_subtree(
                             // 排序键 = (order, child_index)：直接元素子以自身 children_dom
                             // 下标作稳定序。
                             let child_index = children_dom.iter().position(|&c| c == child_dom).unwrap_or(0);
-                            children_with_order.push((child_dom, order, child_index * 1000));
+                            children_with_order.push((child_dom, order, child_index * 1000, false));
                         }
                     }
                     // R3848：提升项（Element/Text/VirtualBox）携 contents 子下标序入同一排序流。
@@ -3730,7 +3730,7 @@ fn build_subtree(
                                     collect_atomic_inline_descendants(doc, styles, node_id, &mut hoisted_atomic);
                                     for atomic_id in hoisted_atomic {
                                         let atomic_order = styles.get(&atomic_id).map_or(0, |s| s.order);
-                                        children_with_order.push((atomic_id, atomic_order, seq));
+                                        children_with_order.push((atomic_id, atomic_order, seq, true));
                                     }
                                     continue;
                                 }
@@ -3740,13 +3740,13 @@ fn build_subtree(
                             }
                         }
                         let order = styles.get(&node_id).map_or(0, |s| s.order);
-                        children_with_order.push((node_id, order, seq));
+                        children_with_order.push((node_id, order, seq, false));
                     }
 
                     // 按 (order, seq) 稳定排序（相同 order 保持 DOM 顺序）
-                    children_with_order.sort_by_key(|&(_, order, seq)| (order, seq));
+                    children_with_order.sort_by_key(|&(_, order, seq, _)| (order, seq));
 
-                    for &(child_dom, _, _) in &children_with_order {
+                    for &(child_dom, _, _, hoisted) in &children_with_order {
                         // R3848：提升文本类 → 匿名 taffy leaf。虚拟盒（contents 元素）装饰清零
                         //（contents 无 principal box 装饰）且 context=元素 id（完整 IFC，pre
                         // 折行正确）；散文本 context=文本节点 id（flex/grid 同构，单行 trim）。
@@ -3820,6 +3820,19 @@ fn build_subtree(
                             viewport_w,
                             viewport_h,
                         );
+                        if hoisted {
+                            // R4941：提升原子行内级盒为 taffy **绝对定位**节点——不占容器
+                            // 块级 flex 槽（CSS2 §9.2.1.1 原子行内是行内级盒；占槽曾把
+                            // visufx/overflow-applies-to-001 的块级兄弟整体推移 + legacy
+                            // 37-form-controls 的 IFC 文本所有权撕裂——R109 拼接签名回归）。
+                            // 盒仍存在（gBCR/命中/绘制真值源，slice19 目标不变），行位由
+                            // inline_finalization sync_hoisted_atomic_positions_from_ifc
+                            // 对齐（R4234 IFC 片段同步同源）。
+                            if let Ok(mut s) = ctx.taffy.style(child_taffy).cloned() {
+                                s.position = taffy::style::Position::Absolute;
+                                let _ = ctx.taffy.set_style(child_taffy, s);
+                            }
+                        }
                         child_taffy_ids.push(child_taffy);
                     }
                 }

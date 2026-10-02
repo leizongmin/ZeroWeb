@@ -670,5 +670,6 @@ mod r4193_inline_size_containment_tests;
 mod r4195_legend_inline_size_tests;
 mod r4331_br_in_inline_walk_tests;
 mod r4398_preline_forced_break_tests;
+mod r4941_hoisted_atomic_probe;
 mod s10_hotlist_geometry_tests;
 mod s19_inline_atomic_geometry_tests;

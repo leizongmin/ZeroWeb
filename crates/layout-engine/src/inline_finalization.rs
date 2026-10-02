@@ -1024,6 +1024,33 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
     }
 }
 
+/// R4941：child 是否为 R2156 skip 提升的**原子行内级盒**（DOM 父 ≠ 本容器——由被跳过
+/// 的 inline 子树提升而来）。收集判据与 tree.rs `collect_atomic_inline_descendants`
+/// 同源：inline-block 家族，或 display:inline 的 replaced 元素（R4489 八类）。
+/// 匿名文本/虚拟盒（styles 缺失）不算。
+fn is_hoisted_atomic_child(
+    doc: &Document,
+    container_dom: Option<NodeId>,
+    child_id: NodeId,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> bool {
+    let Some(container_dom) = container_dom else {
+        return false;
+    };
+    if doc.parent_node(child_id) == Some(container_dom) {
+        return false;
+    }
+    let Some(s) = styles.get(&child_id) else {
+        return false;
+    };
+    let is_replaced_inline =
+        matches!(s.display, DisplayValue::Inline) && crate::inline_block_split::is_replaced_element(&child_id, doc);
+    matches!(
+        s.display,
+        DisplayValue::InlineBlock | DisplayValue::InlineFlex | DisplayValue::InlineGrid | DisplayValue::InlineTable
+    ) || is_replaced_inline
+}
+
 fn sync_inline_block_positions_from_ifc(
     box_node: &mut LayoutBox,
     inline_ctx: &InlineFormattingContext,
@@ -1040,6 +1067,12 @@ fn sync_inline_block_positions_from_ifc(
         let Some(child_id) = child.node_id else {
             continue;
         };
+        // R4941：提升原子行内级盒交由 sync_hoisted_atomic_positions_from_ifc 专管。
+        // 此处若混入非 inline-block display 的提升盒（img/replaced-inline）会触发
+        // 下方 all-or-nothing bail（R4234 语义），殃及同容器直接 inline-block 的行位对齐。
+        if is_hoisted_atomic_child(doc, box_node.node_id, child_id, styles) {
+            continue;
+        }
         let is_image = doc
             .get(child_id)
             .is_some_and(|node| matches!(&node.kind, NodeKind::Element(element) if element.local_name() == "img"));
