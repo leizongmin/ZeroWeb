@@ -76,6 +76,9 @@ Commands:
   testharness-encoding  Run pinned encoding corpus (TextEncoder/TextDecoder/labels/
                        legacy-mb) window testharness cases
                        (encoding-compat goal M1 / DC-1)
+  testharness-html-syntax  Run pinned html/syntax + html/dom corpus (parse-tree/
+                       serializer/DOM-interface + P5 document-encoding face)
+                       window testharness cases (html-syntax-compat goal M1 / DC-1)
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
   testharness-service-workers-fetch  Run pinned Service Worker M2 fetch testharness cases
   testharness-service-workers-cache-storage  Run pinned Service Worker CacheStorage testharness cases
@@ -289,6 +292,7 @@ fn main() {
         "testharness-web-animations" => cmd_testharness_web_animations(&options, filter.as_deref()),
         "testharness-net-api" => cmd_testharness_net_api(&options, filter.as_deref()),
         "testharness-encoding" => cmd_testharness_encoding(&options, filter.as_deref()),
+        "testharness-html-syntax" => cmd_testharness_html_syntax(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
         "testharness-service-workers-fetch" => cmd_testharness_service_workers_fetch(&options, filter.as_deref()),
         "testharness-service-workers-cache-storage" => {
@@ -1130,6 +1134,22 @@ fn cmd_testharness_net_api(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_encoding(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_encoding_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-html-syntax` 子命令 — 跑导入的 html/syntax + html/dom corpus（解析树
+/// 一致性/序列化/DOM 接口语义 + P5 文档级编码嗅探案面）window 可执行子集
+/// （html-syntax-compat goal M1 / DC-1——基线）。
+///
+/// 用例由 `tests/wpt-runner/scripts/goals/40-html-syntax-compat.sh` 按需拉到
+/// `wpt-data/`（gitignored，depth-2 support/ 资产显式补拉）。退出码：有用例非 Pass
+/// 或用例集为空 → 1（与 testharness-encoding 一致）。基线首跑即便大量 Fail 也只用于
+/// 记录通过率（agent 经 `--format json` 捕获后写 evidence/），不作为 land 门禁。
+/// filter 按路径子串透传：make testharness-html-syntax FILTER=serializing-（按域
+/// 分类跑/出数）。
+fn cmd_testharness_html_syntax(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_html_syntax_cases(wpt_root, filter)
     });
 }
 

@@ -3482,6 +3482,75 @@ pub fn run_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String,
     run_any_js_corpus_subdirs(wpt_root, ENCODING_CORPUS_SUBDIRS, filter, encoding_case_skipped)
 }
 
+/// html-syntax corpus pinned subset directories（fetch 脚本 goals/40-html-syntax-compat.sh
+/// DIRS 同域——html/syntax 解析树/序列化面 + html/dom 接口语义/reflection 面 +
+/// encoding-compat P5 双向记账转入的文档级编码嗅探案面）。html/syntax 顶层无 .html
+/// （全在子目录）——列叶子目录；html/dom 顶层 .html（reflection-*/aria-*/historical）
+/// 直列。flat 扫描（子目录不递归），与 fetch depth-1 布局对齐。
+pub const HTML_SYNTAX_CORPUS_SUBDIRS: &[&str] = &[
+    "html/syntax/charset",
+    "html/syntax/parsing",
+    "html/syntax/parsing-html-fragments",
+    "html/syntax/serializing-html-fragments",
+    "html/syntax/serializing-xml-fragments",
+    "html/syntax/speculative-charset",
+    "html/syntax/xmldecl",
+    "html/dom",
+    "html/dom/directionality",
+    "html/dom/elements",
+    "html/dom/render-blocking",
+];
+
+/// html-syntax corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
+/// - `*-ref.html` / `-notref.html`（reftest ref 页）、`-manual.html`（用户交互面）、
+///   `.https.html`（secure-context 面——usvstring-reflection）、`idlharness.*`
+///   （WebIDLParser build 期资产）——net-api/encoding 先例
+/// - `*/resources/`（helper 资产——html/dom/resources 子文档，不按案跑）
+/// - 无 `testharness.js` 引用页（legacy 自述式 foreign_content_* 11 案、索引页
+///   reflection-original、crash 回归页 range-on-pi-*——非 testharness 形态）
+/// - rel=match reftest 形态页（`<meta charset>` 文档解码面：charset/ 全域 7 案 +
+///   directionality/bdi test 页——testharness 通道外，P5 落地面归 reftest 通道）
+/// - HTTP 头编码面（`flags content='http'`——the-input-byte-stream 11 案断言依赖
+///   per-file HTTP charset 头，本地 file 通道无法复现测试条件；P5 记账）
+/// - iframe 依赖面（runner 无多 frame 文档管道，net-api 先例——xmldecl/ 3 案
+///   子文档 characterSet 探针、serializing.html 解析上下文 iframe、
+///   doctype-system-identifier-distinction compatMode iframe 面）
+/// - worker 执行面（net-api 先例；当前语料零命中，re-pin 增案防静默错跑）
+fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    if name.ends_with("-manual.html")
+        || name.ends_with("-ref.html")
+        || name.ends_with("-notref.html")
+        || name.ends_with(".https.html")
+        || name.starts_with("idlharness.")
+    {
+        return true;
+    }
+    if relative.contains("/resources/") {
+        return true;
+    }
+    if !source.contains("testharness.js") {
+        return true;
+    }
+    source.contains("rel=match")
+        || source.contains("rel=\"match\"")
+        || source.contains("content='http'")
+        || source.contains("<iframe")
+        || source.contains("createElement('iframe')")
+        || source.contains("createElement(\"iframe\")")
+        || source.contains("new Worker(")
+        || source.contains("SharedWorker(")
+        || source.contains("navigator.serviceWorker")
+}
+
+/// Run the pinned upstream html/syntax + html/dom window subset
+/// （html-syntax-compat goal M1 / DC-1——解析树一致性/序列化/接口语义基线 + P5
+/// 文档级嗅探案面）。filter 按路径子串过滤（如 `serializing-html-fragments/`、
+/// `reflection-`——基线按域分类）。
+pub fn run_html_syntax_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_any_js_corpus_subdirs(wpt_root, HTML_SYNTAX_CORPUS_SUBDIRS, filter, html_syntax_case_skipped)
+}
+
 /// Run the fixed Service Worker M1 core testharness corpus.
 pub fn run_service_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_service_worker_case_set(wpt_root, filter, SERVICE_WORKER_CORE_CASES)

@@ -14,5 +14,16 @@ GOAL="html-syntax-compat"
 DIRS=( "html/syntax" "html/dom"  )
 
 goals_fetch_all
+
+# depth-2 support/ 资产补拉（fetch_dir_html 深度<1 不入子子目录）：运行面 RUN 案引用的
+# helper——render-blocking support 脚本（utils.js / test-render-blocking.js / dummy-1.*）
+# 与 parsing support 脚本（DOMContentLoaded-defer.js / svg-script-self-closing.js）。
+# lib.sh 拉取模式不含 .mjs/.css（此前 corpus 无此形态）——dummy-1.mjs / target-red.css
+# 显式补拉（/common/sab.js 显式补拉先例）。
+fetch_dir_html "html/dom/render-blocking/support"
+fetch_dir_html "html/syntax/parsing/support"
+fetch_raw "html/dom/render-blocking/support/dummy-1.mjs"
+fetch_raw "html/dom/render-blocking/support/target-red.css"
+
 goals_inventory
 goals_next_steps "${GOAL}"

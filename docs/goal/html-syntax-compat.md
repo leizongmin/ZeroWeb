@@ -65,8 +65,9 @@ encoding-compat 嗅探划界双向记账；与 js-dom（已归档）DOM 接口�
 
 ## Done Criteria
 
-- [ ] **DC-1**：html/syntax + html/dom corpus 可执行子集导入 + 分类基线 +
-      suites CSV 回填
+- [x] **DC-1**：html/syntax + html/dom corpus 可执行子集导入 + 分类基线 +
+      suites CSV 回填（2026-10-02 M1：113 案 43884/61304 = 71.6%，见
+      `docs/goal/html-syntax-compat/evidence/2026-10-02-m1-baseline.md`）
 - [ ] **DC-2**：解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐
 - [ ] **DC-3**：序列化边缘 + html/dom 接口语义 + createContextualFragment 补面
 - [ ] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归

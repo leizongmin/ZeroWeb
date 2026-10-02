@@ -1,30 +1,44 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-09-12（立项）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-02（M1 基线落地）
 
 ## 当前状态
 
-html-compat（已归档，fixture 制）的 WPT 化续篇：html/syntax + html/dom。
-html5ever 底座不动，缺口在桥接/序列化侧；js-dom R373 parse-position 架构域
-遗留问题为本 goal 输入。表单域（form-validation 已归档）跳过。
+**M1 已落地（2026-10-02）**：html/syntax + html/dom corpus 通道建成 + 基线
+**113 案 43884/61304 = 71.6%**。通道：`make testharness-html-syntax`（runner 子命令
++ HTML_SYNTAX_CORPUS_SUBDIRS + skip 规则 + test-guard 包裹，fetch 走 goals/40 编号
+脚本含 depth-2 support 资产补拉）。证据：
+[evidence/2026-10-02-m1-baseline.md](evidence/2026-10-02-m1-baseline.md)（分域通过率 +
+通道外 48 案分账 + 失败聚类）。
+
+基线形状：html/dom reflection 面强（74.7%，js-dom 遗产）；**html/syntax/parsing
+1.5% 为 M2 主缺口**——named-character-references NCR 查表面（~2231 子测试）+
+树构造边缘（the-end/zero/cdata/foreign 族）；serializer 面 escaping 0/9 +
+serializing-xml-fragments 1/112 归 M3。
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| P1 | html/syntax + html/dom corpus 导入 + 基线 | ⏳ M1 纯资产 |
-| P2 | 解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐 | ⏳ M2 |
-| P3 | 序列化边缘（XMLSerializer/HTML serializer） | ⏳ M3 |
-| P4 | html/dom 接口语义 + createContextualFragment 补面 | ⏳ M3 |
-| P5 | 文档级编码嗅探（`<meta charset`/BOM 嗅探 → 文档解码，document.characterSet）——encoding-compat goal M4 转入（双向记账，2026-10-02）：其 JS API 面（TextDecoder/labels/legacy 解码 99.96%）已收，document 解码面归本 goal | ⏳ 与 P1 corpus 同批（encoding/ 域 bom-handling/eof-*/utf-32*/sniffing 案面已拉至 wpt-data，可随本 goal M1 一并基线） |
+| P1 | html/syntax + html/dom corpus 导入 + 基线 | ✅ M1（2026-10-02，113 案 71.6%） |
+| P2 | 解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐 | ⏳ M2（NCR 表 → 树构造边缘簇） |
+| P3 | 序列化边缘（XMLSerializer/HTML serializer） | ⏳ M3（escaping 0/9 + XML 面 0.9%） |
+| P4 | html/dom 接口语义 + createContextualFragment 补面 | ⏳ M3（reflection 74.7% 边缘簇 + elements 12.1% + render-blocking IDL 面） |
+| P5 | 文档级编码嗅探（encoding-compat M4 转入） | 📊 html/syntax 域案面已随 M1 入账：charset/ 7 案（reftest 形态）+ xmldecl/ 3 案（iframe 形态）+ the-input-byte-stream 9 案（HTTP 头形态）= 19 案 testharness 通道外记账；encoding/ 域 bom-handling/eof-*/sniffing 案面（已在 wpt-data，encoding 通道按 document.characterSet 规则 skip）尚未基线，落地通道（reftest import / 通道扩展）随 M2+ 定 |
+| — | render-blocking 机制面（62 案 19.3%） | 📊 M1 已基线；`blocking=render` 与渲染管线耦合，是否本 goal 修齐随 M3 碰头定 |
 
 ## 已完成切片
 
-（立项轮，暂无）
+- **M1（2026-10-02）**：goals/40 fetch 脚本（DIRS + depth-2 support 补拉）+ runner
+  通道（testharness-html-syntax 子命令 + html_syntax_case_skipped）+ Makefile
+  fetch-wpt-html-syntax / testharness-html-syntax（test-guard）+ 基线 113 案 71.6%
+  + wpt-suites.csv 数据行回填。
 
 ## 下一步计划
 
-1. **M1**：corpus fetch + 导入 + 基线（goals/40 编号脚本可跑 fetch 步）+ suites CSV 回填
+1. **M2**：解析树一致性逐簇修齐——先 NCR 查表面（最大单簇 ~2231 子测试），再树构造
+   边缘（the-end/zero/cdata-in-integration-point/foreign getElementsByTagName 族），
+   按 evidence 失败聚类逐簇销账。
 
-**待用户决策清单**：（空——启动顺序由用户点名）
+**待用户决策清单**：（空）
