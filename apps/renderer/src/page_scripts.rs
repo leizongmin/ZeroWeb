@@ -8,7 +8,8 @@ use zero_engine::{
     DomEventDetail, DomMutation, PageScript, anchor_hash_target, anchor_javascript_target,
     apply_mutations_to_html_with_handles, extract_page_scripts_indexed, page_script_error_check, resolve_document_url,
     script_call_set_location_hash, script_commit_resource_element_state, script_dispatch_dom_event,
-    script_dispatch_link_event, script_dispatch_script_event, script_report_error, script_run_classic_page,
+    script_dispatch_link_event, script_dispatch_script_event, script_host_focus, script_report_error,
+    script_run_classic_page,
 };
 #[cfg(test)]
 use zero_engine::{
@@ -482,6 +483,57 @@ pub fn dispatch_dom_event(
         Ok(r) => r,
         Err(e) => {
             warn!("dispatch {event_type} on {selector}: {e}");
+            return DomDispatchResult {
+                default_allowed: true,
+                html_changed: false,
+            };
+        }
+    };
+    let default_allowed = result_str.trim() != "prevented";
+    let html_snap = ctx.html.clone();
+    let html_changed = apply_recorded_mutations(ctx, &html_snap).is_some();
+    DomDispatchResult {
+        default_allowed,
+        html_changed,
+    }
+}
+
+/// 宿主焦点治理派发（slice22 focus governance）：一次执行同时完成「页面可见焦点状态同步
+/// （`document.activeElement` 读的 shim `_activeElKey`）+ 该相位焦点事件派发」——`focus=true`
+/// 获焦相位（focus+focusin）/ `false` 失焦相位（focusout+blur）。事件流与 [`dispatch_dom_event`]
+/// 逐字节同通道（shim `__zw_dispatch_event` 同一 UA 通道）；plumbing（快照安装 → 有界等待 →
+/// mutation 应用）同款。
+///
+/// 规范锚：HTML §6.5.2 focusing steps——焦点迁移先更 focused area 再派焦点事件族
+/// <https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps>；focus 是 mousedown
+/// 的默认动作（UI Events §5.2.2 <https://w3c.github.io/uievents/#focus-event-focus>）。
+pub fn dispatch_host_focus(
+    ctx: &mut PageScriptContext<'_>,
+    javascript_enabled: bool,
+    selector: &str,
+    focus: bool,
+) -> DomDispatchResult {
+    if !javascript_enabled || should_skip_scripts(ctx.url) {
+        return DomDispatchResult {
+            default_allowed: true,
+            html_changed: false,
+        };
+    }
+    let script = script_host_focus(selector, focus);
+    // t2-pb1 fix#13 同款：用户事件派发走优先通道 + 有界等待（快照与脚本成对同通道 FIFO）。
+    ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    let result_str = match ctx
+        .js_worker
+        .execute_script_priority_bounded(&script, zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT)
+    {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("dispatch host focus({focus}) on {selector}: {e}");
             return DomDispatchResult {
                 default_allowed: true,
                 html_changed: false,
