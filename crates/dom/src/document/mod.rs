@@ -76,6 +76,10 @@ pub struct Document {
     /// 文档编码标签（`document.characterSet` 读）——解析期由 `<meta charset>` 预扫描
     ///（spec encoding sniffing 的 meta prescan 片段）注入；None → 消费方回落 UTF-8。
     encoding_label: Option<String>,
+    /// 文档 scripting 旗标（spec「scripting is enabled for the node」）：noscript 的解析
+    /// 形态（enabled → raw text；disabled → markup）与序列化转义分流（enabled → literal）。
+    /// 页面文档 true；DOMParser / createHTMLDocument / template content 等 inert 文档 false。
+    scripting_enabled: bool,
     /// 已注册的 MutationObserver 列表。
     observers: Vec<MutationObserver>,
     /// 待处理的 mutation 记录。
@@ -113,6 +117,7 @@ impl Document {
             url: None,
             referrer: None,
             encoding_label: None,
+            scripting_enabled: true,
             observers: Vec::new(),
             pending_mutations: Vec::new(),
             event_listeners: HashMap::new(),
@@ -139,6 +144,7 @@ impl Document {
             url: None,
             referrer: None,
             encoding_label: None,
+            scripting_enabled: true,
             observers: Vec::new(),
             pending_mutations: Vec::new(),
             event_listeners: HashMap::new(),
@@ -1243,6 +1249,16 @@ impl Document {
     /// 注入文档编码标签（解析期 prescan 调）。
     pub fn set_encoding_label(&mut self, label: Option<String>) {
         self.encoding_label = label;
+    }
+
+    /// 文档 scripting 旗标（noscript 解析/序列化分流消费）。
+    pub fn scripting_enabled(&self) -> bool {
+        self.scripting_enabled
+    }
+
+    /// 注入文档 scripting 旗标（解析期按文档形态调：inert 文档 false）。
+    pub fn set_scripting_enabled(&mut self, enabled: bool) {
+        self.scripting_enabled = enabled;
     }
 
     /// 注入运行时焦点元素（engine JS 桥在 `element.focus()`/`element.blur()` 时调）。

@@ -1,7 +1,7 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-02（M2 收口判定）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-02（M3 片 a 进行中）
 
 ## 当前状态
 
@@ -43,6 +43,8 @@ html5ever 0.29→0.39 升级候选架构片。
 
 ## 已完成切片
 
+- **M3 片 a（进行中，2026-10-02）**：noscript scripting 旗标零侧核心（见下一步计划
+  ①；JS 面待续）。
 - **M2 收口（2026-10-02）**：DC-2 判定成立（可执行面全绿 75.35% + 残差全分类）；
   DC-4 实测（reftest 700/700 零不一致补齐最后一块）；html5lib 300s 复评定性
   document.write 管线面；bench 复评挂账（兄弟流活跃污染）。
@@ -71,10 +73,14 @@ html5ever 0.29→0.39 升级候选架构片。
 
 ## 下一步计划
 
-1. **M3**：serializer 面逐簇修齐——首簇 escaping 0/9（HTML serializer 转义规则：
-   & < > nbsp 属性值引号），次簇 serializing-xml-fragments/outerHTML 1/112
-   （XMLSerializer 全域），再 P4 接口语义边缘（reflection 74.7% 缺项 +
-   elements/name-content-attribute 12.1% + aria 反射）。
+1. **M3 片 a（进行中）**：noscript + scripting 旗标——zero-dom 核心已落
+   （Document.scripting_enabled + html5ever TreeBuilderOpts + 序列化条件 raw 规则 +
+   engine 调用点分流：replace/insertAdjacent/outer 随文档旗标、template context
+   强制 disabled、DOMParser parse_html_with_scripting(false)；单测 2 绿 + serializing
+   邻面零回归）。**剩余 JS 本地视图面**：handle 容器/detached 文档的 innerHTML 读走
+   JS 序列化器（`_zwMSerialize`）+ 本地视图解析通道（child_nodes_json 默认
+   scripting=true）——escaping 9 断言中主文档宿主面语义已正确，JS 面改造随下片；
+   insertAdjacentHTML/document.write 面另有 detached 视图独立问题待诊。
 2. **挂账随行**：bench-gate 等让复评（静窗）；html5ever 0.39 升级评估；P5 通道外
    19 案落地通道（reftest import 优先——charset/ 形态契合）。
 

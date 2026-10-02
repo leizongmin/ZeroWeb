@@ -26,7 +26,14 @@ use tendril::StrTendril;
 /// assert!(doc.root().is_valid());
 /// ```
 pub fn parse_html(html: &str) -> Document {
-    parse_html_with_builder(html)
+    parse_html_with_scripting(html, true)
+}
+
+/// `scripting_enabled = false` 变体——DOMParser / createHTMLDocument / template content
+/// 等 inert 文档（spec：无 browsing context → scripting disabled；noscript 按 markup
+/// 解析、序列化走转义分支）。
+pub fn parse_html_with_scripting(html: &str, scripting_enabled: bool) -> Document {
+    parse_html_with_builder(html, scripting_enabled)
 }
 
 /// HTML 片段解析（spec `html-fragment-parsing-algorithm`）——以 `(namespace, local_name)` 标识的
@@ -37,6 +44,17 @@ pub fn parse_html(html: &str) -> Document {
 ///
 /// spec：https://html.spec.whatwg.org/multipage/parsing.html#html-fragment-parsing-algorithm
 pub fn parse_html_fragment(html: &str, namespace: &str, local_name: &str) -> Document {
+    parse_html_fragment_with_scripting(html, namespace, local_name, true)
+}
+
+/// [`parse_html_fragment`] 的 scripting 变体——fragment 目标为 inert 文档
+///（DOMParser/createHTMLDocument/template content）时 false（noscript 按 markup 解析）。
+pub fn parse_html_fragment_with_scripting(
+    html: &str,
+    namespace: &str,
+    local_name: &str,
+    scripting_enabled: bool,
+) -> Document {
     use html5ever::driver::ParseOpts;
     use markup5ever::{LocalName, Namespace, QualName};
     use tendril::TendrilSink;
@@ -62,8 +80,12 @@ pub fn parse_html_fragment(html: &str, namespace: &str, local_name: &str) -> Doc
 
     let context_qname = QualName::new(None, Namespace::from(namespace), LocalName::from(local_name));
     let builder = DomBuilder::new();
-    let parser = html5ever::parse_fragment(builder, ParseOpts::default(), context_qname, Vec::new());
-    parser.one(html)
+    let mut opts = ParseOpts::default();
+    opts.tree_builder.scripting_enabled = scripting_enabled;
+    let parser = html5ever::parse_fragment(builder, opts, context_qname, Vec::new());
+    let mut doc = parser.one(html);
+    doc.set_scripting_enabled(scripting_enabled);
+    doc
 }
 
 /// HTML 命名空间常量（`parse_html_fragment` 的 CDATA 门判定 + DomBuilder 侧同值）。
@@ -525,15 +547,20 @@ impl TreeSink for DomBuilder {
 }
 
 /// 使用 DomBuilder 解析 HTML（推荐方式）。
-fn parse_html_with_builder(html: &str) -> Document {
+fn parse_html_with_builder(html: &str, scripting_enabled: bool) -> Document {
     use html5ever::driver::ParseOpts;
     use tendril::TendrilSink;
 
     let encoding_label = sniff_meta_charset(html);
     let builder = DomBuilder::new();
-    let parser = html5ever::parse_document(builder, ParseOpts::default());
+    let mut opts = ParseOpts::default();
+    // R5001 M3 片 a：scripting 旗标进树构造（html5ever TreeBuilderOpts.scripting_enabled
+    // ——noscript 解析形态分流：enabled = raw text，disabled = markup）。
+    opts.tree_builder.scripting_enabled = scripting_enabled;
+    let parser = html5ever::parse_document(builder, opts);
     let mut doc = parser.one(html);
     doc.set_encoding_label(encoding_label);
+    doc.set_scripting_enabled(scripting_enabled);
     doc
 }
 
