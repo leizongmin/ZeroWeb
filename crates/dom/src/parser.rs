@@ -41,10 +41,63 @@ pub fn parse_html_fragment(html: &str, namespace: &str, local_name: &str) -> Doc
     use markup5ever::{LocalName, Namespace, QualName};
     use tendril::TendrilSink;
 
+    // R5000 片 b（html-syntax-compat）：foreign context 的 CDATA 段桥接——spec
+    // markup-declaration-open-state：`<![CDATA[` 在「adjusted current node 存在且非
+    // HTML ns」时进入 CDATA section 状态（fragment 单 context 元素时即 context 本身）。
+    // html5ever 0.29.1 该门只看 open_elems（fragment 模式仅合成 html 根），不 consult
+    // context_elem → foreign context 的 CDATA 恒落 bogus comment（内容吞掉）。
+    // 桥接侧补面：context 非 HTML ns 时把 CDATA 段预变换为转义文本（解析产物 =
+    // 等价 character data）。FIXME(html5ever): 0.39 起 adjusted_current_node 已含
+    // fragment 特判，升级后移除本预扫描。
+    // 已知边界：integration point 内嵌 HTML 元素**之后**的 CDATA（spec 按
+    // adjusted current node 逐点判定——HTML ns 元素压栈后 CDATA 应恢复禁用）不做树
+    // 状态跟踪；语料面（top-level foreign context）与常见形态为准。
+    let owned;
+    let html = if namespace == HTML_NAMESPACE {
+        html
+    } else {
+        owned = translate_cdata_sections(html);
+        owned.as_str()
+    };
+
     let context_qname = QualName::new(None, Namespace::from(namespace), LocalName::from(local_name));
     let builder = DomBuilder::new();
     let parser = html5ever::parse_fragment(builder, ParseOpts::default(), context_qname, Vec::new());
     parser.one(html)
+}
+
+/// HTML 命名空间常量（`parse_html_fragment` 的 CDATA 门判定 + DomBuilder 侧同值）。
+pub(crate) const HTML_NAMESPACE: &str = "http://www.w3.org/1999/xhtml";
+
+/// foreign context 的 CDATA 段 → 转义文本预变换：`<![CDATA[` 与终止 `]]>`（首个，
+/// spec cdata-section-state）之间的内容按文本转义（`&`→`&amp;`、`<`→`&lt;`、`>`→`&gt;`），
+/// 解析产物即原内容 character data。未终止的 CDATA 段（EOF）内容同样转义（spec
+/// cdata-section-state EOF 产出累计字符）。HTML context 不调用（CDATA 门本就关闭，
+/// 须保持 bogus comment 语义）。
+fn translate_cdata_sections(html: &str) -> String {
+    const OPEN: &str = "<![CDATA[";
+    const CLOSE: &str = "]]>";
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(start) = rest.find(OPEN) {
+        out.push_str(&rest[..start]);
+        let after_open = &rest[start + OPEN.len()..];
+        let (content, next) = match after_open.find(CLOSE) {
+            Some(end) => (&after_open[..end], &after_open[end + CLOSE.len()..]),
+            None => (after_open, ""),
+        };
+        for c in content.chars() {
+            match c {
+                '&' => out.push_str("&amp;"),
+                '<' => out.push_str("&lt;"),
+                '>' => out.push_str("&gt;"),
+                c => out.push(c),
+            }
+        }
+        rest = next;
+    }
+    out.push_str(rest);
+    out
 }
 
 /// 使用 html5ever 从文件解析 HTML。
@@ -1378,5 +1431,40 @@ mod tests {
         let html = "<div>a&b<c>d</div>";
         let doc = parse_html(html);
         assert!(doc.node_count() > 0);
+    }
+}
+
+#[cfg(test)]
+mod cdata_fragment_tests {
+    use super::*;
+
+    #[test]
+    fn translate_cdata_sections_escapes_and_terminates() {
+        assert_eq!(translate_cdata_sections("x<![CDATA[y]]>"), "xy");
+        assert_eq!(translate_cdata_sections("a<![CDATA[b<c&d]]>e"), "ab&lt;c&amp;de");
+        // 首个 ]]> 终止（spec cdata-section-state）——后续 ]]> 为字面文本。
+        assert_eq!(translate_cdata_sections("<![CDATA[a]]>]]>"), "a]]>");
+        // 未终止（EOF）——内容照转义。
+        assert_eq!(translate_cdata_sections("<![CDATA[tail"), "tail");
+        // 多段。
+        assert_eq!(translate_cdata_sections("<![CDATA[a]]><![CDATA[b]]>"), "ab");
+        // 无 CDATA 原样。
+        assert_eq!(
+            translate_cdata_sections("plain <!-- comment -->"),
+            "plain <!-- comment -->"
+        );
+    }
+
+    #[test]
+    fn foreign_context_cdata_is_character_data() {
+        // WPT html/syntax/parsing/cdata-in-integration-point-fragment：MathML/SVG
+        // context 下 CDATA 应为 character data（textContent "xy"），HTML context 下
+        // 保持 bogus comment（吞掉）。
+        let mi = parse_html_fragment("x<![CDATA[y]]>", "http://www.w3.org/1998/Math/MathML", "mi");
+        assert_eq!(mi.text_content(mi.root()), Some("xy".to_string()));
+        let path = parse_html_fragment("x<![CDATA[y]]>", "http://www.w3.org/2000/svg", "path");
+        assert_eq!(path.text_content(path.root()), Some("xy".to_string()));
+        let body = parse_html_fragment("x<![CDATA[y]]>", "http://www.w3.org/1999/xhtml", "body");
+        assert_eq!(body.text_content(body.root()), Some("x".to_string()));
     }
 }

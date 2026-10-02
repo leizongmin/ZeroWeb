@@ -491,7 +491,10 @@ pub fn register_dom_callbacks(
         Box::new(|args: &[String]| -> String {
             let html = args.first().map(String::as_str).unwrap_or("");
             let sel = args.get(1).map(String::as_str).unwrap_or("");
-            child_nodes_json(html, sel)
+            // R5000 片 b：arg[2] 可选 context namespace（foreign context 的本地视图
+            // 解析面——createElementNS 容器 innerHTML 的 CDATA/插入模式按 context）。
+            let ctx_ns = args.get(2).map(String::as_str).filter(|s| !s.is_empty());
+            child_nodes_json_ctx(html, sel, ctx_ns)
         }),
     );
 

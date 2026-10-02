@@ -9047,6 +9047,20 @@
       });
     }
     node.hasAttribute = function (n) { return node.getAttribute(n) !== null; };
+    // R5000 片 b（html-syntax-compat）：HTMLElement 全局反射字符串三元组（spec
+    // `the-title-attribute`/`the-lang-and-xml:lang-attributes`/`the-dir-attribute`
+    // ——title/lang/dir IDL 反射 content attribute）。innerHTML 赋值同 turn 读
+    // firstChild.title 命中本工厂解析节点（WPT html/syntax/parsing/zero.html 的
+    // span.title 断言面）——旧无 accessor 读 undefined。
+    ['title', 'lang', 'dir'].forEach(function (p5000) {
+      try {
+        Object.defineProperty(node, p5000, {
+          configurable: true,
+          get: function () { var v = node.getAttribute(p5000); return v == null ? '' : String(v); },
+          set: function (v) { node.setAttribute(p5000, v == null ? '' : String(v)); },
+        });
+      } catch (_e5000r) {}
+    });
     _zwMDefineBooleanReflected(node);
     // js-dom M3 R97：hasAttributes/getAttributeNames（lit-html Template 解析对解析子树元素
     // 调 `r.hasAttributes()` + `r.getAttributeNames()` 提取属性 parts——缺方法抛 TypeError
@@ -11701,12 +11715,15 @@
   return node;
   }
   // 建 body 元素节点树（root，parentNode=null）：从 <body>innerHtml</body> 取 body 子 entries 递归建。
-  function _zwMBuildBodyTree(innerHtml) {
+  function _zwMBuildBodyTree(innerHtml, ctxNs) {
     var html = '<body>' + innerHtml + '</body>';
     var body = _zwMEl({ tag: 'body' }, null);
     if (typeof __zw_parse_html_child_nodes === 'function') {
       try {
-        var arr = JSON.parse(__zw_parse_html_child_nodes(html, 'body'));
+        // R5000 片 b：ctxNs 可选 context namespace——foreign context（createElementNS
+        // 容器）的本地视图解析走宿主 fragment 路径（CDATA 门/插入模式按 context）；
+        // 缺省 ''=HTML 全文档路径，零行为变化。
+        var arr = JSON.parse(__zw_parse_html_child_nodes(html, 'body', ctxNs ? String(ctxNs) : ''));
         for (var i = 0; i < arr.length; i++) if (arr[i]) body.childNodes.push(_zwMBuildNode(html, arr[i], body));
       } catch (_e) {}
     }
@@ -11721,7 +11738,16 @@
   function _zwFragmentAdded(html, hostHandle) {
     if (typeof _zwMBuildBodyTree !== 'function') return [];
     try {
-      var kids = _zwMBuildBodyTree(String(html == null ? '' : html)).childNodes;
+      // R5000 片 b：createElementNS 容器（_nsHandles 有 ns 记录）→ 本地视图按其真实
+      // ns 解析（与宿主 apply 的 replace_inner_html context 同源）；HTML/普通 handle
+      // 缺省 body context。
+      var _r5000ctxNs = '';
+      try {
+        if (hostHandle != null && typeof _nsHandles !== 'undefined' && _nsHandles[hostHandle]) {
+          _r5000ctxNs = String(_nsHandles[hostHandle].namespace || '');
+        }
+      } catch (_e5000cn) {}
+      var kids = _zwMBuildBodyTree(String(html == null ? '' : html), _r5000ctxNs).childNodes;
       // R123：顶层子盖宿主 handle 印章（__zwFragHostHandle）——PI 视图等解析节点上行找
       // sel/handle 祖先时到片段根即断（_zwMEl parentNode=null），印章提供宿主回链
       //（MutationObserver.observe 回落 + piNotify 投递）。

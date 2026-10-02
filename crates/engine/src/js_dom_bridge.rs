@@ -2059,8 +2059,29 @@ pub fn doc_doctype_json_doc(doc: &Document) -> String {
 /// 元素的**全部子节点**（含文本/注释，区别于 [`element_children_selectors`] 仅元素子），JSON 数组。
 /// 供 `__zw_child_nodes` 回调 → shim `el.childNodes` / `firstChild` / `lastChild`。
 pub fn child_nodes_json(html: &str, elem_sel: &str) -> String {
-    let doc = parse_html(html);
-    child_nodes_json_doc(&doc, elem_sel)
+    child_nodes_json_ctx(html, elem_sel, None)
+}
+
+/// R5000 片 b（html-syntax-compat）：foreign context 变体——`context_ns` 非 HTML ns
+/// 时经 [`parse_html_fragment`] 解析（CDATA 门/插入模式按 context 元素），取片段顶层
+/// 子产出 JSON。片段文档无 body 容器（`elem_sel` 寻址不可用）——本变体语义即「顶层
+/// 子列表」，消费方为 shim 本地解析视图构建（`_zwFragmentAdded` 的 createElementNS
+/// 容器形态）。HTML ns / None → 原路径（全文档解析 + elem_sel 寻址，零行为变化）。
+pub fn child_nodes_json_ctx(html: &str, elem_sel: &str, context_ns: Option<&str>) -> String {
+    match context_ns {
+        None | Some("http://www.w3.org/1999/xhtml") => {
+            let doc = parse_html(html);
+            child_nodes_json_doc(&doc, elem_sel)
+        }
+        Some(ns) => {
+            let frag = parse_html_fragment(html, ns, "body");
+            let entries: Vec<String> = fragment_top_level_children(&frag)
+                .into_iter()
+                .filter_map(|c| node_entry_json(&frag, c))
+                .collect();
+            format!("[{}]", entries.join(","))
+        }
+    }
 }
 
 /// WC-M2（web-components goal）：`<template>` contents 的 childNodes JSON（与
