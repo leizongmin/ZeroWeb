@@ -8139,6 +8139,44 @@
     }
     return low === local;
   }
+  // R5000（html-syntax-compat M2）：sel-based 元素的真实命名空间探测。foreign content
+  // 保真——静态 `<svg>`/`<math>` 解析产物的 namespaceURI/tagName/nodeName 须为真实
+  // ns/原值（WPT html/syntax getElementsByTagName-foreign/math-parse：恒 XHTML +
+  // ASCII 大写为旧缺陷面）。host `__zw_get_ns` 权威值（R-baidu3 epoch memo 重复读
+  // 零重算）；HTML ns 归一 ''（R185 源探测同款约定——调用侧非空才 foreign）。
+  // sel→ns gen 印章 memo（_zwTagCache 同款——gET 过滤器逐元素读 namespaceURI 的
+  // R-baidu3 风暴路径预防：同视图内重复枚举零宿主往返；印章不符即整体失效，语义与
+  // 逐元素宿主查询一致）。
+  var _zwSelNsCache = { gen: -1, added: -1, removed: -1, map: new Map() };
+  function _zwSelNs(sel, handle) {
+    if (handle || !sel || typeof __zw_get_ns !== 'function') return '';
+    var _snk = String(sel);
+    try {
+      if (_zwSelNsCache.gen === _zwApplyGeneration()
+          && _zwSelNsCache.added === _zwPendingAdded.length
+          && _zwSelNsCache.removed === _zwPendingRemoved.length) {
+        var _snhit = _zwSelNsCache.map.get(_snk);
+        if (_snhit !== undefined) return _snhit;
+      }
+    } catch (_e5000g) {}
+    var _sn = '';
+    try {
+      _sn = String(__zw_get_ns(sel) || '');
+      if (_sn === 'http://www.w3.org/1999/xhtml') _sn = '';
+    } catch (_e5000sn) {}
+    try {
+      if (_zwSelNsCache.gen !== _zwApplyGeneration()
+          || _zwSelNsCache.added !== _zwPendingAdded.length
+          || _zwSelNsCache.removed !== _zwPendingRemoved.length) {
+        _zwSelNsCache.gen = _zwApplyGeneration();
+        _zwSelNsCache.added = _zwPendingAdded.length;
+        _zwSelNsCache.removed = _zwPendingRemoved.length;
+        _zwSelNsCache.map = new Map();
+      }
+      _zwSelNsCache.map.set(_snk, _sn);
+    } catch (_e5000s) {}
+    return _sn;
+  }
   function _realTag(sel, handle) {
     // R-baidu3：批量 tag 缓存命中（part05 _zwTagCache——getElementsByTagName('*')
     // 枚举时经 __zw_query_all_tagged 灌入）。印章 = (apply 代际, pending 记账长度)，

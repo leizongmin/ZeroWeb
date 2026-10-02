@@ -1802,7 +1802,14 @@ return _tplContent;
             }
             return _nsh.htmlUpper ? _r120up : _r120q;
           }
-          return (isFrag || isShadow || isComment || isText || isPI) ? undefined : _realTag(sel, handle);
+          if (isFrag || isShadow || isComment || isText || isPI) return undefined;
+          // R5000：foreign ns 元素 tagName = qualifiedName 原值（非 ASCII 大写）。
+          if (_zwSelNs(sel, handle)) {
+            var _r5000t = '';
+            try { _r5000t = String(__zw_get_tag(sel) || ''); } catch (_e5000t) {}
+            if (_r5000t) return _r5000t;
+          }
+          return _realTag(sel, handle);
         }
         // `element.localName`（spec `dom-element-localname`，R11）：HTML 元素 = tagName 小写；
         // 带 prefix 的限定名（`svg:rect`，createElementNS）去 prefix 取冒号后。非 Element → null
@@ -1817,6 +1824,13 @@ return _tplContent;
           // "f:oo"——HTML parser 不拆 NS，冒号是普通字符）。ASCII-only 小写（spec
           // ASCII-lowercase——'İ'/'K' 等 Unicode 大写不变，JS toLowerCase 会错误转换）。
           var _ln = _realTag(sel, handle);
+          // R5000：foreign ns 元素 localName = 解析原值（SVG 大小写修正表产物
+          // linearGradient 等保持驼峰；HTML 解析产物本就小写，走原路径）。
+          if (_zwSelNs(sel, handle)) {
+            var _r5000ln = '';
+            try { _r5000ln = String(__zw_get_tag(sel) || ''); } catch (_e5000ln) {}
+            if (_r5000ln) return _r5000ln;
+          }
           var _lnOut = '';
           for (var _lni = 0; _lni < _ln.length; _lni++) {
             var _lnc = _ln.charAt(_lni);
@@ -1846,6 +1860,12 @@ return _tplContent;
             var _nsn = _nsHandles[handle];
             return _nsn.htmlUpper ? _nsn.qualifiedName.toUpperCase() : _nsn.qualifiedName;
           }
+          // R5000：foreign ns 元素 nodeName = qualifiedName 原值（与 tagName 同，非 ASCII 大写）。
+          if (_zwSelNs(sel, handle)) {
+            var _r5000nn = '';
+            try { _r5000nn = String(__zw_get_tag(sel) || ''); } catch (_e5000nn) {}
+            if (_r5000nn) return _r5000nn;
+          }
           return _realTag(sel, handle);
         }
         if (prop === 'nodeType') {
@@ -1858,6 +1878,12 @@ return _tplContent;
         if (prop === 'namespaceURI') {
           if (isNs) return _nsHandles[handle].namespace;
           if (isFrag || isShadow || isComment || isText || isPI) return null;
+          // R5000：sel-based 元素读真实 ns（foreign content——`<svg>`/`<math>` 解析
+          // 产物为 SVG/MathML ns；R185 旧让路只探 clone 路径，getter 恒 XHTML 使
+          // gET 过滤器把 foreign 元素折叠为 HTML 语义匹配）。host epoch memo 重复
+          // 读零重算；探测 miss 回落 HTML ns（主文档 HTML 语义不变）。
+          var _r5000nsg = _zwSelNs(sel, handle);
+          if (_r5000nsg) return _r5000nsg;
           return 'http://www.w3.org/1999/xhtml';
         }
         // ShadowRoot 专用属性（R2926）：host = 宿主元素 proxy；mode = 'open'/'closed'。

@@ -22,6 +22,9 @@ goals_fetch_all
 # 显式补拉（/common/sab.js 显式补拉先例）。
 fetch_dir_html "html/dom/render-blocking/support"
 fetch_dir_html "html/syntax/parsing/support"
+# depth-2 resources/ 补拉（html5lib 树构造语料——html5lib_write/url/write_single 三案
+# 引 resources/common.js + tests*.dat，M2 首轮跑 script fetch failed 记账后补）。
+fetch_dir_html "html/syntax/parsing/resources"
 fetch_raw "html/dom/render-blocking/support/dummy-1.mjs"
 fetch_raw "html/dom/render-blocking/support/target-red.css"
 
