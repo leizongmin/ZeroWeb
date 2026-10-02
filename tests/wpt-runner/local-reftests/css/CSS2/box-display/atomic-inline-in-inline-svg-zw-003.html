@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>slice19 R4938 S-TE3: inline svg inside an inline element keeps its box (single line)</title>
+<!-- zw-local: S-TE3（pr61 testeff te5/te6 证两臂逐值一致 [108,18,60,30]）——
+     svg 为替换元素（collect 判据 is_replaced_element 八类；sync 判据不含 svg 型），
+     等价契约钉：被 skip span 内 input+svg 并排 ≡ 直接子形态（单变量 = 包装层有无）。
+     CSS2 §9.2.1.1；§10.3.1 replaced inline。 -->
+<style>
+body { margin: 0; }
+input { display: inline-block; margin: 0; padding: 0; border: 0; background: #03c; vertical-align: top; }
+</style>
+</head>
+<body>
+<div><span><input style="width:200px;height:40px"><svg width="100" height="40" style="vertical-align:top"><rect width="100" height="40" fill="#c30"/></svg></span></div>
+</body>
+</html>
