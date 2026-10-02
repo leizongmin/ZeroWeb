@@ -1939,6 +1939,46 @@ impl RendererRuntime {
         self.tick_pending_load()
     }
 
+    /// 补排干入站通道并把积压中的 Navigate 提升为下一个派发对象（fix#14 抢占半部 +
+    /// ZRG-2026-10-03-01 陈旧加载丢弃）。返回提升/保序后的队首；`None` 仅当 `head` 为空
+    /// 且排干与积压中均无 Navigate。见 [`promote_pending_navigation`]。
+    fn promote_pending_navigation(
+        head: Option<IpcMessage>,
+        deferred: &mut VecDeque<IpcMessage>,
+        mut drain_inbound: impl FnMut() -> Vec<IpcMessage>,
+    ) -> Option<IpcMessage> {
+        // 队首已是导航命令：无需抢占（后续导航按 FIFO 依序处理，语义不变）。
+        if matches!(head.as_ref().map(|m| &m.kind), Some(IpcMessageKind::Navigate(_))) {
+            return head;
+        }
+        for later in drain_inbound() {
+            deferred.push_back(later);
+        }
+        let Some(idx) = deferred
+            .iter()
+            .position(|m| matches!(m.kind, IpcMessageKind::Navigate(_)))
+        else {
+            return head;
+        };
+        let nav = deferred.remove(idx).expect("idx 由 position 取得，必在界内");
+        // 先于被提升导航入队的加载命令全部陈旧（Chrome 导航语义：后到者胜），
+        // 照常派发会用旧文档覆盖在途新文档的 pending load，其迟到生命周期报告
+        // 又被宿主 pending 校验拒收——导航永不提交、零帧产出（parity smoke
+        // 首帧 4/4 超时根因：welcome LoadHtml 覆盖 fixture Navigate）。
+        // 输入等非加载消息保持相对顺序继续保留（fix#14 语义不变）。
+        let mut superseded = Vec::new();
+        if let Some(head_msg) = head {
+            superseded.push(head_msg);
+        }
+        superseded.extend(deferred.drain(..idx));
+        for msg in superseded.into_iter().rev() {
+            if !matches!(msg.kind, IpcMessageKind::LoadHtml(_) | IpcMessageKind::Navigate(_)) {
+                deferred.push_front(msg);
+            }
+        }
+        Some(nav)
+    }
+
     fn recv_next_or_timeout(&mut self, timeout: Duration) -> Result<Option<IpcMessage>, String> {
         let mut head = if let Some(msg) = self.deferred_inbound.pop_front() {
             Some(msg)
@@ -1957,22 +1997,13 @@ impl RendererRuntime {
         if let Some(msg) = head.as_ref()
             && !matches!(msg.kind, IpcMessageKind::Navigate(_))
         {
-            while let Ok(later) = self.inbound_rx.try_recv() {
-                self.deferred_inbound.push_back(later);
-            }
-            if let Some(idx) = self
-                .deferred_inbound
-                .iter()
-                .position(|m| matches!(m.kind, IpcMessageKind::Navigate(_)))
-            {
-                let nav = self
-                    .deferred_inbound
-                    .remove(idx)
-                    .expect("idx 由 position 取得，必在界内");
-                self.deferred_inbound
-                    .push_front(head.take().expect("head 已判定为 Some"));
-                head = Some(nav);
-            }
+            head = Self::promote_pending_navigation(head, &mut self.deferred_inbound, || {
+                let mut drained = Vec::new();
+                while let Ok(later) = self.inbound_rx.try_recv() {
+                    drained.push(later);
+                }
+                drained
+            });
         }
         Ok(head)
     }
@@ -3338,6 +3369,9 @@ mod compositor_publish_tests;
 #[cfg(test)]
 #[path = "keyboard_input_tests.rs"]
 mod keyboard_input_tests;
+#[cfg(test)]
+#[path = "navigation_preemption_tests.rs"]
+mod navigation_preemption_tests;
 #[cfg(test)]
 #[path = "predoc_script_tests.rs"]
 mod predoc_script_tests;
