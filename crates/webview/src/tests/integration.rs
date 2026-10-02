@@ -1740,3 +1740,33 @@ fn test_template_clone_identity_chain_r145() {
         .unwrap();
     assert_eq!(out, "true", "sel-keyed dispatch reaches handle-registered listener");
 }
+
+// ── t2-pb1 F2：脚本批量边界脏标记（首轮缺陷审查 2026-10-02）──
+
+/// `end_script_batch` 只在批内 apply 过变更时渲染：事件循环每 16ms tick 都开合
+/// 批量边界，无脏标记时有内容页面每 tick 全量 render_html + 图片子资源扫描
+/// （解析+样式+布局+绘制，bilibili 首页 tEvidence 2750ms→14997ms 回退根因）。
+/// 文档初渲染在装载时完成（`last_render` 已是当前文档），空批量跳过是安全的。
+#[test]
+fn test_end_script_batch_renders_only_when_dirty() {
+    let mut webview = WebView::new(WebViewConfig::default());
+    webview.load_html("<html><body><p id=\"out\">hi</p></body></html>", None);
+    // 空批量（tick 常态）：无变更不重渲染。
+    webview.begin_script_batch();
+    let rendered = webview.end_script_batch().expect("空批量 end");
+    assert!(!rendered, "无变更批量不得重渲染");
+    // 批内有 apply：置脏 → 边界统一渲染一次。
+    webview.begin_script_batch();
+    webview
+        .apply_dom_mutations_and_render(&[zero_engine::DomMutation::SetText {
+            selector: "#out".to_string(),
+            text: "changed".to_string(),
+        }])
+        .expect("批内 apply");
+    let rendered = webview.end_script_batch().expect("脏批量 end");
+    assert!(rendered, "批内 apply 过变更须统一渲染");
+    // 脏标记复位：下一批量重新从空开始。
+    webview.begin_script_batch();
+    let rendered = webview.end_script_batch().expect("复位后 end");
+    assert!(!rendered, "脏标记须在渲染后复位");
+}

@@ -1634,6 +1634,7 @@ body { margin: 0; }
     let (result, snapshot, _handles) = pipeline
         .render_with_dom_mutations(std::slice::from_ref(&m), "")
         .expect("mutations applied");
+    let result = result.expect("rendered");
     let snapshot = snapshot.expect("text mutation changes HTML");
     // 活 DOM + HTML 快照一致
     assert!(snapshot.contains(">x</pre>"), "snapshot: {snapshot}");
@@ -1705,6 +1706,7 @@ fn render_with_dom_mutations_structural_insert_paints_nested_text() {
     let (result, snapshot, _) = pipeline
         .render_with_dom_mutations(&mutations, "")
         .expect("structural mutations applied");
+    let result = result.expect("rendered");
 
     assert!(snapshot.expect("structural mutation snapshot").contains("265"));
     assert!(
@@ -1734,6 +1736,7 @@ fn render_with_dom_mutations_paint_only_keeps_layout() {
     let (result, snapshot, _) = pipeline
         .render_with_dom_mutations(std::slice::from_ref(&m), "")
         .expect("mutations applied");
+    let result = result.expect("rendered");
     let snapshot = snapshot.expect("style mutation changes HTML");
     assert!(
         snapshot.contains("background-color: blue")
@@ -1768,6 +1771,7 @@ fn render_with_dom_mutations_input_value_only_paints() {
     let (result, snapshot, _) = pipeline
         .render_with_dom_mutations(std::slice::from_ref(&mutation), "")
         .expect("value mutation applied");
+    let result = result.expect("rendered");
 
     assert!(snapshot.is_none(), "IDL value edit must not serialize or modify HTML");
     assert_eq!(result.timings.parse_count, 0);
@@ -1804,6 +1808,7 @@ fn budgeted_render_preserves_form_value_incremental_paint_cache() {
     let (result, snapshot, _) = pipeline
         .render_with_dom_mutations(std::slice::from_ref(&mutation), "")
         .expect("value mutation after budget render applied");
+    let result = result.expect("rendered");
 
     assert!(snapshot.is_none(), "IDL value edit must not serialize HTML");
     assert_eq!(result.timings.parse_count, 0);
@@ -1826,6 +1831,7 @@ fn render_with_dom_mutations_input_value_does_not_affect_attribute_selector() {
     let (result, _, _) = pipeline
         .render_with_dom_mutations(std::slice::from_ref(&mutation), "")
         .expect("value mutation applied");
+    let result = result.expect("rendered");
 
     assert_eq!(result.timings.parse_count, 0);
     assert_eq!(result.timings.style_count, 0);
@@ -1845,6 +1851,7 @@ fn render_with_dom_mutations_textarea_value_only_paints_without_snapshot() {
     let (result, snapshot, _) = pipeline
         .render_with_dom_mutations(std::slice::from_ref(&mutation), "")
         .expect("textarea value mutation applied");
+    let result = result.expect("rendered");
 
     assert!(snapshot.is_none());
     assert_eq!(result.timings.parse_count, 0);
@@ -1867,6 +1874,7 @@ fn render_with_dom_mutations_ime_preedit_is_temporary_paint_only() {
     let (result, snapshot, _) = pipeline
         .render_with_dom_mutations(std::slice::from_ref(&mutation), "")
         .expect("preedit mutation applied");
+    let result = result.expect("rendered");
 
     assert!(snapshot.is_none());
     assert_eq!(result.timings.parse_count, 0);
@@ -1900,6 +1908,124 @@ fn render_with_dom_mutations_layout_prop_recomputes_layout() {
     assert_ne!(
         layout_before, layout_after,
         "layout-affecting mutation must recompute layout"
+    );
+}
+
+/// 脚本批量渲染（defer）等价性——begin → 多次 apply → end 的最终态（布局快照、
+/// HTML 快照、表单 live value、handle 重锚、绘制产物）与逐次全量渲染一致。
+/// 依据：HTML Standard event loop「update the rendering」批量语义——同步脚本
+/// 阶段的 DOM 变更在批量边界统一渲染一次。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering
+/// 背景：2026-10-02 bilibili 取证，逐脚本全量渲染 ~1s/次 × 8 占死 renderer 主循环，
+/// 后续导航 IPC 15s 超时（ERR_FAILED）。
+#[test]
+fn deferred_batch_final_state_matches_per_script_rendering() {
+    use crate::js_dom_bridge::DomMutation;
+
+    let html = r#"<html><head><style>body { margin: 0; } #box { width: 200px; }</style></head><body><div id="box">A</div><pre id="result">PENDING</pre><input id="name" value="base"></body></html>"#;
+
+    // 三批变更覆盖三条路径：文本（快照+布局）、结构插入+样式（handle+布局）、
+    // 表单当前值（paint-only，无快照）。
+    let mutations_a = [DomMutation::SetText {
+        selector: "#result".to_string(),
+        text: "batch".to_string(),
+    }];
+    let mutations_b = vec![
+        DomMutation::CreateElement {
+            handle: "__panel".to_string(),
+            tag: "div".to_string(),
+        },
+        DomMutation::SetInnerHtmlOnHandle {
+            handle: "__panel".to_string(),
+            html: "<strong>265</strong>".to_string(),
+        },
+        DomMutation::AppendChild {
+            parent_selector: "#box".to_string(),
+            child_handle: "__panel".to_string(),
+        },
+        DomMutation::SetStyle {
+            selector: "#box".to_string(),
+            property: "height".to_string(),
+            value: "60px".to_string(),
+        },
+    ];
+    let mutations_c = [DomMutation::SetFormValue {
+        selector: "#name".to_string(),
+        value: "typed".to_string(),
+    }];
+    let batches: [&[DomMutation]; 3] = [&mutations_a, &mutations_b, &mutations_c];
+
+    // 对照组：旧行为——每批 mutation 后立即渲染。
+    let mut per_script = RenderPipeline::new(800.0, 600.0);
+    let _ = per_script.render_html(html, "");
+    let mut per_script_html = None;
+    for m in batches {
+        let (result, snapshot, _) = per_script.render_with_dom_mutations(m, "").expect("mutations applied");
+        assert!(result.is_some(), "non-defer path must render");
+        if let Some(snapshot) = snapshot {
+            per_script_html = Some(snapshot);
+        }
+    }
+    let per_script_layout = per_script.cached_layout.as_ref().expect("layout").snapshot();
+
+    // 试验组：defer 批量——apply 只改活 DOM 与快照，批量边界渲染一次。
+    let mut batched = RenderPipeline::new(800.0, 600.0);
+    let _ = batched.render_html(html, "");
+    batched.set_defer_render(true);
+    let mut batched_html = None;
+    let mut reanchor: Vec<(String, String)> = Vec::new();
+    for m in batches {
+        let (result, snapshot, handles) = batched.render_with_dom_mutations(m, "").expect("mutations applied");
+        assert!(result.is_none(), "deferred apply must not render");
+        if let Some(snapshot) = snapshot {
+            batched_html = Some(snapshot);
+        }
+        reanchor.extend(handles);
+    }
+    assert_eq!(
+        per_script_html.as_deref(),
+        batched_html.as_deref(),
+        "final HTML snapshot must match"
+    );
+
+    batched.set_defer_render(false);
+    let html_for_render = batched_html.expect("snapshot");
+    let result = batched.render_after_deferred_batch(&html_for_render, "", &reanchor);
+
+    // 最终布局快照与逐次渲染一致。
+    let batched_layout = batched.cached_layout.as_ref().expect("layout").snapshot();
+    assert_eq!(
+        per_script_layout, batched_layout,
+        "final layout must match per-script rendering"
+    );
+
+    // 表单 live value 跨批量边界换代存活（restore 按旧 doc NodeId→selector 重锚）。
+    let doc = batched.cached_doc.as_ref().expect("doc").borrow();
+    let input = doc.query_selector(doc.root(), "#name").expect("#name");
+    assert_eq!(
+        batched.form_control_values.get(&input).map(String::as_str),
+        Some("typed"),
+        "form live value must survive the batch-boundary re-render"
+    );
+    drop(doc);
+
+    // handle 重锚：新代 doc 中 __panel 落到含 265 文本的节点。
+    let panel = *batched
+        .persistent_handle_nodes
+        .get("__panel")
+        .expect("handle reanchored at batch boundary");
+    let doc = batched.cached_doc.as_ref().expect("doc").borrow();
+    assert_eq!(doc.text_content(panel).as_deref(), Some("265"));
+    drop(doc);
+
+    // 渲染产物非空：批量边界渲染必须产出新插入文本的 glyphs。
+    assert!(
+        result
+            .primitives()
+            .glyphs
+            .iter()
+            .any(|glyph| glyph.glyph_id == '2' as u32),
+        "batch-boundary render must paint newly inserted text"
     );
 }
 

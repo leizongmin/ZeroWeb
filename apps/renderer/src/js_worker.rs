@@ -1,10 +1,8 @@
 //! 渲染进程 JS 线程 — V8 与页面渲染分离。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-#[cfg(test)]
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -29,6 +27,11 @@ use crate::ipc_service_worker::ServiceWorkerIpcClient;
 // 恢复）同时覆盖实测长尾。
 const TAB_JS_EXEC_TIMEOUT_MS: u64 = 30_000;
 const TAB_JS_CHANNEL_TIMEOUT: Duration = Duration::from_millis(TAB_JS_EXEC_TIMEOUT_MS + 5_000);
+
+/// t2-pb1 fix#5：worker 空闲轮询间隔——普通通道空闲时以本间隔醒来检查优先通道
+/// （`recv_timeout` 轮询环）。队列流动时优先命令在命令边界即时处理；仅空闲时最多
+/// 延迟一个间隔（导航里程碑派发对此不敏感）。20 次/秒的空转开销可忽略。
+const WORKER_IDLE_POLL: Duration = Duration::from_millis(50);
 
 /// 看门狗超时错误附加脚本上下文（长度+头部片段）——页面回调超时（P7b 家族）定性
 /// 需要脚本身份；`ScriptError` 本体不携带脚本信息（沙箱边界隔离），只能在 worker
@@ -62,16 +65,25 @@ enum JsWorkerCommand {
     Execute {
         script: String,
         reply: Sender<Result<String, String>>,
+        /// t2-pb1 F1：文档代际序号（提交顺序单调递增）——ResetDocumentState 清队按
+        /// `seq > reset_seq` 判定新文档命令，不再按「Reset 处理时刻」误清新文档队列。
+        seq: u64,
     },
     ExecuteModule {
         source: String,
         url: String,
         deps: Vec<(String, String)>,
         reply: Sender<Result<String, String>>,
+        /// t2-pb1 F1：文档代际序号（同 [`JsWorkerCommand::Execute`]）。
+        seq: u64,
     },
     SetDomSnapshot {
         html: String,
         url: String,
+        /// t2-pb1 fix#21：应用完成回执（None = fire-and-forget，优先通道快照用）。
+        reply: Option<Sender<()>>,
+        /// t2-pb1 F1：文档代际序号（同 [`JsWorkerCommand::Execute`]）。
+        seq: u64,
     },
     /// P1b S1：跨线程异步回调 resolve（marshal channel）。任意线程经
     /// [`RendererJsWorker::async_resolver`] 投递 (id, result)，JS worker 收到后调
@@ -99,6 +111,8 @@ enum JsWorkerCommand {
     },
     ResetDocumentState {
         reply: Sender<()>,
+        /// t2-pb1 F1：本次复位的代际界——提交序 `seq` 更大的命令是新文档工作，清队存活。
+        seq: u64,
     },
     /// 视口提示（renderer 真实窗口尺寸）：快照换代后 shim `innerWidth/innerHeight` 缺省
     /// 1280x800 与真实视口不一致——首次 install 后按 hint 校正（幂等 guard，仅在失配时
@@ -123,6 +137,13 @@ pub type FetchObservedRecord = (u8, u64, String, String, u16, u64);
 /// 渲染进程 JS worker 句柄。
 pub struct RendererJsWorker {
     cmd_tx: Sender<JsWorkerCommand>,
+    /// t2-pb1 fix#9：优先通道发送端——宿主发起的自动化求值与 DOM 快照成对经此入队
+    /// （`set_dom_snapshot_priority` + `execute_script_direct_priority`），不排在页面
+    /// 回调积压之后。
+    prio_tx: Sender<JsWorkerCommand>,
+    /// t2-pb1 F1：文档代际序号源——文档类命令提交时在此分配单调 seq（宿主侧顺序即
+    /// 代际顺序；ResetDocumentState 携带自己的 seq 作清队界）。
+    cmd_seq: Arc<AtomicU64>,
     /// S11：page console 输出队列（worker 回调推入，runtime drain）。
     console_logs: Arc<std::sync::Mutex<Vec<(String, String, String)>>>,
     /// R-baidu2/P3：未捕获脚本错误队列（page_scripts 推入，runtime drain 后
@@ -136,6 +157,9 @@ pub struct RendererJsWorker {
     fetch_observed: Arc<std::sync::Mutex<Vec<FetchObservedRecord>>>,
     join: Option<JoinHandle<()>>,
     executor: ScriptFn,
+    /// t2-pb1 fix#5：优先执行器——页面生命周期派发（`execute_script_direct_priority`）
+    /// 专用通道，worker 在命令边界优先于普通 FIFO 队列消费。
+    prio_executor: ScriptFn,
     module_executor: ModuleFn,
     mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
     /// P1a gBCR：共享 layout-rect snapshot——renderer 主循环 render 后填充，
@@ -220,6 +244,14 @@ impl RendererJsWorker {
         #[cfg(test)]
         let execution_count = Arc::new(AtomicU64::new(0));
         let (cmd_tx, cmd_rx) = mpsc::channel();
+        // t2-pb1 fix#5：优先通道——页面生命周期派发专用（见 js_worker_main 分派环注释）。
+        let (prio_tx, prio_rx) = mpsc::channel();
+        // t2-pb1 F1：文档代际序号源（struct 方法与三个执行器闭包共享同一计数器）。
+        let cmd_seq = Arc::new(AtomicU64::new(0));
+        let seq_for_exec = Arc::clone(&cmd_seq);
+        let seq_for_module = Arc::clone(&cmd_seq);
+        let seq_for_prio = Arc::clone(&cmd_seq);
+        let prio_tx_for_struct = prio_tx.clone();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
         let cmd_for_worker = cmd_tx.clone();
@@ -237,6 +269,7 @@ impl RendererJsWorker {
                 js_worker_main(
                     cmd_rx,
                     cmd_for_worker,
+                    prio_rx,
                     console_logs_for_worker,
                     script_errors_for_worker,
                     doc_write_settled_for_worker,
@@ -262,6 +295,7 @@ impl RendererJsWorker {
                 .send(JsWorkerCommand::Execute {
                     script: script.to_string(),
                     reply: reply_tx,
+                    seq: seq_for_exec.fetch_add(1, Ordering::Relaxed),
                 })
                 .map_err(|e| e.to_string())?;
             reply_rx
@@ -277,6 +311,23 @@ impl RendererJsWorker {
                     url: url.to_string(),
                     deps: deps.to_vec(),
                     reply: reply_tx,
+                    seq: seq_for_module.fetch_add(1, Ordering::Relaxed),
+                })
+                .map_err(|e| e.to_string())?;
+            reply_rx
+                .recv_timeout(TAB_JS_CHANNEL_TIMEOUT)
+                .map_err(|e| e.to_string())?
+        });
+
+        // t2-pb1 fix#5：优先执行器——与 `executor` 同命令语义（Execute + reply），
+        // 仅入队通道不同（worker 命令边界优先消费）。
+        let prio_executor: ScriptFn = Arc::new(move |script: &str| {
+            let (reply_tx, reply_rx) = mpsc::channel();
+            prio_tx
+                .send(JsWorkerCommand::Execute {
+                    script: script.to_string(),
+                    reply: reply_tx,
+                    seq: seq_for_prio.fetch_add(1, Ordering::Relaxed),
                 })
                 .map_err(|e| e.to_string())?;
             reply_rx
@@ -286,8 +337,11 @@ impl RendererJsWorker {
 
         Self {
             cmd_tx,
+            prio_tx: prio_tx_for_struct,
+            cmd_seq,
             join: Some(join),
             executor,
+            prio_executor,
             module_executor,
             console_logs,
             script_errors,
@@ -321,6 +375,76 @@ impl RendererJsWorker {
     /// 在 JS 线程执行脚本（不经 WebView 包装）。
     pub fn execute_script_direct(&self, script: &str) -> Result<String, String> {
         (self.executor)(script)
+    }
+
+    /// t2-pb1 fix#8：有界等待执行——与 [`Self::execute_script_direct`] 同命令语义（普通
+    /// FIFO 通道，保证运行在已入队异步回调 resolve 之后），但等待 reply 有上限。
+    /// 页面回调积压（bilibili timer 臂级联单窗 ~16s）时 checkpoint 不阻塞 renderer 主循环：
+    /// 超时即放弃本轮执行机会（滞留命令是空脚本 no-op，worker 照常消费；ready 旗标由
+    /// worker 继续处理的回调重新置位，下一轮重试），主循环回到 recv 保持导航 IPC 响应。
+    pub fn execute_script_direct_bounded(&self, script: &str, timeout: Duration) -> Result<String, String> {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        self.cmd_tx
+            .send(JsWorkerCommand::Execute {
+                script: script.to_string(),
+                reply: reply_tx,
+                seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
+            })
+            .map_err(|e| e.to_string())?;
+        match reply_rx.recv_timeout(timeout) {
+            Ok(result) => result,
+            Err(_) => Err("js worker execute wait timeout".to_string()),
+        }
+    }
+
+    /// t2-pb1 fix#5：优先队列执行——页面生命周期派发（DOMContentLoaded/load、资源 settle
+    /// 事件族）专用入口。worker 在命令边界优先于普通 FIFO 队列消费，使导航里程碑派发不被
+    /// 脚本阶段遗留的 promise/timer 续体级联压住（bilibili 导航 15s 超时根因）。仅生命周期
+    /// 派发使用；普通脚本/timer/回调仍走 FIFO 通道，相互相对顺序不变。
+    pub fn execute_script_direct_priority(&self, script: &str) -> Result<String, String> {
+        (self.prio_executor)(script)
+    }
+
+    /// t2-pb1 fix#12：fire-and-forget 优先提交——脚本入优先队列执行，但调用方不等待结果。
+    /// 适用于全部 best-effort 派发（生命周期/资源/字体/脚本元素级事件、observer tick 等，
+    /// 返回值被忽略或仅告警）：页面回调单臂可达 28-30s（bilibili 实测），即使是优先队列
+    /// 同步往返，主循环也要等当前臂跑完才拿 reply，期间 Navigate IPC 饿死。reply 接收端
+    /// 即刻丢弃——worker 照常执行并尝试回信（发送失败静默），入队边界与 FIFO/优先语义
+    /// 与同步版完全一致（同通道提交顺序 = 执行顺序，如字体批处理先于 font settle）。
+    pub fn submit_script_priority(&self, script: &str) -> Result<(), String> {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        drop(reply_rx);
+        self.prio_tx
+            .send(JsWorkerCommand::Execute {
+                script: script.to_string(),
+                reply: reply_tx,
+                seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
+            })
+            .map_err(|e| e.to_string())
+    }
+
+    /// t2-pb1 fix#15：优先通道执行 + 有界等待，超时把 reply 通道交还调用方挂起续答。
+    /// 脚本已入优先队列照常执行（结果晚至）；worker 忙于长臂（bilibili timer 回调
+    /// 28-30s）时调用方主循环至多等 `timeout` 即可放行导航等 IPC，回复由调用方轮询
+    /// `rx` 补答。通道关闭（导航复位清队 fix#11 / worker 退出）→ `Ok(Err)`。
+    pub fn execute_script_priority_deferrable(
+        &self,
+        script: &str,
+        timeout: std::time::Duration,
+    ) -> Result<Result<String, String>, mpsc::Receiver<Result<String, String>>> {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        if let Err(e) = self.prio_tx.send(JsWorkerCommand::Execute {
+            script: script.to_string(),
+            reply: reply_tx,
+            seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
+        }) {
+            return Ok(Err(format!("js worker prio send failed: {e}")));
+        }
+        match reply_rx.recv_timeout(timeout) {
+            Ok(result) => Ok(result),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(reply_rx),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Ok(Err("js worker dropped reply".to_string())),
+        }
     }
 
     /// 注入真实视口尺寸提示（shim `innerWidth/innerHeight` 缺省 1280x800 的校正源；
@@ -389,9 +513,37 @@ impl RendererJsWorker {
 
     /// 脚本执行前更新 DOM HTML 快照与页面 URL。
     pub fn set_dom_snapshot(&self, html: &str, url: &str) {
-        let _ = self.cmd_tx.send(JsWorkerCommand::SetDomSnapshot {
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+        if self
+            .cmd_tx
+            .send(JsWorkerCommand::SetDomSnapshot {
+                html: html.to_string(),
+                url: url.to_string(),
+                reply: Some(reply_tx),
+                seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
+            })
+            .is_err()
+        {
+            return;
+        }
+        // t2-pb1 fix#21：有界等待快照应用——后续优先通道派发（fix#12 生命周期
+        // fire-and-forget）依赖快照已生效：body onload 反射按页 URL 去重，抢跑一次
+        // （快照尚在普通通道、worker 忙于 bootstrap/旧臂）即整页反射被去重丢弃，
+        // <body onload> 永不触发（r2946 单测实证；无脚本页生产窗口同源）。同
+        // reset_document_state 的有界等待惯用法；worker 忙臂时超时放行不阻塞导航，
+        // 此时快照已排普通队列，后续普通往返天然保持先快照后脚本的顺序。
+        let _ = reply_rx.recv_timeout(std::time::Duration::from_millis(250));
+    }
+
+    /// t2-pb1 fix#9：优先通道快照——与 [`Self::set_dom_snapshot`] 同命令，入优先队列。
+    /// 供自动化求值路径与 `execute_script_direct_priority` 成对使用（同通道 FIFO 保持
+    /// 快照先于执行的顺序），使宿主求值不被页面回调积压（普通队列）挡住。
+    pub fn set_dom_snapshot_priority(&self, html: &str, url: &str) {
+        let _ = self.prio_tx.send(JsWorkerCommand::SetDomSnapshot {
             html: html.to_string(),
             url: url.to_string(),
+            reply: None,
+            seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
         });
     }
 
@@ -424,13 +576,21 @@ impl RendererJsWorker {
             map.clear();
         }
         self.async_callbacks_ready.store(false, Ordering::Release);
+        // t2-pb1 fix#11：复位命令走优先队列（跳过页面回调积压；同通道 FIFO 保证新文档
+        // 的优先命令排在其后）+ 有界等待——页面回调饱和 / 单臂 30s 级（bilibili timer
+        // 实测）时同步 reply 等待曾把导航初始化整体挂住（二跳 ERR_FAILED 根因链末级）。
+        // 超时放弃等待：复位命令滞留优先队列照常执行（worker 端清队 + reset_context），
+        // 主循环继续导航流程（新文档取回/解析不依赖 worker）。
         let (reply_tx, reply_rx) = mpsc::channel();
         if self
-            .cmd_tx
-            .send(JsWorkerCommand::ResetDocumentState { reply: reply_tx })
+            .prio_tx
+            .send(JsWorkerCommand::ResetDocumentState {
+                reply: reply_tx,
+                seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
+            })
             .is_ok()
         {
-            let _ = reply_rx.recv_timeout(TAB_JS_CHANNEL_TIMEOUT);
+            let _ = reply_rx.recv_timeout(Duration::from_millis(250));
         }
     }
 
@@ -636,10 +796,28 @@ fn refresh_worker_native_dom_source(
     }
 }
 
+/// t2-pb1 F1：导航复位清队的存活判定——命令提交代际（seq）晚于本次复位（`seq >
+/// reset_seq`）即为新文档工作，存活；早于复位的文档类命令（Execute/ExecuteModule/
+/// SetDomSnapshot/更早的 Reset 之前的同类）随旧文档丢弃。ResolveAsyncCallback 一律
+/// 丢弃：晚至的旧页回调解析在新 context 无对应 id（t8 返修既有语义；新页回调解析
+/// 恰入队的极端窗与其一同牺牲，与复位前行为一致）。其余为跨文档配置/生命周期命令
+/// （handler 注入、注册表、视口提示、IndexedDb 事件、Shutdown），一律存活。
+fn survives_document_reset(cmd: &JsWorkerCommand, reset_seq: u64) -> bool {
+    match cmd {
+        JsWorkerCommand::Execute { seq, .. }
+        | JsWorkerCommand::ExecuteModule { seq, .. }
+        | JsWorkerCommand::SetDomSnapshot { seq, .. }
+        | JsWorkerCommand::ResetDocumentState { seq, .. } => *seq > reset_seq,
+        JsWorkerCommand::ResolveAsyncCallback { .. } => false,
+        _ => true,
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // Thread-owned bridges are explicit at the single worker bootstrap boundary.
 fn js_worker_main(
     cmd_rx: Receiver<JsWorkerCommand>,
     cmd_tx: Sender<JsWorkerCommand>,
+    prio_rx: Receiver<JsWorkerCommand>,
     console_logs_for_worker: Arc<std::sync::Mutex<Vec<(String, String, String)>>>,
     script_errors_for_worker: Arc<std::sync::Mutex<Vec<zero_protocol::message::ScriptErrorParams>>>,
     doc_write_settled_for_worker: Arc<std::sync::Mutex<Vec<()>>>,
@@ -824,11 +1002,58 @@ fn js_worker_main(
     if let Err(e) = sandbox.execute(shim) {
         tracing::error!("JS DOM shim init failed: {e}");
     }
+    // t2-pb1 fix#19：动态外链脚本由宿主通路取回（runtime execute_new_dynamic_scripts/
+    // tick_dynamic_scripts——no-cors 脚本语义 + 元素事件派发）；shim R387b 的页面 fetch
+    //（cors 语义）分支让位，避免双执行/双事件（part04 R387b 读此旗标；reset 重建后重置，
+    // 见 ResetDocumentState 臂。browser 单进程路径不置旗标，R387b 照常）。
+    let _ = sandbox.execute("globalThis.__zwHostDynamicScripts = true;");
     let mut viewport_hint: (u32, u32) = (0, 0);
 
-    while let Ok(cmd) = cmd_rx.recv() {
+    // t2-pb1 fix#5：命令分派环——优先通道（页面生命周期派发）在每条命令边界先于普通
+    // 队列被处理。真实浏览器中 DOMContentLoaded/load 在解析/资源 settle 即派发，不被脚本
+    // 发起的异步续体推迟；本 worker 原先单 FIFO 通道，bilibili 脚本阶段遗留的 promise/
+    // timer 续体级联（单臂最长 2.6s）把已入队的 DCL Execute 压 7-25s → 导航 15s 超时
+    // ERR_FAILED。仅调序不并行：生命周期派发仍在本 worker 串行执行。
+    // fix#18：被下方「醒来再查」搁置的普通命令——优先通道清空后立即补跑。
+    let mut held_normal: Option<JsWorkerCommand> = None;
+    // t2-pb1 F1：复位臂存活的滞留命令本地续派队列。不经通道回送（fix#20 的自馈送
+    // 教训在此结构性免疫），且通道回送会让复位臂执行期间新到的命令插队到回送命令
+    // 之前、破坏快照+执行的成对序——本地队列保持原相对序，下一轮分派最先消费。
+    let mut retained_after_reset: VecDeque<JsWorkerCommand> = VecDeque::new();
+    loop {
+        let next_cmd = 'dispatch: loop {
+            // F1：复位臂存活的滞留命令按原序先于一切新到命令续派。
+            if let Some(cmd) = retained_after_reset.pop_front() {
+                break 'dispatch Some(cmd);
+            }
+            // 优先命令先取（每轮一条；循环回到顶部即继续清空）。
+            if let Ok(cmd) = prio_rx.try_recv() {
+                break 'dispatch Some(cmd);
+            }
+            if let Some(cmd) = held_normal.take() {
+                break 'dispatch Some(cmd);
+            }
+            match cmd_rx.recv_timeout(WORKER_IDLE_POLL) {
+                Ok(cmd) => {
+                    // t2-pb1 fix#18：recv 醒来后必须再查一次优先通道。原实现只在阻塞前
+                    // 查 prio（check-then-block 竞态窗口）：fix#12 把生命周期派发改为
+                    // fire-and-forget 后，紧随优先提交到达的普通命令（单测探针、页面
+                    // 后续脚本）可越过 DCL/load 先行执行——r2943 类单测探针读到
+                    // 「提交顺序即执行顺序」破坏后的旧状态，四例齐失败。搁置普通命令
+                    // 一轮，下一轮循环优先队列清空后在此处补跑。
+                    if let Ok(prio_cmd) = prio_rx.try_recv() {
+                        held_normal = Some(cmd);
+                        break 'dispatch Some(prio_cmd);
+                    }
+                    break 'dispatch Some(cmd);
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => continue 'dispatch,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break 'dispatch None,
+            }
+        };
+        let Some(cmd) = next_cmd else { break };
         match cmd {
-            JsWorkerCommand::Execute { script, reply } => {
+            JsWorkerCommand::Execute { script, reply, .. } => {
                 #[cfg(test)]
                 execution_count.fetch_add(1, Ordering::Relaxed);
                 let full = format!("__zw_begin_script && __zw_begin_script();\n{script}");
@@ -879,11 +1104,12 @@ fn js_worker_main(
                 url,
                 deps,
                 reply,
+                ..
             } => {
                 let result = execute_module_in_sandbox(&mut *sandbox, &source, &url, &deps);
                 let _ = reply.send(result);
             }
-            JsWorkerCommand::SetDomSnapshot { html, url } => {
+            JsWorkerCommand::SetDomSnapshot { html, url, reply, .. } => {
                 // 视口提示校正：shim 缺省 innerWidth/innerHeight 1280x800 与真实视口失配时
                 // （首次 install 后必失配）按 hint 校正（幂等——匹配即 no-op，零事件噪声）。
                 if viewport_hint.0 > 0 && viewport_hint.1 > 0 {
@@ -929,6 +1155,10 @@ fn js_worker_main(
                         map.clear();
                     }
                 }
+                // t2-pb1 fix#21：快照应用完成回执（set_dom_snapshot 有界等待此应答）。
+                if let Some(reply) = reply {
+                    let _ = reply.send(());
+                }
             }
             JsWorkerCommand::ResolveAsyncCallback { id, result } => {
                 // P1b S1：跨线程 marshal 到此——在 JS worker 线程调 resolve_async_callback
@@ -964,7 +1194,32 @@ fn js_worker_main(
                 );
                 let _ = sandbox.execute(&guard);
             }
-            JsWorkerCommand::ResetDocumentState { reply } => {
+            JsWorkerCommand::ResetDocumentState { reply, seq: reset_seq } => {
+                // t2-pb1 fix#11：导航复位清队——旧文档残留的命令随 context 重建一并丢弃
+                // （real browser：新文档的任务队列不继承旧文档队列；被丢弃 Execute 的
+                // reply 通道随之关闭，调用方即刻得到错误而非排队悬挂）。
+                // t2-pb1 F1（首轮缺陷审查 2026-10-02）：清队按命令**提交代际**（seq）判定，
+                // 不按「Reset 处理时刻」——Reset 滞留长臂之后时，复位提交**之后**入队的新
+                // 文档快照/脚本/生命周期命令排在 Reset 之后，按时刻清队会把它们当残留丢弃
+                // （连 reply 一起），新文档 JS 整体静默死亡（video 页 ready:false/videoCount:0
+                // 证据吻合）。存活判定见 `survives_document_reset`；丢弃即 drop 整条命令，
+                // 其 reply 发送端随之关闭（fix#21 等待方即刻放行）。
+                while let Ok(cmd) = prio_rx.try_recv() {
+                    if survives_document_reset(&cmd, reset_seq) {
+                        retained_after_reset.push_back(cmd);
+                    }
+                }
+                // fix#18：搁置中的普通命令同属复位时刻的旧队列，按同代际判定续派或丢弃。
+                if let Some(cmd) = held_normal.take()
+                    && survives_document_reset(&cmd, reset_seq)
+                {
+                    retained_after_reset.push_back(cmd);
+                }
+                while let Ok(cmd) = cmd_rx.try_recv() {
+                    if survives_document_reset(&cmd, reset_seq) {
+                        retained_after_reset.push_back(cmd);
+                    }
+                }
                 // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
                 // A cross-document navigation creates a new global object. Keeping the
                 // renderer worker is an implementation detail, not page-visible state.
@@ -992,6 +1247,8 @@ fn js_worker_main(
                 if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
                     tracing::error!("JS DOM shim reinit failed after document reset: {e}");
                 }
+                // t2-pb1 fix#19：context 重建即重置宿主动态脚本旗标（见 bootstrap 处注释）。
+                let _ = sandbox.execute("globalThis.__zwHostDynamicScripts = true;");
                 async_callbacks_ready.store(false, Ordering::Release);
                 let _ = reply.send(());
             }
@@ -1211,6 +1468,25 @@ impl zero_page_runtime::JsExecutor for RendererJsWorker {
     }
     fn mutations(&self) -> Arc<std::sync::Mutex<Vec<zero_engine::DomMutation>>> {
         self.mutations()
+    }
+    // t2-pb1 fix#13：用户交互路径走优先通道 + 有界等待（快照与脚本同通道 FIFO 防倒置；
+    // 超时脚本滞留优先队列照常执行，结果晚至）。详见 trait 方法文档与分派环注释。
+    fn set_dom_snapshot_priority(&self, html: &str, url: &str) {
+        RendererJsWorker::set_dom_snapshot_priority(self, html, url)
+    }
+    fn execute_script_priority_bounded(&self, script: &str, timeout: std::time::Duration) -> Result<String, String> {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        self.prio_tx
+            .send(JsWorkerCommand::Execute {
+                script: script.to_string(),
+                reply: reply_tx,
+                seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
+            })
+            .map_err(|e| e.to_string())?;
+        match reply_rx.recv_timeout(timeout) {
+            Ok(result) => result,
+            Err(_) => Err("js worker execute wait timeout".to_string()),
+        }
     }
 }
 
@@ -3772,5 +4048,178 @@ mod tests {
             TAB_JS_CHANNEL_TIMEOUT,
             Duration::from_millis(TAB_JS_EXEC_TIMEOUT_MS + 5_000)
         );
+    }
+
+    /// t2-pb1 fix#15：可挂起优先执行——worker 空闲时有界等待内同步完成。
+    #[test]
+    fn execute_script_priority_deferrable_done_path() {
+        let worker = RendererJsWorker::spawn(72);
+        match worker.execute_script_priority_deferrable("1+2", std::time::Duration::from_secs(5)) {
+            Ok(Ok(value)) => assert_eq!(value, "3"),
+            other => panic!("worker 空闲时须同步完成，实际 {other:?}"),
+        }
+    }
+
+    /// t2-pb1 fix#15：worker 长臂期间挂起（返回通道），臂结束后脚本照常执行、结果晚至。
+    #[test]
+    fn execute_script_priority_deferrable_parks_then_completes() {
+        let worker = RendererJsWorker::spawn(73);
+        let (busy_tx, busy_rx) = mpsc::channel();
+        // 占住 worker 的长臂：稠密循环（v8 ~1-2s；quickjs 30s 上限截断亦不破坏断言）。
+        worker
+            .prio_tx
+            .send(JsWorkerCommand::Execute {
+                script: "var s=0;for(var i=0;i<5e8;i++)s+=i;String(s)".to_string(),
+                reply: busy_tx,
+                seq: 0,
+            })
+            .expect("长臂入队");
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        // 门控：确认 worker 确在长臂中（1ms 有界等待必须挂起）。
+        let rx = match worker.execute_script_priority_deferrable("6*7", std::time::Duration::from_millis(1)) {
+            Err(rx) => rx,
+            Ok(Ok(value)) => panic!("长臂期间应挂起，实际同步返回 {value}"),
+            Ok(Err(e)) => panic!("长臂期间应挂起，实际错误 {e}"),
+        };
+        // 挂起脚本在臂后照常执行：先等长臂收尾（结果/30s 截断错误均可），再收晚至值。
+        let _ = busy_rx.recv_timeout(Duration::from_secs(35));
+        let value = rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("挂起脚本须在臂后执行")
+            .expect("挂起脚本须成功");
+        assert_eq!(value, "42");
+    }
+
+    /// t2-pb1 fix#15 + F1 语义修订（首轮缺陷审查 2026-10-02）：**复位提交之前**挂起的
+    /// 优先通道求值在 prio FIFO 中先于 Reset 出队——臂结束后照常对旧文档（当时仍是
+    /// 当前文档）执行并回值，不被复位取消；复位清队只吞排在其后的旧代际残留。复位
+    /// 之后提交的脚本属新文档，复位不清（见
+    /// [`reset_purge_keeps_commands_submitted_after_reset`]）；worker 退出（shutdown）
+    /// 丢弃全部滞留 reply 的取消面不变。
+    #[test]
+    fn execute_script_priority_deferrable_before_reset_completes_not_cancelled() {
+        let mut worker = RendererJsWorker::spawn(74);
+        let (busy_tx, busy_rx) = mpsc::channel();
+        worker
+            .prio_tx
+            .send(JsWorkerCommand::Execute {
+                script: "var s=0;for(var i=0;i<5e8;i++)s+=i;String(s)".to_string(),
+                reply: busy_tx,
+                seq: 0,
+            })
+            .expect("长臂入队");
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        // 复位提交之前挂起的求值：排长臂之后（prio FIFO），1ms 有界等待挂起。
+        let rx = match worker.execute_script_priority_deferrable(
+            "String(globalThis.__preNav = 'x') || globalThis.__preNav",
+            std::time::Duration::from_millis(1),
+        ) {
+            Err(rx) => rx,
+            _ => panic!("长臂期间应挂起"),
+        };
+        // 复位命令排挂起求值之后（prio FIFO）；reply 有界等待 250ms 在长臂期间超时，命令滞留队列。
+        worker.reset_document_state();
+        worker.shutdown();
+        let _ = busy_rx.recv_timeout(Duration::from_secs(35));
+        let value = rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("先于复位挂起的求值须在臂后照常执行")
+            .expect("先于复位挂起的求值不被复位取消");
+        assert_eq!(value, "x");
+    }
+
+    /// t2-pb1 F1 回归：Reset 滞留长臂之后时，**复位提交之后**入队的新文档快照+脚本
+    /// 不得被清队。修复前按「Reset 处理时刻」清队——滞留 Reset 处理时把队列里排在
+    /// 它后面的新文档命令连 reply 一起丢弃，新文档 JS 整体静默死亡（bilibili video 页
+    /// ready:false/videoCount:0 证据吻合）。代际判定下快照先于脚本续派（成对序保持）。
+    #[test]
+    fn reset_purge_keeps_commands_submitted_after_reset() {
+        let mut worker = RendererJsWorker::spawn(75);
+        let (busy_tx, busy_rx) = mpsc::channel();
+        // 长臂占住 worker（普通通道；复位/新文档命令排优先队列）。
+        worker
+            .cmd_tx
+            .send(JsWorkerCommand::Execute {
+                script: "var s=0;for(var i=0;i<5e8;i++)s+=i;String(s)".to_string(),
+                reply: busy_tx,
+                seq: 0,
+            })
+            .expect("长臂入队");
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        // 复位提交（滞留优先队列；有界等待在长臂期间超时放行）。
+        worker.reset_document_state();
+        // 新文档工作在复位提交之后入队：快照 + 脚本（优先通道成对，fix#10 语义）。
+        worker.set_dom_snapshot_priority("<html><body></body></html>", "https://example.test/");
+        let rx = match worker.execute_script_priority_deferrable(
+            "globalThis.__newdoc = (typeof document !== 'undefined' && document.body) ? 42 : 0; String(globalThis.__newdoc)",
+            std::time::Duration::from_millis(1),
+        ) {
+            Err(rx) => rx,
+            _ => panic!("长臂期间应挂起"),
+        };
+        worker.shutdown();
+        let _ = busy_rx.recv_timeout(Duration::from_secs(35));
+        let value = rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("复位后提交的新文档脚本须照常执行")
+            .expect("新文档脚本须成功");
+        assert_eq!(value, "42", "新文档快照+脚本须在滞留复位之后按序执行");
+    }
+
+    /// t2-pb1 fix#20 断言级回归：复位清队的滞留配置命令须跨复位保留并生效、复位后
+    /// worker 须继续服务后续命令（修复前排空循环内向同通道重排队自馈送——Reset 时
+    /// cmd_rx 含后续命令即 100% CPU 自旋，Shutdown 永不处理，join 挂死由包裹器杀树
+    /// 才暴露；本测试给出断言级证据而非挂死形态）。
+    #[test]
+    fn reset_purge_retains_config_commands_and_worker_keeps_serving() {
+        let mut worker = RendererJsWorker::spawn(76);
+        let (busy_tx, busy_rx) = mpsc::channel();
+        // 长臂占住 worker。
+        worker
+            .cmd_tx
+            .send(JsWorkerCommand::Execute {
+                script: "var s=0;for(var i=0;i<5e8;i++)s+=i;String(s)".to_string(),
+                reply: busy_tx,
+                seq: 0,
+            })
+            .expect("长臂入队");
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        // 配置命令（视口提示）滞留普通队列——跨复位存活。
+        worker.set_viewport_hint(1000, 700);
+        worker.reset_document_state();
+        // 复位后 worker 继续服务：快照换代使滞留视口提示生效（shim 缺省 1280x800 失配校正）。
+        worker.set_dom_snapshot("<html><body></body></html>", "https://example.test/");
+        let value = worker
+            .execute_script_direct_bounded("String(globalThis.innerWidth)", Duration::from_secs(5))
+            .expect("复位后 worker 须继续服务");
+        assert_eq!(value, "1000", "滞留配置命令（视口提示）须跨复位保留并生效");
+        worker.shutdown();
+        let _ = busy_rx.recv_timeout(Duration::from_secs(35));
+    }
+
+    /// t2-pb1 T3（首轮测试有效性审查缺口，2026-10-02）：`__zwHostDynamicScripts`
+    /// bootstrap 旗标黑盒钉——spawn 后置位（R387b shim 页面 fetch 让位 renderer 宿主
+    /// 通路，part04 分支 gate 读取）；ResetDocumentState 重建 sandbox 后须重臂（缺此
+    /// 重臂则首个导航后动态脚本双执行/双事件回归）。置位语义本身由 engine
+    /// r387b2_host_dynamic_scripts_bootstrap_flag_skips_shim_fetch 钉。
+    #[test]
+    fn host_dynamic_scripts_flag_set_at_bootstrap_and_rearmed_after_reset() {
+        let mut worker = RendererJsWorker::spawn(77);
+        let value = worker
+            .execute_script_direct_bounded(
+                "String(globalThis.__zwHostDynamicScripts === true)",
+                Duration::from_secs(5),
+            )
+            .expect("bootstrap 后 worker 可执行");
+        assert_eq!(value, "true", "bootstrap 须置位 __zwHostDynamicScripts");
+        worker.reset_document_state();
+        let value = worker
+            .execute_script_direct_bounded(
+                "String(globalThis.__zwHostDynamicScripts === true)",
+                Duration::from_secs(5),
+            )
+            .expect("复位后 worker 可执行");
+        assert_eq!(value, "true", "复位重建 sandbox 后须重臂旗标");
+        worker.shutdown();
     }
 }

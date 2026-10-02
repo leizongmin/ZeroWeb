@@ -112,6 +112,60 @@ fn r387b_host_owns_dynamic_scripts_skips_shim_fetch() {
     );
 }
 
+// t2-pb1 T3（首轮测试有效性审查缺口，2026-10-02）：`__zwHostDynamicScripts` bootstrap
+// 旗标钉（与上测 `__zwHostOwnsDynamicScripts` 是两个旗标——本旗标由 renderer js_worker
+// bootstrap 与 ResetDocumentState 重建后置位，js_worker.rs 两处 execute；语义同为 R387b
+// shim 页面 fetch 分支让位，renderer 宿主通路单执行者归属）。两段：未置位负控制（fetch
+// 通道被调）；置位后通道关闭。renderer 侧置位时序（bootstrap + 复位重臂）由 js_worker
+// 测试 host_dynamic_scripts_flag_set_at_bootstrap_and_rearmed_after_reset 黑盒覆盖。
+#[test]
+fn r387b2_host_dynamic_scripts_bootstrap_flag_skips_shim_fetch() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='host'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://zw.test/x.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // fetch stub：同上测（计数 stub 激活 R387b 分支）。
+    sandbox.execute(
+        "globalThis.__fetchCalls = 0;\
+         globalThis.fetch = function (u) {\
+           globalThis.__fetchCalls = (globalThis.__fetchCalls | 0) + 1;\
+           return Promise.reject(new Error('stub-net'));\
+         };",
+    )
+    .unwrap();
+    // 阶段 1：旗标未置位（browser 单进程路径）→ R387b 原行为。
+    sandbox.execute(
+        "var s = globalThis.document.createElement('script');\
+         s.src = '/dyn-bs-a.js';\
+         globalThis.document.getElementById('host').appendChild(s);",
+    )
+    .unwrap();
+    let calls = sandbox.execute("String(globalThis.__fetchCalls)").unwrap().value;
+    assert_eq!(calls, "1", "旗标未置位：R387b 页面 fetch 通道保持原行为（负控制）");
+    // 阶段 2：置位（renderer bootstrap 等价动作）→ 通道关闭。
+    sandbox.execute(
+        "globalThis.__zwHostDynamicScripts = true;\
+         var s2 = globalThis.document.createElement('script');\
+         s2.src = '/dyn-bs-b.js';\
+         globalThis.document.getElementById('host').appendChild(s2);",
+    )
+    .unwrap();
+    let calls2 = sandbox.execute("String(globalThis.__fetchCalls)").unwrap().value;
+    assert_eq!(calls2, "1", "旗标置位：R387b shim 页面 fetch 分支让位（renderer 宿主通路单执行者归属）");
+}
+
 // slice18 评审收尾 S1：loadmatrix 最小判别案（CI 常驻 fixture）端到端钉——以入驻
 // fixture 页（`tests/fixtures/loadmatrix-zw-001.html`，v1 同源基本型 + v9 真跨域）
 // 的**整页脚本**驱动，双相位判别「单执行者归属宿主」契约：

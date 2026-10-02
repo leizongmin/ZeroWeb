@@ -151,7 +151,29 @@ pub trait JsExecutor {
     fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String>;
     /// 取回执行期间记录的 DOM 变更。
     fn mutations(&self) -> Arc<std::sync::Mutex<Vec<DomMutation>>>;
+
+    /// t2-pb1 fix#13：用户交互路径的优先 + 有界执行——快照与脚本成对走优先通道
+    /// （同通道 FIFO 保证快照先于脚本），同步等待 reply 至多 `timeout`，超时返回 Err
+    /// （脚本仍留在队列照常执行，结果晚至；调用方按「结果未知」降级）。默认实现退化为
+    /// [`JsExecutor::execute_script_direct`] + [`JsExecutor::set_dom_snapshot`]（tabworker
+    /// 单页 worker 无页面回调洪水，无优先通道概念）。renderer 侧覆写：bilibili 实测页面
+    /// timer 回调单臂 28-30s，用户事件同步派发在普通通道逐个等臂（b1 旅程：一次 goto 前
+    /// 的输入事件累计让 Navigate IPC 滞留 106s，15s 导航超时必炸）。
+    fn execute_script_priority_bounded(&self, script: &str, timeout: std::time::Duration) -> Result<String, String> {
+        let _ = timeout;
+        self.execute_script_direct(script)
+    }
+
+    /// t2-pb1 fix#13：[`Self::execute_script_priority_bounded`] 的配套快照（优先通道，
+    /// 与脚本同通道 FIFO 防顺序倒置）。默认退化为 [`JsExecutor::set_dom_snapshot`]。
+    fn set_dom_snapshot_priority(&self, html: &str, url: &str) {
+        self.set_dom_snapshot(html, url);
+    }
 }
+
+/// 用户交互路径脚本的同步等待上限（t2-pb1 fix#13）。正常页面事件处理器毫秒级完成，
+/// 此上限只在页面被长臂（28-30s 级 timer 回调）占住时封顶单次派发的主循环等待。
+pub const USER_ACTION_SCRIPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// 分阶段页面加载宿主：网络抓取 + 绘制推送。
 ///

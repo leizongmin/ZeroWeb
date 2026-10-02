@@ -8,13 +8,47 @@ use zero_protocol::message::{
 
 use super::{PageScriptContext, RendererRuntime};
 
+/// t2-pb1 fix#15：挂起中的自动化 Evaluate 回复——Evaluate 家族（ExecuteScript /
+/// EvaluateRetaining）在 worker 被长臂（bilibili timer 回调 28-30s）占住时，主循环
+/// 有界等待 [`zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT`] 后放行导航等 IPC，
+/// 脚本留在优先队列照常执行，本结构由 renderer 主循环轮询补答。
+pub(crate) struct PendingAutomationReply {
+    pub(crate) request_id: u64,
+    pub(crate) rx: std::sync::mpsc::Receiver<Result<String, String>>,
+    pub(crate) kind: DeferredEvalKind,
+}
+
+/// t2-pb1 fix#15：挂起求值的响应构造方式（与同步路径同一段包络解析）。
+pub(crate) enum DeferredEvalKind {
+    /// ExecuteScript：JSON 包络字符串 → [`AutomationResult::Value`]。
+    ScriptValue,
+    /// EvaluateRetaining：句柄/值包络（pending 信号 → evaluate cannot be awaited）。
+    Retaining,
+    /// t2-pb1 fix#15b：CallFunctionOnHandle/Release 家族——句柄/值包络，pending 信号
+    /// 续跑 awaitPromise 落定循环（与同步路径同语义；release 脚本不会产生 pending）。
+    HandleOp { group: String, return_by_value: bool },
+}
+
+/// t2-pb1 fix#15b：[`RendererRuntime::run_handle_operation_deferrable`] 的结果——
+/// Deferred 表示已入挂起表，调用方返回 Empty 占位（被长度差检测拦截）。
+enum AutomationHandleFlow {
+    Done(HandleOutcome),
+    Deferred,
+}
+
 impl RendererRuntime {
     pub(super) fn handle_automation_request(
         &mut self,
         request_id: u64,
         request: AutomationRequest,
     ) -> Result<(), String> {
-        let result = self.execute_automation_request(request);
+        // t2-pb1 fix#15：Evaluate 家族可挂起——挂起请求进 pending 表（长度差为标记），
+        // 不立即发送响应，由主循环 [`Self::poll_deferred_automation_replies`] 补答。
+        let pending_before = self.pending_automation_replies.len();
+        let result = self.execute_automation_request(request_id, request);
+        if self.pending_automation_replies.len() > pending_before {
+            return Ok(());
+        }
         self.send_regular_with_id(
             request_id,
             IpcMessageKind::AutomationResponse(AutomationResponse {
@@ -25,16 +59,145 @@ impl RendererRuntime {
         )
     }
 
-    fn execute_automation_request(&mut self, request: AutomationRequest) -> Result<AutomationResult, AutomationError> {
+    fn execute_automation_request(
+        &mut self,
+        request_id: u64,
+        request: AutomationRequest,
+    ) -> Result<AutomationResult, AutomationError> {
         let font_loader = self.font_loader.duplicate();
         let font_id = self.font_id;
         super::text_metrics::with_measure_ctx_opt(&font_loader, font_id, || {
-            self.execute_automation_operation(request.operation)
+            self.execute_automation_operation(request_id, request.operation)
         })
+    }
+
+    /// t2-pb1 fix#15：Evaluate 家族的可挂起执行。有界等待内完成 → 与同步路径完全一致
+    /// （尾随同步 + 包络转换）；超时 → reply 通道入 pending 表挂起续答（返回值仅占位，
+    /// 被 [`Self::handle_automation_request`] 的长度差检测拦截，不会作为响应发出）。
+    /// 仅此两操作可挂起：其余操作的结果驱动后续分支（句柄状态机），挂起会破坏语义。
+    fn execute_eval_deferrable(
+        &mut self,
+        request_id: u64,
+        source: String,
+        kind: DeferredEvalKind,
+    ) -> Result<AutomationResult, AutomationError> {
+        let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let flow = {
+            let mut context = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &current_url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            super::page_scripts::execute_automation_script_deferrable(&mut context, &source)
+        };
+        match flow {
+            super::page_scripts::AutomationEvalOutcome::Done(outcome) => {
+                let (value, changed) =
+                    outcome.map_err(|message| automation_error(AutomationErrorCode::JavascriptError, message))?;
+                self.automation_eval_sync_tail(changed)?;
+                Ok(match kind {
+                    DeferredEvalKind::ScriptValue => AutomationResult::Value(automation_value_from_script(&value)),
+                    DeferredEvalKind::Retaining => match parse_handle_operation_envelope(&value)? {
+                        HandleOutcome::Result(result) => result,
+                        HandleOutcome::Pending => {
+                            return Err(internal_error("evaluate cannot be awaited".into()));
+                        }
+                    },
+                    // fix#15b：HandleOp 只由 run_handle_operation_deferrable 构造，
+                    // 不会流经本函数（其 Done 路径自带状态机收尾）。
+                    DeferredEvalKind::HandleOp { .. } => {
+                        return Err(internal_error("handle op has no eval-style completion".into()));
+                    }
+                })
+            }
+            super::page_scripts::AutomationEvalOutcome::Deferred(rx) => {
+                self.pending_automation_replies
+                    .push(PendingAutomationReply { request_id, rx, kind });
+                Ok(AutomationResult::Empty)
+            }
+        }
+    }
+
+    /// t2-pb1 fix#15：补答挂起的自动化 Evaluate（主循环每轮调用，空表零开销）。
+    /// 通道关闭（导航复位清队 fix#11 / worker 退出）→ 回脚本异常面错误，与同步路径
+    /// 一致；playwright 对已放弃上下文的响应按 request_id 丢弃。
+    pub(super) fn poll_deferred_automation_replies(&mut self) -> Result<(), String> {
+        if self.pending_automation_replies.is_empty() {
+            return Ok(());
+        }
+        let pending = std::mem::take(&mut self.pending_automation_replies);
+        let mut still_pending = Vec::new();
+        for reply in pending {
+            let mut result: Result<AutomationResult, AutomationError> = match reply.rx.try_recv() {
+                Ok(Ok(value)) => match reply.kind {
+                    DeferredEvalKind::ScriptValue => Ok(AutomationResult::Value(automation_value_from_script(&value))),
+                    DeferredEvalKind::Retaining => match parse_handle_operation_envelope(&value) {
+                        Ok(HandleOutcome::Result(result)) => Ok(result),
+                        Ok(HandleOutcome::Pending) => Err(internal_error("evaluate cannot be awaited".into())),
+                        Err(e) => Err(e),
+                    },
+                    // fix#15b：句柄操作补答后按状态机收尾——pending 信号续跑 awaitPromise
+                    // 落定循环（此时 worker 已空闲，循环内每轮执行不再排长臂之后）。
+                    DeferredEvalKind::HandleOp { group, return_by_value } => {
+                        match parse_handle_operation_envelope(&value) {
+                            Ok(HandleOutcome::Result(result)) => Ok(result),
+                            Ok(HandleOutcome::Pending) => self.await_pending_operation(&group, return_by_value),
+                            Err(e) => Err(e),
+                        }
+                    }
+                },
+                Ok(Err(message)) => Err(automation_error(AutomationErrorCode::JavascriptError, message)),
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    still_pending.push(reply);
+                    continue;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(automation_error(
+                    AutomationErrorCode::JavascriptError,
+                    "deferred evaluate cancelled (navigation reset or worker exit)",
+                )),
+            };
+            // t2-pb1 F4（首轮缺陷审查 2026-10-02）：挂起求值补答的同步尾。挂起路径
+            // 此前不 apply_recorded_mutations——脚本晚至执行产生的 DOM mutation 滞留
+            // worker 队列，被下一脚本/交互入口的 clear() 静默丢弃（数据丢失类：宿主
+            // 侧渲染永久缺该变更，长臂饱和期是常态窗口）。补答成功即按同步路径同款
+            // 收尾（焦点/缓存 HTML 回读、console 与 document.write drain、按需发布）。
+            if result.is_ok() {
+                let changed = {
+                    let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+                    let mut context = super::page_scripts::PageScriptContext {
+                        html: &mut self.cached_html,
+                        url: &current_url,
+                        js_worker: &self.js_worker,
+                        webview: self.webview.as_mut(),
+                    };
+                    let html_snapshot = context.html.clone();
+                    super::page_scripts::apply_recorded_mutations(&mut context, &html_snapshot).is_some()
+                };
+                if let Err(e) = self.automation_eval_sync_tail(changed) {
+                    result = Err(e);
+                }
+            }
+            // t2-pb1 F8①：单条补答发送失败（IPC 断连）不中断循环——`?` 早退会跳过
+            // 末尾的 still_pending 归还，剩余挂起 reply 整体丢失。失败仅告警续跑。
+            if let Err(e) = self.send_regular_with_id(
+                reply.request_id,
+                IpcMessageKind::AutomationResponse(AutomationResponse {
+                    navigation_epoch: self.navigation_epoch,
+                    document_generation: self.document_generation,
+                    result,
+                }),
+            ) {
+                tracing::warn!("deferred automation reply send failed: {e}");
+            }
+        }
+        self.pending_automation_replies = still_pending;
+        Ok(())
     }
 
     fn execute_automation_operation(
         &mut self,
+        request_id: u64,
         operation: AutomationOperation,
     ) -> Result<AutomationResult, AutomationError> {
         match operation {
@@ -151,8 +314,8 @@ impl RendererRuntime {
                     "(function(){{var __zw_value=(function(){{{script}\n}}).apply(null,{arguments});\
                      return JSON.stringify({{defined:typeof __zw_value!=='undefined',value:__zw_value}});}})()"
                 );
-                let value = self.run_page_context_script(&source)?;
-                Ok(AutomationResult::Value(automation_value_from_script(&value)))
+                // t2-pb1 fix#15：Evaluate 家族可挂起（worker 长臂时主循环 2s 放行）。
+                self.execute_eval_deferrable(request_id, source, DeferredEvalKind::ScriptValue)
             }
             AutomationOperation::EvaluateRetaining {
                 script,
@@ -168,10 +331,9 @@ impl RendererRuntime {
                 let group = group.unwrap_or_else(|| DEFAULT_OBJECT_GROUP.to_string());
                 // 对象结果保留进注册表（句柄随文档换代经 JS context 重建自然失效）。
                 let source = evaluate_retaining_script(&script, &group, return_by_value);
-                match self.run_handle_operation(&source)? {
-                    HandleOutcome::Pending => Err(internal_error("evaluate cannot be awaited".into())),
-                    HandleOutcome::Result(result) => Ok(result),
-                }
+                // t2-pb1 fix#15：Evaluate 家族可挂起（pending 信号的拒绝语义移入
+                // execute_eval_deferrable 的补答路径，与同步路径同文案）。
+                self.execute_eval_deferrable(request_id, source, DeferredEvalKind::Retaining)
             }
             AutomationOperation::CallFunctionOnHandle {
                 handle,
@@ -191,18 +353,34 @@ impl RendererRuntime {
                     await_promise,
                     &group,
                 );
-                match self.run_handle_operation(&source)? {
-                    HandleOutcome::Pending => self.await_pending_operation(&group, return_by_value),
-                    HandleOutcome::Result(result) => Ok(result),
+                // t2-pb1 fix#15b：playwright 的 title()/evaluate() 都走此操作，可挂起。
+                match self.run_handle_operation_deferrable(request_id, &source, &group, return_by_value)? {
+                    AutomationHandleFlow::Deferred => Ok(AutomationResult::Empty),
+                    AutomationHandleFlow::Done(HandleOutcome::Pending) => {
+                        self.await_pending_operation(&group, return_by_value)
+                    }
+                    AutomationHandleFlow::Done(HandleOutcome::Result(result)) => Ok(result),
                 }
             }
             AutomationOperation::ReleaseHandle { handle } => {
-                self.run_handle_operation(&release_handle_script(handle))?;
-                Ok(AutomationResult::Empty)
+                match self.run_handle_operation_deferrable(
+                    request_id,
+                    &release_handle_script(handle),
+                    DEFAULT_OBJECT_GROUP,
+                    true,
+                )? {
+                    AutomationHandleFlow::Deferred | AutomationHandleFlow::Done(_) => Ok(AutomationResult::Empty),
+                }
             }
             AutomationOperation::ReleaseObjectGroup { group } => {
-                self.run_handle_operation(&release_object_group_script(&group))?;
-                Ok(AutomationResult::Empty)
+                match self.run_handle_operation_deferrable(
+                    request_id,
+                    &release_object_group_script(&group),
+                    DEFAULT_OBJECT_GROUP,
+                    true,
+                )? {
+                    AutomationHandleFlow::Deferred | AutomationHandleFlow::Done(_) => Ok(AutomationResult::Empty),
+                }
             }
             AutomationOperation::Unsupported { name } => Err(automation_error(
                 AutomationErrorCode::UnsupportedOperation,
@@ -219,6 +397,23 @@ impl RendererRuntime {
         }
     }
 
+    /// 脚本执行后的尾随同步（同步与 fix#15 可挂起路径共用）：焦点/缓存 HTML 回读、
+    /// console 与 document.write drain、DOM 变更发布。
+    fn automation_eval_sync_tail(&mut self, changed: bool) -> Result<(), AutomationError> {
+        self.sync_focus_from_js();
+        self.sync_cached_html_from_webview();
+        // S11：脚本执行产生的 console 输出先于 AutomationResponse 转发（headless 在
+        // 自动化往返中消费并入同一命令的事件排空——晚了要等下一条命令才可见）。
+        self.tick_console_log_drain();
+        // S16：document.write 落定信号同尾 drain（PW setContent 在 evaluate 返回前
+        // 需要 console tag 与 load 生命周期重发均在途）。
+        self.tick_document_write_drain();
+        if changed {
+            self.publish_webview(None, true).map_err(internal_error)?;
+        }
+        Ok(())
+    }
+
     /// 在页面脚本上下文执行 `source`，返回脚本 stdout（JSON 包络字符串）并同步 DOM 变更。
     fn run_page_context_script(&mut self, source: &str) -> Result<String, AutomationError> {
         let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
@@ -232,24 +427,60 @@ impl RendererRuntime {
             super::page_scripts::execute_automation_script(&mut context, source)
                 .map_err(|message| automation_error(AutomationErrorCode::JavascriptError, message))?
         };
-        self.sync_focus_from_js();
-        self.sync_cached_html_from_webview();
-        // S11：脚本执行产生的 console 输出先于 AutomationResponse 转发（headless 在
-        // 自动化往返中消费并入同一命令的事件排空——晚了要等下一条命令才可见）。
-        self.tick_console_log_drain();
-        // S16：document.write 落定信号同尾 drain（PW setContent 在 evaluate 返回前
-        // 需要 console tag 与 load 生命周期重发均在途）。
-        self.tick_document_write_drain();
-        if changed {
-            self.publish_webview(None, true).map_err(internal_error)?;
-        }
+        self.automation_eval_sync_tail(changed)?;
         Ok(value)
     }
 
     /// 句柄操作的公共尾：执行生成脚本、解包络（含 pending/句柄/错误信号）。
+    /// 同步形态仅保留给 awaitPromise 落定循环内部（worker 刚执行完我方轮询脚本，
+    /// 无长臂积压）。
     fn run_handle_operation(&mut self, source: &str) -> Result<HandleOutcome, AutomationError> {
         let value = self.run_page_context_script(source)?;
         parse_handle_operation_envelope(&value)
+    }
+
+    /// t2-pb1 fix#15b：[`Self::run_handle_operation`] 的可挂起形态。有界等待内完成 →
+    /// 与同步路径一致（尾随同步 + 包络状态机）；超时 → reply 通道连同句柄操作延续
+    /// 信息（group/return_by_value）入挂起表，主循环不因 worker 长臂阻塞。bilibili
+    /// 实测：30s timer 臂期间 playwright `page.title()`（CallFunctionOnHandle）曾占死
+    /// 主循环 29s，后续导航 IPC 饿死到 bwfl 必炸。返回 Empty 占位同 Evaluate 家族
+    /// （被 [`Self::handle_automation_request`] 的长度差检测拦截）。
+    fn run_handle_operation_deferrable(
+        &mut self,
+        request_id: u64,
+        source: &str,
+        group: &str,
+        return_by_value: bool,
+    ) -> Result<AutomationHandleFlow, AutomationError> {
+        let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let flow = {
+            let mut context = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &current_url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            super::page_scripts::execute_automation_script_deferrable(&mut context, source)
+        };
+        match flow {
+            super::page_scripts::AutomationEvalOutcome::Done(outcome) => {
+                let (value, changed) =
+                    outcome.map_err(|message| automation_error(AutomationErrorCode::JavascriptError, message))?;
+                self.automation_eval_sync_tail(changed)?;
+                Ok(AutomationHandleFlow::Done(parse_handle_operation_envelope(&value)?))
+            }
+            super::page_scripts::AutomationEvalOutcome::Deferred(rx) => {
+                self.pending_automation_replies.push(PendingAutomationReply {
+                    request_id,
+                    rx,
+                    kind: DeferredEvalKind::HandleOp {
+                        group: group.to_string(),
+                        return_by_value,
+                    },
+                });
+                Ok(AutomationHandleFlow::Deferred)
+            }
+        }
     }
 
     /// `awaitPromise` 落定循环：`__zwAutomationAwait` 由首个 execute 投递，此后每轮
@@ -276,7 +507,8 @@ impl RendererRuntime {
             }
             let state = self
                 .js_worker
-                .execute_script_direct(AWAIT_POLL_SCRIPT)
+                // t2-pb1 fix#9：await 轮询同走优先通道（宿主发起，不排页面回调积压之后）。
+                .execute_script_direct_priority(AWAIT_POLL_SCRIPT)
                 .map_err(|message| automation_error(AutomationErrorCode::JavascriptError, message))?;
             let settled = serde_json::from_str::<serde_json::Value>(&state)
                 .ok()
@@ -718,12 +950,15 @@ mod tests {
 
     fn find(runtime: &mut RendererRuntime, selector: &str) -> AutomationElementRef {
         let result = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::FindElement {
-                    using: zero_protocol::message::AutomationLocatorStrategy::CssSelector,
-                    value: selector.into(),
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::FindElement {
+                        using: zero_protocol::message::AutomationLocatorStrategy::CssSelector,
+                        value: selector.into(),
+                    },
                 },
-            })
+            )
             .expect("find element");
         let AutomationResult::Element(Some(element)) = result else {
             panic!("expected element");
@@ -738,46 +973,61 @@ mod tests {
         let check = find(&mut runtime, "#check");
 
         runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::SendKeys {
-                    element: name,
-                    keys: vec![AutomationKey::Text("Aé".into())],
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::SendKeys {
+                        element: name,
+                        keys: vec![AutomationKey::Text("Aé".into())],
+                    },
                 },
-            })
+            )
             .expect("send unicode keys");
         assert_eq!(
             runtime
-                .execute_automation_request(AutomationRequest {
-                    operation: AutomationOperation::ExecuteScript {
-                        script: "return document.getElementById('name').value;".into(),
-                        arguments: Vec::new(),
-                    },
-                })
+                .execute_automation_request(
+                    1,
+                    AutomationRequest {
+                        operation: AutomationOperation::ExecuteScript {
+                            script: "return document.getElementById('name').value;".into(),
+                            arguments: Vec::new(),
+                        },
+                    }
+                )
                 .expect("read live input"),
             AutomationResult::Value(AutomationValue::String("Aé".into()))
         );
 
         runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::ElementClick { element: check },
-            })
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::ElementClick { element: check },
+                },
+            )
             .expect("click checkbox");
         assert_eq!(
             runtime
-                .execute_automation_request(AutomationRequest {
-                    operation: AutomationOperation::ExecuteScript {
-                        script: "return document.getElementById('check').checked;".into(),
-                        arguments: Vec::new(),
-                    },
-                })
+                .execute_automation_request(
+                    1,
+                    AutomationRequest {
+                        operation: AutomationOperation::ExecuteScript {
+                            script: "return document.getElementById('check').checked;".into(),
+                            arguments: Vec::new(),
+                        },
+                    }
+                )
                 .expect("read live checkedness"),
             AutomationResult::Value(AutomationValue::Bool(true))
         );
         assert_eq!(
             runtime
-                .execute_automation_request(AutomationRequest {
-                    operation: AutomationOperation::GetActiveElement,
-                })
+                .execute_automation_request(
+                    1,
+                    AutomationRequest {
+                        operation: AutomationOperation::GetActiveElement,
+                    }
+                )
                 .expect("active element"),
             AutomationResult::Element(Some(check))
         );
@@ -787,9 +1037,12 @@ mod tests {
             ..check
         };
         let error = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::ElementClick { element: stale },
-            })
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::ElementClick { element: stale },
+                },
+            )
             .expect_err("stale click must fail");
         assert_eq!(error.code, AutomationErrorCode::StaleElementReference);
     }
@@ -798,12 +1051,15 @@ mod tests {
     fn find_elements_returns_all_matches_in_document_order() {
         let mut runtime = runtime();
         let result = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::FindElements {
-                    using: zero_protocol::message::AutomationLocatorStrategy::CssSelector,
-                    value: "input".into(),
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::FindElements {
+                        using: zero_protocol::message::AutomationLocatorStrategy::CssSelector,
+                        value: "input".into(),
+                    },
                 },
-            })
+            )
             .expect("find elements");
         let AutomationResult::Elements(references) = result else {
             panic!("expected elements list");
@@ -812,12 +1068,15 @@ mod tests {
 
         // 空匹配返回空列表（W3C：非错误）。
         let result = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::FindElements {
-                    using: zero_protocol::message::AutomationLocatorStrategy::CssSelector,
-                    value: "#missing".into(),
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::FindElements {
+                        using: zero_protocol::message::AutomationLocatorStrategy::CssSelector,
+                        value: "#missing".into(),
+                    },
                 },
-            })
+            )
             .expect("find elements no match");
         let AutomationResult::Elements(references) = result else {
             panic!("expected elements list");
@@ -829,11 +1088,14 @@ mod tests {
     fn unsupported_automation_operation_is_explicit() {
         let mut runtime = runtime();
         let error = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::Unsupported {
-                    name: "test_driver.set_permission".into(),
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::Unsupported {
+                        name: "test_driver.set_permission".into(),
+                    },
                 },
-            })
+            )
             .expect_err("unsupported operation");
         assert_eq!(error.code, AutomationErrorCode::UnsupportedOperation);
     }
@@ -845,24 +1107,30 @@ mod tests {
     fn evaluate_retaining_splits_objects_and_primitives() {
         let mut runtime = runtime();
         let result = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::EvaluateRetaining {
-                    script: "1 + 2".into(),
-                    group: None,
-                    return_by_value: false,
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::EvaluateRetaining {
+                        script: "1 + 2".into(),
+                        group: None,
+                        return_by_value: false,
+                    },
                 },
-            })
+            )
             .expect("retain primitive");
         assert_eq!(result, AutomationResult::Value(AutomationValue::Number(3.0)));
 
         let result = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::EvaluateRetaining {
-                    script: "({a: 1, b: 21})".into(),
-                    group: None,
-                    return_by_value: false,
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::EvaluateRetaining {
+                        script: "({a: 1, b: 21})".into(),
+                        group: None,
+                        return_by_value: false,
+                    },
                 },
-            })
+            )
             .expect("retain object");
         let AutomationResult::Value(AutomationValue::Handle(_)) = result else {
             panic!("object result must be a handle, got {result:?}");
@@ -876,16 +1144,19 @@ mod tests {
         let target = retain_object(&mut runtime, "({v: 20})");
         let argument = retain_object(&mut runtime, "({v: 1})");
         let result = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::CallFunctionOnHandle {
-                    handle: target.id,
-                    function_declaration: "(function (o) { return this.v + o.v; })".into(),
-                    arguments: vec![AutomationValue::Handle(argument)],
-                    return_by_value: true,
-                    await_promise: false,
-                    group: None,
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::CallFunctionOnHandle {
+                        handle: target.id,
+                        function_declaration: "(function (o) { return this.v + o.v; })".into(),
+                        arguments: vec![AutomationValue::Handle(argument)],
+                        return_by_value: true,
+                        await_promise: false,
+                        group: None,
+                    },
                 },
-            })
+            )
             .expect("call on handle");
         assert_eq!(result, AutomationResult::Value(AutomationValue::Number(21.0)));
     }
@@ -896,31 +1167,37 @@ mod tests {
         let mut runtime = runtime();
         let target = retain_object(&mut runtime, "({v: 5})");
         let result = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::CallFunctionOnHandle {
-                    handle: target.id,
-                    function_declaration: "(function () { return { nested: this.v * 2 }; })".into(),
-                    arguments: vec![],
-                    return_by_value: false,
-                    await_promise: false,
-                    group: None,
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::CallFunctionOnHandle {
+                        handle: target.id,
+                        function_declaration: "(function () { return { nested: this.v * 2 }; })".into(),
+                        arguments: vec![],
+                        return_by_value: false,
+                        await_promise: false,
+                        group: None,
+                    },
                 },
-            })
+            )
             .expect("retain call result");
         let AutomationResult::Value(AutomationValue::Handle(nested)) = result else {
             panic!("object result must be a handle, got {result:?}");
         };
         let result = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::CallFunctionOnHandle {
-                    handle: nested.id,
-                    function_declaration: "(function () { return this.nested + 1; })".into(),
-                    arguments: vec![],
-                    return_by_value: true,
-                    await_promise: false,
-                    group: None,
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::CallFunctionOnHandle {
+                        handle: nested.id,
+                        function_declaration: "(function () { return this.nested + 1; })".into(),
+                        arguments: vec![],
+                        return_by_value: true,
+                        await_promise: false,
+                        group: None,
+                    },
                 },
-            })
+            )
             .expect("read nested via handle");
         assert_eq!(result, AutomationResult::Value(AutomationValue::Number(11.0)));
     }
@@ -931,21 +1208,24 @@ mod tests {
         let mut runtime = runtime();
         let target = retain_object(&mut runtime, "({v: 1})");
         let result = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::CallFunctionOnHandle {
-                    handle: target.id,
-                    function_declaration: "(function () { return Promise.resolve(7); })".into(),
-                    arguments: vec![],
-                    return_by_value: true,
-                    await_promise: true,
-                    group: None,
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::CallFunctionOnHandle {
+                        handle: target.id,
+                        function_declaration: "(function () { return Promise.resolve(7); })".into(),
+                        arguments: vec![],
+                        return_by_value: true,
+                        await_promise: true,
+                        group: None,
+                    },
                 },
-            })
+            )
             .expect("await settled promise");
         assert_eq!(result, AutomationResult::Value(AutomationValue::Number(7.0)));
 
         let result = runtime
-            .execute_automation_request(AutomationRequest {
+            .execute_automation_request(1, AutomationRequest {
                 operation: AutomationOperation::CallFunctionOnHandle {
                     handle: target.id,
                     function_declaration: "(function () { var self = this; return new Promise(function (r) { setTimeout(function () { r(self.v + 3); }, 30); }); })".into(),
@@ -965,21 +1245,27 @@ mod tests {
         let mut runtime = runtime();
         let handle = retain_object(&mut runtime, "({v: 1})");
         runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::ReleaseHandle { handle: handle.id },
-            })
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::ReleaseHandle { handle: handle.id },
+                },
+            )
             .expect("release handle");
         let error = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::CallFunctionOnHandle {
-                    handle: handle.id,
-                    function_declaration: "(function () { return this.v; })".into(),
-                    arguments: vec![],
-                    return_by_value: true,
-                    await_promise: false,
-                    group: None,
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::CallFunctionOnHandle {
+                        handle: handle.id,
+                        function_declaration: "(function () { return this.v; })".into(),
+                        arguments: vec![],
+                        return_by_value: true,
+                        await_promise: false,
+                        group: None,
+                    },
                 },
-            })
+            )
             .expect_err("released handle must fail");
         assert_eq!(error.code, AutomationErrorCode::JavascriptError);
     }
@@ -991,34 +1277,43 @@ mod tests {
         let grouped = retain_object_in_group(&mut runtime, "({v: 1})", "gtest");
         let untouched = retain_object_in_group(&mut runtime, "({v: 2})", "other");
         runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::ReleaseObjectGroup { group: "gtest".into() },
-            })
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::ReleaseObjectGroup { group: "gtest".into() },
+                },
+            )
             .expect("release group");
         let error = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::CallFunctionOnHandle {
-                    handle: grouped.id,
-                    function_declaration: "(function () { return this.v; })".into(),
-                    arguments: vec![],
-                    return_by_value: true,
-                    await_promise: false,
-                    group: None,
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::CallFunctionOnHandle {
+                        handle: grouped.id,
+                        function_declaration: "(function () { return this.v; })".into(),
+                        arguments: vec![],
+                        return_by_value: true,
+                        await_promise: false,
+                        group: None,
+                    },
                 },
-            })
+            )
             .expect_err("grouped handle must be released");
         assert_eq!(error.code, AutomationErrorCode::JavascriptError);
         let result = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::CallFunctionOnHandle {
-                    handle: untouched.id,
-                    function_declaration: "(function () { return this.v; })".into(),
-                    arguments: vec![],
-                    return_by_value: true,
-                    await_promise: false,
-                    group: None,
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::CallFunctionOnHandle {
+                        handle: untouched.id,
+                        function_declaration: "(function () { return this.v; })".into(),
+                        arguments: vec![],
+                        return_by_value: true,
+                        await_promise: false,
+                        group: None,
+                    },
                 },
-            })
+            )
             .expect("other group survives");
         assert_eq!(result, AutomationResult::Value(AutomationValue::Number(2.0)));
     }
@@ -1033,17 +1328,68 @@ mod tests {
         group: &str,
     ) -> zero_protocol::message::AutomationHandleRef {
         let result = runtime
-            .execute_automation_request(AutomationRequest {
-                operation: AutomationOperation::EvaluateRetaining {
-                    script: script.into(),
-                    group: Some(group.into()),
-                    return_by_value: false,
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::EvaluateRetaining {
+                        script: script.into(),
+                        group: Some(group.into()),
+                        return_by_value: false,
+                    },
                 },
-            })
+            )
             .expect("retain object");
         let AutomationResult::Value(AutomationValue::Handle(handle)) = result else {
             panic!("expected handle, got {result:?}");
         };
         handle
+    }
+
+    /// t2-pb1 返修 N1（定向复核缺口，2026-10-02）：F4 补答接线真实路径钉。挂起求值
+    /// 晚至完成后，[`Self::poll_deferred_automation_replies`] 须在**真实补答路径**内
+    /// apply mutation 并落进 `cached_html`——此前 page_scripts 层测试手工复刻了补答侧
+    /// apply（不走 poll），revert automation.rs 的 poll 补答 hunk 时现存测试全绿
+    ///（假绿面）；本测试闭合该缺口：移除 poll 内 apply+sync tail 即红。
+    #[test]
+    fn deferred_reply_poll_applies_mutations_via_real_path() {
+        let mut rt = runtime();
+        // 长臂占住 worker（15e8：debug ~6s，确保后续脚本 2s 有界等待稳定超时挂起；
+        // 5e8 约 2.1s 与 USER_ACTION_SCRIPT_TIMEOUT 同量级，会漂移出假 Done 分支）。
+        let busy = rt
+            .js_worker
+            .execute_script_priority_deferrable(
+                "var s=0;for(var i=0;i<15e8;i++)s+=i;String(s)",
+                std::time::Duration::from_millis(1),
+            )
+            .expect_err("长臂应挂起");
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        // 挂起的自动化脚本：改 DOM + 返回值（入 pending 表，handle_automation_request
+        // 按长度差检测不回信）。
+        rt.handle_automation_request(
+            77,
+            AutomationRequest {
+                operation: AutomationOperation::ExecuteScript {
+                    script: "document.body.setAttribute('data-late','yes'); 'ok'".into(),
+                    arguments: vec![],
+                },
+            },
+        )
+        .expect("挂起路径应成功入队");
+        // 长臂完成 → worker 随后执行挂起求值（mutation 入共享队列、reply 投递 pending
+        // 通道）；poll 轮询到补答成功为止（eval 在长臂结束后才执行）。
+        let _ = busy.recv_timeout(std::time::Duration::from_secs(35));
+        let mut applied = false;
+        for _ in 0..100 {
+            rt.poll_deferred_automation_replies().expect("poll 补答");
+            if rt.cached_html.contains("data-late") {
+                applied = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(
+            applied,
+            "补答路径须 apply mutation 并落进 cached_html（F4 接线真实路径）"
+        );
     }
 }
