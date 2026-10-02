@@ -1,0 +1,40 @@
+<!doctype html>
+<!--
+  slice18 评审收尾 S1：动态脚本执行保真矩阵·最小判别形态（CI 常驻资产）。
+  派生自 site-compat baidu 建议链（/sugrec）诊断用活体 fixture 的 v1（同源基本型）
+  与 v9（真跨域）两案——判别语义等价的入驻版，原件仅存诊断环境不留仓。
+
+  两案语义：
+  - /s18-dyn-a.js（同源基本型）：宿主所有权契约（__zwHostOwnsDynamicScripts，
+    renderer js_worker SetDomSnapshot 置位）下，动态 src 脚本单执行者归属宿主
+    PendingDynamicScripts 管线——onload 恰派发一次、页面计数恰为 1。
+    修前缺陷：shim 页面 fetch 通道（cors 语义）与宿主 tick 并存 → 双执行
+    （活体 base 实测 onload ×2、页面计数 ×2）。
+  - https://cdn.zw.test/s18-dyn-x.js（真跨域）：no-cors classic script 取回语义
+    由宿主管线承载，cors 语义的页面 fetch 通道整体跳过——无 ACAO 的跨域脚本
+    不得误派 error（活体 base 实测 error+load 双派；fixed 单 load）。
+
+  消费方：crates/engine/src/js_dom_bridge_tests/part25.rs
+  r387c_loadmatrix_fixture_single_execution_end_to_end（双相位判别）。
+  活体证据（原始 9 案矩阵的请求计数对照）：
+  .acceptance/site-optimizer/baidu-storm-20260929/diag/evidence/slice18/
+  s18-netcount-base-truebin-double.json / s18-netcount-fixed-truebin-single.json
+-->
+<html>
+<head>
+<script>
+  globalThis.__zwErr = 0;
+  var a = document.createElement('script');
+  a.src = '/s18-dyn-a.js';
+  a.onload = function () { globalThis.__zwALoad = (globalThis.__zwALoad || 0) + 1; };
+  a.onerror = function () { globalThis.__zwErr = globalThis.__zwErr + 1; };
+  document.head.appendChild(a);
+  var x = document.createElement('script');
+  x.src = 'https://cdn.zw.test/s18-dyn-x.js';
+  x.onload = function () { globalThis.__zwXLoad = (globalThis.__zwXLoad || 0) + 1; };
+  x.onerror = function () { globalThis.__zwErr = globalThis.__zwErr + 1; };
+  document.head.appendChild(x);
+</script>
+</head>
+<body></body>
+</html>

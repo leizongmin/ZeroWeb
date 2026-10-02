@@ -415,6 +415,14 @@ impl RendererJsWorker {
         if let Ok(mut focus_changes) = self.focus_changes.lock() {
             focus_changes.clear();
         }
+        // slice18（site-compat baidu 建议链 /sugrec）：handle→selector 表同为文档域状态——
+        // handle/listener store 随导航销毁重建，陈旧条目使宿主元素事件反查
+        //（`__zw_handle_for_selector`）命中上一文档的死 handle 键 → onload IDL 静默不达。
+        // webview 侧同表文档换代即清（`publish_forward_handle_map(None)`），此处补齐。
+        // https://html.spec.whatwg.org/multipage/browsers.html#navigate
+        if let Ok(mut map) = self.handle_selector_map.lock() {
+            map.clear();
+        }
         self.async_callbacks_ready.store(false, Ordering::Release);
         let (reply_tx, reply_rx) = mpsc::channel();
         if self
@@ -886,6 +894,14 @@ fn js_worker_main(
                     );
                     let _ = sandbox.execute(&guard);
                 }
+                // slice18（site-compat baidu 建议链 /sugrec，R-baidu8 接管收尾）：renderer 上下文
+                // 声明动态 src 脚本单点归属宿主管线——shim R387b 页面 fetch 通道（cors 语义）
+                // 整体跳过：no-cors classic script 在 cors 语义下恒败误派元素 error（跨域无
+                // ACAO CDN 脚本，AMD 加载器常态），同源则与 PendingDynamicScripts（no-cors
+                // IPC 取回，tick_dynamic_scripts）双通道双执行。幂等；每快照换代重设
+                //（reset_context 销毁重建后由下一快照重新置位，见本 arm 首行执行序）。
+                // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
+                let _ = sandbox.execute("globalThis.__zwHostOwnsDynamicScripts = true;");
                 // P1a form input：URL 变化（导航）→ 清 shim value 缓存，防跨页同选择器 stale value。
                 let url_changed = page_url.lock().map(|u| *u != url).unwrap_or(true);
                 if let Ok(mut snap) = dom_html.lock() {
@@ -1250,6 +1266,83 @@ mod tests {
                 .unwrap(),
             "SPAN",
             "reset_context 后下一快照重 install 原生绑定"
+        );
+        worker.shutdown();
+    }
+
+    // slice18（site-compat baidu 建议链 /sugrec，R-baidu8 接管收尾）：SetDomSnapshot 置位
+    // `__zwHostOwnsDynamicScripts`——动态 src 脚本单点归属宿主管线，shim R387b 页面 fetch
+    // 通道（cors 语义）整体跳过，动态脚本归 PendingDynamicScripts no-cors 取回。
+    // 负控制：无本置位时 R387b 对跨域 classic script 误派 error、同源与宿主 tick 双执行
+    //（engine part25 r387b 两段钉双向覆盖）；reset_context 销毁重建 context 后下一快照
+    // 须重新置位。
+    // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
+    #[test]
+    fn renderer_js_worker_snapshot_declares_host_owns_dynamic_scripts() {
+        let mut worker = RendererJsWorker::spawn(62);
+        worker.set_dom_snapshot("<html><body><div id='a'></div></body></html>", "about:blank");
+        assert_eq!(
+            worker
+                .execute_script_direct("String(globalThis.__zwHostOwnsDynamicScripts === true)")
+                .unwrap(),
+            "true",
+            "SetDomSnapshot 后宿主动态脚本所有权标志置位"
+        );
+        // ResetDocumentState 销毁重建 context → 下一快照换代重新置位。
+        worker.reset_document_state();
+        assert_eq!(
+            worker
+                .execute_script_direct("String(globalThis.__zwHostOwnsDynamicScripts === true)")
+                .unwrap(),
+            "false",
+            "reset_context 后标志随 context 销毁（未置位态回到 R387b 原行为）"
+        );
+        worker.set_dom_snapshot("<html><body><span id='b'></span></body></html>", "about:blank");
+        assert_eq!(
+            worker
+                .execute_script_direct("String(globalThis.__zwHostOwnsDynamicScripts === true)")
+                .unwrap(),
+            "true",
+            "换代后标志重新置位（先于页面脚本就位）"
+        );
+        worker.shutdown();
+    }
+
+    // slice18（site-compat baidu 建议链 /sugrec）：`handle_selector_map` 是**文档域**状态——
+    // handle/listener store 随导航销毁重建，陈旧 handle→selector 条目使宿主元素事件
+    //（R2944 script load/error 按 selector 反查 handle）经 `__zw_handle_for_selector`
+    // find 有概率命中上一文档的死 handle 键 → listener store 无监听 → 派发落空。
+    // webview 侧同表在文档换代时显式清空（`publish_forward_handle_map(None)`），renderer
+    // 侧补齐同语义。已知边界：清表为必要非充分——活体（矩阵/复刻页）元素事件对目标
+    // onload 的派送仍有不达成分（快照/apply 代际 × shim 视图一致性，slice18 汇报为
+    // 独立待修缺口），本钉只锁「文档换代不留陈旧条目」这一不变式。
+    // https://html.spec.whatwg.org/multipage/browsers.html#navigate
+    #[test]
+    fn renderer_js_worker_reset_document_state_clears_handle_selector_map() {
+        use zero_engine::apply_mutations_to_html_with_handles;
+        let mut worker = RendererJsWorker::spawn(64);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__el = document.createElement('div');\
+                 document.body.appendChild(globalThis.__el);",
+            )
+            .unwrap();
+        let recorded = worker.mutations().lock().unwrap().clone();
+        let (_html1, handle_map) =
+            apply_mutations_to_html_with_handles("<html><body></body></html>", &recorded).unwrap();
+        assert_eq!(handle_map.len(), 1, "一个 createElement handle 映射");
+        worker.handle_selector_map().lock().unwrap().extend(handle_map);
+        assert_eq!(
+            worker.handle_selector_map().lock().unwrap().len(),
+            1,
+            "merge 后表含本文档条目"
+        );
+        worker.reset_document_state();
+        assert_eq!(
+            worker.handle_selector_map().lock().unwrap().len(),
+            0,
+            "文档换代须清空 handle→selector 表（陈旧条目使宿主派发命中死键）"
         );
         worker.shutdown();
     }
