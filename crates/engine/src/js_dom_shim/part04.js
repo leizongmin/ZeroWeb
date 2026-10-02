@@ -4955,7 +4955,20 @@ return _tplContent;
                   try {
                     _r387url = String(child.src || (child.getAttribute && child.getAttribute('src')) || '');
                   } catch (_e387u) {}
-                  if (_r387url && typeof fetch === 'function') {
+                  // slice18（site-compat baidu 建议链 /sugrec，R-baidu8 接管收尾）：宿主管线
+                  //（`__zwHostOwnsDynamicScripts`，renderer js_worker SetDomSnapshot 置位）置位
+                  // 即整体跳过本 shim 页面 fetch 通道，动态 src 脚本单点交宿主
+                  // PendingDynamicScripts（no-cors IPC 取回，tick_dynamic_scripts）执行并派元素
+                  // load/error。依据：classic script 取回是 no-cors 资源取回（request mode
+                  // "no-cors"），页面 fetch() 是 cors 语义——无 ACAO 的跨域 CDN 脚本（AMD 加载
+                  // 器常态）在此永远失败 → 误派元素 error（脚本经宿主 no-cors 取回实际可执行，
+                  // 活体矩阵 v9 真跨域 base 误 error+load 双派、fixed 单 load 实证）；且宿主
+                  // tick 通道并存，同源脚本双通道双执行（base 活体 ran=2、load=2 实证——AMD
+                  // define 双注册同族破坏）。单执行者归属宿主后两类问题一并消除。标志未置位
+                  // 上下文（嵌入 webview / 引擎测试）保持本分支原行为。
+                  // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
+                  if (_r387url && typeof fetch === 'function'
+                      && !(globalThis.__zwHostOwnsDynamicScripts === true)) {
                     if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
                     globalThis._zwRanScripts[child.__zwHandle] = true;
                     var _r387el = child;
