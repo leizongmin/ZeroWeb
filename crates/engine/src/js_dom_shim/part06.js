@@ -3861,11 +3861,15 @@
       return c;
     },
     compatMode: 'CSS1Compat',
-    characterSet: 'UTF-8',
-    charset: 'UTF-8',
-    // R81：inputEncoding（WPT Node-properties document.inputEncoding 期望 "UTF-8"；spec
-    // DOM Document.inputEncoding = characterSet 别名，readonly）。
-    get inputEncoding() { return 'UTF-8'; },
+    // R5000 片 c（html-syntax-compat P5）：解析期 `<meta charset>` 预扫描标签经
+    // encoding_rs 归一（`__zw_get_character_set`）——旧常量 'UTF-8' 遮蔽真实嗅探值
+    //（WPT quotes-in-meta / meta-inhead-insertion-mode 断言面）。
+    get characterSet() {
+      try { return (typeof __zw_get_character_set === 'function' && __zw_get_character_set()) || 'UTF-8'; } catch (_e5000cs) { return 'UTF-8'; }
+    },
+    get charset() { return this.characterSet; },
+    // R81：inputEncoding（spec DOM Document.inputEncoding = characterSet 别名，readonly）。
+    get inputEncoding() { return this.characterSet; },
     contentType: 'text/html',
     readyState: 'complete',
     // fullscreen（R2817 stub → R2938 spec-alike 状态追踪 + 事件）。headless 无真 OS 全屏，但 fullscreenElement

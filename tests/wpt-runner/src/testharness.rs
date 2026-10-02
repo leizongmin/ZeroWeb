@@ -18,6 +18,17 @@ const CASE_TIMEOUT: Duration = Duration::from_secs(10);
 /// 30s 覆盖 ~35 周期，非 Pass 判定语义不变。
 const CORPUS_CASE_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// 单案 wall-clock 预算——`ZW_CORPUS_CASE_TIMEOUT_SECS` 按跑覆盖（html-syntax-compat
+/// M2 记账：html5lib 全量语料 × document.write 面在 30s 案预算内跑不完，切片跑法用；
+/// 缺省维持 30s，零行为变化）。
+fn corpus_case_timeout() -> Duration {
+    std::env::var("ZW_CORPUS_CASE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(CORPUS_CASE_TIMEOUT)
+}
+
 /// First supported upstream HTML interaction cases.
 pub const HTML_INTERACTION_CASES: &[&str] = &[
     "html/semantics/embedded-content/media-elements/networkState_initial.html",
@@ -2875,7 +2886,7 @@ fn run_corpus_subdirs(
             if case_skipped(&relative, &source) {
                 continue;
             }
-            let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, CORPUS_CASE_TIMEOUT);
+            let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, corpus_case_timeout());
             cases.push((relative, results));
         }
     }
@@ -3193,7 +3204,7 @@ fn run_any_js_window_case(
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let html = any_js_window_wrapper(relative, &support_refs, source);
-    run_testharness_html(wpt_root, relative, &html, harness_source, CORPUS_CASE_TIMEOUT)
+    run_testharness_html(wpt_root, relative, &html, harness_source, corpus_case_timeout())
 }
 
 /// timing 四 corpus 共用基础筛减：`*-manual.html`（需真实用户交互，clipboard 先例）、
@@ -3460,7 +3471,7 @@ fn run_any_js_corpus_subdirs(
             let results = if is_any_js {
                 run_any_js_window_case(wpt_root, &relative, &source, &harness_source)
             } else {
-                run_testharness_html(wpt_root, &relative, &source, &harness_source, CORPUS_CASE_TIMEOUT)
+                run_testharness_html(wpt_root, &relative, &source, &harness_source, corpus_case_timeout())
             };
             cases.push((relative, results));
         }

@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 html5ever = { workspace = true }
 markup5ever = "0.14"
+encoding_rs = { workspace = true }
 tendril = "0.4"
 serde = { workspace = true }
 thiserror = { workspace = true }

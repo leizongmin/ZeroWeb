@@ -225,7 +225,11 @@ test: target-disk-guard target/test-guard
 	# zero-browser 测试 artifact 提供 Xvfb display，实测全套 411P（~0.2s/用例，
 	# 无额外 wgpu adapter 需求）；有 display 的环境该前缀同样工作（xvfb-run
 	# 独立起 display，不影响结果语义）。
-	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --workspace --exclude zero-browser --exclude zero-renderer -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
+	# R5000 片 c 栈边际记账：libtest 线程栈 8MiB 默认值对 tests::pipeline 深嵌套
+	# 递归帧**边际翻转**（zero-dom rmeta 重编译即抽签——纯注释 no-op 也触发；
+	# 2026-10-02 实证）。临时基建加固 = 提测试线程栈 32MiB；真修（style/layout
+	# 递归帧瘦身）归渲染流域碰头账（master.md 碰头条款）。
+	ZERO_NOPROXY=1 RUST_MIN_STACK=33554432 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --workspace --exclude zero-browser --exclude zero-renderer -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
 	cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings & clippy_pid=$$!; \
 	rc=0; wait $$test_pid || rc=$$?; wait $$clippy_pid || rc=$$?; exit $$rc
 	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-renderer --bin zero-renderer -- --test-threads=1

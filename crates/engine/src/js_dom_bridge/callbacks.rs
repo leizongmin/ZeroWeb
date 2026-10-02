@@ -1019,6 +1019,24 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // R5000 片 c（html-syntax-compat P5）：`document.characterSet`——dom_html 快照的
+    // encoding_label（解析期 `<meta charset>` 预扫描产物，spec encoding sniffing meta
+    // prescan 片段）经 encoding_rs 归一为编码名；无标签回落 UTF-8。shim 主文档视图的
+    // 旧常量 'UTF-8' 遮蔽原生 getter（part06）——shim 改读本回调。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_get_character_set",
+        Box::new(move |_args: &[String]| -> String {
+            let snap_guard = html.lock().unwrap_or_else(|e| e.into_inner());
+            with_query_doc(&snap_guard, |doc| {
+                doc.encoding_label()
+                    .and_then(|l| encoding_rs::Encoding::for_label(l.as_bytes()))
+                    .map(|e| e.name().to_string())
+                    .unwrap_or_else(|| "UTF-8".to_string())
+            })
+        }),
+    );
+
     // `getComputedStyle(el).getPropertyValue(prop)`——计算样式（display/position/visibility/
     // opacity + 颜色族）。**per-snapshot + per-style-version 缓存**：(html_key, style_version) →
     // (selector → ComputedStyle)。Document 非 Send（含 observer/listener 闘包 + html5ever tendril

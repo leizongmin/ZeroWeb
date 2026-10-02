@@ -529,9 +529,213 @@ fn parse_html_with_builder(html: &str) -> Document {
     use html5ever::driver::ParseOpts;
     use tendril::TendrilSink;
 
+    let encoding_label = sniff_meta_charset(html);
     let builder = DomBuilder::new();
     let parser = html5ever::parse_document(builder, ParseOpts::default());
-    parser.one(html)
+    let mut doc = parser.one(html);
+    doc.set_encoding_label(encoding_label);
+    doc
+}
+
+/// R5000 片 c（html-syntax-compat P5）：`<meta charset>` 预扫描——spec「encoding
+/// sniffing → prescan a byte stream to determine its encoding」的字符串近似（runner
+/// 以已解码字符串载入页面；BOM/HTTP 头优先级在载入链上游）。前 1024 字符内的 `<meta`：
+/// charset 属性优先，否则 http-equiv=content-type 的 content 属性内 `charset=` 提取；
+/// 首个产出编码的 meta 生效。属性收集引号语义（单/双引号/无引号）；「算法提取 meta
+/// 元素编码」的**无闭引号 → failure**规则保留（quotes-in-meta 首个 meta
+/// `content='charset="windows-1251'` 据此弃权，次个 meta 生效）。label 归一（名称）由
+/// 消费方（engine 经 encoding_rs for_label→name）完成。
+pub(crate) fn sniff_meta_charset(html: &str) -> Option<String> {
+    let window: String = html.chars().take(1024).collect();
+    let lower = window.to_ascii_lowercase();
+    let mut search = 0usize;
+    while let Some(rel) = lower[search..].find("<meta") {
+        let tag_start = search + rel + "<meta".len();
+        let (attrs, tag_end) = collect_meta_attrs(&window, tag_start)?;
+        // charset 属性优先（spec：有 charset 属性 → 提取）；label 不可识别 → spec
+        // prescan 规则「返回 failure 则继续扫描」——不立返（序列化快照里 value 含
+        // &quot; 等实体的形态经解码 + 失败规则落到后续 meta——quotes-in-meta 面）。
+        if let Some((_, v)) = attrs.iter().find(|(n, _)| n == "charset")
+            && let Some(label) = extract_charset_value(v)
+            && encoding_rs::Encoding::for_label(label.as_bytes()).is_some()
+        {
+            return Some(label);
+        }
+        if let (Some((_, he)), Some((_, content))) = (
+            attrs.iter().find(|(n, _)| n == "http-equiv"),
+            attrs.iter().find(|(n, _)| n == "content"),
+        ) && he.eq_ignore_ascii_case("content-type")
+            && let Some(label) = extract_charset_from_content(content)
+            && encoding_rs::Encoding::for_label(label.as_bytes()).is_some()
+        {
+            return Some(label);
+        }
+        search = tag_end;
+    }
+    None
+}
+
+/// 收集 meta 标签属性至标签闭（'>'；引号内不截断）。返 (attr 列表, 标签闭后位置)。
+/// 未找到标签闭（EOF）→ None（spec prescan 对截断 meta 同样放弃）。
+fn collect_meta_attrs(s: &str, start: usize) -> Option<(Vec<(String, String)>, usize)> {
+    let bytes = s.as_bytes();
+    let mut i = start;
+    let mut attrs: Vec<(String, String)> = Vec::new();
+    while i < bytes.len() {
+        let c = bytes[i];
+        if c == b'>' {
+            return Some((attrs, i + 1));
+        }
+        if c.is_ascii_whitespace() {
+            i += 1;
+            continue;
+        }
+        // 属性名：读到 '=' / 空白 / '>'
+        let name_start = i;
+        while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'=' && bytes[i] != b'>' {
+            i += 1;
+        }
+        let name = s[name_start..i].to_ascii_lowercase();
+        let mut value = String::new();
+        if i < bytes.len() && bytes[i] == b'=' {
+            i += 1;
+            if i < bytes.len() && (bytes[i] == b'"' || bytes[i] == b'\'') {
+                let quote = bytes[i];
+                i += 1;
+                let vstart = i;
+                while i < bytes.len() && bytes[i] != quote {
+                    i += 1;
+                }
+                value = s[vstart..i].to_string();
+                if i < bytes.len() {
+                    i += 1; // 闭引号
+                }
+            } else {
+                let vstart = i;
+                while i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b'>' {
+                    i += 1;
+                }
+                value = s[vstart..i].to_string();
+            }
+        }
+        if !name.is_empty() {
+            attrs.push((name, decode_basic_entities(&value)));
+        }
+    }
+    None
+}
+
+/// 属性值基础实体解码（序列化快照重解析面：`&quot;` `&amp;` `&lt;` `&gt;` `&apos;`
+/// + 数字/十六进制字符引用——prescan 的引号语义须作用于解码后的真实值）。
+fn decode_basic_entities(s: &str) -> String {
+    if !s.contains('&') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] != b'&' {
+            let start = i;
+            while i < bytes.len() && bytes[i] != b'&' {
+                i += 1;
+            }
+            out.push_str(&s[start..i]);
+            continue;
+        }
+        let rest = &s[i + 1..];
+        let decoded: Option<(char, usize)> = if let Some(semi) = rest.find(';') {
+            let ent = &rest[..semi];
+            let n = semi + 1;
+            let mapped = match ent {
+                "quot" => Some('"'),
+                "amp" => Some('&'),
+                "lt" => Some('<'),
+                "gt" => Some('>'),
+                "apos" => Some('\''),
+                _ => {
+                    if let Some(hex) = ent.strip_prefix("#x").or_else(|| ent.strip_prefix("#X")) {
+                        u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
+                    } else if let Some(dec) = ent.strip_prefix('#') {
+                        dec.parse::<u32>().ok().and_then(char::from_u32)
+                    } else {
+                        None
+                    }
+                }
+            };
+            mapped.map(|c| (c, n))
+        } else {
+            None
+        };
+        match decoded {
+            Some((c, n)) => {
+                out.push(c);
+                i += 1 + n;
+            }
+            None => {
+                out.push('&');
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// spec「getting an attribute's value」+ charset 直接提取：原值 trim。
+fn extract_charset_value(v: &str) -> Option<String> {
+    let trimmed = v.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// spec「algorithm for extracting a character encoding from a Meta element」的 content
+/// 属性分支——`charset=` 后可选引号包裹值，**无闭引号 → failure**（None）。
+fn extract_charset_from_content(content: &str) -> Option<String> {
+    const KEY: &str = "charset";
+    let lower = content.to_ascii_lowercase();
+    let mut search = 0usize;
+    while let Some(rel) = lower[search..].find(KEY) {
+        let mut pos = search + rel + KEY.len();
+        let bytes = content.as_bytes();
+        while pos < bytes.len() && (bytes[pos] as char).is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos >= bytes.len() || bytes[pos] != b'=' {
+            // 非 charset= 形态——跳过本命中继续找。
+            search = pos.max(search + 1);
+            continue;
+        }
+        pos += 1;
+        while pos < bytes.len() && (bytes[pos] as char).is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos >= bytes.len() {
+            return None;
+        }
+        let first = bytes[pos];
+        if first == b'"' || first == b'\'' {
+            let vstart = pos + 1;
+            let mut end = vstart;
+            while end < bytes.len() && bytes[end] != first {
+                end += 1;
+            }
+            if end >= bytes.len() {
+                return None; // 无闭引号 → failure（quotes-in-meta 面）
+            }
+            return Some(content[vstart..end].trim().to_string());
+        }
+        let vstart = pos;
+        let mut end = vstart;
+        while end < bytes.len() && !(bytes[end] as char).is_ascii_whitespace() && bytes[end] != b';' {
+            end += 1;
+        }
+        let v = content[vstart..end].trim().to_string();
+        return if v.is_empty() { None } else { Some(v) };
+    }
+    None
 }
 
 #[cfg(test)]
@@ -1453,6 +1657,55 @@ mod cdata_fragment_tests {
             translate_cdata_sections("plain <!-- comment -->"),
             "plain <!-- comment -->"
         );
+    }
+
+    #[test]
+    fn sniff_meta_charset_prescan() {
+        // charset 属性优先于 content 属性（meta-inhead-insertion-mode）。
+        assert_eq!(
+            sniff_meta_charset(
+                r#"<meta http-equiv="Content-Type" content="text/html; charset=koi8-r" charset="iso-8859-15">"#,
+            ),
+            Some("iso-8859-15".to_string())
+        );
+        // content 属性 charset 提取 + 无闭引号 → failure（quotes-in-meta 首个 meta 弃权）。
+        assert_eq!(
+            sniff_meta_charset(
+                "<meta http-equiv=\"Content-Type\" content='charset=\"windows-1251'>\n<meta charset=windows-1250>"
+            ),
+            Some("windows-1250".to_string())
+        );
+        // 无引号值。
+        assert_eq!(sniff_meta_charset("<meta charset=utf-8>"), Some("utf-8".to_string()));
+        // 序列化快照形态：content 值含 &quot; 实体——解码后无闭引号 → failure → 次个
+        // meta 生效（quotes-in-meta 经 dom_html 序列化串的实际形态）。
+        assert_eq!(
+            sniff_meta_charset(
+                "<meta http-equiv=\"Content-Type\" content='charset=&quot;windows-1251'>\n<meta charset=\"windows-1250\">"
+            ),
+            Some("windows-1250".to_string())
+        );
+        // 不可识别 label → 继续扫描（spec prescan failure 规则）。
+        assert_eq!(
+            sniff_meta_charset("<meta charset=nonexistent-enc><meta charset=koi8-r>"),
+            Some("koi8-r".to_string())
+        );
+        // 无 meta → None。
+        assert_eq!(sniff_meta_charset("<html><body>x</body></html>"), None);
+        // 1024 字符窗外不扫。
+        let far = format!("<html>{}<meta charset=koi8-r>", "x".repeat(2000));
+        assert_eq!(sniff_meta_charset(&far), None);
+        // 1024 窗内生效。
+        let near = format!("<html>{}<meta charset=koi8-r>", "x".repeat(500));
+        assert_eq!(sniff_meta_charset(&near), Some("koi8-r".to_string()));
+    }
+
+    #[test]
+    fn parse_html_sets_encoding_label() {
+        let doc = parse_html("<meta charset=windows-1250><body>x</body>");
+        assert_eq!(doc.encoding_label(), Some("windows-1250"));
+        let plain = parse_html("<html><body>x</body></html>");
+        assert_eq!(plain.encoding_label(), None);
     }
 
     #[test]

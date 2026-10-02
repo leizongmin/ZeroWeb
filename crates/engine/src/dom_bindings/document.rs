@@ -93,15 +93,24 @@ pub(super) fn native_compat_mode_getter(
     set_string_rv(scope, val, &mut rv);
 }
 
-/// `document.characterSet` getter（spec `dom-document-character-set`）：HTML 解析文档固定 "UTF-8"
-///（headless：html5ever 默认 UTF-8，无 HTTP charset 协商；分析/编码探测库高频）。
+/// `document.characterSet` getter（spec `dom-document-character-set`）：HTML 解析文档
+/// 读解析期 `<meta charset>` 预扫描标签（R5000 片 c / P5——zero-dom
+/// `sniff_meta_charset`），经 encoding_rs for_label 归一为编码名（"windows-1250" /
+/// "ISO-8859-15"）；无标签或 label 不可识别回落 "UTF-8"（html5ever 默认；文档实际
+/// 解码仍为 UTF-8——本值是嗅探声明面，BOM/HTTP 头优先级在载入链上游）。
 pub(super) fn native_character_set_getter(
     scope: &mut v8::PinScope,
     _name: v8::Local<v8::Name>,
     _args: v8::PropertyCallbackArguments,
     mut rv: v8::ReturnValue<v8::Value>,
 ) {
-    set_string_rv(scope, "UTF-8", &mut rv);
+    let label = with_dom(|d| d.encoding_label().map(str::to_string)).flatten();
+    let name = label
+        .as_deref()
+        .and_then(|label| encoding_rs::Encoding::for_label(label.as_bytes()))
+        .map(|e| e.name().to_string())
+        .unwrap_or_else(|| "UTF-8".to_string());
+    set_string_rv(scope, &name, &mut rv);
 }
 
 /// `document.contentType` getter（spec `dom-document-contenttype`）：HTML 解析文档固定 "text/html"

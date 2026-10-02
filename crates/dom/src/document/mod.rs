@@ -73,6 +73,9 @@ pub struct Document {
     /// 文档 referrer（来源页 URL，导航层注入；`document.referrer` 读）。
     /// 解析时不设，由 engine 在页面加载后 `set_referrer` 注入（referrer = 导航前的页面 URL）。
     referrer: Option<String>,
+    /// 文档编码标签（`document.characterSet` 读）——解析期由 `<meta charset>` 预扫描
+    ///（spec encoding sniffing 的 meta prescan 片段）注入；None → 消费方回落 UTF-8。
+    encoding_label: Option<String>,
     /// 已注册的 MutationObserver 列表。
     observers: Vec<MutationObserver>,
     /// 待处理的 mutation 记录。
@@ -109,6 +112,7 @@ impl Document {
             id_map: HashMap::new(),
             url: None,
             referrer: None,
+            encoding_label: None,
             observers: Vec::new(),
             pending_mutations: Vec::new(),
             event_listeners: HashMap::new(),
@@ -134,6 +138,7 @@ impl Document {
             id_map: HashMap::new(),
             url: None,
             referrer: None,
+            encoding_label: None,
             observers: Vec::new(),
             pending_mutations: Vec::new(),
             event_listeners: HashMap::new(),
@@ -1227,6 +1232,17 @@ impl Document {
     /// 注入文档 URL（engine 在页面加载后调，来自导航层）。
     pub fn set_url(&mut self, url: Option<String>) {
         self.url = url;
+    }
+
+    /// 文档编码标签（`document.characterSet` 消费；spec meta prescan 产物——label 原值，
+    /// 名称归一由消费方完成）。
+    pub fn encoding_label(&self) -> Option<&str> {
+        self.encoding_label.as_deref()
+    }
+
+    /// 注入文档编码标签（解析期 prescan 调）。
+    pub fn set_encoding_label(&mut self, label: Option<String>) {
+        self.encoding_label = label;
     }
 
     /// 注入运行时焦点元素（engine JS 桥在 `element.focus()`/`element.blur()` 时调）。

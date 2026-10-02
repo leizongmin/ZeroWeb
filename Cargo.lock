@@ -6897,6 +6897,7 @@ version = "0.1.0"
 dependencies = [
  "compact_str",
  "criterion",
+ "encoding_rs",
  "hashbrown 0.17.1",
  "html5ever",
  "markup5ever",
