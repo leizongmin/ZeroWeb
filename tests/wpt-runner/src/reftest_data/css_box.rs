@@ -416,6 +416,22 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><head><style>body{margin:0;font:36px/46px Arial,sans-serif}.row{margin:8px}.nav-item{display:inline-block;background:#3fbf3f;white-space:nowrap}.nav-item a{font-size:39px;line-height:138px;color:#222}.big{font-size:39px;line-height:138px;background:#e6a23c}</style></head><body><div class=\"row\"><span class=\"nav-item\"><a>abcdef ghijkl</a></span><span class=\"nav-item big\" style=\"margin-left:40px\">abcdef ghijkl</span></div></body></html>",
         is_match: true,
     },
+    // ── slice19（R4938）：inline 元素内原子行内级后代保布局盒（R2156 skip 曾整棵丢弃）──
+    // 回归形态：div > span > input(inline-block)——span 被 inline_box_model_coherence
+    // skip 后原子行内级后代既无 taffy 子树也无 LayoutBox → 不绘制（IFC 行高仍由
+    // collect_items 收集项撑起，信号 = input 矩形本体像素：360×40 + 240×60 = 28800px
+    // ≈ 6.0% ≫ Layout 1% 阈值）。ref 页去 span 包装（原子 input 直接为块容器子，
+    // R109 路径）——修复态两页逐像素相等。
+    // CSS2 §9.2.1.1 inline formatting；§10.3.1 replaced inline。
+    // 文件孪生（make reftest-upstream 域 + 几何 dump 用）：
+    // tests/wpt-runner/local-reftests/css/CSS2/box-display/atomic-inline-in-inline-zw-001*.html。
+    InlineReftestDef {
+        id: "css-box/atomic-inline-in-inline-zw-001",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0}input{display:inline-block;margin:0;padding:0;border:0;background:#03c;vertical-align:top}</style></head><body><div><span><input style=\"width:360px;height:40px\"><input style=\"width:240px;height:60px\"></span></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0}input{display:inline-block;margin:0;padding:0;border:0;background:#03c;vertical-align:top}</style></head><body><div><input style=\"width:360px;height:40px\"><input style=\"width:240px;height:60px\"></div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {
