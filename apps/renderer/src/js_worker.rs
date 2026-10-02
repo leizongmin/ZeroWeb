@@ -233,6 +233,12 @@ impl RendererJsWorker {
 
         let join = thread::Builder::new()
             .name(format!("renderer-js-{}", renderer_id))
+            // R5000 live 侧同类加固（2026-10-02 slice20 实证）：本线程承载页面脚本 eval，
+            // shim/站点脚本深递归帧贴近 Rust 默认 2MiB 线程栈边际——baidu 首页脚本管线
+            // 实测 `thread 'renderer-js-N' has overflowed its stack`（SIGABRT，整 renderer
+            // 随崩）。测试侧 R5000 已用 32MiB 缓解（Makefile RUST_MIN_STACK）；真修
+            //（递归帧瘦身）仍归渲染流域碰头账。
+            .stack_size(32 * 1024 * 1024)
             .spawn(move || {
                 js_worker_main(
                     cmd_rx,
