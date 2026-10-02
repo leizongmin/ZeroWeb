@@ -5601,6 +5601,52 @@ return _tplContent;
               for (var _r97l = 0; _r97l < _r97Fb.length; _r97l++) _ceApplyConn(_r97Fb[_r97l], _r97Pb);
               return newNode;
             }
+            // R5001 M3 片 a 收口（html-syntax-compat）：plain 节点（_zwMEl 解析子——无
+            // handle 无 selector，nodeType 1/3/8）插入 handle 容器的带位变体（appendChild
+            // R84 分支的镜像：registry splice + parentNode/sibling 反链）。insertAdjacentHTML
+            // ('afterbegin') 的 handle-only 容器路径逐个 insertBefore 解析子——此前四分支
+            //（R334 sel 子 / R97 fragment / __zwHandle / R265 textEl）全 miss → 静默 no-op
+            //（div.firstChild 恒 null，WPT escaping.html 'div.insertAdjacentHTML' 根因）。
+            // https://dom.spec.whatwg.org/#concept-node-pre-insert
+            if (newNode && !newNode.__zwHandle && !newNode.__zwSelector && handle && newNode.nodeType) {
+              if (newNode === refNode) return newNode;
+              // 异父移动：先摘旧位（同容器/无父直接跳过——_zwFragmentAdded 产物的
+              // parentNode 是本容器 proxy 但未入 registry）。
+              try {
+                var _pnbOp = newNode.parentNode;
+                if (_pnbOp && _pnbOp !== _makeProxy(sel, handle) && typeof _pnbOp.removeChild === 'function') {
+                  _pnbOp.removeChild(newNode);
+                }
+              } catch (_ePnbRm) {}
+              if (!_handleChildren[handle]) _handleChildren[handle] = [];
+              var _pnbKids = _handleChildren[handle];
+              var _pnbI = _pnbKids.indexOf(newNode);
+              if (_pnbI >= 0) _pnbKids.splice(_pnbI, 1);
+              var _pnbAt = refNode ? _pnbKids.indexOf(refNode) : -1;
+              if (_pnbAt >= 0) _pnbKids.splice(_pnbAt, 0, newNode);
+              else _pnbKids.push(newNode);
+              // R84 同款反链（parentNode/sibling getter——appendChild plain 分支镜像）。
+              try {
+                var _pnbParent = _makeProxy(null, handle);
+                Object.defineProperty(newNode, 'parentNode', { get: function () { return _pnbParent; }, configurable: true });
+                Object.defineProperty(newNode, 'parentElement', { get: function () { return _pnbParent; }, configurable: true });
+                Object.defineProperty(newNode, 'previousSibling', { get: function () {
+                  var kids = _handleChildren[handle] || [];
+                  var i = kids.indexOf(newNode);
+                  return i > 0 ? kids[i - 1] : null;
+                }, configurable: true });
+                Object.defineProperty(newNode, 'nextSibling', { get: function () {
+                  var kids = _handleChildren[handle] || [];
+                  var i = kids.indexOf(newNode);
+                  return i >= 0 && i < kids.length - 1 ? kids[i + 1] : null;
+                }, configurable: true });
+              } catch (_ePnb84) {}
+              var _pnbPrev = _pnbAt > 0 ? _pnbKids[_pnbAt - 1] : null;
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: [newNode], removedNodes: [], previousSibling: _pnbPrev, nextSibling: refNode || null });
+              var _pnbPc = _ceParentConnected(sel, handle);
+              _ceApplyConn(newNode, _pnbPc);
+              return newNode;
+            }
             if (newNode && newNode.__zwHandle) {
               // js-dom M3 R97：spec `dom-node-pre-insert`「node === child 时 no-op」
               //（WPT Node-insertBefore "Inserting a node before itself should not move

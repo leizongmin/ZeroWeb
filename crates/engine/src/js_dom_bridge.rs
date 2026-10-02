@@ -2110,6 +2110,62 @@ pub fn child_nodes_json_ctx(html: &str, elem_sel: &str, context_ns: Option<&str>
     child_nodes_json_full(html, elem_sel, context_ns, true)
 }
 
+/// R5001 M3 片 a 收口（html-syntax-compat）：HTML **context tag** 片段解析变体——
+/// `Range.createContextualFragment` 的 context 元素面（spec §8.5.7：startContainer
+/// Element 或 Text/CDATASection 的 parentElement，`<html>` 容器与 null 回落 body）。
+/// 经 [`parse_html_fragment_with_scripting`] 以 (HTML ns, context_tag) 解析，顶层子
+/// 产出**深 JSON**（shim `_zwMBuildDeepEntry` 消费——浅 selector 条目须 shim 侧全文档
+/// re-parse 二次定位，fragment 树形与全文档解析的 head/body 归置会错位——bare
+/// `<noscript>` 全文档解析落 head 且 scripting enabled rawtext 内容吞掉，实证
+/// probe-dbg1）。scripting 旗标随 range 所在文档（createHTMLDocument/DOMParser
+/// inert 文档 → noscript 按 markup 解析 + 实体解码，序列化走转义分支）。
+pub fn fragment_children_json(html: &str, context_tag: &str, scripting: bool) -> String {
+    let frag =
+        zero_dom::parse_html_fragment_with_scripting(html, "http://www.w3.org/1999/xhtml", context_tag, scripting);
+    let entries: Vec<String> = fragment_top_level_children(&frag)
+        .into_iter()
+        .filter_map(|c| deep_entry_json(&frag, c))
+        .collect();
+    format!("[{}]", entries.join(","))
+}
+
+/// 深形态单节点条目（`{"k":"T","v"}` / `{"k":"C","v"}` / `{"k":"E","tag","attrs","children"}`）
+/// ——children 嵌套，shim 侧本地构建消费（[`template_contents_json_doc`] 同形态；
+/// fragment 顶层子面无 selector 二次定位可达性，直接发全子树）。
+fn deep_entry_json(doc: &Document, id: NodeId) -> Option<String> {
+    let node = doc.get(id)?;
+    match &node.kind {
+        NodeKind::Text(t) => Some(format!("{{\"k\":\"T\",\"v\":{}}}", json_str(&t.content))),
+        NodeKind::Comment(c) => Some(format!("{{\"k\":\"C\",\"v\":{}}}", json_str(&c.content))),
+        NodeKind::Element(e) => {
+            let tag = json_str(e.local_name());
+            let attrs: Vec<String> = e
+                .attributes
+                .iter()
+                .map(|a| {
+                    format!(
+                        "{{\"n\":{},\"v\":{}}}",
+                        json_str(a.name.local.as_ref()),
+                        json_str(&a.value)
+                    )
+                })
+                .collect();
+            let kids: Vec<String> = doc
+                .child_nodes(id)
+                .iter()
+                .filter_map(|&k| deep_entry_json(doc, k))
+                .collect();
+            Some(format!(
+                "{{\"k\":\"E\",\"tag\":{},\"attrs\":[{}],\"children\":[{}]}}",
+                tag,
+                attrs.join(","),
+                kids.join(",")
+            ))
+        }
+        _ => None,
+    }
+}
+
 /// WC-M2（web-components goal）：`<template>` contents 的 childNodes JSON（与
 /// [`child_nodes_json`] 同形态）——shim template.content 视图的数据源（spec
 /// the-template-element：内容在独立 inert DocumentFragment，非 template 的 children）。

@@ -254,15 +254,28 @@
         self.response = new Blob([bytes], { type: finalMime });
       } else if (rt === 'document') {
         // xhr.spec set a document response：final MIME 非 HTML/XML MIME → return（
-        // response object 保持 null——responsexml-invalid-type 面）。XML/HTML 文档
-        // 解析深水挂账（template-element 族）——FIXME: 两形态文档解析，暂一并置 null。
+        // response object 保持 null——responsexml-invalid-type 面）。
+        // R5001 M3 片 a 收口（html-syntax-compat）：HTML MIME 的 response 文档面——
+        // 复用 DOMParser 的 `_zwParsedDoc` 工厂（scripting disabled 印记——响应文档无
+        // browsing context，noscript 按 markup 解析 + 序列化转义分支；body/firstChild/
+        // getElementById 查询面全通）。WPT escaping.html 'XMLHttpRequest' 面：
+        // data:text/html 响应的 body.firstChild 解码 + 再转义双断言。XML MIME 文档解析
+        // 仍挂账（FIXME: XML parser 面）。
         var docMime = self._zwXhrOverrideMime;
         if (!docMime) {
           var docCtRaw = self._zwXhrResponseHeaders['content-type'];
           var docParsed = docCtRaw ? _zwParseMimeType(docCtRaw) : null;
           docMime = docParsed ? _zwSerializeMimeType(docParsed) : 'text/xml';
         }
-        self.response = null;
+        if (typeof _zwParsedDoc === 'function'
+            && (docMime === 'text/html' || docMime === 'application/xhtml+xml')) {
+          self.response = new _zwParsedDoc(text);
+          self.responseXML = self.response;
+        } else {
+          // 非 HTML/XML MIME（含 XML 解析挂账）→ response/responseXML 保持 null
+          //（spec set a document response 的 return 分支）。
+          self.response = null;
+        }
       } else {
         self.response = text;
       }
@@ -11791,7 +11804,17 @@
           _r5000ctxNs = String(_nsHandles[hostHandle].namespace || '');
         }
       } catch (_e5000cn) {}
-      var kids = _zwMBuildBodyTree(String(html == null ? '' : html), _r5000ctxNs).childNodes;
+      // R5001 M3 片 a 收口：TEMPLATE 容器（template.innerHTML / insertAdjacentHTML）——
+      // spec fragment parsing 对 template context 的文档为 template contents owner
+      // document（无 browsing context → scripting disabled，https://html.spec.whatwg.org/
+      // multipage/parsing.html#parsing-html-fragments）→ noscript 按 markup 解析（实体
+      // 解码）+ `__zwTreeScripting=false` 印章（序列化 noscript 再转义分支，同函数内
+      // `_zwMBuildBodyTree` 递归盖章）。WPT escaping.html 'template.innerHTML' 面。
+      var _r5000scr;
+      try {
+        _r5000scr = (hostHandle != null && _realTag(null, hostHandle) === 'TEMPLATE') ? false : undefined;
+      } catch (_e5000tg) { _r5000scr = undefined; }
+      var kids = _zwMBuildBodyTree(String(html == null ? '' : html), _r5000ctxNs, _r5000scr).childNodes;
       // R123：顶层子盖宿主 handle 印章（__zwFragHostHandle）——PI 视图等解析节点上行找
       // sel/handle 祖先时到片段根即断（_zwMEl parentNode=null），印章提供宿主回链
       //（MutationObserver.observe 回落 + piNotify 投递）。
@@ -12862,6 +12885,11 @@
       // defaultview——无 browsing context 的 Document 返 null 而非 undefined；
       // selection/getSelection.html "defaultView of created HTML document must be null"）。
       defaultView: null,
+      // R5001 M3 片 a 收口（html-syntax-compat）：detached 文档 scripting disabled
+      //（spec：无 browsing context → scripting disabled——createHTMLDocument/new
+      // Document 同）——`Range.createContextualFragment` / detached `document.write`
+      // 的本地解析按 markup 形态（noscript 实体解码 + 序列化转义分支）。
+      __zwScriptingEnabled: false,
       // R185（js-dom M4）：isSameNode（spec `dom-node-issamenode` 引用比较；WPT
       // Node-isSameNode "documents should be compared on reference"——createDocument
       // 产物的 detached doc）。
@@ -13199,6 +13227,31 @@
       getElementsByClassName: function (cls) { return queryAll('.' + String(cls)); },
       // R112：doc 级 getElementById（同 R34xx 属性选择器形态——id 特殊字符安全）。
       getElementById: function (id) { return queryOne('[id="' + String(id).replace(/"/g, '\\"') + '"]'); },
+      // R5001 M3 片 a 收口（html-syntax-compat）：detached doc 的 `document.write/writeln`
+      //（spec https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html
+      // #document-write-steps——inert 文档首次 write 隐式 open 后解析写入流；此处近似为
+      // markup 追加至 body 本地树：scripting disabled 解析（noscript 实体解码）+
+      // `__zwTreeScripting=false` 印章（序列化转义分支），detHtml/getElementById 经
+      // `_tree` 序列化立即可见。WPT escaping.html 'createHTMLDocument and document.write'
+      // 面）。XML 文档（contentType 非 html 族）抛 InvalidStateError（spec 步骤 6）。
+      write: function () {
+        var s = '';
+        for (var i = 0; i < arguments.length; i++) s += String(arguments[i] == null ? '' : arguments[i]);
+        var ct = String(doc.contentType || '');
+        if (ct && ct.indexOf('html') < 0) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to execute 'write' on 'Document': This document is an XML document.", 'InvalidStateError');
+        }
+        if (!s) return;
+        ensureTree();
+        var added = _zwMBuildBodyTree(s, '', false).childNodes;
+        for (var j = 0; j < added.length; j++) if (added[j]) _tree.appendChild(added[j]);
+      },
+      writeln: function () {
+        var s = '';
+        for (var i = 0; i < arguments.length; i++) s += String(arguments[i] == null ? '' : arguments[i]);
+        doc.write(s + '\n');
+      },
       // R112：doc 级 createEvent（WPT Event-dispatch-bubbles testChain
       // `document.createEvent("Event")`——detached doc 缺此方法直接 TypeError）。委托
       // 主 document 的 createEvent（事件对象本身与文档无关）。
