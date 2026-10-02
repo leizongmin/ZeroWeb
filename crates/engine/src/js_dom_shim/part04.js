@@ -721,7 +721,15 @@
           // `document.querySelector('template').content.cloneNode(true)`（sel 模板旧
           // 返 undefined → "Cannot read properties of undefined"）。
           var _r145SelKids = function () {
-            if (handle) return _handleChildren[handle] || [];
+            // R5002 M3 片 b（html-syntax-compat）：handle 路径**就地建册**——旧
+            // `_handleChildren[handle] || []` 在缺册时每次返回临时数组，content 视图的
+            // appendChild/insertBefore push 落在弃置数组上（WPT template.html
+            // 'createHTMLDocument' 形态：content.appendChild 后 childNodes 恒空、
+            // innerHTML 读链断）。就地建册后读写共享同一活数组。
+            if (handle) {
+              if (!_handleChildren[handle]) _handleChildren[handle] = [];
+              return _handleChildren[handle];
+            }
             // WC-M2：host 解析产物在 contents fragment（parser 真实化）——sel 路径读
             // __zw_parse_template_contents（参数化 html 的**深 JSON**，本地构建节点——
             // contents 子非文档树节点，浅 selector 二次定位不可达）。**仅非空时采用**——
@@ -947,6 +955,14 @@ return _tplContent;
                 if (!_ihn) continue;
                 if (_ihn.nodeType === 3) _ihOut += _zwMEscapeText(_ihn.nodeValue != null ? _ihn.nodeValue : (_ihn.data != null ? _ihn.data : ''));
                 else if (_ihn.nodeType === 8) _ihOut += '<!--' + (_ihn.nodeValue != null ? _ihn.nodeValue : _ihn.data) + '-->';
+                else if (_ihn.nodeType === 7) {
+                  // R5003 M3 片 b（html-syntax-compat）：PI 序列化（spec fragment
+                  // serializing algorithm——`<?` + target + ' ' + data + `?>`；空 data
+                  // 不特判，分隔空格恒在，WPT processing-instructions 'PI with empty
+                  // data'）。
+                  _ihOut += '<?' + (_ihn.target != null ? _ihn.target : (_ihn.nodeName != null ? _ihn.nodeName : ''))
+                    + ' ' + (_ihn.data != null ? _ihn.data : (_ihn.nodeValue != null ? _ihn.nodeValue : '')) + '?>';
+                }
                 else if (_ihn.nodeType === 1 && _ihn.__zwHandle) {
                   _ihOut += _makeProxy(null, _ihn.__zwHandle).outerHTML || '';
                 } else if (_ihn.nodeType === 1 && typeof _ihn.outerHTML === 'string') {
@@ -997,6 +1013,11 @@ return _tplContent;
                 if (!_r380n) continue;
                 if (_r380n.nodeType === 3) _r380Out += _zwMEscapeText(_r380n.nodeValue != null ? _r380n.nodeValue : (_r380n.data != null ? _r380n.data : ''));
                 else if (_r380n.nodeType === 8) _r380Out += '<!--' + (_r380n.nodeValue != null ? _r380n.nodeValue : _r380n.data) + '-->';
+                else if (_r380n.nodeType === 7) {
+                  // R5003 M3 片 b：PI 序列化（同 handle 分支——spec 恒空格分隔）。
+                  _r380Out += '<?' + (_r380n.target != null ? _r380n.target : (_r380n.nodeName != null ? _r380n.nodeName : ''))
+                    + ' ' + (_r380n.data != null ? _r380n.data : (_r380n.nodeValue != null ? _r380n.nodeValue : '')) + '?>';
+                }
                 else if (_r380n.nodeType === 1) {
                   if (typeof _zwIsRemovedNode === 'function' && _zwIsRemovedNode(_r380n)) continue;
                   _r380Out += _r380n.outerHTML || '';
@@ -1074,6 +1095,17 @@ return _tplContent;
                 var _wcCm = '';
                 try { _wcCm = String(this.data != null ? this.data : (this.nodeValue != null ? this.nodeValue : '')); } catch (_eWcC) {}
                 return '<!--' + _wcCm + '-->';
+              }
+              // R5004 M3 片 b（html-syntax-compat）：**XML 文档元素走 XML 序列化**
+              //（DOM-Parsing §3.2.1——serializing-xml-fragments 语料：createDocument
+              // XML 文档的 createElementNS 产物 outerHTML = xmlns 声明 + void ` />`
+              // 自闭合；HTML 序列化无 xmlns 声明且 void 无斜杠）。contentType 非 html
+              // 族判定（application/xml / text/xml / image/svg+xml）。
+              var _r50od = null;
+              try { _r50od = this.ownerDocument || null; } catch (_e50od0) { _r50od = null; }
+              var _r50ct = _r50od ? String(_r50od.contentType || '') : '';
+              if (_r50ct && _r50ct.indexOf('html') < 0 && typeof _zwXMLSerialize === 'function') {
+                return _zwXMLSerialize(this, null);
               }
               var VOID = { area: 1, base: 1, br: 1, col: 1, embed: 1, hr: 1, img: 1, input: 1, link: 1, meta: 1, param: 1, source: 1, track: 1, wbr: 1 };
               var tag = (typeof __zw_get_tag_handle === 'function' ? __zw_get_tag_handle(handle) : '') || 'div';

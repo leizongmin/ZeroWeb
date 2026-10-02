@@ -8925,6 +8925,20 @@
   // 节点 → HTML 串（元素含属性 + 子树；文本转义；注释包裹）。供 innerHTML/outerHTML 序列化（反映 mutation）。
   function _zwMSerialize(node) {
     if (!node) return '';
+    // R5004 M3 片 b（html-syntax-compat）：**XML 文档元素走 XML 序列化**（DOM-Parsing
+    // §3.2.1）——detached XML 文档（createDocument，contentType 非 html 族）的
+    // `_zwMEl` 产物 outerHTML/innerHTML = xmlns 声明 + HTML ns void ` />` 自闭合 +
+    // 非 HTML ns 空元素 `/>`（serializing-xml-fragments/outerHTML 语料；HTML 文档
+    // 零变化）。nodeType 1 门——文本子仍走本函数转义分支（escape 集一致面）。
+    try {
+      var _r50od = node.ownerDocument;
+      if (node.nodeType === 1 && _r50od
+          && typeof _r50od.contentType === 'string'
+          && _r50od.contentType.indexOf('html') < 0
+          && typeof _zwXMLSerialize === 'function') {
+        return _zwXMLSerialize(node, null);
+      }
+    } catch (_eR50x) {}
     if (node.nodeType === 3) {
       // R5001 M3 片 a：noscript 条件 raw（spec serialising-html-fragments——parent
       // 为 noscript 且对该节点 scripting enabled → literal）。宿主解析
@@ -8938,6 +8952,12 @@
       return _zwMEscapeText(node.nodeValue);
     }
     if (node.nodeType === 8) return '<!--' + node.nodeValue + '-->';
+    if (node.nodeType === 7) {
+      // R5003 M3 片 b（html-syntax-compat）：PI 序列化（spec fragment serializing
+      // algorithm——`<?` + target + ' ' + data + `?>`，空 data 不特判）。
+      return '<?' + (node.target != null ? node.target : (node.nodeName != null ? node.nodeName : ''))
+        + ' ' + (node.data != null ? node.data : (node.nodeValue != null ? node.nodeValue : '')) + '?>';
+    }
     if (node.nodeType !== 1) return '';
     var tag = node.localName || (node.tagName || '').toLowerCase();
     var attrStr = '';
@@ -8958,6 +8978,61 @@
     for (var j = 0; j < node.childNodes.length; j++) inner += _zwMSerialize(node.childNodes[j]);
     return '<' + tag + attrStr + '>' + inner + '</' + tag + '>';
   }
+  // R5004 M3 片 b（html-syntax-compat）：**XML 序列化**（DOM-Parsing §3.2.1 XML
+  // serialization algorithm 的语料面——serializing-xml-fragments/outerHTML 的 XML 文档
+  // 元素 outerHTML：`createElementNS` 产物 `<tag xmlns="ns">` 声明 + HTML ns void 元素
+  // ` />` 自闭合 + 非 HTML ns 空元素 `/>`）。与 HTML 序列化（_zwMSerialize）的差异：
+  // ns 声明显式化、void 自闭合带斜杠、名字大小写敏感（XML 无 ASCII 归一）。
+  // https://w3c.github.io/DOM-Parsing/#dfn-concept-serialize-xml
+  function _zwXMLSerialize(node, inheritedNs) {
+    if (node == null) return '';
+    var nt = node.nodeType | 0;
+    if (nt === 3 || nt === 4) {
+      return _zwXEscapeText(String(node.data != null ? node.data : (node.nodeValue != null ? node.nodeValue : '')));
+    }
+    if (nt === 8) return '<!--' + String(node.nodeValue != null ? node.nodeValue : (node.data || '')) + '-->';
+    if (nt === 7) {
+      return '<?' + (node.target != null ? node.target : (node.nodeName != null ? node.nodeName : ''))
+        + ' ' + String(node.data != null ? node.data : (node.nodeValue != null ? node.nodeValue : '')) + '?>';
+    }
+    if (nt !== 1) return '';
+    var tag = String(node.localName || node.tagName || '');
+    var ns = '';
+    try { ns = String(node.namespaceURI || ''); } catch (_eXns) {}
+    var declAttrs = '';
+    // 步骤 12（namespace 序列化）：inherited ≠ 自身 ns → 默认 ns 声明（语料面无
+    // prefix 元素——qualified name 直用 localName）。
+    if (ns && ns !== String(inheritedNs || '')) declAttrs += ' xmlns="' + _zwXEscapeAttr(ns) + '"';
+    var attrStr = '';
+    var attrs = null;
+    try { attrs = node.attributes || null; } catch (_eXa) { attrs = null; }
+    if (attrs && typeof attrs.length === 'number') {
+      for (var xi = 0; xi < attrs.length; xi++) {
+        var xa = attrs[xi];
+        if (!xa) continue;
+        var xn = String(xa.name != null ? xa.name : (xa.nodeName != null ? xa.nodeName : ''));
+        var xv = String(xa.value != null ? xa.value : (xa.nodeValue != null ? xa.nodeValue : ''));
+        if (xn === 'xmlns') { declAttrs = ' xmlns="' + _zwXEscapeAttr(xv) + '"'; continue; }
+        attrStr += ' ' + xn + '="' + _zwXEscapeAttr(xv) + '"';
+      }
+    }
+    var kids = [];
+    try { kids = node.childNodes || []; } catch (_eXk) { kids = []; }
+    // 步骤 14/15：HTML ns void 元素 → ` />`；非 HTML ns 空元素 → `/>`（skip end tag）。
+    if (!kids.length) {
+      if (ns === 'http://www.w3.org/1999/xhtml' && _ZW_VOID_TAGS[String(tag).toLowerCase()]) {
+        return '<' + tag + declAttrs + attrStr + ' />';
+      }
+      if (ns !== 'http://www.w3.org/1999/xhtml') {
+        return '<' + tag + declAttrs + attrStr + '/>';
+      }
+    }
+    var inner = '';
+    for (var xk = 0; xk < kids.length; xk++) inner += _zwXMLSerialize(kids[xk], ns);
+    return '<' + tag + declAttrs + attrStr + '>' + inner + '</' + tag + '>';
+  }
+  function _zwXEscapeText(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function _zwXEscapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   // R3018：兄弟导航 getter（previousSibling/nextSibling）经 parentNode.childNodes indexOf 自身动态求值。
   // removeChild/appendChild/insertBefore/replaceChild relink 已维护 parentNode，故兄弟关系始终一致。
   // 元素/文本/注释节点共用（DOMPurify 等库 walk 时对任意节点类型取兄弟）。

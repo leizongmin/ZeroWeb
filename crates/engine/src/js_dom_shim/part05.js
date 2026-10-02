@@ -6012,6 +6012,20 @@
     // data-zw-canvas-ctx（painter 桥接），width/height 同步属性（重解析尺寸正确）。
     var _handle = (typeof __zw_create_element === 'function') ? __zw_create_element('canvas') : '';
     if (_handle) el.__zwHandle = _handle;
+    // R5005 M3 片 b（html-syntax-compat）：standalone canvas 的 innerHTML/outerHTML
+    // 委托 handle 代理（outerHTML getter 的 handle 分支——旧 standalone 对象缺此
+    // 二属性读 undefined，WPT serializing-html-fragments/outerHTML 'Node for canvas'
+    // 期望 '<canvas></canvas>'）。
+    try {
+      Object.defineProperty(el, 'innerHTML', {
+        get: function () { return _makeProxy(null, _handle).innerHTML; },
+        configurable: true, enumerable: true,
+      });
+      Object.defineProperty(el, 'outerHTML', {
+        get: function () { return _makeProxy(null, _handle).outerHTML; },
+        configurable: true, enumerable: true,
+      });
+    } catch (_eR50c) {}
     // R34xx：standalone canvas width/height accessor——设值（**即使同值**，spec）重置
     // bitmap（host resizeContext）+ 全部绘图状态（2d.canvas.host.initial.reset.2dstate
     // 的 canvas.width= 同值复位断言）。旧为普通数据属性：赋值不触达 host，canvas-host

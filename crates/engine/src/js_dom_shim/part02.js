@@ -4288,6 +4288,13 @@
       n.getAttributeNames = function () { return Object.keys(_attrs); };
       Object.defineProperty(n, 'outerHTML', {
         get: function () {
+          // R5004 M3 片 b（html-syntax-compat）：**XML 文档元素走 XML 序列化**——
+          // DOM-Parsing §3.2.1（xmlns 声明 + HTML ns void ` />` 自闭合 + 非 HTML ns
+          // 空元素 `/>`），serializing-xml-fragments/outerHTML 语料（createDocument
+          // XML 文档 createElementNS 产物）。HTML 文档保持原 HTML 序列化零变化。
+          if (!d._htmlDoc && typeof _zwXMLSerialize === 'function') {
+            return _zwXMLSerialize(n, null);
+          }
           var out = '<' + n.tagName;
           var names = Object.keys(_attrs);
           for (var i = 0; i < names.length; i++) {
@@ -4296,6 +4303,17 @@
             out += ' ' + names[i] + '="' + v + '"';
           }
           return out + '></' + n.tagName + '>';
+        },
+        configurable: true, enumerable: true,
+      });
+      // R5004：轻量元素 attributes 视图（`_zwXMLSerialize`/`_zwMSerialize` 的
+      // attrs 读链——closure `_attrs` 的快照数组形态）。
+      Object.defineProperty(n, 'attributes', {
+        get: function () {
+          var out = [];
+          var ks = Object.keys(_attrs);
+          for (var i = 0; i < ks.length; i++) out.push({ name: ks[i], value: _attrs[ks[i]], nodeName: ks[i], nodeValue: _attrs[ks[i]] });
+          return out;
         },
         configurable: true, enumerable: true,
       });

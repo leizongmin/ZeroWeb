@@ -1,9 +1,20 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-03（M3 片 a 收口——escaping 9/9）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-03（M3 片 b——serializing 双域全绿 75.55%）
 
 ## 当前状态
+
+**M3 片 b 已落地（2026-10-03）**：**serializing-html-fragments 域 137/137 全绿**
+（template.html 2 面 + processing-instructions.html 3 面 + outerHTML canvas 面
+修齐）+ **serializing-xml-fragments 域 112/112 全绿**（`_zwXMLSerialize`
+DOM-Parsing §3.2.1 语料面 + `_zwMSerialize` XML 域分支三接线）。全通道
+46316/61303 = **75.55%**，M1 基线逐案 0 回归。架构首块：`__zw_get_inner_html`
+切视图文档（解析插入子树同 turn 读一致性片落地——R57 view doc 读链对齐，空闲期
+同一 live fast path）。DC-4 实测：make test 68 suites 全绿 + clippy 干净 + fmt +
+reftest **704/704**。残差收窄：ambiguous-ampersand 另一半（`__zw_child_nodes`
+live-aware + char-by-char 流语义）仍挂账。证据：
+[evidence/2026-10-03-m3b-serializing.md](evidence/2026-10-03-m3b-serializing.md)。
 
 **M3 片 a 已收口（2026-10-03）**：escaping.html **3/9 → 9/9**（serializing 通道
 首个全绿用例），全通道 46205/61309 = **75.36%**，对 M1 基线 per-case 逐案比对
@@ -33,13 +44,19 @@ html5lib 3 案 document.write 管线面）。证据：
 |---|------|------|
 | P1 | html/syntax + html/dom corpus 导入 + 基线 | ✅ M1（2026-10-02，113 案 71.6%） |
 | P2 | 解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐 | ✅ **M2 收口（2026-10-02）**：五片落地（charref/foreign ns/CDATA/characterSet/生命周期），通道可执行面全绿 75.35%，DC-4 门禁实测齐（reftest 700/700）；残差分类记账（P5 通道外 19 案 + html5lib 管线面 3 案） |
-| P3 | 序列化边缘（XMLSerializer/HTML serializer） | 🔄 **M3 片 a 收口（2026-10-03）**：escaping.html 9/9（noscript scripting 旗标双面 + 6 缺失 API/视图/XHR 面全绿）；残差：XMLSerializer XML 面 0.9%、ambiguous-ampersand 读链 seam |
+| P3 | 序列化边缘（XMLSerializer/HTML serializer） | ✅ **M3 片 b 落地（2026-10-03）**：serializing-html-fragments 域 **137/137 全绿**（template/processing-instructions/outerHTML canvas 面）+ serializing-xml-fragments 域 **112/112 全绿**（`_zwXMLSerialize` XML 序列化 + 读链视图文档对齐）；escaping.html 9/9（片 a）；残差：ambiguous-ampersand 读链 seam（挂账） |
 | P4 | html/dom 接口语义（createContextualFragment 已落 ✅） | ⏳ M3 续（reflection 74.7% 边缘簇 + elements 12.1% + render-blocking IDL 面） |
 | P5 | 文档级编码嗅探（encoding-compat M4 转入） | 🔄 testharness 通道可执行面首片 ✅（sniff→Document label→characterSet 管线，2026-10-02）；📊 通道外案面仍记账：charset/ 7 案（reftest 形态）+ xmldecl/ 3 案（iframe 形态）+ the-input-byte-stream 9 案（HTTP 头形态）= 19 案 testharness 通道外记账；encoding/ 域 bom-handling/eof-*/sniffing 案面（已在 wpt-data，encoding 通道按 document.characterSet 规则 skip）尚未基线，落地通道（reftest import / 通道扩展）随 M2+ 定 |
 | — | render-blocking 机制面（62 案 19.3%） | 📊 M1 已基线；`blocking=render` 与渲染管线耦合，是否本 goal 修齐随 M3 碰头定 |
 
 ## 已完成切片
 
+- **M3 片 b（2026-10-03）**：serializing 双域全绿——serializing-html-fragments
+  137/137（template contents 序列化双面 + PI 三序列化环 + canvas standalone
+  outerHTML）+ serializing-xml-fragments 112/112（`_zwXMLSerialize` DOM-Parsing
+  §3.2.1 + `_zwMSerialize`/outerHTML/`_zwParsedDoc` 三接线）；`__zw_get_inner_html`
+  切视图文档（读一致性架构片首块）；75.55%，0 回归；DC-4 实测全绿
+  （test 68 suites / clippy / fmt / reftest 704/704）。
 - **M3 片 a 收口（2026-10-03）**：escaping 3/9→9/9——六面修齐（template 解析期
   disabled 标记 / createContextualFragment / detached doc.write / IAH afterbegin
   plain 分支 / 主文档 write 隐式 open 流 / XHR data: URL responseXML）；75.36%，
@@ -70,15 +87,11 @@ html5lib 3 案 document.write 管线面）。证据：
 
 ## 下一步计划
 
-1. **M3 片 b（下一片）**：serializing 邻面残差——serializing.html（解析上下文
-   iframe 形态，M2 已记通道外）/ outerHTML.html / processing-instructions.html /
-   serializing-lt-gt.html 逐案诊断；XMLSerializer XML 面（0.9%）随 dc-3 接口面
-   一并评估。
-2. **M3 片 c 起**：html/dom 接口语义——reflection 74.7% 边缘簇 + elements 12.1%
-   逐簇修齐（DC-3 主面）。
-3. **挂账随行**：bench-gate 等让复评（静窗）；html5ever 0.39 升级评估（顺带静态
+1. **M3 片 c（下一片）**：html/dom 接口语义——reflection 74.7% 边缘簇 +
+   elements 12.1% 逐簇修齐（DC-3 主面）；render-blocking IDL 面随碰头定。
+2. **挂账随行**：bench-gate 等让复评（静窗）；html5ever 0.39 升级评估（顺带静态
    template noscript 解析面）；P5 通道外 19 案落地通道（reftest import 优先）；
-   解析插入子树同 turn 读一致性架构片（R57 view doc vs `__zw_child_nodes`
-   live-aware 分裂——ambiguous-ampersand 残差根因）。
+   读一致性架构片余量（`__zw_child_nodes` live-aware——ambiguous-ampersand
+   char-by-char 流语义另叠一层，独立片评估）；XHR XML MIME 解析挂账。
 
 **待用户决策清单**：（空）

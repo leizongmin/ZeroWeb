@@ -2069,12 +2069,20 @@ pub fn register_dom_callbacks(
     );
 
     let html = Arc::clone(dom_html);
+    let muts_ih = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_get_inner_html",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            with_query_doc_live_aware(&snap, true, |doc| query_inner_html_from_html_doc(doc, &sel))
+            // R5002 M3 片 b（html-syntax-compat）：读链切**查询视图文档**——旧
+            // live-aware 直读 live doc，同 turn InsertAdjacentHtml 烘焙的子树（含
+            // template contents）缺席（查询面 view doc 有、读链 live 无 → 查询命中
+            // 元素的 innerHTML/子树读恒空，WPT template.html 两断言 + ambiguous-
+            // ampersand 写入子树读链根因）。视图文档无 pending structural mutations
+            // 时走同一 live fast path（with_query_view_doc 的 live_ok 臂），空闲期
+            // 零行为/零成本变化；Remove/SetInnerHtml 仍按 R57/R3029 约定排除在
+            // 烘焙范围外（removed 子树读回落快照语义不变）。
+            with_query_view_doc(&html, &muts_ih, |doc| query_inner_html_from_html_doc(doc, &sel))
         }),
     );
 
