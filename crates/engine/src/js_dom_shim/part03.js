@@ -16090,10 +16090,32 @@ return e;
         // → 空值（href getter 回落原始串）。SPA 路由（读 a.pathname/a.search）/链接分析/analytics 高频。
         // 组件 setter（a.pathname='/x'）经 R3070 set-trap 分支接通 `__zw_set_url_part` 重算 href 写回属性
         //（闭合 R2838 旧限制「组件 setter 误设 spurious 属性」）。origin 为只读（无 setter）。
-        if ((_realTag(sel, handle) === 'A' || _realTag(sel, handle) === 'AREA') &&
+        if (((_realTag(sel, handle) === 'A' || _realTag(sel, handle) === 'AREA') &&
             (prop === 'href' || prop === 'pathname' || prop === 'search' || prop === 'hash' ||
              prop === 'host' || prop === 'hostname' || prop === 'port' || prop === 'protocol' ||
-             prop === 'origin' || prop === 'username' || prop === 'password')) {
+             prop === 'origin' || prop === 'username' || prop === 'password')) ||
+            // R5008 M3 片 d（html-syntax-compat）：BASE/LINK 的 href 同为 URL 反射
+            //（getter 返解析绝对 URL；组件 IDL 不在 base/link 面——spec 仅 href）。
+            // 空 attr（存在但 ''）→ ''（WPT reflection.js resolveUrl 经 detached-a
+            // 组件读取——空串 parse 失败组件恒 '' → ret '//' 回落原串——harness 期望
+            // 跟随该实现行为；missing 同返 ''）。
+            ((_realTag(sel, handle) === 'BASE' || _realTag(sel, handle) === 'LINK') &&
+             prop === 'href')) {
+          // R5008：BASE/LINK 的空/缺失 href → ''（harness resolveUrl 经 detached-a
+          // 组件读取——空串 parse 失败组件恒 '' → ret '//' 回落原串）；非空仍解析
+          // 绝对 URL（resolveUrl 非空走 A 组件解析面）。
+          if (_realTag(sel, handle) !== 'A' && _realTag(sel, handle) !== 'AREA') {
+            var _r5blRaw = handle ? __zw_get_attr_handle(handle, 'href') : __zw_get_attr(sel, 'href');
+            if (_r5blRaw == null || _r5blRaw === '' || typeof __zw_parse_url !== 'function') {
+              return _r5blRaw == null ? '' : String(_r5blRaw);
+            }
+            try {
+              var _r5blBase = globalThis.location ? globalThis.location.href : '';
+              var _r5blJson = __zw_parse_url(String(_r5blRaw), _r5blBase);
+              if (!_r5blJson) return String(_r5blRaw);
+              return JSON.parse(_r5blJson).href || String(_r5blRaw);
+            } catch (_eR5bl) { return String(_r5blRaw); }
+          }
           var aRaw = handle ? __zw_get_attr_handle(handle, 'href') : __zw_get_attr(sel, 'href');
           if (!aRaw) {
             // media-elements M1 切片 3：href 属性**存在但为空串**不是 missing——'' 解析为页

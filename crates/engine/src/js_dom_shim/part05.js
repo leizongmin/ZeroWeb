@@ -539,7 +539,7 @@
             } catch (_e) {}
           }
         } else if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean'
-            && _reflectedStringAttr(p) === null) {
+            && _reflectedStringAttr(p) === null && p !== 'href' && p !== 'size' && p !== 'label' && p !== 'as' && p !== 'crossorigin') {
           // R3042：expando 属性（非原始值——function/object/array/null/undefined/symbol/bigint）。旧经 generic fallthrough
           // 写垃圾内容属性（`__zw_set_attr(sel, p, '[object Object]')` / 'function(){}'）且 get 读不回（undefined）。
           // real browser：expando 存于 JS 对象非内容属性。改存 per-element expando map（get trap 读回）。
@@ -613,7 +613,7 @@
           } else {
             _imFail();
           }
-        } else if (_reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label') {
+        } else if (_reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label' || p === 'as' || p === 'crossorigin') {
           // R3069：reflected 原始属性——get trap 经 `_reflectedStringAttr`（type/name/placeholder/...）/ `_REFLECTED_UINT`
           //（colSpan/rowSpan/maxLength/cols/rows/start）/ `size` 专用分支读内容属性，故 set 须继续写属性（非 expando），
           // 否则 set 写 expando / get 读空属性 round-trip 断。复用 get trap 同源检测函数，自动一致（无静态名表维护）。
@@ -630,6 +630,18 @@
           // R5007 M3 片 c：[LegacyNullToEmptyString] 集（body 颜色族）null → ''，
           // 余 DOMString null → "null"（WebIDL 默认转换）。
           var _refVal = _reflectedStringNullEmpty(p) && value === null ? '' : String(value);
+          // R5008 M3 片 d（html-syntax-compat）：UINT 反射 setter 数值归一（WebIDL
+          // unsigned long——idlTests "-0" → attr "0"，String(-0) 恒 "0"）；limited
+          //（min:1）set 0 抛 IndexSizeError（spec「On setting, if the value is zero,
+          // fire an INDEX_SIZE_ERR exception」——WPT reflection 'IDL set to 0' 断言）。
+          if (Object.prototype.hasOwnProperty.call(_REFLECTED_UINT, p)) {
+            var _ruNum = Number(value);
+            if (_REFLECTED_UINT[p].min === 1 && _ruNum === 0) {
+              throw new (globalThis.DOMException || Error)(
+                'The value provided is 0, which is an invalid value for this attribute.', 'IndexSizeError');
+            }
+            _refVal = String(_ruNum);
+          }
           if (handle) __zw_set_attr_handle(handle, _refAttr, _refVal);
           else __zw_set_attr(sel, _refAttr, _refVal);
           if (_refAttr === 'src' && _realTag(sel, handle) === 'IFRAME' &&

@@ -569,7 +569,14 @@
   // spec reflected string 缺省空串）。1:1 小写名用 `_REFLECTED_STRING_FLAT`；camelCase→attr 映射用 `_REFLECTED_STRING_MAP`。
   // 数值型（size/maxLength/colSpan/rowSpan）+ 布尔型（required/readonly/multiple）spec 返 number/boolean，
   // 另列 follow-up（本切片仅 string）。
-  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox cite coords shape ping media align version background text link scroll ';
+  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox cite coords shape ping media align version background text link scroll color ';
+  // R5008 M3 片 d：link.as enumerated 关键字集（elements-metadata.js 表——ASCII
+  // 小写；非法/缺省 → ''）。
+  var _ZW_LINK_AS_KEYWORDS = {
+    fetch: 1, audio: 1, document: 1, embed: 1, font: 1, image: 1, manifest: 1,
+    object: 1, report: 1, script: 1, sharedworker: 1, style: 1, track: 1,
+    video: 1, worker: 1, xslt: 1,
+  };
   // WC-M3 切片 8 第十小步（web-components goal）：reflected camelCase→attr 名补遗——
   // referrerPolicy（img/iframe，spec referrerpolicy 内容属性）+ dateTime（ins/del/time，
   // spec datetime 内容属性）。reactions 反射面 + get→attr round-trip 同源。
@@ -577,7 +584,7 @@
   // bgColor → vlink/alink/bgcolor）+ body margin 族（marginHeight 等 → 同名小写，
   // spec HTMLBodyElement DOMString 反射）+ marquee trueSpeed。WPT reflection-*
   // （sections/misc/obsolete/grouping/text）主导簇：旧读 undefined（表外）。
-  var _REFLECTED_STRING_MAP = { crossOrigin: 'crossorigin', formAction: 'formaction', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for', referrerPolicy: 'referrerpolicy', dateTime: 'datetime', vLink: 'vlink', aLink: 'alink', bgColor: 'bgcolor', marginHeight: 'marginheight', marginWidth: 'marginwidth', topMargin: 'topmargin', bottomMargin: 'bottommargin', leftMargin: 'leftmargin', rightMargin: 'rightmargin', trueSpeed: 'truespeed' };
+  var _REFLECTED_STRING_MAP = { formAction: 'formaction', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for', referrerPolicy: 'referrerpolicy', dateTime: 'datetime', vLink: 'vlink', aLink: 'alink', bgColor: 'bgcolor', marginHeight: 'marginheight', marginWidth: 'marginwidth', topMargin: 'topmargin', bottomMargin: 'bottommargin', leftMargin: 'leftmargin', rightMargin: 'rightmargin', trueSpeed: 'truespeed' };
   // R5007 M3 片 c：[LegacyNullToEmptyString] DOMString 反射集（spec HTMLBodyElement 的
   // legacy 颜色族——null → ''，WPT reflection-* 'IDL set to null' getAttribute 期望 ""；
   // 其余 DOMString null → "null"）。
@@ -660,8 +667,29 @@
     minLength: { a: 'minlength', d: -1 },
     cols: { a: 'cols', d: 20 },
     rows: { a: 'rows', d: 2 },
-    start: { a: 'start', d: 1 },
+    start: { a: 'start', d: 1, min: 1 },
   };
+  // R5008 M3 片 d（html-syntax-compat）：spec「rules for parsing integers /
+  // non-negative integers」——前导空白仅 \t\n\f\r 空格五类（\v/BOM/nbsp/各 Unicode
+  // 空白不跳——parseInt 会误吞，WPT reflection-* 'setAttribute() to "7"'
+  // 期望 default 实证）；可选 +/-；十进制数字前缀；失败返 null。nonneg 变体拒 '-'。
+  function _zwParseSpecInt(s) {
+    s = String(s == null ? '' : s);
+    var i = 0, n = s.length;
+    while (i < n && (s.charAt(i) === '\t' || s.charAt(i) === '\n' || s.charAt(i) === '\f' || s.charAt(i) === '\r' || s.charAt(i) === ' ')) i++;
+    var sign = 1;
+    if (s.charAt(i) === '-') { sign = -1; i++; }
+    else if (s.charAt(i) === '+') { i++; }
+    var start = i;
+    while (i < n && s.charAt(i) >= '0' && s.charAt(i) <= '9') i++;
+    if (i === start) return null;
+    var v = parseInt(s.slice(start, i), 10);
+    return v === 0 ? 0 : sign * v; // sign*-0 归一 +0（WebIDL long）
+  }
+  function _zwParseSpecNonneg(s) {
+    var v = _zwParseSpecInt(s);
+    return (v == null || v < 0) ? null : v;
+  }
   // 布尔 reflected 属性表（IDL 名 → 内容属性名）。get trap presence 读返 boolean（R3038）；set trap
   // truthy→设 presence / falsy→removeAttribute（R3039，闭合 set-false bug）。仅收录**纯布尔 presence-based** 属性；
   // 枚举型（draggable/spellcheck="true"/"false" 等）与含 dirty/default 态的（defaultChecked/defaultMuted）
@@ -679,6 +707,7 @@
     async: 'async', defer: 'defer', nomodule: 'nomodule',
     autoplay: 'autoplay', controls: 'controls', loop: 'loop', muted: 'muted', playsInline: 'playsinline',
     reversed: 'reversed', isMap: 'ismap', itemScope: 'itemscope',
+    noShade: 'noshade',
   };
   // R3039：查 _REFLECTED_BOOL 返内容属性名（readOnly→readonly 等），非 string/未命中 → null。供 set trap
   // 布尔 falsy→removeAttribute 分支与 get trap presence 读共用。

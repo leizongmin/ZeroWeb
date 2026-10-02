@@ -7924,6 +7924,45 @@ return _tplContent;
           var _et = _reflectedTypeEnum(sel, handle);
           if (_et !== null) return _et;
         }
+        // R5008 M3 片 d（html-syntax-compat）：PRE width 的 **long** 反射（HTMLPreElement
+        // `attribute long width`——spec parse-integer 严格解析，范围 [minInt,maxInt]，
+        // 失败/越界/缺省 → 0；hr.width 是 STRING 面（FLAT 表）故先 tag 门）。WPT
+        // reflection-grouping 'pre.width' 簇。
+        if (prop === 'width' && _realTag(sel, handle) === 'PRE') {
+          var _p5wRaw = handle
+            ? __zw_get_attr_handle(handle, 'width')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'width') : __zw_get_attr(sel, 'width'));
+          var _p5wN = _zwParseSpecInt(_p5wRaw);
+          return (_p5wN == null || _p5wN > 2147483647 || _p5wN < -2147483648) ? 0 : _p5wN;
+        }
+        // R5008 M3 片 d：crossOrigin enumerated（img/script/link/audio/video；放
+        // R3037 MAP 查表**之前**——MAP 的 crossorigin 直读曾遮蔽 nullable 枚举语义，
+        // missing 期望 null 实测返 ''）。''/invalid → "anonymous"，合法 ascii 小写。
+        // link.as enumerated（fetch destination）——合法关键字 ascii 小写，非法/缺省 → ''。
+        if (prop === 'crossOrigin' || prop === 'as') {
+          var _p5coTag = _realTag(sel, handle);
+          var _p5coAttr = prop === 'crossOrigin' ? 'crossorigin' : 'as';
+          if (prop === 'crossOrigin'
+              ? (_p5coTag === 'IMG' || _p5coTag === 'SCRIPT' || _p5coTag === 'LINK'
+                 || _p5coTag === 'AUDIO' || _p5coTag === 'VIDEO')
+              : _p5coTag === 'LINK') {
+            var _p5coHas = (handle
+              ? __zw_has_attr_handle(handle, _p5coAttr)
+              : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, _p5coAttr) : __zw_has_attr(sel, _p5coAttr))) === '1';
+            var _p5coRaw = handle
+              ? __zw_get_attr_handle(handle, _p5coAttr)
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _p5coAttr) : __zw_get_attr(sel, _p5coAttr));
+            if (prop === 'crossOrigin') {
+              // missing → null（nullable enum——__zw_get_attr 缺省返 ''，须 has_attr 区分）。
+              if (!_p5coHas) return null;
+              var _p5coLo = String(_p5coRaw == null ? '' : _p5coRaw).toLowerCase();
+              return (_p5coLo === 'anonymous' || _p5coLo === 'use-credentials') ? _p5coLo : 'anonymous';
+            }
+            if (!_p5coHas || _p5coRaw == null || _p5coRaw === '') return '';
+            var _p5asLo = String(_p5coRaw).toLowerCase();
+            return _ZW_LINK_AS_KEYWORDS.hasOwnProperty(_p5asLo) ? _p5asLo : '';
+          }
+        }
         // R3037：reflected string 内容属性读（type/name/placeholder/min/max/step/pattern/alt/src/rel/...）。
         // 旧 get trap 未拦 → 读返 undefined（写正常，set trap generic fallthrough → __zw_set_attr）。表单校验库
         // 读 input.min/max/pattern/type、analytics 读 src/name 等失效。命中 [`_reflectedStringAttr`] → 读内容属性
@@ -7946,9 +7985,12 @@ return _tplContent;
             var _szRaw = handle
               ? __zw_get_attr_handle(handle, 'size')
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'size') : __zw_get_attr(sel, 'size'));
-            var _szN = parseInt(String(_szRaw == null ? '' : _szRaw), 10);
-            if (_szTag === 'INPUT') return (isNaN(_szN) || _szN < 1) ? 20 : _szN;
-            return (isNaN(_szN) || _szN < 0) ? 0 : _szN;
+            // R5008 M3 片 d：spec「rules for parsing non-negative integers」严格解析
+            //（\v/BOM/nbsp 不跳——parseInt 宽松误吞，WPT reflection-forms 'size'
+            // whitespace 簇期望 default 实证）。
+            var _szN = _zwParseSpecNonneg(String(_szRaw == null ? '' : _szRaw));
+            if (_szTag === 'INPUT') return (_szN == null || _szN < 1) ? 20 : _szN;
+            return (_szN == null) ? 0 : _szN;
           }
         }
         // WC-M3 切片 8 第二增量（web-components goal，WPT event-with-related-target
@@ -7976,9 +8018,13 @@ return _tplContent;
           var _ruRaw = handle
             ? __zw_get_attr_handle(handle, _ruEntry.a)
             : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _ruEntry.a) : __zw_get_attr(sel, _ruEntry.a));
-          var _ruN = parseInt(String(_ruRaw == null ? '' : _ruRaw), 10);
-          if (isNaN(_ruN)) return _ruEntry.d;
-          if (_ruEntry.min != null && _ruN < _ruEntry.min) return _ruEntry.min;
+          // R5008 M3 片 d（html-syntax-compat）：spec「rules for parsing non-negative
+          // integers」解析（严格空白类 + 范围 0..2147483647）——失败/越界/低于 min →
+          // entry.d（spec 缺省；旧 parseInt 宽松吞 \v/BOM/nbsp，WPT reflection-*
+          // 'setAttribute() to "7"' 期望 default 实证）。
+          var _ruN = _zwParseSpecNonneg(String(_ruRaw == null ? '' : _ruRaw));
+          if (_ruN == null || _ruN > 2147483647) return _ruEntry.d;
+          if (_ruEntry.min != null && _ruN < _ruEntry.min) return _ruEntry.d;
           return _ruN;
         }
         // R3038/R3040：reflected boolean 属性读（_REFLECTED_BOOL 全表：required/readOnly/multiple/noValidate/

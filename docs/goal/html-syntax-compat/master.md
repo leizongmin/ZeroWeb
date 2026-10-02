@@ -1,9 +1,20 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-03（M3 片 c——reflection 系统面 82.18%）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-03（M3 片 d 第一波——per-interface IDL 83.83%）
 
 ## 当前状态
+
+**M3 片 d 第一波已落地（2026-10-03）**：per-interface IDL 清单首批簇——spec 严格
+解析面（`_zwParseSpecInt/Nonneg`：UINT 表 getter、input/select.size、PRE width
+long、limited-unsigned setter 0 抛 IndexSizeError + "-0" 归一）+ URL/枚举反射
+（BASE/LINK.href、crossOrigin nullable 枚举、link.as 关键字表、nonce 撤出反射面）
++ hr.noShade 布尔。全通道 **51391/61303 = 83.83%**（片 c 82.18%，+1011），M1 基线
+逐案 **0 回归**；forms 88%、grouping 94%、metadata 85%、text 97%。DC-4 实测全绿
+（test 68 suites / fmt / reftest 704/704）。残差归片 e：form.enctype/formMethod
+枚举 IDL-set 面（198 簇）、formAction URL 解析反射（32）、embedded 尾簇（2599F）、
+tabular（1992F）、aria-enumerated（1201F）。证据：
+[evidence/2026-10-03-m3d-interfaces.md](evidence/2026-10-03-m3d-interfaces.md)。
 
 **M3 片 c 已落地（2026-10-03）**：reflection IDL 反射**系统面**修齐（一改千测）：
 R3042 expando 豁免（反射 DOMString 属性收 null/对象仍走 WebIDL 转义）+
@@ -44,12 +55,16 @@ html5lib 3 案 document.write 管线面）。证据：
 | P1 | html/syntax + html/dom corpus 导入 + 基线 | ✅ M1（2026-10-02，113 案 71.6%） |
 | P2 | 解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐 | ✅ **M2 收口（2026-10-02）**：五片落地（charref/foreign ns/CDATA/characterSet/生命周期），通道可执行面全绿 75.35%，DC-4 门禁实测齐（reftest 700/700）；残差分类记账（P5 通道外 19 案 + html5lib 管线面 3 案） |
 | P3 | 序列化边缘（XMLSerializer/HTML serializer） | ✅ **M3 片 b 落地（2026-10-03）**：serializing-html-fragments 域 **137/137 全绿**（template/processing-instructions/outerHTML canvas 面）+ serializing-xml-fragments 域 **112/112 全绿**（`_zwXMLSerialize` XML 序列化 + 读链视图文档对齐）；escaping.html 9/9（片 a）；残差：ambiguous-ampersand 读链 seam（挂账） |
-| P4 | html/dom 接口语义（createContextualFragment 已落 ✅） | 🔄 **M3 片 c 落地（2026-10-03）**：reflection 系统面修齐（全通道 82.18%，reflection-sections 全绿、text 97%、forms 85%）；残差归片 d：per-interface IDL 清单（base/link.href URL 面、table 章节族、ol/li 数值面、ARIA 枚举反射） |
+| P4 | html/dom 接口语义（createContextualFragment 已落 ✅） | 🔄 **M3 片 c 落地（2026-10-03）**：reflection 系统面修齐（全通道 82.18%，reflection-sections 全绿、text 97%、forms 85%）；残差归片 e：form 枚举/URL 面、embedded/tabular 尾簇、ARIA 枚举反射；**片 d 第一波 ✅（2026-10-03，83.83%）**：spec 严格解析 + BASE/LINK.href/crossOrigin/as/nonce + noShade |
 | P5 | 文档级编码嗅探（encoding-compat M4 转入） | 🔄 testharness 通道可执行面首片 ✅（sniff→Document label→characterSet 管线，2026-10-02）；📊 通道外案面仍记账：charset/ 7 案（reftest 形态）+ xmldecl/ 3 案（iframe 形态）+ the-input-byte-stream 9 案（HTTP 头形态）= 19 案 testharness 通道外记账；encoding/ 域 bom-handling/eof-*/sniffing 案面（已在 wpt-data，encoding 通道按 document.characterSet 规则 skip）尚未基线，落地通道（reftest import / 通道扩展）随 M2+ 定 |
 | — | render-blocking 机制面（62 案 19.3%） | 📊 M1 已基线；`blocking=render` 与渲染管线耦合，是否本 goal 修齐随 M3 碰头定 |
 
 ## 已完成切片
 
+- **M3 片 d 第一波（2026-10-03）**：spec 严格解析（`_zwParseSpecInt/Nonneg` +
+  UINT/size/PRE-width 面换装 + limited setter 0 抛）+ BASE/LINK.href/
+  crossOrigin/as/nonce URL 与枚举反射 + noShade；83.83%（+1011），0 回归；
+  DC-4 全绿。证据 evidence/2026-10-03-m3d-interfaces.md。
 - **M3 片 c（2026-10-03）**：reflection IDL 反射系统面——R3042 expando 豁免 +
   实例层移除同步（`_zwAttrInstanceRemoveKey`）+ autofocus/inert handle 真移除 +
   title/lang/accessKey 归普通 DOMString（R3185 单测按 spec 更新）+ tabIndex
@@ -92,9 +107,10 @@ html5lib 3 案 document.write 管线面）。证据：
 
 ## 下一步计划
 
-1. **M3 片 d（下一片）**：reflection 尾簇 per-interface 清单——base/link.href
-   URL 解析反射、img 维度族、table 章节族、ol.start/reversed、li.value 等数值
-   反射面、ARIA 枚举反射（aria-enumerated 30%）；render-blocking IDL 面随碰头定。
+1. **M3 片 e（下一片）**：reflection 尾簇续——form.enctype/formMethod 枚举
+   IDL-set 面（198 簇）、formAction URL 解析反射（32）、embedded 尾簇（img/
+   iframe 维度与 URL 族，2599F）、tabular 章节族（1992F）、aria-enumerated
+   枚举反射语义（1201F）；render-blocking IDL 面随碰头定。
 2. **挂账随行**：bench-gate 等让复评（静窗）；html5ever 0.39 升级评估（顺带静态
    template noscript 解析面）；P5 通道外 19 案落地通道（reftest import 优先）；
    读一致性架构片余量（`__zw_child_nodes` live-aware——ambiguous-ampersand
