@@ -129,7 +129,7 @@ impl RendererRuntime {
         let pending = std::mem::take(&mut self.pending_automation_replies);
         let mut still_pending = Vec::new();
         for reply in pending {
-            let result: Result<AutomationResult, AutomationError> = match reply.rx.try_recv() {
+            let mut result: Result<AutomationResult, AutomationError> = match reply.rx.try_recv() {
                 Ok(Ok(value)) => match reply.kind {
                     DeferredEvalKind::ScriptValue => Ok(AutomationResult::Value(automation_value_from_script(&value))),
                     DeferredEvalKind::Retaining => match parse_handle_operation_envelope(&value) {
@@ -157,14 +157,39 @@ impl RendererRuntime {
                     "deferred evaluate cancelled (navigation reset or worker exit)",
                 )),
             };
-            self.send_regular_with_id(
+            // t2-pb1 F4（首轮缺陷审查 2026-10-02）：挂起求值补答的同步尾。挂起路径
+            // 此前不 apply_recorded_mutations——脚本晚至执行产生的 DOM mutation 滞留
+            // worker 队列，被下一脚本/交互入口的 clear() 静默丢弃（数据丢失类：宿主
+            // 侧渲染永久缺该变更，长臂饱和期是常态窗口）。补答成功即按同步路径同款
+            // 收尾（焦点/缓存 HTML 回读、console 与 document.write drain、按需发布）。
+            if result.is_ok() {
+                let changed = {
+                    let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+                    let mut context = super::page_scripts::PageScriptContext {
+                        html: &mut self.cached_html,
+                        url: &current_url,
+                        js_worker: &self.js_worker,
+                        webview: self.webview.as_mut(),
+                    };
+                    let html_snapshot = context.html.clone();
+                    super::page_scripts::apply_recorded_mutations(&mut context, &html_snapshot).is_some()
+                };
+                if let Err(e) = self.automation_eval_sync_tail(changed) {
+                    result = Err(e);
+                }
+            }
+            // t2-pb1 F8①：单条补答发送失败（IPC 断连）不中断循环——`?` 早退会跳过
+            // 末尾的 still_pending 归还，剩余挂起 reply 整体丢失。失败仅告警续跑。
+            if let Err(e) = self.send_regular_with_id(
                 reply.request_id,
                 IpcMessageKind::AutomationResponse(AutomationResponse {
                     navigation_epoch: self.navigation_epoch,
                     document_generation: self.document_generation,
                     result,
                 }),
-            )?;
+            ) {
+                tracing::warn!("deferred automation reply send failed: {e}");
+            }
         }
         self.pending_automation_replies = still_pending;
         Ok(())

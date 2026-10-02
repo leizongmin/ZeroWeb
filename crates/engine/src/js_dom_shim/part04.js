@@ -7380,11 +7380,19 @@ return _tplContent;
         // 面惯用形态）。仅 FORM gate 且 prop 非保留名（length/elements/action 等已在前置
         // 分支返回，落到这里的是无匹配成员的任意键）；控件名/id 首匹配，未命中 → undefined
         //（回落 trap 后续通用路径）。驱动用例：WPT implicit-submission.optional.html。
-        // t2-pb1 fix#19：reset/requestSubmit/submit 豁免——WebIDL named properties 对象
-        // 位于接口原型之下（https://webidl.spec.whatwg.org/#idl-named-properties），
-        // 命名控件不得遮蔽接口内建方法：`<button id=reset>` 入 form 时 `form.reset`
-        // 须仍是函数（R3048 方法），否则宿主 reset 脚本的 `typeof f.reset==='function'`
-        // guard 永假 → 表单重置整体静默 no-op（form-interaction fixture 实测）。
+        // t2-pb1 fix#19（reset/requestSubmit/submit 豁免）+ F6 结论（首轮缺陷审查
+        // 2026-10-02 复核）：WebIDL named properties 对象位于接口原型之下
+        //（https://webidl.spec.whatwg.org/#idl-named-properties），命名控件不得遮蔽
+        // 接口成员。本 shim 的接口方法由 get trap **分支序**提供（原型空壳不挂方法），
+        // 豁免名单须恰好覆盖 named access gate **之后**仍有分支服务的成员：
+        // gate 前置分支（checkValidity/reportValidity/setCustomValidity/validity/
+        // validationMessage——CVA 段、length/elements/action、反射属性等）早已返回，
+        // 不受遮蔽影响（`<input name=checkValidity>` 时 form.checkValidity 仍是函数）；
+        // gate 之后服务的仅 R3048 三方法（reset/requestSubmit/submit，本文件后段）——
+        // 即本点名单。审查建议的「prop in HTMLFormElement.prototype」泛化不适用：空壳
+        // 原型不含 R3048 方法，`in` 判定为 false → `<button id=reset>` 重新遮蔽
+        // form.reset → 宿主 reset 脚本的 `typeof f.reset==='function'` guard 永假 →
+        // 表单重置整体静默 no-op（fix#19c 回归；form-interaction fixture 实测）。
         if (_realTag(sel, handle) === 'FORM' && typeof prop === 'string'
             && prop !== '' && prop !== 'item' && prop !== 'namedItem'
             && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'

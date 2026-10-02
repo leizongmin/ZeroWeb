@@ -1899,6 +1899,10 @@ fn test_indexed_db_response_carries_id_and_error_shape() {
 /// 完整 /json/version 请求必须仍能在超时内被服务。修复前：A 在 `handle_http_discovery`
 /// 的阻塞 read 上无超时冻结整个 mux 循环，B 永久饿死（2026-10-02 navmatrix 首连
 /// wedge 实测）。终止符守护后 A 留在非阻塞 Peek 直至 5s 丢弃，B 即刻被服务。
+/// t2-pb1 F3（首轮缺陷审查 2026-10-02）+t2-pb1 测试缺口修订（首轮测试有效性审查）：
+/// 载荷为**含 `Upgrade: websocket` 头的半截 WS 升级请求**——真实阻塞场景。普通半截
+/// GET 在旧代码阻塞 read 立即读到已有字节→404，本不 wedge、对修复无判别力；半截
+/// WS 升级使 deadline 分支按 `is_ws_upgrade` 前缀切进阻塞握手（修复前 5.27s FAIL 实证）。
 #[test]
 fn test_partial_request_does_not_wedge_mux() {
     use std::io::{Read, Write};
@@ -1927,9 +1931,12 @@ fn test_partial_request_does_not_wedge_mux() {
         }
     };
 
-    // A：部分请求（无终止符），保持打开——不补发剩余字节、不关闭。
+    // A：部分 WS 升级请求（含 Upgrade 头、无 `\r\n\r\n` 终止符），保持打开——
+    // 不补发剩余字节、不关闭。
     let mut stalled = TcpStream::connect(addr).expect("connect stalled conn");
-    stalled.write_all(b"GET /json/ver").expect("write partial request");
+    stalled
+        .write_all(b"GET /devtools/page/abc HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n")
+        .expect("write partial ws upgrade");
 
     // B：完整发现请求必须被服务（修复前此处永久饿死超时）。
     let mut good = TcpStream::connect(addr).expect("connect good conn");

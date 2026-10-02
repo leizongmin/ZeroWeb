@@ -782,30 +782,37 @@ pub fn apply_set_hash_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) 
     let Some(hash) = anchor_hash_target(ctx.html, selector) else {
         return false;
     };
-    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    // t2-pb1 F7（首轮缺陷审查 2026-10-02）：点击默认动作路径改优先通道对（快照+脚本同
+    // 通道保序，fix#10 语义）+ 有界挂起（与 execute_automation_script_deferrable 同型）。
+    // 原 execute_script_direct 无界同步等待——worker 长臂（bilibili timer 级联 28-30s）
+    // 时点击处理阻塞 renderer 主循环、Navigate IPC 饿死（fix#15 同族）。挂起时脚本照常
+    // 执行，mutation 由下一入口 drain 落定。
+    ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
     // 调 location.hash = hash（R3006 全语义：hash 更新 + history entry + hashchange 派发经 _defer microtask）。
-    let _ = ctx
-        .js_worker
-        .execute_script_direct(&script_call_set_location_hash(&hash));
+    let _ = ctx.js_worker.execute_script_priority_deferrable(
+        &script_call_set_location_hash(&hash),
+        zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+    );
     let html_snap = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snap).is_some()
 }
 
 /// P1a 导航（R3057，闭合 R3052 限制②）：click 命中 `<a href="javascript:...">` → 在页面全局执行其 JS 体
 ///（real browser 语义：javascript: URL click 执行其体，返回值丢弃——非导航）。与 onclick handler 同一
-/// JS 执行通路（`execute_script_direct`，**非新增 eval 表面**，CSP `script-src` 统辖内联/eval 拦截）。
+/// JS 执行通路（worker 脚本命令，**非新增 eval 表面**，CSP `script-src` 统辖内联/eval 拦截）。
 /// 返回 JS 体执行是否改 DOM（调用方据此单次 rerender）。无 javascript: 目标 → false。
 pub fn apply_javascript_href(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
     // gate：`<a href="javascript:...">` 才执行（mirror apply_set_hash_on_click 防御性再校验 anchor_hash_target）。
     let Some(js) = anchor_javascript_target(ctx.html, selector) else {
         return false;
     };
-    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    // t2-pb1 F7：优先通道对 + 有界挂起（同 apply_set_hash_on_click 注）。
+    ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
         .lock()
@@ -813,7 +820,9 @@ pub fn apply_javascript_href(ctx: &mut PageScriptContext<'_>, selector: &str) ->
         .clear();
     // 执行 JS 体（空体 no-op）。js 为 href 解析后的原始 JS 源（HTML 已解码实体），不经转义——直接执行。
     if !js.is_empty() {
-        let _ = ctx.js_worker.execute_script_direct(&js);
+        let _ = ctx
+            .js_worker
+            .execute_script_priority_deferrable(&js, zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT);
     }
     let html_snap = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snap).is_some()
@@ -996,7 +1005,7 @@ fn run_page_script_caught(js_worker: &RendererJsWorker, code: &str, script_index
     }
 }
 
-fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &str) -> Option<String> {
+pub(crate) fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &str) -> Option<String> {
     let recorded = ctx
         .js_worker
         .mutations()
@@ -2545,6 +2554,60 @@ mod tests {
             AutomationEvalOutcome::Done(Err(e)) => panic!("worker 空闲时须成功，实际错误 {e}"),
             AutomationEvalOutcome::Deferred(_) => panic!("worker 空闲时须同步完成，实际挂起"),
         }
+        worker.shutdown();
+    }
+
+    /// t2-pb1 F4（首轮缺陷审查 2026-10-02）：挂起求值晚至完成后，其 DOM mutation
+    /// 滞留 worker 队列（期间无 checkpoint 会 apply 它们），补答侧的
+    /// `apply_recorded_mutations` 须能认领并落进宿主 HTML——此前补答路径不 apply，
+    /// 变更被下一脚本入口的 clear() 静默丢弃（数据丢失类缺陷）。
+    #[test]
+    fn automation_deferrable_mutations_survive_until_answer_applies() {
+        let mut worker = RendererJsWorker::spawn(82);
+        // 长臂占住 worker（公共 API：挂起的 deferrable 求值即臂）。
+        let busy_rx = match worker.execute_script_priority_deferrable(
+            "var s=0;for(var i=0;i<5e8;i++)s+=i;String(s)",
+            std::time::Duration::from_millis(1),
+        ) {
+            Err(rx) => rx,
+            _ => panic!("长臂入队应挂起"),
+        };
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        let mut html = String::from("<html><body><div id='a'>t</div></body></html>");
+        let mut ctx = PageScriptContext {
+            html: &mut html,
+            url: "about:blank",
+            js_worker: &worker,
+            webview: None,
+        };
+        // 长臂期间挂起的求值：改 DOM + 返回值。
+        let rx = match execute_automation_script_deferrable(
+            &mut ctx,
+            "document.getElementById('a').textContent = 'late'; 'ok'",
+        ) {
+            AutomationEvalOutcome::Deferred(rx) => rx,
+            _ => panic!("长臂期间应挂起"),
+        };
+        // 臂结束 → 挂起求值照常执行（先于其入队的快照已就位）。
+        let _ = busy_rx.recv_timeout(std::time::Duration::from_secs(35));
+        let value = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("挂起求值须晚至完成")
+            .expect("挂起求值须成功");
+        assert_eq!(value, "ok");
+        // 补答时点 mutation 仍滞留队列（此间无 checkpoint 会 apply 它们）。
+        let recorded_len = ctx
+            .js_worker
+            .mutations()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len();
+        assert!(recorded_len > 0, "挂起求值的 DOM mutation 须滞留队列待补答认领");
+        // 补答侧 apply（poll_deferred_automation_replies 的修复路径）→ 变更落宿主 HTML。
+        let html_snapshot = ctx.html.clone();
+        let applied = apply_recorded_mutations(&mut ctx, &html_snapshot);
+        assert!(applied.is_some(), "补答 apply 须产出新 HTML");
+        assert!(ctx.html.contains(">late<"), "挂起求值的 DOM 变更须落入宿主 HTML");
         worker.shutdown();
     }
 }

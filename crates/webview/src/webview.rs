@@ -540,6 +540,11 @@ pub struct WebView {
     /// 脚本批量渲染进行中（`begin_script_batch`…`end_script_batch`）——apply 跳过
     /// 渲染消费与图片子资源扫描，批量边界统一执行（见 [`Self::begin_script_batch`]）。
     script_batch_active: bool,
+    /// t2-pb1 F2（首轮缺陷审查 2026-10-02）：本批是否 apply 过任何 DOM 变更。
+    /// `end_script_batch` 无变更时不重渲染——事件循环每 16ms tick 都会开/合批量边界，
+    /// 无脏标记时有内容页面每 tick 全量 render_html（解析+样式+布局+绘制）+ 图片
+    /// 子资源扫描（首页 tEvidence 2750ms→14997ms 回退根因）。
+    script_batch_dirty: bool,
     /// 批量期间各次 apply 产出的 handle→唯一选择器累积（`end_script_batch` 重锚用）。
     batch_handle_selectors: HashMap<String, String>,
     /// ratio-only 图片信号（url hash → width/height 比，CSS §10.3.2 仅 SVG 出现）。
@@ -678,6 +683,7 @@ impl WebView {
             webaudio: std::sync::Arc::new(std::sync::Mutex::new(crate::webaudio_registry::WebAudioRegistry::new())),
             cached_image_sizes: HashMap::new(),
             script_batch_active: false,
+            script_batch_dirty: false,
             batch_handle_selectors: HashMap::new(),
             cached_image_ratios: HashMap::new(),
             cached_image_no_ratio: HashMap::new(),
@@ -970,6 +976,10 @@ impl WebView {
     /// 脚本批量期间（[`Self::begin_script_batch`]）渲染被 defer，`RenderResult`
     /// 为 `None`，由 [`Self::end_script_batch`] 在批量边界统一渲染。
     pub fn apply_dom_mutations_and_render(&mut self, mutations: &[DomMutation]) -> Result<AppliedMutations, String> {
+        // t2-pb1 F2：批内 apply 置脏——`end_script_batch` 只在本批有变更时渲染。
+        if self.script_batch_active && !mutations.is_empty() {
+            self.script_batch_dirty = true;
+        }
         let (result, html_snapshot, handle_selectors) =
             self.pipeline.render_with_dom_mutations(mutations, &self.cached_css)?;
         // R1794：只有内容 DOM 改变才刷新图片子资源。文本控件当前值由 retained 状态持有，
@@ -1014,20 +1024,24 @@ impl WebView {
     /// DOM/更新快照/累积 handle 映射，跳过渲染管线与图片子资源扫描。
     pub fn begin_script_batch(&mut self) {
         self.script_batch_active = true;
+        self.script_batch_dirty = false;
         self.batch_handle_selectors.clear();
         self.pipeline.set_defer_render(true);
     }
 
-    /// 脚本批量渲染边界结束：对批量结束后的 HTML 快照统一渲染一次（含 handle
+    /// 脚本批量渲染边界结束：对本批 apply 过变更时统一渲染一次（含 handle
     /// 重锚、表单 live value 保留与图片子资源扫描），消费 [`Self::begin_script_batch`]
-    /// 以来累积的全部 DOM 变更。批量未产生变更（快照为空）时仅复位开关。
-    pub fn end_script_batch(&mut self) -> Result<(), String> {
+    /// 以来累积的全部 DOM 变更。批量未产生变更时仅复位开关——文档初渲染在装载时
+    ///（`last_render` 已是当前文档），事件循环 tick 的空批量不重渲染（t2-pb1 F2）。
+    /// 返回是否实际渲染（Ok(rendered)；测试与调用方可观测）。
+    pub fn end_script_batch(&mut self) -> Result<bool, String> {
         self.script_batch_active = false;
         self.pipeline.set_defer_render(false);
         let reanchor: Vec<(String, String)> = self.batch_handle_selectors.drain().collect();
-        if self.cached_html.is_empty() {
-            return Ok(());
+        if !self.script_batch_dirty || self.cached_html.is_empty() {
+            return Ok(false);
         }
+        self.script_batch_dirty = false;
         let html = self.cached_html.clone();
         let result = self
             .pipeline
@@ -1048,7 +1062,7 @@ impl WebView {
             self.pipeline.set_image_no_ratio(image_no_ratio);
         }
         self.last_render = Some(render_result_to_webview(&result));
-        Ok(())
+        Ok(true)
     }
 
     /// 中止脚本批量渲染边界（导航让路，P-B1）：解除 defer、丢弃累积的 handle
@@ -1056,6 +1070,7 @@ impl WebView {
     /// 渲染是纯浪费。与 [`Self::end_script_batch`] 二选一配对 `begin_script_batch`。
     pub fn abort_script_batch(&mut self) {
         self.script_batch_active = false;
+        self.script_batch_dirty = false;
         self.batch_handle_selectors.clear();
         self.pipeline.set_defer_render(false);
     }
@@ -2028,6 +2043,10 @@ impl WebView {
     /// 更新 `applied_mutations` 游标并同步 handle 映射（与
     /// [`Self::apply_pending_shared_mutations`] 同机制，按给定子集切分）。
     fn apply_mutations_subset(&mut self, subset: &[zero_engine::js_dom_bridge::DomMutation]) {
+        // t2-pb1 F2：共享队列路径（动画泵/tick observer）批内 apply 同样置脏。
+        if self.script_batch_active && !subset.is_empty() {
+            self.script_batch_dirty = true;
+        }
         if subset.is_empty() {
             return;
         }

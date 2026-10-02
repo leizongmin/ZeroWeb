@@ -320,8 +320,17 @@ impl HeadlessServer {
                         // 后续 HTTP 全部无人读取、WS 响应停发、客户端永久挂起）。
                         // 终止符已在内核缓冲时，阻塞 read/WS 握手读立即完成。
                         let head_complete = data.windows(4).any(|w| w == b"\r\n\r\n");
-                        if !head_complete && std::time::Instant::now() <= *deadline {
-                            // 头未满且未超期：留在非阻塞 Peek，下一 tick 重试。
+                        if !head_complete {
+                            if std::time::Instant::now() <= *deadline {
+                                // 头未满且未超期：留在非阻塞 Peek，下一 tick 重试。
+                            } else {
+                                // t2-pb1 F3（首轮缺陷审查 2026-10-02）：超期且头仍未收满——
+                                // 对端静默的半截请求永不完整，丢弃连接而非按前缀分类。
+                                // 此前 deadline 分支按前缀分类：半截 "GET " 进无超时阻塞
+                                // read、半截 WS 升级进阻塞握手——wedge 仅从即刻推迟到 5s，
+                                // 与 P-B5 要修的单线程 mux 冻结同型（含已建立 WS 的收发停摆）。
+                                conn.alive = false;
+                            }
                         } else if Self::is_http_get_request(data) {
                             // HTTP 快进快出：请求头已在内核缓冲，回阻塞模式同步读完
                             let _ = conn.stream.set_nonblocking(false);
