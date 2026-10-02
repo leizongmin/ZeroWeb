@@ -8736,17 +8736,23 @@ return _tplContent;
           moAttr = 'id';
         } else if (p === 'title' || p === 'lang' || p === 'dir') {
           // reflected 字符串属性 set——写同名 attribute + 同步客户端缓存（set 后 get 读缓存）。
-          // spec [LegacyNullToEmptyString]：title/lang null→空串；dir 为 enumerated 非 LegacyNull（null→"null"）。
+          // R5006 M3 片 c（html-syntax-compat）：title/lang/dir 都是**普通 DOMString**
+          //（HTMLElement.idl——无 [LegacyNullToEmptyString]）→ WebIDL DOMString 转换
+          // null → "null"（旧版误按 LegacyNull 处理 null→''，WPT reflection-*
+          // 'IDL set to null' 簇 getAttribute() 期望 "null"）。
           var rcb = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
-          var rcv = (p !== 'dir' && value === null) ? '' : String(value);
+          var rcv = String(value);
           rcb[p] = rcv;
           if (handle) __zw_set_attr_handle(handle, p, rcv);
           else __zw_set_attr(sel, p, rcv);
           moAttr = p;
         } else if (p === 'tabIndex') {
           // tabIndex set——反射为 tabindex 属性（数值）；NaN 忽略（spec 抛，lenient 不抛）。同步缓存。
+          // R5006 M3 片 c：`| 0` 归一（WebIDL long 的 Int32 转换——"-0" 的 -0 → +0，
+          // WPT reflection-* 'setAttribute() to "-0"' IDL get 期望 0）。
           var tisv = parseInt(value, 10);
           if (!isNaN(tisv)) {
+            tisv = tisv | 0; // R5006：WebIDL long Int32 归一（"-0" → +0）
             var rtc2 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
             rtc2['tabindex'] = tisv;
             if (handle) __zw_set_attr_handle(handle, 'tabindex', String(tisv));
@@ -8762,9 +8768,11 @@ return _tplContent;
           else __zw_set_attr(sel, 'contenteditable', String(value));
           moAttr = 'contenteditable';
         } else if (p === 'accessKey') {
-          // accessKey set——反射 accesskey 属性（串）。spec [LegacyNullToEmptyString]：null→空串。同步缓存。
+          // accessKey set——反射 accesskey 属性（串）。R5006 M3 片 c：普通 DOMString
+          //（HTMLFileSystemElement? 无——HTMLElement accessKey 无 LegacyNullToEmptyString）
+          // → null → "null"（同 title/lang 修正）。
           var akc2 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
-          var akv = value === null ? '' : String(value);
+          var akv = String(value);
           akc2['accesskey'] = akv;
           if (handle) __zw_set_attr_handle(handle, 'accesskey', akv);
           else __zw_set_attr(sel, 'accesskey', akv);

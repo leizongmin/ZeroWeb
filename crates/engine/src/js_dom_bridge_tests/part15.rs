@@ -208,18 +208,21 @@ fn test_reflected_string_attrs_null_empty_production_r3185() {
             _ => None,
         })
         .collect();
-    // id/title/lang/accessKey（→accesskey）null→""；className(→class)/dir null→"null"。
+    // R5006 M3 片 c（html-syntax-compat）：id 为 [LegacyNullToEmptyString]（spec HTML
+    // `attribute [LegacyNullToEmptyString] DOMString id`）null→""；title/lang/accessKey
+    // （→accesskey）/class/dir 均为普通 DOMString null→"null"（WebIDL DOMString 转换——
+    // WPT reflection-* 'IDL set to null' getAttribute 期望 "null" 实证，5604 子测试面）。
     assert_eq!(
         pairs,
         vec![
             ("id".to_string(), "".to_string()),
-            ("title".to_string(), "".to_string()),
-            ("lang".to_string(), "".to_string()),
-            ("accesskey".to_string(), "".to_string()),
+            ("title".to_string(), "null".to_string()),
+            ("lang".to_string(), "null".to_string()),
+            ("accesskey".to_string(), "null".to_string()),
             ("class".to_string(), "null".to_string()),
             ("dir".to_string(), "null".to_string()),
         ],
-        "id/title/lang/accessKey null→空串（LegacyNull）；class/dir null→\"null\"（非 LegacyNull）"
+        "id null→空串（LegacyNull）；title/lang/accessKey/class/dir null→\"null\"（普通 DOMString）"
     );
 }
 

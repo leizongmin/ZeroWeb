@@ -403,11 +403,10 @@
             else __zw_set_attr(sel, p, '');
             moAttr = p;
           } else if (handle && typeof __zw_remove_attr_handle === 'function') {
-            // R313（js-dom M4）：handle falsy 真移除（`__zw_remove_attr_handle` 已注册
-            // callbacks.rs——旧「不设」使 `.disabled = false` 后属性残留，click() 的
-            // disabled 门与 getter 恒真；WPT Event-dispatch-on-disabled-elements 的
-            // re-enabled 后 `.click() must dispatch` 断言）。与下方 R3039/40 反射表同款。
+            // R2998 修正注：falsy 真移除（`__zw_remove_attr_handle` 已注册 callbacks.rs——旧「不设」使 `.disabled = false` 后属性残留，click() 的 disabled 门与 getter 恒真；WPT Event-dispatch-on-disabled-elements 的 re-enabled 后 `.click() must dispatch` 断言）。与下方 R3039/40 反射表同款。
             __zw_remove_attr_handle(handle, p);
+            // R5006 M3 片 c：实例层同步（_zwAttrInstances 登记残留使 hasAttribute 短路恒 true——IDL falsy set 后 WPT reflection-* 断言面）。
+            if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, p);
             moAttr = p;
           } else if (!handle && typeof __zw_remove_attr === 'function') {
             __zw_remove_attr(sel, p);
@@ -425,6 +424,8 @@
             else { __zw_set_attr(sel, _bAttrName, ''); moAttr = _bAttrName; }
           } else if (handle && typeof __zw_remove_attr_handle === 'function') {
             __zw_remove_attr_handle(handle, _bAttrName);
+            // R5006 M3 片 c：实例层同步（同 hidden 分支——hasAttribute 实例短路残留）。
+            if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, _bAttrName);
             moAttr = _bAttrName;
           } else if (!handle && typeof __zw_remove_attr === 'function') {
             __zw_remove_attr(sel, _bAttrName);
@@ -441,6 +442,14 @@
             if (bsv) {
               if (handle) { __zw_set_attr_handle(handle, p, ''); moAttr = p; } // WC-M1 切片 4
               else { __zw_set_attr(sel, p, ''); moAttr = p; }
+            } else if (handle && typeof __zw_remove_attr_handle === 'function') {
+              // R5006 M3 片 c（html-syntax-compat）：handle falsy **真移除**——旧仅
+              // `!handle` 分支移除，createElement detached 元素（WPT reflection-* 全域
+              // 的装配形态）`.autofocus = ''/undefined` 属性残留（hasAttribute 期望
+              // false）。与上方 hidden 分支 R313 同款双路径 + 实例层同步。
+              __zw_remove_attr_handle(handle, p);
+              if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, p);
+              moAttr = p;
             } else if (!handle && typeof __zw_remove_attr === 'function') {
               __zw_remove_attr(sel, p); moAttr = p;
             }
@@ -529,12 +538,16 @@
               }
             } catch (_e) {}
           }
-        } else if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+        } else if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean'
+            && _reflectedStringAttr(p) === null) {
           // R3042：expando 属性（非原始值——function/object/array/null/undefined/symbol/bigint）。旧经 generic fallthrough
           // 写垃圾内容属性（`__zw_set_attr(sel, p, '[object Object]')` / 'function(){}'）且 get 读不回（undefined）。
           // real browser：expando 存于 JS 对象非内容属性。改存 per-element expando map（get trap 读回）。
           // 仅非原始值——real reflected/special attr setter 永不收非原始值（string/number/boolean 走 generic fallthrough 不变），
           // 故零回归风险（不会拦截 role/aria/class/value 等任何真属性 setter）。无 moAttr（expando 非内容属性，不发 attributes MO）。
+          // R5007 M3 片 c（html-syntax-compat）豁免：**reflected DOMString 属性收非原始值仍须反射**（WebIDL
+          // DOMString 转换 null→"null"、对象走 ToPrimitive toString/valueOf——WPT reflection-* 'IDL set to
+          // null/object' 簇 getAttribute() 断言；旧 expando 拦截使属性未写 → getAttribute null）。
           var _ex = _expando[key] || (_expando[key] = {});
           _ex[p] = value;
         } else if (p === 'src' && _realTag(sel, handle) === 'IMG') {
@@ -614,8 +627,11 @@
           // 写同名内容属性（href→'href' / label→'label'，1:1 小写），匹配旧 generic fallthrough 对所有元素的行为（无 tag
           // gate——非 A/AREA 设 href 亦写属性，与旧行为一致，无害）。
           var _refAttr = _REFLECTED_UINT[p] ? _REFLECTED_UINT[p].a : (_reflectedStringAttr(p) || p);
-          if (handle) __zw_set_attr_handle(handle, _refAttr, String(value));
-          else __zw_set_attr(sel, _refAttr, String(value));
+          // R5007 M3 片 c：[LegacyNullToEmptyString] 集（body 颜色族）null → ''，
+          // 余 DOMString null → "null"（WebIDL 默认转换）。
+          var _refVal = _reflectedStringNullEmpty(p) && value === null ? '' : String(value);
+          if (handle) __zw_set_attr_handle(handle, _refAttr, _refVal);
+          else __zw_set_attr(sel, _refAttr, _refVal);
           if (_refAttr === 'src' && _realTag(sel, handle) === 'IFRAME' &&
               typeof globalThis.__zw_reload_iframe === 'function' &&
               typeof _zwIframeNavigationConnected === 'function' &&
@@ -1121,6 +1137,32 @@
     var a = _zwAttrInstances.get(elKey);
     if (!a) { a = []; _zwAttrInstances.set(elKey, a); }
     return a;
+  }
+  // R5006 M3 片 c（html-syntax-compat）：实例层移除同步——IDL boolean setter（hidden 族/
+  // _REFLECTED_BOOL 表/autofocus/inert）falsy 走 `__zw_remove_attr_handle` 真移除后，本表
+  // 登记残留使 hasAttribute 的实例短路（R122）恒 true（宿主 latest-wins 已 0）。对称
+  // removeAttribute 的实例清理（qname/local 小写双匹配 + Attr 绑定摘除）。
+  function _zwAttrInstanceRemoveKey(elKey, name) {
+    var list = _zwAttrInstances.get(elKey);
+    if (!list || !list.length) return;
+    var n = String(name).toLowerCase();
+    var idx = -1;
+    for (var i = 0; i < list.length; i++) {
+      if (String(list[i].qname).toLowerCase() === n) { idx = i; break; }
+    }
+    if (idx < 0) {
+      for (var j = 0; j < list.length; j++) {
+        if (String(list[j].local).toLowerCase() === n) { idx = j; break; }
+      }
+    }
+    if (idx < 0) return;
+    var q = String(list[idx].qname);
+    list.splice(idx, 1);
+    var bind = (typeof _zwAttrBindings === 'object' && _zwAttrBindings) ? _zwAttrBindings.get(elKey) : null;
+    if (bind) {
+      var a = bind.get(q);
+      if (a) { try { a.ownerElement = null; } catch (_eR50a) {} bind.delete(q); }
+    }
   }
   function _zwAttrInstUpsert(elKey, qname, ns, prefix, local, value) {
     var list = _zwAttrInstList(elKey);

@@ -3923,6 +3923,51 @@
     get inputEncoding() { return this.characterSet; },
     contentType: 'text/html',
     readyState: 'complete',
+    // R5007 M3 片 c（html-syntax-compat）：Document legacy 颜色/dir 别名（spec HTML
+    // Document 接口——fgColor↔body text、linkColor↔body link、vlinkColor↔body vlink、
+    // alinkColor↔body alink、bgColor↔body bgcolor、dir↔html dir）。getter 读 body/html
+    // 内容属性（缺省 ''）；setter 反射写入。WPT reflection-sections '#document.fgColor
+    // (<body text>)' 簇（旧 undefined）。
+    get fgColor() { return this._zwLegacyBodyColor('text'); },
+    set fgColor(v) { this._zwLegacyBodyColor('text', v); },
+    get linkColor() { return this._zwLegacyBodyColor('link'); },
+    set linkColor(v) { this._zwLegacyBodyColor('link', v); },
+    get vlinkColor() { return this._zwLegacyBodyColor('vlink'); },
+    set vlinkColor(v) { this._zwLegacyBodyColor('vlink', v); },
+    get alinkColor() { return this._zwLegacyBodyColor('alink'); },
+    set alinkColor(v) { this._zwLegacyBodyColor('alink', v); },
+    get bgColor() { return this._zwLegacyBodyColor('bgcolor'); },
+    set bgColor(v) { this._zwLegacyBodyColor('bgcolor', v); },
+    _zwLegacyBodyColor: function (attrName, setValue) {
+      // R5007：getter/setter 经 arguments.length 区分——setter 可合法收 undefined
+      //（`document.fgColor = undefined` → attr 写 "undefined"，旧版误判 getter 早退）。
+      var b = this.body;
+      if (!b) return arguments.length >= 2 ? undefined : '';
+      if (arguments.length >= 2) {
+        // R5007：document 颜色别名同为 [LegacyNullToEmptyString]（elements-sections.js
+        // treatNullAsEmptyString:true）——null → ''（WPT 'IDL set to null' getAttribute ""）。
+        if (typeof b.setAttribute === 'function') {
+          b.setAttribute(attrName, setValue === null ? '' : String(setValue));
+        }
+        return undefined;
+      }
+      var raw = typeof b.getAttribute === 'function' ? b.getAttribute(attrName) : null;
+      return raw == null ? '' : String(raw);
+    },
+    get dir() {
+      var de = this.documentElement;
+      if (!de || typeof de.getAttribute !== 'function') return '';
+      // R5007：dir 为 enumerated——IDL get = 合法关键字 ascii 小写（ltr/rtl/auto），
+      // 缺省/非法 → ''（WPT reflection-sections '#document.dir' setAttribute('RTL')
+      // 期望 'rtl'、'xrtl' 期望 ''）。
+      var raw = de.getAttribute('dir');
+      var lo = raw == null ? '' : String(raw).toLowerCase();
+      return (lo === 'ltr' || lo === 'rtl' || lo === 'auto') ? lo : '';
+    },
+    set dir(v) {
+      var de = this.documentElement;
+      if (de && typeof de.setAttribute === 'function') de.setAttribute('dir', String(v));
+    },
     // fullscreen（R2817 stub → R2938 spec-alike 状态追踪 + 事件）。headless 无真 OS 全屏，但 fullscreenElement
     // 反映 requestFullscreen/exitFullscreen 设置的元素（_makeProxy(_fsSel,_fsHandle) 或 null）；fullscreenEnabled
     // 经 host `__zw_fullscreen_enabled`（'0'=禁用），无注册→true；exitFullscreen 清状态 + 派 fullscreenchange。

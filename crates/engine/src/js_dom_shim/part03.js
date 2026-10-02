@@ -16505,8 +16505,10 @@ return e;
           var rtc = _reflectedAttrs[key];
           if (rtc && Object.prototype.hasOwnProperty.call(rtc, 'tabindex')) return rtc['tabindex'];
           var tiraw = handle ? __zw_get_attr_handle(handle, 'tabindex') : __zw_get_attr(sel, 'tabindex');
+          // R5006 M3 片 c：命中后 `| 0` 归一（WebIDL long Int32 转换——"-0" 反射为
+          // +0）；NaN 保持（native-focusability 默认链不断——旧回归实证）。
           var tin = parseInt(tiraw, 10);
-          if (!isNaN(tin)) return tin;
+          if (!isNaN(tin)) return tin | 0;
           var titag = _realTag(sel, handle);
           if (titag === 'BUTTON' || titag === 'INPUT' || titag === 'SELECT' || titag === 'TEXTAREA' || titag === 'SUMMARY') return 0;
           if (titag === 'A' || titag === 'AREA') {

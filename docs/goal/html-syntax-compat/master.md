@@ -1,9 +1,22 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-03（M3 片 b——serializing 双域全绿 75.55%）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-03（M3 片 c——reflection 系统面 82.18%）
 
 ## 当前状态
+
+**M3 片 c 已落地（2026-10-03）**：reflection IDL 反射**系统面**修齐（一改千测）：
+R3042 expando 豁免（反射 DOMString 属性收 null/对象仍走 WebIDL 转义）+
+`_zwAttrInstanceRemoveKey` 实例层同步（boolean IDL 移除后 hasAttribute 不再短路）+
+autofocus/inert handle 真移除 + title/lang/accessKey 归普通 DOMString（null→"null"，
+R3185 单测按 spec 更新）+ tabIndex "-0" Int32 归一 + `_REFLECTED_STRING_NULL_EMPTY`
+（body 颜色族 LegacyNull）+ legacy 反射串扩表 + document 颜色/dir 别名。全通道
+**50380/61303 = 82.18%**（片 b 75.55%，+3833），M1 基线逐案 **0 回归**；
+reflection-sections **5604/5604 全绿**、text 97%、forms 85%、misc 87%。DC-4 实测：
+make test 68 suites 全绿 + clippy 干净 + fmt + reftest **704/704**。残差归片 d：
+per-interface IDL 清单（base/link.href URL 解析反射、table 章节族、ol.start/
+reversed/li.value 数值面、ARIA 枚举反射）。证据：
+[evidence/2026-10-03-m3c-reflection.md](evidence/2026-10-03-m3c-reflection.md)。
 
 **M3 片 b 已落地（2026-10-03）**：**serializing-html-fragments 域 137/137 全绿**
 （template.html 2 面 + processing-instructions.html 3 面 + outerHTML canvas 面
@@ -15,20 +28,6 @@ DOM-Parsing §3.2.1 语料面 + `_zwMSerialize` XML 域分支三接线）。全�
 reftest **704/704**。残差收窄：ambiguous-ampersand 另一半（`__zw_child_nodes`
 live-aware + char-by-char 流语义）仍挂账。证据：
 [evidence/2026-10-03-m3b-serializing.md](evidence/2026-10-03-m3b-serializing.md)。
-
-**M3 片 a 已收口（2026-10-03）**：escaping.html **3/9 → 9/9**（serializing 通道
-首个全绿用例），全通道 46205/61309 = **75.36%**，对 M1 基线 per-case 逐案比对
-**0 回归**。六失败面修齐：template content 解析期 disabled 标记 +
-`Range.createContextualFragment`（DC-3 明确项，host `__zw_parse_fragment_children`
-深 JSON 通道）+ detached doc.write + IAH afterbegin plain 节点 insertBefore 分支
-+ 主文档 write 隐式 open 流（基线快照 + 累计重放）+ XHR data: URL responseXML
-（HTML MIME 复用 `_zwParsedDoc`）。DC-4 门禁实测：make test 68 suites 全绿 +
-clippy `-D warnings` 干净（顺修上轮遗留 unused import）+ fmt + reftest **704/704**
-零不一致。残差记账：ambiguous-ampersand 写入子树读链 hit 查询视图/live doc 分裂
-seam（R57 view doc vs `__zw_child_nodes` live-aware——解析插入子树同 turn 全 API
-面读一致性归架构片）；XHR XML MIME 解析挂账；静态 `<template><noscript>` 文档
-解析面待 html5ever 0.39 评估。证据：
-[evidence/2026-10-03-m3a-closing.md](evidence/2026-10-03-m3a-closing.md)。
 
 **M1 + M2 已收口（2026-10-02）**：基线 71.6% → M2 五片（charref 直通 75.23% →
 foreign ns 保真 75.31% → CDATA/NUL 75.33% → characterSet 嗅探 75.34% → 生命周期
@@ -45,12 +44,18 @@ html5lib 3 案 document.write 管线面）。证据：
 | P1 | html/syntax + html/dom corpus 导入 + 基线 | ✅ M1（2026-10-02，113 案 71.6%） |
 | P2 | 解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐 | ✅ **M2 收口（2026-10-02）**：五片落地（charref/foreign ns/CDATA/characterSet/生命周期），通道可执行面全绿 75.35%，DC-4 门禁实测齐（reftest 700/700）；残差分类记账（P5 通道外 19 案 + html5lib 管线面 3 案） |
 | P3 | 序列化边缘（XMLSerializer/HTML serializer） | ✅ **M3 片 b 落地（2026-10-03）**：serializing-html-fragments 域 **137/137 全绿**（template/processing-instructions/outerHTML canvas 面）+ serializing-xml-fragments 域 **112/112 全绿**（`_zwXMLSerialize` XML 序列化 + 读链视图文档对齐）；escaping.html 9/9（片 a）；残差：ambiguous-ampersand 读链 seam（挂账） |
-| P4 | html/dom 接口语义（createContextualFragment 已落 ✅） | ⏳ M3 续（reflection 74.7% 边缘簇 + elements 12.1% + render-blocking IDL 面） |
+| P4 | html/dom 接口语义（createContextualFragment 已落 ✅） | 🔄 **M3 片 c 落地（2026-10-03）**：reflection 系统面修齐（全通道 82.18%，reflection-sections 全绿、text 97%、forms 85%）；残差归片 d：per-interface IDL 清单（base/link.href URL 面、table 章节族、ol/li 数值面、ARIA 枚举反射） |
 | P5 | 文档级编码嗅探（encoding-compat M4 转入） | 🔄 testharness 通道可执行面首片 ✅（sniff→Document label→characterSet 管线，2026-10-02）；📊 通道外案面仍记账：charset/ 7 案（reftest 形态）+ xmldecl/ 3 案（iframe 形态）+ the-input-byte-stream 9 案（HTTP 头形态）= 19 案 testharness 通道外记账；encoding/ 域 bom-handling/eof-*/sniffing 案面（已在 wpt-data，encoding 通道按 document.characterSet 规则 skip）尚未基线，落地通道（reftest import / 通道扩展）随 M2+ 定 |
 | — | render-blocking 机制面（62 案 19.3%） | 📊 M1 已基线；`blocking=render` 与渲染管线耦合，是否本 goal 修齐随 M3 碰头定 |
 
 ## 已完成切片
 
+- **M3 片 c（2026-10-03）**：reflection IDL 反射系统面——R3042 expando 豁免 +
+  实例层移除同步（`_zwAttrInstanceRemoveKey`）+ autofocus/inert handle 真移除 +
+  title/lang/accessKey 归普通 DOMString（R3185 单测按 spec 更新）+ tabIndex
+  "-0" 归一 + `_REFLECTED_STRING_NULL_EMPTY` + legacy 反射串扩表 + document
+  颜色/dir 别名；82.18%（+3833），0 回归；DC-4 全绿（test/clippy/fmt/reftest
+  704/704）。证据 evidence/2026-10-03-m3c-reflection.md。
 - **M3 片 b（2026-10-03）**：serializing 双域全绿——serializing-html-fragments
   137/137（template contents 序列化双面 + PI 三序列化环 + canvas standalone
   outerHTML）+ serializing-xml-fragments 112/112（`_zwXMLSerialize` DOM-Parsing
@@ -87,8 +92,9 @@ html5lib 3 案 document.write 管线面）。证据：
 
 ## 下一步计划
 
-1. **M3 片 c（下一片）**：html/dom 接口语义——reflection 74.7% 边缘簇 +
-   elements 12.1% 逐簇修齐（DC-3 主面）；render-blocking IDL 面随碰头定。
+1. **M3 片 d（下一片）**：reflection 尾簇 per-interface 清单——base/link.href
+   URL 解析反射、img 维度族、table 章节族、ol.start/reversed、li.value 等数值
+   反射面、ARIA 枚举反射（aria-enumerated 30%）；render-blocking IDL 面随碰头定。
 2. **挂账随行**：bench-gate 等让复评（静窗）；html5ever 0.39 升级评估（顺带静态
    template noscript 解析面）；P5 通道外 19 案落地通道（reftest import 优先）；
    读一致性架构片余量（`__zw_child_nodes` live-aware——ambiguous-ampersand

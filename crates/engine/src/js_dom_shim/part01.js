@@ -569,11 +569,22 @@
   // spec reflected string 缺省空串）。1:1 小写名用 `_REFLECTED_STRING_FLAT`；camelCase→attr 映射用 `_REFLECTED_STRING_MAP`。
   // 数值型（size/maxLength/colSpan/rowSpan）+ 布尔型（required/readonly/multiple）spec 返 number/boolean，
   // 另列 follow-up（本切片仅 string）。
-  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox cite coords shape ping media ';
+  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox cite coords shape ping media align version background text link scroll ';
   // WC-M3 切片 8 第十小步（web-components goal）：reflected camelCase→attr 名补遗——
   // referrerPolicy（img/iframe，spec referrerpolicy 内容属性）+ dateTime（ins/del/time，
   // spec datetime 内容属性）。reactions 反射面 + get→attr round-trip 同源。
-  var _REFLECTED_STRING_MAP = { crossOrigin: 'crossorigin', formAction: 'formaction', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for', referrerPolicy: 'referrerpolicy', dateTime: 'datetime' };
+  // R5007 M3 片 c（html-syntax-compat）：legacy 反射串面——body 颜色族（vLink/aLink/
+  // bgColor → vlink/alink/bgcolor）+ body margin 族（marginHeight 等 → 同名小写，
+  // spec HTMLBodyElement DOMString 反射）+ marquee trueSpeed。WPT reflection-*
+  // （sections/misc/obsolete/grouping/text）主导簇：旧读 undefined（表外）。
+  var _REFLECTED_STRING_MAP = { crossOrigin: 'crossorigin', formAction: 'formaction', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for', referrerPolicy: 'referrerpolicy', dateTime: 'datetime', vLink: 'vlink', aLink: 'alink', bgColor: 'bgcolor', marginHeight: 'marginheight', marginWidth: 'marginwidth', topMargin: 'topmargin', bottomMargin: 'bottommargin', leftMargin: 'leftmargin', rightMargin: 'rightmargin', trueSpeed: 'truespeed' };
+  // R5007 M3 片 c：[LegacyNullToEmptyString] DOMString 反射集（spec HTMLBodyElement 的
+  // legacy 颜色族——null → ''，WPT reflection-* 'IDL set to null' getAttribute 期望 ""；
+  // 其余 DOMString null → "null"）。
+  var _REFLECTED_STRING_NULL_EMPTY = ' text link vLink aLink bgColor ';
+  function _reflectedStringNullEmpty(prop) {
+    return typeof prop === 'string' && _REFLECTED_STRING_NULL_EMPTY.indexOf(' ' + prop + ' ') >= 0;
+  }
   function _reflectedStringAttr(prop) {
     if (typeof prop !== 'string') return null;
     if (Object.prototype.hasOwnProperty.call(_REFLECTED_STRING_MAP, prop)) return _REFLECTED_STRING_MAP[prop];
