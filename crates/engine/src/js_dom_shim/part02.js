@@ -3904,8 +3904,26 @@
     var node = _zwMEl(snap, null);
     if (typeof __zw_parse_html_child_nodes === 'function') {
       try {
-        var arr = JSON.parse(__zw_parse_html_child_nodes(this.outerHTML, tag));
-        for (var i = 0; i < arr.length; i++) if (arr[i]) node.childNodes.push(_zwMBuildNode(this.outerHTML, arr[i], node));
+        // R5001 M3 片 a：ownerDocument 为 inert 文档（`__zwScriptingEnabled === false`
+        // ——DOMParser/createHTMLDocument 产物）时本地树按 markup 解析（noscript 实体
+        // 解码）+ 逐节点盖 `__zwTreeScripting=false` 印章（序列化器转义分支）。
+        // _zwParseEl 产物全部来自 `__zw_parse_html_query`（parse_html_element_json_full
+        // ——R5001 起恒 scripting disabled 的 inert 文档面），树恒 inert 印章。
+        var _r5000scr = '0';
+        var _r5000inert = true;
+        var arr = JSON.parse(__zw_parse_html_child_nodes(this.outerHTML, tag, '', _r5000scr));
+        for (var i = 0; i < arr.length; i++) if (arr[i]) {
+          var _r5000built = _zwMBuildNode(this.outerHTML, arr[i], node, _r5000inert ? false : undefined);
+          if (_r5000inert) {
+            (function stampInert(n5i) {
+              if (!n5i) return;
+              try { n5i.__zwTreeScripting = false; } catch (_e5i) {}
+              var k5i = n5i.childNodes || [];
+              for (var j5i = 0; j5i < k5i.length; j5i++) stampInert(k5i[j5i]);
+            })(_r5000built);
+          }
+          node.childNodes.push(_r5000built);
+        }
       } catch (_e) {}
     }
     this._mtree = node;
@@ -4155,6 +4173,10 @@
     this.head = this.querySelector('head');
     this.body = this.querySelector('body');
   }
+  // R5001 M3 片 a：DOMParser 产物为 inert 文档（scripting disabled）——本地视图
+  // 解析（`__zw_parse_html_child_nodes` arg[3]='0'）与序列化（`__zwTreeScripting`
+  // 印章 → noscript 转义分支）按旗标分流。
+  _zwParsedDoc.prototype.__zwScriptingEnabled = false;
   _zwParsedDoc.prototype.querySelector = function (sel) {
     if (typeof __zw_parse_html_query !== 'function') return null;
     var arr = JSON.parse(__zw_parse_html_query(this._html, String(sel), '0'));
