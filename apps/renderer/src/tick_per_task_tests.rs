@@ -285,3 +285,112 @@ fn reset_clears_writes_landed_after_main_thread_clear_d1() {
         pending.len()
     );
 }
+
+// slice18 评审收尾 S1：loadmatrix 最小判别案（同源基本型 + 真跨域）renderer 真管线
+// 端到端钉——页面脚本 createElement('script')+src+appendChild → 宿主
+// PendingDynamicScripts 取回执行 → onload/onerror 派发。单执行者归属契约
+//（`__zwHostOwnsDynamicScripts`，SetDomSnapshot 置位 → shim cors 语义页面 fetch 通道
+// 整体跳过）下断言：取回源码执行恰一次 + onload 恰一次 + 零误派 error。修前
+//（base f88350219/85479210a）通道与宿主并存：无 ACAO 跨域脚本在 cors 语义下恒败误派
+// error（err==1 红）。run_page_scripts 每 chunk 前 set_dom_snapshot（page_scripts.rs
+// 快照换代语义）在修复后先行置位——本钉的判别力即来自该真实时点。
+// 活体对应形态：loadmatrix v1（同源）/ v9（跨域）——
+// diag/evidence/slice18/s18-netcount-{base-truebin-double,fixed-truebin-single}.json。
+// 注：本文件属 zero-renderer lib target，不在 make test 口径（workspace 排除
+// zero-renderer 后仅跑其 bin target）；与既有 R-baidu8 runtime 钉同层，CI 覆盖由
+// CI 矩阵现状决定，常驻判别钉（make test 口径）见 engine r387c（loadmatrix fixture）。
+// https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
+#[test]
+fn dynamic_sameorigin_script_single_execution_end_to_end() {
+    let html = r#"<html><head><script>
+      var s = document.createElement('script');
+      s.src = '/s18-dyn-a.js';
+      s.onload = function () { globalThis.__zwALoad = (globalThis.__zwALoad | 0) + 1; };
+      s.onerror = function () { globalThis.__zwErr = (globalThis.__zwErr | 0) + 1; };
+      document.head.appendChild(s);
+    </script></head><body></body></html>"#;
+    let url = "https://zero.test/s18-loadmatrix-a";
+    let mut runtime = RendererRuntime::new(9121);
+    runtime.compositor_publish = None;
+    runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
+    runtime.stub_network = true;
+    runtime.current_url = Some(url.to_string());
+    runtime.cached_html = html.to_string();
+    runtime.webview.as_mut().unwrap().load_html(html, None);
+    {
+        let mut ctx = PageScriptContext {
+            html: &mut runtime.cached_html,
+            url,
+            js_worker: &runtime.js_worker,
+            webview: runtime.webview.as_mut(),
+        };
+        page_scripts::run_page_scripts(&mut ctx, true, |_url| Err::<String, String>("no fetch".into()));
+        let _ = page_scripts::drain_pending_dom_mutations(&mut ctx);
+    }
+    runtime.stub_fetch_responses.insert(
+        "https://zero.test/s18-dyn-a.js".to_string(),
+        Ok("globalThis.__zwExec = (globalThis.__zwExec | 0) + 1;".to_string()),
+    );
+    runtime.execute_new_dynamic_scripts();
+    runtime.tick_dynamic_scripts().expect("tick dynamic scripts");
+    let verdict = runtime
+        .js_worker
+        .execute_script_direct(
+            "JSON.stringify({exec: (globalThis.__zwExec | 0), load: (globalThis.__zwALoad | 0), err: (globalThis.__zwErr | 0)})",
+        )
+        .unwrap();
+    assert_eq!(
+        verdict.trim(),
+        r#"{"exec":1,"load":1,"err":0}"#,
+        "同源动态脚本单执行语义：宿主取回执行恰一次、onload 恰一次、零误派 error（修前 err==1）"
+    );
+}
+
+#[test]
+fn dynamic_crossorigin_script_no_false_error_end_to_end() {
+    // 真跨域案（loadmatrix v9 镜像）：无 ACAO 的跨域 CDN 脚本在 cors 语义页面 fetch
+    // 通道下恒败——修前误派元素 error（活体 base error+load 双派）；宿主 no-cors
+    // 取回实际可执行。断言取回执行恰一次、onload 恰一次、error 恒零。
+    let html = r#"<html><head><script>
+      var s = document.createElement('script');
+      s.src = 'https://cdn.zero.test/s18-dyn-x.js';
+      s.onload = function () { globalThis.__zwXLoad = (globalThis.__zwXLoad | 0) + 1; };
+      s.onerror = function () { globalThis.__zwErr = (globalThis.__zwErr | 0) + 1; };
+      document.head.appendChild(s);
+    </script></head><body></body></html>"#;
+    let url = "https://zero.test/s18-loadmatrix-x";
+    let mut runtime = RendererRuntime::new(9122);
+    runtime.compositor_publish = None;
+    runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
+    runtime.stub_network = true;
+    runtime.current_url = Some(url.to_string());
+    runtime.cached_html = html.to_string();
+    runtime.webview.as_mut().unwrap().load_html(html, None);
+    {
+        let mut ctx = PageScriptContext {
+            html: &mut runtime.cached_html,
+            url,
+            js_worker: &runtime.js_worker,
+            webview: runtime.webview.as_mut(),
+        };
+        page_scripts::run_page_scripts(&mut ctx, true, |_url| Err::<String, String>("no fetch".into()));
+        let _ = page_scripts::drain_pending_dom_mutations(&mut ctx);
+    }
+    runtime.stub_fetch_responses.insert(
+        "https://cdn.zero.test/s18-dyn-x.js".to_string(),
+        Ok("globalThis.__zwXExec = (globalThis.__zwXExec | 0) + 1;".to_string()),
+    );
+    runtime.execute_new_dynamic_scripts();
+    runtime.tick_dynamic_scripts().expect("tick dynamic scripts");
+    let verdict = runtime
+        .js_worker
+        .execute_script_direct(
+            "JSON.stringify({exec: (globalThis.__zwXExec | 0), load: (globalThis.__zwXLoad | 0), err: (globalThis.__zwErr | 0)})",
+        )
+        .unwrap();
+    assert_eq!(
+        verdict.trim(),
+        r#"{"exec":1,"load":1,"err":0}"#,
+        "跨域动态脚本单执行语义：宿主 no-cors 取回执行恰一次、onload 恰一次、无 ACAO 不误派 error（修前 err==1）"
+    );
+}

@@ -112,6 +112,182 @@ fn r387b_host_owns_dynamic_scripts_skips_shim_fetch() {
     );
 }
 
+// slice18 评审收尾 S1：loadmatrix 最小判别案（CI 常驻 fixture）端到端钉——以入驻
+// fixture 页（`tests/fixtures/loadmatrix-zw-001.html`，v1 同源基本型 + v9 真跨域）
+// 的**整页脚本**驱动，双相位判别「单执行者归属宿主」契约：
+// 相位 1（负控制，无 `__zwHostOwnsDynamicScripts`）：shim 页面 fetch 通道保持
+//   原行为——两个动态 src 均经通道取回（channel==2；修前缺陷形态：同源与宿主
+//   tick 双执行、跨域无 ACAO 误派 error）。
+// 相位 2（renderer SetDomSnapshot 契约置位）：通道整体关闭（channel==0），宿主
+//   apply（drain→apply→快照换新，真管线同序）+ R145 identity 桥后派发
+//   （`__zw_dispatch_script_event`，绝对 URL）送达 onload 恰一次——单执行
+//   语义钉：__zwALoad==1、__zwXLoad==1、__zwErr==0。修前 base（85479210a，
+//   不识标志）相位 2 显红：通道照走 channel==2（双案皆取回）且 stub reject
+//   双误派 __zwErr==2（跨域误 error 语义）。
+// 与 r387b 的差别：r387b 用合成 createElement 序列钉通道门控本身；本钉以入驻
+// fixture 全页驱动（解析→页面脚本→动态追加→宿主派发→页面计数），锁定「页面级
+// 可观测语义」（计数==1）而非仅通道调用数。
+// https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
+#[test]
+fn r387c_loadmatrix_fixture_single_execution_end_to_end() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    const FIXTURE: &str = include_str!("../../tests/fixtures/loadmatrix-zw-001.html");
+    let page_url_value = "https://zw.test/loadmatrix-zw-001.html".to_string();
+    // 相位执行器：独立 sandbox 各相位（标志置位是文档域一次性契约，不回收）。
+    fn run_phase(host_owns: bool, fixture: &str, page_url: &str) -> (String, String) {
+        let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        sandbox.execute(generate_js_dom_shim()).unwrap();
+        let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+        let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(fixture.to_string()));
+        let page_url_cell: Arc<Mutex<String>> = Arc::new(Mutex::new(page_url.to_string()));
+        let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+            std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+        register_dom_callbacks(
+            &mut sandbox,
+            &mutations,
+            &dom_html,
+            &page_url_cell,
+            &canvas_registry,
+            None,
+        );
+        // fetch stub：计数（含 URL 签名）+ reject（宿主是唯一执行者，stub 不供源码）。
+        sandbox
+            .execute(
+                "globalThis.__zwFetchCalls = 0;\
+                 globalThis.__zwFetchUrls = '';\
+                 globalThis.fetch = function (u) {\
+                   globalThis.__zwFetchCalls = (globalThis.__zwFetchCalls | 0) + 1;\
+                   globalThis.__zwFetchUrls += String(u) + ';';\
+                   return Promise.reject(new Error('stub-net'));\
+                 };",
+            )
+            .unwrap();
+        if host_owns {
+            sandbox
+                .execute("globalThis.__zwHostOwnsDynamicScripts = true;")
+                .unwrap();
+        }
+        // 整页驱动：按文档序执行页面脚本（engine 页面脚本提取真路径）。
+        for script in crate::extract_page_scripts(fixture) {
+            match script {
+                crate::PageScript::Inline(code) => {
+                    sandbox.execute(&code).unwrap();
+                }
+                _ => panic!("fixture 只含内联页面脚本"),
+            }
+        }
+        let calls = sandbox.execute("String(globalThis.__zwFetchCalls)").unwrap().value;
+        let urls = sandbox.execute("String(globalThis.__zwFetchUrls)").unwrap().value;
+        (calls, urls)
+    }
+    // 相位 1：无宿主置位 → 通道原行为（两个动态 src 均经页面 fetch 通道）。
+    let (calls1, urls1) = run_phase(false, FIXTURE, &page_url_value);
+    assert_eq!(
+        calls1, "2",
+        "无宿主置位：同源与跨域动态 src 均经 shim 页面 fetch 通道（负控制）"
+    );
+    assert!(
+        urls1.contains("/s18-dyn-a.js") && urls1.contains("cdn.zw.test/s18-dyn-x.js"),
+        "两案 src 均入通道（同源 + 跨域）"
+    );
+    // 相位 2：renderer SetDomSnapshot 契约置位 → 通道关闭 + 宿主派发单执行。
+    let mut sandbox2 = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox2.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(FIXTURE.to_string()));
+    let page_url_cell: Arc<Mutex<String>> = Arc::new(Mutex::new(page_url_value.clone()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(
+        &mut sandbox2,
+        &mutations,
+        &dom_html,
+        &page_url_cell,
+        &canvas_registry,
+        None,
+    );
+    sandbox2
+        .execute(
+            "globalThis.__zwFetchCalls = 0;\
+             globalThis.fetch = function () {\
+               globalThis.__zwFetchCalls = (globalThis.__zwFetchCalls | 0) + 1;\
+               return Promise.reject(new Error('stub-net'));\
+             };\
+             globalThis.__zwHostOwnsDynamicScripts = true;",
+        )
+        .unwrap();
+    for script in crate::extract_page_scripts(FIXTURE) {
+        match script {
+            crate::PageScript::Inline(code) => {
+                sandbox2.execute(&code).unwrap();
+            }
+            _ => panic!("fixture 只含内联页面脚本"),
+        }
+    }
+    let calls2 = sandbox2
+        .execute("String(globalThis.__zwFetchCalls)")
+        .unwrap()
+        .value;
+    assert_eq!(
+        calls2, "0",
+        "宿主所有权置位：shim cors 语义 fetch 通道整体跳过（同源/跨域一律不经页面 fetch）"
+    );
+    // 宿主 apply（真管线同序：drain → apply → 快照换新；runtime.rs tick_dynamic_scripts
+    // 派发前置 set_dom_snapshot 同构）——动态 script 元素落快照后派发才可达。
+    let batch: Vec<DomMutation> = {
+        let mut guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
+        guard.drain(..).collect()
+    };
+    let (applied_html, handle_selectors) =
+        crate::apply_mutations_to_html_with_handles(&dom_html.lock().unwrap(), &batch)
+            .expect("宿主 apply：动态脚本追加落快照");
+    *dom_html.lock().unwrap() = applied_html;
+    // R145 identity 桥（renderer register_identity_bridge_callback 同款）：sel→handle
+    // 反查——宿主 sel 派发落到页面在 createElement handle proxy 上注册的 onload/onerror。
+    let sel_to_handle: std::collections::HashMap<String, String> = handle_selectors
+        .into_iter()
+        .map(|(h, s)| (s, h))
+        .collect();
+    sandbox2.register_callback(
+        "__zw_handle_for_selector",
+        Box::new(move |args: &[String]| -> String {
+            let sel = args.first().map(String::as_str).unwrap_or("");
+            sel_to_handle.get(sel).cloned().unwrap_or_default()
+        }),
+    );
+    // 宿主派发（tick_dynamic_scripts 同入口，绝对 URL）：单执行语义钉。
+    sandbox2
+        .execute(
+            "globalThis.__zw_dispatch_script_event('https://zw.test/s18-dyn-a.js', 'load');\
+             globalThis.__zw_dispatch_script_event('https://cdn.zw.test/s18-dyn-x.js', 'load');",
+        )
+        .unwrap();
+    let verdict = sandbox2
+        .execute(
+            "JSON.stringify({\
+               aLoad: (globalThis.__zwALoad || 0),\
+               xLoad: (globalThis.__zwXLoad || 0),\
+               err: (globalThis.__zwErr || 0)\
+             })",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        verdict,
+        r#"{"aLoad":1,"xLoad":1,"err":0}"#,
+        "单执行语义：两案 onload 恰一次、页面计数恰为 1、零误派 error"
+    );
+}
+
 // slice18（site-compat baidu 建议链 /sugrec）：宿主 selector 派发链守卫——engine harness
 //（无 `__zw_handle_for_selector` 宿主回调注册）下，动态 script 元素的 onload IDL 监听
 //（handle key）经 `__zw_dispatch_script_event`（sel 主路径 + R145 桥回落 sel 键）必须送达。

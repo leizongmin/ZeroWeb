@@ -3,6 +3,17 @@
 本目录存放单元测试引用的第三方静态资源（经 `include_str!` 编译期嵌入）。这些文件**仅用于测试**，
 不进入任何构建产物或运行时依赖。
 
+## loadmatrix-zw-001.html
+
+- **来源**：自研（slice18 评审收尾 S1 落仓）——site-compat baidu 建议链诊断用活体
+  fixture（loadmatrix.html v1–v9 动态脚本执行保真矩阵）的最小判别形态入驻版
+  （v1 同源基本型 + v9 真跨域两案；原件仅存诊断环境，见
+  `.acceptance/site-optimizer/baidu-storm-20260929/diag/evidence/slice18/` 证据 JSON）
+- **消费方**：`js_dom_bridge_tests::r387c_loadmatrix_fixture_single_execution_end_to_end`
+  （双相位判别：宿主所有权契约下单执行者语义 + 无宿主置位时通道原行为负控制）
+- **更新方式**：判别语义变更须同步修改消费方断言并复跑 RED/GREEN（base 双执行语义红 /
+  修复后绿）
+
 ## dompurify.js
 
 - **来源**：DOMPurify 3.2.7（`dist/purify.js`，可读非压缩版）
