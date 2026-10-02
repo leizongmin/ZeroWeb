@@ -14,8 +14,7 @@ use std::sync::{Arc, Mutex};
 use zero_style_system::ComputedStyle;
 
 use zero_dom::{
-    Document, FocusManager, NodeId, NodeKind, parse_html, parse_html_fragment,
-    parse_html_fragment_with_scripting, parse_html_with_scripting,
+    Document, FocusManager, NodeId, NodeKind, parse_html, parse_html_fragment_with_scripting, parse_html_with_scripting,
 };
 #[cfg(feature = "script-runtime")]
 use zero_script_sandbox::Sandbox;
