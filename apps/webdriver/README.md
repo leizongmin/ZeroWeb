@@ -1,6 +1,6 @@
 # ZeroWeb WebDriver (`zero-webdriver`)
 
-> W3C WebDriver 服务 — 34 endpoint 的自动化验证基建（webdriver 与 webdriver-screenshot 两 goal 均已收口归档，2026-09-08 / 2026-09-09）
+> W3C WebDriver 服务 — 36 endpoint 的自动化验证基建（webdriver 与 webdriver-screenshot 两 goal 均已收口归档，2026-09-08 / 2026-09-09；现按 method × 路由组合实数 36）
 
 ## 概述
 

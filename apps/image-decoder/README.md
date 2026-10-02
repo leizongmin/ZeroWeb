@@ -35,10 +35,11 @@ cargo run --bin zero-image-decoder -- --type=image-decoder --instance-id=1
 webview 按以下顺序定位本二进制（与 zero-renderer / zero-compositor 的发现模式一致）：
 
 1. 环境变量 `ZW_IMAGE_DECODER_BIN`
-2. macOS 主应用中的 `ZeroBrowser Helper (Image Decoder).app`
-3. `current_exe`（即 zero-renderer）所在目录
-4. 测试二进制目录上溯（`target/debug/deps/` → `target/debug/`）
-5. `PATH` 兜底
+2. `CARGO_BIN_EXE_zero-image-decoder`（cargo test 注入的集成测试二进制路径）
+3. macOS 主应用中的 `ZeroBrowser Helper (Image Decoder).app`
+4. `current_exe`（即 zero-renderer）所在目录
+5. 测试二进制目录上溯（`target/debug/deps/` → `target/debug/`）
+6. `PATH` 兜底
 
 macOS 发布包将解码器封装为独立 Helper App；Linux 与 Windows 发布产物仍将
 `zero-image-decoder` 与 `zero-renderer` 放在同一目录。各平台打包脚本已内置；

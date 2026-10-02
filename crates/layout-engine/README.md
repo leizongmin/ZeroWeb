@@ -1,6 +1,6 @@
 # ZeroWeb Layout Engine (`zero-layout-engine`)
 
-> 基于 Taffy 的布局引擎，支持 Block、Flexbox 和 Grid 布局，将计算样式转换为精确的几何位置
+> 基于 Taffy 的布局引擎，支持 Block、Inline、Flexbox 和 Grid 布局，将计算样式转换为精确的几何位置
 
 ## 概述
 

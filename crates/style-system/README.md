@@ -8,11 +8,11 @@
 
 ## 主要功能
 
-- **选择器匹配** — 支持标签、ID、类、属性、伪类（`:first-child`、`:last-child`、`:root`、`:empty`、`:nth-child()`、`:not()`、`:is()`、`:where()`）以及后代、子、相邻兄弟、通用兄弟组合器
+- **选择器匹配** — 支持标签、ID、类、属性、伪类（`:first-child`、`:last-child`、`:root`、`:empty`、`:nth-child()`、`:not()`、`:is()`、`:where()`）以及后代、子、相邻兄弟、通用兄弟组合器，还有 `@container` 尺寸/`style()` 查询条件求值
 - **级联算法** — 按 `!important`、来源（UA / User / Author）、`@layer`、选择器特异性、源码顺序五个维度决定胜出声明
 - **属性继承** — 处理 `inherit`、`initial`、`unset`、`revert`、`revert-layer` 全局关键字，以及可继承属性的隐式继承
-- **计算值生成** — 将 em、rem、vh、vw、vmin、vmax、ch 等相对单位转换为绝对像素值，支持 `var()` 自定义属性引用和回退值
-- **`ComputedStyle` 结构体** — 覆盖盒模型、边框、颜色/背景、字体、文本、Flexbox、定位、Overflow 共 50+ 个 CSS 属性的 typed 字段
+- **计算值生成** — 将 em、rem、vh、vw、vmin、vmax、ch 等相对单位转换为绝对像素值，支持 `var()` 自定义属性引用和回退值；逻辑属性（margin/padding/border/inset 的 `-inline-`/`-block-` 系列）按 writing-mode 确定后延迟解析应用
+- **`ComputedStyle` 结构体** — 覆盖盒模型、边框、颜色/背景、字体、文本、Flexbox、定位、Overflow 共 250+ 个 CSS 属性的 typed 字段（含 `corner-shape` 等较新属性）
 - **`PropertyRegistry`** — 提供属性初始值查询、继承性判断、已知属性枚举
 
 ## 使用示例

@@ -4,7 +4,7 @@
 
 ## 概述
 
-`ZeroWeb Security` (`zero-security`) 为 ZeroWeb 提供核心安全策略基础设施：同源策略判断、跨源资源共享（CORS）检查、内容安全策略（CSP）解析与资源加载控制、iframe 沙箱、站点隔离（site-isolation，经 `zero-psl` 计算 eTLD+1）、COOP/COEP、HSTS 预加载与混合内容阻止/升级、权限模型。作为渲染引擎的安全边界层，它在网络请求、资源加载等环节拦截不安全的跨源访问，确保浏览器行为符合 Web 安全规范，并统一收敛到 `SecurityContext` 门面供页面加载路径调用。
+`ZeroWeb Security` (`zero-security`) 为 ZeroWeb 提供核心安全策略基础设施：同源策略判断、跨源资源共享（CORS）检查、内容安全策略（CSP）解析与资源加载控制、iframe 沙箱、站点隔离（site-isolation，经 `zero-psl` 计算 eTLD+1）、COOP/COEP、HSTS 与混合内容阻止/升级、权限模型。作为渲染引擎的安全边界层，它在网络请求、资源加载等环节拦截不安全的跨源访问，确保浏览器行为符合 Web 安全规范，并统一收敛到 `SecurityContext` 门面供页面加载路径调用。
 
 ## 主要功能
 
@@ -14,7 +14,7 @@
 - **iframe 沙箱** — `sandbox` 属性 token 解析（ASCII 大小写不敏感）与导航/弹窗/表单/脚本能力限制
 - **站点隔离** — `SiteIsolationManager`：site-per-process 模型，基于 PSL 的真实 eTLD+1 进程边界判定，跨站 DOM 访问阻止
 - **COOP / COEP** — 跨源开放者策略与跨源嵌入者策略的响应头解析与检查
-- **HSTS 预加载** — 内置 40+ 预加载域名，支持运行时注册与升级决策
+- **HSTS** — Strict-Transport-Security 头解析（max-age / includeSubDomains；`preload` 标记解析后忽略，无内置预加载域名列表），支持运行时注册（`HstsStore::register`）与升级决策（`should_upgrade`）
 - **混合内容阻止 / 升级** — 检测与分级（blockable/upgradable），主动升级可升级请求
 - **权限模型** — `PermissionManager`：11 种权限类型、3 种状态、按 origin 隔离存储
 - **统一门面** — `SecurityContext` 把上述检查整合为资源加载检查管线，供 webview / renderer 调用

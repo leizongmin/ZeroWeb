@@ -14,6 +14,7 @@
 - **全图元类型覆盖** — fill / rounded rect / gradient（含 CSS Color 4 多色彩空间插值与色相法）/ shadow / image / stroke / path fill / path stroke / clip / transform / filter / blend mode / glyph 共 13 类绘制图元逐一映射
 - **字体变轴** — `IpcFontVariation` 校验（非法整体丢弃）→ `OpenTypeVariation`，glyph 按 variation 索引关联
 - **字形文本源** — glyph text run 去重 intern（`run_id` 冲突文本剔除），`IpcGlyphSource` 还原为 `GlyphSource`
+- **Surface 字体导入** — `fonts` 模块 `PaintFonts`：surface 局部下装字体注册表（数量/字节预算校验、平台字体 ID 冲突拒绝、校验通过后原子整体替换），`remap` / `remap_glyphs` 把 renderer 本地字体 ID 改写为注册表 ID，`revision` 递增供光栅缓存失效
 - **非绘制元数据** — 文本控件 caret 边界（`text_control_boundaries`）随转换透传，供 browser 输入法交互使用（CPU/GPU 光栅化不消费）
 - **IPC 面缺口显式标注** — shadow 裁剪窗口 / punch-out 区域暂无 IPC 传递（恒 `None`），以注释锚定来源轮次
 

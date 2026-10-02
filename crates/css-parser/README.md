@@ -9,10 +9,10 @@
 ## 主要功能
 
 - **词法分析（Tokenizer）** — 将 CSS 字符流转换为 token 流，支持标识符、数字、百分比、带单位数值、字符串、URL、颜色匹配运算符、注释等全部 CSS token 类型
-- **语法解析（Parser）** — 将 token 流转换为 AST，支持样式规则（选择器 + 声明块）和 @规则（`@media`、`@import`、`@supports` 等）
+- **语法解析（Parser）** — 将 token 流转换为 AST，支持样式规则（选择器 + 声明块）和 @规则（`@media`、`@import`、`@supports`、`@layer`、`@container`（含 `style()` 容器查询）等）
 - **完整选择器解析** — 类型选择器、通配符、ID、类、属性选择器（7 种匹配模式）、伪类（`:not()`、`:is()`、`:where()`、`:nth-child()`、`:lang()` 等）、伪元素（`::before`、`::after`）、组合器（后代、子元素、相邻兄弟、通用兄弟）
 - **选择器特异性计算** — 按 CSS 规范计算 (A, B, C) 三元组，正确处理 `:is()`/`:not()` 取最大值、`:where()` 为零的规则
-- **属性值类型化** — 解析颜色（命名、十六进制、rgb/hsl）、长度（px/em/rem/vh/vw 等）、display、position、overflow、flex 布局、字体、`var()` 引用等常见 CSS 属性值
+- **属性值类型化** — 解析颜色（命名、十六进制、rgb/hsl）、长度（px/em/rem/vh/vw 等）、display、position、overflow、flex 布局、字体、`var()` 引用等常见 CSS 属性值，以及 corner-shape（含 superellipse）、margin-trim 等较新属性
 
 ## 使用示例
 

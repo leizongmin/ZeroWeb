@@ -11,7 +11,7 @@
 - **GPU 渲染器（wgpu）** — 窗口模式直接合成到屏幕，无头模式渲染到纹理后回读像素，适用于测试与 CPU 后备
 - **统一 WGSL 渲染管线** — 单管线同时处理填充矩形和 Glyph 文本渲染，通过 UV 标记区分图元类型
 - **Glyph Atlas 纹理图集** — 2048x2048 R8Unorm 纹理，行式打包放置策略，满时自动清空重建，带半纹素内缩避免采样泄漏
-- **字体渲染栈** — fontdue + FreeType 的字体加载与光栅化（`freetype-raster` feature 默认开启，非 Ahem 字形优先 FreeType，纯 Rust 构建时 `--no-default-features`），支持字体族查找、Glyph 位图缓存与淘汰
+- **字体渲染栈** — fontdue + FreeType 的字体加载与光栅化（`freetype-raster` feature 默认开启，非 Ahem 字形优先 FreeType，纯 Rust 构建时 `--no-default-features`），支持 rustybuzz 文本整形（`TextShaper`，连字/kerning/GSUB/GPOS 与可变字体变轴）、字体族查找、WOFF 1.0 解码、Glyph 位图缓存与淘汰
 - **颜色系统** — RGBA 颜色表示，支持十六进制解析、sRGB 到线性空间转换、预乘 alpha；`color_space` 色彩空间管理
 - **图像缓存** — `image_cache` 图片解码缓存 + GC（优先级淘汰），供多进程帧发布去重与 drawImage 复用
 - **几何与脏区域追踪** — Point / Size / Rect 基础几何类型，DamageTracker 管理增量重绘区域，支持智能合并

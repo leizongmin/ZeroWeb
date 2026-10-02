@@ -2,7 +2,7 @@
 
 待升级但存在 **API 破坏性变更** 的依赖项清单，需通过专项逐个处理。
 
-> 最后检查日期：2026-09-26（本轮复核：上表五项版本与 Cargo.lock 实测一致（winit 0.30.13 / html5ever 0.29.1 / reqwest 0.12.28 / wasmi 0.40.0 / v8 150.2.0），无漂移；2026-09-14 以来唯一依赖变动为 2026-09-24 security-hardening M2-s1 zero-security 接线 `sha2`（workspace 既有依赖，hash 门禁用），非第三方升级项不入积压；另 tests/playwright-matrix 为 Node 测试-only 工程（playwright-core 1.63.0 pin + ws），不属 Rust 依赖积压范畴）
+> 最后检查日期：2026-10-03（本轮复核：上表五项版本与 Cargo.lock 实测一致（winit 0.30.13 / html5ever 0.29.1 / reqwest 0.12.28 / wasmi 0.40.0 / v8 150.2.0），无漂移；2026-09-14 以来依赖变动为 2026-09-24 security-hardening M2-s1 zero-security 接线 `sha2`（workspace 既有依赖，hash 门禁用）与 2026-10-02 encoding-compat M2 engine/dom 接线 `encoding_rs` 0.8（Cargo.lock 0.8.35，net 同款 workspace 既有依赖），均为新增消费面而非版本升级，不入积压；另 tests/playwright-matrix 为 Node 测试-only 工程（playwright-core 1.63.0 pin + ws），不属 Rust 依赖积压范畴）
 
 ## 概要
 
