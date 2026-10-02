@@ -645,6 +645,23 @@
           } else {
             _imFail();
           }
+        } else if (typeof _reflectedUrlAttr === 'function'
+            && _realTag(sel, handle) !== 'IFRAME'
+            && _reflectedUrlAttr(_realTag(sel, handle), p) != null) {
+          // R5009 片 e（M4 片 b）：URL 反射面 setter（img.lowsrc/longDesc、object.
+          // data/codeBase、video.poster 等——R3069 条件未含、曾落 expando 兜底吞写）。
+          // 逐字写 attr（含 null/undefined → "null"/"undefined" 串，url 型非 nullable）。
+          // **IFRAME.src 除外**——R3069 分支尾部有 `__zw_reload_iframe` 导航钩子
+          // （r388 iframe history 面依赖），不走本分支。
+          var _r5u2Attr = _reflectedUrlAttr(_realTag(sel, handle), p);
+          if (handle) { __zw_set_attr_handle(handle, _r5u2Attr, String(value)); moAttr = _r5u2Attr; }
+          else { __zw_set_attr(sel, _r5u2Attr, String(value)); moAttr = _r5u2Attr; }
+        } else if ((prop === 'decoding' || prop === 'loading' || prop === 'referrerPolicy') && typeof _reflectedUrlAttr === 'function') {
+          // R5009 片 e（M4 片 b）：embedded 枚举 setter 逐字（decoding/loading/
+          // referrerPolicy——R3069 条件未含、`IDL set to ""` 曾落 expando 残留）。
+          var _r5emAttr = (prop === 'decoding') ? 'decoding' : (prop === 'loading') ? 'loading' : 'referrerpolicy';
+          if (handle) { __zw_set_attr_handle(handle, _r5emAttr, String(value)); moAttr = _r5emAttr; }
+          else { __zw_set_attr(sel, _r5emAttr, String(value)); moAttr = _r5emAttr; }
         } else if (_reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label' || p === 'as' || p === 'crossorigin' || p === 'span' || p === 'scope' || p === 'valign') {
           // R3069：reflected 原始属性——get trap 经 `_reflectedStringAttr`（type/name/placeholder/...）/ `_REFLECTED_UINT`
           //（colSpan/rowSpan/maxLength/cols/rows/start）/ `size` 专用分支读内容属性，故 set 须继续写属性（非 expando），
@@ -6150,6 +6167,33 @@
       var list = el.attributes || [];
       for (var j = list.length - 1; j >= 0; j--) if (String(list[j].name).toLowerCase() === nm.toLowerCase()) list.splice(j, 1);
     };
+    // R5009 片 e（M4 片 b）：standalone canvas 的**全局反射面**（WPT
+    // reflection-embedded 'canvas.title/lang/className/autofocus/hidden/accessKey/
+    // tabIndex' 簇——standalone 对象无 proxy trap，逐一手动反射）。
+    el._zwCanvasGlob = function (attr, fallback) {
+      var v = el.getAttribute(attr);
+      return v == null ? (fallback === undefined ? '' : fallback) : String(v);
+    };
+    el._zwCanvasGlobSet = function (attr, v) { el.setAttribute(attr, String(v == null ? '' : v)); };
+    Object.defineProperty(el, 'title', { configurable: true, get: function () { return el._zwCanvasGlob('title'); }, set: function (v) { el._zwCanvasGlobSet('title', v); } });
+    Object.defineProperty(el, 'lang', { configurable: true, get: function () { return el._zwCanvasGlob('lang'); }, set: function (v) { el._zwCanvasGlobSet('lang', v); } });
+    Object.defineProperty(el, 'className', { configurable: true, get: function () { return el._zwCanvasGlob('class'); }, set: function (v) { el._zwCanvasGlobSet('class', v); } });
+    Object.defineProperty(el, 'accessKey', { configurable: true, get: function () { return el._zwCanvasGlob('accesskey'); }, set: function (v) { el._zwCanvasGlobSet('accesskey', v); } });
+    Object.defineProperty(el, 'autofocus', { configurable: true, get: function () { return el.hasAttribute('autofocus'); }, set: function (v) { if (v) el.setAttribute('autofocus', ''); else el.removeAttribute('autofocus'); } });
+    Object.defineProperty(el, 'hidden', { configurable: true, get: function () { return el.hasAttribute('hidden'); }, set: function (v) { if (v) el.setAttribute('hidden', ''); else el.removeAttribute('hidden'); } });
+    Object.defineProperty(el, 'tabIndex', {
+      configurable: true,
+      get: function () {
+        var raw = el.getAttribute('tabindex');
+        var n = parseInt(raw, 10);
+        if (!isNaN(n)) return n | 0;
+        return 0; // canvas 原生可聚焦 → default 0
+      },
+      set: function (v) {
+        var n = parseInt(v, 10);
+        if (!isNaN(n)) el.setAttribute('tabindex', String(n | 0));
+      },
+    });
     Object.defineProperty(el, 'dir', {
       configurable: true,
       get: function () {
@@ -6197,7 +6241,9 @@
         var raw = el.getAttribute('width');
         if (raw == null) return _cw;
         var n = parseInt(String(raw), 10);
-        return (isNaN(n) || n < 0) ? 300 : n;
+        // R5009 片 e（M4 片 b）：> maxInt → default 300（reflection-embedded 实证）。
+        if (isNaN(n) || n < 0 || n > 2147483647) return 300;
+        return n;
       },
       set: function (v) { _zwSetCanvasDim('width', v); },
       enumerable: true,
@@ -6208,7 +6254,8 @@
         var raw = el.getAttribute('height');
         if (raw == null) return _ch;
         var n = parseInt(String(raw), 10);
-        return (isNaN(n) || n < 0) ? 150 : n;
+        if (isNaN(n) || n < 0 || n > 2147483647) return 150;
+        return n;
       },
       set: function (v) { _zwSetCanvasDim('height', v); },
       enumerable: true,

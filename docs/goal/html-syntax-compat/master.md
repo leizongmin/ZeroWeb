@@ -5,6 +5,18 @@
 
 ## 当前状态
 
+**M4 片 b 第二波已落地（2026-10-05）**：canvas standalone 全局反射
+（title/lang/className/accessKey/autofocus/hidden/tabIndex + width/height
+> maxInt → default）+ URL/枚举 setter 统一分支（`_reflectedUrlAttr` 命中与
+decoding/loading/referrerPolicy 枚举逐字写 attr——expando 兜底吞写根因；
+IFRAME.src 排除保留 `__zw_reload_iframe` 导航钩子——r388 单测 bisect 实证）+
+iframe/embed/object width-height string 面读侧收窄 + img/video numeric getter
+> maxInt → 0。全通道 **59091/61303 = 96.39%**（+453），M1 基线逐案
+**0 回归**；DC-4 实测全绿（test 68 suites / fmt / reftest 704/704）。残差：
+embedded 尾 423F（setter 非原始值 expando 前移）、obsolete ~400F、其余尾
+~1000F——片 b 第三波。证据：
+[evidence/2026-10-05-m4b2-canvas.md](evidence/2026-10-05-m4b2-canvas.md)。
+
 **M4 片 b 第一波已落地（2026-10-05）**：reflection 混合尾簇首批——数值 setter
 面（img/video width/height/hspace/vspace IDL set > maxInt → "0"）+ media falsy
 实例同步（video/audio.loop/defaultMuted——R122 短路根因）+ track 三面（kind
@@ -98,6 +110,10 @@ html5lib 3 案 document.write 管线面）。证据：
 
 ## 已完成切片
 
+- **M4 片 b 第二波（2026-10-05）**：canvas standalone 全局反射 + URL/枚举
+  setter 统一分支（IFRAME.src 排除保留导航钩子）+ iframe/embed width-height
+  string 面收窄 + numeric getter maxInt 面；96.39%（+453），0 回归；DC-4 全绿。
+  证据 evidence/2026-10-05-m4b2-canvas.md。
 - **M4 片 b 第一波（2026-10-05）**：数值 setter maxInt → 0 面 + media falsy
   实例同步 + track kind/src/label 三面 + FLAT/MAP/BOOL 扩表；95.65%（+363），
   0 回归；DC-4 全绿。证据 evidence/2026-10-05-m4b-tails.md。
@@ -155,11 +171,10 @@ html5lib 3 案 document.write 管线面）。证据：
 
 ## 下一步计划
 
-1. **M4 片 b（下一片）**：reflection 混合尾簇——embedded 尾 1180F（img.src
-   早分支遮蔽 URL 面/iframe.srcdoc/object.data 等）、obsolete 尾 403F、forms
-   尾 374F（input.size limited 面/progress 尾）、grouping 234F、misc 226F、
-   metadata 175F、name-content-attribute-and-property 123F；render-blocking
-   IDL 面随碰头定。
+1. **M4 片 b 第三波（下一片）**：URL/枚举 setter 非原始值形态 expando 前移
+   （embedded 尾 423F）、iframe marginHeight/marginWidth LegacyNull 面、
+   obsolete 尾 ~400F、forms/grouping/misc/metadata/name-content 尾；
+   render-blocking IDL 面随碰头定。
 2. **挂账随行**：bench-gate 等让复评（静窗）；html5ever 0.39 升级评估（顺带静态
    template noscript 解析面）；P5 通道外 19 案落地通道（reftest import 优先）；
    读一致性架构片余量（`__zw_child_nodes` live-aware——ambiguous-ampersand

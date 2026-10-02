@@ -398,13 +398,18 @@
             }
             return 0;
           }
-          if ((rgTag === 'IMG' || rgTag === 'IFRAME' || rgTag === 'EMBED' || rgTag === 'VIDEO') && (prop === 'width' || prop === 'height')) {
+          // R5009 片 e（M4 片 b）：iframe/embed 的 width/height 是 **string** 反射
+          // （elements-embedded 表）——收窄出 numeric 面（落 R3037 FLAT 串读）。
+          if ((rgTag === 'IMG' || rgTag === 'VIDEO') && (prop === 'width' || prop === 'height')) {
             // sync set→get 优先读缓存（setter 写数值）；无缓存则解析 width/height 内容属性（缺省/非负整数失败 → 0）。
             // R3204：sel 读源 latest-wins（`__zw_get_attr_lw`）反映同批 setAttribute。
             var drc = _reflectedAttrs[key];
             if (drc && Object.prototype.hasOwnProperty.call(drc, prop)) return drc[prop];
             var dRaw = handle ? __zw_get_attr_handle(handle, prop) : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop) : __zw_get_attr(sel, prop));
             var dN = parseInt(dRaw, 10);
+            // R5009 片 e（M4 片 b）：> maxInt → 0（WPT 'setAttribute(2147483648) →
+            // img.width 0' 实证——out-of-int32 无效语义）。
+            if (!isNaN(dN) && dN > 2147483647) dN = 0;
             return (isNaN(dN) || dN < 0) ? 0 : dN;
           }
         }
@@ -592,7 +597,10 @@
             // sync set→get 优先读缓存（setter R3077 写数值）；无缓存则反射内容属性（default 300/150）。
             var cdc = _reflectedAttrs[key];
             if (cdc && Object.prototype.hasOwnProperty.call(cdc, prop)) return cdc[prop];
-            return _zwCanvasDim(sel, handle, prop, prop === 'width' ? 300 : 150);
+            // R5009 片 e（M4 片 b）：> maxInt → default（300/150——reflection-embedded
+            // 'canvas.width setAttribute(2147483648)' 期望 300 实证）。
+            var _c5dim = _zwCanvasDim(sel, handle, prop, prop === 'width' ? 300 : 150);
+            return (_c5dim > 2147483647) ? (prop === 'width' ? 300 : 150) : _c5dim;
           }
         }
         // `el.dataset`——`data-*` 属性的 camelCase 键对象（get/set/has/delete/枚举）。
