@@ -13,7 +13,10 @@ use std::sync::{Arc, Mutex};
 #[cfg(feature = "script-runtime")]
 use zero_style_system::ComputedStyle;
 
-use zero_dom::{Document, FocusManager, NodeId, NodeKind, parse_html, parse_html_fragment};
+use zero_dom::{
+    Document, FocusManager, NodeId, NodeKind, parse_html, parse_html_fragment,
+    parse_html_fragment_with_scripting, parse_html_with_scripting,
+};
 #[cfg(feature = "script-runtime")]
 use zero_script_sandbox::Sandbox;
 
@@ -1448,7 +1451,15 @@ pub(crate) fn replace_inner_html(doc: &mut Document, parent: NodeId, html: &str)
         Some(NodeKind::Element(e)) => (e.namespace().to_string(), e.local_name().to_string()),
         _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
     };
-    let frag_doc = parse_html_fragment(trimmed, &context_ns, &context_local);
+    // R5001 M3 片 a：scripting 旗标——context 为 template 时 disabled（spec：template
+    // content owner 文档无 browsing context），否则随目标文档旗标（noscript 解析/序列化
+    // 分流——html-syntax-compat escaping 面）。
+    let scripting = if context_local.eq_ignore_ascii_case("template") && context_ns == "http://www.w3.org/1999/xhtml" {
+        false
+    } else {
+        doc.scripting_enabled()
+    };
+    let frag_doc = parse_html_fragment_with_scripting(trimmed, &context_ns, &context_local, scripting);
     let frag_children = fragment_top_level_children(&frag_doc);
     for frag_child in frag_children {
         let copied = copy_subtree_from(doc, &frag_doc, frag_child);
@@ -1682,7 +1693,10 @@ fn insert_adjacent_html(doc: &mut Document, node: NodeId, position: &str, html: 
         Some(NodeKind::Element(e)) => (e.namespace().to_string(), e.local_name().to_string()),
         _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
     };
-    let frag_doc = parse_html_fragment(trimmed, &context_ns, &context_local);
+    // R5001 M3 片 a：scripting 旗标随目标文档（template context 规则同 replace_inner_html）。
+    let scripting = !(context_local.eq_ignore_ascii_case("template") && context_ns == "http://www.w3.org/1999/xhtml")
+        && doc.scripting_enabled();
+    let frag_doc = parse_html_fragment_with_scripting(trimmed, &context_ns, &context_local, scripting);
     let kids = fragment_top_level_children(&frag_doc);
     let frag_nodes: Vec<NodeId> = kids.into_iter().map(|k| copy_subtree_from(doc, &frag_doc, k)).collect();
     insert_nodes_at_position(doc, &frag_nodes, node, position)
@@ -1730,7 +1744,11 @@ pub(crate) fn replace_outer_html_node(doc: &mut Document, node: NodeId, html: &s
             Some(NodeKind::Element(e)) => (e.namespace().to_string(), e.local_name().to_string()),
             _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
         };
-        let frag_doc = parse_html_fragment(trimmed, &context_ns, &context_local);
+        // R5001 M3 片 a：scripting 旗标随目标文档（template context 规则同上）。
+        let scripting = !(context_local.eq_ignore_ascii_case("template")
+            && context_ns == "http://www.w3.org/1999/xhtml")
+            && doc.scripting_enabled();
+        let frag_doc = parse_html_fragment_with_scripting(trimmed, &context_ns, &context_local, scripting);
         let kids = fragment_top_level_children(&frag_doc);
         for k in kids {
             let copied = copy_subtree_from(doc, &frag_doc, k);
@@ -1877,7 +1895,9 @@ pub fn parse_html_element_json_full(
     url: Option<&str>,
     filter_synthetic: bool,
 ) -> String {
-    let mut doc = parse_html(html);
+    // R5001 M3 片 a：DOMParser 产物为 inert 文档（scripting disabled——noscript 按
+    // markup 解析、序列化走转义分支，html-syntax-compat escaping 面）。
+    let mut doc = parse_html_with_scripting(html, false);
     if url.is_some() {
         doc.set_url(url.map(str::to_string));
     }
@@ -2059,7 +2079,27 @@ pub fn doc_doctype_json_doc(doc: &Document) -> String {
 /// 元素的**全部子节点**（含文本/注释，区别于 [`element_children_selectors`] 仅元素子），JSON 数组。
 /// 供 `__zw_child_nodes` 回调 → shim `el.childNodes` / `firstChild` / `lastChild`。
 pub fn child_nodes_json(html: &str, elem_sel: &str) -> String {
-    child_nodes_json_ctx(html, elem_sel, None)
+    child_nodes_json_full(html, elem_sel, None, true)
+}
+
+/// R5001 M3 片 a：scripting 旗标变体——detached 文档（DOMParser/createHTMLDocument）
+/// 本地视图解析传 false（noscript 按 markup 解析、实体解码；JS 序列化器按
+/// `__zwTreeScripting` 印章对应转义）。
+pub fn child_nodes_json_full(html: &str, elem_sel: &str, context_ns: Option<&str>, scripting: bool) -> String {
+    match context_ns {
+        None | Some("http://www.w3.org/1999/xhtml") => {
+            let doc = parse_html_with_scripting(html, scripting);
+            child_nodes_json_doc(&doc, elem_sel)
+        }
+        Some(ns) => {
+            let frag = parse_html_fragment_with_scripting(html, ns, "body", scripting);
+            let entries: Vec<String> = fragment_top_level_children(&frag)
+                .into_iter()
+                .filter_map(|c| node_entry_json(&frag, c))
+                .collect();
+            format!("[{}]", entries.join(","))
+        }
+    }
 }
 
 /// R5000 片 b（html-syntax-compat）：foreign context 变体——`context_ns` 非 HTML ns
@@ -2068,20 +2108,7 @@ pub fn child_nodes_json(html: &str, elem_sel: &str) -> String {
 /// 子列表」，消费方为 shim 本地解析视图构建（`_zwFragmentAdded` 的 createElementNS
 /// 容器形态）。HTML ns / None → 原路径（全文档解析 + elem_sel 寻址，零行为变化）。
 pub fn child_nodes_json_ctx(html: &str, elem_sel: &str, context_ns: Option<&str>) -> String {
-    match context_ns {
-        None | Some("http://www.w3.org/1999/xhtml") => {
-            let doc = parse_html(html);
-            child_nodes_json_doc(&doc, elem_sel)
-        }
-        Some(ns) => {
-            let frag = parse_html_fragment(html, ns, "body");
-            let entries: Vec<String> = fragment_top_level_children(&frag)
-                .into_iter()
-                .filter_map(|c| node_entry_json(&frag, c))
-                .collect();
-            format!("[{}]", entries.join(","))
-        }
-    }
+    child_nodes_json_full(html, elem_sel, context_ns, true)
 }
 
 /// WC-M2（web-components goal）：`<template>` contents 的 childNodes JSON（与

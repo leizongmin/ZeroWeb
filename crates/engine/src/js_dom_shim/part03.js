@@ -8901,7 +8901,9 @@
   // sibling 导航（previousSibling/nextSibling 经 parentNode 动态求值）+ insertBefore/replaceChild/lastChild 收尾
   // DOMPurify 清洗所需 mutation 面（移禁元素 + 去 on*/style 属性 + 重定位）。
   var _ZW_VOID_TAGS = { area: 1, base: 1, br: 1, col: 1, embed: 1, hr: 1, img: 1, input: 1, link: 1, meta: 1, param: 1, source: 1, track: 1, wbr: 1 };
-  function _zwMEscapeText(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  // R5001 M3 片 a：补 U+00A0 → &nbsp;（spec escapingString 全集，与 Rust escape_text/
+  // escape_html 对齐——noscript 转义分支 round-trip 面）。
+  function _zwMEscapeText(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\u00a0/g, '&nbsp;'); }
   // R123：对齐 Rust escape_html 全集（& " < > U+00A0）——_zwMEl 序列化路径与 sel/handle
   // outerHTML 路径三方一致（旧只转 & " 使 handle-create 元素 innerHTML 序列化分歧）。
   // R123：对齐 Rust escape_html 全集（& " < > U+00A0）——_zwMEl 序列化路径与 sel/handle
@@ -8910,7 +8912,18 @@
   // 节点 → HTML 串（元素含属性 + 子树；文本转义；注释包裹）。供 innerHTML/outerHTML 序列化（反映 mutation）。
   function _zwMSerialize(node) {
     if (!node) return '';
-    if (node.nodeType === 3) return _zwMEscapeText(node.nodeValue);
+    if (node.nodeType === 3) {
+      // R5001 M3 片 a：noscript 条件 raw（spec serialising-html-fragments——parent
+      // 为 noscript 且对该节点 scripting enabled → literal）。宿主解析
+      // scripting=true 时 noscript 为 rawtext，本地视图文本数据本就字面；JS 侧
+      // 直出即与宿主序列化一致。显式 disabled 印记（`__zwTreeScripting === false`
+      // ——detached 文档树 build 时盖章，随 detached 面切片接通）保持转义；
+      // 未盖章树（主文档常态）默认 literal。
+      var _p5k = node.parentNode;
+      var _p5tag = _p5k ? String(_p5k.localName || _p5k.tagName || '').toLowerCase() : '';
+      if (_p5tag === 'noscript' && node.__zwTreeScripting !== false) return String(node.nodeValue);
+      return _zwMEscapeText(node.nodeValue);
+    }
     if (node.nodeType === 8) return '<!--' + node.nodeValue + '-->';
     if (node.nodeType !== 1) return '';
     var tag = node.localName || (node.tagName || '').toLowerCase();
@@ -11633,7 +11646,7 @@
     };
     return n;
   }
-  function _zwMBuildNode(html, entry, parent) {
+  function _zwMBuildNode(html, entry, parent, scripting) {
     if (entry.k === 'T') return _zwMText(entry.v, parent);
     if (entry.k === 'C') {
       // R123：bogus comment '?…?' 形态 → PI 视图（html-parser source 的 PI 语义）。
@@ -11673,8 +11686,15 @@
     }
     if (typeof __zw_parse_html_child_nodes === 'function') {
       try {
-        var arr = JSON.parse(__zw_parse_html_child_nodes(html, entry.s));
-        for (var i = 0; i < arr.length; i++) if (arr[i]) node.childNodes.push(_zwMBuildNode(html, arr[i], node));
+        // R5001 M3 片 a：scripting 旗标随递归下传（noscript 子树的解析形态随文档旗标）
+        // + 逐节点盖章（序列化器 noscript 条件 raw 分流）。
+        var _p5scr = (scripting === false) ? '0' : '1';
+        var arr = JSON.parse(__zw_parse_html_child_nodes(html, entry.s, '', _p5scr));
+        for (var i = 0; i < arr.length; i++) if (arr[i]) {
+          var _p5b = _zwMBuildNode(html, arr[i], node, scripting);
+          try { if (scripting === false) _p5b.__zwTreeScripting = false; } catch (_e5b) {}
+          node.childNodes.push(_p5b);
+        }
       } catch (_e) {}
     }
     return node;
@@ -11728,7 +11748,7 @@
   return node;
   }
   // 建 body 元素节点树（root，parentNode=null）：从 <body>innerHtml</body> 取 body 子 entries 递归建。
-  function _zwMBuildBodyTree(innerHtml, ctxNs) {
+  function _zwMBuildBodyTree(innerHtml, ctxNs, scripting) {
     var html = '<body>' + innerHtml + '</body>';
     var body = _zwMEl({ tag: 'body' }, null);
     if (typeof __zw_parse_html_child_nodes === 'function') {
@@ -11736,8 +11756,19 @@
         // R5000 片 b：ctxNs 可选 context namespace——foreign context（createElementNS
         // 容器）的本地视图解析走宿主 fragment 路径（CDATA 门/插入模式按 context）；
         // 缺省 ''=HTML 全文档路径，零行为变化。
-        var arr = JSON.parse(__zw_parse_html_child_nodes(html, 'body', ctxNs ? String(ctxNs) : ''));
-        for (var i = 0; i < arr.length; i++) if (arr[i]) body.childNodes.push(_zwMBuildNode(html, arr[i], body));
+        // R5001 M3 片 a：scripting 可选旗标（detached/inert 文档 false——noscript 按
+        // markup 解析、实体解码），并逐节点盖 `__zwTreeScripting` 印章供序列化器
+        // 分流（noscript 条件 raw：undefined/true = literal，false = 转义）。
+        var _p5scr = (scripting === false) ? '0' : '1';
+        var arr = JSON.parse(__zw_parse_html_child_nodes(html, 'body', ctxNs ? String(ctxNs) : '', _p5scr));
+        var _p5stamp = function (n5k) {
+          if (!n5k) return;
+          try { if (scripting === false) n5k.__zwTreeScripting = false; } catch (_e5k) {}
+          var k5 = n5k.childNodes || [];
+          for (var i5 = 0; i5 < k5.length; i5++) _p5stamp(k5[i5]);
+        };
+        for (var si5 = 0; si5 < body.childNodes.length; si5++) _p5stamp(body.childNodes[si5]);
+        for (var i = 0; i < arr.length; i++) if (arr[i]) body.childNodes.push(_zwMBuildNode(html, arr[i], body, scripting));
       } catch (_e) {}
     }
     return body;
@@ -11931,7 +11962,9 @@
     var _r179HeadHtml = ''; // R179：createHTMLDocument 的 head/title 段（detHtml 包装层消费）
     function ensureTree() {
       if (!_tree) {
-        _tree = _zwMBuildBodyTree(bodyHtml);
+        // R5001 M3 片 a：detached 文档 scripting disabled——本地树 noscript 按
+        // markup 解析 + `__zwTreeScripting=false` 序列化印章（转义分支）。
+        _tree = _zwMBuildBodyTree(bodyHtml, '', false);
         // R167（L2-d3b）/ R168（d3b2）：**树根独占** doc 印章——ownerDocument
         // accessor 沿 `_zwOwnerDetDoc` 读源 doc（detached doc 的 body 视图对象
         // 与 `_tree` 根是两个对象，链在树根断——无印章则归一节点回落主

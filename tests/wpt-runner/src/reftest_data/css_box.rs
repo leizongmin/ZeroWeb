@@ -416,6 +416,57 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><head><style>body{margin:0;font:36px/46px Arial,sans-serif}.row{margin:8px}.nav-item{display:inline-block;background:#3fbf3f;white-space:nowrap}.nav-item a{font-size:39px;line-height:138px;color:#222}.big{font-size:39px;line-height:138px;background:#e6a23c}</style></head><body><div class=\"row\"><span class=\"nav-item\"><a>abcdef ghijkl</a></span><span class=\"nav-item big\" style=\"margin-left:40px\">abcdef ghijkl</span></div></body></html>",
         is_match: true,
     },
+    // ── slice19（R4938）：inline 元素内原子行内级后代保布局盒（R2156 skip 曾整棵丢弃）──
+    // 回归形态：div > span > input(inline-block)——span 被 inline_box_model_coherence
+    // skip 后原子行内级后代既无 taffy 子树也无 LayoutBox → 不绘制（IFC 行高仍由
+    // collect_items 收集项撑起，信号 = input 矩形本体像素：360×40 + 240×60 = 28800px
+    // ≈ 6.0% ≫ Layout 1% 阈值）。ref 页去 span 包装（原子 input 直接为块容器子，
+    // R109 路径）——修复态两页逐像素相等。
+    // CSS2 §9.2.1.1 inline formatting；§10.3.1 replaced inline。
+    // 文件孪生（make reftest-upstream 域 + 几何 dump 用）：
+    // tests/wpt-runner/local-reftests/css/CSS2/box-display/atomic-inline-in-inline-zw-001*.html。
+    InlineReftestDef {
+        id: "css-box/atomic-inline-in-inline-zw-001",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0}input{display:inline-block;margin:0;padding:0;border:0;background:#03c;vertical-align:top}</style></head><body><div><span><input style=\"width:360px;height:40px\"><input style=\"width:240px;height:60px\"></span></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0}input{display:inline-block;margin:0;padding:0;border:0;background:#03c;vertical-align:top}</style></head><body><div><input style=\"width:360px;height:40px\"><input style=\"width:240px;height:60px\"></div></body></html>",
+        is_match: true,
+    },
+    // ── slice19 收尾（S-TE2）：跨行位钉——span 内双 200px input 在 300px 容器
+    // 强制换行（pr61 testeff te3/te4 探针证两臂逐值一致：a=[0,0,208,48]
+    // b=[0,48,208,48]，b.y=48 即第二行行位）。钉「提升臂产物跨行定位 ≡ 直接子
+    // 形态」；base 双 input 矩形缺席 = 16000/480000 = 3.33%。
+    // 文件孪生：local-reftests/css/CSS2/box-display/atomic-inline-in-inline-wrap-zw-002*.html。
+    InlineReftestDef {
+        id: "css-box/atomic-inline-in-inline-wrap-zw-002",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0}input{display:inline-block;margin:0;padding:0;border:0;background:#03c;vertical-align:top}</style></head><body><div style=\"width:300px\"><span><input style=\"width:200px;height:40px\"><input style=\"width:200px;height:40px\"></span></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0}input{display:inline-block;margin:0;padding:0;border:0;background:#03c;vertical-align:top}</style></head><body><div style=\"width:300px\"><input style=\"width:200px;height:40px\"><input style=\"width:200px;height:40px\"></div></body></html>",
+        is_match: true,
+    },
+    // ── slice19 收尾（S-TE3）：svg 等价单行钉——svg 为替换元素（collect 判据
+    // is_replaced_element 八类；sync 判据不含 svg 型），pr61 testeff te5/te6 探针
+    // 证两臂逐值一致 [108,18,60,30]。钉「被 skip span 内 input+svg 并排 ≡ 直接子
+    // 形态」（单变量 = 包装层有无）；base input+svg 矩形缺席 = 12000/480000 = 2.5%。
+    // 文件孪生：local-reftests/css/CSS2/box-display/atomic-inline-in-inline-svg-zw-003*.html。
+    InlineReftestDef {
+        id: "css-box/atomic-inline-in-inline-svg-zw-003",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0}input{display:inline-block;margin:0;padding:0;border:0;background:#03c;vertical-align:top}</style></head><body><div><span><input style=\"width:200px;height:40px\"><svg width=\"100\" height=\"40\" style=\"vertical-align:top\"><rect width=\"100\" height=\"40\" fill=\"#c30\"/></svg></span></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0}input{display:inline-block;margin:0;padding:0;border:0;background:#03c;vertical-align:top}</style></head><body><div><input style=\"width:200px;height:40px\"><svg width=\"100\" height=\"40\" style=\"vertical-align:top\"><rect width=\"100\" height=\"40\" fill=\"#c30\"/></svg></div></body></html>",
+        is_match: true,
+    },
+    // ── slice19 收尾（S-TE3 多行探针案，先探后钉）：svg 换行到第二行时行位是否
+    // 随 IFC 片段同步（sync 判据不含 svg 型，te 探针未覆盖多行）。两臂一致才保留
+    // 本钉；不一致则撤钉记挂账。base 矩形缺席 = 8000+8000 = 16000/480000 = 3.33%。
+    // 文件孪生：local-reftests/css/CSS2/box-display/atomic-inline-in-inline-svgwrap-zw-004*.html。
+    InlineReftestDef {
+        id: "css-box/atomic-inline-in-inline-svgwrap-zw-004",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0}input{display:inline-block;margin:0;padding:0;border:0;background:#03c;vertical-align:top}</style></head><body><div style=\"width:300px\"><span><input style=\"width:200px;height:40px\"><svg width=\"200\" height=\"40\" style=\"vertical-align:top\"><rect width=\"200\" height=\"40\" fill=\"#c30\"/></svg></span></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0}input{display:inline-block;margin:0;padding:0;border:0;background:#03c;vertical-align:top}</style></head><body><div style=\"width:300px\"><input style=\"width:200px;height:40px\"><svg width=\"200\" height=\"40\" style=\"vertical-align:top\"><rect width=\"200\" height=\"40\" fill=\"#c30\"/></svg></div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {

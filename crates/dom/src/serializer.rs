@@ -132,7 +132,15 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
             // 这些元素的内容在 HTML 解析时按 rawtext / rcdata 处理，序列化须保持原样，
             // 否则 CSS/JS 源码（如 `<style>` 内的 `<![CDATA[`、`a > b`）被转义后
             // 再次解析会被破坏。普通文本节点按常规转义（`&`/`<`/`>`）。
-            if parent_tag.map(is_raw_text_element).unwrap_or(false) {
+            // R5001 M3 片 a：noscript 按 spec 条件 raw——「parent 为 noscript 且对该
+            // 节点 scripting enabled」时 literal（页面主文档），否则常规转义
+            //（DOMParser/createHTMLDocument/template content 等 inert 文档）。
+            // 旧 R3216 全量 defer 的 DOMPurify 交互面恰在 disabled 侧（保持转义），
+            // 旗标化后两侧均 spec 一致。
+            let noscript_raw = parent_tag
+                .map(|t| t.eq_ignore_ascii_case("noscript") && doc.scripting_enabled())
+                .unwrap_or(false);
+            if parent_tag.map(is_raw_text_element).unwrap_or(false) || noscript_raw {
                 output.push_str(&data.content);
             } else {
                 output.push_str(&escape_text(&data.content));
@@ -296,9 +304,11 @@ fn is_void_element(tag: &str) -> bool {
 /// 被错误转义——rawtext 解析**不识别字符引用**，故 `a < b` 序列化为 `a &lt; b` 再解析仍是 `a &lt; b`，
 /// round-trip 失效。spec：https://html.spec.whatwg.org/multipage/parsing.html#serialising-html-fragments
 ///
-/// **不含 `noscript`**：spec 谓 noscript 当 scripting enabled 时亦 raw，但本浏览器 DOMPurify 清洗
-///（`test_sanitize_dompurify_real_r3019`）的 mXSS 再解析检查与 raw noscript 序列化交互致空结果
-///（noscript mXSS 是经典向量）——noscript raw 序列化需配套 mXSS 处理，**defer**，本次仅修无条件 raw 族。
+/// **含条件 `noscript`**（R5001 M3 片 a）：spec 谓 noscript 当 scripting enabled 时亦
+/// raw——按文档 [`Document::scripting_enabled`] 旗标分流（调用侧 text 分支判定；
+/// 本函数仍只覆盖无条件 raw 族）。DOMParser/createHTMLDocument 等 inert 文档
+/// scripting disabled → noscript 走转义分支（R3216 defer 的 DOMPurify mXSS 面恰在
+/// disabled 侧，旗标化后两侧均 spec 一致）。
 ///
 /// 注：`textarea`/`title` 是 escapable raw text（解析时识别 `&` 引用），
 /// 对它们用 [`escape_text`]（转义 `&`/`<`/`>`）才能正确 round-trip，故不在此列。
@@ -433,6 +443,48 @@ mod tests {
         doc.append_child(ta, text).unwrap();
         let html = doc.outer_html(ta);
         assert_eq!(html, "<textarea>a &lt; b &amp; c</textarea>");
+    }
+
+    /// R5001 M3 片 a：noscript 条件 raw——scripting enabled 文档 literal 序列化、
+    /// disabled 文档转义（html-syntax-compat escaping 面语义核心）。
+    #[test]
+    fn test_noscript_conditional_raw_r5001() {
+        // 手工构造：noscript 元素 + 文本子（绕过解析差异，直测序列化分流）。
+        let mut doc_on = Document::new();
+        doc_on.set_scripting_enabled(true);
+        let ns = doc_on.create_element("noscript");
+        let tx = doc_on.create_text_node("a & b < c");
+        doc_on.append_child(ns, tx).unwrap();
+        assert_eq!(
+            doc_on.outer_html(ns),
+            "<noscript>a & b < c</noscript>",
+            "scripting enabled → noscript 文本 literal"
+        );
+
+        let mut doc_off = Document::new();
+        doc_off.set_scripting_enabled(false);
+        let ns2 = doc_off.create_element("noscript");
+        let tx2 = doc_off.create_text_node("a & b < c");
+        doc_off.append_child(ns2, tx2).unwrap();
+        assert_eq!(
+            doc_off.outer_html(ns2),
+            "<noscript>a &amp; b &lt; c</noscript>",
+            "scripting disabled → noscript 文本转义"
+        );
+    }
+
+    /// R5001 M3 片 a：scripting 旗标解析面——html5ever TreeBuilderOpts 分流，noscript
+    /// 在 disabled 文档按 markup 解析（实体解码为文本），enabled 按 raw text（字面保留）。
+    #[test]
+    fn test_noscript_parse_scripting_flag_r5001() {
+        use crate::parse_html_with_scripting;
+        let src = "<body><noscript>&amp;&nbsp;&lt;&gt;</noscript></body>";
+        let on = parse_html_with_scripting(src, true);
+        let ns_on = on.query_selector(on.root(), "noscript").expect("noscript on");
+        assert_eq!(on.text_content(ns_on), Some("&amp;&nbsp;&lt;&gt;".to_string()));
+        let off = parse_html_with_scripting(src, false);
+        let ns_off = off.query_selector(off.root(), "noscript").expect("noscript off");
+        assert_eq!(off.text_content(ns_off), Some("&\u{a0}<>".to_string()));
     }
 
     /// R3216：真实 round-trip——parse `<xmp>a < b</xmp>` → 序列化 → 文本须仍 "a < b"

@@ -213,6 +213,63 @@ pub(crate) fn phasea_multi_inline_eligible(
     !crate::inline::InlineFormattingContext::inline_subtree_has_ooflow_descendant(doc, styles, child_id)
 }
 
+/// slice19：收集 inline 元素子树内的**原子行内级后代**（DOM 序，供 R2156 skip 路径
+/// 提升为容器 taffy 子树）。
+///
+/// 背景：`inline_box_model_coherence`（R2156）把「含嵌套 atomic inline 后代」的 inline
+/// 子节点从 taffy 树整体跳过（父 IFC 经 R1576 递归收集文本 + 后代原子项单次行排）。
+/// skip 后原子后代既无 taffy 子树也无 LayoutBox——gBCR/命中面/绘制三方真值全失
+///（活体 baidu `#kw`/`#su` 0×0 + 最小静态页 `div>div>span>input` 盒缺席实证）。
+/// 本谓词给出须提升的节点集：与 [`crate::inline::InlineFormattingContext::inline_elem_has_nested_inline_block`]
+/// 的下探边界一致（inline-level 逐层深入；block-level 后代停止 = R109 另路径）。
+///
+/// 收集判据（与 collect_items 的 IFC 原子项臂同源）：
+/// - inline-block 家族（InlineBlock/InlineFlex/InlineGrid/InlineTable）；
+/// - 计算 display:inline 的替换元素（R4489：input/select/textarea/button 及
+///   img/svg/canvas 等八类，[`crate::inline_block_split::is_replaced_element`]）——
+///   IFC 侧按原子行内级盒收集、需独立盒子；
+/// - `display:contents` 穿透（子项归入祖先流）。
+///
+/// https://www.w3.org/TR/CSS22/visuren.html#inline-boxes
+/// https://www.w3.org/TR/CSS22/visuren.html#box-generation
+pub(crate) fn collect_atomic_inline_descendants(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_id: NodeId,
+    out: &mut Vec<NodeId>,
+) {
+    for child in doc.child_nodes(inline_id) {
+        let Some(node) = doc.get(child) else {
+            continue;
+        };
+        let NodeKind::Element(_) = &node.kind else {
+            continue;
+        };
+        let Some(s) = styles.get(&child) else {
+            continue;
+        };
+        match s.display {
+            DisplayValue::None => continue,
+            DisplayValue::Contents => collect_atomic_inline_descendants(doc, styles, child, out),
+            DisplayValue::Inline => {
+                if crate::inline_block_split::is_replaced_element(&child, doc) {
+                    out.push(child);
+                } else {
+                    collect_atomic_inline_descendants(doc, styles, child, out);
+                }
+            }
+            DisplayValue::InlineBlock
+            | DisplayValue::InlineFlex
+            | DisplayValue::InlineGrid
+            | DisplayValue::InlineTable => {
+                out.push(child);
+            }
+            // block-level 后代不入本路径（R109 split 域；与 skip 谓词下探边界一致）。
+            _ => {}
+        }
+    }
+}
+
 /// R3991（CSS Display 3 §2.3 run-in box）：判定 run-in 元素是否满足「并入后继块」
 /// 条件，通过时返回**后继 in-flow 块级兄弟**的 DOM NodeId。
 ///
@@ -3602,6 +3659,21 @@ fn build_subtree(
                                     })
                                 })
                             {
+                                // slice19：skip 不再整棵丢弃原子行内级后代——提升为容器
+                                // taffy 子树（DOM 序入同一排序流），使其保有 LayoutBox
+                                //（gBCR/命中面/绘制共同真值源；活体 baidu #kw/#su 0×0 与
+                                // 最小静态页 span>input 盒缺席根因）。文本仍走父 IFC
+                                //（collect_items R1576 递归收集），行位由
+                                // sync_inline_block_positions_from_ifc 对齐（s10 热榜机制）。
+                                // CSS2 §9.2.1.1 inline formatting；随
+                                // ZW_INLINE_BOX_MODEL_COHERENCE kill-switch 同关断。
+                                let skip_index = children_dom.iter().position(|&c| c == child_dom).unwrap_or(0);
+                                let mut hoisted_atomic = Vec::new();
+                                collect_atomic_inline_descendants(doc, styles, child_dom, &mut hoisted_atomic);
+                                for atomic_id in hoisted_atomic {
+                                    let atomic_order = styles.get(&atomic_id).map_or(0, |s| s.order);
+                                    children_with_order.push((atomic_id, atomic_order, skip_index * 1000));
+                                }
                                 continue;
                             }
                             // R2160 part1：multi-inline block 容器中 childless plain inline 跳过
@@ -3652,6 +3724,14 @@ fn build_subtree(
                                         doc, styles, node_id,
                                     )
                                 {
+                                    // slice19：同直接子路径——原子行内级后代提升（DOM 序，
+                                    // 同 seq 槽稳定排序保序），不再整棵丢弃盒子。
+                                    let mut hoisted_atomic = Vec::new();
+                                    collect_atomic_inline_descendants(doc, styles, node_id, &mut hoisted_atomic);
+                                    for atomic_id in hoisted_atomic {
+                                        let atomic_order = styles.get(&atomic_id).map_or(0, |s| s.order);
+                                        children_with_order.push((atomic_id, atomic_order, seq));
+                                    }
                                     continue;
                                 }
                                 if multi_inline_block_skip && phasea_multi_inline_eligible(doc, styles, node_id) {
