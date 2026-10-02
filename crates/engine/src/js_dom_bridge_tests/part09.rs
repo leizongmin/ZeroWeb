@@ -1224,8 +1224,8 @@ fn test_form_reflected_idl_attrs_r2839() {
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__action)").unwrap().value,
-        "/submit",
-        "form.action 反射（原始串）"
+        "http://test.local/submit",
+        "form.action URL 反射（spec resolveUrl——R5009 按 WPT reflection-forms 期望更新）"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__method)").unwrap().value,

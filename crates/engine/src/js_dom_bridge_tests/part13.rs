@@ -1084,12 +1084,13 @@ fn test_reflected_string_attr_reads_r3037() {
         "setAttribute('min','5') 后 input.min='5'（attr↔IDL 一致）"
     );
 
-    // ⑦ camelCase 映射：input.formMethod / a.crossOrigin 反射 formmethod / crossorigin（缺省 ''）。
+    // ⑦ camelCase 映射：input.formMethod / a.crossOrigin 反射 formmethod / crossorigin。
+    // R5009 片 e：formMethod 为 enumerated（missing default 'get'——WPT reflection-forms）。
     sandbox.execute("globalThis.__fm = document.getElementById('i').formMethod;").unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__fm").unwrap().value,
-        "",
-        "input.formMethod 缺省=''（camelCase→attr 映射，无 formmethod 属性）"
+        "get",
+        "input.formMethod 缺省='get'（spec enumerated missing-default）"
     );
 }
 

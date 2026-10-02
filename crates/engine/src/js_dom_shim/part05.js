@@ -464,7 +464,7 @@
             if (handle) __zw_set_attr_handle(handle, p, attrV);
             else { __zw_set_attr(sel, p, attrV); moAttr = p; }
           }
-        } else if ((p === 'width' || p === 'height') && (_realTag(sel, handle) === 'IMG' || _realTag(sel, handle) === 'IFRAME' || _realTag(sel, handle) === 'CANVAS' || _realTag(sel, handle) === 'EMBED' || _realTag(sel, handle) === 'VIDEO')) {
+        } else if ((p === 'width' || p === 'height') && (_realTag(sel, handle) === 'IMG' || _realTag(sel, handle) === 'CANVAS' || _realTag(sel, handle) === 'VIDEO')) {
           // reflected unsigned-long 维度 setter（R2851）：归一（NaN/负 → 0）→ 缓存数值 + 写 width/height
           // 内容属性（getter 优先读缓存保 sync set→get）。R3077：CANVAS width/height 反射（保 set→get 一致）。
           // R3308：CANVAS 设 width/height 触发 bitmap resize（HTML spec §4.12.5.1——清空 bitmap + 重置绘图状态）。
@@ -6066,6 +6066,41 @@
     // data-zw-canvas-ctx（painter 桥接），width/height 同步属性（重解析尺寸正确）。
     var _handle = (typeof __zw_create_element === 'function') ? __zw_create_element('canvas') : '';
     if (_handle) el.__zwHandle = _handle;
+    // R5009 片 e（html-syntax-compat）：standalone canvas 的**属性方法面**（WPT
+    // reflection-embedded 'canvas.width/height setAttribute()' 簇——domObj.setAttribute
+    // is not a function 69×2）+ 全局 dir 枚举 + width/height 的 attr 反射读（setter
+    // 位面保持——设值复位 bitmap 语义不动；getter 改读属性 latest-wins，缺省 300/150，
+    // 非法 → default）。reflected canvass 用例与 2d host 尺寸语义共存：setter 已同步
+    // 写属性（__zw_set_attr_handle）。
+    el.setAttribute = function (n, v) {
+      var nm = String(n), vv = String(v == null ? '' : v);
+      if (_handle && typeof __zw_set_attr_handle === 'function') __zw_set_attr_handle(_handle, nm, vv);
+      (el.attributes = el.attributes || []).push({ name: nm, value: vv });
+    };
+    el.getAttribute = function (n) {
+      var nm = String(n);
+      if (_handle && typeof __zw_get_attr_handle === 'function') {
+        try { var hv = __zw_get_attr_handle(_handle, nm); if (hv != null) return String(hv); } catch (_e5gc) {}
+      }
+      var list = el.attributes || [];
+      for (var i = list.length - 1; i >= 0; i--) if (String(list[i].name).toLowerCase() === nm.toLowerCase()) return String(list[i].value);
+      return null;
+    };
+    el.hasAttribute = function (n) { return el.getAttribute(n) != null; };
+    el.removeAttribute = function (n) {
+      var nm = String(n);
+      if (_handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(_handle, nm);
+      var list = el.attributes || [];
+      for (var j = list.length - 1; j >= 0; j--) if (String(list[j].name).toLowerCase() === nm.toLowerCase()) list.splice(j, 1);
+    };
+    Object.defineProperty(el, 'dir', {
+      configurable: true,
+      get: function () {
+        var d = String(el.getAttribute('dir') || '').toLowerCase();
+        return (d === 'ltr' || d === 'rtl' || d === 'auto') ? d : '';
+      },
+      set: function (v) { el.setAttribute('dir', String(v == null ? '' : v)); },
+    });
     // R5005 M3 片 b（html-syntax-compat）：standalone canvas 的 innerHTML/outerHTML
     // 委托 handle 代理（outerHTML getter 的 handle 分支——旧 standalone 对象缺此
     // 二属性读 undefined，WPT serializing-html-fragments/outerHTML 'Node for canvas'
@@ -6099,13 +6134,25 @@
       }
     };
     Object.defineProperty(el, 'width', {
-      get: function () { return _cw; },
+      // R5009 片 e：getter 读属性反射（spec reflected unsigned long——missing →
+      // default 300；非法 → default）。setter 位面（复位 bitmap）不动。
+      get: function () {
+        var raw = el.getAttribute('width');
+        if (raw == null) return _cw;
+        var n = parseInt(String(raw), 10);
+        return (isNaN(n) || n < 0) ? 300 : n;
+      },
       set: function (v) { _zwSetCanvasDim('width', v); },
       enumerable: true,
       configurable: true
     });
     Object.defineProperty(el, 'height', {
-      get: function () { return _ch; },
+      get: function () {
+        var raw = el.getAttribute('height');
+        if (raw == null) return _ch;
+        var n = parseInt(String(raw), 10);
+        return (isNaN(n) || n < 0) ? 150 : n;
+      },
       set: function (v) { _zwSetCanvasDim('height', v); },
       enumerable: true,
       configurable: true

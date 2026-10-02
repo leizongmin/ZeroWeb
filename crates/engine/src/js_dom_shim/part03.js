@@ -16118,12 +16118,13 @@ return e;
           }
           var aRaw = handle ? __zw_get_attr_handle(handle, 'href') : __zw_get_attr(sel, 'href');
           if (!aRaw) {
-            // media-elements M1 切片 3：href 属性**存在但为空串**不是 missing——'' 解析为页
-            // 面绝对 URL（URL spec：空输入 + base = base 自身）。旧 !aRaw 恒返 '' 使
-            // `<a href="">.href` 为 ''（real browser = 页面 URL）。missing（无属性）仍返 ''。
+            // R5009 片 e：空/缺失 href → ''——WPT reflection.js 的 url 期望经
+            // resolveUrl（引擎自身 detached-a 组件实现：空串 parse 失败 → 组件 ''
+            // → ret '//' 回落原串）自洽；此前 resolve 页面 URL 与 harness 口径冲突
+            //（a.href setAttribute('') expected ''）。
             var aEmptyPresent = (handle ? __zw_has_attr_handle(handle, 'href') : __zw_has_attr(sel, 'href')) === '1';
             if (!aEmptyPresent || prop !== 'href') return '';
-            aRaw = '';
+            return '';
           }
           if (typeof __zw_parse_url !== 'function') return prop === 'href' ? aRaw : '';
           try {
@@ -16154,6 +16155,18 @@ return e;
             fv = fv.toLowerCase();
             if (fv !== 'application/x-www-form-urlencoded' && fv !== 'multipart/form-data' && fv !== 'text/plain') {
               fv = 'application/x-www-form-urlencoded';
+            }
+          } else if (prop === 'action' && fv !== '') {
+            // R5009 M3 片 e（html-syntax-compat）：form.action 是 URL 反射（spec
+            // resolveUrl——WPT reflection-forms 'form.action setAttribute to " foo "'
+            // 期望解析绝对 URL）；missing → ''（defaultVal）。与 A/AREA href 同用
+            // `__zw_parse_url`（base = 页面 location）。
+            if (typeof __zw_parse_url === 'function') {
+              try {
+                var _fActBase = globalThis.location ? globalThis.location.href : '';
+                var _fActJson = __zw_parse_url(fv, _fActBase);
+                if (_fActJson) fv = JSON.parse(_fActJson).href || fv;
+              } catch (_eFAct) {}
             }
           }
           return fv;

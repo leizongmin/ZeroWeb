@@ -569,7 +569,14 @@
   // spec reflected string 缺省空串）。1:1 小写名用 `_REFLECTED_STRING_FLAT`；camelCase→attr 映射用 `_REFLECTED_STRING_MAP`。
   // 数值型（size/maxLength/colSpan/rowSpan）+ 布尔型（required/readonly/multiple）spec 返 number/boolean，
   // 另列 follow-up（本切片仅 string）。
-  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox cite coords shape ping media align version background text link scroll color ';
+  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox cite coords shape ping media align version background text link scroll color dirname border srcdoc integrity hreflang charset rev clear event for ';
+  // R5009 片 e：inputMode/enterKeyHint 全局枚举关键字集（missing/invalid → ''）。
+  var _ZW_ENTER_KEY_HINT_KEYWORDS = {
+    'enter': 1, 'done': 1, 'go': 1, 'next': 1, 'previous': 1, 'search': 1, 'send': 1,
+  };
+  var _ZW_INPUT_MODE_KEYWORDS = {
+    none: 1, text: 1, tel: 1, url: 1, email: 1, numeric: 1, decimal: 1, search: 1,
+  };
   // R5008 M3 片 d：link.as enumerated 关键字集（elements-metadata.js 表——ASCII
   // 小写；非法/缺省 → ''）。
   var _ZW_LINK_AS_KEYWORDS = {
@@ -584,11 +591,34 @@
   // bgColor → vlink/alink/bgcolor）+ body margin 族（marginHeight 等 → 同名小写，
   // spec HTMLBodyElement DOMString 反射）+ marquee trueSpeed。WPT reflection-*
   // （sections/misc/obsolete/grouping/text）主导簇：旧读 undefined（表外）。
-  var _REFLECTED_STRING_MAP = { formAction: 'formaction', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for', referrerPolicy: 'referrerpolicy', dateTime: 'datetime', vLink: 'vlink', aLink: 'alink', bgColor: 'bgcolor', marginHeight: 'marginheight', marginWidth: 'marginwidth', topMargin: 'topmargin', bottomMargin: 'bottommargin', leftMargin: 'leftmargin', rightMargin: 'rightmargin', trueSpeed: 'truespeed' };
+  var _REFLECTED_STRING_MAP = { formAction: 'formaction', useMap: 'usemap', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for', referrerPolicy: 'referrerpolicy', dateTime: 'datetime', httpEquiv: 'http-equiv', vLink: 'vlink', aLink: 'alink', bgColor: 'bgcolor', marginHeight: 'marginheight', marginWidth: 'marginwidth', topMargin: 'topmargin', bottomMargin: 'bottommargin', leftMargin: 'leftmargin', rightMargin: 'rightmargin', trueSpeed: 'truespeed' };
   // R5007 M3 片 c：[LegacyNullToEmptyString] DOMString 反射集（spec HTMLBodyElement 的
   // legacy 颜色族——null → ''，WPT reflection-* 'IDL set to null' getAttribute 期望 ""；
   // 其余 DOMString null → "null"）。
   var _REFLECTED_STRING_NULL_EMPTY = ' text link vLink aLink bgColor ';
+  // R5009 片 e：URL 反射表（spec url 类型——非空解析绝对 URL，missing/空 → ''；
+  // harness resolveUrl 经本引擎 detached-a 实现自洽）。getter 置于 R3037 前。
+  var _REFLECTED_URL_TAGS = {
+    IMG: { src: 'src', lowsrc: 'lowsrc', longDesc: 'longdesc' },
+    IFRAME: { longDesc: 'longdesc', src: 'src' },
+    OBJECT: { data: 'data', codeBase: 'codebase' },
+    VIDEO: { src: 'src', poster: 'poster' },
+    AUDIO: { src: 'src' },
+    SOURCE: { src: 'src' },
+    TRACK: { src: 'src' },
+    INPUT: { src: 'src' },
+    SCRIPT: { src: 'src' },
+    BLOCKQUOTE: { cite: 'cite' },
+    Q: { cite: 'cite' },
+    INS: { cite: 'cite' },
+    DEL: { cite: 'cite' },
+  };
+  function _reflectedUrlAttr(tag, prop) {
+    if (typeof prop !== 'string') return null;
+    var t = _REFLECTED_URL_TAGS[tag];
+    if (t && Object.prototype.hasOwnProperty.call(t, prop)) return t[prop];
+    return null;
+  }
   function _reflectedStringNullEmpty(prop) {
     return typeof prop === 'string' && _REFLECTED_STRING_NULL_EMPTY.indexOf(' ' + prop + ' ') >= 0;
   }
@@ -666,6 +696,10 @@
     maxLength: { a: 'maxlength', d: -1 },
     minLength: { a: 'minlength', d: -1 },
     cols: { a: 'cols', d: 20 },
+    hspace: { a: 'hspace', d: 0 },
+    vspace: { a: 'vspace', d: 0 },
+    // frameset.cols/rows 与 textarea.cols/rows 同 IDL 名异型——UINT 分支无 tag 门，
+    // frameset 的 string 面走下方 frameset 专用 getter（无法仅靠表表达）。
     rows: { a: 'rows', d: 2 },
     start: { a: 'start', d: 1, min: 1 },
   };
@@ -707,6 +741,7 @@
     async: 'async', defer: 'defer', nomodule: 'nomodule',
     autoplay: 'autoplay', controls: 'controls', loop: 'loop', muted: 'muted', playsInline: 'playsinline',
     reversed: 'reversed', isMap: 'ismap', itemScope: 'itemscope',
+    formNoValidate: 'formnovalidate', allowFullscreen: 'allowfullscreen', noModule: 'nomodule',
     noShade: 'noshade',
   };
   // R3039：查 _REFLECTED_BOOL 返内容属性名（readOnly→readonly 等），非 string/未命中 → null。供 set trap

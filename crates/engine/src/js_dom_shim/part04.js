@@ -52,9 +52,12 @@
               : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, prop) : '0')) === '1';
           }
           if (prop === 'autocomplete') {
-            // enumerated 串反射：attr 值（缺省 → "on"，spec missing-default）。__zw_get_attr 缺省返 "" 故 "" 亦判缺省。
+            // enumerated 串反射：attr 值 ascii 小写归一（合法 on/off）；缺省/空/非法
+            // → "on"（spec missing-default + invalid → default，WPT reflection-forms
+            // 'form.autocomplete setAttribute() to junk' 期望 "on" 实证）。
             var acRaw = handle ? __zw_get_attr_handle(handle, 'autocomplete') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'autocomplete') : __zw_get_attr(sel, 'autocomplete'));
-            return (acRaw == null || acRaw === '') ? 'on' : String(acRaw);
+            var acLo = String(acRaw == null ? '' : acRaw).toLowerCase();
+            return (acLo === 'on' || acLo === 'off') ? acLo : 'on';
           }
           // R3188 draggable：enumerated（true/false，case-insensitive），缺省/非法 → auto 状态 → default-draggable
           //（spec/Chrome：img/audio/video/a[href] 默认可拖拽，余 false）。旧实现仅 `=== 'true'`（case-sensitive，
@@ -7963,6 +7966,138 @@ return _tplContent;
             return _ZW_LINK_AS_KEYWORDS.hasOwnProperty(_p5asLo) ? _p5asLo : '';
           }
         }
+        // R5009 片 e：inputMode 全局枚举（HTMLElement）——none/text/tel/url/email/
+        // numeric/decimal/search ascii 小写；missing/invalid → ''（WPT reflection-misc
+        // undefinedelement.inputMode 簇）。
+        if (prop === 'enterKeyHint') {
+          var _p5ekRaw = handle
+            ? __zw_get_attr_handle(handle, 'enterkeyhint')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'enterkeyhint') : __zw_get_attr(sel, 'enterkeyhint'));
+          var _p5ekLo = String(_p5ekRaw == null ? '' : _p5ekRaw).toLowerCase();
+          return (_ZW_ENTER_KEY_HINT_KEYWORDS.hasOwnProperty(_p5ekLo)) ? _p5ekLo : '';
+        }
+        if (prop === 'inputMode') {
+          var _p5imRaw = handle
+            ? __zw_get_attr_handle(handle, 'inputmode')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'inputmode') : __zw_get_attr(sel, 'inputmode'));
+          var _p5imLo = String(_p5imRaw == null ? '' : _p5imRaw).toLowerCase();
+          return (_ZW_INPUT_MODE_KEYWORDS.hasOwnProperty(_p5imLo)) ? _p5imLo : '';
+        }
+        // R5009 片 e：embedded 枚举/unsigned 反射——referrerPolicy（img/iframe/area/
+        // link，含空关键字，invalid → ''）、decoding（img，invalid → auto）、loading
+        //（img/iframe/video/audio，invalid → eager）；hspace/vspace unsigned（default 0
+        // 走 _REFLECTED_UINT 表）。置于 R3037 直读之前（同遮蔽规避）。
+        if (prop === 'referrerPolicy' || prop === 'decoding' || prop === 'loading') {
+          var _p5emTag = _realTag(sel, handle);
+          var _p5emHit = prop === 'referrerPolicy'
+            ? (_p5emTag === 'IMG' || _p5emTag === 'IFRAME' || _p5emTag === 'AREA' || _p5emTag === 'LINK')
+            : prop === 'decoding' ? _p5emTag === 'IMG'
+            : (_p5emTag === 'IMG' || _p5emTag === 'IFRAME' || _p5emTag === 'VIDEO' || _p5emTag === 'AUDIO');
+          if (_p5emHit) {
+            var _p5emAttr = prop === 'referrerPolicy' ? 'referrerpolicy'
+              : prop === 'decoding' ? 'decoding' : 'loading';
+            var _p5emRaw = String((handle
+              ? __zw_get_attr_handle(handle, _p5emAttr)
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _p5emAttr) : __zw_get_attr(sel, _p5emAttr))) == null
+              ? '' : (handle ? __zw_get_attr_handle(handle, _p5emAttr)
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _p5emAttr) : __zw_get_attr(sel, _p5emAttr))));
+            var _p5emLo = _p5emRaw.toLowerCase();
+            if (prop === 'referrerPolicy') {
+              var _p5rpOk = { '': 1, 'no-referrer': 1, 'no-referrer-when-downgrade': 1, 'same-origin': 1,
+                'origin': 1, 'strict-origin': 1, 'origin-when-cross-origin': 1,
+                'strict-origin-when-cross-origin': 1, 'unsafe-url': 1 };
+              return _p5rpOk.hasOwnProperty(_p5emLo) ? _p5emLo : '';
+            }
+            if (prop === 'decoding') {
+              return (_p5emLo === 'async' || _p5emLo === 'sync' || _p5emLo === 'auto') ? _p5emLo : 'auto';
+            }
+            return (_p5emLo === 'lazy' || _p5emLo === 'eager') ? _p5emLo : 'eager';
+          }
+        }
+        // R5009 片 e：URL 反射（spec url 类型——`_REFLECTED_URL_TAGS` 表）：
+        // 非空解析绝对 URL（`__zw_parse_url`，base = 文档 location）；missing/空 → ''。
+        // img.src/iframe.src 等此前走 FLAT 直读原串（WPT url 型 setAttribute 簇期望解析）。
+        if (typeof prop === 'string' && prop.length > 0 && typeof _reflectedUrlAttr === 'function') {
+          var _r5uAttr = _reflectedUrlAttr(_realTag(sel, handle), prop);
+          if (_r5uAttr != null) {
+            var _r5uHas = (handle
+              ? __zw_has_attr_handle(handle, _r5uAttr)
+              : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, _r5uAttr) : __zw_has_attr(sel, _r5uAttr))) === '1';
+            var _r5uRaw = handle
+              ? __zw_get_attr_handle(handle, _r5uAttr)
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _r5uAttr) : __zw_get_attr(sel, _r5uAttr));
+            if (!_r5uHas || _r5uRaw == null || _r5uRaw === '') return '';
+            if (typeof __zw_parse_url === 'function') {
+              try {
+                var _r5uBase = globalThis.location ? globalThis.location.href : '';
+                var _r5uJson = __zw_parse_url(String(_r5uRaw), _r5uBase);
+                if (_r5uJson) return JSON.parse(_r5uJson).href || String(_r5uRaw);
+              } catch (_eR5u) {}
+            }
+            return String(_r5uRaw);
+          }
+        }
+        // R5009 M3 片 e（html-syntax-compat）：form 关联元素（input/button/select/
+        // textarea/output）的 formMethod/formEnctype 枚举 + formAction URL 反射。
+        // formMethod [get,post,dialog] invalid → 'get'；formEnctype 三值 invalid →
+        // urlencoded；formAction 非空解析绝对 URL、空/missing → 文档 URL（spec：缺
+        // formAction 反射 form owner action，form 未归 action 缺省 = 文档 URL——
+        // WPT reflection-forms 'formAction unset' 期望页面 URL 实证）。置于 R3037
+        // MAP 查表之前（formaction/formmethod/formenctype 的直读曾遮蔽枚举语义）。
+        if (prop === 'formMethod' || prop === 'formEnctype' || prop === 'formAction') {
+          var _p5fTag = _realTag(sel, handle);
+          if (_p5fTag === 'INPUT' || _p5fTag === 'BUTTON' || _p5fTag === 'SELECT'
+              || _p5fTag === 'TEXTAREA' || _p5fTag === 'OUTPUT') {
+            var _p5fAttr = prop === 'formMethod' ? 'formmethod'
+              : prop === 'formEnctype' ? 'formenctype' : 'formaction';
+            var _p5fHas = (handle
+              ? __zw_has_attr_handle(handle, _p5fAttr)
+              : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, _p5fAttr) : __zw_has_attr(sel, _p5fAttr))) === '1';
+            var _p5fRaw = handle
+              ? __zw_get_attr_handle(handle, _p5fAttr)
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _p5fAttr) : __zw_get_attr(sel, _p5fAttr));
+            if (prop === 'formAction') {
+              // 非空解析绝对 URL；空/missing → 文档 URL（parse('') + base = base 自身）。
+              var _p5fBase = globalThis.location ? globalThis.location.href : '';
+              if (typeof __zw_parse_url === 'function') {
+                try {
+                  var _p5fJson = __zw_parse_url(_p5fHas && _p5fRaw != null && _p5fRaw !== '' ? String(_p5fRaw) : '', _p5fBase);
+                  if (_p5fJson) return JSON.parse(_p5fJson).href || _p5fBase || '';
+                } catch (_eR5fA) {}
+              }
+              return (_p5fHas && _p5fRaw != null && _p5fRaw !== '') ? String(_p5fRaw) : String(_p5fBase || '');
+            }
+            var _p5fLo = String(_p5fRaw == null ? '' : _p5fRaw).toLowerCase();
+            if (prop === 'formMethod') {
+              return (_p5fLo === 'get' || _p5fLo === 'post' || _p5fLo === 'dialog') ? _p5fLo : 'get';
+            }
+            return (_p5fLo === 'application/x-www-form-urlencoded' || _p5fLo === 'multipart/form-data'
+                    || _p5fLo === 'text/plain') ? _p5fLo : 'application/x-www-form-urlencoded';
+          }
+        }
+        // R5009：progress.max「double」反射（HTMLProgressElement max，default 1）——
+        // spec 浮点解析（前后空白五类；数值形态整数/小数/指数）失败或 ≤ 0 → 1
+        //（WPT reflection-forms 'progress.max' 簇：'-2147483649' 期望 1）。
+        if (prop === 'max' && _realTag(sel, handle) === 'PROGRESS') {
+          var _p5mxRaw = handle
+            ? __zw_get_attr_handle(handle, 'max')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'max') : __zw_get_attr(sel, 'max'));
+          var _p5mxS = String(_p5mxRaw == null ? '' : _p5mxRaw);
+          var _p5mxi = 0, _p5mxn = _p5mxS.length;
+          while (_p5mxi < _p5mxn && (_p5mxS.charAt(_p5mxi) === '\t' || _p5mxS.charAt(_p5mxi) === '\n'
+              || _p5mxS.charAt(_p5mxi) === '\f' || _p5mxS.charAt(_p5mxi) === '\r' || _p5mxS.charAt(_p5mxi) === ' ')) _p5mxi++;
+          var _p5mxT = _p5mxS.slice(_p5mxi);
+          var _p5mxV = /^[-+]?((\d+\.?\d*)|(\.\d+))([eE][-+]?\d+)?$/.test(_p5mxT) ? Number(_p5mxT) : NaN;
+          return (_p5mxV != null && !isNaN(_p5mxV) && _p5mxV > 0 && isFinite(_p5mxV)) ? _p5mxV : 1;
+        }
+        // R5009：li.value「long」反射（default 0）——同 PRE width 的 signed long 面。
+        if (prop === 'value' && _realTag(sel, handle) === 'LI') {
+          var _p5lvRaw = handle
+            ? __zw_get_attr_handle(handle, 'value')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'value') : __zw_get_attr(sel, 'value'));
+          var _p5lvN = _zwParseSpecInt(_p5lvRaw);
+          return (_p5lvN == null || _p5lvN > 2147483647 || _p5lvN < -2147483648) ? 0 : _p5lvN;
+        }
         // R3037：reflected string 内容属性读（type/name/placeholder/min/max/step/pattern/alt/src/rel/...）。
         // 旧 get trap 未拦 → 读返 undefined（写正常，set trap generic fallthrough → __zw_set_attr）。表单校验库
         // 读 input.min/max/pattern/type、analytics 读 src/name 等失效。命中 [`_reflectedStringAttr`] → 读内容属性
@@ -8013,6 +8148,25 @@ return _tplContent;
         // 函数 → `if (_ruEntry)` 误入 → `parseInt(_ruEntry.a=undefined)`=NaN → `return undefined` 提前吞掉
         // 这些名字，R93 原型链回落不可达（lit `this.enableUpdating.call(this)` 前的 hasOwnProperty 探测、
         // 任何 `el.valueOf` 读全部返 undefined）。
+        // R5009 片 e：FRAMESET cols/rows 是 **string** 反射（HTMLFrameSetElement——
+        // 与 textarea 的 UINT cols/rows 同 IDL 名异型；先 tag 门 string 面）。
+        if ((prop === 'cols' || prop === 'rows') && _realTag(sel, handle) === 'FRAMESET') {
+          var _p5fsRaw = handle
+            ? __zw_get_attr_handle(handle, prop)
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop) : __zw_get_attr(sel, prop));
+          return _p5fsRaw == null ? '' : String(_p5fsRaw);
+        }
+        // R5009 片 e：MARQUEE 的 scrollAmount/scrollDelay unsigned（default 6/85）——
+        // 与 UINT 表同款解析但 per-element default（表 entry.d 全局不能承载）。
+        if ((prop === 'scrollAmount' || prop === 'scrollDelay') && _realTag(sel, handle) === 'MARQUEE') {
+          var _p5mqAttr = prop === 'scrollAmount' ? 'scrollamount' : 'scrolldelay';
+          var _p5mqRaw = handle
+            ? __zw_get_attr_handle(handle, _p5mqAttr)
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _p5mqAttr) : __zw_get_attr(sel, _p5mqAttr));
+          var _p5mqN = _zwParseSpecNonneg(String(_p5mqRaw == null ? '' : _p5mqRaw));
+          var _p5mqD = prop === 'scrollAmount' ? 6 : 85;
+          return (_p5mqN == null || _p5mqN > 2147483647 || _p5mqN < 1) ? _p5mqD : _p5mqN;
+        }
         var _ruEntry = Object.prototype.hasOwnProperty.call(_REFLECTED_UINT, prop) ? _REFLECTED_UINT[prop] : null;
         if (_ruEntry) {
           var _ruRaw = handle

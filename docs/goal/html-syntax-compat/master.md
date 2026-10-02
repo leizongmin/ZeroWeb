@@ -1,9 +1,22 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-03（M3 片 d 第一波——per-interface IDL 83.83%）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-04（M3 片 e——reflection 尾簇 89.54%）
 
 ## 当前状态
+
+**M3 片 e 已落地（2026-10-04）**：reflection 尾簇续——form 枚举/URL 面
+（form.action/formAction URL 解析、formMethod/formEnctype/form.autocomplete
+枚举、progress.max double、li.value long）+ URL 反射表（`_REFLECTED_URL_TAGS`：
+img.lowsrc/longDesc、object.data/codeBase、video.poster、script.src、cite 族
+等 ~500F）+ embedded 枚举（referrerPolicy/decoding/loading，A 门补录）+
+inputMode/enterKeyHint 全局枚举 + canvas standalone 属性方法面 + iframe/embed
+width/height string 面收窄 + marquee 数值面。全通道 **54888/61303 = 89.54%**
+（+3508），M1 基线逐案 **0 回归**；sections 100%、text 99%、forms/misc/grouping/
+metadata/weekmonth 94-95%、embedded 86%、obsolete 82%。DC-4 实测全绿（test 68
+suites + R2839/R3037 单测按 spec 更新 / fmt / reftest 704/704）。残差归 M4：
+tabular 68%（table 章节集合面）、aria-enumerated 30%、obsolete 尾 82%。
+证据：[evidence/2026-10-04-m3e-tails.md](evidence/2026-10-04-m3e-tails.md)。
 
 **M3 片 d 第一波已落地（2026-10-03）**：per-interface IDL 清单首批簇——spec 严格
 解析面（`_zwParseSpecInt/Nonneg`：UINT 表 getter、input/select.size、PRE width
@@ -61,6 +74,10 @@ html5lib 3 案 document.write 管线面）。证据：
 
 ## 已完成切片
 
+- **M3 片 e（2026-10-04）**：reflection 尾簇——form 枚举/URL 面 + URL 反射表 +
+  embedded 枚举 + 全局枚举 + canvas 属性方法面 + width/height string 收窄 +
+  marquee 数值；89.54%（+3508），0 回归；DC-4 全绿。证据
+  evidence/2026-10-04-m3e-tails.md。
 - **M3 片 d 第一波（2026-10-03）**：spec 严格解析（`_zwParseSpecInt/Nonneg` +
   UINT/size/PRE-width 面换装 + limited setter 0 抛）+ BASE/LINK.href/
   crossOrigin/as/nonce URL 与枚举反射 + noShade；83.83%（+1011），0 回归；
@@ -107,10 +124,10 @@ html5lib 3 案 document.write 管线面）。证据：
 
 ## 下一步计划
 
-1. **M3 片 e（下一片）**：reflection 尾簇续——form.enctype/formMethod 枚举
-   IDL-set 面（198 簇）、formAction URL 解析反射（32）、embedded 尾簇（img/
-   iframe 维度与 URL 族，2599F）、tabular 章节族（1992F）、aria-enumerated
-   枚举反射语义（1201F）；render-blocking IDL 面随碰头定。
+1. **M4 起（下一片）**：reflection 尾残——tabular 68%（table 章节集合面
+   tHead/tBodies/rows/cells——DOM 集合架构）、aria-enumerated 30% + aria 面
+   0/41、obsolete 尾 82%；render-blocking IDL 面随碰头定；P4 收口判定随
+   aria/tabular 碰头定。
 2. **挂账随行**：bench-gate 等让复评（静窗）；html5ever 0.39 升级评估（顺带静态
    template noscript 解析面）；P5 通道外 19 案落地通道（reftest import 优先）；
    读一致性架构片余量（`__zw_child_nodes` live-aware——ambiguous-ampersand
