@@ -1,7 +1,7 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-02（M3 片 a 进行中）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-03（M3 片 a 续二落地）
 
 ## 当前状态
 
@@ -43,8 +43,12 @@ html5ever 0.29→0.39 升级候选架构片。
 
 ## 已完成切片
 
-- **M3 片 a（进行中，2026-10-02）**：noscript scripting 旗标零侧核心（见下一步计划
-  ①；JS 面待续）。
+- **M3 片 a 续二（2026-10-03）**：detached 旗标通道贯通——child_nodes_json_full
+  （arg[3]）+ `_zwParseEl._ensureMutTree` 桥 inert 印章 + `_zwMBuildNode` 递归旗标
+  （插桩实证漏传点：body 顶层已传、元素递归未传）+ `_zwMEscapeText` 补 nbsp；
+  escaping 1/9→3/9（div.innerHTML + DOMParser + created-innerHTML，转义分支含
+  nbsp 全对）；rebase 撞兄弟流 slice19 merge（import 冲突取并集）后组合树复验
+  3/3 绿。
 - **M2 收口（2026-10-02）**：DC-2 判定成立（可执行面全绿 75.35% + 残差全分类）；
   DC-4 实测（reftest 700/700 零不一致补齐最后一块）；html5lib 300s 复评定性
   document.write 管线面；bench 复评挂账（兄弟流活跃污染）。
@@ -76,13 +80,13 @@ html5ever 0.29→0.39 升级候选架构片。
 1. **M3 片 a（进行中）**：noscript + scripting 旗标——zero-dom 核心已落
    （Document.scripting_enabled + html5ever TreeBuilderOpts + 序列化条件 raw 规则 +
    engine 调用点分流；单测 2 绿 + serializing 邻面零回归）；JS 序列化器
-   `_zwMSerialize` noscript 条件 literal 已落（div.innerHTML 首绿 1/9）。
-   **剩余 8 失败全分类**：①detached 旗标通道 3 面（DOMParser/template/
-   createHTMLDocument——detached 文档 scripting=false 标记 + child_nodes_json
-   旗标参 + build 印章）；②缺失 API 2 面（Range.createContextualFragment = DC-3
-   明确项；detached doc.write）；③主文档视图更新 2 面（insertAdjacentHTML
-   afterbegin/document.write 后 firstChild null——handle 容器本地视图更新）；
-   ④XHR data: URL 1 面。
+   `_zwMSerialize` noscript 条件 literal 已落 + detached 旗标通道贯通（续二）。
+   **escaping 3/9，剩余 6 失败**：①template content 序列化反查 1 面（content 归
+   template → disabled 旗标须进宿主序列化器——template_contents 反查或解析期标
+   记）；②缺失 API 2 面（Range.createContextualFragment = DC-3 明确项；detached
+   doc.write）；③主文档视图更新 2 面（insertAdjacentHTML afterbegin/
+   document.write 后 firstChild null——handle 容器本地视图更新）；④XHR data:
+   URL 1 面。
 2. **挂账随行**：bench-gate 等让复评（静窗）；html5ever 0.39 升级评估；P5 通道外
    19 案落地通道（reftest import 优先——charset/ 形态契合）。
 
