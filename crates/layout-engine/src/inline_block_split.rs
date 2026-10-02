@@ -187,6 +187,19 @@ pub(crate) fn block_container_has_mixed_content(
         {
             return true;
         }
+        // R4944：含**嵌套原子行内级后代**的 inline（R2156 skip 域——img/input 等
+        // replaced/inline-block 包在 inline 中）也计入 inline 内容。此前排除使这类
+        // 容器落 plain 路径 + R2156 容器级提升——提升原子作容器 taffy 子与容器 IFC
+        // 行 backfill 交互双计 19px（visufx/overflow-applies-to-001 的 table 127≠108
+        // 红底裸露带 + legacy 37-form-controls struct FAIL）。入 segments 后原子经
+        // 片段 atomic_children（R4489 路径）成为片段子槽，与片段 IFC 行（唯一行）
+        // 同高无双计。CSS2 §9.2.1.1 runs of inline-level boxes。
+        if matches!(style.display, DisplayValue::Inline)
+            && !is_out_of_flow(style)
+            && crate::inline::InlineFormattingContext::inline_elem_has_nested_inline_block(doc, styles, child)
+        {
+            return true;
+        }
     }
     false
 }

@@ -3280,7 +3280,7 @@ fn build_subtree(
                             // 曾无盒 → 格子全空白，2d.gradient.colorInterpolationMethod
                             // oracle A/B 10.7%）。纯 inline 元素与文本仍走 IFC（fragment
                             // 收集），此处只补需要盒子的原子项。
-                            let atomic_children: Vec<taffy::NodeId> = item_node_ids
+                            let mut atomic_children: Vec<taffy::NodeId> = item_node_ids
                                 .iter()
                                 .copied()
                                 .filter(|&nid| {
@@ -3310,6 +3310,43 @@ fn build_subtree(
                                     )
                                 })
                                 .collect();
+                            // R4944：嵌套原子行内级后代下降收集——R4941 谓词扩宽后，
+                            // 「inline 含嵌套原子」的 run 进入片段路径；其原子后代
+                            // （child3>img 的 img）不在 item_node_ids 直属面（R4489 过滤
+                            // 只看直属项），须按 collect_atomic_inline_descendants 同判据
+                            // 下降提升为片段 taffy 子槽。片段 IFC 行（唯一行）与子槽同高
+                            //（单原子行槽=行）无双计；提升原子的 gBCR/命中/绘制真值由
+                            // 片段子盒承担。
+                            let mut nested_atomic: Vec<taffy::NodeId> = Vec::new();
+                            for &nid in item_node_ids.iter() {
+                                let is_plain_inline = styles.get(&nid).is_some_and(|s| {
+                                    matches!(s.display, DisplayValue::Inline)
+                                        && !crate::inline_block_split::is_replaced_element(&nid, doc)
+                                });
+                                if is_plain_inline
+                                    && crate::inline::InlineFormattingContext::inline_elem_has_nested_inline_block(
+                                        doc, styles, nid,
+                                    )
+                                {
+                                    let mut hoisted = Vec::new();
+                                    collect_atomic_inline_descendants(doc, styles, nid, &mut hoisted);
+                                    for atomic_id in hoisted {
+                                        let t = build_subtree(
+                                            ctx,
+                                            doc,
+                                            styles,
+                                            atomic_id,
+                                            grid_areas.as_ref(),
+                                            false,
+                                            own_writing_mode.clone(),
+                                            viewport_w,
+                                            viewport_h,
+                                        );
+                                        nested_atomic.push(t);
+                                    }
+                                }
+                            }
+                            atomic_children.extend(nested_atomic);
                             let anon_style = if is_block_mixed {
                                 // block 容器匿名块：plain Block（不继承容器盒模型，容器
                                 // 自身的 bg/border/padding 仍由容器盒绘制）。
