@@ -1668,6 +1668,27 @@ fn test_apply_set_inner_html_table_context_r3183() {
     );
 }
 
+/// R5000 M2 首簇（html-syntax-compat）：纯文本 innerHTML 的 character reference 展开——
+/// `SetInnerHtml` 纯文本（无 `<`）同样过 fragment 解析（html5ever charref 语义）。
+/// `div.innerHTML = '&AElig;&#x41;'` 序列化应含 "ÆA"；旧无 `<` 快速路径直通产出
+/// 字面 "&AElig;&#x41;"（WPT html/syntax/parsing/named-character-references 0/2231 根因）。
+#[test]
+fn test_apply_set_inner_html_character_reference_r5000() {
+    let html = "<html><body><div id='d'></div></body></html>";
+    let out = apply_mutations_to_html(
+        html,
+        &[DomMutation::SetInnerHtml {
+            selector: "#d".into(),
+            html: "&AElig;&#x41;".into(),
+        }],
+    )
+    .unwrap();
+    assert!(
+        out.contains("<div id=\"d\">ÆA</div>"),
+        "innerHTML 纯文本应展开 character reference 为 ÆA，got: {out}"
+    );
+}
+
 /// R3206：innerHTML setter 经 `copy_subtree_from` 重建 SVG 外部命名空间属性时保留 prefix + ns。
 /// `div.innerHTML = '<svg><use xlink:href="#a"/></svg>'` round-trip（apply → 序列化）须保留 `xlink:href`
 /// 前缀。旧 `copy_subtree_from` 恒走 `set_attribute(local)`，把 `xlink:href` 重建为裸 `href`（无 ns），

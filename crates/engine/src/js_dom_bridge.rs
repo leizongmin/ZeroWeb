@@ -1436,11 +1436,10 @@ pub(crate) fn replace_inner_html(doc: &mut Document, parent: NodeId, html: &str)
     if trimmed.is_empty() {
         return Ok(());
     }
-    if !trimmed.contains('<') {
-        let text = doc.create_text_node(trimmed);
-        doc.append_child(parent, text).map_err(|e| e.to_string())?;
-        return Ok(());
-    }
+    // R5000 M2 首簇：纯文本快速路径删除——文本须过 fragment 解析做 character reference
+    // 展开（spec tokenizer charref 语义：命名表含 legacy 无分号形态 + 数字引用 + C1
+    // 重映射）。旧 `!contains('<')` 直通使 `innerHTML = "&AElig"` 产出字面文本（WPT
+    // html/syntax/parsing/named-character-references 0/2231 根因）。
     // R3182：用 context element（parent namespace + local_name）做 fragment 解析（spec
     // `html-fragment-parsing-algorithm`）——table/select 等 context-sensitive 元素的 innerHTML 在正确
     // context 下解析（如 table → tbody 隐式包裹），旧 body-wrap 在 body context 下 `<tr>` foster-parent
@@ -1664,31 +1663,28 @@ fn insert_adjacent_html(doc: &mut Document, node: NodeId, position: &str, html: 
     if trimmed.is_empty() {
         return Ok(());
     }
-    // 解析顶层 fragment 节点（与 replace_inner_html 同源）。R3182：context element 按 position 取
+    // 解析顶层 fragment 节点（与 replace_inner_html 同源，纯文本同样过解析做 charref
+    // 展开——R5000 M2 首簇）。R3182：context element 按 position 取
     //（spec `dom-element-insertadjacenthtml`）——beforebegin/afterend = 目标父，afterbegin/beforeend =
     // 目标自身。旧 body-wrap 在 body context 下 foster-parent 丢失 table/select 等结构。
     // 先全部 copy 收集，再按 position 插入（原子化，单一出口）。
-    let frag_nodes: Vec<NodeId> = if !trimmed.contains('<') {
-        vec![doc.create_text_node(trimmed)]
-    } else {
-        // R3207：spec `dom-element-insertadjacenthtml` position 为 ASCII 大小写不敏感——
-        // 先规范化为小写再决定 context element。旧 `match position`（大小写敏感）对大写 position
-        //（如 "BEFOREBEGIN"）错走 `_` 分支用**目标自身**作 context（应为父），致 table 等
-        // context-sensitive 片段解析错（实测 `<tr><td>y</td></tr>` 在 caption context 下 foster-parent
-        // 丢行结构，仅剩文本 "y"）。`insert_nodes_at_position` 内部亦 trim+小写（幂等，统一语义）。
-        let pos = position.trim().to_ascii_lowercase();
-        let context_node = match pos.as_str() {
-            "beforebegin" | "afterend" => doc.get(node).and_then(|n| n.parent).unwrap_or(node),
-            _ => node, // afterbegin / beforeend → 目标自身
-        };
-        let (context_ns, context_local) = match doc.get(context_node).map(|n| &n.kind) {
-            Some(NodeKind::Element(e)) => (e.namespace().to_string(), e.local_name().to_string()),
-            _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
-        };
-        let frag_doc = parse_html_fragment(trimmed, &context_ns, &context_local);
-        let kids = fragment_top_level_children(&frag_doc);
-        kids.into_iter().map(|k| copy_subtree_from(doc, &frag_doc, k)).collect()
+    // R3207：spec `dom-element-insertadjacenthtml` position 为 ASCII 大小写不敏感——
+    // 先规范化为小写再决定 context element。旧 `match position`（大小写敏感）对大写 position
+    //（如 "BEFOREBEGIN"）错走 `_` 分支用**目标自身**作 context（应为父），致 table 等
+    // context-sensitive 片段解析错（实测 `<tr><td>y</td></tr>` 在 caption context 下 foster-parent
+    // 丢行结构，仅剩文本 "y"）。`insert_nodes_at_position` 内部亦 trim+小写（幂等，统一语义）。
+    let pos = position.trim().to_ascii_lowercase();
+    let context_node = match pos.as_str() {
+        "beforebegin" | "afterend" => doc.get(node).and_then(|n| n.parent).unwrap_or(node),
+        _ => node, // afterbegin / beforeend → 目标自身
     };
+    let (context_ns, context_local) = match doc.get(context_node).map(|n| &n.kind) {
+        Some(NodeKind::Element(e)) => (e.namespace().to_string(), e.local_name().to_string()),
+        _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
+    };
+    let frag_doc = parse_html_fragment(trimmed, &context_ns, &context_local);
+    let kids = fragment_top_level_children(&frag_doc);
+    let frag_nodes: Vec<NodeId> = kids.into_iter().map(|k| copy_subtree_from(doc, &frag_doc, k)).collect();
     insert_nodes_at_position(doc, &frag_nodes, node, position)
 }
 
@@ -1726,23 +1722,19 @@ pub(crate) fn replace_outer_html_node(doc: &mut Document, node: NodeId, html: &s
     }
     // 解析顶层 fragment 节点（与 replace_inner_html 同源），逐个插到目标之前。
     // R3182：context element = 目标父（fragment 在父 context 下解析——如父是 table，
-    // `<tr>` 正确解析为隐式 tbody；旧 body-wrap foster-parent 丢失）。
+    // `<tr>` 正确解析为隐式 tbody；旧 body-wrap foster-parent 丢失）。纯文本同样过
+    // 解析做 charref 展开（R5000 M2 首簇）。
     let trimmed = html.trim();
     if !trimmed.is_empty() {
-        if !trimmed.contains('<') {
-            let t = doc.create_text_node(trimmed);
-            doc.insert_before(parent, t, node).map_err(|e| e.to_string())?;
-        } else {
-            let (context_ns, context_local) = match doc.get(parent).map(|n| &n.kind) {
-                Some(NodeKind::Element(e)) => (e.namespace().to_string(), e.local_name().to_string()),
-                _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
-            };
-            let frag_doc = parse_html_fragment(trimmed, &context_ns, &context_local);
-            let kids = fragment_top_level_children(&frag_doc);
-            for k in kids {
-                let copied = copy_subtree_from(doc, &frag_doc, k);
-                doc.insert_before(parent, copied, node).map_err(|e| e.to_string())?;
-            }
+        let (context_ns, context_local) = match doc.get(parent).map(|n| &n.kind) {
+            Some(NodeKind::Element(e)) => (e.namespace().to_string(), e.local_name().to_string()),
+            _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
+        };
+        let frag_doc = parse_html_fragment(trimmed, &context_ns, &context_local);
+        let kids = fragment_top_level_children(&frag_doc);
+        for k in kids {
+            let copied = copy_subtree_from(doc, &frag_doc, k);
+            doc.insert_before(parent, copied, node).map_err(|e| e.to_string())?;
         }
     }
     // 移除目标自身（整体替换）。

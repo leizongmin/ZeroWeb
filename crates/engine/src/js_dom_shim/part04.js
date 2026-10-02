@@ -8097,7 +8097,21 @@ return _tplContent;
             // el.childNodes[0] 文本节点——created handle 元素无 sel，host 不可查）。
             // _makeProxy 经 _proxyCache 返同一 proxy 对象（parentNode===el 成立）。
             if (typeof _zwRegisterTextEl === 'function' && _ihVal.indexOf('<') < 0) {
-              _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, _ihVal);
+              // R5000 M2 首簇（html-syntax-compat）：本地文本视图与宿主 apply 同语义——
+              // host replace_inner_html 对纯文本也过 fragment 解析展开 character reference
+              //（&AElig → Æ，WPT html/syntax/parsing/named-character-references 0/2231
+              // 根因面：同 turn 读命中本地视图）。展开文本取上方 _zwFragmentAdded 的宿主
+              // 解析产物（纯文本 = 恰一 text 子的 data，已 trim + 展开一提双得）；宿主
+              // 无解析器（视图空）回落原串，纯空白串宿主 trim 后无子 → 注册空串。
+              var _ihRegText = _ihVal;
+              try {
+                if (_ihAdded.length === 1 && _ihAdded[0] && _ihAdded[0].nodeType === 3) {
+                  _ihRegText = String(_ihAdded[0].data != null ? _ihAdded[0].data : _ihVal);
+                } else if (_ihAdded.length === 0) {
+                  _ihRegText = '';
+                }
+              } catch (_eIhExp) {}
+              _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, _ihRegText);
               // R294（js-dom M4）：纯文本形态的 addedNodes 用**注册表同一 textEl 节点**
               // ——消费方断言 `record.addedNodes[0] === el.firstChild`（WPT
               // MutationObserver-inner-outer "innerHTML mutation"——firstChild 经
