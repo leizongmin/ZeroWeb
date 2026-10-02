@@ -1110,6 +1110,14 @@ impl HeadlessSession {
     }
 
     pub(super) fn send_pre_document_scripts(&mut self) -> Result<(), String> {
+        // T-S3 发送面守卫钉：测试进程内无 renderer——记录本应发出的登记列表
+        // （全量替换语义），由 headless/tests.rs 断言；删除 page.rs 发送调用点即红。
+        let sources = self
+            .injected_scripts
+            .iter()
+            .map(|script| script.source.clone())
+            .collect();
+        LAST_PREDOC_SEND.with(|slot| *slot.borrow_mut() = Some(sources));
         Ok(())
     }
 
@@ -1121,4 +1129,12 @@ impl HeadlessSession {
     ) -> Result<zero_protocol::message::AutomationResult, String> {
         Err("renderer unavailable in unit tests".into())
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// T-S3 发送面钉记录器：最近一次 PreDocumentScripts 发送的登记 source 列表
+    /// （None = 复位后未发送）。headless/tests.rs 的发送面守卫钉消费并复位。
+    pub(super) static LAST_PREDOC_SEND: std::cell::RefCell<Option<Vec<String>>> =
+        const { std::cell::RefCell::new(None) };
 }

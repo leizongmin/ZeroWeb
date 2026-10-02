@@ -133,3 +133,22 @@ fn predoc_script_skipped_when_js_disabled() {
         "JS 关闭时预注入不执行（与页面脚本同门槛）"
     );
 }
+
+#[test]
+fn predoc_kill_switch_value_matrix() {
+    // env 值矩阵钉（评审 T-I1/缺陷 S1）：钉住 predoc_enabled_for 的现语义——
+    // 仅字面 "0" 关断；unset/其余任意值一律 on。纯值核心直测，不做 env set_var
+    // （并行测试下有竞态）。若实现意外翻转为白名单（如 `== Ok("1")`），此钉即红。
+    assert!(super::predoc_enabled_for(None), "未设 → on（默认开）");
+    assert!(!super::predoc_enabled_for(Some("0")), "\"0\" → 关断");
+    assert!(super::predoc_enabled_for(Some("1")), "\"1\" → on（非关断值）");
+    assert!(
+        super::predoc_enabled_for(Some("00")),
+        "\"00\" → on（字面精确匹配，防前缀/数值化误判）"
+    );
+    assert!(
+        super::predoc_enabled_for(Some("false")),
+        "\"false\" → on（非关断值，语义=仅 \"0\" 关断）"
+    );
+    assert!(super::predoc_enabled_for(Some("")), "空串 → on（非关断值）");
+}

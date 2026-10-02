@@ -244,10 +244,16 @@ pub(crate) struct RendererRuntime {
     service_worker_host: Arc<service_worker_host::RendererServiceWorkerHost>,
 }
 
+/// kill-switch 纯值核心（自 env 读取拆出以便值矩阵单测钉语义）：仅字面 `"0"` 关断；
+/// 未设 / 任意其他值（`"1"`、`"00"`、`"false"`…）一律 on。
+fn predoc_enabled_for(env_value: Option<&str>) -> bool {
+    !matches!(env_value, Some("0"))
+}
+
 /// CDP 预注入脚本 kill-switch：默认 on；`ZW_CDP_PREDOC_SCRIPTS=0` 关闭（renderer 忽略
 /// 登记列表，browser 侧回落导航后重放旧行为——零回归）。
 pub(crate) fn pre_document_scripts_enabled() -> bool {
-    !matches!(std::env::var("ZW_CDP_PREDOC_SCRIPTS").as_deref(), Ok("0"))
+    predoc_enabled_for(std::env::var("ZW_CDP_PREDOC_SCRIPTS").as_deref().ok())
 }
 
 impl RendererRuntime {
