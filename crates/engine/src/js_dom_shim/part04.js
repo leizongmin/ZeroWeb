@@ -4976,7 +4976,13 @@ return _tplContent;
                 // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
                 // FIXME(CSP): spec 要求 script-src 指令约束脚本 fetch；fetch 通道当前不区分
                 // destination，CSP 对齐留待 fetch destination 元数据切片。
-                else if (!(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
+                // t2-pb1 fix#19：嵌入方置 `__zwHostDynamicScripts` 时跳过本分支——renderer
+                // 路径的动态外链脚本由宿主通路取回（runtime execute_new_dynamic_scripts/
+                // tick_dynamic_scripts，no-cors 脚本语义 + 元素事件派发），shim 页面 fetch
+                //（cors 语义）再跑一遍会双执行/双事件（load+load、fetch 失败误派 load）。
+                // 未置旗标的嵌入方（browser 单进程路径）仍走本分支。
+                else if (!(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])
+                         && !globalThis.__zwHostDynamicScripts) {
                   var _r387url = '';
                   try {
                     _r387url = String(child.src || (child.getAttribute && child.getAttribute('src')) || '');
@@ -7374,8 +7380,14 @@ return _tplContent;
         // 面惯用形态）。仅 FORM gate 且 prop 非保留名（length/elements/action 等已在前置
         // 分支返回，落到这里的是无匹配成员的任意键）；控件名/id 首匹配，未命中 → undefined
         //（回落 trap 后续通用路径）。驱动用例：WPT implicit-submission.optional.html。
+        // t2-pb1 fix#19：reset/requestSubmit/submit 豁免——WebIDL named properties 对象
+        // 位于接口原型之下（https://webidl.spec.whatwg.org/#idl-named-properties），
+        // 命名控件不得遮蔽接口内建方法：`<button id=reset>` 入 form 时 `form.reset`
+        // 须仍是函数（R3048 方法），否则宿主 reset 脚本的 `typeof f.reset==='function'`
+        // guard 永假 → 表单重置整体静默 no-op（form-interaction fixture 实测）。
         if (_realTag(sel, handle) === 'FORM' && typeof prop === 'string'
             && prop !== '' && prop !== 'item' && prop !== 'namedItem'
+            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
             && Object.prototype.hasOwnProperty.call(globalThis, 'HTMLFormElement')) {
           var _fna = _formControls(sel);
           for (var _fnai = 0; _fnai < _fna.length; _fnai++) {

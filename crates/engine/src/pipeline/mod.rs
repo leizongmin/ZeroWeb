@@ -149,7 +149,7 @@ pub struct RenderPipeline {
     /// 缓存的基础样式（用于过渡检测，存储覆盖前的原始计算样式）。
     pub(crate) cached_styles: HashMap<NodeId, ComputedStyle>,
     /// 文本表单控件的页面级当前值，独立于 HTML 内容属性。
-    form_control_values: HashMap<NodeId, String>,
+    pub(crate) form_control_values: HashMap<NodeId, String>,
     /// js-dom M3 R100：跨 apply 的 handle→NodeId 持久表（同一 `cached_doc` 生命周期内，
     /// JS shim 的 `__n{n}` handle 直达 NodeId——`apply_dom_mutations_full` 的优先解析层。
     /// 文本节点等无唯一选择器的 handle 只能经此锚定）。`render_html`（全量重建 doc）
@@ -157,6 +157,16 @@ pub struct RenderPipeline {
     pub(crate) persistent_handle_nodes: HashMap<String, NodeId>,
     /// 文本表单控件尚未提交的 IME preedit。
     pub(crate) form_control_compositions: HashMap<NodeId, (String, usize, usize)>,
+    /// 脚本批量渲染 defer 开关（宿主 `begin_script_batch`/`end_script_batch` 控制）。
+    /// 置位时 [`Self::render_with_dom_mutations_persistent`] 照常应用 DOM 变更与快照，
+    /// 但跳过 style/layout/paint 管线（返回 `None` 渲染结果），由宿主在批量边界
+    /// [`Self::render_after_deferred_batch`] 统一渲染一次。
+    /// 依据：HTML Standard event loop「update the rendering」——同一脚本 task 内的
+    /// DOM 变更在渲染机会批量处理，不逐脚本同步 layout/paint
+    ///（https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering）。
+    /// 2026-10-02 bilibili 取证：21 个页面脚本 8 次逐脚本全量渲染（169KB/数千节点
+    /// 单次 ~1s）占死 renderer 主循环 9s+，后续导航 IPC 15s 超时（ERR_FAILED）。
+    defer_render: bool,
     /// 宿主维护的页面焦点所有者 selector。
     focused_selector: Option<String>,
     /// R4353：脚本化滚动偏移（selector 未解析态）——paint 期解析 NodeId 并应用
@@ -381,6 +391,7 @@ impl RenderPipeline {
             form_control_values: HashMap::new(),
             persistent_handle_nodes: HashMap::new(),
             form_control_compositions: HashMap::new(),
+            defer_render: false,
             focused_selector: None,
             scroll_offsets: Vec::new(),
             cached_layout: None,
@@ -1656,6 +1667,11 @@ impl RenderPipeline {
         ))
     }
 
+    /// 脚本批量渲染开关（见字段 [`RenderPipeline::defer_render`] 文档）。
+    pub fn set_defer_render(&mut self, defer: bool) {
+        self.defer_render = defer;
+    }
+
     /// DOM 变更增量渲染（M3-S9 第一刀：消除 HTML 往返）。
     ///
     /// 把 JS 侧记录的 [`DomMutation`] 直接应用到缓存的活 DOM（`cached_doc`），
@@ -1664,13 +1680,16 @@ impl RenderPipeline {
     ///
     /// # 返回
     ///
-    /// `(RenderResult, 可选新 HTML 快照)`——纯表单当前值变更不修改内容属性，因而不生成
-    /// 整页 HTML 快照；其余 DOM 变更返回快照供调用方同步 `cached_html`。
+    /// `(可选 RenderResult, 可选新 HTML 快照, handle selector 表)`——纯表单当前值变更
+    /// 不修改内容属性，因而不生成整页 HTML 快照；其余 DOM 变更返回快照供调用方同步
+    /// `cached_html`。批量渲染 defer 置位时（[`RenderPipeline::defer_render`]）DOM 变更
+    /// 照常应用但不渲染，`RenderResult` 为 `None`，由
+    /// [`Self::render_after_deferred_batch`] 在批量边界统一渲染。
     pub fn render_with_dom_mutations(
         &mut self,
         mutations: &[crate::js_dom_bridge::DomMutation],
         css: &str,
-    ) -> Result<(RenderResult, Option<String>, HashMap<String, String>), String> {
+    ) -> Result<(Option<RenderResult>, Option<String>, HashMap<String, String>), String> {
         self.render_with_dom_mutations_persistent(mutations, css, None)
     }
 
@@ -1684,7 +1703,7 @@ impl RenderPipeline {
         mutations: &[crate::js_dom_bridge::DomMutation],
         css: &str,
         persistent: Option<&HashMap<String, String>>,
-    ) -> Result<(RenderResult, Option<String>, HashMap<String, String>), String> {
+    ) -> Result<(Option<RenderResult>, Option<String>, HashMap<String, String>), String> {
         let doc_rc = self.cached_doc.take().ok_or("no cached document")?;
         let all_form_value_only = !mutations.is_empty()
             && mutations
@@ -1780,7 +1799,13 @@ impl RenderPipeline {
         let all_paint_only = mutations.iter().all(Self::is_paint_only_mutation);
         // 增量分支：borrow RefCell（&mut self 方法与 Ref borrow 不冲突——后者借堆 RefCell 非字段），
         // 工作后 drop borrow 再把 doc_rc 放回；repaint 分支：先放回 doc_rc 再 repaint（它 take 自字段）。
-        let result = if all_form_value_only {
+        let result = if self.defer_render {
+            // 脚本批量模式：跳过 style/layout/paint 分支，仅保留 apply 段产出
+            //（cached_doc 未换代、handle 表/表单值保持有效），渲染由宿主在批量
+            // 边界 `render_after_deferred_batch` 统一执行一次。
+            self.cached_doc = Some(doc_rc);
+            None
+        } else if all_form_value_only {
             let r = {
                 let doc = doc_rc.borrow();
                 self.paint_form_value_mutations(&doc, mutations)
@@ -1830,8 +1855,7 @@ impl RenderPipeline {
                 self.restore_form_control_values(values);
             }
             Some(result)
-        }
-        .ok_or("repaint failed after mutations")?;
+        };
         Ok((result, html_snapshot, handle_selectors))
     }
 
@@ -1847,6 +1871,46 @@ impl RenderPipeline {
             .into_iter()
             .filter_map(|(selector, value)| doc.query_selector(doc.root(), &selector).map(|node| (node, value)))
             .collect();
+    }
+
+    /// 脚本批量边界（`defer_render` 置位期间累积的 DOM 变更）的统一渲染出口。
+    ///
+    /// 与 [`Self::render_with_dom_mutations_persistent`] 全量臂的尾段同语义：
+    /// `render_html` 全量重建 + handle→selector 重锚 + 表单 live value 保留——
+    /// `render_html` 重解析使 slotmap 换代，批量期间 apply 建立的 handle NodeId
+    /// 全灭，按 `reanchor`（批量期间各次 apply 产出的 handle→唯一选择器累积）
+    /// 在新 doc 上重新锚定。
+    pub fn render_after_deferred_batch(
+        &mut self,
+        html: &str,
+        css: &str,
+        reanchor: &[(String, String)],
+    ) -> RenderResult {
+        // 换代前按旧 doc 的 NodeId 生成表单值 selector（restore 需要字符串锚点）。
+        let retained: HashMap<String, String> = match self.cached_doc.as_ref() {
+            Some(doc) => {
+                let doc = doc.borrow();
+                self.form_control_values
+                    .iter()
+                    .filter_map(|(node, value)| {
+                        crate::js_dom_bridge::unique_selector_for_node(&doc, *node)
+                            .map(|selector| (selector, value.clone()))
+                    })
+                    .collect()
+            }
+            None => HashMap::new(),
+        };
+        let result = self.render_html(html, css);
+        if let Some(doc) = self.cached_doc.as_ref() {
+            let doc = doc.borrow();
+            for (h, s) in reanchor {
+                if let Some(id) = doc.query_selector(doc.root(), s.trim()) {
+                    self.persistent_handle_nodes.insert(h.clone(), id);
+                }
+            }
+        }
+        self.restore_form_control_values(retained);
+        result
     }
 
     /// 当前值不改变文本输入框的外部几何；没有依赖 `value` 的选择器时可只重绘。

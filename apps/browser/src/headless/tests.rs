@@ -1893,3 +1893,55 @@ fn test_indexed_db_response_carries_id_and_error_shape() {
         "error must carry the unified headless unavailability error"
     );
 }
+
+/// P-B5 回归：部分 HTTP 请求（无 `\r\n\r\n` 终止符）不得把单线程 mux 切进阻塞读。
+/// 坏连接 A 发半截请求后保持打开（模拟 aborted keep-alive 轮询连接）；好连接 B 的
+/// 完整 /json/version 请求必须仍能在超时内被服务。修复前：A 在 `handle_http_discovery`
+/// 的阻塞 read 上无超时冻结整个 mux 循环，B 永久饿死（2026-10-02 navmatrix 首连
+/// wedge 实测）。终止符守护后 A 留在非阻塞 Peek 直至 5s 丢弃，B 即刻被服务。
+#[test]
+fn test_partial_request_does_not_wedge_mux() {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    let server = Arc::new(HeadlessServer::new(0, 800.0, 600.0));
+    let srv = Arc::clone(&server);
+    // run() 不返回；分离线程随测试进程退出回收（泄漏端口在本测试二进制内存续期无害）。
+    std::thread::spawn(move || {
+        let _ = srv.run();
+    });
+
+    // 等 bind 完成（run() 在 bind 后把实际地址回写 addr，port 0 → 实际端口）。
+    let addr = {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let guard = server.addr.lock().unwrap();
+            if guard.port() != 0 {
+                break *guard;
+            }
+            drop(guard);
+            assert!(Instant::now() < deadline, "server did not bind in time");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+
+    // A：部分请求（无终止符），保持打开——不补发剩余字节、不关闭。
+    let mut stalled = TcpStream::connect(addr).expect("connect stalled conn");
+    stalled.write_all(b"GET /json/ver").expect("write partial request");
+
+    // B：完整发现请求必须被服务（修复前此处永久饿死超时）。
+    let mut good = TcpStream::connect(addr).expect("connect good conn");
+    good.write_all(b"GET /json/version HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        .expect("write full request");
+    good.set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("set read timeout");
+    let mut buf = [0u8; 256];
+    let n = good.read(&mut buf).expect("read discovery response");
+    let response = String::from_utf8_lossy(&buf[..n]).to_string();
+    assert!(
+        response.starts_with("HTTP/1.1 200 OK"),
+        "discovery must be served while a partial request is pending, got: {response}"
+    );
+}

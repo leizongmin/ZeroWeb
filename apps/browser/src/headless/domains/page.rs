@@ -464,17 +464,23 @@ impl HeadlessServer {
             params: serde_json::json!({ "timestamp": ts }),
             session_id: None,
         });
-        events.push(ServerEvent {
-            method: "Page.lifecycleEvent".into(),
-            params: serde_json::json!({ "frameId": frame_id, "name": "load", "timestamp": ts }),
-            session_id: None,
-        });
-        events.push(ServerEvent {
-            method: "Page.loadEventFired".into(),
-            params: serde_json::json!({ "timestamp": ts }),
-            session_id: None,
-        });
-        events.push(frame_event("Page.frameStoppedLoading"));
+        // DCL 先返语义：navigate 已在 DomContentLoaded 返回（load_event_pending=true）
+        // 时，load 尚未落定——load 生命周期族与 frameStoppedLoading 由 renderer
+        // LoadComplete 到达时经 pending_network_events 延迟补发（Chromium 时序：
+        // frameStoppedLoading 与 load 同帧落定）。
+        if !session.load_event_pending {
+            events.push(ServerEvent {
+                method: "Page.lifecycleEvent".into(),
+                params: serde_json::json!({ "frameId": frame_id, "name": "load", "timestamp": ts }),
+                session_id: None,
+            });
+            events.push(ServerEvent {
+                method: "Page.loadEventFired".into(),
+                params: serde_json::json!({ "timestamp": ts }),
+                session_id: None,
+            });
+            events.push(frame_event("Page.frameStoppedLoading"));
+        }
     }
 
     /// 主 frame id 与 targetId 同值（CDP 契约：page target 的根 frame 复用 targetId，

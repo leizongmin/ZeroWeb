@@ -585,12 +585,18 @@ impl WebView {
         script: &str,
     ) -> Result<DomScriptResult, WebViewError> {
         if let Some(executor) = executor {
-            executor.set_dom_snapshot(&self.cached_html, self.current_url.as_deref().unwrap_or("about:blank"));
+            // t2-pb1 fix#13：用户动作（键入/删除/提交等）走优先通道 + 有界等待（快照与
+            // 脚本成对同通道 FIFO）。普通通道同步往返在页面回调洪水下逐个等 28-30s 臂，
+            // 主循环被输入派发占死时导航 IPC 饿死。超时脚本留队列照常执行（值晚至），
+            // 调用方按 Err 降级（见 apply_text_edit 等的错误分支）。
+            executor.set_dom_snapshot_priority(&self.cached_html, self.current_url.as_deref().unwrap_or("about:blank"));
             let mutations = executor.mutations();
             mutations.lock().unwrap_or_else(|error| error.into_inner()).clear();
             // R-baidu3：drain 代际递增——查询视图增量链只在无 drain 的批内成立。
             zero_engine::js_dom_bridge::bump_mut_drain_gen();
-            let value = executor.execute_script_direct(script).map_err(WebViewError::Script)?;
+            let value = executor
+                .execute_script_priority_bounded(script, zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT)
+                .map_err(WebViewError::Script)?;
             let recorded = mutations.lock().unwrap_or_else(|error| error.into_inner()).clone();
             let result = self.apply_dom_script_result(value, recorded)?;
             executor.set_dom_snapshot(&self.cached_html, self.current_url.as_deref().unwrap_or("about:blank"));
@@ -673,7 +679,9 @@ impl WebView {
         if let Some(html) = html_snapshot {
             self.cached_html = html;
         }
-        self.last_render = Some(render_result_to_webview(&result));
+        if let Some(result) = &result {
+            self.last_render = Some(render_result_to_webview(result));
+        }
         Ok(DomScriptResult { value, changed: true })
     }
 }

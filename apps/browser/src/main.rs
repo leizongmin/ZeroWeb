@@ -911,16 +911,21 @@ impl<W: Write> Write for TeeLogWriter<W> {
 
 fn init_logging() {
     let Some(path) = browser_log_path() else {
-        tracing_subscriber::fmt().init();
+        // t2-pb1 fix#17：日志写 stderr 不写 stdout。fmt() 默认 writer 是 stdout，
+        // 而宿主以管道 spawn zero-browser 时 stdout 常无读取者（playwright/CDP 自动化
+        // 只读 stderr）：64KB 管道缓冲写满后所有打日志的 browser 线程阻塞在 write，
+        // 导航/CDP 派发全部停摆（bilibili 实测 goto 必超时， Example 页日志量小才幸存）。
+        // Chromium 日志同样走 stderr；stdout 留给程序输出（如 --version）。
+        tracing_subscriber::fmt().with_writer(io::stderr).init();
         return;
     };
     let Some(parent) = path.parent() else {
-        tracing_subscriber::fmt().init();
+        tracing_subscriber::fmt().with_writer(io::stderr).init();
         return;
     };
     if let Err(error) = fs::create_dir_all(parent) {
         eprintln!("无法创建浏览器日志目录: {error}");
-        tracing_subscriber::fmt().init();
+        tracing_subscriber::fmt().with_writer(io::stderr).init();
         return;
     }
     match RollingLogWriter::open(path.clone(), BROWSER_LOG_MAX_BYTES, BROWSER_LOG_BACKUP_COUNT) {
@@ -930,7 +935,7 @@ fn init_logging() {
             .init(),
         Err(error) => {
             eprintln!("无法打开浏览器日志文件 {}: {error}", path.display());
-            tracing_subscriber::fmt().init();
+            tracing_subscriber::fmt().with_writer(io::stderr).init();
         }
     }
 }

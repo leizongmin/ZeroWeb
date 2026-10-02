@@ -340,7 +340,8 @@ impl AsyncPageLoad {
         }
     }
 
-    /// 当前阶段。
+    /// 当前加载阶段（宿主用于 DOMContentLoaded 里程碑判定：进入
+    /// `StyledPaint` 即文档已解析且样式已应用，图片/字体可继续加载）。
     pub fn stage(&self) -> PageLoadStage {
         self.stage
     }
@@ -469,7 +470,6 @@ impl AsyncPageLoad {
         if self.budget_pending && matches!(self.stage, PageLoadStage::FetchingImages | PageLoadStage::Complete) {
             changed |= self.advance_render(webview, budget_ms);
         }
-
         changed
     }
 

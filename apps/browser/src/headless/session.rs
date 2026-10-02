@@ -75,6 +75,10 @@ pub(super) struct HeadlessSession {
     /// Console 事件队列（S11：renderer `ConsoleLog` → `Runtime.consoleAPICalled`，
     /// transport 逐命令排空盖章；`(level, text, args_json)`）。
     pub(super) pending_console_events: Vec<(String, String, String)>,
+    /// DCL 先返语义：navigate 已在 DomContentLoaded 返回、renderer `LoadComplete`
+    /// 尚未到达（全量 load 未落定）。true 时 load 生命周期族由 LoadComplete 到达
+    /// 时经 pending_network_events 延迟补发；false = load 已随导航事件族同步发出。
+    pub(super) load_event_pending: bool,
     /// 未捕获脚本错误队列（R-baidu2/P3：renderer `ScriptError` →
     /// `Runtime.exceptionThrown` 事件源）。
     pub(super) pending_script_errors: Vec<zero_protocol::message::ScriptErrorParams>,
@@ -96,6 +100,11 @@ pub(super) struct HeadlessSession {
     pub(super) fetch_completion_tx: std::sync::mpsc::Sender<CompletedFetch>,
     #[cfg(not(test))]
     pub(super) fetch_completions_rx: std::sync::mpsc::Receiver<CompletedFetch>,
+    /// 代理 fetch 共享调度器（GET 走 6/origin、24 total 限流，对齐 renderer 路径
+    /// `resource_policy`）：无上限 thread-per-send 实测把重资源站点打成百级并行
+    /// 连接（bilibili 首页 116 条）并拖垮后续导航。
+    #[cfg(not(test))]
+    pub(super) fetch_scheduler: std::sync::Arc<std::sync::Mutex<zero_net::PerOriginFetchScheduler>>,
 }
 
 /// 按帧更新下载字体注册表并重写 surface-local 数字 ID（compositor 主路径同序：
@@ -168,6 +177,7 @@ impl HeadlessSession {
             network_enabled: false,
             pending_network_events: Vec::new(),
             pending_console_events: Vec::new(),
+            load_event_pending: false,
             pending_script_errors: Vec::new(),
             active_child_frames: std::collections::HashMap::new(),
             next_frame_seq: 1,
@@ -210,6 +220,7 @@ impl HeadlessSession {
             shell,
             renderer,
             http: HttpClient::new(),
+            fetch_scheduler: zero_net::PerOriginFetchScheduler::new_shared(),
             snapshot: crate::tab_snapshot::TabSnapshot::default(),
             navigation_epoch: 0,
             next_request_id: 1,
@@ -219,6 +230,7 @@ impl HeadlessSession {
             network_enabled: false,
             pending_network_events: Vec::new(),
             pending_console_events: Vec::new(),
+            load_event_pending: false,
             pending_script_errors: Vec::new(),
             active_child_frames: std::collections::HashMap::new(),
             next_frame_seq: 1,
@@ -274,7 +286,39 @@ impl HeadlessSession {
                 crate::paint_ipc::apply_paint_snapshot(&mut self.snapshot, paint);
                 Ok(None)
             }
-            IpcMessageKind::LoadComplete => Ok(Some(Ok(()))),
+            // DCL 先返语义：navigate 在 DomContentLoaded 即返回（文档可交互，图片/字体
+            // 可续加载）；全量 load 生命周期族延迟到 LoadComplete 到达时经
+            // pending_network_events 补发（同 S16 document.write 通道）。
+            // https://html.spec.whatwg.org/multipage/#the-end
+            IpcMessageKind::DomContentLoaded => {
+                self.load_event_pending = true;
+                Ok(Some(Ok(())))
+            }
+            IpcMessageKind::LoadComplete => {
+                if self.load_event_pending {
+                    // 导航已返回（DCL），LoadComplete 只补发延迟的 load 族，不再终结
+                    // 任何等待者（此时无导航在途）。
+                    self.load_event_pending = false;
+                    let frame_id = self.active_frame_id().unwrap_or_default();
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    self.pending_network_events.push((
+                        "Page.lifecycleEvent".into(),
+                        serde_json::json!({ "frameId": frame_id, "name": "load", "timestamp": ts }),
+                    ));
+                    self.pending_network_events
+                        .push(("Page.loadEventFired".into(), serde_json::json!({ "timestamp": ts })));
+                    self.pending_network_events.push((
+                        "Page.frameStoppedLoading".into(),
+                        serde_json::json!({ "frameId": frame_id }),
+                    ));
+                    Ok(None)
+                } else {
+                    Ok(Some(Ok(())))
+                }
+            }
             IpcMessageKind::LoadFailed(message) | IpcMessageKind::CrashNotification(message) => Ok(Some(Err(message))),
             // S11：page console 输出 → 会话事件队列（transport 逐命令排空盖章为
             // `Runtime.consoleAPICalled`； PW 消费面 = msg.type()/text()）。
@@ -292,6 +336,9 @@ impl HeadlessSession {
             // 等待新 load——spec document.close() 解析结束触发 load 的软导航语义）。
             // 不发 frameNavigated/contextsCleared：文档对象与 JS context 未换代。
             IpcMessageKind::DocumentWriteSettled(_) => {
+                // 写周期落定已重发完整 DCL+load 族——同一文档的 LoadComplete 到达时
+                // 不再补发延迟 load 族。
+                self.load_event_pending = false;
                 let frame_id = self.active_frame_id().unwrap_or_default();
                 let ts = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -538,15 +585,36 @@ impl HeadlessSession {
         let job_body = params.body.clone();
         let outcome_tx = self.fetch_completion_tx.clone();
         let http = self.http.clone();
+        let scheduler = self.fetch_scheduler.clone();
+        // GET 且无 body 走 per-origin 调度（6/origin、24 total，对齐 renderer 路径
+        // resource_policy）：无上限并发发送实测对重资源站点形成百级并行连接并拖垮
+        // 后续导航；非 GET / 带 body（XHR 写操作）保留直发。
+        let via_scheduler = matches!(job_method, HttpMethod::Get) && job_body.is_none();
         let spawn = std::thread::Builder::new()
             .name("headless-fetch".into())
             .spawn(move || {
-                let outcome = http.send(HttpRequest {
-                    method: job_method,
-                    url: job_url.clone(),
-                    headers: job_headers,
-                    body: job_body,
-                });
+                let outcome = if via_scheduler {
+                    let (priority, _) = zero_net::FetchPriority::from_fetch_headers(&job_headers, &job_url);
+                    let (rx, _telemetry, _owns) =
+                        zero_net::PerOriginFetchScheduler::submit_shared_with_key_headers_and_telemetry(
+                            &scheduler,
+                            job_url.clone(),
+                            job_url.clone(),
+                            priority,
+                            job_headers,
+                            30,
+                        );
+                    rx.recv()
+                        .map_err(|error| zero_net::NetError::Network(format!("fetch scheduler channel: {error}")))
+                        .and_then(|result| result.map_err(zero_net::NetError::Network))
+                } else {
+                    http.send(HttpRequest {
+                        method: job_method,
+                        url: job_url.clone(),
+                        headers: job_headers,
+                        body: job_body,
+                    })
+                };
                 let _ = outcome_tx.send(CompletedFetch {
                     request_id,
                     net_request_id: net_request_id_clone,
@@ -685,6 +753,12 @@ impl HeadlessSession {
     }
 
     fn wait_for_load(&mut self) -> Result<(), String> {
+        // 武装门控：renderer 发出 NavigationStarted（携带本次导航 epoch）之前，接收
+        // 缓冲中的终结信号（DCL/LoadComplete/LoadFailed）一律属上一文档——吞掉，不得
+        // 冒充本次导航的完成依据。不排空缓冲：旧文档持续产出消息（图片 fetch 等）
+        // 时排空永不收敛，会饿死本次导航命令的发送。
+        let epoch = self.navigation_epoch;
+        let mut armed = false;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
         loop {
             if std::time::Instant::now() >= deadline {
@@ -693,6 +767,19 @@ impl HeadlessSession {
             self.drain_fetch_completions();
             match self.renderer.try_recv().map_err(|error| error.to_string())? {
                 Some(message) => {
+                    if !armed {
+                        match message.kind {
+                            IpcMessageKind::NavigationStarted(ref params) if params.navigation_epoch == epoch => {
+                                armed = true;
+                            }
+                            // 陈旧终结信号：丢弃（其唯一起作用的就是终结等待者）。
+                            IpcMessageKind::DomContentLoaded
+                            | IpcMessageKind::LoadComplete
+                            | IpcMessageKind::LoadFailed(_)
+                            | IpcMessageKind::CrashNotification(_) => continue,
+                            _ => {}
+                        }
+                    }
                     if let Some(result) = self.handle_renderer_message(message)? {
                         return result;
                     }
@@ -705,6 +792,12 @@ impl HeadlessSession {
 
     pub(super) fn navigate_renderer(&mut self, url: &str) -> Result<(), String> {
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1).max(1);
+        // 上一文档未交付的延迟 load 族作废（文档换代，LoadComplete 不再属于新导航）。
+        self.load_event_pending = false;
+        // 导航终止旧文档的 fetch group（https://fetch.spec.whatwg.org/#fetch-groups）：
+        // 换新调度器实例——旧页挂起子资源不得占用并发槽饿死新文档 fetch；旧实例由
+        // 在途任务持有排空后消亡，队列内未启动任务随 reply 通道关闭而终止。
+        self.fetch_scheduler = zero_net::PerOriginFetchScheduler::new_shared();
         self.snapshot.begin_navigation(url.to_string());
         self.renderer
             .navigate(url, None, self.navigation_epoch)
@@ -714,6 +807,7 @@ impl HeadlessSession {
 
     pub(super) fn load_html_renderer(&mut self, html: &str, css: Option<&str>) -> Result<(), String> {
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1).max(1);
+        self.load_event_pending = false;
         self.snapshot.begin_navigation("about:blank".to_string());
         self.renderer
             .send(IpcMessage {
@@ -760,7 +854,11 @@ impl HeadlessSession {
                 kind: IpcMessageKind::AutomationRequest(AutomationRequest { operation }),
             })
             .map_err(|error| error.to_string())?;
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        // t2-pb1 fix#15 协同：renderer 侧 evaluate 可挂起续答（worker 长臂时 2s 放行主循环），
+        // 迟到的回复最迟在 worker 单臂上限之后到达。这里等待窗须覆盖同一上限（js_worker
+        // TAB_JS_EXEC_TIMEOUT_MS=30s + 余量），否则挂起补答被 headless 先行超时报错丢弃
+        // （bilibili 30s timer 臂期间 ev19 实测 evaluate 间歇性 "automation request timeout"）。
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(35);
         let response = loop {
             if std::time::Instant::now() >= deadline {
                 return Err("automation request timeout".into());

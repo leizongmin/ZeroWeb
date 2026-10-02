@@ -38,6 +38,7 @@ fn main() {
         let (result, snapshot, _) = pipeline
             .render_with_dom_mutations(std::slice::from_ref(&mutation), "")
             .expect("form value mutation must apply");
+        let result = result.expect("rendered");
         assert!(snapshot.is_none(), "IDL value edits must not serialize the document");
 
         let mut transaction = FrameTransaction::default();

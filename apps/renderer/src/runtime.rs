@@ -12,7 +12,7 @@ use crate::ipc_service_worker::{ServiceWorkerIpcClient, ServiceWorkerResponseRou
 use crate::{compositor_publish_thread, error_page, ipc_indexed_db, page_scripts, paint_export, sandbox, text_metrics};
 
 use crate::js_worker::RendererJsWorker;
-use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, run_page_scripts};
+use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event};
 use crate::script_prefetch::{PendingDynamicScripts, PendingScriptPrefetch};
 use crate::service_worker_host;
 
@@ -123,6 +123,8 @@ struct PendingLoad {
     deadline: Instant,
     run_scripts_after: bool,
     emit_load_complete: bool,
+    /// DCL 里程碑（样式应用、图片/字体未齐）是否已上报——每次加载至多一次。
+    dcl_sent: bool,
 }
 
 /// 渲染进程运行时状态。
@@ -174,6 +176,9 @@ pub(crate) struct RendererRuntime {
     history_index: usize,
     /// 等待处理的浏览器侧消息（fetch 阻塞 recv 时暂存）。
     deferred_inbound: VecDeque<IpcMessage>,
+    /// t2-pb1 fix#15：挂起中的自动化 Evaluate 回复（worker 长臂时主循环 2s 放行，
+    /// 主循环每轮轮询补答；automation::PendingAutomationReply）。
+    pending_automation_replies: Vec<automation::PendingAutomationReply>,
     /// RFC 4.1：compositor 帧 IPC 异步发布线程（默认启用，`=0` 可诊断性禁用）。
     compositor_publish: Option<compositor_publish_thread::CompositorPublishThread>,
     /// 当前页面 HTML（脚本执行后同步更新）。
@@ -390,6 +395,7 @@ impl RendererRuntime {
             history: Vec::new(),
             history_index: 0,
             deferred_inbound: VecDeque::new(),
+            pending_automation_replies: Vec::new(),
             compositor_publish,
             cached_html: String::new(),
             cached_css: String::new(),
@@ -477,12 +483,15 @@ impl RendererRuntime {
         }))
     }
 
-    fn after_page_html_loaded_with_cache(&mut self, fetch_cache: HashMap<String, String>) -> Result<(), String> {
+    /// 页面脚本阶段（预取完成后）。返回 `false` = 阶段被导航命令让路中止（P-B1）：
+    /// 命令已回灌 `deferred_inbound` 队首，收尾（动态脚本/发布/生命周期事件）全部跳过——
+    /// 文档即将换代，对旧文档收尾是纯浪费。
+    fn after_page_html_loaded_with_cache(&mut self, fetch_cache: HashMap<String, String>) -> Result<bool, String> {
         self.executed_external_scripts.extend(fetch_cache.keys().cloned());
         let js_enabled = self.javascript_enabled;
         let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let skip = page_scripts::should_skip_scripts(&current_url);
-        let changed = {
+        let phase = {
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
                 url: &current_url,
@@ -495,9 +504,25 @@ impl RendererRuntime {
                     .cloned()
                     .ok_or_else(|| format!("script fetch failed: {url}"))
             };
-            run_page_scripts(&mut ctx, js_enabled, fetch_from_cache)
+            // P-B1 导航让路：脚本间扫描 staging 队列 + inbound，导航命令即中止剩余脚本。
+            // 字段不相交：ctx 借 cached_html/js_worker/webview，yield 借 inbound_rx/deferred_inbound。
+            let yield_to_commands = page_scripts::ScriptPhaseYield {
+                inbound_rx: &self.inbound_rx,
+                deferred: &mut self.deferred_inbound,
+            };
+            page_scripts::run_page_scripts_interruptible(
+                &mut ctx,
+                js_enabled,
+                fetch_from_cache,
+                Some(yield_to_commands),
+            )
         };
-        if changed {
+        if let Some(nav) = phase.aborted {
+            // 回灌队首：主循环下一轮 recv 优先派发（先于阶段期间暂存的其他消息）。
+            self.deferred_inbound.push_front(nav);
+            return Ok(false);
+        }
+        if phase.changed {
             self.execute_new_dynamic_scripts();
             self.publish_webview(None, true)?;
         }
@@ -518,11 +543,15 @@ impl RendererRuntime {
                 font_events,
             );
         }
-        Ok(())
+        Ok(true)
     }
 
     /// 非阻塞推进脚本预取；完成后执行页面脚本。
     fn tick_script_prefetch(&mut self) -> Result<(), String> {
+        self.tick_script_prefetch_inner()
+    }
+
+    fn tick_script_prefetch_inner(&mut self) -> Result<(), String> {
         self.drain_inflight_fetch_responses();
         let Some(mut prefetch) = self.pending_script_prefetch.take() else {
             return Ok(());
@@ -546,12 +575,19 @@ impl RendererRuntime {
         }
 
         let cache = prefetch.finish();
-        self.after_page_html_loaded_with_cache(cache)?;
+        if !self.after_page_html_loaded_with_cache(cache)? {
+            // 导航让路中止：跳过旧文档的收尾发布，主循环下一轮优先派发导航命令。
+            return Ok(());
+        }
         self.try_publish_progress(true)
     }
 
     /// 将定时器等异步页面任务产生的 DOM 变更提交到活文档。
     fn drain_pending_script_mutations(&mut self) -> Result<(), String> {
+        self.drain_pending_script_mutations_inner()
+    }
+
+    fn drain_pending_script_mutations_inner(&mut self) -> Result<(), String> {
         if !self.javascript_enabled {
             return Ok(());
         }
@@ -563,7 +599,19 @@ impl RendererRuntime {
                 js_worker: &self.js_worker,
                 webview: self.webview.as_mut(),
             };
-            page_scripts::drain_pending_dom_mutations(&mut ctx)
+            // 事件循环 drain 的批量渲染边界：一轮 drain 内多次 apply 合并为一次
+            // 渲染（主循环 16ms 轮询节拍下逐次全量渲染会饿死消息处理，
+            // 同 run_page_scripts 的批量语义）。
+            if let Some(wv) = ctx.webview.as_deref_mut() {
+                wv.begin_script_batch();
+            }
+            let changed = page_scripts::drain_pending_dom_mutations(&mut ctx);
+            if let Some(wv) = ctx.webview.as_deref_mut()
+                && let Err(e) = wv.end_script_batch()
+            {
+                tracing::warn!("end script batch render (drain): {e}");
+            }
+            changed
         };
         if changed {
             self.execute_new_dynamic_scripts();
@@ -632,13 +680,21 @@ impl RendererRuntime {
             // worker 持有的 dom_html 快照），mutation 落定（drain_pending_script_mutations）
             // 不自动换代快照——派发/执行前刷到当前 cached_html，动态插入的元素才可见
             //（镜像 run_page_scripts 每 chunk 执行前 set_dom_snapshot 的语义）。
+            // t2-pb1 fix#19：刷新走优先通道（与下方执行/元素事件派发同通道 FIFO）——
+            // 派发是优先队列 fire-and-forget（fix#12），快照留在普通通道时优先派发可在
+            // 快照前执行（fix#18 分派环醒来再查加剧为必现），动态插入的元素尚不可见 →
+            // 事件匹配 miss（error 事件丢失实测）。快照+执行+派发同通道保序。
             let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-            self.js_worker.set_dom_snapshot(&self.cached_html, &current_url);
+            self.js_worker
+                .set_dom_snapshot_priority(&self.cached_html, &current_url);
         }
 
         for (url, result) in completions {
             match result {
-                Ok(source) => match self.js_worker.execute_script_direct(&source) {
+                // t2-pb1 fix#7：宿主节拍执行走优先队列——本 tick 在主循环上同步等 worker
+                // reply，worker 被页面续体洪水（promise/timer 回调流）占住时主循环整体
+                // 停摆，Navigate IPC 饿死（bilibili 二跳 15s 超时的第三级根因）。
+                Ok(source) => match self.js_worker.execute_script_direct_priority(&source) {
                     Ok(_) => page_scripts::dispatch_script_event(&self.js_worker, &url, "load"),
                     // spec：脚本执行/解析错误走 window 错误报告，不派元素 error 事件。
                     Err(error) => tracing::warn!(%url, "dynamic script execute failed: {error}"),
@@ -1663,6 +1719,19 @@ impl RendererRuntime {
             return Ok(());
         };
 
+        // DCL 里程碑：文档已解析且样式已应用（StyledPaint 及其后），图片/字体等
+        // 非阻塞子资源可继续加载——对应 DOMContentLoaded 事件时点语义。
+        // https://html.spec.whatwg.org/multipage/#the-end
+        if !pending.dcl_sent
+            && matches!(
+                pending.load.stage(),
+                zero_webview::PageLoadStage::StyledPaint | zero_webview::PageLoadStage::FetchingImages
+            )
+        {
+            pending.dcl_sent = true;
+            self.send_regular(IpcMessageKind::DomContentLoaded)?;
+        }
+
         if Instant::now() >= pending.deadline {
             if matches!(pending.load.stage(), zero_webview::PageLoadStage::FetchingImages) {
                 tracing::warn!(url = %pending.page_url, "非关键子资源加载超时，保留已呈现页面");
@@ -1826,14 +1895,41 @@ impl RendererRuntime {
     }
 
     fn recv_next_or_timeout(&mut self, timeout: Duration) -> Result<Option<IpcMessage>, String> {
-        if let Some(msg) = self.deferred_inbound.pop_front() {
-            return Ok(Some(msg));
+        let mut head = if let Some(msg) = self.deferred_inbound.pop_front() {
+            Some(msg)
+        } else {
+            match self.inbound_rx.recv_timeout(timeout) {
+                Ok(msg) => Some(msg),
+                Err(RecvTimeoutError::Timeout) => None,
+                Err(RecvTimeoutError::Disconnected) => return Err("IPC 通道已关闭".into()),
+            }
+        };
+        // t2-pb1 fix#14：导航抢占挂起输入（Chrome 导航优先于输入的既有语义）。
+        // b1 旅程实测：goto 前积压的注入/鼠标事件在普通通道逐个同步等 28-30s 脚本臂，
+        // Navigate IPC 滞留 106s，宿主侧 15s 导航超时必炸。队首非 Navigate 时非阻塞排干
+        // 入站通道（保持到达序），若队列中有 Navigate 则提前到队首先派发，其余消息相对
+        // 顺序不变。输入事件不被丢弃，仅在导航后继续处理（导航本身会复位文档状态）。
+        if let Some(msg) = head.as_ref()
+            && !matches!(msg.kind, IpcMessageKind::Navigate(_))
+        {
+            while let Ok(later) = self.inbound_rx.try_recv() {
+                self.deferred_inbound.push_back(later);
+            }
+            if let Some(idx) = self
+                .deferred_inbound
+                .iter()
+                .position(|m| matches!(m.kind, IpcMessageKind::Navigate(_)))
+            {
+                let nav = self
+                    .deferred_inbound
+                    .remove(idx)
+                    .expect("idx 由 position 取得，必在界内");
+                self.deferred_inbound
+                    .push_front(head.take().expect("head 已判定为 Some"));
+                head = Some(nav);
+            }
         }
-        match self.inbound_rx.recv_timeout(timeout) {
-            Ok(msg) => Ok(Some(msg)),
-            Err(RecvTimeoutError::Timeout) => Ok(None),
-            Err(RecvTimeoutError::Disconnected) => Err("IPC 通道已关闭".into()),
-        }
+        Ok(head)
     }
 
     /// 用当前 cached_html/css 经 WebView 重绘并发布（脚本改 DOM 后的重渲染路径）。
@@ -1998,6 +2094,7 @@ impl RendererRuntime {
             deadline: Instant::now() + PAGE_LOAD_DEADLINE,
             run_scripts_after: true,
             emit_load_complete: send_complete,
+            dcl_sent: false,
         })
     }
 
@@ -2021,6 +2118,7 @@ impl RendererRuntime {
             deadline: Instant::now() + PAGE_LOAD_DEADLINE,
             run_scripts_after: false,
             emit_load_complete: false,
+            dcl_sent: false,
         })?;
         self.send(IpcMessageKind::TitleChanged("加载失败".to_string()))
     }
@@ -2080,13 +2178,15 @@ impl RendererRuntime {
             && let Ok(bytes) = self.fetch_post(&page_url, body.unwrap_or_default())
         {
             let html = String::from_utf8_lossy(&bytes).into_owned();
-            return self.start_pending_load(PendingLoad {
+            let r = self.start_pending_load(PendingLoad {
                 load: AsyncPageLoad::from_html(page_url.clone(), html),
                 page_url,
                 deadline: Instant::now() + PAGE_LOAD_DEADLINE,
                 run_scripts_after: true,
                 emit_load_complete: true,
+                dcl_sent: false,
             });
+            return r;
         }
         self.start_pending_load(PendingLoad {
             load: AsyncPageLoad::start(page_url.clone()),
@@ -2094,6 +2194,7 @@ impl RendererRuntime {
             deadline: Instant::now() + PAGE_LOAD_DEADLINE,
             run_scripts_after: true,
             emit_load_complete: true,
+            dcl_sent: false,
         })
     }
 
@@ -2686,6 +2787,7 @@ impl RendererRuntime {
             | IpcMessageKind::TitleChanged(_)
             | IpcMessageKind::UrlChanged(_)
             | IpcMessageKind::LoadComplete
+            | IpcMessageKind::DomContentLoaded
             | IpcMessageKind::LoadFailed(_)
             | IpcMessageKind::ViewPainted(_)
             | IpcMessageKind::HitTestLinkResult(_)
@@ -2711,7 +2813,6 @@ impl RendererRuntime {
 
     pub(crate) fn run(&mut self) -> Result<(), String> {
         tracing::info!("渲染进程 {} 启动，等待 IPC 消息...", self.renderer_id);
-
         loop {
             if self.pending_load.is_some()
                 || self.pending_script_prefetch.is_some()
@@ -2819,6 +2920,14 @@ impl RendererRuntime {
                         self.try_republish_cached()?;
                     }
                 }
+            }
+
+            // t2-pb1 fix#15：补答挂起的自动化 Evaluate（优先队列中脚本完成或被导航
+            // 复位清队后）；空表零开销。
+            if !self.pending_automation_replies.is_empty()
+                && let Err(e) = self.poll_deferred_automation_replies()
+            {
+                tracing::warn!("deferred automation reply send failed: {e}");
             }
 
             match self.recv_next_or_timeout(LOAD_TICK_INTERVAL) {

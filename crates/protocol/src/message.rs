@@ -47,6 +47,10 @@ pub enum IpcMessageKind {
     UrlChanged(String),
     /// 页面加载完成。
     LoadComplete,
+    /// DOM 解析与样式应用完成（HTML spec DCL 语义：文档可交互，图片/字体等
+    /// 子资源可继续加载）。headless 自动化按此语义返回 Page.navigate，
+    /// https://html.spec.whatwg.org/multipage/#the-end
+    DomContentLoaded,
     /// 页面加载失败。
     LoadFailed(String),
     /// 页面绘制快照（渲染→浏览器）。
