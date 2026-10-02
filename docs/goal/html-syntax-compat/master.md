@@ -1,7 +1,7 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-02（M2 片 d 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-02（M2 收口判定）
 
 ## 当前状态
 
@@ -22,17 +22,20 @@ toStringTag）。片 b 根因
 [evidence/2026-10-02-m2d-p5-cherset.md](evidence/2026-10-02-m2d-p5-cherset.md)、
 [evidence/2026-10-02-m2e-lifecycle.md](evidence/2026-10-02-m2e-lifecycle.md)。
 
-**M2 剩余缺口**：html5lib 三案案预算复评（首轮 Timeout 系递归 bug 冤案，修后未
-复评；bench 复评一并与等让窗跑——本轮两窗被兄弟流 clone 长测污染挂账）。P2
-testharness 通道可执行面**全绿**。serializer 面归 M3。html5ever 0.29→0.39 升级
-（fragment CDATA 门正解、可移除预扫描）记候选架构片。
+**M2 已收口（2026-10-02 判定）**：DC-2 通道可执行面全绿 + DC-4 门禁实测齐
+（make test 68 suites + clippy/fmt + reftest **700/700 零不一致**）。残差全分类：
+P5 通道外 19 案（reftest/iframe/HTTP 头形态）+ html5lib 3 案（300s 复评 Timeout，
+document.write 测试生成管线面）+ serializer 面（DC-3/M3）。判定文档：
+[evidence/2026-10-02-m2-verdict.md](evidence/2026-10-02-m2-verdict.md)。挂账：
+bench-gate 复评（三轮窗口被兄弟流 clone 活跃测试污染，等让随下轮静窗）；
+html5ever 0.29→0.39 升级候选架构片。
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | html/syntax + html/dom corpus 导入 + 基线 | ✅ M1（2026-10-02，113 案 71.6%） |
-| P2 | 解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐 | 🔄 首簇 NCR 表 ✅（2231/2231）+ 片 a foreign ns ✅（foreign 4 案全绿）+ 片 b CDATA ✅（10/10）+ zero 读回 ✅（14/14）+ 片 c P5 characterSet ✅（quotes/meta 全绿）+ 片 d 生命周期 ✅（the-end 4/4 + DCL-defer 1/1，2026-10-02）——**通道可执行面全绿** |
+| P2 | 解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐 | ✅ **M2 收口（2026-10-02）**：五片落地（charref/foreign ns/CDATA/characterSet/生命周期），通道可执行面全绿 75.35%，DC-4 门禁实测齐（reftest 700/700）；残差分类记账（P5 通道外 19 案 + html5lib 管线面 3 案） |
 | P3 | 序列化边缘（XMLSerializer/HTML serializer） | ⏳ M3（escaping 0/9 + XML 面 0.9%） |
 | P4 | html/dom 接口语义 + createContextualFragment 补面 | ⏳ M3（reflection 74.7% 边缘簇 + elements 12.1% + render-blocking IDL 面） |
 | P5 | 文档级编码嗅探（encoding-compat M4 转入） | 🔄 testharness 通道可执行面首片 ✅（sniff→Document label→characterSet 管线，2026-10-02）；📊 通道外案面仍记账：charset/ 7 案（reftest 形态）+ xmldecl/ 3 案（iframe 形态）+ the-input-byte-stream 9 案（HTTP 头形态）= 19 案 testharness 通道外记账；encoding/ 域 bom-handling/eof-*/sniffing 案面（已在 wpt-data，encoding 通道按 document.characterSet 规则 skip）尚未基线，落地通道（reftest import / 通道扩展）随 M2+ 定 |
@@ -40,6 +43,9 @@ testharness 通道可执行面**全绿**。serializer 面归 M3。html5ever 0.29
 
 ## 已完成切片
 
+- **M2 收口（2026-10-02）**：DC-2 判定成立（可执行面全绿 75.35% + 残差全分类）；
+  DC-4 实测（reftest 700/700 零不一致补齐最后一块）；html5lib 300s 复评定性
+  document.write 管线面；bench 复评挂账（兄弟流活跃污染）。
 - **M2 片 d（2026-10-02）**：生命周期时序——runner 尾单 timer 任务严格序
   DCL→load→pageshow（DCL 异步入队 + bubbles；load/pageshow target=document 经
   `_zwTargetOverride` 四写点门控；pageshow whatwg#6794 语义 + PageTransitionEvent
@@ -65,8 +71,11 @@ testharness 通道可执行面**全绿**。serializer 面归 M3。html5ever 0.29
 
 ## 下一步计划
 
-1. **M2 收口**：① bench-gate 等让复评（兄弟流 clone 长测污染两窗挂账）+ html5lib
-   三案 ZW_CORPUS_CASE_TIMEOUT_SECS 预算复评——两评过后 M2 收口判定（通道可执行面
-   已全绿），进 M3（serializer 面 escaping 0/9 + XML 面 0.9% + P4 接口语义边缘）。
+1. **M3**：serializer 面逐簇修齐——首簇 escaping 0/9（HTML serializer 转义规则：
+   & < > nbsp 属性值引号），次簇 serializing-xml-fragments/outerHTML 1/112
+   （XMLSerializer 全域），再 P4 接口语义边缘（reflection 74.7% 缺项 +
+   elements/name-content-attribute 12.1% + aria 反射）。
+2. **挂账随行**：bench-gate 等让复评（静窗）；html5ever 0.39 升级评估；P5 通道外
+   19 案落地通道（reftest import 优先——charset/ 形态契合）。
 
 **待用户决策清单**：（空）
