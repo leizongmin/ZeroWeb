@@ -645,7 +645,8 @@ fn test_plain_parsed_get_attribute_node_s24() {
              an.value = 'sp2';\
              globalThis.__writeBack = sp.getAttribute('id') === 'sp2';\
              var xtn = sp.getAttributeNodeNS('http://www.w3.org/1999/xlink', 'title');\
-             globalThis.__nsOk = !!xtn && xtn.value === 'xt' && xtn.localName === 'title';\
+             globalThis.__nsLitMiss = xtn === null;\
+             globalThis.__nsNullFull = (function () { var a = sp.getAttributeNodeNS(null, 'xlink:title'); return !!a && a.value === 'xt' && a.localName === 'xlink:title' && a.prefix === null && a.namespaceURI === null; })();\
              globalThis.__nsMiss = sp.getAttributeNodeNS('http://www.w3.org/1999/xlink', 'other') === null;",
         )
         .unwrap();
@@ -669,13 +670,14 @@ fn test_plain_parsed_get_attribute_node_s24() {
         "true",
         "Attr.value 写回应经 setAttribute 传播到 attrs 数组（R122 setter 共享路径）"
     );
-    // 现状守卫（D5 登记）：__nsOk 冻结 R190 非 spec 前缀面行为——xml/xmlns/xlink 同源
-    // 映射 + 其余前缀按字面比较；严格 spec 面未绑定前缀查询应双 null。Chrome oracle
-    // 待下轮实测后再裁决是否翻转，裁决前不得单面擅改。
+    // slice26 翻转（原 D5 现状守卫——Chrome/154 oracle 裁决翻转，详见
+    // test_factory_attr_ns_gate_s26_flip）：HTML 解析字面 'xlink:title' 属性 ns=null、
+    // localName=整串——(xlink-ns,'title') 双 null；(null,'xlink:title') 按整串命中且
+    // Attr 字段 ns=null；他 local 查询仍 miss。
     assert_eq!(
-        sandbox.execute("String(globalThis.__nsOk + ':' + globalThis.__nsMiss)").unwrap().value,
-        "true:true",
-        "getAttributeNodeNS 按 (ns, local) 定位（xlink prefix→ns 映射，R190 同源）"
+        sandbox.execute("String(globalThis.__nsLitMiss + ':' + globalThis.__nsNullFull + ':' + globalThis.__nsMiss)").unwrap().value,
+        "true:true:true",
+        "getAttributeNodeNS 字面前缀名按 concept-attribute-namespace 字面对（ns=null、localName=整串；slice26 已翻转 R190 映射近似）"
     );
 }
 
@@ -943,7 +945,8 @@ fn test_plain_parsed_get_attribute_node_ns_no_prefix_null_s24_flip() {
              globalThis.__nsHtml = sp.getAttributeNodeNS('http://www.w3.org/1999/xhtml', 'id') === null;\
              sp.setAttribute('xlink:href', 'u');\
              var pf = sp.getAttributeNodeNS('http://www.w3.org/1999/xlink', 'href');\
-             globalThis.__pfHit = !!pf && pf.prefix === 'xlink' && pf.namespaceURI === 'http://www.w3.org/1999/xlink' && pf.localName === 'href' && pf.value === 'u';\
+             globalThis.__pfXlinkMiss = pf === null;\
+             globalThis.__pfNullFull = (function () { var a = sp.getAttributeNodeNS(null, 'xlink:href'); return !!a && a.value === 'u' && a.localName === 'xlink:href' && a.prefix === null && a.namespaceURI === null; })();\
              globalThis.__pfNullMiss = sp.getAttributeNodeNS(null, 'href') === null;\
              var px = document.createElement('div');\
              px.setAttribute('foo', 'bar');\
@@ -964,16 +967,17 @@ fn test_plain_parsed_get_attribute_node_ns_no_prefix_null_s24_flip() {
         "true",
         "getAttributeNodeNS(HTML-ns, 'id') 应返 null（spec concept-attribute-namespace 无前缀属性 ns=null——slice24 known-deviation F1 已翻转）"
     );
-    // 现状守卫（D5 登记）：__pfHit 冻结 R190 非 spec 前缀面行为（xlink 同源映射命中 +
-    // (null,'href') 不命中）；严格 spec 双 null 面与 Chrome oracle 对照待下轮实测，
-    // 裁决前不得单面擅改。
+    // slice26 翻转（原 D5 现状守卫——Chrome/154 oracle 裁决翻转，详见
+    // test_factory_attr_ns_gate_s26_flip）：字面 'xlink:href' 属性 ns=null、
+    // localName=整串——(xlink-ns,'href') 双 null；(null,'xlink:href') 按整串命中；
+    // (null,'href') 不命中（无短名属性）；proxy (null,'foo') 命中不受扰动。
     assert_eq!(
         sandbox
-            .execute("String(globalThis.__pfHit + ':' + globalThis.__pfNullMiss + ':' + globalThis.__selHit)")
+            .execute("String(globalThis.__pfXlinkMiss + ':' + globalThis.__pfNullFull + ':' + globalThis.__pfNullMiss + ':' + globalThis.__selHit)")
             .unwrap()
             .value,
-        "true:true:true",
-        "负控制：有前缀属性 (xlink-ns,'href') 命中不变且 (null,'href') 不命中（R190 prefix→ns 映射）；sel 世界 proxy (null,'foo') 命中不受翻转扰动"
+        "true:true:true:true",
+        "getAttributeNodeNS 字面前缀名四面（xlink-ns miss、null+整串 hit、null+短名 miss、sel 控制不变；slice26 已翻转 R190 映射近似）"
     );
 }
 
@@ -1041,5 +1045,270 @@ fn test_ua_display_li_list_item_canvas_inline_s24_flip() {
         sandbox.execute("globalThis.__ctrl").unwrap().value,
         "block:block",
         "负控制：div/ul 仍 block——block 集其余值不受翻转扰动"
+    );
+}
+
+// slice26 翻转钉（slice25 D 族 D1 残缺口）：_zwUaDisplay UA 默认表 hidden 组 + block
+// 补全——HTML 渲染 UA sheet（https://html.spec.whatwg.org/multipage/rendering.html#the-css-user-agent-style-sheet-and-presentational-hints
+// 15.3.1 hidden 列表 `…, head, …, script, style, template, title { display: none; }`；
+// 15.3.3 flow content 列表 `address, blockquote, center, …, legend, … { display: block; }`）。
+// Chrome/154 oracle（diag/evidence/slice26/chrome-oracle.json）：script/head/style/title
+// → 'none'、center/legend → 'block'。host 面（style-system ua_default_display）六值已
+// 对齐（script/style/title/head→None L101、center/legend→Block L72/74）——D4 双面义务
+// 无分叉，本翻转仅 JS 回落面。消费面：jQuery css_defaultDisplay 以非 'none'/非空判定
+// 跳过 iframe 兜底——none 组翻 none 后 .show() 入 iframe 分支为 Chrome 同款行为；活体
+// 可见轴由 baidu 首页锚 + sugrec 链（s24o-final TAG=fix26）回归钉住。无直接上游 WPT
+// 用例（shim 双世界 getComputedStyle 回落为 ZeroWeb 特有架构），补等价本地钉。
+#[test]
+fn test_ua_display_none_group_center_legend_s26_flip() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var tags = ['script','head','style','title','center','legend'];\
+             globalThis.__proxyD = tags.map(function (t) {\
+               var el = document.createElement(t);\
+               document.body.appendChild(el);\
+               return getComputedStyle(el).display;\
+             }).join(',');\
+             document.body.innerHTML = '<script></script><style></style><title></title><center></center><legend></legend><div></div><span></span>';\
+             var kids = document.body.childNodes;\
+             globalThis.__plainD = [];\
+             for (var i = 0; i < 7; i++) globalThis.__plainD.push(getComputedStyle(kids[i]).display);\
+             globalThis.__plainD = globalThis.__plainD.join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__proxyD").unwrap().value,
+        "none,none,none,none,block,block",
+        "proxy createElement 臂：script/head/style/title → 'none'（UA sheet 15.3.1 hidden 列表）、center/legend → 'block'（15.3.3 flow content）——D1 残缺口已翻转"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__plainD").unwrap().value,
+        "none,none,none,block,block,block,inline",
+        "plain innerHTML 臂同值（innerHTML 不产 <head>——解析器 body 上下文丢弃，head 由 proxy 臂覆盖）；负控制 div/span 不受扰动"
+    );
+}
+
+// slice26 翻转钉（slice25 D 族 D2 修复 + D5 前缀面 proxy 臂）：代理世界 NS 读族限定名
+// 兜底跨 ns 守卫——spec https://dom.spec.whatwg.org/#dom-element-getattributenodens
+// namespace 与 localName 双匹配；https://dom.spec.whatwg.org/#concept-attribute-namespace
+// 属性 ns 创建时定死。Chrome/154 oracle（diag/evidence/slice26/chrome-oracle.json）：
+// setAttribute('foo') 后 (xhtml-ns,'foo') → null；字面 'xlink:href'（setAttribute 产物，
+// local=整串、ns=null）查 (xlink-ns,'href') → null；setAttributeNS(xlink,'xlink:href')
+// 显式 ns 属性 (xlink-ns,'href') 命中面保持；(null,name) 无前缀命中面保持。
+#[test]
+fn test_proxy_ns_qname_fallback_cross_ns_s26_flip() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var el = document.createElement('div');\
+             document.body.appendChild(el);\
+             el.setAttribute('foo', 'bar');\
+             var hit = el.getAttributeNodeNS(null, 'foo');\
+             globalThis.__nullHit = !!hit && hit instanceof Attr && hit.value === 'bar' && hit.localName === 'foo' && hit.namespaceURI === null;\
+             globalThis.__gaNsNull = el.getAttributeNS(null, 'foo') === 'bar';\
+             globalThis.__gaNsXhtml = el.getAttributeNS('http://www.w3.org/1999/xhtml', 'foo') === null;\
+             globalThis.__ganXhtml = el.getAttributeNodeNS('http://www.w3.org/1999/xhtml', 'foo') === null;\
+             globalThis.__haNsXhtml = el.hasAttributeNS('http://www.w3.org/1999/xhtml', 'foo') === false;\
+             el.setAttribute('xlink:href', 'u');\
+             globalThis.__litXlinkMiss = el.getAttributeNodeNS('http://www.w3.org/1999/xlink', 'href') === null;\
+             globalThis.__litXlinkGaMiss = el.getAttributeNS('http://www.w3.org/1999/xlink', 'href') === null;\
+             globalThis.__litNullFull = (function () { var a = el.getAttributeNodeNS(null, 'xlink:href'); return !!a && a.value === 'u' && a.localName === 'xlink:href'; })();\
+             el.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', 'u2');\
+             var xh = el.getAttributeNodeNS('http://www.w3.org/1999/xlink', 'href');\
+             globalThis.__metaHit = !!xh && xh.value === 'u2' && xh.prefix === 'xlink' && xh.localName === 'href' && xh.namespaceURI === 'http://www.w3.org/1999/xlink';\
+             globalThis.__metaGaHit = el.getAttributeNS('http://www.w3.org/1999/xlink', 'href') === 'u2';\
+             el.removeAttributeNS('http://www.w3.org/1999/xhtml', 'foo');\
+             globalThis.__rmCrossNsKept = el.getAttribute('foo') === 'bar';\
+             el.removeAttributeNS(null, 'foo');\
+             globalThis.__rmNullNsRemoved = el.getAttribute('foo') === null;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nullHit + ':' + globalThis.__gaNsNull)").unwrap().value,
+        "true:true",
+        "(null,'foo') 无前缀命中面保持：gANNS 返 Attr 真实例（localName='foo'、ns=null）、gANS 命中"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__gaNsXhtml + ':' + globalThis.__ganXhtml + ':' + globalThis.__haNsXhtml)").unwrap().value,
+        "true:true:true",
+        "跨 ns miss 面（D2 翻转）：setAttribute('foo') 属性 ns=null，(xhtml-ns,'foo') 三读族（gANS/gANNS/hasAttributeNS）均不得命中——Chrome oracle 同面"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__litXlinkMiss + ':' + globalThis.__litXlinkGaMiss + ':' + globalThis.__litNullFull)").unwrap().value,
+        "true:true:true",
+        "字面前缀名（setAttribute('xlink:href')，local=整串、ns=null）：(xlink-ns,'href') 双读族 miss（D5 proxy 臂翻转）；(null,'xlink:href') 按整串 local 命中——Chrome oracle 同面"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__metaHit + ':' + globalThis.__metaGaHit)").unwrap().value,
+        "true:true",
+        "显式 ns 属性命中面保持：setAttributeNS(xlink,'xlink:href') 后 (xlink-ns,'href') gANNS 返全字段 Attr、gANS 命中（slice25 D5 守卫的正命中面不受守卫扰动）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rmCrossNsKept + ':' + globalThis.__rmNullNsRemoved)").unwrap().value,
+        "true:true",
+        "removeAttributeNS 跨 ns 守卫：(xhtml-ns,'foo') 删不掉 ns=null 的 'foo'；(null,'foo') 正常删除（spec removeattributens 缺失即 no-op）"
+    );
+}
+
+// slice26 翻转钉（slice25 D 族 D5 前缀面裁决翻转）：plain 工厂世界属性 NS 字面化——
+// spec https://dom.spec.whatwg.org/#concept-attribute-namespace 属性 ns 创建时定死。
+// Chrome/154 oracle（diag/evidence/slice26/chrome-oracle.json）：HTML span 解析
+// 'xlink:title' → name/localName 均 'xlink:title'、prefix/ns null，
+// getAttributeNodeNS(xlink-ns,'title') 双 null、(null,'xlink:title') 命中；
+// setAttribute('xlink:href')（任何元素）同理（setAttribute 不调前缀）。撤销无印记条目的
+// prefix→ns 映射后：匹配按字面整名（loc=整串、ans=null），NS 印记（entry.ns——R190
+// _r190FixNs 克隆权威）优先。slice25 两处 D5 现状守卫钉（__nsOk/__pfHit）随本翻转撤销。
+// 注：本世界 innerHTML 解析产物经快照扁平化——`xlink:href` 到达工厂时已是 'href'（上游
+// 前缀丢失，登记观察），故 adjust-foreign-attributes 的外来正命面（Chrome 解析 SVG use
+// → ns=xlink 命中）在本世界不可表达；proxy 世界 R190 derive 近似保留（D5 登记残余）。
+#[test]
+fn test_factory_attr_ns_gate_s26_flip() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var d = document.getElementById('body') || document.body;\
+             d.innerHTML = '<span id=\"sp\" xlink:title=\"xt\">t</span>';\
+             var sp = d.firstChild;\
+             globalThis.__xlinkMiss = sp.getAttributeNodeNS('http://www.w3.org/1999/xlink', 'title') === null;\
+             globalThis.__nullFullHit = (function () { var a = sp.getAttributeNodeNS(null, 'xlink:title'); return !!a && a.value === 'xt' && a.name === 'xlink:title' && a.localName === 'xlink:title' && a.prefix === null && a.namespaceURI === null; })();\
+             globalThis.__gaNullFull = sp.getAttributeNS(null, 'xlink:title') === 'xt';\
+             globalThis.__gaNullTailMiss = sp.getAttributeNS(null, 'title') === null;\
+             globalThis.__gaXlinkMiss = sp.getAttributeNS('http://www.w3.org/1999/xlink', 'title') === null;\
+             globalThis.__ctrlNullId = (function () { var a = sp.getAttributeNodeNS(null, 'id'); return !!a && a.value === 'sp'; })();\
+             globalThis.__ctrlXhtmlId = sp.getAttributeNodeNS('http://www.w3.org/1999/xhtml', 'id') === null;\
+             globalThis.__ctrlPlainLit = (function () { var a = sp.getAttributeNode('xlink:title'); return !!a && a.value === 'xt'; })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__xlinkMiss + ':' + globalThis.__nullFullHit)").unwrap().value,
+        "true:true",
+        "HTML span 解析 'xlink:title'：getAttributeNodeNS(xlink-ns,'title') 双 null（slice25 D5 现状守卫 __nsOk 已翻转）；(null,'xlink:title') 按整串 local 命中且 Attr 字段全 null ns——Chrome oracle 同面"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__gaNullFull + ':' + globalThis.__gaNullTailMiss + ':' + globalThis.__gaXlinkMiss)").unwrap().value,
+        "true:true:true",
+        "同工厂 getAttributeNS 门控一致化：(null,'xlink:title') 命中、(null,'title') 冒号尾误命中撤销、(xlink-ns,'title') miss"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ctrlNullId + ':' + globalThis.__ctrlXhtmlId)").unwrap().value,
+        "true:true",
+        "负控制：slice25 F1 翻转面不回退——(null,'id') 命中、(xhtml-ns,'id') null"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ctrlPlainLit)").unwrap().value,
+        "true",
+        "负控制：非 NS 读 getAttributeNode('xlink:title') 字面命中不受门控扰动（R116 字面族）"
+    );
+}
+
+// slice26 翻转钉（slice25 D 族 D3 NS-miss 兜底守卫）：detached body（createHTMLDocument
+// R132 覆写版）getAttributeNS/getAttributeNodeNS 的 NS 元数据 miss 不再回落 plain 限定名
+// 直查——spec https://dom.spec.whatwg.org/#dom-element-getattributenodens 双匹配；无前缀
+// 属性 ns 恒 null（concept-attribute-namespace）。Chrome/154 oracle（diag/evidence/
+// slice26/chrome-oracle.json）：setAttribute('foo') 后 (xhtml-ns,'foo') → null、(null,'foo')
+// → 命中；setAttributeNS(xhtml-ns,'baz') 后 (null,'baz') → null、(xhtml-ns,'baz') → 命中。
+// part20 detached body R132 显式 NS 元数据路径不受影响（元数据命中面正控制）。
+#[test]
+fn test_detached_body_ns_fallback_s26_flip() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var b = document.implementation.createHTMLDocument('t').body;\
+             b.setAttribute('foo', 'bar');\
+             globalThis.__gaNull = b.getAttributeNS(null, 'foo') === 'bar';\
+             globalThis.__gaXhtml = b.getAttributeNS('http://www.w3.org/1999/xhtml', 'foo') === null;\
+             var fn0 = b.getAttributeNodeNS(null, 'foo');\
+             globalThis.__ganNull = !!fn0 && fn0.value === 'bar';\
+             globalThis.__ganXhtml = b.getAttributeNodeNS('http://www.w3.org/1999/xhtml', 'foo') === null;\
+             b.setAttributeNS('http://www.w3.org/1999/xhtml', 'baz', 'q');\
+             globalThis.__metaGa = b.getAttributeNS('http://www.w3.org/1999/xhtml', 'baz') === 'q';\
+             globalThis.__metaGan = b.getAttributeNodeNS('http://www.w3.org/1999/xhtml', 'baz') !== null;\
+             globalThis.__metaCrossNull = b.getAttributeNS(null, 'baz') === null && b.getAttributeNodeNS(null, 'baz') === null;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__gaNull + ':' + globalThis.__ganNull)").unwrap().value,
+        "true:true",
+        "(null,'foo') 命中面保持：无前缀属性（setAttribute 产物）ns=null，gANS 命中、gANNS 返 Attr"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__gaXhtml + ':' + globalThis.__ganXhtml)").unwrap().value,
+        "true:true",
+        "跨 ns miss 面（D3 翻转）：NS 元数据 miss 后不回落 plain 直查——(xhtml-ns,'foo') 双读族 null（Chrome oracle 同面）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__metaGa + ':' + globalThis.__metaGan)").unwrap().value,
+        "true:true",
+        "正控制：setAttributeNS(xhtml-ns,'baz') 显式 NS 元数据路径命中不变（part20 detached body 面不受翻转扰动）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__metaCrossNull)").unwrap().value,
+        "true",
+        "反向跨 ns miss（D3 翻转）：显式 ns 属性 (xhtml-ns,'baz') 不得被 (null,'baz') 误命中"
     );
 }
