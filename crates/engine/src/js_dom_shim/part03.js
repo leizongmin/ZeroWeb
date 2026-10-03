@@ -9216,25 +9216,30 @@
     node.getAttributeNodeNS = function (ns, local) {
       var _gnNs = (ns == null || ns === '') ? null : String(ns);
       var _gnL = String(local == null ? '' : local).toLowerCase();
+      // slice26（slice25 D5 前缀面裁决翻转，Chrome/154 oracle 2026-10-03）：撤销无印记
+      // 条目的 prefix→ns 映射。spec https://dom.spec.whatwg.org/#concept-attribute-namespace
+      // 属性 ns 创建时定死——Chrome 实测：HTML 内容解析 `xlink:title` 是整串 local、
+      // ns=null（text/html 只对外来内容调 adjust-foreign-attributes，
+      // https://html.spec.whatwg.org/multipage/parsing.html#adjust-foreign-attributes ）；
+      // setAttribute('xlink:href')（任何元素）亦整串 local、ns=null（setAttribute 不调
+      // 前缀）。旧无门控映射使 HTML 元素解析属性误得 ns=xlink（slice25 part32 两处 D5
+      // 现状守卫钉 __nsOk/__pfHit 随本翻转撤销）。本世界解析产物带前缀属性本就丢失前缀
+      // 归 local（快照扁平化），冒号名只剩 setAttribute/setAttributeNS 字面产物——统一
+      // 字面对（loc=整串、ans=null）。克隆/解析写入的 NS 印记（entry.ns —— R190
+      // _r190FixNs）是权威，优先于名字字面。
       for (var i = 0; i < attrs.length; i++) {
         var nm = String(attrs[i].name);
         var loc = nm, pre = null, ans = null;
-        var ci = nm.indexOf(':');
-        if (ci > 0) {
-          pre = nm.slice(0, ci); loc = nm.slice(ci + 1);
-          // R190 同源 prefix→ns 映射（xml/xmlns/xlink）；其余前缀按字面比较。
-          ans = { xmlns: 'http://www.w3.org/2000/xmlns/', xlink: 'http://www.w3.org/1999/xlink', xml: 'http://www.w3.org/XML/1998/namespace' }[pre] || null;
+        if (attrs[i] && attrs[i].ns !== undefined) {
+          ans = attrs[i].ns != null ? String(attrs[i].ns) : null;
+          pre = attrs[i].prefix != null ? String(attrs[i].prefix) : null;
+          loc = attrs[i].local != null ? String(attrs[i].local) : nm;
         }
-        // else：无前缀属性 namespace 恒 null，不随元素 ns——spec
-        // https://dom.spec.whatwg.org/#concept-attribute-namespace （属性 ns 在创建时
-        // 定死，HTML 解析产物无前缀属性 ns=null；getAttributeNodeNS(HTML-ns, name)
-        // 不得命中）。slice25 翻转 slice24 known-deviation F1 的「无前缀属性 ∈ 元素 ns」
-        // 分支，与同工厂 getAttributeNS 的 _zwMNsMatch（entry.ns 缺省 null）语义对齐。
-        if (loc.toLowerCase() === _gnL && ans === _gnNs) {
+        if (String(loc).toLowerCase() === _gnL && ans === _gnNs) {
           var _ga = _zwMakeAttr(nm, attrs[i].value, node);
           // spec dom-attr：localName 是冒号后的 local 部分、prefix 是冒号前段
-          //（_zwMakeAttr 缺省整名入 localName——plain 路径在此补齐，与 R190
-          // proxy 路径 _zwDeriveAttrNS 的拆分语义一致）。
+          //（_zwMakeAttr 缺省整名入 localName——印记条目在此补齐；无印记字面产物
+          // localName=整串与 Chrome 一致）。
           if (pre != null) { _ga.prefix = pre; _ga.localName = loc; _ga.namespaceURI = ans; }
           return _ga;
         }
@@ -10256,13 +10261,20 @@
     // name)` 记账（upgrade 初始 attributeChanged 面的每一案），_zwMEl 缺方法 → TypeError
     // 被派发侧吞 → 日志缺 attributeChanged（got [constructed, connected] 根因）。NS 匹配
     // 按 (ns, local)（entry.ns 缺省 null；local = 限定名冒号后段，HTML 形态恒无名前缀）。
-    var _zwMNsLocal = function (name) {
-      var c = String(name).indexOf(':');
-      return c >= 0 ? String(name).slice(c + 1) : String(name);
-    };
+    // slice26（slice25 D5 前缀面同裁决，Chrome/154 oracle 2026-10-03）：NS 匹配①印记
+    // 条目（entry.ns —— R190 克隆/解析权威）直接用；②无印记条目按**字面整名**匹配
+    //（ns=null）——Chrome 实测：HTML 解析 `xlink:title` 与 setAttribute('xlink:href')
+    // 产物的 localName 均为整串、ns=null，getAttributeNS(null,'xlink:title') 命中、
+    // (xlink-ns,'title') 双 null；旧 _zwMNsLocal 冒号拆分使 (null,'title') 误命中、
+    // (null,'xlink:title') 误 miss。与同工厂 getAttributeNodeNS 字面面一致化。
     var _zwMNsMatch = function (entry, ns, local) {
-      var eNs = entry && entry.ns != null ? String(entry.ns) : null;
-      return eNs === (ns == null || ns === '' ? null : String(ns)) && _zwMNsLocal(entry.name) === String(local);
+      var q = ns == null || ns === '' ? null : String(ns);
+      var nm = String(entry && entry.name != null ? entry.name : '');
+      if (entry && entry.ns !== undefined) {
+        return (entry.ns != null ? String(entry.ns) : null) === q
+          && String(entry.local != null ? entry.local : nm) === String(local);
+      }
+      return null === q && nm === String(local);
     };
     node.getAttributeNS = function (ns, local) {
       for (var i = 0; i < attrs.length; i++) {
@@ -12529,7 +12541,18 @@
             return _tree.getAttribute(gk);
           }
         }
-        return _tree.getAttribute(String(local));
+        // slice26（slice25 D3 NS-miss 兜底守卫，Chrome/154 oracle 2026-10-03）：NS 元数据
+        // miss 后的 plain 限定名直查仅限——① 该限定名无显式 NS 元数据（有则说明其 ns 与
+        // 查询失配，上方循环已按 ns 比对未中）；② 查询 ns===null（无前缀属性 ns 恒 null，
+        // spec https://dom.spec.whatwg.org/#concept-attribute-namespace 双匹配）。旧
+        // 「miss 再按 local 直查」近似使 (xhtml-ns,'foo') 误中 plain 属性、(null,'baz')
+        // 误中 setAttributeNS(xhtml-ns,'baz') 属性（Chrome 实测双双 null）。
+        var _s26fqn = String(local);
+        if (Object.prototype.hasOwnProperty.call(_r132BodyAttrNS, _s26fqn)) return null;
+        var _s26fv = _tree.getAttribute(_s26fqn);
+        if (_s26fv === null || _s26fv === undefined) return null;
+        if (String(ns == null ? '' : ns) !== '') return null;
+        return _s26fv;
       },
       hasAttribute: function (n) { ensureTree(); return _tree.hasAttribute(String(n)); },
       removeAttribute: function (n) { ensureTree(); _tree.removeAttribute(String(n)); },
@@ -12551,9 +12574,19 @@
           }
         }
         if (qn === null) {
-          // NS miss 再按 local 直查限定名（与 proxy NS 读同源的 first-match 近似）
-          var v0 = _tree.getAttribute(String(local));
-          return v0 === null || v0 === undefined ? null : _zwMakeAttr(String(local), v0, body);
+          // slice26（slice25 D3 NS-miss 兜底守卫，Chrome/154 oracle 2026-10-03）：NS 元数据
+          // miss 后不再「按 local 直查限定名」近似——① 该限定名带显式 NS 元数据则其 ns 与
+          // 查询失配（上方循环已按 (ns,local) 比对未中）→ null；② 无元数据条目为无前缀
+          // 属性（ns 恒 null），仅查询 ns===null 时命中（spec
+          // https://dom.spec.whatwg.org/#dom-element-getattributenodens —— namespace 与
+          // localName 双匹配；Chrome 实测 (xhtml-ns,'foo') 查 plain 属性 → null、
+          // (null,'foo') → Attr）。
+          var _s26fqn = String(local);
+          if (Object.prototype.hasOwnProperty.call(_r132BodyAttrNS, _s26fqn)) return null;
+          var v0 = _tree.getAttribute(_s26fqn);
+          if (v0 === null || v0 === undefined) return null;
+          if (String(ns == null ? '' : ns) !== '') return null;
+          return _zwMakeAttr(_s26fqn, v0, body);
         }
         var v = _tree.getAttribute(qn);
         if (v === null || v === undefined) return null;
@@ -14730,6 +14763,22 @@ return e;
     a.isSameNode = function (other) { return other === a; };
     return a;
   }
+  // slice26：元素 ns 解析提为共享 helper——R190 派生与 part04 NS 读族限定名兜底的
+  // 有效 ns 判定（D2 守卫）共此一路（原先内联在 _zwDeriveAttrNS，提全局避免双份漂移）。
+  // handle 元素读 _nsHandles 印记；sel 元素沿祖先链找首个非 HTML ns（svg/math 子继承根 ns）。
+  globalThis._zwElementNsFor = function (sel, handle) {
+    var elNs = handle && _nsHandles[handle] ? _nsHandles[handle].namespace : null;
+    if (elNs == null && typeof __zw_get_ns === 'function' && typeof _ancestorChain === 'function') {
+      if (sel) {
+        var chain = _ancestorChain(sel);
+        for (var i = 0; i < chain.length; i++) {
+          var gn = String(__zw_get_ns(chain[i]) || '');
+          if (gn && gn !== 'http://www.w3.org/1999/xhtml') { elNs = gn; break; }
+        }
+      }
+    }
+    return elNs;
+  };
   // R190（js-dom M4）：解析产物带前缀属性的 NS 字段推导（共享 helper——attributesProxy
   // 的 attrObj 与 getAttributeNodeNS 的 fallback 构造两处消费）。已知 prefix 映射 +
   // 「元素自身或祖先链非 HTML ns」判定（svg/math 子继承根 ns；HTML 元素的 "xml:lang"
@@ -14743,17 +14792,7 @@ return e;
       var _r190Pre = _r190q.slice(0, _r190Colon);
       var _r190NsByPre = { xmlns: 'http://www.w3.org/2000/xmlns/', xlink: 'http://www.w3.org/1999/xlink', xml: 'http://www.w3.org/XML/1998/namespace' }[_r190Pre];
       if (!_r190NsByPre) return attr;
-      var _r190ElNs = handle && _nsHandles[handle] ? _nsHandles[handle].namespace : null;
-      if (_r190ElNs == null && typeof __zw_get_ns === 'function' && typeof _ancestorChain === 'function') {
-        var _r190ChainSel = sel;
-        if (_r190ChainSel) {
-          var _r190Chain = _ancestorChain(_r190ChainSel);
-          for (var _r190ci = 0; _r190ci < _r190Chain.length; _r190ci++) {
-            var _r190Gn = String(__zw_get_ns(_r190Chain[_r190ci]) || '');
-            if (_r190Gn && _r190Gn !== 'http://www.w3.org/1999/xhtml') { _r190ElNs = _r190Gn; break; }
-          }
-        }
-      }
+      var _r190ElNs = globalThis._zwElementNsFor(sel, handle);
       if (_r190ElNs == null || _r190ElNs === 'http://www.w3.org/1999/xhtml') return attr;
       attr.prefix = _r190Pre;
       attr.localName = _r190q.slice(_r190Colon + 1);

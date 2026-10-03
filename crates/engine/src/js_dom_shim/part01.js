@@ -5080,7 +5080,16 @@
       // 回落 display 初始值 'inline'）。jQuery css_defaultDisplay 消费面：'list-item'/
       // 'inline' 均非 'none'/非空串，不触发 iframe 兜底（slice24 修复回归面不受扰）。
       if (tag === 'li') return 'list-item';
-      var block = { address: 1, article: 1, aside: 1, blockquote: 1, dd: 1, details: 1, dialog: 1, div: 1, dl: 1, dt: 1, fieldset: 1, figcaption: 1, figure: 1, footer: 1, form: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1, header: 1, hgroup: 1, hr: 1, main: 1, menu: 1, nav: 1, ol: 1, option: 1, p: 1, pre: 1, section: 1, summary: 1, table: 1, ul: 1 };
+      // slice26 翻转 slice25 D 族 D1 残缺口：hidden 元素组 → 'none'（同 UA sheet 15.3.1
+      // hidden 列表——`…, head, …, script, style, template, title { display: none; }`；
+      // Chrome/154 oracle 六值实测在案 diag/evidence/slice26/）。消费面：jQuery 1.x
+      // css_defaultDisplay 以非 'none'/非空判定跳过 iframe 兜底——本组翻 none 后对
+      // script/head/style/title 调 .show() 会入 iframe 分支（Chrome 同款分支；活体可见轴
+      // 回归由 baidu 首页锚 + sugrec 链 fix26 轮验证钉住）。
+      if (tag === 'script' || tag === 'head' || tag === 'style' || tag === 'title') return 'none';
+      // slice26：center/legend 补入 block 集（同 UA sheet 15.3.3 flow content 列表——
+      // `address, blockquote, center, …, legend, … { display: block; }`；老式布局页消费面）。
+      var block = { address: 1, article: 1, aside: 1, blockquote: 1, center: 1, dd: 1, details: 1, dialog: 1, div: 1, dl: 1, dt: 1, fieldset: 1, figcaption: 1, figure: 1, footer: 1, form: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1, header: 1, hgroup: 1, hr: 1, legend: 1, main: 1, menu: 1, nav: 1, ol: 1, option: 1, p: 1, pre: 1, section: 1, summary: 1, table: 1, ul: 1 };
       var ib = { button: 1, input: 1, select: 1, textarea: 1 };
       if (block[tag]) return 'block';
       if (ib[tag]) return 'inline-block';

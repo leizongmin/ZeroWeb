@@ -2609,6 +2609,35 @@ return _tplContent;
           }
           return _nsQualName(ns, localName);
         };
+        // slice26（D2/D5 同族守卫，Chrome/154 oracle 2026-10-03）：限定名兜底命中的属性
+        // 有效 ns——_attrNSMeta 显式登记（setAttributeNS）优先；无登记时保留前缀仅在
+        // **非 HTML ns 元素**上派生 ns（text/html 解析 adjust-foreign-attributes 同源——
+        // https://html.spec.whatwg.org/multipage/parsing.html#adjust-foreign-attributes ），
+        // HTML ns 元素上带前缀字面名属性 ns=null（属性 ns 创建时定死——
+        // https://dom.spec.whatwg.org/#concept-attribute-namespace ）。getAttributeNodeNS /
+        // getAttributeNS / hasAttributeNS / removeAttributeNS 的兜底命中须与查询 ns 全等
+        //（spec https://dom.spec.whatwg.org/#dom-element-getattributenodens ——namespace 与
+        // localName 双匹配；跨 ns 不得误命中/误删）。
+        var _s26QNameEffNs = function (qname) {
+          try {
+            var qn = String(qname);
+            var metaMap = _attrNSMeta[key];
+            if (metaMap && Object.prototype.hasOwnProperty.call(metaMap, qn)
+                && metaMap[qn] && metaMap[qn].ns !== undefined) {
+              return metaMap[qn].ns != null ? String(metaMap[qn].ns) : null;
+            }
+            var ci = qn.indexOf(':');
+            if (ci > 0) {
+              var mapped = { xmlns: 'http://www.w3.org/2000/xmlns/', xlink: 'http://www.w3.org/1999/xlink', xml: 'http://www.w3.org/XML/1998/namespace' }[qn.slice(0, ci)] || null;
+              if (mapped) {
+                var elNs = (typeof globalThis._zwElementNsFor === 'function')
+                  ? globalThis._zwElementNsFor(sel, handle) : null;
+                if (elNs != null && elNs !== 'http://www.w3.org/1999/xhtml') return mapped;
+              }
+            }
+            return null;
+          } catch (_eEff26) { return null; }
+        };
         if (prop === 'getAttribute') {
           return function(name) {
             var n = _r116AttrName(name); // R116：HTML 文档小写（非 NS 读；非 HTML ns 元素原样）
@@ -2694,6 +2723,11 @@ return _tplContent;
               ? __zw_has_attr_handle(handle, _gn122qn)
               : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, _gn122qn) : __zw_has_attr(sel, _gn122qn))) === '1';
             if (!_gn122present2 && (_gn122v2 === '' || _gn122v2 == null)) return null;
+            // slice26（D2 修复）：限定名兜底命中须 (有效 ns === 查询 ns)——跨 ns 失配返
+            // null 不构造 Attr（Chrome/154 oracle：setAttribute('foo') 后 (xhtml-ns,'foo')
+            // → null、字面 'xlink:href' 查 (xlink-ns,'href') → null；SVG 元素解析
+            // xlink:href 查 (xlink-ns,'href') 命中面经 _zwElementNsFor 派生保持）。
+            if (_s26QNameEffNs(_gn122qn) !== _gn122Ns) return null;
             return attrObjByIdx(-1, _gn122qn, _gn122v2);
             // attrObjByIdx：readNames 第 idx 项（idx<0 时按名建）；onlyInst 标记跳过索引映射
             // 直接按 qname（实例位置与 readNames 展开序一致——实例段在前）。
@@ -3238,6 +3272,9 @@ return _tplContent;
               if (_r122HasLocal) return null;
             }
             var n = _r116NsQName(ns, localName);
+            // slice26（D2 同族守卫）：兜底限定名有效 ns 与查询 ns 失配 → miss（不读 host；
+            // spec getAttributeNS 同双匹配面）。
+            if (_s26QNameEffNs(n) !== (ns == null || ns === '' ? null : String(ns))) return null;
             var v = handle ? __zw_get_attr_handle(handle, n)
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, n) : __zw_get_attr(sel, n));
             if (v !== '') return v;
@@ -3266,6 +3303,8 @@ return _tplContent;
               if (_r122HasLocalH) return false;
             }
             var n = _r116NsQName(ns, localName);
+            // slice26（D2 同族守卫）：兜底限定名有效 ns 与查询 ns 失配 → false。
+            if (_s26QNameEffNs(n) !== (ns == null || ns === '' ? null : String(ns))) return false;
             if (handle && typeof __zw_has_attr_handle === 'function') {
               try { return __zw_has_attr_handle(handle, n) === '1'; } catch (_e) { return false; }
             }
@@ -3306,6 +3345,10 @@ return _tplContent;
             } catch (_eRN122) {}
             _zwAttrInstRemoveNS(key, ns === '' ? null : ns, local);
             var qname = _r116NsQName(_ns, localName) || _nsQualName(ns, local);
+            // slice26（D2 同族守卫）：兜底限定名有效 ns 与查询失配 → 该 ns 下属性不存在，
+            // 不删 host 条目、不发 record/CE 回调（spec
+            // https://dom.spec.whatwg.org/#dom-element-removeattributens 缺失即 no-op）。
+            if (_s26QNameEffNs(qname) !== ns) return undefined;
             var _nsMoId2 = _mo_id(handle, sel);
             var _nsExisted = false;
             try {
