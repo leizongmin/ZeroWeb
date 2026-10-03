@@ -992,6 +992,35 @@
               walk(this);
               return out;
             },
+            // R5009 片 e（M4 片 e）：querySelectorAll（ParentNode 面补遗——WPT
+            // fragment-parse-form-in-template 'template.content.querySelectorAll'
+            // 曾 "not a function"；同款简单选择器 DFS，树序收集）。
+            querySelectorAll: function (q) {
+              var out = [];
+              var _qsaM = /^([a-zA-Z][a-zA-Z0-9-]*|\*|#([\w-]+)|\.([\w-]+))$/.exec(String(q == null ? '' : q).trim());
+              if (!_qsaM) return out;
+              (function dfsQsa(node) {
+                var kids = node.childNodes || [];
+                for (var i = 0; i < kids.length; i++) {
+                  var k = kids[i];
+                  if (!k || k.nodeType !== 1) continue;
+                  var ok = false;
+                  if (_qsaM[1] === '*') ok = true;
+                  else if (_qsaM[2]) { try { ok = String(k.id || (k.getAttribute && k.getAttribute('id')) || '') === _qsaM[2]; } catch (_eQsaI) {} }
+                  else if (_qsaM[3]) {
+                    try {
+                      var clsQ = String((k.getAttribute && (k.getAttribute('class') != null ? k.getAttribute('class') : k.className)) || '');
+                      ok = clsQ.split(/\s+/).indexOf(_qsaM[3]) >= 0;
+                    } catch (_eQsaC) {}
+                  } else {
+                    ok = String(k.tagName || '').toLowerCase() === String(_qsaM[1]).toLowerCase();
+                  }
+                  if (ok) out.push(k);
+                  dfsQsa(k);
+                }
+              })(_tplContent);
+              return out;
+            },
           // WC-M1 切片 3（spec custom-element-reactions + the-template-element）：
             // content 视图的 mutation 面（document_types helper 的「the document of
             // the template elements」→ `content.ownerDocument` 树 appendChild——

@@ -530,7 +530,11 @@
             // R5009 片 e（M4 片 b）：> maxInt → 0（WPT reflection-embedded
             // 'img.width IDL set to 2147483648' getAttribute 期望 "0" 实证）。
             if (!isNaN(pv) && pv > 2147483647) pv = 0;
-            return (isNaN(pv) || pv < 0) ? 0 : pv;
+            if (isNaN(pv) || pv < 0) return 0;
+            // R5009 片 e（M4 片 e）："-0" → +0（缓存存 -0 供 getter 读回 -0——
+            // WPT reflection-embedded 'video.width IDL set "-0"' 期望 0）。
+            if (pv === 0) pv = 0;
+            return pv;
           })();
           var wrc = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
           wrc[p] = wv;
