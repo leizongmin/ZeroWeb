@@ -1,9 +1,26 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M4 片 d——reflection 混合尾簇系统面 99.78%）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M4 片 e——ARIA Element 反射特性片 99.86%）
 
 ## 当前状态
+
+**M4 片 e 已落地（2026-10-07）**：ARIA Element 反射特性片 + 尾簇扫尾（+48
+passes）：`_ZW_ARIA_EL_ATTRS` 8 属性（activedescendant 单元素 + 7 FrozenArray
+面）——树链有效性 walker（shadow host 跳跃/分离文档 ownerDocument 区分）、
+树内 id DFS 解析（proxy 同步视图修复 host 索引同 turn stale）、显式引用存储
+（removeAttribute 解除/setAttribute 覆盖/attr 空串面）、FrozenArray 身份缓存、
+TypeError 面、sel 子挂 handle 容器同步父记录（`_zwAriaSyncParent`）；
+aria-element-reflection 23F→3F + disconnected 2F→0 + aria-attribute-reflection
+21F→0（role/aria nullable getter 面——set-then-remove 标记）+ historical 2F
+（applets 空集合/computed float 'none'）+ fragment-parse-form-in-template 1F
+（input.form TEMPLATE 祖先门）。全通道 **61216/61304 = 99.86%**（片 d 收尾
+99.78%，+48），M1 基线逐案 **0 回归**；DC-4 实测全绿（test 68 suites / fmt /
+clippy / reftest 704/704）。残差 88F：aria-element 2F（同 turn sel 移树 host
+视图 stale——引擎 async-apply 架构缝）、render-blocking 行为 ~13F（管线集成
+挂账）、document.all 1F、M2 残差（math-parse/svg-script/html5lib/
+ambiguous-ampersand）。证据：
+[evidence/2026-10-07-m4e-aria-element.md](evidence/2026-10-07-m4e-aria-element.md)。
 
 **M4 片 d 已落地（2026-10-07）**：reflection 混合尾簇**系统面**修齐（+1381
 passes）：值 getter 遮蔽门（part03 通用 dirty-cache value getter 撤出 BUTTON/LI/
@@ -134,6 +151,10 @@ html5lib 3 案 document.write 管线面）。证据：
 
 ## 已完成切片
 
+- **M4 片 e（2026-10-07）**：ARIA Element 反射特性片（8 属性表/树链有效性/
+  树内 id 解析/显式引用/FrozenArray 缓存）+ aria nullable getter 面 + 尾簇
+  （applets/cssFloat/template form 门）；99.86%（+48），0 回归；DC-4 全绿。
+  证据 evidence/2026-10-07-m4e-aria-element.md。
 - **M4 片 d（2026-10-07）**：reflection 混合尾簇系统面——值 getter 遮蔽门 +
   standalone canvas 三修 + 枚举 ASCII 面 + URL/串表调 + name tag 门 +
   数值 limited/fallback 面 + forms 尾；99.78%（+1381），0 回归；DC-4 全绿
@@ -205,11 +226,10 @@ html5lib 3 案 document.write 管线面）。证据：
 
 ## 下一步计划
 
-1. **M4 片 e（下一片）**：ARIA Element 反射特性片（aria-element-reflection 25F
-   ——ariaActiveDescendantElement 等 ID→Element 解析 + shadow 树规则）；尾簇
-   扫尾（historical document.all applet/cssFloat 2F、fragment-parse-form-in-template
-   1F）；render-blocking 行为面与渲染管线集成评估（缺口清单 P-render-blocking，
-   ~18F，随碰头定）。
+1. **M4 收口评估（下一片）**：残差 88F 全分类记账后评估 DC-2/DC-3 判定与 M4
+   收口（通道可执行面 99.86%）；可选深项——同 turn sel 移树同步视图（引擎
+   async-apply 架构缝，aria-element 2F + 潜在收益面）、render-blocking 管线
+   集成（~13F，随碰头定）、document.all exotic 对象（1F）。
 2. **挂账随行**：bench-gate 等让复评（静窗）；html5ever 0.39 升级评估（顺带静态
    template noscript 解析面）；P5 通道外 19 案落地通道（reftest import 优先）；
    读一致性架构片余量（`__zw_child_nodes` live-aware——ambiguous-ampersand

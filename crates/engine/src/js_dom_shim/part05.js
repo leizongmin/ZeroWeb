@@ -4856,6 +4856,14 @@
   // 记录 child 进容器 parent 的 registry。child 为 fragment 时 flatten 其 registry 子节点（并清空
   // child registry，spec：fragment append 后清空）。仅 handle-based child 可记录。
   function _recordHandleChild(parentHandle, child) {
+    // R5009 片 e（M4 片 e）：sel-based 子同步父记录（须先于 handle 早退——sel 子
+    // 挂 shadow/handle 容器同 turn 内 ARIA 树链 walker 的 parentNode 视图 stale，
+    // 见 part01 `_zwAriaSyncParent`）。
+    try {
+      if (parentHandle && child && child.__zwSelector && typeof _zwAriaSyncParent !== 'undefined') {
+        _zwAriaSyncParent[String(child.__zwSelector)] = { parentSel: null, parentHandle: parentHandle };
+      }
+    } catch (_e91sel) {}
     if (!parentHandle || !child || !child.__zwHandle) return;
     // R315（js-dom M4）：**消零后重挂的 identity 归一**——R52 消零语义清了
     // `_proxyCache['@h']`（GR3 泄漏修复，假设「节点已消零不会再被访问」），但节点

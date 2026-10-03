@@ -702,6 +702,147 @@
     if (prop !== 'name') return null;
     return _REFLECTED_NAME_TAGS.indexOf(' ' + String(tag || '').toLowerCase() + ' ') >= 0 ? 'name' : null;
   }
+  // R5009 片 e（M4 片 e）：ARIA **Element 反射**（ARIAMixin element 反射——WPT
+  // aria-element-reflection/disconnected）。IDL 名 → 内容属性名 + 形态（single /
+  // list）。注意：`ariaErrorMessageElement`（单数）spec **不存在**（WPT `'aria-
+  // ErrorMessageElement' in el` 期望 false）——严禁入表。
+  var _ZW_ARIA_EL_ATTRS = {
+    ariaActiveDescendantElement: { attr: 'aria-activedescendant', single: 1 },
+    ariaControlsElements: { attr: 'aria-controls' },
+    ariaDescribedByElements: { attr: 'aria-describedby' },
+    ariaDetailsElements: { attr: 'aria-details' },
+    ariaFlowToElements: { attr: 'aria-flowto' },
+    ariaLabelledByElements: { attr: 'aria-labelledby' },
+    ariaOwnsElements: { attr: 'aria-owns' },
+    ariaErrorMessageElements: { attr: 'aria-errormessage' },
+  };
+  // 显式引用存储（IDL set——key → attr → { single: proxy, list: [proxy] }）；
+  // removeAttribute(attr) 清除（spec：内容属性移除即解除关联），setAttribute 不清。
+  var _zwAriaElExplicit = {};
+  // FrozenArray 身份缓存（spec caching invariant——同态重读须返回**同一数组对象**；
+  // 签名 = 结果键集 + 来源 + attr 串 + 自身树根——树迁移/attr 变更即失配换新）。
+  var _zwAriaElCache = {};
+  // 非主文档对象 → 树身份 id（WeakMap——分离文档跨文档引用面）。
+  var _zwAriaDocIds = new WeakMap();
+  // 节点所属**树链**（内树 → 外根；树身份：'doc' 主文档 / 'sh:<handle>' shadow 树 /
+  // 'frag:<handle>' 分离 fragment / 'h:<handle>' 分离元素根 / 'sel:<sel>' 其他）。
+  // spec 有效性：E 对 A 有效 ⟺ T_E ∈ C_A（同树或 E 在 A 的 shadow-including 祖先树
+  // ——跨入更深 shadow / 跨文档 / 分离异树均无效；同分离树仍有效）。
+  function _zwAriaTreeChain(proxy) {
+    var chain = [];
+    var cur = proxy;
+    var hops = 0;
+    while (cur && hops++ < 64) {
+      var h = cur.__zwHandle;
+      if (h && typeof _shadowHandles !== 'undefined' && _shadowHandles[h]) {
+        chain.push('sh:' + h);
+        var meta = (typeof _shadowHandleMeta !== 'undefined') ? _shadowHandleMeta[h] : null;
+        if (meta && meta.hostHandle) cur = _wrapHandle(meta.hostHandle);
+        else if (meta && meta.hostSel) cur = _wrapSelector(meta.hostSel);
+        else break;
+        continue;
+      }
+      var par = null;
+      // R5009 片 e：同步父记录优先（sel 子挂 handle/shadow 容器——parentNode 的
+      // host 视图在 mutation apply 前 stale，见 `_zwAriaSyncParent`）。
+      try {
+        var _aspKey = cur.__zwSelector || null;
+        var _asp = _aspKey ? _zwAriaSyncParent[String(_aspKey)] : null;
+        if (_asp) {
+          if (_asp.parentHandle) par = _wrapHandle(_asp.parentHandle);
+          else if (_asp.parentSel) par = _wrapSelector(_asp.parentSel);
+        }
+      } catch (_eAsp) {}
+      if (!par) {
+        try { par = cur.parentNode; } catch (_eAc) { par = null; }
+      }
+      if (!par) {
+        if (h) {
+          if (typeof _fragmentHandles !== 'undefined' && _fragmentHandles[h] && !(typeof _shadowHandles !== 'undefined' && _shadowHandles[h])) {
+            chain.push('frag:' + h);
+          } else {
+            chain.push('h:' + h);
+          }
+        } else {
+          var s = String(cur);
+          // R5009 片 e：'html' 根需区分主文档与 implementation.createHTMLDocument 的
+          // 分离文档根（ownerDocument 身份——跨文档引用无效性依赖树身份区分，WPT
+          // 'Cross-document references and moves'；分离文档元素 ownerDocument 返
+          // 分离文档对象）。
+          if (s === 'html') {
+            var _aeDoc = null;
+            try { _aeDoc = cur.ownerDocument; } catch (_eDoc) { _aeDoc = null; }
+            if (!_aeDoc || _aeDoc === (typeof document !== 'undefined' ? document : null)) {
+              chain.push('doc');
+            } else {
+              if (!_zwAriaDocIds.has(_aeDoc)) _zwAriaDocIds.set(_aeDoc, 'doc' + (_zwAriaDocIds.size + 1));
+              chain.push(String(_zwAriaDocIds.get(_aeDoc)));
+            }
+          } else {
+            chain.push('sel:' + s);
+          }
+        }
+        break;
+      }
+      cur = par;
+    }
+    return chain;
+  }
+  function _zwAriaValidRef(aProxy, eProxy) {
+    try {
+      var aChain = _zwAriaTreeChain(aProxy);
+      var eChain = _zwAriaTreeChain(eProxy);
+      if (!eChain.length) return false;
+      var eTree = eChain[0];
+      for (var i = 0; i < aChain.length; i++) {
+        if (aChain[i] === eTree) return true;
+      }
+      return false;
+    } catch (_eAv) { return false; }
+  }
+  // 内容属性 token → A **自身树内**首个匹配 id 的元素（spec：分离树仍按本树解析——
+  // WPT disconnected 'idrefs should continue to work when target is disconnected'）。
+  // 沿 **proxy childNodes 同步视图** DFS（读 `.id` 走 get trap latest-wins——host
+  // getElementById 索引对同 turn 内 id 变更/移除 stale，WPT 'Changing the ID of an
+  // element'/'Deleting a reflected element' 实证）。树序 DFS 首个命中 = spec「first
+  // element whose ID matches」。
+  function _zwAriaResolveToken(aProxy, tok) {
+    if (!tok) return null;
+    try {
+      var root = aProxy;
+      var hops = 0;
+      while (hops++ < 64) {
+        var h = root.__zwHandle;
+        if (h && typeof _shadowHandles !== 'undefined' && _shadowHandles[h]) break; // shadow 树根即本树顶
+        var par = null;
+        try { par = root.parentNode; } catch (_eRt) { par = null; }
+        if (!par) break;
+        root = par;
+      }
+      var hit = null;
+      var _aeDfs = function (node, depth) {
+        if (hit || depth > 32) return;
+        var kids = null;
+        try { kids = node.childNodes; } catch (_eK) { kids = null; }
+        if (!kids) return;
+        var n = kids.length | 0;
+        for (var i = 0; i < n; i++) {
+          var k = kids[i];
+          if (!k || k.nodeType !== 1) continue;
+          // R5009 片 e：id 读走 **getAttribute**（latest-wins 同步视图）——`.id`
+          // getter 读 host 快照（`__zw_get_attr` 非 lw），同 turn id 变更/移除 stale
+          //（WPT 'Changing the ID of an element'/'content attribute set directly'
+          // 实证）。
+          var kid = null;
+          try { kid = k.hasAttribute('id') ? k.getAttribute('id') : null; } catch (_eI) { kid = null; }
+          if (kid === tok) { hit = k; return; }
+          _aeDfs(k, depth + 1);
+        }
+      };
+      _aeDfs(root, 0);
+      return hit;
+    } catch (_eRT2) { return null; }
+  }
   // R3187：contentEditable 枚举状态求值——返 'true' / 'false' / 'inherit'。spec HTML `contenteditable`
   // 为枚举属性，关键字「空串、true、false」——**空串与 true 同映射 true 状态**（故 `<div contenteditable>`
   // 等价 `<div contenteditable="true">`）。缺省（属性不存在）/ 非法（incl "foo"/"inherit"）→ inherit 状态。
@@ -1375,6 +1516,12 @@
   // `while (node != node.parentNode.childNodes[i])` 在假父快照上越界恒不等 → 死循环）。
   // 记账挂 _mo_notify childList 汇流点（shim 全部 childList mutation 单一入口，R50 同款）。
   var _zwNodeParent = {};
+  // R5009 片 e（M4 片 e）：**sel-based 子**挂 handle/shadow 容器的同步父记录（ARIA
+  // Element 反射树链 walker 专用——sel 子的 parentNode 在 host mutation apply 前
+  // stale（M3 扩批 XLV 槽仅覆盖 sel 父），shadow 挂载同 turn 内树链判定失真，
+  // WPT aria-element-reflection 'Reparenting ... shadow scope' 3 案）。写点：handle
+  // 容器 appendChild（part05 R91 记录点同址）；读点：`_zwAriaTreeChain`。
+  var _zwAriaSyncParent = {};
   // P1a Comment（R2816）：已创建的 comment handle 集合（nodeType=8 / nodeName '#comment' 标识）。
   // comment 为 create 句柄无 selector，故用此 set 区别于普通元素句柄（同 _fragmentHandles 模式）。
   var _commentHandles = {};
@@ -4924,7 +5071,12 @@
         if (p === 'parentRule') return null;
         if (p === 'cssText') return '';
         if (typeof prop !== 'string') return undefined; // Symbol 属性返 undefined
-        return query(_camelToKebab(p));
+        // R5009 片 e（M4 片 e）：float 计算值初始 'none'（spec CSS2§9.3.1——host 未
+        // 覆盖返 '' 曾使 computed cssFloat 空，WPT historical 'applet is not styled'
+        // 期望 'none'；host 真值非空时不变）。
+        var _csV = query(_camelToKebab(p));
+        if (_csV === '' && (p === 'cssFloat' || p === 'float')) return 'none';
+        return _csV;
       }
     });
   };

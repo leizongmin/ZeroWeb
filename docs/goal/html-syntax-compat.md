@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active（M4 推进中——片 d reflection 混合尾簇系统面，全通道 61168/61304 = 99.78%（2026-10-07 控制面口径）；控制面见 [master.md](html-syntax-compat/master.md)）
+**状态**: Active（M4 收口评估——片 e ARIA Element 反射落地，全通道 61216/61304 = 99.86%（2026-10-07 控制面口径）；控制面见 [master.md](html-syntax-compat/master.md)）
 **执行模式**: WPT 驱动（上游 html/syntax + html/dom corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 文档面）
 
