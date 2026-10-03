@@ -1071,7 +1071,10 @@ fn test_ua_display_none_group_center_legend_s26_flip() {
     sandbox.execute(generate_js_dom_shim()).unwrap();
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
-        "<html><body></body></html>".to_string(),
+        "<html><head id=\"s26hd\"><title id=\"s26ti\">t</title>\
+         <script id=\"s26sc\"></script><style id=\"s26sty\"></style></head>\
+         <body><center id=\"s26ce\"></center><legend id=\"s26lg\"></legend></body></html>"
+            .to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
@@ -1086,6 +1089,10 @@ fn test_ua_display_none_group_center_legend_s26_flip() {
                document.body.appendChild(el);\
                return getComputedStyle(el).display;\
              }).join(',');\
+             var hids = ['s26sc','s26hd','s26sty','s26ti','s26ce','s26lg'];\
+             globalThis.__hostD = hids.map(function (i2) {\
+               return getComputedStyle(document.getElementById(i2)).display;\
+             }).join(',');\
              document.body.innerHTML = '<script></script><style></style><title></title><center></center><legend></legend><div></div><span></span>';\
              var kids = document.body.childNodes;\
              globalThis.__plainD = [];\
@@ -1096,12 +1103,17 @@ fn test_ua_display_none_group_center_legend_s26_flip() {
     assert_eq!(
         sandbox.execute("globalThis.__proxyD").unwrap().value,
         "none,none,none,none,block,block",
-        "proxy createElement 臂：script/head/style/title → 'none'（UA sheet 15.3.1 hidden 列表）、center/legend → 'block'（15.3.3 flow content）——D1 残缺口已翻转"
+        "proxy createElement 臂（JS 回落面采样——createElement 产物无 sel，读 _zwUaDisplay 表）：script/head/style/title → 'none'（UA sheet 15.3.1 hidden 列表）、center/legend → 'block'（15.3.3 flow content）——D1 残缺口已翻转"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hostD").unwrap().value,
+        "none,none,none,none,block,block",
+        "host 面 in-DOM 采样臂（I5 收尾第二面）：初始快照六元素（head 族 script/head/style/title + body 族 center/legend）经 getElementById → __zw_get_computed_style → style-system ua_default_display——slice25 D4 教训采样面维度：本臂读 host 面（快照注册元素），proxy/plain 两臂读 JS 回落面；双面同六值直钉 D4 无分叉义务（任一面翻转须同提交双面）"
     );
     assert_eq!(
         sandbox.execute("globalThis.__plainD").unwrap().value,
         "none,none,none,block,block,block,inline",
-        "plain innerHTML 臂同值（innerHTML 不产 <head>——解析器 body 上下文丢弃，head 由 proxy 臂覆盖）；负控制 div/span 不受扰动"
+        "plain innerHTML 臂同值（JS 回落面采样，同 proxy 臂——innerHTML 不产 <head>，解析器 body 上下文丢弃，head 由 proxy 臂覆盖）；负控制 div/span 不受扰动"
     );
 }
 
@@ -1111,7 +1123,8 @@ fn test_ua_display_none_group_center_legend_s26_flip() {
 // 属性 ns 创建时定死。Chrome/154 oracle（diag/evidence/slice26/chrome-oracle.json）：
 // setAttribute('foo') 后 (xhtml-ns,'foo') → null；字面 'xlink:href'（setAttribute 产物，
 // local=整串、ns=null）查 (xlink-ns,'href') → null；setAttributeNS(xlink,'xlink:href')
-// 显式 ns 属性 (xlink-ns,'href') 命中面保持；(null,name) 无前缀命中面保持。
+// 显式 ns 属性 (xlink-ns,'href') 命中面保持；(null,name) 无前缀命中面保持；(null,字面
+// 限定名) × 显式 ns 属性反向 miss 臂（__metaCrossNull，收尾轮增补，与 detached 世界同形）。
 #[test]
 fn test_proxy_ns_qname_fallback_cross_ns_s26_flip() {
     use std::sync::{Arc, Mutex};
@@ -1150,6 +1163,10 @@ fn test_proxy_ns_qname_fallback_cross_ns_s26_flip() {
              var xh = el.getAttributeNodeNS('http://www.w3.org/1999/xlink', 'href');\
              globalThis.__metaHit = !!xh && xh.value === 'u2' && xh.prefix === 'xlink' && xh.localName === 'href' && xh.namespaceURI === 'http://www.w3.org/1999/xlink';\
              globalThis.__metaGaHit = el.getAttributeNS('http://www.w3.org/1999/xlink', 'href') === 'u2';\
+             var el2 = document.createElement('div');\
+             document.body.appendChild(el2);\
+             el2.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', 'u2');\
+             globalThis.__metaCrossNull = el2.getAttributeNodeNS(null, 'xlink:href') === null && el2.getAttributeNS(null, 'xlink:href') === null;\
              el.removeAttributeNS('http://www.w3.org/1999/xhtml', 'foo');\
              globalThis.__rmCrossNsKept = el.getAttribute('foo') === 'bar';\
              el.removeAttributeNS(null, 'foo');\
@@ -1175,6 +1192,11 @@ fn test_proxy_ns_qname_fallback_cross_ns_s26_flip() {
         sandbox.execute("String(globalThis.__metaHit + ':' + globalThis.__metaGaHit)").unwrap().value,
         "true:true",
         "显式 ns 属性命中面保持：setAttributeNS(xlink,'xlink:href') 后 (xlink-ns,'href') gANNS 返全字段 Attr、gANS 命中（slice25 D5 守卫的正命中面不受守卫扰动）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__metaCrossNull)").unwrap().value,
+        "true",
+        "反向跨 ns miss（缺陷轮 S2/TE-S1 同根收尾臂）：setAttributeNS(xlink-ns,'xlink:href') 显式 ns 属性不得被 (null,'xlink:href') 字面限定名误命中——detached 世界 __metaCrossNull 同构面；判别力：_s26QNameEffNs 的 metaMap 支（_attrNSMeta 显式 ns 印记）退化回落前缀映射时，HTML-ns 元素上 effNs=null === 查询 null，host 扁平 'xlink:href'（'u2'）经字面路径误命中，本臂转红。单属性面（fresh 元素 el2）——同 qname 双属性并存在本世界受 R122 扁平存储结构限制（imported-tests.txt 账），混合序列面不在本臂"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__rmCrossNsKept + ':' + globalThis.__rmNullNsRemoved)").unwrap().value,
