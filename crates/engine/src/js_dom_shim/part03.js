@@ -15327,6 +15327,28 @@ return e;
             }
             return _outputDefault[key];
           }
+          // R5009 片 d（M4 片 d）：BUTTON/LI/METER/PROGRESS/PARAM/OPTION 的 value 是
+          // **纯内容属性/数值反射**（无 INPUT dirty-flag 语义）——不走本 dirty 缓存
+          // getter（lazy-init 缓存曾把 setAttribute 后的 IDL 读钉死在旧串：WPT
+          // reflection-* 'li.value/meter.value/param.value/button.value' 全族）。
+          // BUTTON/PARAM/OPTION/PROGRESS 此处直读属性（LI long / METER double 有专用
+          // 数值分支在 part04——置旗跳过本分支余下 dirty 缓存逻辑，让后续分支接手）。
+          var _rvTag3 = _realTag(sel, handle);
+          var _rvSkip3 = (_rvTag3 === 'BUTTON' || _rvTag3 === 'LI' || _rvTag3 === 'METER'
+              || _rvTag3 === 'PROGRESS' || _rvTag3 === 'PARAM' || _rvTag3 === 'OPTION');
+          if (_rvSkip3 && _rvTag3 !== 'LI' && _rvTag3 !== 'METER') {
+            var _rvAttr3 = handle ? __zw_get_attr_handle(handle, 'value') : (sel ? __zw_get_attr(sel, 'value') : null);
+            if (_rvAttr3 != null) return String(_rvAttr3);
+            // OPTION：attr 缺省回落 option 文本（spec option.value）；余缺省 ''。
+            if (_rvTag3 === 'OPTION') {
+              try {
+                var _rvText3 = handle ? __zw_get_text_handle(handle) : __zw_get_text(sel);
+                return (_rvText3 == null) ? '' : String(_rvText3);
+              } catch (_eRvT3) { return ''; }
+            }
+            return '';
+          }
+          if (!_rvSkip3) {
           // P1a form input：value get——per-element 缓存，lazy-init。
           // textarea 的 value 是其**文本内容**（非 value 属性，HTML spec）；input 是 value 属性。
           // R57（FV M3）：缓存读——setter 写入（_inputValuesSet 标记——JS-set 值/typed 值，
@@ -15347,6 +15369,7 @@ return e;
           }
           var vaF = handle ? __zw_get_attr_handle(handle, 'value') : (sel ? __zw_get_attr(sel, 'value') : null);
           return (vaF == null) ? '' : vaF;
+          } // R5009 片 d：!_rvSkip3——LI/METER 跳过 dirty 缓存，落 part04 数值分支
         }
         // `input.valueAsNumber`（HTMLInputElement，R2836）——number/range 输入值↔数值转换（计算器/数量输入/
         // 校验库读 NaN 判非法）。type=number/range：parseFloat(value)（空/无效→NaN，parseFloat 对 '12px'
@@ -16143,30 +16166,37 @@ return e;
         // R3202：sel 路径改走 latest-wins（`__zw_get_attr_lw`）反映同批 `form.method=`/`setAttribute`（旧纯快照
         // `__zw_get_attr` → `f.method='POST'; f.method` 读 stale 快照返 default 'get'，同 R3190/R3195 stale 模式）。
         if (_realTag(sel, handle) === 'FORM' &&
-            (prop === 'action' || prop === 'method' || prop === 'enctype' || prop === 'target')) {
+            (prop === 'action' || prop === 'method' || prop === 'enctype' || prop === 'encoding' || prop === 'target')) {
           var fv = handle
-            ? __zw_get_attr_handle(handle, prop)
-            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop) : __zw_get_attr(sel, prop));
+            ? __zw_get_attr_handle(handle, prop === 'encoding' ? 'enctype' : prop)
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop === 'encoding' ? 'enctype' : prop) : __zw_get_attr(sel, prop === 'encoding' ? 'enctype' : prop));
           fv = fv || '';
+          // R5009 片 d（M4 片 d）：encoding 与 enctype 同 attr（domAttrName 映射——
+          // MAP 直读曾返原串无归一，WPT reflection-forms 'form.encoding
+          // setAttribute("multipart/form-data\0")' 期望 invalid → urlencoded）。
           if (prop === 'method') {
             fv = fv.toLowerCase();
             if (fv !== 'get' && fv !== 'post' && fv !== 'dialog') fv = 'get';
-          } else if (prop === 'enctype') {
-            fv = fv.toLowerCase();
+          } else if (prop === 'enctype' || prop === 'encoding') {
+            // R5009 片 d：encoding 归一同 enctype（ASCII 小写 + invalid → urlencoded）。
+            fv = _zwASCIILower(fv);
             if (fv !== 'application/x-www-form-urlencoded' && fv !== 'multipart/form-data' && fv !== 'text/plain') {
               fv = 'application/x-www-form-urlencoded';
             }
-          } else if (prop === 'action' && fv !== '') {
+          } else if (prop === 'action') {
             // R5009 M3 片 e（html-syntax-compat）：form.action 是 URL 反射（spec
             // resolveUrl——WPT reflection-forms 'form.action setAttribute to " foo "'
-            // 期望解析绝对 URL）；missing → ''（defaultVal）。与 A/AREA href 同用
-            // `__zw_parse_url`（base = 页面 location）。
+            // 期望解析绝对 URL）。R5009 片 d：missing/空 → **文档 URL**（spec：form
+            // action 缺省 = 文档地址——WPT 'form.action IDL get with DOM attribute
+            // unset' 期望页面 URL）。与 A/AREA href 同用 `__zw_parse_url`。
+            var _fActBase = globalThis.location ? globalThis.location.href : '';
             if (typeof __zw_parse_url === 'function') {
               try {
-                var _fActBase = globalThis.location ? globalThis.location.href : '';
                 var _fActJson = __zw_parse_url(fv, _fActBase);
-                if (_fActJson) fv = JSON.parse(_fActJson).href || fv;
+                if (_fActJson) fv = JSON.parse(_fActJson).href || _fActBase || fv;
               } catch (_eFAct) {}
+            } else if (fv === '') {
+              fv = _fActBase;
             }
           }
           return fv;

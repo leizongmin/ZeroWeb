@@ -569,7 +569,13 @@
   // spec reflected string 缺省空串）。1:1 小写名用 `_REFLECTED_STRING_FLAT`；camelCase→attr 映射用 `_REFLECTED_STRING_MAP`。
   // 数值型（size/maxLength/colSpan/rowSpan）+ 布尔型（required/readonly/multiple）spec 返 number/boolean，
   // 另列 follow-up（本切片仅 string）。
-  var _REFLECTED_STRING_FLAT = ' type name placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox cite coords shape ping media align version background text link scroll color dirname border srcdoc integrity hreflang charset rev clear event for scrolling frameborder archive code standby codetype face behavior direction acceptcharset wrap accept frame rules summary width height cellPadding cellSpacing ch chOff headers abbr axis valign ';
+  // R5009 片 d（M4 片 d）：`name` 撤出 FLAT——spec 仅 form 关联族（a/button/embed/
+  // fieldset/form/frame/iframe/img/input/map/meta/object/output/param/select/slot/
+  // textarea）的 name IDL 反射内容属性，**其余元素 .name= 是 expando**（WPT
+  // name-content-attribute-and-property doesNotReflect 全族——FLAT 全表反射曾把
+  // div.name= 写成内容属性）。getter/setter 经 `_reflectedNameAttr` tag 门。
+  var _REFLECTED_NAME_TAGS = ' a button embed fieldset form frame iframe img input map meta object output param select slot textarea ';
+  var _REFLECTED_STRING_FLAT = ' type placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox cite coords shape ping media align version background text link scroll color dirname border srcdoc integrity hreflang charset rev clear event for scrolling frameborder archive code standby codetype face behavior direction acceptcharset wrap accept frame rules summary width height cellPadding cellSpacing ch chOff headers abbr axis valign content scheme ';
   // R5009 片 e（M4 片 a）：ARIA enumerated 反射表（elements-aria-enumerated.js）
   // ——kw 白名单 / inv invalidVal / d defaultVal（null → missing 返 null，即
   // isNullable）；setter（既有 aria 面的 expando 豁免 + 逐字写 attr）不变。
@@ -622,11 +628,19 @@
   // bgColor → vlink/alink/bgcolor）+ body margin 族（marginHeight 等 → 同名小写，
   // spec HTMLBodyElement DOMString 反射）+ marquee trueSpeed。WPT reflection-*
   // （sections/misc/obsolete/grouping/text）主导簇：旧读 undefined（表外）。
-  var _REFLECTED_STRING_MAP = { formAction: 'formaction', useMap: 'usemap', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for', referrerPolicy: 'referrerpolicy', dateTime: 'datetime', httpEquiv: 'http-equiv', valueType: 'valuetype', dirName: 'dirname', acceptCharset: 'acceptcharset', encoding: 'encoding', wrap: 'wrap', ch: 'char', chOff: 'charoff', cellPadding: 'cellpadding', cellSpacing: 'cellspacing', vAlign: 'valign', frameBorder: 'frameborder', vLink: 'vlink', aLink: 'alink', bgColor: 'bgcolor', marginHeight: 'marginheight', marginWidth: 'marginwidth', topMargin: 'topmargin', bottomMargin: 'bottommargin', leftMargin: 'leftmargin', rightMargin: 'rightmargin' };
+  // R5009 片 d（M4 片 d）：codeType 入 MAP（object.codeType → codetype 内容属性——
+  // FLAT 仅收小写名，camelCase IDL 名曾读 undefined，WPT reflection-embedded
+  // 'object.codeType typeof' 簇）+ inputMode/enterKeyHint 入 MAP（全局枚举 setter
+  // 落 R3069 逐字写 attr——旧 camelCase 不命中反射分支落 expando 兜底吞写）。
+  var _REFLECTED_STRING_MAP = { formAction: 'formaction', useMap: 'usemap', formMethod: 'formmethod', formEnctype: 'formenctype', formTarget: 'formtarget', htmlFor: 'for', referrerPolicy: 'referrerpolicy', dateTime: 'datetime', httpEquiv: 'http-equiv', valueType: 'valuetype', dirName: 'dirname', acceptCharset: 'accept-charset', encoding: 'enctype', wrap: 'wrap', ch: 'char', chOff: 'charoff', cellPadding: 'cellpadding', cellSpacing: 'cellspacing', vAlign: 'valign', frameBorder: 'frameborder', vLink: 'vlink', aLink: 'alink', bgColor: 'bgcolor', marginHeight: 'marginheight', marginWidth: 'marginwidth', topMargin: 'topmargin', bottomMargin: 'bottommargin', leftMargin: 'leftmargin', rightMargin: 'rightmargin', codeType: 'codetype', inputMode: 'inputmode', enterKeyHint: 'enterkeyhint' };
   // R5007 M3 片 c：[LegacyNullToEmptyString] DOMString 反射集（spec HTMLBodyElement 的
   // legacy 颜色族——null → ''，WPT reflection-* 'IDL set to null' getAttribute 期望 ""；
   // 其余 DOMString null → "null"）。
-  var _REFLECTED_STRING_NULL_EMPTY = ' text link vLink aLink cellPadding cellSpacing color ';
+  // R5009 片 d（M4 片 d）：border（img/object）+ marginHeight/marginWidth（frame/
+  // iframe）spec 同为 treatNullAsEmptyString——tag 门见 `_reflectedNullEmptyFor`
+  //（color 仅 BODY/FONT LegacyNull；hr.color 普通串，WPT 'hr.color IDL set null'
+  // 期望 "null"）。
+  var _REFLECTED_STRING_NULL_EMPTY = ' text link vLink aLink cellPadding cellSpacing color border marginHeight marginWidth ';
   // bgColor 按元素分型：body LegacyNull（''）、marquee 普通串（"null"）——tag 门在 R3069。
   // R5009 片 e：URL 反射表（spec url 类型——非空解析绝对 URL，missing/空 → ''；
   // harness resolveUrl 经本引擎 detached-a 实现自洽）。getter 置于 R3037 前。
@@ -634,9 +648,12 @@
     IMG: { src: 'src', lowsrc: 'lowsrc', longDesc: 'longdesc' },
     IFRAME: { longDesc: 'longdesc', src: 'src' },
     OBJECT: { data: 'data', codeBase: 'codebase' },
-    VIDEO: { src: 'src', poster: 'poster' },
-    AUDIO: { src: 'src' },
-    SOURCE: { src: 'src' },
+    // R5009 片 d（M4 片 d）：video/audio 的 src 撤出 URL 表（media getter 服务——
+    // 串 "" 曾解析成文档 URL，WPT reflection-embedded 'video.src/audio.src
+    // setAttribute("")' 期望 ""；非空面 _zwResolveFetchUrl 与 corpus resolveUrl
+    // 同源）。SOURCE 由专用 getter 服务（part04 resource 段，同语义）。
+    EMBED: { src: 'src' },
+    VIDEO: { poster: 'poster' },
     TRACK: { src: 'src' },
     INPUT: { src: 'src' },
     SCRIPT: { src: 'src' },
@@ -655,11 +672,35 @@
   function _reflectedStringNullEmpty(prop) {
     return typeof prop === 'string' && _REFLECTED_STRING_NULL_EMPTY.indexOf(' ' + prop + ' ') >= 0;
   }
+  // R5009 片 d（M4 片 d）：LegacyNull tag 门——color 仅 BODY/FONT（hr.color/marquee
+  // 普通串）；border 仅 IMG/OBJECT；marginHeight/marginWidth 仅 FRAME/IFRAME
+  //（body.marginHeight 普通串）。余 NULL_EMPTY 集（body 颜色族/cellPadding 族）无门。
+  function _reflectedNullEmptyFor(tag, prop) {
+    if (!_reflectedStringNullEmpty(prop)) return false;
+    if (prop === 'color') return tag === 'BODY' || tag === 'FONT';
+    if (prop === 'border') return tag === 'IMG' || tag === 'OBJECT';
+    if (prop === 'marginHeight' || prop === 'marginWidth') return tag === 'FRAME' || tag === 'IFRAME';
+    return true;
+  }
+  // R5009 片 d（M4 片 d）：枚举关键字 ASCII 小写（spec「ASCII case-insensitive」——
+  // 全 Unicode toLowerCase 会把 U+212A KELVIN SIGN 折成 k，WPT 枚举 kelvin 变体
+  // （'worΚer' 等）期望 invalid，折叠后误判合法）。
+  function _zwASCIILower(s) {
+    return String(s == null ? '' : s).replace(/[A-Z]/g, function (c) {
+      return String.fromCharCode(c.charCodeAt(0) + 32);
+    });
+  }
   function _reflectedStringAttr(prop) {
     if (typeof prop !== 'string') return null;
     if (Object.prototype.hasOwnProperty.call(_REFLECTED_STRING_MAP, prop)) return _REFLECTED_STRING_MAP[prop];
     if (_REFLECTED_STRING_FLAT.indexOf(' ' + prop + ' ') >= 0) return prop;
     return null;
+  }
+  // R5009 片 d（M4 片 d）：`name` tag 门反射（`_REFLECTED_NAME_TAGS` 表）——命中返
+  // 内容属性名 'name'，未命中返 null（caller 回落 expando/getter undefined）。
+  function _reflectedNameAttr(tag, prop) {
+    if (prop !== 'name') return null;
+    return _REFLECTED_NAME_TAGS.indexOf(' ' + String(tag || '').toLowerCase() + ' ') >= 0 ? 'name' : null;
   }
   // R3187：contentEditable 枚举状态求值——返 'true' / 'false' / 'inherit'。spec HTML `contenteditable`
   // 为枚举属性，关键字「空串、true、false」——**空串与 true 同映射 true 状态**（故 `<div contenteditable>`
@@ -710,7 +751,10 @@
     var raw = handle
       ? __zw_get_attr_handle(handle, 'type')
       : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'));
-    var lo = (raw == null || raw === '') ? '' : String(raw).toLowerCase();
+    // R5009 片 d：ASCII 小写（U+212A KELVIN SIGN 全 Unicode 折叠曾把 'weeΚ' 误判
+    // 合法——WPT reflection-forms-weekmonth 'input.type setAttribute("weeΚ")' 期望
+    // invalid → "text"）。
+    var lo = (raw == null || raw === '') ? '' : _zwASCIILower(String(raw));
     if (tag === 'INPUT') {
       if (lo === '') return 'text'; // 缺省 → Text 状态。
       return _INPUT_TYPE_KEYWORDS.indexOf(' ' + lo + ' ') >= 0 ? lo : 'text'; // 非法 → Text 状态。
@@ -728,15 +772,20 @@
     rowSpan: { a: 'rowspan', d: 1, min: 0, max: 65534 },
     maxLength: { a: 'maxlength', d: -1 },
     minLength: { a: 'minlength', d: -1 },
-    cols: { a: 'cols', d: 20 },
+    // R5009 片 d（M4 片 d）：cols/rows 是「limited to non-negative > 0 with
+    // fallback」——[1, maxInt] 外（含 0）→ **default**（非 min-clamp；WPT
+    // reflection-forms 'textarea.cols setAttribute(0)' 期望 20）。limited 旗标
+    // 区分 colSpan/rowSpan 的 clamp 语义。
+    cols: { a: 'cols', d: 20, min: 1, limited: 1 },
     hspace: { a: 'hspace', d: 0 },
     vspace: { a: 'vspace', d: 0 },
     // frameset.cols/rows 与 textarea.cols/rows 同 IDL 名异型——UINT 分支无 tag 门，
     // frameset 的 string 面走下方 frameset 专用 getter（无法仅靠表表达）。
-    rows: { a: 'rows', d: 2 },
-    // R5009 片 e（M4 片 a）：ol.start limited-unsigned（IDL set 0 抛 IndexSizeError
-    // ——throwOnZero 旗标仅此条目；colSpan/rowSpan 是 clamped 面，不抛）。
-    start: { a: 'start', d: 1, min: 1, throwOnZero: 1 },
+    rows: { a: 'rows', d: 2, min: 1, limited: 1 },
+    // R5009 片 d（M4 片 d）：ol.start 撤 throwOnZero/min——spec/corpus 是 **plain
+    // long**（负数合法，IDL set 0 不抛——WPT 'ol.start IDL set 0' 期望 attr "0"）。
+    // getter 走 signed 解析专用分支（part04，default 1）；表 entry 仅服务 setter。
+    start: { a: 'start', d: 1 },
   };
   // R5008 M3 片 d（html-syntax-compat）：spec「rules for parsing integers /
   // non-negative integers」——前导空白仅 \t\n\f\r 空格五类（\v/BOM/nbsp/各 Unicode

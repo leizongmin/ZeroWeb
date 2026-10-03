@@ -1284,8 +1284,8 @@ fn test_form_reflected_idl_attrs_r2839() {
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__actionDef)").unwrap().value,
-        "",
-        "form.action 无属性→''"
+        "http://test.local/",
+        "form.action 无属性→文档 URL（R5009 片 d 按 WPT reflection-forms 'form.action IDL get with DOM attribute unset' 期望更新）"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__targetDef)").unwrap().value,

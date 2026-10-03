@@ -1,9 +1,35 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-05（M4 片 b 第一波——混合尾簇 95.68%）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M4 片 d——reflection 混合尾簇系统面 99.78%）
 
 ## 当前状态
+
+**M4 片 d 已落地（2026-10-07）**：reflection 混合尾簇**系统面**修齐（+1381
+passes）：值 getter 遮蔽门（part03 通用 dirty-cache value getter 撤出 BUTTON/LI/
+METER/PROGRESS/PARAM/OPTION——li.value/meter.value 串化全族根因）+ standalone
+canvas 手工属性面三修（attr 名 ASCII 小写/getAttribute has 门/逐字 DOMString）+
+枚举面（inputMode/enterKeyHint 入 MAP、crossOrigin 扩 SCRIPT/LINK、referrerPolicy
+补 A、全枚举 getter 换 ASCII 小写防 U+212A 误判）+ URL/串反射表调（meta.content/
+scheme、codeType/acceptCharset/encoding 映射、name 17-tag 门——name-content
+123F 修齐、nonce-hiding 面）+ 数值面（size/width/height/cols/rows/start spec 解析
+与 limited/fallback 语义、ol.start 撤 throwOnZero、progress.max/meter setter）+
+forms 尾（form.action 缺省文档 URL、formMethod/Enctype 缺省 ''、autocomplete 缓存
+归一）。全通道 **61168/61304 = 99.78%**（片 c 收尾 97.53%，+1381），M1 基线逐案
+**0 回归**；DC-4 实测全绿（test 68 suites——2 单测按 WPT corpus 更新 / fmt /
+clippy 干净 / reftest 704/704）。残差 136F：aria-element-reflection 25F（Element
+反射特性——片 e）、render-blocking 行为 ~18F（管线集成挂账）、M2 残差（math-parse/
+svg-script/html5lib）等。证据：
+[evidence/2026-10-07-m4d-tails.md](evidence/2026-10-07-m4d-tails.md)。
+
+**M4 片 c 已落地（2026-10-03 提交 0e49d074c + d7e8aaa21）**：obsolete 尾簇
+（403F → 2F——marquee scrollAmount/scrollDelay setter、FRAMESET cols/rows string
+双侧 tag 门、bgColor LegacyNull tag 门扩 table 族、frame.frameBorder attr 名
+小写化、FRAME 入 URL 表、font/dir.compact 面）+ forms 深水面（636F → 259F——
+INPUT numeric width/height、maxLength/minLength limited-long 负值抛、METER double
+反射、progress.max 浮点前缀解析、FLAT/MAP 扩表）。全通道 96.39% → **97.52%**
+（+691），M1 基线 0 回归；DC-4 全绿（test 68 suites / fmt / reftest 704/704）。
+证据：[evidence/2026-10-06-m4c-forms.md](evidence/2026-10-06-m4c-forms.md)。
 
 **M4 片 b 第三波已落地（2026-10-05）**：URL/枚举 setter 分支前移到 expando
 判定之前（`IDL set to ""`/undefined/对象 attr 残留根因——expando 先行拦截吞写）
@@ -14,18 +40,6 @@ suites——首跑 send_keys 3F 为负载敏感 flake 隔离复跑绿+全量复�
 reftest 704/704）。残差归 M4 片 c：embedded 尾 394F（setAttribute undefined
 串写面）、obsolete ~400F、其余域尾。证据：
 [evidence/2026-10-05-m4c-tails.md](evidence/2026-10-05-m4c-tails.md)。
-
-**M4 片 b 第二波已落地（2026-10-05）**：canvas standalone 全局反射
-（title/lang/className/accessKey/autofocus/hidden/tabIndex + width/height
-> maxInt → default）+ URL/枚举 setter 统一分支（`_reflectedUrlAttr` 命中与
-decoding/loading/referrerPolicy 枚举逐字写 attr——expando 兜底吞写根因；
-IFRAME.src 排除保留 `__zw_reload_iframe` 导航钩子——r388 单测 bisect 实证）+
-iframe/embed/object width-height string 面读侧收窄 + img/video numeric getter
-> maxInt → 0。全通道 **59091/61303 = 96.39%**（+453），M1 基线逐案
-**0 回归**；DC-4 实测全绿（test 68 suites / fmt / reftest 704/704）。残差：
-embedded 尾 423F（setter 非原始值 expando 前移）、obsolete ~400F、其余尾
-~1000F——片 b 第三波。证据：
-[evidence/2026-10-05-m4b2-canvas.md](evidence/2026-10-05-m4b2-canvas.md)。
 
 **M4 片 b 第一波已落地（2026-10-05）**：reflection 混合尾簇首批——数值 setter
 面（img/video width/height/hspace/vspace IDL set > maxInt → "0"）+ media falsy
@@ -114,12 +128,19 @@ html5lib 3 案 document.write 管线面）。证据：
 | P1 | html/syntax + html/dom corpus 导入 + 基线 | ✅ M1（2026-10-02，113 案 71.6%） |
 | P2 | 解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐 | ✅ **M2 收口（2026-10-02）**：五片落地（charref/foreign ns/CDATA/characterSet/生命周期），通道可执行面全绿 75.35%，DC-4 门禁实测齐（reftest 700/700）；残差分类记账（P5 通道外 19 案 + html5lib 管线面 3 案） |
 | P3 | 序列化边缘（XMLSerializer/HTML serializer） | ✅ **M3 片 b 落地（2026-10-03）**：serializing-html-fragments 域 **137/137 全绿**（template/processing-instructions/outerHTML canvas 面）+ serializing-xml-fragments 域 **112/112 全绿**（`_zwXMLSerialize` XML 序列化 + 读链视图文档对齐）；escaping.html 9/9（片 a）；残差：ambiguous-ampersand 读链 seam（挂账） |
-| P4 | html/dom 接口语义（createContextualFragment 已落 ✅） | 🔄 **M3 片 c 落地（2026-10-03）**：reflection 系统面修齐（全通道 82.18%，reflection-sections 全绿、text 97%、forms 85%）；**片 e ✅（2026-10-04，89.54%）**：form 枚举/URL 面 + URL 反射表 + embedded 枚举 + inputMode/enterKeyHint + canvas 属性方法面；**M4 片 a ✅（2026-10-04，95.06%）**：tabular 全绿 + aria-enumerated 全绿；残差：embedded/obsolete/forms 混合尾簇（片 b） |
+| P4 | html/dom 接口语义（createContextualFragment 已落 ✅） | 🔄 **M4 片 d ✅（2026-10-07，99.78%）**：reflection 混合尾簇系统面（值 getter 遮蔽门/canvas 面/枚举 ASCII/URL 串表/数值 limited 面/forms 尾——name-content 123F 修齐）；历史：M3 片 c/e + M4 片 a/b/c 递次收口；残差：aria-element-reflection 25F（Element 反射——片 e）+ render-blocking 行为 ~18F（挂账） |
 | P5 | 文档级编码嗅探（encoding-compat M4 转入） | 🔄 testharness 通道可执行面首片 ✅（sniff→Document label→characterSet 管线，2026-10-02）；📊 通道外案面仍记账：charset/ 7 案（reftest 形态）+ xmldecl/ 3 案（iframe 形态）+ the-input-byte-stream 9 案（HTTP 头形态）= 19 案 testharness 通道外记账；encoding/ 域 bom-handling/eof-*/sniffing 案面（已在 wpt-data，encoding 通道按 document.characterSet 规则 skip）尚未基线，落地通道（reftest import / 通道扩展）随 M2+ 定 |
 | — | render-blocking 机制面（62 案 19.3%） | 📊 M1 已基线；`blocking=render` 与渲染管线耦合，是否本 goal 修齐随 M3 碰头定 |
 
 ## 已完成切片
 
+- **M4 片 d（2026-10-07）**：reflection 混合尾簇系统面——值 getter 遮蔽门 +
+  standalone canvas 三修 + 枚举 ASCII 面 + URL/串表调 + name tag 门 +
+  数值 limited/fallback 面 + forms 尾；99.78%（+1381），0 回归；DC-4 全绿
+  （2 单测按 corpus 更新）。证据 evidence/2026-10-07-m4d-tails.md。
+- **M4 片 c（2026-10-03）**：obsolete 尾簇 + forms 深水面；97.52%（+691），
+  0 回归；DC-4 全绿；bgColor tag 门扩 table 族修正（d7e8aaa21）。
+  证据 evidence/2026-10-06-m4c-forms.md。
 - **M4 片 b 第三波（2026-10-05）**：URL/枚举 setter 前移 expando 前止损
   （embedded 408→394F）+ IMG.src/IFRAME.src 专面排除（r3284/r388 bisect）；
   96.39% 维持，0 回归；DC-4 全绿。证据 evidence/2026-10-05-m4c-tails.md。
@@ -184,10 +205,11 @@ html5lib 3 案 document.write 管线面）。证据：
 
 ## 下一步计划
 
-1. **M4 片 b 第三波（下一片）**：URL/枚举 setter 非原始值形态 expando 前移
-   （embedded 尾 423F）、iframe marginHeight/marginWidth LegacyNull 面、
-   obsolete 尾 ~400F、forms/grouping/misc/metadata/name-content 尾；
-   render-blocking IDL 面随碰头定。
+1. **M4 片 e（下一片）**：ARIA Element 反射特性片（aria-element-reflection 25F
+   ——ariaActiveDescendantElement 等 ID→Element 解析 + shadow 树规则）；尾簇
+   扫尾（historical document.all applet/cssFloat 2F、fragment-parse-form-in-template
+   1F）；render-blocking 行为面与渲染管线集成评估（缺口清单 P-render-blocking，
+   ~18F，随碰头定）。
 2. **挂账随行**：bench-gate 等让复评（静窗）；html5ever 0.39 升级评估（顺带静态
    template noscript 解析面）；P5 通道外 19 案落地通道（reftest import 优先）；
    读一致性架构片余量（`__zw_child_nodes` live-aware——ambiguous-ampersand

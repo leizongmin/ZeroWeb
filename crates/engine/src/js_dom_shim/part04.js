@@ -139,7 +139,11 @@
           var _soHas = (handle ? __zw_has_attr_handle(handle, 'src') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src'))) === '1';
           if (!_soHas) return '';
           var _soRaw = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_has_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
-          var _soClean = String(_soRaw == null ? '' : _soRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');
+          // R5009 片 d（M4 片 d）：空串按**原串**判（同 media src——控制串剥离判空
+          // 曾误返 ""；resolveUrl('') detached-a 自洽返原串）。
+          var _soStr = String(_soRaw == null ? '' : _soRaw);
+          if (_soStr === '') return '';
+          var _soClean = _soStr.replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');
           return _zwResolveFetchUrl(_soClean);
         }
         if ((resourceTag === 'AUDIO' || resourceTag === 'VIDEO') &&
@@ -235,11 +239,18 @@
           // https://html.spec.whatwg.org/multipage/media.html#dom-media-preservespitch
           if (prop === 'preservesPitch') return (_ms && _ms.preservesPitch !== undefined) ? !!_ms.preservesPitch : true;
           // src IDL getter：URL 属性——反射 + base 解析为绝对 URL（同 a.href / track.src 语义）。
+          // R5009 片 d（M4 片 d）：空串 → ''（corpus resolveUrl('') 经 detached-a
+          // 自洽返原串——文档 URL 曾误返；WPT reflection-embedded
+          // 'video.src/audio.src setAttribute("")' 期望 ""）。
           if (prop === 'src') {
             var _mvHas = (handle ? __zw_has_attr_handle(handle, 'src') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src'))) === '1';
             if (!_mvHas) return '';
             var _mvRaw = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
-            var _mvClean = String(_mvRaw == null ? '' : _mvRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');
+            // R5009 片 d（M4 片 d）：空串按**原串**判（attr === '' 才返 ''——二进制
+            // 控制串剥离后为空但 resolveUrl 返原串，剥离判空曾误返 ""）。
+            var _mvStr = String(_mvRaw == null ? '' : _mvRaw);
+            if (_mvStr === '') return '';
+            var _mvClean = _mvStr.replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '');
             return _zwResolveFetchUrl(_mvClean);
           }
           if (prop === 'paused') return _ms ? !_ms.playing : true;
@@ -400,17 +411,21 @@
           }
           // R5009 片 e（M4 片 b）：iframe/embed 的 width/height 是 **string** 反射
           // （elements-embedded 表）——收窄出 numeric 面（落 R3037 FLAT 串读）。
-          if ((rgTag === 'IMG' || rgTag === 'VIDEO') && (prop === 'width' || prop === 'height')) {
+          if ((rgTag === 'IMG' || rgTag === 'VIDEO' || rgTag === 'INPUT') && (prop === 'width' || prop === 'height')) {
             // sync set→get 优先读缓存（setter 写数值）；无缓存则解析 width/height 内容属性（缺省/非负整数失败 → 0）。
             // R3204：sel 读源 latest-wins（`__zw_get_attr_lw`）反映同批 setAttribute。
+            // R5009 片 d：INPUT 入面（input.width/height 是「unsigned long customGetter」
+            // ——typeof 须 number；FLAT 串读曾返 "7" 串，WPT reflection-forms
+            // 'input.width typeof' 簇）。
             var drc = _reflectedAttrs[key];
             if (drc && Object.prototype.hasOwnProperty.call(drc, prop)) return drc[prop];
             var dRaw = handle ? __zw_get_attr_handle(handle, prop) : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop) : __zw_get_attr(sel, prop));
-            var dN = parseInt(dRaw, 10);
-            // R5009 片 e（M4 片 b）：> maxInt → 0（WPT 'setAttribute(2147483648) →
-            // img.width 0' 实证——out-of-int32 无效语义）。
-            if (!isNaN(dN) && dN > 2147483647) dN = 0;
-            return (isNaN(dN) || dN < 0) ? 0 : dN;
+            // R5009 片 d（M4 片 d）：spec「rules for parsing non-negative integers」
+            //（_zwParseSpecNonneg——\v/nbsp 不跳、"-0" → 0 合法、越界 → default 0；
+            // parseInt 宽松解析曾把 "\v7" 吞成 7，WPT reflection-embedded
+            // 'video.width setAttribute("\v7")' 期望 0）。
+            var dN = _zwParseSpecNonneg(String(dRaw == null ? '' : dRaw));
+            return (dN == null || dN > 2147483647) ? 0 : dN;
           }
         }
         // R3077：HTMLCanvasElement proxy 的 canvas 2D API（getContext/toDataURL/width/height）。旧仅 standalone
@@ -597,6 +612,9 @@
             // sync set→get 优先读缓存（setter R3077 写数值）；无缓存则反射内容属性（default 300/150）。
             var cdc = _reflectedAttrs[key];
             if (cdc && Object.prototype.hasOwnProperty.call(cdc, prop)) return cdc[prop];
+            // R5009 片 d（M4 片 d）：spec 非负整数解析（_zwCanvasDim 改走
+            // _zwParseSpecNonneg——"\v7" → default 300/150、"-0" → 0；WPT
+            // reflection-embedded 'canvas.width setAttribute' 簇）。
             // R5009 片 e（M4 片 b）：> maxInt → default（300/150——reflection-embedded
             // 'canvas.width setAttribute(2147483648)' 期望 300 实证）。
             var _c5dim = _zwCanvasDim(sel, handle, prop, prop === 'width' ? 300 : 150);
@@ -1216,7 +1234,7 @@ return _tplContent;
         // coverage 测试对 sup 表内组合断言 class_string；表外组合走原路径 undefined）。
         // https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#ordered-set
         if ((prop === 'relList' || prop === 'sandbox' || prop === 'sizes' || prop === 'htmlFor'
-             || prop === 'controlsList')
+             || prop === 'controlsList' || prop === 'blocking')
             && typeof _classListProxy === 'function') {
           var _r374clTag = '', _r374clNs = 'http://www.w3.org/1999/xhtml';
           try {
@@ -1260,13 +1278,26 @@ return _tplContent;
             return _classListProxy(sel, handle, 'controlslist',
               ['nodownload', 'nofullscreen', 'noplaybackrate', 'noremoteplayback']);
           }
+          // R5009 片 d（M4 片 d）：blocking DOMTokenList 反射（link/script/style，
+          // supported token 仅 'render'——WPT blocking-idl-attr 'Supported tokens/
+          // Setting the blocking IDL attribute'；render-blocking 行为面另案）。
+          if (prop === 'blocking' && _r374isHtmlNs
+              && (_r374clTag === 'link' || _r374clTag === 'script' || _r374clTag === 'style')) {
+            return _classListProxy(sel, handle, 'blocking', ['render']);
+          }
           // R374：四属性 gate-miss（错误元素/错误 ns）→ undefined（spec：这些 IDL
           // 属性只存在于特定接口；generic 反射回落属性串 "" 不可接受——coverage
           // 表外组合全族期望 undefined）。label.htmlFor 例外（R2840 字符串反射）。
-          if (prop === 'htmlFor' && _r374clTag !== 'label') {
+          // R5009 片 d：script.htmlFor 是普通 string 反射（elements-misc
+          // domAttrName 'for'）——与 label 一并放行（余元素维持 undefined）。
+          if (prop === 'htmlFor' && _r374clTag !== 'label' && _r374clTag !== 'script') {
             return undefined;
           }
-          if (prop === 'relList' || prop === 'sandbox' || prop === 'sizes' || prop === 'controlsList') {
+          // R5009 片 d（M4 片 d）：source.sizes 是普通 string 反射（elements-embedded
+          // 表；link.sizes 才是 tokenlist）——SOURCE 放行落 R3037 FLAT 串读，余维持
+          // undefined（spec：sizes IDL 只存在于 link/source 接口）。
+          if ((prop === 'relList' || prop === 'sandbox' || prop === 'sizes' || prop === 'controlsList' || prop === 'blocking')
+              && !(prop === 'sizes' && _r374clTag === 'source')) {
             return undefined;
           }
         }
@@ -8016,9 +8047,21 @@ return _tplContent;
               return (_p5coLo === 'anonymous' || _p5coLo === 'use-credentials') ? _p5coLo : 'anonymous';
             }
             if (!_p5coHas || _p5coRaw == null || _p5coRaw === '') return '';
-            var _p5asLo = String(_p5coRaw).toLowerCase();
+            var _p5asLo = _zwASCIILower(String(_p5coRaw));
             return _ZW_LINK_AS_KEYWORDS.hasOwnProperty(_p5asLo) ? _p5asLo : '';
           }
+        }
+        // R5009 片 d（M4 片 d）：nonce「string」反射（link/style——nonce-hiding 面：
+        // IDL set **不写内容属性**（corpus 'IDL set to X' getAttribute 期望 previous
+        // value，security 语义），IDL get 读「内部值优先、attr 回落、缺省 ''」。
+        // M3 片 d 撤出反射面曾全 undefined）。缓存见 set 侧 nonce 分支（part05）。
+        if (prop === 'nonce' && (_realTag(sel, handle) === 'LINK' || _realTag(sel, handle) === 'STYLE')) {
+          var _p5ncCached = _reflectedAttrs[key];
+          if (_p5ncCached && Object.prototype.hasOwnProperty.call(_p5ncCached, 'nonce')) {
+            return _p5ncCached.nonce;
+          }
+          var _p5ncRaw = handle ? __zw_get_attr_handle(handle, 'nonce') : __zw_get_attr(sel, 'nonce');
+          return (_p5ncRaw == null) ? '' : String(_p5ncRaw);
         }
         // R5009 片 e（M4 片 c）：METER double 反射（value/min/max/low/high/optimum，
         // default 0——spec 浮点前缀解析，trailing junk 忽略；非有限/NaN → 0）。
@@ -8086,8 +8129,11 @@ return _tplContent;
         // 走 _REFLECTED_UINT 表）。置于 R3037 直读之前（同遮蔽规避）。
         if (prop === 'referrerPolicy' || prop === 'decoding' || prop === 'loading') {
           var _p5emTag = _realTag(sel, handle);
+          // R5009 片 d（M4 片 d）：A 入 referrerPolicy 面（HTMLAnchorElement 同枚举
+          // ——tag 门曾缺，IDL set 大写变体后 getter 经 R3037 MAP 返原串，WPT
+          // reflection-text 'a.referrerPolicy IDL set "NO-REFERRER"' 簇 108F）。
           var _p5emHit = prop === 'referrerPolicy'
-            ? (_p5emTag === 'IMG' || _p5emTag === 'IFRAME' || _p5emTag === 'AREA' || _p5emTag === 'LINK')
+            ? (_p5emTag === 'IMG' || _p5emTag === 'IFRAME' || _p5emTag === 'AREA' || _p5emTag === 'LINK' || _p5emTag === 'A')
             : prop === 'decoding' ? _p5emTag === 'IMG'
             : (_p5emTag === 'IMG' || _p5emTag === 'IFRAME' || _p5emTag === 'VIDEO' || _p5emTag === 'AUDIO');
           if (_p5emHit) {
@@ -8098,7 +8144,7 @@ return _tplContent;
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _p5emAttr) : __zw_get_attr(sel, _p5emAttr))) == null
               ? '' : (handle ? __zw_get_attr_handle(handle, _p5emAttr)
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _p5emAttr) : __zw_get_attr(sel, _p5emAttr))));
-            var _p5emLo = _p5emRaw.toLowerCase();
+            var _p5emLo = _zwASCIILower(_p5emRaw);
             if (prop === 'referrerPolicy') {
               var _p5rpOk = { '': 1, 'no-referrer': 1, 'no-referrer-when-downgrade': 1, 'same-origin': 1,
                 'origin': 1, 'strict-origin': 1, 'origin-when-cross-origin': 1,
@@ -8165,6 +8211,12 @@ return _tplContent;
               return (_p5fHas && _p5fRaw != null && _p5fRaw !== '') ? String(_p5fRaw) : String(_p5fBase || '');
             }
             var _p5fLo = String(_p5fRaw == null ? '' : _p5fRaw).toLowerCase();
+            // R5009 片 d（M4 片 d）：form 关联元素的 formMethod/formEnctype 枚举**无
+            // missing default**（缺省 → ''——invalid 才映射 invalidVal；FORM 元素本体
+            // 的 method/enctype 才有 missing default，已由 part03 FORM 分支服务）。
+            // WPT reflection-forms 'input.formEnctype/formMethod IDL get with DOM
+            // attribute unset' 期望 ""。
+            if (!_p5fHas) return '';
             if (prop === 'formMethod') {
               return (_p5fLo === 'get' || _p5fLo === 'post' || _p5fLo === 'dialog') ? _p5fLo : 'get';
             }
@@ -8198,12 +8250,44 @@ return _tplContent;
           var _p5lvN = _zwParseSpecInt(_p5lvRaw);
           return (_p5lvN == null || _p5lvN > 2147483647 || _p5lvN < -2147483648) ? 0 : _p5lvN;
         }
+        // R5009 片 d（M4 片 d）：ol.start 是 **plain long**（signed 解析——负数合法，
+        // 越界/缺省 → default 1；WPT reflection-grouping 'ol.start setAttribute(-36)'
+        // 期望 -36、'setAttribute(0)' 期望 0——旧 UINT nonneg + throwOnZero 面全反）。
+        if (prop === 'start' && _realTag(sel, handle) === 'OL') {
+          var _p5osRaw = handle
+            ? __zw_get_attr_handle(handle, 'start')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'start') : __zw_get_attr(sel, 'start'));
+          var _p5osN = _zwParseSpecInt(_p5osRaw);
+          return (_p5osN == null || _p5osN > 2147483647 || _p5osN < -2147483648) ? 1 : _p5osN;
+        }
+        // R5009 片 d（M4 片 d）：hr.size/font.size 是普通 **string** 反射（obsolete
+        // 面——逐字读写，缺省 ''；专用 size 数值分支曾吞二者，WPT
+        // reflection-grouping 'hr.size' / reflection-obsolete 'font.size' 全族）。
+        var _sz5StrTag = _realTag(sel, handle);
+        if (prop === 'size' && (_sz5StrTag === 'HR' || _sz5StrTag === 'FONT')) {
+          return (handle ? __zw_get_attr_handle(handle, 'size')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'size') : __zw_get_attr(sel, 'size'))) || '';
+        }
+        // R5009 片 d（M4 片 d）：accessKeyLabel——UA 派生标签。headless 无平台快捷键
+        // 面：单字符 accesskey（可分配）→ 合成 'Alt+<key>'（WPT valid 面仅断言非空
+        // ——跨厂商修饰键不同）；多 token/无效 → ''（'Returns empty string when
+        // accesskey is invalid'）。
+        if (prop === 'accessKeyLabel') {
+          var _aklRaw = (handle ? __zw_get_attr_handle(handle, 'accesskey')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'accesskey') : __zw_get_attr(sel, 'accesskey'))) || '';
+          var _aklTrim = String(_aklRaw).replace(/^[ \t\n\f\r]+/, '').replace(/[ \t\n\f\r]+$/, '');
+          return (_aklTrim.length === 1) ? 'Alt+' + _aklTrim : '';
+        }
         // R3037：reflected string 内容属性读（type/name/placeholder/min/max/step/pattern/alt/src/rel/...）。
         // 旧 get trap 未拦 → 读返 undefined（写正常，set trap generic fallthrough → __zw_set_attr）。表单校验库
         // 读 input.min/max/pattern/type、analytics 读 src/name 等失效。命中 [`_reflectedStringAttr`] → 读内容属性
         //（sel 走 latest-wins `__zw_get_attr_lw` 反映 pending SetAttr；handle 走 `__zw_get_attr_handle`）；缺省返 ''
         //（spec reflected string 缺省空串，非 null/undefined）。
-        var _rsAttr = _reflectedStringAttr(prop);
+        // R5009 片 d：`name` 先走 tag 门（form 关联族反射、余 undefined——WPT
+        // name-content-attribute-and-property doesNotReflect 全族）。
+        var _rsAttr = (prop === 'name')
+          ? _reflectedNameAttr(_realTag(sel, handle), prop)
+          : _reflectedStringAttr(prop);
         if (_rsAttr) {
           if (handle) return __zw_get_attr_handle(handle, _rsAttr) || '';
           if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, _rsAttr) || '';
@@ -8224,8 +8308,11 @@ return _tplContent;
             //（\v/BOM/nbsp 不跳——parseInt 宽松误吞，WPT reflection-forms 'size'
             // whitespace 簇期望 default 实证）。
             var _szN = _zwParseSpecNonneg(String(_szRaw == null ? '' : _szRaw));
-            if (_szTag === 'INPUT') return (_szN == null || _szN < 1) ? 20 : _szN;
-            return (_szN == null) ? 0 : _szN;
+            // R5009 片 d（M4 片 d）：range 上界 maxInt（> maxInt → default——WPT
+            // reflection-forms 'input.size setAttribute(2147483648)' 期望 20、
+            // 'select.size setAttribute(4294967296)' 期望 0）。
+            if (_szTag === 'INPUT') return (_szN == null || _szN < 1 || _szN > 2147483647) ? 20 : _szN;
+            return (_szN == null || _szN > 2147483647) ? 0 : _szN;
           }
         }
         // WC-M3 切片 8 第二增量（web-components goal，WPT event-with-related-target
@@ -8239,6 +8326,9 @@ return _tplContent;
             ? __zw_get_attr_handle(handle, 'label')
             : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'label') : __zw_get_attr(sel, 'label'));
           if (_glbRaw) return _glbRaw;
+          // R5009 片 d（M4 片 d）：optgroup.label 是普通 string 反射（缺省 ''）——
+          // undefined 曾使 typeof 断言挂（WPT reflection-forms 'optgroup.label' 簇）。
+          if (_realTag(sel, handle) === 'OPTGROUP') return '';
         }
         // R3038/R3041：reflected unsigned-long（numeric）属性读（colSpan/rowSpan/maxLength/minLength/cols/rows/start）。
         // parseInt 内容属性 → number；缺省/不可解析 → entry.d（spec default）；colSpan/rowSpan <1 → 1（min）。
@@ -8289,6 +8379,10 @@ return _tplContent;
             return (_ruN > _ruEntry.max) ? _ruEntry.max : _ruN;
           }
           if (_ruN > 2147483647) return _ruEntry.d;
+          // R5009 片 d（M4 片 d）：limited 面（cols/rows「> 0 with fallback」）——
+          // [1, maxInt] 外 → **default**（非 min-clamp——WPT reflection-forms
+          // 'textarea.cols setAttribute(0)' 期望 20）。
+          if (_ruEntry.limited && _ruEntry.min != null && _ruN < _ruEntry.min) return _ruEntry.d;
           if (_ruEntry.min != null && _ruN < _ruEntry.min) return _ruEntry.min;
           return _ruN;
         }
@@ -9096,6 +9190,10 @@ return _tplContent;
           if (value) _zwSetAttr(key, sel, handle, 'open', '');
           else {
             _zwRemoveAttr(key, sel, handle, 'open');
+            // R5009 片 d（M4 片 d）：R122 实例层同步（setAttribute('open') 的 upsert
+            // 残留曾使 hasAttribute 短路恒 true——WPT reflection-misc
+            // 'details.open/dialog.open IDL set falsy' hasAttribute 期望 false 簇）。
+            if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, 'open');
             if (_realTag(sel, handle) === 'DIALOG') {
               delete _zwDialogModal[key];
               delete _zwTopLayer[key];
@@ -9130,6 +9228,15 @@ return _tplContent;
           else { __zw_set_attr(sel, 'popovertargetaction', _ptaV); moAttr = 'popovertargetaction'; }
         } else if (p === 'role') {
           // role set——反射 role 属性（串）。同步缓存。
+          // R5009 片 d（M4 片 d）：null/undefined → removeAttribute（ARIA 属性可空，
+          // WPT aria-attribute-reflection 'role attribute reflects.' 期望 getAttribute
+          // null）。
+          if (value === null || value === undefined) {
+            _zwRemoveAttr(key, sel, handle, 'role');
+            if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, 'role');
+            moAttr = 'role';
+            return true;
+          }
           var rlc2 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
           rlc2['role'] = String(value);
           if (handle) __zw_set_attr_handle(handle, 'role', String(value));
@@ -9138,7 +9245,16 @@ return _tplContent;
         } else if (_ariaAttrName(p)) {
           // ariaXxx set——反射 aria-* 属性（ariaLabel→aria-label, ariaLabelledBy→aria-labelledby...）。
           // 通用映射覆盖全部 aria IDL 属性。同步缓存。
+          // R5009 片 d（M4 片 d）：null/undefined → removeAttribute（ARIA DOMString?
+          // 可空语义——String(value) 曾写 "null"，WPT aria-attribute-reflection
+          // 'aria-braillelabel/aria-colcount/... attribute reflects.' 全族）。
           var ariaAttr = _ariaAttrName(p);
+          if (value === null || value === undefined) {
+            _zwRemoveAttr(key, sel, handle, ariaAttr);
+            if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, ariaAttr);
+            moAttr = ariaAttr;
+            return true;
+          }
           // R5009 片 e（M4 片 a）：ARIA enumerated setter（_ZW_ARIA_ENUMS 名单）——
           // null/undefined → removeAttribute（isNullable，WPT 'IDL set to null'
           // getAttribute 期望 null）；余逐字写（getter 侧枚举归一）。置于 plain 面前
@@ -9166,7 +9282,19 @@ return _tplContent;
           if (handle) __zw_set_attr_handle(handle, ariaAttr, String(value));
           else __zw_set_attr(sel, ariaAttr, String(value));
           moAttr = ariaAttr;
-        } else if (p === 'value') {
+        } else if (p === 'max' && _realTag(sel, handle) === 'PROGRESS') {
+          // R5009 片 d（M4 片 d）：progress.max「limited double」setter——值 > 0 →
+          // String(Number) 写 attr（1e-10 → "1e-10"、1e25 → "1e+25"）；≤ 0（含 -0/
+          // NaN/非有限）→ **不写**（attr 留原值——WPT reflection-forms
+          // 'progress.max IDL set -1/-0/0' getAttribute 期望 "previous value"）。
+          var _pgMaxNum = Number(value);
+          if (typeof _pgMaxNum === 'number' && isFinite(_pgMaxNum) && _pgMaxNum > 0) {
+            if (handle) { __zw_set_attr_handle(handle, 'max', String(_pgMaxNum)); moAttr = 'max'; }
+            else { __zw_set_attr(sel, 'max', String(_pgMaxNum)); moAttr = 'max'; }
+          }
+        } else if (p === 'value'
+                   || (_realTag(sel, handle) === 'METER'
+                       && (p === 'low' || p === 'high' || p === 'optimum'))) {
           // WC-M3 切片 8 第十小步（web-components goal，spec HTML 各元素的 reflected
           // `value` IDL）：BUTTON/LI/METER/PROGRESS/PARAM/OPTION 的 value IDL 是**纯
           // 内容属性反射**（无 INPUT 的 dirty-flag 语义）——写 value 属性 + moAttr 汇流
@@ -9177,13 +9305,21 @@ return _tplContent;
               || _rvTag === 'PROGRESS' || _rvTag === 'PARAM' || _rvTag === 'OPTION') {
             // CE 反应内联派发（'value' 不入全局映射——INPUT 的 dirty-flag 语义不受影响）：
             // 写前捕旧值，写后 dispatch（observed 过滤/值真变判定在 dispatch 内）。
+            // R5009 片 d（M4 片 d）：meter.low/high/optimum 同分支逐字写（同名小写
+            // 内容属性；double 型串化 String 转换即 spec「best representation」——
+            // "1e-10"/"1e+25"/"0"（-0）全对齐）。
+            var _rvAttr = (p === 'value') ? 'value' : p;
             var _rvEntry = _ce_registry_gen ? _ceEntryFor(key, sel, handle) : null;
-            var _rvOld = _rvEntry ? _ce_attrValue(sel, handle, 'value') : null;
-            var _rvVal = (value === null || value === undefined) ? '' : String(value);
-            if (handle) { __zw_set_attr_handle(handle, 'value', _rvVal); moAttr = 'value'; }
-            else { __zw_set_attr(sel, 'value', _rvVal); moAttr = 'value'; }
+            var _rvOld = _rvEntry ? _ce_attrValue(sel, handle, _rvAttr) : null;
+            // R5009 片 d（M4 片 d）：逐字 DOMString 转换（null → "null"、undefined →
+            // "undefined"——`== null → ''` 曾吞串面，WPT reflection-forms
+            // 'button.value/param.value/option.value IDL set undefined' getAttribute
+            // 期望 "undefined"）。
+            var _rvVal = String(value);
+            if (handle) { __zw_set_attr_handle(handle, _rvAttr, _rvVal); moAttr = _rvAttr; }
+            else { __zw_set_attr(sel, _rvAttr, _rvVal); moAttr = _rvAttr; }
             if (_rvEntry) {
-              _ce_dispatchAttrChange(_rvEntry, _makeProxy(sel, handle), 'value', _rvOld, _rvVal, null);
+              _ce_dispatchAttrChange(_rvEntry, _makeProxy(sel, handle), _rvAttr, _rvOld, _rvVal, null);
             }
           } else if (!handle && sel && typeof __zw_select_option === 'function' && _isTag(sel, 'SELECT')) {
             // P1a select：编程设 `<select>.value = value` → 记 SelectOption mutation（apply 时
@@ -9285,8 +9421,10 @@ return _tplContent;
           } else if (_realTag(sel, handle) === 'INPUT') {
             _throwDom('InvalidStateError', 'input type does not support text selection');
           }
-        } else if (p === 'htmlFor') {
+        } else if (p === 'htmlFor' && _realTag(sel, handle) === 'LABEL') {
           // `label.htmlFor = x`（R2840）——反射 `for` 属性（attr 名映射 htmlFor→for）。仅 LABEL。
-          if (_realTag(sel, handle) === 'LABEL') {
+          // R5009 片 d：tag 门上提（旧分支体 gate 曾吞非 LABEL——script.htmlFor 的
+          // IDL set 静默不写，WPT reflection-misc 'script.htmlFor IDL set' 17F）。
+          {
             if (handle) __zw_set_attr_handle(handle, 'for', String(value));
             else { __zw_set_attr(sel, 'for', String(value)); moAttr = 'for'; }

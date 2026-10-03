@@ -1085,12 +1085,13 @@ fn test_reflected_string_attr_reads_r3037() {
     );
 
     // ⑦ camelCase 映射：input.formMethod / a.crossOrigin 反射 formmethod / crossorigin。
-    // R5009 片 e：formMethod 为 enumerated（missing default 'get'——WPT reflection-forms）。
+    // R5009 片 d：formMethod 枚举**无 missing default**（缺省 ''——WPT reflection-forms
+    // 'input.formMethod IDL get with DOM attribute unset' 期望 ""；invalid 才映射 'get'）。
     sandbox.execute("globalThis.__fm = document.getElementById('i').formMethod;").unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__fm").unwrap().value,
-        "get",
-        "input.formMethod 缺省='get'（spec enumerated missing-default）"
+        "",
+        "input.formMethod 缺省=''（R5009 片 d 按 WPT reflection-forms 期望更新——枚举无 missing default）"
     );
 }
 

@@ -4111,6 +4111,10 @@
     embeds: _liveQueryCollection(['embed', 'object']),
     plugins: _liveQueryCollection(['embed', 'object']),
     anchors: _liveQueryCollection('a[name]'),
+    // R5009 片 d（M4 片 d）：document.applets 恒空集合（spec historical——applet 已废，
+    // applets 集合不再收集，WPT historical 'document.applets is always empty'
+    // assert_array_equals [] 曾读 undefined）。
+    applets: { length: 0 },
     addEventListener: function(type, fn, opts) {
       // R40：document 注册打 tgt='doc' 标（document/window/html 三合一 _elKey('html') key 内槽位区分，
       // 派发期 document 虚站只触发本槽位注册，currentTarget=document 本体）。不再经 _makeProxy('html')

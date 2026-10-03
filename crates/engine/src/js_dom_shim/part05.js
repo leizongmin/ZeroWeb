@@ -249,7 +249,10 @@
           //（getter 走 part04 media 段读 attr）。DOMString 非 nullable → null 转 "null" 串。
           // https://html.spec.whatwg.org/multipage/media.html#dom-media-preload
           var _plTag = _realTag(sel, handle);
-          var _plStr = (value === null || value === undefined) ? 'null' : String(value);
+          // R5009 片 d（M4 片 d）：逐字 DOMString 转换（null → "null"、undefined →
+          // "undefined"——枚举型非 nullable，null-removal 曾吞 undefined 串面，
+          // WPT 'video.preload IDL set undefined' getAttribute 期望 "undefined"）。
+          var _plStr = String(value);
           if (handle) { __zw_set_attr_handle(handle, 'preload', _plStr); moAttr = 'preload'; } // WC-M1 切片 4
           else { __zw_set_attr(sel, 'preload', _plStr); moAttr = 'preload'; }
         } else if (p === 'crossOrigin') {
@@ -257,7 +260,11 @@
           // 其余原样写属性（spec：IDL getter 归一，setter 存原始值——invalid value 'foo'
           // 写属性 'foo'，getter 返 'anonymous'）。
           var _coTag = _realTag(sel, handle);
-          if (_coTag === 'AUDIO' || _coTag === 'VIDEO' || _coTag === 'IMG') {
+          // R5009 片 d（M4 片 d）：SCRIPT/LINK 入面（同一 nullable 枚举 setter——
+          // WPT reflection-misc/metadata 'script.crossOrigin/link.crossOrigin IDL set'
+          // 簇——旧仅 AUDIO/VIDEO/IMG，script/link 落 expando 兜底吞写）。
+          if (_coTag === 'AUDIO' || _coTag === 'VIDEO' || _coTag === 'IMG'
+              || _coTag === 'SCRIPT' || _coTag === 'LINK') {
             if (value === null || value === undefined) {
               // 与 removeAttribute 同步 R122 实例层（removeAttribute 路径本身有清理；IDL setter
               // 直呼 host remove 回调绕过了它——不清理则 hasAttribute 读实例层 stale true）。
@@ -312,18 +319,13 @@
         } else if (p === 'src' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
           // `media.src = x`（HTMLMediaElement，M2）——写属性 + headless 加载模拟：setTimeout(0)
           // 后提交资源状态并派事件序列（loadstart→...→canplaythrough；autoplay 续派 play/playing）。
-          // URL 属性语义：null → removeAttribute（spec）；'' → 解析为页面 URL 触发加载。
+          // R5009 片 d（M4 片 d）：逐字 DOMString 写（corpus「url 型非 nullable」——
+          // null/undefined → "null"/"undefined" 串；null-removal 曾吞串面，WPT
+          // reflection-embedded 'video.src/audio.src IDL set undefined' getAttribute
+          // 期望 "undefined"）。
           var _mTag = _realTag(sel, handle);
           var _mKey = _elKey(sel, handle);
-          if (value === null || value === undefined) {
-            try { _zwAttrInstRemoveNS(_mKey, null, 'src'); } catch (_eMSRm) {}
-            if (handle && typeof __zw_remove_attr_handle === 'function') {
-              __zw_remove_attr_handle(handle, 'src'); moAttr = 'src'; // WC-M3 切片 8 第十小步
-            } else if (!handle && typeof __zw_remove_attr === 'function') {
-              __zw_remove_attr(sel, 'src'); moAttr = 'src';
-            }
-            delete _resourceStates[_mKey]; // spec：src 移除 → 资源选择重置（headless 清状态可重载）
-          } else {
+          {
             var _mSrc = String(value);
             // WC-M3 切片 8 第十小步：handle 路径汇流 moAttr（CE 反应 + R45 record）。
             if (handle) { __zw_set_attr_handle(handle, 'src', _mSrc); moAttr = 'src'; }
@@ -387,6 +389,23 @@
               else __zw_set_text(sel, _odv);
             }
           }
+        } else if (p === 'defaultSelected') {
+          // `option.defaultSelected = x`（R5009 片 d，M4 片 d）——boolean 反射 `selected`
+          // 属性（truthy→设存在，falsy→移除）。旧无分支 → 落 expando 兜底，attr 不写
+          //（<option selected> 的 truthy 面因属性本就存在而侥幸过，falsy 面 5F）。
+          if (_realTag(sel, handle) === 'OPTION') {
+            _clearBoolDefault(key, 'selected');
+            if (value) {
+              if (handle) __zw_set_attr_handle(handle, 'selected', '');
+              else { __zw_set_attr(sel, 'selected', ''); moAttr = 'selected'; }
+            } else if (handle && typeof __zw_remove_attr_handle === 'function') {
+              __zw_remove_attr_handle(handle, 'selected');
+              if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, 'selected');
+              moAttr = 'selected';
+            } else if (!handle && typeof __zw_remove_attr === 'function') {
+              __zw_remove_attr(sel, 'selected'); moAttr = 'selected';
+            }
+          }
         } else if (p === 'defaultChecked') {
           // `input.defaultChecked = x`（R2840）——boolean 反射 `checked` 属性（truthy→设存在，falsy→移除）。
           // R2998：显式设 defaultChecked 重同步（清 dirty，getter 回落新属性值 latest-wins）。
@@ -395,6 +414,14 @@
             if (value) {
               if (handle) __zw_set_attr_handle(handle, 'checked', '');
               else { __zw_set_attr(sel, 'checked', ''); moAttr = 'checked'; }
+            } else if (handle && typeof __zw_remove_attr_handle === 'function') {
+              // R5009 片 d（M4 片 d）：handle 路径 falsy 真移除（仅 `!handle` 分支曾
+              // 移除——detached createElement('input') 的 defaultChecked falsy set
+              // 属性残留，WPT reflection-forms-weekmonth '<input checked>
+              // defaultChecked IDL set ""' hasAttribute 期望 false 簇）。
+              __zw_remove_attr_handle(handle, 'checked');
+              if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, 'checked');
+              moAttr = 'checked';
             } else if (!handle && typeof __zw_remove_attr === 'function') {
               __zw_remove_attr(sel, 'checked'); moAttr = 'checked';
             }
@@ -462,7 +489,17 @@
               __zw_remove_attr(sel, p); moAttr = p;
             }
           } else if (p === 'autocomplete') {
-            rc4[p] = String(value);
+            // R5009 片 d（M4 片 d）：FORM 的 autocomplete 是枚举反射（[on, off]，
+            // missing/invalid default on）——**缓存须存归一值**（getter 优先读缓存，
+            // 存原串使 IDL set "OFF"/"xon" 后 IDL get 读回原串——WPT
+            // reflection-forms 'form.autocomplete IDL set' 簇）。非 FORM（input/
+            // select/textarea 的 autocomplete 是 token 串反射，customGetter）仍存原串。
+            var _acV = String(value);
+            if (_realTag(sel, handle) === 'FORM') {
+              var _acLo = _zwASCIILower(_acV);
+              _acV = (_acLo === 'on' || _acLo === 'off') ? _acLo : 'on';
+            }
+            rc4[p] = _acV;
             if (handle) __zw_set_attr_handle(handle, 'autocomplete', String(value));
             else { __zw_set_attr(sel, 'autocomplete', String(value)); moAttr = 'autocomplete'; }
           } else {
@@ -472,14 +509,23 @@
             if (handle) __zw_set_attr_handle(handle, p, attrV);
             else { __zw_set_attr(sel, p, attrV); moAttr = p; }
           }
-        } else if ((p === 'width' || p === 'height') && (_realTag(sel, handle) === 'IMG' || _realTag(sel, handle) === 'CANVAS' || _realTag(sel, handle) === 'VIDEO')) {
+        } else if ((p === 'width' || p === 'height') && (_realTag(sel, handle) === 'IMG' || _realTag(sel, handle) === 'CANVAS' || _realTag(sel, handle) === 'VIDEO' || _realTag(sel, handle) === 'INPUT')) {
+          // R5009 片 d（M4 片 d）：INPUT 入面（input.width/height「unsigned long
+          // customGetter」数值面——FLAT 逐字写曾把 "-0"/2147483648 原样落 attr，WPT
+          // reflection-forms 'input.width IDL set "-0"' getAttribute 期望 "0"）。
           // reflected unsigned-long 维度 setter（R2851）：归一（NaN/负 → 0）→ 缓存数值 + 写 width/height
           // 内容属性（getter 优先读缓存保 sync set→get）。R3077：CANVAS width/height 反射（保 set→get 一致）。
           // R3308：CANVAS 设 width/height 触发 bitmap resize（HTML spec §4.12.5.1——清空 bitmap + 重置绘图状态）。
           // 已 getContext 的 canvas，调 host resizeContext 清空像素 + 重置 context 状态到默认。
           // R34xx：CANVAS 走 WebIDL ToUint32（2d.canvas.host.size.invalid.attributes.idl——
           // 200-2^32 → 200（mod 2^32）、'400x' → NaN → 0）；IMG/IFRAME 保持 parseInt（既有语义）。
-          var wv = (_realTag(sel, handle) === 'CANVAS') ? _zwToUint32(value) : (function () {
+          var wv = (_realTag(sel, handle) === 'CANVAS') ? (function () {
+            // R5009 片 d（M4 片 d）：ToUint32 后 > maxInt → default（300/150——
+            // reflected unsigned long 界外语义，WPT 'canvas.width IDL set
+            // 2147483648' getAttribute 期望 "300"）。
+            var cv = _zwToUint32(value);
+            return (cv > 2147483647) ? (p === 'width' ? 300 : 150) : cv;
+          })() : (function () {
             var pv = parseInt(value, 10);
             // R5009 片 e（M4 片 b）：> maxInt → 0（WPT reflection-embedded
             // 'img.width IDL set to 2147483648' getAttribute 期望 "0" 实证）。
@@ -582,14 +628,16 @@
           if (handle) { __zw_set_attr_handle(handle, _p5mqAttr2, _p5mqStr); moAttr = _p5mqAttr2; }
           else { __zw_set_attr(sel, _p5mqAttr2, _p5mqStr); moAttr = _p5mqAttr2; }
         } else if (typeof _reflectedUrlAttr === 'function'
-            && _realTag(sel, handle) !== 'IFRAME'
+            && !(_realTag(sel, handle) === 'IFRAME' && p === 'src')
             && !(_realTag(sel, handle) === 'IMG' && p === 'src')
             && _reflectedUrlAttr(_realTag(sel, handle), p) != null) {
           // R5009 片 e（M4 片 b）：URL 反射面 setter（img.lowsrc/longDesc、object.
           // data/codeBase、video.poster 等——R3069 条件未含、曾落 expando 兜底吞写）。
           // 逐字写 attr（含 null/undefined → "null"/"undefined" 串，url 型非 nullable）。
-          // **IFRAME.src 除外**——R3069 分支尾部有 `__zw_reload_iframe` 导航钩子
-          // （r388 iframe history 面依赖），不走本分支。
+          // **IFRAME.src/IMG.src 除外**——R3069 分支尾部有 `__zw_reload_iframe` 导航钩子
+          // （r388 iframe history 面依赖）/img 加载链，不走本分支。
+          // R5009 片 d：IFRAME 排除收窄到 src（iframe.longDesc 曾一并落排除 → expando
+          // 吞写，WPT reflection-embedded 'iframe.longDesc IDL set' 全族）。
           var _r5u2Attr = _reflectedUrlAttr(_realTag(sel, handle), p);
           if (handle) { __zw_set_attr_handle(handle, _r5u2Attr, String(value)); moAttr = _r5u2Attr; }
           else { __zw_set_attr(sel, _r5u2Attr, String(value)); moAttr = _r5u2Attr; }
@@ -599,8 +647,35 @@
           var _r5emAttr = (prop === 'decoding') ? 'decoding' : (prop === 'loading') ? 'loading' : 'referrerpolicy';
           if (handle) { __zw_set_attr_handle(handle, _r5emAttr, String(value)); moAttr = _r5emAttr; }
           else { __zw_set_attr(sel, _r5emAttr, String(value)); moAttr = _r5emAttr; }
+        } else if (p === 'size' && (_realTag(sel, handle) === 'INPUT' || _realTag(sel, handle) === 'SELECT')) {
+          // R5009 片 d（M4 片 d）：size 数值 setter（R3069 generic 曾逐字写原串）。
+          // INPUT「limited unsigned long」：0 → **抛 IndexSizeError**；[1, maxInt] →
+          // String(Number)；越界 → default "20"（WPT reflection-forms idlDomExpected
+          // [exception, "1", maxInt, "20", "20"]）。SELECT「unsigned long」：[0, maxInt]
+          // → String(Number)；越界 → default "0"（"-0" → "0"）。
+          var _sz5Num = Number(value);
+          if (_realTag(sel, handle) === 'INPUT') {
+            if (_sz5Num === 0) {
+              throw new (globalThis.DOMException || Error)(
+                'The value provided is 0, which is an invalid value for this attribute.', 'IndexSizeError');
+            }
+            var _sz5Str = (!_sz5Num || _sz5Num < 1 || _sz5Num > 2147483647) ? '20' : String(_sz5Num);
+            if (handle) { __zw_set_attr_handle(handle, 'size', _sz5Str); moAttr = 'size'; }
+            else { __zw_set_attr(sel, 'size', _sz5Str); moAttr = 'size'; }
+          } else {
+            var _sz5Sel = (!_sz5Num && _sz5Num !== 0) || _sz5Num < 0 || _sz5Num > 2147483647 ? '0' : String(_sz5Num);
+            if (handle) { __zw_set_attr_handle(handle, 'size', _sz5Sel); moAttr = 'size'; }
+            else { __zw_set_attr(sel, 'size', _sz5Sel); moAttr = 'size'; }
+          }
+        } else if (p === 'nonce' && (_realTag(sel, handle) === 'LINK' || _realTag(sel, handle) === 'STYLE')) {
+          // R5009 片 d（M4 片 d）：nonce-hiding——IDL set **不写内容属性**（spec：
+          // nonce 内部值与 attr 仅创建时同步；corpus 'IDL set to X' getAttribute 期望
+          // previous value）。缓存内部值（getter 读缓存 → attr → ''）。
+          var _nc5 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
+          _nc5.nonce = String(value);
         } else if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean'
-            && _reflectedStringAttr(p) === null && p !== 'href' && p !== 'size' && p !== 'label' && p !== 'as' && p !== 'crossorigin' && p !== 'span' && p !== 'scope' && p !== 'valign' && p !== 'scrollAmount' && p !== 'scrollDelay' && p !== 'trueSpeed' && p !== 'lowsrc' && p !== 'longDesc' && p !== 'data' && p !== 'codeBase' && p !== 'poster' && p !== 'decoding' && p !== 'loading' && p !== 'referrerPolicy' && !(_realTag(sel, handle) === 'FRAMESET' && (p === 'cols' || p === 'rows'))) {
+            && _reflectedStringAttr(p) === null && p !== 'href' && p !== 'size' && p !== 'label' && p !== 'as' && p !== 'crossorigin' && p !== 'span' && p !== 'scope' && p !== 'valign' && p !== 'scrollAmount' && p !== 'scrollDelay' && p !== 'trueSpeed' && p !== 'lowsrc' && p !== 'longDesc' && p !== 'data' && p !== 'codeBase' && p !== 'poster' && p !== 'decoding' && p !== 'loading' && p !== 'referrerPolicy' && !(_realTag(sel, handle) === 'FRAMESET' && (p === 'cols' || p === 'rows'))
+            && !(p === 'name' && typeof _reflectedNameAttr === 'function' && _reflectedNameAttr(_realTag(sel, handle), p) != null)) {
           // R3042：expando 属性（非原始值——function/object/array/null/undefined/symbol/bigint）。旧经 generic fallthrough
           // 写垃圾内容属性（`__zw_set_attr(sel, p, '[object Object]')` / 'function(){}'）且 get 读不回（undefined）。
           // real browser：expando 存于 JS 对象非内容属性。改存 per-element expando map（get trap 读回）。
@@ -674,7 +749,9 @@
           } else {
             _imFail();
           }
-        } else if (_reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label' || p === 'as' || p === 'crossorigin' || p === 'span' || p === 'scope' || p === 'valign') {
+        } else if ((p === 'name' && typeof _reflectedNameAttr === 'function'
+                    && _reflectedNameAttr(_realTag(sel, handle), p) != null)
+                   || _reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label' || p === 'as' || p === 'crossorigin' || p === 'span' || p === 'scope' || p === 'valign') {
           // R3069：reflected 原始属性——get trap 经 `_reflectedStringAttr`（type/name/placeholder/...）/ `_REFLECTED_UINT`
           //（colSpan/rowSpan/maxLength/cols/rows/start）/ `size` 专用分支读内容属性，故 set 须继续写属性（非 expando），
           // 否则 set 写 expando / get 读空属性 round-trip 断。复用 get trap 同源检测函数，自动一致（无静态名表维护）。
@@ -690,7 +767,14 @@
           var _refAttr = _REFLECTED_UINT[p] ? _REFLECTED_UINT[p].a : (_reflectedStringAttr(p) || p);
           // R5007 M3 片 c：[LegacyNullToEmptyString] 集（body 颜色族）null → ''，
           // 余 DOMString null → "null"（WebIDL 默认转换）。
-          var _refVal = _reflectedStringNullEmpty(p) && value === null ? '' : String(value);
+          // R5007 M3 片 c：[LegacyNullToEmptyString] 集（body 颜色族）null → ''，
+          // 余 DOMString null → "null"（WebIDL 默认转换）。R5009 片 d：改走 tag 门
+          //（color 仅 BODY/FONT、border 仅 IMG/OBJECT、marginHeight/marginWidth 仅
+          // FRAME/IFRAME——table.border 普通串曾误转 ""，WPT 'table.border IDL set
+          // null' 期望 "null"）。
+          var _refVal = (typeof _reflectedNullEmptyFor === 'function'
+            ? _reflectedNullEmptyFor(_realTag(sel, handle), p)
+            : _reflectedStringNullEmpty(p)) && value === null ? '' : String(value);
           // R5009 片 e（M4 片 c）：bgColor 按元素分型——body LegacyNull（null→''），
           // marquee 等普通串（null→"null"）。NULL_EMPTY 对 bgColor 无 tag 感知，此处门。
           if (p === 'bgColor' && value === null) {
@@ -750,10 +834,21 @@
               throw new (globalThis.DOMException || Error)(
                 'The value provided is negative.', 'IndexSizeError');
             }
+            // R5009 片 d（M4 片 d）：textarea.cols/rows「limited to non-negative > 0
+            // with fallback」setter——[1, maxInt] 内 → String(Number)；界外（含 0/负/
+            // 越界/NaN）→ **default 串**（WPT reflection-forms idlDomExpected
+            // [null→"20", "1", maxInt, null, null]）。
+            if (_REFLECTED_UINT[p].limited) {
+              _refVal = (!_ruNum && _ruNum !== 0) || _ruNum < 1 || _ruNum > 2147483647
+                ? String(_REFLECTED_UINT[p].d) : String(_ruNum);
+            }
             // R5009 片 e（M4 片 b）：unsigned 面 > maxInt → 0（WPT img.hspace
             // 'IDL set to 2147483648' getAttribute 期望 "0" 实证——非 clamped 面）。
-            if (_ruNum > 2147483647) _ruNum = 0;
-            _refVal = String(_ruNum);
+            // R5009 片 d：limited 面（cols/rows fallback）已在上方定 _refVal，不覆写。
+            if (!_REFLECTED_UINT[p].limited) {
+              if (_ruNum > 2147483647) _ruNum = 0;
+              _refVal = String(_ruNum);
+            }
           }
           if (handle) __zw_set_attr_handle(handle, _refAttr, _refVal);
           else __zw_set_attr(sel, _refAttr, _refVal);
@@ -6186,14 +6281,33 @@
     // 非法 → default）。reflected canvass 用例与 2d host 尺寸语义共存：setter 已同步
     // 写属性（__zw_set_attr_handle）。
     el.setAttribute = function (n, v) {
-      var nm = String(n), vv = String(v == null ? '' : v);
+      // R5009 片 d（M4 片 d）：DOMString 逐字转换（null → "null"、undefined →
+      // "undefined"——`v == null ? ''` 曾把 setAttribute(title, undefined) 写成空串，
+      // WPT reflection-embedded 'canvas.title setAttribute' 簇）。attr 名 ASCII
+      // 小写（HTML 文档 spec——harness domName 'accessKey'/'tabIndex' camelCase 曾
+      // 与 IDL set 的小写名裂成两条属性，getAttribute 读回旧条目）。
+      var nm = _zwASCIILower(String(n)), vv = String(v);
       if (_handle && typeof __zw_set_attr_handle === 'function') __zw_set_attr_handle(_handle, nm, vv);
-      (el.attributes = el.attributes || []).push({ name: nm, value: vv });
+      // 同名属性原位改值（spec「set an attribute」qualified-name 匹配——push 曾堆叠
+      // 重复条目，hasAttribute 读侧歧义）。
+      var list = el.attributes = el.attributes || [];
+      for (var i = 0; i < list.length; i++) {
+        if (String(list[i].name).toLowerCase() === nm.toLowerCase()) { list[i].value = vv; return; }
+      }
+      list.push({ name: nm, value: vv });
     };
     el.getAttribute = function (n) {
-      var nm = String(n);
+      var nm = _zwASCIILower(String(n));
       if (_handle && typeof __zw_get_attr_handle === 'function') {
-        try { var hv = __zw_get_attr_handle(_handle, nm); if (hv != null) return String(hv); } catch (_e5gc) {}
+        // R5009 片 d：先 has 门（`__zw_get_attr_handle` 缺省返 "" 非 null——曾把
+        // 未设属性误返 ""，hasAttribute('autofocus') 恒 true、tabIndex 恒 0，
+        // WPT reflection-embedded 'canvas.autofocus/tabIndex' 簇）。
+        try {
+          if (typeof __zw_has_attr_handle === 'function' && __zw_has_attr_handle(_handle, nm) === '1') {
+            var hv = __zw_get_attr_handle(_handle, nm);
+            return String(hv == null ? '' : hv);
+          }
+        } catch (_e5gc) {}
       }
       var list = el.attributes || [];
       for (var i = list.length - 1; i >= 0; i--) if (String(list[i].name).toLowerCase() === nm.toLowerCase()) return String(list[i].value);
@@ -6201,7 +6315,8 @@
     };
     el.hasAttribute = function (n) { return el.getAttribute(n) != null; };
     el.removeAttribute = function (n) {
-      var nm = String(n);
+      // R5009 片 d：attr 名 ASCII 小写（同 setAttribute/getAttribute）。
+      var nm = _zwASCIILower(String(n));
       if (_handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(_handle, nm);
       var list = el.attributes || [];
       for (var j = list.length - 1; j >= 0; j--) if (String(list[j].name).toLowerCase() === nm.toLowerCase()) list.splice(j, 1);
@@ -6213,7 +6328,9 @@
       var v = el.getAttribute(attr);
       return v == null ? (fallback === undefined ? '' : fallback) : String(v);
     };
-    el._zwCanvasGlobSet = function (attr, v) { el.setAttribute(attr, String(v == null ? '' : v)); };
+    // R5009 片 d（M4 片 d）：逐字 DOMString 转换（null → "null"——`== null → ''`
+    // 曾吞串面，WPT 'canvas.title IDL set null' getAttribute 期望 "null"）。
+    el._zwCanvasGlobSet = function (attr, v) { el.setAttribute(attr, String(v)); };
     Object.defineProperty(el, 'title', { configurable: true, get: function () { return el._zwCanvasGlob('title'); }, set: function (v) { el._zwCanvasGlobSet('title', v); } });
     Object.defineProperty(el, 'lang', { configurable: true, get: function () { return el._zwCanvasGlob('lang'); }, set: function (v) { el._zwCanvasGlobSet('lang', v); } });
     Object.defineProperty(el, 'className', { configurable: true, get: function () { return el._zwCanvasGlob('class'); }, set: function (v) { el._zwCanvasGlobSet('class', v); } });
@@ -6239,7 +6356,7 @@
         var d = String(el.getAttribute('dir') || '').toLowerCase();
         return (d === 'ltr' || d === 'rtl' || d === 'auto') ? d : '';
       },
-      set: function (v) { el.setAttribute('dir', String(v == null ? '' : v)); },
+      set: function (v) { el.setAttribute('dir', String(v)); },
     });
     // R5005 M3 片 b（html-syntax-compat）：standalone canvas 的 innerHTML/outerHTML
     // 委托 handle 代理（outerHTML getter 的 handle 分支——旧 standalone 对象缺此
@@ -6262,7 +6379,11 @@
     var _cw = 300, _ch = 150;
     var _zwSetCanvasDim = function (p, v) {
       // R34xx：WebIDL ToUint32（size.invalid.attributes.idl 的 200-2^32 → 200）。
+      // R5009 片 d（M4 片 d）：mod 2^32 后 > maxInt → **default**（300/150——
+      // reflected unsigned long 界外语义，WPT reflection-embedded
+      // 'canvas.width IDL set 2147483648' getAttribute 期望 "300"）。
       var nv = _zwToUint32(v);
+      if (nv > 2147483647) nv = (p === 'width') ? 300 : 150;
       if (p === 'width') _cw = nv; else _ch = nv;
       // R57：同步 host 元素属性（append 后重解析的 canvas 尺寸正确）。
       if (_handle && typeof __zw_set_attr_handle === 'function') {
@@ -6276,12 +6397,13 @@
     Object.defineProperty(el, 'width', {
       // R5009 片 e：getter 读属性反射（spec reflected unsigned long——missing →
       // default 300；非法 → default）。setter 位面（复位 bitmap）不动。
+      // R5009 片 d：spec 非负整数解析（"-0" → 0 合法、"\v7"/nbsp → default 300）。
       get: function () {
         var raw = el.getAttribute('width');
         if (raw == null) return _cw;
-        var n = parseInt(String(raw), 10);
+        var n = _zwParseSpecNonneg(String(raw));
         // R5009 片 e（M4 片 b）：> maxInt → default 300（reflection-embedded 实证）。
-        if (isNaN(n) || n < 0 || n > 2147483647) return 300;
+        if (n == null || n > 2147483647) return 300;
         return n;
       },
       set: function (v) { _zwSetCanvasDim('width', v); },
@@ -6292,8 +6414,8 @@
       get: function () {
         var raw = el.getAttribute('height');
         if (raw == null) return _ch;
-        var n = parseInt(String(raw), 10);
-        if (isNaN(n) || n < 0 || n > 2147483647) return 150;
+        var n = _zwParseSpecNonneg(String(raw));
+        if (n == null || n > 2147483647) return 150;
         return n;
       },
       set: function (v) { _zwSetCanvasDim('height', v); },
@@ -6460,8 +6582,11 @@
     var raw = handle
       ? __zw_get_attr_handle(handle, name)
       : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, name) : __zw_get_attr(sel, name));
-    var n = parseInt(String(raw == null ? '' : raw), 10);
-    return (isNaN(n) || n < 0) ? def : n;
+    // R5009 片 d（M4 片 d）：spec「rules for parsing non-negative integers」严格解析
+    // （\v/nbsp 不跳、"-0" → 0 合法——parseInt 宽松解析曾吞 "\v7" 为 7，WPT
+    // reflection-embedded 'canvas.width setAttribute("\v7")' 期望 default 300）。
+    var n = _zwParseSpecNonneg(String(raw == null ? '' : raw));
+    return (n == null) ? def : n;
   }
   // R34xx：'currentColor' 关键字解析（spec：canvas 元素 computed color，设值时求值——
   // 2d.fillStyle.parse.current.* / 2d.shadow.attributes.shadowColor.current.*）。shim 内
