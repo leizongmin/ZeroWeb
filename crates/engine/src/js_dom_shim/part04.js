@@ -5240,6 +5240,92 @@ return _tplContent;
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
               return child;
             }
+            // siteopt slice24：parsed CharacterData 子（快照 `_wrapNodeEntry` 产物——文本/
+            // 注释/PI，`__zwIsText` 印记、无 handle 无 sel）的移除路径。旧版四分支（R87
+            // 注册文本 / handle / R195-R271 plain registry / R125 sel 元素）均不命中 →
+            // 静默穿透（返回 child 但零状态变化：融合视图仍含该子、无 childList record、
+            // host 快照不移除）。真实站点后果（baidu san 水合）：SSR `s-data:` 注释经
+            // prelude `parentNode.removeChild(n)` 移除失效 → 水合 walker 把注释当当前
+            // 节点 → "Element type not match, expect 1 but 8" → 组件 boot 中断。
+            // 修复三件（对齐 R125 sel 元素路径同语义）：
+            // ① host `RemoveChildAt` mutation（父 sel + 基底索引定位——apply 后快照真
+            //    移除，与 pa2b「apply 后清 removed 桶」语义自洽；宿主开关
+            //    `ZW_REMOVE_CHILD_AT=0` 回退时不注册回调，此处 typeof guard 落回穿透）；
+            // ② `_mo_notify` childList record（MO 通知 + pending-removed 记账 → 同 turn
+            //    融合视图 overlay 立即隐藏该子）；
+            // ③ 迭代器/range pre-remove 通知 + 本地 parentNode 断链。
+            // https://dom.spec.whatwg.org/#dom-node-removechild
+            // https://dom.spec.whatwg.org/#concept-node-pre-remove
+            if (child && sel && !child.__zwHandle && !child.__zwSelector && child.__zwIsText
+                && typeof child.nodeType === 'number'
+                && (child.nodeType === 3 || child.nodeType === 4 || child.nodeType === 7 || child.nodeType === 8)) {
+              // 定位 host 基底索引：优先基底缓存 identity 位（权威——pending overlay 不
+              // 影响 host 坐标）；缺缓存回落 `__zwChildIndex` 戳（_childNodeList 物化时盖，
+              // 同为基底序）；再缺回落融合视图序（best effort，仅 PI 视图等旁路产物）。
+              // 同 turn 早前同父移除会平移 host 序——按桶 removed 中位于本子之前的基底
+              // 兄弟数递减（apply 按批序执行，本 mutation apply 时那些兄弟已真移除）。
+              var _rdIdx = -1;
+              var _rdBase = _zwChildBaseCache ? _zwChildBaseCache.get(sel) : null;
+              if (_rdBase) {
+                var _rdBi = -1;
+                for (var _rdBi2 = 0; _rdBi2 < _rdBase.length; _rdBi2++) {
+                  if (_rdBase[_rdBi2] === child) { _rdBi = _rdBi2; break; }
+                }
+                if (_rdBi >= 0) {
+                  _rdIdx = _rdBi;
+                  var _rdB = (typeof _zwPendingByParent === 'object' && _zwPendingByParent)
+                    ? _zwPendingByParent.get(sel) : null;
+                  if (_rdB && _rdB.removed.length) {
+                    for (var _rdR = 0; _rdR < _rdB.removed.length; _rdR++) {
+                      var _rdRe = _rdB.removed[_rdR];
+                      if (!_rdRe || _rdRe === child) continue;
+                      var _rdRei = -1;
+                      for (var _rdRe2 = 0; _rdRe2 < _rdBase.length; _rdRe2++) {
+                        if (_rdBase[_rdRe2] === _rdRe) { _rdRei = _rdRe2; break; }
+                      }
+                      if (_rdRei >= 0 && _rdRei < _rdBi) _rdIdx--;
+                    }
+                  }
+                }
+              }
+              if (_rdIdx < 0 && typeof child.__zwChildIndex === 'number') _rdIdx = child.__zwChildIndex;
+              if (_rdIdx < 0) {
+                try {
+                  var _rdKids = _childNodeList(sel, handle);
+                  for (var _rdKi = 0; _rdKi < _rdKids.length; _rdKi++) {
+                    if (_rdKids[_rdKi] === child) { _rdIdx = _rdKi; break; }
+                  }
+                } catch (_eRdK) {}
+              }
+              if (_rdIdx >= 0 && typeof __zw_remove_child_at === 'function') {
+                try { __zw_remove_child_at(sel, String(_rdIdx)); } catch (_eRdH) {}
+              }
+              // R86 同款：迭代器 retarget 通知先于树状态变化。
+              if (globalThis._zwNotifyIteratorsRemove) {
+                try { globalThis._zwNotifyIteratorsRemove(child); } catch (_eRdI) {}
+              }
+              // R262 同款：live-range 边界迁移先于任何树状态变化（pre-remove 末段）。
+              try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(child); } catch (_eRdR) {}
+              // R294/R188 同款：record sibling 字段读融合视图，先于断链。
+              var _rdPv = null, _rdNx = null;
+              try {
+                var _rdSib = _childNodeList(sel, handle);
+                var _rdSi = _rdSib.indexOf(child);
+                if (_rdSi >= 0) {
+                  _rdPv = _rdSi > 0 ? _rdSib[_rdSi - 1] : null;
+                  _rdNx = _rdSi + 1 < _rdSib.length ? _rdSib[_rdSi + 1] : null;
+                }
+              } catch (_eRdS) {}
+              try { child.parentNode = null; } catch (_eRdP) {}
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child], previousSibling: _rdPv, nextSibling: _rdNx });
+              // R140 同款：live childNodes 同步（sel 路径）。
+              try {
+                if (globalThis._zwLiveNLSync && sel && globalThis._zwLiveNLSync[sel]) {
+                  globalThis._zwLiveNLSync[sel]();
+                }
+              } catch (_eRdL) {}
+              return child;
+            }
             if (child && child.__zwHandle) {
               // R2994：移除前快照连接态（移除后 host 快照变化，但 _ceConn 为 JS 端追踪，移除调用不影响）。
               // R34xx：注销注册的文本元素（DOM 对照侧几何——removeChild 后 caret 不再命中）。

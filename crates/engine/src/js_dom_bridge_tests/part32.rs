@@ -485,3 +485,266 @@ fn test_canvas_ctr_global_eager_registration() {
         "ctx 原型应恒等 getContext 前捕获的构造器引用（无重复定义）"
     );
 }
+
+// siteopt slice24：parsed CharacterData 子（初始 HTML 解析出的注释/文本）的 removeChild
+// 全链——shim 视图移除 + host `RemoveChildAt` mutation 真移除。
+// 判别史：baidu SSR `s-data:` 注释经 san prelude `parentNode.removeChild(n)` 移除失效
+// （旧四移除分支只认 handle/sel 身份 → 静默穿透）→ 水合 walker 把注释当当前节点 →
+// "Element type not match, expect 1 but 8" → 聊天输入组件 boot 中断 → sugrec 双通道 0。
+// 浏览器级最小复现（min-repro）在 base 4f0ef846f RED：A_initialParsed/B_innerHTML
+// 双案 removeChild 返回后子节点数不变（证据 diag/evidence/slice24/s24-repro-zw.json）；
+// Chrome 同页全 GREEN。本单测钉同一语义的 shim→host 全链。
+// https://dom.spec.whatwg.org/#dom-node-removechild
+// https://dom.spec.whatwg.org/#concept-node-pre-remove
+#[test]
+fn test_parsed_characterdata_remove_child_s24() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><!--pc--><b id=\"b\">x</b></div>\
+         <p id=\"p\">hello</p></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var host = document.getElementById('host');\
+             var c = host.firstChild;\
+             globalThis.__cType = c.nodeType;\
+             globalThis.__cData = String(c.data);\
+             var ret = host.removeChild(c);\
+             globalThis.__retIdentity = ret === c;\
+             globalThis.__cParentNull = c.parentNode === null;\
+             globalThis.__kidCount = host.childNodes.length;\
+             globalThis.__fcIsB = host.firstChild && host.firstChild.id === 'b';\
+             globalThis.__noContain = !host.contains(c);\
+             globalThis.__ih = host.innerHTML;\
+             var again = 'none';\
+             try { host.removeChild(c); } catch (e) { again = e.name; }\
+             globalThis.__reRemove = again;\
+             var p = document.getElementById('p');\
+             var t = p.firstChild;\
+             globalThis.__tType = t.nodeType;\
+             p.removeChild(t);\
+             globalThis.__pKids = p.childNodes.length;\
+             globalThis.__pFcNull = p.firstChild === null;",
+        )
+        .unwrap();
+    // shim 视图：注释识别 + 移除生效（旧形态：kidCount 仍 2、firstChild 仍是注释）。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cType + ':' + globalThis.__cData)").unwrap().value,
+        "8:pc",
+        "初始解析注释应包装为 nodeType 8 / data 'pc' 的 CharacterData 子"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__retIdentity + ':' + globalThis.__cParentNull)").unwrap().value,
+        "true:true",
+        "removeChild 应返被移除节点且 parentNode 置空（spec concept-node-pre-remove）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__kidCount + ':' + globalThis.__fcIsB + ':' + globalThis.__noContain)").unwrap().value,
+        "1:true:true",
+        "移除后融合视图应只剩元素子（childNodes/firstChild/contains 同步）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ih").unwrap().value,
+        "<b id=\"b\">x</b>",
+        "innerHTML 序列化应不再含注释"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__reRemove").unwrap().value,
+        "NotFoundError",
+        "重复移除：节点已非父的子（融合视图已剔除）→ NotFoundError（spec pre-remove 步骤 1-2，与 R126 校验族一致）"
+    );
+    // 邻近边界：parsed 文本子移除同语义（融合视图 childNodes/firstChild 同步）。
+    // 注：sel 父的 textContent getter 直读 host（apply 窗口内 stale）——与 R125 元素子
+    // 移除同款既有限制（innerHTML 有 R380 融合门、textContent 无），本切片不加宽；
+    // baidu 场景不受影响（spec dom-node-textcontent：注释不计入 textContent）。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tType + ':' + globalThis.__pKids + ':' + globalThis.__pFcNull)").unwrap().value,
+        "3:0:true",
+        "parsed 文本子移除后融合视图应为空（childNodes/firstChild）"
+    );
+
+    // host 落地：队列含 RemoveChildAt（#host 注释 idx 0 + #p 文本 idx 0），apply 后
+    // 注释/文本真消失、元素子保留。
+    let queue = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let rm_count = queue
+        .iter()
+        .filter(|m| matches!(m, DomMutation::RemoveChildAt { child_index: 0, .. }))
+        .count();
+    assert_eq!(rm_count, 2, "两次 CharacterData 移除应各排队一条 RemoveChildAt");
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap_or_else(|e| e.into_inner()), &queue)
+        .unwrap();
+    assert!(
+        !out.contains("<!--pc-->") && !out.contains("pc"),
+        "apply 后 host 文档应真移除注释\n{out}"
+    );
+    assert!(
+        out.contains("id=\"b\""),
+        "元素子应保留\n{out}"
+    );
+    assert!(
+        !out.contains("hello"),
+        "apply 后 host 文档应真移除文本子\n{out}"
+    );
+}
+
+// slice24 邻近钉：innerHTML 解析 plain 元素的 getAttributeNode/getAttributeNodeNS
+//（spec https://dom.spec.whatwg.org/#dom-element-getattributenode 、
+// https://dom-element-getattributenodens）。jQuery Sizzle attrHandle.id 优先调
+// `elem.getAttributeNode('id')` 读 nodeValue——旧 plain 工厂缺方法抛 TypeError
+//（baidu 首页 hydration 链 reject → sugrec 通道死）。与元素 proxy R122（part04）
+// 同语义：Attr 真实例（instanceof Attr、ownerElement 指回）、miss 返 null、value
+// 写回经 setAttribute 传播到 attrs 数组。无直接上游 WPT 用例（shim plain 世界为
+// ZeroWeb 特有架构，理由同上），补等价本地钉。
+#[test]
+fn test_plain_parsed_get_attribute_node_s24() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var d = document.getElementById('body') || document.body;\
+             d.innerHTML = '<span id=\"sp\" class=\"c1\" xlink:title=\"xt\">t</span>';\
+             var sp = d.firstChild;\
+             globalThis.__isFn = typeof sp.getAttributeNode === 'function' && typeof sp.getAttributeNodeNS === 'function';\
+             var an = sp.getAttributeNode('id');\
+             globalThis.__anOk = !!an && an.nodeType === 2 && an.name === 'id' && an.value === 'sp' && an.nodeValue === 'sp';\
+             globalThis.__isAttr = !!an && an instanceof Attr;\
+             globalThis.__ownerOk = !!an && an.ownerElement === sp;\
+             globalThis.__missNull = sp.getAttributeNode('nope') === null && sp.getAttributeNodeNS(null, 'nope') === null;\
+             globalThis.__ciOk = sp.getAttributeNode('ID') !== null;\
+             an.value = 'sp2';\
+             globalThis.__writeBack = sp.getAttribute('id') === 'sp2';\
+             var xtn = sp.getAttributeNodeNS('http://www.w3.org/1999/xlink', 'title');\
+             globalThis.__nsOk = !!xtn && xtn.value === 'xt' && xtn.localName === 'title';\
+             globalThis.__nsMiss = sp.getAttributeNodeNS('http://www.w3.org/1999/xlink', 'other') === null;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__isFn)").unwrap().value,
+        "true",
+        "plain 解析元素应有 getAttributeNode/getAttributeNodeNS 方法（spec dom-element-getattributenode）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__anOk + ':' + globalThis.__isAttr + ':' + globalThis.__ownerOk)").unwrap().value,
+        "true:true:true",
+        "getAttributeNode 应返 Attr 真实例（nodeType 2、name/value/nodeValue、ownerElement 指回）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__missNull + ':' + globalThis.__ciOk)").unwrap().value,
+        "true:true",
+        "miss 返 null；非 NS 变体大小写不敏感（R116 HTML 小写语义）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__writeBack)").unwrap().value,
+        "true",
+        "Attr.value 写回应经 setAttribute 传播到 attrs 数组（R122 setter 共享路径）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nsOk + ':' + globalThis.__nsMiss)").unwrap().value,
+        "true:true",
+        "getAttributeNodeNS 按 (ns, local) 定位（xlink prefix→ns 映射，R190 同源）"
+    );
+}
+
+// slice24 邻近钉：getComputedStyle 的 display UA 默认回落（CSS 层叠第 2 步 UA 声明
+// 兜底——https://drafts.csswg.org/css-cascade/#cascading ；UA stylesheet
+// https://html.spec.whatwg.org/multipage/rendering.html#the-css-user-agent-style-sheet-and-presentational-hints ）。
+// 旧形：host 只覆盖 sel 注册元素，plain 元素（innerHTML 解析产物 / createElement 未
+// 落 host）查 display 返 ''——jQuery 1.x css_defaultDisplay 以非空判定跳过 iframe 兜底，
+// '' 逼入 iframe 分支（plain 世界 iframe 无同步 contentWindow）抛 TypeError（baidu his
+// suggest 初始化链断，sugrec 通道死）。无直接上游 WPT 用例（shim 双世界特有），补等价本地钉。
+#[test]
+fn test_computed_style_ua_default_display_s24() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"hd\" style=\"display:none\">h</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var sp = document.createElement('span');\
+             document.body.appendChild(sp);\
+             var dv = document.createElement('div');\
+             document.body.appendChild(dv);\
+             var ce = document.createElement('my-widget');\
+             document.body.appendChild(ce);\
+             globalThis.__sp = getComputedStyle(sp).display;\
+             globalThis.__dv = getComputedStyle(dv).display;\
+             globalThis.__ce = getComputedStyle(ce).display;\
+             globalThis.__spPv = getComputedStyle(sp).getPropertyValue('display');\
+             dv.style.display = 'none';\
+             globalThis.__dvNone = getComputedStyle(dv).display;\
+             globalThis.__hd = getComputedStyle(document.getElementById('hd')).display;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__sp").unwrap().value,
+        "inline",
+        "plain 新建 span 的计算 display 应为 UA 默认 inline（旧 '' 逼 jQuery 入 iframe 兜底分支）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dv").unwrap().value,
+        "block",
+        "plain 新建 div 的计算 display 应为 UA 默认 block"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ce").unwrap().value,
+        "inline",
+        "未知元素（custom element）缺省 inline（CSS2.1 UA sheet 兜底）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__spPv").unwrap().value,
+        "inline",
+        "getPropertyValue('display') 同语义"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dvNone").unwrap().value,
+        "none",
+        "inline style display 优先于 UA 默认（层叠序 inline > UA）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hd").unwrap().value,
+        "none",
+        "sel 注册元素 host 计算值仍优先（inline style='display:none' → none，host 路径不受回落影响）"
+    );
+}
