@@ -7850,22 +7850,31 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
             let _ = webview.execute_script(&script);
             None
         }
-        // uievents-compat M3：Actions up 步——text = "x,y,pointerType,button|downSel"。
+        // uievents-compat M3：Actions up 步——text =
+        // "x,y,pointerType,button|downSel|anc1|anc2…"（尾段 = up 落点祖先链）。
         // click/auxclick 组合逻辑在 shim `__zw_pointer_up_sequence`（捕获落点/公共祖先/
-        // 连击）。downSel = down 步命中元素（空串回落 shim 记录值）。
+        // 连击）。downSel = down 步命中元素（空串回落 shim 记录值）；祖先链 = touch
+        // 抬起悬停拆除的 leave 锚（目标被移除时取首个连通近祖）。
         "pointer_up" => {
             let text = command.text.as_deref().unwrap_or_default();
-            let (coords, down_selector) = match text.split_once('|') {
-                Some((coords, down)) => (coords, down.to_string()),
-                None => (text, String::new()),
-            };
+            let mut segments = text.split('|');
+            let coords = segments.next().unwrap_or_default();
+            let down_selector = segments.next().unwrap_or_default().to_string();
+            let ancestor_chain = segments.map(String::from).collect::<Vec<_>>().join("|");
             let mut parts = coords.split(',');
             let x = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
             let y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
             let pointer_type = parts.next().unwrap_or("mouse").to_string();
             let button = parts.next().and_then(|v| v.parse::<i16>().ok()).unwrap_or(0);
-            let script =
-                zero_engine::script_pointer_up_sequence(&selector, &down_selector, x, y, &pointer_type, button);
+            let script = zero_engine::script_pointer_up_sequence(
+                &selector,
+                &down_selector,
+                x,
+                y,
+                &pointer_type,
+                button,
+                &ancestor_chain,
+            );
             let _ = webview.execute_script(&script);
             None
         }
@@ -8146,6 +8155,7 @@ const TESTDRIVER_STUB: &str = r#"<script>
   var nextId = 1;
   var pending = {};
   var queuedElements = {};
+  var queuedChains = {}; // uievents-compat M3 尾簇：id → 祖先选择器链（入队时快照，近祖优先）
   globalThis.__zw_td_queue = [];
   function selectorFor(element) {
     if (!element) return null;
@@ -8203,7 +8213,7 @@ const TESTDRIVER_STUB: &str = r#"<script>
     } catch (_e2) {}
     return null;
   }
-  function enqueue(operation, element, text) {
+  function enqueue(operation, element, text, chain) {
     return new Promise(function(resolve, reject) {
       var id = nextId++;
       pending[id] = { resolve: resolve, reject: reject };
@@ -8212,6 +8222,22 @@ const TESTDRIVER_STUB: &str = r#"<script>
       // 落 host）。存元素引用，宿主出队时（跨 turn，apply 已完成）经
       // `__zw_td_selector(id)` 现场解析（正置表已 merge）。
       queuedElements[id] = element;
+      // uievents-compat M3 尾簇：祖先链快照（入队时最近祖先优先）——执行期目标元素
+      // 被页内 listener 移除（after_target_removed 族）时，出队解析回退到**首个仍
+      // 连通祖先**（headless 布局/查询快照对移除滞后，命中测试不可用——WPT
+      // 「pointerup@parent after (child-removed)」断言面）。
+      // chain 预建（move 步时点快照）优先——up/down 命令的 enqueue 在前一命令 resolve
+      // 后才跑，彼时命中元素可能已被页内 listener 移除（parentElement 断链 → 链只剩
+      // 自身），回退构建已不可用。
+      queuedChains[id] = chain || (function(el) {
+        var c = [];
+        var cur = el, guard = 0;
+        while (cur && guard++ < 32) {
+          try { var s = selectorFor(cur); if (s) c.push(s); } catch (_eC) {}
+          try { cur = cur.parentElement; } catch (_eP) { cur = null; }
+        }
+        return c;
+      })(element);
       globalThis.__zw_td_queue.push({
         id: id, operation: operation, selector: null,
         text: text == null ? null : String(text)
@@ -8221,14 +8247,26 @@ const TESTDRIVER_STUB: &str = r#"<script>
   globalThis.__zw_td_selector = function(id) {
     var element = queuedElements[id];
     if (!element) return null;
-    return selectorFor(element);
+    var sel = selectorFor(element);
+    // uievents-compat M3 尾簇：目标已断连 → 祖先链回退（首个 querySelector 命中的
+    // 近祖）。truthy 判定（isConnected 实现差异容忍——getter 缺失/非布尔回退不触发）。
+    try {
+      if (!element.isConnected && queuedChains[id]) {
+        var chain = queuedChains[id];
+        for (var i = 1; i < chain.length; i++) {
+          try { if (document.querySelector(chain[i])) return chain[i]; } catch (_eQ) {}
+        }
+      }
+    } catch (_eC2) {}
+    return sel;
   };
-  globalThis.__zw_td_forget = function(id) { delete queuedElements[id]; };
+  globalThis.__zw_td_forget = function(id) { delete queuedElements[id]; delete queuedChains[id]; };
   globalThis.__zw_td_resolve = function(id, error) {
     var entry = pending[id];
     if (!entry) return;
     delete pending[id];
     delete queuedElements[id];
+    delete queuedChains[id];
     if (error == null) entry.resolve();
     else entry.reject(new Error(String(error)));
   };
@@ -8288,6 +8326,7 @@ const TESTDRIVER_STUB: &str = r#"<script>
     this._sourceOrder = []; // 记录序（tick 重放的源间次序）
     this._current = { pointer: null, key: null };
     this._downOf = {}; // per-source pendingDown {selector,x,y}（M3 down/up 逐步重放）
+    this._lastChain = {}; // per-source 祖先链快照（move 步时点——移除后回退锚）
     this._lastMove = {}; // per-source 最近 move {origin,x,y}
     this.tickIdx = 0;
     this._srcIdx = 0;
@@ -8392,7 +8431,17 @@ const TESTDRIVER_STUB: &str = r#"<script>
           }
           if (!originEl) continue;
           this._lastMove[this._sourceOrder[si]] = { origin: originEl, x: moveX, y: moveY };
-          plan.push({ op: 'pointer_move', origin: originEl, text: moveX + ',' + moveY + ',' + source.pointerType });
+          // 祖先链快照（move 时点——down/up 的 enqueue 在后，彼时元素可能已移除）
+          this._lastChain[this._sourceOrder[si]] = (function(el) {
+            var c = [];
+            var cur = el, guard = 0;
+            while (cur && guard++ < 32) {
+              try { var s2 = selectorFor(cur); if (s2) c.push(s2); } catch (_eC) {}
+              try { cur = cur.parentElement; } catch (_eP) { cur = null; }
+            }
+            return c;
+          })(originEl);
+          plan.push({ op: 'pointer_move', origin: originEl, text: moveX + ',' + moveY + ',' + source.pointerType, chain: this._lastChain[this._sourceOrder[si]] });
         } else if (step.type === 'pointerDown') {
           // uievents-compat M3（2026-10-03）：down 步独立入队（取代 M2 折叠 click
           // ——页内 pointerdown listener 的 setPointerCapture 须影响后续 move/up 路由）。
@@ -8406,19 +8455,32 @@ const TESTDRIVER_STUB: &str = r#"<script>
           plan.push({
             op: 'pointer_down',
             origin: downEl,
-            text: (dOrigin ? dOrigin.x : 0) + ',' + (dOrigin ? dOrigin.y : 0) + ',' + source.pointerType + ',' + (step.button || 0)
+            text: (dOrigin ? dOrigin.x : 0) + ',' + (dOrigin ? dOrigin.y : 0) + ',' + source.pointerType + ',' + (step.button || 0),
+            chain: this._lastChain[this._sourceOrder[si]]
           });
         } else if (step.type === 'pointerUp') {
           // up 步独立入队：click/auxclick 组合在 shim（捕获落点/公共祖先/连击）。
-          // downSel 编入 text（'|' 分隔——down 步落点，组合目标 down 侧）。
+          // downSel 编入 text（'|' 分隔——down 步落点，组合目标 down 侧）；尾部再编
+          // up 落点的祖先链（touch 抬起悬停拆除的 leave 锚——目标被页内 listener
+          // 移除时取首个连通近祖，WPT after_target_removed ?touch 断言面）。
           var uOrigin = this._lastMove[this._sourceOrder[si]];
           var upEl = this._resolveOrigin(uOrigin && uOrigin.origin) || element;
           var downInfo = this._downOf[this._sourceOrder[si]] || { selector: '', x: 0, y: 0 };
           delete this._downOf[this._sourceOrder[si]];
+          var upChain = (function(el) {
+            var chain = [];
+            var cur = el, guard = 0;
+            while (cur && guard++ < 32) {
+              try { var s = selectorFor(cur); if (s) chain.push(s); } catch (_eC) {}
+              try { cur = cur.parentElement; } catch (_eP) { cur = null; }
+            }
+            return chain;
+          })(upEl).join('|');
           plan.push({
             op: 'pointer_up',
             origin: upEl,
-            text: (uOrigin ? uOrigin.x : downInfo.x) + ',' + (uOrigin ? uOrigin.y : downInfo.y) + ',' + source.pointerType + ',' + (step.button || 0) + '|' + downInfo.selector
+            text: (uOrigin ? uOrigin.x : downInfo.x) + ',' + (uOrigin ? uOrigin.y : downInfo.y) + ',' + source.pointerType + ',' + (step.button || 0) + '|' + downInfo.selector + '|' + upChain,
+            chain: this._lastChain[this._sourceOrder[si]]
           });
         } else {
           // keydown/keyup：对 activeElement（R3254-K2 先例——键盘链无 origin 元素）。
@@ -8437,7 +8499,7 @@ const TESTDRIVER_STUB: &str = r#"<script>
     var promise = Promise.resolve();
     for (var i = 0; i < plan.length; i++) {
       promise = promise.then(function(step) {
-        return enqueue(step.op, step.origin, step.text);
+        return enqueue(step.op, step.origin, step.text, step.chain);
       }.bind(null, plan[i]));
     }
     return promise;

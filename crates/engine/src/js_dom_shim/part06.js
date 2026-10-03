@@ -11951,6 +11951,62 @@
   function _zwSetButtons(mask) {
     _zwPtrState.buttons = mask | 0;
   }
+  // uievents-compat M3 尾簇（2026-10-04）：命中测试（视口 CSS 像素 → 选择器）——
+  // host `__zw_elementFromPoint`（R2924 HitTestCache）优先；runner headless 无渲染
+  // 缓存 → gBCR 几何近似（文档序逆序首个含点元素 ≈ 最深/topmost；proxy `__zwSelector`
+  // 内部键反查选择器，R351 顶部短路零额外成本）。无命中 → null。
+  function _zwHitTestSel(x, y) {
+    x = x || 0;
+    y = y || 0;
+    try {
+      if (typeof __zw_elementFromPoint === 'function') {
+        var hit = __zw_elementFromPoint(String(x), String(y));
+        if (hit) return hit;
+      }
+    } catch (_eHT1) {}
+    try {
+      if (typeof document === 'undefined' || !document.querySelectorAll) return null;
+      var all = document.querySelectorAll('body, body *');
+      // 最小包含盒 = 最深/topmost 近似（文档序逆序会赢在文档尾部的 harness 容器——
+      // 页脚大盒常覆盖内容坐标；runner headless 无 z 序信息，以面积最小者近似）。
+      var best = null, bestArea = Infinity;
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        if (!el.getBoundingClientRect) continue;
+        var r = el.getBoundingClientRect();
+        if (r && r.width > 0 && r.height > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+          var area = r.width * r.height;
+          if (area < bestArea) {
+            bestArea = area;
+            best = el;
+          }
+        }
+      }
+      if (best) return best.__zwSelector || null;
+    } catch (_eHT2) {}
+    return null;
+  }
+  // uievents-compat M3 尾簇：悬停/事件目标**移除后重定向**（PE spec——over 元素被移除
+  // 时，已移除元素不接收 out/leave；下一个指针事件以命中测试新目标派发，边界序只补
+  // over@新目标——连通祖先已入过 enter，不重派；WPT pointerevent_after_target_removed
+  // 「(child-removed) → pointerover@parent → pointerup@parent」断言面）。目标仍连通
+  // → 原样返回（零开销路径）。
+  function _zwRetargetSel(sel, x, y) {
+    if (!sel) return sel;
+    if (typeof _zwIsConnected === 'function' && !_zwIsConnected(sel, null)) {
+      var hit = _zwHitTestSel(x, y);
+      if (hit && hit !== sel) {
+        var st = _zwPtrState;
+        if (typeof _zwPointerCross === 'function') {
+          _zwPointerCross(st.overSel, hit, x, y);
+        }
+        st.overSel = hit;
+        st.hoverSel = hit;
+        return hit;
+      }
+    }
+    return sel;
+  }
   // uievents-compat M2 片 1（2026-10-03）：合成指针悬停态 + 边界事件序（spec
   // https://www.w3.org/TR/pointerevents2/ §11 + UI Events §5.3 mouseover/out、
   // §5.4 enter/leave）。宿主驱动路径（webview Activate 前置悬停迁移、runner
@@ -11975,6 +12031,13 @@
     var st = _zwPtrState;
     st.x = x || 0;
     st.y = y || 0;
+    // uievents-compat M3 尾簇：touch 无 hover——move 步不派边界序/move 对（真实
+    // 触摸指针无悬停态，边界事件在接触（down）时派——WPT after_target_removed
+    // ?touch「pointerdown should imply a pointermove again」）。
+    if (st.pointerType === 'touch') return 'ok';
+    // 目标已移除（悬停元素被 DOM 删除）→ 命中测试重定向（over 元素移除后下一个
+    // 指针事件以新命中目标派发——WPT pointerevent_after_target_removed）。
+    sel = _zwRetargetSel(sel, x, y);
     st.hoverSel = sel; // 真实悬停位恒更新（捕获期逻辑位≠真实位，释放恢复用）
     // Process pending 先于捕获态判定（spec——pointer 事件前结算 pending override；
     // pointerup 内 release 的场景在下一 move 清算 lost + 悬停恢复，随后 move 按
@@ -12062,10 +12125,25 @@
   globalThis.__zw_pointer_down_sequence = function (sel, x, y, pointerType, button) {
     button = button | 0;
     var st = _zwPtrState;
-    __zw_pointer_move(sel, x, y);
+    st.pointerType = pointerType || 'mouse';
+    if (st.pointerType === 'touch') {
+      // touch：move 步不派（无 hover）——down **隐含一次悬停迁移**（spec 触摸接触
+      // 即边界事件派发点；WPT after_target_removed ?touch「pointerdown should imply
+      // a pointermove again」）。
+      st.x = x || 0;
+      st.y = y || 0;
+      sel = _zwRetargetSel(sel, x, y);
+      if (st.overSel !== sel && typeof __zw_parent === 'function') {
+        _zwPointerCross(st.overSel, sel, x, y);
+      }
+      st.overSel = sel;
+      st.hoverSel = sel;
+    } else {
+      sel = _zwRetargetSel(sel, x, y);
+      __zw_pointer_move(sel, x, y);
+    }
     st.downSel = sel;
     st.downButton = button;
-    st.pointerType = pointerType || 'mouse';
     _zwSetButtons(st.buttons | (1 << button));
     var prevented = __zw_dispatch_event(sel, 'pointerdown', {
       clientX: x || 0, clientY: y || 0, button: button,
@@ -12089,10 +12167,26 @@
   // ——同目标连击 detail 递增 + dblclick；跨目标 click@最近公共祖先；非主键无 click、
   // auxclick{button} 连击计数）。捕获生效期 down/up 逻辑目标随重定向——组合目标以
   // pointerup 结算后的有效落点为准。
-  globalThis.__zw_pointer_up_sequence = function (upSel, downSel, x, y, pointerType, button) {
+  globalThis.__zw_pointer_up_sequence = function (upSel, downSel, x, y, pointerType, button, ancestorChain) {
     button = button | 0;
     var st = _zwPtrState;
+    st.pointerType = pointerType || 'mouse';
+    // 目标已移除（down 序列内 listener 删除了命中元素）→ 命中测试重定向 + 边界序
+    // （over@新目标——dangling cross 面只补 over；WPT after_target_removed
+    // 「(child-removed) → pointerover@parent → pointerup@parent」断言面）。
+    upSel = _zwRetargetSel(upSel, x, y);
+    // up 落点变化（runner 侧祖先链回退重定向等）且非捕获重定向 → 补跨界序。
+    if (upSel !== st.overSel && !st.capture['1'] && typeof __zw_parent === 'function') {
+      _zwPointerCross(st.overSel, upSel, x, y);
+      st.overSel = upSel;
+    }
     var effDown = downSel || st.downSel || upSel;
+    // down 落点已移除（remover listener 场景）→ click/auxclick 组合随 up 落点
+    // （已移除目标不参与公共祖先折算——否则 chainOf 断链 → nocommon 早退，连带
+    // 跳过 touch 悬停拆除；WPT after_target_removed 断言面）。
+    if (effDown !== upSel && typeof _zwIsConnected === 'function' && !_zwIsConnected(effDown, null)) {
+      effDown = upSel;
+    }
     // 有效落点先于派发取（pointerup 派发尾的隐式释放会清 capture——click/auxclick
     // 组合目标须用释放前的捕获落点；WPT pointerevent_click_during_capture 期望
     // click@捕获目标而非 up 命中元素）。
@@ -12140,6 +12234,41 @@
     if (st.streakCount >= 2) {
       __zw_dispatch_event(target, 'dblclick', { detail: 2 });
     }
+    // uievents-compat M3 尾簇：touch（非 hoverable）抬起即悬停拆除——out@over
+    // （over 已移除则抑制）+ leave 全链（over 已移除时以命中测试新锚起走——WPT
+    // after_target_removed ?touch「pointerleave@parent 无 out@child」断言面）。
+    if (st.pointerType === 'touch') {
+      var over = st.overSel;
+      if (over) {
+        var overConn = (typeof _zwIsConnected !== 'function') ? true : _zwIsConnected(over, null);
+        if (overConn) {
+          __zw_dispatch_event(over, 'pointerout', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
+          __zw_dispatch_event(over, 'mouseout', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
+        }
+        var anchor = overConn ? over : null;
+        if (!anchor && ancestorChain) {
+          // 祖先链回退（headless 布局/查询快照对移除滞后——命中测试不可靠）：首个
+          // 仍连通近祖即 leave 锚。
+          var chainA = String(ancestorChain).split('|');
+          for (var ai = 0; ai < chainA.length; ai++) {
+            if (chainA[ai] && (!overConn || chainA[ai] !== over)
+                && (typeof _zwIsConnected !== 'function' || _zwIsConnected(chainA[ai], null))) {
+              anchor = chainA[ai];
+              break;
+            }
+          }
+        }
+        if (!anchor) anchor = _zwHitTestSel(x, y);
+        var curL = anchor, guardL = 0;
+        while (curL && guardL++ < 64) {
+          __zw_dispatch_event(curL, 'pointerleave', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
+          __zw_dispatch_event(curL, 'mouseleave', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
+          try { curL = __zw_parent(curL) || ''; } catch (_eTL) { curL = ''; }
+        }
+      }
+      st.overSel = null;
+      st.hoverSel = null;
+    }
     st.downSel = null;
     return 'ok';
   };
@@ -12148,6 +12277,10 @@
   // `__zw_dispatch_event` 走 UA 通道（isTrusted + R145 retargeting 与宿主派发同流）。
   function _zwPointerCross(prevSel, nextSel, x, y) {
     if (prevSel === nextSel) return;
+    // uievents-compat M3 尾簇：prev 已移除（悬停元素被 DOM 删除）→ 不派 out/leave@
+    // 已移除元素、不重派 enter（连通祖先已入过）——只补 over@新目标（WPT
+    // pointerevent_after_target_removed 断言面）。
+    var prevDangling = !!(prevSel && typeof _zwIsConnected === 'function' && !_zwIsConnected(prevSel, null));
     var chainOf = function (sel) {
       var chain = [];
       var cur = sel, guard = 0;
@@ -12157,7 +12290,7 @@
       }
       return chain; // [target, ..., html]
     };
-    var prevChain = prevSel ? chainOf(prevSel) : [];
+    var prevChain = (prevSel && !prevDangling) ? chainOf(prevSel) : [];
     var nextChain = nextSel ? chainOf(nextSel) : [];
     var common = '';
     for (var i = 0; i < prevChain.length && !common; i++) {
@@ -12169,24 +12302,26 @@
     // out/over 在**任意**命中目标变化时都派（含父子间移动——mouseover/out 按元素
     // 边界面非几何边界；WPT mouseover-out：parent→child 也派 mouseout@parent）。
     // leave/enter 仅在跨出/跨入祖先链段派（同树内父子移动无 enter/leave）。
-    if (prevSel) {
+    // prevDangling：out/leave 整段抑制（已移除元素不接收边界事件）。
+    if (prevSel && !prevDangling) {
       __zw_dispatch_event(prevSel, 'pointerout', { relatedTarget: rel, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
       __zw_dispatch_event(prevSel, 'mouseout', { relatedTarget: rel, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
     }
-    for (var k = 0; k < prevChain.length && prevChain[k] !== common; k++) {
+    for (var k = 0; !prevDangling && k < prevChain.length && prevChain[k] !== common; k++) {
       __zw_dispatch_event(prevChain[k], 'pointerleave', { relatedTarget: rel, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
       __zw_dispatch_event(prevChain[k], 'mouseleave', { relatedTarget: rel, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
     }
     // 新链：over@next（边界元素，恒派——next 即公共祖先的向祖先移动也派）→
     // enter（每新入站，公共祖先下行至 next；next 已入 over，站序自外向内——
     // MDN/Chromium 序：mouseover(边界) → mouseenter(自外向内) → mousemove）。
-    var relIn = prevSel || null;
+    // prevDangling：enter 段抑制（relatedTarget 指向已移除元素无意义 → null）。
+    var relIn = (prevSel && !prevDangling) ? prevSel : null;
     if (nextSel) {
       __zw_dispatch_event(nextSel, 'pointerover', { relatedTarget: relIn, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
       __zw_dispatch_event(nextSel, 'mouseover', { relatedTarget: relIn, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
     }
     var enter = [];
-    for (var k2 = 0; k2 < nextChain.length; k2++) {
+    for (var k2 = 0; !prevDangling && k2 < nextChain.length; k2++) {
       if (nextChain[k2] === common) break;
       enter.push(nextChain[k2]);
     }

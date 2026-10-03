@@ -246,10 +246,11 @@ pub fn script_pointer_down_sequence(
 }
 
 /// 生成「Actions up 步序列」脚本（uievents-compat M3）。up 步调 shim
-/// `__zw_pointer_up_sequence(upSel, downSel, x, y, pointerType, button)`（part06.js）：
+/// `__zw_pointer_up_sequence(upSel, downSel, x, y, pointerType, button, chain)`（part06.js）：
 /// pointerup →（未取消时）mouseup → click/auxclick 组合（同目标连击 dblclick；
 /// 跨目标 click@最近公共祖先；非主键 auxclick）。downSel = down 步的命中元素选择器
-/// （click 组合的 down 侧落点；空串回落 shim 内记录值）。
+/// （click 组合的 down 侧落点；空串回落 shim 内记录值）。chain = up 落点祖先选择器
+/// 链（'|' 分隔，近祖优先——touch 抬起悬停拆除的 leave 锚回退）。
 pub fn script_pointer_up_sequence(
     up_selector: &str,
     down_selector: &str,
@@ -257,12 +258,14 @@ pub fn script_pointer_up_sequence(
     client_y: f32,
     pointer_type: &str,
     button: i16,
+    ancestor_chain: &str,
 ) -> String {
     let up = escape_js_string(up_selector);
     let down = escape_js_string(down_selector);
     let pty = escape_js_string(pointer_type);
+    let chain = escape_js_string(ancestor_chain);
     format!(
-        "if(typeof __zw_pointer_up_sequence==='function')__zw_pointer_up_sequence('{up}','{down}',{client_x},{client_y},'{pty}',{button});"
+        "if(typeof __zw_pointer_up_sequence==='function')__zw_pointer_up_sequence('{up}','{down}',{client_x},{client_y},'{pty}',{button},'{chain}');"
     )
 }
 
