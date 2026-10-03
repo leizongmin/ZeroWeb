@@ -1,9 +1,9 @@
 # UI/指针事件兼容 — uievents / pointerevents
 
-**版本**: v1.1
-**日期**: 2026-09-12（立项）/ 2026-10-03（M1 收口）
-**状态**: Active（M1 完成——corpus 导入 + runner 通道 + 分类基线 1024 subtests 230P；
-M2 鼠标事件序推进中）
+**版本**: v1.2
+**日期**: 2026-09-12（立项）/ 2026-10-03（M1 收口；M2 片 1 + M3 落地——230P→375P）
+**状态**: Active（M1 完成；M2/M3 核心语义落地——鼠标事件序/click 组合 + Pointer
+Capture 全语义；残余尾簇与 M4 挂账定稿推进中，见 master.md）
 **执行模式**: WPT 驱动（上游 uievents + pointerevents corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——输入事件语义面）
 
