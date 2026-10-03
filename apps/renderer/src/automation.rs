@@ -574,25 +574,26 @@ impl RendererRuntime {
             AutomationKey::Text(text) => {
                 for character in text.chars() {
                     let value = character.to_string();
-                    self.automation_key_event(&value, "Unidentified", false, KeyboardEventType::Down)?;
-                    self.automation_key_event(&value, "Unidentified", false, KeyboardEventType::Up)?;
+                    // 字符键携带字符值（character value）——renderer 据此派 keypress 并插入。
+                    self.automation_key_event(&value, "Unidentified", false, Some(&value), KeyboardEventType::Down)?;
+                    self.automation_key_event(&value, "Unidentified", false, None, KeyboardEventType::Up)?;
                 }
             }
             AutomationKey::Tab => {
-                self.automation_key_event("Tab", "Tab", false, KeyboardEventType::Down)?;
-                self.automation_key_event("Tab", "Tab", false, KeyboardEventType::Up)?;
+                self.automation_key_event("Tab", "Tab", false, None, KeyboardEventType::Down)?;
+                self.automation_key_event("Tab", "Tab", false, None, KeyboardEventType::Up)?;
             }
             AutomationKey::ShiftTab => {
-                self.automation_key_event("Tab", "Tab", true, KeyboardEventType::Down)?;
-                self.automation_key_event("Tab", "Tab", true, KeyboardEventType::Up)?;
+                self.automation_key_event("Tab", "Tab", true, None, KeyboardEventType::Down)?;
+                self.automation_key_event("Tab", "Tab", true, None, KeyboardEventType::Up)?;
             }
             AutomationKey::Backspace => {
-                self.automation_key_event("Backspace", "Backspace", false, KeyboardEventType::Down)?;
-                self.automation_key_event("Backspace", "Backspace", false, KeyboardEventType::Up)?;
+                self.automation_key_event("Backspace", "Backspace", false, None, KeyboardEventType::Down)?;
+                self.automation_key_event("Backspace", "Backspace", false, None, KeyboardEventType::Up)?;
             }
             AutomationKey::Enter => {
-                self.automation_key_event("Enter", "Enter", false, KeyboardEventType::Down)?;
-                self.automation_key_event("Enter", "Enter", false, KeyboardEventType::Up)?;
+                self.automation_key_event("Enter", "Enter", false, None, KeyboardEventType::Down)?;
+                self.automation_key_event("Enter", "Enter", false, None, KeyboardEventType::Up)?;
             }
         }
         Ok(())
@@ -603,11 +604,13 @@ impl RendererRuntime {
         key: &str,
         code: &str,
         shift: bool,
+        text: Option<&str>,
         event_type: KeyboardEventType,
     ) -> Result<(), String> {
         self.handle_keyboard_event(KeyboardEventParams {
             key: key.to_string(),
             code: code.to_string(),
+            text: text.map(|t| t.to_string()),
             ctrl: false,
             shift,
             alt: false,

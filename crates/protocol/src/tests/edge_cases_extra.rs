@@ -110,6 +110,8 @@ fn test_keyboard_event_ctrl_only() {
         kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: "c".into(),
             code: "KeyC".into(),
+            // 字符值字段随修饰键组合一并往返（Some/None 两面中本例覆盖 Some）。
+            text: Some("c".into()),
             ctrl: true,
             shift: false,
             alt: false,
@@ -123,6 +125,7 @@ fn test_keyboard_event_ctrl_only() {
         assert!(!p.shift, "shift 应为 false");
         assert!(!p.alt, "alt 应为 false");
         assert!(!p.meta, "meta 应为 false");
+        assert_eq!(p.text.as_deref(), Some("c"), "text 字符值应往返保真");
     } else {
         panic!("期望 KeyboardEvent");
     }
@@ -136,6 +139,7 @@ fn test_keyboard_event_alt_only() {
         kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: "a".into(),
             code: "KeyA".into(),
+            text: None,
             ctrl: false,
             shift: false,
             alt: true,
@@ -163,6 +167,7 @@ fn test_keyboard_event_ctrl_shift_combo() {
         kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: "I".into(),
             code: "KeyI".into(),
+            text: None,
             ctrl: true,
             shift: true,
             alt: false,
@@ -187,6 +192,7 @@ fn test_keyboard_event_ctrl_alt_meta_combo() {
         kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: "Delete".into(),
             code: "Delete".into(),
+            text: None,
             ctrl: true,
             shift: false,
             alt: true,

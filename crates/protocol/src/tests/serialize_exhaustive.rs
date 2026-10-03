@@ -136,6 +136,7 @@ fn test_roundtrip_all_message_kinds() {
             kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
                 key: "A".into(),
                 code: "KeyA".into(),
+                text: None,
                 ctrl: false,
                 shift: false,
                 alt: false,
@@ -320,6 +321,7 @@ fn test_all_keyboard_event_types() {
             kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
                 key: "X".into(),
                 code: "KeyX".into(),
+                text: None,
                 ctrl: false,
                 shift: false,
                 alt: false,

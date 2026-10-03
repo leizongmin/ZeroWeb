@@ -223,6 +223,7 @@ fn test_different_message_types_interleaved() {
             kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
                 key: "a".into(),
                 code: "KeyA".into(),
+                text: None,
                 ctrl: false,
                 shift: false,
                 alt: false,
@@ -988,6 +989,7 @@ fn test_ipc_message_with_all_field_types() {
         kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: String::new(),
             code: String::new(),
+            text: None,
             ctrl: true,
             shift: true,
             alt: true,
@@ -1425,6 +1427,7 @@ fn test_ipc_enum_variants() {
             IpcMessageKind::KeyboardEvent(KeyboardEventParams {
                 key: "a".into(),
                 code: "KeyA".into(),
+                text: None,
                 ctrl: false,
                 shift: false,
                 alt: false,
@@ -1871,6 +1874,7 @@ fn test_keyboard_event_control_characters_in_key_and_code() {
         kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: "a\tb\nc\rd\u{0000}e".into(),
             code: "Key\u{0009}Code\u{000A}".into(),
+            text: None,
             ctrl: false,
             shift: false,
             alt: false,
@@ -1892,6 +1896,7 @@ fn test_keyboard_event_control_characters_in_key_and_code() {
         kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: "\u{0000}\u{0001}\u{001F}".into(),
             code: "\t\n\r".into(),
+            text: None,
             ctrl: true,
             shift: true,
             alt: true,

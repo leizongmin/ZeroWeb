@@ -1021,6 +1021,7 @@ mod tests {
                 kind: IpcMessageKind::KeyboardEvent(crate::message::KeyboardEventParams {
                     key: "Enter".into(),
                     code: "Enter".into(),
+                    text: None,
                     ctrl: false,
                     shift: false,
                     alt: false,

@@ -2250,6 +2250,11 @@ pub struct KeyboardEventParams {
     pub key: String,
     /// 物理键码。
     pub code: String,
+    /// 该次按键产生的字符值（CDP `Input.dispatchKeyEvent` 的 `text` / winit
+    /// `KeyEvent.text`）。`Some` = 产生字符值（UI Events character value）——keypress
+    /// 派发与字符插入判据；`None` = 纯物理键（rawKeyDown/修饰键/导航键，无文本产出）。
+    #[serde(default)]
+    pub text: Option<String>,
     /// Ctrl 键是否按下。
     pub ctrl: bool,
     /// Shift 键是否按下。
