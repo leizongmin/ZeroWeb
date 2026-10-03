@@ -16309,7 +16309,13 @@ return e;
               if (sel) {
                 var fchain = _ancestorChain(sel);
                 for (var fi = 1; fi < fchain.length; fi++) {
-                  if ((__zw_get_tag(fchain[fi]) || '').toUpperCase() === 'FORM') return _wrapSelector(fchain[fi]);
+                  var fChainTag = (__zw_get_tag(fchain[fi]) || '').toUpperCase();
+                  // R5009 片 e（M4 片 e）：template content 内 form element pointer 为
+                  // null（fragment 解析不设 form 指针——WHATWG#12257，WPT
+                  // fragment-parse-form-in-template 'inputs[0].form' 期望 null）；
+                  // 祖先链先于 FORM 命中 TEMPLATE 即无关联。
+                  if (fChainTag === 'TEMPLATE') break;
+                  if (fChainTag === 'FORM') return _wrapSelector(fchain[fi]);
                 }
               }
             } catch (_e) {}

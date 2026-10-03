@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active（M4 推进中——片 d reflection 混合尾簇系统面，全通道 61168/61304 = 99.78%（2026-10-07 控制面口径）；控制面见 [master.md](html-syntax-compat/master.md)）
+**状态**: Closed（M4 收口 2026-10-07——全通道 61218/61304 = 99.86%，DC-1~4 全满足；残差 86F 全分类挂账，见 [master.md](html-syntax-compat/master.md) 与 [收口证据](html-syntax-compat/evidence/2026-10-07-m4-close.md)）
 **执行模式**: WPT 驱动（上游 html/syntax + html/dom corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 文档面）
 
@@ -68,9 +68,13 @@ encoding-compat 嗅探划界双向记账；与 js-dom（已归档）DOM 接口�
 - [x] **DC-1**：html/syntax + html/dom corpus 可执行子集导入 + 分类基线 +
       suites CSV 回填（2026-10-02 M1：113 案 43884/61304 = 71.6%，见
       `docs/goal/html-syntax-compat/evidence/2026-10-02-m1-baseline.md`）
-- [ ] **DC-2**：解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐
-- [ ] **DC-3**：序列化边缘 + html/dom 接口语义 + createContextualFragment 补面
-- [ ] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
+- [x] **DC-2**：解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐
+      （M2 五片 2026-10-02 判定成立 + M3/M4 递次收口；残差全分类挂账，
+      见 `docs/goal/html-syntax-compat/evidence/2026-10-07-m4-close.md`）
+- [x] **DC-3**：序列化边缘 + html/dom 接口语义 + createContextualFragment 补面
+      （serializing 双域全绿 + escaping 9/9 + CF 落地；接口面 61218/61304 = 99.86%）
+- [x] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
+      （2026-10-07 终态实测：68 suites EXIT=0 / clippy / fmt / reftest 704/704）
 
 ## 活跃里程碑
 

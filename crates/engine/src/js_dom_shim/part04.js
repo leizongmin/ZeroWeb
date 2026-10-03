@@ -21,6 +21,15 @@
         if (prop === 'role') {
           var rlc = _reflectedAttrs[key];
           if (rlc && Object.prototype.hasOwnProperty.call(rlc, 'role')) return rlc['role'];
+          var _roleHas = (handle ? __zw_has_attr_handle(handle, 'role') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'role') : __zw_has_attr(sel, 'role'))) === '1';
+          if (!_roleHas) {
+            // R5009 片 e（M4 片 e）：set-then-remove → null（nullable 语义，WPT
+            // aria-attribute-reflection testNullable；初始 unset → ''）。
+            try {
+              var _roleEx = _zwAriaExplicit.get(key);
+              if (_roleEx && _roleEx.has('role')) return null;
+            } catch (_eRoleEx) {}
+          }
           return (handle ? __zw_get_attr_handle(handle, 'role') : __zw_get_attr(sel, 'role')) || '';
         }
         // R5009 片 e（M4 片 a）：ARIA enumerated 反射（w3c/aria#2484 tentative——
@@ -60,12 +69,75 @@
           if (_p5arDef.kw.hasOwnProperty(_p5arLo)) return _p5arLo;
           return _p5arDef.inv != null ? _p5arDef.inv : (_p5arDef.d != null ? _p5arDef.d : null);
         }
+        // R5009 片 e（M4 片 e）：ARIA Element 反射 getter（ARIAMixin——WPT
+        // aria-element-reflection/disconnected 全族）。三态：① IDL 显式引用优先
+        //（存储保持完整——树迁移后同链恢复可见），按树链有效性过滤（T_E ∈ C_A）；
+        // ② 内容属性 token 按自身树内 id 解析（分离树仍可解析）；③ 两者皆无 → null。
+        // FrozenArray 身份缓存见 part01 `_zwAriaElCache`（签名含结果集/attr 串/树根
+        // ——树迁移即失配换新，满足 caching invariant 与 scope 变更及时性两断言）。
+        // 置于 `_ariaAttrName` plain 串反射**之前**（ariaActiveDescendantElement 曾被
+        // 通用 aria 映射误读 'aria-activedescendantelement' 返 ""）。
+        var _aeEntry = (typeof _ZW_ARIA_EL_ATTRS === 'object'
+            && Object.prototype.hasOwnProperty.call(_ZW_ARIA_EL_ATTRS, prop)) ? _ZW_ARIA_EL_ATTRS[prop] : null;
+        if (_aeEntry) {
+          var _aeProxy = _makeProxy(sel, handle);
+          var _aeExplicit = _zwAriaElExplicit[key] ? _zwAriaElExplicit[key][_aeEntry.attr] : null;
+          var _aeHas = (handle
+            ? __zw_has_attr_handle(handle, _aeEntry.attr)
+            : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, _aeEntry.attr) : __zw_has_attr(sel, _aeEntry.attr))) === '1';
+          var _aeRaw = _aeHas ? (handle ? __zw_get_attr_handle(handle, _aeEntry.attr)
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _aeEntry.attr) : __zw_get_attr(sel, _aeEntry.attr))) : null;
+          if (_aeEntry.single) {
+            if (_aeExplicit && _aeExplicit.single != null) {
+              return _zwAriaValidRef(_aeProxy, _aeExplicit.single) ? _aeExplicit.single : null;
+            }
+            if (!_aeHas || _aeRaw == null) return null;
+            var _aeTok = String(_aeRaw).trim().split(/[ \t\n\f\r]+/)[0];
+            return _zwAriaResolveToken(_aeProxy, _aeTok);
+          }
+          var _aeList = null, _aeSrc = '';
+          if (_aeExplicit && _aeExplicit.list) {
+            _aeList = [];
+            for (var _aei = 0; _aei < _aeExplicit.list.length; _aei++) {
+              if (_zwAriaValidRef(_aeProxy, _aeExplicit.list[_aei])) _aeList.push(_aeExplicit.list[_aei]);
+            }
+            _aeSrc = 'x';
+          } else if (_aeHas && _aeRaw != null) {
+            var _aeToks = String(_aeRaw).trim().split(/[ \t\n\f\r]+/);
+            _aeList = [];
+            for (var _aej = 0; _aej < _aeToks.length; _aej++) {
+              if (!_aeToks[_aej]) continue;
+              var _aeHit = _zwAriaResolveToken(_aeProxy, _aeToks[_aej]);
+              if (_aeHit) _aeList.push(_aeHit);
+            }
+            _aeSrc = 'a';
+          } else {
+            return null;
+          }
+          var _aeSig = _aeSrc + '|' + String(_aeRaw == null ? '' : _aeRaw) + '|' + _zwAriaTreeChain(_aeProxy).join('>');
+          for (var _aek = 0; _aek < _aeList.length; _aek++) _aeSig += '|' + String(_aeList[_aek]);
+          var _aeCache = _zwAriaElCache[key] ? _zwAriaElCache[key][_aeEntry.attr] : null;
+          if (_aeCache && _aeCache.sig === _aeSig) return _aeCache.arr;
+          var _aeArr = _aeList.slice();
+          if (!_zwAriaElCache[key]) _zwAriaElCache[key] = {};
+          _zwAriaElCache[key][_aeEntry.attr] = { sig: _aeSig, arr: _aeArr };
+          return _aeArr;
+        }
         // `el.ariaXxx`——反射 aria-* 属性（ariaLabel↔aria-label, ariaLabelledBy↔aria-labelledby, ...）。
         // 经 `_ariaAttrName` 通用映射覆盖全部 aria IDL 属性；无 → ''。同步 set→get 优先读缓存。
+        // R5009 片 e（M4 片 e）：set-then-remove → null（nullable——testNullable 全族；
+        // 初始 unset → ''）。置于 `_ZW_ARIA_EL_ATTRS` 之后（element 反射名不带此映射）。
         var _ariaName = _ariaAttrName(prop);
         if (_ariaName) {
           var arc = _reflectedAttrs[key];
           if (arc && Object.prototype.hasOwnProperty.call(arc, _ariaName)) return arc[_ariaName];
+          var _ariaHas = (handle ? __zw_has_attr_handle(handle, _ariaName) : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, _ariaName) : __zw_has_attr(sel, _ariaName))) === '1';
+          if (!_ariaHas) {
+            try {
+              var _ariaExP = _zwAriaExplicit.get(key);
+              if (_ariaExP && _ariaExP.has(_ariaName)) return null;
+            } catch (_eAriaExP) {}
+          }
           return (handle ? __zw_get_attr_handle(handle, _ariaName) : __zw_get_attr(sel, _ariaName)) || '';
         }
         // reflected 布尔/枚举全局属性（R2848/R2850）：autofocus/draggable/spellcheck/translate（R2848）
@@ -918,6 +990,35 @@
                 }
               }
               walk(this);
+              return out;
+            },
+            // R5009 片 e（M4 片 e）：querySelectorAll（ParentNode 面补遗——WPT
+            // fragment-parse-form-in-template 'template.content.querySelectorAll'
+            // 曾 "not a function"；同款简单选择器 DFS，树序收集）。
+            querySelectorAll: function (q) {
+              var out = [];
+              var _qsaM = /^([a-zA-Z][a-zA-Z0-9-]*|\*|#([\w-]+)|\.([\w-]+))$/.exec(String(q == null ? '' : q).trim());
+              if (!_qsaM) return out;
+              (function dfsQsa(node) {
+                var kids = node.childNodes || [];
+                for (var i = 0; i < kids.length; i++) {
+                  var k = kids[i];
+                  if (!k || k.nodeType !== 1) continue;
+                  var ok = false;
+                  if (_qsaM[1] === '*') ok = true;
+                  else if (_qsaM[2]) { try { ok = String(k.id || (k.getAttribute && k.getAttribute('id')) || '') === _qsaM[2]; } catch (_eQsaI) {} }
+                  else if (_qsaM[3]) {
+                    try {
+                      var clsQ = String((k.getAttribute && (k.getAttribute('class') != null ? k.getAttribute('class') : k.className)) || '');
+                      ok = clsQ.split(/\s+/).indexOf(_qsaM[3]) >= 0;
+                    } catch (_eQsaC) {}
+                  } else {
+                    ok = String(k.tagName || '').toLowerCase() === String(_qsaM[1]).toLowerCase();
+                  }
+                  if (ok) out.push(k);
+                  dfsQsa(k);
+                }
+              })(_tplContent);
               return out;
             },
           // WC-M1 切片 3（spec custom-element-reactions + the-template-element）：
@@ -2675,6 +2776,18 @@ return _tplContent;
             if (n === 'class') _classCache[key] = v;
             else if (n === 'value') { _inputValues[key] = v; _inputValuesSet[key] = true; _clearInputDefault(key); } // R2996：setAttribute('value') 重同步 defaultValue
             else if (n === 'checked' || n === 'selected') _clearBoolDefault(key, n); // R2998：setAttribute('checked'/'selected') 重同步 defaultChecked/defaultSelected
+            // R5009 片 e（M4 片 e）：setAttribute 到 ARIA element 反射 attr → 清显式
+            // 关联（内容属性直接设值覆盖 IDL 引用——WPT aria-errormessage
+            // 'setAttribute(...) 后 getter 回落内容属性解析' 面；空串设值同）。
+            if (typeof _ZW_ARIA_EL_ATTRS === 'object') {
+              for (var _aeSaK in _ZW_ARIA_EL_ATTRS) {
+                if (_ZW_ARIA_EL_ATTRS[_aeSaK].attr === n) {
+                  if (_zwAriaElExplicit[key]) delete _zwAriaElExplicit[key][n];
+                  if (_zwAriaElCache[key]) delete _zwAriaElCache[key][n];
+                  break;
+                }
+              }
+            }
             // R125：id 变更前先摘 pending-ID 索引旧键（写后再摘会摘到新键——proxy.id
             // latest-wins 读新值，旧 id 条目残留 = getElementById 旧 id 误命中）。
             var _r125OldPid = null;
@@ -2873,6 +2986,18 @@ return _tplContent;
             if (n === 'class') _classCache[key] = '';
             else if (n === 'value') { _inputValues[key] = ''; _inputValuesSet[key] = true; _clearInputDefault(key); } // R2996：removeAttribute('value') 重同步 defaultValue
             else if (n === 'checked' || n === 'selected') _clearBoolDefault(key, n); // R2998：removeAttribute('checked'/'selected') 重同步 defaultChecked/defaultSelected
+            // R5009 片 e（M4 片 e）：ARIA Element 反射——removeAttribute(attr) 解除
+            // 显式关联（WPT disconnected 'el.removeAttribute(contentAttr)' 后 getter
+            // null；setAttribute 不清——errormessage 'setAttribute 后仍显式' 面）。
+            if (typeof _ZW_ARIA_EL_ATTRS === 'object') {
+              for (var _aeRmK in _ZW_ARIA_EL_ATTRS) {
+                if (_ZW_ARIA_EL_ATTRS[_aeRmK].attr === nLower) {
+                  if (_zwAriaElExplicit[key]) delete _zwAriaElExplicit[key][nLower];
+                  if (_zwAriaElCache[key]) delete _zwAriaElCache[key][nLower];
+                  break;
+                }
+              }
+            }
             if (nLower === 'popover') delete _zwTopLayer[key];
             if (nLower === 'open' && targetTag === 'DIALOG') {
               delete _zwDialogModal[key];
@@ -4730,6 +4855,11 @@ return _tplContent;
               if (child === _makeProxy(sel, handle) || _zwIsAncestorOf(child, sel, handle)) {
                 throw _zwDomException('A Node cannot be appended to itself or its descendant.', 'HierarchyRequestError');
               }
+              // R5009 片 e（M4 片 e）：sel 父接手 → 清 handle 容器同步父记录（shadow
+              // 移回 light DOM 的恢复面——stale 记录曾使树链滞留 shadow 判无效）。
+              try {
+                if (typeof _zwAriaSyncParent !== 'undefined') delete _zwAriaSyncParent[String(child.__zwSelector)];
+              } catch (_e334asp) {}
               var _r334ChildSel = child.__zwSelector;
               // M3 扩批 XLV（2026-09-04）：旧父在 wire 前读（wire 的 reparent 之后读
               // 会被 removed 标记/槽未设干扰返 null——record 的 removed 归旧父语义丢失）。
@@ -4776,6 +4906,13 @@ return _tplContent;
             // js-dom M4 R84：同步接 parentNode 反链 + 兄弟 getter（R3018 同款）——旧只入
             // registry 不接链，oracle nextNode() 树序遍历在该子断链（parentNode=null →
             // climb 提前终止，NodeIterator/TreeWalker expected-null-but-got-object 根因）。
+            // R5009 片 e（M4 片 e）：sel 子挂 handle 容器（shadow/fragment/handle 元素）
+            // 同步父记录——`_recordHandleChild` 早退于无 handle 子，R334 槽仅覆盖 sel 父；
+            // ARIA 树链 walker 在 host mutation apply 前消费（`_zwAriaSyncParent`）。
+            if (handle && child && child.__zwSelector && !child.__zwHandle
+                && typeof _zwAriaSyncParent !== 'undefined') {
+              _zwAriaSyncParent[String(child.__zwSelector)] = { parentSel: null, parentHandle: handle };
+            }
             if (child && !child.__zwHandle && handle && child.nodeType) {
               if (!_handleChildren[handle]) _handleChildren[handle] = [];
               _handleChildren[handle].push(child);
@@ -9312,6 +9449,50 @@ return _tplContent;
           var _ptaV = (value == null) ? 'toggle' : String(value);
           if (handle) __zw_set_attr_handle(handle, 'popovertargetaction', _ptaV);
           else { __zw_set_attr(sel, 'popovertargetaction', _ptaV); moAttr = 'popovertargetaction'; }
+        } else if (typeof _ZW_ARIA_EL_ATTRS === 'object'
+                   && Object.prototype.hasOwnProperty.call(_ZW_ARIA_EL_ATTRS, p)) {
+          // R5009 片 e（M4 片 e）：ARIA Element 反射 setter。null/undefined → 移除
+          // 内容属性 + 清显式引用（WPT 'nullifying the idl attribute removes the
+          // content attribute'）；Element / FrozenArray<Element> → 存显式引用 +
+          // 内容属性写**空串**（spec：IDL set 反映空串非 id 列表）；类型不符 →
+          // TypeError（WPT 'Passing values of the wrong type'）。存储不裁剪——
+          // 无效树引用仅 getter 过滤（WPT reparenting/restore 全族）。
+          var _aeS = _ZW_ARIA_EL_ATTRS[p];
+          var _aeIsEl = function (v) {
+            return !!(v && typeof v === 'object' && v.nodeType === 1);
+          };
+          if (value === null || value === undefined) {
+            _zwRemoveAttr(key, sel, handle, _aeS.attr);
+            if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, _aeS.attr);
+            if (_zwAriaElExplicit[key]) delete _zwAriaElExplicit[key][_aeS.attr];
+            if (_zwAriaElCache[key]) delete _zwAriaElCache[key][_aeS.attr];
+            moAttr = _aeS.attr;
+          } else if (_aeS.single) {
+            if (!_aeIsEl(value)) {
+              throw new TypeError('Failed to set the aria element reference: the value is not an Element.');
+            }
+            if (!_zwAriaElExplicit[key]) _zwAriaElExplicit[key] = {};
+            _zwAriaElExplicit[key][_aeS.attr] = { single: value };
+            if (_zwAriaElCache[key]) delete _zwAriaElCache[key][_aeS.attr];
+            if (handle) __zw_set_attr_handle(handle, _aeS.attr, '');
+            else { __zw_set_attr(sel, _aeS.attr, ''); }
+            moAttr = _aeS.attr;
+          } else {
+            if (!Array.isArray(value)) {
+              throw new TypeError('Failed to set the aria element references: the value is not a list of Elements.');
+            }
+            for (var _aeSi = 0; _aeSi < value.length; _aeSi++) {
+              if (!_aeIsEl(value[_aeSi])) {
+                throw new TypeError('Failed to set the aria element references: list item ' + _aeSi + ' is not an Element.');
+              }
+            }
+            if (!_zwAriaElExplicit[key]) _zwAriaElExplicit[key] = {};
+            _zwAriaElExplicit[key][_aeS.attr] = { list: value.slice() };
+            if (_zwAriaElCache[key]) delete _zwAriaElCache[key][_aeS.attr];
+            if (handle) __zw_set_attr_handle(handle, _aeS.attr, '');
+            else { __zw_set_attr(sel, _aeS.attr, ''); }
+            moAttr = _aeS.attr;
+          }
         } else if (p === 'role') {
           // role set——反射 role 属性（串）。同步缓存。
           // R5009 片 d（M4 片 d）：null/undefined → removeAttribute（ARIA 属性可空，
@@ -9320,6 +9501,14 @@ return _tplContent;
           if (value === null || value === undefined) {
             _zwRemoveAttr(key, sel, handle, 'role');
             if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, 'role');
+            // R5009 片 e（M4 片 e）：同步清缓存（同 aria 面——role getter 缓存优先）
+            // + set-then-remove 标记（getter null 面）。
+            if (_reflectedAttrs[key]) delete _reflectedAttrs[key]['role'];
+            try {
+              var _roleNx = _zwAriaExplicit.get(key);
+              if (!_roleNx) { _roleNx = new Set(); _zwAriaExplicit.set(key, _roleNx); }
+              _roleNx.add('role');
+            } catch (_eRoleNx) {}
             moAttr = 'role';
             return true;
           }
@@ -9338,6 +9527,15 @@ return _tplContent;
           if (value === null || value === undefined) {
             _zwRemoveAttr(key, sel, handle, ariaAttr);
             if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, ariaAttr);
+            // R5009 片 e（M4 片 e）：同步清缓存（getter 缓存优先——残留使 null 后
+            // IDL get 读回旧值，WPT aria-attribute-reflection testNullable
+            // 'assert_equals(element[jsAttr], null)' 全族）+ set-then-remove 标记。
+            if (_reflectedAttrs[key]) delete _reflectedAttrs[key][ariaAttr];
+            try {
+              var _ariaNx = _zwAriaExplicit.get(key);
+              if (!_ariaNx) { _ariaNx = new Set(); _zwAriaExplicit.set(key, _ariaNx); }
+              _ariaNx.add(ariaAttr);
+            } catch (_eAriaNx) {}
             moAttr = ariaAttr;
             return true;
           }
