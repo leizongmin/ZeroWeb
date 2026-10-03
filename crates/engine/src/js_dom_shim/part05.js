@@ -693,8 +693,16 @@
           var _refVal = _reflectedStringNullEmpty(p) && value === null ? '' : String(value);
           // R5009 片 e（M4 片 c）：bgColor 按元素分型——body LegacyNull（null→''），
           // marquee 等普通串（null→"null"）。NULL_EMPTY 对 bgColor 无 tag 感知，此处门。
-          if (p === 'bgColor' && value === null && _realTag(sel, handle) !== 'BODY') {
-            _refVal = 'null';
+          if (p === 'bgColor' && value === null) {
+            // R5009 片 e（M4 片 c）：bgColor 分型——BODY/TABLE/TR/TD/TH/THEAD/
+            // TBODY/TFOOT LegacyNull（null→''，WPT reflection-tabular 'table.bgColor
+            // IDL set to null' 期望 "" 实证）；其余（marquee）普通串（null→"null"）。
+            var _bg5Tag = _realTag(sel, handle);
+            if (_bg5Tag === 'BODY' || _bg5Tag === 'TABLE' || _bg5Tag === 'TR'
+                || _bg5Tag === 'TD' || _bg5Tag === 'TH' || _bg5Tag === 'THEAD'
+                || _bg5Tag === 'TBODY' || _bg5Tag === 'TFOOT') {
+              _refVal = '';
+            }
           }
           // R5009 片 e（M4 片 a）：col/colgroup.span IDL setter 数值归一（WebIDL
           // unsigned long——"-0" → "0"；WPT 'IDL set to "-0"' getAttribute 期望 "0"）。
