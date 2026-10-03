@@ -669,6 +669,9 @@ fn test_plain_parsed_get_attribute_node_s24() {
         "true",
         "Attr.value 写回应经 setAttribute 传播到 attrs 数组（R122 setter 共享路径）"
     );
+    // 现状守卫（D5 登记）：__nsOk 冻结 R190 非 spec 前缀面行为——xml/xmlns/xlink 同源
+    // 映射 + 其余前缀按字面比较；严格 spec 面未绑定前缀查询应双 null。Chrome oracle
+    // 待下轮实测后再裁决是否翻转，裁决前不得单面擅改。
     assert_eq!(
         sandbox.execute("String(globalThis.__nsOk + ':' + globalThis.__nsMiss)").unwrap().value,
         "true:true",
@@ -899,17 +902,18 @@ fn test_parsed_characterdata_same_parent_multi_remove_shift_s24() {
     );
 }
 
-// slice24 收尾轮（TE2+F1）：getAttributeNodeNS 现状钉——对**已存在属性** (null,'id')
-// 断言（旧钉仅 'nope' miss 空表形态：spec 语义与现状语义下同值 null，零判别力）。
-// KNOWN-DEVIATION：part03 _zwMEl getAttributeNodeNS 对无前缀属性的 ns 归属按元素
-// namespaceURI 匹配（「无前缀属性 ∈ 元素 ns」分支）——spec
-// https://dom.spec.whatwg.org/#concept-attribute-namespace 无前缀属性 namespace 应为
-// null：getAttributeNodeNS(HTML-ns, 'id') 应返 null，现误命中返 Attr（本钉 __nsHtmlDev
-// 断言现状非 null）。语义修复已裁定入问题池（baidu-storm slice24 缺陷 F1），下 shim
-// 切片携带同提交翻转：届时 __nsHtmlDev 断言同提交翻转为 === null；(null,'id') 命中面
-//（__hitOk/__hitFields——无前缀属性 ns=null 的判别命中共相）不受翻转影响，须保持 GREEN。
+// slice25 翻转钉（原 slice24 收尾轮 TE2+F1 known-deviation 现状钉，同提交翻转兑现
+// 问题池 F1）：getAttributeNodeNS 无前缀属性 ns 语义——spec
+// https://dom.spec.whatwg.org/#concept-attribute-namespace 属性 ns 在创建时定死，
+// HTML 解析产物无前缀属性 namespace=null：getAttributeNodeNS(HTML-ns, 'id') 应返
+// null（slice24 现状误命中返 Attr 的「无前缀属性 ∈ 元素 ns」分支已移除——part03
+// _zwMEl 与同工厂 getAttributeNS 的 _zwMNsMatch（entry.ns 缺省 null）语义对齐）。
+// (null,'id') 命中面（__hitOk/__hitFields/__hitOwner——slice24 钉的判别命中共相）
+// 翻转后保持 GREEN。负控制：① 有前缀属性 xlink:href 命中面不变（R190 prefix→ns
+// 映射）且 (null,'href') 不命中；② sel 世界（proxy R122 实例层，ns 显式元数据）
+// (null,name) 命中不受本翻转扰动。
 #[test]
-fn test_plain_parsed_get_attribute_node_ns_existing_known_deviation_s24() {
+fn test_plain_parsed_get_attribute_node_ns_no_prefix_null_s24_flip() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
     let config = SandboxConfig {
@@ -936,7 +940,15 @@ fn test_plain_parsed_get_attribute_node_ns_existing_known_deviation_s24() {
              globalThis.__hitOk = !!nid && nid instanceof Attr;\
              globalThis.__hitFields = !!nid && nid.name === 'id' && nid.value === 'sp' && nid.localName === 'id' && nid.prefix === null && nid.namespaceURI === null;\
              globalThis.__hitOwner = !!nid && nid.ownerElement === sp;\
-             globalThis.__nsHtmlDev = sp.getAttributeNodeNS('http://www.w3.org/1999/xhtml', 'id') !== null;",
+             globalThis.__nsHtml = sp.getAttributeNodeNS('http://www.w3.org/1999/xhtml', 'id') === null;\
+             sp.setAttribute('xlink:href', 'u');\
+             var pf = sp.getAttributeNodeNS('http://www.w3.org/1999/xlink', 'href');\
+             globalThis.__pfHit = !!pf && pf.prefix === 'xlink' && pf.namespaceURI === 'http://www.w3.org/1999/xlink' && pf.localName === 'href' && pf.value === 'u';\
+             globalThis.__pfNullMiss = sp.getAttributeNodeNS(null, 'href') === null;\
+             var px = document.createElement('div');\
+             px.setAttribute('foo', 'bar');\
+             var sna = px.getAttributeNodeNS(null, 'foo');\
+             globalThis.__selHit = !!sna && sna.value === 'bar';",
         )
         .unwrap();
     assert_eq!(
@@ -948,22 +960,36 @@ fn test_plain_parsed_get_attribute_node_ns_existing_known_deviation_s24() {
         "(null,'id') 应命中已存在属性并返 Attr 真实例（name/value/localName、prefix=null、namespaceURI=null——spec concept-attribute-namespace 无前缀属性 ns 为 null）"
     );
     assert_eq!(
-        sandbox.execute("String(globalThis.__nsHtmlDev)").unwrap().value,
+        sandbox.execute("String(globalThis.__nsHtml)").unwrap().value,
         "true",
-        "KNOWN-DEVIATION 现状：无前缀属性对 HTML-ns 请求现误命中（spec 应返 null）——语义修复入问题池 F1，下 shim 切片同提交翻转为 === null"
+        "getAttributeNodeNS(HTML-ns, 'id') 应返 null（spec concept-attribute-namespace 无前缀属性 ns=null——slice24 known-deviation F1 已翻转）"
+    );
+    // 现状守卫（D5 登记）：__pfHit 冻结 R190 非 spec 前缀面行为（xlink 同源映射命中 +
+    // (null,'href') 不命中）；严格 spec 双 null 面与 Chrome oracle 对照待下轮实测，
+    // 裁决前不得单面擅改。
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__pfHit + ':' + globalThis.__pfNullMiss + ':' + globalThis.__selHit)")
+            .unwrap()
+            .value,
+        "true:true:true",
+        "负控制：有前缀属性 (xlink-ns,'href') 命中不变且 (null,'href') 不命中（R190 prefix→ns 映射）；sel 世界 proxy (null,'foo') 命中不受翻转扰动"
     );
 }
 
-// slice24 收尾轮（TE2+F2）：_zwUaDisplay 已知偏差现状钉。UA 默认表将 li/canvas 归
-// block 集（part01 _zwUaDisplay block 表）——spec HTML rendering UA stylesheet
+// slice25 翻转钉（原 slice24 收尾轮 TE2+F2 known-deviation 现状钉，同提交翻转兑现
+// 问题池 F2）：_zwUaDisplay UA 默认表 li/canvas 回归 HTML 渲染 UA sheet 标准值
 //（https://html.spec.whatwg.org/multipage/rendering.html#the-css-user-agent-style-sheet-and-presentational-hints ）：
-// li 应 'list-item'（`li { display: list-item; }`）；canvas 不在 UA sheet block 集，
-// replaced 元素回落 display 初始值应 'inline'。本钉只断言现状（公共面
-// getComputedStyle().display）。KNOWN-DEVIATION 三条件：① 公共面断言（本钉两断言）；
-// ② spec 期望值 + 问题池条目（baidu-storm slice24 缺陷 F2——li→'list-item'、
-// canvas→'inline'）；③ 语义修复入池后下 shim 切片携带同提交翻转本钉两断言。
+// li → 'list-item'（`li { display: list-item; }`）；canvas 不在 UA sheet block 集，
+// replaced 元素回落 display 初始值 'inline'（part01 _zwUaDisplay：li 专支 + canvas
+// 移出 block 表落 inline 兜底）。双臂：proxy createElement（sel 世界，host miss 后
+// 落 UA 表）与 parsed innerHTML（plain 世界）同值。负控制：div/ul 仍 block（block
+// 集其余值不受翻转扰动）；inline style 优先序与 host miss 回落序由交付钉
+// test_computed_style_ua_default_display_s24 覆盖。'list-item'/'inline' 均非
+// 'none'/非空串——jQuery css_defaultDisplay 消费面不触发 iframe 兜底（slice24
+// 修复回归面不受扰）。
 #[test]
-fn test_ua_display_known_deviation_li_canvas_s24() {
+fn test_ua_display_li_list_item_canvas_inline_s24_flip() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
     let config = SandboxConfig {
@@ -988,17 +1014,32 @@ fn test_ua_display_known_deviation_li_canvas_s24() {
              var cv = document.createElement('canvas');\
              document.body.appendChild(cv);\
              globalThis.__li = getComputedStyle(li).display;\
-             globalThis.__cv = getComputedStyle(cv).display;",
+             globalThis.__cv = getComputedStyle(cv).display;\
+             document.body.innerHTML = '<li></li><canvas></canvas><div></div><ul></ul>';\
+             var kids = document.body.childNodes;\
+             globalThis.__liP = getComputedStyle(kids[0]).display;\
+             globalThis.__cvP = getComputedStyle(kids[1]).display;\
+             globalThis.__ctrl = getComputedStyle(kids[2]).display + ':' + getComputedStyle(kids[3]).display;",
         )
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__li").unwrap().value,
-        "block",
-        "KNOWN-DEVIATION 现状：li 计算 display 现为 'block'（spec UA sheet 应 'list-item'——问题池 F2，下 shim 切片同提交翻转）"
+        "list-item",
+        "li 计算 display 应为 'list-item'（spec UA sheet li 规则 display:list-item——slice24 known-deviation F2 已翻转）"
     );
     assert_eq!(
         sandbox.execute("globalThis.__cv").unwrap().value,
-        "block",
-        "KNOWN-DEVIATION 现状：canvas 计算 display 现为 'block'（spec 应 'inline'——问题池 F2，下 shim 切片同提交翻转）"
+        "inline",
+        "canvas 计算 display 应为 'inline'（不在 UA sheet block 集，replaced 元素回落初始值——slice24 known-deviation F2 已翻转）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__liP + ':' + globalThis.__cvP)").unwrap().value,
+        "list-item:inline",
+        "plain 双臂同值：innerHTML 解析产物 li/canvas 走同一 UA 表（host miss 面）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ctrl").unwrap().value,
+        "block:block",
+        "负控制：div/ul 仍 block——block 集其余值不受翻转扰动"
     );
 }

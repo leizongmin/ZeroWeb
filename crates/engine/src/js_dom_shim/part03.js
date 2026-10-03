@@ -9209,15 +9209,16 @@
         var nm = String(attrs[i].name);
         var loc = nm, pre = null, ans = null;
         var ci = nm.indexOf(':');
-        if (ci > 0) { pre = nm.slice(0, ci); loc = nm.slice(ci + 1); }
-        if (pre != null) {
+        if (ci > 0) {
+          pre = nm.slice(0, ci); loc = nm.slice(ci + 1);
           // R190 同源 prefix→ns 映射（xml/xmlns/xlink）；其余前缀按字面比较。
           ans = { xmlns: 'http://www.w3.org/2000/xmlns/', xlink: 'http://www.w3.org/1999/xlink', xml: 'http://www.w3.org/XML/1998/namespace' }[pre] || null;
-        } else if (_gnNs === null) {
-          ans = null;
-        } else {
-          ans = node.namespaceURI || null; // 无前缀属性 ∈ 元素 ns（HTML 解析语义）
         }
+        // else：无前缀属性 namespace 恒 null，不随元素 ns——spec
+        // https://dom.spec.whatwg.org/#concept-attribute-namespace （属性 ns 在创建时
+        // 定死，HTML 解析产物无前缀属性 ns=null；getAttributeNodeNS(HTML-ns, name)
+        // 不得命中）。slice25 翻转 slice24 known-deviation F1 的「无前缀属性 ∈ 元素 ns」
+        // 分支，与同工厂 getAttributeNS 的 _zwMNsMatch（entry.ns 缺省 null）语义对齐。
         if (loc.toLowerCase() === _gnL && ans === _gnNs) {
           var _ga = _zwMakeAttr(nm, attrs[i].value, node);
           // spec dom-attr：localName 是冒号后的 local 部分、prefix 是冒号前段

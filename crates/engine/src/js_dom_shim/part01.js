@@ -5074,7 +5074,13 @@
     // → 实例 inline style（host miss 时兜住 `el.style.display='none'` 场景）→ UA 默认表。
     var _zwUaDisplay = function(el) {
       var tag = el && el.tagName ? String(el.tagName).toLowerCase() : '';
-      var block = { address: 1, article: 1, aside: 1, blockquote: 1, canvas: 1, dd: 1, details: 1, dialog: 1, div: 1, dl: 1, dt: 1, fieldset: 1, figcaption: 1, figure: 1, footer: 1, form: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1, header: 1, hgroup: 1, hr: 1, li: 1, main: 1, menu: 1, nav: 1, ol: 1, option: 1, p: 1, pre: 1, section: 1, summary: 1, table: 1, ul: 1 };
+      // slice25 翻转 slice24 known-deviation F2：li/canvas 回归 HTML 渲染 UA sheet 标准值
+      //（https://html.spec.whatwg.org/multipage/rendering.html#the-css-user-agent-style-sheet-and-presentational-hints
+      // —— `li { display: list-item; }`；canvas 不在 UA sheet block 集，replaced 元素
+      // 回落 display 初始值 'inline'）。jQuery css_defaultDisplay 消费面：'list-item'/
+      // 'inline' 均非 'none'/非空串，不触发 iframe 兜底（slice24 修复回归面不受扰）。
+      if (tag === 'li') return 'list-item';
+      var block = { address: 1, article: 1, aside: 1, blockquote: 1, dd: 1, details: 1, dialog: 1, div: 1, dl: 1, dt: 1, fieldset: 1, figcaption: 1, figure: 1, footer: 1, form: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1, header: 1, hgroup: 1, hr: 1, main: 1, menu: 1, nav: 1, ol: 1, option: 1, p: 1, pre: 1, section: 1, summary: 1, table: 1, ul: 1 };
       var ib = { button: 1, input: 1, select: 1, textarea: 1 };
       if (block[tag]) return 'block';
       if (ib[tag]) return 'inline-block';
