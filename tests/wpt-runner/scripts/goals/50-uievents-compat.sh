@@ -14,5 +14,10 @@ GOAL="uievents-compat"
 DIRS=( "uievents" "pointerevents"  )
 
 goals_fetch_all
+# 二级子目录显式追加（lib 递归仅一层 depth<1——fetch-dom-subset SUBDIRS 先例）：
+# order-of-events/{mouse-events,focus-events} 是 M2 鼠标事件序的核心语料
+#（click-order/mouseover-out/mousemove-between 等），首轮 fetch 因深度限制缺失。
+fetch_dir_html "uievents/order-of-events/mouse-events"
+fetch_dir_html "uievents/order-of-events/focus-events"
 goals_inventory
 goals_next_steps "${GOAL}"

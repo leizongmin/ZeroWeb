@@ -1559,6 +1559,111 @@ fn collect_keyboard_dir_cases(
     }
 }
 
+/// uievents-compat goal corpus subdirs（M1 / DC-1）：上游 `uievents/` +
+/// `pointerevents/` 全域递归扫描。`uievents/keyboard` 子域与
+/// [`KEYBOARD_TEST_SUBDIRS`] 重叠属有意——keyboard goal 已收口，重复计入本 goal
+/// 基线分母（分类口径独立）。
+pub const UIEVENTS_TEST_SUBDIRS: &[&str] = &["uievents", "pointerevents"];
+
+/// uievents-compat 语料跳过规则（非静默丢弃——记入 evidence 导入清单）：
+/// - `*-manual.html`：需真实指针/触控硬件交互（clipboard/fullscreen 先例）
+/// - `pointerevents/crashtests/`：崩溃回归用例，非 testharness 格式
+/// - `pointerevents/pointerlock/`：pointer lock 域——goal 契约挂账（宿主鼠标
+///   捕获模式域，重入条件 = 用户点名）
+/// - `pointerevents/resources/`：helper 脚本目录，非用例
+/// - `uievents/legacy-domevents-tests/`：DOM Level 3 旧套件（Status.html 索引页，
+///   非 testharness.js 格式；approved/ 子目录未拉取）
+fn uievents_case_skipped(relative: &str) -> bool {
+    let file_name = relative.rsplit('/').next().unwrap_or(relative);
+    if file_name.ends_with("-manual.html") {
+        return true;
+    }
+    [
+        "pointerevents/crashtests/",
+        "pointerevents/pointerlock/",
+        "pointerevents/resources/",
+        "uievents/legacy-domevents-tests/",
+    ]
+    .iter()
+    .any(|prefix| relative.starts_with(prefix))
+}
+
+/// Run the upstream UI/pointer-events testharness corpus under `wpt_root`
+/// （uievents-compat goal M1 / DC-1——鼠标事件序 + Pointer Events 语义基线）。
+///
+/// 递归扫描 [`UIEVENTS_TEST_SUBDIRS`]（两域为嵌套布局，与 flat 的
+/// [`run_any_js_corpus_subdirs`] 不同）。仅依赖 `testharness.js` + runner 内建
+/// testdriver 适配（click/send_keys/Actions）；依赖白名单外 testdriver API 的
+/// 用例在 [`run_testharness_html`] 内判 Unsupported。用例由
+/// `scripts/goals/50-uievents-compat.sh` 按需拉取（gitignored）。
+pub fn run_uievents_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                "resources/testharness.js".to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+
+    let mut cases = Vec::new();
+    for subdir in UIEVENTS_TEST_SUBDIRS {
+        collect_uievents_dir_cases(wpt_root, subdir, filter, &harness_source, &mut cases);
+    }
+    cases
+}
+
+/// 递归收集一个 UI/pointer 子域下的主线程 .html 用例（跳过规则见
+/// [`uievents_case_skipped`]；variant meta 展开，js-dom R329 先例）。
+fn collect_uievents_dir_cases(
+    wpt_root: &Path,
+    subdir: &str,
+    filter: Option<&str>,
+    harness_source: &str,
+    cases: &mut Vec<(String, Vec<HarnessSubtestResult>)>,
+) {
+    let Ok(entries) = std::fs::read_dir(wpt_root.join(subdir)) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        let relative = format!("{subdir}/{file_name}");
+        if path.is_dir() {
+            collect_uievents_dir_cases(wpt_root, &relative, filter, harness_source, cases);
+            continue;
+        }
+        if !file_name.ends_with(".html") && !file_name.ends_with(".htm") {
+            continue;
+        }
+        if uievents_case_skipped(&relative) {
+            continue;
+        }
+        if filter.is_some_and(|filter| !relative.contains(filter)) {
+            continue;
+        }
+        let Ok(source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let variants = case_variants(&source);
+        if variants.is_empty() {
+            let results = run_testharness_html(wpt_root, &relative, &source, harness_source, corpus_case_timeout());
+            cases.push((relative, results));
+            continue;
+        }
+        for variant in variants {
+            let case_name = format!("{relative}{variant}");
+            let results = run_testharness_html(wpt_root, &case_name, &source, harness_source, corpus_case_timeout());
+            cases.push((case_name, results));
+        }
+    }
+}
+
 /// 解析用例声明的 `<meta name="variant" content="?query">` 列表（js-dom R329）。
 ///
 /// WPT variant 用例（如 Range-in-shadow-after-the-shadow-removed 的 `?mode=open` /

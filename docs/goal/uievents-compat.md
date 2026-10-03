@@ -1,8 +1,9 @@
 # UI/指针事件兼容 — uievents / pointerevents
 
-**版本**: v1.0
-**日期**: 2026-09-12
-**状态**: Active（已立项，未启动——启动顺序由用户点名）
+**版本**: v1.1
+**日期**: 2026-09-12（立项）/ 2026-10-03（M1 收口）
+**状态**: Active（M1 完成——corpus 导入 + runner 通道 + 分类基线 1024 subtests 230P；
+M2 鼠标事件序推进中）
 **执行模式**: WPT 驱动（上游 uievents + pointerevents corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——输入事件语义面）
 
@@ -67,8 +68,9 @@ pointerenter/leave 边界序 / touch-events 评估记账。
 
 ## Done Criteria
 
-- [ ] **DC-1**：uievents + pointerevents corpus 可执行子集导入 + 分类基线 +
-      suites CSV 回填
+- [x] **DC-1**：uievents + pointerevents corpus 可执行子集导入 + 分类基线 +
+      suites CSV 回填（2026-10-03——314 case 条目/235 唯一文件/1024 subtests
+      230P；evidence/2026-10-03-m1-baseline.md）
 - [ ] **DC-2**：鼠标事件语义（事件序/坐标/click 组合）修齐
 - [ ] **DC-3**：Pointer Events 生命周期 + capture 三方法 + enter/leave 边界序修齐
 - [ ] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
