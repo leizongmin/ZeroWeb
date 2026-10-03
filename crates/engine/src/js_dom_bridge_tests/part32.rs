@@ -669,6 +669,9 @@ fn test_plain_parsed_get_attribute_node_s24() {
         "true",
         "Attr.value 写回应经 setAttribute 传播到 attrs 数组（R122 setter 共享路径）"
     );
+    // 现状守卫（D5 登记）：__nsOk 冻结 R190 非 spec 前缀面行为——xml/xmlns/xlink 同源
+    // 映射 + 其余前缀按字面比较；严格 spec 面未绑定前缀查询应双 null。Chrome oracle
+    // 待下轮实测后再裁决是否翻转，裁决前不得单面擅改。
     assert_eq!(
         sandbox.execute("String(globalThis.__nsOk + ':' + globalThis.__nsMiss)").unwrap().value,
         "true:true",
@@ -961,6 +964,9 @@ fn test_plain_parsed_get_attribute_node_ns_no_prefix_null_s24_flip() {
         "true",
         "getAttributeNodeNS(HTML-ns, 'id') 应返 null（spec concept-attribute-namespace 无前缀属性 ns=null——slice24 known-deviation F1 已翻转）"
     );
+    // 现状守卫（D5 登记）：__pfHit 冻结 R190 非 spec 前缀面行为（xlink 同源映射命中 +
+    // (null,'href') 不命中）；严格 spec 双 null 面与 Chrome oracle 对照待下轮实测，
+    // 裁决前不得单面擅改。
     assert_eq!(
         sandbox
             .execute("String(globalThis.__pfHit + ':' + globalThis.__pfNullMiss + ':' + globalThis.__selHit)")
@@ -978,7 +984,7 @@ fn test_plain_parsed_get_attribute_node_ns_no_prefix_null_s24_flip() {
 // replaced 元素回落 display 初始值 'inline'（part01 _zwUaDisplay：li 专支 + canvas
 // 移出 block 表落 inline 兜底）。双臂：proxy createElement（sel 世界，host miss 后
 // 落 UA 表）与 parsed innerHTML（plain 世界）同值。负控制：div/ul 仍 block（block
-// 集其余值不受翻转扰动）；inline style 优先序与 host 路径由交付钉
+// 集其余值不受翻转扰动）；inline style 优先序与 host miss 回落序由交付钉
 // test_computed_style_ua_default_display_s24 覆盖。'list-item'/'inline' 均非
 // 'none'/非空串——jQuery css_defaultDisplay 消费面不触发 iframe 兜底（slice24
 // 修复回归面不受扰）。

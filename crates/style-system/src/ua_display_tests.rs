@@ -81,6 +81,21 @@ fn test_inline_elements_remain_unset() {
     }
 }
 
+/// 现状守卫（slice25 收尾轮，D4 登记）：canvas 在 Rust host 面 `ua_default_display`
+/// 归 InlineBlock（replaced 元素组），而 JS 回落面（part01 `_zwUaDisplay`）slice25 已
+/// 翻转为 spec UA sheet 语义（canvas 不在 block 集 → 初始值 inline）——双面分叉。
+/// host li→Block + marker 门控与 spec `li{display:list-item}` 的语义等价性待裁决
+///（不预设翻转 host 字面值）；双面裁决前冻结 host 现状，未来修复须同提交双面翻转
+/// 并带 reftest/product-smoke 门控。
+#[test]
+fn test_canvas_host_inline_block_frozen_until_dual_surface_adjudication() {
+    assert_eq!(
+        ua_default_display("canvas"),
+        Some(DisplayValue::InlineBlock),
+        "canvas host 面现状 InlineBlock（D4 双面分叉裁决前冻结现状）"
+    );
+}
+
 #[test]
 fn test_textarea_defaults_to_bidirectional_resize() {
     let doc = zero_dom::parse_html("<textarea></textarea>");
