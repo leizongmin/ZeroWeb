@@ -391,7 +391,13 @@ fn navigate_and_focus(cdp: &mut CdpClient, site: &TestSite, path: &str, focus_id
 /// keydown → keypress → beforeinput(insertText,data) → input(同面) → keyup 全序 +
 /// value === "we"。keypress 面：key 语义 + target + trusted（R312 宿主派发可信戳）。
 /// base 预期翻红（keypress 缺失——同桶判别的引擎最小面）。
-// https://w3c.github.io/uievents/#events-keyboard-event-order
+///
+/// 键序背离注记：本钉冻结的序是 keypress 在 beforeinput/input 之前——Chrome/154
+/// 实测同桶序（探针 JSON 存档 s23-chrome-local.json），也是两合成点（WPT runner
+/// send_keys 与宿主 CDP 路径）的现行实现序；UI Events §8.3.2 的字面处理序与之
+/// 相反。若未来统一两合成点键序、对齐规范字面序，须同步修改本钉的序断言。
+// https://w3c.github.io/uievents/#keypress-event-order （keypress 相对 beforeinput/
+//   input 的位置句在此；#events-keyboard-event-order 的字面序与实现序相反，勿引）
 // https://w3c.github.io/uievents/#event-type-keypress
 // https://w3c.github.io/input-events/#interface-InputEvent
 #[test]
@@ -524,7 +530,8 @@ fn insert_text_command_lands_value_and_dispatches_input_events() {
 
 /// 钉 3（无 text 边界负控制钉）：rawKeyDown（无 text）只派 keydown/keyup 事件轴——
 /// 无 keypress（keypress 仅属于产生字符值的键）、无 beforeinput/input、value 不变。
-/// base 与修复后均须绿（守护 keypress 的 text 判据不被放大到全部键）。
+/// base 预期翻红（text→key 坍缩使 rawKeyDown 幻插入、值落 "w"，见 s23-pin-red-green.md
+/// RED 实录）；修复后绿。守护 keypress 的 text 判据不被放大到全部键。
 // https://w3c.github.io/uievents/#event-type-keypress
 #[test]
 fn raw_key_down_without_text_skips_keypress_and_insertion() {
