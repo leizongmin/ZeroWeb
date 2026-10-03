@@ -103,6 +103,11 @@ pub struct LayoutBox {
     /// 与 paint 不变），仅 rect 桥（gBCR 面消费；命中面读树几何，slice13 返修）。
     /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
     pub inline_reported_rect: Option<(f32, f32)>,
+    /// R4945：R2156 skip 提升的原子行内级盒旗（taffy Position::Absolute + computed
+    /// static 的组合态——extract 期推导）。语义 = 该盒由容器 IFC 占位行「代持」空间、
+    /// 自身绘制/几何独立于流。struct-check 的 block_children 判定排除之（37-form
+    /// fixture：p 的提升 input 盒曾被计为 block children 触发 concat 误报）。
+    pub hoisted_atomic: bool,
     /// 对应的 DOM 节点 ID。
     pub node_id: Option<NodeId>,
     /// 盒子的位置（相对于父元素的内容区域）。
@@ -637,6 +642,7 @@ impl Default for LayoutBox {
     fn default() -> Self {
         Self {
             inline_reported_rect: None,
+            hoisted_atomic: false,
             node_id: None,
             writing_mode_sideways_lr: false,
             x: 0.0,

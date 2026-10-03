@@ -2389,6 +2389,18 @@ impl LayoutEngine {
 
         LayoutBox {
             inline_reported_rect: None,
+            // R4945：taffy Position::Absolute + computed static 的组合 = R2156 skip
+            // 提升原子（tree.rs 置 taffy 绝对定位持位，computed 无 inset 语义）。
+            hoisted_atomic: taffy.style(taffy_id).map(|st| {
+                st.position == taffy::style::Position::Absolute
+                    && dom_id.and_then(|id| styles.get(&id)).is_some_and(|st2| {
+                        !matches!(
+                            st2.position,
+                            zero_css_parser::values::PositionValue::Absolute
+                                | zero_css_parser::values::PositionValue::Fixed
+                        )
+                    })
+            }) == Ok(true),
             node_id: dom_id,
             x,
             y,

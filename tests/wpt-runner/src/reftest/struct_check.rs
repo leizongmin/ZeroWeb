@@ -207,8 +207,14 @@ pub fn check_text_concatenation(
             .children
             .iter()
             .filter(|c| {
+                // R4945：hoisted_atomic（R2156 skip 提升原子——taffy 绝对定位持位）
+                // 非 block children：其 DOM 父是容器内 inline（label/span），自身绘制
+                // 与容器 IFC 文本同线共位，计入会误触发 concat（37-form-controls：
+                // p 内双提升 input 盒曾被计为 block children →「absorbing 2 text
+                // nodes」误报）。
                 !c.is_absolute
                     && !c.is_fixed
+                    && !c.hoisted_atomic
                     && c.height >= MIN_CHILD_H
                     && c.node_id.is_some_and(|id| labels.contains_key(&id))
             })
