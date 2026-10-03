@@ -1145,6 +1145,62 @@ fn js_worker_main(
                 // R358/R3243：就地换代（Arc 被回调捕获不可换装）→ bump 宿主视图缓存代际，
                 // 防同 count 查询命中换代前解析的视图文档/备忘。
                 zero_engine::js_dom_bridge::bump_dom_view_gen();
+                // slice27（site-compat baidu 建议链 su 注册，2026-10-04）：**快照落地即同步
+                // Window named access**。shim 的 install 自调用仅发生在 shim eval——bootstrap
+                // 时 dom_html 恒空、reset 时读到的是**上一文档**快照——首载快照落地后无人
+                // 注册，`window.su`/`window.kw` 永不出现（活体 B 臂 702336f67 首载实测，
+                // baidu 建议链静默死）。此处于 `*snap = html` + 视图换代后执行注册，并维护
+                // 「本特性已注册面」登记（`__zwNamedAccessInstalled`，随 reset_context 重建
+                // 归零）：换代后消失的 id 元素全局回收（不留上一文档悬挂元素）；新 context
+                // 首快照（登记未建、页面脚本未跑）全量扫除元素全局后重注；脚本自建
+                // 同名全局不被遮蔽（spec：脚本 own property 位于 WindowProperties 命名属性
+                // 层之下）。与 shim eval 自调用互补，幂等；每次快照换代各执行一遍。
+                // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+                let _ = sandbox.execute(
+                    r#"(function () {
+  if (typeof __zw_collect_ids !== 'function') return;
+  var ids = __zw_collect_ids();
+  var cur = {};
+  if (ids) {
+    var parts = ids.split('|');
+    for (var i = 0; i < parts.length; i++) {
+      var id = parts[i];
+      if (id && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id)) cur[id] = true;
+    }
+  }
+  var installed = globalThis.__zwNamedAccessInstalled;
+  if (!installed) {
+    // 新 context（reset 后首快照）：快照先于页面脚本执行，本 context 尚无脚本自建
+    // 全局——shim eval 自调用此刻登记的「上一文档」元素全局全部回收（否则跨站
+    // 导航/重载会把旧页元素残留进新文档，且 id 撞车时遮蔽新页注册）。
+    for (var k in globalThis) {
+      if (cur[k]) continue;
+      var v0;
+      try { v0 = globalThis[k]; } catch (e) { continue; }
+      if (v0 && typeof v0 === 'object' && v0.nodeType === 1) {
+        try { delete globalThis[k]; } catch (e) {}
+      }
+    }
+  } else {
+    for (var k in installed) {
+      if (cur[k]) continue;
+      var old;
+      try { old = globalThis[k]; } catch (e) { continue; }
+      if (old && typeof old === 'object' && old.nodeType === 1) {
+        try { delete globalThis[k]; } catch (e) {}
+      }
+    }
+  }
+  if (typeof __zwInstallNamedAccess === 'function') __zwInstallNamedAccess();
+  var next = {};
+  for (var id in cur) {
+    var v;
+    try { v = globalThis[id]; } catch (e) { continue; }
+    if (v && typeof v === 'object' && v.nodeType === 1) next[id] = true;
+  }
+  globalThis.__zwNamedAccessInstalled = next;
+})()"#,
+                );
                 if let Ok(mut u) = page_url.lock() {
                     *u = url;
                 }
@@ -1548,6 +1604,62 @@ mod tests {
                 .unwrap(),
             "SPAN",
             "reset_context 后下一快照重 install 原生绑定"
+        );
+        worker.shutdown();
+    }
+
+    // slice27（site-compat baidu 建议链 su 注册，2026-10-04）：**Window named access
+    // 须随快照落地注册**。spec：文档树内带 id 的元素可作 `window.<id>` 裸标识符访问，
+    // 且随文档换代更新。缺陷形态（活体 B/702336f67 首载实测）：shim 的 install 自调用
+    // 仅发生在 shim eval（bootstrap 时 dom_html 恒空；reset 时读到的是**上一文档**的
+    // 快照）——首载快照落地后无人注册 → `window.su`/`window.kw` 永不出现，baidu 建议
+    // 链静默死。钉：快照落地后 id 元素立即可裸访问；页面脚本自建同名全局不被遮蔽
+    //（spec：脚本 own property 位于 WindowProperties 之下）；文档换代后消失的 id 全局
+    // 被回收（不留上一文档悬挂元素）。
+    // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+    #[test]
+    fn renderer_js_worker_named_access_registers_after_snapshot_s27() {
+        let mut worker = RendererJsWorker::spawn(63);
+        // 首载：快照落地即注册（修复前此处 undefined——install 只在 shim eval 跑过、
+        // 当时 dom_html 尚空）。
+        worker.set_dom_snapshot(
+            "<html><body><div id='s27target'></div><span id='s27gone'></span></body></html>",
+            "https://example.test/",
+        );
+        assert_eq!(
+            worker.execute_script_direct("typeof globalThis.s27target").unwrap(),
+            "object",
+            "快照落地后 id 元素须可裸标识符访问（spec named access）"
+        );
+        // 负控制 1：页面脚本自建同名全局不被遮蔽（装后设置——own property 优先）。
+        worker
+            .execute_script_direct("globalThis.s27target = 'page-owned'")
+            .unwrap();
+        // 负控制 2：非标识符形态 id 不注册（spec 仅合法标识符可裸访问）。
+        // 换代：s27target id 保留、s27gone 移除、脚本自有全局保留。
+        worker.set_dom_snapshot(
+            "<html><body><div id='s27target'></div></body></html>",
+            "https://example.test/",
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.s27target)").unwrap(),
+            "page-owned",
+            "脚本自建同名全局不被 named access 覆盖"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("String(globalThis.s27gone === undefined)")
+                .unwrap(),
+            "true",
+            "换代后消失的 id 元素全局被回收（不留上一文档悬挂元素）"
+        );
+        // 二次换代到空 id 文档：注册面清空，重建 context 后（reset）仍随快照恢复。
+        worker.reset_document_state();
+        worker.set_dom_snapshot("<html><body></body></html>", "https://example.test/");
+        assert_eq!(
+            worker.execute_script_direct("typeof globalThis.s27target").unwrap(),
+            "undefined",
+            "reset 后无 id 文档不残留命名属性"
         );
         worker.shutdown();
     }
