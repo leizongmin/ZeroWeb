@@ -11667,6 +11667,44 @@
     ['pointerType', 'pointerType', ''], ['isPrimary', 'isPrimary', false],
     ['twist', 'twist', 0], ['tangentialPressure', 'tangentialPressure', 0],
   ]);
+  // uievents-compat M3 尾簇（2026-10-03）：coalesced/predicted 事件队列 stub——合成
+  // 派发无真指针采样管线，spec 返空列表
+  //（https://www.w3.org/TR/pointerevents2/#dom-pointerevent-getcoalescedevents——
+  // "return a sequences of all CoalescedEvents"（无队列 = 空）；WPT
+  // pointerevent_constructor/coalesced_events_attributes 的 `is not a function`
+  // TypeError 全簇解挂）。predicted 同形（实验性 getPredictedEvents）。
+  try {
+    var PE_M3 = globalThis.PointerEvent;
+    if (PE_M3 && PE_M3.prototype) {
+      if (!PE_M3.prototype.getCoalescedEvents) {
+        PE_M3.prototype.getCoalescedEvents = function () {
+          return this._zwCoalescedEvents || [];
+        };
+      }
+      if (!PE_M3.prototype.getPredictedEvents) {
+        PE_M3.prototype.getPredictedEvents = function () {
+          return this._zwPredictedEvents || [];
+        };
+      }
+      // init dict 序列成员透传（PointerEventInit.coalescedEvents/predictedEvents——
+      // 构造期注入，getter 返注入序列；WPT pointerevent_constructor 的 predicted
+      // 断言族读 init 注入元素的 clientX/pointerId 等）。
+      if (!PE_M3.__zwM3SeqInit) {
+        var PEM3Wrapped = function PointerEvent(type, options) {
+          var r = PE_M3.apply(this, arguments);
+          var inst = (r && typeof r === 'object') ? r : this;
+          var o = (options == null || typeof options !== 'object') ? {} : options;
+          if (o.coalescedEvents && o.coalescedEvents.length) inst._zwCoalescedEvents = o.coalescedEvents;
+          if (o.predictedEvents && o.predictedEvents.length) inst._zwPredictedEvents = o.predictedEvents;
+          return r !== undefined ? r : inst;
+        };
+        try { Object.defineProperty(PEM3Wrapped, 'name', { value: 'PointerEvent', configurable: true }); } catch (_eNm3) {}
+        PEM3Wrapped.prototype = PE_M3.prototype;
+        try { Object.defineProperty(PEM3Wrapped, '__zwM3SeqInit', { value: true }); } catch (_eF3) {}
+        globalThis.PointerEvent = PEM3Wrapped;
+      }
+    }
+  } catch (_eCE) {}
   // InputEvent（UIEvent 子类）：data / inputType / isComposing / dataTransfer。
   _defineEventSubclass('InputEvent', 'UIEvent', [
     ['data', 'data', null], ['isComposing', 'isComposing', false],

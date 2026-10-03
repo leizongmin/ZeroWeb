@@ -8372,12 +8372,24 @@ const TESTDRIVER_STUB: &str = r#"<script>
         var step = source.actions[tick];
         if (!step) continue;
         if (step.type === 'pointerMove') {
-          // origin 三态：元素 origin 直用；'viewport'/缺省 → 视口命中测试
-          //（page 侧 document.elementFromPoint，R2924 host HitTestCache 通道——
-          // mousemove-between 的 viewport 坐标移动面）；命中空（视口外）→ 跳过步。
+          // origin 三态：元素 origin = 中心 + offset（WebDriver 元素 origin 语义——
+          // uievents-compat M3 尾簇：偏移出元素盒时按命中点跨界，?pen/?touch variant
+          // 的 pointerMove(-30,-30/{origin}) 事件序面）；'viewport'/缺省 → 视口命中
+          // 测试（page 侧 document.elementFromPoint R2924 + gBCR 几何近似）；命中空
+          //（视口外）→ 跳过步。
           var originEl = this._resolveOrigin(step.origin);
           var moveX = step.x || 0, moveY = step.y || 0;
-          if (!originEl) originEl = this._hitTest(moveX, moveY);
+          if (originEl && originEl.getBoundingClientRect) {
+            var or = originEl.getBoundingClientRect();
+            if (or && or.width > 0) {
+              var px = or.left + or.width / 2 + moveX;
+              var py = or.top + or.height / 2 + moveY;
+              var hitEl = this._hitTest(px, py);
+              if (hitEl) { originEl = hitEl; moveX = px; moveY = py; }
+            }
+          } else if (!originEl) {
+            originEl = this._hitTest(moveX, moveY);
+          }
           if (!originEl) continue;
           this._lastMove[this._sourceOrder[si]] = { origin: originEl, x: moveX, y: moveY };
           plan.push({ op: 'pointer_move', origin: originEl, text: moveX + ',' + moveY + ',' + source.pointerType });
