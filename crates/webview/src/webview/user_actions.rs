@@ -5,8 +5,8 @@ use zero_engine::script_dispatch_native_event;
 use zero_engine::{
     DomEventDetail, DomMutation, register_dom_callbacks, script_call_set_location_hash, script_contenteditable_delete,
     script_contenteditable_enter, script_contenteditable_insert, script_contenteditable_probe,
-    script_dispatch_dom_event, script_reset_form_controls, script_set_control_checked, script_set_open,
-    script_set_option_selected, script_set_text_control_state, script_text_control_snapshot,
+    script_dispatch_dom_event, script_pointer_move, script_reset_form_controls, script_set_control_checked,
+    script_set_open, script_set_option_selected, script_set_text_control_state, script_text_control_snapshot,
 };
 use zero_page_runtime::{
     ActionNoopReason, ActionTargetState, EventDispatchResult, FormNavigationIntent, HtmlActionRequest, HtmlUserAction,
@@ -381,10 +381,50 @@ impl WebView {
                 ActionTargetState::Submit { form, submitter }
             }
         };
-        let plan = match plan_html_action(&request, self.navigation_epoch, self.document_generation, &state) {
+        let mut plan = match plan_html_action(&request, self.navigation_epoch, self.document_generation, &state) {
             Ok(plan) => plan,
             Err(reason) => return Ok(WebViewUserActionResult::noop(reason)),
         };
+        // uievents-compat M2 片 1（2026-10-03）：激活/悬停迁移前置跨界序。宿主激活
+        // = 指针点击——spec Pointer Events §11/UI Events §5.3：over/out/enter/leave
+        // 边界事件先于 pointerdown/mousedown 序列派发。悬停目标与上次不同 → 调
+        // `__zw_pointer_move`（跨界序 + move 对，坐标近似 0,0——合成激活无真命中点）；
+        // 相同 → 免重派（真实浏览器同元素连击不重发边界序）。InsertText/keydown 等
+        // 非指针动作不迁移悬停。
+        let is_pointer_action = matches!(request.action, HtmlUserAction::Activate);
+        let target_selector = selector.clone();
+        if javascript_enabled && is_pointer_action && self.pointer_over.as_deref() != Some(target_selector.as_str()) {
+            self.execute_dom_script(executor, &script_pointer_move(&target_selector, 0.0, 0.0))?;
+            self.pointer_over = Some(target_selector.clone());
+        }
+        // 同目标连击（dblclick 判定，UI Events §3.3——detail 按连击计数；目标变化
+        // 即重置。headless 无时间窗：同目标连击近似，跨动作空白期不去抖）。
+        let mut dblclick = false;
+        if is_pointer_action {
+            if self.click_streak_target.as_deref() == Some(target_selector.as_str()) {
+                self.click_streak_count += 1;
+            } else {
+                self.click_streak_target = Some(target_selector.clone());
+                self.click_streak_count = 1;
+            }
+            if self.click_streak_count >= 2 {
+                dblclick = true;
+            }
+        }
+        if dblclick {
+            // 第二次及以后的同目标激活 → click 之后补派 dblclick（UI Events
+            // §5.2.2 事件序 click → dblclick；detail=2 连击计数）。
+            plan.followup_events
+                .push(zero_page_runtime::PlannedEvent::dblclick(plan.target));
+        }
+        // click 的 UIEvent.detail = 连击计数（spec UI Events §3.3——首次点击 1、
+        // 连击递增；WPT dblclick_event_mouse 断言 click detail 1 / dblclick detail 2）。
+        if is_pointer_action
+            && let Some(click_event) = plan.cancelable_event.as_mut()
+            && click_event.event_type == "click"
+        {
+            click_event.detail = Some(self.click_streak_count);
+        }
         let is_reset = matches!(request.action, HtmlUserAction::Reset);
         let mut changed = self.apply_planned_mutations(executor, &plan.prepare)?;
         if is_reset {
@@ -475,11 +515,14 @@ impl WebView {
             .submitter
             .as_ref()
             .and_then(|submitter| self.selector_for_page_node_handle(submitter.node().get()));
-        let detail = if event.input_type.is_some() || submitter_sel.is_some() {
+        let detail = if event.input_type.is_some() || submitter_sel.is_some() || event.detail.is_some() {
             Some(DomEventDetail {
                 data: event.data.clone(),
                 input_type: event.input_type.clone(),
                 submitter: submitter_sel,
+                // uievents-compat M2 片 1：UIEvent.detail（click 连击计数/dblclick=2）
+                // 透传——shim 泛型分支 own-property 注入。
+                detail: event.detail,
                 ..Default::default()
             })
         } else {

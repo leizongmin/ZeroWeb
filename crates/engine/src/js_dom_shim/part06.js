@@ -11725,8 +11725,39 @@
         altKey: !!detail.altKey,
         metaKey: !!detail.metaKey
       });
+    } else if (type === 'pointerdown' || type === 'pointerup' || type === 'pointermove'
+               || type === 'pointerover' || type === 'pointerout' || type === 'pointerenter'
+               || type === 'pointerleave' || type === 'pointercancel') {
+      // uievents-compat M2 片 1（2026-10-03）：pointer 类型走 PointerEvent 类
+      //（spec https://www.w3.org/TR/pointerevents2/ §3——PointerEvent extends
+      // MouseEvent；此前落泛型分支，WPT pointerevent_attributes 的
+      // `event instanceof PointerEvent` 断言全簇 miss）。pointerId/isPrimary/
+      // width/height 按真鼠标单点近似；pressure down=0.5（主键按下）、up/move=0；
+      // enter/leave 不冒泡不可取消（§11.1）；pointercancel 不可取消。
+      var _pBub = (detail && detail.bubbles != null) ? !!detail.bubbles
+        : (type !== 'pointerenter' && type !== 'pointerleave');
+      var _pCan = (detail && detail.cancelable != null) ? !!detail.cancelable
+        : (type !== 'pointerenter' && type !== 'pointerleave' && type !== 'pointercancel');
+      ev = new PointerEvent(type, {
+        bubbles: _pBub,
+        cancelable: _pCan,
+        clientX: (detail && typeof detail.clientX === 'number') ? detail.clientX : 0,
+        clientY: (detail && typeof detail.clientY === 'number') ? detail.clientY : 0,
+        button: (detail && typeof detail.button === 'number') ? detail.button : (type === 'pointermove' ? -1 : 0),
+        buttons: (detail && typeof detail.buttons === 'number') ? detail.buttons
+          : (type === 'pointerdown' ? 1 : (type === 'pointerup' || type === 'pointermove') ? 0 : 1),
+        relatedTarget: (detail && detail.relatedTarget) ? _wrapSelector(detail.relatedTarget) : null,
+        pointerId: 1,
+        pointerType: (detail && detail.pointerType) || 'mouse',
+        isPrimary: true,
+        width: 1,
+        height: 1,
+        pressure: type === 'pointerdown' ? 0.5 : 0
+      });
     } else if (type === 'mousedown' || type === 'mouseup' || type === 'mousemove'
-               || type === 'contextmenu' || type === 'mouseover' || type === 'mouseout') {
+               || type === 'contextmenu' || type === 'mouseover' || type === 'mouseout'
+               || type === 'mouseenter' || type === 'mouseleave'
+               || type === 'auxclick' || type === 'dblclick') {
       // UI Events §MouseEventInit：指针事件带视口坐标（detail.clientX/Y 由宿主注入——CDP
       // Input.dispatchMouseEvent 的 x/y）。Playwright hit-target 拦截器在 mousemove/mousedown
       // 上读 event.clientX/Y 复核命中点；缺省 undefined → elementFromPoint(undefined) → null
@@ -11735,14 +11766,31 @@
       // / 取消回滚协议与宿主激活事务（execute_shared_action）的 checked 翻转/取消语义按旧
       // 路径协作；改成 MouseEvent 会双重翻转（webdriver http_session）且破坏三宿主
       // conformance（html_compat across-hosts 实测回归）。
+      // uievents-compat M2 片 1（2026-10-03）：relatedTarget/detail/button/buttons
+      // 透传（UI Events §MouseEventInit——over/out 的 relatedTarget 是对侧元素；
+      // enter/leave 同携带但**不冒泡**；detail=点击计数、button/buttons 按键位）。
+      // 显式 detail.bubbles 覆盖缺省（enter/leave false，其余 true）。
+      var _mBub = (detail && detail.bubbles != null) ? !!detail.bubbles
+        : (type !== 'mouseenter' && type !== 'mouseleave');
       ev = new MouseEvent(type, {
-        bubbles: true,
+        bubbles: _mBub,
         cancelable: true,
         clientX: (detail && typeof detail.clientX === 'number') ? detail.clientX : 0,
         clientY: (detail && typeof detail.clientY === 'number') ? detail.clientY : 0,
+        button: (detail && typeof detail.button === 'number') ? detail.button : 0,
+        buttons: (detail && typeof detail.buttons === 'number') ? detail.buttons
+          : (type === 'mouseup' || type === 'mousemove') ? 0 : 1,
+        detail: (detail && typeof detail.detail === 'number') ? detail.detail : 0,
+        relatedTarget: (detail && detail.relatedTarget) ? _wrapSelector(detail.relatedTarget) : null
       });
     } else {
       ev = _makeEvent(type, { bubbles: true, cancelable: true });
+      // uievents-compat M2 片 1：泛型分支 detail 注入（UIEvent.detail——click 连击
+      // 计数；dblclick 走上支 MouseEvent 后 detail 走构造器）。泛型 Event 无
+      // detail getter，own property 注入满足 `event.detail === N` 断言面。
+      if (detail && typeof detail.detail === 'number') {
+        try { ev.detail = detail.detail; } catch (_eM2d) {}
+      }
     }
     // R312（js-dom M4）：宿主派发 = UA 合成事件，isTrusted=true（spec——真实浏览器
     // 的用户输入/激活事件链全部 trusted；`__zw_dispatch_event` 只被 engine 的
@@ -11771,6 +11819,154 @@
     try { ev._zwUaDispatch = false; } catch (_e312ua) {}
     return ok ? 'ok' : 'prevented';
   };
+  // uievents-compat M2 片 1（2026-10-03）：合成指针悬停态 + 边界事件序（spec
+  // https://www.w3.org/TR/pointerevents2/ §11 + UI Events §5.3 mouseover/out、
+  // §5.4 enter/leave）。宿主驱动路径（webview Activate 前置悬停迁移、runner
+  // Actions pointer_move 步）经 `__zw_pointer_move(sel, x, y)` 单钩子触发：
+  // ① 跨界（prev≠next 时）——旧链自 target 上行至公共祖先：pointerout/mouseout
+  //   （仅边界元素，冒泡，relatedTarget=新侧）→ pointerleave/mouseleave（旧链每站，
+  //   不冒泡）；新链自公共祖先下行至 target：pointerover/mouseover（仅边界元素，
+  //   冒泡）→ pointerenter/mouseenter（每站，不冒泡）；
+  // ② pointermove/mousemove 对（新 target 上）。
+  // 悬停态 per-document（导航经 __zw_reset_form_state 清空）；headless 无真命中测试
+  // ——宿主直接给目标元素选择器，坐标为近似（真鼠标路由待宿主指针管线）。
+  var _zwPtrState = { overSel: null, auxTarget: null, auxCount: 0 };
+  globalThis.__zw_pointer_move = function (sel, x, y) {
+    var prev = _zwPtrState.overSel;
+    if (prev !== sel && typeof __zw_parent === 'function') {
+      _zwPointerCross(prev, sel, x, y);
+    }
+    _zwPtrState.overSel = sel;
+    __zw_dispatch_event(sel, 'pointermove', {
+      clientX: x || 0, clientY: y || 0,
+      button: -1, buttons: 0
+    });
+    __zw_dispatch_event(sel, 'mousemove', {
+      clientX: x || 0, clientY: y || 0,
+      button: -1, buttons: 0
+    });
+    return 'ok';
+  };
+  // 悬停态导航重置（part01 `__zw_reset_form_state` 同族——per-page 状态生命周期）。
+  globalThis.__zw_pointer_reset = function () {
+    _zwPtrState.overSel = null;
+    _zwPtrState.auxTarget = null;
+    _zwPtrState.auxCount = 0;
+  };
+  // 最近公共包含祖先（uievents-compat M2 片 1——click 组合目标，UI Events §5.2.2
+  // 「mousedown/mouseup 目标不同 → click 派发到最近公共祖先」；WPT
+  // click_event_target_child_parent/siblings 断言面）。无公共祖先（异树）→ null。
+  globalThis.__zw_common_ancestor = function (aSel, bSel) {
+    if (!aSel || !bSel) return null;
+    var chainOf = function (sel) {
+      var chain = [], cur = sel, guard = 0;
+      while (cur && guard++ < 64) { chain.push(cur); try { cur = __zw_parent(cur) || ''; } catch (_e) { cur = ''; } }
+      return chain;
+    };
+    var bc = chainOf(bSel);
+    var ac = chainOf(aSel);
+    for (var i = 0; i < ac.length; i++) {
+      for (var j = 0; j < bc.length; j++) {
+        if (ac[i] === bc[j]) return ac[i];
+      }
+    }
+    return null;
+  };
+  // 跨目标 click 组合序（mousedown/mouseup 落点不同——UI Events §5.2.2 激活事件序：
+  // pointerdown/mousedown@down → pointerup/mouseup@up → click@最近公共祖先）。
+  // down 前置悬停迁移（跨界序 + move 对）；up 后悬停态 = up 目标。泛型 click
+  //（无 pre-click activation——R108 泛型路径；组合目标无表单激活语义）。
+  globalThis.__zw_pointer_click_sequence = function (downSel, upSel, x, y, pointerType) {
+    __zw_pointer_move(downSel, x, y);
+    __zw_dispatch_event(downSel, 'pointerdown', {
+      clientX: x || 0, clientY: y || 0, button: 0, buttons: 1,
+      pointerType: pointerType || 'mouse', pressure: 0.5
+    });
+    __zw_dispatch_event(downSel, 'mousedown', { clientX: x || 0, clientY: y || 0, button: 0, buttons: 1 });
+    var common = globalThis.__zw_common_ancestor(downSel, upSel);
+    __zw_dispatch_event(upSel, 'pointerup', {
+      clientX: x || 0, clientY: y || 0, button: 0, buttons: 0,
+      pointerType: pointerType || 'mouse'
+    });
+    __zw_dispatch_event(upSel, 'mouseup', { clientX: x || 0, clientY: y || 0, button: 0, buttons: 0 });
+    _zwPtrState.overSel = upSel;
+    if (common) __zw_dispatch_event(common, 'click', {});
+    return common ? 'ok' : 'nocommon';
+  };
+  // 非主键点击序（UI Events §5.2.2——非主键无 click：mousedown{button} →
+  // [contextmenu{button}（右键）] → mouseup{button} → auxclick{button}；WPT
+  // auxclick_event/contextmenu_event 断言面）。contextmenu 于 mousedown 后
+  //（WPT "Test contextmenu dispatched after mousedown"）。auxclick.detail 按
+  // 同目标连击计数（UI Events §3.3 同 click——WPT auxclick detail 1/2 断言）。
+  globalThis.__zw_pointer_auxclick_sequence = function (sel, x, y, button) {
+    __zw_pointer_move(sel, x, y);
+    __zw_dispatch_event(sel, 'pointerdown', {
+      clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button,
+      pressure: 0.5
+    });
+    __zw_dispatch_event(sel, 'mousedown', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button });
+    if (button === 2) {
+      __zw_dispatch_event(sel, 'contextmenu', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button });
+    }
+    __zw_dispatch_event(sel, 'pointerup', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
+    __zw_dispatch_event(sel, 'mouseup', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
+    if (_zwPtrState.auxTarget === sel) _zwPtrState.auxCount += 1;
+    else { _zwPtrState.auxTarget = sel; _zwPtrState.auxCount = 1; }
+    __zw_dispatch_event(sel, 'auxclick', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0, detail: _zwPtrState.auxCount });
+    return 'ok';
+  };
+  // 跨界序列：prev→next 的 over/out/enter/leave 全序。祖先链经 `__zw_parent`
+  // sel 域上行（driver/宿主目标均为页面可见元素；handle 域 defer）。每事件经
+  // `__zw_dispatch_event` 走 UA 通道（isTrusted + R145 retargeting 与宿主派发同流）。
+  function _zwPointerCross(prevSel, nextSel, x, y) {
+    if (prevSel === nextSel) return;
+    var chainOf = function (sel) {
+      var chain = [];
+      var cur = sel, guard = 0;
+      while (cur && guard++ < 64) {
+        chain.push(cur);
+        try { cur = __zw_parent(cur) || ''; } catch (_e) { cur = ''; }
+      }
+      return chain; // [target, ..., html]
+    };
+    var prevChain = prevSel ? chainOf(prevSel) : [];
+    var nextChain = nextSel ? chainOf(nextSel) : [];
+    var common = '';
+    for (var i = 0; i < prevChain.length && !common; i++) {
+      for (var j = 0; j < nextChain.length; j++) {
+        if (prevChain[i] === nextChain[j]) { common = prevChain[i]; break; }
+      }
+    }
+    var rel = nextSel || null;
+    // out/over 在**任意**命中目标变化时都派（含父子间移动——mouseover/out 按元素
+    // 边界面非几何边界；WPT mouseover-out：parent→child 也派 mouseout@parent）。
+    // leave/enter 仅在跨出/跨入祖先链段派（同树内父子移动无 enter/leave）。
+    if (prevSel) {
+      __zw_dispatch_event(prevSel, 'pointerout', { relatedTarget: rel, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+      __zw_dispatch_event(prevSel, 'mouseout', { relatedTarget: rel, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+    }
+    for (var k = 0; k < prevChain.length && prevChain[k] !== common; k++) {
+      __zw_dispatch_event(prevChain[k], 'pointerleave', { relatedTarget: rel, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+      __zw_dispatch_event(prevChain[k], 'mouseleave', { relatedTarget: rel, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+    }
+    // 新链：over@next（边界元素，恒派——next 即公共祖先的向祖先移动也派）→
+    // enter（每新入站，公共祖先下行至 next；next 已入 over，站序自外向内——
+    // MDN/Chromium 序：mouseover(边界) → mouseenter(自外向内) → mousemove）。
+    var relIn = prevSel || null;
+    if (nextSel) {
+      __zw_dispatch_event(nextSel, 'pointerover', { relatedTarget: relIn, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+      __zw_dispatch_event(nextSel, 'mouseover', { relatedTarget: relIn, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+    }
+    var enter = [];
+    for (var k2 = 0; k2 < nextChain.length; k2++) {
+      if (nextChain[k2] === common) break;
+      enter.push(nextChain[k2]);
+    }
+    for (var k3 = enter.length - 1; k3 >= 0; k3--) {
+      __zw_dispatch_event(enter[k3], 'pointerenter', { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+      __zw_dispatch_event(enter[k3], 'mouseenter', { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+    }
+  }
   // slice22 焦点治理：宿主驱动焦点迁移（mousedown 默认动作 / Tab 焦点导航 / 宿主激活）的
   // 「页面可见焦点状态同步 + 焦点事件派发」合一钩子。此前宿主路径只经 `__zw_dispatch_event`
   // 派事件、从不更新 `_activeElKey` → `document.activeElement` 停留在页面 JS 最后 `focus()`

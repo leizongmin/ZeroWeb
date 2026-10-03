@@ -209,6 +209,9 @@ pub struct PlannedEvent {
     pub input_type: Option<String>,
     /// InputEvent data。
     pub data: Option<String>,
+    /// uievents-compat M2 片 1：UIEvent.detail——click 连击计数 / dblclick=2
+    ///（spec UI Events §3.3；宿主 dispatch 时进 DomEventDetail.detail 通道）。
+    pub detail: Option<u32>,
 }
 
 impl PlannedEvent {
@@ -220,7 +223,16 @@ impl PlannedEvent {
             submitter: None,
             input_type: None,
             data: None,
+            detail: None,
         }
+    }
+
+    /// uievents-compat M2 片 1：dblclick 事件（UI Events §5.2.2——click 之后派发，
+    /// 冒泡、可取消；泛型事件面——detail 字段随切片 2 的 PlannedEvent 丰富化跟进）。
+    pub fn dblclick(target: PageNodeRef) -> Self {
+        let mut event = Self::simple(target, "dblclick", true);
+        event.detail = Some(2);
+        event
     }
 
     fn input(target: PageNodeRef, event_type: &str, cancelable: bool, input_type: &str, data: Option<String>) -> Self {
@@ -231,6 +243,7 @@ impl PlannedEvent {
             submitter: None,
             input_type: Some(input_type.to_string()),
             data,
+            detail: None,
         }
     }
 }

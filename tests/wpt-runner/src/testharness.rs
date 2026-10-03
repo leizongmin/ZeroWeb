@@ -7795,7 +7795,49 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
         None => return Some(format!("testdriver target not found: {selector}")),
     };
     match command.operation.as_str() {
+        // uievents-compat M2 片 1（2026-10-03）：Actions 指针 move 步——宿主
+        // `__zw_pointer_move` 钩子（跨界时派 over/out/enter/leave 边界序 + 新目标
+        // pointermove/mousemove 对）。text = "x,y"（Actions pointerMove 坐标，
+        // WebDriver 元素 origin 偏移近似直传）。仅事件面；无默认动作。
+        "pointer_move" => {
+            let (x, y) = command
+                .text
+                .as_deref()
+                .and_then(|text| {
+                    let mut parts = text.split(',');
+                    let x = parts.next()?.parse::<f32>().ok()?;
+                    let y = parts.next()?.parse::<f32>().ok()?;
+                    Some((x, y))
+                })
+                .unwrap_or((0.0, 0.0));
+            let script = zero_engine::script_pointer_move(&selector, x, y);
+            let _ = webview.execute_script(&script);
+            None
+        }
         "click" => {
+            // uievents-compat M2 片 1：text = "x,y,pointerType,button"（Actions 源）。
+            // button≠0 → 非主键序（无 click——mousedown/contextmenu/mouseup/auxclick）；
+            // 主键 → 既有 Activate 路径（focus 步骤 + 全序列 + 连击 dblclick）。
+            if let Some(button) = command
+                .text
+                .as_deref()
+                .and_then(|text| text.split(',').nth(3).and_then(|b| b.parse::<i16>().ok()))
+                && button != 0
+            {
+                let (x, y) = command
+                    .text
+                    .as_deref()
+                    .and_then(|text| {
+                        let mut parts = text.split(',');
+                        let x = parts.next()?.parse::<f32>().ok()?;
+                        let y = parts.next()?.parse::<f32>().ok()?;
+                        Some((x, y))
+                    })
+                    .unwrap_or((0.0, 0.0));
+                let script = zero_engine::script_pointer_auxclick_sequence(&selector, x, y, button);
+                let _ = webview.execute_script(&script);
+                return None;
+            }
             // R142：合成指针点击的 focus 步骤（spec UI Events 指针激活序列——可聚焦目标
             // 先获得焦点再派发 click；WPT no-focus-events 期望 focus/focusin 恰好一次、
             // target 为点击元素）。element.focus() 经 shim 的 R3247 focus 派发
@@ -7807,6 +7849,45 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
             );
             let _ = webview.execute_script(&focus_script);
             dispatch_action(webview, target, HtmlUserAction::Activate)
+        }
+        // uievents-compat M2 片 1：跨目标 click 组合序（mousedown/mouseup 落点不同 →
+        // click 到最近公共祖先；UI Events §5.2.2）。text = "x,y,pointerType|upSel"，
+        // origin 元素 = down 目标。无表单激活语义（泛型 click——组合目标路径）。
+        "pointer_click" => {
+            let text = command.text.as_deref().unwrap_or_default();
+            let (coords, up_selector) = match text.split_once('|') {
+                Some((coords, up)) => (coords, up.to_string()),
+                None => (text, String::new()),
+            };
+            let (x, y) = coords
+                .split(',')
+                .map(str::parse::<f32>)
+                .collect::<Result<Vec<_>, _>>()
+                .ok()
+                .and_then(|values| match values.as_slice() {
+                    [x, y] => Some((*x, *y)),
+                    _ => None,
+                })
+                .unwrap_or((0.0, 0.0));
+            let pointer_type = coords.split(',').nth(2).unwrap_or("mouse").to_string();
+            if up_selector.is_empty() {
+                return Some("testdriver pointer_click has no up-target selector".into());
+            }
+            let script = zero_engine::script_pointer_click_sequence(&selector, &up_selector, x, y, &pointer_type);
+            let _ = webview.execute_script(&script);
+            None
+        }
+        // uievents-compat M2 片 1：非主键点击序（mousedown → [contextmenu（右键）] →
+        // mouseup → auxclick；UI Events §5.2.2——非主键无 click）。text = "x,y,button"。
+        "auxclick" => {
+            let text = command.text.as_deref().unwrap_or_default();
+            let mut parts = text.split(',');
+            let x = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+            let y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+            let button = parts.next().and_then(|v| v.parse::<i16>().ok()).unwrap_or(2);
+            let script = zero_engine::script_pointer_auxclick_sequence(&selector, x, y, button);
+            let _ = webview.execute_script(&script);
+            None
         }
         // R3254-K2（keyboard goal M1 切片 2，2026-09-07）：Actions 键盘链命令——
         // keydown/keyup cancelable KeyboardEvent 派发（script_dispatch_dom_event 通道，
@@ -8208,47 +8289,221 @@ const TESTDRIVER_STUB: &str = r#"<script>
       return Promise.resolve();
     }
   };
-  // R142：test_driver.Actions（指针动作链）——上游用 no-focus-events 等 case 经
-  // pointerMove/pointerDown/pointerUp 合成一次指针点击。headless 无真指针，语义映射：
-  // 链上记录 origin 元素（pointerMove 的 options.origin / 链首隐式），send() 时对
-  // origin 元素入队与 click 同形的 'click' 命令（宿主走既有 Activate 派发管线派发
-  // click 事件）。链式 API：每个方法返 this。
-  // R3254-K2（keyboard goal M1 切片 2，2026-09-07）：**键盘动作链**——addKeyboard(id)
-  // 注册键盘源；keyDown(key)/keyUp(key) 记步骤；send() 时按序入队 'keydown'/'keyup'
-  // 命令（对 origin || activeElement）。keydown 宿主派 cancelable KeyboardEvent（经
-  // script_dispatch_dom_event 通道）；被页面 preventDefault 时 runner 跳过字符默认动作
-  //（uievents/keyboard/keydown-input-events.html 的 cancel 语义）；未取消 → keydown
-  // 命令处理器追加 InsertText 默认动作（beforeinput→input→value，事件序断言）。
-  // pointer 与 key 混合链按记录序执行（指针→click、键盘→keydown/keyup）。
-  function Actions() { this._origin = null; this._steps = []; }
-  Actions.prototype.pointerMove = function(x, y, options) {
-    if (options && options.origin) this._origin = options.origin;
+  // R142：test_driver.Actions（指针动作链）——镜像上游 testdriver-actions.js 的
+  // 多源 API 面（addPointer/setPointer/addKeyboard + tick 语义 + options-object
+  // 签名），headless 无真指针：send() 本地重放为宿主命令序——
+  // uievents-compat M2 片 1（2026-10-03）：pointerMove → 'pointer_move' 命令
+  //（宿主 `__zw_pointer_move` 跨界序 + move 对，pointerType 随源）；同源
+  // pointerDown/Up 对 → 'click' 命令（宿主 Activate 全序列 pointerdown→mousedown→
+  // pointerup→mouseup→click + 连击 dblclick——同 origin 两次对 → 宿主连击计数派
+  // dblclick，click-order 断言面）。keyDown/Up → 'keydown'/'keyup'（R3254-K2 键盘
+  // 链——keydown 未取消 → 宿主追加 InsertText 默认动作，事件序断言面）。
+  // tick 对齐：上游 serialize 的 per-tick 源矩阵 → 逐 tick 逐源重放（pause/addTick
+  // 空 tick 跳过）。move-only 链保留旧折叠语义（补一笔 click——R142 先例兼容）。
+  // wheel 源（scroll 步）记账不重放（wheel 事件面 M2 片 2 评估）。
+  function Actions() {
+    this._sources = {}; // name -> {kind:'pointer'|'key', pointerType, actions:{tick->step}}
+    this._sourceOrder = []; // 记录序（tick 重放的源间次序）
+    this._current = { pointer: null, key: null };
+    this._pair = {}; // per-source pendingDown {origin,x,y,button}
+    this._lastMove = {}; // per-source 最近 move {origin,x,y}
+    this.tickIdx = 0;
+    this._srcIdx = 0;
+  }
+  Actions.prototype.ButtonType = { LEFT: 0, MIDDLE: 1, RIGHT: 2, BACK: 3, FORWARD: 4 };
+  Actions.prototype._createSource = function(kind, name, pointerType) {
+    if (!name) {
+      do { name = '' + this._srcIdx++; } while (this._sources[name]);
+    } else if (this._sources[name]) {
+      throw new Error('Already have a source named ' + name);
+    }
+    this._sources[name] = { kind: kind, pointerType: pointerType || 'mouse', actions: {} };
+    this._sourceOrder.push(name);
+    this._current[kind] = name;
+    return name;
+  };
+  Actions.prototype._getSource = function(kind, name) {
+    if (name == null) name = this._current[kind];
+    if (name == null || !this._sources[name]) name = this._createSource(kind, name);
+    return this._sources[name];
+  };
+  Actions.prototype.addPointer = function(name, pointerType) {
+    // 上游 createSource 恒置 current（set 参数在 createSource 内已生效）。
+    this._createSource('pointer', name, pointerType || 'mouse');
     return this;
   };
-  Actions.prototype.pointerDown = function() { return this; };
-  Actions.prototype.pointerUp = function() { return this; };
-  Actions.prototype.addKeyboard = function() { return this; };
-  Actions.prototype.keyDown = function(key) { this._steps.push({ type: 'keydown', key: key }); return this; };
-  Actions.prototype.keyUp = function(key) { this._steps.push({ type: 'keyup', key: key }); return this; };
+  Actions.prototype.setPointer = function(name) {
+    if (this._sources[name]) this._current.pointer = name;
+    return this;
+  };
+  Actions.prototype.addKeyboard = function(name) {
+    this._createSource('key', name);
+    return this;
+  };
+  Actions.prototype.setKeyboard = function(name) {
+    if (this._sources[name]) this._current.key = name;
+    return this;
+  };
+  Actions.prototype.addWheel = function() { return this; };
+  Actions.prototype.setContext = function() { return this; };
+  Actions.prototype.addTick = function() { this.tickIdx += 1; return this; };
+  Actions.prototype.pause = function() { return this; };
+  Actions.prototype._tick = function(source, step) {
+    var t = this.tickIdx;
+    if (source.actions[t]) { this.tickIdx += 1; t = this.tickIdx; }
+    source.actions[t] = step;
+    return this;
+  };
+  Actions.prototype.keyDown = function(key, options) {
+    this._tick(this._getSource('key', options && options.sourceName), { type: 'keydown', value: key });
+    return this;
+  };
+  Actions.prototype.keyUp = function(key, options) {
+    this._tick(this._getSource('key', options && options.sourceName), { type: 'keyup', value: key });
+    return this;
+  };
+  Actions.prototype.pointerDown = function(options) {
+    options = options || {};
+    this._tick(this._getSource('pointer', options.sourceName), { type: 'pointerDown', button: options.button || 0 });
+    return this;
+  };
+  Actions.prototype.pointerUp = function(options) {
+    options = options || {};
+    this._tick(this._getSource('pointer', options.sourceName), { type: 'pointerUp', button: options.button || 0 });
+    return this;
+  };
+  Actions.prototype.pointerMove = function(x, y, options) {
+    options = options || {};
+    this._tick(this._getSource('pointer', options.sourceName), { type: 'pointerMove', x: x, y: y, origin: options.origin });
+    return this;
+  };
+  Actions.prototype.scroll = function() { return this; };
   Actions.prototype.send = function() {
-    var element = this._origin || document.activeElement;
-    if (!element) {
-      return Promise.reject(new Error('testdriver Actions has no pointer origin'));
-    }
+    var element = this._current.pointer && this._resolveOrigin(this._lastMove[this._current.pointer] && this._lastMove[this._current.pointer].origin) || document.activeElement;
     // WAB2-M3-s1：动作链发送同 click 授予瞬态激活（sendPasteShortcutKey 等 paste 链）。
     if (typeof globalThis.__zwUserActivate === 'function') globalThis.__zwUserActivate();
-    if (!this._steps.length) {
+    // 上游 serialize 的 per-tick 源矩阵 → 逐 tick 逐源（sourceOrder 序）重放。
+    var plan = [];
+    for (var tick = 0; tick <= this.tickIdx; tick++) {
+      for (var si = 0; si < this._sourceOrder.length; si++) {
+        var source = this._sources[this._sourceOrder[si]];
+        var step = source.actions[tick];
+        if (!step) continue;
+        if (step.type === 'pointerMove') {
+          // origin 三态：元素 origin 直用；'viewport'/缺省 → 视口命中测试
+          //（page 侧 document.elementFromPoint，R2924 host HitTestCache 通道——
+          // mousemove-between 的 viewport 坐标移动面）；命中空（视口外）→ 跳过步。
+          var originEl = this._resolveOrigin(step.origin);
+          var moveX = step.x || 0, moveY = step.y || 0;
+          if (!originEl) originEl = this._hitTest(moveX, moveY);
+          if (!originEl) continue;
+          this._lastMove[this._sourceOrder[si]] = { origin: originEl, x: moveX, y: moveY };
+          plan.push({ op: 'pointer_move', origin: originEl, text: moveX + ',' + moveY + ',' + source.pointerType });
+        } else if (step.type === 'pointerDown') {
+          var dOrigin = this._lastMove[this._sourceOrder[si]];
+          this._pair[this._sourceOrder[si]] = {
+            downOrigin: dOrigin ? dOrigin.origin : null,
+            x: dOrigin ? dOrigin.x : 0, y: dOrigin ? dOrigin.y : 0,
+            button: step.button
+          };
+        } else if (step.type === 'pointerUp') {
+          var pair = this._pair[this._sourceOrder[si]];
+          var uOrigin = this._lastMove[this._sourceOrder[si]];
+          var downOrigin = pair ? pair.downOrigin : (uOrigin ? uOrigin.origin : null);
+          var upOrigin = uOrigin ? uOrigin.origin : downOrigin;
+          delete this._pair[this._sourceOrder[si]];
+          var upEl = this._resolveOrigin(upOrigin) || element;
+          if ((pair && pair.button) || step.button) {
+            // 非主键（UI Events §5.2.2——无 click）：auxclick 序命令。
+            plan.push({
+              op: 'auxclick',
+              origin: upEl,
+              text: (pair ? pair.x : 0) + ',' + (pair ? pair.y : 0) + ',' + (step.button || 0)
+            });
+          } else if (downOrigin && upOrigin && downOrigin !== upOrigin) {
+            // 跨目标组合（UI Events §5.2.2——mousedown/mouseup 落点不同 → click 到
+            // 最近公共祖先）：down/up 两目标都传（upSel 编入 text——up 目标经上游
+            // move 步已存在，selectorFor 静态元素即时可解析；页面脚本创建元素 defer）。
+            var downEl = this._resolveOrigin(downOrigin) || upEl;
+            plan.push({
+              op: 'pointer_click',
+              origin: downEl,
+              text: (pair ? pair.x : 0) + ',' + (pair ? pair.y : 0) + ',' + source.pointerType + '|' + this._selectorOf(upOrigin)
+            });
+          } else {
+            plan.push({
+              op: 'click',
+              origin: upEl,
+              text: (pair ? pair.x : 0) + ',' + (pair ? pair.y : 0) + ',' + source.pointerType + ',0'
+            });
+          }
+        } else {
+          // keydown/keyup：对 activeElement（R3254-K2 先例——键盘链无 origin 元素）。
+          plan.push({ op: step.type, origin: document.activeElement || element, text: step.value });
+        }
+      }
+    }
+    if (!plan.length) {
+      // 旧 R142 折叠语义：无有效步骤 → 单 click（链首 origin / activeElement）。
       return enqueue('click', element, null);
     }
-    // 键盘步骤按序链式执行——每步独立入队（事件序对 eventLog 断言敏感）。
-    var steps = this._steps.slice();
+    // move-only 链保留旧折叠语义：补一笔 click（R142 先例兼容——仅 move 的链
+    // 此前也派一次 click）。
+    var hasClick = false;
+    for (var ci = 0; ci < plan.length; ci++) {
+      if (plan[ci].op === 'click' || plan[ci].op === 'pointer_click' || plan[ci].op === 'auxclick') { hasClick = true; break; }
+    }
+    if (!hasClick) {
+      var last = this._current.pointer && this._lastMove[this._current.pointer];
+      plan.push({ op: 'click', origin: this._resolveOrigin(last && last.origin) || element, text: null });
+    }
+    // 命令按序链式执行——每步独立入队（事件序对 eventLog 断言敏感）。
     var promise = Promise.resolve();
-    for (var i = 0; i < steps.length; i++) {
+    for (var i = 0; i < plan.length; i++) {
       promise = promise.then(function(step) {
-        return enqueue(step.type, element, step.key);
-      }.bind(null, steps[i]));
+        return enqueue(step.op, step.origin, step.text);
+      }.bind(null, plan[i]));
     }
     return promise;
+  };
+  // origin 归一：元素直接用；'viewport'/'pointer'/缺省 → activeElement 近似
+  //（真视口命中测试待宿主指针管线——headless 桥接近似，uievents-compat M2 片 1）。
+  Actions.prototype._resolveOrigin = function(origin) {
+    if (origin && typeof origin === 'object' && origin.nodeType) return origin;
+    return null;
+  };
+  // 元素 → 唯一选择器（跨目标组合命令的 upSel 编码；page 侧 selectorFor，静态
+  // 元素即时稳定；动态创建元素由 R145 延迟解析面覆盖——组合命令暂用即时值）。
+  Actions.prototype._selectorOf = function(element) {
+    try { return selectorFor(element) || ''; } catch (_e) { return ''; }
+  };
+  // 视口命中测试（viewport origin 移动步）：host elementFromPoint（R2924
+  // HitTestCache——真实渲染面）优先；runner headless 缓存未填 → page 侧 gBCR
+  // 几何近似（文档序逆序首个含点元素 ≈ 最深/topmost；WPT 用例元素数小，O(n) 可接受）。
+  // 视口内未命中盒 → body（Chromium 的 body 背景传播命中语义——canvas 区命中返 body）。
+  Actions.prototype._hitTest = function(x, y) {
+    try {
+      if (typeof document === 'undefined') return null;
+      var doc = document.documentElement;
+      var vw = (window && window.innerWidth) || 0;
+      var vh = (window && window.innerHeight) || 0;
+      if (x < 0 || y < 0 || (vw > 0 && x >= vw) || (vh > 0 && y >= vh)) return null;
+      if (document.elementFromPoint) {
+        var host = document.elementFromPoint(x, y);
+        if (host) return host;
+      }
+      var all = document.querySelectorAll('body, body *');
+      for (var i = all.length - 1; i >= 0; i--) {
+        var el = all[i];
+        if (!el.getBoundingClientRect) continue;
+        var r = el.getBoundingClientRect();
+        if (r && r.width > 0 && r.height > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+          return el;
+        }
+      }
+      return document.body || (doc || null);
+    } catch (_eHT) {}
+    return null;
   };
   globalThis.test_driver.Actions = Actions;
 })();

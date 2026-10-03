@@ -35,6 +35,18 @@ pub struct DomEventDetail {
     pub client_x: Option<f32>,
     /// MouseEvent.clientY——同上。
     pub client_y: Option<f32>,
+    /// MouseEvent.button——按下的指针键（uievents-compat M2 片 1；-1 = move 无变化）。
+    pub button: Option<i16>,
+    /// MouseEvent.buttons——按下键位掩码（down=1、up/move=0）。
+    pub buttons: Option<u16>,
+    /// UIEvent.detail——点击计数（dblclick=2）。
+    pub detail: Option<u32>,
+    /// MouseEvent.relatedTarget——over/out/enter/leave 对侧元素唯一选择器。
+    pub related_target: Option<String>,
+    /// Event.bubbles——缺省由 shim 分支按事件类型决定（enter/leave false）；显式覆盖。
+    pub bubbles: Option<bool>,
+    /// PointerEvent.pointerType——缺省 'mouse'。
+    pub pointer_type: Option<String>,
 }
 
 fn escape_js_string(s: &str) -> String {
@@ -83,8 +95,23 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
             let meta_key = d.meta_key;
             let client_x = d.client_x.map(|v| format!("{v}")).unwrap_or_else(|| "null".to_string());
             let client_y = d.client_y.map(|v| format!("{v}")).unwrap_or_else(|| "null".to_string());
+            // uievents-compat M2 片 1：指针字段透传（null = 缺省由 shim 分支按事件类型定）。
+            let button = d.button.map(|v| format!("{v}")).unwrap_or_else(|| "null".to_string());
+            let buttons = d.buttons.map(|v| format!("{v}")).unwrap_or_else(|| "null".to_string());
+            let detail_count = d.detail.map(|v| format!("{v}")).unwrap_or_else(|| "null".to_string());
+            let related_target = d
+                .related_target
+                .as_deref()
+                .map(|s| format!("'{}'", escape_js_string(s)))
+                .unwrap_or_else(|| "null".to_string());
+            let bubbles = d.bubbles.map(|v| format!("{v}")).unwrap_or_else(|| "null".to_string());
+            let pointer_type = d
+                .pointer_type
+                .as_deref()
+                .map(|s| format!("'{}'", escape_js_string(s)))
+                .unwrap_or_else(|| "null".to_string());
             format!(
-                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing},shiftKey:{shift_key},ctrlKey:{ctrl_key},altKey:{alt_key},metaKey:{meta_key},clientX:{client_x},clientY:{client_y}}}"
+                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing},shiftKey:{shift_key},ctrlKey:{ctrl_key},altKey:{alt_key},metaKey:{meta_key},clientX:{client_x},clientY:{client_y},button:{button},buttons:{buttons},detail:{detail_count},relatedTarget:{related_target},bubbles:{bubbles},pointerType:{pointer_type}}}"
             )
         }
     };
@@ -187,6 +214,44 @@ pub fn script_dispatch_native_event(selector: &str, event_type: &str) -> String 
         "(function(){{if(typeof __zw_native_query_selector!=='function')return;\
 var t=__zw_native_query_selector('{esc_sel}');\
 if(t)t.dispatchEvent({{type:'{esc_ty}',target:t,currentTarget:t,bubbles:true}});}})()"
+    )
+}
+
+/// 生成「合成指针悬停迁移」脚本（uievents-compat M2 片 1，2026-10-03）。宿主在
+/// 指针悬停目标变化时执行：调 shim 钩子 `__zw_pointer_move(sel, x, y)`（part06.js）
+/// ——跨界时派发 over/out/enter/leave 边界序（relatedTarget 对侧；enter/leave 不冒泡），
+/// 随后在新目标上派 pointermove/mousemove 对。宿主侧悬停态自持（webview `pointer_over`）。
+pub fn script_pointer_move(selector: &str, client_x: f32, client_y: f32) -> String {
+    let sel = escape_js_string(selector);
+    format!("if(typeof __zw_pointer_move==='function')__zw_pointer_move('{sel}',{client_x},{client_y});")
+}
+
+/// 生成「跨目标 click 组合序」脚本（uievents-compat M2 片 1）。宿主在 Actions
+/// down/up 对的 mousedown/mouseup 落点不同时执行（UI Events §5.2.2——click 派发到
+/// 最近公共祖先）：`__zw_pointer_click_sequence(downSel, upSel, x, y, pointerType)`
+/// （part06.js——down 前悬停迁移跨界序 → pointerdown/mousedown@down →
+/// pointerup/mouseup@up → click@最近公共祖先）。
+pub fn script_pointer_click_sequence(
+    down_selector: &str,
+    up_selector: &str,
+    client_x: f32,
+    client_y: f32,
+    pointer_type: &str,
+) -> String {
+    let down = escape_js_string(down_selector);
+    let up = escape_js_string(up_selector);
+    format!(
+        "if(typeof __zw_pointer_click_sequence==='function')__zw_pointer_click_sequence('{down}','{up}',{client_x},{client_y},'{pointer_type}');"
+    )
+}
+
+/// 生成「非主键点击序」脚本（uievents-compat M2 片 1）。宿主在 Actions down/up 对
+/// button 非主键时执行（UI Events §5.2.2——非主键无 click）：mousedown →
+/// [contextmenu（右键）] → mouseup → auxclick（part06.js `__zw_pointer_auxclick_sequence`）。
+pub fn script_pointer_auxclick_sequence(selector: &str, client_x: f32, client_y: f32, button: i16) -> String {
+    let sel = escape_js_string(selector);
+    format!(
+        "if(typeof __zw_pointer_auxclick_sequence==='function')__zw_pointer_auxclick_sequence('{sel}',{client_x},{client_y},{button});"
     )
 }
 

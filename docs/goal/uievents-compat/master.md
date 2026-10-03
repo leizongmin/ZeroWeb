@@ -1,47 +1,57 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-03（M1 收口）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-03（M2 片 1 落地）
 
 ## 当前状态
 
-**M1 收口（2026-10-03）**：corpus 全量导入（uievents 60 + pointerevents 200 案）、
-runner 通道 `testharness-uievents`（递归扫描 + 跳过规则 + variant 展开）、分类基线
-1024 subtests（230P / 675F / 73TO / 46NR——uievents 17.4%、pointerevents 23.6%）。
-证据：[evidence/2026-10-03-m1-baseline.md](evidence/2026-10-03-m1-baseline.md)。
-suites CSV 已回填（active 行，1024/230）。
+**M2 片 1 落地（2026-10-03）**：基线 230P → **343P（+113）**——uievents 17.4%→27.8%、
+pointerevents 23.6%→33.9%（1024 subtests 口径）。跑法
+`ZW_CORPUS_CASE_TIMEOUT_SECS=10 make testharness-uievents`（30s 缺省首跑 30min guard
+超时——explicit_timeout 用例等真输入恒烧满额）。门禁：make test 19,603P/0F、
+clippy -D warnings、fmt 全绿。
 
-**M2 主根因**（基线聚类）：runner testdriver Actions stub 指针链退化
-（pointerDown/Up no-op、send() 折叠单 click）+ 宿主派发面缺 detail/button/
-relatedTarget/dblclick/PointerEvent 类型 + 边界事件（over/out/enter/leave）零合成。
+落地内容：① runner testdriver Actions stub 重写为上游 testdriver-actions.js 多源
+API 面（addPointer/setPointer/addKeyboard + tick 对齐重放 + options-object 签名）；
+② `__zw_dispatch_event` PointerEvent 分支（pointerdown/up/move/over/out/enter/
+leave/cancel——`instanceof PointerEvent` 面）+ mouse 分支补 relatedTarget/detail/
+button/buttons；③ 边界事件序（`__zw_pointer_move` 跨界 out/leave + over/enter，
+enter/leave 非冒泡；out/over 任意命中目标变化都派）；④ click 组合序（连击
+dblclick + UIEvent.detail 连击计数；mousedown/mouseup 跨目标 → click 到最近公共
+祖先 `__zw_pointer_click_sequence`）；⑤ 非主键序（mousedown→contextmenu（右键）→
+mouseup→auxclick，auxclick.detail 连击计数）；⑥ viewport origin 命中测试
+（elementFromPoint host 缓存 + gBCR 几何近似 + body 背景传播 fallback）。
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | uievents + pointerevents corpus 导入 + 基线 | ✅ 2026-10-03 |
-| P2 | 鼠标事件序/坐标/click 组合语义修齐 | ⏳ M2（主根因 = Actions 指针链退化） |
+| P2 | 鼠标事件序/坐标/click 组合语义修齐 | 🔄 片 1 已落地（+113）；残余 = mousemove-between（视口命中精度） |
 | P3 | Pointer 生命周期 + capture 三方法 + enter/leave 边界序 | ⏳ M3 |
 | P4 | touch-events / pointerlock / IME 组合挂账定稿 | ⏳ M4 |
 
 ## 已完成切片
 
-- **M1（2026-10-03）**：50 号 fetch 脚本幂等续拉 + order-of-events 二级子目录追加；
-  runner `testharness-uievents` 子命令 + `uievents_case_skipped` 跳过规则
-  （manual ×8 / pointerlock ×9 / crashtests / resources / legacy-domevents——evidence
-  清单在册）；Makefile `fetch-wpt-uievents`/`testharness-uievents`；分类基线 +
-  suites CSV 回填。
+- **M1（2026-10-03）**：corpus 导入 + runner 通道 + 分类基线 1024 subtests 230P +
+  suites CSV 回填（[evidence/2026-10-03-m1-baseline.md](evidence/2026-10-03-m1-baseline.md)）。
+- **M2 片 1（2026-10-03）**：见当前状态。伴生修改：PlannedEvent.detail 通道
+  （click/dblclick detail）；webview `pointer_over`/连击态（per-document 生命周期，
+  导航重置 ×4 站）；shim `__zw_reset_form_state` 挂 `__zw_pointer_reset`。
+  已验证无回归：testharness-html 全绿、keyboard 16/16 绿、web-components 4003P
+  （稳态）、fullscreen 132P。
 
 ## 下一步计划
 
-1. **M2 切片 1**：Actions 指针链步骤化（runner 注入 stub 记录 move/down/up → 宿主
-   命令 `pointer_move`/`pointer_down`/`pointer_up`，keyboard keydown/keyup 命令先例
-   同构）+ `__zw_dispatch_event` mouse 分支补 detail/button/buttons/relatedTarget
-   + dblclick 组合序——驱动面 click-order/mouse_buttons_back_forward/mouseover-out。
-2. **M2 切片 2**：边界事件合成（mouseover/out + mouseenter/leave 非冒泡祖先链 +
-   relatedTarget）——驱动面 mouse 边界族。
-3. **M3**：PointerEvent 类型分支 + pointer 边界序 + capture 三方法
-   （got/lostpointercapture、pending override、隐式释放、NotFoundError）。
+1. **M2 片 2**：uievents 残余面——mousemove-between（视口命中精度，需 host
+   HitTestCache 在 runner 侧填充）、wheel 三案（wheel 源 scroll 命令——wheel 事件 +
+   scroll 干预）、focus-events 四案（mousedown→focus 默认动作链）、interface
+   keyboard-click（键盘激活无 pointer 序——需 Activate 来源标注）。
+2. **M3**：Pointer capture 三方法语义化（got/lostpointercapture 派发、pending
+   override、隐式释放、active pointer NotFoundError、捕获重定向 + compat mouse
+   抑制）；pointerType pen/touch 全链（PlannedEvent.pointer_type 通道）；
+   pointercancel；touch-action 解析/计算值核对。
+3. **M4**：挂账定稿（touch-events / pointerlock / IME / touch-action 交互面）。
 
-**待用户决策清单**：（空——touch-action 交互面与 textInput 族在 M2 尾评估记账，
-pointerlock 挂账重入 = 用户点名）
+**待用户决策清单**：（空——pointerlock 挂账重入 = 用户点名）
+

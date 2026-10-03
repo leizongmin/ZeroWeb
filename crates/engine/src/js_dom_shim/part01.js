@@ -4995,7 +4995,7 @@
       if (_proxyCache[key] === el) { delete _userEdited[key]; return; }
     }
   };
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

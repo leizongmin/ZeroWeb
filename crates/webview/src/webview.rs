@@ -474,6 +474,14 @@ pub struct WebView {
     document_generation: u64,
     /// 当前 focus owner。
     focus_owner: Option<zero_page_runtime::PageNodeRef>,
+    /// uievents-compat M2 片 1：指针悬停目标唯一选择器（合成指针——宿主激活/驱动
+    /// pointer_move 前置跨界序的基准；导航经导航重置点清空，与 shim 悬停态同生命周期）。
+    pointer_over: Option<String>,
+    /// uievents-compat M2 片 1：同目标连击计数（dblclick 判定——UI Events §5.2.2
+    /// detail 按连击计数；目标变化即重置；headless 无时间窗，同目标连击近似）。
+    click_streak_target: Option<String>,
+    /// 同上——当前连击计数。
+    click_streak_count: u32,
     /// 当前文档页面脚本是否已经执行。
     page_scripts_initialized: bool,
     /// security-hardening M2-s2：被 CSP 阻止的 markup img 绝对 URL 队列——fetch 阶段
@@ -658,6 +666,9 @@ impl WebView {
             navigation_epoch: 0,
             document_generation: 0,
             focus_owner: None,
+            pointer_over: None,
+            click_streak_target: None,
+            click_streak_count: 0,
             page_scripts_initialized: false,
             pending_csp_img_blocks: Vec::new(),
             pending_csp_style_violations: Vec::new(),
@@ -888,6 +899,10 @@ impl WebView {
         self.service_worker_client_generation
             .store(self.document_generation, Ordering::Relaxed);
         self.focus_owner = None;
+        // uievents-compat M2 片 1：导航丢弃悬停/连击态（per-document 生命周期）。
+        self.pointer_over = None;
+        self.click_streak_target = None;
+        self.click_streak_count = 0;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
         // R100：文档换代——旧页 handle 在新页无效，清 selector→handle 反查表
@@ -1482,6 +1497,10 @@ impl WebView {
         // 设置加载状态
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
         self.focus_owner = None;
+        // uievents-compat M2 片 1：导航丢弃悬停/连击态（per-document 生命周期）。
+        self.pointer_over = None;
+        self.click_streak_target = None;
+        self.click_streak_count = 0;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
         let old_url = self.current_url.clone();
@@ -1606,6 +1625,10 @@ impl WebView {
         self.service_worker_client_generation
             .store(self.document_generation, Ordering::Relaxed);
         self.focus_owner = None;
+        // uievents-compat M2 片 1：导航丢弃悬停/连击态（per-document 生命周期）。
+        self.pointer_over = None;
+        self.click_streak_target = None;
+        self.click_streak_count = 0;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
         let old_url = self.current_url.clone();
@@ -1692,6 +1715,10 @@ impl WebView {
         self.service_worker_client_generation
             .store(self.document_generation, Ordering::Relaxed);
         self.focus_owner = None;
+        // uievents-compat M2 片 1：导航丢弃悬停/连击态（per-document 生命周期）。
+        self.pointer_over = None;
+        self.click_streak_target = None;
+        self.click_streak_count = 0;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
         self.last_render = None;
