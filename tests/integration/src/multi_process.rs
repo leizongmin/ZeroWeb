@@ -302,6 +302,7 @@ fn test_input_event_forwarding() {
             kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
                 key: "a".into(),
                 code: "KeyA".into(),
+                text: None,
                 ctrl: true,
                 shift: false,
                 alt: false,

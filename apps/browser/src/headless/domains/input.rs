@@ -93,14 +93,26 @@ impl HeadlessServer {
                 });
             }
         };
-        let key_text = params
+        // CDP `text` 语义（<https://chromedevtools.github.io/devtools-protocol/tot/Input/#method-dispatchKeyEvent>）：
+        // text = 该键产生的字符值（仅 keyDown/char 携带）；rawKeyDown/keyUp 无文本产出。
+        // 此前 text 被坍缩进 key（缺失回退 key）——「产生字符值与否」在 wire 上丢失，
+        // 导致 renderer keypress 缺失与 rawKeyDown+可打印 key 幻插入（slice23 判别）。
+        let cdp_text = params
             .get("text")
             .and_then(|v| v.as_str())
             .filter(|t| !t.is_empty())
-            .unwrap_or(&key)
-            .to_string();
+            .map(|t| t.to_string());
+        let key = match key_type {
+            // char 显式 keypress：key 缺省时回退 text（保持既有 keypress 事件面）。
+            KeyboardEventType::Press if key.is_empty() => cdp_text.clone().unwrap_or_default(),
+            _ => key,
+        };
+        let text = match key_type {
+            KeyboardEventType::Down => cdp_text,
+            _ => None,
+        };
         session
-            .send_input_key(key_text, code, ctrl, shift, alt, meta, key_type)
+            .send_input_key(key, code, ctrl, shift, alt, meta, text, key_type)
             .map_err(|error| ProtocolError {
                 code: -32000,
                 message: error,

@@ -63,6 +63,7 @@ fn keyboard_entry_points_share_prevented_default_action() {
         .handle_keyboard_event(KeyboardEventParams {
             key: "A".to_string(),
             code: "KeyA".to_string(),
+            text: None,
             ctrl: false,
             shift: false,
             alt: false,
@@ -99,6 +100,7 @@ fn prevented_tab_keeps_focus_owner() {
         .handle_keyboard_event(KeyboardEventParams {
             key: "Tab".to_string(),
             code: "Tab".to_string(),
+            text: None,
             ctrl: false,
             shift: false,
             alt: false,
@@ -204,11 +206,17 @@ fn keyboard_defaults_enforce_readonly_and_maxlength() {
     }
 
     runtime.focus_target("#readonly").unwrap();
-    runtime.apply_keydown_default("#readonly", "x", false, false).unwrap();
+    runtime
+        .apply_keydown_default("#readonly", "x", Some("x"), false, false)
+        .unwrap();
     runtime.blur_focused().unwrap();
     runtime.focus_target("#limited").unwrap();
-    runtime.apply_keydown_default("#limited", "😀", false, false).unwrap();
-    runtime.apply_keydown_default("#limited", "B", false, false).unwrap();
+    runtime
+        .apply_keydown_default("#limited", "😀", Some("😀"), false, false)
+        .unwrap();
+    runtime
+        .apply_keydown_default("#limited", "B", Some("B"), false, false)
+        .unwrap();
 
     assert_eq!(
         runtime
@@ -263,7 +271,9 @@ fn pointer_selection_uses_utf16_paint_boundary() {
             },
         )
         .unwrap();
-    runtime.apply_keydown_default("#name", "X", false, false).unwrap();
+    runtime
+        .apply_keydown_default("#name", "X", Some("X"), false, false)
+        .unwrap();
 
     assert_eq!(
         runtime
@@ -291,11 +301,20 @@ fn ctrl_a_selects_all_text_without_inserting_character() {
     runtime.focus_target("#name").unwrap();
 
     // 输入 'abc'（含非 ASCII，验证 UTF-16 偏移口径）后 Ctrl+A 全选。
-    runtime.apply_keydown_default("#name", "中", false, false).unwrap();
-    runtime.apply_keydown_default("#name", "a", false, false).unwrap();
-    runtime.apply_keydown_default("#name", "b", false, false).unwrap();
-    runtime.apply_keydown_default("#name", "c", false, false).unwrap();
-    runtime.apply_keydown_default("#name", "a", false, true).unwrap();
+    runtime
+        .apply_keydown_default("#name", "中", Some("中"), false, false)
+        .unwrap();
+    runtime
+        .apply_keydown_default("#name", "a", Some("a"), false, false)
+        .unwrap();
+    runtime
+        .apply_keydown_default("#name", "b", Some("b"), false, false)
+        .unwrap();
+    runtime
+        .apply_keydown_default("#name", "c", Some("c"), false, false)
+        .unwrap();
+    // Ctrl+A 走 accel 全选分支——纯物理键语义，无需字符值（None）。
+    runtime.apply_keydown_default("#name", "a", None, false, true).unwrap();
 
     let state = runtime.form_controls.get("#name").expect("form state");
     assert_eq!(state.value, "中abc");
@@ -308,5 +327,117 @@ fn ctrl_a_selects_all_text_without_inserting_character() {
             )
             .unwrap(),
         "0:4"
+    );
+}
+
+/// slice23 input events：全输入事件序记录页（input#name 空值聚焦；document 监听五类事件，
+/// 记录 `type:事件时 value` 到 `__seq`）。
+fn runtime_with_input_recorder(renderer_id: u64) -> RendererRuntime {
+    let html = r#"<html><body>
+        <input id="name">
+        <script>
+          globalThis.__seq = [];
+          ['keydown','keypress','beforeinput','input','keyup'].forEach(function (t) {
+            document.addEventListener(t, function (e) {
+              var v = e.target && e.target.value !== undefined ? e.target.value : '';
+              globalThis.__seq.push(t + ':' + v);
+            });
+          });
+        </script>
+    </body></html>"#;
+    let url = "https://zero.test/keypress-synthesis";
+    let mut runtime = RendererRuntime::new(renderer_id);
+    runtime.compositor_publish = None;
+    runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
+    runtime.current_url = Some(url.to_string());
+    runtime.cached_html = html.to_string();
+    runtime.webview.as_mut().unwrap().prepare_document_state(url);
+    runtime.webview.as_mut().unwrap().load_html(html, None);
+    {
+        let mut ctx = PageScriptContext {
+            html: &mut runtime.cached_html,
+            url,
+            js_worker: &runtime.js_worker,
+            webview: runtime.webview.as_mut(),
+        };
+        page_scripts::run_page_scripts(&mut ctx, true, |_url| Err::<String, String>("no fetch".into()));
+    }
+    runtime.focus_target("#name").unwrap();
+    runtime
+}
+
+#[test]
+fn text_keydown_dispatches_keypress_before_input_events() {
+    // slice23：产生字符值的 keydown（text 在场）→ keydown → keypress → beforeinput →
+    // input（value 已落）→ keyup 全序（UI Events 键盘事件序；keypress 在插入默认动作前）。
+    let mut runtime = runtime_with_input_recorder(916);
+    runtime
+        .handle_keyboard_event(KeyboardEventParams {
+            key: "w".to_string(),
+            code: "KeyW".to_string(),
+            text: Some("w".to_string()),
+            ctrl: false,
+            shift: false,
+            alt: false,
+            meta: false,
+            event_type: zero_protocol::message::KeyboardEventType::Down,
+        })
+        .unwrap();
+    runtime
+        .handle_keyboard_event(KeyboardEventParams {
+            key: "w".to_string(),
+            code: "KeyW".to_string(),
+            text: None,
+            ctrl: false,
+            shift: false,
+            alt: false,
+            meta: false,
+            event_type: zero_protocol::message::KeyboardEventType::Up,
+        })
+        .unwrap();
+
+    assert_eq!(
+        runtime
+            .js_worker
+            .execute_script_direct("globalThis.__seq.join(',')")
+            .unwrap(),
+        "keydown:,keypress:,beforeinput:,input:w,keyup:w",
+        "keypress must fire between keydown and the insertion default action"
+    );
+    assert_eq!(
+        runtime.form_controls.get("#name").map(|state| state.value.as_str()),
+        Some("w")
+    );
+}
+
+#[test]
+fn textless_keydown_skips_keypress_and_insertion() {
+    // slice23：纯物理键（text=None，rawKeyDown/修饰键宿主形态）不派 keypress、不插入——
+    // keypress 仅属于产生字符值的键。
+    let mut runtime = runtime_with_input_recorder(917);
+    runtime
+        .handle_keyboard_event(KeyboardEventParams {
+            key: "w".to_string(),
+            code: "KeyW".to_string(),
+            text: None,
+            ctrl: false,
+            shift: false,
+            alt: false,
+            meta: false,
+            event_type: zero_protocol::message::KeyboardEventType::Down,
+        })
+        .unwrap();
+
+    assert_eq!(
+        runtime
+            .js_worker
+            .execute_script_direct("globalThis.__seq.join(',')")
+            .unwrap(),
+        "keydown:",
+        "no keypress/insertion without a character value"
+    );
+    assert_eq!(
+        runtime.form_controls.get("#name").map(|state| state.value.as_str()),
+        Some("")
     );
 }

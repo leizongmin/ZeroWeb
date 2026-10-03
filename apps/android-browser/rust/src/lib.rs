@@ -781,6 +781,8 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativePageKey(
             IpcMessageKind::KeyboardEvent(KeyboardEventParams {
                 key: key.to_string(),
                 code: key.to_string(),
+                // 白名单特殊键（Backspace/Enter 等）无字符产出；文本经 Ime Commit 通道。
+                text: None,
                 ctrl: false,
                 shift: false,
                 alt: false,

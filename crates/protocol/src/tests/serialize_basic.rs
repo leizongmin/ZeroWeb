@@ -155,6 +155,7 @@ fn test_serialize_deserialize_keyboard_event() {
         kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: "a".into(),
             code: "KeyA".into(),
+            text: None,
             ctrl: true,
             shift: false,
             alt: false,
@@ -280,6 +281,7 @@ fn test_roundtrip_all_message_types() {
         IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: "Enter".into(),
             code: "Enter".into(),
+            text: None,
             ctrl: false,
             shift: false,
             alt: false,
@@ -461,6 +463,7 @@ fn test_keyboard_event_with_modifiers() {
         kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: "c".into(),
             code: "KeyC".into(),
+            text: None,
             ctrl: true,
             shift: false,
             alt: false,
@@ -742,6 +745,7 @@ fn test_keyboard_event_up() {
         kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: "a".into(),
             code: "KeyA".into(),
+            text: None,
             ctrl: false,
             shift: false,
             alt: false,
@@ -925,6 +929,7 @@ fn test_keyboard_event_all_modifiers_on() {
         kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: "x".into(),
             code: "KeyX".into(),
+            text: None,
             ctrl: true,
             shift: true,
             alt: true,
@@ -947,6 +952,7 @@ fn test_keyboard_event_all_modifiers_off() {
         kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: "z".into(),
             code: "KeyZ".into(),
+            text: None,
             ctrl: false,
             shift: false,
             alt: false,
@@ -1368,6 +1374,7 @@ fn test_script_execution_via_keyboard_events() {
             kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
                 key: "F5".into(),
                 code: "F5".into(),
+                text: None,
                 ctrl: false,
                 shift: false,
                 alt: false,
@@ -1380,6 +1387,7 @@ fn test_script_execution_via_keyboard_events() {
             kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
                 key: "F5".into(),
                 code: "F5".into(),
+                text: None,
                 ctrl: false,
                 shift: false,
                 alt: false,

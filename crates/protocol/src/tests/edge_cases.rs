@@ -324,6 +324,7 @@ fn test_ipc_channel_trait_object_stress_50_messages() {
                 6 => IpcMessageKind::KeyboardEvent(KeyboardEventParams {
                     key: format!("Key{i}"),
                     code: format!("Code{i}"),
+                    text: None,
                     ctrl: i % 2 == 0,
                     shift: i % 3 == 0,
                     alt: false,
@@ -574,6 +575,7 @@ fn test_input_events_all_types_with_boundary_values() {
             kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
                 key: String::new(),
                 code: "Space".into(),
+                text: None,
                 ctrl: true,
                 shift: true,
                 alt: true,
@@ -630,6 +632,7 @@ fn test_keyboard_event_long_key_and_code() {
         kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: long_key.clone(),
             code: long_code.clone(),
+            text: None,
             ctrl: false,
             shift: false,
             alt: false,
@@ -1008,6 +1011,7 @@ fn test_keyboard_event_all_modifiers_true_roundtrip() {
         kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
             key: "a".into(),
             code: "KeyA".into(),
+            text: None,
             ctrl: true,
             shift: true,
             alt: true,
@@ -1294,6 +1298,7 @@ fn test_keyboard_event_all_modifiers() {
     let params = KeyboardEventParams {
         key: "c".to_string(),
         code: "KeyC".to_string(),
+        text: None,
         ctrl: true,
         shift: true,
         alt: true,
@@ -1312,6 +1317,7 @@ fn test_keyboard_event_no_modifiers() {
     let params = KeyboardEventParams {
         key: "a".to_string(),
         code: "KeyA".to_string(),
+        text: None,
         ctrl: false,
         shift: false,
         alt: false,

@@ -994,6 +994,7 @@ impl HeadlessSession {
         shift: bool,
         alt: bool,
         meta: bool,
+        text: Option<String>,
         event_type: KeyboardEventType,
     ) -> Result<(), String> {
         self.renderer
@@ -1002,6 +1003,7 @@ impl HeadlessSession {
                 kind: IpcMessageKind::KeyboardEvent(KeyboardEventParams {
                     key,
                     code,
+                    text,
                     ctrl,
                     shift,
                     alt,
@@ -1157,6 +1159,7 @@ impl HeadlessSession {
         _shift: bool,
         _alt: bool,
         _meta: bool,
+        _text: Option<String>,
         _event_type: KeyboardEventType,
     ) -> Result<(), String> {
         Ok(())

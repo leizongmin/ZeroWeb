@@ -55,8 +55,9 @@ fn browser_ipc_disconnected(err: &str) -> bool {
     is_disconnected_channel_message(err)
 }
 
-/// P1a form input：判定 key 是否为单字符可打印键（用于向 input/textarea 注入字符）。
-/// 多字符 key 名（"Enter"/"Backspace"/"ArrowLeft"/"Shift"/"Tab"…）与控制字符排除。
+/// Legacy DispatchDomEvent 键盘通道专用：判定 key 是否为单字符可打印键（向 input/
+/// textarea 注入字符）。多字符 key 名（"Enter"/"Backspace"/"ArrowLeft"/"Shift"/"Tab"…）
+/// 与控制字符排除。CDP KeyboardEvent 通道不再用此启发式（text 字段为忠实判据）。
 fn is_printable_key(key: &str) -> bool {
     let mut chars = key.chars();
     match chars.next() {
@@ -264,6 +265,15 @@ pub(crate) fn pre_document_scripts_enabled() -> bool {
 /// <https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps>。
 pub(crate) fn host_focus_state_sync() -> bool {
     predoc_enabled_for(std::env::var("ZW_HOST_FOCUS_STATE_SYNC").as_deref().ok())
+}
+
+/// UI Events keypress 合成 kill-switch（slice23 input events）：默认 on——keydown 未取消
+/// 且产生字符值（`KeyboardEventParams.text`）时，在字符插入默认动作前派发 `keypress`
+///（Chrome/154 同桶序 keydown→keypress→beforeinput→input→keyup）。`ZW_KEYPRESS_SYNTH=0`
+/// 回落不派发（off = base 逐字节事件序）。规范锚：UI Events 键盘事件序
+/// <https://w3c.github.io/uievents/#events-keyboard-event-order>。
+pub(crate) fn keypress_synth_enabled() -> bool {
+    predoc_enabled_for(std::env::var("ZW_KEYPRESS_SYNTH").as_deref().ok())
 }
 
 impl RendererRuntime {
@@ -1105,18 +1115,21 @@ impl RendererRuntime {
     }
 
     /// 执行未取消 keydown 的用户代理默认动作；两条键盘 IPC 入口共用。
+    /// `text` = 该键产生的字符值（UI Events character value；`None` = 纯物理键）——
+    /// 字符插入仅发生在 text 在场时。此前以 `is_printable_key(key)` 为判据，CDP text
+    /// 坍缩进 key 使 rawKeyDown+可打印 key 幻插入、keyDown 的 text 有无信息丢失
+    ///（slice23 判别）。
     // https://w3c.github.io/uievents/#event-type-keydown
-    fn apply_keydown_default(&mut self, target: &str, key: &str, shift: bool, accel: bool) -> Result<(), String> {
+    fn apply_keydown_default(
+        &mut self,
+        target: &str,
+        key: &str,
+        text: Option<&str>,
+        shift: bool,
+        accel: bool,
+    ) -> Result<(), String> {
         if key == "Tab" {
             self.execute_shared_action(target, zero_page_runtime::HtmlUserAction::MoveFocus { forward: !shift })?;
-        } else if is_printable_key(key) && !self.is_composing_at(target) {
-            // R3254-L5：IME 合成期间跳过可打印字符，避免与 Commit 双写。
-            if accel && key.eq_ignore_ascii_case("a") {
-                // Ctrl/Cmd+A：选中文本控件全部内容（keydown 默认动作），不注入字符。
-                self.apply_select_all_at(target)?;
-            } else {
-                self.apply_text_input_at(target, key)?;
-            }
         } else if key == "Backspace" {
             self.apply_text_delete_at(target)?;
         } else if key == "Enter" {
@@ -1143,6 +1156,14 @@ impl RendererRuntime {
             let script = zero_engine::script_select_key_action(target, key);
             if let Err(e) = self.js_worker.execute_script_direct(&script) {
                 tracing::debug!("select key action: {e}");
+            }
+        } else if accel && key.eq_ignore_ascii_case("a") {
+            // Ctrl/Cmd+A：选中文本控件全部内容（keydown 默认动作），不注入字符。
+            self.apply_select_all_at(target)?;
+        } else if let Some(text) = text.filter(|t| !t.is_empty()) {
+            // 字符插入（产生字符值的键）。R3254-L5：IME 合成期间跳过，避免与 Commit 双写。
+            if !self.is_composing_at(target) {
+                self.apply_text_input_at(target, text)?;
             }
         }
         Ok(())
@@ -2532,7 +2553,12 @@ impl RendererRuntime {
                 .focus_owner()
                 .unwrap_or_else(|| self.interaction.pointer_target())
                 .to_string();
-            self.apply_keydown_default(&target, key.as_deref().unwrap_or_default(), params.shift, false)?;
+            let key = key.as_deref().unwrap_or_default();
+            // Legacy DispatchDomEvent 键盘通道（浏览器主进程 tab_manager 转发，wire 无
+            // text 字段）：以单字符可打印 key 回填字符值——桌面窗口模式既有插入行为
+            // 逐字节保持。CDP KeyboardEvent 通道已走忠实 text 语义（slice23）。
+            let text = is_printable_key(key).then(|| key.to_string());
+            self.apply_keydown_default(&target, key, text.as_deref(), params.shift, false)?;
         } else if result.default_allowed && event_type == "mousedown" {
             // R3254-M8：焦点切换在 mousedown（UI Events：focus 是 mousedown 默认动作，与
             // Chrome/Firefox 一致——mousedown preventDefault 阻止聚焦）。blur/change/focus
@@ -2741,8 +2767,23 @@ impl RendererRuntime {
             .to_string();
         let result = self.dispatch_dom_at(Some(target.clone()), 0.0, 0.0, event_type, Some(detail));
         if matches!(params.event_type, KeyboardEventType::Down) && result.default_allowed {
+            // UI Events 键序：keydown 未取消且该键产生字符值（`text` 非 None）→ 在字符插入
+            // 默认动作（beforeinput/input）之前派发 `keypress`（legacy KeyboardEvent 面）。
+            // 无 text（rawKeyDown/修饰键/导航键）不派——keypress 仅属于产生字符值的键；
+            // IME 合成期间不派（同插入 guard）。keypress 自身取消不阻断插入（UI Events：
+            // 字符插入的取消面在 beforeinput）。
+            // https://w3c.github.io/uievents/#events-keyboard-event-order
+            // https://w3c.github.io/uievents/#event-type-keypress
+            if keypress_synth_enabled() && params.text.is_some() && !self.is_composing_at(&target) {
+                let keypress_detail = DomEventDetail {
+                    key: Some(params.key.clone()),
+                    code: Some(params.code.clone()),
+                    ..Default::default()
+                };
+                let _ = self.dispatch_dom_at(Some(target.clone()), 0.0, 0.0, "keypress", Some(keypress_detail));
+            }
             let accel = params.ctrl || params.meta;
-            self.apply_keydown_default(&target, &params.key, params.shift, accel)?;
+            self.apply_keydown_default(&target, &params.key, params.text.as_deref(), params.shift, accel)?;
         }
         Ok(())
     }
