@@ -2068,6 +2068,33 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // siteopt slice24：parsed 非元素子节点（文本/注释/PI）移除——`Node.removeChild`
+    // sel-based 路径的 host 真相同步（与 `__zw_set_child_text` 同「父 sel + child 索引」
+    // 定位口径；此前四条移除分支均只认 handle/sel 身份，parsed CharacterData 静默穿透，
+    // baidu san 水合的 s-data 注释移除失效即此形态）。kill-switch：`ZW_REMOVE_CHILD_AT=0`
+    // 回退（off 臂不注册回调，shim 分支的 typeof guard 落回旧形态），照
+    // `ZW_MO_HOST_TRIGGER` 先例。
+    // https://dom.spec.whatwg.org/#dom-node-removechild
+    if std::env::var("ZW_REMOVE_CHILD_AT").as_deref() != Ok("0") {
+        let m = Arc::clone(mutations);
+        sandbox.register_callback(
+            "__zw_remove_child_at",
+            Box::new(move |args| {
+                if args.len() >= 2
+                    && let Ok(idx) = args[1].parse::<usize>()
+                {
+                    m.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push(DomMutation::RemoveChildAt {
+                            parent_selector: args[0].clone(),
+                            child_index: idx,
+                        });
+                }
+                "ok".into()
+            }),
+        );
+    }
+
     let html = Arc::clone(dom_html);
     let muts_ih = Arc::clone(mutations);
     sandbox.register_callback(

@@ -10094,10 +10094,14 @@
     // subtest 全量重建（Range-mutations dataChange ~5000 subtest × ~30 节点）旧实现无界膨胀。
     // 512 上限远离正常页面规模（单 turn 数百 mutation 级），溢出时一次性丢弃死条目（O(表)
     // 摊销 O(1)/mutation）。sel 条目（快照真实节点）保留。
+    // siteopt slice24 例外：parsed CharacterData 子（`__zwIsText` 印记、无 handle——
+    // `_wrapNodeEntry` 产物）**是**快照真实节点（host 快照 k:'T'/'C' 条目本就无 selector），
+    // 压实丢弃会让已移除的注释/文本在融合视图复活（baidu san 水合 s-data 注释同族）。
     if (_zwPendingRemoved.length > 512) {
       var _cmp = [];
       for (var c0 = 0; c0 < _zwPendingRemoved.length; c0++) {
-        if (_zwPendingRemoved[c0] && _zwPendingRemoved[c0].__zwSelector) _cmp.push(_zwPendingRemoved[c0]);
+        var _c0e = _zwPendingRemoved[c0];
+        if (_c0e && (_c0e.__zwSelector || (_c0e.__zwIsText && !_c0e.__zwHandle))) _cmp.push(_c0e);
       }
       _zwPendingRemoved = _cmp;
       _zwPendingRemovedSet = null; // 惰性重建（_zwPRSet）
@@ -10114,9 +10118,11 @@
       _pb.stamp = (typeof globalThis._zwApplyGeneration === 'function') ? globalThis._zwApplyGeneration() : 0;
       // R51c：桶 removed 压实（同全局表语义——handle-only 死条目丢弃，512 软上限）。
       if (_pb.removed.length > 512) {
+        // siteopt slice24：parsed CharacterData 条目同全局表例外——快照真实节点，压实保留。
         var _bc = [];
         for (var bc = 0; bc < _pb.removed.length; bc++) {
-          if (_pb.removed[bc] && _pb.removed[bc].__zwSelector) _bc.push(_pb.removed[bc]);
+          var _bce = _pb.removed[bc];
+          if (_bce && (_bce.__zwSelector || (_bce.__zwIsText && !_bce.__zwHandle))) _bc.push(_bce);
         }
         _pb.removed = _bc;
         _pb.removedSet = new Set(_bc);

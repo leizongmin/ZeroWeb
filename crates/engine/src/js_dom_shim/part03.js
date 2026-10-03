@@ -9181,6 +9181,54 @@
     // 使整条 update 链 reject）。与元素 proxy R3197 语义一致（attrs 数组本地维护）。
     node.hasAttributes = function () { return attrs.length > 0; };
     node.getAttributeNames = function () { var out = []; for (var i = 0; i < attrs.length; i++) out.push(attrs[i].name); return out; };
+    // slice24（js-dom R122 plain 对齐）：getAttributeNode / getAttributeNodeNS
+    //（spec https://dom.spec.whatwg.org/#dom-element-getattributenode 、
+    // https://dom.spec.whatwg.org/#dom-element-getattributenodens —— Element 接口必备
+    // 成员，缺省 undefined 使消费方 `typeof elem.getAttributeNode !== 'function'` 崩）。
+    // jQuery Sizzle 的 attrHandle.id/name/coords 优先调 `elem.getAttributeNode('id')`
+    // 读 nodeValue——innerHTML 解析产物（本工厂 plain 元素）无此方法时 Sizzle 每次属性
+    // 选择器匹配都抛 TypeError（baidu 首页 hydration 链因此整链 reject → sugrec 通道死）。
+    // 共享路径修复：与元素 proxy 的 R122（part04）同语义——按限定名（非 NS 变体 HTML
+    // 小写化，R116 同源）/ (ns, local) 在 attrs 数组定位，命中经共享 _zwMakeAttr 建
+    // Attr 真实例（instanceof Attr true，ownerElement=本元素，value 写回经原型 setter
+    // 走 setAttribute 传播）；miss 返 null（spec：no attribute → null）。
+    // 注：plain 世界 attributes 集合本就是 {name,value} plain 对象（既有形态），此处
+    // 不做 Attr 实例身份与 attributes[i] 的往返绑定——与既有 plain attributes 语义一致，
+    // 消费面（Sizzle/属性读）只需值与名字段。
+    node.getAttributeNode = function (n) {
+      var _gnP = String(n == null ? '' : n).toLowerCase(); // R116：非 NS 小写语义
+      for (var i = 0; i < attrs.length; i++) {
+        if (String(attrs[i].name).toLowerCase() === _gnP) return _zwMakeAttr(attrs[i].name, attrs[i].value, node);
+      }
+      return null;
+    };
+    node.getAttributeNodeNS = function (ns, local) {
+      var _gnNs = (ns == null || ns === '') ? null : String(ns);
+      var _gnL = String(local == null ? '' : local).toLowerCase();
+      for (var i = 0; i < attrs.length; i++) {
+        var nm = String(attrs[i].name);
+        var loc = nm, pre = null, ans = null;
+        var ci = nm.indexOf(':');
+        if (ci > 0) { pre = nm.slice(0, ci); loc = nm.slice(ci + 1); }
+        if (pre != null) {
+          // R190 同源 prefix→ns 映射（xml/xmlns/xlink）；其余前缀按字面比较。
+          ans = { xmlns: 'http://www.w3.org/2000/xmlns/', xlink: 'http://www.w3.org/1999/xlink', xml: 'http://www.w3.org/XML/1998/namespace' }[pre] || null;
+        } else if (_gnNs === null) {
+          ans = null;
+        } else {
+          ans = node.namespaceURI || null; // 无前缀属性 ∈ 元素 ns（HTML 解析语义）
+        }
+        if (loc.toLowerCase() === _gnL && ans === _gnNs) {
+          var _ga = _zwMakeAttr(nm, attrs[i].value, node);
+          // spec dom-attr：localName 是冒号后的 local 部分、prefix 是冒号前段
+          //（_zwMakeAttr 缺省整名入 localName——plain 路径在此补齐，与 R190
+          // proxy 路径 _zwDeriveAttrNS 的拆分语义一致）。
+          if (pre != null) { _ga.prefix = pre; _ga.localName = loc; _ga.namespaceURI = ans; }
+          return _ga;
+        }
+      }
+      return null;
+    };
     // WC-M1（web-components goal，2026-09-10）：plain TEMPLATE 的 `content` fragment 视图
     //（spec the-template-element：contents 是独立 inert DocumentFragment）。R95/R145 的
     // content 视图只覆盖 proxy 元素（part04 get trap）与 sel 模板；deepClone 产物

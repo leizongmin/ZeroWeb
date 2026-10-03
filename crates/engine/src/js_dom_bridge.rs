@@ -291,6 +291,19 @@ pub enum DomMutation {
         /// 新数据。
         text: String,
     },
+    /// siteopt slice24：对 parsed DOM 的**非元素子节点**（文本/注释/PI）按父 selector +
+    /// child 索引移除（`Node.prototype.removeChild` 的 sel-based 路径——parsed
+    /// CharacterData 无 handle 亦无唯一 selector，唯一定位 = 父 + childNodes 索引，
+    /// 与 [`DomMutation::SetChildText`] 同口径）。host 真相同步移除后，shim 侧
+    /// 「apply 后清 removed 视图补偿桶」的换代语义（pa2b）才自洽：apply 前窗口由
+    /// shim pending overlay 隐藏该子，apply 后新快照天然不含。
+    /// https://dom.spec.whatwg.org/#dom-node-removechild
+    RemoveChildAt {
+        /// 父元素唯一选择器。
+        parent_selector: String,
+        /// childNodes 中的索引（含文本/注释的全节点序）。
+        child_index: usize,
+    },
     /// 对 create 句柄设置 innerHTML。
     SetInnerHtmlOnHandle {
         /// 节点句柄。
@@ -616,6 +629,10 @@ fn rewrite_pending_id_selectors(
                 ..
             }
             | DomMutation::SetChildText {
+                parent_selector: selector,
+                ..
+            }
+            | DomMutation::RemoveChildAt {
                 parent_selector: selector,
                 ..
             } => selector,
@@ -1116,6 +1133,31 @@ pub fn apply_dom_mutations_full(
                     // 单文本子 = 全文本）。与批内前序 SetText/文本替换 compose 正确。
                     None => {
                         doc.set_text_content(parent, &text);
+                    }
+                }
+            }
+            // siteopt slice24：按父 selector + child 索引移除 parsed 非元素子（文本/注释/PI
+            // ——`Node.removeChild` 的 sel-based 路径）。父 miss/索引越界 lenient warn+跳过
+            //（同 [`DomMutation::SetChildText`] 口径：JS 侧视图补偿已隐藏该子，host 跳过
+            // 只影响下一回合快照，不中止整批）。
+            // https://dom.spec.whatwg.org/#dom-node-removechild
+            // https://dom.spec.whatwg.org/#concept-node-pre-remove
+            DomMutation::RemoveChildAt {
+                parent_selector,
+                child_index,
+            } => {
+                let Some(parent) = find_by_selector(doc, &parent_selector) else {
+                    tracing::warn!("apply DOM mutations: remove_child_at parent no match, skipped: {parent_selector}");
+                    continue;
+                };
+                match doc.child_nodes(parent).get(child_index).copied() {
+                    Some(child) => {
+                        doc.remove_child(parent, child).map_err(|e| e.to_string())?;
+                    }
+                    None => {
+                        tracing::warn!(
+                            "apply DOM mutations: remove_child_at index out of range, skipped: {parent_selector}[{child_index}]"
+                        );
                     }
                 }
             }

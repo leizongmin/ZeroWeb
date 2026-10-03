@@ -485,3 +485,520 @@ fn test_canvas_ctr_global_eager_registration() {
         "ctx 原型应恒等 getContext 前捕获的构造器引用（无重复定义）"
     );
 }
+
+// siteopt slice24：parsed CharacterData 子（初始 HTML 解析出的注释/文本）的 removeChild
+// 全链——shim 视图移除 + host `RemoveChildAt` mutation 真移除。
+// 判别史：baidu SSR `s-data:` 注释经 san prelude `parentNode.removeChild(n)` 移除失效
+// （旧四移除分支只认 handle/sel 身份 → 静默穿透）→ 水合 walker 把注释当当前节点 →
+// "Element type not match, expect 1 but 8" → 聊天输入组件 boot 中断 → sugrec 双通道 0。
+// 浏览器级最小复现（min-repro）在 base 4f0ef846f RED：A_initialParsed/B_innerHTML
+// 双案 removeChild 返回后子节点数不变（RED 依据归档 diag/evidence/slice24/
+// boot-hook-bh1-9docErr.json、boot-hook-bh2-clean.json、verdict-base-s24j.json；
+// 钉 RED→GREEN 复跑日志 review-te-pin-red-green-repro.log）；
+// Chrome 同页全 GREEN。本单测钉同一语义的 shim→host 全链。
+// https://dom.spec.whatwg.org/#dom-node-removechild
+// https://dom.spec.whatwg.org/#concept-node-pre-remove
+#[test]
+fn test_parsed_characterdata_remove_child_s24() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><!--pc--><b id=\"b\">x</b></div>\
+         <p id=\"p\">hello</p></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var host = document.getElementById('host');\
+             var c = host.firstChild;\
+             globalThis.__cType = c.nodeType;\
+             globalThis.__cData = String(c.data);\
+             var ret = host.removeChild(c);\
+             globalThis.__retIdentity = ret === c;\
+             globalThis.__cParentNull = c.parentNode === null;\
+             globalThis.__kidCount = host.childNodes.length;\
+             globalThis.__fcIsB = host.firstChild && host.firstChild.id === 'b';\
+             globalThis.__noContain = !host.contains(c);\
+             globalThis.__ih = host.innerHTML;\
+             var again = 'none';\
+             try { host.removeChild(c); } catch (e) { again = e.name; }\
+             globalThis.__reRemove = again;\
+             var p = document.getElementById('p');\
+             var t = p.firstChild;\
+             globalThis.__tType = t.nodeType;\
+             p.removeChild(t);\
+             globalThis.__pKids = p.childNodes.length;\
+             globalThis.__pFcNull = p.firstChild === null;",
+        )
+        .unwrap();
+    // shim 视图：注释识别 + 移除生效（旧形态：kidCount 仍 2、firstChild 仍是注释）。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cType + ':' + globalThis.__cData)").unwrap().value,
+        "8:pc",
+        "初始解析注释应包装为 nodeType 8 / data 'pc' 的 CharacterData 子"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__retIdentity + ':' + globalThis.__cParentNull)").unwrap().value,
+        "true:true",
+        "removeChild 应返被移除节点且 parentNode 置空（spec concept-node-pre-remove）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__kidCount + ':' + globalThis.__fcIsB + ':' + globalThis.__noContain)").unwrap().value,
+        "1:true:true",
+        "移除后融合视图应只剩元素子（childNodes/firstChild/contains 同步）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ih").unwrap().value,
+        "<b id=\"b\">x</b>",
+        "innerHTML 序列化应不再含注释"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__reRemove").unwrap().value,
+        "NotFoundError",
+        "重复移除：节点已非父的子（融合视图已剔除）→ NotFoundError（spec pre-remove 步骤 1-2，与 R126 校验族一致）"
+    );
+    // 邻近边界：parsed 文本子移除同语义（融合视图 childNodes/firstChild 同步）。
+    // 注：sel 父的 textContent getter 直读 host（apply 窗口内 stale）——与 R125 元素子
+    // 移除同款既有限制（innerHTML 有 R380 融合门、textContent 无），本切片不加宽；
+    // baidu 场景不受影响（spec dom-node-textcontent：注释不计入 textContent）。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tType + ':' + globalThis.__pKids + ':' + globalThis.__pFcNull)").unwrap().value,
+        "3:0:true",
+        "parsed 文本子移除后融合视图应为空（childNodes/firstChild）"
+    );
+
+    // host 落地：队列含 RemoveChildAt（#host 注释 idx 0 + #p 文本 idx 0），apply 后
+    // 注释/文本真消失、元素子保留。
+    let queue = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let rm_count = queue
+        .iter()
+        .filter(|m| matches!(m, DomMutation::RemoveChildAt { child_index: 0, .. }))
+        .count();
+    assert_eq!(rm_count, 2, "两次 CharacterData 移除应各排队一条 RemoveChildAt");
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap_or_else(|e| e.into_inner()), &queue)
+        .unwrap();
+    assert!(
+        !out.contains("<!--pc-->") && !out.contains("pc"),
+        "apply 后 host 文档应真移除注释\n{out}"
+    );
+    assert!(
+        out.contains("id=\"b\""),
+        "元素子应保留\n{out}"
+    );
+    assert!(
+        !out.contains("hello"),
+        "apply 后 host 文档应真移除文本子\n{out}"
+    );
+}
+
+// slice24 邻近钉：innerHTML 解析 plain 元素的 getAttributeNode/getAttributeNodeNS
+//（spec https://dom.spec.whatwg.org/#dom-element-getattributenode 、
+// https://dom-element-getattributenodens）。jQuery Sizzle attrHandle.id 优先调
+// `elem.getAttributeNode('id')` 读 nodeValue——旧 plain 工厂缺方法抛 TypeError
+//（baidu 首页 hydration 链 reject → sugrec 通道死）。与元素 proxy R122（part04）
+// 同语义：Attr 真实例（instanceof Attr、ownerElement 指回）、miss 返 null、value
+// 写回经 setAttribute 传播到 attrs 数组。无直接上游 WPT 用例（shim plain 世界为
+// ZeroWeb 特有架构，理由同上），补等价本地钉。
+#[test]
+fn test_plain_parsed_get_attribute_node_s24() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var d = document.getElementById('body') || document.body;\
+             d.innerHTML = '<span id=\"sp\" class=\"c1\" xlink:title=\"xt\">t</span>';\
+             var sp = d.firstChild;\
+             globalThis.__isFn = typeof sp.getAttributeNode === 'function' && typeof sp.getAttributeNodeNS === 'function';\
+             var an = sp.getAttributeNode('id');\
+             globalThis.__anOk = !!an && an.nodeType === 2 && an.name === 'id' && an.value === 'sp' && an.nodeValue === 'sp';\
+             globalThis.__isAttr = !!an && an instanceof Attr;\
+             globalThis.__ownerOk = !!an && an.ownerElement === sp;\
+             globalThis.__missNull = sp.getAttributeNode('nope') === null && sp.getAttributeNodeNS(null, 'nope') === null;\
+             globalThis.__ciOk = sp.getAttributeNode('ID') !== null;\
+             an.value = 'sp2';\
+             globalThis.__writeBack = sp.getAttribute('id') === 'sp2';\
+             var xtn = sp.getAttributeNodeNS('http://www.w3.org/1999/xlink', 'title');\
+             globalThis.__nsOk = !!xtn && xtn.value === 'xt' && xtn.localName === 'title';\
+             globalThis.__nsMiss = sp.getAttributeNodeNS('http://www.w3.org/1999/xlink', 'other') === null;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__isFn)").unwrap().value,
+        "true",
+        "plain 解析元素应有 getAttributeNode/getAttributeNodeNS 方法（spec dom-element-getattributenode）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__anOk + ':' + globalThis.__isAttr + ':' + globalThis.__ownerOk)").unwrap().value,
+        "true:true:true",
+        "getAttributeNode 应返 Attr 真实例（nodeType 2、name/value/nodeValue、ownerElement 指回）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__missNull + ':' + globalThis.__ciOk)").unwrap().value,
+        "true:true",
+        "miss 返 null；非 NS 变体大小写不敏感（R116 HTML 小写语义）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__writeBack)").unwrap().value,
+        "true",
+        "Attr.value 写回应经 setAttribute 传播到 attrs 数组（R122 setter 共享路径）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nsOk + ':' + globalThis.__nsMiss)").unwrap().value,
+        "true:true",
+        "getAttributeNodeNS 按 (ns, local) 定位（xlink prefix→ns 映射，R190 同源）"
+    );
+}
+
+// slice24 邻近钉：getComputedStyle 的 display UA 默认回落（CSS 层叠第 2 步 UA 声明
+// 兜底——https://drafts.csswg.org/css-cascade/#cascading ；UA stylesheet
+// https://html.spec.whatwg.org/multipage/rendering.html#the-css-user-agent-style-sheet-and-presentational-hints ）。
+// 旧形：host 只覆盖 sel 注册元素，plain 元素（innerHTML 解析产物 / createElement 未
+// 落 host）查 display 返 ''——jQuery 1.x css_defaultDisplay 以非空判定跳过 iframe 兜底，
+// '' 逼入 iframe 分支（plain 世界 iframe 无同步 contentWindow）抛 TypeError（baidu his
+// suggest 初始化链断，sugrec 通道死）。无直接上游 WPT 用例（shim 双世界特有），补等价本地钉。
+#[test]
+fn test_computed_style_ua_default_display_s24() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"hd\" style=\"display:none\">h</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var sp = document.createElement('span');\
+             document.body.appendChild(sp);\
+             var dv = document.createElement('div');\
+             document.body.appendChild(dv);\
+             var ce = document.createElement('my-widget');\
+             document.body.appendChild(ce);\
+             globalThis.__sp = getComputedStyle(sp).display;\
+             globalThis.__dv = getComputedStyle(dv).display;\
+             globalThis.__ce = getComputedStyle(ce).display;\
+             globalThis.__spPv = getComputedStyle(sp).getPropertyValue('display');\
+             dv.style.display = 'none';\
+             globalThis.__dvNone = getComputedStyle(dv).display;\
+             globalThis.__hd = getComputedStyle(document.getElementById('hd')).display;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__sp").unwrap().value,
+        "inline",
+        "plain 新建 span 的计算 display 应为 UA 默认 inline（旧 '' 逼入 iframe 兜底分支）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dv").unwrap().value,
+        "block",
+        "plain 新建 div 的计算 display 应为 UA 默认 block"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ce").unwrap().value,
+        "inline",
+        "未知元素（custom element）缺省 inline（CSS2.1 UA sheet 兜底）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__spPv").unwrap().value,
+        "inline",
+        "getPropertyValue('display') 同语义"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dvNone").unwrap().value,
+        "none",
+        "inline style display 优先于 UA 默认（层叠序 inline > UA）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hd").unwrap().value,
+        "none",
+        "sel 注册元素 host 计算值仍优先（inline style='display:none' → none，host 路径不受回落影响）"
+    );
+}
+
+// slice24 收尾轮（TE1+F4）：同父连续多删的桶移位修正钉。pin1（上）两案异父且各删
+// idx 0——RemoveChildAt 的移位递减（part04 removeChild parsed-CharacterData 第四分支：
+// 按桶 removed 中基底位于本子之前的兄弟数递减 host 索引）零覆盖。本钉同父连删两注释子：
+// 正向臂先删基底 0 再删基底 2 → 队列索引 [0, 1]（第二删递减 1——apply 批序下基底 0
+// 已真移除）；反向臂先删基底 2 再删基底 0 → [2, 0]（removed 基底 2 不位于 0 前，
+// 禁递减——防「按 removed 总数无差递减」的过头形态；负向回归即队列出现 -1/错位，
+// apply 解析 usize 失败硬错）。队列索引是契约断言：naive 基底直传正向臂得 [0, 2]
+//（apply 误删基底 1 元素子）。
+// https://dom.spec.whatwg.org/#concept-node-pre-remove
+#[test]
+fn test_parsed_characterdata_same_parent_multi_remove_shift_s24() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <div id=\"h1\"><!--f0--><b id=\"a1\">1</b><!--f1--><b id=\"a2\">2</b></div>\
+         <div id=\"h2\"><!--r0--><b id=\"b1\">1</b><!--r1--><b id=\"b2\">2</b></div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var h1 = document.getElementById('h1');\
+             var f0 = h1.firstChild;\
+             globalThis.__f0Type = f0.nodeType;\
+             globalThis.__f0Data = String(f0.data);\
+             var f1 = h1.childNodes[2];\
+             globalThis.__f1Type = f1.nodeType;\
+             var r1 = h1.removeChild(f0);\
+             globalThis.__r1Ok = r1 === f0 && f0.parentNode === null;\
+             globalThis.__h1Kids1 = h1.childNodes.length;\
+             globalThis.__f1Shift = h1.childNodes[1] === f1;\
+             var r2 = h1.removeChild(f1);\
+             globalThis.__r2Ok = r2 === f1 && f1.parentNode === null;\
+             globalThis.__h1Kids2 = h1.childNodes.length;\
+             globalThis.__h1Ih = h1.innerHTML;\
+             var h2 = document.getElementById('h2');\
+             var r0 = h2.firstChild;\
+             var r1c = h2.childNodes[2];\
+             var q1 = h2.removeChild(r1c);\
+             globalThis.__q1Ok = q1 === r1c && r1c.parentNode === null;\
+             globalThis.__h2Kids1 = h2.childNodes.length;\
+             var q2 = h2.removeChild(r0);\
+             globalThis.__q2Ok = q2 === r0 && r0.parentNode === null;\
+             globalThis.__h2Kids2 = h2.childNodes.length;\
+             globalThis.__h2Ih = h2.innerHTML;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__f0Type + ':' + globalThis.__f0Data + ':' + globalThis.__f1Type)")
+            .unwrap()
+            .value,
+        "8:f0:8",
+        "同父两注释子应识别为 CharacterData（nodeType 8、data 保留）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__r1Ok + ':' + globalThis.__r2Ok)")
+            .unwrap()
+            .value,
+        "true:true",
+        "同父连续两次 removeChild 应各返被移除节点且 parentNode 置空"
+    );
+    assert_eq!(
+        sandbox
+            .execute(
+                "String(globalThis.__h1Kids1 + ':' + globalThis.__f1Shift + ':' + globalThis.__h1Kids2)"
+            )
+            .unwrap()
+            .value,
+        "3:true:2",
+        "首次移除后融合视图 3 子且 f1 前移至 idx 1，再次移除后 2 子"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__h1Ih").unwrap().value,
+        "<b id=\"a1\">1</b><b id=\"a2\">2</b>",
+        "正向臂两注释移除后 innerHTML 应只剩两元素子"
+    );
+    assert_eq!(
+        sandbox
+            .execute(
+                "String(globalThis.__q1Ok + ':' + globalThis.__q2Ok + ':' + globalThis.__h2Kids1 + ':' + globalThis.__h2Kids2)"
+            )
+            .unwrap()
+            .value,
+        "true:true:3:2",
+        "反向臂（先基底 2 后基底 0）同语义：各返被移除节点、融合视图 3→2"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__h2Ih").unwrap().value,
+        "<b id=\"b1\">1</b><b id=\"b2\">2</b>",
+        "反向臂两注释移除后 innerHTML 应只剩两元素子"
+    );
+
+    // host 落地：队列索引契约断言——正向臂 [0,1]（移位递减生效）、反向臂 [2,0]
+    //（不位于本子之前的 removed 禁递减）。
+    let queue = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let idx_of = |sel: &str| -> Vec<usize> {
+        queue
+            .iter()
+            .filter_map(|m| match m {
+                DomMutation::RemoveChildAt { parent_selector, child_index }
+                    if parent_selector == sel =>
+                {
+                    Some(*child_index)
+                }
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(
+        idx_of("#h1"),
+        vec![0, 1],
+        "正向臂队列索引应 [0,1]：第二删按基底 0 已移除递减 1（naive 基底直传得 [0,2] 误删元素子）"
+    );
+    assert_eq!(
+        idx_of("#h2"),
+        vec![2, 0],
+        "反向臂队列索引应 [2,0]：removed 基底 2 不位于 0 前，禁过头递减（无差递减回归即 -1 硬错）"
+    );
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap_or_else(|e| e.into_inner()), &queue)
+        .unwrap();
+    assert!(
+        !out.contains("f0") && !out.contains("f1") && !out.contains("r0") && !out.contains("r1"),
+        "apply 后两父的四条注释应真移除\n{out}"
+    );
+    assert!(
+        out.contains("id=\"a1\"")
+            && out.contains("id=\"a2\"")
+            && out.contains("id=\"b1\"")
+            && out.contains("id=\"b2\""),
+        "四条元素子应全保留（移位不误删）\n{out}"
+    );
+}
+
+// slice24 收尾轮（TE2+F1）：getAttributeNodeNS 现状钉——对**已存在属性** (null,'id')
+// 断言（旧钉仅 'nope' miss 空表形态：spec 语义与现状语义下同值 null，零判别力）。
+// KNOWN-DEVIATION：part03 _zwMEl getAttributeNodeNS 对无前缀属性的 ns 归属按元素
+// namespaceURI 匹配（「无前缀属性 ∈ 元素 ns」分支）——spec
+// https://dom.spec.whatwg.org/#concept-attribute-namespace 无前缀属性 namespace 应为
+// null：getAttributeNodeNS(HTML-ns, 'id') 应返 null，现误命中返 Attr（本钉 __nsHtmlDev
+// 断言现状非 null）。语义修复已裁定入问题池（baidu-storm slice24 缺陷 F1），下 shim
+// 切片携带同提交翻转：届时 __nsHtmlDev 断言同提交翻转为 === null；(null,'id') 命中面
+//（__hitOk/__hitFields——无前缀属性 ns=null 的判别命中共相）不受翻转影响，须保持 GREEN。
+#[test]
+fn test_plain_parsed_get_attribute_node_ns_existing_known_deviation_s24() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var d = document.getElementById('body') || document.body;\
+             d.innerHTML = '<span id=\"sp\" class=\"c1\">t</span>';\
+             var sp = d.firstChild;\
+             var nid = sp.getAttributeNodeNS(null, 'id');\
+             globalThis.__hitOk = !!nid && nid instanceof Attr;\
+             globalThis.__hitFields = !!nid && nid.name === 'id' && nid.value === 'sp' && nid.localName === 'id' && nid.prefix === null && nid.namespaceURI === null;\
+             globalThis.__hitOwner = !!nid && nid.ownerElement === sp;\
+             globalThis.__nsHtmlDev = sp.getAttributeNodeNS('http://www.w3.org/1999/xhtml', 'id') !== null;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__hitOk + ':' + globalThis.__hitFields + ':' + globalThis.__hitOwner)")
+            .unwrap()
+            .value,
+        "true:true:true",
+        "(null,'id') 应命中已存在属性并返 Attr 真实例（name/value/localName、prefix=null、namespaceURI=null——spec concept-attribute-namespace 无前缀属性 ns 为 null）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nsHtmlDev)").unwrap().value,
+        "true",
+        "KNOWN-DEVIATION 现状：无前缀属性对 HTML-ns 请求现误命中（spec 应返 null）——语义修复入问题池 F1，下 shim 切片同提交翻转为 === null"
+    );
+}
+
+// slice24 收尾轮（TE2+F2）：_zwUaDisplay 已知偏差现状钉。UA 默认表将 li/canvas 归
+// block 集（part01 _zwUaDisplay block 表）——spec HTML rendering UA stylesheet
+//（https://html.spec.whatwg.org/multipage/rendering.html#the-css-user-agent-style-sheet-and-presentational-hints ）：
+// li 应 'list-item'（`li { display: list-item; }`）；canvas 不在 UA sheet block 集，
+// replaced 元素回落 display 初始值应 'inline'。本钉只断言现状（公共面
+// getComputedStyle().display）。KNOWN-DEVIATION 三条件：① 公共面断言（本钉两断言）；
+// ② spec 期望值 + 问题池条目（baidu-storm slice24 缺陷 F2——li→'list-item'、
+// canvas→'inline'）；③ 语义修复入池后下 shim 切片携带同提交翻转本钉两断言。
+#[test]
+fn test_ua_display_known_deviation_li_canvas_s24() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var li = document.createElement('li');\
+             document.body.appendChild(li);\
+             var cv = document.createElement('canvas');\
+             document.body.appendChild(cv);\
+             globalThis.__li = getComputedStyle(li).display;\
+             globalThis.__cv = getComputedStyle(cv).display;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__li").unwrap().value,
+        "block",
+        "KNOWN-DEVIATION 现状：li 计算 display 现为 'block'（spec UA sheet 应 'list-item'——问题池 F2，下 shim 切片同提交翻转）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__cv").unwrap().value,
+        "block",
+        "KNOWN-DEVIATION 现状：canvas 计算 display 现为 'block'（spec 应 'inline'——问题池 F2，下 shim 切片同提交翻转）"
+    );
+}

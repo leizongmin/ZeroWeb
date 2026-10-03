@@ -5060,17 +5060,70 @@
       if (!hasHost) return '';
       try { return __zw_get_computed_style(sel, prop); } catch (_e) { return ''; }
     };
+    // slice24：display 的 UA 默认回落。host 查询只覆盖 **sel 注册元素**（host snapshot
+    // 内）；innerHTML 解析产物 / createElement 未落 host 前的 plain 元素（无
+    // __zwSelector）host 返 ''。真实 UA 对任何元素都有计算 display（CSS 层叠第 2 步
+    // UA 声明兜底——https://drafts.csswg.org/css-cascade/#cascading 、HTML 渲染节 UA
+    // stylesheet https://html.spec.whatwg.org/multipage/rendering.html#the-css-user-agent-style-sheet-and-presentational-hints ）。
+    // 消费面：jQuery 1.x `css_defaultDisplay`（`.show()` 路径）以
+    // `jQuery.css(fresh, 'display')` 非 none/非空判定是否走 iframe 兜底——'' 逼其入
+    // iframe 分支并因 plain 世界 iframe 无同步 contentWindow 抛 TypeError（baidu his
+    // suggest 初始化链 9 连断，sugrec 通道死）。默认表仅管 display；其余属性维持 ''
+    // fallback 不扩。
+    // 优先序（spec 层叠序 inline > cascade > UA）：host 计算值（含 inline+cascade）
+    // → 实例 inline style（host miss 时兜住 `el.style.display='none'` 场景）→ UA 默认表。
+    var _zwUaDisplay = function(el) {
+      var tag = el && el.tagName ? String(el.tagName).toLowerCase() : '';
+      var block = { address: 1, article: 1, aside: 1, blockquote: 1, canvas: 1, dd: 1, details: 1, dialog: 1, div: 1, dl: 1, dt: 1, fieldset: 1, figcaption: 1, figure: 1, footer: 1, form: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1, header: 1, hgroup: 1, hr: 1, li: 1, main: 1, menu: 1, nav: 1, ol: 1, option: 1, p: 1, pre: 1, section: 1, summary: 1, table: 1, ul: 1 };
+      var ib = { button: 1, input: 1, select: 1, textarea: 1 };
+      if (block[tag]) return 'block';
+      if (ib[tag]) return 'inline-block';
+      // table 族（spec rendering：table-row/table-cell/table-header-group…）
+      if (tag === 'tr') return 'table-row';
+      if (tag === 'td' || tag === 'th') return 'table-cell';
+      if (tag === 'tbody' || tag === 'thead' || tag === 'tfoot') return 'table-row-group';
+      if (tag === 'caption') return 'table-caption';
+      if (tag === 'col') return 'table-column';
+      if (tag === 'colgroup') return 'table-column-group';
+      // 其余（span/b/i/a/em/strong/code/custom elements…）：inline（CSS2.1 UA sheet
+      // 缺省——未知元素不特判，inline 兜底）。
+      return 'inline';
+    };
     return new Proxy({}, {
       get: function(_t, prop) {
         var p = String(prop);
         if (p === 'getPropertyValue') {
-          return function(name) { return query(_camelToKebab(String(name))); };
+          return function(name) {
+            var kp = _camelToKebab(String(name));
+            if (kp === 'display') {
+              var hv = query(kp);
+              if (hv !== '') return hv;
+              try {
+                var iv = elt && elt.style && elt.style.display;
+                if (iv) return String(iv);
+              } catch (_eD1) {}
+              return _zwUaDisplay(elt);
+            }
+            return query(kp);
+          };
         }
         if (p === 'getPropertyPriority' || p === 'item') return function() { return ''; };
         if (p === 'length') return 0;
         if (p === 'parentRule') return null;
         if (p === 'cssText') return '';
         if (typeof prop !== 'string') return undefined; // Symbol 属性返 undefined
+        // slice24 与 R5009 片 e 双回落共存：display 走 UA 默认表回落（host miss 时
+        // inline style → UA 默认），其余属性 host miss 时仅 float/cssFloat 回 'none'
+        //（spec CSS2§9.3.1）。两路径互不覆盖。
+        if (p === 'display') {
+          var hvD = query(p);
+          if (hvD !== '') return hvD;
+          try {
+            var ivD = elt && elt.style && elt.style.display;
+            if (ivD) return String(ivD);
+          } catch (_eD2) {}
+          return _zwUaDisplay(elt);
+        }
         // R5009 片 e（M4 片 e）：float 计算值初始 'none'（spec CSS2§9.3.1——host 未
         // 覆盖返 '' 曾使 computed cssFloat 空，WPT historical 'applet is not styled'
         // 期望 'none'；host 真值非空时不变）。
