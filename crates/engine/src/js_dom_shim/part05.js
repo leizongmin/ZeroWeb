@@ -570,6 +570,17 @@
             if (handle) { __zw_set_attr_handle(handle, _arAttr5, _arVal); moAttr = _arAttr5; }
             else { __zw_set_attr(sel, _arAttr5, _arVal); moAttr = _arAttr5; }
           }
+        } else if ((p === 'scrollAmount' || p === 'scrollDelay') && _realTag(sel, handle) === 'MARQUEE') {
+          // R5009 片 e（M4 片 c）：MARQUEE scrollAmount/scrollDelay setter——attr
+          // 逐字（getter 侧 clamp/default 面）。R3069 条件未含、曾落 expando 兜底。
+          var _p5mqAttr2 = p === 'scrollAmount' ? 'scrollamount' : 'scrolldelay';
+          // R5009 片 e（M4 片 c）："-0" → "0"、超 maxInt → default（6/85，idlDomExpected
+          // 对 maxInt+1/maxUnsigned → default 实证）。
+          var _p5mqNum = Number(value);
+          var _p5mqStr = (isNaN(_p5mqNum) || _p5mqNum > 2147483647) ? String(p === 'scrollAmount' ? 6 : 85)
+            : String(_p5mqNum === 0 ? 0 : _p5mqNum);
+          if (handle) { __zw_set_attr_handle(handle, _p5mqAttr2, _p5mqStr); moAttr = _p5mqAttr2; }
+          else { __zw_set_attr(sel, _p5mqAttr2, _p5mqStr); moAttr = _p5mqAttr2; }
         } else if (typeof _reflectedUrlAttr === 'function'
             && _realTag(sel, handle) !== 'IFRAME'
             && !(_realTag(sel, handle) === 'IMG' && p === 'src')
@@ -589,7 +600,7 @@
           if (handle) { __zw_set_attr_handle(handle, _r5emAttr, String(value)); moAttr = _r5emAttr; }
           else { __zw_set_attr(sel, _r5emAttr, String(value)); moAttr = _r5emAttr; }
         } else if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean'
-            && _reflectedStringAttr(p) === null && p !== 'href' && p !== 'size' && p !== 'label' && p !== 'as' && p !== 'crossorigin' && p !== 'span' && p !== 'scope' && p !== 'valign' && (typeof _ZW_ARIA_ENUMS === 'undefined' || !_ZW_ARIA_ENUMS.hasOwnProperty(p))) {
+            && _reflectedStringAttr(p) === null && p !== 'href' && p !== 'size' && p !== 'label' && p !== 'as' && p !== 'crossorigin' && p !== 'span' && p !== 'scope' && p !== 'valign' && p !== 'scrollAmount' && p !== 'scrollDelay' && p !== 'trueSpeed' && p !== 'lowsrc' && p !== 'longDesc' && p !== 'data' && p !== 'codeBase' && p !== 'poster' && p !== 'decoding' && p !== 'loading' && p !== 'referrerPolicy' && !(_realTag(sel, handle) === 'FRAMESET' && (p === 'cols' || p === 'rows'))) {
           // R3042：expando 属性（非原始值——function/object/array/null/undefined/symbol/bigint）。旧经 generic fallthrough
           // 写垃圾内容属性（`__zw_set_attr(sel, p, '[object Object]')` / 'function(){}'）且 get 读不回（undefined）。
           // real browser：expando 存于 JS 对象非内容属性。改存 per-element expando map（get trap 读回）。
@@ -680,6 +691,11 @@
           // R5007 M3 片 c：[LegacyNullToEmptyString] 集（body 颜色族）null → ''，
           // 余 DOMString null → "null"（WebIDL 默认转换）。
           var _refVal = _reflectedStringNullEmpty(p) && value === null ? '' : String(value);
+          // R5009 片 e（M4 片 c）：bgColor 按元素分型——body LegacyNull（null→''），
+          // marquee 等普通串（null→"null"）。NULL_EMPTY 对 bgColor 无 tag 感知，此处门。
+          if (p === 'bgColor' && value === null && _realTag(sel, handle) !== 'BODY') {
+            _refVal = 'null';
+          }
           // R5009 片 e（M4 片 a）：col/colgroup.span IDL setter 数值归一（WebIDL
           // unsigned long——"-0" → "0"；WPT 'IDL set to "-0"' getAttribute 期望 "0"）。
           if (p === 'span' && (_realTag(sel, handle) === 'COL' || _realTag(sel, handle) === 'COLGROUP')) {
@@ -698,6 +714,14 @@
           //（min:1）set 0 抛 IndexSizeError（spec「On setting, if the value is zero,
           // fire an INDEX_SIZE_ERR exception」——WPT reflection 'IDL set to 0' 断言）。
           if (Object.prototype.hasOwnProperty.call(_REFLECTED_UINT, p)) {
+            // R5009 片 e（M4 片 c）：FRAMESET cols/rows 是 string 面——verbatim 写
+            //（IDL set "" → attr ""，Number('')=0 曾归 "0"）。
+            if (_realTag(sel, handle) === 'FRAMESET') {
+              _refVal = String(value);
+              if (handle) { __zw_set_attr_handle(handle, _refAttr, _refVal); moAttr = _refAttr; }
+              else { __zw_set_attr(sel, _refAttr, _refVal); moAttr = _refAttr; }
+              return true;
+            }
             var _ruNum = Number(value);
             // R5009 片 e（M4 片 a）：limited-unsigned 仅 throwOnZero 条目（ol.start）
             // IDL set 0 抛 IndexSizeError；clamped 面（colSpan/rowSpan）不抛——数值
@@ -711,6 +735,12 @@
             if (_REFLECTED_UINT[p].throwOnZero && _ruNum === 0) {
               throw new (globalThis.DOMException || Error)(
                 'The value provided is 0, which is an invalid value for this attribute.', 'IndexSizeError');
+            }
+            // R5009 片 e（M4 片 c）：maxLength/minLength（limited long）负值 → 抛
+            // IndexSizeError（WPT reflection-forms 'IDL set to -2147483648' 断言）。
+            if ((p === 'maxLength' || p === 'minLength') && _ruNum < 0) {
+              throw new (globalThis.DOMException || Error)(
+                'The value provided is negative.', 'IndexSizeError');
             }
             // R5009 片 e（M4 片 b）：unsigned 面 > maxInt → 0（WPT img.hspace
             // 'IDL set to 2147483648' getAttribute 期望 "0" 实证——非 clamped 面）。

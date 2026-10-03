@@ -8020,6 +8020,19 @@ return _tplContent;
             return _ZW_LINK_AS_KEYWORDS.hasOwnProperty(_p5asLo) ? _p5asLo : '';
           }
         }
+        // R5009 片 e（M4 片 c）：METER double 反射（value/min/max/low/high/optimum，
+        // default 0——spec 浮点前缀解析，trailing junk 忽略；非有限/NaN → 0）。
+        if (_realTag(sel, handle) === 'METER'
+            && (prop === 'value' || prop === 'min' || prop === 'max'
+                || prop === 'low' || prop === 'high' || prop === 'optimum')) {
+          var _p5mtRaw = handle
+            ? __zw_get_attr_handle(handle, String(prop))
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, String(prop)) : __zw_get_attr(sel, String(prop)));
+          var _p5mtS = String(_p5mtRaw == null ? '' : _p5mtRaw);
+          var _p5mtM = /^[ \t\n\f\r]*([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)/.exec(_p5mtS);
+          var _p5mtV = _p5mtM ? Number(_p5mtM[1]) : 0;
+          return (isNaN(_p5mtV) || !isFinite(_p5mtV)) ? 0 : _p5mtV;
+        }
         // R5009 片 e：inputMode 全局枚举（HTMLElement）——none/text/tel/url/email/
         // numeric/decimal/search ascii 小写；missing/invalid → ''（WPT reflection-misc
         // undefinedelement.inputMode 簇）。
@@ -8171,8 +8184,11 @@ return _tplContent;
           while (_p5mxi < _p5mxn && (_p5mxS.charAt(_p5mxi) === '\t' || _p5mxS.charAt(_p5mxi) === '\n'
               || _p5mxS.charAt(_p5mxi) === '\f' || _p5mxS.charAt(_p5mxi) === '\r' || _p5mxS.charAt(_p5mxi) === ' ')) _p5mxi++;
           var _p5mxT = _p5mxS.slice(_p5mxi);
-          var _p5mxV = /^[-+]?((\d+\.?\d*)|(\.\d+))([eE][-+]?\d+)?$/.test(_p5mxT) ? Number(_p5mxT) : NaN;
-          return (_p5mxV != null && !isNaN(_p5mxV) && _p5mxV > 0 && isFinite(_p5mxV)) ? _p5mxV : 1;
+          // R5009 片 e（M4 片 c）：浮点**前缀**解析（trailing junk 忽略——"7\v" → 7
+          // WPT reflection-forms 'progress.max setAttribute("7\v")' 期望 7 实证）。
+          var _p5mxM = /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?[0-9]+)?/.exec(_p5mxT);
+          var _p5mxV = _p5mxM ? Number(_p5mxM[0]) : NaN;
+          return (!isNaN(_p5mxV) && isFinite(_p5mxV) && _p5mxV > 0) ? _p5mxV : 1;
         }
         // R5009：li.value「long」反射（default 0）——同 PRE width 的 signed long 面。
         if (prop === 'value' && _realTag(sel, handle) === 'LI') {
@@ -8249,7 +8265,9 @@ return _tplContent;
             : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _p5mqAttr) : __zw_get_attr(sel, _p5mqAttr));
           var _p5mqN = _zwParseSpecNonneg(String(_p5mqRaw == null ? '' : _p5mqRaw));
           var _p5mqD = prop === 'scrollAmount' ? 6 : 85;
-          return (_p5mqN == null || _p5mqN > 2147483647 || _p5mqN < 1) ? _p5mqD : _p5mqN;
+          // R5009 片 e（M4 片 c）：unsigned 面 0 合法（[0, maxInt]；fail/> maxInt →
+          // default）——旧 <1 clamp 误吞 0（WPT 'setAttribute(0)' 期望 0 实证）。
+          return (_p5mqN == null || _p5mqN > 2147483647) ? _p5mqD : _p5mqN;
         }
         var _ruEntry = Object.prototype.hasOwnProperty.call(_REFLECTED_UINT, prop) ? _REFLECTED_UINT[prop] : null;
         if (_ruEntry) {
