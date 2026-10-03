@@ -2543,9 +2543,11 @@ fn test_intersection_observer_root_margin_r2966() {
 
 #[test]
 fn test_pointer_capture_api_r3068() {
-    // R3068：Pointer Capture API（setPointerCapture/releasePointerCapture/hasPointerCapture）。headless 无真
-    // 指针路由（事件不重定向到捕获元素），但 API 表面 + hasPointerCapture 状态查询对指针/拖拽库必需。
-    // 验证：① hasPointerCapture 默认 false；② set→true；③ release→false；④ per-element 隔离；⑤ 多 pointerId 独立。
+    // R3068：Pointer Capture API（setPointerCapture/releasePointerCapture/hasPointerCapture）。
+    // uievents-compat M3（2026-10-03）语义化：set/release 校验 active pointerId
+    //（NotFoundError）+ got/lostpointercapture 派发 + 捕获重定向（part06 `_zwPtrState`）。
+    // 验证：① hasPointerCapture 默认 false；② set→true；③ release→false；④ per-element
+    // 隔离；⑤ 多 pointerId 独立；⑥ 非 active pointerId NotFoundError。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
@@ -2570,7 +2572,15 @@ fn test_pointer_capture_api_r3068() {
         "hasPointerCapture 默认 false"
     );
 
-    // ② setPointerCapture(1) → hasPointerCapture(1) true。
+    // ② setPointerCapture(1) → hasPointerCapture(1) true。uievents-compat M3：
+    // setPointerCapture 语义化——pointerId 须 active（pointerdown 派发置位，
+    // spec §9.1/§9.3 NotFoundError）——先派 pointerdown 激活 1/2 两 pointer。
+    sandbox
+        .execute(
+            "__zw_dispatch_event('#a', 'pointerdown', { pointerId: 1 });\
+             __zw_dispatch_event('#a', 'pointerdown', { pointerId: 2 });",
+        )
+        .unwrap();
     sandbox
         .execute("document.querySelector('#a').setPointerCapture(1);")
         .unwrap();
@@ -2626,6 +2636,20 @@ fn test_pointer_capture_api_r3068() {
         "false,true",
         "多 pointerId 独立：release 1 后 hasPointerCapture(1)=false, (2)=true"
     );
+
+    // ⑥ uievents-compat M3：非 active pointerId → NotFoundError（spec §9.3；
+    // pointerup 派发后 active 集清空——3 未激活过）。
+    sandbox
+        .execute("__zw_dispatch_event('#a', 'pointerup', { pointerId: 1 });")
+        .unwrap();
+    let thrown = sandbox
+        .execute(
+            "try { document.querySelector('#a').setPointerCapture(3); 'no-throw'; }\
+             catch (e) { e instanceof DOMException && e.name === 'NotFoundError' ? 'NotFoundError' : String(e); }",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(thrown, "NotFoundError", "非 active pointerId set → NotFoundError");
 }
 
 #[test]

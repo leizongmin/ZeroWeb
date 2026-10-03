@@ -11727,7 +11727,8 @@
       });
     } else if (type === 'pointerdown' || type === 'pointerup' || type === 'pointermove'
                || type === 'pointerover' || type === 'pointerout' || type === 'pointerenter'
-               || type === 'pointerleave' || type === 'pointercancel') {
+               || type === 'pointerleave' || type === 'pointercancel'
+               || type === 'gotpointercapture' || type === 'lostpointercapture') {
       // uievents-compat M2 片 1（2026-10-03）：pointer 类型走 PointerEvent 类
       //（spec https://www.w3.org/TR/pointerevents2/ §3——PointerEvent extends
       // MouseEvent；此前落泛型分支，WPT pointerevent_attributes 的
@@ -11738,8 +11739,13 @@
         : (type !== 'pointerenter' && type !== 'pointerleave');
       var _pCan = (detail && detail.cancelable != null) ? !!detail.cancelable
         : (type !== 'pointerenter' && type !== 'pointerleave' && type !== 'pointercancel');
+      // pressure：按下的键 → 0.5（mouse 面——WPT pointerevent_support assert_props
+      // 「pressure is 0.5 for mouse with a button pressed」）；got/lost 显式透传。
+      var _pPres = (detail && typeof detail.pressure === 'number') ? detail.pressure
+        : (type === 'pointerdown' ? 0.5 : 0);
       ev = new PointerEvent(type, {
         bubbles: _pBub,
+        composed: _pBub,
         cancelable: _pCan,
         clientX: (detail && typeof detail.clientX === 'number') ? detail.clientX : 0,
         clientY: (detail && typeof detail.clientY === 'number') ? detail.clientY : 0,
@@ -11752,7 +11758,7 @@
         isPrimary: true,
         width: 1,
         height: 1,
-        pressure: type === 'pointerdown' ? 0.5 : 0
+        pressure: _pPres
       });
     } else if (type === 'mousedown' || type === 'mouseup' || type === 'mousemove'
                || type === 'contextmenu' || type === 'mouseover' || type === 'mouseout'
@@ -11807,7 +11813,37 @@
     // sel-key 派发查不到（WPT pointer-event-document-move：模板 clone 的 p 上
     // pointerup listener，host 经 'p' 派发 miss）。正置反查命中 → 以 handle 形态派发
     // （`_elKey(handle)` 锚定 listener store；未命中 → 原 sel 路径，零回归）。
-    var r145Handle = '';
+    // uievents-compat M3：捕获重定向（spec https://www.w3.org/TR/pointerevents2/ §9.3
+    // ——capture 生效期间该 pointerId 的 pointer/mouse 系事件全部重定向到捕获目标；
+    // got/lostpointercapture 本身不重定向；WPT pointerevent_capture_mouse 的
+    // pointermove@captured-while-outside 断言面）。
+    var _m3Cap = null;
+    if (typeof _zwPtrState !== 'undefined' && _zwPtrState) {
+      var _m3IsPointerFamily = type.indexOf('pointer') === 0 || type === 'mousedown'
+        || type === 'mouseup' || type === 'mousemove' || type === 'mouseover'
+        || type === 'mouseout' || type === 'mouseenter' || type === 'mouseleave'
+        || type === 'contextmenu' || type === 'auxclick';
+      if (_m3IsPointerFamily && type !== 'gotpointercapture' && type !== 'lostpointercapture') {
+        var _m3Pid = (detail && detail.pointerId != null) ? String(detail.pointerId) : '1';
+        // Process Pending Pointer Capture（spec §9.2 / TA5.1.3.1——**pointer 系**事件
+        // 派发前先结算 pending override：pending≠现 override 时派 lost@got 站点并换防；
+        // compat mouse 事件不触发结算——其目标随同刻 pointer 事件）。
+        if (type.indexOf('pointer') === 0 && !_zwPtrState.processingCapture) {
+          _zwProcessPendingCapture(_m3Pid);
+        }
+        _m3Cap = _zwPtrState.capture[_m3Pid] || null;
+      }
+    }
+    if (_m3Cap) {
+      sel = _m3Cap.sel;
+      // handle 形态捕获（createElement 产物）→ 重定向后 handle 为权威；sel 为回落。
+    }
+    // active pointer 置位于**派发前**（listener 内 setPointerCapture 的 NotFoundError
+    // 校验要求 pointerdown 派发期间 pointer 已 active——spec §9.1 active pointer 状态机）。
+    if (typeof _zwPtrState !== 'undefined' && _zwPtrState && type === 'pointerdown') {
+      _zwPtrState.active[(detail && detail.pointerId != null) ? String(detail.pointerId) : '1'] = true;
+    }
+    var r145Handle = _m3Cap ? (_m3Cap.handle || '') : '';
     try {
       if (typeof __zw_handle_for_selector === 'function') r145Handle = __zw_handle_for_selector(sel) || '';
     } catch (_e145h) {}
@@ -11817,8 +11853,104 @@
     // 事件对象再经页面脚本 dispatchEvent 时 guard 按 legacy DOM3 语义翻
     // isTrusted=false（WPT Event-dispatch-redispatch 的 before/after 断言对）。
     try { ev._zwUaDispatch = false; } catch (_e312ua) {}
+    // uievents-compat M3：active pointer 状态机 + 隐式释放（spec §9.3「implicit release
+    // of pointer capture」——pointerup 后**末键释放**（buttons 归零）或 pointercancel 时，
+    // 捕获隐式释放：lostpointercapture 于捕获目标派发（got/lost 不重定向），随后跨界序
+    // 恢复真实悬停位（WPT pointerevent_capture_suppressing_mouse 断言序 lost → out/leave
+    // → over/enter）。chorded buttons（还有键按着）不释放——WPT
+    // pointerevent_pointercapture-not-lost-in-chorded-buttons。setPointerCapture 在
+    // pointerup listener 内登记的 pending 于此一并清除——pending 未及结算、无
+    // gotpointercapture（WPT pointerevent_setpointercapture_pointerup_mouse）。
+    if (typeof _zwPtrState !== 'undefined' && _zwPtrState) {
+      var _m3PidTail = (detail && detail.pointerId != null) ? String(detail.pointerId) : '1';
+      if (type === 'pointerup' || type === 'pointercancel') {
+        var _m3BtnsAfter = (type === 'pointercancel') ? 0 : (_zwPtrState.buttons & ~(1 << ((detail && detail.button) || 0)));
+        if (typeof _zwSetButtons === 'function') _zwSetButtons(_m3BtnsAfter);
+        delete _zwPtrState.active[_m3PidTail];
+        var _m3HadPending = !!_zwPtrState.pending[_m3PidTail];
+        delete _zwPtrState.pending[_m3PidTail];
+        var _m3CapRel = _zwPtrState.capture[_m3PidTail] || null;
+        if (_m3CapRel && (_m3BtnsAfter === 0 || type === 'pointercancel')) {
+          delete _zwPtrState.capture[_m3PidTail];
+          var _m3CapSet = (typeof _pointerCapture !== 'undefined' && _pointerCapture) ? _pointerCapture[_m3CapRel.key] : null;
+          if (_m3CapSet) delete _m3CapSet[_m3PidTail];
+          try {
+            _zwReleaseCaptureElement(_m3CapRel, _m3PidTail, detail ? detail.pointerId : 1);
+          } catch (_eILR) {}
+        } else if (_m3HadPending && (detail && detail.pointerId != null ? String(detail.pointerId) : '1') === _m3PidTail && !_m3CapRel) {
+          // pending-only（无现 override）→ 无声清除（无 lost、无 got）。
+        }
+      }
+    }
     return ok ? 'ok' : 'prevented';
   };
+  // uievents-compat M3：捕获释放站后处理——lostpointercapture（不冒泡 PointerEvent）
+  // + 悬停跨界序恢复（捕获期 `_zwPtrState.overSel` 停在捕获目标；释放后 pointer 逻辑
+  // 位置回到 `_zwPtrState.hoverSel` 真实悬停位）。
+  function _zwReleaseCaptureElement(cap, pid, pointerId) {
+    var st = _zwPtrState;
+    try {
+      // bubbles/composed **true**、cancelable false（WPT pointerevent_support.js
+      // assert_props helper——got/lostpointercapture 与普通 pointer 事件同冒泡面，
+      // 仅 enter/leave 例外）；pressure 随键位（按下的键 → mouse 0.5）；pointerType
+      // 随源（?touch/?pen variant——got/lost 也是 PointerEvent，pointerType 断言同面）。
+      __zw_dispatch_event(cap.sel, 'lostpointercapture', {
+        bubbles: true, composed: true, cancelable: false,
+        pointerId: pointerId, pressure: st.buttons ? 0.5 : 0,
+        pointerType: st.pointerType || 'mouse'
+      });
+    } catch (_eLPC) {}
+    if (st.overSel && st.hoverSel && st.overSel !== st.hoverSel) {
+      var prevOver = st.overSel;
+      _zwPointerCross(prevOver, st.hoverSel, st.x, st.y);
+      st.overSel = st.hoverSel;
+    }
+  }
+  // uievents-compat M3：Process Pending Pointer Capture（spec §9.2——
+  // https://w3c.github.io/pointerevents/#process-pending-pointer-capture）。pending
+  // override ≠ 现 override 时：① 有现 override → lostpointercapture@现 override + 悬停
+  // 恢复；② 有 pending → 跨界序（out/leave@旧悬停 → over/enter@捕获目标）+
+  // gotpointercapture@pending，override 换防。重入 guard：跨界序自身派 pointer 系事件
+  // （pointerout/enter…），其派发又触发结算——`processingCapture` 期间跳过。
+  function _zwProcessPendingCapture(pid) {
+    var st = _zwPtrState;
+    var pending = st.pending[pid] || null;
+    var cur = st.capture[pid] || null;
+    var same = (pending && cur) ? pending.key === cur.key : (pending === cur);
+    if (same) return;
+    st.processingCapture = true;
+    try {
+      if (cur) {
+        delete st.capture[pid];
+        var capSet = (typeof _pointerCapture !== 'undefined' && _pointerCapture) ? _pointerCapture[cur.key] : null;
+        if (capSet) delete capSet[pid];
+        _zwReleaseCaptureElement(cur, pid, Number(pid) || 1);
+      }
+      if (pending && typeof _zwIsConnected === 'function' && !_zwIsConnected(pending.sel, pending.handle)) {
+        // 捕获目标已断连（移除）→ 按已释放处理（无 got）。
+        delete st.pending[pid];
+      } else if (pending) {
+        if (typeof _zwPointerCross === 'function') {
+          _zwPointerCross(st.overSel, pending.sel, st.x, st.y);
+        }
+        st.overSel = pending.sel;
+        __zw_dispatch_event(pending.sel, 'gotpointercapture', {
+          bubbles: true, composed: true, cancelable: false,
+          pointerId: Number(pid) || 1, pressure: st.buttons ? 0.5 : 0,
+          pointerType: st.pointerType || 'mouse'
+        });
+        st.capture[pid] = pending;
+      }
+    } finally {
+      st.processingCapture = false;
+    }
+  }
+  // uievents-compat M3：按下键位状态（move 事件 buttons/pressure 消费——真实浏览器
+  // 拖拽中 pointermove.buttons 为按下键位掩码；WPT pointerevent_setpointercapture_
+  // to_same_element_twice 的「move 不带键位则不入 log」过滤面）。
+  function _zwSetButtons(mask) {
+    _zwPtrState.buttons = mask | 0;
+  }
   // uievents-compat M2 片 1（2026-10-03）：合成指针悬停态 + 边界事件序（spec
   // https://www.w3.org/TR/pointerevents2/ §11 + UI Events §5.3 mouseover/out、
   // §5.4 enter/leave）。宿主驱动路径（webview Activate 前置悬停迁移、runner
@@ -11830,20 +11962,54 @@
   // ② pointermove/mousemove 对（新 target 上）。
   // 悬停态 per-document（导航经 __zw_reset_form_state 清空）；headless 无真命中测试
   // ——宿主直接给目标元素选择器，坐标为近似（真鼠标路由待宿主指针管线）。
-  var _zwPtrState = { overSel: null, auxTarget: null, auxCount: 0 };
+  var _zwPtrState = {
+    overSel: null, auxTarget: null, auxCount: 0,
+    // uievents-compat M3：active/pending/capture 状态机 + 真实悬停位 + 键位掩码 +
+    // 位置缓存（跨界序坐标）+ 结算重入 guard + split 链 click 连击态。
+    active: {}, pending: {}, capture: {},
+    hoverSel: null, buttons: 0, x: 0, y: 0, pointerType: 'mouse',
+    processingCapture: false,
+    streakTarget: null, streakCount: 0, downSel: null, downButton: 0
+  };
   globalThis.__zw_pointer_move = function (sel, x, y) {
-    var prev = _zwPtrState.overSel;
+    var st = _zwPtrState;
+    st.x = x || 0;
+    st.y = y || 0;
+    st.hoverSel = sel; // 真实悬停位恒更新（捕获期逻辑位≠真实位，释放恢复用）
+    // Process pending 先于捕获态判定（spec——pointer 事件前结算 pending override；
+    // pointerup 内 release 的场景在下一 move 清算 lost + 悬停恢复，随后 move 按
+    // **现**捕获态路由——WPT pointerevent_releasepointercapture_events_to_original_
+    // target「release 后事件回原命中元素」断言面）。
+    if (!st.processingCapture) _zwProcessPendingCapture('1');
+    // 捕获生效期：pointer 逻辑位置恒在捕获目标——跨界序抑制，move 对直接派发于
+    // 捕获目标（spec §9.3；WPT pointerevent_capture_mouse「captured while outside」）。
+    // buttons 携带按下键位（拖拽中 move.buttons 非零——same_element_twice 过滤面）。
+    var cap = st.capture['1'] || st.capture['2'];
+    if (cap) {
+      __zw_dispatch_event(cap.sel, 'pointermove', {
+        clientX: x || 0, clientY: y || 0,
+        button: -1, buttons: st.buttons, relatedTarget: null,
+        pressure: st.buttons ? 0.5 : 0
+      });
+      __zw_dispatch_event(cap.sel, 'mousemove', {
+        clientX: x || 0, clientY: y || 0,
+        button: -1, buttons: st.buttons, relatedTarget: null
+      });
+      return 'ok';
+    }
+    var prev = st.overSel;
     if (prev !== sel && typeof __zw_parent === 'function') {
       _zwPointerCross(prev, sel, x, y);
     }
-    _zwPtrState.overSel = sel;
+    st.overSel = sel;
     __zw_dispatch_event(sel, 'pointermove', {
       clientX: x || 0, clientY: y || 0,
-      button: -1, buttons: 0
+      button: -1, buttons: st.buttons,
+      pressure: st.buttons ? 0.5 : 0
     });
     __zw_dispatch_event(sel, 'mousemove', {
       clientX: x || 0, clientY: y || 0,
-      button: -1, buttons: 0
+      button: -1, buttons: st.buttons
     });
     return 'ok';
   };
@@ -11852,6 +12018,15 @@
     _zwPtrState.overSel = null;
     _zwPtrState.auxTarget = null;
     _zwPtrState.auxCount = 0;
+    _zwPtrState.active = {};
+    _zwPtrState.pending = {};
+    _zwPtrState.capture = {};
+    _zwPtrState.hoverSel = null;
+    _zwPtrState.buttons = 0;
+    _zwPtrState.processingCapture = false;
+    _zwPtrState.streakTarget = null;
+    _zwPtrState.streakCount = 0;
+    _zwPtrState.downSel = null;
   };
   // 最近公共包含祖先（uievents-compat M2 片 1——click 组合目标，UI Events §5.2.2
   // 「mousedown/mouseup 目标不同 → click 派发到最近公共祖先」；WPT
@@ -11872,47 +12047,100 @@
     }
     return null;
   };
-  // 跨目标 click 组合序（mousedown/mouseup 落点不同——UI Events §5.2.2 激活事件序：
-  // pointerdown/mousedown@down → pointerup/mouseup@up → click@最近公共祖先）。
-  // down 前置悬停迁移（跨界序 + move 对）；up 后悬停态 = up 目标。泛型 click
-  //（无 pre-click activation——R108 泛型路径；组合目标无表单激活语义）。
-  globalThis.__zw_pointer_click_sequence = function (downSel, upSel, x, y, pointerType) {
-    __zw_pointer_move(downSel, x, y);
-    __zw_dispatch_event(downSel, 'pointerdown', {
-      clientX: x || 0, clientY: y || 0, button: 0, buttons: 1,
-      pointerType: pointerType || 'mouse', pressure: 0.5
-    });
-    __zw_dispatch_event(downSel, 'mousedown', { clientX: x || 0, clientY: y || 0, button: 0, buttons: 1 });
-    var common = globalThis.__zw_common_ancestor(downSel, upSel);
-    __zw_dispatch_event(upSel, 'pointerup', {
-      clientX: x || 0, clientY: y || 0, button: 0, buttons: 0,
-      pointerType: pointerType || 'mouse'
-    });
-    __zw_dispatch_event(upSel, 'mouseup', { clientX: x || 0, clientY: y || 0, button: 0, buttons: 0 });
-    _zwPtrState.overSel = upSel;
-    if (common) __zw_dispatch_event(common, 'click', {});
-    return common ? 'ok' : 'nocommon';
-  };
-  // 非主键点击序（UI Events §5.2.2——非主键无 click：mousedown{button} →
-  // [contextmenu{button}（右键）] → mouseup{button} → auxclick{button}；WPT
-  // auxclick_event/contextmenu_event 断言面）。contextmenu 于 mousedown 后
-  //（WPT "Test contextmenu dispatched after mousedown"）。auxclick.detail 按
-  // 同目标连击计数（UI Events §3.3 同 click——WPT auxclick detail 1/2 断言）。
-  globalThis.__zw_pointer_auxclick_sequence = function (sel, x, y, button) {
+  // uievents-compat M3（2026-10-03）：Actions 链**逐步重放**的 down/up 序列钩子
+  // （取代 M2 片 1 的折叠 `__zw_pointer_click_sequence`/`__zw_pointer_auxclick_sequence`
+  // ——折叠把 down/up 压成单命令，页内 listener 于 pointerdown 里 setPointerCapture
+  // 无法影响后续 move/up 路由，capture 族全簇不可测）。
+  //
+  // `__zw_pointer_down_sequence(sel, x, y, pointerType, button)`——UI Events §5.2.2
+  // 指针事件序 down 半段：悬停迁移（跨界序 + move 对）→ pointerdown →（未取消时）
+  // mousedown → [contextmenu（右键）]。compat mouse 抑制：pointerdown preventDefault
+  // 时 mousedown/contextmenu 不派（PE spec §11；WPT pointerevent_suppress_compat_
+  // events_on_click 断言面）。touch 隐式捕获：pointerType==='touch' 时 pointerdown
+  // 目标即 pending 捕获目标（spec §9.3 direct manipulation 设备隐式捕获；WPT
+  // pointerevent_element_haspointercapture ?touch expected_default_capture 面）。
+  globalThis.__zw_pointer_down_sequence = function (sel, x, y, pointerType, button) {
+    button = button | 0;
+    var st = _zwPtrState;
     __zw_pointer_move(sel, x, y);
-    __zw_dispatch_event(sel, 'pointerdown', {
-      clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button,
-      pressure: 0.5
-    });
+    st.downSel = sel;
+    st.downButton = button;
+    st.pointerType = pointerType || 'mouse';
+    _zwSetButtons(st.buttons | (1 << button));
+    var prevented = __zw_dispatch_event(sel, 'pointerdown', {
+      clientX: x || 0, clientY: y || 0, button: button,
+      buttons: 1 << button, pointerType: pointerType || 'mouse', pressure: 0.5
+    }) === 'prevented';
+    if (prevented) return 'prevented';
     __zw_dispatch_event(sel, 'mousedown', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button });
     if (button === 2) {
       __zw_dispatch_event(sel, 'contextmenu', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button });
     }
-    __zw_dispatch_event(sel, 'pointerup', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
-    __zw_dispatch_event(sel, 'mouseup', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
-    if (_zwPtrState.auxTarget === sel) _zwPtrState.auxCount += 1;
-    else { _zwPtrState.auxTarget = sel; _zwPtrState.auxCount = 1; }
-    __zw_dispatch_event(sel, 'auxclick', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0, detail: _zwPtrState.auxCount });
+    // touch 隐式捕获（无显式 pending 时）——于 mousedown 后登记，下一 pointer 系
+    // 事件派发前结算（gotpointercapture 站序与显式 setPointerCapture 一致）。
+    var pid = '1';
+    if ((pointerType || 'mouse') === 'touch' && !st.pending[pid] && !st.capture[pid]) {
+      st.pending[pid] = { key: '_zw_implicit_' + sel, sel: sel, handle: null };
+    }
+    return 'ok';
+  };
+  // `__zw_pointer_up_sequence(upSel, downSel, x, y, pointerType, button)`——up 半段 +
+  // 点击组合：pointerup →（未取消时）mouseup → click/auxclick 组合（UI Events §5.2.2
+  // ——同目标连击 detail 递增 + dblclick；跨目标 click@最近公共祖先；非主键无 click、
+  // auxclick{button} 连击计数）。捕获生效期 down/up 逻辑目标随重定向——组合目标以
+  // pointerup 结算后的有效落点为准。
+  globalThis.__zw_pointer_up_sequence = function (upSel, downSel, x, y, pointerType, button) {
+    button = button | 0;
+    var st = _zwPtrState;
+    var effDown = downSel || st.downSel || upSel;
+    // 有效落点先于派发取（pointerup 派发尾的隐式释放会清 capture——click/auxclick
+    // 组合目标须用释放前的捕获落点；WPT pointerevent_click_during_capture 期望
+    // click@捕获目标而非 up 命中元素）。
+    var upEff = st.capture['1'] ? st.capture['1'].sel : upSel;
+    var upPrevented = __zw_dispatch_event(upSel, 'pointerup', {
+      clientX: x || 0, clientY: y || 0, button: button,
+      buttons: 0, pointerType: pointerType || 'mouse'
+    }) === 'prevented';
+    // pointerup 取消 → compat mouseup 抑制（click 照常——WPT
+    // pointerevent_suppress_compat_events_on_click 期望序 click@t0 无 mousedown/up）。
+    if (!upPrevented) {
+      __zw_dispatch_event(upSel, 'mouseup', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
+    }
+    if (button !== 0) {
+      // 非主键：无 click——auxclick（UI Events §5.2.2），detail 同目标连击计数。
+      // 组合目标：捕获生效 → 捕获落点（spec——capture 期间激活事件随捕获目标）；
+      // 否则跨目标 → 最近公共祖先（WPT click_during_capture ?mouse-auxclick）。
+      var auxT = upEff;
+      if (!st.capture['1']) {
+        var downEffAux = effDown;
+        auxT = (downEffAux === upEff) ? upEff : globalThis.__zw_common_ancestor(downEffAux, upEff);
+        if (!auxT) auxT = upEff;
+      }
+      if (st.auxTarget === auxT) st.auxCount += 1;
+      else { st.auxTarget = auxT; st.auxCount = 1; }
+      __zw_dispatch_event(auxT, 'auxclick', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0, detail: st.auxCount });
+      st.downSel = null;
+      return 'ok';
+    }
+    // 组合目标：捕获生效 → 捕获落点（upEff 即捕获元素——capture 期间 click 不做
+    // 公共祖先折算，WPT click_during_capture capture@child2 → click@child2 断言面）；
+    // 否则同目标直落 / 跨目标 → 最近公共祖先（UI Events §5.2.2）。
+    var target = upEff;
+    if (!st.capture['1']) {
+      var downEff = effDown;
+      target = (downEff === upEff) ? upEff : globalThis.__zw_common_ancestor(downEff, upEff);
+    }
+    if (!target) {
+      st.downSel = null;
+      return 'nocommon';
+    }
+    if (st.streakTarget === target) st.streakCount += 1;
+    else { st.streakTarget = target; st.streakCount = 1; }
+    __zw_dispatch_event(target, 'click', { detail: st.streakCount });
+    if (st.streakCount >= 2) {
+      __zw_dispatch_event(target, 'dblclick', { detail: 2 });
+    }
+    st.downSel = null;
     return 'ok';
   };
   // 跨界序列：prev→next 的 over/out/enter/leave 全序。祖先链经 `__zw_parent`

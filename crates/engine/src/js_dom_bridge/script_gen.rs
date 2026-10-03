@@ -226,32 +226,43 @@ pub fn script_pointer_move(selector: &str, client_x: f32, client_y: f32) -> Stri
     format!("if(typeof __zw_pointer_move==='function')__zw_pointer_move('{sel}',{client_x},{client_y});")
 }
 
-/// 生成「跨目标 click 组合序」脚本（uievents-compat M2 片 1）。宿主在 Actions
-/// down/up 对的 mousedown/mouseup 落点不同时执行（UI Events §5.2.2——click 派发到
-/// 最近公共祖先）：`__zw_pointer_click_sequence(downSel, upSel, x, y, pointerType)`
-/// （part06.js——down 前悬停迁移跨界序 → pointerdown/mousedown@down →
-/// pointerup/mouseup@up → click@最近公共祖先）。
-pub fn script_pointer_click_sequence(
-    down_selector: &str,
-    up_selector: &str,
+/// 生成「Actions down 步序列」脚本（uievents-compat M3，2026-10-03）。runner 把
+/// Actions 链逐步重放为宿主命令——down 步调 shim
+/// `__zw_pointer_down_sequence(sel, x, y, pointerType, button)`（part06.js）：悬停迁移
+/// 跨界序 → pointerdown →（未取消时）mousedown → [contextmenu（右键）]；页内
+/// listener 在 pointerdown 里 setPointerCapture 后，后续 move/up 步按捕获路由。
+pub fn script_pointer_down_sequence(
+    selector: &str,
     client_x: f32,
     client_y: f32,
     pointer_type: &str,
+    button: i16,
 ) -> String {
-    let down = escape_js_string(down_selector);
-    let up = escape_js_string(up_selector);
+    let sel = escape_js_string(selector);
+    let pty = escape_js_string(pointer_type);
     format!(
-        "if(typeof __zw_pointer_click_sequence==='function')__zw_pointer_click_sequence('{down}','{up}',{client_x},{client_y},'{pointer_type}');"
+        "if(typeof __zw_pointer_down_sequence==='function')__zw_pointer_down_sequence('{sel}',{client_x},{client_y},'{pty}',{button});"
     )
 }
 
-/// 生成「非主键点击序」脚本（uievents-compat M2 片 1）。宿主在 Actions down/up 对
-/// button 非主键时执行（UI Events §5.2.2——非主键无 click）：mousedown →
-/// [contextmenu（右键）] → mouseup → auxclick（part06.js `__zw_pointer_auxclick_sequence`）。
-pub fn script_pointer_auxclick_sequence(selector: &str, client_x: f32, client_y: f32, button: i16) -> String {
-    let sel = escape_js_string(selector);
+/// 生成「Actions up 步序列」脚本（uievents-compat M3）。up 步调 shim
+/// `__zw_pointer_up_sequence(upSel, downSel, x, y, pointerType, button)`（part06.js）：
+/// pointerup →（未取消时）mouseup → click/auxclick 组合（同目标连击 dblclick；
+/// 跨目标 click@最近公共祖先；非主键 auxclick）。downSel = down 步的命中元素选择器
+/// （click 组合的 down 侧落点；空串回落 shim 内记录值）。
+pub fn script_pointer_up_sequence(
+    up_selector: &str,
+    down_selector: &str,
+    client_x: f32,
+    client_y: f32,
+    pointer_type: &str,
+    button: i16,
+) -> String {
+    let up = escape_js_string(up_selector);
+    let down = escape_js_string(down_selector);
+    let pty = escape_js_string(pointer_type);
     format!(
-        "if(typeof __zw_pointer_auxclick_sequence==='function')__zw_pointer_auxclick_sequence('{sel}',{client_x},{client_y},{button});"
+        "if(typeof __zw_pointer_up_sequence==='function')__zw_pointer_up_sequence('{up}','{down}',{client_x},{client_y},'{pty}',{button});"
     )
 }
 

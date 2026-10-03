@@ -8097,6 +8097,17 @@
       configurable: true,
       get: function() { return this.target; }
     });
+    // uievents-compat M3（2026-10-03）：Event.prototype 原型链挂接——_makeEvent 产物
+    // 此前是裸对象，泛型派发事件（click 等 `__zw_dispatch_event` 泛型分支、UA trusted
+    // 生命周期事件）缺 Event 常量（AT_TARGET/BUBBLING_PHASE——WPT
+    // click_during_capture 的 `event.eventPhase == event.AT_TARGET` 过滤断言全簇 miss）
+    // 与 instanceof Event 面。子类构造器（CustomEvent/PointerEvent…）随后覆盖自身
+    // prototype，不受影响。
+    try {
+      if (typeof globalThis.Event === 'function' && globalThis.Event.prototype) {
+        Object.setPrototypeOf(ev, globalThis.Event.prototype);
+      }
+    } catch (_eM3ep) {}
     return ev;
   }
   // R312（js-dom M4）：UA 合成 trusted 事件的出口——runner 注入的 DOMContentLoaded/

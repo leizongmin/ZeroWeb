@@ -7815,29 +7815,9 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
             None
         }
         "click" => {
-            // uievents-compat M2 片 1：text = "x,y,pointerType,button"（Actions 源）。
-            // button≠0 → 非主键序（无 click——mousedown/contextmenu/mouseup/auxclick）；
-            // 主键 → 既有 Activate 路径（focus 步骤 + 全序列 + 连击 dblclick）。
-            if let Some(button) = command
-                .text
-                .as_deref()
-                .and_then(|text| text.split(',').nth(3).and_then(|b| b.parse::<i16>().ok()))
-                && button != 0
-            {
-                let (x, y) = command
-                    .text
-                    .as_deref()
-                    .and_then(|text| {
-                        let mut parts = text.split(',');
-                        let x = parts.next()?.parse::<f32>().ok()?;
-                        let y = parts.next()?.parse::<f32>().ok()?;
-                        Some((x, y))
-                    })
-                    .unwrap_or((0.0, 0.0));
-                let script = zero_engine::script_pointer_auxclick_sequence(&selector, x, y, button);
-                let _ = webview.execute_script(&script);
-                return None;
-            }
+            // 主键 → 既有 Activate 路径（focus 步骤 + 全序列 + 连击 dblclick）——
+            // move-only 链的尾随合成 click（R142 先例）与无 down/up 的链走此路径；
+            // 带 down/up 步的 Actions 链已改逐步重放（M3 pointer_down/pointer_up）。
             // R142：合成指针点击的 focus 步骤（spec UI Events 指针激活序列——可聚焦目标
             // 先获得焦点再派发 click；WPT no-focus-events 期望 focus/focusin 恰好一次、
             // target 为点击元素）。element.focus() 经 shim 的 R3247 focus 派发
@@ -7850,42 +7830,42 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
             let _ = webview.execute_script(&focus_script);
             dispatch_action(webview, target, HtmlUserAction::Activate)
         }
-        // uievents-compat M2 片 1：跨目标 click 组合序（mousedown/mouseup 落点不同 →
-        // click 到最近公共祖先；UI Events §5.2.2）。text = "x,y,pointerType|upSel"，
-        // origin 元素 = down 目标。无表单激活语义（泛型 click——组合目标路径）。
-        "pointer_click" => {
-            let text = command.text.as_deref().unwrap_or_default();
-            let (coords, up_selector) = match text.split_once('|') {
-                Some((coords, up)) => (coords, up.to_string()),
-                None => (text, String::new()),
-            };
-            let (x, y) = coords
-                .split(',')
-                .map(str::parse::<f32>)
-                .collect::<Result<Vec<_>, _>>()
-                .ok()
-                .and_then(|values| match values.as_slice() {
-                    [x, y] => Some((*x, *y)),
-                    _ => None,
-                })
-                .unwrap_or((0.0, 0.0));
-            let pointer_type = coords.split(',').nth(2).unwrap_or("mouse").to_string();
-            if up_selector.is_empty() {
-                return Some("testdriver pointer_click has no up-target selector".into());
-            }
-            let script = zero_engine::script_pointer_click_sequence(&selector, &up_selector, x, y, &pointer_type);
-            let _ = webview.execute_script(&script);
-            None
-        }
-        // uievents-compat M2 片 1：非主键点击序（mousedown → [contextmenu（右键）] →
-        // mouseup → auxclick；UI Events §5.2.2——非主键无 click）。text = "x,y,button"。
-        "auxclick" => {
+        // uievents-compat M3（2026-10-03）：Actions down 步——独立宿主命令（取代 M2
+        // 折叠 click：页内 pointerdown listener 的 setPointerCapture 须影响后续 move/up
+        // 步路由）。text = "x,y,pointerType,button"。focus 步骤与 collapse click 同位
+        //（mousedown 默认动作前置近似——R142 先例）。
+        "pointer_down" => {
             let text = command.text.as_deref().unwrap_or_default();
             let mut parts = text.split(',');
             let x = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
             let y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
-            let button = parts.next().and_then(|v| v.parse::<i16>().ok()).unwrap_or(2);
-            let script = zero_engine::script_pointer_auxclick_sequence(&selector, x, y, button);
+            let pointer_type = parts.next().unwrap_or("mouse").to_string();
+            let button = parts.next().and_then(|v| v.parse::<i16>().ok()).unwrap_or(0);
+            let focus_script = format!(
+                "(function(){{var el=document.querySelector({sel});try{{if(el&&el.focus)el.focus();}}catch(_e){{}}}})();",
+                sel = serde_json::to_string(&selector).unwrap_or_else(|_| "null".into())
+            );
+            let _ = webview.execute_script(&focus_script);
+            let script = zero_engine::script_pointer_down_sequence(&selector, x, y, &pointer_type, button);
+            let _ = webview.execute_script(&script);
+            None
+        }
+        // uievents-compat M3：Actions up 步——text = "x,y,pointerType,button|downSel"。
+        // click/auxclick 组合逻辑在 shim `__zw_pointer_up_sequence`（捕获落点/公共祖先/
+        // 连击）。downSel = down 步命中元素（空串回落 shim 记录值）。
+        "pointer_up" => {
+            let text = command.text.as_deref().unwrap_or_default();
+            let (coords, down_selector) = match text.split_once('|') {
+                Some((coords, down)) => (coords, down.to_string()),
+                None => (text, String::new()),
+            };
+            let mut parts = coords.split(',');
+            let x = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+            let y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+            let pointer_type = parts.next().unwrap_or("mouse").to_string();
+            let button = parts.next().and_then(|v| v.parse::<i16>().ok()).unwrap_or(0);
+            let script =
+                zero_engine::script_pointer_up_sequence(&selector, &down_selector, x, y, &pointer_type, button);
             let _ = webview.execute_script(&script);
             None
         }
@@ -8293,11 +8273,13 @@ const TESTDRIVER_STUB: &str = r#"<script>
   // 多源 API 面（addPointer/setPointer/addKeyboard + tick 语义 + options-object
   // 签名），headless 无真指针：send() 本地重放为宿主命令序——
   // uievents-compat M2 片 1（2026-10-03）：pointerMove → 'pointer_move' 命令
-  //（宿主 `__zw_pointer_move` 跨界序 + move 对，pointerType 随源）；同源
-  // pointerDown/Up 对 → 'click' 命令（宿主 Activate 全序列 pointerdown→mousedown→
-  // pointerup→mouseup→click + 连击 dblclick——同 origin 两次对 → 宿主连击计数派
-  // dblclick，click-order 断言面）。keyDown/Up → 'keydown'/'keyup'（R3254-K2 键盘
-  // 链——keydown 未取消 → 宿主追加 InsertText 默认动作，事件序断言面）。
+  //（宿主 `__zw_pointer_move` 跨界序 + move 对，pointerType 随源）。
+  // uievents-compat M3（2026-10-03）：pointerDown/pointerUp → 'pointer_down'/
+  // 'pointer_up' 命令**逐步重放**（取代 M2 的 down/up 折叠 'click'——页内
+  // pointerdown listener 的 setPointerCapture 须影响后续 move/up 步路由，capture 族
+  // 断言面）。click/auxclick 组合在 shim `__zw_pointer_up_sequence`（捕获落点/公共
+  // 祖先/连击 dblclick）。keyDown/Up → 'keydown'/'keyup'（R3254-K2 键盘链——keydown
+  // 未取消 → 宿主追加 InsertText 默认动作，事件序断言面）。
   // tick 对齐：上游 serialize 的 per-tick 源矩阵 → 逐 tick 逐源重放（pause/addTick
   // 空 tick 跳过）。move-only 链保留旧折叠语义（补一笔 click——R142 先例兼容）。
   // wheel 源（scroll 步）记账不重放（wheel 事件面 M2 片 2 评估）。
@@ -8305,7 +8287,7 @@ const TESTDRIVER_STUB: &str = r#"<script>
     this._sources = {}; // name -> {kind:'pointer'|'key', pointerType, actions:{tick->step}}
     this._sourceOrder = []; // 记录序（tick 重放的源间次序）
     this._current = { pointer: null, key: null };
-    this._pair = {}; // per-source pendingDown {origin,x,y,button}
+    this._downOf = {}; // per-source pendingDown {selector,x,y}（M3 down/up 逐步重放）
     this._lastMove = {}; // per-source 最近 move {origin,x,y}
     this.tickIdx = 0;
     this._srcIdx = 0;
@@ -8400,43 +8382,32 @@ const TESTDRIVER_STUB: &str = r#"<script>
           this._lastMove[this._sourceOrder[si]] = { origin: originEl, x: moveX, y: moveY };
           plan.push({ op: 'pointer_move', origin: originEl, text: moveX + ',' + moveY + ',' + source.pointerType });
         } else if (step.type === 'pointerDown') {
+          // uievents-compat M3（2026-10-03）：down 步独立入队（取代 M2 折叠 click
+          // ——页内 pointerdown listener 的 setPointerCapture 须影响后续 move/up 路由）。
+          // down 落点 = 最近 move 命中（无 move → activeElement 回落）。
           var dOrigin = this._lastMove[this._sourceOrder[si]];
-          this._pair[this._sourceOrder[si]] = {
-            downOrigin: dOrigin ? dOrigin.origin : null,
-            x: dOrigin ? dOrigin.x : 0, y: dOrigin ? dOrigin.y : 0,
-            button: step.button
+          var downEl = this._resolveOrigin(dOrigin && dOrigin.origin) || element;
+          this._downOf[this._sourceOrder[si]] = {
+            selector: this._selectorOf(downEl),
+            x: dOrigin ? dOrigin.x : 0, y: dOrigin ? dOrigin.y : 0
           };
+          plan.push({
+            op: 'pointer_down',
+            origin: downEl,
+            text: (dOrigin ? dOrigin.x : 0) + ',' + (dOrigin ? dOrigin.y : 0) + ',' + source.pointerType + ',' + (step.button || 0)
+          });
         } else if (step.type === 'pointerUp') {
-          var pair = this._pair[this._sourceOrder[si]];
+          // up 步独立入队：click/auxclick 组合在 shim（捕获落点/公共祖先/连击）。
+          // downSel 编入 text（'|' 分隔——down 步落点，组合目标 down 侧）。
           var uOrigin = this._lastMove[this._sourceOrder[si]];
-          var downOrigin = pair ? pair.downOrigin : (uOrigin ? uOrigin.origin : null);
-          var upOrigin = uOrigin ? uOrigin.origin : downOrigin;
-          delete this._pair[this._sourceOrder[si]];
-          var upEl = this._resolveOrigin(upOrigin) || element;
-          if ((pair && pair.button) || step.button) {
-            // 非主键（UI Events §5.2.2——无 click）：auxclick 序命令。
-            plan.push({
-              op: 'auxclick',
-              origin: upEl,
-              text: (pair ? pair.x : 0) + ',' + (pair ? pair.y : 0) + ',' + (step.button || 0)
-            });
-          } else if (downOrigin && upOrigin && downOrigin !== upOrigin) {
-            // 跨目标组合（UI Events §5.2.2——mousedown/mouseup 落点不同 → click 到
-            // 最近公共祖先）：down/up 两目标都传（upSel 编入 text——up 目标经上游
-            // move 步已存在，selectorFor 静态元素即时可解析；页面脚本创建元素 defer）。
-            var downEl = this._resolveOrigin(downOrigin) || upEl;
-            plan.push({
-              op: 'pointer_click',
-              origin: downEl,
-              text: (pair ? pair.x : 0) + ',' + (pair ? pair.y : 0) + ',' + source.pointerType + '|' + this._selectorOf(upOrigin)
-            });
-          } else {
-            plan.push({
-              op: 'click',
-              origin: upEl,
-              text: (pair ? pair.x : 0) + ',' + (pair ? pair.y : 0) + ',' + source.pointerType + ',0'
-            });
-          }
+          var upEl = this._resolveOrigin(uOrigin && uOrigin.origin) || element;
+          var downInfo = this._downOf[this._sourceOrder[si]] || { selector: '', x: 0, y: 0 };
+          delete this._downOf[this._sourceOrder[si]];
+          plan.push({
+            op: 'pointer_up',
+            origin: upEl,
+            text: (uOrigin ? uOrigin.x : downInfo.x) + ',' + (uOrigin ? uOrigin.y : downInfo.y) + ',' + source.pointerType + ',' + (step.button || 0) + '|' + downInfo.selector
+          });
         } else {
           // keydown/keyup：对 activeElement（R3254-K2 先例——键盘链无 origin 元素）。
           plan.push({ op: step.type, origin: document.activeElement || element, text: step.value });
@@ -8447,16 +8418,9 @@ const TESTDRIVER_STUB: &str = r#"<script>
       // 旧 R142 折叠语义：无有效步骤 → 单 click（链首 origin / activeElement）。
       return enqueue('click', element, null);
     }
-    // move-only 链保留旧折叠语义：补一笔 click（R142 先例兼容——仅 move 的链
-    // 此前也派一次 click）。
-    var hasClick = false;
-    for (var ci = 0; ci < plan.length; ci++) {
-      if (plan[ci].op === 'click' || plan[ci].op === 'pointer_click' || plan[ci].op === 'auxclick') { hasClick = true; break; }
-    }
-    if (!hasClick) {
-      var last = this._current.pointer && this._lastMove[this._current.pointer];
-      plan.push({ op: 'click', origin: this._resolveOrigin(last && last.origin) || element, text: null });
-    }
+    // uievents-compat M3：move-only 链不再补尾随 click——真实浏览器 Actions move-only
+    // 不产生 click（M2 折叠期的兼容近似使悬停迁移重放、捕获族「无多余事件」断言面
+    // 记入多余 pointermove；WPT pointerevent_capture_suppressing_mouse）。
     // 命令按序链式执行——每步独立入队（事件序对 eventLog 断言敏感）。
     var promise = Promise.resolve();
     for (var i = 0; i < plan.length; i++) {

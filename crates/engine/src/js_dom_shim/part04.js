@@ -3521,24 +3521,62 @@ return _tplContent;
         // R3047：scroll 方法（headless 无真视口滚动 → JS-side 状态追踪）。scrollTo/scrollBy 更新 `_scrollOffsets[key]`
         //（与 scrollTop/scrollLeft getter 自洽）；scrollIntoView 无 viewport → no-op（documented）。
         // 参数支持 `(x,y)` 与 `{left,top,behavior}` 两 spec 形式（_zwApplyScroll 统一解析）。
-        // R3068：Pointer Capture API（setPointerCapture/releasePointerCapture/hasPointerCapture）。headless 无真
-        // 指针路由（事件不重定向到捕获元素），但 API 表面 + hasPointerCapture 状态查询对指针/拖拽库必需。
-        // per-element `_pointerCapture[key]` set 形态追踪。permissive：不校验 pointerId active（spec NotFoundError defer）。
+        // R3068：Pointer Capture API（setPointerCapture/releasePointerCapture/hasPointerCapture）。
+        // uievents-compat M3（2026-10-03）语义化（spec
+        // https://www.w3.org/TR/pointerevents2/ §9.3 pending pointer capture override 模型）：
+        // ① setPointerCapture 非 active pointerId → NotFoundError（active 追踪在
+        //   `_zwPtrState.active`，pointerdown/up 由 `__zw_dispatch_event` 增删）、目标
+        //   disconnected → InvalidStateError；② 登记进 `_zwPtrState.pending[id]`（pending
+        //   override）——gotpointercapture **不在本调用内派**，待下一个 pointer 系事件派发前的
+        //   Process Pending Pointer Capture 结算站（part06 `_zwProcessPendingCapture`）；
+        //   pointerup listener 内的登记随 up 尾隐式释放一并清除、无 got（WPT
+        //   pointerevent_setpointercapture_pointerup_mouse）；③ releasePointerCapture 非
+        //   active pointerId → NotFoundError；仅清除**本元素**的 pending override（结算站按
+        //   pending≠现 override 派 lostpointercapture——WPT lostpointercapture_is_first 的
+        //   「先于后续事件」面）；④ hasPointerCapture 读 pending override（WPT
+        //   pointerevent_element_haspointercapture）。
         if (prop === 'setPointerCapture') {
           return function (pid) {
             var id = String(pid);
+            if (typeof _zwPtrState !== 'undefined' && _zwPtrState && !_zwPtrState.active[id]) {
+              throw _zwDomException("Failed to execute 'setPointerCapture' on 'Element': The pointer with the given id " + id + " is not active.", 'NotFoundError');
+            }
+            // spec §9.3 step：目标 disconnected → InvalidStateError。
+            if (typeof _zwIsConnected === 'function' && !_zwIsConnected(sel, handle)) {
+              throw _zwDomException("Failed to execute 'setPointerCapture' on 'Element': The element is not connected.", 'InvalidStateError');
+            }
+            if (typeof _zwPtrState !== 'undefined' && _zwPtrState) {
+              _zwPtrState.pending[id] = { key: key, sel: sel, handle: handle || null };
+            }
             var set = _pointerCapture[key] || (_pointerCapture[key] = {});
             set[id] = true;
           };
         }
         if (prop === 'releasePointerCapture') {
           return function (pid) {
-            var set = _pointerCapture[key];
-            if (set) delete set[String(pid)];
+            var id = String(pid);
+            if (typeof _zwPtrState !== 'undefined' && _zwPtrState && !_zwPtrState.active[id]) {
+              throw _zwDomException("Failed to execute 'releasePointerCapture' on 'Element': The pointer with the given id " + id + " is not active.", 'NotFoundError');
+            }
+            var pending = (typeof _zwPtrState !== 'undefined' && _zwPtrState) ? _zwPtrState.pending[id] : null;
+            if (pending && pending.key === key) {
+              delete _zwPtrState.pending[id];
+              var capSet = _pointerCapture[key];
+              if (capSet) delete capSet[id];
+            }
+            // 未 pending 本元素的调用 → no-op（spec：无 InvalidStateError；现 override
+            // 的 lostpointercapture 在结算站派发）。
           };
         }
         if (prop === 'hasPointerCapture') {
           return function (pid) {
+            // spec：hasPointerCapture 反映 **pending** pointer capture override——
+            // setPointerCapture 即刻 true、releasePointerCapture 即刻 false（WPT
+            // pointerevent_element_haspointercapture 断言面）。
+            if (typeof _zwPtrState !== 'undefined' && _zwPtrState) {
+              var pending = _zwPtrState.pending[String(pid)];
+              return !!(pending && pending.key === key);
+            }
             var set = _pointerCapture[key];
             return !!(set && set[String(pid)]);
           };
