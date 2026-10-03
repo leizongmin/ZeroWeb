@@ -392,6 +392,24 @@ return JSON.stringify([String(el.value||''),Number(el.selectionStart||0),Number(
     )
 }
 
+/// 构造「宿主焦点治理」脚本（slice22 focus governance）：宿主驱动焦点迁移（mousedown 默认
+/// 动作 / Tab 焦点导航）调 shim 内部钩子 `__zw_host_focus(sel)`（获焦相位：状态同步、派发
+/// focus 与 focusin）或 `__zw_host_blur(sel)`（失焦相位：清状态、派发 focusout 与 blur），
+/// 一次执行完成「页面可见焦点状态同步（`document.activeElement` 读的 shim `_activeElKey`）
+/// 与该相位焦点事件派发」。此前宿主路径只派事件不更状态 → `document.activeElement` 停留在
+/// 页面 JS 最后 `focus()` 的元素（「焦点状态报告」与「事件落点」分离）。
+///
+/// 规范锚：HTML §6.5.2 focusing steps——焦点迁移先更 focused area 再派焦点事件族
+/// <https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps>；focus 是 mousedown
+/// 的默认动作（UI Events §5.2.2 <https://w3c.github.io/uievents/#focus-event-focus>）。
+/// `focus` 为 true 获焦相位、false 失焦相位；事件流与旧 `script_dispatch_dom_event` 逐字节
+/// 同通道（shim `__zw_dispatch_event` 同一 UA 通道）。
+pub fn script_host_focus(selector: &str, focus: bool) -> String {
+    let esc_sel = escape_js_string(selector);
+    let hook = if focus { "__zw_host_focus" } else { "__zw_host_blur" };
+    format!("if(typeof {hook}==='function'){hook}('{esc_sel}');")
+}
+
 /// 构造「报告未捕获脚本错误」的 shim 脚本（R2940 onerror host 集成）。宿主在页面 `<script>` 执行
 /// 出错（ScriptError）时执行：shim `__zw_report_error(msg, src, line, col)` 调 legacy window.onerror
 ///（5-arg 签名）+ 派发 ErrorEvent 'error' 到 window（addEventListener('error') listener），使 Sentry /

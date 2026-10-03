@@ -256,6 +256,16 @@ pub(crate) fn pre_document_scripts_enabled() -> bool {
     predoc_enabled_for(std::env::var("ZW_CDP_PREDOC_SCRIPTS").as_deref().ok())
 }
 
+/// 宿主焦点治理 kill-switch（slice22 focus governance）：默认 on——宿主焦点迁移（mousedown
+/// 默认动作 / Tab 焦点导航）经 shim `__zw_host_focus`/`__zw_host_blur` 同步页面可见焦点状态
+///（`document.activeElement`）并派发焦点事件；`ZW_HOST_FOCUS_STATE_SYNC=0` 回落旧
+///「只派事件不更状态」路径（逐字节旧行为面——`document.activeElement` 停留在页面 JS 最后
+/// `focus()` 的元素）。规范锚：HTML §6.5.2 focusing steps
+/// <https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps>。
+pub(crate) fn host_focus_state_sync() -> bool {
+    predoc_enabled_for(std::env::var("ZW_HOST_FOCUS_STATE_SYNC").as_deref().ok())
+}
+
 impl RendererRuntime {
     /// 创建新的渲染进程运行时。
     pub(crate) fn new(renderer_id: u64) -> Self {
@@ -1438,9 +1448,17 @@ impl RendererRuntime {
                 webview: self.webview.as_mut(),
             };
             // https://w3c.github.io/uievents/#events-focusevent-event-order
-            changed |= page_scripts::dispatch_dom_event(&mut ctx, true, &old, "focusout", None).html_changed;
-            changed |=
-                page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "blur", None).html_changed;
+            // slice22 焦点治理：默认经 `__zw_host_blur` 一次完成页面可见焦点状态同步
+            //（`document.activeElement` 读的 shim `_activeElKey` 清空）+ focusout+blur 派发
+            //（状态先更再派事件——HTML focusing steps）。kill-switch 关断回落旧双次派发。
+            if host_focus_state_sync() {
+                changed |=
+                    page_scripts::dispatch_host_focus(&mut ctx, self.javascript_enabled, &old, false).html_changed;
+            } else {
+                changed |= page_scripts::dispatch_dom_event(&mut ctx, true, &old, "focusout", None).html_changed;
+                changed |= page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "blur", None)
+                    .html_changed;
+            }
             if value_changed {
                 changed |= page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "change", None)
                     .html_changed;
@@ -1484,10 +1502,18 @@ impl RendererRuntime {
                 webview: self.webview.as_mut(),
             };
             // https://w3c.github.io/uievents/#events-focusevent-event-order
-            let focus = page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, selector, "focus", None);
-            let focusin =
-                page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, selector, "focusin", None);
-            focus.html_changed || focusin.html_changed
+            // slice22 焦点治理：默认经 `__zw_host_focus` 一次完成页面可见焦点状态同步
+            //（`document.activeElement` = 获焦元素——focus handler 内已可见，HTML focusing
+            // steps）+ focus+focusin 派发。kill-switch 关断回落旧双次派发（只派事件不更状态）。
+            if host_focus_state_sync() {
+                page_scripts::dispatch_host_focus(&mut ctx, self.javascript_enabled, selector, true).html_changed
+            } else {
+                let focus =
+                    page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, selector, "focus", None);
+                let focusin =
+                    page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, selector, "focusin", None);
+                focus.html_changed || focusin.html_changed
+            }
         };
         if changed {
             self.rerender_publish_webview()?;

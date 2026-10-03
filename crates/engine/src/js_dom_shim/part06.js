@@ -11767,6 +11767,50 @@
     try { ev._zwUaDispatch = false; } catch (_e312ua) {}
     return ok ? 'ok' : 'prevented';
   };
+  // slice22 焦点治理：宿主驱动焦点迁移（mousedown 默认动作 / Tab 焦点导航 / 宿主激活）的
+  // 「页面可见焦点状态同步 + 焦点事件派发」合一钩子。此前宿主路径只经 `__zw_dispatch_event`
+  // 派事件、从不更新 `_activeElKey` → `document.activeElement` 停留在页面 JS 最后 `focus()`
+  // 的元素（baidu 首页 boot `kw.focus()` 聚焦隐藏 #kw 后，点击可见 textarea 派发 focus@textarea
+  // 而 activeElement 恒报 #kw——「焦点状态报告」与「事件落点」分离，页面 sugrec 触发器读
+  // activeElement 走错分支）。规范锚：HTML §6.5.2 focusing steps——焦点迁移先更 focused area
+  // 再派焦点事件族（https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps，
+  // focus handler 内 activeElement 已是新元素）；focus 是 mousedown 的默认动作（UI Events
+  // §5.2.2 https://w3c.github.io/uievents/#focus-event-focus）。事件经 `__zw_dispatch_event`
+  // 同一 UA 通道（isTrusted=true / R145 handle retargeting 同款，与旧宿主派发逐字节同流）；
+  // 状态同步只写 `_activeElKey`（R148 proxy/解析节点所有权互斥同款——宿主焦点即 proxy 焦点，
+  // 后续页面 `focus()` 在同元素上按已聚焦 no-op）。宿主侧 kill-switch
+  // `ZW_HOST_FOCUS_STATE_SYNC=0` 时不调本钩子（回落「只派事件不更状态」旧路径）。
+  globalThis.__zw_host_focus = function (sel) {
+    var k = null;
+    try {
+      k = _elKey(sel, null);
+      // 幂等守卫（UI Events：聚焦已聚焦元素不重派 focus——shim focus() 同款语义
+      // part04「已聚焦 → no-op」）：宿主 mousedown/mouseup 双达 focus_target 时只派一次。
+      if (_activeElKey === k) return;
+    } catch (_eHF0) {}
+    try {
+      if (globalThis._zwMElFocused) globalThis._zwMElFocused = null;
+      // 宿主聚焦的元素页面可能从未触碰（无 proxy 缓存）→ get-or-create，防 activeElement
+      // getter 回落 body（页面随后读 activeElement 须命中被聚焦元素本身）。
+      if (!_proxyCache[k] && typeof _makeProxy === 'function') _makeProxy(sel, null);
+      _activeElKey = k;
+    } catch (_eHF) {}
+    try {
+      __zw_dispatch_event(sel, 'focus', null);
+      __zw_dispatch_event(sel, 'focusin', null);
+    } catch (_eHF2) {}
+  };
+  globalThis.__zw_host_blur = function (sel) {
+    try {
+      // 幂等守卫（同上反向面）：失焦非当前焦点元素 = no-op（shim blur() 同款语义）。
+      if (_activeElKey !== _elKey(sel, null)) return;
+    } catch (_eHB0) {}
+    try { _activeElKey = null; } catch (_eHB) {}
+    try {
+      __zw_dispatch_event(sel, 'focusout', null);
+      __zw_dispatch_event(sel, 'blur', null);
+    } catch (_eHB2) {}
+  };
   // security-hardening M2-s1（spec CSP3 §report-the-violation）：宿主 CSP 检查点派发
   // securitypolicyviolation——shim `_makeEvent` 事件 + 违规字段以自有属性附于事件
   //（assert_equals 直接属性读取面；native SecurityPolicyViolationEvent 构造实例过不了
