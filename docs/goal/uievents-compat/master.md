@@ -55,11 +55,16 @@ NotFoundError、disconnected InvalidStateError、got/lostpointercapture 派发�
 ## 下一步计划
 
 1. **M2/M3 尾簇**（按 Throughput 排序）：a) mutation 族残余——pointerup-remover
-   variant（子测试间 re-append 后布局快照陈旧：gBCR 零 rect → 命中测试回退近祖，
-   需 per-command 布局/rect 刷新或 runner 侧 HitTestCache 填充——与 mousemove-between
-   的视口命中精度同根）、after_target_appended/from_slot/interleaved 族；b) wheel
-   源 scroll 命令（wheel 三案）；c) mousedown→focus 默认动作链（focus-events 四案）；
-   d) uievents/mouse 尾簇（layerX/layerY、chorded buttons 位、image-map 命中）。
+   variant（**根因已定位（2026-10-04 摸底轮）**：runner 页内 DOM 变更全落 shim 内部
+   状态——不产 DomMutation/native 写——宿主管线布局停留在导航时点，re-append 元素
+   gBCR 恒零盒 → send() 时点命中测试回退近祖。已验证 shim outerHTML 驱动的结构性
+   刷新（render_html 全量 + persistent_handle_nodes 重绑）机制可行但**序列化滞后一
+   turn** 且计划构建时点解析救不回——正解 = **命令执行时点重解析**（pointer 命令
+   dequeue 时以 fresh 几何做 origin 中心+offset 命中，配合同款结构性刷新，一个提交
+   内成套落地）；试做净差零已回退）；after_target_appended/from_slot/interleaved
+   族；b) wheel 源 scroll 命令（wheel 三案）；c) mousedown→focus 默认动作链
+   （focus-events 四案）；d) uievents/mouse 尾簇（layerX/layerY、chorded buttons 位、
+   image-map 命中）。
 2. **M4 收口**：touch-action 解析/计算值核对（parsing 三案 0P 待查）、
    touch-events / pointerlock / IME / touch-action 交互面挂账定稿、DC-4 全绿门禁
    （make test + clippy + fmt + reftest 零回归 + product-smoke）。
