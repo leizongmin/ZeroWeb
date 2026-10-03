@@ -155,6 +155,11 @@ pub struct RenderPipeline {
     /// 文本节点等无唯一选择器的 handle 只能经此锚定）。`render_html`（全量重建 doc）
     /// 时清空——slotmap 换代后旧 NodeId 无效。
     pub(crate) persistent_handle_nodes: HashMap<String, NodeId>,
+    /// uievents-compat M3 尾簇 4：跨批 detach→re-insert 移动语义记账（selector→NodeId，
+    /// FIFO 封顶）——页内 remove 落 listener turn、re-append 落 cleanup turn 的两批
+    /// 之间，insert 类 child 失配时复用摘下节点（[`DetachedNodeStash`]）。`render_html`
+    /// 全量重建时清空（slotmap 换代旧 NodeId 无效）。
+    pub(crate) detached_sel_nodes: crate::js_dom_bridge::DetachedNodeStash,
     /// 文本表单控件尚未提交的 IME preedit。
     pub(crate) form_control_compositions: HashMap<NodeId, (String, usize, usize)>,
     /// 脚本批量渲染 defer 开关（宿主 `begin_script_batch`/`end_script_batch` 控制）。
@@ -390,6 +395,7 @@ impl RenderPipeline {
             cached_styles: HashMap::new(),
             form_control_values: HashMap::new(),
             persistent_handle_nodes: HashMap::new(),
+            detached_sel_nodes: crate::js_dom_bridge::DetachedNodeStash::default(),
             form_control_compositions: HashMap::new(),
             defer_render: false,
             focused_selector: None,
@@ -1251,6 +1257,27 @@ impl RenderPipeline {
         ))
     }
 
+    /// uievents-compat M3 尾簇 4：导航边界清跨批 detached 片段 stash（webview 载入
+    /// 新页面内容时调用——跨页 stale 片段不复活；页内 remove→re-append 间隔的宿主
+    /// 管线全量重建不清——序列化片段跨重建有效）。
+    pub fn clear_detached_sel_nodes(&mut self) {
+        self.detached_sel_nodes.clear();
+    }
+
+    /// uievents-compat M3 尾簇 4：handle→NodeId 重绑——全量 `render_html` 重建会清
+    /// `persistent_handle_nodes`（R100），此后 handle 型 mutation（页内
+    /// createElement 产物的后续写）报 unknown handle。结构性刷新方持 shim 侧
+    /// handle→selector 正置表，重建后按 selector 在新 doc 重查 NodeId 回填。目标
+    /// 缺失（元素确被移除）→ 静默跳过。
+    pub fn rebind_handle_node(&mut self, handle: &str, selector: &str) {
+        if let Some(doc_rc) = &self.cached_doc {
+            let doc = doc_rc.borrow();
+            if let Some(id) = doc.query_selector(doc.root(), selector.trim()) {
+                self.persistent_handle_nodes.insert(handle.to_string(), id);
+            }
+        }
+    }
+
     /// 取缓存 live Document 的共享句柄（`Rc<RefCell<Document>>` 克隆）。
     ///
     /// P1b L1a（R3106）：原生 DOM 绑定（engine::dom_bindings）经此取**同一** live Document，
@@ -1752,6 +1779,7 @@ impl RenderPipeline {
                 mutations,
                 persistent,
                 Some(&mut self.persistent_handle_nodes),
+                Some(&mut self.detached_sel_nodes),
             ) {
                 Ok(hs) => hs,
                 Err(e) => {

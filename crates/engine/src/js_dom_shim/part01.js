@@ -373,6 +373,12 @@
     return String(raw).toLowerCase() === 'auto' ? 'auto' : 'manual';
   }
   function _zwIsConnected(sel, handle) {
+    // uievents-compat M3 尾簇 4：同步移除标记优先——脚本内 remove() 后（host mutation
+    // 尚未应用、快照仍含该元素）连接性立即为否（R34xx parentNode 同款语义；touch 抬起
+    // 悬停拆除对已移除 hover 目标不再派 out/leave@已移除元素——WPT after_target_removed
+    // ?touch「pointerleave@parent 无 out@child」断言面）。
+    if (_zwIsRemoved(sel)) return false;
+    if (handle && _zwRemovedHandles[handle]) return false;
     if (sel) {
       if (typeof __zw_contains === 'function') {
         try { return __zw_contains('html', sel) === '1'; } catch (_e) { return true; }

@@ -6966,6 +6966,9 @@ fn run_testharness_html_inner(
     //（body 在 timer 回调里 enqueue，host 侧 next pump 才 materialize），probe 每帧
     // 排空队列的首次解析可能先于元素落 doc。同 id 最多重试 20 帧，超限按原错误处理。
     let mut td_command_attempts: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
+    // uievents-compat M3 尾簇 4：已刷新的 mutation 代际（跨 take_probe/命令执行共享
+    // ——同代不重复序列化，见 take_probe / resolve_pointer_target）。
+    let mut td_refresh_ver: u64 = 0;
     // M3 扩批 XVI：文件字节缓存（同 src 只读盘一次；注册表 contains_source 幂等）。
     let mut media_byte_cache: std::collections::HashMap<String, std::rc::Rc<Vec<u8>>> =
         std::collections::HashMap::new();
@@ -7063,7 +7066,7 @@ fn run_testharness_html_inner(
             "/tmp/zw-hb3.txt",
             format!("loop {}ms\n", playback_clock_origin.elapsed().as_millis()),
         );
-        let probe = match take_probe(&mut webview) {
+        let probe = match take_probe(&mut webview, &mut td_refresh_ver) {
             Ok(probe) => probe,
             Err(error) => {
                 return vec![HarnessSubtestResult {
@@ -7079,7 +7082,7 @@ fn run_testharness_html_inner(
         last_state = probe.state;
         last_test_wait = probe.test_wait;
         for command in probe.commands {
-            let result = apply_testdriver_command(&mut webview, &command);
+            let result = apply_testdriver_command(&mut webview, &command, &mut td_refresh_ver);
             // R347：目标未解析（元素尚未 materialize）→ 重新入队下帧重试。
             let unresolved = result.as_deref().is_some_and(|message| {
                 message.starts_with("testdriver target not found")
@@ -7659,12 +7662,25 @@ fn kind_tag(kind: zero_engine::MediaResourceElementKind) -> &'static str {
     }
 }
 
-fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {
+fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64) -> Result<HarnessProbe, String> {
     // Pump timer tasks first so the sandbox's microtask checkpoint has flushed
     // testharness result callbacks before the state snapshot is serialized.
     webview
         .execute_script("if (typeof globalThis.__zw_fire_due_timers === 'function') globalThis.__zw_fire_due_timers()")
         .map_err(|error| error.to_string())?;
+    // uievents-compat M3 尾簇 4：shim 序列化 html 驱动的结构性刷新（泵后——shim 的
+    // 序列化状态在 turn 末提交）：页内脚本 remove/appendChild 后 gBCR/命中测试立即可
+    // 见（此前管线布局停留在导航时点——after_target_removed 族断言面）。
+    // mutation 代际门控：无 mutation 批 → 零成本跳过（探测环 ~1ms/拍，无门控的逐拍
+    // 百 KB 级 outerHTML 序列化曾跑穿 test-guard time-limit）。
+    let ver = zero_engine::js_dom_bridge::mutation_version();
+    if ver != *last_refresh_ver {
+        let shim_html = webview
+            .execute_script("document.documentElement ? document.documentElement.outerHTML : ''")
+            .unwrap_or_default();
+        webview.refresh_if_html_changed(shim_html.trim());
+        *last_refresh_ver = ver;
+    }
     // M3 扩批：time-marches-on——cue enter/exit 调度按桥真值时钟推进（泵 tick 同拍；
     // spec media.html#time-marches-on——track-cues-* 播放推进族断言面）。与 timer
     // 泵同一 execute_script 通道（无 registry 锁持有——桥回调各自加锁）。
@@ -7768,7 +7784,77 @@ fn sanitize_lone_surrogate_escapes(json: &str) -> String {
     out
 }
 
-fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) -> Option<String> {
+/// uievents-compat M3 尾簇 4：指针命令目标**执行时点解析**——origin 元素中心 + offset
+///（WebDriver 元素 origin 语义）→ fresh gBCR/最小包含盒命中 → (hitSel, px, py)。
+/// `absolute`（viewport origin，text '@' 前缀）→ (offX, offY) 即视口坐标。命中为空
+///（点在所有元素外）→ 回落 origin 选择器。gBCR 读 rect 快照——take_probe 泵后结构性
+/// 刷新保证探测边界新鲜；批内移除由 shim 祖先链回退兜底路由。
+fn resolve_pointer_target(
+    webview: &mut WebView,
+    origin_sel: &str,
+    off_x: f32,
+    off_y: f32,
+    absolute: bool,
+    last_refresh_ver: &mut u64,
+) -> (String, f32, f32) {
+    // 命令执行时点结构性刷新——泵后刷新受 shim 序列化一 turn 滞后：命令批与
+    // remove→re-append 的回程变更可同批到达（泵 turn 提交 live 状态、下一 turn 才进
+    // 序列化），gBCR 停在移除态。命令前重读一次 shim html（mutation 代际门控——同代
+    // 命令批共享探测环已刷新的布局，无门控的逐命令全量序列化是 corpus 超时根因）。
+    let ver = zero_engine::js_dom_bridge::mutation_version();
+    if ver != *last_refresh_ver {
+        let shim_html = webview
+            .execute_script("document.documentElement ? document.documentElement.outerHTML : ''")
+            .unwrap_or_default();
+        webview.refresh_if_html_changed(shim_html.trim());
+        *last_refresh_ver = ver;
+    }
+    let sel_js = if absolute || origin_sel.is_empty() {
+        "null".to_string()
+    } else {
+        serde_json::to_string(origin_sel).unwrap_or_else(|_| "null".into())
+    };
+    let script = format!(
+        "(function(){{\
+var el=document.querySelector({sel});\
+var px={ox},py={oy};\
+if(el){{var r=el.getBoundingClientRect();if(r&&r.width>0){{px=r.left+r.width/2+px;py=r.top+r.height/2+py;}}}}\
+var best=null,bestArea=Infinity;\
+var all=document.querySelectorAll('body, body *');\
+for(var i=0;i<all.length;i++){{var e=all[i];if(!e.getBoundingClientRect)continue;\
+var r=e.getBoundingClientRect();\
+if(r&&r.width>0&&r.height>0&&px>=r.left&&px<=r.right&&py>=r.top&&py<=r.bottom){{var a=r.width*r.height;if(a<=bestArea){{bestArea=a;best=e;}}}}}}\
+return (best?(best.__zwSelector||''):'')+'|'+px+'|'+py;}})()",
+        sel = sel_js,
+        ox = off_x,
+        oy = off_y,
+    );
+    let out = match webview.execute_script(&script) {
+        Ok(out) => out,
+        Err(_) => return (origin_sel.to_string(), off_x, off_y),
+    };
+    if std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1") {
+        eprintln!(
+            "[ptr-resolve] origin={origin_sel} off=({off_x},{off_y}) abs={absolute} out={}",
+            out.trim()
+        );
+    }
+    let mut parts = out.trim().split('|');
+    let hit = parts.next().unwrap_or_default().trim().to_string();
+    let x = parts.next().and_then(|v| v.trim().parse::<f32>().ok());
+    let y = parts.next().and_then(|v| v.trim().parse::<f32>().ok());
+    match (x, y) {
+        (Some(x), Some(y)) if !hit.is_empty() => (hit, x, y),
+        (Some(x), Some(y)) if absolute => (origin_sel.to_string(), x, y),
+        _ => (origin_sel.to_string(), off_x, off_y),
+    }
+}
+
+fn apply_testdriver_command(
+    webview: &mut WebView,
+    command: &TestdriverCommand,
+    td_refresh_ver: &mut u64,
+) -> Option<String> {
     // R145：selector 延迟解析——enqueue 时 mutation 未 apply（正置表空），出队时
     //（跨 turn）经 stub 的 `__zw_td_selector` 现场解析（apply 已 merge handle→selector）。
     // 返回值为裸串（"p"）或字面 "null"/空（无稳定选择器）。
@@ -7797,20 +7883,25 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
     match command.operation.as_str() {
         // uievents-compat M2 片 1（2026-10-03）：Actions 指针 move 步——宿主
         // `__zw_pointer_move` 钩子（跨界时派 over/out/enter/leave 边界序 + 新目标
-        // pointermove/mousemove 对）。text = "x,y"（Actions pointerMove 坐标，
-        // WebDriver 元素 origin 偏移近似直传）。仅事件面；无默认动作。
+        // pointermove/mousemove 对）。仅事件面；无默认动作。
+        // uievents-compat M3 尾簇 4（2026-10-04）：**执行时点解析**——text =
+        // "offX,offY,pointerType"（元素 origin：中心 + offset）或
+        // "@absX,absY,pointerType"（viewport origin：绝对坐标）；命中元素以 fresh
+        // 几何现解析（计划构建时点解析受 shim 序列化一 turn 滞后——
+        // after_target_removed pointerup-remover 断言面）。
         "pointer_move" => {
-            let (x, y) = command
-                .text
-                .as_deref()
-                .and_then(|text| {
-                    let mut parts = text.split(',');
-                    let x = parts.next()?.parse::<f32>().ok()?;
-                    let y = parts.next()?.parse::<f32>().ok()?;
-                    Some((x, y))
-                })
-                .unwrap_or((0.0, 0.0));
-            let script = zero_engine::script_pointer_move(&selector, x, y);
+            let text = command.text.as_deref().unwrap_or_default();
+            let (coords, absolute) = match text.strip_prefix('@') {
+                Some(rest) => (rest, true),
+                None => (text, false),
+            };
+            let mut parts = coords.split(',');
+            let off_x = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+            let off_y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+            let pointer_type = parts.next().unwrap_or("mouse").to_string();
+            let _ = pointer_type;
+            let (hit_sel, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
+            let script = zero_engine::script_pointer_move(&hit_sel, px, py);
             let _ = webview.execute_script(&script);
             None
         }
@@ -7832,45 +7923,57 @@ fn apply_testdriver_command(webview: &mut WebView, command: &TestdriverCommand) 
         }
         // uievents-compat M3（2026-10-03）：Actions down 步——独立宿主命令（取代 M2
         // 折叠 click：页内 pointerdown listener 的 setPointerCapture 须影响后续 move/up
-        // 步路由）。text = "x,y,pointerType,button"。focus 步骤与 collapse click 同位
-        //（mousedown 默认动作前置近似——R142 先例）。
+        // 步路由）。text = "offX,offY,pointerType,button"（'@' 前缀 = viewport 绝对）。
+        // focus 步骤与 collapse click 同位（mousedown 默认动作前置近似——R142 先例）。
+        // uievents-compat M3 尾簇 4：落点执行时点解析（同 pointer_move）。
         "pointer_down" => {
             let text = command.text.as_deref().unwrap_or_default();
-            let mut parts = text.split(',');
-            let x = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
-            let y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+            let (coords, absolute) = match text.strip_prefix('@') {
+                Some(rest) => (rest, true),
+                None => (text, false),
+            };
+            let mut parts = coords.split(',');
+            let off_x = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+            let off_y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
             let pointer_type = parts.next().unwrap_or("mouse").to_string();
             let button = parts.next().and_then(|v| v.parse::<i16>().ok()).unwrap_or(0);
+            let (hit_sel, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
             let focus_script = format!(
                 "(function(){{var el=document.querySelector({sel});try{{if(el&&el.focus)el.focus();}}catch(_e){{}}}})();",
-                sel = serde_json::to_string(&selector).unwrap_or_else(|_| "null".into())
+                sel = serde_json::to_string(&hit_sel).unwrap_or_else(|_| "null".into())
             );
             let _ = webview.execute_script(&focus_script);
-            let script = zero_engine::script_pointer_down_sequence(&selector, x, y, &pointer_type, button);
+            let script = zero_engine::script_pointer_down_sequence(&hit_sel, px, py, &pointer_type, button);
             let _ = webview.execute_script(&script);
             None
         }
         // uievents-compat M3：Actions up 步——text =
-        // "x,y,pointerType,button|downSel|anc1|anc2…"（尾段 = up 落点祖先链）。
-        // click/auxclick 组合逻辑在 shim `__zw_pointer_up_sequence`（捕获落点/公共祖先/
-        // 连击）。downSel = down 步命中元素（空串回落 shim 记录值）；祖先链 = touch
-        // 抬起悬停拆除的 leave 锚（目标被移除时取首个连通近祖）。
+        // "offX,offY,pointerType,button|downSel|anc1|anc2…"（'@' 前缀 = viewport 绝对；
+        // 尾段 = up origin 祖先链）。click/auxclick 组合逻辑在 shim
+        // `__zw_pointer_up_sequence`（捕获落点/公共祖先/连击）。downSel = down 步命中
+        // 元素（空串回落 shim 记录值）；祖先链 = touch 抬起悬停拆除的 leave 锚（目标
+        // 被移除时取首个连通近祖）。尾簇 4：落点执行时点解析。
         "pointer_up" => {
             let text = command.text.as_deref().unwrap_or_default();
-            let mut segments = text.split('|');
+            let (coords_rest, absolute) = match text.strip_prefix('@') {
+                Some(rest) => (rest, true),
+                None => (text, false),
+            };
+            let mut segments = coords_rest.split('|');
             let coords = segments.next().unwrap_or_default();
             let down_selector = segments.next().unwrap_or_default().to_string();
             let ancestor_chain = segments.map(String::from).collect::<Vec<_>>().join("|");
             let mut parts = coords.split(',');
-            let x = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
-            let y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+            let off_x = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+            let off_y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
             let pointer_type = parts.next().unwrap_or("mouse").to_string();
             let button = parts.next().and_then(|v| v.parse::<i16>().ok()).unwrap_or(0);
+            let (hit_sel, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
             let script = zero_engine::script_pointer_up_sequence(
-                &selector,
+                &hit_sel,
                 &down_selector,
-                x,
-                y,
+                px,
+                py,
                 &pointer_type,
                 button,
                 &ancestor_chain,
@@ -8411,26 +8514,18 @@ const TESTDRIVER_STUB: &str = r#"<script>
         var step = source.actions[tick];
         if (!step) continue;
         if (step.type === 'pointerMove') {
-          // origin 三态：元素 origin = 中心 + offset（WebDriver 元素 origin 语义——
-          // uievents-compat M3 尾簇：偏移出元素盒时按命中点跨界，?pen/?touch variant
-          // 的 pointerMove(-30,-30/{origin}) 事件序面）；'viewport'/缺省 → 视口命中
-          // 测试（page 侧 document.elementFromPoint R2924 + gBCR 几何近似）；命中空
-          //（视口外）→ 跳过步。
+          // uievents-compat M3 尾簇 4（2026-10-04）：**执行时点解析**——计划只编
+          // origin 元素 + 原始 offset（WebDriver 元素 origin 语义：中心 + offset），
+          // 命中元素由 runner 命令执行时以 fresh 几何解析（计划构建时点解析受 shim
+          // 序列化一 turn 滞后 + re-append 零盒影响——after_target_removed
+          // pointerup-remover 断言面）。'viewport'/缺省 origin（绝对坐标）编 '@'
+          // 前缀，origin 元素 = body（仅过 R145 出队解析闸，执行时忽略）。
           var originEl = this._resolveOrigin(step.origin);
           var moveX = step.x || 0, moveY = step.y || 0;
-          if (originEl && originEl.getBoundingClientRect) {
-            var or = originEl.getBoundingClientRect();
-            if (or && or.width > 0) {
-              var px = or.left + or.width / 2 + moveX;
-              var py = or.top + or.height / 2 + moveY;
-              var hitEl = this._hitTest(px, py);
-              if (hitEl) { originEl = hitEl; moveX = px; moveY = py; }
-            }
-          } else if (!originEl) {
-            originEl = this._hitTest(moveX, moveY);
-          }
-          if (!originEl) continue;
-          this._lastMove[this._sourceOrder[si]] = { origin: originEl, x: moveX, y: moveY };
+          var abs = !originEl;
+          var moveOrigin = originEl || document.body || document.documentElement;
+          if (!moveOrigin) continue;
+          this._lastMove[this._sourceOrder[si]] = { origin: moveOrigin, x: moveX, y: moveY, abs: abs };
           // 祖先链快照（move 时点——down/up 的 enqueue 在后，彼时元素可能已移除）
           this._lastChain[this._sourceOrder[si]] = (function(el) {
             var c = [];
@@ -8441,7 +8536,7 @@ const TESTDRIVER_STUB: &str = r#"<script>
             }
             return c;
           })(originEl);
-          plan.push({ op: 'pointer_move', origin: originEl, text: moveX + ',' + moveY + ',' + source.pointerType, chain: this._lastChain[this._sourceOrder[si]] });
+          plan.push({ op: 'pointer_move', origin: moveOrigin, text: (abs ? '@' : '') + moveX + ',' + moveY + ',' + source.pointerType, chain: this._lastChain[this._sourceOrder[si]] });
         } else if (step.type === 'pointerDown') {
           // uievents-compat M3（2026-10-03）：down 步独立入队（取代 M2 折叠 click
           // ——页内 pointerdown listener 的 setPointerCapture 须影响后续 move/up 路由）。
@@ -8455,7 +8550,7 @@ const TESTDRIVER_STUB: &str = r#"<script>
           plan.push({
             op: 'pointer_down',
             origin: downEl,
-            text: (dOrigin ? dOrigin.x : 0) + ',' + (dOrigin ? dOrigin.y : 0) + ',' + source.pointerType + ',' + (step.button || 0),
+            text: (dOrigin && dOrigin.abs ? '@' : '') + (dOrigin ? dOrigin.x : 0) + ',' + (dOrigin ? dOrigin.y : 0) + ',' + source.pointerType + ',' + (step.button || 0),
             chain: this._lastChain[this._sourceOrder[si]]
           });
         } else if (step.type === 'pointerUp') {
@@ -8479,7 +8574,7 @@ const TESTDRIVER_STUB: &str = r#"<script>
           plan.push({
             op: 'pointer_up',
             origin: upEl,
-            text: (uOrigin ? uOrigin.x : downInfo.x) + ',' + (uOrigin ? uOrigin.y : downInfo.y) + ',' + source.pointerType + ',' + (step.button || 0) + '|' + downInfo.selector + '|' + upChain,
+            text: (uOrigin && uOrigin.abs ? '@' : '') + (uOrigin ? uOrigin.x : downInfo.x) + ',' + (uOrigin ? uOrigin.y : downInfo.y) + ',' + source.pointerType + ',' + (step.button || 0) + '|' + downInfo.selector + '|' + upChain,
             chain: this._lastChain[this._sourceOrder[si]]
           });
         } else {
@@ -8514,34 +8609,6 @@ const TESTDRIVER_STUB: &str = r#"<script>
   // 元素即时稳定；动态创建元素由 R145 延迟解析面覆盖——组合命令暂用即时值）。
   Actions.prototype._selectorOf = function(element) {
     try { return selectorFor(element) || ''; } catch (_e) { return ''; }
-  };
-  // 视口命中测试（viewport origin 移动步）：host elementFromPoint（R2924
-  // HitTestCache——真实渲染面）优先；runner headless 缓存未填 → page 侧 gBCR
-  // 几何近似（文档序逆序首个含点元素 ≈ 最深/topmost；WPT 用例元素数小，O(n) 可接受）。
-  // 视口内未命中盒 → body（Chromium 的 body 背景传播命中语义——canvas 区命中返 body）。
-  Actions.prototype._hitTest = function(x, y) {
-    try {
-      if (typeof document === 'undefined') return null;
-      var doc = document.documentElement;
-      var vw = (window && window.innerWidth) || 0;
-      var vh = (window && window.innerHeight) || 0;
-      if (x < 0 || y < 0 || (vw > 0 && x >= vw) || (vh > 0 && y >= vh)) return null;
-      if (document.elementFromPoint) {
-        var host = document.elementFromPoint(x, y);
-        if (host) return host;
-      }
-      var all = document.querySelectorAll('body, body *');
-      for (var i = all.length - 1; i >= 0; i--) {
-        var el = all[i];
-        if (!el.getBoundingClientRect) continue;
-        var r = el.getBoundingClientRect();
-        if (r && r.width > 0 && r.height > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
-          return el;
-        }
-      }
-      return document.body || (doc || null);
-    } catch (_eHT) {}
-    return null;
   };
   globalThis.test_driver.Actions = Actions;
 })();

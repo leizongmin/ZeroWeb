@@ -1438,7 +1438,7 @@ fn test_apply_detached_stash_move_semantics_r361() {
     // 旧版：第 ② 条 child 失配 → Err("insert_adjacent_sel_element: no child match for
     // #target") 中止整批。新版：stash 复用 detach 时的 NodeId → 成功（target 移入 #other）。
     let mut doc = zero_dom::parse_html(html);
-    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None);
+    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None, None);
     assert!(
         result.is_ok(),
         "R361 批内 detach→insert 应复用 stash NodeId（移动语义），旧版硬错: {:?}",
@@ -1497,7 +1497,7 @@ fn test_apply_selector_miss_does_not_abort_batch_p19() {
         },
     ];
     let mut doc = zero_dom::parse_html(html);
-    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None);
+    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None, None);
     assert!(
         result.is_ok(),
         "P19 失配记录应 warn+跳过而非中止整批: {:?}",
@@ -1535,7 +1535,7 @@ fn test_apply_dangling_child_handle_stays_hard_error_p19() {
         ref_selector: "#panel".to_string(),
     }];
     let mut doc = zero_dom::parse_html(html);
-    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None);
+    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None, None);
     let err = result.expect_err("悬垂 child handle 必须硬错，不得被 P19 lenient 化吞掉");
     assert!(
         err.contains("unknown child handle"),

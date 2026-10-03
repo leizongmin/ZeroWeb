@@ -11991,17 +11991,19 @@
   // over@新目标——连通祖先已入过 enter，不重派；WPT pointerevent_after_target_removed
   // 「(child-removed) → pointerover@parent → pointerup@parent」断言面）。目标仍连通
   // → 原样返回（零开销路径）。
-  function _zwRetargetSel(sel, x, y) {
+  function _zwRetargetSel(sel, x, y, skipCross) {
     if (!sel) return sel;
     if (typeof _zwIsConnected === 'function' && !_zwIsConnected(sel, null)) {
       var hit = _zwHitTestSel(x, y);
       if (hit && hit !== sel) {
         var st = _zwPtrState;
-        if (typeof _zwPointerCross === 'function') {
+        if (!skipCross && typeof _zwPointerCross === 'function') {
           _zwPointerCross(st.overSel, hit, x, y);
         }
-        st.overSel = hit;
-        st.hoverSel = hit;
+        if (!skipCross) {
+          st.overSel = hit;
+          st.hoverSel = hit;
+        }
         return hit;
       }
     }
@@ -12024,6 +12026,9 @@
     // 位置缓存（跨界序坐标）+ 结算重入 guard + split 链 click 连击态。
     active: {}, pending: {}, capture: {},
     hoverSel: null, buttons: 0, x: 0, y: 0, pointerType: 'mouse',
+    // uievents-compat M3 尾簇 4：compat mouse 层独立 hover 位——不随 touch 抬起拆除
+    // （mouse 边界事件只随真实指针位置跨界，见 _zwPointerCross 双层拆分）。
+    mouseOverSel: null,
     processingCapture: false,
     streakTarget: null, streakCount: 0, downSel: null, downButton: 0
   };
@@ -12150,9 +12155,29 @@
       buttons: 1 << button, pointerType: pointerType || 'mouse', pressure: 0.5
     }) === 'prevented';
     if (prevented) return 'prevented';
-    __zw_dispatch_event(sel, 'mousedown', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button });
+    // uievents-compat M3 尾簇 4（interleaved 面）：pointerdown 派发中目标被页内
+    // listener 移除 → compat mousedown/contextmenu **重定向**（宿主视图父链回退——
+    // 命中测试受布局快照滞后不可靠；Chromium 行为 mousedown@新目标，WPT
+    // after_target_removed_interleaved「(child-removed) → mouseover@parent +
+    // mousedown@parent」断言面）。
+    var downEff = sel;
+    if (typeof _zwIsConnected === 'function' && !_zwIsConnected(sel, null)) {
+      var reDown = _zwRetargetSel(sel, x, y);
+      if (reDown === sel) {
+        try { reDown = (typeof __zw_parent === 'function' && __zw_parent(sel)) || sel; } catch (_eRD) { reDown = sel; }
+        if (reDown !== sel && typeof _zwPointerCross === 'function') {
+          _zwPointerCross(st.overSel, reDown, x, y);
+        }
+        if (reDown !== sel) {
+          st.overSel = reDown;
+          st.hoverSel = reDown;
+        }
+      }
+      downEff = reDown;
+    }
+    __zw_dispatch_event(downEff, 'mousedown', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button });
     if (button === 2) {
-      __zw_dispatch_event(sel, 'contextmenu', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button });
+      __zw_dispatch_event(downEff, 'contextmenu', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button });
     }
     // touch 隐式捕获（无显式 pending 时）——于 mousedown 后登记，下一 pointer 系
     // 事件派发前结算（gotpointercapture 站序与显式 setPointerCapture 一致）。
@@ -12190,11 +12215,50 @@
     // 有效落点先于派发取（pointerup 派发尾的隐式释放会清 capture——click/auxclick
     // 组合目标须用释放前的捕获落点；WPT pointerevent_click_during_capture 期望
     // click@捕获目标而非 up 命中元素）。
-    var upEff = st.capture['1'] ? st.capture['1'].sel : upSel;
+    var capturedSel = st.capture['1'] ? st.capture['1'].sel : null;
     var upPrevented = __zw_dispatch_event(upSel, 'pointerup', {
       clientX: x || 0, clientY: y || 0, button: button,
       buttons: 0, pointerType: pointerType || 'mouse'
     }) === 'prevented';
+    // uievents-compat M3 尾簇 4（interleaved 面）：pointerup 派发中目标被页内
+    // listener 移除 → compat mouseup 重定向新落点（再命中测试/祖先链回退——
+    // Chromium 行为 mouseup@新目标；WPT after_target_removed_interleaved pointerup
+    // variant「(child-removed) → mouseover@parent + mouseup@parent」断言面）。
+    // 捕获期不重定向（capture 语义优先）。层分流：hoverable 双层跨界（pointer
+    // over@新目标——after_target_removed pointerup variant 断言面）；touch 仅 mouse
+    // 层（pointer 层随抬起拆除走 leave、over 留给下次 down 隐含迁移——?touch 期望
+    // 序「pointerleave@parent → pointerover@parent」面）。
+    if (!capturedSel && typeof _zwIsConnected === 'function' && !_zwIsConnected(upSel, null)) {
+      var touchUp = st.pointerType === 'touch';
+      var reUp = _zwRetargetSel(upSel, x, y, touchUp);
+      if (reUp === upSel && ancestorChain) {
+        var chainU = String(ancestorChain).split('|');
+        for (var ui = 0; ui < chainU.length; ui++) {
+          if (chainU[ui] && chainU[ui] !== upSel
+              && (typeof _zwIsConnected !== 'function' || _zwIsConnected(chainU[ui], null))) {
+            reUp = chainU[ui];
+            break;
+          }
+        }
+      }
+      if (reUp !== upSel) {
+        if (touchUp) {
+          _zwLayerCross(st.mouseOverSel, reUp, x, y, 'mouse');
+          st.mouseOverSel = reUp;
+        } else {
+          // hoverable：命中测试路的跨界已由 _zwRetargetSel 内部完成——此处重复
+          // cross 幂等（overSel 已是新目标 → prev===next 早退）；仅回退链路径实际
+          // 派发（over@新目标，dangling prev 段全抑制）。
+          if (typeof _zwPointerCross === 'function') {
+            _zwPointerCross(st.overSel, reUp, x, y);
+          }
+          st.overSel = reUp;
+          st.hoverSel = reUp;
+        }
+        upSel = reUp;
+      }
+    }
+    var upEff = capturedSel || upSel;
     // pointerup 取消 → compat mouseup 抑制（click 照常——WPT
     // pointerevent_suppress_compat_events_on_click 期望序 click@t0 无 mousedown/up）。
     if (!upPrevented) {
@@ -12234,16 +12298,18 @@
     if (st.streakCount >= 2) {
       __zw_dispatch_event(target, 'dblclick', { detail: 2 });
     }
-    // uievents-compat M3 尾簇：touch（非 hoverable）抬起即悬停拆除——out@over
-    // （over 已移除则抑制）+ leave 全链（over 已移除时以命中测试新锚起走——WPT
-    // after_target_removed ?touch「pointerleave@parent 无 out@child」断言面）。
+    // uievents-compat M3 尾簇：touch（非 hoverable）抬起即悬停拆除——pointer 层
+    // out@over（over 已移除则抑制）+ leave 全链（over 已移除时以命中测试新锚起走
+    // ——WPT after_target_removed ?touch「pointerleave@parent 无 out@child」断言面）。
+    // 尾簇 4：**仅 pointer 层**——compat mouse 层 hover 独立（mouseup 不派
+    // mouseout/mouseleave、mouse hover 位留待后续跨界按 mouse 链计算——WPT ?touch
+    // mouse 子测试「up@parent 后无 mouseout/mouseleave」断言面）。
     if (st.pointerType === 'touch') {
       var over = st.overSel;
       if (over) {
         var overConn = (typeof _zwIsConnected !== 'function') ? true : _zwIsConnected(over, null);
         if (overConn) {
           __zw_dispatch_event(over, 'pointerout', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
-          __zw_dispatch_event(over, 'mouseout', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
         }
         var anchor = overConn ? over : null;
         if (!anchor && ancestorChain) {
@@ -12262,7 +12328,6 @@
         var curL = anchor, guardL = 0;
         while (curL && guardL++ < 64) {
           __zw_dispatch_event(curL, 'pointerleave', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
-          __zw_dispatch_event(curL, 'mouseleave', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
           try { curL = __zw_parent(curL) || ''; } catch (_eTL) { curL = ''; }
         }
       }
@@ -12276,7 +12341,19 @@
   // sel 域上行（driver/宿主目标均为页面可见元素；handle 域 defer）。每事件经
   // `__zw_dispatch_event` 走 UA 通道（isTrusted + R145 retargeting 与宿主派发同流）。
   function _zwPointerCross(prevSel, nextSel, x, y) {
+    // uievents-compat M3 尾簇 4：**双层跨界**——pointer 层（prev = st.overSel 语义位）
+    // 与 compat mouse 层（prev = st.mouseOverSel）各自独立算边界序。mouse 层 hover
+    // 不随 touch 抬起拆除（compat mouse 边界事件只随真实指针位置——WPT
+    // after_target_removed ?touch mouse 子测试：up@parent 后无 mouseout/mouseleave、
+    // down 隐含迁移不重派 mouseover@已悬停目标）。
+    var st = _zwPtrState;
+    _zwLayerCross(prevSel, nextSel, x, y, 'pointer');
+    _zwLayerCross(st.mouseOverSel, nextSel, x, y, 'mouse');
+    st.mouseOverSel = nextSel;
+  }
+  function _zwLayerCross(prevSel, nextSel, x, y, layer) {
     if (prevSel === nextSel) return;
+    var evOut = layer + 'out', evLeave = layer + 'leave', evOver = layer + 'over', evEnter = layer + 'enter';
     // uievents-compat M3 尾簇：prev 已移除（悬停元素被 DOM 删除）→ 不派 out/leave@
     // 已移除元素、不重派 enter（连通祖先已入过）——只补 over@新目标（WPT
     // pointerevent_after_target_removed 断言面）。
@@ -12304,12 +12381,10 @@
     // leave/enter 仅在跨出/跨入祖先链段派（同树内父子移动无 enter/leave）。
     // prevDangling：out/leave 整段抑制（已移除元素不接收边界事件）。
     if (prevSel && !prevDangling) {
-      __zw_dispatch_event(prevSel, 'pointerout', { relatedTarget: rel, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
-      __zw_dispatch_event(prevSel, 'mouseout', { relatedTarget: rel, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+      __zw_dispatch_event(prevSel, evOut, { relatedTarget: rel, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
     }
     for (var k = 0; !prevDangling && k < prevChain.length && prevChain[k] !== common; k++) {
-      __zw_dispatch_event(prevChain[k], 'pointerleave', { relatedTarget: rel, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
-      __zw_dispatch_event(prevChain[k], 'mouseleave', { relatedTarget: rel, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+      __zw_dispatch_event(prevChain[k], evLeave, { relatedTarget: rel, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
     }
     // 新链：over@next（边界元素，恒派——next 即公共祖先的向祖先移动也派）→
     // enter（每新入站，公共祖先下行至 next；next 已入 over，站序自外向内——
@@ -12317,8 +12392,7 @@
     // prevDangling：enter 段抑制（relatedTarget 指向已移除元素无意义 → null）。
     var relIn = (prevSel && !prevDangling) ? prevSel : null;
     if (nextSel) {
-      __zw_dispatch_event(nextSel, 'pointerover', { relatedTarget: relIn, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
-      __zw_dispatch_event(nextSel, 'mouseover', { relatedTarget: relIn, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+      __zw_dispatch_event(nextSel, evOver, { relatedTarget: relIn, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
     }
     var enter = [];
     for (var k2 = 0; !prevDangling && k2 < nextChain.length; k2++) {
@@ -12326,8 +12400,7 @@
       enter.push(nextChain[k2]);
     }
     for (var k3 = enter.length - 1; k3 >= 0; k3--) {
-      __zw_dispatch_event(enter[k3], 'pointerenter', { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
-      __zw_dispatch_event(enter[k3], 'mouseenter', { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+      __zw_dispatch_event(enter[k3], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
     }
   }
   // slice22 焦点治理：宿主驱动焦点迁移（mousedown 默认动作 / Tab 焦点导航 / 宿主激活）的

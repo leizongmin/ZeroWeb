@@ -19,6 +19,10 @@ use zero_dom::{
 #[cfg(feature = "script-runtime")]
 use zero_script_sandbox::Sandbox;
 
+/// uievents-compat M3 尾簇 4：宿主侧 DOM mutation 代际计数——runner 探测环刷新门
+///（[`mutation_version`]）。
+static MUTATION_VERSION: AtomicU64 = AtomicU64::new(0);
+
 // getComputedStyle 计算与序列化（R2709 从本文件拆出，控制主文件行数）。
 mod computed_style;
 pub use computed_style::*;
@@ -654,7 +658,46 @@ fn rewrite_pending_id_selectors(
 /// handle→NodeId 映射仅在本函数调用作用域内有效（返回 handle→selector 供 RectBridge）。
 /// R45：同批 id 重命名经 [`rewrite_pending_id_selectors`] 追链（见该函数文档）。
 pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Result<HashMap<String, String>, String> {
-    apply_dom_mutations_with_persistent(doc, mutations, None)
+    apply_dom_mutations_full(doc, mutations, None, None, None)
+}
+
+/// uievents-compat M3 尾簇 4：detach→re-insert 移动语义的**跨批** detached-stash——
+/// `DomMutation::Remove`/`RemoveChildAt` 摘下的 sel 子按 selector 记账**序列化片段**
+///（有序去重、FIFO 封顶），后续批的 `InsertAdjacentSelElement` child 失配时重解析片段
+/// 并按移动语义插回（spec removeChild+appendChild 引用同一节点对象；宿主 doc 为
+/// 布局/查询镜像，片段重解析不破语义——shim 侧元素身份由 shim registry 持有）。
+/// R361 批内 NodeId stash 的跨批扩展：页内 listener 移除元素、之后 turn 的
+/// cleanup/水合再插回（WPT pointerevents after_target_removed 族断言面——remove 落
+/// listener turn、re-append 落 cleanup turn，且间隔可含宿主管线全量重建
+///（runner shim html 刷新），NodeId 跨重建失效、片段跨重建有效）。调用方在导航
+/// 边界（新页面内容到达）清空——跨页 stale 片段不复活。
+#[derive(Default)]
+pub struct DetachedNodeStash {
+    entries: Vec<(String, String)>,
+}
+
+impl DetachedNodeStash {
+    const CAP: usize = 32;
+
+    /// 记账一条 detach（同 selector 重复 remove 去重，保留最新片段）。
+    pub fn insert(&mut self, selector: String, html: String) {
+        self.entries.retain(|(sel, _)| sel != &selector);
+        self.entries.push((selector, html));
+        if self.entries.len() > Self::CAP {
+            self.entries.remove(0);
+        }
+    }
+
+    /// 消费一条记账（复用即移除——复活后 selector 回到文档，不再悬垂）。
+    pub fn take(&mut self, selector: &str) -> Option<String> {
+        let idx = self.entries.iter().position(|(sel, _)| sel == selector)?;
+        Some(self.entries.remove(idx).1)
+    }
+
+    /// 导航边界清空（跨页 stale 片段不复活）。
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
 }
 
 /// js-dom M3 R100：[`apply_dom_mutations`] 的持久 handle 解析版。
@@ -682,18 +725,21 @@ pub fn apply_dom_mutations_with_persistent(
     mutations: &[DomMutation],
     persistent: Option<&HashMap<String, String>>,
 ) -> Result<HashMap<String, String>, String> {
-    apply_dom_mutations_full(doc, mutations, persistent, None)
+    apply_dom_mutations_full(doc, mutations, persistent, None, None)
 }
 
 /// [`apply_dom_mutations_with_persistent`] 的 NodeId 持久表扩展（R100——见其文档）。
 /// `persistent_nodes` 的条目在 apply 后**回填**（本批 ephemeral handles 全量 merge 返出，
 /// 调用方持有跨 apply）。节点被移除后 NodeId 可能被 slotmap 复用——调用方在结构性
 /// Remove/RemoveHandle 应用后应失效对应条目（当前批内移除的 handle 从返出 map 剔除）。
+/// `detached`：跨批 detach→re-insert 移动语义记账（见 [`DetachedNodeStash`]）——传
+/// `None` 时退化为批内 stash（R361 原语义）。
 pub fn apply_dom_mutations_full(
     doc: &mut Document,
     mutations: &[DomMutation],
     persistent: Option<&HashMap<String, String>>,
     persistent_nodes: Option<&mut HashMap<String, NodeId>>,
+    mut detached: Option<&mut DetachedNodeStash>,
 ) -> Result<HashMap<String, String>, String> {
     let mut handles: HashMap<String, NodeId> = HashMap::new();
     // js-dom M3 R100：NodeId 持久表（优先解析层）——查到即**预植**进本批 ephemeral map，
@@ -723,8 +769,10 @@ pub fn apply_dom_mutations_full(
     // 后续 InsertAdjacentSelElement 的 child `find_by_selector('#target')` 失配（detach
     // 节点不在文档）→ 硬错中止整批。spec：两操作引用**同一节点对象**，insert 应复用该
     // NodeId（reparent 移动语义）。Remove 应用时把 (selector → NodeId) 存入本批 stash；
-    // insert 类 child 解析失配时查 stash 复用（consume 后移除）。批结束即弃（跨批 stale
-    // 引用不复活——stash 生命周期 = 一批 mutation，与 handles 同级）。
+    // insert 类 child 解析失配时查 stash 复用（consume 后移除）。批结束即弃。
+    // uievents-compat M3 尾簇 4：调用方另传跨批片段 stash（[`DetachedNodeStash`]，序列化
+    // 片段跨宿主管线全量重建有效）时，Remove/RemoveChildAt 同步记账片段——remove 落
+    // listener turn、re-append 落后续 turn 的 cleanup/水合面（批间可含重建）。
     let mut detached_stash: std::collections::HashMap<String, NodeId> = std::collections::HashMap::new();
     while let Some(mutation) = pending.pop_front() {
         // js-dom M3 R100：handle 变体在 ephemeral map 未命中时，先经持久表翻译成
@@ -920,6 +968,11 @@ pub fn apply_dom_mutations_full(
                     // R361：detached-stash 记账（selector → NodeId，本批内 insert 类
                     // 变体 child 失配时复用——同批 detach→insert = 同一节点移动）。
                     detached_stash.insert(selector.clone(), node);
+                    // 尾簇 4：跨批片段记账（序列化片段跨宿主管线全量重建有效——
+                    // runner shim html 刷新触发的 render_html 间隔面）。
+                    if let Some(stash) = detached.as_mut() {
+                        stash.insert(selector.clone(), doc.outer_html(node));
+                    }
                 }
             }
             DomMutation::CreateElement { handle, tag } => {
@@ -1153,6 +1206,15 @@ pub fn apply_dom_mutations_full(
                 match doc.child_nodes(parent).get(child_index).copied() {
                     Some(child) => {
                         doc.remove_child(parent, child).map_err(|e| e.to_string())?;
+                        // 尾簇 4：跨批片段记账——sel 元素移除走本变体（非 Remove），后续
+                        // 批 re-insert（InsertAdjacentSelElement）child 失配时按子 selector
+                        // 重解析片段插回（R361 移动语义跨批面）。无唯一 selector 的子
+                        //（纯文本等）无法被 sel insert 引用，不记账。
+                        if let Some(child_sel) = unique_selector_for_node(doc, child)
+                            && let Some(stash) = detached.as_mut()
+                        {
+                            stash.insert(child_sel, doc.outer_html(child));
+                        }
                     }
                     None => {
                         tracing::warn!(
@@ -1288,13 +1350,36 @@ pub fn apply_dom_mutations_full(
                     // R361：child 失配（同批前序 Remove 已 detach）→ stash 复用该 NodeId
                     //（移动语义——spec removeChild+appendChild 引用同一节点对象）。
                     // siteopt t4 P19：stash 也未命中 → lenient warn+跳过（原硬错同被推翻）。
+                    // 尾簇 4：跨批片段层——NodeId stash 亦未命中（remove 落前批且批间宿主
+                    // 管线已全量重建，NodeId 失效）→ 跨批片段 stash 重解析插回。
                     None => match detached_stash.remove(child_selector.as_str()) {
                         Some(id) => id,
                         None => {
-                            tracing::warn!(
-                                "apply DOM mutations: insert_adjacent_sel_element child no match, skipped: {child_selector}"
-                            );
-                            continue;
+                            let frag_html = detached.as_mut().and_then(|stash| stash.take(child_selector.as_str()));
+                            match frag_html {
+                                Some(html) => {
+                                    let (context_ns, context_local) = match doc.get(node).map(|n| &n.kind) {
+                                        Some(NodeKind::Element(e)) => {
+                                            (e.namespace().to_string(), e.local_name().to_string())
+                                        }
+                                        _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
+                                    };
+                                    let frag_doc =
+                                        zero_dom::parse_html_fragment(html.trim(), &context_ns, &context_local);
+                                    let mut copied = Vec::new();
+                                    for frag_child in fragment_top_level_children(&frag_doc) {
+                                        copied.push(copy_subtree_from(doc, &frag_doc, frag_child));
+                                    }
+                                    insert_nodes_at_position(doc, &copied, node, &position)?;
+                                    continue;
+                                }
+                                None => {
+                                    tracing::warn!(
+                                        "apply DOM mutations: insert_adjacent_sel_element child no match, skipped: {child_selector}"
+                                    );
+                                    continue;
+                                }
+                            }
                         }
                     },
                 };
@@ -1406,7 +1491,20 @@ pub fn apply_dom_mutations_full(
         }
     }
 
+    // uievents-compat M3 尾簇 4：非空批应用 → mutation 代际自增（runner 刷新门）。
+    if !mutations.is_empty() {
+        MUTATION_VERSION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
     Ok(handle_selectors)
+}
+
+/// uievents-compat M3 尾簇 4：宿主侧 DOM mutation 代际计数——`apply_dom_mutations*`
+/// 应用非空批后自增（见 [`MUTATION_VERSION`]）。runner 探测环据此**廉价门控** shim
+/// html 序列化刷新（无 mutation → 零成本跳过百 KB 级 outerHTML 序列化——headless 泵
+/// ~1ms/拍的探测环上逐拍全量序列化曾把 corpus 跑穿 test-guard 20min time-limit）。
+pub fn mutation_version() -> u64 {
+    MUTATION_VERSION.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 fn apply_style_property(doc: &mut Document, node: NodeId, property: &str, value: &str) {

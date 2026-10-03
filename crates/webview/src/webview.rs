@@ -407,6 +407,10 @@ pub struct WebView {
     /// `rect_bridge::LayoutRectSnapshot` 承担；进程内 webview 此前无该桥（gBCR 恒零
     /// rect），testharness 用例的 `getBoundingClientRect`/MouseEvent offsetX 计算不可用。
     layout_rect_snapshot: zero_engine::rect_bridge::LayoutRectSnapshot,
+    /// uievents-compat M3 尾簇 4：runner 探测环上一次结构性刷新的 shim html 基线
+    /// （`refresh_if_html_changed` 差分基线——remove→re-append 的净零变更须经历两个
+    /// 状态各刷新一次，cached_html 等值判定会漏掉回程）。
+    runner_probe_html: Option<String>,
     /// HTTP 客户端。
     http_client: HttpClient,
     /// 进程内 JavaScript 沙箱（`external_script` 为 None 时使用）。
@@ -635,6 +639,7 @@ impl WebView {
             shared_mutations: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             applied_mutations: 0,
             layout_rect_snapshot: zero_engine::rect_bridge::new_layout_rect_snapshot(),
+            runner_probe_html: None,
             http_client,
             js_sandbox,
             indexed_db_bridge,
@@ -927,6 +932,10 @@ impl WebView {
         // js-dom M1 L2 R102：清 live 查询源（旧页 Rc 失效；render_html 后由
         // apply/注册路径重新发布新 doc 句柄）。
         zero_engine::js_dom_bridge::publish_live_query_doc(None);
+        // uievents-compat M3 尾簇 4：导航边界清跨批 detached 片段 stash（跨页 stale
+        // 片段不复活；页内 remove→re-append 间隔的宿主管线全量重建不清——片段
+        // 跨重建有效，见 [`DetachedNodeStash`]）。
+        self.pipeline.clear_detached_sel_nodes();
         self.cached_html = html.to_string();
         let css_str = css.unwrap_or("");
         self.cached_css = css_str.to_string();
@@ -939,6 +948,42 @@ impl WebView {
         // R150：render 后刷新布局 rect 快照（gBCR 回调读取源）。
         self.refresh_layout_rect_snapshot();
         render_result
+    }
+
+    /// uievents-compat M3 尾簇 4：runner 探测环的结构性刷新——JS shim 是自含 DOM
+    /// 实现（页内 remove/appendChild 只落 shim 内部状态，不产 DomMutation/native 写），
+    /// 宿主管线布局停留在导航时点。探测环传 shim 序列化 html：变化 → `render_html`
+    /// 全量重布局 + handle 重绑 + gBCR 快照刷新（gBCR/命中测试对 re-append 节点立即可
+    /// 用——WPT pointerevents after_target_removed 族断言面）。shim DOM 为唯一真相，
+    /// 管线 doc 仅布局/绘制镜像——重建无身份风险（sel 域查询/派发走 shim 表）。
+    pub fn refresh_if_html_changed(&mut self, html: &str) -> bool {
+        if html.is_empty() {
+            return false;
+        }
+        // 差分基线 = 上次探测 html（非 cached_html——remove→re-append 净零变更的
+        // 「回程」也要刷新一次，否则布局停留在移除态）。
+        let changed = match &self.runner_probe_html {
+            Some(prev) => prev != html,
+            None => html != self.cached_html,
+        };
+        self.runner_probe_html = Some(html.to_string());
+        if !changed {
+            return false;
+        }
+        self.cached_html = html.to_string();
+        self.render();
+        // R100：全量重建清 persistent_handle_nodes——按 shim 侧正置表（selector→handle）
+        // 重绑，页内 createElement 产物的后续 handle 型 mutation 不失配（keyboard
+        // keydown-input-events 的「unknown handle __n0」回归面）。
+        let pairs: Vec<(String, String)> = {
+            let sel_map = self.selector_handle_map.lock().unwrap_or_else(|e| e.into_inner());
+            sel_map.iter().map(|(s, h)| (h.clone(), s.clone())).collect()
+        };
+        for (handle, selector) in &pairs {
+            self.pipeline.rebind_handle_node(handle, selector);
+        }
+        self.refresh_layout_rect_snapshot();
+        true
     }
 
     /// js-dom R150：从当前布局树刷新 `layout_rect_snapshot`（render/apply 后调用——
@@ -1763,6 +1808,9 @@ impl WebView {
     pub fn set_cached_content(&mut self, html: &str, css: &str) {
         self.cached_html = html.to_string();
         self.cached_css = css.to_string();
+        // uievents-compat M3 尾簇 4：新页面内容到达 = 导航边界——跨批 detached 片段
+        // stash 清空（同 load 路径；防跨页 stale 片段复活）。
+        self.pipeline.clear_detached_sel_nodes();
     }
 
     /// 已缓存图片固有尺寸。
