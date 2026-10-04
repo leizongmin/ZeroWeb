@@ -71,3 +71,65 @@ fn test_collect_name_face_order_id_only_regression_s28() {
         "id 面保序不回归 + name 面追加树序位"
     );
 }
+
+// slice30（RP-1 同名多命中 HTMLCollection 面，2026-10-04）：`collect_element_ids_multi`
+// 钉——「named object 命中 ≥2 的名字」清单（树序首现、去重）。spec WindowProperties
+// 命名属性取值：唯一 named object 返元素，多命中返以文档为根、树序全集的 HTMLCollection；
+// shim `_installNamedAccess` 据本清单安装集合（单命中名走元素路径）。named object 以
+// 元素计——同元素 id/name 双臂同值只算一个。
+// https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+// https://webidl.spec.whatwg.org/#WindowProperties
+
+#[test]
+fn test_collect_multi_match_id_face_tree_order_s30() {
+    // id 面多命中：双 div 同 id + 混合面（img name=dup ×2 + div id=dup）——清单按
+    // 树序首现、去重；单命中名不入选。
+    let html = "<html><body>\
+                <div id=\"dupe\"></div>\
+                <img name=\"mm\">\
+                <div id=\"dupe\"></div>\
+                <div id=\"dupe2\"></div>\
+                <img name=\"mm\">\
+                <div id=\"dupe2\"></div>\
+                <div id=\"dupe2\"></div>\
+                <div id=\"solo\"></div>\
+                </body></html>";
+    assert_eq!(
+        collect_element_ids_multi(html),
+        "dupe|mm|dupe2",
+        "id 面多命中 + name 面多命中按树序首现；单命中名（solo）不入选"
+    );
+}
+
+#[test]
+fn test_collect_multi_match_same_element_id_name_once_s30() {
+    // 同元素 id=name 同值 + 另一同名元素：该元素对同名只算一个 named object——
+    // 两者合计命中 2 → 入选；单元素自身同值不重复计。
+    let html = "<html><body>\
+                <img id=\"both\" name=\"both\">\
+                <div id=\"both\"></div>\
+                <form name=\"solo\"></form>\
+                </body></html>";
+    assert_eq!(
+        collect_element_ids_multi(html),
+        "both",
+        "同元素 id/name 同值计一个 named object；两元素同名入选；单命中名不入选"
+    );
+}
+
+#[test]
+fn test_collect_multi_match_negative_non_nameable_and_single_s30() {
+    // 负面：input/a 等非 name-able 元素同名多命中不入清单（name 面仅四元素参与，
+    // 同 collect 口径）；全部单命中名不入选；iframe name= 不入（R139 委托）。
+    let html = "<html><body>\
+                <input name=\"q\"><input name=\"q\">\
+                <a name=\"anc\"></a><a name=\"anc\"></a>\
+                <iframe name=\"fr\"></iframe><iframe name=\"fr\"></iframe>\
+                <img name=\"one\">\
+                </body></html>";
+    assert_eq!(
+        collect_element_ids_multi(html),
+        "",
+        "非 name-able 多命中（input/a/iframe）不入选；全单命中不入选"
+    );
+}

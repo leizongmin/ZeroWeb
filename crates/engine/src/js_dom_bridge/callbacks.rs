@@ -879,6 +879,18 @@ pub fn register_dom_callbacks(
             with_query_doc_live_aware(&snap, true, collect_element_ids_doc)
         }),
     );
+    // slice30（RP-1 同名多命中面）：多命中名清单（≥2 named object 同名，树序首现）。
+    // shim `_installNamedAccess` 对这些名安装 HTMLCollection（spec 取值算法多命中返
+    // 集合）；单命中名仍走 `__zw_collect_ids` 元素路径。
+    // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_collect_ids_multi",
+        Box::new(move |_args| {
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            with_query_doc_live_aware(&snap, true, collect_element_ids_multi_doc)
+        }),
+    );
     let _ = sandbox.execute("if (typeof __zwInstallNamedAccess === 'function') __zwInstallNamedAccess();");
 
     let html = Arc::clone(dom_html);

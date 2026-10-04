@@ -8127,6 +8127,23 @@
     return r;
   };
 
+  // slice30（RP-1 同名多命中面）：名的全部 named object——union selector 单查树序
+  // + 同元素双臂同中去重（spec：集合成员是元素，`<img id="x" name="x">` 一员）。
+  // 与单命中回落同选择器面（id 面 `[id=…]` + name 面四元素 `[name=…]`；iframe 不入
+  // 本面——R139 委托，同 collect 口径）。标识符字符集内嵌属性选择器（无引号/转义面）。
+  function _namedAccessMatches(name) {
+    var nl = globalThis.document.querySelectorAll(
+      '[id="' + name + '"],embed[name="' + name + '"],form[name="' + name + '"],' +
+      'img[name="' + name + '"],object[name="' + name + '"]');
+    var els = [];
+    for (var i = 0; i < nl.length; i++) {
+      var e = nl[i], dup = false;
+      for (var j = 0; j < els.length; j++) if (els[j] === e) { dup = true; break; }
+      if (!dup) els.push(e);
+    }
+    return els;
+  }
+
   // HTML 规范「Window 上的命名属性访问」：带 id 的元素应作为全局变量可访问
   // （`<div id="container">…</div>` → JS `container.appendChild(...)`）。动态 reftest
   // 普遍用裸标识符引用元素（257 个 reftest 文件），缺失则抛 ReferenceError 中断脚本。
@@ -8138,14 +8155,38 @@
   // 过滤（supported property names 为任意 DOMString），留门偏差=①`|` 分隔 transport
   // 与属性选择器嵌入在标识符字符集下才安全 ②canonical 风暴面行为风险；非标识符名
   // 的括号访问 window['a-b'] 本 shim 不支持——偏差记档不放宽。
+  // slice30（RP-1 同名多命中面）：唯一 named object 返元素本身（既有单命中路径），
+  // 多命中返以文档为根、树序全集的 HTMLCollection（spec WindowProperties 命名属性
+  // 取值算法）。多命中名先装集合（`_zwMakeCollection(els, true)` 现有集合设施），
+  // 下方单命中循环以「不覆盖已存在全局」守卫自然跳过——集合形态优先于首命中元素。
+  // **静态快照集合**：安装时点文档快照的全集，非 live（集合内动态增删后随下次快照
+  // 换代整体重装）；spec 的 live 集合语义属 RP-3 live-mutation 面。FIXME(live-collection)
   // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+  // https://webidl.spec.whatwg.org/#WindowProperties
   function _installNamedAccess() {
     try {
       var ids = __zw_collect_ids();
       if (!ids) return;
+      // 多命中名先装集合（≥2 named object 同名——`__zw_collect_ids_multi` 清单）。
+      try {
+        var mnames = typeof __zw_collect_ids_multi === 'function' ? __zw_collect_ids_multi() : '';
+        if (mnames) {
+          var parts30 = mnames.split('|');
+          for (var p30 = 0; p30 < parts30.length; p30++) {
+            var mname = parts30[p30];
+            if (!mname || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(mname)) continue;
+            if (globalThis[mname] !== undefined) continue;
+            var els30 = _namedAccessMatches(mname);
+            if (els30.length > 1) {
+              // spec HTMLCollection（length/item/namedItem）；静态快照（见头注 FIXME）。
+              globalThis[mname] = _zwMakeCollection(els30, true);
+            }
+          }
+        }
+      } catch (_e30m) {}
       ids.split('|').forEach(function(id) {
         if (!id || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id)) return;
-        if (globalThis[id] !== undefined) return;
+        if (globalThis[id] !== undefined) return; // 多命中集合已装 / 脚本自有全局均跳过
         var el = globalThis.document.getElementById(id);
         if (!el) {
           // name 面：标识符字符集内嵌属性选择器（无引号/转义面）；命中 embed/form/

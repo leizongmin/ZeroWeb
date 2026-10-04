@@ -1171,7 +1171,38 @@ fn js_worker_main(
       if (id && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id)) cur[id] = true;
     }
   }
+  // slice30（RP-1）：named access 安装值判别——元素（nodeType 1）或多命中集合
+  //（HTMLCollection，__zwHC 内部标记）。换代回收/换代登记两口径同扩：集合无
+  // nodeType，修前不在回收扫描内 → 跨换代悬挂。
+  var _isNA = function (v) {
+    if (!v || typeof v !== 'object') return false;
+    if (v.nodeType === 1) return true;
+    try { return typeof v.__zwHC === 'function'; } catch (e) { return false; }
+  };
   var installed = globalThis.__zwNamedAccessInstalled;
+  // slice30（RP-1）：集合值换代重装——登记在案的 named access 所有值中，①集合值
+  //（多命中安装）随快照换代必删，交由 install 重装（成员随新快照刷新；形态切换
+  // 多命中↔单命中同此闭合——旧集合不删则 install 的「不覆盖已存在全局」守卫跳过，
+  // 残留旧形态）；②仍在多命中清单的名重装（集合成员刷新）。单命中元素值保持
+  // slice27 口径（选择器 wrapper 再解析，不重装）。脚本自有全局（无登记）不动。
+  // 集合内同步脚本动态增删的 live 语义归 RP-3。FIXME(live-collection)
+  try {
+    var mnames30 = typeof __zw_collect_ids_multi === 'function' ? __zw_collect_ids_multi() : '';
+    var multiNow = {};
+    if (mnames30) {
+      var mp30 = mnames30.split('|');
+      for (var mi30 = 0; mi30 < mp30.length; mi30++) if (mp30[mi30]) multiNow[mp30[mi30]] = true;
+    }
+    for (var k30 in cur) {
+      if (!(installed && installed[k30])) continue;
+      var ex30;
+      try { ex30 = globalThis[k30]; } catch (e30) { continue; }
+      if (!_isNA(ex30)) continue;
+      if (!(ex30.nodeType === 1) || multiNow[k30]) {
+        try { delete globalThis[k30]; } catch (e30d) {}
+      }
+    }
+  } catch (e30m) {}
   if (!installed) {
     // 新 context（reset 后首快照）：快照先于页面脚本执行，本 context 尚无脚本自建
     // 全局——shim eval 自调用此刻登记的「上一文档」元素全局全部回收（否则跨站
@@ -1180,7 +1211,7 @@ fn js_worker_main(
       if (cur[k]) continue;
       var v0;
       try { v0 = globalThis[k]; } catch (e) { continue; }
-      if (v0 && typeof v0 === 'object' && v0.nodeType === 1) {
+      if (_isNA(v0)) {
         try { delete globalThis[k]; } catch (e) {}
       }
     }
@@ -1189,7 +1220,7 @@ fn js_worker_main(
       if (cur[k]) continue;
       var old;
       try { old = globalThis[k]; } catch (e) { continue; }
-      if (old && typeof old === 'object' && old.nodeType === 1) {
+      if (_isNA(old)) {
         try { delete globalThis[k]; } catch (e) {}
       }
     }
@@ -1199,7 +1230,7 @@ fn js_worker_main(
   for (var id in cur) {
     var v;
     try { v = globalThis[id]; } catch (e) { continue; }
-    if (v && typeof v === 'object' && v.nodeType === 1) next[id] = true;
+    if (_isNA(v)) next[id] = true;
   }
   globalThis.__zwNamedAccessInstalled = next;
 })()"#,
@@ -1751,6 +1782,152 @@ mod tests {
             worker.execute_script_direct("typeof globalThis.s28imgname").unwrap(),
             "object",
             "换代保留的 name 元素全局持续可用"
+        );
+        worker.shutdown();
+    }
+
+    // slice30（RP-1 同名多命中 HTMLCollection 面，2026-10-04）：同名多命中时 spec 要求
+    // 返 HTMLCollection——WindowProperties 命名属性取值算法：唯一 named object 返元素
+    // 本身，多命中返以文档为根、含全部同名 named object 的 HTMLCollection（树序）。
+    // named object = 文档树内带 id 元素 + embed/form/img/object 非空 name 元素（同元素
+    // id/name 同值只算一个）。修前形态：getElementById/querySelector 均首命中 → 单元素
+    //（slice28 缺陷轮 I-1 定性、slice29 testeff I-6 核实守卫空缺）。
+    // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+    // https://webidl.spec.whatwg.org/#WindowProperties
+    #[test]
+    fn renderer_js_worker_named_access_multi_match_collection_s30() {
+        let mut worker = RendererJsWorker::spawn(65);
+        worker.set_dom_snapshot(
+            "<html><body>\
+             <img name='s30mm' data-mark='img-a'>\
+             <img name='s30mm' data-mark='img-b'>\
+             <div id='s30mm' data-mark='div-c'></div>\
+             </body></html>",
+            "https://example.test/",
+        );
+        // 多命中 → HTMLCollection（修前：id 面查无 → name 面 querySelector 首命中单元素）。
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.s30mm instanceof window.HTMLCollection)")
+                .unwrap(),
+            "true",
+            "同名多命中须返 HTMLCollection（修前单元素）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(window.s30mm.length)").unwrap(),
+            "3",
+            "集合长度 = named object 命中数（2 img name 面 + 1 div id 面）"
+        );
+        // 树序 + 成员 identity（data-mark 判别，不依赖 tag 启发）。
+        assert_eq!(
+            worker
+                .execute_script_direct(
+                    "window.s30mm[0].getAttribute('data-mark') + '|' + \
+                     window.s30mm[1].getAttribute('data-mark') + '|' + \
+                     window.s30mm[2].getAttribute('data-mark')"
+                )
+                .unwrap(),
+            "img-a|img-b|div-c",
+            "集合成员按树序排列（spec named objects tree order）"
+        );
+        // namedItem 接口成员可用（HTMLCollection 专有，id/name 首匹配）。
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.s30mm.namedItem('s30mm') === window.s30mm[0])")
+                .unwrap(),
+            "true",
+            "多命中集合具 namedItem 接口成员（首匹配）"
+        );
+        worker.shutdown();
+    }
+
+    // slice30 单命中回归守卫：唯一 named object 时仍返元素本身（RP-1 不改单命中语义
+    // ——slice27/28 修复面保持）。id 面 + name 面各一例。
+    #[test]
+    fn renderer_js_worker_named_access_single_match_element_regression_s30() {
+        let mut worker = RendererJsWorker::spawn(66);
+        worker.set_dom_snapshot(
+            "<html><body>\
+             <div id='s30single'></div>\
+             <form name='s30f'></form>\
+             </body></html>",
+            "https://example.test/",
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.s30single && window.s30single.nodeType === 1)")
+                .unwrap(),
+            "true",
+            "单命中 id 元素仍为元素（回归守卫）"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.s30f && window.s30f.nodeType === 1)")
+                .unwrap(),
+            "true",
+            "单命中 name 元素仍为元素（回归守卫）"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.s30single instanceof window.HTMLCollection)")
+                .unwrap(),
+            "false",
+            "单命中不被误装为集合（元素形态保持）"
+        );
+        worker.shutdown();
+    }
+
+    // slice30 负控 + 换代回收：① 非 name-able 元素（input）多命中不注册（spec name 面
+    // 仅 embed/form/img/object）；② name 面多命中 collection 形态；③ 换代多命中→单命中
+    // 集合回收、元素重装；④ 名消失后 collection 全局同在回收口径（修前 collection 无
+    // nodeType 标记、不在换代回收扫描内——悬挂全局）。
+    #[test]
+    fn renderer_js_worker_named_access_multi_negative_and_reclaim_s30() {
+        let mut worker = RendererJsWorker::spawn(67);
+        worker.set_dom_snapshot(
+            "<html><body>\
+             <input name='s30q'><input name='s30q'>\
+             <img name='s30m1'><img name='s30m1'>\
+             </body></html>",
+            "https://example.test/",
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.s30q === undefined)")
+                .unwrap(),
+            "true",
+            "负面：input 非 name-able，多命中也不注册"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct(
+                    "String(window.s30m1 instanceof window.HTMLCollection && window.s30m1.length === 2)"
+                )
+                .unwrap(),
+            "true",
+            "name 面多命中（双 form/img 同名）为 collection"
+        );
+        // 换代：多命中 → 单命中：collection 回收、单元素重装（生命周期跟快照）。
+        worker.set_dom_snapshot("<html><body><img name='s30m1'></body></html>", "https://example.test/");
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.s30m1 && window.s30m1.nodeType === 1)")
+                .unwrap(),
+            "true",
+            "多命中转单命中后为元素（集合不残留）"
+        );
+        // 再换代：名消失 → 全局回收（collection 与元素同口径，不留悬挂）。
+        worker.set_dom_snapshot(
+            "<html><body><img name='s30m1'><img name='s30m1'></body></html>",
+            "https://example.test/",
+        );
+        worker.set_dom_snapshot("<html><body><div></div></body></html>", "https://example.test/");
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.s30m1 === undefined)")
+                .unwrap(),
+            "true",
+            "换代后消失的多命中名全局回收（collection 在回收口径内）"
         );
         worker.shutdown();
     }
