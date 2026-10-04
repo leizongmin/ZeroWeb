@@ -12048,11 +12048,33 @@
     // uievents-compat M3 尾簇 5：hover 元素被 remove（或同父 move）后原位重插入——
     // 下一指针事件补派 over/enter 重入面（insert-under-cursor 语义）。
     overReinserted: false,
+    // uievents-compat M3 尾簇 6c：页内 DOM 变异代际（removeChild/appendChild 钩子
+    // 递增）——up 序列「派发中变异」检测（post-up 结算武装）；touch 抬起拆除后
+    // 武装的 child-first enter 序（WPT after_target_appended ?touch D2 断言序）。
+    mutTick: 0,
+    touchChildFirstEnter: false,
+    upMutSel: null,
+    // 尾簇 6c：post-up 跨界迁移的**延迟结算**——up 内插入的元素本 turn 宿主树
+    // 不可派发（mutation 批间应用），跨界序排队至下一指针命令入口补派。
+    pendingCross: null,
     processingCapture: false,
     streakTarget: null, streakCount: 0, downSel: null, downButton: 0
   };
+  // 尾簇 6c：post-up 跨界延迟结算入口（move/down/up 三站入口各一次）——上一 up
+  // 序列内变异（insert-under-cursor）的跨界序在本站补派（mutation 批已应用、目标
+  // 可派发）；消费即清。
+  function _zwFlushPendingCross(x, y) {
+    var st = _zwPtrState;
+    if (!st.pendingCross) return;
+    var pc = st.pendingCross;
+    st.pendingCross = null;
+    if (pc.next && pc.next !== pc.prev && typeof _zwPointerCross === 'function') {
+      try { _zwPointerCross(pc.prev, pc.next, x || 0, y || 0); } catch (_ePC) {}
+    }
+  }
   globalThis.__zw_pointer_move = function (sel, x, y) {
     var st = _zwPtrState;
+    _zwFlushPendingCross(x, y);
     st.x = x || 0;
     st.y = y || 0;
     // uievents-compat M3 尾簇：touch 无 hover——move 步不派边界序/move 对（真实
@@ -12151,6 +12173,7 @@
   globalThis.__zw_pointer_down_sequence = function (sel, x, y, pointerType, button) {
     button = button | 0;
     var st = _zwPtrState;
+    _zwFlushPendingCross(x, y);
     st.pointerType = pointerType || 'mouse';
     if (st.pointerType === 'touch') {
       // touch：move 步不派（无 hover）——down **隐含一次悬停迁移**（spec 触摸接触
@@ -12199,9 +12222,15 @@
       }
       downEff = reDown;
     }
-    __zw_dispatch_event(downEff, 'mousedown', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button });
+    var mdownPrevented = __zw_dispatch_event(downEff, 'mousedown', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button }) === 'prevented';
     if (button === 2) {
       __zw_dispatch_event(downEff, 'contextmenu', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button });
+    }
+    // uievents-compat M3 尾簇 6b：mousedown 默认动作 = 焦点迁移（UI Events §5.2.2）
+    // ——pointerdown 或 mousedown 被取消时连带抑制（spec——canceling mousedown
+    // prevents its default action；Chromium canceling pointerdown 同效）。
+    if (!prevented && !mdownPrevented && typeof globalThis._zwFocusSel === 'function') {
+      globalThis._zwFocusSel(downEff);
     }
     // touch 隐式捕获（无显式 pending 时）——于 mousedown 后登记，下一 pointer 系
     // 事件派发前结算（gotpointercapture 站序与显式 setPointerCapture 一致）。
@@ -12219,6 +12248,7 @@
   globalThis.__zw_pointer_up_sequence = function (upSel, downSel, x, y, pointerType, button, ancestorChain) {
     button = button | 0;
     var st = _zwPtrState;
+    _zwFlushPendingCross(x, y);
     st.pointerType = pointerType || 'mouse';
     // uievents-compat M3 尾簇 5：touch **隐式**捕获 up 前清除——pending 于 up 派发时
     // 经 Process-Pending 换防并把 pointerup 重定向 down 目标；Chromium 行为 up@新
@@ -12233,12 +12263,17 @@
     // （over@新目标——dangling cross 面只补 over；WPT after_target_removed
     // 「(child-removed) → pointerover@parent → pointerup@parent」断言面）。
     upSel = _zwRetargetSel(upSel, x, y);
-    // 尾簇 5：hover 元素原位重插入 → 补重入面（over/enter）。
-    _zwReentryCheck(upSel, x, y);
+    // 尾簇 5：hover 元素原位重插入 → 补重入面（over/enter）。返回值 = 本站是否
+    // 实派重入面（尾簇 6c——touch 抬起拆除抑制判据之一）。
+    var boundaryWork = _zwReentryCheck(upSel, x, y);
     // up 落点变化（runner 侧祖先链回退重定向等）且非捕获重定向 → 补跨界序。
+    // crossedAtUp：本站发生了异元素跨界（尾簇 6c——child-first enter 序仅在此 +
+    // 抬起拆除齐备时武装；无跨界的裸拆除后重入保持外先内——F3/F4 D1 断言序）。
+    var crossedAtUp = false;
     if (upSel !== st.overSel && !st.capture['1'] && typeof __zw_parent === 'function') {
       _zwPointerCross(st.overSel, upSel, x, y);
       st.overSel = upSel;
+      crossedAtUp = true;
     }
     var effDown = downSel || st.downSel || upSel;
     // down 落点已移除（remover listener 场景）→ click/auxclick 组合随 up 落点
@@ -12251,6 +12286,10 @@
     // 组合目标须用释放前的捕获落点；WPT pointerevent_click_during_capture 期望
     // click@捕获目标而非 up 命中元素）。
     var capturedSel = st.capture['1'] ? st.capture['1'].sel : null;
+    // 尾簇 6c：变异代际快照——up 派发（pointerup/mouseup）期间页内 listener 的
+    // DOM 变异（attach/move-under-cursor）以此检测，驱动 post-up 结算。
+    var upTick0 = st.mutTick;
+    st.upMutSel = null; // 本站 wire 落点清零（只认 up 派发期间的变异）
     var upPrevented = __zw_dispatch_event(upSel, 'pointerup', {
       clientX: x || 0, clientY: y || 0, button: button,
       buttons: 0, pointerType: pointerType || 'mouse'
@@ -12299,6 +12338,38 @@
     if (!upPrevented) {
       __zw_dispatch_event(upSel, 'mouseup', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
     }
+    // uievents-compat M3 尾簇 6c（2026-10-04）：**up 派发中变异的 post-up 结算**
+    //（Chromium touch 接触失效语义——WPT after_target_appended ?touch 断言面）。
+    // up 派发期间页内 listener 变异（mutTick 推进）时：
+    // ① 同元素原位重插（旗标在）→ 补重入面（双层 over/enter——moved@pointerup/mouseup
+    //    variant「(child-moved) → pointerover@child/mouseover@child → pointerup@child」）；
+    // ② 否则命中测试新落点，变化 → 跨界迁移（attached@pointerup variant
+    //    「(child-attached) → pointerout@parent → pointerover@child → pointerenter@child」
+    //    —— parent 已入 enter 链不重派）。
+    // 两者都**抑制 touch 抬起拆除**（悬停态随新落点延续——下一 down 无边界事件，
+    // 次次 up 结算拆除；Chromium 非悬停设备 up 后悬停清算仅在无边界工作时执行）。
+    if (st.pointerType === 'touch' && !st.capture['1'] && st.mutTick !== upTick0) {
+      // 结算两分支都**只认 wire 记录**（upMutSel = 本 up 内 insert/move 落点）：
+      // 移除型变异（remover listener——remove 只推 tick 不记 wire）不触发重入/
+      // 跨界，抬起拆除照旧（after_target_removed ?touch pointerup-remover
+      // 「(child-removed) → pointerleave@parent」断言面）。
+      if (st.upMutSel && _zwReentryCheck(upSel, x, y)) {
+        boundaryWork = true;
+      } else if (st.upMutSel && (typeof _zwIsRemoved !== 'function' || !_zwIsRemoved(st.upMutSel))) {
+        // 插入落点 = wire 记录（本 turn 宿主树/布局滞后——_zwIsConnected 的
+        // __zw_contains 与几何命中测试均不可见，zwprobe-attach 实证）。
+        var postHit = st.upMutSel;
+        if (postHit !== st.overSel && typeof __zw_parent === 'function') {
+          // 跨界序**延迟**至下一指针命令入口（_zwFlushPendingCross）——本 turn 派发
+          // 落在宿主树尚未收录的新元素上产出空目标事件（实证）；状态位即时前移，
+          // 下一命令自身的边界判定（overSel==命中 → 无跨界）不受扰动。
+          st.pendingCross = { prev: st.overSel, next: postHit };
+          st.overSel = postHit;
+          st.hoverSel = postHit;
+          boundaryWork = true;
+        }
+      }
+    }
     if (button !== 0) {
       // 非主键：无 click——auxclick（UI Events §5.2.2），detail 同目标连击计数。
       // 组合目标：捕获生效 → 捕获落点（spec——capture 期间激活事件随捕获目标）；
@@ -12339,7 +12410,11 @@
     // 尾簇 4：**仅 pointer 层**——compat mouse 层 hover 独立（mouseup 不派
     // mouseout/mouseleave、mouse hover 位留待后续跨界按 mouse 链计算——WPT ?touch
     // mouse 子测试「up@parent 后无 mouseout/mouseleave」断言面）。
-    if (st.pointerType === 'touch') {
+    // 尾簇 6c：up 序列发生边界工作（重入面/跨界迁移）时**拆除抑制**——悬停态随
+    // 新落点延续（Chromium touch up 后清算仅在无 pending 边界工作时执行；
+    // after_target_appended ?touch F2/F3/F4 断言面）。拆除同时武装 child-first
+    // enter 序（拆除后首次 touch 隐含迁移的 enter 链目标先序——D2 断言序）。
+    if (st.pointerType === 'touch' && !boundaryWork) {
       var over = st.overSel;
       if (over) {
         var overConn = (typeof _zwIsConnected !== 'function') ? true : _zwIsConnected(over, null);
@@ -12368,6 +12443,11 @@
       }
       st.overSel = null;
       st.hoverSel = null;
+      // 尾簇 6c：**跨界后**拆除武装 child-first enter 序（WPT after_target_appended
+      // ?touch F1-D2「pointerover@child → pointerenter@child → pointerenter@parent」
+      // 断言序——逆于 mouse 层外先内；F3/F4 的无跨界裸拆除后重入保持外先内。
+      // 消费即清，仅影响 pointer 层一趟）。
+      if (crossedAtUp) st.touchChildFirstEnter = true;
     }
     st.downSel = null;
     return 'ok';
@@ -12395,14 +12475,15 @@
   // → pointerup@child」断言面）。
   function _zwReentryCheck(sel, x, y) {
     var st = _zwPtrState;
-    if (!st.overReinserted) return;
-    if (sel !== st.overSel && sel !== st.mouseOverSel) return;
-    if (typeof _zwIsConnected === 'function' && !_zwIsConnected(sel, null)) return;
+    if (!st.overReinserted) return false;
+    if (sel !== st.overSel && sel !== st.mouseOverSel) return false;
+    if (typeof _zwIsConnected === 'function' && !_zwIsConnected(sel, null)) return false;
     __zw_dispatch_event(sel, 'pointerover', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
     __zw_dispatch_event(sel, 'pointerenter', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
     __zw_dispatch_event(sel, 'mouseover', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
     __zw_dispatch_event(sel, 'mouseenter', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
     st.overReinserted = false;
+    return true; // 尾簇 6c：实派重入面告之（up 序列拆除抑制判据）
   }
   function _zwLayerCross(prevSel, nextSel, x, y, layer) {
     if (prevSel === nextSel) return;
@@ -12452,8 +12533,18 @@
       if (nextChain[k2] === common) break;
       enter.push(nextChain[k2]);
     }
-    for (var k3 = enter.length - 1; k3 >= 0; k3--) {
-      __zw_dispatch_event(enter[k3], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+    // 尾簇 6c：touch 拆除后首次隐含迁移——enter 链**目标先序**（child→parent，
+    // WPT after_target_appended ?touch D2 断言序；mouse 层保持外先内不受影响）。
+    var childFirst = layer === 'pointer' && _zwPtrState.touchChildFirstEnter === true;
+    if (childFirst) _zwPtrState.touchChildFirstEnter = false;
+    if (childFirst) {
+      for (var k3f = 0; k3f < enter.length; k3f++) {
+        __zw_dispatch_event(enter[k3f], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+      }
+    } else {
+      for (var k3 = enter.length - 1; k3 >= 0; k3--) {
+        __zw_dispatch_event(enter[k3], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+      }
     }
   }
   // slice22 焦点治理：宿主驱动焦点迁移（mousedown 默认动作 / Tab 焦点导航 / 宿主激活）的
@@ -12496,9 +12587,45 @@
     } catch (_eHB0) {}
     try { _activeElKey = null; } catch (_eHB) {}
     try {
-      __zw_dispatch_event(sel, 'focusout', null);
+      // uievents-compat M3 尾簇 6b：失焦序 **blur 先于 focusout**（WPT
+      // focus-events expected「blur@a → focusout@a」逐条断言面；此钩子此前
+      // 无 caller 未被实测——mousedown 默认动作接线（_zwFocusSel）首次启用）。
       __zw_dispatch_event(sel, 'blur', null);
+      __zw_dispatch_event(sel, 'focusout', null);
     } catch (_eHB2) {}
+  };
+  // uievents-compat M3 尾簇 6b（2026-10-04）：mousedown 默认动作 = 焦点迁移
+  //（UI Events §5.2.2 https://w3c.github.io/uievents/#focus-event-focus「focus is
+  // the default action of mousedown」；HTML §6.5.2 focusing steps）。指针 down 序列
+  // 在 mousedown 未被取消且目标可聚焦时调本钩子：旧焦点失焦相位（blur → focusout，
+  // WPT focus-events 断言序）+ 新焦点获焦相位（focus → focusin，__zw_host_focus）。
+  // slice22 的 __zw_host_focus/__zw_host_blur 此前无 caller（宿主路径未接线）——
+  // runner 合成点击与真实 mousedown 同走 shim down 序列，本钩子即统一入口。
+  function _zwIsFocusableSel(sel) {
+    try {
+      var el = (typeof _makeProxy === 'function') ? _makeProxy(sel, null) : null;
+      if (!el || el.nodeType !== 1) return false;
+      var tag = String(el.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON'
+          || tag === 'IFRAME' || tag === 'SUMMARY') return true;
+      if (tag === 'A' || tag === 'AREA') return el.hasAttribute('href');
+      if (el.hasAttribute('tabindex')) return true;
+      var ce = el.getAttribute('contenteditable');
+      return ce === '' || String(ce).toLowerCase() === 'true';
+    } catch (_eFA) { return false; }
+  }
+  globalThis._zwFocusSel = function (sel) {
+    if (!_zwIsFocusableSel(sel)) return;
+    var k = null;
+    try { k = _elKey(sel, null); } catch (_eF0) { return; }
+    if (_activeElKey === k) return; // 已聚焦 → no-op（spec 不重派）
+    var oldKey = _activeElKey;
+    if (oldKey && _proxyCache[oldKey]) {
+      var oldSel = null;
+      try { oldSel = _proxyCache[oldKey].__zwSelector || null; } catch (_eF1) {}
+      if (oldSel && typeof __zw_host_blur === 'function') __zw_host_blur(oldSel);
+    }
+    if (typeof __zw_host_focus === 'function') __zw_host_focus(sel);
   };
   // security-hardening M2-s1（spec CSP3 §report-the-violation）：宿主 CSP 检查点派发
   // securitypolicyviolation——shim `_makeEvent` 事件 + 违规字段以自有属性附于事件

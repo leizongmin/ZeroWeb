@@ -1,20 +1,25 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-04（M3 尾簇 4+5 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-04（M3 尾簇 6a+6b+6c 落地）
 
 ## 当前状态
 
-**M3 + 尾簇 1/2/4/5 落地（2026-10-04）**：基线 230P → M2 片 1 343P → M3 375P →
-尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → **502P（+272 累计）**
-（corpus：502P/596F/97TO，`TIME_LIMIT=3600`——per-case 30s 超时 ×~100 TO 案
-注定 corpus 超 20min 默认 test-guard 时限；尾簇 4→5 零回归、+10 subtest）。
+**M3 + 尾簇 1/2/4/5/6 落地（2026-10-04）**：基线 230P → M2 片 1 343P → M3 375P →
+尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P → 尾簇 6a 1107P →
+**1115P（+885 累计）**
+（corpus：1115P/743F/97TO，`TIME_LIMIT=3600`——per-case 30s 超时 ×~100 TO 案
+注定 corpus 超 20min 默认 test-guard 时限；尾簇 6a 后总册 1195→1955——fractional
+untrusted 脚本中断解除、~760 subtest 全量入册；6a/6b+6c 双轮零回归）。
 证据：[evidence/2026-10-03-m2-slice1.json](evidence/2026-10-03-m2-slice1.json)（M2 片 1）、
 [evidence/2026-10-03-m2m3-after.json](evidence/2026-10-03-m2m3-after.json)（M3 后）、
 [evidence/2026-10-03-m3-tail.json](evidence/2026-10-03-m3-tail.json)（尾簇 1 后）、
 [evidence/2026-10-04-m3-tail4.json](evidence/2026-10-04-m3-tail4.json)（尾簇 4 后）、
-[evidence/2026-10-04-m3-tail5.json](evidence/2026-10-04-m3-tail5.json)（尾簇 5 后）。
-门禁：clippy -D warnings、fmt 全绿；make test 见尾簇 4 提交说明（19,614P/0F）。
+[evidence/2026-10-04-m3-tail5.json](evidence/2026-10-04-m3-tail5.json)（尾簇 5 后）、
+[evidence/2026-10-04-m3-tail6a.json](evidence/2026-10-04-m3-tail6a.json)（尾簇 6a 后）、
+[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)（尾簇 6b+6c 后）。
+门禁：clippy -D warnings、fmt 全绿（见尾簇 4 提交说明）；尾簇 6 系纯 JS 变更
+（node --check + 聚焦族跑）。
 
 **M3 尾簇 4（2026-10-04，650cdfa2e）——mutation 族收口**。三件套：
 
@@ -87,13 +92,39 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 证据：[evidence/2026-10-04-m3-tail6a.json](evidence/2026-10-04-m3-tail6a.json)。
 门禁：shim 拼接 node --check 全绿（纯 JS 变更，无 Rust 面）。
 
+**M3 尾簇 6b+6c（2026-10-04，本轮）——mousedown→focus 默认动作链 + touch 接触
+失效语义收口**。三件：
+
+1. **焦点迁移序修齐**（part04 proxy focus/blur 陷阱）：失焦相位先于获焦相位且
+   blur 先于 focusout（WPT focus-events expected「blur@a → focusout@a →
+   focus@b → focusin@b」；旧序 blur 迟到获焦相位后——focus.html 族全灭根因）+
+   relatedTarget 双向（blur/focusout@旧 携新焦点、focus/focusin@新 携旧焦点）+
+   失焦相位 activeElement 落空（spec focusing steps）。slice22 的
+   `__zw_host_focus/__zw_host_blur` 首次接线（`_zwFocusSel`，down 序列 mousedown
+   未取消时可聚焦目标迁移——此前 `script_host_focus` 无 caller 死代码）。
+2. **up 内变异 post-up 结算**（尾簇 6c）：mutTick 代际（remove/appendChild 钩子
+   推进）+ wire 落点记录（upMutSel）——同元素重插 → 重入面（F4/F5）；异元素插入
+   → 跨界序**延迟结算**（pendingCross 于下一指针命令入口 flush——up 内插入元素
+   本 turn 宿主树不可派发，zwprobe 实证空目标事件）；移除型变异不触发结算两分支
+   （拆除照旧——after_target_removed pointerup-remover 断言面）。
+3. **child-first enter 序**：跨界后拆除武装一次（`touchChildFirstEnter`，pointer
+   层 enter 链目标先序消费即清——F1-D2 断言序；无跨界裸拆除保持外先内——F3/F4
+   D1 断言序）。
+
+结果：**corpus 1107P→1115P（+8，零回归）**：after_target_appended **24/24 全绿**
+（?touch 3→8P——teardown 抑制 + 延迟跨界 + child-first 序）、focus-events +3
+（focus / focus-contained / focus-automated same-DocumentOwner；残余 = iframe 跨
+文档焦点（different-DocumentOwner）与 keydown→focus activation 两案）。
+证据：[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)
+（含 2 案本地 zwprobe 探针已剔除入账）。门禁：node --check + 双族聚焦跑全绿。
+
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | uievents + pointerevents corpus 导入 + 基线 | ✅ 2026-10-03 |
-| P2 | 鼠标事件序/坐标/click 组合语义修齐 | 🔄 核心已落地；残余 = mousemove-between（视口命中精度）、wheel 三案、focus-events 四案、interface keyboard-click、uievents/mouse 尾簇（layerX/chorded buttons/image-map） |
-| P3 | Pointer 生命周期 + capture 三方法 + enter/leave 边界序 | 🔄 核心 + mutation 族 + 重入面已落地（尾簇 4/5）；残余 = after_target_appended ?touch 5 案（touch 接触失效 enter 序/teardown 抑制）、pointercancel/touch-action 交互面；from_slot 案阻塞于 declarative shadow DOM（shadowrootmode 未实现——web-components 域前置，挂账）；interleaved 族行为面已对齐（残余 = 上游 expected 记账 bug，pin 版即 Fail，不再追） |
+| P2 | 鼠标事件序/坐标/click 组合语义修齐 | 🔄 核心已落地；残余 = mousemove-between（视口命中精度）、wheel 三案（scroll 源重放——wheel-basic/deadlock 可解，scrolling 需真滚动）、interface keyboard-click、uievents/mouse 尾簇（mouseover-at-removing 58F 与 6c 同族待复测、layerX/chorded buttons/image-map/modifier-no-movement） |
+| P3 | Pointer 生命周期 + capture 三方法 + enter/leave 边界序 | ✅ 核心 + mutation 族 + 重入面 + touch 接触失效收口（尾簇 4/5/6c——after_target_appended 24/24 全绿）；残余 = pointercancel/touch-action 交互面、iframe 跨文档焦点；from_slot 案阻塞于 declarative shadow DOM（shadowrootmode 未实现——web-components 域前置，挂账）；interleaved 族行为面已对齐（残余 = 上游 expected 记账 bug，pin 版即 Fail，不再追） |
 | P4 | touch-events / pointerlock / IME 组合挂账定稿 | ⏳ M4 |
 
 ## 已完成切片
@@ -115,17 +146,21 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
   detach 片段 stash + 双层跨界 + compat 重定向）。457P→492P。
 - **M3 尾簇 5（2026-10-04，d6433f0e8）**：insert-under-cursor 重入 + touch 隐式
   捕获 up 前清除。492P→502P。
-- **M3 尾簇 6a（2026-10-04，本轮）**：untrusted 构造语义（坐标 floor + page/
-  offset 派生 + tilt/angle 归一）。502P→1107P（总册 1195→1955）。
+- **M3 尾簇 6a（2026-10-04，68edcce1b→baaabf835）**：untrusted 构造语义（坐标
+  floor + page/offset 派生 + tilt/angle 归一）。502P→1107P（总册 1195→1955）。
+- **M3 尾簇 6b+6c（2026-10-04，本轮）**：mousedown→focus 默认动作链（迁移序 +
+  relatedTarget + slice22 钩子接线）+ touch 接触失效收口（up 内变异 post-up
+  结算 + 延迟跨界 + child-first 序）。1107P→1115P。
 
 ## 下一步计划
 
-1. **M2/M3 尾簇**（按 Throughput 排序）：a) after_target_appended ?touch 残余 5 案
-   （?mouse 已全绿）——Chromium touch 接触失效语义收尾（up 中变异 post-up 结算 +
-   teardown 抑制 + child-first enter 序——尾簇 6c 已实现待测）；b) mousedown→focus
-   默认动作链（focus-events 四案——尾簇 6b 已实现待测）；c) wheel 源 scroll 命令
-   （wheel 三案）；d) uievents/mouse 尾簇（layerX/layerY、chorded buttons 位、
-   image-map 命中）。
+1. **M2/M3 尾簇**（按 Throughput 排序）：a) uievents/mouse 尾簇——mouseover-at-
+   removing-mousedown-target 58F（6c 同族：mousedown 目标移除后 mouseover@parent
+   → mouseup@parent，复测后定打法）、boundary_events_after_reappending 11F（重插
+   语义同族）、modifier-no-movement 16F、image-map 8F、layerX/layerY；b) wheel 源
+   scroll 重放（wheel-basic/deadlock——Actions scroll 步记账不重放改重放 +
+   `__zw_wheel` shim 钩子）；c) focus 残余两案（iframe 跨文档焦点、keydown→focus
+   activation——键盘域邻接，挂账候选）。
 2. **M4 收口**：touch-action 解析/计算值核对（parsing 三案 0P 待查）、
    touch-events / pointerlock / IME / touch-action 交互面挂账定稿、DC-4 全绿门禁
    （make test + clippy + fmt + reftest 零回归 + product-smoke）。

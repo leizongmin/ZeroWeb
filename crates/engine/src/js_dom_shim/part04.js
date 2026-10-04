@@ -3408,27 +3408,38 @@ return _tplContent;
                 r148Related = r148OldMEl;
               }
             }
-            _activeElKey = key; // 先更状态防 handler 重入（focus handler 再 focus 其它元素时序自洽）
-            if (oldProxy) {
-              try { oldProxy.dispatchEvent(_makeEvent('focusout', { bubbles: true, cancelable: false })); } catch (_e) {}
-            } else if (r148OldMEl) {
-              try { r148OldMEl.dispatchEvent(_makeEvent('focusout', { bubbles: true, cancelable: false })); } catch (_e148m) {}
+            // uievents-compat M3 尾簇 6b（2026-10-04）：失焦相位**先于**获焦相位且
+            // blur 先于 focusout（WPT focus-events expected「blur@a → focusout@a →
+            // focus@b → focusin@b」逐条断言序；旧序 focusout → focus/focusin → blur
+            // 使 blur 迟到获焦相位之后——focus.html/focus-contained/
+            // focus-automated-blink-webkit 全族根因）。focus-automated normal 面补两点：
+            // ① 失焦相位 activeElement 落空（spec focusing steps——聚焦区 blur 相位
+            //    先行清空、focus 相位落新；focusedElements 断言 blur@old 时读 body）；
+            // ② relatedTarget 双向：blur/focusout@旧 携**新**焦点、focus/focusin@新
+            //    携**旧**焦点（relatedTargets 断言 ['b','b','a','a'] 面）。
+            var r148Self = proxy; // 新焦点元素（旧侧 blur/focusout 的 relatedTarget）
+            var rtForNew = r148Related || oldProxy || null; // 新侧 focus/focusin 的 relatedTarget
+            if (oldProxy || r148OldMEl) {
+              var oldEl = oldProxy || r148OldMEl;
+              var _zwBL = _makeEvent('blur', { bubbles: false, cancelable: false });
+              var _zwFO = _makeEvent('focusout', { bubbles: true, cancelable: false });
+              try { if (r148Self) _zwBL.relatedTarget = r148Self; } catch (_eBLrt) {}
+              try { if (r148Self) _zwFO.relatedTarget = r148Self; } catch (_eFOrt) {}
+              _activeElKey = null; // 失焦相位聚焦区先清（activeElement 回落 body）
+              try { oldEl.dispatchEvent(_zwBL); } catch (_eBLd) {}
+              try { oldEl.dispatchEvent(_zwFO); } catch (_eFOd) {}
             }
+            _activeElKey = key; // 获焦相位落新（focus handler 内 activeElement 已是新元素）
             try {
               // R148：focus/focusin 携带 relatedTarget（FocusEvent 语义——retargeting 后
-              // 的旧焦点；非解析节点旧焦点时无 host 语义面，保持原事件形态）。
+              // 的旧焦点；proxy 旧焦点同样携带——focus-automated relatedTargets 断言面）。
               var r148FE = _makeEvent('focus', { bubbles: false, cancelable: false });
-              if (r148Related) { try { r148FE.relatedTarget = r148Related; } catch (_e148r) {} }
+              if (rtForNew) { try { r148FE.relatedTarget = rtForNew; } catch (_e148r) {} }
               _dispatchWithBubble(key, sel, handle, r148FE);
               var r148FI = _makeEvent('focusin', { bubbles: true, cancelable: false });
-              if (r148Related) { try { r148FI.relatedTarget = r148Related; } catch (_e148r2) {} }
+              if (rtForNew) { try { r148FI.relatedTarget = rtForNew; } catch (_e148r2) {} }
               _dispatchWithBubble(key, sel, handle, r148FI);
             } catch (_e) {}
-            if (oldProxy) {
-              try { oldProxy.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_e) {}
-            } else if (r148OldMEl) {
-              try { r148OldMEl.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_e148m2) {}
-            }
             // R3254-M7'：通知宿主同步 retained 焦点状态（键盘路由 + 滚动守卫）。空串 → host 不采纳
             //（selector 缺失的 focus 无稳定目标）；宿主侧另有 is_focusable_selector 校验兜底。
             if (sel && typeof __zw_focus_changed === 'function') __zw_focus_changed(sel);
@@ -3439,8 +3450,9 @@ return _tplContent;
             if (_activeElKey !== key) return; // 非当前焦点元素 → no-op
             _activeElKey = null;
             try {
-              _dispatchWithBubble(key, sel, handle, _makeEvent('focusout', { bubbles: true, cancelable: false }));
+              // 尾簇 6b：blur 先于 focusout（WPT focus-events 断言序，同 focus 迁移序）。
               _dispatchWithBubble(key, sel, handle, _makeEvent('blur', { bubbles: false, cancelable: false }));
+              _dispatchWithBubble(key, sel, handle, _makeEvent('focusout', { bubbles: true, cancelable: false }));
             } catch (_e) {}
             // R3254-M7'：通知宿主失焦（空串表示 blur）。
             if (typeof __zw_focus_changed === 'function') __zw_focus_changed('');
@@ -4954,12 +4966,21 @@ return _tplContent;
               // hover 重入旗标（insert-under-cursor 语义；WPT after_target_appended
               // moved variant 断言面）。
               try {
-                if (_r334OldSel && typeof _zwPtrState !== 'undefined' && _zwPtrState
-                    && (_r334ChildSel === _zwPtrState.overSel || _r334ChildSel === _zwPtrState.mouseOverSel)) {
-                  _zwPtrState.overReinserted = true;
+                if (typeof _zwPtrState !== 'undefined' && _zwPtrState) {
+                  // 尾簇 6c：变异代际推进（up 序列「派发中变异」post-up 结算判据——
+                  // attached-under-cursor 亦经本路径）。
+                  _zwPtrState.mutTick = (_zwPtrState.mutTick || 0) + 1;
+                  if (_r334OldSel && (_r334ChildSel === _zwPtrState.overSel || _r334ChildSel === _zwPtrState.mouseOverSel)) {
+                    _zwPtrState.overReinserted = true;
+                  }
                 }
               } catch (_eRe334) {}
               try { __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334ChildSel); } catch (_e334w) {}
+              try {
+                // 尾簇 6c：wire 落点记录——up 内变异 post-up 结算的目标身份（本 turn
+                // 内宿主布局滞后，几何命中测试不可见——zwprobe-attach [hit=null] 实证）。
+                if (typeof _zwPtrState !== 'undefined' && _zwPtrState) _zwPtrState.upMutSel = _r334ChildSel;
+              } catch (_eRe334b) {}
               // M3 扩批 XLV：**sel 子重插的移除标记清除**——静态元素 removeChild→
               // appendChild 重插后 removed 标记残留使 parentNode getter（_zwIsRemoved
               // 短路返 null）恒 null、removal-pause tick 误判（track-remove-insert-

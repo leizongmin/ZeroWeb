@@ -8658,9 +8658,12 @@
       // 旗标——下一指针事件对回连的 hover 元素补派 over/enter（insert-under-cursor
       // 语义；WPT after_target_appended moved variant 断言面）。
       try {
-        if (typeof _zwPtrState !== 'undefined' && _zwPtrState
-            && (sel === _zwPtrState.overSel || sel === _zwPtrState.mouseOverSel)) {
-          _zwPtrState.overReinserted = true;
+        if (typeof _zwPtrState !== 'undefined' && _zwPtrState) {
+          // 尾簇 6c：变异代际推进（up 序列「派发中变异」post-up 结算判据）。
+          _zwPtrState.mutTick = (_zwPtrState.mutTick || 0) + 1;
+          if (sel === _zwPtrState.overSel || sel === _zwPtrState.mouseOverSel) {
+            _zwPtrState.overReinserted = true;
+          }
         }
       } catch (_eRe45) {}
     }
