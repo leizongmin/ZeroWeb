@@ -11391,6 +11391,92 @@
   // 实例须有 UIEvent 的 view/detail；旧实现只设子类自身 props → MouseEvent 实例缺 view/detail，WPT
   // Event-subclasses-constructors assert_props 递归检查父链 fail）。键=子类名，值=[ownProps, parentName]。
   var _eventSubclassProps = {};
+  // uievents-compat M3 尾簇 6（2026-10-04）：MouseEvent 系坐标的 **untrusted 构造语义**
+  //（https://w3c.github.io/pointerevents/#fractional-coordinates；WPT
+  // pointerevent_fractional_coordinates_untrusted 断言面）：
+  // ① **取整面**：MouseEvent/WheelEvent/DragEvent 全型 + PointerEvent 的
+  //    click/auxclick/contextmenu 三型——坐标为 long 语义（UI Events MouseEventInit；
+  //    PE spec fractional 例外集），构造值 floor（WPT floored 断言
+  //    `event.screenX === Math.floor(dict.screenX)`——负值向下取整）；其余 pointer 型
+  //    保 double 精度。
+  // ② **派生面**：pageX/pageY（= client + 滚动偏移，沙箱无滚动 → 恒等）与
+  //    offsetX/offsetY（无目标盒回退 client——Chromium 构造事件行为）dict 未给时
+  //    从 clientX/clientY 推导，不再落 0（旧版默认 0 使 fractional untrusted 的
+  //    page/offset 断言族 168F 根因）。
+  // 派发路径（__zw_dispatch_event）经同一 ctor：compat mouse trusted 坐标同步 floor
+  //（Chromium trusted mouse 面本就整数——fractional trusted twin ?mouse 断言同型）。
+  function _zwMouseCoordInit(inst, cls, type, o) {
+    if (cls !== 'MouseEvent' && cls !== 'WheelEvent' && cls !== 'DragEvent'
+        && cls !== 'PointerEvent') return;
+    var floored = cls === 'MouseEvent' || cls === 'WheelEvent' || cls === 'DragEvent'
+      || (cls === 'PointerEvent'
+          && (type === 'click' || type === 'auxclick' || type === 'contextmenu'));
+    var _fl = function (v) { v = Number(v); return isFinite(v) ? Math.floor(v) : 0; };
+    if (floored) {
+      inst.screenX = _fl(inst.screenX); inst.screenY = _fl(inst.screenY);
+      inst.clientX = _fl(inst.clientX); inst.clientY = _fl(inst.clientY);
+    }
+    var dX = Number(inst.clientX) || 0, dY = Number(inst.clientY) || 0;
+    if (o.pageX == null) inst.pageX = dX;
+    else if (floored) inst.pageX = _fl(inst.pageX);
+    if (o.pageY == null) inst.pageY = dY;
+    else if (floored) inst.pageY = _fl(inst.pageY);
+    if (o.offsetX == null) inst.offsetX = dX;
+    else if (floored) inst.offsetX = _fl(inst.offsetX);
+    if (o.offsetY == null) inst.offsetY = dY;
+    else if (floored) inst.offsetY = _fl(inst.offsetY);
+  }
+  // 尾簇 6 续：tiltX/tiltY ↔ azimuthAngle/altitudeAngle 互换
+  //（https://w3c.github.io/pointerevents/#converting-between-tiltx-tilty-and-azimuth-angle-altitudeangle；
+  // WPT pointerevent_tiltX_tiltY_to_azimuth_altitude 断言面——24F 全簇）。
+  // 单位向量 v=(cosθ·cosφ, cosθ·sinφ, sinθ)：tiltX=atan(vx/vz)、tiltY=atan(vy/vz)；
+  // 反解 tanX=tan(tiltX)、tanY=tan(tiltY) → θ=atan(1/√(tanX²+tanY²))、φ=atan2(tanY,tanX)。
+  // ±90° 角点 tan 爆炸（JS 里 tan(π/2)≈1.6e16 非真∞）——altitude 精确 0、双 ±90 时
+  // azimuth 简并 0（WPT 期望 event.altitudeAngle === 0 逐位断言）。
+  function _zwTiltToAzAlt(tx, ty) {
+    if (!tx && !ty) return [0, Math.PI / 2];
+    var rad = Math.PI / 180;
+    var tanX = Math.tan(tx * rad), tanY = Math.tan(ty * rad);
+    var corner = Math.abs(tx) === 90 || Math.abs(ty) === 90;
+    var alt = corner ? 0 : Math.atan(1 / Math.sqrt(tanX * tanX + tanY * tanY));
+    var az;
+    if (tx === 0) az = ty > 0 ? Math.PI / 2 : 3 * Math.PI / 2;
+    else if (ty === 0) az = tx > 0 ? 0 : Math.PI;
+    else if (corner) az = 0;
+    else { az = Math.atan2(tanY, tanX); if (az < 0) az += 2 * Math.PI; }
+    // 常规角（0/30/45/60/90/180/270°）1-ulp float 噪声 snap——WPT assert_equals 与
+    // Math.PI/4 等字面量逐位相等（tan(π/4)≈0.9999999999999999 → atan 链漂 1 ulp）。
+    var SNAP = [0, Math.PI / 6, Math.PI / 4, Math.PI / 3, Math.PI / 2,
+                2 * Math.PI / 3, 3 * Math.PI / 4, Math.PI, 5 * Math.PI / 4,
+                4 * Math.PI / 3, 3 * Math.PI / 2, 5 * Math.PI / 3, 7 * Math.PI / 4, 2 * Math.PI];
+    for (var si = 0; si < SNAP.length; si++) {
+      if (Math.abs(az - SNAP[si]) < 1e-9) { az = SNAP[si]; break; }
+    }
+    for (var sj = 0; sj < SNAP.length; sj++) {
+      if (Math.abs(alt - SNAP[sj]) < 1e-9) { alt = SNAP[sj]; break; }
+    }
+    return [az, alt];
+  }
+  // PointerEvent 构造期的 tilt/angle 归一（spec「If only one of the values … is
+  // available the other one is set to the default value」）：dict 给了 angle 对任一
+  // → angle 为事实源（缺省补 0 / π/2）、tilt 反解（轴对齐 float 噪声 snap ±1e-9、
+  // 度数取整）；否则 tilt 为事实源、angle 正向派生。
+  function _zwPointerTiltInit(inst, o) {
+    if (o.azimuthAngle != null || o.altitudeAngle != null) {
+      var az = Number(o.azimuthAngle) || 0;
+      var al = (o.altitudeAngle != null) ? Number(o.altitudeAngle) : Math.PI / 2;
+      inst.azimuthAngle = az; inst.altitudeAngle = al;
+      var c = Math.cos(az), s = Math.sin(az);
+      if (Math.abs(c) < 1e-9) c = 0;
+      if (Math.abs(s) < 1e-9) s = 0;
+      var vz = Math.sin(al), h = Math.cos(al);
+      inst.tiltX = Math.round(Math.atan2(h * c, vz) * 180 / Math.PI) || 0;
+      inst.tiltY = Math.round(Math.atan2(h * s, vz) * 180 / Math.PI) || 0;
+    } else {
+      var pair = _zwTiltToAzAlt(Number(inst.tiltX) || 0, Number(inst.tiltY) || 0);
+      inst.azimuthAngle = pair[0]; inst.altitudeAngle = pair[1];
+    }
+  }
   function _defineEventSubclass(name, parentName, props) {
     if (globalThis[name]) {
       // js-dom M4 R109：native 叠加路径——native bindings 先装（MouseEvent/KeyboardEvent 为
@@ -11427,6 +11513,9 @@
         }
         // R150：显式 offset init 印章（dispatch 期 offsetX 计算的跳过条件）。
         if (o.offsetX != null || o.offsetY != null) this._zwOffsetInit = true;
+        // 尾簇 6：坐标 floor + page/offset 派生（untrusted 构造语义，见 _zwMouseCoordInit）。
+        _zwMouseCoordInit(this, name, type, o);
+        if (name === 'PointerEvent') _zwPointerTiltInit(this, o);
         return this;
       }
       var ev = _makeEvent(type, options);
@@ -11449,6 +11538,9 @@
       }
       // R150：显式 offset init 印章（dispatch 期 offsetX 计算的跳过条件）。
       if (o.offsetX != null || o.offsetY != null) ev._zwOffsetInit = true;
+      // 尾簇 6：坐标 floor + page/offset 派生（untrusted 构造语义，见 _zwMouseCoordInit）。
+      _zwMouseCoordInit(ev, name, type, o);
+      if (name === 'PointerEvent') _zwPointerTiltInit(ev, o);
       return ev;
     };
     Ctor.prototype = Object.create(Parent.prototype);
@@ -11664,6 +11756,9 @@
   _defineEventSubclass('PointerEvent', 'MouseEvent', [
     ['pointerId', 'pointerId', 0], ['width', 'width', 1], ['height', 'height', 1],
     ['pressure', 'pressure', 0], ['tiltX', 'tiltX', 0], ['tiltY', 'tiltY', 0],
+    // 尾簇 6：azimuth/altitude 对（PE spec 缺省 0 / π/2——构造期经 _zwPointerTiltInit
+    // 与 tiltX/tiltY 归一互换）。
+    ['azimuthAngle', 'azimuthAngle', 0], ['altitudeAngle', 'altitudeAngle', Math.PI / 2],
     ['pointerType', 'pointerType', ''], ['isPrimary', 'isPrimary', false],
     ['twist', 'twist', 0], ['tangentialPressure', 'tangentialPressure', 0],
   ]);

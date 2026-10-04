@@ -69,6 +69,24 @@ touch 接触失效语义尾簇：D2 隐含迁移 enter 序上游 expected 为 ch
 内层先序〔逆于同文件 ?mouse 的 parent→child〕+ 重入后 up 的 teardown 抑制
 + enter@parent 抑制）。
 
+**M3 尾簇 6a（2026-10-04，本轮）——untrusted 事件构造语义（分数坐标 + tilt/
+angle 互换）**。两件，均纯构造层（派发路径共用 ctor 但面不变）：
+
+1. **坐标 floor + page/offset 派生**（`_zwMouseCoordInit`）：MouseEvent/WheelEvent/
+   DragEvent 全型 + PointerEvent 的 click/auxclick/contextmenu 三型坐标构造值
+   floor（UI Events long 语义；PE fractional 例外集——其余 pointer 型保 double）；
+   pageX/pageY/offsetX/offsetY dict 未给时自 clientX/clientY 派生（旧版落 0——
+   fractional untrusted 168F 根因）。
+2. **tiltX/tiltY ↔ azimuthAngle/altitudeAngle 归一**（`_zwPointerTiltInit` +
+   `_zwTiltToAzAlt`）：spec 换算 + ±90° 角点简并（tan 爆炸 → altitude 0/双 90
+   azimuth 0）+ 常规角 1-ulp snap（tan(π/4)≈0.9999… 的 atan 链漂移）。
+
+结果：**corpus 502P→1107P（+605，零回归）**——corpus 总 subtests 1195→1955
+（fractional untrusted 此前脚本中断未及注册的 ~760 subtest 全量入册）：
+fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、constructor 双文件 +6。
+证据：[evidence/2026-10-04-m3-tail6a.json](evidence/2026-10-04-m3-tail6a.json)。
+门禁：shim 拼接 node --check 全绿（纯 JS 变更，无 Rust 面）。
+
 ## 缺口清单
 
 | # | 缺口 | 状态 |
@@ -95,17 +113,19 @@ touch 接触失效语义尾簇：D2 隐含迁移 enter 序上游 expected 为 ch
   6→7P）。
 - **M3 尾簇 4（2026-10-04，650cdfa2e）**：mutation 族收口（执行时点重解析 + 跨批
   detach 片段 stash + 双层跨界 + compat 重定向）。457P→492P。
-- **M3 尾簇 5（2026-10-04，本轮）**：insert-under-cursor 重入 + touch 隐式捕获
-  up 前清除。492P→502P。
+- **M3 尾簇 5（2026-10-04，d6433f0e8）**：insert-under-cursor 重入 + touch 隐式
+  捕获 up 前清除。492P→502P。
+- **M3 尾簇 6a（2026-10-04，本轮）**：untrusted 构造语义（坐标 floor + page/
+  offset 派生 + tilt/angle 归一）。502P→1107P（总册 1195→1955）。
 
 ## 下一步计划
 
 1. **M2/M3 尾簇**（按 Throughput 排序）：a) after_target_appended ?touch 残余 5 案
-   （?mouse 已全绿）——Chromium touch 接触失效语义收尾：D2 隐含迁移 enter 序
-   （上游 expected 为 child→parent 内层先序，逆于 ?mouse 同文件 parent→child）、
-   重入后 up 的 teardown 抑制、enter@parent 抑制；b) wheel 源 scroll 命令（wheel
-   三案）；c) mousedown→focus 默认动作链（focus-events 四案）；d) uievents/mouse
-   尾簇（layerX/layerY、chorded buttons 位、image-map 命中）。
+   （?mouse 已全绿）——Chromium touch 接触失效语义收尾（up 中变异 post-up 结算 +
+   teardown 抑制 + child-first enter 序——尾簇 6c 已实现待测）；b) mousedown→focus
+   默认动作链（focus-events 四案——尾簇 6b 已实现待测）；c) wheel 源 scroll 命令
+   （wheel 三案）；d) uievents/mouse 尾簇（layerX/layerY、chorded buttons 位、
+   image-map 命中）。
 2. **M4 收口**：touch-action 解析/计算值核对（parsing 三案 0P 待查）、
    touch-events / pointerlock / IME / touch-action 交互面挂账定稿、DC-4 全绿门禁
    （make test + clippy + fmt + reftest 零回归 + product-smoke）。
