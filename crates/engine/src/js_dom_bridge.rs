@@ -2692,20 +2692,54 @@ pub fn is_reset_button(html: &str, elem_sel: &str) -> bool {
     (tag.eq_ignore_ascii_case("input") || tag.eq_ignore_ascii_case("button")) && ty == "reset"
 }
 
-/// P1a 导航：解析 anchor `<a href>` click 的导航目标 URL（R3052）。供 renderer click 路由判定「点击链接是否导航」。
-///
-/// 返回 `Some(绝对 URL)` 当：元素为 `<a>` 且有非空 href，且 href 非 `javascript:` / `mailto:` / `tel:` / `sms:` /
-/// `data:` / `#fragment`，且非 `target=_blank/_top/_parent`（新窗口/顶层，headless no-op）。相对 href 经
-/// [`resolve_document_url`] 按 base 解析为绝对。否则 `None`（不导航）。`javascript:` URL 不 eval（headless 简化）；
-/// `#hash` 不滚动到锚（headless 无 viewport）。
-pub fn anchor_click_target(html: &str, selector: &str, base_url: &str) -> Option<String> {
-    if !matches!(
-        query_tag_from_html(html, selector).to_ascii_lowercase().as_str(),
-        "a" | "area"
-    ) {
-        return None;
+/// 事件路径激活目标解析（slice29 P1b 修）：命中元素非 `a`/`area` 时沿祖先找最近的 `a`/`area`。
+/// DOM 事件派发在事件路径上取首个具激活行为的元素为 activation target——点击 `<a>` 的内层
+/// span/em/strong/img 等后代元素，激活的是锚点祖先（baidu SERP 结果标题即 `<a><span>…</span></a>`，
+/// renderer hit 命中 SPAN 时原实现只认 `a`/`area` 自身 → 默认动作链全 miss）。与 GUI 管线
+/// `hit_test_link` 的 `find_link_href_cached` 祖先行走同语义。
+/// https://dom.spec.whatwg.org/#concept-event-dispatch（activation target = 路径上首个具激活行为元素）
+/// https://html.spec.whatwg.org/multipage/links.html#hyperlink（`a` 的激活行为 = 导航）
+fn anchor_activation_target(doc: &Document, start: Option<NodeId>) -> Option<NodeId> {
+    let mut node = start?;
+    loop {
+        if doc.get(node).is_some_and(|data| match &data.kind {
+            NodeKind::Element(e) => matches!(e.local_name(), "a" | "area"),
+            _ => false,
+        }) {
+            return Some(node);
+        }
+        node = doc.parent_node(node)?;
     }
-    let href = query_attr_from_html(html, selector, "href");
+}
+
+/// P1a 导航：解析 anchor `<a href>` click 的导航目标 URL（R3052；slice29 契约更新）。
+/// 供 renderer click 路由判定「点击链接是否导航」。
+///
+/// **target 面语义（slice29 修——P1 阻断卡：SERP 结果链接全为 `target=_blank`，点击无导航旅程死）**：
+/// 激活默认行为的主语义是「导航到 chosen navigable」；`target` 属性只决定 chosen navigable 的选择。
+/// spec 上 `_blank`（及页面中无匹配 frame 的命名 target）应新建辅助 browsing context——嵌入态/renderer
+/// 无新建 tab 面（无 tab 创建 IPC），降级为**当前 traversable 导航**：新建上下文面不可用 ≠ 激活面失效
+/// （与 R2979 `window.open` popup-blocked 返 null 的降级同族；GUI 管线 hit_test 面本就无 target 过滤——
+/// 左键 `_blank` 已同 tab 导航，本修收敛两管线一致）。`_top`/`_parent` 在顶级文档即当前 traversable，
+/// 同 tab 导航为 spec 正解非降级。
+/// FIXME(tab-ipc)：renderer→browser 新建 tab IPC 落地后，此处需暴露「新 tab 意图」交宿主选择。
+///
+/// **命中面（slice29 P1b 修）**：renderer `hit_test_element` 返回最深元素——真实站锚点可点区常为
+/// 锚点内层后代（baidu SERP 标题 `<a><span>…</span></a>` 命中 SPAN）。解析经
+/// [`anchor_activation_target`] 沿事件路径行走：命中元素非 `a`/`area` 时激活最近锚点祖先
+/// （与 GUI 管线 `hit_test_link` 的 `find_link_href_cached` 祖先行走同语义，两管线收敛一致）。
+/// https://html.spec.whatwg.org/multipage/nav-history-apis.html#chosen-navigable
+/// https://html.spec.whatwg.org/multipage/links.html#attr-hyperlink-target
+/// https://w3c.github.io/uievents/#event-type-click
+///
+/// 返回 `Some(绝对 URL)` 当：命中元素或其最近 `a`/`area` 祖先（见 [`anchor_activation_target`]）
+/// 有非空 href，且 href 非 `javascript:` / `mailto:` / `tel:` / `sms:` / `data:` / `#fragment`。
+/// 相对 href 经 [`crate::resolve_document_url`] 按 base 解析为绝对。否则 `None`（不导航）。
+/// `javascript:` URL 不在此 eval（R3057 专用分支）；`#hash` 走 R3053 hash 分支。
+pub fn anchor_click_target(html: &str, selector: &str, base_url: &str) -> Option<String> {
+    let doc = parse_html(html);
+    let node = anchor_activation_target(&doc, find_by_selector(&doc, selector))?;
+    let href = doc.get_attribute(node, "href").unwrap_or_default();
     let href = href.trim();
     if href.is_empty() {
         return None; // 无 href / 空 → 不导航
@@ -2721,27 +2755,18 @@ pub fn anchor_click_target(html: &str, selector: &str, base_url: &str) -> Option
     {
         return None;
     }
-    // target=_blank/_top/_parent → 新窗口/顶层（headless 无多窗口，no-op）。
-    let target = query_attr_from_html(html, selector, "target");
-    let tl = target.trim().to_ascii_lowercase();
-    if tl == "_blank" || tl == "_top" || tl == "_parent" {
-        return None;
-    }
     Some(crate::resolve_document_url(base_url, href))
 }
 
 /// P1a 导航：解析 anchor `<a href="#...">` click 的 hash 目标（R3053，闭合 R3052 限制③）。供 renderer click 路由
-/// 判定「点击 hash 链接是否更新 location.hash」。返回 `Some(hash)`（含前导 `#`，如 `#sec` / `#`）当元素为 `<a>` 且
-/// href 以 `#` 开头；否则 `None`。renderer 经 `script_call_set_location_hash` 调 shim `location.hash = hash`
+/// 判定「点击 hash 链接是否更新 location.hash」。返回 `Some(hash)`（含前导 `#`，如 `#sec` / `#`）当命中元素或其
+/// 最近 `a`/`area` 祖先（[`anchor_activation_target`] 事件路径行走）href 以 `#` 开头；否则 `None`。renderer 经
+/// `script_call_set_location_hash` 调 shim `location.hash = hash`
 ///（R3006：更新 hash + history entry + 派 hashchange）。headless 无 viewport → 不滚动到锚，仅 hash/hashchange。
 pub fn anchor_hash_target(html: &str, selector: &str) -> Option<String> {
-    if !matches!(
-        query_tag_from_html(html, selector).to_ascii_lowercase().as_str(),
-        "a" | "area"
-    ) {
-        return None;
-    }
-    let href = query_attr_from_html(html, selector, "href");
+    let doc = parse_html(html);
+    let node = anchor_activation_target(&doc, find_by_selector(&doc, selector))?;
+    let href = doc.get_attribute(node, "href").unwrap_or_default();
     let href = href.trim();
     if href.starts_with('#') {
         Some(href.to_string())
@@ -2751,19 +2776,16 @@ pub fn anchor_hash_target(html: &str, selector: &str) -> Option<String> {
 }
 
 /// P1a 导航：解析 anchor `<a href="javascript:...">` click 的 JS 体（R3057，闭合 R3052 限制②）。供 renderer
-/// click 路由判定「点击 javascript: 链接是否 eval JS」。返回 `Some(js 体)` 当元素为 `<a>` 且 href（trim 后）
-/// 以 `javascript:` 开头（大小写不敏感）；否则 `None`。js 体 = scheme 后的原始字符串（前导空白 trim），如
-/// `void(0)` / `doSomething()` / `alert('hi')`。renderer 经 `execute_script_direct` 在页面全局执行（与 onclick
-/// handler 同一 JS 执行通路——非新增 eval 表面，CSP `script-src` 统辖内联/eval 拦截）。空体（`javascript:`）
-/// 返 `Some("")` → 执行空脚本 no-op。real browser：`javascript:` URL click 执行其体，返回值丢弃（非导航）。
+/// click 路由判定「点击 javascript: 链接是否 eval JS」。返回 `Some(js 体)` 当命中元素或其最近 `a`/`area` 祖先
+/// （[`anchor_activation_target`] 事件路径行走）的 href（trim 后）以 `javascript:` 开头（大小写不敏感）；
+/// 否则 `None`。js 体 = scheme 后的原始字符串（前导空白 trim），如 `void(0)` / `doSomething()` / `alert('hi')`。
+/// renderer 经 `execute_script_direct` 在页面全局执行（与 onclick handler 同一 JS 执行通路——非新增 eval 表面，
+/// CSP `script-src` 统辖内联/eval 拦截）。空体（`javascript:`）返 `Some("")` → 执行空脚本 no-op。
+/// real browser：`javascript:` URL click 执行其体，返回值丢弃（非导航）。
 pub fn anchor_javascript_target(html: &str, selector: &str) -> Option<String> {
-    if !matches!(
-        query_tag_from_html(html, selector).to_ascii_lowercase().as_str(),
-        "a" | "area"
-    ) {
-        return None;
-    }
-    let href = query_attr_from_html(html, selector, "href");
+    let doc = parse_html(html);
+    let node = anchor_activation_target(&doc, find_by_selector(&doc, selector))?;
+    let href = doc.get_attribute(node, "href").unwrap_or_default();
     let href = href.trim();
     // `javascript:` 为 ASCII，前 11 字节即 scheme；lowercase 判定后取原始体（执行需原样 JS 源，不归一）。
     if href.to_ascii_lowercase().starts_with("javascript:") {

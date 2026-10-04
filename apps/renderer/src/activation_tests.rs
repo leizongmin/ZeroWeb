@@ -256,3 +256,77 @@ fn shared_form_actions_preserve_reset_and_submit_semantics() {
         Some("https://zero.test/submitted?name=listener&go=1")
     );
 }
+
+#[test]
+fn blank_target_anchor_click_navigates_s29() {
+    // slice29 缺陷面钉（baidu SERP 旅程探索 P1 阻断卡）：target=_blank 锚点 click 在
+    // renderer 管线曾恒 no-op（anchor_click_target 把 _blank/_top/_parent 过滤为
+    // None）——SERP 结果链接全为 target=_blank，点击后无导航，旅程点击段死。
+    // 修复契约：激活保导航——「新建辅助 browsing context」面嵌入态降级为当前
+    // traversable 导航（与 R2979 window.open popup-blocked 降级同族）；FIXME(tab-ipc)：
+    // renderer→browser 新建 tab IPC 落地后新 tab 意图交宿主。
+    // https://html.spec.whatwg.org/multipage/nav-history-apis.html#chosen-navigable
+    let html = r#"<html><body>
+        <a id="ext" href="/dest" target="_blank">result</a>
+    </body></html>"#;
+    let mut runtime = runtime_with_scripts(html, 930);
+    runtime.stub_network = true;
+
+    let click = runtime.dispatch_dom_at(Some("#ext".to_string()), 0.0, 0.0, "click", None);
+    assert!(click.default_allowed);
+
+    let url = zero_engine::anchor_click_target(
+        &runtime.cached_html,
+        "#ext",
+        runtime.current_url.as_deref().unwrap_or("about:blank"),
+    )
+    .unwrap_or_else(|| panic!("判据失败：target=_blank 锚点点击必须解析出导航 URL"));
+    runtime
+        .handle_navigate(zero_protocol::message::NavigateParams {
+            url,
+            referrer: runtime.current_url.clone(),
+            navigation_epoch: runtime.navigation_epoch.wrapping_add(1),
+        })
+        .unwrap();
+    assert_eq!(
+        runtime.history.last().map(String::as_str),
+        Some("https://zero.test/dest"),
+        "_blank 锚点点击 → 当前 traversable 导航落地 history"
+    );
+}
+
+#[test]
+fn blank_target_anchor_hit_descendant_navigates_s29() {
+    // slice29 P1b 缺陷面钉（活体 baidu SERP 判别探针：dp=false、事件 target=SPAN、
+    // 无导航）：renderer hit_test 取最深元素，真实站锚点点击常命中内层后代
+    // （`<a><span>标题</span></a>`）。事件路径激活目标 = 路径上首个具激活行为的元素
+    // （锚点祖先）——anchor_click_target 需沿祖先行走，否则默认动作链全 miss。
+    // https://dom.spec.whatwg.org/#concept-event-dispatch
+    let html = r#"<html><body>
+        <a href="/dest" target="_blank"><em id="tt">result title</em></a>
+    </body></html>"#;
+    let mut runtime = runtime_with_scripts(html, 931);
+    runtime.stub_network = true;
+
+    let click = runtime.dispatch_dom_at(Some("#tt".to_string()), 0.0, 0.0, "click", None);
+    assert!(click.default_allowed, "span 命中点击默认动作不被取消");
+
+    let url = zero_engine::anchor_click_target(
+        &runtime.cached_html,
+        "#tt",
+        runtime.current_url.as_deref().unwrap_or("about:blank"),
+    )
+    .unwrap_or_else(|| panic!("判据失败：锚点内层后代命中必须沿祖先行走解析出导航 URL"));
+    runtime
+        .handle_navigate(zero_protocol::message::NavigateParams {
+            url,
+            referrer: runtime.current_url.clone(),
+            navigation_epoch: runtime.navigation_epoch.wrapping_add(1),
+        })
+        .unwrap();
+    assert_eq!(
+        runtime.history.last().map(String::as_str),
+        Some("https://zero.test/dest"),
+        "span-in-anchor 点击 → 激活 a 祖先 → 导航落地 history"
+    );
+}
