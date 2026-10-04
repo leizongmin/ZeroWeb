@@ -1,25 +1,48 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-04（M3 尾簇 6a+6b+6c 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-04（M3 尾簇 7 落地）
 
 ## 当前状态
 
-**M3 + 尾簇 1/2/4/5/6 落地（2026-10-04）**：基线 230P → M2 片 1 343P → M3 375P →
+**M3 + 尾簇 1/2/4/5/6/7 落地（2026-10-04）**：基线 230P → M2 片 1 343P → M3 375P →
 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P → 尾簇 6a 1107P →
-**1115P（+885 累计）**
-（corpus：1115P/743F/97TO，`TIME_LIMIT=3600`——per-case 30s 超时 ×~100 TO 案
-注定 corpus 超 20min 默认 test-guard 时限；尾簇 6a 后总册 1195→1955——fractional
-untrusted 脚本中断解除、~760 subtest 全量入册；6a/6b+6c 双轮零回归）。
-证据：[evidence/2026-10-03-m2-slice1.json](evidence/2026-10-03-m2-slice1.json)（M2 片 1）、
+尾簇 6b+6c 1115P → **1167P（+937 累计）**
+（corpus：1167P/684F/97TO，`TIME_LIMIT=3600`；97TO 恒值。尾簇 7 净 +52P 零真回归——
+variant 改名条目净零，pd=/buttonType= 变体 6P→4P 系 variant 大小写修正后真实配置的
+诚实计数）。
+证据：[evidence/2026-10-04-m3-tail7.json](evidence/2026-10-04-m3-tail7.json)（尾簇 7 后）、
+[evidence/2026-10-04-m3-tail7.md](evidence/2026-10-04-m3-tail7.md)（根因链 + bisect 记录 +
+排除路径）、
+[evidence/2026-10-03-m2-slice1.json](evidence/2026-10-03-m2-slice1.json)（M2 片 1）、
 [evidence/2026-10-03-m2m3-after.json](evidence/2026-10-03-m2m3-after.json)（M3 后）、
 [evidence/2026-10-03-m3-tail.json](evidence/2026-10-03-m3-tail.json)（尾簇 1 后）、
 [evidence/2026-10-04-m3-tail4.json](evidence/2026-10-04-m3-tail4.json)（尾簇 4 后）、
 [evidence/2026-10-04-m3-tail5.json](evidence/2026-10-04-m3-tail5.json)（尾簇 5 后）、
 [evidence/2026-10-04-m3-tail6a.json](evidence/2026-10-04-m3-tail6a.json)（尾簇 6a 后）、
 [evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)（尾簇 6b+6c 后）。
-门禁：clippy -D warnings、fmt 全绿（见尾簇 4 提交说明）；尾簇 6 系纯 JS 变更
-（node --check + 聚焦族跑）。
+门禁：fmt + clippy（quickjs 面 webview/wpt-runner）全绿；shim 拼接 node --check 全绿。
+
+**M3 尾簇 7（2026-10-04，本轮）——R334 重插同 turn 查询可见性 + variant 大小写保真**。
+三件：
+
+1. **by-selector 重插索引**（part05 `_zwPendReselBySel`）：R334 sel 子重插的结构 wire
+   异步 drain，窗口内 gEBI 恒 null（mouseover-at-removing 30 迭代链 i1 起同步抛错 →
+   整链 microtask 塌缩进单轮、永不自愈）。R51c by-id 索引登记不了它——重插子宿主侧已
+   无节点，`nd.id` 读链落空返 ''。以 R334 已知 `__zwSelector` 为键直登，gEBI 查
+   `'#'+id`（in-doc 门 = 槽位 parentSel 树中判定）；表随 apply 代际 bump 清空。
+   mouseover-at-removing **1P/29F→30P×2 全绿**。
+2. **探测轮首 flush**（`WebView::flush_pending_shared_mutations` + `take_probe` 入口）：
+   上一轮 JS 排队的结构 wire 本轮 JS 前落活 DOM（跨轮查询/命中少断一代；队列空零成本）。
+3. **variant 值大小写保真**（`case_variants`）：旧实现小写源码后提取 variant——
+   `?Shift`/`?preventDefault=…` 被写成 `?shift`/`?preventdefault=…`，页面
+   `URLSearchParams.get`（大小写敏感）miss。修复后 modifier 族 `keyDown(undefined)`
+   16F 解除为真语义缺口 2P/4F×4；click_during_parent_capture / synthetic-button-state
+   的 pd=/buttonType= 变体首次跑真实配置。
+
+排除路径（bisect 实证，勿重试）：`with_query_view_doc` 把 `InsertAdjacentSelElement`
+纳入 live_ok 排除 + 视图烘焙——live_ok 扫 append-only 队列全史，任一 sel-insert 入队
+（即使已 drain）即永久切视图路径，after_target_removed 4P→2P 真回归。
 
 **M3 尾簇 4（2026-10-04，650cdfa2e）——mutation 族收口**。三件套：
 
@@ -129,7 +152,7 @@ quickjs 面 + zero-renderer）+ fmt 全绿；**reftest 704/704 零回归**。6b 
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | uievents + pointerevents corpus 导入 + 基线 | ✅ 2026-10-03 |
-| P2 | 鼠标事件序/坐标/click 组合语义修齐 | 🔄 核心已落地；残余 = mousemove-between（视口命中精度）、wheel 三案（scroll 源重放——wheel-basic/deadlock 可解，scrolling 需真滚动）、interface keyboard-click、uievents/mouse 尾簇（mouseover-at-removing 58F 与 6c 同族待复测、layerX/chorded buttons/image-map/modifier-no-movement） |
+| P2 | 鼠标事件序/坐标/click 组合语义修齐 | 🔄 核心已落地；残余 = mousemove-between（视口命中精度）、wheel 三案（scroll 源重放——wheel-basic/deadlock 可解，scrolling 需真滚动）、interface keyboard-click、uievents/mouse 尾簇（mouseover-at-removing ✅ 尾簇 7 全绿；同 turn gBCR 强制同步布局——reappending 11F + removing_last_over 4F 根因；mutation 驱动悬停重定向——modifier 族 32F；image-map 命中——16F；layerX/chorded buttons） |
 | P3 | Pointer 生命周期 + capture 三方法 + enter/leave 边界序 | ✅ 核心 + mutation 族 + 重入面 + touch 接触失效收口（尾簇 4/5/6c——after_target_appended 24/24 全绿）；残余 = pointercancel/touch-action 交互面、iframe 跨文档焦点；from_slot 案阻塞于 declarative shadow DOM（shadowrootmode 未实现——web-components 域前置，挂账）；interleaved 族行为面已对齐（残余 = 上游 expected 记账 bug，pin 版即 Fail，不再追） |
 | P4 | touch-events / pointerlock / IME 组合挂账定稿 | ⏳ M4 |
 
@@ -154,26 +177,27 @@ quickjs 面 + zero-renderer）+ fmt 全绿；**reftest 704/704 零回归**。6b 
   捕获 up 前清除。492P→502P。
 - **M3 尾簇 6a（2026-10-04，68edcce1b→baaabf835）**：untrusted 构造语义（坐标
   floor + page/offset 派生 + tilt/angle 归一）。502P→1107P（总册 1195→1955）。
-- **M3 尾簇 6b+6c（2026-10-04，本轮）**：mousedown→focus 默认动作链（迁移序 +
+- **M3 尾簇 6b+6c（2026-10-04，001375034 校准）**：mousedown→focus 默认动作链（迁移序 +
   relatedTarget + slice22 钩子接线）+ touch 接触失效收口（up 内变异 post-up
   结算 + 延迟跨界 + child-first 序）。1107P→1115P。
+- **M3 尾簇 7（2026-10-04，本轮）**：R334 重插同 turn 查询可见性（by-selector 索引 +
+  探测轮首 flush）+ variant 值大小写保真。1115P→1167P（总册 1955→1948——pd=/
+  buttonType= 变体按真实配置计册）。
 
 ## 下一步计划
 
-1. **M2/M3 尾簇**（按 Throughput 排序）：a) uievents/mouse 尾簇——mouseover-at-
-   removing-mousedown-target 58F **根因已定位**（zwprobe 实证：remove→re-append
-   跨 turn 循环中，shim 侧 reappend 记账完成〔childNodes/parentNode 对〕但宿主侧
-   三路全失——`__zw_contains`/query 快照/getElementById 均无子；InsertAdjacentSel
-   Element 的 stash 消费链（Remove 记账 → child 失配 → NodeId stash → 片段 stash
-   重解析插回，js_dom_bridge.rs:1378 区）在该时序下未生效；迭代 0 断言面本身已过
-   （mousedown@child→mouseover@parent→mouseup@parent），58F 全为 finally 再挂失败
-   的级联 unhandled rejection——**DetachedNodeStash/shim registry 身份保真**专项，
-   勿用 setTimeout 延迟 wire（runner 环境定时器不转，且破坏 F1/F2 in-turn attach
-   ——已试已回退））、boundary_events_after_reappending 11F（重插语义同族）、
-   modifier-no-movement 16F、image-map 8F、layerX/layerY；b) wheel 源 scroll 重放
-   （wheel-basic/deadlock——Actions scroll 步记账不重放改重放 + `__zw_wheel` shim
-   钩子）；c) focus 残余两案（iframe 跨文档焦点、keydown→focus activation——键盘域
-   邻接，挂账候选）。
+1. **M2/M3 尾簇**（按 Throughput 排序，根因链见
+   [evidence/2026-10-04-m3-tail7.md](evidence/2026-10-04-m3-tail7.md) 残余节）：
+   a) **同 turn gBCR 强制同步布局**——`mouse_boundary_events_after_reappending_last_
+   over_target` 11F + removing_last_over_element 4F + pointer 孪生：createElement 后
+   同步 `getBoundingClientRect` 读 stale 布局（真浏览器 gBCR flush layout；需把
+   drain+relayout 接进 gBCR 宿主回调——pipeline 句柄进 callbacks 层的设计题）；
+   b) **mutation 驱动悬停重定向**——modifier_no_mouse/pointer_movement 32F：
+   stationary pointer 下 DOM 变更引发 boundary 事件（含修饰键态）；引擎现只在指针
+   命令时重算 hover；c) **image-map 命中测试**——boundary_events_on_image_map 16F：
+   `<area shape coords>` 几何命中（area 无布局盒，经 img usemap 映射）；d) wheel 源
+   scroll 重放（wheel-basic/deadlock）；e) focus 残余两案（iframe 跨文档焦点、
+   keydown→focus activation——键盘域邻接，挂账候选）。
 2. **M4 收口**：touch-action 解析/计算值核对（parsing 三案 0P 待查）、
    touch-events / pointerlock / IME / touch-action 交互面挂账定稿、DC-4 全绿门禁
    （make test + clippy + fmt + reftest 零回归 + product-smoke）。

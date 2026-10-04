@@ -2300,6 +2300,21 @@
           }
         }
       }
+      // uievents-compat M3 尾簇 7：R334 重插 by-selector 索引命中——重插的 sel 子在 wire
+      // drain 前宿主视图/live 皆不含（in-doc 门走 `_zwSelPendingParent` 槽的 parentSel
+      // 判定；表随 apply 代际 bump 清空，drain 后无缝切常规读链）。mouseover-at-removing
+      // 30 迭代链 i1 起整链 microtask 塌缩进单轮的 gEBI 断代根因。
+      if (typeof globalThis.__zwPendReselGet === 'function') {
+        var resel7 = globalThis.__zwPendReselGet('#' + idText);
+        if (resel7 && !_zwPRSet().has(resel7) && !_r125AncestorRemoved(resel7)
+            && resel7._zwSelPendingParent) {
+          var r7Pl = resel7._zwSelPendingParent;
+          if ((r7Pl.parentSel && _zwMutationInDoc(r7Pl.parentSel, null))
+              || (r7Pl.parentHandle && _zwMutationInDoc(null, r7Pl.parentHandle))) {
+            return resel7;
+          }
+        }
+      }
       var hit = globalThis.document.querySelector('[id="' + idText.replace(/"/g, '\\"') + '"]');
       // R125：快照命中但元素已 remove（pending-removed 表）→ 继续找下一个（spec tree
       // order 的下一候选）——removeChild 的 Remove mutation 不入查询视图（R3029 removed

@@ -2114,6 +2114,18 @@ impl WebView {
         self.pipeline.tick_animation_clock(current_time)
     }
 
+    /// uievents-compat M3 尾簇 7：pending 共享 mutation 队列的显式 flush（探测轮首
+    /// 调用）。真实浏览器里页内 DOM 变更同步可见（同一 JS 堆）；runner 的 shim 把
+    /// 结构变更拆成 shim 树（同步）+ 宿主 wire（异步 drain）两层——wire 只在
+    /// `pump_animation_clock`（探测轮尾）等 drain 点落活 DOM，使「上一轮 JS 末尾
+    /// re-append → 本轮 JS 首个 getElementById」断代一轮（mouseover-at-removing
+    /// 30 迭代链 i1 起整链 microtask 塌缩进单轮、永不自愈的根因）。探测轮首先
+    /// drain，本轮 JS（timer/rAF 回调、事件 listener）查询即读到上一轮变异的当下
+    /// 真相；队列空时零成本（cursor 早退）。
+    pub fn flush_pending_shared_mutations(&mut self) -> Result<(), WebViewError> {
+        self.apply_pending_shared_mutations()
+    }
+
     /// R342：应用 mutation 子集（不触发渲染增量分支——泵随后统一 tick 重算）。
     /// 更新 `applied_mutations` 游标并同步 handle 映射（与
     /// [`Self::apply_pending_shared_mutations`] 同机制，按给定子集切分）。

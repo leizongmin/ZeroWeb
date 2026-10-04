@@ -4997,6 +4997,14 @@ return _tplContent;
                 var _r334kids = _childNodeList(sel, handle);
                 var _r334prev = _r334kids.length ? _r334kids[_r334kids.length - 1] : null;
                 child._zwSelPendingParent = { parentSel: sel, nextSibling: null };
+                // uievents-compat M3 尾簇 7：**同 turn 查询可见性**——R334 重插的结构 wire
+                // 异步 drain，host 视图/live 在此窗口内不含该子，getElementById（
+                // mouseover-at-removing 30 迭代链 i1 起整链 microtask 塌缩进单轮）恒 null。
+                // 经 by-selector 索引补偿（重插子宿主侧已无节点，id/attr 读链落空——
+                // `_zwPAIdAdd` 的 `nd.id` 返 ''，须以已知 `__zwSelector` 为键直登）；
+                // in-doc 门 = 槽位 parentSel 树中判定（part06 gEBI 尾簇 7 分支）。
+                // host apply 后代际 bump 清表 → 无缝切 live 读。
+                try { if (typeof globalThis.__zwPendReselAdd === 'function') globalThis.__zwPendReselAdd(_r334ChildSel, child); } catch (_e334pa) {}
                 // R334：同父移动（WPT n42 appendChild(firstChild.nextSibling)）也发 removed——
                 // spec remove-then-insert 两步各一条 record。
                 if (_r334OldSel) {

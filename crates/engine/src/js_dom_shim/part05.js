@@ -9847,6 +9847,7 @@
     _zwPendingRemovedSet = null;
     _zwPendingByParent.clear();
     _zwPendingAddedById.clear();
+    try { if (typeof _zwPendReselBySel !== 'undefined') _zwPendReselBySel.clear(); } catch (_eReselClr) {}
     _zwIdOverrides.clear();
     // R379/pa2a：移除标记纳入换代清理（pa1 审计 §2.4 实证「标记不在清桶范围」——
     // 快照换代后 host 真相已含/已不含该节点，标记的同步补偿语义作废）。
@@ -9969,6 +9970,21 @@
     if (i >= 0) arr.splice(i, 1);
     if (!arr.length) _zwPendingAddedById.delete(id);
   }
+  // uievents-compat M3 尾簇 7：**R334 重插 by-selector 索引**——重插的 sel 子宿主侧已
+  // 无节点，其 id/attr 读链全落空（`nd.id` → ''——宿主快照不含已移除节点），R51c 的
+  // by-id 索引无法经 `nd.id` 登记。本表以 `__zwSelector`（'#child'，R334 已知）为键
+  // 直登节点，getElementById 经 '#'+id 命中（in-doc 门 = `_zwSelPendingParent` 槽的
+  // parentSel 树中判定，见 part06）。生命周期同 pending 补偿表：`__zw_reset_pending_
+  // state`（导航 + apply 代际 bump 共用体）清空——drain 后 live doc 已含该子，无缝切
+  // 常规读链。
+  var _zwPendReselBySel = new Map();
+  globalThis.__zwPendReselAdd = function (sel, node) {
+    if (!sel || !node) return;
+    _zwPendReselBySel.set(String(sel), node);
+  };
+  globalThis.__zwPendReselGet = function (sel) {
+    return _zwPendReselBySel.get(String(sel)) || null;
+  };
   function _zwPendBucket(sel, handle) {
     var key = sel ? sel : '_h:' + String(handle == null ? '' : handle);
     var b = _zwPendingByParent.get(key);

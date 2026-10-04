@@ -1677,15 +1677,22 @@ fn collect_uievents_dir_cases(
 /// URL（无 query），依赖 variant 参数的用例全簇误败（`mode=null` 落 TypeError）。
 /// content 支持无引号/单双引号形式；与上游 wpt struct 一致，query 含前导 `?`。
 fn case_variants(source: &str) -> Vec<String> {
+    // uievents-compat 尾簇 7：variant 值大小写保真——上游 `<meta name="variant"
+    // content="?Shift">` 的查询串大小写敏感（页面 `location.search` 消费方按字面
+    // switch 分派——modifier_no_mouse_movement 族旧被整体小写成 `?shift`，键miss
+    // → `keyDown(undefined)` 全 variant 16F）。ASCII 小写化逐字节等长，匹配在
+    // 小写镜像上做、值切片回**原文**。
     let mut out = Vec::new();
     let lower = source.to_ascii_lowercase();
     let mut rest = lower.as_str();
+    let mut origin_rest = source;
     while let Some(idx) = rest.find("name=\"variant\"").or_else(|| rest.find("name=variant")) {
         let after = &rest[idx..];
         let Some(content_idx) = after.find("content=") else {
             break;
         };
-        let tail = &after[content_idx + "content=".len()..];
+        let offset = idx + content_idx + "content=".len();
+        let tail = &origin_rest[offset..];
         let value = if let Some(stripped) = tail.strip_prefix('"') {
             stripped.split('"').next().unwrap_or("")
         } else if let Some(stripped) = tail.strip_prefix('\'') {
@@ -1697,6 +1704,7 @@ fn case_variants(source: &str) -> Vec<String> {
             out.push(value.to_string());
         }
         rest = &after[1..];
+        origin_rest = &origin_rest[idx + 1..];
     }
     out
 }
@@ -7669,6 +7677,11 @@ fn kind_tag(kind: zero_engine::MediaResourceElementKind) -> &'static str {
 }
 
 fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64) -> Result<HarnessProbe, String> {
+    // uievents-compat M3 尾簇 7：探测轮首先 flush pending 共享 mutation——上一轮 JS
+    //（rAF/timer 回调、事件 listener）排队的结构 wire 在本轮 JS 前落活 DOM（真实
+    // 浏览器 DOM 变更同步可见；mouseover-at-removing 30 迭代 remove→re-append 链
+    // 的查询断代根因）。队列空时 cursor 早退零成本。
+    let _ = webview.flush_pending_shared_mutations();
     // Pump timer tasks first so the sandbox's microtask checkpoint has flushed
     // testharness result callbacks before the state snapshot is serialized.
     webview
