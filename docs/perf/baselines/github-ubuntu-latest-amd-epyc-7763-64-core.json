@@ -83,15 +83,15 @@
     },
     {
       "id": "mb/zero-css-parser/complex_selector_parse_100",
-      "p95": 413668.54285714286,
+      "p95": 410733.6928571428,
       "tier": "budget",
-      "tightened_at": "2026-10-02T19:26:02Z"
+      "tightened_at": "2026-10-04T19:26:19Z"
     },
     {
       "id": "mb/zero-css-parser/css_parse_100kb",
-      "p95": 2770591.287878788,
+      "p95": 2765021.761904762,
       "tier": "budget",
-      "tightened_at": "2026-10-04T15:15:48Z"
+      "tightened_at": "2026-10-04T19:26:19Z"
     },
     {
       "id": "mb/zero-css-parser/css_parse_by_size/rules/100",
@@ -107,9 +107,9 @@
     },
     {
       "id": "mb/zero-css-parser/css_parse_by_size/rules/500",
-      "p95": 1879952.6923076923,
+      "p95": 1873941.9545454546,
       "tier": "budget",
-      "tightened_at": "2026-09-29T19:28:27Z"
+      "tightened_at": "2026-10-04T19:26:19Z"
     },
     {
       "id": "mb/zero-css-parser/css_parse_by_size/rules/5000",
@@ -538,9 +538,9 @@
     },
     {
       "id": "mb/zero-webview/webview_builder_create",
-      "p95": 7437.065201654602,
+      "p95": 7397.316921471851,
       "tier": "budget",
-      "tightened_at": "2026-10-02T13:26:32Z"
+      "tightened_at": "2026-10-04T19:26:19Z"
     },
     {
       "id": "mb/zero-webview/webview_complex_page",
