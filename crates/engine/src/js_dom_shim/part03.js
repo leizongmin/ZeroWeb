@@ -8651,7 +8651,20 @@
   // 须立即返 null（host mutation 异步应用，快照仍含该元素；2d.shadow.attributes.
   // shadowColor.current.removed：remove 后 currentColor 解析为黑）。
   var _zwRemovedSels = {};
-  function _zwMarkRemoved(sel) { if (sel) _zwRemovedSels[sel] = true; }
+  function _zwMarkRemoved(sel) {
+    if (sel) {
+      _zwRemovedSels[sel] = true;
+      // uievents-compat M3 尾簇 5：hover 元素被移除（后续可能原位重插入）→ 记重入
+      // 旗标——下一指针事件对回连的 hover 元素补派 over/enter（insert-under-cursor
+      // 语义；WPT after_target_appended moved variant 断言面）。
+      try {
+        if (typeof _zwPtrState !== 'undefined' && _zwPtrState
+            && (sel === _zwPtrState.overSel || sel === _zwPtrState.mouseOverSel)) {
+          _zwPtrState.overReinserted = true;
+        }
+      } catch (_eRe45) {}
+    }
+  }
   function _zwUnmarkRemoved(sel) { if (sel) delete _zwRemovedSels[sel]; }
   function _zwIsRemoved(sel) { return !!(sel && _zwRemovedSels[sel]); }
   // js-dom M4 R86：handle 移除标记（sel 版同款语义）——removeChild/remove 的 handle 节点

@@ -12029,6 +12029,9 @@
     // uievents-compat M3 尾簇 4：compat mouse 层独立 hover 位——不随 touch 抬起拆除
     // （mouse 边界事件只随真实指针位置跨界，见 _zwPointerCross 双层拆分）。
     mouseOverSel: null,
+    // uievents-compat M3 尾簇 5：hover 元素被 remove（或同父 move）后原位重插入——
+    // 下一指针事件补派 over/enter 重入面（insert-under-cursor 语义）。
+    overReinserted: false,
     processingCapture: false,
     streakTarget: null, streakCount: 0, downSel: null, downButton: 0
   };
@@ -12044,6 +12047,8 @@
     // 指针事件以新命中目标派发——WPT pointerevent_after_target_removed）。
     sel = _zwRetargetSel(sel, x, y);
     st.hoverSel = sel; // 真实悬停位恒更新（捕获期逻辑位≠真实位，释放恢复用）
+    // 尾簇 5：hover 元素原位重插入 → 补重入面（over/enter）。
+    _zwReentryCheck(sel, x, y);
     // Process pending 先于捕获态判定（spec——pointer 事件前结算 pending override；
     // pointerup 内 release 的场景在下一 move 清算 lost + 悬停恢复，随后 move 按
     // **现**捕获态路由——WPT pointerevent_releasepointercapture_events_to_original_
@@ -12147,6 +12152,9 @@
       sel = _zwRetargetSel(sel, x, y);
       __zw_pointer_move(sel, x, y);
     }
+    // 尾簇 5：hover 元素原位重插入 → 补重入面（over/enter——touch 隐含迁移分支与
+    // mouse move 分支同面）。
+    _zwReentryCheck(sel, x, y);
     st.downSel = sel;
     st.downButton = button;
     _zwSetButtons(st.buttons | (1 << button));
@@ -12196,10 +12204,21 @@
     button = button | 0;
     var st = _zwPtrState;
     st.pointerType = pointerType || 'mouse';
+    // uievents-compat M3 尾簇 5：touch **隐式**捕获 up 前清除——pending 于 up 派发时
+    // 经 Process-Pending 换防并把 pointerup 重定向 down 目标；Chromium 行为 up@新
+    // 命中目标（insert-under-cursor 后 up 落新元素——WPT after_target_appended
+    // ?touch「pointerdown@parent,(child-attached) → pointerup@child」断言面）。显式
+    // setPointerCapture 的捕获（无 _zw_implicit_ 前缀）不受影响。
+    if (st.pointerType === 'touch' && !st.capture['1'] && st.pending['1']
+        && String(st.pending['1'].key || '').indexOf('_zw_implicit_') === 0) {
+      delete st.pending['1'];
+    }
     // 目标已移除（down 序列内 listener 删除了命中元素）→ 命中测试重定向 + 边界序
     // （over@新目标——dangling cross 面只补 over；WPT after_target_removed
     // 「(child-removed) → pointerover@parent → pointerup@parent」断言面）。
     upSel = _zwRetargetSel(upSel, x, y);
+    // 尾簇 5：hover 元素原位重插入 → 补重入面（over/enter）。
+    _zwReentryCheck(upSel, x, y);
     // up 落点变化（runner 侧祖先链回退重定向等）且非捕获重定向 → 补跨界序。
     if (upSel !== st.overSel && !st.capture['1'] && typeof __zw_parent === 'function') {
       _zwPointerCross(st.overSel, upSel, x, y);
@@ -12347,9 +12366,27 @@
     // after_target_removed ?touch mouse 子测试：up@parent 后无 mouseout/mouseleave、
     // down 隐含迁移不重派 mouseover@已悬停目标）。
     var st = _zwPtrState;
+    // 尾簇 5：跨界到不同元素 → 重入旗标失效（重入面只对原位重插的 hover 元素）。
+    if (nextSel && nextSel !== prevSel) st.overReinserted = false;
     _zwLayerCross(prevSel, nextSel, x, y, 'pointer');
     _zwLayerCross(st.mouseOverSel, nextSel, x, y, 'mouse');
     st.mouseOverSel = nextSel;
+  }
+  // uievents-compat M3 尾簇 5：hover 元素 remove→reinsert（或同父 move 重挂）的
+  // **重入面**——下一指针事件派发前对回连的原 hover 元素补派 over/enter（双层，
+  // 仅 over+enter、无 out/leave——prev 与 next 同元素；Chromium insert-under-cursor
+  // 语义，WPT after_target_appended moved variant「(child-moved) → pointerover@child
+  // → pointerup@child」断言面）。
+  function _zwReentryCheck(sel, x, y) {
+    var st = _zwPtrState;
+    if (!st.overReinserted) return;
+    if (sel !== st.overSel && sel !== st.mouseOverSel) return;
+    if (typeof _zwIsConnected === 'function' && !_zwIsConnected(sel, null)) return;
+    __zw_dispatch_event(sel, 'pointerover', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+    __zw_dispatch_event(sel, 'pointerenter', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+    __zw_dispatch_event(sel, 'mouseover', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+    __zw_dispatch_event(sel, 'mouseenter', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+    st.overReinserted = false;
   }
   function _zwLayerCross(prevSel, nextSel, x, y, layer) {
     if (prevSel === nextSel) return;

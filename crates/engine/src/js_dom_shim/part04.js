@@ -4949,6 +4949,16 @@ return _tplContent;
                 var _r334op0 = child.parentNode;
                 if (_r334op0 && _r334op0.__zwSelector) _r334OldSel = _r334op0.__zwSelector;
               } catch (_e334o0) {}
+              // uievents-compat M3 尾簇 5：**同父 move 重挂**（appendChild 已连接 sel 子
+              // = detach+append，不抽 DomMutation::Remove、不走 _zwMarkRemoved）→ 记
+              // hover 重入旗标（insert-under-cursor 语义；WPT after_target_appended
+              // moved variant 断言面）。
+              try {
+                if (_r334OldSel && typeof _zwPtrState !== 'undefined' && _zwPtrState
+                    && (_r334ChildSel === _zwPtrState.overSel || _r334ChildSel === _zwPtrState.mouseOverSel)) {
+                  _zwPtrState.overReinserted = true;
+                }
+              } catch (_eRe334) {}
               try { __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334ChildSel); } catch (_e334w) {}
               // M3 扩批 XLV：**sel 子重插的移除标记清除**——静态元素 removeChild→
               // appendChild 重插后 removed 标记残留使 parentNode getter（_zwIsRemoved
