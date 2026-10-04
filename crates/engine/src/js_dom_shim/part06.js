@@ -8130,7 +8130,15 @@
   // HTML 规范「Window 上的命名属性访问」：带 id 的元素应作为全局变量可访问
   // （`<div id="container">…</div>` → JS `container.appendChild(...)`）。动态 reftest
   // 普遍用裸标识符引用元素（257 个 reftest 文件），缺失则抛 ReferenceError 中断脚本。
-  // 仅安装合法标识符 id；不覆盖已存在全局（避免 shadow `document`/`window` 等真实 global）。
+  // 仅安装合法标识符名；不覆盖已存在全局（避免 shadow `document`/`window` 等真实
+  // global；spec：脚本 own property 位于 WindowProperties 命名属性层之下）。
+  // slice28（RP-1）：collect 同收 name 面（embed/form/img/object 非空 name，
+  // 树序合并；iframe 走 R139 既存 contentWindow 面）——id 查不到时按四
+  // name-able 元素回落解析。RP-5 评估：spec 无标识符
+  // 过滤（supported property names 为任意 DOMString），留门偏差=①`|` 分隔 transport
+  // 与属性选择器嵌入在标识符字符集下才安全 ②canonical 风暴面行为风险；非标识符名
+  // 的括号访问 window['a-b'] 本 shim 不支持——偏差记档不放宽。
+  // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
   function _installNamedAccess() {
     try {
       var ids = __zw_collect_ids();
@@ -8139,6 +8147,14 @@
         if (!id || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id)) return;
         if (globalThis[id] !== undefined) return;
         var el = globalThis.document.getElementById(id);
+        if (!el) {
+          // name 面：标识符字符集内嵌属性选择器（无引号/转义面）；命中 embed/form/
+          // img/object 之一（iframe 不入本面——R139 已以 contentWindow 注册 named
+          // iframe 全局，本面收 iframe 会以元素先占名压制之，值类型倒退）。
+          el = globalThis.document.querySelector(
+            'embed[name="' + id + '"],form[name="' + id + '"],' +
+            'img[name="' + id + '"],object[name="' + id + '"]');
+        }
         if (el) globalThis[id] = el;
       });
     } catch (_e) {}

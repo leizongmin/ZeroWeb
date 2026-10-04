@@ -233,6 +233,12 @@ test: target-disk-guard target/test-guard
 	cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings & clippy_pid=$$!; \
 	rc=0; wait $$test_pid || rc=$$?; wait $$clippy_pid || rc=$$?; exit $$rc
 	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-renderer --bin zero-renderer -- --test-threads=1
+	# slice28（RP-3，2026-10-04）：renderer lib 专项腿。workspace 腿 --exclude
+	# zero-renderer、renderer 腿仅 --bin——renderer lib（js_worker 快照/协议单测，
+	# slice27/28 named access 钉所在）此前 make test 结构性失明（CI nextest 兜底）。
+	# 锚算术基数变化：本腿加入后 make test 总计 = 原 19,614P + 本腿 P 数
+	#（2026-10-04 时点本腿 202P = 3bc44bf62 基线 201P + slice28 新钉 1P；随钉数自然增长）。
+	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-renderer --lib -- --test-threads=1
 	ZERO_NOPROXY=1 ZW_GUARD_RUNNER_PREFIX="xvfb-run -a" ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-browser --bin zero-browser -- --test-threads=1
 	@if ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 120 -- cargo test -p zero-render-foundation gpu::renderer::tests::test_gpu_renderer_headless_creation -- --exact --test-threads=1 >/dev/null 2>&1; then \
 		echo "wgpu adapter available; running adapter-only GPU tests"; \
