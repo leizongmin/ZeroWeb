@@ -12498,6 +12498,15 @@
     // 有效落点先于派发取（pointerup 派发尾的隐式释放会清 capture——click/auxclick
     // 组合目标须用释放前的捕获落点；WPT pointerevent_click_during_capture 期望
     // click@捕获目标而非 up 命中元素）。
+    // 尾簇 12：capturedSel 在 **pending 换防后**取——pointerdown 里 setPointerCapture
+    // 的 pending 于 pointerup 派发前结算（PE spec §9.2 Process Pending Pointer
+    // Capture——「before dispatching the next pointer event」；gotpointercapture 站序
+    // 仍先于 pointerup listener）。旧序 capturedSel 读在换防前恒 null/旧值 →
+    // upEff 回落真实命中元素（WPT click_during_parent_capture「mouseup/click 的
+    // composedPath 不含 target」断言面）。
+    if (typeof _zwProcessPendingCapture === 'function' && !st.processingCapture) {
+      _zwProcessPendingCapture('1');
+    }
     var capturedSel = st.capture['1'] ? st.capture['1'].sel : null;
     // 尾簇 6c：变异代际快照——up 派发（pointerup/mouseup）期间页内 listener 的
     // DOM 变异（attach/move-under-cursor）以此检测，驱动 post-up 结算。
@@ -12548,8 +12557,14 @@
     var upEff = capturedSel || upSel;
     // pointerup 取消 → compat mouseup 抑制（click 照常——WPT
     // pointerevent_suppress_compat_events_on_click 期望序 click@t0 无 mousedown/up）。
+    // 尾簇 12：compat mouseup 落点——**mouse 随捕获有效落点**（upEff；pointerup 派发
+    // 内的隐式释放已清 capture，内部 `_m3Cap` 重定向到此已不可达；Chrome 语义 compat
+    // mouse 随指针捕获落点——WPT click_during_parent_capture mouse「mouseup path 不含
+    // target」断言面）；**touch 随真实命中**（upSel——touch 的 compat mouseup 仍按
+    // touchstart 目标，同 touchend「always fired on same target as touchstart」语义，
+    // 同测试 touch 面「mouseup path 含 target」断言面）。无捕获时两者 === upSel 零变化。
     if (!upPrevented) {
-      __zw_dispatch_event(upSel, 'mouseup', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
+      __zw_dispatch_event(pointerType === 'touch' ? upSel : upEff, 'mouseup', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
     }
     // uievents-compat M3 尾簇 6c（2026-10-04）：**up 派发中变异的 post-up 结算**
     //（Chromium touch 接触失效语义——WPT after_target_appended ?touch 断言面）。
