@@ -2628,6 +2628,14 @@
       }
       if (tag.toLowerCase() === 'canvas') return _zwMakeCanvas();
       var handle = __zw_create_element(tag);
+      // uievents-compat 尾簇 9：创建代际印章——insert 路径的跨批悬停风险窗口判据
+      //（createElement 产物跨 apply 代际后，镜像侧 handle 可经 refresh_if_html_changed
+      // 全量重建失效；同批创建+插入（代际相等）无此窗口）。见 part04 insertBefore
+      // sel 父分支注记。
+      try {
+        (globalThis._zwHandleBirthGen = globalThis._zwHandleBirthGen || {})[handle] =
+          (typeof globalThis._zwApplyGeneration === 'function') ? globalThis._zwApplyGeneration() : 0;
+      } catch (_eBirthGen9) {}
       var el = _wrapHandle(handle);
       // js-dom M3 R90→R94：createElement 命中已注册 custom element → 立即升级（spec
       // `custom-elements-upgrades`：创建即 upgrade = 原型挂接 + **用户 ctor 体执行**）。
@@ -12267,10 +12275,26 @@
     _zwMutHoverFireTransient(tr, st.x, st.y, null);
     return 'ok';
   };
+  // uievents-compat 尾簇 9：handle 子插入 sel 父的跨批悬停风险窗口判据（part04
+  // insertBefore 分支消费）。创建代际（_zwHandleBirthGen，createElement 印章）≠ 当下
+  // apply 代际 → 中间有 apply 批（批间可含 refresh_if_html_changed 全量重建——镜像
+  // handle-only 节点失效）→ 返回序列化片段（child outerHTML——shim 唯一真相，含当下
+  // 属性面）供 InsertAdjacentHtml 物化；同批创建（代际相等）→ 返回 ''（走原
+  // InsertBefore/AppendChild 路径零变化）。序列化失败/空 → '' 回落原路径（原硬错
+  // 语义保留，不掩盖真悬垂）。
+  globalThis._zwIb9Serialized = function (node) {
+    try {
+      var h = node && node.__zwHandle;
+      if (!h) return '';
+      var birth = (globalThis._zwHandleBirthGen || {})[h];
+      var cur = (typeof globalThis._zwApplyGeneration === 'function') ? globalThis._zwApplyGeneration() : 0;
+      if (birth === undefined || birth === cur) return '';
+      return String(node.outerHTML || '');
+    } catch (_eIb9s) { return ''; }
+  };
   globalThis.__zw_mut_hover_settle = function (hitSel, x, y) {
     var st = _zwPtrState;
-    st.mutTickSettled = st.mutTick;
-    if (st.pointerType === 'touch') return 'ok';
+    if (st.pointerType === 'touch') { st.mutTickSettled = st.mutTick; return 'ok'; }
     var tr = st.hoverTransient;
     if (tr && tr.reattached) {
       if ((x || 0) !== tr.px || (y || 0) !== tr.py) {
@@ -12290,6 +12314,15 @@
     // 非 transient（净移除/普通变异）：端点几何重算——命中与现悬停不同 → 补跨界。
     // 命中未变（remove wire 尚 pending 的窗口）→ 保留 transient（后续重插仍可置
     // reattached）；端点已结算（净移除）→ 丢弃旧瞬态。
+    // 尾簇 9：命中目标尚未落 applied 快照（R334 结构 wire 未 drain——hit test 读
+    // live 视图可见、`__zw_contains`/`__zw_parent` 的 applied/视图路径不可见，本
+    // turn 跨界序派不出 out/leave@prev 与 over/enter@next 的父链/目标）→ 不消费
+    // 代际（返回 'deferred'），runner 下一探测轮 flush 后重结算。空命中（净移除
+    // 端点）照常结算。
+    if (hitSel && typeof _zwIsConnected === 'function' && !_zwIsConnected(hitSel, null)) {
+      return 'deferred';
+    }
+    st.mutTickSettled = st.mutTick;
     if (!hitSel || hitSel === st.overSel) return 'ok';
     st.hoverTransient = null;
     _zwPointerCross(st.overSel, hitSel, x || 0, y || 0);
@@ -12433,7 +12466,12 @@
       st.overSel = upSel;
       crossedAtUp = true;
     }
-    var effDown = downSel || st.downSel || upSel;
+    // 尾簇 9：down 落点以 shim 记录值优先——stub 编码的 downSel 是 down 步 **origin
+    // 元素**（enqueue 时点近似；image-map 命中面 origin=img 而实派目标=area），组合
+    // 目标折算以实派 target 为准（UI Events §5.2.2 mousedown/mouseup 目标——
+    // pointerevent_target_at_clicking_link_in_image_map click@area 断言面；st.downSel
+    // 于 up 尾清空、链中无 down 时回落编码值，双保险不变）。
+    var effDown = st.downSel || downSel || upSel;
     // down 落点已移除（remover listener 场景）→ click/auxclick 组合随 up 落点
     // （已移除目标不参与公共祖先折算——否则 chainOf 断链 → nocommon 早退，连带
     // 跳过 touch 悬停拆除；WPT after_target_removed 断言面）。

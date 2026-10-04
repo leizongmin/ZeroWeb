@@ -3919,10 +3919,24 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             let sel_map = self.selector_handle_map.lock().unwrap_or_else(|e| e.into_inner());
             sel_map.iter().map(|(s, h)| (h.clone(), s.clone())).collect()
         };
-        let (render_result, html_snapshot, handles) = self
+        let applied = match self
             .pipeline
             .render_with_dom_mutations_persistent(&tail, &self.cached_css, Some(&forward))
-            .map_err(|e| WebViewError::Script(format!("apply mutations: {e}")))?;
+        {
+            Ok(applied) => applied,
+            Err(e) => {
+                // uievents-compat 尾簇 9：批硬错（如悬垂 child handle——apply_dom_mutations_full
+                // 的 P19 钉死语义不 lenient）不再**吞咽重试**。旧路径 Err 上抛后被探测环
+                // `let _` 吞掉、游标不推进，同批每轮 flush 重选重败——共享队列从此永久
+                // 卡死（批尾全部 mutation 连带丢失 + 后续批永远轮不到）。改 warn + 丢弃
+                // 本批并推进游标：单批可恢复性让位队列整体活性；镜像侧由 shim html 刷新
+                // （refresh_if_html_changed）按 shim 真相（唯一真相源）重建兜底。
+                tracing::warn!("apply_pending_shared_mutations: batch dropped: {e}");
+                self.applied_mutations += tail.len();
+                return Ok(());
+            }
+        };
+        let (render_result, html_snapshot, handles) = applied;
         if let Some(mutated) = html_snapshot {
             self.cached_html = mutated;
         }

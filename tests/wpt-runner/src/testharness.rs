@@ -7869,7 +7869,22 @@ var all=document.querySelectorAll('body, body *');\
 for(var i=0;i<all.length;i++){{var e=all[i];if(!e.getBoundingClientRect)continue;\
 var r=e.getBoundingClientRect();\
 if(r&&r.width>0&&r.height>0&&px>=r.left&&px<=r.right&&py>=r.top&&py<=r.bottom){{var a=r.width*r.height;if(a<=bestArea){{bestArea=a;best=e;}}}}}}\
-return (best?(best.__zwSelector||''):'')+'|'+px+'|'+py;}})()",
+var imgs=document.querySelectorAll('img[usemap]');\
+for(var mi=imgs.length-1;mi>=0;mi--){{var im=imgs[mi];var rim=im.getBoundingClientRect();\
+if(!(rim&&rim.width>0&&rim.height>0&&px>=rim.left&&px<=rim.right&&py>=rim.top&&py<=rim.bottom))continue;\
+if(best&&best!==im){{var anc=best,contained=false;for(var gi=0;gi<16&&anc;gi++){{if(anc===im){{contained=true;break;}}anc=anc.parentElement;}}if(!contained)continue;}}\
+var mn=(im.getAttribute('usemap')||'').replace(/^#/,'');\
+var mp=(document.getElementById&&document.getElementById(mn))||(mn?document.querySelector('map[name=\"'+mn+'\"]'):null);if(!mp)continue;\
+var ars=mp.querySelectorAll('area');var lx=px-rim.left,ly=py-rim.top;\
+for(var ai=0;ai<ars.length;ai++){{var a=ars[ai];var sh=(a.getAttribute('shape')||'rect').toLowerCase();\
+if(sh==='default'){{best=a;break;}}\
+var cs=(a.getAttribute('coords')||'').split(/[\\s,]+/).filter(function(v){{return v!=='';}}).map(Number);var inside=false;\
+if(sh==='rect'&&cs.length>=4){{inside=lx>=cs[0]&&lx<=cs[2]&&ly>=cs[1]&&ly<=cs[3];}}\
+else if(sh==='circle'&&cs.length>=3){{var dx=lx-cs[0],dy=ly-cs[1];inside=dx*dx+dy*dy<=cs[2]*cs[2];}}\
+else if(sh==='poly'&&cs.length>=6){{var inn=false,jj=0,kk=cs.length/2-1;for(;jj<cs.length/2;kk=jj++){{var xi=cs[jj*2],yi=cs[jj*2+1],xj=cs[kk*2],yj=cs[kk*2+1];if(((yi>ly)!==(yj>ly))&&(lx<(xj-xi)*(ly-yi)/(yj-yi)+xi))inn=!inn;}}inside=inn;}}\
+if(inside){{best=a;break;}}}}\
+if(best&&best.tagName&&String(best.tagName).toLowerCase()==='area')break;}}\
+return (best?((best.__zwSelector||(best.id?'#'+best.id:''))||''):'')+'|'+px+'|'+py;}})()",
         sel = sel_js,
         ox = off_x,
         oy = off_y,
@@ -7893,6 +7908,29 @@ return (best?(best.__zwSelector||''):'')+'|'+px+'|'+py;}})()",
         (Some(x), Some(y)) if absolute => (origin_sel.to_string(), x, y),
         _ => (origin_sel.to_string(), off_x, off_y),
     }
+}
+
+/// uievents-compat 尾簇 9：mutation 驱动悬停重结算（指针命令入口）——上一命令的
+/// 页内 listener 变异（area 插入/coords 收缩/usemap 切换等）推进 mutTick 后，下一
+/// 指针命令派发**前**按**最后已知指针位**重结算（真实浏览器的渲染机会边界在命令间
+/// 重算悬停——同一 Actions 批的命令在本 runner 同 turn 连发，探测环 settle 来不及；
+/// WPT mouse_boundary_events_on_image_map "new <area> is available" 断言面）。
+fn mut_hover_settle_if_dirty(webview: &mut WebView, last_pointer: &Option<(f32, f32)>, td_refresh_ver: &mut u64) {
+    let Some((last_x, last_y)) = last_pointer else { return };
+    let Ok(dirty) =
+        webview.execute_script(r#"(globalThis.__zw_ptr_hover_dirty ? globalThis.__zw_ptr_hover_dirty() : '0')"#)
+    else {
+        return;
+    };
+    if dirty.trim() != "1" {
+        return;
+    }
+    let (hit_sel, hx, hy) = resolve_pointer_target(webview, "", *last_x, *last_y, true, td_refresh_ver);
+    if std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1") {
+        eprintln!("[zw-settle-cmd] hit={hit_sel} at ({hx},{hy})");
+    }
+    let script = zero_engine::script_mut_hover_settle(&hit_sel, hx, hy);
+    let _ = webview.execute_script(&script);
 }
 
 fn apply_testdriver_command(
@@ -7946,6 +7984,7 @@ fn apply_testdriver_command(
             let off_y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
             let pointer_type = parts.next().unwrap_or("mouse").to_string();
             let _ = pointer_type;
+            mut_hover_settle_if_dirty(webview, last_pointer, td_refresh_ver);
             let (hit_sel, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
             *last_pointer = Some((px, py));
             let script = zero_engine::script_pointer_move(&hit_sel, px, py);
@@ -7984,6 +8023,7 @@ fn apply_testdriver_command(
             let off_y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
             let pointer_type = parts.next().unwrap_or("mouse").to_string();
             let button = parts.next().and_then(|v| v.parse::<i16>().ok()).unwrap_or(0);
+            mut_hover_settle_if_dirty(webview, last_pointer, td_refresh_ver);
             let (hit_sel, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
             *last_pointer = Some((px, py));
             let focus_script = format!(
@@ -8016,6 +8056,7 @@ fn apply_testdriver_command(
             let off_y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
             let pointer_type = parts.next().unwrap_or("mouse").to_string();
             let button = parts.next().and_then(|v| v.parse::<i16>().ok()).unwrap_or(0);
+            mut_hover_settle_if_dirty(webview, last_pointer, td_refresh_ver);
             let (hit_sel, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
             *last_pointer = Some((px, py));
             let script = zero_engine::script_pointer_up_sequence(

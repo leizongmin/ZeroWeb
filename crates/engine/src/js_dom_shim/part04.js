@@ -2831,6 +2831,19 @@ return _tplContent;
             }
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
+            // uievents-compat 尾簇 9：悬停元素自身的属性变异（coords/width/style 等可
+            // 改几何）或 img 的 image-map 绑定/尺寸属性（usemap/coords/shape/width/
+            // height——命中面随绑定变化，WPT mouse_boundary_events_on_image_map 的
+            // area-resized / usemap-modified 断言面）→ 变异代际推进（探测环 settle
+            // 的「悬停失效」判据）——下一渲染机会按 fresh 几何重结算。
+            try {
+              if (typeof _zwPtrState !== 'undefined' && _zwPtrState) {
+                var _ptrHit9 = (sel && (sel === _zwPtrState.overSel || sel === _zwPtrState.mouseOverSel))
+                  || ((n === 'usemap' || n === 'coords' || n === 'shape' || n === 'width' || n === 'height')
+                      && typeof _realTag === 'function' && _realTag(sel, handle) === 'IMG');
+                if (_ptrHit9) _zwPtrState.mutTick = (_zwPtrState.mutTick || 0) + 1;
+              }
+            } catch (_ePtrAttr9) {}
             // media-elements M3 扩批 XI：setAttribute('src') 入 audio/video（HTML ns）→
             // invoke media load 算法（resource-selection-invoke-set-src 族断言 loadstart；
             // setAttribute 是内容属性路径——IDL src= setter 同语义，part05）。非法 ns 的
@@ -4805,6 +4818,17 @@ return _tplContent;
             if (child.nodeType === 9) {
               throw _zwDomException('Nodes of type 9 cannot be inserted.', 'HierarchyRequestError');
             }
+            // 尾簇 9：AREA 插入（handle 章子不经 R334 分支——map1 的 image-map 命中面
+            // 变化）→ 变异代际推进（探测环悬停重结算判据；WPT
+            // mouse_boundary_events_on_image_map "new <area> is available" 断言面）。
+            try {
+              var _ptrTag9a = (child && child.__zwHandle && typeof _realTag === 'function')
+                ? _realTag(null, child.__zwHandle) : (child && child.tagName);
+              if (typeof _zwPtrState !== 'undefined' && _zwPtrState && child && child.nodeType === 1
+                  && String(_ptrTag9a || '').toLowerCase() === 'area') {
+                _zwPtrState.mutTick = (_zwPtrState.mutTick || 0) + 1;
+              }
+            } catch (_ePtrAr9a) {}
             if (child.nodeType === 2) {
               throw _zwDomException(
                 "Failed to execute 'appendChild' on 'Node': Attr nodes cannot be inserted as children.",
@@ -5607,7 +5631,20 @@ return _tplContent;
               // 任何树状态变化；oldParent/index 读融合视图（childNodes getter——
               // _zwLocalChildNodes + registry 合并），须在 _unrecordHandleChild 前）。
               try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(child); } catch (_eR262h) {}
-              __zw_remove_handle(child.__zwHandle);
+              // uievents-compat 尾簇 9：镜像绑定失效（序列化落地拷贝无 handle 绑定 /
+              // 跨批 rebuild 后 persistent NodeId 换代）时 RemoveHandle 对镜像 no-op →
+              // 已移除元素在镜像/hit test/ohtml 序列化中永久泄漏（WPT image-map 新
+              // area cleanup 后 case 8 首移仍命中泄漏拷贝断言面）。有 id 时改派
+              // selector Remove（镜像按 id 解析移除——到达本分支必已插入 shim 树，
+              // 镜像同 id 节点即落地拷贝/重建产物）；无 id 回落原路径（镜像残留由
+              // shim html 刷新主同步路径收敛——受限已知偏差）。
+              var _r9mId = '';
+              try { _r9mId = String(child.id || ''); } catch (_eR9mi) {}
+              if (_r9mId) {
+                __zw_remove('#' + _r9mId);
+              } else {
+                __zw_remove_handle(child.__zwHandle);
+              }
               // R86：handle 移除标记（迭代器 order 扫描跳过）。
               if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(child.__zwHandle);
               // R294（js-dom M4）：record 的 previousSibling/nextSibling——移除前从
@@ -5863,6 +5900,16 @@ return _tplContent;
                 "Failed to execute 'insertBefore' on 'Node': parameter 2 is not of type 'Node' and is not null.");
             }
             // js-dom M4 R51：spec `dom-node-pre-insert` 同 appendChild 的自环/祖先校验。
+            // 尾簇 9：AREA 插入代际推进（同 appendChild 注记；带位变体不走 R334b
+            // bump——createElement 产物为 handle 章，本入口统一覆盖）。
+            try {
+              var _ptrTag9b = (newNode && newNode.__zwHandle && typeof _realTag === 'function')
+                ? _realTag(null, newNode.__zwHandle) : (newNode && newNode.tagName);
+              if (typeof _zwPtrState !== 'undefined' && _zwPtrState && newNode && newNode.nodeType === 1
+                  && String(_ptrTag9b || '').toLowerCase() === 'area') {
+                _zwPtrState.mutTick = (_zwPtrState.mutTick || 0) + 1;
+              }
+            } catch (_ePtrAr9b) {}
             if (newNode && (newNode === _makeProxy(sel, handle) || _zwIsAncestorOf(newNode, sel, handle))) {
               throw _zwDomException('A Node cannot be inserted before itself or its descendant.', 'HierarchyRequestError');
             }
@@ -6031,6 +6078,14 @@ return _tplContent;
                   _mo_notify(_r334bOldSel, null, { type: 'childList', addedNodes: [], removedNodes: [newNode], previousSibling: _r334bRprev, nextSibling: _r334bRnext });
                 }
                 _mo_notify(sel, handle, { type: 'childList', addedNodes: [newNode], removedNodes: [], previousSibling: _r334bprev, nextSibling: refNode || null });
+                // 尾簇 9：sel 子带位插入同样推进变异代际（image-map 新 area 插入 →
+                // 悬停重结算——WPT mouse_boundary_events_on_image_map "new <area> is
+                // available" 断言面）。
+                try {
+                  if (typeof _zwPtrState !== 'undefined' && _zwPtrState) {
+                    _zwPtrState.mutTick = (_zwPtrState.mutTick || 0) + 1;
+                  }
+                } catch (_ePtrIns9) {}
                 if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
               } catch (_e334bn) {}
               var _r334bpc = _ceParentConnected(sel, handle);
@@ -6158,7 +6213,10 @@ return _tplContent;
                 // `insertBefore(node, null)` 等价于 appendChild。
                 ceAdded = [newNode];
                 if (handle) __zw_append_child_handle(handle, newNode.__zwHandle);
-                else __zw_append_child(sel, newNode.__zwHandle);
+                else if (typeof _zwIb9Serialized === 'function' && _zwIb9Serialized(newNode)) {
+                  // 跨批悬停风险窗口 → 序列化落地（见下方 sel 父带位分支注记）。
+                  __zw_insert_adjacent_html(sel, 'beforeend', _zwIb9Serialized(newNode));
+                } else __zw_append_child(sel, newNode.__zwHandle);
                 // js-dom M3 R97：appendChild 路径（1869 行起）有 _recordHandleChild，本分支
                 // 旧缺——host 记账后 JS 侧 registry 不含 newNode，容器 childNodes 视图漏子
                 //（lit-html render 的 marker 插入即此形态：container.insertBefore(marker, null)
@@ -6167,7 +6225,22 @@ return _tplContent;
               } else if (refNode.__zwSelector) {
                 ceAdded = [newNode];
                 if (handle) __zw_insert_before_handle(handle, newNode.__zwHandle, refNode.__zwSelector);
-                else __zw_insert_before(sel, newNode.__zwHandle, refNode.__zwSelector);
+                else if (typeof _zwIb9Serialized === 'function' && _zwIb9Serialized(newNode)) {
+                  // uievents-compat 尾簇 9：handle 子入 sel 父的**跨批悬停风险窗口**——
+                  // createElement 产物（handle-only）跨 apply 代际后，镜像侧可经
+                  // refresh_if_html_changed 全量重建失效（rebind 只覆盖 sel 对——
+                  // persistent_handle_nodes 的 NodeId 随重建全部换代），InsertBefore 的
+                  // child_handle 硬错「unknown child handle」（apply 侧 P19 钉死不
+                  // lenient；批硬错 + 游标停摆曾卡死共享队列）。代际相等（同批创建+
+                  // 插入，CreateElement 与本 op 同批 apply、handle 必有效）走原路径
+                  // 零变化；跨批改走**序列化落地**：child outerHTML（shim DOM 唯一
+                  // 真相，含当下属性面）经 InsertAdjacentHtml('beforebegin') 于 ref 前
+                  // 物化——管线 doc 仅布局/绘制镜像的设计下解析拷贝与移动语义等价
+                  //（sel 域查询/派发走 shim 表）；后续 handle 型属性写不再锚定镜像，
+                  // 由 shim html 刷新主同步路径收敛。WPT
+                  // mouse_boundary_events_on_image_map "new <area> is available" 断言面。
+                  __zw_insert_adjacent_html(refNode.__zwSelector, 'beforebegin', _zwIb9Serialized(newNode));
+                } else __zw_insert_before(sel, newNode.__zwHandle, refNode.__zwSelector);
               } else if (handle && refNode.__zwHandle) {
                 // js-dom M3 R97：refNode 为 create 句柄节点（comment marker / detached 元素，
                 // 无 selector）但父是 handle 容器——JS 侧 registry 插入（appendChild R84 路径
@@ -6661,8 +6734,22 @@ return _tplContent;
                 _r369Link.innerBody.removeChild(ceSelf);
               }
             } catch (_e369rm) {}
-            if (handle) __zw_remove_handle(handle);
-            else { __zw_remove(sel); _zwMarkRemoved(sel); }
+            // uievents-compat 尾簇 9：handle 节点镜像绑定失效（序列化落地拷贝无绑定 /
+            // 跨批 rebuild 后 persistent NodeId 换代）时 RemoveHandle 对镜像 no-op →
+            // 已移除元素在镜像/hit test/ohtml 序列化永久泄漏（WPT image-map 新 area
+            // cleanup 后次 case 首移仍命中泄漏拷贝断言面）。有 id 时改派 selector
+            // Remove（镜像按 id 解析移除）；无 id 回落原路径（受限已知偏差，由 shim
+            // html 刷新主同步路径收敛）。
+            var _r9mId = '';
+            try { _r9mId = String(ceSelf.id || ''); } catch (_eR9mi) {}
+            if (handle && _r9mId) {
+              __zw_remove('#' + _r9mId);
+            } else if (handle) {
+              __zw_remove_handle(handle);
+            } else {
+              __zw_remove(sel);
+              _zwMarkRemoved(sel);
+            }
             // WAB2-M3-s2：移除子树含全屏元素 → fullscreenElement 同步置 null + 异步 change
             //（target=document）。见 part06 _fsOnNodeRemoved。
             if (typeof _fsOnNodeRemoved === 'function') _fsOnNodeRemoved(sel, handle);
