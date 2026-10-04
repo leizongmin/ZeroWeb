@@ -155,12 +155,19 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 ## 下一步计划
 
 1. **M2/M3 尾簇**（按 Throughput 排序）：a) uievents/mouse 尾簇——mouseover-at-
-   removing-mousedown-target 58F（6c 同族：mousedown 目标移除后 mouseover@parent
-   → mouseup@parent，复测后定打法）、boundary_events_after_reappending 11F（重插
-   语义同族）、modifier-no-movement 16F、image-map 8F、layerX/layerY；b) wheel 源
-   scroll 重放（wheel-basic/deadlock——Actions scroll 步记账不重放改重放 +
-   `__zw_wheel` shim 钩子）；c) focus 残余两案（iframe 跨文档焦点、keydown→focus
-   activation——键盘域邻接，挂账候选）。
+   removing-mousedown-target 58F **根因已定位**（zwprobe 实证：remove→re-append
+   跨 turn 循环中，shim 侧 reappend 记账完成〔childNodes/parentNode 对〕但宿主侧
+   三路全失——`__zw_contains`/query 快照/getElementById 均无子；InsertAdjacentSel
+   Element 的 stash 消费链（Remove 记账 → child 失配 → NodeId stash → 片段 stash
+   重解析插回，js_dom_bridge.rs:1378 区）在该时序下未生效；迭代 0 断言面本身已过
+   （mousedown@child→mouseover@parent→mouseup@parent），58F 全为 finally 再挂失败
+   的级联 unhandled rejection——**DetachedNodeStash/shim registry 身份保真**专项，
+   勿用 setTimeout 延迟 wire（runner 环境定时器不转，且破坏 F1/F2 in-turn attach
+   ——已试已回退））、boundary_events_after_reappending 11F（重插语义同族）、
+   modifier-no-movement 16F、image-map 8F、layerX/layerY；b) wheel 源 scroll 重放
+   （wheel-basic/deadlock——Actions scroll 步记账不重放改重放 + `__zw_wheel` shim
+   钩子）；c) focus 残余两案（iframe 跨文档焦点、keydown→focus activation——键盘域
+   邻接，挂账候选）。
 2. **M4 收口**：touch-action 解析/计算值核对（parsing 三案 0P 待查）、
    touch-events / pointerlock / IME / touch-action 交互面挂账定稿、DC-4 全绿门禁
    （make test + clippy + fmt + reftest 零回归 + product-smoke）。

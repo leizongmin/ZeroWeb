@@ -160,12 +160,15 @@ fn host_focus_transition_dispatches_focus_event_order() {
     runtime.blur_focused().unwrap();
     runtime.focus_target("#b").unwrap();
 
+    // 序锚 uievents-compat M3 尾簇 6b（2026-10-04）：失焦相位 blur 先于 focusout
+    //（WPT focus-events expected「blur@a → focusout@a → focus@b → focusin@b」——
+    // 旧序 focusout→blur 为旧 shim 实现自定，尾簇 6b 已按上游修正）。
     assert_eq!(
         runtime
             .js_worker
             .execute_script_direct("globalThis.__focusEvents.join(',')")
             .unwrap(),
-        "a:focusout,a:blur,b:focus,b:focusin"
+        "a:blur,a:focusout,b:focus,b:focusin"
     );
 }
 

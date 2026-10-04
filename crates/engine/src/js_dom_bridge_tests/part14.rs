@@ -2549,7 +2549,9 @@ fn test_focus_blur_events_r3247() {
     assert_eq!(sandbox.execute("globalThis.__evts.join(',')").unwrap().value, "a:focus,a:focusin", "focus() 派发 focus + focusin");
     assert_eq!(sandbox.execute("globalThis.__ae").unwrap().value, "true", "focus() 后 activeElement===该元素");
 
-    // ② blur() 派发 'blur'(非 bubble) + 'focusout'(bubble)
+    // ② blur() 派发 'blur'(非 bubble) + 'focusout'(bubble)——序 **blur 先于 focusout**
+    //（uievents-compat M3 尾簇 6b：WPT focus-events expected「blur@a → focusout@a」
+    // 逐条断言序；旧序 focusout→blur 为早期实现自定，与 Chromium/WPT 不符）
     sandbox.execute(
         "globalThis.__evts2 = [];\
          var a = document.getElementById('a');\
@@ -2557,7 +2559,7 @@ fn test_focus_blur_events_r3247() {
          a.addEventListener('focusout', function(){ globalThis.__evts2.push('a:focusout'); });\
          a.blur();",
     ).unwrap();
-    assert_eq!(sandbox.execute("globalThis.__evts2.join(',')").unwrap().value, "a:focusout,a:blur", "blur() 派发 focusout + blur");
+    assert_eq!(sandbox.execute("globalThis.__evts2.join(',')").unwrap().value, "a:blur,a:focusout", "blur() 派发 blur + focusout（blur 先序）");
 
     // ③ 焦点 A→B 移动：A 失焦（focusout+blur）、B 获焦（focus+focusin）
     sandbox.execute(
