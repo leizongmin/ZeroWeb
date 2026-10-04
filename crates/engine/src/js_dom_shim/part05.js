@@ -11807,6 +11807,19 @@
           var o = (options == null || typeof options !== 'object') ? {} : options;
           if (o.coalescedEvents && o.coalescedEvents.length) inst._zwCoalescedEvents = o.coalescedEvents;
           if (o.predictedEvents && o.predictedEvents.length) inst._zwPredictedEvents = o.predictedEvents;
+          // uievents-compat 尾簇 11：constructor 身份统一——wrapper 接管
+          // globalThis.PointerEvent 后，inner 工厂产物 `.constructor` 仍指 inner ctor
+          //（_defineEventSubclass 的 `Ctor.prototype.constructor = Ctor`），
+          // `event.constructor === window.PointerEvent`（= 本 wrapper）恒失配（WPT
+          // pointerevent_{click,auxclick,contextmenu}_is_a_pointerevent 断言面；此前
+          // 断言族全按 instanceof 面绿、constructor 面首度暴露）。own non-enumerable
+          // 覆盖为 wrapper（原型链 instanceof 不受影响）；子类 super() 构造
+          //（new.target ≠ 本 wrapper）不盖——子类 `.constructor` 语义保持。
+          try {
+            if (new.target === PEM3Wrapped) {
+              Object.defineProperty(inst, 'constructor', { value: PEM3Wrapped, writable: true, configurable: true, enumerable: false });
+            }
+          } catch (_eCtor11) {}
           return r !== undefined ? r : inst;
         };
         try { Object.defineProperty(PEM3Wrapped, 'name', { value: 'PointerEvent', configurable: true }); } catch (_eNm3) {}

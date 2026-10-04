@@ -4058,11 +4058,26 @@ return _tplContent;
               } catch (_e313d) {}
             }
             if (globalThis.__zwR155InlGen != null) globalThis.__zwR155InlGen++;
-            var ev = _makeEvent('click', { bubbles: true, cancelable: true });
+            // uievents-compat 尾簇 11：click() API 的 click = **PointerEvent 实例**
+            //（PE spec https://www.w3.org/TR/pointerevents2/#the-click-auxclick-and-
+            // contextmenu-events——非指针生成的 click pointerId=-1、pointerType=''；
+            // WPT pointerevent_click_is_a_pointerevent non-pointing-device 断言面）。
+            // R108 pre-click activation 语义不变（`_zwSyntheticClick` 打标路径原样接通
+            // ——isClickApi=true）；R57 默认动作守卫同步放宽（见下方注记）。
+            var ev;
+            try {
+              ev = new PointerEvent('click', { bubbles: true, cancelable: true, pointerId: -1, pointerType: '' });
+            } catch (_e11pe) {
+              ev = _makeEvent('click', { bubbles: true, cancelable: true });
+            }
             // R108：合成 click 打标——pre-click activation 认它（非 MouseEvent 实例）。
             ev._zwSyntheticClick = true;
             var notPrevented = _dispatchWithBubble(key, sel, handle, ev);
-            if (notPrevented && !(globalThis.MouseEvent && ev instanceof globalThis.MouseEvent)) {
+            // R57 守卫：click() API（synthetic 标）保持原 R57 路径零变化（历史绿面——
+            // R57 与 R108 的 isClickApi 协作契约不动）；UA 指针 click（PointerEvent
+            // 实例、无 synthetic 标——R108 激活链已做 checked 翻转 + input/change）不
+            // 重复走本内联默认动作。
+            if (notPrevented && (ev._zwSyntheticClick === true || !(globalThis.MouseEvent && ev instanceof globalThis.MouseEvent))) {
               // R57（FV M1）：click 默认动作——checkbox/radio 的 checked 切换
               //（spec §4.10.5.2.4 的 radio 组语义——radio-group-valueMissing 的
               // fourth.click()）。属性层面（shim 的 checked 读取 = 属性存在性）。

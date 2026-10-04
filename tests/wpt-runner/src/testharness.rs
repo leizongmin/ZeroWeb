@@ -8100,6 +8100,35 @@ fn apply_testdriver_command(
                 //（UI Events cancelable 语义；value 不变、editing 事件不派发）。
                 return None;
             }
+            // uievents-compat 尾簇 11（2026-10-05）：Actions 键盘链的 **ENTER** 默认动作
+            //——formless buttonish（BUTTON / input type=button|submit|reset）= 激活点击
+            //（真浏览器语义；旧版落入 InsertText{'\u{E007}'} → text-control snapshot 对
+            // button 类 input 抛 InvalidStateError「does not support text selection」→
+            // actions.send() 整链拒绝，WPT pointerevent_click_is_a_pointerevent
+            // non-pointing-device 的 send() 永挂 → 文件 Timeout）。click 为 PointerEvent
+            // 实例 + pointerId -1（PE spec 非指针生成；shim click+pointerType 分支）。
+            // in-form Enter→click→submit 链与非 buttonish 目标维持既有语义（隐式提交族
+            // 绿面不动）。R108 pre-click activation 经 PE 原型链接通——buttonish 无
+            // checked 态，激活目标查找（checkbox/radio）恒 miss，无双翻转面。
+            if key == "\u{E007}"
+                && webview
+                    .execute_script(&zero_engine::script_buttonish_probe(&selector))
+                    .map(|v| v.trim() == "1")
+                    .unwrap_or(false)
+                && webview
+                    .execute_script(&zero_engine::script_enclosing_form_probe(&selector))
+                    .map(|v| v.trim() != "1")
+                    .unwrap_or(false)
+            {
+                let click_detail = zero_engine::DomEventDetail {
+                    pointer_type: Some(String::new()),
+                    pointer_id: Some(-1),
+                    ..Default::default()
+                };
+                let click_script = zero_engine::script_dispatch_dom_event(&selector, "click", Some(&click_detail));
+                let _ = webview.execute_script(&click_script);
+                return None;
+            }
             if key.chars().count() == 1 {
                 if let Some(error) = dispatch_action(webview, target, HtmlUserAction::InsertText { text: key.clone() })
                 {
@@ -8286,7 +8315,37 @@ fn apply_testdriver_command(
                     // 只抑制字符插入类序，此处动作照旧执行——与旧版行为一致）→ keyup。
                     _ => {
                         dispatch_key_event_script(webview, &selector, "keydown", &key_detail);
-                        if let Some(error) = dispatch_action(webview, target, action) {
+                        // uievents-compat 尾簇 11（2026-10-05）：Enter on **formless**
+                        // buttonish（BUTTON / input type=button|submit|reset）= 激活点击
+                        //（真浏览器语义；旧版落入 Submit 臂 → enclosing form 缺席
+                        // noop(NotApplicable) → 无 click，WPT
+                        // pointerevent_click_is_a_pointerevent non-pointing-device 的
+                        // click promise 永挂 → 文件 Timeout）。click 为 PointerEvent
+                        // 实例 + pointerId -1（PE spec 非指针生成；shim
+                        // `__zw_dispatch_event` click+pointerType 分支）。in-form 的
+                        // Enter→click→submit 链由 Submit 臂既有语义承载（不改——隐式
+                        // 提交族绿面）。R108 pre-click activation 经 PE 原型链接通——
+                        // buttonish 无 checked 态、激活目标查找（checkbox/radio）恒
+                        // miss，checked 双翻转历史坑不适用。
+                        let enter_formless_buttonish = character == '\u{E007}'
+                            && webview
+                                .execute_script(&zero_engine::script_buttonish_probe(&selector))
+                                .map(|v| v.trim() == "1")
+                                .unwrap_or(false)
+                            && webview
+                                .execute_script(&zero_engine::script_enclosing_form_probe(&selector))
+                                .map(|v| v.trim() != "1")
+                                .unwrap_or(false);
+                        if enter_formless_buttonish {
+                            let click_detail = zero_engine::DomEventDetail {
+                                pointer_type: Some(String::new()),
+                                pointer_id: Some(-1),
+                                ..Default::default()
+                            };
+                            let click_script =
+                                zero_engine::script_dispatch_dom_event(&selector, "click", Some(&click_detail));
+                            let _ = webview.execute_script(&click_script);
+                        } else if let Some(error) = dispatch_action(webview, target, action) {
                             return Some(error);
                         }
                     }

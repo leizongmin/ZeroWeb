@@ -47,6 +47,9 @@ pub struct DomEventDetail {
     pub bubbles: Option<bool>,
     /// PointerEvent.pointerType——缺省 'mouse'。
     pub pointer_type: Option<String>,
+    /// PointerEvent.pointerId——uievents-compat 尾簇 11：None = 缺省（UA 指针 1）；
+    /// Some(-1) = 非指针生成（click() API / Enter 激活，PE spec）。
+    pub pointer_id: Option<i32>,
 }
 
 fn escape_js_string(s: &str) -> String {
@@ -110,8 +113,13 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
                 .as_deref()
                 .map(|s| format!("'{}'", escape_js_string(s)))
                 .unwrap_or_else(|| "null".to_string());
+            // uievents-compat 尾簇 11：pointerId 透传（null = shim 分支缺省——UA 指针 1）。
+            let pointer_id = d
+                .pointer_id
+                .map(|v| format!("{v}"))
+                .unwrap_or_else(|| "null".to_string());
             format!(
-                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing},shiftKey:{shift_key},ctrlKey:{ctrl_key},altKey:{alt_key},metaKey:{meta_key},clientX:{client_x},clientY:{client_y},button:{button},buttons:{buttons},detail:{detail_count},relatedTarget:{related_target},bubbles:{bubbles},pointerType:{pointer_type}}}"
+                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing},shiftKey:{shift_key},ctrlKey:{ctrl_key},altKey:{alt_key},metaKey:{meta_key},clientX:{client_x},clientY:{client_y},button:{button},buttons:{buttons},detail:{detail_count},relatedTarget:{related_target},bubbles:{bubbles},pointerType:{pointer_type},pointerId:{pointer_id}}}"
             )
         }
     };
@@ -940,6 +948,17 @@ pub fn script_contenteditable_probe(selector: &str) -> String {
     format!(
         "(function(){{var e=document.querySelector('{esc_sel}');\
 return (e && typeof __zw_is_ce_host === 'function' && __zw_is_ce_host(e)) ? '1' : '';}})()"
+    )
+}
+
+/// 构造「探测元素是否有 enclosing form」的宿主脚本（uievents-compat 尾簇 11）。
+/// 返 '1'（target 在 form 内）或 ''（formless——Enter on formless buttonish 走激活
+/// 点击而非隐式提交 noop）。
+pub fn script_enclosing_form_probe(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!(
+        "(function(){{var e=document.querySelector('{esc_sel}');\
+return (e && e.closest && e.closest('form')) ? '1' : '';}})()"
     )
 }
 

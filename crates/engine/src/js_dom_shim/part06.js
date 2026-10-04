@@ -11777,7 +11777,19 @@
     } else if (type === 'pointerdown' || type === 'pointerup' || type === 'pointermove'
                || type === 'pointerover' || type === 'pointerout' || type === 'pointerenter'
                || type === 'pointerleave' || type === 'pointercancel'
-               || type === 'gotpointercapture' || type === 'lostpointercapture') {
+               || type === 'gotpointercapture' || type === 'lostpointercapture'
+               || ((type === 'click' || type === 'auxclick' || type === 'contextmenu')
+                   && detail && detail.pointerType != null)) {
+      // uievents-compat 尾簇 11（2026-10-05）：click/auxclick/contextmenu 携
+      // pointerType（UA 指针 up/down 序列路径——见 `__zw_pointer_up_sequence`/
+      // down 序列注记）→ **PointerEvent 实例**（PE spec https://www.w3.org/TR/
+      // pointerevents2/#the-click-auxclick-and-contextmenu-events——触发激活行为的
+      // click 是 PointerEvent，pointerId/pointerType 随源 pointer；R108 pre-click
+      // activation 经原型链 `instanceof MouseEvent` 恰好接通一次——宿主激活事务
+      // （webdriver 折叠 click 路径）不传 pointerType 仍走泛型分支零变化，
+      // checked 双翻转历史坑（R108 注记）不复现）。WPT
+      // pointerevent_{click,auxclick,contextmenu}_is_a_pointerevent 断言面。
+      // detail 透传（click 连击计数；pointer* 型恒 0——调用方未设）。
       // uievents-compat M2 片 1（2026-10-03）：pointer 类型走 PointerEvent 类
       //（spec https://www.w3.org/TR/pointerevents2/ §3——PointerEvent extends
       // MouseEvent；此前落泛型分支，WPT pointerevent_attributes 的
@@ -11797,14 +11809,18 @@
         bubbles: _pBub,
         composed: _pBub,
         cancelable: _pCan,
+        detail: (detail && typeof detail.detail === 'number') ? detail.detail : 0,
         clientX: (detail && typeof detail.clientX === 'number') ? detail.clientX : 0,
         clientY: (detail && typeof detail.clientY === 'number') ? detail.clientY : 0,
         button: (detail && typeof detail.button === 'number') ? detail.button : (type === 'pointermove' ? -1 : 0),
         buttons: (detail && typeof detail.buttons === 'number') ? detail.buttons
           : (type === 'pointerdown' ? 1 : (type === 'pointerup' || type === 'pointermove') ? 0 : 1),
         relatedTarget: (detail && detail.relatedTarget) ? _wrapSelector(detail.relatedTarget) : null,
-        pointerId: 1,
-        pointerType: (detail && detail.pointerType) || 'mouse',
+        // 尾簇 11：pointerId 透传（-1 = 非指针生成——click() API / Enter 激活，PE spec
+        //「If the pointerId is not supported … -1」；UA 指针路径缺省 1）。pointerType
+        // `!= null` 判（'' = 非指针生成合法值，`||` 会塌成 'mouse'）。
+        pointerId: (detail && detail.pointerId != null) ? detail.pointerId : 1,
+        pointerType: (detail && detail.pointerType != null) ? detail.pointerType : 'mouse',
         isPrimary: true,
         width: 1,
         height: 1,
@@ -12415,7 +12431,8 @@
     }
     var mdownPrevented = __zw_dispatch_event(downEff, 'mousedown', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button }) === 'prevented';
     if (button === 2) {
-      __zw_dispatch_event(downEff, 'contextmenu', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button });
+      // 尾簇 11：UA 指针 contextmenu → PointerEvent 实例（同 click/auxclick 注记）。
+      __zw_dispatch_event(downEff, 'contextmenu', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button, pointerType: pointerType || 'mouse', pointerId: 1 });
     }
     // uievents-compat M3 尾簇 6b：mousedown 默认动作 = 焦点迁移（UI Events §5.2.2）
     // ——pointerdown 或 mousedown 被取消时连带抑制（spec——canceling mousedown
@@ -12578,7 +12595,7 @@
       }
       if (st.auxTarget === auxT) st.auxCount += 1;
       else { st.auxTarget = auxT; st.auxCount = 1; }
-      __zw_dispatch_event(auxT, 'auxclick', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0, detail: st.auxCount });
+      __zw_dispatch_event(auxT, 'auxclick', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0, detail: st.auxCount, pointerType: pointerType || 'mouse', pointerId: 1 });
       st.downSel = null;
       return 'ok';
     }
@@ -12596,7 +12613,10 @@
     }
     if (st.streakTarget === target) st.streakCount += 1;
     else { st.streakTarget = target; st.streakCount = 1; }
-    __zw_dispatch_event(target, 'click', { detail: st.streakCount });
+    // 尾簇 11：UA 指针点击携 pointerType → PointerEvent 实例（PE spec——
+    // pointerevent_click_is_a_pointerevent 断言面；webdriver 折叠 click 不传
+    // pointerType 保持泛型，R108 激活事务单翻转契约不变）。
+    __zw_dispatch_event(target, 'click', { detail: st.streakCount, pointerType: pointerType || 'mouse', pointerId: 1 });
     if (st.streakCount >= 2) {
       __zw_dispatch_event(target, 'dblclick', { detail: 2 });
     }
