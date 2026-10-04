@@ -7098,23 +7098,22 @@ fn run_testharness_html_inner(
         // 以 last pointer 位跑 fresh 命中测试（resolve 内部代际门控刷新），命中与现
         // 悬停不同 → shim 补跨界序（只派边界序不派 move 对）。无指针活动或未失效
         // 时零命中测试（单 execute_script 轮询判据）。
-        if let Some((last_x, last_y)) = td_last_pointer {
-            if let Ok(dirty) =
+        if let Some((last_x, last_y)) = td_last_pointer
+            && let Ok(dirty) =
                 webview.execute_script("globalThis.__zw_ptr_hover_dirty ? globalThis.__zw_ptr_hover_dirty() : '0'")
-            {
-                let debug = std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1");
+        {
+            let debug = std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1");
+            if debug {
+                eprintln!("[zw-settle] poll dirty={} pos=({last_x},{last_y})", dirty.trim());
+            }
+            if dirty.trim() == "1" {
+                let (hit_sel, hx, hy) =
+                    resolve_pointer_target(&mut webview, "", last_x, last_y, true, &mut td_refresh_ver);
                 if debug {
-                    eprintln!("[zw-settle] poll dirty={} pos=({last_x},{last_y})", dirty.trim());
+                    eprintln!("[zw-settle] hit={hit_sel} at ({hx},{hy})");
                 }
-                if dirty.trim() == "1" {
-                    let (hit_sel, hx, hy) =
-                        resolve_pointer_target(&mut webview, "", last_x, last_y, true, &mut td_refresh_ver);
-                    if debug {
-                        eprintln!("[zw-settle] hit={hit_sel} at ({hx},{hy})");
-                    }
-                    let script = zero_engine::script_mut_hover_settle(&hit_sel, hx, hy);
-                    let _ = webview.execute_script(&script);
-                }
+                let script = zero_engine::script_mut_hover_settle(&hit_sel, hx, hy);
+                let _ = webview.execute_script(&script);
             }
         }
         partial_results = probe.results;
