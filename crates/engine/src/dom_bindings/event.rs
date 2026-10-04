@@ -150,6 +150,22 @@ fn init_int(scope: &mut v8::PinScope, args: &v8::FunctionCallbackArguments, idx:
         .unwrap_or(default)
 }
 
+/// 读 eventInitDict 第 `idx` 参的 double→**floor** 属性（坐标族语义）。UI Events 的
+/// MouseEventInit clientX 等按 WebIDL 是 long（truncate），但浏览器实现对坐标统一取
+/// floor（负值 [-1.0,-0.5) → -1 而非 0）——WPT fractional_coordinates_untrusted 双
+/// 引擎逐位断言 Math.floor（uievents-compat 尾簇 6 的 shim 面 `_zwMouseCoordInit`
+/// 同语义；此处对齐 native 模板路径）。
+fn init_floor_int(scope: &mut v8::PinScope, args: &v8::FunctionCallbackArguments, idx: i32, name: &str) -> i32 {
+    let Ok(opts) = v8::Local::<v8::Object>::try_from(args.get(idx)) else {
+        return 0;
+    };
+    v8::String::new(scope, name)
+        .and_then(|k| opts.get(scope, k.into()))
+        .and_then(|v| v.number_value(scope))
+        .map(|n| if n.is_finite() { n.floor() as i32 } else { 0 })
+        .unwrap_or(0)
+}
+
 /// 读 eventInitDict 第 `idx` 参的字符串属性（缺省 `default`）。
 fn init_string(
     scope: &mut v8::PinScope,
@@ -310,21 +326,45 @@ fn native_mouse_event_constructor_invoke(
     let cancelable = init_bool(scope, &args, 1, "cancelable");
     set_event_init(scope, this, &event_type, bubbles, cancelable);
     // UIEvent.detail + 坐标族 + button/buttons（缺省 0）。先取值再设（避 scope 双重 mutable borrow）。
-    for name in [
-        "detail",
-        "screenX",
-        "screenY",
-        "clientX",
-        "clientY",
-        "pageX",
-        "pageY",
-        "movementX",
-        "movementY",
-        "button",
-        "buttons",
-    ] {
+    // uievents-compat 尾簇 10（2026-10-05）：坐标族 floor + page/offset 派生对齐 shim
+    // `_zwMouseCoordInit`（尾簇 6 只覆盖了 shim 构造路径；native 模板是唯一生产路径
+    // ——R384——此前 truncate 且缺 offsetX/offsetY 属性，WPT
+    // pointerevent_fractional_coordinates_untrusted 的 MouseEvent 11 型 × 32 subtest
+    // 全灭：offsetX=undefined、负值 floor 位 clientX=-0.7 报 0）。
+    //   screenX/screenY/clientX/clientY = floor(init)（浏览器坐标语义——双引擎对
+    //   Math.floor 逐位断言，WebIDL truncate 不符实测）；
+    //   pageX/pageY = init 给了则 floor 采信，否则派生 = floor(clientX/Y)（target-less
+    //   构造的 CSSOM-View 语义，scroll 0）；
+    //   offsetX/offsetY = 同 pageX（缺 target 时 = floor(client)， undispatched 事件
+    //   Chrome/Firefox 均如此）——此前属性整体缺失（undefined）。
+    for name in ["detail", "movementX", "movementY", "button", "buttons"] {
         let v = init_int(scope, &args, 1, name, 0);
         set_int(scope, this, name, v);
+    }
+    for name in ["screenX", "screenY", "clientX", "clientY"] {
+        let v = init_floor_int(scope, &args, 1, name);
+        set_int(scope, this, name, v);
+    }
+    let client_x = init_floor_int(scope, &args, 1, "clientX");
+    let client_y = init_floor_int(scope, &args, 1, "clientY");
+    for (name, derived) in [
+        ("pageX", client_x),
+        ("pageY", client_y),
+        ("offsetX", client_x),
+        ("offsetY", client_y),
+    ] {
+        // init 显式给了 pageX/offsetX（非标准扩展面，shim R150 同款兼容）→ floor 采信；
+        // 缺省 → 派生。`is_number` 门：缺失键 get 返 undefined，其 number_value 是
+        // Some(NaN) 而非 None——NaN→0 回落会以 0 压掉派生值（floor≠0 的范围全灭）。
+        let explicit = match v8::Local::<v8::Object>::try_from(args.get(1)) {
+            Ok(opts) => v8::String::new(scope, name)
+                .and_then(|k| opts.get(scope, k.into()))
+                .filter(|v| v.is_number())
+                .and_then(|v| v.number_value(scope))
+                .map(|n| if n.is_finite() { n.floor() as i32 } else { 0 }),
+            Err(_) => None,
+        };
+        set_int(scope, this, name, explicit.unwrap_or(derived));
     }
     // UIEvent.view（R25，缺省 null）——MouseEvent extends UIEvent，WPT 父链检查。
     set_ui_view(scope, this, &args);

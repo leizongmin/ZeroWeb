@@ -1,17 +1,19 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-05（M3 尾簇 9 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-05（M3 尾簇 10 落地）
 
 ## 当前状态
 
-**M3 + 尾簇 1/2/4/5/6/7/8/9 落地（2026-10-05）**：基线 230P → M2 片 1 343P → M3 375P →
+**M3 + 尾簇 1/2/4/5/6/7/8/9/10 落地（2026-10-05）**：基线 230P → M2 片 1 343P → M3 375P →
 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P → 尾簇 6a 1107P →
-尾簇 6b+6c 1115P → 尾簇 7 1167P → 尾簇 8 1202P → **1218P（+988 累计）**
-（corpus：1218P/633F/97TO，`TIME_LIMIT=3600`；97TO 恒值。尾簇 9 净 +16P 零回归——
-image-map 命中 +12 主面、click-link 组合 +2、new area 可用 +2；逐 subtest 对账
-improvements=16/regressions=0）。
-证据：[evidence/2026-10-04-m3-tail9.json](evidence/2026-10-04-m3-tail9.json)（尾簇 9 后）、
+尾簇 6b+6c 1115P → 尾簇 7 1167P → 尾簇 8 1202P → 尾簇 9 1218P → **1570P（+1340 累计）**
+（corpus：1570P/281F/97TO，`TIME_LIMIT=3600`；97TO 恒值。尾簇 10 净 +352P 零回归——
+fractional untrusted 11 MouseEvent 型 × 32 subtest 全绿；逐 subtest 对账
+improvements=356/regressions=0）。
+证据：[evidence/2026-10-05-m3-tail10.json](evidence/2026-10-05-m3-tail10.json)（尾簇 10 后）、
+[evidence/2026-10-05-m3-tail10.md](evidence/2026-10-05-m3-tail10.md)（根因链 + 排除路径）、
+[evidence/2026-10-04-m3-tail9.json](evidence/2026-10-04-m3-tail9.json)（尾簇 9 后）、
 [evidence/2026-10-04-m3-tail9.md](evidence/2026-10-04-m3-tail9.md)（根因链 + 排除路径）、
 [evidence/2026-10-04-m3-tail8.json](evidence/2026-10-04-m3-tail8.json)（尾簇 8 后）、
 [evidence/2026-10-04-m3-tail8.md](evidence/2026-10-04-m3-tail8.md)（根因链 + 排除路径）、
@@ -28,7 +30,14 @@ improvements=16/regressions=0）。
 门禁：workspace 17,246P/0F、renderer lib 204P/0F、reftest 704/704、fmt + clippy
 （quickjs 面）全绿；shim 拼接 node --check 全绿。
 
-**M3 尾簇 9（2026-10-05，本轮）——image-map 命中 + 跨目标 click 组合 + 跨批 handle
+**M3 尾簇 10（2026-10-05，本轮）——untrusted 事件构造 native 路径坐标语义**。
+native MouseEvent 模板（唯一生产构造路径——R384）坐标族 floor 化（`init_floor_int`，
+浏览器语义非 WebIDL truncate）+ pageX/Y/offsetX/Y 派生（init 显式则 floor 采信、
+缺省 = floor(client)；`is_number` 门防缺失键 NaN→0 压派生——首轮 4 范围全灭根因）。
+对齐尾簇 6 的 shim 面 `_zwMouseCoordInit`。corpus **+352P 零回归**（细节与排除路径见
+[evidence/2026-10-05-m3-tail10.md](evidence/2026-10-05-m3-tail10.md)）。
+
+**M3 尾簇 9（2026-10-05，ce7ca7f37）——image-map 命中 + 跨目标 click 组合 + 跨批 handle
 插入序列化落地**。五件 + 宿主活性修复（根因链与排除路径见
 [evidence/2026-10-04-m3-tail9.md](evidence/2026-10-04-m3-tail9.md)）：
 
@@ -179,10 +188,11 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 证据：[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)
 （含 2 案本地 zwprobe 探针已剔除入账）。门禁：node --check + 双族聚焦跑全绿。
 
-**DC-4 门禁（2026-10-05，尾簇 9 后）**：make test 全腿 **19,825P/0F**（锚恒）；fmt +
-clippy -D warnings（engine/webview/wpt-runner 三 crate）全绿；**reftest 704/704 零
-回归**（真通过 546 + 近似 47 + 不一致 0）；shim 拼接 node --check 全绿。历史（尾簇 6
-期 90b4dabf4 后）：workspace 17,445P/0F + renderer lib 202P/0F，6b 旧序钉双校准。
+**DC-4 门禁（2026-10-05，尾簇 10 后）**：make test 全腿 **19,825P/0F**（锚恒）；fmt +
+clippy -D warnings（zero-engine）全绿；**reftest 704/704 零回归**（不一致 0）；shim
+拼接 node --check 全绿。历史（尾簇 9 后）：clippy engine/webview/wpt-runner 三 crate
+全绿（真通过 546 + 近似 47）；尾簇 6 期：workspace 17,445P/0F + renderer lib
+202P/0F，6b 旧序钉双校准。
 
 ## 缺口清单
 
@@ -223,26 +233,30 @@ clippy -D warnings（engine/webview/wpt-runner 三 crate）全绿；**reftest 70
 - **M3 尾簇 8（2026-10-04，6045a7462）**：修饰键全局态（`_zwModifiers` + 合成事件缺省
   携带）+ mutation 驱动瞬态悬停重结算（rAF 派发点同步 + 探测环几何，px/py 守卫）。
   1167P→1202P。
-- **M3 尾簇 9（2026-10-05，本轮）**：image-map 几何命中（runner 命中测试 JS 扩
+- **M3 尾簇 9（2026-10-05，ce7ca7f37）**：image-map 几何命中（runner 命中测试 JS 扩
   area shape/coords 面）+ 跨目标 click 组合实派 target 优先 + mutation 代际扩面
   （悬停元素属性/IMG image-map 属性/AREA 插入）+ settle 延迟结算 + 指针命令入口
-  settle + 跨批 handle 插入序列化落地（共享队列卡死修复）。1202P→1218P。
+  settle + 跨批 handle 插入序列化落地（共享队列卡死修复）。1218P（前值 1202P）。
+- **M3 尾簇 10（2026-10-05，本轮）**：native MouseEvent 模板坐标 floor + page/offset
+  派生（`init_floor_int` + is_number 门）。1218P→1570P（+352）。
 
 ## 下一步计划
 
 1. **M2/M3 尾簇**（按 Throughput 排序，根因链见
    [evidence/2026-10-04-m3-tail7.md](evidence/2026-10-04-m3-tail7.md)/
-   [evidence/2026-10-04-m3-tail9.md](evidence/2026-10-04-m3-tail9.md) 残余节）：
-   a) **查询视图缓存双计**（尾簇 10）——`with_query_view_doc` 的 snapshot+全史重放
-   烘焙在「snapshot 已含序列化落地拷贝 + 重放再插」时双计（mirror dump 实证
-   `areas=3` 而 ohtml 计 0）——"new \<area\> is available and the \<img\> is
-   resized" 双案 2F；涉及 view cache 键（count/drain_gen/view_gen）语义；
+   [evidence/2026-10-04-m3-tail9.md](evidence/2026-10-04-m3-tail9.md)/
+   [evidence/2026-10-05-m3-tail10.md](evidence/2026-10-05-m3-tail10.md) 残余节）：
+   a) **click_is_a_pointerevent 10F**——click/auxclick/contextmenu 应为 PointerEvent
+   实例（PE spec），当前 dispatch 走泛型 Event（与 R108 激活事务 checked 翻转契约
+   耦合——part06 `__zw_dispatch_event` click 分支注记，需专项设计）；
    b) **同 turn gBCR 强制同步布局**——`mouse_boundary_events_after_reappending_last_
    over_target` 11F + removing_last_over_element 4F + pointer 孪生：createElement 后
    同步 `getBoundingClientRect` 读 stale 布局（真浏览器 gBCR flush layout；需把
    drain+relayout 接进 gBCR 宿主回调——pipeline 句柄进 callbacks 层的设计题）；
-   c) wheel 源 scroll 重放（wheel-basic/deadlock）；d) focus 残余两案（iframe 跨文档
-   焦点、keydown→focus activation——键盘域邻接，挂账候选）。
+   c) **click_during_parent_capture 14F / pointercapture_in_frame 18F**（iframe 捕获面）；
+   d) **查询视图缓存双计**（img-resized 双案 2F——`with_query_view_doc` snapshot+全史
+   重放烘焙双计）；e) wheel 源 scroll 重放（wheel-basic/deadlock）；f) focus 残余两案
+   （iframe 跨文档焦点、keydown→focus activation——键盘域邻接，挂账候选）。
 2. **M4 收口**：touch-action 解析/计算值核对（parsing 三案 0P 待查）、
    touch-events / pointerlock / IME / touch-action 交互面挂账定稿、DC-4 全绿门禁
    （make test + clippy + fmt + reftest 零回归 + product-smoke）。
