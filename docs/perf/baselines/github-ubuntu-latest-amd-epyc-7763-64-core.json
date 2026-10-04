@@ -65,9 +65,9 @@
     },
     {
       "id": "mb/zero-canvas/save_restore_100_deep",
-      "p95": 50777.54722452361,
+      "p95": 50742.88061465721,
       "tier": "budget",
-      "tightened_at": "2026-10-04T13:26:14Z"
+      "tightened_at": "2026-10-04T15:15:48Z"
     },
     {
       "id": "mb/zero-canvas/stroke_rect_1000",
@@ -89,9 +89,9 @@
     },
     {
       "id": "mb/zero-css-parser/css_parse_100kb",
-      "p95": 2780334.3666666667,
+      "p95": 2770591.287878788,
       "tier": "budget",
-      "tightened_at": "2026-09-30T13:30:43Z"
+      "tightened_at": "2026-10-04T15:15:48Z"
     },
     {
       "id": "mb/zero-css-parser/css_parse_by_size/rules/100",
@@ -184,9 +184,9 @@
     },
     {
       "id": "mb/zero-engine/dirty_tracking/mark_100_nodes_and_merge",
-      "p95": 2832.3,
+      "p95": 2827.8929065402094,
       "tier": "budget",
-      "tightened_at": "2026-10-03T14:56:01Z"
+      "tightened_at": "2026-10-04T15:15:48Z"
     },
     {
       "id": "mb/zero-engine/end_to_end_pipeline",
@@ -231,9 +231,9 @@
     },
     {
       "id": "mb/zero-host-runtime/window_config_builder_chain",
-      "p95": 16.223006331373092,
+      "p95": 16.207638202573193,
       "tier": "budget",
-      "tightened_at": "2026-10-02T19:26:02Z"
+      "tightened_at": "2026-10-04T15:15:48Z"
     },
     {
       "id": "mb/zero-host-runtime/window_config_default",
@@ -243,9 +243,9 @@
     },
     {
       "id": "mb/zero-layout-engine/block_layout_1000_elements",
-      "p95": 5405639.948717949,
+      "p95": 5372740.444444444,
       "tier": "budget",
-      "tightened_at": "2026-10-04T13:26:14Z"
+      "tightened_at": "2026-10-04T15:15:48Z"
     },
     {
       "id": "mb/zero-layout-engine/deep_nesting_50_levels",
@@ -455,9 +455,9 @@
     },
     {
       "id": "mb/zero-storage/local_storage_read_1000",
-      "p95": 66308.12962962964,
+      "p95": 65975.88508064517,
       "tier": "budget",
-      "tightened_at": "2026-10-03T13:26:13Z"
+      "tightened_at": "2026-10-04T15:15:48Z"
     },
     {
       "id": "mb/zero-storage/local_storage_write_1000",
@@ -532,9 +532,9 @@
     },
     {
       "id": "mb/zero-wasm-sandbox/wasm_module_instantiate",
-      "p95": 320.68176069931,
+      "p95": 316.56487447315374,
       "tier": "budget",
-      "tightened_at": "2026-10-03T13:26:13Z"
+      "tightened_at": "2026-10-04T15:15:48Z"
     },
     {
       "id": "mb/zero-webview/webview_builder_create",
