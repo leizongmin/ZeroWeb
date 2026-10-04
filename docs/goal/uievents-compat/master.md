@@ -118,6 +118,12 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 证据：[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)
 （含 2 案本地 zwprobe 探针已剔除入账）。门禁：node --check + 双族聚焦跑全绿。
 
+**DC-4 门禁（2026-10-04，尾簇 6 门禁修复 90b4dabf4 后）**：make test workspace 腿
+**17,445P/0F** + renderer lib 腿 **202P/0F**（skip_waiting 第 4 例为已知负载性
+flake——单测 0.07s 过、兄弟流八族红预案同源）；clippy -D warnings（zero-engine
+quickjs 面 + zero-renderer）+ fmt 全绿；**reftest 704/704 零回归**。6b 旧序钉双
+校准（R3247 blur() 序 + renderer focus 迁移序——测试意图不变、期望序随上游）。
+
 ## 缺口清单
 
 | # | 缺口 | 状态 |
