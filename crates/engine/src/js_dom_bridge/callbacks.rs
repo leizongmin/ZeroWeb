@@ -866,7 +866,9 @@ pub fn register_dom_callbacks(
         }),
     );
 
-    // HTML 规范「Window 上的命名属性访问」：所有带 id 的元素作为全局变量可访问
+    // HTML 规范「Window 上的命名属性访问」：带 id 的元素与四 name-able 元素（embed/
+    // form/img/object 非空 name——slice28 RP-1；iframe 走 R139 contentWindow 面）
+    // 作为全局变量可访问
     // （`<div id="container">` → JS 裸标识符 `container`）。shim 据此在脚本执行前
     // 安装 `globalThis[id] = getElementById(id)`（仅合法标识符、不覆盖已存在全局）。
     let html = Arc::clone(dom_html);

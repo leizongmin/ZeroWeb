@@ -32,6 +32,9 @@ SUBDIRS=(
   "dom/abort"
   "dom/lists"
   "dom"
+  # slice28（RP-4，2026-10-04）：Window named access on the window object 用例集
+  # （html/browsers/the-window-object/ 子域；RP-1 name 面修复的资产化对位）。
+  "html/browsers/the-window-object/named-access-on-the-window-object"
 )
 
 fetch_raw() {
@@ -67,8 +70,11 @@ fetch_dir_html() {
     fi
   fi
   local names
+  # slice28（2026-10-04）：目录列表同样 pin 到 WPT_REV（?ref=）——Contents API 默认列
+  # master HEAD，上游已新增而 pin rev 没有的文件会逐个 404（fetch_raw --fail +
+  # set -e 整脚本中断；fresh 环境 dom/ranges 等 8 文件实证）。
   names=$(curl --fail --location --silent --show-error --retry 3 --connect-timeout 8 --max-time 30 \
-    "${API_ROOT}/${dir}" | grep -o '"name": "[^"]*"')
+    "${API_ROOT}/${dir}?ref=${WPT_REV}" | grep -o '"name": "[^"]*"')
   while IFS= read -r line; do
     local name="${line#\"name\": \"}"
     name="${name%\"}"
@@ -109,6 +115,10 @@ fetch_raw "common/dummy.xhtml"
 # 恒 null → "Cannot read properties of null (reading 'contentType')" 整簇 fail）。全 41
 # 文件（4 扩展 × 10 形态 + generate.py）逐个拉。
 fetch_dir_html "dom/nodes/Document-createElement-namespace-tests"
+
+# slice28（RP-4）：named-access 用例集由下方 SUBDIRS 循环 fetch_dir_html 拉取
+#（WPT_REV 时点该目录为 16 个顶层 .html、无 resources/ 子目录——上游 cross-origin
+# 变体在后续版本才引入，本 pin 不含）。
 
 for dir in "${SUBDIRS[@]}"; do
   fetch_dir_html "${dir}"

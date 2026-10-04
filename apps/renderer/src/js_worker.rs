@@ -1155,6 +1155,9 @@ fn js_worker_main(
                 // 首快照（登记未建、页面脚本未跑）全量扫除元素全局后重注；脚本自建
                 // 同名全局不被遮蔽（spec：脚本 own property 位于 WindowProperties 命名属性
                 // 层之下）。与 shim eval 自调用互补，幂等；每次快照换代各执行一遍。
+                // slice28（RP-1）：`__zw_collect_ids` 同收 name 面（embed/form/img/
+                // object 非空 name；iframe 委托 shim R139）——本处 cur 登记/换代回收/
+                // install 全链路对 name 面自动生效，无须另改（登记口径 = collect 返回全集）。
                 // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
                 let _ = sandbox.execute(
                     r#"(function () {
@@ -1623,7 +1626,8 @@ mod tests {
         // 首载：快照落地即注册（修复前此处 undefined——install 只在 shim eval 跑过、
         // 当时 dom_html 尚空）。
         worker.set_dom_snapshot(
-            "<html><body><div id='s27target'></div><span id='s27gone'></span></body></html>",
+            "<html><body><div id='s27target'></div><span id='s27gone'></span>\
+             <div id='s27-not-ident'></div></body></html>",
             "https://example.test/",
         );
         assert_eq!(
@@ -1636,15 +1640,29 @@ mod tests {
             .execute_script_direct("globalThis.s27target = 'page-owned'")
             .unwrap();
         // 负控制 2：非标识符形态 id 不注册（spec 仅合法标识符可裸访问）。
-        // 换代：s27target id 保留、s27gone 移除、脚本自有全局保留。
+        // slice28（RP-2 补强）：此前仅注释宣称、无断言（幽灵注释）——落断言。
+        assert_eq!(
+            worker
+                .execute_script_direct("String(globalThis['s27-not-ident'] === undefined)")
+                .unwrap(),
+            "true",
+            "非标识符 id（含连字符）不注册为全局"
+        );
+        // 换代：s27target id 保留、s27gone 移除、s27added 新增（slice28 RP-2 正向注册
+        // 断言——换代新增 id 须随快照落地出现）、脚本自有全局保留。
         worker.set_dom_snapshot(
-            "<html><body><div id='s27target'></div></body></html>",
+            "<html><body><div id='s27target'></div><div id='s27added'></div></body></html>",
             "https://example.test/",
         );
         assert_eq!(
             worker.execute_script_direct("String(globalThis.s27target)").unwrap(),
             "page-owned",
             "脚本自建同名全局不被 named access 覆盖"
+        );
+        assert_eq!(
+            worker.execute_script_direct("typeof globalThis.s27added").unwrap(),
+            "object",
+            "换代新增 id 元素随快照落地注册（空洞 A）"
         );
         assert_eq!(
             worker
@@ -1660,6 +1678,79 @@ mod tests {
             worker.execute_script_direct("typeof globalThis.s27target").unwrap(),
             "undefined",
             "reset 后无 id 文档不残留命名属性"
+        );
+        worker.shutdown();
+    }
+
+    // slice28（site-compat Window named access name 属性面，RP-1）：name 面注册钉。
+    // spec named access 除 id 面外覆盖 embed/form/img/object 四元素的非空
+    // name 内容属性（树序合并；iframe 属 navigable target name 源，委托 shim R139
+    // contentWindow 注册，不入本面）；快照落地注册须同达 name 面，换代回收口径与
+    // id 面一致（不留上一文档悬挂 name 全局）。修前形态：name-only 元素不可裸访问
+    //（collect 仅收 [id]，RP-1 缺陷轮 S1）。
+    // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+    #[test]
+    fn renderer_js_worker_named_access_name_face_registers_s28() {
+        let mut worker = RendererJsWorker::spawn(64);
+        worker.set_dom_snapshot(
+            "<html><body>\
+             <form name='s28form'></form>\
+             <input name='s28q'>\
+             <img id='s28img' name='s28imgname'>\
+             <iframe name='s28fr'></iframe>\
+             </body></html>",
+            "https://example.test/",
+        );
+        assert_eq!(
+            worker.execute_script_direct("typeof globalThis.s28form").unwrap(),
+            "object",
+            "name 面注册：form name= 可裸访问（修前 undefined）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("typeof globalThis.s28imgname").unwrap(),
+            "object",
+            "name+id 并存元素两名字均可裸访问"
+        );
+        assert_eq!(
+            worker.execute_script_direct("typeof globalThis.s28img").unwrap(),
+            "object",
+            "id 面不回归（同页 id 元素照常注册）"
+        );
+        // iframe name= 不入快照注册面（spec：iframe 属 child navigable target name 源
+        // ——shim R139 已以 contentWindow 值注册 named iframe 全局；本面若以元素先占
+        // 名会压制 R139 注册，值类型倒退）。断言形态=非元素（R139 触发时序不定：
+        // load 派发早则已注册 contentWindow[object Object]、晚则 undefined——两者都
+        // 是「未以元素占名」的正确边界形态）。
+        assert_eq!(
+            worker
+                .execute_script_direct("String(!!(window.s28fr && window.s28fr.nodeType === 1))")
+                .unwrap(),
+            "false",
+            "iframe name 不被本面以元素占名（R139 contentWindow 委托保持）"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("String(globalThis.s28q === undefined)")
+                .unwrap(),
+            "true",
+            "负面：input 非 name-able 元素不注册"
+        );
+        // 换代：s28form 移除 → name 全局回收；保留 name 元素持续可用。
+        worker.set_dom_snapshot(
+            "<html><body><img id='s28img' name='s28imgname'></body></html>",
+            "https://example.test/",
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("String(globalThis.s28form === undefined)")
+                .unwrap(),
+            "true",
+            "换代后消失的 name 元素全局被回收（不留悬挂 name 全局）"
+        );
+        assert_eq!(
+            worker.execute_script_direct("typeof globalThis.s28imgname").unwrap(),
+            "object",
+            "换代保留的 name 元素全局持续可用"
         );
         worker.shutdown();
     }

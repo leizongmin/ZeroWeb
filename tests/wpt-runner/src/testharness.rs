@@ -149,6 +149,12 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
     // eventPathRemoved / svg-insert-crash / historical 域——read_dir 单层扫描，
     // 子目录由各自条目覆盖）。
     "dom",
+    // slice28（RP-4，2026-10-04）：Window named access on the window object 用例集
+    // （RP-1 name 面修复的资产化对位；上游 22 文件中 17 .html/.window.js + resources/
+    // 支持文件，runner 单层扫描 .html——basics/removing 等 live 动态语义面在本引擎
+    // 未实现，基线如实记录不放宽断言；静态 id/name 面子集经本切片修复须绿）。
+    // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+    "html/browsers/the-window-object/named-access-on-the-window-object",
 ];
 
 /// Selection goal（editing/contenteditable M1 / DC-1）pinned upstream subset

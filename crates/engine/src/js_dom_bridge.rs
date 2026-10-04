@@ -2416,24 +2416,52 @@ pub fn element_contains_doc(doc: &Document, container_sel: &str, other_sel: &str
     }
 }
 
-/// 收集文档中所有元素的 `id` 属性值（去重、保序，首次出现优先——与
-/// `getElementById` 取首个匹配语义一致）。供 `__zw_collect_ids` 回调实现
-/// HTML 规范「Window 上的命名属性访问」（`<div id="x">` → 全局 `x`）。
+/// 收集文档中 Window named access 的 supported property names（slice28 RP-1 起
+/// id 面 + name 面合并）：所有带 id 元素的 id 值 + embed/form/img/object 四元素的
+/// 非空 name 内容属性值。单遍树序、去重、首现优先——与 `getElementById`
+/// 取首个匹配语义一致。供 `__zw_collect_ids` 回调实现 HTML 规范「Window 上的
+/// 命名属性访问」（`<div id="x">` / `<form name="x">` → 全局 `x`）。
+/// https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
 pub fn collect_element_ids(html: &str) -> String {
     let doc = parse_html(html);
     collect_element_ids_doc(&doc)
 }
+
+/// name 面参与的元素集（spec supported property names 之 name 源：embed/form/
+/// img/object 的非空 name 内容属性）。iframe 属「document-tree child navigable
+/// target name property set」源——本 shim 已由 R139 `__zwRegisterNamedIframes`
+/// 覆盖（contentWindow 值，比元素注册更贴 spec 值类型；本面若收 iframe 会以其
+/// 元素先占名、压制 R139 的 contentWindow 注册），故**不收**、委托 R139。历史
+/// spec 文本另含 applet 与「exposed」限定（嵌套 object 回退内容），现行 spec 已
+/// 移除——不实现。
+const NAMED_ACCESS_NAME_FACE_TAGS: [&str; 4] = ["embed", "form", "img", "object"];
 
 /// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
 pub fn collect_element_ids_doc(doc: &Document) -> String {
     let root = doc.root();
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    for node in doc.query_selector_all(root, "[id]") {
+    // 单遍树序合并（spec：supported property names 按贡献元素 tree order、忽略后现
+    // 重复——child navigable target name 源由 R139 独立供给，id/name 两源同树序合并）。
+    for node in doc.query_selector_all(root, "[id],embed[name],form[name],img[name],object[name]") {
         if let Some(val) = doc.get_attribute(node, "id") {
             let v = val.trim();
             if !v.is_empty() && seen.insert(v.to_string()) {
                 out.push(v.to_string());
+            }
+        }
+        if let Some(val) = doc.get_attribute(node, "name") {
+            // name 面仅四元素参与（input/a 等的 name 是表单控件名/锚点名；iframe 委托
+            // R139——见 NAMED_ACCESS_NAME_FACE_TAGS 注）。
+            let is_name_face = doc.get(node).is_some_and(|n| match &n.kind {
+                NodeKind::Element(e) => NAMED_ACCESS_NAME_FACE_TAGS.contains(&e.local_name()),
+                _ => false,
+            });
+            if is_name_face {
+                let v = val.trim();
+                if !v.is_empty() && seen.insert(v.to_string()) {
+                    out.push(v.to_string());
+                }
             }
         }
     }
