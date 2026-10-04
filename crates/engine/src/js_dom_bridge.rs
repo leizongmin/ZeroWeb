@@ -21,7 +21,7 @@ use zero_script_sandbox::Sandbox;
 
 /// uievents-compat M3 尾簇 4：宿主侧 DOM mutation 代际计数——runner 探测环刷新门
 ///（[`mutation_version`]）。
-static MUTATION_VERSION: AtomicU64 = AtomicU64::new(0);
+static MUTATION_VERSION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 // getComputedStyle 计算与序列化（R2709 从本文件拆出，控制主文件行数）。
 mod computed_style;
