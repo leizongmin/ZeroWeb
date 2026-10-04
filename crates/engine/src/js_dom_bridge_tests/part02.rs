@@ -1361,15 +1361,16 @@ fn test_anchor_click_target_r3052() {
         "data: → None"
     );
 
-    // ⑤ target=_blank/_top/_parent → None（新窗口/顶层，headless no-op）；target=_self/默认 → Some。
+    // ⑤ target 面不再过滤（slice29 修：_blank/_top/_parent → 同 traversable 导航，
+    // 新建辅助上下文面降级——见 anchor_click_target 文档注释）；target=_self/默认 → Some。
     assert_eq!(
         anchor_click_target(
             "<html><body><a id='b' href='https://x.com/' target='_blank'>l</a></body></html>",
             "#b",
             base
         ),
-        None,
-        "target=_blank → None（新窗口 no-op）"
+        Some("https://x.com/".to_string()),
+        "target=_blank → Some（激活保导航，新建 tab 面降级）"
     );
     assert_eq!(
         anchor_click_target(
@@ -1396,6 +1397,144 @@ fn test_anchor_click_target_r3052() {
         anchor_click_target("<html><body><a id='e' href=''>l</a></body></html>", "#e", base),
         None,
         "<a> 空 href → None"
+    );
+}
+
+#[test]
+fn test_anchor_click_target_blank_nav_s29() {
+    // slice29 变体/边界钉：target 面导航解析（R3052 契约更新——_blank/_top/_parent
+    // 不再 no-op；嵌入态「新建辅助 browsing context」面降级为当前 traversable 导航，
+    // 保住激活主语义。与 R2979 window.open popup-blocked 降级同族）。
+    // https://html.spec.whatwg.org/multipage/nav-history-apis.html#chosen-navigable
+    let base = "https://example.com/dir/page";
+
+    // ① target 值 ASCII 大小写不敏感（https://html.spec.whatwg.org/multipage/links.html#attr-hyperlink-target）。
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='bl' href='https://x.com/' target='_BLANK'>l</a></body></html>",
+            "#bl",
+            base
+        ),
+        Some("https://x.com/".to_string()),
+        "target=_BLANK（大写）→ Some"
+    );
+    // ② _top：顶级 traversable 即本文档 → 同 tab 导航。
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='t' href='/top' target='_top'>l</a></body></html>",
+            "#t",
+            base
+        ),
+        Some("https://example.com/top".to_string()),
+        "target=_top → Some（顶级 traversable 同 tab）"
+    );
+    // ③ _parent：无父可升 → 当前 traversable。
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='p' href='/par' target='_parent'>l</a></body></html>",
+            "#p",
+            base
+        ),
+        Some("https://example.com/par".to_string()),
+        "target=_parent → Some"
+    );
+    // ④ 非 _ 前缀命名 target 本就导航（现状守卫，改不改同值）。
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='n' href='/named' target='frame1'>l</a></body></html>",
+            "#n",
+            base
+        ),
+        Some("https://example.com/named".to_string()),
+        "命名 target → Some（现状守卫）"
+    );
+    // ⑤ 非导航 scheme 守卫不受本修影响（回归守卫）。
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='j' href='javascript:void(0)' target='_blank'>l</a></body></html>",
+            "#j",
+            base
+        ),
+        None,
+        "javascript: + _blank → 仍 None（scheme 守卫优先）"
+    );
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='h' href='#sec' target='_blank'>l</a></body></html>",
+            "#h",
+            base
+        ),
+        None,
+        "#hash + _blank → 仍 None（同文档锚走 hash 分支）"
+    );
+}
+
+#[test]
+fn test_anchor_click_target_hit_descendant_walk_s29() {
+    // slice29 P1b 变体/边界钉：事件路径激活目标行走——renderer hit_test 取最深元素，
+    // 真实站点击目标常为锚点内层后代（baidu SERP 标题 `<a><span>…</span></a>` 命中
+    // SPAN）。DOM 事件派发在事件路径上取首个具激活行为的元素为 activation target，
+    // 激活的是锚点祖先（与 GUI 管线 hit_test_link 的 find_link_href_cached 祖先行走
+    // 同语义）。https://dom.spec.whatwg.org/#concept-event-dispatch
+    let base = "https://www.baidu.com/s";
+
+    // ① 内层 span 命中 → 最近 a 祖先的 href 解析出导航 URL。
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a href='https://x.com/link' target='_blank'><em id='t'>title</em></a></body></html>",
+            "#t",
+            base
+        ),
+        Some("https://x.com/link".to_string()),
+        "span-in-anchor 命中 → 激活 a 祖先 → Some"
+    );
+    // ② hash 锚点内层后代 → hash 分支同语义（anchor_hash_target 行走）。
+    assert_eq!(
+        anchor_hash_target(
+            "<html><body><a id='sec' href='#top'><strong id='st'>t</strong></a></body></html>",
+            "#st"
+        ),
+        Some("#top".to_string()),
+        "hash 锚内层后代 → 激活 a 祖先 → Some"
+    );
+    // ③ javascript: 锚点内层后代 → JS 分支同语义（anchor_javascript_target 行走）。
+    assert_eq!(
+        anchor_javascript_target(
+            "<html><body><a href='javascript:void(0)'><span id='jt'>t</span></a></body></html>",
+            "#jt"
+        ),
+        Some("void(0)".to_string()),
+        "javascript: 锚内层后代 → 激活 a 祖先 → Some"
+    );
+    // ④ 负控：不在锚点内的 span → 仍 None（不误激活）。
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><p><span id='free'>t</span></p></body></html>",
+            "#free",
+            base
+        ),
+        None,
+        "非锚点内 span → None（负控）"
+    );
+    // ⑤ 直接命中 a 本身（回归守卫，行走不改变原语义）。
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a id='d' href='/direct'>l</a></body></html>",
+            "#d",
+            base
+        ),
+        Some("https://www.baidu.com/direct".to_string()),
+        "直接命中 a → 行走前后同值"
+    );
+    // ⑥ 多层嵌套（span 内 b）→ 仍走到 a 祖先。
+    assert_eq!(
+        anchor_click_target(
+            "<html><body><a href='/deep'><span><b id='deep'>t</b></span></a></body></html>",
+            "#deep",
+            base
+        ),
+        Some("https://www.baidu.com/deep".to_string()),
+        "多层嵌套后代 → 走到 a 祖先"
     );
 }
 

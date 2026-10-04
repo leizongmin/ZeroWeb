@@ -2720,9 +2720,11 @@ impl RendererRuntime {
                 &target,
                 self.current_url.as_deref().unwrap_or("about:blank"),
             ) {
-                // R3052：anchor `<a href>` click → 导航（仅 click 未 preventDefault）。target 非 submit/
-                // checkbox/radio/reset 且 anchor_click_target 解析出可导航 URL → handle_navigate。
-                // referrer = 当前页；navigation_epoch 递增。javascript:/#/mailto:/target=_blank 等已在 helper 过滤。
+                // R3052（slice29 契约更新）：anchor `<a href>` click → 导航（仅 click 未 preventDefault）。
+                // target 非 submit/checkbox/radio/reset 且 anchor_click_target 解析出可导航 URL → handle_navigate。
+                // referrer = 当前页；navigation_epoch 递增。javascript:/#/mailto: 等已在 helper 过滤；
+                // target=_blank 不再 no-op——新建辅助上下文面嵌入态降级为当前 traversable 导航
+                // （FIXME(tab-ipc)：新建 tab IPC 落地后新 tab 意图交宿主。见 anchor_click_target 文档注释）。
                 if click_default_allowed {
                     let _ = self.handle_navigate(zero_protocol::message::NavigateParams {
                         url,
