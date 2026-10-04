@@ -8663,6 +8663,12 @@
           _zwPtrState.mutTick = (_zwPtrState.mutTick || 0) + 1;
           if (sel === _zwPtrState.overSel || sel === _zwPtrState.mouseOverSel) {
             _zwPtrState.overReinserted = true;
+            // 尾簇 8：悬停元素被移除 → 瞬态记录（重插时置 reattached；settle 补
+            // 「移除→重插」两段跨界序——净态不变也派瞬态边界事件）。px/py 快照：
+            // 指针已移开（后续命令改变位置）→ 重插不在指针下，瞬态失效（真实
+            // 浏览器只对指针下变异重算悬停——after_target_removed 的 cleanup
+            // 重插远离子 done 元素，不派事件）。
+            _zwPtrState.hoverTransient = { sel: sel, reattached: false, px: _zwPtrState.x || 0, py: _zwPtrState.y || 0 };
           }
         }
       } catch (_eRe45) {}

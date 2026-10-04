@@ -226,6 +226,16 @@ pub fn script_pointer_move(selector: &str, client_x: f32, client_y: f32) -> Stri
     format!("if(typeof __zw_pointer_move==='function')__zw_pointer_move('{sel}',{client_x},{client_y});")
 }
 
+/// 生成「mutation 驱动悬停重结算」脚本（uievents-compat 尾簇 8）。runner 在探测环
+/// 发现悬停失效（`__zw_ptr_hover_dirty()`）并以 fresh gBCR 命中测试后调用：调 shim
+/// `__zw_mut_hover_settle(sel, x, y)`（part06.js）——命中与现悬停不同 → 补跨界序
+/// （双层 pointer/compat mouse；只派边界序不派 move 对——spec 的 mutation 触发
+/// 重算不合成 move）。
+pub fn script_mut_hover_settle(selector: &str, client_x: f32, client_y: f32) -> String {
+    let sel = escape_js_string(selector);
+    format!("if(typeof __zw_mut_hover_settle==='function')__zw_mut_hover_settle('{sel}',{client_x},{client_y});")
+}
+
 /// 生成「Actions down 步序列」脚本（uievents-compat M3，2026-10-03）。runner 把
 /// Actions 链逐步重放为宿主命令——down 步调 shim
 /// `__zw_pointer_down_sequence(sel, x, y, pointerType, button)`（part06.js）：悬停迁移

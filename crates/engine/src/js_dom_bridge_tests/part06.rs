@@ -3885,6 +3885,11 @@ __zw_dispatch_event("#target", "keydown", { key: "Shift", code: "Shift", shiftKe
         "Shift/true/false/false/false",
         "Shift keydown（init dict shiftKey:true）须 event.shiftKey=true 其余 false"
     );
+    // 尾簇 8：修饰键全局态维护（keydown 置位/keyup 清除）——每臂后配对 keyup 复原，
+    // 后续臂的缺省位不被前置臂污染（真实键盘序列的清理对称性）。
+    sandbox
+        .execute(r##"__zw_dispatch_event("#target", "keyup", { key: "Shift", code: "Shift" });"##)
+        .unwrap();
     // ②：Control → ctrlKey 位（新 listener 写 __got2）。
     sandbox
         .execute(
@@ -3902,6 +3907,9 @@ __zw_dispatch_event("#target", "keydown", { key: "Control", code: "Control", ctr
         "Control/false/true/false/false",
         "Control keydown 须 ctrlKey=true"
     );
+    sandbox
+        .execute(r##"__zw_dispatch_event("#target", "keyup", { key: "Control", code: "Control" });"##)
+        .unwrap();
     // ③：Alt + Meta 位独立（各注册新 listener）。
     sandbox
         .execute(
@@ -3920,6 +3928,9 @@ __zw_dispatch_event("#target", "keydown", { key: "Alt", code: "Alt", altKey: tru
         "Alt keydown 须 altKey=true"
     );
     sandbox
+        .execute(r##"__zw_dispatch_event("#target", "keyup", { key: "Alt", code: "Alt" });"##)
+        .unwrap();
+    sandbox
         .execute(
             r##"
 globalThis.__got4 = null;
@@ -3935,6 +3946,9 @@ __zw_dispatch_event("#target", "keydown", { key: "Meta", code: "Meta", metaKey: 
         "Meta/false/false/false/true",
         "Meta keydown 须 metaKey=true"
     );
+    sandbox
+        .execute(r##"__zw_dispatch_event("#target", "keyup", { key: "Meta", code: "Meta" });"##)
+        .unwrap();
     // ④：detail 缺省修饰键字段 → 全 false（向后兼容——既有 scroll/导航键路径零变化）。
     sandbox
         .execute(

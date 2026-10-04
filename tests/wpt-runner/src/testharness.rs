@@ -6983,6 +6983,9 @@ fn run_testharness_html_inner(
     // uievents-compat M3 尾簇 4：已刷新的 mutation 代际（跨 take_probe/命令执行共享
     // ——同代不重复序列化，见 take_probe / resolve_pointer_target）。
     let mut td_refresh_ver: u64 = 0;
+    // uievents-compat 尾簇 8：最后已知指针位（pointer 命令 resolve 后记录）——
+    // mutation 驱动悬停重结算的命中测试输入。
+    let mut td_last_pointer: Option<(f32, f32)> = None;
     // M3 扩批 XVI：文件字节缓存（同 src 只读盘一次；注册表 contains_source 幂等）。
     let mut media_byte_cache: std::collections::HashMap<String, std::rc::Rc<Vec<u8>>> =
         std::collections::HashMap::new();
@@ -7090,13 +7093,37 @@ fn run_testharness_html_inner(
                 }];
             }
         };
+        // uievents-compat 尾簇 8：mutation 驱动悬停重结算——探测轮 flush 后悬停目标
+        // 可能已被页内 remove/appendChild 失效（mutTick 推进）。poll 廉价判据命中时
+        // 以 last pointer 位跑 fresh 命中测试（resolve 内部代际门控刷新），命中与现
+        // 悬停不同 → shim 补跨界序（只派边界序不派 move 对）。无指针活动或未失效
+        // 时零命中测试（单 execute_script 轮询判据）。
+        if let Some((last_x, last_y)) = td_last_pointer {
+            if let Ok(dirty) =
+                webview.execute_script("globalThis.__zw_ptr_hover_dirty ? globalThis.__zw_ptr_hover_dirty() : '0'")
+            {
+                let debug = std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1");
+                if debug {
+                    eprintln!("[zw-settle] poll dirty={} pos=({last_x},{last_y})", dirty.trim());
+                }
+                if dirty.trim() == "1" {
+                    let (hit_sel, hx, hy) =
+                        resolve_pointer_target(&mut webview, "", last_x, last_y, true, &mut td_refresh_ver);
+                    if debug {
+                        eprintln!("[zw-settle] hit={hit_sel} at ({hx},{hy})");
+                    }
+                    let script = zero_engine::script_mut_hover_settle(&hit_sel, hx, hy);
+                    let _ = webview.execute_script(&script);
+                }
+            }
+        }
         partial_results = probe.results;
         last_test_function = probe.test_function;
         last_harness_hook = probe.harness_hook;
         last_state = probe.state;
         last_test_wait = probe.test_wait;
         for command in probe.commands {
-            let result = apply_testdriver_command(&mut webview, &command, &mut td_refresh_ver);
+            let result = apply_testdriver_command(&mut webview, &command, &mut td_refresh_ver, &mut td_last_pointer);
             // R347：目标未解析（元素尚未 materialize）→ 重新入队下帧重试。
             let unresolved = result.as_deref().is_some_and(|message| {
                 message.starts_with("testdriver target not found")
@@ -7873,6 +7900,7 @@ fn apply_testdriver_command(
     webview: &mut WebView,
     command: &TestdriverCommand,
     td_refresh_ver: &mut u64,
+    last_pointer: &mut Option<(f32, f32)>,
 ) -> Option<String> {
     // R145：selector 延迟解析——enqueue 时 mutation 未 apply（正置表空），出队时
     //（跨 turn）经 stub 的 `__zw_td_selector` 现场解析（apply 已 merge handle→selector）。
@@ -7920,6 +7948,7 @@ fn apply_testdriver_command(
             let pointer_type = parts.next().unwrap_or("mouse").to_string();
             let _ = pointer_type;
             let (hit_sel, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
+            *last_pointer = Some((px, py));
             let script = zero_engine::script_pointer_move(&hit_sel, px, py);
             let _ = webview.execute_script(&script);
             None
@@ -7957,6 +7986,7 @@ fn apply_testdriver_command(
             let pointer_type = parts.next().unwrap_or("mouse").to_string();
             let button = parts.next().and_then(|v| v.parse::<i16>().ok()).unwrap_or(0);
             let (hit_sel, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
+            *last_pointer = Some((px, py));
             let focus_script = format!(
                 "(function(){{var el=document.querySelector({sel});try{{if(el&&el.focus)el.focus();}}catch(_e){{}}}})();",
                 sel = serde_json::to_string(&hit_sel).unwrap_or_else(|_| "null".into())
@@ -7988,6 +8018,7 @@ fn apply_testdriver_command(
             let pointer_type = parts.next().unwrap_or("mouse").to_string();
             let button = parts.next().and_then(|v| v.parse::<i16>().ok()).unwrap_or(0);
             let (hit_sel, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
+            *last_pointer = Some((px, py));
             let script = zero_engine::script_pointer_up_sequence(
                 &hit_sel,
                 &down_selector,

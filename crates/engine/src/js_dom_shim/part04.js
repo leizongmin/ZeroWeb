@@ -4973,6 +4973,10 @@ return _tplContent;
                   if (_r334OldSel && (_r334ChildSel === _zwPtrState.overSel || _r334ChildSel === _zwPtrState.mouseOverSel)) {
                     _zwPtrState.overReinserted = true;
                   }
+                  // 尾簇 8：瞬态悬停重插标记——settle 的回程跨界序判据。
+                  if (_zwPtrState.hoverTransient && _zwPtrState.hoverTransient.sel === _r334ChildSel) {
+                    _zwPtrState.hoverTransient.reattached = true;
+                  }
                 }
               } catch (_eRe334) {}
               try { __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334ChildSel); } catch (_e334w) {}

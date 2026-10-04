@@ -11746,15 +11746,25 @@
       // metaKey 进 init dict（KeyboardEvent constructor，part05 modifier 位全接）。
       // runner send_keys 修饰键（uE008/uE009/uE00A/uE03D）keydown 断言位（WPT
       // modifier-keys.html：event.shiftKey === (key === 'Shift') 等）。
+      // 尾簇 8：修饰键全局态维护——事件位先算（本键在 keydown/keyup 事件自身上均
+      // 报按下——WPT modifier-keys 断言 keyup.shiftKey 同 true），后按类型落态
+      // （keydown 置位、keyup 清除）；后续合成 pointer/mouse 事件经 `_zwModInit`
+      // 缺省携带当下态。
+      var _zmKey8 = _zwModifierForKey(detail.key);
+      var _zmDef8 = _zwModInit(detail);
+      if (_zmKey8) {
+        _zmDef8[_zmKey8 === 'ctrl' ? 'ctrlKey' : _zmKey8 + 'Key'] = true;
+        _zwModifiers[_zmKey8] = (type !== 'keyup');
+      }
       ev = new KeyboardEvent(type, {
         bubbles: true,
         cancelable: true,
         key: detail.key || '',
         code: detail.code || detail.key || '',
-        shiftKey: !!detail.shiftKey,
-        ctrlKey: !!detail.ctrlKey,
-        altKey: !!detail.altKey,
-        metaKey: !!detail.metaKey
+        shiftKey: _zmDef8.shiftKey,
+        ctrlKey: _zmDef8.ctrlKey,
+        altKey: _zmDef8.altKey,
+        metaKey: _zmDef8.metaKey
       });
     } else if (type === 'pointerdown' || type === 'pointerup' || type === 'pointermove'
                || type === 'pointerover' || type === 'pointerout' || type === 'pointerenter'
@@ -11774,6 +11784,7 @@
       // 「pressure is 0.5 for mouse with a button pressed」）；got/lost 显式透传。
       var _pPres = (detail && typeof detail.pressure === 'number') ? detail.pressure
         : (type === 'pointerdown' ? 0.5 : 0);
+      var _pMod8 = _zwModInit(detail);
       ev = new PointerEvent(type, {
         bubbles: _pBub,
         composed: _pBub,
@@ -11789,7 +11800,11 @@
         isPrimary: true,
         width: 1,
         height: 1,
-        pressure: _pPres
+        pressure: _pPres,
+        shiftKey: _pMod8.shiftKey,
+        ctrlKey: _pMod8.ctrlKey,
+        altKey: _pMod8.altKey,
+        metaKey: _pMod8.metaKey
       });
     } else if (type === 'mousedown' || type === 'mouseup' || type === 'mousemove'
                || type === 'contextmenu' || type === 'mouseover' || type === 'mouseout'
@@ -11809,6 +11824,7 @@
       // 显式 detail.bubbles 覆盖缺省（enter/leave false，其余 true）。
       var _mBub = (detail && detail.bubbles != null) ? !!detail.bubbles
         : (type !== 'mouseenter' && type !== 'mouseleave');
+      var _mMod8 = _zwModInit(detail);
       ev = new MouseEvent(type, {
         bubbles: _mBub,
         cancelable: true,
@@ -11818,7 +11834,11 @@
         buttons: (detail && typeof detail.buttons === 'number') ? detail.buttons
           : (type === 'mouseup' || type === 'mousemove') ? 0 : 1,
         detail: (detail && typeof detail.detail === 'number') ? detail.detail : 0,
-        relatedTarget: (detail && detail.relatedTarget) ? _wrapSelector(detail.relatedTarget) : null
+        relatedTarget: (detail && detail.relatedTarget) ? _wrapSelector(detail.relatedTarget) : null,
+        shiftKey: _mMod8.shiftKey,
+        ctrlKey: _mMod8.ctrlKey,
+        altKey: _mMod8.altKey,
+        metaKey: _mMod8.metaKey
       });
     } else {
       ev = _makeEvent(type, { bubbles: true, cancelable: true });
@@ -12073,8 +12093,40 @@
     // 不可派发（mutation 批间应用），跨界序排队至下一指针命令入口补派。
     pendingCross: null,
     processingCapture: false,
-    streakTarget: null, streakCount: 0, downSel: null, downButton: 0
+    streakTarget: null, streakCount: 0, downSel: null, downButton: 0,
+    // 尾簇 8：mutation 驱动悬停重结算——mutTick 消费位（settle 后记录；poll 比较
+    // 判「悬停目标可能已失效」，runner 据此跑命中测试 + 补跨界序）。
+    mutTickSettled: 0,
+    // 尾簇 8：悬停元素瞬态记录——`_zwMarkRemoved` 摘除悬停元素时记 {sel, reattached}；
+    // R334 重插同 sel 时置 reattached。settle 据此补「移除→重插」两段跨界序
+    // （真实浏览器按变异步重算 hover——净态不变也派瞬态边界事件）。
+    hoverTransient: null
   };
+  // uievents-compat 尾簇 8：**修饰键全局态**——Actions keyDown/keyUp 派发的
+  // KeyboardEvent 经 `__zw_dispatch_event` 时维护；后续合成的 pointer/mouse 事件
+  // （含 mutation 驱动的边界序）缺省携带当下修饰键态（UI Events §5.1——事件坐标
+  // 之外的修饰键位反映输入设备当前状态；WPT modifier_no_mouse_movement 族断言
+  // 「boundary 事件携带 keyDown 后的 shiftKey」）。键值映射含 WebDriver 键码
+  //（ Shift /  Control /  Alt /  Meta）与字面键名。
+  var _zwModifiers = { shift: false, ctrl: false, alt: false, meta: false };
+  function _zwModifierForKey(key) {
+    var k = String(key == null ? '' : key);
+    if (k === '' || k === 'Shift') return 'shift';
+    if (k === '' || k === 'Control') return 'ctrl';
+    if (k === '' || k === 'Alt') return 'alt';
+    if (k === '' || k === 'Meta') return 'meta';
+    return null;
+  }
+  // 合成 pointer/mouse 事件 init 的修饰键位——detail 显式值优先（keyboard 断言路径
+  // 旧语义），缺省取全局态。
+  function _zwModInit(detail) {
+    return {
+      shiftKey: (detail && detail.shiftKey != null) ? !!detail.shiftKey : _zwModifiers.shift,
+      ctrlKey: (detail && detail.ctrlKey != null) ? !!detail.ctrlKey : _zwModifiers.ctrl,
+      altKey: (detail && detail.altKey != null) ? !!detail.altKey : _zwModifiers.alt,
+      metaKey: (detail && detail.metaKey != null) ? !!detail.metaKey : _zwModifiers.meta
+    };
+  }
   // 尾簇 6c：post-up 跨界延迟结算入口（move/down/up 三站入口各一次）——上一 up
   // 序列内变异（insert-under-cursor）的跨界序在本站补派（mutation 批已应用、目标
   // 可派发）；消费即清。
@@ -12153,6 +12205,97 @@
     _zwPtrState.streakTarget = null;
     _zwPtrState.streakCount = 0;
     _zwPtrState.downSel = null;
+    _zwPtrState.mutTickSettled = _zwPtrState.mutTick;
+    _zwPtrState.hoverTransient = null;
+  };
+  // uievents-compat 尾簇 8：**mutation 驱动悬停重结算**（真实浏览器 stationary
+  // pointer 下 DOM 变更在下一渲染机会重算 hover 并派边界事件——UI Events §5.3/PE
+  // §11；WPT modifier_no_mouse_movement 族断言面）。两段：
+  // ① `__zw_ptr_hover_dirty()`——runner 探测环逐 turn 轮询的廉价判据：有悬停目标、
+  //   非捕获态、且 mutTick 已推进（remove/re-append 钩子递增）→ '1'（悬停目标可能
+  //   已失效，需命中测试重结算）；否则 '0'。
+  // ② `__zw_mut_hover_settle(hitSel, x, y)`——runner 以 fresh gBCR 命中测试的结果
+  //   调入：命中与现悬停不同 → 补跨界序（`_zwPointerCross` 双层——pointer + compat
+  //   mouse；dangling prev / 重入旗标语义与命令路径同面），**只派边界序不派 move 对**
+  //   （spec 的 mutation 触发重算不合成 move）；命中相同或无悬停 → no-op。结算后
+  //   记 mutTickSettled 消费位。
+  globalThis.__zw_ptr_hover_dirty = function () {
+    var st = _zwPtrState;
+    if (st.pointerType === 'touch') return '0';
+    if (!st.overSel && !st.mouseOverSel) return '0';
+    if (st.capture['1'] || st.capture['2'] || st.pending['1']) return '0';
+    return (st.mutTick !== st.mutTickSettled) ? '1' : '0';
+  };
+  // 尾簇 8：瞬态「移除→重插」跨界序的实派（settle 双路径共用）——sel→最近连通祖先
+  //（移除步的 out/leave@sel 链 + over/enter@祖先），祖先→回程端点（重插步的
+  // out/leave@祖先 + over/enter@回程）。真浏览器按变异步重算 hover（WPT
+  // modifier_no_mouse_movement 的 mouseover@container + mouseout@container 断言面）。
+  // 回程完成后重入旗标一并消费（`_zwReentryCheck` 不再重复 over/enter）。
+  function _zwMutHoverFireTransient(tr, x, y, backSel) {
+    var st = _zwPtrState;
+    var anc = 'body';
+    try { anc = (typeof __zw_parent === 'function' && __zw_parent(tr.sel)) || 'body'; } catch (_eTrP) {}
+    if (anc && anc !== tr.sel) {
+      _zwPointerCross(tr.sel, anc, x || 0, y || 0);
+      st.overSel = anc;
+      st.hoverSel = anc;
+    }
+    var back = backSel || tr.sel;
+    if (back !== st.overSel) {
+      _zwPointerCross(st.overSel, back, x || 0, y || 0);
+    }
+    st.overSel = back;
+    st.hoverSel = back;
+    st.overReinserted = false;
+    st.hoverTransient = null;
+    st.mutTickSettled = st.mutTick;
+  }
+  // 同步结算（rAF 回调派发点调用——真实浏览器的「update the rendering」在 rAF 前
+  // 重算悬停；OFF 模式 rAF 同步执行使整个测试尾段在同一脚本任务内，settle 必须内联
+  // 于 rAF 派发点）。只处理已重插的瞬态且指针未移开（px/py 快照比对——重插在指针
+  // 下才派）；净移除的几何端点结算归 runner 探测环（`__zw_mut_hover_settle`）。
+  globalThis.__zw_mut_hover_sync_settle = function () {
+    var st = _zwPtrState;
+    var tr = st.hoverTransient;
+    if (!tr || !tr.reattached) return 'ok';
+    if (st.pointerType === 'touch') return 'ok';
+    if (st.x !== tr.px || st.y !== tr.py) {
+      // 指针已移开：重插不在指针下 → 瞬态失效（不派边界事件）。
+      st.hoverTransient = null;
+      return 'ok';
+    }
+    _zwMutHoverFireTransient(tr, st.x, st.y, null);
+    return 'ok';
+  };
+  globalThis.__zw_mut_hover_settle = function (hitSel, x, y) {
+    var st = _zwPtrState;
+    st.mutTickSettled = st.mutTick;
+    if (st.pointerType === 'touch') return 'ok';
+    var tr = st.hoverTransient;
+    if (tr && tr.reattached) {
+      if ((x || 0) !== tr.px || (y || 0) !== tr.py) {
+        // 指针已移开：瞬态失效 → 按端点几何重算（下方公共路径）。
+        st.hoverTransient = null;
+      } else {
+        // 瞬态移除→重插（净态不变）：两段跨界。回程端点：几何命中与祖先不同 → 用
+        // 命中（re-insert 到别处）；命中等于祖先（快照滞后未及重插元素——settle 期
+        // 宿主布局滞后的常态）→ 回落 tr.sel（原位重插即指针下元素）。
+        var anc = 'body';
+        try { anc = (typeof __zw_parent === 'function' && __zw_parent(tr.sel)) || 'body'; } catch (_eTrP2) {}
+        var back = (hitSel && hitSel !== anc) ? hitSel : tr.sel;
+        _zwMutHoverFireTransient(tr, x || 0, y || 0, back);
+        return 'ok';
+      }
+    }
+    // 非 transient（净移除/普通变异）：端点几何重算——命中与现悬停不同 → 补跨界。
+    // 命中未变（remove wire 尚 pending 的窗口）→ 保留 transient（后续重插仍可置
+    // reattached）；端点已结算（净移除）→ 丢弃旧瞬态。
+    if (!hitSel || hitSel === st.overSel) return 'ok';
+    st.hoverTransient = null;
+    _zwPointerCross(st.overSel, hitSel, x || 0, y || 0);
+    st.overSel = hitSel;
+    st.hoverSel = hitSel;
+    return 'ok';
   };
   // 最近公共包含祖先（uievents-compat M2 片 1——click 组合目标，UI Events §5.2.2
   // 「mousedown/mouseup 目标不同 → click 派发到最近公共祖先」；WPT

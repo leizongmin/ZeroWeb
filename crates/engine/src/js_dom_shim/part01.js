@@ -5023,6 +5023,11 @@
       // 进入最终 HTML 被 harness 单渲染捕获。时间戳取真实时钟（spec DOMHighResTimeStamp——
       // 恒 0 曾使依赖时间推进的动画收敛循环永不退出）。
       _rafBudget--;
+      // uievents-compat 尾簇 8：rAF 回调 = 「update the rendering」边界近似——回调
+      // 派发前重结算 mutation 驱动的瞬态悬停跨界（真实浏览器在渲染机会重算 hover
+      // 并派边界事件；OFF 模式 rAF 同步执行、整个测试尾段同一脚本任务，探测环
+      // settle 来不及）。无瞬态时零成本。
+      if (typeof __zw_mut_hover_sync_settle === 'function') { try { __zw_mut_hover_sync_settle(); } catch (_eMhs8) {} }
       var _r3254ts = (typeof __zw_performance_now === 'function') ? __zw_performance_now() : 0;
       try { fn(_r3254ts); } catch (_e) {}
     }
@@ -5035,6 +5040,8 @@
   // host 在 render 后调用（renderer tick_observers；OFF 时早返零开销）。ts = DOMHighResTimeStamp（ms）。
   globalThis.__zw_raf_tick = function(ts) {
     if (!globalThis.__ZW_RAF_FRAME_DRIVEN) return;
+    // 尾簇 8：帧驱动的渲染边界同步结算（同 requestAnimationFrame OFF 路径注记）。
+    if (typeof __zw_mut_hover_sync_settle === 'function') { try { __zw_mut_hover_sync_settle(); } catch (_eMhs8b) {} }
     var cbs = _rafPending; _rafPending = {}; // 本帧快照、清空（rAF 内重注册入下一帧队列）
     for (var id in cbs) { try { cbs[id](ts); } catch (_e) {} }
   };
