@@ -1,17 +1,19 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-05（M3 尾簇 15 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-05（M3 尾簇 16 落地）
 
 ## 当前状态
 
-**M3 + 尾簇 1/2/4/5/6/7/8/9/10/11/12/13/14/15 落地（2026-10-05）**：基线 230P → M2 片 1 343P →
+**M3 + 尾簇 1/2/4/5/6/7/8/9/10/11/12/13/14/15/16 落地（2026-10-05）**：基线 230P → M2 片 1 343P →
 M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P → 尾簇 6a 1107P →
 尾簇 6b+6c 1115P → 尾簇 7 1167P → 尾簇 8 1202P → 尾簇 9 1218P → 尾簇 10 1570P →
-尾簇 11 1583P → 尾簇 12 1588P → 尾簇 13 1590P → 尾簇 14 1594P → **1609P（+1379 累计）**
-（corpus：1609P/242F/97TO，`TIME_LIMIT=3600`；97TO 恒值。尾簇 15 净 +15 零回归——
-down 序列同位幂等 + compat mouse 抑制链归一；逐 subtest 对账
-improvements=15/regressions=0）。
+尾簇 11 1583P → 尾簇 12 1588P → 尾簇 13 1590P → 尾簇 14 1594P → 尾簇 15 1609P →
+**1610P（+1380 累计）**
+（corpus：1610P/240F/98TO，`TIME_LIMIT=3600`。尾簇 16 净 +1 零回归——跨界/移动事件
+按钮按层分流（compat mouse=0 / pointer=-1）；逐 subtest 对账
+improvements=1/regressions=0；mouseevent_key_pressed 文件级 Timeout 为负载性 flake
+——隔离重跑正常）。
 证据：[evidence/2026-10-05-m3-tail13.json](evidence/2026-10-05-m3-tail13.json)（尾簇 13 后）、
 [evidence/2026-10-05-m3-tail13.md](evidence/2026-10-05-m3-tail13.md)（根因链 + 排除路径）、
 [evidence/2026-10-05-m3-tail12.json](evidence/2026-10-05-m3-tail12.json)（尾簇 12 后）、
@@ -37,7 +39,14 @@ improvements=15/regressions=0）。
 门禁：workspace 17,246P/0F、renderer lib 204P/0F、reftest 704/704、fmt + clippy
 （quickjs 面）全绿；shim 拼接 node --check 全绿。
 
-**M3 尾簇 15（2026-10-05，本轮）——down 序列同位幂等 + compat mouse 抑制链归一**。
+**M3 尾簇 16（2026-10-05，本轮）——跨界/移动事件按钮按层分流**。UI Events「un-
+initialized」语义：compat mouse 面（mousemove/mouseover/out/enter/leave，move 双路
++ `_zwLayerCross` 四站 + `_zwReentryCheck`）`button` 恒 **0**；pointer 面（pointer-
+over/enter 等）保持 **-1**（PE spec move/边界无按键）。mouseevent_move_button 转绿
++ mouseenter-mouseleave-on-drag 3/3（button 断言面）。细节见
+[evidence/2026-10-05-m3-tail16.md](evidence/2026-10-05-m3-tail16.md)。
+
+**M3 尾簇 15（2026-10-05，dcf5a4d89）——down 序列同位幂等 + compat mouse 抑制链归一**。
 三件（shim）：① down 序列 mouse 分支**同位同目标幂等**（`overSel` 相同且指针坐标
 未变 → 不再派 move 对——Actions move 已派过一对，down 隐含迁移重复派发即双 move）；
 ② pointerdown 取消 → `st.compatSuppressed` 手势级标记（至下次 down 清除），
@@ -241,7 +250,10 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 证据：[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)
 （含 2 案本地 zwprobe 探针已剔除入账）。门禁：node --check + 双族聚焦跑全绿。
 
-**DC-4 门禁（2026-10-05，尾簇 15 后）**：workspace 腿（exclude zero-webdriver，环境
+**DC-4 门禁（2026-10-05，尾簇 16 后）**：workspace 腿（exclude zero-webdriver，环境
+损坏同前账）**17,232P/0F**（0 超时）+ renderer bin 腿 0F + **reftest 704/704 零回归**
++ shim 拼接 node --check 全绿（纯 JS shim 变更）。
+历史（尾簇 15 后）：workspace 17,232P/0F + reftest 704/704。：workspace 腿（exclude zero-webdriver，环境
 损坏同前账）**17,232P/0F**（0 超时）+ renderer bin 腿 0F + **reftest 704/704 零回归**
 + shim 拼接 node --check 全绿（纯 JS shim 变更）。
 历史（尾簇 14 后）：workspace 17,232P/0F + reftest 704/704。：workspace 腿（exclude zero-webdriver，环境
@@ -308,8 +320,10 @@ make test 19,825P/0F 首轮绿；尾簇 11 后：三跑收口。
   命中测试 isConnected 幽灵过滤。1588P→1590P（+2，image-map 族 18/18 收口）。
 - **M3 尾簇 14（2026-10-05，c2fe2a8af）**：事件构造器 `length` 归一（wrapper + shim 基构造
   `(type)` 化）+ init* 0 参 TypeError 守卫。1590P→1594P（+4）。
-- **M3 尾簇 15（2026-10-05，本轮）**：down 序列同位幂等 + compat mouse 抑制链归一
+- **M3 尾簇 15（2026-10-05，dcf5a4d89）**：down 序列同位幂等 + compat mouse 抑制链归一
   （compatSuppressed 手势标记 / 撤销 upPrevented 过泛化）。1594P→1609P（+15）。
+- **M3 尾簇 16（2026-10-05，本轮）**：跨界/移动事件按钮按层分流（compat mouse=0 /
+  pointer=-1）。1609P→1610P（+1）。
 
 ## 下一步计划
 
