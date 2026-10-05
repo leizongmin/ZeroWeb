@@ -951,6 +951,16 @@ fn test_document_domain_getter() {
         "",
         "无 host origin 回空串"
     );
+
+    // ④ 非默认端口剥离（缺陷角色 N1 复核建议第四向）：host 带显式端口时 domain 不含端口
+    //（getter 取 hostname 语义，与 ① 同路径但端口形态防回归）。
+    *pu2.lock().unwrap_or_else(|e| e.into_inner()) = "https://www.bilibili.com:8080/video/".to_string();
+    sandbox2.execute("globalThis.__d3 = document.domain;").unwrap();
+    assert_eq!(
+        sandbox2.execute("globalThis.__d3").unwrap().value,
+        "www.bilibili.com",
+        "host 带端口时 domain 不含端口"
+    );
 }
 
 #[test]

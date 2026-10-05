@@ -479,7 +479,7 @@ fn execute_script_chunk(
 /// window.onerror，R2940）。包装器 execute 不会抛（try-catch 兜底），随后的 sentinel 读取 execute
 /// 在干净 Isolate 上可靠。镜像 renderer `page_scripts::run_page_script_caught`。
 fn run_page_script_caught(worker: &TabJsWorkerHandle, code: &str, script_index: usize) -> Result<(), String> {
-    let _ = worker.execute_page_script(&script_run_classic_page(code, script_index));
+    let _ = worker.execute_page_script(&script_run_classic_page(code, script_index, None));
     match worker.execute_page_script(&page_script_error_check()) {
         Ok(v) if v.is_empty() => Ok(()),
         Ok(msg) => Err(msg),

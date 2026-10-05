@@ -170,7 +170,7 @@ pub fn run_page_scripts_interruptible<F: Fn(&str) -> Result<String, String>>(
             PageScript::External(_) | PageScript::ExternalModule(_) => {
                 let abs = external_abs.clone().unwrap_or_default();
                 match fetch_text(&abs) {
-                    Ok(code) => append_source_url(&code, &abs),
+                    Ok(code) => code,
                     Err(e) => {
                         warn!("external script fetch {abs}: {e}");
                         // R2942 mirror：外部脚本 fetch 失败 → 即时派 window 'error'（脚本 fetch 同步失败，
@@ -184,7 +184,16 @@ pub fn run_page_scripts_interruptible<F: Fn(&str) -> Result<String, String>>(
             }
         };
 
-        if let Err(e) = execute_chunk(ctx, &html, is_module, &module_url, &code, &fetch_text, script_index) {
+        if let Err(e) = execute_chunk(
+            ctx,
+            &html,
+            is_module,
+            &module_url,
+            &code,
+            &fetch_text,
+            script_index,
+            external_abs.as_deref(),
+        ) {
             warn!("page script error: {e}");
             // R2940 mirror：未捕获脚本错误 → window.onerror（legacy 5-arg）+ window 'error' ErrorEvent，
             // 使 Sentry / analytics / GA 等错误上报库 hook 触发（与 browser tab_scripts 对齐）。
@@ -966,13 +975,23 @@ pub fn drain_pending_dom_mutations(ctx: &mut PageScriptContext<'_>) -> bool {
 /// split TypeError 栈帧 `N @ <anonymous>:2:16812` 无法定位到 bundle 实证。V8 对无名
 /// 脚本取 sourceURL 为脚本名（`Error.stack` / 未捕获报告显真名）；QuickJS 忽略该
 /// 注释（优雅降级）。注释不改变脚本语义，仅命名。
+///
+/// 供**直接执行路径**（无 wrapper，如 `runtime.rs` tick_dynamic_scripts 动态脚本）使用；
+/// classic wrapper 路径的 URL 命名由 [`script_run_classic_page`] 的 `source_url` 参数在
+/// eval 源真末尾（导出后缀之后）置注释——V8 仅认末行 sourceURL，前置会被导出后缀整行
+/// 拼接污染。URL 内控制字符剔除（换行会把注释后文本变回可执行代码）。
 pub(crate) fn append_source_url(code: &str, url: &str) -> String {
     if url.is_empty() {
         return code.to_string();
     }
-    format!("{code}\n//# sourceURL={url}")
+    let mut named = String::with_capacity(code.len() + url.len() + 16);
+    named.push_str(code);
+    named.push_str("\n//# sourceURL=");
+    named.extend(url.chars().filter(|c| !c.is_control()));
+    named
 }
 
+#[allow(clippy::too_many_arguments)] // 8 参 = 既有 7 参 + source_url 穿参，签名清晰优于打包结构体
 fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     ctx: &mut PageScriptContext<'_>,
     html: &str,
@@ -981,6 +1000,7 @@ fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     code: &str,
     fetch_text: &F,
     script_index: usize,
+    source_url: Option<&str>,
 ) -> Result<(), String> {
     // t2-pb1 fix#10：脚本阶段走优先通道（快照+执行成对，同通道 FIFO 保持顺序）——解析期
     // 脚本先于已排队的 timer/fetch 回调运行是真实浏览器语义（parser 优先于任务队列）；
@@ -999,7 +1019,7 @@ fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     } else {
         // classic 页面脚本：顶层 try-catch 包装捕获抛错（防持久 Isolate 中毒 + 让 R2940 报告生效）+
         // 执行期设/清 document.currentScript（R3258，script_run_classic_page）。
-        run_page_script_caught(ctx.js_worker, code, script_index)?;
+        run_page_script_caught(ctx.js_worker, code, script_index, source_url)?;
     }
     Ok(())
 }
@@ -1008,9 +1028,14 @@ fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
 /// 执行期设/清 `document.currentScript`（R3258）。
 /// 成功 → `Ok(())`；抛错 → sentinel 读出消息 → `Err(msg)`（调用方 `run_page_scripts` 据此报 window.onerror）。
 /// 包装器 execute 不会抛（try-catch 兜底），随后的 sentinel 读取 execute 在干净 Isolate 上可靠。
-fn run_page_script_caught(js_worker: &RendererJsWorker, code: &str, script_index: usize) -> Result<(), String> {
+fn run_page_script_caught(
+    js_worker: &RendererJsWorker,
+    code: &str,
+    script_index: usize,
+    source_url: Option<&str>,
+) -> Result<(), String> {
     // t2-pb1 fix#10：脚本阶段执行走优先通道（配对快照同为优先，见 execute_chunk）。
-    let _ = js_worker.execute_script_direct_priority(&script_run_classic_page(code, script_index));
+    let _ = js_worker.execute_script_direct_priority(&script_run_classic_page(code, script_index, source_url));
     match js_worker.execute_script_direct_priority(&page_script_error_check()) {
         Ok(v) if v.is_empty() => Ok(()),
         Ok(msg) => Err(msg),
@@ -1169,6 +1194,36 @@ mod tests {
         assert!(
             stack.contains("at eval (https://example.com/bundle.js:"),
             "stack 顶帧应显脚本 URL，实际：{stack}"
+        );
+        worker.shutdown();
+    }
+
+    /// strict 顶层 `var` 形态的 sourceURL 回归钉（缺陷角色 N1 定向闭环）：R201 accessor
+    /// 导出后缀拼接在 eval 源上——sourceURL 注释现由 `script_run_classic_page` 置于后缀
+    /// **之后**（eval 源真末行）。V8 仅认末行注释，注释被后缀顶离末行时此形态栈帧回退
+    /// `<anonymous>`（T4 实测）。WPT strict 测试库（dom/common.js 等）正中此型。
+    #[test]
+    fn external_script_strict_var_stack_shows_source_url() {
+        let mut worker = RendererJsWorker::spawn(161);
+        let html = "<html><body><script src='https://example.com/strict-bundle.js'></script></body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+
+        let mut buf = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut buf,
+            url: "https://example.com/page",
+            js_worker: &worker,
+            webview: None,
+        };
+        run_page_scripts(&mut ctx, true, |u| {
+            assert_eq!(u, "https://example.com/strict-bundle.js");
+            Ok("\"use strict\";\nvar __strictProbe = new Error().stack;".into())
+        });
+
+        let stack = wait_for_global(&worker, "__strictProbe", 1000);
+        assert!(
+            stack.contains("at eval (https://example.com/strict-bundle.js:"),
+            "strict var 形态 stack 顶帧应仍显脚本 URL，实际：{stack}"
         );
         worker.shutdown();
     }

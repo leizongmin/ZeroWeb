@@ -2509,6 +2509,7 @@ fn test_class_decl_global_export_r3254_k3() {
     let wrapped = crate::js_dom_bridge::script_run_classic_page(
         "class ZooKeeper { greet() { return 'hi'; } }",
         0,
+        None,
     );
     sandbox
         .execute(&wrapped)
@@ -2517,6 +2518,7 @@ fn test_class_decl_global_export_r3254_k3() {
         .execute(&crate::js_dom_bridge::script_run_classic_page(
             "globalThis.__r = (typeof ZooKeeper) + '/' + (new ZooKeeper().greet());",
             1,
+            None,
         ))
         .unwrap();
     assert_eq!(

@@ -3461,7 +3461,7 @@ impl WebView {
                 // Classic scripts must execute in the global script scope. Wrapping them in a
                 // block changes top-level async function and lexical declaration visibility.
                 if strict {
-                    script_run_classic_page(&code, script_index)
+                    script_run_classic_page(&code, script_index, None)
                 } else {
                     format!(
                         "{set}\n__zw_begin_script&&__zw_begin_script();\n{code}",
