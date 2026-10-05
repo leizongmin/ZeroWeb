@@ -170,7 +170,7 @@ pub fn run_page_scripts_interruptible<F: Fn(&str) -> Result<String, String>>(
             PageScript::External(_) | PageScript::ExternalModule(_) => {
                 let abs = external_abs.clone().unwrap_or_default();
                 match fetch_text(&abs) {
-                    Ok(code) => code,
+                    Ok(code) => append_source_url(&code, &abs),
                     Err(e) => {
                         warn!("external script fetch {abs}: {e}");
                         // R2942 mirror：外部脚本 fetch 失败 → 即时派 window 'error'（脚本 fetch 同步失败，
@@ -960,6 +960,19 @@ pub fn drain_pending_dom_mutations(ctx: &mut PageScriptContext<'_>) -> bool {
     apply_recorded_mutations(ctx, &html_snapshot).is_some()
 }
 
+/// 诊断可观测性：外链脚本文本以脚本 URL 命名执行——源尾追加 `//# sourceURL=<url>`
+/// 注释。sandbox 执行通路（`v8::Script::compile` 无 ScriptOrigin / 经 wrapper 的间接
+/// eval）脚本无名，异常 stack 全显 `<anonymous>`——bilibili video 页站点 loader 的
+/// split TypeError 栈帧 `N @ <anonymous>:2:16812` 无法定位到 bundle 实证。V8 对无名
+/// 脚本取 sourceURL 为脚本名（`Error.stack` / 未捕获报告显真名）；QuickJS 忽略该
+/// 注释（优雅降级）。注释不改变脚本语义，仅命名。
+pub(crate) fn append_source_url(code: &str, url: &str) -> String {
+    if url.is_empty() {
+        return code.to_string();
+    }
+    format!("{code}\n//# sourceURL={url}")
+}
+
 fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     ctx: &mut PageScriptContext<'_>,
     html: &str,
@@ -1126,6 +1139,38 @@ mod tests {
             webview: None,
         };
         let _ = run_page_scripts(&mut ctx, true, |_u| Err::<String, String>("no external fetch".into()));
+    }
+
+    /// 外链脚本以脚本 URL 命名执行（`append_source_url` 源尾 `//# sourceURL=` 注释）：
+    /// 脚本内 `Error().stack` 顶帧显 src 真名而非 `<anonymous>`。bilibili video 页动态
+    /// bundle split TypeError 栈帧全匿名、无法定位 bundle 的可观测性修复钉（V8 对无名
+    /// 脚本取 sourceURL 为脚本名；QuickJS 忽略该注释，本测试按默认 feature=v8 运行）。
+    #[test]
+    fn external_script_error_stack_shows_source_url() {
+        let mut worker = RendererJsWorker::spawn(161);
+        let html = "<html><body><script src='https://example.com/bundle.js'></script></body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+
+        let mut buf = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut buf,
+            url: "https://example.com/page",
+            js_worker: &worker,
+            webview: None,
+        };
+        run_page_scripts(&mut ctx, true, |u| {
+            assert_eq!(u, "https://example.com/bundle.js");
+            Ok("globalThis.__stackProbe = new Error().stack;".into())
+        });
+
+        let stack = wait_for_global(&worker, "__stackProbe", 1000);
+        // 顶帧 = eval 的脚本文本，显 sourceURL 命名；wrapper 自身帧（间接 eval 调用点）
+        // 保持 `<anonymous>`——引擎内部机制帧不在命名范围。
+        assert!(
+            stack.contains("at eval (https://example.com/bundle.js:"),
+            "stack 顶帧应显脚本 URL，实际：{stack}"
+        );
+        worker.shutdown();
     }
 
     /// P-B1 导航让路：脚本间截获入站导航命令——首个脚本执行、其余中止，命令返回

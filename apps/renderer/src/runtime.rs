@@ -694,11 +694,15 @@ impl RendererRuntime {
                 // t2-pb1 fix#7：宿主节拍执行走优先队列——本 tick 在主循环上同步等 worker
                 // reply，worker 被页面续体洪水（promise/timer 回调流）占住时主循环整体
                 // 停摆，Navigate IPC 饿死（bilibili 二跳 15s 超时的第三级根因）。
-                Ok(source) => match self.js_worker.execute_script_direct_priority(&source) {
-                    Ok(_) => page_scripts::dispatch_script_event(&self.js_worker, &url, "load"),
-                    // spec：脚本执行/解析错误走 window 错误报告，不派元素 error 事件。
-                    Err(error) => tracing::warn!(%url, "dynamic script execute failed: {error}"),
-                },
+                // 诊断可观测性：动态脚本以 URL 命名执行（见 page_scripts::append_source_url）。
+                Ok(source) => {
+                    let named = page_scripts::append_source_url(&source, &url);
+                    match self.js_worker.execute_script_direct_priority(&named) {
+                        Ok(_) => page_scripts::dispatch_script_event(&self.js_worker, &url, "load"),
+                        // spec：脚本执行/解析错误走 window 错误报告，不派元素 error 事件。
+                        Err(error) => tracing::warn!(%url, "dynamic script execute failed: {error}"),
+                    }
+                }
                 Err(error) => {
                     // 取回失败 → 元素 error 事件（R2944 镜像；shim 按 src 绝对 URL 匹配派发）。
                     tracing::warn!(%url, "dynamic script load failed: {error}");
