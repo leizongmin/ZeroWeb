@@ -119,9 +119,9 @@
     },
     {
       "id": "mb/zero-css-parser/tokenizer_1000_rules",
-      "p95": 1599595.1944444445,
+      "p95": 1597880.761904762,
       "tier": "budget",
-      "tightened_at": "2026-10-02T19:26:02Z"
+      "tightened_at": "2026-10-05T13:26:34Z"
     },
     {
       "id": "mb/zero-dom/dom/batch_append_child_1000",
@@ -279,9 +279,9 @@
     },
     {
       "id": "mb/zero-net/cookie_parse",
-      "p95": 385.68663419974814,
+      "p95": 383.827434434883,
       "tier": "budget",
-      "tightened_at": "2026-10-03T13:26:13Z"
+      "tightened_at": "2026-10-05T13:26:34Z"
     },
     {
       "id": "mb/zero-net/navigation_navigate",
@@ -290,9 +290,9 @@
     },
     {
       "id": "mb/zero-net/parse_url",
-      "p95": 474.2915315068354,
+      "p95": 474.2520153231179,
       "tier": "budget",
-      "tightened_at": "2026-09-27T20:05:59Z"
+      "tightened_at": "2026-10-05T13:26:34Z"
     },
     {
       "id": "mb/zero-protocol/ipc_deserialize_10000",
@@ -337,9 +337,9 @@
     },
     {
       "id": "mb/zero-render-foundation/damage_tracker/damage_all",
-      "p95": 1.8743156565036356,
+      "p95": 1.871832482036468,
       "tier": "budget",
-      "tightened_at": "2026-10-03T14:56:01Z"
+      "tightened_at": "2026-10-05T13:26:34Z"
     },
     {
       "id": "mb/zero-render-foundation/frame_buffer/clear_1080p",
@@ -515,9 +515,9 @@
     },
     {
       "id": "mb/zero-wasm-sandbox/wasm_call_add_i32_1000",
-      "p95": 138590.23164335664,
+      "p95": 138471.625,
       "tier": "budget",
-      "tightened_at": "2026-10-03T14:56:01Z"
+      "tightened_at": "2026-10-05T13:26:34Z"
     },
     {
       "id": "mb/zero-wasm-sandbox/wasm_factorial_100_calls",
@@ -538,9 +538,9 @@
     },
     {
       "id": "mb/zero-webview/webview_builder_create",
-      "p95": 7397.316921471851,
+      "p95": 7383.410618048389,
       "tier": "budget",
-      "tightened_at": "2026-10-04T19:26:19Z"
+      "tightened_at": "2026-10-05T13:26:34Z"
     },
     {
       "id": "mb/zero-webview/webview_complex_page",
