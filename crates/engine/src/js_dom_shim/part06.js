@@ -8188,8 +8188,14 @@
   // 多命中返以文档为根、树序全集的 HTMLCollection（spec WindowProperties 命名属性
   // 取值算法）。多命中名先装集合（`_zwMakeCollection(els, true)` 现有集合设施），
   // 下方单命中循环以「不覆盖已存在全局」守卫自然跳过——集合形态优先于首命中元素。
-  // **静态快照集合**：安装时点文档快照的全集，非 live（集合内动态增删后随下次快照
-  // 换代整体重装）；spec 的 live 集合语义属 RP-3 live-mutation 面。FIXME(live-collection)
+  // slice32（RP-3）：多命中集合升格 **live 集合**（`_zwNALiveSpec(mname)` liveSpec，
+  // part05 slice32 块）——childList 变异按 matches 同步维护、id/name 属性变异经
+  // _zwNAAttrChanged 重核、成员跌破 2 全局形态跟随（morph/回收）。同名重装（快照
+  // 换代 renderer 登记·重装链路）先置旧集合 dead（停维护——旧文档集合不跨换代存活，
+  // captured 引用冻结）。**live 边界（FIXME(live-collection) 收窄）**：安装时点不
+  // 存在、由脚本后建的名不解析（window.N 动态取值面，WindowProperties exotic object
+  // 每读动态查找在数据属性安装的全局上不可达）；末位并入近似（insertBefore 中插
+  // 树序不保）；单命中元素全局不 live——三面偏差 RP-3 池如实申报。
   // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
   // https://webidl.spec.whatwg.org/#WindowProperties
   function _installNamedAccess() {
@@ -8207,8 +8213,17 @@
             if (globalThis[mname] !== undefined) continue;
             var els30 = _namedAccessMatches(mname);
             if (els30.length > 1) {
-              // spec HTMLCollection（length/item/namedItem）；静态快照（见头注 FIXME）。
-              globalThis[mname] = _zwMakeCollection(els30, true);
+              // slice32（RP-3）：同名旧 NA 集合置 dead（换代/重装后停维护），再装新
+              // live 集合（spec HTMLCollection length/item/namedItem + live 语义）。
+              try {
+                for (var d32 = 0; d32 < _zwLiveCollections.length; d32++) {
+                  var dlc32 = _zwLiveCollections[d32];
+                  if (dlc32 && dlc32.naName === mname) dlc32.dead = true;
+                }
+              } catch (_e32d) {}
+              var col32 = _zwMakeCollection(els30, true, _zwNALiveSpec(mname));
+              _zwNAInstalled[mname] = col32;
+              globalThis[mname] = col32;
             }
           }
         }

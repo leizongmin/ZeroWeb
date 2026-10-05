@@ -2949,6 +2949,12 @@ return _tplContent;
               var _r107f = _onHandlers[key] && _onHandlers[key][_r107n];
               if (typeof _r107f === 'function') globalThis.window['on' + _r107n] = _r107f;
             }
+            // slice32（RP-3）：id/name 属性变异 → Window named access 集合成员重核
+            //（失格剔除保序 / 新中末位并入）+ 全局形态跟随（_zwNAGlobalMorph，part05）。
+            // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+            if ((n === 'id' || n === 'name') && typeof _zwNAAttrChanged === 'function') {
+              try { _zwNAAttrChanged(proxy); } catch (_eNA32s) {}
+            }
             _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, v);
             // WC-M3 切片 8 第九增量（web-components goal，spec DOM「use these attribute
@@ -3067,6 +3073,11 @@ return _tplContent;
             if (n === 'src' && typeof _realTag === 'function' && _realTag(sel, handle) === 'TRACK'
                 && typeof _zwTrackScheduleLoad === 'function') {
               try { _zwTrackScheduleLoad(sel, handle, { srcChange: true }); } catch (_eSaTr) {}
+            }
+            // slice32（RP-3）：id/name 属性移除 → NA 集合成员重核（与 setAttribute
+            // 钩子对称——removeAttribute('id'/'name') 使元素失格，_zwNAGlobalMorph 跟随）。
+            if ((n === 'id' || n === 'name') && typeof _zwNAAttrChanged === 'function') {
+              try { _zwNAAttrChanged(proxy); } catch (_eNA32r) {}
             }
             if (_rmExisted) _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
             // WC-M3 切片 8 第九增量：slot/name 属性移除的 slotchange 队列面（与

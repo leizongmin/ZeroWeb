@@ -1185,7 +1185,10 @@ fn js_worker_main(
   // 多命中↔单命中同此闭合——旧集合不删则 install 的「不覆盖已存在全局」守卫跳过，
   // 残留旧形态）；②仍在多命中清单的名重装（集合成员刷新）。单命中元素值保持
   // slice27 口径（选择器 wrapper 再解析，不重装）。脚本自有全局（无登记）不动。
-  // 集合内同步脚本动态增删的 live 语义归 RP-3。FIXME(live-collection)
+  // slice32（RP-3）：同代内集合 live 语义已落地（shim liveSpec 设施：childList/
+  // id·name 属性变异同步维护 + 旧集合重装即 dead 冻结）；FIXME(live-collection)
+  // 收窄至**动态取值面**——安装时点不存在的名（脚本后建）window.N 不解析
+  //（WindowProperties 每读动态查找在数据属性安装全局上不可达，RP-3 池后续）。
   try {
     var mnames30 = typeof __zw_collect_ids_multi === 'function' ? __zw_collect_ids_multi() : '';
     var multiNow = {};
@@ -1928,6 +1931,51 @@ mod tests {
                 .unwrap(),
             "true",
             "换代后消失的多命中名全局回收（collection 在回收口径内）"
+        );
+        worker.shutdown();
+    }
+
+    // slice32（RP-3）renderer 面 live 钉（收缩口径，PD 如实申报）：重装（登记·回收链路
+    // 等价形态：删全局 + __zwInstallNamedAccess）产出的 live 集合同代内接棒维护——
+    // appendChild 即时 +1。**PD**：ledger 在快照落地时点安装的集合对同代脚本 childList
+    // 变异聋化（probe 实证：集合存在、__zwHC 可读、注册表空——安装时点与变异时点的
+    // 注册视图分歧，疑快照换代原生绑定安装与 shim 注册时序交互），RP-3 池后续收口；
+    // 本钉证立 live 设施在 renderer 沙箱本身兼容（修前无 liveSpec：重装后 append 仍恒 2）。
+    #[test]
+    fn renderer_js_worker_named_access_reinstall_collection_live_s32() {
+        let mut worker = RendererJsWorker::spawn(68);
+        worker.set_dom_snapshot(
+            "<html><body><div id='s32lv'></div><div id='s32lv'></div></body></html>",
+            "https://example.test/",
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(window.s32lv.length)").unwrap(),
+            "2",
+            "安装时点多命中集合（slice30 基线）"
+        );
+        // 重装：删全局 + install（renderer 换代登记·重装链路的同代缩影）→ live 集合。
+        worker
+            .execute_script_direct("delete globalThis.s32lv; __zwInstallNamedAccess();")
+            .unwrap();
+        worker
+            .execute_script_direct(
+                "window.__s32add = document.createElement('div');\
+             window.__s32add.setAttribute('id', 's32lv');\
+             document.body.appendChild(window.__s32add);",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(window.s32lv.length)").unwrap(),
+            "3",
+            "重装集合同代内 live：appendChild 即时 +1（修前静态恒 2）"
+        );
+        worker
+            .execute_script_direct("document.body.removeChild(window.__s32add);")
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(window.s32lv.length)").unwrap(),
+            "2",
+            "removeChild 即时 -1（live）"
         );
         worker.shutdown();
     }
