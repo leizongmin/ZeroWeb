@@ -73,6 +73,14 @@ fn with_query_view_doc<R>(
     mutations: &Arc<std::sync::Mutex<Vec<DomMutation>>>,
     f: impl FnOnce(&zero_dom::Document) -> R,
 ) -> R {
+    // uievents-compat 尾簇 13：视图基座**钉定**在首见时点 html（按 drain_gen 代际——
+    // 导航清史即重钉）。dom_html Arc 存在换代写入点（R55 dispatch_event 每次重注册
+    // 换新 Arc = 最新 cached_html、user_actions 批末内容更新、R348 重绑）——换代后
+    // 基座已含「已 apply 的落地拷贝」（InsertAdjacentHtml 物化结果），而重放区间
+    // [0..count) 仍含同一 op → **双计**（WPT image-map img-resized 双案：视图残留
+    // 已移除 area → hit test 命中幽灵、宿主派发回落 img）。钉定后基座恒为首见快照
+    // + [0..count] 重放 = R100 原始设计语义（dom_html 不可变 + 队列全史）；native
+    // 写/live 读经 live-first 路径（publish_live_query_doc）覆盖，不依赖视图基座。
     let count = mutations.lock().unwrap_or_else(|e| e.into_inner()).len();
     // live_ok 判定：队列 [0..count) 无 pending structural mutations——与 R57 字符串
     // 路径的 structural.is_empty()/base_live 传播逐点一致（结构性插入一旦入队即
@@ -141,19 +149,40 @@ fn with_query_view_doc<R>(
         //（R3029：innerHTML= 替换后 removedNodes[] 的 tagName 读旧子）；form-
         // requestsubmit 的需求（同批 insertAdjacentHTML 后 querySelector 命中）由
         // InsertAdjacentHtml 覆盖。
-        let structural: Vec<DomMutation> = {
-            let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
-            mut_guard[prev_count..count]
-                .iter()
-                .filter(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
-                .cloned()
-                .collect()
-        };
         // 增量步：条目已归我们所有（take 出来原地改，零 clone）；否则全新 parse 基座。
         let mut doc = if chain_hit {
             cache_guard.take().expect("chain_hit implies entry").1
         } else {
             parse_html(&html.lock().unwrap_or_else(|e| e.into_inner()))
+        };
+        let structural: Vec<DomMutation> = {
+            let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
+            mut_guard[prev_count..count]
+                .iter()
+                .filter(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
+                .filter(|m| {
+                    // uievents-compat 尾簇 13：**基座已反映去重**——dom_html 存在换代
+                    // 写入点（R55 dispatch_event 每次重注册换新 Arc = 最新 cached_html、
+                    // user_actions 批末更新），基座可能已含「已 apply 的落地拷贝」；
+                    // 全量重放再插一次即双计（WPT image_map img-resized 双案：视图
+                    // 幽灵 → hit test 命中残影）。fragment 首元素带 id 且基座已有同
+                    // id → 视该 op 已反映，跳过；无 id 片段照旧重放（无法判重，保守）。
+                    if let DomMutation::InsertAdjacentHtml { html: frag, .. } = m {
+                        if let Some(start) = frag.find("id=") {
+                            let rest = &frag[start + 4..];
+                            let id = rest.strip_prefix('"').and_then(|r| r.find('"').map(|i| &r[..i]));
+                            if let Some(id) = id {
+                                if !id.is_empty() {
+                                    let has = doc.query_selector(doc.root(), &format!("#{}", id)).is_some();
+                                    return !has;
+                                }
+                            }
+                        }
+                    }
+                    true
+                })
+                .cloned()
+                .collect()
         };
         if !structural.is_empty() {
             // apply 失败回落：增量步保留旧基座（缺新增插入——字符串路径

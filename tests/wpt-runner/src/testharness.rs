@@ -7876,7 +7876,7 @@ if(best&&best!==im){{var anc=best,contained=false;for(var gi=0;gi<16&&anc;gi++){
 var mn=(im.getAttribute('usemap')||'').replace(/^#/,'');\
 var mp=(document.getElementById&&document.getElementById(mn))||(mn?document.querySelector('map[name=\"'+mn+'\"]'):null);if(!mp)continue;\
 var ars=mp.querySelectorAll('area');var lx=px-rim.left,ly=py-rim.top;\
-for(var ai=0;ai<ars.length;ai++){{var a=ars[ai];var sh=(a.getAttribute('shape')||'rect').toLowerCase();\
+for(var ai=0;ai<ars.length;ai++){{var a=ars[ai];if(a.isConnected===false)continue;var sh=(a.getAttribute('shape')||'rect').toLowerCase();\
 if(sh==='default'){{best=a;break;}}\
 var cs=(a.getAttribute('coords')||'').split(/[\\s,]+/).filter(function(v){{return v!=='';}}).map(Number);var inside=false;\
 if(sh==='rect'&&cs.length>=4){{inside=lx>=cs[0]&&lx<=cs[2]&&ly>=cs[1]&&ly<=cs[3];}}\
