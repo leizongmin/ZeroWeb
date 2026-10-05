@@ -1169,6 +1169,10 @@ fn test_shim_includes_modern_reftest_stubs() {
     // HTML 规范 named access on window（`id="x"` → 全局 `x`，257 reftest 文件）。
     assert!(shim.contains("_installNamedAccess"));
     assert!(shim.contains("__zw_collect_ids"));
+    // slice30（RP-1）：同名多命中面——多命中名清单回调 + shim 集合安装（spec 多命中
+    // 返 HTMLCollection）。
+    assert!(shim.contains("__zw_collect_ids_multi"));
+    assert!(shim.contains("_namedAccessMatches"));
     // `createElementNS`（XHTML 命名空间 alias createElement；SVG OOS 不渲染但不中断）。
     assert!(shim.contains("createElementNS:"));
     // `getComputedStyle`：动态 reftest 常作「强制 reflow」触发器调用，缺失则抛

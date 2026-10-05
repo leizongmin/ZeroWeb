@@ -2516,9 +2516,10 @@ pub fn element_contains_doc(doc: &Document, container_sel: &str, other_sel: &str
 
 /// 收集文档中 Window named access 的 supported property names（slice28 RP-1 起
 /// id 面 + name 面合并）：所有带 id 元素的 id 值 + embed/form/img/object 四元素的
-/// 非空 name 内容属性值。单遍树序、去重、首现优先——与 `getElementById`
-/// 取首个匹配语义一致。供 `__zw_collect_ids` 回调实现 HTML 规范「Window 上的
-/// 命名属性访问」（`<div id="x">` / `<form name="x">` → 全局 `x`）。
+/// 非空 name 内容属性值。单遍树序、去重、首现优先。供 `__zw_collect_ids` 回调实现
+/// HTML 规范「Window 上的命名属性访问」（`<div id="x">` / `<form name="x">` → 全局
+/// `x`）。slice30 起 shim 对本清单中的多命中名（见
+/// [`collect_element_ids_multi_doc`]）安装 HTMLCollection，单命中名仍装元素。
 /// https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
 pub fn collect_element_ids(html: &str) -> String {
     let doc = parse_html(html);
@@ -2564,6 +2565,64 @@ pub fn collect_element_ids_doc(doc: &Document) -> String {
         }
     }
     out.join("|")
+}
+
+/// 同名多命中清单（slice30 RP-1）：返回「named object 命中 ≥2 的名字」——单遍树序
+/// 首现序、去重。named object = 文档树内带非空 id 的元素，或 embed/form/img/object
+/// 四元素的非空 name 内容属性元素；同元素 id/name 双臂同值只算一个 named object
+/// （spec 以元素为集合成员）。与 [`collect_element_ids_doc`] 同 selector、同 trim
+/// 口径，故两清单同名同界（多清单 ⊆ 全清单）；iframe 不入本面（R139 委托，同 id 面）。
+/// 供 `__zw_collect_ids_multi` 回调——shim `_installNamedAccess` 对这些名安装
+/// HTMLCollection（spec 取值算法：唯一 named object 返元素本身，多命中返以文档为根、
+/// 树序全集的 HTMLCollection），单命中名仍走元素路径。
+/// https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+/// https://webidl.spec.whatwg.org/#WindowProperties
+pub fn collect_element_ids_multi(html: &str) -> String {
+    let doc = parse_html(html);
+    collect_element_ids_multi_doc(&doc)
+}
+
+/// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
+pub fn collect_element_ids_multi_doc(doc: &Document) -> String {
+    let root = doc.root();
+    // 名 → 命中计数（按元素计——同元素双臂同中只计一次）+ 首现序。
+    let mut counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    let mut first_order: Vec<String> = Vec::new();
+    for node in doc.query_selector_all(root, "[id],embed[name],form[name],img[name],object[name]") {
+        // 同元素的贡献名：id 面至多一 + name 面至多一（name 面仅四元素参与，同
+        // collect_element_ids_doc 口径）。
+        let id_face = doc
+            .get_attribute(node, "id")
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
+        let name_face = doc.get_attribute(node, "name").and_then(|v| {
+            let is_name_face = doc.get(node).is_some_and(|n| match &n.kind {
+                NodeKind::Element(e) => NAMED_ACCESS_NAME_FACE_TAGS.contains(&e.local_name()),
+                _ => false,
+            });
+            let v = v.trim().to_string();
+            (is_name_face && !v.is_empty()).then_some(v)
+        });
+        // 同元素 id/name 同值 → 一个 named object，只计一次。
+        let contrib: Vec<&String> = match (&id_face, &name_face) {
+            (Some(i), Some(n)) if i == n => vec![i],
+            (Some(i), Some(n)) => vec![i, n],
+            (Some(i), None) | (None, Some(i)) => vec![i],
+            (None, None) => vec![],
+        };
+        for name in contrib {
+            let c = counts.entry(name.clone()).or_insert(0);
+            if *c == 0 {
+                first_order.push(name.clone());
+            }
+            *c += 1;
+        }
+    }
+    first_order
+        .into_iter()
+        .filter(|n| counts.get(n).is_some_and(|c| *c >= 2))
+        .collect::<Vec<_>>()
+        .join("|")
 }
 
 /// 从当前 HTML 快照查询属性（供 `__zw_get_attr` 回调只读使用）。
