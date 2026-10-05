@@ -1039,6 +1039,18 @@
       }
       var kind = _zwIframeKindFromUrl(url);
       entry.doc = _zwMakeIframeDoc(kind, body);
+      // uievents-compat 尾簇 23（2026-10-06）：body id 落视图——`<body id=…>` 的
+      // 子文档（pointercapture_in_frame 内页）body 视图 getAttribute 此前恒 null
+      //（_zwMakeIframeDoc 的 R159/R255 提取链对 fetch 形态断链）——从原始 markup
+      // 直提 id，setAttribute 落视图（portal target.id 断言面）。
+      try {
+        var _bm23 = /<body\b[^>]*\bid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>/i.exec(String(body || ''));
+        var _bid23 = _bm23 ? (_bm23[1] != null ? _bm23[1] : (_bm23[2] != null ? _bm23[2] : _bm23[3])) : '';
+        if (_bid23 && entry.doc.body && typeof entry.doc.body.setAttribute === 'function'
+            && entry.doc.body.getAttribute('id') == null) {
+          entry.doc.body.setAttribute('id', _bid23);
+        }
+      } catch (_e23bid) {}
       try { entry.doc._zwURL = effectiveUrl; } catch (_e115u) {}
       // https://html.spec.whatwg.org/multipage/dom.html#dom-document-referrer
       try { entry.doc._zwReferrer = _zwCurrentHref(); } catch (_e115r) {}

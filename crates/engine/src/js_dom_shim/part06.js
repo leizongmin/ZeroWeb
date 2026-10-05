@@ -12266,6 +12266,7 @@
     pendingCross: null,
     processingCapture: false,
     streakTarget: null, streakCount: 0, downSel: null, downButton: 0,
+    portalFrame: null, portalCap: null, portalCapPending: null,
     // 尾簇 8：mutation 驱动悬停重结算——mutTick 消费位（settle 后记录；poll 比较
     // 判「悬停目标可能已失效」，runner 据此跑命中测试 + 补跨界序）。
     mutTickSettled: 0,
@@ -12333,11 +12334,25 @@
     try {
       var entry = (typeof _iframeDocCache !== 'undefined') ? _iframeDocCache[iframeSel] : null;
       var doc = entry && entry.doc;
-      // R168：doc.querySelector('body') 产**树根**（_r159BodyAttrs 已盖章 .id）——
-      // 优先于 doc.body 包装视图（无 .id）。
-      var t = doc ? ((typeof doc.querySelector === 'function' && doc.querySelector('body'))
-        || doc.body || doc.documentElement) : null;
+      // doc.body 包装视图（body→doc 冒泡链可达 doc listener——树根是 detached 子树
+      // 不冒泡到 doc，probe 实证）。`.id` 由入口戳（尾簇 23 setAttribute 落视图）+
+      // 下方惰性 getter 反射。
+      var t = doc ? (doc.body || doc.documentElement) : null;
       if (!t || typeof t.dispatchEvent !== 'function' || !globalThis.PointerEvent) return false;
+      // 尾簇 23：frame 活跃标记 + capture 方法/id 补齐（一次性）。pending capture
+      // 先结算（gotpointercapture 先于本事件——pointercapture_in_frame subtest 1 序）。
+      try { globalThis.__zwPortalProcessPendingCapture(); } catch (_e23pp) {}
+      try { doc.__zwFrameSel = iframeSel; } catch (_e23fs) {}
+      try { _zwPtrState.portalFrame = iframeSel; } catch (_e23pf) {}
+      try { globalThis.__zwPortalAttachCaptureMethods(t); } catch (_e23am2) {}
+      if (t.id === undefined || t.id === '') {
+        try {
+          Object.defineProperty(t, 'id', {
+            configurable: true,
+            get: function () { try { return t.getAttribute('id') || ''; } catch (_e22id) { return ''; } }
+          });
+        } catch (_e22idp) {}
+      }
       // 模板 body 视图（proxy 包装）的 `.id` 反射缺口——R255 分支已补
       // `_r159BodyAttrs` 提取（R168 树根盖章随之生效）；包装层的 id 直读余挂
       //（proxy trap 吞 set——pointercapture_in_frame target.id 断言面，下段处理）。
@@ -12354,12 +12369,104 @@
       return true;
     } catch (_e22p) { return false; }
   }
+  // 尾簇 23：per-frame capture 状态机——inner 元素的 setPointerCapture/release/
+  // hasPointerCapture（模板元素工厂/视图缺方法）+ 捕获期 portal 路由。语义：
+  // ① 仅当指针当前活跃于该 frame（st.portalFrame === doc.__zwFrameSel）时可设，
+  // 否则 NotFoundError（inactivate_pointer 双向断面）；② 单指针单捕获（已有捕获时
+  // 再设抛 NotFoundError）；③ gotpointercapture 随捕获激活同步派发（log 位置等价），
+  // pointerup 隐式释放派 lostpointercapture。
+  globalThis.__zwPortalCaptureSet = function (doc, el, pid) {
+    var st = _zwPtrState;
+    pid = String(pid == null ? '1' : pid);
+    if (!doc || doc.__zwFrameSel == null || doc.__zwFrameSel !== st.portalFrame
+        || st.portalCap) {
+      throw new (globalThis.DOMException || Error)(
+        "Failed to execute 'setPointerCapture': the pointer with the given id is not active in this frame.",
+        'NotFoundError');
+    }
+    // pending 模型（PE spec——pending capture 于**下一个 pointer 事件派发前**结算，
+    // gotpointercapture 随结算派发；sync 派发使 corpus log 序 got 先于 pointerdown
+    // ——pointercapture_in_frame subtest 1 断言面）。
+    st.portalCapPending = { frameSel: doc.__zwFrameSel, target: el, pointerId: pid };
+  };
+  globalThis.__zwPortalCaptureRelease = function (el, pid) {
+    var st = _zwPtrState;
+    pid = String(pid == null ? '1' : pid);
+    if (!st.portalCap || st.portalCap.target !== el || st.portalCap.pointerId !== pid) return;
+    var cap = st.portalCap;
+    st.portalCap = null;
+    try {
+      var lpe = new globalThis.PointerEvent('lostpointercapture', {
+        bubbles: true, composed: true, cancelable: false,
+        pointerId: Number(pid) || 1, pointerType: st.pointerType || 'mouse',
+        buttons: st.buttons, isPrimary: true
+      });
+      cap.target.dispatchEvent(lpe);
+    } catch (_e23l) {}
+  };
+  globalThis.__zwPortalCaptureHas = function (el, pid) {
+    var st = _zwPtrState;
+    var cap = st.portalCapPending || st.portalCap;
+    return !!cap && cap.target === el && cap.pointerId === String(pid == null ? '1' : pid);
+  };
+  // pending capture 结算（portal 每次事件派发前——PE spec「process pending pointer
+  // capture」；gotpointercapture@捕获目标随结算派发）。
+  globalThis.__zwPortalProcessPendingCapture = function () {
+    var st = _zwPtrState;
+    if (!st.portalCapPending) return;
+    var pend = st.portalCapPending;
+    st.portalCapPending = null;
+    st.portalCap = pend;
+    try {
+      var gpe = new globalThis.PointerEvent('gotpointercapture', {
+        bubbles: true, composed: true, cancelable: false,
+        pointerId: Number(pend.pointerId) || 1, pointerType: st.pointerType || 'mouse',
+        buttons: st.buttons, isPrimary: true
+      });
+      pend.target.dispatchEvent(gpe);
+    } catch (_e23g2) {}
+  };
+  // 视图/工厂元素的方法补齐（一次性——extensible 对象；set/get 走全局状态机）。
+  globalThis.__zwPortalAttachCaptureMethods = function (el) {
+    try {
+      if (el.__zwPortalCapMethods) return;
+      el.__zwPortalCapMethods = true;
+      var doc = el.ownerDocument || null;
+      el.setPointerCapture = function (pid) { globalThis.__zwPortalCaptureSet(doc, el, pid); };
+      el.releasePointerCapture = function (pid) { globalThis.__zwPortalCaptureRelease(el, pid); };
+      el.hasPointerCapture = function (pid) { return globalThis.__zwPortalCaptureHas(el, pid); };
+    } catch (_e23am) {}
+  };
   globalThis.__zw_pointer_move = function (sel, x, y, chordBtn19) {
-    var _pFrame22 = _zwPortalSplitSel(sel);
+    var st = _zwPtrState;
+    // 尾簇 23：捕获期 portal 路由——inner 捕获激活时全部事件随捕获目标（视口出框
+    // 不丢）；外层捕获（真实 st.capture/pending）优先于 portal（subtest 3 面）。
+    // 尾簇 23：捕获期 portal 路由——inner 捕获激活时全部事件随捕获目标（视口出框
+    // 不丢）。外层捕获（真实 st.capture/pending）生效时常规路径接管（dispatch 层
+    // 重定向到捕获目标），portal 不劫持。
+    if (st.portalCap || st.portalCapPending) {
+      try { globalThis.__zwPortalProcessPendingCapture(); } catch (_e23pp2) {}
+      var _pcT = st.portalCap.target;
+      if (_pcT && typeof _pcT.dispatchEvent === 'function') {
+        try {
+          _pcT.dispatchEvent(new globalThis.PointerEvent('pointermove', {
+            bubbles: true, cancelable: false,
+            clientX: x || 0, clientY: y || 0,
+            button: (chordBtn19 != null) ? chordBtn19 : -1, buttons: st.buttons,
+            pointerId: 1, pointerType: st.pointerType || 'mouse', isPrimary: true,
+            width: 1, height: 1, pressure: st.buttons ? 0.5 : 0
+          }));
+        } catch (_e23pm) {}
+      }
+      return 'ok';
+    }
+    var _pFrame22 = (st.capture['1'] || st.pending['1']) ? null : _zwPortalSplitSel(sel);
     if (_pFrame22) {
       _zwPortalDispatch(_pFrame22, 'pointermove', x, y, st.pointerType || 'mouse', -1, st.buttons);
       return 'ok';
     }
+    // 指针离开 portal frame（无捕获）→ frame 活跃态清除。
+    st.portalFrame = null;
     var st = _zwPtrState;
     _zwFlushPendingCross(x, y);
     st.x = x || 0;
@@ -12672,7 +12779,12 @@
   globalThis.__zw_pointer_down_sequence = function (sel, x, y, pointerType, button) {
     button = button | 0;
     var st = _zwPtrState;
-    var _pFrame22d = _zwPortalSplitSel(sel);
+    if (st.portalCap) {
+      // 捕获期 portal down——事件随捕获目标（chorded down 走 move 语义前已分流）。
+      _zwPortalDispatch(st.portalCap.frameSel, 'pointerdown', x, y, pointerType || 'mouse', button, _zwButtonMask(button));
+      return 'ok';
+    }
+    var _pFrame22d = (st.capture['1'] || st.pending['1']) ? null : _zwPortalSplitSel(sel);
     if (_pFrame22d) {
       _zwPortalDispatch(_pFrame22d, 'pointerdown', x, y, pointerType || 'mouse', button, 1 << (button | 0) ? _zwButtonMask(button) : 0);
       st.downSel = sel;
@@ -12785,10 +12897,15 @@
   globalThis.__zw_pointer_up_sequence = function (upSel, downSel, x, y, pointerType, button, ancestorChain) {
     button = button | 0;
     var st = _zwPtrState;
-    var _pFrame22u = _zwPortalSplitSel(upSel);
+    var _pFrame22u = _zwPortalSplitSel(upSel) || (st.portalCap ? st.portalCap.frameSel : null);
     if (_pFrame22u) {
       _zwPortalDispatch(_pFrame22u, 'pointerup', x, y, pointerType || 'mouse', button, 0);
+      // 尾簇 23：pointerup 隐式释放——lostpointercapture@捕获目标（spec §9.3）。
+      if (st.portalCap && typeof globalThis.__zwPortalCaptureRelease === 'function') {
+        try { globalThis.__zwPortalCaptureRelease(st.portalCap.target, st.portalCap.pointerId); } catch (_e23ur) {}
+      }
       if (st.downSel) st.downSel = null;
+      st.portalFrame = null;
       return 'ok';
     }
     // uievents-compat 尾簇 19：**chorded button 释放**——仍有他键按下时不派
