@@ -1541,3 +1541,209 @@ globalThis.__hits = hits;
         "无实现接收者兜底跳过不产生 DOM mutation 记录"
     );
 }
+
+// SVG className IDL（spec SVG2 svg-types `InterfaceSVGAnimatedString` + `SVGElement::className`
+// [SameObject] readonly）：SVG ns 元素 className 返 SVGAnimatedString（baseVal/animVal live
+// reflect class 属性），HTML 元素维持 string 反射（spec dom-classname）。SVG 元素 className
+// 赋值 readonly → no-op（class 不动）。判别史：bilibili 视频页树 diff（P-B3.2 r33，
+// 2026-10-06）Chrome 侧 `String(svgEl.className)` 为 "[object SVGAnimatedString]"、ZeroWeb
+// 侧 plain string——解析树 svg/path 与 createElementNS 产物同面修复。
+// https://svgwg.org/svg2-draft/types.html#InterfaceSVGAnimatedString
+// https://html.spec.whatwg.org/multipage/dom.html#dom-classname
+#[test]
+fn test_svg_classname_animated_string_pb3() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><svg id=\"s1\" class=\"icon a\"><path id=\"pth\" class=\"p1\"/><foreignObject id=\"fo\"><div id=\"fod\" class=\"fd\"></div></foreignObject></svg><div id=\"d1\" class=\"box\"></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var s1 = document.getElementById('s1');\
+             var pth = document.getElementById('pth');\
+             var d1 = document.getElementById('d1');\
+             globalThis.__svIsAnimated = s1.className instanceof SVGAnimatedString;\
+             globalThis.__svSameObject = s1.className === s1.className;\
+             globalThis.__svBase = String(s1.className.baseVal);\
+             globalThis.__svAnim = String(s1.className.animVal);\
+             globalThis.__svStr = String(s1.className);\
+             globalThis.__pthIsAnimated = pth.className instanceof SVGAnimatedString;\
+             globalThis.__pthBase = String(pth.className.baseVal);\
+             globalThis.__fodIsString = typeof document.getElementById('fod').className === 'string';\
+             globalThis.__htmlIsString = typeof d1.className === 'string';\
+             globalThis.__htmlVal = String(d1.className);\
+             var ctor = new SVGAnimatedString();\
+             globalThis.__ctorBase = String(ctor.baseVal);\
+             globalThis.__ctorTag = String(Object.prototype.toString.call(new SVGAnimatedString()));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__svIsAnimated)").unwrap().value,
+        "true",
+        "解析树 svg 元素 className instanceof SVGAnimatedString"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__svSameObject)").unwrap().value,
+        "true",
+        "[SameObject]：el.className === el.className（spec SVG2 SameObject 扩展属性）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__svBase)").unwrap().value,
+        "icon a",
+        "baseVal reflect class 属性初值"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__svAnim)").unwrap().value,
+        "icon a",
+        "animVal 同 baseVal（SVG className 无动画分离面）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__svStr)").unwrap().value,
+        "[object SVGAnimatedString]",
+        "String(className) 形态对齐 Chrome 树 diff 对照面"
+    );
+    assert_eq!(
+        mutations.lock().unwrap_or_else(|e| e.into_inner()).len(),
+        0,
+        "纯读取轮不产生 DOM mutation 记录"
+    );
+    // createElementNS 面（轮 2）：SVG ns 产物同面（CreateElementNS 本身产生记录，既有行为）。
+    sandbox
+        .execute("var s2 = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); globalThis.__nsIsAnimated = s2.className instanceof SVGAnimatedString; globalThis.__nsBase = String(s2.className.baseVal); globalThis.__nsSame = s2.className === s2.className; globalThis.__svIso = s1.className === s2.className;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nsIsAnimated)").unwrap().value,
+        "true",
+        "createElementNS(svg) 产物同面"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nsBase)").unwrap().value,
+        "",
+        "无 class 属性 → baseVal 空串"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nsSame)").unwrap().value,
+        "true",
+        "ns 产物同面 [SameObject]"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__svIso)").unwrap().value,
+        "false",
+        "per-element 身份：不同元素缓存对象互异（sel 与 handle 两路径产物隔离）"
+    );
+    assert_eq!(
+        mutations.lock().unwrap_or_else(|e| e.into_inner()).len(),
+        1,
+        "createElementNS 产生 1 条记录（既有行为，建立基线）"
+    );
+    // live 面（轮 3）：setAttribute 落 class 属性，baseVal 即时反映。
+    sandbox
+        .execute("s1.setAttribute('class', 'x y'); globalThis.__svLive = String(s1.className.baseVal);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__svLive)").unwrap().value,
+        "x y",
+        "baseVal live：setAttribute('class') 后即时反映"
+    );
+    assert_eq!(
+        mutations.lock().unwrap_or_else(|e| e.into_inner()).len(),
+        2,
+        "setAttribute('class') 再产生 1 条 mutation 记录（累计 2）"
+    );
+    // SVG no-op 赋值（轮 4）：readonly [SameObject]，class 属性与 mutation 记录都不动。
+    sandbox
+        .execute("s1.className = 'w'; globalThis.__svgSetNoop = String(s1.getAttribute('class')); globalThis.__svgSetNoopBase = String(s1.className.baseVal);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pthIsAnimated)").unwrap().value,
+        "true",
+        "svg 嵌套 path（解析树）同面（ns 探测覆盖 foreign content 后代）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pthBase)").unwrap().value,
+        "p1",
+        "path baseVal reflect 自身 class"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fodIsString)").unwrap().value,
+        "true",
+        "foreignObject 内 HTML 后代（integration point → XHTML ns）className 仍为 string"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__htmlIsString)").unwrap().value,
+        "true",
+        "HTML 元素 className 仍为 string（dom-classname 反射不回归）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__htmlVal)").unwrap().value,
+        "box",
+        "HTML className 值不变"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__svgSetNoop)").unwrap().value,
+        "x y",
+        "SVG className 赋值 no-op：class 属性不动（readonly [SameObject]）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__svgSetNoopBase)").unwrap().value,
+        "x y",
+        "SVG className 赋值后 baseVal 不被覆盖"
+    );
+    assert_eq!(
+        mutations.lock().unwrap_or_else(|e| e.into_inner()).len(),
+        2,
+        "SVG className 赋值 no-op 不产生新 mutation（readonly [SameObject]，对照 setAttribute 基线）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ctorBase)").unwrap().value,
+        "",
+        "new SVGAnimatedString() 构造值面：baseVal 空串"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ctorTag)").unwrap().value,
+        "[object SVGAnimatedString]",
+        "构造实例 Symbol.toStringTag 面"
+    );
+    // HTML 反射写正控制（轮 5）：d1.className = 'z' 落 class 属性 + 产生 mutation
+    //（R174/R122 行为不回归；与 SVG no-op 零新增对照）。
+    sandbox
+        .execute("d1.className = 'z'; globalThis.__htmlSet = String(d1.getAttribute('class'));")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__htmlSet)").unwrap().value,
+        "z",
+        "HTML className 赋值反射写 class 属性（R174/R122 面不回归）"
+    );
+    assert_eq!(
+        mutations.lock().unwrap_or_else(|e| e.into_inner()).len(),
+        3,
+        "HTML className 赋值产生 mutation 记录（累计 3，对照 SVG no-op 零新增）"
+    );
+    // ns 产物 live 面（轮 6，审查加固）：handle 型 setAttribute 后 baseVal 即时反映。
+    sandbox
+        .execute("s2.setAttribute('class', 'q'); globalThis.__nsLive = String(s2.className.baseVal);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nsLive)").unwrap().value,
+        "q",
+        "ns 产物 baseVal live：setAttribute('class') 后即时反映（handle 型写路径）"
+    );
+    assert_eq!(
+        mutations.lock().unwrap_or_else(|e| e.into_inner()).len(),
+        4,
+        "ns 产物 setAttribute 产生 mutation 记录（累计 4）"
+    );
+}

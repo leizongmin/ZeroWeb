@@ -1637,6 +1637,23 @@
         : Object.create(globalThis.SVGElement.prototype);
     }
   }
+  // SVG className IDL（spec SVG2 https://svgwg.org/svg2-draft/types.html#InterfaceSVGAnimatedString）：
+  // `SVGElement.className` 是 **[SameObject] readonly SVGAnimatedString**（baseVal/animVal 同值 reflect
+  // class 属性；`el.className === el.className` 恒真）。HTML 元素维持 string 反射（spec dom-classname）。
+  // 对照：bilibili 视频页树 diff（P-B3.2 r33，2026-10-06）Chrome 侧 `String(svgEl.className)` 为
+  // "[object SVGAnimatedString]"、ZeroWeb 侧 plain string——SVGAnimatedString 缺失实锤。
+  // 构造实例给 plain baseVal/animVal 字段（spec SVGAnimatedString() 值面）；className 返回的
+  // 缓存对象由消费点（part04 get trap className）own defineProperty live getter 覆盖。
+  // 消费点走本局部引用而非 globalThis 现值：页面覆盖/删除 globalThis.SVGAnimatedString
+  // 不影响 IDL 语义（Chrome 同面），也避免引擎后续换真实现时 get trap 内 `new` 落空。
+  var _zwSvgAnimatedStringCtor = globalThis.SVGAnimatedString;
+  if (!_zwSvgAnimatedStringCtor) {
+    _zwSvgAnimatedStringCtor = new Function('return function SVGAnimatedString() { this.baseVal = \'\'; this.animVal = \'\'; }')();
+    globalThis.SVGAnimatedString = _zwSvgAnimatedStringCtor;
+    Object.defineProperty(_zwSvgAnimatedStringCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGAnimatedString',
+    });
+  }
   // WC-M1 切片 4（spec create-a-native-element / interface object [[Call]]）：
   // 接口构造器被 **custom element 的 super() 调用**且无升级在途（`new klass()` 形态，
   // spec customized built-in constructor：new klass() 产生真实元素，localName = 接口
@@ -8225,6 +8242,20 @@
   // R-baidu3 风暴路径预防：同视图内重复枚举零宿主往返；印章不符即整体失效，语义与
   // 逐元素宿主查询一致）。
   var _zwSelNsCache = { gen: -1, added: -1, removed: -1, map: new Map() };
+  // SVG className IDL：per-element SVGAnimatedString 缓存（[SameObject]——同一 SVG 元素
+  // 每次 className 读返同一对象；key = 元素 key，与 _classCache 同域）。声明于 _zwSelNs
+  // 旁（消费点 get trap className 与 set trap no-op 共用其存在语义，见 part03/part04）。
+  var _zwSvgClsCache = {};
+  // SVG ns 判定：createElementNS 产物（handle 型）经 _nsHandles（R18/R80 登记的 ns）；
+  // sel-based 解析元素经 _zwSelNs（R5000 foreign content 探测）。
+  // 已知限制（PR #80 缺陷审查记档）：sel 型元素 detach 后 host query miss → 归一 ''，
+  // className 退返 string（Chrome 恒 SVGAnimatedString）；handle 型不受影响。与既有
+  // namespaceURI getter 的 R5000 face 同源同限。
+  function _zwIsSvgNsEl(sel, handle) {
+    if (handle && typeof _nsHandles !== 'undefined' && _nsHandles[handle]
+        && _nsHandles[handle].namespace === 'http://www.w3.org/2000/svg') return true;
+    return _zwSelNs(sel, handle) === 'http://www.w3.org/2000/svg';
+  }
   function _zwSelNs(sel, handle) {
     if (handle || !sel || typeof __zw_get_ns !== 'function') return '';
     var _snk = String(sel);
@@ -16704,6 +16735,30 @@ return e;
         }
         if (prop === 'classList') return _classListProxy(sel, handle);
         if (prop === 'className') {
+          // SVG className IDL（spec SVG2
+          // https://svgwg.org/svg2-draft/types.html#InterfaceSVGAnimatedString
+          // https://svgwg.org/svg2-draft/types.html#__svg__SVGElement__className）：
+          // SVG ns 元素返 [SameObject] SVGAnimatedString（baseVal/animVal live reflect
+          // class 属性）；HTML 元素维持 string
+          //（https://html.spec.whatwg.org/multipage/dom.html#dom-classname）。
+          // ns 判定经 _zwIsSvgNsEl（handle 型 _nsHandles + sel 型 R5000 epoch memo）。
+          // SameObject 经 per-key 缓存（`el.className === el.className`，spec [SameObject]
+          // 扩展属性）。
+          if (_zwIsSvgNsEl(sel, handle)) {
+            var _svCls = _zwSvgClsCache[key];
+            if (!_svCls) {
+              _svCls = new _zwSvgAnimatedStringCtor();
+              var _svRead = function () { return _readClass(key, sel, handle); };
+              // FIXME（spec SVG2 svg-types baseVal/animVal 均为可写 DOMString 反射）：
+              // setter 未实现——Chrome 中 `el.className.baseVal = 'x'` 反射写 class 属性
+              // 并产生 mutation；此处只有 getter，赋值 sloppy 静默/strict TypeError
+              //（老库 `.baseVal=` 写类惯用法落空）。后续切片补 setter（镜像 HTML 写路径）。
+              Object.defineProperty(_svCls, 'baseVal', { get: _svRead, configurable: true });
+              Object.defineProperty(_svCls, 'animVal', { get: _svRead, configurable: true });
+              _zwSvgClsCache[key] = _svCls;
+            }
+            return _svCls;
+          }
           return _readClass(key, sel, handle);
         }
         if (prop === 'id') {
