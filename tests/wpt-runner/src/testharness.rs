@@ -7884,6 +7884,7 @@ else if(sh==='circle'&&cs.length>=3){{var dx=lx-cs[0],dy=ly-cs[1];inside=dx*dx+d
 else if(sh==='poly'&&cs.length>=6){{var inn=false,jj=0,kk=cs.length/2-1;for(;jj<cs.length/2;kk=jj++){{var xi=cs[jj*2],yi=cs[jj*2+1],xj=cs[kk*2],yj=cs[kk*2+1];if(((yi>ly)!==(yj>ly))&&(lx<(xj-xi)*(ly-yi)/(yj-yi)+xi))inn=!inn;}}inside=inn;}}\
 if(inside){{best=a;break;}}}}\
 if(best&&best.tagName&&String(best.tagName).toLowerCase()==='area')break;}}\
+if(best&&String(best.tagName).toUpperCase()==='IFRAME'){{return '@zwframe:'+((best.__zwSelector||(best.id?'#'+best.id:''))||'')+'|'+px+'|'+py;}}\
 return (best?((best.__zwSelector||(best.id?'#'+best.id:''))||''):'')+'|'+px+'|'+py;}})()",
         sel = sel_js,
         ox = off_x,

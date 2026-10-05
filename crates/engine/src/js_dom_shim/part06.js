@@ -12320,7 +12320,46 @@
       try { _zwPointerCross(pc.prev, pc.next, x || 0, y || 0); } catch (_ePC) {}
     }
   }
+  // uievents-compat 尾簇 22（2026-10-06）：**subframe portal**——指针命中落 iframe
+  // 元素（runner resolve 产 `@zwframe:<iframeSel>` 形）→ 指针事件入 inner doc（模板
+  // 树原生冒泡派发已证可达 doc listener、target=inner body）。路由首段：仅 pointer
+  // 事件本体（capture 跨 frame 状态机为下一段）；坐标透传（headless inner 无几何，
+  // 语料只断言 type/target）。inner target = body（缺省 documentElement）。
+  function _zwPortalSplitSel(sel) {
+    return (typeof sel === 'string' && sel.indexOf('@zwframe:') === 0)
+      ? sel.slice('@zwframe:'.length) : null;
+  }
+  function _zwPortalDispatch(iframeSel, type, x, y, pointerType, button, buttons) {
+    try {
+      var entry = (typeof _iframeDocCache !== 'undefined') ? _iframeDocCache[iframeSel] : null;
+      var doc = entry && entry.doc;
+      // R168：doc.querySelector('body') 产**树根**（_r159BodyAttrs 已盖章 .id）——
+      // 优先于 doc.body 包装视图（无 .id）。
+      var t = doc ? ((typeof doc.querySelector === 'function' && doc.querySelector('body'))
+        || doc.body || doc.documentElement) : null;
+      if (!t || typeof t.dispatchEvent !== 'function' || !globalThis.PointerEvent) return false;
+      // 模板 body 视图（proxy 包装）的 `.id` 反射缺口——R255 分支已补
+      // `_r159BodyAttrs` 提取（R168 树根盖章随之生效）；包装层的 id 直读余挂
+      //（proxy trap 吞 set——pointercapture_in_frame target.id 断言面，下段处理）。
+      var ev = new globalThis.PointerEvent(type, {
+        bubbles: type !== 'pointerenter' && type !== 'pointerleave',
+        cancelable: false,
+        clientX: x || 0, clientY: y || 0,
+        button: (type === 'pointerdown') ? (button | 0) : (type === 'pointerup' ? (button | 0) : -1),
+        buttons: buttons,
+        pointerId: 1, pointerType: pointerType || 'mouse', isPrimary: true,
+        width: 1, height: 1, pressure: buttons ? 0.5 : 0
+      });
+      t.dispatchEvent(ev);
+      return true;
+    } catch (_e22p) { return false; }
+  }
   globalThis.__zw_pointer_move = function (sel, x, y, chordBtn19) {
+    var _pFrame22 = _zwPortalSplitSel(sel);
+    if (_pFrame22) {
+      _zwPortalDispatch(_pFrame22, 'pointermove', x, y, st.pointerType || 'mouse', -1, st.buttons);
+      return 'ok';
+    }
     var st = _zwPtrState;
     _zwFlushPendingCross(x, y);
     st.x = x || 0;
@@ -12633,6 +12672,12 @@
   globalThis.__zw_pointer_down_sequence = function (sel, x, y, pointerType, button) {
     button = button | 0;
     var st = _zwPtrState;
+    var _pFrame22d = _zwPortalSplitSel(sel);
+    if (_pFrame22d) {
+      _zwPortalDispatch(_pFrame22d, 'pointerdown', x, y, pointerType || 'mouse', button, 1 << (button | 0) ? _zwButtonMask(button) : 0);
+      st.downSel = sel;
+      return 'ok';
+    }
     _zwFlushPendingCross(x, y);
     st.pointerType = pointerType || 'mouse';
     if (st.pointerType === 'touch') {
@@ -12740,6 +12785,12 @@
   globalThis.__zw_pointer_up_sequence = function (upSel, downSel, x, y, pointerType, button, ancestorChain) {
     button = button | 0;
     var st = _zwPtrState;
+    var _pFrame22u = _zwPortalSplitSel(upSel);
+    if (_pFrame22u) {
+      _zwPortalDispatch(_pFrame22u, 'pointerup', x, y, pointerType || 'mouse', button, 0);
+      if (st.downSel) st.downSel = null;
+      return 'ok';
+    }
     // uievents-compat 尾簇 19：**chorded button 释放**——仍有他键按下时不派
     // pointerup/mouseup，改派 pointermove（buttons 变化——WPT pointerevent_
     // pointerrawupdate 键序「MIDDLE up → move，末键 up → pointerup」断言面）；

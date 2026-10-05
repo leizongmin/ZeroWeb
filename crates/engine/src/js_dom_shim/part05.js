@@ -1686,6 +1686,12 @@
         // doctype/`<html…>`/`<head>…</head>` 段取剩余。
         var _r255mk = String(markup || '');
         var _r255BodyOpen = /<body\b[^>]*>/i.exec(_r255mk);
+        // 尾簇 22：body 属性串补提取（R255 分支此前不设 _r159BodyAttrs——R168 树根
+        // .id 盖章与 portal target.id 直读双断面：pointercapture_in_frame 内页
+        // `<body id='innerFrame'>` 的 target.id 期望）。
+        try {
+          doc._r159BodyAttrs = _r255BodyOpen ? String(_r255BodyOpen[1] || '').trim() || null : null;
+        } catch (_e22ba) {}
         if (_r255BodyOpen) {
           bodyInner = _r255mk.slice(_r255BodyOpen.index + _r255BodyOpen[0].length);
         } else {
@@ -2185,6 +2191,11 @@
       getBoundingClientRect: function () { return _makeDomRect(0, 0, 0, 0); },
       getClientRects: function () { return []; },
       getAttribute: function (n) { n = String(n); for (var i = 0; i < el.attributes.length; i++) if (el.attributes[i].name === n) return el.attributes[i].value; return null; },
+      // uievents-compat 尾簇 22（2026-10-06）：id 反射器（模板元素此前无 `.id`——
+      // subframe portal 的事件 target 断言面：pointercapture_in_frame 内页
+      // `event.target.id` 期望 'innerFrame'；getAttribute 同源读写）。
+      get id() { return el.getAttribute('id') || ''; },
+      set id(v) { el.setAttribute('id', v); },
       hasAttribute: function (n) { return el.getAttribute(n) !== null; },
       setAttribute: function (n, v) {
         var found = false;

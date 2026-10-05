@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-06（M3 尾簇 21 落地——零净 P 基建 + 根因精化轮）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-06（M3 尾簇 22 落地——subframe portal 首段）
 
 ## 当前状态
 
@@ -9,12 +9,12 @@
 M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P → 尾簇 6a 1107P →
 尾簇 6b+6c 1115P → 尾簇 7 1167P → 尾簇 8 1202P → 尾簇 9 1218P → 尾簇 10 1570P →
 尾簇 11 1583P → 尾簇 12 1588P → 尾簇 13 1590P → 尾簇 14 1594P → 尾簇 15 1609P →
-尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → 尾簇 19 1736P → **1738P（+1518 累计）**
-（corpus：1738P/187F/100TO，`TIME_LIMIT=3600`。尾簇 19：improvements=120 /
-regressions=1 已记录；尾簇 20：improvements=2 / regressions=0；尾簇 21：**Δ0 基建 +
-根因精化轮**——retarget host-echo 弃用 + 三族 blocker 根因测绘（同 turn 动态元素
-rect plumbing / live 查询移除感知 / subframe 面测绘），见
-[evidence/2026-10-06-m3-tail21.md](evidence/2026-10-06-m3-tail21.md)。
+尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → 尾簇 19 1736P → 尾簇 20/21 1738P →
+**1739P（+1519 累计）**
+（corpus：1739P/187F/99TO，`TIME_LIMIT=3600`。尾簇 19：improvements=120 /
+regressions=1 已记录；尾簇 20：+2；尾簇 21：Δ0 基建轮；尾簇 22：**subframe portal
+首段**——+1（mouse_pointercapture_inactivate_pointer TO→Pass），见
+[evidence/2026-10-06-m3-tail22.md](evidence/2026-10-06-m3-tail22.md)。
 证据：[evidence/2026-10-05-m3-tail13.json](evidence/2026-10-05-m3-tail13.json)（尾簇 13 后）、
 [evidence/2026-10-05-m3-tail13.md](evidence/2026-10-05-m3-tail13.md)（根因链 + 排除路径）、
 [evidence/2026-10-05-m3-tail12.json](evidence/2026-10-05-m3-tail12.json)（尾簇 12 后）、
@@ -40,7 +40,16 @@ rect plumbing / live 查询移除感知 / subframe 面测绘），见
 门禁：workspace 17,246P/0F、renderer lib 204P/0F、reftest 704/704、fmt + clippy
 （quickjs 面）全绿；shim 拼接 node --check 全绿。
 
-**M3 尾簇 21（2026-10-06，本轮）——零净 P 基建 + 根因精化轮**。三件基建：retarget 路径
+**M3 尾簇 22（2026-10-06，本轮）——subframe portal 首段**。四件：① runner 命中下探
+（最小包含盒命中 IFRAME → `@zwframe:<iframeSel>` frame-qualified 目标）；② shim portal
+派发（`_zwPortalSplitSel`/`_zwPortalDispatch`——move/down/up 三站早退，解析
+`_iframeDocCache` → inner body → 模板树原生冒泡派发 PointerEvent，probe 已证 body→doc
+可达）；③ 模板元素 `.id` 反射器（工厂对象）；④ R255 分支 `_r159BodyAttrs` 补提取。
++1（mouse_pointercapture_inactivate_pointer TO→Pass）。余挂精确断面：inner body 视图
+`.id` 直读（proxy trap 吞）、per-frame capture 状态机、跨 frame capture 无效判定——
+[evidence/2026-10-06-m3-tail22.md](evidence/2026-10-06-m3-tail22.md)。
+
+**M3 尾簇 21（2026-10-06，ad8a35023）——零净 P 基建 + 根因精化轮**。三件基建：retarget 路径
 host elementFromPoint 回声弃用（skipHostSel——同 turn 移除后 host 视图恒返被移除元素
 自身，move 级重定向全数失效的断面）+ post-rawupdate 重定向后清瞬态/重入态（防 settle
 双补派）+ 参数面扩展。三族根因测绘（probe 实证）：①同 turn 动态元素 apply 后 gBCR 恒
@@ -304,10 +313,9 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 证据：[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)
 （含 2 案本地 zwprobe 探针已剔除入账）。门禁：node --check + 双族聚焦跑全绿。
 
-**DC-4 门禁（2026-10-06，尾簇 21 后）**：workspace **19,831P/0F** + reftest **704/704**
-零回归 + shim 拼接 node --check 全绿（纯 JS shim 变更）。首轮 make test
-network_loading 一例失败为语料并发期本地 server 瞬态（隔离 6/6 绿 + 全量重跑 0F 归因
-排除）。历史（尾簇 20 后）：workspace 19,831P/0F + reftest 704/704。
+**DC-4 门禁（2026-10-06，尾簇 22 后）**：workspace **19,834P/0F** + reftest **704/704**
+零回归 + fmt + clippy（zero-wpt-runner）+ shim 拼接 node --check 全绿。
+历史（尾簇 21 后）：workspace 19,831P/0F + reftest 704/704。
 
 ## 缺口清单
 
@@ -379,9 +387,12 @@ network_loading 一例失败为语料并发期本地 server 瞬态（隔离 6/6 
 - **M3 尾簇 20（2026-10-06，c64beab8f）**：remove-hover 连通祖先重定向（move 步）+
   runner selectorFor 安全 id 门（pointercapture_in_frame 首断面解除，subframe 路由
   blocker 转记 Timeout）。1736P→1738P（+2）。
-- **M3 尾簇 21（2026-10-06，本轮）**：retarget host-echo 弃用 + 瞬态清零 + 参数面
+- **M3 尾簇 21（2026-10-06，ad8a35023）**：retarget host-echo 弃用 + 瞬态清零 + 参数面
   扩展；三族 blocker 根因测绘（动态元素 rect / live 查询移除感知 / subframe 面）。
   1738P→1738P（Δ0，基建轮）。
+- **M3 尾簇 22（2026-10-06，本轮）**：subframe portal 首段（runner 命中下探
+  `@zwframe:` + shim portal 冒泡派发）+ 模板元素 `.id` 反射器 + R255 body attrs 补
+  提取。1738P→1739P（+1）。
 
 ## 下一步计划
 
