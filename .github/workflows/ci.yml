@@ -238,6 +238,17 @@ jobs:
         continue-on-error: true
         run: cargo check ${{ matrix.features }} --workspace --target ${{ matrix.target }}
 
+      # 单包 feature 组合守卫：workspace 级 check/clippy 受 feature unification
+      # （wpt-runner 点亮 v8）遮蔽，-p zero-browser 单包组合（根 Cargo.toml:172
+      # zero-engine default-features = false → 无 script-runtime）只有 launch-smoke
+      # 的单包默认构建覆盖（RP-9 E0425 即由它抓出，58521b7f3 修复）。此步补齐
+      # --no-default-features 与单包 quickjs 两臂。
+      - name: Check zero-browser single-package feature combos
+        if: matrix.name == 'linux-x86_64'
+        run: |
+          cargo check -p zero-browser --no-default-features --target ${{ matrix.target }}
+          cargo check -p zero-browser --no-default-features --features quickjs --target ${{ matrix.target }}
+
       - name: Run clippy
         if: matrix.v8_runtime != false
         run: cargo clippy ${{ matrix.features }} --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
