@@ -5299,6 +5299,23 @@
   globalThis.outerWidth = 1280;
   globalThis.outerHeight = 800;
   globalThis.devicePixelRatio = 1;
+  // uievents-compat 尾簇 17：window.visualViewport（CSSOM-View VisualViewport——
+  // headless 无 pinch-zoom/独立可视视口：scale=1、offset/page 恒 0，width/height
+  // 经 getter 实时读 innerWidth/innerHeight（__zw_user_resize 更新后自动跟随）。
+  // WPT pointerevent_range_input 的 viewport 坐标换算面（旧 ReferenceError 整子测
+  // 拒绝）。页面 addEventListener(resize) 用例未覆盖（plain object，无 EventTarget
+  // 面——挂账）。
+  if (globalThis.visualViewport === undefined) {
+    globalThis.visualViewport = {
+      scale: 1,
+      offsetLeft: 0,
+      offsetTop: 0,
+      pageLeft: 0,
+      pageTop: 0,
+      get width() { return globalThis.innerWidth; },
+      get height() { return globalThis.innerHeight; }
+    };
+  }
   // R2987 window context / security 全局——库 feature-detect 后再使用 secure-only API（crypto.subtle /
   // SharedArrayBuffer / Service Worker）或错误上报。
   // `isSecureContext`（getter，随 location.protocol）：secure 除非 http:/ws:（about:blank/https/wss/file → secure）。
