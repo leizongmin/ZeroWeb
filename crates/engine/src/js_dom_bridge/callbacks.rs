@@ -157,32 +157,41 @@ fn with_query_view_doc<R>(
         };
         let structural: Vec<DomMutation> = {
             let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
-            mut_guard[prev_count..count]
-                .iter()
-                .filter(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
-                .filter(|m| {
-                    // uievents-compat 尾簇 13：**基座已反映去重**——dom_html 存在换代
-                    // 写入点（R55 dispatch_event 每次重注册换新 Arc = 最新 cached_html、
-                    // user_actions 批末更新），基座可能已含「已 apply 的落地拷贝」；
-                    // 全量重放再插一次即双计（WPT image_map img-resized 双案：视图
-                    // 幽灵 → hit test 命中残影）。fragment 首元素带 id 且基座已有同
-                    // id → 视该 op 已反映，跳过；无 id 片段照旧重放（无法判重，保守）。
-                    if let DomMutation::InsertAdjacentHtml { html: frag, .. } = m
-                        && let Some(start) = frag.find("id=")
-                    {
-                        let rest = &frag[start + 4..];
-                        let id = rest.strip_prefix('"').and_then(|r| r.find('"').map(|i| &r[..i]));
-                        if let Some(id) = id
-                            && !id.is_empty()
+            // R342：count（本函数入口锁外读）与本锁之间队列可能被清（脚本执行前
+            // 归账 clear——`clear_mutations_fresh` 补 bump 后窗已收窄到纳秒级交错，
+            // 但防御不可省：未来任何旁路 bump 的清零点都复发）。len < count 即
+            // 「只增长」前提破——空集降级（doc 分支已选 parse/基座，structural
+            // 本就只取 InsertAdjacentHtml 子集，latest-wins 属性面兜底），不越界。
+            if mut_guard.len() < count {
+                Vec::new()
+            } else {
+                mut_guard[prev_count..count]
+                    .iter()
+                    .filter(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
+                    .filter(|m| {
+                        // uievents-compat 尾簇 13：**基座已反映去重**——dom_html 存在换代
+                        // 写入点（R55 dispatch_event 每次重注册换新 Arc = 最新 cached_html、
+                        // user_actions 批末更新），基座可能已含「已 apply 的落地拷贝」；
+                        // 全量重放再插一次即双计（WPT image_map img-resized 双案：视图
+                        // 幽灵 → hit test 命中残影）。fragment 首元素带 id 且基座已有同
+                        // id → 视该 op 已反映，跳过；无 id 片段照旧重放（无法判重，保守）。
+                        if let DomMutation::InsertAdjacentHtml { html: frag, .. } = m
+                            && let Some(start) = frag.find("id=")
                         {
-                            let has = doc.query_selector(doc.root(), &format!("#{}", id)).is_some();
-                            return !has;
+                            let rest = &frag[start + 4..];
+                            let id = rest.strip_prefix('"').and_then(|r| r.find('"').map(|i| &r[..i]));
+                            if let Some(id) = id
+                                && !id.is_empty()
+                            {
+                                let has = doc.query_selector(doc.root(), &format!("#{}", id)).is_some();
+                                return !has;
+                            }
                         }
-                    }
-                    true
-                })
-                .cloned()
-                .collect()
+                        true
+                    })
+                    .cloned()
+                    .collect()
+            }
         };
         if !structural.is_empty() {
             // apply 失败回落：增量步保留旧基座（缺新增插入——字符串路径

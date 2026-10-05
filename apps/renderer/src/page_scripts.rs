@@ -480,11 +480,7 @@ pub fn dispatch_dom_event(
     // 四连发让 Navigate IPC 滞留 106s）。超时按「结果未知」降级（默认动作放行、
     // html 视为未变），脚本留队列照常执行。
     ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     let result_str = match ctx
         .js_worker
         .execute_script_priority_bounded(&script, zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT)
@@ -531,11 +527,7 @@ pub fn dispatch_host_focus(
     let script = script_host_focus(selector, focus);
     // t2-pb1 fix#13 同款：用户事件派发走优先通道 + 有界等待（快照与脚本成对同通道 FIFO）。
     ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     let result_str = match ctx
         .js_worker
         .execute_script_priority_bounded(&script, zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT)
@@ -656,11 +648,7 @@ pub fn apply_text_input_without_events(ctx: &mut PageScriptContext<'_>, selector
 #[cfg(test)]
 fn apply_text_edit(ctx: &mut PageScriptContext<'_>, selector: &str, edit_script: &str) -> TextEditOutcome {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     let script = format!("{edit_script};{}", script_text_control_snapshot(selector));
     let snapshot = ctx
         .js_worker
@@ -704,11 +692,7 @@ pub fn dispatch_composition_events(
         .collect::<Vec<_>>()
         .join(";");
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     if let Err(error) = ctx.js_worker.execute_script_direct(&script) {
         warn!("dispatch composition events on {selector}: {error}");
         return false;
@@ -754,11 +738,7 @@ pub fn apply_reset_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) -> 
         return false;
     };
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     // 调 shim form.reset()（R3048）：reset 事件派发 + 控件恢复 default 经 proxy setter 记 mutation。
     let _ = ctx.js_worker.execute_script_direct(&script_call_form_reset(&form_sel));
     let html_snap = ctx.html.clone();
@@ -776,11 +756,7 @@ pub fn apply_reset_on_click_without_events(ctx: &mut PageScriptContext<'_>, sele
         return false;
     };
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     let _ = ctx
         .js_worker
         .execute_script_direct(&script_reset_form_controls(&form_sel));
@@ -792,11 +768,7 @@ pub fn apply_reset_on_click_without_events(ctx: &mut PageScriptContext<'_>, sele
 #[cfg(test)]
 pub fn apply_form_reset_without_events(ctx: &mut PageScriptContext<'_>, form_selector: &str) -> bool {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     let _ = ctx
         .js_worker
         .execute_script_direct(&script_reset_form_controls(form_selector));
@@ -821,11 +793,7 @@ pub fn begin_host_action_transaction(ctx: &mut PageScriptContext<'_>) {
 #[cfg(test)]
 pub fn end_host_action_transaction(ctx: &mut PageScriptContext<'_>) -> bool {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     let _ = ctx
         .js_worker
         .execute_script_direct("__zw_end_host_action_transaction()");
@@ -849,11 +817,7 @@ pub fn apply_set_hash_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) 
     // 时点击处理阻塞 renderer 主循环、Navigate IPC 饿死（fix#15 同族）。挂起时脚本照常
     // 执行，mutation 由下一入口 drain 落定。
     ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     // 调 location.hash = hash（R3006 全语义：hash 更新 + history entry + hashchange 派发经 _defer microtask）。
     let _ = ctx.js_worker.execute_script_priority_deferrable(
         &script_call_set_location_hash(&hash),
@@ -874,11 +838,7 @@ pub fn apply_javascript_href(ctx: &mut PageScriptContext<'_>, selector: &str) ->
     };
     // t2-pb1 F7：优先通道对 + 有界挂起（同 apply_set_hash_on_click 注）。
     ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     // 执行 JS 体（空体 no-op）。js 为 href 解析后的原始 JS 源（HTML 已解码实体），不经转义——直接执行。
     if !js.is_empty() {
         let _ = ctx
@@ -899,11 +859,7 @@ fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str, submit
         return SubmitOutcome::default();
     };
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     // R2984：SubmitEvent.submitter——click submit button → 该按钮选择器；Enter 隐式提交 → None。
     let detail = DomEventDetail {
         submitter: submitter.map(String::from),
@@ -932,11 +888,7 @@ pub fn apply_set_checked_without_events(ctx: &mut PageScriptContext<'_>, selecto
 #[cfg(test)]
 fn apply_state_script(ctx: &mut PageScriptContext<'_>, script: &str) -> bool {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     if let Err(error) = ctx.js_worker.execute_script_direct(script) {
         warn!("apply form control state: {error}");
         return false;
@@ -953,11 +905,7 @@ pub fn execute_automation_script(ctx: &mut PageScriptContext<'_>, script: &str) 
     // 发起的求值（CDP evaluate / Playwright title 等）不排在页面回调积压之后（bilibili
     // timer 臂级联曾把 title 求值压 17.5s，连带饿死其后的导航 IPC）。
     ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|error| error.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     let value = ctx.js_worker.execute_script_direct_priority(script)?;
     let html_snapshot = ctx.html.clone();
     let changed = apply_recorded_mutations(ctx, &html_snapshot).is_some();
@@ -980,11 +928,7 @@ pub enum AutomationEvalOutcome {
 /// 在臂上同步等 21.6s，其后 0.2s 的 Navigate IPC 撞上 15s 看门狗（epoch2 ERR_FAILED）。
 pub fn execute_automation_script_deferrable(ctx: &mut PageScriptContext<'_>, script: &str) -> AutomationEvalOutcome {
     ctx.js_worker.set_dom_snapshot_priority(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|error| error.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     match ctx
         .js_worker
         .execute_script_priority_deferrable(script, zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT)
@@ -1058,11 +1002,7 @@ fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     // 脚本先于已排队的 timer/fetch 回调运行是真实浏览器语义（parser 优先于任务队列）；
     // 页面回调流饱和时普通通道往返无界，脚本阶段曾单窗 9s+。
     ctx.js_worker.set_dom_snapshot_priority(html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
+    ctx.js_worker.clear_mutations_fresh();
     if is_module {
         let mut registry: HashMap<String, String> = HashMap::new();
         collect_module_deps(fetch_text, module_url, code, &mut registry)?;

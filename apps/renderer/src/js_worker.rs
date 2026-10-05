@@ -605,6 +605,20 @@ impl RendererJsWorker {
         Arc::clone(&self.mutations)
     }
 
+    /// 清空 DOM 变更队列并递增 drain 代际——「脚本执行前归账清零」的统一入口
+    /// （`drain ⇒ bump_mut_drain_gen` 不变式，PR #33 返修确立、R-baidu3
+    /// `reset_document_state` 同款）：查询视图增量链（callbacks.rs `prev_base` /
+    /// VIEW_DOC_CACHE）以「队列只增长 + drain 代际未变」为前提，旁路 bump 的
+    /// clear 会让缓存的 `key.count` 与实际队列脱钩——automation eval 竞窗实测
+    /// renderer panic（siteopt t2-pb3nm 集成验收，`mut_guard[prev_count..count]`
+    /// 越界）。凡要清队列一律走本方法，禁止直接 `.lock().clear()`。
+    pub fn clear_mutations_fresh(&self) {
+        if let Ok(mut q) = self.mutations.lock() {
+            q.clear();
+        }
+        zero_engine::js_dom_bridge::bump_mut_drain_gen();
+    }
+
     /// R2949 FontFace.load() 请求队列句柄——`__zw_load_font` 回调（worker 线程）push，renderer 主循环
     /// drain 后处理（fetch_get 字节 + load_font/register/set_resolver + async_resolver.resolve）。
     pub fn pending_font_loads(&self) -> Arc<std::sync::Mutex<Vec<zero_engine::FontLoadRequest>>> {
@@ -1592,6 +1606,30 @@ impl zero_page_runtime::JsExecutor for RendererJsWorker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// R342（siteopt t2-pb3nm）：clear_mutations_fresh 的 drain⇒bump 不变式钉——
+    /// 队列清空同时 MUT_DRAIN_GEN 前进（查询视图增量链的「只增长+代际未变」前提
+    /// 靠本方法维持；automation eval 旁路 bump 的 clear 曾致 callbacks.rs 切片竞窗
+    /// renderer panic）。
+    #[test]
+    fn clear_mutations_fresh_bumps_drain_gen_r342() {
+        let worker = RendererJsWorker::spawn(6142);
+        worker
+            .mutations()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(zero_engine::DomMutation::SetAttr {
+                selector: "#x".to_string(),
+                name: "a".to_string(),
+                value: "b".to_string(),
+            });
+        assert_eq!(worker.mutations().lock().unwrap().len(), 1, "前置：队列 1 条");
+        let gen_before = zero_engine::js_dom_bridge::MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        worker.clear_mutations_fresh();
+        let gen_after = zero_engine::js_dom_bridge::MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(worker.mutations().lock().unwrap().len(), 0, "清空语义");
+        assert_eq!(gen_after, gen_before + 1, "clear 必须 bump drain 代际（不变式本体）");
+    }
 
     /// js-dom R386（DC-1 多进程生产路径）：RendererJsWorker 沙箱装原生 DOM 绑定——
     /// `__zw_native_*` 工厂在 worker context 可用，且读 `set_dom_snapshot` 快照 +

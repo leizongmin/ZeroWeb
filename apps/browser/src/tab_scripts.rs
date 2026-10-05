@@ -324,7 +324,7 @@ pub fn dispatch_dom_event(
     let result_str = if let Some(worker) = js_worker {
         let page_url = wv.url().unwrap_or("about:blank");
         worker.set_dom_snapshot(html, page_url);
-        worker.mutations().lock().unwrap_or_else(|e| e.into_inner()).clear();
+        worker.clear_mutations_fresh();
         match worker.execute_script_direct(&script) {
             Ok(r) => r,
             Err(e) => {
@@ -382,7 +382,7 @@ pub fn apply_text_input_default(
     if let Some(worker) = js_worker {
         let page_url = wv.url().unwrap_or("about:blank");
         worker.set_dom_snapshot(html, page_url);
-        worker.mutations().lock().unwrap_or_else(|e| e.into_inner()).clear();
+        worker.clear_mutations_fresh();
         if worker.execute_script_direct(&script).is_err() {
             return false;
         }
@@ -450,7 +450,7 @@ fn execute_script_chunk(
     let page_url = wv.url().unwrap_or("about:blank");
     if let Some(worker) = js_worker {
         worker.set_dom_snapshot(html, page_url);
-        worker.mutations().lock().unwrap_or_else(|e| e.into_inner()).clear();
+        worker.clear_mutations_fresh();
     }
     if is_module {
         let worker = js_worker.ok_or("ES module requires JS worker")?;
