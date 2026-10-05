@@ -209,6 +209,17 @@ impl TabJsWorkerHandle {
         Arc::clone(&self.mutations)
     }
 
+    /// 清空 DOM 变更队列并递增 drain 代际——「脚本执行前归账清零」统一入口
+    /// （`drain ⇒ bump_mut_drain_gen` 不变式；与 renderer 侧 js_worker 同名方法
+    /// 同语义。查询视图增量链以「队列只增长 + drain 代际未变」为前提，旁路
+    /// bump 的 clear 会让缓存 count 与实际队列脱钩——实测竞窗 renderer panic
+    /// （siteopt t2-pb3nm 集成验收）。凡清队列一律走本方法。
+    pub fn clear_mutations_fresh(&self) {
+        // 中毒锁强制清（into_inner）——与被替换调用点原语义一致（PR #77 审查 D3）。
+        self.mutations.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        zero_engine::js_dom_bridge::bump_mut_drain_gen();
+    }
+
     /// R3254-M10：页面 JS focus()/blur() 变更队列句柄——tab_worker drain 后经
     /// `TabWorkerMessage::FocusChanged` 同步 TabManager 的 event_targets。
     pub fn focus_changes(&self) -> Arc<std::sync::Mutex<Vec<Option<String>>>> {
@@ -726,6 +737,32 @@ impl zero_page_runtime::JsExecutor for TabJsWorkerHandle {
 mod tests {
     use super::*;
     use zero_browser_shell::TabId;
+
+    /// R342（siteopt t2-pb3nm）：clear_mutations_fresh 的 drain⇒bump 不变式钉——
+    /// 与 renderer 侧 js_worker 同名方法同语义（tab_scripts 三处 clear 曾旁路 bump）。
+    #[cfg(any(feature = "v8", all(feature = "quickjs", not(feature = "v8"))))]
+    #[test]
+    fn tab_clear_mutations_fresh_bumps_drain_gen_r342() {
+        let worker = TabJsWorkerHandle::spawn(TabId(9142));
+        worker
+            .mutations()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(DomMutation::SetAttr {
+                selector: "#x".to_string(),
+                name: "a".to_string(),
+                value: "b".to_string(),
+            });
+        assert_eq!(worker.mutations().lock().unwrap().len(), 1, "前置：队列 1 条");
+        let gen_before = zero_engine::js_dom_bridge::MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        worker.clear_mutations_fresh();
+        let gen_after = zero_engine::js_dom_bridge::MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(worker.mutations().lock().unwrap().len(), 0, "清空语义");
+        // R342 返修（PR #77 审查 D2）：MUT_DRAIN_GEN 是进程级全局原子，libtest 并行
+        // 测试可在两 load 之间 bump——断言「必须前进」而非恰好 +1（免 flake；对
+        // 「禁 bump」变异同等灵敏：不变式本体即前进）。
+        assert!(gen_after > gen_before, "clear 必须 bump drain 代际（不变式本体）");
+    }
 
     /// js-dom R386（DC-1 多进程生产路径）：TabJsWorker 沙箱装原生 DOM 绑定——
     /// `__zw_native_*` 工厂在 worker context 可用，且读 `set_dom_snapshot` 快照

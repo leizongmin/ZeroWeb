@@ -88,9 +88,17 @@ fn with_query_view_doc<R>(
     // R102，[`with_query_doc_live_aware`] 同语义），视图文档根本不用建。
     let live_ok = {
         let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
-        !mut_guard[..count]
-            .iter()
-            .any(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
+        // R342 返修（PR #77 双审查 D1）：count（:84 锁外读）与本锁之间队列可能被
+        // 旁路清零——与本函数下方 structural 切片同一竞窗类，且本判定先执行。
+        // len < count 即「队列被清」→「无 pending structural」字面成立，live_ok
+        // 取 true（live doc 即宿主现行态），不切片越界。
+        if mut_guard.len() < count {
+            true
+        } else {
+            !mut_guard[..count]
+                .iter()
+                .any(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
+        }
     };
     // FnOnce 单次调用：live 命中即消费；miss 时经 Option 还回落。
     let mut f = Some(f);
@@ -157,32 +165,41 @@ fn with_query_view_doc<R>(
         };
         let structural: Vec<DomMutation> = {
             let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
-            mut_guard[prev_count..count]
-                .iter()
-                .filter(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
-                .filter(|m| {
-                    // uievents-compat 尾簇 13：**基座已反映去重**——dom_html 存在换代
-                    // 写入点（R55 dispatch_event 每次重注册换新 Arc = 最新 cached_html、
-                    // user_actions 批末更新），基座可能已含「已 apply 的落地拷贝」；
-                    // 全量重放再插一次即双计（WPT image_map img-resized 双案：视图
-                    // 幽灵 → hit test 命中残影）。fragment 首元素带 id 且基座已有同
-                    // id → 视该 op 已反映，跳过；无 id 片段照旧重放（无法判重，保守）。
-                    if let DomMutation::InsertAdjacentHtml { html: frag, .. } = m
-                        && let Some(start) = frag.find("id=")
-                    {
-                        let rest = &frag[start + 4..];
-                        let id = rest.strip_prefix('"').and_then(|r| r.find('"').map(|i| &r[..i]));
-                        if let Some(id) = id
-                            && !id.is_empty()
+            // R342：count（本函数入口锁外读）与本锁之间队列可能被清（脚本执行前
+            // 归账 clear——`clear_mutations_fresh` 补 bump 后窗已收窄到纳秒级交错，
+            // 但防御不可省：未来任何旁路 bump 的清零点都复发）。len < count 即
+            // 「只增长」前提破——空集降级（doc 分支已选 parse/基座，structural
+            // 本就只取 InsertAdjacentHtml 子集，latest-wins 属性面兜底），不越界。
+            if mut_guard.len() < count {
+                Vec::new()
+            } else {
+                mut_guard[prev_count..count]
+                    .iter()
+                    .filter(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
+                    .filter(|m| {
+                        // uievents-compat 尾簇 13：**基座已反映去重**——dom_html 存在换代
+                        // 写入点（R55 dispatch_event 每次重注册换新 Arc = 最新 cached_html、
+                        // user_actions 批末更新），基座可能已含「已 apply 的落地拷贝」；
+                        // 全量重放再插一次即双计（WPT image_map img-resized 双案：视图
+                        // 幽灵 → hit test 命中残影）。fragment 首元素带 id 且基座已有同
+                        // id → 视该 op 已反映，跳过；无 id 片段照旧重放（无法判重，保守）。
+                        if let DomMutation::InsertAdjacentHtml { html: frag, .. } = m
+                            && let Some(start) = frag.find("id=")
                         {
-                            let has = doc.query_selector(doc.root(), &format!("#{}", id)).is_some();
-                            return !has;
+                            let rest = &frag[start + 4..];
+                            let id = rest.strip_prefix('"').and_then(|r| r.find('"').map(|i| &r[..i]));
+                            if let Some(id) = id
+                                && !id.is_empty()
+                            {
+                                let has = doc.query_selector(doc.root(), &format!("#{}", id)).is_some();
+                                return !has;
+                            }
                         }
-                    }
-                    true
-                })
-                .cloned()
-                .collect()
+                        true
+                    })
+                    .cloned()
+                    .collect()
+            }
         };
         if !structural.is_empty() {
             // apply 失败回落：增量步保留旧基座（缺新增插入——字符串路径
@@ -216,6 +233,11 @@ static REG_EPOCH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsiz
 /// 不变式前提：drain 后同批重新增长回旧 count 时 (ptr, count) 键会被误判为
 /// 「只增长」/「精确命中」，没有 gen 项会把 pre-drain 视图端出（错视图）。
 /// 未配对 view_gen 换代的 drain 站点（不推快照的排空路径）必须直接 bump 本代际。
+///
+/// 已知例外的清队站点：`zero-webview` 文档换代对 `shared_mutations` 就地 clear
+/// 且不 bump（webview.rs 注册路径）——其安全性依赖每次脚本执行重注册时装**新
+/// dom_html Arc**（跨代键必失配），而非 gen 失效；且清队与查询同线程无竞窗。
+/// 若未来该注册改为复用 Arc，必须改为走 clear+bump 范式。
 pub static MUT_DRAIN_GEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// mutations 队列 drain 站点调用（见 [`MUT_DRAIN_GEN`]）。

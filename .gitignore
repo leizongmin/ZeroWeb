@@ -79,6 +79,8 @@ docs/goal/rendering-compat/evidence/product-static/*
 !docs/goal/rendering-compat/evidence/product-static/slice29/
 # 例外：slice30 named access 多命中 HTMLCollection 修复的活体前后对照（PR 证据图，同 slice29 先例）
 !docs/goal/rendering-compat/evidence/product-static/slice30/
+# 例外：t2-r342 automation eval 竞窗 panic 修复的活体前后对照（PR 证据图，同 slice29 先例）
+!docs/goal/rendering-compat/evidence/product-static/t2-r342-panic/
 # 例外：WPT 趋势基线（绝对数，weekly CI 自动记录并提交回 main——趋势数据应入库）
 !docs/goal/rendering-compat/evidence/wpt-trends/
 
