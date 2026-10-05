@@ -167,16 +167,16 @@ fn with_query_view_doc<R>(
                     // 全量重放再插一次即双计（WPT image_map img-resized 双案：视图
                     // 幽灵 → hit test 命中残影）。fragment 首元素带 id 且基座已有同
                     // id → 视该 op 已反映，跳过；无 id 片段照旧重放（无法判重，保守）。
-                    if let DomMutation::InsertAdjacentHtml { html: frag, .. } = m {
-                        if let Some(start) = frag.find("id=") {
-                            let rest = &frag[start + 4..];
-                            let id = rest.strip_prefix('"').and_then(|r| r.find('"').map(|i| &r[..i]));
-                            if let Some(id) = id {
-                                if !id.is_empty() {
-                                    let has = doc.query_selector(doc.root(), &format!("#{}", id)).is_some();
-                                    return !has;
-                                }
-                            }
+                    if let DomMutation::InsertAdjacentHtml { html: frag, .. } = m
+                        && let Some(start) = frag.find("id=")
+                    {
+                        let rest = &frag[start + 4..];
+                        let id = rest.strip_prefix('"').and_then(|r| r.find('"').map(|i| &r[..i]));
+                        if let Some(id) = id
+                            && !id.is_empty()
+                        {
+                            let has = doc.query_selector(doc.root(), &format!("#{}", id)).is_some();
+                            return !has;
                         }
                     }
                     true
