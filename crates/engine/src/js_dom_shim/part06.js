@@ -4064,6 +4064,12 @@
     get URL() { return globalThis.location ? globalThis.location.href : ''; },
     get documentURI() { return globalThis.location ? globalThis.location.href : ''; },
     get referrer() { return ''; },
+    // document.domain——getter 返 origin 的 domain（host 去端口，spec；opaque origin 回 ''）。
+    // setter 已废弃（Chrome 115+ 禁用）不实现。读路径是站点兼容面：bilibili reporter-pb
+    // cookie 助手 `document.domain.split('.').slice(-2).join('.')` 在缺成员时读 undefined
+    // 抛 TypeError（6× Uncaught in promise，2026-10-05 stack 命名修复后定位）。
+    // https://html.spec.whatwg.org/multipage/dom.html#dom-document-domain
+    get domain() { return globalThis.location ? (globalThis.location.hostname || '') : ''; },
     // document.activeElement——当前焦点元素（focus()/blur() 操作 _activeElKey）；无焦点回落 body（spec）。
     // R148：解析节点焦点（_zwMElFocused——R114 focus() 设置）优先于 proxy 态（所有权互斥，
     // _zwMEl focus 已清 _activeElKey，双态并存时解析节点为准是防御性回落）。

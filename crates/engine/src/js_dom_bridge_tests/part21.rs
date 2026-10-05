@@ -175,10 +175,12 @@ fn test_classic_script_strict_function_globals_r147() {
     let first = crate::js_dom_bridge::script_run_classic_page(
         "'use strict';\nfunction topFnA() { return 1; }\n\"use strict\";\nfunction topFnB() { return 2; }\n(function(){\n  function innerFn() { return 3; }\n  globalThis.__innerRef = typeof innerFn;\n})();\n",
         0,
+        None,
     );
     let second = crate::js_dom_bridge::script_run_classic_page(
         "globalThis.__probe = [typeof topFnA, typeof topFnB, String(topFnA() + topFnB()), globalThis.__innerRef].join(',');",
         1,
+        None,
     );
     sandbox.execute(&first).unwrap();
     sandbox.execute(&second).unwrap();
@@ -219,11 +221,13 @@ fn test_classic_script_strict_async_generator_globals_wab2m1() {
     let first = crate::js_dom_bridge::script_run_classic_page(
         "'use strict';\nasync function topAsyncA() { return 1; }\nasync function* topAsyncGenB() { yield 2; }\nfunction* topGenC() { yield 3; }\n(function(){\n  async function innerAsync() {}\n  globalThis.__innerAsyncRef = typeof innerAsync;\n})();\n",
         0,
+        None,
     );
     // 第二段跨脚本消费探针。
     let second = crate::js_dom_bridge::script_run_classic_page(
         "globalThis.__probe = [typeof topAsyncA, typeof topAsyncGenB, typeof topGenC, globalThis.__innerAsyncRef].join(',');",
         1,
+        None,
     );
     sandbox.execute(&first).unwrap();
     sandbox.execute(&second).unwrap();
@@ -261,10 +265,12 @@ fn test_classic_script_strict_const_let_globals_r198() {
     let first = crate::js_dom_bridge::script_run_classic_page(
         "'use strict';\nconst topConstA = new Function('return 41;');\nlet topLetB = 1;\n(function(){\n  const innerConst = 7;\n  globalThis.__innerConstRef = typeof innerConst;\n})();\n",
         0,
+        None,
     );
     let second = crate::js_dom_bridge::script_run_classic_page(
         "globalThis.__probe = [typeof topConstA, String(topConstA() + 1), String(topLetB), globalThis.__innerConstRef].join(',');",
         1,
+        None,
     );
     sandbox.execute(&first).unwrap();
     sandbox.execute(&second).unwrap();
@@ -305,6 +311,7 @@ fn test_classic_script_strict_var_accessor_export_r201() {
     let first = crate::js_dom_bridge::script_run_classic_page(
         "'use strict';\nvar testTable = [1, 2, 3];\nvar holder, dependent,\n    continued, tailName;\nvar initialized = 42;\nfunction assignLater() { holder = 'assigned'; continued = 'cont'; tailName = 'tail'; }\n",
         0,
+        None,
     );
     sandbox.execute(&first).unwrap();
     let err = sandbox
@@ -318,6 +325,7 @@ fn test_classic_script_strict_var_accessor_export_r201() {
     let second = crate::js_dom_bridge::script_run_classic_page(
         "globalThis.__p1 = [String(globalThis.testTable.join('-')), String(typeof globalThis.holder), String(typeof globalThis.continued), String(globalThis.initialized)].join(',');\nglobalThis.testTable = [4];\nassignLater();\nglobalThis.__p2 = [globalThis.holder, globalThis.continued, globalThis.tailName, String(globalThis.testTable.join('-'))].join(',');",
         1,
+        None,
     );
     sandbox.execute(&second).unwrap();
     let err2 = sandbox

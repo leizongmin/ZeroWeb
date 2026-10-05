@@ -635,7 +635,7 @@ pub const PAGE_SCRIPT_ERROR_GLOBAL: &str = "__zw_pgerr__";
 /// `execute_module`。成功时 sentinel 留 `undefined`（非字符串），抛错时设为消息字符串，二者经
 /// [`page_script_error_check`] 的 `===undefined` 判别可靠区分（即便 `throw undefined` 也只产生
 /// 字符串 "undefined"，不与 undefined 值混淆）。
-pub fn script_run_classic_page(code: &str, script_index: usize) -> String {
+pub fn script_run_classic_page(code: &str, script_index: usize, source_url: Option<&str>) -> String {
     let code_literal = format!("'{}'", escape_js_string(code));
     // R147（js-dom M4）：顶层函数声明的**全局发布**。间接 eval `(0,eval)` 中源内
     // 'use strict'/"use strict" 指令使 eval 建独立变量环境——顶层 `function` 声明
@@ -844,10 +844,23 @@ pub fn script_run_classic_page(code: &str, script_index: usize) -> String {
     // R147：eval 源拼接形态 `(0,eval)('<源>'+';globalThis.x=x;')`——后缀是**带引号的
     // 字符串字面量**（与源同串相接），在 eval 的同一变量环境内执行（strict 局部声明
     // 可见），且不改 'use strict' 必须为源首语句的语义（拼接发生在两侧而非插入）。
-    let export_suffix = if exports.is_empty() {
+    // t2-pb3 诊断可观测性：`source_url` 给定时在 eval 源**真末尾**（导出后缀之后）追加
+    // `//# sourceURL=<url>`——V8 仅在源末行取 sourceURL 为脚本名，注释落在导出后缀
+    // 之前会被 R201 accessor 后缀（strict 顶层 var）整行拼接污染甚至弃用（V8 实测回
+    // `<anonymous>`；缺陷角色 N1 定向闭环）。直接执行路径（无 wrapper）由
+    // page_scripts::append_source_url 覆盖。
+    let mut tail = exports;
+    if let Some(url) = source_url {
+        if !tail.is_empty() {
+            tail.push('\n');
+        }
+        tail.push_str("//# sourceURL=");
+        tail.extend(url.chars().filter(|c| !c.is_control()));
+    }
+    let export_suffix = if tail.is_empty() {
         String::new()
     } else {
-        format!("+'{}'", escape_js_string(&format!(";{exports}")))
+        format!("+'{}'", escape_js_string(&format!(";{tail}")))
     };
     format!(
         // security-hardening M2-s6：`(0,globalThis.__zwRealEval||eval)`——eval 门禁

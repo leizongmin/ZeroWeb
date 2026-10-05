@@ -894,6 +894,76 @@ fn test_document_title_setter_writeback_r3035() {
 }
 
 #[test]
+fn test_document_domain_getter() {
+    // document.domain getter = origin 的 domain（host 去端口，spec dom-document-domain）；
+    // opaque/无 host origin 回 ''。setter 已废弃（Chrome 115+ 禁用）不实现。
+    // 站点兼容面：bilibili reporter-pb cookie 助手 `document.domain.split('.').slice(-2).join('.')`
+    // 缺成员时读 undefined 抛 TypeError（2026-10-05 stack 命名修复后定位的真根因）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><head></head><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("https://www.bilibili.com/video/BV1GJ411x7h7/".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① getter 读 host（去端口）。
+    sandbox.execute("globalThis.__d0 = document.domain;").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__d0").unwrap().value,
+        "www.bilibili.com",
+        "document.domain getter 读 host 去端口"
+    );
+
+    // ② 站点炸点模式：eTLD+1 式切分不再抛（缺成员时 `.split` 读 undefined 即 TypeError）。
+    sandbox
+        .execute("globalThis.__d1 = document.domain.split('.').slice(-2).join('.');")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__d1").unwrap().value,
+        "bilibili.com",
+        "cookie 助手同款切分返回 eTLD+1"
+    );
+
+    // ③ 无 host URL（about:blank）回 ''（回落，不抛）。
+    let mut sandbox2 = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox2.execute(generate_js_dom_shim()).unwrap();
+    let m2: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let h2: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let pu2: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry2: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox2, &m2, &h2, &pu2, &canvas_registry2, None);
+    sandbox2.execute("globalThis.__d2 = document.domain;").unwrap();
+    assert_eq!(
+        sandbox2.execute("globalThis.__d2").unwrap().value,
+        "",
+        "无 host origin 回空串"
+    );
+
+    // ④ 非默认端口剥离（缺陷角色 N1 复核建议第四向）：host 带显式端口时 domain 不含端口
+    //（getter 取 hostname 语义，与 ① 同路径但端口形态防回归）。
+    *pu2.lock().unwrap_or_else(|e| e.into_inner()) = "https://www.bilibili.com:8080/video/".to_string();
+    sandbox2.execute("globalThis.__d3 = document.domain;").unwrap();
+    assert_eq!(
+        sandbox2.execute("globalThis.__d3").unwrap().value,
+        "www.bilibili.com",
+        "host 带端口时 domain 不含端口"
+    );
+}
+
+#[test]
 fn test_element_sheet_cssstylesheet_r3036() {
     // R3036：element.sheet CSSStyleSheet 入口。<style>/<link rel=stylesheet> 的 .sheet 应返 CSSStyleSheet
     //（CSS-in-JS 库 + 样式表操作经 .sheet.cssRules/insertRule 读改规则）。当前 get trap 对 'sheet' 返 undefined。
