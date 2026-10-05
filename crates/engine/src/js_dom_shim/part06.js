@@ -8158,12 +8158,16 @@
 
   // slice30（RP-1 同名多命中面）：名的全部 named object——union selector 单查树序
   // + 同元素双臂同中去重（spec：集合成员是元素，`<img id="x" name="x">` 一员）。
-  // 与单命中回落同选择器面（id 面 `[id=…]` + name 面四元素 `[name=…]`；iframe 不入
-  // 本面——R139 委托，同 collect 口径）。标识符字符集内嵌属性选择器（无引号/转义面）。
+  // 与单命中回落同选择器面（id 面 `[id=…]` + name 面五元素 `[name=…]`；iframe 自
+  // slice33 I-1 起入面——现行 spec named objects 含 HTMLIFrameElement，与 Rust
+  // 采集器（NAMED_ACCESS_NAME_FACE_TAGS）同口径；单命中 iframe 名的 R139
+  // contentWindow 值由「不覆盖已存在全局」守卫保留）。标识符字符集内嵌属性选择器
+  //（无引号/转义面）。
+  // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
   function _namedAccessMatches(name) {
     var nl = globalThis.document.querySelectorAll(
       '[id="' + name + '"],embed[name="' + name + '"],form[name="' + name + '"],' +
-      'img[name="' + name + '"],object[name="' + name + '"]');
+      'iframe[name="' + name + '"],img[name="' + name + '"],object[name="' + name + '"]');
     var els = [];
     for (var i = 0; i < nl.length; i++) {
       var e = nl[i], dup = false;
@@ -8234,11 +8238,14 @@
         var el = globalThis.document.getElementById(id);
         if (!el) {
           // name 面：标识符字符集内嵌属性选择器（无引号/转义面）；命中 embed/form/
-          // img/object 之一（iframe 不入本面——R139 已以 contentWindow 注册 named
-          // iframe 全局，本面收 iframe 会以元素先占名压制之，值类型倒退）。
+          // iframe/img/object 之一（slice33 I-1：iframe 入面——现行 spec named
+          // objects 含 HTMLIFrameElement，元素即 spec 值类型；R139 已注册的
+          // contentWindow 由上方「不覆盖已存在全局」守卫保留，注册时序上 R139 先于
+          // 本安装的单命中 iframe 名不受影响）。
+          // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
           el = globalThis.document.querySelector(
             'embed[name="' + id + '"],form[name="' + id + '"],' +
-            'img[name="' + id + '"],object[name="' + id + '"]');
+            'iframe[name="' + id + '"],img[name="' + id + '"],object[name="' + id + '"]');
         }
         if (el) globalThis[id] = el;
       });

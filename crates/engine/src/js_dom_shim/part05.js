@@ -10528,7 +10528,8 @@
   var _zwNAInstalled = globalThis.__zwNAInstalledStore
     || (globalThis.__zwNAInstalledStore = {}); // slice32：同上，跨 shim 重执行存活
   // named access 成员判定——与安装期采集器 `_namedAccessMatches`（part06）同口径：
-  // id 面（全元素）+ name 面（embed/form/img/object，local 名不辨 ns，与构建期选择器一致）。
+  // id 面（全元素）+ name 面（embed/form/iframe/img/object，local 名不辨 ns，与
+  // 构建期选择器一致；iframe 自 slice33 I-1 起入面，同 Rust 采集器口径）。
   function _zwNAElemMatches(name, el) {
     if (!el || el.nodeType !== 1) return false;
     var idv = null, nmv = null;
@@ -10539,7 +10540,7 @@
     var tn = '';
     try { tn = String(el.tagName || ''); } catch (_e32t) {}
     var low = tn.toLowerCase();
-    return low === 'embed' || low === 'form' || low === 'img' || low === 'object';
+    return low === 'embed' || low === 'form' || low === 'iframe' || low === 'img' || low === 'object';
   }
   function _zwNALiveSpec(name) {
     return {
@@ -10549,17 +10550,34 @@
   }
   // 全局形态跟随：仅当 globalThis[name] 仍是本特性安装的集合时改写/回收——脚本自有
   // 全局、已 morph 成元素的全局（broadening 面未实现，见边界注）不回改。
+  // slice33（RP-3 I-7）：0 命中回收后再生——回收时保留账本（`_zwNAInstalled[name]`
+  // 不删；集合仍注册 live 维护），成员重入（0→1/0→2）时经本函数恢复全局：1 命中
+  // 恢复元素、≥2 恢复集合。恢复条件 = global 缺席且账本在（回收态，或 renderer
+  // 快照换代登记·回收链路已删 stale 名后的重入——同域两态统一）。spec：取值算法
+  // 每读按当下 named objects 求值，重入后值恢复（live 语义自然延伸）；修前账本随
+  // 回收删除，重入后全局恒 undefined（再生缺口）。morph 成元素的全局仍不回改
+  //（slice32 边界钉保持）。
   function _zwNAGlobalMorph(name) {
     var g, installed = _zwNAInstalled[name];
     if (!installed) return;
     try { g = globalThis[name]; } catch (_e32g) { return; }
-    if (g !== installed) return;
+    if (g !== installed) {
+      if (g === undefined) {
+        var elsR = null;
+        try { elsR = installed.__zwHC(); } catch (_eR0) { return; }
+        if (elsR.length === 1) {
+          try { globalThis[name] = elsR[0]; } catch (_eR1) {}
+        } else if (elsR.length > 1) {
+          try { globalThis[name] = installed; } catch (_eR2) {}
+        }
+      }
+      return;
+    }
     var els = installed.__zwHC();
     if (els.length === 1) {
       try { globalThis[name] = els[0]; } catch (_e32m1) {}
     } else if (els.length === 0) {
       try { delete globalThis[name]; } catch (_e32m0) {}
-      delete _zwNAInstalled[name];
     }
   }
   // id/name 属性变异重核：全部 NA 活集合逐个核对该元素成员资格（失格剔除保序 /

@@ -1145,6 +1145,13 @@ fn js_worker_main(
                 // R358/R3243：就地换代（Arc 被回调捕获不可换装）→ bump 宿主视图缓存代际，
                 // 防同 count 查询命中换代前解析的视图文档/备忘。
                 zero_engine::js_dom_bridge::bump_dom_view_gen();
+                // R358（js-dom M1）：快照换代即清 JS 侧 pending 记账（与 tab_js_worker 同款）。
+                // slice33（RP-3 跨文档残影）：清算必须先于下方 slice27 named access 重装——
+                // 旧序（重装 → 清算）把新装入 `_zwLiveCollections` 的集合随即抹除，注册表
+                // 恒空，slice32 live 维护（childList/id·name 变异同步 + dead 冻结）在 renderer
+                // 永不生效，集合成员冻结在安装时点视图上（残影放大器：安装后任何 stale
+                // 成员都无人再校正）。换代先清、重装后注册，集合才真正 live。
+                let _ = sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();");
                 // slice27（site-compat baidu 建议链 su 注册，2026-10-04）：**快照落地即同步
                 // Window named access**。shim 的 install 自调用仅发生在 shim eval——bootstrap
                 // 时 dom_html 恒空、reset 时读到的是**上一文档**快照——首载快照落地后无人
@@ -1241,8 +1248,6 @@ fn js_worker_main(
                 if let Ok(mut u) = page_url.lock() {
                     *u = url;
                 }
-                // R358（js-dom M1）：快照换代即清 JS 侧 pending 记账（与 tab_js_worker 同款）。
-                let _ = sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();");
                 if url_changed {
                     let _ = sandbox.execute("__zw_reset_form_state && __zw_reset_form_state();");
                     // R3059：导航 → 清旧页 _hist_entries（pushState/hash-setter 残留），新页 location.href
