@@ -12341,6 +12341,25 @@
         _zwPointerCross(prev, sel, x, y, _raw19);
       }
       st.overSel = sel;
+      // uievents-compat 尾簇 20：跨界序派发中页内 listener **移除/替换目标** →
+      // move 对重定向到**最近连通祖先**（UI Events——mousemove 落最后存活
+      // mouseenter 链最深目标：child.remove()/outerHTML 替换 → parent；parent.remove()
+      // → grandparent。**不用命中测试**——替换场景新子已占同点位但未入 enter 链，
+      // spec 排除之。WPT mousemove_after_mouseover_target_removed 4 断言面）。
+      if (typeof _zwIsConnected === 'function' && sel && !_zwIsConnected(sel, null)
+          && typeof __zw_parent === 'function') {
+        var _up20 = sel;
+        for (var _g20 = 0; _g20 < 32 && _up20; _g20++) {
+          _up20 = __zw_parent(_up20);
+          if (_up20 && _zwIsConnected(_up20, null)) {
+            _zwPointerCross(sel, _up20, x, y);
+            st.overSel = _up20;
+            st.hoverSel = _up20;
+            sel = _up20;
+            break;
+          }
+        }
+      }
     }
     if (_raw19) {
       __zw_dispatch_event(sel, 'pointerrawupdate', {

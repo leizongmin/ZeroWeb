@@ -8427,7 +8427,11 @@ const TESTDRIVER_STUB: &str = r#"<script>
       } catch (_eH) {}
     }
     var id = element.getAttribute && element.getAttribute('id');
-    if (id) return '#' + id;
+    // 尾簇 20：id 仅在 **合法 CSS 标识符**（无空白/无特殊字符）时产 `#id` 形——
+    // `id="outerFrame body"`（带空格）曾产 `#outerFrame body`（descendant 选择器）
+    // → 宿主解析 miss → 「testdriver target not found」（pointercapture_in_frame
+    // 全簇首断言面）。非安全 id 落下方 attr 筛选路径（body[id="..."] 合法唯一）。
+    if (id && /^[A-Za-z][\w-]*$/.test(id)) return '#' + id;
     var tag = String(element.tagName || '').toLowerCase();
     if (!tag) return null;
     var matches = document.querySelectorAll(tag);

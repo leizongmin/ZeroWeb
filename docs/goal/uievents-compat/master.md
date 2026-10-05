@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-05（M3 尾簇 19 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-06（M3 尾簇 20 落地）
 
 ## 当前状态
 
@@ -9,11 +9,11 @@
 M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P → 尾簇 6a 1107P →
 尾簇 6b+6c 1115P → 尾簇 7 1167P → 尾簇 8 1202P → 尾簇 9 1218P → 尾簇 10 1570P →
 尾簇 11 1583P → 尾簇 12 1588P → 尾簇 13 1590P → 尾簇 14 1594P → 尾簇 15 1609P →
-尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → **1736P（+1516 累计）**
-（corpus：1736P/207F/97TO，`TIME_LIMIT=3600`。尾簇 19 链口径 +116（上链 headline 系列）/
-逐 subtest 对账 improvements=120 / regressions=1 已记录——pointerrawupdate 语义 + chorded
-button 键序 + coalesced 克隆 + 反射面；总册 1948→2040，rawupdate/coalesced 族文件从
-Timeout 恢复执行）。
+尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → 尾簇 19 1736P → **1738P（+1518 累计）**
+（corpus：1738P/187F/100TO，`TIME_LIMIT=3600`。尾簇 19：improvements=120 /
+regressions=1 已记录；尾簇 20：improvements=2 / regressions=0——remove-hover 连通祖先
+重定向 + runner 安全 id 选择器；pointercapture_in_frame 18F→3×文件级 Timeout 转记
+（subframe 路由 blocker 暴露，F 计数 -20 为口径转移非修复）。
 证据：[evidence/2026-10-05-m3-tail13.json](evidence/2026-10-05-m3-tail13.json)（尾簇 13 后）、
 [evidence/2026-10-05-m3-tail13.md](evidence/2026-10-05-m3-tail13.md)（根因链 + 排除路径）、
 [evidence/2026-10-05-m3-tail12.json](evidence/2026-10-05-m3-tail12.json)（尾簇 12 后）、
@@ -39,7 +39,18 @@ Timeout 恢复执行）。
 门禁：workspace 17,246P/0F、renderer lib 204P/0F、reftest 704/704、fmt + clippy
 （quickjs 面）全绿；shim 拼接 node --check 全绿。
 
-**M3 尾簇 19（2026-10-05，本轮）——pointerrawupdate 语义 + chorded button 键序 + coalesced 克隆 + 反射面**。七件
+**M3 尾簇 20（2026-10-06，本轮）——remove-hover 连通祖先重定向 + runner 安全 id 选择器**。两件
+（细节/回退/oracle 冲突记录见 [evidence/2026-10-06-m3-tail20.md](evidence/2026-10-06-m3-tail20.md)）：
+① move 步跨界序中移除/替换 hover 目标 → move 对重定向**最近连通祖先**（mouseenter 链
+语义，不用命中测试——替换场景新子未入 enter 链）——mousemove_after_mouseover_target_removed
+移除两案 +2P，替换两案余挂同 turn stale gBCR；② runner selectorFor 非安全 id 落 attr
+筛选路径（`id="outerFrame body"` 曾产非法 `#outerFrame body` → target not found 全簇
+断面）——pointercapture_in_frame 18F→3×文件级 Timeout（subframe 事件路由 blocker
+暴露：指针命中不下探 iframe）。尝试并回退 1 件：mousedown/mouseup 拆除边界（out/leave@
+被移除元素）——与 after_target_removed 稳定 oracle 冲突（tentative 文件自注浏览器分歧），
+按稳定语料优先回退，冲突入档。
+
+**M3 尾簇 19（2026-10-05，93c189648）——pointerrawupdate 语义 + chorded button 键序 + coalesced 克隆 + 反射面**。七件
 （engine shim；细节/排除路径见 [evidence/2026-10-05-m3-tail19.md](evidence/2026-10-05-m3-tail19.md)）：
 ① pointerrawupdate 派发（secure + listener 存在性门槛，无 listener 整站跳过；站点序
 跨界序 → rawupdate → pointermove；Process-Pending/capture 重定向复用 dispatch 层既有
@@ -282,10 +293,10 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 证据：[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)
 （含 2 案本地 zwprobe 探针已剔除入账）。门禁：node --check + 双族聚焦跑全绿。
 
-**DC-4 门禁（2026-10-05，尾簇 19 后）**：workspace 腿（exclude zero-webdriver，环境
-损坏同前账）**19,825P/0F**（0 超时）+ renderer bin 腿 0F + **reftest 704/704 零回归**
-+ shim 拼接 node --check 全绿（纯 JS shim 变更，无 Rust 面——fmt/clippy 不适用）。
-历史（尾簇 18 后）：workspace 17,232P/0F + reftest 704/704。
+**DC-4 门禁（2026-10-06，尾簇 20 后）**：workspace 腿 **19,825P/0F** + renderer bin 腿 0F +
+**reftest 704/704 零回归** + shim 拼接 node --check 全绿（shim JS + testharness.rs runner
+工具面各一处；fmt/clippy 见提交说明）。
+历史（尾簇 19 后）：workspace 19,825P/0F + reftest 704/704。
 历史（尾簇 14 后）：workspace 腿（Makefile 同参 exclude zero-webdriver——其
 http_session 用例**本机环境损坏**：stash bisect 于 HEAD 未含本轮改动同样红，element
 not found/标题空，疑 show-window 依赖；非本轮回归）**17,232P/0F**（49 套件 0 超时）
@@ -354,11 +365,14 @@ make test 19,825P/0F 首轮绿；尾簇 11 后：三跑收口。
   1610P→1616P（+6）。
 - **M3 尾簇 18（2026-10-05，91c61702b）**：range 拖拽取值默认动作（轴向修正）+ 空命中
   坐标保持。1616P→1620P（+4）。
-- **M3 尾簇 19（2026-10-05，本轮）**：pointerrawupdate 语义（secure + listener 门槛 +
+- **M3 尾簇 19（2026-10-05，93c189648）**：pointerrawupdate 语义（secure + listener 门槛 +
   dispatch 层 Process-Pending 复用）+ chorded button 键序/位掩码映射 + got/lost buttons
   显式携带 + coalesced 队列克隆 + deferred mouse 层跨界 + 反射面
   （onpointerrawupdate/persistentDeviceId/pseudoTarget）。1620P→1736P（+116，总册
   1948→2040）。
+- **M3 尾簇 20（2026-10-06，本轮）**：remove-hover 连通祖先重定向（move 步）+
+  runner selectorFor 安全 id 门（pointercapture_in_frame 首断面解除，subframe 路由
+  blocker 转记 Timeout）。1736P→1738P（+2）。
 
 ## 下一步计划
 
