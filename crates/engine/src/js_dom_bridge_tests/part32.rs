@@ -1450,3 +1450,94 @@ fn test_parsed_characterdata_node_mutable_methods_pb3() {
         "正控制：append 的文本落树（li 文本内容 a+ok）"
     );
 }
+
+#[test]
+fn test_insert_before_fallback_no_prototype_appendchild_loop_pb3() {
+    // R341 还账（PR #76 审查 D1 / PR #78）：insertBefore 尾部 appendChild 兜底不得
+    // 委托 R341 安装的 Node.prototype.appendChild——其 spec 本义即
+    // `insertBefore(node, null)`，「无 own insertBefore + 无 __zwHandle」接收者
+    // （R219 ①形态：Object.create(HTMLHtmlElement.prototype)，原型链 appendChild
+    // 即被安装的原型版）会互调成环至 RangeError 被 catch 吞——终态 no-op 同旧态，
+    // 但一次满栈空转纯浪费。钉法：newNode.nodeType 用 getter 计数——每次
+    // insertBefore 入口校验读一次，环状递归放大到千次级；断环后个位数。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r#"
+var hits = 0;
+var n2 = {};
+Object.defineProperty(n2, 'nodeType', { get: function () { hits++; return 1; } });
+var plain = Object.create(globalThis.HTMLHtmlElement.prototype);
+plain.nodeType = 1; plain.nodeName = 'HTML'; plain.tagName = 'HTML';
+globalThis.__premise = plain.appendChild === globalThis.Node.prototype.appendChild;
+// PR #78 双审查加固（测试角色 Low-1/2）：前提钉防「钉空转」——appendChild 双侧
+// 皆缺失时 undefined === undefined 恒真（空洞通过）；路由前提钉死「真走兜底分支」
+// （own insertBefore / __zwHandle 任一存在都会改道，守卫不再被执行）。
+globalThis.__premiseFn = typeof plain.appendChild === 'function';
+globalThis.__routeNoOwnIb = !Object.prototype.hasOwnProperty.call(plain, 'insertBefore');
+globalThis.__routeNoHandle = plain.__zwHandle === undefined;
+var r1 = 'none';
+try { r1 = plain.insertBefore(n2, null) === n2 ? 'returned' : 'other'; } catch (e1) { r1 = 'ERR:' + e1.name; }
+globalThis.__r = r1;
+globalThis.__hits = hits;
+"#,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__premise)").unwrap().value,
+        "true",
+        "前提：接收者 appendChild 解析到 R341 安装的原型版（否则本钉空转无意义）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__premiseFn)").unwrap().value,
+        "true",
+        "前提加固（审查 Low-1）：appendChild 是函数——封死「双侧缺失 undefined===undefined」空洞通过"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__routeNoOwnIb)").unwrap().value,
+        "true",
+        "路由前提（审查 Low-2）：无 own insertBefore——真走兜底分支"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__routeNoHandle)").unwrap().value,
+        "true",
+        "路由前提（审查 Low-2）：无 __zwHandle——非代理，不走直调分支"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r)").unwrap().value,
+        "returned",
+        "终态不变：无实现接收者 insertBefore 静默返回入参（R219 ①同面）"
+    );
+    let hits: i64 = sandbox
+        .execute("String(globalThis.__hits)")
+        .unwrap()
+        .value
+        .trim()
+        .parse()
+        .unwrap_or(-1);
+    assert!(
+        hits > 0 && hits < 20,
+        "断环：nodeType 读取个位数（成环时入口校验 × 递归深度 = 数千次），实测 {hits}"
+    );
+    // 审查 Info-3：终态 no-op 不向 host 发任何变更记录（断环与成环终态一致的本证）。
+    assert!(
+        mutations.lock().unwrap_or_else(|e| e.into_inner()).is_empty(),
+        "无实现接收者兜底跳过不产生 DOM mutation 记录"
+    );
+}

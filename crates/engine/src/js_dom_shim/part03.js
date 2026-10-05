@@ -3438,7 +3438,18 @@
         && _r219OwnIb !== globalThis.Node.prototype.insertBefore) {
       return _r219OwnIb.call(this, newNode, refNode);
     }
-    try { this.appendChild(newNode); } catch (_e6) {}
+    // R341 还账（PR #76 审查 D1 / PR #78）：appendChild 兜底须排除 R341 安装的
+    // Node.prototype.appendChild——其 spec 本义即 insertBefore(node, null)。接收者
+    // 无 own insertBefore 且无 __zwHandle 时，兜底委托回原型 appendChild 再进本方法
+    // → 互调成环至 RangeError 被上方 catch 吞（终态 no-op 不变，但一次满栈空转
+    // 纯浪费；R219 探针时代 appendChild 为 undefined → TypeError 立即出局，环是
+    // R341 装方法后新暴露）。判据断环：兜底只委托非原型实现（own/工厂实现语义
+    // 不受扰）；原型形态直接静默返回入参（与 R219 无实现终态一致）。
+    try {
+      if (this.appendChild !== globalThis.Node.prototype.appendChild) {
+        this.appendChild(newNode);
+      }
+    } catch (_e6) {}
     return newNode;
   });
   // R219（js-dom M4）：`Node.prototype.contains` / `compareDocumentPosition` /
