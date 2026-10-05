@@ -11505,7 +11505,11 @@
       return globalThis[name];
     }
     var Parent = globalThis[parentName] || globalThis.Event;
-    var Ctor = function (type, options) {
+    // uievents-compat 尾簇 14：构造器 `length` = **1**（spec 各事件构造器仅 type 必填，
+    // eventInitDict 可选——WPT Event-subclasses-init `eventType.length === 1` 断言面；
+    // 旧 `(type, options)` 双形参 length=2）。options 经 arguments[1] 运行时读取。
+    var Ctor = function (type) {
+        var options = arguments.length > 1 ? arguments[1] : undefined;
       // R109：真构造器化（同 Event 修复）——`class X extends MouseEvent` 的 super() 要求本 ctor
       // 以 [[Construct]] 语义填充 new.target 的 this；工厂返对象会致子类 this 未初始化。
       var o = (options == null || typeof options !== 'object') ? {} : options;
@@ -11579,7 +11583,8 @@
   // `uievent` §constructor）。挂在 UIEvent 原构造器外层（保 prototype/子类注册不动）。
   var UIEventBase = globalThis.UIEvent;
   if (UIEventBase) {
-    var UIEventCtor109 = function UIEvent(type, options) {
+    var UIEventCtor109 = function UIEvent(type) {
+      var options = arguments.length > 1 ? arguments[1] : undefined; // 尾簇 14：length=1
       if (options != null && typeof options === 'object'
           && 'view' in options && options.view != null && options.view !== globalThis) {
         throw new globalThis.TypeError(
@@ -11644,7 +11649,7 @@
   (function () {
     var KB109 = globalThis.KeyboardEvent;
     if (!KB109 || !KB109.__zwR109Patched) {
-      var WrappedKB = function KeyboardEvent(type, options) {
+      var WrappedKB = function KeyboardEvent(type) { // 尾簇 14：length=1
         var r = KB109.apply(this, arguments);
         var inst = (r && typeof r === 'object') ? r : this;
         var defs = { key: '', code: '', location: 0, repeat: false, isComposing: false, charCode: 0, keyCode: 0, which: 0, detail: 0, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, view: null };
@@ -11657,7 +11662,8 @@
         // prop 链同款；WPT keyboardevent-composed.html 断言 composed===true）。
         // native 模板**恒设 composed=false**（非 undefined——不能用 undefined 探测），
         // 以 init dict 为事实源：dict 无 composed 键（或值 null）→ true；显式 false → false。
-        var oC = (options == null || typeof options !== 'object') ? {} : options;
+        // 尾簇 14：options 经 arguments[1] 运行时读取（length=1）。
+        var oC = (arguments[1] == null || typeof arguments[1] !== 'object') ? {} : arguments[1];
         if (oC.composed == null) {
           try { inst.composed = true; } catch (_eKc) {}
         }
@@ -11675,10 +11681,11 @@
     // 有 composed 键 → 采信；无键 → 保持 native false（EventInit 缺省）。
     var ME109 = globalThis.MouseEvent;
     if (ME109 && !ME109.__zwR109Patched && ME109 !== globalThis.Event) {
-      var WrappedME = function MouseEvent(type, options) {
+      var WrappedME = function MouseEvent(type) {
         var r = ME109.apply(this, arguments);
         var inst = (r && typeof r === 'object') ? r : this;
-        var oM = (options == null || typeof options !== 'object') ? {} : options;
+        // 尾簇 14：options 经 arguments[1] 运行时读取（length=1，见 _defineEventSubclass 注记）。
+        var oM = (arguments[1] == null || typeof arguments[1] !== 'object') ? {} : arguments[1];
         if (oM.composed != null) {
           try { inst.composed = !!oM.composed; } catch (_eMc) {}
         }
@@ -11727,6 +11734,7 @@
   var UIEventCtor110 = globalThis.UIEvent;
   if (UIEventCtor110 && !UIEventCtor110.prototype.initUIEvent) {
     UIEventCtor110.prototype.initUIEvent = function (type, bubbles, cancelable, view, detail) {
+      if (arguments.length === 0) throw new globalThis.TypeError("Failed to execute 'initUIEvent' on 'UIEvent': 1 argument required, but only 0 present."); // 尾簇 14
       if (this._zwDispatching) return;
       var proto = Object.getPrototypeOf(Object.getPrototypeOf(this));
       if (proto && typeof proto.initEvent === 'function') proto.initEvent.call(this, type, bubbles, cancelable);
@@ -11739,6 +11747,7 @@
                                                         detail, screenX, screenY, clientX, clientY,
                                                         ctrlKey, altKey, shiftKey, metaKey,
                                                         button, relatedTarget) {
+      if (arguments.length === 0) throw new globalThis.TypeError("Failed to execute 'initMouseEvent' on 'MouseEvent': 1 argument required, but only 0 present."); // 尾簇 14
       if (this._zwDispatching) return;
       var proto = Object.getPrototypeOf(Object.getPrototypeOf(this));
       if (proto && typeof proto.initEvent === 'function') proto.initEvent.call(this, type, bubbles, cancelable);
@@ -11758,6 +11767,7 @@
     KeyboardEventCtor.prototype.initKeyboardEvent = function (type, bubbles, cancelable, view,
                                                              key, location, ctrlKey, altKey,
                                                              shiftKey, metaKey) {
+      if (arguments.length === 0) throw new globalThis.TypeError("Failed to execute 'initKeyboardEvent' on 'KeyboardEvent': 1 argument required, but only 0 present."); // 尾簇 14
       if (this._zwDispatching) return;
       var proto = Object.getPrototypeOf(Object.getPrototypeOf(this));
       if (proto && typeof proto.initEvent === 'function') proto.initEvent.call(this, type, bubbles, cancelable);
@@ -11801,10 +11811,10 @@
       // 构造期注入，getter 返注入序列；WPT pointerevent_constructor 的 predicted
       // 断言族读 init 注入元素的 clientX/pointerId 等）。
       if (!PE_M3.__zwM3SeqInit) {
-        var PEM3Wrapped = function PointerEvent(type, options) {
+        var PEM3Wrapped = function PointerEvent(type) { // 尾簇 14：length=1
           var r = PE_M3.apply(this, arguments);
           var inst = (r && typeof r === 'object') ? r : this;
-          var o = (options == null || typeof options !== 'object') ? {} : options;
+          var o = (arguments[1] == null || typeof arguments[1] !== 'object') ? {} : arguments[1];
           if (o.coalescedEvents && o.coalescedEvents.length) inst._zwCoalescedEvents = o.coalescedEvents;
           if (o.predictedEvents && o.predictedEvents.length) inst._zwPredictedEvents = o.predictedEvents;
           // uievents-compat 尾簇 11：constructor 身份统一——wrapper 接管

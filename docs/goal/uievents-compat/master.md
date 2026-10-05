@@ -1,17 +1,17 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-05（M3 尾簇 13 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-05（M3 尾簇 14 落地）
 
 ## 当前状态
 
-**M3 + 尾簇 1/2/4/5/6/7/8/9/10/11/12/13 落地（2026-10-05）**：基线 230P → M2 片 1 343P →
+**M3 + 尾簇 1/2/4/5/6/7/8/9/10/11/12/13/14 落地（2026-10-05）**：基线 230P → M2 片 1 343P →
 M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P → 尾簇 6a 1107P →
 尾簇 6b+6c 1115P → 尾簇 7 1167P → 尾簇 8 1202P → 尾簇 9 1218P → 尾簇 10 1570P →
-尾簇 11 1583P → 尾簇 12 1588P → **1590P（+1360 累计）**
-（corpus：1590P/261F/97TO，`TIME_LIMIT=3600`；97TO 恒值。尾簇 13 净 +2 零回归——
-image-map 族 **18/18 全绿**（视图基座去重 + hit test isConnected 幽灵过滤）；逐
-subtest 对账 improvements=2/regressions=0）。
+尾簇 11 1583P → 尾簇 12 1588P → 尾簇 13 1590P → **1594P（+1364 累计）**
+（corpus：1594P/257F/97TO，`TIME_LIMIT=3600`；97TO 恒值。尾簇 14 净 +4 零回归——
+事件构造器 `length` 归一 + init* 0 参 TypeError；逐 subtest 对账
+improvements=4/regressions=0）。
 证据：[evidence/2026-10-05-m3-tail13.json](evidence/2026-10-05-m3-tail13.json)（尾簇 13 后）、
 [evidence/2026-10-05-m3-tail13.md](evidence/2026-10-05-m3-tail13.md)（根因链 + 排除路径）、
 [evidence/2026-10-05-m3-tail12.json](evidence/2026-10-05-m3-tail12.json)（尾簇 12 后）、
@@ -37,7 +37,14 @@ subtest 对账 improvements=2/regressions=0）。
 门禁：workspace 17,246P/0F、renderer lib 204P/0F、reftest 704/704、fmt + clippy
 （quickjs 面）全绿；shim 拼接 node --check 全绿。
 
-**M3 尾簇 13（2026-10-05，本轮）——查询视图基座去重 + hit test 幽灵过滤**。两件：
+**M3 尾簇 14（2026-10-05，本轮）——事件构造器 `length` 归一 + init* 0 参 TypeError**。
+spec 各事件构造器仅 `type` 必填（eventInitDict 可选）——wrapper（UIEventCtor109/
+WrappedME/WrappedKB/PEM3Wrapped）与 shim 基构造器签名 `(type, options)` → `(type)`
+（options 经 `arguments[1]` 运行时读取），`eventType.length === 1`（WPT
+Event-subclasses-init 断言面）；initUIEvent/initMouseEvent/initKeyboardEvent 补
+0 参 TypeError 守卫。+4。
+
+**M3 尾簇 13（2026-10-05，c2eb6c48c）——查询视图基座去重 + hit test 幽灵过滤**。两件：
 ① `with_query_view_doc` 的 InsertAdjacentHtml 重放加**基座已反映去重**——dom_html
 换代写入点（R55 重注册换新 Arc = 最新 cached_html / user_actions 批末更新）使基座
 可能已含已 apply 的落地拷贝，全量重放再插一次即双计；fragment 首 id 已在基座 →
@@ -224,7 +231,10 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 证据：[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)
 （含 2 案本地 zwprobe 探针已剔除入账）。门禁：node --check + 双族聚焦跑全绿。
 
-**DC-4 门禁（2026-10-05，尾簇 13 后）**：workspace 腿（Makefile 同参 exclude
+**DC-4 门禁（2026-10-05，尾簇 14 后）**：workspace 腿（exclude zero-webdriver，环境
+损坏同前账）**17,232P/0F**（0 超时）+ renderer bin 腿 0F + **reftest 704/704 零回归**
++ shim 拼接 node --check 全绿（纯 JS shim 变更，clippy/fmt 无 Rust 面）。
+历史（尾簇 13 后）：workspace 17,232P/0F + reftest 704/704。：workspace 腿（Makefile 同参 exclude
 zero-webdriver——其 http_session 用例**本机环境损坏**：stash bisect 于 HEAD 未含本轮
 改动同样红，element not found/标题空，疑 show-window 依赖；非本轮回归）**17,232P/0F**
 （49 套件 0 超时，RUST_MIN_STACK=32MiB 同 Makefile）+ renderer bin 腿 0F；**reftest
@@ -281,8 +291,10 @@ make test 19,825P/0F 首轮绿；尾簇 11 后：三跑收口。
   1570P→1583P（+13）。
 - **M3 尾簇 12（2026-10-05，e96325586）**：pending 捕获换防时序（capturedSel 后取）+
   compat mouseup 捕获落点分流（mouse=upEff / touch=upSel）。1583P→1588P（+5）。
-- **M3 尾簇 13（2026-10-05，本轮）**：视图重放基座去重（fragment id 已在基座跳过）+
+- **M3 尾簇 13（2026-10-05，c2eb6c48c）**：视图重放基座去重（fragment id 已在基座跳过）+
   命中测试 isConnected 幽灵过滤。1588P→1590P（+2，image-map 族 18/18 收口）。
+- **M3 尾簇 14（2026-10-05，本轮）**：事件构造器 `length` 归一（wrapper + shim 基构造
+  `(type)` 化）+ init* 0 参 TypeError 守卫。1590P→1594P（+4）。
 
 ## 下一步计划
 
