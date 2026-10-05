@@ -9823,7 +9823,14 @@
   // added/removed 均展开 handle 子树（`_handleChildren` R2927 registry——WPT case.js 先建
   // container 挂 15 个 NS 元素再 append container：childList notify 只含 container，孙节点
   // 须经展开进 pending 表；remove container 同理整树剔除，防跨子测试泄漏）。
-  var _zwLiveCollections = [];
+  // slice32（RP-3）：live 集合登记表挂 **context 级稳定 global**——renderer worker 的 shim
+  // 重执行（reset_context 重建 context 后 reinit；同 context 再 eval 时本行 var 重绑定
+  // 会把已登记集合搁浅进孤儿闭包数组——登记表读不到 → 集合聋化，probe 实证）。
+  // 同 context 复用旧表（旧集合闭包同 context 存活、matches 仍有效）；context 销毁
+  //（reset_context）global 随亡，自然换新。host 安装的 named access 集合依赖本表 live，
+  // 无脚本重建路径（对比脚本自建 getElementsBy* 集合重执行后自然重取），必须跨重执行存活。
+  var _zwLiveCollections = globalThis.__zwLiveCollectionsStore
+    || (globalThis.__zwLiveCollectionsStore = []);
   var _zwPendingAdded = [];
   var _zwPendingRemoved = [];
   // js-dom M4 R51c：pending 表并行 Set——`_zwHCLiveInvalidate` 的 added 分支旧实现每条
@@ -10226,6 +10233,8 @@
     var _r54InDoc = _zwMutationInDoc(mutSel, mutHandle);
     for (var i = 0; i < _zwLiveCollections.length; i++) {
       var lc = _zwLiveCollections[i];
+      // slice32（RP-3）：同名新集合重装（换代/重装）后旧 NA 集合停维护。
+      if (lc.dead) continue;
       if (remFlat.length) {
         var out = [];
         var els = lc.elements();
@@ -10265,6 +10274,11 @@
             if (!dup) cur.push(nd);
           }
         }
+      }
+      // slice32（RP-3）：NA 集合成员经 childList 变异维护后跟随全局形态（成员跌破
+      // 2 → 全局 morph 元素/回收；仅安装集合值本身，见 _zwNAGlobalMorph 边界注）。
+      if (lc.naName && (remFlat.length || addFlat.length)) {
+        try { _zwNAGlobalMorph(lc.naName); } catch (_e32lm) {}
       }
     }
   }
@@ -10477,9 +10491,89 @@
         // add 并入判定按作用域放行（mutation 容器 === 作用域容器即入，不查 in-doc）。
         scopeHandle: liveSpec.scopeHandle || null,
         scopeSel: liveSpec.scopeSel || null,
+        // slice32（RP-3）：Window named access 集合标记（naName = 多命中名）——
+        // _zwHCLiveInvalidate 的 morph 尾叫与 _zwNAAttrChanged 重核只作用于本标记集合；
+        // dead = 同名新集合重装（换代/重装）后旧集合停维护（captured 引用冻结 =
+        // 旧文档语义，spec 新文档集合不跨文档存活）。
+        naName: liveSpec.naName || null,
+        dead: false,
       });
     }
     return proxy;
+  }
+
+  // slice32（RP-3）：Window named access 多命中集合 live 语义（slice30 静态快照集合的
+  // live 化）。三件套：①childList 变异（appendChild/removeChild 及子树）经既有
+  // _zwLiveCollections 设施按 matches 同步维护（part01 _mo_notify 单一汇流点）；
+  // ②id/name 属性变异经 part04 setAttribute/removeAttribute 钩子 _zwNAAttrChanged
+  // 重核成员；③成员数跌破 2 时全局形态跟随 spec 取值算法（_zwNAGlobalMorph：
+  // 1 命中→元素、0 命中→回收全局；仅当全局当前值仍是本特性安装的集合）。
+  // **live 边界（FIXME(live-collection) 收窄，偏差如实申报）**：安装时点不存在的名
+  // 不解析（window.N 动态取值面——spec WindowProperties exotic object [[GetOwnProperty]]
+  // 每读动态查找，shim 全局为数据属性安装不可达：multi-match.html / changing.html /
+  // removing.html 的脚本后建名面维持不 Pass）；childList 并入为末位近似（insertBefore
+  // 中插的树序不保）；单命中元素全局（slice27 面）不 live。
+  // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+  var _zwNAInstalled = globalThis.__zwNAInstalledStore
+    || (globalThis.__zwNAInstalledStore = {}); // slice32：同上，跨 shim 重执行存活
+  // named access 成员判定——与安装期采集器 `_namedAccessMatches`（part06）同口径：
+  // id 面（全元素）+ name 面（embed/form/img/object，local 名不辨 ns，与构建期选择器一致）。
+  function _zwNAElemMatches(name, el) {
+    if (!el || el.nodeType !== 1) return false;
+    var idv = null, nmv = null;
+    try { idv = el.getAttribute('id'); } catch (_e32i) {}
+    try { nmv = el.getAttribute('name'); } catch (_e32n) {}
+    if (idv === name) return true;
+    if (nmv !== name) return false;
+    var tn = '';
+    try { tn = String(el.tagName || ''); } catch (_e32t) {}
+    var low = tn.toLowerCase();
+    return low === 'embed' || low === 'form' || low === 'img' || low === 'object';
+  }
+  function _zwNALiveSpec(name) {
+    return {
+      naName: name,
+      matches: function (el) { return _zwNAElemMatches(name, el); },
+    };
+  }
+  // 全局形态跟随：仅当 globalThis[name] 仍是本特性安装的集合时改写/回收——脚本自有
+  // 全局、已 morph 成元素的全局（broadening 面未实现，见边界注）不回改。
+  function _zwNAGlobalMorph(name) {
+    var g, installed = _zwNAInstalled[name];
+    if (!installed) return;
+    try { g = globalThis[name]; } catch (_e32g) { return; }
+    if (g !== installed) return;
+    var els = installed.__zwHC();
+    if (els.length === 1) {
+      try { globalThis[name] = els[0]; } catch (_e32m1) {}
+    } else if (els.length === 0) {
+      try { delete globalThis[name]; } catch (_e32m0) {}
+      delete _zwNAInstalled[name];
+    }
+  }
+  // id/name 属性变异重核：全部 NA 活集合逐个核对该元素成员资格（失格剔除保序 /
+  // 新中末位并入），随后全局形态跟随。每次 setAttribute/removeAttribute('id'/'name')
+  // 各 O(NA 集合数 × 成员数)，named access 集合个位数常态，无热路径风险。
+  function _zwNAAttrChanged(el) {
+    for (var i32 = 0; i32 < _zwLiveCollections.length; i32++) {
+      var lc32 = _zwLiveCollections[i32];
+      if (!lc32 || !lc32.naName || lc32.dead) continue;
+      var els32 = lc32.elements();
+      var has32 = false;
+      for (var j32 = 0; j32 < els32.length; j32++) if (els32[j32] === el) { has32 = true; break; }
+      var m32 = false;
+      try { m32 = lc32.matches(el); } catch (_e32am) { m32 = false; }
+      if (has32 === m32) continue;
+      var out32 = [];
+      if (m32) {
+        for (var k32 = 0; k32 < els32.length; k32++) out32.push(els32[k32]);
+        out32.push(el);
+      } else {
+        for (var k2c = 0; k2c < els32.length; k2c++) if (els32[k2c] !== el) out32.push(els32[k2c]);
+      }
+      lc32.replace(out32);
+      _zwNAGlobalMorph(lc32.naName);
+    }
   }
 
   // `prepend`/`before`/`after` 共用：variadic 节点/字符串按 position 经 insertAdjacent*
