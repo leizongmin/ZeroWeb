@@ -9543,21 +9543,26 @@ return _tplContent;
           // 须早于末尾 generic fallthrough（否则 classList 落入 expando 被覆盖）。
           return true;
         } else if (p === 'className') {
-          _classCache[key] = String(value);
-          if (handle) __zw_set_attr_handle(handle, 'class', String(value));
-          else __zw_set_attr(sel, 'class', String(value));
-          // R122：同步实例层（classList/className 直写 host，实例不更新则 getAttribute 读 stale）。
-          try {
-            var _cn122L = _zwAttrInstances.get(key);
-            if (_cn122L) {
-              var _cn122Hit = false;
-              for (var _cn122i = 0; _cn122i < _cn122L.length; _cn122i++) {
-                if (_cn122L[_cn122i].qname === 'class') { _cn122L[_cn122i].value = String(value); _cn122Hit = true; break; }
+          // SVG className IDL：readonly [SameObject]（spec SVG2 svg-types）——SVG ns 元素
+          // 赋值无效（non-strict no-op 对齐 Chrome，class 属性不动）；HTML 元素维持反射写。
+          // ns 判定同 get 面 _zwIsSvgNsEl（part03；handle 型 _nsHandles + sel 型 R5000）。
+          if (!_zwIsSvgNsEl(sel, handle)) {
+            _classCache[key] = String(value);
+            if (handle) __zw_set_attr_handle(handle, 'class', String(value));
+            else __zw_set_attr(sel, 'class', String(value));
+            // R122：同步实例层（classList/className 直写 host，实例不更新则 getAttribute 读 stale）。
+            try {
+              var _cn122L = _zwAttrInstances.get(key);
+              if (_cn122L) {
+                var _cn122Hit = false;
+                for (var _cn122i = 0; _cn122i < _cn122L.length; _cn122i++) {
+                  if (_cn122L[_cn122i].qname === 'class') { _cn122L[_cn122i].value = String(value); _cn122Hit = true; break; }
+                }
+                if (!_cn122Hit) _zwAttrInstUpsert(key, 'class', null, null, 'class', String(value));
               }
-              if (!_cn122Hit) _zwAttrInstUpsert(key, 'class', null, null, 'class', String(value));
-            }
-          } catch (_eCn122) {}
-          moAttr = 'class';
+            } catch (_eCn122) {}
+            moAttr = 'class';
+          }
         } else if (p === 'style') {
           // js-dom M4 R122：`el.style = cssText`（spec CSSStyleDeclaration cssText setter——
           // 「set the cssText attribute」写 style 内容属性为串）。旧落 generic fallthrough 进
