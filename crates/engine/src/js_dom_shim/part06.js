@@ -12171,7 +12171,14 @@
     // uievents-compat M3 尾簇：touch 无 hover——move 步不派边界序/move 对（真实
     // 触摸指针无悬停态，边界事件在接触（down）时派——WPT after_target_removed
     // ?touch「pointerdown should imply a pointermove again」）。
-    if (st.pointerType === 'touch') return 'ok';
+    if (st.pointerType === 'touch') {
+      // 尾簇 18：touch 拖拽的 range 取值（touch 无 hover/move 对——取值是默认动作
+      // 非事件面；WPT pointerevent_range_input ?touch 断言面）。
+      if (st.buttons && st.downSel && _zwIsRangeInput(st.downSel, null)) {
+        _zwRangeApplyFromPoint(st.downSel, null, x, y);
+      }
+      return 'ok';
+    }
     // 目标已移除（悬停元素被 DOM 删除）→ 命中测试重定向（over 元素移除后下一个
     // 指针事件以新命中目标派发——WPT pointerevent_after_target_removed）。
     sel = _zwRetargetSel(sel, x, y);
@@ -12222,6 +12229,10 @@
         clientX: x || 0, clientY: y || 0,
         button: 0, buttons: st.buttons // 尾簇 16：compat mouse 面按钮恒 0（同上）
       });
+    }
+    // 尾簇 18：range input 拖拽持续取值（按下键位非零 + down 落在 range 上）。
+    if (st.buttons && st.downSel && _zwIsRangeInput(st.downSel, null)) {
+      _zwRangeApplyFromPoint(st.downSel, null, x, y);
     }
     return 'ok';
   };
@@ -12380,6 +12391,47 @@
   // ——折叠把 down/up 压成单命令，页内 listener 于 pointerdown 里 setPointerCapture
   // 无法影响后续 move/up 路由，capture 族全簇不可测）。
   //
+  // uievents-compat 尾簇 18：**range input 拖拽取值默认动作**——pointerdown 于
+  // INPUT[type=range] → 按指针位置设定 value；拖拽 move 持续更新；release 派 change。
+  // 轴向：水平（缺省，w>=h）pct=(x-rx)/rw；垂直（inline style writing-mode 含
+  // vertical——WPT 用 `writing-mode:vertical-lr; direction:rtl`）pct=1-(y-ry)/rh
+  //（顶=max——rtl 垂直滑块填充自底向顶，WPT「up drag → value 100」断言面）。
+  // value = min + pct*(max-min) 按 step 取整；正交轴拖动不改值（pct 恒定自然满足）。
+  // headless 无真滑块 UI，此为该默认动作的语义近似（pointerevent_range_input 面）。
+  function _zwIsRangeInput(sel, handle) {
+    try {
+      if (_realTag(sel, handle) !== 'INPUT') return false;
+      var t = String((handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '').toLowerCase();
+      return t === 'range';
+    } catch (_e18r) { return false; }
+  }
+  function _zwRangeApplyFromPoint(sel, handle, x, y) {
+    try {
+      var rStr = (typeof __zw_getBoundingClientRect === 'function') ? String(__zw_getBoundingClientRect(sel)) : '';
+      if (!rStr) return;
+      var parts = rStr.split(',');
+      var rx = Number(parts[0]), ry = Number(parts[1]), rw = Number(parts[2]), rh = Number(parts[3]);
+      if (!isFinite(rx) || !isFinite(rw) || rw <= 0 || rh <= 0) return;
+      var st = (handle ? __zw_get_attr_handle(handle, 'style') : __zw_get_attr(sel, 'style')) || '';
+      var vertical = /writing-mode[^;]*vertical/i.test(String(st));
+      var pct = vertical ? (1 - (y - ry) / rh) : ((x - rx) / rw);
+      if (!(pct >= 0)) pct = 0;
+      if (pct > 1) pct = 1;
+      var proxy = _makeProxy(sel, handle);
+      var min = Number(proxy.min) || 0;
+      var max = Number(proxy.max);
+      if (!isFinite(max)) max = 100;
+      var step = Number(proxy.step);
+      if (!isFinite(step) || step <= 0) step = 1;
+      var v = min + pct * (max - min);
+      v = min + Math.round((v - min) / step) * step;
+      if (v < min) v = min;
+      if (v > max) v = max;
+      proxy.value = String(v);
+      __zw_dispatch_event(sel, 'input', {});
+    } catch (_e18ra) {}
+  }
+
   // `__zw_pointer_down_sequence(sel, x, y, pointerType, button)`——UI Events §5.2.2
   // 指针事件序 down 半段：悬停迁移（跨界序 + move 对）→ pointerdown →（未取消时）
   // mousedown → [contextmenu（右键）]。compat mouse 抑制：pointerdown preventDefault
@@ -12451,6 +12503,10 @@
       downEff = reDown;
     }
     var mdownPrevented = __zw_dispatch_event(downEff, 'mousedown', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button }) === 'prevented';
+    // 尾簇 18：range input 按下取值默认动作（未被页面取消时）。
+    if (!mdownPrevented && _zwIsRangeInput(downEff, null)) {
+      _zwRangeApplyFromPoint(downEff, null, x, y);
+    }
     if (button === 2) {
       // 尾簇 11：UA 指针 contextmenu → PointerEvent 实例（同 click/auxclick 注记）。
       __zw_dispatch_event(downEff, 'contextmenu', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button, pointerType: pointerType || 'mouse', pointerId: 1 });
@@ -12590,6 +12646,10 @@
     // 的误推广）。
     if (!st.compatSuppressed) {
       __zw_dispatch_event(pointerType === 'touch' ? upSel : upEff, 'mouseup', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
+    }
+    // 尾簇 18：range input release → change 事件（spec——拖拽取值提交面）。
+    if (_zwIsRangeInput(upEff, null)) {
+      __zw_dispatch_event(upEff, 'change', {});
     }
     // uievents-compat M3 尾簇 6c（2026-10-04）：**up 派发中变异的 post-up 结算**
     //（Chromium touch 接触失效语义——WPT after_target_appended ?touch 断言面）。

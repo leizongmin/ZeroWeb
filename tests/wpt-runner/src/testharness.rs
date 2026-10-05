@@ -7905,7 +7905,11 @@ return (best?((best.__zwSelector||(best.id?'#'+best.id:''))||''):'')+'|'+px+'|'+
     let y = parts.next().and_then(|v| v.trim().parse::<f32>().ok());
     match (x, y) {
         (Some(x), Some(y)) if !hit.is_empty() => (hit, x, y),
-        (Some(x), Some(y)) if absolute => (origin_sel.to_string(), x, y),
+        // uievents-compat 尾簇 18：命中为空但坐标有效 → 以 body 落点 + **计算坐标**
+        //（指针可移出任何元素盒到文档空白区——真浏览器事件落 html/body；旧版回落
+        // origin + RAW offset 使坐标错页（(0,186)）——range_input 纵向拖拽取值断链
+        // 实证：GBCR 算得 (93,202) 被弃用，move 派到 (0,186) 左上角）。
+        (Some(x), Some(y)) => ("body".to_string(), x, y),
         _ => (origin_sel.to_string(), off_x, off_y),
     }
 }

@@ -1,20 +1,18 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-05（M3 尾簇 17 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-05（M3 尾簇 18 落地）
 
 ## 当前状态
 
-**M3 + 尾簇 1/2/4/5/6/7/8/9/10/11/12/13/14/15/16/17 落地（2026-10-05）**：基线 230P → M2 片 1 343P →
+**M3 + 尾簇 1/2/4/5/6/7/8/9/10/11/12/13/14/15/16/17/18 落地（2026-10-05）**：基线 230P → M2 片 1 343P →
 M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P → 尾簇 6a 1107P →
 尾簇 6b+6c 1115P → 尾簇 7 1167P → 尾簇 8 1202P → 尾簇 9 1218P → 尾簇 10 1570P →
 尾簇 11 1583P → 尾簇 12 1588P → 尾簇 13 1590P → 尾簇 14 1594P → 尾簇 15 1609P →
-尾簇 16 1610P → **1616P（+1386 累计）**
-（corpus：1616P/235F/97TO，`TIME_LIMIT=3600`；97TO 回归恒值。尾簇 17 净 +6 零回归——
-window.visualViewport 最小实现；逐 subtest 对账 improvements=6/regressions=0）。
-range input 拖拽取值默认动作（尾簇 18 候选）：drag-from-point 取值需滑块轴向约定
-（水平/垂直/writing-mode）——首版 w/h 比启发式使 vertical-on-vertical 2 例回归已
-回退，待专项。
+尾簇 16 1610P → 尾簇 17 1616P → **1620P（+1390 累计）**
+（corpus：1620P/230F/98TO，`TIME_LIMIT=3600`。尾簇 18 净 +4 零回归——range 拖拽取值
+默认动作 + 空命中坐标保持；逐 subtest 对账 improvements=4/regressions=0；
+drag_on_added_range_input NaN 残余）。
 证据：[evidence/2026-10-05-m3-tail13.json](evidence/2026-10-05-m3-tail13.json)（尾簇 13 后）、
 [evidence/2026-10-05-m3-tail13.md](evidence/2026-10-05-m3-tail13.md)（根因链 + 排除路径）、
 [evidence/2026-10-05-m3-tail12.json](evidence/2026-10-05-m3-tail12.json)（尾簇 12 后）、
@@ -40,7 +38,18 @@ range input 拖拽取值默认动作（尾簇 18 候选）：drag-from-point 取
 门禁：workspace 17,246P/0F、renderer lib 204P/0F、reftest 704/704、fmt + clippy
 （quickjs 面）全绿；shim 拼接 node --check 全绿。
 
-**M3 尾簇 17（2026-10-05，本轮）——window.visualViewport 最小实现**。CSSOM-View
+**M3 尾簇 18（2026-10-05，本轮）——range 拖拽取值默认动作 + 空命中坐标保持**。三件：
+① range input 拖拽取值（shim down/move/up 三站 hook）：INPUT[type=range] 按下/拖拽
+按指针位置设 value（input 事件）+ release 派 change；轴向——水平 pct=(x-rx)/rw、
+垂直（inline style writing-mode 含 vertical）pct=1-(y-ry)/rh（`vertical-lr;rtl` 顶
+=max，WPT「up drag → 100」面）——尾簇 17 回退的 w/h 比启发式由 inline-style 检测 +
+反转修正替代；② runner `resolve_pointer_target` **空命中坐标保持**：命中扫描为空
+（指针移出任何元素盒到文档空白区）不再回落 origin+RAW offset（坐标错页 (0,186)
+断链实证），改派 body 落点 + 计算坐标（93,202）——真浏览器事件落 html/body；
+③ touch move 早退路径补 range 取值（touch 无 move 对但取值是默认动作）。+4。
+细节与回退史见 [evidence/2026-10-05-m3-tail18.md](evidence/2026-10-05-m3-tail18.md)。
+
+**M3 尾簇 17（2026-10-05，aa992c1c1）——window.visualViewport 最小实现**。CSSOM-View
 VisualViewport（headless 近似：scale=1、offset/page 恒 0，width/height 经 getter 实时
 读 innerWidth/innerHeight——`__zw_user_resize` 更新后自动跟随）。range_input 族的
 ReferenceError 整子测拒绝解除（+6）。range input 拖拽取值默认动作未落地（轴向约定
@@ -259,7 +268,10 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 证据：[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)
 （含 2 案本地 zwprobe 探针已剔除入账）。门禁：node --check + 双族聚焦跑全绿。
 
-**DC-4 门禁（2026-10-05，尾簇 17 后）**：workspace 腿（exclude zero-webdriver，环境
+**DC-4 门禁（2026-10-05，尾簇 18 后）**：workspace 腿（exclude zero-webdriver，环境
+损坏同前账）**17,232P/0F**（0 超时）+ renderer bin 腿 0F + **reftest 704/704 零回归**
++ shim 拼接 node --check 全绿。
+历史（尾簇 17 后）：workspace 17,232P/0F + reftest 704/704。：workspace 腿（exclude zero-webdriver，环境
 损坏同前账）**17,232P/0F**（0 超时）+ renderer bin 腿 0F + **reftest 704/704 零回归**
 + shim 拼接 node --check 全绿（纯 JS shim 变更）。
 历史（尾簇 16 后）：workspace 17,232P/0F + reftest 704/704。：workspace 腿（exclude zero-webdriver，环境
@@ -336,8 +348,10 @@ make test 19,825P/0F 首轮绿；尾簇 11 后：三跑收口。
   （compatSuppressed 手势标记 / 撤销 upPrevented 过泛化）。1594P→1609P（+15）。
 - **M3 尾簇 16（2026-10-05，58b1854c7）**：跨界/移动事件按钮按层分流（compat mouse=0 /
   pointer=-1）。1609P→1610P（+1）。
-- **M3 尾簇 17（2026-10-05，本轮）**：window.visualViewport 最小实现。
-  1610P→1616P（+6）；range 拖拽取值轴向约定回退挂账。
+- **M3 尾簇 17（2026-10-05，aa992c1c1）**：window.visualViewport 最小实现。
+  1610P→1616P（+6）。
+- **M3 尾簇 18（2026-10-05，本轮）**：range 拖拽取值默认动作（轴向修正）+ 空命中
+  坐标保持。1616P→1620P（+4）。
 
 ## 下一步计划
 
