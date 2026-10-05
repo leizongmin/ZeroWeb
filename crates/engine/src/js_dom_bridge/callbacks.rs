@@ -88,9 +88,17 @@ fn with_query_view_doc<R>(
     // R102，[`with_query_doc_live_aware`] 同语义），视图文档根本不用建。
     let live_ok = {
         let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
-        !mut_guard[..count]
-            .iter()
-            .any(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
+        // R342 返修（PR #77 双审查 D1）：count（:84 锁外读）与本锁之间队列可能被
+        // 旁路清零——与本函数下方 structural 切片同一竞窗类，且本判定先执行。
+        // len < count 即「队列被清」→「无 pending structural」字面成立，live_ok
+        // 取 true（live doc 即宿主现行态），不切片越界。
+        if mut_guard.len() < count {
+            true
+        } else {
+            !mut_guard[..count]
+                .iter()
+                .any(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
+        }
     };
     // FnOnce 单次调用：live 命中即消费；miss 时经 Option 还回落。
     let mut f = Some(f);
@@ -225,6 +233,11 @@ static REG_EPOCH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsiz
 /// 不变式前提：drain 后同批重新增长回旧 count 时 (ptr, count) 键会被误判为
 /// 「只增长」/「精确命中」，没有 gen 项会把 pre-drain 视图端出（错视图）。
 /// 未配对 view_gen 换代的 drain 站点（不推快照的排空路径）必须直接 bump 本代际。
+///
+/// 已知例外的清队站点：`zero-webview` 文档换代对 `shared_mutations` 就地 clear
+/// 且不 bump（webview.rs 注册路径）——其安全性依赖每次脚本执行重注册时装**新
+/// dom_html Arc**（跨代键必失配），而非 gen 失效；且清队与查询同线程无竞窗。
+/// 若未来该注册改为复用 Arc，必须改为走 clear+bump 范式。
 pub static MUT_DRAIN_GEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// mutations 队列 drain 站点调用（见 [`MUT_DRAIN_GEN`]）。

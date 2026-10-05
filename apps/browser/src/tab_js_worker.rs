@@ -215,9 +215,8 @@ impl TabJsWorkerHandle {
     /// bump 的 clear 会让缓存 count 与实际队列脱钩——实测竞窗 renderer panic
     /// （siteopt t2-pb3nm 集成验收）。凡清队列一律走本方法。
     pub fn clear_mutations_fresh(&self) {
-        if let Ok(mut q) = self.mutations.lock() {
-            q.clear();
-        }
+        // 中毒锁强制清（into_inner）——与被替换调用点原语义一致（PR #77 审查 D3）。
+        self.mutations.lock().unwrap_or_else(|e| e.into_inner()).clear();
         zero_engine::js_dom_bridge::bump_mut_drain_gen();
     }
 
@@ -759,7 +758,10 @@ mod tests {
         worker.clear_mutations_fresh();
         let gen_after = zero_engine::js_dom_bridge::MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
         assert_eq!(worker.mutations().lock().unwrap().len(), 0, "清空语义");
-        assert_eq!(gen_after, gen_before + 1, "clear 必须 bump drain 代际（不变式本体）");
+        // R342 返修（PR #77 审查 D2）：MUT_DRAIN_GEN 是进程级全局原子，libtest 并行
+        // 测试可在两 load 之间 bump——断言「必须前进」而非恰好 +1（免 flake；对
+        // 「禁 bump」变异同等灵敏：不变式本体即前进）。
+        assert!(gen_after > gen_before, "clear 必须 bump drain 代际（不变式本体）");
     }
 
     /// js-dom R386（DC-1 多进程生产路径）：TabJsWorker 沙箱装原生 DOM 绑定——
