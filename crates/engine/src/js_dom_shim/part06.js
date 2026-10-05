@@ -12193,10 +12193,15 @@
         button: -1, buttons: st.buttons, relatedTarget: null,
         pressure: st.buttons ? 0.5 : 0
       });
-      __zw_dispatch_event(cap.sel, 'mousemove', {
-        clientX: x || 0, clientY: y || 0,
-        button: -1, buttons: st.buttons, relatedTarget: null
-      });
+      // 尾簇 15：pointerdown 被取消 → 本手势后续 compat mouse 抑制（PE spec §11
+      // 「canceling the pointerdown event ... prevents ... compatibility mouse
+      // events」——mousemove/mouseup 全链；click 例外照常）。
+      if (!st.compatSuppressed) {
+        __zw_dispatch_event(cap.sel, 'mousemove', {
+          clientX: x || 0, clientY: y || 0,
+          button: -1, buttons: st.buttons, relatedTarget: null
+        });
+      }
       return 'ok';
     }
     var prev = st.overSel;
@@ -12209,10 +12214,12 @@
       button: -1, buttons: st.buttons,
       pressure: st.buttons ? 0.5 : 0
     });
-    __zw_dispatch_event(sel, 'mousemove', {
-      clientX: x || 0, clientY: y || 0,
-      button: -1, buttons: st.buttons
-    });
+    if (!st.compatSuppressed) {
+      __zw_dispatch_event(sel, 'mousemove', {
+        clientX: x || 0, clientY: y || 0,
+        button: -1, buttons: st.buttons
+      });
+    }
     return 'ok';
   };
   // 悬停态导航重置（part01 `__zw_reset_form_state` 同族——per-page 状态生命周期）。
@@ -12396,7 +12403,14 @@
       st.hoverSel = sel;
     } else {
       sel = _zwRetargetSel(sel, x, y);
-      __zw_pointer_move(sel, x, y);
+      // uievents-compat 尾簇 15：同位同目标幂等——**悬停已到位（overSel 相同且指针
+      // 坐标未变）时 down 不再派 move 对**（真实浏览器 pointerdown 无位移不产
+      // pointermove——Actions 链 move 命令已派过一对，down 序列的隐含迁移重复派发
+      // 即双 move；WPT pointerevent_mouse-pointer-preventdefault「move 对恰 1 对」
+      // 断言面）。悬停未到位（首次接触/跨界）照旧走完整迁移。
+      if (st.overSel !== sel || st.x !== (x || 0) || st.y !== (y || 0)) {
+        __zw_pointer_move(sel, x, y);
+      }
     }
     // 尾簇 5：hover 元素原位重插入 → 补重入面（over/enter——touch 隐含迁移分支与
     // mouse move 分支同面）。
@@ -12408,6 +12422,10 @@
       clientX: x || 0, clientY: y || 0, button: button,
       buttons: 1 << button, pointerType: pointerType || 'mouse', pressure: 0.5
     }) === 'prevented';
+    // 尾簇 15：pointerdown 取消 → 本手势 compat mouse 全链抑制标记（至下次 down
+    // 清除；mousemove 于 move 路径判、mouseup 于 up 序列判）。touch 无 compat 面
+    // 不置位。
+    st.compatSuppressed = prevented && (pointerType || 'mouse') !== 'touch';
     if (prevented) return 'prevented';
     // uievents-compat M3 尾簇 4（interleaved 面）：pointerdown 派发中目标被页内
     // listener 移除 → compat mousedown/contextmenu **重定向**（宿主视图父链回退——
@@ -12555,15 +12573,19 @@
       }
     }
     var upEff = capturedSel || upSel;
-    // pointerup 取消 → compat mouseup 抑制（click 照常——WPT
-    // pointerevent_suppress_compat_events_on_click 期望序 click@t0 无 mousedown/up）。
     // 尾簇 12：compat mouseup 落点——**mouse 随捕获有效落点**（upEff；pointerup 派发
     // 内的隐式释放已清 capture，内部 `_m3Cap` 重定向到此已不可达；Chrome 语义 compat
     // mouse 随指针捕获落点——WPT click_during_parent_capture mouse「mouseup path 不含
     // target」断言面）；**touch 随真实命中**（upSel——touch 的 compat mouseup 仍按
     // touchstart 目标，同 touchend「always fired on same target as touchstart」语义，
     // 同测试 touch 面「mouseup path 含 target」断言面）。无捕获时两者 === upSel 零变化。
-    if (!upPrevented) {
+    // 尾簇 15：mouseup 抑制仅随 **pointerdown 取消**（st.compatSuppressed——PE spec
+    // §11 全链抑制；WPT mouse-pointer-preventdefault「canceling pointerdown 后无
+    // mouseup」面）；**pointerup 自身取消不抑制 mouseup**（Chrome 实测/WPT
+    // mouse-pointer-preventdefault「canceling pointerup 仍有 mouseup」面——旧
+    // upPrevented 门为过泛化，撤销；该门源自 suppress_compat 族 pointerdown 面
+    // 的误推广）。
+    if (!st.compatSuppressed) {
       __zw_dispatch_event(pointerType === 'touch' ? upSel : upEff, 'mouseup', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0 });
     }
     // uievents-compat M3 尾簇 6c（2026-10-04）：**up 派发中变异的 post-up 结算**
