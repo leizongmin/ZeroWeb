@@ -53,9 +53,9 @@
     },
     {
       "id": "mb/zero-canvas/fill_rect_1000",
-      "p95": 8239242.5,
+      "p95": 8235258.25,
       "tier": "budget",
-      "tightened_at": "2026-10-02T19:26:02Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-canvas/path_ops_1000_segments",
@@ -83,15 +83,15 @@
     },
     {
       "id": "mb/zero-css-parser/complex_selector_parse_100",
-      "p95": 410733.6928571428,
+      "p95": 406621.24206349207,
       "tier": "budget",
-      "tightened_at": "2026-10-04T19:26:19Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-css-parser/css_parse_100kb",
-      "p95": 2765021.761904762,
+      "p95": 2745099.6666666665,
       "tier": "budget",
-      "tightened_at": "2026-10-04T19:26:19Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-css-parser/css_parse_by_size/rules/100",
@@ -101,15 +101,15 @@
     },
     {
       "id": "mb/zero-css-parser/css_parse_by_size/rules/1000",
-      "p95": 3772785.875,
+      "p95": 3741698.027777778,
       "tier": "budget",
-      "tightened_at": "2026-10-02T13:26:32Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-css-parser/css_parse_by_size/rules/500",
-      "p95": 1873941.9545454546,
+      "p95": 1868833.2166666666,
       "tier": "budget",
-      "tightened_at": "2026-10-04T19:26:19Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-css-parser/css_parse_by_size/rules/5000",
@@ -154,9 +154,9 @@
     },
     {
       "id": "mb/zero-dom/dom/query_selector_1000_elements_by_class",
-      "p95": 404.3308622915848,
+      "p95": 398.7937175315635,
       "tier": "budget",
-      "tightened_at": "2026-10-02T13:26:32Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-dom/dom/query_selector_1000_elements_by_id",
@@ -184,9 +184,9 @@
     },
     {
       "id": "mb/zero-engine/dirty_tracking/mark_100_nodes_and_merge",
-      "p95": 2827.8929065402094,
+      "p95": 2820.632407954322,
       "tier": "budget",
-      "tightened_at": "2026-10-04T15:15:48Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-engine/end_to_end_pipeline",
@@ -308,9 +308,9 @@
     },
     {
       "id": "mb/zero-protocol/ipc_roundtrip_10000",
-      "p95": 883791.3697478991,
+      "p95": 881440.2647058824,
       "tier": "budget",
-      "tightened_at": "2026-10-04T13:26:14Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-protocol/ipc_serialize_10000",
@@ -325,9 +325,9 @@
     },
     {
       "id": "mb/zero-render-foundation/damage_tracker/add_damage/1000",
-      "p95": 20885.654057017542,
+      "p95": 20865.110285335104,
       "tier": "budget",
-      "tightened_at": "2026-10-03T14:56:01Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-render-foundation/damage_tracker/add_damage/500",
@@ -361,15 +361,15 @@
     },
     {
       "id": "mb/zero-render-foundation/primitives/build_1000_fills",
-      "p95": 5414.974462658248,
+      "p95": 5346.834247377669,
       "tier": "budget",
-      "tightened_at": "2026-09-28T19:27:28Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-script-sandbox/es_module_simple_export",
-      "p95": 284713.116,
+      "p95": 283292.29215686274,
       "tier": "budget",
-      "tightened_at": "2026-10-04T13:26:14Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-script-sandbox/es_module_with_import",
@@ -390,9 +390,9 @@
     },
     {
       "id": "mb/zero-script-sandbox/execute_simple_expression",
-      "p95": 272032.908,
+      "p95": 269465.9,
       "tier": "budget",
-      "tightened_at": "2026-09-29T19:28:27Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-script-sandbox/execute_string_ops",
@@ -408,15 +408,15 @@
     },
     {
       "id": "mb/zero-script-sandbox/sandbox_with_config",
-      "p95": 1543439.235,
+      "p95": 1539581.63125,
       "tier": "budget",
-      "tightened_at": "2026-10-04T13:26:14Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-script-sandbox/worker_create_terminate",
-      "p95": 3486712.6,
+      "p95": 3476694.222222222,
       "tier": "budget",
-      "tightened_at": "2026-10-04T13:26:14Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-security/cors_check_1000",
@@ -461,9 +461,9 @@
     },
     {
       "id": "mb/zero-storage/local_storage_write_1000",
-      "p95": 237428.91654247392,
+      "p95": 236218.58122205664,
       "tier": "budget",
-      "tightened_at": "2026-10-03T14:56:01Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "mb/zero-style-system/cascade/declarations/10",
@@ -580,9 +580,9 @@
     },
     {
       "id": "page/welcome/style_ms",
-      "p95": 2.65042,
+      "p95": 2.625165,
       "tier": "budget",
-      "tightened_at": "2026-10-03T14:56:01Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "page/welcome/layout_ms",
@@ -617,9 +617,9 @@
     },
     {
       "id": "page/medium/layout_ms",
-      "p95": 180.96981100000002,
+      "p95": 180.830402,
       "tier": "budget",
-      "tightened_at": "2026-09-30T13:30:43Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "page/medium/paint_ms",
@@ -629,10 +629,10 @@
     },
     {
       "id": "page/medium/total_ms",
-      "p95": 357.235099,
+      "p95": 356.517403,
       "tier": "hard",
       "absolute_budget_ms": 2000.0,
-      "tightened_at": "2026-09-30T13:30:43Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "page/morning/parse_ms",
@@ -642,9 +642,9 @@
     },
     {
       "id": "page/morning/style_ms",
-      "p95": 13.14175,
+      "p95": 13.137763999999999,
       "tier": "budget",
-      "tightened_at": "2026-10-02T19:26:02Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "page/morning/layout_ms",
@@ -673,9 +673,9 @@
     },
     {
       "id": "page/medium/first_paint_wall_ms",
-      "p95": 457.487982,
+      "p95": 456.756238,
       "tier": "budget",
-      "tightened_at": "2026-09-30T13:30:43Z"
+      "tightened_at": "2026-10-05T19:29:56Z"
     },
     {
       "id": "page/morning/first_paint_wall_ms",
