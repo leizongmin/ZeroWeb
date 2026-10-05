@@ -1486,6 +1486,12 @@ Object.defineProperty(n2, 'nodeType', { get: function () { hits++; return 1; } }
 var plain = Object.create(globalThis.HTMLHtmlElement.prototype);
 plain.nodeType = 1; plain.nodeName = 'HTML'; plain.tagName = 'HTML';
 globalThis.__premise = plain.appendChild === globalThis.Node.prototype.appendChild;
+// PR #78 双审查加固（测试角色 Low-1/2）：前提钉防「钉空转」——appendChild 双侧
+// 皆缺失时 undefined === undefined 恒真（空洞通过）；路由前提钉死「真走兜底分支」
+// （own insertBefore / __zwHandle 任一存在都会改道，守卫不再被执行）。
+globalThis.__premiseFn = typeof plain.appendChild === 'function';
+globalThis.__routeNoOwnIb = !Object.prototype.hasOwnProperty.call(plain, 'insertBefore');
+globalThis.__routeNoHandle = plain.__zwHandle === undefined;
 var r1 = 'none';
 try { r1 = plain.insertBefore(n2, null) === n2 ? 'returned' : 'other'; } catch (e1) { r1 = 'ERR:' + e1.name; }
 globalThis.__r = r1;
@@ -1497,6 +1503,21 @@ globalThis.__hits = hits;
         sandbox.execute("String(globalThis.__premise)").unwrap().value,
         "true",
         "前提：接收者 appendChild 解析到 R341 安装的原型版（否则本钉空转无意义）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__premiseFn)").unwrap().value,
+        "true",
+        "前提加固（审查 Low-1）：appendChild 是函数——封死「双侧缺失 undefined===undefined」空洞通过"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__routeNoOwnIb)").unwrap().value,
+        "true",
+        "路由前提（审查 Low-2）：无 own insertBefore——真走兜底分支"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__routeNoHandle)").unwrap().value,
+        "true",
+        "路由前提（审查 Low-2）：无 __zwHandle——非代理，不走直调分支"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__r)").unwrap().value,
@@ -1513,5 +1534,10 @@ globalThis.__hits = hits;
     assert!(
         hits > 0 && hits < 20,
         "断环：nodeType 读取个位数（成环时入口校验 × 递归深度 = 数千次），实测 {hits}"
+    );
+    // 审查 Info-3：终态 no-op 不向 host 发任何变更记录（断环与成环终态一致的本证）。
+    assert!(
+        mutations.lock().unwrap_or_else(|e| e.into_inner()).is_empty(),
+        "无实现接收者兜底跳过不产生 DOM mutation 记录"
     );
 }
