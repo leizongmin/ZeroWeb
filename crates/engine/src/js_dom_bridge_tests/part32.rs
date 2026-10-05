@@ -1562,7 +1562,7 @@ fn test_svg_classname_animated_string_pb3() {
     sandbox.execute(generate_js_dom_shim()).unwrap();
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
-        "<html><body><svg id=\"s1\" class=\"icon a\"><path id=\"pth\" class=\"p1\"/></svg><div id=\"d1\" class=\"box\"></div></body></html>"
+        "<html><body><svg id=\"s1\" class=\"icon a\"><path id=\"pth\" class=\"p1\"/><foreignObject id=\"fo\"><div id=\"fod\" class=\"fd\"></div></foreignObject></svg><div id=\"d1\" class=\"box\"></div></body></html>"
             .to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
@@ -1582,6 +1582,7 @@ fn test_svg_classname_animated_string_pb3() {
              globalThis.__svStr = String(s1.className);\
              globalThis.__pthIsAnimated = pth.className instanceof SVGAnimatedString;\
              globalThis.__pthBase = String(pth.className.baseVal);\
+             globalThis.__fodIsString = typeof document.getElementById('fod').className === 'string';\
              globalThis.__htmlIsString = typeof d1.className === 'string';\
              globalThis.__htmlVal = String(d1.className);\
              var ctor = new SVGAnimatedString();\
@@ -1621,7 +1622,7 @@ fn test_svg_classname_animated_string_pb3() {
     );
     // createElementNS 面（轮 2）：SVG ns 产物同面（CreateElementNS 本身产生记录，既有行为）。
     sandbox
-        .execute("var s2 = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); globalThis.__nsIsAnimated = s2.className instanceof SVGAnimatedString; globalThis.__nsBase = String(s2.className.baseVal);")
+        .execute("var s2 = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); globalThis.__nsIsAnimated = s2.className instanceof SVGAnimatedString; globalThis.__nsBase = String(s2.className.baseVal); globalThis.__nsSame = s2.className === s2.className; globalThis.__svIso = s1.className === s2.className;")
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__nsIsAnimated)").unwrap().value,
@@ -1632,6 +1633,16 @@ fn test_svg_classname_animated_string_pb3() {
         sandbox.execute("String(globalThis.__nsBase)").unwrap().value,
         "",
         "无 class 属性 → baseVal 空串"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nsSame)").unwrap().value,
+        "true",
+        "ns 产物同面 [SameObject]"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__svIso)").unwrap().value,
+        "false",
+        "per-element 身份：不同元素缓存对象互异（sel 与 handle 两路径产物隔离）"
     );
     assert_eq!(
         mutations.lock().unwrap_or_else(|e| e.into_inner()).len(),
@@ -1665,6 +1676,11 @@ fn test_svg_classname_animated_string_pb3() {
         sandbox.execute("String(globalThis.__pthBase)").unwrap().value,
         "p1",
         "path baseVal reflect 自身 class"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fodIsString)").unwrap().value,
+        "true",
+        "foreignObject 内 HTML 后代（integration point → XHTML ns）className 仍为 string"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__htmlIsString)").unwrap().value,
@@ -1715,5 +1731,19 @@ fn test_svg_classname_animated_string_pb3() {
         mutations.lock().unwrap_or_else(|e| e.into_inner()).len(),
         3,
         "HTML className 赋值产生 mutation 记录（累计 3，对照 SVG no-op 零新增）"
+    );
+    // ns 产物 live 面（轮 6，审查加固）：handle 型 setAttribute 后 baseVal 即时反映。
+    sandbox
+        .execute("s2.setAttribute('class', 'q'); globalThis.__nsLive = String(s2.className.baseVal);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nsLive)").unwrap().value,
+        "q",
+        "ns 产物 baseVal live：setAttribute('class') 后即时反映（handle 型写路径）"
+    );
+    assert_eq!(
+        mutations.lock().unwrap_or_else(|e| e.into_inner()).len(),
+        4,
+        "ns 产物 setAttribute 产生 mutation 记录（累计 4）"
     );
 }

@@ -9543,7 +9543,10 @@ return _tplContent;
           // 须早于末尾 generic fallthrough（否则 classList 落入 expando 被覆盖）。
           return true;
         } else if (p === 'className') {
-          // SVG className IDL：readonly [SameObject]（spec SVG2 svg-types）——SVG ns 元素
+          // SVG className IDL：readonly [SameObject]（spec SVG2
+          // https://svgwg.org/svg2-draft/types.html#__svg__SVGElement__className；
+          // HTML 反射写 spec
+          // https://html.spec.whatwg.org/multipage/dom.html#dom-classname）——SVG ns 元素
           // 赋值无效（non-strict no-op 对齐 Chrome，class 属性不动）；HTML 元素维持反射写。
           // ns 判定同 get 面 _zwIsSvgNsEl（part03；handle 型 _nsHandles + sel 型 R5000）。
           if (!_zwIsSvgNsEl(sel, handle)) {
