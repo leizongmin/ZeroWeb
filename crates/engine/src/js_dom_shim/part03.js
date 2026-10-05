@@ -3509,6 +3509,17 @@
     }
     return child;
   });
+  // R341（js-dom P-B3）：`Node.prototype.appendChild`——spec 本义 `appendChild(node)` =
+  // `insertBefore(node, null)`（https://dom.spec.whatwg.org/#dom-node-append-child）。
+  // 旧缺方法：Node.prototype 只有 insertBefore/removeChild/replaceChild（R117 族），
+  // 原型链经过 Node 的轻量节点（parsed 文本/注释视图接 Text/Comment.prototype 后）
+  // 方法调用形态 `textNode.appendChild(x)` miss → "appendChild is not a function"
+  // TypeError；接通后经 insertBefore 的 pre-insert 校验链对非 Element/Document/
+  // Fragment 父抛 HierarchyRequestError（Chrome 同款）。own appendChild 的对象
+  //（proxy/元素）不受影响（own 优先）。
+  _zwDefProtoMethod(globalThis.Node.prototype, 'appendChild', function (node) {
+    return this.insertBefore(node, null);
+  });
   _zwDefProtoMethod(globalThis.Element.prototype, 'addEventListener', function(type, fn, opts) {
     _globalAddEventListener(type, fn, opts);
   });

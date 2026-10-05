@@ -1334,3 +1334,119 @@ fn test_detached_body_ns_fallback_s26_flip() {
         "反向跨 ns miss（D3 翻转）：显式 ns 属性 (xhtml-ns,'baz') 不得被 (null,'baz') 误命中"
     );
 }
+
+// siteopt slice P-B3（bilibili hydration 诊断线）：parsed CharacterData 子（初始 HTML
+// 解析出的文本/注释视图）的 **Node 可变方法面**——原型链 Text/Comment.prototype →
+// CharacterData → Node 接通后方法调用形态可达，且对非 Element/Document/Fragment 父
+// 抛 HierarchyRequestError（Chrome oracle 同面）。判别史：bilibili 视频页 Vue hydration
+// 崩溃栈 `recv.appendChild is not a function`（recv = _wrapNodeEntry 文本视图，siteopt
+// r17 实锤 keys 吻合）——站点在 Chrome 可用 ⇒ 真实路径 elm 应为元素 ⇒ 分歧在视图原型
+// 链缺失（方法面 miss）而非 append 语义本身。修前纯对象视图原型是 Object.prototype，
+// Node.prototype 上 R117 族（insertBefore/removeChild/replaceChild）不可达。
+// appendChild 经 Node.prototype 本义 `insertBefore(node, null)`（spec dom-node-append-child）。
+// https://dom.spec.whatwg.org/#dom-node-append-child
+// https://dom.spec.whatwg.org/#concept-node-pre-insert
+#[test]
+fn test_parsed_characterdata_node_mutable_methods_pb3() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, SandboxConfig, V8Sandbox};
+    let config = SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><p id=\"p\">hello</p><!--anchor--><ul id=\"list\"><li>a</li></ul></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var p = document.getElementById('p');\
+             var t = p.firstChild;\
+             globalThis.__tType = t.nodeType;\
+             globalThis.__tIsText = t instanceof Text;\
+             var threw = 'none';\
+             try { t.appendChild(document.createElement('x')); } catch (e) { threw = e.name; }\
+             globalThis.__tAppend = threw;\
+             var threw2 = 'none';\
+             try { t.insertBefore(document.createElement('x'), null); } catch (e) { threw2 = e.name; }\
+             globalThis.__tInsert = threw2;\
+             var bodyComment = null;\
+             var kids = document.body.childNodes;\
+             for (var i = 0; i < kids.length; i++) { if (kids[i].nodeType === 8) { bodyComment = kids[i]; break; } }\
+             globalThis.__cFound = !!bodyComment;\
+             globalThis.__cIsComment = !!bodyComment && bodyComment instanceof Comment;\
+             var threw3 = 'none';\
+             try { bodyComment.appendChild(document.createTextNode('y')); } catch (e) { threw3 = e.name; }\
+             globalThis.__cAppend = threw3;\
+             var ul = document.getElementById('list');\
+             var li = document.createElement('li');\
+             li.textContent = 'b';\
+             var appended = 'none';\
+             try { ul.appendChild(li); appended = ul.childNodes.length; } catch (e) { appended = 'ERR:' + e.name; }\
+             globalThis.__elAppend = String(appended);\
+             globalThis.__elLast = String(ul.lastChild.textContent);\
+             var li2 = ul.firstChild;\
+             globalThis.__liIsEl = li2 instanceof Element;\
+             var threw4 = 'none';\
+             try { li2.appendChild(document.createTextNode('ok')); } catch (e) { threw4 = 'ERR:' + e.name; }\
+             globalThis.__liAppend = threw4;\
+             globalThis.__liText = String(li2.textContent);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__tType)").unwrap().value, "3", "parsed 文本子 nodeType 3 不变");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tIsText)").unwrap().value,
+        "true",
+        "parsed 文本视图 instanceof Text（原型链 Text.prototype 接通）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tAppend)").unwrap().value,
+        "HierarchyRequestError",
+        "parsed 文本 appendChild → HierarchyRequestError（Chrome oracle：CharacterData 无子面，pre-insert 父类型校验）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tInsert)").unwrap().value,
+        "HierarchyRequestError",
+        "parsed 文本 insertBefore 同面（appendChild 的语义本体）"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__cFound)").unwrap().value, "true", "body 注释子可达");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cIsComment)").unwrap().value,
+        "true",
+        "parsed 注释视图 instanceof Comment（原型链 Comment.prototype 接通）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cAppend)").unwrap().value,
+        "HierarchyRequestError",
+        "parsed 注释 appendChild 同面（CharacterData 族一致）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__elAppend").unwrap().value,
+        "2",
+        "正控制：元素 proxy appendChild 正常（#list 2 子，R117 own 分派不回归）"
+    );
+    assert_eq!(sandbox.execute("globalThis.__elLast").unwrap().value, "b", "元素 append 的子内容正确");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__liIsEl)").unwrap().value,
+        "true",
+        "parsed 元素子 instanceof Element（元素 proxy 面不受原型接通扰动）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__liAppend").unwrap().value,
+        "none",
+        "正控制：parsed 元素子 appendChild 文本无异常（pre-insert 对元素父放行）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__liText").unwrap().value,
+        "aok",
+        "正控制：append 的文本落树（li 文本内容 a+ok）"
+    );
+}

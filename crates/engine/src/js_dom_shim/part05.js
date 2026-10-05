@@ -9263,6 +9263,17 @@
       node.previousSibling = null;
       node.nextSibling = null;
     }
+    // R341（js-dom P-B3）：parsed 文本/注释视图接接口原型链——Text/Comment.prototype →
+    // CharacterData → Node（_zwMText R179 / doctype part06 R117 同款三态 fallback）。
+    // 站点框架 hydration 的读取/变异面（nodeType 判定后 appendChild/insertBefore 等
+    // 方法调用形态）走原型链分派；纯对象无链 → "x.appendChild is not a function"。
+    // own 属性（CharacterData 编辑族/sibling getter/contains）优先不受影响。
+    try {
+      Object.setPrototypeOf(node, (isComment
+        ? (globalThis.Comment && globalThis.Comment.prototype)
+        : (globalThis.Text && globalThis.Text.prototype))
+        || (globalThis.Node ? globalThis.Node.prototype : Object.prototype));
+    } catch (_eR341p5) {}
     // R123：parsed 路径的 bogus comment '?…?' → PI 视图（与 _zwMBuildNode 的 innerHTML
     // 路径同款——主文档 parse 的 <?t …?> 经 tokenizer bogus comment 落为 comment entry，
     // WPT PI-attributes "in main parser" 断言 nodeType 7 + 属性面）。复用 part03
