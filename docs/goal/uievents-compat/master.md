@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-06（M3 尾簇 20 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-06（M3 尾簇 21 落地——零净 P 基建 + 根因精化轮）
 
 ## 当前状态
 
@@ -11,9 +11,10 @@ M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P 
 尾簇 11 1583P → 尾簇 12 1588P → 尾簇 13 1590P → 尾簇 14 1594P → 尾簇 15 1609P →
 尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → 尾簇 19 1736P → **1738P（+1518 累计）**
 （corpus：1738P/187F/100TO，`TIME_LIMIT=3600`。尾簇 19：improvements=120 /
-regressions=1 已记录；尾簇 20：improvements=2 / regressions=0——remove-hover 连通祖先
-重定向 + runner 安全 id 选择器；pointercapture_in_frame 18F→3×文件级 Timeout 转记
-（subframe 路由 blocker 暴露，F 计数 -20 为口径转移非修复）。
+regressions=1 已记录；尾簇 20：improvements=2 / regressions=0；尾簇 21：**Δ0 基建 +
+根因精化轮**——retarget host-echo 弃用 + 三族 blocker 根因测绘（同 turn 动态元素
+rect plumbing / live 查询移除感知 / subframe 面测绘），见
+[evidence/2026-10-06-m3-tail21.md](evidence/2026-10-06-m3-tail21.md)。
 证据：[evidence/2026-10-05-m3-tail13.json](evidence/2026-10-05-m3-tail13.json)（尾簇 13 后）、
 [evidence/2026-10-05-m3-tail13.md](evidence/2026-10-05-m3-tail13.md)（根因链 + 排除路径）、
 [evidence/2026-10-05-m3-tail12.json](evidence/2026-10-05-m3-tail12.json)（尾簇 12 后）、
@@ -39,7 +40,17 @@ regressions=1 已记录；尾簇 20：improvements=2 / regressions=0——remove
 门禁：workspace 17,246P/0F、renderer lib 204P/0F、reftest 704/704、fmt + clippy
 （quickjs 面）全绿；shim 拼接 node --check 全绿。
 
-**M3 尾簇 20（2026-10-06，本轮）——remove-hover 连通祖先重定向 + runner 安全 id 选择器**。两件
+**M3 尾簇 21（2026-10-06，本轮）——零净 P 基建 + 根因精化轮**。三件基建：retarget 路径
+host elementFromPoint 回声弃用（skipHostSel——同 turn 移除后 host 视图恒返被移除元素
+自身，move 级重定向全数失效的断面）+ post-rawupdate 重定向后清瞬态/重入态（防 settle
+双补派）+ 参数面扩展。三族根因测绘（probe 实证）：①同 turn 动态元素 apply 后 gBCR 恒
+零（handle 元素 rect plumbing——五个族 ~20F 同根因，修在渲染/rect 快照层，跨流域碰头项）；
+②live 查询面对同步移除不感知（_zwRemovedSels 与 live-first query 脱节——retarget 命中
+回声死循环）；③subframe 面测绘完成（冒泡派发 ✓/脚本 ✓/frames[0] ✓；缺 .id 反射器/
+setPointerCapture/gBCR/per-frame 捕获态）。Δ0 honest 记账，排除路径见
+[evidence/2026-10-06-m3-tail21.md](evidence/2026-10-06-m3-tail21.md)。
+
+**M3 尾簇 20（2026-10-06，c64beab8f）——remove-hover 连通祖先重定向 + runner 安全 id 选择器**。两件
 （细节/回退/oracle 冲突记录见 [evidence/2026-10-06-m3-tail20.md](evidence/2026-10-06-m3-tail20.md)）：
 ① move 步跨界序中移除/替换 hover 目标 → move 对重定向**最近连通祖先**（mouseenter 链
 语义，不用命中测试——替换场景新子未入 enter 链）——mousemove_after_mouseover_target_removed
@@ -293,15 +304,10 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 证据：[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)
 （含 2 案本地 zwprobe 探针已剔除入账）。门禁：node --check + 双族聚焦跑全绿。
 
-**DC-4 门禁（2026-10-06，尾簇 20 后）**：workspace 腿 **19,825P/0F** + renderer bin 腿 0F +
-**reftest 704/704 零回归** + shim 拼接 node --check 全绿（shim JS + testharness.rs runner
-工具面各一处；fmt/clippy 见提交说明）。
-历史（尾簇 19 后）：workspace 19,825P/0F + reftest 704/704。
-历史（尾簇 14 后）：workspace 腿（Makefile 同参 exclude zero-webdriver——其
-http_session 用例**本机环境损坏**：stash bisect 于 HEAD 未含本轮改动同样红，element
-not found/标题空，疑 show-window 依赖；非本轮回归）**17,232P/0F**（49 套件 0 超时）
-+ renderer bin 腿 0F；**reftest 704/704 零回归**；fmt + clippy 全绿。历史（尾簇 12 后）：
-make test 19,825P/0F 首轮绿；尾簇 11 后：三跑收口。
+**DC-4 门禁（2026-10-06，尾簇 21 后）**：workspace **19,831P/0F** + reftest **704/704**
+零回归 + shim 拼接 node --check 全绿（纯 JS shim 变更）。首轮 make test
+network_loading 一例失败为语料并发期本地 server 瞬态（隔离 6/6 绿 + 全量重跑 0F 归因
+排除）。历史（尾簇 20 后）：workspace 19,831P/0F + reftest 704/704。
 
 ## 缺口清单
 
@@ -370,9 +376,12 @@ make test 19,825P/0F 首轮绿；尾簇 11 后：三跑收口。
   显式携带 + coalesced 队列克隆 + deferred mouse 层跨界 + 反射面
   （onpointerrawupdate/persistentDeviceId/pseudoTarget）。1620P→1736P（+116，总册
   1948→2040）。
-- **M3 尾簇 20（2026-10-06，本轮）**：remove-hover 连通祖先重定向（move 步）+
+- **M3 尾簇 20（2026-10-06，c64beab8f）**：remove-hover 连通祖先重定向（move 步）+
   runner selectorFor 安全 id 门（pointercapture_in_frame 首断面解除，subframe 路由
   blocker 转记 Timeout）。1736P→1738P（+2）。
+- **M3 尾簇 21（2026-10-06，本轮）**：retarget host-echo 弃用 + 瞬态清零 + 参数面
+  扩展；三族 blocker 根因测绘（动态元素 rect / live 查询移除感知 / subframe 面）。
+  1738P→1738P（Δ0，基建轮）。
 
 ## 下一步计划
 

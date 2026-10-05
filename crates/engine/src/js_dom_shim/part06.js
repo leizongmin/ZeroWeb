@@ -12161,13 +12161,15 @@
   // host `__zw_elementFromPoint`（R2924 HitTestCache）优先；runner headless 无渲染
   // 缓存 → gBCR 几何近似（文档序逆序首个含点元素 ≈ 最深/topmost；proxy `__zwSelector`
   // 内部键反查选择器，R351 顶部短路零额外成本）。无命中 → null。
-  function _zwHitTestSel(x, y) {
+  function _zwHitTestSel(x, y, skipHostSel) {
     x = x || 0;
     y = y || 0;
     try {
       if (typeof __zw_elementFromPoint === 'function') {
         var hit = __zw_elementFromPoint(String(x), String(y));
-        if (hit) return hit;
+        // 尾簇 21：host 视图对**同 turn 移除**滞后——命中恰为已移除 sel 时弃用
+        //（落 shim 树扫描——已移除元素不在查询面，命中即存活祖先/兄弟）。
+        if (hit && hit !== skipHostSel) return hit;
       }
     } catch (_eHT1) {}
     try {
@@ -12197,10 +12199,10 @@
   // over@新目标——连通祖先已入过 enter，不重派；WPT pointerevent_after_target_removed
   // 「(child-removed) → pointerover@parent → pointerup@parent」断言面）。目标仍连通
   // → 原样返回（零开销路径）。
-  function _zwRetargetSel(sel, x, y, skipCross) {
+  function _zwRetargetSel(sel, x, y, skipCross, skipHostSel) {
     if (!sel) return sel;
     if (typeof _zwIsConnected === 'function' && !_zwIsConnected(sel, null)) {
-      var hit = _zwHitTestSel(x, y);
+      var hit = _zwHitTestSel(x, y, skipHostSel);
       if (hit && hit !== sel) {
         var st = _zwPtrState;
         if (!skipCross && typeof _zwPointerCross === 'function') {
@@ -12321,7 +12323,10 @@
     }
     // 目标已移除（悬停元素被 DOM 删除）→ 命中测试重定向（over 元素移除后下一个
     // 指针事件以新命中目标派发——WPT pointerevent_after_target_removed）。
-    sel = _zwRetargetSel(sel, x, y);
+    // 尾簇 21：host elementFromPoint 回声弃用（skipHostSel=sel——同 turn 移除后
+    // host 视图滞后恒返 sel 自身，settle/重入重放会再派已移除目标的事件对；
+    // pointerrawupdate_remove_target 断言面）。
+    sel = _zwRetargetSel(sel, x, y, false, sel);
     st.hoverSel = sel; // 真实悬停位恒更新（捕获期逻辑位≠真实位，释放恢复用）
     // 尾簇 5：hover 元素原位重插入 → 补重入面（over/enter）。
     _zwReentryCheck(sel, x, y);
@@ -12375,12 +12380,17 @@
         bubbles: true, cancelable: false, coalescedClone: true
       });
       // rawupdate handler 移除了目标 → 新命中重定向 + 补跨界（over@新目标——
-      // pointerrawupdate_remove_target 断言面）。
-      var _sel19 = _zwRetargetSel(sel, x, y, true);
+      // pointerrawupdate_remove_target 断言面）。**host elementFromPoint 弃用**
+      //（skipHostSel=sel——host 视图对同 turn 移除滞后恒返被移除元素自身），
+      // 落 shim 树扫描——同 turn 已移除的 target 不在查询面，命中即 container。
+      var _sel19 = _zwRetargetSel(sel, x, y, true, sel);
       if (_sel19 !== sel) {
         if (typeof __zw_parent === 'function') _zwPointerCross(sel, _sel19, x, y);
         st.overSel = _sel19;
         sel = _sel19;
+        // 拆除已就地结算——清瞬态/重入态防 settle 二次补派（over/move 双对）。
+        st.overReinserted = false;
+        st.hoverTransient = null;
       }
       // rawupdate 后、pointermove 前结算延迟的 mouse 层跨界序。
       _zwFlushPendingCross(x, y);
