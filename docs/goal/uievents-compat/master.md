@@ -1,18 +1,19 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-05（M3 尾簇 18 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-05（M3 尾簇 19 落地）
 
 ## 当前状态
 
-**M3 + 尾簇 1/2/4/5/6/7/8/9/10/11/12/13/14/15/16/17/18 落地（2026-10-05）**：基线 230P → M2 片 1 343P →
+**M3 + 尾簇 1/2/4/5/6/7/8/9/10/11/12/13/14/15/16/17/18/19 落地（2026-10-05）**：基线 230P → M2 片 1 343P →
 M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P → 尾簇 6a 1107P →
 尾簇 6b+6c 1115P → 尾簇 7 1167P → 尾簇 8 1202P → 尾簇 9 1218P → 尾簇 10 1570P →
 尾簇 11 1583P → 尾簇 12 1588P → 尾簇 13 1590P → 尾簇 14 1594P → 尾簇 15 1609P →
-尾簇 16 1610P → 尾簇 17 1616P → **1620P（+1390 累计）**
-（corpus：1620P/230F/98TO，`TIME_LIMIT=3600`。尾簇 18 净 +4 零回归——range 拖拽取值
-默认动作 + 空命中坐标保持；逐 subtest 对账 improvements=4/regressions=0；
-drag_on_added_range_input NaN 残余）。
+尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → **1736P（+1516 累计）**
+（corpus：1736P/207F/97TO，`TIME_LIMIT=3600`。尾簇 19 链口径 +116（上链 headline 系列）/
+逐 subtest 对账 improvements=120 / regressions=1 已记录——pointerrawupdate 语义 + chorded
+button 键序 + coalesced 克隆 + 反射面；总册 1948→2040，rawupdate/coalesced 族文件从
+Timeout 恢复执行）。
 证据：[evidence/2026-10-05-m3-tail13.json](evidence/2026-10-05-m3-tail13.json)（尾簇 13 后）、
 [evidence/2026-10-05-m3-tail13.md](evidence/2026-10-05-m3-tail13.md)（根因链 + 排除路径）、
 [evidence/2026-10-05-m3-tail12.json](evidence/2026-10-05-m3-tail12.json)（尾簇 12 后）、
@@ -38,7 +39,20 @@ drag_on_added_range_input NaN 残余）。
 门禁：workspace 17,246P/0F、renderer lib 204P/0F、reftest 704/704、fmt + clippy
 （quickjs 面）全绿；shim 拼接 node --check 全绿。
 
-**M3 尾簇 18（2026-10-05，本轮）——range 拖拽取值默认动作 + 空命中坐标保持**。三件：
+**M3 尾簇 19（2026-10-05，本轮）——pointerrawupdate 语义 + chorded button 键序 + coalesced 克隆 + 反射面**。七件
+（engine shim；细节/排除路径见 [evidence/2026-10-05-m3-tail19.md](evidence/2026-10-05-m3-tail19.md)）：
+① pointerrawupdate 派发（secure + listener 存在性门槛，无 listener 整站跳过；站点序
+跨界序 → rawupdate → pointermove；Process-Pending/capture 重定向复用 dispatch 层既有
+机制）；② chorded button 键序（down/up 早退分支——多键按下/中间释放派 pointermove，
+中间释放照常结 click/auxclick 携剩余掩码）；③ `_zwButtonMask`（WebDriver index↔PE
+位序互换——middle=4/right=2）；④ got/lostpointercapture buttons 显式携带；
+⑤ coalesced 队列克隆（非冒泡同属性克隆 + target 首派回填/redispatch 保持 + `_zw19Clone`
+印章隔离构造注入序列）；⑥ deferred mouse 层跨界（rawupdate 后结算 compat mouse 边界序）；
+⑦ 反射面（onpointerrawupdate secure-only exposure、persistentDeviceId、pseudoTarget）。
+已知回归 1：pointerrawupdate.html 非 https 变体 1P→0P——runner 单 origin https 使
+secure 分流不可测，scheme 分流属 runner 级改造挂账。corpus +119（总册 1948→2040）。
+
+**M3 尾簇 18（2026-10-05，91c61702b）——range 拖拽取值默认动作 + 空命中坐标保持**。三件：
 ① range input 拖拽取值（shim down/move/up 三站 hook）：INPUT[type=range] 按下/拖拽
 按指针位置设 value（input 事件）+ release 派 change；轴向——水平 pct=(x-rx)/rw、
 垂直（inline style writing-mode 含 vertical）pct=1-(y-ry)/rh（`vertical-lr;rtl` 顶
@@ -268,26 +282,14 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 证据：[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)
 （含 2 案本地 zwprobe 探针已剔除入账）。门禁：node --check + 双族聚焦跑全绿。
 
-**DC-4 门禁（2026-10-05，尾簇 18 后）**：workspace 腿（exclude zero-webdriver，环境
-损坏同前账）**17,232P/0F**（0 超时）+ renderer bin 腿 0F + **reftest 704/704 零回归**
-+ shim 拼接 node --check 全绿。
-历史（尾簇 17 后）：workspace 17,232P/0F + reftest 704/704。：workspace 腿（exclude zero-webdriver，环境
-损坏同前账）**17,232P/0F**（0 超时）+ renderer bin 腿 0F + **reftest 704/704 零回归**
-+ shim 拼接 node --check 全绿（纯 JS shim 变更）。
-历史（尾簇 16 后）：workspace 17,232P/0F + reftest 704/704。：workspace 腿（exclude zero-webdriver，环境
-损坏同前账）**17,232P/0F**（0 超时）+ renderer bin 腿 0F + **reftest 704/704 零回归**
-+ shim 拼接 node --check 全绿（纯 JS shim 变更）。
-历史（尾簇 15 后）：workspace 17,232P/0F + reftest 704/704。：workspace 腿（exclude zero-webdriver，环境
-损坏同前账）**17,232P/0F**（0 超时）+ renderer bin 腿 0F + **reftest 704/704 零回归**
-+ shim 拼接 node --check 全绿（纯 JS shim 变更）。
-历史（尾簇 14 后）：workspace 17,232P/0F + reftest 704/704。：workspace 腿（exclude zero-webdriver，环境
-损坏同前账）**17,232P/0F**（0 超时）+ renderer bin 腿 0F + **reftest 704/704 零回归**
-+ shim 拼接 node --check 全绿（纯 JS shim 变更，clippy/fmt 无 Rust 面）。
-历史（尾簇 13 后）：workspace 17,232P/0F + reftest 704/704。：workspace 腿（Makefile 同参 exclude
-zero-webdriver——其 http_session 用例**本机环境损坏**：stash bisect 于 HEAD 未含本轮
-改动同样红，element not found/标题空，疑 show-window 依赖；非本轮回归）**17,232P/0F**
-（49 套件 0 超时，RUST_MIN_STACK=32MiB 同 Makefile）+ renderer bin 腿 0F；**reftest
-704/704 零回归**；fmt + clippy（engine/webview/wpt-runner）全绿。历史（尾簇 12 后）：
+**DC-4 门禁（2026-10-05，尾簇 19 后）**：workspace 腿（exclude zero-webdriver，环境
+损坏同前账）**19,825P/0F**（0 超时）+ renderer bin 腿 0F + **reftest 704/704 零回归**
++ shim 拼接 node --check 全绿（纯 JS shim 变更，无 Rust 面——fmt/clippy 不适用）。
+历史（尾簇 18 后）：workspace 17,232P/0F + reftest 704/704。
+历史（尾簇 14 后）：workspace 腿（Makefile 同参 exclude zero-webdriver——其
+http_session 用例**本机环境损坏**：stash bisect 于 HEAD 未含本轮改动同样红，element
+not found/标题空，疑 show-window 依赖；非本轮回归）**17,232P/0F**（49 套件 0 超时）
++ renderer bin 腿 0F；**reftest 704/704 零回归**；fmt + clippy 全绿。历史（尾簇 12 后）：
 make test 19,825P/0F 首轮绿；尾簇 11 后：三跑收口。
 
 ## 缺口清单
@@ -350,27 +352,37 @@ make test 19,825P/0F 首轮绿；尾簇 11 后：三跑收口。
   pointer=-1）。1609P→1610P（+1）。
 - **M3 尾簇 17（2026-10-05，aa992c1c1）**：window.visualViewport 最小实现。
   1610P→1616P（+6）。
-- **M3 尾簇 18（2026-10-05，本轮）**：range 拖拽取值默认动作（轴向修正）+ 空命中
+- **M3 尾簇 18（2026-10-05，91c61702b）**：range 拖拽取值默认动作（轴向修正）+ 空命中
   坐标保持。1616P→1620P（+4）。
+- **M3 尾簇 19（2026-10-05，本轮）**：pointerrawupdate 语义（secure + listener 门槛 +
+  dispatch 层 Process-Pending 复用）+ chorded button 键序/位掩码映射 + got/lost buttons
+  显式携带 + coalesced 队列克隆 + deferred mouse 层跨界 + 反射面
+  （onpointerrawupdate/persistentDeviceId/pseudoTarget）。1620P→1736P（+116，总册
+  1948→2040）。
 
 ## 下一步计划
 
 1. **M2/M3 尾簇**（按 Throughput 排序，根因链见
    [evidence/2026-10-04-m3-tail7.md](evidence/2026-10-04-m3-tail7.md)/
    [evidence/2026-10-05-m3-tail13.md](evidence/2026-10-05-m3-tail13.md) 残余节）：
-   a) **同 turn gBCR 强制同步布局**（~15F）——**待用户拍板**：fix 需 mutation
-   drain+relayout 接进 gBCR 宿主回调，`RenderPipeline` 为 webview 私有 `&mut` 字段
-  （webview.rs 100 调用点、resize 整体替换），callbacks 层无句柄——Arc<Mutex> 化属
-   深结构改造（run-rules §11）；
+   a) **同 turn gBCR 强制同步布局**（~15F + drag_on_added_range_input 终值断言）——
+   **待用户拍板**：fix 需 mutation drain+relayout 接进 gBCR 宿主回调，`RenderPipeline`
+   为 webview 私有 `&mut` 字段（webview.rs 100 调用点、resize 整体替换），callbacks
+   层无句柄——Arc<Mutex> 化属深结构改造（run-rules §11）；
    b) **iframe 捕获面**（pointercapture_in_frame 18F + click_during_parent_capture
-   iframe 面 4F——actions 到 subframe 的事件路由未建）；
+   iframe 面 4F + rawupdate_remove_target 2F + after_adoption 1F——actions 到 subframe
+   的事件路由未建）；
    c) **layerX/layerY**（layer-coords-transform 族——transform 感知几何，渲染流域
    邻接，挂账候选）；
    d) wheel 源 scroll 重放（wheel-basic/deadlock）；e) focus 残余两案（iframe 跨文档
    焦点、keydown→focus activation——键盘域邻接，挂账候选）。
-2. **M4 收口**：touch-action 解析/计算值核对（parsing 三案 0P 待查）、
-   touch-events / pointerlock / IME / touch-action 交互面挂账定稿、DC-4 全绿门禁
-   （make test + clippy + fmt + reftest 零回归 + product-smoke）。
+2. **M4 收口**：touch-action 解析/计算值核对（parsing/inheritance ~30F——css-parser/
+   style-system 面，渲染流域工作面，跨流冲突待碰头）、coalesced 真采样管线
+   （under_load/movement ~10F + rawupdate_coalesced target 恒等 6F——headless 无采样，
+   挂账候选）、runner `.https.html` scheme 分流（pointerrawupdate.html 非 https 变体
+   -1 回归的复位——跨 corpus 核算漂移，专项拍板）、touch-events / pointerlock / IME /
+   touch-action 交互面挂账定稿、DC-4 全绿门禁（make test + clippy + fmt + reftest
+   零回归 + product-smoke）。
 
-**待用户决策清单**：（空——pointerlock 挂账重入 = 用户点名；declarative shadow
-DOM 前置如需立项请点名）
+**待用户决策清单**：（空——pointerlock 挂账重入 = 用户点名；declarative shadow DOM
+前置如需立项请点名；gBCR 同步布局 RenderPipeline Arc 化待拍板见上 1a）

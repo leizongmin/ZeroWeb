@@ -7330,6 +7330,24 @@
       globalThis.__zwDwbOverrideHit = 'no';
       event.target = target;
     }
+    // uievents-compat 尾簇 19（2026-10-05）：coalesced 克隆的 target 回填（克隆构造期
+    // 容器 target 未定；listener 于派发期读 clone.target——WPT coalesced 属性面
+    // 「clone.target === event.target」断言面）。
+    try {
+      var _clA19 = event && event._zwCoalescedEvents;
+      // 仅首派回填（null 时）——JS redispatch 同一事件对象时克隆 target **保持原值**
+      //（WPT coalesced_events_attributes_on_redispatch「target maintains its original
+      // value」断言面）。
+      if (_clA19 && _clA19.length && target != null) {
+        for (var _ci19 = 0; _ci19 < _clA19.length; _ci19++) {
+          if (!_clA19[_ci19] || !_clA19[_ci19]._zw19Clone) continue;
+          if (_clA19[_ci19].target != null) continue;
+          try { _clA19[_ci19].target = target; } catch (_e19ci) {
+            try { Object.defineProperty(_clA19[_ci19], 'target', { value: target, configurable: true }); } catch (_e19ci2) {}
+          }
+        }
+      }
+    } catch (_e19ca) {}
     // R150（js-dom M4）：MouseEvent offsetX/offsetY 的 dispatch 期计算——spec CSSOM
     // View §dom-mouseevent-offsetx：offset = client 坐标 - target 的 padding 边缘
     //（本实现近似为 gBCR 左/上）。构造时**未显式给** offset init（真实浏览器 MouseEvent

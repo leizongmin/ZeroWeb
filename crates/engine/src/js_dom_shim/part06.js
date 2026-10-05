@@ -11818,6 +11818,7 @@
     } else if (type === 'pointerdown' || type === 'pointerup' || type === 'pointermove'
                || type === 'pointerover' || type === 'pointerout' || type === 'pointerenter'
                || type === 'pointerleave' || type === 'pointercancel'
+               || type === 'pointerrawupdate'
                || type === 'gotpointercapture' || type === 'lostpointercapture'
                || ((type === 'click' || type === 'auxclick' || type === 'contextmenu')
                    && detail && detail.pointerType != null)) {
@@ -11871,6 +11872,33 @@
         altKey: _pMod8.altKey,
         metaKey: _pMod8.metaKey
       });
+      // 尾簇 19：pointerrawupdate/pointermove 的 coalesced 队列 = 同属性的**非冒泡
+      // 克隆**（PE spec coalesced 事件语义——bubbles false / cancelable false / 自身
+      // 无嵌套队列 / target 与容器一致 / isTrusted true；无真采样管线时单元素队列。
+      // WPT pointerevent_pointerrawupdate_coalesced_events_attributes +
+      // coalesced_events_attributes「至少 1 项 + 克隆属性面」断言面）。
+      if (detail && (detail.coalescedClone || detail.coalescedMove) && globalThis.PointerEvent) {
+        try {
+          var _cl19 = new globalThis.PointerEvent(type, {
+            bubbles: false, cancelable: false, composed: false,
+            pointerId: ev.pointerId, pointerType: ev.pointerType, isPrimary: ev.isPrimary,
+            width: ev.width, height: ev.height, pressure: ev.pressure,
+            tiltX: ev.tiltX, tiltY: ev.tiltY, twist: ev.twist,
+            tangentialPressure: ev.tangentialPressure,
+            clientX: ev.clientX, clientY: ev.clientY,
+            screenX: ev.screenX, screenY: ev.screenY,
+            button: ev.button, buttons: ev.buttons,
+            shiftKey: ev.shiftKey, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey
+          });
+          try { Object.defineProperty(_cl19, 'isTrusted', { value: true }); } catch (_e19t) {}
+          // UA 克隆印章（构造注入序列的元素不参与 target 回填——pointerevent_constructor
+          // 「注入 coalesced 事件 target 恒 null」断言面）。
+          try { _cl19._zw19Clone = true; } catch (_e19mk) {}
+          // target 恒等（Event.target 原型 accessor——plain 赋值不落，defineProperty 影子）
+          try { Object.defineProperty(_cl19, 'target', { value: ev.target, configurable: true }); } catch (_e19tg) {}
+          ev._zwCoalescedEvents = [_cl19];
+        } catch (_e19c) {}
+      }
     } else if (type === 'mousedown' || type === 'mouseup' || type === 'mousemove'
                || type === 'contextmenu' || type === 'mouseover' || type === 'mouseout'
                || type === 'mouseenter' || type === 'mouseleave'
@@ -11980,7 +12008,7 @@
     if (typeof _zwPtrState !== 'undefined' && _zwPtrState) {
       var _m3PidTail = (detail && detail.pointerId != null) ? String(detail.pointerId) : '1';
       if (type === 'pointerup' || type === 'pointercancel') {
-        var _m3BtnsAfter = (type === 'pointercancel') ? 0 : (_zwPtrState.buttons & ~(1 << ((detail && detail.button) || 0)));
+        var _m3BtnsAfter = (type === 'pointercancel') ? 0 : (_zwPtrState.buttons & ~_zwButtonMask((detail && detail.button) || 0));
         if (typeof _zwSetButtons === 'function') _zwSetButtons(_m3BtnsAfter);
         delete _zwPtrState.active[_m3PidTail];
         var _m3HadPending = !!_zwPtrState.pending[_m3PidTail];
@@ -12012,7 +12040,7 @@
       // 随源（?touch/?pen variant——got/lost 也是 PointerEvent，pointerType 断言同面）。
       __zw_dispatch_event(cap.sel, 'lostpointercapture', {
         bubbles: true, composed: true, cancelable: false,
-        pointerId: pointerId, pressure: st.buttons ? 0.5 : 0,
+        pointerId: pointerId, buttons: st.buttons, pressure: st.buttons ? 0.5 : 0,
         pointerType: st.pointerType || 'mouse'
       });
     } catch (_eLPC) {}
@@ -12052,7 +12080,7 @@
         st.overSel = pending.sel;
         __zw_dispatch_event(pending.sel, 'gotpointercapture', {
           bubbles: true, composed: true, cancelable: false,
-          pointerId: Number(pid) || 1, pressure: st.buttons ? 0.5 : 0,
+          pointerId: Number(pid) || 1, buttons: st.buttons, pressure: st.buttons ? 0.5 : 0,
           pointerType: st.pointerType || 'mouse'
         });
         st.capture[pid] = pending;
@@ -12067,6 +12095,62 @@
   function _zwSetButtons(mask) {
     _zwPtrState.buttons = mask | 0;
   }
+  // uievents-compat 尾簇 19：WebDriver button index → PE buttons 位掩码（spec §11.1
+  // https://www.w3.org/TR/pointerevents/#dom-pointerevent-buttons——primary/left=1、
+  // secondary/right=2、middle=4；WebDriver 桥 index 1=middle、2=right 与位序**互换**。
+  // 旧 `1 << button` 对 middle 落 2（right 位）——click_on_chorded_mouse_button
+  // 「M-down → buttons 4」断言面）。
+  function _zwButtonMask(button) {
+    button = button | 0;
+    if (button === 1) return 4;
+    if (button === 2) return 2;
+    return 1 << button;
+  }
+  // uievents-compat 尾簇 19（2026-10-05）：pointerrawupdate **listener 存在性**——无
+  // 监听时整个事件（含其前置 Process-Pending 站点）跳过（Chromium 性能语义；WPT
+  // pointerevent_pointerrawupdate_changes_pointer_capture 尾子测「no listener → 不
+  // 派发、每 move 只跑一次 process pending」断言面）。全页近似：任一元素/根注册
+  // pointerrawupdate listener（含 capture——rawupdate 不冒泡但捕获相可达祖先）或
+  // onpointerrawupdate handler 即视为有；路径外多派的 rawupdate 无 listener 接收、
+  // pending 空时 Process-Pending 零副作用，观感等价。
+  function _zwHasAnyRawListener() {
+    try {
+      for (var _k19 in _listenerStore) {
+        var _m19 = _listenerStore[_k19];
+        if (_m19 && _m19['pointerrawupdate'] && _m19['pointerrawupdate'].length) return true;
+      }
+      for (var _k19b in _onHandlers) {
+        var _h19 = _onHandlers[_k19b];
+        if (_h19 && typeof _h19['pointerrawupdate'] === 'function') return true;
+      }
+      if (typeof globalThis['onpointerrawupdate'] === 'function') return true;
+    } catch (_eHRL19) {}
+    return false;
+  }
+  // 尾簇 19：onpointerrawupdate IDL handler 暴露（window/document——secure context
+  // only，PE spec「only within a secure context」；WPT pointerevent_pointerrawupdate
+  // 两文件 `in window`/`in document` 断言面）。element 级经 R2933 泛型 on* get/set
+  // 面 + has 白名单补列（part05 尾簇 19 注记）。定义期一次性判定 secure（页级不变
+  // 量——location 协议在 shim 安装前已定）。
+  (function () {
+    try {
+      if (globalThis.isSecureContext !== true) return;
+      var _zwRawWin19 = null;
+      Object.defineProperty(globalThis, 'onpointerrawupdate', {
+        configurable: true, enumerable: true,
+        get: function () { return _zwRawWin19; },
+        set: function (v) { _zwRawWin19 = (typeof v === 'function') ? v : null; }
+      });
+      var _zwRawDoc19 = null;
+      if (globalThis.document && typeof globalThis.document === 'object') {
+        Object.defineProperty(globalThis.document, 'onpointerrawupdate', {
+          configurable: true, enumerable: true,
+          get: function () { return _zwRawDoc19; },
+          set: function (v) { _zwRawDoc19 = (typeof v === 'function') ? v : null; }
+        });
+      }
+    } catch (_eRaw19) {}
+  })();
   // uievents-compat M3 尾簇（2026-10-04）：命中测试（视口 CSS 像素 → 选择器）——
   // host `__zw_elementFromPoint`（R2924 HitTestCache）优先；runner headless 无渲染
   // 缓存 → gBCR 几何近似（文档序逆序首个含点元素 ≈ 最深/topmost；proxy `__zwSelector`
@@ -12197,6 +12281,15 @@
   // 可派发）；消费即清。
   function _zwFlushPendingCross(x, y) {
     var st = _zwPtrState;
+    // 尾簇 19：延迟 mouse 层跨界结算（见 _zwPointerCross deferMouse）。
+    if (st.pendingMouseCross) {
+      var _pmc = st.pendingMouseCross;
+      st.pendingMouseCross = null;
+      if (st.mouseOverSel === _pmc.prev && _pmc.next !== _pmc.prev) {
+        try { _zwLayerCross(_pmc.prev, _pmc.next, x || 0, y || 0, 'mouse'); } catch (_ePMC) {}
+        st.mouseOverSel = _pmc.next;
+      }
+    }
     if (!st.pendingCross) return;
     var pc = st.pendingCross;
     st.pendingCross = null;
@@ -12204,7 +12297,7 @@
       try { _zwPointerCross(pc.prev, pc.next, x || 0, y || 0); } catch (_ePC) {}
     }
   }
-  globalThis.__zw_pointer_move = function (sel, x, y) {
+  globalThis.__zw_pointer_move = function (sel, x, y, chordBtn19) {
     var st = _zwPtrState;
     _zwFlushPendingCross(x, y);
     st.x = x || 0;
@@ -12226,44 +12319,51 @@
     st.hoverSel = sel; // 真实悬停位恒更新（捕获期逻辑位≠真实位，释放恢复用）
     // 尾簇 5：hover 元素原位重插入 → 补重入面（over/enter）。
     _zwReentryCheck(sel, x, y);
-    // Process pending 先于捕获态判定（spec——pointer 事件前结算 pending override；
-    // pointerup 内 release 的场景在下一 move 清算 lost + 悬停恢复，随后 move 按
-    // **现**捕获态路由——WPT pointerevent_releasepointercapture_events_to_original_
-    // target「release 后事件回原命中元素」断言面）。
-    if (!st.processingCapture) _zwProcessPendingCapture('1');
-    // 捕获生效期：pointer 逻辑位置恒在捕获目标——跨界序抑制，move 对直接派发于
-    // 捕获目标（spec §9.3；WPT pointerevent_capture_mouse「captured while outside」）。
-    // buttons 携带按下键位（拖拽中 move.buttons 非零——same_element_twice 过滤面）。
-    var cap = st.capture['1'] || st.capture['2'];
-    if (cap) {
-      __zw_dispatch_event(cap.sel, 'pointermove', {
-        clientX: x || 0, clientY: y || 0,
-        button: -1, buttons: st.buttons, relatedTarget: null,
-        pressure: st.buttons ? 0.5 : 0
-      });
-      // 尾簇 15：pointerdown 被取消 → 本手势后续 compat mouse 抑制（PE spec §11
-      // 「canceling the pointerdown event ... prevents ... compatibility mouse
-      // events」——mousemove/mouseup 全链；click 例外照常）。
-      if (!st.compatSuppressed) {
-        __zw_dispatch_event(cap.sel, 'mousemove', {
-          clientX: x || 0, clientY: y || 0,
-          // 尾簇 16：compat mouse 面按钮恒 0（UI Events「un-initialized」——mousemove/
-          // mouseenter/mouseleave 等 button=0；-1 仅 pointer 面 move 语义）。
-          // mouseevent_move_button「Button must be un-initialized for mousemove」面。
-          button: 0, buttons: st.buttons, relatedTarget: null
-        });
+    // Process pending / 捕获重定向在 **dispatch 层**统一执行（__zw_dispatch_event
+    // 对 pointer 系事件派发前置 Process-Pending + capture override 重定向——spec
+    // 「fire a pointer event」；pointerup 内 release 的场景在下一 move 清算 lost +
+    // 悬停恢复——WPT pointerevent_releasepointercapture_events_to_original_target）。
+    // 尾簇 19：pointerrawupdate——secure context 且页内存在监听时派发，站点序
+    // 跨界序 → **rawupdate** → pointermove（rawupdate 自身是一次 pointer 事件派发，
+    // 其 dispatch 前置结算与 capture 重定向在 dispatch 层同一次完成；handler 的
+    // capture set/release 落效于随后的 pointermove 派发前置结算——PE spec
+    // https://w3c.github.io/pointerevents/#the-pointerrawupdate-event；WPT
+    // pointerevent_pointerrawupdate_changes_pointer_capture 全簇 +
+    // boundary_events_before_pointerrawupdate 断言面）。
+    var _raw19 = (globalThis.isSecureContext === true) && _zwHasAnyRawListener();
+    // 捕获生效期跨界序抑制（pointer 逻辑位置恒在捕获目标——spec §9.3；WPT
+    // pointerevent_capture_mouse「captured while outside」）。buttons 携带按下键位
+    //（拖拽中 move.buttons 非零——same_element_twice 过滤面）。
+    var _capNow19 = st.capture['1'] || st.capture['2'];
+    if (!_capNow19) {
+      var prev = st.overSel;
+      if (prev !== sel && typeof __zw_parent === 'function') {
+        _zwPointerCross(prev, sel, x, y, _raw19);
       }
-      return 'ok';
+      st.overSel = sel;
     }
-    var prev = st.overSel;
-    if (prev !== sel && typeof __zw_parent === 'function') {
-      _zwPointerCross(prev, sel, x, y);
+    if (_raw19) {
+      __zw_dispatch_event(sel, 'pointerrawupdate', {
+        clientX: x || 0, clientY: y || 0,
+        button: (chordBtn19 != null) ? chordBtn19 : -1, buttons: st.buttons, relatedTarget: null,
+        pointerType: st.pointerType || 'mouse', pressure: st.buttons ? 0.5 : 0,
+        bubbles: true, cancelable: false, coalescedClone: true
+      });
+      // rawupdate handler 移除了目标 → 新命中重定向 + 补跨界（over@新目标——
+      // pointerrawupdate_remove_target 断言面）。
+      var _sel19 = _zwRetargetSel(sel, x, y, true);
+      if (_sel19 !== sel) {
+        if (typeof __zw_parent === 'function') _zwPointerCross(sel, _sel19, x, y);
+        st.overSel = _sel19;
+        sel = _sel19;
+      }
+      // rawupdate 后、pointermove 前结算延迟的 mouse 层跨界序。
+      _zwFlushPendingCross(x, y);
     }
-    st.overSel = sel;
     __zw_dispatch_event(sel, 'pointermove', {
       clientX: x || 0, clientY: y || 0,
-      button: -1, buttons: st.buttons,
-      pressure: st.buttons ? 0.5 : 0
+      button: (chordBtn19 != null) ? chordBtn19 : -1, buttons: st.buttons, relatedTarget: null,
+      pressure: st.buttons ? 0.5 : 0, coalescedMove: true
     });
     if (!st.compatSuppressed) {
       __zw_dispatch_event(sel, 'mousemove', {
@@ -12511,12 +12611,28 @@
     // 尾簇 5：hover 元素原位重插入 → 补重入面（over/enter——touch 隐含迁移分支与
     // mouse move 分支同面）。
     _zwReentryCheck(sel, x, y);
+    // uievents-compat 尾簇 19：**chorded button 按下**——已有键位按下时再按他键
+    // 不派 pointerdown/mousedown，改派 pointermove（buttons 变化——PE spec「指针
+    // 属性变化不触发 down/up 时派 pointermove」；WPT pointerevent_pointerrawupdate
+    // 键序「second pointerDown(MIDDLE) → rawupdate+move」断言面）。downSel 保持
+    // 首次 down 目标（click/auxclick 组合仍随末键 up 结算）。
+    if ((pointerType || 'mouse') !== 'touch' && (st.buttons | 0) !== 0
+        && !(st.buttons & _zwButtonMask(button))) {
+      _zwSetButtons(st.buttons | _zwButtonMask(button));
+      // chorded 触发的 move 携**变化键位**（非 -1——pointermove_on_chorded_mouse_button
+      // 「second button pressed → button != -1」断言面）。
+      __zw_pointer_move(sel, x, y, button);
+      if (button === 2) {
+        __zw_dispatch_event(sel, 'contextmenu', { clientX: x || 0, clientY: y || 0, button: button, buttons: st.buttons, pointerType: pointerType || 'mouse', pointerId: 1 });
+      }
+      return 'ok';
+    }
     st.downSel = sel;
     st.downButton = button;
-    _zwSetButtons(st.buttons | (1 << button));
+    _zwSetButtons(st.buttons | _zwButtonMask(button));
     var prevented = __zw_dispatch_event(sel, 'pointerdown', {
       clientX: x || 0, clientY: y || 0, button: button,
-      buttons: 1 << button, pointerType: pointerType || 'mouse', pressure: 0.5
+      buttons: _zwButtonMask(button), pointerType: pointerType || 'mouse', pressure: 0.5
     }) === 'prevented';
     // 尾簇 15：pointerdown 取消 → 本手势 compat mouse 全链抑制标记（至下次 down
     // 清除；mousemove 于 move 路径判、mouseup 于 up 序列判）。touch 无 compat 面
@@ -12543,14 +12659,14 @@
       }
       downEff = reDown;
     }
-    var mdownPrevented = __zw_dispatch_event(downEff, 'mousedown', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button }) === 'prevented';
+    var mdownPrevented = __zw_dispatch_event(downEff, 'mousedown', { clientX: x || 0, clientY: y || 0, button: button, buttons: _zwButtonMask(button) }) === 'prevented';
     // 尾簇 18：range input 按下取值默认动作（未被页面取消时）。
     if (!mdownPrevented && _zwIsRangeInput(downEff, null)) {
       _zwRangeApplyFromPoint(downEff, null, x, y);
     }
     if (button === 2) {
       // 尾簇 11：UA 指针 contextmenu → PointerEvent 实例（同 click/auxclick 注记）。
-      __zw_dispatch_event(downEff, 'contextmenu', { clientX: x || 0, clientY: y || 0, button: button, buttons: 1 << button, pointerType: pointerType || 'mouse', pointerId: 1 });
+      __zw_dispatch_event(downEff, 'contextmenu', { clientX: x || 0, clientY: y || 0, button: button, buttons: _zwButtonMask(button), pointerType: pointerType || 'mouse', pointerId: 1 });
     }
     // uievents-compat M3 尾簇 6b：mousedown 默认动作 = 焦点迁移（UI Events §5.2.2）
     // ——pointerdown 或 mousedown 被取消时连带抑制（spec——canceling mousedown
@@ -12574,6 +12690,44 @@
   globalThis.__zw_pointer_up_sequence = function (upSel, downSel, x, y, pointerType, button, ancestorChain) {
     button = button | 0;
     var st = _zwPtrState;
+    // uievents-compat 尾簇 19：**chorded button 释放**——仍有他键按下时不派
+    // pointerup/mouseup，改派 pointermove（buttons 变化——WPT pointerevent_
+    // pointerrawupdate 键序「MIDDLE up → move，末键 up → pointerup」断言面）；
+    // 但 **click/auxclick 组合照常**（Chrome oracle——click_on_chorded_mouse_button：
+    // 中间释放按其键位结 click（主键）/auxclick（非主键），buttons 携**剩余掩码**；
+    // detail/连击计数照常推进）。downSel 保留至末键释放（组合目标不变）。
+    if ((pointerType || 'mouse') !== 'touch' && (st.buttons | 0) !== 0
+        && (st.buttons & ~_zwButtonMask(button)) !== 0) {
+      var _restBtns19 = st.buttons & ~_zwButtonMask(button);
+      _zwSetButtons(_restBtns19);
+      __zw_pointer_move(upSel, x, y, button);
+      var _chEffUp = st.downSel || downSel || upSel;
+      if (typeof _zwIsConnected === 'function' && !_zwIsConnected(_chEffUp, null)) {
+        _chEffUp = upSel;
+      }
+      if (button !== 0) {
+        var _chAuxT = _chEffUp;
+        if (!st.capture['1'] && _chEffUp !== upSel) {
+          var _chAncA = globalThis.__zw_common_ancestor(_chEffUp, upSel);
+          if (_chAncA) _chAuxT = _chAncA;
+        }
+        if (st.auxTarget === _chAuxT) st.auxCount += 1;
+        else { st.auxTarget = _chAuxT; st.auxCount = 1; }
+        __zw_dispatch_event(_chAuxT, 'auxclick', { clientX: x || 0, clientY: y || 0, button: button, buttons: _restBtns19, detail: st.auxCount, pointerType: pointerType || 'mouse', pointerId: 1 });
+      } else {
+        var _chT = _chEffUp;
+        if (!st.capture['1'] && _chEffUp !== upSel) {
+          var _chAncB = globalThis.__zw_common_ancestor(_chEffUp, upSel);
+          if (_chAncB) _chT = _chAncB;
+        }
+        if (_chT) {
+          if (st.streakTarget === _chT) st.streakCount += 1;
+          else { st.streakTarget = _chT; st.streakCount = 1; }
+          __zw_dispatch_event(_chT, 'click', { detail: st.streakCount, buttons: _restBtns19, pointerType: pointerType || 'mouse', pointerId: 1 });
+        }
+      }
+      return 'ok';
+    }
     _zwFlushPendingCross(x, y);
     st.pointerType = pointerType || 'mouse';
     // uievents-compat M3 尾簇 5：touch **隐式**捕获 up 前清除——pending 于 up 派发时
@@ -12736,7 +12890,7 @@
       }
       if (st.auxTarget === auxT) st.auxCount += 1;
       else { st.auxTarget = auxT; st.auxCount = 1; }
-      __zw_dispatch_event(auxT, 'auxclick', { clientX: x || 0, clientY: y || 0, button: button, buttons: 0, detail: st.auxCount, pointerType: pointerType || 'mouse', pointerId: 1 });
+      __zw_dispatch_event(auxT, 'auxclick', { clientX: x || 0, clientY: y || 0, button: button, buttons: st.buttons, detail: st.auxCount, pointerType: pointerType || 'mouse', pointerId: 1 });
       st.downSel = null;
       return 'ok';
     }
@@ -12757,7 +12911,9 @@
     // 尾簇 11：UA 指针点击携 pointerType → PointerEvent 实例（PE spec——
     // pointerevent_click_is_a_pointerevent 断言面；webdriver 折叠 click 不传
     // pointerType 保持泛型，R108 激活事务单翻转契约不变）。
-    __zw_dispatch_event(target, 'click', { detail: st.streakCount, pointerType: pointerType || 'mouse', pointerId: 1 });
+    // 尾簇 19：buttons 显式携带（末键释放后掩码已归零——click_on_chorded_mouse_button
+    // 「final click buttons === 0」面；dispatch 缺省对 click 落 1）。
+    __zw_dispatch_event(target, 'click', { detail: st.streakCount, buttons: st.buttons, pointerType: pointerType || 'mouse', pointerId: 1 });
     if (st.streakCount >= 2) {
       __zw_dispatch_event(target, 'dblclick', { detail: 2 });
     }
@@ -12812,7 +12968,7 @@
   // 跨界序列：prev→next 的 over/out/enter/leave 全序。祖先链经 `__zw_parent`
   // sel 域上行（driver/宿主目标均为页面可见元素；handle 域 defer）。每事件经
   // `__zw_dispatch_event` 走 UA 通道（isTrusted + R145 retargeting 与宿主派发同流）。
-  function _zwPointerCross(prevSel, nextSel, x, y) {
+  function _zwPointerCross(prevSel, nextSel, x, y, deferMouse19) {
     // uievents-compat M3 尾簇 4：**双层跨界**——pointer 层（prev = st.overSel 语义位）
     // 与 compat mouse 层（prev = st.mouseOverSel）各自独立算边界序。mouse 层 hover
     // 不随 touch 抬起拆除（compat mouse 边界事件只随真实指针位置——WPT
@@ -12822,6 +12978,15 @@
     // 尾簇 5：跨界到不同元素 → 重入旗标失效（重入面只对原位重插的 hover 元素）。
     if (nextSel && nextSel !== prevSel) st.overReinserted = false;
     _zwLayerCross(prevSel, nextSel, x, y, 'pointer');
+    if (deferMouse19) {
+      // 尾簇 19：move 步 rawupdate 前的跨界只结 **pointer 层**——compat mouse 边界
+      // 序延至 rawupdate **之后**结算（Chromium 站序：pointerover → pointerrawupdate
+      // → mouseover → pointermove；boundary_events_before_pointerrawupdate 在
+      // rawupdate handler 内摘除 mouse listener 的断言面）。guard 防插入型变异路径
+      //（re-retarget 二次跨界）双结——mouseOverSel 已前移即弃单。
+      st.pendingMouseCross = { prev: st.mouseOverSel, next: nextSel };
+      return;
+    }
     _zwLayerCross(st.mouseOverSel, nextSel, x, y, 'mouse');
     st.mouseOverSel = nextSel;
   }

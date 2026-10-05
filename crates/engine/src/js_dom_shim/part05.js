@@ -941,6 +941,10 @@
             || prop === 'nodeName' || prop === 'nodeType' || prop === 'tagName'
             || prop === 'validity' || prop === 'willValidate' || prop === 'validationMessage'
             || prop === 'checkValidity' || prop === 'reportValidity' || prop === 'setCustomValidity'
+            // uievents-compat 尾簇 19（2026-10-05）：onpointerrawupdate IDL handler
+            // `in` 可见性（secure context only——PE spec rawupdate 仅安全上下文；WPT
+            // pointerevent_pointerrawupdate.https.html documentElement 断言面）。
+            || (prop === 'onpointerrawupdate' && globalThis.isSecureContext === true)
             || prop === 'value') {
           return true;
         }
@@ -11601,6 +11605,22 @@
     UIEventCtor109.prototype.constructor = UIEventCtor109;
     globalThis.UIEvent = UIEventCtor109;
   }
+  // uievents-compat 尾簇 19（2026-10-05）：pseudoTarget（UI Events draft——事件路径
+  // 的 pseudo target 反射；own accessor 在 **UIEvent.prototype**，MouseEvent 经原型
+  // 链继承、不得 own。headless 无 shadow pseudo target 近似：回落构造注入值，缺省
+  // target。WPT ui_event_pseudo_target 断言面——descriptor 存在 + 继承）。
+  try {
+    if (globalThis.UIEvent && globalThis.UIEvent.prototype
+        && !Object.getOwnPropertyDescriptor(globalThis.UIEvent.prototype, 'pseudoTarget')) {
+      Object.defineProperty(globalThis.UIEvent.prototype, 'pseudoTarget', {
+        configurable: true, enumerable: true,
+        get: function () {
+          return (this._zwPseudoTarget !== undefined) ? this._zwPseudoTarget
+            : ((this && this.target != null) ? this.target : null);
+        }
+      });
+    }
+  } catch (_ePT19) {}
   // MouseEvent（UIEvent 子类）：坐标 / 修饰键 / button / buttons / relatedTarget。
   var MouseEventCtor = _defineEventSubclass('MouseEvent', 'UIEvent', [
     ['screenX', 'screenX', 0], ['screenY', 'screenY', 0],
@@ -11787,6 +11807,10 @@
     ['azimuthAngle', 'azimuthAngle', 0], ['altitudeAngle', 'altitudeAngle', Math.PI / 2],
     ['pointerType', 'pointerType', ''], ['isPrimary', 'isPrimary', false],
     ['twist', 'twist', 0], ['tangentialPressure', 'tangentialPressure', 0],
+    // uievents-compat 尾簇 19（2026-10-05）：persistentDeviceId（PointerEventInit——
+    // 跨 pointerId 持久设备标识，tentative spec w3c/pointerevents#495；缺省 0。WPT
+    // persistentDeviceId/pointer-event-has-persistentdeviceid-from-pointer-event-init）。
+    ['persistentDeviceId', 'persistentDeviceId', 0],
   ]);
   // uievents-compat M3 尾簇（2026-10-03）：coalesced/predicted 事件队列 stub——合成
   // 派发无真指针采样管线，spec 返空列表
