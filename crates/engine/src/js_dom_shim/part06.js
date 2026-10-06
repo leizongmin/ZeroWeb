@@ -12482,6 +12482,24 @@
     // 触摸指针无悬停态，边界事件在接触（down）时派——WPT after_target_removed
     // ?touch「pointerdown should imply a pointermove again」）。
     if (st.pointerType === 'touch') {
+      // 尾簇 25：触式捕获路由——捕获生效时触式 move 随捕获目标派发（PE spec 无
+      // 「捕获触式不派 move」；早退仅指无 hover/边界序——非捕获触式 move 维持
+      // 既有抑制。pointercapture_in_frame subtest 6 ?touch 断言面）。
+      if (typeof _zwProcessPendingCapture === 'function' && !st.processingCapture) {
+        _zwProcessPendingCapture('1');
+      }
+      var _capT25 = st.capture['1'];
+      if (_capT25) {
+        __zw_dispatch_event(_capT25.sel, 'pointermove', {
+          clientX: x || 0, clientY: y || 0,
+          button: -1, buttons: st.buttons,
+          pointerType: 'touch', pressure: st.buttons ? 0.5 : 0
+        });
+        if (st.buttons && st.downSel && _zwIsRangeInput(st.downSel, null)) {
+          _zwRangeApplyFromPoint(st.downSel, null, x, y);
+        }
+        return 'ok';
+      }
       // 尾簇 18：touch 拖拽的 range 取值（touch 无 hover/move 对——取值是默认动作
       // 非事件面；WPT pointerevent_range_input ?touch 断言面）。
       if (st.buttons && st.downSel && _zwIsRangeInput(st.downSel, null)) {
