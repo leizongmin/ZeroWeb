@@ -6745,4 +6745,126 @@ mod tests {
             "sel_map 已重绑新 handle：不被旧 handle 移除误杀（等值守卫）"
         );
     }
+
+    // slice35（slice34 testeff I-1 二阶盲区收口·调用点面）：apply_dom_mutations_and_render
+    // 路径的 evict 调用点行为钉。slice34 的 5 根钉全在函数体级（直呼 evict），任一 apply
+    // 路径的调用点被重构删行则残影通道重开而函数体钉全绿。本钉走真实 apply 路径（浏览器
+    // Tab JS worker 生产入口）：预置 stale 绑定 → Remove 变异 apply → 断言绑定清除。
+    #[test]
+    fn apply_dom_mutations_and_render_evicts_removed_identities_s35() {
+        let mut wv = wv();
+        wv.load_html("<html><body><p class='s35a'>t</p></body></html>", None);
+        seed(&wv, &[("p.s35a", "h_stale")], &[("h_stale", "p.s35a")]);
+        let applied = wv.apply_dom_mutations_and_render(&[DomMutation::Remove {
+            selector: "p.s35a".to_string(),
+        }]);
+        assert!(applied.is_ok(), "Remove 变异 apply 成功：{applied:?}");
+        assert!(
+            !wv.selector_handle_map
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key("p.s35a"),
+            "apply_dom_mutations_and_render 路径 Remove 后 sel→handle 残账必须清除——本路径 evict 调用点删行时残影通道重开"
+        );
+    }
+
+    // slice35：apply_pending_shared_mutations 单步路径（tail 纯结构批）的 evict +
+    // R379/pa2b 换代通知调用点行为钉。通知是 fire-and-forget execute_script（结果被
+    // `let _` 吞），删行后 map 语义不变、无任何函数体钉可抓——本钉以 external_script
+    // spy 截获下发脚本断言通知发生；evict 删行以双表状态断言。
+    #[test]
+    fn flush_shared_mutations_single_step_evicts_and_notifies_s35() {
+        let scripts: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+        let spy = scripts.clone();
+        let mut wv = WebView::new(WebViewConfig {
+            external_script: Some(std::sync::Arc::new(move |script: &str| {
+                spy.lock().unwrap_or_else(|e| e.into_inner()).push(script.to_string());
+                Ok(String::new())
+            })),
+            ..WebViewConfig::default()
+        });
+        wv.load_html("<html><body><p class='s35b'>t</p></body></html>", None);
+        seed(&wv, &[("p.s35b", "h_stale")], &[("h_stale", "p.s35b")]);
+        wv.shared_mutations
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(DomMutation::Remove {
+                selector: "p.s35b".to_string(),
+            });
+        wv.flush_pending_shared_mutations().expect("单步 tail flush 成功");
+        assert!(
+            !wv.selector_handle_map
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key("p.s35b"),
+            "单步 tail apply 后残账清除（本路径 evict 调用点删行即红）"
+        );
+        assert!(
+            scripts
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .iter()
+                .any(|s| s.contains("__zw_apply_generation_bump")),
+            "apply 后必须向 shim 下发 __zw_apply_generation_bump 换代通知（通知调用点删行即红）"
+        );
+    }
+
+    // slice35：两步切分路径（tail 混合结构+样式批 → apply_mutations_subset）的 evict +
+    // 换代通知调用点行为钉——动画泵/共享队列混合批的生产路径（R342 两步 apply），
+    // 子批 evict 与子批通知各一次，删任一即红。
+    #[test]
+    fn flush_shared_mutations_two_step_subset_evicts_and_notifies_s35() {
+        let scripts: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+        let spy = scripts.clone();
+        let mut wv = WebView::new(WebViewConfig {
+            external_script: Some(std::sync::Arc::new(move |script: &str| {
+                spy.lock().unwrap_or_else(|e| e.into_inner()).push(script.to_string());
+                Ok(String::new())
+            })),
+            ..WebViewConfig::default()
+        });
+        wv.load_html("<html><body><p class='s35c'>t</p></body></html>", None);
+        seed(&wv, &[("p.s35c", "h_stale")], &[("h_stale", "p.s35c")]);
+        wv.shared_mutations.lock().unwrap_or_else(|e| e.into_inner()).extend([
+            DomMutation::Remove {
+                selector: "p.s35c".to_string(),
+            },
+            DomMutation::SetStyle {
+                selector: "p.s35c".to_string(),
+                property: "color".to_string(),
+                value: "red".to_string(),
+            },
+        ]);
+        wv.flush_pending_shared_mutations().expect("两步 tail flush 成功");
+        assert!(
+            !wv.selector_handle_map
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key("p.s35c"),
+            "两步切分后结构子批经 apply_mutations_subset 清残账（子批 evict 调用点删行即红）"
+        );
+        assert!(
+            scripts
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .iter()
+                .any(|s| s.contains("__zw_apply_generation_bump")),
+            "两步切分子批 apply 后同样下发换代通知（子批通知调用点删行即红）"
+        );
+    }
+
+    // slice35：第 4 应用路径（execute_dom_script，user_actions.rs 子模块）的 evict
+    // 调用点存在性钉（源码扫描）。该路径需 JS 沙箱驱动（js_sandbox.execute），行为钉
+    // 成本高；include_str! 编译期内嵌产品源码——调用点删行 → 重编译内嵌随之变 → 计数
+    // 失配即红。断言出现次数而非行号（行号漂移鲁棒）；`self.` 前缀区分产品调用点与
+    // 测试直呼（测试内均为 `wv.` 形）。
+    #[test]
+    fn execute_dom_script_path_evict_call_site_present_s35() {
+        let src = include_str!("webview/user_actions.rs");
+        assert_eq!(
+            src.matches("self.evict_removed_identities(").count(),
+            1,
+            "execute_dom_script 第 4 应用路径的 evict_removed_identities 调用点必须存在（删行即红）"
+        );
+    }
 }
