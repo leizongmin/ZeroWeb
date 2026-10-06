@@ -6573,3 +6573,176 @@ impl Drop for WebView {
         zero_engine::quickjs_dom_bindings::reset_quickjs_state();
     }
 }
+
+// slice34（RP-3 修复面钉债收口，slice33 testeff 评审 S-2）：`evict_removed_identities`
+// 全臂单测——evict 为纯 map 逻辑（双表 + recorded 列表 + batch_handles 入参），此前
+// 零断言（本文件无测试模块）。守卫语义见方法文档（slice33 缺陷轮 S-2 同批等值守卫 +
+// RemoveHandle 臂既有等值守卫）。webview.rs 内联模块（非 src/tests/ 目录）：evict 与
+// 双表字段均私有，子模块方可触达，不改产品可见性。
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wv() -> WebView {
+        WebView::new(WebViewConfig::default())
+    }
+
+    fn seed(wv: &WebView, sel_map: &[(&str, &str)], fwd: &[(&str, &str)]) {
+        wv.selector_handle_map
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .extend(sel_map.iter().map(|(s, h)| (s.to_string(), h.to_string())));
+        wv.handle_selector_forward
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .extend(fwd.iter().map(|(h, s)| (h.to_string(), s.to_string())));
+    }
+
+    // Remove 臂（非同批）：stale 绑定照删（同位重建残影通道关闭的本体语义）；
+    // fwd（handle→sel）保留——Remove 臂只清 sel→handle 反查账，JS 已持旧 proxy
+    // 读回落（R3029 removedNodes 语义）不受影响。
+    #[test]
+    fn evict_remove_selector_clears_stale_binding_out_of_batch_s34() {
+        let mut wv = wv();
+        seed(&wv, &[("div.g", "h1")], &[("h1", "div.g")]);
+        wv.evict_removed_identities(
+            &[DomMutation::Remove {
+                selector: "div.g".to_string(),
+            }],
+            &HashMap::new(),
+        );
+        assert!(
+            !wv.selector_handle_map
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key("div.g"),
+            "非同批 Remove：sel→handle 残账必须清除"
+        );
+        assert!(
+            wv.handle_selector_forward
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key("h1"),
+            "Remove 臂不清 fwd（JS 已持旧 proxy 读回落保留）"
+        );
+    }
+
+    // slice33 缺陷轮 S-2 守卫：同批「Remove{S} + 同位重建注册 S→H2」（merge 先行，
+    // batch_handles 即本次 apply 重建账）下新绑定存活。守卫删行（回退无条件删）本断言红
+    // ——误杀新注册且双表不对称（fwd 仍留 H2→S）。
+    #[test]
+    fn evict_remove_selector_same_batch_rebuild_keeps_new_binding_s34() {
+        let mut wv = wv();
+        seed(&wv, &[("div.g", "h2")], &[("h2", "div.g")]);
+        let mut batch = HashMap::new();
+        batch.insert("h2".to_string(), "div.g".to_string());
+        wv.evict_removed_identities(
+            &[DomMutation::Remove {
+                selector: "div.g".to_string(),
+            }],
+            &batch,
+        );
+        assert_eq!(
+            wv.selector_handle_map
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get("div.g")
+                .map(String::as_str),
+            Some("h2"),
+            "同批等值重建：新绑定存活（守卫跳过删除）"
+        );
+    }
+
+    // 守卫异值面：当前绑定的 handle 不在本批重建账（batch 只含他 selector 的重建）
+    // → 照删；他 selector 的同批绑定不受扰动。
+    #[test]
+    fn evict_remove_selector_clears_binding_absent_from_batch_s34() {
+        let mut wv = wv();
+        seed(
+            &wv,
+            &[("div.g", "h_old"), ("p.q", "h9")],
+            &[("h_old", "div.g"), ("h9", "p.q")],
+        );
+        let mut batch = HashMap::new();
+        batch.insert("h9".to_string(), "p.q".to_string());
+        wv.evict_removed_identities(
+            &[DomMutation::Remove {
+                selector: "div.g".to_string(),
+            }],
+            &batch,
+        );
+        assert!(
+            !wv.selector_handle_map
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key("div.g"),
+            "当前绑定不在 batch 重建账：残账照删"
+        );
+        assert_eq!(
+            wv.selector_handle_map
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get("p.q")
+                .map(String::as_str),
+            Some("h9"),
+            "他 selector 的同批重建绑定不受扰动"
+        );
+    }
+
+    // RemoveHandle 臂：fwd + sel_map 成对清除（handle 的 selector 绑定整体失效）。
+    #[test]
+    fn evict_remove_handle_clears_pair_s34() {
+        let mut wv = wv();
+        seed(&wv, &[("div.g", "h1")], &[("h1", "div.g")]);
+        wv.evict_removed_identities(
+            &[DomMutation::RemoveHandle {
+                handle: "h1".to_string(),
+            }],
+            &HashMap::new(),
+        );
+        assert!(
+            !wv.handle_selector_forward
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key("h1"),
+            "RemoveHandle：fwd 条目清除"
+        );
+        assert!(
+            !wv.selector_handle_map
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key("div.g"),
+            "RemoveHandle：sel_map 成对清除"
+        );
+    }
+
+    // RemoveHandle 臂等值守卫：sel_map 已重绑新 handle（h2）时，旧 handle（h1）的
+    // 移除只清自己的 fwd 条目，不误删新绑定（`sel_map[sel] == handle` 才删）。
+    #[test]
+    fn evict_remove_handle_keeps_rebound_selector_s34() {
+        let mut wv = wv();
+        seed(&wv, &[("div.g", "h2")], &[("h1", "div.g")]);
+        wv.evict_removed_identities(
+            &[DomMutation::RemoveHandle {
+                handle: "h1".to_string(),
+            }],
+            &HashMap::new(),
+        );
+        assert!(
+            !wv.handle_selector_forward
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key("h1"),
+            "旧 handle fwd 条目清除"
+        );
+        assert_eq!(
+            wv.selector_handle_map
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get("div.g")
+                .map(String::as_str),
+            Some("h2"),
+            "sel_map 已重绑新 handle：不被旧 handle 移除误杀（等值守卫）"
+        );
+    }
+}
