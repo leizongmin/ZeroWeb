@@ -17,7 +17,11 @@ M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P 
 （上轮 22P/1F/1TO：api CE execCommand 案 Pass + enter-textarea CE 案 Pass）；
 其余零回归。尾簇 33 的 textContent 同步可见性挂账解明并修复：根因 = `'value' in`
 has 白名单无条件 true（div 等 CE 元素误入 value getter 分支）+ CE Enter 元素
-caret no-op + innerHTML mutation 异步可见性。尾簇 19：improvements=120 / regressions=1 已记录；尾簇 20：+2；
+caret no-op + innerHTML mutation 异步可见性。尾簇 36（Δ0 归因轮）：
+mousemove-between 的序断言缺口腔定位——**body 级 margin:auto 水平居中失效**
+（探针实证 a 盒 [8,208] vs 真实浏览器居中 [300,500]，absolute 坐标步全错位——
+渲染流域 layout-engine 面，跨流挂账）；mouse 族余挂 layerX/layerY 反射
+（transform 感知计算——shim 面可做，2F 收益）。尾簇 19：improvements=120 / regressions=1 已记录；尾簇 20：+2；
 尾簇 21：Δ0 基建轮；尾簇 22：portal 首段 +1；尾簇 23：portal 第二段 +6；尾簇 24：
 portal 第三段 +5；尾簇 25：触式捕获路由 +5；尾簇 26：Δ0 id 值面；尾簇 27：
 frame-hold 重接 +2；尾簇 28：frame-hold 残留清零 +2；尾簇 29：判例轮 Δ0（?touch
@@ -500,7 +504,7 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | uievents + pointerevents corpus 导入 + 基线 | ✅ 2026-10-03 |
-| P2 | 鼠标事件序/坐标/click 组合语义修齐 | 🔄 核心已落地；残余 = mousemove-between（视口命中精度）、wheel 三案（scroll 源重放——wheel-basic/deadlock 可解，scrolling 需真滚动）、interface keyboard-click、TextEvent 语义域（textInput 族 ✅ 16P——余 5 TO = execCommand insertText 对 text control ×3 + CE ForwardDelete + CE Enter 面，editing 域挂账——尾簇 31）、uievents/mouse 尾簇（mouseover-at-removing ✅ 尾簇 7 全绿；mutation 驱动悬停重定向 + 修饰键态 ✅ 尾簇 8 全绿；image-map 命中 + 跨目标 click 组合 ✅ 尾簇 9 全绿；同 turn gBCR 强制同步布局——reappending 11F + removing_last_over 4F + compat-mouse-when-removing 4F + boundary_drag 2F 根因（尾簇 30 ZW_TD_DEBUG 实证零盒）；image-map img-resized 双案 = 查询视图缓存双计——尾簇 10；layerX/chorded buttons） |
+| P2 | 鼠标事件序/坐标/click 组合语义修齐 | 🔄 核心已落地；残余 = mousemove-between（**根因：body 级 margin:auto 水平居中失效**——渲染流域，尾簇 36 探针归因）、wheel 三案（scroll 源重放——wheel-basic/deadlock 可解，scrolling 需真滚动）、interface keyboard-click、TextEvent 语义域（textInput 族 ✅ 16P——余 5 TO = execCommand insertText 对 text control ×3 + CE ForwardDelete + CE Enter 面，editing 域挂账——尾簇 31）、uievents/mouse 尾簇（mouseover-at-removing ✅ 尾簇 7 全绿；mutation 驱动悬停重定向 + 修饰键态 ✅ 尾簇 8 全绿；image-map 命中 + 跨目标 click 组合 ✅ 尾簇 9 全绿；同 turn gBCR 强制同步布局——reappending 11F + removing_last_over 4F + compat-mouse-when-removing 4F + boundary_drag 2F 根因（尾簇 30 ZW_TD_DEBUG 实证零盒）；image-map img-resized 双案 = 查询视图缓存双计——尾簇 10；layerX/chorded buttons） |
 | P3 | Pointer 生命周期 + capture 三方法 + enter/leave 边界序 | ✅ 核心 + mutation 族 + 重入面 + touch 接触失效收口（尾簇 4/5/6c——after_target_appended 24/24 全绿）+ portal 段收口（尾簇 22-29——pointercapture_in_frame 17P + 1 上游即 Fail）；残余 = pointercancel/touch-action 交互面、iframe 跨文档焦点；from_slot 案阻塞于 declarative shadow DOM（shadowrootmode 未实现——web-components 域前置，挂账）；interleaved 族 + pointercapture_in_frame ?touch subtest 4 行为面已对齐（残余 = 上游 expected 记账 bug，pin 版即 Fail，不再追——尾簇 29 判例） |
 | P4 | touch-events / pointerlock / IME 组合挂账定稿 | ⏳ M4 |
 
