@@ -11,7 +11,8 @@
   - FAIL_FILE_COUNT=$(grep -c '^Fail ' ...)  # 1（cross-origin-named-access.sub.html，
     派发书排除项，fetch 基建未触碰）
   - TIMEOUT_COUNT=$(grep -c '^Timeout ' ...) # 2（named-objects/window-named-properties
-    文件级，见残差②；两文件全部子测 Pass）
+    文件级，见残差②；两文件全部已上报子测 Pass——各余 2/1 个 load 依赖
+    async 子测未上报，R139 残差②同源；返修轮勘误，原「全部子测 Pass」措辞过宽）
   - 口径注：after 组数字测于 NPO 收口实现（引擎分叉条件接线前），终版 part05 在
     V8 腿语义等价（仅安装期多一次引擎语义探测），WPT 为 V8 腿；终版树复验
     after2 = 43P/1F/2T 与 after 逐条一致（Fail=cross-origin 排除项，
@@ -112,7 +113,9 @@
   {w:true,e:false,c:true}；s2.winOwnNpid1 = false；s4.winSloppy = ret=true,
   reread=element（复活，ret 与 Chrome 同款）；s4.npoSloppy = ret=false；
   s4.npoStrict = THREW:TypeError；s6.gspCtorOwn = false（'constructor' 隐名）——
-  与 chrome-control.json 逐面对齐
+  NPO 本面与 chrome-control.json 逐面对齐（全量对照共 4 处语义差，均非 NPO
+  本面，见残差⑨⑩及残差①⑤：ET class string、s5 ImmutablePrototype、
+  s6 ctor 源串外观、s7 子 realm onload；testeff I6 勘误，原「逐面对齐」措辞过强）
 
 ## 残差申报（如实）
 
@@ -122,7 +125,9 @@
 ② window-named-properties.html / named-objects.html 文件级 Timeout 维持：两文件
    async_test 完成依赖 iframe load 派发（srcdoc 动态再导航 / 静态解析期 iframe load）
    ——runner 不派发该二面（R139 通道已知缺口，事件/导航基建非本切片语义范围；
-   named-objects 的 T 为派发书明确排除项）。子测全 P。
+   named-objects 的 T 为派发书明确排除项）。已上报子测全 P（window-np 余
+   Dynamic name/Ghost name 2 个、named-objects 余 1 个 load 依赖 async 子测
+   未上报——返修轮措辞收口，testeff I1）。
 ③ window 级 delete 表达式 ret 值：浏览器腿（CDP 探针 s4.winSloppy/Strict）实测
    ret=true 且再读复活——与 Chrome 同款；NPO 级 sloppy=false / strict TypeError 与
    Chrome 逐面一致。引擎沙箱腿（Proxy [[Delete]] 语义字面）sloppy ret=false 为
@@ -144,6 +149,11 @@
    test target，`clippy --all-targets` 门禁覆盖为绿；
    test_pipeline_deeply_nested_html 在本环境（WSL2）默认栈下单跑即栈溢出，
    687b12ecd stash 实证同款，RUST_MIN_STACK=16777216 下全绿。
+⑨ ET.prototype class string：Chrome `[object EventTarget]` vs ZeroWeb
+   `[object Object]`（EventTarget 接口表示差，非 NPO 本面；三态对照
+   s1.etProtoTag 与 s1.chain 第 4 层同源；testeff I6 补录）。
+⑩ 子 realm iframe onload 未派发：三态探针 s7.* ZeroWeb 侧未完成
+   （s7.pending=yes）——R139 通道已知缺口，残差②同源（testeff I6 补录）。
 
 ## 钉族变更（RED→GREEN 见上）
 
@@ -193,3 +203,105 @@
 - part05.js = 507896c66cb9ccd67d314e1fe2a1922419168bdcb22c4fa33bb4c02d029bddb0
 - part04.js = 007756fe224884b57c923a5b05915c7d6c2a76cfe9337a7065ce0f7e6829f21f
 - part06.js = 538a9a24193a27d20254a985e7613083d6608ee738580274e0b8224e5ebf8240
+
+## 返修轮（2026-10-07，双首轮评审 REQUEST_CHANGES 后，主控-direct）
+
+### 返修输入
+
+- defect 首轮（pr89-defect-round1.md）：0B/2S/2I——S1 make test 全量归档缺口；
+  S2 交付头 CI precheck 红（fmt）未申报；I1 清扫注释「slice36 口径」失准；
+  I2 还原 sha 复核无归档输出
+- testeff 首轮（pr89-test-effectiveness-round1.md）：0B/1S/7I——S1 与 defect S1
+  收敛（三计数不可复算 + quickjs webview 681 腿零归档）；I1-I7 见该报告
+
+### S2 收口：CI merge-ref fmt 红（run 37507331271）
+
+- 事实：交付头 4c47dbc4a 的 CI precheck fmt 步骤 exit 1
+  （gates/ci-precheck-fail-run37507331271.log 全量归档）；drift 5 hunk 分布
+  3 文件——crates/page-runtime/src/html_actions.rs:654、
+  crates/webview/src/webview/user_actions.rs:3/:189、
+  tests/wpt-runner/src/testharness.rs:7959/:8421——均不在 slice37 diff 面
+  （base 继承内容）
+- 归因：main 直推尾簇 31/32/33 + PR #88 + gCS 收口未过 CI（fmt 漂移随 merge-ref
+  显影）；CI runner rustfmt（@stable 浮动通道）与本地 1.9.0 规则漂移——import
+  分组整行填充、fn 签名一行化、jammed 语句拆分
+- 收口：merge main（5a2f514e4，merge-tree fmt 干跑净）→ 5 hunk 机械格式化
+  （8d91395ad style(ci)）→ 本地 cargo fmt --all -- --check 复归零 diff →
+  CI 重跑取绿（返修推送后；结果见返修门禁节追记）
+- 反证归档：gates/ci-fmt-drift-files.txt（交付头时点本地复核为空 = drift 非
+  4c47dbc4a 内容引入）
+
+### S1 收口：make test 全量复跑 + reftest 复跑（返修树 23ec96006）
+
+- gates/maketest-rework.log **全量归档 21,266 行**（非尾注）；awk 复算：
+  **passed=20123 failed=0 ignored=198**（70 腿；exit=0，memguard + make test
+  既定包裹入口）
+- quickjs webview 腿 681/681 与 renderer quickjs lib 218/218 两行均可在归档
+  grep 实证（S1 双评审指名的两行）
+- 锚分解：20,107（slice36 合并树锚，slice36 归档 maketest-mergetree.log 复算）
+  + 8（main 合并带入——engine lib 腿 2852→2860 实测，尾簇 31/32/33 + #88 +
+  gCS）+ 8（slice37：part38 6 fn + renderer v8 腿 1 + renderer quickjs 腿 1）
+  = **20,123** ✓（198I 恒等）
+- make reftest 复跑：gates/reftest-rework.log 全量 764 行——704 ✓/0 ✗
+  （Layout 502/502 + Text 202/202，与 slice36 结构逐位一致，exit=0）
+- WPT named-access 组返修树复验：gates/wpt-named-access-rework.log =
+  43P/1F/2T，Fail/Timeout 三条身份与 after2 逐条同位（merge 未引回 NPO 面回归）
+
+### RED→GREEN 返修轮补全（交付树；defect I2 / testeff I2 sha 归档缺口同轮闭合）
+
+- 基准 sha256(part05.js) = bc5994a74a60f05a97b4b1fe4e611268ec0abd54a67f5fd10523290c90577165
+  （merge 后交付树；三 cycle 共用；每次还原后 sha256sum 原样输出附 log 尾）
+- M1' probe-forced-false（M1 于交付树接线点的等价变异——探针强制 unwired）：
+  red-mutation/M1-probe-forced-false-{red,green}.log + mutation.diff
+  - RED **5 钉**（chain_shape/descriptor_gpn/shadow_visibility/delete_faces +
+    child_realm_chain——交付树子 realm 门读 wired，探测面变异连带子接线断，
+    较初版 M1 的 4 钉更宽；enumerable 守恒钉独绿 = testeff I4 预言实证）
+  - → 还原 sha 复核一致 → GREEN 6/6（2854 filtered + 6 = 2860 ✓）
+- M2' deleteProperty trap（false→true，交付树复跑）：
+  red-mutation/M2-delete-trap-rework-{red,green}.log + mutation.diff
+  —— 恰 1 RED（delete_faces）→ 还原复核 → GREEN 6/6
+- M3 child-realm-wiring（testeff I3 补全——子接线点直变）：
+  red-mutation/M3-child-realm-wiring-{red,green}.log + mutation.diff
+  —— 恰 1 RED（child_realm_chain）→ 还原复核 → GREEN 6/6
+- 至此 6 钉全部有交付树 mutation 归档（testeff I2/I3 闭合）；6 根钉归档矩阵：
+  chain_shape←M1' / descriptor_gpn←M1' / shadow_visibility←M1' /
+  delete_faces←M1'+M2' / child_realm_chain←M1'+M3 / enumerable_faces=守恒钉
+  （定位见 23ec96006 钉注释）
+
+### 评审措辞收口（manifest 本体勘误）
+
+- 「两文件全部子测 Pass」→「全部已上报子测 Pass（各余 2/1 个 load 依赖 async
+  子测未上报，R139 残差②同源）」（testeff I1；门禁节 + 残差②两处已改）
+- 残差清单补录 ⑨（ET.prototype class string `[object Object]` vs Chrome
+  `[object EventTarget]`）⑩（子 realm iframe onload 未派发 s7.pending=yes）——
+  均非 NPO 本面（testeff I6）；「与 chrome-control.json 逐面对齐」勘误为
+  「NPO 本面逐面对齐（全量对照共 4 处语义差）」
+- js_worker.rs:1237 注释如实化（defect I1，23ec96006）：quickjs 臂 gPN 较
+  slice36 for-in（仅可枚举）为安全方向放宽（多覆盖非可枚举 own 残留；
+  快照先于页面脚本故无越界回收面）
+- future-mutation 纪律（testeff I5 入池）：后续 mutation run 不做 _s37 过滤
+  （part34/35 旧钉翻转纳入 RED 面），或对单翻转补单点 mutation
+
+### 规范测试缺口入池（testeff I7，承接 slice36 缺口池）
+
+- 零守护优先：[[DefineOwnProperty]]→false、[[PreventExtensions]]→false
+  （实现已申报，钉与 WPT 组均无断言）
+- 候基建/前置：Window.prototype own 遮蔽 engine 钉（WPT 已覆盖）、
+  cross-origin NPO（候 fetch 基建）、document.all×NPO（候 IsHTMLDDA）、
+  NPO ownKeys 枚举序（低优先）
+
+### 返修提交面
+
+- 5a2f514e4 merge main（CI merge-ref 取绿前置；吸收尾簇 31/32/33 + #88 + gCS）
+- 8d91395ad style(ci)：3 文件 5 hunk 机械格式化（CI @stable rustfmt 对齐）
+- 23ec96006 docs(slice37)：defect I1 + testeff I4 注释收口（零行为差异）
+- 本提交：manifest 返修节 + mutation/gates 返修归档（产品代码零 diff——
+  门禁实跑于 23ec96006 树，本提交仅增 .acceptance 证据面）
+
+### 返修轮终版 sha256（merge 后交付树 23ec96006）
+
+- part04.js = 0868d30360039d5cd443d4ff3f9b5318af17f08befa2af9b01810815d6a72ab0
+- part05.js = bc5994a74a60f05a97b4b1fe4e611268ec0abd54a67f5fd10523290c90577165
+- part06.js = 40ec15feb0bd849e5f43e7af3ef3db11ff5a7d91387fdd4c5f99fc5456204084
+  （merge 吸收尾簇 31/32/33 面；初版「终版 sha」节为 4c47dbc4a 时点值，
+  以本节为准）

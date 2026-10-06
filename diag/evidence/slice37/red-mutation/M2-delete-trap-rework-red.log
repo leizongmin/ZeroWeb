@@ -1,0 +1,37 @@
+# M2' deleteProperty-trap RED（返修轮，交付树）
+# 树: 23ec960068497dd64e83155d3f1df062197bc0e2  基准 sha256(part05.js) = bc5994a74a60f05a97b4b1fe4e611268ec0abd54a67f5fd10523290c90577165
+# 变异: NPO [[Delete]] trap return false; → return true;
+# diff: ../M2-delete-trap-rework-mutation.diff
+# 日期: 2026-10-07
+
+   Compiling zero-engine v0.1.0 (/home/lei/work/ZeroWeb/crates/engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.91s
+     Running unittests src/lib.rs (target/debug/deps/zero_engine-acbd885ebec27618)
+
+running 6 tests
+test js_dom_bridge::tests::npo_delete_faces_s37 ... FAILED
+test js_dom_bridge::tests::npo_enumerable_faces_s37 ... ok
+test js_dom_bridge::tests::npo_chain_shape_s37 ... ok
+test js_dom_bridge::tests::npo_child_realm_chain_s37 ... ok
+test js_dom_bridge::tests::npo_descriptor_gpn_s37 ... ok
+test js_dom_bridge::tests::npo_shadow_visibility_s37 ... ok
+
+failures:
+
+---- js_dom_bridge::tests::npo_delete_faces_s37 stdout ----
+
+thread 'js_dom_bridge::tests::npo_delete_faces_s37' (3337067) panicked at crates/engine/src/js_dom_bridge_tests/part38.rs:269:5:
+assertion `left == right` failed: NPO 级 sloppy delete ret=false（WebIDL [[Delete]]→false）
+  left: "true"
+ right: "false"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    js_dom_bridge::tests::npo_delete_faces_s37
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 2854 filtered out; finished in 0.06s
+
+error: test failed, to rerun pass `-p zero-engine --lib`
+
+# 还原后复核: bc5994a74a60f05a97b4b1fe4e611268ec0abd54a67f5fd10523290c90577165  crates/engine/src/js_dom_shim/part05.js
