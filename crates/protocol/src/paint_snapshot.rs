@@ -660,6 +660,10 @@ pub struct IpcHitTestCache {
     /// computed visibility hidden/collapse 的元素 id（命中穿透；布局保留）。
     #[serde(default)]
     pub hidden_nodes: Vec<u64>,
+    /// computed `pointer-events: none` 的元素 id（命中穿透；布局保留）。
+    /// https://drafts.csswg.org/css-ui-4/#pointer-events
+    #[serde(default)]
+    pub pe_none_nodes: Vec<u64>,
 }
 
 impl Default for PaintSnapshotParams {

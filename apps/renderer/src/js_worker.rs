@@ -2659,6 +2659,7 @@ mod tests {
             ],
             parents: vec![(id2, id1)],
             hidden_nodes: Vec::new(),
+            pe_none_nodes: Vec::new(),
         });
         *worker.element_from_point_cache().lock().unwrap() = Some(Arc::new(cache));
         worker
@@ -2749,6 +2750,7 @@ mod tests {
             ],
             parents: vec![(id2, id1)],
             hidden_nodes: Vec::new(),
+            pe_none_nodes: Vec::new(),
         });
         *worker.element_from_point_cache().lock().unwrap() = Some(Arc::new(cache));
         worker

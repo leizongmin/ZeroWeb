@@ -85,6 +85,7 @@ fn hit_test_cache_from_ipc(cache: IpcHitTestCache) -> Option<HitTestCache> {
         nodes,
         parents,
         hidden_nodes: cache.hidden_nodes,
+        pe_none_nodes: cache.pe_none_nodes,
     }))
 }
 
@@ -168,6 +169,7 @@ mod tests {
                 .collect(),
                 parents: [(2, 1)].into_iter().collect(),
                 hidden_nodes: Vec::new(),
+                pe_none_nodes: Vec::new(),
             }),
             ..Default::default()
         };
