@@ -1053,6 +1053,14 @@
         // 尾簇 26：id 值槽（body 视图 getAttribute 链断点的 portal 侧直读源——
         // _zwPortalDispatch 的 .id 惰性 getter 消费）。
         if (_bid23) { try { entry.doc.__zwBodyId = _bid23; } catch (_e23ids) {} }
+        // 尾簇 28：帧根 html id 槽（frame-hold 期 body 视图 .id 报帧根——
+        // pointercapture_in_frame subtest 5 「innerFrameDocument received pointerup」
+        // 断言面的数据源）。
+        try {
+          var _hm23 = /<html\b[^>]*\bid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>/i.exec(String(body || ''));
+          var _hid23 = _hm23 ? (_hm23[1] != null ? _hm23[1] : (_hm23[2] != null ? _hm23[2] : _hm23[3])) : '';
+          if (_hid23) { try { entry.doc.__zwHtmlId = _hid23; } catch (_e23hids) {} }
+        } catch (_e23hid) {}
       } catch (_e23bid) {}
       try { entry.doc._zwURL = effectiveUrl; } catch (_e115u) {}
       // https://html.spec.whatwg.org/multipage/dom.html#dom-document-referrer

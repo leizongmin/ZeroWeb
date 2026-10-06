@@ -12357,7 +12357,18 @@
           var _bid22v = (doc.__zwBodyId != null) ? String(doc.__zwBodyId) : '';
           Object.defineProperty(t, 'id', {
             configurable: true,
-            get: function () { try { return t.getAttribute('id') || _bid22v || ''; } catch (_e22id) { return _bid22v || ''; } }
+            get: function () {
+              try {
+                // 尾簇 28：frame-hold 期（mouse/pen release 后至 pointerup）body 视图
+                // 的 .id 报**帧根 html id**（Chromium frame 持有指针——hold 期事件
+                // target 为帧根；pointercapture_in_frame subtest 5 ?mouse/?pen
+                // 「innerFrameDocument received pointerup」断言面）。
+                var _st26 = (typeof _zwPtrState !== 'undefined') ? _zwPtrState : null;
+                if (_st26 && _st26.portalFrameHold && (_st26.pointerType || 'mouse') !== 'touch'
+                    && doc.__zwHtmlId) return String(doc.__zwHtmlId);
+                return t.getAttribute('id') || _bid22v || '';
+              } catch (_e22id) { return _bid22v || ''; }
+            }
           });
         } catch (_e22idp) {}
       }
@@ -12404,11 +12415,6 @@
     if (!st.portalCap || st.portalCap.target !== el || st.portalCap.pointerId !== pid) return;
     var cap = st.portalCap;
     st.portalCap = null;
-    // 尾簇 26：frame 级捕获（mouse/pen——release 后 frame 仍持有指针至 pointerup，
-    // 后续事件派 inner documentElement；touch 无此语义——up 随命中目标）。
-    if ((st.pointerType || 'mouse') !== 'touch') {
-      st.portalFrameHold = cap.frameSel;
-    }
     try {
       var lpe = new globalThis.PointerEvent('lostpointercapture', {
         bubbles: true, composed: true, cancelable: false,
@@ -12417,6 +12423,13 @@
       });
       cap.target.dispatchEvent(lpe);
     } catch (_e23l) {}
+    // 尾簇 26：frame 级捕获（mouse/pen——release 后 frame 仍持有指针至 pointerup，
+    // 后续事件派 inner documentElement；touch 无此语义——up 随命中目标）。
+    // **lostpointercapture 派发后置 hold**（lost 自身的 target 仍为被释放元素——
+    // hold 先置会使 lost 的 .id 误报帧根，subtest 1 断言面）。
+    if ((st.pointerType || 'mouse') !== 'touch') {
+      st.portalFrameHold = cap.frameSel;
+    }
   };
   globalThis.__zwPortalCaptureHas = function (el, pid) {
     var st = _zwPtrState;
@@ -12483,11 +12496,7 @@
       var _fhBody = _fhDoc && _fhDoc.doc ? _fhDoc.doc.body : null;
       if (_fhBody && typeof _fhBody.dispatchEvent === 'function' && globalThis.PointerEvent) {
         try {
-          var _htmlId26 = (_fhDoc.doc.documentElement && _fhDoc.doc.documentElement.id != null)
-            ? String(_fhDoc.doc.documentElement.id) : '';
-          var _fw26 = Object.create(_fhBody);
-          Object.defineProperty(_fw26, 'id', { value: _htmlId26 });
-          _fw26.dispatchEvent(new globalThis.PointerEvent('pointermove', {
+          _fhBody.dispatchEvent(new globalThis.PointerEvent('pointermove', {
             bubbles: true, cancelable: false,
             clientX: x || 0, clientY: y || 0,
             button: (chordBtn19 != null) ? chordBtn19 : -1, buttons: st.buttons,
@@ -12963,11 +12972,7 @@
       var _fhBodyU27 = _fhDocU27 && _fhDocU27.doc ? _fhDocU27.doc.body : null;
       if (_fhBodyU27 && typeof _fhBodyU27.dispatchEvent === 'function' && globalThis.PointerEvent) {
         try {
-          var _htmlId27 = (_fhDocU27.doc.documentElement && _fhDocU27.doc.documentElement.id != null)
-            ? String(_fhDocU27.doc.documentElement.id) : '';
-          var _fw27 = Object.create(_fhBodyU27);
-          Object.defineProperty(_fw27, 'id', { value: _htmlId27 });
-          _fw27.dispatchEvent(new globalThis.PointerEvent('pointerup', {
+          _fhBodyU27.dispatchEvent(new globalThis.PointerEvent('pointerup', {
             bubbles: true, cancelable: false,
             clientX: x || 0, clientY: y || 0,
             button: button | 0, buttons: 0,
@@ -12989,6 +12994,9 @@
       if (st.portalCap && typeof globalThis.__zwPortalCaptureRelease === 'function') {
         try { globalThis.__zwPortalCaptureRelease(st.portalCap.target, st.portalCap.pointerId); } catch (_e23ur) {}
       }
+      // 尾簇 28：隐式释放置的 frame-hold 于本 up 内终结（跨 subtest 残留会使后续
+      // portal 事件 .id 误报帧根——pointercapture_in_frame subtest 2 断言面）。
+      st.portalFrameHold = null;
       if (st.downSel) st.downSel = null;
       st.portalFrame = null;
       return 'ok';

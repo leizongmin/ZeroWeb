@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-06（M3 尾簇 27 落地——frame-hold 重接）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-06（M3 尾簇 28 落地——frame-hold 残留清零）
 
 ## 当前状态
 
@@ -10,13 +10,15 @@ M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P 
 尾簇 6b+6c 1115P → 尾簇 7 1167P → 尾簇 8 1202P → 尾簇 9 1218P → 尾簇 10 1570P →
 尾簇 11 1583P → 尾簇 12 1588P → 尾簇 13 1590P → 尾簇 14 1594P → 尾簇 15 1609P →
 尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → 尾簇 19 1736P → 尾簇 20/21 1738P →
-尾簇 22 1739P → 尾簇 23 1745P → 尾簇 24 1750P → 尾簇 25 1755P → **1757P（+1537 累计）**
-（corpus：1757P/189F/96TO，`TIME_LIMIT=3600`。尾簇 19：improvements=120 /
+尾簇 22 1739P → 尾簇 23 1745P → 尾簇 24 1750P → 尾簇 25 1755P → 尾簇 27 1757P →
+**1759P（+1539 累计）**
+（corpus：1759P/187F/96TO，`TIME_LIMIT=3600`。尾簇 19：improvements=120 /
 regressions=1 已记录；尾簇 20：+2；尾簇 21：Δ0 基建轮；尾簇 22：portal 首段 +1；
 尾簇 23：portal 第二段 +6；尾簇 24：portal 第三段 +5；尾簇 25：触式捕获路由 +5；
-尾簇 26：Δ0 id 值面；尾簇 27：**frame-hold 重接**——载体法（body 视图原型包装 + own
-.id=html id），+2（subtest 6 ?mouse/?pen Pass；subtest 5 转具名 Fail——TO 口径转移），
-见 [evidence/2026-10-06-m3-tail27.md](evidence/2026-10-06-m3-tail27.md)。
+尾簇 26：Δ0 id 值面；尾簇 27：frame-hold 重接 +2；尾簇 28：**frame-hold 残留清零**
+——+2（pointercapture_in_frame 15→17P：subtest 5 ?mouse/?pen 转绿；文件 18 子测全
+部具名、文件级 Timeout 消失；唯一余挂 ?touch subtest 4→touch move 专项），见
+[evidence/2026-10-06-m3-tail28.md](evidence/2026-10-06-m3-tail28.md)。
 证据：[evidence/2026-10-05-m3-tail13.json](evidence/2026-10-05-m3-tail13.json)（尾簇 13 后）、
 [evidence/2026-10-05-m3-tail13.md](evidence/2026-10-05-m3-tail13.md)（根因链 + 排除路径）、
 [evidence/2026-10-05-m3-tail12.json](evidence/2026-10-05-m3-tail12.json)（尾簇 12 后）、
@@ -42,7 +44,16 @@ regressions=1 已记录；尾簇 20：+2；尾簇 21：Δ0 基建轮；尾簇 22
 门禁：workspace 17,246P/0F、renderer lib 204P/0F、reftest 704/704、fmt + clippy
 （quickjs 面）全绿；shim 拼接 node --check 全绿。
 
-**M3 尾簇 27（2026-10-06，本轮）——frame-hold 重接（portal 第五段，载体法）**。一件：
+**M3 尾簇 28（2026-10-06，本轮）——frame-hold 残留清零（portal 第五段收口）**。一件：
+非 hold portal up 分支补 `st.portalFrameHold = null`——隐式释放置 hold 后，up 落点在
+frame 内、释放后 up 随命中目标出框的形态（subtest 1/2 类）此前不清 hold——残留跨
+subtest 泄漏使后续 portal 事件 .id 误报帧根（probe 实证 subtest 2 单页全绿、语料序
+贯态下全误报）。+2：pointercapture_in_frame 15→17P（subtest 5 ?mouse/?pen 转绿），
+文件 18 子测全部具名、文件级 Timeout 消失；唯一余挂 ?touch subtest 4（非捕获触式
+move 抑制的推广面，随 touch move 专项）——
+[evidence/2026-10-06-m3-tail28.md](evidence/2026-10-06-m3-tail28.md)。
+
+**M3 尾簇 27（2026-10-06，70f0e595e）——frame-hold 重接（portal 第五段，载体法）**。一件：
 move/up 站 frame-hold 路由以 **body 视图原型包装载体**重接（`Object.create(bodyView)` +
 own `.id`=doc.documentElement.id + 继承 dispatchEvent/冒泡链——绕开 tail-26 的 docEl
 无 dispatchEvent 断面）；up 载体派发后清 hold/downSel/portalFrame。+2：subtest 6
@@ -360,11 +371,9 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 证据：[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)
 （含 2 案本地 zwprobe 探针已剔除入账）。门禁：node --check + 双族聚焦跑全绿。
 
-**DC-4 门禁（2026-10-06，尾簇 27 后）**：workspace **19,867P/0F** + reftest **704/704**
-零回归 + shim 拼接 node --check 全绿（纯 JS shim 变更，无 Rust 面）。本轮 make test
-两次单例失败（send_keys_space keyup / js_worker reset_purge）——两次不同测试、隔离
-复跑均绿 + 第三次全量 0F——资源并发瞬态归因。
-历史（尾簇 26 后）：workspace 19,852P/0F + reftest 704/704。
+**DC-4 门禁（2026-10-06，尾簇 28 后）**：workspace **19,870P/0F** + reftest **704/704**
+零回归 + shim 拼接 node --check 全绿（纯 JS shim 变更，无 Rust 面）。
+历史（尾簇 27 后）：workspace 19,867P/0F + reftest 704/704。
 
 ## 缺口清单
 
@@ -451,9 +460,11 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
   move 随捕获目标）。1750P→1755P（+5）。
 - **M3 尾簇 26（2026-10-06，00e59b400）**：portal target id 值面（__zwBodyId 槽 + docEl
   `.id` 反射器）+ frame-hold 实验（回退）。1755P→1755P（Δ0）。
-- **M3 尾簇 27（2026-10-06，本轮）**：frame-hold 重接（载体法：body 视图原型包装 +
+- **M3 尾簇 27（2026-10-06，70f0e595e）**：frame-hold 重接（载体法：body 视图原型包装 +
   own .id=html id）。1755P→1757P（+2，subtest 6 ?mouse/?pen Pass；subtest 5 转具名
   Fail）。
+- **M3 尾簇 28（2026-10-06，本轮）**：frame-hold 残留清零（非 hold portal up 分支）。
+  1757P→1759P（+2，pointercapture_in_frame 15→17P，文件 TO 消失）。
 
 ## 下一步计划
 
