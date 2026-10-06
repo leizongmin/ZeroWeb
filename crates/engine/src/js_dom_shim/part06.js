@@ -12289,7 +12289,10 @@
     if (k === '' || k === 'Shift') return 'shift';
     if (k === '' || k === 'Control') return 'ctrl';
     if (k === '' || k === 'Alt') return 'alt';
-    if (k === '' || k === 'Meta') return 'meta';
+    // \uE03D = WebDriver 标准Meta 转义；\uE053 = 上游
+    // pointerevent_boundary_events_modifier_no_pointer_movement.html?Meta 变体的实际 key
+    //（上游文件 switch 表写死 \uE053——非标准转义，shim 双认）。
+    if (k === '' || k === '' || k === 'Meta') return 'meta';
     return null;
   }
   // 合成 pointer/mouse 事件 init 的修饰键位——detail 显式值优先（keyboard 断言路径
@@ -13306,11 +13309,13 @@
     if (!st.overReinserted) return false;
     if (sel !== st.overSel && sel !== st.mouseOverSel) return false;
     if (typeof _zwIsConnected === 'function' && !_zwIsConnected(sel, null)) return false;
-    __zw_dispatch_event(sel, 'pointerover', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
-    __zw_dispatch_event(sel, 'pointerenter', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+    // 尾簇 30：重入面 buttons 同跨界序——当下按下掩码（见 _zwLayerCross 注记）。
+    var _reBtns30 = (_zwPtrState.buttons | 0);
+    __zw_dispatch_event(sel, 'pointerover', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: -1, buttons: _reBtns30 });
+    __zw_dispatch_event(sel, 'pointerenter', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: _reBtns30 });
     // 尾簇 16：compat mouse 面按钮恒 0（UI Events un-initialized）。
-    __zw_dispatch_event(sel, 'mouseover', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: 0, buttons: 0 });
-    __zw_dispatch_event(sel, 'mouseenter', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: 0, buttons: 0 });
+    __zw_dispatch_event(sel, 'mouseover', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: 0, buttons: _reBtns30 });
+    __zw_dispatch_event(sel, 'mouseenter', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: 0, buttons: _reBtns30 });
     st.overReinserted = false;
     return true; // 尾簇 6c：实派重入面告之（up 序列拆除抑制判据）
   }
@@ -13345,12 +13350,18 @@
     // prevDangling：out/leave 整段抑制（已移除元素不接收边界事件）。
     // 尾簇 16：跨界事件按钮按层分流——pointer 面 -1（PE spec move/边界无按键）、
     // compat mouse 面 0（UI Events「un-initialized」——mouseevent_move_button 断言面）。
+    // 尾簇 30：跨界事件 **buttons = 当下按下掩码**（`_zwPtrState.buttons`——UI Events
+    // MouseEventInit：button 对 over/out/enter/leave 是「un-initialized」，buttons 是
+    // 活掩码——拖拽中跨界 buttons 非零（WPT pointerevent_boundary_events_attributes_
+    // during_drag「buttons: 1」+ synthetic-mouse-enter-leave-over-out-button-state
+    // 断言面）；up 尾掩码已清 → 释放后跨界 buttons=0 自然成立。
     var _b16 = (layer === 'mouse') ? 0 : -1;
+    var _bcBtns30 = (_zwPtrState.buttons | 0);
     if (prevSel && !prevDangling) {
-      __zw_dispatch_event(prevSel, evOut, { relatedTarget: rel, clientX: x || 0, clientY: y || 0, button: _b16, buttons: 0 });
+      __zw_dispatch_event(prevSel, evOut, { relatedTarget: rel, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
     }
     for (var k = 0; !prevDangling && k < prevChain.length && prevChain[k] !== common; k++) {
-      __zw_dispatch_event(prevChain[k], evLeave, { relatedTarget: rel, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: 0 });
+      __zw_dispatch_event(prevChain[k], evLeave, { relatedTarget: rel, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
     }
     // 新链：over@next（边界元素，恒派——next 即公共祖先的向祖先移动也派）→
     // enter（每新入站，公共祖先下行至 next；next 已入 over，站序自外向内——
@@ -13358,7 +13369,7 @@
     // prevDangling：enter 段抑制（relatedTarget 指向已移除元素无意义 → null）。
     var relIn = (prevSel && !prevDangling) ? prevSel : null;
     if (nextSel) {
-      __zw_dispatch_event(nextSel, evOver, { relatedTarget: relIn, clientX: x || 0, clientY: y || 0, button: _b16, buttons: 0 });
+      __zw_dispatch_event(nextSel, evOver, { relatedTarget: relIn, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
     }
     var enter = [];
     for (var k2 = 0; !prevDangling && k2 < nextChain.length; k2++) {
@@ -13371,11 +13382,11 @@
     if (childFirst) _zwPtrState.touchChildFirstEnter = false;
     if (childFirst) {
       for (var k3f = 0; k3f < enter.length; k3f++) {
-        __zw_dispatch_event(enter[k3f], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: 0 });
+        __zw_dispatch_event(enter[k3f], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
       }
     } else {
       for (var k3 = enter.length - 1; k3 >= 0; k3--) {
-        __zw_dispatch_event(enter[k3], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: 0 });
+        __zw_dispatch_event(enter[k3], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
       }
     }
   }
