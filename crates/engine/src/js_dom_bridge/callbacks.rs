@@ -1125,9 +1125,9 @@ pub fn register_dom_callbacks(
     // opacity + 颜色族）。**per-snapshot + per-style-version 缓存**：(html_key, style_version) →
     // (selector → ComputedStyle)。Document 非 Send（含 observer/listener 闘包 + html5ever tendril
     // `Cell`），不能入 `Send + Sync` 闭包；故只缓存 `ComputedStyle`（纯值类型，Send）。同 html 同
-    // selector 命中 → 仅 serialize（O(1)）；新 selector → parse+cascade 一次并存入——同一元素的多属
-    // 性查询（`cs.display;cs.color;cs.visibility`）由 3 次全 cascade 摊销为 1 次。html 变（新 snapshot）
-    // 或 inline style mutation 变 → 清空 per-selector 缓存。
+    // selector 命中 → 仅 serialize（O(1)）；新 selector → 经 `with_cached_document_styles`
+    //（E14 per-generation TLS 缓存，parsed doc 按 (html, style_version) 代际复用）提取并存入。
+    // html 变（新 snapshot）或 inline style mutation 变 → 清空 per-selector 缓存并换代重算。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
     let cs_cache: Arc<Mutex<Option<(String, usize, HashMap<String, ComputedStyle>)>>> = Arc::new(Mutex::new(None));
@@ -1157,18 +1157,20 @@ pub fn register_dom_callbacks(
             if let Some(style) = map.get(sel) {
                 return serialize_computed_property(style, prop);
             }
-            // 未命中：parse + apply inline-style overrides + cascade，提取该 selector 的 ComputedStyle
-            // 并缓存，再 serialize。clone 变更列表后即释放锁，parse+cascade 不持 mutation 锁。
+            // 未命中：E14 per-generation 缓存（parsed doc + 全文档样式按 (html, style_version)
+            // 代际复用，同代际新 selector 仅 O(节点) 查找——真站每 tick 几十个新 selector
+            // 不再各触发一次全量 parse+cascade）内提取该 selector 的 ComputedStyle 并入
+            // per-selector map，再 serialize。clone 变更列表后即释放锁，重算不持 mutation 锁。
             let mlist = m.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            let (doc, styles) = compute_document_styles_with_inline_overrides(&snap, &mlist);
-            let Some(node) = find_by_selector(&doc, sel) else {
+            let hit = with_cached_document_styles(&snap, style_version, &mlist, |doc, styles| {
+                find_by_selector(doc, sel)
+                    .and_then(|node| styles.get(&node))
+                    .map(|style| (serialize_computed_property(style, prop), style.clone()))
+            });
+            let Some((value, style)) = hit else {
                 return String::new();
             };
-            let Some(style) = styles.get(&node) else {
-                return String::new();
-            };
-            let value = serialize_computed_property(style, prop);
-            map.insert((*sel).clone(), style.clone());
+            map.insert((*sel).clone(), style);
             value
         }),
     );

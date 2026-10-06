@@ -1946,3 +1946,44 @@ fn test_get_computed_style_video_intrinsic_sizes_m3xxxvii() {
     // 显式 CSS 尺寸不覆盖（% 保留计算值——serialize 既有 documented 限制）。
     assert_eq!(lookup("#v5", "width"), "50%");
 }
+
+#[test]
+fn test_cached_document_styles_reuses_doc_within_generation() {
+    // E14 真站停摆修复：同代际（同 html + 同 style_version）跨 selector 复用 parsed doc。
+    // Document 指针同一性直接证明第二查询命中缓存而非重新 parse+cascade。
+    let html = "<html><body><div id='a'></div><div id='b'></div></body></html>";
+    let mut first: usize = 0;
+    with_cached_document_styles(html, 0, &[], |doc, _| first = doc as *const _ as usize);
+    with_cached_document_styles(html, 0, &[], |doc, _| {
+        assert_eq!(
+            doc as *const _ as usize, first,
+            "同代际第二查询必须复用同一 parsed doc（E14：旧实现每新 selector 全量重算 ~600ms）"
+        );
+    });
+}
+
+#[test]
+fn test_cached_document_styles_invalidates_on_generation_change() {
+    // E14：style_version 前进（R3030 mutation 计数）或 html 快照变 → 换代重算；
+    // inline override 语义经缓存仍与直算一致。
+    let html = "<html><body><div id='a'></div></body></html>";
+    let muts = vec![DomMutation::SetStyle {
+        selector: "#a".to_string(),
+        property: "color".to_string(),
+        value: "red".to_string(),
+    }];
+    let v0 = with_cached_document_styles(html, 0, &[], |doc, styles| {
+        lookup_computed_property(doc, styles, "#a", "color")
+    });
+    let v1 = with_cached_document_styles(html, 1, &muts, |doc, styles| {
+        lookup_computed_property(doc, styles, "#a", "color")
+    });
+    assert_ne!(v0, v1, "style_version 前进必须换代重算（override 生效）");
+    assert_eq!(v1, "rgb(255, 0, 0)", "换代后 inline override 与直算语义一致");
+    // html 快照变 → 换代：新元素可查。
+    let html2 = "<html><body><div id='a'></div><div id='b' style='color: blue'></div></body></html>";
+    let v2 = with_cached_document_styles(html2, 1, &muts, |doc, styles| {
+        lookup_computed_property(doc, styles, "#b", "color")
+    });
+    assert_eq!(v2, "rgb(0, 0, 255)", "html 快照换代后新元素可查");
+}
