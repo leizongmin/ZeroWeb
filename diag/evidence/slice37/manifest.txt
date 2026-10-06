@@ -227,7 +227,8 @@
   分组整行填充、fn 签名一行化、jammed 语句拆分
 - 收口：merge main（5a2f514e4，merge-tree fmt 干跑净）→ 5 hunk 机械格式化
   （8d91395ad style(ci)）→ 本地 cargo fmt --all -- --check 复归零 diff →
-  CI 重跑取绿（返修推送后；结果见返修门禁节追记）
+  **CI 重跑取绿已兑现：run 37517808225 conclusion SUCCESS**（2026-10-07，
+  返修头 6dd44943d——fmt 步骤过、cargo check 首过此树、precheck 全绿）
 - 反证归档：gates/ci-fmt-drift-files.txt（交付头时点本地复核为空 = drift 非
   4c47dbc4a 内容引入）
 
