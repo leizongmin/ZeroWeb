@@ -1082,9 +1082,22 @@ pub(crate) fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &s
                 if !handle_selectors.is_empty()
                     && let Ok(mut map) = ctx.js_worker.handle_selector_map().lock()
                 {
-                    map.extend(handle_selectors);
+                    // iter 克隆 extend（同 webview batch_handle_selectors 惯用法）——
+                    // handle_selectors 还要作 evict 的 batch_handles 借用。
+                    map.extend(handle_selectors.iter().map(|(h, s)| (h.clone(), s.clone())));
                 }
+                // slice33：R100 失效契约（webview 侧 evict_removed_identities 同源）——
+                // 被移除 handle 的 worker 侧 gBCR 反查表条目同步清除，防 RectBridge
+                // 把旧 handle 锚到同选择器的新节点上。
+                evict_removed_worker_handles(ctx, &recorded, &handle_selectors);
                 *ctx.html = new_html.clone();
+                // slice33（RP-3 跨文档残影）：apply 代际换代通知——与 webview
+                // `apply_pending_shared_mutations`/`apply_mutations_subset` 的 R379/pa2b
+                // 钩子同款（那两条共享队列路径 apply 后执行同一行；本路径此前缺失，
+                // shim 侧对 apply 完全无感：移除补偿/解析补偿节点/融合基底缓存跨代际
+                // 残留，同 id/同 selector 的新节点解析撞上被移除节点的旧 identity——
+                // 残影出生点）。失败静默（钩子缺失 = 旧 shim 版本，零影响）。
+                notify_shim_apply_generation(ctx);
                 Some(new_html)
             }
             Err(e) => {
@@ -1101,14 +1114,69 @@ pub(crate) fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &s
             if !handle_selectors.is_empty()
                 && let Ok(mut map) = ctx.js_worker.handle_selector_map().lock()
             {
-                map.extend(handle_selectors);
+                // iter 克隆 extend（同 path A 注）——handle_selectors 还要作 evict 的
+                // batch_handles 借用。
+                map.extend(handle_selectors.iter().map(|(h, s)| (h.clone(), s.clone())));
             }
             *ctx.html = new_html.clone();
+            // slice33：R100 失效契约（同 webview 路径）。
+            evict_removed_worker_handles(ctx, &recorded, &handle_selectors);
+            // slice33：同 webview 路径——apply 代际换代通知（HTML 回写路径同边界语义）。
+            notify_shim_apply_generation(ctx);
             Some(new_html)
         }
         Err(e) => {
             warn!("apply DOM mutations: {e}");
             None
+        }
+    }
+}
+
+/// slice33（RP-3）：apply 代际换代通知——host apply 完成后在 shim 侧执行
+/// `__zw_apply_generation_bump`（R379/pa2b 钩子；定义见 js_dom_shim/part05.js）。
+/// 与 webview `apply_pending_shared_mutations`/`apply_mutations_subset` 的既有
+/// 通知点同口径：host 真相已更新，shim 同步补偿状态（移除标记、解析补偿节点、
+/// 融合基底缓存）整体作废。有界等待（bump 为微秒级脚本；页面回调积压时不阻塞
+/// 主循环，与 `drain_pending_dom_mutations` 的 200ms 上限同约定）。
+fn notify_shim_apply_generation(ctx: &mut PageScriptContext<'_>) {
+    let _ = ctx.js_worker.execute_script_direct_bounded(
+        "if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();",
+        std::time::Duration::from_millis(200),
+    );
+}
+
+/// slice33（RP-3）：worker 侧 handle→selector 反查表的 Remove 失效——webview
+/// `evict_removed_identities` 的 worker 镜像（gBCR path A 的 RectBridge 解析源）。
+/// 仅在 apply 成功后调用（失败时 handle 仍存活，清除会使其 gBCR 失锚）。
+/// slice33 缺陷轮 S-2/I-1：补 `Remove { selector }` 形（此前仅 RemoveHandle 臂——
+/// selector 形移除的 worker 残账不清）；与 webview Remove 臂同款「同批 rebuild 且
+/// 等值则跳过」守卫：`batch_handles`（render 第 3 元）仅含 apply 后仍在树内的
+/// handle，同批先删旧位又重建同选择器新节点时 post-apply 绑定指向新 handle，
+/// 删了会误杀；batch 成员 live，同批建又删的 handle 不会守卫穿透。
+fn evict_removed_worker_handles(
+    ctx: &mut PageScriptContext<'_>,
+    recorded: &[DomMutation],
+    batch_handles: &std::collections::HashMap<String, String>,
+) {
+    let touches_removed = recorded
+        .iter()
+        .any(|m| matches!(m, DomMutation::Remove { .. } | DomMutation::RemoveHandle { .. }));
+    if !touches_removed {
+        return;
+    }
+    if let Ok(mut map) = ctx.js_worker.handle_selector_map().lock() {
+        for mutation in recorded {
+            match mutation {
+                DomMutation::RemoveHandle { handle } => {
+                    map.remove(handle);
+                }
+                DomMutation::Remove { selector } => {
+                    map.retain(|handle, sel| {
+                        !(sel.as_str() == selector.as_str() && !batch_handles.contains_key(handle))
+                    });
+                }
+                _ => {}
+            }
         }
     }
 }
@@ -1374,7 +1442,10 @@ mod tests {
             }
         }
         assert!(committed, "timer mutation was not committed before the deadline");
-        assert_eq!(worker.execution_count_for_test(), execution_baseline + 2);
+        // slice33：apply 代际换代通知（notify_shim_apply_generation）在 commit 时多一次
+        // worker 执行（+1）——apply 边界的有意工作；空闲 drain 路径不触发（上方两条
+        // 基线断言已证），V8 堆增长关注面不变。
+        assert_eq!(worker.execution_count_for_test(), execution_baseline + 3);
         assert!(ctx.html.contains("265"), "mutated HTML: {}", ctx.html);
         assert!(
             ctx.webview

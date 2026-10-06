@@ -1042,6 +1042,8 @@ impl WebView {
         }
         let (result, html_snapshot, handle_selectors) =
             self.pipeline.render_with_dom_mutations(mutations, &self.cached_css)?;
+        // slice33：apply 成功即履行 R100 失效契约（见 evict_removed_identities 文档）。
+        self.evict_removed_identities(mutations, &handle_selectors);
         // R1794：只有内容 DOM 改变才刷新图片子资源。文本控件当前值由 retained 状态持有，
         // 不改变 HTML 快照，也不应让每个字符重扫整页图片。
         // 脚本批量期间（`script_batch_active`）跳过图片扫描与渲染消费——渲染管线
@@ -2150,6 +2152,8 @@ impl WebView {
             {
                 Ok((_, snap, handles)) => {
                     self.merge_handle_selectors(&handles);
+                    // slice33：apply 成功即履行 R100 失效契约（见 evict_removed_identities 文档）。
+                    self.evict_removed_identities(subset, &handles);
                     snap
                 }
                 Err(error) => {
@@ -3942,6 +3946,8 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         }
         self.applied_mutations += tail.len();
         self.merge_handle_selectors(&handles);
+        // slice33：apply 成功即履行 R100 失效契约（见 evict_removed_identities 文档）。
+        self.evict_removed_identities(&tail, &handles);
         if let Some(render_result) = &render_result {
             self.last_render = Some(render_result_to_webview(render_result));
         }
@@ -3983,6 +3989,54 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         zero_engine::js_dom_bridge::publish_forward_handle_map(Some(std::sync::Arc::new(std::sync::Mutex::new(
             forward,
         ))));
+    }
+
+    /// slice33（RP-3 跨文档残影）：Remove/RemoveHandle 应用成功后，清除被移除节点
+    /// 在 `selector_handle_map`（sel→handle）的绑定——`apply_dom_mutations_full`
+    /// 契约文档（js-dom M4 R100）明确「调用方在结构性 Remove/RemoveHandle 应用后
+    /// 应失效对应条目」，此前三个 apply 路径均未履行。不清除的后果：unique
+    /// selector 按文档位次生成（同 id 多命中元素、同位次重建元素都复用同一条
+    /// 结构选择器），新节点经 `__zw_handle_for_selector` 命中被移除节点的残端
+    /// handle，query wrap（`_zwQueryWrapIdentity`）复活死 identity——移除后同位
+    /// 重建的同 id 元素读到旧节点内容（gamma 换血残影根因，跨文档探针
+    /// zw33-timeline2.mjs 实证 `__zw_handle_for_selector(div:nth-child(7))` 在
+    /// γ2 移除、γ3 同位落位后仍返 `__n0`）。
+    /// `handle_selector_forward`（handle→sel）只清反向可锚定的条目：JS 已持有的
+    /// 旧 proxy 读回落（R3029 removedNodes 语义）不受影响。
+    /// slice33 缺陷轮 S-2：`Remove { selector }` 臂与 RemoveHandle 臂同款「同批
+    /// rebuild 且等值则跳过」守卫——`batch_handles` 为本次 apply 重建的 handle→sel
+    /// 账（render_with_dom_mutations 第 3 元，仅含 apply 后仍在树内的 handle）：同批
+    /// 先 Remove 旧位又重建同选择器新节点时，post-apply 绑定已指向新 handle，无条件
+    /// 删会误杀新绑定。batch 成员仅 post-apply-live，同批建又删的 handle 不在内，
+    /// 不会守卫穿透。
+    fn evict_removed_identities(
+        &mut self,
+        mutations: &[DomMutation],
+        batch_handles: &std::collections::HashMap<String, String>,
+    ) {
+        if mutations.is_empty() {
+            return;
+        }
+        let mut fwd = self.handle_selector_forward.lock().unwrap_or_else(|e| e.into_inner());
+        let mut sel_map = self.selector_handle_map.lock().unwrap_or_else(|e| e.into_inner());
+        for mutation in mutations {
+            match mutation {
+                DomMutation::Remove { selector } => {
+                    if sel_map.get(selector).is_some_and(|cur| batch_handles.contains_key(cur)) {
+                        continue;
+                    }
+                    sel_map.remove(selector);
+                }
+                DomMutation::RemoveHandle { handle } => {
+                    if let Some(sel) = fwd.remove(handle)
+                        && sel_map.get(&sel).map(|h| h == handle).unwrap_or(false)
+                    {
+                        sel_map.remove(&sel);
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     /// 注入 CSS（重新渲染）。

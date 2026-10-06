@@ -1,0 +1,5 @@
+{
+ "mode": "ghost",
+ "round": 1,
+ "panel": "isCol=true len=3 items=alpha|beta|gamma-2 truth=3"
+}

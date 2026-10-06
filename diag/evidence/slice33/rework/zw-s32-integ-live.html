@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>slice32 live probe</title></head>
+<body style="font:18px monospace; background:#ffffff; color:#111; margin:16px">
+<h3>Window named access - live collection (slice32 RP-3)</h3>
+<div id="mm" data-mark="alpha">alpha</div>
+<div id="mm" data-mark="beta">beta</div>
+<div id="panel" style="white-space:pre; border:1px solid #888; padding:8px; margin-top:12px"></div>
+<div id="frame" style="font-weight:bold; margin-top:8px">FRAME A</div>
+<script>
+function render() {
+  var c = window.mm;
+  var isCol = !!(c && typeof c.item === 'function' && typeof c.length === 'number');
+  var len = isCol ? c.length : 'n/a';
+  var items = isCol ? Array.prototype.map.call(c, function (e) { return e.getAttribute('data-mark') || e.textContent; }).join('|') : 'n/a';
+  var truth = document.querySelectorAll('[id=mm]').length;
+  document.getElementById('panel').textContent = 'isCol=' + isCol + ' len=' + len + ' items=' + items + ' truth=' + truth;
+}
+setInterval(render, 120);
+render();
+</script>
+</body>
+</html>

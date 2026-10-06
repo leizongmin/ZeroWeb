@@ -1,0 +1,18 @@
+{
+  "desc_configurable": true,
+  "desc_get": "undefined",
+  "desc_value_is_el": false,
+  "desc_writable": true,
+  "el_contentWindow": true,
+  "frTag": "[object Object]",
+  "fr_is_cw": true,
+  "has_install": "function",
+  "has_register": "function",
+  "install_src_has_iframe": false,
+  "store_keys": ""
+}
+{
+  "afterInstall": "contentWindow",
+  "afterR139": "contentWindow",
+  "before": "contentWindow"
+}

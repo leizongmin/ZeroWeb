@@ -715,13 +715,17 @@ impl WebView {
             self.sync_render_after_native_dom();
             return Ok(DomScriptResult { value, changed: false });
         }
-        let (result, html_snapshot, _) = self
+        let (result, html_snapshot, handle_selectors) = self
             .pipeline
             .render_with_dom_mutations(&recorded, &self.cached_css)
             .map_err(|error| WebViewError::Script(format!("apply mutations: {error}")))?;
         if let Some(html) = html_snapshot {
             self.cached_html = html;
         }
+        // slice33 缺陷轮 S-1：第 4 应用路径（execute_dom_script）补 R100 失效面清理——
+        // 结构性 Remove/RemoveHandle 后清 selector_handle_map（sel→handle 残账，与其余
+        // 3 条应用路径同契约）。
+        self.evict_removed_identities(&recorded, &handle_selectors);
         if let Some(result) = &result {
             self.last_render = Some(render_result_to_webview(result));
         }

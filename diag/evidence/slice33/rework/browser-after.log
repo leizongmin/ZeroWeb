@@ -1,0 +1,36 @@
+[2m2026-10-05T23:55:48.732368Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m ZeroBrowser starting...
+[2m2026-10-05T23:55:48.732411Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m Tabs use zero-renderer child processes
+[2m2026-10-05T23:55:48.732413Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m Renderer mode: auto
+[2m2026-10-05T23:55:48.732421Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m Starting headless mode on port 9222, viewport: 800x600
+ZeroWeb headless server: ws://127.0.0.1:9222
+DevTools URL: http://127.0.0.1:9222
+[2m2026-10-05T23:55:48.732486Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Headless protocol server listening on ws://127.0.0.1:9222
+[2m2026-10-05T23:55:48.733522Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform primary font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf" [3mfont_id[0m[2m=[0m0
+[2m2026-10-05T23:55:48.734057Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform bold font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" [3mfont_id[0m[2m=[0m1
+[2m2026-10-05T23:55:48.750938Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc [3mface_index[0m[2m=[0m2 [3mfont_id[0m[2m=[0m6
+[2m2026-10-05T23:55:48.763447Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/truetype/wqy/wqy-microhei.ttc [3mface_index[0m[2m=[0m0 [3mfont_id[0m[2m=[0m8
+[2m2026-10-05T23:55:48.776170Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc [3mface_index[0m[2m=[0m0 [3mfont_id[0m[2m=[0m9
+[2m2026-10-05T23:55:54.736135Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:33542
+[2m2026-10-05T23:56:00.270199Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:41678
+[2m2026-10-05T23:56:00.279565Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:41690
+[2m2026-10-05T23:56:00.300979Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:8123/iframe-face-probe.html [3morigin[0m[2m=[0mhttp://127.0.0.1:8123 [3mpriority[0m[2m=[0mFetchPriority(4)
+[2m2026-10-05T23:56:00.302734Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:8123/iframe-face-probe.html [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m1375
+[mux-debug] slow conn step 200ms peer 127.0.0.1:41690
+[mux-debug] slow tick 200ms conns=1
+[mux-debug] slow conn step 52ms peer 127.0.0.1:41690
+[2m2026-10-05T23:56:03.565451Z[0m [31mERROR[0m [2mzero_browser::headless[0m[2m:[0m WebSocket read error: WebSocket protocol error: Connection reset without closing handshake
+[2m2026-10-05T23:56:04.668505Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:41702
+[2m2026-10-05T23:56:04.681082Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:41718
+[2m2026-10-05T23:56:04.706466Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:8123/iframe-face-probe.html [3morigin[0m[2m=[0mhttp://127.0.0.1:8123 [3mpriority[0m[2m=[0mFetchPriority(4)
+[2m2026-10-05T23:56:04.707606Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:8123/iframe-face-probe.html [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m1375
+[mux-debug] slow conn step 190ms peer 127.0.0.1:41718
+[mux-debug] slow tick 190ms conns=1
+[mux-debug] slow conn step 52ms peer 127.0.0.1:41718
+[2m2026-10-05T23:56:07.948692Z[0m [31mERROR[0m [2mzero_browser::headless[0m[2m:[0m WebSocket read error: WebSocket protocol error: Connection reset without closing handshake
+[2m2026-10-05T23:56:13.230093Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:37278
+[2m2026-10-05T23:56:13.236364Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:37286
+[mux-debug] slow conn step 50ms peer 127.0.0.1:37286
+[2m2026-10-05T23:56:13.306470Z[0m [31mERROR[0m [2mzero_browser::headless[0m[2m:[0m WebSocket read error: WebSocket protocol error: Connection reset without closing handshake
+[2m2026-10-05T23:56:35.756400Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:42316
+[2m2026-10-05T23:56:35.768914Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:42332
+[2m2026-10-05T23:56:35.854732Z[0m [31mERROR[0m [2mzero_browser::headless[0m[2m:[0m WebSocket read error: WebSocket protocol error: Connection reset without closing handshake

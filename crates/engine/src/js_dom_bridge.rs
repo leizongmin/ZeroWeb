@@ -2526,13 +2526,16 @@ pub fn collect_element_ids(html: &str) -> String {
     collect_element_ids_doc(&doc)
 }
 
-/// name 面参与的元素集（spec supported property names 之 name 源：embed/form/
-/// img/object 的非空 name 内容属性）。iframe 属「document-tree child navigable
-/// target name property set」源——本 shim 已由 R139 `__zwRegisterNamedIframes`
-/// 覆盖（contentWindow 值，比元素注册更贴 spec 值类型；本面若收 iframe 会以其
-/// 元素先占名、压制 R139 的 contentWindow 注册），故**不收**、委托 R139。历史
-/// spec 文本另含 applet 与「exposed」限定（嵌套 object 回退内容），现行 spec 已
-/// 移除——不实现。
+/// name 面参与的元素集（spec supported property names 之 name 源逐字：*"the value
+/// of the `name` content attribute for all `embed`, `form`, `img`, and `object`
+/// elements"*——iframe **不在** name 面，slice33 RP-3 I-1 曾误收、缺陷轮 B-1 撤出）。
+/// iframe 名属「document-tree child navigable target name property set」通道：
+/// named object 值为该 navigable 的 active WindowProxy（contentWindow），且取值
+/// 算法中 navigable 优先于元素——引擎侧由 R139 `__zwRegisterNamedIframes` 委托
+/// 承载（load 派发物化 + 首读 lazy 注册，已占用名跳过）；本面收 iframe 会以元素
+/// 先占名压制该注册。历史 spec 文本另含 applet 与「exposed」限定（嵌套 object
+/// 回退内容），现行 spec 已移除——不实现。
+/// https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
 const NAMED_ACCESS_NAME_FACE_TAGS: [&str; 4] = ["embed", "form", "img", "object"];
 
 /// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
@@ -2550,8 +2553,8 @@ pub fn collect_element_ids_doc(doc: &Document) -> String {
             }
         }
         if let Some(val) = doc.get_attribute(node, "name") {
-            // name 面仅四元素参与（input/a 等的 name 是表单控件名/锚点名；iframe 委托
-            // R139——见 NAMED_ACCESS_NAME_FACE_TAGS 注）。
+            // name 面四元素参与（input/a 等的 name 是表单控件名/锚点名；iframe 不入
+            // 面——R139 委托通道，见 NAMED_ACCESS_NAME_FACE_TAGS 注）。
             let is_name_face = doc.get(node).is_some_and(|n| match &n.kind {
                 NodeKind::Element(e) => NAMED_ACCESS_NAME_FACE_TAGS.contains(&e.local_name()),
                 _ => false,
@@ -2571,7 +2574,8 @@ pub fn collect_element_ids_doc(doc: &Document) -> String {
 /// 首现序、去重。named object = 文档树内带非空 id 的元素，或 embed/form/img/object
 /// 四元素的非空 name 内容属性元素；同元素 id/name 双臂同值只算一个 named object
 /// （spec 以元素为集合成员）。与 [`collect_element_ids_doc`] 同 selector、同 trim
-/// 口径，故两清单同名同界（多清单 ⊆ 全清单）；iframe 不入本面（R139 委托，同 id 面）。
+/// 口径，故两清单同名同界（多清单 ⊆ 全清单）；iframe 不入本面（R139 委托通道，
+/// 见 NAMED_ACCESS_NAME_FACE_TAGS 注；slice33 I-1 曾误收、缺陷轮 B-1 撤出）。
 /// 供 `__zw_collect_ids_multi` 回调——shim `_installNamedAccess` 对这些名安装
 /// HTMLCollection（spec 取值算法：唯一 named object 返元素本身，多命中返以文档为根、
 /// 树序全集的 HTMLCollection），单命中名仍走元素路径。
@@ -2589,7 +2593,7 @@ pub fn collect_element_ids_multi_doc(doc: &Document) -> String {
     let mut counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     let mut first_order: Vec<String> = Vec::new();
     for node in doc.query_selector_all(root, "[id],embed[name],form[name],img[name],object[name]") {
-        // 同元素的贡献名：id 面至多一 + name 面至多一（name 面仅四元素参与，同
+        // 同元素的贡献名：id 面至多一 + name 面至多一（name 面四元素参与，同
         // collect_element_ids_doc 口径）。
         let id_face = doc
             .get_attribute(node, "id")
