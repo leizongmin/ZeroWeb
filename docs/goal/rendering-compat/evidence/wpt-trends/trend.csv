@@ -43,3 +43,4 @@
 2026-09-19,upstream,v1.10,16058,14693,91.5,failed=1365;skipped=0,fceaf44,
 2026-09-26,upstream,v1.10,16058,14748,91.8,failed=1310;skipped=0,8b24ada,
 2026-10-03,upstream,v1.10,16058,14754,91.9,failed=1304;skipped=0,733c8fc,
+2026-10-06,upstream,v1.10,16060,14758,91.9,failed=1302;skipped=0,c8f1a90cd,R4946 修复嵌套 flex 行容器 max-content 塌单项宽 + 恢复 zw 本地案与 media fixture（wpt-data 重拉事故后）
