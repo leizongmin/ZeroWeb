@@ -300,9 +300,10 @@ fn npo_delete_faces_s37() {
     );
 }
 
-// ⑤可枚举守恒：named prop 与 NPO 化新增全局（__zwNPO/__zwNAGet/__zwNADelete/
-// __zwNAOwnKeys）均不入 for-in(window)/Object.keys(window)；ET.prototype 三方法
-// 非可枚举（NPO 接线前重定义，for-in(window) 747 基线守恒的结构面）。
+// ⑤可枚举守恒（守恒钉，非 NPO 判别钉——实现为空亦绿，M1 red 实证；守护 slice36
+// 747 基线不因 NPO 化引入可枚举泄漏）：named prop 与 NPO 化新增全局（__zwNPO/
+// __zwNAGet/__zwNADelete/__zwNAOwnKeys）均不入 for-in(window)/Object.keys(window)；
+// ET.prototype 三方法非可枚举（NPO 接线前重定义，for-in(window) 747 基线守恒的结构面）。
 #[test]
 fn npo_enumerable_faces_s37() {
     let mut sandbox = s37_sandbox!("<html><body><img name='en37'></body></html>");

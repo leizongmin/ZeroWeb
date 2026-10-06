@@ -1236,7 +1236,8 @@ fn js_worker_main(
     // 导航/重载会把旧页元素残留进新文档，且 id 撞车时遮蔽新页注册）。
     // slice37（NPO 收口）：枚举面 = __zwNAOwnKeys（wired：backing own keys——原
     // for-in globalThis 在 NPO 化后枚举不到安装值；quickjs：getOwnPropertyNames
-    // globalThis own，slice36 口径）。
+    // globalThis own——较 slice36 的 for-in（仅可枚举）为安全方向放宽，多覆盖
+    // 非可枚举 own 残留，快照先于页面脚本故无越界回收面）。
     var ks37 = typeof __zwNAOwnKeys === 'function' ? __zwNAOwnKeys() : [];
     for (var ki37 = 0; ki37 < ks37.length; ki37++) {
       var k = ks37[ki37];
