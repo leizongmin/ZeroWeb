@@ -11,12 +11,13 @@ M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P 
 尾簇 11 1583P → 尾簇 12 1588P → 尾簇 13 1590P → 尾簇 14 1594P → 尾簇 15 1609P →
 尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → 尾簇 19 1736P → 尾簇 20/21 1738P →
 尾簇 22 1739P → 尾簇 23 1745P → 尾簇 24 1750P → 尾簇 25 1755P → 尾簇 27 1757P →
-尾簇 28 1759P → 尾簇 30 1763P → 尾簇 31 1778P → 尾簇 32 1782P → 尾簇 33 **1785P
-（+1565 累计）**
-（corpus：**1785P/177F/97TO**，`TIME_LIMIT=3600`——新 Fail 1 = textInput/api 的 CE
-execCommand 案从 TO 转具名 Fail（textContent 同步可见性——mutation 通道时序挂账，
-诊断价值高于 TO）；其余零回归。textInput 族 18P→22P（execCommand insertText 对
-text control ×2 + enter textarea +1）。尾簇 19：improvements=120 / regressions=1 已记录；尾簇 20：+2；
+尾簇 28 1759P → 尾簇 30 1763P → 尾簇 31 1778P → 尾簇 32 1782P → 尾簇 33 1785P →
+尾簇 34 **1787P（+1567 累计）**
+（corpus：**1787P/176F/96TO**，`TIME_LIMIT=3600`——textInput 族 **24P 全绿**
+（上轮 22P/1F/1TO：api CE execCommand 案 Pass + enter-textarea CE 案 Pass）；
+其余零回归。尾簇 33 的 textContent 同步可见性挂账解明并修复：根因 = `'value' in`
+has 白名单无条件 true（div 等 CE 元素误入 value getter 分支）+ CE Enter 元素
+caret no-op + innerHTML mutation 异步可见性。尾簇 19：improvements=120 / regressions=1 已记录；尾簇 20：+2；
 尾簇 21：Δ0 基建轮；尾簇 22：portal 首段 +1；尾簇 23：portal 第二段 +6；尾簇 24：
 portal 第三段 +5；尾簇 25：触式捕获路由 +5；尾簇 26：Δ0 id 值面；尾簇 27：
 frame-hold 重接 +2；尾簇 28：frame-hold 残留清零 +2；尾簇 29：判例轮 Δ0（?touch
@@ -50,9 +51,8 @@ selection key 存活面 +14**（见下节与
 [evidence/2026-10-04-m3-tail6a.json](evidence/2026-10-04-m3-tail6a.json)（尾簇 6a 后）、
 [evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)（尾簇 6b+6c 后）。
 门禁：**make test EXIT=0** + clippy（quickjs 面，-D warnings）EXIT=0 + shim 拼接
-node --check 全绿 + corpus 全量 **1785P/177F/97TO**（新 Fail 1 = api CE execCommand
-TO 转具名 Fail，挂账面；其余零回归）（2026-10-07 尾簇 33 后）。
-历史（尾簇 32 后）：1782P/176F/98TO；reftest 704/704（尾簇 28 后）。
+node --check 全绿 + corpus 全量 **1787P/176F/96TO** 零回归（新 Fail 0 新 TO 0）
+（2026-10-07 尾簇 34 后）。历史（尾簇 33 后）：1785P/177F/97TO；reftest 704/704（尾簇 28 后）。
 
 **M3 尾簇 33（2026-10-07，本轮）——execCommand text-control 事件序 + maxlength 哨兵 + textarea Enter 换行（1782P→1785P）**。
 三件：① **execCommand('insertText') text-control 分支补事件序**（beforeinput（可取消，
@@ -74,6 +74,19 @@ basic.sub.js 在 input handler 内断言 textInputEvents===1）+ `__zw_ce_insert
 Fail——`__zw_ce_insert` appendChild 走 mutation 通道异步 apply，input handler 同步段
 读 textContent 为空——textContent 同步可见性挂账）+ enter-textarea 的 CE 案（同族）。
 详见 [evidence/2026-10-07-m3-tail33.md](evidence/2026-10-07-m3-tail33.md)。
+
+**M3 尾簇 34（2026-10-07，本轮）——'value' in tag-gate + CE Enter 元素 caret/本地树变更（textInput 族全绿）**。
+三件：① **`'value' in el` tag-gate**（part05 has 白名单——`prop === 'value'` 无条件
+true 使 CE div 等非 form-control 元素误入 value getter 分支；消费方
+`'value' in el ? el.value : el.textContent` 读恒 ''——gate 到 IDL value 接口成员族
+INPUT/TEXTAREA/SELECT/OPTION/BUTTON/OUTPUT/METER/PROGRESS/PARAM/LI/DATA）；②
+**CE Enter 元素 caret 分支**（`__zw_ce_enter` 空宿主/元素边界 caret 旧版 no-op——
+input 缺失使 basic.sub.js 驱动 resolve 永挂；补完整事件序 beforeinput →
+textInput('\n') → `<br>` 直插 → input）；③ **CE Enter 变更走本地 shim 树**
+（caret 拆分 + `<br>` insertBefore + tail 节点——取代 innerHTML setter 的异步
+mutation 可见面）。余挂收窄：textInput 域清零；keyboard-click-event TO（交互层）
+与 CE insertParagraph（编辑 goal 邻接）维持。详见
+[evidence/2026-10-07-m3-tail34.md](evidence/2026-10-07-m3-tail34.md)。
 
 **M3 尾簇 32（2026-10-06，39ca800f1）——send_keys 自聚焦 + CE ForwardDelete + Enter 键序（1778P→1782P）**。
 三件：① **send_keys 入口自聚焦目标**（runner——WebDriver per-element send 语义；
@@ -573,6 +586,8 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 - **M3 尾簇 33（2026-10-07，本轮）**：execCommand text-control 事件序 + maxlength
   哨兵 + textarea Enter 换行 + CE Enter textInput。1782P→1785P（+3；api CE 案
   TO 转具名 Fail 挂账）。
+- **M3 尾簇 34（2026-10-07，本轮）**：'value' in tag-gate + CE Enter 元素 caret/
+  本地树变更。1785P→1787P（+2，textInput 族 24P 全绿；单测校准 CE Enter mutation 形态）。
 
 ## 下一步计划
 

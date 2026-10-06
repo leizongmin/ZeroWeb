@@ -945,7 +945,21 @@
             // `in` 可见性（secure context only——PE spec rawupdate 仅安全上下文；WPT
             // pointerevent_pointerrawupdate.https.html documentElement 断言面）。
             || (prop === 'onpointerrawupdate' && globalThis.isSecureContext === true)
-            || prop === 'value') {
+            // 尾簇 33：'value' 的 `in` 可见性 **tag-gate**（HTMLTextAreaElement 等
+            // IDL value 接口成员归属——div 等非 form-control 元素 `'value' in el` 应
+            // false；无条件 true 使消费方 `'value' in el ? el.value : el.textContent`
+            // 分支对 CE 元素读 value getter 恒 ''（WPT uievents/textInput/api 尾部
+            // execCommand CE 案断言面）。PW locator 的 `"value" in e` 表单字段探测
+            // 在 gate 内不受影响）。
+            || (prop === 'value' && (function () {
+                 try {
+                   var _vTg = _realTag(sel, handle);
+                   return _vTg === 'INPUT' || _vTg === 'TEXTAREA' || _vTg === 'SELECT'
+                     || _vTg === 'OPTION' || _vTg === 'BUTTON' || _vTg === 'OUTPUT'
+                     || _vTg === 'METER' || _vTg === 'PROGRESS' || _vTg === 'PARAM'
+                     || _vTg === 'LI' || _vTg === 'DATA';
+                 } catch (_eVg) { return false; }
+               })())) {
           return true;
         }
         // media-playback M2a：videoWidth/videoHeight——HTMLVideoElement 专属接口成员

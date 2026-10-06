@@ -2660,15 +2660,22 @@ globalThis.__caret = getSelection()._ranges[0].startContainer === ce
         )
         .unwrap();
     {
+        // 尾簇 34 校准：CE Enter 变更走**本地 shim 树**（SetChildText 选区拆分 +
+        // CreateElement(br)/AppendChild + tail CreateTextNode/AppendChild——取代
+        // SetInnerHtml mutation；innerHTML setter 的异步 apply 使 input handler
+        // 同步读空——同族可见性修复）。正序：SetChildText → CreateElement(br) →
+        // AppendChild(br) → CreateTextNode(tail) → AppendChild(tail)。
         let m = mutations.lock().unwrap();
         let has_br = m.iter().any(|mm| {
-            matches!(mm, DomMutation::SetInnerHtml { selector, html }
-                if selector.contains("ce") && html.contains("ab<br>cd"))
+            matches!(mm, DomMutation::CreateElement { tag, .. } if tag == "br")
+        }) && m.iter().any(|mm| {
+            matches!(mm, DomMutation::AppendChild { parent_selector, .. }
+                if parent_selector.contains("ce"))
         });
         assert!(
             has_br,
-            "CE Enter 须经 SetInnerHtml mutation 插 <br>（'ab<br>cd'），实际: {:?}",
-            m.iter().rev().take(6).collect::<Vec<_>>()
+            "CE Enter 须经本地树 mutation 插 <br>（CreateElement(br)+AppendChild），实际: {:?}",
+            m.iter().rev().take(8).collect::<Vec<_>>()
         );
     }
     assert_eq!(

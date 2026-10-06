@@ -4877,6 +4877,31 @@
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
     var range = globalThis.__zw_ce_caret_range(el);
     var sc = range.startContainer, so = range.startOffset | 0;
+    // 尾簇 34：空宿主/元素边界 caret（fallback range startContainer=el——宿主无
+    // 文本子时 `__zw_ce_caret_range` 的 selectNodeContents 形）→ 完整事件序
+    // beforeinput(insertLineBreak) → textInput('\n') → <br> 直插宿主 → input。
+    // 旧版元素 caret no-op return，input 事件缺失使 basic.sub.js 驱动的 resolve
+    // 永挂（WPT uievents/textInput enter-textarea-contenteditable CE 案 TO）。
+    if (sc === el) {
+      var beforeE = new InputEvent('beforeinput', {
+        bubbles: true, cancelable: true, data: null, inputType: 'insertLineBreak', isComposing: false
+      });
+      if (el.dispatchEvent(beforeE) === false) return;
+      if (globalThis._zwTextEventCtorRef) {
+        el.dispatchEvent(new globalThis._zwTextEventCtorRef('textInput', {
+          bubbles: true, cancelable: true, view: globalThis, data: '\n'
+        }));
+      }
+      el.appendChild(document.createElement('br'));
+      var nrE = document.createRange();
+      nrE.setStart(el, 1);
+      nrE.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nrE]; }
+      el.dispatchEvent(new InputEvent('input', {
+        bubbles: true, cancelable: false, data: null, inputType: 'insertLineBreak', isComposing: false
+      }));
+      return;
+    }
     // 仅支持 caret 在宿主**直子**文本节点内（嵌套结构偏移映射 defer，记录限制）。
     if (!(sc && (sc.nodeType === 3 || sc.__zwIsText) && sc.parentNode === el)) return;
     var v = String(sc.nodeValue || '');
@@ -4906,44 +4931,27 @@
       if (k === sc) { nodeLen = v.length; break; }
       if (k.nodeType === 3 || k.__zwIsText) textOffset += String(k.nodeValue || '').length;
     }
-    var html = String(el.innerHTML || '');
     // 把 innerHTML 中第 textOffset+so 个「文本字符」定位到串偏移——flat 模型下
     // innerHTML 前缀 = 各前置文本子的转义串。逐字符扫描配对（转义实体 &amp; 等
     // 按渲染后单字符计数——扫描时跳过 `&...;` 实体段）。
-    var want = textOffset + so;
-    var seen = 0;
-    var splitAt = -1;
-    for (var j = 0; j < html.length; j++) {
-      if (seen === want) { splitAt = j; break; }
-      if (html.charAt(j) === '&') {
-        var semi = html.indexOf(';', j);
-        if (semi > j && semi - j <= 10) { j = semi; seen++; continue; }
-      }
-      seen++;
-    }
-    if (splitAt < 0) splitAt = (seen === want) ? html.length : -1;
-    if (splitAt < 0) return; // 偏移映射失败（非 flat 结构等）——no-op
-    // 选区删除端：从 want 起再消费 (eo-so) 个字符得删除终点。
-    var cutEnd = -1;
-    if (eo > so) {
-      var seen2 = seen, want2 = want + (eo - so);
-      for (var j2 = splitAt; j2 < html.length; j2++) {
-        if (seen2 === want2) { cutEnd = j2; break; }
-        if (html.charAt(j2) === '&') {
-          var semi2 = html.indexOf(';', j2);
-          if (semi2 > j2 && semi2 - j2 <= 10) { j2 = semi2; seen2++; continue; }
-        }
-        seen2++;
-      }
-      if (cutEnd < 0) cutEnd = html.length;
-    }
-    var newHtml = html.slice(0, splitAt) + '<br>' + (cutEnd >= 0 ? html.slice(cutEnd) : html.slice(splitAt));
-    el.innerHTML = newHtml; // SetInnerHtml mutation → 宿主重解析
-    // caret → <br> 之后（宿主 childNodes 中 br 索引+1 的元素边界）。
+    // 尾簇 34：变更走**本地 shim 树**（旧实现 innerHTML setter = SetInnerHtml
+    // mutation 异步 apply——input handler 同步读 innerHTML 空，basic.sub.js 的
+    // step_func 断言抛后 promise 无 reject 路径 → 文件 TO；ce_insert 的 proxy 面已
+    // 证同步可见，mirror 同款）。caret 文本节点拆分（nodeValue 本地写）+ <br>
+    // insertBefore + tail 文本节点。
     var brIdx = 0;
     for (var bi = 0; bi < kids.length; bi++) {
       if (kids[bi] === sc) { brIdx = bi; break; }
     }
+    sc.nodeValue = v.slice(0, so) + v.slice(eo);
+    var br = document.createElement('br');
+    var _pEnter = sc.parentNode || el;
+    try { _pEnter.insertBefore(br, sc.nextSibling || null); } catch (_eB34) {}
+    var tailV = v.slice(eo);
+    if (tailV) {
+      try { _pEnter.insertBefore(document.createTextNode(tailV), br.nextSibling || null); } catch (_eT34) {}
+    }
+    // caret → <br> 之后（宿主直子中 br 索引+1 的元素边界）。
     var nr = document.createRange();
     nr.setStart(el, brIdx + 1);
     nr.collapse(true);
