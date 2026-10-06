@@ -1230,6 +1230,9 @@ mod tests {
     /// 脚本内 `Error().stack` 顶帧显 src 真名而非 `<anonymous>`。bilibili video 页动态
     /// bundle split TypeError 栈帧全匿名、无法定位 bundle 的可观测性修复钉（V8 对无名
     /// 脚本取 sourceURL 为脚本名；QuickJS 忽略该注释，本测试按默认 feature=v8 运行）。
+    /// slice35：注释声明的 v8-only 范围补 cfg 门（quickjs 腿此前不跑 lib target，
+    /// 盲区未暴露；quickjs 腿入册后本钉在 quickjs 组合下编译期剔除）。
+    #[cfg(feature = "v8")]
     #[test]
     fn external_script_error_stack_shows_source_url() {
         let mut worker = RendererJsWorker::spawn(161);
@@ -1262,6 +1265,8 @@ mod tests {
     /// 导出后缀拼接在 eval 源上——sourceURL 注释现由 `script_run_classic_page` 置于后缀
     /// **之后**（eval 源真末行）。V8 仅认末行注释，注释被后缀顶离末行时此形态栈帧回退
     /// `<anonymous>`（T4 实测）。WPT strict 测试库（dom/common.js 等）正中此型。
+    /// slice35：同上 v8-only cfg 门。
+    #[cfg(feature = "v8")]
     #[test]
     fn external_script_strict_var_stack_shows_source_url() {
         let mut worker = RendererJsWorker::spawn(161);
@@ -1591,6 +1596,117 @@ mod tests {
         assert!(!map.contains_key("h1"), "handle 形移除：条目直删");
         assert_eq!(map.get("h2").map(String::as_str), Some("p.q"), "他 handle 条目不受扰动");
         drop(map);
+        worker.shutdown();
+    }
+
+    // slice35（slice34 testeff I-1 二阶盲区收口·调用点面）：HTML 回写臂（webview: None）
+    // 的 evict_removed_worker_handles 调用点行为钉——s34 两根镜像钉直呼函数体，本臂
+    // apply_recorded_mutations 内的调用点删行则 worker gBCR 反查表残账不清而函数体钉
+    // 全绿。驱动：shim 记录 Remove 变异 → 回写臂 apply → 断言预置 stale 条目清除
+    //（selector 口径取 shim 实际记录值，不假设选择器生成形态）。
+    #[test]
+    fn apply_writeback_arm_evicts_worker_handles_s35() {
+        let html = r#"<html><body><div id="s35w"></div></body></html>"#;
+        let url = "https://zero.test/s35w";
+        let mut worker = RendererJsWorker::spawn(172);
+        worker.set_dom_snapshot(html, url);
+        worker
+            .execute_script_direct("document.querySelector('#s35w').remove();")
+            .unwrap();
+        let recorded = worker.mutations().lock().unwrap().clone();
+        let selector = recorded
+            .iter()
+            .find_map(|m| match m {
+                DomMutation::Remove { selector } => Some(selector.clone()),
+                _ => None,
+            })
+            .expect("shim 记录 Remove 变异");
+        worker
+            .handle_selector_map()
+            .lock()
+            .unwrap()
+            .insert("h_stale".to_string(), selector.clone());
+        let mut buf = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut buf,
+            url,
+            js_worker: &worker,
+            webview: None,
+        };
+        let applied = apply_recorded_mutations(&mut ctx, html);
+        assert!(applied.is_some(), "变异 apply 成功（HTML 回写路径）");
+        assert!(
+            !worker.handle_selector_map().lock().unwrap().contains_key("h_stale"),
+            "回写臂 Remove 后 worker 反查账清除——本臂 evict 调用点删行时 gBCR 残影通道重开"
+        );
+        worker.shutdown();
+    }
+
+    // slice35：webview 在场臂（path A）的 evict + notify 调用点行为钉——回写臂 notify
+    // 已由 s34 Fix B 钉穿过，在场臂此前零钉（无 display 环境下 make test 只能经测试
+    // 显式构造 webview ctx 才走到本臂）。驱动同 s34 webview 在场测试形态
+    //（prepare_document_state + load_html），Remove 变异经 apply_dom_mutations_and_render
+    // 应用后断言 worker 反查账清除（evict 调用点删行即红）+ shim 代际推进（在场臂
+    // notify_shim_apply_generation 调用点删行即红）。
+    #[test]
+    fn apply_webview_present_arm_evicts_and_notifies_s35() {
+        let html = r#"<html><body><div id="s35p"></div></body></html>"#;
+        let url = "https://zero.test/s35p";
+        let mut worker = RendererJsWorker::spawn(173);
+        worker.set_dom_snapshot(html, url);
+        assert_eq!(
+            worker
+                .execute_script_direct("typeof globalThis._zwApplyGeneration")
+                .unwrap(),
+            "function",
+            "shim R381 代际读面在 renderer 沙箱可用"
+        );
+        let gen0: i64 = worker
+            .execute_script_direct("String(globalThis._zwApplyGeneration())")
+            .unwrap()
+            .parse()
+            .expect("gen0 numeric");
+        worker
+            .execute_script_direct("document.querySelector('#s35p').remove();")
+            .unwrap();
+        let recorded = worker.mutations().lock().unwrap().clone();
+        let selector = recorded
+            .iter()
+            .find_map(|m| match m {
+                DomMutation::Remove { selector } => Some(selector.clone()),
+                _ => None,
+            })
+            .expect("shim 记录 Remove 变异");
+        worker
+            .handle_selector_map()
+            .lock()
+            .unwrap()
+            .insert("h_stale".to_string(), selector.clone());
+        let mut webview = zero_webview::WebView::new(zero_webview::WebViewConfig::default());
+        webview.prepare_document_state(url);
+        webview.load_html(html, None);
+        let mut buf = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut buf,
+            url,
+            js_worker: &worker,
+            webview: Some(&mut webview),
+        };
+        let applied = apply_recorded_mutations(&mut ctx, html);
+        assert!(applied.is_some(), "webview 在场臂 apply 成功");
+        assert!(
+            !worker.handle_selector_map().lock().unwrap().contains_key("h_stale"),
+            "在场臂 Remove 后 worker 反查账清除——本臂 evict 调用点删行时 gBCR 残影通道重开"
+        );
+        let gen1: i64 = worker
+            .execute_script_direct("String(globalThis._zwApplyGeneration())")
+            .unwrap()
+            .parse()
+            .expect("gen1 numeric");
+        assert!(
+            gen1 > gen0,
+            "在场臂 apply 后 shim 代际必须推进（gen0={gen0} gen1={gen1}）——本臂 notify 调用点删行时恒等"
+        );
         worker.shutdown();
     }
 

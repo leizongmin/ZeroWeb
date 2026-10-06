@@ -250,6 +250,11 @@ test: target-disk-guard target/test-guard
 	# QuickJS 运行测试（v8/quickjs 接口一致性保证）
 	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES_WITHOUT_BROWSER_OR_RENDERER))
 	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-renderer --bin zero-renderer -- --test-threads=1
+	# slice35（RP-3 调用点钉收口，2026-10-06）：renderer lib 专项腿补 quickjs feature
+	# 组合——page_scripts/js_worker（slice33/34 残影修复面钉所在）均属 lib target，
+	# quickjs 腿此前只有 --bin 过滤，renderer 钉在 quickjs-only 构建（仓库认可的
+	# fallback 面）下从未执行。镜像上方 v8 `--lib` 腿（slice28）。
+	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-renderer --lib -- --test-threads=1
 endif
 
 # M4 HTML behavior: selected upstream forms/focus/InputEvent testharness cases.
