@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-06（M3 尾簇 23 落地——subframe portal 第二段）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-06（M3 尾簇 24 落地——portal 第三段 up 站守卫）
 
 ## 当前状态
 
@@ -10,12 +10,12 @@ M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P 
 尾簇 6b+6c 1115P → 尾簇 7 1167P → 尾簇 8 1202P → 尾簇 9 1218P → 尾簇 10 1570P →
 尾簇 11 1583P → 尾簇 12 1588P → 尾簇 13 1590P → 尾簇 14 1594P → 尾簇 15 1609P →
 尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → 尾簇 19 1736P → 尾簇 20/21 1738P →
-尾簇 22 1739P → **1745P（+1525 累计）**
-（corpus：1745P/187F/99TO，`TIME_LIMIT=3600`。尾簇 19：improvements=120 /
+尾簇 22 1739P → 尾簇 23 1745P → **1750P（+1530 累计）**
+（corpus：1750P/189F/99TO，`TIME_LIMIT=3600`。尾簇 19：improvements=120 /
 regressions=1 已记录；尾簇 20：+2；尾簇 21：Δ0 基建轮；尾簇 22：portal 首段 +1；
-尾簇 23：**portal 第二段**——per-frame capture 状态机 + body id 落视图，
-+6（pointercapture_in_frame subtest 1+2 ×3 变体 TO→Pass），见
-[evidence/2026-10-06-m3-tail23.md](evidence/2026-10-06-m3-tail23.md)。
+尾簇 23：portal 第二段 +6；尾簇 24：**portal 第三段**——up 站外层捕获守卫，
++5（pointercapture_in_frame 0 子测→11P：?mouse 1-4/?pen 1-4 全绿、?touch 1/2/4/5），
+见 [evidence/2026-10-06-m3-tail24.md](evidence/2026-10-06-m3-tail24.md)。
 证据：[evidence/2026-10-05-m3-tail13.json](evidence/2026-10-05-m3-tail13.json)（尾簇 13 后）、
 [evidence/2026-10-05-m3-tail13.md](evidence/2026-10-05-m3-tail13.md)（根因链 + 排除路径）、
 [evidence/2026-10-05-m3-tail12.json](evidence/2026-10-05-m3-tail12.json)（尾簇 12 后）、
@@ -41,7 +41,16 @@ regressions=1 已记录；尾簇 20：+2；尾簇 21：Δ0 基建轮；尾簇 22
 门禁：workspace 17,246P/0F、renderer lib 204P/0F、reftest 704/704、fmt + clippy
 （quickjs 面）全绿；shim 拼接 node --check 全绿。
 
-**M3 尾簇 23（2026-10-06，本轮）——subframe portal 第二段（per-frame capture）**。四件：
+**M3 尾簇 24（2026-10-06，本轮）——portal 第三段（up 站外层捕获守卫）**。一件：up 站
+portal 判定加 `st.capture['1'] || st.pending['1']` 前置——tail-23 只给 move/down 两站
+加守卫，up 站漏网：down@outer 捕获后 move/up 进 iframe 区域时 pointerup 被劫持入
+inner frame（probe 实证 pointerup@outerFrame + lostpointercapture 双缺失）。
+pointercapture_in_frame 0 子测→11P（?mouse 1-4/?pen 1-4 全绿、?touch 1/2/4/5 绿、
+subtest 3 触式转具名 Fail——TO 口径转移覆盖面扩张）。余挂：subtest 5/6
+release-on-next-pointermove 链 + frame 级捕获概念——
+[evidence/2026-10-06-m3-tail24.md](evidence/2026-10-06-m3-tail24.md)。
+
+**M3 尾簇 23（2026-10-06，f82ea3bee）——subframe portal 第二段（per-frame capture）**。四件：
 ① body id 落视图（`_zwFinishIframeEntry` 直提 markup body id → setAttribute）；②
 per-frame capture 状态机（`__zwPortalCapture*` + `st.portalFrame/portalCap/
 portalCapPending`——活跃 frame 校验 NotFoundError 双向面 + 单指针单捕获 + **pending
@@ -325,9 +334,9 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 证据：[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)
 （含 2 案本地 zwprobe 探针已剔除入账）。门禁：node --check + 双族聚焦跑全绿。
 
-**DC-4 门禁（2026-10-06，尾簇 23 后）**：workspace **19,843P/0F** + reftest **704/704**
+**DC-4 门禁（2026-10-06，尾簇 24 后）**：workspace **19,844P/0F** + reftest **704/704**
 零回归 + shim 拼接 node --check 全绿（纯 JS shim 变更，无 Rust 面）。
-历史（尾簇 22 后）：workspace 19,834P/0F + reftest 704/704。
+历史（尾簇 23 后）：workspace 19,843P/0F + reftest 704/704。
 
 ## 缺口清单
 
@@ -405,9 +414,11 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 - **M3 尾簇 22（2026-10-06，074429d8b）**：subframe portal 首段（runner 命中下探
   `@zwframe:` + shim portal 冒泡派发）+ 模板元素 `.id` 反射器 + R255 body attrs 补
   提取。1738P→1739P（+1）。
-- **M3 尾簇 23（2026-10-06，本轮）**：portal 第二段——per-frame capture 状态机
+- **M3 尾簇 23（2026-10-06，f82ea3bee）**：portal 第二段——per-frame capture 状态机
   （pending 模型 + 隐式释放）+ body id 落视图 + 视图方法补齐 + 路由守卫。
   1739P→1745P（+6）。
+- **M3 尾簇 24（2026-10-06，本轮）**：portal 第三段——up 站外层捕获守卫。
+  1745P→1750P（+5，pointercapture_in_frame 0→11P）。
 
 ## 下一步计划
 

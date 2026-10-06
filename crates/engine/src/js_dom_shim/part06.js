@@ -12897,7 +12897,11 @@
   globalThis.__zw_pointer_up_sequence = function (upSel, downSel, x, y, pointerType, button, ancestorChain) {
     button = button | 0;
     var st = _zwPtrState;
-    var _pFrame22u = _zwPortalSplitSel(upSel) || (st.portalCap ? st.portalCap.frameSel : null);
+    // 尾簇 23：外层真实捕获生效时常规路径接管（up 随捕获目标 + 隐式释放），
+    // portal 不劫持（pointercapture_in_frame subtest 3 面——down@outer 捕获后
+    // move/up 进 iframe 区域须重定向捕获目标而非入 inner frame）。
+    var _pFrame22u = (st.capture['1'] || st.pending['1']) ? null
+      : (_zwPortalSplitSel(upSel) || (st.portalCap ? st.portalCap.frameSel : null));
     if (_pFrame22u) {
       _zwPortalDispatch(_pFrame22u, 'pointerup', x, y, pointerType || 'mouse', button, 0);
       // 尾簇 23：pointerup 隐式释放——lostpointercapture@捕获目标（spec §9.3）。
