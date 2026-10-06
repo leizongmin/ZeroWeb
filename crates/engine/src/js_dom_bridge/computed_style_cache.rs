@@ -95,7 +95,8 @@ pub fn publish_gcs_drain_record(old_html: &str, new_html: &str, mutations: &[Dom
 ///
 /// **v1 sync-safe 变体集**（批次含白名单外变体一律回退，宁慢勿错）：
 /// - 无样式效果（changed 不计）：SetFormValue / SetFormComposition / FocusChanged /
-///   SelectOption / Create*（本批登记，目标节点随 append 父子树 cascade 覆盖）；
+///   Create*（本批登记，目标节点随 append 父子树 cascade 覆盖）。SelectOption 因
+///   applier 改写兄弟 selected 属性（:checked 匹配面）不在白名单；
 /// - selector 目标（pre-apply 解析，身份稳定）：SetAttr / RemoveAttr / SetStyle /
 ///   RemoveStyle / SetText / SetInnerHtml（目标子树）、SetChildText / RemoveChildAt
 ///   （selector 字段即父）、Remove / SetOuterHtml（解析目标后取父——nth-child 位移面）、
@@ -107,7 +108,9 @@ pub fn publish_gcs_drain_record(old_html: &str, new_html: &str, mutations: &[Dom
 /// **正确性**：cached doc 与 `parse(new_html)` 的等价性由「同一 applier
 ///（apply_dom_mutations）+ 幂等 replay + drain 时 style 类 mutation 必伴随快照重序列化」
 /// 保持——与 webview 渲染路径 M3-S9 活 doc 机制同一信任基座；记录不衔接即全量兜底，
-/// 漂移不可能跨过 html 键检查存活。
+/// 漂移不可能跨过 html 键检查存活。批次触及样式表面（结构性写 / 目标为 style·meta）
+/// 时换代收尾重收集 stylesheets 并以根元素扩大重算覆盖全文档（见
+/// [`finish_generation_update`]）。
 fn try_sync_with_drain_record(
     slot: &mut (
         String,
@@ -129,31 +132,68 @@ fn try_sync_with_drain_record(
         return false;
     }
     // 批次分类 + pre-apply 解析（身份稳定：attr/选择器突变前先锚节点）。
+    // 样式面判脏（PR #88 复核 D1）：结构性变体（fragment/append 子树可携带
+    // `<style>`/`<meta>`、删除可移除样式元素）无条件脏；attr 变体目标为 meta 时脏
+    //（color-scheme 合成规则）；文本变体目标为 style 时脏（规则文本）。
     let mut changed: Vec<NodeId> = Vec::new();
-    let mut post_handle: Vec<(String, bool)> = Vec::new(); // (handle, is_parent)
+    let mut sheets_dirty = false;
+    let mut post_handle: Vec<(String, bool)> = Vec::new(); // (handle, 无条件结构性脏)
     for m in &record.mutations {
         match m {
-            DomMutation::SetAttr { selector, .. }
-            | DomMutation::RemoveAttr { selector, .. }
-            | DomMutation::SetStyle { selector, .. }
-            | DomMutation::RemoveStyle { selector, .. }
-            | DomMutation::SetText { selector, .. }
-            | DomMutation::SetInnerHtml { selector, .. } => match find_in_doc(&slot.3, selector) {
-                Some(n) => changed.push(n),
+            DomMutation::SetAttr { selector, .. } | DomMutation::RemoveAttr { selector, .. } => {
+                match find_in_doc(&slot.3, selector) {
+                    Some(n) => {
+                        if is_style_or_meta(&slot.3, n) {
+                            sheets_dirty = true;
+                        }
+                        changed.push(n);
+                    }
+                    None => return false,
+                }
+            }
+            DomMutation::SetInnerHtml { selector, .. } => match find_in_doc(&slot.3, selector) {
+                Some(n) => {
+                    sheets_dirty = true;
+                    changed.push(n);
+                }
                 None => return false,
             },
-            // selector 字段即父；Remove/SetOuterHtml 解析目标后取父（目标本身将被删/换）。
-            DomMutation::SetChildText { parent_selector, .. } | DomMutation::RemoveChildAt { parent_selector, .. } => {
-                match find_in_doc(&slot.3, parent_selector) {
+            DomMutation::SetStyle { selector, .. } | DomMutation::RemoveStyle { selector, .. } => {
+                match find_in_doc(&slot.3, selector) {
                     Some(n) => changed.push(n),
                     None => return false,
                 }
             }
+            DomMutation::SetText { selector, .. } => match find_in_doc(&slot.3, selector) {
+                Some(n) => {
+                    if is_style_or_meta(&slot.3, n) {
+                        sheets_dirty = true;
+                    }
+                    changed.push(n);
+                }
+                None => return false,
+            },
+            // selector 字段即父；Remove/SetOuterHtml 解析目标后取父（目标本身将被删/换）。
+            DomMutation::SetChildText { parent_selector, .. } => match find_in_doc(&slot.3, parent_selector) {
+                Some(n) => {
+                    if is_style_or_meta(&slot.3, n) {
+                        sheets_dirty = true;
+                    }
+                    changed.push(n);
+                }
+                None => return false,
+            },
+            DomMutation::RemoveChildAt { parent_selector, .. } => match find_in_doc(&slot.3, parent_selector) {
+                Some(n) => changed.push(n),
+                None => return false,
+            },
             DomMutation::Remove { selector } | DomMutation::SetOuterHtml { selector, .. } => {
                 let target = match find_in_doc(&slot.3, selector) {
                     Some(n) => n,
                     None => return false,
                 };
+                // 删除/外层替换可移除 `<style>`/`<meta>` → 无条件脏。
+                sheets_dirty = true;
                 match slot.3.parent_node(target) {
                     Some(p) => changed.push(p),
                     None => return false,
@@ -161,7 +201,11 @@ fn try_sync_with_drain_record(
             }
             DomMutation::AppendChild { parent_selector, .. } | DomMutation::InsertBefore { parent_selector, .. } => {
                 match find_in_doc(&slot.3, parent_selector) {
-                    Some(n) => changed.push(n),
+                    // append/insert 子树可携带 `<style>`/`<meta>` → 无条件脏。
+                    Some(n) => {
+                        sheets_dirty = true;
+                        changed.push(n);
+                    }
                     None => return false,
                 }
             }
@@ -179,18 +223,20 @@ fn try_sync_with_drain_record(
                 post_handle.push((handle.clone(), false));
             }
             // 无样式效果 / 本批登记（create 的节点随其 append 父子树 cascade）。
+            // SelectOption 不在此列（PR #88 复核 D2）：权威 applier 会改写目标 option
+            // 的 selected 属性并 deselect 兄弟，:checked / option[selected] 匹配面
+            // 超出目标子树 → 回退全量。
             DomMutation::SetFormValue { .. }
             | DomMutation::SetFormComposition { .. }
             | DomMutation::FocusChanged { .. }
-            | DomMutation::SelectOption { .. }
             | DomMutation::CreateElement { .. }
             | DomMutation::CreateElementNS { .. }
             | DomMutation::CreateTextNode { .. }
             | DomMutation::CreateComment { .. }
             | DomMutation::CreateProcessingInstruction { .. }
             | DomMutation::CreateDocumentFragment { .. } => {}
-            // v1 白名单外（跨批 handle、path/fragment/InsertAdjacent 族、RemoveHandle、
-            // SelectOption 之外的表单外变体）→ 回退全量。
+            // v1 白名单外（SelectOption、跨批 handle、path/fragment/InsertAdjacent 族、
+            // RemoveHandle、其余表单外变体）→ 回退全量。
             _ => return false,
         }
     }
@@ -200,14 +246,18 @@ fn try_sync_with_drain_record(
         Err(_) => return false,
     };
     // post-apply 解析同批 handle（OnHandle 目标 / ByHandle 父——均随目标或父子树
-    // cascade 覆盖）。
-    for (handle, _is_parent) in post_handle {
+    // cascade 覆盖）；结构父无条件脏，OnHandle 目标按 tag 判脏（attr/text 写到
+    // meta/style 上会改样式面；SetStyle 类 inline 写误判为脏仅多一次级联，无害）。
+    for (handle, structural) in post_handle {
         let Some(sel) = handle_selectors.get(&handle) else {
             return false;
         };
         let Some(n) = find_in_doc(&slot.3, sel) else {
             return false;
         };
+        if structural || is_style_or_meta(&slot.3, n) {
+            sheets_dirty = true;
+        }
         changed.push(n);
     }
     // 变更节点必须全部仍然存在（批内被删的目标/父 → 回退，宁慢勿错）。
@@ -218,14 +268,25 @@ fn try_sync_with_drain_record(
     }
     // 当前 pending 批 replay（attr/style 子集，既有语义）并入变更集。
     changed.extend(apply_inline_style_overrides(&mut slot.3, pending));
-    finish_generation_update(slot, html, drain_gen, style_version, changed)
+    finish_generation_update(slot, html, drain_gen, style_version, changed, sheets_dirty)
 }
 
 fn find_in_doc(doc: &Document, selector: &str) -> Option<NodeId> {
     super::find_by_selector(doc, selector)
 }
 
-/// 增量 cascade 收尾：去重变更集 → 变更子树重算 → 固有尺寸覆盖 → 换代键前进。
+/// 目标元素是否可能牵动样式表面（`<style>` 规则文本 / `<meta color-scheme>` 合成
+/// 规则）——供增量换代判脏（PR #88 复核 D1）。
+fn is_style_or_meta(doc: &Document, nid: NodeId) -> bool {
+    matches!(
+        doc.get(nid).map(|n| &n.kind),
+        Some(zero_dom::NodeKind::Element(e)) if e.local_name() == "style" || e.local_name() == "meta"
+    )
+}
+
+/// 增量 cascade 收尾：去重变更集 → （样式面脏时重收集 + 全文档覆盖）→ 变更子树
+/// 重算 → 固有尺寸覆盖 → 换代键前进。返回 `false` = 无法安全收尾（样式面脏但无
+/// html 根可锚），调用方回退全量 parse。
 fn finish_generation_update(
     slot: &mut (
         String,
@@ -239,9 +300,22 @@ fn finish_generation_update(
     drain_gen: usize,
     style_version: usize,
     mut changed: Vec<NodeId>,
+    sheets_dirty: bool,
 ) -> bool {
     changed.sort_unstable();
     changed.dedup();
+    // 样式面脏（PR #88 复核 D1）：本批可能改变 `<style>` 文本或 meta color-scheme
+    // 合成规则——沿用旧代 stylesheets 会让脏规则贯穿整个会话（sync 通道持续成功则
+    // 全量 parse 一次都不发生，无自愈点）。重收集后还需把根元素推入变更集：新规则
+    // 可匹配任意元素、根级声明经继承传播，影响面不限于变更子树——根子树=全文档，
+    // 免 HTML 重 parse 的全量级联。
+    if sheets_dirty {
+        slot.5 = collect_stylesheets(&slot.3, "");
+        match slot.3.get_elements_by_tag_names(&["html"]).first().copied() {
+            Some(root) => changed.push(root),
+            None => return false,
+        }
+    }
     let mut sys = StyleSystem::new();
     // 视口与全量路径同源（compute_styles_for_doc 的 1280×800 默认）。
     sys.set_viewport(1280.0, 800.0);
@@ -269,6 +343,13 @@ thread_local! {
     #[cfg(test)]
     pub static GENERATION_RECOMPUTE_COUNT: std::cell::Cell<usize> =
         const { std::cell::Cell::new(0) };
+
+    /// 测试观测点：本线程全量 parse 兜底次数（增量 / sync 换代不计；`cfg(test)` only）。
+    /// 与换代总计数分离，用于钉「同 html 增量路径零全量 parse」——换代粒度修复的
+    /// revert 检出锚点（PR #88 复核）。
+    #[cfg(test)]
+    pub static GENERATION_FULL_PARSE_COUNT: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
 }
 
 /// 清空本线程的代际槽（换代即 drop 旧代际的 `Document` 与 styles）+ 全局 drain 记录
@@ -293,6 +374,13 @@ pub fn clear_generation_cache() {
 /// **契约**：同代际调用必须传等价的 `mutations` 内容（键不含内容摘要——由键契约
 /// 保证同代际队列前缀相同）；`f` 不得重入本函数（RefCell 借用期内；host 回调单线程
 /// 执行且 `f` 体无 JS/宿主回流，现状唯一调用方满足）。
+///
+/// **已知偏差**（PR #88 复核 D3，接受项）：二级 replay 隐含「html 同 + 键前进 ⇒
+/// drained 批无可见 DOM 效果」。drain 时 applier Err（队列已消费、gen 已 bump、
+/// html 未变、无记录）或 `clear_mutations_fresh` 丢弃未 drain 批次时，cached doc
+/// 保留此前 replay 进去的 inline style 效果，而权威全量语义（parse(html)+新队列）
+/// 不含——「JS 写入可见 vs 快照权威」取前者（R3030 意图方向），偏离本函数
+/// 「增量 ≡ 全量逐位一致」合同；闭合需 drain 失败路径发作废信号，暂不做。
 pub fn with_cached_document_styles<T>(
     html: &str,
     drain_gen: usize,
@@ -310,23 +398,28 @@ pub fn with_cached_document_styles<T>(
             if !same_gen {
                 #[cfg(test)]
                 GENERATION_RECOMPUTE_COUNT.with(|c| c.set(c.get() + 1));
-                if matches!(&*slot, Some((h, ..)) if h == html) {
+                let advanced = if matches!(&*slot, Some((h, ..)) if h == html) {
                     // html 同、键前进：幂等 replay pending 收集变更节点 → 增量换代。
                     let s = slot.as_mut().expect("html 匹配守卫已保证槽为 Some");
                     let changed = apply_inline_style_overrides(&mut s.3, mutations);
-                    finish_generation_update(s, html, drain_gen, style_version, changed);
-                } else if slot.is_some()
-                    && try_sync_with_drain_record(
-                        slot.as_mut().expect("守卫保证 Some"),
-                        html,
-                        drain_gen,
-                        style_version,
-                        mutations,
-                    )
-                {
-                    // t6 drain 同步成功：cached doc 已推进到新代（含 pending replay）。
+                    // pending attr 写到 meta/style 上会改样式面 → 判脏。
+                    let dirty = changed.iter().any(|&n| is_style_or_meta(&s.3, n));
+                    finish_generation_update(s, html, drain_gen, style_version, changed, dirty)
                 } else {
-                    // 冷槽 / 记录不衔接 / 批次含不支持变体：全量 parse 兜底。
+                    // html 变：先试 drain 记录同步（cached doc 推进到新代）。
+                    slot.is_some()
+                        && try_sync_with_drain_record(
+                            slot.as_mut().expect("守卫保证 Some"),
+                            html,
+                            drain_gen,
+                            style_version,
+                            mutations,
+                        )
+                };
+                if !advanced {
+                    // 冷槽 / 记录不衔接 / 批次含不支持变体 / 收尾失败：全量 parse 兜底。
+                    #[cfg(test)]
+                    GENERATION_FULL_PARSE_COUNT.with(|c| c.set(c.get() + 1));
                     let (doc, styles) = compute_document_styles_with_inline_overrides(html, mutations);
                     let sheets = collect_stylesheets(&doc, "");
                     *slot = Some((html.to_string(), drain_gen, style_version, doc, styles, sheets));

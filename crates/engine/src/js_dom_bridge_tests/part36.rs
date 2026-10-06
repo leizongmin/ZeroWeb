@@ -113,14 +113,22 @@ fn test_generation_cache_incremental_matches_full_compute() {
             .unwrap_or_default()
     };
     crate::js_dom_bridge::clear_generation_cache();
+    GENERATION_FULL_PARSE_COUNT.with(|c| c.set(0));
     // 代 A（冷槽全量）：队列 [m1]。
     with_cached_document_styles(&html, 0, 1, std::slice::from_ref(&m1), |doc, styles| {
         style_dbg(doc, styles, "#d")
     });
+    let full_before = GENERATION_FULL_PARSE_COUNT.with(|c| c.get());
     // 代 B（html 同、键前进 → 增量路径）：队列累积为 [m1, m2]。
     let d_inc = with_cached_document_styles(&html, 0, 2, &[m1.clone(), m2.clone()], |doc, styles| {
         (style_dbg(doc, styles, "#d"), style_dbg(doc, styles, "#s"))
     });
+    assert_eq!(
+        GENERATION_FULL_PARSE_COUNT.with(|c| c.get()),
+        full_before,
+        "同 html 键前进必须走增量换代、零全量 parse（换代粒度修复的 revert 检出锚点；\
+         本断言只经 pending replay 路径，无 DRAIN_RECORD 竞态）"
+    );
     // 权威对照：同输入全量重算。
     let (doc, styles) = compute_document_styles_with_inline_overrides(&html, &[m1, m2]);
     assert_eq!(
@@ -153,12 +161,19 @@ fn test_generation_cache_incremental_attr_selector_restyle() {
             .unwrap_or_default()
     };
     crate::js_dom_bridge::clear_generation_cache();
+    GENERATION_FULL_PARSE_COUNT.with(|c| c.set(0));
     // 代 A（冷槽、无 mutation）：.c 不匹配 [data-on] .c。
     let before = with_cached_document_styles(html, 0, 0, &[], |doc, styles| style_dbg(doc, styles));
+    let full_before = GENERATION_FULL_PARSE_COUNT.with(|c| c.get());
     // 代 B（html 同、style_version 前进 → 增量路径）：SetAttr 后 .c 应转绿。
     let after = with_cached_document_styles(html, 0, 1, std::slice::from_ref(&m), |doc, styles| {
         style_dbg(doc, styles)
     });
+    assert_eq!(
+        GENERATION_FULL_PARSE_COUNT.with(|c| c.get()),
+        full_before,
+        "同 html 键前进必须走增量换代、零全量 parse（无 DRAIN_RECORD 竞态的第二锚点）"
+    );
     assert_ne!(before, after, "attr mutation 必须触发增量重样式化：{:?} -> {:?}", before, after);
     // 权威对照：同输入全量重算。
     let (doc, styles) = compute_document_styles_with_inline_overrides(html, &[m]);
@@ -172,6 +187,10 @@ fn test_generation_cache_incremental_attr_selector_restyle() {
 // t6：drain 记录同步主通道——轮询站点每 tick「结构写 → drain → 快照重序列化 →
 // gCS」形态。html 变但 drain 记录衔接时，cached doc 经权威 applier 推进 + 增量
 // cascade，结果必须与全量 parse 逐位一致（属性选择器匹配面随 body 属性变化）。
+// 接受项（PR #88 复核）：本组测试不 pin「sync 被消费」——全局 DRAIN_RECORD 在并行
+// 测试下可被其他测试线程的 clear 抢走，此时走全量兜底、断言仍绿（sync 永久退化为
+// fallback 时测试全绿）；路径活性由测试 1/2 的零全量计数断言（无竞态路径）与
+// select_option/stale_record 两测的兜底计数间接覆盖。
 #[test]
 fn test_generation_cache_drain_sync_matches_full_compute() {
     let html0 = "<html><body><div class='c'>x</div><style>[data-on] .c { color: green }</style></body></html>";
@@ -258,11 +277,123 @@ fn test_generation_cache_drain_sync_fallback_without_record() {
     crate::js_dom_bridge::clear_generation_cache();
     with_cached_document_styles(html0, 0, 0, &[], |doc, styles| style_dbg(doc, styles));
     // 不发布记录：html 变 → 全量兜底。
+    GENERATION_FULL_PARSE_COUNT.with(|c| c.set(0));
     let after = with_cached_document_styles(html1, 1, 0, &[], |doc, styles| style_dbg(doc, styles));
+    assert_eq!(
+        GENERATION_FULL_PARSE_COUNT.with(|c| c.get()),
+        1,
+        "无记录的 html 变化必须走全量 parse 兜底"
+    );
     let (doc, styles) = compute_document_styles_with_inline_overrides(html1, &[]);
     assert_eq!(
         after,
         style_dbg(&doc, &styles),
         "无 drain 记录时全量 parse 兜底，结果必须与权威一致"
+    );
+}
+
+// PR #88 复核 D1 钉：sync 换代必须从推进后的 doc 重收集 stylesheets——SetInnerHtml
+// 改 `<style>` 文本后新规则必须生效（revert 重收集则 sync 用旧代样式表返旧色）。
+#[test]
+fn test_generation_cache_sync_recollects_stylesheets() {
+    let html0 = "<html><body><div class='n'>t</div><style id='s'>.n { color: purple }</style></body></html>";
+    // 渲染器快照重序列化属性用双引号，html1 与之一致。
+    let html1 = "<html><body><div class=\"n\">t</div><style id=\"s\">.n { color: green }</style></body></html>";
+    let m = DomMutation::SetInnerHtml {
+        selector: "#s".to_string(),
+        html: ".n { color: green }".to_string(),
+    };
+    let style_dbg = |doc: &zero_dom::Document,
+                     styles: &std::collections::HashMap<zero_dom::NodeId, zero_style_system::ComputedStyle>| {
+        find_by_selector(doc, ".n")
+            .and_then(|node| styles.get(&node))
+            .map(|s| format!("{:?}", s))
+            .unwrap_or_default()
+    };
+    crate::js_dom_bridge::clear_generation_cache();
+    let before = with_cached_document_styles(html0, 0, 0, &[], |doc, styles| style_dbg(doc, styles));
+    crate::js_dom_bridge::publish_gcs_drain_record(html0, html1, std::slice::from_ref(&m));
+    let after = with_cached_document_styles(html1, 1, 0, &[], |doc, styles| style_dbg(doc, styles));
+    assert_ne!(before, after, "样式文本变更必须反映到换代结果：{:?} -> {:?}", before, after);
+    let (doc, styles) = compute_document_styles_with_inline_overrides(html1, &[]);
+    assert_eq!(
+        after,
+        style_dbg(&doc, &styles),
+        "sync 换代后样式表必须与全量重算一致（新规则生效，不得沿用旧代 stylesheets）"
+    );
+}
+
+// PR #88 复核 D2 钉：SelectOption 的权威 applier 改写目标 option 的 selected 属性并
+// deselect 兄弟（:checked / option[selected] 匹配面超出目标子树）→ 必须回退全量，
+// 结果与全量一致。批含 SelectOption 时 sync 恒拒（白名单外），兜底计数无竞态。
+#[test]
+fn test_generation_cache_select_option_falls_back_full_parse() {
+    let html0 = "<html><body><select id=\"sel\"><option value=\"a\">a</option><option value=\"b\" id=\"b\">b</option></select><style>option:checked { color: green }</style></body></html>";
+    let html1 = "<html><body><select id=\"sel\"><option value=\"a\">a</option><option value=\"b\" id=\"b\" selected=\"\">b</option></select><style>option:checked { color: green }</style></body></html>";
+    let m = DomMutation::SelectOption {
+        selector: "#sel".to_string(),
+        value: "b".to_string(),
+    };
+    let style_dbg = |doc: &zero_dom::Document,
+                     styles: &std::collections::HashMap<zero_dom::NodeId, zero_style_system::ComputedStyle>| {
+        find_by_selector(doc, "#b")
+            .and_then(|node| styles.get(&node))
+            .map(|s| format!("{:?}", s))
+            .unwrap_or_default()
+    };
+    crate::js_dom_bridge::clear_generation_cache();
+    let before = with_cached_document_styles(html0, 0, 0, &[], |doc, styles| style_dbg(doc, styles));
+    GENERATION_FULL_PARSE_COUNT.with(|c| c.set(0));
+    crate::js_dom_bridge::publish_gcs_drain_record(html0, html1, std::slice::from_ref(&m));
+    let after = with_cached_document_styles(html1, 1, 0, &[], |doc, styles| style_dbg(doc, styles));
+    assert_eq!(
+        GENERATION_FULL_PARSE_COUNT.with(|c| c.get()),
+        1,
+        "SelectOption 在白名单外：sync 必须拒绝、走全量 parse 兜底"
+    );
+    assert_ne!(before, after, "选中态变化必须反映到 option 样式：{:?} -> {:?}", before, after);
+    let (doc, styles) = compute_document_styles_with_inline_overrides(html1, &[]);
+    assert_eq!(
+        after,
+        style_dbg(&doc, &styles),
+        "SelectOption 兜底结果必须与全量重算一致（option:checked 匹配新选中项）"
+    );
+}
+
+// PR #88 复核（测试面 3）：记录不衔接（old_html 与槽当前代不符 / 被他批覆盖）→
+// 全量兜底且兜底计数 +1——「记录死亡」路径的确定性验证。
+#[test]
+fn test_generation_cache_stale_record_falls_back_full_parse() {
+    let html0 = "<html><body><div class='c'>x</div><style>.c { color: blue }</style></body></html>";
+    let html1 = "<html><body data-on=\"1\"><div class='c'>x</div><style>[data-on] .c { color: green }</style></body></html>";
+    let m = DomMutation::SetAttr {
+        selector: "body".to_string(),
+        name: "data-on".to_string(),
+        value: "1".to_string(),
+    };
+    let style_dbg = |doc: &zero_dom::Document,
+                     styles: &std::collections::HashMap<zero_dom::NodeId, zero_style_system::ComputedStyle>| {
+        find_by_selector(doc, ".c")
+            .and_then(|node| styles.get(&node))
+            .map(|s| format!("{:?}", s))
+            .unwrap_or_default()
+    };
+    crate::js_dom_bridge::clear_generation_cache();
+    with_cached_document_styles(html0, 0, 0, &[], |doc, styles| style_dbg(doc, styles));
+    GENERATION_FULL_PARSE_COUNT.with(|c| c.set(0));
+    // 发布不衔接记录：old_html 与槽（html0）不符 → sync 拒绝 → 全量兜底。
+    // 他线程抢走记录 / 覆盖记录同样落到本断言（兜底路径恒 +1）。
+    crate::js_dom_bridge::publish_gcs_drain_record("<html><body></body></html>", html1, std::slice::from_ref(&m));
+    let after = with_cached_document_styles(html1, 1, 0, &[], |doc, styles| style_dbg(doc, styles));
+    assert_eq!(
+        GENERATION_FULL_PARSE_COUNT.with(|c| c.get()),
+        1,
+        "不衔接记录必须被拒绝并走全量 parse 兜底"
+    );
+    let (doc, styles) = compute_document_styles_with_inline_overrides(html1, &[]);
+    assert_eq!(
+        after,
+        style_dbg(&doc, &styles),
+        "不衔接记录兜底结果必须与权威一致"
     );
 }
