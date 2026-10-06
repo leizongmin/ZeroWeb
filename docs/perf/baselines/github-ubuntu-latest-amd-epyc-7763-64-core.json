@@ -65,9 +65,9 @@
     },
     {
       "id": "mb/zero-canvas/save_restore_100_deep",
-      "p95": 50742.88061465721,
+      "p95": 50676.575352112675,
       "tier": "budget",
-      "tightened_at": "2026-10-04T15:15:48Z"
+      "tightened_at": "2026-10-06T13:28:26Z"
     },
     {
       "id": "mb/zero-canvas/stroke_rect_1000",
@@ -166,9 +166,9 @@
     },
     {
       "id": "mb/zero-dom/dom/query_selector_1000_elements_by_tag",
-      "p95": 362.7015021781583,
+      "p95": 360.5658090509387,
       "tier": "budget",
-      "tightened_at": "2026-10-03T14:56:01Z"
+      "tightened_at": "2026-10-06T13:28:26Z"
     },
     {
       "id": "mb/zero-dom/dom/tree_construction_10k_nodes",
@@ -249,21 +249,21 @@
     },
     {
       "id": "mb/zero-layout-engine/deep_nesting_50_levels",
-      "p95": 384829.1105263158,
+      "p95": 379069.7236842105,
       "tier": "budget",
-      "tightened_at": "2026-10-02T13:26:32Z"
+      "tightened_at": "2026-10-06T13:28:26Z"
     },
     {
       "id": "mb/zero-layout-engine/flex_layout_1000_elements",
-      "p95": 4908167.666666667,
+      "p95": 4874774.816666666,
       "tier": "budget",
-      "tightened_at": "2026-09-30T13:30:43Z"
+      "tightened_at": "2026-10-06T13:28:26Z"
     },
     {
       "id": "mb/zero-layout-engine/grid_layout_100_elements",
-      "p95": 545008.6111111111,
+      "p95": 537390.4691358025,
       "tier": "budget",
-      "tightened_at": "2026-10-03T14:56:01Z"
+      "tightened_at": "2026-10-06T13:28:26Z"
     },
     {
       "id": "mb/zero-layout-engine/incremental_layout",
@@ -361,9 +361,9 @@
     },
     {
       "id": "mb/zero-render-foundation/primitives/build_1000_fills",
-      "p95": 5346.834247377669,
+      "p95": 5340.771491899309,
       "tier": "budget",
-      "tightened_at": "2026-10-05T19:29:56Z"
+      "tightened_at": "2026-10-06T13:28:26Z"
     },
     {
       "id": "mb/zero-script-sandbox/es_module_simple_export",
@@ -479,9 +479,9 @@
     },
     {
       "id": "mb/zero-style-system/cascade/declarations/50",
-      "p95": 7695.701411082157,
+      "p95": 7665.460342979635,
       "tier": "budget",
-      "tightened_at": "2026-10-02T19:26:02Z"
+      "tightened_at": "2026-10-06T13:28:26Z"
     },
     {
       "id": "mb/zero-style-system/cascade/declarations/500",
@@ -538,9 +538,9 @@
     },
     {
       "id": "mb/zero-webview/webview_builder_create",
-      "p95": 7383.410618048389,
+      "p95": 7374.66019668737,
       "tier": "budget",
-      "tightened_at": "2026-10-05T13:26:34Z"
+      "tightened_at": "2026-10-06T13:28:26Z"
     },
     {
       "id": "mb/zero-webview/webview_complex_page",
