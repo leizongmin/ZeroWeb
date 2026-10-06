@@ -1126,15 +1126,17 @@ pub fn register_dom_callbacks(
     );
 
     // `getComputedStyle(el).getPropertyValue(prop)`——计算样式（display/position/visibility/
-    // opacity + 颜色族）。**per-snapshot + per-style-version 缓存**：(html_key, style_version) →
-    // (selector → ComputedStyle)。Document 非 Send（含 observer/listener 闘包 + html5ever tendril
-    // `Cell`），不能入 `Send + Sync` 闭包；故只缓存 `ComputedStyle`（纯值类型，Send）。同 html 同
-    // selector 命中 → 仅 serialize（O(1)）；新 selector → 经 `with_cached_document_styles`
+    // opacity + 颜色族）。**per-snapshot + per-drain-generation + per-style-version 缓存**：
+    // (html_key, drain_gen, style_version) → (selector → ComputedStyle)。Document 非 Send（含
+    // observer/listener 闭包 + html5ever tendril `Cell`），不能入 `Send + Sync` 闭包；故只缓存
+    // `ComputedStyle`（纯值类型，Send）。同 html 同 selector 命中 → 仅 serialize（O(1)）；新
+    // selector → 经 `with_cached_document_styles`
     //（E14 per-generation TLS 缓存，parsed doc 按 (html, drain_gen, style_version) 代际复用）
     // 提取并存入。html 变（新 snapshot）/ drain 前进 / inline style mutation 变 → 换代重算。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let cs_cache: Arc<Mutex<Option<(String, usize, HashMap<String, ComputedStyle>)>>> = Arc::new(Mutex::new(None));
+    let cs_cache: Arc<Mutex<Option<(String, usize, usize, HashMap<String, ComputedStyle>)>>> =
+        Arc::new(Mutex::new(None));
     sandbox.register_callback(
         "__zw_get_computed_style",
         Box::new(move |args| {
@@ -1152,14 +1154,16 @@ pub fn register_dom_callbacks(
             // 可不同（与视图缓存精确命中键同理由，见 MUT_DRAIN_GEN 注）。
             let doc_drain_gen = MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
             let mut cache = cs_cache.lock().unwrap_or_else(|e| e.into_inner());
-            // html 变或 style_version 变 → 清空 per-selector 缓存，重置 key。
+            // html 变 / drain 前进 / style_version 变 → 清空 per-selector 缓存，重置 key。
+            // drain_gen 并键（PR #83 复核遗留收口）：drain 后队列重长回同 len 但内容可不同，
+            // 已缓存 selector 走本 map 短路先于 doc 级代际缓存，键不含 drain_gen 则返 stale。
             let need_reset = cache
                 .as_ref()
-                .is_none_or(|(h, v, _)| h != &*snap || *v != style_version);
+                .is_none_or(|(h, g, v, _)| h != &*snap || *g != doc_drain_gen || *v != style_version);
             if need_reset {
-                *cache = Some(((*snap).clone(), style_version, HashMap::new()));
+                *cache = Some(((*snap).clone(), doc_drain_gen, style_version, HashMap::new()));
             }
-            let (_, _, map) = cache.as_mut().expect("cs cache populated");
+            let (_, _, _, map) = cache.as_mut().expect("cs cache populated");
             // 同 selector 命中 → 直接 serialize（O(1)）。
             if let Some(style) = map.get(sel) {
                 return serialize_computed_property(style, prop);
