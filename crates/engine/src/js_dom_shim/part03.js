@@ -8893,10 +8893,22 @@
     var chain = [];
     if (!sel || typeof __zw_parent !== 'function') return chain;
     var cur = sel, guard = 0;
+    // t8：parent 关系按树代际缓存（声明与 bump 挂点见 part01 `_zwParentLinkCache`）
+    //——childList/换代之间重复爬链（MO subtree 冒泡每 attr 写一次）退化为 Map 查。
+    if (_zwParentLinkCache.gen !== _zwParentLinkGen) {
+      _zwParentLinkCache.gen = _zwParentLinkGen;
+      _zwParentLinkCache.map.clear();
+    }
+    var _plMap = _zwParentLinkCache.map;
     while (cur && guard < 4096) {
       chain.push(cur);
       var p = '';
-      try { p = __zw_parent(cur) || ''; } catch (_e) { p = ''; }
+      if (_plMap.has(cur)) {
+        p = _plMap.get(cur) || '';
+      } else {
+        try { p = __zw_parent(cur) || ''; } catch (_e) { p = ''; }
+        _plMap.set(cur, p);
+      }
       if (!p || p === cur) break;
       cur = p;
       guard++;

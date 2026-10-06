@@ -9977,6 +9977,8 @@
     // 相等（如新文档首快照），旧文档 ns 表不得跨代服务；置失配态走懒填充重灌。
     _zwSelNsCache.gen = -1;
     _zwSelNsCache.map = new Map();
+    // t8：快照换代树结构可能整体变化——parent 关系缓存随代作废（同上防跨代）。
+    _zwParentLinkBump();
   };
   // R379/pa2b（js-dom M4）：**apply 代际换代钩子**——host `apply_pending_shared_mutations`
   // 完成后调用（pending-apply RFC pa2 的 host→shim 回调链半边）。与
