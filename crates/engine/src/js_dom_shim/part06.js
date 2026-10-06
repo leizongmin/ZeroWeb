@@ -12361,6 +12361,7 @@
           });
         } catch (_e22idp) {}
       }
+      try { globalThis.__zwDbg26 = 'hasDE=' + String(!!doc.documentElement) + ' qsHtml=' + String(doc.querySelector && String(doc.querySelector('html'))) + ' sameAsF0=' + String(doc === (globalThis.frames && frames[0] && frames[0].document)); } catch (_eD26) {}
       // 模板 body 视图（proxy 包装）的 `.id` 反射缺口——R255 分支已补
       // `_r159BodyAttrs` 提取（R168 树根盖章随之生效）；包装层的 id 直读余挂
       //（proxy trap 吞 set——pointercapture_in_frame target.id 断言面，下段处理）。
@@ -12470,6 +12471,30 @@
             width: 1, height: 1, pressure: st.buttons ? 0.5 : 0
           }));
         } catch (_e23pm) {}
+      }
+      return 'ok';
+    }
+    // 尾簇 27：frame 级捕获持有（mouse/pen release 后至 pointerup——事件派 inner
+    // frame 的 html 元素（id=innerFrameDocument），pointercapture_in_frame subtest 5
+    // ?mouse/?pen 断言面）。载体：body 视图的原型包装（own .id=html id + 继承
+    // dispatchEvent/parentNode——冒泡链不变）。
+    if (st.portalFrameHold) {
+      var _fhDoc = (typeof _iframeDocCache !== 'undefined') ? _iframeDocCache[st.portalFrameHold] : null;
+      var _fhBody = _fhDoc && _fhDoc.doc ? _fhDoc.doc.body : null;
+      if (_fhBody && typeof _fhBody.dispatchEvent === 'function' && globalThis.PointerEvent) {
+        try {
+          var _htmlId26 = (_fhDoc.doc.documentElement && _fhDoc.doc.documentElement.id != null)
+            ? String(_fhDoc.doc.documentElement.id) : '';
+          var _fw26 = Object.create(_fhBody);
+          Object.defineProperty(_fw26, 'id', { value: _htmlId26 });
+          _fw26.dispatchEvent(new globalThis.PointerEvent('pointermove', {
+            bubbles: true, cancelable: false,
+            clientX: x || 0, clientY: y || 0,
+            button: (chordBtn19 != null) ? chordBtn19 : -1, buttons: st.buttons,
+            pointerId: 1, pointerType: st.pointerType || 'mouse', isPrimary: true,
+            width: 1, height: 1, pressure: st.buttons ? 0.5 : 0
+          }));
+        } catch (_e26fh) {}
       }
       return 'ok';
     }
@@ -12931,6 +12956,31 @@
     // 尾簇 23：外层真实捕获生效时常规路径接管（up 随捕获目标 + 隐式释放），
     // portal 不劫持（pointercapture_in_frame subtest 3 面——down@outer 捕获后
     // move/up 进 iframe 区域须重定向捕获目标而非入 inner frame）。
+    // 尾簇 27：frame hold 的 up——pointerup 派 inner html 元素（id=innerFrameDocument）
+    // 并清持有态（subtest 5 ?mouse/?pen 断言面）。
+    if (st.portalFrameHold) {
+      var _fhDocU27 = (typeof _iframeDocCache !== 'undefined') ? _iframeDocCache[st.portalFrameHold] : null;
+      var _fhBodyU27 = _fhDocU27 && _fhDocU27.doc ? _fhDocU27.doc.body : null;
+      if (_fhBodyU27 && typeof _fhBodyU27.dispatchEvent === 'function' && globalThis.PointerEvent) {
+        try {
+          var _htmlId27 = (_fhDocU27.doc.documentElement && _fhDocU27.doc.documentElement.id != null)
+            ? String(_fhDocU27.doc.documentElement.id) : '';
+          var _fw27 = Object.create(_fhBodyU27);
+          Object.defineProperty(_fw27, 'id', { value: _htmlId27 });
+          _fw27.dispatchEvent(new globalThis.PointerEvent('pointerup', {
+            bubbles: true, cancelable: false,
+            clientX: x || 0, clientY: y || 0,
+            button: button | 0, buttons: 0,
+            pointerId: 1, pointerType: st.pointerType || 'mouse', isPrimary: true,
+            width: 1, height: 1, pressure: 0
+          }));
+        } catch (_e26fhu) {}
+      }
+      st.portalFrameHold = null;
+      if (st.downSel) st.downSel = null;
+      st.portalFrame = null;
+      return 'ok';
+    }
     var _pFrame22u = (st.capture['1'] || st.pending['1']) ? null
       : (_zwPortalSplitSel(upSel) || (st.portalCap ? st.portalCap.frameSel : null));
     if (_pFrame22u) {

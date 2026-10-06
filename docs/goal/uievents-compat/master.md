@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-06（M3 尾簇 26 落地——portal target id 值面）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-06（M3 尾簇 27 落地——frame-hold 重接）
 
 ## 当前状态
 
@@ -10,14 +10,13 @@ M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P 
 尾簇 6b+6c 1115P → 尾簇 7 1167P → 尾簇 8 1202P → 尾簇 9 1218P → 尾簇 10 1570P →
 尾簇 11 1583P → 尾簇 12 1588P → 尾簇 13 1590P → 尾簇 14 1594P → 尾簇 15 1609P →
 尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → 尾簇 19 1736P → 尾簇 20/21 1738P →
-尾簇 22 1739P → 尾簇 23 1745P → 尾簇 24 1750P → **1755P（+1535 累计）**
-（corpus：1755P/187F/98TO，`TIME_LIMIT=3600`。尾簇 19：improvements=120 /
+尾簇 22 1739P → 尾簇 23 1745P → 尾簇 24 1750P → 尾簇 25 1755P → **1757P（+1537 累计）**
+（corpus：1757P/189F/96TO，`TIME_LIMIT=3600`。尾簇 19：improvements=120 /
 regressions=1 已记录；尾簇 20：+2；尾簇 21：Δ0 基建轮；尾簇 22：portal 首段 +1；
 尾簇 23：portal 第二段 +6；尾簇 24：portal 第三段 +5；尾簇 25：触式捕获路由 +5；
-尾簇 26：**Δ0——portal target id 值面落定**（`doc.__zwBodyId` 槽 + 合成 docEl `.id`
-反射器；probe 实证 portal 事件 target.id 恢复 'innerFrame'）+ frame-hold 实验
-（target 身份解析落 body，回退——portal 第五段入口），见
-[evidence/2026-10-06-m3-tail26.md](evidence/2026-10-06-m3-tail26.md)。
+尾簇 26：Δ0 id 值面；尾簇 27：**frame-hold 重接**——载体法（body 视图原型包装 + own
+.id=html id），+2（subtest 6 ?mouse/?pen Pass；subtest 5 转具名 Fail——TO 口径转移），
+见 [evidence/2026-10-06-m3-tail27.md](evidence/2026-10-06-m3-tail27.md)。
 证据：[evidence/2026-10-05-m3-tail13.json](evidence/2026-10-05-m3-tail13.json)（尾簇 13 后）、
 [evidence/2026-10-05-m3-tail13.md](evidence/2026-10-05-m3-tail13.md)（根因链 + 排除路径）、
 [evidence/2026-10-05-m3-tail12.json](evidence/2026-10-05-m3-tail12.json)（尾簇 12 后）、
@@ -43,7 +42,16 @@ regressions=1 已记录；尾簇 20：+2；尾簇 21：Δ0 基建轮；尾簇 22
 门禁：workspace 17,246P/0F、renderer lib 204P/0F、reftest 704/704、fmt + clippy
 （quickjs 面）全绿；shim 拼接 node --check 全绿。
 
-**M3 尾簇 26（2026-10-06，本轮）——portal target id 值面落定 + frame-hold 实验回退（Δ0）**。
+**M3 尾簇 27（2026-10-06，本轮）——frame-hold 重接（portal 第五段，载体法）**。一件：
+move/up 站 frame-hold 路由以 **body 视图原型包装载体**重接（`Object.create(bodyView)` +
+own `.id`=doc.documentElement.id + 继承 dispatchEvent/冒泡链——绕开 tail-26 的 docEl
+无 dispatchEvent 断面）；up 载体派发后清 hold/downSel/portalFrame。+2：subtest 6
+?mouse/?pen Pass、subtest 5 ?mouse/?pen 转具名 Fail（hold-up own .id 在 corpus 内页读
+空——`_r159HtmlAttrs` 槽提取序差异待比对）。对象图结论（tail-26 断面解明）：hold 块三
+链均回 body 视图 = docEl 无 dispatchEvent——载体法为解。见
+[evidence/2026-10-06-m3-tail27.md](evidence/2026-10-06-m3-tail27.md)。
+
+**M3 尾簇 26（2026-10-06，00e59b400）——portal target id 值面落定 + frame-hold 实验回退（Δ0）**。
 两件落地：① `doc.__zwBodyId` 值槽（part01 入口戳旁——body 视图 getAttribute 链断点的
 portal 直读源，probe 实证 portal 事件 target.id 恢复）；② 合成 docEl `.id` 反射器
 （R207 html 元素）。frame-hold 路由（mouse/pen release 后 frame 持有至 up）端到端通但
@@ -352,10 +360,11 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 证据：[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)
 （含 2 案本地 zwprobe 探针已剔除入账）。门禁：node --check + 双族聚焦跑全绿。
 
-**DC-4 门禁（2026-10-06，尾簇 26 后）**：workspace **19,852P/0F** + reftest **704/704**
-零回归 + shim 拼接 node --check 全绿（纯 JS shim 变更，无 Rust 面）。首轮 make test
-的 html_compat cross-hosts 运行中被终止——重跑全量 0F 归因资源并发瞬态。
-历史（尾簇 25 后）：workspace 19,845P/0F + reftest 704/704。
+**DC-4 门禁（2026-10-06，尾簇 27 后）**：workspace **19,867P/0F** + reftest **704/704**
+零回归 + shim 拼接 node --check 全绿（纯 JS shim 变更，无 Rust 面）。本轮 make test
+两次单例失败（send_keys_space keyup / js_worker reset_purge）——两次不同测试、隔离
+复跑均绿 + 第三次全量 0F——资源并发瞬态归因。
+历史（尾簇 26 后）：workspace 19,852P/0F + reftest 704/704。
 
 ## 缺口清单
 
@@ -440,8 +449,11 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
   1745P→1750P（+5，pointercapture_in_frame 0→11P）。
 - **M3 尾簇 25（2026-10-06，24945baa8）**：触式捕获路由（早退分支内捕获结算 + 捕获期
   move 随捕获目标）。1750P→1755P（+5）。
-- **M3 尾簇 26（2026-10-06，本轮）**：portal target id 值面（__zwBodyId 槽 + docEl
+- **M3 尾簇 26（2026-10-06，00e59b400）**：portal target id 值面（__zwBodyId 槽 + docEl
   `.id` 反射器）+ frame-hold 实验（回退）。1755P→1755P（Δ0）。
+- **M3 尾簇 27（2026-10-06，本轮）**：frame-hold 重接（载体法：body 视图原型包装 +
+  own .id=html id）。1755P→1757P（+2，subtest 6 ?mouse/?pen Pass；subtest 5 转具名
+  Fail）。
 
 ## 下一步计划
 
