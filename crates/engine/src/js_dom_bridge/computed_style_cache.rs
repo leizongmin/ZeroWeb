@@ -183,8 +183,15 @@ fn try_sync_with_drain_record(
                 }
                 None => return false,
             },
+            // 删除子节点可移除 `<style>` 的规则文本子节点（styleEl.firstChild.remove()）
+            // → 与 SetChildText 同判父 tag。
             DomMutation::RemoveChildAt { parent_selector, .. } => match find_in_doc(&slot.3, parent_selector) {
-                Some(n) => changed.push(n),
+                Some(n) => {
+                    if is_style_or_meta(&slot.3, n) {
+                        sheets_dirty = true;
+                    }
+                    changed.push(n);
+                }
                 None => return false,
             },
             DomMutation::Remove { selector } | DomMutation::SetOuterHtml { selector, .. } => {
@@ -214,10 +221,14 @@ fn try_sync_with_drain_record(
             | DomMutation::InsertBeforeByHandleHandle { parent_handle, .. } => {
                 post_handle.push((parent_handle.clone(), true));
             }
+            // SetInnerHtmlOnHandle 与非 handle 版同语义（fragment 可携带 style/meta）
+            // → 无条件脏；其余 OnHandle 变体 post-apply 按目标 tag 判脏。
+            DomMutation::SetInnerHtmlOnHandle { handle, .. } => {
+                post_handle.push((handle.clone(), true));
+            }
             DomMutation::SetAttrOnHandle { handle, .. }
             | DomMutation::RemoveAttrOnHandle { handle, .. }
             | DomMutation::SetTextOnHandle { handle, .. }
-            | DomMutation::SetInnerHtmlOnHandle { handle, .. }
             | DomMutation::SetStyleOnHandle { handle, .. }
             | DomMutation::RemoveStyleOnHandle { handle, .. } => {
                 post_handle.push((handle.clone(), false));
@@ -266,8 +277,12 @@ fn try_sync_with_drain_record(
             return false;
         }
     }
-    // 当前 pending 批 replay（attr/style 子集，既有语义）并入变更集。
+    // 当前 pending 批 replay（attr/style 子集，既有语义）并入变更集；pending 写到
+    // meta/style 上同样改样式面 → 与同 html 路径镜像判脏。
     changed.extend(apply_inline_style_overrides(&mut slot.3, pending));
+    if changed.iter().any(|&n| is_style_or_meta(&slot.3, n)) {
+        sheets_dirty = true;
+    }
     finish_generation_update(slot, html, drain_gen, style_version, changed, sheets_dirty)
 }
 

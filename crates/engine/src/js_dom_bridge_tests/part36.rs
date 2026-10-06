@@ -188,9 +188,9 @@ fn test_generation_cache_incremental_attr_selector_restyle() {
 // gCS」形态。html 变但 drain 记录衔接时，cached doc 经权威 applier 推进 + 增量
 // cascade，结果必须与全量 parse 逐位一致（属性选择器匹配面随 body 属性变化）。
 // 接受项（PR #88 复核）：本组测试不 pin「sync 被消费」——全局 DRAIN_RECORD 在并行
-// 测试下可被其他测试线程的 clear 抢走，此时走全量兜底、断言仍绿（sync 永久退化为
-// fallback 时测试全绿）；路径活性由测试 1/2 的零全量计数断言（无竞态路径）与
-// select_option/stale_record 两测的兜底计数间接覆盖。
+// 测试下可被其他测试线程的 clear 抢走，此时走全量兜底、断言仍绿；**sync 腿（html 变
+// 主通道）整通道退化为恒 fallback 时本组测试仍全绿——该腿活性无 pin，属接受项**。
+// 测试 1/2 的零全量计数断言只覆盖同 html 增量腿（无竞态路径），不覆盖本腿。
 #[test]
 fn test_generation_cache_drain_sync_matches_full_compute() {
     let html0 = "<html><body><div class='c'>x</div><style>[data-on] .c { color: green }</style></body></html>";
