@@ -4732,7 +4732,10 @@
   // ① caret 在文本节点内 → nodeValue splice（SetTextChild 类 mutation 流转宿主）；
   // ② caret 在元素边界 → 首个/对应子为文本节点同①；宿主无文本子 → createTextNode
   // + appendChild（两 mutation 均流转宿主）。caret 移到插入文本尾。
-  globalThis.__zw_ce_insert = function(sel, text) {
+  // 尾簇 33：withTextInput === false 时**不派 textInput**（execCommand 编辑命令与
+  // 真键盘输入分流——Chromium execCommand insertText 只派 beforeinput/input；
+  // WPT textInput/api 的 reject listener 断言面）。缺省（真键盘路径）照派。
+  globalThis.__zw_ce_insert = function(sel, text, withTextInput) {
     var el = document.querySelector(sel);
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
     var ins = String(text == null ? '' : text);
@@ -4746,7 +4749,7 @@
     // textInput(TextEvent) → DOM 变更 → input；WPT textInput/basic contenteditable
     // 断言面）。可取消（取消即中止插入——spec textInput cancelable 语义，CE 路径
     // 完整保留；text control 管线的 followup 通道近似不回滚）。
-    if (globalThis._zwTextEventCtorRef) {
+    if (withTextInput !== false && globalThis._zwTextEventCtorRef) {
       var ti31 = new globalThis._zwTextEventCtorRef('textInput', {
         bubbles: true, cancelable: true, view: globalThis, data: ins
       });
@@ -4883,6 +4886,16 @@
       bubbles: true, cancelable: true, data: null, inputType: 'insertLineBreak', isComposing: false
     });
     if (el.dispatchEvent(before) === false) return;
+    // 尾簇 33：CE Enter 补 **textInput(data='\n')**（真实浏览器 CE 换行的事件序
+    // beforeinput(insertLineBreak) → textInput(TextEvent) → <br> 变更 → input；
+    // WPT uievents/textInput enter-textarea-contenteditable 的 basic.sub.js 在 input
+    // handler 内断言 `textInputEvents === 1`——缺 textInput 使 promise 永挂）。
+    if (globalThis._zwTextEventCtorRef) {
+      var ti33 = new globalThis._zwTextEventCtorRef('textInput', {
+        bubbles: true, cancelable: true, view: globalThis, data: '\n'
+      });
+      el.dispatchEvent(ti33);
+    }
     // 计算 caret 在宿主 innerHTML 中的文本偏移（直子文本节点序列——宿主直子中
     // 该节点之前的文本子长度和；非文本子不计——flat 内容模型）。
     var kids = el.childNodes || [];

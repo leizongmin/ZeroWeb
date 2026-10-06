@@ -2995,14 +2995,66 @@
             var combined = cur + ins;
             var ml = null;
             try { ml = tgt.maxLength; } catch (_e) {}
-            if (ml != null && !isNaN(+ml) && combined.length > +ml) {
+            // 尾簇 33：maxlength **-1 = 无限制**（HTMLMaxLength 缺省——旧版
+            // `combined.length > -1` 恒真使无 maxlength 的输入被截成空串——探针实证
+            // `assign:combined=""`）。
+            if (ml != null && !isNaN(+ml) && +ml >= 0 && combined.length > +ml) {
               combined = combined.slice(0, +ml);
               var cc = combined.charCodeAt(combined.length - 1);
               if (cc >= 0xd800 && cc <= 0xdbff) combined = combined.slice(0, -1);
             }
+            // 尾簇 33：text-control 分支补 **beforeinput → 变更 → input** 事件序
+            //（R3254-M2 editing-host 分支同款——此前裸 value 赋值不派事件，WPT
+            // uievents/textInput/api 尾部 `execCommand('insertText') → input 事件 →
+            // value==='a'` 的 promise 永挂）。**不派 textInput**（api 的 reject
+            // listener 断言面——execCommand 编辑命令与真键盘输入（runner send_keys
+            // 的 text_plan 派 textInput）分流，Chromium 同此）。trusted 印记 R312
+            // 同款（UA 合成编辑操作）。beforeinput 取消 → 命令失败（返回 false，
+            // spec「canceled commands return false」）。
+            var before57 = new InputEvent('beforeinput', {
+              bubbles: true, cancelable: true, data: ins, inputType: 'insertText', isComposing: false
+            });
+            try {
+              Object.defineProperty(before57, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
+              before57._zwUaDispatch = true;
+            } catch (_eTb57) {}
+            if (tgt.dispatchEvent(before57) === false) {
+              try { before57._zwUaDispatch = false; } catch (_eTb57b) {}
+              return false;
+            }
+            try { before57._zwUaDispatch = false; } catch (_eTb57c) {}
             tgt.value = combined;
+            var input57 = new InputEvent('input', {
+              bubbles: true, cancelable: false, data: ins, inputType: 'insertText', isComposing: false
+            });
+            try {
+              Object.defineProperty(input57, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
+              input57._zwUaDispatch = true;
+            } catch (_eTb57d) {}
+            tgt.dispatchEvent(input57);
+            try { input57._zwUaDispatch = false; } catch (_eTb57e) {}
           }
         } catch (_e) {}
+      } else if (cmd === 'inserttext'
+                 && (function () {
+                   // 尾簇 33：CE 宿主（activeElement 在 contenteditable 内）的
+                   // execCommand insertText——editing-host 分支对「focus 未建 Selection
+                   // range」的 caret 面 no-op（api 尾部 CE div 案 promise 挂点）。
+                   // 直接走 `__zw_ce_insert`（caret 构建 + 变更 + 事件序；
+                   // withTextInput=false——execCommand 不派 textInput）。
+                   try {
+                     var t57c = globalThis.document.activeElement;
+                     return !!(t57c && typeof globalThis.__zw_is_ce_host === 'function'
+                       && globalThis.__zw_is_ce_host(t57c));
+                   } catch (_e57c) { return false; }
+                 })()) {
+        try {
+          var tgtC = globalThis.document.activeElement;
+          var selC = (tgtC && tgtC.__zwSelector != null) ? String(tgtC.__zwSelector) : null;
+          if (selC && typeof globalThis.__zw_ce_insert === 'function') {
+            globalThis.__zw_ce_insert(selC, String(arguments[2] == null ? '' : arguments[2]), false);
+          }
+        } catch (_eC57) {}
       } else if (typeof _zwExecCmdInputType[cmd] !== 'undefined') {
         // R3254-M2：编辑类命令（format 族/insert 族/delete 族/undo-redo）——editing host
         // 事件序。选区无 range 或起点不在任何 editing host 内 → no-op（WPT 断言 0 事件

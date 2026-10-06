@@ -8164,11 +8164,10 @@ fn apply_testdriver_command(
             // 各 focus 自己的元素后并发排队），前序 focus 覆盖 → 激活管线（空格/Enter 对
             // button 的 click 合成）焦点归属错位 → click 不发 → EventWatcher 门铃永挂。
             // slice22 焦点治理通道（__zw_host_focus）——页面可见焦点状态同步 + 焦点事件
-            // 派发同流。
-            if !selector.is_empty() {
-                let focus_script = zero_engine::script_host_focus(&selector, true);
-                let _ = webview.execute_script(&focus_script);
-            }
+            // 派发同流。**实现**：聚焦拼进**首键 keydown 派发脚本**（`_zwFocusPrefix`——
+            // 零额外 execute_script 往返；独立 focus 脚本在 workspace 并发负载下使
+            // send_keys 命令的轮询窗偶发错过——内嵌 fixture 间歇 Timeout 实证）。
+            let mut _zw_first_char = true;
             // R3254-K2 残余切片 4（keyboard goal，2026-09-07）：send_keys 串内修饰键
             // 持久化——修饰字符设置状态位，后续普通字符的事件对继承（WPT
             // keypress-not-fired-for-modifier-shortcuts.html 的 `uE009 + 'v'` 复合序）。
@@ -8178,6 +8177,17 @@ fn apply_testdriver_command(
             let mut alt_sticky = false;
             let mut meta_sticky = false;
             for character in text.chars() {
+                // 尾簇 33：**首键** keydown 拼 focus 前缀（self-focus——零额外往返形，
+                // 见 send_keys 入口注记）。
+                let focus_prefix = if _zw_first_char && !selector.is_empty() {
+                    format!(
+                        "(typeof __zw_host_focus==='function')&&__zw_host_focus({});",
+                        serde_json::to_string(&selector).unwrap_or_else(|_| "null".into())
+                    )
+                } else {
+                    String::new()
+                };
+                _zw_first_char = false;
                 // R3254-KP2（keyboard-page-scrolling goal M1 切片 1 解除 defer）：
                 // WebDriver 滚动/导航键（arrows/pages/home/end）→ keydown+keyup 事件
                 // 对（key 名按 WebDriver 规范映射）。runner 侧无真滚动管线（滚动默认
@@ -8223,7 +8233,13 @@ fn apply_testdriver_command(
                     // 与 browser R3254-M9 同源，经 R3047 scrollTop setter 派 'scroll'
                     // 事件）。旧版只派事件不滚动 → snap 三案的 scrollend promise 链
                     // 永不解阻（整簇 Timeout）。
-                    let keydown_result = dispatch_key_event_script(webview, &selector, "keydown", &scroll_detail);
+                    let keydown_result = dispatch_key_event_script_focused(
+                        webview,
+                        &selector,
+                        "keydown",
+                        &scroll_detail,
+                        focus_prefix.as_str(),
+                    );
                     if keydown_result != "prevented" {
                         let scroll_script = zero_engine::script_scroll_key_default(&selector, key_name);
                         let _ = webview.execute_script(&scroll_script);
@@ -8254,6 +8270,26 @@ fn apply_testdriver_command(
                     character => HtmlUserAction::InsertText {
                         text: character.to_string(),
                     },
+                };
+                // 尾簇 33：textarea 的 Enter = **换行**（真实浏览器语义——textarea 不参
+                // 与 implicit submission；WPT uievents/textInput
+                // enter-textarea-contenteditable 的 basic.sub.js 断言 value='\n' +
+                // textInput(data='\n')——走 InsertText 管线（text_plan 的 textInput
+                // followup 面）。其余目标维持 Submit 动作。
+                let action = if matches!(action, HtmlUserAction::Submit) {
+                    let ta_probe = webview.execute_script(&format!(
+                        "(function(){{var e=document.querySelector({});return (e && e.tagName==='TEXTAREA') ? '1' : '';}})()",
+                        serde_json::to_string(&selector).unwrap_or_else(|_| "null".into())
+                    ))
+                    .map(|v| v.trim() == "1")
+                    .unwrap_or(false);
+                    if ta_probe {
+                        HtmlUserAction::InsertText { text: "\n".to_string() }
+                    } else {
+                        action
+                    }
+                } else {
+                    action
                 };
                 // R3254-K2 残余切片 4（keyboard goal，2026-09-07）：普通/编辑键补全
                 // keydown→默认动作→keypress→keyup 事件序（UI Events §keydown/§keyup 默认
@@ -8300,14 +8336,27 @@ fn apply_testdriver_command(
                                 .map(|v| v.trim() == "1")
                                 .unwrap_or(false);
                         if space_buttonish {
-                            dispatch_key_event_script(webview, &selector, "keydown", &key_detail);
+                            dispatch_key_event_script_focused(
+                                webview,
+                                &selector,
+                                "keydown",
+                                &key_detail,
+                                focus_prefix.as_str(),
+                            );
                             dispatch_key_event_script(webview, &selector, "keyup", &key_detail);
                             if let Some(error) = dispatch_action(webview, target, action) {
                                 return Some(error);
                             }
                             continue;
                         }
-                        if dispatch_key_event_script(webview, &selector, "keydown", &key_detail) != "prevented" {
+                        if dispatch_key_event_script_focused(
+                            webview,
+                            &selector,
+                            "keydown",
+                            &key_detail,
+                            focus_prefix.as_str(),
+                        ) != "prevented"
+                        {
                             // R3254-K5 切片 3（2026-09-07）：SELECT 焦点上的可打印字符 =
                             // type-ahead 键入跳转（多字符缓冲 500ms 窗，Chromium closed-
                             // select 语义近似）。消费后跳过 InsertText/keypress（SELECT 无
@@ -8348,7 +8397,13 @@ fn apply_testdriver_command(
                     // 非字符编辑/导航键（Backspace/Tab/ENTER）：keydown → 默认动作（取消
                     // 只抑制字符插入类序，此处动作照旧执行——与旧版行为一致）→ keyup。
                     _ => {
-                        dispatch_key_event_script(webview, &selector, "keydown", &key_detail);
+                        dispatch_key_event_script_focused(
+                            webview,
+                            &selector,
+                            "keydown",
+                            &key_detail,
+                            focus_prefix.as_str(),
+                        );
                         // uievents-compat 尾簇 11（2026-10-05）：Enter on **formless**
                         // buttonish（BUTTON / input type=button|submit|reset）= 激活点击
                         //（真浏览器语义；旧版落入 Submit 臂 → enclosing form 缺席
@@ -8419,6 +8474,28 @@ fn dispatch_key_event_script(
     let script = zero_engine::script_dispatch_dom_event(selector, event_type, Some(detail));
     webview
         .execute_script(&script)
+        .map(|v| v.trim().to_string())
+        .unwrap_or_default()
+}
+
+/// 尾簇 33：keydown 派发带 **focus 前缀**（send_keys 自聚焦合并进首键脚本——零额外
+/// execute_script 往返；独立 focus 脚本在 workspace 并发负载下使命令轮询窗偶发错过，
+/// 内嵌 fixture 间歇 Timeout 实证）。prefix 空串时与 `dispatch_key_event_script` 等价。
+fn dispatch_key_event_script_focused(
+    webview: &mut WebView,
+    selector: &str,
+    event_type: &str,
+    detail: &zero_engine::DomEventDetail,
+    focus_prefix: &str,
+) -> String {
+    let script = zero_engine::script_dispatch_dom_event(selector, event_type, Some(detail));
+    let full = if focus_prefix.is_empty() {
+        script
+    } else {
+        format!("{}{}", focus_prefix, script)
+    };
+    webview
+        .execute_script(&full)
         .map(|v| v.trim().to_string())
         .unwrap_or_default()
 }
