@@ -77,12 +77,13 @@ fn named_access_remove_attribute_name_disqualifies_s33() {
     );
 }
 
-// ②B-1 白名单边界：iframe 名不进元素集合面。双 iframe name=fr 在安装器面不装
-// 集合（spec name 面逐字仅 embed/form/img/object）；既有 img 同名 live 集合不因
-// appendChild iframe 并入成员（live matcher 面——_zwNAElemMatches 无 iframe 臂）。
-// iframe 名的全局值面 = R139 `__zwRegisterNamedIframes` 委托（contentWindow 即
-// WindowProxy，load 派发物化 + 首读 lazy 注册）——本钉环境无 load 物化，R139 面
-// 以浏览器探针归档（diag/evidence/slice33/rework/ iframe-face before/after PNG）。
+// ②B-1 白名单边界：iframe 名不进**元素集合面**（spec name 面逐字仅 embed/form/img/
+// object，_zwNAElemMatches 无 iframe 臂）；既有 img 同名 live 集合不因 appendChild
+// iframe 并入成员。iframe 名的全局**值面** slice37 起 = NPO live 扫描（Chrome 实测 +
+// WPT window-named-properties "Static name: bar"——bar 即 iframe 名，无 load 派发也
+// 可见；值取首棵 contentWindow，R115/R139 物化面供给）——旧钉「fr 无 load 不见」是
+// slice33 lazy 装载面残留，按新语义翻转。ret 面：window.fr 可见但不是 iframe 元素
+// HTMLCollection。
 #[test]
 fn named_access_iframe_whitelist_boundary_s33() {
     let mut sandbox = s32_sandbox!(
@@ -91,7 +92,7 @@ fn named_access_iframe_whitelist_boundary_s33() {
     );
     sandbox
         .execute(
-            "globalThis.__r_fr_absent = typeof window.fr === 'undefined';
+            "globalThis.__r_fr_present = typeof window.fr !== 'undefined';
              globalThis.__r_fr_not_col = !(window.fr && typeof window.fr.item === 'function');
              globalThis.__r_zz_len0 = window.zz.length;
              var f3 = document.createElement('iframe');
@@ -100,14 +101,14 @@ fn named_access_iframe_whitelist_boundary_s33() {
              globalThis.__r_zz_len1 = window.zz.length;")
         .unwrap();
     assert_eq!(
-        sandbox.execute("globalThis.__r_fr_absent").unwrap().value,
+        sandbox.execute("globalThis.__r_fr_present").unwrap().value,
         "true",
-        "iframe 名不进安装器面（spec name 面仅 embed/form/img/object，R139 委托面）"
+        "iframe 名进 named property 值面（WPT Static name 面，NPO live 扫描）"
     );
     assert_eq!(
         sandbox.execute("globalThis.__r_fr_not_col").unwrap().value,
         "true",
-        "window.fr 不是 iframe 元素 HTMLCollection（B-1 白名单边界）"
+        "window.fr 不是 iframe 元素 HTMLCollection（B-1 白名单边界：集合面不含 iframe）"
     );
     assert_eq!(
         sandbox.execute("globalThis.__r_zz_len0").unwrap().value,
@@ -122,8 +123,9 @@ fn named_access_iframe_whitelist_boundary_s33() {
 }
 
 // ③I-7 再生：2 命中集合 → 双双失格（1 命中 morph 元素——slice32 边界钉保持；
-// 0 命中回收保留账本）→ 全局清空后同名新元素重入 → 恢复（1 命中恢复元素）。
-// 修前账本随回收删除、重入后恒 undefined（再生缺口，slice32 缺陷轮 I-7 边界）。
+// 0 命中回收保留账本）→ window 级 delete 不清 named prop（slice36 FIXME ⑥ 收口：
+// 再读复活，Chrome 同款；slice36 前 own 面一删即逝）→ 真清除走 `__zwNADelete`
+//（renderer 快照换代链路同款）→ 清空态 → 同名新元素重入 → 恢复（1 命中恢复元素）。
 #[test]
 fn named_access_recycled_collection_regenerates_s33() {
     let mut sandbox = s32_sandbox!(
@@ -136,7 +138,9 @@ fn named_access_recycled_collection_regenerates_s33() {
              document.getElementById('z1').removeAttribute('name');
              document.getElementById('z2').removeAttribute('name');
              globalThis.__r_len1 = col0.length;
-             delete window.zz; // renderer 快照换代登记·回收链路对 stale 名的同款清理
+             delete window.zz; // NPO 级 [[Delete]]=false 经链传播——no-op（ret 值不钉，偏差申报）
+             globalThis.__r_resurrect = typeof window.zz !== 'undefined';
+             __zwNADelete('zz'); // renderer 快照换代登记·回收链路对 stale 名的同款清理（backing 面）
              globalThis.__r_absent0 = typeof window.zz === 'undefined';
              var z3 = document.createElement('img');
              z3.setAttribute('name', 'zz');
@@ -154,9 +158,14 @@ fn named_access_recycled_collection_regenerates_s33() {
         "双失格后集合成员清空（0 命中回收态）"
     );
     assert_eq!(
+        sandbox.execute("globalThis.__r_resurrect").unwrap().value,
+        "true",
+        "window 级 delete 后 window.zz 再读复活（FIXME ⑥ 收口，Chrome 同款）"
+    );
+    assert_eq!(
         sandbox.execute("globalThis.__r_absent0").unwrap().value,
         "true",
-        "全局清空后 window.zz 缺席"
+        "backing 清除（__zwNADelete）后 window.zz 缺席"
     );
     assert_eq!(
         sandbox.execute("globalThis.__r_restored").unwrap().value,

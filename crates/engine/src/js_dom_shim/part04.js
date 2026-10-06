@@ -763,7 +763,9 @@
                 var _r139Name = handle ? __zw_get_attr_handle(handle, 'name') : (sel ? __zw_get_attr(sel, 'name') : '');
                 _r139Name = String(_r139Name || '');
                 if (_r139Name && !(globalThis[_r139Name] !== undefined && globalThis[_r139Name] !== _r115Entry.win)) {
-                  globalThis[_r139Name] = _r115Entry.win;
+                  // slice37（NPO 收口）：注册写面 = backing（原 globalThis own 赋值站错层；
+                  // 占用守卫保持 window 级读——NPO 化后经原型链解析，元素先占名优先级不变）。
+                  _zwNADefineNA(_r139Name, _r115Entry.win);
                 }
               } catch (_e139n) {}
               return _r115Entry.win;
@@ -783,7 +785,8 @@
               var _r139FbName = handle ? __zw_get_attr_handle(handle, 'name') : (sel ? __zw_get_attr(sel, 'name') : '');
               _r139FbName = String(_r139FbName || '');
               if (_r139FbName && !(globalThis[_r139FbName] !== undefined && globalThis[_r139FbName] !== _r115FbWin)) {
-                globalThis[_r139FbName] = _r115FbWin;
+                // slice37（NPO 收口）：注册写面 = backing（同上——占用守卫保持 window 级读）。
+                _zwNADefineNA(_r139FbName, _r115FbWin);
               }
             } catch (_e139f) {}
             return _r115FbWin;

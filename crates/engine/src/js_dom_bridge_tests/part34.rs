@@ -201,8 +201,10 @@ fn named_access_static_regression_s32() {
     );
 }
 
-// ④同名重装 dead 语义：全局删除后重装（renderer 换代登记·重装链路的沙箱缩影）→
+// ④同名重装 dead 语义：全局清除后重装（renderer 换代登记·重装链路的沙箱缩影）→
 // 新集合对象 + 新内容；旧 captured 引用冻结（不再随变异更新——旧文档集合不跨换代存活）。
+// slice37 NPO 化后清理面换 `__zwNADelete`（window 级 delete 对 named property 是
+// no-op——Chrome 同款，见 recycled_collection_regenerates_s33 复活面），沙箱缩影随链路。
 #[test]
 fn named_access_reinstall_dead_marks_old_s32() {
     let mut sandbox = s32_sandbox!("<html><body><div id='rr'></div><div id='rr'></div></body></html>");
@@ -210,7 +212,7 @@ fn named_access_reinstall_dead_marks_old_s32() {
         .execute(
             "var old = window.rr;
              globalThis.__r_old_alive0 = (function () { document.body.appendChild(document.createElement('div')).setAttribute('id', 'rr'); return old.length; })();
-             delete globalThis.rr;
+             __zwNADelete('rr');
              __zwInstallNamedAccess();
              globalThis.__r_new_obj = window.rr !== old;
              globalThis.__r_new_len0 = window.rr.length;
