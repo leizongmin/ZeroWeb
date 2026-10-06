@@ -279,6 +279,10 @@ pub fn register_dom_callbacks(
     canvas_registry: &Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>>,
     rect_snapshot_opt: Option<&crate::rect_bridge::LayoutRectSnapshot>,
 ) {
+    // E14：注册装新快照/新沙箱 → 清 getComputedStyle per-generation TLS 槽（旧代际
+    // 一律不复用；覆盖 webview 文档换代就地 clear 不 bump MUT_DRAIN_GEN 的例外与
+    // 同线程先后多沙箱隔离，见 computed_style_cache 模块注释）。
+    crate::js_dom_bridge::clear_generation_cache();
     // js-dom M3 R100：handle 计数器改 thread-local 单调持久——旧版每次
     // `register_dom_callbacks`（run_page_scripts / execute_script_with_dom / dispatch_event
     // 各自注册）都从 0 重启，跨注册的 `__zw_create_element` 返回碰撞的 `__n0`——
@@ -1126,8 +1130,8 @@ pub fn register_dom_callbacks(
     // (selector → ComputedStyle)。Document 非 Send（含 observer/listener 闘包 + html5ever tendril
     // `Cell`），不能入 `Send + Sync` 闭包；故只缓存 `ComputedStyle`（纯值类型，Send）。同 html 同
     // selector 命中 → 仅 serialize（O(1)）；新 selector → 经 `with_cached_document_styles`
-    //（E14 per-generation TLS 缓存，parsed doc 按 (html, style_version) 代际复用）提取并存入。
-    // html 变（新 snapshot）或 inline style mutation 变 → 清空 per-selector 缓存并换代重算。
+    //（E14 per-generation TLS 缓存，parsed doc 按 (html, drain_gen, style_version) 代际复用）
+    // 提取并存入。html 变（新 snapshot）/ drain 前进 / inline style mutation 变 → 换代重算。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
     let cs_cache: Arc<Mutex<Option<(String, usize, HashMap<String, ComputedStyle>)>>> = Arc::new(Mutex::new(None));
@@ -1144,6 +1148,9 @@ pub fn register_dom_callbacks(
             // 与快照一同作 cache key：任一变化 → 重算时把 inline style mutation 子集顺序 apply 到
             // parsed doc 后再 cascade（latest-wins，语义同 render），闭合 `el.style.X=` 后 gCS 读 stale。
             let style_version = m.lock().unwrap_or_else(|e| e.into_inner()).len();
+            // E14：drain 代际并入 doc 缓存键——mutation 队列 drain 后重长回同 len 但内容
+            // 可不同（与视图缓存精确命中键同理由，见 MUT_DRAIN_GEN 注）。
+            let doc_drain_gen = MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
             let mut cache = cs_cache.lock().unwrap_or_else(|e| e.into_inner());
             // html 变或 style_version 变 → 清空 per-selector 缓存，重置 key。
             let need_reset = cache
@@ -1157,12 +1164,13 @@ pub fn register_dom_callbacks(
             if let Some(style) = map.get(sel) {
                 return serialize_computed_property(style, prop);
             }
-            // 未命中：E14 per-generation 缓存（parsed doc + 全文档样式按 (html, style_version)
-            // 代际复用，同代际新 selector 仅 O(节点) 查找——真站每 tick 几十个新 selector
-            // 不再各触发一次全量 parse+cascade）内提取该 selector 的 ComputedStyle 并入
-            // per-selector map，再 serialize。clone 变更列表后即释放锁，重算不持 mutation 锁。
+            // 未命中：E14 per-generation 缓存（parsed doc + 全文档样式按 (html, drain_gen,
+            // style_version) 代际复用，同代际新 selector 仅 O(节点) 查找——真站每 tick 几十
+            // 个新 selector 不再各触发一次全量 parse+cascade）内提取该 selector 的
+            // ComputedStyle 并入 per-selector map，再 serialize。clone 变更列表后即释放锁，
+            // 重算不持 mutation 锁。
             let mlist = m.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            let hit = with_cached_document_styles(&snap, style_version, &mlist, |doc, styles| {
+            let hit = with_cached_document_styles(&snap, doc_drain_gen, style_version, &mlist, |doc, styles| {
                 find_by_selector(doc, sel)
                     .and_then(|node| styles.get(&node))
                     .map(|style| (serialize_computed_property(style, prop), style.clone()))
