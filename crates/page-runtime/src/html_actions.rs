@@ -654,10 +654,7 @@ fn plan_text_delete(target: PageNodeRef, state: &TextActionState) -> Result<Html
 /// uievents/textInput delete/delete-selection 断言面）。选区非空删选区（同
 /// Backward）；collapsed 删 caret **后**一个 UTF-16 单元（代理对安全）。caret 吸附
 /// 原位（spec deleteContentForward 语义——删除后选区起点不变）。
-fn plan_text_forward_delete(
-    target: PageNodeRef,
-    state: &TextActionState,
-) -> Result<HtmlActionPlan, ActionNoopReason> {
+fn plan_text_forward_delete(target: PageNodeRef, state: &TextActionState) -> Result<HtmlActionPlan, ActionNoopReason> {
     if state.read_only {
         return Err(ActionNoopReason::ReadOnlyTarget);
     }
