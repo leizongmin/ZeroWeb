@@ -3,8 +3,9 @@ use std::sync::{Arc, Mutex};
 #[cfg(feature = "v8")]
 use zero_engine::script_dispatch_native_event;
 use zero_engine::{
-    DomEventDetail, DomMutation, register_dom_callbacks, script_call_set_location_hash, script_contenteditable_delete,
-    script_contenteditable_enter, script_contenteditable_insert, script_contenteditable_probe,
+    DomEventDetail, DomMutation, register_dom_callbacks, script_call_set_location_hash,
+    script_contenteditable_delete, script_contenteditable_enter, script_contenteditable_forward_delete,
+    script_contenteditable_insert, script_contenteditable_probe,
     script_dispatch_dom_event, script_pointer_move, script_reset_form_controls, script_set_control_checked,
     script_set_open, script_set_option_selected, script_set_text_control_state, script_text_control_snapshot,
 };
@@ -197,16 +198,14 @@ impl WebView {
                 // 仍走既有快照+plan 管线（零变化）。
                 let ce_probe = self.execute_dom_script(executor, &script_contenteditable_probe(&selector))?;
                 if ce_probe.value.trim() == "1" {
-                    // 尾簇 31：CE 宿主 + ForwardDelete → noop（`__zw_ce_delete` 是
-                    // Backward 语义——复用删错字符；range 后向删除挂账）。
-                    if matches!(request.action, HtmlUserAction::ForwardDelete) {
-                        return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
-                    }
                     let script = match &request.action {
                         // R3254-M2 切片 3：CE 宿主内 "\n"（textarea/worker Enter 路由复用
                         // InsertText 通道）→ __zw_ce_enter（<br> 插入）而非字面插入。
                         HtmlUserAction::InsertText { text } if text == "\n" => script_contenteditable_enter(&selector),
                         HtmlUserAction::InsertText { text } => script_contenteditable_insert(&selector, text),
+                        // 尾簇 32：CE ForwardDelete 接通（`__zw_ce_forward_delete`——
+                        // deleteContentForward 语义；取代尾簇 31 的 noop 挂账）。
+                        HtmlUserAction::ForwardDelete => script_contenteditable_forward_delete(&selector),
                         _ => script_contenteditable_delete(&selector),
                     };
                     let result = self.execute_dom_script(executor, &script)?;

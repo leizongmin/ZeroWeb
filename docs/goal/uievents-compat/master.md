@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-06（M3 尾簇 31——TextEvent 语义域 + selection key 存活面，textInput 族 2P→16P）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-06（M3 尾簇 32——send_keys 自聚焦 + CE ForwardDelete + Enter 键序，1778P→1782P）
 
 ## 当前状态
 
@@ -11,10 +11,10 @@ M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P 
 尾簇 11 1583P → 尾簇 12 1588P → 尾簇 13 1590P → 尾簇 14 1594P → 尾簇 15 1609P →
 尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → 尾簇 19 1736P → 尾簇 20/21 1738P →
 尾簇 22 1739P → 尾簇 23 1745P → 尾簇 24 1750P → 尾簇 25 1755P → 尾簇 27 1757P →
-尾簇 28 1759P → 尾簇 30 1763P → 尾簇 31 **1778P（+1558 累计）**
-（corpus：**1778P/176F/102TO**，`TIME_LIMIT=3600`——新 Fail 0；新 TO 1 =
-mouseevent_key_pressed 全量序贯 flaky（复跑 5/5 Pass，tail4 调度伪影同类）。
-textInput 族 2P→16P（+14）。尾簇 19：improvements=120 / regressions=1 已记录；尾簇 20：+2；
+尾簇 28 1759P → 尾簇 30 1763P → 尾簇 31 1778P → 尾簇 32 **1782P（+1562 累计）**
+（corpus：**1782P/176F/98TO**，`TIME_LIMIT=3600`——新 Fail 0 新 TO 0（尾簇 31 的
+mouseevent_key_pressed 序贯 flaky 本轮全量转 Pass）。textInput 族 16P→18P（CE
+ForwardDelete +2）+ enter-input input 案 +1 + keyboard-click 通路修复（行为面）。尾簇 19：improvements=120 / regressions=1 已记录；尾簇 20：+2；
 尾簇 21：Δ0 基建轮；尾簇 22：portal 首段 +1；尾簇 23：portal 第二段 +6；尾簇 24：
 portal 第三段 +5；尾簇 25：触式捕获路由 +5；尾簇 26：Δ0 id 值面；尾簇 27：
 frame-hold 重接 +2；尾簇 28：frame-hold 残留清零 +2；尾簇 29：判例轮 Δ0（?touch
@@ -47,9 +47,26 @@ selection key 存活面 +14**（见下节与
 [evidence/2026-10-04-m3-tail5.json](evidence/2026-10-04-m3-tail5.json)（尾簇 5 后）、
 [evidence/2026-10-04-m3-tail6a.json](evidence/2026-10-04-m3-tail6a.json)（尾簇 6a 后）、
 [evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)（尾簇 6b+6c 后）。
-门禁：**make test EXIT=0**（2026-10-06 尾簇 31 后）+ clippy（quickjs 面，-D warnings）
-EXIT=0 + shim 拼接 node --check 全绿 + corpus 全量 1778P/176F/102TO 零回归（新 Fail 0）。
-历史（尾簇 30 后）：workspace 49 test result 全 0 failed；reftest 704/704（尾簇 28 后）。
+门禁：**make test EXIT=0** + clippy（quickjs 面，-D warnings）EXIT=0 + shim 拼接
+node --check 全绿 + corpus 全量 **1782P/176F/98TO** 零回归（新 Fail 0 新 TO 0）
+（2026-10-06 尾簇 32 后）。历史（尾簇 31 后）：1778P/176F/102TO；reftest 704/704（尾簇 28 后）。
+
+**M3 尾簇 32（2026-10-06，本轮）——send_keys 自聚焦 + CE ForwardDelete + Enter 键序（1778P→1782P）**。
+三件：① **send_keys 入口自聚焦目标**（runner——WebDriver per-element send 语义；
+slice22 `__zw_host_focus` 通道——多 promise_test 交错 focus 的组合时序下激活管线
+焦点归属错位 → click 不发：keyboard-click-event 4 子测全挂的根因，zzprobe 三段
+二分实证）；② **uE006 接 formless buttonish 激活**（Enter click 通路与 uE007 一致
+——tail11 修复只判了 uE007）；③ **CE ForwardDelete 接通**（`__zw_ce_forward_delete`
+——deleteContentForward 语义 mirror ce_delete，代理对安全；取代尾簇 31 noop）+
+**动作 noop 不中断键事件序**（keyup 恒派——enter-input input 案 +1；旧版 Submit
+noop 提前 return 跳过 keyup）。keyboard-click-event 行为面已通（探针 4/4——
+EventWatcher/mini-report 交互层 TO 余挂，testharness 深水面）。textInput 族
+16P→**18P**（delete + delete-selection 的 CE div ×2）、enter-input +1。余挂：
+execCommand insertText 对 text control ×3（api.html）、enter 两文件的 textarea/CE
+尾案（Submit/CE Enter 域）、keyboard-click-event TO（testharness 交互层）。详见
+[evidence/2026-10-06-m3-tail32.md](evidence/2026-10-06-m3-tail32.md)。
+
+**M3 尾簇 31（2026-10-06，7c550a079）——TextEvent 语义域 + selection key 存活面（textInput 族 2P→16P）**。
 
 **M3 尾簇 31（2026-10-06，本轮）——TextEvent 语义域 + selection key 存活面（textInput 族 2P→16P）**。
 五件（engine shim ×4 + page-runtime/webview/runner Rust 面）：

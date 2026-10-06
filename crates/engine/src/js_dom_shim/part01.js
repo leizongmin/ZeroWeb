@@ -4826,6 +4826,41 @@
       bubbles: true, cancelable: false, data: null, inputType: 'deleteContentBackward', isComposing: false
     }));
   };
+  // CE ForwardDelete（尾簇 32——Delete 键的 CE 面，deleteContentForward 语义；WPT
+  // uievents/textInput delete.html CE div 案「caret@1 删光标后一字符 → 'ac'」断言面）。
+  // mirror __zw_ce_delete：选区非空删选区；collapsed 删 caret **后**一个 UTF-16 单元
+  //（代理对安全）；caret 吸附原位（删除点不变）。文本节点边界（终点无后单元）no-op。
+  globalThis.__zw_ce_forward_delete = function(sel) {
+    var el = document.querySelector(sel);
+    if (!el || !globalThis.__zw_is_ce_host(el)) return;
+    var range = globalThis.__zw_ce_caret_range(el);
+    var sc = range.startContainer, so = range.startOffset | 0;
+    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText))) return;
+    var v = String(sc.nodeValue || '');
+    var start = so, end = range.collapsed ? so : (range.endOffset | 0);
+    if (start === end) {
+      if (end >= v.length) return; // 文本节点终点无后单元
+      end++;
+      var nxt = v.charCodeAt(end - 1);
+      if (nxt >= 0xDC00 && nxt <= 0xDFFF && end < v.length) {
+        var after = v.charCodeAt(end);
+        if (after >= 0xDC00 && after <= 0xDFFF) end++;
+      }
+    }
+    if (start === end) return;
+    var before = new InputEvent('beforeinput', {
+      bubbles: true, cancelable: true, data: null, inputType: 'deleteContentForward', isComposing: false
+    });
+    if (el.dispatchEvent(before) === false) return;
+    sc.nodeValue = v.slice(0, start) + v.slice(end);
+    var nr = document.createRange();
+    nr.setStart(sc, start);
+    nr.collapse(true);
+    if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    el.dispatchEvent(new InputEvent('input', {
+      bubbles: true, cancelable: false, data: null, inputType: 'deleteContentForward', isComposing: false
+    }));
+  };
   // CE Enter 换行（R3254-M2 切片 3，editing goal，2026-09-07）：caret 处插 `<br>`
   //（insertLineBreak 语义；insertParagraph 的块级拆分 defer——SetInnerHtml 单域内
   // 重排的块结构拆分需父域选择器，记录限制）。实现：宿主 innerHTML（R380 融合

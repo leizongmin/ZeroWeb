@@ -8158,6 +8158,17 @@ fn apply_testdriver_command(
         }
         "send_keys" => {
             let text = command.text.as_deref().unwrap_or_default();
+            // 尾簇 32：send_keys 入口**自聚焦目标**（WebDriver send keys 语义——键事件
+            // 与激活归属目标元素；真实浏览器 per-element send 先聚焦）。多 promise_test
+            // 交错 focus 的组合时序下（WPT uievents/interface/keyboard-click-event 4 子测
+            // 各 focus 自己的元素后并发排队），前序 focus 覆盖 → 激活管线（空格/Enter 对
+            // button 的 click 合成）焦点归属错位 → click 不发 → EventWatcher 门铃永挂。
+            // slice22 焦点治理通道（__zw_host_focus）——页面可见焦点状态同步 + 焦点事件
+            // 派发同流。
+            if !selector.is_empty() {
+                let focus_script = zero_engine::script_host_focus(&selector, true);
+                let _ = webview.execute_script(&focus_script);
+            }
             // R3254-K2 残余切片 4（keyboard goal，2026-09-07）：send_keys 串内修饰键
             // 持久化——修饰字符设置状态位，后续普通字符的事件对继承（WPT
             // keypress-not-fired-for-modifier-shortcuts.html 的 `uE009 + 'v'` 复合序）。
@@ -8350,7 +8361,13 @@ fn apply_testdriver_command(
                         // 提交族绿面）。R108 pre-click activation 经 PE 原型链接通——
                         // buttonish 无 checked 态、激活目标查找（checkbox/radio）恒
                         // miss，checked 双翻转历史坑不适用。
-                        let enter_formless_buttonish = character == '\u{E007}'
+                        // 尾簇 32：uE006（WebDriver Return）同 Enter——formless
+                        // buttonish 激活面与 uE007 一致（WPT
+                        // uievents/interface/keyboard-click-event 的 keyMapping 写
+                        // uE006——submit 动作对 formless button noop(NotApplicable)
+                        // 使 send_keys 链 reject/挂）。
+                        let enter_formless_buttonish = (character == '\u{E007}'
+                            || character == '\u{E006}')
                             && webview
                                 .execute_script(&zero_engine::script_buttonish_probe(&selector))
                                 .map(|v| v.trim() == "1")
@@ -8359,6 +8376,12 @@ fn apply_testdriver_command(
                                 .execute_script(&zero_engine::script_enclosing_form_probe(&selector))
                                 .map(|v| v.trim() != "1")
                                 .unwrap_or(false);
+                        // 尾簇 32：动作 noop（NotApplicable——formless input 的
+                        // Submit 等）不中断键事件序——**keyup 恒派**（UI Events 键事件
+                        // 序 keydown → （默认动作可有可无）→ keyup；旧版 return 跳过
+                        // keyup 使页面 keyup 门铃永挂（WPT uievents/textInput
+                        // enter-input 的 no-textInput 驱动））。
+                        let mut action_error = None;
                         if enter_formless_buttonish {
                             let click_detail = zero_engine::DomEventDetail {
                                 pointer_type: Some(String::new()),
@@ -8368,7 +8391,11 @@ fn apply_testdriver_command(
                             let click_script =
                                 zero_engine::script_dispatch_dom_event(&selector, "click", Some(&click_detail));
                             let _ = webview.execute_script(&click_script);
-                        } else if let Some(error) = dispatch_action(webview, target, action) {
+                        } else {
+                            action_error = dispatch_action(webview, target, action);
+                        }
+                        if let Some(error) = action_error {
+                            dispatch_key_event_script(webview, &selector, "keyup", &key_detail);
                             return Some(error);
                         }
                     }

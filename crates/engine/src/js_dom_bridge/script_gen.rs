@@ -951,6 +951,15 @@ pub fn script_contenteditable_delete(selector: &str) -> String {
     format!("__zw_ce_delete('{esc_sel}')")
 }
 
+/// 构造「contenteditable 宿主 ForwardDelete」的宿主脚本（uievents-compat 尾簇 32）。
+///
+/// shim `__zw_ce_forward_delete(sel)`：选区非空删选区；collapsed 删 caret 后一个
+/// UTF-16 单元（deleteContentForward 语义）并派发 beforeinput/input。
+pub fn script_contenteditable_forward_delete(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!("__zw_ce_forward_delete('{esc_sel}')")
+}
+
 /// 构造「探测元素是否 contenteditable 宿主」的宿主脚本（R3254-M2 切片 2）。
 ///
 /// 返 '1'（是宿主——自身或祖先 contenteditable=true）或 ''（否）。InsertText/
