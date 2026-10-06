@@ -1045,16 +1045,25 @@
           // WC-M1 切片 4：customized built-in 优先——parser 产物 `<a is="my-a">` 的 is
           // 内容属性命中 registry（localName 匹配）→ 用户 ctor.prototype（spec
           // concept-create-element：parser 升级 customized built-in）。
-          var _wcIsN = null;
-          try {
-            _wcIsN = (handle && typeof __zw_get_attr_handle === 'function')
-              ? __zw_get_attr_handle(handle, 'is')
-              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'is') : null);
-          } catch (_eIsGp) { _wcIsN = null; }
-          if (_wcIsN && globalThis.__zwCERegistryLookup) {
-            var _wcIsEntry = globalThis.__zwCERegistryLookup(String(_wcIsN), _r90Tag);
-            if (_wcIsEntry && _wcIsEntry.ctor && _wcIsEntry.ctor.prototype) {
-              return _wcIsEntry.ctor.prototype;
+          // t7（bilibili 稳态轮询满核）：registry 空（_ce_registry_gen=0，绝大多数
+          // 页面）时 `__zwCERegistryLookup` 对任意 is 值恒 null——探测结果不可能改变
+          // 本 trap 的返回（回落 iface 链不变），跳过 `__zw_get_attr_*` 宿主往返。此
+          // trap 在 R98 分支的**每次字符串属性读**都被 `Object.getPrototypeOf` 触发
+          //（bilibili 首页稳态 ~800 元素 × 每属性读 1-2 次探测 = 每循环 ~50ms，
+          // gTN 过滤循环 3 属性 × 全量元素 ≈ 120ms/次满核主源）。门控先例
+          // part04 `var _ceSetEntry = _ce_registry_gen ? _ceEntryFor(...) : null`。
+          if (_ce_registry_gen) {
+            var _wcIsN = null;
+            try {
+              _wcIsN = (handle && typeof __zw_get_attr_handle === 'function')
+                ? __zw_get_attr_handle(handle, 'is')
+                : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'is') : null);
+            } catch (_eIsGp) { _wcIsN = null; }
+            if (_wcIsN && globalThis.__zwCERegistryLookup) {
+              var _wcIsEntry = globalThis.__zwCERegistryLookup(String(_wcIsN), _r90Tag);
+              if (_wcIsEntry && _wcIsEntry.ctor && _wcIsEntry.ctor.prototype) {
+                return _wcIsEntry.ctor.prototype;
+              }
             }
           }
           var _r90Ctor = globalThis.customElements.get(_r90Tag);
@@ -9964,6 +9973,10 @@
     try { if (typeof globalThis._zwSiblingBaseInvalidateAll === 'function') globalThis._zwSiblingBaseInvalidateAll(); } catch (_e358sb) {}
     // R-baidu3：批量 tag 缓存随快照换代作废（sel→元素绑定可能变化）。
     _zwTagCache = null;
+    // t7/D2（PR90 审查）：ns 表同代作废——换代后印章 (gen,added,removed) 可能
+    // 相等（如新文档首快照），旧文档 ns 表不得跨代服务；置失配态走懒填充重灌。
+    _zwSelNsCache.gen = -1;
+    _zwSelNsCache.map = new Map();
   };
   // R379/pa2b（js-dom M4）：**apply 代际换代钩子**——host `apply_pending_shared_mutations`
   // 完成后调用（pending-apply RFC pa2 的 host→shim 回调链半边）。与
@@ -11444,6 +11457,7 @@
     var _pendingEmpty = (typeof _zwPendingAdded === 'undefined' || !_zwPendingAdded || _zwPendingAdded.length === 0);
     if (_stamp && _pendingEmpty && _zwDocAllSnapEls && _zwDocAllSnapStamp === _stamp) {
       _zwTagCacheSet(_zwDocAllSnapEls.tmap);
+      _zwSelNsCacheSet(_zwDocAllSnapEls.nsmap);
       return _zwDocAllSnapEls.els;
     }
     var out = [];
@@ -11457,8 +11471,9 @@
     };
     var snapCount = 0;
     try {
-      // R-baidu3：优先 tagged 形态（sel\x1ftag 记录）——一次往返取全量 sel+tag，灌
-      // _zwTagCache 供 _realTag 零往返命中。宿主未提供 tagged 回调 → 旧
+      // R-baidu3：优先 tagged 形态（sel\x1ftag[\x1fns] 记录——t7 起非 HTML ns 附第三
+      // 段）——一次往返取全量 sel+tag(+ns)，灌 _zwTagCache 供 _realTag 零往返命中、灌
+      // _zwSelNs 缓存供过滤循环 namespaceURI 读零往返。宿主未提供 tagged 回调 → 旧
       // __zw_query_all 形态（纯 sel）原样回落。
       var tagged = (typeof __zw_query_all_tagged === 'function') ? String(__zw_query_all_tagged('*') || '') : '';
       if (tagged && _zwDocAllSnapEls && _zwDocAllSnapEls.payload === tagged) {
@@ -11471,6 +11486,7 @@
         // tag 表内容只随宿主视图变（payload 相同即新鲜），与 pending 长度无关——
         // pending 元素走 handle 链（sel=null 不查本表），不受本章影响。
         _zwTagCacheSet(_zwDocAllSnapEls.tmap);
+        _zwSelNsCacheSet(_zwDocAllSnapEls.nsmap);
         snapCount = _zwDocAllSnapEls.els.length;
         for (var ci = 0; ci < _zwDocAllSnapEls.els.length; ci++) {
           push(_zwDocAllSnapEls.els[ci]);
@@ -11480,14 +11496,24 @@
         var sels = all ? all.split('|').filter(Boolean) : [];
         snapCount = sels.length;
         var _tmap = null;
+        var _nsmap = null;
         if (tagged) {
           _tmap = new Map();
+          // t7：同趟解析 sel→ns 表（第三段缺席即 HTML ns 归一 ''——与 `_zwSelNs`
+          // 探测归一约定逐值一致；宿主仅对非 HTML ns 发第三段）。全量条目灌注后，
+          // `_zwFilterByTagNameNS` 过滤循环的 namespaceURI 读在本视图内零宿主往返。
+          _nsmap = new Map();
           for (var ti = 0; ti < sels.length; ti++) {
             var _sep = sels[ti].indexOf('\x1f');
             if (_sep < 0) continue;
-            _tmap.set(sels[ti].slice(0, _sep), sels[ti].slice(_sep + 1));
+            var _tsel = sels[ti].slice(0, _sep);
+            var _rest = sels[ti].slice(_sep + 1);
+            var _sep2 = _rest.indexOf('\x1f');
+            _tmap.set(_tsel, _sep2 < 0 ? _rest : _rest.slice(0, _sep2));
+            _nsmap.set(_tsel, _sep2 < 0 ? '' : _rest.slice(_sep2 + 1));
           }
           _zwTagCacheSet(_tmap);
+          _zwSelNsCacheSet(_nsmap);
         }
         var _built = [];
         for (var i = 0; i < sels.length; i++) {
@@ -11501,7 +11527,7 @@
           } catch (_e) {}
         }
         if (tagged) {
-          _zwDocAllSnapEls = { payload: tagged, els: _built, tmap: _tmap };
+          _zwDocAllSnapEls = { payload: tagged, els: _built, tmap: _tmap, nsmap: _nsmap };
           _zwDocAllSnapStamp = _stamp;
           _zwAllArrays.add(_built);
         }

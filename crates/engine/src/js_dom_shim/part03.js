@@ -8242,6 +8242,18 @@
   // R-baidu3 风暴路径预防：同视图内重复枚举零宿主往返；印章不符即整体失效，语义与
   // 逐元素宿主查询一致）。
   var _zwSelNsCache = { gen: -1, added: -1, removed: -1, map: new Map() };
+  // t7（bilibili 稳态轮询满核）：_zwSelNs 的批量灌注口——`__zw_query_all_tagged`
+  // payload（sel\x1ftag[\x1fns]）在 _zwDocAllElements 枚举时一次往返建全量 sel→ns
+  // 表。缺此通道时轮询页每次视图换代印章失效 → 过滤循环对全量元素逐个
+  // `__zw_get_ns` 宿主往返（bilibili ~900 元素 × ~0.25ms ≈ 200ms/次 gTN，每次
+  // 视图换代首调全价 → 持续满核）。印章语义与 `_zwTagCacheSet` 完全同款
+  //（apply 代际 + pending 记账）；payload 相同即同一宿主视图，值与逐元素探测同源。
+  function _zwSelNsCacheSet(map) {
+    _zwSelNsCache.gen = _zwApplyGeneration();
+    _zwSelNsCache.added = _zwPendingAdded.length;
+    _zwSelNsCache.removed = _zwPendingRemoved.length;
+    _zwSelNsCache.map = map;
+  }
   // SVG className IDL：per-element SVGAnimatedString 缓存（[SameObject]——同一 SVG 元素
   // 每次 className 读返同一对象；key = 元素 key，与 _classCache 同域）。声明于 _zwSelNs
   // 旁（消费点 get trap className 与 set trap no-op 共用其存在语义，见 part03/part04）。

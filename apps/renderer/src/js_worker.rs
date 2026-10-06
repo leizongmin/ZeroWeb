@@ -833,6 +833,117 @@ fn survives_document_reset(cmd: &JsWorkerCommand, reset_seq: u64) -> bool {
     }
 }
 
+/// t7 诊断基座：js worker 命令成本普查（`ZW_JS_WORKER_CENSUS` 启用）。
+/// 按命令类型累计「执行次数 / 累计耗时 / 单次最大耗时」，窗口 ≥5s 输出一行，
+/// 用于把稳态满核分解为可排序的成本桶。纯观测：默认关闭，关闭时每命令仅一次
+/// bool 判断；开启时每命令开销为两次 `Instant::now` + 一次哈希增量。
+/// 输出三态：值 `1`/`true` → tracing INFO（renderer stderr 在多进程下进有界 tail
+/// 缓冲，平时不可见）；空串与 `0`/`false`/`off`（任意大小写）→ 关闭；其余非空值
+/// 视为路径 → 追加写该文件（诊断采集用侧信道）。
+struct WorkerCensus {
+    enabled: bool,
+    sink: Option<std::path::PathBuf>,
+    window_start: std::time::Instant,
+    buckets: HashMap<&'static str, (u64, u128, u128)>,
+}
+
+impl WorkerCensus {
+    fn new() -> Self {
+        let value = zero_runtime_config::optional_string("ZW_JS_WORKER_CENSUS");
+        let truthy = value
+            .as_deref()
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        // falsy 值与 truthy 值都不当作 sink 路径——否则 `CENSUS=0` 意外启用文件
+        // 写、`CENSUS=1` 会在 cwd 留下名为 `1` 的垃圾文件（PR90 复核发现）。
+        let sink = value
+            .filter(|v| !truthy && !(v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("off")))
+            .map(std::path::PathBuf::from);
+        Self {
+            enabled: truthy || sink.is_some(),
+            sink,
+            window_start: std::time::Instant::now(),
+            buckets: HashMap::new(),
+        }
+    }
+
+    fn kind(cmd: &JsWorkerCommand) -> &'static str {
+        match cmd {
+            JsWorkerCommand::Execute { .. } => "Execute",
+            JsWorkerCommand::ExecuteModule { .. } => "ExecuteModule",
+            JsWorkerCommand::SetDomSnapshot { .. } => "SetDomSnapshot",
+            // 响应派发按 payload 规模分桶——区分「少量巨大响应」与「每个响应都贵」。
+            JsWorkerCommand::ResolveAsyncCallback { result, .. } => {
+                if result.len() < 1_000 {
+                    "ResolveAsyncCallback[<1KB]"
+                } else if result.len() < 10_000 {
+                    "ResolveAsyncCallback[1-10KB]"
+                } else if result.len() < 100_000 {
+                    "ResolveAsyncCallback[10-100KB]"
+                } else {
+                    "ResolveAsyncCallback[>100KB]"
+                }
+            }
+            JsWorkerCommand::SetFetchHandler { .. } => "SetFetchHandler",
+            JsWorkerCommand::SetVideoPlayers { .. } => "SetVideoPlayers",
+            JsWorkerCommand::SetWebAudio { .. } => "SetWebAudio",
+            JsWorkerCommand::ResetDocumentState { .. } => "ResetDocumentState",
+            JsWorkerCommand::SetViewportHint { .. } => "SetViewportHint",
+            JsWorkerCommand::DispatchIndexedDbConnectionEvent { .. } => "DispatchIndexedDbConnectionEvent",
+            JsWorkerCommand::Shutdown => "Shutdown",
+        }
+    }
+}
+
+/// 借用普查表，在作用域结束（该命令处理完成）时入账；窗口期满即输出并重置。
+/// 输出按累计耗时降序——饱和大头一眼可见；busy% = Σ执行耗时 / 墙钟。
+struct WorkerCensusGuard<'a> {
+    census: &'a mut WorkerCensus,
+    kind: &'static str,
+    started: std::time::Instant,
+}
+
+impl WorkerCensusGuard<'_> {
+    fn report(census: &mut WorkerCensus) {
+        let wall = census.window_start.elapsed();
+        if wall < std::time::Duration::from_secs(5) || census.buckets.is_empty() {
+            return;
+        }
+        let mut rows: Vec<(&'static str, (u64, u128, u128))> = census.buckets.drain().collect();
+        rows.sort_by_key(|(_, (_, total, _))| std::cmp::Reverse(*total));
+        let mut total_ns: u128 = 0;
+        let mut parts: Vec<String> = Vec::with_capacity(rows.len());
+        for (name, (n, total, max)) in rows {
+            total_ns += total;
+            parts.push(format!(
+                "{name}{{n={n},t={}ms,max={}ms}}",
+                total / 1_000_000,
+                max / 1_000_000
+            ));
+        }
+        let busy = 100 * total_ns / wall.as_nanos().max(1);
+        let line = format!("worker busy={busy}% wall={}ms {}", wall.as_millis(), parts.join(" "));
+        tracing::info!(target: "js_worker_census", "{line}");
+        if let Some(path) = &census.sink
+            && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path)
+        {
+            use std::io::Write as _;
+            let _ = writeln!(f, "{line}");
+        }
+        census.window_start = std::time::Instant::now();
+    }
+}
+
+impl Drop for WorkerCensusGuard<'_> {
+    fn drop(&mut self) {
+        let elapsed = self.started.elapsed();
+        let entry = self.census.buckets.entry(self.kind).or_insert((0, 0, 0));
+        entry.0 += 1;
+        entry.1 += elapsed.as_nanos();
+        entry.2 = entry.2.max(elapsed.as_nanos());
+        Self::report(self.census);
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // Thread-owned bridges are explicit at the single worker bootstrap boundary.
 fn js_worker_main(
     cmd_rx: Receiver<JsWorkerCommand>,
@@ -1040,6 +1151,7 @@ fn js_worker_main(
     // 教训在此结构性免疫），且通道回送会让复位臂执行期间新到的命令插队到回送命令
     // 之前、破坏快照+执行的成对序——本地队列保持原相对序，下一轮分派最先消费。
     let mut retained_after_reset: VecDeque<JsWorkerCommand> = VecDeque::new();
+    let mut census = WorkerCensus::new();
     loop {
         let next_cmd = 'dispatch: loop {
             // F1：复位臂存活的滞留命令按原序先于一切新到命令续派。
@@ -1072,6 +1184,12 @@ fn js_worker_main(
             }
         };
         let Some(cmd) = next_cmd else { break };
+        // t7 诊断基座：命令处理全程计时，Drop 入账（关闭时零开销跳过）。
+        let _census = census.enabled.then(|| WorkerCensusGuard {
+            census: &mut census,
+            kind: WorkerCensus::kind(&cmd),
+            started: std::time::Instant::now(),
+        });
         match cmd {
             JsWorkerCommand::Execute { script, reply, .. } => {
                 #[cfg(test)]

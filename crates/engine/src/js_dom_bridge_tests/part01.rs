@@ -742,6 +742,44 @@ fn test_query_all_selector_list_unique() {
 }
 
 #[test]
+fn test_query_all_tagged_list_ns_fields() {
+    // t7：tagged payload 记录格式 `sel\x1ftag[\x1fns]`——HTML ns 元素两段（第三段
+    // 缺席即 HTML ns，与 shim `_zwSelNs` 的 XHTML→'' 归一约定对接）；foreign content
+    //（svg/math 解析产物）三段且 ns 为宿主权威值（与 `__zw_get_ns` 同源
+    // `Element::namespace()`）。shim 侧 `_zwFilterByTagNameNS` 过滤循环凭第三段
+    // 批量灌注的 sel→ns 表免逐元素 `__zw_get_ns` 宿主往返。
+    // https://dom.spec.whatwg.org/#concept-getelementsbytagnamens
+    let html = "<html><body><div id='d'>x</div>\
+                <svg id='s'><circle id='c'></circle></svg>\
+                <math id='m'></math></body></html>";
+    let list = query_all_tagged_list_doc(&parse_html(html), "*");
+    let recs: Vec<&str> = list.split('|').collect();
+    let find = |frag: &str| -> Vec<&str> {
+        recs.iter()
+            .find(|r| r.starts_with(frag))
+            .expect("记录应存在")
+            .split('\x1f')
+            .collect()
+    };
+    // HTML ns：恰好两段（无第三段）。
+    let div = find("#d");
+    assert_eq!(div.len(), 2, "HTML ns 元素不带 ns 段");
+    assert_eq!(div[1], "div");
+    // SVG：三段，ns = SVG 权威值；svg 子元素继承 SVG ns。
+    let svg = find("#s");
+    assert_eq!(svg.len(), 3, "SVG 元素应附 ns 第三段");
+    assert_eq!(svg[1], "svg");
+    assert_eq!(svg[2], "http://www.w3.org/2000/svg");
+    let circle = find("#c");
+    assert_eq!(circle.len(), 3);
+    assert_eq!(circle[2], "http://www.w3.org/2000/svg");
+    // MathML：三段。
+    let math = find("#m");
+    assert_eq!(math.len(), 3);
+    assert_eq!(math[2], "http://www.w3.org/1998/Math/MathML");
+}
+
+#[test]
 fn test_element_matches_test_selector() {
     let html = "<html><body>\
                     <div id='outer' class='row'><div id='inner' class='cell active'>x</div></div>\
