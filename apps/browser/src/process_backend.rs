@@ -2185,6 +2185,7 @@ mod navigation_contract_tests {
             .collect(),
             parents: [(2, 1)].into_iter().collect(),
             hidden_nodes: Vec::new(),
+            pe_none_nodes: Vec::new(),
         });
 
         ProcessTabBackend::apply_inbound_message(

@@ -6,7 +6,7 @@ use slotmap::{Key, KeyData};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
 use zero_style_system::ComputedStyle;
-use zero_style_system::property::types::VisibilityValue;
+use zero_style_system::property::types::{PointerEventsValue, VisibilityValue};
 
 /// slice15（R4384）：inline 命中面 kill-switch（默认开，"0" 回退布局树行盒几何）。
 /// 关断后命中遍历忽略 `inline_reported_rect`，恢复 slice13 返修语义（行盒几何命中面）。
@@ -45,15 +45,30 @@ fn is_hidden_style(styles: &HashMap<NodeId, ComputedStyle>, node: NodeId) -> boo
         .is_some_and(|style| matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse))
 }
 
-/// 命中遍历共享上下文：查询点 + 不可见谓词。
+/// 元素 computed pointer-events 是否为 none：盒自身不是命中目标（鼠标/elementFromPoint
+/// 穿透），后代显式 `pointer-events: auto` 恢复可命中——与 visibility 同构（候选资格
+/// 剥夺 + 继续下探）。真站实证：bilibili 轮播遮罩 `pointer-events:none` 盖住搜索框，
+/// 命中未穿透致点击路由命中遮罩、焦点不迁移、键入不落值。
+/// https://drafts.csswg.org/css-ui-4/#pointer-events
+fn is_pe_none_style(styles: &HashMap<NodeId, ComputedStyle>, node: NodeId) -> bool {
+    styles
+        .get(&node)
+        .is_some_and(|style| style.pointer_events == PointerEventsValue::None)
+}
+
+/// 命中遍历共享上下文：查询点 + 候选资格谓词。
 ///
 /// CSS Visibility：hidden/collapse 盒不参与命中，但后代显式 `visibility: visible` 仍可命中
 /// ——递归不剪枝，仅剥夺盒自身的候选资格。 https://drafts.csswg.org/css-visibility/#visibility
+/// CSS pointer-events（css-ui-4）：`none` 盒同构——自身非命中目标，后代显式 `auto` 恢复。
+/// https://drafts.csswg.org/css-ui-4/#pointer-events
 struct HitWalk<'a> {
     point_x: f32,
     point_y: f32,
     /// 盒 node_id → 是否不可见。live 树按 computed style 判定；缓存树按构建期集合判定。
     is_hidden: &'a dyn Fn(NodeId) -> bool,
+    /// 盒 node_id → 是否 `pointer-events: none`（同构语义，见 struct 文档）。
+    is_pe_none: &'a dyn Fn(NodeId) -> bool,
 }
 
 /// 主线程只读命中测试快照（由 tab worker 在推送快照时构建）。
@@ -66,6 +81,9 @@ pub struct HitTestCache {
     /// 构建期 computed visibility hidden/collapse 的元素（快照导出为 `hidden_nodes`，
     /// 跨进程恢复后语义一致）。
     hidden: HashSet<NodeId>,
+    /// 构建期 computed `pointer-events: none` 的元素（快照导出为 `pe_none_nodes`，
+    /// 跨进程恢复后语义一致）。https://drafts.csswg.org/css-ui-4/#pointer-events
+    pe_none: HashSet<NodeId>,
 }
 
 #[derive(Debug, Clone)]
@@ -103,6 +121,16 @@ impl HitTestCache {
                 })
                 .map(|(id, _)| *id)
                 .collect(),
+            pe_none: styles
+                .iter()
+                .filter(|(id, style)| {
+                    style.pointer_events == PointerEventsValue::None
+                        && doc
+                            .get(**id)
+                            .is_some_and(|data| matches!(data.kind, NodeKind::Element(_)))
+                })
+                .map(|(id, _)| *id)
+                .collect(),
         }
     }
 
@@ -112,6 +140,7 @@ impl HitTestCache {
             point_x: x,
             point_y: y,
             is_hidden: &|n| self.hidden.contains(&n),
+            is_pe_none: &|n| self.pe_none.contains(&n),
         };
         let mut best = (0, self.doc_root);
         deepest_node_at(&self.layout_root, 0.0, 0.0, 0, &mut best, &walk);
@@ -124,6 +153,7 @@ impl HitTestCache {
             point_x: x,
             point_y: y,
             is_hidden: &|n| self.hidden.contains(&n),
+            is_pe_none: &|n| self.pe_none.contains(&n),
         };
         let mut best = (0, self.doc_root);
         deepest_node_at(&self.layout_root, 0.0, 0.0, 0, &mut best, &walk);
@@ -136,6 +166,7 @@ impl HitTestCache {
             point_x: x,
             point_y: y,
             is_hidden: &|n| self.hidden.contains(&n),
+            is_pe_none: &|n| self.pe_none.contains(&n),
         };
         let mut best = (0, self.doc_root);
         deepest_node_at(&self.layout_root, 0.0, 0.0, 0, &mut best, &walk);
@@ -153,6 +184,7 @@ impl HitTestCache {
             point_x: x,
             point_y: y,
             is_hidden: &|n| self.hidden.contains(&n),
+            is_pe_none: &|n| self.pe_none.contains(&n),
         };
         let mut hits: Vec<(usize, NodeId)> = Vec::new();
         collect_nodes_at(&self.layout_root, 0.0, 0.0, 0, &mut hits, &walk);
@@ -195,6 +227,7 @@ impl HitTestCache {
                 .collect(),
             parents: self.parents.iter().map(|(c, p)| (*c, *p)).collect(),
             hidden_nodes: self.hidden.iter().map(|id| node_id_to_u64(*id)).collect(),
+            pe_none_nodes: self.pe_none.iter().map(|id| node_id_to_u64(*id)).collect(),
         }
     }
 
@@ -222,6 +255,7 @@ impl HitTestCache {
                 .collect(),
             parents: snap.parents.into_iter().collect(),
             hidden: snap.hidden_nodes.into_iter().map(node_id_from_u64).collect(),
+            pe_none: snap.pe_none_nodes.into_iter().map(node_id_from_u64).collect(),
         }
     }
 
@@ -314,6 +348,9 @@ pub struct HitTestCacheSnapshot {
     pub parents: Vec<(NodeId, NodeId)>,
     /// computed visibility hidden/collapse 的元素（[`node_id_to_u64`] 编码；命中穿透）。
     pub hidden_nodes: Vec<u64>,
+    /// computed `pointer-events: none` 的元素（[`node_id_to_u64`] 编码；命中穿透）。
+    /// https://drafts.csswg.org/css-ui-4/#pointer-events
+    pub pe_none_nodes: Vec<u64>,
 }
 
 fn layout_snapshot_from_box(layout: &LayoutBox) -> HitTestLayoutSnapshot {
@@ -527,6 +564,7 @@ fn deepest_node_at(
     if contains
         && let Some(node_id) = layout.node_id
         && !(walk.is_hidden)(node_id)
+        && !(walk.is_pe_none)(node_id)
         && depth >= best.0
     {
         *best = (depth, node_id);
@@ -565,6 +603,7 @@ fn collect_nodes_at(
     if contains
         && let Some(node_id) = layout.node_id
         && !(walk.is_hidden)(node_id)
+        && !(walk.is_pe_none)(node_id)
     {
         out.push((depth, node_id));
     }
@@ -736,6 +775,7 @@ pub fn hit_test_link(
         point_x: x,
         point_y: y,
         is_hidden: &|n| is_hidden_style(styles, n),
+        is_pe_none: &|n| is_pe_none_style(styles, n),
     };
     let mut best = (0, doc.root());
     deepest_node_at(layout, 0.0, 0.0, 0, &mut best, &walk);
@@ -754,6 +794,7 @@ pub fn hit_test_image(
         point_x: x,
         point_y: y,
         is_hidden: &|n| is_hidden_style(styles, n),
+        is_pe_none: &|n| is_pe_none_style(styles, n),
     };
     let mut best = (0, doc.root());
     deepest_node_at(layout, 0.0, 0.0, 0, &mut best, &walk);
@@ -772,6 +813,7 @@ pub fn hit_test_element(
         point_x: x,
         point_y: y,
         is_hidden: &|n| is_hidden_style(styles, n),
+        is_pe_none: &|n| is_pe_none_style(styles, n),
     };
     let mut best = (0, doc.root());
     deepest_node_at(layout, 0.0, 0.0, 0, &mut best, &walk);
@@ -1404,6 +1446,7 @@ mod tests {
             point_x: 10.0,
             point_y: 10.0,
             is_hidden: &|n| is_hidden_style(&styles, n),
+            is_pe_none: &|n| is_pe_none_style(&styles, n),
         };
         let mut best = (0usize, doc.root());
         deepest_node_at(&layout.root, 0.0, 0.0, 0, &mut best, &walk);
@@ -1563,5 +1606,64 @@ mod tests {
         </body></html>"#;
         let (doc, layout, styles) = render_with_styles(html, "");
         assert!(hit_test_link(&doc, &layout.root, &styles, 50.0, 30.0).is_none());
+    }
+
+    /// `pointer-events: none` 遮罩盖住 input：命中穿透到 input（bilibili 轮播遮罩
+    /// 盖搜索框实站场景最小化——遮罩 absolute+pe:none 盖导航区，点击须路由到
+    /// input 而非遮罩）。live 与缓存路径 + 跨进程快照往返语义一致。
+    /// https://drafts.csswg.org/css-ui-4/#pointer-events
+    #[test]
+    fn pe_none_overlay_penetrates_to_input() {
+        let html = r#"<html><body>
+            <input id="q" style="position:absolute; left:10px; top:10px; width:160px; height:24px;">
+            <div id="mask" style="position:absolute; left:0px; top:0px; width:200px; height:100px; pointer-events:none;">mask</div>
+        </body></html>"#;
+        let (doc, layout, styles) = render_with_styles(html, "");
+        let hit = hit_test_element(&doc, &layout.root, &styles, 80.0, 20.0).expect("hit input");
+        assert_eq!(hit.id.as_deref(), Some("q"), "pe:none 遮罩下应命中 input");
+        let cache = HitTestCache::from_document(&doc, &layout.root, &styles);
+        assert_eq!(
+            cache.hit_test_element(80.0, 20.0).expect("hit input").id.as_deref(),
+            Some("q"),
+            "缓存路径与 live 路径一致"
+        );
+        let stack = cache.elements_at_point(80.0, 20.0);
+        assert!(
+            stack.iter().all(|h| h.id.as_deref() != Some("mask")),
+            "elementsAtPoint 序列不应含 pe:none 遮罩: {:?}",
+            stack.iter().map(|h| h.id.clone()).collect::<Vec<_>>()
+        );
+        let restored = HitTestCache::from_snapshot(cache.snapshot());
+        assert_eq!(
+            restored.hit_test_element(80.0, 20.0).expect("hit input").id.as_deref(),
+            Some("q"),
+            "跨进程快照往返后语义一致"
+        );
+    }
+
+    /// `pointer-events: none` 元素自身位置命中穿透到下层元素。
+    #[test]
+    fn pe_none_element_itself_penetrates() {
+        let html = r#"<html><body>
+            <div id="target" style="position:absolute; left:0px; top:0px; width:200px; height:100px;">t</div>
+            <div id="ghost" style="position:absolute; left:0px; top:0px; width:200px; height:100px; pointer-events:none;">ghost</div>
+        </body></html>"#;
+        let (doc, layout, styles) = render_with_styles(html, "");
+        let hit = hit_test_element(&doc, &layout.root, &styles, 100.0, 50.0).expect("hit target");
+        assert_eq!(hit.id.as_deref(), Some("target"), "pe:none 层应穿透到下层 target");
+    }
+
+    /// pe:none 祖先 + 显式 `pointer-events: auto` 后代：后代仍可命中（与 visibility
+    /// hidden/visible 同构：候选资格剥夺仅作用于盒自身，递归不剪枝）。
+    #[test]
+    fn pe_auto_descendant_of_pe_none_ancestor_still_hit() {
+        let html = r#"<html><body>
+            <div id="panel" style="position:absolute; left:0px; top:0px; width:200px; height:100px; pointer-events:none;">
+                <a id="link" href="/p2" style="position:absolute; left:10px; top:10px; width:100px; height:40px; pointer-events:auto;">go</a>
+            </div>
+        </body></html>"#;
+        let (doc, layout, styles) = render_with_styles(html, "");
+        let hit = hit_test_element(&doc, &layout.root, &styles, 50.0, 30.0).expect("hit link");
+        assert_eq!(hit.id.as_deref(), Some("link"), "显式 auto 后代仍可命中");
     }
 }

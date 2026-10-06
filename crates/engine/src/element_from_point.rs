@@ -177,6 +177,7 @@ mod tests {
             ],
             parents: vec![(id2, id1)],
             hidden_nodes: Vec::new(),
+            pe_none_nodes: Vec::new(),
         };
         HitTestCache::from_snapshot(snap)
     }

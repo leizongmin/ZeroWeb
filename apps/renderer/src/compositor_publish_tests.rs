@@ -68,6 +68,7 @@ fn sample_frame() -> zero_page_runtime::FrameModel {
             )],
             parents: Vec::new(),
             hidden_nodes: Vec::new(),
+            pe_none_nodes: Vec::new(),
         })),
     }
 }
