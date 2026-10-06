@@ -42,9 +42,9 @@
     },
     {
       "id": "mb/zero-browser-shell/history_search_1k",
-      "p95": 21.26686310004881,
+      "p95": 21.25994769429373,
       "tier": "budget",
-      "tightened_at": "2026-10-02T13:26:32Z"
+      "tightened_at": "2026-10-06T19:26:33Z"
     },
     {
       "id": "mb/zero-browser-shell/tab_creation_100",
@@ -77,9 +77,9 @@
     },
     {
       "id": "mb/zero-canvas/transform_chain_100",
-      "p95": 30852.877324749643,
+      "p95": 30783.075268817203,
       "tier": "budget",
-      "tightened_at": "2026-09-29T19:28:27Z"
+      "tightened_at": "2026-10-06T19:26:33Z"
     },
     {
       "id": "mb/zero-css-parser/complex_selector_parse_100",
@@ -219,9 +219,9 @@
     },
     {
       "id": "mb/zero-host-runtime/create_100_window_configs",
-      "p95": 6550.094805578696,
+      "p95": 6545.515550781716,
       "tier": "budget",
-      "tightened_at": "2026-09-29T19:28:27Z"
+      "tightened_at": "2026-10-06T19:26:33Z"
     },
     {
       "id": "mb/zero-host-runtime/host_runtime_new",
@@ -231,9 +231,9 @@
     },
     {
       "id": "mb/zero-host-runtime/window_config_builder_chain",
-      "p95": 16.207638202573193,
+      "p95": 16.173453529528018,
       "tier": "budget",
-      "tightened_at": "2026-10-04T15:15:48Z"
+      "tightened_at": "2026-10-06T19:26:33Z"
     },
     {
       "id": "mb/zero-host-runtime/window_config_default",
@@ -279,9 +279,9 @@
     },
     {
       "id": "mb/zero-net/cookie_parse",
-      "p95": 383.827434434883,
+      "p95": 383.60747466897476,
       "tier": "budget",
-      "tightened_at": "2026-10-05T13:26:34Z"
+      "tightened_at": "2026-10-06T19:26:33Z"
     },
     {
       "id": "mb/zero-net/navigation_navigate",
@@ -343,9 +343,9 @@
     },
     {
       "id": "mb/zero-render-foundation/frame_buffer/clear_1080p",
-      "p95": 1299900.3522727273,
+      "p95": 1299582.5,
       "tier": "budget",
-      "tightened_at": "2026-10-03T13:26:13Z"
+      "tightened_at": "2026-10-06T19:26:33Z"
     },
     {
       "id": "mb/zero-render-foundation/full_scene/raster_1500_fills_1080p",
@@ -361,9 +361,9 @@
     },
     {
       "id": "mb/zero-render-foundation/primitives/build_1000_fills",
-      "p95": 5340.771491899309,
+      "p95": 5316.8111990502575,
       "tier": "budget",
-      "tightened_at": "2026-10-06T13:28:26Z"
+      "tightened_at": "2026-10-06T19:26:33Z"
     },
     {
       "id": "mb/zero-script-sandbox/es_module_simple_export",
@@ -538,9 +538,9 @@
     },
     {
       "id": "mb/zero-webview/webview_builder_create",
-      "p95": 7374.66019668737,
+      "p95": 7342.928795442908,
       "tier": "budget",
-      "tightened_at": "2026-10-06T13:28:26Z"
+      "tightened_at": "2026-10-06T19:26:33Z"
     },
     {
       "id": "mb/zero-webview/webview_complex_page",
