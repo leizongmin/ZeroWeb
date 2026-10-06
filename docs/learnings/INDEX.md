@@ -5,8 +5,13 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（126）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（131）
 
+- 2026-10-07 [切分支后 cargo build 显示 Fresh 不能作为「base 代码」证据——多个 rlib fingerprint 变体并存](bugs/2026-10/2026-10-07-cargo-fresh-multirlib-not-base-evidence.md)
+- 2026-10-06 [make import-wpt 连锁 fetch-wpt-data 重建目录，静默抹掉未入 tag 的 media fixture](bugs/2026-10/2026-10-06-wpt-data-refetch-wipes-untracked-fixtures.md) — wpt-runner,build-support
+- 2026-10-06 [诊断轮换二进制：`-p zero-browser` 不重建 zero-renderer；build 未确认即跑 probe 用旧二进制](bugs/2026-10/2026-10-06-renderer-diag-binary-rebuild-scope-and-race.md) — renderer, build
+- 2026-10-06 [grep 遇日志内 NUL 字节静默转 binary 模式吞掉全部匹配行（打点"零命中"假象）](bugs/2026-10/2026-10-06-grep-binary-mode-nul-bytes-swallow-matches.md) — diagnostics
+- 2026-10-06 [getComputedStyle 每新 selector 全量 parse+cascade 压死真站 js worker（E14 停摆根因）](bugs/2026-10/2026-10-06-gcs-per-selector-full-recompute-real-site-worker-hang.md) — engine/js_dom_bridge, renderer/js_worker
 - 2026-10-05 [pgrep/pkill -f 自匹配静默卡死守候器并击杀自身 shell](bugs/2026-10/2026-10-05-pgrep-pkill-self-match-watchers.md) — rally-infra, docs/rally
 - 2026-10-02 [textContent= 突变后 gBCR 返回文本量盒——写路径注册副作用劫持读路径语义](bugs/2026-10/2026-10-02-textcontent-mutation-gbcr-identity-hijack.md) — engine
 - 2026-10-02 [日志写 stdout 管道无读取者：64KB 缓冲写满后全进程停摆](bugs/2026-10/2026-10-02-stdout-pipe-no-reader-logging-deadlock.md) — zero-browser
@@ -134,8 +139,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（17）
+## Patterns — 可复用代码模式与最佳实践（18）
 
+- 2026-10-07 [无 perf/gdb/Profiler 下定位 js worker 饱和的方法阶梯（bilibili 输入卡死案）](patterns/2026-10/2026-10-07-js-worker-saturation-diagnosis-without-perf.md)
 - 2026-10-06 [V8 无名脚本命名：sourceURL 注释的末行规则与失效形态](patterns/2026-10/2026-10-06-v8-sourceurl-naming.md) — script-sandbox,renderer,engine
 - 2026-09-30 [ZW_IPC_TRACE：跨进程 IPC 消息级的帧级诊断](patterns/2026-09/2026-09-30-zw-ipc-trace-frame-diagnostic.md) — zero-protocol,apps/browser,apps/renderer
 - 2026-09-13 [Node 父进程内嵌服务 + execFileSync 子进程 = 双向死锁](patterns/2026-09/2026-09-13-node-sync-child-exec-deadlocks-inprocess-server.md) — tests/playwright-matrix
