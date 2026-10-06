@@ -8710,6 +8710,16 @@
     return n;
   }
   // 取/建元素选区对象（getter 用默认 {0,0,'forward'}，不污染 map；setter/method 先 ensure 再 mutate）。
+  // 尾簇 31：text-control 选区状态 key——**sel 主导**（`_textSelKey`）。`_elKey` 是
+  // handle 主导（`@handle`）——动态元素 rebuild（render_html 全量重建，尾簇 4）后
+  // handle 换代使 '@handle' key 孤儿化：页面 setter 写的 selection 在新 proxy 的
+  // getter 读缺省 (0,0)（WPT uievents/textInput no-textInput 组合时序——前序命令
+  // mutation 重建树 → 后续 textarea 的 DeleteBackward 快照读 (0,0) → NothingToDelete
+  // → send_keys 整链 reject）。selection 是文档元素态——sel 字符串形为正确 key
+  //（跨 rebuild 稳定）；detached 无 sel 才回退 handle 形。
+  function _textSelKey(sel, handle) {
+    return sel ? _elKey(sel, null) : _elKey(sel, handle);
+  }
   function _selObj(key) {
     if (!_textSelection[key]) _textSelection[key] = { start: 0, end: 0, direction: 'forward' };
     return _textSelection[key];
@@ -15559,7 +15569,16 @@ return e;
             }
             return _inputValues[key];
           }
-          var vaF = handle ? __zw_get_attr_handle(handle, 'value') : (sel ? __zw_get_attr(sel, 'value') : null);
+          // 尾簇 31：textarea 直读分支补 **child text**（value getter 的 mirror——
+          // `_controlValue` 已有同款特判）。textarea 无 value 属性——非 stable key
+          // （attr/nth 形 sel）直读 `__zw_get_attr('value')` 恒 ''：无 value setter 的
+          // 初始 child-text textarea 读 .value 丢初值（WPT uievents/textInput
+          // no-textInput 族 DeleteBackward 快照 value='' → clamp (0,0) →
+          // NothingToDelete）。live 直读 child text（ZeroWeb 无物化模型——child text
+          // 即 live 默认值；有 setter 的语料走 `_inputValuesSet` 缓存面不变）。
+          var vaF = (!handle && sel && _isTag(sel, 'TEXTAREA'))
+            ? __zw_get_text(sel)
+            : (handle ? __zw_get_attr_handle(handle, 'value') : (sel ? __zw_get_attr(sel, 'value') : null));
           return (vaF == null) ? '' : vaF;
           } // R5009 片 d：!_rvSkip3——LI/METER 跳过 dirty 缓存，落 part04 数值分支
         }
@@ -15599,7 +15618,7 @@ return e;
         // getter 不污染 _textSelection（纯读）。
         if (prop === 'selectionStart' || prop === 'selectionEnd' || prop === 'selectionDirection') {
           if (_isTextControl(sel, handle)) {
-            var gs = _textSelection[key] || { start: 0, end: 0, direction: 'forward' };
+            var gs = _textSelection[_textSelKey(sel, handle)] || { start: 0, end: 0, direction: 'forward' };
             if (prop === 'selectionStart') return gs.start;
             if (prop === 'selectionEnd') return gs.end;
             return gs.direction;
@@ -15617,7 +15636,7 @@ return e;
               var ns = _clampSelOffset(s, len);
               if (ne < ns) ns = ne;
               var d = (dir === 'backward' || dir === 'none') ? dir : 'forward';
-              var so = _selObj(key);
+              var so = _selObj(_textSelKey(sel, handle));
               // E2 切片 12（editing goal，2026-09-08）：同值早退——spec「To set the
               // selection range」末步：仅当 extent 或 direction 实际变更才排程
               // selectionchange（WPT textcontrols/selectionchange.html
@@ -15654,7 +15673,7 @@ return e;
             }
           } else {
             return function(replacement, start, end, selectionMode) {
-            var so = _selObj(key);
+            var so = _selObj(_textSelKey(sel, handle));
             if (arguments.length < 2) start = so.start;
             if (arguments.length < 3) end = so.end;
             start = Number(start); end = Number(end);

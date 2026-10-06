@@ -2916,7 +2916,10 @@
         beforeunloadevent: globalThis.BeforeUnloadEvent,
         devicemotionevent: globalThis.DeviceMotionEvent,
         deviceorientationevent: globalThis.DeviceOrientationEvent,
-        textevent: globalThis.TextEvent,
+        // 尾簇 31：TextEvent 走**内部 ctor**（globalThis.TextEvent 已换 throw wrapper
+        //——spec 无 constructor；createEvent 的 `new Ctor('')` 通道须可构造）。
+        textevent: (typeof _zwTextEventCtorRef !== 'undefined' && _zwTextEventCtorRef)
+          ? _zwTextEventCtorRef : globalThis.TextEvent,
         touchevent: globalThis.TouchEvent,
         // R17：以下 modern event interface 为 non-createable（spec createEvent 仅支持 legacy event interface；
         // WPT someNonCreateableEvents 列表）——**不**入 map，createEvent 对其抛 NotSupportedError：
@@ -2992,14 +2995,66 @@
             var combined = cur + ins;
             var ml = null;
             try { ml = tgt.maxLength; } catch (_e) {}
-            if (ml != null && !isNaN(+ml) && combined.length > +ml) {
+            // 尾簇 33：maxlength **-1 = 无限制**（HTMLMaxLength 缺省——旧版
+            // `combined.length > -1` 恒真使无 maxlength 的输入被截成空串——探针实证
+            // `assign:combined=""`）。
+            if (ml != null && !isNaN(+ml) && +ml >= 0 && combined.length > +ml) {
               combined = combined.slice(0, +ml);
               var cc = combined.charCodeAt(combined.length - 1);
               if (cc >= 0xd800 && cc <= 0xdbff) combined = combined.slice(0, -1);
             }
+            // 尾簇 33：text-control 分支补 **beforeinput → 变更 → input** 事件序
+            //（R3254-M2 editing-host 分支同款——此前裸 value 赋值不派事件，WPT
+            // uievents/textInput/api 尾部 `execCommand('insertText') → input 事件 →
+            // value==='a'` 的 promise 永挂）。**不派 textInput**（api 的 reject
+            // listener 断言面——execCommand 编辑命令与真键盘输入（runner send_keys
+            // 的 text_plan 派 textInput）分流，Chromium 同此）。trusted 印记 R312
+            // 同款（UA 合成编辑操作）。beforeinput 取消 → 命令失败（返回 false，
+            // spec「canceled commands return false」）。
+            var before57 = new InputEvent('beforeinput', {
+              bubbles: true, cancelable: true, data: ins, inputType: 'insertText', isComposing: false
+            });
+            try {
+              Object.defineProperty(before57, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
+              before57._zwUaDispatch = true;
+            } catch (_eTb57) {}
+            if (tgt.dispatchEvent(before57) === false) {
+              try { before57._zwUaDispatch = false; } catch (_eTb57b) {}
+              return false;
+            }
+            try { before57._zwUaDispatch = false; } catch (_eTb57c) {}
             tgt.value = combined;
+            var input57 = new InputEvent('input', {
+              bubbles: true, cancelable: false, data: ins, inputType: 'insertText', isComposing: false
+            });
+            try {
+              Object.defineProperty(input57, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
+              input57._zwUaDispatch = true;
+            } catch (_eTb57d) {}
+            tgt.dispatchEvent(input57);
+            try { input57._zwUaDispatch = false; } catch (_eTb57e) {}
           }
         } catch (_e) {}
+      } else if (cmd === 'inserttext'
+                 && (function () {
+                   // 尾簇 33：CE 宿主（activeElement 在 contenteditable 内）的
+                   // execCommand insertText——editing-host 分支对「focus 未建 Selection
+                   // range」的 caret 面 no-op（api 尾部 CE div 案 promise 挂点）。
+                   // 直接走 `__zw_ce_insert`（caret 构建 + 变更 + 事件序；
+                   // withTextInput=false——execCommand 不派 textInput）。
+                   try {
+                     var t57c = globalThis.document.activeElement;
+                     return !!(t57c && typeof globalThis.__zw_is_ce_host === 'function'
+                       && globalThis.__zw_is_ce_host(t57c));
+                   } catch (_e57c) { return false; }
+                 })()) {
+        try {
+          var tgtC = globalThis.document.activeElement;
+          var selC = (tgtC && tgtC.__zwSelector != null) ? String(tgtC.__zwSelector) : null;
+          if (selC && typeof globalThis.__zw_ce_insert === 'function') {
+            globalThis.__zw_ce_insert(selC, String(arguments[2] == null ? '' : arguments[2]), false);
+          }
+        } catch (_eC57) {}
       } else if (typeof _zwExecCmdInputType[cmd] !== 'undefined') {
         // R3254-M2：编辑类命令（format 族/insert 族/delete 族/undo-redo）——editing host
         // 事件序。选区无 range 或起点不在任何 editing host 内 → no-op（WPT 断言 0 事件
@@ -11809,6 +11864,19 @@
         inputType: detail.inputType,
         isComposing: !!detail.isComposing
       });
+    } else if (type === 'textInput') {
+      // uievents-compat 尾簇 31：textInput = **TextEvent** 实例（UI Events legacy
+      // 附录——文本插入默认动作的事件序 beforeinput → textInput → DOM 变更 → input；
+      // WPT textInput/basic 断言 e instanceof window.TextEvent + data/bubbles/
+      // cancelable/view=window/detail=0 面）。宿主 text control 管线（page-runtime
+      // text_plan followup 首位）与 CE 插入管线（__zw_ce_insert）共用本分支。
+      // view=window（UIEvent view 语义——headless 全局窗）、detail=0（基类缺省）。
+      ev = new (globalThis._zwTextEventCtorRef || globalThis.TextEvent)('textInput', {
+        bubbles: true,
+        cancelable: (detail && detail.cancelable != null) ? !!detail.cancelable : true,
+        view: globalThis,
+        data: (detail && detail.data != null) ? String(detail.data) : ''
+      });
     } else if (type === 'input') {
       ev = new InputEvent(type, { bubbles: true, cancelable: false });
     } else if (type === 'change' || type === 'focus' || type === 'blur' ||
@@ -12293,7 +12361,10 @@
     if (k === '' || k === 'Shift') return 'shift';
     if (k === '' || k === 'Control') return 'ctrl';
     if (k === '' || k === 'Alt') return 'alt';
-    if (k === '' || k === 'Meta') return 'meta';
+    // \uE03D = WebDriver 标准Meta 转义；\uE053 = 上游
+    // pointerevent_boundary_events_modifier_no_pointer_movement.html?Meta 变体的实际 key
+    //（上游文件 switch 表写死 \uE053——非标准转义，shim 双认）。
+    if (k === '' || k === '' || k === 'Meta') return 'meta';
     return null;
   }
   // 合成 pointer/mouse 事件 init 的修饰键位——detail 显式值优先（keyboard 断言路径
@@ -13310,11 +13381,13 @@
     if (!st.overReinserted) return false;
     if (sel !== st.overSel && sel !== st.mouseOverSel) return false;
     if (typeof _zwIsConnected === 'function' && !_zwIsConnected(sel, null)) return false;
-    __zw_dispatch_event(sel, 'pointerover', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
-    __zw_dispatch_event(sel, 'pointerenter', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: 0 });
+    // 尾簇 30：重入面 buttons 同跨界序——当下按下掩码（见 _zwLayerCross 注记）。
+    var _reBtns30 = (_zwPtrState.buttons | 0);
+    __zw_dispatch_event(sel, 'pointerover', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: -1, buttons: _reBtns30 });
+    __zw_dispatch_event(sel, 'pointerenter', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: -1, buttons: _reBtns30 });
     // 尾簇 16：compat mouse 面按钮恒 0（UI Events un-initialized）。
-    __zw_dispatch_event(sel, 'mouseover', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: 0, buttons: 0 });
-    __zw_dispatch_event(sel, 'mouseenter', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: 0, buttons: 0 });
+    __zw_dispatch_event(sel, 'mouseover', { relatedTarget: null, clientX: x || 0, clientY: y || 0, button: 0, buttons: _reBtns30 });
+    __zw_dispatch_event(sel, 'mouseenter', { relatedTarget: null, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: 0, buttons: _reBtns30 });
     st.overReinserted = false;
     return true; // 尾簇 6c：实派重入面告之（up 序列拆除抑制判据）
   }
@@ -13349,12 +13422,18 @@
     // prevDangling：out/leave 整段抑制（已移除元素不接收边界事件）。
     // 尾簇 16：跨界事件按钮按层分流——pointer 面 -1（PE spec move/边界无按键）、
     // compat mouse 面 0（UI Events「un-initialized」——mouseevent_move_button 断言面）。
+    // 尾簇 30：跨界事件 **buttons = 当下按下掩码**（`_zwPtrState.buttons`——UI Events
+    // MouseEventInit：button 对 over/out/enter/leave 是「un-initialized」，buttons 是
+    // 活掩码——拖拽中跨界 buttons 非零（WPT pointerevent_boundary_events_attributes_
+    // during_drag「buttons: 1」+ synthetic-mouse-enter-leave-over-out-button-state
+    // 断言面）；up 尾掩码已清 → 释放后跨界 buttons=0 自然成立。
     var _b16 = (layer === 'mouse') ? 0 : -1;
+    var _bcBtns30 = (_zwPtrState.buttons | 0);
     if (prevSel && !prevDangling) {
-      __zw_dispatch_event(prevSel, evOut, { relatedTarget: rel, clientX: x || 0, clientY: y || 0, button: _b16, buttons: 0 });
+      __zw_dispatch_event(prevSel, evOut, { relatedTarget: rel, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
     }
     for (var k = 0; !prevDangling && k < prevChain.length && prevChain[k] !== common; k++) {
-      __zw_dispatch_event(prevChain[k], evLeave, { relatedTarget: rel, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: 0 });
+      __zw_dispatch_event(prevChain[k], evLeave, { relatedTarget: rel, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
     }
     // 新链：over@next（边界元素，恒派——next 即公共祖先的向祖先移动也派）→
     // enter（每新入站，公共祖先下行至 next；next 已入 over，站序自外向内——
@@ -13362,7 +13441,7 @@
     // prevDangling：enter 段抑制（relatedTarget 指向已移除元素无意义 → null）。
     var relIn = (prevSel && !prevDangling) ? prevSel : null;
     if (nextSel) {
-      __zw_dispatch_event(nextSel, evOver, { relatedTarget: relIn, clientX: x || 0, clientY: y || 0, button: _b16, buttons: 0 });
+      __zw_dispatch_event(nextSel, evOver, { relatedTarget: relIn, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
     }
     var enter = [];
     for (var k2 = 0; !prevDangling && k2 < nextChain.length; k2++) {
@@ -13375,11 +13454,11 @@
     if (childFirst) _zwPtrState.touchChildFirstEnter = false;
     if (childFirst) {
       for (var k3f = 0; k3f < enter.length; k3f++) {
-        __zw_dispatch_event(enter[k3f], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: 0 });
+        __zw_dispatch_event(enter[k3f], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
       }
     } else {
       for (var k3 = enter.length - 1; k3 >= 0; k3--) {
-        __zw_dispatch_event(enter[k3], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: 0 });
+        __zw_dispatch_event(enter[k3], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
       }
     }
   }

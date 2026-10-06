@@ -4378,7 +4378,7 @@ return _tplContent;
         if (prop === 'select') {
           return function() {
             if (_isTextControl(sel, handle)) {
-              var so = _selObj(key);
+              var so = _selObj(_textSelKey(sel, handle));
               // E2 切片 12（editing goal，2026-09-08）：spec select() = 「Set the
               // selection range with 0 and infinity」→ 同值时（已全选）不排程
               // selectionchange（WPT textcontrols/selectionchange.html
@@ -9924,7 +9924,7 @@ return _tplContent;
           // 设 start 超 end → end 跟到 start（{start:99}→ end 升到 start）；设 end 低于 start → end 升回 start
           //（{end:-5}→ end 升到 start，不降）；start/end 均 clamp [0, len]；direction 仅接受 forward/backward/none。
           if (_isTextControl(sel, handle)) {
-            var so = _selObj(key);
+            var so = _selObj(_textSelKey(sel, handle));
             // E2 切片 12（editing goal，2026-09-08）：变更检测——spec selectionStart/End
             // setter 经「set the selection range」算法，仅 extent/direction 实际变更
             // 才排程 selectionchange（WPT textcontrols/selectionchange.html

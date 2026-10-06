@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-06（M3 尾簇 29——pointercapture_in_frame ?touch subtest 4 判例定谳：上游即 Fail，portal 段收口）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M3 尾簇 33——execCommand text-control 事件序 + maxlength 哨兵 + textarea Enter 换行，1782P→1785P）
 
 ## 当前状态
 
@@ -11,13 +11,21 @@ M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P 
 尾簇 11 1583P → 尾簇 12 1588P → 尾簇 13 1590P → 尾簇 14 1594P → 尾簇 15 1609P →
 尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → 尾簇 19 1736P → 尾簇 20/21 1738P →
 尾簇 22 1739P → 尾簇 23 1745P → 尾簇 24 1750P → 尾簇 25 1755P → 尾簇 27 1757P →
-**1759P（+1539 累计）**
-（corpus：1759P/187F/96TO，`TIME_LIMIT=3600`。尾簇 19：improvements=120 /
-regressions=1 已记录；尾簇 20：+2；尾簇 21：Δ0 基建轮；尾簇 22：portal 首段 +1；
-尾簇 23：portal 第二段 +6；尾簇 24：portal 第三段 +5；尾簇 25：触式捕获路由 +5；
-尾簇 26：Δ0 id 值面；尾簇 27：frame-hold 重接 +2；尾簇 28：**frame-hold 残留清零**
-——+2（pointercapture_in_frame 15→17P：subtest 5 ?mouse/?pen 转绿；文件 18 子测全
-部具名、文件级 Timeout 消失；唯一余挂 ?touch subtest 4→touch move 专项），见
+尾簇 28 1759P → 尾簇 30 1763P → 尾簇 31 1778P → 尾簇 32 1782P → 尾簇 33 **1785P
+（+1565 累计）**
+（corpus：**1785P/177F/97TO**，`TIME_LIMIT=3600`——新 Fail 1 = textInput/api 的 CE
+execCommand 案从 TO 转具名 Fail（textContent 同步可见性——mutation 通道时序挂账，
+诊断价值高于 TO）；其余零回归。textInput 族 18P→22P（execCommand insertText 对
+text control ×2 + enter textarea +1）。尾簇 19：improvements=120 / regressions=1 已记录；尾簇 20：+2；
+尾簇 21：Δ0 基建轮；尾簇 22：portal 首段 +1；尾簇 23：portal 第二段 +6；尾簇 24：
+portal 第三段 +5；尾簇 25：触式捕获路由 +5；尾簇 26：Δ0 id 值面；尾簇 27：
+frame-hold 重接 +2；尾簇 28：frame-hold 残留清零 +2；尾簇 29：判例轮 Δ0（?touch
+subtest 4 上游即 Fail）；尾簇 30：Meta 转义三认 + 跨界序 buttons 活掩码 +4 +
+textInput 资产补齐（7 案 page-threw 转具名）；尾簇 31：**TextEvent 语义域 +
+selection key 存活面 +14**（见下节与
+[evidence/2026-10-06-m3-tail31.md](evidence/2026-10-06-m3-tail31.md)）、
+[evidence/2026-10-06-m3-tail30.md](evidence/2026-10-06-m3-tail30.md)、
+[evidence/2026-10-06-m3-tail29.md](evidence/2026-10-06-m3-tail29.md)、
 [evidence/2026-10-06-m3-tail28.md](evidence/2026-10-06-m3-tail28.md)。
 证据：[evidence/2026-10-05-m3-tail13.json](evidence/2026-10-05-m3-tail13.json)（尾簇 13 后）、
 [evidence/2026-10-05-m3-tail13.md](evidence/2026-10-05-m3-tail13.md)（根因链 + 排除路径）、
@@ -41,10 +49,86 @@ regressions=1 已记录；尾簇 20：+2；尾簇 21：Δ0 基建轮；尾簇 22
 [evidence/2026-10-04-m3-tail5.json](evidence/2026-10-04-m3-tail5.json)（尾簇 5 后）、
 [evidence/2026-10-04-m3-tail6a.json](evidence/2026-10-04-m3-tail6a.json)（尾簇 6a 后）、
 [evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)（尾簇 6b+6c 后）。
-门禁：workspace 17,246P/0F、renderer lib 204P/0F、reftest 704/704、fmt + clippy
-（quickjs 面）全绿；shim 拼接 node --check 全绿。
+门禁：**make test EXIT=0** + clippy（quickjs 面，-D warnings）EXIT=0 + shim 拼接
+node --check 全绿 + corpus 全量 **1785P/177F/97TO**（新 Fail 1 = api CE execCommand
+TO 转具名 Fail，挂账面；其余零回归）（2026-10-07 尾簇 33 后）。
+历史（尾簇 32 后）：1782P/176F/98TO；reftest 704/704（尾簇 28 后）。
 
-**M3 尾簇 29（2026-10-06，本轮）——pointercapture_in_frame ?touch subtest 4 判例定谳：上游即 Fail（Δ0 记账轮，portal 段收口）**。
+**M3 尾簇 33（2026-10-07，本轮）——execCommand text-control 事件序 + maxlength 哨兵 + textarea Enter 换行（1782P→1785P）**。
+三件：① **execCommand('insertText') text-control 分支补事件序**（beforeinput（可取消，
+取消返 false）→ value 变更 → input——R312 trusted 印记；**不派 textInput**（api 的
+reject listener 断言面——execCommand 编辑命令与真键盘 send_keys 分流，Chromium 同此）
+——此前裸 value 赋值不派事件，api 尾部 3 promise 永挂）；② **maxlength 哨兵修复**
+（`HTMLMaxLength` 缺省 **-1** 被当有效截断值——`combined.length > -1` 恒真使无
+maxlength 的输入被截成空串——探针实证 `assign:combined=""`；补 `+ml >= 0` 门）；
+③ **textarea 的 Enter = 换行**（runner send_keys 目标分流：E006/E007 on TEXTAREA →
+InsertText{'\n'}——text_plan 的 textInput followup 面；真实浏览器 textarea 不参与
+implicit submission）+ **CE Enter 补 textInput(data='\n')**（`__zw_ce_enter`——
+basic.sub.js 在 input handler 内断言 textInputEvents===1）+ `__zw_ce_insert` 参数化
+（withTextInput=false——execCommand CE 分支复用 caret 管线不派 textInput）。
+**加时序加固**：send_keys 的自聚焦从独立 focus 脚本**拼进首键 keydown 派发脚本**
+（零额外 execute_script 往返——独立脚本在 workspace 并发负载下使命令轮询窗偶发
+错过，内嵌 fixture 间歇 Timeout 三次复现实证，单跑 5/5 Pass 同款 flake 形态）。
+门禁：editing 域 183P 无新增 Fail（`Changing selection from handler` 为尾簇 31 stash
+基线确认的既有 Fail）+ keyboard 域 3 TO 恒值。余挂：**api CE execCommand 案**（TO 转
+Fail——`__zw_ce_insert` appendChild 走 mutation 通道异步 apply，input handler 同步段
+读 textContent 为空——textContent 同步可见性挂账）+ enter-textarea 的 CE 案（同族）。
+详见 [evidence/2026-10-07-m3-tail33.md](evidence/2026-10-07-m3-tail33.md)。
+
+**M3 尾簇 32（2026-10-06，39ca800f1）——send_keys 自聚焦 + CE ForwardDelete + Enter 键序（1778P→1782P）**。
+三件：① **send_keys 入口自聚焦目标**（runner——WebDriver per-element send 语义；
+slice22 `__zw_host_focus` 通道——多 promise_test 交错 focus 的组合时序下激活管线
+焦点归属错位 → click 不发：keyboard-click-event 4 子测全挂的根因，zzprobe 三段
+二分实证）；② **uE006 接 formless buttonish 激活**（Enter click 通路与 uE007 一致
+——tail11 修复只判了 uE007）；③ **CE ForwardDelete 接通**（`__zw_ce_forward_delete`
+——deleteContentForward 语义 mirror ce_delete，代理对安全；取代尾簇 31 noop）+
+**动作 noop 不中断键事件序**（keyup 恒派——enter-input input 案 +1；旧版 Submit
+noop 提前 return 跳过 keyup）。keyboard-click-event 行为面已通（探针 4/4——
+EventWatcher/mini-report 交互层 TO 余挂，testharness 深水面）。textInput 族
+16P→**18P**（delete + delete-selection 的 CE div ×2）、enter-input +1。余挂：
+execCommand insertText 对 text control ×3（api.html）、enter 两文件的 textarea/CE
+尾案（Submit/CE Enter 域）、keyboard-click-event TO（testharness 交互层）。详见
+[evidence/2026-10-06-m3-tail32.md](evidence/2026-10-06-m3-tail32.md)。
+
+**M3 尾簇 31（2026-10-06，7c550a079）——TextEvent 语义域 + selection key 存活面（textInput 族 2P→16P）**。
+五件（engine shim ×4 + page-runtime/webview/runner Rust 面）：
+① **TextEvent 接口特化**（part05/06）：无 constructor 语义（`new TextEvent()` TypeError——
+throw wrapper 共享 prototype）+ 内部 ctor 供 createEvent/dispatch + `data` 字段 +
+`initTextEvent`（0 参 TypeError、data 缺省 `'undefined'`、view 缺省 null）；
+② **textInput 事件序**（UI Events legacy 附录——beforeinput → textInput(TextEvent) →
+input）：text control 管线（`text_plan` followup 首位插 textInput）+ CE 插入管线
+（`__zw_ce_insert`，完整保留可取消语义）；shim dispatch 层 textInput → TextEvent 实例；
+③ **编辑键 key 名**（runner send_keys）：Backspace/Tab/Enter（uE003/uE004/uE006|uE007）/
+Delete（uE017）透传 **WebDriver 键名**而非原始 PUA 转义 + uE006（Return）接 Enter 语义
+（Submit）+ uE017 接 **ForwardDelete**（page-runtime 新 variant + `plan_text_forward_delete`
+——collapsed 删 caret 后一 UTF-16 单元；CE 宿主 noop 挂账）；④ **testdriver selectorFor
+shim 权威形优先**（`element.__zwSelector` 回查自指才信任——stub tag/attr/nth 启发式对
+无 id 元素产 tag 形与 shim listener key 形不一致 → keydown/keyup 对无 id text control
+静默丢——zzprobe 复刻实证）；⑤ **selection 状态 key sel 主导**（`_textSelKey`——
+`_elKey` handle 主导形在 render_html rebuild 后 handle 换代孤儿化：页面 setter 写的
+selection 新 proxy 读缺省 (0,0)）+ **textarea value getter 直读分支补 child text**
+（非 stable key 直读 value attr 恒 ''——初始 child-text textarea 的 .value 丢初值，
+DeleteBackward 快照 clamp (0,0) → NothingToDelete）。
+门禁：keyboard 语料回归全绿（keydown/modifier/keypress）+ selection 域 2965P 无新增
+Fail（stash 基线比对）+ textInput 族 16P/5TO（余挂 = execCommand insertText 对 text
+control ×3、CE ForwardDelete、CE Enter 面——editing 域挂账）。详见
+[evidence/2026-10-06-m3-tail31.md](evidence/2026-10-06-m3-tail31.md)。
+
+**M3 尾簇 30（2026-10-06，本轮）——Meta 转义双认 + 跨界序 buttons 活掩码（1759P→1763P）**。
+两件（engine shim part06）：① `_zwModifierForKey` meta 分支 U+E053→**U+E03D ‖
+U+E053 ‖ 'Meta' 三认**（mouseevent_key_pressed +2；U+E053 系上游
+boundary_events_modifier_no_pointer_movement ?Meta 变体写死 key——单改 U+E03D 曾
+致该文件 4F，双认后 48P 恢复）；② `_zwLayerCross`/`_zwReentryCheck` 跨界序
+buttons 0→当下按下掩码（synthetic tentative mouseover buttons ×2；UI Events
+MouseEventInit——button un-initialized / buttons 活掩码）。textInput 族资产补齐
+（fetch 脚本首轮漏 support/ 子目录——人工补拉 common.js + basic.sub.js，7 案
+page-threw 转具名 2P/11F/2TO，**TextEvent 语义域新缺口**）。排除路径：compat-
+mouse-events-when-removing-nodes 4F + boundary_events_attributes_during_drag 2F
+= 动态 createElement 物化同 turn gBCR 零盒（ZW_TD_DEBUG 实证命中扫描全零）——
+归 1a 待拍板项；tentative B 域（out/leave@被移除元素）维持尾簇 20 回退挂账。
+详见 [evidence/2026-10-06-m3-tail30.md](evidence/2026-10-06-m3-tail30.md)。
+
+**M3 尾簇 29（2026-10-06，986f8294e）——pointercapture_in_frame ?touch subtest 4 判例定谳：上游即 Fail（Δ0 记账轮，portal 段收口）**。
 零源码改动。唯一余挂 ?touch subtest 4 判定**上游即 Fail**：wpt.fyi Chrome master run
 （chrome-157 linux，run 6293748152795136，2026-10-06）?touch **4/6**（ZeroWeb 同变体
 5/6 已超上游）；Chromium pem.cc `SendTouchPointerEvent`（#660-673）touch down 隐式
@@ -382,16 +466,17 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 证据：[evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)
 （含 2 案本地 zwprobe 探针已剔除入账）。门禁：node --check + 双族聚焦跑全绿。
 
-**DC-4 门禁（2026-10-06，尾簇 28 后）**：workspace **19,870P/0F** + reftest **704/704**
-零回归 + shim 拼接 node --check 全绿（纯 JS shim 变更，无 Rust 面）。
-历史（尾簇 27 后）：workspace 19,867P/0F + reftest 704/704。
+**DC-4 门禁（2026-10-06，尾簇 30 后）**：workspace **49 test result 全 0 failed**
++ clippy（quickjs 面，-D warnings）EXIT=0 + shim 拼接 node --check 全绿（纯 JS shim
+变更，无 Rust 面；corpus 门 = make testharness-uievents 全量 1763P/183F/96TO 零回归）。
+历史（尾簇 28 后）：workspace 19,870P/0F + reftest 704/704。
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | uievents + pointerevents corpus 导入 + 基线 | ✅ 2026-10-03 |
-| P2 | 鼠标事件序/坐标/click 组合语义修齐 | 🔄 核心已落地；残余 = mousemove-between（视口命中精度）、wheel 三案（scroll 源重放——wheel-basic/deadlock 可解，scrolling 需真滚动）、interface keyboard-click、uievents/mouse 尾簇（mouseover-at-removing ✅ 尾簇 7 全绿；mutation 驱动悬停重定向 + 修饰键态 ✅ 尾簇 8 全绿；image-map 命中 + 跨目标 click 组合 ✅ 尾簇 9 全绿；同 turn gBCR 强制同步布局——reappending 11F + removing_last_over 4F 根因；image-map img-resized 双案 = 查询视图缓存双计——尾簇 10；layerX/chorded buttons） |
+| P2 | 鼠标事件序/坐标/click 组合语义修齐 | 🔄 核心已落地；残余 = mousemove-between（视口命中精度）、wheel 三案（scroll 源重放——wheel-basic/deadlock 可解，scrolling 需真滚动）、interface keyboard-click、TextEvent 语义域（textInput 族 ✅ 16P——余 5 TO = execCommand insertText 对 text control ×3 + CE ForwardDelete + CE Enter 面，editing 域挂账——尾簇 31）、uievents/mouse 尾簇（mouseover-at-removing ✅ 尾簇 7 全绿；mutation 驱动悬停重定向 + 修饰键态 ✅ 尾簇 8 全绿；image-map 命中 + 跨目标 click 组合 ✅ 尾簇 9 全绿；同 turn gBCR 强制同步布局——reappending 11F + removing_last_over 4F + compat-mouse-when-removing 4F + boundary_drag 2F 根因（尾簇 30 ZW_TD_DEBUG 实证零盒）；image-map img-resized 双案 = 查询视图缓存双计——尾簇 10；layerX/chorded buttons） |
 | P3 | Pointer 生命周期 + capture 三方法 + enter/leave 边界序 | ✅ 核心 + mutation 族 + 重入面 + touch 接触失效收口（尾簇 4/5/6c——after_target_appended 24/24 全绿）+ portal 段收口（尾簇 22-29——pointercapture_in_frame 17P + 1 上游即 Fail）；残余 = pointercancel/touch-action 交互面、iframe 跨文档焦点；from_slot 案阻塞于 declarative shadow DOM（shadowrootmode 未实现——web-components 域前置，挂账）；interleaved 族 + pointercapture_in_frame ?touch subtest 4 行为面已对齐（残余 = 上游 expected 记账 bug，pin 版即 Fail，不再追——尾簇 29 判例） |
 | P4 | touch-events / pointerlock / IME 组合挂账定稿 | ⏳ M4 |
 
@@ -476,9 +561,18 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
   Fail）。
 - **M3 尾簇 28（2026-10-06，本轮）**：frame-hold 残留清零（非 hold portal up 分支）。
   1757P→1759P（+2，pointercapture_in_frame 15→17P，文件 TO 消失）。
-- **M3 尾簇 29（2026-10-06，本轮）**：pointercapture_in_frame ?touch subtest 4 判例
+- **M3 尾簇 29（2026-10-06，986f8294e）**：pointercapture_in_frame ?touch subtest 4 判例
   定谳（上游即 Fail——wpt.fyi Chrome ?touch 4/6 + pem.cc 隐式捕获推演，ZeroWeb 5/6
   超上游）。Δ0，portal 段收口。
+- **M3 尾簇 30（2026-10-06，本轮）**：Meta 转义三认 + 跨界序 buttons 活掩码 +
+  textInput 资产补齐。1759P→1763P（+4，零回归）。
+- **M3 尾簇 31（2026-10-06，7c550a079）**：TextEvent 语义域 + selection key 存活面
+  + 编辑键 key 名 + selectorFor 权威形。1763P→1778P（+14，零回归）。
+- **M3 尾簇 32（2026-10-06，39ca800f1）**：send_keys 自聚焦 + uE006 formless
+  buttonish 激活 + CE ForwardDelete + 动作 noop 键序。1778P→1782P（+4，零回归）。
+- **M3 尾簇 33（2026-10-07，本轮）**：execCommand text-control 事件序 + maxlength
+  哨兵 + textarea Enter 换行 + CE Enter textInput。1782P→1785P（+3；api CE 案
+  TO 转具名 Fail 挂账）。
 
 ## 下一步计划
 

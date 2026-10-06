@@ -4732,7 +4732,10 @@
   // ① caret 在文本节点内 → nodeValue splice（SetTextChild 类 mutation 流转宿主）；
   // ② caret 在元素边界 → 首个/对应子为文本节点同①；宿主无文本子 → createTextNode
   // + appendChild（两 mutation 均流转宿主）。caret 移到插入文本尾。
-  globalThis.__zw_ce_insert = function(sel, text) {
+  // 尾簇 33：withTextInput === false 时**不派 textInput**（execCommand 编辑命令与
+  // 真键盘输入分流——Chromium execCommand insertText 只派 beforeinput/input；
+  // WPT textInput/api 的 reject listener 断言面）。缺省（真键盘路径）照派。
+  globalThis.__zw_ce_insert = function(sel, text, withTextInput) {
     var el = document.querySelector(sel);
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
     var ins = String(text == null ? '' : text);
@@ -4742,6 +4745,16 @@
       bubbles: true, cancelable: true, data: ins, inputType: 'insertText', isComposing: false
     });
     if (el.dispatchEvent(before) === false) return;
+    // 尾簇 31：CE 插入的事件序补 textInput（UI Events legacy——beforeinput →
+    // textInput(TextEvent) → DOM 变更 → input；WPT textInput/basic contenteditable
+    // 断言面）。可取消（取消即中止插入——spec textInput cancelable 语义，CE 路径
+    // 完整保留；text control 管线的 followup 通道近似不回滚）。
+    if (withTextInput !== false && globalThis._zwTextEventCtorRef) {
+      var ti31 = new globalThis._zwTextEventCtorRef('textInput', {
+        bubbles: true, cancelable: true, view: globalThis, data: ins
+      });
+      if (el.dispatchEvent(ti31) === false) return;
+    }
     var sc = range.startContainer, so = range.startOffset | 0;
     var node = null, caretOff = 0;
     if (sc && (sc.nodeType === 3 || sc.__zwIsText)) {
@@ -4816,6 +4829,41 @@
       bubbles: true, cancelable: false, data: null, inputType: 'deleteContentBackward', isComposing: false
     }));
   };
+  // CE ForwardDelete（尾簇 32——Delete 键的 CE 面，deleteContentForward 语义；WPT
+  // uievents/textInput delete.html CE div 案「caret@1 删光标后一字符 → 'ac'」断言面）。
+  // mirror __zw_ce_delete：选区非空删选区；collapsed 删 caret **后**一个 UTF-16 单元
+  //（代理对安全）；caret 吸附原位（删除点不变）。文本节点边界（终点无后单元）no-op。
+  globalThis.__zw_ce_forward_delete = function(sel) {
+    var el = document.querySelector(sel);
+    if (!el || !globalThis.__zw_is_ce_host(el)) return;
+    var range = globalThis.__zw_ce_caret_range(el);
+    var sc = range.startContainer, so = range.startOffset | 0;
+    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText))) return;
+    var v = String(sc.nodeValue || '');
+    var start = so, end = range.collapsed ? so : (range.endOffset | 0);
+    if (start === end) {
+      if (end >= v.length) return; // 文本节点终点无后单元
+      end++;
+      var nxt = v.charCodeAt(end - 1);
+      if (nxt >= 0xDC00 && nxt <= 0xDFFF && end < v.length) {
+        var after = v.charCodeAt(end);
+        if (after >= 0xDC00 && after <= 0xDFFF) end++;
+      }
+    }
+    if (start === end) return;
+    var before = new InputEvent('beforeinput', {
+      bubbles: true, cancelable: true, data: null, inputType: 'deleteContentForward', isComposing: false
+    });
+    if (el.dispatchEvent(before) === false) return;
+    sc.nodeValue = v.slice(0, start) + v.slice(end);
+    var nr = document.createRange();
+    nr.setStart(sc, start);
+    nr.collapse(true);
+    if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    el.dispatchEvent(new InputEvent('input', {
+      bubbles: true, cancelable: false, data: null, inputType: 'deleteContentForward', isComposing: false
+    }));
+  };
   // CE Enter 换行（R3254-M2 切片 3，editing goal，2026-09-07）：caret 处插 `<br>`
   //（insertLineBreak 语义；insertParagraph 的块级拆分 defer——SetInnerHtml 单域内
   // 重排的块结构拆分需父域选择器，记录限制）。实现：宿主 innerHTML（R380 融合
@@ -4838,6 +4886,16 @@
       bubbles: true, cancelable: true, data: null, inputType: 'insertLineBreak', isComposing: false
     });
     if (el.dispatchEvent(before) === false) return;
+    // 尾簇 33：CE Enter 补 **textInput(data='\n')**（真实浏览器 CE 换行的事件序
+    // beforeinput(insertLineBreak) → textInput(TextEvent) → <br> 变更 → input；
+    // WPT uievents/textInput enter-textarea-contenteditable 的 basic.sub.js 在 input
+    // handler 内断言 `textInputEvents === 1`——缺 textInput 使 promise 永挂）。
+    if (globalThis._zwTextEventCtorRef) {
+      var ti33 = new globalThis._zwTextEventCtorRef('textInput', {
+        bubbles: true, cancelable: true, view: globalThis, data: '\n'
+      });
+      el.dispatchEvent(ti33);
+    }
     // 计算 caret 在宿主 innerHTML 中的文本偏移（直子文本节点序列——宿主直子中
     // 该节点之前的文本子长度和；非文本子不计——flat 内容模型）。
     var kids = el.childNodes || [];

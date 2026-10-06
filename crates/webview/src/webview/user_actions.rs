@@ -3,8 +3,9 @@ use std::sync::{Arc, Mutex};
 #[cfg(feature = "v8")]
 use zero_engine::script_dispatch_native_event;
 use zero_engine::{
-    DomEventDetail, DomMutation, register_dom_callbacks, script_call_set_location_hash, script_contenteditable_delete,
-    script_contenteditable_enter, script_contenteditable_insert, script_contenteditable_probe,
+    DomEventDetail, DomMutation, register_dom_callbacks, script_call_set_location_hash,
+    script_contenteditable_delete, script_contenteditable_enter, script_contenteditable_forward_delete,
+    script_contenteditable_insert, script_contenteditable_probe,
     script_dispatch_dom_event, script_pointer_move, script_reset_form_controls, script_set_control_checked,
     script_set_open, script_set_option_selected, script_set_text_control_state, script_text_control_snapshot,
 };
@@ -183,7 +184,13 @@ impl WebView {
             return Ok(WebViewUserActionResult::noop(ActionNoopReason::DisabledTarget));
         }
         let state = match &request.action {
-            HtmlUserAction::InsertText { .. } | HtmlUserAction::DeleteBackward => {
+            // 尾簇 31：ForwardDelete 同走 text-control 探测，但 **CE 宿主不分流**——
+            // `__zw_ce_delete` 是 Backward 语义（caret 前退），ForwardDelete 复用会删错
+            // 字符（delete.html CE div 案 'a' 被误删）；CE ForwardDelete（range 后向
+            // 删除）挂账，此处落 text-control 快照对 contenteditable 返 noop
+            //（NotApplicable）。
+            HtmlUserAction::InsertText { .. } | HtmlUserAction::DeleteBackward
+            | HtmlUserAction::ForwardDelete => {
                 // R3254-M2 切片 2（editing goal）：焦点元素为 contenteditable 宿主时走
                 // CE 键入/删除管线（shim __zw_ce_insert/delete——Selection caret 处
                 // deleteContents/insertNode 真实 DOM 变更 + beforeinput/input 事件序），
@@ -196,6 +203,9 @@ impl WebView {
                         // InsertText 通道）→ __zw_ce_enter（<br> 插入）而非字面插入。
                         HtmlUserAction::InsertText { text } if text == "\n" => script_contenteditable_enter(&selector),
                         HtmlUserAction::InsertText { text } => script_contenteditable_insert(&selector, text),
+                        // 尾簇 32：CE ForwardDelete 接通（`__zw_ce_forward_delete`——
+                        // deleteContentForward 语义；取代尾簇 31 的 noop 挂账）。
+                        HtmlUserAction::ForwardDelete => script_contenteditable_forward_delete(&selector),
                         _ => script_contenteditable_delete(&selector),
                     };
                     let result = self.execute_dom_script(executor, &script)?;

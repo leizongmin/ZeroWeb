@@ -87,7 +87,11 @@ fn compute_styles_for_doc(doc: &Document) -> HashMap<NodeId, ComputedStyle> {
 /// 去重、SetAttr style 整体覆盖），与 render 路径同序列应用结果逐位一致。handle-based 变体
 ///（`SetStyleOnHandle` 等）跳过：其 handle 元素未 append 前不在 snapshot 内，`find_by_selector`
 /// 不命中 → 无效果，与 gCS 仅对 live-DOM 元素（有 selector）查询的契约一致。
-fn apply_inline_style_overrides(doc: &mut Document, mutations: &[DomMutation]) {
+/// 返回本次实际 apply 到的 `NodeId` 列表（含重复；调用方去重后作增量 cascade 的
+/// 变更集）。四类 apply 均幂等（同 prop/attr 重复 apply 结果不变）——对已 apply 过
+/// 旧批次的 doc 重放累积队列安全，latest-wins 由顺序 apply 保持。
+pub(super) fn apply_inline_style_overrides(doc: &mut Document, mutations: &[DomMutation]) -> Vec<NodeId> {
+    let mut changed = Vec::new();
     for m in mutations {
         match m {
             DomMutation::SetStyle {
@@ -97,11 +101,13 @@ fn apply_inline_style_overrides(doc: &mut Document, mutations: &[DomMutation]) {
             } => {
                 if let Some(node) = find_by_selector(doc, selector) {
                     apply_style_property(doc, node, property, value);
+                    changed.push(node);
                 }
             }
             DomMutation::RemoveStyle { selector, property } => {
                 if let Some(node) = find_by_selector(doc, selector) {
                     apply_remove_style(doc, node, property);
+                    changed.push(node);
                 }
             }
             // R34xx：SetAttr/RemoveAttr 泛化应用（含 style——canvas setAttribute('width',
@@ -110,16 +116,19 @@ fn apply_inline_style_overrides(doc: &mut Document, mutations: &[DomMutation]) {
             DomMutation::SetAttr { selector, name, value } => {
                 if let Some(node) = find_by_selector(doc, selector) {
                     doc.set_attribute(node, name, value);
+                    changed.push(node);
                 }
             }
             DomMutation::RemoveAttr { selector, name } => {
                 if let Some(node) = find_by_selector(doc, selector) {
                     doc.remove_attribute(node, name);
+                    changed.push(node);
                 }
             }
             _ => {}
         }
     }
+    changed
 }
 
 /// R3030：`compute_document_styles` 的动态 inline-style override 变体——parse snapshot 后先把
@@ -135,6 +144,13 @@ pub fn compute_document_styles_with_inline_overrides(
     let mut doc = parse_html(html);
     apply_inline_style_overrides(&mut doc, mutations);
     let mut styles = compute_styles_for_doc(&doc);
+    apply_intrinsic_size_overrides(&doc, &mut styles);
+    (doc, styles)
+}
+
+/// R34xx + media-elements M3 扩批 XXXVII：canvas/video 固有尺寸 → 计算样式 auto 侧
+/// 覆盖。全量与增量（t6）两路共用；仅覆盖仍为 auto 的侧，幂等可重复执行。
+pub(super) fn apply_intrinsic_size_overrides(doc: &Document, styles: &mut HashMap<NodeId, ComputedStyle>) {
     // R34xx：canvas 固有尺寸（width/height 内容属性，rules for parsing non-negative
     // integers 前导数字）→ 计算样式 auto 侧覆盖——getComputedStyle(canvas).width ===
     // "100px"（2d.canvas.host.size.attributes.parse.*：'100.999' → 100、'0x100' → 0、
@@ -182,7 +198,6 @@ pub fn compute_document_styles_with_inline_overrides(
             }
         }
     }
-    (doc, styles)
 }
 
 /// R34xx：非负整数解析（spec "rules for parsing non-negative integers"：可选前导

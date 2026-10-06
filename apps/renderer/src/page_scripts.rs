@@ -1091,6 +1091,9 @@ pub(crate) fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &s
                 // 把旧 handle 锚到同选择器的新节点上。
                 evict_removed_worker_handles(ctx, &recorded, &handle_selectors);
                 *ctx.html = new_html.clone();
+                // t6：发布 drain 应用记录——gCS 代际缓存（js worker 线程）消费后把
+                // cached doc 推进到新代，免每 tick 全量 re-parse（轮询站点风暴根因）。
+                zero_engine::js_dom_bridge::publish_gcs_drain_record(html, &new_html, &recorded);
                 // slice33（RP-3 跨文档残影）：apply 代际换代通知——与 webview
                 // `apply_pending_shared_mutations`/`apply_mutations_subset` 的 R379/pa2b
                 // 钩子同款（那两条共享队列路径 apply 后执行同一行；本路径此前缺失，
@@ -1121,6 +1124,8 @@ pub(crate) fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &s
             *ctx.html = new_html.clone();
             // slice33：R100 失效契约（同 webview 路径）。
             evict_removed_worker_handles(ctx, &recorded, &handle_selectors);
+            // t6：发布 drain 应用记录（同 webview 路径——gCS 代际缓存免重 parse）。
+            zero_engine::js_dom_bridge::publish_gcs_drain_record(html, &new_html, &recorded);
             // slice33：同 webview 路径——apply 代际换代通知（HTML 回写路径同边界语义）。
             notify_shim_apply_generation(ctx);
             Some(new_html)
