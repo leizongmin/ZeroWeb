@@ -6858,13 +6858,20 @@ mod tests {
     // 成本高；include_str! 编译期内嵌产品源码——调用点删行 → 重编译内嵌随之变 → 计数
     // 失配即红。断言出现次数而非行号（行号漂移鲁棒）；`self.` 前缀区分产品调用点与
     // 测试直呼（测试内均为 `wv.` 形）。
+    // PR #84 testeff 轮 S-1 加固：注释化删行（`// self.evict_…` 惯用禁用手法）原文
+    // 计数不变形——先剔除整行 `//` 注释再计数，注释化与硬删行同判红。
     #[test]
     fn execute_dom_script_path_evict_call_site_present_s35() {
         let src = include_str!("webview/user_actions.rs");
+        let live = src
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
         assert_eq!(
-            src.matches("self.evict_removed_identities(").count(),
+            live.matches("self.evict_removed_identities(").count(),
             1,
-            "execute_dom_script 第 4 应用路径的 evict_removed_identities 调用点必须存在（删行即红）"
+            "execute_dom_script 第 4 应用路径的 evict_removed_identities 调用点必须存在（删行/注释化即红）"
         );
     }
 }
