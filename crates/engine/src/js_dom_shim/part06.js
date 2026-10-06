@@ -8220,15 +8220,10 @@
             if (els30.length > 1) {
               // slice32（RP-3）：同名旧 NA 集合置 dead（换代/重装后停维护），再装新
               // live 集合（spec HTMLCollection length/item/namedItem + live 语义）。
-              try {
-                for (var d32 = 0; d32 < _zwLiveCollections.length; d32++) {
-                  var dlc32 = _zwLiveCollections[d32];
-                  if (dlc32 && dlc32.naName === mname) dlc32.dead = true;
-                }
-              } catch (_e32d) {}
-              var col32 = _zwMakeCollection(els30, true, _zwNALiveSpec(mname));
-              _zwNAInstalled[mname] = col32;
-              globalThis[mname] = col32;
+              // slice36（RP-3 动态名面）：安装逻辑收口到 `_zwNAInstallCollection`
+              //（dead 置换 + liveSpec + 集合账本 + 非枚举全局 + renderer 换代登记一处
+              // 维护）——安装面与动态面同口径。
+              _zwNAInstallCollection(mname, els30);
             }
           }
         }

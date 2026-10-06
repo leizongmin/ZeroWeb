@@ -3,8 +3,8 @@
 // 设施（liveSpec.matches）同步维护 len/order；②id/name 属性变异经 part04 钩子
 // _zwNAAttrChanged 重核成员（失格剔除/新中末位并入）；③成员跌破 2 全局形态跟随
 //（_zwNAGlobalMorph：1→元素、0→回收）；④同名重装置旧集合 dead（captured 引用冻结
-// = 旧文档语义）；⑤live 边界负控——安装时点不存在的脚本后建名不解析（动态取值面
-// 未实现，偏差如实申报）。
+// = 旧文档语义）；⑤动态名边界钉——slice36 已收口为动态解析正钉（脚本后建名访问时
+// 解析，见 part37.rs `_zwNADynamicSync` 面）。
 // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
 // https://dom.spec.whatwg.org/#concept-collection-live
 
@@ -245,8 +245,10 @@ fn named_access_reinstall_dead_marks_old_s32() {
     );
 }
 
-// ⑤live 边界负控：安装时点不存在的名（脚本后建）不解析——动态取值面未实现的
-// 如实申报钉（防误报全 live；spec WindowProperties 每读动态查找面归 RP-3 池后续）。
+// ⑤动态名面（slice36 收口，原 s32 live 边界负控钉按其断言信息翻转）：脚本后建
+// 元素（createElement + id + appendChild）在访问时点解析——spec named property
+// visibility 按次访问计算，不限定安装时点快照。
+// https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
 #[test]
 fn named_access_dynamic_name_boundary_s32() {
     let mut sandbox = s32_sandbox!("<html><body></body></html>");
@@ -255,11 +257,17 @@ fn named_access_dynamic_name_boundary_s32() {
             "var d = document.createElement('div');
              d.setAttribute('id', 'dyn32');
              document.body.appendChild(d);
-             globalThis.__r_undef = window.dyn32 === undefined;")
+             globalThis.__r_undef = window.dyn32 === undefined;
+             globalThis.__r_ident = window.dyn32 === d;")
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__r_undef").unwrap().value,
+        "false",
+        "slice36 已收口动态名面：脚本后建名访问时解析（本钉为机制设计的强制申报翻转，非回归）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_ident").unwrap().value,
         "true",
-        "脚本后建名不解析（live 边界，偏差申报面）"
+        "解析目标即脚本创建的同一元素（身份一致）"
     );
 }

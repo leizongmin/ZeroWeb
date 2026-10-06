@@ -841,3 +841,9 @@ html/browsers/the-window-object/named-access-on-the-window-object/strict-mode-re
 html/browsers/the-window-object/named-access-on-the-window-object/test.html 315976933870b34d6ea30e3f6643403edae678ba 2026-10-04 S28-NA-baseline
 html/browsers/the-window-object/named-access-on-the-window-object/window-named-properties.html 315976933870b34d6ea30e3f6643403edae678ba 2026-10-04 S28-NA-baseline
 html/browsers/the-window-object/named-access-on-the-window-object/window-null-names.html 315976933870b34d6ea30e3f6643403edae678ba 2026-10-04 S28-NA-baseline
+# 2026-10-06 slice36（RP-3 动态名面）：上列 named-access-on-the-window-object 17 案不变，
+# 动态名注册/注销面收口（part01 _mo_notify → part05 _zwNADynamicSync/_zwNAAttrDynamicSync
+# 尾叫 + part06 安装面共用 _zwNAInstallCollection）——组内真执行 16P/28F/2T → 31P/13F/2T
+#（+15P：basics 4、changing 5、multi-match 1、removing 2、name-attribute-elements 2、
+# nested-context 1）；残余 13F 为 iframe contentWindow 通道/prototype 链/cross-global/
+# 取数基建面，非动态名语义（diag/evidence/slice36/gates/wpt-named-access-group-after.log）。
