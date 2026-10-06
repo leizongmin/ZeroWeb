@@ -240,6 +240,35 @@ fn resolve_kw_real_length(value: &LengthValue, style: &zero_style_system::Comput
 }
 
 fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+    // R4946（css-flexbox §9.9 intrinsic main size）：被通用递归测到的 flex/grid 容器
+    //（典型：flex item 自身是 flex 行容器 → `flex_item_base_size` 第 3 步落到本函数；
+    // R4032 inline-block 族递归遇 inline-flex 同理）须用专用 intrinsic 测量——flex 行
+    // = Σ item base size，通用块递归按「块子各自成行取 max」会把行容器塌成单项宽。
+    // `block_max_content_width` 已有同款分发（R1018），本函数此前缺位。
+    // None（无流内 item）→ 落回通用路径保留叶/文本回退。
+    if let Some(s) = box_node.node_id.and_then(|id| styles.get(&id)) {
+        match s.display {
+            DisplayValue::Flex | DisplayValue::InlineFlex => {
+                let base = if matches!(
+                    s.flex_direction,
+                    FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+                ) {
+                    flex_column_intrinsic_width(box_node, doc, styles)
+                } else {
+                    flex_row_intrinsic_width(box_node, doc, styles)
+                };
+                if let Some(w) = base {
+                    return w;
+                }
+            }
+            DisplayValue::Grid | DisplayValue::InlineGrid => {
+                if let Some(w) = grid_intrinsic_width(box_node, doc, styles) {
+                    return w;
+                }
+            }
+            _ => {}
+        }
+    }
     let mut inline_sum = 0.0f32;
     let mut block_max = 0.0f32;
     // R4397：float 子横向叠加 + clear 强制换行（同 block_max_content_width loop 头注

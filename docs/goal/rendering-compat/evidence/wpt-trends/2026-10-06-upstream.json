@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-06",
+  "mode": "upstream",
+  "wpt_data_ref": "v1.10",
+  "total": 16060,
+  "passed": 14758,
+  "rate_pct": 91.9,
+  "extra": "failed=1302;skipped=0",
+  "git_sha": "c8f1a90cd",
+  "note": "R4946 修复嵌套 flex 行容器 max-content 塌单项宽 + 恢复 zw 本地案与 media fixture（wpt-data 重拉事故后）"
+}

@@ -876,3 +876,69 @@ fn test_r3925_fit_content_arg_is_upper_bound_not_fixed() {
         t.width
     );
 }
+
+/// 回归：max-content 语境的**嵌套 flex 行**——外层 flex 容器（width:max-content）的
+/// item 自身是 flex 行容器时，item 的 max-content 贡献 = Σ 内层 item base size
+///（css-flexbox §9.9 intrinsic main size），而非通用块递归的「块子各自成行取 max」。
+/// 站点实证（bilibili left-entry）：外层 `max-width:max-content` 塌到 ≈单项宽（80），
+/// Chrome 406（内层 7 项求和）→ 搜索表单压进菜单行。
+/// 期望：inner = 50 + 30 = 80；outer = inner 的 max-content 贡献 = 80。旧缺陷测 50。
+#[test]
+fn test_nested_flex_row_max_content_sums_inner_flex() {
+    let html = r#"<html><body style="margin:0">
+          <div id="outer" style="display:flex;width:max-content;align-items:center">
+            <div id="main" style="display:flex;align-items:center">
+              <div style="flex-shrink:0"><div style="width:50px;height:50px"></div></div>
+              <div style="flex-shrink:0"><div style="width:30px;height:30px"></div></div>
+            </div>
+          </div>
+        </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let main = find("main", &doc, &result.root).expect("#main");
+    let outer = find("outer", &doc, &result.root).expect("#outer");
+    assert!(
+        (main.width - 80.0).abs() < 3.0,
+        "inner flex row #main should lay out to item sum 80px, got w={}",
+        main.width
+    );
+    assert!(
+        (outer.width - 80.0).abs() < 3.0,
+        "outer width:max-content must take inner flex row's SUM contribution (80px), \
+         not block-recursion max(50,30)=50px, got w={}",
+        outer.width
+    );
+}
+
+/// 变体（R4946 邻近边界）：嵌套 **flex column**——列容器主轴垂直，cross 轴
+/// max-content = max(item)（css-flexbox §9.9 cross size），非求和。钉住分发
+/// 不是无脑求和：column 走 `flex_column_intrinsic_width`。
+#[test]
+fn test_nested_flex_column_max_content_takes_max() {
+    let html = r#"<html><body style="margin:0">
+          <div id="outer" style="display:flex;width:max-content">
+            <div id="col" style="display:flex;flex-direction:column">
+              <div style="flex-shrink:0"><div style="width:50px;height:50px"></div></div>
+              <div style="flex-shrink:0"><div style="width:30px;height:30px"></div></div>
+            </div>
+          </div>
+        </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let col = find("col", &doc, &result.root).expect("#col");
+    let outer = find("outer", &doc, &result.root).expect("#outer");
+    assert!(
+        (outer.width - 50.0).abs() < 3.0,
+        "nested flex column cross contribution = max(50,30)=50px, got w={} (col w={})",
+        outer.width,
+        col.width
+    );
+}
