@@ -838,7 +838,8 @@ fn survives_document_reset(cmd: &JsWorkerCommand, reset_seq: u64) -> bool {
 /// 用于把稳态满核分解为可排序的成本桶。纯观测：默认关闭，关闭时每命令仅一次
 /// bool 判断；开启时每命令开销为两次 `Instant::now` + 一次哈希增量。
 /// 输出：值 `1`/`true` → tracing INFO（renderer stderr 在多进程下进有界 tail
-/// 缓冲，平时不可见）；值为路径 → 追加写该文件（诊断采集用侧信道）。
+/// 缓冲，平时不可见）；值为路径 → 追加写该文件（诊断采集用侧信道）；空串与
+/// `0`/`false`/`off`（任意大小写）→ 关闭。
 struct WorkerCensus {
     enabled: bool,
     sink: Option<std::path::PathBuf>,
@@ -852,7 +853,12 @@ impl WorkerCensus {
         let truthy = value
             .as_deref()
             .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-        let sink = value.filter(|_v| !truthy).map(std::path::PathBuf::from);
+        // 显式 falsy 值不当作 sink 路径——否则 `CENSUS=0` 会意外启用文件写模式。
+        let sink = value
+            .filter(|v| {
+                !v.is_empty() && !(v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("off"))
+            })
+            .map(std::path::PathBuf::from);
         Self {
             enabled: truthy || sink.is_some(),
             sink,

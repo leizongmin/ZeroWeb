@@ -1985,10 +1985,12 @@ pub fn query_all_selector_list_doc(doc: &Document, selector: &str) -> String {
 /// sel→tag 本地缓存，枚举内属性读零宿主往返。
 ///
 /// t7（bilibili 稳态轮询满核）：记录扩为 `sel\x1ftag[\x1fns]`——**仅非 HTML ns**
-/// 元素发第三段（`\x1f` 亦不出现在 ns URI 中），shim 枚举时灌注 sel→ns 表
+/// 元素发第三段，shim 枚举时灌注 sel→ns 表
 ///（`_zwSelNs` 缓存），`_zwFilterByTagNameNS` 过滤循环的 namespaceURI 读零宿主
 /// 往返（轮询页每次视图换代对全量元素逐个 `__zw_get_ns` 探测 ≈ 200ms/次 gTN）。
-/// 第三段缺席即 HTML ns，与 `_zwSelNs` 的 XHTML→'' 归一约定一致。
+/// 第三段缺席即 HTML ns，与 `_zwSelNs` 的 XHTML→'' 归一约定一致。解析端仅按前
+/// 两处分界切分（`\x1f` 不出现在引擎生成的唯一选择器与 tag 名中），第三段整段
+/// 保留——ns URI 本身含 `\x1f` 亦不影响逐值一致。
 /// https://dom.spec.whatwg.org/#concept-getelementsbytagnamens
 pub fn query_all_tagged_list_doc(doc: &Document, selector: &str) -> String {
     let root = doc.root();

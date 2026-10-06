@@ -9911,6 +9911,10 @@
     try { if (typeof globalThis._zwSiblingBaseInvalidateAll === 'function') globalThis._zwSiblingBaseInvalidateAll(); } catch (_e358sb) {}
     // R-baidu3：批量 tag 缓存随快照换代作废（sel→元素绑定可能变化）。
     _zwTagCache = null;
+    // t7/D2（PR90 审查）：ns 表同代作废——换代后印章 (gen,added,removed) 可能
+    // 相等（如新文档首快照），旧文档 ns 表不得跨代服务；置失配态走懒填充重灌。
+    _zwSelNsCache.gen = -1;
+    _zwSelNsCache.map = new Map();
   };
   // R379/pa2b（js-dom M4）：**apply 代际换代钩子**——host `apply_pending_shared_mutations`
   // 完成后调用（pending-apply RFC pa2 的 host→shim 回调链半边）。与
