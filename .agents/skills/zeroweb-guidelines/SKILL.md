@@ -11,7 +11,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 
 - 触发后整个编码任务期间持续生效，不因多轮对话或任务切换遗忘；仅当用户明确说「跳过准则」时暂停，恢复编码后自动重新生效。
 - 动代码前按改动选择主题，CR 时对照触碰到的条目；先核对适用条件，不把局部经验扩展为无条件禁令。
-- **权衡**：这些不变式倾向谨慎而非速度。小改动不必全量过 27 条，自行判断。
+- **权衡**：这些不变式倾向谨慎而非速度。小改动不必全量过 28 条，自行判断。
 - 本 skill 是领域层，叠加在 AGENTS.md 编码准则 / `lei-code-guidelines`（行为层）之上，不复述其行为规则。
 
 | 改动入口 | 必读条目 |
@@ -21,7 +21,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 | 绘制 / 合成 / 帧复用 | #6–8、#12–14、#17 |
 | IPC / 同步脚本 / 宿主桥 | #12–15、#24–25 |
 | 存储 / 并发缓存 | #16、#19、#22 |
-| 性能 / 测试工具 | #9–11、#17–20、#23、#27；shim 循环加 #26 |
+| 性能 / 测试工具 | #9–11、#17–20、#23、#27–28；shim 循环加 #26 |
 
 ## 与「简单至上」的关系
 
@@ -31,7 +31,7 @@ ZeroWeb 中一切来自网页的输入（HTML/CSS/JS 传值）都是**不可信�
 
 以下场景可临时放宽（合入 main 前必须恢复，放宽结束自动恢复全部）：
 
-- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离可先单跑看方向，合入前补全验证
+- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离、#28 执行体证据核验可先单跑看方向，合入前补全验证
 - 紧急热修复且用户确认：#11 可先单跑，事后补同条件配对对照
 
 任何场景下不可放宽：#1、#2、#16、#21（信任边界与数据丢失）。
@@ -172,3 +172,9 @@ js_dom_shim 中凡对象可能是 `_makeProxy`/`_wrapHandle` 产物，「属性�
 cargo 的产物身份（package ID / `-C metadata`）不区分 path 依赖在不同 worktree 的源码差异：共享同一 `CARGO_TARGET_DIR` 时，第二棵树编译同名 crate 会把第一棵树的 rmeta/rlib 原地覆盖，而 fingerprint 仍判「fresh」——后续编译静默链接到错误产物。症状（A/B 测出伪值、下游 crate `unresolved` 符号）从不指向污染源。跨树构建必须用独立 `CARGO_TARGET_DIR`；复用共享 target 时，返回主树先对在另一棵树编译过的 crate `cargo clean -p`，不信任增量结果。
 
 依据：[worktree 共享 target 指纹污染致 A/B 伪值](../../../docs/learnings/platform/2026-08/2026-08-18-worktree-shared-target-dir-fingerprint-collision.md)、[共享 CARGO_TARGET_DIR 静默覆盖主树产物](../../../docs/learnings/bugs/2026-10/2026-10-02-shared-cargo-target-worktree-corruption.md)。
+
+### 28. 执行体代码版本必须以最终链接产物内容为证据
+
+Fresh 输出、构建耗时、`deps/` 下 rlib 的字符串检索、对另一个 bin 的 `-p` 构建，都不是「该二进制包含某段代码」的证据：deps/ 下同一 crate 可并存多个 fingerprint 变体，独立 bin target 不在其他包的构建闭包内（修 shim 后 `-p zero-browser` 不会重编实际执行它的 zero-renderer）。探针、A/B、对账等行为验证前，先对将要执行的产物本体核验：`nm <bin> | grep <新符号>`（base 应 0 命中）或 `grep -a -c <特征串> <bin>`；主进程二进制 grep 不到 shim 字符串属链接器 GC 正常现象，核验对象必须是实际执行该代码的进程二进制。
+
+依据：[cargo Fresh 与多 rlib 变体](../../../docs/learnings/bugs/2026-10/2026-10-07-cargo-fresh-multirlib-not-base-evidence.md)、[shim 修复未进 renderer 二进制](../../../docs/learnings/bugs/2026-10/2026-10-07-renderer-shim-not-in-browser-binary.md)。

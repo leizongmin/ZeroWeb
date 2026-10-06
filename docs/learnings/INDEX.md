@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（131）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（132）
 
+- 2026-10-07 [多进程二进制分工：DOM shim 在 zero-renderer，`-p zero-browser` 构建不覆盖它](bugs/2026-10/2026-10-07-renderer-shim-not-in-browser-binary.md) — engine,renderer
 - 2026-10-07 [切分支后 cargo build 显示 Fresh 不能作为「base 代码」证据——多个 rlib fingerprint 变体并存](bugs/2026-10/2026-10-07-cargo-fresh-multirlib-not-base-evidence.md)
 - 2026-10-06 [make import-wpt 连锁 fetch-wpt-data 重建目录，静默抹掉未入 tag 的 media fixture](bugs/2026-10/2026-10-06-wpt-data-refetch-wipes-untracked-fixtures.md) — wpt-runner,build-support
 - 2026-10-06 [诊断轮换二进制：`-p zero-browser` 不重建 zero-renderer；build 未确认即跑 probe 用旧二进制](bugs/2026-10/2026-10-06-renderer-diag-binary-rebuild-scope-and-race.md) — renderer, build

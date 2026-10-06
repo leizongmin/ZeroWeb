@@ -30,6 +30,12 @@
       "prompt": "为做父 SHA 与 HEAD 的性能对照，在 /tmp 起了 git worktree 并沿用主树 CARGO_TARGET_DIR，测完回主树继续增量编译，该流程有问题吗？",
       "expected_output": "有；cargo 产物身份不含 worktree 源码差异，第二棵树编译会原地覆盖主树 rmeta/rlib 而 fingerprint 仍判 fresh，症状是伪测量值或下游 unresolved 符号且不指向污染源。跨树必须用独立 CARGO_TARGET_DIR，或回主树先对被污染 crate cargo clean -p。",
       "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "修了 js_dom_shim 里一个热循环后，用 cargo build --release -p zero-browser 重建，再用 CDP 探针验证发现优化没生效，准备据此放弃这个修复方向，这个判断可靠吗？",
+      "expected_output": "不可靠；shim 经 include_str! 嵌入、实际由 zero-renderer 进程执行，独立 bin target 不在 zero-browser 的构建闭包内，-p zero-browser 不会重编 zero-renderer，探针跑的是旧二进制。应改用 -p zero-renderer（或 workspace）构建，并先对最终产物本体核验（grep -a -c 特征串或 nm 符号表）确认新代码已进入实际执行体，再做行为验证；Fresh 输出、构建耗时、deps/ 下 rlib 内容都不能作为代码版本证据。",
+      "files": []
     }
   ]
 }
