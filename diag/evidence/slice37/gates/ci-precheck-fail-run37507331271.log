@@ -1,0 +1,70 @@
+precheck	Check formatting	﻿2026-10-06T17:57:15.8664646Z ##[group]Run cargo fmt --all -- --check
+precheck	Check formatting	2026-10-06T17:57:15.8664859Z ^[[36;1mcargo fmt --all -- --check^[[0m
+precheck	Check formatting	2026-10-06T17:57:15.8717184Z shell: /usr/bin/bash -e {0}
+precheck	Check formatting	2026-10-06T17:57:15.8717338Z env:
+precheck	Check formatting	2026-10-06T17:57:15.8717453Z   CARGO_TERM_COLOR: always
+precheck	Check formatting	2026-10-06T17:57:15.8717585Z   RUST_BACKTRACE: 1
+precheck	Check formatting	2026-10-06T17:57:15.8717872Z   CARGO_HOME: /home/runner/.cargo
+precheck	Check formatting	2026-10-06T17:57:15.8718015Z   CARGO_INCREMENTAL: 0
+precheck	Check formatting	2026-10-06T17:57:15.8718141Z   RUSTY_V8_VERSION: 150.2.0
+precheck	Check formatting	2026-10-06T17:57:15.8718275Z ##[endgroup]
+precheck	Check formatting	2026-10-06T17:57:18.3839380Z Diff in /home/runner/work/ZeroWeb/ZeroWeb/crates/page-runtime/src/html_actions.rs:654:
+precheck	Check formatting	2026-10-06T17:57:18.3840374Z  /// uievents/textInput delete/delete-selection 断言面）。选区非空删选区（同
+precheck	Check formatting	2026-10-06T17:57:18.3841062Z  /// Backward）；collapsed 删 caret **后**一个 UTF-16 单元（代理对安全）。caret 吸附
+precheck	Check formatting	2026-10-06T17:57:18.3841501Z  /// 原位（spec deleteContentForward 语义——删除后选区起点不变）。
+precheck	Check formatting	2026-10-06T17:57:18.3841811Z -fn plan_text_forward_delete(
+precheck	Check formatting	2026-10-06T17:57:18.3842045Z -    target: PageNodeRef,
+precheck	Check formatting	2026-10-06T17:57:18.3842425Z -    state: &TextActionState,
+precheck	Check formatting	2026-10-06T17:57:18.3842710Z -) -> Result<HtmlActionPlan, ActionNoopReason> {
+precheck	Check formatting	2026-10-06T17:57:18.3843274Z +fn plan_text_forward_delete(target: PageNodeRef, state: &TextActionState) -> Result<HtmlActionPlan, ActionNoopReason> {
+precheck	Check formatting	2026-10-06T17:57:18.3843775Z      if state.read_only {
+precheck	Check formatting	2026-10-06T17:57:18.3849396Z          return Err(ActionNoopReason::ReadOnlyTarget);
+precheck	Check formatting	2026-10-06T17:57:18.3849766Z      }
+precheck	Check formatting	2026-10-06T17:57:19.3480432Z Diff in /home/runner/work/ZeroWeb/ZeroWeb/crates/webview/src/webview/user_actions.rs:3:
+precheck	Check formatting	2026-10-06T17:57:19.3481007Z  #[cfg(feature = "v8")]
+precheck	Check formatting	2026-10-06T17:57:19.3481306Z  use zero_engine::script_dispatch_native_event;
+precheck	Check formatting	2026-10-06T17:57:19.3481594Z  use zero_engine::{
+precheck	Check formatting	2026-10-06T17:57:19.3481926Z -    DomEventDetail, DomMutation, register_dom_callbacks, script_call_set_location_hash,
+precheck	Check formatting	2026-10-06T17:57:19.3482499Z -    script_contenteditable_delete, script_contenteditable_enter, script_contenteditable_forward_delete,
+precheck	Check formatting	2026-10-06T17:57:19.3483048Z -    script_contenteditable_insert, script_contenteditable_probe,
+precheck	Check formatting	2026-10-06T17:57:19.3483551Z -    script_dispatch_dom_event, script_pointer_move, script_reset_form_controls, script_set_control_checked,
+precheck	Check formatting	2026-10-06T17:57:19.3484160Z -    script_set_open, script_set_option_selected, script_set_text_control_state, script_text_control_snapshot,
+precheck	Check formatting	2026-10-06T17:57:19.3484842Z +    DomEventDetail, DomMutation, register_dom_callbacks, script_call_set_location_hash, script_contenteditable_delete,
+precheck	Check formatting	2026-10-06T17:57:19.3485756Z +    script_contenteditable_enter, script_contenteditable_forward_delete, script_contenteditable_insert,
+precheck	Check formatting	2026-10-06T17:57:19.3486415Z +    script_contenteditable_probe, script_dispatch_dom_event, script_pointer_move, script_reset_form_controls,
+precheck	Check formatting	2026-10-06T17:57:19.3487105Z +    script_set_control_checked, script_set_open, script_set_option_selected, script_set_text_control_state,
+precheck	Check formatting	2026-10-06T17:57:19.3487548Z +    script_text_control_snapshot,
+precheck	Check formatting	2026-10-06T17:57:19.3487776Z  };
+precheck	Check formatting	2026-10-06T17:57:19.3487965Z  use zero_page_runtime::{
+precheck	Check formatting	2026-10-06T17:57:19.3488442Z      ActionNoopReason, ActionTargetState, EventDispatchResult, FormNavigationIntent, HtmlActionRequest, HtmlUserAction,
+precheck	Check formatting	2026-10-06T17:57:19.3489137Z Diff in /home/runner/work/ZeroWeb/ZeroWeb/crates/webview/src/webview/user_actions.rs:189:
+precheck	Check formatting	2026-10-06T17:57:19.3490116Z              // 字符（delete.html CE div 案 'a' 被误删）；CE ForwardDelete（range 后向
+precheck	Check formatting	2026-10-06T17:57:19.3490640Z              // 删除）挂账，此处落 text-control 快照对 contenteditable 返 noop
+precheck	Check formatting	2026-10-06T17:57:19.3490983Z              //（NotApplicable）。
+precheck	Check formatting	2026-10-06T17:57:19.3491322Z -            HtmlUserAction::InsertText { .. } | HtmlUserAction::DeleteBackward
+precheck	Check formatting	2026-10-06T17:57:19.3491711Z -            | HtmlUserAction::ForwardDelete => {
+precheck	Check formatting	2026-10-06T17:57:19.3492199Z +            HtmlUserAction::InsertText { .. } | HtmlUserAction::DeleteBackward | HtmlUserAction::ForwardDelete => {
+precheck	Check formatting	2026-10-06T17:57:19.3492810Z                  // R3254-M2 切片 2（editing goal）：焦点元素为 contenteditable 宿主时走
+precheck	Check formatting	2026-10-06T17:57:19.3493768Z                  // CE 键入/删除管线（shim __zw_ce_insert/delete——Selection caret 处
+precheck	Check formatting	2026-10-06T17:57:19.3494278Z                  // deleteContents/insertNode 真实 DOM 变更 + beforeinput/input 事件序），
+precheck	Check formatting	2026-10-06T17:57:19.7779671Z Diff in /home/runner/work/ZeroWeb/ZeroWeb/tests/wpt-runner/src/testharness.rs:7959:
+precheck	Check formatting	2026-10-06T17:57:19.7780946Z              .filter(|value| !value.is_empty() && value != "null" && value != "undefined"),
+precheck	Check formatting	2026-10-06T17:57:19.7781308Z      };
+precheck	Check formatting	2026-10-06T17:57:19.7781507Z      let Some(selector) = selector else {
+precheck	Check formatting	2026-10-06T17:57:19.7781862Z -        return Some("testdriver target has no stable selector".into());    };
+precheck	Check formatting	2026-10-06T17:57:19.7782296Z +        return Some("testdriver target has no stable selector".into());
+precheck	Check formatting	2026-10-06T17:57:19.7782638Z +    };
+precheck	Check formatting	2026-10-06T17:57:19.7782835Z      let selector = selector.trim().to_string();
+precheck	Check formatting	2026-10-06T17:57:19.7783142Z      if selector.is_empty() || selector == "null" {
+precheck	Check formatting	2026-10-06T17:57:19.7783502Z          return Some("testdriver target has no stable selector".into());
+precheck	Check formatting	2026-10-06T17:57:19.7783983Z Diff in /home/runner/work/ZeroWeb/ZeroWeb/tests/wpt-runner/src/testharness.rs:8421:
+precheck	Check formatting	2026-10-06T17:57:19.7784742Z                          // uievents/interface/keyboard-click-event 的 keyMapping 写
+precheck	Check formatting	2026-10-06T17:57:19.7785547Z                          // uE006——submit 动作对 formless button noop(NotApplicable)
+precheck	Check formatting	2026-10-06T17:57:19.7785999Z                          // 使 send_keys 链 reject/挂）。
+precheck	Check formatting	2026-10-06T17:57:19.7786338Z -                        let enter_formless_buttonish = (character == '\u{E007}'
+precheck	Check formatting	2026-10-06T17:57:19.7786689Z -                            || character == '\u{E006}')
+precheck	Check formatting	2026-10-06T17:57:19.7787094Z +                        let enter_formless_buttonish = (character == '\u{E007}' || character == '\u{E006}')
+precheck	Check formatting	2026-10-06T17:57:19.7787493Z                              && webview
+precheck	Check formatting	2026-10-06T17:57:19.7787881Z                                  .execute_script(&zero_engine::script_buttonish_probe(&selector))
+precheck	Check formatting	2026-10-06T17:57:19.7788260Z                                  .map(|v| v.trim() == "1")
+precheck	Check formatting	2026-10-06T17:57:19.7928287Z ##[error]Process completed with exit code 1.

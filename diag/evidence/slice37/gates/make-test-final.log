@@ -1,0 +1,68 @@
+# make test 终版尾注（final tree，含引擎分叉补丁）
+# 日期：2026-10-07；完整日志 21257 行（/tmp 临时，awk 复算口径如下）
+# 命令口径：make test（scripts/test-guard.rs 包裹，外层 memguard 20480MB + timeout 3300s）
+#
+--- awk 复算（grep 'test result:' 求和）---
+passed=20115 failed=0 ignored=198
+---
+--- 完整日志尾部（最后 60 行）---
+test runtime::automation::tests::evaluate_retaining_splits_objects_and_primitives ... ok
+test runtime::automation::tests::find_elements_returns_all_matches_in_document_order ... ok
+test runtime::automation::tests::live_automation_updates_form_and_rejects_stale_reference ... ok
+test runtime::automation::tests::release_handle_invalidates_reference ... ok
+test runtime::automation::tests::release_object_group_scopes_to_group ... ok
+test runtime::automation::tests::unsupported_automation_operation_is_explicit ... ok
+test runtime::compositor_publish_tests::one_input_transaction_publishes_at_most_one_page_frame ... ok
+test runtime::compositor_publish_tests::publish_compositor_frame_carries_dirty_rects ... ok
+test runtime::compositor_publish_tests::publish_frame_emits_compositor_sequence_with_full_paint_payload ... ok
+test runtime::compositor_publish_tests::publish_frame_emits_viewpainted_with_primitives ... ok
+test runtime::compositor_publish_tests::publish_mode_switch_republishes_legacy_only ... ok
+test runtime::keyboard_input_tests::ctrl_a_selects_all_text_without_inserting_character ... ok
+test runtime::keyboard_input_tests::host_focus_transition_dispatches_focus_event_order ... ok
+test runtime::keyboard_input_tests::keyboard_defaults_enforce_readonly_and_maxlength ... ok
+test runtime::keyboard_input_tests::keyboard_entry_points_share_prevented_default_action ... ok
+test runtime::keyboard_input_tests::pointer_selection_uses_utf16_paint_boundary ... ok
+test runtime::keyboard_input_tests::prevented_tab_keeps_focus_owner ... ok
+test runtime::keyboard_input_tests::text_keydown_dispatches_keypress_before_input_events ... ok
+test runtime::keyboard_input_tests::textless_keydown_skips_keypress_and_insertion ... ok
+test runtime::navigation_preemption_tests::empty_head_promotes_navigation_from_deferred ... ok
+test runtime::navigation_preemption_tests::navigation_head_short_circuits_without_draining ... ok
+test runtime::navigation_preemption_tests::no_pending_navigation_returns_head_and_keeps_drained ... ok
+test runtime::navigation_preemption_tests::promoted_navigation_drops_stale_queued_load ... ok
+test runtime::navigation_preemption_tests::promoted_navigation_preserves_non_load_messages_in_order ... ok
+test runtime::predoc_script_tests::predoc_kill_switch_value_matrix ... ok
+test runtime::predoc_script_tests::predoc_registration_replaces_list_and_persists_across_documents ... ok
+test runtime::predoc_script_tests::predoc_script_runs_before_page_scripts ... ok
+test runtime::predoc_script_tests::predoc_script_skipped_when_js_disabled ... ok
+test runtime::runtime_smoke::ipc_fetch_get_skips_deferred_messages_without_spinning ... ok
+test runtime::runtime_smoke::read_input_value_for_change_textarea_uses_content ... ok
+test runtime::runtime_smoke::renderer_runtime_stack_handles_deep_render_call_chain ... ok
+test runtime::tick_per_task_tests::dynamic_crossorigin_script_no_false_error_end_to_end ... ok
+test runtime::tick_per_task_tests::dynamic_external_scripts_host_fetch_fires_element_error_event ... ok
+test runtime::tick_per_task_tests::dynamic_external_scripts_host_fetch_success_fires_load_event_and_executes ... ok
+test runtime::tick_per_task_tests::dynamic_sameorigin_script_single_execution_end_to_end ... ok
+test runtime::tick_per_task_tests::observer_tick_preserves_pending_async_mutations_t8 ... ok
+test runtime::tick_per_task_tests::reset_clears_writes_landed_after_main_thread_clear_d1 ... ok
+test runtime::tick_per_task_tests::tick_combined_mode_default_does_not_call_tick_once ... ok
+test runtime::tick_per_task_tests::tick_per_task_mode_iterates_one_observer_per_execute ... ok
+test sandbox::tests::renderer_seccomp_env_gate ... ok
+test script_prefetch::dynamic_scripts_tests::dynamic_scripts_complete_with_ok_and_err_callbacks ... ok
+test script_prefetch::dynamic_scripts_tests::dynamic_scripts_disconnected_channel_completes_with_err ... ok
+test script_prefetch::dynamic_scripts_tests::dynamic_scripts_parallel_cap_bounds_new_requests_per_tick ... ok
+test service_worker_host::tests::cache_delete_and_storage_listing_round_trips_through_renderer_host ... ok
+test service_worker_host::tests::cache_match_round_trips_through_renderer_host ... ok
+test service_worker_host::tests::cache_query_options_round_trip_through_renderer_host ... ok
+test service_worker_host::tests::cache_storage_open_put_match_all_keys_round_trips_through_renderer_host ... ok
+test service_worker_host::tests::evaluate_command_reports_compile_error_event ... ok
+test service_worker_host::tests::evaluate_command_reports_evaluated_event ... ok
+test service_worker_host::tests::fetch_command_dispatches_and_returns_response_event ... ok
+test service_worker_host::tests::import_scripts_round_trips_through_renderer_host ... ok
+test service_worker_host::tests::invalid_command_is_rejected_without_runtime ... ok
+test service_worker_host::tests::message_command_dispatches_and_returns_outbound_events ... ok
+test service_worker_host::tests::module_graph_fetch_round_trips_through_renderer_host ... ok
+test service_worker_host::tests::shutdown_command_stops_runtime ... ok
+test service_worker_host::tests::worker_global_fetch_round_trips_through_renderer_host ... ok
+
+test result: ok. 218 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 166.38s
+
+exit=0

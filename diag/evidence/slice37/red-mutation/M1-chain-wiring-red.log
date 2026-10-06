@@ -1,0 +1,51 @@
+   Compiling zero-engine v0.1.0 (/home/lei/work/ZeroWeb/crates/engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.39s
+     Running unittests src/lib.rs (target/debug/deps/zero_engine-acbd885ebec27618)
+
+running 6 tests
+test js_dom_bridge::tests::npo_shadow_visibility_s37 ... FAILED
+test js_dom_bridge::tests::npo_delete_faces_s37 ... FAILED
+test js_dom_bridge::tests::npo_enumerable_faces_s37 ... ok
+test js_dom_bridge::tests::npo_chain_shape_s37 ... FAILED
+test js_dom_bridge::tests::npo_descriptor_gpn_s37 ... FAILED
+test js_dom_bridge::tests::npo_child_realm_chain_s37 ... ok
+
+failures:
+
+---- js_dom_bridge::tests::npo_shadow_visibility_s37 stdout ----
+
+thread 'js_dom_bridge::tests::npo_shadow_visibility_s37' (260533) panicked at crates/engine/src/js_dom_bridge_tests/part38.rs:192:10:
+called `Result::unwrap()` on an `Err` value: RuntimeError("TypeError: Cannot read properties of undefined (reading 'value')\nTypeError: Cannot read properties of undefined (reading 'value')\n    at <anonymous>:5:87")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- js_dom_bridge::tests::npo_delete_faces_s37 stdout ----
+
+thread 'js_dom_bridge::tests::npo_delete_faces_s37' (260530) panicked at crates/engine/src/js_dom_bridge_tests/part38.rs:269:5:
+assertion `left == right` failed: NPO 级 sloppy delete ret=false（WebIDL [[Delete]]→false）
+  left: "true"
+ right: "false"
+
+---- js_dom_bridge::tests::npo_chain_shape_s37 stdout ----
+
+thread 'js_dom_bridge::tests::npo_chain_shape_s37' (260528) panicked at crates/engine/src/js_dom_bridge_tests/part38.rs:52:5:
+assertion `left == right` failed: window 的 [[Prototype]] 站 Window.prototype（WebIDL §3.7.3）
+  left: "false"
+ right: "true"
+
+---- js_dom_bridge::tests::npo_descriptor_gpn_s37 stdout ----
+
+thread 'js_dom_bridge::tests::npo_descriptor_gpn_s37' (260531) panicked at crates/engine/src/js_dom_bridge_tests/part38.rs:126:5:
+assertion `left == right` failed: NPO.hasOwnProperty(named) 真（own 观察面，Chrome 同款）
+  left: "false"
+ right: "true"
+
+
+failures:
+    js_dom_bridge::tests::npo_chain_shape_s37
+    js_dom_bridge::tests::npo_delete_faces_s37
+    js_dom_bridge::tests::npo_descriptor_gpn_s37
+    js_dom_bridge::tests::npo_shadow_visibility_s37
+
+test result: FAILED. 2 passed; 4 failed; 0 ignored; 0 measured; 2846 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `-p zero-engine --lib`

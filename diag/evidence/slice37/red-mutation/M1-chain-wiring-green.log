@@ -1,0 +1,14 @@
+   Compiling zero-engine v0.1.0 (/home/lei/work/ZeroWeb/crates/engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.56s
+     Running unittests src/lib.rs (target/debug/deps/zero_engine-acbd885ebec27618)
+
+running 6 tests
+test js_dom_bridge::tests::npo_enumerable_faces_s37 ... ok
+test js_dom_bridge::tests::npo_delete_faces_s37 ... ok
+test js_dom_bridge::tests::npo_chain_shape_s37 ... ok
+test js_dom_bridge::tests::npo_descriptor_gpn_s37 ... ok
+test js_dom_bridge::tests::npo_child_realm_chain_s37 ... ok
+test js_dom_bridge::tests::npo_shadow_visibility_s37 ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 2846 filtered out; finished in 0.13s
+

@@ -8297,7 +8297,11 @@
             'embed[name="' + id + '"],form[name="' + id + '"],' +
             'img[name="' + id + '"],object[name="' + id + '"]');
         }
-        if (el) globalThis[id] = el;
+        // slice37（NPO 收口）：安装面 = backing（原 globalThis own 赋值可枚举且站错层）。
+        // 上方 `globalThis[id] !== undefined` 守卫语义保持 window 级读（NPO 化后经原型链
+        // 解析到 backing/NPO 值，幂等性不回退；脚本/真实全局遮蔽仍跳过）。引擎分叉见
+        // part05 接线处申报——quickjs 不接链时本函数经 _zwNADefineNA 落 slice36 own 面。
+        if (el) _zwNADefineNA(id, el);
       });
     } catch (_e) {}
   }

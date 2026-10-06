@@ -1,0 +1,35 @@
+# M3 child-realm-wiring RED（返修轮，交付树；I3 补全）
+# 树: 23ec960068497dd64e83155d3f1df062197bc0e2  基准 sha256(part05.js) = bc5994a74a60f05a97b4b1fe4e611268ec0abd54a67f5fd10523290c90577165
+# 变异: _zwMakeIframeWin 子 realm NPO 接线门 if (…wired) → if (false && …wired)
+# diff: ../M3-child-realm-wiring-mutation.diff
+# 日期: 2026-10-07
+
+   Compiling zero-engine v0.1.0 (/home/lei/work/ZeroWeb/crates/engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.59s
+     Running unittests src/lib.rs (target/debug/deps/zero_engine-acbd885ebec27618)
+
+running 6 tests
+test js_dom_bridge::tests::npo_chain_shape_s37 ... ok
+test js_dom_bridge::tests::npo_delete_faces_s37 ... ok
+test js_dom_bridge::tests::npo_descriptor_gpn_s37 ... ok
+test js_dom_bridge::tests::npo_enumerable_faces_s37 ... ok
+test js_dom_bridge::tests::npo_child_realm_chain_s37 ... FAILED
+test js_dom_bridge::tests::npo_shadow_visibility_s37 ... ok
+
+failures:
+
+---- js_dom_bridge::tests::npo_child_realm_chain_s37 stdout ----
+
+thread 'js_dom_bridge::tests::npo_child_realm_chain_s37' (3337894) panicked at crates/engine/src/js_dom_bridge_tests/part38.rs:369:10:
+called `Result::unwrap()` on an `Err` value: RuntimeError("TypeError: Cannot convert undefined or null to object\nTypeError: Cannot convert undefined or null to object\n    at Object.getPrototypeOf (<anonymous>)\n    at <anonymous>:7:51")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    js_dom_bridge::tests::npo_child_realm_chain_s37
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 2854 filtered out; finished in 0.06s
+
+error: test failed, to rerun pass `-p zero-engine --lib`
+
+# 还原后复核: bc5994a74a60f05a97b4b1fe4e611268ec0abd54a67f5fd10523290c90577165  crates/engine/src/js_dom_shim/part05.js

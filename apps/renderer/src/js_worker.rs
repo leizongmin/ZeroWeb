@@ -1220,10 +1220,13 @@ fn js_worker_main(
     for (var k30 in cur) {
       if (!(installed && installed[k30])) continue;
       var ex30;
-      try { ex30 = globalThis[k30]; } catch (e30) { continue; }
+      // slice37（NPO 收口）：安装值读面 = __zwNAGet（wired：backing own「本面登记值」
+      // 口径——globalThis 读经原型链也能解析，但脚本 expando 不得混入；quickjs 不接链：
+      // globalThis own raw 读，slice36 口径，引擎分叉见 part05 接线处申报）。
+      try { ex30 = __zwNAGet(k30); } catch (e30) { continue; }
       if (!_isNA(ex30)) continue;
       if (!(ex30.nodeType === 1) || multiNow[k30]) {
-        try { delete globalThis[k30]; } catch (e30d) {}
+        try { __zwNADelete(k30); } catch (e30d) {}
       }
     }
   } catch (e30m) {}
@@ -1231,21 +1234,27 @@ fn js_worker_main(
     // 新 context（reset 后首快照）：快照先于页面脚本执行，本 context 尚无脚本自建
     // 全局——shim eval 自调用此刻登记的「上一文档」元素全局全部回收（否则跨站
     // 导航/重载会把旧页元素残留进新文档，且 id 撞车时遮蔽新页注册）。
-    for (var k in globalThis) {
+    // slice37（NPO 收口）：枚举面 = __zwNAOwnKeys（wired：backing own keys——原
+    // for-in globalThis 在 NPO 化后枚举不到安装值；quickjs：getOwnPropertyNames
+    // globalThis own——较 slice36 的 for-in（仅可枚举）为安全方向放宽，多覆盖
+    // 非可枚举 own 残留，快照先于页面脚本故无越界回收面）。
+    var ks37 = typeof __zwNAOwnKeys === 'function' ? __zwNAOwnKeys() : [];
+    for (var ki37 = 0; ki37 < ks37.length; ki37++) {
+      var k = ks37[ki37];
       if (cur[k]) continue;
       var v0;
-      try { v0 = globalThis[k]; } catch (e) { continue; }
+      try { v0 = __zwNAGet(k); } catch (e) { continue; }
       if (_isNA(v0)) {
-        try { delete globalThis[k]; } catch (e) {}
+        try { __zwNADelete(k); } catch (e) {}
       }
     }
   } else {
     for (var k in installed) {
       if (cur[k]) continue;
       var old;
-      try { old = globalThis[k]; } catch (e) { continue; }
+      try { old = __zwNAGet(k); } catch (e) { continue; }
       if (_isNA(old)) {
-        try { delete globalThis[k]; } catch (e) {}
+        try { __zwNADelete(k); } catch (e) {}
       }
     }
   }
@@ -1253,7 +1262,7 @@ fn js_worker_main(
   var next = {};
   for (var id in cur) {
     var v;
-    try { v = globalThis[id]; } catch (e) { continue; }
+    try { v = __zwNAGet(id); } catch (e) { continue; }
     if (_isNA(v)) next[id] = true;
   }
   globalThis.__zwNamedAccessInstalled = next;
@@ -4857,6 +4866,115 @@ mod tests {
             )
             .expect("复位后 worker 可执行");
         assert_eq!(value, "true", "复位重建 sandbox 后须重臂旗标");
+        worker.shutdown();
+    }
+
+    // slice37（NPO 收口）：renderer 腿（真实快照臂路径，同一份 shim JS）named access
+    // 语义钉，按 shim 自身引擎分叉（`__zwNPO.wired`——part05 接线处 FIXME 申报）分支：
+    // wired（V8/Chrome 语义）= NPO 面——①named prop 不在 globalThis own（hasOwnProperty
+    // 假）而 gsp 描述符 {w:true,e:false,c:true}；②gPN(npo) 不含 named prop；③window 级
+    // delete 再读复活（slice36 FIXME ⑥ 收口面）；quickjs（不接链）= slice36 安装面——
+    // globalThis own 非可枚举数据属性、delete 即清除（引擎 C 层 get_property 短路，
+    // 如实申报）。共用面：for-in 可枚举守恒 + 换代快照回收重装。Chrome 154 对照：
+    // diag/evidence/slice37/repro/。
+    #[test]
+    fn renderer_js_worker_npo_faces_s37() {
+        let mut worker = RendererJsWorker::spawn(78);
+        worker.set_dom_snapshot("<html><body><img name='s37r'></body></html>", "https://example.test/");
+        let wired = worker
+            .execute_script_direct("String(globalThis.__zwNPO && globalThis.__zwNPO.wired === true)")
+            .unwrap()
+            == "true";
+        if wired {
+            assert_eq!(
+                worker
+                    .execute_script_direct("String(Object.prototype.hasOwnProperty.call(globalThis, 's37r'))")
+                    .unwrap(),
+                "false",
+                "named prop 不在 globalThis own（NPO 化本量）"
+            );
+            assert_eq!(
+                worker
+                    .execute_script_direct(
+                        "var gsp=Object.getPrototypeOf(Object.getPrototypeOf(window));\
+                         var d=Object.getOwnPropertyDescriptor(gsp,'s37r');\
+                         String(d && d.writable===true && d.enumerable===false && d.configurable===true)"
+                    )
+                    .unwrap(),
+                "true",
+                "NPO gsp 描述符 writable/!enumerable/configurable（WebIDL §3.7.4.1）"
+            );
+            assert_eq!(
+                worker
+                    .execute_script_direct(
+                        "var gsp=Object.getPrototypeOf(Object.getPrototypeOf(window));\
+                         String(Object.getOwnPropertyNames(gsp).indexOf('s37r')===-1 && gsp.hasOwnProperty('s37r'))"
+                    )
+                    .unwrap(),
+                "true",
+                "gPN 不含 named prop 而 hasOwnProperty 真（Chrome 同款并存面）"
+            );
+            assert_eq!(
+                worker
+                    .execute_script_direct("delete window.s37r; String(window.s37r && window.s37r.nodeType === 1)")
+                    .unwrap(),
+                "true",
+                "window 级 delete 后再读复活（FIXME ⑥ 收口，Chrome 同款）"
+            );
+        } else {
+            // quickjs（引擎分叉申报）：slice36 安装面——own 非可枚举数据属性在位，
+            // window 级 delete 命中 own 即清除（再读 undefined，无复活——NPO 层缺席）。
+            assert_eq!(
+                worker
+                    .execute_script_direct(
+                        "var d=Object.getOwnPropertyDescriptor(globalThis,'s37r');\
+                         String(!!d && d.writable===true && d.enumerable===false && d.configurable===true && d.value.nodeType===1)"
+                    )
+                    .unwrap(),
+                "true",
+                "quickjs 安装面：globalThis own 非可枚举数据属性=元素（slice36 口径）"
+            );
+            assert_eq!(
+                worker
+                    .execute_script_direct("delete window.s37r; String(window.s37r === undefined)")
+                    .unwrap(),
+                "true",
+                "quickjs：window 级 delete 命中 own 清除（slice36 口径，无 NPO 复活面）"
+            );
+        }
+        assert_eq!(
+            worker
+                .execute_script_direct(
+                    "String(typeof window.s37r === 'undefined' || (window.s37r && window.s37r.nodeType === 1))"
+                )
+                .unwrap(),
+            "true",
+            "named access 取值面在位（双腿：NPO 值/own 数据属性）"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct(
+                    "var bad=[]; for (var k in window) { if (k==='s37r'||k==='__zwNPO'||k==='__zwNAGet'||k==='__zwNADelete'||k==='__zwNAOwnKeys') bad.push(k); } String(bad.join(','))"
+                )
+                .unwrap(),
+            "",
+            "for-in(window) 不暴露 named prop 与 NPO 内部全局（可枚举守恒）"
+        );
+        // 换代：同名换新元素——wired 走 NPO backing 重装 + 回收链路；quickjs 走
+        // slice36 own 重装（快照换代同款，双腿同 JS 臂）。
+        worker.set_dom_snapshot(
+            "<html><body><img name='s37r' id='s37r2'></body></html>",
+            "https://example.test/",
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct(
+                    "String(window.s37r && window.s37r.nodeType === 1 && window.s37r.id === 's37r2')"
+                )
+                .unwrap(),
+            "true",
+            "换代后 named prop 重装为新元素（回收链路双腿不失效）"
+        );
         worker.shutdown();
     }
 }

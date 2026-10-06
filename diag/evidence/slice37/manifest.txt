@@ -1,0 +1,308 @@
+# slice37 manifest — Window named properties object 语义收口
+# 分支 slice37-named-properties-object（base main @ 687b12ecd）
+# 2026-10-07（终版；2026-10-06 初版的 flake 矩阵定性经根因排查推翻，见「根因排查」节）
+
+## 门禁计数（awk 复算口径，非粘贴）
+
+- WPT named-access 组 before = 31P/13F/2T（gates/wpt-named-access-group-before.log，
+  687b12ecd 复现 = slice36 终态基线；总数 46 守恒）
+- WPT named-access 组 after  = 43P/1F/2T（gates/wpt-named-access-group-after.log）
+  - PASS_FILE_COUNT=$(grep -c '^Pass ' ...)  # 43
+  - FAIL_FILE_COUNT=$(grep -c '^Fail ' ...)  # 1（cross-origin-named-access.sub.html，
+    派发书排除项，fetch 基建未触碰）
+  - TIMEOUT_COUNT=$(grep -c '^Timeout ' ...) # 2（named-objects/window-named-properties
+    文件级，见残差②；两文件全部已上报子测 Pass——各余 2/1 个 load 依赖
+    async 子测未上报，R139 残差②同源；返修轮勘误，原「全部子测 Pass」措辞过宽）
+  - 口径注：after 组数字测于 NPO 收口实现（引擎分叉条件接线前），终版 part05 在
+    V8 腿语义等价（仅安装期多一次引擎语义探测），WPT 为 V8 腿；终版树复验
+    after2 = 43P/1F/2T 与 after 逐条一致（Fail=cross-origin 排除项，
+    Timeout=named-objects/window-named-properties 文件级同名同位）
+- make test 终版：见 gates/make-test-final 尾注——passed=20115 failed=0
+  ignored=198（grep 'test result:' awk 复算；exit=0，memguard 20480MB +
+  timeout 3300s 包裹）
+- cargo fmt --all -- --check：无 diff
+- cargo clippy --workspace --all-targets -- -D warnings：无 warning（exit 0）
+- quickjs clippy（QUICKJS_CLIPPY_CRATES 同款）：无 warning（exit 0）
+- make reftest：见 gates/reftest-final 尾注——Total 704/704 全绿（Layout
+  502/502 + Text 202/202，exit=0）
+
+## 根因排查（本切片最大坑：初版「并行 flake」定性错误，实为 QuickJS 引擎分歧）
+
+- 现象：make test 三连挂在「quickjs 腿 zero-webview」（681-test 二进制，同 4F 集：
+  currentScript NULL / csp target=document / csp style retained=0 / execute-error
+  is_err=false），且 quickjs zero-webview **单跑亦 4F 复现**（solo 决定性复现推翻
+  flake 定性）；v8 腿全绿。
+- 根因（双层）：
+  ① QuickJS C 层 JS_GetPropertyInternal2 对**原型链上的 Proxy** 先走 em->get_property
+  （js_proxy_get）并把 get trap 返回值（miss = undefined）**当命中返回**
+  （rquickjs-sys-0.7.0/quickjs/quickjs.c:7428-7443 + js_proxy_exotic_methods:46769）；
+  spec/V8 对链上 Proxy 的属性读经 OrdinaryGet 同样调 [[Get]]（get trap），但
+  **变量解析**（JS_GetGlobalVar / V8 LoadLookupSlot）V8 按 gOPD/has 语义判缺失抛
+  ReferenceError，QuickJS 走同一 get_property 短路 → 自由变量 miss 静默 undefined。
+  后果：a) execute-error 面（ReferenceError 消失）；b) 任何 miss 全局读重入 NPO
+  get trap → _zwNPOMainLookup → iframe 扫描 → getElementsByTagName → 查询机器内
+  typeof 守卫读再 miss → **递归**，gETN 文档级集合在重入中吞异常返空
+  （document.getElementsByTagName('*') 恒 0 → currentScript NULL → CSP 元素
+  target/retained 面连坐）。
+  ② 排查中的中间实证链（evidence/quickjs-diag/）：querySelectorAll('script')=2 而
+  document.getElementsByTagName('script')=0、宿主 __zw_query_all_tagged('*')
+  payload 正常、元素 nodeType 正常、页内 setter 调用日志 S1G1:undefG1:undefCC。
+- 修复：in-JS 引擎语义探测 _zwV8ProtoProxyGetSemantics（R76 _zwV8ProxySetSemantics
+  同款单次直测——临时给 globalThis 挂 miss 透明 Proxy，读保证缺席的自由变量：
+  抛 ReferenceError = V8 语义 → 接 NPO 链；静默 undefined = QuickJS → 不接链）。
+  wired=false 时 slice36 globalThis own 安装面原样（registry 三面 + renderer 助手
+  按 __zwNPO.wired 分流）；_zwNPOMainLookup 加重入门（防御，wired 腿嵌套 miss 读
+  不再二次扫描）。Windows 判例：探测必须测**变量解析**面而非属性读续链面——spec
+  OrdinaryGet 对链上 Proxy 本就调 [[Get]]（两引擎一致），第一版探针据此写错并被
+  node 复现推翻（t.marker37 undefined on V8 too）。
+- 初版 flake 矩阵声明作废：make test 挂面 100% = quickjs zero-webview 4F 确定性
+  回归（solo 复现），非并行 flake；run2 的 integration etag 1F 为独立 TOCTOU
+  （docs/learnings/bugs/2026-08/2026-08-14-test-server-free-port-toctou.md 先例）。
+
+## 引擎分叉申报（如实；FIXME(engine-divergence) 注释在 part05 接线处）
+
+- V8 腿（主语义）：完整 NPO——链形 window → Window.prototype(own constructor) →
+  WindowProperties(Proxy) → EventTarget.prototype → Object.prototype；描述符
+  {w:true,e:false,c:true}；gPN 排除；[[DefineOwnProperty]]/[[Delete]]/
+  [[PreventExtensions]] → false；delete 表达式 window 级 ret 值偏差见残差③。
+- quickjs 腿（fallback）：不接 NPO 链，slice36 安装面原样——named prop 为
+  globalThis own 非可枚举数据属性（w/e/c=true/false/true）、delete 命中 own 即清除
+  （无复活面）、无 WindowProperties class string / Window 构造器链。quickjs C 层
+  限制：任何 miss-returning get trap 站链上都会同时杀死自由变量 ReferenceError
+  （webview execute-error 钉）并让 miss 全局读重入 trap——NPO 语义在 quickjs 上
+  不可用 JS Proxy 表达（Chrome 内部 NPO 非陷阱对象，仅覆盖 [[GetOwnProperty]]）。
+  webview quickjs 681/681、renderer quickjs lib 218/218（--test-threads=1，make
+  test 同款）全绿为证。
+- renderer 钉 renderer_js_worker_npo_faces_s37 改为按 __zwNPO.wired 运行时分支：
+  wired 臂断言 NPO 面（own 缺席/gsp 描述符/gPN 排除/delete 复活）；unwired 臂
+  断言 slice36 面（own 非可枚举数据属性/delete 清除）；共用面 for-in 守恒 +
+  换代重装双腿。
+
+## 翻转明细（9F+1T 目标面 → 实际；均为 V8 腿/WPT 面）
+
+- prototype.html 4F → 4P（"Window is not defined"/named3/named4 shadowing 全翻）
+- window-named-properties.html 4F+1T → 5 子测全 P + 文件级 T 维持（见残差②）
+- cross-global-npo.html 1F → 1P（"Named access across globals"）
+- 附带翻转（非目标面）：nested-context.html 1F→2P、window-null-names.html 1F→1P、
+  named-objects.html "window['c']" 子测 1F→P
+- 明确不动面（派发书排除项，实际结果）：
+  - cross-origin-named-access.sub.html 1F 维持（fetch 基建，未触碰）
+  - named-objects.html 文件级 Timeout 维持（与 before 同款）
+
+## RED→GREEN（mutation 注入 → RED 日志 → 字节级还原 → GREEN 日志）
+
+- 还原基准 sha256(part05.js) =
+  63fa0e8859a802a45caee20ac470b983e6d724b1345284adfec3c992c79c2c55
+  （注：此为 RED/GREEN 实验时点基准；终版 part05 因引擎分叉补丁 sha 变更，
+  终版 sha256 见文末）
+- M1 链形接线断开（setPrototypeOf(globalThis, Window.prototype) 注释化）：
+  red-mutation/M1-chain-wiring-red.log（4 RED：npo_chain_shape/npo_delete_faces/
+  npo_descriptor_gpn/npo_shadow_visibility）→ 还原 sha 复核一致 →
+  red-mutation/M1-chain-wiring-green.log（6/6 GREEN）
+- M2 deleteProperty trap 翻转（false→true）：
+  red-mutation/M2-delete-trap-red.log（npo_delete_faces RED）→ 还原 sha 复核一致 →
+  red-mutation/M2-delete-trap-green.log（6/6 GREEN）
+
+## 截图清单（三态）
+
+- chrome-control.png（Chrome 154 headless 对照）/ repro-before.png（687b12ecd）/
+  repro-after.png（本切片收口后）——均 CDP 实拍（npo-probe.html）
+- 探针 dump：repro/chrome-control.json / repro-before.json / repro-after.json
+- after 关键面（repro-after.json）：s1.chain = [object Window] -> [object Window] ->
+  [object WindowProperties] -> [object Object] -> [object Object]；s2.gspDescNpid1 =
+  {w:true,e:false,c:true}；s2.winOwnNpid1 = false；s4.winSloppy = ret=true,
+  reread=element（复活，ret 与 Chrome 同款）；s4.npoSloppy = ret=false；
+  s4.npoStrict = THREW:TypeError；s6.gspCtorOwn = false（'constructor' 隐名）——
+  NPO 本面与 chrome-control.json 逐面对齐（全量对照共 4 处语义差，均非 NPO
+  本面，见残差⑨⑩及残差①⑤：ET class string、s5 ImmutablePrototype、
+  s6 ctor 源串外观、s7 子 realm onload；testeff I6 勘误，原「逐面对齐」措辞过强）
+
+## 残差申报（如实）
+
+① ImmutablePrototype 未实现：Chrome globalThis [[Prototype]] 不可变（WebIDL [Global]
+   探针 s5 THREW:TypeError）；ZeroWeb V8 全局可变，本切片利用可变性接线 NPO 链，
+   未实现不可变面（目标用例不断言；after 探针 s5 ZeroWeb 侧可变+还原=可复现差异）。
+② window-named-properties.html / named-objects.html 文件级 Timeout 维持：两文件
+   async_test 完成依赖 iframe load 派发（srcdoc 动态再导航 / 静态解析期 iframe load）
+   ——runner 不派发该二面（R139 通道已知缺口，事件/导航基建非本切片语义范围；
+   named-objects 的 T 为派发书明确排除项）。已上报子测全 P（window-np 余
+   Dynamic name/Ghost name 2 个、named-objects 余 1 个 load 依赖 async 子测
+   未上报——返修轮措辞收口，testeff I1）。
+③ window 级 delete 表达式 ret 值：浏览器腿（CDP 探针 s4.winSloppy/Strict）实测
+   ret=true 且再读复活——与 Chrome 同款；NPO 级 sloppy=false / strict TypeError 与
+   Chrome 逐面一致。引擎沙箱腿（Proxy [[Delete]] 语义字面）sloppy ret=false 为
+   保守申报（两腿同一份 shim JS，观测差异源自动沙箱 global proxy 的删除路径，
+   未单独立钉）；WPT 全组无 delete 断言（grep 实证），不影响分级。
+④ NPO 内部全局 4 枚（__zwNPO/__zwNAGet/__zwNADelete/__zwNAOwnKeys）+ __zwNamedAccess-
+   Installed（slice36 已有）驻 globalThis，均非可枚举（for-in 747 基线守恒钉
+   npo_enumerable_faces_s37）。
+⑤ 静态面 gate（part06 安装器 `globalThis[id] !== undefined` 幂等守卫）语义保持
+   window 级读——解析期 id 与 Object.prototype 属性同名冲突面（如 name='constructor'）
+   按 spec 由 ET.prototype own 隐名，与 Chrome 一致（npo_shadow_visibility_s37）。
+⑥ 子 realm child-NPO live 查询为主 realm 文档静态面（getElementById+4 标签名面+
+   iframe contentWindow），slice36 注册表只服务主 window——cross-global-npo.html
+   五层走查全 P 覆盖目标用例；更深子文档动态名面未追（超出目标用例）。
+⑦ quickjs 腿 NPO 缺席（见「引擎分叉申报」）——派发书「QuickJS 腿编译/行为一致或
+   如实申报」条款下的如实申报项：quickjs 行为= slice36 原样（基线已绿面零回退）。
+⑧ 先前既存环境注记（与本切片 diff 无交集，未修）：`cargo build --release`（无
+   test target）下 zero-engine 报 `match_media_to_json` dead_code 1 条——消费者在
+   test target，`clippy --all-targets` 门禁覆盖为绿；
+   test_pipeline_deeply_nested_html 在本环境（WSL2）默认栈下单跑即栈溢出，
+   687b12ecd stash 实证同款，RUST_MIN_STACK=16777216 下全绿。
+⑨ ET.prototype class string：Chrome `[object EventTarget]` vs ZeroWeb
+   `[object Object]`（EventTarget 接口表示差，非 NPO 本面；三态对照
+   s1.etProtoTag 与 s1.chain 第 4 层同源；testeff I6 补录）。
+⑩ 子 realm iframe onload 未派发：三态探针 s7.* ZeroWeb 侧未完成
+   （s7.pending=yes）——R139 通道已知缺口，残差②同源（testeff I6 补录）。
+
+## 钉族变更（RED→GREEN 见上）
+
+- 新增 engine s37 钉 6（part38.rs，V8 腿）：npo_chain_shape / npo_descriptor_gpn /
+  npo_shadow_visibility / npo_delete_faces / npo_enumerable_faces /
+  npo_child_realm_chain
+- 新增 renderer 钉 1（js_worker.rs，按 __zwNPO.wired 双腿分支）：
+  renderer_js_worker_npo_faces_s37（v8 臂 + quickjs 臂均 GREEN）
+- 旧钉按新语义翻转 3（Chrome 对照 + WPT 目标面为据，注释内注明翻转理由）：
+  - named_access_iframe_whitelist_boundary_s33：iframe 名值面 → NPO live 扫描
+    （WPT "Static name: bar" 即 iframe 名）；集合白名单边界断言保持
+  - named_access_recycled_collection_regenerates_s33：window 级 delete 清除面 →
+    复活面（FIXME ⑥ 收口）+ __zwNADelete backing 清除面
+  - named_access_reinstall_dead_marks_old_s32：`delete globalThis.rr` →
+    `__zwNADelete('rr')`（renderer 换代链路同款沙箱缩影）
+- slice36 FIXME ⑥ 申报更新（part05 注释）：「delete 后再读不复活」已随 NPO 化消除，
+  复活面钉 = recycled_collection_regenerates_s33 __r_resurrect
+
+## 实现落点
+
+- part05.js：ET.prototype 三方法非可枚举重定义 → __zwNPO backing + iframe live 扫描
+  （gen 缓存 + 重入门）→ _zwMakeNPO Proxy 工厂（gOPD/has/get/set/defineProperty/
+  delete/preventExtensions/setPrototypeOf/getPrototypeOf/ownKeys 全 trap 面）→
+  Window 构造器 + Window.prototype 链 → **引擎语义探测 + 条件接线**（V8 wired /
+  quickjs slice36 面）→ renderer 助手 3 枚（wired 分流）→ slice36 注册表三面按
+  wired 分流（_zwNADefineNA/_zwNARegisterName/_zwNAUnregisterEl）+ 动态 sync bump →
+  子 realm 链（_zwMakeIframeWin 尾，wired 分支）
+- part06.js：静态安装面 _installNamedAccess 写入 → _zwNADefineNA（路由由 wired）
+- part04.js：R139 contentWindow 名注册 → _zwNADefineNA
+- js_worker.rs：renderer 快照臂（换代回收/新 context 清扫/登记重扫）走
+  __zwNAGet/__zwNADelete/__zwNAOwnKeys（wired 分流）+ 钉双腿化
+
+## 环境注记
+
+- zero-engine lib 全量 2852/2852 GREEN（RUST_MIN_STACK=16777216——
+  test_pipeline_deeply_nested_html 在本环境默认栈下单跑即溢出，687b12ecd 基线同款，
+  与本切片无关，stash 实证）
+- quickjs renderer lib 首次并行跑（默认线程）finish_page_load_fires_body_onload_r2946
+  1F，solo 即绿、make test 同款 --test-threads=1 下 218/218 全绿——按既有并行 flake
+  类申报（本切片 diff 未触碰该面；对照 learning：并行 flake 先例 + 本次根因教训
+  「先 solo 复现再定性」已双向应用）
+- 排查产物（evidence/quickjs-diag/）：临时诊断代码已全部还原（more_coverage.rs 零
+  diff 复核）
+
+## 终版 sha256（引擎分叉补丁后）
+
+- part05.js = 507896c66cb9ccd67d314e1fe2a1922419168bdcb22c4fa33bb4c02d029bddb0
+- part04.js = 007756fe224884b57c923a5b05915c7d6c2a76cfe9337a7065ce0f7e6829f21f
+- part06.js = 538a9a24193a27d20254a985e7613083d6608ee738580274e0b8224e5ebf8240
+
+## 返修轮（2026-10-07，双首轮评审 REQUEST_CHANGES 后，主控-direct）
+
+### 返修输入
+
+- defect 首轮（pr89-defect-round1.md）：0B/2S/2I——S1 make test 全量归档缺口；
+  S2 交付头 CI precheck 红（fmt）未申报；I1 清扫注释「slice36 口径」失准；
+  I2 还原 sha 复核无归档输出
+- testeff 首轮（pr89-test-effectiveness-round1.md）：0B/1S/7I——S1 与 defect S1
+  收敛（三计数不可复算 + quickjs webview 681 腿零归档）；I1-I7 见该报告
+
+### S2 收口：CI merge-ref fmt 红（run 37507331271）
+
+- 事实：交付头 4c47dbc4a 的 CI precheck fmt 步骤 exit 1
+  （gates/ci-precheck-fail-run37507331271.log 全量归档）；drift 5 hunk 分布
+  3 文件——crates/page-runtime/src/html_actions.rs:654、
+  crates/webview/src/webview/user_actions.rs:3/:189、
+  tests/wpt-runner/src/testharness.rs:7959/:8421——均不在 slice37 diff 面
+  （base 继承内容）
+- 归因：main 直推尾簇 31/32/33 + PR #88 + gCS 收口未过 CI（fmt 漂移随 merge-ref
+  显影）；CI runner rustfmt（@stable 浮动通道）与本地 1.9.0 规则漂移——import
+  分组整行填充、fn 签名一行化、jammed 语句拆分
+- 收口：merge main（5a2f514e4，merge-tree fmt 干跑净）→ 5 hunk 机械格式化
+  （8d91395ad style(ci)）→ 本地 cargo fmt --all -- --check 复归零 diff →
+  **CI 重跑取绿已兑现：run 37517808225 conclusion SUCCESS**（2026-10-07，
+  返修头 6dd44943d——fmt 步骤过、cargo check 首过此树、precheck 全绿）
+- 反证归档：gates/ci-fmt-drift-files.txt（交付头时点本地复核为空 = drift 非
+  4c47dbc4a 内容引入）
+
+### S1 收口：make test 全量复跑 + reftest 复跑（返修树 23ec96006）
+
+- gates/maketest-rework.log **全量归档 21,266 行**（非尾注）；awk 复算：
+  **passed=20123 failed=0 ignored=198**（70 腿；exit=0，memguard + make test
+  既定包裹入口）
+- quickjs webview 腿 681/681 与 renderer quickjs lib 218/218 两行均可在归档
+  grep 实证（S1 双评审指名的两行）
+- 锚分解：20,107（slice36 合并树锚，slice36 归档 maketest-mergetree.log 复算）
+  + 8（main 合并带入——engine lib 腿 2852→2860 实测，尾簇 31/32/33 + #88 +
+  gCS）+ 8（slice37：part38 6 fn + renderer v8 腿 1 + renderer quickjs 腿 1）
+  = **20,123** ✓（198I 恒等）
+- make reftest 复跑：gates/reftest-rework.log 全量 764 行——704 ✓/0 ✗
+  （Layout 502/502 + Text 202/202，与 slice36 结构逐位一致，exit=0）
+- WPT named-access 组返修树复验：gates/wpt-named-access-rework.log =
+  43P/1F/2T，Fail/Timeout 三条身份与 after2 逐条同位（merge 未引回 NPO 面回归）
+
+### RED→GREEN 返修轮补全（交付树；defect I2 / testeff I2 sha 归档缺口同轮闭合）
+
+- 基准 sha256(part05.js) = bc5994a74a60f05a97b4b1fe4e611268ec0abd54a67f5fd10523290c90577165
+  （merge 后交付树；三 cycle 共用；每次还原后 sha256sum 原样输出附 log 尾）
+- M1' probe-forced-false（M1 于交付树接线点的等价变异——探针强制 unwired）：
+  red-mutation/M1-probe-forced-false-{red,green}.log + mutation.diff
+  - RED **5 钉**（chain_shape/descriptor_gpn/shadow_visibility/delete_faces +
+    child_realm_chain——交付树子 realm 门读 wired，探测面变异连带子接线断，
+    较初版 M1 的 4 钉更宽；enumerable 守恒钉独绿 = testeff I4 预言实证）
+  - → 还原 sha 复核一致 → GREEN 6/6（2854 filtered + 6 = 2860 ✓）
+- M2' deleteProperty trap（false→true，交付树复跑）：
+  red-mutation/M2-delete-trap-rework-{red,green}.log + mutation.diff
+  —— 恰 1 RED（delete_faces）→ 还原复核 → GREEN 6/6
+- M3 child-realm-wiring（testeff I3 补全——子接线点直变）：
+  red-mutation/M3-child-realm-wiring-{red,green}.log + mutation.diff
+  —— 恰 1 RED（child_realm_chain）→ 还原复核 → GREEN 6/6
+- 至此 6 钉全部有交付树 mutation 归档（testeff I2/I3 闭合）；6 根钉归档矩阵：
+  chain_shape←M1' / descriptor_gpn←M1' / shadow_visibility←M1' /
+  delete_faces←M1'+M2' / child_realm_chain←M1'+M3 / enumerable_faces=守恒钉
+  （定位见 23ec96006 钉注释）
+
+### 评审措辞收口（manifest 本体勘误）
+
+- 「两文件全部子测 Pass」→「全部已上报子测 Pass（各余 2/1 个 load 依赖 async
+  子测未上报，R139 残差②同源）」（testeff I1；门禁节 + 残差②两处已改）
+- 残差清单补录 ⑨（ET.prototype class string `[object Object]` vs Chrome
+  `[object EventTarget]`）⑩（子 realm iframe onload 未派发 s7.pending=yes）——
+  均非 NPO 本面（testeff I6）；「与 chrome-control.json 逐面对齐」勘误为
+  「NPO 本面逐面对齐（全量对照共 4 处语义差）」
+- js_worker.rs:1237 注释如实化（defect I1，23ec96006）：quickjs 臂 gPN 较
+  slice36 for-in（仅可枚举）为安全方向放宽（多覆盖非可枚举 own 残留；
+  快照先于页面脚本故无越界回收面）
+- future-mutation 纪律（testeff I5 入池）：后续 mutation run 不做 _s37 过滤
+  （part34/35 旧钉翻转纳入 RED 面），或对单翻转补单点 mutation
+
+### 规范测试缺口入池（testeff I7，承接 slice36 缺口池）
+
+- 零守护优先：[[DefineOwnProperty]]→false、[[PreventExtensions]]→false
+  （实现已申报，钉与 WPT 组均无断言）
+- 候基建/前置：Window.prototype own 遮蔽 engine 钉（WPT 已覆盖）、
+  cross-origin NPO（候 fetch 基建）、document.all×NPO（候 IsHTMLDDA）、
+  NPO ownKeys 枚举序（低优先）
+
+### 返修提交面
+
+- 5a2f514e4 merge main（CI merge-ref 取绿前置；吸收尾簇 31/32/33 + #88 + gCS）
+- 8d91395ad style(ci)：3 文件 5 hunk 机械格式化（CI @stable rustfmt 对齐）
+- 23ec96006 docs(slice37)：defect I1 + testeff I4 注释收口（零行为差异）
+- 本提交：manifest 返修节 + mutation/gates 返修归档（产品代码零 diff——
+  门禁实跑于 23ec96006 树，本提交仅增 .acceptance 证据面）
+
+### 返修轮终版 sha256（merge 后交付树 23ec96006）
+
+- part04.js = 0868d30360039d5cd443d4ff3f9b5318af17f08befa2af9b01810815d6a72ab0
+- part05.js = bc5994a74a60f05a97b4b1fe4e611268ec0abd54a67f5fd10523290c90577165
+- part06.js = 40ec15feb0bd849e5f43e7af3ef3db11ff5a7d91387fdd4c5f99fc5456204084
+  （merge 吸收尾簇 31/32/33 面；初版「终版 sha」节为 4c47dbc4a 时点值，
+  以本节为准）

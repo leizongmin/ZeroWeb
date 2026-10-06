@@ -1,0 +1,13 @@
+diff --git a/crates/engine/src/js_dom_shim/part05.js b/crates/engine/src/js_dom_shim/part05.js
+index 97a413fc6..4e55817e3 100644
+--- a/crates/engine/src/js_dom_shim/part05.js
++++ b/crates/engine/src/js_dom_shim/part05.js
+@@ -4131,7 +4131,7 @@
+     // contentWindow。隐名判定复用 _zwMakeNPO 可见性面（EventTarget.prototype.constructor
+     // own 遮 "constructor"——子 window 同主 window 口径）。
+     // 引擎分叉（接线处申报）：QuickJS 不接子 realm NPO 链（同理保基线子窗口链）。
+-    if (globalThis.__zwNPO && globalThis.__zwNPO.wired) {
++    if (false && globalThis.__zwNPO && globalThis.__zwNPO.wired) {
+     try {
+       var _zwChildDoc37 = doc;
+       var _zwChildLookup37 = function (P) {

@@ -4136,6 +4136,54 @@
         win.dispatchEvent(new MessageEvent('message', { data: payload, origin: sourceOrigin, source: globalThis, ports: ports }));
       });
     };
+    // slice37（NPO cross-global）：子 realm 命名属性链——win → childWinProto → childNPO
+    // → EventTarget.prototype（共享主 realm）→ Object.prototype（cross-global-npo.html
+    // 五层 [[Get]]/[[GetOwnProperty]] 走查面）。childNPO live 查询 child doc（spec
+    // named objects 每读求值；子 realm 不维护 slice36 注册表——主注册表只服务主
+    // window，子 doc 静态面足够目标用例）。id 面 getElementById；name 面 embed/form/
+    // img/object 逐标签 getAttribute 比对（选择器内嵌有注入面）；iframe 名面走
+    // contentWindow。隐名判定复用 _zwMakeNPO 可见性面（EventTarget.prototype.constructor
+    // own 遮 "constructor"——子 window 同主 window 口径）。
+    // 引擎分叉（接线处申报）：QuickJS 不接子 realm NPO 链（同理保基线子窗口链）。
+    if (globalThis.__zwNPO && globalThis.__zwNPO.wired) {
+    try {
+      var _zwChildDoc37 = doc;
+      var _zwChildLookup37 = function (P) {
+        if (typeof P !== 'string' || !P) return null;
+        try {
+          var e37c = _zwChildDoc37.getElementById(P);
+          if (e37c) return e37c;
+        } catch (_e37ce) {}
+        var _zwChildTags37 = ['EMBED', 'FORM', 'IMG', 'OBJECT'];
+        for (var t37c = 0; t37c < _zwChildTags37.length; t37c++) {
+          var cn37c = null;
+          try { cn37c = _zwChildDoc37.getElementsByTagName(_zwChildTags37[t37c]); } catch (_e37ct) { cn37c = null; }
+          if (!cn37c) continue;
+          for (var j37c = 0; j37c < cn37c.length; j37c++) {
+            var nn37c = '';
+            try { nn37c = String(cn37c[j37c].getAttribute('name') || ''); } catch (_e37cg) { continue; }
+            if (nn37c === P) return cn37c[j37c];
+          }
+        }
+        try {
+          var fr37c = _zwChildDoc37.getElementsByTagName('iframe');
+          for (var f37c = 0; f37c < fr37c.length; f37c++) {
+            var fn37c = '';
+            try { fn37c = String(fr37c[f37c].getAttribute('name') || ''); } catch (_e37cf) { continue; }
+            if (fn37c === P) {
+              try { return fr37c[f37c].contentWindow || null; } catch (_e37cw) { return null; }
+            }
+          }
+        } catch (_e37ci) {}
+        return null;
+      };
+      var _zwChildNPO37 = _zwMakeNPO(globalThis.EventTarget.prototype, _zwChildLookup37, 'WindowProperties');
+      var _zwChildWinProto37 = Object.create(_zwChildNPO37);
+      Object.defineProperty(_zwChildWinProto37, 'constructor',
+        { value: Object, writable: true, enumerable: false, configurable: true });
+      Object.setPrototypeOf(win, _zwChildWinProto37);
+    } catch (_e37cw2) {}
+    }
     return win;
   }
 
@@ -10678,9 +10726,12 @@
   // 文档即真——spec named objects 限 document tree）；④iframe 名不入面（R139
   // child navigable 委托面，slice33 B-1 口径）；⑤parsed 元素 name 属性脚本改值
   // 面经 attr 触发元入账，host 原生侧改值（`__zw_mo_notify_native`，kill-switch
-  // 默认 OFF）不触发；⑥数据属性安装面固有：`delete window.N` 后再读不复活
-  //（读路径无注册表查询，「注册表增量维护近似」总申报的子面，slice36 testeff
-  // 轮补记）。
+  // 默认 OFF）不触发；⑥【slice37 收口】数据属性安装面固有「delete window.N 后
+  // 再读不复活」已随 NPO 化消除——named prop 移入 WindowProperties 原型层
+  //（backing + trap），window 级 delete 不再命中 own，再读经 NPO 复活（Chrome
+  // 同款；复活面钉 = named_access_recycled_collection_regenerates_s33
+  // __r_resurrect；window 级 delete 表达式 ret=false vs Chrome true 为已知偏差，
+  // [[Delete]] 经原型链传播 NPO false 所致，manifest 申报）。
   // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
   // https://webidl.spec.whatwg.org/#WindowProperties
   // 动态元素账本（name → 本面安装的元素）——broadening（唯一命中升格集合）与失格
@@ -10739,7 +10790,20 @@
   }
   // 非枚举可删数据属性定义（spec：named property 位于 WindowProperties 层——不可
   // 枚举；plain 赋值会使命名属性被 for-in 枚举，WPT basics "not enumerable" 面）。
+  // slice37（NPO 收口）：写安装面从 globalThis own 改为 `__zwNPO.back`（NPO backing，
+  // part05 尾 NPO 构造块）——spec named property 位于 WindowProperties 原型层而非
+  // Window own（WebIDL §3.7.4）。描述符形状由 NPO getOwnPropertyDescriptor trap 统一
+  // 合成（{w:true,e:false,c:true}，Chrome 实测口径），backing 内 plain own 即可。
+  // https://webidl.spec.whatwg.org/#named-properties-object
   function _zwNADefineNA(name, v) {
+    // 引擎分叉（接线处申报）：wired → backing（NPO 层合成描述符）；QuickJS 不接链
+    // → slice36 安装面原样（globalThis own 非可枚举数据属性）。
+    try {
+      if (globalThis.__zwNPO.wired) {
+        globalThis.__zwNPO.back[name] = v;
+        return;
+      }
+    } catch (_e36dw) {}
     try {
       Object.defineProperty(globalThis, name,
         { value: v, writable: true, enumerable: false, configurable: true });
@@ -10769,15 +10833,20 @@
   // 全局在场且为本面动态安装的唯一元素 → 第二命中升格集合（WPT basics "dupe" 面）。
   // 安装期集合账本在场的名不重复装（morph/回收语义接管，slice32/33 面）。
   // 名门（slice36）：spec 命名属性名 = id/name 属性值原文（任意非空字符串——WPT
-  // changing.html 连字符名 "changing-one" 等按 bracket 访问解析），不做标识符形限制；
-  // 「缺席」判据 = globalThis 无 own 属性（value 判 undefined 会误装 "undefined"/
-  // "NaN" 等既有全局——spec named properties 不遮蔽 Window 既有属性）。
+  // changing.html 连字符名 "changing-one" 等按 bracket 访问解析），不做标识符形限制。
+  // slice37（NPO 收口）：「缺席」判据 = NPO backing 无 own（原为 globalThis 无 own）。
+  // 脚本 own expando 不再阻安装——spec/Chrome 口径：window own expando 只按
+  // ordinary [[Set]]/own-first 遮蔽，NPO 层照常暴露同名 named property
+  //（prototype.html test 1：window[name]="shadowing" 后 npo[name] 仍 === element）。
   function _zwNARegisterName(name, triggerEl) {
     if (!name) return;
     var has36 = false;
-    try { has36 = Object.prototype.hasOwnProperty.call(globalThis, name); } catch (_e36gh) { return; }
+    // 引擎分叉：wired → backing own；QuickJS → globalThis own（slice36 口径）。
+    var b37na = null;
+    try { b37na = globalThis.__zwNPO.wired ? globalThis.__zwNPO.back : globalThis; } catch (_e36nb) { return; }
+    try { has36 = Object.prototype.hasOwnProperty.call(b37na, name); } catch (_e36gh) { return; }
     var g36;
-    try { g36 = globalThis[name]; } catch (_e36gr) { return; }
+    try { g36 = b37na[name]; } catch (_e36gr) { return; }
     if (!has36) {
       var els36 = _zwNACollectMatches(name, triggerEl);
       if (els36.length === 1) {
@@ -10813,6 +10882,7 @@
   // 本面安装值失格注销：账本逐名核对——元素已不命中该名（属性失格）或已离文档树
   //（removeChild 面探针实证 `body.contains` 即时）→ 删全局（仅当现值仍是本面安装值，
   // 脚本自有改写不追删）+ 清两账本。集合成员失格由既有重核/morph 面接管（不入此路）。
+  // slice37（NPO 收口）：删写面 = backing（原 globalThis own delete 在 NPO 化后 no-op）。
   function _zwNAUnregisterEl(el) {
     for (var k36 in _zwNADynEls) {
       if (_zwNADynEls[k36] !== el) continue;
@@ -10820,9 +10890,11 @@
       try { still36 = _zwNAElemMatches(k36, el) && _zwDocContains36(el); } catch (_e36sm) {}
       if (still36) continue;
       var gU36;
-      try { gU36 = globalThis[k36]; } catch (_e36gu) { gU36 = null; }
+      var b37u = null;
+      try { b37u = globalThis.__zwNPO.wired ? globalThis.__zwNPO.back : globalThis; } catch (_e36nu) {}
+      try { gU36 = b37u ? b37u[k36] : null; } catch (_e36gu) { gU36 = null; }
       if (gU36 === el) {
-        try { delete globalThis[k36]; } catch (_e36dl) {}
+        try { delete b37u[k36]; } catch (_e36dl) {}
         var L36u = globalThis.__zwNamedAccessInstalled;
         if (L36u) { try { delete L36u[k36]; } catch (_e36Lu) {} }
       }
@@ -10835,18 +10907,22 @@
   }
   // attr 面尾叫：先注销（id 改名换轨 / name 失格），后按当下资格注册。连接性门用
   // `_zwDocContains36`（detached 元素赋名不注册——WPT basics "not reachable" 面）。
+  // slice37：NPO iframe 名 live 扫描缓存随任何树/属性变异失配（bump 代数）。
   function _zwNAAttrDynamicSync(el) {
     if (!el || el.nodeType !== 1) return;
     _zwNAUnregisterEl(el);
     var cn36 = null;
     try { cn36 = _zwNACandidateName(el); } catch (_e36cc) { cn36 = null; }
     if (cn36 !== null && _zwDocContains36(el)) _zwNARegisterName(cn36, el);
+    try { globalThis.__zwNPO.bump(); } catch (_e37ab) {}
   }
   // childList 面尾叫（part01 `_mo_notify` 反链记账后）：removed 逐个注销（真离树才
   // 删——同批 remove+add 移动语义经 `_zwDocContains36` 自然保留，identity 稳定），
   // added 候选名逐个注册（容器 in-doc 门在 flats.inDoc——detached 树插入不注册）。
+  // slice37：NPO iframe 名 live 扫描缓存随树变异失配（bump 代数）。
   function _zwNADynamicSync(flats) {
     if (!flats) return;
+    try { globalThis.__zwNPO.bump(); } catch (_e37db) {}
     var i36, rem36 = flats.remFlat, add36 = flats.addFlat;
     if (rem36 && rem36.length) {
       for (i36 = 0; i36 < rem36.length; i36++) {
@@ -12702,6 +12778,268 @@
     return !event._defaultPrevented;
   };
   globalThis.EventTarget = globalThis.EventTarget || EventTarget;
+
+  // slice37（RP-3 WebIDL named properties object，NPO 语义收口）。
+  // https://webidl.spec.whatwg.org/#named-properties-object
+  //
+  // 目标链形（Chrome 154 headless 实测，diag/evidence/slice37/repro/npo-probe.html）：
+  //   window → Window.prototype(own "constructor" w/e/c=true/false/true)
+  //         → WindowProperties（NPO，Proxy 空靶）
+  //         → EventTarget.prototype → Object.prototype
+  //
+  // EventTarget.prototype IDL 方法面 enumerable:false（spec IDL 属性不可枚举；原裸
+  // 赋值可枚举——接链后 for-in(window) 会多枚举三方法，探针 etcheck before=747 基线
+  // 守恒要求此修复先行）。
+  (function () {
+    var _et37m = ['addEventListener', 'removeEventListener', 'dispatchEvent'];
+    for (var _et37i = 0; _et37i < _et37m.length; _et37i++) {
+      var _et37d = Object.getOwnPropertyDescriptor(EventTarget.prototype, _et37m[_et37i]);
+      if (_et37d && _et37d.configurable && _et37d.enumerable) {
+        Object.defineProperty(EventTarget.prototype, _et37m[_et37i],
+          { value: _et37d.value, writable: true, enumerable: false, configurable: true });
+      }
+    }
+  })();
+
+  // NPO backing + iframe 名 live 扫描（gen 缓存防热路径：未命中名的 unqualified/global
+  // 读每次都走到 NPO，无缓存则每次 querySelector 级开销）。backing = 无原型对象，
+  // 值一律经 trap 合成描述符，绝不落 target own（Chrome 实测 gPN(npo) 不含 named
+  // prop 而 hasOwnProperty 真——target own 会污染 ownKeys 面）。
+  // 非可枚举定义（for-in(window) 747 基线守恒——slice36 前 own 安装面全为 e:false，
+  // 本块新增全局同口径，防枚举面回归）。
+  Object.defineProperty(globalThis, '__zwNPO', {
+    value: {
+      back: Object.create(null),
+      ifrCache: Object.create(null),
+      ifrGen: 0,
+      // NPO 链是否已接主 window（引擎分叉——见接线处申报）。registry 三面与
+      // renderer 助手按此分流：wired → backing/NPO；否则 slice36 globalThis own 面。
+      wired: false,
+      // 树/属性变异代计数 bump（_zwNADynamicSync/_zwNAAttrDynamicSync 尾叫失效缓存）。
+      bump: function () { this.ifrGen++; this.ifrCache = Object.create(null); },
+    },
+    writable: true, enumerable: false, configurable: true,
+  });
+  var _zwNPORef = globalThis.__zwNPO;
+  // iframe 名 live 扫描（spec：document-tree child navigable target name set——首棵
+  // contentWindow；复用 R115/R139 contentWindow 面（含 no-src fallback win 记账，
+  // identity 稳定）。getAttribute 逐元素比对（名=属性值原文，选择器内嵌有注入/转义面）。
+  function _zwNPOIfrScan(name) {
+    var c = _zwNPORef.ifrCache[name];
+    if (c && c.gen === _zwNPORef.ifrGen) return c.hit ? c.val : null;
+    var hitEl = null;
+    try {
+      var fr = document.getElementsByTagName('iframe');
+      for (var i37 = 0; i37 < fr.length; i37++) {
+        var nm37 = '';
+        try { nm37 = String(fr[i37].getAttribute('name') || ''); } catch (_e37n) { continue; }
+        if (nm37 === name) { hitEl = fr[i37]; break; }
+      }
+    } catch (_e37s) { hitEl = null; }
+    var val37 = null;
+    if (hitEl) {
+      try { val37 = hitEl.contentWindow || null; } catch (_e37c) { val37 = null; }
+    }
+    _zwNPORef.ifrCache[name] = { gen: _zwNPORef.ifrGen, hit: !!val37, val: val37 };
+    return val37;
+  }
+  // 主 window named property 解析：backing（slice36 注册表收口面）→ iframe 名。
+  // window/Window.prototype own expando 不参与（Chrome 实测：只按 ordinary own-first
+  // 遮蔽，NPO 层照常暴露）。
+  var _zwNPOInScan37 = false;
+  function _zwNPOMainLookup(name) {
+    if (typeof name !== 'string' || !name) return null;
+    try {
+      if (Object.prototype.hasOwnProperty.call(_zwNPORef.back, name)) return _zwNPORef.back[name];
+    } catch (_e37l1) {}
+    // 重入门（FIXME 防御）：扫描内部（getElementsByTagName → 查询机器 → 全局 miss 读
+    // → get trap）的递归 miss 读不再二次扫描——QuickJS 对原型链 Proxy 走 get trap 短路
+    // （见接线处申报），无门则 gETN 机器内 typeof 守卫读重入 iframe 扫描致栈溢出被吞。
+    if (_zwNPOInScan37) return null;
+    _zwNPOInScan37 = true;
+    try {
+      return _zwNPOIfrScan(name);
+    } finally {
+      _zwNPOInScan37 = false;
+    }
+  }
+  // NPO 工厂（主 window 与子 realm iframe win 共用 trap 面）。trap 面对照 WebIDL
+  // §3.7.4.1-4.5：[[GetOwnProperty]] 命中 → {w:true,e:false,c:true}（§3.7.4.1 + Window
+  // [LegacyUnenumerableNamedProperties]）；隐名/缺席 → undefined（get/has 面自行原型
+  // 跌落——Proxy trap 返 undefined 不自动落链，须手工走 [[Prototype]]）；[[Set]]/
+  // [[DefineOwnProperty]]/[[Delete]]/[[PreventExtensions]] → false（§3.7.4.2/4.3/4.5，
+  // JS 观察面 = sloppy no-op·false / strict TypeError）；[[SetPrototypeOf]] 仅接受
+  // baseProto（§3.7.4.4）；[[OwnPropertyKeys]] 空（Chrome gPN 面——named prop 不入
+  // keys 而 hasOwnProperty 真）。
+  // 遮蔽可见性（Chrome 实测裁定）：仅 NPO 之上（baseProto → Object.prototype）own
+  // 命中即隐——"constructor" 因 EventTarget.prototype.constructor own 而隐
+  //（window-named-properties.html constructor 面）；window/Window.prototype own 不隐
+  //（prototype.html test 1/2 面隐名会反 WPT）。target 空靶（无原型）：值经 lookup 合成，
+  // 绝不落 target own。
+  function _zwMakeNPO(baseProto, lookup, tag) {
+    var npo = null;
+    function visibleAbove(name) {
+      for (var o37 = baseProto, g37 = 0; o37 && g37 < 8;
+           o37 = Object.getPrototypeOf(o37), g37++) {
+        try { if (Object.prototype.hasOwnProperty.call(o37, name)) return true; } catch (_e37v) { return true; }
+      }
+      return false;
+    }
+    npo = new Proxy(Object.create(null), {
+      getOwnPropertyDescriptor: function (_t37, P) {
+        if (typeof P !== 'string') {
+          if (P === Symbol.toStringTag) {
+            return { value: tag, writable: false, enumerable: false, configurable: true };
+          }
+          return undefined;
+        }
+        var v37 = lookup(P);
+        if (v37 === null || v37 === undefined || visibleAbove(P)) return undefined;
+        return { value: v37, writable: true, enumerable: false, configurable: true };
+      },
+      has: function (_t37, P) {
+        if (typeof P === 'string') {
+          var v37h = lookup(P);
+          if (v37h !== null && v37h !== undefined && !visibleAbove(P)) return true;
+        }
+        for (var o37h = baseProto; o37h; o37h = Object.getPrototypeOf(o37h)) {
+          try { if (Object.prototype.hasOwnProperty.call(o37h, P)) return true; } catch (_e37h) {}
+        }
+        return false;
+      },
+      get: function (_t37, P, R37) {
+        if (typeof P !== 'string') {
+          if (P === Symbol.toStringTag) return tag;
+          return undefined;
+        }
+        var v37g = lookup(P);
+        if (v37g !== null && v37g !== undefined && !visibleAbove(P)) return v37g;
+        for (var o37g = baseProto; o37g; o37g = Object.getPrototypeOf(o37g)) {
+          var d37g = null;
+          try { d37g = Object.getOwnPropertyDescriptor(o37g, P); } catch (_e37g) { d37g = null; }
+          // accessor receiver = 调用方 receiver（window 级读 __proto__ 等 getter 须见 window，
+          // 不能 this=npo——否则返回 NPO 的原型而非调用对象的）。
+          if (d37g) return d37g.get ? d37g.get.call(R37) : d37g.value;
+        }
+        return undefined;
+      },
+      // [[Set]] 未被 WebIDL NPO 覆盖（仅 §3.7.4.2 [[DefineOwnProperty]]→false）→
+      // OrdinarySet：沿 baseProto 继续走链（setter receiver=调用方 receiver；走空则
+      // CreateDataProperty 落 receiver own——globalThis.document 等安装面依赖此通路，
+      // 返 false 会静默丢弃 sloppy 赋值并在 defineProperty(non-object) 处炸链）。
+      set: function (_t37, P, V, R37) { return Reflect.set(baseProto, P, V, R37); },
+      defineProperty: function () { return false; },
+      deleteProperty: function () { return false; },
+      preventExtensions: function () { return false; },
+      setPrototypeOf: function (_t37, V) { return V === baseProto; },
+      getPrototypeOf: function () { return baseProto; },
+      ownKeys: function () { return []; },
+    });
+    return npo;
+  }
+  var _zwNPONamed = _zwMakeNPO(EventTarget.prototype, _zwNPOMainLookup, 'WindowProperties');
+  // Window 接口对象 + 原型（prototype.html "Window is not defined" 根修）。
+  function Window() {}
+  // constructor 描述符对齐 Chrome（w/e/c=true/false/true；默认函数原型 c=false）。
+  Object.defineProperty(Window.prototype, 'constructor',
+    { value: Window, writable: true, enumerable: false, configurable: true });
+  Object.defineProperty(Window.prototype, Symbol.toStringTag,
+    { value: 'Window', writable: false, enumerable: false, configurable: true });
+  Object.setPrototypeOf(Window.prototype, _zwNPONamed);
+  try {
+    Object.defineProperty(globalThis, 'Window',
+      { value: Window, writable: true, enumerable: false, configurable: true });
+  } catch (_e37wd) {
+    globalThis.Window = Window;
+  }
+  // 引擎语义探测（R76 `_zwV8ProxySetSemantics` 同款单次直测）：**变量解析**对「原型链
+  // 上的 Proxy」的缺失判定路径。临时给 globalThis 挂一层 miss 恒返 undefined 的透明
+  // Proxy，读一个保证缺席的自由变量：按 spec/V8，全局变量解析沿 [[GetOwnProperty]]/
+  // [[HasProperty]] 语义判缺失（gOPD trap miss 续链 → 全链 miss）→ ReferenceError；
+  // QuickJS C 层 JS_GetPropertyInternal2 对链上 Proxy 先走 em->get_property
+  //（js_proxy_get）并把 get trap 返回值（miss = undefined）**当命中返回** → 静默
+  // undefined。该 C 层短路有两个后果，构成本切片的引擎分叉依据：
+  // ①自由变量解析丢 ReferenceError（webview quickjs execute-error 面炸）；②任何
+  // miss 全局读都重入 NPO get trap（→ iframe 扫描 → 查询机器 → 再 miss 读递归）。
+  // 探针即测第①面（它必然连带第②面——同一 get_property 短路）。探测完 finally 还原
+  // 原链；探测期单线程同步，无页面 JS 重入面。
+  // FIXME(engine-divergence)：QuickJS 腿不接 NPO 链（保 slice36 globalThis own 安装
+  // 面），NPO 链形/描述符/陷阱面为 V8 腿语义；两腿行为差异在此如实申报。
+  function _zwV8ProtoProxyGetSemantics() {
+    var orig37 = Object.getPrototypeOf(globalThis);
+    var threw37 = false;
+    try {
+      var px37 = new Proxy(Object.create(orig37), { get: function () { return undefined; } });
+      Object.setPrototypeOf(globalThis, px37);
+      try {
+        var _probe37 = __zwProtoProbeMissing37xyz;
+        void _probe37;
+      } catch (_e37pp) {
+        threw37 = true;
+      }
+    } catch (_e37pp2) {
+      threw37 = false;
+    } finally {
+      try { Object.setPrototypeOf(globalThis, orig37); } catch (_e37pr) {}
+    }
+    return threw37;
+  }
+  // 接线主 window（spec：Window 全局的原型链站 WindowProperties 之下）。
+  // ZeroWeb V8 全局 [[Prototype]] 可变（探针 s5 实证；Chrome 不可变=ImmutablePrototype
+  // 面，本切片不追，残余申报）。
+  if (_zwV8ProtoProxyGetSemantics()) {
+    try {
+      Object.setPrototypeOf(globalThis, Window.prototype);
+      _zwNPORef.wired = true;
+    } catch (_e37sp) {}
+  }
+  // renderer 换代回收/登记面助手（js_worker 快照臂 JS；NPO 化后 own 不存在，
+  // globalThis 读删须走 backing）。非可枚举（for-in 守恒）。
+  // renderer 换代回收/登记面助手（js_worker 快照臂 JS）。引擎分叉（接线处申报）：
+  // wired → backing own 口径；QuickJS → globalThis own（slice36 安装面——js_worker
+  // 臂原 raw globalThis 读删语义）。均非可枚举（for-in 守恒）。
+  Object.defineProperty(globalThis, '__zwNAGet', {
+    value: function (n37) {
+      try {
+        if (!globalThis.__zwNPO.wired) return globalThis[n37];
+        var b37 = globalThis.__zwNPO.back;
+        return Object.prototype.hasOwnProperty.call(b37, n37) ? b37[n37] : undefined;
+      } catch (_e37gn) { return undefined; }
+    },
+    writable: true, enumerable: false, configurable: true,
+  });
+  Object.defineProperty(globalThis, '__zwNADelete', {
+    value: function (n37) {
+      var had37 = false;
+      var wired37d = false;
+      try { wired37d = globalThis.__zwNPO.wired; } catch (_e37dw) {}
+      if (wired37d) {
+        try {
+          var b37d = globalThis.__zwNPO.back;
+          had37 = Object.prototype.hasOwnProperty.call(b37d, n37);
+          delete b37d[n37];
+        } catch (_e37dn) {}
+      } else {
+        // slice36 口径：globalThis own 删除即清除面（quickjs 不接链）。
+        try { had37 = Object.prototype.hasOwnProperty.call(globalThis, n37); } catch (_e37do) {}
+        try { delete globalThis[n37]; } catch (_e37dg) {}
+        return had37;
+      }
+      try { delete globalThis[n37]; } catch (_e37dg) {}
+      return had37;
+    },
+    writable: true, enumerable: false, configurable: true,
+  });
+  Object.defineProperty(globalThis, '__zwNAOwnKeys', {
+    value: function () {
+      try {
+        if (!globalThis.__zwNPO.wired) return Object.getOwnPropertyNames(globalThis);
+        return Object.keys(globalThis.__zwNPO.back);
+      } catch (_e37kn) { return []; }
+    },
+    writable: true, enumerable: false, configurable: true,
+  });
+  // （slice37 结束——NPO 构造块）
 
   if (globalThis.ServiceWorker) {
     Object.setPrototypeOf(globalThis.ServiceWorker.prototype, globalThis.EventTarget.prototype);
