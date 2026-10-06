@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M3 尾簇 35——wheel 源 scroll 步接通，wheel 族 3 案全绿）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M3 尾簇 36——wheel 族全绿 + reftest 复核 + mousemove-between 归因）
 
 ## 当前状态
 
