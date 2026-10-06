@@ -1,9 +1,11 @@
-// slice33（RP-3 收口）：Window named access 面补钉。①S-2 失格路径——removeAttribute
-// ('id'/'name')（slice32 钉仅覆盖 setAttribute 面，remove 面同经 _zwNAAttrChanged
-// 重核，本钉补资产）；②I-1 name 面白名单补 iframe（spec named objects 含
-// HTMLIFrameElement）——安装器（Rust 采集器 + shim _namedAccessMatches）与 live
-// matcher（_zwNAElemMatches）同口径；③I-7 再生边界——0 命中回收后成员重入全局
-// 恢复（2→0→1 修前恒 undefined）。
+// slice33（RP-3 收口 + 缺陷轮 B-1 收敛）：Window named access 面补钉。①S-2 失格
+// 路径——removeAttribute('id'/'name')（slice32 钉仅覆盖 setAttribute 面，remove 面
+// 同经 _zwNAAttrChanged 重核，本钉补资产）；②B-1 白名单边界——iframe 名**不进**
+// 元素集合面（spec name 面供名元素逐字仅 embed/form/img/object；iframe 名属
+// document-tree child navigable target name 通道，named object 值 = active
+// WindowProxy（contentWindow）且取值算法 navigable 优先于元素，引擎侧由 R139
+// `__zwRegisterNamedIframes` 委托承载；缺陷轮 I-1 曾误收 iframe 入面，B-1 撤出）；
+// ③I-7 再生边界——0 命中回收后成员重入全局恢复（2→0→1 修前恒 undefined）。
 // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
 // https://dom.spec.whatwg.org/#concept-collection-live
 
@@ -75,43 +77,47 @@ fn named_access_remove_attribute_name_disqualifies_s33() {
     );
 }
 
-// ②I-1 iframe 名面：双 iframe name=fr 安装集合（安装器面——Rust 采集器
-// collect_ids_multi + shim _namedAccessMatches 同口径）；appendChild 第三 iframe
-// 集合即时 +1（live matcher 面——_zwNAElemMatches iframe 臂）。
+// ②B-1 白名单边界：iframe 名不进元素集合面。双 iframe name=fr 在安装器面不装
+// 集合（spec name 面逐字仅 embed/form/img/object）；既有 img 同名 live 集合不因
+// appendChild iframe 并入成员（live matcher 面——_zwNAElemMatches 无 iframe 臂）。
+// iframe 名的全局值面 = R139 `__zwRegisterNamedIframes` 委托（contentWindow 即
+// WindowProxy，load 派发物化 + 首读 lazy 注册）——本钉环境无 load 物化，R139 面
+// 以浏览器探针归档（diag/evidence/slice33/rework/ iframe-face before/after PNG）。
 #[test]
-fn named_access_iframe_name_face_s33() {
+fn named_access_iframe_whitelist_boundary_s33() {
     let mut sandbox = s32_sandbox!(
-        "<html><body><iframe name='fr'></iframe><iframe name='fr'></iframe></body></html>"
+        "<html><body><iframe name='fr'></iframe><iframe name='fr'></iframe>\
+         <img name='zz'><img name='zz'></body></html>"
     );
     sandbox
         .execute(
-            "globalThis.__r_is_col = window.fr && typeof window.fr.item === 'function';
-             globalThis.__r_len0 = window.fr ? window.fr.length : -1;
+            "globalThis.__r_fr_absent = typeof window.fr === 'undefined';
+             globalThis.__r_fr_not_col = !(window.fr && typeof window.fr.item === 'function');
+             globalThis.__r_zz_len0 = window.zz.length;
              var f3 = document.createElement('iframe');
-             f3.setAttribute('name', 'fr');
+             f3.setAttribute('name', 'zz');
              document.body.appendChild(f3);
-             globalThis.__r_len1 = window.fr.length;
-             globalThis.__r_member = window.fr[2] === f3;")
+             globalThis.__r_zz_len1 = window.zz.length;")
         .unwrap();
     assert_eq!(
-        sandbox.execute("globalThis.__r_is_col").unwrap().value,
+        sandbox.execute("globalThis.__r_fr_absent").unwrap().value,
         "true",
-        "双 iframe name=fr 安装集合（I-1 安装器面，修前 iframe 不入面 → undefined）"
+        "iframe 名不进安装器面（spec name 面仅 embed/form/img/object，R139 委托面）"
     );
     assert_eq!(
-        sandbox.execute("globalThis.__r_len0").unwrap().value,
+        sandbox.execute("globalThis.__r_fr_not_col").unwrap().value,
+        "true",
+        "window.fr 不是 iframe 元素 HTMLCollection（B-1 白名单边界）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_zz_len0").unwrap().value,
         "2",
-        "集合长度 = 命中数"
+        "img 同名多命中照常安装集合（白名单内元素不受影响）"
     );
     assert_eq!(
-        sandbox.execute("globalThis.__r_len1").unwrap().value,
-        "3",
-        "appendChild iframe 后集合即时 +1（I-1 live matcher 面，修前恒 2/不入）"
-    );
-    assert_eq!(
-        sandbox.execute("globalThis.__r_member").unwrap().value,
-        "true",
-        "新 iframe 成员并入集合"
+        sandbox.execute("globalThis.__r_zz_len1").unwrap().value,
+        "2",
+        "appendChild iframe 后 live 集合不并入 iframe（_zwNAElemMatches 无 iframe 臂）"
     );
 }
 

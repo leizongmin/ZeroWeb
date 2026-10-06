@@ -1142,12 +1142,14 @@ pub(crate) fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &s
                 if !handle_selectors.is_empty()
                     && let Ok(mut map) = ctx.js_worker.handle_selector_map().lock()
                 {
-                    map.extend(handle_selectors);
+                    // iter 克隆 extend（同 webview batch_handle_selectors 惯用法）——
+                    // handle_selectors 还要作 evict 的 batch_handles 借用。
+                    map.extend(handle_selectors.iter().map(|(h, s)| (h.clone(), s.clone())));
                 }
                 // slice33：R100 失效契约（webview 侧 evict_removed_identities 同源）——
                 // 被移除 handle 的 worker 侧 gBCR 反查表条目同步清除，防 RectBridge
                 // 把旧 handle 锚到同选择器的新节点上。
-                evict_removed_worker_handles(ctx, &recorded);
+                evict_removed_worker_handles(ctx, &recorded, &handle_selectors);
                 *ctx.html = new_html.clone();
                 // slice33（RP-3 跨文档残影）：apply 代际换代通知——与 webview
                 // `apply_pending_shared_mutations`/`apply_mutations_subset` 的 R379/pa2b
@@ -1172,11 +1174,13 @@ pub(crate) fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &s
             if !handle_selectors.is_empty()
                 && let Ok(mut map) = ctx.js_worker.handle_selector_map().lock()
             {
-                map.extend(handle_selectors);
+                // iter 克隆 extend（同 path A 注）——handle_selectors 还要作 evict 的
+                // batch_handles 借用。
+                map.extend(handle_selectors.iter().map(|(h, s)| (h.clone(), s.clone())));
             }
             *ctx.html = new_html.clone();
             // slice33：R100 失效契约（同 webview 路径）。
-            evict_removed_worker_handles(ctx, &recorded);
+            evict_removed_worker_handles(ctx, &recorded, &handle_selectors);
             // slice33：同 webview 路径——apply 代际换代通知（HTML 回写路径同边界语义）。
             notify_shim_apply_generation(ctx);
             Some(new_html)
@@ -1204,20 +1208,35 @@ fn notify_shim_apply_generation(ctx: &mut PageScriptContext<'_>) {
 /// slice33（RP-3）：worker 侧 handle→selector 反查表的 Remove 失效——webview
 /// `evict_removed_identities` 的 worker 镜像（gBCR path A 的 RectBridge 解析源）。
 /// 仅在 apply 成功后调用（失败时 handle 仍存活，清除会使其 gBCR 失锚）。
-fn evict_removed_worker_handles(ctx: &mut PageScriptContext<'_>, recorded: &[DomMutation]) {
-    let removed: Vec<String> = recorded
+/// slice33 缺陷轮 S-2/I-1：补 `Remove { selector }` 形（此前仅 RemoveHandle 臂——
+/// selector 形移除的 worker 残账不清）；与 webview Remove 臂同款「同批 rebuild 且
+/// 等值则跳过」守卫：`batch_handles`（render 第 3 元）仅含 apply 后仍在树内的
+/// handle，同批先删旧位又重建同选择器新节点时 post-apply 绑定指向新 handle，
+/// 删了会误杀；batch 成员 live，同批建又删的 handle 不会守卫穿透。
+fn evict_removed_worker_handles(
+    ctx: &mut PageScriptContext<'_>,
+    recorded: &[DomMutation],
+    batch_handles: &std::collections::HashMap<String, String>,
+) {
+    let touches_removed = recorded
         .iter()
-        .filter_map(|m| match m {
-            DomMutation::RemoveHandle { handle } => Some(handle.clone()),
-            _ => None,
-        })
-        .collect();
-    if removed.is_empty() {
+        .any(|m| matches!(m, DomMutation::Remove { .. } | DomMutation::RemoveHandle { .. }));
+    if !touches_removed {
         return;
     }
     if let Ok(mut map) = ctx.js_worker.handle_selector_map().lock() {
-        for handle in removed {
-            map.remove(&handle);
+        for mutation in recorded {
+            match mutation {
+                DomMutation::RemoveHandle { handle } => {
+                    map.remove(handle);
+                }
+                DomMutation::Remove { selector } => {
+                    map.retain(|handle, sel| {
+                        !(sel.as_str() == selector.as_str() && !batch_handles.contains_key(handle))
+                    });
+                }
+                _ => {}
+            }
         }
     }
 }

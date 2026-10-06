@@ -10528,8 +10528,10 @@
   var _zwNAInstalled = globalThis.__zwNAInstalledStore
     || (globalThis.__zwNAInstalledStore = {}); // slice32：同上，跨 shim 重执行存活
   // named access 成员判定——与安装期采集器 `_namedAccessMatches`（part06）同口径：
-  // id 面（全元素）+ name 面（embed/form/iframe/img/object，local 名不辨 ns，与
-  // 构建期选择器一致；iframe 自 slice33 I-1 起入面，同 Rust 采集器口径）。
+  // id 面（全元素）+ name 面（embed/form/img/object，local 名不辨 ns，与
+  // 构建期选择器一致；iframe 不入面——其名走 child navigable 通道由 R139 委托
+  // contentWindow 值，slice33 I-1 曾误收、缺陷轮 B-1 撤出，同 Rust 采集器口径）。
+  // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
   function _zwNAElemMatches(name, el) {
     if (!el || el.nodeType !== 1) return false;
     var idv = null, nmv = null;
@@ -10540,7 +10542,7 @@
     var tn = '';
     try { tn = String(el.tagName || ''); } catch (_e32t) {}
     var low = tn.toLowerCase();
-    return low === 'embed' || low === 'form' || low === 'iframe' || low === 'img' || low === 'object';
+    return low === 'embed' || low === 'form' || low === 'img' || low === 'object';
   }
   function _zwNALiveSpec(name) {
     return {
@@ -10557,6 +10559,7 @@
   // 每读按当下 named objects 求值，重入后值恢复（live 语义自然延伸）；修前账本随
   // 回收删除，重入后全局恒 undefined（再生缺口）。morph 成元素的全局仍不回改
   //（slice32 边界钉保持）。
+  // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
   function _zwNAGlobalMorph(name) {
     var g, installed = _zwNAInstalled[name];
     if (!installed) return;

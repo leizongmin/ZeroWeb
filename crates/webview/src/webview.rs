@@ -1043,7 +1043,7 @@ impl WebView {
         let (result, html_snapshot, handle_selectors) =
             self.pipeline.render_with_dom_mutations(mutations, &self.cached_css)?;
         // slice33：apply 成功即履行 R100 失效契约（见 evict_removed_identities 文档）。
-        self.evict_removed_identities(mutations);
+        self.evict_removed_identities(mutations, &handle_selectors);
         // R1794：只有内容 DOM 改变才刷新图片子资源。文本控件当前值由 retained 状态持有，
         // 不改变 HTML 快照，也不应让每个字符重扫整页图片。
         // 脚本批量期间（`script_batch_active`）跳过图片扫描与渲染消费——渲染管线
@@ -2153,7 +2153,7 @@ impl WebView {
                 Ok((_, snap, handles)) => {
                     self.merge_handle_selectors(&handles);
                     // slice33：apply 成功即履行 R100 失效契约（见 evict_removed_identities 文档）。
-                    self.evict_removed_identities(subset);
+                    self.evict_removed_identities(subset, &handles);
                     snap
                 }
                 Err(error) => {
@@ -3947,7 +3947,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         self.applied_mutations += tail.len();
         self.merge_handle_selectors(&handles);
         // slice33：apply 成功即履行 R100 失效契约（见 evict_removed_identities 文档）。
-        self.evict_removed_identities(&tail);
+        self.evict_removed_identities(&tail, &handles);
         if let Some(render_result) = &render_result {
             self.last_render = Some(render_result_to_webview(render_result));
         }
@@ -4003,7 +4003,17 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
     /// γ2 移除、γ3 同位落位后仍返 `__n0`）。
     /// `handle_selector_forward`（handle→sel）只清反向可锚定的条目：JS 已持有的
     /// 旧 proxy 读回落（R3029 removedNodes 语义）不受影响。
-    fn evict_removed_identities(&mut self, mutations: &[DomMutation]) {
+    /// slice33 缺陷轮 S-2：`Remove { selector }` 臂与 RemoveHandle 臂同款「同批
+    /// rebuild 且等值则跳过」守卫——`batch_handles` 为本次 apply 重建的 handle→sel
+    /// 账（render_with_dom_mutations 第 3 元，仅含 apply 后仍在树内的 handle）：同批
+    /// 先 Remove 旧位又重建同选择器新节点时，post-apply 绑定已指向新 handle，无条件
+    /// 删会误杀新绑定。batch 成员仅 post-apply-live，同批建又删的 handle 不在内，
+    /// 不会守卫穿透。
+    fn evict_removed_identities(
+        &mut self,
+        mutations: &[DomMutation],
+        batch_handles: &std::collections::HashMap<String, String>,
+    ) {
         if mutations.is_empty() {
             return;
         }
@@ -4012,6 +4022,9 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         for mutation in mutations {
             match mutation {
                 DomMutation::Remove { selector } => {
+                    if sel_map.get(selector).is_some_and(|cur| batch_handles.contains_key(cur)) {
+                        continue;
+                    }
                     sel_map.remove(selector);
                 }
                 DomMutation::RemoveHandle { handle } => {

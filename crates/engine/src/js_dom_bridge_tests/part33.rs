@@ -1,17 +1,20 @@
 // slice28（site-compat Window named access name 属性面，RP-1）：
 // `collect_element_ids_doc` 的 name 面钉。spec「Named access on the Window object」
 // 的 supported property names = ①文档树内所有带 id 元素的 id 值 + ②embed/form/
-// iframe/img/object 五元素的非空 name 内容属性值——单遍 tree order 合并、忽略后
-// 现重复。slice33 I-1 起 iframe 入本面（现行 spec named objects 含
-// HTMLIFrameElement；单命中 iframe 名的 R139 contentWindow 值由安装器守卫保留）。
+// img/object 四元素的非空 name 内容属性值——单遍 tree order 合并、忽略后现重复。
+// iframe 属「child navigable target name」源，委托 R139 `__zwRegisterNamedIframes`
+// （contentWindow 值更贴 spec；本面收 iframe 会以元素先占名压制 R139）——不收。
 // 修前 `collect_element_ids_doc` 仅收 `[id]`（name 面整体缺失——缺陷轮 S1）。
+// slice33 缺陷轮 B-1：I-1 曾误收 iframe 入面（「现行 spec named objects 含
+// HTMLIFrameElement」为错误规范断言——spec name 面供名元素逐字仅 embed/form/
+// img/object），本文件回退恢复 slice32 口径。
 // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
 
 #[test]
 fn test_collect_name_face_elements_tree_order_s28() {
-    // 五 name-able 元素 + id 面同页：单遍树序合并（form 无 id → 仅 name 面；
-    // img id+name 并存 → 两个名字都贡献；embed/object 仅 name 面；slice33 I-1 起
-    // iframe name= 同入本面）。
+    // 四 name-able 元素 + id 面同页：单遍树序合并（form 无 id → 仅 name 面；
+    // img id+name 并存 → 两个名字都贡献；embed/object 仅 name 面）。iframe name=
+    // 入 fixture 作负面：不收（R139 委托面，收了会压制 contentWindow 注册）。
     let html = "<html><body>\
                 <form name=\"f1\"></form>\
                 <img name=\"i1\" id=\"ii\">\
@@ -21,8 +24,8 @@ fn test_collect_name_face_elements_tree_order_s28() {
                 </body></html>";
     assert_eq!(
         collect_element_ids(html),
-        "f1|ii|i1|fr|e1|o1",
-        "name 面五元素与 id 面单遍树序合并收集（slice33 I-1 起 iframe 入面）"
+        "f1|ii|i1|e1|o1",
+        "name 面四元素与 id 面单遍树序合并收集；iframe 不入本面（R139 委托）"
     );
 }
 
@@ -35,7 +38,7 @@ fn test_collect_name_face_id_name_same_value_dedup_s28() {
 
 #[test]
 fn test_collect_name_face_non_nameable_tags_s28() {
-    // spec 负面：仅五元素参与 name 面——input/a 等带 name 不收集（input name 是
+    // spec 负面：仅四元素参与 name 面——input/a 等带 name 不收集（input name 是
     // 表单控件名，a name 是锚点名，均非 named access 面）。
     let html = "<html><body>\
                 <input name=\"q\">\
@@ -119,17 +122,17 @@ fn test_collect_multi_match_same_element_id_name_once_s30() {
 
 #[test]
 fn test_collect_multi_match_negative_non_nameable_and_single_s30() {
-    // 负面：input/a 等非 name-able 元素同名多命中不入清单（name 面五元素参与
-    // ——slice33 I-1 起 iframe 入面、不再作负面，input/a 仍负面），全部单命中名
-    // 不入选。
+    // 负面：input/a 等非 name-able 元素同名多命中不入清单（name 面仅四元素参与，
+    // 同 collect 口径）；全部单命中名不入选；iframe name= 不入（R139 委托）。
     let html = "<html><body>\
                 <input name=\"q\"><input name=\"q\">\
                 <a name=\"anc\"></a><a name=\"anc\"></a>\
+                <iframe name=\"fr\"></iframe><iframe name=\"fr\"></iframe>\
                 <img name=\"one\">\
                 </body></html>";
     assert_eq!(
         collect_element_ids_multi(html),
         "",
-        "非 name-able 多命中（input/a）不入选；全单命中不入选"
+        "非 name-able 多命中（input/a/iframe）不入选；全单命中不入选"
     );
 }
