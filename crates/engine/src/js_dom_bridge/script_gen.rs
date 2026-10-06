@@ -955,6 +955,19 @@ pub fn script_contenteditable_delete(selector: &str) -> String {
 ///
 /// shim `__zw_ce_forward_delete(sel)`：选区非空删选区；collapsed 删 caret 后一个
 /// UTF-16 单元（deleteContentForward 语义）并派发 beforeinput/input。
+/// 构造「wheel 源 scroll」的宿主脚本（uievents-compat 尾簇 35）。
+///
+/// shim `__zw_wheel_scroll(sel, px, py, dx, dy)`：WheelEvent 派发（delta 透传；
+/// target = sel 命中元素）。
+pub fn script_wheel_scroll(selector: &str, px: f32, py: f32, dx: f32, dy: f32) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!("__zw_wheel_scroll('{esc_sel}',{px},{py},{dx},{dy});")
+}
+
+/// 构造「contenteditable 宿主 ForwardDelete」的宿主脚本（uievents-compat 尾簇 32）。
+///
+/// shim `__zw_ce_forward_delete(sel)`：选区非空删选区；collapsed 删 caret 后一个
+/// UTF-16 单元（deleteContentForward 语义）并派发 beforeinput/input。
 pub fn script_contenteditable_forward_delete(selector: &str) -> String {
     let esc_sel = escape_js_string(selector);
     format!("__zw_ce_forward_delete('{esc_sel}')")

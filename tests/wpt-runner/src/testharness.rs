@@ -8459,6 +8459,32 @@ fn apply_testdriver_command(
             }
             None
         }
+        // 尾簇 35：wheel 源 scroll 步（Actions scroll → WheelEvent 派发——
+        // wheel-basic 的 target 序面 + deadlock 的 delta 透传面；滚动默认动作
+        // headless 无真滚动管线不消费）。text = "[@]x,y,dx,dy"（'@' = viewport
+        // 绝对坐标；否则 origin 元素中心 + 偏移）。
+        "wheel_scroll" => {
+            let text = command.text.as_deref().unwrap_or_default().to_string();
+            let parts: Vec<&str> = text.trim_start_matches('@').split(',').collect();
+            if parts.len() < 4 {
+                return Some(format!("wheel_scroll bad text: {text}"));
+            }
+            let parse = |v: &str| -> f32 { v.trim().parse::<f32>().unwrap_or(0.0) };
+            let ox = parse(parts[0]);
+            let oy = parse(parts[1]);
+            let dx = parse(parts[2]);
+            let dy = parse(parts[3]);
+            let absolute = text.starts_with('@');
+            let (hit, px, py) = resolve_pointer_target(webview, &selector, ox, oy, absolute, td_refresh_ver);
+            if std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1") {
+                eprintln!("[wheel-scroll] hit={hit} at ({px},{py}) delta=({dx},{dy})");
+            }
+            let script = zero_engine::script_wheel_scroll(&hit, px, py, dx, dy);
+            if let Err(err) = webview.execute_script(&script) {
+                return Some(err.to_string());
+            }
+            None
+        }
         operation => Some(format!("unsupported testdriver command: {operation}")),
     }
 }
@@ -8793,7 +8819,23 @@ const TESTDRIVER_STUB: &str = r#"<script>
     this._tick(this._getSource('pointer', options.sourceName), { type: 'pointerMove', x: x, y: y, origin: options.origin });
     return this;
   };
-  Actions.prototype.scroll = function() { return this; };
+  // 尾簇 35：wheel 源 scroll 步（上游 testdriver-actions 面——x/y 相对 origin
+  // （元素中心/viewport 绝对），dx/dy 为滚动增量）。此前 no-op（记帐不重放——
+  // wheel-basic/deadlock 的 wheel 事件面未接）。
+  Actions.prototype.addWheel = function(name) {
+    this._createSource('wheel', name);
+    return this;
+  };
+  Actions.prototype.setWheel = function(name) {
+    if (this._sources[name]) this._current.wheel = name;
+    return this;
+  };
+  Actions.prototype.scroll = function(x, y, dx, dy, options) {
+    options = options || {};
+    this._tick(this._getSource('wheel', options.sourceName),
+      { type: 'scroll', x: x || 0, y: y || 0, dx: dx || 0, dy: dy || 0, origin: options.origin });
+    return this;
+  };
   Actions.prototype.send = function() {
     var element = this._current.pointer && this._resolveOrigin(this._lastMove[this._current.pointer] && this._lastMove[this._current.pointer].origin) || document.activeElement;
     // WAB2-M3-s1：动作链发送同 click 授予瞬态激活（sendPasteShortcutKey 等 paste 链）。
@@ -8869,6 +8911,16 @@ const TESTDRIVER_STUB: &str = r#"<script>
             text: (uOrigin && uOrigin.abs ? '@' : '') + (uOrigin ? uOrigin.x : downInfo.x) + ',' + (uOrigin ? uOrigin.y : downInfo.y) + ',' + source.pointerType + ',' + (step.button || 0) + '|' + downInfo.selector + '|' + upChain,
             chain: this._lastChain[this._sourceOrder[si]]
           });
+        } else if (step.type === 'scroll') {
+          // 尾簇 35：wheel 源 scroll 步入 plan（wheel_scroll 命令——runner resolve
+          // origin（元素中心 + x/y 偏移；viewport origin = 绝对坐标 '@' 形）→ shim
+          // WheelEvent 派发（delta 透传）。scroll 记帐不重放的旧口径随之解除。
+          var sOriginEl = (step.origin === 'viewport') ? null : this._resolveOrigin(step.origin);
+          var sAbs = !sOriginEl;
+          var sMoveOrigin = sOriginEl || document.body || document.documentElement;
+          if (!sMoveOrigin) continue;
+          plan.push({ op: 'wheel_scroll', origin: sMoveOrigin,
+            text: (sAbs ? '@' : '') + step.x + ',' + step.y + ',' + step.dx + ',' + step.dy });
         } else {
           // keydown/keyup：对 activeElement（R3254-K2 先例——键盘链无 origin 元素）。
           plan.push({ op: step.type, origin: document.activeElement || element, text: step.value });

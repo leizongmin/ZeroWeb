@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M3 尾簇 33——execCommand text-control 事件序 + maxlength 哨兵 + textarea Enter 换行，1782P→1785P）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M3 尾簇 35——wheel 源 scroll 步接通，wheel 族 3 案全绿）
 
 ## 当前状态
 
@@ -12,8 +12,8 @@ M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P 
 尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → 尾簇 19 1736P → 尾簇 20/21 1738P →
 尾簇 22 1739P → 尾簇 23 1745P → 尾簇 24 1750P → 尾簇 25 1755P → 尾簇 27 1757P →
 尾簇 28 1759P → 尾簇 30 1763P → 尾簇 31 1778P → 尾簇 32 1782P → 尾簇 33 1785P →
-尾簇 34 **1787P（+1567 累计）**
-（corpus：**1787P/176F/96TO**，`TIME_LIMIT=3600`——textInput 族 **24P 全绿**
+尾簇 34 1787P → 尾簇 35 **1790P（+1570 累计）**
+（corpus：**1790P/175F/95TO**，`TIME_LIMIT=3600`——**wheel 族 3 案全绿**（尾簇 35——Actions scroll 步接通 + WheelEvent 派发）；textInput 族 24P 全绿
 （上轮 22P/1F/1TO：api CE execCommand 案 Pass + enter-textarea CE 案 Pass）；
 其余零回归。尾簇 33 的 textContent 同步可见性挂账解明并修复：根因 = `'value' in`
 has 白名单无条件 true（div 等 CE 元素误入 value getter 分支）+ CE Enter 元素
@@ -51,8 +51,8 @@ selection key 存活面 +14**（见下节与
 [evidence/2026-10-04-m3-tail6a.json](evidence/2026-10-04-m3-tail6a.json)（尾簇 6a 后）、
 [evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)（尾簇 6b+6c 后）。
 门禁：**make test EXIT=0** + clippy（quickjs 面，-D warnings）EXIT=0 + shim 拼接
-node --check 全绿 + corpus 全量 **1787P/176F/96TO** 零回归（新 Fail 0 新 TO 0）
-（2026-10-07 尾簇 34 后）。历史（尾簇 33 后）：1785P/177F/97TO；reftest 704/704（尾簇 28 后）。
+node --check 全绿 + corpus 全量 **1790P/175F/95TO** 零回归（wheel 族全绿 +3P）
+（2026-10-07 尾簇 35 后）。历史（尾簇 34 后）：1787P/176F/96TO；reftest 704/704（尾簇 28 后）。
 
 **M3 尾簇 33（2026-10-07，本轮）——execCommand text-control 事件序 + maxlength 哨兵 + textarea Enter 换行（1782P→1785P）**。
 三件：① **execCommand('insertText') text-control 分支补事件序**（beforeinput（可取消，
@@ -87,6 +87,17 @@ textInput('\n') → `<br>` 直插 → input）；③ **CE Enter 变更走本地 
 mutation 可见面）。余挂收窄：textInput 域清零；keyboard-click-event TO（交互层）
 与 CE insertParagraph（编辑 goal 邻接）维持。详见
 [evidence/2026-10-07-m3-tail34.md](evidence/2026-10-07-m3-tail34.md)。
+
+**M3 尾簇 35（2026-10-07，本轮）——wheel 源 scroll 步接通（wheel 族 3 案全绿）**。
+四段通道：① stub `Actions.prototype.scroll` 编码（此前 no-op「记帐不重放」）+
+`addWheel/setWheel` 源注册；② stub send() scroll 步入 plan（`wheel_scroll` op——
+viewport `'@'` 绝对/元素中心偏移两形）；③ runner 命令处理（`resolve_pointer_target`
+命中同指针命令）→ `script_wheel_scroll`；④ shim `__zw_wheel_scroll`——WheelEvent
+派发（delta 透传、cancelable、R312 trusted 印记；滚动默认动作 headless 不消费）。
+**「wheel-scrolling 需真滚动」预判推翻**——三案均只断言事件面（EventRecorder
+target 序 + delta 透传），headless 无真滚动管线不阻塞本 goal 语料；真滚动默认动作
+维持挂账（语料未断言滚动面）。详见
+[evidence/2026-10-07-m3-tail35.md](evidence/2026-10-07-m3-tail35.md)。
 
 **M3 尾簇 32（2026-10-06，39ca800f1）——send_keys 自聚焦 + CE ForwardDelete + Enter 键序（1778P→1782P）**。
 三件：① **send_keys 入口自聚焦目标**（runner——WebDriver per-element send 语义；
@@ -588,6 +599,8 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
   TO 转具名 Fail 挂账）。
 - **M3 尾簇 34（2026-10-07，本轮）**：'value' in tag-gate + CE Enter 元素 caret/
   本地树变更。1785P→1787P（+2，textInput 族 24P 全绿；单测校准 CE Enter mutation 形态）。
+- **M3 尾簇 35（2026-10-07，本轮）**：wheel 源 scroll 步接通（stub/runner/shim
+  四段通道）。wheel 族 3 案全绿（1F/2TO→3P）。
 
 ## 下一步计划
 

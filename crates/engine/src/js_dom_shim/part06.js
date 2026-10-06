@@ -12708,6 +12708,29 @@
     }
     return 'ok';
   };
+  // 尾簇 35：wheel 源 scroll 步 → **WheelEvent 派发**（uievents wheel-basic 的
+  // target 序面 + deadlock 的 delta 透传面；滚动默认动作 headless 无真滚动管线，
+  // cancelable 语义保留不消费）。target = runner 命中元素（origin 元素/viewport
+  // 命中——resolve 与指针命令同款）。R312 UA 通道印记（UA 合成 wheel——isTrusted
+  // true；页面 redispatch 翻 false 同款）。
+  globalThis.__zw_wheel_scroll = function(sel, px, py, dx, dy) {
+    try {
+      var hit = (sel && document.querySelector(sel)) || document.body;
+      if (!hit) return;
+      var ev = new globalThis.WheelEvent('wheel', {
+        bubbles: true, cancelable: true, composed: true,
+        deltaX: dx || 0, deltaY: dy || 0, deltaZ: 0, deltaMode: 0,
+        clientX: px || 0, clientY: py || 0,
+        button: 0, buttons: 0, view: globalThis, detail: 0
+      });
+      try {
+        Object.defineProperty(ev, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
+        ev._zwUaDispatch = true;
+      } catch (_eWt35) {}
+      hit.dispatchEvent(ev);
+      try { ev._zwUaDispatch = false; } catch (_eWt35b) {}
+    } catch (_eW35) {}
+  };
   // 悬停态导航重置（part01 `__zw_reset_form_state` 同族——per-page 状态生命周期）。
   globalThis.__zw_pointer_reset = function () {
     _zwPtrState.overSel = null;
