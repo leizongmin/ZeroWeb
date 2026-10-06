@@ -2135,6 +2135,52 @@ mod tests {
         worker.shutdown();
     }
 
+    // slice36（RP-3 动态名面）renderer 钉：脚本后建名（createElement + id + appendChild）
+    // 访问时解析——同 execute 内（_mo_notify 注册面即时）与跨 execute（宿主批应用后，
+    // `__zwNADynElsStore` 账本 + `__zwNamedAccessInstalled` 换代登记存活）；移除注销。
+    // 修前脚本后建名恒 undefined（slice32 边界钉申报面）。
+    #[test]
+    fn renderer_js_worker_named_access_dynamic_resolve_s36() {
+        let mut worker = RendererJsWorker::spawn(71);
+        worker.set_dom_snapshot("<html><body></body></html>", "https://example.test/");
+        // 脚本后建：pending 节点 appendChild → _mo_notify 注册（spec named property
+        // visibility 每次访问对当前文档树求值，shim 以注册表增量维护近似）。
+        worker
+            .execute_script_direct(
+                "window.__s36d = document.createElement('div');\
+             window.__s36d.setAttribute('id', 's36dyn');\
+             document.body.appendChild(window.__s36d);",
+            )
+            .unwrap();
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.s36dyn === window.__s36d)")
+                .unwrap(),
+            "true",
+            "同 execute 内访问时解析（修前恒 undefined）"
+        );
+        // 跨 execute（宿主批应用后）：动态安装值不因换代账本缺席而悬挂。
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.s36dyn && window.s36dyn.nodeType === 1)")
+                .unwrap(),
+            "true",
+            "跨 execute 仍解析（账本 + 换代登记存活）"
+        );
+        // 移除注销：removeChild → 真离树 → 全局回收（脚本自有改写不追删口径不变）。
+        worker
+            .execute_script_direct("document.body.removeChild(window.__s36d);")
+            .unwrap();
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.s36dyn === undefined)")
+                .unwrap(),
+            "true",
+            "移除后名注销（spec：离树 named object 退出 WindowProperties）"
+        );
+        worker.shutdown();
+    }
+
     // slice18（site-compat baidu 建议链 /sugrec，R-baidu8 接管收尾）：SetDomSnapshot 置位
     // `__zwHostOwnsDynamicScripts`——动态 src 脚本单点归属宿主管线，shim R387b 页面 fetch
     // 通道（cors 语义）整体跳过，动态脚本归 PendingDynamicScripts no-cors 取回。

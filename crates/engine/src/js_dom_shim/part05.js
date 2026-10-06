@@ -9890,6 +9890,9 @@
     _zwPendingRemovedSet = null;
     _zwPendingByParent.clear();
     _zwPendingAddedById.clear();
+    // slice36（RP-3 动态名面）：动态元素账本随快照换代清空（旧文档动态安装值由
+    // renderer 登记·回收链路按 `__zwNamedAccessInstalled` 账本删全局，本表不跨文档）。
+    globalThis.__zwNADynElsStore = {};
     try { if (typeof _zwPendReselBySel !== 'undefined') _zwPendReselBySel.clear(); } catch (_eReselClr) {}
     _zwIdOverrides.clear();
     // R379/pa2a：移除标记纳入换代清理（pa1 审计 §2.4 实证「标记不在清桶范围」——
@@ -10313,6 +10316,10 @@
         try { _zwNAGlobalMorph(lc.naName); } catch (_e32lm) {}
       }
     }
+    // slice36（RP-3 动态名面）：展开面交还调用方（part01 `_mo_notify` 在反链记账后
+    // 尾叫 `_zwNADynamicSync`——contains/树序判定依赖的 `_zwNodeParent` 反链在该时点
+    // 已记/已删，本函数内反链尚未落账，不能就地做连接性判定）。
+    return { addFlat: addFlat, remFlat: remFlat, inDoc: _r54InDoc };
   }
 
   function _zwMakeHTMLCollection(elements, liveSpec) {
@@ -10626,6 +10633,216 @@
       }
       lc32.replace(out32);
       _zwNAGlobalMorph(lc32.naName);
+    }
+    // slice36（RP-3 动态名面）：id/name 属性变异的动态注册/注销尾叫——安装时点不
+    // 存在、由脚本赋名（parsed 元素 setAttribute）或改名的元素按 spec 访问时解析。
+    try { _zwNAAttrDynamicSync(el); } catch (_e36ad) {}
+  }
+
+  // ── slice36（RP-3 动态名面）：Window named access 动态名注册 ─────────────────────
+  // spec「Window 上的命名属性访问」的 named property visibility 算法在**每次访问时**
+  // 对当前文档树做 id/name 查询（slice32 边界钉申报的缺口面：安装时点不存在的名
+  // window.N 恒 undefined）。shim 全局为数据属性安装面，真「每读查找」不可达；本面
+  // 以**注册表增量维护**近似：childList 汇流点（_mo_notify，反链记账后尾叫）+
+  // id/name 属性变异钩子（_zwNAAttrChanged 尾叫）两处触发，命中即安装
+  //（1 命中→元素、≥2 命中→live 集合——与安装期 `_installNamedAccess` 同口径，
+  // 共用 `_zwNAInstallCollection`）。代价：childList 批内每元素 1–2 次 getAttribute
+  //（trap 域读）+ 候选名存在时一次 getElementById/pending 扫描；查询面
+  //（querySelectorAll）对同 execute 内 pending/attr 写不可见（探针实证：
+  // append 后 '[id=x]' 恒 0、parsed setAttribute 后旧 id 仍在）——匹配枚举走
+  // getElementById（R125 覆盖表 + pending-ID 索引即时）∪ _zwPendingAdded 扫描
+  //（attr 即时）∪ 触发元（attr 面），树序经 R79 compareDocumentPosition。
+  // **边界（FIXME(dynamic-na) 如实申报）**：①注销面仅覆盖本面动态安装值
+  //（`__zwNADynElsStore` 账本）——安装期单命中元素全局（slice27 面）与 morph 产物
+  // 保持 stale 到换代回收（slice32 申报钉维持）；②非标识符名不注册（安装面同款
+  // 偏差——transport `|` 分隔与属性选择器嵌入约束）；③shadow 树内元素未按
+  // document-tree 语义排除（连接性走 `_zwDocContains36` JS 链，shadow host 连入
+  // 文档即真——spec named objects 限 document tree）；④iframe 名不入面（R139
+  // child navigable 委托面，slice33 B-1 口径）；⑤parsed 元素 name 属性脚本改值
+  // 面经 attr 触发元入账，host 原生侧改值（`__zw_mo_notify_native`，kill-switch
+  // 默认 OFF）不触发。
+  // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+  // https://webidl.spec.whatwg.org/#WindowProperties
+  // 动态元素账本（name → 本面安装的元素）——broadening（唯一命中升格集合）与失格
+  // 注销的「本特性安装值」判据；跨 shim 重执行存活（`_zwNAInstalledStore` 同款）。
+  var _zwNADynEls = globalThis.__zwNADynElsStore
+    || (globalThis.__zwNADynElsStore = {});
+  // 文档树成员判定——R79 `_zwNodeContains`（JS 链 + pending 即时真值）。isConnected
+  // / `__zw_contains` 走 host 视图，同 execute 内 remove 后仍 true（host 批量应用
+  // 滞后，探针实证 body.children/contains 即时而 isConnected 滞后）。
+  function _zwDocContains36(el) {
+    try {
+      var root36 = globalThis.document.body || globalThis.document.documentElement;
+      return !!(root36 && root36.contains(el));
+    } catch (_e36dc) { return false; }
+  }
+  // 候选名推导（与 `_zwNAElemMatches` 安装口径同源）：id 面全元素、name 面仅
+  // embed/form/img/object（空值不取；iframe 不入面）。
+  function _zwNACandidateName(el) {
+    if (!el || el.nodeType !== 1) return null;
+    var idv36 = null, nmv36 = null;
+    try { idv36 = el.getAttribute('id'); } catch (_e36ci) {}
+    if (idv36) return idv36;
+    try { nmv36 = el.getAttribute('name'); } catch (_e36cn) {}
+    if (!nmv36) return null;
+    var tn36 = '';
+    try { tn36 = String(el.tagName || ''); } catch (_e36ct) {}
+    var low36 = tn36.toLowerCase();
+    return (low36 === 'embed' || low36 === 'form' || low36 === 'img' || low36 === 'object')
+      ? nmv36 : null;
+  }
+  // 名的当前文档树命中全集（spec named objects 每读求值的增量面近似）：getElementById
+  //（id 面 parsed/attr 改值即时）∪ pending 扫描（脚本新建未应用节点——查询面不可见）
+  // ∪ 触发元（attr 面——parsed 元素 name 脚本改值的唯一即时枚举源）；文档树门 +
+  // 去重 + 树序。
+  function _zwNACollectMatches(name, extra) {
+    var els36 = [];
+    var push36 = function (e36) {
+      if (!e36 || e36.nodeType !== 1 || els36.indexOf(e36) >= 0) return;
+      if (!_zwDocContains36(e36)) return;
+      els36.push(e36);
+    };
+    try { push36(globalThis.document.getElementById(name)); } catch (_e36ge) {}
+    for (var p36 = 0; p36 < _zwPendingAdded.length; p36++) {
+      var nd36 = _zwPendingAdded[p36];
+      if (!nd36 || nd36.nodeType !== 1) continue;
+      var m36 = false;
+      try { m36 = _zwNAElemMatches(name, nd36); } catch (_e36nm) { m36 = false; }
+      if (m36) push36(nd36);
+    }
+    if (extra) push36(extra);
+    // 树序（spec：集合成员按树序）——DOCUMENT_POSITION_FOLLOWING=4（R2815 常量）。
+    els36.sort(function (a36, b36) {
+      try { return (a36.compareDocumentPosition(b36) & 4) ? -1 : 1; } catch (_e36s) { return 0; }
+    });
+    return els36;
+  }
+  // 非枚举可删数据属性定义（spec：named property 位于 WindowProperties 层——不可
+  // 枚举；plain 赋值会使命名属性被 for-in 枚举，WPT basics "not enumerable" 面）。
+  function _zwNADefineNA(name, v) {
+    try {
+      Object.defineProperty(globalThis, name,
+        { value: v, writable: true, enumerable: false, configurable: true });
+    } catch (_e36dp) {
+      try { globalThis[name] = v; } catch (_e36da) {}
+    }
+  }
+  // 集合形态安装（安装期面与动态面共用）：同名旧 NA 集合置 dead（换代/重装停维护，
+  // slice32 口径）→ 装新 live 集合 → 集合账本 + 非枚举全局 + renderer 换代登记
+  //（js_worker SetDomSnapshot 臂 `__zwNamedAccessInstalled`——动态安装值入账才被
+  // 换代回收，不留跨文档悬挂）；动态元素账本条目消费即除。
+  function _zwNAInstallCollection(name, els) {
+    try {
+      for (var d36 = 0; d36 < _zwLiveCollections.length; d36++) {
+        var dlc36 = _zwLiveCollections[d36];
+        if (dlc36 && dlc36.naName === name) dlc36.dead = true;
+      }
+    } catch (_e36dm) {}
+    var col36 = _zwMakeCollection(els, true, _zwNALiveSpec(name));
+    _zwNAInstalled[name] = col36;
+    _zwNADefineNA(name, col36);
+    var L36 = globalThis.__zwNamedAccessInstalled;
+    if (L36) { try { L36[name] = true; } catch (_e36Lc) {} }
+    delete _zwNADynEls[name];
+  }
+  // 名注册（broadening 入口合一）：全局缺席 → 按当下命中求值安装（1 元素 / ≥2 集合）；
+  // 全局在场且为本面动态安装的唯一元素 → 第二命中升格集合（WPT basics "dupe" 面）。
+  // 安装期集合账本在场的名不重复装（morph/回收语义接管，slice32/33 面）。
+  // 名门（slice36）：spec 命名属性名 = id/name 属性值原文（任意非空字符串——WPT
+  // changing.html 连字符名 "changing-one" 等按 bracket 访问解析），不做标识符形限制；
+  // 「缺席」判据 = globalThis 无 own 属性（value 判 undefined 会误装 "undefined"/
+  // "NaN" 等既有全局——spec named properties 不遮蔽 Window 既有属性）。
+  function _zwNARegisterName(name, triggerEl) {
+    if (!name) return;
+    var has36 = false;
+    try { has36 = Object.prototype.hasOwnProperty.call(globalThis, name); } catch (_e36gh) { return; }
+    var g36;
+    try { g36 = globalThis[name]; } catch (_e36gr) { return; }
+    if (!has36) {
+      var els36 = _zwNACollectMatches(name, triggerEl);
+      if (els36.length === 1) {
+        _zwNADefineNA(name, els36[0]);
+        _zwNADynEls[name] = els36[0];
+        var L36e = globalThis.__zwNamedAccessInstalled;
+        if (L36e) { try { L36e[name] = true; } catch (_e36Le) {} }
+      } else if (els36.length > 1) {
+        _zwNAInstallCollection(name, els36);
+      }
+      return;
+    }
+    if (_zwNAInstalled[name]) return;
+    if (_zwNADynEls[name] !== undefined && g36 === _zwNADynEls[name]) {
+      var elsB36 = _zwNACollectMatches(name, triggerEl);
+      if (elsB36.length > 1) _zwNAInstallCollection(name, elsB36);
+    } else if (g36 && g36.nodeType === 1) {
+      // slice36：静态安装面单命中元素全局（slice27 面，无集合账本）+ 动态第二命中
+      // → 升格集合（spec 多命中取集合形态）。仅当现值本身仍是该名的文档树命中
+      //（`_zwNAElemMatches` + `_zwDocContains36`）才接管——脚本自有同名全局
+      //（own property 遮蔽 named property，WindowProperties 只兜底）不覆写。
+      var gMatch36 = false;
+      try { gMatch36 = _zwNAElemMatches(name, g36) && _zwDocContains36(g36); } catch (_e36gm) {}
+      if (gMatch36) {
+        // g36 作 extra 候选入集——getElementById 对同 id pending 命中走 R125 覆盖
+        //（pending 优先于 parsed），parsed 现值不会被枚举到；identity 与文档树门
+        // 已在 gMatch36 校验，此处入集去重由 push36 indexOf 承担。
+        var elsS36 = _zwNACollectMatches(name, g36);
+        if (elsS36.length > 1) _zwNAInstallCollection(name, elsS36);
+      }
+    }
+  }
+  // 本面安装值失格注销：账本逐名核对——元素已不命中该名（属性失格）或已离文档树
+  //（removeChild 面探针实证 `body.contains` 即时）→ 删全局（仅当现值仍是本面安装值，
+  // 脚本自有改写不追删）+ 清两账本。集合成员失格由既有重核/morph 面接管（不入此路）。
+  function _zwNAUnregisterEl(el) {
+    for (var k36 in _zwNADynEls) {
+      if (_zwNADynEls[k36] !== el) continue;
+      var still36 = false;
+      try { still36 = _zwNAElemMatches(k36, el) && _zwDocContains36(el); } catch (_e36sm) {}
+      if (still36) continue;
+      var gU36;
+      try { gU36 = globalThis[k36]; } catch (_e36gu) { gU36 = null; }
+      if (gU36 === el) {
+        try { delete globalThis[k36]; } catch (_e36dl) {}
+        var L36u = globalThis.__zwNamedAccessInstalled;
+        if (L36u) { try { delete L36u[k36]; } catch (_e36Lu) {} }
+      }
+      delete _zwNADynEls[k36];
+    }
+  }
+  // attr 面尾叫：先注销（id 改名换轨 / name 失格），后按当下资格注册。连接性门用
+  // `_zwDocContains36`（detached 元素赋名不注册——WPT basics "not reachable" 面）。
+  function _zwNAAttrDynamicSync(el) {
+    if (!el || el.nodeType !== 1) return;
+    _zwNAUnregisterEl(el);
+    var cn36 = null;
+    try { cn36 = _zwNACandidateName(el); } catch (_e36cc) { cn36 = null; }
+    if (cn36 !== null && _zwDocContains36(el)) _zwNARegisterName(cn36, el);
+  }
+  // childList 面尾叫（part01 `_mo_notify` 反链记账后）：removed 逐个注销（真离树才
+  // 删——同批 remove+add 移动语义经 `_zwDocContains36` 自然保留，identity 稳定），
+  // added 候选名逐个注册（容器 in-doc 门在 flats.inDoc——detached 树插入不注册）。
+  function _zwNADynamicSync(flats) {
+    if (!flats) return;
+    var i36, rem36 = flats.remFlat, add36 = flats.addFlat;
+    if (rem36 && rem36.length) {
+      for (i36 = 0; i36 < rem36.length; i36++) {
+        var rn36 = rem36[i36];
+        if (!rn36 || rn36.nodeType !== 1) continue;
+        try { _zwNAUnregisterEl(rn36); } catch (_e36rm) {}
+      }
+    }
+    if (add36 && add36.length && flats.inDoc) {
+      var names36 = [];
+      for (i36 = 0; i36 < add36.length; i36++) {
+        var an36 = add36[i36];
+        if (!an36 || an36.nodeType !== 1) continue;
+        var cnA36 = null;
+        try { cnA36 = _zwNACandidateName(an36); } catch (_e36ca) { cnA36 = null; }
+        if (cnA36 !== null && names36.indexOf(cnA36) < 0) names36.push(cnA36);
+      }
+      for (i36 = 0; i36 < names36.length; i36++) {
+        try { _zwNARegisterName(names36[i36], null); } catch (_e36rg) {}
+      }
     }
   }
 
