@@ -27,6 +27,10 @@ static MUTATION_VERSION: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
 mod computed_style;
 pub use computed_style::*;
 
+// getComputedStyle per-generation 缓存（E14 真站停摆修复，从 computed_style 拆出）。
+mod computed_style_cache;
+pub use computed_style_cache::*;
+
 // WebCrypto host 实现（R2973 从本文件拆出，控制主文件行数）。纯字节级 crypto，无 DOM/CSS 依赖。
 mod crypto;
 pub use crypto::*;
