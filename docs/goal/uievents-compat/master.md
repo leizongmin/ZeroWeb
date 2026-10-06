@@ -21,7 +21,9 @@ caret no-op + innerHTML mutation 异步可见性。尾簇 36（Δ0 归因轮）�
 mousemove-between 的序断言缺口腔定位——**body 级 margin:auto 水平居中失效**
 （探针实证 a 盒 [8,208] vs 真实浏览器居中 [300,500]，absolute 坐标步全错位——
 渲染流域 layout-engine 面，跨流挂账）；mouse 族余挂 layerX/layerY 反射
-（transform 感知计算——shim 面可做，2F 收益）。尾簇 19：improvements=120 / regressions=1 已记录；尾簇 20：+2；
+（transform 感知计算——shim 面可做，2F 收益）。**reftest 复核**：尾簇 31-35 的
+shim/Rust 大改后 make reftest **704/704（failed 0）零回归**（DC-4 reftest 项
+尾簇 28 后首次复核）。尾簇 19：improvements=120 / regressions=1 已记录；尾簇 20：+2；
 尾簇 21：Δ0 基建轮；尾簇 22：portal 首段 +1；尾簇 23：portal 第二段 +6；尾簇 24：
 portal 第三段 +5；尾簇 25：触式捕获路由 +5；尾簇 26：Δ0 id 值面；尾簇 27：
 frame-hold 重接 +2；尾簇 28：frame-hold 残留清零 +2；尾簇 29：判例轮 Δ0（?touch
@@ -56,7 +58,8 @@ selection key 存活面 +14**（见下节与
 [evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)（尾簇 6b+6c 后）。
 门禁：**make test EXIT=0** + clippy（quickjs 面，-D warnings）EXIT=0 + shim 拼接
 node --check 全绿 + corpus 全量 **1790P/175F/95TO** 零回归（wheel 族全绿 +3P）
-（2026-10-07 尾簇 35 后）。历史（尾簇 34 后）：1787P/176F/96TO；reftest 704/704（尾簇 28 后）。
+（2026-10-07 尾簇 35 后）。reftest **704/704（failed 0）**（尾簇 36 复核，DC-4 项）；
+历史（尾簇 34 后）：1787P/176F/96TO。
 
 **M3 尾簇 33（2026-10-07，本轮）——execCommand text-control 事件序 + maxlength 哨兵 + textarea Enter 换行（1782P→1785P）**。
 三件：① **execCommand('insertText') text-control 分支补事件序**（beforeinput（可取消，
