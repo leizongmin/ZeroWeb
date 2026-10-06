@@ -1916,6 +1916,214 @@ fn test_mutation_observer_subtree_r3026() {
 }
 
 #[test]
+fn test_mutation_observer_parent_cache_reparent() {
+    // t8 返修（PR91 审查 G-A）：parent-link 缓存跨 apply 钉。applied view 只融合
+    // InsertAdjacent/SetInnerHtml/SetOuterHtml/Remove 族（AppendChild/handle 链族不应用）——
+    // reparent 的 `__zw_parent` 答案在 host **apply 物化**时才变。窗口：同 turn「appendChild →
+    // 对被移动节点 attr 写」（此时查询按 apply 前树把旧链回填缓存）→ host apply → 后续
+    // attr 写若命中 stale 链即误投旧祖先。apply 换代钩子 `__zw_apply_generation_bump` 的
+    // `_zwParentLinkBump()` 删行即红；`_mo_notify` 入口 bump① 删行同红（①的旧链不被清）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='container'><div id='inner'><span id='leaf'></span></div></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① 同 turn：container subtree observer + reparent + 被移动节点 attr 写（apply 前，
+    // 查询按旧树把 [leaf,inner,container,...] 回填缓存）。attributes-only observer 不收 childList。
+    sandbox
+        .execute(
+            "var container = document.getElementById('container');\
+             var leaf = document.getElementById('leaf');\
+             var mo = new MutationObserver(function(){});\
+             mo.observe(container, { attributes: true, subtree: true });\
+             document.body.appendChild(leaf);\
+             globalThis.__drain = mo.takeRecords();\
+             leaf.setAttribute('data-warm', '1');\
+             globalThis.__warm = mo.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__drain.length)").unwrap().value,
+        "0",
+        "attributes-only observer 不收 reparent 的 childList 记录"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__warm.length)").unwrap().value,
+        "1",
+        "apply 前 leaf attr 写按当时（旧）树冒泡到 container（既有 record 时语义）"
+    );
+
+    // ② host apply 物化模拟（镜像 user_actions 批末：快照更新 + view gen 换代 + apply
+    // 代际通知）：leaf 已在 body 下。
+    {
+        let mut snap = dom_html.lock().unwrap();
+        *snap = "<html><body><div id='container'><div id='inner'></div></div><span id='leaf'></span></body></html>".to_string();
+    }
+    crate::js_dom_bridge::bump_dom_view_gen();
+    sandbox
+        .execute("if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();")
+        .unwrap();
+
+    // ③ apply 后 attr 写：按新树冒泡——container 0 记录（leaf 不再其 subtree）、body 1 记录。
+    sandbox
+        .execute(
+            "var mo2 = new MutationObserver(function(){});\
+             mo2.observe(document.body, { attributes: true, subtree: true });\
+             leaf.setAttribute('data-after', '1');\
+             globalThis.__rc = mo.takeRecords();\
+             globalThis.__rb = mo2.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rc.length)").unwrap().value,
+        "0",
+        "apply 后 leaf attr 写不得命中 apply 前旧链误投 container（缓存随 apply 代际作废）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rb.length)").unwrap().value,
+        "1",
+        "apply 后 leaf attr 写按新树冒泡到 body"
+    );
+}
+
+#[test]
+fn test_mutation_observer_parent_cache_native_write() {
+    // t8 返修（PR91 审查 G-A 补充）：bump① 独立钉——native 写路径。host native DOM 写
+    // 改树后经 `drain_native_mutations_to_mo` → `__zw_mo_notify_native` → `_mo_notify`
+    // 投递，**不经 apply-gen 钩子**（sync_render_after_native_dom 只刷 cached_html）——
+    // `_mo_notify` 入口 bump 是该路径唯一的缓存换代机制；无它则 native 写改树后同代内
+    // attr 写命中 native 写前 stale 链、误投旧祖先站。
+    // 删 `_mo_notify` 入口 `_zwParentLinkBump()` 行即红。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='a'><span id='leaf'></span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① 热缓存：a 的 subtree observer + leaf attr 写 → 链 [leaf,a,body,html] 入缓存，a 收 1。
+    sandbox
+        .execute(
+            "var a = document.getElementById('a');\
+             var leaf = document.getElementById('leaf');\
+             var mo = new MutationObserver(function(){});\
+             mo.observe(a, { attributes: true, subtree: true });\
+             leaf.setAttribute('data-warm', '1');\
+             globalThis.__warm = mo.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__warm.length)").unwrap().value,
+        "1",
+        "热缓存步：native 写前 leaf attr 写冒泡到 a"
+    );
+
+    // ② native 写模拟（镜像 sync_render_after_native_dom + drain 形态：host 真相刷新 +
+    // native record 投递；raw 沙箱无 live doc，快照换装 + view gen bump 模拟「查询答案
+    // 已随 native 写推进」——真实路径由 live-first 查询覆盖同一语义）。
+    {
+        let mut snap = dom_html.lock().unwrap();
+        *snap = "<html><body><div id='b'><span id='leaf'></span></div></body></html>".to_string();
+    }
+    crate::js_dom_bridge::bump_dom_view_gen();
+    sandbox
+        .execute("__zw_mo_notify_native('#b', 'childList', null, null, '#leaf', '', null, null);")
+        .unwrap();
+
+    // ③ native 写后 attr 写：按新树冒泡——a 0 记录（leaf 已移棸 b）、b 1 记录。
+    sandbox
+        .execute(
+            "var mo2 = new MutationObserver(function(){});\
+             mo2.observe(document.getElementById('b'), { attributes: true, subtree: true });\
+             leaf.setAttribute('data-after', '1');\
+             globalThis.__rc = mo.takeRecords();\
+             globalThis.__rb = mo2.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rc.length)").unwrap().value,
+        "0",
+        "native 写改树后 leaf attr 写不得命中写前 stale 链误投旧祖先 a"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rb.length)").unwrap().value,
+        "1",
+        "native 写改树后 leaf attr 写按新树冒泡到 b"
+    );
+}
+
+#[test]
+fn test_mutation_observer_parent_cache_snapshot_swap() {
+    // t8 返修（PR91 审查 G-B）：parent-link 缓存 bump② 钉。热缓存 → 模拟 SetDomSnapshot 原地换装
+    // （leaf 移到 #other 下）+ `__zw_reset_pending_state()`（尾部 `_zwParentLinkBump()` 清表）→
+    // attr 写按新快照树冒泡：container observer 不得收。删 reset 尾部 bump 行即红：stale 链跨代服务。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='container'><div id='inner'><span id='leaf'></span></div></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① 热缓存：container subtree observer + leaf attr 写 → 链 [leaf,inner,container,...] 入缓存。
+    sandbox
+        .execute(
+            "var container = document.getElementById('container');\
+             var leaf = document.getElementById('leaf');\
+             var mo = new MutationObserver(function(){});\
+             mo.observe(container, { attributes: true, subtree: true });\
+             leaf.setAttribute('data-warm', '1');\
+             globalThis.__warm = mo.takeRecords();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__warm.length)").unwrap().value,
+        "1",
+        "热缓存步：换代前 leaf attr 写冒泡到 container"
+    );
+
+    // ② 模拟 SetDomSnapshot（part24 R358 同款形态）：host 快照换装（leaf 移到 other 下）+ reset。
+    {
+        let mut snap = dom_html.lock().unwrap();
+        *snap = "<html><body><div id='other'><span id='leaf'></span></div></body></html>".to_string();
+    }
+    crate::js_dom_bridge::bump_dom_view_gen();
+    sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();").unwrap();
+
+    // ③ 换代后 attr 写：container 0 记录（leaf 新快照在 other 下，不在 container subtree）。
+    sandbox
+        .execute("leaf.setAttribute('data-snap', '1'); globalThis.__rc = mo.takeRecords();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rc.length)").unwrap().value,
+        "0",
+        "快照换代后 leaf attr 写不得按旧树链冒泡到 container（缓存不跨代服务）"
+    );
+}
+
+#[test]
 fn test_mutation_observer_character_data_r3027() {
     // R3027：MutationObserver characterData emission + characterDataOldValue。textContent 变更发射 characterData
     // 记录（target=元素，pragmatic——文本节点无 selector 不能直接作 target）；observe(el,{characterData,subtree})

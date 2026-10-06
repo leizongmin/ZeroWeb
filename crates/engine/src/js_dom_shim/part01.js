@@ -3884,10 +3884,13 @@
   // 探针 evidence/t8-domrw/{mosplit,expando} 钉死：树内 attr 写 0.37-0.57ms vs
   // detached 20µs vs detached+自观察全链 7µs——贵在爬链的宿主往返非 notify 本身）。
   // 本缓存按「树代际」存逐层 parent 关系：childList mutation 全部汇流 `_mo_notify`
-  // （13+ 调用点 + `__zw_mo_notify_native` 统一入口），快照换代走
+  // （30+ 调用点 + `__zw_mo_notify_native` 统一入口），快照换代走
   // `__zw_reset_pending_state`——两处 bump 代际清表。attr/characterData 写不改树
   // → 恒命中，链构造退化为纯 JS Map 查（宿主往返零次）。
   // 语义等价：parent 关系只在 childList 变更时改变，代际印章保证不服务过期链。
+  // 已知边界（PR91 审查 D-1）：`ZW_MO_HOST_TRIGGER=0`（opt-out，默认 ON）时 native
+  // 写不经 `_mo_notify`、无 bump——同代内链可能 stale；该配置下 native 记录本就不
+  // 投递（kill-switch 通知端死路），此 stale 面被既有语义覆盖。
   var _zwParentLinkCache = { gen: -1, map: new Map() };
   var _zwParentLinkGen = 0;
   function _zwParentLinkBump() {

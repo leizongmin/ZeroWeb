@@ -10054,6 +10054,13 @@
     try { if (typeof globalThis._zwSiblingBaseInvalidateAll === 'function') globalThis._zwSiblingBaseInvalidateAll(); } catch (_ePa2si) {}
     // R-baidu3：批量 tag 缓存随 apply 代际作废（同 sel 重绑定新元素窗口不服务旧 tag）。
     _zwTagCache = null;
+    // t8/PR91（G-A 返修）：parent 关系缓存随 apply 代际作废。applied view 只把
+    // InsertAdjacent/SetInnerHtml/SetOuterHtml/Remove 族融合进查询（AppendChild/handle
+    // 链族不应用，R51c proxy 身份约束）——该族结构变更的 `__zw_parent` 答案在**本
+    // apply 物化**时才改变；同 turn 内「结构操作 → 对被移动节点 attr 写」会把旧链
+    // 回填缓存，apply 后不 bump 则后续 attr 写持续命中 stale 链（t8 前逐次 live 查询
+    // 自然跟上新树）。与 R55/R-baidu3 同源：host 真相推进 → 视图系缓存换代。
+    _zwParentLinkBump();
   };
   // R51c：pending added 按 id 索引（querySelector('#id') host-miss 回落 O(1)；invalidate
   // 记账时维护——added 入对桶、对冲剔除时同步删）。
