@@ -173,6 +173,11 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
         default: "unset (devtools serve disabled)",
         description: "devtools-frontend bundle 目录；设置后 CDP 服务器经 /devtools/ 静态提供 frontend 并把 /json 的 devtoolsFrontendUrl 指向它",
     },
+    EnvironmentVariable {
+        name: "ZW_JS_WORKER_CENSUS",
+        default: "disabled",
+        description: "js worker 命令成本普查（t7 诊断基座）：按命令类型周期性输出执行次数/累计耗时/单次最大耗时；值 1=true 输出 tracing，值为路径则追加写该文件",
+    },
 ];
 
 /// `1` 或不区分大小写的 `true` 才表示启用。

@@ -1983,17 +1983,30 @@ pub fn query_all_selector_list_doc(doc: &Document, selector: &str) -> String {
 /// 枚举（jQuery/Sizzle）原本逐元素读 tagName 打一次 `__zw_get_tag` 宿主回调
 ///（baidu 页单事件 6 万+ 次往返 → exec 超时风暴）；shim 经本回调一次往返建
 /// sel→tag 本地缓存，枚举内属性读零宿主往返。
+///
+/// t7（bilibili 稳态轮询满核）：记录扩为 `sel\x1ftag[\x1fns]`——**仅非 HTML ns**
+/// 元素发第三段（`\x1f` 亦不出现在 ns URI 中），shim 枚举时灌注 sel→ns 表
+///（`_zwSelNs` 缓存），`_zwFilterByTagNameNS` 过滤循环的 namespaceURI 读零宿主
+/// 往返（轮询页每次视图换代对全量元素逐个 `__zw_get_ns` 探测 ≈ 200ms/次 gTN）。
+/// 第三段缺席即 HTML ns，与 `_zwSelNs` 的 XHTML→'' 归一约定一致。
+/// https://dom.spec.whatwg.org/#concept-getelementsbytagnamens
 pub fn query_all_tagged_list_doc(doc: &Document, selector: &str) -> String {
     let root = doc.root();
     doc.query_selector_all(root, zero_dom::trim_ascii_ws(selector))
         .into_iter()
         .filter_map(|id| {
             let sel = unique_selector_for_node(doc, id)?;
-            let tag = match doc.get(id)?.kind {
-                zero_dom::NodeKind::Element(ref e) => e.local_name().to_string(),
-                _ => return None,
+            let node = doc.get(id)?;
+            let zero_dom::NodeKind::Element(ref e) = node.kind else {
+                return None;
             };
-            Some(format!("{sel}\x1f{tag}"))
+            let tag = e.local_name().to_string();
+            const HTML_NS: &str = "http://www.w3.org/1999/xhtml";
+            let ns = e.namespace();
+            match ns {
+                HTML_NS => Some(format!("{sel}\x1f{tag}")),
+                _ => Some(format!("{sel}\x1f{tag}\x1f{ns}")),
+            }
         })
         .collect::<Vec<_>>()
         .join("|")
