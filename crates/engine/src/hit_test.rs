@@ -1,4 +1,8 @@
 //! 布局树命中测试 — 用于链接点击等交互。
+//!
+//! 已知限制（PR #81 审查记档）：block-in-inline 配置（pe:none 块盒被 inline 包裹，
+//! text hoist 路径）下穿透命中回落到包裹 inline 祖先而非完全穿透——与匿名盒/hoist
+//! 盒 nearest-element 上溯归属机制同根，非命中谓词层面。
 
 use std::collections::{HashMap, HashSet};
 
@@ -49,6 +53,9 @@ fn is_hidden_style(styles: &HashMap<NodeId, ComputedStyle>, node: NodeId) -> boo
 /// 穿透），后代显式 `pointer-events: auto` 恢复可命中——与 visibility 同构（候选资格
 /// 剥夺 + 继续下探）。真站实证：bilibili 轮播遮罩 `pointer-events:none` 盖住搜索框，
 /// 命中未穿透致点击路由命中遮罩、焦点不迁移、键入不落值。
+/// 宽化边界：只判 `none`，SVG 值（visiblePainted/fill/stroke…）一律按可命中——盒级
+/// 命中模型下正确（Chrome 对 HTML 元素亦只区分 auto/none），SVG 几何级语义（如
+/// `fill:none` + `visiblePainted` 不可命中）在无 SVG 几何命中面前提下不可表达。
 /// https://drafts.csswg.org/css-ui-4/#pointer-events
 fn is_pe_none_style(styles: &HashMap<NodeId, ComputedStyle>, node: NodeId) -> bool {
     styles
@@ -1628,6 +1635,11 @@ mod tests {
             "缓存路径与 live 路径一致"
         );
         let stack = cache.elements_at_point(80.0, 20.0);
+        assert_eq!(
+            stack.first().and_then(|h| h.id.as_deref()),
+            Some("q"),
+            "elementsAtPoint 序列非空且以 input 为首"
+        );
         assert!(
             stack.iter().all(|h| h.id.as_deref() != Some("mask")),
             "elementsAtPoint 序列不应含 pe:none 遮罩: {:?}",
@@ -1654,7 +1666,9 @@ mod tests {
     }
 
     /// pe:none 祖先 + 显式 `pointer-events: auto` 后代：后代仍可命中（与 visibility
-    /// hidden/visible 同构：候选资格剥夺仅作用于盒自身，递归不剪枝）。
+    /// hidden/visible 同构：候选资格剥夺仅作用于盒自身，递归不剪枝）。本测试钉住
+    /// 「不剪枝」语义（错误实现剪枝子树时 FAIL）；「删除谓词」轴由穿透用例钉住
+    ///（本配置下 link 更深，谓词在否都赢）。
     #[test]
     fn pe_auto_descendant_of_pe_none_ancestor_still_hit() {
         let html = r#"<html><body>
