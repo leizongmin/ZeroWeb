@@ -42,6 +42,13 @@ thread_local! {
     static GENERATION_CACHE:
         RefCell<Option<(String, usize, usize, Document, HashMap<NodeId, ComputedStyle>)>> =
             const { RefCell::new(None) };
+
+    /// 测试观测点：本线程 doc 全量重算次数（仅 `cfg(test)` 编译，生产零开销）。
+    /// `clear_generation_cache` 的直接单测靠它判定「清槽后同键查询重算」——计数与
+    /// 槽同线程，天然隔离并行测试。
+    #[cfg(test)]
+    pub static GENERATION_RECOMPUTE_COUNT: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
 }
 
 /// 清空本线程的代际槽（换代即 drop 旧代际的 `Document` 与 styles）。
@@ -76,6 +83,8 @@ pub fn with_cached_document_styles<T>(
                 Some((h, g, v, _, _)) if h == html && *g == drain_gen && *v == style_version
             );
             if !valid {
+                #[cfg(test)]
+                GENERATION_RECOMPUTE_COUNT.with(|c| c.set(c.get() + 1));
                 let (doc, styles) = compute_document_styles_with_inline_overrides(html, mutations);
                 *slot = Some((html.to_string(), drain_gen, style_version, doc, styles));
             }
