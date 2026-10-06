@@ -1462,6 +1462,138 @@ mod tests {
         worker.shutdown();
     }
 
+    // slice34（Fix B 强钉，slice33 testeff 评审 I-1 收口）：apply 成功后 shim 代际推进的
+    // 直接断言——notify_shim_apply_generation 执行 `__zw_apply_generation_bump`
+    //（part05.js R381：`_zwApplyGenCounter++`，读面 `_zwApplyGeneration()`）。既有
+    // async_script_mutation_is_committed_to_webview_frame 的 execution_count 弱钉
+    // 抓得住「删调用」、抓不住「通知体空转化」；本钉直读代际计数器，两类回退皆红。
+    // 边界申报：bump 的 shim 语义效果（移除标记作废/融合基底失效）由 engine r379/pa2b
+    // 既有钉联动，本钉只断「通知发生且真钩子被执行」（spy 替身会漏掉真钩子被换绑形态，
+    // 读计数器则真钩子被旁路即不增长）。
+    #[test]
+    fn page_script_apply_bumps_shim_apply_generation_s34() {
+        let html = r#"<html><body><div id="s34gen"></div></body></html>"#;
+        let url = "https://zero.test/s34gen";
+        let mut worker = RendererJsWorker::spawn(163);
+        worker.set_dom_snapshot(html, url);
+        assert_eq!(
+            worker
+                .execute_script_direct("typeof globalThis._zwApplyGeneration")
+                .unwrap(),
+            "function",
+            "shim R381 代际读面在 renderer 沙箱可用"
+        );
+        let gen0: i64 = worker
+            .execute_script_direct("String(globalThis._zwApplyGeneration())")
+            .unwrap()
+            .parse()
+            .expect("gen0 numeric");
+        // 快照臂不 bump（R379 钩子仅 apply 面）——record 一条 SetAttr 变异走 HTML 回写
+        // apply 路径（webview: None，与 webview 在场路径共用 notify 臂）。
+        worker
+            .execute_script_direct("document.querySelector('#s34gen').setAttribute('data-bump', '1');")
+            .unwrap();
+        let mut buf = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut buf,
+            url,
+            js_worker: &worker,
+            webview: None,
+        };
+        let applied = apply_recorded_mutations(&mut ctx, html);
+        assert!(applied.is_some(), "变异 apply 成功（HTML 回写路径）");
+        let gen1: i64 = worker
+            .execute_script_direct("String(globalThis._zwApplyGeneration())")
+            .unwrap()
+            .parse()
+            .expect("gen1 numeric");
+        assert!(
+            gen1 > gen0,
+            "apply 成功后 shim 代际必须推进（gen0={gen0} gen1={gen1}）——notify_shim_apply_generation 回退（删调用/通知体空转化）时恒等"
+        );
+        worker.shutdown();
+    }
+
+    // slice34（worker 镜像钉）：evict_removed_worker_handles retain 谓词两形态——
+    // ① Remove{selector} 形：仅清「selector 相同且 handle 不在同批重建账」的条目
+    //   （同批重建 handle 保留——误杀防护；他 selector 不受扰动）；
+    // ② RemoveHandle 形：按 handle 直删，他 handle 不受扰动。
+    // slice33 缺陷轮 I-1：selector 形此前缺失（仅 RemoveHandle 臂），本钉锁两形态口径。
+    #[test]
+    fn worker_evict_remove_selector_retain_predicate_s34() {
+        let mut worker = RendererJsWorker::spawn(164);
+        let map_handle = worker.handle_selector_map();
+        {
+            let mut map = map_handle.lock().unwrap();
+            map.insert("h1".to_string(), "div.g".to_string()); // stale（不在 batch）→ 删
+            map.insert("h2".to_string(), "div.g".to_string()); // 同批重建（在 batch）→ 留
+            map.insert("h3".to_string(), "p.q".to_string()); // 他 selector → 留
+        }
+        let mut buf = String::new();
+        let mut ctx = PageScriptContext {
+            html: &mut buf,
+            url: "https://zero.test/s34w",
+            js_worker: &worker,
+            webview: None,
+        };
+        let mut batch = std::collections::HashMap::new();
+        batch.insert("h2".to_string(), "div.g".to_string());
+        evict_removed_worker_handles(
+            &mut ctx,
+            &[DomMutation::Remove {
+                selector: "div.g".to_string(),
+            }],
+            &batch,
+        );
+        let map = map_handle.lock().unwrap();
+        assert!(
+            !map.contains_key("h1"),
+            "stale 条目清除（selector 相同、不在 batch 重建账）"
+        );
+        assert_eq!(
+            map.get("h2").map(String::as_str),
+            Some("div.g"),
+            "同批重建 handle 保留（retain 谓词误杀防护）"
+        );
+        assert_eq!(
+            map.get("h3").map(String::as_str),
+            Some("p.q"),
+            "他 selector 条目不受扰动"
+        );
+        drop(map);
+        worker.shutdown();
+    }
+
+    #[test]
+    fn worker_evict_remove_handle_drops_entry_s34() {
+        let mut worker = RendererJsWorker::spawn(165);
+        let map_handle = worker.handle_selector_map();
+        {
+            let mut map = map_handle.lock().unwrap();
+            map.insert("h1".to_string(), "div.g".to_string());
+            map.insert("h2".to_string(), "p.q".to_string());
+        }
+        let mut buf = String::new();
+        let mut ctx = PageScriptContext {
+            html: &mut buf,
+            url: "https://zero.test/s34w",
+            js_worker: &worker,
+            webview: None,
+        };
+        evict_removed_worker_handles(
+            &mut ctx,
+            &[DomMutation::RemoveHandle {
+                handle: "h1".to_string(),
+            }],
+            &std::collections::HashMap::new(),
+        );
+        let map = map_handle.lock().unwrap();
+        assert!(!map.contains_key("h1"), "handle 形移除：条目直删");
+        assert_eq!(map.get("h2").map(String::as_str), Some("p.q"), "他 handle 条目不受扰动");
+        drop(map);
+        worker.shutdown();
+    }
+
     #[test]
     fn styled_inline_block_heading_paints_text() {
         let css = r#"

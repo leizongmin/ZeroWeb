@@ -1981,12 +1981,13 @@ mod tests {
         worker.shutdown();
     }
 
-    // slice32（RP-3）renderer 面 live 钉（收缩口径，PD 如实申报）：重装（登记·回收链路
-    // 等价形态：删全局 + __zwInstallNamedAccess）产出的 live 集合同代内接棒维护——
-    // appendChild 即时 +1。**PD**：ledger 在快照落地时点安装的集合对同代脚本 childList
-    // 变异聋化（probe 实证：集合存在、__zwHC 可读、注册表空——安装时点与变异时点的
-    // 注册视图分歧，疑快照换代原生绑定安装与 shim 注册时序交互），RP-3 池后续收口；
-    // 本钉证立 live 设施在 renderer 沙箱本身兼容（修前无 liveSpec：重装后 append 仍恒 2）。
+    // slice32（RP-3）renderer 面 live 钉：重装（登记·回收链路等价形态：删全局 +
+    // __zwInstallNamedAccess）产出的 live 集合同代内接棒维护——appendChild 即时 +1。
+    // 原 PD（ledger 在快照落地时点安装的集合对同代脚本 childList 变异聋化——probe 实证
+    // 集合存在、__zwHC 可读、注册表空）已由 slice33 Fix A 收口（`__zw_reset_pending_state`
+    // 先于 slice27 重装，注册表存活，见 SetDomSnapshot 臂次序注释），快照臂面由 s34 钉
+    // `renderer_js_worker_snapshot_collection_live_mutation_s34` 常驻直断；本钉保留
+    // 手工重装形态的证立价值（修前无 liveSpec：重装后 append 仍恒 2）。
     #[test]
     fn renderer_js_worker_named_access_reinstall_collection_live_s32() {
         let mut worker = RendererJsWorker::spawn(68);
@@ -2022,6 +2023,114 @@ mod tests {
             worker.execute_script_direct("String(window.s32lv.length)").unwrap(),
             "2",
             "removeChild 即时 -1（live）"
+        );
+        worker.shutdown();
+    }
+
+    // slice34（RP-3 修复面钉债收口，slice33 testeff 评审 S-1）：**聋集合探针常驻钉**——
+    // 快照臂（ledger 路径）装出的多命中集合同代内 live。slice33 Fix A（SetDomSnapshot 臂
+    // `__zw_reset_pending_state` 先于 slice27 重装）的回退形态（重装 → 清算旧序）把新装入
+    // `_zwLiveCollections` 的集合随即抹除（part05.js reset 内 `_zwLiveCollections.length = 0`），
+    // 注册表恒空、slice32 live 维护在 renderer 永不生效：appendChild 后 len 恒 2（聋）。
+    // 本钉以「set_dom_snapshot 装集合 → 同代脚本 appendChild → len 即时 +1」直断次序修复面
+    //——s32 钉的手工重装形态（delete + __zwInstallNamedAccess）绕开快照臂、Fix A 回退下
+    // 仍绿，与本钉互补。RED→GREEN 归档：diag/evidence/slice34/red-mutation/fixA-reset-order/。
+    #[test]
+    fn renderer_js_worker_snapshot_collection_live_mutation_s34() {
+        let mut worker = RendererJsWorker::spawn(69);
+        worker.set_dom_snapshot(
+            "<html><body><div id='s34lc'>a</div><div id='s34lc'>b</div></body></html>",
+            "https://example.test/",
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(window.s34lc.length)").unwrap(),
+            "2",
+            "安装时点多命中集合（快照臂 ledger 路径，slice30 基线）"
+        );
+        // 同代变异：appendChild → 集合即时 +1（Fix A 回退时注册表被 reset 抹除 → 恒 2 聋）。
+        worker
+            .execute_script_direct(
+                "window.__s34add = document.createElement('div');\
+             window.__s34add.setAttribute('id', 's34lc');\
+             document.body.appendChild(window.__s34add);",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(window.s34lc.length)").unwrap(),
+            "3",
+            "快照臂集合同代 live：appendChild 即时 +1（Fix A 回退时恒 2 聋）"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.s34lc[2] === window.__s34add)")
+                .unwrap(),
+            "true",
+            "集合新成员即变异节点（identity，非重建副本）"
+        );
+        worker
+            .execute_script_direct("document.body.removeChild(window.__s34add);")
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(window.s34lc.length)").unwrap(),
+            "2",
+            "removeChild 即时 -1（live 双向）"
+        );
+        worker.shutdown();
+    }
+
+    // slice34（ghost 面 gate 资产化，timeline2 12/12 配方的确定性核心常驻化）：跨文档
+    // 换代集合无残影——gen1 快照装集合 → 跨文档导航 gen2（同 id 同位重建、内容换代）→
+    // 集合成员整体随新快照刷新（无 gen1 残留成员）→ 换代后同代 append 仍 live。对应
+    // timeline2 每轮「同位重建 → 失效 → 重装 → append 后无残影」链；webview 双表残影面
+    //（handle 残端复活）由 webview.rs evict 单测 s34 钉守，本钉守 renderer 集合视图面。
+    // 修前 Fix A 回退时 append 腿红（重装出的集合被 reset 抹除注册 → 聋化恒 2）。
+    #[test]
+    fn renderer_js_worker_cross_document_collection_no_ghost_s34() {
+        let mut worker = RendererJsWorker::spawn(70);
+        worker.set_dom_snapshot(
+            "<html><body><div id='s34cd' data-phase='gen1'>x</div>\
+             <div id='s34cd' data-phase='gen1'>y</div></body></html>",
+            "https://example.test/doc1",
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(window.s34cd.length)").unwrap(),
+            "2",
+            "gen1 安装时点集合"
+        );
+        // 跨文档导航（url 换代）：同 id 同位重建、内容 gen2 → 集合随新快照重装。
+        worker.set_dom_snapshot(
+            "<html><body><div id='s34cd' data-phase='gen2'>x2</div>\
+             <div id='s34cd' data-phase='gen2'>y2</div></body></html>",
+            "https://example.test/doc2",
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(window.s34cd.length)").unwrap(),
+            "2",
+            "换代后集合长度随新快照（不累积旧文档成员）"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct(
+                    "window.s34cd[0].getAttribute('data-phase') + '|' + \
+                     window.s34cd[1].getAttribute('data-phase')"
+                )
+                .unwrap(),
+            "gen2|gen2",
+            "集合成员整体换代（无 gen1 残影成员）"
+        );
+        // 换代后同代 append 仍 live（重装出的集合接棒 live 维护）。
+        worker
+            .execute_script_direct(
+                "window.__s34cd3 = document.createElement('div');\
+             window.__s34cd3.setAttribute('id', 's34cd');\
+             window.__s34cd3.setAttribute('data-phase', 'gen3');\
+             document.body.appendChild(window.__s34cd3);",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(window.s34cd.length)").unwrap(),
+            "3",
+            "换代后集合 live：append 即时 +1（Fix A 回退时聋化恒 2）"
         );
         worker.shutdown();
     }
