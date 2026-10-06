@@ -12,6 +12,9 @@ pub enum HtmlUserAction {
     },
     /// 删除当前选区或 caret 前一个 Unicode scalar。
     DeleteBackward,
+    /// 删除当前选区或 caret 后一个 Unicode scalar（ForwardDelete 键——UI Events
+    /// keyboard map「Delete」；WebDriver uE017）。
+    ForwardDelete,
     /// 顺序移动焦点。
     MoveFocus {
         /// `true` 表示向前，`false` 表示反向。
@@ -373,6 +376,9 @@ pub fn plan_html_action(
             plan_text_insert(request.target, state, text)
         }
         (HtmlUserAction::DeleteBackward, ActionTargetState::Text(state)) => plan_text_delete(request.target, state),
+        (HtmlUserAction::ForwardDelete, ActionTargetState::Text(state)) => {
+            plan_text_forward_delete(request.target, state)
+        }
         (HtmlUserAction::Activate, ActionTargetState::Checkbox { checked }) => {
             Ok(plan_checkbox(request.target, *checked))
         }
@@ -644,6 +650,40 @@ fn plan_text_delete(target: PageNodeRef, state: &TextActionState) -> Result<Html
     Ok(text_plan(target, value, delete_start, "deleteContentBackward", None))
 }
 
+/// uievents-compat 尾簇 31：ForwardDelete（Delete 键——UI Events keyboard map；WPT
+/// uievents/textInput delete/delete-selection 断言面）。选区非空删选区（同
+/// Backward）；collapsed 删 caret **后**一个 UTF-16 单元（代理对安全）。caret 吸附
+/// 原位（spec deleteContentForward 语义——删除后选区起点不变）。
+fn plan_text_forward_delete(
+    target: PageNodeRef,
+    state: &TextActionState,
+) -> Result<HtmlActionPlan, ActionNoopReason> {
+    if state.read_only {
+        return Err(ActionNoopReason::ReadOnlyTarget);
+    }
+    let (start, end) = normalized_selection(state);
+    let total = state.value.encode_utf16().count();
+    if start == end && end >= total {
+        return Err(ActionNoopReason::NothingToDelete);
+    }
+    let delete_end = if start == end {
+        let byte = byte_index_at_utf16(&state.value, end);
+        let next = state.value[byte..]
+            .chars()
+            .next()
+            .ok_or(ActionNoopReason::NothingToDelete)?;
+        end.saturating_add(next.len_utf16())
+    } else {
+        end
+    };
+    let mut value = state.value.clone();
+    value.replace_range(
+        byte_index_at_utf16(&state.value, start)..byte_index_at_utf16(&state.value, delete_end),
+        "",
+    );
+    Ok(text_plan(target, value, start, "deleteContentForward", None))
+}
+
 fn text_plan(
     target: PageNodeRef,
     value: String,
@@ -669,7 +709,21 @@ fn text_plan(
             selection_start: caret,
             selection_end: caret,
         }],
-        followup_events: vec![PlannedEvent::input(target, "input", false, input_type, data)],
+        // uievents-compat 尾簇 31：文本插入默认动作的事件序补 **textInput**（UI Events
+        // legacy 附录——beforeinput → textInput(TextEvent) → input；WPT textInput/basic
+        // 断言 textInput 在 beforeinput 与 input 之间恰一次 + instanceof TextEvent +
+        // data/bubbles/cancelable 面）。textInput 排 followup 首位（DOM 变更后、input
+        // 前）；其 cancelable 取消语义在 followup 通道不回滚 commit（headless 近似——
+        // WPT 断言只涉事件属性面）。删除类（deleteContentBackward）不派 textInput
+        //（spec：文本插入才派）。
+        followup_events: if input_type == "insertText" {
+            vec![
+                PlannedEvent::input(target, "textInput", true, input_type, data.clone()),
+                PlannedEvent::input(target, "input", false, input_type, data),
+            ]
+        } else {
+            vec![PlannedEvent::input(target, "input", false, input_type, data)]
+        },
         effects: vec![],
         invalidation: InvalidationKind::Paint,
     }
@@ -884,8 +938,12 @@ mod tests {
                 selection_end: 2,
             }]
         );
-        assert_eq!(plan.followup_events[0].event_type, "input");
-        assert!(!plan.followup_events[0].cancelable);
+        // 尾簇 31：followup = [textInput（UI Events legacy——beforeinput → textInput →
+        // input）, input]。
+        assert_eq!(plan.followup_events[0].event_type, "textInput");
+        assert!(plan.followup_events[0].cancelable);
+        assert_eq!(plan.followup_events[1].event_type, "input");
+        assert!(!plan.followup_events[1].cancelable);
     }
 
     #[test]

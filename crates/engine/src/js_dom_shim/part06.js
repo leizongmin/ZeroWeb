@@ -2916,7 +2916,10 @@
         beforeunloadevent: globalThis.BeforeUnloadEvent,
         devicemotionevent: globalThis.DeviceMotionEvent,
         deviceorientationevent: globalThis.DeviceOrientationEvent,
-        textevent: globalThis.TextEvent,
+        // 尾簇 31：TextEvent 走**内部 ctor**（globalThis.TextEvent 已换 throw wrapper
+        //——spec 无 constructor；createEvent 的 `new Ctor('')` 通道须可构造）。
+        textevent: (typeof _zwTextEventCtorRef !== 'undefined' && _zwTextEventCtorRef)
+          ? _zwTextEventCtorRef : globalThis.TextEvent,
         touchevent: globalThis.TouchEvent,
         // R17：以下 modern event interface 为 non-createable（spec createEvent 仅支持 legacy event interface；
         // WPT someNonCreateableEvents 列表）——**不**入 map，createEvent 对其抛 NotSupportedError：
@@ -11804,6 +11807,19 @@
         data: detail.data,
         inputType: detail.inputType,
         isComposing: !!detail.isComposing
+      });
+    } else if (type === 'textInput') {
+      // uievents-compat 尾簇 31：textInput = **TextEvent** 实例（UI Events legacy
+      // 附录——文本插入默认动作的事件序 beforeinput → textInput → DOM 变更 → input；
+      // WPT textInput/basic 断言 e instanceof window.TextEvent + data/bubbles/
+      // cancelable/view=window/detail=0 面）。宿主 text control 管线（page-runtime
+      // text_plan followup 首位）与 CE 插入管线（__zw_ce_insert）共用本分支。
+      // view=window（UIEvent view 语义——headless 全局窗）、detail=0（基类缺省）。
+      ev = new (globalThis._zwTextEventCtorRef || globalThis.TextEvent)('textInput', {
+        bubbles: true,
+        cancelable: (detail && detail.cancelable != null) ? !!detail.cancelable : true,
+        view: globalThis,
+        data: (detail && detail.data != null) ? String(detail.data) : ''
       });
     } else if (type === 'input') {
       ev = new InputEvent(type, { bubbles: true, cancelable: false });

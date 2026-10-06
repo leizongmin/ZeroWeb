@@ -4742,6 +4742,16 @@
       bubbles: true, cancelable: true, data: ins, inputType: 'insertText', isComposing: false
     });
     if (el.dispatchEvent(before) === false) return;
+    // 尾簇 31：CE 插入的事件序补 textInput（UI Events legacy——beforeinput →
+    // textInput(TextEvent) → DOM 变更 → input；WPT textInput/basic contenteditable
+    // 断言面）。可取消（取消即中止插入——spec textInput cancelable 语义，CE 路径
+    // 完整保留；text control 管线的 followup 通道近似不回滚）。
+    if (globalThis._zwTextEventCtorRef) {
+      var ti31 = new globalThis._zwTextEventCtorRef('textInput', {
+        bubbles: true, cancelable: true, view: globalThis, data: ins
+      });
+      if (el.dispatchEvent(ti31) === false) return;
+    }
     var sc = range.startContainer, so = range.startOffset | 0;
     var node = null, caretOff = 0;
     if (sc && (sc.nodeType === 3 || sc.__zwIsText)) {

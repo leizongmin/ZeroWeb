@@ -183,7 +183,13 @@ impl WebView {
             return Ok(WebViewUserActionResult::noop(ActionNoopReason::DisabledTarget));
         }
         let state = match &request.action {
-            HtmlUserAction::InsertText { .. } | HtmlUserAction::DeleteBackward => {
+            // 尾簇 31：ForwardDelete 同走 text-control 探测，但 **CE 宿主不分流**——
+            // `__zw_ce_delete` 是 Backward 语义（caret 前退），ForwardDelete 复用会删错
+            // 字符（delete.html CE div 案 'a' 被误删）；CE ForwardDelete（range 后向
+            // 删除）挂账，此处落 text-control 快照对 contenteditable 返 noop
+            //（NotApplicable）。
+            HtmlUserAction::InsertText { .. } | HtmlUserAction::DeleteBackward
+            | HtmlUserAction::ForwardDelete => {
                 // R3254-M2 切片 2（editing goal）：焦点元素为 contenteditable 宿主时走
                 // CE 键入/删除管线（shim __zw_ce_insert/delete——Selection caret 处
                 // deleteContents/insertNode 真实 DOM 变更 + beforeinput/input 事件序），
@@ -191,6 +197,11 @@ impl WebView {
                 // 仍走既有快照+plan 管线（零变化）。
                 let ce_probe = self.execute_dom_script(executor, &script_contenteditable_probe(&selector))?;
                 if ce_probe.value.trim() == "1" {
+                    // 尾簇 31：CE 宿主 + ForwardDelete → noop（`__zw_ce_delete` 是
+                    // Backward 语义——复用删错字符；range 后向删除挂账）。
+                    if matches!(request.action, HtmlUserAction::ForwardDelete) {
+                        return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
+                    }
                     let script = match &request.action {
                         // R3254-M2 切片 3：CE 宿主内 "\n"（textarea/worker Enter 路由复用
                         // InsertText 通道）→ __zw_ce_enter（<br> 插入）而非字面插入。

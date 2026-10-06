@@ -7959,8 +7959,7 @@ fn apply_testdriver_command(
             .filter(|value| !value.is_empty() && value != "null" && value != "undefined"),
     };
     let Some(selector) = selector else {
-        return Some("testdriver target has no stable selector".into());
-    };
+        return Some("testdriver target has no stable selector".into());    };
     let selector = selector.trim().to_string();
     if selector.is_empty() || selector == "null" {
         return Some("testdriver target has no stable selector".into());
@@ -8223,6 +8222,10 @@ fn apply_testdriver_command(
                 }
                 let action = match character {
                     '\u{E003}' => HtmlUserAction::DeleteBackward,
+                    // uievents-compat 尾簇 31：ForwardDelete（WebDriver uE017——WPT
+                    // uievents/textInput delete/delete-selection；CE 宿主不分流（落
+                    // text-control 探测 noop——CE ForwardDelete 挂账））。
+                    '\u{E017}' => HtmlUserAction::ForwardDelete,
                     '\u{E004}' => HtmlUserAction::MoveFocus { forward: true },
                     // R3254-K1（keyboard goal M1，2026-09-07）：WebDriver ENTER →
                     // Submit 动作（implicit submission 规则——webview 层分发：CE 宿主
@@ -8230,7 +8233,10 @@ fn apply_testdriver_command(
                     // → submit 事件+导航意图；textarea 由用例用字面 '\n' 表达换行，
                     // 不经 uE007）。旧版落入 PUA 拒绝分支——implicit-submission 全簇
                     // Unhandled rejection。
-                    '\u{E007}' => HtmlUserAction::Submit,
+                    // 尾簇 31：uE006（WebDriver Return 键）同 Enter 语义（WPT
+                    // uievents/textInput enter-input + uievents/interface/
+                    // keyboard-click-event 的 common.js keyMapping 写 uE006）。
+                    '\u{E006}' | '\u{E007}' => HtmlUserAction::Submit,
                     character if ('\u{E000}'..='\u{F8FF}').contains(&character) => {
                         return Some(format!("unsupported WebDriver key U+{:04X}", character as u32));
                     }
@@ -8246,7 +8252,19 @@ fn apply_testdriver_command(
                 // 生字符点击——keypress-not-fired 主断言）。
                 // https://w3c.github.io/uievents/#keys-modifiers
                 // https://w3c.github.io/uievents/#event-type-keypress
-                let key = character.to_string();
+                // uievents-compat 尾簇 31：编辑/导航键的 key/code 用 **WebDriver 键名**
+                //（Backspace/Tab/Enter——真实浏览器 KeyboardEvent.key 语义；scroll_key
+                // 表的 arrows/pages/modifiers 先例同款）。旧版透传原始 PUA 转义字符，
+                // 页面 keyup listener 按 e.key === 'Backspace' 过滤恒 miss（WPT
+                // uievents/textInput no-textInput 族 keyup 门铃永挂 → 文件 Timeout）。
+                let key = match character {
+                    '\u{E003}' => "Backspace".to_string(),
+                    '\u{E004}' => "Tab".to_string(),
+                    '\u{E006}' | '\u{E007}' => "Enter".to_string(),
+                    // WebDriver Delete 键的 UI Events key 名（区别于 Backspace）。
+                    '\u{E017}' => "Delete".to_string(),
+                    character => character.to_string(),
+                };
                 let key_detail = zero_engine::DomEventDetail {
                     key: Some(key.clone()),
                     code: Some(key.clone()),
@@ -8416,6 +8434,18 @@ const TESTDRIVER_STUB: &str = r#"<script>
   globalThis.__zw_td_queue = [];
   function selectorFor(element) {
     if (!element) return null;
+    // uievents-compat 尾簇 31：**shim 树权威 selector 优先**（element.__zwSelector——
+    // listener 注册 key 与宿主 selector_for_page_node_handle 的同源形）。下方 stub
+    // 启发式（#id/tag/attr/nth）对**无 id 元素**产 tag 形（`input`）——与 shim 树
+    // __zwSelector 形不一致时 `__zw_dispatch_event` 的 sel-key listener store miss
+    // → keydown/keyup 对无 id text control 静默丢失（WPT uievents/textInput
+    // no-textInput 族 keyup 门铃永不触发 → 文件 Timeout；同 id 元素 '#x' 双形一致
+    // 不受影响——backspace 负向族的复刻探针实证）。信任前校验 selector 回查命中
+    // 同一元素（__zwSelector 可能缺/过期）。
+    try {
+      var zwSel31 = element.__zwSelector;
+      if (zwSel31 && document.querySelector(zwSel31) === element) return zwSel31;
+    } catch (_eZ31) {}
     // R145：handle-identity 元素（createElement/cloneNode 产物，如 WPT
     // pointer-event-document-move 的 `template.content.cloneNode` append 后的节点）
     // ——经正置反查表直接解析稳定选择器（tag/attr/nth 启发式对 handle proxy

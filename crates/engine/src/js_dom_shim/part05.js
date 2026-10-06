@@ -12351,7 +12351,43 @@
   _defineEventSubclass('BeforeUnloadEvent', 'Event', []);
   _defineEventSubclass('DeviceMotionEvent', 'Event', []);
   _defineEventSubclass('DeviceOrientationEvent', 'Event', []);
-  _defineEventSubclass('TextEvent', 'UIEvent', []);
+  // uievents-compat 尾簇 31：TextEvent（UI Events legacy 附录——textInput 事件载体，
+  // https://www.w3.org/TR/uievents/#legacy-textevent-interface）。spec：TextEvent
+  // **无 constructor**（`new TextEvent()` 抛 TypeError——WPT textInput/api
+  // "No constructor" assert_throws_js），但接口对象须暴露（createEvent('TextEvent')
+  // 原型链 TextEvent→UIEvent→Event + `e instanceof window.TextEvent` 断言面）。
+  // 内部 ctor 供 createEvent/shim 派发；window.TextEvent = **throw wrapper**
+  //（prototype 共享——instanceof 经 prototype 引用成立）。legacy initTextEvent：
+  // type 必填（0 参 TypeError——initEvent 同款 R110 面）、data 缺省 **'undefined'**
+  //（String(undefined)——WPT initTextEvent('foo') 断言 e.data === 'undefined'）、
+  // view 缺省 null（UIEvent 基类字段，initTextEvent 显式赋值）。
+  var TextEventCtor = _defineEventSubclass('TextEvent', 'UIEvent', [
+    ['data', 'data', ''],
+  ]);
+  // createEvent/shim 派发的内部构造通道（globalThis.TextEvent 已换 throw wrapper）。
+  globalThis._zwTextEventCtorRef = TextEventCtor;
+  TextEventCtor.prototype.initTextEvent = function (type, bubbles, cancelable, view, data) {
+    if (arguments.length < 1) {
+      throw new globalThis.TypeError("Failed to execute 'initTextEvent' on 'TextEvent': 1 argument required, but only 0 present.");
+    }
+    // 字段填充同 Event.prototype.initEvent（R106 initialized flag / R110 mandatory 面）。
+    this._zwUninitialized = false;
+    this.type = type;
+    this.bubbles = !!bubbles;
+    this.cancelable = !!cancelable;
+    this.defaultPrevented = false;
+    this._defaultPrevented = false;
+    this.view = (view === undefined) ? null : view;
+    this.data = (arguments.length < 5 || data === undefined) ? 'undefined' : String(data);
+  };
+  (function () {
+    var _tec31 = globalThis.TextEvent;
+    var TextEvent31 = function TextEvent() {
+      throw new globalThis.TypeError('Illegal constructor');
+    };
+    TextEvent31.prototype = _tec31.prototype;
+    globalThis.TextEvent = TextEvent31;
+  })();
   _defineEventSubclass('TouchEvent', 'UIEvent', []);
 
   // R2937 DataTransfer——拖放载荷容器（format→string map + effectAllowed/dropEffect + files/items 只读视图）。
