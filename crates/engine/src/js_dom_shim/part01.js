@@ -1050,6 +1050,9 @@
             && entry.doc.body.getAttribute('id') == null) {
           entry.doc.body.setAttribute('id', _bid23);
         }
+        // 尾簇 26：id 值槽（body 视图 getAttribute 链断点的 portal 侧直读源——
+        // _zwPortalDispatch 的 .id 惰性 getter 消费）。
+        if (_bid23) { try { entry.doc.__zwBodyId = _bid23; } catch (_e23ids) {} }
       } catch (_e23bid) {}
       try { entry.doc._zwURL = effectiveUrl; } catch (_e115u) {}
       // https://html.spec.whatwg.org/multipage/dom.html#dom-document-referrer

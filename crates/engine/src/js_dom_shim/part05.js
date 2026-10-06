@@ -1658,6 +1658,16 @@
           return Object.prototype.hasOwnProperty.call(_r292DocElAttrs, k292) ? _r292DocElAttrs[k292] : null;
         };
         docEl.hasAttribute = function (n292) { return docEl.getAttribute(n292) !== null; };
+        // 尾簇 26：docEl `.id` 反射器（合成 html 元素——subframe portal hold 路由的
+        // target.id 面：pointercapture_in_frame 内页 `<html id='innerFrameDocument'>`）。
+        try {
+          if (docEl.id === undefined) {
+            Object.defineProperty(docEl, 'id', {
+              configurable: true,
+              get: function () { try { return docEl.getAttribute('id') || ''; } catch (_e26di) { return ''; } }
+            });
+          }
+        } catch (_e26die) {}
         try { Object.setPrototypeOf(docEl, globalThis.HTMLHtmlElement ? globalThis.HTMLHtmlElement.prototype : Object.prototype); } catch (_eR207p) {}
         if (kind !== 'xml') {
         // R159：html/body 属性经 doc 槽传递——detHtml 包装层恢复 `<html ...><body ...>`

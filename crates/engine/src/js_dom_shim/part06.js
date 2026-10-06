@@ -12273,7 +12273,7 @@
     pendingCross: null,
     processingCapture: false,
     streakTarget: null, streakCount: 0, downSel: null, downButton: 0,
-    portalFrame: null, portalCap: null, portalCapPending: null,
+    portalFrame: null, portalCap: null, portalCapPending: null, portalFrameHold: null,
     // 尾簇 8：mutation 驱动悬停重结算——mutTick 消费位（settle 后记录；poll 比较
     // 判「悬停目标可能已失效」，runner 据此跑命中测试 + 补跨界序）。
     mutTickSettled: 0,
@@ -12354,9 +12354,10 @@
       try { globalThis.__zwPortalAttachCaptureMethods(t); } catch (_e23am2) {}
       if (t.id === undefined || t.id === '') {
         try {
+          var _bid22v = (doc.__zwBodyId != null) ? String(doc.__zwBodyId) : '';
           Object.defineProperty(t, 'id', {
             configurable: true,
-            get: function () { try { return t.getAttribute('id') || ''; } catch (_e22id) { return ''; } }
+            get: function () { try { return t.getAttribute('id') || _bid22v || ''; } catch (_e22id) { return _bid22v || ''; } }
           });
         } catch (_e22idp) {}
       }
@@ -12402,6 +12403,11 @@
     if (!st.portalCap || st.portalCap.target !== el || st.portalCap.pointerId !== pid) return;
     var cap = st.portalCap;
     st.portalCap = null;
+    // 尾簇 26：frame 级捕获（mouse/pen——release 后 frame 仍持有指针至 pointerup，
+    // 后续事件派 inner documentElement；touch 无此语义——up 随命中目标）。
+    if ((st.pointerType || 'mouse') !== 'touch') {
+      st.portalFrameHold = cap.frameSel;
+    }
     try {
       var lpe = new globalThis.PointerEvent('lostpointercapture', {
         bubbles: true, composed: true, cancelable: false,
