@@ -10579,7 +10579,8 @@
     };
   }
   // 全局形态跟随：仅当 globalThis[name] 仍是本特性安装的集合时改写/回收——脚本自有
-  // 全局、已 morph 成元素的全局（broadening 面未实现，见边界注）不回改。
+  // 全局、已 morph 成元素的全局不回改（morph 跟随面不升格；元素全局的动态升格走
+  // `_zwNARegisterName` 触发面，slice36）。
   // slice33（RP-3 I-7）：0 命中回收后再生——回收时保留账本（`_zwNAInstalled[name]`
   // 不删；集合仍注册 live 维护），成员重入（0→1/0→2）时经本函数恢复全局：1 命中
   // 恢复元素、≥2 恢复集合。恢复条件 = global 缺席且账本在（回收态，或 renderer
@@ -10653,14 +10654,19 @@
   // getElementById（R125 覆盖表 + pending-ID 索引即时）∪ _zwPendingAdded 扫描
   //（attr 即时）∪ 触发元（attr 面），树序经 R79 compareDocumentPosition。
   // **边界（FIXME(dynamic-na) 如实申报）**：①注销面仅覆盖本面动态安装值
-  //（`__zwNADynElsStore` 账本）——安装期单命中元素全局（slice27 面）与 morph 产物
-  // 保持 stale 到换代回收（slice32 申报钉维持）；②非标识符名不注册（安装面同款
-  // 偏差——transport `|` 分隔与属性选择器嵌入约束）；③shadow 树内元素未按
+  //（`__zwNADynElsStore` 账本）且仅注销触发批的顶层元素——移除子树内已注册
+  // 后代的名保持可解析直至换代回收（slice36 缺陷轮 I-4）；安装期单命中元素
+  // 全局（slice27 面）与 morph 产物保持 stale 到换代回收（slice32 申报钉维持）；
+  // ②名门 = 属性值原文非空串 + own 属性缺席（本面已放开标识符形限制——spec
+  // 名为属性值原文，WPT changing.html 连字符名实证；安装面 transport `|` 分隔
+  // 与属性选择器嵌入约束仍保留标识符门）；③shadow 树内元素未按
   // document-tree 语义排除（连接性走 `_zwDocContains36` JS 链，shadow host 连入
   // 文档即真——spec named objects 限 document tree）；④iframe 名不入面（R139
   // child navigable 委托面，slice33 B-1 口径）；⑤parsed 元素 name 属性脚本改值
   // 面经 attr 触发元入账，host 原生侧改值（`__zw_mo_notify_native`，kill-switch
-  // 默认 OFF）不触发。
+  // 默认 OFF）不触发；⑥数据属性安装面固有：`delete window.N` 后再读不复活
+  //（读路径无注册表查询，「注册表增量维护近似」总申报的子面，slice36 testeff
+  // 轮补记）。
   // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
   // https://webidl.spec.whatwg.org/#WindowProperties
   // 动态元素账本（name → 本面安装的元素）——broadening（唯一命中升格集合）与失格
@@ -10806,6 +10812,10 @@
         var L36u = globalThis.__zwNamedAccessInstalled;
         if (L36u) { try { delete L36u[k36]; } catch (_e36Lu) {} }
       }
+      // 全局已被脚本改写（gU36 !== el）时不删 globalThis/L36u（不碰脚本自有值），
+      // 本面账本仍无条件清——L36u 该名残留 true 至换代回收，以 L36u 为「本特性
+      // 安装值」判据的路径可能误判（已知边角，FIXME(dynamic-na) ① 附带申报，
+      // slice36 缺陷轮 I-3，未修）。
       delete _zwNADynEls[k36];
     }
   }
