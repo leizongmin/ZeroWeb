@@ -7959,7 +7959,8 @@ fn apply_testdriver_command(
             .filter(|value| !value.is_empty() && value != "null" && value != "undefined"),
     };
     let Some(selector) = selector else {
-        return Some("testdriver target has no stable selector".into());    };
+        return Some("testdriver target has no stable selector".into());
+    };
     let selector = selector.trim().to_string();
     if selector.is_empty() || selector == "null" {
         return Some("testdriver target has no stable selector".into());
@@ -8421,8 +8422,7 @@ fn apply_testdriver_command(
                         // uievents/interface/keyboard-click-event 的 keyMapping 写
                         // uE006——submit 动作对 formless button noop(NotApplicable)
                         // 使 send_keys 链 reject/挂）。
-                        let enter_formless_buttonish = (character == '\u{E007}'
-                            || character == '\u{E006}')
+                        let enter_formless_buttonish = (character == '\u{E007}' || character == '\u{E006}')
                             && webview
                                 .execute_script(&zero_engine::script_buttonish_probe(&selector))
                                 .map(|v| v.trim() == "1")
