@@ -517,3 +517,91 @@ fn r388_iframe_history_navigation_preserves_session_history() {
         "R388：history traversal fetch 必须携带 isHistoryNavigation 标记"
     );
 }
+
+// R5010（mm-regression 根修，2026-10-07）：insertAdjacentHTML → apply → gEBI 经 R100
+// identity 反查返回 handle-only proxy 后，其子读（childNodes/firstChild/textContent）
+// 必须经 `_r100SelOfHandle` 锚回 sel 查 host，不得恒空。生产 face：s30-multimatch
+// 集成驱动读 verdict textContent=''（apply 已落、pending 表已被 `__zw_apply_generation_
+// bump` 清、querySelector 命中后 `_zwQueryWrapIdentity` 以 `__zw_handle_for_selector`
+// 反查包成 handle proxy——`_childNodeList(null, handle)` 旧直接返 []）。
+// https://dom.spec.whatwg.org/#dom-node-textcontent
+// https://dom.spec.whatwg.org/#dom-parentnode-queryselector
+#[test]
+fn r5010_r100_handle_proxy_child_reads_anchor_sel_after_iadj_html_apply() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='host'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://zw.test/x.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // ① 页面同 turn：insertAdjacentHTML 解析产物（plain、无 handle/sel）入 pending 表。
+    sandbox
+        .execute(
+            "globalThis.document.body.insertAdjacentHTML('beforeend',\
+             \x20 '<div id=\"s30-verdict\">S30-MULTIMATCH: PASS</div>');",
+        )
+        .unwrap();
+    // ② 宿主 apply（renderer drain 同入口）：insertAdjacentHTML 落快照（verdict 进
+    //    host 文档——读侧数据源；桥侧 iadj apply 本身不产 handle，生产 identity 桥的
+    //    handle→sel merge 另有源头，读路径修复不依赖其来源）。
+    let batch: Vec<DomMutation> = {
+        let mut guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
+        guard.drain(..).collect()
+    };
+    assert!(!batch.is_empty(), "insertAdjacentHTML 必须产出 mutation 记录");
+    let applied = crate::js_dom_bridge::apply_mutations_to_html_with_handles(
+        &dom_html.lock().unwrap_or_else(|e| e.into_inner()),
+        &batch,
+    )
+    .expect("宿主 apply：insertAdjacentHTML 落快照");
+    *dom_html.lock().unwrap_or_else(|e| e.into_inner()) = applied.0;
+    // ③ apply 代际 purge（生产 K3-C bump 同入口）：清 pending 表 → gEBI 回落查询链。
+    sandbox.execute("globalThis.__zw_apply_generation_bump();").unwrap();
+    // ④ identity 桥 stub（r387c 同款注册，镜像生产 `__zw_handle_for_selector`
+    //    selector→handle 反查）：查询命中后 `_zwQueryWrapIdentity` 反查命中 →
+    //    返 handle-only proxy（生产 FAIL 形态：verdict 被 `__n{n}` handle 包装）。
+    sandbox.register_callback(
+        "__zw_handle_for_selector",
+        Box::new(|args: &[String]| -> String {
+            if args.first().map(String::as_str) == Some("#s30-verdict") {
+                "__n226".to_string()
+            } else {
+                String::new()
+            }
+        }),
+    );
+    // ⑤ 修复面：handle-only proxy 的子读经 `_r100SelOfHandle` 锚回 sel 查 host。
+    //    （JS 串内不用 `//` 行注释——Rust `\<newline>` 行继续使整串成单行。）
+    sandbox
+        .execute(
+            "var v = globalThis.document.getElementById('s30-verdict');\
+             globalThis.__r5010 = v ? JSON.stringify({\
+               handle: v.__zwHandle || null,\
+               kids: v.childNodes.length,\
+               text: v.textContent,\
+               first: v.firstChild ? v.firstChild.nodeValue : null\
+             }) : 'null';",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r5010").unwrap().value;
+    assert!(
+        out.contains("\"handle\":\"__n226\""),
+        "R5010：gEBI 须经 R100 反查返回 handle-only proxy（生产 FAIL 形态前提），got: {out}"
+    );
+    assert!(
+        out.contains("\"kids\":1")
+            && out.contains("\"text\":\"S30-MULTIMATCH: PASS\"")
+            && out.contains("\"first\":\"S30-MULTIMATCH: PASS\""),
+        "R5010：handle-only proxy 子读须锚回 sel 读到 apply 后真实子树（childNodes/firstChild/textContent），got: {out}"
+    );
+}

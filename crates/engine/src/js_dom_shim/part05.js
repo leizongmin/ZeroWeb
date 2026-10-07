@@ -9454,6 +9454,19 @@
     if (globalThis._zwLiveNLSync) globalThis._zwLiveNLSync = {};
   };
   function _childNodeList(sel, handle) {
+    // R100 锚回（mm-regression 根修，2026-10-07）：handle-only proxy（`_zwQueryWrapIdentity`
+    // R100 反查命中后 `_wrapHandle` 产物，`__zwSelector` 为空）的子读链（childNodes/
+    // firstChild/textContent getter 终落本函数）此前在 `!sel` 直接返 []——此时 apply 已把
+    // 元素落 host 并 merge handle→sel，`_r100Remember` 也已在包装时登记正置缓存，但读链
+    // 从不消费。s30-multimatch 集成面：insertAdjacentHTML → apply → gEBI → querySelector
+    // → R100 返 handle proxy → 子读恒空（verdict textContent='' 根因）。锚回 sel 走既有
+    // host 查询（同 `_realTag` 的 R100 回落先例，part03）；未登记或锚回后仍空 → 原行为
+    // 返 []，零回归。
+    if (!sel && handle) {
+      try {
+        sel = _r100SelOfHandle(handle) || sel;
+      } catch (_e100cl) {}
+    }
     if (!sel || typeof __zw_child_nodes !== 'function') return [];
     if (!handle) {
       var cached = _zwChildBaseCache.get(sel);

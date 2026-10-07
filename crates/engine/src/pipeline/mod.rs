@@ -1264,6 +1264,18 @@ impl RenderPipeline {
         self.detached_sel_nodes.clear();
     }
 
+    /// slice37（mm-regression 根修）：导航边界清 handle→NodeId 持久表（webview
+    /// 文档换代时调用）。`render_html`/`render_html_animated` 全量重建自清（slotmap
+    /// 换代语义，R100）；预算渲染路径（`advance_budgeted_render`，renderer 生产导航
+    /// 的 AsyncPageLoad 渲染入口）换代不清——旧文档条目残留，下一文档首个
+    /// `apply_dom_mutations_full` 预植旧 handle 进 ephemeral map 并经 handle_selectors
+    /// 返出，re-pollute worker/webview 反查表（slice37 diag 实证：同 URL 重导航
+    /// 逐迭代累积 `__n0..__n10`，`__zw_handle_for_selector` 值扫描命中任意一个，
+    /// gEBI 包装绑死旧 identity）。
+    pub fn clear_persistent_handle_nodes(&mut self) {
+        self.persistent_handle_nodes.clear();
+    }
+
     /// uievents-compat M3 尾簇 4：handle→NodeId 重绑——全量 `render_html` 重建会清
     /// `persistent_handle_nodes`（R100），此后 handle 型 mutation（页内
     /// createElement 产物的后续写）报 unknown handle。结构性刷新方持 shim 侧

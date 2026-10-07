@@ -1784,6 +1784,11 @@ impl WebView {
         self.set_page_url_wire(page_url);
         self.loading = true;
         self.pipeline.set_document_url(Some(page_url));
+        // slice37（mm-regression 根修）：文档换代清 handle→NodeId 持久表——预算渲染
+        // 路径（AsyncPageLoad → advance_budgeted_render）不经过 render_html 的 slotmap
+        // 换代清零（R100），旧文档条目经下一文档首个 apply 的预植/handle_selectors
+        // 返出 re-pollute 反查表（详见 `Pipeline::clear_persistent_handle_nodes` 文档）。
+        self.pipeline.clear_persistent_handle_nodes();
         self.security_context.set_page_origin(page_url);
         self.emit_event(&WebViewEvent::LoadStart(page_url.to_string()));
     }
@@ -6766,6 +6771,68 @@ mod tests {
                 .contains_key("p.s35a"),
             "apply_dom_mutations_and_render 路径 Remove 后 sel→handle 残账必须清除——本路径 evict 调用点删行时残影通道重开"
         );
+    }
+
+    // slice37（mm-regression 根修）：prepare_document_state 文档换代清
+    // persistent_handle_nodes。预算渲染路径（AsyncPageLoad → advance_budgeted_render，
+    // renderer 生产导航的渲染入口）不像 render_html 那样 slotmap 换代清零——旧文档
+    // handle→NodeId 残留，下一文档首个 apply 预植旧 handle 并经 handle_selectors 返出，
+    // re-pollute worker/webview 反查表（slice37 diag 实证：同 URL 重导航逐迭代累积
+    // __n0..__n10，__zw_handle_for_selector 值扫描命中任意一个 → gEBI 包装绑死旧
+    // identity、mm 判定 div 读成空 proxy）。本钉走真实生产序列（prepare → 预算渲染 →
+    // apply）：清零删行后 hs 必然夹带 doc1 的 h1，断言即刻红。
+    #[test]
+    fn prepare_document_state_clears_persistent_handle_nodes_s37() {
+        let mut wv = wv();
+        // doc1：createElement + appendChild apply——persistent_handle_nodes 回填 h1
+        //（结构性 apply 的 rescue/backfill 语义）。
+        wv.load_html("<html><body></body></html>", None);
+        let (_, _, hs1) = wv
+            .apply_dom_mutations_and_render(&[
+                DomMutation::CreateElement {
+                    handle: "h1".to_string(),
+                    tag: "div".to_string(),
+                },
+                DomMutation::AppendChild {
+                    parent_selector: "body".to_string(),
+                    child_handle: "h1".to_string(),
+                },
+            ])
+            .expect("doc1 apply 成功");
+        assert!(hs1.contains_key("h1"), "doc1 apply 产出 h1→selector 绑定");
+
+        // doc2：导航边界（被测清零点）+ 预算渲染路径（同 AsyncPageLoad::advance_render，
+        // 不经过 render_html 的 R100 清零）。
+        wv.prepare_document_state("http://s37.test/doc2");
+        let mut session = BudgetedRenderSession::new("<html><body></body></html>", "");
+        loop {
+            match wv.advance_budget_session(&mut session, 10_000.0) {
+                BudgetAdvance::Complete => break,
+                BudgetAdvance::InProgress => continue,
+            }
+        }
+        let result = session.take_result().expect("预算渲染产出结果");
+        wv.apply_render_result(result, "http://s37.test/doc2", true);
+
+        // doc2 首个 apply：handle_selectors 只含本批 h2——清零删行时 h1 经预植返出，
+        // 本断言红（regression pin）。
+        let (_, _, hs2) = wv
+            .apply_dom_mutations_and_render(&[
+                DomMutation::CreateElement {
+                    handle: "h2".to_string(),
+                    tag: "div".to_string(),
+                },
+                DomMutation::AppendChild {
+                    parent_selector: "body".to_string(),
+                    child_handle: "h2".to_string(),
+                },
+            ])
+            .expect("doc2 apply 成功");
+        assert!(
+            !hs2.contains_key("h1"),
+            "文档换代后 handle_selectors 不得夹带上一文档 handle（persistent_handle_nodes 未清）"
+        );
+        assert!(hs2.contains_key("h2"), "doc2 apply 产出 h2→selector 绑定");
     }
 
     // slice35：apply_pending_shared_mutations 单步路径（tail 纯结构批）的 evict +

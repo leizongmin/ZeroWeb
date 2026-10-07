@@ -1616,14 +1616,27 @@ return _tplContent;
                 ? _zwLocalChildNodes(null, _r140Handle)
                 : null;
               var _k = (_handleChildren[_r140Handle] || []).slice();
-              if (_l && _l.length) view = _l.concat(_k);
-              else if (_k.length) view = _k;
-              else if (_l) view = _l;
+              if (_l && _l.length) { view = _l.concat(_k); }
+              else if (_k.length) { view = _k; }
+              else if (_l) { view = _l; }
               else {
                 var _d = (typeof _zwDetachedChildrenOf === 'function')
                   ? _zwDetachedChildrenOf(_r140Handle)
                   : null;
-                view = (_d && _d.length) ? _d.slice() : [];
+                if (_d && _d.length) {
+                  view = _d.slice();
+                } else {
+                  // R5010（mm-regression 根修，2026-10-07）：handle-only proxy（R100 反查
+                  // 包装，`__zwSelector` 空）——本分支旧止步于此恒 []，不落 `_childNodeList`
+                  //（firstChild/textContent 链落故修复后即通，childNodes 独缺）。锚回 sel
+                  // 查 host（R100 remember 正置缓存——`_zwQueryWrapIdentity` 包装时登记），
+                  // 以无 handle 形态走 base-cache 主路径（与上 `_r140Sel` 分支同形）。
+                  // 未登记 → 原行为返 []，零回归。
+                  var _r5010s = (typeof _r100SelOfHandle === 'function')
+                    ? _r100SelOfHandle(_r140Handle)
+                    : null;
+                  view = _r5010s ? _childNodeList(_r5010s, null) : [];
+                }
               }
             }
             // 同步到承载数组（length + 索引内容）。splice 保持数组非索引属性（item 等）。
