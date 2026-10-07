@@ -599,7 +599,9 @@ fn browser_build_and_release_entries_include_compositor() {
         include_str!("../../../.github/workflows/weekly.yml"),
         include_str!("../../../.github/workflows/release.yml"),
     ] {
-        assert!(workflow.contains("--bin zero-compositor"));
+        // dba14f10f 起构建改 -p 限定 feature 解析（不带 -p 的全成员统一解析会点亮 v8），
+        // 守卫字面随构建形态更新：compositor 仍必须在 CI 构建（-p）与发布（release/）链上。
+        assert!(workflow.contains("-p zero-compositor"));
         assert!(workflow.contains("release/zero-compositor"));
     }
 }
