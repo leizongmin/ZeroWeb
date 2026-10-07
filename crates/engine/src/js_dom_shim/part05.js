@@ -9967,6 +9967,10 @@
   // `children[i]` O(n)/读 + 注册表无界增长 → 每变异全表扫 O(集合×元素)。缓存后同元素同
   // 形态返回同一活集合，活语义由写侧 _zwHCLiveInvalidate 维护网保留（R358/R333）。
   var _zwChildrenCollCache = new WeakMap();
+  // t8f（siteopt bilibili r1）：form.elements 活集合缓存（键=元素 proxy，值={k:分支形态,
+  // c:集合}）——与 _zwChildrenCollCache 同机制（t8e），换代清空同点。分离 WeakMap：同元素
+  // 的 .children 与 .elements 是不同集合对象（Chrome `f.elements !== f.children`），共表会互踩。
+  var _zwFormCollCache = new WeakMap();
   // R358（js-dom M1）：**快照换代失效钩子**——`SetDomSnapshot`（tab_js_worker/renderer
   // js_worker）替换 host 快照后调用。JS 侧 pending 记账（bucket/live 集合/child 缓存）
   // 是**旧快照 + 旧 mutation 批**的衍生物：新快照替换 host 真相后，bucket 残留条目对
@@ -9980,6 +9984,8 @@
     // 一样失聪（页面持旧引用冻结 = 旧文档语义，slice32 dead 标记同款）；不重置则换代后
     // 缓存命中绕过重建，新快照内容不可见（R357 stale 根因同形）。
     _zwChildrenCollCache = new WeakMap();
+    // t8f：form.elements 集合缓存随换代重置（同 children——旧集合对旧文档失聪语义一致）。
+    _zwFormCollCache = new WeakMap();
     _zwPendingAdded.length = 0;
     _zwPendingRemoved.length = 0;
     _zwPendingAddedSet = null;
@@ -11384,24 +11390,63 @@
   function _formControls(sel) {
     var controls = [];
     if (!sel) return controls;
-    if (typeof __zw_form_controls === 'function') {
-      try {
-        var listed = __zw_form_controls(sel);
-        if (listed) return listed.split('|').filter(Boolean).map(_wrapSelector);
-      } catch (_e) {}
+    // t8f（siteopt bilibili r1）：host 视图（`with_query_view_doc`）**不应用 handle 链
+    // mutation**（callbacks.rs 应用范围注释）——同 turn createElement+appendChild 的
+    // 控件对 `__zw_form_controls` 失明，hydration 场景 namedItem miss → 站点恢复路径
+    // insertBefore(undefined) TypeError（bilibili 搜索页爆发根因）。spec：form.elements
+    // 是 **live** 集合（https://html.spec.whatwg.org/multipage/forms.html#dom-form-elements）。
+    // 修复 = child 链 walk（child_nodes 读链含 pending/handle 产物）为主 +
+    // host 视图列表去重合并（覆盖 walk 盲区：外部 `form=id` 关联控件）。
+    // walk 守卫：① 嵌套 `<form>` 子树整枝跳过（owner 归属内层；解析器不允许嵌套，
+    // 但 DOM API 可造出）；② 带 `form` 属性的控件跳过（owner 由 form= 决定，host 列表
+    // 按 owner 过滤覆盖）。
+    var seen = Object.create(null);
+    function push(p) {
+      if (!p) return;
+      var key = null;
+      try { if (p.__zwSelector) key = 's:' + p.__zwSelector; } catch (_eS) {}
+      if (!key) { try { if (p.__zwHandle != null) key = 'h:' + p.__zwHandle; } catch (_eH) {} }
+      if (key) {
+        if (seen[key]) return;
+        seen[key] = 1;
+      }
+      controls.push(p);
     }
-    // 递归下降：childNodes 遍历子树（element 子递归，text/comment 跳过），tag 命中收集。
     function walk(parentProxy) {
       var kids = (parentProxy && parentProxy.childNodes) || [];
       for (var i = 0; i < kids.length; i++) {
         var k = kids[i];
-        if (k && k.nodeType === 1) {
-          if (_formControlTags[k.tagName]) controls.push(k);
-          walk(k);
+        if (!k || k.nodeType !== 1) continue;
+        if (k.tagName === 'FORM') continue;
+        if (_formControlTags[k.tagName]) {
+          var formAttr = null;
+          try { formAttr = k.getAttribute('form'); } catch (_eF) {}
+          // host 列表同款过滤（form_activation.rs `form_control_selectors_doc`，审查 B
+          // 发现 2——并集丢失 host 排除项会让静态表单行为回归）：
+          // ① input[type=image] 不进 form.elements（WPT form-requestsubmit oracle，
+          //    https://html.spec.whatwg.org/multipage/form-submission.html 套件记录）；
+          // ② 仅**无 form 属性**（getAttribute → null）时按子树归属收集——form=""
+          //    与 form="other" 的 owner 由 form= 决定且 "" 解析失败无 owner（不进任何
+          //    form.elements），均不在此收。
+          var _kImg = false;
+          if (k.tagName === 'INPUT') {
+            try { _kImg = String(k.getAttribute('type') || '').toLowerCase() === 'image'; } catch (_eTi) {}
+          }
+          if (!_kImg && formAttr === null) push(k);
         }
+        walk(k);
       }
     }
     try { walk(_wrapSelector(sel)); } catch (_e) {}
+    if (typeof __zw_form_controls === 'function') {
+      try {
+        var listed = __zw_form_controls(sel);
+        if (listed) {
+          var arr = listed.split('|').filter(Boolean).map(_wrapSelector);
+          for (var hi = 0; hi < arr.length; hi++) push(arr[hi]);
+        }
+      } catch (_e) {}
+    }
     return controls;
   }
 
