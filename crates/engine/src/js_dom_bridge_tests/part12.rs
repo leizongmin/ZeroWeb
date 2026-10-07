@@ -1921,8 +1921,10 @@ fn test_mutation_observer_parent_cache_reparent() {
     // InsertAdjacent/SetInnerHtml/SetOuterHtml/Remove 族（AppendChild/handle 链族不应用）——
     // reparent 的 `__zw_parent` 答案在 host **apply 物化**时才变。窗口：同 turn「appendChild →
     // 对被移动节点 attr 写」（此时查询按 apply 前树把旧链回填缓存）→ host apply → 后续
-    // attr 写若命中 stale 链即误投旧祖先。apply 换代钩子 `__zw_apply_generation_bump` 的
-    // `_zwParentLinkBump()` 删行即红；`_mo_notify` 入口 bump① 删行同红（①的旧链不被清）。
+    // attr 写若命中 stale 链即误投旧祖先。删 `__zw_apply_generation_bump` 的
+    // `_zwParentLinkBump()`（挂点③）即红；删 `_mo_notify` 入口 bump① 时本测试仍绿
+    // （首次爬链发生在 reparent 自身 notify、无既有条目可清，apply 后③兜住）——①由
+    // native_write 测试专钉。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
@@ -2064,7 +2066,7 @@ fn test_mutation_observer_parent_cache_native_write() {
     assert_eq!(
         sandbox.execute("String(globalThis.__rb.length)").unwrap().value,
         "1",
-        "native 写改树后 leaf attr 写按新树冒泡到 b"
+        "native 写改树后 leaf attr 写按新树冒泡到 b（leaf 已移到 b）"
     );
 }
 
@@ -2112,14 +2114,26 @@ fn test_mutation_observer_parent_cache_snapshot_swap() {
     crate::js_dom_bridge::bump_dom_view_gen();
     sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();").unwrap();
 
-    // ③ 换代后 attr 写：container 0 记录（leaf 新快照在 other 下，不在 container subtree）。
+    // ③ 换代后 attr 写：container 0 记录（leaf 新快照在 other 下）、other 1 记录（正控——
+    // 防「记录整体丢失」世界假绿）。
     sandbox
-        .execute("leaf.setAttribute('data-snap', '1'); globalThis.__rc = mo.takeRecords();")
+        .execute(
+            "var mo2 = new MutationObserver(function(){});\
+             mo2.observe(document.getElementById('other'), { attributes: true, subtree: true });\
+             leaf.setAttribute('data-snap', '1');\
+             globalThis.__rc = mo.takeRecords();\
+             globalThis.__rb = mo2.takeRecords();",
+        )
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__rc.length)").unwrap().value,
         "0",
         "快照换代后 leaf attr 写不得按旧树链冒泡到 container（缓存不跨代服务）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rb.length)").unwrap().value,
+        "1",
+        "快照换代后 leaf attr 写按新快照树冒泡到 other（正控）"
     );
 }
 

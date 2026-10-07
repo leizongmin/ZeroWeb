@@ -3889,8 +3889,9 @@
   // → 恒命中，链构造退化为纯 JS Map 查（宿主往返零次）。
   // 语义等价：parent 关系只在 childList 变更时改变，代际印章保证不服务过期链。
   // 已知边界（PR91 审查 D-1）：`ZW_MO_HOST_TRIGGER=0`（opt-out，默认 ON）时 native
-  // 写不经 `_mo_notify`、无 bump——同代内链可能 stale；该配置下 native 记录本就不
-  // 投递（kill-switch 通知端死路），此 stale 面被既有语义覆盖。
+  // 写不经 `_mo_notify`、无 bump——同代内链可能 stale。该配置下 native 写自身无记录
+  // 投递（kill-switch 通知端死路），但 stale 链仍影响后续纯 JS 写记录的冒泡站
+  // （pre-t8 逐次现查会跟上新树）——opt-out 配置面缺口，随池项后续收口。
   var _zwParentLinkCache = { gen: -1, map: new Map() };
   var _zwParentLinkGen = 0;
   function _zwParentLinkBump() {
