@@ -1761,6 +1761,255 @@ fn test_form_elements_r2829() {
 }
 
 #[test]
+fn test_form_elements_live_dynamic_controls_t8f() {
+    // t8f（siteopt bilibili r1）：form.elements 对**同 turn createElement+appendChild** 控件须
+    // live 可见（spec：HTMLFormControlsCollection 是 live 集合，
+    // https://html.spec.whatwg.org/multipage/forms.html#dom-form-elements）。
+    // host 查询视图不应用 handle 链 mutation（with_query_view_doc 应用范围注释），R2829 的
+    // `__zw_form_controls`（视图 doc 消费者）对动态控件失明——hydration 恢复路径
+    // namedItem miss → insertBefore(undefined) TypeError 的根因（bilibili 搜索页爆发）。
+    // held ref（站点形态：取一次 elements 后复用）与 fresh read 都须反映。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id='f'><input name='a' value='1'></form></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__f = document.querySelector('#f');\
+             globalThis.__els = globalThis.__f.elements;\
+             var inp = document.createElement('input');\
+             inp.name = 'late'; inp.value = 'L';\
+             globalThis.__f.appendChild(inp);\
+             globalThis.__lenHeld = globalThis.__els.length;\
+             globalThis.__lenFresh = globalThis.__f.elements.length;\
+             globalThis.__namedHeld = (function(){ var v = globalThis.__els.namedItem('late'); return v ? v.value : 'null'; })();\
+             globalThis.__namedFresh = (function(){ var v = globalThis.__f.elements.namedItem('late'); return v ? v.value : 'null'; })();\
+             globalThis.__formLen = globalThis.__f.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__lenHeld)").unwrap().value,
+        "2",
+        "held elements.length 动态 append 后=2（live）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__lenFresh)").unwrap().value,
+        "2",
+        "fresh form.elements.length=2（host 失明须回落 child 链）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__namedHeld)").unwrap().value,
+        "L",
+        "held elements.namedItem('late')=动态控件"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__namedFresh)").unwrap().value,
+        "L",
+        "fresh elements.namedItem('late')=动态控件"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__formLen)").unwrap().value,
+        "2",
+        "form.length 动态 append 后=2"
+    );
+}
+
+#[test]
+fn test_handle_create_tag_cross_execute_t8f() {
+    // t8f（siteopt bilibili r1）：跨 execute 的 detached handle 元素 tag 保持——
+    // createElement('template') 在 execute#1 创建，host `query_tag_from_mutations`
+    // 只查当前批 mutations（生产 apply 后清队，js_dom_bridge.rs:3818）→ execute#2
+    // `_realTag` 双 miss（批查询 + R100 反查——从未挂载无 selector）回落 `_tagFromSel`
+    // 恒 DIV → get trap 的 TEMPLATE `content` 分支 miss → `.content` 落未知属性回退
+    // （""）→ lit/Vue 式 `parent.insertBefore(tpl.content, anchor)` 传字符串抛
+    // R296 TypeError（bilibili 搜索页 hydration 恢复爆发根因，Vue insertStaticContent）。
+    // 修：创建 tag 印章 `_zwHandleCreateTag`（createElement/cloneNode/R368 盖章点；
+    // `_realTag` 兜底消费——spec tagName 不可变，印章无陈旧风险）。
+    // 测试通过 execute 间清空 mutations 队列模拟生产 apply 边界。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='host'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // execute#1：创建 detached template（同 Vue nodeOps 模块级缓存模板时序）
+    sandbox
+        .execute(
+            "globalThis.__tpl = document.createElement('template');\
+             __tpl.innerHTML = '<div class=\"a\">x</div><!--c--><div class=\"b\">y</div>';",
+        )
+        .unwrap();
+    // 模拟生产 apply 边界：mutation 队列清空（CreateElement 记录随之消失）
+    mutations.lock().unwrap().clear();
+
+    // execute#2：tag 保持 TEMPLATE、content 为 fragment 视图、Vue 形态 insertBefore 可用
+    sandbox
+        .execute(
+            "globalThis.__out = (function(){\
+               var out = [];\
+               out.push(__tpl.tagName);\
+               var c = __tpl.content;\
+               out.push(c && typeof c === 'object' ? String(c.nodeType) : 'tos:' + typeof c);\
+               var host = document.createElement('div');\
+               try {\
+                 var r = host.insertBefore(c, null);\
+                 out.push(r === c ? 'frag' : 'nodeType:' + (r && r.nodeType));\
+                 out.push(String(host.childNodes.length));\
+               } catch (_e) { out.push('THROWS:' + _e.message); }\
+               return out.join('|');\
+             })();",
+        )
+        .unwrap();
+    let got = sandbox.execute("String(globalThis.__out)").unwrap().value;
+    let parts: Vec<&str> = got.split('|').collect();
+    assert_eq!(parts[0], "TEMPLATE", "跨 execute 后 tagName 保持 TEMPLATE（印章兜底），got {got}");
+    assert_eq!(parts[1], "11", "跨 execute 后 .content 仍 fragment 视图（nodeType=11），got {got}");
+    assert_eq!(parts[2], "frag", "insertBefore(content, null) 返回 fragment 本身（Vue insertStaticContent 形态），got {got}");
+    assert_eq!(parts[3], "3", "fragment 子节点全部落入 host（div+注释+div），got {got}");
+}
+
+#[test]
+fn test_form_elements_iterable_image_exclusion_t8f_revb() {
+    // t8f 审查返修钉（双审查 B 发现 1/2/4）：
+    // ① form.elements 可迭代——活集合 Proxy 的 get trap 此前对 symbol 键直接
+    //    parseInt（ToString(symbol) 抛 TypeError），for...of/spread/Array.from 从
+    //    可用变抛错（Angular forms/serialize 类站点常见模式）；
+    // ② input[type=image] 不进 form.elements——walk ∪ host 合并须保留 host 侧排除
+    //    （form_activation.rs form_control_selectors_doc 的 image 过滤；WPT
+    //    form-requestsubmit oracle）；
+    // ③ namedItem('') → null（空串守卫——id getter 缺省 '' 不得误配无 id 控件；
+    //    与 part03 两处 namedItem 同款）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id='fx'><input name='a'><input type='image' name='img'>\
+         <button name='btn'>b</button></form></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__out = (function(){\
+               var f = document.querySelector('#fx');\
+               var out = [];\
+               out.push(String(f.elements.length));\
+               var seen = [];\
+               try {\
+                 for (var it of f.elements) seen.push(it.name || it.tagName);\
+                 out.push(seen.join(','));\
+               } catch (_e1) { out.push('ITER-THROWS:' + _e1.message); }\
+               try { out.push(String(Array.from(f.elements).length)); }\
+               catch (_e2) { out.push('AF-THROWS:' + _e2.message); }\
+               out.push(String(f.elements.namedItem('') === null));\
+               out.push(String(f.elements.namedItem('img') === null));\
+               return out.join('|');\
+             })();",
+        )
+        .unwrap();
+    let got = sandbox.execute("String(globalThis.__out)").unwrap().value;
+    let parts: Vec<&str> = got.split('|').collect();
+    assert_eq!(parts[0], "2", "input[type=image] 不进 form.elements（text+button），got {got}");
+    assert_eq!(parts[1], "a,btn", "for...of 迭代产出非 image 控件序列，got {got}");
+    assert_eq!(parts[2], "2", "Array.from(form.elements).length=2（symbol 守卫后可展开），got {got}");
+    assert_eq!(parts[3], "true", "namedItem('') 返 null（空串守卫），got {got}");
+    assert_eq!(parts[4], "true", "namedItem('img') 返 null（image 控件不在集合），got {got}");
+}
+
+#[test]
+fn test_form_elements_form_attr_three_state_t8f_revb() {
+    // t8f 审查返修钉（非作者复核建议：walk 过滤 form 属性三态无钉，口径对齐此前仅
+    // 经静态核对确认）——walk（child 链）只在**无 form 属性**（getAttribute → null）
+    // 时按子树归属收集；form=""/form="other" 的 owner 由 form= 决定，由 host 列表
+    //（form_activation.rs form_control_selectors_doc）提供：form="" 解析失败无 owner
+    // 不进任何 form.elements；form="other" 归属 #other（外部关联，walk ∪ host 合并
+    // 的 host 侧职责）；form 指回所在 form（form='fx'）owner 不变、仍在本 form 集合。
+    // spec §4.10.19.1 form association。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id='fx'><input name='a'><input name='b' form=''>\
+         <input name='c' form='fx'><input name='d' form='other'></form>\
+         <form id='other'></form></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__out = (function(){\
+               var fx = document.querySelector('#fx');\
+               var other = document.querySelector('#other');\
+               var out = [];\
+               out.push(String(fx.elements.length));\
+               var seen = [];\
+               for (var it of fx.elements) seen.push(it.name);\
+               out.push(seen.join(','));\
+               out.push(String(fx.elements.namedItem('b') === null));\
+               out.push(String(fx.elements.namedItem('d') === null));\
+               out.push(String(fx.elements.namedItem('c') !== null));\
+               out.push(String(other.elements.length));\
+               out.push(String(other.elements.namedItem('d') !== null));\
+               return out.join('|');\
+             })();",
+        )
+        .unwrap();
+    let got = sandbox.execute("String(globalThis.__out)").unwrap().value;
+    let parts: Vec<&str> = got.split('|').collect();
+    assert_eq!(parts[0], "2", "#fx 集合 = a（子树）+ c（form=fx 自指），got {got}");
+    assert_eq!(parts[1], "a,c", "form=''/form='other' 控件不进 #fx 集合，got {got}");
+    assert_eq!(parts[2], "true", "namedItem('b') 返 null（form='' 无 owner），got {got}");
+    assert_eq!(parts[3], "true", "namedItem('d') 返 null（form=other 归属他表），got {got}");
+    assert_eq!(parts[4], "true", "namedItem('c') 命中（form=fx 自指 owner 不变），got {got}");
+    assert_eq!(parts[5], "1", "#other 集合 = d（form= 外部关联由 host 侧提供），got {got}");
+    assert_eq!(parts[6], "true", "#other.namedItem('d') 命中，got {got}");
+}
+
+#[test]
 fn test_input_files_filelist_r2830() {
     // R2830：HTMLInputElement.files（空 FileList）。上传表单读 input.files.length / 迭代高频。
     // headless 无真文件 → 空 FileList（length 0 + item→null + 可迭代），让上传 JS 不抛（无文件→0 跳过上传）。
