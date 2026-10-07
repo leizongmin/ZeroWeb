@@ -3,9 +3,10 @@
 // 且向 _zwLiveCollections 注册新集合（仅快照换代清空）——长驻页轮询 `children[i]` O(n)/读
 //（沙箱微基准 15.8ms/次@千子父）+ 注册表无界增长 → 每变异全表扫 O(集合×元素)（bilibili
 // e() 稳态块实证机制）。修复：同元素同分支返回同一活集合（写侧 _zwHCLiveInvalidate 维护网
-// 保留），scoped 集合 add 分支按 nextSibling 锚定插入位，换代清缓存。
+// 保留），scoped 集合树序重排（_zwHCTreeOrderSync：记录锚→槽锚→动态读 + 链走查），换代清缓存。
 // 钉测覆盖：身份稳定性 / 活集合语义（append/insertBefore/removeChild/文本子）/ 插入序 /
-// 换代重置 / sel 路径（R318 + fallback liveSpec 挂网）。
+// 换代重置 / sel 路径（R318 + fallback liveSpec 挂网）/ v2 返修钉：多节点批序（PR #96 审查
+// D1：fragment/iAH 批插入逐节点动态锚产生部分排序）/ 文本锚走查 / 同父移动（轮播+快照节点）/ replaceChild。
 
 #[test]
 fn t8e_children_collection_identity_and_live_handle_path() {
@@ -218,5 +219,236 @@ fn t8e_children_sel_path_cache_and_fallback_livespec() {
         sandbox.execute("globalThis.__fRef").unwrap().value,
         "true",
         "t8e：fallback 面集合成员身份正确"
+    );
+}
+
+// v2 返修钉（PR #96 审查 D1）：多节点单 record 批插入的树序——invalidate 逐节点尾部
+// push 后，重排必须按批的**外部锚**（record nextSibling）+ addFlat 序落位，批内序不
+// 得被批内互锚破坏（v1 缺陷形：fragment [x,y] insertBefore b → [a,y,b,x]）。
+#[test]
+fn t8e_children_multi_node_batch_tree_order() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><div id=bc><span></span><em></em></div></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/t8e-batch".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // handle 路径 fragment 批：单 record（addedNodes=[n1,n2]，锚=b）→ [a,n1,n2,b]。
+    // sel 路径 iAH afterbegin 批：单 record（addedNodes=[解析B,解析I]，锚=旧首子 SPAN）
+    // → [B,I,SPAN,EM]——bilibili 水合顶部插入的真实形态。
+    sandbox
+        .execute(
+            "var p = document.createElement('div');\n\
+             var a = document.createElement('span'); p.appendChild(a);\n\
+             var b = document.createElement('em'); p.appendChild(b);\n\
+             var c1 = p.children;\n\
+             var f = document.createDocumentFragment();\n\
+             var n1 = document.createElement('u'); f.appendChild(n1);\n\
+             var n2 = document.createElement('s'); f.appendChild(n2);\n\
+             p.insertBefore(f, b);\n\
+             globalThis.__bOrder = (c1[0] === a && c1[1] === n1 && c1[2] === n2 && c1[3] === b);\n\
+             globalThis.__bLen = c1.length;\n\
+             var cc = document.getElementById('bc');\n\
+             var h = cc.children;\n\
+             globalThis.__iLen0 = h.length;\n\
+             cc.insertAdjacentHTML('afterbegin', '<b></b><i></i>');\n\
+             globalThis.__iOrder = (h[0].tagName === 'B' && h[1].tagName === 'I' && h[2].tagName === 'SPAN' && h[3].tagName === 'EM');\n\
+             globalThis.__iLen = h.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__bOrder").unwrap().value,
+        "true",
+        "t8e：fragment 多节点批 insertBefore 保批内树序（外部锚 + addFlat 序）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__bLen").unwrap().value,
+        "4",
+        "t8e：fragment 批后集合计数正确"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__iLen0").unwrap().value,
+        "2",
+        "t8e：iAH 前集合基线"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__iOrder").unwrap().value,
+        "true",
+        "t8e：iAH afterbegin 批保批内树序（槽锚=旧首子，批节点落批序位）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__iLen").unwrap().value,
+        "4",
+        "t8e：iAH 批后集合计数正确"
+    );
+}
+
+// v2 返修钉：锚不在集合（文本节点常见）沿 nextSibling 链走查落位——
+// insertBefore(x, textNode) 的锚解析不得使 x 滞留尾部。
+#[test]
+fn t8e_children_text_anchor_walk() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    // 快照含文本子（SPAN 与 EM 之间夹文本）——锚=文本节点（不在元素集合中）。
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><div id=tc><span></span>tx<em></em></div></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/t8e-walk".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var tc = document.getElementById('tc');\n\
+             var c = tc.children;\n\
+             var t = tc.childNodes[1];\n\
+             globalThis.__tIsText = (t && t.nodeType === 3);\n\
+             var x = document.createElement('i');\n\
+             tc.insertBefore(x, t);\n\
+             globalThis.__wOrder = (c[0].tagName === 'SPAN' && c[1] === x && c[2].tagName === 'EM');\n\
+             globalThis.__wLen = c.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__tIsText").unwrap().value,
+        "true",
+        "t8e：childNodes[1] 是夹层文本节点（锚来源）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__wOrder").unwrap().value,
+        "true",
+        "t8e：文本锚沿链走查到 EM，x 落 SPAN/EM 之间（不滞留尾部）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__wLen").unwrap().value,
+        "3",
+        "t8e：走查落位后集合计数正确"
+    );
+}
+
+// v2 返修钉：同父移动（记录锚 null=移到尾 / 槽锚=移动目标位）——held 集合视图跟随。
+#[test]
+fn t8e_children_same_parent_move() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><div id=mv><span></span><em></em><b></b></div></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/t8e-move".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // handle 路径轮播（appendChild(firstChild) → [b,c,a]，记录锚 null=尾）；sel 路径
+    // 快照节点移动（R334b 槽锚=目标位 ref）——sel-only 节点不进反链记账，走槽/动态读。
+    sandbox
+        .execute(
+            "var p = document.createElement('div');\n\
+             var a = document.createElement('span'); p.appendChild(a);\n\
+             var b = document.createElement('em'); p.appendChild(b);\n\
+             var c = document.createElement('u'); p.appendChild(c);\n\
+             var c1 = p.children;\n\
+             p.appendChild(a);\n\
+             globalThis.__mOrder = (c1[0] === b && c1[1] === c && c1[2] === a);\n\
+             globalThis.__mLen = c1.length;\n\
+             var mv = document.getElementById('mv');\n\
+             var mref = mv.children;\n\
+             mv.insertBefore(mref[2], mref[0]);\n\
+             globalThis.__smOrder = (mref[0].tagName === 'B' && mref[1].tagName === 'SPAN' && mref[2].tagName === 'EM');\n\
+             globalThis.__smLen = mref.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__mOrder").unwrap().value,
+        "true",
+        "t8e：handle 路径同父尾移动（轮播）held 视图正确"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__mLen").unwrap().value,
+        "3",
+        "t8e：移动不改变集合计数"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__smOrder").unwrap().value,
+        "true",
+        "t8e：sel 快照节点同父移动落目标位（槽锚/动态读路径）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__smLen").unwrap().value,
+        "3",
+        "t8e：sel 移动不改变集合计数"
+    );
+}
+
+// v2 返修钉（PR #96 审查 G5）：replaceChild 成员守恒与位次——新节点落被替换节点位
+//（R100/R47 形态 record 无 nextSibling 锚，靠动态读落位，不得滞留尾部）。
+#[test]
+fn t8e_children_replace_child_member() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/t8e-replace".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // R100 handle-handle 形态（WPT replaceChild setup 同款）：[a,b,c] replace b → [a,n,c]。
+    sandbox
+        .execute(
+            "var p = document.createElement('div');\n\
+             var a = document.createElement('span'); p.appendChild(a);\n\
+             var b = document.createElement('em'); p.appendChild(b);\n\
+             var c = document.createElement('u'); p.appendChild(c);\n\
+             var c1 = p.children;\n\
+             var n = document.createElement('b');\n\
+             p.replaceChild(n, b);\n\
+             globalThis.__rOrder = (c1[0] === a && c1[1] === n && c1[2] === c);\n\
+             globalThis.__rLen = c1.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__rOrder").unwrap().value,
+        "true",
+        "t8e：replaceChild 新节点落被替换位（无锚 record → 动态读落位）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__rLen").unwrap().value,
+        "3",
+        "t8e：replaceChild 后集合计数守恒"
     );
 }

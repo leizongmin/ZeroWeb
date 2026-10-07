@@ -1507,17 +1507,21 @@ return _tplContent;
           // t8e：fallback（空 children / _childNodeList 缺位）也挂 liveSpec 入维护网并
           // 入缓存——无 liveSpec 的缓存空集合不被 _zwHCLiveInvalidate 维护，「先读空
           // children 后 append」页面模式会永久 stale。matches/作用域与 R318 同款。
-          var _chFb = (sel && typeof __zw_element_children === 'function')
-            ? _zwMakeCollection(_splitSelectors(__zw_element_children(sel)), true, {
-                matches: function (el358f) {
-                  return !!el358f && el358f.nodeType === 1;
-                },
-                scopeHandle: null,
-                scopeSel: sel || null,
-              })
-            : _zwMakeCollection([], true);
-          try { _zwChildrenCollCache.set(proxy, { k: _chKind, c: _chFb }); } catch (_eChFb) {}
-          return _chFb;
+          if (sel && typeof __zw_element_children === 'function') {
+            var _chFb = _zwMakeCollection(_splitSelectors(__zw_element_children(sel)), true, {
+              matches: function (el358f) {
+                return !!el358f && el358f.nodeType === 1;
+              },
+              scopeHandle: null,
+              scopeSel: sel || null,
+            });
+            try { _zwChildrenCollCache.set(proxy, { k: _chKind, c: _chFb }); } catch (_eChFb) {}
+            return _chFb;
+          }
+          // t8e 审查低-1 返修：末枝裸集合（sel 缺位/__zw_element_children 缺位）无
+          // liveSpec 不入维护网——缓存它会让「先读空 children 后 append」永久 stale
+          // 且身份恒定放大暴露面；直接返回不入缓存，后续读各建新集合。
+          return _zwMakeCollection([], true);
         }
         if (prop === 'firstElementChild' || prop === 'lastElementChild' || prop === 'childElementCount') {
           // R2927：容器 handle（shadow/fragment）从 registry 读元素子（无 selector，须 registry）。
