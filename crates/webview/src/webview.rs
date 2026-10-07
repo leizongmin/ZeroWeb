@@ -6876,6 +6876,56 @@ mod tests {
         assert!(hs3.contains_key("h3"), "gen3 apply 产出 h3→selector 绑定");
     }
 
+    // slice38（PR #93 同族收口）：预算渲染 Done 步换 cached_doc 时 form live value 表
+    // （form_control_values）必须与 handle 表同点同清。表单提交快照/reset（
+    // form_control_value_overrides 消费方）、结构性 apply 的 retained 抢救、下一次
+    // render_html 的 painter 灌值三条路径都会把旧代键对新代文档解析——slotmap 换代
+    // ABA 命中同槽无关节点即 ghost 值落无关 selector（slice37 复核 §5 备案的同型
+    // 缺口）。本钉走真实生产序列：load_html → apply SetFormValue（paint-only 臂）→
+    // prepare_document_state → 不同结构文档预算渲染（Done 步换代=被测清零点）。
+    // 红条件：仅删 Done 步 form 表清零 → doc2 从未置值而 overrides 非空（旧代键
+    // 经 ABA 落 doc2 节点 selector）。prepare_document_state 刻意不清 form 表（导航
+    // 开始 ≠ 内容换代；导航失败旧文档存活时用户输入必须保留），故本钉不被 A 线遮蔽。
+    // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-fe-value
+    #[test]
+    fn budget_done_step_clears_form_control_values_cross_document_s38() {
+        let mut wv = wv();
+        // doc1：load_html（render_html 路径）+ apply SetFormValue（纯当前值，不换代，
+        // 值入表键 = doc1 代 NodeId）。
+        wv.load_html("<html><body><input id=\"a\"></body></html>", None);
+        wv.apply_dom_mutations_and_render(&[DomMutation::SetFormValue {
+            selector: "#a".to_string(),
+            value: "typed".to_string(),
+        }])
+        .expect("doc1 表单值 apply 成功");
+        assert_eq!(
+            wv.form_control_value_overrides().get("#a").map(String::as_str),
+            Some("typed"),
+            "前置：doc1 live value 已入表"
+        );
+
+        // doc2：导航边界（prepare 不清 form 表——按 slice38 设计卡语义判断）+ 不同
+        // 结构文档预算渲染（AsyncPageLoad 同入口；Done 步换 cached_doc）。
+        wv.prepare_document_state("http://s38.test/doc2");
+        let mut session =
+            BudgetedRenderSession::new("<html><body><div id=\"x\">pad</div><input id=\"b\"></body></html>", "");
+        loop {
+            match wv.advance_budget_session(&mut session, 10_000.0) {
+                BudgetAdvance::Complete => break,
+                BudgetAdvance::InProgress => continue,
+            }
+        }
+        let result = session.take_result().expect("doc2 预算渲染产出结果");
+        wv.apply_render_result(result, "http://s38.test/doc2", true);
+
+        // doc2 从未置过表单值：任何非空都是旧代键经换代 ABA 落到 doc2 无关节点。
+        let overrides = wv.form_control_value_overrides();
+        assert!(
+            overrides.is_empty(),
+            "文档换代后 live value 覆盖表不得残留上一代 ghost 值（advance_budgeted_render 换代未清 form_control_values）：{overrides:?}"
+        );
+    }
+
     // slice35：apply_pending_shared_mutations 单步路径（tail 纯结构批）的 evict +
     // R379/pa2b 换代通知调用点行为钉。通知是 fire-and-forget execute_script（结果被
     // `let _` 吞），删行后 map 语义不变、无任何函数体钉可抓——本钉以 external_script

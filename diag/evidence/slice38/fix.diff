@@ -1,0 +1,38 @@
+diff --git a/crates/engine/src/pipeline_budget.rs b/crates/engine/src/pipeline_budget.rs
+index d58254d57..6e715f126 100644
+--- a/crates/engine/src/pipeline_budget.rs
++++ b/crates/engine/src/pipeline_budget.rs
+@@ -191,6 +191,18 @@ impl RenderPipeline {
+                     // apply_dom_mutations_full）ABA 命中同槽新节点，与跨文档缺陷同
+                     // 机制同签名。导航边界清零（prepare_document_state）保留作双保险。
+                     self.clear_persistent_handle_nodes();
++                    // slice38（PR #93 同族收口，slice37 复核 §5 备案）：换代连 form
++                    // live value 两表一起清——`form_control_values`/
++                    // `form_control_compositions` 同按 NodeId 键，旧代键换代后失锚，
++                    // 残留经三条路径 ABA 污染新代文档：表单提交快照/reset 消费方
++                    //（form_control_value_overrides）、结构性 apply 的 retained 抢救
++                    //（restore 锚错节点）、下一次 render_html 的 painter 灌值（ghost
++                    // 文本画进无关 input）。与 render_html 尾部三表同清同语义。导航
++                    // 边界刻意不清（prepare_document_state 只翻标志不换 doc，旧键仍
++                    // 锚活文档；导航失败旧文档存活时用户输入必须保留）。
++                    // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-fe-value
++                    self.form_control_values.clear();
++                    self.form_control_compositions.clear();
+                     let layout_out = LayoutResult {
+                         root: layout.root.clone(),
+                         viewport_width: layout.viewport_width,
+@@ -275,6 +287,14 @@ impl RenderPipeline {
+         self.cached_doc = Some(Rc::new(RefCell::new(doc)));
+         // DOM 已替换：CSS 解析缓存失效（见 RenderPipeline.cached_css_text 注释）。
+         self.cached_css_text = None;
++        // slice38：与 render_html 尾部同 R100 换代语义——doc 全量替换后旧代 NodeId
++        // 键（handle 表 + form live value 两表）全部失锚，三表同清。本函数当前全仓
++        // 零调用方（死路径），语义对齐防未来复活时携带 PR #93 同族缺口（旧代键经
++        // slotmap 换代 ABA 命中新代同槽节点）。
++        // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-fe-value
++        self.persistent_handle_nodes.clear();
++        self.form_control_values.clear();
++        self.form_control_compositions.clear();
+         let layout = LayoutResult {
+             root: layout_result.root.clone(),
+             viewport_width: layout_result.viewport_width,
