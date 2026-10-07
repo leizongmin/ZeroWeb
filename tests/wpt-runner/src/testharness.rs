@@ -3681,6 +3681,104 @@ pub fn run_html_syntax_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
     run_any_js_corpus_subdirs(wpt_root, HTML_SYNTAX_CORPUS_SUBDIRS, filter, html_syntax_case_skipped)
 }
 
+// ── navigation-compat goal（docs/goal/navigation-compat.md M1 / DC-1）：导航面
+// corpus window 可执行子集（navigation-api / 会话历史 / 导航遍历 / iframe 元素属性）。
+// 拉取面 = tests/wpt-runner/scripts/goals/60-navigation-compat.sh（DIRS 与本表同域
+// 双保险）。顶层 history/ 在 WPT_REV pin 下不存在——会话历史 corpus 实际落在
+// html/browsers/history/** 四叶目录（fetch 脚本头注释同域记账）。
+
+/// navigation corpus pinned subset directories（fetch 脚本 DIRS 同域——DC-2 轻面
+/// history/location/事件序标尺 + DC-3 门控面的资产盘存面）。navigation-api/ 顶层无
+/// .html（全在 12 个语义子目录）——列叶子目录；history 面的 resources//non-automated/
+/// 子目录不列（helper 资产 / 上游标记不可自动跑，skip 规则同域双保险）。
+pub const NAVIGATION_CORPUS_SUBDIRS: &[&str] = &[
+    // navigation-api 12 leaf dirs（Navigation API——navigatesuccess/currententry 面）
+    "navigation-api/currententrychange-event",
+    "navigation-api/focus-reset",
+    "navigation-api/navigate-event",
+    "navigation-api/navigation-activation",
+    "navigation-api/navigation-history-entry",
+    "navigation-api/navigation-methods",
+    "navigation-api/ordering-and-transition",
+    "navigation-api/per-entry-events",
+    "navigation-api/precommit-handler",
+    "navigation-api/scroll-behavior",
+    "navigation-api/state",
+    "navigation-api/updateCurrentEntry-method",
+    // 会话历史（history/location/会话历史条目语义——DC-2 轻面标尺）
+    "html/browsers/history/the-history-interface",
+    "html/browsers/history/the-history-interface/joint_session_history",
+    "html/browsers/history/the-history-interface/pushstate-replacestate-empty-string",
+    "html/browsers/history/the-location-interface",
+    "html/browsers/history/the-session-history-of-browsing-contexts",
+    "html/browsers/history/joint-session-history",
+    // 导航遍历（前进后退/跨文档导航/fragid/卸载事件序）
+    "html/browsers/browsing-the-web/history-traversal",
+    "html/browsers/browsing-the-web/history-traversal/event-order",
+    "html/browsers/browsing-the-web/history-traversal/pagereveal",
+    "html/browsers/browsing-the-web/history-traversal/pageswap",
+    "html/browsers/browsing-the-web/history-traversal/persisted-user-state-restoration",
+    "html/browsers/browsing-the-web/navigating-across-documents",
+    "html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document",
+    "html/browsers/browsing-the-web/navigating-across-documents/javascript-url-abort",
+    "html/browsers/browsing-the-web/navigating-across-documents/multiple-globals",
+    "html/browsers/browsing-the-web/navigating-across-documents/refresh",
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load",
+    "html/browsers/browsing-the-web/navigating-across-documents/source",
+    // fetch 于本轮限流未完成、语料落地后自动纳入扫描（read_dir 失败静默跳过）
+    "html/browsers/browsing-the-web/scroll-to-fragid",
+    "html/browsers/browsing-the-web/unloading-documents",
+    // iframe 元素属性面（DC-1 资产；用例即 M3 门控深结构面——skip 规则零执行记账）
+    "html/semantics/embedded-content/the-iframe-element",
+];
+
+/// navigation corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
+/// - `*-manual.html` / `*-ref.html` / `*-notref.html` / `.https.html` / `idlharness.*`
+///   （net-api/encoding/html-syntax 先例）
+/// - `*/resources/`（helper 资产——navigation-api/resources 等，META script 消费
+///   不按案跑）
+/// - 无 `testharness.js` 引用页——legacy 多页自动导航套件（history-traversal 001.html
+///   族 window.open 多页链、joint-session-history 多页序、navigating-across-documents
+///   legacy 表单页）依赖跨文档导航链，单文档 runner 通道无法建立测试前提
+///   （html-syntax 先例）
+/// - iframe 依赖面（runner 无多 frame 文档管道，net-api/encoding 先例）——含
+///   the-iframe-element 全域：contentWindow/contentDocument 断言即 M3 门控深结构面
+///   （frame tree），实现侧维持挂起，基线零执行记账、M3 落地后重评
+/// - 多窗口/popup 依赖面（window.open/openner 链——runner 单文档无窗口管理）
+/// - worker 执行面（net-api 先例）
+fn navigation_case_skipped(relative: &str, source: &str) -> bool {
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    if name.ends_with("-manual.html")
+        || name.ends_with("-ref.html")
+        || name.ends_with("-notref.html")
+        || name.ends_with(".https.html")
+        || name.starts_with("idlharness.")
+    {
+        return true;
+    }
+    if relative.contains("/resources/") {
+        return true;
+    }
+    if !source.contains("testharness.js") {
+        return true;
+    }
+    source.contains("<iframe")
+        || source.contains("createElement('iframe')")
+        || source.contains("createElement(\"iframe\")")
+        || source.contains("window.open(")
+        || source.contains("new Worker(")
+        || source.contains("SharedWorker(")
+        || source.contains("navigator.serviceWorker")
+}
+
+/// Run the pinned upstream navigation corpus window subset
+/// （navigation-compat goal M1 / DC-1）。filter 按路径子串过滤（如
+/// `the-history-interface/`、`navigation-api/`、`scroll-to-fragid/`——基线按 corpus
+/// 分类）。
+pub fn run_navigation_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_any_js_corpus_subdirs(wpt_root, NAVIGATION_CORPUS_SUBDIRS, filter, navigation_case_skipped)
+}
+
 /// Run the fixed Service Worker M1 core testharness corpus.
 pub fn run_service_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_service_worker_case_set(wpt_root, filter, SERVICE_WORKER_CORE_CASES)

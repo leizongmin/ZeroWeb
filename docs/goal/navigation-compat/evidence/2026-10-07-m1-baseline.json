@@ -1,0 +1,3482 @@
+[
+  [
+    "navigation-api/currententrychange-event/anchor-click.html",
+    [
+      {
+        "name": "currententrychange fires for link click",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/currententrychange-event/constructor.html",
+    [
+      {
+        "name": "can't bypass required members by omitting the dictionary entirely",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => {\n    new NavigationCurrentEntryChangeEvent(\"currententrychange\");\n  }\" threw object \"ReferenceError: NavigationCurrentEntryChangeEvent is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "from is required",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => {\n    new NavigationCurrentEntryChangeEvent(\"currententrychange\", {\n      navigationType: \"push\"\n    });\n  }\" threw object \"ReferenceError: NavigationCurrentEntryChangeEvent is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "all properties are reflected back",
+        "status": "Fail",
+        "message": "NavigationCurrentEntryChangeEvent is not defined"
+      },
+      {
+        "name": "defaults are as expected",
+        "status": "Fail",
+        "message": "NavigationCurrentEntryChangeEvent is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/currententrychange-event/history-back-same-doc.html",
+    [
+      {
+        "name": "currententrychange fires for history.back()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/currententrychange-event/history-pushState.html",
+    [
+      {
+        "name": "currententrychange fires for history.pushState()",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/currententrychange-event/history-replaceState.html",
+    [
+      {
+        "name": "currententrychange fires for history.replaceState()",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/currententrychange-event/location-api.html",
+    [
+      {
+        "name": "currententrychange fires for location API navigations",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/currententrychange-event/navigation-back-forward-same-doc.html",
+    [
+      {
+        "name": "currententrychange fires for same-document navigation.back() and navigation.forward()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/currententrychange-event/navigation-navigate-preventDefault.html",
+    [
+      {
+        "name": "currententrychange does not fire when onnavigate preventDefault() is called",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/currententrychange-event/navigation-navigate-replace-same-doc.html",
+    [
+      {
+        "name": "currententrychange fires for navigation.navigate() with replace",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/currententrychange-event/navigation-navigate-same-doc.html",
+    [
+      {
+        "name": "currententrychange fires for navigation.navigate()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/currententrychange-event/navigation-updateCurrentEntry.html",
+    [
+      {
+        "name": "currententrychange fires for navigation.updateCurrentEntry()",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/currententrychange-event/not-on-load.html",
+    [
+      {
+        "name": "No navigation API events happen on initial page load",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/currententrychange-event/properties.html",
+    [
+      {
+        "name": "NavigationCurrentEntryChangeEvent's properties",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/focus-reset/autofocus.html",
+    [
+      {
+        "name": "An element with autofocus, present before navigation, gets focused",
+        "status": "NotRun",
+        "message": null
+      },
+      {
+        "name": "Two elements with autofocus, present before navigation; the first gets focused",
+        "status": "NotRun",
+        "message": null
+      },
+      {
+        "name": "An element with autofocus, present before navigation but disabled before finished, does not get focused",
+        "status": "NotRun",
+        "message": null
+      },
+      {
+        "name": "An element with autofocus, present before navigation but with its autofocus attribute removed before finished, does not get focused",
+        "status": "NotRun",
+        "message": null
+      },
+      {
+        "name": "Two elements with autofocus, present before navigation, but the first gets disabled; the second gets focused",
+        "status": "NotRun",
+        "message": null
+      },
+      {
+        "name": "An element with autofocus, introduced between committed and finished, gets focused",
+        "status": "NotRun",
+        "message": null
+      },
+      {
+        "name": "An element with autofocus, introduced after finished, does not get focused",
+        "status": "NotRun",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "navigation-api/focus-reset/basic.html",
+    [
+      {
+        "name": "navigation-api/focus-reset/basic.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named testFocusWasReset"
+      }
+    ]
+  ],
+  [
+    "navigation-api/focus-reset/change-focus-again-in-blur-during-intercept.html",
+    [
+      {
+        "name": "change-focus-again-in-blur-during-intercept",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/focus-reset/change-focus-back-to-origial-during-intercept.html",
+    [
+      {
+        "name": "change-focus-back-to-origial-during-intercept",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/focus-reset/change-focus-during-intercept.html",
+    [
+      {
+        "name": "change-focus-during-intercept",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/focus-reset/change-focus-then-remove-during-intercept.html",
+    [
+      {
+        "name": "change-focus-then-remove-during-intercept",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/focus-reset/focus-reset-timing.html",
+    [
+      {
+        "name": "Focus should be reset before navigatesuccess",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      },
+      {
+        "name": "Focus should be reset before navigateerror",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/focus-reset/multiple-intercept.html",
+    [
+      {
+        "name": "navigation-api/focus-reset/multiple-intercept.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named testFocusWasReset"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/defaultPrevented-navigation-preempted.html",
+    [
+      {
+        "name": "navigateEvent.defaultPrevented isn't affected when the navigation is preempted after dispatch",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/defaultPrevented-window-stop-after-dispatch.html",
+    [
+      {
+        "name": "window.stop() doesn't affect navigateEvent.defaultPrevented after dispatch",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/event-constructor.html",
+    [
+      {
+        "name": "can't bypass required members by omitting the dictionary entirely",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => {\n    new NavigateEvent(\"navigate\");\n  }\" threw object \"ReferenceError: NavigateEvent is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "destination is required",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => {\n    new NavigateEvent(\"navigate\", {\n      navigationType: \"push\",\n      canIntercept: false,\n      userInitiated: false,\n      hashChange: false,\n      signal: (new AbortController()).signal,\n      formData: null,\n      downloadRequest: null,\n      info: null,\n      sourceElement: null\n    });\n  }\" threw object \"ReferenceError: NavigateEvent is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "signal is required",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      },
+      {
+        "name": "all properties are reflected back",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      },
+      {
+        "name": "defaults are as expected",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      },
+      {
+        "name": "hasUAVisualTransition is default false",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-and-navigate.html",
+    [
+      {
+        "name": "Using intercept() then navigate() in the ensuing currententrychange should abort the finished promise (but not the committed promise)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-cross-document-same-origin.html",
+    [
+      {
+        "name": "event.intercept() intercepts a same-origin cross-document navigation",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-cross-origin.html",
+    [
+      {
+        "name": "event.intercept() should throw if called for a cross origin navigation",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-handler-null-or-undefined.html",
+    [
+      {
+        "name": "event.intercept() should throw if the handler is null",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      },
+      {
+        "name": "event.intercept() should not throw if the handler is explicit undefined",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-handler-returns-non-promise.html",
+    [
+      {
+        "name": "event.intercept() should resolve immediately if the handler doesn't return a promise",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-handler-throws.html",
+    [
+      {
+        "name": "event.intercept() should abort if the handler throws",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-history-pushState.html",
+    [
+      {
+        "name": "event.intercept() should proceed if the given promise resolves",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-history-replaceState.html",
+    [
+      {
+        "name": "event.intercept() should proceed if the given promise resolves",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-multiple-times-reject.html",
+    [
+      {
+        "name": "event.intercept() is called multiple times and one of the promises rejects",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-multiple-times.html",
+    [
+      {
+        "name": "navigation.navigate() returns a finished promise that awaits all promises if event.intercept() is called multiple times",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-navigation-back.html",
+    [
+      {
+        "name": "event.intercept() can intercept navigation.back()",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-on-synthetic-event.html",
+    [
+      {
+        "name": "event.intercept() throws if invoked on a synthetic event",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-popstate-no-handler.html",
+    [
+      {
+        "name": "event.intercept() should provide popstate with a valid state object",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-popstate.html",
+    [
+      {
+        "name": "event.intercept() should provide popstate with a valid state object 2",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-reject.html",
+    [
+      {
+        "name": "event.intercept() should abort if the given promise rejects",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-resolve.html",
+    [
+      {
+        "name": "event.intercept() should proceed if the given promise resolves",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/intercept-same-document-history-back.html",
+    [
+      {
+        "name": "event.intercept() can intercept same-document history.back()",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-anchor-cross-origin.html",
+    [
+      {
+        "name": "<a> cross-origin navigate event",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-anchor-download-userInitiated.html",
+    [
+      {
+        "name": "<a download> click fires navigate event",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-anchor-download.html",
+    [
+      {
+        "name": "<a> fires navigate and populates downloadRequest with ''",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      },
+      {
+        "name": "<a> fires navigate and populates downloadRequest with 'filename'",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      },
+      {
+        "name": "<area> fires navigate and populates downloadRequest with ''",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      },
+      {
+        "name": "<area> fires navigate and populates downloadRequest with 'filename'",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-anchor-fragment.html",
+    [
+      {
+        "name": "Fragment <a> click fires navigate event",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-anchor-same-origin-cross-document.html",
+    [
+      {
+        "name": "<a> cross-document (but same-origin) navigate event",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-anchor-same-url.html",
+    [
+      {
+        "name": "<a> to identical url is a replace navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-anchor-userInitiated.html",
+    [
+      {
+        "name": "Fragment <a> click fires navigate event",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-destination-dynamic-index.html",
+    [
+      {
+        "name": "navigation-api/navigate-event/navigate-destination-dynamic-index.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script ../navigation-methods/return-value/resources/helpers.js: script fetch failed: navigation-api/navigation-methods/return-value/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-destination-getState-back-forward.html",
+    [
+      {
+        "name": "navigate event destination.getState() on back/forward navigation",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-destination-getState-fragment-via-href.html",
+    [
+      {
+        "name": "navigate event destination.getState() carries over the previous entry's state on a user-initiated fragment navigation",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-destination-getState-fragment-via-navigate.html",
+    [
+      {
+        "name": "navigate event destination.getState() carries over the previous entry's state on a user-initiated fragment navigation",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-destination-getState-navigate.html",
+    [
+      {
+        "name": "navigate event destination.getState() should be the state given to navigate()",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-destination-getState-reload.html",
+    [
+      {
+        "name": "navigate event destination.getState() on location.reload()",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-event-canintercept-cross-port.html",
+    [
+      {
+        "name": "canIntercept should be false for cross-port navigations",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-form-get-sourceElement.html",
+    [
+      {
+        "name": "<form> submission with GET method and submitter passed into requestSubmit",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      },
+      {
+        "name": "<form> submission with GET method and submitter is clicked",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-form-get.html",
+    [
+      {
+        "name": "<form> submission with GET method fires navigate event but with formData null",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-form-requestSubmit.html",
+    [
+      {
+        "name": "<form> requestSubmit() sets sourceElement",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-form-userInitiated.html",
+    [
+      {
+        "name": "<form> submission fires navigate event",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-form.html",
+    [
+      {
+        "name": "<form> submission fires navigate event",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-history-back-after-fragment.html",
+    [
+      {
+        "name": "history.back() fires the navigate event and sets hashChange when reversing a fragment navigation",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-history-back-after-pushState.html",
+    [
+      {
+        "name": "history.back() fires the navigate event when reversing a pushState()",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-history-back-bfcache.html",
+    [
+      {
+        "name": "navigation-api/navigate-event/navigate-history-back-bfcache.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script /common/dispatcher/dispatcher.js: script fetch failed: common/dispatcher/dispatcher.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-history-pushState.html",
+    [
+      {
+        "name": "history.pushState() fires the navigate event",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-history-replaceState.html",
+    [
+      {
+        "name": "history.replaceState() fires the navigate event",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-location.html",
+    [
+      {
+        "name": "location API fires navigate event",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-multiple-history-pushState.html",
+    [
+      {
+        "name": "history.pushState() called multiple times gives correct event order",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-multiple-location.html",
+    [
+      {
+        "name": "location.href set multiple times gives correct event order",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-multiple-navigation-navigate.html",
+    [
+      {
+        "name": "navigation.navigate() multiple times gives correct event order",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-navigation-back-same-document.html",
+    [
+      {
+        "name": "navigate event for navigation.back() - same-document",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-navigation-navigate.html",
+    [
+      {
+        "name": "navigate event for navigation.navigate()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigate-svg-anchor-fragment.html",
+    [
+      {
+        "name": "<svg:a> click fires navigate event",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigatesuccess-same-document.html",
+    [
+      {
+        "name": "navigatesuccess fires for a same-document navigation",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/navigation-back-same-document-preventDefault.html",
+    [
+      {
+        "name": "navigation-api/navigate-event/navigation-back-same-document-preventDefault.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script ../navigation-methods/return-value/resources/helpers.js: script fetch failed: navigation-api/navigation-methods/return-value/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/reentry-from-focus-reset-navigate-api-tracker.html",
+    [
+      {
+        "name": "Re-entry via focus reset using pushState",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      },
+      {
+        "name": "Re-entry via focus reset using navigate()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/replaceState-inside-back-handler-infinite.optional.html",
+    [
+      {
+        "name": "navigation-api/navigate-event/replaceState-inside-back-handler-infinite.optional.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script ../navigation-methods/return-value/resources/helpers.js: script fetch failed: navigation-api/navigation-methods/return-value/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/replaceState-inside-back-handler.html",
+    [
+      {
+        "name": "navigation-api/navigate-event/replaceState-inside-back-handler.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script ../navigation-methods/return-value/resources/helpers.js: script fetch failed: navigation-api/navigation-methods/return-value/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/same-url-replace-cross-document.html",
+    [
+      {
+        "name": "navigation-api/navigate-event/same-url-replace-cross-document.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: navigation-api/navigate-event/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/same-url-replace-same-document.html",
+    [
+      {
+        "name": "navigation-api/navigate-event/same-url-replace-same-document.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: navigation-api/navigate-event/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/signal-abort-intercept.html",
+    [
+      {
+        "name": "event.intercept() does not signal event.signal",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/signal-abort-preventDefault.html",
+    [
+      {
+        "name": "event.preventDefault() signals event.signal",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/signal-abort-reentry-navigate-api-tracker.html",
+    [
+      {
+        "name": "Re-entry via abort signal using pushState",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      },
+      {
+        "name": "Re-entry via abort signal using navigate()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/signal-abort-window-stop-after-intercept.html",
+    [
+      {
+        "name": "window.stop() cancels the navigate event's intercept() and signals event.signal",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/signal-abort-window-stop-in-onnavigate.html",
+    [
+      {
+        "name": "window.stop() signals event.signal inside a navigate event handler",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigate-event/signal-abort-window-stop.html",
+    [
+      {
+        "name": "window.stop() signals event.signal",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-activation/activation-after-bfcache-cross-origin.html",
+    [
+      {
+        "name": "navigation-api/navigation-activation/activation-after-bfcache-cross-origin.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script /common/dispatcher/dispatcher.js: script fetch failed: common/dispatcher/dispatcher.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-activation/activation-after-bfcache.html",
+    [
+      {
+        "name": "navigation-api/navigation-activation/activation-after-bfcache.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script /common/dispatcher/dispatcher.js: script fetch failed: common/dispatcher/dispatcher.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-activation/activation-history-pushState.html",
+    [
+      {
+        "name": "navigation.activation.entry should not change due to history.pushState()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-activation/activation-history-replaceState.html",
+    [
+      {
+        "name": "navigation.activation.entry should be orphaned by history.replaceState()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-history-entry/current-basic.html",
+    [
+      {
+        "name": "navigation-api/navigation-history-entry/current-basic.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/is_uuid.js: script fetch failed: navigation-api/navigation-history-entry/resources/is_uuid.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-history-entry/entries-after-bfcache.html",
+    [
+      {
+        "name": "navigation-api/navigation-history-entry/entries-after-bfcache.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script /common/dispatcher/dispatcher.js: script fetch failed: common/dispatcher/dispatcher.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-history-entry/entries-array-equality.html",
+    [
+      {
+        "name": "navigation.entries() should not return an identical object on repeated invocations",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-history-entry/entries-when-inactive.html",
+    [
+      {
+        "name": "A non-active entry in navigation.entries() should not be modified when a different entry is modified",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-history-entry/key-id-back-same-document.html",
+    [
+      {
+        "name": "NavigationHistoryEntry's key and id on same-document back navigation",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-history-entry/sameDocument-after-fragment-navigate.html",
+    [
+      {
+        "name": "entry.sameDocument after same-document navigations",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-methods/forward-to-pruned-entry.html",
+    [
+      {
+        "name": "If forward pruning clobbers the target of a traverse, abort",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-methods/navigate-history-push-not-loaded.html",
+    [
+      {
+        "name": "navigation-api/navigation-methods/navigate-history-push-not-loaded.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: navigation-api/navigation-methods/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-methods/navigate-history-push-same-url.html",
+    [
+      {
+        "name": "navigation-api/navigation-methods/navigate-history-push-same-url.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: navigation-api/navigation-methods/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-methods/navigate-history-state-replace.html",
+    [
+      {
+        "name": "history.state should be nulled by navigate()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-methods/navigate-history-state.html",
+    [
+      {
+        "name": "history.state should be nulled by navigate()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-methods/navigate-info-and-state.html",
+    [
+      {
+        "name": "navigate() with info and state",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-methods/navigate-intercept-history-state.html",
+    [
+      {
+        "name": "history.story should be nulled by navigate() handled by intercept()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-methods/navigate-replace-same-document.html",
+    [
+      {
+        "name": "navigate() with history: 'replace' option",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-methods/navigate-same-document.html",
+    [
+      {
+        "name": "navigate() navigates same-document and fires onnavigate (sync)",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      },
+      {
+        "name": "navigate() navigates same-document and fires onnavigate (async)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-methods/navigate-state-repeated-await.html",
+    [
+      {
+        "name": "navigate() with state should work correctly when called repeatedly - with awaits",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-methods/navigate-state-repeated.html",
+    [
+      {
+        "name": "navigate() with state should work correctly when called repeatedly",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-methods/reload-service-worker-fetch-event.html",
+    [
+      {
+        "name": "navigation-api/navigation-methods/reload-service-worker-fetch-event.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script /service-workers/service-worker/resources/test-helpers.sub.js: script fetch failed: service-workers/service-worker/resources/test-helpers.sub.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-methods/traverseTo-multiple-steps.html",
+    [
+      {
+        "name": "goto() can precisely traverse multiple steps in the joint session history",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/navigation-methods/traverseTo-same-document.html",
+    [
+      {
+        "name": "same-document navigate.traverseTo(), back(), and forward()",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/anchor-download-intercept-reject.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/anchor-download-intercept-reject.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/anchor-download-intercept.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/anchor-download-intercept.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/back-same-document-intercept-reject.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/back-same-document-intercept-reject.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/back-same-document-intercept.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/back-same-document-intercept.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/back-same-document.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/back-same-document.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/currententrychange-before-popstate-intercept.html",
+    [
+      {
+        "name": "currententrychange fires before popstate for navigation.back() and navigation.forward()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/currententrychange-dispose-ordering.html",
+    [
+      {
+        "name": "Ordering between Navigation currententrychange and NavigationHistoryEntry dispose events",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/intercept-async.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/intercept-async.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/location-href-canceled.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/location-href-canceled.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/location-href-double-intercept.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/location-href-double-intercept.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/location-href-intercept-reentrant.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/location-href-intercept-reentrant.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/location-href-intercept-reject.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/location-href-intercept-reject.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/location-href-intercept.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/location-href-intercept.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/navigate-canceled.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/navigate-canceled.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/navigate-double-intercept.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/navigate-double-intercept.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/navigate-in-transition-finished.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/navigate-in-transition-finished.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/navigate-intercept-precommitHandler-redirect.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/navigate-intercept-precommitHandler-redirect.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/navigate-intercept-precommitHandler-reject.tentative.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/navigate-intercept-precommitHandler-reject.tentative.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/navigate-intercept-precommitHandler.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/navigate-intercept-precommitHandler.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/navigate-intercept-stop.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/navigate-intercept-stop.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/navigate-intercept.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/navigate-intercept.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/navigate-same-document-intercept-reentrant.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/navigate-same-document-intercept-reentrant.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/navigate-same-document-intercept-reject.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/navigate-same-document-intercept-reject.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/navigate-same-document.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/navigate-same-document.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/reload-canceled.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/reload-canceled.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/reload-intercept-reject.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/reload-intercept-reject.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/reload-intercept.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/reload-intercept.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/reload-no-popstate.html",
+    [
+      {
+        "name": "navigation-api/ordering-and-transition/reload-no-popstate.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: module compile: Compile error: Module ./resources/helpers.mjs does not provide an export named Recorder"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/transition-finished-mark-as-handled.html",
+    [
+      {
+        "name": "navigation.transition.finished must not trigger unhandled rejections",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/ordering-and-transition/transition-to.html",
+    [
+      {
+        "name": "navigation.transition.to matches the navigate event's destination",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/per-entry-events/dispose-after-bfcache.html",
+    [
+      {
+        "name": "navigation-api/per-entry-events/dispose-after-bfcache.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script /common/dispatcher/dispatcher.js: script fetch failed: common/dispatcher/dispatcher.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/per-entry-events/dispose-for-full-session-history.tentative.html",
+    [
+      {
+        "name": "Dispose should fire when an entry is removed from session history due to too many entries",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/per-entry-events/dispose-same-document-intercept.html",
+    [
+      {
+        "name": "dispose events when forward-pruning same-document entries",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/per-entry-events/dispose-same-document-navigate-during.html",
+    [
+      {
+        "name": "navigate() during a same-document-navigation-initiated dispose works (since it's after the previous navigation)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/per-entry-events/dispose-same-document-reload-with-intercept.html",
+    [
+      {
+        "name": "dispose events are not fired when doing a same-document reload using navigation.reload() and intercept()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/per-entry-events/dispose-same-document-replace-with-intercept.html",
+    [
+      {
+        "name": "dispose events when doing a same-document replace using navigation.navigate() and intercept()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/per-entry-events/dispose-same-document-replaceState.html",
+    [
+      {
+        "name": "dispose events when doing a same-document replace using history.replaceState()",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/per-entry-events/dispose-same-document.html",
+    [
+      {
+        "name": "dispose events when forward-pruning same-document entries",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/multiple-intercept.html",
+    [
+      {
+        "name": "precommitHandler + precommitHandler",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      },
+      {
+        "name": "precommitHandler + (not provided)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      },
+      {
+        "name": "precommitHandler + handler",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      },
+      {
+        "name": "handler + precommitHandler",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      },
+      {
+        "name": "handler + (not provided)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      },
+      {
+        "name": "handler + handler",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      },
+      {
+        "name": "(not provided) + precommitHandler",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      },
+      {
+        "name": "(not provided) + handler",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-addHandler.html",
+    [
+      {
+        "name": "handler added in addHandler() delays navigation finish",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      },
+      {
+        "name": "handler added in addHandler() is executed in the correct order",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-back-and-forth.html",
+    [
+      {
+        "name": "\n  Test that going back and forward during a precommitHandler ends up in the\n  correct entry\n",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-new-navigation-before-commit.html",
+    [
+      {
+        "name": "navigation-api/precommit-handler/precommitHandler-new-navigation-before-commit.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script ../navigation-methods/return-value/resources/helpers.js: script fetch failed: navigation-api/navigation-methods/return-value/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-push.html",
+    [
+      {
+        "name": "navigation-api/precommit-handler/precommitHandler-push.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script ../navigation-methods/return-value/resources/helpers.js: script fetch failed: navigation-api/navigation-methods/return-value/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-redirect-options.html",
+    [
+      {
+        "name": "precommitHandler redirect() with options dictionary",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-redirect-push-changed-to-replace.html",
+    [
+      {
+        "name": "precommitHandler redirect() push changed to replace",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-redirect-push.html",
+    [
+      {
+        "name": "precommitHandler redirect() push",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-redirect-replace-changed-to-push.html",
+    [
+      {
+        "name": "precommitHandler redirect() replace changed to push",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-redirect-replace.html",
+    [
+      {
+        "name": "precommitHandler redirect() replace",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-reload.html",
+    [
+      {
+        "name": "navigation-api/precommit-handler/precommitHandler-reload.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script ../navigation-methods/return-value/resources/helpers.js: script fetch failed: navigation-api/navigation-methods/return-value/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-replace.html",
+    [
+      {
+        "name": "navigation-api/precommit-handler/precommitHandler-replace.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script ../navigation-methods/return-value/resources/helpers.js: script fetch failed: navigation-api/navigation-methods/return-value/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-traversal-commit-new-navigation-before-commit.html",
+    [
+      {
+        "name": "navigation-api/precommit-handler/precommitHandler-traversal-commit-new-navigation-before-commit.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script ../navigation-methods/return-value/resources/helpers.js: script fetch failed: navigation-api/navigation-methods/return-value/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-traversal-window-stop-before-commit.html",
+    [
+      {
+        "name": "navigation-api/precommit-handler/precommitHandler-traversal-window-stop-before-commit.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script ../navigation-methods/return-value/resources/helpers.js: script fetch failed: navigation-api/navigation-methods/return-value/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-traverse.html",
+    [
+      {
+        "name": "navigation-api/precommit-handler/precommitHandler-traverse.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script ../navigation-methods/return-value/resources/helpers.js: script fetch failed: navigation-api/navigation-methods/return-value/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/precommit-handler/precommitHandler-window-stop-before-commit.html",
+    [
+      {
+        "name": "navigation-api/precommit-handler/precommitHandler-window-stop-before-commit.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script ../navigation-methods/return-value/resources/helpers.js: script fetch failed: navigation-api/navigation-methods/return-value/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/after-transition-basic.html",
+    [
+      {
+        "name": "scroll: after-transition should scroll when back completes",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/after-transition-change-history-scroll-restoration-during-promise.html",
+    [
+      {
+        "name": "scroll: after-transition should ignore history.scrollRestoration even if it changes in the middle of the navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/after-transition-explicit-scroll.html",
+    [
+      {
+        "name": "scroll: scroll() should preempt after-transition",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/after-transition-intercept-handler-modifies.html",
+    [
+      {
+        "name": "scroll: state should be saved before intercept handlers run",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/after-transition-push.html",
+    [
+      {
+        "name": "scroll: after-transition should work on a push navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/after-transition-reject.html",
+    [
+      {
+        "name": "scroll: after-transition should not scroll when the intercept() handler rejects",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/after-transition-reload-no-scroll-anchoring.html",
+    [
+      {
+        "name": "scroll: after-transition should work on a reload navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/after-transition-reload.html",
+    [
+      {
+        "name": "scroll: after-transition should work on a reload navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/after-transition-replace.html",
+    [
+      {
+        "name": "scroll: after-transition should work on a replace navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/after-transition-skips-restore-when-scrolled.html",
+    [
+      {
+        "name": "scroll: after-transition should not restore scroll if the document was scrolled during the navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/after-transition-timing.html",
+    [
+      {
+        "name": "scroll: after-transition should scroll when back completes, just before navigatesuccess",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/manual-basic.html",
+    [
+      {
+        "name": "scroll: manual should prevent auto scroll on back.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/manual-immediate-scroll.html",
+    [
+      {
+        "name": "scroll: scroll() should not work inside a navigate event handler",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/manual-scroll-after-dispatch.html",
+    [
+      {
+        "name": "scroll: scroll() should work after a navigate event dispatch",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/manual-scroll-after-resolve.html",
+    [
+      {
+        "name": "scroll: scroll() should throw after a navigation finished promise fulfills",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/manual-scroll-fragment-does-not-exist.html",
+    [
+      {
+        "name": "scroll: scroll() should scroll to beginning of document when the fragment does not exist",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/manual-scroll-in-precommit-handler.html",
+    [
+      {
+        "name": "scroll: scroll() in precommitHandler throws",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/manual-scroll-push.html",
+    [
+      {
+        "name": "scroll: scroll() should work on a push navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/manual-scroll-reload-no-scroll-anchoring.html",
+    [
+      {
+        "name": "scroll: scroll() should work on a reload navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/manual-scroll-reload.html",
+    [
+      {
+        "name": "scroll: scroll() should work on a reload navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/manual-scroll-repeated.html",
+    [
+      {
+        "name": "scroll: scroll() should throw if called a second time",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/manual-scroll-replace.html",
+    [
+      {
+        "name": "scroll: scroll() should work on a replace navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/manual-scroll-resets-when-no-fragment.html",
+    [
+      {
+        "name": "scroll: scroll() should reset scroll position when the destination url contains no fragment",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/scroll-after-preventDefault.html",
+    [
+      {
+        "name": "navigation-api/scroll-behavior/scroll-after-preventDefault.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script ../navigation-methods/return-value/resources/helpers.js: script fetch failed: navigation-api/navigation-methods/return-value/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/scroll-on-synthetic-event.html",
+    [
+      {
+        "name": "scroll: scroll() should throw if invoked on a synthetic event.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/scroll-behavior/scroll-without-intercept.html",
+    [
+      {
+        "name": "scroll: scroll() should throw for non-intercept",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: navigation is not defined\""
+      }
+    ]
+  ],
+  [
+    "navigation-api/state/history-pushState.html",
+    [
+      {
+        "name": "navigation-api/state/history-pushState.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: navigation-api/state/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/state/history-replaceState.html",
+    [
+      {
+        "name": "navigation-api/state/history-replaceState.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: navigation-api/state/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "navigation-api/state/same-document-away-and-back-location-api.html",
+    [
+      {
+        "name": "navigation-api/state/same-document-away-and-back-location-api.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 1726], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "navigation-api/state/same-document-away-and-back-navigation-api.html",
+    [
+      {
+        "name": "navigation-api/state/same-document-away-and-back-navigation-api.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 2051], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "navigation-api/updateCurrentEntry-method/basic.html",
+    [
+      {
+        "name": "updateCurrentEntry() works as expected",
+        "status": "Fail",
+        "message": "navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "navigation-api/updateCurrentEntry-method/no-args.html",
+    [
+      {
+        "name": "updateCurrentEntry() must throw if state is not given",
+        "status": "Fail",
+        "message": "assert_throws_js: no args function \"() => {\n    navigation.updateCurrentEntry();\n  }\" threw object \"ReferenceError: navigation is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      }
+    ]
+  ],
+  [
+    "navigation-api/updateCurrentEntry-method/same-document-away-and-back-location-api.html",
+    [
+      {
+        "name": "navigation-api/updateCurrentEntry-method/same-document-away-and-back-location-api.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 1483], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/004.html",
+    [
+      {
+        "name": ".go commands should be queued until the thread has ended",
+        "status": "Fail",
+        "message": "assert_equals: the browser navigated synchronously expected \"baz\" but got \"foo\""
+      },
+      {
+        "name": "browser needs to support hashchange events for this testcase",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "queued .go commands should all be executed when the queue is processed",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "history position should be calculated when executing, not when calling the .go command",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/005.html",
+    [
+      {
+        "name": "history.pushState support is needed for this testcase",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "<body onpopstate=\"...\"> should register a listener for the popstate event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.onpopstate should register a listener for the popstate event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/006.html",
+    [
+      {
+        "name": "history.state should initially be null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "popstate event should not fire before onload fires",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "history.state should still be null onload",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "popstate event should not fire after onload fires",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "history.state should still be null after onload",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "writing to history.state should be silently ignored and not throw an error",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/007.html",
+    [
+      {
+        "name": "html/browsers/history/the-history-interface/007.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 3): Script error: external script /xhr/resources/delay.py?ms=2500: script fetch failed: xhr/resources/delay.py (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/008.html",
+    [
+      {
+        "name": "html/browsers/history/the-history-interface/008.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/011.html",
+    [
+      {
+        "name": "pushState should be able to set the location state",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "pushed location should be reflected immediately",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "pushed location should be retained after the page has loaded",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/012.html",
+    [
+      {
+        "name": "replaceState should be able to set the location state",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "replaced location should be reflected immediately",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "replaced location should be retained after the page has loaded",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/back-pushstate-back-history-state.html",
+    [
+      {
+        "name": "history.state is null after pushState+back+pushState+back",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/combination_history_001.html",
+    [
+      {
+        "name": "Combine pushState and replaceSate methods",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/combination_history_002.html",
+    [
+      {
+        "name": "After calling of pushState method, check length",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/combination_history_003.html",
+    [
+      {
+        "name": "After calling of pushState and replaceState methods, check length",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/combination_history_004.html",
+    [
+      {
+        "name": "After calling of back method, check length",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/combination_history_005.html",
+    [
+      {
+        "name": "After calling of forward method, check length",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/combination_history_006.html",
+    [
+      {
+        "name": "After calling of go method, check length",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/combination_history_007.html",
+    [
+      {
+        "name": "After calling of back and pushState method, check length",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/history_back.html",
+    [
+      {
+        "name": "history back",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/history_forward.html",
+    [
+      {
+        "name": "history forward",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/history_go_minus.html",
+    [
+      {
+        "name": "history go minus",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/history_go_plus.html",
+    [
+      {
+        "name": "history go plus",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/history_pushstate.html",
+    [
+      {
+        "name": "history pushState",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/history_pushstate_err.html",
+    [
+      {
+        "name": "history pushState SECURITY_ERR",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n        window.history.pushState(1, document.title, 'http://www.microsoft.com/test.html');\n      }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/history_pushstate_nooptionalparam.html",
+    [
+      {
+        "name": "history pushState NoOptionalParam",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/history_pushstate_too_many_calls.optional.html",
+    [
+      {
+        "name": "history pushState too many calls",
+        "status": "Fail",
+        "message": "assert_unreached: No rate limit reached. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/history_pushstate_url.html",
+    [
+      {
+        "name": "history pushState sets url",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/history_replacestate.html",
+    [
+      {
+        "name": "history replaceState",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/history_replacestate_err.html",
+    [
+      {
+        "name": "history replaceState SECURITY_ERR",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n        window.history.replaceState(1, document.title, 'http://www.microsoft.com/test.html');\n      }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/history_replacestate_nooptionalparam.html",
+    [
+      {
+        "name": "history replaceStateNoOptionalParam",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/history_replacestate_too_many_calls.optional.html",
+    [
+      {
+        "name": "history replaceState too many calls",
+        "status": "Fail",
+        "message": "assert_unreached: No rate limit reached. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/history_state.html",
+    [
+      {
+        "name": "history state",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/pushstate-replacestate-empty-string/pushstate-base.html",
+    [
+      {
+        "name": "history.pushState() with an empty string URL and base URL different from document's URL",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/pushstate-replacestate-empty-string/pushstate-whitespace.html",
+    [
+      {
+        "name": "history.pushState() with a whitespace URL",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/pushstate-replacestate-empty-string/pushstate.html",
+    [
+      {
+        "name": "history.pushState() with an empty string URL",
+        "status": "Fail",
+        "message": "assert_equals: expected \"#test\" but got \"\""
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/pushstate-replacestate-empty-string/replacestate-base.html",
+    [
+      {
+        "name": "history.replaceState() with an empty string URL and base URL different from document's URL",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/pushstate-replacestate-empty-string/replacestate-whitespace.html",
+    [
+      {
+        "name": "history.replaceState() with a whitespace URL",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-history-interface/pushstate-replacestate-empty-string/replacestate.html",
+    [
+      {
+        "name": "history.replaceState() with an empty string URL",
+        "status": "Fail",
+        "message": "assert_equals: expected \"#test\" but got \"\""
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/create-script-set-location.html",
+    [
+      {
+        "name": "html/browsers/history/the-location-interface/create-script-set-location.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: page script: navigation is not defined"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/document_location.html",
+    [
+      {
+        "name": "document not in a browsing context",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "document.location equals window.location",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Attribute getter deduplication",
+        "status": "Fail",
+        "message": "assert_equals: expected function \"get location() { return null; }\" but got function \"get location() { return null; }\""
+      },
+      {
+        "name": "Attribute setter deduplication",
+        "status": "Fail",
+        "message": "assert_equals: expected \"function\" but got \"undefined\""
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location-non-configurable-toString-valueOf.html",
+    [
+      {
+        "name": "'toString' redefinition with accessor fails",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => {\n    Object.defineProperty(location, \"toString\", {\n      get() {},\n      set(_v) {},\n      enumerable: true,\n      configurable: true,\n    });\n  }\" did not throw"
+      },
+      {
+        "name": "'valueOf' redefinition with accessor fails",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"valueOf\" missing"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location-prevent-extensions.html",
+    [
+      {
+        "name": "Object.preventExtensions throws a TypeError",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => {\n    Object.preventExtensions(location);\n  }\" did not throw"
+      },
+      {
+        "name": "Reflect.preventExtensions returns false",
+        "status": "Fail",
+        "message": "assert_false: expected false got true"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location-prototype-no-toString-valueOf.html",
+    [
+      {
+        "name": "'toString' accessor property is defined",
+        "status": "Fail",
+        "message": "Location is not defined"
+      },
+      {
+        "name": "'toString' data property is created via [[Set]]",
+        "status": "Fail",
+        "message": "Location is not defined"
+      },
+      {
+        "name": "'valueOf' accessor property is defined",
+        "status": "Fail",
+        "message": "Location is not defined"
+      },
+      {
+        "name": "'valueOf' data property is created via [[Set]]",
+        "status": "Fail",
+        "message": "Location is not defined"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location-prototype-setting-same-origin.html",
+    [
+      {
+        "name": "html/browsers/history/the-location-interface/location-prototype-setting-same-origin.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script /common/test-setting-immutable-prototype.js: script fetch failed: common/test-setting-immutable-prototype.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location-stringifier.html",
+    [
+      {
+        "name": "html/browsers/history/the-location-interface/location-stringifier.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script /common/stringifiers.js: script fetch failed: common/stringifiers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location-symbol-toprimitive.html",
+    [
+      {
+        "name": "Location Symbol.toPrimitive",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'enumerable')"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location-tojson.html",
+    [
+      {
+        "name": "Location has no toJSON",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location-valueof.html",
+    [
+      {
+        "name": "Location valueOf",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'enumerable')"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location_assign.html",
+    [
+      {
+        "name": "location assign",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "URL that fails to parse",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { location.assign(\"http://:\"); }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location_hash_set_empty_string.html",
+    [
+      {
+        "name": "window.location.hash is an empty string",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location_hashchange_infinite_loop.html",
+    [
+      {
+        "name": "Setting window.location.hash to same value while handling hashchange event shouldn't cause an infinite loop.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location_host.html",
+    [
+      {
+        "name": "location host",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location_hostname.html",
+    [
+      {
+        "name": "location hostname",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location_href.html",
+    [
+      {
+        "name": "location href",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location_origin.html",
+    [
+      {
+        "name": "location origin",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location_pathname.html",
+    [
+      {
+        "name": "location pathname",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location_port.html",
+    [
+      {
+        "name": "location port",
+        "status": "Fail",
+        "message": "assert_equals: port expected (string) \"wpt.test\" but got (undefined) undefined"
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location_protocol.html",
+    [
+      {
+        "name": "location protocol",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/history/the-location-interface/location_replace.html",
+    [
+      {
+        "name": "location replace",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "URL that fails to parse",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { location.replace(\"//\"); }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/PopStateEvent.html",
+    [
+      {
+        "name": "PopStateEvent constructor called as normal function",
+        "status": "Fail",
+        "message": "assert_throws_js: Calling PopStateEvent constructor without 'new' must throw function \"() => PopStateEvent('')\" did not throw"
+      },
+      {
+        "name": "initPopStateEvent",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Initial value of PopStateEvent.state must be null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Initial value of PopStateEvent.hasUAVisualTransition must be false",
+        "status": "Fail",
+        "message": "assert_false: the PopStateEvent.hasUAVisualTransition expected false got undefined"
+      },
+      {
+        "name": "Dispatching a synthetic PopStateEvent",
+        "status": "Fail",
+        "message": "assert_true: hasUAVisualTransition not set correctly expected true got undefined"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/events.html",
+    [
+      {
+        "name": "Constructing pageshow event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pagehide event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pageshow event, persisted true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pagehide event, persisted true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pageshow event, empty options",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pagehide event, empty options",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pageshow event, missing options",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pagehide event, missing options",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pageshow event, persisted:null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pagehide event, persisted:null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pageshow event, persisted:undefined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pagehide event, persisted:undefined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pageshow event, bubbles:true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pagehide event, bubbles:true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pageshow event, cancelable:true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructing pagehide event, cancelable:true",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/hash-empty-string.html",
+    [
+      {
+        "name": "URL has no hash",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "changing the hash from an empty string to an empty string does not trigger a popstate event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "changing the hash from an empty string to an empty string does not trigger a hashchange event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/hashchange-same-fragment-does-not-fire.html",
+    [
+      {
+        "name": "Setting the same location.hash twice must not fire hashchange the second time",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/hashchange_event.html",
+    [
+      {
+        "name": "Queue a task to fire hashchange event",
+        "status": "Fail",
+        "message": "assert_true: isTrusted expected true got false"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/popstate_event.html",
+    [
+      {
+        "name": "Queue a task to fire popstate event",
+        "status": "Fail",
+        "message": "assert_true: isTrusted expected true got false"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/event-order/after-load-hash-twice.html",
+    [
+      {
+        "name": "when changing hash, after the load event",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"load\", \"popstate\"] length 2, got [\"load\"] length 1"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/event-order/after-load-hash.html",
+    [
+      {
+        "name": "when changing hash, after the load event",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"load\", \"popstate\"] length 2, got [\"load\"] length 1"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/event-order/after-load-pushState.html",
+    [
+      {
+        "name": "when pushing state, after the load event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/event-order/after-load-replaceState.html",
+    [
+      {
+        "name": "when replacing state, after the load event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/event-order/before-load-hash-twice.html",
+    [
+      {
+        "name": "when changing hash twice, before load",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 2"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/event-order/before-load-hash.html",
+    [
+      {
+        "name": "when changing hash, before load",
+        "status": "Fail",
+        "message": "assert_equals: expected 0 but got 1"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/event-order/before-load-pushState.html",
+    [
+      {
+        "name": "when pushing state, before load",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/event-order/before-load-replaceState.html",
+    [
+      {
+        "name": "when replacing state, before load",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/event-order/pushState-inside-popstate.html",
+    [
+      {
+        "name": "pushState inside popstate",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/event-order/same-document-traverse-immediate.html",
+    [
+      {
+        "name": "when traversing back, before hashchange",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"load\", \"popstate\"] length 2, got [\"load\"] length 1"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/event-order/same-document-traverse-wait.html",
+    [
+      {
+        "name": "when traversing back, after hashchange",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"load\", \"popstate\"] length 2, got [\"load\"] length 1"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/pagereveal/order-in-bfcache-restore.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/history-traversal/pagereveal/order-in-bfcache-restore.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script /common/dispatcher/dispatcher.js: script fetch failed: common/dispatcher/dispatcher.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/pagereveal/order-in-new-document-navigation.html",
+    [
+      {
+        "name": "pagereveal event fires and in correct order on new-document navigation",
+        "status": "Fail",
+        "message": "assert_equals: expected \"pagereveal,rAF\" but got \"rAF\""
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/persisted-user-state-restoration/scroll-restoration-basic.html",
+    [
+      {
+        "name": "Default value is \"auto\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "It is writable",
+        "status": "Fail",
+        "message": "assert_equals: should be able to set \"manual\" expected \"manual\" but got \"auto\""
+      },
+      {
+        "name": "Invalid values are ignored",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/persisted-user-state-restoration/scroll-restoration-fragment-scrolling-samedoc.html",
+    [
+      {
+        "name": "Manual scroll restoration should take precedent over scrolling to fragment in cross doc navigation",
+        "status": "Fail",
+        "message": "assert_equals: expected \"manual\" but got \"auto\""
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/history-traversal/persisted-user-state-restoration/scroll-restoration-navigation-samedoc.html",
+    [
+      {
+        "name": "history.{push,replace}State retain scroll restoration mode and navigation in the same document respects it",
+        "status": "Fail",
+        "message": "assert_equals: Setting scrollRestoration to manual works as expected expected \"manual\" but got \"auto\""
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/form-submit-and-window-stop.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/form-submit-and-window-stop.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/javascript-url-global-scope.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/javascript-url-global-scope.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 201], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document/iframe-src-204-pushState-replaceState.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document/iframe-src-204-pushState-replaceState.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click-during-load.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click-during-load.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click-during-pageshow.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click-during-pageshow.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click-during-load.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click-during-load.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click-during-pageshow.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click-during-pageshow.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit-during-load.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit-during-load.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit-during-pageshow.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit-during-pageshow.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click-during-load.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click-during-load.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click-during-pageshow.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click-during-pageshow.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-cross-frame-crossorigin.sub.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-cross-frame-crossorigin.sub.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-cross-frame.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-cross-frame.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-during-load.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-during-load.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-during-pageshow.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-during-pageshow.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate-during-load.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate-during-load.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate-during-pageshow.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate-during-pageshow.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src-during-load.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src-during-load.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src-during-pageshow.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src-during-pageshow.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-during-load.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-during-load.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-during-pageshow.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-during-pageshow.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-user-click.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-user-click.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-during-load.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-during-load.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-during-pageshow.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-during-pageshow.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-click.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-click.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-mouseup.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-mouseup.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ],
+  [
+    "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter.html",
+    [
+      {
+        "name": "html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/helpers.js (No such file or directory (os error 2))"
+      }
+    ]
+  ]
+]

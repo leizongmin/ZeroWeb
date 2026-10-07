@@ -80,6 +80,10 @@ Commands:
   testharness-html-syntax  Run pinned html/syntax + html/dom corpus (parse-tree/
                        serializer/DOM-interface + P5 document-encoding face)
                        window testharness cases (html-syntax-compat goal M1 / DC-1)
+  testharness-navigation  Run pinned navigation corpus (navigation-api/
+                       html/browsers/history + browsing-the-web traversal +
+                       the-iframe-element) window testharness cases
+                       (navigation-compat goal M1 / DC-1)
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
   testharness-service-workers-fetch  Run pinned Service Worker M2 fetch testharness cases
   testharness-service-workers-cache-storage  Run pinned Service Worker CacheStorage testharness cases
@@ -295,6 +299,7 @@ fn main() {
         "testharness-net-api" => cmd_testharness_net_api(&options, filter.as_deref()),
         "testharness-encoding" => cmd_testharness_encoding(&options, filter.as_deref()),
         "testharness-html-syntax" => cmd_testharness_html_syntax(&options, filter.as_deref()),
+        "testharness-navigation" => cmd_testharness_navigation(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
         "testharness-service-workers-fetch" => cmd_testharness_service_workers_fetch(&options, filter.as_deref()),
         "testharness-service-workers-cache-storage" => {
@@ -1198,6 +1203,21 @@ fn cmd_testharness_encoding(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_html_syntax(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_html_syntax_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-navigation` 子命令 — 跑导入的导航面 corpus（navigation-api/
+/// html/browsers/history 四叶 + browsing-the-web 遍历面 + the-iframe-element 属性面）
+/// window 可执行子集（navigation-compat goal M1 / DC-1——基线）。
+///
+/// 用例由 `tests/wpt-runner/scripts/goals/60-navigation-compat.sh` 按需拉到
+/// `wpt-data/`（gitignored）。退出码：有用例非 Pass 或用例集为空 → 1（与
+/// testharness-html-syntax 一致）。基线首跑即便大量 Fail 也只用于记录通过率（agent
+/// 经 `--format json` 捕获后写 evidence/），不作为 land 门禁。filter 按路径子串透传：
+/// make testharness-navigation FILTER=the-history-interface（按 corpus 分类跑/出数）。
+fn cmd_testharness_navigation(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_navigation_cases(wpt_root, filter)
     });
 }
 
