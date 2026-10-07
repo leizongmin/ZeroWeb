@@ -2,7 +2,8 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-08（M2-S1 location 86.1% + M2-S2 traverse 93.3%；全量 25.9%→29.2%）
+**最后更新**: 2026-10-08（M2-S1/S2/S3 三切片——location 86.1% / traversal 93.3% /
+history-interface 91.8%；全量 20.9%→30.4%）
 
 ---
 
@@ -23,7 +24,7 @@
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | 四 corpus 导入 + 基线 | ✅ 落地（fetch 三域 + 嵌套 resources 2026-10-07 恢复后入库；基线 20.9%，S1+S2 后全量 29.2%） |
-| P2 | history pushState/replaceState/state/length/back/forward/go 语义 | 🔶 the-history-interface 81.6% 持平（余 8F 集中在 navigation 重载/跨源 SecurityError 面） |
+| P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口：the-history-interface 81.6%→**91.8%**（traverse 入队 + 空串 URL + 跨源 SecurityError）；余 xhr helper infra ×1 + 速率限制 optional ×2 挂账 |
 | P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | 🔶 S1+S2 落地：location 41.9%→**86.1%**、traversal 62.2%→**93.3%**；余 exotic 内部方法面（preventExtensions/setPrototypeOf）+ Navigation API 面 |
 | P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | ⏳ M3 **用户门控** |
 | P5 | bfcache / fission 挂账定稿 | ⏳ M4 |
@@ -43,19 +44,24 @@
   scrollRestoration per-entry + runner 顶层 `let` accessor 转发导出（R201 同款，
   before-load-hash 族根因）。traversal 62.2%→**93.3%**、event-order 12/13。
   证据：[evidence/2026-10-08-m2-s2-traverse-events.md](evidence/2026-10-08-m2-s2-traverse-events.md)。
-- **质量门禁（两切片合并跑）**：`make test` 20,180 P / 0 F 全绿；clippy -D warnings
-  零 warning；fmt 零 diff；全量语料零基线回归（M1 81 Pass 案全保持）。
+- **M2-S3 session history 收尾（2026-10-08）**：back/forward/go 按 spec traverse 算法
+  入队 FIFO 结算（位置执行时计算）+ 空串 url 保留 fragment（whatwg#9343）+ 跨源
+  pushState/replaceState SecurityError。history-interface 81.6%→**91.8%**。
+  证据：[evidence/2026-10-08-m2-s3-history-queue.md](evidence/2026-10-08-m2-s3-history-queue.md)。
+- **质量门禁（三切片）**：`make test` 20,183 P / 0 F 全绿；clippy -D warnings 零
+  warning；fmt 零 diff；每轮全量语料零回归（M1 81 Pass 案全保持）。
 
 ## 下一步计划
 
-1. **M2 ③ 跨文档导航语义**：navigating-across-documents 4.8%（2/42）——load/unload
-   事件序与跨文档 URL 归属；依赖跨文档导航链（单文档 runner 形态限制，先评估
-   可达子集再动）。
-2. **M2 ④ Navigation API 评估切片**：0.4%（1/228），`window.navigation` 全域缺席——
-   按 master 前议独立评估（量级 ~196 子测试），排在 ③ 后或并行。
-3. **M2 ⑤ exotic 内部方法面评估**（Location [[PreventExtensions]]/[[SetPrototypeOf]]）：
+1. **M2 ④ Navigation API 评估切片**：0.4%（1/228），`window.navigation` 全域缺席——
+   按前议独立评估（量级 ~196 子测试；spec 面大，须先评估可达子集：entry/currentEntry
+   读侧 vs navigate 事件驱动 vs intercept 拦截面）。
+2. **M2 ⑤ exotic 内部方法面评估**（Location [[PreventExtensions]]/[[SetPrototypeOf]]）：
    影响 [LegacyUnforgeable] 接口建模（Proxy vs 引擎层 exotic 支持），跨切片收益
    （location 3F + 后续 Window/Document 同族面）。
+3. **M2 ③ 跨文档导航语义**（navigating-across-documents 2/42）：主体依赖跨文档导航链
+   + testdriver 用户手势（21 Timeout），单文档 runner 形态不可达——runner 形态升级前
+   仅记账，优先级排在 ④⑤ 后。
 4. **M3**：frame tree 最小面——**启动前须用户点名批准**（2026-10-04 已征询待批复，
    维持挂起，见下）。
 

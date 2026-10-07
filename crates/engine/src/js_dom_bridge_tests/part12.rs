@@ -67,7 +67,9 @@ fn test_location_hash_setter_hashchange_r3006() {
     assert_eq!(sandbox.execute("String(globalThis.__len)").unwrap().value, "3", "hash setter 推 history entry：length=3");
 
     // back() 回 #foo：location.hash 反映（R3005 location 读 history entry url）。
-    sandbox.execute("history.back(); globalThis.__hBack = location.hash;").unwrap();
+    // M2-S3：back() 入队 task 末尾——execute 边界 drain 后读。
+    sandbox.execute("history.back();").unwrap();
+    sandbox.execute("globalThis.__hBack = location.hash;").unwrap();
     assert_eq!(sandbox.execute("globalThis.__hBack").unwrap().value, "#foo", "back() 后 location.hash='#foo'（history entry 反映）");
 }
 
@@ -241,12 +243,17 @@ fn test_location_assign_replace_reload_r3009() {
     assert_eq!(sandbox.execute("String(globalThis.__len3)").unwrap().value, "3", "replace 替换当前 entry 不增 length（替换 #sec）：length=3");
 
     // replace 后 back 不回 #sec（被替换）→ 回 /a。
-    sandbox.execute("history.back(); globalThis.__hBack = location.href;").unwrap();
+    // M2-S3：back() 入队 task 末尾——execute 边界 drain 后读。
+    sandbox.execute("history.back();").unwrap();
+    sandbox.execute("globalThis.__hBack = location.href;").unwrap();
     assert_eq!(sandbox.execute("globalThis.__hBack").unwrap().value, "https://example.com/a", "replace 后 back 回 /a（#sec entry 被替换）");
 
     // assign 同当前 url no-op（不增 entry）。
+    // M2-S3：forward() 入队——先单独 execute 结算（同 call 内 assign 会在队列 drain 前
+    // 于旧 cursor 上 push，语义错位）。
+    sandbox.execute("history.forward();").unwrap();
     sandbox
-        .execute("history.forward(); globalThis.__len4 = history.length; location.assign('https://example.com/final'); globalThis.__len5 = history.length;")
+        .execute("globalThis.__len4 = history.length; location.assign('https://example.com/final'); globalThis.__len5 = history.length;")
         .unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__len5)").unwrap().value, "3", "assign 同当前 url no-op（不增 entry）");
 

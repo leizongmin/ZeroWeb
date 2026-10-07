@@ -4758,6 +4758,50 @@
     }
     return u;
   }
+  // M2-S3：pushState/replaceState 的 url 归一——undefined 或空串 → 当前 entry URL（空串保留
+  // fragment，见 pushState 注）；可解析时做同源校验（跨源抛 SecurityError 后返哨兵）。返回 null
+  // 且原始 url 非空串 = 已抛、调用方直接 return；其余 null 形态 = 沿用当前 URL。无 URL 通道
+  //（裸 sandbox）不可校验，保持 legacy permissive。
+  function _histStateUrlOrNull(url) {
+    if (url == null) return _hist_current().url;
+    var raw = String(url);
+    if (raw === '') return _hist_current().url;
+    if (typeof URL === 'function' && typeof __zw_parse_url === 'function') {
+      var abs = null;
+      try { abs = new URL(raw, globalThis.location.href).href; } catch (_e) {}
+      if (abs !== null) {
+        var _histOrig = function (h) { try { return new URL(h).origin; } catch (_e2) { return null; } };
+        var newO = _histOrig(abs), curO = _histOrig(globalThis.location.href);
+        if (newO !== null && curO !== null && newO !== curO) {
+          throw new (globalThis.DOMException || DOMException)(
+            "Failed to execute 'pushState' on 'History': A history state object with URL '" + raw + "' cannot be created in a document with origin " + curO + " and URL " + curO + ".", 'SecurityError');
+        }
+        return abs;
+      }
+    }
+    return raw;
+  }
+  // M2-S3：traverse 命令队列——back/forward/go 仅入队（delta），_defer 任务按 FIFO 逐条结算：
+  // 位置在**执行时**对当期 cursor 计算（非入队时快照），越界条目跳过，每条生效即派 popstate
+  //（+ 跨 hash 派 hashchange，_hist_applyTraversal 内同步派发）。
+  var _hist_pendingTraversals = [];
+  function _hist_queueTraversal(delta) {
+    _hist_pendingTraversals.push(delta);
+    _defer(_hist_runQueuedTraversals);
+  }
+  function _hist_runQueuedTraversals() {
+    while (_hist_pendingTraversals.length) {
+      _hist_applyTraversal(_hist_pendingTraversals.shift());
+    }
+  }
+  function _hist_applyTraversal(delta) {
+    var target = _hist_cursor + delta;
+    if (target < 0 || target > _hist_entries.length - 1) return; // 越界 no-op
+    if (target === _hist_cursor) return;
+    var oldHref = _hist_current().url;
+    _hist_cursor = target;
+    _hist_dispatchPopState(oldHref);
+  }
   globalThis.history = {
     get length() { return _hist_entries.length; },
     get state() { return _hist_current().state; },
@@ -4773,29 +4817,39 @@
     // pushState(state, unused, url?)：截断 forward entries + push 新 entry + 推进 cursor（不触发 popstate）。
     // R3005：url 经 _resolveHistUrl 解析为绝对存入 entry（供 location getter 反映）。
     // M2-S2：新 entry 继承当前 entry 的 scrollRestoration mode（克隆语义，同 _pushHistNav）。
+    // M2-S3：① 空串 url ≡ 当前文档 URL（**保留 fragment**——WHATWG issue 9343 决议，URL parser 的
+    // 空 input 剥 fragment 与此不同；WPT pushstate-replacestate-empty-string）。② 跨源 url 抛
+    // SecurityError DOMException（spec pushState/replaceState step——解析后 origin 与 document
+    // origin 不同即抛；WPT history_pushstate_err / history_replacestate_err）。
     pushState: function (state, _unused, url) {
+      var newUrl = _histStateUrlOrNull(url);
+      if (newUrl === null && url != null && String(url) !== '') return; // 跨源已抛（_histStateUrlOrNull）
       var _zwSR = _hist_current().scrollRestoration || 'auto';
       _hist_entries = _hist_entries.slice(0, _hist_cursor + 1);
-      _hist_entries.push({ state: state, url: url != null ? _resolveHistUrl(String(url)) : _hist_current().url, scrollRestoration: _zwSR });
+      _hist_entries.push({ state: state, url: newUrl, scrollRestoration: _zwSR });
       _hist_cursor = _hist_entries.length - 1;
     },
     // replaceState(state, unused, url?)：原地替换当前 entry 的 state/url（不触发 popstate）。
-    // R3005：url 经 _resolveHistUrl 解析为绝对。
+    // R3005：url 经 _resolveHistUrl 解析为绝对。M2-S3：空串/跨源语义同 pushState。
     replaceState: function (state, _unused, url) {
+      var newUrl = _histStateUrlOrNull(url);
+      if (newUrl === null && url != null && String(url) !== '') return;
       var cur = _hist_current();
       cur.state = state;
-      if (url != null) cur.url = _resolveHistUrl(String(url));
+      if (newUrl !== null) cur.url = newUrl;
     },
-    back: function () { if (_hist_cursor > 0) { var oldHref = _hist_current().url; _hist_cursor--; _hist_dispatchPopState(oldHref); } },
-    forward: function () { if (_hist_cursor < _hist_entries.length - 1) { var oldHref = _hist_current().url; _hist_cursor++; _hist_dispatchPopState(oldHref); } },
+    // M2-S3（navigation-compat）：back/forward/go **入队**到 task 末尾执行（spec——traverse 步骤
+    // 是排队算法，同脚本内多次 go 的终位在任务结束时按序结算、位置在**执行时**计算；WPT
+    // the-history-interface/004「.go commands should be queued until the thread has ended」——
+    // go(-2) 后立即断言 location.hash 未动 + hashchange 未发，队列按序执行各派一次事件）。
+    back: function () { _hist_queueTraversal(-1); },
+    forward: function () { _hist_queueTraversal(1); },
     go: function (delta) {
-      // R3004：spec/MDN——out-of-range delta 为 **no-op**（不动 cursor、不派发 popstate）。旧实现 clamp target
-      // 到 [0,len-1] 后移动+派发 popstate（SPA router 计算的 delta 过冲时误导航到边界）。delta==null → -1
-      //（spec go() 无参为 reload，headless 近似 back，保留旧默认）；delta==0 → 不移动（spec reload，headless no-op）。
+      // R3004：spec/MDN——out-of-range delta 为 no-op（执行时越界跳过，见 _hist_applyTraversal）。
+      // delta==null → -1（spec go() 无参为 reload，headless 近似 back）；delta==0 → 不移动（spec reload）。
       var d = (delta == null) ? -1 : (delta | 0);
-      var target = _hist_cursor + d;
-      if (target < 0 || target > _hist_entries.length - 1) return; // 越界 no-op
-      if (target !== _hist_cursor) { var oldHref = _hist_current().url; _hist_cursor = target; _hist_dispatchPopState(oldHref); }
+      if (d === 0) return;
+      _hist_queueTraversal(d);
     },
   };
 
@@ -4808,6 +4862,7 @@
   globalThis.__zw_reset_history = function () {
     _hist_entries = [{ state: null, url: '', scrollRestoration: 'auto' }];
     _hist_cursor = 0;
+    _hist_pendingTraversals = []; // M2-S3：清跨文档残留 traverse 队列（新文档不复现旧页 go()）
   };
 
   // R3006/R3008：location setter 共享导航应用——push 新 history entry（navigation 语义，R3005 location 读之反映）
