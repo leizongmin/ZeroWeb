@@ -1,0 +1,23 @@
+{
+ "tag": "s30-multimatch-regression",
+ "bin": "b2323f0e4 integ r2",
+ "verdictWaitMs": 152,
+ "state": {
+  "isCollection": "true",
+  "len": "3",
+  "order": "img-a|img-b|div-c",
+  "singleNode": "true",
+  "formNode": "true",
+  "qNegative": "undefined",
+  "verdict": "S30-MULTIMATCH: PASS"
+ },
+ "expect": {
+  "isCollection": "true",
+  "len": "3",
+  "order": "img-a|img-b|div-c",
+  "singleNode": "true",
+  "formNode": "true",
+  "qNegative": "undefined"
+ },
+ "verdict": "PASS"
+}
