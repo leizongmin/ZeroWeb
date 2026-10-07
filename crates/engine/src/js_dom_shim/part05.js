@@ -10845,8 +10845,9 @@
   // **边界（FIXME(dynamic-na) 如实申报）**：①【slice40 收口】注销面覆盖本面动态
   // 安装值（`__zwNADynElsStore` 账本）——触发批逐元 + 移除批账本补偿扫（remFlat
   // 展开对 parsed 子树后代有缺口，扫面对账本全量重核补齐，slice36 缺陷轮 I-4 修复）；
-  // 安装期单命中元素全局（slice27 面）与 morph 产物保持 stale 到换代回收
-  //（slice32 申报钉维持）；②名门 = 属性值原文非空串 + own 属性缺席（本面已放开
+  // `_zwNADynEls` 动态账本面的 stale-至-换代保留已随移除批补偿扫提前退役（移除批内
+  // 即注销）；保持 stale 到换代回收的仅 slice27 静态单命中面（安装期元素全局）与
+  // morph 产物（slice32 申报钉维持）；②名门 = 属性值原文非空串 + own 属性缺席（本面已放开
   // 标识符形限制——spec 名为属性值原文，WPT changing.html 连字符名实证；安装面
   // transport `|` 分隔与属性选择器嵌入约束仍保留标识符门）；③shadow 树内元素——
   // slice40 探针实证三面（childList 挂入 / attr 改 id / parsed 移入）均不入册，

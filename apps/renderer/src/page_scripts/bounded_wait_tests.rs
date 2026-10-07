@@ -7,7 +7,9 @@
 //! - ready 旗标由积压回调的 ResolveAsyncCallback 臂末重新置位 ⇒ 超时后下一成功
 //!   checkpoint 补应用滞留 mutation（不丢）；
 //! - apply/notify/`_zwApplyGeneration` 状态 per worker sandbox / per WebView 实例，
-//!   跨实例零串扰。
+//!   跨实例零串扰；
+//! - 滞留 bump 的**唯一**丢弃出路是导航 seq 清扫（slice39 §8 勘误构造，钉 4）——
+//!   超时本身不丢弃（钉 2），导航丢弃无损 by-design（reset 即等价新鲜）。
 //!
 //! 超时制造：helper 线程经 [`RendererJsWorker::executor`]（`ScriptFn = Arc<dyn Fn +
 //! Send + Sync>`）提交 ~1.2s JS 忙臂（`Date.now()` 忙循环；V8 watchdog 30s /
@@ -276,4 +278,85 @@ fn apply_generation_state_isolated_across_tab_instances_s39() {
     );
     worker_a.shutdown();
     worker_b.shutdown();
+}
+
+// 钉 4（slice39 §8 勘误顺延）：滞留 bump 遇导航 seq 丢弃——**确定性**构造，非时序竞态。
+// bump 经 normal 通道入队（notify 的有界等待只放弃等待、不撤回命令），`reset_document_state`
+// 经 prio 通道提交，worker 分派臂 prio 先于 normal 且 reset 臂按提交代际（seq）清扫
+// normal 队列（`survives_document_reset`：seq ≤ reset_seq 的 Execute 随旧文档丢弃）——
+// 忙臂窗内先提交 bump、再提交 reset 即结构保证复现「丢弃」。
+// 观测面（slice40 汇总 xI-3 顺延主因）：reset 重建 shim context 后 gen 归零，单靠 gen
+// 无法区分「丢弃」与「执行后随 context 销毁」——以 cfg(test) `execution_count` 作判别
+//（Execute 臂每命令恰 +1）：丢弃形态下忙臂后仅屏障探针 +1；清扫失效/滞留补执行形态
+// +2 恒红（gen 断言在此形态下仍绿——正是不补 ec 观测就发现不了的盲区）。
+// https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
+#[test]
+fn lingering_bump_dropped_by_navigation_reset_seq_sweep_s41() {
+    let html = r#"<html><body><div id="s41n"></div></body></html>"#;
+    let url = "https://zero.test/s41drop";
+    let mut worker = RendererJsWorker::spawn(187);
+    worker.set_dom_snapshot(html, url);
+
+    // 代际基线推进（非零可辨新 context 归零）：空闲 worker 记录 mutation + apply——
+    // HTML 回写臂 apply 成功后内部 notify bump 同步落地。
+    worker
+        .execute_script_direct("document.querySelector('#s41n').setAttribute('data-n','1');")
+        .unwrap();
+    let mut buf = html.to_string();
+    let mut ctx = PageScriptContext {
+        html: &mut buf,
+        url,
+        js_worker: &worker,
+        webview: None,
+    };
+    assert!(
+        apply_recorded_mutations(&mut ctx, html).is_some(),
+        "首轮 apply 成功（notify bump 落地，代际基线推进）"
+    );
+    let gen1 = s39_apply_generation(&worker);
+    assert!(gen1 >= 1, "notify bump 已落地（代际基线非零）：{gen1}");
+
+    // 忙臂窗内先 bump 后 reset（提交序即 seq 序）：notify 200ms / reset 250ms 有界等待
+    // 均在忙臂（1.2s）内超时放弃等待，两命令分别滞留 normal FIFO 与 prio 队列。
+    let busy = s39_occupy_worker(&worker);
+    let ec_occupied = worker.execution_count_for_test();
+    notify_shim_apply_generation(&mut ctx);
+    worker.reset_document_state();
+    busy.join().expect("忙臂线程 join").expect("忙臂脚本执行成功");
+
+    // 新文档到达（seq 最大，清扫存活臂）→ 落 reset 重建后的新 context；屏障探针排在
+    // 一切滞留命令之后，其返回即 reset 臂 + seq 清扫已完结（worker 串行边界）。
+    let html2 = r#"<html><body><div id="s41m"></div></body></html>"#;
+    let url2 = "https://zero.test/s41fresh";
+    worker.set_dom_snapshot(html2, url2);
+    let gen_fresh = s39_apply_generation(&worker);
+    let ec_final = worker.execution_count_for_test();
+
+    // 判别断言：忙臂被领取后仅探针 1 次 Execute——bump 被 seq 清扫丢弃、从未执行。
+    assert_eq!(
+        ec_final,
+        ec_occupied + 1,
+        "滞留 bump 须被导航 seq 清扫丢弃（不执行）：ec {ec_occupied}→{ec_final}"
+    );
+    assert_eq!(
+        gen_fresh, 0,
+        "新文档 shim context 全新（代际归零，滞留 bump 不落新文档）"
+    );
+    assert!(
+        worker.mutations().lock().unwrap_or_else(|e| e.into_inner()).is_empty(),
+        "reset 臂清空 mutation 队列（旧文档残留不入新文档）"
+    );
+
+    // drain 面无残留：ready 旗标已随导航 reset 置 false——drain no-op、新文档宿主 HTML
+    // 不被改写。
+    let mut buf2 = html2.to_string();
+    let mut ctx2 = PageScriptContext {
+        html: &mut buf2,
+        url: url2,
+        js_worker: &worker,
+        webview: None,
+    };
+    assert!(!drain_pending_dom_mutations(&mut ctx2), "新文档首轮 drain 无事可做");
+    assert_eq!(buf2, html2, "drain 不得改写新文档宿主 HTML");
+    worker.shutdown();
 }

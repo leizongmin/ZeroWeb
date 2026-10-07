@@ -1,0 +1,8 @@
+   Compiling zero-renderer v0.1.0 (/home/lei/work/ZeroWeb/apps/renderer)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.05s
+
+running 1 test
+test page_scripts::bounded_wait_tests::lingering_bump_dropped_by_navigation_reset_seq_sweep_s41 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 222 filtered out; finished in 1.57s
+
