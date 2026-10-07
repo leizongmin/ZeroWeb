@@ -672,5 +672,6 @@ mod r4331_br_in_inline_walk_tests;
 mod r4398_preline_forced_break_tests;
 mod r4941_hoisted_atomic_probe;
 mod r4986_vertical_ar_tests;
+mod r4987_abspos_ar_tests;
 mod s10_hotlist_geometry_tests;
 mod s19_inline_atomic_geometry_tests;

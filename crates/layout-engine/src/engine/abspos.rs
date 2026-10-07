@@ -1282,6 +1282,184 @@ fn subtree_content_bottom(box_node: &LayoutBox, content_top: f32) -> f32 {
     bottom
 }
 
+/// R4987（css-sizing-4 §5.2 transferred size suggestion + shrink-to-fit·abspos 臂）：
+/// abspos + aspect-ratio 的 auto 轴传递三臂——taffy 0.12 对 OOF 盒 AR 语义不完整：
+/// 007 双 auto 塌 19×18（shrink-to-fit + 传递全缺）、013 definite 高 + auto 宽只传
+/// 高×ratio=50 不与内容 shrink-to-fit 取大（应 100）、018 definite 宽 + auto 高被
+/// 内容撑 200（abspos auto 块轴 = 纯传递，内容不撑，012 在册语义）、008 双 auto +
+/// max-height:100% 钳高后未按 ratio 回传宽（200→钳 100→回传 100）。
+///
+/// spec 映射：① definite 高 + auto 宽 → 宽 = max(高×ratio, automatic minimum)，
+/// 地板仅 min-width:auto 时生效（013：max(50, 100)=100；017 min-width:0 纯传递
+/// 100，内容 200 不撑）；② definite 宽 + auto 高 → 高 = 宽/ratio **纯传递**
+/// （abspos 无 content-based automatic minimum 高地板——012 现绿即此语义，
+/// 018 同式收敛）；③ 双 auto → 宽 = shrink-to-fit(max-content 钳 CB 宽)，高 =
+/// 宽/ratio，max-height（% 按 CB 高解析）钳高后按 ratio 回传宽（008）。
+///
+/// 范围限定：非替换（替换走 attr/AR 固有路径）；`contain:size` 不触（内容不参与
+/// 尺寸，014 在册）；insets 拉伸（auto + 对侧 inset 全 definite）不触（§10.3.7/
+/// §10.6.4 归既有拉伸 pass，021 在册）；fixed 不触（CB=视口，归
+/// adjust_fixed_to_viewport 域）；百分比尺寸不触（归 R1227/R1227b 解析 pass，009
+/// 在册）。box-sizing:border-box 时 ratio 作用在 border 盒（§4.2），010/011 在册
+/// 幂等。内容度量用 `block_max_content_width`（max-content 语境：inline 同行求和 +
+/// block 取大）。
+/// kill-switch `ZW_ABSPOS_AR=0`。
+///
+/// // https://drafts.csswg.org/css-sizing-4/#aspect-ratio-auto-sizes
+pub(super) fn fix_abspos_aspect_ratio_auto_sizes(
+    box_node: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    cb: Option<(f32, f32)>,
+    viewport: (f32, f32),
+) {
+    if std::env::var("ZW_ABSPOS_AR").as_deref() == Ok("0") {
+        return;
+    }
+    use zero_css_parser::values::{BoxSizingValue, FloatValue, LengthValue};
+    let (vp_w, vp_h) = viewport;
+    for child in &mut box_node.children {
+        if child.is_absolute
+            && !child.is_fixed
+            && !child.is_replaced
+            && let Some(id) = child.node_id
+            && let Some(style) = styles.get(&id)
+            && let Some(ratio) = style.aspect_ratio.filter(|&r| r > 0.0)
+            && !style.contain.has_size()
+        {
+            let (cb_w, cb_h) = cb.unwrap_or(viewport);
+            let frame_h = child.padding_left + child.padding_right + child.border_left + child.border_right;
+            let frame_v = child.padding_top + child.padding_bottom + child.border_top + child.border_bottom;
+            let is_bb = matches!(style.box_sizing, BoxSizingValue::BorderBox);
+            let definite = |v: &LengthValue| resolve_abspos_real_length(v, &style.font_size, vp_w, vp_h).is_some();
+            let stretched_w =
+                matches!(style.width, LengthValue::Auto) && definite(&style.left) && definite(&style.right);
+            let stretched_h =
+                matches!(style.height, LengthValue::Auto) && definite(&style.top) && definite(&style.bottom);
+            // max-height 定值（Px 等 real length；% 按 CB 高另行解析）。
+            let max_h = |cb_basis: f32| -> Option<f32> {
+                resolve_abspos_real_length(&style.max_height, &style.font_size, vp_w, vp_h).or_else(|| {
+                    match &style.max_height {
+                        LengthValue::Percentage(p) => Some(*p as f32 / 100.0 * cb_basis),
+                        _ => None,
+                    }
+                })
+            };
+            let w_definite = definite(&style.width);
+            let h_definite = definite(&style.height);
+            if !stretched_w && !stretched_h && !w_definite && h_definite {
+                // 臂①（013/017/019/020）：transferred 宽 = 高×ratio，仅 min-width:auto
+                // 时以 content-based automatic minimum 取大（§4.1；min-width:0 无地板
+                // ——017 内容 200 不撑应纯传递 100）。地板度量暂用 max-content 近似
+                // min-content（二者在在册案同值；可换行 IFC + min-width:auto + 传递值
+                // < min-content 场景会过估，RFC 域）。shrink 钳 CB 可用宽。
+                let main_h = if is_bb {
+                    child.height
+                } else {
+                    (child.height - frame_v).max(0.0)
+                };
+                let transferred_basis_w = main_h * ratio;
+                let transferred_content_w = if is_bb {
+                    (transferred_basis_w - frame_h).max(0.0)
+                } else {
+                    transferred_basis_w
+                };
+                let mut target_content_w = transferred_content_w;
+                if matches!(style.min_width, LengthValue::Auto) {
+                    let floor = crate::intrinsic_sizing::block_max_content_width(child, doc, styles).min(cb_w.max(0.0));
+                    target_content_w = target_content_w.max(floor);
+                }
+                let new_w = target_content_w + frame_h;
+                if (child.width - new_w).abs() > 0.5 {
+                    child.width = new_w;
+                    child.content_width = target_content_w;
+                }
+            } else if w_definite && !stretched_h && matches!(style.height, LengthValue::Auto) {
+                // 臂②（012/018/010/011）：高 = 宽/ratio 传递，仅 min-height:auto 时以
+                // content-based automatic minimum 取大（§4.1 近似 = in-flow 子底边，
+                // 同 R4986 vertical 臂口径；012 auto 地板 100 胜传递 50，018
+                // min-height:0 无地板纯传递 100、内容 200 不撑）。max-height 钳后落盒。
+                let basis_w = if is_bb {
+                    child.width
+                } else {
+                    (child.width - frame_h).max(0.0)
+                };
+                let transferred_basis_h = basis_w / ratio;
+                let mut target_content_h = if is_bb {
+                    (transferred_basis_h - frame_v).max(0.0)
+                } else {
+                    transferred_basis_h
+                };
+                if matches!(style.min_height, LengthValue::Auto) {
+                    let child_bottom = child
+                        .children
+                        .iter()
+                        .filter(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
+                        .map(|c| c.y + c.height)
+                        .fold(0.0_f32, f32::max);
+                    target_content_h = target_content_h.max(child_bottom);
+                }
+                if let Some(mh) = max_h(cb_h) {
+                    let max_content_h = if is_bb { (mh - frame_v).max(0.0) } else { mh };
+                    target_content_h = target_content_h.min(max_content_h);
+                }
+                let new_h = target_content_h + frame_v;
+                if (child.height - new_h).abs() > 0.5 {
+                    child.height = new_h;
+                    child.content_height = target_content_h;
+                }
+            } else if matches!(style.width, LengthValue::Auto)
+                && matches!(style.height, LengthValue::Auto)
+                && !stretched_w
+                && !stretched_h
+            {
+                // 臂③（007/008）：双 auto shrink-to-fit + 传递 + max-height 钳高回传宽。
+                let maxc = crate::intrinsic_sizing::block_max_content_width(child, doc, styles);
+                let mut target_content_w = maxc.min(cb_w.max(0.0));
+                let basis_w = if is_bb {
+                    target_content_w + frame_h
+                } else {
+                    target_content_w
+                };
+                let mut target_content_h = if is_bb {
+                    (basis_w / ratio - frame_v).max(0.0)
+                } else {
+                    basis_w / ratio
+                };
+                if let Some(mh) = max_h(cb_h) {
+                    let border_h = target_content_h + frame_v;
+                    if border_h > mh + 0.5 {
+                        // 钳高后按 ratio 回传宽（min-content 地板不低于此处 shrink 值）。
+                        let basis_h = if is_bb { mh } else { (mh - frame_v).max(0.0) };
+                        let basis_w2 = basis_h * ratio;
+                        target_content_w = if is_bb { (basis_w2 - frame_h).max(0.0) } else { basis_w2 };
+                        target_content_h = if is_bb { (mh - frame_v).max(0.0) } else { mh };
+                    }
+                }
+                let new_w = target_content_w + frame_h;
+                let new_h = target_content_h + frame_v;
+                if (child.width - new_w).abs() > 0.5 || (child.height - new_h).abs() > 0.5 {
+                    child.width = new_w;
+                    child.content_width = target_content_w;
+                    child.height = new_h;
+                    child.content_height = target_content_h;
+                }
+            }
+        }
+        // 递归：abspos CB 子（is_abspos_cb）成为其后代最近 CB（padding-box 内缘），
+        // 否则继承；坐标仅取宽高（本 pass 不动定位）。
+        let child_cb = if child.is_abspos_cb {
+            Some((
+                (child.width - child.border_left - child.border_right).max(0.0),
+                (child.height - child.border_top - child.border_bottom).max(0.0),
+            ))
+        } else {
+            cb
+        };
+        fix_abspos_aspect_ratio_auto_sizes(child, doc, styles, child_cb, viewport);
+    }
+}
+
 pub(super) fn recenter_abspos_margin_auto_vertically(
     box_node: &mut LayoutBox,
     cb_height: f32,
