@@ -757,7 +757,8 @@ fn console_value_to_remote_object(value: &serde_json::Value) -> serde_json::Valu
             // `JSHandle._preview = objectId ? renderPreview : String(ro.value)`——无 objectId
             // 时 text() 就是 String(value)，故 value 必须承载展示文本，省略或为对象则渲染成
             // "undefined"/`[object Object]`）。
-            // 误判面：普通对象恰好同名三 string 键 → 仅多 subtype/description 字段，无害。
+            // 误判面：普通对象恰好同名三 string 键 → 判 error，text() 可读（显示其 stack），
+            // 但 `value` 从对象载荷被替换为展示串——该对象失去 wire 级可检视性（设计接受）。
             let err_tuple = match (
                 entries.get("name").and_then(|v| v.as_str()),
                 entries.get("message").and_then(|v| v.as_str()),

@@ -385,6 +385,43 @@ fn test_console_host_bridge_r3256() {
         r#"[{"name":"plain","message":"m","stack":"s"}]"#,
         "普通对象三键 round-trip 原样（JSON 键序稳定）"
     );
+
+    // ⑥ 审查 B-1 钉：revoked Proxy 传给 console——instanceof 触发 [[GetPrototypeOf]] 抛
+    // TypeError，守卫（try 包 instanceof）后不向页面抛异常、不炸桥，走 round-trip 回退。
+    // （console 序列化 best-effort 不变量：任何入参形态下 console.* 不打断页面脚本。）
+    sandbox
+        .execute(
+            "var __rv = Proxy.revocable({}, {}); __rv.revoke();\
+             globalThis.__noThrow = 'set';\
+             console.error(__rv.proxy);\
+             globalThis.__after = 'reached';",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__noThrow + '|' + globalThis.__after").unwrap().value,
+        "set|reached",
+        "revoked Proxy 经 console.error 不向页面抛异常、后续脚本继续"
+    );
+    let got = captured.lock().unwrap().clone();
+    let (_, _, values) = &got[got.len() - 1];
+    assert!(
+        !values.contains(r#""name":"TypeError","#),
+        "revoked Proxy 非真实 Error，不产出展开三键（回退序列化），got: {values}"
+    );
+
+    // ⑦ 审查 B-3 钉：无自有 stack/message 的 Error 子类实例（Object.create(Error.prototype)）
+    // ——`== null` 守卫下 stack/message 序列化为空串（非 "undefined" 假栈），headless 侧
+    // 据空串走 `name: message` 首行回退。
+    let before = captured.lock().unwrap().len();
+    sandbox
+        .execute("console.error(Object.create(Error.prototype))")
+        .unwrap();
+    let got = captured.lock().unwrap().clone();
+    let (_, _, values) = &got[before];
+    assert!(
+        values.contains(r#""stack":""#) && values.contains(r#""message":""#),
+        "无自有 stack/message → 空串（headless 走 name: message 回退），got: {values}"
+    );
 }
 
 #[test]
