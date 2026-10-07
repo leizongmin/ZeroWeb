@@ -3878,7 +3878,31 @@
     } catch (_e387r) { /* 回放失败静默（保守——不阻断 observe 注册） */ }
   }
 
+  // t8（bilibili 轮询第二层燃烧）：_mo_notify 的 subtree 冒泡对每个树内 attr 写
+  // 构造完整祖先链——旧实现逐层 `__zw_parent` 宿主往返（~17µs × 深度 ~20 ≈
+  // 0.34ms/写；页面 hydration 注册 subtree observer 后轮询 handler 每写全吃此税，
+  // 探针 evidence/t8-domrw/{mosplit,expando} 钉死：树内 attr 写 0.37-0.57ms vs
+  // detached 20µs vs detached+自观察全链 7µs——贵在爬链的宿主往返非 notify 本身）。
+  // 本缓存按「树代际」存逐层 parent 关系：childList mutation 全部汇流 `_mo_notify`
+  // （30+ 调用点 + `__zw_mo_notify_native` 统一入口），快照换代走
+  // `__zw_reset_pending_state`——两处 bump 代际清表。attr/characterData 写不改树
+  // → 恒命中，链构造退化为纯 JS Map 查（宿主往返零次）。
+  // 语义等价：parent 关系只在 childList 变更时改变，代际印章保证不服务过期链。
+  // 已知边界（PR91 审查 D-1）：`ZW_MO_HOST_TRIGGER=0`（opt-out，默认 ON）时 native
+  // 写不经 `_mo_notify`、无 bump——同代内链可能 stale。该配置下 native 写自身无记录
+  // 投递（kill-switch 通知端死路），但 stale 链仍影响后续纯 JS 写记录的冒泡站
+  // （pre-t8 逐次现查会跟上新树）——opt-out 配置面缺口，随池项后续收口。
+  var _zwParentLinkCache = { gen: -1, map: new Map() };
+  var _zwParentLinkGen = 0;
+  function _zwParentLinkBump() {
+    _zwParentLinkGen++;
+    _zwParentLinkCache.map.clear();
+  }
+
   function _mo_notify(sel, handle, baseRecord) {
+    // t8：childList mutation 先行作废 parent 关系缓存——本 mutation 自身的 subtree
+    // 冒泡（下方）必须按**变更后**的树爬链；attr/characterData 不改树不 bump。
+    if (baseRecord && baseRecord.type === 'childList') _zwParentLinkBump();
     var id = _mo_id(handle, sel);
     // R188：document 站 record.target 用 mutation 容器 proxy（_makeProxy(sel, handle)）
     // 统一在此补——childList call site 数量多且均以 sel/handle 标识容器，入口处一次性
