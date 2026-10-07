@@ -710,19 +710,20 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 - **M4 尾簇 40（2026-10-07，本轮）**：corpus 173F/96TO 挂账定稿编目（14 类
   逐案归因 + 重入条件，见「M4 挂账定稿清单」节；docs-only 零源码改动）。
   P2/P3 转核心修齐关账，余挂全部具名转移。
+- **M4 尾簇 41（2026-10-07，d688d89e7）**：CANDIDATE 池收口（tilt 跨集部分给值
+  互不派生 + 跨界事件携源 pointerType + 站内 release 延迟生效三态）。3F 修复
+  1791P→1794P，余 5F 根因重归类进定稿清单；M4 门禁全绿（make test EXIT=0 +
+  product-smoke 首跑通过）。[evidence/2026-10-07-m4-tail41.md](evidence/2026-10-07-m4-tail41.md)。
 
 ## 下一步计划
 
-1. **尾簇 41：CANDIDATE 池燃烧**（挂账定稿清单末行 8F——shim face 逐案）：
-   capture 释放后 pointerout 双案、mouse_capture_change_hover ×3、
-   multiple_pointerover、lostpointercapture_remove_setcapture_node、tilt 部分集
-   init。修后全量 corpus 复核 + master.md 挂账表相应行收数。
-2. **M4 收口**：DC-2/DC-3 关账复核（对照挂账定稿清单逐类确认转移）、DC-4 门禁
-   （make test + clippy + fmt + reftest 零回归——**补 product-smoke**，goal 契约
-   M4 列项，本流改动为事件派发面未跑过）、`DONE` 判定输出。
-3. **长线挂账**（重入条件见定稿清单）：touch-action/滚动管线（渲染流碰头）、
+**goal 已 Done（2026-10-07 尾簇 41 收口）**：无 in-stream 必修面，仅余长线挂账
+与待用户决策项，均在重入条件满足时由对应 goal/专项带案，本控制面转为归档态。
+
+1. **长线挂账**（重入条件见定稿清单）：touch-action/滚动管线（渲染流碰头）、
    gBCR 同步布局（用户拍板 1a）、shadow DOM/slot（用户点名立项）、runner scheme
-   分流（专项拍板）、testharness 交互层 TO（跨 corpus 基建专项）。
+   分流（专项拍板）、testharness 交互层 TO（跨 corpus 基建专项）、`:hover`
+   capture 驱动计算样式（渲染流）、多指针状态机（结构性扩展立项）。
 
 **待用户决策清单**：gBCR 同步布局 RenderPipeline Arc 化（1a——30F 重入条件）；
 declarative shadow DOM 立项（15F/3TO 重入条件）；runner `.https.html` scheme
