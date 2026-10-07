@@ -747,13 +747,47 @@ fn console_value_to_remote_object(value: &serde_json::Value) -> serde_json::Valu
             "type": "object", "subtype": "array",
             "value": items.iter().map(console_value_to_remote_object).collect::<Vec<_>>(),
         }),
-        serde_json::Value::Object(entries) => serde_json::json!({
-            "type": "object",
-            "value": entries
-                .iter()
-                .map(|(k, v)| (k.clone(), console_value_to_remote_object(v)))
-                .collect::<serde_json::Map<String, serde_json::Value>>(),
-        }),
+        serde_json::Value::Object(entries) => {
+            // t8h（console 桥 Error 保真）：shim `_zwSerializeConsoleValue` 把 Error 展开为
+            // {name, message, stack} 三 string 键的平面——此处识别该形态并产出 CDP error
+            // 语义（subtype+description，Chromium 的 error RemoteObject 带同名与堆栈首行），
+            // 客户端（playwright text()/DevTools）可读错误内容而非 `[object Object]`。
+            // `value` 字段 = description 字符串（Chromium 原生无 value，靠 objectId 走
+            // renderPreview→description；我们无堆句柄，playwright 侧
+            // `JSHandle._preview = objectId ? renderPreview : String(ro.value)`——无 objectId
+            // 时 text() 就是 String(value)，故 value 必须承载展示文本，省略或为对象则渲染成
+            // "undefined"/`[object Object]`）。
+            // 误判面：普通对象恰好同名三 string 键 → 判 error，text() 可读（显示其 stack），
+            // 但 `value` 从对象载荷被替换为展示串——该对象失去 wire 级可检视性（设计接受）。
+            let err_tuple = match (
+                entries.get("name").and_then(|v| v.as_str()),
+                entries.get("message").and_then(|v| v.as_str()),
+                entries.get("stack").and_then(|v| v.as_str()),
+            ) {
+                (Some(name), Some(message), Some(stack)) if entries.len() == 3 => Some((name, message, stack)),
+                _ => None,
+            };
+            if let Some((name, message, stack)) = err_tuple {
+                let description = if stack.is_empty() {
+                    format!("{name}: {message}")
+                } else {
+                    stack.to_string()
+                };
+                return serde_json::json!({
+                    "type": "object",
+                    "subtype": "error",
+                    "description": description,
+                    "value": description,
+                });
+            }
+            serde_json::json!({
+                "type": "object",
+                "value": entries
+                    .iter()
+                    .map(|(k, v)| (k.clone(), console_value_to_remote_object(v)))
+                    .collect::<serde_json::Map<String, serde_json::Value>>(),
+            })
+        }
     }
 }
 

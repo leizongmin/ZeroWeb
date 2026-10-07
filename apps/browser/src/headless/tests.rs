@@ -2010,3 +2010,51 @@ fn test_partial_request_does_not_wedge_mux() {
         "discovery must be served while a partial request is pending, got: {response}"
     );
 }
+
+#[test]
+fn test_console_value_to_remote_object_error_shape_t8h() {
+    // t8h（console 桥 Error 保真）：shim `_zwSerializeConsoleValue` 把 Error 展开为
+    // {name,message,stack} 三 string 键平面；本函数识别该形态 → CDP error 语义
+    //（subtype:"error" + description 首行 name: message 或整段 stack），客户端可读
+    // 错误内容而非 `[object Object]`。`value` = description 字符串：playwright 侧
+    // `JSHandle._preview = objectId ? renderPreview : String(ro.value)`——我们无堆
+    // 句柄（无 objectId），text() 就是 String(value)，value 缺失渲染 "undefined"、
+    // 为对象渲染 `[object Object]`（Chromium 原生靠 objectId 走 description 路径）。
+    // 误判面（普通对象恰同形）仅多 subtype 字段。
+    // https://console.spec.whatwg.org/#error
+    // ① Error 形态：三键全 string → subtype+description（stack 优先）+ value=description。
+    let err = serde_json::json!({
+        "name": "TypeError",
+        "message": "boom",
+        "stack": "TypeError: boom\n    at eval (<anonymous>:1:1)",
+    });
+    let ro = super::console_value_to_remote_object(&err);
+    assert_eq!(ro["type"], "object");
+    assert_eq!(ro["subtype"], "error");
+    assert_eq!(ro["description"], "TypeError: boom\n    at eval (<anonymous>:1:1)");
+    assert_eq!(
+        ro["value"], "TypeError: boom\n    at eval (<anonymous>:1:1)",
+        "value=description 字符串（playwright text() 面内容承载）"
+    );
+    // ② 无 stack（空串）→ description 首行 `name: message`。
+    let err_nostack = serde_json::json!({ "name": "RangeError", "message": "neg", "stack": "" });
+    let ro2 = super::console_value_to_remote_object(&err_nostack);
+    assert_eq!(ro2["subtype"], "error");
+    assert_eq!(ro2["description"], "RangeError: neg");
+    // ③ 三键缺一 → 普通 object（无 subtype）。
+    let partial = serde_json::json!({ "name": "x", "message": "y" });
+    let ro3 = super::console_value_to_remote_object(&partial);
+    assert!(ro3.get("subtype").is_none(), "非三键形态不判 error");
+    // ④ 值类型非 string（嵌套对象）→ 不判 error。
+    let nested = serde_json::json!({ "name": "x", "message": "y", "stack": { "frames": 1 } });
+    let ro4 = super::console_value_to_remote_object(&nested);
+    assert!(ro4.get("subtype").is_none(), "stack 非 string 不判 error");
+    // ⑤ 普通对象 → 现语义不变（object + value 递归）。
+    let plain = serde_json::json!({ "a": 1 });
+    let ro5 = super::console_value_to_remote_object(&plain);
+    assert_eq!(ro5["type"], "object");
+    assert_eq!(
+        ro5["value"]["a"]["value"], 1,
+        "普通对象 value 递归 remoteObject 语义不变"
+    );
+}

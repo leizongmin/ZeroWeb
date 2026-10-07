@@ -6995,6 +6995,27 @@
     if (t === 'number' || t === 'boolean') return a;
     if (a === null) return null;
     if (a === undefined) return '__zw_undefined__';
+    // t8h：Error 实例保真——JSON round-trip 对 Error 产出 '{}'（message/stack 为不可枚举
+    // 自有属性），headless remoteObject 无内容可显（playwright 面渲染 `[object Object]`，
+    // Chrome 则显示 name+message+stack）。展开为 JSON-safe 平面对象（三 string 键形态由
+    // headless `console_value_to_remote_object` 识别为 error 语义，附 subtype+description）。
+    // 单 context 下 instanceof 可靠；Error 子类覆盖；非 Error 的同形对象维持 round-trip。
+    // instanceof 与属性读全在 try 内：revoked Proxy / 页面改写 globalThis.Error 时
+    // instanceof 本身可抛——console 序列化不得向页面抛异常（best-effort 不变量）。
+    // stack/message 无自有值（Object.create(Error.prototype)）为 null/undefined → 空串，
+    // 交 headless 走 `name: message` 首行回退（String(undefined) 会产出 "undefined" 假栈）。
+    // https://console.spec.whatwg.org/#error
+    var isErr = false;
+    try { isErr = a instanceof Error; } catch (_eIE) {}
+    if (isErr) {
+      var name = '';
+      var message = '';
+      var stack = '';
+      try { name = a.name == null ? '' : String(a.name); } catch (_eN) {}
+      try { message = a.message == null ? '' : String(a.message); } catch (_eM) {}
+      try { stack = a.stack == null ? '' : String(a.stack); } catch (_eS) {}
+      return { name: name, message: message, stack: stack };
+    }
     try { return JSON.parse(JSON.stringify(a)); } catch (_) {}
     try { return String(a); } catch (_) { return '[unknown]'; }
   }
