@@ -5,13 +5,17 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（137）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（141）
 
 - 2026-10-07 [workspace 根 `--bin` 构建的全成员 feature 统一解析把 v8 拖进 quickjs 臂](bugs/2026-10/2026-10-07-workspace-bin-build-feature-unification-v8-leak.md) — ci,build
+- 2026-10-07 [taffy 的 aspect-ratio 传递不与内容取大，且项目内既有传递臂全部 HorizontalTb 门控](bugs/2026-10/2026-10-07-taffy-ar-transfer-no-content-max-vertical.md) — zero-layout-engine
 - 2026-10-07 [多进程二进制分工：DOM shim 在 zero-renderer，`-p zero-browser` 构建不覆盖它](bugs/2026-10/2026-10-07-renderer-shim-not-in-browser-binary.md) — engine,renderer
+- 2026-10-07 [node spawn 子进程 stdio pipe 无消费者导致浏览器假死（CDP 永不起）](bugs/2026-10/2026-10-07-node-spawn-stdio-pipe-drain.md) — 验收工具链/probe
+- 2026-10-07 [MutexGuard 借用穿过 assert! format_args 后 NLL 不释放 → 同线程二次 lock 死锁](bugs/2026-10/2026-10-07-mutexguard-assert-format-args-deadlock.md) — engine
 - 2026-10-07 [CSS 嵌套 desugar 的父×子选择器叉乘需设预算——病态输入指数放大](bugs/2026-10/2026-10-07-css-nesting-desugar-cross-product-budget.md) — css-parser
 - 2026-10-07 [切分支后 cargo build 显示 Fresh 不能作为「base 代码」证据——多个 rlib fingerprint 变体并存](bugs/2026-10/2026-10-07-cargo-fresh-multirlib-not-base-evidence.md)
 - 2026-10-07 [预算渲染路径不清 persistent_handle_nodes 致跨文档 handle 身份漂移](bugs/2026-10/2026-10-07-budgeted-render-persistent-handle-nodes-stale.md) — engine,webview,renderer
+- 2026-10-07 [abspos + aspect-ratio 的 auto 轴 = 传递值 + automatic minimum（仅 min-*:auto 时），且 R1743 回填会覆盖后处理结果](bugs/2026-10/2026-10-07-abspos-ar-transferred-size-floors.md) — zero-layout-engine
 - 2026-10-06 [make import-wpt 连锁 fetch-wpt-data 重建目录，静默抹掉未入 tag 的 media fixture](bugs/2026-10/2026-10-06-wpt-data-refetch-wipes-untracked-fixtures.md) — wpt-runner,build-support
 - 2026-10-06 [诊断轮换二进制：`-p zero-browser` 不重建 zero-renderer；build 未确认即跑 probe 用旧二进制](bugs/2026-10/2026-10-06-renderer-diag-binary-rebuild-scope-and-race.md) — renderer, build
 - 2026-10-06 [残留 http.server 占端口导致合并树集成验收假 FAIL](bugs/2026-10/2026-10-06-leftover-http-server-port-squat.md) — engine,tests,wpt-runner

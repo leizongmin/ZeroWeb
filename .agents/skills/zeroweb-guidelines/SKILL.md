@@ -11,7 +11,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 
 - 触发后整个编码任务期间持续生效，不因多轮对话或任务切换遗忘；仅当用户明确说「跳过准则」时暂停，恢复编码后自动重新生效。
 - 动代码前按改动选择主题，CR 时对照触碰到的条目；先核对适用条件，不把局部经验扩展为无条件禁令。
-- **权衡**：这些不变式倾向谨慎而非速度。小改动不必全量过 28 条，自行判断。
+- **权衡**：这些不变式倾向谨慎而非速度。小改动不必全量过 29 条，自行判断。
 - 本 skill 是领域层，叠加在 AGENTS.md 编码准则 / `lei-code-guidelines`（行为层）之上，不复述其行为规则。
 
 | 改动入口 | 必读条目 |
@@ -19,6 +19,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 | CSS parser / shorthand | #1–2、#10、#21；触碰热路径加 #23 |
 | 字体 / shaping / 缓存 | #3–5、#8；性能改动加 #11 |
 | 绘制 / 合成 / 帧复用 | #6–8、#12–14、#17 |
+| 布局 / 后处理 pass | #18、#29 |
 | IPC / 同步脚本 / 宿主桥 | #12–15、#24–25 |
 | 存储 / 并发缓存 | #16、#19、#22 |
 | 性能 / 测试工具 | #9–11、#17–20、#23、#27–28；shim 循环加 #26 |
@@ -31,7 +32,7 @@ ZeroWeb 中一切来自网页的输入（HTML/CSS/JS 传值）都是**不可信�
 
 以下场景可临时放宽（合入 main 前必须恢复，放宽结束自动恢复全部）：
 
-- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离、#28 执行体证据核验可先单跑看方向，合入前补全验证
+- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离、#28 执行体证据核验、#29 pass 归因与臂覆盖审计可先单跑看方向，合入前补全验证
 - 紧急热修复且用户确认：#11 可先单跑，事后补同条件配对对照
 
 任何场景下不可放宽：#1、#2、#16、#21（信任边界与数据丢失）。
@@ -178,3 +179,9 @@ cargo 的产物身份（package ID / `-C metadata`）不区分 path 依赖在不
 Fresh 输出、构建耗时、`deps/` 下 rlib 的字符串检索、对另一个 bin 的 `-p` 构建，都不是「该二进制包含某段代码」的证据：deps/ 下同一 crate 可并存多个 fingerprint 变体，独立 bin target 不在其他包的构建闭包内（修 shim 后 `-p zero-browser` 不会重编实际执行它的 zero-renderer）。探针、A/B、对账等行为验证前，先对将要执行的产物本体核验：`nm <bin> | grep <新符号>`（base 应 0 命中）或 `grep -a -c <特征串> <bin>`；主进程二进制 grep 不到 shim 字符串属链接器 GC 正常现象，核验对象必须是实际执行该代码的进程二进制。
 
 依据：[cargo Fresh 与多 rlib 变体](../../../docs/learnings/bugs/2026-10/2026-10-07-cargo-fresh-multirlib-not-base-evidence.md)、[shim 修复未进 renderer 二进制](../../../docs/learnings/bugs/2026-10/2026-10-07-renderer-shim-not-in-browser-binary.md)。
+
+### 29. 布局输出是 pass 叠加态：归因按 pass 粒度 kill-switch，加臂先审计门控覆盖与回填覆盖
+
+布局最终几何是 taffy + 十余个后处理 pass 的叠加态，单看最终渲染值无法归因到机制——推断「某 CSS 语义不存在/已被承担」前，先用 kill-switch 环境变量逐个关闭 pass 定位真实承担者（绿案可能是另一条回填/位移 pass 间接撑住的）。给 pass 加臂或按书写模式门控时，必须同时审计：未门控书写模式（vertical）下同一 CSS 语义由谁接管——本项目 vertical 与水平是两套代码，水平臂修的 bug 在 vertical 侧几乎总有对应缺口；以及后续 pass（凡「把 auto 盒长回内容」的回填）是否会覆盖本臂的写入。
+
+依据：[abspos AR 传递与 R1743 回填覆盖](../../../docs/learnings/bugs/2026-10/2026-10-07-abspos-ar-transferred-size-floors.md)、[vertical 写入模式 AR 传递缺口](../../../docs/learnings/bugs/2026-10/2026-10-07-taffy-ar-transfer-no-content-max-vertical.md)。
