@@ -1,0 +1,24 @@
+   Compiling zero-renderer v0.1.0 (/home/lei/work/ZeroWeb/apps/renderer)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.50s
+     Running unittests src/lib.rs (target/debug/deps/zero_renderer-5977e6194b6742d5)
+
+running 3 tests
+test page_scripts::bounded_wait_tests::apply_generation_state_isolated_across_tab_instances_s39 ... FAILED
+test page_scripts::bounded_wait_tests::apply_generation_bump_lands_after_bounded_wait_timeout_s39 ... ok
+test page_scripts::bounded_wait_tests::drain_timeout_applies_recorded_and_recovers_backlog_s39 ... ok
+
+failures:
+
+---- page_scripts::bounded_wait_tests::apply_generation_state_isolated_across_tab_instances_s39 stdout ----
+
+thread 'page_scripts::bounded_wait_tests::apply_generation_state_isolated_across_tab_instances_s39' (145672) panicked at apps/renderer/src/page_scripts/bounded_wait_tests.rs:223:5:
+tab A 代际推进（A 的 notify 只作用 A 的 sandbox）
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    page_scripts::bounded_wait_tests::apply_generation_state_isolated_across_tab_instances_s39
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 220 filtered out; finished in 1.28s
+
+error: test failed, to rerun pass `-p zero-renderer --lib`

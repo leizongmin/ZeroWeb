@@ -3027,3 +3027,8 @@ mod tests {
         worker.shutdown();
     }
 }
+
+// slice39：drain/notify 两处 200ms 有界等待的时限语义钉 + apply/notify/代际多实例
+// 隔离钉（独立文件——本文件已超行数预算，测试外挂不再增长）。
+#[cfg(test)]
+mod bounded_wait_tests;
