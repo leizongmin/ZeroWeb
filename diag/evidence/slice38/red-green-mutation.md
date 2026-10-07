@@ -35,6 +35,6 @@ slotmap key version 计数随每个 `Document` 新建复位（`crates/dom/src/no
 
 ## 返修补注（双首轮 S2/S1 处置，主控 2026-10-07）
 
-- 上节「恢复修复行后复跑」的绿证当时未单独归档（S2）；补证口径：M1/M2 还原态以返修树全量 `gates/maketest-rework.log` 为在树绿证（钉 1/2/3 及后续钉 4 各腿全绿，见返修后 manifest 锚分解）；本补注之后的新增 mutation cycle 均带显式还原自证。
+- 上节「恢复修复行后复跑」的绿证当时未单独归档（S2）；补证口径：M1/M2 还原态以返修树全量 `gates/maketest-rework-rerun.log` 为在树绿证（钉 1/2/3 及钉 4 各腿全绿，见返修后 manifest 锚分解；首跑 `maketest-rework.log` 遇在册 flake 对 2F 中止、仅 4/6 钉腿在档，故以重跑收口 log 为准）；本补注之后的新增 mutation cycle 均带显式还原自证。
 - 新增钉 4（testeff S1，负空间守恒钉）：`prepare_document_state_keeps_form_control_values_s38`（webview tests）——断言 prepare 不清 form live value 表；mutation M2' 经 prepare 可达真实路径注入（`Pipeline::set_document_url` 加两表 clear，diff `mutation2.diff`）→ 新钉红、钉 2 构造性绿（`mutation2-red-webview-pin.log`，1 failed / 1 passed 定域）→ 还原 sha256 逐字节命中基线（`mutation2-restore-verify.log`）→ 复跑 `2 passed`（`mutation2-green-webview-pin.log`）。
 - 基线对账订正（defect S-1 ≡ testeff S3，独立收敛）：+4P = 4 条钉腿（钉 1/3 engine 各 1 腿 + 钉 2 webview v8/quickjs 双腿——zero-webview ∈ QUICKJS_TEST_CRATES），**0 漂移**，20,136 即切出点真值；撤回「+1P 基线漂移」「切出点实测 20,137」（无归档且与自归档 log 内部矛盾）与「+13 跨运行漂移」定性（实为 slice37 前后期树 +15 钉增 − 2 wayland 环境条件测试）。
