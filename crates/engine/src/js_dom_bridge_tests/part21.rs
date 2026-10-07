@@ -1620,6 +1620,53 @@ fn test_mouse_event_layer_xy_reflection_tail37() {
     );
 }
 
+/// uievents-compat 尾簇 38：UA 指针 click/dblclick 携指针坐标（UI Events §5.2.2
+/// ——click 与 mouseup 同指针位置；WPT layer-coords-transform outside 案 pageX
+/// 面）。此前 `__zw_pointer_up_sequence` 的 chorded click/主 click/dblclick 三分支
+/// init dict 缺 clientX/clientY，派生坐标恒 0（auxclick/mouseup/contextmenu 均
+/// 已携带——click 族漏网）。经 up-sequence 直驱双连击：两 click + dblclick 坐标
+/// 全随派发位；pageX = clientX（无滚动，`_zwMouseCoordInit` 派生）。
+#[test]
+fn test_pointer_click_carries_coordinates_tail38() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"t\">x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var log = [];\
+             var t = document.querySelector('#t');\
+             t.addEventListener('click', function (e) {\
+               log.push('click:' + e.clientX + ',' + e.clientY + ',' + e.pageX);\
+             });\
+             t.addEventListener('dblclick', function (e) {\
+               log.push('dblclick:' + e.clientX + ',' + e.clientY);\
+             });\
+             __zw_pointer_up_sequence('#t', '#t', 123, 45, 'mouse', 0);\
+             __zw_pointer_up_sequence('#t', '#t', 123, 45, 'mouse', 0);\
+             log.join('|')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "click:123,45,123|click:123,45,123|dblclick:123,45",
+        "尾簇 38：UA click/dblclick 携派发位坐标（clientX/Y = up 位；pageX = clientX 无滚动）"
+    );
+}
+
 /// R150②：Event timeStamp 量化到 5µs（0.005ms）——定时侧信道缓解（WPT
 /// Event-timestamp-safe-resolution 千样本 GCD ≥ 5µs）。断言两点：① 相邻构造事件差值
 /// 的量化粒度（任意两值之差 × 200 恒整数）② 量化不破坏单调非递减（后构造 ≥ 先构造）。

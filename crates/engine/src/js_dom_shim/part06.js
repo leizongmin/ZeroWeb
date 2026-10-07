@@ -13127,7 +13127,7 @@
         if (_chT) {
           if (st.streakTarget === _chT) st.streakCount += 1;
           else { st.streakTarget = _chT; st.streakCount = 1; }
-          __zw_dispatch_event(_chT, 'click', { detail: st.streakCount, buttons: _restBtns19, pointerType: pointerType || 'mouse', pointerId: 1 });
+          __zw_dispatch_event(_chT, 'click', { clientX: x || 0, clientY: y || 0, detail: st.streakCount, buttons: _restBtns19, pointerType: pointerType || 'mouse', pointerId: 1 });
         }
       }
       return 'ok';
@@ -13317,9 +13317,14 @@
     // pointerType 保持泛型，R108 激活事务单翻转契约不变）。
     // 尾簇 19：buttons 显式携带（末键释放后掩码已归零——click_on_chorded_mouse_button
     // 「final click buttons === 0」面；dispatch 缺省对 click 落 1）。
-    __zw_dispatch_event(target, 'click', { detail: st.streakCount, buttons: st.buttons, pointerType: pointerType || 'mouse', pointerId: 1 });
+    // 尾簇 38：click/dblclick 携指针坐标（UI Events §5.2.2——click 与 mouseup 同
+    // 指针位置；此前 init dict 缺 clientX/clientY 使派生坐标恒 0——auxclick/
+    // mouseup/contextmenu 均已携带，click 族漏网。WPT layer-coords-transform
+    // outside 案 pageX 面 + DC-2 坐标域；键盘激活 / element.click() 的无坐标
+    // click 走各自路径不受影响——spec 无指针交互坐标恒 0）。
+    __zw_dispatch_event(target, 'click', { clientX: x || 0, clientY: y || 0, detail: st.streakCount, buttons: st.buttons, pointerType: pointerType || 'mouse', pointerId: 1 });
     if (st.streakCount >= 2) {
-      __zw_dispatch_event(target, 'dblclick', { detail: 2 });
+      __zw_dispatch_event(target, 'dblclick', { clientX: x || 0, clientY: y || 0, detail: 2 });
     }
     // uievents-compat M3 尾簇：touch（非 hoverable）抬起即悬停拆除——pointer 层
     // out@over（over 已移除则抑制）+ leave 全链（over 已移除时以命中测试新锚起走
