@@ -9461,7 +9461,9 @@
     // 从不消费。s30-multimatch 集成面：insertAdjacentHTML → apply → gEBI → querySelector
     // → R100 返 handle proxy → 子读恒空（verdict textContent='' 根因）。锚回 sel 走既有
     // host 查询（同 `_realTag` 的 R100 回落先例，part03）；未登记或锚回后仍空 → 原行为
-    // 返 []，零回归。
+    // 返 []，零回归。已登记但失效（元素移除且未走物化快照）→ 锚回同 sel 可能读到同位
+    // 新元素：两害取其轻（审查 F3——旧 `[]` 同样不符「移除子树保子」语义）；镜像随
+    // renderer 每文档 context 重建而亡，跨文档不渗血。
     if (!sel && handle) {
       try {
         sel = _r100SelOfHandle(handle) || sel;

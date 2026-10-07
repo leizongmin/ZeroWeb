@@ -184,6 +184,13 @@ impl RenderPipeline {
                     self.cached_styles = session.styles.clone();
                     // DOM 已替换：CSS 解析缓存失效（见 RenderPipeline.cached_css_text 注释）。
                     self.cached_css_text = None;
+                    // slice37（mm-regression 根修，PR #93 审查 F1）：DOM 已换代即清
+                    // handle→NodeId 持久表——预算路径的子资源重绘（图片到达/字体
+                    // rerender/lazy 补绘）反复走本换代点，与 render_html 尾部同 R100
+                    // 换代语义；不清则旧代 NodeId 经下一 apply 预植（js_dom_bridge
+                    // apply_dom_mutations_full）ABA 命中同槽新节点，与跨文档缺陷同
+                    // 机制同签名。导航边界清零（prepare_document_state）保留作双保险。
+                    self.clear_persistent_handle_nodes();
                     let layout_out = LayoutResult {
                         root: layout.root.clone(),
                         viewport_width: layout.viewport_width,

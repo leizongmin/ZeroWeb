@@ -1787,7 +1787,12 @@ impl WebView {
         // slice37（mm-regression 根修）：文档换代清 handle→NodeId 持久表——预算渲染
         // 路径（AsyncPageLoad → advance_budgeted_render）不经过 render_html 的 slotmap
         // 换代清零（R100），旧文档条目经下一文档首个 apply 的预植/handle_selectors
-        // 返出 re-pollute 反查表（详见 `Pipeline::clear_persistent_handle_nodes` 文档）。
+        // 返出 re-pollute 反查表（详见 `Pipeline::clear_persistent_handle_nodes` 文档；
+        // 预算路径内部的 cached_doc 换代点已在 advance_budgeted_render Done 步对齐清零）。
+        // 已知边界（审查 F2，先行存在）：lazy 尾图到达的 is_loading()==false 窗口会
+        // 同文档重复进入本函数（same_navigation 误判），清零随之落在活文档上——当前
+        // 该时点 renderer 脚本未启/session 随即重绘，无实际损害；script-during-load
+        // 路径落地时须先修 same_navigation 语义。
         self.pipeline.clear_persistent_handle_nodes();
         self.security_context.set_page_origin(page_url);
         self.emit_event(&WebViewEvent::LoadStart(page_url.to_string()));
@@ -6833,6 +6838,38 @@ mod tests {
             "文档换代后 handle_selectors 不得夹带上一文档 handle（persistent_handle_nodes 未清）"
         );
         assert!(hs2.contains_key("h2"), "doc2 apply 产出 h2→selector 绑定");
+
+        // F1 钉（PR #93 审查）：同文档内的预算换代（子资源到达重绘——AsyncPageLoad
+        // 反复走 advance_budgeted_render Done 步换 cached_doc，不经 prepare_document_state）
+        // 同样必须清 persistent_handle_nodes。本段刻意不调 prepare_document_state：
+        // 清零删行时 doc2 apply 回填的 h2 经预植返出，下方断言红。
+        let mut session2 = BudgetedRenderSession::new("<html><body></body></html>", "");
+        loop {
+            match wv.advance_budget_session(&mut session2, 10_000.0) {
+                BudgetAdvance::Complete => break,
+                BudgetAdvance::InProgress => continue,
+            }
+        }
+        let result2 = session2.take_result().expect("二代预算渲染产出结果");
+        wv.apply_render_result(result2, "http://s37.test/doc2", true);
+        let (_, _, hs3) = wv
+            .apply_dom_mutations_and_render(&[
+                DomMutation::CreateElement {
+                    handle: "h3".to_string(),
+                    tag: "div".to_string(),
+                },
+                DomMutation::AppendChild {
+                    parent_selector: "body".to_string(),
+                    child_handle: "h3".to_string(),
+                },
+            ])
+            .expect("gen3 apply 成功");
+        assert!(
+            !hs3.contains_key("h2"),
+            "预算换代后 handle_selectors 不得夹带上一代 handle（advance_budgeted_render 换代未清 persistent_handle_nodes）"
+        );
+        assert!(!hs3.contains_key("h1"), "更早文档 handle 亦不得复现");
+        assert!(hs3.contains_key("h3"), "gen3 apply 产出 h3→selector 绑定");
     }
 
     // slice35：apply_pending_shared_mutations 单步路径（tail 纯结构批）的 evict +

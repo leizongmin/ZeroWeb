@@ -1629,13 +1629,16 @@ return _tplContent;
                   // R5010（mm-regression 根修，2026-10-07）：handle-only proxy（R100 反查
                   // 包装，`__zwSelector` 空）——本分支旧止步于此恒 []，不落 `_childNodeList`
                   //（firstChild/textContent 链落故修复后即通，childNodes 独缺）。锚回 sel
-                  // 查 host（R100 remember 正置缓存——`_zwQueryWrapIdentity` 包装时登记），
-                  // 以无 handle 形态走 base-cache 主路径（与上 `_r140Sel` 分支同形）。
-                  // 未登记 → 原行为返 []，零回归。
+                  // 查 host（R100 remember 正置缓存——`_zwQueryWrapIdentity` 包装时登记）。
+                  // 未登记 → 原行为返 []，零回归。已登记但失效（移除未物化）→ 锚回同
+                  // sel 可能读到同位新元素：两害取其轻（旧 `[]` 亦不符「移除子树保子」
+                  // 语义；审查 F3），镜像随 renderer 每文档 context 重建而亡，跨文档不
+                  // 渗血。传 handle 形态（审查 F4，与 firstChild/textContent 链对齐）：
+                  // 子项 parentNode 恒等原 proxy，不因读路径分叉。
                   var _r5010s = (typeof _r100SelOfHandle === 'function')
                     ? _r100SelOfHandle(_r140Handle)
                     : null;
-                  view = _r5010s ? _childNodeList(_r5010s, null) : [];
+                  view = _r5010s ? _childNodeList(_r5010s, _r140Handle) : [];
                 }
               }
             }
