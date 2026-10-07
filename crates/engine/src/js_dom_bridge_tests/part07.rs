@@ -561,12 +561,18 @@ fn test_history_go_out_of_range_noop_r3004() {
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // 建 3 entry（init null + a + b），back 到中间（cursor 在 a，state.page=1）。
+    // M2-S3：back/forward/go 入队 task 末尾（spec traverse 排队；WPT 004）——microtask 在
+    // execute 边界 drain，结算态在下一次 execute 读。
     sandbox
         .execute(
             "history.pushState({ page: 1 }, '', '/a');\
              history.pushState({ page: 2 }, '', '/b');\
-             history.back();\
-             globalThis.__midState = history.state.page;\
+             history.back();",
+        )
+        .unwrap();
+    sandbox
+        .execute(
+            "globalThis.__midState = history.state.page;\
              globalThis.__midLen = history.length;",
         )
         .unwrap();
@@ -582,10 +588,10 @@ fn test_history_go_out_of_range_noop_r3004() {
     );
 
     // go(-100) 越界（仅能回退 1）→ no-op：state 不变（仍 page=1），length 不变。
+    sandbox.execute("history.go(-100);").unwrap();
     sandbox
         .execute(
-            "history.go(-100);\
-             globalThis.__afterBack = history.state.page;\
+            "globalThis.__afterBack = history.state.page;\
              globalThis.__afterBackLen = history.length;\
              globalThis.__oobBack = (function(){ try { return 'ok'; } catch(e){ return 'threw'; } })();",
         )
@@ -607,11 +613,9 @@ fn test_history_go_out_of_range_noop_r3004() {
     );
 
     // go(100) 越界（仅能前进 1）→ no-op：state 不变。
+    sandbox.execute("history.go(100);").unwrap();
     sandbox
-        .execute(
-            "history.go(100);\
-             globalThis.__afterFwd = history.state.page;",
-        )
+        .execute("globalThis.__afterFwd = history.state.page;")
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__afterFwd)").unwrap().value,
@@ -620,11 +624,9 @@ fn test_history_go_out_of_range_noop_r3004() {
     );
 
     // in-range go(-1) 正常移动（state→null，回 init entry）。
+    sandbox.execute("history.go(-1);").unwrap();
     sandbox
-        .execute(
-            "history.go(-1);\
-             globalThis.__inRangeBack = (history.state === null);",
-        )
+        .execute("globalThis.__inRangeBack = (history.state === null);")
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__inRangeBack)").unwrap().value,
@@ -633,11 +635,9 @@ fn test_history_go_out_of_range_noop_r3004() {
     );
 
     // in-range go(2) 正常前进（state→page=2，b entry）。
+    sandbox.execute("history.go(2);").unwrap();
     sandbox
-        .execute(
-            "history.go(2);\
-             globalThis.__inRangeFwd = history.state.page;",
-        )
+        .execute("globalThis.__inRangeFwd = history.state.page;")
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__inRangeFwd)").unwrap().value,
@@ -2898,9 +2898,17 @@ fn test_location_reflects_pushstate_replacestate_r3005() {
         .execute(
             "globalThis.__p0 = location.pathname;\
              history.pushState({ p: 1 }, '', '/a'); globalThis.__p1 = location.pathname;\
-             history.pushState({ p: 2 }, '', '/b'); globalThis.__p2 = location.pathname;\
-             history.back(); globalThis.__pBack = location.pathname;\
-             history.replaceState({ p: 3 }, '', '/c'); globalThis.__pRep = location.pathname; globalThis.__sRep = history.state.p;\
+             history.pushState({ p: 2 }, '', '/b'); globalThis.__p2 = location.pathname;",
+        )
+        .unwrap();
+    // M2-S3：back() 入队 task 末尾——execute 边界 drain 后读（pushState/replaceState 仍同步反映）。
+    sandbox.execute("history.back();").unwrap();
+    sandbox
+        .execute("globalThis.__pBack = location.pathname;")
+        .unwrap();
+    sandbox
+        .execute(
+            "history.replaceState({ p: 3 }, '', '/c'); globalThis.__pRep = location.pathname; globalThis.__sRep = history.state.p;\
              history.pushState({ p: 9 }); globalThis.__pNoUrl = location.pathname;\
              globalThis.__href1 = location.href;",
         )
