@@ -62,6 +62,16 @@
   （gates/clippy-s40.log；默认 v8 feature 本地可编译，全靶向覆盖）；quickjs clippy 臂
   含于 make test（exit 0）
 
+## 合并后复测（origin/main 工作期间前进 e10211443→e73ece816：css-parser 嵌套
+## desugar 预算 + CI -p 化，产品变更——按红线 merge 进分支全量重测，merge commit 5c1d7bd3f）
+
+- make test：**70 腿 / 20,169P / 0F / 198I**（gates/maketest-postmerge-s40.log，exit 0；
+  = 基线 20,159 + 本切片 8 + 合入 css-parser 测试 2）
+- reftest：**704/704**（Layout 502 + Text 202，exit 0；gates/reftest-postmerge-s40.log）
+- WPT targeted：**43P/1F/2T**（gates/wpt-named-access-postmerge-s40.log），零 P 回退
+- fmt 零 diff / clippy 零告警复测（gates/fmt-postmerge-s40.log、
+  gates/clippy-postmerge-s40.log）
+
 ## RED 证据
 
 - 修前自然 RED（三根缺陷修复钉）：red-natural/red-engine-s40-prefix.log
