@@ -1,0 +1,19 @@
+   Compiling zero-renderer v0.1.0 (/home/lei/work/ZeroWeb/apps/renderer)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.35s
+
+running 1 test
+test page_scripts::bounded_wait_tests::lingering_bump_dropped_by_navigation_reset_seq_sweep_s41 ... 
+thread 'page_scripts::bounded_wait_tests::lingering_bump_dropped_by_navigation_reset_seq_sweep_s41' (2271945) panicked at apps/renderer/src/page_scripts/bounded_wait_tests.rs:336:5:
+assertion `left == right` failed: 滞留 bump 须被导航 seq 清扫丢弃（不执行）：ec 4→6
+  left: 6
+ right: 5
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    page_scripts::bounded_wait_tests::lingering_bump_dropped_by_navigation_reset_seq_sweep_s41
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 224 filtered out; finished in 1.27s
+

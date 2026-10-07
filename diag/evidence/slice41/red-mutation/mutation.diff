@@ -1,0 +1,26 @@
+# slice41 变异 M-S41：neuter 导航 reset 的 seq 清扫谓词（判别代码变异 → 钉 RED 复杀）
+#
+# 对象：apps/renderer/src/js_worker.rs :: survives_document_reset 的 seq 模式臂
+# 变异：`*seq > reset_seq` → `true`（全部代际类命令无条件存活 = 清扫失去判别力，
+#       滞留 bump 在 reset 重建 context 后补执行——「执行后随 context 销毁」形态）
+# 注入：单行；还原：cp 备份逐字节恢复，sha256 前后一致（见 sha256-*.txt）
+#
+# 行号偏移栏（xI-1 采纳实践；本切片树 = origin/main @ 9799ce551 + bounded_wait_tests.rs 钉 4）
+#   注入点实测行号：js_worker.rs:830（survives_document_reset match 臂末）
+#   注入仅改本行、不增删行数 → 后续行零偏移
+#   slice39 卡片所记 :825-834（survives_document_reset 全函数）在本树仍吻合（825-834）
+#   分派环 prio 臂 :1162 / normal recv 醒后复查 :1176、reset 清扫臂 :1452-1467、
+#   Execute 臂 execution_count 自增 :1196、notify 有界等待入口 :391、reset prio 提交 :592-593
+#   ——以上为 9799ce551 树实测，供后续切片复用时校准漂移
+#
+--- a/apps/renderer/src/js_worker.rs
++++ b/apps/renderer/src/js_worker.rs (MUTATED, temporary)
+@@ -827,7 +827,7 @@
+         JsWorkerCommand::Execute { seq, .. }
+         | JsWorkerCommand::ExecuteModule { seq, .. }
+         | JsWorkerCommand::SetDomSnapshot { seq, .. }
+-        | JsWorkerCommand::ResetDocumentState { seq, .. } => *seq > reset_seq,
++        | JsWorkerCommand::ResetDocumentState { seq, .. } => true, // MUT-S41
+         JsWorkerCommand::ResolveAsyncCallback { .. } => false,
+         _ => true,
+     }
