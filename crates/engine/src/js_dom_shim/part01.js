@@ -3962,6 +3962,11 @@
       if (_na36flats && (_na36flats.addFlat.length || _na36flats.remFlat.length)) {
         _zwNADynamicSync(_na36flats);
       }
+      // t8e：scoped 集合树序重排（t8e 起 children 集合被缓存，中间插入的树序落位在
+      // 反链记账后进行——invalidate 内反链未落账不能就地锚定，见 part05 _zwHCTreeOrderSync）。
+      if (_na36flats && _na36flats.addFlat.length) {
+        _zwHCTreeOrderSync(_na36flats.addFlat, sel, handle);
+      }
     }
   }
   // event-loop-spec M2 MO-S1（方案 C hybrid，设计片

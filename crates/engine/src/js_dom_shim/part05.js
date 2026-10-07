@@ -9961,6 +9961,12 @@
   // R51c：pending 按 parentSel 分桶（childNodes overlay 查询用——见 _zwOverlayPendingChildNodes）。
   // key 为 null（handle 父 mutation）时桶键 '_h:' + parentHandle。
   var _zwPendingByParent = new Map();
+  // t8e（siteopt bilibili r1）：Element.children 集合对象缓存（键=元素 proxy，值={k:分支形态,
+  // c:集合}；声明于此、消费在 part04 children getter、换代清空见 __zw_reset_pending_state）。
+  // getter 每次访问全量重建并向 _zwLiveCollections 注册新集合（仅换代清空）——长驻页轮询
+  // `children[i]` O(n)/读 + 注册表无界增长 → 每变异全表扫 O(集合×元素)。缓存后同元素同
+  // 形态返回同一活集合，活语义由写侧 _zwHCLiveInvalidate 维护网保留（R358/R333）。
+  var _zwChildrenCollCache = new WeakMap();
   // R358（js-dom M1）：**快照换代失效钩子**——`SetDomSnapshot`（tab_js_worker/renderer
   // js_worker）替换 host 快照后调用。JS 侧 pending 记账（bucket/live 集合/child 缓存）
   // 是**旧快照 + 旧 mutation 批**的衍生物：新快照替换 host 真相后，bucket 残留条目对
@@ -9970,6 +9976,10 @@
   // 快照替换形态）。id 覆盖表同源清理（旧快照的 id 变更对新文档无意义）。
   globalThis.__zw_reset_pending_state = function () {
     _zwLiveCollections.length = 0;
+    // t8e：children 集合缓存随换代重置（与注册表清空同点）——旧集合自此刻起与旧文档
+    // 一样失聪（页面持旧引用冻结 = 旧文档语义，slice32 dead 标记同款）；不重置则换代后
+    // 缓存命中绕过重建，新快照内容不可见（R357 stale 根因同形）。
+    _zwChildrenCollCache = new WeakMap();
     _zwPendingAdded.length = 0;
     _zwPendingRemoved.length = 0;
     _zwPendingAddedSet = null;
@@ -10405,6 +10415,9 @@
             var cur = lc.elements();
             var dup = false;
             for (var c2 = 0; c2 < cur.length; c2++) if (cur[c2] === nd) { dup = true; break; }
+            // t8e 注：此处不做树序插入——本函数运行时反链尚未落账（见函数尾 slice36 注），
+            // nd.nextSibling 读到旧位置兄弟。成员先入（尾部 push），树序由 _mo_notify
+            // 反链记账后的 _zwHCTreeOrderSync 尾叫重排（scoped 集合）。
             if (!dup) cur.push(nd);
           }
         }
@@ -10419,6 +10432,83 @@
     // 尾叫 `_zwNADynamicSync`——contains/树序判定依赖的 `_zwNodeParent` 反链在该时点
     // 已记/已删，本函数内反链尚未落账，不能就地做连接性判定）。
     return { addFlat: addFlat, remFlat: remFlat, inDoc: _r54InDoc };
+  }
+
+  // t8e（siteopt bilibili r1）：scoped 集合树序重排——_mo_notify 在反链记账**之后**的
+  // 尾叫（_zwNADynamicSync 同位）。invalidate 的 add 分支运行时反链未落账，只能尾部
+  // push（成员正确、顺序保守）；本函数此时点把本批加入节点重排到树序位。仅 scoped
+  // 集合（children/元素级 getElementsBy*）——t8e 起 children 集合被缓存（fresh 读也见
+  // held 序），中间插入必须落位；文档级集合维持旧 push 行为不变（无缓存暴露面）。
+  // 锚定策略（PR #96 审查 D1 返修）：**优先 `_zwNodeParent` 记录的 record nextSibling**
+  //（批的**外部**锚——多节点批各节点同锚，按 addFlat 序逐个落位即保批内序；动态读
+  // `nd.nextSibling` 会让批内节点互锚，先落位节点成为后落位节点的锚但还在尾部，产生
+  // 部分排序中间态——fragment [x,y] insertBefore b 实测 [a,y,b,x]）。handle 节点记录
+  // 必在（_mo_notify 反链记账同批写入）；记录锚 null（真尾插/replaceChild 无锚 record/
+  // sel-only 节点不进反链记账）一律回落动态读——先调
+  // `_zwSiblingBaseInvalidateAll`（R334 姊妹缓存 notify 后段本就全失效，提前到本点使
+  // 动态读新鲜，同父移动形 appendChild(firstChild) 不再命中移动前旧锚）。锚不在集合
+  //（文本/注释锚常见于 insertBefore(node, el.nextSibling)）沿 nextSibling 链走查到
+  // 首个集合成员或链尾（保守回退=尾插，R51 overlay 同款）。成本 O(批×集合元素)，
+  // 仅结构变异时发生。
+  function _zwHCTreeOrderSync(addFlat, mutSel, mutHandle) {
+    if (!addFlat || !addFlat.length) return;
+    if (typeof globalThis._zwSiblingBaseInvalidateAll === 'function') {
+      try { globalThis._zwSiblingBaseInvalidateAll(); } catch (_eSbInv) {}
+    }
+    for (var i = 0; i < _zwLiveCollections.length; i++) {
+      var lc = _zwLiveCollections[i];
+      if (lc.dead) continue;
+      if (!lc.scopeHandle && !lc.scopeSel) continue;
+      var scoped = lc.scopeHandle ? (lc.scopeHandle === mutHandle) : (lc.scopeSel === mutSel);
+      if (!scoped) continue;
+      for (var a = 0; a < addFlat.length; a++) {
+        var nd = addFlat[a];
+        if (!nd) continue;
+        var cur = lc.elements();
+        var idx = -1;
+        for (var q = 0; q < cur.length; q++) if (cur[q] === nd) { idx = q; break; }
+        if (idx < 0) continue; // 未入集合（matches 不收/已对冲）——只重排已入成员
+        var anch = null;
+        if (nd.__zwHandle && typeof _zwNodeParent !== 'undefined') {
+          var _np = _zwNodeParent[nd.__zwHandle];
+          if (_np) anch = _np.nextSibling || null;
+        }
+        if (anch === null && nd._zwSelPendingParent) {
+          // 槽锚（R55 overlay 同源）：解析 wrapper（innerHTML/iAH 产物，无 handle 无 sel）
+          // 与 sel 移动节点的挂父槽带插入点 ref——记录锚的 sel 对偶（R51c overlay 消费
+          // 同款字段）。
+          anch = nd._zwSelPendingParent.nextSibling || null;
+        }
+        if (anch === null) {
+          // 无记录/槽锚 → 动态读（入口已失效 R334 姊妹缓存，读到本批变异后的新鲜树）：
+          // ① sel-only 快照节点不进反链记账（_mo_notify 只记 __zwHandle 节点）也无槽
+          // ——同父移动唯有此路；② replaceChild 各形态 record 无可用锚（R100/R47 混合
+          // 形态 record 不带 nextSibling 字段，sel-sel 形态虽有但节点无 handle 记不到，
+          // handle 子的 nextSibling 是同步 registry getter 故读数准）；③ 记录锚 null
+          //（真尾插）时动态读同为 null，幂等无害。
+          try { anch = nd.nextSibling || null; } catch (_eNs3) { anch = null; }
+        }
+        // 锚不在集合 → 沿链走查（文本/注释锚落位；上限防异常链）。
+        var _wg = 0;
+        while (anch && _wg < 64) {
+          var _inC = false;
+          for (var w = 0; w < cur.length; w++) { if (cur[w] === anch) { _inC = true; break; } }
+          if (_inC) break;
+          try { anch = anch.nextSibling || null; } catch (_eWlk) { anch = null; }
+          _wg++;
+        }
+        var target = cur.length - 1; // 无锚（尾插入/链走查落空）→ 保持末位
+        if (anch) {
+          for (var w2 = 0; w2 < cur.length; w2++) {
+            if (cur[w2] === anch) { target = (w2 > idx) ? w2 - 1 : w2; break; }
+          }
+        }
+        if (target !== idx) {
+          cur.splice(idx, 1);
+          cur.splice(target, 0, nd);
+        }
+      }
+    }
   }
 
   function _zwMakeHTMLCollection(elements, liveSpec) {
