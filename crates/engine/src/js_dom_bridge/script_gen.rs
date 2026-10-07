@@ -834,6 +834,20 @@ pub fn script_run_classic_page(code: &str, script_index: usize, source_url: Opti
                     if name.is_empty() || !(after_trim.starts_with('=') || after_trim.is_empty()) {
                         return None;
                     }
+                    // M2-S2（navigation-compat）：`let` 声明改 **accessor 转发导出**（R201 var
+                    // 同款 get/set 双向转发）。旧值快照 `globalThis.NAME=NAME` 只同步导出时刻
+                    // 的值——顶层 `let` 声明后被闭包（如 `window.onpopstate = () =>
+                    // popstatesLeft--`）再赋值时，后续脚本经 globalThis 读到的是**过期快照**
+                    //（WPT history-traversal/event-order/before-load-hash 族断言
+                    // `popstatesLeft` 跨脚本递减可见性）。真浏览器 classic 脚本共享全局
+                    // lexical binding，跨脚本读赋同源。accessor 闭包捕获 eval 作用域双向
+                    // 转发即复现该语义。**非 strict 也安全**：let 是 lexical declaration 恒
+                    // 不泄漏 global（var 的 accessor 自递归坑仅 var 数据属性泄漏形态——
+                    // R201 is_strict 注记），getter 内 `return NAME` 恒解析 eval 绑定。
+                    // const 保持值快照（不可重赋，快照 ≡ 转发）。
+                    if keyword == "let " {
+                        return Some(var_accessor_export(&name));
+                    }
                     return Some(format!("try{{globalThis.{name}={name};}}catch(_zw_ex){{}}"));
                 }
             }

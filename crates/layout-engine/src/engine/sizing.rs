@@ -758,6 +758,29 @@ impl LayoutEngine {
                     ps.flex_direction,
                     FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
                 );
+                // R4991（css-flexbox §4.2 flex-basis:content + css-sizing-4 §4 transferred
+                // size）：basis content 时不读 main size property（width:20px 不钉主轴），
+                // content 尺寸经 ratio 从 definite cross 传递（021：cross h:100 × AR 1/1 →
+                // main 100 方块，ZW 渲 20×100）——flex_basis 直接写 transferred definite，
+                // taffy flex 算法以 basis 为基。022 为 column 镜像。仅叶条目水平域。
+                let basis_is_content = matches!(item_style.flex_basis, zero_style_system::FlexBasisValue::Content);
+                let cross_definite_css = if is_column {
+                    resolve_sizing_definite_real_length(&item_style.width, item_style)
+                } else {
+                    resolve_sizing_definite_real_length(&item_style.height, item_style)
+                };
+                if basis_is_content
+                    && !b.is_replaced
+                    && let Some(cross_px) = cross_definite_css
+                    && cross_px > 0.5
+                    && matches!(b.writing_mode, WritingModeValue::HorizontalTb)
+                {
+                    let transferred_main = if is_column { cross_px / ratio } else { cross_px * ratio };
+                    st.flex_basis = taffy::style::Dimension::length(transferred_main.max(0.5));
+                    let _ = taffy_tree.set_style(tid, st.clone());
+                    let _ = taffy_tree.mark_dirty(tid);
+                    changed = true;
+                }
                 // main 轴 CSS 须为 auto（否则 converter 已从显式 CSS 处理，不应覆盖）。
                 let main_is_auto = if is_column {
                     matches!(item_style.height, LengthValue::Auto)

@@ -2,7 +2,7 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-07（M1 runner 通道落地 + 首轮基线 20.9%；三域 fetch 网络挂账）
+**最后更新**: 2026-10-08（M2-S1 location 86.1% + M2-S2 traverse 93.3%；全量 25.9%→29.2%）
 
 ---
 
@@ -22,34 +22,42 @@
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| P1 | 四 corpus（html/browsers + history + navigation-api + iframe）导入 + 基线 | 🔶 主体落地（770 案在库 / 基线 387 子测试 20.9%）；scroll-to-fragid + unloading-documents + the-iframe-element 与嵌套 resources 因 GitHub 网络间歇中断未落地（fetch 脚本已补列 DIRS，幂等续拉） |
-| P2 | history pushState/replaceState/state/length/back/forward/go 语义 | 🔶 部分在位（the-history-interface 81.6%）；Location 接口面 / hashchange 赋值序为缺口 |
-| P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | ⏳ M2（基线已定位：traverse 事件序断言 / location 同步导航 `expected "baz" but got "foo"`） |
+| P1 | 四 corpus 导入 + 基线 | ✅ 落地（fetch 三域 + 嵌套 resources 2026-10-07 恢复后入库；基线 20.9%，S1+S2 后全量 29.2%） |
+| P2 | history pushState/replaceState/state/length/back/forward/go 语义 | 🔶 the-history-interface 81.6% 持平（余 8F 集中在 navigation 重载/跨源 SecurityError 面） |
+| P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | 🔶 S1+S2 落地：location 41.9%→**86.1%**、traversal 62.2%→**93.3%**；余 exotic 内部方法面（preventExtensions/setPrototypeOf）+ Navigation API 面 |
 | P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | ⏳ M3 **用户门控** |
 | P5 | bfcache / fission 挂账定稿 | ⏳ M4 |
 
 ## 已完成切片
 
 - **M1 runner 通道 + 首轮基线（2026-10-07）**：`testharness-navigation` 子命令 +
-  `navigation_case_skipped` 筛减规则（iframe 依赖 245 / window.open 70 / legacy 多页
-  95 记账）+ Makefile `fetch-wpt-navigation` / `testharness-navigation` target；
-  fetch 脚本改按 pin 实际布局取语料（pin 下无顶层 history/——会话历史 corpus 落
-  `html/browsers/history/**`）并补列嵌套 resources 叶。基线：309 案 387 子测试
-  81 Pass = **20.9%**（navigation-api 0/196 全域未实现；history-interface 81.6% /
-  location 41.9% / history-traversal 62.2% / navigating-across-documents 0%）。
-  证据：[evidence/2026-10-07-m1-baseline.md](evidence/2026-10-07-m1-baseline.md)；
-  CSV 已回填 active 行（2026-10-07）。
+  `navigation_case_skipped` 筛减规则 + Makefile target；基线 309 案 387 子测试
+  81 Pass = 20.9%。证据：[evidence/2026-10-07-m1-baseline.md](evidence/2026-10-07-m1-baseline.md)。
+- **M2-S1 Location 接口语义（2026-10-08）**：Location [LegacyUnforgeable] 面 +
+  `window.Location` 接口对象 + port + 写侧 SYNTAX_ERR + Document.location dedup +
+  runner 绝对路径 helper 通道（stringifiers.js）。location 41.9%→**86.1%**；余 5F =
+  exotic 面 ×3（FIXME 已标）+ runner 无端口 URL ×1 + Navigation API ×1。
+  证据：[evidence/2026-10-08-m2-s1-location-interface.md](evidence/2026-10-08-m2-s1-location-interface.md)。
+- **M2-S2 traverse 事件序（2026-10-08）**：fragment navigation 同步 popstate +
+  isTrusted（`__zwTrusted` 口）+ PopStateEvent hasUAVisualTransition/非 new TypeError +
+  scrollRestoration per-entry + runner 顶层 `let` accessor 转发导出（R201 同款，
+  before-load-hash 族根因）。traversal 62.2%→**93.3%**、event-order 12/13。
+  证据：[evidence/2026-10-08-m2-s2-traverse-events.md](evidence/2026-10-08-m2-s2-traverse-events.md)。
+- **质量门禁（两切片合并跑）**：`make test` 20,180 P / 0 F 全绿；clippy -D warnings
+  零 warning；fmt 零 diff；全量语料零基线回归（M1 81 Pass 案全保持）。
 
 ## 下一步计划
 
-1. **P1 收尾**：网络恢复后 `FORCE=1 bash tests/wpt-runner/scripts/goals/60-navigation-compat.sh`
-   续拉三域 + 嵌套 resources → 重跑三域基线刷新 evidence + CSV（the-iframe-element
-   属 M3 门控面，基线零执行记账不阻塞）。
-2. **M2 切片排序建议**（按基线 gap 聚类，见 evidence §gap 归类）：① Location 接口
-   语义（`window.Location` 构造器/原型 + hash 赋值 + 写侧重入 guard）② traverse
-   事件序（load/popstate 序 + isTrusted + PopStateEvent 属性面）③ 跨文档导航语义。
-   Navigation API（0/196，量级 ~196 子测试）建议作为独立评估切片排在 ①② 之后。
-3. **M3**：frame tree 最小面——**启动前须用户点名批准**。
+1. **M2 ③ 跨文档导航语义**：navigating-across-documents 4.8%（2/42）——load/unload
+   事件序与跨文档 URL 归属；依赖跨文档导航链（单文档 runner 形态限制，先评估
+   可达子集再动）。
+2. **M2 ④ Navigation API 评估切片**：0.4%（1/228），`window.navigation` 全域缺席——
+   按 master 前议独立评估（量级 ~196 子测试），排在 ③ 后或并行。
+3. **M2 ⑤ exotic 内部方法面评估**（Location [[PreventExtensions]]/[[SetPrototypeOf]]）：
+   影响 [LegacyUnforgeable] 接口建模（Proxy vs 引擎层 exotic 支持），跨切片收益
+   （location 3F + 后续 Window/Document 同族面）。
+4. **M3**：frame tree 最小面——**启动前须用户点名批准**（2026-10-04 已征询待批复，
+   维持挂起，见下）。
 
 **待用户决策清单**：
 - [ ] M3 iframe 深结构切片启动授权（未获批期间 DC-3 保持 pending，不阻塞 M2 收口）

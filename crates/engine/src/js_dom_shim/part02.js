@@ -4694,7 +4694,7 @@
   // `location`，同源导航 defer host 桥）；② popstate 仅 dispatch 给 window listener（headless 无真用户
   // back 按钮，浏览器 chrome 导航 defer）；③ popstate 经 `_defer` microtask 派发（spec 为 task，本沙箱异步
   // 模型近似）；④ go(delta) 同步移 cursor + microtask 派发（spec 批量合并简化）。
-  var _hist_entries = [{ state: null, url: '' }]; // cursor 0 = 初始 entry
+  var _hist_entries = [{ state: null, url: '', scrollRestoration: 'auto' }]; // cursor 0 = 初始 entry（M2-S2：+ per-entry scrollRestoration）
   var _hist_cursor = 0;
   function _hist_current() { return _hist_entries[_hist_cursor]; }
   function _hist_dispatchPopState(oldHrefBefore) {
@@ -4712,11 +4712,14 @@
       _scrollToAnchorForHash(String(newHref).split('#')[1] || '');
     }
     _defer(function () {
-      var ev = new PopStateEvent('popstate', { state: st });
+      // M2-S2（navigation-compat）：back/forward/go 派发的 popstate/hashchange 为 UA 生成事件
+      // → isTrusted true（spec：traverse 步骤 fire 的事件非合成；WPT popstate_event/
+      // hashchange_event 'assert_true(e.isTrusted)'）。经 R312 `__zwTrusted` 内部口置位。
+      var ev = new PopStateEvent('popstate', { state: st, __zwTrusted: true });
       ev.target = globalThis;
       _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
       if (hashChanged) {
-        var hev = new HashChangeEvent('hashchange', { oldURL: oldHrefBefore, newURL: newHref });
+        var hev = new HashChangeEvent('hashchange', { oldURL: oldHrefBefore, newURL: newHref, __zwTrusted: true });
         hev.target = globalThis;
         _dispatchToListeners(_elKey('html', null), hev, 'all', globalThis);
       }
@@ -4758,13 +4761,22 @@
   globalThis.history = {
     get length() { return _hist_entries.length; },
     get state() { return _hist_current().state; },
-    get scrollRestoration() { return 'auto'; },
-    set scrollRestoration(_v) { /* headless 无真滚动恢复，no-op */ },
+    // M2-S2（navigation-compat）：scrollRestoration 为 **per-entry** 属性（spec——session history
+    // entry 的 scroll restoration mode，getter/setter 读写当前 entry；traverse 切 entry 即反映该
+    // entry 的 mode，pushState/replaceState 克隆/保留。WPT scroll-restoration-navigation-samedoc）。
+    get scrollRestoration() { return _hist_current().scrollRestoration || 'auto'; },
+    set scrollRestoration(v) {
+      // spec：非法值（非 'auto'/'manual'）**静默忽略**不抛（WPT scroll-restoration-basic
+      // 'Invalid values are ignored'——3.1415/{}/ 'bogus' 均保持原值）。
+      if (v === 'auto' || v === 'manual') _hist_current().scrollRestoration = v;
+    },
     // pushState(state, unused, url?)：截断 forward entries + push 新 entry + 推进 cursor（不触发 popstate）。
     // R3005：url 经 _resolveHistUrl 解析为绝对存入 entry（供 location getter 反映）。
+    // M2-S2：新 entry 继承当前 entry 的 scrollRestoration mode（克隆语义，同 _pushHistNav）。
     pushState: function (state, _unused, url) {
+      var _zwSR = _hist_current().scrollRestoration || 'auto';
       _hist_entries = _hist_entries.slice(0, _hist_cursor + 1);
-      _hist_entries.push({ state: state, url: url != null ? _resolveHistUrl(String(url)) : _hist_current().url });
+      _hist_entries.push({ state: state, url: url != null ? _resolveHistUrl(String(url)) : _hist_current().url, scrollRestoration: _zwSR });
       _hist_cursor = _hist_entries.length - 1;
     },
     // replaceState(state, unused, url?)：原地替换当前 entry 的 state/url（不触发 popstate）。
@@ -4794,20 +4806,26 @@
   //（旧页 pushState 后导航，新页 location.href/history 误读旧 SPA entry）。pushState/replaceState/hash 变更
   //（同文档）**不**触发 host set_dom_snapshot(url 变化)，故不误重置 SPA 路由态。
   globalThis.__zw_reset_history = function () {
-    _hist_entries = [{ state: null, url: '' }];
+    _hist_entries = [{ state: null, url: '', scrollRestoration: 'auto' }];
     _hist_cursor = 0;
   };
 
   // R3006/R3008：location setter 共享导航应用——push 新 history entry（navigation 语义，R3005 location 读之反映）
   // + hash 段变化时异步派 hashchange。供 _setLocationHash / _setLocationPart 复用（DRY）。
+  // M2-S2：新 entry 继承当前 entry 的 scrollRestoration mode（spec「session history entry 的
+  // scroll restoration mode 随 entry 克隆」——WPT scroll-restoration-navigation-samedoc
+  // 'retained after pushing new state'）。
   function _pushHistNav(newHref, oldHref) {
+    var _zwSR = _hist_current().scrollRestoration || 'auto';
     _hist_entries = _hist_entries.slice(0, _hist_cursor + 1);
-    _hist_entries.push({ state: null, url: newHref });
+    _hist_entries.push({ state: null, url: newHref, scrollRestoration: _zwSR });
     _hist_cursor = _hist_entries.length - 1;
     if (String(oldHref).split('#')[1] !== String(newHref).split('#')[1]) {
       var oldU = oldHref, newU = newHref;
       _defer(function () {
-        var ev = new HashChangeEvent('hashchange', { oldURL: oldU, newURL: newU });
+        // M2-S2：hash setter 触发的 fragment navigation 派发的 hashchange 为 UA 生成 → isTrusted
+        // true（R312 `__zwTrusted` 内部口；WPT hashchange_event 'assert_true(e.isTrusted)'）。
+        var ev = new HashChangeEvent('hashchange', { oldURL: oldU, newURL: newU, __zwTrusted: true });
         ev.target = globalThis;
         _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
       });
@@ -4842,6 +4860,14 @@
     var newHref = oldHref.split('#')[0] + h;
     if (newHref === oldHref) return; // hash 未变 → no-op（spec：不派 hashchange）
     _pushHistNav(newHref, oldHref);
+    // M2-S2（navigation-compat）：fragment navigation 派 popstate **同步**（setter 返回前；spec
+    // URL and history update steps——同文档导航的 popstate 在导航算法内同步派发，先于 queued
+    // hashchange task。WPT event-order/before-load-hash「setter 后立即断言 popstate 已计数」、
+    // pushState-inside-popstate「location.hash='#1' 后同步断言 onpopstate 已跑」）。UA 生成 →
+    // isTrusted true（R312 `__zwTrusted` 口）。state 取新 entry state（fragment 克隆导航不换 state）。
+    var _zwPsEv = new PopStateEvent('popstate', { state: _hist_current().state, __zwTrusted: true });
+    _zwPsEv.target = globalThis;
+    _dispatchToListeners(_elKey('html', null), _zwPsEv, 'all', globalThis);
     // R3061：滚到锚元素（frag = hash 去 '#'）——闭合 R3053 限制①。real browser 同文档片段导航滚锚。
     _scrollToAnchorForHash(h.charAt(0) === '#' ? h.slice(1) : '');
   }
@@ -4853,7 +4879,13 @@
     var oldHref = globalThis.location.href;
     var newHref = null;
     if (typeof URL === 'function' && typeof __zw_set_url_part === 'function') {
-      try { var u = new URL(oldHref); u[part] = String(value); newHref = u.href; } catch (_e) {}
+      try { var u = new URL(oldHref); u[part] = String(value); newHref = u.href; } catch (_e) {
+        // M2-S1（navigation-compat）：href 写侧解析失败 → SYNTAX_ERR DOMException（spec
+        // location-href-setter「parse 失败 throw SyntaxError」；WPT location_assign/location_replace
+        // 'URL that fails to parse' 断言 SYNTAX_ERR）。pathname/search/port 等 URL part setter
+        // 不抛（sanitize 语义），本路径实际仅 href 整体替换可触达。
+        throw new (globalThis.DOMException || DOMException)("The URL '" + String(value) + "' is invalid.", 'SyntaxError');
+      }
     }
     if (!newHref || newHref === oldHref) return; // 解析失败 / 未变 → no-op
     _pushHistNav(newHref, oldHref);
@@ -4870,7 +4902,9 @@
     if (String(oldHref).split('#')[1] !== String(newHref).split('#')[1]) {
       var oldU = oldHref, newU = newHref;
       _defer(function () {
-        var ev = new HashChangeEvent('hashchange', { oldURL: oldU, newURL: newU });
+        // M2-S2：location.replace 触发的 fragment 导航 hashchange 为 UA 生成 → isTrusted true
+        //（R312 `__zwTrusted` 口，同 _pushHistNav）。
+        var ev = new HashChangeEvent('hashchange', { oldURL: oldU, newURL: newU, __zwTrusted: true });
         ev.target = globalThis;
         _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
       });
@@ -4891,6 +4925,15 @@
   // 解析失败 / 未变 → no-op（spec assign/replace 同 url 为 no-op 导航）。
   function _locationAssign(url) {
     var oldHref = globalThis.location.href;
+    // M2-S1：解析失败 → SYNTAX_ERR DOMException（spec location-assign「parse 失败 throw
+    // SyntaxError」；WPT location_assign 'URL that fails to parse'——location.assign('http://:')）。
+    // _resolveHistUrl 解析失败回退返原串（truthy），falsy 判定不可达——显式 new URL 校验。
+    // 无 URL 通道（裸 sandbox）不可校验，保持 legacy no-op 不抛。
+    if (typeof URL === 'function' && typeof __zw_parse_url === 'function') {
+      try { new URL(String(url), oldHref); } catch (_e) {
+        throw new (globalThis.DOMException || DOMException)("The URL '" + String(url) + "' is invalid.", 'SyntaxError');
+      }
+    }
     var newHref = _resolveHistUrl(String(url));
     if (!newHref || newHref === oldHref) return; // 解析失败 / 未变 → no-op
     _pushHistNav(newHref, oldHref);
@@ -4901,6 +4944,13 @@
   }
   function _locationReplace(url) {
     var oldHref = globalThis.location.href;
+    // M2-S1：解析失败 → SYNTAX_ERR DOMException（同 _locationAssign；WPT location_replace
+    // 'URL that fails to parse'——location.replace('//')）。
+    if (typeof URL === 'function' && typeof __zw_parse_url === 'function') {
+      try { new URL(String(url), oldHref); } catch (_e) {
+        throw new (globalThis.DOMException || DOMException)("The URL '" + String(url) + "' is invalid.", 'SyntaxError');
+      }
+    }
     var newHref = _resolveHistUrl(String(url));
     if (!newHref || newHref === oldHref) return;
     _replaceHistNav(newHref, oldHref);

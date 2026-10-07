@@ -5314,13 +5314,15 @@
         var u = new URL(h);
         return {
           href: u.href, protocol: u.protocol, host: u.host, hostname: u.hostname,
+          // M2-S1：port（默认端口归一由 URL 实现——u.port 缺省为 ''）。
+          port: u.port,
           pathname: u.pathname, search: u.search, hash: u.hash, origin: u.origin,
         };
       } catch (_) { /* 解析失败 → 回退 regex */ }
     }
     var m = h.match(/^([^:]+):\/\/([^\/]*)(\/[^?#]*)?(\?[^#]*)?(#.*)?$/);
     if (!m) {
-      return { href: h || 'about:blank', protocol: '', host: '', hostname: '', pathname: '/', search: '', hash: '', origin: 'null' };
+      return { href: h || 'about:blank', protocol: '', host: '', hostname: '', port: '', pathname: '/', search: '', hash: '', origin: 'null' };
     }
     var host = m[2] || '';
     return {
@@ -5328,6 +5330,8 @@
       protocol: m[1] + ':',
       host: host,
       hostname: host.split(':')[0] || '',
+      // M2-S1：port（regex 回退通道——host 冒号后段；无端口 → ''，与 URL 通道缺省一致）。
+      port: host.indexOf(':') >= 0 ? (host.split(':')[1] || '') : '',
       pathname: m[3] || '/',
       search: m[4] || '',
       hash: m[5] || '',
@@ -5335,6 +5339,11 @@
     };
   }
 
+  // FIXME(M2 后续切片)：spec location-setprototypeof / location-preventextensions——Location
+  // 为 exotic object，[[SetPrototypeOf]]（非原 prototype 恒返 false）与 [[PreventExtensions]]
+  // （恒返 false，Object.preventExtensions 抛 TypeError）未实现（plain object 无自定义内部
+  // 方法，与 immutable-prototype 同族）。WPT location-prevent-extensions 2 子测试 +
+  // location-prototype-setting-*（需 /common/test-setting-immutable-prototype.js，未拉）。
   function _makeLocation() {
     function href() {
       var base = typeof __zw_get_page_url === 'function' ? __zw_get_page_url() : 'about:blank';
@@ -5347,35 +5356,92 @@
       }
       return base;
     }
-    return {
-      get href() { return _parseLocation(href()).href; },
-      // R3008：location.href = v 经 _setLocationPart 整体替换 URL（navigation，_setLocationPart 在 part02 定义，
-      // 同 IIFE 提升，setter 运行时就绪，typeof guard 防御）。
-      set href(v) { if (typeof _setLocationPart === 'function') _setLocationPart('href', v); },
-      get protocol() { return _parseLocation(href()).protocol; },
-      get host() { return _parseLocation(href()).host; },
-      get hostname() { return _parseLocation(href()).hostname; },
-      get pathname() { return _parseLocation(href()).pathname; },
-      set pathname(v) { if (typeof _setLocationPart === 'function') _setLocationPart('pathname', v); },
-      get search() { return _parseLocation(href()).search; },
-      set search(v) { if (typeof _setLocationPart === 'function') _setLocationPart('search', v); },
-      get hash() { return _parseLocation(href()).hash; },
-      // R3006：location.hash = v 更新 hash + history entry + 派发 hashchange（_setLocationHash 在 part02 定义，
-      // 同 IIFE 提升，setter 运行时就绪）。SPA hash 路由核心。
-      set hash(v) { if (typeof _setLocationHash === 'function') _setLocationHash(v); },
-      get origin() { return _parseLocation(href()).origin; },
-      // R3009：assign/replace 导航方法（_locationAssign/_locationReplace 在 part02 定义，同 IIFE 提升，运行时就绪，
-      // typeof guard 防御）。assign(url) ≡ location.href = url（MDN）；replace(url) replace 当前 entry。
-      assign: function (url) { if (typeof _locationAssign === 'function') _locationAssign(url); },
-      replace: function (url) { if (typeof _locationReplace === 'function') _locationReplace(url); },
-      // headless 无真文档重载——synthesized page 无原始 fetch 可重取。no-op（不抛，spec reload 返 void）。
-      // host 真重载（重新 fetch + 解析 + 执行页面脚本）defer。
-      reload: function () {},
-      toString: function() { return _parseLocation(href()).href; }
-    };
+    function part(partName) { return _parseLocation(href())[partName]; }
+    // M2-S1（navigation-compat）：Location 对象按 spec [LegacyUnforgeable] 面（WebIDL——
+    // 接口成员落**实例 own property**，enumerable + non-configurable；WPT
+    // location-non-configurable-toString-valueOf / location-stringifier /
+    // location-prototype-no-toString-valueOf 断言面）。旧形态为可配置对象字面量——
+    // defineProperty 重定义/重写不被拒，stringifier 描述符不符。
+    var loc = {};
+    // 属性（attributes）→ own accessor：{get, set?, enumerable: true, configurable: false}。
+    // getter/setter 函数体与旧实现逐一等同（R3006/R3008/R3009 链路不动，只换属性描述符）。
+    function defAcc(name, get, set) {
+      Object.defineProperty(loc, name, { get: get, set: set, enumerable: true, configurable: false });
+    }
+    defAcc('href', function () { return part('href'); },
+      // R3008：location.href = v 经 _setLocationPart 整体替换 URL（navigation，_setLocationPart 在
+      // part02 定义，同 IIFE 提升，setter 运行时就绪，typeof guard 防御）。
+      function (v) { if (typeof _setLocationPart === 'function') _setLocationPart('href', v); });
+    defAcc('protocol', function () { return part('protocol'); });
+    defAcc('host', function () { return part('host'); });
+    defAcc('hostname', function () { return part('hostname'); });
+    // M2-S1：port getter（旧整体缺席——WPT location_port 'location port'）+ 写侧（同 pathname
+    // 的 _setLocationPart 通道：URL part setter 归一默认端口/剥非数字）。
+    defAcc('port', function () { return part('port'); },
+      function (v) { if (typeof _setLocationPart === 'function') _setLocationPart('port', v); });
+    defAcc('pathname', function () { return part('pathname'); },
+      function (v) { if (typeof _setLocationPart === 'function') _setLocationPart('pathname', v); });
+    defAcc('search', function () { return part('search'); },
+      function (v) { if (typeof _setLocationPart === 'function') _setLocationPart('search', v); });
+    // R3006：location.hash = v 更新 hash + history entry + 派发 hashchange（_setLocationHash 在
+    // part02 定义，同 IIFE 提升，setter 运行时就绪）。SPA hash 路由核心。
+    defAcc('hash', function () { return part('hash'); },
+      function (v) { if (typeof _setLocationHash === 'function') _setLocationHash(v); });
+    defAcc('origin', function () { return part('origin'); });
+    // 操作（operations）→ own data：{value, writable: false, enumerable: true, configurable: false}。
+    function defOp(name, fn) {
+      Object.defineProperty(loc, name, { value: fn, writable: false, enumerable: true, configurable: false });
+    }
+    // R3009：assign/replace 导航方法（_locationAssign/_locationReplace 在 part02 定义，同 IIFE
+    // 提升，运行时就绪，typeof guard 防御）。assign(url) ≡ location.href = url（MDN）；
+    // replace(url) replace 当前 entry。
+    defOp('assign', function (url) { if (typeof _locationAssign === 'function') _locationAssign(url); });
+    defOp('replace', function (url) { if (typeof _locationReplace === 'function') _locationReplace(url); });
+    // headless 无真文档重载——synthesized page 无原始 fetch 可重取。no-op（不抛，spec reload 返 void）。
+    // host 真重载（重新 fetch + 解析 + 执行页面脚本）defer。
+    defOp('reload', function () {});
+    // stringifier（stringifier attribute USVString href）→ own **data** property，值 = getter
+    // 函数（WebIDL es-stringifier——属性值为 getter 函数，调用时以 this 过 brand check 后返回
+    // 属性值；[LegacyUnforgeable] → {writable: false, enumerable: true, configurable: false}。
+    // WPT location-stringifier 断言 prop.writable === false——accessor 描述符无 writable（undefined）
+    // 即 fail，且 `location.toString()` 须可调用）。brand 经非枚举 symbol marker。
+    var _zwLocBrand = Symbol('LocationBrand');
+    Object.defineProperty(loc, _zwLocBrand, { value: true });
+    defOp('toString', function () {
+      if (!this || this[_zwLocBrand] !== true) throw new TypeError('Illegal invocation');
+      return part('href');
+    });
+    // spec location-defineownproperty：`valueOf` 落 own data（值 = Object.prototype.valueOf）、
+    // 三旗全 false（WPT location-valueof 断言 location.valueOf === Object.prototype.valueOf +
+    // 描述符）。
+    Object.defineProperty(loc, 'valueOf', {
+      value: Object.prototype.valueOf, writable: false, enumerable: false, configurable: false,
+    });
+    // spec location-defineownproperty：`Symbol.toPrimitive` own undefined 值、三旗全 false
+    //（WPT location-symbol-toprimitive——`location[Symbol.toPrimitive] === undefined` 且
+    // getOwnPropertyDescriptor 存在；未定义时 +location 走 toString stringifier）。
+    Object.defineProperty(loc, Symbol.toPrimitive, {
+      value: undefined, writable: false, enumerable: false, configurable: false,
+    });
+    return loc;
+  }
+
+  // M2-S1：Location 接口对象（WebIDL interface object——callable，调用即 TypeError「Illegal
+  // constructor」；prototype 挂 Object.prototype 且**无 own toString/valueOf**——stringifier
+  // 落实例（LegacyUnforgeable），WPT location-prototype-no-toString-valueOf 断言
+  // Location.prototype 无 own toString/valueOf 且 defineProperty 可加）。
+  function _makeLocationInterface() {
+    function Location() { throw new TypeError('Illegal constructor'); }
+    var proto = {};
+    Object.defineProperty(proto, 'constructor', { value: Location, writable: true, configurable: true });
+    Object.defineProperty(Location, 'prototype', {
+      value: proto, writable: false, enumerable: false, configurable: false,
+    });
+    return Location;
   }
 
   globalThis.location = _makeLocation();
+  globalThis.Location = _makeLocationInterface();
   globalThis.self = globalThis;
   globalThis.top = globalThis;
   globalThis.parent = globalThis;

@@ -1521,12 +1521,27 @@
   // 构造器缺失使 setup 中途崩 → testNodes undefined → dom/* 依赖 common.js 的 mega-case
   //（NodeIterator.html 等）全体退化。以 `_makeDetachedDocument('')`（R2815 独立可变 doc）承载。
   // prototype 挂 Node.prototype（instanceof Node 经原型链）。
+  // M2-S1（navigation-compat）：Document.location [LegacyUnforgeable] 共享访问器——WPT
+  // document_location 'Attribute getter/setter deduplication' 断言跨实例描述符的 get/set
+  // **同一函数身份**（WebIDL 属性 getter/setter 接口级共享；实例化时以 own property 形态
+  // 装配 = LegacyUnforgeable 语义）。非浏览上下文文档 getter 恒 null；setter no-op（spec
+  // document.location setter——location 为 null 即返回，无可导航目标）。
+  var _zwDocLocationGet = function locationGetter() { return null; };
+  var _zwDocLocationSet = function locationSetter(_v) { /* 无浏览上下文 → no-op */ };
+
   globalThis.Document = globalThis.Document || function Document() {
     var d = _makeDetachedDocument('');
     // R81：spec `new Document()` 返 **XML** Document（contentType 'application/xml'，createElement
     // 的元素 ns 恒 null）。
     d.contentType = 'application/xml';
     d._docNS = null;
+    // M2-S1：共享身份的 location own accessor 覆盖 detached 模板的 per-instance 闭包 getter
+    //（dedup 断言 desc1.get === desc2.get + typeof desc.set === 'function'——旧模板无 setter）。
+    try {
+      Object.defineProperty(d, 'location', {
+        get: _zwDocLocationGet, set: _zwDocLocationSet, enumerable: true, configurable: true,
+      });
+    } catch (_eDocLoc) {}
     return d;
   };
   try {

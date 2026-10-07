@@ -54,5 +54,10 @@ DIRS=(
 )
 
 goals_fetch_all
+# M2-S1（location 接口语义）绝对路径 helper：location-stringifier 引用 /common/stringifiers.js
+# （test_stringifier_attribute）——raw 拉取不走 API 配额，runner 侧 NAVIGATION_ABSOLUTE_HELPERS
+# 内联。/common/test-setting-immutable-prototype.js 不拉（immutable-prototype 面需 exotic
+# [[SetPrototypeOf]]，plain object 未实现——见 testharness.rs NAVIGATION_ABSOLUTE_HELPERS 注）。
+fetch_raw "common/stringifiers.js"
 goals_inventory
 goals_next_steps "${GOAL}"

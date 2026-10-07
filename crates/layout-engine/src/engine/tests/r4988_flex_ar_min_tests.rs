@@ -113,3 +113,45 @@ fn r4990_flex_ar_nonleaf_content_floor_wins() {
         "content floor (child 100) must beat transferred 50; cross stays stretched 100"
     );
 }
+
+/// R4991：flex-basis:content + AR 条目——basis content 不读 main size property
+/// （width:20px 不钉主轴），content 尺寸经 ratio 从 definite cross 传递
+/// （021：cross h:100 × AR 1/1 → main 100，ZW 曾渲 20×100）。
+#[test]
+fn r4991_flex_basis_content_transfers_through_ratio() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let item = doc.create_element("div");
+    doc.append_child(container, item).unwrap();
+
+    let mut container_style = ComputedStyle::default();
+    container_style.display = zero_style_system::DisplayValue::Flex;
+    container_style.width = LengthValue::Px(784.0);
+
+    let mut item_style = ComputedStyle::default();
+    item_style.flex_basis = zero_style_system::FlexBasisValue::Content;
+    item_style.width = LengthValue::Px(20.0);
+    item_style.height = LengthValue::Px(100.0);
+    item_style.aspect_ratio = Some(1.0);
+    item_style.min_width = LengthValue::Px(0.0);
+
+    let mut styles = HashMap::new();
+    styles.insert(container, container_style);
+    styles.insert(item, item_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find(root: &crate::LayoutBox, id: NodeId) -> Option<&crate::LayoutBox> {
+        if root.node_id == Some(id) {
+            return Some(root);
+        }
+        root.children.iter().find_map(|c| find(c, id))
+    }
+    let b = find(&result.root, item).expect("item box").clone();
+    assert_eq!(
+        (b.width, b.height),
+        (100.0, 100.0),
+        "flex-basis:content + AR: main transfers from definite cross 100 (width:20px must not pin)"
+    );
+}
