@@ -31,6 +31,10 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 23 | [selection-compat](../../../../docs/goal/selection-compat.md) | selection | 无（2026-10-08 立项） |
 | 24 | [compression-compat](../../../../docs/goal/compression-compat.md) | compression | 无（实现型小套件，M2 实现轮） |
 | 25 | [html-semantics-compat](../../../../docs/goal/html-semantics-compat.md) | html/semantics 十子域 | **主攻大域**（分域切片收口制） |
+| 26 | [webcrypto-compat](../../../../docs/goal/webcrypto-compat.md) | WebCryptoAPI | 无（2026-10-08 立项；随机源面已有，subtle 实现轮分片自主） |
+| 27 | [page-state-compat](../../../../docs/goal/page-state-compat.md) | beacon; page-visibility; online | 无（三小套件打包；sendBeacon 走 net POST 底座薄封装） |
+| 28 | [dnd-compat](../../../../docs/goal/dnd-compat.md) | dnd | **门控 goal**（M1 盘点 + M2 构造器面自主；拖放交互管线须用户点名） |
+| 29 | [pointerlock-compat](../../../../docs/goal/pointerlock-compat.md) | pointerlock | **门控 goal**（M1 盘点自主；指针捕获管线须用户点名） |
 | 30 | [encoding-compat](../../../../docs/goal/encoding-compat.md) | encoding | **已收口**（2026-10-04） |
 | 40 | [html-syntax-compat](../../../../docs/goal/html-syntax-compat.md) | html/syntax; html/dom | **已收口**（2026-10-04） |
 | 50 | [uievents-compat](../../../../docs/goal/uievents-compat.md) | uievents; pointerevents | **已收口**（2026-10-07）；touch/pointerlock/IME 挂账 |
@@ -41,10 +45,11 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 92 | [web-api-batch2](../../../../docs/goal/web-api-batch2.md) | clipboard-apis; fullscreen | **已收口**（2026-10-04） |
 | 99 | [webgl-compat](../../../../docs/goal/webgl-compat.md) | webgl | **远期门控**（M2+ 全门控，M1 盘点为唯一自主切片） |
 
-**预留与协调面（2026-10-08 更新）**：上表 10-25 槽位已全部立项。未拆候选：
+**预留与协调面（2026-10-08 更新）**：上表 10-29 槽位已全部立项。未拆候选：
 cssom-view / geometry-1（渲染 API 面，与 rendering-compat 工作面重叠，立项前先按
-run-rules §9 协调）、websockets（等 net 二期）、webaudio / notifications / push /
-gamepad 类（host 面缺失，学 99-webgl 模式远期门控）。新候选从 26 号起顺延占位。
+run-rules §9 协调）、websockets（等 net 二期）、webrtc / getUserMedia / webaudio /
+geolocation / sensors / speech 类（host 设备与音频图缺失，远期门控池；30 已被
+encoding 占用，从 31 号起顺延占位）。
 
 ## 与 rally 启动脚本的关系
 
