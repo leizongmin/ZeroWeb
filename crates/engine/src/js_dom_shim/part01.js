@@ -3977,7 +3977,8 @@
   // `_mo_notify` 单注册表派发（options 过滤 / subtree 冒泡 / oldValue 语义自动获益）。
   // 与 polyfill Proxy-trap 路径去重：排空点在 `sync_render_after_native_dom`（live
   // outerHTML ≠ cached_html 才触发），polyfill apply 路径自更 cached_html 不进该分支。
-  // Rust 侧 kill-switch `ZW_MO_HOST_TRIGGER`（默认 OFF，时序变更门禁约束）。
+  // Rust 侧 kill-switch `ZW_MO_HOST_TRIGGER`（default ON，opt-out 置 `=0`；2026-09-12 ②b 起，
+  // webview.rs mo_host_trigger 判定）。
   // 参数：sel=目标稳定 selector；type=attributes/childList/characterData；attrName/
   // oldValue 透传；addedSels/removedSels = '|' 分隔的子节点稳定 selector 串（逐个经
   // _makeProxy 包 proxy；无身份节点已被 Rust 侧丢弃——spec：unobserved target 不通知）；
