@@ -97,7 +97,7 @@ record-bench-baseline.sh（基线，手动）→ docs/perf/baselines/<platform_c
   - **8370c**：113 指标全量重建（报告 = 第 19 轮 run 36572028085 head `2da5c4cf` GATE FAIL 轮实测 `benchmark_20260929_130113.json`，suspect=false、errors=null、config_hash 一致；原基线 08-24 捕获后仅 auto-tighten）。本轮 GATE FAIL 9 指标（NEW=0）：慢性核心四成员 + layout 家族五成员，超限 1.02-1.17× 带状。
   - **验证（护栏④）**：两平台各自原 GATE FAIL 报告对新基线本地复跑 `perf-gate.sh` → **均 GATE PASS，各 113/113，NEW=0**，无残留超预算项（「重建后仍超预算者单列报告再议」检查通过——本轮无残留）。
   - CI 侧验证待下一轮 dispatch 落 9v45 / 8370c 后补记；**6973p-c / 8573c 维持挂账同口径**（该两池现行基线较新或近期未命中 GATE FAIL 轮，无待取用实测报告，命中即按本批复口径执行无需再征询）。
-- **恢复计划**：weekly / dispatch `--auto-tighten` 持续收紧（重建不掩盖真实回归）；「auto-tighten 收紧至好天值 + 租户负载双峰 → 带缘指标噪声日复发」机制（台账第 23/24 轮闭环）属独立挂账项，不在本批复范围，处置三选项仍待用户拍板。
+- **恢复计划**：weekly / dispatch `--auto-tighten` 持续收紧（重建不掩盖真实回归）；「auto-tighten 收紧至好天值 + 租户负载双峰 → 带缘指标噪声日复发」机制（台账第 23/24 轮闭环）不在本批复范围，**2026-10-07 用户批复处置 = 选项 ③ 接受现状**——不改 perf-gate 语义（budget tier 公式/margin/绝对预算均不动）、不换 runner 规格、不 relax 基线，噪声日带缘指标 GATE FAIL 按慢性预存失败口径逐轮甄别记档（NEW=0 / 同日双池 A/B / 零代码 delta 三重证据口径不变）；**升级条件 = 已重建池噪声日红频率明显上升时再评估选项 ①（高方差指标上调 margin 或分位数下限）**。
 
 **2026-09-28 CI 平台基线 re-capture 放行记录 + 7763 执行记录（用户批复，GB-20260919 征询扩围 + desktop-browser 合并征询合并裁决，「一次性基线重建放行」）**：
 - **放行内容**：CI benchmarks 陈旧平台基线 re-capture 扩围 **6973p-c / 9v74 / 7763** 三平台各自独立一次性 re-capture（`record-bench-baseline.sh --relax` 显式执行 + justification 记录批复依据），消除 2026-09-20 起 CI-GUARD 连续 16 轮同签名慢性 GATE FAIL（NEW=0、FAIL 集逐轮漂移、同 SHA 零代码变化下逐轮进出带、跨 15+ 个不同 head 含 pre-code/post-code 两代码面）造成的每轮预存 FAIL 噪声。
