@@ -1893,6 +1893,64 @@ fn test_handle_create_tag_cross_execute_t8f() {
 }
 
 #[test]
+fn test_form_elements_iterable_image_exclusion_t8f_revb() {
+    // t8f 审查返修钉（双审查 B 发现 1/2/4）：
+    // ① form.elements 可迭代——活集合 Proxy 的 get trap 此前对 symbol 键直接
+    //    parseInt（ToString(symbol) 抛 TypeError），for...of/spread/Array.from 从
+    //    可用变抛错（Angular forms/serialize 类站点常见模式）；
+    // ② input[type=image] 不进 form.elements——walk ∪ host 合并须保留 host 侧排除
+    //    （form_activation.rs form_control_selectors_doc 的 image 过滤；WPT
+    //    form-requestsubmit oracle）；
+    // ③ namedItem('') → null（空串守卫——id getter 缺省 '' 不得误配无 id 控件；
+    //    与 part03 两处 namedItem 同款）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id='fx'><input name='a'><input type='image' name='img'>\
+         <button name='btn'>b</button></form></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__out = (function(){\
+               var f = document.querySelector('#fx');\
+               var out = [];\
+               out.push(String(f.elements.length));\
+               var seen = [];\
+               try {\
+                 for (var it of f.elements) seen.push(it.name || it.tagName);\
+                 out.push(seen.join(','));\
+               } catch (_e1) { out.push('ITER-THROWS:' + _e1.message); }\
+               try { out.push(String(Array.from(f.elements).length)); }\
+               catch (_e2) { out.push('AF-THROWS:' + _e2.message); }\
+               out.push(String(f.elements.namedItem('') === null));\
+               out.push(String(f.elements.namedItem('img') === null));\
+               return out.join('|');\
+             })();",
+        )
+        .unwrap();
+    let got = sandbox.execute("String(globalThis.__out)").unwrap().value;
+    let parts: Vec<&str> = got.split('|').collect();
+    assert_eq!(parts[0], "2", "input[type=image] 不进 form.elements（text+button），got {got}");
+    assert_eq!(parts[1], "a,btn", "for...of 迭代产出非 image 控件序列，got {got}");
+    assert_eq!(parts[2], "2", "Array.from(form.elements).length=2（symbol 守卫后可展开），got {got}");
+    assert_eq!(parts[3], "true", "namedItem('') 返 null（空串守卫），got {got}");
+    assert_eq!(parts[4], "true", "namedItem('img') 返 null（image 控件不在集合），got {got}");
+}
+
+#[test]
 fn test_input_files_filelist_r2830() {
     // R2830：HTMLInputElement.files（空 FileList）。上传表单读 input.files.length / 迭代高频。
     // headless 无真文件 → 空 FileList（length 0 + item→null + 可迭代），让上传 JS 不抛（无文件→0 跳过上传）。

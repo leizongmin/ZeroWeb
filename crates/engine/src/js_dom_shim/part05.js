@@ -11420,7 +11420,18 @@
         if (_formControlTags[k.tagName]) {
           var formAttr = null;
           try { formAttr = k.getAttribute('form'); } catch (_eF) {}
-          if (!formAttr) push(k);
+          // host 列表同款过滤（form_activation.rs `form_control_selectors_doc`，审查 B
+          // 发现 2——并集丢失 host 排除项会让静态表单行为回归）：
+          // ① input[type=image] 不进 form.elements（WPT form-requestsubmit oracle，
+          //    https://html.spec.whatwg.org/multipage/form-submission.html 套件记录）；
+          // ② 仅**无 form 属性**（getAttribute → null）时按子树归属收集——form=""
+          //    与 form="other" 的 owner 由 form= 决定且 "" 解析失败无 owner（不进任何
+          //    form.elements），均不在此收。
+          var _kImg = false;
+          if (k.tagName === 'INPUT') {
+            try { _kImg = String(k.getAttribute('type') || '').toLowerCase() === 'image'; } catch (_eTi) {}
+          }
+          if (!_kImg && formAttr === null) push(k);
         }
         walk(k);
       }

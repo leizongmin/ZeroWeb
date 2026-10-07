@@ -8341,8 +8341,11 @@
     // 修：创建时 tag 印章（`_zwHandleCreateTag`，`_zwHandleBirthGen` 同款惰性全局表）。
     // spec tagName 不可变（https://dom.spec.whatwg.org/#dom-element-tagname），印章无
     // 陈旧风险；本分支仅在 host 批查询与 R100 反查双 miss 后兜底，既有命中路径零变化。
-    // 换代（__zw_reset_pending_state）不清本表——跨 execute 持久正是目的；导航重建
-    // JS 世界时随世界消亡，无泄漏面。
+    // 换代（__zw_reset_pending_state）不清本表——跨 execute 持久正是目的。表随 tab
+    // 的 sandbox 存续（url_changed 在**同一 sandbox** 执行 __zw_reset_form_state——
+    // JS 世界跨导航存活，js_worker.rs），append-only 单调增长（审查 B 发现 3：非
+    // 「无泄漏面」，量级同 _zwHandleBirthGen 既有先例）；句柄 "__n{n}" 计数器
+    // thread-local 单调不复用（callbacks.rs E14/R100），无过期印章误读面。
     if (handle && !sel && globalThis._zwHandleCreateTag) {
       try {
         var _hct = globalThis._zwHandleCreateTag[String(handle)];

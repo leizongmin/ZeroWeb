@@ -4735,9 +4735,10 @@ return _tplContent;
             if (!nh) {
               nh = __zw_create_element(srcTag);
               // t8f：克隆产物同盖创建 tag 印章（`_realTag` 跨 execute 兜底，见 part03）。
+              // ASCII-only 小写对齐 host 口径（见 part06 写入点注记）。
               try {
                 (globalThis._zwHandleCreateTag = globalThis._zwHandleCreateTag || {})[nh] =
-                  String(srcTag).toLowerCase();
+                  String(srcTag).replace(/[A-Z]/g, function (_zwCc) { return _zwCc.toLowerCase(); });
               } catch (_eHctC) {}
             }
             // 复制属性（名 + 值）。R3198：handle 源经 `__zw_attr_names_handle`+`__zw_get_attr_handle`，
@@ -4957,6 +4958,7 @@ return _tplContent;
                 var _r368Tag = String(child.tagName || child.nodeName || 'div').toLowerCase();
                 child.__zwHandle = __zw_create_element(_r368Tag);
                 // t8f：R368 盖章产物同记创建 tag 印章（`_realTag` 跨 execute 兜底，见 part03）。
+                // 此处 tag 已按既有 ASCII 语义小写（_r368Tag 行），与 host 口径一致。
                 (globalThis._zwHandleCreateTag = globalThis._zwHandleCreateTag || {})[child.__zwHandle] = _r368Tag;
               } catch (_e368st) {}
               // R368：adopt 子树传播——盖章 plain 子的 ownerDocument 重指主 document
@@ -8067,15 +8069,35 @@ return _tplContent;
           if (_fcCached && _fcCached.k === _fcKind) return _fcCached.c;
           var _fcColl = new Proxy({ length: 0 }, {
             get: function (_t, p) {
+              // symbol 键守卫（审查 B 发现 1）：parseInt(Symbol) 抛 TypeError——迭代协议
+              // （for...of/spread/Array.from 经 Symbol.iterator、String() 经
+              // Symbol.toPrimitive）无守卫时从可用变抛错（Angular forms/serialize 类
+              // 站点常见模式）。iterator 逐步现取列表（live 语义）。
+              if (typeof p !== 'string') {
+                if (p === Symbol.iterator) {
+                  return function () {
+                    var i = 0;
+                    return { next: function () {
+                      var l = _formControls(sel);
+                      return i < l.length ? { value: l[i++], done: false } : { value: undefined, done: true };
+                    } };
+                  };
+                }
+                return undefined;
+              }
               var list = _formControls(sel);
               if (p === 'length') return list.length;
               if (p === 'item') return function (i) { return list[i] || null; };
-              // namedItem（id 或 name 首匹配，miss → null）——现取列表（live）。
+              // namedItem（HTMLFormControlsCollection：id 或 name 首匹配，miss → null，
+              // 空串 → null——审查 B 发现 4，与 part03 两处实现同款）。列表闭包内现取
+              // （先取方法后调用的时序不持旧快照）。
               if (p === 'namedItem') {
                 return function (name) {
                   var n = String(name);
-                  for (var i = 0; i < list.length; i++) {
-                    var c = list[i];
+                  if (n === '') return null;
+                  var cur = _formControls(sel);
+                  for (var i = 0; i < cur.length; i++) {
+                    var c = cur[i];
                     if (c && c.id === n) return c;
                     try { if (c && c.getAttribute && c.getAttribute('name') === n) return c; } catch (_e2) {}
                   }
@@ -8087,6 +8109,7 @@ return _tplContent;
               return list[p];
             },
             has: function (_t, p) {
+              if (typeof p !== 'string') return false;
               var idx = parseInt(p, 10);
               if (!isNaN(idx) && String(idx) === String(p)) {
                 var list = _formControls(sel);
