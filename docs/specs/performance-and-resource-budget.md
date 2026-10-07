@@ -88,6 +88,17 @@ record-bench-baseline.sh（基线，手动）→ docs/perf/baselines/<platform_c
 - **自动收紧**（weekly CI `record-bench-trend.sh --auto-tighten`）：实测 p95 低于基线 →
   就地收紧（仅收紧永远合法，无需 justification）。
 
+**2026-10-07 CI 平台基线 re-capture 扩围放行记录 + 9v45/8370c 执行记录（用户批复，CI-GUARD 台账第 19/22/27/28 轮挂账征询扩围，「一次性基线重建放行」，用户对话渠道「按照你的建议来处理」）**：
+- **放行内容**：CI benchmarks 陈旧平台基线 re-capture 扩围 **9v45 / 8370c** 两平台各自独立一次性 re-capture（`record-bench-baseline.sh --relax` 显式执行 + justification 记录批复依据），消除两未重建池被调度命中即复发（9v45 第 22/27/28 轮三命中、8370c 第 19 轮一命中）的慢性 GATE FAIL 噪声。
+- **证据链**：第 28 轮（run 37524848597 验证轮）9v45 池 7 指标 FAIL 与同日触发轮 7763 重建池 GATE PASS 113/113 构成同日双池 A/B，池调度为唯一自变量；第 27 轮 9v45 单指标 FAIL 的 IPC 族在 7763 连续两轮全带内；第 19 轮 8370c 9 指标 1.05-1.17× 带状超限、与第 6 轮同指标实测对照全部更低；全部轮次 NEW=0、FAIL 集跨互不相关子系统轮转——9v45 基线系 2026-09-18 auto-tighten 单样本（全 9 池最紧）、8370c 系 2026-08-24 捕获后仅 auto-tighten（活跃池最陈旧），平台基线陈旧 + 调度命中即复发，非代码回归。
+- **护栏**：沿 GB-20260928 五条口径——①各平台按各自 GATE FAIL 轮实测独立重建、不共用一组数 ②「重建后仍超预算者单列报告再议」③明确非放宽阈值——绝对预算语义不动（`total_ms` hard tier 2000ms 绝对值、budget tier 公式均不变），仅基线参考值按各平台实测更新 ④执行轮须对各自原 GATE FAIL 报告本地复跑 `perf-gate.sh` 验证 NEW=0 收敛 ⑤执行归 perf-gate 政策域。
+- **执行记录（2026-10-07，9v45 + 8370c）**：
+  - **9v45**：113 指标全量重建（报告 = 第 28 轮 run 37524848597 head `b2323f0e` GATE FAIL 轮实测 `benchmark_20261006_201434.json`，suspect=false、errors=null、config_hash `a3bd667…` 与原基线一致；原基线 09-18 auto-tighten 首次基线）。本轮 GATE FAIL 7 指标（NEW=0）：`paint_complex_page_500` 946583.49ns（对旧基线 1.30×）、`paint_simple_page_100` 150808.65ns（1.08×）、`flex_layout_1000` 3762111.33ns（1.12×）、`ipc_serialize_10000` 303201.56ns（1.13×）、`compute_styles_200` 11992970.38ns（1.07×）、`page/medium/first_paint` 397.64ms（1.10×）、`page/morning/first_paint` 1021.37ms（5.98× 冷启动面 wall-clock 离群）。
+  - **8370c**：113 指标全量重建（报告 = 第 19 轮 run 36572028085 head `2da5c4cf` GATE FAIL 轮实测 `benchmark_20260929_130113.json`，suspect=false、errors=null、config_hash 一致；原基线 08-24 捕获后仅 auto-tighten）。本轮 GATE FAIL 9 指标（NEW=0）：慢性核心四成员 + layout 家族五成员，超限 1.02-1.17× 带状。
+  - **验证（护栏④）**：两平台各自原 GATE FAIL 报告对新基线本地复跑 `perf-gate.sh` → **均 GATE PASS，各 113/113，NEW=0**，无残留超预算项（「重建后仍超预算者单列报告再议」检查通过——本轮无残留）。
+  - CI 侧验证待下一轮 dispatch 落 9v45 / 8370c 后补记；**6973p-c / 8573c 维持挂账同口径**（该两池现行基线较新或近期未命中 GATE FAIL 轮，无待取用实测报告，命中即按本批复口径执行无需再征询）。
+- **恢复计划**：weekly / dispatch `--auto-tighten` 持续收紧（重建不掩盖真实回归）；「auto-tighten 收紧至好天值 + 租户负载双峰 → 带缘指标噪声日复发」机制（台账第 23/24 轮闭环）属独立挂账项，不在本批复范围，处置三选项仍待用户拍板。
+
 **2026-09-28 CI 平台基线 re-capture 放行记录 + 7763 执行记录（用户批复，GB-20260919 征询扩围 + desktop-browser 合并征询合并裁决，「一次性基线重建放行」）**：
 - **放行内容**：CI benchmarks 陈旧平台基线 re-capture 扩围 **6973p-c / 9v74 / 7763** 三平台各自独立一次性 re-capture（`record-bench-baseline.sh --relax` 显式执行 + justification 记录批复依据），消除 2026-09-20 起 CI-GUARD 连续 16 轮同签名慢性 GATE FAIL（NEW=0、FAIL 集逐轮漂移、同 SHA 零代码变化下逐轮进出带、跨 15+ 个不同 head 含 pre-code/post-code 两代码面）造成的每轮预存 FAIL 噪声。
 - **证据链**：16 轮 FAIL 集互不重叠且复发核心成员（paint_complex/paint_simple/page/medium/layout_ms/first_paint_wall_ms）逐轮进出带；同 SHA rerun 孤峰定论多轮先例（第二十二/二十五轮等）；本地同代码同 gate GATE PASS 多轮旁证（R4653-R4656、R4819 等）；基线 auto-tighten 持续收紧方向（9v74 09-15、7763 09-19）对实测持续高于基线的核心成员无法自动收敛——平台调度绑定漂移 + 共享 runner 负载波，非代码回归。
