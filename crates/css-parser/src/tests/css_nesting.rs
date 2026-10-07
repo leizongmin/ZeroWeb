@@ -378,3 +378,36 @@ fn test_nesting_forgiving_skip_preserves_amp() {
         rules
     );
 }
+
+#[test]
+/// 嵌套 desugar 叉乘预算：11 层 × 每层 2 选择器的嵌套链在第 11 层越过
+/// MAX_DESUGARED_SELECTORS（2^11 = 2048 > 1024）→ 该层整条丢弃，第 10 层
+/// （2^10 = 1024，恰好不超）存活。守卫病态输入的指数放大（内存/时间双爆）。
+/// driving: fuzz_css_parser timeout-e33b1829（280 字节输入放大至 35GB/OOM，
+/// 2026-10-04/09/11 fuzz.yml 连续三周失败；css-nesting-1 Security Considerations）。
+fn test_nesting_desugar_selector_budget() {
+    let depth = 11;
+    let css = format!("{}color: red;{}", "a, b { ".repeat(depth), "}".repeat(depth));
+    let ss = Parser::parse_stylesheet(&css);
+    let style: Vec<&StyleRule> = ss
+        .rules
+        .iter()
+        .filter_map(|r| if let Rule::Style(sr) = r { Some(sr) } else { None })
+        .collect();
+    // 第 1..=10 层存活，第 11 层整条丢弃。
+    assert_eq!(style.len(), depth - 1, "超预算层应整条丢弃，实际 {} 层", style.len());
+    // 存活的最深层恰为 2^10 = 1024 条选择器（预算边界钉死）。
+    let max_sels = style.iter().map(|sr| sr.selectors.len()).max().unwrap();
+    assert_eq!(max_sels, 1024, "最深存活层选择器数应恰为预算值");
+}
+
+#[test]
+/// fuzz_css_parser timeout-e33b1829 原始输入回归：嵌套 desugar 预算修复前，
+/// 该 280 字节输入经 5-6 层嵌套 × 宽选择器列表叉乘指数放大（本地 26s+/35GB OOM，
+/// CI 5s 超时）；修复后毫秒级、规则数有界。输入为 libFuzzer 工件原字节（合法 UTF-8）。
+fn test_nesting_desugar_fuzz_input_regression() {
+    const FUZZ_INPUT: &[u8] = b"\x00\x00#\x00\x00\x00~\x00~\x00&.\x00,\x00\x00.\x00\x00,\x00\x00&.,\x00\x00.\x00\x00,\x00\x00\\,\x00{\x00\x00,\x00&.\x00\x00\x00\x00&.&.\x00,\x00\x00.\x00\x00,\x00\x00&.,\x00\x00.\x00\x00,\x00\x00\\,\x00{\x00\x00,\x00&.\x00\x00\x00\x00&.\x002,\x00\x00.\x00\x00,\x00\x00,\\\x00{\x00\x00&.\x00,\x00\x00.\x00\x00,\x00\x00\x00\x00.\x00\x00,\x00\x00&.,\x00\x00.\x00\x00,\x00\x00\\,\x00{\x00\x00&.\x00,\x00\x00\x00\x00&.\x00\x00\x00,.\x00\x00,\x00\x00,\\\x00{\x00\x00&.\x00,\x00\x00.\x00\x00\x002,\x00\x00.\x00\x00,\x00\x00,\\\x00{\x00\x00&.\x00,\x00\x00.\x00\x00,\x00\x00\x00\x00.\x00\x00,\x00\x00&.,\x00\x00.\x00\x00,\x00\x00\\,\x00{\x00\x00&.\x00,\x00\x00\x00\x00&.\x00\x00\x00,.\x00\x00,\x00\x00,\\\x00{\x00\x00&.\x00,\x00\x00.\x00\x00,\x00\x00\x00\x00,\x00\x00\\,\x00{\x00{";
+    let input = std::str::from_utf8(FUZZ_INPUT).expect("fuzz 输入应为合法 UTF-8");
+    let ss = Parser::parse_stylesheet(input);
+    assert!(ss.rules.len() <= 8, "修复后规则数应有界，实际: {}", ss.rules.len());
+}
