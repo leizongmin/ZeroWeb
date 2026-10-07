@@ -873,11 +873,28 @@ impl LayoutEngine {
                         matches!(item_style.margin_top, LengthValue::Auto)
                             || matches!(item_style.margin_bottom, LengthValue::Auto)
                     };
+                    // R4996（css-flexbox §9.4 align-self）：容器 cross 替换的前提是 item 将被
+                    // 拉伸到容器 cross——align-self 显式非 stretch 值、或 auto 而容器
+                    // align-items 为非拉伸值（如 flex-start）时 item cross = 内容尺寸，
+                    // 用容器 cross 推 main 即错（flex-aspect-ratio-img-column-007：容器
+                    // align-items:flex-start + column + min-width:20% 地板 40 → 旧推
+                    // main = 200/0.4 = 500，chromium 40×100）。
+                    let cross_align_stretchy = match item_style.align_self {
+                        zero_css_parser::values::AlignmentValue::Stretch => true,
+                        zero_css_parser::values::AlignmentValue::Auto => matches!(
+                            ps.align_items,
+                            zero_css_parser::values::AlignmentValue::Auto
+                                | zero_css_parser::values::AlignmentValue::Normal
+                                | zero_css_parser::values::AlignmentValue::Stretch
+                        ),
+                        _ => false,
+                    };
                     let item_cross_is_auto = (if is_column {
                         matches!(item_style.width, LengthValue::Auto)
                     } else {
                         matches!(item_style.height, LengthValue::Auto)
-                    }) && !cross_margin_auto;
+                    }) && !cross_margin_auto
+                        && cross_align_stretchy;
                     let parent_cross_definite = if is_column {
                         resolve_sizing_definite_real_length(&ps.width, ps)
                     } else {

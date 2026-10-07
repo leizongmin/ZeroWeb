@@ -5135,10 +5135,18 @@
       }
     } catch (_e140s2) {}
     // R91：对称清反链（removeChild 后 isConnected 反链上行正确断开）。
+    // t8g 修复（site-compat bilibili-20261002-r1）：旧代码引用未声明标识符 `ch`（应为
+    // `child.__zwHandle`）——`typeof ch` 对不可解析引用沿全局作用域链落到
+    // WindowProperties NPO has trap → 每次 removeChild 触发一次全局命名查找（t8g
+    // 二次方根因链上半段，见 `_zwNPOIfrScan` 静态枚举修复）。本段条件因笔误恒假、
+    // 清理从未生效，但反链已被 `_mo_notify` 汇流点在同批 removedNodes 分支无条件
+    // 同步清链（part01.js），行为面无残留；此处修复为消除每次 remove 的全局命名
+    // 查找税，并恢复 R91 自身对称清理语义（冗余保险）。
     try {
+      var _ch91 = child.__zwHandle;
       if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent
-          && _zwNodeParent[ch] && _zwNodeParent[ch].parentHandle === parentHandle) {
-        delete _zwNodeParent[ch];
+          && _ch91 && _zwNodeParent[_ch91] && _zwNodeParent[_ch91].parentHandle === parentHandle) {
+        delete _zwNodeParent[_ch91];
       }
     } catch (_e91u) {}
   }
@@ -12687,6 +12695,30 @@
     PopStateEventCtor.prototype.constructor = PopStateEventCtor;
     globalThis.PopStateEvent = PopStateEventCtor;
   }
+  // M2-S4（navigation-compat）：NavigationCurrentEntryChangeEvent（Navigation API——currententrychange
+  // 事件面）。init dict 的 `from` **必填**（缺省/缺 dict → TypeError——WPT constructor 'from is
+  // required' / 'can't bypass required members'）；navigationType 缺省 null（'defaults are as
+  // expected'）；属性反射回读（'all properties are reflected back'）。
+  _defineEventSubclass('NavigationCurrentEntryChangeEvent', 'Event', [
+    ['navigationType', 'navigationType', null],
+    ['from', 'from', null],
+  ]);
+  var NCECEBase = globalThis.NavigationCurrentEntryChangeEvent;
+  if (NCECEBase) {
+    var NCECECtor = function NavigationCurrentEntryChangeEvent(type) {
+      var options = arguments.length > 1 ? arguments[1] : undefined;
+      var o = (options == null || typeof options !== 'object') ? {} : options;
+      if (o.from === undefined) {
+        throw new globalThis.TypeError(
+          "Failed to construct 'NavigationCurrentEntryChangeEvent': required member from is undefined.");
+      }
+      return NCECEBase.apply(this, arguments);
+    };
+    try { Object.defineProperty(NCECECtor, 'name', { value: 'NavigationCurrentEntryChangeEvent', configurable: true }); } catch (_eNcNm) {}
+    NCECECtor.prototype = NCECEBase.prototype;
+    NCECECtor.prototype.constructor = NCECECtor;
+    globalThis.NavigationCurrentEntryChangeEvent = NCECECtor;
+  }
   _defineEventSubclass('StorageEvent', 'Event', [
     ['key', 'key', null], ['newValue', 'newValue', null], ['oldValue', 'oldValue', null],
     ['url', 'url', ''], ['storageArea', 'storageArea', null],
@@ -13170,7 +13202,21 @@
     if (c && c.gen === _zwNPORef.ifrGen) return c.hit ? c.val : null;
     var hitEl = null;
     try {
-      var fr = document.getElementsByTagName('iframe');
+      // t8g 修复（site-compat bilibili-20261002-r1）：iframe 名扫描改**静态枚举**
+      // （querySelectorAll，零 _zwLiveCollections 注册）——旧实现每次 cache miss 都
+      // getElementsByTagName 新建一个 live HTMLCollection（每次树/属性 mutation 都经
+      // _zwNADynamicSync 尾叫 bump 使 ifrGen 失效），逐个注册进 _zwLiveCollections
+      // 永不回收；集合数随操作数线性涨，`_zwHCLiveInvalidate` 每 mutation 遍历全部
+      // 集合 × 每集合 matches 的逐元素 tag 解析（handle-only 元素为宿主调用）→ 高频
+      // DOM 操作页面呈 O(ops²)（t8g 实证：400 对 append/remove 泄漏 409 个集合，
+      // _realTag 43·i 次/对、85.5M 次宿主回调、13.7s）。
+      // 不取「单例 live 集合复用」方案：shim 集合的 live 性靠 _zwHCLiveInvalidate 的
+      // mutation 记账维护，而 SetDomSnapshot 整文档替换不经该网——bootstrap 早期建的
+      // 单例对后续快照永久失明（s33 钉实证）；且扫描只在 gen-bump 后 cache miss 时
+      // 发生，静态现查本身就是新鲜度来源，live 语义在此无消费方。扫描为 shim 内部
+      // 消费，不暴露页面；页面自身 gEBT 调用仍按 spec 各得新 live 集合。
+      // https://html.spec.whatwg.org/multipage/dom.html#htmlcollection
+      var fr = document.querySelectorAll('iframe');
       for (var i37 = 0; i37 < fr.length; i37++) {
         var nm37 = '';
         try { nm37 = String(fr[i37].getAttribute('name') || ''); } catch (_e37n) { continue; }

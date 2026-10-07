@@ -4800,6 +4800,9 @@
     if (target === _hist_cursor) return;
     var oldHref = _hist_current().url;
     _hist_cursor = target;
+    // M2-S4：Navigation API traverse 面——currentEntry 恢复到目标 session entry 的 record
+    //（按 he 反查，key/id 还原——WPT key-id-back-same-document）+ 'traverse' currententrychange。
+    if (typeof _navTraverse === 'function') _navTraverse(_hist_current());
     _hist_dispatchPopState(oldHref);
   }
   globalThis.history = {
@@ -4826,17 +4829,22 @@
       if (newUrl === null && url != null && String(url) !== '') return; // 跨源已抛（_histStateUrlOrNull）
       var _zwSR = _hist_current().scrollRestoration || 'auto';
       _hist_entries = _hist_entries.slice(0, _hist_cursor + 1);
-      _hist_entries.push({ state: state, url: newUrl, scrollRestoration: _zwSR });
+      var _zwHe = { state: state, url: newUrl, scrollRestoration: _zwSR };
+      _hist_entries.push(_zwHe);
       _hist_cursor = _hist_entries.length - 1;
+      // M2-S4：Navigation API push 面（fresh key/id + currententrychange 'push' 同步派）。
+      _navPushCurrent(_zwHe);
     },
     // replaceState(state, unused, url?)：原地替换当前 entry 的 state/url（不触发 popstate）。
     // R3005：url 经 _resolveHistUrl 解析为绝对。M2-S3：空串/跨源语义同 pushState。
+    // M2-S4：Navigation API replace 面（保 key 新 id + 旧 entry detach + 'replace' 同步派）。
     replaceState: function (state, _unused, url) {
       var newUrl = _histStateUrlOrNull(url);
       if (newUrl === null && url != null && String(url) !== '') return;
       var cur = _hist_current();
       cur.state = state;
       if (newUrl !== null) cur.url = newUrl;
+      _navReplaceCurrent(cur);
     },
     // M2-S3（navigation-compat）：back/forward/go **入队**到 task 末尾执行（spec——traverse 步骤
     // 是排队算法，同脚本内多次 go 的终位在任务结束时按序结算、位置在**执行时**计算；WPT
@@ -4863,7 +4871,169 @@
     _hist_entries = [{ state: null, url: '', scrollRestoration: 'auto' }];
     _hist_cursor = 0;
     _hist_pendingTraversals = []; // M2-S3：清跨文档残留 traverse 队列（新文档不复现旧页 go()）
+    if (typeof _navReset === 'function') _navReset(); // M2-S4：同步重置 Navigation API entry list
   };
+
+  // ===== M2-S4（navigation-compat）：Navigation API 最小面（read side + currententrychange）=====
+  // spec：https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigation-api
+  // 面覆盖：navigation.currentEntry/entries()/updateCurrentEntry()/back()/forward() +
+  // NavigationHistoryEntry（index/key/id/url/sameDocument/getState()）+
+  // currententrychange 事件（pushState='push'、replaceState/location.replace='replace'、
+  // location.hash setter='replace'（**保 key**——WPT current-basic sixth + location-api
+  // from.index===-1）、href/assign 同文档='push'（WPT sameDocument-after-fragment-navigate）、
+  // traverse='traverse'、updateCurrentEntry=null）。entry 侧 state 槽独立于 history.state
+  //（updateCurrentEntry 不动 history.state、pushState/replaceState 清 navState——WPT
+  // state/history-pushState）。
+  // **已知限制（记录）**：navigate 事件/navigate()/reload()/traverseTo()/transition 拦截面
+  // 未实现（slice ④-B）；sameDocument 恒 true（单文档 runner 形态）；跨文档 entry list
+  // 重置面未建模（traverse 落到无 record 的 session entry 时按 fallback 新建，key 不保）。
+  // spec 未实现步骤：navigate event 的 destination/canIntercept/intercept() 全簇 +
+  // 专用派发序（currententrychange 现走自有 registry，不共享 window 站）。
+  var _navList = []; // entry list（record：{key,id,navState,he,_pub}——he 反查 session entry）
+  var _navPos = 0; // currentEntry 在 _navList 的位置
+  function _navUuid() {
+    try { return crypto.randomUUID(); } catch (_eNavUuid) {
+      return 'z' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    }
+  }
+  function _navMakeRecord(he, key) {
+    return { key: key || _navUuid(), id: _navUuid(), navState: undefined, he: he, _pub: null };
+  }
+  // 公共 NavigationHistoryEntry 对象（per-record 单例——entries()[i] === currentEntry 身份面）。
+  function _navPub(rec) {
+    if (rec._pub) return rec._pub;
+    var e = {};
+    // index：entry list 内位置；detach（replace 语义让位）后 -1（WPT location-api e.from.index===-1）。
+    Object.defineProperty(e, 'index', { enumerable: true, configurable: true, get: function () { return _navList.indexOf(rec); } });
+    Object.defineProperty(e, 'url', {
+      enumerable: true, configurable: true,
+      // 初始 session entry url=''（fallback 口）→ 读 host 页面 URL（WPT current-basic first_entry.url
+      // === location.href——runner 页面 URL https://wpt.test/<case>）。
+      get: function () {
+        if (rec.he && rec.he.url) return rec.he.url;
+        return typeof __zw_get_page_url === 'function' ? __zw_get_page_url() : 'about:blank';
+      },
+    });
+    Object.defineProperty(e, 'key', { enumerable: true, configurable: true, get: function () { return rec.key; } });
+    Object.defineProperty(e, 'id', { enumerable: true, configurable: true, get: function () { return rec.id; } });
+    Object.defineProperty(e, 'sameDocument', { enumerable: true, configurable: true, get: function () { return true; } });
+    // getState：每次返结构化克隆（WPT updateCurrentEntry basic——getState() !== 注入对象身份）。
+    e.getState = function () {
+      if (rec.navState === undefined) return undefined;
+      return _zw_structured_clone(rec.navState, typeof WeakMap !== 'undefined' ? new WeakMap() : new Map());
+    };
+    rec._pub = e;
+    return e;
+  }
+  function _navCurrent() { return _navList[_navPos]; }
+  // 事件面（自有 listener registry——navigation 非 window 站，不复用 _dispatchToListeners）。
+  var _navListeners = {};
+  var _navOnHandlers = {};
+  function _navFire(type, navigationType, fromRec) {
+    var ev = new NavigationCurrentEntryChangeEvent(type, {
+      navigationType: navigationType,
+      from: _navPub(fromRec),
+      __zwTrusted: true,
+    });
+    ev.target = globalThis.navigation;
+    var list = (_navListeners.currententrychange || []).slice();
+    var on = _navOnHandlers.currententrychange;
+    if (typeof on === 'function') list.push(on);
+    for (var i = 0; i < list.length; i++) {
+      try { list[i].call(globalThis.navigation, ev); } catch (_eNavFire) {}
+    }
+  }
+  // replace 语义共通：当前 record 让位（detach）→ 同 key 新 id 新 record（navState 清）。
+  // keepHe=false 时绑新 session entry（hash-setter/location.replace 已 push/改写 session entry）。
+  function _navReplaceCurrent(newHe) {
+    var old = _navCurrent() || _navMakeRecord(_hist_current());
+    if (!_navList.length) _navList.push(old);
+    var fresh = _navMakeRecord(newHe || old.he, old.key); // key 保留（current-basic sixth / replaceState）
+    _navList[_navPos] = fresh;
+    _navFire('currententrychange', 'replace', old);
+    return fresh;
+  }
+  // push 语义：插入新 record（fresh key/id），截断前方，推进 _navPos。
+  function _navPushCurrent(newHe) {
+    var old = _navCurrent() || _navMakeRecord(_hist_current());
+    if (!_navList.length) _navList.push(old);
+    _navList = _navList.slice(0, _navPos + 1);
+    var fresh = _navMakeRecord(newHe);
+    _navList.push(fresh);
+    _navPos = _navList.length - 1;
+    _navFire('currententrychange', 'push', old);
+    return fresh;
+  }
+  // traverse（S3 队列结算后调）：currentEntry = 目标 session entry 的 record（按 he 反查；
+  // 无则 fallback 新建——key 不保，spec 跨文档重置面近似）。
+  function _navTraverse(targetHe) {
+    var from = _navCurrent();
+    var found = -1;
+    for (var i = 0; i < _navList.length; i++) { if (_navList[i].he === targetHe) { found = i; break; } }
+    if (found < 0) {
+      _navList = _navList.slice(0, _navPos + 1);
+      _navList.push(_navMakeRecord(targetHe));
+      found = _navList.length - 1;
+    }
+    _navPos = found;
+    if (from && from !== _navCurrent()) _navFire('currententrychange', 'traverse', from);
+  }
+  function _navReset() {
+    _navList = [_navMakeRecord(_hist_entries[0])];
+    _navPos = 0;
+  }
+  _navReset();
+
+  globalThis.navigation = {
+    // entries()：快照数组（元素身份稳定——per-record 单例 public 对象）。
+    entries: function () { return _navList.map(_navPub); },
+    get currentEntry() { return _navPub(_navCurrent()); },
+    // updateCurrentEntry(options)：state 必填（缺省 TypeError——WPT no-args 空 dict 同抛）；
+    // 只改 navState 槽（history.state 不动——WPT updateCurrentEntry basic）+ 同步派
+    // currententrychange（navigationType null；state 未变也派——WPT navigation-updateCurrentEntry）。
+    updateCurrentEntry: function (options) {
+      if (options == null || typeof options !== 'object' || options.state === undefined) {
+        throw new TypeError("Failed to execute 'updateCurrentEntry' on 'Navigation': required member state is undefined.");
+      }
+      var rec = _navCurrent();
+      rec.navState = _zw_structured_clone(options.state, typeof WeakMap !== 'undefined' ? new WeakMap() : new Map());
+      _navFire('currententrychange', null, rec);
+    },
+    // back/forward：委托 history traverse 队列（复用 S3 结算——popstate/hashchange/currententrychange
+    // 全走既有链）。返回 spec 形 Promise + finished（resolve 于队列结算后——_defer 两跳近似 task 边界）。
+    back: function () { _hist_queueTraversal(-1); return _navNavPromise(); },
+    forward: function () { _hist_queueTraversal(1); return _navNavPromise(); },
+    addEventListener: function (type, fn) {
+      if (typeof fn !== 'function') return;
+      (_navListeners[type] = _navListeners[type] || []).push(fn);
+    },
+    removeEventListener: function (type, fn) {
+      var l = _navListeners[type];
+      if (!l) return;
+      var i = l.indexOf(fn);
+      if (i >= 0) l.splice(i, 1);
+    },
+    dispatchEvent: function (ev) { return _navFire(ev && ev.type, undefined, _navCurrent()) !== false; },
+  };
+  // on* IDL handler（onnavigate/onnavigatesuccess/onnavigateerror/oncurrententrychange）——
+  // defineProperty accessor（setter 存 handler，派发期读取）。onnavigate 派发面属 ④-B。
+  function _navDefineOn(type) {
+    Object.defineProperty(globalThis.navigation, 'on' + type, {
+      configurable: true,
+      get: function () { return _navOnHandlers[type] || null; },
+      set: function (fn) { _navOnHandlers[type] = (typeof fn === 'function') ? fn : null; },
+    });
+  }
+  _navDefineOn('navigate');
+  _navDefineOn('navigatesuccess');
+  _navDefineOn('navigateerror');
+  _navDefineOn('currententrychange');
+  function _navNavPromise() {
+    var obj = {};
+    obj.finished = new Promise(function (res) { _defer(function () { _defer(function () { res(undefined); }); }); });
+    obj.committed = obj.finished;
+    return obj;
+  }
 
   // R3006/R3008：location setter 共享导航应用——push 新 history entry（navigation 语义，R3005 location 读之反映）
   // + hash 段变化时异步派 hashchange。供 _setLocationHash / _setLocationPart 复用（DRY）。
@@ -4923,6 +5093,9 @@
     var _zwPsEv = new PopStateEvent('popstate', { state: _hist_current().state, __zwTrusted: true });
     _zwPsEv.target = globalThis;
     _dispatchToListeners(_elKey('html', null), _zwPsEv, 'all', globalThis);
+    // M2-S4：Navigation API hash-setter 面——**replace** 语义（保 key 新 id、旧 entry detach；
+    // WPT location-api navigationType='replace' + from.index===-1 + current-basic sixth 保 key）。
+    _navReplaceCurrent(_hist_current());
     // R3061：滚到锚元素（frag = hash 去 '#'）——闭合 R3053 限制①。real browser 同文档片段导航滚锚。
     _scrollToAnchorForHash(h.charAt(0) === '#' ? h.slice(1) : '');
   }
@@ -4935,15 +5108,25 @@
     var newHref = null;
     if (typeof URL === 'function' && typeof __zw_set_url_part === 'function') {
       try { var u = new URL(oldHref); u[part] = String(value); newHref = u.href; } catch (_e) {
-        // M2-S1（navigation-compat）：href 写侧解析失败 → SYNTAX_ERR DOMException（spec
-        // location-href-setter「parse 失败 throw SyntaxError」；WPT location_assign/location_replace
-        // 'URL that fails to parse' 断言 SYNTAX_ERR）。pathname/search/port 等 URL part setter
-        // 不抛（sanitize 语义），本路径实际仅 href 整体替换可触达。
-        throw new (globalThis.DOMException || DOMException)("The URL '" + String(value) + "' is invalid.", 'SyntaxError');
+        // M2-S4（navigation-compat）：href part 的 URL part setter 按绝对 URL 重解析（无 base
+        // 上下文——part02 URL **已知限制**）→ 相对值抛 TypeError。spec location-href-setter 以
+        // 文档 URL 为 base 解析（相对值合法，如 `location = "#hash"` 片段导航）——回落显式
+        // `new URL(value, oldHref)` 解析；仍失败才 SYNTAX_ERR（spec「parse 失败 throw」；
+        // WPT location_assign/location_replace 'URL that fails to parse' 断言面）。
+        if (part === 'href') {
+          try { newHref = new URL(String(value), oldHref).href; } catch (_e2) {
+            throw new (globalThis.DOMException || DOMException)("The URL '" + String(value) + "' is invalid.", 'SyntaxError');
+          }
+        } else {
+          throw new (globalThis.DOMException || DOMException)("The URL '" + String(value) + "' is invalid.", 'SyntaxError');
+        }
       }
     }
     if (!newHref || newHref === oldHref) return; // 解析失败 / 未变 → no-op
     _pushHistNav(newHref, oldHref);
+    // M2-S4：Navigation API href-setter 面——**push**（同文档；WPT sameDocument-after-fragment
+    // `location = "#hash"` entries 增长 + fresh key；跨文档 host 导航近似同面）。
+    _navPushCurrent(_hist_current());
     // R3058：href/pathname/search setter 改的是非 hash 段 → 跨文档导航 → host 真重载。
     //（hash 段经 _setLocationPath 不走此函数；故此处变更恒跨文档。）
     if (typeof __zw_request_navigate === 'function') __zw_request_navigate(newHref);
@@ -4992,6 +5175,8 @@
     var newHref = _resolveHistUrl(String(url));
     if (!newHref || newHref === oldHref) return; // 解析失败 / 未变 → no-op
     _pushHistNav(newHref, oldHref);
+    // M2-S4：Navigation API assign 面——**push**（assign ≡ href-setter 语义，fresh key）。
+    _navPushCurrent(_hist_current());
     // R3058：跨文档 assign（非 hash-only）→ host 真导航（fetch 新文档）。hash-only assign = 同文档，不导航。
     if (_isCrossDocumentNav(oldHref, newHref) && typeof __zw_request_navigate === 'function') {
       __zw_request_navigate(newHref);
@@ -5009,6 +5194,8 @@
     var newHref = _resolveHistUrl(String(url));
     if (!newHref || newHref === oldHref) return;
     _replaceHistNav(newHref, oldHref);
+    // M2-S4：Navigation API location.replace 面——**replace**（保 key 新 id，旧 entry detach）。
+    _navReplaceCurrent(_hist_current());
     // R3058：跨文档 replace（非 hash-only）→ host 真导航（replace 语义：back 不回旧 url，但跨文档仍重载）。
     if (_isCrossDocumentNav(oldHref, newHref) && typeof __zw_request_navigate === 'function') {
       __zw_request_navigate(newHref);
