@@ -1559,6 +1559,67 @@ fn test_mouse_event_offset_xy_dispatch_computed_r150() {
     );
 }
 
+/// uievents-compat 尾簇 37：MouseEvent.layerX/layerY 反射（WPT
+/// uievents/mouse/layer-coords-transform，上游 w3c/uievents#398 + mozilla bug
+/// 1975653——Chrome/Firefox 对齐的互操语义）。spec = pageX/pageY 减最近分层严格
+/// 祖先盒原点，无分层祖先 → 恒等 pageX。headless 布局无变换几何 → 缺省派生 =
+/// pageX（「无层」分支）。断言四面：① native MouseEvent 构造缺省派生 = floor
+/// (client)（生产路径，dom_bindings 模板）；② 显式 init floor 采信（UI Events
+/// long 语义，同 page 面）；③ 派发面 layerX === pageX（body 直下 target 无分层
+/// 祖先）；④ PointerEvent 继承（shim 工厂路径 + `_zwMouseCoordInit` 派生）。
+#[test]
+fn test_mouse_event_layer_xy_reflection_tail37() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"t\">x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // 注入 native 绑定（生产唯一路径——dom_bindings 双引擎 default-on）：new MouseEvent
+    // 走 native 模板（`native_mouse_event_constructor_invoke` 派生面）；PointerEvent 无
+    // native 模板，走 shim 工厂（`_zwMouseCoordInit` 派生面）——两改面同测。
+    sandbox.install_native_bindings(Box::new(|scope, ctx| {
+        let dom = std::rc::Rc::new(std::cell::RefCell::new(zero_dom::parse_html(
+            "<html><body><div id=\"t\">x</div></body></html>",
+        )));
+        crate::dom_bindings::install_dom_bindings(scope, ctx, dom);
+    }));
+
+    let out = sandbox
+        .execute(
+            "var log = [];\
+             var e1 = new MouseEvent('x', { clientX: 5.7, clientY: 2.2 });\
+             log.push('derived:' + e1.layerX + ',' + e1.layerY);\
+             var e2 = new MouseEvent('x', { layerX: 12.9, layerY: 7.2 });\
+             log.push('explicit:' + e2.layerX + ',' + e2.layerY);\
+             var t = document.querySelector('#t');\
+             t.addEventListener('click', function (e) {\
+               log.push('dispatched:' + (e.layerX === e.pageX) + ',' + (e.layerY === e.pageY) + ',' + e.layerX);\
+             });\
+             t.dispatchEvent(new MouseEvent('click', { clientX: 50, clientY: 30 }));\
+             var e4 = new PointerEvent('pointermove', { clientX: 8 });\
+             log.push('pointer:' + e4.layerX + ',' + e4.layerY);\
+             log.join('|')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "derived:5,2|explicit:12,7|dispatched:true,true,50|pointer:8,0",
+        "尾簇 37 layerX/layerY：缺省派生 = floor(client)（native 面）、显式 init floor 采信、\
+         派发面恒等 pageX（无分层祖先）、PointerEvent 继承（shim 面——clientY 缺省 0 → layerY=0）"
+    );
+}
+
 /// R150②：Event timeStamp 量化到 5µs（0.005ms）——定时侧信道缓解（WPT
 /// Event-timestamp-safe-resolution 千样本 GCD ≥ 5µs）。断言两点：① 相邻构造事件差值
 /// 的量化粒度（任意两值之差 × 200 恒整数）② 量化不破坏单调非递减（后构造 ≥ 先构造）。

@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M3 尾簇 36——wheel 族全绿 + reftest 复核 + mousemove-between 归因）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M3 尾簇 37——layerX/layerY 反射 + 基线重跑漂移归因）
 
 ## 当前状态
 
@@ -12,8 +12,13 @@ M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P 
 尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → 尾簇 19 1736P → 尾簇 20/21 1738P →
 尾簇 22 1739P → 尾簇 23 1745P → 尾簇 24 1750P → 尾簇 25 1755P → 尾簇 27 1757P →
 尾簇 28 1759P → 尾簇 30 1763P → 尾簇 31 1778P → 尾簇 32 1782P → 尾簇 33 1785P →
-尾簇 34 1787P → 尾簇 35 **1790P（+1570 累计）**
-（corpus：**1790P/175F/95TO**，`TIME_LIMIT=3600`——**wheel 族 3 案全绿**（尾簇 35——Actions scroll 步接通 + WheelEvent 派发）；textInput 族 24P 全绿
+尾簇 34 1787P → 尾簇 35 1790P → 尾簇 37 **1790P/174F（+1571 累计）**
+（corpus：**1790P/174F/95TO**，`TIME_LIMIT=3600`——layer-coords-transform **1F→1P**
+（尾簇 37——layerX/layerY 反射，shim + native 双路径）；总册 2059 与 HEAD 基线
+重跑逐条恒等（仅 layer 案翻转 + 2 条尾随空格名变体），尾簇 35 账册 2060 总册
+未复现属核算漂移（tail-4/24 先例）——
+[evidence/2026-10-07-m3-tail37.md](evidence/2026-10-07-m3-tail37.md) 漂移归因节）；
+**wheel 族 3 案全绿**（尾簇 35——Actions scroll 步接通 + WheelEvent 派发）；textInput 族 24P 全绿
 （上轮 22P/1F/1TO：api CE execCommand 案 Pass + enter-textarea CE 案 Pass）；
 其余零回归。尾簇 33 的 textContent 同步可见性挂账解明并修复：根因 = `'value' in`
 has 白名单无条件 true（div 等 CE 元素误入 value getter 分支）+ CE Enter 元素
@@ -56,10 +61,30 @@ selection key 存活面 +14**（见下节与
 [evidence/2026-10-04-m3-tail5.json](evidence/2026-10-04-m3-tail5.json)（尾簇 5 后）、
 [evidence/2026-10-04-m3-tail6a.json](evidence/2026-10-04-m3-tail6a.json)（尾簇 6a 后）、
 [evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)（尾簇 6b+6c 后）。
-门禁：**make test EXIT=0** + clippy（quickjs 面，-D warnings）EXIT=0 + shim 拼接
-node --check 全绿 + corpus 全量 **1790P/175F/95TO** 零回归（wheel 族全绿 +3P）
-（2026-10-07 尾簇 35 后）。reftest **704/704（failed 0）**（尾簇 36 复核，DC-4 项）；
+门禁：fmt 无 diff + clippy（quickjs 面，-D warnings）EXIT=0 + shim 拼接
+node --check 全绿 + workspace 测试全绿（51 result 块 0 failed）+ corpus 全量
+**1790P/174F/95TO**（layer 案 1F→1P，基线重跑逐条 diff 零其它行为差）+
+reftest **704/704（failed 0）**（2026-10-07 尾簇 37 后，DC-4 项复验）。
+make test 首两窗在 2s 窗口交互测试族偶发 Timeout（失败集合逐轮漂移、单跑
+全绿、并行 clone 同时段负载——tail-33 已记录同型 flake），复跑绿；
 历史（尾簇 34 后）：1787P/176F/96TO。
+
+**M3 尾簇 37（2026-10-07，本轮）——layerX/layerY 反射（shim + native 双路径）+ 基线重跑漂移归因（174F）**。
+两改面 + 单测：① shim（part05）MouseEvent props 注册表补 layerX/layerY
+（WheelEvent/PointerEvent 父链继承）+ `_zwMouseCoordInit` 派生（显式 init
+floor 采信 / 缺省 = pageX/Y——headless 布局无变换几何，分层祖先偏移不可诚实
+计算，恒走「无层」分支）；② native v8 模板（dom_bindings/event.rs）派生对补
+layerX/layerY（pageX/offsetX 同款模式，生产唯一路径）；③ 单测四面断言
+（native 派生 / 显式 floor / 派发面恒等 pageX / PointerEvent 继承）。
+语义依据：WPT layer-coords-transform（w3c/uievents#398 + bugzilla 1975653）。
+**inside 案根因升级**：指针命中 body（inner 未变换盒不含点位）——过案需变换
+感知 gBCR + scrollIntoView + 滚动后命中全链，属渲染流域深结构（与 gBCR 同步
+布局同域），跨流挂账。**相邻缺口登记**：UA click 派发 init dict 缺
+clientX/clientY（auxclick/mouseup 均有）——语料断言面极薄未修，DC-2 坐标面
+候选簇。**漂移归因**：HEAD 基线全量重跑与本轮逐条 diff——总册双 2059 恒等，
+唯一行为 diff = layer 案翻转；尾簇 35 账册 2060 总册未复现，-1 属核算漂移
+（tail-4/24 先例）。详见
+[evidence/2026-10-07-m3-tail37.md](evidence/2026-10-07-m3-tail37.md)。
 
 **M3 尾簇 33（2026-10-07，本轮）——execCommand text-control 事件序 + maxlength 哨兵 + textarea Enter 换行（1782P→1785P）**。
 三件：① **execCommand('insertText') text-control 分支补事件序**（beforeinput（可取消，
@@ -507,7 +532,7 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | uievents + pointerevents corpus 导入 + 基线 | ✅ 2026-10-03 |
-| P2 | 鼠标事件序/坐标/click 组合语义修齐 | 🔄 核心已落地；残余 = mousemove-between（**根因：body 级 margin:auto 水平居中失效**——渲染流域，尾簇 36 探针归因）、wheel 三案（scroll 源重放——wheel-basic/deadlock 可解，scrolling 需真滚动）、interface keyboard-click、TextEvent 语义域（textInput 族 ✅ 16P——余 5 TO = execCommand insertText 对 text control ×3 + CE ForwardDelete + CE Enter 面，editing 域挂账——尾簇 31）、uievents/mouse 尾簇（mouseover-at-removing ✅ 尾簇 7 全绿；mutation 驱动悬停重定向 + 修饰键态 ✅ 尾簇 8 全绿；image-map 命中 + 跨目标 click 组合 ✅ 尾簇 9 全绿；同 turn gBCR 强制同步布局——reappending 11F + removing_last_over 4F + compat-mouse-when-removing 4F + boundary_drag 2F 根因（尾簇 30 ZW_TD_DEBUG 实证零盒）；image-map img-resized 双案 = 查询视图缓存双计——尾簇 10；layerX/chorded buttons） |
+| P2 | 鼠标事件序/坐标/click 组合语义修齐 | 🔄 核心已落地；残余 = mousemove-between（**根因：body 级 margin:auto 水平居中失效**——渲染流域，尾簇 36 探针归因）、wheel 三案（scroll 源重放——wheel-basic/deadlock 可解，scrolling 需真滚动）、interface keyboard-click、TextEvent 语义域（textInput 族 ✅ 16P——余 5 TO = execCommand insertText 对 text control ×3 + CE ForwardDelete + CE Enter 面，editing 域挂账——尾簇 31）、uievents/mouse 尾簇（mouseover-at-removing ✅ 尾簇 7 全绿；mutation 驱动悬停重定向 + 修饰键态 ✅ 尾簇 8 全绿；image-map 命中 + 跨目标 click 组合 ✅ 尾簇 9 全绿；同 turn gBCR 强制同步布局——reappending 11F + removing_last_over 4F + compat-mouse-when-removing 4F + boundary_drag 2F 根因（尾簇 30 ZW_TD_DEBUG 实证零盒）；image-map img-resized 双案 = 查询视图缓存双计——尾簇 10；layerX ✅ 尾簇 37 反射落地（outside 案 Pass；inside 案 = 变换感知几何全链，渲染流域挂账——尾簇 37 段）；UA click 坐标（init dict 缺 clientX——DC-2 坐标面候选簇，尾簇 37 登记）） |
 | P3 | Pointer 生命周期 + capture 三方法 + enter/leave 边界序 | ✅ 核心 + mutation 族 + 重入面 + touch 接触失效收口（尾簇 4/5/6c——after_target_appended 24/24 全绿）+ portal 段收口（尾簇 22-29——pointercapture_in_frame 17P + 1 上游即 Fail）；残余 = pointercancel/touch-action 交互面、iframe 跨文档焦点；from_slot 案阻塞于 declarative shadow DOM（shadowrootmode 未实现——web-components 域前置，挂账）；interleaved 族 + pointercapture_in_frame ?touch subtest 4 行为面已对齐（残余 = 上游 expected 记账 bug，pin 版即 Fail，不再追——尾簇 29 判例） |
 | P4 | touch-events / pointerlock / IME 组合挂账定稿 | ⏳ M4 |
 
@@ -608,6 +633,9 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
   本地树变更。1785P→1787P（+2，textInput 族 24P 全绿；单测校准 CE Enter mutation 形态）。
 - **M3 尾簇 35（2026-10-07，本轮）**：wheel 源 scroll 步接通（stub/runner/shim
   四段通道）。wheel 族 3 案全绿（1F/2TO→3P）。
+- **M3 尾簇 37（2026-10-07，本轮）**：layerX/layerY 反射（shim props 注册表 +
+  `_zwMouseCoordInit` 派生 / native 模板派生对 + 四面单测）。layer-coords-transform
+  1F→1P；HEAD 基线重跑漂移归因（总册 2059 双跑恒等）。
 
 ## 下一步计划
 
@@ -621,8 +649,9 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
    b) **iframe 捕获面**（pointercapture_in_frame 18F + click_during_parent_capture
    iframe 面 4F + rawupdate_remove_target 2F + after_adoption 1F——actions 到 subframe
    的事件路由未建）；
-   c) **layerX/layerY**（layer-coords-transform 族——transform 感知几何，渲染流域
-   邻接，挂账候选）；
+   c) ~~layerX/layerY~~ ✅ 尾簇 37（反射落地，inside 案随渲染流域变换几何挂账）；
+   c') **UA click 坐标**（`__zw_pointer_up_sequence` 主 click 分支 init dict 补
+   clientX/clientY——尾簇 37 登记的 DC-2 坐标面候选簇，修后需独立 corpus 验证）；
    d) wheel 源 scroll 重放（wheel-basic/deadlock）；e) focus 残余两案（iframe 跨文档
    焦点、keydown→focus activation——键盘域邻接，挂账候选）。
 2. **M4 收口**：touch-action 解析/计算值核对（parsing/inheritance ~30F——css-parser/

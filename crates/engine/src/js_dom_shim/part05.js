@@ -11944,6 +11944,13 @@
     else if (floored) inst.offsetX = _fl(inst.offsetX);
     if (o.offsetY == null) inst.offsetY = dY;
     else if (floored) inst.offsetY = _fl(inst.offsetY);
+    // 尾簇 37：layerX/layerY 派生 = pageX/pageY（headless 无分层几何近似——见
+    // props 注册表尾簇 37 注记；显式 init 层坐标 floor 采信，同 page 面）。
+    // 须在 pageX/pageY 派生之后读 inst.pageX（显式 pageX floor 采信值随取）。
+    if (o.layerX == null) inst.layerX = inst.pageX;
+    else if (floored) inst.layerX = _fl(inst.layerX);
+    if (o.layerY == null) inst.layerY = inst.pageY;
+    else if (floored) inst.layerY = _fl(inst.layerY);
   }
   // 尾簇 6 续：tiltX/tiltY ↔ azimuthAngle/altitudeAngle 互换
   //（https://w3c.github.io/pointerevents/#converting-between-tiltx-tilty-and-azimuth-angle-altitudeangle；
@@ -12126,6 +12133,17 @@
     ['clientX', 'clientX', 0], ['clientY', 'clientY', 0],
     ['pageX', 'pageX', 0], ['pageY', 'pageY', 0],
     ['offsetX', 'offsetX', 0], ['offsetY', 'offsetY', 0],
+    // uievents-compat 尾簇 37（2026-10-07）：layerX/layerY 反射（非标准但 Chrome/
+    // Firefox 已对齐互操语义——WPT uievents/mouse/layer-coords-transform，上游
+    // w3c/uievents#398 + mozilla bug 1975653）。spec 定义 = pageX/pageY 减最近
+    // 「分层」严格祖先（transform/position 等建 RenderLayer 的元素）盒原点；无
+    // 分层祖先 → 恒等 pageX/pageY。WheelEvent/PointerEvent 经父链继承本表。
+    // **headless 近似**：布局/gBCR/命中全为未变换几何（LayoutBox 无 transform
+    // 字段，transform 仅样式层 + 绘制面）——分层祖先偏移无法诚实计算，缺省派生
+    // = pageX/pageY（即「无层」分支，与 pageX 沙箱无滚动恒等 clientX 同款记录
+    // 近似）；transform 感知分层偏移属渲染流域（layer-coords-transform inside
+    // 案挂账，见 goal master.md）。
+    ['layerX', 'layerX', 0], ['layerY', 'layerY', 0],
     ['ctrlKey', 'ctrlKey', false], ['shiftKey', 'shiftKey', false],
     ['altKey', 'altKey', false], ['metaKey', 'metaKey', false],
     ['button', 'button', 0], ['buttons', 'buttons', 0],

@@ -352,6 +352,14 @@ fn native_mouse_event_constructor_invoke(
         ("pageY", client_y),
         ("offsetX", client_x),
         ("offsetY", client_y),
+        // uievents-compat 尾簇 37（2026-10-07）：layerX/layerY 反射（WPT
+        // uievents/mouse/layer-coords-transform，上游 w3c/uievents#398 + mozilla
+        // bug 1975653）。spec = pageX/pageY 减最近分层严格祖先盒原点，无分层祖先
+        // → 恒等 pageX。headless 布局无变换几何（分层偏移不可诚实计算）→ 派生 =
+        // client（= page 派生值，「无层」分支；shim `_zwMouseCoordInit` 尾簇 37
+        // 同款近似，见 props 注册表注记）。transform 感知分层偏移属渲染流域挂账。
+        ("layerX", client_x),
+        ("layerY", client_y),
     ] {
         // init 显式给了 pageX/offsetX（非标准扩展面，shim R150 同款兼容）→ floor 采信；
         // 缺省 → 派生。`is_number` 门：缺失键 get 返 undefined，其 number_value 是
