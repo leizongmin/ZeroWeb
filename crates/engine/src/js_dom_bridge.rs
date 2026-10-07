@@ -464,8 +464,58 @@ pub fn utf8_byte_to_utf16_offset(text: &str, byte_offset: usize) -> usize {
 
 /// 在文档根下按简单选择器查找第一个匹配元素。
 pub fn find_by_selector(doc: &Document, selector: &str) -> Option<NodeId> {
+    let sel = zero_dom::trim_ascii_ws(selector);
+    // t8b（性能）：structural path 快速通道。该形态由 [`structural_path_selector`]
+    // 生成（每段 `tag:nth-child(pos)`、pos 为 1-based 元素序、`" > "` 连接），先按
+    // 元素索引逐段 O(1) 下行；形态不符或段失配返 None 回落通用 CSS 引擎，不引入
+    // 行为分歧。绕开通用引擎的理由：长 path（10+ 段）全量解析+逐段匹配单次 ~32µs
+    // （t8b 诊断：轮询批量更新数千次查询 × 此税 = e() 单次 ~1s 大头）。
+    if let Some(n) = try_structural_path_fastpath(doc, sel) {
+        return Some(n);
+    }
     let root = doc.root();
-    doc.query_selector(root, zero_dom::trim_ascii_ws(selector))
+    doc.query_selector(root, sel)
+}
+
+/// t8b：structural path 快速通道——识别 [`structural_path_selector`] 生成的
+/// `tag:nth-child(pos) > tag:nth-child(pos) > …` 形态并按元素索引下行。
+/// 语义锚点：`:nth-child(pos)` 按**元素序**（1-based，只数元素兄弟）——与生成端
+/// [`element_child_index`] 及 CSS 规范一致；tag 比较大小写不敏感（HTML 文档语义，
+/// 生成端 `local_name` 已小写）。任何一段不匹配返 None（调用方回落通用引擎）。
+/// https://drafts.csswg.org/selectors-4/#nth-child-pseudo
+fn try_structural_path_fastpath(doc: &Document, selector: &str) -> Option<NodeId> {
+    let mut cur = doc.root();
+    for seg in selector.split(" > ") {
+        let rest = seg.strip_suffix(')')?;
+        let (tag, pos) = rest.split_once(":nth-child(")?;
+        if tag.is_empty() || tag.contains(':') {
+            return None;
+        }
+        let k: u32 = pos.parse().ok()?;
+        // 第 k 个元素子（元素序，同 [`element_child_index`] 计数口径）。
+        let children = &doc.get(cur)?.children;
+        let mut idx = 0u32;
+        let mut hit = None;
+        for &c in children.iter() {
+            if doc.get(c).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))) {
+                idx += 1;
+                if idx == k {
+                    hit = Some(c);
+                    break;
+                }
+            }
+        }
+        cur = hit?;
+        match &doc.get(cur)?.kind {
+            NodeKind::Element(e) => {
+                if !e.local_name().eq_ignore_ascii_case(tag) {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+    }
+    Some(cur)
 }
 
 /// 在文档根下查找所有匹配元素并生成稳定选择器列表。

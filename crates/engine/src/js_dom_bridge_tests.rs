@@ -38,3 +38,4 @@ include!("js_dom_bridge_tests/part35.rs");
 include!("js_dom_bridge_tests/part36.rs");
 include!("js_dom_bridge_tests/part37.rs");
 include!("js_dom_bridge_tests/part38.rs");
+include!("js_dom_bridge_tests/part39.rs");
