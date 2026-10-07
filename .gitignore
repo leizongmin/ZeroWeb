@@ -99,3 +99,12 @@ tests/wpt-runner/scripts/chrome/
 
 # 官网 metrics 数据——pages.yml 部署时由 scripts/generate-website-metrics.py 重新生成，仓库内旧产物是假事实源
 website/metrics.json
+
+# 评审/证据截图不入库（github-delivery 契约：PR 正文图片走 GitHub 附件上传；文本类证据 log/md 不受限）
+diag/**/*.png
+diag/**/*.jpg
+diag/**/*.jpeg
+diag/**/*.gif
+diag/**/*.webp
+diag/**/*.bmp
+diag/**/*.avif
