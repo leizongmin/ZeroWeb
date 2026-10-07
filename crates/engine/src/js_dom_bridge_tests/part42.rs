@@ -6,9 +6,13 @@
 // `_zwHCLiveInvalidate` 每 mutation 遍历全部集合 × 每集合 matches 逐元素 tag 解析
 // → O(ops²)。真站实证：400 对 append/remove 泄漏 409 集合、_realTag 43·i 次/对。
 
-/// 泄漏钉：removeChild 循环不触发集合累积——600 对 append/remove 墙钟有界。
-/// 修复前同形态约 8s 量级（二次方 + 每对 1 个新集合的失效遍历）；修复后线性，
-/// 进程内毫秒级。绝对阈值给足裕量（<2000ms），避免 CI 机器噪声误报。
+/// 泄漏钉：removeChild 循环不触发集合累积——600 对 append/remove（每对含一次
+/// 全局命名查找，驱动 `_zwNPOIfrScan` 扫描路径真实执行）墙钟有界 + 机制断言：
+/// `__zwLiveCollectionsStore.length === 0`（context 级稳定 global，页面可读，
+/// 机器无关——扫描实现若回退为向登记表注册集合的形态，此断言先于墙钟报警；
+/// 双审查红→绿实验实证回退态泄漏 436 集合/400 次命名查找）。修复前同形态约
+/// 8s 量级（二次方 + 每对 1 个新集合的失效遍历）；修复后线性，进程内毫秒级。
+/// 绝对阈值给足裕量（<2000ms），避免 CI 机器噪声误报。
 #[test]
 fn test_t8g_npo_iframe_scan_no_collection_leak() {
     use std::sync::{Arc, Mutex};
@@ -37,7 +41,11 @@ fn test_t8g_npo_iframe_scan_no_collection_leak() {
             "var c = document.createElement('div');\
              document.body.appendChild(c);\
              var d = document.createElement('div');\
-             for (var i = 0; i < 600; i++) { c.appendChild(d); c.removeChild(d); }\
+             for (var i = 0; i < 600; i++) {\
+               c.appendChild(d); c.removeChild(d);\
+               globalThis.__t8gNpoProbe = typeof ch;\
+             }\
+             globalThis.__t8gStoreLen = globalThis.__zwLiveCollectionsStore.length;\
              globalThis.__t8gDone = true;",
         )
         .unwrap();
@@ -49,6 +57,14 @@ fn test_t8g_npo_iframe_scan_no_collection_leak() {
             .value,
         "true",
         "600 对 append/remove 正常完成"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__t8gStoreLen)")
+            .unwrap()
+            .value,
+        "0",
+        "循环内命名查找不得向 _zwLiveCollections 泄漏注册任何集合（扫描应零注册）"
     );
     assert!(
         elapsed.as_millis() < 2000,
@@ -111,18 +127,19 @@ fn test_t8g_window_named_properties_intact() {
         "1",
         "mutation 后 iframe 集合仍正确反映文档"
     );
-    // 命名 iframe 访问：contentWindow 在无真实加载环境时允许 null/undefined，
-    // 但解析路径不得抛异常（返回值类型仅两种）。
+    // 命名 iframe 访问：快照命名 iframe 经 NPO 主查找解析为其 contentWindow
+    // （window 形态对象，非元素代理）。
     let v = sandbox.execute("globalThis.__frameAType").unwrap().value;
-    assert!(
-        v == "undefined" || v == "object",
-        "window.frameA 命名访问不得抛异常（实测 {}）",
-        v
+    assert_eq!(
+        v, "object",
+        "window.frameA 命名访问应解析为元素对象（不得抛异常或落空）"
     );
 }
 
-/// R91 钉：removeChild 后反链清理生效——移除节点脱离文档可观测面（isConnected /
-/// document.contains），且同 handle 重挂载到新父后恢复连接（反链重写语义不受影响）。
+/// isConnected 语义钉：removeChild 后节点立即脱离文档可观测面，且同节点重挂载
+/// 到新父后恢复连接（red→green 归因注记：双审查回退实验实证 isConnected 面由
+/// `_mo_notify` 汇流点冗余保障、回退下同样绿——本钉为语义 green-guard，不判别
+/// R91 清理行本身；R91 修复的检出力在泄漏钉的墙钟 + 机制断言）。
 #[test]
 fn test_t8g_r91_backlink_cleanup_after_remove() {
     use std::sync::{Arc, Mutex};
@@ -155,7 +172,9 @@ fn test_t8g_r91_backlink_cleanup_after_remove() {
              a.appendChild(d);\
              globalThis.__connInA = d.isConnected;\
              a.removeChild(d);\
-             globalThis.__connAfterRemove = d.isConnected;",
+             globalThis.__connAfterRemove = d.isConnected;\
+             b.appendChild(d);\
+             globalThis.__connAfterRemount = d.isConnected;",
         )
         .unwrap();
     assert_eq!(
@@ -172,6 +191,14 @@ fn test_t8g_r91_backlink_cleanup_after_remove() {
             .unwrap()
             .value,
         "false",
-        "removeChild 后 isConnected 立即为假（R91 反链清理）"
+        "removeChild 后 isConnected 立即为假（反链清理语义面）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__connAfterRemount)")
+            .unwrap()
+            .value,
+        "true",
+        "同节点重挂载到新父后 isConnected 恢复为真（反链重写语义不受修复影响）"
     );
 }

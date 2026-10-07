@@ -5136,11 +5136,12 @@
     } catch (_e140s2) {}
     // R91：对称清反链（removeChild 后 isConnected 反链上行正确断开）。
     // t8g 修复（site-compat bilibili-20261002-r1）：旧代码引用未声明标识符 `ch`（应为
-    // `child.__zwHandle`）——两个同源后果：① 条件恒假，反链清理从未生效（死代码，
-    // 移除节点的 `_zwNodeParent` 旧链残留至同 handle 重挂载）；② `typeof ch` 对不可
-    // 解析引用沿全局作用域链落到 WindowProperties NPO has trap → 每次 removeChild
-    // 触发一次全局命名查找 → 见 `_zwNPOIfrScan` 的静态枚举修复（t8g 二次方根因链
-    // 上半段）。
+    // `child.__zwHandle`）——`typeof ch` 对不可解析引用沿全局作用域链落到
+    // WindowProperties NPO has trap → 每次 removeChild 触发一次全局命名查找（t8g
+    // 二次方根因链上半段，见 `_zwNPOIfrScan` 静态枚举修复）。本段条件因笔误恒假、
+    // 清理从未生效，但反链已被 `_mo_notify` 汇流点在同批 removedNodes 分支无条件
+    // 同步清链（part01.js），行为面无残留；此处修复为消除每次 remove 的全局命名
+    // 查找税，并恢复 R91 自身对称清理语义（冗余保险）。
     try {
       var _ch91 = child.__zwHandle;
       if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent
