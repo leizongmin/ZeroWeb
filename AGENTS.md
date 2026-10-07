@@ -284,6 +284,8 @@ tools/
 
 > 本仓库已选定入口与阈值，见 [`docs/rally/run-rules.md`](docs/rally/run-rules.md)（`make test` / `make reftest`，经 `scripts/test-guard.rs` 包裹）与 [`docs/rally/oom-guard.md`](docs/rally/oom-guard.md)。
 
+**病态输入实验在交互式会话同样适用（2026-10-07 修订）**：复现或最小化 fuzz 工件（`timeout-*`/`OOM-*`）以及任何"解析器/算法对病态输入行为"的实验，一律走 [`scripts/fuzz-repro-guard.sh`](scripts/fuzz-repro-guard.sh)（先无限制预编译，再以 ulimit -v 8G + 墙钟超时执行），禁止裸跑——指数放大只受算法上界约束，不因"本次有人盯着"而安全。2026-10-07 两个 ~35GB 的 fuzz 最小化进程把 46GB 机器拖到系统 OOM，连坐杀死 `oom_score_adj=500` 的远程入口服务，交互式会话与 agent 进程随之断线。注意脚本内预编译步骤不可省：`ulimit -v` 会把链接器一并掐死。
+
 ## 经验沉淀
 
 在日常排查问题、修复 bug 以及开发新功能的过程中，如果发现了可积累的技术经验（如踩坑根因、平台差异、性能优化手段、可复用代码模式等），应主动将经验总结并保存到 `docs/learnings/` 目录下，供后续查阅参考。

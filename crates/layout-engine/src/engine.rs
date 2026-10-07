@@ -148,8 +148,12 @@ use crate::inline_finalization::*;
 // R831：abspos 后处理（adjust_fixed/absolute_to_* / stretch_fixed / resolve_abspos_against_root_cb）
 // 抽出到 engine/abspos.rs（2000 行规则）。5 个自包含函数，零私有 helper 依赖；
 // 经 glob 引入保持 engine.rs 内 18 处调用点不变（纯移动，零行为变化）。
+// R4988：abspos.rs 超 2000 行规则续拆——尺寸/居中修正域（height 内容关键字/
+// aspect-ratio 三臂/垂直 margin:auto 居中 + 既有单测）分出 abspos_sizing.rs。
 mod abspos;
 use abspos::*;
+mod abspos_sizing;
+use abspos_sizing::*;
 // R965：taffy 后处理步骤（adjust_inline_block_positions / sort_children_by_css_order /
 // fix_vertical_mode_abs_pos / apply_relative_offsets* / apply_calc_size_adjustments /
 // exclude_floats_from_non_bfc_auto_height / backfill_r109_anon_block_heights /

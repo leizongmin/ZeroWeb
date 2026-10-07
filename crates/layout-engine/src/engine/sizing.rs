@@ -898,9 +898,104 @@ impl LayoutEngine {
                                 st.size.height = taffy::style::Dimension::length(pc.max(0.5));
                             }
                         }
+                        // R4988（css-sizing-4 §4.1 + css-flexbox §4.5）：容器 main definite
+                        // 且小于 transferred 值时，flex-shrink 会把 size.main 重新缩穿
+                        //（045：容器 w:0 收缩 100→0）。transferred size suggestion 同喂
+                        // automatic minimum → min.main 地板：收缩钳在传递值，容器溢出
+                        //（chromium 行为，045/046/047/048 收口）。跨 definite-min 项已在
+                        // R1013 skip 臂外（本臂 !main_has_definite_min）。
+                        let container_main_definite = if is_column {
+                            resolve_sizing_definite_real_length(&ps.height, ps)
+                        } else {
+                            resolve_sizing_definite_real_length(&ps.width, ps)
+                        };
+                        // min-*:auto 门（R4988；同 R4987 abspos 臂口径）：显式零
+                        // （min-height:0）禁用 automatic minimum（css-sizing-4 §5.1，
+                        // 014 回归案：min-height:0 + flex:1 1 50px 不得被地板撑爆）。
+                        let main_min_auto = if is_column {
+                            matches!(item_style.min_height, LengthValue::Auto)
+                        } else {
+                            matches!(item_style.min_width, LengthValue::Auto)
+                        };
+                        // auto margin 让路（auto-margins-002 回归案）：margin:auto 条目
+                        // 尺寸走 max 钳 + 居中路径，automatic minimum 地板会撑破缩放
+                        //（img 300×150 + max-w/max-h → 应 100×50 居中，地板致 300 宽）。
+                        let any_margin_auto = matches!(item_style.margin_left, LengthValue::Auto)
+                            || matches!(item_style.margin_right, LengthValue::Auto)
+                            || matches!(item_style.margin_top, LengthValue::Auto)
+                            || matches!(item_style.margin_bottom, LengthValue::Auto);
+                        if main_min_auto
+                            && !any_margin_auto
+                            && container_main_definite.is_some_and(|cm| cm < expected_main - 0.5)
+                        {
+                            if is_column {
+                                st.min_size.height = taffy::style::Dimension::length(expected_main.max(0.5));
+                            } else {
+                                st.min_size.width = taffy::style::Dimension::length(expected_main.max(0.5));
+                            }
+                        }
                         let _ = taffy_tree.set_style(tid, st);
                         let _ = taffy_tree.mark_dirty(tid);
                         changed = true;
+                    }
+                } else if !b.is_replaced {
+                    // R4988 臂 2（css-flexbox §4.5 + css-sizing-4 §4.1）：definite main
+                    // 的 AR 叶条目——容器 main 收缩竞争时 taffy 把 specified size 缩穿
+                    //（053/054：item w:100 h:100 + 容器 w:0 → 应溢出 100 方，ZW 收缩到
+                    // 0）。transferred minimum（laid cross×ratio）作 taffy min.main 地板。
+                    // 触发收窄：容器 main definite 且 < item main 指定值（收缩必现），
+                    // laid cross > 0；R1013 语义（min 约束驱动域）不受影响——本臂只抬
+                    // min 地板，不动 size。
+                    let main_definite_px = if is_column {
+                        resolve_sizing_definite_real_length(&item_style.height, item_style)
+                    } else {
+                        resolve_sizing_definite_real_length(&item_style.width, item_style)
+                    };
+                    let container_main2 = if is_column {
+                        resolve_sizing_definite_real_length(&ps.height, ps)
+                    } else {
+                        resolve_sizing_definite_real_length(&ps.width, ps)
+                    };
+                    let cross_laid = if is_column { b.width } else { b.height };
+                    let transferred_min_main = if is_column {
+                        cross_laid / ratio
+                    } else {
+                        cross_laid * ratio
+                    };
+                    let main_min_auto2 = if is_column {
+                        matches!(item_style.min_height, LengthValue::Auto)
+                    } else {
+                        matches!(item_style.min_width, LengthValue::Auto)
+                    };
+                    let any_margin_auto2 = matches!(item_style.margin_left, LengthValue::Auto)
+                        || matches!(item_style.margin_right, LengthValue::Auto)
+                        || matches!(item_style.margin_top, LengthValue::Auto)
+                        || matches!(item_style.margin_bottom, LengthValue::Auto);
+                    if let (Some(main_px), Some(cm)) = (main_definite_px, container_main2)
+                        && main_min_auto2
+                        && !any_margin_auto2
+                        && main_px > 0.5
+                        && cm < main_px - 0.5
+                        && cross_laid > 0.5
+                        && transferred_min_main > 0.5
+                        && let Ok(mut st) = taffy_tree.style(tid).cloned()
+                    {
+                        let cur = if is_column {
+                            st.min_size.height
+                        } else {
+                            st.min_size.width
+                        };
+                        let cur_px = if cur.is_auto() { 0.0 } else { cur.value() };
+                        if transferred_min_main > cur_px + 0.5 {
+                            if is_column {
+                                st.min_size.height = taffy::style::Dimension::length(transferred_min_main);
+                            } else {
+                                st.min_size.width = taffy::style::Dimension::length(transferred_min_main);
+                            }
+                            let _ = taffy_tree.set_style(tid, st);
+                            let _ = taffy_tree.mark_dirty(tid);
+                            changed = true;
+                        }
                     }
                 }
             }
