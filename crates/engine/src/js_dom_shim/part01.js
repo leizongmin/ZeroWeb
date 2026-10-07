@@ -3964,8 +3964,9 @@
       }
       // t8e：scoped 集合树序重排（t8e 起 children 集合被缓存，中间插入的树序落位在
       // 反链记账后进行——invalidate 内反链未落账不能就地锚定，见 part05 _zwHCTreeOrderSync）。
+      // slice42：inDoc 透传（文档级 NA 集合排序门，对齐成员并入 R54 口径）。
       if (_na36flats && _na36flats.addFlat.length) {
-        _zwHCTreeOrderSync(_na36flats.addFlat, sel, handle);
+        _zwHCTreeOrderSync(_na36flats.addFlat, sel, handle, _na36flats.inDoc);
       }
     }
   }

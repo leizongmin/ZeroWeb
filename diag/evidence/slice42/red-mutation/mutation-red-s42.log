@@ -1,0 +1,31 @@
+thread 'js_dom_bridge::tests::named_access_live_collection_tree_order_attr_join_s42' (3382825) panicked at crates/engine/src/js_dom_bridge_tests/part42.rs:173:5:
+assertion `left == right` failed: attr 并入成员落树序位（p 在树首；修前末位 push：[a,b,p]）
+  left: "false"
+ right: "true"
+
+---- js_dom_bridge::tests::named_access_morph_product_zero_hit_recycle_s42 stdout ----
+
+thread 'js_dom_bridge::tests::named_access_morph_product_zero_hit_recycle_s42' (3383021) panicked at crates/engine/src/js_dom_bridge_tests/part42.rs:60:5:
+assertion `left == right` failed: morph 产物 0 命中回收（spec：0 named objects 则属性缺席；修前 stale 元素）
+  left: "false"
+ right: "true"
+
+---- js_dom_bridge::tests::named_access_recycled_collection_regenerates_s33 stdout ----
+
+thread 'js_dom_bridge::tests::named_access_recycled_collection_regenerates_s33' (3383023) panicked at crates/engine/src/js_dom_bridge_tests/part35.rs:162:5:
+assertion `left == right` failed: 0 命中双面回收（slice42 收口；修前 stale 元素/backing 残留复活）
+  left: "false"
+ right: "true"
+
+
+failures:
+    js_dom_bridge::tests::named_access_attr_shrink_morph_then_captured_live_s32
+    js_dom_bridge::tests::named_access_batch_zero_hit_recycle_backing_s42
+    js_dom_bridge::tests::named_access_live_collection_tree_order_attr_join_s42
+    js_dom_bridge::tests::named_access_live_collection_tree_order_childlist_s42
+    js_dom_bridge::tests::named_access_morph_product_zero_hit_recycle_s42
+    js_dom_bridge::tests::named_access_recycled_collection_regenerates_s33
+
+test result: FAILED. 21 passed; 6 failed; 0 ignored; 0 measured; 2868 filtered out; finished in 0.20s
+
+TREE_SHA=d1e2a3aae5418929eba84db4c33c147c2c44d0a4

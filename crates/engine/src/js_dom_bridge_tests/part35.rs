@@ -122,10 +122,11 @@ fn named_access_iframe_whitelist_boundary_s33() {
     );
 }
 
-// ③I-7 再生：2 命中集合 → 双双失格（1 命中 morph 元素——slice32 边界钉保持；
-// 0 命中回收保留账本）→ window 级 delete 不清 named prop（slice36 FIXME ⑥ 收口：
-// 再读复活，Chrome 同款；slice36 前 own 面一删即逝）→ 真清除走 `__zwNADelete`
-//（renderer 快照换代链路同款）→ 清空态 → 同名新元素重入 → 恢复（1 命中恢复元素）。
+// ③I-7 再生：2 命中集合 → 双双失格（1 命中 morph 元素；slice42 收口：0 命中时
+// morph 产物 + backing 原集合双面回收，原「delete 后复活」的 stale 面已退役）→
+// 回收态缺席 → 同名新元素重入 → 恢复（1 命中恢复元素）；live 名 window 级 delete
+// 不清 named prop（slice36 FIXME ⑥ 收口：再读复活，Chrome 同款）——该面移到恢复
+// 后的 live 名上验证。
 #[test]
 fn named_access_recycled_collection_regenerates_s33() {
     let mut sandbox = s32_sandbox!(
@@ -138,14 +139,15 @@ fn named_access_recycled_collection_regenerates_s33() {
              document.getElementById('z1').removeAttribute('name');
              document.getElementById('z2').removeAttribute('name');
              globalThis.__r_len1 = col0.length;
+             globalThis.__r_recycled = typeof window.zz === 'undefined';
              delete window.zz; // NPO 级 [[Delete]]=false 经链传播——no-op（ret 值不钉，偏差申报）
-             globalThis.__r_resurrect = typeof window.zz !== 'undefined';
-             __zwNADelete('zz'); // renderer 快照换代登记·回收链路对 stale 名的同款清理（backing 面）
              globalThis.__r_absent0 = typeof window.zz === 'undefined';
              var z3 = document.createElement('img');
              z3.setAttribute('name', 'zz');
              document.body.appendChild(z3);
-             globalThis.__r_restored = window.zz === z3;")
+             globalThis.__r_restored = window.zz === z3;
+             delete window.zz; // live 名 window 级 delete 不清 named prop（FIXME ⑥，NPO false）
+             globalThis.__r_resurrect = window.zz === z3;")
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__r_len0").unwrap().value,
@@ -158,18 +160,23 @@ fn named_access_recycled_collection_regenerates_s33() {
         "双失格后集合成员清空（0 命中回收态）"
     );
     assert_eq!(
-        sandbox.execute("globalThis.__r_resurrect").unwrap().value,
+        sandbox.execute("globalThis.__r_recycled").unwrap().value,
         "true",
-        "window 级 delete 后 window.zz 再读复活（FIXME ⑥ 收口，Chrome 同款）"
+        "0 命中双面回收（slice42 收口；修前 stale 元素/backing 残留复活）"
     );
     assert_eq!(
         sandbox.execute("globalThis.__r_absent0").unwrap().value,
         "true",
-        "backing 清除（__zwNADelete）后 window.zz 缺席"
+        "回收态 window.zz 缺席（修后 __zwNADelete 已在 morph 尾叫完成）"
     );
     assert_eq!(
         sandbox.execute("globalThis.__r_restored").unwrap().value,
         "true",
         "同名重入后全局恢复为唯一元素（I-7 再生面，修前恒 undefined）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_resurrect").unwrap().value,
+        "true",
+        "live 名 window 级 delete 后再读复活（FIXME ⑥ 收口，Chrome 同款）"
     );
 }

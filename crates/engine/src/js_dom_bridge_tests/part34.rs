@@ -113,8 +113,8 @@ fn named_access_attr_shrink_and_morph_s32() {
 }
 
 // ②扩展：morph 后 captured 集合仍 live（spec：脚本先捕获的集合对象持续反映文档）；
-// 全局 morph 成元素后 0 命中不回收（元素全局不跟随——slice27 元素全局语义保持，
-// stale 到下次快照换代由 renderer 登记·回收链路清理——live 边界如实申报钉）。
+// slice42 收口：morph 产物元素全局 0 命中回收（spec：named objects 空集则属性缺席）
+//——原 slice32 边界钉（「0 命中不回收、stale 至换代清理」）翻转为正确行为钉。
 #[test]
 fn named_access_attr_shrink_morph_then_captured_live_s32() {
     let mut sandbox = s32_sandbox!(
@@ -130,7 +130,7 @@ fn named_access_attr_shrink_morph_then_captured_live_s32() {
                && !(window.zz instanceof window.HTMLCollection);
              document.getElementById('z2').setAttribute('name', '');
              globalThis.__r_len2 = col0.length;
-             globalThis.__r_stale = window.zz === document.getElementById('z2');")
+             globalThis.__r_recycled = typeof window.zz === 'undefined';")
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__r_len0").unwrap().value,
@@ -153,9 +153,9 @@ fn named_access_attr_shrink_morph_then_captured_live_s32() {
         "captured 集合 0 命中（全失格剔除，集合对象仍存活）"
     );
     assert_eq!(
-        sandbox.execute("globalThis.__r_stale").unwrap().value,
+        sandbox.execute("globalThis.__r_recycled").unwrap().value,
         "true",
-        "元素全局 0 命中不回收（边界：元素全局 stale 到换代清理，如实申报）"
+        "morph 产物 0 命中回收（slice42 收口；修前 stale 元素至换代清理）"
     );
 }
 

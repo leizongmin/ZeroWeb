@@ -1,0 +1,6 @@
+TREE_SHA=d1e2a3aae5418929eba84db4c33c147c2c44d0a4
+    Checking zero-layout-engine v0.1.0 (/home/lei/work/ZeroWeb/crates/layout-engine)
+    Checking zero-engine v0.1.0 (/home/lei/work/ZeroWeb/crates/engine)
+    Checking zero-page-runtime v0.1.0 (/home/lei/work/ZeroWeb/crates/page-runtime)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.28s
+CLIPPY_QUICKJS_EXIT=0
