@@ -177,14 +177,14 @@ fn complex_has_amp_inside_has(complex: &ComplexSelector) -> bool {
 /// Security Considerations 允许实现对此类组合设上限。超限**整条规则丢弃**（返回空
 /// 列表；`compile_parsed_style_rule` 对空 `own` 本就丢弃规则，子嵌套拿空父级连锁
 /// 为空），不做部分截断（部分应用无规范语义）。
-const MAX_DESUGARED_SELECTORS: usize = 1024;
+pub(crate) const MAX_DESUGARED_SELECTORS: usize = 256;
 
 /// 嵌套样式规则深度上限。仅管每层数量不够：深链使单个选择器的 parts 链累计变长，
 /// desugar 的单次 `prepend_descendant`/`substitute_amp` 成本 O(累计长度)，数量预算
 /// 下仍可到秒级（fuzz timeout-8480a917 实证）。规范同款策略：Blink 的 CSS 嵌套
 /// 解析亦设最大嵌套深度。超深的嵌套规则**整条按畸形处理**（不消费，由调用方
 /// `skip_malformed_qualified_rule` 恢复）。
-pub(crate) const MAX_NESTING_STYLE_RULE_DEPTH: usize = 32;
+pub(crate) const MAX_NESTING_STYLE_RULE_DEPTH: usize = 16;
 
 /// 将选择器列表相对父级列表去糖（CSS 嵌套 compile 算法）。
 ///
@@ -237,6 +237,13 @@ fn prepend_descendant(parent: &ComplexSelector, nested: &ComplexSelector) -> Sel
     }
 }
 
+/// 单个复杂选择器的 parts 数上限。`substitute_amp` 对每个 `&` 化合物摊开整个
+/// 父级 parts——`>&>&>&` 型病态选择器带 k 个 `&` 时输出 = k × 父级长度，在单条
+/// 选择器内部乘法放大（fuzz timeout-ab8296ea：86 字节 `>&,{&{` 汤单次分配 640MB，
+/// 数量/深度预算均按条数计数，管不到 parts 级）。超限丢弃该 (nested, parent) 组合
+/// （返回 None → 上层跳过该父级），不做截断。
+const MAX_SELECTOR_PARTS: usize = 256;
+
 /// 把 `nested` 中每个 `&`（Nesting 化合物）替换为 `parent` 的化合物链，并递归处理
 /// :is/:not/:where/:has 参数内的 `&`。组合器簿记：
 /// - 父级内部组合器保留；
@@ -259,6 +266,9 @@ fn substitute_amp(nested: &ComplexSelector, parent: &ComplexSelector) -> Option<
                 };
                 let use_comb = if pi == last_parent_idx { *comb } else { *p_comb };
                 new_parts.push((merged, use_comb));
+                if new_parts.len() > MAX_SELECTOR_PARTS {
+                    return None;
+                }
             }
         } else {
             // 无化合物级 `&`：但仍可能在 :is/:not/:where/:has 内 → 递归替换为 parent。
@@ -284,6 +294,9 @@ fn substitute_amp(nested: &ComplexSelector, parent: &ComplexSelector) -> Option<
                 }
             }
             new_parts.push((new_compound, *comb));
+            if new_parts.len() > MAX_SELECTOR_PARTS {
+                return None;
+            }
         }
     }
     Some(ComplexSelector { parts: new_parts })

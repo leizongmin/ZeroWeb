@@ -380,13 +380,13 @@ fn test_nesting_forgiving_skip_preserves_amp() {
 }
 
 #[test]
-/// 嵌套 desugar 叉乘预算：11 层 × 每层 2 选择器的嵌套链在第 11 层越过
-/// MAX_DESUGARED_SELECTORS（2^11 = 2048 > 1024）→ 该层整条丢弃，第 10 层
-/// （2^10 = 1024，恰好不超）存活。守卫病态输入的指数放大（内存/时间双爆）。
+/// 嵌套 desugar 叉乘预算：每层 2 选择器的嵌套链在第 k 层越过
+/// MAX_DESUGARED_SELECTORS（2^k 首次超限）→ 该层整条丢弃。守卫病态输入的
+/// 指数放大（内存/时间双爆）。期望值从常量推导（调帽不改测试）。
 /// driving: fuzz_css_parser timeout-e33b1829（280 字节输入放大至 35GB/OOM，
 /// 2026-10-04/09/11 fuzz.yml 连续三周失败；css-nesting-1 Security Considerations）。
 fn test_nesting_desugar_selector_budget() {
-    let depth = 11;
+    let depth = 40;
     let css = format!("{}color: red;{}", "a, b { ".repeat(depth), "}".repeat(depth));
     let ss = Parser::parse_stylesheet(&css);
     let style: Vec<&StyleRule> = ss
@@ -394,11 +394,15 @@ fn test_nesting_desugar_selector_budget() {
         .iter()
         .filter_map(|r| if let Rule::Style(sr) = r { Some(sr) } else { None })
         .collect();
-    // 第 1..=10 层存活，第 11 层整条丢弃。
-    assert_eq!(style.len(), depth - 1, "超预算层应整条丢弃，实际 {} 层", style.len());
-    // 存活的最深层恰为 2^10 = 1024 条选择器（预算边界钉死）。
+    // 第 1..=k_max 层存活（2^k_max ≤ 预算的最大 k），其后整条丢弃。
+    let max_nested = (1..=depth)
+        .take_while(|k| 2usize.pow(*k as u32) <= crate::parser::MAX_DESUGARED_SELECTORS)
+        .count();
+    assert_eq!(style.len(), max_nested, "超预算层应整条丢弃，实际 {} 层", style.len());
+    // 存活的最深层选择器数 = 不超预算的最大 2^k（预算边界钉死）。
     let max_sels = style.iter().map(|sr| sr.selectors.len()).max().unwrap();
-    assert_eq!(max_sels, 1024, "最深存活层选择器数应恰为预算值");
+    let expected_max = 1usize << max_nested;
+    assert_eq!(max_sels, expected_max, "最深存活层选择器数应恰为预算内最大 2^k");
 }
 
 #[test]
@@ -438,4 +442,16 @@ fn test_nesting_depth_cap_fuzz_input_regression() {
     let input = std::str::from_utf8(FUZZ_INPUT).expect("fuzz 输入应为合法 UTF-8");
     let ss = Parser::parse_stylesheet(input);
     assert!(ss.rules.len() <= 40, "修复后规则数应有界，实际: {}", ss.rules.len());
+}
+
+#[test]
+/// fuzz_css_parser timeout-ab8296ea 原始输入回归（第三案：`>&` 汤使单选择器带 k 个
+/// `&` 化合物，substitute_amp 每个化合物摊开父级全部 parts——MAX_SELECTOR_PARTS=512
+/// 封死单选择器内部的乘法放大）。修复前 86 字节输入单次分配 640MB（8G ulimit 下
+/// OOM），修复后毫秒级。
+fn test_nesting_amp_substitute_parts_cap_regression() {
+    const FUZZ_INPUT: &[u8] = b">>&>,&{>&&{>>>>>>&{>&&{>&{>&{>>>>>>&{>+&{>>>&>,&{>&&{>>>>>>&{>&&{>&{>&{>>>>>>&{>+&{>>>";
+    let input = std::str::from_utf8(FUZZ_INPUT).expect("fuzz 输入应为合法 UTF-8");
+    let ss = Parser::parse_stylesheet(input);
+    assert!(ss.rules.len() <= 64, "修复后规则数应有界，实际: {}", ss.rules.len());
 }
