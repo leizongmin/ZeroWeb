@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M3 尾簇 39——utils.js 资产补拉 + 解锁面三连修，corpus 1791P）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M4 尾簇 40——corpus 173F/96TO 挂账定稿编目）
 
 ## 当前状态
 
@@ -560,9 +560,33 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | uievents + pointerevents corpus 导入 + 基线 | ✅ 2026-10-03 |
-| P2 | 鼠标事件序/坐标/click 组合语义修齐 | 🔄 核心已落地；残余 = mousemove-between（**根因：body 级 margin:auto 水平居中失效**——渲染流域，尾簇 36 探针归因）、wheel 三案（scroll 源重放——wheel-basic/deadlock 可解，scrolling 需真滚动）、interface keyboard-click、TextEvent 语义域（textInput 族 ✅ 16P——余 5 TO = execCommand insertText 对 text control ×3 + CE ForwardDelete + CE Enter 面，editing 域挂账——尾簇 31）、uievents/mouse 尾簇（mouseover-at-removing ✅ 尾簇 7 全绿；mutation 驱动悬停重定向 + 修饰键态 ✅ 尾簇 8 全绿；image-map 命中 + 跨目标 click 组合 ✅ 尾簇 9 全绿；同 turn gBCR 强制同步布局——reappending 11F + removing_last_over 4F + compat-mouse-when-removing 4F + boundary_drag 2F 根因（尾簇 30 ZW_TD_DEBUG 实证零盒）；image-map img-resized 双案 = 查询视图缓存双计——尾簇 10；layerX ✅ 尾簇 37 反射落地（outside 案 Pass；inside 案 = 变换感知几何全链，渲染流域挂账——尾簇 37 段）；UA click 坐标 ✅ 尾簇 38（click 族补 clientX/clientY，corpus 恒等）） |
-| P3 | Pointer 生命周期 + capture 三方法 + enter/leave 边界序 | ✅ 核心 + mutation 族 + 重入面 + touch 接触失效收口（尾簇 4/5/6c——after_target_appended 24/24 全绿）+ portal 段收口（尾簇 22-29——pointercapture_in_frame 17P + 1 上游即 Fail）；残余 = pointercancel/touch-action 交互面、iframe 跨文档焦点；from_slot 案阻塞于 declarative shadow DOM（shadowrootmode 未实现——web-components 域前置，挂账）；interleaved 族 + pointercapture_in_frame ?touch subtest 4 行为面已对齐（残余 = 上游 expected 记账 bug，pin 版即 Fail，不再追——尾簇 29 判例） |
-| P4 | touch-events / pointerlock / IME 组合挂账定稿 | ⏳ M4 |
+| P2 | 鼠标事件序/坐标/click 组合语义修齐 | ✅ 核心修齐（2026-10-07——事件序/坐标/click 组合/layer 反射/click 坐标/TextEvent 域全落地，见已完成切片尾簇 1-39；**余挂 = 尾簇 40 挂账定稿清单**，无 in-stream 必修面） |
+| P3 | Pointer 生命周期 + capture 三方法 + enter/leave 边界序 | ✅ 核心修齐（2026-10-07——capture 三方法 + portal 段 + 边界序 + touch 接触失效 + rawupdate 语义落地；**余挂 = 尾簇 40 挂账定稿清单**） |
+| P4 | touch-events / pointerlock / IME 组合挂账定稿 | 🔄 M4——尾簇 40 编目定稿（2026-10-07，见下节）；余 = CANDIDATE 池收尾 + DC-2/3 关账复核 + product-smoke 门禁 |
+
+## M4 挂账定稿清单（尾簇 40，2026-10-07——corpus 1791P/173F/96TO 逐案编目）
+
+编目基线 = 尾簇 39 全量跑 `--json`（HEAD 65b97dbc3 逐案归类，覆盖 173F/96TO 精确
+到条）。各类根因与重入条件：
+
+| 类 | F | TO | 归因 | 重入条件 |
+|---|---|----|----|---------|
+| touch-action + 滚动管线（渲染流域跨流） | 51 | 16 | parsing/computed/inheritance 值面（css-parser/style-system）+ touch-action 交互判定与 swipe/axis-lock（真滚动管线 headless 缺失） | 渲染流实现 touch-action 计算值 + 滚动消费后碰头（run-rules §9 工作面不重叠） |
+| 同 turn gBCR 零盒族（1a——用户拍板） | 30 | 0 | reappend/removing_last_over/compat-mouse-removing/mousemove_after_mouseover/during_drag/drag_on_added_range/innerHTML/rawupdate_remove_target——变异同 turn 布局不刷新（尾簇 30 ZW_TD_DEBUG 实证） | gBCR 同步布局深结构改造（RenderPipeline Arc 化——run-rules §11 用户点名） |
+| tentative（上游自注分歧/tentative/manual） | 18 | 1 | synthetic-button-state 按钮/移除序（Chromium 分歧自注）、persistentDeviceId（tentative 值面）、pointermove_after_pointerover_removed | 上游定稿或产品需要时重开 |
+| interleaved（上游 expected 记账 bug） | 18 | 0 | appended/removed_interleaved ×3 变体——页内 logEvent 只收 mouse 前缀而 expected 含 click@ 记账（tail-4 pin 版判例：上游即 Fail 不再追） | 上游修 expected 后重跑 |
+| shadow DOM / slot retarget（web-components 前置） | 15 | 3 | mouse_target_after_*_removed ×9、to_slotted_target ×3、from_slot、pointercapture-in-shadow-dom 等 | declarative shadow DOM（shadowrootmode）+ slot retarget 立项（用户点名前置） |
+| iframe/subframe/portal 邻接 | 14 | 1 | click_during_parent_capture/click_during_capture（iframe 内捕获链）、capture_mouse_and_release 双案（pointerout after lost capture）、pointercapture_in_frame ?touch、after_adoption、cancel-mousedown-in-subframe | subframe 事件路由深化立项（portal 段后续，in-stream 可选） |
+| testharness 交互层 TO（EventWatcher 深水面） | 0 | 59 | pointerevent_attributes ×10 / haspointercapture ×6 / releasepointercapture ×8 / setpointercapture ×6 / pointercancel 族 ×5 / boundary_in_capturing ×3 / sequence_at_implicit_release ×4 等——多 promise_test 交错 + EventWatcher 依赖 runner 命令窗语义，单案行为面已对齐（探针实证） | runner testharness 深水面专项（跨 corpus 基建，非本 goal 语义面） |
+| DOMAIN（域外挂账） | 3 | 8 | mousemove_prevent_default（selection/DnD 默认动作——DnD 已排除、selection 属 editing goal）、mouse-on-object（object 兼容）、drag-interaction、pen 变体 TO | 各属域 goal 立项时带案 |
+| coalesced/predicted 真采样（headless 无采样） | 6 | 5 | under_load/attributes/movement 加总、constructor getCoalescedEvents、predicted ?touch | 真采样管线立项（master M4 既有挂账候选） |
+| RENDER（渲染流域邻接） | 5 | 1 | mousemove-between（margin:auto 居中——尾簇 36 归因）、layer-coords inside（变换几何——尾簇 37）、layout_change_mouseover、hover-generates-content、interpolation、click-on-html | 随渲染流 hover/居中/变换几何落地 |
+| KEYBOARD_FOCUS（键盘域邻接） | 2 | 2 | focus-automated-blink（iframe 跨文档焦点）、focus-management（keydown→focus activation）、keyboard-click/accesskey TO | 键盘域重入时带案（已归档 goal） |
+| SCHEME（runner secure 分流——专项拍板） | 2 | 0 | pointerrawupdate 非 https 变体（runner 单 origin https 使 secure 分流不可测——尾簇 19 已知） | runner `.https.html` scheme 分流专项拍板（master M4 既有） |
+| RAWUPDATE 余点 | 1 | 0 | flush_pointercapture（rawupdate 前捕获结算时序） | in-stream 候选池 |
+| CANDIDATE（语义尾点候选池——in-stream 可做） | 8 | 0 | lostpointercapture_remove_setcapture_node、capture_*_and_release 双案、mouse_capture_change_hover ×3、multiple_pointerover、tilt 部分集 init | 下一簇燃烧对象（shim face 逐案） |
+
+
 
 ## 已完成切片
 
@@ -670,31 +694,24 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 - **M3 尾簇 39（2026-10-07，本轮）**：utils.js 资产补拉（goal 脚本 fetch_raw）
   + 解锁面三连修（constructor 身份 / composed / cancelable）。
   attributes.html file-Fail→named Pass；1790P→1791P。
+- **M4 尾簇 40（2026-10-07，本轮）**：corpus 173F/96TO 挂账定稿编目（14 类
+  逐案归因 + 重入条件，见「M4 挂账定稿清单」节；docs-only 零源码改动）。
+  P2/P3 转核心修齐关账，余挂全部具名转移。
 
 ## 下一步计划
 
-1. **M2/M3 尾簇**（按 Throughput 排序，根因链见
-   [evidence/2026-10-04-m3-tail7.md](evidence/2026-10-04-m3-tail7.md)/
-   [evidence/2026-10-05-m3-tail13.md](evidence/2026-10-05-m3-tail13.md) 残余节）：
-   a) **同 turn gBCR 强制同步布局**（~15F + drag_on_added_range_input 终值断言）——
-   **待用户拍板**：fix 需 mutation drain+relayout 接进 gBCR 宿主回调，`RenderPipeline`
-   为 webview 私有 `&mut` 字段（webview.rs 100 调用点、resize 整体替换），callbacks
-   层无句柄——Arc<Mutex> 化属深结构改造（run-rules §11）；
-   b) **iframe 捕获面**（pointercapture_in_frame 18F + click_during_parent_capture
-   iframe 面 4F + rawupdate_remove_target 2F + after_adoption 1F——actions 到 subframe
-   的事件路由未建）；
-   c) ~~layerX/layerY~~ ✅ 尾簇 37（反射落地，inside 案随渲染流域变换几何挂账）；
-   c') ~~UA click 坐标~~ ✅ 尾簇 38（click 族三分支补 clientX/clientY，corpus
-   恒等零涟漪）；
-   d) wheel 源 scroll 重放（wheel-basic/deadlock）；e) focus 残余两案（iframe 跨文档
-   焦点、keydown→focus activation——键盘域邻接，挂账候选）。
-2. **M4 收口**：touch-action 解析/计算值核对（parsing/inheritance ~30F——css-parser/
-   style-system 面，渲染流域工作面，跨流冲突待碰头）、coalesced 真采样管线
-   （under_load/movement ~10F + rawupdate_coalesced target 恒等 6F——headless 无采样，
-   挂账候选）、runner `.https.html` scheme 分流（pointerrawupdate.html 非 https 变体
-   -1 回归的复位——跨 corpus 核算漂移，专项拍板）、touch-events / pointerlock / IME /
-   touch-action 交互面挂账定稿、DC-4 全绿门禁（make test + clippy + fmt + reftest
-   零回归 + product-smoke）。
+1. **尾簇 41：CANDIDATE 池燃烧**（挂账定稿清单末行 8F——shim face 逐案）：
+   capture 释放后 pointerout 双案、mouse_capture_change_hover ×3、
+   multiple_pointerover、lostpointercapture_remove_setcapture_node、tilt 部分集
+   init。修后全量 corpus 复核 + master.md 挂账表相应行收数。
+2. **M4 收口**：DC-2/DC-3 关账复核（对照挂账定稿清单逐类确认转移）、DC-4 门禁
+   （make test + clippy + fmt + reftest 零回归——**补 product-smoke**，goal 契约
+   M4 列项，本流改动为事件派发面未跑过）、`DONE` 判定输出。
+3. **长线挂账**（重入条件见定稿清单）：touch-action/滚动管线（渲染流碰头）、
+   gBCR 同步布局（用户拍板 1a）、shadow DOM/slot（用户点名立项）、runner scheme
+   分流（专项拍板）、testharness 交互层 TO（跨 corpus 基建专项）。
 
-**待用户决策清单**：（空——pointerlock 挂账重入 = 用户点名；declarative shadow DOM
-前置如需立项请点名；gBCR 同步布局 RenderPipeline Arc 化待拍板见上 1a）
+**待用户决策清单**：gBCR 同步布局 RenderPipeline Arc 化（1a——30F 重入条件）；
+declarative shadow DOM 立项（15F/3TO 重入条件）；runner `.https.html` scheme
+分流专项（2F）；testharness 交互层 TO 专项（59TO——跨 corpus 基建，非本 goal 单独
+可关）。pointerlock/IME/touch-events 维持排除（入口文档排除项，无需决策）。
