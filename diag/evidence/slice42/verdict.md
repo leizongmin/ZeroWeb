@@ -36,6 +36,19 @@
 
 `red-mutation/`：三修复面四变异点（M-A/M-B/M-C1/M-C2，纯 delta + 修复态行号），变异态 21P/6F——6 红全数命中三面覆盖测试；逐字节还原 sha256 自证（`79a654cc…` 前后一致）。
 
+## 门禁（新锚 ca55467d4 = slice42 79cd8b98a + origin/main 28784ba23 merge；执行中途 origin/main 前移含产品变更，按卡 merge 后全量重测）
+
+| 门禁 | 实测 | 基线 | 归因 |
+|---|---|---|---|
+| fmt | 零 diff | — | — |
+| clippy v8（workspace -D warnings） | EXIT=0 | — | `gates/clippy-v8-s42.log` |
+| clippy quickjs（-D warnings） | EXIT=0 | — | `gates/clippy-quickjs-s42.log` |
+| make test | 20,189P/0F/198I/70 腿，EXIT=0 | 20,182P/0F/198I/70 腿（bba78d605） | +7 = upstream 2（R4990 +1、R4991 +1，r4988_flex_ar_min_tests 2→4，v8 腿）+ slice42 5（part42，engine 不在 QUICKJS_TEST_CRATES，quickjs 测试腿不变） |
+| reftest | 704/704，EXIT=0 | 704/704（slice41 同锚实测） | runner `reftest` 子命令 = css21 固定清单（reftest_data::css21_reftest_cases），与 wpt-data 上游导入（reftest-upstream 层）无关，零漂移 |
+| WPT named-access targeted | 43P/1F/2T | 43P/1F/2T | Fail/Timeout 身份与基线一致（cross-origin-named-access.sub / named-objects / window-named-properties），零 P 回退 |
+
+R4990/R4991 的 5 条上游 reftest 导入（imported-tests.txt +5）属 `reftest-upstream` 口径，不在本门禁 704 案清单内。
+
 ## 申报收窄文本（替代 VERDICT :68-73 对应行）
 
 1. ~~morph 成元素的全局 0 命中不回收——slice32 边界钉保持~~ →【slice42 收口】morph 产物经 `_zwNAMorphEls` 账本 identity 判据 0 命中回收（`__zwNADelete` 双面写；脚本自有改写不追删）；同路径集合面 wired 腿 delete no-op 一并修。残余：morph 产物 >1 命中不升格集合（跟随面不升格口径保持）。
