@@ -75,12 +75,6 @@ docs/goal/rendering-compat/evidence/*
 !docs/goal/rendering-compat/evidence/product-static/
 docs/goal/rendering-compat/evidence/product-static/*
 !docs/goal/rendering-compat/evidence/product-static/welcome-chromium.png
-# 例外：slice29 锚点激活修复的活体前后对照（PR 证据图，user-attachments 无头不可达，随分支分发）
-!docs/goal/rendering-compat/evidence/product-static/slice29/
-# 例外：slice30 named access 多命中 HTMLCollection 修复的活体前后对照（PR 证据图，同 slice29 先例）
-!docs/goal/rendering-compat/evidence/product-static/slice30/
-# 例外：t2-r342 automation eval 竞窗 panic 修复的活体前后对照（PR 证据图，同 slice29 先例）
-!docs/goal/rendering-compat/evidence/product-static/t2-r342-panic/
 # 例外：WPT 趋势基线（绝对数，weekly CI 自动记录并提交回 main——趋势数据应入库）
 !docs/goal/rendering-compat/evidence/wpt-trends/
 
@@ -108,3 +102,9 @@ diag/**/*.gif
 diag/**/*.webp
 diag/**/*.bmp
 diag/**/*.avif
+
+# devtools 评审截图同政策（github-delivery 契约：PR 正文图片走 GitHub 附件上传）
+docs/goal/devtools/evidence/*.png
+docs/goal/devtools/evidence/*.jpg
+docs/goal/devtools/evidence/*.jpeg
+docs/goal/devtools/evidence/*.webp
