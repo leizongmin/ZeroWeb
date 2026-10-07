@@ -60,72 +60,86 @@ jobs:
       matrix:
         include:
           # 每种平台出 v8 与 quickjs 两个引擎的产物；windows-aarch64 无 v8（rusty_v8 不发布该目标原生库），只有 quickjs
+          # browser_features：zero-browser 默认 feature 无引擎，必须显式点亮（同 weekly.yml
+          # 2026-10-07 修复：不带 -p 的构建会因 workspace feature 统一解析把 v8 拖进
+          # quickjs 臂构建图，在 rusty_v8 未预下载时 panic）。
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: zero-browser-linux-x86_64-v8
             engine: v8
             ext: ''
             features: ''
+            browser_features: '--features v8'
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: zero-browser-linux-x86_64-quickjs
             engine: quickjs
             ext: ''
             features: '--no-default-features --features quickjs'
+            browser_features: '--features quickjs'
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             artifact: zero-browser-linux-aarch64-v8
             engine: v8
             ext: ''
             features: ''
+            browser_features: '--features v8'
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             artifact: zero-browser-linux-aarch64-quickjs
             engine: quickjs
             ext: ''
             features: '--no-default-features --features quickjs'
+            browser_features: '--features quickjs'
           - os: macos-15-intel
             target: x86_64-apple-darwin
             artifact: zero-browser-macos-x86_64-v8
             engine: v8
             ext: ''
             features: ''
+            browser_features: '--features v8'
           - os: macos-15-intel
             target: x86_64-apple-darwin
             artifact: zero-browser-macos-x86_64-quickjs
             engine: quickjs
             ext: ''
             features: '--no-default-features --features quickjs'
+            browser_features: '--features quickjs'
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: zero-browser-macos-aarch64-v8
             engine: v8
             ext: ''
             features: ''
+            browser_features: '--features v8'
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: zero-browser-macos-aarch64-quickjs
             engine: quickjs
             ext: ''
             features: '--no-default-features --features quickjs'
+            browser_features: '--features quickjs'
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: zero-browser-windows-x86_64-v8
             engine: v8
             ext: '.exe'
             features: ''
+            browser_features: '--features v8'
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: zero-browser-windows-x86_64-quickjs
             engine: quickjs
             ext: '.exe'
             features: '--no-default-features --features quickjs'
+            browser_features: '--features quickjs'
           - os: windows-11-arm
             target: aarch64-pc-windows-msvc
             artifact: zero-browser-windows-aarch64-quickjs
             engine: quickjs
             ext: '.exe'
             features: '--no-default-features --features quickjs'
+            browser_features: '--features quickjs'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -239,11 +253,13 @@ jobs:
           rm -rf $(find "$CARGO_HOME/registry/src" -name "freetype-sys-0.23.0" -type d 2>/dev/null)
           echo "Patch applied."
 
+      # browser 显式引擎 feature + compositor/decoder 加 -p 限定解析范围，
+      # 堵 workspace feature 统一解析把 v8 拖进 quickjs 臂的坑（同 weekly.yml）。
       - name: Build release
         run: |
-          cargo build --release --bin zero-browser --target ${{ matrix.target }}
+          cargo build ${{ matrix.browser_features }} --release --bin zero-browser --target ${{ matrix.target }}
           cargo build ${{ matrix.features }} --release --bin zero-renderer --target ${{ matrix.target }}
-          cargo build --release --bin zero-compositor --bin zero-image-decoder --target ${{ matrix.target }}
+          cargo build -p zero-compositor -p zero-image-decoder --release --target ${{ matrix.target }}
 
       - name: Strip binaries (Linux/macOS)
         if: runner.os != 'Windows'
