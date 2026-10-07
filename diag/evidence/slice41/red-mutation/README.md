@@ -15,8 +15,14 @@
 
 ## 断言级击杀语义
 
-变异下 gen 断言仍绿（reset 重建 shim context 后 bump 落新 context，但 fresh context 尚未
-装 shim，`__zw_apply_generation_bump` 的 typeof 守卫使 bump 成 no-op，gen 恒 0）——唯
-`execution_count` 判别断言（Execute 臂每命令恰 +1：丢弃形态忙臂后仅屏障探针 +1 = 5；
-补执行形态 +2 = 6）击杀。此即 slice40 汇总 xI-3 申报的观测盲区：「单靠 gen 无法区分
-『丢弃』与『执行后随 context 销毁』」，本钉以 cfg(test) `execution_count` 补齐。
+变异 M-S41（清扫失效）下滞留 bump 于 reset 臂完结后续派——reset 臂内 `reset_context` 与
+shim 重装同臂同步、先于续派（js_worker.rs:1471/:1492 先于下一轮分派环顶部 :1158 的
+retained 消费）——落新 context 带 shim 执行：gen 会读 1、gen 断言同样会红，并非「仍绿」。
+唯 `execution_count` 判别断言（Execute 臂每命令恰 +1：丢弃形态忙臂后仅屏障探针 +1 = 5；
+补执行形态 +2 = 6）把失败位次直接落在「滞留命令被执行」这一判别点，且对执行时序排序
+无关。ec 对 slice40 汇总 xI-3 申报的观测盲区形态——「bump 于 reset 处理前已在旧 context
+执行、随后 context 销毁，gen 归零不可辨」——保持判别（该形态 ec 同样 +2）。本钉以
+cfg(test) `execution_count` 补齐该观测面。
+
+（勘误 2026-10-08：初版本段误称「fresh context 尚未装 shim、gen 恒 0」，与 reset 臂
+代码结构矛盾——PR #102 缺陷轮首轮评审 S-1 指认，主控核实后更正。）

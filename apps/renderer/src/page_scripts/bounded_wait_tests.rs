@@ -285,10 +285,12 @@ fn apply_generation_state_isolated_across_tab_instances_s39() {
 // 经 prio 通道提交，worker 分派臂 prio 先于 normal 且 reset 臂按提交代际（seq）清扫
 // normal 队列（`survives_document_reset`：seq ≤ reset_seq 的 Execute 随旧文档丢弃）——
 // 忙臂窗内先提交 bump、再提交 reset 即结构保证复现「丢弃」。
-// 观测面（slice40 汇总 xI-3 顺延主因）：reset 重建 shim context 后 gen 归零，单靠 gen
-// 无法区分「丢弃」与「执行后随 context 销毁」——以 cfg(test) `execution_count` 作判别
-//（Execute 臂每命令恰 +1）：丢弃形态下忙臂后仅屏障探针 +1；清扫失效/滞留补执行形态
-// +2 恒红（gen 断言在此形态下仍绿——正是不补 ec 观测就发现不了的盲区）。
+// 观测面（slice40 汇总 xI-3 顺延主因）：以 cfg(test) `execution_count` 作判别
+//（Execute 臂每命令恰 +1，跨 reset 累计）：丢弃形态下忙臂后仅屏障探针 +1；清扫失效/
+// 滞留补执行形态 +2 恒红。gen 对「bump 于 reset 处理前已在旧 context 执行、随后 context
+// 销毁」形态不可辨（执行后归零——§8 申报盲区的准确落点）；对 M-S41 变异形态（清扫失效
+// → 滞留 bump 于 reset 臂完结后续派，臂内 context 重建与 shim 重装先于续派）gen 会读 1
+// 同样红，但唯 ec 断言把失败位次直接落在「滞留命令被执行」这一判别点上。
 // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
 #[test]
 fn lingering_bump_dropped_by_navigation_reset_seq_sweep_s41() {
