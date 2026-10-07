@@ -265,3 +265,90 @@ fn walk_flex_cross(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
         walk_flex_cross(c, styles);
     }
 }
+
+/// R4995（css-flexbox §4.5 + css-sizing-4 §4.1/§4.2·026 Blink 实证矩阵）：column AR
+/// 条目 transferred max 钳制 + auto-ratio content-box base——后置于全部增高类 pass
+/// （R1743 回填/R1492 位移），读回填终值收口。
+///
+/// final = min( max(floor, base), max )：
+/// - floor = 回填后 laid 高（min-height:auto 时 = 内容驱动值；min-*:0 时 = 0）；
+/// - base：plain <ratio> = border-box cross / ratio（25×8=200）；auto <ratio> =
+///   content-box cross / ratio + pad_v（(25-15)/19+10 = 200，Blink base quirk
+///   ——auto 关键字使 ratio 仅入 content sizing，与 R4992 矩阵同源）；
+/// - max：definite max-width → plain = max_w / ratio；auto = (max_w-pad_h)/ratio + pad_v。
+///
+/// 026 八案全过验算（510/475→200 等）。仅 column 父 + 非替换 + height auto + 水平域；
+/// cross 走 CSS 链（definite width + min/max 钳）。kill-switch `ZW_AR_COL_CLAMP=0`。
+pub(crate) fn clamp_flex_ar_column_transferred_max(
+    root: &mut LayoutBox,
+    parent_style: Option<&ComputedStyle>,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    use zero_css_parser::values::{DisplayValue, FlexDirectionValue, LengthValue};
+    if std::env::var("ZW_AR_COL_CLAMP").as_deref() == Ok("0") {
+        return;
+    }
+    for child in root.children.iter_mut() {
+        let my_style = child.node_id.and_then(|id| styles.get(&id));
+        if let Some(ps) = parent_style
+            && matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+            && matches!(
+                ps.flex_direction,
+                FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+            )
+            && let Some(style) = my_style
+            && let Some(ratio) = style.aspect_ratio.filter(|&r| r > 0.0)
+            && matches!(style.height, LengthValue::Auto)
+            && !child.is_replaced
+            && !child.is_absolute
+            && !child.is_fixed
+            && matches!(child.writing_mode, WritingModeValue::HorizontalTb)
+        {
+            let css_pref = resolve_definite(&style.width);
+            let css_min = resolve_definite(&style.min_width);
+            let css_max = resolve_definite(&style.max_width);
+            let mut cross_border = css_pref.unwrap_or(0.0);
+            if let Some(mn) = css_min {
+                cross_border = cross_border.max(mn);
+            }
+            if let Some(mx) = css_max {
+                cross_border = cross_border.min(mx);
+            }
+            let pad_v = child.padding_top + child.padding_bottom;
+            let pad_h = child.padding_left + child.padding_right;
+            let base_main = if style.aspect_ratio_auto {
+                ((cross_border - pad_h).max(0.0)) / ratio + pad_v
+            } else {
+                cross_border / ratio
+            };
+            let max_main = css_max.map(|mw| {
+                if style.aspect_ratio_auto {
+                    ((mw - pad_h).max(0.0)) / ratio + pad_v
+                } else {
+                    mw / ratio
+                }
+            });
+            // floor：min-*:auto 时 laid 高即内容驱动 floor；显式零（min-height:0）不设
+            // floor（但 auto-ratio 的 base 仍生效——Blink 实证 026 case 5 min-height:0 → 200）。
+            let min_h_auto = matches!(style.min_height, LengthValue::Auto);
+            let floor_main = if min_h_auto { child.height } else { 0.0 };
+            let mut target = floor_main.max(base_main);
+            if let Some(mm) = max_main {
+                target = target.min(mm);
+            }
+            if target > 0.5 && (child.height - target).abs() > 0.5 {
+                child.height = target;
+                child.content_height = (target - pad_v).max(0.0);
+            }
+        }
+        let child_style = child.node_id.and_then(|id| styles.get(&id));
+        let child_is_column_flex = child_style.is_some_and(|s| {
+            matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+                && matches!(
+                    s.flex_direction,
+                    FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+                )
+        });
+        clamp_flex_ar_column_transferred_max(child, if child_is_column_flex { child_style } else { None }, styles);
+    }
+}
