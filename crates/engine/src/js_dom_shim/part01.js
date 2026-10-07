@@ -5439,7 +5439,19 @@
     return Location;
   }
 
-  globalThis.location = _makeLocation();
+  // M2-S4（navigation-compat）：`location` 全局属性改 accessor——**setter = href 写侧导航**
+  //（spec WindowLocation [[DefineOwnProperty]] 拦截 `location = v` → navigate；WPT
+  // sameDocument-after-fragment `location = "#hash"` push 语义）。get 返 Location 对象。
+  // `_setLocationPart` 在 part02 定义（同 IIFE 提升，typeof guard 防御——裸 reftest 无回调路径
+  // 时 setter no-op 降级，行为同旧 plain 属性可覆写形态）。
+  var _zwLocation = _makeLocation();
+  Object.defineProperty(globalThis, 'location', {
+    enumerable: true, configurable: true,
+    get: function () { return _zwLocation; },
+    set: function (v) {
+      if (typeof _setLocationPart === 'function') _setLocationPart('href', String(v));
+    },
+  });
   globalThis.Location = _makeLocationInterface();
   globalThis.self = globalThis;
   globalThis.top = globalThis;

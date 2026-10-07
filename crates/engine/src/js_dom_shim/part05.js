@@ -12623,6 +12623,30 @@
     PopStateEventCtor.prototype.constructor = PopStateEventCtor;
     globalThis.PopStateEvent = PopStateEventCtor;
   }
+  // M2-S4（navigation-compat）：NavigationCurrentEntryChangeEvent（Navigation API——currententrychange
+  // 事件面）。init dict 的 `from` **必填**（缺省/缺 dict → TypeError——WPT constructor 'from is
+  // required' / 'can't bypass required members'）；navigationType 缺省 null（'defaults are as
+  // expected'）；属性反射回读（'all properties are reflected back'）。
+  _defineEventSubclass('NavigationCurrentEntryChangeEvent', 'Event', [
+    ['navigationType', 'navigationType', null],
+    ['from', 'from', null],
+  ]);
+  var NCECEBase = globalThis.NavigationCurrentEntryChangeEvent;
+  if (NCECEBase) {
+    var NCECECtor = function NavigationCurrentEntryChangeEvent(type) {
+      var options = arguments.length > 1 ? arguments[1] : undefined;
+      var o = (options == null || typeof options !== 'object') ? {} : options;
+      if (o.from === undefined) {
+        throw new globalThis.TypeError(
+          "Failed to construct 'NavigationCurrentEntryChangeEvent': required member from is undefined.");
+      }
+      return NCECEBase.apply(this, arguments);
+    };
+    try { Object.defineProperty(NCECECtor, 'name', { value: 'NavigationCurrentEntryChangeEvent', configurable: true }); } catch (_eNcNm) {}
+    NCECECtor.prototype = NCECEBase.prototype;
+    NCECECtor.prototype.constructor = NCECECtor;
+    globalThis.NavigationCurrentEntryChangeEvent = NCECECtor;
+  }
   _defineEventSubclass('StorageEvent', 'Event', [
     ['key', 'key', null], ['newValue', 'newValue', null], ['oldValue', 'oldValue', null],
     ['url', 'url', ''], ['storageArea', 'storageArea', null],
