@@ -2308,6 +2308,84 @@ mod tests {
         worker.shutdown();
     }
 
+    // slice40（RP-3 残余②）：换文档重置全链路钉——同 context 快照换代（文档 A → 文档
+    // B）后：旧文档静态名与脚本动态名全部回收（spec：document 替换后 named property
+    // 按新文档重算，不留上一文档悬挂）、新文档静态名重装、动态注册面对新文档照常
+    // 工作（不聋化）。engine 面（part38 named_access_reset_registry_functional_s40）
+    // 锁 shim 换代钩子；本钉锁 js_worker SetDomSnapshot 臂全序（回收 → 重装 → 登记）。
+    // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+    #[test]
+    fn renderer_js_worker_named_access_document_reset_s40() {
+        let mut worker = RendererJsWorker::spawn(79);
+        // 文档 A：静态 id 名 + 脚本动态名。
+        worker.set_dom_snapshot(
+            "<html><body><div id='da40'></div></body></html>",
+            "https://example.test/a",
+        );
+        worker
+            .execute_script_direct(
+                "window.__da40d = document.createElement('div');\
+             window.__da40d.setAttribute('id', 'dyna40');\
+             document.body.appendChild(window.__da40d);",
+            )
+            .unwrap();
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.dyna40 === window.__da40d)")
+                .unwrap(),
+            "true",
+            "文档 A 动态名解析（基线）"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.da40 && window.da40.nodeType === 1)")
+                .unwrap(),
+            "true",
+            "文档 A 静态名解析（基线）"
+        );
+        // 文档 B：快照换代（同 context，SPA 形态）。
+        worker.set_dom_snapshot(
+            "<html><body><div id='db40'></div></body></html>",
+            "https://example.test/b",
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("String(typeof window.dyna40 === 'undefined')")
+                .unwrap(),
+            "true",
+            "旧文档动态名跨换代回收（不留悬挂）"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("String(typeof window.da40 === 'undefined')")
+                .unwrap(),
+            "true",
+            "旧文档静态名跨换代回收（新文档无同名 id）"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.db40 && window.db40.nodeType === 1)")
+                .unwrap(),
+            "true",
+            "新文档静态名重装"
+        );
+        worker
+            .execute_script_direct(
+                "window.__db40d = document.createElement('div');\
+             window.__db40d.setAttribute('id', 'dynb40');\
+             document.body.appendChild(window.__db40d);",
+            )
+            .unwrap();
+        assert_eq!(
+            worker
+                .execute_script_direct("String(window.dynb40 === window.__db40d)")
+                .unwrap(),
+            "true",
+            "新文档动态注册面照常工作（换文档不聋化）"
+        );
+        worker.shutdown();
+    }
+
     // slice18（site-compat baidu 建议链 /sugrec，R-baidu8 接管收尾）：SetDomSnapshot 置位
     // `__zwHostOwnsDynamicScripts`——动态 src 脚本单点归属宿主管线，shim R387b 页面 fetch
     // 通道（cors 语义）整体跳过，动态脚本归 PendingDynamicScripts no-cors 取回。

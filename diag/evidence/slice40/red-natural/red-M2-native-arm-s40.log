@@ -1,0 +1,5 @@
+thread 'js_dom_bridge::tests::named_access_native_attr_sync_s40' (948724) panicked at crates/engine/src/js_dom_bridge_tests/part38.rs:497:5:
+assertion `left == right` failed: native attributes(id) 通知触发重核 → 名恢复解析（kill-switch ON 臂；修前通知不触达动态名面恒缺席）
+  left: "false"
+ right: "true"
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2889 filtered out; finished in 0.05s

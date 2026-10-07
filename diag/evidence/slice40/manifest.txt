@@ -1,0 +1,79 @@
+# slice40 manifest — Window named access 残余池收口
+# 分支 slice40-named-access-residual（base origin/main @ e10211443，fetch 核对未前进）
+# 2026-10-07
+
+## 交付对照（残余池 → 处置）
+
+- ①子树后代注销（slice36 缺陷轮 I-4）→ **判真实缺陷，最小共享路径修复**：parsed 子树
+  内经 attr 面动态注册的后代随整树移除后名保持可解析（探针实证 window.k40d stale），
+  违反 spec named objects「当下 document tree」限定（元素断开连接即不再作为 named
+  property 暴露）。修复 = part05 `_zwNADynamicSync` 移除批对动态账本全量补偿扫
+  （`_zwHCCollectSubtree` 对 sel 父仅回落 pending 桶 added，parsed 后代不入 remFlat——
+  扫面按账本重核补齐所有展开缺口形态，含同批 move 的 contains 真值保留）。
+  钉 named_access_subtree_descendant_unregister_s40（自然 RED→GREEN；M1 变异复杀）。
+- ②换文档重置 → **现状行为正确，双面钉**：engine 面
+  named_access_reset_registry_functional_s40（换代钩子清注册面 + 换代后注册不聋化；
+  M6 变异复杀）+ renderer 全链路面 renderer_js_worker_named_access_document_reset_s40
+  （文档 A→B 旧名回收/新名重装/动态面工作；M7 `_isNA` 变异复杀）。
+  **附申报（不修，超出本切片范围）**：`__zw_reset_pending_state` 以
+  `__zwNADynElsStore = {}` 替换对象清账本，而消费面闭包变量 `_zwNADynEls` 持 eval
+  时点旧引用——替换对闭包不生效（行实为死代码）；语义面无观察差（动态名全局由
+  js_worker 按 L36 账本回收 + slice40 ①补偿扫按失格重核清理），留池后续收口。
+- ②shadow 排除 → **现状 = spec 正确，边界钉**：named_access_shadow_tree_excluded_s40
+  三面锁定（childList 挂入/attr 改 id/parsed 移入均不入册 + gEBI 结构性排除；M4 变异
+  复杀）。slice36 FIXME ③ 申报的理论暴露面（`_zwDocContains36` JS 链跨 shadow host）
+  实测不成立，注释已同步修正。
+- ②iframe 名（R139 委托）→ **现状 = spec 正确，边界钉**：
+  named_access_iframe_name_delegation_s40（动态创建 iframe 名解析 contentWindow 非
+  元素 + 不入动态账本，slice33 B-1 口径；M5 四点变异复杀——R139 win/fallback 分支 +
+  NPO 扫描返回值 + 扫描缓存，单点不足见 red-natural/mutation.diff M5 注）。
+- ⑤kill-switch ON 臂（native 改值）→ **判缺陷，最小实现**：`ZW_MO_HOST_TRIGGER`
+  2026-09-12 起 default ON（opt-out =0），native 通知为生产路径；attributes 臂此前
+  不触达动态名面（attr 钩子仅 part04 JS 写路径）。修复 = part01
+  `__zw_mo_notify_native` attributes 臂 id/name 触发 `_zwNAAttrDynamicSync`（detached
+  目标由 contains 门自然拦下）。钉 named_access_native_attr_sync_s40（真实通知入口
+  驱动，自然 RED→GREEN；M2 变异复杀）。FIXME⑤ 注释「默认 OFF」过时一并修正。
+- ⑥delete 不复活 → **申报保持**：V8 腿已随 slice37 NPO 化收口（part35
+  named_access_recycled_collection_regenerates_s33 `__r_resurrect` 钉常驻）；quickjs
+  腿 own 数据属性面 delete 即逝为引擎分叉固有面——无拦截点，接链会破 QuickJS 变量
+  解析（part05 接线处探针申报在案，FIXME(engine-divergence)），不强行扩面。
+- ⑥L36u 双账本删除条件不对称（slice36 缺陷轮 I-3）→ **判缺陷，1 处修复**：
+  `_zwNAUnregisterEl` 的 L36u 删除移出 `gU36 === el` 守卫（登记语义 =「该名当前全局
+  值是本面安装」，失格注销即失效；b37u 脚本自有值面删除仍守卫，不碰脚本自有值）。
+  修前残留 true 至换代回收：回收臂多扫 + 脚本自有元素 expando 误删角（quickjs 腿
+  b37u=globalThis 可被脚本覆写）。钉 named_access_l36_ledger_delete_aligned_s40
+  （backing 直写同构两腿判定面，自然 RED→GREEN；M3 变异复杀）。
+
+## 门禁数字（实测，非粘贴基线）
+
+- 基线锚 e10211443：make test = 20,159P/0F/198I/70 腿；reftest 704/704；WPT
+  named-access 43P/1F/2T
+- make test（test-guard 包裹，RUST_MIN_STACK=33554432，exit 0）：**70 腿 / 20,167P /
+  0F / 198I**（gates/maketest-s40.log，awk `/^test result:/` 全腿求和）
+  - +8 归因：engine 6 根 s40 钉 ×1 腿（v8 workspace 腿）+ renderer
+    document_reset_s40 ×2 腿（v8 + quickjs）= 8 次执行（grep `_s40 ` 实测 8 行，
+    198I 恒量非本切片引入）
+- reftest（exit 0）：Layout 502/502 + Text 202/202 = **704/704**（gates/reftest-s40.log）
+- WPT targeted（gates/wpt-named-access-s40.log）：**43P/1F/2T**，与基线逐位一致，
+  零 P 回退（Fail = cross-origin-named-access.sub.html 派发书排除项 fetch 基建；
+  Timeout = named-objects/window-named-properties 文件级，slice37 申报口径不变）
+- fmt：`cargo fmt --all -- --check` 零 diff（gates/fmt-s40.log）
+- clippy：`cargo clippy --workspace --all-targets -- -D warnings` 无 warning
+  （gates/clippy-s40.log；默认 v8 feature 本地可编译，全靶向覆盖）；quickjs clippy 臂
+  含于 make test（exit 0）
+
+## RED 证据
+
+- 修前自然 RED（三根缺陷修复钉）：red-natural/red-engine-s40-prefix.log
+  （3 failed：subtree_descendant / native_attr_sync / l36_ledger）
+- 变异 RED（7 组，全部断言级击杀）：red-natural/red-M{1,2,3,4,5,6,7}-*.log +
+  red-natural/mutation.diff（注入点、恢复 sha256 校验 OK、M5 单点不足与四点闭合记录）
+- M5 诊断用的临时探针件已删不入库（诊断结论并入 mutation.diff M5 注）
+
+## 红线自检
+
+- 无域名/URL/selector 特判、无 UA 伪装、无吞异常伪造成功（catch 均为窄探针 + 真值
+  回退继续判定，与库内既有风格一致）
+- 规范行为实现处带 spec 链接注释（part01 native 臂、part05 补偿扫/L36u 对齐）
+- acceptance 账本未触碰；diag/evidence/slice3{6,7,8,9} 未触碰；工作树外来修改
+  （docs/learnings/platform/2026-09-30-*.md）未纳入提交
