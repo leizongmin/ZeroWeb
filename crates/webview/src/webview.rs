@@ -926,6 +926,10 @@ impl WebView {
             let mut guard = self.shared_mutations.lock().unwrap_or_else(|e| e.into_inner());
             guard.clear();
         }
+        // drain ⇒ bump 不变式（PR #94 审查 D1）：本站点曾是全仓唯一就地 clear 不
+        // bump 的清队点——队列键消费方（HANDLE_TAG_MEMO 等）跨文档水位失明。视图
+        // 缓存靠重注册新 dom_html Arc 免疫，队列键消费方必须靠代际。
+        zero_engine::js_dom_bridge::bump_mut_drain_gen();
         self.applied_mutations = 0;
         zero_engine::js_dom_bridge::publish_forward_handle_map(None);
         zero_engine::js_dom_bridge::clear_mutation_history();
