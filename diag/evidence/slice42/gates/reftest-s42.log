@@ -1,7 +1,4 @@
-TREE_SHA=ca55467d4ea3beb6e86bd4bc69de7167bd172a9b
-target-disk-guard: target/ 占用 50GB 超过阈值 50GB，开始分级清理 …
-target-disk-guard: 已删增量缓存 /home/lei/work/ZeroWeb/target/debug/incremental（9GB）
-target-disk-guard: 分级清理后 41GB ≤ 阈值 50GB，保留已编译产物，继续执行原命令。
+TREE_SHA=aae73e4c988e462a46ebf291935916356c979886
 wpt-data 已存在 (tests/wpt-runner/wpt-data, ref=v1.10)；刷新请先 rm -rf 该目录
 检查 reftest-smoke 依赖子域...
   smoke 子域已就绪: css/css-variables
@@ -17,7 +14,7 @@ cargo build --release --bin zero-wpt-runner
    Compiling zero-page-runtime v0.1.0 (/home/lei/work/ZeroWeb/crates/page-runtime)
    Compiling zero-webview v0.1.0 (/home/lei/work/ZeroWeb/crates/webview)
    Compiling zero-wpt-runner v0.1.0 (/home/lei/work/ZeroWeb/tests/wpt-runner)
-    Finished `release` profile [optimized] target(s) in 35.65s
+    Finished `release` profile [optimized] target(s) in 24.69s
 ./target/test-guard -- ./target/release/zero-wpt-runner reftest
 Running 704 reftest cases...
 Using 8 test job(s).
