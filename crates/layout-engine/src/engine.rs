@@ -1185,6 +1185,17 @@ impl LayoutEngine {
         // max-content/min-content）的 abspos 盒在 converter 被映射 length(0) 塌缩，
         // 居中方程依赖修复后的 height，故本 pass 必须在 recenter 之前执行。
         fix_abspos_height_content_keyword(&mut root_box, styles);
+        // R4987（css-sizing-4 §5.2 transferred size·abspos 臂）：abspos + aspect-ratio
+        // 三臂（definite 高→宽 / definite 宽→高 / 双 auto shrink-to-fit + max 钳回传）。
+        // 须在 CB 解析（11.5/11.7）后、recenter 居中（11.9）前执行——居中方程依赖修复
+        // 后尺寸。kill-switch `ZW_ABSPOS_AR=0`（default-on）。
+        fix_abspos_aspect_ratio_auto_sizes(
+            &mut root_box,
+            doc,
+            styles,
+            None,
+            (self.viewport_width, self.viewport_height),
+        );
         let initial_cb_height = if root_is_positioned {
             (root_box.height - root_box.border_top - root_box.border_bottom).max(0.0)
         } else {

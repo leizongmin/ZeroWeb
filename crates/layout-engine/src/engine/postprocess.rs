@@ -1270,9 +1270,19 @@ fn shift_siblings_after_ifc_grow_inner(
     let ar_transferred_block_size = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
         s.aspect_ratio.is_some_and(|r| r > 0.0)
             && matches!(s.height, LengthValue::Auto)
-            && !matches!(s.overflow_y, OverflowValue::Visible)
             && matches!(s.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
             && resolve_postprocess_real_length(&s.width, s).is_some()
+            && (
+                // R3754：滚动容器（overflow 非 visible）无 content-based minimum，
+                // 内容不撑盒。
+                !matches!(s.overflow_y, OverflowValue::Visible)
+                // R4987（css-sizing-4 §5.2）：OOF（abspos/fixed）+ AR 的 auto 块轴 =
+                // 纯 ratio 传递（abspos 无 automatic minimum 高地板，abspos-012/018
+                // 语义对——018 min-height:0 与 012 min-height:auto 同渲 50/100 传递值）。
+                // 「回填近似溢出生长」对 OOF 不成立，R1743 不得扩展。
+                || box_node.is_absolute
+                || box_node.is_fixed
+            )
     });
     // R1743：父容器高度回填信号。taffy 对含 `<br>`/多行 inline 内容的块子通过 ctx_node 测高
     // 欠计（br-split 子 taffy 测 ~0），remeasure_inline_only_containers 之后子盒 height 已正确，
