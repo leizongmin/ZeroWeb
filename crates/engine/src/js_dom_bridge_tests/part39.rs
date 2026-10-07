@@ -87,8 +87,8 @@ fn structural_path_fastpath_falls_back_for_non_structural_forms() {
     assert!(find_by_selector(&doc, "p.x").is_some());
 }
 
-/// t8b 边界钉：structural 形态但失配（pos 越界 / tag 不对）——fastpath None，
-/// `find_by_selector` 与引擎一致（None），不误命中兄弟/祖先。
+/// t8b 边界钉：structural 形态但失配（pos 越界 / 位次命中但 tag 不对）——
+/// fastpath None，`find_by_selector` 与引擎一致（None），不误命中兄弟/祖先。
 #[test]
 fn structural_path_fastpath_rejects_mismatched_segments() {
     let html = "<html><body><div><span>s1</span><span>s2</span></div>\
@@ -96,9 +96,13 @@ fn structural_path_fastpath_rejects_mismatched_segments() {
     let doc = parse_html(html);
     let root = doc.root();
     let mismatches = [
-        "html:nth-child(1) > body:nth-child(2) > div:nth-child(3) > span:nth-child(4)", // pos 越界（span 只有 2）
-        "html:nth-child(1) > body:nth-child(2) > section:nth-child(3)",                 // tag 不对（无 section）
-        "html:nth-child(1) > body:nth-child(2) > div:nth-child(9)",                     // 顶层 pos 越界
+        // pos 越界（该层元素子不足）：链中途与顶层各一。
+        "html:nth-child(1) > body:nth-child(2) > div:nth-child(3) > span:nth-child(4)",
+        "html:nth-child(1) > body:nth-child(2) > div:nth-child(9)",
+        // 位次命中但 tag 不对（tag 比较分支）：中段与末段各一。
+        "html:nth-child(1) > section:nth-child(2)", // 位次 2 命中 body，tag ≠ body
+        "html:nth-child(1) > body:nth-child(2) > em:nth-child(1)", // 位次 1 命中 div，tag ≠ div
+        "html:nth-child(1) > body:nth-child(2) > div:nth-child(1) > em:nth-child(1)", // 位次 1 命中 span，tag ≠ span
     ];
     for sel in mismatches {
         assert_eq!(
@@ -119,4 +123,37 @@ fn structural_path_fastpath_rejects_mismatched_segments() {
         hit.and_then(|n| structural_path_selector(&doc, n)),
         Some(good.to_string())
     );
+}
+
+/// t8b（D1 返修）：字面怪名标签（`<div#x>`）——引擎把选择器段 `div#x` 复合解析为
+/// tag `div` + id `x`（无匹配，与真实浏览器一致），fastpath 不得把 `div#x` 当字面
+/// tag 认领（位次命中 + 字面 local_name 恰为 `div#x` 时会误命中）。
+#[test]
+fn structural_path_fastpath_rejects_non_ident_tag_chars() {
+    // HTML 分词器允许字面 `<div#x>` 产生含 `#` 的 local_name。
+    let html = "<html><body><span></span><div#x>t</div#x></body></html>";
+    let doc = parse_html(html);
+    let root = doc.root();
+    let sel = "html:nth-child(1) > body:nth-child(2) > div#x:nth-child(2)";
+    assert!(
+        try_structural_path_fastpath(&doc, sel).is_none(),
+        "tag segment `div#x` is not a CSS ident; fastpath must fall back"
+    );
+    assert_eq!(
+        find_by_selector(&doc, sel),
+        doc.query_selector(root, sel),
+        "fallback must match engine"
+    );
+    assert!(find_by_selector(&doc, sel).is_none(), "engine finds nothing");
+    // 同文档常规 path 不受白名单收窄影响，仍走快速通道命中。
+    let good = "html:nth-child(1) > body:nth-child(2) > span:nth-child(1)";
+    assert!(find_by_selector(&doc, good).is_some());
+    // 形态变体：大写 tag 双侧同为 ASCII 不敏感比较，认领面结果一致；
+    // 段间多余空格（tag 含空白）白名单拒绝回落，由通用引擎解析（`>` 语义）。
+    let upper = "html:nth-child(1) > BODY:nth-child(2) > span:nth-child(1)";
+    assert_eq!(find_by_selector(&doc, upper), doc.query_selector(root, upper));
+    assert!(find_by_selector(&doc, upper).is_some());
+    let spaces = "html:nth-child(1) >  body:nth-child(2)";
+    assert_eq!(find_by_selector(&doc, spaces), doc.query_selector(root, spaces));
+    assert!(find_by_selector(&doc, spaces).is_some());
 }

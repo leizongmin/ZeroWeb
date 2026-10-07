@@ -467,9 +467,12 @@ pub fn find_by_selector(doc: &Document, selector: &str) -> Option<NodeId> {
     let sel = zero_dom::trim_ascii_ws(selector);
     // t8b（性能）：structural path 快速通道。该形态由 [`structural_path_selector`]
     // 生成（每段 `tag:nth-child(pos)`、pos 为 1-based 元素序、`" > "` 连接），先按
-    // 元素索引逐段 O(1) 下行；形态不符或段失配返 None 回落通用 CSS 引擎，不引入
-    // 行为分歧。绕开通用引擎的理由：长 path（10+ 段）全量解析+逐段匹配单次 ~32µs
-    // （t8b 诊断：轮询批量更新数千次查询 × 此税 = e() 单次 ~1s 大头）。
+    // 元素索引逐段 O(1) 下行；形态不符或段失配返 None 回落通用 CSS 引擎。与引擎
+    // 结果的一致性以「tag 段为 CSS ident 字符域」（见 [`try_structural_path_fastpath`]）为前提；
+    // 已知残余边界：文档含 rogue `html` 名元素时多匹配的「文档序首个」选择可能与
+    // 引擎先序 DFS 不同（fastpath 固定取根锚链）。绕开通用引擎的理由：长 path
+    // （10+ 段）全量解析+逐段匹配单次 ~32µs（t8b 诊断：轮询批量更新数千次查询
+    // × 此税 = e() 单次 ~1s 大头）。
     if let Some(n) = try_structural_path_fastpath(doc, sel) {
         return Some(n);
     }
@@ -488,7 +491,18 @@ fn try_structural_path_fastpath(doc: &Document, selector: &str) -> Option<NodeId
     for seg in selector.split(" > ") {
         let rest = seg.strip_suffix(')')?;
         let (tag, pos) = rest.split_once(":nth-child(")?;
-        if tag.is_empty() || tag.contains(':') {
+        // tag 段限定 CSS ident 字符域（D1）：引擎把 `div#x` 复合解析为 tag `div` +
+        // id `x`（`crates/dom/src/query.rs`），而 HTML 分词器允许字面 `<div#x>` 产生
+        // 含 `#` 的 local_name——整串字面比较与引擎语义不同，此类形态必须回落。
+        // 生成端 `local_name` 均在该域内，不影响命中面。
+        let mut tag_bytes = tag.bytes();
+        let tag_ok = match tag_bytes.next() {
+            Some(first) if first.is_ascii_alphabetic() => {
+                tag_bytes.all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            }
+            _ => false,
+        };
+        if !tag_ok {
             return None;
         }
         let k: u32 = pos.parse().ok()?;
