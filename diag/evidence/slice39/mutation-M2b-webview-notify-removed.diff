@@ -1,0 +1,11 @@
+--- /tmp/s39-before-M2.rs	2026-10-07 16:49:45.149827790 +0800
++++ apps/renderer/src/page_scripts.rs	2026-10-07 16:50:16.923640416 +0800
+@@ -1100,7 +1100,7 @@
+                 // shim 侧对 apply 完全无感：移除补偿/解析补偿节点/融合基底缓存跨代际
+                 // 残留，同 id/同 selector 的新节点解析撞上被移除节点的旧 identity——
+                 // 残影出生点）。失败静默（钩子缺失 = 旧 shim 版本，零影响）。
+-                notify_shim_apply_generation(ctx);
++                // MUTATION-M2b: 删调用——在场臂通知调用点回退形态。
+                 Some(new_html)
+             }
+             Err(e) => {

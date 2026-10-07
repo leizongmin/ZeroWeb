@@ -1,0 +1,24 @@
+   Compiling zero-renderer v0.1.0 (/home/lei/work/ZeroWeb/apps/renderer)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.46s
+     Running unittests src/lib.rs (target/debug/deps/zero_renderer-5977e6194b6742d5)
+
+running 3 tests
+test page_scripts::bounded_wait_tests::apply_generation_state_isolated_across_tab_instances_s39 ... ok
+test page_scripts::bounded_wait_tests::drain_timeout_applies_recorded_and_recovers_backlog_s39 ... ok
+test page_scripts::bounded_wait_tests::apply_generation_bump_lands_after_bounded_wait_timeout_s39 ... FAILED
+
+failures:
+
+---- page_scripts::bounded_wait_tests::apply_generation_bump_lands_after_bounded_wait_timeout_s39 stdout ----
+
+thread 'page_scripts::bounded_wait_tests::apply_generation_bump_lands_after_bounded_wait_timeout_s39' (145319) panicked at apps/renderer/src/page_scripts/bounded_wait_tests.rs:173:5:
+bump 超时后须滞留补执行（gen0=0 gen1=0）——滞留命令丢弃/通知删行形态恒红
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    page_scripts::bounded_wait_tests::apply_generation_bump_lands_after_bounded_wait_timeout_s39
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 220 filtered out; finished in 6.27s
+
+error: test failed, to rerun pass `-p zero-renderer --lib`

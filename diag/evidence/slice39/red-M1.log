@@ -1,0 +1,21 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/lib.rs (target/debug/deps/zero_renderer-5977e6194b6742d5)
+
+running 1 test
+test page_scripts::bounded_wait_tests::drain_timeout_applies_recorded_and_recovers_backlog_s39 ... FAILED
+
+failures:
+
+---- page_scripts::bounded_wait_tests::drain_timeout_applies_recorded_and_recovers_backlog_s39 stdout ----
+
+thread 'page_scripts::bounded_wait_tests::drain_timeout_applies_recorded_and_recovers_backlog_s39' (144645) panicked at apps/renderer/src/page_scripts/bounded_wait_tests.rs:99:5:
+超时轮已记录的 mutation 仍须 apply（drain 返回 true）
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    page_scripts::bounded_wait_tests::drain_timeout_applies_recorded_and_recovers_backlog_s39
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 222 filtered out; finished in 1.27s
+
+error: test failed, to rerun pass `-p zero-renderer --lib`
