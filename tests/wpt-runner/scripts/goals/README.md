@@ -21,9 +21,16 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 |------|------|-----------|----------|
 | 10 | [timing-animation-compat](../../../../docs/goal/timing-animation-compat.md) | hr-time; performance-timeline; user-timing; web-animations | **已收口**（2026-10-04） |
 | 15 | [webstorage-compat](../../../../docs/goal/webstorage-compat.md) | webstorage | 无（快赢；2026-10-08 立项） |
+| 16 | [fileapi-compat](../../../../docs/goal/fileapi-compat.md) | FileAPI | 无（2026-10-08 立项） |
+| 17 | [webmessaging-compat](../../../../docs/goal/webmessaging-compat.md) | webmessaging | 无（2026-10-08 立项；跨 frame 面挂 navigation-compat M3 门槛） |
 | 18 | [cookies-compat](../../../../docs/goal/cookies-compat.md) | cookies | 无（快赢；HTTP 头驱动用例可执行性 M1 甄别） |
+| 19 | [performance-api-compat](../../../../docs/goal/performance-api-compat.md) | performance-api（resource/navigation/event/longtask） | 缺面甄别在 M1（host 数据管道） |
 | 20 | [net-api-compat](../../../../docs/goal/net-api-compat.md) | fetch; xhr; url; mimesniff; streams; eventsource | **已收口**（2026-10-04）；WebSocket 二期挂账 |
 | 21 | [console-compat](../../../../docs/goal/console-compat.md) | console | 无（极小快赢；console 捕获通道 M1 甄别，触面先与 devtools 流协调） |
+| 22 | [touch-events-compat](../../../../docs/goal/touch-events-compat.md) | touch-events | 构造器面自主；注入面 M1 甄别 |
+| 23 | [selection-compat](../../../../docs/goal/selection-compat.md) | selection | 无（2026-10-08 立项） |
+| 24 | [compression-compat](../../../../docs/goal/compression-compat.md) | compression | 无（实现型小套件，M2 实现轮） |
+| 25 | [html-semantics-compat](../../../../docs/goal/html-semantics-compat.md) | html/semantics 十子域 | **主攻大域**（分域切片收口制） |
 | 30 | [encoding-compat](../../../../docs/goal/encoding-compat.md) | encoding | **已收口**（2026-10-04） |
 | 40 | [html-syntax-compat](../../../../docs/goal/html-syntax-compat.md) | html/syntax; html/dom | **已收口**（2026-10-04） |
 | 50 | [uievents-compat](../../../../docs/goal/uievents-compat.md) | uievents; pointerevents | **已收口**（2026-10-07）；touch/pointerlock/IME 挂账 |
@@ -34,11 +41,10 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 92 | [web-api-batch2](../../../../docs/goal/web-api-batch2.md) | clipboard-apis; fullscreen | **已收口**（2026-10-04） |
 | 99 | [webgl-compat](../../../../docs/goal/webgl-compat.md) | webgl | **远期门控**（M2+ 全门控，M1 盘点为唯一自主切片） |
 
-**预留编号（2026-10-08 规划，未立项）**：16 fileapi-compat、17 webmessaging-compat、
-19 performance-api-compat（resource/navigation-timing/event-timing 扩面）、
-22 touch-events-compat、23 selection-compat、24 compression-compat、
-25 html-semantics-compat（主攻候选）。cssom-view/geometry-1 渲染 API 面与
-rendering-compat 工作面重叠，立项前先按 run-rules §9 协调。
+**预留与协调面（2026-10-08 更新）**：上表 10-25 槽位已全部立项。未拆候选：
+cssom-view / geometry-1（渲染 API 面，与 rendering-compat 工作面重叠，立项前先按
+run-rules §9 协调）、websockets（等 net 二期）、webaudio / notifications / push /
+gamepad 类（host 面缺失，学 99-webgl 模式远期门控）。新候选从 26 号起顺延占位。
 
 ## 与 rally 启动脚本的关系
 
