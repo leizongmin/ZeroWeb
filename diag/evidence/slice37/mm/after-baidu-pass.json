@@ -1,0 +1,20 @@
+{
+ "tag": "s32-baidu-rp6",
+ "bin": "b2323f0e4 integ r2",
+ "navMs": 5076,
+ "readyStateComplete": true,
+ "state": {
+  "title": "百度一下，你就知道",
+  "bodyChars": "388321",
+  "inputs": "ie,f,rsv_bp,rsv_idx,ch,tn,bar,wd,su,rn,fenlei,oq,rsv_pq,rsv_t,rqlang,?,?",
+  "su_type": "object",
+  "su_isElem": "false",
+  "kw_type": "object",
+  "kw_name": "wd",
+  "hasKwValue": "true"
+ },
+ "consoleErrorCount": 0,
+ "consoleErrors": [],
+ "provenance": "b2323f0e4 integ r2 env-i proxy-clear fresh-profile",
+ "verdict": "PASS"
+}

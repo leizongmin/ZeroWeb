@@ -316,11 +316,29 @@ fn tab_worker_main(
 
     // M2a 切片 5b：播放帧泵时钟锚点（单调，跨命令共享——VideoPlayer 契约是注入式时钟）。
     let pump_epoch = std::time::Instant::now();
+    // slice37（mm-regression 根修）：文档换代边界清 handle→selector 表（renderer
+    // `reset_document_state` 的 tab worker 镜像，slice18 同类文档域状态）。tab worker
+    // 保持同一 JS worker/context，但 Navigate/NavigateRequest/LoadHtml 换代后旧文档
+    // 的 handle 全部失效——残留条目使 `__zw_handle_for_selector` 反查命中上一文档
+    // 的死 handle：新文档 JS 会话经 `_zwQueryWrapIdentity`（R100）把该 handle 包装成
+    // 元素 proxy，而其本地视图/宿主真相都锚在新 handle 上 → 子树读恒空（
+    // s30-multimatch 集成面 verdict textContent='' 的间歇 FAIL 根因；handle 计数器
+    // 跨文档复用同号时尤其如此）。此前仅 SetDomSnapshot 的 url_changed 守卫覆盖，
+    // 同 URL 重载/重导航漏清。apply 路径会在新文档 createElement 时重新 merge。
+    // https://html.spec.whatwg.org/multipage/browsers.html#navigate
+    let clear_handle_selector_map = |js_worker: Option<&TabJsWorkerHandle>| {
+        if let Some(worker) = js_worker
+            && let Ok(mut map) = worker.handle_selector_map().lock()
+        {
+            map.clear();
+        }
+    };
     loop {
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
                 TabWorkerCommand::Navigate(url) => {
                     tracing::info!("Tab {} navigate: {url}", tab_id.0);
+                    clear_handle_selector_map(_js_worker.as_ref());
                     wv.prepare_document_state(&url);
                     async_load = Some(AsyncPageLoad::start(url));
                     pending_sync_html = None;
@@ -328,12 +346,14 @@ fn tab_worker_main(
                 }
                 TabWorkerCommand::NavigateRequest { url, method, body } => {
                     tracing::info!("Tab {} navigate: {method} {url}", tab_id.0);
+                    clear_handle_selector_map(_js_worker.as_ref());
                     wv.prepare_document_state(&url);
                     async_load = Some(AsyncPageLoad::start_request(url, method, body.map(String::into_bytes)));
                     pending_sync_html = None;
                     page_script_runner = None;
                 }
                 TabWorkerCommand::LoadHtml { html, css, url } => {
+                    clear_handle_selector_map(_js_worker.as_ref());
                     pending_sync_html = Some((html, css, url));
                     async_load = None;
                     page_script_runner = None;

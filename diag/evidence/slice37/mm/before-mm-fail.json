@@ -1,0 +1,22 @@
+{
+ "tag": "s30-multimatch-regression",
+ "bin": "b2323f0e4 integ",
+ "state": {
+  "isCollection": "true",
+  "len": "3",
+  "order": "img-a|img-b|div-c",
+  "singleNode": "true",
+  "formNode": "true",
+  "qNegative": "undefined",
+  "verdict": "n/a"
+ },
+ "expect": {
+  "isCollection": "true",
+  "len": "3",
+  "order": "img-a|img-b|div-c",
+  "singleNode": "true",
+  "formNode": "true",
+  "qNegative": "undefined"
+ },
+ "verdict": "FAIL"
+}
