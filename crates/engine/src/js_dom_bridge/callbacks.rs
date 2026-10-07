@@ -1479,6 +1479,9 @@ pub fn register_dom_callbacks(
 
     // detached createElement 句柄元素的真实 tag 名（shim `tagName`/`nodeName` 对 handle-only
     // 元素原走 `_tagFromSel` 恒猜 DIV；本回调从 CreateElement 记录取真实 tag）。
+    // t8c：增量 handle→tag 备忘优先（见 [`HANDLE_TAG_MEMO`]）——get trap 每属性读热点，
+    // 全队列线性扫在结构操作循环下 O(n²)。备忘 miss = 当前队列无此 handle 的 create
+    // 记录，等价于 `query_tag_from_mutations` 返空，直接落旧回落链（历史/反查）。
     // js-dom M3 R100：当前批记录 miss（跨 execute 引用的旧 handle——本批 mutations 不含
     // 其 CreateElement）时，经持久 selector→handle 反查表锚回 selector，从查询快照读 tag
     //（闭包捕获 dom_html Arc）。两处都 miss → 空串（shim fallback，原行为）。
@@ -1489,9 +1492,7 @@ pub fn register_dom_callbacks(
         "__zw_get_tag_handle",
         Box::new(move |args| {
             let handle = args.first().map(String::from).unwrap_or_default();
-            let list = m.lock().unwrap_or_else(|e| e.into_inner());
-            let tag = query_tag_from_mutations(&list, &handle);
-            if !tag.is_empty() {
+            if let Some(tag) = handle_tag_from_memo(&m, &handle) {
                 return tag;
             }
             // R100：当前批 miss → 线程本地已应用历史。
@@ -2642,6 +2643,61 @@ thread_local! {
     > = const { std::cell::RefCell::new(None) };
 }
 
+// `__zw_get_tag_handle` 的增量 handle→tag 备忘（t8c，TAG_MEMO 的 handle 对偶）：
+// get trap 每属性读经 shim `_realTag` 打本查询，底源 `query_tag_from_mutations`
+// 全队列逆序线性扫——队列随结构操作只增 ⇒ 每次 O(len)，append/remove 循环 O(n²)
+//（沙箱实测 200 append 触发 44 万次查询、占 831ms/1098ms）。sel 侧 R-baidu3 已
+// O(1) 化而 handle 侧漏改，本备忘补齐对称。
+// 键 = (mutations epoch Arc, drain 代际)——tag 是**队列纯函数**（不依赖快照视图，
+// 无 view_gen）；同键下队列只追加 ⇒ 水位 `scanned` 增量扫 [scanned, count)，
+// CreateElement/NS 正序 insert 覆写与逆序首中同为 latest-wins。drain（代际递增，
+// 队列清空）或换 epoch → 全量重建。epoch 内旁路清零（R342 竞窗同类）由水位对
+// 队列长度取 min 防越界（内容以 drain 代际兜底，误服务窗与既有路径同宽）。
+thread_local! {
+    static HANDLE_TAG_MEMO: std::cell::RefCell<
+        Option<((Arc<std::sync::Mutex<Vec<DomMutation>>>, usize, usize), std::collections::HashMap<String, String>)>,
+    > = const { std::cell::RefCell::new(None) };
+}
+
+/// [`HANDLE_TAG_MEMO`] 查询：队列源命中返 `Some(tag)`；`None` = 当前队列无此
+/// handle 的 create 记录（调用方走 history/R100 回落，语义同直查）。
+fn handle_tag_from_memo(m: &Arc<std::sync::Mutex<Vec<DomMutation>>>, handle: &str) -> Option<String> {
+    let count = m.lock().unwrap_or_else(|e| e.into_inner()).len();
+    let drain_gen = MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
+    HANDLE_TAG_MEMO.with(|slot| {
+        let mut guard = slot.borrow_mut();
+        let valid = guard
+            .as_ref()
+            .is_some_and(|(k, _)| Arc::ptr_eq(&k.0, m) && k.1 == drain_gen);
+        if !valid {
+            *guard = Some(((Arc::clone(m), drain_gen, 0), std::collections::HashMap::new()));
+        }
+        let entry = guard.as_mut().expect("memo ensured");
+        if entry.0.2 < count {
+            let queue = m.lock().unwrap_or_else(|e| e.into_inner());
+            // R342 竞窗同类防御：水位与队列长度取 min（旁路清零不越界）。
+            let scanned = entry.0.2.min(queue.len());
+            for rec in &queue[scanned..] {
+                match rec {
+                    DomMutation::CreateElement { handle: h, tag } => {
+                        entry.1.insert(h.clone(), tag.clone());
+                    }
+                    DomMutation::CreateElementNS {
+                        handle: h,
+                        qualified_name,
+                        ..
+                    } => {
+                        entry.1.insert(h.clone(), qualified_name.clone());
+                    }
+                    _ => {}
+                }
+            }
+            entry.0.2 = queue.len();
+        }
+        entry.1.get(handle).cloned()
+    })
+}
+
 // __zw_query_all_tagged 的 payload 单条目缓存（R-baidu3）：(dom_arc, mut_arc, count,
 // drain_gen, view_gen, sel) → payload。视图键恒等式同 QueryViewEntry（epoch Arc 身份 + 队列长度
 // + drain 代际唯一决定视图输入——drain 后重长到同 count 内容可不同，缺 drain_gen 会
@@ -2661,6 +2717,60 @@ thread_local! {
 thread_local! {
     static NS_MEMO: std::cell::RefCell<Option<((Arc<std::sync::Mutex<String>>, usize), std::collections::HashMap<String, String>)>> =
         const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+mod handle_tag_memo_tests {
+    use super::*;
+
+    /// t8c 主钉：增量水位——队列增长只扫新增区间，既有条目保持；latest-wins
+    ///（同 handle 二次 create 覆写，与逆序首中语义一致）；CreateElementNS 记录
+    /// qualified_name 原样；drain（代际递增 + 队列清空）全量重置。
+    #[test]
+    fn memo_incremental_watermark_latest_wins_and_drain_reset() {
+        let m: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        // 空队列：miss（历史/反查回落由调用方处理）。
+        assert_eq!(handle_tag_from_memo(&m, "__h1"), None);
+        // 追加 create → 命中。
+        m.lock().unwrap().push(DomMutation::CreateElement {
+            handle: "__h1".into(),
+            tag: "span".into(),
+        });
+        assert_eq!(handle_tag_from_memo(&m, "__h1").as_deref(), Some("span"));
+        // 再追加新 handle → 增量扫命中新条目，旧条目经水位保持（不重扫全队列）。
+        m.lock().unwrap().push(DomMutation::CreateElement {
+            handle: "__h2".into(),
+            tag: "div".into(),
+        });
+        assert_eq!(handle_tag_from_memo(&m, "__h2").as_deref(), Some("div"));
+        assert_eq!(handle_tag_from_memo(&m, "__h1").as_deref(), Some("span"));
+        // 未记录 handle → miss（≠ 空串，区分回落链）。
+        assert_eq!(handle_tag_from_memo(&m, "__nope"), None);
+        // NS 记录：qualified_name 原样（含 prefix）。
+        m.lock().unwrap().push(DomMutation::CreateElementNS {
+            handle: "__h3".into(),
+            namespace: "http://www.w3.org/1999/xhtml".into(),
+            qualified_name: "p:l".into(),
+        });
+        assert_eq!(handle_tag_from_memo(&m, "__h3").as_deref(), Some("p:l"));
+        // 同 handle 重复 create：正序覆写 = latest-wins。
+        m.lock().unwrap().push(DomMutation::CreateElement {
+            handle: "__h1".into(),
+            tag: "em".into(),
+        });
+        assert_eq!(handle_tag_from_memo(&m, "__h1").as_deref(), Some("em"));
+        // drain：代际递增 + 队列清空 → 备忘全量重置（miss → 调用方走历史回落）。
+        MUT_DRAIN_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        m.lock().unwrap().clear();
+        assert_eq!(handle_tag_from_memo(&m, "__h1"), None);
+        assert_eq!(handle_tag_from_memo(&m, "__h2"), None);
+        // 重置后新 epoch 重新增量积累。
+        m.lock().unwrap().push(DomMutation::CreateElement {
+            handle: "__h4".into(),
+            tag: "section".into(),
+        });
+        assert_eq!(handle_tag_from_memo(&m, "__h4").as_deref(), Some("section"));
+    }
 }
 
 #[cfg(test)]

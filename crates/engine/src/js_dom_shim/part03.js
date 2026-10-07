@@ -11499,9 +11499,12 @@
       var oldParent262 = null, oldIndex262 = -1;
       try {
         oldParent262 = removed262.parentNode || null;
-        if (oldParent262 && oldParent262.childNodes) {
-          for (var _r262i = 0; _r262i < oldParent262.childNodes.length; _r262i++) {
-            if (oldParent262.childNodes[_r262i] === removed262) { oldIndex262 = _r262i; break; }
+        // t8c：同 `_zwAdjustRangesForInsert`——live NL 每次属性读 refresh O(n)，
+        // 承载数组提到循环外（契约下首次读已含被移除节点，循环内树不变）。
+        var _nl262 = oldParent262 && oldParent262.childNodes;
+        if (_nl262) {
+          for (var _r262i = 0; _r262i < _nl262.length; _r262i++) {
+            if (_nl262[_r262i] === removed262) { oldIndex262 = _r262i; break; }
           }
         }
       } catch (_e262p) {}
@@ -11627,9 +11630,15 @@
       var newParent263 = null, newIndex263 = -1;
       try {
         newParent263 = inserted263.parentNode || null;
-        if (newParent263 && newParent263.childNodes) {
-          for (var _r263i = 0; _r263i < newParent263.childNodes.length; _r263i++) {
-            if (newParent263.childNodes[_r263i] === inserted263) { newIndex263 = _r263i; break; }
+        // t8c：childNodes 承载数组提到循环外——live NL（R140）每次属性读都 refresh
+        //（registry slice+concat，O(n)）；n 迭代 × 2 读 = 每次 insert O(n²)，append
+        // 循环线性项主源（沙箱消融实测：置空本钩子 400 append 6170→78ms 的剩余
+        // 项即此）。本循环内树不再变、首次读已含本次插入（mutation 先于边界调整），
+        // 承载数组 identity 稳定，索引内容循环内无需重读。
+        var _nl263 = newParent263 && newParent263.childNodes;
+        if (_nl263) {
+          for (var _r263i = 0; _r263i < _nl263.length; _r263i++) {
+            if (_nl263[_r263i] === inserted263) { newIndex263 = _r263i; break; }
           }
         }
       } catch (_e263p) {}
