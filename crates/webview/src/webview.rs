@@ -6926,6 +6926,37 @@ mod tests {
         );
     }
 
+    // slice38（testeff S1）：prepare_document_state 刻意不清 form live value 表的
+    // 守恒钉（负空间）。清零失效点唯一地是内容换代（cached_doc 换代四点：预算
+    // Done 步 / render_html 尾 / render_html_animated 尾 / render_html_in_rect）；
+    // prepare 只翻标志与清 webview 层缓存、不换 doc——导航开始 ≠ 内容换代，导航
+    // 失败旧文档存活时用户输入必须保留。红条件：prepare 经任何可达路径误清 form
+    // 表 → 导航后 overrides 变空，断言红（与上一钉构成正/负两半，互不遮蔽）。
+    // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-fe-value
+    #[test]
+    fn prepare_document_state_keeps_form_control_values_s38() {
+        let mut wv = wv();
+        wv.load_html("<html><body><input id=\"a\"></body></html>", None);
+        wv.apply_dom_mutations_and_render(&[DomMutation::SetFormValue {
+            selector: "#a".to_string(),
+            value: "typed".to_string(),
+        }])
+        .expect("doc1 表单值 apply 成功");
+        assert_eq!(
+            wv.form_control_value_overrides().get("#a").map(String::as_str),
+            Some("typed"),
+            "前置：doc1 live value 已入表"
+        );
+
+        // 导航边界：只翻标志/清缓存，form live value 表必须原样保留。
+        wv.prepare_document_state("http://s38.test/nav2");
+        assert_eq!(
+            wv.form_control_value_overrides().get("#a").map(String::as_str),
+            Some("typed"),
+            "prepare_document_state 不得清 form live value 表（导航失败旧文档存活时用户输入必须保留）"
+        );
+    }
+
     // slice35：apply_pending_shared_mutations 单步路径（tail 纯结构批）的 evict +
     // R379/pa2b 换代通知调用点行为钉。通知是 fire-and-forget execute_script（结果被
     // `let _` 吞），删行后 map 语义不变、无任何函数体钉可抓——本钉以 external_script
