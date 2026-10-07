@@ -6785,7 +6785,11 @@ mod tests {
     // re-pollute worker/webview 反查表（slice37 diag 实证：同 URL 重导航逐迭代累积
     // __n0..__n10，__zw_handle_for_selector 值扫描命中任意一个 → gEBI 包装绑死旧
     // identity、mm 判定 div 读成空 proxy）。本钉走真实生产序列（prepare → 预算渲染 →
-    // apply）：清零删行后 hs 必然夹带 doc1 的 h1，断言即刻红。
+    // apply）。红条件（第二轮审查 F-A 订正，两清零点分工）：仅删预算 Done 步清零
+    // （B 线，pipeline_budget）→ 第二代段 `!hs3.contains_key("h2")` 红；仅删本处
+    // （A 线）→ B 线已先行清 pn，测试保持绿——A 线定位双保险（当前被 B 线遮蔽，
+    // 价值在 F2 挂账的 script-during-load 未来窗口）；两处全删 → 首段
+    // `!hs2.contains_key("h1")` 方红。
     #[test]
     fn prepare_document_state_clears_persistent_handle_nodes_s37() {
         let mut wv = wv();

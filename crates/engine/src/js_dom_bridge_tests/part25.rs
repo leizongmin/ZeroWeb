@@ -573,10 +573,11 @@ fn r5010_r100_handle_proxy_child_reads_anchor_sel_after_iadj_html_apply() {
     sandbox.register_callback(
         "__zw_handle_for_selector",
         Box::new(|args: &[String]| -> String {
-            if args.first().map(String::as_str) == Some("#s30-verdict") {
-                "__n226".to_string()
-            } else {
-                String::new()
+            match args.first().map(String::as_str) {
+                Some("#s30-verdict") => "__n226".to_string(),
+                // F-C 对照：宿主无此元素 → 无 remember 登记 → 锚回落空路径。
+                Some("#s30-orphan") => "__n999".to_string(),
+                _ => String::new(),
             }
         }),
     );
@@ -589,7 +590,8 @@ fn r5010_r100_handle_proxy_child_reads_anchor_sel_after_iadj_html_apply() {
                handle: v.__zwHandle || null,\
                kids: v.childNodes.length,\
                text: v.textContent,\
-               first: v.firstChild ? v.firstChild.nodeValue : null\
+               first: v.firstChild ? v.firstChild.nodeValue : null,\
+               pnode: v.childNodes[0] ? (v.childNodes[0].parentNode === v) : null\
              }) : 'null';",
         )
         .unwrap();
@@ -603,5 +605,29 @@ fn r5010_r100_handle_proxy_child_reads_anchor_sel_after_iadj_html_apply() {
             && out.contains("\"text\":\"S30-MULTIMATCH: PASS\"")
             && out.contains("\"first\":\"S30-MULTIMATCH: PASS\""),
         "R5010：handle-only proxy 子读须锚回 sel 读到 apply 后真实子树（childNodes/firstChild/textContent），got: {out}"
+    );
+    // F4 身份对齐钉（第二轮审查 F-D）：childNodes 子项 parentNode 恒等原 proxy，
+    // 不因读路径分叉（与 firstChild/textContent 链同形）。
+    assert!(
+        out.contains("\"pnode\":true"),
+        "R5010/F4：childNodes[0].parentNode 须恒等原 handle proxy（读路径身份一致），got: {out}"
+    );
+    // F-C 零回归对照钉（第二轮审查 F-C）：未登记 handle（宿主无此元素、wrap 时无
+    // remember 可登记）→ 锚回落空 → 原行为零读：要么 gEBI 直接 null（本 harness 形态
+    // 下反查不触达），要么 handle-only proxy 且 kids:0——不得读出垃圾子树。
+    sandbox
+        .execute(
+            "var w = globalThis.document.getElementById('s30-orphan');\
+             globalThis.__r5010c = w ? JSON.stringify({\
+               handle: w.__zwHandle || null,\
+               kids: w.childNodes.length\
+             }) : 'null';",
+        )
+        .unwrap();
+    let outc = sandbox.execute("globalThis.__r5010c").unwrap().value;
+    assert!(
+        outc == "null"
+            || (outc.contains("\"handle\":\"__n999\"") && outc.contains("\"kids\":0")),
+        "R5010/F-C：未登记 handle 须保持零读原行为（null 或 handle proxy kids:0），got: {outc}"
     );
 }
