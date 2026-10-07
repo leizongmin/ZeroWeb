@@ -10464,10 +10464,29 @@
   //（文本/注释锚常见于 insertBefore(node, el.nextSibling)）沿 nextSibling 链走查到
   // 首个集合成员或链尾（保守回退=尾插，R51 overlay 同款）。成本 O(批×集合元素)，
   // 仅结构变异时发生。
-  function _zwHCTreeOrderSync(addFlat, mutSel, mutHandle) {
+  function _zwHCTreeOrderSync(addFlat, mutSel, mutHandle, inDoc) {
     if (!addFlat || !addFlat.length) return;
     if (typeof globalThis._zwSiblingBaseInvalidateAll === 'function') {
       try { globalThis._zwSiblingBaseInvalidateAll(); } catch (_eSbInv) {}
+    }
+    // slice42：文档级 NA 集合树序——slice32 末位近似（insertBefore 中插树序不保）
+    // 收口。本函数是 part01 `_mo_notify` 反链记账**之后**的尾叫，R79
+    // compareDocumentPosition 读数新鲜；整集合 CDP 排序（`_zwNACollectMatches`
+    // 安装序同款，DOCUMENT_POSITION_FOLLOWING=4）。仅 naName 文档级集合（scoped
+    // 集合树序由下方 t8e 锚定机制承担；inDoc 门对齐成员并入 R54 口径——detached
+    // 批无成员并入，跳过排序防 disconnected 读数扰动）。成员个位数常态，
+    // O(n log n × CDP) 仅结构变异时发生。
+    // https://dom.spec.whatwg.org/#concept-collection
+    if (inDoc) {
+      for (var i42 = 0; i42 < _zwLiveCollections.length; i42++) {
+        var lc42 = _zwLiveCollections[i42];
+        if (lc42.dead || !lc42.naName || lc42.scopeHandle || lc42.scopeSel) continue;
+        var els42 = lc42.elements();
+        if (els42.length < 2) continue;
+        els42.sort(function (a42, b42) {
+          try { return (a42.compareDocumentPosition(b42) & 4) ? -1 : 1; } catch (_e42ts) { return 0; }
+        });
+      }
     }
     for (var i = 0; i < _zwLiveCollections.length; i++) {
       var lc = _zwLiveCollections[i];
@@ -10750,14 +10769,22 @@
   // ②id/name 属性变异经 part04 setAttribute/removeAttribute 钩子 _zwNAAttrChanged
   // 重核成员；③成员数跌破 2 时全局形态跟随 spec 取值算法（_zwNAGlobalMorph：
   // 1 命中→元素、0 命中→回收全局；仅当全局当前值仍是本特性安装的集合）。
-  // **live 边界（FIXME(live-collection) 收窄，偏差如实申报）**：安装时点不存在的名
-  // 不解析（window.N 动态取值面——spec WindowProperties exotic object [[GetOwnProperty]]
-  // 每读动态查找，shim 全局为数据属性安装不可达：multi-match.html / changing.html /
-  // removing.html 的脚本后建名面维持不 Pass）；childList 并入为末位近似（insertBefore
-  // 中插的树序不保）；单命中元素全局（slice27 面）不 live。
+  // **live 边界（slice42 勘误收窄）**：①安装时点不存在的名不解析面已随 slice36
+  // 动态注册面收口（changing/multi-match/removing.html 实测 Pass，slice41 gate log
+  // 佐证）；②childList/attr 并入树序已随 slice42 收口（_zwHCTreeOrderSync NA 臂
+  // + _zwNAAttrChanged join 排序，dom.spec.whatwg.org/#concept-collection）；残余：
+  // 单命中元素全局（slice27 静态安装面）不 live（stale 至快照换代——morph 产物的
+  // 0 命中回收面已随 slice42 收口，见 _zwNAGlobalMorph）。
   // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
   var _zwNAInstalled = globalThis.__zwNAInstalledStore
     || (globalThis.__zwNAInstalledStore = {}); // slice32：同上，跨 shim 重执行存活
+  // slice42：morph 产物账本（name → 本特性 morph 写入的元素全局）。0 命中回收判据 =
+  // 「现全局值仍是本特性 morph 写入的元素」——脚本自有改写（own expando 任意值）不
+  // 追删（spec：脚本 own property 遮蔽命名属性，WindowProperties 只兜底）。跨 shim
+  // 重执行存活（_zwNAInstalled 同款 store）；元素 identity 跨快照换代持久，换代不清
+  //（renderer 登记·回收链路删全局后账本条目由 g===账本 守卫自然失效）。
+  var _zwNAMorphEls = globalThis.__zwNAMorphElsStore
+    || (globalThis.__zwNAMorphElsStore = {});
   // named access 成员判定——与安装期采集器 `_namedAccessMatches`（part06）同口径：
   // id 面（全元素）+ name 面（embed/form/img/object，local 名不辨 ns，与
   // 构建期选择器一致；iframe 不入面——其名走 child navigable 通道由 R139 委托
@@ -10782,15 +10809,22 @@
     };
   }
   // 全局形态跟随：仅当 globalThis[name] 仍是本特性安装的集合时改写/回收——脚本自有
-  // 全局、已 morph 成元素的全局不回改（morph 跟随面不升格；元素全局的动态升格走
-  // `_zwNARegisterName` 触发面，slice36）。
+  // 全局不回改（morph 跟随面不升格；元素全局的动态升格走 `_zwNARegisterName` 触发
+  // 面，slice36）。
   // slice33（RP-3 I-7）：0 命中回收后再生——回收时保留账本（`_zwNAInstalled[name]`
   // 不删；集合仍注册 live 维护），成员重入（0→1/0→2）时经本函数恢复全局：1 命中
   // 恢复元素、≥2 恢复集合。恢复条件 = global 缺席且账本在（回收态，或 renderer
   // 快照换代登记·回收链路已删 stale 名后的重入——同域两态统一）。spec：取值算法
   // 每读按当下 named objects 求值，重入后值恢复（live 语义自然延伸）；修前账本随
-  // 回收删除，重入后全局恒 undefined（再生缺口）。morph 成元素的全局仍不回改
-  //（slice32 边界钉保持）。
+  // 回收删除，重入后全局恒 undefined（再生缺口）。
+  // slice42（RP-3 残余①收口）：morph 成元素的全局补 0 命中回收——slice32 边界钉
+  // （「morph 产物 0 命中不回收、stale 至换代」）翻转。morph 写入时登记
+  // `_zwNAMorphEls[name]`；现全局值仍是本特性 morph 产物（账本 identity 核对）且
+  // 命中跌至 0 时按 spec 回收（named objects 空集则属性缺席）；脚本自有改写不追删。
+  // 回收写面 = `__zwNADelete`（wired 腿 backing + own expando 双面——morph 产物是
+  // own expando、backing 尚残留原集合，单面 delete 会经 NPO 复活 stale 空集合）；
+  // 集合面 0 命中回收同此原语（原 `delete globalThis[name]` 对 backing 安装值经 NPO
+  // deleteProperty=false no-op，批删形态 stale 空集合残留）。
   // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
   function _zwNAGlobalMorph(name) {
     var g, installed = _zwNAInstalled[name];
@@ -10802,8 +10836,22 @@
         try { elsR = installed.__zwHC(); } catch (_eR0) { return; }
         if (elsR.length === 1) {
           try { globalThis[name] = elsR[0]; } catch (_eR1) {}
+          _zwNAMorphEls[name] = elsR[0]; // slice42：恢复态元素同属 morph 产物面
         } else if (elsR.length > 1) {
           try { globalThis[name] = installed; } catch (_eR2) {}
+          delete _zwNAMorphEls[name]; // slice42：集合面接管，产物账本清除
+        }
+      } else if (_zwNAMorphEls[name] === g) {
+        // slice42：morph 产物跟随——0 命中回收（账本 identity 核对，脚本自有改写
+        // 不追删）；>1 命中不升格（morph 跟随面不升格口径保持，残余申报）。
+        var elsM = null;
+        try { elsM = installed.__zwHC(); } catch (_e42m) { return; }
+        if (elsM.length === 0) {
+          delete _zwNAMorphEls[name];
+          try {
+            if (typeof globalThis.__zwNADelete === 'function') globalThis.__zwNADelete(name);
+            else { try { delete globalThis[name]; } catch (_e42d1) {} }
+          } catch (_e42d2) {}
         }
       }
       return;
@@ -10811,8 +10859,15 @@
     var els = installed.__zwHC();
     if (els.length === 1) {
       try { globalThis[name] = els[0]; } catch (_e32m1) {}
+      _zwNAMorphEls[name] = els[0]; // slice42：morph 产物登记
     } else if (els.length === 0) {
-      try { delete globalThis[name]; } catch (_e32m0) {}
+      // slice42：回收写面 `__zwNADelete`（backing 双面清除；quickjs 腿 own delete
+      // 等价原语义）。
+      delete _zwNAMorphEls[name];
+      try {
+        if (typeof globalThis.__zwNADelete === 'function') globalThis.__zwNADelete(name);
+        else { try { delete globalThis[name]; } catch (_e42d3) {} }
+      } catch (_e42d4) {}
     }
   }
   // id/name 属性变异重核：全部 NA 活集合逐个核对该元素成员资格（失格剔除保序 /
@@ -10832,6 +10887,13 @@
       if (m32) {
         for (var k32 = 0; k32 < els32.length; k32++) out32.push(els32[k32]);
         out32.push(el);
+        // slice42：并入成员按树序落位（spec：HTMLCollection 成员树序——末位 push
+        // 近似收口）。此时点成员先于本 attr 变异入树、反链已记账，CDP 读数新鲜
+        //（_zwNACollectMatches 安装序同款；NA 集合成员个位数常态，成本可忽略）。
+        // https://dom.spec.whatwg.org/#concept-collection
+        out32.sort(function (a42, b42) {
+          try { return (a42.compareDocumentPosition(b42) & 4) ? -1 : 1; } catch (_e42as) { return 0; }
+        });
       } else {
         for (var k2c = 0; k2c < els32.length; k2c++) if (els32[k2c] !== el) out32.push(els32[k2c]);
       }
@@ -10860,8 +10922,9 @@
   // 安装值（`__zwNADynElsStore` 账本）——触发批逐元 + 移除批账本补偿扫（remFlat
   // 展开对 parsed 子树后代有缺口，扫面对账本全量重核补齐，slice36 缺陷轮 I-4 修复）；
   // `_zwNADynEls` 动态账本面的 stale-至-换代保留已随移除批补偿扫提前退役（移除批内
-  // 即注销）；保持 stale 到换代回收的仅 slice27 静态单命中面（安装期元素全局）与
-  // morph 产物（slice32 申报钉维持）；②名门 = 属性值原文非空串 + own 属性缺席（本面已放开
+  // 即注销）；morph 产物的 0 命中回收已随 slice42 收口（_zwNAMorphEls 账本 +
+  // `__zwNADelete` 双面写，见 _zwNAGlobalMorph）；保持 stale 到换代回收的仅
+  // slice27 静态单命中面（安装期元素全局）；②名门 = 属性值原文非空串 + own 属性缺席（本面已放开
   // 标识符形限制——spec 名为属性值原文，WPT changing.html 连字符名实证；安装面
   // transport `|` 分隔与属性选择器嵌入约束仍保留标识符门）；③shadow 树内元素——
   // slice40 探针实证三面（childList 挂入 / attr 改 id / parsed 移入）均不入册，
@@ -10964,6 +11027,7 @@
   //（js_worker SetDomSnapshot 臂 `__zwNamedAccessInstalled`——动态安装值入账才被
   // 换代回收，不留跨文档悬挂）；动态元素账本条目消费即除。
   function _zwNAInstallCollection(name, els) {
+    delete _zwNAMorphEls[name]; // slice42：集合面接管该名，morph 产物账本清除
     try {
       for (var d36 = 0; d36 < _zwLiveCollections.length; d36++) {
         var dlc36 = _zwLiveCollections[d36];
