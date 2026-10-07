@@ -67,3 +67,49 @@ fn r4988_flex_ar_min_height_zero_disables_floor() {
         "min-height:0 disables the transferred-minimum floor; box must stay within container cross"
     );
 }
+
+/// R4990：非叶 AR 条目 content-size suggestion——taffy 按纯比值传 main（049：
+/// cross 100 × ratio 0.5 → 50），content floor（子块定宽 100）应胜出。臂 3 以
+/// 清除 taffy aspect_ratio + 双轴 definite size 绕开 AR 反传（R4989 负结果：
+/// min 写入被反传 cross、size 写入被 AR 求解覆盖）。
+#[test]
+fn r4990_flex_ar_nonleaf_content_floor_wins() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let item = doc.create_element("div");
+    doc.append_child(container, item).unwrap();
+    let kid = doc.create_element("div");
+    doc.append_child(item, kid).unwrap();
+
+    let mut container_style = ComputedStyle::default();
+    container_style.display = zero_style_system::DisplayValue::Flex;
+    container_style.width = LengthValue::Px(0.0);
+    container_style.height = LengthValue::Px(100.0);
+
+    let mut item_style = ComputedStyle::default();
+    item_style.aspect_ratio = Some(0.5);
+
+    let mut styles = HashMap::new();
+    styles.insert(container, container_style);
+    styles.insert(item, item_style);
+    let mut kid_style = ComputedStyle::default();
+    kid_style.display = zero_style_system::DisplayValue::Block;
+    kid_style.width = LengthValue::Px(100.0);
+    styles.insert(kid, kid_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find(root: &crate::LayoutBox, id: NodeId) -> Option<&crate::LayoutBox> {
+        if root.node_id == Some(id) {
+            return Some(root);
+        }
+        root.children.iter().find_map(|c| find(c, id))
+    }
+    let b = find(&result.root, item).expect("item box").clone();
+    assert_eq!(
+        (b.width, b.height),
+        (100.0, 100.0),
+        "content floor (child 100) must beat transferred 50; cross stays stretched 100"
+    );
+}

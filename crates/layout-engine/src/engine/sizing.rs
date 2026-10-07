@@ -998,6 +998,92 @@ impl LayoutEngine {
                         }
                     }
                 }
+            } else if !b.is_replaced
+                && let Some(id) = b.node_id
+                && let Some(ps) = parent_style
+                && matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+                && let Some(item_style) = my_style
+                && let Some(&tid) = dom_to_taffy.get(&id)
+                && let Ok(mut st) = taffy_tree.style(tid).cloned()
+                && let Some(ratio) = st.aspect_ratio
+                && ratio > 0.0
+            {
+                // R4990 臂 3（css-flexbox §4.5 content size suggestion + css-sizing-4 §4.1）：
+                // 非叶 AR 条目（块级 in-flow 子决定内容下限）——taffy 对 AR 条目按纯比值
+                // 传 main（049：cross 100 × ratio 0.5 → 50），content-based automatic
+                // minimum（min-content ≥ 子块定宽 100）不参与 → 应 max(50, 100) = 100。
+                //
+                // R4989 负结果教训：写 min.main 被 taffy 经 ratio 反传 cross（min_w 100 →
+                // cross 200）；写 size.main 不生效（机制未定谳）。本臂绕开两者——**清除
+                // taffy aspect_ratio + 双轴 definite size**（main = max(transferred,
+                // content_floor)，cross = stretch 容器值）：AR 不参与求解即无反传路径，
+                // 收缩地板由 taffy 自身 content-based minimum（子 min-content 100）承担。
+                // 门控：main/min-main CSS auto（014 门）+ 无 float 子 + 无 auto margin
+                //（auto-margins-002 门）+ 水平书写模式。仅块子域；inline 文本子条目
+                // min-content 语义另案。
+                let is_column = matches!(
+                    ps.flex_direction,
+                    FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+                );
+                let main_css_auto = if is_column {
+                    matches!(item_style.height, LengthValue::Auto)
+                } else {
+                    matches!(item_style.width, LengthValue::Auto)
+                };
+                let main_min_auto = if is_column {
+                    matches!(item_style.min_height, LengthValue::Auto)
+                } else {
+                    matches!(item_style.min_width, LengthValue::Auto)
+                };
+                let any_margin_auto = matches!(item_style.margin_left, LengthValue::Auto)
+                    || matches!(item_style.margin_right, LengthValue::Auto)
+                    || matches!(item_style.margin_top, LengthValue::Auto)
+                    || matches!(item_style.margin_bottom, LengthValue::Auto);
+                let has_float_child = b.children.iter().any(|c| !matches!(c.float, FloatValue::None));
+                // max-cross definite 让路（039 语义域）：transferred max（max-height:50 →
+                // max-w 100）参与 min/max 链，简单 max(transferred, content) 地板会顶穿
+                // 上限——该形态 taffy 自身已正确，跳过。
+                let max_cross_definite = if is_column {
+                    resolve_sizing_definite_real_length(&item_style.max_width, item_style).is_some_and(|v| v > 0.0)
+                } else {
+                    resolve_sizing_definite_real_length(&item_style.max_height, item_style).is_some_and(|v| v > 0.0)
+                };
+                let content_floor = b
+                    .children
+                    .iter()
+                    .filter(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
+                    .map(|c| c.width + c.margin_left + c.margin_right)
+                    .fold(0.0_f32, f32::max);
+                if main_css_auto
+                    && main_min_auto
+                    && !any_margin_auto
+                    && !has_float_child
+                    && !max_cross_definite
+                    && content_floor > 0.5
+                    && matches!(b.writing_mode, WritingModeValue::HorizontalTb)
+                {
+                    // transferred 值 = 布局期 taffy 已解的 main（AR 传递结果）。
+                    let laid_main = if is_column { b.height } else { b.width };
+                    let target_main = laid_main.max(content_floor);
+                    let laid_cross = if is_column { b.width } else { b.height };
+                    if (laid_main - target_main).abs() > 0.5 || laid_cross > 0.5 {
+                        if is_column {
+                            st.size.height = taffy::style::Dimension::length(target_main.max(0.5));
+                            if laid_cross > 0.5 {
+                                st.size.width = taffy::style::Dimension::length(laid_cross);
+                            }
+                        } else {
+                            st.size.width = taffy::style::Dimension::length(target_main.max(0.5));
+                            if laid_cross > 0.5 {
+                                st.size.height = taffy::style::Dimension::length(laid_cross);
+                            }
+                        }
+                        st.aspect_ratio = None;
+                        let _ = taffy_tree.set_style(tid, st);
+                        let _ = taffy_tree.mark_dirty(tid);
+                        changed = true;
+                    }
+                }
             }
 
             for c in &b.children {
