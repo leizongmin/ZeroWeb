@@ -1761,6 +1761,138 @@ fn test_form_elements_r2829() {
 }
 
 #[test]
+fn test_form_elements_live_dynamic_controls_t8f() {
+    // t8f（siteopt bilibili r1）：form.elements 对**同 turn createElement+appendChild** 控件须
+    // live 可见（spec：HTMLFormControlsCollection 是 live 集合，
+    // https://html.spec.whatwg.org/multipage/forms.html#dom-form-elements）。
+    // host 查询视图不应用 handle 链 mutation（with_query_view_doc 应用范围注释），R2829 的
+    // `__zw_form_controls`（视图 doc 消费者）对动态控件失明——hydration 恢复路径
+    // namedItem miss → insertBefore(undefined) TypeError 的根因（bilibili 搜索页爆发）。
+    // held ref（站点形态：取一次 elements 后复用）与 fresh read 都须反映。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id='f'><input name='a' value='1'></form></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__f = document.querySelector('#f');\
+             globalThis.__els = globalThis.__f.elements;\
+             var inp = document.createElement('input');\
+             inp.name = 'late'; inp.value = 'L';\
+             globalThis.__f.appendChild(inp);\
+             globalThis.__lenHeld = globalThis.__els.length;\
+             globalThis.__lenFresh = globalThis.__f.elements.length;\
+             globalThis.__namedHeld = (function(){ var v = globalThis.__els.namedItem('late'); return v ? v.value : 'null'; })();\
+             globalThis.__namedFresh = (function(){ var v = globalThis.__f.elements.namedItem('late'); return v ? v.value : 'null'; })();\
+             globalThis.__formLen = globalThis.__f.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__lenHeld)").unwrap().value,
+        "2",
+        "held elements.length 动态 append 后=2（live）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__lenFresh)").unwrap().value,
+        "2",
+        "fresh form.elements.length=2（host 失明须回落 child 链）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__namedHeld)").unwrap().value,
+        "L",
+        "held elements.namedItem('late')=动态控件"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__namedFresh)").unwrap().value,
+        "L",
+        "fresh elements.namedItem('late')=动态控件"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__formLen)").unwrap().value,
+        "2",
+        "form.length 动态 append 后=2"
+    );
+}
+
+#[test]
+fn test_handle_create_tag_cross_execute_t8f() {
+    // t8f（siteopt bilibili r1）：跨 execute 的 detached handle 元素 tag 保持——
+    // createElement('template') 在 execute#1 创建，host `query_tag_from_mutations`
+    // 只查当前批 mutations（生产 apply 后清队，js_dom_bridge.rs:3818）→ execute#2
+    // `_realTag` 双 miss（批查询 + R100 反查——从未挂载无 selector）回落 `_tagFromSel`
+    // 恒 DIV → get trap 的 TEMPLATE `content` 分支 miss → `.content` 落未知属性回退
+    // （""）→ lit/Vue 式 `parent.insertBefore(tpl.content, anchor)` 传字符串抛
+    // R296 TypeError（bilibili 搜索页 hydration 恢复爆发根因，Vue insertStaticContent）。
+    // 修：创建 tag 印章 `_zwHandleCreateTag`（createElement/cloneNode/R368 盖章点；
+    // `_realTag` 兜底消费——spec tagName 不可变，印章无陈旧风险）。
+    // 测试通过 execute 间清空 mutations 队列模拟生产 apply 边界。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='host'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // execute#1：创建 detached template（同 Vue nodeOps 模块级缓存模板时序）
+    sandbox
+        .execute(
+            "globalThis.__tpl = document.createElement('template');\
+             __tpl.innerHTML = '<div class=\"a\">x</div><!--c--><div class=\"b\">y</div>';",
+        )
+        .unwrap();
+    // 模拟生产 apply 边界：mutation 队列清空（CreateElement 记录随之消失）
+    mutations.lock().unwrap().clear();
+
+    // execute#2：tag 保持 TEMPLATE、content 为 fragment 视图、Vue 形态 insertBefore 可用
+    sandbox
+        .execute(
+            "globalThis.__out = (function(){\
+               var out = [];\
+               out.push(__tpl.tagName);\
+               var c = __tpl.content;\
+               out.push(c && typeof c === 'object' ? String(c.nodeType) : 'tos:' + typeof c);\
+               var host = document.createElement('div');\
+               try {\
+                 var r = host.insertBefore(c, null);\
+                 out.push(r === c ? 'frag' : 'nodeType:' + (r && r.nodeType));\
+                 out.push(String(host.childNodes.length));\
+               } catch (_e) { out.push('THROWS:' + _e.message); }\
+               return out.join('|');\
+             })();",
+        )
+        .unwrap();
+    let got = sandbox.execute("String(globalThis.__out)").unwrap().value;
+    let parts: Vec<&str> = got.split('|').collect();
+    assert_eq!(parts[0], "TEMPLATE", "跨 execute 后 tagName 保持 TEMPLATE（印章兜底），got {got}");
+    assert_eq!(parts[1], "11", "跨 execute 后 .content 仍 fragment 视图（nodeType=11），got {got}");
+    assert_eq!(parts[2], "frag", "insertBefore(content, null) 返回 fragment 本身（Vue insertStaticContent 形态），got {got}");
+    assert_eq!(parts[3], "3", "fragment 子节点全部落入 host（div+注释+div），got {got}");
+}
+
+#[test]
 fn test_input_files_filelist_r2830() {
     // R2830：HTMLInputElement.files（空 FileList）。上传表单读 input.files.length / 迭代高频。
     // headless 无真文件 → 空 FileList（length 0 + item→null + 可迭代），让上传 JS 不抛（无文件→0 跳过上传）。

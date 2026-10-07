@@ -135,6 +135,90 @@ fn test_document_collections_r2833() {
 }
 
 #[test]
+fn test_collection_named_item_t8f() {
+    // t8f（siteopt bilibili r1）：HTMLCollection.namedItem（DOM spec
+    // https://dom.spec.whatwg.org/#dom-htmlcollection-nameditem——id 或 name 首匹配，
+    // miss → null）。`_liveQueryCollection`（document.forms/images/scripts/links 全家）
+    // 与 `_selectOptions`（HTMLOptionsCollection，同 id/name 语义）此前手搓 Proxy 缺
+    // namedItem → 站点集合变量 `controls.namedItem(...)` TypeError/undefined 链。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <img id='pic'><img name='byname' id='ibn'>\
+         <form id='f2'></form>\
+         <select id='sel'><option value='o1'>1</option><option value='o2' id='o2id'>2</option>\
+         <option value='o3' name='o3n'>3</option></select>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__typeofNi = typeof document.images.namedItem;\
+             globalThis.__byId = (function(){ var v = document.images.namedItem('pic'); return v ? v.id : 'null'; })();\
+             globalThis.__byName = (function(){ var v = document.images.namedItem('byname'); return v ? v.id : 'null'; })();\
+             globalThis.__miss = (function(){ var v = document.images.namedItem('missing'); return v === null ? 'null' : String(v); })();\
+             globalThis.__formsNi = (function(){ var v = document.forms.namedItem('f2'); return v ? v.id : 'null'; })();\
+             globalThis.__optNiId = (function(){ var v = document.querySelector('#sel').options.namedItem('o2id'); return v ? v.value : 'null'; })();\
+             globalThis.__optNiName = (function(){ var v = document.querySelector('#sel').options.namedItem('o3n'); return v ? v.value : 'null'; })();\
+             globalThis.__optMiss = (function(){ var v = document.querySelector('#sel').options.namedItem('o1'); return v === null ? 'null' : String(v); })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__typeofNi)").unwrap().value,
+        "function",
+        "document.images.namedItem 是函数"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__byId)").unwrap().value,
+        "pic",
+        "images.namedItem 按 id 命中"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__byName)").unwrap().value,
+        "ibn",
+        "images.namedItem 按 name 命中"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__miss)").unwrap().value,
+        "null",
+        "images.namedItem miss → null（spec）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__formsNi)").unwrap().value,
+        "f2",
+        "document.forms.namedItem 按 id 命中"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__optNiId)").unwrap().value,
+        "o2",
+        "options.namedItem 按 option id 命中"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__optNiName)").unwrap().value,
+        "o3",
+        "options.namedItem 按 option name 命中"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__optMiss)").unwrap().value,
+        "null",
+        "options.namedItem value 不参与匹配 → null（Chrome 对照）"
+    );
+}
+
+#[test]
 fn test_image_constructor_r2834() {
     // R2834：HTMLImageElement 构造器 new Image(w,h)——图片预加载 + DOM 挂载高频（WPT css-images /
     // css-backgrounds / content-visibility fixtures 经 new Image() 构造）。旧返 plain object（appendChild 失效、

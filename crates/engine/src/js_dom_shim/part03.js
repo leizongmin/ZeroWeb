@@ -8330,6 +8330,25 @@
         }
       } catch (_e100t) {}
     }
+    // t8f（siteopt bilibili r1）：跨 execute 的 **detached** handle（createElement 产物
+    // 从未挂载）——host `query_tag_from_mutations` 只查当前批 mutations（apply 后清队，
+    // js_dom_bridge.rs query_tag_from_mutations），R100 反查表只锚已应用（有 selector）
+    // 句柄 → `_realTag` 回落 `_tagFromSel(null)` 恒 DIV。lit/Vue 式「createElement
+    // ('template') 早创建、后续 execute 读 `tpl.content`」时序下 get trap 的 TEMPLATE
+    // 分支 miss → `.content` 落未知属性回退（""）→ 站点
+    // `parent.insertBefore(tpl.content, anchor)` 传字符串 → R296 TypeError
+    // （bilibili 搜索页 hydration 恢复爆发根因，Vue insertStaticContent）。
+    // 修：创建时 tag 印章（`_zwHandleCreateTag`，`_zwHandleBirthGen` 同款惰性全局表）。
+    // spec tagName 不可变（https://dom.spec.whatwg.org/#dom-element-tagname），印章无
+    // 陈旧风险；本分支仅在 host 批查询与 R100 反查双 miss 后兜底，既有命中路径零变化。
+    // 换代（__zw_reset_pending_state）不清本表——跨 execute 持久正是目的；导航重建
+    // JS 世界时随世界消亡，无泄漏面。
+    if (handle && !sel && globalThis._zwHandleCreateTag) {
+      try {
+        var _hct = globalThis._zwHandleCreateTag[String(handle)];
+        if (_hct) return _zwAsciiUpper(String(_hct));
+      } catch (_eHct) {}
+    }
     return _tagFromSel(sel);
   }
   // R3254-K3（keyboard goal，2026-09-07）：sel → pending 解析节点归一。insertAdjacentHTML/
@@ -14786,6 +14805,24 @@ return e;
         var list = snapshot();
         if (prop === 'length') return list.length;
         if (prop === 'item') return function(i) { return list[i] || null; };
+        // t8f（siteopt bilibili r1）：namedItem——DOM spec HTMLCollection.namedItem
+        //（https://dom.spec.whatwg.org/#dom-htmlcollection-nameditem）：id 或
+        //（HTML ns 元素）name 属性首匹配，miss → null。document.forms/images 等
+        // 手搓 Proxy 此前缺方法（站点 `controls.namedItem(...)` TypeError/undefined 链）。
+        if (prop === 'namedItem') {
+          return function(name) {
+            var n = String(name);
+            if (n === '') return null;
+            var l = snapshot();
+            for (var i = 0; i < l.length; i++) {
+              var el = l[i];
+              if (!el) continue;
+              try { if (el.getAttribute && el.getAttribute('id') === n) return el; } catch (_eId) {}
+              try { if (el.getAttribute && el.getAttribute('name') === n) return el; } catch (_eNm) {}
+            }
+            return null;
+          };
+        }
         var idx = parseInt(prop, 10);
         if (!isNaN(idx) && String(idx) === String(prop)) return list[idx];
         return list[prop];
@@ -14810,6 +14847,21 @@ return e;
         var list = globalThis.document.querySelectorAll(sel + ' option');
         if (prop === 'length') return list.length;
         if (prop === 'item') return function(i) { return list[i] || null; };
+        // t8f：namedItem——HTMLOptionsCollection 同 HTMLCollection.namedItem 语义
+        //（id 或 name 首匹配，miss → null；option 的 value 属性不参与匹配——Chrome 对照）。
+        if (prop === 'namedItem') {
+          return function(name) {
+            var n = String(name);
+            if (n === '') return null;
+            for (var i = 0; i < list.length; i++) {
+              var el = list[i];
+              if (!el) continue;
+              try { if (el.getAttribute && el.getAttribute('id') === n) return el; } catch (_eId) {}
+              try { if (el.getAttribute && el.getAttribute('name') === n) return el; } catch (_eNm) {}
+            }
+            return null;
+          };
+        }
         if (prop === 'selectedIndex') {
           try { return parseInt(__zw_select_index(sel), 10); } catch (_e) { return -1; }
         }

@@ -4732,7 +4732,14 @@ return _tplContent;
                 if (nh) _nsHandles[nh] = { qualifiedName: srcTag, namespace: _r185SrcNs, htmlUpper: false };
               }
             }
-            if (!nh) nh = __zw_create_element(srcTag);
+            if (!nh) {
+              nh = __zw_create_element(srcTag);
+              // t8f：克隆产物同盖创建 tag 印章（`_realTag` 跨 execute 兜底，见 part03）。
+              try {
+                (globalThis._zwHandleCreateTag = globalThis._zwHandleCreateTag || {})[nh] =
+                  String(srcTag).toLowerCase();
+              } catch (_eHctC) {}
+            }
             // 复制属性（名 + 值）。R3198：handle 源经 `__zw_attr_names_handle`+`__zw_get_attr_handle`，
             // sel 源经 `__zw_attr_names`（latest-wins，自 R3002）+ 值。R3203：sel 源值改走 `__zw_get_attr_lw`
             //（latest-wins，与名源同 lw）——旧纯快照 `__zw_get_attr` 致 `setAttribute('x','v'); cloneNode()` 复制 stale 值
@@ -4947,8 +4954,10 @@ return _tplContent;
                 && !(handle && _isContainerHandle(handle))
                 && typeof __zw_create_element === 'function') {
               try {
-                child.__zwHandle = __zw_create_element(
-                  String(child.tagName || child.nodeName || 'div').toLowerCase());
+                var _r368Tag = String(child.tagName || child.nodeName || 'div').toLowerCase();
+                child.__zwHandle = __zw_create_element(_r368Tag);
+                // t8f：R368 盖章产物同记创建 tag 印章（`_realTag` 跨 execute 兜底，见 part03）。
+                (globalThis._zwHandleCreateTag = globalThis._zwHandleCreateTag || {})[child.__zwHandle] = _r368Tag;
               } catch (_e368st) {}
               // R368：adopt 子树传播——盖章 plain 子的 ownerDocument 重指主 document
               //（spec `concept-node-adopt` 递归 descendants）。R177/R181 的传播分支 gated
@@ -8046,20 +8055,48 @@ return _tplContent;
         }
         // `form.elements`（HTMLFormControlsCollection，R2829）——表单控件集合（jQuery serialize /
         // FormData / 校验库迭代高频）。仅 HTMLFormElement（_realTag==='FORM' gate）；非 form → undefined。
-        // `_formControls(sel)` 查 '*' 全后代客户端按 tag 过滤（tree order）+ namedItem。
+        // `_formControls(sel)` child 链 walk + host 视图合并（tree order，见 part05）。
+        // t8f（siteopt bilibili r1）：**活集合**——spec form.elements 是 live HTMLFormControlsCollection
+        //（https://html.spec.whatwg.org/multipage/forms.html#dom-form-elements），此前返快照数组，
+        // held ref 看不见 hydration 同 turn 插入的控件（namedItem miss → 站点恢复路径
+        // insertBefore(undefined) TypeError）。每次属性读经 `_formControls` 现取（live）；
+        // 集合对象按元素缓存（t8e 同机制，`f.elements === f.elements` 恒等 + 长页零重建）。
         if (prop === 'elements' && _realTag(sel, handle) === 'FORM') {
-          var controls = _formControls(sel);
-          // array-like collection + namedItem（id 或 name 首匹配）。
-          controls.namedItem = function (name) {
-            var n = String(name);
-            for (var i = 0; i < controls.length; i++) {
-              var c = controls[i];
-              if (c && c.id === n) return c;
-              try { if (c && c.getAttribute && c.getAttribute('name') === n) return c; } catch (_e2) {}
+          var _fcKind = (!sel && handle) ? 'h' : 's';
+          var _fcCached = _zwFormCollCache.get(proxy);
+          if (_fcCached && _fcCached.k === _fcKind) return _fcCached.c;
+          var _fcColl = new Proxy({ length: 0 }, {
+            get: function (_t, p) {
+              var list = _formControls(sel);
+              if (p === 'length') return list.length;
+              if (p === 'item') return function (i) { return list[i] || null; };
+              // namedItem（id 或 name 首匹配，miss → null）——现取列表（live）。
+              if (p === 'namedItem') {
+                return function (name) {
+                  var n = String(name);
+                  for (var i = 0; i < list.length; i++) {
+                    var c = list[i];
+                    if (c && c.id === n) return c;
+                    try { if (c && c.getAttribute && c.getAttribute('name') === n) return c; } catch (_e2) {}
+                  }
+                  return null;
+                };
+              }
+              var idx = parseInt(p, 10);
+              if (!isNaN(idx) && String(idx) === String(p)) return list[idx];
+              return list[p];
+            },
+            has: function (_t, p) {
+              var idx = parseInt(p, 10);
+              if (!isNaN(idx) && String(idx) === String(p)) {
+                var list = _formControls(sel);
+                return idx >= 0 && idx < list.length;
+              }
+              return false;
             }
-            return null;
-          };
-          return controls;
+          });
+          try { _zwFormCollCache.set(proxy, { k: _fcKind, c: _fcColl }); } catch (_eFcC) {}
+          return _fcColl;
         }
         // `form.length`（HTMLFormElement）= 控件数；非 form 透传（不拦截）。
         if (prop === 'length' && _realTag(sel, handle) === 'FORM') {

@@ -2628,6 +2628,14 @@
       }
       if (tag.toLowerCase() === 'canvas') return _zwMakeCanvas();
       var handle = __zw_create_element(tag);
+      // t8f（siteopt bilibili r1）：创建 tag 印章——跨 execute 的 detached handle 在
+      // host 批查询（query_tag_from_mutations，apply 后清队）与 R100 反查（仅已应用
+      // 句柄）双 miss 后，`_realTag` 经 `_zwHandleCreateTag` 兜底（见 part03 消费点）。
+      // HTML doc createElement 小写（spec），与 host `create_element` 存储口径一致。
+      try {
+        (globalThis._zwHandleCreateTag = globalThis._zwHandleCreateTag || {})[handle] =
+          String(tag).toLowerCase();
+      } catch (_eHctW) {}
       // uievents-compat 尾簇 9：创建代际印章——insert 路径的跨批悬停风险窗口判据
       //（createElement 产物跨 apply 代际后，镜像侧 handle 可经 refresh_if_html_changed
       // 全量重建失效；同批创建+插入（代际相等）无此窗口）。见 part04 insertBefore
