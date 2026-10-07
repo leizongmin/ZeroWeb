@@ -1,0 +1,33 @@
+# red-M2b-r2.log — 提交树重取 mutation M2b red（全模块三钉，守恒绿面同轮落证）
+# date: 2026-10-07T18:06:18+08:00  HEAD: 2ec7e7b89  branch: slice39-notify-bounded-wait-multitab
+# cmd: cargo test -p zero-renderer --lib page_scripts::bounded_wait_tests
+# product page_scripts.rs sha256(施行时): 83ce88f6cbc9192f9aa24f180c4df227a0974173bbaf5b9f58f0cdfd9ceb110b
+# test bounded_wait_tests.rs sha256: ab700d698cbaf3aad41865bb14dad8df1a7a00b48ddd0ab3e8a3566437567edb
+# wall: 3.81s  exit: 101
+
+
+running 3 tests
+test page_scripts::bounded_wait_tests::apply_generation_state_isolated_across_tab_instances_s39 ... FAILED
+test page_scripts::bounded_wait_tests::apply_generation_bump_lands_after_bounded_wait_timeout_s39 ... ok
+test page_scripts::bounded_wait_tests::drain_timeout_applies_recorded_and_recovers_backlog_s39 ... ok
+
+failures:
+
+---- page_scripts::bounded_wait_tests::apply_generation_state_isolated_across_tab_instances_s39 stdout ----
+
+thread 'page_scripts::bounded_wait_tests::apply_generation_state_isolated_across_tab_instances_s39' (326899) panicked at apps/renderer/src/page_scripts/bounded_wait_tests.rs:226:5:
+tab A 代际推进（A 的 notify 只作用 A 的 sandbox）
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    page_scripts::bounded_wait_tests::apply_generation_state_isolated_across_tab_instances_s39
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 220 filtered out; finished in 1.28s
+
+   Compiling zero-renderer v0.1.0 (/home/lei/work/ZeroWeb/apps/renderer)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.48s
+     Running unittests src/lib.rs (target/debug/deps/zero_renderer-5977e6194b6742d5)
+error: test failed, to rerun pass `-p zero-renderer --lib`
+
+# exit: 101

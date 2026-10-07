@@ -105,3 +105,17 @@ B 再 apply 独立推进且不扰动 A。
 - 门禁全绿：cargo fmt 零 diff、clippy `-D warnings`（v8 腿；环境允许补 quickjs 腿）、
   `make test` ≥ 20,146P + 新 3 腿 / 0F、`make reftest` 704/704、WPT named-access 43P/1F/2T 同位。
 - 无产品行为变更（diff 仅测试 + 模块声明 + 证据）。
+
+## 8. 勘误（评审返修，2026-10-07）
+
+- base 字段：头部记 `29e7c9671` 为卡片落笔时点的 origin/main tip；分支实际 merge-base 为
+  `828306332`（PR #97 合并晚于落笔；分支已随新 tip 重挂，PR body 已披露）。
+- 腿数口径：§7「新 3 腿」实为 **6 条新钉腿**（3 钉 × renderer v8/quickjs 双 feature 腿，
+  `QUICKJS_TEST_CRATES` 含 zero-renderer；make test 20,152P = 20,146P + 6）。
+- 残差②理由更正（评审 testeff-I-3）：「滞留 bump 遇导航 seq 丢弃」**可确定性构造**——
+  bump 经 normal 通道入队（js_worker.rs:391-399），`reset_document_state` 经 prio 通道
+  提交（:591-596），worker 分派臂 prio 先于 normal（:1162 vs :1168）且 reset 臂按 seq
+  清扫 normal 队列（:1452-1467）：忙臂窗内先提交 bump、再提交 reset 即结构保证复现丢弃，
+  非时序竞态。真实约束在观测面：reset 重建 shim context 后 gen 归零，单靠 gen 无法区分
+  「丢弃」与「执行后随 context 销毁」，需 cfg(test) `execution_count`（:1196）补观测断言。
+  未钉维持可接受（丢弃无损 by-design、reset 即等价新鲜，不在本切片主张集），补钉顺延后续切片。
