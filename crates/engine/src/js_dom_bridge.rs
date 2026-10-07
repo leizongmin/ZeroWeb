@@ -494,7 +494,8 @@ fn try_structural_path_fastpath(doc: &Document, selector: &str) -> Option<NodeId
         // tag 段限定 CSS ident 字符域（D1）：引擎把 `div#x` 复合解析为 tag `div` +
         // id `x`（`crates/dom/src/query.rs`），而 HTML 分词器允许字面 `<div#x>` 产生
         // 含 `#` 的 local_name——整串字面比较与引擎语义不同，此类形态必须回落。
-        // 生成端 `local_name` 均在该域内，不影响命中面。
+        // 生成端 local_name 首字符必为 ASCII 字母（解析器 tag open 态要求）；
+        // continuation 域外形态（如含 CJK 的字面 tag）回落引擎仍可解析，仅失加速。
         let mut tag_bytes = tag.bytes();
         let tag_ok = match tag_bytes.next() {
             Some(first) if first.is_ascii_alphabetic() => {
