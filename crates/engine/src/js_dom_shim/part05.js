@@ -12556,7 +12556,28 @@
   ]);
   _defineEventSubclass('PopStateEvent', 'Event', [
     ['state', 'state', null],
+    // M2-S2（navigation-compat）：hasUAVisualTransition（HTML spec popstateevent——init dict
+    // 布尔，缺省 false；WPT PopStateEvent 'Initial value ... must be false' + 合成派发注入面）。
+    ['hasUAVisualTransition', 'hasUAVisualTransition', false],
   ]);
+  // M2-S2：PopStateEvent 接口对象非 new 调用抛 TypeError（WebIDL 接口构造器无 [[Call]]——
+  // WPT PopStateEvent 'constructor called as normal function'）。UIEventCtor109 wrapper 同款
+  //（保 prototype/子类 super() 透传；prototype.constructor 统一为 wrapper 保 `event.constructor
+  // === window.PopStateEvent` 身份面）。
+  var PopStateEventBase = globalThis.PopStateEvent;
+  if (PopStateEventBase) {
+    var PopStateEventCtor = function PopStateEvent(type) {
+      if (!(this instanceof PopStateEventCtor)) {
+        throw new globalThis.TypeError(
+          "Failed to construct 'PopStateEvent': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+      }
+      return PopStateEventBase.apply(this, arguments);
+    };
+    try { Object.defineProperty(PopStateEventCtor, 'name', { value: 'PopStateEvent', configurable: true }); } catch (_ePsNm) {}
+    PopStateEventCtor.prototype = PopStateEventBase.prototype;
+    PopStateEventCtor.prototype.constructor = PopStateEventCtor;
+    globalThis.PopStateEvent = PopStateEventCtor;
+  }
   _defineEventSubclass('StorageEvent', 'Event', [
     ['key', 'key', null], ['newValue', 'newValue', null], ['oldValue', 'oldValue', null],
     ['url', 'url', ''], ['storageArea', 'storageArea', null],

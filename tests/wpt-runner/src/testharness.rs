@@ -3547,6 +3547,20 @@ fn run_any_js_corpus_subdirs(
     filter: Option<&str>,
     case_skipped: fn(&str, &str) -> bool,
 ) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_any_js_corpus_subdirs_with_helpers(wpt_root, subdirs, filter, case_skipped, &[])
+}
+
+/// [`run_any_js_corpus_subdirs`] 的绝对路径 helper 变体（timing
+/// [`timing_absolute_helper_extras`] 同款语义）：`absolute_helpers` 为
+/// `(上游绝对 src, wpt-data 本地相对路径)` 表——`.html` 案 source 引用且本地已拉取时经
+/// inline extras 内联，缺失跳过按真实缺口失败。
+fn run_any_js_corpus_subdirs_with_helpers(
+    wpt_root: &Path,
+    subdirs: &[&str],
+    filter: Option<&str>,
+    case_skipped: fn(&str, &str) -> bool,
+    absolute_helpers: &[(&str, &str)],
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
@@ -3590,7 +3604,27 @@ fn run_any_js_corpus_subdirs(
             let results = if is_any_js {
                 run_any_js_window_case(wpt_root, &relative, &source, &harness_source)
             } else {
-                run_testharness_html(wpt_root, &relative, &source, &harness_source, corpus_case_timeout())
+                let extras: Vec<(String, String)> = absolute_helpers
+                    .iter()
+                    .filter(|(src, _)| source.contains(src))
+                    .filter_map(|(src, local)| {
+                        std::fs::read_to_string(wpt_root.join(local))
+                            .ok()
+                            .map(|content| ((*src).to_string(), content))
+                    })
+                    .collect();
+                let extra_refs = extras
+                    .iter()
+                    .map(|(src, body)| (src.as_str(), body.as_str()))
+                    .collect::<Vec<_>>();
+                run_testharness_html_inner(
+                    wpt_root,
+                    &relative,
+                    &source,
+                    &harness_source,
+                    &extra_refs,
+                    corpus_case_timeout(),
+                )
             };
             cases.push((relative, results));
         }
@@ -3771,12 +3805,26 @@ fn navigation_case_skipped(relative: &str, source: &str) -> bool {
         || source.contains("navigator.serviceWorker")
 }
 
+/// navigation corpus 绝对路径 helper → wpt-data 本地映射（timing
+/// [`TIMING_ABSOLUTE_HELPERS`] 同款——只装被引用且已拉取的，缺失跳过按真实缺口失败）。
+/// location-stringifier 用 `/common/stringifiers.js` 的 `test_stringifier_attribute`。
+/// `/common/test-setting-immutable-prototype.js`（location-prototype-setting）**不装**：
+/// immutable-prototype 面需 exotic [[SetPrototypeOf]]（与 preventExtensions 同族，shim
+/// plain object 未实现）——装了也转真语义 fail，留 M2 后续切片定夺。
+const NAVIGATION_ABSOLUTE_HELPERS: &[(&str, &str)] = &[("/common/stringifiers.js", "common/stringifiers.js")];
+
 /// Run the pinned upstream navigation corpus window subset
 /// （navigation-compat goal M1 / DC-1）。filter 按路径子串过滤（如
 /// `the-history-interface/`、`navigation-api/`、`scroll-to-fragid/`——基线按 corpus
 /// 分类）。
 pub fn run_navigation_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_any_js_corpus_subdirs(wpt_root, NAVIGATION_CORPUS_SUBDIRS, filter, navigation_case_skipped)
+    run_any_js_corpus_subdirs_with_helpers(
+        wpt_root,
+        NAVIGATION_CORPUS_SUBDIRS,
+        filter,
+        navigation_case_skipped,
+        NAVIGATION_ABSOLUTE_HELPERS,
+    )
 }
 
 /// Run the fixed Service Worker M1 core testharness corpus.
