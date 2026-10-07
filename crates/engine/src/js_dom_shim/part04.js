@@ -4955,10 +4955,12 @@ return _tplContent;
                 && !(handle && _isContainerHandle(handle))
                 && typeof __zw_create_element === 'function') {
               try {
-                var _r368Tag = String(child.tagName || child.nodeName || 'div').toLowerCase();
+                var _r368Tag = String(child.tagName || child.nodeName || 'div').replace(/[A-Z]/g, function (_zwC) { return _zwC.toLowerCase(); });
                 child.__zwHandle = __zw_create_element(_r368Tag);
                 // t8f：R368 盖章产物同记创建 tag 印章（`_realTag` 跨 execute 兜底，见 part03）。
-                // 此处 tag 已按既有 ASCII 语义小写（_r368Tag 行），与 host 口径一致。
+                // ASCII-only 小写（与 part06/part04 既有印章写入点同款）对齐 host
+                // `create_element` 的 to_ascii_lowercase——非 ASCII 大写（如 'İ'）host
+                // 原样保留，JS toLowerCase 会展开为多码点致印章与 host 存档分叉。
                 (globalThis._zwHandleCreateTag = globalThis._zwHandleCreateTag || {})[child.__zwHandle] = _r368Tag;
               } catch (_e368st) {}
               // R368：adopt 子树传播——盖章 plain 子的 ownerDocument 重指主 document
@@ -8280,20 +8282,14 @@ return _tplContent;
                   if (_ty === 'checkbox' || _ty === 'radio') {
                     // 未勾选不贡献；勾选取 value 属性，缺省 'on'。
                     if (_c.checked) _pairs.push([_nm, _c.getAttribute('value') != null ? _c.getAttribute('value') : 'on']);
-                  } else if (_ty === 'submit' || _ty === 'image') {
+                  } else if (_ty === 'submit') {
                     // 仅 submitter 按钮贡献（spec：submitter entry）；其余 submit 按钮跳过。
                     // value 属性缺省 → ''（review M2：getAttribute 缺省返 null，直传会
                     // 经 String(null) 序列化出字面量 "null"，兄弟分支同守卫）。
+                    // type=image 不在此列表——Image Button 非 listed element（t8f 返修：
+                    // _formControls walk/host 双侧排除），坐标对走循环后 submitter 直查。
                     if (_zwIsSubmitterControl(_c, submitter)) {
-                      if (_ty === 'image') {
-                        // type=image submitter 贡献 name.x/name.y 坐标对（spec
-                        // §4.10.22.2；非指针激活坐标 0,0——requestSubmit/submit() 语义；
-                        // 二轮 review minor 3：不得产出 name= 基础伪 entry）。
-                        _pairs.push([_nm + '.x', '0']);
-                        _pairs.push([_nm + '.y', '0']);
-                      } else {
-                        _pairs.push([_nm, _c.getAttribute('value') != null ? _c.getAttribute('value') : '']);
-                      }
+                      _pairs.push([_nm, _c.getAttribute('value') != null ? _c.getAttribute('value') : '']);
                     }
                   } else if (_ty === 'button' || _ty === 'reset') {
                     // 非提交按钮不贡献。
@@ -8340,6 +8336,27 @@ return _tplContent;
                 // OUTPUT/KEYGEN/FIELDSET 不贡献（fieldset disabled 传播 FIXME）。
               } catch (_eC) {}
             }
+            // spec §4.10.22.2 步骤 5：submitter 为 input[type=image] → name.x/name.y
+            // 坐标对（非指针激活坐标 0,0——requestSubmit/submit() 语义；二轮 review
+            // minor 3：不得产出 name= 基础伪 entry）。Image Button 非 listed element
+            //（t8f 返修后 _formControls walk/host 双侧排除），坐标 entry 走 submitter
+            // 直查——原列表内分支随排除成为死代码移除；条目按 spec 追加次序置于树序
+            // 列表之后（非指针激活下与坐标同值，树序差异不可观测）。三个调用方均已
+            // 保证 submitter 归属本 form：requestSubmit NotFoundError 校验（R57）/ click
+            // 默认动作自证（form owner 由 submitter 反链求出）/ submit() 传 null。
+            // 回归钉：form submit default navigation r_baidu5（坐标对 entry）。
+            try {
+              if (submitter && String(submitter.tagName || '').toUpperCase() === 'INPUT') {
+                var _subImgTy = String(submitter.getAttribute('type') || '').toLowerCase();
+                if (_subImgTy === 'image') {
+                  var _subImgNm = submitter.getAttribute('name');
+                  if (_subImgNm != null && _subImgNm !== '') {
+                    _pairs.push([_subImgNm + '.x', '0']);
+                    _pairs.push([_subImgNm + '.y', '0']);
+                  }
+                }
+              }
+            } catch (_eImg) {}
             // ④ urlencoded 序列化（spec serialize urlencoded：换行归一 \r\n → 百分号编码 →
             // 空格 '+'；encodeURIComponent 除 `*`-集合差异与 spec 编码集一致）。
             function _encPair(n, v) {

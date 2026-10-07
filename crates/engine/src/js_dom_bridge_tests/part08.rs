@@ -1951,6 +1951,65 @@ fn test_form_elements_iterable_image_exclusion_t8f_revb() {
 }
 
 #[test]
+fn test_form_elements_form_attr_three_state_t8f_revb() {
+    // t8f 审查返修钉（非作者复核建议：walk 过滤 form 属性三态无钉，口径对齐此前仅
+    // 经静态核对确认）——walk（child 链）只在**无 form 属性**（getAttribute → null）
+    // 时按子树归属收集；form=""/form="other" 的 owner 由 form= 决定，由 host 列表
+    //（form_activation.rs form_control_selectors_doc）提供：form="" 解析失败无 owner
+    // 不进任何 form.elements；form="other" 归属 #other（外部关联，walk ∪ host 合并
+    // 的 host 侧职责）；form 指回所在 form（form='fx'）owner 不变、仍在本 form 集合。
+    // spec §4.10.19.1 form association。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id='fx'><input name='a'><input name='b' form=''>\
+         <input name='c' form='fx'><input name='d' form='other'></form>\
+         <form id='other'></form></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__out = (function(){\
+               var fx = document.querySelector('#fx');\
+               var other = document.querySelector('#other');\
+               var out = [];\
+               out.push(String(fx.elements.length));\
+               var seen = [];\
+               for (var it of fx.elements) seen.push(it.name);\
+               out.push(seen.join(','));\
+               out.push(String(fx.elements.namedItem('b') === null));\
+               out.push(String(fx.elements.namedItem('d') === null));\
+               out.push(String(fx.elements.namedItem('c') !== null));\
+               out.push(String(other.elements.length));\
+               out.push(String(other.elements.namedItem('d') !== null));\
+               return out.join('|');\
+             })();",
+        )
+        .unwrap();
+    let got = sandbox.execute("String(globalThis.__out)").unwrap().value;
+    let parts: Vec<&str> = got.split('|').collect();
+    assert_eq!(parts[0], "2", "#fx 集合 = a（子树）+ c（form=fx 自指），got {got}");
+    assert_eq!(parts[1], "a,c", "form=''/form='other' 控件不进 #fx 集合，got {got}");
+    assert_eq!(parts[2], "true", "namedItem('b') 返 null（form='' 无 owner），got {got}");
+    assert_eq!(parts[3], "true", "namedItem('d') 返 null（form=other 归属他表），got {got}");
+    assert_eq!(parts[4], "true", "namedItem('c') 命中（form=fx 自指 owner 不变），got {got}");
+    assert_eq!(parts[5], "1", "#other 集合 = d（form= 外部关联由 host 侧提供），got {got}");
+    assert_eq!(parts[6], "true", "#other.namedItem('d') 命中，got {got}");
+}
+
+#[test]
 fn test_input_files_filelist_r2830() {
     // R2830：HTMLInputElement.files（空 FileList）。上传表单读 input.files.length / 迭代高频。
     // headless 无真文件 → 空 FileList（length 0 + item→null + 可迭代），让上传 JS 不抛（无文件→0 跳过上传）。
