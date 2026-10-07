@@ -1,0 +1,8 @@
+TREE_SHA=402dc9e85eff92b10ba9d2191c8f38d7ab3b342d
+# run3 flaky：testharness::send_keys_dispatches_key_event_sequence_and_suppresses_modifier_keypress（zero-wpt-runner）内嵌 harness 子测试 Timeout，脚本耗时 [3971, 21877, 2173]ms——并发兄弟会话门禁（ZeroWeb-2 integration tests + renderer 进程群 + 本工作区另一 cargo test/clippy 组合）负载尖峰。三遍全量三个不同时序测试，各自 scoped 全绿（run1 SW pending/ready 3/3；run2 renderer onload 5/5；run3 本条 scoped 见下）。先例：s38/s39/s41 rerun。
+SCOPED_RERUN_EXIT=1
+# 订正：zero-wpt-runner 为 bin-only crate，--lib 过滤无效（error: no library targets）；改 --bin 后 scoped 复跑：
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 288 filtered out; finished in 0.93s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 288 filtered out; finished in 0.98s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 288 filtered out; finished in 0.96s
+SCOPED_RERUN2_EXIT=0

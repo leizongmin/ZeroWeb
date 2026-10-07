@@ -1,4 +1,4 @@
-TREE_SHA=595425f093aeb4230e68658e39025644041ee749
+TREE_SHA=402dc9e85eff92b10ba9d2191c8f38d7ab3b342d
     Finished `release` profile [optimized] target(s) in 0.19s
      Running `target/release/zero-wpt-runner testharness-dom browsers/the-window-object/named-access-on-the-window-object`
 Pass html/browsers/the-window-object/named-access-on-the-window-object/existing-prop.html :: A named property must not be set if a property already exists
@@ -19,7 +19,7 @@ Pass html/browsers/the-window-object/named-access-on-the-window-object/named-obj
 Pass html/browsers/the-window-object/named-access-on-the-window-object/named-objects.html :: Check if window['d'] returns the element with id='d'
 Pass html/browsers/the-window-object/named-access-on-the-window-object/named-objects.html :: Check widow[''] when there are some elements with empty id or name attribute
 Timeout html/browsers/the-window-object/named-access-on-the-window-object/named-objects.html :: html/browsers/the-window-object/named-access-on-the-window-object/named-objects.html
-  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 2218], state={"loaded":true,"pending":1,"phase":3,"tests":6}, test_wait=false)
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 2218], state={"loaded":true,"pending":1,"phase":4,"tests":6}, test_wait=false)
 Pass html/browsers/the-window-object/named-access-on-the-window-object/window-named-properties.html :: Static name
 Pass html/browsers/the-window-object/named-access-on-the-window-object/window-named-properties.html :: Static id
 Pass html/browsers/the-window-object/named-access-on-the-window-object/window-named-properties.html :: Static name on the prototype

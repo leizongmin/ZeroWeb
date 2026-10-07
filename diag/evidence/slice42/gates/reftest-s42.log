@@ -1,4 +1,4 @@
-TREE_SHA=595425f093aeb4230e68658e39025644041ee749
+TREE_SHA=402dc9e85eff92b10ba9d2191c8f38d7ab3b342d
 wpt-data 已存在 (tests/wpt-runner/wpt-data, ref=v1.10)；刷新请先 rm -rf 该目录
 检查 reftest-smoke 依赖子域...
   smoke 子域已就绪: css/css-variables
@@ -9,11 +9,7 @@ wpt-data 已存在 (tests/wpt-runner/wpt-data, ref=v1.10)；刷新请先 rm -rf 
 imported font resource closure: PASS
 rustc -O scripts/test-guard.rs -o target/test-guard
 cargo build --release --bin zero-wpt-runner
-   Compiling zero-engine v0.1.0 (/home/lei/work/ZeroWeb/crates/engine)
-   Compiling zero-page-runtime v0.1.0 (/home/lei/work/ZeroWeb/crates/page-runtime)
-   Compiling zero-webview v0.1.0 (/home/lei/work/ZeroWeb/crates/webview)
-   Compiling zero-wpt-runner v0.1.0 (/home/lei/work/ZeroWeb/tests/wpt-runner)
-    Finished `release` profile [optimized] target(s) in 22.08s
+    Finished `release` profile [optimized] target(s) in 0.22s
 ./target/test-guard -- ./target/release/zero-wpt-runner reftest
 Running 704 reftest cases...
 Using 8 test job(s).
@@ -756,7 +752,7 @@ Using 8 test job(s).
   Passed:  704
   Failed:  0
   Pass Rate: 100.0%
-  Duration:  0.27s
+  Duration:  0.26s
 
 ── By Category ───────────────────────────────
 
