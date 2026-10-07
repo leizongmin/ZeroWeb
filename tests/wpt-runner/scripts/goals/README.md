@@ -20,7 +20,10 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 序号 | Goal | WPT 测试集 | 门控/挂账 |
 |------|------|-----------|----------|
 | 10 | [timing-animation-compat](../../../../docs/goal/timing-animation-compat.md) | hr-time; performance-timeline; user-timing; web-animations | 无（轻量热身） |
+| 15 | [webstorage-compat](../../../../docs/goal/webstorage-compat.md) | webstorage | 无（快赢；2026-10-08 立项） |
+| 18 | [cookies-compat](../../../../docs/goal/cookies-compat.md) | cookies | 无（快赢；HTTP 头驱动用例可执行性 M1 甄别） |
 | 20 | [net-api-compat](../../../../docs/goal/net-api-compat.md) | fetch; xhr; url; mimesniff; streams; eventsource | WebSocket 二期挂账 |
+| 21 | [console-compat](../../../../docs/goal/console-compat.md) | console | 无（极小快赢；console 捕获通道 M1 甄别，触面先与 devtools 流协调） |
 | 30 | [encoding-compat](../../../../docs/goal/encoding-compat.md) | encoding | 无（小快赢） |
 | 40 | [html-syntax-compat](../../../../docs/goal/html-syntax-compat.md) | html/syntax; html/dom | 无 |
 | 50 | [uievents-compat](../../../../docs/goal/uievents-compat.md) | uievents; pointerevents | touch/pointerlock/IME 挂账 |
@@ -31,10 +34,17 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 92 | [web-api-batch2](../../../../docs/goal/web-api-batch2.md) | clipboard-apis; fullscreen | 已立项（2026-09-12） |
 | 99 | [webgl-compat](../../../../docs/goal/webgl-compat.md) | webgl | **远期门控**（M2+ 全门控，M1 盘点为唯一自主切片） |
 
+**预留编号（2026-10-08 规划，未立项）**：16 fileapi-compat、17 webmessaging-compat、
+19 performance-api-compat（resource/navigation-timing/event-timing 扩面）、
+22 touch-events-compat、23 selection-compat、24 compression-compat、
+25 html-semantics-compat（主攻候选）。cssom-view/geometry-1 渲染 API 面与
+rendering-compat 工作面重叠，立项前先按 run-rules §9 协调。
+
 ## 与 rally 启动脚本的关系
 
-- `scripts/rally-N-<goal>.sh`（仓库根 scripts/，编号 6-14 对应本目录 10-99）：**启动
-  无人值守推进循环**（`rally run docs/goal/<goal>.md`）——这是 goal 的执行入口。
+- `scripts/rally-N-<goal>.sh`（仓库根 scripts/，编号 6-17 对应本目录 10-99；其中
+  rally-15/16/17 ↔ 本目录 15/18/21）：**启动无人值守推进循环**
+  （`rally run docs/goal/<goal>.md`）——这是 goal 的执行入口。
 - 本目录 `NN-<goal>.sh`：**M1 语料预置**（fetch + 盘点 + 检查单），rally 轮内或
   手动执行均可；两者编号不同（rally-6 ↔ 本目录 10），各脚本头注释互相指向。
 
