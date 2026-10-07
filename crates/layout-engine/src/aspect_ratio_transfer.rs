@@ -15,7 +15,7 @@
 
 use crate::LayoutBox;
 use zero_css_parser::values::{
-    AlignmentValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, LengthValue,
+    AlignmentValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, LengthValue, OverflowValue,
 };
 use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
@@ -80,6 +80,45 @@ fn walk(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
         if (b.height - (target + frame)).abs() > 0.5 && content_w > 0.5 {
             b.content_height = target;
             b.height = target + frame;
+        }
+    }
+    // R4986（css-sizing-4 §4.2 transferred size suggestion·vertical 写入模式臂）：
+    // vertical 容器 plain block + definite 块轴（vertical 下块轴 = 物理宽）+ Auto 内联轴
+    // （物理高）+ AR——taffy 已按 ratio 传递高（block-aspect-ratio-017：w:100 + AR 2/1
+    // → h=50），但不与内容内联尺寸取大：子 h:100 的 inline extent（child bottom 100）
+    // 未参与 max → 应 100×100（内容胜出，§4.1 automatic minimum 近似同上方水平臂）。
+    // 块轴沿物理 x：内联轴（y）生长不推挤沿块轴排列的兄弟，无需位移。滚动容器
+    // （overflow 非 visible）无 content-based minimum（R3765 同语义），保持 taffy 传递值。
+    // https://drafts.csswg.org/css-sizing-4/#aspect-ratio-auto-sizes
+    if let Some(id) = b.node_id
+        && let Some(style) = styles.get(&id)
+        && b.writing_mode.is_vertical_block_flow()
+        && let Some(ratio) = style.aspect_ratio.filter(|&r| r > 0.0)
+        && matches!(style.display, DisplayValue::Block | DisplayValue::FlowRoot)
+        && !b.is_replaced
+        && !b.is_flex_grid_item
+        && !b.is_absolute
+        && !b.is_fixed
+        && resolve_definite(&style.width).is_some()
+        && matches!(style.height, LengthValue::Auto)
+        && matches!(style.overflow_x, OverflowValue::Visible)
+        && matches!(style.overflow_y, OverflowValue::Visible)
+    {
+        let frame_h = b.padding_left + b.padding_right + b.border_left + b.border_right;
+        let frame_v = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+        let content_w = (b.width - frame_h).max(0.0);
+        let transferred = content_w / ratio;
+        // child.y 相对父内容盒；仅 in-flow 子参与内容底边（float/abspos 不撑内联轴）。
+        let child_bottom = b
+            .children
+            .iter()
+            .filter(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
+            .map(|c| c.y + c.height)
+            .fold(0.0_f32, f32::max);
+        let target = transferred.max(child_bottom).max(b.content_height);
+        if target + frame_v > b.height + 0.5 {
+            b.content_height = target;
+            b.height = target + frame_v;
         }
     }
     // R4152（css-sizing-4 §4.1 automatic content-based minimum）：flex/grid 容器
