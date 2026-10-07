@@ -234,10 +234,11 @@ static REG_EPOCH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsiz
 /// 「只增长」/「精确命中」，没有 gen 项会把 pre-drain 视图端出（错视图）。
 /// 未配对 view_gen 换代的 drain 站点（不推快照的排空路径）必须直接 bump 本代际。
 ///
-/// 已知例外的清队站点：`zero-webview` 文档换代对 `shared_mutations` 就地 clear
-/// 且不 bump（webview.rs 注册路径）——其安全性依赖每次脚本执行重注册时装**新
-/// dom_html Arc**（跨代键必失配），而非 gen 失效；且清队与查询同线程无竞窗。
-/// 若未来该注册改为复用 Arc，必须改为走 clear+bump 范式。
+/// 历史例外（PR #94 审查 D1 已收口）：`zero-webview` 文档换代曾对 `shared_mutations`
+/// 就地 clear 且不 bump——视图缓存靠每次重注册装新 dom_html Arc 免疫，但任何只键
+/// 队列的消费方（如 t8c HANDLE_TAG_MEMO）会水位失明（换页后 detached tagName 恒猜
+/// DIV）。现 load_html 已改走 clear+bump 范式；队列消费方另备水位回缩守卫（见
+/// [`HANDLE_TAG_MEMO`]）防未来同类的非配对截断。
 pub static MUT_DRAIN_GEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// mutations 队列 drain 站点调用（见 [`MUT_DRAIN_GEN`]）。
@@ -2648,14 +2649,22 @@ thread_local! {
 // 全队列逆序线性扫——队列随结构操作只增 ⇒ 每次 O(len)，append/remove 循环 O(n²)
 //（沙箱实测 200 append 触发 44 万次查询、占 831ms/1098ms）。sel 侧 R-baidu3 已
 // O(1) 化而 handle 侧漏改，本备忘补齐对称。
-// 键 = (mutations epoch Arc, drain 代际)——tag 是**队列纯函数**（不依赖快照视图，
-// 无 view_gen）；同键下队列只追加 ⇒ 水位 `scanned` 增量扫 [scanned, count)，
-// CreateElement/NS 正序 insert 覆写与逆序首中同为 latest-wins。drain（代际递增，
-// 队列清空）或换 epoch → 全量重建。epoch 内旁路清零（R342 竞窗同类）由水位对
-// 队列长度取 min 防越界（内容以 drain 代际兜底，误服务窗与既有路径同宽）。
+// 键 = (mutations epoch Arc, drain 代际, 注册代际)——tag 是**队列纯函数**（不依赖
+// 快照视图，无 view_gen）；同键下队列只追加 ⇒ 水位 `scanned` 增量扫 [scanned,
+// count)，CreateElement/NS 正序 insert 覆写与逆序首中同为 latest-wins。drain（代际
+// 递增，队列清空）或换 epoch（跨注册 Arc 地址复用 ABA 防御，语义同视图戳 epoch 项）
+// → 全量重建。epoch 内**就地截断**（不 bump 代际的清队站点）由水位守卫兜底：队列
+// 长度回缩到水位之下 ⇒ 旧水位非法，全量重建（PR #94 审查 D1：webview load_html 曾
+// 就地 clear 不 bump，键失明致换页后 detached tagName 恒猜 DIV——该站点已改走
+// clear+bump 范式）。守卫覆盖「截断后、静默重长跨旧水位之前」的查询主形；截断后
+// 不查询即重长跨水位的残余窗不可由长度检测，依赖 clear+bump 范式（非配对截断即
+// 清队站点自身 bug，见 [`MUT_DRAIN_GEN`] 不变式）。
 thread_local! {
     static HANDLE_TAG_MEMO: std::cell::RefCell<
-        Option<((Arc<std::sync::Mutex<Vec<DomMutation>>>, usize, usize), std::collections::HashMap<String, String>)>,
+        Option<(
+            (Arc<std::sync::Mutex<Vec<DomMutation>>>, usize, usize, usize),
+            std::collections::HashMap<String, String>,
+        )>,
     > = const { std::cell::RefCell::new(None) };
 }
 
@@ -2664,19 +2673,30 @@ thread_local! {
 fn handle_tag_from_memo(m: &Arc<std::sync::Mutex<Vec<DomMutation>>>, handle: &str) -> Option<String> {
     let count = m.lock().unwrap_or_else(|e| e.into_inner()).len();
     let drain_gen = MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
+    let reg_epoch = REG_EPOCH.load(std::sync::atomic::Ordering::Relaxed);
     HANDLE_TAG_MEMO.with(|slot| {
         let mut guard = slot.borrow_mut();
-        let valid = guard
+        let mut valid = guard
             .as_ref()
-            .is_some_and(|(k, _)| Arc::ptr_eq(&k.0, m) && k.1 == drain_gen);
+            .is_some_and(|(k, _)| Arc::ptr_eq(&k.0, m) && k.1 == drain_gen && k.2 == reg_epoch);
+        if valid {
+            // 就地截断检测：不 bump 代际的清队使队列回缩到水位之下，旧增量水位
+            // 对新队列失明（新 create 记录落在旧水位之下永不入图）——全量重建。
+            if count < guard.as_ref().expect("memo ensured").0.3 {
+                valid = false;
+            }
+        }
         if !valid {
-            *guard = Some(((Arc::clone(m), drain_gen, 0), std::collections::HashMap::new()));
+            *guard = Some((
+                (Arc::clone(m), drain_gen, reg_epoch, 0),
+                std::collections::HashMap::new(),
+            ));
         }
         let entry = guard.as_mut().expect("memo ensured");
-        if entry.0.2 < count {
+        if entry.0.3 < count {
             let queue = m.lock().unwrap_or_else(|e| e.into_inner());
             // R342 竞窗同类防御：水位与队列长度取 min（旁路清零不越界）。
-            let scanned = entry.0.2.min(queue.len());
+            let scanned = entry.0.3.min(queue.len());
             for rec in &queue[scanned..] {
                 match rec {
                     DomMutation::CreateElement { handle: h, tag } => {
@@ -2692,7 +2712,7 @@ fn handle_tag_from_memo(m: &Arc<std::sync::Mutex<Vec<DomMutation>>>, handle: &st
                     _ => {}
                 }
             }
-            entry.0.2 = queue.len();
+            entry.0.3 = queue.len();
         }
         entry.1.get(handle).cloned()
     })
@@ -2770,6 +2790,38 @@ mod handle_tag_memo_tests {
             tag: "section".into(),
         });
         assert_eq!(handle_tag_from_memo(&m, "__h4").as_deref(), Some("section"));
+    }
+
+    /// PR #94 审查 D1 钉：**就地截断**（清队不 bump 代际——webview load_html 历史
+    /// 形态）下水位守卫必须全量重建。修复前：键 (Arc, drain_gen) 不变、水位残留，
+    /// 新队列 create 记录落在旧水位之下永不入图 → miss → 调用方回落链（换页后同点
+    /// 被清）→ shim 恒猜 DIV。修复后：count 回缩到水位之下 → 重建 → 新页 tag 正确。
+    #[test]
+    fn memo_in_place_truncation_rebuilds_without_drain_bump() {
+        let m: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        // 旧页：积累两个记录，水位 = 2。
+        for (h, t) in [("__h1", "span"), ("__h2", "div")] {
+            m.lock().unwrap().push(DomMutation::CreateElement {
+                handle: h.into(),
+                tag: t.into(),
+            });
+            assert_eq!(handle_tag_from_memo(&m, h).as_deref(), Some(t));
+        }
+        // 换页（D1 形态）：就地 clear，**不 bump** MUT_DRAIN_GEN，同注册窗口。
+        m.lock().unwrap().clear();
+        // 新页首个 create：必须经水位回缩守卫重建后命中（修复前 miss → None）。
+        m.lock().unwrap().push(DomMutation::CreateElement {
+            handle: "__new1".into(),
+            tag: "section".into(),
+        });
+        assert_eq!(
+            handle_tag_from_memo(&m, "__new1").as_deref(),
+            Some("section"),
+            "t8c D1：就地截断不 bump 代际，新页 create 必须仍可解析（水位守卫重建）"
+        );
+        // 旧页条目不得跨截断存活（其记录已不在队列，陈旧图服务即串 tag 面）。
+        assert_eq!(handle_tag_from_memo(&m, "__h1"), None);
+        assert_eq!(handle_tag_from_memo(&m, "__h2"), None);
     }
 }
 
