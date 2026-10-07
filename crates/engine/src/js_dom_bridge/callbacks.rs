@@ -2652,8 +2652,11 @@ thread_local! {
 // 键 = (mutations epoch Arc, drain 代际, 注册代际)——tag 是**队列纯函数**（不依赖
 // 快照视图，无 view_gen）；同键下队列只追加 ⇒ 水位 `scanned` 增量扫 [scanned,
 // count)，CreateElement/NS 正序 insert 覆写与逆序首中同为 latest-wins。drain（代际
-// 递增，队列清空）或换 epoch（跨注册 Arc 地址复用 ABA 防御，语义同视图戳 epoch 项）
-// → 全量重建。epoch 内**就地截断**（不 bump 代际的清队站点）由水位守卫兜底：队列
+// 递增，队列清空）或换 epoch → 全量重建。reg_epoch 项非 ABA 必需（本图持强 Arc
+// 克隆，身份比较无地址复用暴露；handle 又线程本地单调不复用，陈旧条目不可达），
+// 取其键族一致（视图缓存键族同构，见 [`MUT_DRAIN_GEN`] 注）+ 按注册重置封顶陈旧
+// 图跨注册存续——PR #94 复核订正。epoch 内**就地截断**（不 bump 代际的清队站点）
+// 由水位守卫兜底：队列
 // 长度回缩到水位之下 ⇒ 旧水位非法，全量重建（PR #94 审查 D1：webview load_html 曾
 // 就地 clear 不 bump，键失明致换页后 detached tagName 恒猜 DIV——该站点已改走
 // clear+bump 范式）。守卫覆盖「截断后、静默重长跨旧水位之前」的查询主形；截断后
