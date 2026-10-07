@@ -262,15 +262,15 @@ jobs:
           rm -rf $(find "$CARGO_HOME/registry/src" -name "freetype-sys-0.23.0" -type d 2>/dev/null)
           echo "Patch applied."
 
-      # 不带 -p 的构建会在 workspace 根做全成员 feature 统一解析——wpt-runner 的
-      # default = ["v8"] 会点亮 zero-engine/v8，把 v8 crate 拖进所有臂的构建图，
-      # quickjs 臂因没跑 rusty_v8 预下载而在 v8 build.rs 处 panic（2026-08-15 起
-      # weekly 连续 8 周失败）。browser 显式引擎 feature + compositor/decoder 加
-      # -p 限定解析范围，两条路都堵死。
+      # 三条命令都必须带 -p：workspace 根的 --bin 构建会做全成员 feature 统一
+      # 解析——wpt-runner 的 default = ["v8"] 点亮 zero-engine/v8，把 v8 crate 拖进
+      # 构建图，quickjs 臂因没跑 rusty_v8 预下载而在 v8 build.rs 处 panic
+      # （2026-08-15 起连续失败；仅给 browser/renderer 加显式 feature 不够，
+      # 37604698775 实证 v8 仍经统一解析混入）。-p 把解析范围限定到目标包。
       - name: Build release binaries
         run: |
-          cargo build ${{ matrix.browser_features }} --release --bin zero-browser --target ${{ matrix.target }}
-          cargo build ${{ matrix.features }} --release --bin zero-renderer --target ${{ matrix.target }}
+          cargo build -p zero-browser ${{ matrix.browser_features }} --release --bin zero-browser --target ${{ matrix.target }}
+          cargo build -p zero-renderer ${{ matrix.features }} --release --bin zero-renderer --target ${{ matrix.target }}
           cargo build -p zero-compositor -p zero-image-decoder --release --target ${{ matrix.target }}
 
       - name: Import Developer ID certificate

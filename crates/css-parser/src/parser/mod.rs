@@ -166,6 +166,14 @@ fn complex_has_amp_inside_has(complex: &ComplexSelector) -> bool {
     false
 }
 
+/// 嵌套 desugar 选择器列表预算。嵌套规则逐层与父级列表做叉乘（`parent × nested`），
+/// 深链 + 宽列表的病态输入会指数放大叉乘结果（内存/时间双爆——fuzz_css_parser
+/// timeout-e33b1829 定位：280 字节输入 2^k 级放大至 35GB/OOM）。css-nesting-1
+/// Security Considerations 允许实现对此类组合设上限。超限**整条规则丢弃**（返回空
+/// 列表；`compile_parsed_style_rule` 对空 `own` 本就丢弃规则，子嵌套拿空父级连锁
+/// 为空），不做部分截断（部分应用无规范语义）。
+const MAX_DESUGARED_SELECTORS: usize = 1024;
+
 /// 将选择器列表相对父级列表去糖（CSS 嵌套 compile 算法）。
 ///
 /// - 含 `&`：顶层（parent=None）替换为 `:scope`；嵌套替换为各父级化合物（交叉积）。
@@ -191,6 +199,11 @@ fn desugar_selectors(selectors: &[Selector], parent: Option<&[Selector]>) -> Vec
             }
         } else {
             out.push(sel.clone());
+        }
+        // 预算守卫：超限整条丢弃。放每轮 sel 后（而非 push 处）使 inductive 界成立——
+        // 父级 ≤ 预算（上游同此守卫），单 sel 最多再扩 parent.len()，循环末统一裁决。
+        if out.len() > MAX_DESUGARED_SELECTORS {
+            return Vec::new();
         }
     }
     out
