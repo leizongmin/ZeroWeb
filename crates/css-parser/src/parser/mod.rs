@@ -26,6 +26,11 @@ pub struct Parser<'a> {
     /// 结束（已出现样式规则或 @supports 等非前置 at-rule）。序言结束后的 @namespace
     /// 整条无效——消耗但不注册。
     namespace_prologue_ended: bool,
+    /// 当前嵌套样式规则深度（`parse_style_rule_structure(nesting=true)` 递归层）。
+    /// 与 [`MAX_NESTING_STYLE_RULE_DEPTH`] 配合约束 desugar 叉乘的单选择器累计长度
+    ///（深度帽管长度，[`MAX_DESUGARED_SELECTORS`] 管每层数量——fuzz timeout-8480a917
+    /// 实证仅有数量预算时深层链仍可到秒级）。
+    style_rule_depth: usize,
 }
 
 /// 未编译的样式规则（CSS 嵌套中间结构）。
@@ -174,6 +179,13 @@ fn complex_has_amp_inside_has(complex: &ComplexSelector) -> bool {
 /// 为空），不做部分截断（部分应用无规范语义）。
 const MAX_DESUGARED_SELECTORS: usize = 1024;
 
+/// 嵌套样式规则深度上限。仅管每层数量不够：深链使单个选择器的 parts 链累计变长，
+/// desugar 的单次 `prepend_descendant`/`substitute_amp` 成本 O(累计长度)，数量预算
+/// 下仍可到秒级（fuzz timeout-8480a917 实证）。规范同款策略：Blink 的 CSS 嵌套
+/// 解析亦设最大嵌套深度。超深的嵌套规则**整条按畸形处理**（不消费，由调用方
+/// `skip_malformed_qualified_rule` 恢复）。
+pub(crate) const MAX_NESTING_STYLE_RULE_DEPTH: usize = 32;
+
 /// 将选择器列表相对父级列表去糖（CSS 嵌套 compile 算法）。
 ///
 /// - 含 `&`：顶层（parent=None）替换为 `:scope`；嵌套替换为各父级化合物（交叉积）。
@@ -303,6 +315,7 @@ impl<'a> Parser<'a> {
             pos: 0,
             namespace_prefixes: std::collections::HashMap::new(),
             namespace_prologue_ended: false,
+            style_rule_depth: 0,
         }
     }
 
@@ -484,6 +497,22 @@ impl<'a> Parser<'a> {
     /// `ParsedStyleRule` 树（嵌套子规则保留为树形），由 `compile_parsed_style_rule`
     /// 自顶向下线程父级选择器后展平。选择器非法或块缺失时返回 None（不消耗 `{`）。
     fn parse_style_rule_structure(&mut self, nesting: bool) -> Option<ParsedStyleRule> {
+        // 深度帽：超限不消费直接 None，调用方守卫（`pos == pos_before`）触发
+        // skip_malformed_qualified_rule 恢复，整体保持有界。
+        if nesting {
+            if self.style_rule_depth >= MAX_NESTING_STYLE_RULE_DEPTH {
+                return None;
+            }
+            self.style_rule_depth += 1;
+        }
+        let result = self.parse_style_rule_structure_inner(nesting);
+        if nesting {
+            self.style_rule_depth -= 1;
+        }
+        result
+    }
+
+    fn parse_style_rule_structure_inner(&mut self, nesting: bool) -> Option<ParsedStyleRule> {
         let selectors = self.consume_selector_list(nesting)?;
         self.skip_whitespace();
         if !matches!(self.peek(), Token::LBrace) {

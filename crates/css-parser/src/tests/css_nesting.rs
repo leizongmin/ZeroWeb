@@ -411,3 +411,31 @@ fn test_nesting_desugar_fuzz_input_regression() {
     let ss = Parser::parse_stylesheet(input);
     assert!(ss.rules.len() <= 8, "修复后规则数应有界，实际: {}", ss.rules.len());
 }
+
+#[test]
+/// 嵌套深度帽：MAX_NESTING_STYLE_RULE_DEPTH=32 层内的嵌套链存活，第 33 层整条按
+/// 畸形恢复。与 desugar 数量预算互补——深度帽约束单选择器 parts 累计长度。
+/// driving: fuzz_css_parser timeout-8480a917（217 字节输入 1.5s+/sanitizer 档超 5s）。
+fn test_nesting_depth_cap() {
+    let depth = 40;
+    let css = format!("{}color: red;{}", "a { ".repeat(depth), "}".repeat(depth));
+    let ss = Parser::parse_stylesheet(&css);
+    let style_count = ss.rules.iter().filter(|r| matches!(r, Rule::Style(_))).count();
+    // 顶层规则 nesting=false 不计深度；嵌套层 1..=MAX 存活，第 MAX+1 层丢弃。
+    assert_eq!(
+        style_count,
+        crate::parser::MAX_NESTING_STYLE_RULE_DEPTH + 1,
+        "深度帽内层应存活、超深整条丢弃"
+    );
+}
+
+#[test]
+/// fuzz_css_parser timeout-8480a917 原始输入回归（第二个指数路径：深链 + 前导
+/// 组合器嵌套，desugar 数量预算不足以约束——需深度帽配合）。修复前本地 debug 档
+/// 1.5s+（CI sanitizer 档放大超 5s 超时），修复后毫秒级。
+fn test_nesting_depth_cap_fuzz_input_regression() {
+    const FUZZ_INPUT: &[u8] = b"\x00{\x00.\x00\x00.\x00\x00{>{Q,\xef\xbb\xbf~+>-\x00\x00\x00\x00\x00{>Q,\xef\xbb\xbf~+>+\x00-{-,Q{>{;>w-{>{>>w-{\x00.\x00\x00{>Q,\xef\xbb\xbf~+>-\x00\x00\x00\x00\x00{>Q,\xef\xbb\xbf~+>+\x00-{-,Q{>{;>w-{>{>>w-{-,Q{>{;>{-,Q{>{;>w-{>{>>w-{-,Q{>{;>w-{>{>>w-,$;>w-{>{>-,Q{>{;>{-,Q{>{;>w-{>{>>w-{-,Q{>{;>w-{>{>>w-,$;>w-{>{";
+    let input = std::str::from_utf8(FUZZ_INPUT).expect("fuzz 输入应为合法 UTF-8");
+    let ss = Parser::parse_stylesheet(input);
+    assert!(ss.rules.len() <= 40, "修复后规则数应有界，实际: {}", ss.rules.len());
+}
