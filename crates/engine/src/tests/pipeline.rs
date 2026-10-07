@@ -2219,3 +2219,130 @@ fn content_url_pseudo_element_renders_image() {
         "::before content:url() 应产出 100×100 图片图元，实际 {imgs:?}"
     );
 }
+
+/// slice38（PR #93 同族收口）：预算渲染 Done 步换 cached_doc（slotmap 换代）必须连
+/// form live value 表一起清——`form_control_values`/`form_control_compositions` 同按
+/// NodeId 键，旧代键在换代后失锚；不清则经 `form_control_value_overrides()`（表单
+/// 提交快照/reset 消费方）、结构性 apply 的 retained 抢救（restore 锚错节点）、下一
+/// 次 render_html 的 painter 灌值（ghost 文本画进无关 input）三条路径 ABA 污染新
+/// 代文档。与 render_html 尾部三表同清（R100 换代语义）对齐；handle 表清零已由
+/// PR #93（slice37 F1）落地，本钉锁 form 两表同点同清。
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-fe-value
+#[test]
+fn budget_done_step_clears_form_control_state_maps_s38() {
+    use crate::js_dom_bridge::DomMutation;
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    // doc1：预算渲染（AsyncPageLoad 生产同入口）。
+    let mut s1 = BudgetedRenderSession::new(r#"<html><body><input id="a"></body></html>"#, "");
+    loop {
+        match pipeline.advance_budgeted_render(&mut s1, 10_000.0) {
+            BudgetAdvance::Complete => break,
+            BudgetAdvance::InProgress => continue,
+        }
+    }
+    let _ = s1.take_result().expect("doc1 预算渲染产出结果");
+
+    // 用户输入：live value + IME 组合态入表（键 = doc1 代 NodeId；纯表单当前值
+    // 变更走 paint-only 臂，不换代）。
+    let mutations = [
+        DomMutation::SetFormValue {
+            selector: "#a".to_string(),
+            value: "typed".to_string(),
+        },
+        DomMutation::SetFormComposition {
+            selector: "#a".to_string(),
+            text: "yp".to_string(),
+            selection_start: 1,
+            selection_end: 1,
+        },
+    ];
+    pipeline
+        .render_with_dom_mutations(&mutations, "")
+        .expect("表单当前值 apply 成功");
+    assert!(!pipeline.form_control_values.is_empty(), "前置：value 已入表");
+    assert!(
+        !pipeline.form_control_compositions.is_empty(),
+        "前置：composition 已入表"
+    );
+
+    // doc2：不同结构文档预算渲染——Done 步换 cached_doc（被测清零点，与 handle 表
+    // 清零同点同序）。
+    let mut s2 = BudgetedRenderSession::new(r#"<html><body><div id="x">pad</div><input id="b"></body></html>"#, "");
+    loop {
+        match pipeline.advance_budgeted_render(&mut s2, 10_000.0) {
+            BudgetAdvance::Complete => break,
+            BudgetAdvance::InProgress => continue,
+        }
+    }
+    let _ = s2.take_result().expect("doc2 预算渲染产出结果");
+
+    // 换代后三路径消费面必须无 ghost：doc2 从未置过表单值，任何非空都是旧代键
+    // 经 ABA 命中同槽新节点（红线载体为两个表直断；overrides 为消费面旁证）。
+    assert!(
+        pipeline.form_control_values.is_empty(),
+        "预算换代后 form_control_values 不得残留上一代 NodeId 键"
+    );
+    assert!(
+        pipeline.form_control_compositions.is_empty(),
+        "预算换代后 form_control_compositions 不得残留上一代 NodeId 键"
+    );
+    assert!(
+        pipeline.form_control_value_overrides().is_empty(),
+        "预算换代后 live value 覆盖表不得含上一代 ghost 值"
+    );
+}
+
+/// slice38：`render_html_in_rect` 全量换 cached_doc 与 render_html 同 R100 换代语义，
+/// 尾部必须三表同清（handle 表 + form 两表）。该函数当前全仓零调用方（死路径），
+/// 本钉锁定其换代语义，防未来复活时携带 PR #93 同族缺口（旧代 NodeId 经 ABA 命中
+/// 新代同槽节点）。
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-fe-value
+#[test]
+fn render_html_in_rect_swapping_cached_doc_clears_node_id_keyed_maps_s38() {
+    use crate::js_dom_bridge::DomMutation;
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.render_html(r#"<html><body><input id="a"></body></html>"#, "");
+    // 结构性 apply（回填 persistent_handle_nodes）+ 表单当前值（retained restore 后
+    // 仍以新代 NodeId 键存表）。
+    let mutations = [
+        DomMutation::CreateElement {
+            handle: "h1".to_string(),
+            tag: "div".to_string(),
+        },
+        DomMutation::AppendChild {
+            parent_selector: "body".to_string(),
+            child_handle: "h1".to_string(),
+        },
+        DomMutation::SetFormValue {
+            selector: "#a".to_string(),
+            value: "typed".to_string(),
+        },
+    ];
+    pipeline
+        .render_with_dom_mutations(&mutations, "")
+        .expect("结构性 apply 成功");
+    assert!(!pipeline.persistent_handle_nodes.is_empty(), "前置：handle 表已回填");
+    assert!(!pipeline.form_control_values.is_empty(), "前置：value 已入表");
+
+    // 死路径直调：全量换 cached_doc（被测清零点）。
+    let _ = pipeline.render_html_in_rect(
+        r#"<html><body><p>doc2</p></body></html>"#,
+        "",
+        Rect::new(0.0, 0.0, 800.0, 600.0),
+    );
+
+    assert!(
+        pipeline.persistent_handle_nodes.is_empty(),
+        "render_html_in_rect 换代后 handle 表不得残留上一代条目"
+    );
+    assert!(
+        pipeline.form_control_values.is_empty(),
+        "render_html_in_rect 换代后 form_control_values 不得残留上一代键"
+    );
+    assert!(
+        pipeline.form_control_compositions.is_empty(),
+        "render_html_in_rect 换代后 form_control_compositions 不得残留上一代键"
+    );
+}

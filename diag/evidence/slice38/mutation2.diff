@@ -1,0 +1,13 @@
+diff --git a/crates/engine/src/pipeline/mod.rs b/crates/engine/src/pipeline/mod.rs
+index 3e8b3b0a1..a86608422 100644
+--- a/crates/engine/src/pipeline/mod.rs
++++ b/crates/engine/src/pipeline/mod.rs
+@@ -422,6 +422,8 @@ impl RenderPipeline {
+     /// 设置当前文档 URL（导航时由 webview 传入，供相对路径子资源解析）。
+     pub fn set_document_url(&mut self, url: Option<&str>) {
+         self.document_url = url.map(str::to_string);
++        self.form_control_values.clear();
++        self.form_control_compositions.clear();
+     }
+ 
+     /// 当前文档 URL。
