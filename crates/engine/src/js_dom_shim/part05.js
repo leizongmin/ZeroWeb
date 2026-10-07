@@ -10842,23 +10842,29 @@
   // append 后 '[id=x]' 恒 0、parsed setAttribute 后旧 id 仍在）——匹配枚举走
   // getElementById（R125 覆盖表 + pending-ID 索引即时）∪ _zwPendingAdded 扫描
   //（attr 即时）∪ 触发元（attr 面），树序经 R79 compareDocumentPosition。
-  // **边界（FIXME(dynamic-na) 如实申报）**：①注销面仅覆盖本面动态安装值
-  //（`__zwNADynElsStore` 账本）且仅注销触发批的顶层元素——移除子树内已注册
-  // 后代的名保持可解析直至换代回收（slice36 缺陷轮 I-4）；安装期单命中元素
-  // 全局（slice27 面）与 morph 产物保持 stale 到换代回收（slice32 申报钉维持）；
-  // ②名门 = 属性值原文非空串 + own 属性缺席（本面已放开标识符形限制——spec
-  // 名为属性值原文，WPT changing.html 连字符名实证；安装面 transport `|` 分隔
-  // 与属性选择器嵌入约束仍保留标识符门）；③shadow 树内元素未按
-  // document-tree 语义排除（连接性走 `_zwDocContains36` JS 链，shadow host 连入
-  // 文档即真——spec named objects 限 document tree）；④iframe 名不入面（R139
-  // child navigable 委托面，slice33 B-1 口径）；⑤parsed 元素 name 属性脚本改值
-  // 面经 attr 触发元入账，host 原生侧改值（`__zw_mo_notify_native`，kill-switch
-  // 默认 OFF）不触发；⑥【slice37 收口】数据属性安装面固有「delete window.N 后
+  // **边界（FIXME(dynamic-na) 如实申报）**：①【slice40 收口】注销面覆盖本面动态
+  // 安装值（`__zwNADynElsStore` 账本）——触发批逐元 + 移除批账本补偿扫（remFlat
+  // 展开对 parsed 子树后代有缺口，扫面对账本全量重核补齐，slice36 缺陷轮 I-4 修复）；
+  // 安装期单命中元素全局（slice27 面）与 morph 产物保持 stale 到换代回收
+  //（slice32 申报钉维持）；②名门 = 属性值原文非空串 + own 属性缺席（本面已放开
+  // 标识符形限制——spec 名为属性值原文，WPT changing.html 连字符名实证；安装面
+  // transport `|` 分隔与属性选择器嵌入约束仍保留标识符门）；③shadow 树内元素——
+  // slice40 探针实证三面（childList 挂入 / attr 改 id / parsed 移入）均不入册，
+  // spec 正确（钉 = named_access_shadow_tree_excluded_s40；原「_zwDocContains36
+  // JS 链跨 host 即真」理论暴露面实测不成立）；④iframe 名不入面（R139
+  // child navigable 委托面，slice33 B-1 口径）；⑤【slice40 收口】parsed 元素 name
+  // 属性脚本改值面经 attr 触发元入账；host 原生侧改值经 `__zw_mo_notify_native`
+  // attributes 臂 id/name 触发 `_zwNAAttrDynamicSync`（kill-switch
+  // `ZW_MO_HOST_TRIGGER` 2026-09-12 起 default ON，native 通知为生产路径——原
+  // 「默认 OFF」申报过时，一并修正）；⑥【slice37 收口】数据属性安装面固有「delete window.N 后
   // 再读不复活」已随 NPO 化消除——named prop 移入 WindowProperties 原型层
   //（backing + trap），window 级 delete 不再命中 own，再读经 NPO 复活（Chrome
   // 同款；复活面钉 = named_access_recycled_collection_regenerates_s33
   // __r_resurrect；window 级 delete 表达式 ret=false vs Chrome true 为已知偏差，
-  // [[Delete]] 经原型链传播 NPO false 所致，manifest 申报）。
+  // [[Delete]] 经原型链传播 NPO false 所致，manifest 申报）；quickjs 腿 own 面
+  // delete 即逝为引擎分叉固有面（无拦截点；接链会破 QuickJS 变量解析——接线处
+  // 探针申报在案），slice40 评估申报保持；⑥附 L36u 双账本删除条件不对称
+  //【slice40 收口】——`_zwNAUnregisterEl` L36u 删除已无条件对齐 dyn 账本。
   // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
   // https://webidl.spec.whatwg.org/#WindowProperties
   // 动态元素账本（name → 本面安装的元素）——broadening（唯一命中升格集合）与失格
@@ -11022,13 +11028,15 @@
       try { gU36 = b37u ? b37u[k36] : null; } catch (_e36gu) { gU36 = null; }
       if (gU36 === el) {
         try { delete b37u[k36]; } catch (_e36dl) {}
-        var L36u = globalThis.__zwNamedAccessInstalled;
-        if (L36u) { try { delete L36u[k36]; } catch (_e36Lu) {} }
       }
-      // 全局已被脚本改写（gU36 !== el）时不删 globalThis/L36u（不碰脚本自有值），
-      // 本面账本仍无条件清——L36u 该名残留 true 至换代回收，以 L36u 为「本特性
-      // 安装值」判据的路径可能误判（已知边角，FIXME(dynamic-na) ① 附带申报，
-      // slice36 缺陷轮 I-3，未修）。
+      // slice40（RP-3 残余⑥收口）：L36u 删除与 dyn 账本对齐（无条件）——登记语义 =
+      // 「该名当前全局值是本面安装」，元素失格注销即失效，与全局值是否被改写无关。
+      // 修前删除被 gU36 === el 守卫折叠：改写形态（quickjs 腿 b37u=globalThis 脚本
+      // 可覆写；wired 腿同构形态）L36u 残留 true 至换代回收，使回收臂多扫且脚本
+      // 自有元素 expando 有误删角（slice36 缺陷轮 I-3）。b37u（脚本自有值面）删除
+      // 仍仅在 gU36 === el 时执行，不碰脚本自有值。
+      var L36u = globalThis.__zwNamedAccessInstalled;
+      if (L36u) { try { delete L36u[k36]; } catch (_e36Lu) {} }
       delete _zwNADynEls[k36];
     }
   }
@@ -11056,6 +11064,23 @@
         var rn36 = rem36[i36];
         if (!rn36 || rn36.nodeType !== 1) continue;
         try { _zwNAUnregisterEl(rn36); } catch (_e36rm) {}
+      }
+      // slice40（RP-3 残余①收口）：remFlat 展开缺口补偿扫——`_zwHCCollectSubtree` 对
+      // sel 父仅回落 pending 桶 added（R51c），parsed 子树内已动态注册的后代不入
+      // remFlat，其名保持可解析至换代回收（slice36 缺陷轮 I-4，探针实证）。spec
+      // named objects 限当下 document tree（元素断开连接即不再作为 named property
+      // 暴露），此处对本面动态账本全量重核：失格/离树条目经 `_zwNAUnregisterEl`
+      // 同口径注销（含 L36u 对齐删除）。账本个位数常态，O(账本) 仅移除批承担；
+      // 同批 remove+add 移动语义经 `_zwDocContains36` 当下真值自然保留（对齐上方
+      // 逐元注销口径）。
+      // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+      for (var sk40 in _zwNADynEls) {
+        var se40 = _zwNADynEls[sk40];
+        var gone40 = false;
+        try { gone40 = !_zwNAElemMatches(sk40, se40) || !_zwDocContains36(se40); } catch (_e40sw) { gone40 = false; }
+        if (gone40) {
+          try { _zwNAUnregisterEl(se40); } catch (_e40un) {}
+        }
       }
     }
     if (add36 && add36.length && flats.inDoc) {

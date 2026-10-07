@@ -405,3 +405,278 @@ fn npo_child_realm_chain_s37() {
         "child NPO ≠ 主 NPO（per-realm 实例）"
     );
 }
+
+// ── slice40（RP-3 残余池收口）：named access 残余面钉 ─────────────────────────────
+// ①子树后代注销（缺陷修复钉）、⑤native 改值 kill-switch ON 臂（缺陷修复钉）、
+// L36u 双账本删除条件对齐（缺陷修复钉）、②换文档重置 / shadow 排除 / iframe 名
+// （规范行为锁面钉）。证据：diag/evidence/slice40/。
+// https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+
+// ①子树后代注销：parsed 子树内经 attr 面动态注册的后代随整树移除一并失格。spec
+// named objects 限**当下 document tree**——元素断开连接即不再作为 named property
+// 暴露。修前 remFlat 展开对 sel 父仅回落 pending 桶 added（R51c），parsed 后代不入
+// flats → 名保持可解析至换代回收（slice36 缺陷轮 I-4）。对照形态（script 建的子树
+// + 后代）经 _zwHCCollectSubtree 展开面天然覆盖，保持不回退。
+#[test]
+fn named_access_subtree_descendant_unregister_s40() {
+    let mut sandbox = s37_sandbox!(
+        "<html><body><div id='w40'><img name='k40'></div></body></html>"
+    );
+    sandbox
+        .execute(
+            "var w = document.getElementById('w40');
+             var k = document.querySelector('img[name=\"k40\"]');
+             k.setAttribute('name', 'k40d');
+             globalThis.__r_dyn = String(window.k40d === k);
+             document.body.removeChild(w);
+             globalThis.__r_gone = String(!document.getElementById('w40'));
+             globalThis.__r_after = String(typeof window.k40d === 'undefined');
+             var outer = document.createElement('div');
+             var inner = document.createElement('div');
+             inner.setAttribute('id', 'i40');
+             outer.appendChild(inner);
+             document.body.appendChild(outer);
+             globalThis.__r_ctl_before = String(window.i40 === inner);
+             document.body.removeChild(outer);
+             globalThis.__r_ctl_after = String(typeof window.i40 === 'undefined');")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_dyn").unwrap().value,
+        "true",
+        "后代经 attr 面动态注册（子树移除前可解析）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_gone").unwrap().value,
+        "true",
+        "子树整体已离文档树"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_after").unwrap().value,
+        "true",
+        "子树移除后后代动态名失格（spec 断开连接即不再暴露；修前 stale 可解析至换代回收）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_ctl_before").unwrap().value,
+        "true",
+        "对照形态：script 后代注册（remFlat 展开面天然覆盖）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_ctl_after").unwrap().value,
+        "true",
+        "对照形态：script 子树移除注销不回退（_zwHCCollectSubtree 展开路径）"
+    );
+}
+
+// ⑤native 改值 kill-switch ON 臂：`__zw_mo_notify_native` attributes 臂对 id/name
+// 触发动态名重核（host 原生侧改名同代内生效；此前 attr 钩子仅 part04 JS 写路径，
+// native 通知不触达动态名面）。kill-switch `ZW_MO_HOST_TRIGGER` 2026-09-12 起
+// default ON（opt-out `=0`），native 通知是生产路径。钉经真实通知入口驱动：清全局
+// 后仅靠 native attributes 通知恢复解析（JS attr 钩子不参与，唯一触发源 = ON 臂）。
+#[test]
+fn named_access_native_attr_sync_s40() {
+    let mut sandbox = s37_sandbox!("<html><body><div id='n40'></div></body></html>");
+    sandbox
+        .execute(
+            "var el = document.getElementById('n40');
+             globalThis.__r_base = String(window.n40 === el);
+             __zwNADelete('n40');
+             globalThis.__r_cleared = String(typeof window.n40 === 'undefined');
+             __zw_mo_notify_native('#n40', 'attributes', 'id', null, null, null, null, null);
+             globalThis.__r_resync = String(window.n40 === el);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_base").unwrap().value,
+        "true",
+        "基线：parsed id 名安装（静态安装面）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_cleared").unwrap().value,
+        "true",
+        "全局清除后缺席（__zwNADelete 面，part35 s33 同款）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_resync").unwrap().value,
+        "true",
+        "native attributes(id) 通知触发重核 → 名恢复解析（kill-switch ON 臂；修前通知不触达动态名面恒缺席）"
+    );
+}
+
+// ⑥L36u 双账本删除条件对齐：`__zwNamedAccessInstalled` 登记语义 =「该名当前全局值
+// 是本面安装」——元素失格注销即失效，与全局值是否被改写无关。修前删除被
+// `gU36 === el` 守卫折叠：全局被改写时（quickjs 腿 b37u=globalThis 脚本可覆写；
+// wired 腿以 backing 直写同构）L36u 残留 true 至换代回收，使回收臂多扫且脚本自有
+// 元素 expando 有误删角。b37u（脚本自有值面）删除仍仅在 gU36 === el 时执行，
+// 不碰脚本自有值。
+#[test]
+fn named_access_l36_ledger_delete_aligned_s40() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "globalThis.__zwNamedAccessInstalled = {}; // 白盒构造 renderer 登记账本（引擎腿 worker 面缺席）
+             var d = document.createElement('div');
+             d.setAttribute('id', 'l40');
+             document.body.appendChild(d);
+             globalThis.__r_reg = String(globalThis.__zwNamedAccessInstalled.l40 === true);
+             globalThis.__zwNPO.back.l40 = 'own40'; // 模拟「全局值已被改写」形态
+             document.body.removeChild(d);
+             globalThis.__r_dyn_cleared = String(Object.keys(globalThis.__zwNADynElsStore).indexOf('l40') < 0);
+             globalThis.__r_l36_cleared = String(globalThis.__zwNamedAccessInstalled.l40 !== true);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_reg").unwrap().value,
+        "true",
+        "动态注册入 L36u 登记账本"
+    );
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__r_dyn_cleared")
+            .unwrap()
+            .value,
+        "true",
+        "元素离树后动态元素账本清除（既有口径不变）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__r_l36_cleared")
+            .unwrap()
+            .value,
+        "true",
+        "改写形态下 L36u 同步删除（与 dyn 账本对齐；修前残留 true 至换代回收）"
+    );
+}
+
+// ②shadow 排除（现状边界钉）：shadow 树内元素不入 named property 注册表——spec
+// named objects 限 document tree，shadow 树不在其内。三面锁定：script 建元素挂入
+// shadowRoot（childList 面）、shadow 内改 id（attr 面）、parsed 元素移入 shadow
+//（离 light tree 即失格）。slice36 FIXME ③ 申报的理论暴露面（_zwDocContains36 JS 链
+// 跨 shadow host）实测不成立——现状三面均不入册，spec 正确，钉常驻防回退。
+#[test]
+fn named_access_shadow_tree_excluded_s40() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var host = document.createElement('div');
+             document.body.appendChild(host);
+             var sr = host.attachShadow({ mode: 'open' });
+             var s1 = document.createElement('div');
+             s1.setAttribute('id', 'shx40');
+             sr.appendChild(s1);
+             globalThis.__r_append = String(typeof window.shx40 === 'undefined');
+             s1.setAttribute('id', 'shy40');
+             globalThis.__r_attr = String(typeof window.shy40 === 'undefined');
+             var p = document.createElement('div');
+             p.setAttribute('id', 'shz40');
+             document.body.appendChild(p);
+             globalThis.__r_move_before = String(window.shz40 === p);
+             sr.appendChild(p);
+             globalThis.__r_move_after = String(typeof window.shz40 === 'undefined');
+             globalThis.__r_gebi = String(document.getElementById('shx40') === null);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_append").unwrap().value,
+        "true",
+        "shadow 内 id 元素挂入 shadowRoot 不入册（childList 面）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_attr").unwrap().value,
+        "true",
+        "shadow 内改 id 不入册（attr 面）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__r_move_before")
+            .unwrap()
+            .value,
+        "true",
+        "基线：parsed 元素 light tree 内解析"
+    );
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__r_move_after")
+            .unwrap()
+            .value,
+        "true",
+        "移入 shadow 即失格（离 light tree = 断开连接语义）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_gebi").unwrap().value,
+        "true",
+        "getElementById 不达 shadow 内部（采集源结构性排除）"
+    );
+}
+
+// ②iframe 名（现状边界钉，R139 委托通道 slice33 口径）：脚本动态创建 iframe 赋名
+// 后，window.<名> 解析到 contentWindow（R139 委托 + NPO live 扫描），不入动态元素
+// 面账本（slice33 缺陷轮 B-1：误收 iframe 会以元素先占名压制 R139「已占用名跳过」
+// 守卫）。
+#[test]
+fn named_access_iframe_name_delegation_s40() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var f = document.createElement('iframe');
+             f.setAttribute('name', 'ifd40');
+             document.body.appendChild(f);
+             globalThis.__r_not_elem = String(window.ifd40 !== f);
+             globalThis.__r_is_cw = String(!!f.contentWindow && window.ifd40 === f.contentWindow);
+             globalThis.__r_no_dyn = String(Object.keys(globalThis.__zwNADynElsStore).indexOf('ifd40') < 0);")
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__r_not_elem")
+            .unwrap()
+            .value,
+        "true",
+        "iframe 名不解析到 iframe 元素（name 面不含 iframe）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_is_cw").unwrap().value,
+        "true",
+        "iframe 名解析到 contentWindow（R139 委托通道，动态创建同享）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_no_dyn").unwrap().value,
+        "true",
+        "iframe 名不入动态元素账本（slice33 B-1 口径）"
+    );
+}
+
+// ②换文档重置（engine 面）：快照换代钩子清动态注册面 + 换代后注册面对新文档照常
+// 工作（renderer 全链路钉 = renderer_js_worker_named_access_document_reset_s40）。
+// 附申报（不修，超出本切片修复范围）：reset 以 `__zwNADynElsStore = {}` **替换对象**
+// 清账本，而消费面闭包变量（part05 `_zwNADynEls`）持 eval 时点旧引用——替换对闭包
+// 不生效，账本实际清空依赖本面注销路径（slice40 ①补偿扫补齐）与 renderer 回收臂；
+// 语义面无观察差（动态名全局由 js_worker 按 L36 账本回收），留池后续收口。
+#[test]
+fn named_access_reset_registry_functional_s40() {
+    let mut sandbox = s37_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var a = document.createElement('div');
+             a.setAttribute('id', 'rz40');
+             document.body.appendChild(a);
+             globalThis.__r_pre = String(window.rz40 === a);
+             __zw_reset_pending_state();
+             __zw_reset_pending_state();
+             globalThis.__r_store = String(Object.keys(globalThis.__zwNADynElsStore).length === 0);
+             var b = document.createElement('div');
+             b.setAttribute('id', 'rz40b');
+             document.body.appendChild(b);
+             globalThis.__r_post = String(window.rz40b === b);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r_pre").unwrap().value,
+        "true",
+        "换代前动态名解析（基线）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_store").unwrap().value,
+        "true",
+        "快照换代钩子清动态注册面（__zwNADynElsStore 清空）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r_post").unwrap().value,
+        "true",
+        "换代后注册面对新文档照常工作（换文档不聋化）"
+    );
+}

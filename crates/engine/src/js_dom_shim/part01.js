@@ -3977,7 +3977,8 @@
   // `_mo_notify` 单注册表派发（options 过滤 / subtree 冒泡 / oldValue 语义自动获益）。
   // 与 polyfill Proxy-trap 路径去重：排空点在 `sync_render_after_native_dom`（live
   // outerHTML ≠ cached_html 才触发），polyfill apply 路径自更 cached_html 不进该分支。
-  // Rust 侧 kill-switch `ZW_MO_HOST_TRIGGER`（默认 OFF，时序变更门禁约束）。
+  // Rust 侧 kill-switch `ZW_MO_HOST_TRIGGER`（default ON，opt-out 置 `=0`；2026-09-12 ②b 起，
+  // webview.rs mo_host_trigger 判定）。
   // 参数：sel=目标稳定 selector；type=attributes/childList/characterData；attrName/
   // oldValue 透传；addedSels/removedSels = '|' 分隔的子节点稳定 selector 串（逐个经
   // _makeProxy 包 proxy；无身份节点已被 Rust 侧丢弃——spec：unobserved target 不通知）；
@@ -3990,6 +3991,18 @@
     if (type === 'attributes') {
       record.attributeName = attrName;
       if (oldValue != null) record.oldValue = oldValue;
+      // slice40（RP-3 残余⑤收口，kill-switch ON 臂）：host 原生侧 id/name 改值此前
+      // 不触达 Window named access 动态名面（attr 钩子仅 part04 JS 写路径）——spec
+      // named property visibility 按次访问计算，native 改名后新名注册/旧名失格须同
+      // 代内生效。目标 proxy 与 R188 _r188Target 同源（_makeProxy）；detached 目标由
+      // `_zwNAAttrDynamicSync` 内 `_zwDocContains36` 门自然拦下。
+      // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+      if ((attrName === 'id' || attrName === 'name') && typeof _makeProxy === 'function') {
+        try {
+          var _t40n = _makeProxy(sel, null);
+          if (_t40n && typeof _zwNAAttrDynamicSync === 'function') _zwNAAttrDynamicSync(_t40n);
+        } catch (_e40na) {}
+      }
     } else if (type === 'characterData') {
       if (oldValue != null) record.oldValue = oldValue;
       // characterData 的 record.target 须自带（_mo_notify 的 R188 分支跳过 characterData）。

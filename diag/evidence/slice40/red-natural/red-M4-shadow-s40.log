@@ -1,0 +1,5 @@
+thread 'js_dom_bridge::tests::named_access_shadow_tree_excluded_s40' (949390) panicked at crates/engine/src/js_dom_bridge_tests/part38.rs:575:5:
+assertion `left == right` failed: shadow 内 id 元素挂入 shadowRoot 不入册（childList 面）
+  left: "false"
+ right: "true"
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2889 filtered out; finished in 0.06s
