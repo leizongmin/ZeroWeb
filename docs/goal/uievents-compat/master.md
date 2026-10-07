@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M3 尾簇 38——click/dblclick 携指针坐标，corpus 恒等零涟漪）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M3 尾簇 39——utils.js 资产补拉 + 解锁面三连修，corpus 1791P）
 
 ## 当前状态
 
@@ -12,12 +12,17 @@ M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P 
 尾簇 16 1610P → 尾簇 17 1616P → 尾簇 18 1620P → 尾簇 19 1736P → 尾簇 20/21 1738P →
 尾簇 22 1739P → 尾簇 23 1745P → 尾簇 24 1750P → 尾簇 25 1755P → 尾簇 27 1757P →
 尾簇 28 1759P → 尾簇 30 1763P → 尾簇 31 1778P → 尾簇 32 1782P → 尾簇 33 1785P →
-尾簇 34 1787P → 尾簇 35 1790P → 尾簇 37 **1790P/174F（+1571 累计）**
-（corpus：**1790P/174F/95TO**，`TIME_LIMIT=3600`——layer-coords-transform **1F→1P**
-（尾簇 37——layerX/layerY 反射，shim + native 双路径）；总册 2059 与 HEAD 基线
-重跑逐条恒等（仅 layer 案翻转 + 2 条尾随空格名变体），尾簇 35 账册 2060 总册
-未复现属核算漂移（tail-4/24 先例）——
-[evidence/2026-10-07-m3-tail37.md](evidence/2026-10-07-m3-tail37.md) 漂移归因节）；
+尾簇 34 1787P → 尾簇 35 1790P → 尾簇 37 1790P/174F → 尾簇 38 1790P/174F →
+尾簇 39 **1791P/173F（+1572 累计）**
+（corpus：**1791P/173F/96TO**，`TIME_LIMIT=3600`——尾簇 39：utils.js 资产补拉
+解锁三 page-threw 案 + 解锁面三连修（constructor 身份/composed/cancelable），
+`uievents/mouse/attributes.html` file-Fail→**named Pass**，逐条 diff 仅 3 文件
+翻转零涟漪——[evidence/2026-10-07-m3-tail39.md](evidence/2026-10-07-m3-tail39.md)；
+尾簇 37：layer-coords-transform **1F→1P**（layerX/layerY 反射，shim + native
+双路径；总册漂移已归因——
+[evidence/2026-10-07-m3-tail37.md](evidence/2026-10-07-m3-tail37.md)）；
+尾簇 38：click/dblclick 携指针坐标（corpus 恒等零涟漪——
+[evidence/2026-10-07-m3-tail38.md](evidence/2026-10-07-m3-tail38.md)）；
 **wheel 族 3 案全绿**（尾簇 35——Actions scroll 步接通 + WheelEvent 派发）；textInput 族 24P 全绿
 （上轮 22P/1F/1TO：api CE execCommand 案 Pass + enter-textarea CE 案 Pass）；
 其余零回归。尾簇 33 的 textContent 同步可见性挂账解明并修复：根因 = `'value' in`
@@ -63,11 +68,25 @@ selection key 存活面 +14**（见下节与
 [evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)（尾簇 6b+6c 后）。
 门禁：fmt 无 diff + clippy（quickjs 面，-D warnings）EXIT=0 + shim 拼接
 node --check 全绿 + workspace 测试全绿（51 result 块 0 failed）+ corpus 全量
-**1790P/174F/95TO**（尾簇 38 跑与尾簇 37 跑**逐条恒等**——click 坐标补齐零
-涟漪；总册 2059 双跑一致）+ reftest **704/704（failed 0）**（尾簇 37 复核；
-尾簇 38 零渲染面改动复用）。
-make test 末段在并行 clone 验收负载下偶发超 900s guard 窗（复跑绿——tail-37
-记录的负载伪影同型）；历史（尾簇 34 后）：1787P/176F/96TO。
+**1791P/173F/96TO**（尾簇 39——逐条 diff 仅 3 文件翻转零涟漪）+ reftest
+**704/704（failed 0）**（尾簇 37 复核；38/39 零渲染面改动复用）。
+make test 末段在并行 clone 验收负载下偶发超 900s guard 窗 / 2s 窗 flake
+（复跑/单跑绿——tail-37 记录的负载伪影同型）；历史（尾簇 34 后）：
+1787P/176F/96TO。
+
+**M3 尾簇 39（2026-10-07，本轮）——utils.js 资产补拉 + 解锁面三连修（1790P→1791P）**。
+goal 脚本补 `fetch_raw "uievents/mouse/resources/utils.js"`（目录列举只收
+.html，attributes / cancel-mousedown-in-subframe / mousemove_prevent_default_
+action 三案 import 该资源 page-threw 各折 1 条文件级 Fail——tail-30 人工补拉
+先例的脚本化）。解锁面断言链逐位修三件（part05/06）：① MouseEvent constructor
+身份统一（R109 WrappedME own non-enumerable 覆盖，tail-11 PEM3Wrapped 同款）；
+② composed 随 bubbles 缺省（mouse 分支补 `composed: _mBub`——PointerEvent 分支
+同款已有）；③ cancelable 显式透传 + enter/leave 缺省 false（`_mCan` 镜像
+`_pCan`）。attributes.html file-Fail→**named Pass**；另两案转具名余挂：
+mousemove_prevent_default 2F（selectionchange/dragstart 默认动作——selection/
+DnD 域）、cancel-mousedown-in-subframe TO（iframe 子框架消息路由域）。
+composed/cancelable 全 corpus 零涟漪（逐条 diff 仅 3 文件）。详见
+[evidence/2026-10-07-m3-tail39.md](evidence/2026-10-07-m3-tail39.md)。
 
 **M3 尾簇 38（2026-10-07，本轮）——UA click/dblclick 携指针坐标（corpus 恒等零涟漪）**。
 `__zw_pointer_up_sequence` 的 chorded click/主 click/dblclick 三分支 init dict
@@ -645,9 +664,12 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 - **M3 尾簇 37（2026-10-07，6b8626f6a）**：layerX/layerY 反射（shim props 注册表 +
   `_zwMouseCoordInit` 派生 / native 模板派生对 + 四面单测）。layer-coords-transform
   1F→1P；HEAD 基线重跑漂移归因（总册 2059 双跑恒等）。
-- **M3 尾簇 38（2026-10-07，本轮）**：UA click/dblclick 携指针坐标（up-sequence
+- **M3 尾簇 38（2026-10-07，53eee8dfe）**：UA click/dblclick 携指针坐标（up-sequence
   三分支 init dict 补 clientX/clientY + up-sequence 直驱单测）。corpus 逐条恒等
   （1790P/174F/95TO，零涟漪）。
+- **M3 尾簇 39（2026-10-07，本轮）**：utils.js 资产补拉（goal 脚本 fetch_raw）
+  + 解锁面三连修（constructor 身份 / composed / cancelable）。
+  attributes.html file-Fail→named Pass；1790P→1791P。
 
 ## 下一步计划
 

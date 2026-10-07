@@ -12241,6 +12241,19 @@
         if (oM.composed != null) {
           try { inst.composed = !!oM.composed; } catch (_eMc) {}
         }
+        // uievents-compat 尾簇 39：constructor 身份统一（tail-11 PEM3Wrapped 同款）
+        // ——R109 包装接管 globalThis.MouseEvent 后，native 模板产物 `.constructor`
+        // 仍指 native 模板函数（prototype.constructor 不经 wrapper），`e.constructor
+        // === window.MouseEvent`（= 本 wrapper）恒失配（WPT uievents/mouse/
+        // attributes.html「should use a MouseEvent constructor」断言面——utils.js
+        // 资产补拉后 page-threw 解除、断言首度暴露）。own non-enumerable 覆盖为
+        // wrapper（原型链 instanceof 不受影响）；子类 super()（new.target ≠ 本
+        // wrapper）不盖——子类 `.constructor` 语义保持。
+        try {
+          if (new.target === WrappedME) {
+            Object.defineProperty(inst, 'constructor', { value: WrappedME, writable: true, configurable: true, enumerable: false });
+          }
+        } catch (_eCtor39) {}
         return r !== undefined ? r : inst;
       };
       try { Object.defineProperty(WrappedME, 'name', { value: 'MouseEvent', configurable: true }); } catch (_eNm109) {}

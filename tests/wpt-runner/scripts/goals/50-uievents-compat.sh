@@ -19,5 +19,10 @@ goals_fetch_all
 #（click-order/mouseover-out/mousemove-between 等），首轮 fetch 因深度限制缺失。
 fetch_dir_html "uievents/order-of-events/mouse-events"
 fetch_dir_html "uievents/order-of-events/focus-events"
+# 尾簇 39（2026-10-07）：子目录资源文件——attributes / cancel-mousedown-in-subframe /
+# mousemove_prevent_default_action 三案 import `resources/utils.js`（目录列举只收
+# .html，资源文件漏拉 → 三案 page-threw「script fetch failed」，各折 1 条文件级
+# Fail）。同 tail-30 textInput support/ 人工补拉先例，此处脚本化（幂等 + pin）。
+fetch_raw "uievents/mouse/resources/utils.js"
 goals_inventory
 goals_next_steps "${GOAL}"

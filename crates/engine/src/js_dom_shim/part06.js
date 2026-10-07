@@ -12012,10 +12012,23 @@
       // 显式 detail.bubbles 覆盖缺省（enter/leave false，其余 true）。
       var _mBub = (detail && detail.bubbles != null) ? !!detail.bubbles
         : (type !== 'mouseenter' && type !== 'mouseleave');
+      // uievents-compat 尾簇 39：cancelable 显式透传 + enter/leave 缺省 false
+      //（UI Events——mouseenter/leave 不可取消，PointerEvent 分支 `_pCan` 同款；
+      // 内部跨界机制本就显式传 cancelable:false，缺省面此前被硬编码 true 压制
+      // ——WPT uievents/mouse/attributes.html「mouseenter.cancelable attribute」
+      // 断言面）。
+      var _mCan = (detail && detail.cancelable != null) ? !!detail.cancelable
+        : (type !== 'mouseenter' && type !== 'mouseleave');
       var _mMod8 = _zwModInit(detail);
       ev = new MouseEvent(type, {
         bubbles: _mBub,
-        cancelable: true,
+        // uievents-compat 尾簇 39：composed 随 bubbles 缺省（UI Events——mouseover/
+        // out/move/down/up/click/auxclick/contextmenu/dblclick 冒泡且穿越 shadow
+        // 边界 composed true；mouseenter/leave 双 false。PointerEvent 分支已带
+        // `composed: _pBub` 同款——WPT uievents/mouse/attributes.html
+        // 「mouseover.composed attribute」断言面，utils.js 资产补拉后首度暴露）。
+        composed: _mBub,
+        cancelable: _mCan,
         clientX: (detail && typeof detail.clientX === 'number') ? detail.clientX : 0,
         clientY: (detail && typeof detail.clientY === 'number') ? detail.clientY : 0,
         button: (detail && typeof detail.button === 'number') ? detail.button : 0,
