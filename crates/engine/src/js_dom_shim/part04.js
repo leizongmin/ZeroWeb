@@ -1442,6 +1442,19 @@ return _tplContent;
           // HTMLCollection（含 R38 namedItem 空串守卫）。_splitSelectors 已 .map(_wrapSelector) 返 proxy 数组。
           // js-dom M4 R81：handle 元素（createElement 容器）从融合 childNodes 过滤元素子（pending
           // 子可见——WPT Node-properties testDiv.children[0..5]；host 回调只对 sel-based 有意义）。
+          // t8e（siteopt bilibili r1）：**集合对象缓存**。此前每次 getter 访问全量重建
+          //（slice + 逐子 trap 读 nodeType 过滤 + Proxy/闭包构造）并向 _zwLiveCollections
+          // 注册一个新集合（该表仅快照换代清空）——长驻页轮询器逐索引迭代 `children[i]` 时
+          // O(n)/读（沙箱微基准 15.8ms/次@千子父）且注册表无界增长，每次变异全表扫
+          // O(集合×元素)（bilibili e() ~800ms/5s 稳态块的实证机制）。修复：同元素同分支
+          // 返回同一活集合（DOM Standard collection 缓存语义 + 浏览器实况
+          // `el.children === el.children` 恒 true）。活语义不变——缓存集合仍在
+          // _zwLiveCollections 由 _zwHCLiveInvalidate 写侧维护（R358/R333 门）；换代清缓存
+          //（__zw_reset_pending_state，R357 同点）。键含分支形态（h=handle/s=sel）：R100
+          // 锚回后元素从 handle-only 转 sel 融合视图，旧分支集合不可跨形态复用。
+          var _chKind = (!sel && handle) ? 'h' : 's';
+          var _chCached = _zwChildrenCollCache.get(proxy);
+          if (_chCached && _chCached.k === _chKind) return _chCached.c;
           if (!sel && handle) {
             var _r81Kids = (function () {
               var _cl = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(sel, handle) : null;
@@ -1454,13 +1467,15 @@ return _tplContent;
             // R358（js-dom M1）：handle 容器 scoped liveSpec——held 集合随 append/remove
             // 反映（WPT live collection 断言面）；快照换代由 `__zw_reset_pending_state`
             // 清桶（R357 被哨兵拦截的 stale 根因已消）。
-            return _zwMakeCollection(_r81Kids.filter(function (k) { return k && k.nodeType === 1; }), true, {
+            var _r81Coll = _zwMakeCollection(_r81Kids.filter(function (k) { return k && k.nodeType === 1; }), true, {
               matches: function (el358ch) {
                 return !!el358ch && el358ch.nodeType === 1;
               },
               scopeHandle: handle,
               scopeSel: null,
             });
+            try { _zwChildrenCollCache.set(proxy, { k: _chKind, c: _r81Coll }); } catch (_eChC1) {}
+            return _r81Coll;
           }
           // R318（js-dom M4）：sel 父优先走融合 childNodes 视图（同 childElementCount 的
           // R317 路由——同 turn append 后立即可见；WPT Element-children edge cases 在
@@ -1478,17 +1493,31 @@ return _tplContent;
               // length 增长，旧恒快照值）。R357 被哨兵拦截的 stale 根因 =
               // `__zw_reset_pending_state` 缺失（SetDomSnapshot 换代不清桶）；现挂钩后
               // 桶残留随换代清空，R333 门（mutation 容器 === 作用域容器）继续防跨容器。
-              return _zwMakeCollection(_r318ek, true, {
+              var _r318Coll = _zwMakeCollection(_r318ek, true, {
                 matches: function (el358c) {
                   return !!el358c && el358c.nodeType === 1;
                 },
                 scopeHandle: null,
                 scopeSel: sel || null,
               });
+              try { _zwChildrenCollCache.set(proxy, { k: _chKind, c: _r318Coll }); } catch (_eChC2) {}
+              return _r318Coll;
             }
           }
-          return sel && typeof __zw_element_children === 'function'
-            ? _zwMakeCollection(_splitSelectors(__zw_element_children(sel)), true) : _zwMakeCollection([], true);
+          // t8e：fallback（空 children / _childNodeList 缺位）也挂 liveSpec 入维护网并
+          // 入缓存——无 liveSpec 的缓存空集合不被 _zwHCLiveInvalidate 维护，「先读空
+          // children 后 append」页面模式会永久 stale。matches/作用域与 R318 同款。
+          var _chFb = (sel && typeof __zw_element_children === 'function')
+            ? _zwMakeCollection(_splitSelectors(__zw_element_children(sel)), true, {
+                matches: function (el358f) {
+                  return !!el358f && el358f.nodeType === 1;
+                },
+                scopeHandle: null,
+                scopeSel: sel || null,
+              })
+            : _zwMakeCollection([], true);
+          try { _zwChildrenCollCache.set(proxy, { k: _chKind, c: _chFb }); } catch (_eChFb) {}
+          return _chFb;
         }
         if (prop === 'firstElementChild' || prop === 'lastElementChild' || prop === 'childElementCount') {
           // R2927：容器 handle（shadow/fragment）从 registry 读元素子（无 selector，须 registry）。
