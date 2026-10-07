@@ -112,14 +112,14 @@ jobs:
     query:
       session_reuse: false
 
-  # 每晚 21:00 与凌晨 3:00：手动触发 main CI，失败则修复并提交（claude-glm）
+  # 每晚 21:00 与凌晨 3:00：手动触发 main CI，并检查 weekly/pages 最近运行，失败则修复并提交（claude-glm）
   - id: "ci-watchdog"
     enabled: true
     schedule: "0 21,3 * * *"
     command: "rally"
     args:
       - "query"
-      - "守护 main 分支 CI：① 用 gh workflow run ci.yml 手动触发 main 的 CI（gh 已登录；--ref main）；② 轮询 gh run view <run_id> 直到完成（build-and-test / benchmarks / smoke）；③ 若有失败 job，分析失败原因——修复能自主修复的（编译错误、测试失败、脚本问题），遵循 docs/rally/run-rules.md 提交规则（cargo fmt/clippy、make test、lei-pre-commit-guard）提交并推送到 main，然后重新触发 CI 确认；④ 已知预存失败（与本次变更无关的既有 CI 问题）记录到 master.md 不强行修复；⑤ 全部通过或确认无自主可修项后输出 DONE。"
+      - "守护 main 分支 CI 与发布流水线：① 用 gh workflow run ci.yml 手动触发 main 的 CI（gh 已登录；--ref main）；② 轮询 gh run view <run_id> 直到完成（build-and-test / benchmarks / smoke）；③ 若有失败 job，分析失败原因——修复能自主修复的（编译错误、测试失败、脚本问题），遵循 docs/rally/run-rules.md 提交规则（cargo fmt/clippy、make test、lei-pre-commit-guard）提交并推送到 main，然后重新触发 CI 确认；④ 已知预存失败（与本次变更无关的既有 CI 问题）记录到 master.md 不强行修复；⑤ weekly.yml 最近一次运行若为 failure（in_progress 则跳过本轮，下轮再看）：按 ③ 同样流程诊断修复（构建矩阵失败先在本地复现对应平台/feature 组合——zero-browser 用 --features v8 或 --features quickjs 显式构建、compositor/image-decoder 加 -p 限定解析范围），修复提交后 gh workflow run weekly.yml --ref main（不带输入参数 = 完整构建矩阵）并轮询到 Publish weekly release 完成确认发布成功；⑥ pages.yml 最近一次运行若为 failure：多为 docs/compat/trends/wpt-suites.csv 列数错位（修复须遵循该文件头维护约定，尤其第 4 条：字段内禁半角逗号、本文件不做引号转义），修数并本地跑通 scripts/generate-website-metrics.py 后普通推送 main 触发重部署，确认 deploy 成功；⑦ 全部通过或确认无自主可修项后输出 DONE。"
       - "-w"
       - "."
       - "--agent-command"
@@ -127,9 +127,9 @@ jobs:
     cwd: "$DIR/../.."
     concurrency: "skip"
     start: "next"
-    # 重 job：触发 CI + 轮询（一轮 40-60m）+ 失败修复（本地门禁）+ 复触发，可能两轮 CI。
-    # 历史自然完成最长 116m，多次在 2h 被内层超时掐死时仍在正常工作。
-    timeout_seconds: 14400
+    # 重 job：触发 CI + 轮询（一轮 40-60m）+ 失败修复（本地门禁）+ 复触发；⑤⑥ 命中时
+    # 再加一轮 weekly 构建（60-90m）或 pages 重部署。历史自然完成最长 116m。
+    timeout_seconds: 18000
     query:
       session_reuse: false
 
