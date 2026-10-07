@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M4 尾簇 40——corpus 173F/96TO 挂账定稿编目）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M4 尾簇 41——CANDIDATE 池收口，DC-1~4 全满足，goal Done）
 
 ## 当前状态
 
@@ -13,8 +13,8 @@ M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P 
 尾簇 22 1739P → 尾簇 23 1745P → 尾簇 24 1750P → 尾簇 25 1755P → 尾簇 27 1757P →
 尾簇 28 1759P → 尾簇 30 1763P → 尾簇 31 1778P → 尾簇 32 1782P → 尾簇 33 1785P →
 尾簇 34 1787P → 尾簇 35 1790P → 尾簇 37 1790P/174F → 尾簇 38 1790P/174F →
-尾簇 39 **1791P/173F（+1572 累计）**
-（corpus：**1791P/173F/96TO**，`TIME_LIMIT=3600`——尾簇 39：utils.js 资产补拉
+尾簇 39 1791P/173F → 尾簇 41 **1794P/170F（+1575 累计）**
+（corpus：**1794P/170F/96TO**，`TIME_LIMIT=3600`——尾簇 39：utils.js 资产补拉
 解锁三 page-threw 案 + 解锁面三连修（constructor 身份/composed/cancelable），
 `uievents/mouse/attributes.html` file-Fail→**named Pass**，逐条 diff 仅 3 文件
 翻转零涟漪——[evidence/2026-10-07-m3-tail39.md](evidence/2026-10-07-m3-tail39.md)；
@@ -66,13 +66,26 @@ selection key 存活面 +14**（见下节与
 [evidence/2026-10-04-m3-tail5.json](evidence/2026-10-04-m3-tail5.json)（尾簇 5 后）、
 [evidence/2026-10-04-m3-tail6a.json](evidence/2026-10-04-m3-tail6a.json)（尾簇 6a 后）、
 [evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)（尾簇 6b+6c 后）。
-门禁：fmt 无 diff + clippy（quickjs 面，-D warnings）EXIT=0 + shim 拼接
-node --check 全绿 + workspace 测试全绿（51 result 块 0 failed）+ corpus 全量
-**1791P/173F/96TO**（尾簇 39——逐条 diff 仅 3 文件翻转零涟漪）+ reftest
-**704/704（failed 0）**（尾簇 37 复核；38/39 零渲染面改动复用）。
-make test 末段在并行 clone 验收负载下偶发超 900s guard 窗 / 2s 窗 flake
-（复跑/单跑绿——tail-37 记录的负载伪影同型）；历史（尾簇 34 后）：
-1787P/176F/96TO。
+门禁：`make test` **EXIT=0**（尾簇 41 后一次通过）+ clippy（quickjs 面，
+-D warnings）EXIT=0 + fmt 无 diff + shim 拼接 node --check 全绿 + corpus 全量
+**1794P/170F/96TO**（尾簇 41——逐条 diff 仅 3 文件翻转零回归）+ reftest
+**704/704（failed 0）**（尾簇 37 复核；38/39/41 零渲染面改动复用）+
+**product-smoke EXIT=0**（diff 15.40% ≤ 20% + struct-check PASS——本 goal
+首跑，DC-4 M4 列项补齐）。历史（尾簇 34 后）：1787P/176F/96TO。
+
+**M4 尾簇 41（2026-10-07，本轮）——CANDIDATE 池收口，DC-1~4 全满足，goal Done**。
+三修：① tilt 跨集部分给值互不派生（`_zwPointerTiltInit` 前置分支——给定保持/
+缺省落默认，单集给值仍整集派生）；② pointer 层跨界事件携源 pointerType
+（`_zwLayerCross`——touch/pen 流边界事件此前缺省标 mouse）；③ 处理站内
+release 延迟生效三态（'armed'/'skip'/'fire' 相位 + 派发序号一次性对齐 +
+up 序列入口站传参）+ 站外入口站 lost handler 重捕获抑制（五流验证收敛，
+修复 capture_{touch,mouse}_and_release_at_got_capture + lostpointercapture_
+is_first + pointerrawupdate_changes_pointer_capture 六子测）。重归类 5F：
+mouse_capture_change_hover（capture 驱动 `:hover` 计算样式——style-system 面）、
+multiple_pointerover（多指针状态机模型面）、events_after_lostpointercapture_
+remove（runner 同代命中缓存 + Chromium 自注 bug 域）——进挂账定稿清单。
+**DC-1~4 全满足**（DC-4 product-smoke 首跑通过），挂账定稿完成，goal Done。
+详见 [evidence/2026-10-07-m4-tail41.md](evidence/2026-10-07-m4-tail41.md)。
 
 **M3 尾簇 39（2026-10-07，本轮）——utils.js 资产补拉 + 解锁面三连修（1790P→1791P）**。
 goal 脚本补 `fetch_raw "uievents/mouse/resources/utils.js"`（目录列举只收
@@ -562,7 +575,7 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 | P1 | uievents + pointerevents corpus 导入 + 基线 | ✅ 2026-10-03 |
 | P2 | 鼠标事件序/坐标/click 组合语义修齐 | ✅ 核心修齐（2026-10-07——事件序/坐标/click 组合/layer 反射/click 坐标/TextEvent 域全落地，见已完成切片尾簇 1-39；**余挂 = 尾簇 40 挂账定稿清单**，无 in-stream 必修面） |
 | P3 | Pointer 生命周期 + capture 三方法 + enter/leave 边界序 | ✅ 核心修齐（2026-10-07——capture 三方法 + portal 段 + 边界序 + touch 接触失效 + rawupdate 语义落地；**余挂 = 尾簇 40 挂账定稿清单**） |
-| P4 | touch-events / pointerlock / IME 组合挂账定稿 | 🔄 M4——尾簇 40 编目定稿（2026-10-07，见下节）；余 = CANDIDATE 池收尾 + DC-2/3 关账复核 + product-smoke 门禁 |
+| P4 | touch-events / pointerlock / IME 组合挂账定稿 | ✅ 2026-10-07（尾簇 40 编目 + 尾簇 41 CANDIDATE 池收口；重入条件见定稿清单各类注记） |
 
 ## M4 挂账定稿清单（尾簇 40，2026-10-07——corpus 1791P/173F/96TO 逐案编目）
 
@@ -584,7 +597,7 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 | KEYBOARD_FOCUS（键盘域邻接） | 2 | 2 | focus-automated-blink（iframe 跨文档焦点）、focus-management（keydown→focus activation）、keyboard-click/accesskey TO | 键盘域重入时带案（已归档 goal） |
 | SCHEME（runner secure 分流——专项拍板） | 2 | 0 | pointerrawupdate 非 https 变体（runner 单 origin https 使 secure 分流不可测——尾簇 19 已知） | runner `.https.html` scheme 分流专项拍板（master M4 既有） |
 | RAWUPDATE 余点 | 1 | 0 | flush_pointercapture（rawupdate 前捕获结算时序） | in-stream 候选池 |
-| CANDIDATE（语义尾点候选池——in-stream 可做） | 8 | 0 | lostpointercapture_remove_setcapture_node、capture_*_and_release 双案、mouse_capture_change_hover ×3、multiple_pointerover、tilt 部分集 init | 下一簇燃烧对象（shim face 逐案） |
+| CANDIDATE（尾簇 41 收口） | 5 | 0 | 尾簇 41 修 3F（capture_*_and_release 双案 + tilt 部分集 init）；余 5F 重归类：mouse_capture_change_hover ×3（capture 驱动 `:hover` 计算样式——style-system 面，渲染流域）、multiple_pointerover（多指针状态机模型面）、events_after_lostpointercapture_remove（runner 同代命中缓存 + Chromium 自注 bug 域） | `:hover` 随渲染流 hover 态落地；多指针随结构性扩展立项；Chromium 侧修后重跑 |
 
 
 

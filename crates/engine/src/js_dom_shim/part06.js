@@ -12080,8 +12080,35 @@
         // Process Pending Pointer Capture（spec §9.2 / TA5.1.3.1——**pointer 系**事件
         // 派发前先结算 pending override：pending≠现 override 时派 lost@got 站点并换防；
         // compat mouse 事件不触发结算——其目标随同刻 pointer 事件）。
+        // 尾簇 41：处理站内（gotpointercapture 派发期）release 的延迟生效三态——
+        // 'skip' = 显式站（touch 分支）刚建立捕获、本拍是其 in-flight 事件 → 跳过
+        // 结算转 'fire'；'fire' = 下一事件边界 → 清旗标并结算（pending 已被站消费、
+        // 现 override 孤立 → lost + 悬停跨界）；'armed' 由 releasePointerCapture
+        // 写入、由站点调用方按相位转换（前置站内站 → 'fire'；touch 显式站 → 'skip'）。
+        // Chrome 实测序（WPT capture_{touch,mouse}_and_release_at_got_capture、
+        // pointerrawupdate_changes_pointer_capture ±rawupdate 双变体、
+        // lostpointercapture_is_first 五流断言面）：lost 恒在 in-flight 事件之后、
+        // 下一 pointer 事件之前。
         if (type.indexOf('pointer') === 0 && !_zwPtrState.processingCapture) {
-          _zwProcessPendingCapture(_m3Pid);
+          var _dr41 = _zwPtrState.deferredReleaseCap && _zwPtrState.deferredReleaseCap[_m3Pid];
+          _zwPtrState.dispSeq = (_zwPtrState.dispSeq | 0) + 1;
+          var _sup41 = _zwPtrState.suppressStationOnce && _zwPtrState.suppressStationOnce[_m3Pid];
+          if (_sup41 != null && _sup41 === _zwPtrState.dispSeq) {
+            // 尾簇 41：入口站内 lost handler 重捕获 → 本事件（up）不再结算（一次性，
+            // 序号对齐入口站预测的派发序）；下一事件正常。
+            delete _zwPtrState.suppressStationOnce[_m3Pid];
+            if (_dr41) delete _zwPtrState.deferredReleaseCap[_m3Pid];
+          } else if (_dr41 === 'skip') {
+            _zwPtrState.deferredReleaseCap[_m3Pid] = 'fire';
+          } else if (_dr41 === 'fire') {
+            delete _zwPtrState.deferredReleaseCap[_m3Pid];
+            _zwProcessPendingCapture(_m3Pid);
+          } else {
+            _zwProcessPendingCapture(_m3Pid);
+            if (_zwPtrState.deferredReleaseCap && _zwPtrState.deferredReleaseCap[_m3Pid] === 'armed') {
+              _zwPtrState.deferredReleaseCap[_m3Pid] = 'fire';
+            }
+          }
         }
         _m3Cap = _zwPtrState.capture[_m3Pid] || null;
       }
@@ -12164,7 +12191,7 @@
   // 恢复；② 有 pending → 跨界序（out/leave@旧悬停 → over/enter@捕获目标）+
   // gotpointercapture@pending，override 换防。重入 guard：跨界序自身派 pointer 系事件
   // （pointerout/enter…），其派发又触发结算——`processingCapture` 期间跳过。
-  function _zwProcessPendingCapture(pid) {
+  function _zwProcessPendingCapture(pid, forNextDispatch41) {
     var st = _zwPtrState;
     var pending = st.pending[pid] || null;
     var cur = st.capture[pid] || null;
@@ -12177,6 +12204,16 @@
         var capSet = (typeof _pointerCapture !== 'undefined' && _pointerCapture) ? _pointerCapture[cur.key] : null;
         if (capSet) delete capSet[pid];
         _zwReleaseCaptureElement(cur, pid, Number(pid) || 1);
+        // 尾簇 41：**站外入口站**（up 序列入口——该站为 up 事件的处理）内 lost
+        // handler 重捕获（capture_mouse_and_release_and_capture_again——
+        // lostpointercapture listener 内 setPointerCapture）→ 抑制 up 派发前置站的
+        // 再结算（对齐 spec 每事件一次 processing——重捕获 pending 属下一事件，无
+        // 下一事件即静默清除，up 落物理目标）。站内（gate/touch 显式）不抑制：
+        // capture at lostpointercapture 的重捕获照常于下一事件结算。
+        if (forNextDispatch41 && !pending && st.pending[pid]) {
+          st.suppressStationOnce = st.suppressStationOnce || {};
+          st.suppressStationOnce[pid] = (st.dispSeq | 0) + 1;
+        }
       }
       if (pending && typeof _zwIsConnected === 'function' && !_zwIsConnected(pending.sel, pending.handle)) {
         // 捕获目标已断连（移除）→ 按已释放处理（无 got）。
@@ -12192,6 +12229,13 @@
           pointerType: st.pointerType || 'mouse'
         });
         st.capture[pid] = pending;
+        // 尾簇 41：站内 release 的 armed 旗标——捕获已建立，pending 消费（后续事件
+        // 边界的释放走 'fire' 拍，见前置站三态门控）。
+        if (st.deferredReleaseCap && st.deferredReleaseCap[pid] === 'armed') {
+          delete st.pending[pid];
+          var capSet41 = (typeof _pointerCapture !== 'undefined' && _pointerCapture) ? _pointerCapture[pending.key] : null;
+          if (capSet41) delete capSet41[pid];
+        }
       }
     } finally {
       st.processingCapture = false;
@@ -12608,8 +12652,13 @@
       // 尾簇 25：触式捕获路由——捕获生效时触式 move 随捕获目标派发（PE spec 无
       // 「捕获触式不派 move」；早退仅指无 hover/边界序——非捕获触式 move 维持
       // 既有抑制。pointercapture_in_frame subtest 6 ?touch 断言面）。
+      // 尾簇 41：显式站的相位转换——站内 release（armed）→ 'skip'（本站 in-flight
+      // pointermove 仍随捕获目标，下一事件边界再释放，见前置站三态门控）。
       if (typeof _zwProcessPendingCapture === 'function' && !st.processingCapture) {
         _zwProcessPendingCapture('1');
+        if (st.deferredReleaseCap && st.deferredReleaseCap['1'] === 'armed') {
+          st.deferredReleaseCap['1'] = 'skip';
+        }
       }
       var _capT25 = st.capture['1'];
       if (_capT25) {
@@ -12948,8 +12997,8 @@
   // 目标即 pending 捕获目标（spec §9.3 direct manipulation 设备隐式捕获；WPT
   // pointerevent_element_haspointercapture ?touch expected_default_capture 面）。
   globalThis.__zw_pointer_down_sequence = function (sel, x, y, pointerType, button) {
-    button = button | 0;
     var st = _zwPtrState;
+    button = button | 0;
     if (st.portalCap) {
       // 捕获期 portal down——事件随捕获目标（chorded down 走 move 语义前已分流）。
       _zwPortalDispatch(st.portalCap.frameSel, 'pointerdown', x, y, pointerType || 'mouse', button, _zwButtonMask(button));
@@ -13194,7 +13243,7 @@
     // upEff 回落真实命中元素（WPT click_during_parent_capture「mouseup/click 的
     // composedPath 不含 target」断言面）。
     if (typeof _zwProcessPendingCapture === 'function' && !st.processingCapture) {
-      _zwProcessPendingCapture('1');
+      _zwProcessPendingCapture('1', true);
     }
     var capturedSel = st.capture['1'] ? st.capture['1'].sel : null;
     // 尾簇 6c：变异代际快照——up 派发（pointerup/mouseup）期间页内 listener 的
@@ -13470,11 +13519,16 @@
     // 断言面）；up 尾掩码已清 → 释放后跨界 buttons=0 自然成立。
     var _b16 = (layer === 'mouse') ? 0 : -1;
     var _bcBtns30 = (_zwPtrState.buttons | 0);
+    // uievents-compat 尾簇 41：pointer 层跨界事件携源 pointerType（PE spec——边界
+    // 事件是 PointerEvent，pointerType 随源指针；detail 缺省时 dispatch 层落
+    // 'mouse'，touch/pen 流的边界事件被误标 mouse——WPT capture_touch_and_release_
+    // at_got_capture「pointerType=touch」断言面；mouse 层非 PointerEvent 不带）。
+    var _xC41 = (layer === 'pointer') ? { pointerType: _zwPtrState.pointerType || 'mouse' } : {};
     if (prevSel && !prevDangling) {
-      __zw_dispatch_event(prevSel, evOut, { relatedTarget: rel, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
+      __zw_dispatch_event(prevSel, evOut, { relatedTarget: rel, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30, pointerType: _xC41.pointerType });
     }
     for (var k = 0; !prevDangling && k < prevChain.length && prevChain[k] !== common; k++) {
-      __zw_dispatch_event(prevChain[k], evLeave, { relatedTarget: rel, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
+      __zw_dispatch_event(prevChain[k], evLeave, { relatedTarget: rel, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30, pointerType: _xC41.pointerType });
     }
     // 新链：over@next（边界元素，恒派——next 即公共祖先的向祖先移动也派）→
     // enter（每新入站，公共祖先下行至 next；next 已入 over，站序自外向内——
@@ -13482,7 +13536,7 @@
     // prevDangling：enter 段抑制（relatedTarget 指向已移除元素无意义 → null）。
     var relIn = (prevSel && !prevDangling) ? prevSel : null;
     if (nextSel) {
-      __zw_dispatch_event(nextSel, evOver, { relatedTarget: relIn, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
+      __zw_dispatch_event(nextSel, evOver, { relatedTarget: relIn, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30, pointerType: _xC41.pointerType });
     }
     var enter = [];
     for (var k2 = 0; !prevDangling && k2 < nextChain.length; k2++) {
@@ -13495,11 +13549,11 @@
     if (childFirst) _zwPtrState.touchChildFirstEnter = false;
     if (childFirst) {
       for (var k3f = 0; k3f < enter.length; k3f++) {
-        __zw_dispatch_event(enter[k3f], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
+        __zw_dispatch_event(enter[k3f], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30, pointerType: _xC41.pointerType });
       }
     } else {
       for (var k3 = enter.length - 1; k3 >= 0; k3--) {
-        __zw_dispatch_event(enter[k3], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30 });
+        __zw_dispatch_event(enter[k3], evEnter, { relatedTarget: relIn, bubbles: false, cancelable: false, clientX: x || 0, clientY: y || 0, button: _b16, buttons: _bcBtns30, pointerType: _xC41.pointerType });
       }
     }
   }

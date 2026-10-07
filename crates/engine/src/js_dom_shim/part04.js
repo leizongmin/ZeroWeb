@@ -3658,9 +3658,22 @@ return _tplContent;
             }
             var pending = (typeof _zwPtrState !== 'undefined' && _zwPtrState) ? _zwPtrState.pending[id] : null;
             if (pending && pending.key === key) {
-              delete _zwPtrState.pending[id];
-              var capSet = _pointerCapture[key];
-              if (capSet) delete capSet[id];
+              if (_zwPtrState.processingCapture) {
+                // uievents-compat 尾簇 41：处理站内（gotpointercapture 派发期）release
+                // ——捕获维持至当前 in-flight 事件之后，lost 于下一 pointer 事件边界
+                // 结算（三态相位由站点调用方转换，见 dispatch 层前置站门控注记；
+                // Chrome 实测序 got → [rawupdate] → move@captured → lost → 次事件@物理
+                // 目标；WPT pointerevent_capture_{touch,mouse}_and_release_at_got_
+                // capture + pointerrawupdate_changes_pointer_capture 双变体 +
+                // lostpointercapture_is_first 断言面——旧版即删 pending，前置站在
+                // 同一 in-flight 事件派发前结算 lost+out，序错）。
+                _zwPtrState.deferredReleaseCap = _zwPtrState.deferredReleaseCap || {};
+                _zwPtrState.deferredReleaseCap[id] = 'armed';
+              } else {
+                delete _zwPtrState.pending[id];
+                var capSet = _pointerCapture[key];
+                if (capSet) delete capSet[id];
+              }
             }
             // 未 pending 本元素的调用 → no-op（spec：无 InvalidStateError；现 override
             // 的 lostpointercapture 在结算站派发）。

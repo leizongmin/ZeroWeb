@@ -1,9 +1,9 @@
 # UI/指针事件兼容 — uievents / pointerevents
 
-**版本**: v1.2
-**日期**: 2026-09-12（立项）/ 2026-10-03（M1 收口；M2 片 1 + M3 落地——230P→375P）
-**状态**: Active（M1 完成；M2/M3 核心语义落地——鼠标事件序/click 组合 + Pointer
-Capture 全语义；残余尾簇与 M4 挂账定稿推进中，见 master.md）
+**版本**: v1.3
+**日期**: 2026-09-12（立项）/ 2026-10-07（M4 收口——1794P/170F/96TO，挂账定稿）
+**状态**: Done（DC-1~4 全满足 + 挂账定稿；2026-10-07 尾簇 41 收口，
+master.md「M4 挂账定稿清单」为余挂唯一账册，重入条件见各类注记）
 **执行模式**: WPT 驱动（上游 uievents + pointerevents corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——输入事件语义面）
 
@@ -71,9 +71,15 @@ pointerenter/leave 边界序 / touch-events 评估记账。
 - [x] **DC-1**：uievents + pointerevents corpus 可执行子集导入 + 分类基线 +
       suites CSV 回填（2026-10-03——314 case 条目/235 唯一文件/1024 subtests
       230P；evidence/2026-10-03-m1-baseline.md）
-- [ ] **DC-2**：鼠标事件语义（事件序/坐标/click 组合）修齐
-- [ ] **DC-3**：Pointer Events 生命周期 + capture 三方法 + enter/leave 边界序修齐
-- [ ] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
+- [x] **DC-2**：鼠标事件语义（事件序/坐标/click 组合）修齐（2026-10-07——事件序/
+      坐标族/click 组合/layer 反射/click 坐标/TextEvent 域全落地；余挂按
+      master.md「M4 挂账定稿清单」转移，见 evidence/2026-10-07-m4-tail41.md）
+- [x] **DC-3**：Pointer Events 生命周期 + capture 三方法 + enter/leave 边界序修齐
+      （2026-10-07——capture 三方法 + 释放时序三态 + portal 段 + 边界序
+      pointerType 面 + touch 接触失效 + rawupdate 语义落地；余挂同上转移）
+- [x] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
+      （2026-10-07——workspace 0 failed + clippy（quickjs 面）EXIT=0 +
+      reftest 704/704 + product-smoke EXIT=0（15.40% ≤ 20% + struct PASS））
 
 ## 活跃里程碑
 

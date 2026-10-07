@@ -12003,6 +12003,20 @@
   // → angle 为事实源（缺省补 0 / π/2）、tilt 反解（轴对齐 float 噪声 snap ±1e-9、
   // 度数取整）；否则 tilt 为事实源、angle 正向派生。
   function _zwPointerTiltInit(inst, o) {
+    // uievents-compat 尾簇 41：**跨集部分给值互不派生**（PE spec 转换节——至少各给
+    // 一值（≥1 tilt 且 ≥1 angle）时，给定值保持、缺省成员落各自默认（tilt 0 /
+    // azimuth 0 / altitude π/2），不做任何换算；WPT pointerevent_tiltX_tiltY_to_
+    // azimuth_altitude「If one of the values in both sets is provided」断言面——
+    // 旧版走 angle 权威分支重解全 tilt（tiltX:45 + azimuth:π/4 → tiltX 被解成 90）。
+    // 单集给值（仅 tilt 或仅 angle）仍走下方权威分支：缺省成员补默认后**整集派生**
+    // 另一集（WPT「only one of the values」subtest 断言面）。
+    if ((o.tiltX != null || o.tiltY != null) && (o.azimuthAngle != null || o.altitudeAngle != null)) {
+      if (o.tiltX == null) inst.tiltX = 0;
+      if (o.tiltY == null) inst.tiltY = 0;
+      inst.azimuthAngle = (o.azimuthAngle != null) ? Number(o.azimuthAngle) : 0;
+      inst.altitudeAngle = (o.altitudeAngle != null) ? Number(o.altitudeAngle) : Math.PI / 2;
+      return;
+    }
     if (o.azimuthAngle != null || o.altitudeAngle != null) {
       var az = Number(o.azimuthAngle) || 0;
       var al = (o.altitudeAngle != null) ? Number(o.altitudeAngle) : Math.PI / 2;
