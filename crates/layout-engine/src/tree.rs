@@ -1230,6 +1230,35 @@ fn apply_replaced_element_sizing(
                 if computed.aspect_ratio.is_none() && needs_ar {
                     taffy_style.aspect_ratio = Some(w / h);
                 }
+                // R4996（css-flexbox §9.2.1 + css-sizing-4 §4.1）：flex item 主轴 % 对 indefinite
+                // 容器主轴不可解析 → 按 auto（content-based）处理；taffy §9.2.3.B 需 aspect_ratio
+                // 才能由 definite cross 传递 flex base。chromium flex-aspect-ratio-img-column-004：
+                // column 容器 height auto（min-height:500）+ img width:100%; height:100% 固有 2:1
+                // → h=50（旧无 ar → base=measure 0 → 高塌 0）。
+                // 仅 flex 语境 + CSS 比未设 + 固有维有效；% cross 对 definite 容器轴照常解析。
+                if computed.aspect_ratio.is_none()
+                    && w > 0.0
+                    && h > 0.0
+                    && let Some(parent_style) = doc
+                        .parent_node(dom_id)
+                        .and_then(|p| styles.get(&p))
+                        .filter(|ps| matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex))
+                {
+                    let parent_is_column = matches!(
+                        parent_style.flex_direction,
+                        FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+                    );
+                    let main_unresolvable = if parent_is_column {
+                        matches!(computed.height, LengthValue::Percentage(_))
+                            && resolve_tree_definite_real_length(&parent_style.height, parent_style).is_none()
+                    } else {
+                        matches!(computed.width, LengthValue::Percentage(_))
+                            && resolve_tree_definite_real_length(&parent_style.width, parent_style).is_none()
+                    };
+                    if main_unresolvable {
+                        taffy_style.aspect_ratio = Some(w / h);
+                    }
+                }
                 // CSS §10.3/§10.6 替换元素：一侧显式、另一侧 auto 时，auto 侧按
                 // 固有宽高比从显式侧推导（而非用固有绝对值）。旧实现把 auto 侧直接设为
                 // 固有绝对值（如 width:80px 的正方形 SVG 渲染成 80×441 而非 80×80），
@@ -1276,6 +1305,77 @@ fn apply_replaced_element_sizing(
                         // item 塌 h=0）。min transfer 不做——min-width/min-height 是 flex base
                         // 的 floor 非 base 本身（row-007：写 definite 会把 base 抬到 min，
                         // flex:1 grow 越过 floor，img 150 应 100）。
+                        // R4996（css-sizing-4 §4.1 ratio 作用于 content box）：替换 item 带
+                        // padding/border（frame>0）时，taffy 把 aspect_ratio 施于 **border-box**
+                        //（leaf `height = max(h, w/ratio)` + flex 传递均按 bb）→ 内容比失真：
+                        // img-column-013（border-top 50 + 固有 100×50，taffy 传递 bb cross 100 →
+                        // main 200，chromium 100）、img-row-009（border-left 50 + min.main 地板
+                        // 100 → leaf 反推 cross 200，chromium 100×100）。修：frame 折入显式
+                        // border-box 尺寸（main = iw+frame_h / cross = ih+frame_v）并清 ratio，
+                        // 传递语义由显式尺寸承载。无 frame 时 ratio 语义自洽，维持原路径。
+                        let frame_px =
+                            |p: &LengthValue,
+                             bd_w: &LengthValue,
+                             bd_s: &zero_style_system::property::types::BorderStyleValue| {
+                                let bd = if matches!(
+                                    bd_s,
+                                    zero_style_system::property::types::BorderStyleValue::None
+                                        | zero_style_system::property::types::BorderStyleValue::Hidden
+                                ) {
+                                    0.0
+                                } else {
+                                    resolve_tree_definite_real_length(bd_w, computed).unwrap_or(0.0)
+                                };
+                                resolve_tree_definite_real_length(p, computed).unwrap_or(0.0) + bd
+                            };
+                        let frame_h = frame_px(
+                            &computed.padding_left,
+                            &computed.border_left_width,
+                            &computed.border_left_style,
+                        ) + frame_px(
+                            &computed.padding_right,
+                            &computed.border_right_width,
+                            &computed.border_right_style,
+                        );
+                        let frame_v = frame_px(
+                            &computed.padding_top,
+                            &computed.border_top_width,
+                            &computed.border_top_style,
+                        ) + frame_px(
+                            &computed.padding_bottom,
+                            &computed.border_bottom_width,
+                            &computed.border_bottom_style,
+                        );
+                        if frame_h > 0.5 || frame_v > 0.5 {
+                            // size 保持 content-box 固有维（taffy ContentBox 下 bb = content + frame）；
+                            // 仅剥 ratio——传递语义由 min.main 内容建议（set_replaced_content_suggestion_min）
+                            // 承载。例外：cross 轴将被**拉伸到 definite 容器 cross**（align-stretchy +
+                            // 容器 cross definite）时保留 ratio——R1364 的 cross 替换 / taffy stretch
+                            // 依赖它写 used cross 与 main 传递（flex-minimum-height-flex-items-022：
+                            // column 容器 width:100 + border-bottom 99 img，剥 ratio 会让 R1364 缺席、
+                            // cross 停在固有宽 1；chromium 拉伸到 100）。
+                            let parent_style_for_stretch = doc.parent_node(dom_id).and_then(|p| styles.get(&p));
+                            let cross_stretch_definite = parent_style_for_stretch.is_some_and(|ps| {
+                                use zero_css_parser::values::AlignmentValue;
+                                let stretchy = match computed.align_self {
+                                    AlignmentValue::Stretch => true,
+                                    AlignmentValue::Auto => matches!(
+                                        ps.align_items,
+                                        AlignmentValue::Auto | AlignmentValue::Normal | AlignmentValue::Stretch
+                                    ),
+                                    _ => false,
+                                };
+                                let container_cross_definite = if is_flex_col_item {
+                                    resolve_tree_definite_real_length(&ps.width, ps)
+                                } else {
+                                    resolve_tree_definite_real_length(&ps.height, ps)
+                                };
+                                stretchy && container_cross_definite.is_some()
+                            });
+                            if !cross_stretch_definite {
+                                taffy_style.aspect_ratio = None;
+                            }
+                        }
                         taffy_style.size.width = taffy::style::Dimension::length(w);
                         taffy_style.size.height = taffy::style::Dimension::length(h);
                     } else {
@@ -1542,7 +1642,7 @@ fn apply_replaced_element_sizing(
     // spec：auto-min = min(content suggestion, transferred suggestion)，transferred =
     // 明确 cross size × 固有比。此处仅当父是 flex 容器且有明确 cross size 时计算
     // transferred 并设 min_size.main（row + column 对称，仅水平书写模式）。
-    apply_flex_transferred_min_size(taffy_style, computed, doc, styles, dom_id);
+    apply_flex_transferred_min_size(taffy_style, computed, doc, styles, dom_id, img_intrinsic_sizes);
 }
 
 /// R3800（CSS2 §10.4）：替换元素 min/max 约束违反解析表。
@@ -1710,6 +1810,79 @@ fn apply_replaced_min_max_constraint_table(
     }
 }
 
+/// R4996（css-flexbox §4.5 content size suggestion）：replaced flex item 的 auto-min
+/// 内容建议 = 固有主尺寸（content 级；taffy 对 flex item min_size 自行叠加主轴 frame）。
+///
+/// chromium flex-aspect-ratio-img-row-009：img 内容宽 50 + border-left 50 → min-width:auto
+/// 外沿地板 100（溢出 50 容器不收缩）；旧实现缺席此臂 → taffy 以内容 50 作 auto-min，
+/// border 被收缩吃掉（w=50，chromium 100）。仅 min/main 双 auto（显式 min 不覆盖）；无解码
+/// 固有维或非 replaced 元素维持旧行为。调用方：cross 不明确分支 + 无 ratio 分支（ratio 已被
+/// frame-fold 臂剥离，本臂不依赖 ratio）。
+fn set_replaced_content_suggestion_min(
+    taffy_style: &mut taffy::Style,
+    computed: &ComputedStyle,
+    doc: &Document,
+    dom_id: NodeId,
+    img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    is_column: bool,
+) {
+    use zero_css_parser::values::LengthValue;
+    let is_replaced = doc.get(dom_id).is_some_and(|n| {
+        matches!(&n.kind, NodeKind::Element(e)
+            if matches!(e.local_name(), "img" | "canvas" | "video"))
+    });
+    let (min_main_auto, main_auto) = if is_column {
+        (
+            matches!(computed.min_height, LengthValue::Auto),
+            matches!(computed.height, LengthValue::Auto),
+        )
+    } else {
+        (
+            matches!(computed.min_width, LengthValue::Auto),
+            matches!(computed.width, LengthValue::Auto),
+        )
+    };
+    if !(is_replaced && min_main_auto && main_auto) {
+        return;
+    }
+    let Some(&(iw, ih)) = img_intrinsic_sizes.get(&dom_id) else {
+        return;
+    };
+    let intrinsic_main = if is_column { ih } else { iw };
+    // §4.5：content size suggestion 由 definite max 钳制——含 transferred max（definite
+    // max cross × ratio）。flex-aspect-ratio-img-row-010/011：固有 200 + max-height:100
+    // → transferred max main = 100 → auto-min 地板 100（非 200），max 钳制不被 min 顶穿。
+    let eff_ratio = taffy_style.aspect_ratio.filter(|r| *r > 0.0).unwrap_or(iw / ih); // w/h 比（row: transferred = max_h × r；column: max_w / r）
+    let max_main = if is_column {
+        resolve_tree_definite_real_length(&computed.max_height, computed)
+    } else {
+        resolve_tree_definite_real_length(&computed.max_width, computed)
+    };
+    let max_cross = if is_column {
+        resolve_tree_definite_real_length(&computed.max_width, computed)
+    } else {
+        resolve_tree_definite_real_length(&computed.max_height, computed)
+    };
+    let transferred_max_main = max_cross.map(|mc| if is_column { mc / eff_ratio } else { mc * eff_ratio });
+    let mut auto_min = intrinsic_main;
+    if let Some(t) = transferred_max_main {
+        auto_min = auto_min.min(t);
+    }
+    if let Some(mm) = max_main {
+        auto_min = auto_min.min(mm);
+    }
+    // 内容建议为 content 级——taffy 对 flex item min_size 自行叠加 box_sizing_adjustment
+    //（generate_anonymous_flex_items `min_size...maybe_add(box_sizing_adjustment)`），
+    // 此处再叠 frame 会双计（009：min 100 + border 50 → outer 150，chromium 100）。
+    if auto_min > 0.0 && auto_min.is_finite() {
+        if is_column {
+            taffy_style.min_size.height = taffy::style::Dimension::length(auto_min);
+        } else {
+            taffy_style.min_size.width = taffy::style::Dimension::length(auto_min);
+        }
+    }
+}
+
 /// 替换元素 flex item 的 min-size:auto transferred-size-suggestion（CSS Flexbox §4.5 / csswg #5663）。
 ///
 /// taffy 0.7 把 leaf（替换元素）flex item 的自动最小尺寸当作其 definite 主尺寸本身
@@ -1730,6 +1903,7 @@ fn apply_flex_transferred_min_size(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     dom_id: NodeId,
+    img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
 ) {
     use zero_css_parser::values::{DisplayValue, FlexDirectionValue, LengthValue};
 
@@ -1747,16 +1921,22 @@ fn apply_flex_transferred_min_size(
     if !matches!(parent_style.display, DisplayValue::Flex | DisplayValue::InlineFlex) {
         return;
     }
-    // 子须有 aspect_ratio（由上方 sizing 设好，或 CSS aspect-ratio）
-    let ratio = match taffy_style.aspect_ratio {
-        Some(r) if r > 0.0 => r,
-        _ => return,
-    };
     // 主/交叉轴：column → main=height/cross=width；row(含 reverse) → main=width/cross=height。
     let is_column = matches!(
         parent_style.flex_direction,
         FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
     );
+    // 子须有 aspect_ratio（由上方 sizing 设好，或 CSS aspect-ratio）——R4996 后移：
+    // replaced 内容建议臂（下方 cross 缺失分支）不依赖 ratio（taffy ratio 已被
+    // frame-fold 臂剥离），须在其之前放行。
+    let ratio = match taffy_style.aspect_ratio {
+        Some(r) if r > 0.0 => r,
+        _ => {
+            // 无 ratio：仅 replaced 内容建议臂可用，其余路径终止。
+            set_replaced_content_suggestion_min(taffy_style, computed, doc, dom_id, img_intrinsic_sizes, is_column);
+            return;
+        }
+    };
     // §4.5 transferred-size-suggestion 需 item 有明确 cross size。两种来源（容器优先，最小化回归）：
     //  (a) 容器明确 cross（Px）+ item align-stretch → item cross = 容器 cross（原有逻辑）。
     //  (b) item 自身明确 cross（img height:50px）——0.8.3 taffy 不再原生兜底 auto-cross 容器
@@ -1789,7 +1969,17 @@ fn apply_flex_transferred_min_size(
             };
             match item_cross {
                 Some(c) if c > 0.0 => (c, true),
-                _ => return,
+                _ => {
+                    set_replaced_content_suggestion_min(
+                        taffy_style,
+                        computed,
+                        doc,
+                        dom_id,
+                        img_intrinsic_sizes,
+                        is_column,
+                    );
+                    return;
+                }
             }
         }
     };
@@ -1809,8 +1999,17 @@ fn apply_flex_transferred_min_size(
         }
         use zero_css_parser::values::AlignmentValue;
         match computed.align_self {
-            // Auto（继承容器，默认 stretch）/ Stretch → item 被拉伸，cross size = 容器 cross
-            AlignmentValue::Auto | AlignmentValue::Stretch => {}
+            // Stretch → item 被拉伸，cross size = 容器 cross
+            AlignmentValue::Stretch => {}
+            // R4996（css-flexbox §9.4 align-self）：`auto` = 容器 align-items 的计算值，
+            // 仅容器值为 auto/normal/stretch（均拉伸）时 cross = 容器 cross。旧实现把
+            // auto 一律当 stretch——容器 `align-items: flex-start` 的 item 未拉伸、cross
+            // 为内容高，transferred min 被按容器 cross 高估（flex-aspect-ratio-img-column-013：
+            // min-width 误传 50×2=200 → item 200 宽溢出 100 容器，chromium 期望 100）。
+            AlignmentValue::Auto => match parent_style.align_items {
+                AlignmentValue::Auto | AlignmentValue::Normal | AlignmentValue::Stretch => {}
+                _ => return,
+            },
             // 显式 center/flex-start/flex-end/baseline/start/end/space-* → 不拉伸，跳过
             _ => return,
         }

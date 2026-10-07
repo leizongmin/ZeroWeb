@@ -31,6 +31,11 @@ fn extract_img_srcs(html: &str) -> Vec<String> {
             let value_start = src_start + 5;
             if let Some(value_end) = tag[value_start..].find(quote) {
                 let src_value = &tag[value_start..value_start + value_end];
+                // R4996：trim 对齐 engine 侧 `effective_img_src`——src 属性值可含首尾空白
+                //（HTML 源内长 base64 折行尾随换行）。未 trim 时此处 URL 串与 paint/布局
+                // 侧 key（image_resource_key trim 后）错位，ImageCache 双查 miss，
+                // flex-aspect-ratio-img-row-016 的 data URI 图整体不渲染。
+                let src_value = src_value.trim();
                 if !src_value.is_empty() {
                     extracted = Some(src_value.to_string());
                 }

@@ -1443,6 +1443,11 @@ pub fn resolve_document_url(base_url: &str, href: &str) -> String {
 
 /// 图像子资源 lookup key：始终对**解析后的绝对 URL** 哈希，与 webview 抓取路径一致。
 pub fn image_resource_key(src: &str, document_url: Option<&str>) -> u64 {
+    // R4996：src 属性值首尾可含空白（HTML 源内长 base64 折行的尾随换行等）。URL 解析
+    // 按规范剥离首尾 C0 控制符与空格（https://url.spec.whatwg.org/#concept-basic-url-parser），
+    // 抓取路径（`extract_img_srcs` trim 后）与 key 哈希（此处）须同串——否则 ImageCache
+    // / img_intrinsic_sizes 双查皆 miss，图像整体不渲染（flex-aspect-ratio-img-row-016）。
+    let src = src.trim();
     let resolved = document_url
         .map(|base| resolve_document_url(base, src))
         .unwrap_or_else(|| src.to_string());

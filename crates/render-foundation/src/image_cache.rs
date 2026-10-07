@@ -1712,8 +1712,13 @@ pub fn decode_data_uri_bytes(src: &str) -> Result<Vec<u8>, String> {
     let payload = &src[comma + 1..];
     let bytes = if header.split(';').any(|part| part.eq_ignore_ascii_case("base64")) {
         use base64::Engine;
+        // forgiving-base64 decode（fetch spec data URL processor）：先剥离 ASCII 空白再解码。
+        // HTML 属性值可携带换行（长 base64 折行），STANDARD 引擎对空白字节直接报错——
+        // flex-aspect-ratio-img-row-016 的 data URI src 内嵌换行即致图像整体解码失败。
+        // https://fetch.spec.whatwg.org/#data-url-processor
+        let stripped: Vec<u8> = payload.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
         base64::engine::general_purpose::STANDARD
-            .decode(payload)
+            .decode(&stripped)
             .map_err(|e| format!("data URI base64 解码失败: {e}"))?
     } else {
         percent_decode_bytes(payload)
