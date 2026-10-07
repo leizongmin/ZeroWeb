@@ -19,19 +19,19 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 
 | 序号 | Goal | WPT 测试集 | 门控/挂账 |
 |------|------|-----------|----------|
-| 10 | [timing-animation-compat](../../../../docs/goal/timing-animation-compat.md) | hr-time; performance-timeline; user-timing; web-animations | 无（轻量热身） |
+| 10 | [timing-animation-compat](../../../../docs/goal/timing-animation-compat.md) | hr-time; performance-timeline; user-timing; web-animations | **已收口**（2026-10-04） |
 | 15 | [webstorage-compat](../../../../docs/goal/webstorage-compat.md) | webstorage | 无（快赢；2026-10-08 立项） |
 | 18 | [cookies-compat](../../../../docs/goal/cookies-compat.md) | cookies | 无（快赢；HTTP 头驱动用例可执行性 M1 甄别） |
-| 20 | [net-api-compat](../../../../docs/goal/net-api-compat.md) | fetch; xhr; url; mimesniff; streams; eventsource | WebSocket 二期挂账 |
+| 20 | [net-api-compat](../../../../docs/goal/net-api-compat.md) | fetch; xhr; url; mimesniff; streams; eventsource | **已收口**（2026-10-04）；WebSocket 二期挂账 |
 | 21 | [console-compat](../../../../docs/goal/console-compat.md) | console | 无（极小快赢；console 捕获通道 M1 甄别，触面先与 devtools 流协调） |
-| 30 | [encoding-compat](../../../../docs/goal/encoding-compat.md) | encoding | 无（小快赢） |
-| 40 | [html-syntax-compat](../../../../docs/goal/html-syntax-compat.md) | html/syntax; html/dom | 无 |
-| 50 | [uievents-compat](../../../../docs/goal/uievents-compat.md) | uievents; pointerevents | touch/pointerlock/IME 挂账 |
-| 60 | [navigation-compat](../../../../docs/goal/navigation-compat.md) | history; navigation-api; html/browsers | **M3 iframe 切片用户门控** |
-| 70 | [workers-compat](../../../../docs/goal/workers-compat.md) | workers; dedicated-workers | zero-page-runtime 契约先行 |
-| 80 | [svg-compat](../../../../docs/goal/svg-compat.md) | svg | 渲染面归 rendering-compat |
-| 90 | [security-hardening](../../../../docs/goal/security-hardening.md) | content-security-policy; mixed-content; secure-contexts | 已立项（2026-09-12） |
-| 92 | [web-api-batch2](../../../../docs/goal/web-api-batch2.md) | clipboard-apis; fullscreen | 已立项（2026-09-12） |
+| 30 | [encoding-compat](../../../../docs/goal/encoding-compat.md) | encoding | **已收口**（2026-10-04） |
+| 40 | [html-syntax-compat](../../../../docs/goal/html-syntax-compat.md) | html/syntax; html/dom | **已收口**（2026-10-04） |
+| 50 | [uievents-compat](../../../../docs/goal/uievents-compat.md) | uievents; pointerevents | **已收口**（2026-10-07）；touch/pointerlock/IME 挂账 |
+| 60 | [navigation-compat](../../../../docs/goal/navigation-compat.md) | history; navigation-api; html/browsers | M2 轻面推进中；**M3 iframe 切片用户门控** |
+| 70 | [workers-compat](../../../../docs/goal/workers-compat.md) | workers; dedicated-workers | 推进中；zero-page-runtime 契约先行 |
+| 80 | [svg-compat](../../../../docs/goal/svg-compat.md) | svg | 推进中；渲染面归 rendering-compat |
+| 90 | [security-hardening](../../../../docs/goal/security-hardening.md) | content-security-policy; mixed-content; secure-contexts | **已收口**（2026-09-27） |
+| 92 | [web-api-batch2](../../../../docs/goal/web-api-batch2.md) | clipboard-apis; fullscreen | **已收口**（2026-10-04） |
 | 99 | [webgl-compat](../../../../docs/goal/webgl-compat.md) | webgl | **远期门控**（M2+ 全门控，M1 盘点为唯一自主切片） |
 
 **预留编号（2026-10-08 规划，未立项）**：16 fileapi-compat、17 webmessaging-compat、
@@ -42,11 +42,16 @@ rendering-compat 工作面重叠，立项前先按 run-rules §9 协调。
 
 ## 与 rally 启动脚本的关系
 
-- `scripts/rally-N-<goal>.sh`（仓库根 scripts/，编号 6-17 对应本目录 10-99；其中
-  rally-15/16/17 ↔ 本目录 15/18/21）：**启动无人值守推进循环**
-  （`rally run docs/goal/<goal>.md`）——这是 goal 的执行入口。
+- `scripts/rally-NN-<goal>.sh`（仓库根 scripts/）：**启动无人值守推进循环**
+  （`rally run docs/goal/<goal>.md`）——这是 goal 的执行入口。**编号与本目录
+  槽位一一对应**（rally-10 ↔ 10-timing、rally-15 ↔ 15-webstorage……），
+  按编号序执行即按优先级序执行；已收口 goal（上表标记者）的启动器仅作
+  历史入口，无需重跑。2026-10-08 前旧编号为立项流水号，已全部重对号。
+- 无数字的 rally 脚本（rally-zero-web / rally-rendering-compat / rally-cdp-protocol /
+  rally-devtools / rally-desktop-browser / rally-android-browser / rally-cron）：
+  非 WPT 语料目标与总控入口，不占本目录槽位。
 - 本目录 `NN-<goal>.sh`：**M1 语料预置**（fetch + 盘点 + 检查单），rally 轮内或
-  手动执行均可；两者编号不同（rally-6 ↔ 本目录 10），各脚本头注释互相指向。
+  手动执行均可；两族脚本按 goal 名互指。
 
 ## 约定
 

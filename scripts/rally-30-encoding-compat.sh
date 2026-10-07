@@ -6,8 +6,8 @@
 #   （rally 轮内也可直接跑；编号索引见该目录 README.md）。
 #
 # 用法：
-#   bash scripts/rally-8-encoding-compat.sh                # 推进 encoding-compat goal
-#   bash scripts/rally-8-encoding-compat.sh --dry-run      # 只打印命令
+#   bash scripts/rally-30-encoding-compat.sh                # 推进 encoding-compat goal
+#   bash scripts/rally-30-encoding-compat.sh --dry-run      # 只打印命令
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
