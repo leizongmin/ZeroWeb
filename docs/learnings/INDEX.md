@@ -5,14 +5,19 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（132）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（137）
 
+- 2026-10-07 [workspace 根 `--bin` 构建的全成员 feature 统一解析把 v8 拖进 quickjs 臂](bugs/2026-10/2026-10-07-workspace-bin-build-feature-unification-v8-leak.md) — ci,build
 - 2026-10-07 [多进程二进制分工：DOM shim 在 zero-renderer，`-p zero-browser` 构建不覆盖它](bugs/2026-10/2026-10-07-renderer-shim-not-in-browser-binary.md) — engine,renderer
+- 2026-10-07 [CSS 嵌套 desugar 的父×子选择器叉乘需设预算——病态输入指数放大](bugs/2026-10/2026-10-07-css-nesting-desugar-cross-product-budget.md) — css-parser
 - 2026-10-07 [切分支后 cargo build 显示 Fresh 不能作为「base 代码」证据——多个 rlib fingerprint 变体并存](bugs/2026-10/2026-10-07-cargo-fresh-multirlib-not-base-evidence.md)
+- 2026-10-07 [预算渲染路径不清 persistent_handle_nodes 致跨文档 handle 身份漂移](bugs/2026-10/2026-10-07-budgeted-render-persistent-handle-nodes-stale.md) — engine,webview,renderer
 - 2026-10-06 [make import-wpt 连锁 fetch-wpt-data 重建目录，静默抹掉未入 tag 的 media fixture](bugs/2026-10/2026-10-06-wpt-data-refetch-wipes-untracked-fixtures.md) — wpt-runner,build-support
 - 2026-10-06 [诊断轮换二进制：`-p zero-browser` 不重建 zero-renderer；build 未确认即跑 probe 用旧二进制](bugs/2026-10/2026-10-06-renderer-diag-binary-rebuild-scope-and-race.md) — renderer, build
+- 2026-10-06 [残留 http.server 占端口导致合并树集成验收假 FAIL](bugs/2026-10/2026-10-06-leftover-http-server-port-squat.md) — engine,tests,wpt-runner
 - 2026-10-06 [grep 遇日志内 NUL 字节静默转 binary 模式吞掉全部匹配行（打点"零命中"假象）](bugs/2026-10/2026-10-06-grep-binary-mode-nul-bytes-swallow-matches.md) — diagnostics
 - 2026-10-06 [getComputedStyle 每新 selector 全量 parse+cascade 压死真站 js worker（E14 停摆根因）](bugs/2026-10/2026-10-06-gcs-per-selector-full-recompute-real-site-worker-hang.md) — engine/js_dom_bridge, renderer/js_worker
+- 2026-10-05 [陈旧 target 目录下新构建嵌入过期产品版本串](bugs/2026-10/2026-10-05-product-version-buildscript-cache.md) — zero-product-version, build-support
 - 2026-10-05 [pgrep/pkill -f 自匹配静默卡死守候器并击杀自身 shell](bugs/2026-10/2026-10-05-pgrep-pkill-self-match-watchers.md) — rally-infra, docs/rally
 - 2026-10-02 [textContent= 突变后 gBCR 返回文本量盒——写路径注册副作用劫持读路径语义](bugs/2026-10/2026-10-02-textcontent-mutation-gbcr-identity-hijack.md) — engine
 - 2026-10-02 [日志写 stdout 管道无读取者：64KB 缓冲写满后全进程停摆](bugs/2026-10/2026-10-02-stdout-pipe-no-reader-logging-deadlock.md) — zero-browser
@@ -140,10 +145,11 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（18）
+## Patterns — 可复用代码模式与最佳实践（19）
 
 - 2026-10-07 [无 perf/gdb/Profiler 下定位 js worker 饱和的方法阶梯（bilibili 输入卡死案）](patterns/2026-10/2026-10-07-js-worker-saturation-diagnosis-without-perf.md)
 - 2026-10-06 [V8 无名脚本命名：sourceURL 注释的末行规则与失效形态](patterns/2026-10/2026-10-06-v8-sourceurl-naming.md) — script-sandbox,renderer,engine
+- 2026-10-04 [make test 锚算术对 zero-renderer/zero-browser 测试结构性失明——回归钉的落点必须核对 target 归属](patterns/2026-10/2026-10-04-make-test-target-blindspot-pins.md) — apps/renderer, apps/browser, tests/wpt-runner
 - 2026-09-30 [ZW_IPC_TRACE：跨进程 IPC 消息级的帧级诊断](patterns/2026-09/2026-09-30-zw-ipc-trace-frame-diagnostic.md) — zero-protocol,apps/browser,apps/renderer
 - 2026-09-13 [Node 父进程内嵌服务 + execFileSync 子进程 = 双向死锁](patterns/2026-09/2026-09-13-node-sync-child-exec-deadlocks-inprocess-server.md) — tests/playwright-matrix
 - 2026-09-04 [collapse 边框中心线迁移：taffy 拉伸伪影 × paint 盒内绘制模型的双耦合面](patterns/2026-09/2026-09-04-collapse-border-centerline-migration.md) — layout-engine, engine
@@ -161,8 +167,9 @@
 - 2026-08-05 [回调闭包 Send+Sync 约束：不能缓存 Document](patterns/2026-08/2026-08-05-callback-closure-send-sync-no-document.md) — zero-engine（js_dom_bridge.rs）, zero-script-sandbox（register_callback）, zero-dom（Document）
 - 2026-07-20 [经验：reftest 布局诊断必须用 empirical ZW-output 验证，不能只靠 code-trace](patterns/2026-07/2026-07-20-reftest-layout-diagnosis-empirical-verification.md) — tests/wpt-runner（reftest harness）, crates/layout-engine（multicol 等）
 
-## Performance — 性能优化经验（41）
+## Performance — 性能优化经验（42）
 
+- 2026-10-07 [DOM shim 每次访问打宿主/重扫树的模式在批量循环下退化为 O(n²)](performance/2026-10/2026-10-07-dom-shim-per-access-host-requery-quadratic.md) — engine,js-dom-shim
 - 2026-09-14 [热路径遗留 env 探针——R4332_FOLD_OFF 逐 item `std::env::var` 致 wide_tree 微基准 +67%](performance/2026-09/2026-09-14-env-var-kill-switch-hot-path-regression.md) — zero-layout-engine
 - 2026-09-14 [CPU 频率窗效应——bench-gate 微基准跨窗漂移可达 2-3×（compositing_layer_analysis 误判归因）](performance/2026-09/2026-09-14-cpu-freq-window-bench-drift.md) — zero-engine,perf-gate
 - 2026-09-13 [绑核后退出成功，不代表相对性能预算已通过](performance/2026-09/2026-09-13-affinity-available-parallelism-budget-gate.md) — wpt-runner,benchmark
@@ -205,8 +212,12 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（22）
+## Platform — 平台与环境相关经验（26）
 
+- 2026-10-07 [zero-wpt-runner 组级过滤的正确调用形态：testharness-dom + 路径，不是 `run <组名>`](platform/2026-10/2026-10-07-wpt-runner-group-invocation-form.md) — tests/wpt-runner
+- 2026-10-07 [陈旧 sibling 二进制使进程级二分定位全盘失效（zero-renderer 未随 zero-browser 重建）](platform/2026-10/2026-10-07-stale-sibling-binary-bisect-corruption.md) — renderer,protocol,diag
+- 2026-10-04 [包裹构建的三个假阳性/假破损陷阱（看门狗空转、pgrep 自匹配、cd 后台化）](platform/2026-10/2026-10-04-wrapped-build-verification-pitfalls.md) — docs/rally
+- 2026-10-04 [fresh worktree 跑 make test / 构建前必须先拉 wpt-data 素材与 rusty_v8 archive](platform/2026-10/2026-10-04-fresh-worktree-wpt-data-fixtures.md) — zero-media,tests/wpt-runner,Makefile
 - 2026-10-01 [renderer 进程 tracing 日志不落浏览器 stderr（内存环形缓冲）](platform/2026-10/2026-10-01-renderer-stderr-ring-buffer.md) — protocol, renderer
 - 2026-10-01 [playwright page.screenshot 在 ZeroWeb 重量级结果页需 15s+，自设 10s 超时必失败](platform/2026-10/2026-10-01-playwright-screenshot-heavy-page-timeout.md) — render-foundation, testing
 - 2026-09-30 [ZeroWeb CDP live 调试坑点（/json/new、Page.reload、renderer stderr 环、探针退化）](platform/2026-09/2026-09-30-zeroweb-cdp-live-debug-quirks.md) — apps/renderer,apps/browser,crates/protocol
