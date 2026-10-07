@@ -745,6 +745,7 @@ impl LayoutEngine {
         // R3913：row flex 容器 cross 从 item flexed main × ratio 传递（csswg #line-sizing）。
         let changed_ar_flex_cross = if sizing_targets.ar_source {
             Self::apply_flex_cross_from_flexed_main(&mut taffy_tree, &root_box, &dom_to_taffy, styles)
+                || Self::apply_flex_auto_ratio_content_transfer(&mut taffy_tree, &root_box, &dom_to_taffy, styles)
         } else {
             false
         };

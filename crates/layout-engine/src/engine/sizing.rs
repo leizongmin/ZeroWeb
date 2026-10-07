@@ -1117,6 +1117,131 @@ impl LayoutEngine {
         walk(root, None, taffy_tree, dom_to_taffy, styles)
     }
 
+    /// R4993（css-sizing-4 auto <ratio> + css-flexbox §4.5·Blink 实证矩阵见
+    /// evidence/r4992-custody-2026-10-08.md）：`aspect-ratio: auto <ratio>` 叶条目的
+    /// content-box 传递臂——Blink 分叉：plain <ratio> floor = border-box 传递
+    /// （25×8=200 / 25×19=475），auto <ratio> floor/base = content-box 传递 + padding
+    /// （(25-15)×8+10=90 / (25-15)×19+10=200）。025 八行期望全 200（ref 平铺），
+    /// ZW rows 5-8 渲 475/371/475/475。
+    ///
+    /// 本 pass **必须后于 `apply_flex_cross_from_flexed_main`**（R4992 干扰假设：前置
+    /// 写入使 item main definite Px → 该 pass 门触发重写 cross/尺寸链致 rows 6/8 写入
+    /// 丢失）。实现 = 清 taffy aspect_ratio（R4990 同法防反传）+ definite size.main =
+    /// content-box 传递 + pad_main；min.main 地板仅 min-*:auto（014 门）。cross 用 CSS
+    /// 链（definite height/min/max 逐级钳）而非 laid 值（laid 可被 taffy 反传污染）。
+    /// kill-switch `ZW_AR_AUTO_CONTENT=0`。
+    pub(super) fn apply_flex_auto_ratio_content_transfer(
+        taffy_tree: &mut TaffyTree<NodeId>,
+        root: &LayoutBox,
+        dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+        styles: &HashMap<NodeId, ComputedStyle>,
+    ) -> bool {
+        use zero_css_parser::values::{DisplayValue, FlexDirectionValue, LengthValue};
+        if std::env::var("ZW_AR_AUTO_CONTENT").as_deref() == Ok("0") {
+            return false;
+        }
+        fn walk(
+            b: &LayoutBox,
+            parent_style: Option<&ComputedStyle>,
+            taffy_tree: &mut TaffyTree<NodeId>,
+            dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+            styles: &HashMap<NodeId, ComputedStyle>,
+        ) -> bool {
+            if !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+                return false;
+            }
+            let mut changed = false;
+            let my_style = b.node_id.and_then(|id| styles.get(&id));
+            if b.children.is_empty()
+                && let Some(id) = b.node_id
+                && let Some(ps) = parent_style
+                && matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+                && let Some(item_style) = my_style
+                && item_style.aspect_ratio_auto
+                && !b.is_replaced
+                && let Some(&tid) = dom_to_taffy.get(&id)
+                && let Ok(mut st) = taffy_tree.style(tid).cloned()
+                && let Some(ratio) = st.aspect_ratio
+                && ratio > 0.0
+            {
+                let is_column = matches!(
+                    ps.flex_direction,
+                    FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+                );
+                let main_css_auto = if is_column {
+                    matches!(item_style.height, LengthValue::Auto)
+                } else {
+                    matches!(item_style.width, LengthValue::Auto)
+                };
+                // cross 用 CSS 链（definite width/min/max 逐级钳）而非 laid 值。
+                let (css_pref_cross, css_min_cross, css_max_cross) = if is_column {
+                    (
+                        resolve_sizing_definite_real_length(&item_style.width, item_style),
+                        resolve_sizing_definite_real_length(&item_style.min_width, item_style),
+                        resolve_sizing_definite_real_length(&item_style.max_width, item_style),
+                    )
+                } else {
+                    (
+                        resolve_sizing_definite_real_length(&item_style.height, item_style),
+                        resolve_sizing_definite_real_length(&item_style.min_height, item_style),
+                        resolve_sizing_definite_real_length(&item_style.max_height, item_style),
+                    )
+                };
+                let mut css_cross_border = css_pref_cross.unwrap_or(0.0);
+                if let Some(mn) = css_min_cross {
+                    css_cross_border = css_cross_border.max(mn);
+                }
+                if let Some(mx) = css_max_cross {
+                    css_cross_border = css_cross_border.min(mx);
+                }
+                let auto_content_cross = if is_column {
+                    css_cross_border - b.padding_left - b.padding_right
+                } else {
+                    css_cross_border - b.padding_top - b.padding_bottom
+                };
+                if main_css_auto && auto_content_cross > 0.5 {
+                    let transferred_content_main = if is_column {
+                        auto_content_cross / ratio
+                    } else {
+                        auto_content_cross * ratio
+                    };
+                    let pad_main = if is_column {
+                        b.padding_top + b.padding_bottom
+                    } else {
+                        b.padding_left + b.padding_right
+                    };
+                    let target_main = (transferred_content_main + pad_main).max(0.5);
+                    let min_main_auto = if is_column {
+                        matches!(item_style.min_height, LengthValue::Auto)
+                    } else {
+                        matches!(item_style.min_width, LengthValue::Auto)
+                    };
+                    if is_column {
+                        st.size.height = taffy::style::Dimension::length(target_main);
+                        if min_main_auto {
+                            st.min_size.height = taffy::style::Dimension::length(target_main);
+                        }
+                    } else {
+                        st.size.width = taffy::style::Dimension::length(target_main);
+                        if min_main_auto {
+                            st.min_size.width = taffy::style::Dimension::length(target_main);
+                        }
+                    }
+                    st.aspect_ratio = None;
+                    let _ = taffy_tree.set_style(tid, st);
+                    let _ = taffy_tree.mark_dirty(tid);
+                    changed = true;
+                }
+            }
+
+            for c in &b.children {
+                changed |= walk(c, my_style, taffy_tree, dom_to_taffy, styles);
+            }
+            changed
+        }
+        walk(root, None, taffy_tree, dom_to_taffy, styles)
+    }
+
     /// R3913：row flex 容器（自身无 ratio + CSS height Auto）的 cross 从**flexed main ×
     /// item ratio** 传递（css-flexbox §9.2.3.B + css-sizing-4 §4，csswg #line-sizing 决议：
     /// aspect-ratio 传递按 **flexed** 主轴尺寸——011 item width:50 + flex:1 在 100px 容器
