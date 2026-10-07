@@ -36,18 +36,19 @@
 
 `red-mutation/`：三修复面四变异点（M-A/M-B/M-C1/M-C2，纯 delta + 修复态行号），变异态 21P/6F——6 红全数命中三面覆盖测试；逐字节还原 sha256 自证（`79a654cc…` 前后一致）。
 
-## 门禁（终锚 aae73e4c9）
+## 门禁（终锚 595425f09）
 
-执行中途 origin/main 两次前移且含产品变更，均按卡 merge 进分支全量重测：
+执行中途 origin/main 三次前移且含产品变更，均按卡 merge 进分支全量重测：
 - 第一轮 merge 28784ba23（R4991 + navigation-compat M2）→ 中间锚 ca55467d4：fmt 零 diff、clippy 双腿 EXIT=0、make test 20,189P/0F/198I/70 腿、reftest 704/704、WPT 43P/1F/2T。
-- 第二轮 merge d3fffc60e（t8f hydration-insertbefore + R4993）→ 终锚 aae73e4c9，下表实测。
+- 第二轮 merge d3fffc60e（t8f hydration-insertbefore + R4993）→ 中间锚 aae73e4c9：make test 20,194P/0F/198I/70 腿（t8f +5）、reftest 704/704、WPT 43P/1F/2T。
+- 第三轮 merge 381fbb761（M2-S3 session history，part02 shim +66 行；R4994 调查轮树恒等零产品变更）→ 终锚 595425f09，下表实测。
 
 | 门禁 | 终锚实测 | 基线 | 归因 |
 |---|---|---|---|
 | fmt | 零 diff | — | — |
 | clippy v8（workspace -D warnings） | EXIT=0 | — | `gates/clippy-v8-s42.log` |
 | clippy quickjs（-D warnings） | EXIT=0 | — | `gates/clippy-quickjs-s42.log` |
-| make test | 20,194P/0F/198I/70 腿，EXIT=0 | 20,182P/0F/198I/70 腿（bba78d605） | +12 = upstream 7（R4990 +1、R4991 +1、t8f +5，均 v8 腿；R4993 零新增单测）+ slice42 5（part42；engine 不在 QUICKJS_TEST_CRATES，quickjs 测试腿不变） |
+| make test | 20,194P/0F/198I/70 腿，EXIT=0 | 20,182P/0F/198I/70 腿（bba78d605） | +12 = upstream 7（R4990 +1、R4991 +1、t8f +5，均 v8 腿；R4993/M2-S3 零新增单测）+ slice42 5（part42；engine 不在 QUICKJS_TEST_CRATES，quickjs 测试腿不变） |
 | reftest | 704/704，EXIT=0 | 704/704（slice41 同锚实测） | runner `reftest` 子命令 = css21 固定清单（reftest_data::css21_reftest_cases），与 wpt-data 上游导入（reftest-upstream 层）无关，零漂移 |
 | WPT named-access targeted | 43P/1F/2T | 43P/1F/2T | Fail/Timeout 身份与基线一致（cross-origin-named-access.sub / named-objects / window-named-properties），零 P 回退 |
 
