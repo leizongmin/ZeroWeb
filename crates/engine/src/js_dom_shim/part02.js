@@ -6995,6 +6995,21 @@
     if (t === 'number' || t === 'boolean') return a;
     if (a === null) return null;
     if (a === undefined) return '__zw_undefined__';
+    // t8h：Error 实例保真——JSON round-trip 对 Error 产出 '{}'（message/stack 为不可枚举
+    // 自有属性），headless remoteObject 无内容可显（playwright 面渲染 `[object Object]`，
+    // Chrome 则显示 name+message+stack）。展开为 JSON-safe 平面对象（三 string 键形态由
+    // headless `console_value_to_remote_object` 识别为 error 语义，附 subtype+description）。
+    // 单 context 下 instanceof 可靠；Error 子类覆盖；非 Error 的同形对象维持 round-trip。
+    // https://console.spec.whatwg.org/#error
+    if (a instanceof Error) {
+      var name = '';
+      var message = '';
+      var stack = '';
+      try { name = String(a.name); } catch (_eN) {}
+      try { message = String(a.message); } catch (_eM) {}
+      try { stack = String(a.stack); } catch (_eS) {}
+      return { name: name, message: message, stack: stack };
+    }
     try { return JSON.parse(JSON.stringify(a)); } catch (_) {}
     try { return String(a); } catch (_) { return '[unknown]'; }
   }

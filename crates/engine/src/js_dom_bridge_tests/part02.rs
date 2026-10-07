@@ -321,14 +321,15 @@ fn test_console_host_bridge_r3256() {
         ..Default::default()
     };
     let mut sandbox = V8Sandbox::with_config(config).unwrap();
-    let captured: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(vec![]));
+    let captured: Arc<Mutex<Vec<(String, String, String)>>> = Arc::new(Mutex::new(vec![]));
     let cap = Arc::clone(&captured);
     sandbox.register_callback(
         "__zw_console_log",
         Box::new(move |args: &[String]| -> String {
             let level = args.first().cloned().unwrap_or_default();
             let msg = args.get(1).cloned().unwrap_or_default();
-            cap.lock().unwrap().push((level, msg));
+            let values = args.get(2).cloned().unwrap_or_default();
+            cap.lock().unwrap().push((level, msg, values));
             String::new()
         }),
     );
@@ -352,6 +353,38 @@ fn test_console_host_bridge_r3256() {
     let before = captured.lock().unwrap().len();
     sandbox.execute("console.count('x'); console.group('g'); console.time('t');").unwrap();
     assert_eq!(captured.lock().unwrap().len(), before, "count/group/time 非输出类 → no-op，不调回调");
+
+    // ④ t8h（console 桥 Error 保真）：Error 实例经 `_zwSerializeConsoleValue` 展开为
+    // {name,message,stack} 平面（JSON round-trip 对 Error 产出 '{}'，宿主面全盲——
+    // bilibili hydration 爆发 60+ 条 `[object Object]` 的根因）。钉三键在 valuesJson。
+    let before = captured.lock().unwrap().len();
+    sandbox.execute("console.error(new TypeError('boom at x'))").unwrap();
+    let got = captured.lock().unwrap().clone();
+    let (_, _, values) = &got[before];
+    assert!(
+        values.contains(r#""name":"TypeError""#) && values.contains(r#""message":"boom at x""#),
+        "Error 展开保真：valuesJson 含 name+message（旧值为空对象），got: {values}"
+    );
+    assert!(
+        values.contains(r#""stack":"TypeError: boom at x"#),
+        "stack 首行含 name: message（V8 stack 语义），got: {values}"
+    );
+
+    // ⑤ 非 Error 的同形普通对象不误伤：{name,message,stack} 三键经 round-trip 照常，
+    // shim 层不做 error 判别（headless 侧识别后才附 subtype——见 apps/browser 测试）。
+    //（本测试所有 lock 均为 `lock().clone()` 立即释放——MutexGuard 若借用穿过 assert!
+    // format_args 存活到后续步骤，再 lock 即 futex 死锁，见 docs/learnings/bugs 该条。）
+    let before = captured.lock().unwrap().len();
+    sandbox
+        .execute("console.log({ name: 'plain', message: 'm', stack: 's' })")
+        .unwrap();
+    let got = captured.lock().unwrap().clone();
+    let (_, _, values) = &got[before];
+    assert_eq!(
+        values,
+        r#"[{"name":"plain","message":"m","stack":"s"}]"#,
+        "普通对象三键 round-trip 原样（JSON 键序稳定）"
+    );
 }
 
 #[test]
