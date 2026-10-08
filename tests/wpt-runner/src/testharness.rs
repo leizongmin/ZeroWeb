@@ -9161,7 +9161,10 @@ promise_test(async function() {
             "local-supported.html",
             html,
             MINI_HARNESS,
-            Duration::from_secs(2),
+            // R5005（R3254-K5 谱系）：workspace 全量并行负载下 JS 启动 + 事件泵超 2s
+            // 间歇超限（R5001b/c、R5004 三连折此案·solo 恒过）——case 级超时非语义
+            // 断言，与 R3254-K5 同款放宽（30s 只在真挂起时咬合）。
+            Duration::from_secs(30),
         );
         assert_eq!(
             results,
@@ -9248,7 +9251,9 @@ promise_test(async function() {
             // R3254-K5 fixture：三段多键序列 + microtask 链，solo ~1.05s；2s 案超时在
             // workspace 并行负载下间歇超限（连续四轮 make test 折在此处、solo 恒过）——
             // 提到 10s 负载容限（case 级超时非语义断言，放宽无语义影响）。
-            Duration::from_secs(10),
+            // R5005：10s 在 workspace 重载窗口仍间歇超限（R5004c 单折此案）——同谱系
+            // 统一 30s。
+            Duration::from_secs(30),
         );
         assert!(
             results.iter().all(|r| r.status == HarnessStatus::Pass),
@@ -9301,7 +9306,9 @@ promise_test(async function() {
             "local-space-button-keyup.html",
             html,
             MINI_HARNESS,
-            Duration::from_secs(3),
+            // R5005（R3254-K5 谱系）：同 035 系 workspace 并行负载间歇超限（R5001b/c、
+            // R5004 折此案）——case 级超时非语义断言，统一 30s。
+            Duration::from_secs(30),
         );
         assert!(
             results.iter().all(|r| r.status == HarnessStatus::Pass),
