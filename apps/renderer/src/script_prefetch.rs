@@ -5,7 +5,7 @@ use std::sync::mpsc::Receiver;
 
 use zero_engine::{PageScript, extract_page_scripts, resolve_document_url};
 use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
-use zero_script_sandbox::extract_module_import_specifiers;
+use zero_script_sandbox::extract_static_module_import_specifiers;
 
 /// 进行中的脚本预取。
 pub struct PendingScriptPrefetch {
@@ -61,7 +61,10 @@ impl PendingScriptPrefetch {
                 Ok(result) => {
                     match result {
                         Ok(text) => {
-                            for spec in extract_module_import_specifiers(&text) {
+                            // t8j：只预取**静态** import 依赖（R3093：动态 import() 留给运行时
+                            // `__zw_compile_module` fetch）——全量提取器会把 Vite `import("_")`
+                            // 能力探测当依赖网络预取（404 噪声 + cache 污染）。
+                            for spec in extract_static_module_import_specifiers(&text) {
                                 let dep = resolve_document_url(url, &spec);
                                 if self.seen.insert(dep.clone()) {
                                     self.queue.push_back(dep);
@@ -270,6 +273,62 @@ mod dynamic_scripts_tests {
         assert_eq!(started, 0, "无完成则无回调");
         assert_eq!(pending.queue.len(), 2, "每 tick 新请求钳到 max_parallel=4");
         assert!(pending.is_active(), "4 inflight + 2 queued");
+    }
+
+    /// t8j（site-compat bilibili laputa-home）：预取层只沿**静态** import 依赖展开——
+    /// 动态 `import()` spec（Vite `import("_")` 探测形态）不得当依赖网络预取
+    /// （404 噪声 + cache 污染）。与 renderer js_worker / browser tab_js_worker 同判据。
+    #[test]
+    fn prefetch_expands_static_module_imports_only() {
+        struct RecordingHost {
+            requested: std::sync::Mutex<Vec<String>>,
+            responses: HashMap<String, String>,
+        }
+        impl AsyncFetchHost for RecordingHost {
+            fn fetch_text_meta(&mut self, url: &str, _: ResourceFetchMeta) -> Receiver<Result<String, String>> {
+                self.requested.lock().unwrap().push(url.to_string());
+                let (tx, rx) = channel();
+                let _ = tx.send(
+                    self.responses
+                        .get(url)
+                        .cloned()
+                        .map(Ok)
+                        .unwrap_or_else(|| Err("not stubbed".into())),
+                );
+                rx
+            }
+
+            fn fetch_bytes_meta(&mut self, _: &str, _: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
+                let (tx, rx) = channel();
+                let _ = tx.send(Err("not used".into()));
+                rx
+            }
+        }
+
+        let mut host = RecordingHost {
+            requested: std::sync::Mutex::new(Vec::new()),
+            responses: HashMap::from([(
+                "https://zero.test/m.js".to_string(),
+                "import st from './t.js'\nimport('./s.js')\nimport('_')\nexport default st".to_string(),
+            )]),
+        };
+        let mut pending =
+            PendingScriptPrefetch::from_html("https://zero.test/", r#"<script type="module" src="m.js"></script>"#);
+        let mut guard = 0;
+        while pending.is_active() && guard < 10 {
+            pending.tick(&mut host, 4);
+            guard += 1;
+        }
+        let mut requested = host.requested.into_inner().unwrap();
+        requested.sort();
+        assert_eq!(
+            requested,
+            vec![
+                "https://zero.test/m.js".to_string(),
+                "https://zero.test/t.js".to_string(),
+            ],
+            "只预取静态 import 依赖（红态：'./s.js' 与 '_' 被动态提取进预取队列）：{requested:?}"
+        );
     }
 
     /// Sender 被丢弃（导航边界 / StopLoading 清 inflight_fetches）→ 通道关闭；

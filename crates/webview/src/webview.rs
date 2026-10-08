@@ -3381,6 +3381,7 @@ impl WebView {
                     }
                     // R3094：递归 fetch transitive deps（闭合 module graph）。registry 按原 spec 注册源，
                     // 循环防护按解析后 URL；fetch 失败 → 返空（__zw_load_module 抛 Module not found）。
+                    // t8j-r2（D1）：回传 `resolved\x1fcode`，JS 侧缓存键取宿主解析键。
                     let mut reg = zero_script_sandbox::ModuleRegistry::new();
                     let mut visited = std::collections::HashSet::new();
                     let compiled =
@@ -3388,7 +3389,7 @@ impl WebView {
                             .ok()
                             .and_then(|_| zero_script_sandbox::compile_dependency_iife(spec, &reg).ok());
                     match compiled {
-                        Some(iife) => iife,
+                        Some(iife) => format!("{}\u{1f}{iife}", resolve_document_url(parent, spec)),
                         None => {
                             tracing::warn!("compile module {spec} (transitive fetch)");
                             String::new()

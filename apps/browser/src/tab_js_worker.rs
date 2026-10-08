@@ -16,7 +16,7 @@ use zero_engine::{
 use zero_net::{FetchPriority, HttpMethod, HttpRequest, ResourceLoader, ResourceRequest};
 use zero_script_sandbox::{
     ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
-    extract_module_import_specifiers,
+    extract_static_module_import_specifiers,
 };
 
 /// 页面 `<script>` 执行超时（毫秒）— 短于事件派发，避免死循环拖死 tab worker。
@@ -643,12 +643,14 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
             let parent = args.get(1).map(String::as_str).unwrap_or("about:blank");
             let url = zero_engine::resolve_document_url(parent, spec);
 
+            // t8j-r2（D1）：回传 `resolved\x1fcode`——JS 侧 `__moduleCache` 以宿主解析键为缓存
+            // 键（ECMA-262 §sec-hostresolveimportedmodule），跨目录同名相对 spec 不再碰撞。
             if let Ok(cache) = runtime_iifes.lock() {
                 if let Some(iife) = cache.get(&url) {
-                    return iife.clone();
+                    return format!("{url}\u{1f}{iife}");
                 }
                 if let Some(iife) = cache.get(spec) {
-                    return iife.clone();
+                    return format!("{spec}\u{1f}{iife}");
                 }
             }
 
@@ -689,9 +691,9 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
                 }
             };
             if let Ok(mut cache) = runtime_iifes.lock() {
-                cache.insert(url, iife.clone());
+                cache.insert(url.clone(), iife.clone());
             }
-            iife
+            format!("{url}\u{1f}{iife}")
         }),
     );
 }
@@ -707,7 +709,10 @@ pub fn collect_module_deps(
         return Ok(());
     }
     registry.insert(entry_url.to_string(), source.to_string());
-    for spec in extract_module_import_specifiers(source) {
+    // t8j：只预取**静态** import 依赖（与 renderer js_worker::collect_module_deps 同款）——
+    // 动态 import() 留给运行时 `__zw_compile_module` fetch，失败以 rejection 呈现，不得作为
+    // 硬依赖中止模块执行（Vite `import("_")` 能力探测形态）。
+    for spec in extract_static_module_import_specifiers(source) {
         let dep_url = zero_engine::resolve_document_url(entry_url, &spec);
         if !registry.contains_key(&dep_url) {
             let dep_src = fetch(&dep_url)?;
@@ -737,6 +742,30 @@ impl zero_page_runtime::JsExecutor for TabJsWorkerHandle {
 mod tests {
     use super::*;
     use zero_browser_shell::TabId;
+
+    /// t8j（site-compat bilibili laputa-home）：tab 侧模块依赖收集只取**静态** import——
+    /// 动态 `import()` spec（Vite `import("_")` 探测形态）不得当硬依赖 fetch 中止模块。
+    /// 与 renderer js_worker::collect_module_deps_skips_dynamic_import_specs 同判据。
+    #[test]
+    fn tab_collect_module_deps_skips_dynamic_import_specs() {
+        let calls: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        let fetch = |url: &str| -> Result<String, String> {
+            calls.lock().unwrap().push(url.to_string());
+            Ok("export default 1".to_string())
+        };
+        let mut reg = HashMap::new();
+        let source = "import { a } from './static-dep.js'\nimport('_').catch(function () {})\nexport default a";
+        collect_module_deps(&fetch, "https://zero.test/m.js", source, &mut reg).unwrap();
+        let calls = calls.into_inner().unwrap();
+        assert!(
+            calls.contains(&"https://zero.test/static-dep.js".to_string()),
+            "静态依赖仍被收集预取：{calls:?}"
+        );
+        assert!(
+            !calls.iter().any(|u| u.ends_with("/_")),
+            "动态 import spec 不得当依赖收集：{calls:?}"
+        );
+    }
 
     /// R342（siteopt t2-pb3nm）：clear_mutations_fresh 的 drain⇒bump 不变式钉——
     /// 与 renderer 侧 js_worker 同名方法同语义（tab_scripts 三处 clear 曾旁路 bump）。
