@@ -32,10 +32,15 @@
 //   https://dom.spec.whatwg.org/#dom-parentnode-queryselector
 
 /// slice47 钉①：`_zwAppl45` 压实豁免条目跨压实存活 + apply 代际边界 E2 清空。
-/// 断言翻转语义：(a) 臂翻转 = 压实豁免被撤（R52 守卫移除或压实 keep 谓词
-/// `_zwAppl45` 析取元被删——handle 豁免条目当死数据丢弃，查询 stale 复发）；
-/// (b) 臂翻转 = E2 代际清空被撤（stale id 条目经漏斗误杀换代后重挂节点——id 形态
-/// QSA 判别面）。
+/// 断言翻转语义：(a) 臂翻转 = 压实豁免被撤（R52 守卫被改回无条件删，或**全局表**
+/// 压实 keep 谓词 `_zwAppl45` 析取元被删——handle 豁免条目当死数据丢弃，查询
+/// stale 复发；**桶级** keep 谓词 part05.js:10437 站点未被本钉覆盖——豁免条目在
+/// 本钉路径先进全局表，桶级需 add/remove 桶键形态分裂的窄路径才持有，TEFF-I-1
+/// 登记，slice45 起既有缺口）；(b) 臂翻转 = E2 代际清空被撤（stale id 条目经漏斗
+/// 误杀换代后重挂节点——id 形态 QSA 判别面）。R52 守卫的 falsy 分支（未打标
+/// 照删）由钉② r52_purge_untagged_expando_deletion_s47 单独钉住；打标分支
+/// （豁免条目旁表保留）由 (a) 臂端到端覆盖（钉语义不绑守卫读法——返修 F-1 后
+/// 守卫为直接旁表读）。
 #[test]
 fn compaction_exemption_appl45_generation_lifecycle_s47() {
     use std::sync::{Arc, Mutex};
@@ -228,6 +233,74 @@ fn compaction_exemption_appl45_generation_lifecycle_s47() {
         fails.is_empty(),
         "压实豁免条目寿命观测（诊断：ex_qs=false ⇒ 压实丢弃了 _zwAppl45 条目；\
          gen_qsa=0 ⇒ E2 未清、stale id 条目经漏斗误杀换代后重挂节点）：\n{}",
+        fails.join("\n")
+    );
+}
+
+/// slice47 钉②（TEFF-I-2，PR #115 测效首轮）：R52 守卫 **falsy 分支**——未打标
+/// 条目（同 turn createElement→append→remove 消零，从未 apply，R51c 热类）照删
+/// per-element `_expando` 旁表。观测面：消零后经原 proxy 读用户 expando 返
+/// undefined（旁表删除后 get trap R3042 miss；后续读经 R93 回退取全新 proxy 无
+/// expando）。翻转 = 守卫被改宽（如恒不删 expando）→ 用户 expando 存活可读——
+/// 性能不变式（R52 原始动机面：消零节点强引用全清）回归的行为显面。打标分支
+/// （豁免条目旁表保留）由钉① (a) 臂端到端覆盖，两臂正交：守卫改无条件删时本钉
+/// 保持绿而钉① (a) 臂红；守卫改恒不删时本钉红而钉① (a) 臂保持绿。
+/// https://dom.spec.whatwg.org/#concept-node-remove
+#[test]
+fn r52_purge_untagged_expando_deletion_s47() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://zero.test/s47c".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 同 turn 消零热类：createElement → 用户 expando（旁表落表，R3069）→ append
+    //（PA 入表）→ remove（invalidate 内 R51c 消零 + R52 清理：proxy/expando 旁表
+    // 照删——未打标 falsy 分支）。无 apply、无 identity 桥（消零路径纯 shim 侧）。
+    sandbox
+        .execute(
+            "var d = document.createElement('img');\
+             d.foo47 = 'bar';\
+             globalThis.__r47c_pre = String(d.foo47);\
+             document.body.appendChild(d);\
+             d.remove();\
+             globalThis.__r47c_post = String(d.foo47);",
+        )
+        .unwrap();
+
+    let mut read = |name: &str| -> String {
+        sandbox
+            .execute(&format!("String(globalThis.{name})"))
+            .unwrap()
+            .value
+    };
+    let mut fails: Vec<String> = Vec::new();
+    let mut expect = |fails: &mut Vec<String>, name: &str, want: &str| {
+        let got = read(name);
+        if got != want {
+            fails.push(format!("{name}: want {want:?}, got {got:?}"));
+        }
+    };
+    // 前置 sanity：expando set/get 往返成立（排除观测面自身失真）。
+    expect(&mut fails, "__r47c_pre", "bar");
+    // falsy 分支语义：消零后旁表已删 → expando 读回 undefined（翻转 = 守卫被改宽
+    // 恒不删 → 'bar' 存活）。变异 RED：M-C（删除行整体中和）唯一杀死本断言。
+    expect(&mut fails, "__r47c_post", "undefined");
+    assert!(
+        fails.is_empty(),
+        "R52 消零未打标条目 expando 照删观测（诊断：post='bar' ⇒ 守卫被改宽、\
+         消零节点旁表强引用残留，R52 泄漏修复面回归）：\n{}",
         fails.join("\n")
     );
 }

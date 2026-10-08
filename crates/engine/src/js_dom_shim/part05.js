@@ -10528,22 +10528,26 @@
           if (typeof _clsProxyCache !== 'undefined') delete _clsProxyCache['@' + _rv.__zwHandle];
           // slice47：`_zwAppl45` 压实豁免标记存于 per-element `_expando` 旁表（set trap
           // R3069 fallthrough 落表，part05.js `_ex2[p] = value`）——本清除在豁免标记
-          // **同一 invalidate 内后执行**（上方 slice45 豁免门 10507 置标 → 此处删表），
+          // **同一 invalidate 内后执行**（上方 slice45 豁免门 10490 置标 → 此处删表），
           // 无条件删会把刚打的标记一并湮灭 → 下一次 512 压实经 get trap（R3042 expando
           // 读）读到 undefined → 豁免条目当死数据丢弃 → identity 剔除漏斗失去依据，
           // document QS/QSA 对快照真移除的 handle 节点 stale（slice45 修复在压实场景
           // 恒失效；part47 钉 compaction_exemption_appl45_generation_lifecycle_s47
-          // 修前自然红实证）。未打标条目（R51c 纯消零热路径）falsy 照删，行为不变。
-          // 旁表保留范围：仅本 invalidate 被豁免的 handle 条目（快照真移除，罕见类），
-          // E2 代际整表作废后条目出表、旁表条目随 handle 死键不可达。
-          // slice47：须直读 _expando 判 _zwAppl45——`!_rv._zwAppl45` 经 get trap miss 落
-          // R93 原型链 walk（`Object.getPrototypeOf(_makeProxy(...))`）会在 delete 后把
-          // proxy 重塞 _proxyCache，R52 热路径泄漏复现。
-          if (typeof _expando !== 'undefined') {
-            var _exAppl45E = _expando['@' + _rv.__zwHandle];
-            if (!(_exAppl45E && Object.prototype.hasOwnProperty.call(_exAppl45E, '_zwAppl45') && _exAppl45E._zwAppl45))
-              delete _expando['@' + _rv.__zwHandle];
-          }
+          // 修前自然红实证）。未打标条目（R51c 纯消零热路径）照删，行为不变。
+          // slice47 返修 F-1（PR #115 缺陷首轮）：读标记走**直接旁表读**，不经代理
+          // trap——若经 `_rv._zwAppl45` 求值，未打标节点 expando miss 后落 R93 原型链
+          // 回退调 `_makeProxy`（part04.js:9303），恰逢两行前 `_proxyCache` 已删 →
+          // 缓存 miss 分配新 proxy 并回写（part05.js `_proxyCache[key] = proxy`），
+          // 在 R52 自己的目标热路径上复活刚清理的缓存条目（死条目随消零数线性增长
+          // 模式复发，即 R52 泄漏修复的中和）。旁表直读零 trap、零分配、与删除顺序
+          // 无关。
+          // 旁表保留范围：仅本 invalidate 被豁免的 handle 条目（快照真移除，罕见类）。
+          // E2 代际整表作废后条目出表，但旁表 bucket 对标记条目无删除点（唯一删除点
+          // 即本行、被守卫跳过；导航级 `__zw_reset_form_state` 整表重置除外）——标记
+          // bucket 会话内滞留（语义死键），与上方 sel 键保留设计同族，有界驻留申报
+          // 见 PR #115 交付卡（F-2，PR #115 缺陷首轮）。
+          var _ex47 = _expando['@' + _rv.__zwHandle];
+          if (!_ex47 || !_ex47._zwAppl45) delete _expando['@' + _rv.__zwHandle];
         }
       }
       for (var r3 = 0; r3 < remFlat.length; r3++) {
