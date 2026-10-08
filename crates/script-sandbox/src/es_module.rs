@@ -665,9 +665,8 @@ fn module_provides_export(
             let after = after_star.trim_start();
             if let Some(after_as) = after.strip_prefix("as").map(str::trim_start)
                 && let Some((namespace, _)) = split_from_clause(after_as)
-                && namespace.trim() == name
             {
-                return true;
+                return namespace.trim() == name;
             }
             if name != "default"
                 && let Some((_, spec_part)) = split_from_clause(after)
@@ -862,7 +861,7 @@ fn transform_export(
 fn is_regex_literal_start(prev: Option<&char>, prev_word: &str) -> bool {
     match prev {
         None => true,
-        Some(')' | ']' | '.') => false,
+        Some(')' | ']' | '.' | '+' | '-' | '\'' | '"' | '`') => false,
         Some(c) if c.is_alphanumeric() || *c == '_' || *c == '$' => matches!(
             prev_word,
             "return"
@@ -962,6 +961,45 @@ fn split_statements(source: &str) -> Vec<String> {
                     continue;
                 }
                 ScanCtx::TemplateBrace(depth) => {
+                    if ch == '/' && next == Some('/') {
+                        line_comment = true;
+                        index += 2;
+                        continue;
+                    }
+                    if ch == '/' && next == Some('*') {
+                        block_comment = true;
+                        index += 2;
+                        continue;
+                    }
+                    if ch == '/' && is_regex_literal_start(prev_significant.as_ref(), &prev_word) {
+                        current.push(ch);
+                        index += 1;
+                        let mut in_class = false;
+                        while index < chars.len() {
+                            let rc = chars[index];
+                            current.push(rc);
+                            if rc == '\\' && index + 1 < chars.len() {
+                                current.push(chars[index + 1]);
+                                index += 2;
+                                continue;
+                            }
+                            index += 1;
+                            if rc == '[' {
+                                in_class = true;
+                            } else if rc == ']' {
+                                in_class = false;
+                            } else if rc == '/' && !in_class {
+                                while index < chars.len() && chars[index].is_ascii_alphabetic() {
+                                    current.push(chars[index]);
+                                    index += 1;
+                                }
+                                break;
+                            }
+                        }
+                        prev_significant = Some(')');
+                        prev_word.clear();
+                        continue;
+                    }
                     current.push(ch);
                     match ch {
                         '{' => *ctx_stack.last_mut().expect("ctx") = ScanCtx::TemplateBrace(depth + 1),
