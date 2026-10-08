@@ -4786,6 +4786,7 @@
   // history.pushState/replaceState 与 navigation.navigate() 共用）。含 S4 的 Navigation API
   // push/replace CCE 面。M2-S4C：bind 单元格提交后绑记录（destination 动态 index/getState）。
   function _histApplyNav(state, url, replace, bind) {
+    _histSaveCurrentScroll(); // M2-S4D：离开当前 entry 前存滚动位
     if (replace) {
       var newUrl = _histStateUrlOrNull(url);
       if (newUrl === null && url != null && String(url) !== '') return; // 跨源已抛
@@ -4829,7 +4830,7 @@
       if (ctrl) {
         var ie = new (globalThis.DOMException || DOMException)('Cannot go back or forward.', 'InvalidStateError');
         ctrl.reject(ie);
-        ctrl.finishedSettle(ie);
+        ctrl.finishedSettle(ie, true);
       }
       return;
     }
@@ -4843,6 +4844,7 @@
       return;
     }
     var oldHref = _hist_current().url;
+    _histSaveCurrentScroll(); // M2-S4D：离开当前 entry 前存滚动位
     // M2-S4C：navigate 'traverse' 同步派发（queue 任务内）——destination = 目标 record（真实
     // key/id/index——WPT navigate-history-back-after-fragment）；preventDefault → 取消整个
     // traversal（不动 cursor/不派 popstate）；intercept → 应用后走 handler 生命周期（WPT
@@ -4871,11 +4873,18 @@
       destState: _navTgtRec ? _navTgtRec.navState : undefined,
     });
     _navTraverseDispatching = false;
+    // M2-S4D：restore 规格（目标 entry 保存滚动位 + 派发时刻滚动代次）——intercept 链
+    // after-transition 恢复 / e.scroll() 消费（WPT scroll-behavior after-transition-*）。
+    var _navTgtHe = _hist_entries[target];
+    _navEv._zwRestore = {
+      x: _navTgtHe.scrollX || 0, y: _navTgtHe.scrollY || 0,
+      has: _navTgtHe.scrollY !== undefined, gen: _winScrollGen,
+    };
     if (_navEv.defaultPrevented) {
       if (ctrl) {
         var ce = new (globalThis.DOMException || DOMException)('The operation was aborted.', 'AbortError');
         ctrl.reject(ce);
-        ctrl.finishedSettle(ce);
+        ctrl.finishedSettle(ce, true);
       }
       return;
     }
@@ -4883,7 +4892,7 @@
       if (ctrl) {
         var pe = new (globalThis.DOMException || DOMException)('The navigation was preempted.', 'AbortError');
         ctrl.reject(pe);
-        ctrl.finishedSettle(pe);
+        ctrl.finishedSettle(pe, true);
       } else {
         try { globalThis.__zwDbgPreemptNoCtrl = String(_hist_cursor) + '/' + String(target) + '/' + String(delta); } catch (_eDbg) {}
       }
@@ -4893,6 +4902,11 @@
     // M2-S4：Navigation API traverse 面——currentEntry 恢复到目标 session entry 的 record
     //（按 he 反查，key/id 还原——WPT key-id-back-same-document）+ 'traverse' currententrychange。
     if (typeof _navTraverse === 'function') _navTraverse(_hist_current());
+    // M2-S4D：非 intercept traversal 的滚动恢复（非 fragment 变更且有保存数据；fragment 走
+    // 既有滚锚面——R3065）。
+    if (!_navEv._zwIntercepted && !_navEv.hashChange) {
+      _histRestoreScroll(_hist_entries[target]);
+    }
     _hist_dispatchPopState(oldHref, _navEv._zwIntercepted);
     if (_navEv._zwIntercepted) _navRunIntercept(_navEv, ctrl);
     else if (ctrl) {
@@ -5139,28 +5153,40 @@
     // M2-S4B：navigate(url, {state, history, info})——同步派 navigate（cancelable/interceptable）；
     // preventDefault → 双 reject AbortError（WPT navigation-navigate-preventDefault——CCE 不发因
     // 无提交）；否则同文档提交（push/replace session entry + CCE，state 入 classic 槽——WPT
-    // navigate-history-state history.state 面），committed/finished 于提交后（或 intercept handler
-    // 结算后）结算。已知限制：解析 base 用当前 location.href（spec 为文档 base URL——pushState 后
-    // 相对导航面 defer）。
+    // navigate-history-state history.state 面）。M2-S4D：intercept 时 committed 于链任务头结算
+    //（handler 起跑前——WPT after-transition-push handler pending 期间 await committed），
+    // finished 于 handler 链结算后。已知限制：解析 base 用当前 location.href（spec 为文档 base
+    // URL——pushState 后相对导航面 defer）。
     navigate: function (url, options) {
       var o = (options == null || typeof options !== 'object') ? {} : options;
       var replace = o.history === 'replace';
       var oldHref = globalThis.location.href;
       var abs = _resolveHistUrl(String(url));
+      var hashChange = _navIsHashOnly(oldHref, abs);
       var ctrl = _navNavResult();
       var ev = _navFireNavigate({
         navigationType: replace ? 'replace' : 'push',
-        url: abs, hashChange: _navIsHashOnly(oldHref, abs), info: o.info,
+        url: abs, hashChange: hashChange, info: o.info,
       });
       if (ev.defaultPrevented) {
         var de = _navNavAbortError();
         ctrl.reject(de);
-        ctrl.finishedSettle(de);
+        ctrl.finishedSettle(de, true);
         return { committed: ctrl.committed, finished: ctrl.finished };
       }
       _histApplyNav(o.state, abs, replace, ev._zwBind);
-      if (ev._zwIntercepted) _navRunIntercept(ev, ctrl);
+      if (ev._zwIntercepted) {
+        // M2-S4D：restore 规格（push/replace——destination fragment 锚滚 | 无 fragment 滚到文档
+        // 顶；WPT scroll-behavior manual-scroll-resets-when-no-fragment / -fragment-does-not-exist）。
+        ev._zwRestore = _navRestoreSpecForUrl(abs);
+        _navRunIntercept(ev, ctrl);
+      }
       else {
+        // M2-S4D：fragment 导航提交后滚锚（WPT scroll-behavior after-transition-basic
+        // 「navigate('#frag') 后 scrollY ≠ 0」基面）。
+        if (hashChange && String(abs).indexOf('#') >= 0) {
+          _scrollToAnchorForHash(String(abs).split('#')[1] || '');
+        }
         _defer(function () {
           if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
           if (ctrl.finishedSettle) ctrl.finishedSettle(null);
@@ -5177,10 +5203,15 @@
       if (ev.defaultPrevented) {
         var de = _navNavAbortError();
         ctrl.reject(de);
-        ctrl.finishedSettle(de);
+        ctrl.finishedSettle(de, true);
         return { committed: ctrl.committed, finished: ctrl.finished };
       }
-      if (ev._zwIntercepted) _navRunIntercept(ev, ctrl);
+      if (ev._zwIntercepted) {
+        // M2-S4D：restore 规格（reload——当前 URL 的 fragment 锚滚 | 无 fragment 文档顶；
+        // WPT scroll-behavior after-transition-reload-*）。committed 于链任务头结算（_navRunIntercept）。
+        ev._zwRestore = _navRestoreSpecForUrl(globalThis.location.href);
+        _navRunIntercept(ev, ctrl);
+      }
       else {
         _defer(function () {
           if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
@@ -5229,6 +5260,11 @@
     var list = (_navListeners[type] || []).slice();
     var on = _navOnHandlers[type];
     if (typeof on === 'function') list.push({ fn: on });
+    // M2-S4D：dispatch 印记——NavigateEvent.scroll() 在 dispatch 期（监听器内）抛
+    // InvalidStateError 的判定基面（spec dispatch flag；WPT manual-immediate-scroll）。
+    // save/restore 防嵌套派发（preemption 面）串写。
+    var _prevDsp = ev._zwDispatching;
+    ev._zwDispatching = true;
     for (var i = 0; i < list.length; i++) {
       var entry = (list[i] && typeof list[i] === 'object') ? list[i] : { fn: list[i] };
       // once：调用**前**移除（spec inner invoke——WPT dynamic-index {once:true} 面）。
@@ -5238,11 +5274,60 @@
       }
       try { (typeof entry.fn === 'function' ? entry.fn : entry).call(globalThis.navigation, ev); } catch (_eNda) {}
     }
+    ev._zwDispatching = _prevDsp;
   }
   // 仅 hash 段不同（同文档片段导航判定——navigate event hashChange 面）。
   function _navIsHashOnly(oldHref, newHref) {
     return String(oldHref).split('#')[0] === String(newHref).split('#')[0]
       && String(oldHref).split('#')[1] !== String(newHref).split('#')[1];
+  }
+  // M2-S4D：离开 entry 前保存滚动位（session entry scrollX/Y——traverse 回访恢复基面；
+  // WPT scroll-behavior after-transition-*）。
+  function _histSaveCurrentScroll() {
+    var cur = _hist_current();
+    if (!cur) return;
+    cur.scrollX = _winScroll.left;
+    cur.scrollY = _winScroll.top;
+  }
+  // M2-S4D：restore 规格构造（push/replace/reload intercept 面）——destination URL 带 fragment
+  // → 锚滚（还原时重查几何，DOM 变更后位置正确）；无 fragment → 文档顶（spec nav scroll steps
+  // 「beginning of the document」；WPT manual-scroll-resets-when-no-fragment）。gen = 派发时刻
+  // 滚动代次（after-transition「导航期间文档被滚 → 跳过」判定基面）。
+  function _navRestoreSpecForUrl(url) {
+    var s = String(url);
+    var i = s.indexOf('#');
+    return { frag: (i >= 0 && s.length > i + 1) ? s.slice(i + 1) : null, gen: _winScrollGen };
+  }
+  // M2-S4D：restore 规格执行（链尾 after-transition / e.scroll() 共用）——两种形：
+  // ① frag 形（push/replace/reload）：fragment 有匹配锚 → 锚滚；无锚/无 fragment → 文档顶
+  //（WPT manual-scroll-fragment-does-not-exist「beginning of document」）。② saved 形
+  //（traverse）：目标 entry 保存位（`has` 门——未保存不滚）。
+  function _navApplyRestoreSpec(rs) {
+    if (rs.frag !== undefined) {
+      var _a = null;
+      if (rs.frag !== null) {
+        try { _a = globalThis.document.getElementById(rs.frag); } catch (_eA0) {}
+        if (!_a) { try { _a = globalThis.document.querySelector('[name="' + rs.frag + '"]'); } catch (_eA1) {} }
+      }
+      if (_a) _scrollToAnchorForHash(rs.frag);
+      else { _winScroll.left = 0; _winScroll.top = 0; _zwFireScroll(null, null, null); }
+      return;
+    }
+    if (rs.has) {
+      _winScroll.left = rs.x;
+      _winScroll.top = rs.y;
+      _zwFireScroll(null, null, null);
+    }
+  }
+  // M2-S4D：traverse 提交后恢复目标 entry 滚动位（scrollRestoration auto 且目标有保存数据且
+  // 非 fragment 变更——fragment 走既有滚锚面）。
+  function _histRestoreScroll(target) {
+    if (!target || target.scrollY === undefined) return false;
+    if ((target.scrollRestoration || 'auto') === 'manual') return false;
+    _winScroll.left = target.scrollX || 0;
+    _winScroll.top = target.scrollY || 0;
+    _zwFireScroll(null, null, null);
+    return true;
   }
   // M2-S4C：session entry 的**有效 URL**——初始 entry url=''（fallback 口）→ 读页面 URL
   //（traverse destination.url 须绝对可解析——WPT navigate-history-back-after-fragment
@@ -5305,7 +5390,7 @@
   function _navNavResult() {
     var ctrl = { resolve: null, reject: null, committed: null, finished: null };
     ctrl.committed = new Promise(function (res, rej) { ctrl.resolve = res; ctrl.reject = rej; });
-    ctrl.finished = new Promise(function (res, rej) { ctrl.finishedSettle = function (err) { err ? rej(err) : res(undefined); }; });
+    ctrl.finished = new Promise(function (res, rej) { ctrl.finishedSettle = function (err, failed) { failed ? rej(err) : res(undefined); }; });
     // M2-S4C：导航 abort/preempt 是**预期**拒绝路径——消费方可选观察。内置 no-op catch 防止
     // 未观察的 abort（preempt/越界/取消）计为全局 unhandledrejection（WPT 各测试自行挂
     // promise_rejects_dom 断言，不受影响）。
@@ -5319,7 +5404,8 @@
   // intercept handler 生命周期：defer 起跑（spec——handler 在事件 dispatch 完成后的任务里调），
   // **顺序链**执行（多次 intercept() 依序 await——WPT intercept-multiple-times）；任一
   // throw/reject → navigateerror（ErrorEvent——error/message/filename/lineno/colno 从 err.stack
-  // best-effort 提取）+ 双 reject；全成 → navigatesuccess + committed(entry)/finished 结算。
+  // best-effort 提取）+ 双 reject；全成 → after-transition 滚动恢复 + navigatesuccess + finished
+  // 结算。M2-S4D：committed 于链任务头（handler 起跑前）结算——intercept 链只挡 finished。
   // M2-S4C：NavigationTransition——intercept 链进行中暴露（navigation.transition）；
   // 链 settle（成/败）即结束并清空。
   var _navTransition = null;
@@ -5334,17 +5420,33 @@
       if (tSettle) tSettle(err);
     }
     _defer(function () {
+      // M2-S4D：committed 于链任务头结算（spec——commit 后、handler 起跑前），且 handler 在
+      // **同一任务内**被调——`await committed` 的续延（microtask）晚于 handler 同步段，使
+      // handler 内创建的 promise（WPT manual-scroll-after-dispatch 的 intercept_resolve）
+      // 对续延可见。
+      if (ctrl && ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
       var idx = 0;
       var settled = false;
       function runNext() {
         if (settled) return;
         if (idx >= handlers.length) {
           settled = true;
+          ev._zwSettled = true;
           done(null);
+          // M2-S4D：after-transition 滚动恢复（链尾，先于 navigatesuccess——WPT
+          // after-transition-timing 事件序断言）——manual / e.scroll() 已滚 / 导航期间文档被
+          // 滚动（代次变化）均跳过（WPT scroll-behavior after-transition-* 三面）。**不读**
+          // history.scrollRestoration（Navigation API restore 独立于 entry mode——WPT
+          // after-transition-with-history-scroll-restoration-manual / -during-promise）。
+          var _rs = ev._zwRestore;
+          var _mode = ev._zwScrollMode || 'after-transition';
+          if (_rs && _mode !== 'manual' && !ev._zwScrollRequested && _rs.gen === _winScrollGen) {
+            _navApplyRestoreSpec(_rs);
+          }
           var ok = new Event('navigatesuccess');
           _navDispatchAny(ok);
           if (ctrl) {
-            if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+            // committed 已于提交时结算（M2-S4D）——链尾仅 finished。
             if (ctrl.finishedSettle) ctrl.finishedSettle(null);
           }
           return;
@@ -5353,8 +5455,8 @@
         var result;
         try {
           result = (typeof h === 'function') ? h() : undefined;
-        } catch (err) { settled = true; done(err); _navInterceptFail(err, ctrl); return; }
-        Promise.resolve(result).then(runNext, function (err) { settled = true; done(err); _navInterceptFail(err, ctrl); });
+        } catch (err) { settled = true; ev._zwSettled = true; done(err); _navInterceptFail(err, ctrl); return; }
+        Promise.resolve(result).then(runNext, function (err) { settled = true; ev._zwSettled = true; done(err); _navInterceptFail(err, ctrl); });
       }
       runNext();
     });
@@ -5387,9 +5489,11 @@
     });
     _navDispatchAny(ee);
     if (ctrl) {
-      var ab = (err && typeof err === 'object') ? err : _navNavAbortError();
-      if (ctrl.reject) ctrl.reject(ab);
-      if (ctrl.finishedSettle) ctrl.finishedSettle(ab);
+      // M2-S4D：handler 拒绝原因**原样**透传（Promise.reject() → undefined 也原样——
+      // WPT after-transition-reject promise_rejects_exactly(t, undefined, ...)）。
+      if (ctrl.reject) ctrl.reject(err);
+      // failed=true 显式标失败——handler 拒绝原因可为 undefined（falsy 不得误判为成功）。
+      if (ctrl.finishedSettle) ctrl.finishedSettle(err, true);
     }
   }
 
@@ -5427,8 +5531,23 @@
     if (!anchor) {
       try { anchor = globalThis.document.querySelector('[name="' + frag + '"]'); } catch (_e) {}
     }
+    // M2-S4D：窗口滚动位同步——fragment 导航后 window.scrollY 可观测（WPT scroll-behavior
+    // after-transition-* 「navigate('#frag') 后 scrollY ≠ 0」基面）。先取**滚动前**几何算绝对
+    // 目标位；scrollIntoView 已落窗口位（scroll-to-fragid/scroll-position 的 border-edge 精确值）
+    // 时不覆写——仅在 scrollIntoView 未动窗口位时以几何近似补写。
+    var _preTop = _winScroll.top;
+    var _targetTop = null;
+    try {
+      var _rt = anchor && anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : null;
+      _targetTop = (_rt && isFinite(_rt.top)) ? Math.max(0, Math.round(_rt.top + _preTop)) : null;
+    } catch (_eWSc0) {}
     if (anchor && typeof anchor.scrollIntoView === 'function') {
       try { anchor.scrollIntoView(); } catch (_e) {}
+    }
+    if (_targetTop !== null && _targetTop > 0 && _winScroll.top === _preTop) {
+      _winScroll.top = _targetTop;
+      _winScrollGen++;
+      _zwFireScroll(null, null, null);
     }
   }
 

@@ -2,8 +2,8 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-08（M2-S1/S2/S3/S4/S4B/S4C 六切片——location 86.1% / traversal 93.3% /
-history-interface 91.8% / navigation-api 27.8%；全量 20.9%→45.0%）
+**最后更新**: 2026-10-08（M2-S1/S2/S3/S4/S4B/S4C/S4D 七切片——location 86.1% / traversal 93.3% /
+history-interface 91.8% / navigation-api 36.1%；全量 20.9%→49.4%）
 
 ---
 
@@ -26,7 +26,7 @@ history-interface 91.8% / navigation-api 27.8%；全量 20.9%→45.0%）
 | P1 | 四 corpus 导入 + 基线 | ✅ 落地（fetch 三域 + 嵌套 resources 2026-10-07 恢复后入库；基线 20.9%，S1+S2 后全量 29.2%） |
 | P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口：the-history-interface 81.6%→**91.8%**（traverse 入队 + 空串 URL + 跨源 SecurityError）；余 xhr helper infra ×1 + 速率限制 optional ×2 挂账 |
 | P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | 🔶 S1+S2 落地：location 41.9%→**86.1%**、traversal 62.2%→**93.3%**；余 exotic 内部方法面（preventExtensions/setPrototypeOf） |
-| P3b | Navigation API（window.navigation 全域） | 🔶 S4 read side + S4B navigate/intercept + S4C traverse 面/destination 动态面/preemption/transition（→**27.8%**）；余 destination scroll/focus 拦截行为、跨文档 navigate、userInitiated（runner 无 user-activation）= ④-D |
+| P3b | Navigation API（window.navigation 全域） | 🔶 S4 read side + S4B navigate/intercept + S4C traverse/destination/preemption + S4D scroll-behavior 面（→**36.1%**）；scroll-behavior 22/26（余 4F = reload 族挂账渲染域：scroll anchoring + rect 快照刷新，见 S4D evidence）；余 focus-reset 簇、跨文档 navigate、userInitiated（runner 无 user-activation）= ④-D 残余 |
 | P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | ⏳ M3 **用户门控** |
 | P5 | bfcache / fission 挂账定稿 | ⏳ M4 |
 
@@ -65,16 +65,23 @@ history-interface 91.8% / navigation-api 27.8%；全量 20.9%→45.0%）
   navigation.transition + addEventListener once + send_keys fixture 2s 超时修复（连轮闪红
   根因）。
   证据：[evidence/2026-10-08-m2-s4c-traverse-face.md](evidence/2026-10-08-m2-s4c-traverse-face.md)。
-- **质量门禁（六切片）**：`make test` 全绿 20,200 P / 0 F（S4C 轮）；clippy -D warnings
-  零 warning；fmt 零 diff；每轮全量语料零回归（M1 81 Pass 案全保持）。全量批墙钟
-  TIME_LIMIT=2700（批内不与 make test 并发）。
+- **M2-S4D scroll-behavior 面（2026-10-08）**：滚动保存（离 entry 前）/ restore 规格
+  （frag 形锚滚|文档顶 + saved 形 traverse 保存位）/ scroll 代次 skip 判定 / intercept({scroll})
+  after-transition|manual / e.scroll()（dispatch 期 InvalidStateError——顺手修掉 manual-immediate-scroll
+  假绿：listener assert 异常被 dispatch 吞）/ committed 改链任务头结算（intercept 链只挡
+  finished——scroll-behavior 族 14 Timeout 同根）/ finished 拒绝原因原样透传。
+  navigation-api 27.8%→**36.1%**（scroll-behavior 1/26→22/26）；全量 45.0%→**49.4%**。
+  余 4F = reload 族挂账渲染域（scroll anchoring + rect 快照刷新）。
+  证据：[evidence/2026-10-08-m2-s4d-scroll-behavior.md](evidence/2026-10-08-m2-s4d-scroll-behavior.md)。
+- **质量门禁（七切片）**：`make test` 全绿 20,209 P / 0 F（S4D 轮）；clippy -D warnings
+  零 warning；fmt 零 diff；每轮全量语料零回归（per-subtest 精确 diff，S4D 轮 scroll-behavior
+  域外零状态变化）。全量批墙钟 TIME_LIMIT=2700（批内不与 make test 并发）。
 
 ## 下一步计划
 
-1. **M2 ④-D Navigation API 收尾簇**：destination scroll()/focus 拦截行为（scroll-behavior
-   after-transition 面）、userInitiated（须 runner user-activation 模型——先评估）、跨文档
-   navigate 面、preemption 残余（defaultPrevented-navigation-preempted / intercept-and-
-   navigate）。
+1. **M2 ④-D 残余——focus-reset 簇评估**（navigation-api focus-reset/ 8 案）：依赖
+   document.activeElement/autofocus/导航后 focus reset 语义——先探 activeElement 面现状
+   再定切片 scope；scroll()/scroll-behavior 簇已收（S4D，余 4F 挂账渲染域）。
 2. **M2 ⑤ exotic 内部方法面评估**（Location [[PreventExtensions]]/[[SetPrototypeOf]]）：
    影响 [LegacyUnforgeable] 接口建模（Proxy vs 引擎层 exotic 支持），跨切片收益
    （location 3F + 后续 Window/Document 同族面）。

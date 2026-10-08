@@ -12837,7 +12837,9 @@
         throw new globalThis.TypeError("Failed to execute 'intercept' on 'NavigateEvent': required member handler is null.");
       }
       // M2-S4B：多次 intercept() 合法——handler **顺序链**（WPT intercept-multiple-times——
-      // finished 依序 await 全部 handler promise）。
+      // finished 依序 await 全部 handler promise）。M2-S4D：scroll 模式（'after-transition'
+      // 缺省 | 'manual'——WPT scroll-behavior manual-basic）。
+      this._zwScrollMode = (o.scroll === 'manual') ? 'manual' : 'after-transition';
       if (!this._zwHandlers) this._zwHandlers = [];
       this._zwHandlers.push(typeof o.handler === 'function' ? o.handler : undefined);
       this._zwIntercepted = true;
@@ -12847,14 +12849,39 @@
     };
     NavigateEventBase.prototype.scroll = function () {
       // spec：synthetic（非 UA 派发）事件 scroll() 抛 SecurityError（WPT scroll-on-synthetic-event）；
-      // 未 intercept 的 UA 事件抛 InvalidStateError（WPT scroll-without-intercept）；intercept 后
-      // headless 无真滚动 → no-op。
+      // 未 intercept 的 UA 事件抛 InvalidStateError（WPT scroll-without-intercept）。
+      // M2-S4D：intercept 后 = **立即执行滚动恢复**（目标 entry 保存位）并置请求标记——
+      // after-transition 的链尾恢复跳过（WPT after-transition-explicit-scroll「scroll() 应
+      // preempt after-transition」）。无保存数据 → no-op。
       if (!this._zwNavFired) {
         throw new (globalThis.DOMException || DOMException)('scroll() can only be called on a trusted navigate event.', 'SecurityError');
       }
       if (!this._zwIntercepted) {
         throw new (globalThis.DOMException || DOMException)('scroll() can only be called after intercept().', 'InvalidStateError');
       }
+      // M2-S4D：**dispatch 期**（事件监听器内）scroll() 抛 InvalidStateError（spec——导航未
+      // 提交不可滚；WPT manual-immediate-scroll）。
+      if (this._zwDispatching) {
+        throw new (globalThis.DOMException || DOMException)('scroll() can only be called after the navigate event has finished dispatching.', 'InvalidStateError');
+      }
+      // M2-S4D：重复 scroll() 抛 InvalidStateError（WPT manual-scroll-repeated）；导航已
+      // 结算（finished fulfill/reject 链尾）后再调抛 InvalidStateError（WPT
+      // manual-scroll-after-resolve）。
+      if (this._zwScrollRequested) {
+        throw new (globalThis.DOMException || DOMException)('scroll() has already been called.', 'InvalidStateError');
+      }
+      // M2-S4D：intercept 后 preventDefault（取消）→ scroll() 抛 InvalidStateError
+      //（WPT scroll-after-preventDefault）。
+      if (this._defaultPrevented || this.defaultPrevented) {
+        throw new (globalThis.DOMException || DOMException)('The navigation was canceled.', 'InvalidStateError');
+      }
+      if (this._zwSettled) {
+        throw new (globalThis.DOMException || DOMException)('The navigation has already finished.', 'InvalidStateError');
+      }
+      this._zwScrollRequested = true;
+      // M2-S4D：立即滚到目标（frag 形——锚滚/文档顶；saved 形——目标 entry 保存位）。显式
+      // 滚动不受 after-transition 代次跳过面约束（WPT after-transition-explicit-scroll）。
+      if (this._zwRestore) _navApplyRestoreSpec(this._zwRestore);
     };
     var NavigateEventCtor = function NavigateEvent(type) {
       var options = arguments.length > 1 ? arguments[1] : undefined;

@@ -552,6 +552,10 @@
   // 负值 clamp 0（spec scroll 不可负）。导航经 __zw_reset_form_state 重置。
   var _scrollOffsets = {};
   var _winScroll = { top: 0, left: 0 };
+  // M2-S4D（navigation-compat）：scroll 代次——任意程序滚动 +1（Navigation API intercept 链的
+  // 「文档在导航期间被滚动」判定基面——after-transition 恢复跳过条件；WPT
+  // after-transition-skips-restore-when-scrolled）。
+  var _winScrollGen = 0;
   // R4353：滚动偏移导出（reftest harness 消费）——sel-based 条目（'@handle' 键 =
   // detached createElement 元素无文档选择器，跳过；零偏移条目跳过）。返回 JSON 数组
   // [{sel, top, left}]，随渲染参数回流（照 R4241 focus_selector 模式）。
@@ -5580,6 +5584,7 @@
     else { store.left = nx; store.top = ny; }
     if (store.left < 0) store.left = 0; // spec scroll 不可负
     if (store.top < 0) store.top = 0;
+    _winScrollGen++; // M2-S4D：滚动代次推进
   }
   // R3051：scroll 事件派发（R3047 follow-up）。scrollTo/scrollBy/scrollTop= 后派发 'scroll' 事件，使
   // scroll-listener（infinite scroll / lazy load / sticky nav / parallax）在程序化滚动后触发。real browser 异步
