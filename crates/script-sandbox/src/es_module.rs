@@ -188,16 +188,25 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry) -> Result<String,
     // 反序时入口模块体在 prelude 第 2 条语句执行 → `__zw_dynamic_import is not defined` ReferenceError，
     // 探测中断、后续语句永不执行 → 站点误回落 legacy 加载路径。
     out.push_str("globalThis.__zw_load_module = function(spec, parentHint) {\n");
-    out.push_str("  if (__moduleCache[spec]) return __moduleCache[spec];\n");
     // t8j：parent 优先取调用点穿入的 referrer（rewrite_dynamic_imports 的 `.call({referrer})`），
     // 回退全局 _importMeta（直接调用形态）——模块 IIFE 局部的 _importMeta 在此不可见。
     out.push_str(
         "  var parent = parentHint || ((typeof _importMeta !== 'undefined' && _importMeta.url) || 'about:blank');\n",
     );
-    out.push_str("  var code = __zw_compile_module(spec, parent);\n");
-    out.push_str("  if (!code) throw new Error('Module not found: ' + spec);\n");
-    out.push_str("  __moduleCache[spec] = (function() { return eval('(' + code + ')'); })();\n");
-    out.push_str("  return __moduleCache[spec];\n");
+    // t8j-r2（D1）：缓存键必须是 referrer×spec 的解析结果（ECMA-262 §sec-hostresolveimportedmodule）。
+    // 旧实现以原始 specifier 为键——两个不同目录的模块各自 `import('./config.js')` 时后者命中
+    // 前者条目，静默拿到错误模块。宿主（renderer/tab/webview）已按 parent 解析出绝对 URL，
+    // 回传改为 `resolved\u{1f}code`：缓存键取宿主解析键，跨目录同名相对 spec 不再碰撞；
+    // 旧契约（无分隔符的裸 code）回退 spec 键（base 语义）。宿主自身有 runtime_iifes 编译缓存，
+    // 重复调用不重复取回。
+    out.push_str("  var r = __zw_compile_module(spec, parent);\n");
+    out.push_str("  if (!r) throw new Error('Module not found: ' + spec);\n");
+    out.push_str("  var sep = r.indexOf('\\u001f');\n");
+    out.push_str("  var resolved = sep >= 0 ? r.slice(0, sep) : spec;\n");
+    out.push_str("  if (__moduleCache[resolved]) return __moduleCache[resolved];\n");
+    out.push_str("  var code = sep >= 0 ? r.slice(sep + 1) : r;\n");
+    out.push_str("  __moduleCache[resolved] = (function() { return eval('(' + code + ')'); })();\n");
+    out.push_str("  return __moduleCache[resolved];\n");
     out.push_str("};\n");
     // t8j：动态 import() 失败须以 rejected promise 呈现，不得同步 throw——
     // https://tc39.es/ecma262/#sec-import-calls（ImportCall 恒返回 promise；取回/编译失败
@@ -221,14 +230,17 @@ pub(crate) fn rewrite_dynamic_imports(source: &str) -> String {
     while i < source.len() {
         if source[i..].starts_with("import(") {
             // t8j：经 `.call({referrer})` 把调用点 referrer 穿给 helper——重写点在模块 IIFE
-            // 内（build_module_script / build_dep_iife 均定义 `var _importMeta`），而
-            // `__zw_dynamic_import` 本体在全局作用域执行，读不到 IIFE 局部的 `_importMeta`
-            // （旧实现恒回退 'about:blank' → 相对 spec 解析失败、按原始 specifier 发起
-            // 网络请求）。ECMA-262 §sec-module-specifiers：动态 import 的 specifier 相对
+            // 内（build_module_script / build_dep_iife 均定义 `var _importMeta`；service_worker
+            // 经典脚本路径在宿主侧设置 `globalThis._importMeta`），而 `__zw_dynamic_import`
+            // 本体在全局作用域执行，读不到 IIFE 局部的 `_importMeta`（旧实现恒回退
+            // 'about:blank' → 相对 spec 解析失败、按原始 specifier 发起网络请求）。
+            // ECMA-262 §sec-module-specifiers：动态 import 的 specifier 相对
             // **active script/module**（即调用点 referrer）解析。
-            out.push_str(
-                "__zw_dynamic_import.call({ referrer: (typeof _importMeta !== 'undefined' && _importMeta.url) || '' }, ",
-            );
+            // t8j-r2（D2）：发射串不得含任何引号字符——子串扫描不识别字符串字面量上下文，
+            // 发射进宿主单引号字符串（如 `throw new Error('import() failed')`）时引号提前
+            // 终止字符串 → 整脚本 SyntaxError（base 发射串无引号仅值污染）。发射体只引用
+            // 调用点词法作用域的 `_importMeta`（全部重写目标已保证定义），零引号。
+            out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url }, ");
             i += "import(".len();
         } else {
             let ch = source[i..].chars().next().expect("char");
@@ -1155,7 +1167,8 @@ mod tests {
             std::sync::Arc::new(std::sync::Mutex::new(None));
         let reported_cb = reported.clone();
         // 宿主取回调：（spec, parent）——parent 即断言面；相对 spec 命中已注册依赖时返回
-        // 手工 IIFE（复刻 compile_dependency_iife 形态），否则返空（走 Module not found rejection）。
+        // `resolved\x1fcode`（t8j-r2 D1 契约，复刻 renderer/tab 宿主形态），否则返空
+        // （走 Module not found rejection）。
         sandbox.register_callback(
             "__zw_compile_module",
             Box::new(move |args| {
@@ -1164,7 +1177,8 @@ mod tests {
                     args.first().map(String::as_str) == Some("./dep.js") && parent == "https://zero.test/m.js";
                 *seen_parent_cb.lock().unwrap() = Some(parent);
                 if is_target {
-                    "(function(){ globalThis.__t8j_dep_loaded = true; return { default: 42 }; })()".to_string()
+                    "https://zero.test/dep.js\u{1f}(function(){ globalThis.__t8j_dep_loaded = true; return { default: 42 }; })()"
+                        .to_string()
                 } else {
                     String::new()
                 }
@@ -1193,6 +1207,112 @@ mod tests {
             reported.lock().unwrap().as_deref(),
             Some("dep=42"),
             "相对 spec 命中依赖并加载（红态：Module not found rejection）"
+        );
+    }
+
+    /// t8j-r2 D1（缺陷审查返修）：动态 import 缓存键 = referrer×spec 的解析结果——两个不同
+    /// 目录的模块各自 `import('./config.js')` 时各得自己的模块（ECMA-262
+    /// §sec-hostresolveimportedmodule：解析键为 referrer×specifier）。宿主回传
+    /// `resolved\x1fcode`，JS 侧以宿主解析键为缓存键。红态（PR #109 首 版）：缓存以原始
+    /// specifier 为键，B 命中 A 写入的条目，静默拿到 A 的模块且宿主只被取回一次（首版）。
+    #[test]
+    fn test_dynamic_import_cache_keyed_by_resolved_url() {
+        #[cfg(feature = "v8")]
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox = crate::QuickJSSandbox::new().unwrap();
+        let seen: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_cb = seen.clone();
+        let reported: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let reported_cb = reported.clone();
+        // 宿主解析 stub：`./x` 相对 parent 目录 join（resolve_document_url 语义子集），
+        // 返回 `resolved\x1fiife`；config 内容按目录区分（A/B）。
+        sandbox.register_callback(
+            "__zw_compile_module",
+            Box::new(move |args| {
+                let spec = args.first().cloned().unwrap_or_default();
+                let parent = args.get(1).cloned().unwrap_or_default();
+                let dir = match parent.rfind('/') {
+                    Some(i) => &parent[..=i],
+                    None => "",
+                };
+                let resolved = match spec.strip_prefix("./") {
+                    Some(rest) => format!("{dir}{rest}"),
+                    None => spec.clone(),
+                };
+                seen_cb.lock().unwrap().push(resolved.clone());
+                let tag = if resolved.contains("/app/a/") { "A" } else { "B" };
+                format!("{resolved}\u{1f}(function(){{ return {{ default: '{tag}-config' }}; }})()")
+            }),
+        );
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *reported_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        let prelude = build_module_runtime_prelude(&ModuleRegistry::new()).unwrap();
+        // prelude 与驱动代码单次 execute（非持久 context 跨 execute 全局不可见，复刻真实路径）。
+        let driver = "\
+var a = __zw_load_module('./config.js', 'https://zero.test/app/a/m.js');\n\
+var b = __zw_load_module('./config.js', 'https://zero.test/app/b/m.js');\n\
+__zw_report('A=' + a.default + '|B=' + b.default);";
+        sandbox
+            .execute(&format!("{prelude}\n{driver}"))
+            .expect("跨目录同名相对 spec 取回不得失败");
+        assert_eq!(
+            reported.lock().unwrap().as_deref(),
+            Some("A=A-config|B=B-config"),
+            "各目录模块拿到各自的 config（红态：B 静默拿到 A-config）"
+        );
+        assert_eq!(
+            seen.lock().unwrap().len(),
+            2,
+            "两个不同解析键各触发一次宿主取回（红态：B 命中缓存、宿主只被调用 1 次）"
+        );
+    }
+
+    /// t8j-r2 D2（缺陷审查返修）：rewrite 发射体零引号——模块源码单引号字符串字面量含
+    /// `import(` 时改写不得破坏语法。红态（PR #109 首版发射串含 4 个单引号）：发射进
+    /// `'import() failed'` 提前终止字符串 → 整 execute SyntaxError（prelude+模块单脚本，
+    /// 单模块坏全文死）。改写后的值污染（子串扫描既有限制）与 base 同级，可接受。
+    #[test]
+    fn test_rewrite_single_quoted_string_with_import_stays_parseable() {
+        #[cfg(feature = "v8")]
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox = crate::QuickJSSandbox::new().unwrap();
+        sandbox.register_callback("__zw_compile_module", Box::new(|_args| String::new()));
+        let reported: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let reported_cb = reported.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *reported_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        let registry = ModuleRegistry::new();
+        let prelude = build_module_runtime_prelude(&registry).unwrap();
+        // 单引号字符串含 `import(`（MDN 式特性检测/错误消息常见形态）+ 合法动态 import
+        // （dep 缺失走 rejection）——两语句都必须存活。
+        let source = "\
+var s = 'import() failed';\n\
+import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { __zw_report('slen=' + s.length + '|rej=' + (e && e.message)); });";
+        let module = build_module_script(source, "https://zero.test/m.js", &registry, false, &mut HashSet::new())
+            .expect("模块编译不得失败");
+        sandbox
+            .execute(&format!("{prelude}\n{module}"))
+            .expect("单引号字符串含 import( 时改写不得产生 SyntaxError（红态：整脚本解析失败）");
+        let text = reported.lock().unwrap().clone();
+        let text = text.as_deref().unwrap_or_default();
+        assert!(
+            text.starts_with("slen=") && text.contains("rej=Module not found: ./dep.js"),
+            "字符串字面量后续语句执行、动态 import 走 rejection（实际: {text:?}）"
         );
     }
 

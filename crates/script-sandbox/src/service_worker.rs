@@ -5707,15 +5707,21 @@ fn evaluate_classic_script(sandbox: &mut dyn Sandbox, source: &str, script_url: 
     // Error, so rewrite import() to the same TypeError rejected promise used by module workers.
     sandbox.execute(SERVICE_WORKER_DYNAMIC_IMPORT_PRELUDE)?;
     let original_source = source;
+    // t8j-r2（D2）：rewrite 发射体裸引用 `_importMeta.url`（重写点须有该词法/全局绑定）——
+    // 模块 IIFE 路径自带 `var _importMeta`；经典脚本路径在此补全局绑定（referrer=SW 脚本
+    // URL；SW 动态 import 调用点本就被 prelude stub 以 TypeError 拒绝，referrer 不消费）。
     let source = rewrite_dynamic_imports(source);
     let setup = format!(
-        "globalThis.__zwCurrentScriptURL = {}; globalThis.__zwCurrentScriptSource = {};",
+        "globalThis.__zwCurrentScriptURL = {}; globalThis.__zwCurrentScriptSource = {}; globalThis._importMeta = {{ url: {} }};",
         serde_json::to_string(script_url).unwrap(),
-        serde_json::to_string(original_source).unwrap()
+        serde_json::to_string(original_source).unwrap(),
+        serde_json::to_string(script_url).unwrap()
     );
     sandbox.execute(&setup)?;
     let result = sandbox.execute(&source).map(|_| ());
-    let _ = sandbox.execute("delete globalThis.__zwCurrentScriptURL; delete globalThis.__zwCurrentScriptSource;");
+    let _ = sandbox.execute(
+        "delete globalThis.__zwCurrentScriptURL; delete globalThis.__zwCurrentScriptSource; delete globalThis._importMeta;",
+    );
     result
 }
 

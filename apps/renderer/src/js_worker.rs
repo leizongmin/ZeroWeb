@@ -1626,12 +1626,14 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
             let parent = args.get(1).map(String::as_str).unwrap_or("about:blank");
             let url = zero_engine::resolve_document_url(parent, spec);
 
+            // t8j-r2（D1）：回传 `resolved\x1fcode`——JS 侧 `__moduleCache` 以宿主解析键为缓存
+            // 键（ECMA-262 §sec-hostresolveimportedmodule），跨目录同名相对 spec 不再碰撞。
             if let Ok(cache) = runtime_iifes.lock() {
                 if let Some(iife) = cache.get(&url) {
-                    return iife.clone();
+                    return format!("{url}\u{1f}{iife}");
                 }
                 if let Some(iife) = cache.get(spec) {
-                    return iife.clone();
+                    return format!("{spec}\u{1f}{iife}");
                 }
             }
 
@@ -1672,9 +1674,9 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
                 }
             };
             if let Ok(mut cache) = runtime_iifes.lock() {
-                cache.insert(url, iife.clone());
+                cache.insert(url.clone(), iife.clone());
             }
-            iife
+            format!("{url}\u{1f}{iife}")
         }),
     );
 }
