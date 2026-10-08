@@ -178,8 +178,11 @@ impl WebSocket {
                 Message::Pong(data) => Ok(Some(WebSocketMessage::Pong(data.to_vec()))),
                 _ => Ok(None),
             },
-            Err(tungstenite::Error::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                // 非阻塞模式：暂无消息
+            Err(tungstenite::Error::Io(e))
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                // 读超时 / 非阻塞：暂无消息（SO_RCVTIMEO 在 Windows 等映射为 TimedOut）。
                 Ok(None)
             }
             Err(tungstenite::Error::ConnectionClosed) => {
@@ -218,7 +221,8 @@ impl WebSocket {
         Ok(())
     }
 
-    /// 给底层 TCP 流设置读超时（宿主桥读泵用：阻塞 `read()` 超时返回 WouldBlock，
+    /// 给底层 TCP 流设置读超时（宿主桥读泵用：阻塞 `read()` 超时返回 WouldBlock 或
+    /// TimedOut（平台相关），
     /// 泵循环得以轮询发送通道）。仅 Open 状态生效；wss 路径同样作用在内层 TCP 流。
     /// TLS 后端由 workspace 统一为 rustls（tungstenite `rustls-tls-webpki-roots`，与
     /// reqwest HTTP 栈同族 webpki-roots 信任源）——变更 tungstenite TLS feature 时

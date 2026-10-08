@@ -41,6 +41,11 @@ pub enum WsEvent {
     Binary(Vec<u8>),
     /// 连接层错误（其后必随 Close——err 只驱动 `onerror`，状态终结由 close 承载）。
     Error(String),
+    /// 宿主已把 `send()` 数据写入网络（回投 JS 递减 `bufferedAmount`）。
+    Sent {
+        /// 已写出字节数。
+        bytes: usize,
+    },
     /// 连接关闭。`clean` = 是否完成关闭握手（本地 close/服务端 Close 帧 = true；IO 错误 = false）。
     Close {
         /// close 状态码（RFC 6455 §7.4；1005/1006 为合成码——wire 上禁止）。
@@ -122,6 +127,7 @@ pub fn serialize_event(ev: &WsEvent) -> String {
         WsEvent::Text(t) => format!("msg{FIELD_SEP}{t}"),
         WsEvent::Binary(b) => format!("bin{FIELD_SEP}{}", encode_bytes_csv(b)),
         WsEvent::Error(m) => format!("err{FIELD_SEP}{}", sanitize_field(m)),
+        WsEvent::Sent { bytes } => format!("sent{FIELD_SEP}{bytes}"),
         WsEvent::Close { code, reason, clean } => {
             format!(
                 "close{FIELD_SEP}{code}{FIELD_SEP}{}{FIELD_SEP}{}",
@@ -154,6 +160,24 @@ struct WsCore {
 pub struct WsEmitter {
     core: Arc<Mutex<WsCore>>,
     resolver: AsyncResolver,
+    host: Arc<Mutex<Option<Arc<dyn WsHost>>>>,
+}
+
+impl WsEmitter {
+    /// 绑定宿主——事件队列溢出时调用 [`WsHost::close`] 收线。
+    pub fn bind_host(&self, host: Arc<dyn WsHost>) {
+        if let Ok(mut cell) = self.host.lock() {
+            *cell = Some(host);
+        }
+    }
+
+    fn teardown_on_overflow(&self, conn_id: &str) {
+        if let Ok(cell) = self.host.lock()
+            && let Some(h) = cell.as_ref()
+        {
+            h.close(conn_id, 1008, "event-queue-overflow");
+        }
+    }
 }
 
 impl WsEmitter {
@@ -161,9 +185,10 @@ impl WsEmitter {
     /// 合成 overflow close 并丢弃本事件）。
     pub fn emit(&self, conn_id: &str, ev: WsEvent) {
         let wire = serialize_event(&ev);
-        let pid = {
+        let (pid, overflow_teardown) = {
             let mut core = self.core.lock().expect("ws core lock");
-            if let Some(pids) = core.pending.get_mut(conn_id) {
+            let mut overflow_teardown = false;
+            let pid = if let Some(pids) = core.pending.get_mut(conn_id) {
                 if let Some(pid) = pids.pop_front() {
                     Some(pid)
                 } else {
@@ -179,6 +204,7 @@ impl WsEmitter {
                             reason: "event-queue-overflow".to_string(),
                             clean: false,
                         });
+                        overflow_teardown = true;
                     } else {
                         q.push_back(ev);
                     }
@@ -194,12 +220,17 @@ impl WsEmitter {
                         reason: "event-queue-overflow".to_string(),
                         clean: false,
                     });
+                    overflow_teardown = true;
                 } else {
                     q.push_back(ev);
                 }
                 None
-            }
+            };
+            (pid, overflow_teardown)
         };
+        if overflow_teardown {
+            self.teardown_on_overflow(conn_id);
+        }
         if let Some(pid) = pid {
             self.resolver.resolve(&pid, &wire);
         }
@@ -249,6 +280,7 @@ impl WsBridge {
             emitter: WsEmitter {
                 core: Arc::new(Mutex::new(WsCore::default())),
                 resolver,
+                host: Arc::new(Mutex::new(None)),
             },
             host_cell: Arc::new(Mutex::new(None)),
         }
@@ -262,8 +294,9 @@ impl WsBridge {
     /// 注入生产宿主（app 的 `SetWsHandler` 命令 arm 调用；chicken-and-egg 解同 fetch）。
     pub fn set_host(&self, host: Arc<dyn WsHost>) {
         if let Ok(mut cell) = self.host_cell.lock() {
-            *cell = Some(host);
+            *cell = Some(Arc::clone(&host));
         }
+        self.emitter.bind_host(host);
     }
 
     /// 注册 4 个回调（均**非阻塞**，JS worker 线程绝不在 WS 路径上等待网络）：
@@ -392,7 +425,7 @@ static CONNECT_GATE: ConnectGate = ConnectGate {
 /// 同宿主 open/连接中连接数上限（guidelines #21 资源预算：WS 长连接占 FD+线程，比 fetch
 /// inflight 更贵——connect gate 16 之上再设表级上限；恶意页无法以极低成本堆积 socket）。
 const MAX_OPEN_WS_CONNECTIONS: usize = 128;
-/// 读泵轮询间隔（阻塞 `receive()` 的读超时——超时返 WouldBlock，泵得以轮询发送通道）。
+/// 读泵轮询间隔（阻塞 `receive()` 的读超时——超时返 WouldBlock/TimedOut，泵得以轮询发送通道）。
 const WS_PUMP_POLL_MS: u64 = 50;
 
 /// 泵线程发送命令（JS→宿主 send/close 经通道 marshal 到泵线程——泵独占 socket 写权，
@@ -455,50 +488,52 @@ impl WsHost for NetWsHost {
         let conns = Arc::clone(&self.conns);
         let id = id.to_string();
         let url = url.to_string();
-        let protocols: Vec<String> = protocols.to_vec();
-        std::thread::spawn(move || {
-            // 阻塞 TCP/TLS/握手（connect 线程受 CONNECT_GATE 钳制；OS 级 TCP 超时兜底）。
-            let mut ws = zero_net::websocket::WebSocket::new(&url);
-            let _ = protocols; // FIXME(t8k): Sec-WebSocket-Protocol 协商头与 101 选定子协议未透出（zero_net::WebSocket 不暴露握手响应）——本切片先发空协议头，子协议协商面留待 net 层扩展
-            if let Err(e) = ws.connect() {
-                let terminated_early = {
-                    let mut conns = conns.lock().expect("ws conn table lock");
-                    let early = conns.get(&id).is_some_and(|s| s.state == ConnState::Closed);
-                    conns.remove(&id);
-                    early
-                };
-                if !terminated_early {
-                    // 恰好一条 Close 契约：connect 失败 → err + close(1006)。
-                    emitter.emit(&id, WsEvent::Error(format!("connect failed: {e}")));
-                    emitter.emit(
-                        &id,
-                        WsEvent::Close {
-                            code: 1006,
-                            reason: String::new(),
-                            clean: false,
-                        },
-                    );
-                }
-                return;
-            }
-            // 握手成功——close-during-connect 竞态：close() 已仲裁终结（发过 close 事件），
-            // 本线程静默弃连。
-            {
+        let _protocols = protocols.to_vec(); // FIXME(t8k): Sec-WebSocket-Protocol 协商头与 101 选定子协议未透出（zero_net::WebSocket 不暴露握手响应）——本切片先发空协议头，子协议协商面留待 net 层扩展
+        // 阻塞 TCP/TLS/握手在 connect 调用线程（register 的 gate 线程）——握手完成后再起读泵。
+        let mut ws = zero_net::websocket::WebSocket::new(&url);
+        if let Err(e) = ws.connect() {
+            let terminated_early = {
                 let mut conns = conns.lock().expect("ws conn table lock");
-                match conns.get(&id).map(|s| s.state) {
-                    Some(ConnState::Closed) | None => {
-                        conns.remove(&id);
-                        return;
-                    }
-                    _ => {
-                        if let Some(slot) = conns.get_mut(&id) {
-                            slot.state = ConnState::Open;
-                        }
+                let early = matches!(
+                    conns.get(&id).map(|s| s.state),
+                    None | Some(ConnState::Closed)
+                );
+                conns.remove(&id);
+                early
+            };
+            if !terminated_early {
+                // 恰好一条 Close 契约：connect 失败 → err + close(1006)。
+                emitter.emit(&id, WsEvent::Error(format!("connect failed: {e}")));
+                emitter.emit(
+                    &id,
+                    WsEvent::Close {
+                        code: 1006,
+                        reason: String::new(),
+                        clean: false,
+                    },
+                );
+            }
+            return;
+        }
+        // 握手成功——close-during-connect 竞态：close() 已仲裁终结（发过 close 事件），
+        // 本路径静默弃连。
+        {
+            let mut conns = conns.lock().expect("ws conn table lock");
+            match conns.get(&id).map(|s| s.state) {
+                Some(ConnState::Closed) | None => {
+                    conns.remove(&id);
+                    return;
+                }
+                _ => {
+                    if let Some(slot) = conns.get_mut(&id) {
+                        slot.state = ConnState::Open;
                     }
                 }
             }
-            // 读泵：阻塞 read() 超时返 WouldBlock → 轮询发送通道（tungstenite read 自动回 Pong）。
-            let _ = ws.set_read_timeout(Some(std::time::Duration::from_millis(WS_PUMP_POLL_MS)));
+        }
+        // 读泵：阻塞 read() 超时返 WouldBlock/TimedOut → 轮询发送通道（tungstenite read 自动回 Pong）。
+        let _ = ws.set_read_timeout(Some(std::time::Duration::from_millis(WS_PUMP_POLL_MS)));
+        std::thread::spawn(move || {
             emitter.emit(
                 &id,
                 WsEvent::Open {
@@ -509,10 +544,16 @@ impl WsHost for NetWsHost {
                 loop {
                     match cmd_rx.try_recv() {
                         Ok(HostCmd::Text(t)) => {
-                            let _ = ws.send(&t);
+                            let n = t.len();
+                            if ws.send(&t).is_ok() {
+                                emitter.emit(&id, WsEvent::Sent { bytes: n });
+                            }
                         }
                         Ok(HostCmd::Bytes(b)) => {
-                            let _ = ws.send_binary(&b);
+                            let n = b.len();
+                            if ws.send_binary(&b).is_ok() {
+                                emitter.emit(&id, WsEvent::Sent { bytes: n });
+                            }
                         }
                         Ok(HostCmd::Close { code, reason }) => {
                             // code 0 = 页面 close() 无参——发不带状态码的 Close 帧（RFC 6455
@@ -560,7 +601,7 @@ impl WsHost for NetWsHost {
                     // Ping/Pong：tungstenite read 期间自动回 Pong，页面不可见（spec：UA 处理）。
                     Ok(Some(zero_net::websocket::WebSocketMessage::Ping(_)))
                     | Ok(Some(zero_net::websocket::WebSocketMessage::Pong(_))) => {}
-                    Ok(None) => {} // 读超时（WouldBlock）或连接已静默关闭——下轮重查
+                    Ok(None) => {} // 读超时（WouldBlock/TimedOut）或连接已静默关闭——下轮重查
                     Err(e) => {
                         emitter.emit(&id, WsEvent::Error(format!("receive: {e}")));
                         emitter.emit(
@@ -721,6 +762,7 @@ mod tests {
         let em = WsEmitter {
             core: Arc::new(Mutex::new(WsCore::default())),
             resolver,
+            host: Arc::new(Mutex::new(None)),
         };
         // open 先于 next 到达（握手快于 JS 泵注册）→ 入队；next 到达 → 立即 FIFO resolve。
         em.emit(
@@ -744,6 +786,7 @@ mod tests {
         let em = WsEmitter {
             core: Arc::new(Mutex::new(WsCore::default())),
             resolver,
+            host: Arc::new(Mutex::new(None)),
         };
         em.next("c1", "p1"); // JS 泵先注册
         em.emit(
@@ -763,6 +806,7 @@ mod tests {
         let em = WsEmitter {
             core: Arc::new(Mutex::new(WsCore::default())),
             resolver,
+            host: Arc::new(Mutex::new(None)),
         };
         em.next("c1", "p1");
         let em2 = em.clone();
@@ -780,6 +824,7 @@ mod tests {
         let em = WsEmitter {
             core: Arc::new(Mutex::new(WsCore::default())),
             resolver,
+            host: Arc::new(Mutex::new(None)),
         };
         for i in 0..(EVENT_QUEUE_CAP + 5) {
             em.emit("c1", WsEvent::Text(format!("m{i}")));

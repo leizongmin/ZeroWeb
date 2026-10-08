@@ -14571,6 +14571,10 @@ function _zwCaretFromPoint(x, y) {
       var kind = sep < 0 ? wire : wire.slice(0, sep);
       var data = sep < 0 ? '' : wire.slice(sep + 1);
       if (kind === 'open') {
+        // close-during-connect：页面已 CLOSING/CLOSED 时忽略迟到的 open wire。
+        if (self.readyState === WebSocket.CLOSING || self.readyState === WebSocket.CLOSED) {
+          return;
+        }
         self.readyState = WebSocket.OPEN;
         self.protocol = data || '';
         self._dispatch('open', null);
@@ -14581,6 +14585,11 @@ function _zwCaretFromPoint(x, y) {
         var bytes = csvToBytes(data);
         var payload = self.binaryType === 'arraybuffer' ? bytes.buffer : new Blob([bytes]);
         self._dispatch('message', new MessageEvent('message', { data: payload, origin: self.url }));
+      } else if (kind === 'sent') {
+        var sentBytes = parseInt(data, 10);
+        if (!isNaN(sentBytes) && sentBytes > 0) {
+          self.bufferedAmount = Math.max(0, self.bufferedAmount - sentBytes);
+        }
       } else if (kind === 'err') {
         // err 非终结：只驱动 onerror（状态终结一律由 close wire 承载）。
         self._dispatch('error', null);
@@ -14684,4 +14693,9 @@ function _zwCaretFromPoint(x, y) {
       // close wire 由宿主回投（泵派发 close 事件）——shim 不自派发（避免双事件）。
     },
   };
+  // WebIDL：常量同时挂 interface prototype object（`ws.OPEN` / `this.CLOSED` 断言面）。
+  WebSocket.prototype.CONNECTING = 0;
+  WebSocket.prototype.OPEN = 1;
+  WebSocket.prototype.CLOSING = 2;
+  WebSocket.prototype.CLOSED = 3;
   globalThis.WebSocket = globalThis.WebSocket || WebSocket;
