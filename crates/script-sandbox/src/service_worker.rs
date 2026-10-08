@@ -5719,8 +5719,10 @@ fn evaluate_classic_script(sandbox: &mut dyn Sandbox, source: &str, script_url: 
     );
     sandbox.execute(&setup)?;
     let result = sandbox.execute(&source).map(|_| ());
+    // rewrite_dynamic_imports 在调用点求值 `_importMeta.url`；经典 SW 全局在 install 后仍存活，
+    // fetch/message/setTimeout 中的 import() 须能解析该绑定，不得随评估临时量一并删除。
     let _ = sandbox.execute(
-        "delete globalThis.__zwCurrentScriptURL; delete globalThis.__zwCurrentScriptSource; delete globalThis._importMeta;",
+        "delete globalThis.__zwCurrentScriptURL; delete globalThis.__zwCurrentScriptSource;",
     );
     result
 }
