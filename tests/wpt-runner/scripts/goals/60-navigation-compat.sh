@@ -62,5 +62,7 @@ goals_fetch_all
 # 内联。/common/test-setting-immutable-prototype.js 不拉（immutable-prototype 面需 exotic
 # [[SetPrototypeOf]]，plain object 未实现——见 testharness.rs NAVIGATION_ABSOLUTE_HELPERS 注）。
 fetch_raw "common/stringifiers.js"
+# M2-S4F：immutable prototype helper（location-prototype-setting-same-origin——[[SetPrototypeOf]] 面）
+fetch_raw "common/test-setting-immutable-prototype.js"
 goals_inventory
 goals_next_steps "${GOAL}"

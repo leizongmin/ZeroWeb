@@ -3811,7 +3811,15 @@ fn navigation_case_skipped(relative: &str, source: &str) -> bool {
 /// `/common/test-setting-immutable-prototype.js`（location-prototype-setting）**不装**：
 /// immutable-prototype 面需 exotic [[SetPrototypeOf]]（与 preventExtensions 同族，shim
 /// plain object 未实现）——装了也转真语义 fail，留 M2 后续切片定夺。
-const NAVIGATION_ABSOLUTE_HELPERS: &[(&str, &str)] = &[("/common/stringifiers.js", "common/stringifiers.js")];
+const NAVIGATION_ABSOLUTE_HELPERS: &[(&str, &str)] = &[
+    ("/common/stringifiers.js", "common/stringifiers.js"),
+    // M2-S4F：location-prototype-setting-same-origin 的 [[SetPrototypeOf]] 面助手
+    //（此前不拉——plain object 未实现 exotic 内部方法；Proxy 面落地后启用）。
+    (
+        "/common/test-setting-immutable-prototype.js",
+        "common/test-setting-immutable-prototype.js",
+    ),
+];
 
 /// Run the pinned upstream navigation corpus window subset
 /// （navigation-compat goal M1 / DC-1）。filter 按路径子串过滤（如
