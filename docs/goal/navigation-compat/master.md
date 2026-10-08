@@ -105,16 +105,18 @@ history-interface 91.8% / navigation-api 69.7%；全量 20.9%→67.4%）
 
 ## 下一步计划
 
-1. **M2 残余小簇评估**：replace-before-load（38F——load 前导航 history: replace 语义，
-   需「文档未完全加载」位）、scroll-to-fragid（16F——编码/几何变体）、anchor-download
-   （2T——downloadRequest/canIntercept 面）。逐簇定性「可切片/挂账」。
-2. **M4 收口评估**：DC 逐项判定（DC-1 ✓ / DC-2 轻面主簇已收 / DC-4 门禁连续全绿；DC-3
+1. **M2 残余小簇**：anchor-download（2T——anchor download 属性 → downloadRequest/canIntercept
+   面，锚点击导航管线小改）；scroll-to-fragid 变体（编码/几何，部分回流渲染/焦点域）。
+2. **replace-before-load 38F 重定性 → M3 依赖**（2026-10-09 勘察）：全簇为 iframe 载体
+   （setupSentinelIframe/insertIframe + 子文档 load 前自导航），断言 iframe 自有 session
+   history 的 replace 语义——单文档 runner 形态不可达，随 M3 frame tree 一并解锁。
+3. **M4 收口评估**：DC 逐项判定（DC-1 ✓ / DC-2 轻面主簇已收 / DC-4 门禁连续全绿；DC-3
    用户门控维持 pending）；bfcache/fission 挂账定稿。
-3. **M2 ③ 跨文档导航语义**（navigating-across-documents 2/42）：主体依赖跨文档导航链
+4. **M2 ③ 跨文档导航语义**（navigating-across-documents 2/42）：主体依赖跨文档导航链
    + testdriver 用户手势，单文档 runner 形态不可达——runner 形态升级前仅记账。
-4. **M2 ④-D 残余挂账域回流点**：Tab 键顺序焦点导航 + autofocus load 期处理（DOM 焦点域）；
+5. **M2 ④-D 残余挂账域回流点**：Tab 键顺序焦点导航 + autofocus load 期处理（DOM 焦点域）；
    scroll anchoring + rect 快照刷新（渲染域，回流 rendering-compat）。
-5. **M3**：frame tree 最小面——**启动前须用户点名批准**（2026-10-04 已征询待批复，
+6. **M3**：frame tree 最小面——**启动前须用户点名批准**（2026-10-04 已征询待批复，
    维持挂起，见下）。
 
 **待用户决策清单**：
