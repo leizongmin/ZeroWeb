@@ -520,6 +520,40 @@ impl LayoutEngine {
             },
         );
 
+        // R5011：env-gated taffy 树 dump（transform-input 带 root-cause 工具——
+        // ZW_TAFFY_TREE_DUMP=1 时输出每 taffy 节点的 position/location/size/dom 链，
+        // 供 A/B 两态结构 diff 定位装配分叉）。
+        if std::env::var("ZW_TAFFY_TREE_DUMP").as_deref() == Ok("1") {
+            fn dump_taffy_tree<N>(
+                tree: &taffy::TaffyTree<N>,
+                taffy_to_dom: &HashMap<taffy::NodeId, NodeId>,
+                node: taffy::NodeId,
+                depth: usize,
+            ) {
+                let Ok(style) = tree.style(node) else { return };
+                let Ok(layout) = tree.layout(node) else { return };
+                let dom = taffy_to_dom
+                    .get(&node)
+                    .map(|d| format!("{d:?}"))
+                    .unwrap_or_else(|| "-".into());
+                eprintln!(
+                    "TAFFY{} node={node:?} dom={dom} pos={:?} loc=({:.1},{:.1}) size=({:.1}x{:.1})",
+                    "-".repeat(depth),
+                    style.position,
+                    layout.location.x,
+                    layout.location.y,
+                    layout.size.width,
+                    layout.size.height,
+                );
+                if let Ok(kids) = tree.children(node) {
+                    for kid in kids {
+                        dump_taffy_tree(tree, taffy_to_dom, kid, depth + 1);
+                    }
+                }
+            }
+            dump_taffy_tree(&taffy_tree, &taffy_to_dom, root_id, 0);
+        }
+
         // 3. 提取 LayoutBox 树（根元素使用 HorizontalTb 作为父级 writing mode）（根元素使用 HorizontalTb 作为父级 writing mode）
         let mut root_box = Self::extract_layout(
             &taffy_tree,
