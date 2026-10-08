@@ -666,7 +666,10 @@ fn module_provides_export(
             if let Some(after_as) = after.strip_prefix("as").map(str::trim_start)
                 && let Some((namespace, _)) = split_from_clause(after_as)
             {
-                return namespace.trim() == name;
+                if namespace.trim() == name {
+                    return true;
+                }
+                continue;
             }
             if name != "default"
                 && let Some((_, spec_part)) = split_from_clause(after)
@@ -916,7 +919,7 @@ fn split_statements(source: &str) -> Vec<String> {
         if line_comment {
             if ch == '\n' {
                 line_comment = false;
-                if braces == 0 && parens == 0 && brackets == 0 {
+                if braces == 0 && parens == 0 && brackets == 0 && ctx_stack.is_empty() {
                     let statement = current.trim();
                     if !statement.is_empty() {
                         stmts.push(statement.to_string());
