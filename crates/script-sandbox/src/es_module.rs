@@ -2252,6 +2252,20 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
     }
 
     #[test]
+    fn test_split_statements_keyword_after_whitespace_starts_new_prev_word() {
+        // 空白后新标识符单独成词、不与 prev_word 拼接（sib-5，217fbc298）：压缩形态
+        // `else return /re/` 下，旧实现把 "else"+"return" 跨空白拼成 "elsereturn"，
+        // 非关键词 → `/` 误判除号 → 正则不原子消费，内部 `;` 把语句切碎。
+        // 正则判定依据 https://tc39.es/ecma262/#prod-RegularExpressionLiteral。
+        let src = "if(c)return 1;else return /a;b/.test(c);var done=1;";
+        let stmts = split_statements(src);
+        assert_eq!(stmts.len(), 3, "stmts={stmts:?}");
+        assert_eq!(stmts[0], "if(c)return 1", "stmts={stmts:?}");
+        assert_eq!(stmts[1], "else return /a;b/.test(c)", "stmts={stmts:?}");
+        assert_eq!(stmts[2], "var done=1", "stmts={stmts:?}");
+    }
+
+    #[test]
     fn test_diamond_dep_shares_first_inline_instance() {
         // webpack 菱形（github.com 真实结构，2026-10-08 home-reload 证据）：entry→wp-runtime
         // （命名导入）+ entry→chunk（命名空间导入）+ chunk→wp-runtime 重入。重入须共享首份
