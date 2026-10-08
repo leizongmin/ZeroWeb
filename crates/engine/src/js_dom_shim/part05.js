@@ -10536,7 +10536,14 @@
           // 修前自然红实证）。未打标条目（R51c 纯消零热路径）falsy 照删，行为不变。
           // 旁表保留范围：仅本 invalidate 被豁免的 handle 条目（快照真移除，罕见类），
           // E2 代际整表作废后条目出表、旁表条目随 handle 死键不可达。
-          if (typeof _expando !== 'undefined' && !_rv._zwAppl45) delete _expando['@' + _rv.__zwHandle];
+          // slice47：须直读 _expando 判 _zwAppl45——`!_rv._zwAppl45` 经 get trap miss 落
+          // R93 原型链 walk（`Object.getPrototypeOf(_makeProxy(...))`）会在 delete 后把
+          // proxy 重塞 _proxyCache，R52 热路径泄漏复现。
+          if (typeof _expando !== 'undefined') {
+            var _exAppl45E = _expando['@' + _rv.__zwHandle];
+            if (!(_exAppl45E && Object.prototype.hasOwnProperty.call(_exAppl45E, '_zwAppl45') && _exAppl45E._zwAppl45))
+              delete _expando['@' + _rv.__zwHandle];
+          }
         }
       }
       for (var r3 = 0; r3 < remFlat.length; r3++) {
