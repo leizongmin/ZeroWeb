@@ -8164,7 +8164,16 @@ fn apply_testdriver_command(
                 sel = serde_json::to_string(&selector).unwrap_or_else(|_| "null".into())
             );
             let _ = webview.execute_script(&focus_script);
-            dispatch_action(webview, target, HtmlUserAction::Activate)
+            let result = dispatch_action(webview, target, HtmlUserAction::Activate);
+            // navigation-compat S4J：合成 click 无 JS 默认动作面——submit 按钮点击后补调
+            // 页面提交入口（表单提交 navigate 事件面——WPT navigate-form-userInitiated）。
+            // 按钮判定/表单归属在 JS 侧完成（避免缓存 html 快照访问）。
+            let submit_script = format!(
+                "(function(){{var b=document.querySelector({sel});try{{var ty=b?String(b.getAttribute('type')||'').toLowerCase():'';var isBtn=b&&((b.tagName==='BUTTON'&&(ty==='submit'||ty===''))||(b.tagName==='INPUT'&&(ty==='submit'||ty==='image')));var f=isBtn&&(b.form||(b.closest&&b.closest('form')));if(f&&globalThis.__zwNavFormRequestSubmit)globalThis.__zwNavFormRequestSubmit(f,b);}}catch(_e){{}}}})();",
+                sel = serde_json::to_string(&selector).unwrap_or_else(|_| "null".into()),
+            );
+            let _ = webview.execute_script(&submit_script);
+            result
         }
         // uievents-compat M3（2026-10-03）：Actions down 步——独立宿主命令（取代 M2
         // 折叠 click：页内 pointerdown listener 的 setPointerCapture 须影响后续 move/up

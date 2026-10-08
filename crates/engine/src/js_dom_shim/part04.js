@@ -8548,7 +8548,9 @@
         // list 导航（共享 helper 既有局限，二轮 review note）。
         function _zwFormSubmitNavigate(fSel, fHandle, submitter) {
           try {
-            if (typeof __zw_request_navigate !== 'function') return;
+            // M2-S4J：__zw_request_navigate 缺失不再前置早退（navigate 事件/intercept 面
+            // 不依赖 host 回调——WPT navigate-form 族在 testharness 沙箱无该回调时仍须
+            // 派发；host 传输仅在默认分支 typeof-guard）。
             var _base = String(globalThis.location.href || 'about:blank');
             // ① action：submitter formaction > form action 属性 > 文档地址（spec：无
             // action 属性 → 文档地址；空串 resolve 即 base）。
@@ -8567,9 +8569,11 @@
             }
             _method = _method.toLowerCase();
             // spec §4.10.22 步骤 4-7：method 归一——get→GET；非 post/dialog（含缺失、
-            // 未知值）→ 默认 GET。baidu 首页 form 无 method 属性即走此默认。本切片仅
-            // 实现 GET 导航；post/dialog 排除（FIXME 函数头边界）。
-            if (_method === 'post' || _method === 'dialog') return;
+            // 未知值）→ 默认 GET。M2-S4J：POST 入面（navigate 事件 formData 非 null 面——
+            // WPT navigate-form / -userInitiated；host 传输无 method/body 面仍是 documented
+            // 边界——非拦截 POST 的 host 导航近似同 URL GET）。dialog 排除维持。
+            if (_method === 'dialog') return;
+            var _isPost = (_method === 'post');
             // ③ entry list（tree order，_formControls；spec §4.10.22.2 子集）。
             var _ctrls = _formControls(fSel);
             var _pairs = [];
@@ -8675,16 +8679,84 @@
             // ⑤ mutate action URL（review M1）：spec §4.10.22 GET 分支 "Set parsed
             // action's query component to query"——query **整体替换**（真实浏览器
             // action="/s?src=1" GET 提交 → "/s?x=1"，action 既有 query 丢失是知名
-            // 行为）；entry list 空 → query 清空。
-            try { _u.search = _body; } catch (_eQ) {}
+            // 行为）；entry list 空 → query 清空。M2-S4J：POST 不改 query（body 走
+            // 请求体——headless 无传输面，仅 navigate formData 承载）。
+            if (!_isPost) {
+              try { _u.search = _body; } catch (_eQ) {}
+            }
             var _abs = _u.href;
-            // ⑥ 导航：内存历史 push + host 真导航（同 URL = 重载语义，resubmit 同型）。
+            // M2-S4J：GET 突变后无 '?' → 追加（spec parse-driven query set 保留空 query 的
+            // '?'——WPT navigate-form-get「destination.url = location.href + '?'」）。
+            if (!_isPost && String(_abs).indexOf('?') < 0) _abs += '?';
+            // ⑥ M2-S4J：navigate 事件先行（form submission 面——formData（POST）/sourceElement
+            // （submitter || form）/navigationType（同源 form target：瞬态激活 → push、否则
+            // 同 URL（去 query）→ replace，异 URL → push——WPT navigate-form 三兄弟）。
+            var _formSe = null;
+            try { _formSe = submitter || _makeProxy(fSel, fHandle); } catch (_eSe) {}
+            var _fdObj = null;
+            if (_isPost && typeof FormData === 'function') {
+              try {
+                _fdObj = new FormData();
+                for (var _fi2 = 0; _fi2 < _pairs.length; _fi2++) {
+                  _fdObj.append(_pairs[_fi2][0], _pairs[_fi2][1]);
+                }
+              } catch (_eFd) { _fdObj = {}; }
+            }
+            try { globalThis.__zwBc = (globalThis.__zwBc || '') + '>preFire' + (_zwTransientActive === true); } catch (_eB1) {}
+            var _fNavType = (_zwTransientActive === true) ? 'push'
+              : ((String(_abs).split('?')[0] === String(_base).split('?')[0]) ? 'replace' : 'push');
+            try { globalThis.__zwDbgS += '|firing:' + _fNavType + ':' + String(_abs).slice(-12); } catch (_eD4) {}
+            var _fEv = _navFireNavigate({
+              navigationType: _fNavType, url: _abs, hashChange: false,
+              sameDocument: false, sourceElement: _formSe,
+              formData: _fdObj, canIntercept: true,
+            });
+            try { globalThis.__zwBc = (globalThis.__zwBc || '') + '>postFire:' + String(_fEv.defaultPrevented) + ':int=' + String(!!_fEv._zwIntercepted); } catch (_eB2) {}
+            if (_fEv.defaultPrevented) {
+              if (!_fEv._zwErrored) _navCancelNavigation(_fEv, null);
+              return;
+            }
+            if (_fEv._zwIntercepted) {
+              // intercept → 同文档提交（entry push + CCE + handler 链；POST 同面——
+              // 内存会话模型无传输分叉）。
+              if (typeof _pushHistNav === 'function') {
+                try { _pushHistNav(_abs, _base); } catch (_eH) {}
+              }
+              if (_fEv._zwBind) _fEv._zwBind.rec = _navPushCurrent(_hist_current());
+              _navRunIntercept(_fEv, null);
+              return;
+            }
+            // ⑦ 默认：内存历史 push + host 真导航（同 URL = 重载语义，resubmit 同型）。
+            // M2-S4J：**POST 未拦截 → 零投递**（host 导航契约无 method/body 面——R-baidu5
+            // 排除契约维持；navigate 事件已派发即本切片新增面；WPT form 族全部
+            // preventDefault/intercept，不落入此分支）。
+            if (_isPost) return;
             if (typeof _pushHistNav === 'function') {
               try { _pushHistNav(_abs, _base); } catch (_eH) {}
             }
-            __zw_request_navigate(_abs);
+            if (typeof __zw_request_navigate === 'function') __zw_request_navigate(_abs);
+            // M2-S4J：host 替换文档 → 进行中导航以 navigateerror 终结（**微任务**派发——
+            // requestSubmit() 同步返回后测试才挂 onnavigateerror 监听；WPT
+            // navigate-form-requestSubmit 每次提交 await onnavigateerror）。
+            if (typeof queueMicrotask === 'function') {
+              queueMicrotask(function () {
+                try {
+                  _navFireNavigateerror(new (globalThis.DOMException || DOMException)('The navigation was aborted.', 'AbortError'), _fEv);
+                } catch (_eNe) {}
+              });
+            }
           } catch (_eNav) {}
         }
+        // M2-S4I/S4J：host Activate 管线入口（testdriver click 合成 click 无 JS 默认动作
+        // ——runner 对 submit 按钮补调本入口跑提交管线）。
+        globalThis.__zwNavFormRequestSubmit = function (formEl, submitterEl) {
+            try {
+                var _fs = formEl && formEl.__zwSelector || null;
+                var _fh = formEl && formEl.__zwHandle || null;
+                if (!_fs && !_fh) return;
+                _zwRunFormSubmit(_elKey(_fs, _fh), _fs, _fh, submitterEl || null);
+            } catch (_eRs) {}
+        };
         // submitter 身份比对（sel/handle 双路径，requestSubmit 归属检查同型）。
         function _zwIsSubmitterControl(c, submitter) {
           if (!submitter) return false;

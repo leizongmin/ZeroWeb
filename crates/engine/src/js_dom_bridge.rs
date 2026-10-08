@@ -2955,6 +2955,46 @@ pub fn anchor_hash_target(html: &str, selector: &str) -> Option<String> {
     }
 }
 
+/// navigation-compat S4J：判定激活目标是否**表单提交按钮**（BUTTON type=submit/'' 或
+/// INPUT type=submit/image，且存在 form owner——最近 FORM 祖先）。供 runner click 管线判定
+/// 是否补调页面提交入口（`__zwNavFormRequestSubmit`——合成 click 无 JS 默认动作面）。
+pub fn submit_button_form_target(html: &str, selector: &str) -> bool {
+    let doc = parse_html(html);
+    let Some(start) = find_by_selector(&doc, selector) else {
+        return false;
+    };
+    let is_submit_button = doc.get(start).is_some_and(|data| match &data.kind {
+        NodeKind::Element(e) => {
+            if !matches!(e.local_name(), "button" | "input" | "area") {
+                return false;
+            }
+            let ty = e.get_attribute("type").unwrap_or_default().to_ascii_lowercase();
+            match e.local_name() {
+                "button" => ty == "submit" || ty.is_empty(),
+                "input" => ty == "submit" || ty == "image",
+                _ => false,
+            }
+        }
+        _ => false,
+    });
+    if !is_submit_button {
+        return false;
+    }
+    let mut node = start;
+    loop {
+        let Some(parent) = doc.parent_node(node) else {
+            return false;
+        };
+        let is_form = doc
+            .get(parent)
+            .is_some_and(|data| matches!(&data.kind, NodeKind::Element(e) if e.local_name() == "form"));
+        if is_form {
+            return true;
+        }
+        node = parent;
+    }
+}
+
 /// navigation-compat S4I：判定激活目标是否锚（命中元素或其最近 `a`/`area` 祖先带 href——
 /// [`anchor_activation_target`] 事件路径行走）。供 host 激活管线判定是否做锚线程
 ///（`__zwNavSourceElement`/`__zwNavDownloadRequest` 前置脚本）。

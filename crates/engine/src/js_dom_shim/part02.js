@@ -5606,7 +5606,7 @@
       userInitiated: !!o.userInitiated || _zwTransientActive === true,
       hashChange: !!o.hashChange,
       signal: ctrl.signal,
-      formData: null,
+      formData: o.formData !== undefined ? o.formData : null,
       // M2-S4H：anchor download 属性线程（part04 读后即清 `__zwNavDownloadRequest`）。
       downloadRequest: o.downloadRequest !== undefined ? o.downloadRequest
         : (globalThis.__zwNavDownloadRequest || null),
@@ -5834,14 +5834,23 @@
   function _navCancelNavigation(ev, ctrl) {
     var ab = _navNavAbortError();
     try { if (ev && ev._zwAbortCtl) ev._zwAbortCtl.abort(ab); } catch (_eCn1) {}
+    // M2-S4J：navigateerror **微任务**派发（spec abort 事件序——同步段内 requestSubmit()
+    // 返回后测试才挂 onnavigateerror 监听，同步派发必漏；微任务晚于同步段、早于 task。
+    // 入队先于 promise reject → ordering 序 [navigateerror, committed rejected, ...] 保持
+    //——WPT ordering navigate-canceled）。
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(function () { try { _navFireNavigateerror(ab, ev); } catch (_eCn2) {} });
+    } else {
+      _navFireNavigateerror(ab, ev);
+    }
     if (ctrl) {
       if (ctrl.reject && !ctrl._cDone) ctrl.reject(ab);
       if (ctrl.finishedSettle) ctrl.finishedSettle(ab, true);
     }
-    _navFireNavigateerror(ab, ev);
   }
   // M2-S4G：navigateerror 派发体（ErrorEvent 构造 + 派发——abort/cancel/handler-failure 共用）。
   function _navFireNavigateerror(err, ev) {
+    try { globalThis.__zwBc = (globalThis.__zwBc || '') + '>fireErr'; } catch (_eBc0) {}
     var msg = (err && err.message !== undefined) ? ((err.name || 'Error') + ': ' + err.message) : String(err);
     var file = '', line = 0, col = 0;
     try {
