@@ -3,6 +3,7 @@
 //! 提供 HTTP Cookie 解析、存储和匹配功能。
 
 use std::str::FromStr;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::NetError;
@@ -570,6 +571,14 @@ impl Default for CookieStore {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// 进程内共享 cookie jar（与 [`crate::http_cache::shared_http_cache`] 同形态；fetch/WS 等子系统复用）。
+pub fn shared_cookie_store() -> Arc<Mutex<CookieStore>> {
+    static STORE: OnceLock<Arc<Mutex<CookieStore>>> = OnceLock::new();
+    STORE
+        .get_or_init(|| Arc::new(Mutex::new(CookieStore::new())))
+        .clone()
 }
 
 /// 判断 SameSite 策略是否允许在给定请求上下文中发送 cookie。

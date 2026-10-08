@@ -501,10 +501,42 @@ fn remove_conn_if_current(conns: &std::sync::Mutex<HashMap<String, ConnSlot>>, i
 struct NetWsHost {
     emitter: WsEmitter,
     conns: Arc<Mutex<HashMap<String, ConnSlot>>>,
+    cookie_store: Arc<Mutex<zero_net::CookieStore>>,
+}
+
+/// RFC 6265 / WHATWG WebSocket：握手 Cookie 取自 jar 中匹配连接 URL 的条目（含 HttpOnly），
+/// 不用 `document.cookie`。`ws`/`wss` 按 `http`/`https` 参与 Secure 与域匹配。
+fn ws_handshake_cookie(store: &zero_net::CookieStore, url: &str, document_origin: &str) -> String {
+    let mut parsed = match zero_net::parse_url(url) {
+        Ok(p) => p,
+        Err(_) => return String::new(),
+    };
+    match parsed.scheme.as_str() {
+        "ws" => parsed.scheme = "http".to_string(),
+        "wss" => parsed.scheme = "https".to_string(),
+        _ => {}
+    }
+    let doc_host = if document_origin.is_empty() || document_origin == "null" {
+        None
+    } else {
+        zero_net::parse_url(document_origin)
+            .ok()
+            .and_then(|u| u.host)
+            .or_else(|| {
+                url::Url::parse(document_origin)
+                    .ok()
+                    .and_then(|u| u.host_str().map(str::to_string))
+            })
+    };
+    let context = match (parsed.host.as_deref(), doc_host.as_deref()) {
+        (Some(req), Some(doc)) => zero_net::request_context(req, doc),
+        _ => zero_net::RequestContext::CrossSiteSubresource,
+    };
+    store.cookie_header_with_context(&parsed, context, true)
 }
 
 impl WsHost for NetWsHost {
-    fn connect(&self, id: &str, url: &str, protocols: &[String], origin: &str, cookie: &str) {
+    fn connect(&self, id: &str, url: &str, protocols: &[String], origin: &str, _cookie: &str) {
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<HostCmd>();
         // 代际在本函数入口捕获。调用契约（见 [`WsHost`] trait 文档）：connect 非阻塞、
         // 且由 JS 回调线程同步调用——捕获与下方插槽插入之间没有跨线程窗口，
@@ -542,9 +574,13 @@ impl WsHost for NetWsHost {
         let conns = Arc::clone(&self.conns);
         let id = id.to_string();
         let url = url.to_string();
+        let cookie = {
+            let store = self.cookie_store.lock().expect("ws cookie store lock");
+            ws_handshake_cookie(&store, &url, origin)
+        };
         let handshake = zero_net::websocket::WebSocketHandshake {
             origin: origin.to_string(),
-            cookie: cookie.to_string(),
+            cookie,
         };
         let _protocols = protocols.to_vec(); // FIXME(t8k): Sec-WebSocket-Protocol 协商头与 101 选定子协议未透出（zero_net::WebSocket 不暴露握手响应）——本切片先发空协议头，子协议协商面留待 net 层扩展
         std::thread::spawn(move || {
@@ -749,6 +785,7 @@ pub fn default_net_ws_host(emitter: WsEmitter) -> Arc<dyn WsHost> {
     Arc::new(NetWsHost {
         emitter,
         conns: Arc::new(Mutex::new(HashMap::new())),
+        cookie_store: zero_net::shared_cookie_store(),
     })
 }
 

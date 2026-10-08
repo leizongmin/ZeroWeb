@@ -14647,13 +14647,14 @@ function _zwCaretFromPoint(x, y) {
       // 未知 kind：静默忽略（前向兼容 wire 扩展）。
     }
     pump();
-    var wsCookie = '';
+    // 握手 Origin = 文档 settings object 的 origin（非连接 URL origin；MessageEvent.origin 仍用 _messageOrigin）。
+    var wsOrigin = '';
     try {
-      if (typeof document !== 'undefined' && document && typeof document.cookie === 'string' && document.cookie) {
-        wsCookie = document.cookie;
+      if (typeof globalThis.location !== 'undefined' && globalThis.location && globalThis.location.origin) {
+        wsOrigin = String(globalThis.location.origin);
       }
-    } catch (_eCookie) {}
-    __zw_ws_connect(connId, resolved.href, protoList.join(','), self._messageOrigin, wsCookie);
+    } catch (_eWsOrigin) {}
+    __zw_ws_connect(connId, resolved.href, protoList.join(','), wsOrigin, '');
   }
   WebSocket.CONNECTING = 0;
   WebSocket.OPEN = 1;

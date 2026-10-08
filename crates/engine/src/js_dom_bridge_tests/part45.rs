@@ -338,7 +338,7 @@ fn test_t8k_websocket_event_flow_open_message_close() {
     assert_eq!(sandbox.execute("globalThis.__wsCalls.length").unwrap().value, "1");
     assert_eq!(
         sandbox.execute("globalThis.__wsCalls[0]").unwrap().value,
-        "connect|ws1|ws://example.com/socket|chat,v2|ws://example.com|"
+        "connect|ws1|ws://example.com/socket|chat,v2|null|"
     );
     // open wire → open 事件 + protocol 回填 + OPEN 态 send（text）转发。
     sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'open\\x1fchat')").unwrap();
