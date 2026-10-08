@@ -5113,8 +5113,11 @@ mod tests {
         worker.reset_document_state();
         // 复位后 worker 继续服务：快照换代使滞留视口提示生效（shim 缺省 1280x800 失配校正）。
         worker.set_dom_snapshot("<html><body></body></html>", "https://example.test/");
+        // R5012：有界等待 5s → 30s（R3254-K5/R5005/R5006 谱系第 5 例——长臂 5e8 循环
+        // 在本机 ~6s，5s 窗口在负载窗/慢机时刻间歇超限（实测 solo 也折，base 树同折
+        // 3/3 非回归）；断言在滞留配置生效（顺序语义）非时序，30s 只在真挂起时咬合）。
         let value = worker
-            .execute_script_direct_bounded("String(globalThis.innerWidth)", Duration::from_secs(5))
+            .execute_script_direct_bounded("String(globalThis.innerWidth)", Duration::from_secs(30))
             .expect("复位后 worker 须继续服务");
         assert_eq!(value, "1000", "滞留配置命令（视口提示）须跨复位保留并生效");
         worker.shutdown();
