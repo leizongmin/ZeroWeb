@@ -2,8 +2,9 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-09（M2-S1~S4J 十三片——location-interface 95.3% / traversal 93.3% /
-history-interface 91.8% / navigation-api 76.1%；全量 20.9%→71.0%）
+**最后更新**: 2026-10-09（M2-S1~S4K 十四片——location-interface 95.3% / traversal 93.3% /
+history-interface 91.8% / navigation-api 74.5%（分母 230→255：variant 展开）；全量
+20.9%→69.1%（329/476，分母同扩张））
 
 ---
 
@@ -26,7 +27,7 @@ history-interface 91.8% / navigation-api 76.1%；全量 20.9%→71.0%）
 | P1 | 四 corpus 导入 + 基线 | ✅ 落地（fetch 三域 + 嵌套 resources 2026-10-07 恢复后入库；基线 20.9%，S1+S2 后全量 29.2%） |
 | P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口：the-history-interface 81.6%→**91.8%**（traverse 入队 + 空串 URL + 跨源 SecurityError）；余 xhr helper infra ×1 + 速率限制 optional ×2 挂账 |
 | P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | 🔶 S1+S2+S4F 落地：location-interface 41.9%→**95.3%**（exotic 内部方法面 Proxy 承载收口）、traversal 62.2%→**93.3%**；余 2F = runner 无端口 URL（形态缺口挂账）+ create-script-set-location（归 ③ 跨文档簇） |
-| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4J 十三段落地（→**76.1%**）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程/form submit navigate 全收；余静态锚 href IDL 落 attr 面（2 案——回流 element IDL 域）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域） |
+| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4K 十四段落地（→**74.5%**，分母 230→255 variant 展开）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程/form submit navigate/activation 暴露全收；余静态锚 href IDL 落 attr 面（2 案——回流 element IDL 域）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域）、ordering `?currententrychange` 变体 Fail 簇 ~10（C 类余项） |
 | P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | ⏳ M3 **用户门控** |
 | P5 | bfcache / fission 挂账定稿 | ✅ M4 定稿（bfcache：无实现面，依赖 frame tree→Document 快照管线，挂账至 M3 后续立项；fission：charter 排除维持。见 [M4 评估](evidence/2026-10-09-m4-closeout-assessment.md)） |
 
@@ -121,11 +122,17 @@ history-interface 91.8% / navigation-api 76.1%；全量 20.9%→71.0%）
   `__zwNavFormRequestSubmit`。navigation-api 73.5%→**76.1%**（form 族 5T→6P）；全量
   69.7%→**71.0%**；per-subtest 精确 diff 零回归。
   证据：[evidence/2026-10-09-m2-s4j-form-submit.md](evidence/2026-10-09-m2-s4j-form-submit.md)。
-- **质量门禁（十三片）**：`make test` 全绿 20,255 P / 0 F（S4J 轮；baidu5 POST 投递回归被门禁
-  当场捕获修复后复跑全绿；renderer s41 确定性钉负载 flake solo 复跑即绿——兄弟流 crate 归因
-  同 S4I 先例）；`make reftest` 704/704 零失败（2026-10-08 复验）；clippy -D warnings 零
-  warning；fmt 零 diff；每轮全量语料零回归（per-subtest 精确 diff）。全量批墙钟
-  TIME_LIMIT=2700（批内不与 make test 并发）。
+- **M2-S4K navigation.activation 暴露 + runner variant-meta 展开（2026-10-09）**：
+  NavigationActivation 接口对象 + getter（entry 首次访问定格/同文档导航不变/replaceState
+  孤儿化 index -1）+ runner `run_any_js_corpus_subdirs_with_helpers_variants`（expand 门仅
+  navigation corpus；`case_variants` 既有提取器复用；每变体独立运行 case URL 追加 query）。
+  navigation-api 76.1%→**74.5%**（分母 230→255：state `?method=` ×4 Pass、ordering
+  `?currententrychange` 变体面首次运行 + activation 2 案收口）；全量 71.0%→**69.1%**
+  （329/476，分母 +34）。per-subtest 精确 diff 零回归（既有 case 状态零变化）。
+  证据：[evidence/2026-10-09-m2-s4k-activation-variants.md](evidence/2026-10-09-m2-s4k-activation-variants.md)。
+- **质量门禁（十四片）**：`make test` 全绿 20,255 P / 0 F（S4K 轮）；`make reftest` 704/704
+  零失败（2026-10-08 复验）；clippy -D warnings 零 warning；fmt 零 diff；每轮全量语料零回归
+  （per-subtest 精确 diff）。全量批墙钟 TIME_LIMIT=2700（批内不与 make test 并发）。
 
 ## M4 收口评估（2026-10-09）
 
@@ -138,8 +145,9 @@ history-interface 91.8% / navigation-api 76.1%；全量 20.9%→71.0%）
 
 ## 下一步计划
 
-1. **C 类可切片余项**：state classic/nav 分槽 2F → navigation-activation 暴露 4F → dispose
-   深簇 ~6F（每案带语料断言，逐簇出数字）。
+1. **C 类可切片余项**：ordering `?currententrychange` 变体 Fail 簇 ~10（CCE 事件序 Recorder
+   断言）→ dispose 深簇 ~6F → state same-document-away-and-back ×2（traverse navState 还原
+   语义）。
 2. **replace-before-load 38F 重定性 → M3 依赖**（2026-10-09 勘察）：全簇为 iframe 载体
    （setupSentinelIframe/insertIframe + 子文档 load 前自导航），断言 iframe 自有 session
    history 的 replace 语义——单文档 runner 形态不可达，随 M3 frame tree 一并解锁。

@@ -5213,6 +5213,7 @@
   }
   globalThis.NavigationHistoryEntry = globalThis.NavigationHistoryEntry || _makeNavInterface('NavigationHistoryEntry');
   globalThis.NavigationTransition = globalThis.NavigationTransition || _makeNavInterface('NavigationTransition');
+  globalThis.NavigationActivation = globalThis.NavigationActivation || _makeNavInterface('NavigationActivation');
   globalThis.navigation = {
     // entries()：快照数组（元素身份稳定——per-record 单例 public 对象）。
     entries: function () { return _navList.map(_navPub); },
@@ -5266,6 +5267,18 @@
     // M2-S4C：transition——intercept 链进行中的 NavigationTransition（finished + navigationType）；
     // 无进行中导航 → null（spec）。滚动/聚焦行为面 defer。
     get transition() { return _navTransition; },
+    // M2-S4K：navigation.activation——文档激活快照（entry = 激活时 entry、首次访问定格；
+    // 同文档 push/replace 不变——replaceState 让 activation.entry 成为孤儿 index=-1 经
+    // per-record index getter 自然成立；WPT navigation-activation history-pushState/-replaceState）。
+    get activation() {
+      if (!_navActivationRec) {
+        _navActivationRec = _navCurrent() || _navMakeRecord(_hist_current());
+        _navActivationType = 'push';
+      }
+      var _act = { entry: _navPub(_navActivationRec), from: null, navigationType: _navActivationType };
+      try { Object.setPrototypeOf(_act, globalThis.NavigationActivation.prototype); } catch (_eActP) {}
+      return _act;
+    },
     // M2-S4B：navigate(url, {state, history, info})——同步派 navigate（cancelable/interceptable）；
     // preventDefault → 双 reject AbortError（WPT navigation-navigate-preventDefault——CCE 不发因
     // 无提交）；否则同文档提交（push/replace session entry + CCE，state 入 classic 槽——WPT
@@ -5689,6 +5702,9 @@
   // M2-S4C：NavigationTransition——intercept 链进行中暴露（navigation.transition）；
   // 链 settle（成/败）即结束并清空。
   var _navTransition = null;
+  // M2-S4K：文档激活快照（navigation.activation——首次访问定格 entry/type；同文档导航不变）。
+  var _navActivationRec = null;
+  var _navActivationType = 'push';
   // commitFn：提交动作闭包（M2-S4G——precommitHandler 存在时由调用方延迟提供：提交须等
   // precommit 全 fulfill；无 precommit 时 doCommit() 立即调 → 与旧「先提交后起链」时序一致）。
   function _navRunIntercept(ev, ctrl, commitFn) {

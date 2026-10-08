@@ -3561,6 +3561,19 @@ fn run_any_js_corpus_subdirs_with_helpers(
     case_skipped: fn(&str, &str) -> bool,
     absolute_helpers: &[(&str, &str)],
 ) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_any_js_corpus_subdirs_with_helpers_variants(wpt_root, subdirs, filter, case_skipped, absolute_helpers, false)
+}
+
+/// navigation-compat S4K：同上 + variant-meta 展开（`case_variants`——uievents 尾簇 7 既有
+/// 提取器复用；expand_variants 门仅 navigation corpus 启用）。
+fn run_any_js_corpus_subdirs_with_helpers_variants(
+    wpt_root: &Path,
+    subdirs: &[&str],
+    filter: Option<&str>,
+    case_skipped: fn(&str, &str) -> bool,
+    absolute_helpers: &[(&str, &str)],
+    expand_variants: bool,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
@@ -3601,8 +3614,15 @@ fn run_any_js_corpus_subdirs_with_helpers(
             if case_skipped(&relative, &source) {
                 continue;
             }
-            let results = if is_any_js {
-                run_any_js_window_case(wpt_root, &relative, &source, &harness_source)
+            // navigation-compat S4K：variant-meta 展开（expand_variants 且 html 形态）。
+            let variants = if expand_variants && is_html {
+                case_variants(&source)
+            } else {
+                Vec::new()
+            };
+            if is_any_js {
+                let results = run_any_js_window_case(wpt_root, &relative, &source, &harness_source);
+                cases.push((relative, results));
             } else {
                 let extras: Vec<(String, String)> = absolute_helpers
                     .iter()
@@ -3617,16 +3637,33 @@ fn run_any_js_corpus_subdirs_with_helpers(
                     .iter()
                     .map(|(src, body)| (src.as_str(), body.as_str()))
                     .collect::<Vec<_>>();
-                run_testharness_html_inner(
-                    wpt_root,
-                    &relative,
-                    &source,
-                    &harness_source,
-                    &extra_refs,
-                    corpus_case_timeout(),
-                )
-            };
-            cases.push((relative, results));
+                if variants.is_empty() {
+                    let results = run_testharness_html_inner(
+                        wpt_root,
+                        &relative,
+                        &source,
+                        &harness_source,
+                        &extra_refs,
+                        corpus_case_timeout(),
+                    );
+                    cases.push((relative, results));
+                } else {
+                    // navigation-compat S4K：每变体独立运行（case URL 追加 query——
+                    // WPT variant 用例矩阵；case 名带 query 与上游 dashboard 对齐）。
+                    for variant in variants {
+                        let case_v = format!("{relative}{variant}");
+                        let results_v = run_testharness_html_inner(
+                            wpt_root,
+                            &case_v,
+                            &source,
+                            &harness_source,
+                            &extra_refs,
+                            corpus_case_timeout(),
+                        );
+                        cases.push((case_v, results_v));
+                    }
+                }
+            }
         }
     }
     cases
@@ -3826,12 +3863,13 @@ const NAVIGATION_ABSOLUTE_HELPERS: &[(&str, &str)] = &[
 /// `the-history-interface/`、`navigation-api/`、`scroll-to-fragid/`——基线按 corpus
 /// 分类）。
 pub fn run_navigation_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_any_js_corpus_subdirs_with_helpers(
+    run_any_js_corpus_subdirs_with_helpers_variants(
         wpt_root,
         NAVIGATION_CORPUS_SUBDIRS,
         filter,
         navigation_case_skipped,
         NAVIGATION_ABSOLUTE_HELPERS,
+        true,
     )
 }
 
