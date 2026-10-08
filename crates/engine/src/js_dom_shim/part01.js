@@ -3721,17 +3721,18 @@
       var rec = Object.create(globalThis.MutationRecord.prototype);
       rec.type = baseRecord.type;
       // R49：characterData record 的 target 是**文本节点自身**（spec；call site baseRecord.target
-      // 携带——R48 parsed 文本编辑 / R49 textContent= 后 firstChild.data= 场景），其余类型 target=
-      // 观测元素 proxy。
-      // R188：document 站（id='doc'，subtree 冒泡终点）的 record.target = **mutation 目标**
-      // 自身（spec——subtree 记录的 target 是发生 mutation 的节点，非观察注册点；WPT
-      // MutationObserver-document "removal of parent" 断言 target === body）。baseRecord
-      // 的 call site 不带 target proxy（sel/handle 形态）——按 sel/handle 现查 body 层
-      // proxy：childList 的目标即 mutation 发生的容器，由 call site 经 baseRecord._r188Target
-      // 传入；未传时回落观察 proxy（document——旧语义）。
+      // 携带——R48 parsed 文本编辑 / R49 textContent= 后 firstChild.data= 场景）。
+      // R188/R311：record.target = **mutation 目标**自身（spec `dom-mutationrecord-target`——
+      // 无论精确观测还是 subtree 祖先冒泡，target 都是发生 mutation 的节点，非观察注册点；
+      // WPT MutationObserver-document "removal of parent" 断言 target === body，
+      // MutationObserver-subtree 断言后代 attr/childList 变更 target = 该后代）。
+      // R311 前该值仅 doc 站生效（R188），subtree 冒泡到祖先观察者的 record 回落
+      // obs._targetProxies[id]＝被观察元素——observe(html,{subtree}) 下深层变更 target
+      // 恒报 html。_r188Target 由 _mo_notify 入口统一按 sel/handle 派生（mutation 容器/
+      // 属性属主 proxy），未派生时（极早初始化）回落观察 proxy 旧语义。
       rec.target = baseRecord.type === 'characterData' && baseRecord.target != null
         ? baseRecord.target
-        : (id === 'doc' && baseRecord._r188Target !== undefined
+        : (baseRecord._r188Target !== undefined
             ? baseRecord._r188Target
             : obs._targetProxies[id]);
       // spec 字段：addedNodes/removedNodes 缺省 []（类数组），sibling/attributeNamespace/oldValue 缺省 null。
