@@ -248,3 +248,404 @@ fn named_access_morph_follow_multi_hit_upgrade_s45() {
         "升格后全局反映双命中（live 维护自然延续）"
     );
 }
+
+
+/// t8k WebSocket 钉测共用 mock 宿主装配：shim + DOM 回调 + `__zw_ws_*` mock。
+/// mock 契约：connect 记录 url/protocols 并存 `__lastWsId`；next 登记 pid；
+/// `__wsEmit(id, wire)` 经 setTimeout(0) 走 `__zwResolveCallback`（test sandbox 零延迟泵送）。
+macro_rules! ws45_sandbox {
+    () => {{
+        use std::sync::{Arc, Mutex};
+        use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+        let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        sandbox.execute(generate_js_dom_shim()).unwrap();
+        let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+        let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+        let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+        let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+            std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+        register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+        sandbox
+            .execute(
+                "globalThis.__wsCalls = [];\
+                 globalThis.__lastWsId = '';\
+                 globalThis.__wsPids = {};\
+                 globalThis.__zw_ws_connect = function(id, url, protocols) {\
+                   globalThis.__lastWsId = id;\
+                   globalThis.__wsCalls.push('connect|' + id + '|' + url + '|' + protocols);\
+                 };\
+                 globalThis.__zw_ws_next = function(id, pid) { globalThis.__wsPids[id] = pid; };\
+                 globalThis.__zw_ws_send = function(id, kind, data) {\
+                   globalThis.__wsCalls.push('send|' + id + '|' + kind + '|' + data);\
+                 };\
+                 globalThis.__zw_ws_close = function(id, code, reason) {\
+                   globalThis.__wsCalls.push('close|' + id + '|' + code + '|' + reason);\
+                 };\
+                 globalThis.__wsEmit = function(id, wire) {\
+                   var pid = globalThis.__wsPids[id];\
+                   if (pid) setTimeout(function() { globalThis.__zwResolveCallback(pid, wire); }, 0);\
+                 };",
+            )
+            .unwrap();
+        sandbox
+    }};
+}
+
+// 主钉：ctor → open（protocol 回填）→ text message（origin/url）→ send 转发 → 服务端 close
+//（wasClean/code/reason）→ send 已 CLOSED 再抛 InvalidStateError。
+#[test]
+fn test_t8k_websocket_event_flow_open_message_close() {
+    let mut sandbox = ws45_sandbox!();
+    sandbox
+        .execute(
+            "globalThis.__events = [];\
+             var ws = new WebSocket('ws://example.com/socket', ['chat', 'v2']);\
+             globalThis.__ws = ws;\
+             ws.onopen = function() {\
+               globalThis.__events.push('open:' + ws.readyState + ':' + ws.protocol + ':' + ws.url);\
+             };\
+             ws.onmessage = function(e) { globalThis.__events.push('msg:' + e.data + ':' + e.origin); };\
+             ws.onclose = function(e) {\
+               globalThis.__events.push('close:' + e.wasClean + ':' + e.code + ':' + e.reason + ':' + ws.readyState);\
+             };\
+             ws.onerror = function() { globalThis.__events.push('error'); };",
+        )
+        .unwrap();
+    // 构造态：CONNECTING(0) + url 序列化 + 常量面（HTML spec §WebSocket readyState）。
+    assert_eq!(
+        sandbox.execute("globalThis.__ws.readyState + ':' + WebSocket.CONNECTING + WebSocket.OPEN + WebSocket.CLOSING + WebSocket.CLOSED").unwrap().value,
+        "0:0123"
+    );
+    assert_eq!(sandbox.execute("globalThis.__ws.url").unwrap().value, "ws://example.com/socket");
+    // 连接期 send → InvalidStateError（spec send：state ≠ OPEN 抛 InvalidStateError）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var invalidBefore = 'no';\
+                 try { globalThis.__ws.send('early'); } catch (e) {\
+                   invalidBefore = (e instanceof DOMException && e.name === 'InvalidStateError') ? 'yes' : ('wrong:' + e);\
+                 } invalidBefore"
+            )
+            .unwrap()
+            .value,
+        "yes"
+    );
+    assert_eq!(sandbox.execute("globalThis.__wsCalls.length").unwrap().value, "1");
+    assert_eq!(
+        sandbox.execute("globalThis.__wsCalls[0]").unwrap().value,
+        "connect|ws1|ws://example.com/socket|chat,v2"
+    );
+    // open wire → open 事件 + protocol 回填 + OPEN 态 send（text）转发。
+    sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'open\\x1fchat')").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__events[0] || '')").unwrap().value, "open:1:chat:ws://example.com/socket");
+    sandbox.execute("globalThis.__ws.send('hello-t8k')").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__wsCalls[1]").unwrap().value,
+        "send|ws1|t|hello-t8k"
+    );
+    // msg wire（数据末字段含 \x1f 须原样保留）→ message 事件，origin = 连接 URL。
+    sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'msg\\x1fa\\x1fb')").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__events[1] || '')").unwrap().value,
+        "msg:a\x1fb:ws://example.com/socket"
+    );
+    // close wire（clean close 1000）→ CloseEvent 面齐全 + readyState CLOSED。
+    sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'close\\x1f1000\\x1f1\\x1fdone')").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__events[2] || '')").unwrap().value,
+        "close:true:1000:done:3"
+    );
+    // close 后 send → InvalidStateError；close() 幂等（不重复发宿主命令）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "var invalidAfter = 'no';\
+                 try { globalThis.__ws.send('late'); } catch (e) {\
+                   invalidAfter = (e instanceof DOMException && e.name === 'InvalidStateError') ? 'yes' : ('wrong:' + e);\
+                 } invalidAfter"
+            )
+            .unwrap()
+            .value,
+        "yes"
+    );
+    let before = sandbox.execute("globalThis.__wsCalls.length").unwrap().value;
+    sandbox.execute("globalThis.__ws.close()").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__wsCalls.length").unwrap().value, before);
+}
+
+// 构造器校验面：URL 解析失败 / 非 ws scheme / 空 protocol / 重复 protocol → SyntaxError
+// DOMException（HTML spec 构造 step 2–4）；close(code) 非 1000/3000–4999、reason > 123 字节
+// → SyntaxError（spec close 校验）。
+#[test]
+fn test_t8k_websocket_constructor_validation() {
+    let mut sandbox = ws45_sandbox!();
+    let cases = r#"
+      function ctorErr(expr) {
+        try { eval(expr); return 'none'; } catch (e) {
+          return (e instanceof DOMException && e.name === 'SyntaxError') ? 'SyntaxError' : ('wrong:' + e);
+        }
+      }
+      [
+        ctorErr("new WebSocket('not a url')"),
+        ctorErr("new WebSocket('http://example.com/x')"),
+        ctorErr("new WebSocket('ftp://example.com/x')"),
+        ctorErr("new WebSocket('ws://example.com/s', [''])"),
+        ctorErr("new WebSocket('ws://example.com/s', ['chat', 'chat'])"),
+        ctorErr("new WebSocket('ws://example.com/s', 'a,b')"),
+      ].join('|')"#;
+    assert_eq!(
+        sandbox
+            .execute(cases)
+            .unwrap()
+            .value,
+        "SyntaxError|SyntaxError|SyntaxError|SyntaxError|SyntaxError|SyntaxError"
+    );
+    // 合法面：string protocols 单条 + 3000–4999 close code 均放行（不再抛）。
+    sandbox
+        .execute(
+            "var ok = 'no';\
+             try { var wsp = new WebSocket('ws://example.com/ok', 'chat'); \
+                   wsp.close(3000, 'bye'); ok = (wsp.readyState === WebSocket.CLOSING) ? 'yes' : ('state:' + wsp.readyState); }\
+             catch (e) { ok = 'threw:' + e; } ok",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("ok").unwrap().value, "yes");
+    // close code 越界（1001 保留段 / 2999 私用段下界外）→ SyntaxError。
+    assert_eq!(
+        sandbox
+            .execute(
+                "function closeErr(expr) {\
+                   try { eval(expr); return 'none'; } catch (e) {\
+                     return (e instanceof DOMException && e.name === 'SyntaxError') ? 'SyntaxError' : ('wrong:' + e);\
+                   }\
+                 }\
+                 [closeErr(\"wsp.close(1001)\"), closeErr(\"wsp.close(2999)\"),\
+                  closeErr(\"wsp.close(1000, new Array(125).join('x'))\")].join('|')"
+            )
+            .unwrap()
+            .value,
+        "SyntaxError|SyntaxError|SyntaxError"
+    );
+}
+
+// 本地 close()：OPEN 态 → CLOSING 过渡 + 宿主命令（code/reason 穿参）；宿主随后回 close wire
+// → close 事件（wasClean=true）收尾。CONNECTING 态 close → fail the connection（宿主回
+// clean=false close wire）。
+#[test]
+fn test_t8k_websocket_local_close_handshake() {
+    let mut sandbox = ws45_sandbox!();
+    sandbox
+        .execute(
+            "globalThis.__ev = [];\
+             var ws = new WebSocket('ws://example.com/close-me');\
+             globalThis.__wsc = ws;\
+             ws.onclose = function(e) { globalThis.__ev.push('close:' + e.wasClean + ':' + e.code + ':' + ws.readyState); };",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'open\\x1f')").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__wsc.readyState)").unwrap().value, "1");
+    sandbox.execute("globalThis.__wsc.close(1000, 'bye')").unwrap();
+    // CLOSING 过渡 + 宿主命令穿参。
+    assert_eq!(sandbox.execute("String(globalThis.__wsc.readyState)").unwrap().value, "2");
+    assert_eq!(
+        sandbox.execute("globalThis.__wsCalls[globalThis.__wsCalls.length - 1]").unwrap().value,
+        "close|ws1|1000|bye"
+    );
+    // 宿主确认 close wire → close 事件 + CLOSED。
+    sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'close\\x1f1000\\x1f1\\x1fbye')").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__ev[0] || '')").unwrap().value, "close:true:1000:3");
+    // CONNECTING 态 close → fail：宿主回 clean=false close wire → wasClean=false close 事件。
+    sandbox
+        .execute(
+            "globalThis.__ev2 = [];\
+             var ws2 = new WebSocket('ws://example.com/abort');\
+             globalThis.__wsc2 = ws2;\
+             ws2.onclose = function(e) { globalThis.__ev2.push('close:' + e.wasClean + ':' + e.code); };",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__wsc2.close()").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__wsCalls[globalThis.__wsCalls.length - 1]").unwrap().value,
+        "close|ws2|0|"
+    );
+    sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'close\\x1f1006\\x1f0\\x1f')").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__ev2[0] || '')").unwrap().value, "close:false:1006");
+}
+
+// binary wire：binaryType='blob'（默认）→ message data 为 Blob；binaryType='arraybuffer' →
+// ArrayBuffer；send(Uint8Array) → binary wire csv-decimal。
+#[test]
+fn test_t8k_websocket_binary_frames() {
+    let mut sandbox = ws45_sandbox!();
+    sandbox
+        .execute(
+            "globalThis.__data = [];\
+             var ws = new WebSocket('ws://example.com/bin');\
+             globalThis.__wsb = ws;\
+             ws.onmessage = function(e) {\
+               globalThis.__data.push(e.data instanceof Blob ? 'blob:' + e.data.size\
+                 : (e.data instanceof ArrayBuffer ? 'ab:' + e.data.byteLength : 'other'));\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'open\\x1f')").unwrap();
+    sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'bin\\x1f104,105,0,255')").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__data[0] || '')").unwrap().value, "blob:4");
+    sandbox.execute("globalThis.__wsb.binaryType = 'arraybuffer'").unwrap();
+    sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'bin\\x1f1,2')").unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__data[1] || '')").unwrap().value, "ab:2");
+    // send(Uint8Array) → 'b' wire csv。
+    sandbox.execute("globalThis.__wsb.send(new Uint8Array([72, 255]))").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__wsCalls[globalThis.__wsCalls.length - 1]").unwrap().value,
+        "send|ws1|b|72,255"
+    );
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__wsb.bufferedAmount >= 2 ? 'grown' : 'stuck'")
+            .unwrap()
+            .value,
+        "grown"
+    );
+}
+
+// err wire 非终结：onerror 派发、readyState 不变、泵继续（后续 msg 照常投递）。
+#[test]
+fn test_t8k_websocket_error_nonterminal() {
+    let mut sandbox = ws45_sandbox!();
+    sandbox
+        .execute(
+            "globalThis.__ev3 = [];\
+             var ws = new WebSocket('ws://example.com/err');\
+             globalThis.__wse = ws;\
+             ws.onerror = function() { globalThis.__ev3.push('error:' + ws.readyState); };\
+             ws.onmessage = function(e) { globalThis.__ev3.push('msg:' + e.data); };",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'open\\x1f')").unwrap();
+    sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'err\\x1freset')").unwrap();
+    sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'msg\\x1fafter-error')").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ev3.join('|')").unwrap().value,
+        "error:1|msg:after-error"
+    );
+}
+
+// 宿主缺失（webview 未配置 / 裸 engine-reftest 环境）：构造不抛 ReferenceError，异步
+// fail the connection——error + close(1006, wasClean=false)（HTML spec fail the
+// WebSocket connection 语义）。
+#[test]
+fn test_t8k_websocket_no_host_graceful_degradation() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // 不注入 __zw_ws_* mock——裸 shim 环境。
+    sandbox
+        .execute(
+            "globalThis.__ev4 = [];\
+             var ws = null;\
+             try { ws = new WebSocket('ws://example.com/x'); } catch (e) { globalThis.__ev4.push('threw:' + e); }\
+             globalThis.__wsn = ws;\
+             if (ws) {\
+               ws.onerror = function() { globalThis.__ev4.push('error:' + ws.readyState); };\
+               ws.onclose = function(e) { globalThis.__ev4.push('close:' + e.wasClean + ':' + e.code + ':' + ws.readyState); };\
+             }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ev4.join('|')").unwrap().value,
+        "error:3|close:false:1006:3"
+    );
+}
+
+// ── t8k 第二断层：createEvent + initEvent + dispatchEvent legacy 三连（native overlay）──
+//
+// 同页空白菜的伴生根因：shim `document.createEvent` 在 **native** Event 实例上置
+// `_zwUninitialized`（js-dom M4 R106 spec initialized flag），而页面实际解析到的
+// initEvent 是 native 模板版（dom_bindings R3141——先于 flag 契约，不清 flag）；
+// shim 版 initEvent 因「`Event.prototype.initEvent` 已存在则不覆盖」守卫（part05 R106）
+// 永不安装 → dispatch 守卫 `_zwDispatchGuard` 见 flag 仍置 → InvalidStateError。
+// bili-header emitter（`createEvent("HTMLEvents")` + initEvent + dispatch）与 core-js
+// unhandledrejection polyfill（`createEvent("Event")` + expando + initEvent + dispatch）
+// 均按此三连构造，真实站实证报 `Uncaught InvalidStateError: The event is not initialized`，
+// 头部初始化链死亡、播放器不挂载。
+// spec：initEvent 属 initialize 步骤，须设 initialized flag——
+// https://dom.spec.whatwg.org/#concept-event-initialize
+// https://dom.spec.whatwg.org/#dom-event-initevent
+#[test]
+fn test_t8k_create_event_init_event_dispatch_native_overlay() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // 生产 overlay：native V8 绑定 + shim 双装（真实页面环境——globalThis.Event 为 native 模板，
+    // `Event.prototype.initEvent` 由 native 提供、shim 版永不覆盖）。
+    sandbox.install_native_bindings(Box::new(|scope, ctx| {
+        let dom = std::rc::Rc::new(std::cell::RefCell::new(zero_dom::parse_html(
+            "<html><body></body></html>",
+        )));
+        crate::dom_bindings::install_dom_bindings(scope, ctx, dom);
+    }));
+    // 三序列：① bili-header emit 原样（HTMLEvents + initEvent + dispatch，监听器须触发）；
+    // ② core-js polyfill 变体（Event + expando 先置 + initEvent 后初始化）；
+    // ③ R106 防过修对照——createEvent 后不经 initEvent 直接 dispatch 仍须抛 InvalidStateError
+    //（initialized flag 契约不可因本修复失效）。
+    sandbox
+        .execute(
+            "globalThis.__out = '';\
+             try {\
+               var fired = 0;\
+               document.addEventListener('onlogin', function() { fired++; }, false);\
+               var n = document.createEvent('HTMLEvents');\
+               n.initEvent('onlogin', true, true);\
+               n.data = 1;\
+               var ret = document.dispatchEvent(n);\
+               globalThis.__out += 'bili:' + ret + ',' + fired;\
+             } catch (e) { globalThis.__out += 'bili:ERR:' + e.name; }\
+             try {\
+               var m = document.createEvent('Event');\
+               m.promise = null; m.reason = null;\
+               m.initEvent('unhandledrejection', false, true);\
+               document.dispatchEvent(m);\
+               globalThis.__out += '|corejs:ok';\
+             } catch (e) { globalThis.__out += '|corejs:ERR:' + e.name; }\
+             try {\
+               var u = document.createEvent('Event');\
+               document.dispatchEvent(u);\
+               globalThis.__out += '|uninit:no-throw';\
+             } catch (e) { globalThis.__out += '|uninit:' + e.name; }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__out").unwrap().value,
+        "bili:true,1|corejs:ok|uninit:InvalidStateError",
+        "createEvent+initEvent+dispatchEvent legacy 三连在 native overlay 须完整走通；未初始化事件仍须抛 InvalidStateError（R106 契约保持）"
+    );
+}

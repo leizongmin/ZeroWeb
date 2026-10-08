@@ -204,6 +204,43 @@ impl WebSocket {
         Ok(())
     }
 
+    /// 发送带状态码/原因的关闭帧并关闭连接（WHATWG HTML §WebSocket close(code, reason)）。
+    pub fn close_with(&mut self, code: u16, reason: &str) -> Result<(), WebSocketError> {
+        if let Some(ws) = self.inner.as_mut() {
+            let frame = tungstenite::protocol::CloseFrame {
+                code: code.into(),
+                reason: tungstenite::Utf8Bytes::from(reason),
+            };
+            let _ = ws.close(Some(frame));
+        }
+        self.state = WebSocketState::Closed;
+        self.inner = None;
+        Ok(())
+    }
+
+    /// 给底层 TCP 流设置读超时（宿主桥读泵用：阻塞 `read()` 超时返回 WouldBlock，
+    /// 泵循环得以轮询发送通道）。仅 Open 状态生效；wss 路径同样作用在内层 TCP 流。
+    /// TLS 后端由 workspace 统一为 rustls（tungstenite `rustls-tls-webpki-roots`，与
+    /// reqwest HTTP 栈同族 webpki-roots 信任源）——变更 tungstenite TLS feature 时
+    /// 此处 match 须同步。
+    pub fn set_read_timeout(&self, dur: Option<std::time::Duration>) -> Result<(), WebSocketError> {
+        let ws = self.inner.as_ref().ok_or(WebSocketError::NotOpen)?;
+        match ws.get_ref() {
+            MaybeTlsStream::Plain(tcp) => tcp
+                .set_read_timeout(dur)
+                .map_err(|e| WebSocketError::ReceiveFailed(e.to_string())),
+            MaybeTlsStream::Rustls(tls) => tls
+                .get_ref()
+                .set_read_timeout(dur)
+                .map_err(|e| WebSocketError::ReceiveFailed(e.to_string())),
+            // MaybeTlsStream 标记 non-exhaustive（后续 tungstenite 版本可能增变体）——未知
+            // 流形态拒设读超时（泵循环保持默认阻塞语义，不静默假成功）。
+            _ => Err(WebSocketError::ReceiveFailed(
+                "unsupported TLS stream variant".to_string(),
+            )),
+        }
+    }
+
     /// 返回当前连接状态。
     pub fn state(&self) -> &WebSocketState {
         &self.state

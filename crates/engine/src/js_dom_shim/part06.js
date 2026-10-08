@@ -14443,3 +14443,245 @@ function _zwCaretFromPoint(x, y) {
   }
   return null;
 }
+
+  // ═══ WebSocket（t8k：WHATWG HTML §network Web sockets + RFC 6455 客户端面）═══
+  // 宿主桥：__zw_ws_connect/send/close/next（engine ws_bridge + app 默认宿主，net::WebSocket
+  // 专用线程读泵）。事件回推复用 __zw_pending Promise 通道（P1b S1）：每连接串行泵——
+  // next 登记一条 pending，宿主 resolve 一条事件 wire，处理完再泵下一条。wire 格式
+  //（ws_bridge::serialize_event）：open\x1f<protocol> / msg\x1f<text 末字段可含 \x1f> /
+  // bin\x1f<csv> / err\x1f<msg> / close\x1f<code>\x1f<clean>\x1f<reason>。
+  function CloseEvent(type, options) {
+    // 注：part06 是独立 IIFE 作用域，_makeEvent（part03）不可见——经 globalThis Event 构造器
+    // 起底再换原型（MessageEvent/part05 同形态；Event 构造器产 isTrusted=false 素 ev）。
+    var ev = new Event(type, options);
+    Object.setPrototypeOf(ev, CloseEvent.prototype);
+    // HTML spec §close event：wasClean（关闭握手完成）、code（默认 1005）、reason（默认 ''）。
+    ev.wasClean = !!(options && options.wasClean);
+    ev.code = options && options.code !== undefined ? options.code : 1005;
+    ev.reason = (options && options.reason) || '';
+    return ev;
+  }
+  CloseEvent.prototype = Object.create(Event.prototype);
+  CloseEvent.prototype.constructor = CloseEvent;
+  globalThis.CloseEvent = globalThis.CloseEvent || CloseEvent;
+
+  var _zwWsSeq = 0; // pump pending id 单调计数器
+  var _zwWsConnSeq = 0; // 连接 id 单调计数器（独立于 pump seq：conn id 不随泵跳动，可预测）
+
+  function WebSocket(url, protocols) {
+    // spec 构造（HTML §network WebSocket(url, protocols) step 2）：url = parse(url, API base
+    // URL)，失败抛 SyntaxError DOMException。base 取 location.href（about:blank 兜底）。
+    var base = 'about:blank';
+    try {
+      if (typeof location !== 'undefined' && location && location.href) base = String(location.href);
+    } catch (e) {}
+    var resolved;
+    try {
+      resolved = new URL(String(url), base);
+    } catch (e) {
+      var DE = (typeof globalThis.DOMException === 'function') ? globalThis.DOMException : DOMException;
+      throw new DE('Invalid URL', 'SyntaxError');
+    }
+    // spec step 3：scheme 非 ws/wss → SyntaxError（信任边界：非 WebSocket scheme 不得进宿主桥）。
+    if (resolved.protocol !== 'ws:' && resolved.protocol !== 'wss:') {
+      var DE2 = (typeof globalThis.DOMException === 'function') ? globalThis.DOMException : DOMException;
+      throw new DE2("The URL's scheme must be ws or wss. '" + resolved.protocol + "' is not valid.", 'SyntaxError');
+    }
+    // spec step 4：protocols 归一（string → [string]）；任一空串 / 含非合法字符 / 重复 →
+    // SyntaxError。合法 protocol：非空、0x21–0x7E 可打印 ASCII、无逗号（Sec-WebSocket-Protocol
+    // 元素语法 + 本桥 wire 以逗号 join）。重复按 spec 逐条比对拒绝。
+    var protoList = [];
+    if (protocols !== undefined && protocols !== null) {
+      var given = typeof protocols === 'string' ? [protocols] : Array.prototype.slice.call(protocols);
+      for (var pi = 0; pi < given.length; pi++) {
+        var p = String(given[pi]);
+        var bad = p === '';
+        for (var ci = 0; ci < p.length; ci++) {
+          var cc = p.charCodeAt(ci);
+          if (cc < 0x21 || cc > 0x7e || cc === 0x2c) { bad = true; break; }
+        }
+        if (bad || protoList.indexOf(p) >= 0) {
+          var DE3 = (typeof globalThis.DOMException === 'function') ? globalThis.DOMException : DOMException;
+          throw new DE3('Invalid protocol: ' + p, 'SyntaxError');
+        }
+        protoList.push(p);
+      }
+    }
+    this.url = resolved.href; // spec：url 属性 = 序列化形态
+    this.readyState = WebSocket.CONNECTING;
+    this.bufferedAmount = 0;
+    this.extensions = ''; // 协商扩展面未实现（RFC 6455 permessage-deflate 未协商）
+    this.protocol = '';   // 服务端选中子协议（open wire 回填）
+    this.binaryType = 'blob';
+    this.onopen = null; this.onmessage = null; this.onerror = null; this.onclose = null;
+    this._listeners = {};
+    var self = this;
+    var connId = 'ws' + (++_zwWsConnSeq);
+    this._connId = connId;
+    this._closedByUs = false;
+    this._pumpStopped = false;
+
+    this._dispatch = function (type, event) {
+      var ev = event || new Event(type, { __zwTrusted: true });
+      ev.type = type;
+      ev.target = self;
+      var handler = self['on' + type];
+      if (typeof handler === 'function') { try { handler.call(self, ev); } catch (_e) {} }
+      var arr = self._listeners[type];
+      if (arr) for (var i = 0; i < arr.length; i++) { try { arr[i].call(self, ev); } catch (_e) {} }
+    };
+
+    // 宿主缺失（webview 未配置 handler / engine-reftest 裸环境）：优雅降级——不 ReferenceError，
+    // 异步 fail the connection（error + close(1006, wasClean=false)）；spec 构造 step「fail the
+    // WebSocket connection」语义。异步派发（构造器内同步派发时页面尚无法挂 handler）。
+    if (typeof __zw_ws_connect !== 'function' || typeof __zw_ws_next !== 'function') {
+      setTimeout(function () {
+        if (self.readyState === WebSocket.CLOSED) return;
+        self.readyState = WebSocket.CLOSED;
+        self._dispatch('error', null);
+        self._dispatch('close', new CloseEvent('close', { wasClean: false, code: 1006, reason: '' }));
+      }, 0);
+      return;
+    }
+
+    // 串行泵：pending resolve 回来一条事件 → 处理 → 再登记下一条。宿主保证每连接恰好一条
+    // 终结 close（错误必随后续 close；本地 close()/服务端 close 帧各一条）。
+    function pump() {
+      if (self._pumpStopped) return;
+      var pid = connId + '-' + (++_zwWsSeq);
+      globalThis.__zw_pending[pid] = function (wire) {
+        try {
+          handleWire(String(wire));
+        } catch (_e) {
+          // wire 处理内部异常不中断泵（下一事件照常取）；终结 close 分支自行停泵。
+        }
+        if (!self._pumpStopped) pump();
+      };
+      __zw_ws_next(connId, pid);
+    }
+    function csvToBytes(csv) {
+      if (!csv) return new Uint8Array(0);
+      var parts = csv.split(',');
+      var out = new Uint8Array(parts.length);
+      for (var i = 0; i < parts.length; i++) out[i] = parseInt(parts[i], 10) & 0xff;
+      return out;
+    }
+    function handleWire(wire) {
+      var sep = wire.indexOf('\x1f');
+      var kind = sep < 0 ? wire : wire.slice(0, sep);
+      var data = sep < 0 ? '' : wire.slice(sep + 1);
+      if (kind === 'open') {
+        self.readyState = WebSocket.OPEN;
+        self.protocol = data || '';
+        self._dispatch('open', null);
+      } else if (kind === 'msg') {
+        // spec message 事件：MessageEvent，origin = 本连接序列化 URL；text 末字段可含 \x1f。
+        self._dispatch('message', new MessageEvent('message', { data: data, origin: self.url }));
+      } else if (kind === 'bin') {
+        var bytes = csvToBytes(data);
+        var payload = self.binaryType === 'arraybuffer' ? bytes.buffer : new Blob([bytes]);
+        self._dispatch('message', new MessageEvent('message', { data: payload, origin: self.url }));
+      } else if (kind === 'err') {
+        // err 非终结：只驱动 onerror（状态终结一律由 close wire 承载）。
+        self._dispatch('error', null);
+      } else if (kind === 'close') {
+        var parts = data.split('\x1f');
+        var code = parseInt(parts[0], 10);
+        var clean = parts[1] === '1';
+        var reason = parts.length > 2 ? parts.slice(2).join('\x1f') : '';
+        self.readyState = WebSocket.CLOSED;
+        self._pumpStopped = true;
+        self._dispatch('close', new CloseEvent('close', {
+          wasClean: clean,
+          code: isNaN(code) ? 1006 : code,
+          reason: reason,
+        }));
+      }
+      // 未知 kind：静默忽略（前向兼容 wire 扩展）。
+    }
+    pump();
+    __zw_ws_connect(connId, resolved.href, protoList.join(','));
+  }
+  WebSocket.CONNECTING = 0;
+  WebSocket.OPEN = 1;
+  WebSocket.CLOSING = 2;
+  WebSocket.CLOSED = 3;
+  WebSocket.prototype = {
+    constructor: WebSocket,
+    addEventListener: function (type, cb) {
+      (this._listeners[type] || (this._listeners[type] = [])).push(cb);
+    },
+    removeEventListener: function (type, cb) {
+      var arr = this._listeners[type];
+      if (!arr) return;
+      var i = arr.indexOf(cb);
+      if (i >= 0) arr.splice(i, 1);
+    },
+    // spec send(data)：state ≠ OPEN → InvalidStateError DOMException；string → text 帧，
+    // BufferSource → binary 帧（wire csv-decimal）；Blob 取内部 _parts 尽力序列化。
+    send: function (data) {
+      if (this.readyState !== WebSocket.OPEN) {
+        var DE4 = (typeof globalThis.DOMException === 'function') ? globalThis.DOMException : DOMException;
+        throw new DE4('WebSocket is not open', 'InvalidStateError');
+      }
+      if (typeof __zw_ws_send !== 'function') return;
+      if (typeof data === 'string') {
+        this.bufferedAmount += data.length;
+        __zw_ws_send(this._connId, 't', data);
+        return;
+      }
+      var bytes = null;
+      if (data instanceof ArrayBuffer) {
+        bytes = new Uint8Array(data);
+      } else if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(data)) {
+        bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      } else if (typeof Blob !== 'undefined' && data instanceof Blob && data._parts) {
+        // shim 内部 Blob：_parts 串接（string 面尽力而为；非 string part 走 String 化）。
+        var acc = '';
+        for (var i = 0; i < data._parts.length; i++) acc += String(data._parts[i]);
+        this.bufferedAmount += acc.length;
+        __zw_ws_send(this._connId, 't', acc);
+        return;
+      }
+      if (bytes) {
+        var csv = new Array(bytes.length);
+        for (var j = 0; j < bytes.length; j++) csv[j] = bytes[j];
+        this.bufferedAmount += bytes.length;
+        __zw_ws_send(this._connId, 'b', csv.join(','));
+      }
+      // 其余类型（不可判定的宿主对象）：静默忽略（IDL 层非法类型本应 TypeError，shim 无
+      // IDL 校验层——不伪造发送成功，也不中断页面）。
+    },
+    // spec close(code, reason)：code 存在且非 1000/3000–4999 → SyntaxError；reason UTF-8
+    // 字节长 > 123 → SyntaxError；CLOSING/CLOSED 幂等返回；CONNECTING → fail the connection
+    //（宿主发 close 后回 close wire，wasClean=false）。
+    close: function (code, reason) {
+      // spec step 1：code/reason 校验先行（CLOSING/CLOSED 态仍须抛 SyntaxError——校验
+      // 先于幂等返回）。
+      var DE5 = (typeof globalThis.DOMException === 'function') ? globalThis.DOMException : DOMException;
+      if (code !== undefined && code !== null) {
+        var c = Number(code);
+        if (!isFinite(c) || (c !== 1000 && (c < 3000 || c > 4999))) {
+          throw new DE5('Invalid close code: ' + code, 'SyntaxError');
+        }
+        code = c;
+      }
+      if (reason !== undefined && reason !== null) {
+        var r = String(reason);
+        // 123 字节上限按 UTF-8 计（TextEncoder 可用时准确计；否则字符数近似）。
+        var rlen = (typeof TextEncoder === 'function') ? new TextEncoder().encode(r).length : r.length;
+        if (rlen > 123) throw new DE5('Reason string too long', 'SyntaxError');
+        reason = r;
+      } else {
+        reason = '';
+      }
+      // spec step 2：CLOSING/CLOSED 幂等返回（校验之后）。
+      if (this.readyState === WebSocket.CLOSING || this.readyState === WebSocket.CLOSED) return;
+      this.readyState = WebSocket.CLOSING;
+      if (typeof __zw_ws_close === 'function') {
+        __zw_ws_close(this._connId, code === undefined || code === null ? 0 : code, reason);
+      }
+      // close wire 由宿主回投（泵派发 close 事件）——shim 不自派发（避免双事件）。
+    },
+  };
+  globalThis.WebSocket = globalThis.WebSocket || WebSocket;
