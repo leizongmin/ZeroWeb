@@ -207,6 +207,7 @@ impl WebSocket {
                 Message::Binary(data) => Ok(Some(WebSocketMessage::Binary(data.to_vec()))),
                 Message::Close(close_frame) => {
                     let (code, reason) = close_frame
+                        .as_ref()
                         .map(|cf| (Some(cf.code.into()), Some(cf.reason.to_string())))
                         .unwrap_or((None, None));
                     // RFC 6455 §7.1.5：收到 Close 后须回送 Close（若尚未发送）。

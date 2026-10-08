@@ -989,10 +989,9 @@ mod tests {
     }
     impl WsHost for LogHost {
         fn connect(&self, id: &str, url: &str, protocols: &[String], origin: &str, cookie: &str) {
-            self.cmds
-                .lock()
-                .unwrap()
-                .push(format!("connect {id} {url} {protocols:?} origin={origin} cookie={cookie}"));
+            self.cmds.lock().unwrap().push(format!(
+                "connect {id} {url} {protocols:?} origin={origin} cookie={cookie}"
+            ));
         }
         fn send(&self, id: &str, data: &WsData) {
             self.cmds.lock().unwrap().push(format!("send {id} {data:?}"));
