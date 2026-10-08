@@ -636,6 +636,12 @@ impl InlineFormattingContext {
                                 && !self.vertical
                                 && (w > 0.0) != (h > 0.0)
                                 && let Some(s) = style
+                                // R5001（HTML media natural size）：audio 的控件自然尺寸
+                                // 赢过 CSS aspect-ratio——Mozilla 上游 035 验证 ar 对 audio
+                                // 无传递（ref 页无 ar 与 test 页有 ar 须同渲；chromium 探针
+                                // 实测 300×54/100×54/300×100 双页同值）。tree.rs replaced
+                                // 臂已剥 taffy ar，此处同步剥 ComputedStyle 面的 IFC 传递。
+                                && elem_data.local_name() != "audio"
                                 // R2440 语义（css-sizing-4 §aspect-ratio）：`auto <ratio>` 时
                                 // replaced 元素**固有比**优先（显式 ratio 仅 fallback）。inline
                                 // svg 的固有比直接从 viewBox attr 解析（无需解码信号面——
