@@ -48,8 +48,10 @@ mod static_content_e2e {
 
     /// 形态 A + 缓存重挂载：handle 容器（createElement 产物）——Vue 组件内静态内容
     /// 挂载原样复刻（fresh insertBefore(content, anchor) → 边界捕获 → 二次挂载走
-    /// cloneNode 缓存路径）。修复前：边界对象 clone=undefined → TypeError（站点
-    /// 18 簇同款）。
+    /// cloneNode 缓存路径）。回归钉：锁定缓存重挂全链当前行为。双审查红态实验
+    /// （reviews/t8i-pr107/first-test-validity.md E1/E2b）实证本钉在 base 态亦绿——
+    /// 本形态的修复判别由 part44 双钉与 sel 容器钉承载；站点 18 簇的精确复现形态
+    /// 见设计卡（形态二分节）。
     #[test]
     fn static_content_handle_container_cached_remount() {
         let report = run_page(
@@ -110,7 +112,7 @@ globalThis.__t8iReport = log.join('|');
         );
         assert_eq!(
             report, "fresh:3|prev:I|clone:function",
-            "sel-only 容器：2 子并入 + I 边界 + cloneNode 可用（修复前 1/null/undefined）"
+            "sel-only 容器：2 子并入 + I 边界 + cloneNode 可用（红态 E2a 实测红值 fresh:1|prev:null|clone:object——typeof null 即 'object'）"
         );
     }
 }
