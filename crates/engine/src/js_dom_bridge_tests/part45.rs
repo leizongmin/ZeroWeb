@@ -42,11 +42,24 @@ fn handle_form_remove_document_query_stale_s45() {
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
     // 批 N：createElement（handle-form）→ 赋 id → appendChild（mutation 入队，host 快照未落）。
+    // 同 turn 正向臂（测效 I1）：e2 create+append+remove 全在同一 turn（未 apply）——
+    // 同代际条目消零保持（`_zwPaGen45` === 当前代际，谓词跳过），apply#1 后节点按
+    // spec 不在查询可见面（append+remove 对冲落快照）。防跨代际门误吞同 turn 场景。
+    // 再登记母体（测效 S2）：e3（div，turn1 无 id）append 后留活——apply#1 落快照
+    // （代际戳 gen0），批 N+1 跨 turn 补 id 触发 part04 id 重登记路径（_zwPAIdAdd
+    // 再入）后移除——若重登记刷新代际戳（M-E），消零谓词的代际门把已 apply 节点
+    // 误判为同 turn，移除不入 removed 表。
     sandbox
         .execute(
             "var d = document.createElement('img');\
              d.id = 'dyn45';\
              document.body.appendChild(d);\
+             var e2 = document.createElement('span');\
+             e2.id = 'dyn45s';\
+             document.body.appendChild(e2);\
+             e2.remove();\
+             var e3 = document.createElement('div');\
+             document.body.appendChild(e3);\
              globalThis.__r_s45_pre = document.querySelectorAll('img').length;",
         )
         .unwrap();
@@ -101,14 +114,24 @@ fn handle_form_remove_document_query_stale_s45() {
         .unwrap();
 
     // 批 N+1：apply 已落窗口内 remove → document 面观测（QS / QSA / gEBI 对照臂）。
+    // 同 turn 正向臂观测：apply#1 后 e2（append+remove 同 turn 对冲）不在查询可见面。
+    // 再登记臂：跨 turn 对已 apply 的 e3 补 id（part04 id 重登记路径，`_zwPaGen45`
+    // 首登不覆盖——代际戳保持 gen0）→ remove → 消零谓词代际门放行 → 移除入
+    // _zwPendingRemoved → 漏斗对 e3 的 host stale 命中剔除（qsa_div=0）。若重登记
+    // 刷新代际戳（M-E），谓词被代际门跳过 → 不入表 → qsa_div=1。
     sandbox
         .execute(
-            "globalThis.__r_s45_applied_raw = String(__zw_query_all('img'));\
+            "globalThis.__r_s45_st_qs = String(document.querySelector('#dyn45s') === null);\
+             globalThis.__r_s45_st_id = String(document.getElementById('dyn45s') === null);\
+             globalThis.__r_s45_applied_raw = String(__zw_query_all('img'));\
              globalThis.__r_s45_applied_id = String(document.getElementById('dyn45') === d);\
              d.remove();\
              globalThis.__r_s45_after_qs = String(document.querySelector('#dyn45') === null);\
              globalThis.__r_s45_after_qsa = document.querySelectorAll('img').length;\
-             globalThis.__r_s45_after_id = String(document.getElementById('dyn45') === null);",
+             globalThis.__r_s45_after_id = String(document.getElementById('dyn45') === null);\
+             e3.setAttribute('id', 'dyn45b');\
+             e3.remove();\
+             globalThis.__r_s45_rb_qsa_div = document.querySelectorAll('div').length;",
         )
         .unwrap();
 
@@ -137,7 +160,9 @@ fn handle_form_remove_document_query_stale_s45() {
     sandbox
         .execute(
             "globalThis.__r_s45_gen2_qs = String(document.querySelector('#dyn45') === null);\
-             globalThis.__r_s45_gen2_qsa = document.querySelectorAll('img').length;",
+             globalThis.__r_s45_gen2_qsa = document.querySelectorAll('img').length;\
+             globalThis.__r_s45_rb_gen2_qs = String(document.querySelector('#dyn45b') === null);\
+             globalThis.__r_s45_rb_gen2_div = document.querySelectorAll('div').length;",
         )
         .unwrap();
 
@@ -159,13 +184,18 @@ fn handle_form_remove_document_query_stale_s45() {
         }
     };
     expect(&mut fails, "__r_s45_pre", "2");
+    expect(&mut fails, "__r_s45_st_qs", "true");
+    expect(&mut fails, "__r_s45_st_id", "true");
     expect(&mut fails, "__r_s45_applied_raw", "#keep45|#dyn45");
     expect(&mut fails, "__r_s45_applied_id", "true");
     expect(&mut fails, "__r_s45_after_qs", "true");
     expect(&mut fails, "__r_s45_after_qsa", "1");
     expect(&mut fails, "__r_s45_after_id", "true");
+    expect(&mut fails, "__r_s45_rb_qsa_div", "0");
     expect(&mut fails, "__r_s45_gen2_qs", "true");
     expect(&mut fails, "__r_s45_gen2_qsa", "1");
+    expect(&mut fails, "__r_s45_rb_gen2_qs", "true");
+    expect(&mut fails, "__r_s45_rb_gen2_div", "0");
     assert!(
         fails.is_empty(),
         "handle-form remove 后 document 面查询 stale 观测（诊断：after_id=false ⇒ 层1 消零对冲\
