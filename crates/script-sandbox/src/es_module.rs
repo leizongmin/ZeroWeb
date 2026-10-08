@@ -546,8 +546,23 @@ fn transform_import(
         let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
         // R3398：防循环/菱形 import 无限递归（仅首次访问时内联依赖 IIFE；重入 → 引用首份
         // 导出，避免 a↔b 循环致栈溢出 abort）。镜像 import 'm' 副作用导入的 visited 守卫。
+        let safe = safe_ident(&specifier);
         let dep = inline_dep_once(&specifier, registry, visited)?;
-        return Ok(format!("  var {} = {};\n", ns_name.trim(), dep.exports_expr()));
+        let exports_var = match &dep {
+            DepInline::Fresh(_) => format!("_mod_{safe}"),
+            DepInline::Visited(_) => format!("_modref_{safe}"),
+        };
+        let mut result = String::new();
+        match &dep {
+            DepInline::Fresh(code) => {
+                result.push_str(&format!("  var {exports_var} = {code};\n"));
+            }
+            DepInline::Visited(_) => {
+                result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
+            }
+        }
+        result.push_str(&format!("  var {} = {exports_var};\n", ns_name.trim()));
+        return Ok(result);
     }
 
     // import { X, Y as Z } from 'module'
@@ -592,8 +607,23 @@ fn transform_import(
         let raw_specifier = extract_import_specifier_from_rest(spec_part)?;
         let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
         ensure_module_export(&specifier, "default", registry)?;
+        let safe = safe_ident(&specifier);
         let dep = inline_dep_once(&specifier, registry, visited)?;
-        return Ok(format!("  var {name} = ({}).default;\n", dep.exports_expr()));
+        let exports_var = match &dep {
+            DepInline::Fresh(_) => format!("_mod_{safe}"),
+            DepInline::Visited(_) => format!("_modref_{safe}"),
+        };
+        let mut result = String::new();
+        match &dep {
+            DepInline::Fresh(code) => {
+                result.push_str(&format!("  var {exports_var} = {code};\n"));
+            }
+            DepInline::Visited(_) => {
+                result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
+            }
+        }
+        result.push_str(&format!("  var {name} = ({exports_var}).default;\n"));
+        return Ok(result);
     }
 
     Ok(String::new())
@@ -762,10 +792,23 @@ fn transform_export(
         let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
         let safe = safe_ident(&specifier);
         let dep = inline_dep_once(&specifier, registry, visited)?;
-        return Ok(format!(
-            "  var _reexport_{safe} = {};\n  Object.keys(_reexport_{safe}).forEach(function(key) {{ if (key !== 'default') _exports[key] = _reexport_{safe}[key]; }});\n",
-            dep.exports_expr()
+        let exports_var = match &dep {
+            DepInline::Fresh(_) => format!("_mod_{safe}"),
+            DepInline::Visited(_) => format!("_modref_{safe}"),
+        };
+        let mut result = String::new();
+        match &dep {
+            DepInline::Fresh(code) => {
+                result.push_str(&format!("  var {exports_var} = {code};\n"));
+            }
+            DepInline::Visited(_) => {
+                result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
+            }
+        }
+        result.push_str(&format!(
+            "  var _reexport_{safe} = {exports_var};\n  Object.keys(_reexport_{safe}).forEach(function(key) {{ if (key !== 'default') _exports[key] = _reexport_{safe}[key]; }});\n",
         ));
+        return Ok(result);
     }
     if clause.starts_with('{')
         && let Some((before, spec_part)) = split_from_clause(clause)
