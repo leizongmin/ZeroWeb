@@ -13,7 +13,8 @@
 //   重复计入 pending 条目（R331 identity 反查把快照命中升格为原 handle proxy +
 //   R379 PA 保留同一节点 → 双计）。修复 = 按调用意图定义 `_elKeyOf`（与 pending
 //   键 k161 同构：'@'+handle / 'id:'+id）。（slice45 交付卡遗留申报收口）
-// ③slice27 静态单命中面 live 评估为读码评估件，不落本文件。
+// ③slice27 静态单命中面 live 评估为评估件：判定=边界保持（行为钉固化现状 + 申报
+//   收窄，不强修）——钉 `static_single_hit_named_access_stale_boundary_s46` 在本文件。
 //
 // 批次边界 apply 镜像生产链（part45 钉①同款，r5010/part25 先例扩展）：drain 队列
 // → `append_mutation_history`（webview apply 前同款）→ 持久 handle→selector 表 +
@@ -307,6 +308,121 @@ fn qsa_pending_tag_dedup_identity_s46() {
     assert!(
         fails.is_empty(),
         "apply 后 tag 形 QSA pending dedup 观测：\n{}",
+        fails.join("\n")
+    );
+}
+
+/// slice46 钉③（行为钉/申报收窄——固化现状，非 spec 断言）：slice27 静态单命中
+/// named access 面不 live。初始快照 id 元素经 `_installNamedAccess`（register_dom_
+/// callbacks 注册时自调用，见 callbacks.rs `__zw_collect_ids` 注册后）以数据属性
+/// 装全局；元素移除且 Remove 落快照 + 代际 bump 后，属性保持 stale——直至下一次
+/// 快照安装（renderer SetDomSnapshot 换代回收/重装链路闭合）。spec 取值算法每读按
+/// 当下 named objects 求值（移除后属性应缺席，typeof 应为 "undefined"）——现状为
+/// 已知收窄边界，本钉固化防无意识翻转；翻转此断言 = live 化改造落地时点（需
+/// WindowProperties exotic 每读求值改造或静态面失格账本，波及 slice27/30/32/33/
+/// 36/40/42/43/45 九轮钉网，成本依据见交付卡评估件段）。对照臂：GEBI 同时刻已不
+/// 命中（host 快照真值）——查询面 live 而命名面 stale 的边界差即钉面。上游 WPT
+/// removing.html 只覆盖 createElement 动态面（slice36/40 已收口），静态安装面无
+/// 上游直接用例。
+/// https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+#[test]
+fn static_single_hit_named_access_stale_boundary_s46() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><img id='st46'></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://zero.test/s46g".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    // register_dom_callbacks 尾部自调用 __zwInstallNamedAccess()：静态单命中名
+    // st46 以数据属性装上（安装链即被评面）。
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 批 N：remove 入队（host 快照未动）；pre 臂确认安装面在位。
+    sandbox
+        .execute(
+            "globalThis.__r46g_pre_typeof = typeof window.st46;\
+             document.getElementById('st46').remove();",
+        )
+        .unwrap();
+
+    // 批次边界 apply：Remove 落快照（host 真值：img 已不在文档）+ 代际 bump。
+    let batch: Vec<DomMutation> = {
+        let mut guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
+        guard.drain(..).collect()
+    };
+    assert!(!batch.is_empty(), "remove 必须产出 Remove mutation 记录");
+    crate::js_dom_bridge::callbacks::append_mutation_history(&batch);
+    let persistent: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    {
+        let mut doc =
+            zero_dom::parse_html(&dom_html.lock().unwrap_or_else(|e| e.into_inner()).clone());
+        crate::js_dom_bridge::apply_dom_mutations_with_persistent(&mut doc, &batch, Some(&persistent))
+            .expect("批次边界 apply：Remove 落 host 快照");
+        *dom_html.lock().unwrap_or_else(|e| e.into_inner()) = doc.outer_html(doc.root());
+    }
+    sandbox
+        .execute("globalThis.__zw_apply_generation_bump && globalThis.__zw_apply_generation_bump();")
+        .unwrap();
+
+    // 观测：apply + 换代后——GEBI（host 真值）已不命中；window.st46 数据属性仍
+    // 在（stale 至下次快照安装）。
+    sandbox
+        .execute(
+            "globalThis.__r46g_gebi = String(document.getElementById('st46') === null);\
+             globalThis.__r46g_typeof = typeof window.st46;\
+             globalThis.__r46g_in = String('st46' in window);",
+        )
+        .unwrap();
+
+    let mut read = |name: &str| -> String {
+        sandbox
+            .execute(&format!("String(globalThis.{name})"))
+            .unwrap()
+            .value
+    };
+    let mut fails: Vec<String> = Vec::new();
+    // 安装面 sanity：remove 前属性已装（object）。
+    let pre = read("__r46g_pre_typeof");
+    if pre != "object" {
+        fails.push(format!("__r46g_pre_typeof: want \"object\"（静态安装面在位）, got {pre:?}"));
+    }
+    // 对照臂：host 快照真值已剔除（查询面 live）。
+    let gebi = read("__r46g_gebi");
+    if gebi != "true" {
+        fails.push(format!(
+            "__r46g_gebi: want \"true\"（apply 后 GEBI 不命中——对照臂）, got {gebi:?}"
+        ));
+    }
+    // 主钉臂（固化现状，非 spec 断言）：命名面 stale 保持——属性仍在、typeof 仍
+    // "object"。spec 每读求值语义下应为 "undefined"/"false"；翻转 = live 化改造
+    // 落地时点（申报收窄边界）。
+    let typeof_after = read("__r46g_typeof");
+    if typeof_after != "object" {
+        fails.push(format!(
+            "__r46g_typeof: want \"object\"（现状固化：stale 至下次快照安装）, got \
+             {typeof_after:?}（变 \"undefined\" ⇒ 静态面已 live 化，须按交付卡评估件段 \
+             重验九轮钉网并更新收窄申报）"
+        ));
+    }
+    let in_after = read("__r46g_in");
+    if in_after != "true" {
+        fails.push(format!(
+            "__r46g_in: want \"true\"（现状固化：属性保持）, got {in_after:?}"
+        ));
+    }
+    assert!(
+        fails.is_empty(),
+        "slice27 静态单命中面 stale 边界观测（行为钉）：\n{}",
         fails.join("\n")
     );
 }
