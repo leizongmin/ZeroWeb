@@ -779,6 +779,34 @@ fn determine_flex_base_size(
                 .with_cross(dir, cross_axis_available_space);
 
             debug_log!("COMPUTE CHILD BASE SIZE:");
+            // ZW R4998（css-flexbox §9.2.3.E + css-sizing-4 §4.1）：main 在块轴（column）的
+            // aspect-ratio item，content-based base 须经 fit-content cross × ratio 传递——
+            // 直接量内容 main 会得子内容块高（flex-aspect-ratio-037：column + ar 1/1 +
+            // 子 w:100 → base 0，chromium 100 = inline max-content 100 × ratio）。行轴主轴
+            // （row）base = inline max-content 本身，不适用本传递。仅 cross auto（definite
+            // cross 已在 B 步经 generate_anonymous_flex_items 的 ratio 应用处理）。
+            let item_ar = tree.get_flexbox_child_style(child.node).aspect_ratio();
+            if !constants.is_row
+                && item_ar.is_some_and(|r| r > 0.0 && r.is_finite())
+                && child.size.cross(dir).is_none()
+            {
+                let cross_max_content = tree.measure_child_size(
+                    child.node,
+                    Size::NONE,
+                    child_parent_size,
+                    Size::MAX_CONTENT,
+                    SizingMode::ContentSize,
+                    dir.cross_axis(),
+                    Line::FALSE,
+                );
+                let pb_cross = child.padding.cross_axis_sum(dir) + child.border.cross_axis_sum(dir);
+                let cross_fit = match cross_axis_available_space {
+                    AvailableSpace::Definite(av) => cross_max_content.min(av),
+                    _ => cross_max_content,
+                };
+                let inner_cross = (cross_fit - pb_cross).max(0.0);
+                break 'flex_basis inner_cross * item_ar.unwrap();
+            }
             break 'flex_basis tree.measure_child_size(
                 child.node,
                 child_known_dimensions,
