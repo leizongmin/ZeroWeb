@@ -16,7 +16,7 @@ use zero_engine::{
 use zero_net::{FetchPriority, HttpMethod, HttpRequest, ResourceLoader, ResourceRequest};
 use zero_script_sandbox::{
     ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
-    extract_module_import_specifiers,
+    extract_static_module_import_specifiers,
 };
 
 use crate::ipc_service_worker::ServiceWorkerIpcClient;
@@ -1690,7 +1690,11 @@ pub fn collect_module_deps(
         return Ok(());
     }
     registry.insert(entry_url.to_string(), source.to_string());
-    for spec in extract_module_import_specifiers(source) {
+    // t8j：只预取**静态** import 依赖——动态 import() 是运行时行为（R3093 同款语义：留给
+    // `__zw_load_module → __zw_compile_module` 运行时 fetch，失败以 rejection 呈现），不得
+    // 作为硬依赖中止模块执行。全量提取器把 `import("_")` 能力探测（Vite 现代浏览器检测
+    // `import("_").catch(()=>1)`）当静态依赖 → 预取 cache miss → 模块整体不执行。
+    for spec in extract_static_module_import_specifiers(source) {
         let dep_url = zero_engine::resolve_document_url(entry_url, &spec);
         if !registry.contains_key(&dep_url) {
             let dep_src = fetch(&dep_url)?;
@@ -1764,6 +1768,32 @@ mod tests {
         // 测试可在两 load 之间 bump——断言「必须前进」而非恰好 +1（免 flake；对
         // 「禁 bump」变异同等灵敏：不变式本体即前进）。
         assert!(gen_after > gen_before, "clear 必须 bump drain 代际（不变式本体）");
+    }
+
+    /// t8j（site-compat bilibili laputa-home）：模块依赖收集只取**静态** import——动态
+    /// `import()` spec（如 Vite 现代浏览器探测 `import("_").catch(()=>1)`）不得作为硬依赖
+    /// 预取。红态：全量提取器把 `_` 提为依赖 → fetch cache miss → `Err("script fetch
+    /// failed: …/_")` 中止整个模块执行 → Vite `__vite_is_modern_browser` 永不置位、站点
+    /// 误回落 legacy 加载路径（真站 `vite: loading legacy chunks` ×4 同构）。
+    #[test]
+    fn collect_module_deps_skips_dynamic_import_specs() {
+        let calls: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        let fetch = |url: &str| -> Result<String, String> {
+            calls.lock().unwrap().push(url.to_string());
+            Ok("export default 1".to_string())
+        };
+        let mut reg = HashMap::new();
+        let source = "import { a } from './static-dep.js'\nimport('_').catch(function () {})\nexport default a";
+        collect_module_deps(&fetch, "https://zero.test/m.js", source, &mut reg).unwrap();
+        let calls = calls.into_inner().unwrap();
+        assert!(
+            calls.contains(&"https://zero.test/static-dep.js".to_string()),
+            "静态依赖仍被收集预取：{calls:?}"
+        );
+        assert!(
+            !calls.iter().any(|u| u.ends_with("/_")),
+            "动态 import spec 不得当依赖收集（红态：'_ ' 被提取为依赖硬失败中止模块）：{calls:?}"
+        );
     }
 
     /// js-dom R386（DC-1 多进程生产路径）：RendererJsWorker 沙箱装原生 DOM 绑定——

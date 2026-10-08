@@ -181,24 +181,37 @@ pub fn compile_dependency_iife(specifier: &str, registry: &ModuleRegistry) -> Re
 /// 生成模块运行时 prelude（`__moduleCache` + 动态 `import()` 支持）。
 pub fn build_module_runtime_prelude(registry: &ModuleRegistry) -> Result<String, ScriptError> {
     let mut out = String::from("var __moduleCache = {};\n");
-    for spec in registry.specifiers() {
-        let iife = build_dep_iife(spec, registry, &mut HashSet::new())?;
-        let escaped = spec.replace('\\', "\\\\").replace('\'', "\\'");
-        out.push_str(&format!("__moduleCache['{escaped}'] = {iife};\n"));
-    }
-    out.push_str("globalThis.__zw_load_module = function(spec) {\n");
+    // t8j：helper（__zw_load_module / __zw_dynamic_import）必须先于 `__moduleCache[spec] = IIFE`
+    // 注册求值——注册右侧的 IIFE **立即执行模块体**（依赖预热 + collect_module_deps 把入口模块
+    // 自身也注册进 registry，见 js_worker/tab_js_worker collect_module_deps）。模块体顶层的
+    // `import()`（Vite 现代浏览器探测 `import("_").catch(()=>1)`）在求值瞬间需要 helper 已定义；
+    // 反序时入口模块体在 prelude 第 2 条语句执行 → `__zw_dynamic_import is not defined` ReferenceError，
+    // 探测中断、后续语句永不执行 → 站点误回落 legacy 加载路径。
+    out.push_str("globalThis.__zw_load_module = function(spec, parentHint) {\n");
     out.push_str("  if (__moduleCache[spec]) return __moduleCache[spec];\n");
+    // t8j：parent 优先取调用点穿入的 referrer（rewrite_dynamic_imports 的 `.call({referrer})`），
+    // 回退全局 _importMeta（直接调用形态）——模块 IIFE 局部的 _importMeta 在此不可见。
     out.push_str(
-        "  var parent = (typeof _importMeta !== 'undefined' && _importMeta.url) ? _importMeta.url : 'about:blank';\n",
+        "  var parent = parentHint || ((typeof _importMeta !== 'undefined' && _importMeta.url) || 'about:blank');\n",
     );
     out.push_str("  var code = __zw_compile_module(spec, parent);\n");
     out.push_str("  if (!code) throw new Error('Module not found: ' + spec);\n");
     out.push_str("  __moduleCache[spec] = (function() { return eval('(' + code + ')'); })();\n");
     out.push_str("  return __moduleCache[spec];\n");
     out.push_str("};\n");
+    // t8j：动态 import() 失败须以 rejected promise 呈现，不得同步 throw——
+    // https://tc39.es/ecma262/#sec-import-calls（ImportCall 恒返回 promise；取回/编译失败
+    // 走 promise rejection）。同步 throw 发生在调用方 `.catch()` 挂上之前（`import(x).catch(…)`
+    // 表达式求值即抛），Vite 现代浏览器探测模块 `import("_").catch(()=>1)` 由此整体中断、
+    // 后续语句（`__vite_is_modern_browser=true`）永不执行 → 站点误回落 legacy 加载路径。
     out.push_str(
-        "globalThis.__zw_dynamic_import = function(spec) { return Promise.resolve(__zw_load_module(spec)); };\n",
+        "globalThis.__zw_dynamic_import = function(spec) {\n  var parent = (this && this.referrer) || ((typeof _importMeta !== 'undefined' && _importMeta.url) || 'about:blank');\n  try {\n    return Promise.resolve(__zw_load_module(spec, parent));\n  } catch (e) {\n    return Promise.reject(e);\n  }\n};\n",
     );
+    for spec in registry.specifiers() {
+        let iife = build_dep_iife(spec, registry, &mut HashSet::new())?;
+        let escaped = spec.replace('\\', "\\\\").replace('\'', "\\'");
+        out.push_str(&format!("__moduleCache['{escaped}'] = {iife};\n"));
+    }
     Ok(out)
 }
 
@@ -207,7 +220,15 @@ pub(crate) fn rewrite_dynamic_imports(source: &str) -> String {
     let mut i = 0;
     while i < source.len() {
         if source[i..].starts_with("import(") {
-            out.push_str("__zw_dynamic_import(");
+            // t8j：经 `.call({referrer})` 把调用点 referrer 穿给 helper——重写点在模块 IIFE
+            // 内（build_module_script / build_dep_iife 均定义 `var _importMeta`），而
+            // `__zw_dynamic_import` 本体在全局作用域执行，读不到 IIFE 局部的 `_importMeta`
+            // （旧实现恒回退 'about:blank' → 相对 spec 解析失败、按原始 specifier 发起
+            // 网络请求）。ECMA-262 §sec-module-specifiers：动态 import 的 specifier 相对
+            // **active script/module**（即调用点 referrer）解析。
+            out.push_str(
+                "__zw_dynamic_import.call({ referrer: (typeof _importMeta !== 'undefined' && _importMeta.url) || '' }, ",
+            );
             i += "import(".len();
         } else {
             let ch = source[i..].chars().next().expect("char");
@@ -1030,6 +1051,149 @@ mod tests {
             .execute_module("export default import.meta.url;", Some("https://example.com/module.js"))
             .unwrap();
         assert!(r.namespace_json.contains("https://example.com/module.js"));
+    }
+
+    /// t8j（site-compat bilibili laputa-home）：动态 import() 取回/编译失败须以 rejected
+    /// promise 呈现（https://tc39.es/ecma262/#sec-import-calls——ImportCall 恒返回 promise），
+    /// 不得同步 throw。同步 throw 发生在调用方 `.catch()` 挂上之前，Vite 现代浏览器探测
+    /// `import("_").catch(()=>1)` 整体中断、后续语句永不执行 → 站点误回落 legacy 路径。
+    /// 红态：`__zw_dynamic_import` 在 `__zw_compile_module` 返空（取回失败）时同步抛
+    /// `Module not found`，本测试首个 execute 即 Err。
+    #[test]
+    fn test_dynamic_import_failure_rejects_not_throws() {
+        #[cfg(feature = "v8")]
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox = crate::QuickJSSandbox::new().unwrap();
+        // 模拟宿主取回失败：__zw_compile_module 返空 → __zw_load_module 抛 Module not found。
+        sandbox.register_callback("__zw_compile_module", Box::new(|_args| String::new()));
+        // promise 落定结果经宿主回调回传（execute 间 global 不共享——非 persistent
+        // context 每次 execute 新建；真实路径 prelude+模块同为单次 execute）。
+        let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *settled_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        let prelude = build_module_runtime_prelude(&ModuleRegistry::new()).unwrap();
+        // 忠实复刻 execute_module_in_sandbox：prelude + 调用方代码单次 execute；
+        // 微任务检查点在 execute 内跑 → .then 落定发生在返回前，__zw_report 已被调。
+        sandbox
+            .execute(&format!(
+                "{prelude}\n\
+                     __zw_dynamic_import('_nope').then(\n\
+                       function () {{ __zw_report('fulfilled'); }},\n\
+                       function (e) {{ __zw_report('rejected:' + (e && e.message)); }});\n"
+            ))
+            .expect("动态 import 失败不得同步 throw");
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("rejected:Module not found: _nope"),
+            "失败以 rejection 呈现且原因携带 spec（红态：同步 throw 后首个 execute 即 Err）"
+        );
+    }
+
+    /// t8j F3（site-compat bilibili laputa-home）：prelude 语句顺序钉——helper 定义必须先于
+    /// `__moduleCache[spec] = IIFE` 注册求值。collect_module_deps 把入口模块自身注册进 registry，
+    /// 注册右侧 IIFE 立即执行模块体；模块体顶层 `import()`（Vite 探测形态）在 helper 未定义时
+    /// 同步 ReferenceError（红态：反序 prelude 中模块体在 `__zw_dynamic_import` 定义前执行）。
+    #[test]
+    fn test_prelude_helpers_precede_module_registrations() {
+        #[cfg(feature = "v8")]
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox = crate::QuickJSSandbox::new().unwrap();
+        sandbox.register_callback("__zw_compile_module", Box::new(|_args| String::new()));
+        // execute 间 global 不共享（非 persistent context 每次 execute 新建）——模块体执行
+        // 结果经宿主回调在同一 execute 内回传（与 F2 钉同法）。
+        let reported: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let reported_cb = reported.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *reported_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        let mut registry = ModuleRegistry::new();
+        // 入口模块自身进 registry（复刻 collect_module_deps 行为）+ 体顶层动态 import 探测。
+        registry.register(
+            "https://zero.test/m.js",
+            "globalThis.__t8j_probe_ran = true;\nimport('_').catch(function(){});\nglobalThis.__t8j_after_import = true;\n__zw_report('after=' + (globalThis.__t8j_after_import === true));",
+        );
+        let prelude = build_module_runtime_prelude(&registry).unwrap();
+        sandbox
+            .execute(&prelude)
+            .expect("注册求值阶段模块体顶层 import() 不得同步 throw（红态：helper 反序 → ReferenceError）");
+        assert_eq!(
+            reported.lock().unwrap().as_deref(),
+            Some("after=true"),
+            "模块体在注册求值阶段跑完 import() 之后的语句（探测被吞、流程继续）"
+        );
+    }
+
+    /// t8j F4（site-compat bilibili laputa-home）：动态 import() 相对 spec 按调用点 referrer
+    /// 解析钉——rewrite_dynamic_imports 经 `.call({referrer})` 把模块 IIFE 的 `_importMeta.url`
+    /// 穿给 helper，`__zw_compile_module(spec, parent)` 收到的 parent 须为调用模块 URL 而非
+    /// 'about:blank'（红态：旧 helper 读不到 IIFE 局部 _importMeta，相对 spec 按原样发起请求）。
+    /// https://tc39.es/ecma262/#sec-module-specifiers（相对 specifier 相对 referrer 解析）。
+    #[test]
+    fn test_dynamic_import_referrer_resolves_relative_spec() {
+        #[cfg(feature = "v8")]
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox = crate::QuickJSSandbox::new().unwrap();
+        let seen_parent: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let seen_parent_cb = seen_parent.clone();
+        let reported: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let reported_cb = reported.clone();
+        // 宿主取回调：（spec, parent）——parent 即断言面；相对 spec 命中已注册依赖时返回
+        // 手工 IIFE（复刻 compile_dependency_iife 形态），否则返空（走 Module not found rejection）。
+        sandbox.register_callback(
+            "__zw_compile_module",
+            Box::new(move |args| {
+                let parent = args.get(1).cloned().unwrap_or_default();
+                let is_target =
+                    args.first().map(String::as_str) == Some("./dep.js") && parent == "https://zero.test/m.js";
+                *seen_parent_cb.lock().unwrap() = Some(parent);
+                if is_target {
+                    "(function(){ globalThis.__t8j_dep_loaded = true; return { default: 42 }; })()".to_string()
+                } else {
+                    String::new()
+                }
+            }),
+        );
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *reported_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        let mut registry = ModuleRegistry::new();
+        registry.register(
+            "https://zero.test/m.js",
+            "import('./dep.js').then(function (m) { __zw_report('dep=' + m.default); }, function (e) { __zw_report('rej=' + e.message); });",
+        );
+        let prelude = build_module_runtime_prelude(&registry).unwrap();
+        sandbox.execute(&prelude).expect("模块体注册求值不得同步 throw");
+        assert_eq!(
+            seen_parent.lock().unwrap().as_deref(),
+            Some("https://zero.test/m.js"),
+            "宿主取回调收到的 parent = 调用模块 URL（红态：'about:blank'，相对 spec 无法解析）"
+        );
+        assert_eq!(
+            reported.lock().unwrap().as_deref(),
+            Some("dep=42"),
+            "相对 spec 命中依赖并加载（红态：Module not found rejection）"
+        );
     }
 
     #[test]
