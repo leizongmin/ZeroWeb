@@ -997,6 +997,7 @@ fn split_statements(source: &str) -> Vec<String> {
     // 正则字面量判定上下文：最后一个非空白有效字符与其标识符 token
     let mut prev_significant: Option<char> = None;
     let mut prev_word = String::new();
+    let mut after_whitespace = false;
     let chars = source.chars().collect::<Vec<_>>();
     let mut index = 0usize;
     while index < chars.len() {
@@ -1108,11 +1109,17 @@ fn split_statements(source: &str) -> Vec<String> {
                     }
                     if !ch.is_whitespace() {
                         if ch.is_alphanumeric() || ch == '_' || ch == '$' {
+                            if after_whitespace {
+                                prev_word.clear();
+                            }
                             prev_word.push(ch);
                         } else {
                             prev_word.clear();
                         }
                         prev_significant = Some(ch);
+                        after_whitespace = false;
+                    } else {
+                        after_whitespace = true;
                     }
                     index += 1;
                     continue;
@@ -1177,11 +1184,17 @@ fn split_statements(source: &str) -> Vec<String> {
         let top_level = braces == 0 && parens == 0 && brackets == 0;
         if !ch.is_whitespace() {
             if ch.is_alphanumeric() || ch == '_' || ch == '$' {
+                if after_whitespace {
+                    prev_word.clear();
+                }
                 prev_word.push(ch);
             } else {
                 prev_word.clear();
             }
             prev_significant = Some(ch);
+            after_whitespace = false;
+        } else {
+            after_whitespace = true;
         }
         if (ch == ';' || ch == '\n') && top_level {
             let statement = current.trim();
