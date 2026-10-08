@@ -929,7 +929,15 @@ fn apply_replaced_element_sizing(
             return;
         }
     }
-    if tag != "img" && tag != "canvas" && tag != "video" && tag != "embed" && tag != "object" && tag != "applet" {
+    // R5001：+ audio（无固有尺寸替换元素，CSS aspect-ratio 走 default object size 臂）
+    if tag != "img"
+        && tag != "canvas"
+        && tag != "video"
+        && tag != "embed"
+        && tag != "object"
+        && tag != "applet"
+        && tag != "audio"
+    {
         return;
     }
 
@@ -1165,6 +1173,15 @@ fn apply_replaced_element_sizing(
             }
         }
         _ => {
+            // R5001（css-sizing-4 §4.1 + HTML media natural size）：audio 的控件自然尺寸
+            //（chromium 300×54 系）在 natural dims 存在时赢过 CSS aspect-ratio——Mozilla
+            // 上游 035 正是验证 ar 对 audio 无传递（ref 页无 ar 与 test 页有 ar 须同渲；
+            // chromium 探针实测 300×54/100×54/300×100 双页同值）。ZW 无控件 UI：剥 ar
+            // 使 test 与 ref 走同一条无 ar sizing 链（035 曾因 taffy ar 对内容 0 高传递
+            // 致 test① h=784 ≠ ref 0 → 红）。
+            if tag == "audio" {
+                taffy_style.aspect_ratio = None;
+            }
             // 无 HTML 属性：按解码信号分派。no-ratio / both-abs-sizes / ratio-only 三者互斥
             //（一张图只命中其一；no-ratio 图虽也留在 image_sizes 供背景图读 pixmap 尺寸，
             // 但此处先命中 no_ratio 即跳过 sizes 的 aspect_ratio 逻辑）。
@@ -2955,7 +2972,9 @@ fn build_subtree(
     {
         let is_replaced_tag = doc.get(dom_id).is_some_and(|n| {
             matches!(&n.kind, NodeKind::Element(e)
-                if matches!(e.local_name(), "img" | "canvas" | "video" | "embed" | "object" | "applet" | "iframe" | "svg"))
+                if matches!(e.local_name(), "img" | "canvas" | "video" | "embed" | "object" | "applet" | "iframe" | "svg"
+                    // R5001：audio 控件自然尺寸赢过 CSS ar（035，两处 R3854/R3912 门同步）
+                    | "audio"))
         });
         let max_w_unset = matches!(computed.max_width, LengthValue::Auto)
             || matches!(computed.max_width, LengthValue::Px(v) if v.is_infinite());
@@ -3020,7 +3039,9 @@ fn build_subtree(
     {
         let is_replaced_tag = doc.get(dom_id).is_some_and(|n| {
             matches!(&n.kind, NodeKind::Element(e)
-                if matches!(e.local_name(), "img" | "canvas" | "video" | "embed" | "object" | "applet" | "iframe" | "svg"))
+                if matches!(e.local_name(), "img" | "canvas" | "video" | "embed" | "object" | "applet" | "iframe" | "svg"
+                    // R5001：audio 控件自然尺寸赢过 CSS ar（035，两处 R3854/R3912 门同步）
+                    | "audio"))
         });
         let parent_is_flex_grid = doc.parent_node(dom_id).and_then(|p| styles.get(&p)).is_some_and(|ps| {
             matches!(

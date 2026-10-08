@@ -75,6 +75,12 @@ mod e2e_web_components;
 #[cfg(test)]
 mod e2e_lit_library;
 
+// t8i（site-compat bilibili-20261002-r1）：script 路径 fragment 视图插入端到端钉
+// （Vue legacy insertStaticContent 双容器形态 + 缓存重挂载；evaluate/script fabric
+// 分叉的钉测承载——探针必须走真实页面 script）。
+#[cfg(test)]
+mod e2e_static_content;
+
 #[cfg(test)]
 mod e2e_rendering;
 

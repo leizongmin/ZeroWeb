@@ -1907,6 +1907,26 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // t8i（site-compat bilibili-20261002-r1）：fragment flatten 到 create 句柄 ref 前
+    //（comment 锚形态——lit commit / Vue insertStaticContent；子可能为 M 域解析代理
+    // 无 handle，故以 fragment 句柄整体 wire，host 侧 move_fragment_children 平展）。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_insert_fragment_children_before_handle",
+        Box::new(move |args| {
+            if args.len() >= 3 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::InsertFragmentChildrenBeforeHandle {
+                        parent_handle: args[0].clone(),
+                        fragment_handle: args[1].clone(),
+                        ref_handle: args[2].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
     let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_insert_fragment_before",

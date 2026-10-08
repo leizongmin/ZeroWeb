@@ -10048,7 +10048,13 @@
     var _r3kStale = [];
     for (var _r3kpa = _zwPendingAdded.length - 1; _r3kpa >= 0; _r3kpa--) {
       var _r3knd = _zwPendingAdded[_r3kpa];
-      if (_r3knd && !_r3knd.__zwHandle && !_r3knd.__zwSelector && _r3knd._zwSelPendingParent) {
+      // t8i：R97 fragment 视图分支的解析收编子带 noWire 槽标记，豁免本清除——清除
+      // 前提「host apply 后节点已进快照」对无 wire 收编不成立（该分支语义即 JS 侧
+      // registry+overlay 承载），清掉会让 dual 身份父 childNodes 的 overlay 跨 turn
+      // 二次丢失。setter/insertAdjacentHTML 解析路径未标记，清除行为不变（本切片
+      // K3 钉面不受影响）。
+      if (_r3knd && !_r3knd.__zwHandle && !_r3knd.__zwSelector && _r3knd._zwSelPendingParent
+          && !_r3knd._zwSelPendingParent.noWire) {
         _r3kStale.push(_r3knd);
         _zwPendingAdded.splice(_r3kpa, 1);
       }

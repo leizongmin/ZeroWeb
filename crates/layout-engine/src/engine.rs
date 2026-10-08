@@ -1713,11 +1713,15 @@ impl LayoutEngine {
         // 全-inset stretch。标记供 abspos stretch 后处理跳过（避免覆写固有尺寸）。
         // applet 与 embed/object 同族（R2091 固有尺寸语义），补入以免 float_positioning
         // 的 BFC auto-height 重算把其属性固有高度压成 0（tests_10 断言 60px 实测 0）。
+        // R5001：+ audio——同病：`<audio style="aspect-ratio:1/1">` 的 sizing 已由
+        // tree.rs replaced 臂落定（default object size 300×150 经 ratio 调整），缺旗标时
+        // adjust_no_float_page 的 BFC auto-height 重算按无子重算压成 0
+        //（replaced-element-035：300×300/100×100 → ×0，chromium 全 100×100 系）。
         let is_replaced = dom_id.is_some_and(|id| {
             doc.get(id).is_some_and(|n| match &n.kind {
                 zero_dom::NodeKind::Element(elem) => matches!(
                     elem.local_name(),
-                    "img" | "video" | "iframe" | "embed" | "object" | "svg" | "canvas" | "applet"
+                    "img" | "video" | "iframe" | "embed" | "object" | "svg" | "canvas" | "applet" | "audio"
                 ),
                 _ => false,
             })
