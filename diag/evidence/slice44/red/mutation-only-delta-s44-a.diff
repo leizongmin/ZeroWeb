@@ -1,0 +1,29 @@
+diff --git a/crates/engine/src/js_dom_shim/part06.js b/crates/engine/src/js_dom_shim/part06.js
+index 9cf415385..d0488bb7d 100644
+--- a/crates/engine/src/js_dom_shim/part06.js
++++ b/crates/engine/src/js_dom_shim/part06.js
+@@ -2529,23 +2529,7 @@
+       // 已含 li 时由 host 判定命中）+ pending 归并（R322 链）消费 handle proxy，同一 li 两
+       // identity 双计（lis:A,B,A,B，vue_reconciliation 首渲染回归 R322 轮未发现——A/B 列表
+       // 未含 vue e2e）。反查命中 → 原复用 = 双源合流；未命中 → 原 sel wrapper 零变化。
+-      var _s44sels = all ? all.split('|').filter(Boolean) : [];
+-      // slice44：pendingRemoved sel 剔除（document 面全查，包装前按 sel 过滤——
+-      // 已移除 parsed 后代在 host apply 前仍被快照命中，spec 查询面限当下
+-      // document tree）。https://dom.spec.whatwg.org/#concept-node-list-alive
+-      if (_s44sels.length && _zwPendingRemoved.length) {
+-        try {
+-          var _s44rs = _zwPendingRemovedSels();
+-          if (_s44rs.size) {
+-            var _s44kept = [];
+-            for (var _s44k = 0; _s44k < _s44sels.length; _s44k++) {
+-              if (!_s44rs.has(_s44sels[_s44k])) _s44kept.push(_s44sels[_s44k]);
+-            }
+-            _s44sels = _s44kept;
+-          }
+-        } catch (_e44qsa) {}
+-      }
+-      var out161 = _s44sels.map(_zwQueryWrapIdentity);
++      var out161 = all ? all.split('|').filter(Boolean).map(_zwQueryWrapIdentity) : [];
+       var tagM161 = /^[A-Za-z][\w-]*$/.exec(q);
+       if (tagM161 && typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded.length) {
+         var seen161 = {};

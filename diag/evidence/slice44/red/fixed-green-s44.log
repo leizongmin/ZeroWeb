@@ -1,0 +1,13 @@
+TREE_SHA=7c44d04de16a520e55101b6c65e8040467ad4007
+FIX_COMMIT=7c44d04de16a520e55101b6c65e8040467ad4007
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running unittests src/lib.rs (target/debug/deps/zero_engine-acbd885ebec27618)
+
+running 3 tests
+test js_dom_bridge::tests::static_selector_query_parsed_subtree_remove_s44 ... ok
+test js_dom_bridge::tests::named_access_doc_tree_root_head_mount_s44 ... ok
+test js_dom_bridge::tests::parsed_subtree_move_lifecycle_s44 ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 2905 filtered out; finished in 0.06s
+
+EXIT=0

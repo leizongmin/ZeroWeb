@@ -1,0 +1,13 @@
+diff --git a/crates/engine/src/js_dom_shim/part05.js b/crates/engine/src/js_dom_shim/part05.js
+index 6fb877ec4..d970b730a 100644
+--- a/crates/engine/src/js_dom_shim/part05.js
++++ b/crates/engine/src/js_dom_shim/part05.js
+@@ -11001,7 +11001,7 @@
+   // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+   function _zwDocContains36(el) {
+     try {
+-      var root36 = globalThis.document.documentElement;
++      var root36 = globalThis.document.body || globalThis.document.documentElement;
+       return !!(root36 && root36.contains(el));
+     } catch (_e36dc) { return false; }
+   }

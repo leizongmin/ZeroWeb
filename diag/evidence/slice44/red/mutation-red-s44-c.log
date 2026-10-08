@@ -1,0 +1,32 @@
+# mutation-red-s44-c：_zwDocContains36 根部回退 body||documentElement（part05.js）
+# BASE_TREE_SHA=7c44d04de16a520e55101b6c65e8040467ad4007（HEAD=7c44d04de，工作树仅叠加 mutation-only-delta-s44-c.diff）
+# 预期：named_access_doc_tree_root_head_mount_s44 在 __r_head_named 处红（body 根漏判 head 子树）
+# 其余两钉保持绿（分 site 归因）
+---
+   Compiling zero-engine v0.1.0 (/home/lei/work/ZeroWeb/crates/engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.42s
+     Running unittests src/lib.rs (target/debug/deps/zero_engine-acbd885ebec27618)
+
+running 3 tests
+test js_dom_bridge::tests::static_selector_query_parsed_subtree_remove_s44 ... ok
+test js_dom_bridge::tests::named_access_doc_tree_root_head_mount_s44 ... FAILED
+test js_dom_bridge::tests::parsed_subtree_move_lifecycle_s44 ... ok
+
+failures:
+
+---- js_dom_bridge::tests::named_access_doc_tree_root_head_mount_s44 stdout ----
+
+thread 'js_dom_bridge::tests::named_access_doc_tree_root_head_mount_s44' (3351343) panicked at crates/engine/src/js_dom_bridge_tests/part44.rs:138:5:
+assertion `left == right` failed: head 内挂载 id 命名元素入 named objects（spec document tree 判定；修前 body 根谓词漏判为 undefined）
+  left: "false"
+ right: "true"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    js_dom_bridge::tests::named_access_doc_tree_root_head_mount_s44
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 2905 filtered out; finished in 0.06s
+
+error: test failed, to rerun pass `-p zero-engine --lib`
+EXIT=101
