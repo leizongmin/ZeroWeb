@@ -442,6 +442,19 @@ pub enum DomMutation {
         /// 参考节点选择器。
         ref_selector: String,
     },
+    /// `parentHandle.insertBefore(fragment, refHandle)`——ref 为 create 句柄
+    ///（comment 锚等无 selector 可翻译；t8i：lit `marker.parentNode.insertBefore(
+    /// importedFragment, endNode)` 与 Vue legacy insertStaticContent 同形态）。
+    /// fragment 子节点 flatten 到 ref 之前；ref_handle miss 时降级 append 尾部
+    ///（与 [`Self::InsertBeforeByHandleHandle`] 同一 lenient 约定）。
+    InsertFragmentChildrenBeforeHandle {
+        /// 父节点句柄。
+        parent_handle: String,
+        /// DocumentFragment 句柄。
+        fragment_handle: String,
+        /// 参考节点句柄。
+        ref_handle: String,
+    },
     /// 页面 `element.focus()`/`blur()`（R3254-M7'）——shim 已在 V8 内派发过 focus 事件，
     /// 宿主只同步 retained 焦点状态（`PageInteractionState` + 焦点回执），不写 DOM、不重复派发。
     FocusChanged {
@@ -1524,6 +1537,26 @@ pub fn apply_dom_mutations_full(
                     continue;
                 };
                 move_fragment_children(doc, parent, &fragment_handle, Some(ref_node), &handles)?;
+            }
+            DomMutation::InsertFragmentChildrenBeforeHandle {
+                parent_handle,
+                fragment_handle,
+                ref_handle,
+            } => {
+                let parent = handles
+                    .get(&parent_handle)
+                    .copied()
+                    .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
+                // ref handle miss 降级 append 尾部（insertBefore(node, null) == appendChild
+                // 语义；与 InsertBeforeByHandleHandle arm 同一 lenient 约定）。
+                match handles.get(&ref_handle).copied() {
+                    Some(ref_node) => {
+                        move_fragment_children(doc, parent, &fragment_handle, Some(ref_node), &handles)?;
+                    }
+                    None => {
+                        move_fragment_children(doc, parent, &fragment_handle, None, &handles)?;
+                    }
+                }
             }
         }
     }

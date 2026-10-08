@@ -3326,6 +3326,14 @@
         return a;
       }
       var isDeep = deep === true;
+      // t8i（site-compat bilibili-20261002-r1）：handle 形态 template content 视图
+      // （createElement('template') + innerHTML=，lit importNode(content) 消费面）——
+      // 保持修复前「返回视图本体」行为：旧版视图无 cloneNode 落 `else return node`
+      // 回退，lit 的 commit 链（fragment 展开 + text-ref 插入）依赖视图本体的活子链；
+      // 进入 cloneNode 拷贝分发会因克隆子树 text-ref 插入未打通使响应式二次 render
+      // 不落地（e2e_lit_library 实证）。Vue 走 content.cloneNode 直调，不消费本入口。
+      // sel 形态视图不带标记，继续走既有拷贝分发（part27 createTestTree 依赖）。
+      if (node.nodeType === 11 && node.__zwTplViewSelfImport) return node;
       var copy;
       if (typeof node.cloneNode === 'function') copy = node.cloneNode(isDeep);
       else return node;
