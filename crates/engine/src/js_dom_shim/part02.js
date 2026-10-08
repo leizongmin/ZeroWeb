@@ -4814,7 +4814,14 @@
   var _hist_pendingTraversals = [];
   function _hist_queueTraversal(delta, ctrl) {
     _hist_pendingTraversals.push({ delta: delta, ctrl: ctrl || null });
-    _defer(_hist_runQueuedTraversals);
+    // M2-S4G：traverse 步骤入 **task** 队列（spec session history traversal steps——非微任务；
+    // back() 后同任务内排队的 promise 微任务先于 traverse 事件——WPT ordering back-same-document
+    // 「promise microtask 先于 navigate」）。旧 _defer(queueMicrotask) 顺序不符。
+    if (typeof setTimeout === 'function') {
+      setTimeout(_hist_runQueuedTraversals, 0);
+    } else {
+      _defer(_hist_runQueuedTraversals);
+    }
   }
   function _hist_runQueuedTraversals() {
     while (_hist_pendingTraversals.length) {
@@ -4838,7 +4845,7 @@
       if (ctrl) {
         _defer(function () {
           if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
-          if (ctrl.finishedSettle) ctrl.finishedSettle(null);
+          if (ctrl.finishedSettle) ctrl.finishedSettle(null, false, _navPub(_navCurrent()));
         });
       }
       return;
@@ -4867,6 +4874,7 @@
     var _navEv = _navFireNavigate({
       navigationType: 'traverse',
       _zwSelf: true,
+      resultCtrl: ctrl,
       url: _histEntryUrl(_hist_entries[target]),
       hashChange: _navIsHashOnly(_histEntryUrl(_hist_current()), _histEntryUrl(_hist_entries[target])),
       destRec: _navTgtRec,
@@ -4881,11 +4889,7 @@
       has: _navTgtHe.scrollY !== undefined, gen: _winScrollGen,
     };
     if (_navEv.defaultPrevented) {
-      if (ctrl) {
-        var ce = new (globalThis.DOMException || DOMException)('The operation was aborted.', 'AbortError');
-        ctrl.reject(ce);
-        ctrl.finishedSettle(ce, true);
-      }
+      if (!_navEv._zwErrored) _navCancelNavigation(_navEv, ctrl);
       return;
     }
     if (_navPreempted) {
@@ -4898,22 +4902,36 @@
       }
       return;
     }
-    _hist_cursor = target;
-    // M2-S4：Navigation API traverse 面——currentEntry 恢复到目标 session entry 的 record
-    //（按 he 反查，key/id 还原——WPT key-id-back-same-document）+ 'traverse' currententrychange。
-    if (typeof _navTraverse === 'function') _navTraverse(_hist_current());
-    // M2-S4D：非 intercept traversal 的滚动恢复（非 fragment 变更且有保存数据；fragment 走
-    // 既有滚锚面——R3065）。
-    if (!_navEv._zwIntercepted && !_navEv.hashChange) {
-      _histRestoreScroll(_hist_entries[target]);
-    }
-    _hist_dispatchPopState(oldHref, _navEv._zwIntercepted);
-    if (_navEv._zwIntercepted) _navRunIntercept(_navEv, ctrl);
-    else if (ctrl) {
-      _defer(function () {
+    // M2-S4G：traverse 提交块闭包化（cursor 应用 + currentEntry 恢复 + 滚动恢复 + popstate
+    // 派发）——intercept + precommitHandler 时延迟到 precommit 结算（WPT precommitHandler
+    // traverse 面「popstate before handler starts 不发」）；无 precommit 时 doCommit() 立即调
+    // → 与旧内联时序一致。
+    var _navCommitTraversal = function () {
+      _hist_cursor = target;
+      // M2-S4：Navigation API traverse 面——currentEntry 恢复到目标 session entry 的 record
+      //（按 he 反查，key/id 还原——WPT key-id-back-same-document）+ 'traverse' currententrychange。
+      if (typeof _navTraverse === 'function') _navTraverse(_hist_current());
+      // M2-S4D：非 intercept traversal 的滚动恢复（非 fragment 变更且有保存数据；fragment 走
+      // 既有滚锚面——R3065）。
+      if (!_navEv._zwIntercepted && !_navEv.hashChange) {
+        _histRestoreScroll(_hist_entries[target]);
+      }
+      _hist_dispatchPopState(oldHref, _navEv._zwIntercepted);
+    };
+    if (_navEv._zwIntercepted) _navRunIntercept(_navEv, ctrl, _navCommitTraversal);
+    else {
+      _navCommitTraversal();
+      if (ctrl) {
+        // M2-S4G：committed 提交即结算（spec notify）。
         if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
-        if (ctrl.finishedSettle) ctrl.finishedSettle(null);
-      });
+        _defer(function () {
+          // M2-S4G：非 intercept traverse 同走 success steps（spec 空 handler 链；
+          // WPT ordering back-same-document「navigatesuccess」）；抢占守卫同上。
+          if (_navEv._zwErrored) return;
+          if (ctrl.finishedSettle) ctrl.finishedSettle(null, false, _navPub(_navCurrent()));
+          _navDispatchAny(new Event('navigatesuccess'));
+        });
+      }
     }
   }
   globalThis.history = {
@@ -4939,9 +4957,24 @@
       var oldHref = globalThis.location.href;
       var abs = (url == null || String(url) === '') ? oldHref : (_resolveHistUrl(String(url)) || oldHref);
       var ev = _navFireNavigate({ navigationType: 'push', url: abs, hashChange: _navIsHashOnly(oldHref, abs) });
-      if (ev.defaultPrevented) return;
-      _histApplyNav(state, url, false, ev._zwBind);
-      if (ev._zwIntercepted) _navRunIntercept(ev, null);
+      if (ev.defaultPrevented) { if (!ev._zwErrored) _navCancelNavigation(ev, null); return; }
+      // M2-S4G：precommit 存在 → 提交延迟（abort → 无 entry——WPT back-and-forth「pushState
+      // precommit pending 期 back() 取消」）。classic state 恒入 classic 槽；redirect state 入
+      // navState（spec 分槽——pushState 自身不写 navState，history-pushState getState undefined 面）。
+      if (ev._zwIntercepted && (ev._zwPrecommit || []).length) {
+        _navRunIntercept(ev, null, function () {
+          var u = ev._zwRedirectUrl || abs;
+          var rep = ev._zwRedirectHistory === 'replace' ? true : false;
+          _histApplyNav(state, u, rep, ev._zwBind);
+          if (ev._zwRedirectState !== undefined && ev._zwBind && ev._zwBind.rec) {
+            ev._zwBind.rec.navState = ev._zwRedirectState;
+          }
+        });
+      }
+      else {
+        _histApplyNav(state, url, false, ev._zwBind);
+        if (ev._zwIntercepted) _navRunIntercept(ev, null);
+      }
     },
     // replaceState(state, unused, url?)：原地替换当前 entry 的 state/url（不触发 popstate）。
     // R3005：url 经 _resolveHistUrl 解析为绝对。M2-S3：空串/跨源语义同 pushState。
@@ -4951,9 +4984,22 @@
       var oldHref = globalThis.location.href;
       var abs = (url == null || String(url) === '') ? oldHref : (_resolveHistUrl(String(url)) || oldHref);
       var ev = _navFireNavigate({ navigationType: 'replace', url: abs, hashChange: _navIsHashOnly(oldHref, abs) });
-      if (ev.defaultPrevented) return;
-      _histApplyNav(state, url, true, ev._zwBind);
-      if (ev._zwIntercepted) _navRunIntercept(ev, null);
+      if (ev.defaultPrevented) { if (!ev._zwErrored) _navCancelNavigation(ev, null); return; }
+      // M2-S4G：precommit 延迟提交（同 pushState 面）。
+      if (ev._zwIntercepted && (ev._zwPrecommit || []).length) {
+        _navRunIntercept(ev, null, function () {
+          var u = ev._zwRedirectUrl || abs;
+          var rep = ev._zwRedirectHistory === 'push' ? false : true;
+          _histApplyNav(state, u, rep, ev._zwBind);
+          if (ev._zwRedirectState !== undefined && ev._zwBind && ev._zwBind.rec) {
+            ev._zwBind.rec.navState = ev._zwRedirectState;
+          }
+        });
+      }
+      else {
+        _histApplyNav(state, url, true, ev._zwBind);
+        if (ev._zwIntercepted) _navRunIntercept(ev, null);
+      }
     },
     // M2-S3（navigation-compat）：back/forward/go **入队**到 task 末尾执行（spec——traverse 步骤
     // 是排队算法，同脚本内多次 go 的终位在任务结束时按序结算、位置在**执行时**计算；WPT
@@ -5014,6 +5060,7 @@
   function _navPub(rec) {
     if (rec._pub) return rec._pub;
     var e = {};
+    try { Object.setPrototypeOf(e, globalThis.NavigationHistoryEntry.prototype); } catch (_eNheP) {}
     // index：entry list 内位置；detach（replace 语义让位）后 -1（WPT location-api e.from.index===-1）。
     Object.defineProperty(e, 'index', { enumerable: true, configurable: true, get: function () { return _navList.indexOf(rec); } });
     Object.defineProperty(e, 'url', {
@@ -5034,7 +5081,30 @@
       return _zw_structured_clone(rec.navState, typeof WeakMap !== 'undefined' ? new WeakMap() : new Map());
     };
     rec._pub = e;
+    // M2-S4G：dispose 事件面（spec entry update——replace 让位/push 截断的 entry 在
+    // currententrychange 后派 dispose；WPT currententrychange-dispose-ordering）。
+    (function () {
+      var disposeListeners = [];
+      e.addEventListener = function (type, fn) { if (type === 'dispose' && typeof fn === 'function') disposeListeners.push(fn); };
+      e.removeEventListener = function (type, fn) { var i = disposeListeners.indexOf(fn); if (i >= 0) disposeListeners.splice(i, 1); };
+      Object.defineProperty(e, 'ondispose', {
+        configurable: true,
+        get: function () { return e._zwOnDispose || null; },
+        set: function (fn) { e._zwOnDispose = (typeof fn === 'function') ? fn : null; },
+      });
+      rec._zwFireDispose = function () {
+        var dEv = new Event('dispose');
+        dEv.target = e;
+        var on = e._zwOnDispose;
+        if (typeof on === 'function') { try { on.call(e, dEv); } catch (_eD0) {} }
+        for (var di = 0; di < disposeListeners.length; di++) { try { disposeListeners[di].call(e, dEv); } catch (_eD1) {} }
+      };
+    })();
     return e;
+  }
+  // M2-S4G：dispose 派发入口（record 未发布过 pub → 无监听面，no-op）。
+  function _navFireDispose(rec) {
+    if (rec && typeof rec._zwFireDispose === 'function') rec._zwFireDispose();
   }
   function _navCurrent() { return _navList[_navPos]; }
   // 事件面（自有 listener registry——navigation 非 window 站，不复用 _dispatchToListeners）。
@@ -5074,17 +5144,22 @@
     _navDetached.push(old);
     if (_navDetached.length > 16) _navDetached.shift();
     _navFire('currententrychange', 'replace', old);
+    // M2-S4G：dispose 在 currententrychange 后（spec update-entries 12→13 步序）。
+    _navFireDispose(old);
     return fresh;
   }
   // push 语义：插入新 record（fresh key/id），截断前方，推进 _navPos。
   function _navPushCurrent(newHe) {
     var old = _navCurrent() || _navMakeRecord(_hist_current());
     if (!_navList.length) _navList.push(old);
+    // M2-S4G：截断的 forward entries → dispose（spec push dispose 面）。
+    var _navDisposed = _navList.slice(_navPos + 1);
     _navList = _navList.slice(0, _navPos + 1);
     var fresh = _navMakeRecord(newHe);
     _navList.push(fresh);
     _navPos = _navList.length - 1;
     _navFire('currententrychange', 'push', old);
+    for (var _di = 0; _di < _navDisposed.length; _di++) _navFireDispose(_navDisposed[_di]);
     return fresh;
   }
   // traverse（S3 队列结算后调）：currentEntry = 目标 session entry 的 record（按 he 反查；
@@ -5123,6 +5198,21 @@
   }
   _navReset();
 
+  // M2-S4G：NavigationHistoryEntry / NavigationTransition 接口对象（WebIDL——callable，
+  // 调用即 Illegal constructor；实例经 prototype 链接可 instanceof——WPT return-value
+  // helpers「fulfillment value must be a NavigationHistoryEntry」）。
+  function _makeNavInterface(name) {
+    function Iface() { throw new TypeError('Illegal constructor'); }
+    Object.defineProperty(Iface, 'name', { value: name });
+    var proto = {};
+    Object.defineProperty(proto, 'constructor', { value: Iface, writable: true, configurable: true });
+    Object.defineProperty(Iface, 'prototype', {
+      value: proto, writable: false, enumerable: false, configurable: false,
+    });
+    return Iface;
+  }
+  globalThis.NavigationHistoryEntry = globalThis.NavigationHistoryEntry || _makeNavInterface('NavigationHistoryEntry');
+  globalThis.NavigationTransition = globalThis.NavigationTransition || _makeNavInterface('NavigationTransition');
   globalThis.navigation = {
     // entries()：快照数组（元素身份稳定——per-record 单例 public 对象）。
     entries: function () { return _navList.map(_navPub); },
@@ -5144,6 +5234,32 @@
     // InvalidStateError reject——spec canGoBack/canGoForward 前置面）。
     back: function () { return _navTraverseBy(-1); },
     forward: function () { return _navTraverseBy(1); },
+    // M2-S4G：traverseTo(key)——按 entry key 找回 record 反查 session entry 位；无此 key /
+    // 位不可达 → 双 reject InvalidStateError（spec early error result）；key 即当前 → 双 fulfill
+    //（WPT traverseTo-same-location）；否则按 delta 入 traverse 队列（携 committed/finished）。
+    traverseTo: function (key) {
+      var k = String(key);
+      var rec = null;
+      for (var i = 0; i < _navList.length; i++) { if (_navList[i] && _navList[i].key === k) { rec = _navList[i]; break; } }
+      var heIdx = rec ? _hist_entries.indexOf(rec.he) : -1;
+      if (heIdx < 0) {
+        var ctrl0 = _navNavResult();
+        var ise = new (globalThis.DOMException || DOMException)('No history entry with that key.', 'InvalidStateError');
+        ctrl0.reject(ise);
+        ctrl0.finishedSettle(ise, true);
+        return { committed: ctrl0.committed, finished: ctrl0.finished };
+      }
+      if (heIdx === _hist_cursor) {
+        var ctrl1 = _navNavResult();
+        _defer(function () {
+          if (ctrl1.finishedSettle) ctrl1.finishedSettle(null, false, _navPub(_navCurrent()));
+          _navDispatchAny(new Event('navigatesuccess'));
+          if (ctrl1.resolve) ctrl1.resolve(_navPub(_navCurrent()));
+        });
+        return { committed: ctrl1.committed, finished: ctrl1.finished };
+      }
+      return _navTraverseBy(heIdx - _hist_cursor);
+    },
     // M2-S4C：canGoBack/canGoForward（WPT intercept-navigation-back canGoBack 断言面）。
     get canGoBack() { return _hist_cursor > 0; },
     get canGoForward() { return _hist_cursor < _hist_entries.length - 1; },
@@ -5167,30 +5283,59 @@
       var ev = _navFireNavigate({
         navigationType: replace ? 'replace' : 'push',
         url: abs, hashChange: hashChange, info: o.info,
+        // M2-S4G：destination.getState() 提交前即反映 navigate({state})（WPT redirect-options
+        // 前置断言）。
+        destState: o.state,
+        resultCtrl: ctrl,
       });
       if (ev.defaultPrevented) {
-        var de = _navNavAbortError();
-        ctrl.reject(de);
-        ctrl.finishedSettle(de, true);
+        // M2-S4G：dispatch 期已被 abort（重入面）→ 双 promise 已 reject、navigateerror 已派。
+        if (!ev._zwErrored) _navCancelNavigation(ev, ctrl);
         return { committed: ctrl.committed, finished: ctrl.finished };
       }
-      _histApplyNav(o.state, abs, replace, ev._zwBind);
-      if (ev._zwIntercepted) {
+      // M2-S4G：提交动作闭包——无 redirect 数据时与「立即提交 abs」等价；precommit 存在时
+      // 延迟到其结算（redirect 后的 url/history/state 生效——WPT precommitHandler-redirect-push
+      // 「committed 后 hash = #redirect2」；reject → 不提交）。
+      var _navCommitNav = function () {
+        var u = ev._zwRedirectUrl || abs;
+        var rep = ev._zwRedirectHistory === 'replace' ? true
+          : (ev._zwRedirectHistory === 'push' ? false : replace);
+        var st = ev._zwRedirectState !== undefined ? ev._zwRedirectState : o.state;
+        _histApplyNav(st, u, rep, ev._zwBind);
+        // M2-S4G：navigate({state}) → entry **navState** 槽（与 classic history.state 分槽——
+        // pushState 只入 classic；WPT redirect-options「currentEntry.getState() 反映 redirect
+        // state」）。
+        if (ev._zwBind && ev._zwBind.rec) ev._zwBind.rec.navState = st;
         // M2-S4D：restore 规格（push/replace——destination fragment 锚滚 | 无 fragment 滚到文档
         // 顶；WPT scroll-behavior manual-scroll-resets-when-no-fragment / -fragment-does-not-exist）。
-        ev._zwRestore = _navRestoreSpecForUrl(abs);
-        _navRunIntercept(ev, ctrl);
+        ev._zwRestore = _navRestoreSpecForUrl(u);
+      };
+      if (ev._zwIntercepted && (ev._zwPrecommit || []).length) {
+        _navRunIntercept(ev, ctrl, _navCommitNav);
       }
       else {
-        // M2-S4D：fragment 导航提交后滚锚（WPT scroll-behavior after-transition-basic
-        // 「navigate('#frag') 后 scrollY ≠ 0」基面）。
-        if (hashChange && String(abs).indexOf('#') >= 0) {
-          _scrollToAnchorForHash(String(abs).split('#')[1] || '');
+        _navCommitNav();
+        // M2-S4G：committed 于提交即结算（spec notify-about-committed——先于 success steps 微任务）。
+        if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+        if (ev._zwIntercepted) {
+          _navRunIntercept(ev, ctrl);
         }
-        _defer(function () {
-          if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
-          if (ctrl.finishedSettle) ctrl.finishedSettle(null);
-        });
+        else {
+          // M2-S4D：fragment 导航提交后滚锚（WPT scroll-behavior after-transition-basic
+          // 「navigate('#frag') 后 scrollY ≠ 0」基面）。
+          if (hashChange && String(abs).indexOf('#') >= 0) {
+            _scrollToAnchorForHash(String(abs).split('#')[1] || '');
+          }
+          _defer(function () {
+            // M2-S4G：非 intercept 同文档导航同样走 success steps（spec——空 handler 链的
+            // wait-for-all；WPT ordering navigate-same-document「navigatesuccess」）。
+            // 被后续导航抢占（_zwErrored）→ 跳过（navigateerror 已派——WPT
+            // navigate-multiple-navigation-navigate 事件序）。
+            if (ev._zwErrored) return;
+            if (ctrl.finishedSettle) ctrl.finishedSettle(null, false, _navPub(_navCurrent()));
+            _navDispatchAny(new Event('navigatesuccess'));
+          });
+        }
       }
       return { committed: ctrl.committed, finished: ctrl.finished };
     },
@@ -5199,23 +5344,29 @@
     reload: function (options) {
       var o = (options == null || typeof options !== 'object') ? {} : options;
       var ctrl = _navNavResult();
-      var ev = _navFireNavigate({ navigationType: 'reload', url: globalThis.location.href, hashChange: false, info: o.info });
+      var ev = _navFireNavigate({ navigationType: 'reload', url: globalThis.location.href, hashChange: false, info: o.info, resultCtrl: ctrl });
       if (ev.defaultPrevented) {
-        var de = _navNavAbortError();
-        ctrl.reject(de);
-        ctrl.finishedSettle(de, true);
+        // M2-S4G：dispatch 期已被 abort（重入面）→ 双 promise 已 reject、navigateerror 已派。
+        if (!ev._zwErrored) _navCancelNavigation(ev, ctrl);
         return { committed: ctrl.committed, finished: ctrl.finished };
       }
       if (ev._zwIntercepted) {
         // M2-S4D：restore 规格（reload——当前 URL 的 fragment 锚滚 | 无 fragment 文档顶；
-        // WPT scroll-behavior after-transition-reload-*）。committed 于链任务头结算（_navRunIntercept）。
+        // WPT scroll-behavior after-transition-reload-*）。M2-S4G：reload 提交 = CCE 'reload'
+        //（spec update-entries for reload；WPT ordering reload-no-popstate）——precommit 存在时
+        // 延迟到其结算。
         ev._zwRestore = _navRestoreSpecForUrl(globalThis.location.href);
-        _navRunIntercept(ev, ctrl);
+        _navRunIntercept(ev, ctrl, function () {
+          _navFire('currententrychange', 'reload', _navCurrent());
+        });
       }
       else {
+        // M2-S4G：committed 提交即结算 + 非 intercept 同走 success steps（CCE 'reload' 同步面）。
+        _navFire('currententrychange', 'reload', _navCurrent());
+        if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
         _defer(function () {
-          if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
-          if (ctrl.finishedSettle) ctrl.finishedSettle(null);
+          if (ctrl.finishedSettle) ctrl.finishedSettle(null, false, _navPub(_navCurrent()));
+          _navDispatchAny(new Event('navigatesuccess'));
         });
       }
       return { committed: ctrl.committed, finished: ctrl.finished };
@@ -5247,6 +5398,16 @@
   _navDefineOn('navigatesuccess');
   _navDefineOn('navigateerror');
   _navDefineOn('currententrychange');
+  // M2-S4G：window.stop()——spec「stop loading」。headless 无网络加载可停；消费面 =
+  // 进行中（precommit pending 或 handler 链）导航的中止（WPT precommitHandler-window-stop-
+  // before-commit：stop() → 双 reject AbortError + navigateerror + 无提交）。
+  globalThis.stop = function () {
+    var og = _navOngoing;
+    if (og && og.abort) {
+      _navOngoing = null;
+      try { og.abort(_navNavAbortError()); } catch (_eStp) {}
+    }
+  };
   // ===== M2-S4B：navigate 事件 + navigation.navigate()/reload() + intercept 拦截面 =====
   // spec：nav-history-apis#navigate-event。navigate 在导航算法内**同步**派发（cancelable；
   // preventDefault → 导航中止——pushState/replaceState/hash-setter/href/assign 无 entry 无
@@ -5393,7 +5554,20 @@
     for (var j = 0; j < _navDetached.length; j++) { if (_navDetached[j].he === he) return _navDetached[j]; }
     return null;
   }
+  // M2-S4G：进行中导航槽（_navRunIntercept 置位、结算清除）——新导航派发前先中止（spec
+  // inner fire step 2「inform the navigation API about aborting navigation」；WPT
+  // precommitHandler-new-navigation-before-commit + ordering double-intercept 族）。
+  var _navOngoing = null;
   function _navFireNavigate(o) {
+    // M2-S4G：新导航先抢占进行中导航（spec「while ongoing navigate event is not null: abort」
+    // ——循环：navigateerror 监听器内可再起导航，逐个抢占；traverse 自身派发 _zwSelf 不触发。
+    // 非 intercept 导航同样参与——已提交未走 success steps 的导航被抢 → navigateerror（WPT
+    // navigate-multiple-navigation-navigate 事件序）。
+    while (_navOngoing && !o._zwSelf) {
+      var _slotOg = _navOngoing;
+      _navOngoing = null;
+      try { _slotOg.abort(_navNavAbortError()); } catch (_eOgAb) {}
+    }
     // M2-S4E：focus changed during ongoing navigation（spec nav-tracking——dispatch 置位起点，
     // finish 消费；focus()/blur() 经 _navMarkFocusChanged 记变）。WPT focus-reset 族。
     _navFocusChanged = false;
@@ -5433,6 +5607,39 @@
     });
     ev._zwNavFired = true;
     ev._zwBind = bind;
+    // M2-S4G：transition.from 捕获（dispatch 时刻 currentEntry——commit 前）。
+    try { ev._zwFromPub = _navPub(_navCurrent()); } catch (_eFp) {}
+    // M2-S4G：结果控制柄挂钩（abort 面在 dispatch 期即可 reject 双 promise）。
+    ev._zwResultCtrl = o.resultCtrl || null;
+    // M2-S4G：进行中导航 abort（dispatch 期即挂——重入导航于 nav1 监听器内派发时，nav1 须
+    // 当场取消：signal abort + navigateerror + canceled 标记（调用方 cancel 分支跳过重复
+    // navigateerror）；链期由 _navRunIntercept 复用同一 fn（此时 ctrl 可 reject））。spec
+    // inner fire step 2「inform the navigation API about aborting navigation」+ abort event 序。
+    ev._zwAbortOngoing = function (reason) {
+      if (ev._zwErrored || ev._zwSettled) return;
+      ev._zwErrored = true;
+      ev._zwSettled = true;
+      ev._zwPrecommitPending = false;
+      if (_navOngoing && _navOngoing.ev === ev) _navOngoing = null;
+      try { if (ev._zwAbortCtl) ev._zwAbortCtl.abort(reason); } catch (_eAo1) {}
+      var rc = ev._zwResultCtrl;
+      if (rc) {
+        if (!rc._cDone && rc.reject) rc.reject(reason);
+        if (rc.finishedSettle) rc.finishedSettle(reason, true);
+      }
+      if (ev._zwDispatching) {
+        // dispatch 期中止 = 取消（spec「set event's canceled flag」）——调用方 cancel 分支
+        // 走 no-commit 路径（_zwErrored 已置 → 不再派 navigateerror）。
+        try { ev._defaultPrevented = true; ev.defaultPrevented = true; } catch (_eAo2) {}
+      }
+      _navFireNavigateerror(reason, ev);
+      if (typeof ev._zwFinishTransition === 'function') ev._zwFinishTransition(reason);
+      if (typeof ev._zwClearTransition === 'function') ev._zwClearTransition();
+    };
+    _navOngoing = { ev: ev, abort: ev._zwAbortOngoing };
+    // M2-S4G：保留 AbortController——导航 abort 时 signal 同步中止（abort 事件 + reason——
+    // WPT precommitHandler-back-and-forth 的 signal abort 监听拒绝 precommit）。
+    ev._zwAbortCtl = ctrl;
     // 嵌套导航抢占进行中的 traversal（traverse 自身派发带 _zwSelf 标记，不自抢占）。
     if (_navTraverseDispatching && !o._zwSelf) _navPreempted = true;
     _navDispatchAny(ev);
@@ -5440,9 +5647,14 @@
   }
   // committed/finished 双 Promise 控制柄（navigate()/reload() 返回；spec 形 {committed, finished}）。
   function _navNavResult() {
-    var ctrl = { resolve: null, reject: null, committed: null, finished: null };
-    ctrl.committed = new Promise(function (res, rej) { ctrl.resolve = res; ctrl.reject = rej; });
-    ctrl.finished = new Promise(function (res, rej) { ctrl.finishedSettle = function (err, failed) { failed ? rej(err) : res(undefined); }; });
+    var ctrl = { resolve: null, reject: null, committed: null, finished: null, _cDone: false };
+    ctrl.committed = new Promise(function (res, rej) {
+      // M2-S4G：committed 结算印记——abort 面「已 fulfill 的 committed 不再 reject」（WPT
+      // double-intercept「committed fulfilled 1 后 finished rejected 1」）。
+      ctrl.resolve = function (v) { ctrl._cDone = true; res(v); };
+      ctrl.reject = function (e) { ctrl._cDone = true; rej(e); };
+    });
+    ctrl.finished = new Promise(function (res, rej) { ctrl.finishedSettle = function (err, failed, value) { failed ? rej(err) : res(value); }; });
     // M2-S4C：导航 abort/preempt 是**预期**拒绝路径——消费方可选观察。内置 no-op catch 防止
     // 未观察的 abort（preempt/越界/取消）计为全局 unhandledrejection（WPT 各测试自行挂
     // promise_rejects_dom 断言，不受影响）。
@@ -5465,27 +5677,44 @@
   // M2-S4C：NavigationTransition——intercept 链进行中暴露（navigation.transition）；
   // 链 settle（成/败）即结束并清空。
   var _navTransition = null;
-  function _navRunIntercept(ev, ctrl) {
-    var handlers = (ev._zwHandlers || []).slice();
+  // commitFn：提交动作闭包（M2-S4G——precommitHandler 存在时由调用方延迟提供：提交须等
+  // precommit 全 fulfill；无 precommit 时 doCommit() 立即调 → 与旧「先提交后起链」时序一致）。
+  function _navRunIntercept(ev, ctrl, commitFn) {
     var tSettle = null;
     var transition = { navigationType: ev.navigationType || null };
+    try { Object.setPrototypeOf(transition, globalThis.NavigationTransition.prototype); } catch (_eNtP) {}
+    // M2-S4G：transition.from（spec——dispatch 时刻 currentEntry；commit 前捕获）+ to（destination）。
+    transition.from = ev._zwFromPub || null;
+    transition.to = ev.destination || null;
     transition.finished = new Promise(function (res, rej) { tSettle = function (err) { err ? rej(err) : res(undefined); }; });
     _navTransition = transition;
-    function done(err) {
+    // M2-S4G：transition 生命周期对齐 spec success/failure steps——**navigatesuccess/
+    // navigateerror 派发时 transition 仍暴露**（Recorder 于事件监听器内挂
+    // transition.finished——ordering 簇），settled 后再 resolve transition.finished、最后清。
+    function finishTransition(err) { if (tSettle) tSettle(err); }
+    function clearTransition() {
       if (_navTransition === transition) _navTransition = null;
-      if (tSettle) tSettle(err);
+      if (_navOngoing && _navOngoing.ev === ev) _navOngoing = null;
     }
-    // M2-S4D：committed 于 handler 起跑前结算（spec notify-about-committed-to-entry 先于
-    // handler 调用；同任务——同步 JS 无微任务检查点插入点，await 续延天然晚于本同步段）。
-    if (ctrl && ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+    ev._zwFinishTransition = finishTransition;
+    ev._zwClearTransition = clearTransition;
+    // M2-S4G：链期 abort 用**链感知 wrapper**（先落链 settled 门——doCommit/runNext 的守卫
+    // 读闭包 `settled`，window.stop 等外部 abort 须过此路径；再走 ev 级 fn 派 abort 序）。
+    var _navAbortOngoing = function (reason) {
+      if (settled) return;
+      settled = true;
+      ev._zwAbortOngoing(reason);
+    };
+    _navOngoing = { ev: ev, abort: _navAbortOngoing };
     var idx = 0;
     var settled = false;
     function runNext() {
       if (settled) return;
+      // 链读取放 runNext 内（M2-S4G——precommitHandler 经 controller.addHandler 追加后可见）。
+      var handlers = (ev._zwHandlers || []).slice();
       if (idx >= handlers.length) {
         settled = true;
         ev._zwSettled = true;
-        done(null);
         // M2-S4E：焦点重置（finish event 步骤 4——先于 scroll 与 navigatesuccess；WPT
         // focus-reset-timing「before navigatesuccess」）。
         _navMaybeResetFocus(ev);
@@ -5499,22 +5728,88 @@
         if (_rs && _mode !== 'manual' && !ev._zwScrollRequested && _rs.gen === _winScrollGen) {
           _navApplyRestoreSpec(_rs);
         }
+        if (ctrl) {
+          // M2-S4D+G：spec success steps 序——finished resolve（step 6）先于 navigatesuccess
+          // 派发（step 7）；transition.finished resolve（step 8）与清空（step 9）殿后。
+          if (ctrl.finishedSettle) ctrl.finishedSettle(null, false, _navPub(_navCurrent()));
+        }
         var ok = new Event('navigatesuccess');
         _navDispatchAny(ok);
-        if (ctrl) {
-          // committed 已于提交时结算（M2-S4D）——链尾仅 finished。
-          if (ctrl.finishedSettle) ctrl.finishedSettle(null);
-        }
+        finishTransition(null);
+        clearTransition();
         return;
       }
       var h = handlers[idx++];
       var result;
       try {
         result = (typeof h === 'function') ? h() : undefined;
-      } catch (err) { settled = true; ev._zwSettled = true; done(err); _navInterceptFail(err, ev, ctrl); return; }
-      Promise.resolve(result).then(runNext, function (err) { settled = true; ev._zwSettled = true; done(err); _navInterceptFail(err, ev, ctrl); });
+      } catch (err) { settled = true; ev._zwSettled = true; _navInterceptFail(err, ev, ctrl); finishTransition(err); clearTransition(); return; }
+      Promise.resolve(result).then(runNext, function (err) { settled = true; ev._zwSettled = true; _navInterceptFail(err, ev, ctrl); finishTransition(err); clearTransition(); });
     }
-    runNext();
+    function startChain() {
+      // M2-S4D：committed 于 handler 起跑前结算（spec notify-about-committed-to-entry 先于
+      // handler 调用；同任务——同步 JS 无微任务检查点插入点，await 续延天然晚于本同步段）。
+      if (ctrl && ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+      runNext();
+    }
+    function doCommit() {
+      // M2-S4G：abort（stop/新导航）或失败已结算 → 不再提交（Promise.all 成功分支仍会到这——
+      // precommit promise 自身 fulfill 与 abort 竞态；WPT window-stop-before-commit）。
+      if (settled) return;
+      if (commitFn) { try { commitFn(); } catch (_eCmt) {} }
+      startChain();
+    }
+    // M2-S4G：precommit——handler 全部**同步调起**（spec：invoking each with «controller» →
+    // promisesList → wait for all），成功 → commit → 起链；任一 reject/throw → 失败路径
+    //（无提交：committed/finished 双 reject + navigateerror；WPT rejectBeforeCommit）。
+    var pre = (ev._zwPrecommit || []).slice();
+    if (pre.length === 0) { doCommit(); return; }
+    ev._zwPrecommitPending = true;
+    var _clearPrecommitAbort = function () { ev._zwPrecommitPending = false; };
+    var _abortPrecommit = function () { _navAbortOngoing(_navNavAbortError()); };
+    // 抢占：precommit pending 期新导航（_navFireNavigate 槽）或 window.stop() 均中止本导航
+    //（WPT precommitHandler-window-stop-before-commit + precommitHandler-traversal-window-stop
+    //——traverse 同样被 stop 中止：committed/finished reject AbortError + 无提交）。
+    var controller = {
+      // spec NavigationPrecommitController.redirect(url, options)：push/replace 限定；
+      // 改 destination.url（此后 destination 断言面）+ history push/replace 切换 + state/info
+      //（省略成员不覆写——显式 undefined 同 absent；WPT redirect-options）。
+      redirect: function (url, options) {
+        if (ev.navigationType !== 'push' && ev.navigationType !== 'replace') {
+          throw new (globalThis.DOMException || DOMException)('Cannot redirect a reload or traverse navigation.', 'InvalidStateError');
+        }
+        var o = (options == null || typeof options !== 'object') ? {} : options;
+        var abs = _resolveHistUrl(String(url));
+        ev._zwRedirectUrl = abs;
+        if (o.history === 'push' || o.history === 'replace') ev._zwRedirectHistory = o.history;
+        if (o.state !== undefined) {
+          ev._zwRedirectState = o.state;
+          try { if (ev.destination && ev.destination._zwSetState) ev.destination._zwSetState(o.state); } catch (_eRs) {}
+        }
+        if ('info' in o && o.info !== undefined) {
+          try { ev.info = o.info; } catch (_eRi) {}
+        }
+        try { if (ev.destination && ev.destination._zwSetUrl) ev.destination._zwSetUrl(abs); } catch (_eRd) {}
+      },
+      // spec addHandler(h)：追加 commit 后 handler 链（runNext 每步现读 ev._zwHandlers）。
+      addHandler: function (h) {
+        if (!ev._zwHandlers) ev._zwHandlers = [];
+        ev._zwHandlers.push(h);
+      },
+    };
+    var prePromises = [];
+    for (var pi = 0; pi < pre.length; pi++) {
+      var pr;
+      try { pr = pre[pi](controller); } catch (errP) { pr = Promise.reject(errP); }
+      prePromises.push(Promise.resolve(pr));
+    }
+    Promise.all(prePromises).then(function () { _clearPrecommitAbort(); doCommit(); }, function (errPc) {
+      _clearPrecommitAbort();
+      // M2-S4G：abort 已走失败路径（signal-reject 晚到——_navInterceptFail 内同步 abort signal
+      // 触发本分支）→ 不重复派 navigateerror。
+      if (settled) return;
+      settled = true; ev._zwSettled = true; _navInterceptFail(errPc, ev, ctrl); finishTransition(errPc); clearTransition();
+    });
   }
   // M2-S4C：navigation.back/forward 的 traverse 队列入口（携 committed/finished 控制柄）。
   function _navTraverseBy(delta) {
@@ -5522,10 +5817,19 @@
     _hist_queueTraversal(delta, ctrl);
     return { committed: ctrl.committed, finished: ctrl.finished };
   }
-  function _navInterceptFail(err, ev, ctrl) {
-    // ErrorEvent 定位面：err.stack 末帧 best-effort 解析（V8 形 `at fn (url:line:col)`）；
-    // 空帧/<anonymous> 回落页面 URL（WPT intercept-handler-throws 断言 filename=页面 URL +
-    // line/col>0——eval 源栈帧名在 runner 形态下不可信）。
+  // M2-S4G：navigate 事件被 preventDefault → 导航取消 = abort 面（signal abort → 双 reject →
+  // navigateerror；WPT ordering navigate-canceled / location-href-canceled）。
+  function _navCancelNavigation(ev, ctrl) {
+    var ab = _navNavAbortError();
+    try { if (ev && ev._zwAbortCtl) ev._zwAbortCtl.abort(ab); } catch (_eCn1) {}
+    if (ctrl) {
+      if (ctrl.reject && !ctrl._cDone) ctrl.reject(ab);
+      if (ctrl.finishedSettle) ctrl.finishedSettle(ab, true);
+    }
+    _navFireNavigateerror(ab, ev);
+  }
+  // M2-S4G：navigateerror 派发体（ErrorEvent 构造 + 派发——abort/cancel/handler-failure 共用）。
+  function _navFireNavigateerror(err, ev) {
     var msg = (err && err.message !== undefined) ? ((err.name || 'Error') + ': ' + err.message) : String(err);
     var file = '', line = 0, col = 0;
     try {
@@ -5542,10 +5846,23 @@
       error: err !== undefined ? err : null, message: msg,
       filename: file, lineno: line, colno: col,
     });
+    _navDispatchAny(ee);
+  }
+  // M2-S4G：进行中导航中止（spec「Abort event given reason」序——signal abort → finished
+  // reject（committed 已 fulfill 则不动）→ navigateerror → transition.finished reject → 清）。
+  // WPT ordering navigate-canceled / location-href-* / double-intercept 族。
+  function _navAbortSignalAndError(ev, err) {
+    try { if (ev && ev._zwAbortCtl) ev._zwAbortCtl.abort(err); } catch (_eAbr) {}
+    _navFireNavigateerror(err, ev);
+  }
+  function _navInterceptFail(err, ev, ctrl) {
+    // M2-S4G：导航失败 → signal 中止（spec「Abort event given reason」——abort 事件携带
+    // 拒绝原因；WPT precommitHandler-back-and-forth signal abort 面）。
+    try { if (ev && ev._zwAbortCtl) ev._zwAbortCtl.abort(err); } catch (_eAbr) {}
     // M2-S4E：焦点重置先于 navigateerror（spec finish event 失败路径——WPT
     // focus-reset-timing「before navigateerror」）。
     _navMaybeResetFocus(ev);
-    _navDispatchAny(ee);
+    _navFireNavigateerror(err, ev);
     if (ctrl) {
       // M2-S4D：handler 拒绝原因**原样**透传（Promise.reject() → undefined 也原样——
       // WPT after-transition-reject promise_rejects_exactly(t, undefined, ...)）。
@@ -5626,7 +5943,7 @@
       // M2-S4B：anchor click 触发时由 part04 R154 线程 sourceElement（读后即清）。
       sourceElement: globalThis.__zwNavSourceElement !== undefined ? globalThis.__zwNavSourceElement : null,
     });
-    if (_zwNavEv.defaultPrevented) return;
+    if (_zwNavEv.defaultPrevented) { if (!_zwNavEv._zwErrored) _navCancelNavigation(_zwNavEv, null); return; }
     _pushHistNav(newHref, oldHref);
     // M2-S2（navigation-compat）：fragment navigation 派 popstate **同步**（setter 返回前；spec
     // URL and history update steps——同文档导航的 popstate 在导航算法内同步派发，先于 queued
@@ -5675,7 +5992,7 @@
     // M2-S4B：navigate 'push' 先行（href-setter 同文档面——WPT intercept-resolve 等）；
     // preventDefault → 中止。
     var _zwNavEv = _navFireNavigate({ navigationType: 'push', url: newHref, hashChange: _navIsHashOnly(oldHref, newHref) });
-    if (_zwNavEv.defaultPrevented) return;
+    if (_zwNavEv.defaultPrevented) { if (!_zwNavEv._zwErrored) _navCancelNavigation(_zwNavEv, null); return; }
     _pushHistNav(newHref, oldHref);
     // M2-S4：Navigation API href-setter 面——**push**（同文档；WPT sameDocument-after-fragment
     // `location = "#hash"` entries 增长 + fresh key；跨文档 host 导航近似同面）。
@@ -5730,7 +6047,7 @@
     if (!newHref || newHref === oldHref) return; // 解析失败 / 未变 → no-op
     // M2-S4B：navigate 'push' 先行（assign ≡ href-setter 语义）。
     var _zwNavEv = _navFireNavigate({ navigationType: 'push', url: newHref, hashChange: _navIsHashOnly(oldHref, newHref) });
-    if (_zwNavEv.defaultPrevented) return;
+    if (_zwNavEv.defaultPrevented) { if (!_zwNavEv._zwErrored) _navCancelNavigation(_zwNavEv, null); return; }
     _pushHistNav(newHref, oldHref);
     // M2-S4：Navigation API assign 面——**push**（assign ≡ href-setter 语义，fresh key）。
     if (_zwNavEv._zwBind) _zwNavEv._zwBind.rec = _navPushCurrent(_hist_current());
@@ -5753,7 +6070,7 @@
     if (!newHref || newHref === oldHref) return;
     // M2-S4B：navigate 'replace' 先行（location.replace 语义）。
     var _zwNavEv = _navFireNavigate({ navigationType: 'replace', url: newHref, hashChange: _navIsHashOnly(oldHref, newHref) });
-    if (_zwNavEv.defaultPrevented) return;
+    if (_zwNavEv.defaultPrevented) { if (!_zwNavEv._zwErrored) _navCancelNavigation(_zwNavEv, null); return; }
     _replaceHistNav(newHref, oldHref);
     // M2-S4：Navigation API location.replace 面——**replace**（保 key 新 id，旧 entry detach）。
     // M2-S4C：navState 承继（导航语义同 fragment）+ destination bind。

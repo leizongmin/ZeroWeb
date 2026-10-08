@@ -38,6 +38,8 @@ DIRS=(
   # M2-S4E（2026-10-08）：focus-reset 簇 helpers.mjs（basic/multiple-intercept 的 module
   # 依赖——缺失时 module compile error，2 案 decl 0 tests）
   "navigation-api/focus-reset/resources"
+  # M2-S4G（2026-10-08）：ordering-and-transition 簇 helpers.mjs（Recorder 模块依赖）
+  "navigation-api/ordering-and-transition/resources"
   "navigation-api/navigate-event/resources"
   "navigation-api/navigation-activation/resources"
   "navigation-api/per-entry-events/resources"

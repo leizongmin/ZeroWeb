@@ -12881,6 +12881,8 @@
   // per-event 实例（part02 _navFireNavigate 构造）。
   function NavigationDestination(url, sameDocument, key, id, index, bind) {
     Object.defineProperty(this, 'url', { enumerable: true, configurable: true, get: function () { return url; } });
+    // M2-S4G：precommitController.redirect(url) 改写 destination URL（闭包单元格重绑）。
+    this._zwSetUrl = function (u) { url = u; };
     Object.defineProperty(this, 'sameDocument', { enumerable: true, configurable: true, get: function () { return !!sameDocument; } });
     Object.defineProperty(this, 'key', { enumerable: true, configurable: true, get: function () { return key === undefined ? null : key; } });
     Object.defineProperty(this, 'id', { enumerable: true, configurable: true, get: function () { return id === undefined ? null : id; } });
@@ -12897,6 +12899,9 @@
       if (bind && typeof bind.getState === 'function') return bind.getState();
       return undefined;
     };
+    // M2-S4G：precommitController.redirect(url, {state}) 改写目的地 state（bind.state 单元格
+    // 重绑——commit 前 destination.getState() 即反映，WPT redirect-options）。
+    this._zwSetState = function (s) { if (bind) bind.state = s; };
   }
   globalThis.NavigationDestination = globalThis.NavigationDestination || NavigationDestination;
   // M2-S4B：NavigateEvent——navigate 导航事件（destination/signal **必填**——WPT event-constructor
@@ -12937,6 +12942,12 @@
       if (o.handler === null) {
         throw new globalThis.TypeError("Failed to execute 'intercept' on 'NavigateEvent': required member handler is null.");
       }
+      // M2-S4G：precommitHandler 列表（与 handler 分列——commit **前**运行，可 redirect/
+      // addHandler；reject/throw → 取消导航无提交）。多次 intercept() 追加。
+      if (typeof o.precommitHandler === 'function') {
+        if (!this._zwPrecommit) this._zwPrecommit = [];
+        this._zwPrecommit.push(o.precommitHandler);
+      }
       // M2-S4B：多次 intercept() 合法——handler **顺序链**（WPT intercept-multiple-times——
       // finished 依序 await 全部 handler promise）。M2-S4D：scroll 模式（'after-transition'
       // 缺省 | 'manual'——WPT scroll-behavior manual-basic）。M2-S4E：focusReset 模式
@@ -12970,9 +12981,13 @@
         throw new (globalThis.DOMException || DOMException)('scroll() can only be called after intercept().', 'InvalidStateError');
       }
       // M2-S4D：**dispatch 期**（事件监听器内）scroll() 抛 InvalidStateError（spec——导航未
-      // 提交不可滚；WPT manual-immediate-scroll）。
+      // 提交不可滚；WPT manual-immediate-scroll）。M2-S4G：precommit pending（未提交）同样抛
+      //（spec interception state 须 'committed'；WPT manual-scroll-in-precommit-handler）。
       if (this._zwDispatching) {
         throw new (globalThis.DOMException || DOMException)('scroll() can only be called after the navigate event has finished dispatching.', 'InvalidStateError');
+      }
+      if (this._zwPrecommitPending) {
+        throw new (globalThis.DOMException || DOMException)('scroll() can only be called after the navigation has committed.', 'InvalidStateError');
       }
       // M2-S4D：重复 scroll() 抛 InvalidStateError（WPT manual-scroll-repeated）；导航已
       // 结算（finished fulfill/reject 链尾）后再调抛 InvalidStateError（WPT

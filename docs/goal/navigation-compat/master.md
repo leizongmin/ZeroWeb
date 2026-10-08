@@ -2,8 +2,8 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-08（M2-S1~S4F 九切片——location-interface 95.3% / traversal 93.3% /
-history-interface 91.8% / navigation-api 40.1%；全量 20.9%→52.9%）
+**最后更新**: 2026-10-09（M2-S1~S4G 十切片——location-interface 95.3% / traversal 93.3% /
+history-interface 91.8% / navigation-api 69.7%；全量 20.9%→67.4%）
 
 ---
 
@@ -26,7 +26,7 @@ history-interface 91.8% / navigation-api 40.1%；全量 20.9%→52.9%）
 | P1 | 四 corpus 导入 + 基线 | ✅ 落地（fetch 三域 + 嵌套 resources 2026-10-07 恢复后入库；基线 20.9%，S1+S2 后全量 29.2%） |
 | P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口：the-history-interface 81.6%→**91.8%**（traverse 入队 + 空串 URL + 跨源 SecurityError）；余 xhr helper infra ×1 + 速率限制 optional ×2 挂账 |
 | P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | 🔶 S1+S2+S4F 落地：location-interface 41.9%→**95.3%**（exotic 内部方法面 Proxy 承载收口）、traversal 62.2%→**93.3%**；余 2F = runner 无端口 URL（形态缺口挂账）+ create-script-set-location（归 ③ 跨文档簇） |
-| P3b | Navigation API（window.navigation 全域） | 🔶 S4 read side + S4B navigate/intercept + S4C traverse/destination/preemption + S4D scroll-behavior + S4E focus-reset/handler 同步起跑（→**40.1%**）；scroll-behavior 22/26（余 4F reload 族挂账渲染域）+ focus-reset 9P（余 Tab 焦点导航 2T + autofocus load 期处理 7 NotRun，挂账 DOM 焦点域）；余跨文档 navigate、userInitiated（runner 无 user-activation） |
+| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4G 十段落地（→**69.7%**）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort 事件序全收；余 anchor-download ×2T（downloadRequest 面）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域）、userInitiated/跨文档（runner 形态） |
 | P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | ⏳ M3 **用户门控** |
 | P5 | bfcache / fission 挂账定稿 | ⏳ M4 |
 
@@ -88,23 +88,33 @@ history-interface 91.8% / navigation-api 40.1%；全量 20.9%→52.9%）
   资产启用。location-interface 86.1%→**95.3%**（消 M2-S1 遗留 FIXME）；全量 50.6%→**52.9%**。
   余 2F = runner 无端口 URL（形态挂账）+ create-script-set-location（③ 跨文档簇）。
   证据：[evidence/2026-10-08-m2-s4f-location-exotic.md](evidence/2026-10-08-m2-s4f-location-exotic.md)。
-- **质量门禁（九切片）**：`make test` 全绿 20,209 P / 0 F（S4F 轮）；`make reftest` 704/704
-  零失败（2026-10-08 S4D~S4F 三轮 shim 变更后统一复验——滚锚/焦点面涉 reftest 消费路径）；
+- **M2-S4G precommitHandler + traverseTo + ongoing-abort 事件序（2026-10-09）**：
+  precommitHandler 全生命周期（同步调起/redirect/addHandler/提交延迟化——navigate/reload/
+  pushState/replaceState/traverse 五路 commitFn 闭包）+ navigate({state}) navState 分槽 +
+  traverseTo(key) + NavigationHistoryEntry/Transition 接口对象（instanceof 面）+ 进行中导航
+  抢占（spec inform-abort while 循环、非 intercept 同参与、abort 序 = signal→finished→
+  navigateerror→transition）+ window.stop() + 非 intercept success steps + transition 生命
+  周期对齐（派发时仍暴露）+ traverse 入 task 队列 + dispose 事件 + ordering Recorder 资产。
+  navigation-api 40.1%→**69.7%**（precommit-handler 0→38P、ordering 1→28P）；全量
+  52.9%→**67.4%**；per-subtest 精确 diff 零回归。
+  证据：[evidence/2026-10-09-m2-s4g-precommit-traverseto.md](evidence/2026-10-09-m2-s4g-precommit-traverseto.md)。
+- **质量门禁（十切片）**：`make test` 全绿 20,225 P / 0 F（S4G 轮；锚 20,209 → 20,225 含兄弟
+  流新增）；`make reftest` 704/704 零失败（2026-10-08 S4D~S4F 三轮 shim 变更后统一复验）；
   clippy -D warnings 零 warning；fmt 零 diff；每轮全量语料零回归（per-subtest 精确 diff）。
   全量批墙钟 TIME_LIMIT=2700（批内不与 make test 并发）。
 
 ## 下一步计划
 
-1. **M4 收口评估**：DC 逐项判定（DC-1 ✓ / DC-2 轻面主簇已收——跨文档 2/42 与 runner 形态
-   缺口如实记账 / DC-4 门禁连续全绿；DC-3 用户门控维持 pending）。残量域（跨文档导航链、
-   replace-before-load、scroll-to-fragid 变体、precommit-handler 深簇）为 M4 判定提供
-   「不可达/挂账」定性输入；bfcache/fission 挂账定稿。
-2. **M2 ③ 跨文档导航语义**（navigating-across-documents 2/42）：主体依赖跨文档导航链
-   + testdriver 用户手势（21 Timeout），单文档 runner 形态不可达——runner 形态升级前仅记账。
-3. **M2 ④-D 残余挂账域回流点**：Tab 键顺序焦点导航 + autofocus load 期处理（DOM 焦点域
-   独立切片，回流点在 web-api-batch 或 dom goal）；scroll anchoring + rect 快照刷新
-   （渲染域，记账回流 rendering-compat）。
-4. **M3**：frame tree 最小面——**启动前须用户点名批准**（2026-10-04 已征询待批复，
+1. **M2 残余小簇评估**：replace-before-load（38F——load 前导航 history: replace 语义，
+   需「文档未完全加载」位）、scroll-to-fragid（16F——编码/几何变体）、anchor-download
+   （2T——downloadRequest/canIntercept 面）。逐簇定性「可切片/挂账」。
+2. **M4 收口评估**：DC 逐项判定（DC-1 ✓ / DC-2 轻面主簇已收 / DC-4 门禁连续全绿；DC-3
+   用户门控维持 pending）；bfcache/fission 挂账定稿。
+3. **M2 ③ 跨文档导航语义**（navigating-across-documents 2/42）：主体依赖跨文档导航链
+   + testdriver 用户手势，单文档 runner 形态不可达——runner 形态升级前仅记账。
+4. **M2 ④-D 残余挂账域回流点**：Tab 键顺序焦点导航 + autofocus load 期处理（DOM 焦点域）；
+   scroll anchoring + rect 快照刷新（渲染域，回流 rendering-compat）。
+5. **M3**：frame tree 最小面——**启动前须用户点名批准**（2026-10-04 已征询待批复，
    维持挂起，见下）。
 
 **待用户决策清单**：
