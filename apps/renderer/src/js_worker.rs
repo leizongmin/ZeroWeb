@@ -1647,6 +1647,12 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
                         .map_err(|_| "module loader worker exited".to_string())?
                         .map_err(|e| format!("module fetch: {e}"))?
                 };
+                // 模块体仅对 2xx 有效：404 等错误响应的 HTML 错误页若被当 JS 编译，
+                // 会以难定位的 SyntaxError 形式失败（github.com lazy chunk 404 实测，
+                // 2026-10-09 t2h 轮）；非 2xx 一律按 fetch 失败处理，交上层报错。
+                if !(200..300).contains(&response.status_code) {
+                    return Err(format!("module fetch: HTTP {}", response.status_code));
+                }
                 Ok(String::from_utf8_lossy(&response.body).into_owned())
             };
 
