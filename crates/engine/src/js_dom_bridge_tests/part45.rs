@@ -275,9 +275,9 @@ macro_rules! ws45_sandbox {
                 "globalThis.__wsCalls = [];\
                  globalThis.__lastWsId = '';\
                  globalThis.__wsPids = {};\
-                 globalThis.__zw_ws_connect = function(id, url, protocols) {\
+                 globalThis.__zw_ws_connect = function(id, url, protocols, origin, cookie) {\
                    globalThis.__lastWsId = id;\
-                   globalThis.__wsCalls.push('connect|' + id + '|' + url + '|' + protocols);\
+                   globalThis.__wsCalls.push('connect|' + id + '|' + url + '|' + protocols + '|' + origin + '|' + cookie);\
                  };\
                  globalThis.__zw_ws_next = function(id, pid) { globalThis.__wsPids[id] = pid; };\
                  globalThis.__zw_ws_send = function(id, kind, data) {\
@@ -338,7 +338,7 @@ fn test_t8k_websocket_event_flow_open_message_close() {
     assert_eq!(sandbox.execute("globalThis.__wsCalls.length").unwrap().value, "1");
     assert_eq!(
         sandbox.execute("globalThis.__wsCalls[0]").unwrap().value,
-        "connect|ws1|ws://example.com/socket|chat,v2"
+        "connect|ws1|ws://example.com/socket|chat,v2|ws://example.com|"
     );
     // open wire → open 事件 + protocol 回填 + OPEN 态 send（text）转发。
     sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'open\\x1fchat')").unwrap();
@@ -348,11 +348,11 @@ fn test_t8k_websocket_event_flow_open_message_close() {
         sandbox.execute("globalThis.__wsCalls[1]").unwrap().value,
         "send|ws1|t|hello-t8k"
     );
-    // msg wire（数据末字段含 \x1f 须原样保留）→ message 事件，origin = 连接 URL。
+    // msg wire（数据末字段含 \x1f 须原样保留）→ message 事件，origin = 连接 URL 的 origin。
     sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'msg\\x1fa\\x1fb')").unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__events[1] || '')").unwrap().value,
-        "msg:a\x1fb:ws://example.com/socket"
+        "msg:a\x1fb:ws://example.com"
     );
     // close wire（clean close 1000）→ CloseEvent 面齐全 + readyState CLOSED。
     sandbox.execute("globalThis.__wsEmit(globalThis.__lastWsId, 'close\\x1f1000\\x1f1\\x1fdone')").unwrap();

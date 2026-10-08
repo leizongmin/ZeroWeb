@@ -14472,6 +14472,39 @@ function _zwCaretFromPoint(x, y) {
     return (typeof TextEncoder === 'function') ? new TextEncoder().encode(str).length : str.length;
   }
 
+  function _zwWsPartBytes(part) {
+    if (part == null) return new Uint8Array(0);
+    if (typeof part === 'string') {
+      if (typeof TextEncoder === 'function') return new TextEncoder().encode(part);
+      var out = [];
+      for (var si = 0; si < part.length; si++) {
+        var c = part.charCodeAt(si);
+        if (c < 0x80) out.push(c);
+        else if (c < 0x800) { out.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f)); }
+        else { out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f)); }
+      }
+      return new Uint8Array(out);
+    }
+    if (typeof ArrayBuffer !== 'undefined' && part instanceof ArrayBuffer) return new Uint8Array(part);
+    if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(part)) {
+      return new Uint8Array(part.buffer, part.byteOffset, part.byteLength);
+    }
+    if (typeof Blob !== 'undefined' && part instanceof Blob && part._parts) {
+      var chunks = [];
+      var total = 0;
+      for (var pi = 0; pi < part._parts.length; pi++) {
+        var b = _zwWsPartBytes(part._parts[pi]);
+        chunks.push(b);
+        total += b.length;
+      }
+      var merged = new Uint8Array(total);
+      var off = 0;
+      for (var pj = 0; pj < chunks.length; pj++) { merged.set(chunks[pj], off); off += chunks[pj].length; }
+      return merged;
+    }
+    return new Uint8Array(0);
+  }
+
   function WebSocket(url, protocols) {
     // spec 构造（HTML §network WebSocket(url, protocols) step 2）：url = parse(url, API base
     // URL)，失败抛 SyntaxError DOMException。base 取 location.href（about:blank 兜底）。
@@ -14512,6 +14545,7 @@ function _zwCaretFromPoint(x, y) {
       }
     }
     this.url = resolved.href; // spec：url 属性 = 序列化形态
+    this._messageOrigin = resolved.origin; // MessageEvent.origin = 连接 URL 的 origin 序列化
     this.readyState = WebSocket.CONNECTING;
     this.bufferedAmount = 0;
     this.extensions = ''; // 协商扩展面未实现（RFC 6455 permessage-deflate 未协商）
@@ -14583,12 +14617,12 @@ function _zwCaretFromPoint(x, y) {
         self.protocol = data || '';
         self._dispatch('open', null);
       } else if (kind === 'msg') {
-        // spec message 事件：MessageEvent，origin = 本连接序列化 URL；text 末字段可含 \x1f。
-        self._dispatch('message', new MessageEvent('message', { data: data, origin: self.url }));
+        // spec message 事件：MessageEvent，origin = 连接 URL 的 origin 序列化；text 末字段可含 \x1f。
+        self._dispatch('message', new MessageEvent('message', { data: data, origin: self._messageOrigin }));
       } else if (kind === 'bin') {
         var bytes = csvToBytes(data);
         var payload = self.binaryType === 'arraybuffer' ? bytes.buffer : new Blob([bytes]);
-        self._dispatch('message', new MessageEvent('message', { data: payload, origin: self.url }));
+        self._dispatch('message', new MessageEvent('message', { data: payload, origin: self._messageOrigin }));
       } else if (kind === 'sent') {
         var sentBytes = parseInt(data, 10);
         if (!isNaN(sentBytes) && sentBytes > 0) {
@@ -14613,7 +14647,13 @@ function _zwCaretFromPoint(x, y) {
       // 未知 kind：静默忽略（前向兼容 wire 扩展）。
     }
     pump();
-    __zw_ws_connect(connId, resolved.href, protoList.join(','));
+    var wsCookie = '';
+    try {
+      if (typeof document !== 'undefined' && document && typeof document.cookie === 'string' && document.cookie) {
+        wsCookie = document.cookie;
+      }
+    } catch (_eCookie) {}
+    __zw_ws_connect(connId, resolved.href, protoList.join(','), self._messageOrigin, wsCookie);
   }
   WebSocket.CONNECTING = 0;
   WebSocket.OPEN = 1;
@@ -14631,7 +14671,7 @@ function _zwCaretFromPoint(x, y) {
       if (i >= 0) arr.splice(i, 1);
     },
     // spec send(data)：state ≠ OPEN → InvalidStateError DOMException；string → text 帧，
-    // BufferSource → binary 帧（wire csv-decimal）；Blob 取内部 _parts 尽力序列化。
+    // BufferSource → binary 帧（wire csv-decimal）；Blob → 二进制帧（全 part 字节物化）。
     send: function (data) {
       if (this.readyState !== WebSocket.OPEN) {
         var DE4 = (typeof globalThis.DOMException === 'function') ? globalThis.DOMException : DOMException;
@@ -14648,13 +14688,8 @@ function _zwCaretFromPoint(x, y) {
         bytes = new Uint8Array(data);
       } else if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(data)) {
         bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-      } else if (typeof Blob !== 'undefined' && data instanceof Blob && data._parts) {
-        // shim 内部 Blob：_parts 串接（string 面尽力而为；非 string part 走 String 化）。
-        var acc = '';
-        for (var i = 0; i < data._parts.length; i++) acc += String(data._parts[i]);
-        this.bufferedAmount += _zwWsUtf8ByteLength(acc);
-        __zw_ws_send(this._connId, 't', acc);
-        return;
+      } else if (typeof Blob !== 'undefined' && data instanceof Blob) {
+        bytes = _zwWsPartBytes(data);
       }
       if (bytes) {
         var csv = new Array(bytes.length);

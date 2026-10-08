@@ -80,7 +80,7 @@ pub trait WsHost: Send + Sync {
     /// JS 回调线程**同步**调用——连接的导航代际在入口捕获，bridge 侧不得再包 wrapper
     /// 线程推迟调用点（t8k 返修实证：wrapper 调度延迟晚于 `reset_context` 时代际错标、
     /// close-before-insert 仲裁丢失）。
-    fn connect(&self, id: &str, url: &str, protocols: &[String]);
+    fn connect(&self, id: &str, url: &str, protocols: &[String], origin: &str, cookie: &str);
     /// 发送数据（连接不存在/未 open 时静默忽略——JS 侧已按 readyState 前置拦截）。
     fn send(&self, id: &str, data: &WsData);
     /// 关闭连接（`code` 0 = 不带状态码；宿主发 Close 帧后 emit `Close`）。
@@ -354,7 +354,7 @@ impl WsBridge {
 
     /// 注册 4 个回调（均**非阻塞**，JS worker 线程绝不在 WS 路径上等待网络）：
     ///
-    /// - `__zw_ws_connect(id, url, protocolsWire)`：同步转发宿主（[`WsHost::connect`] 契约
+    /// - `__zw_ws_connect(id, url, protocolsWire, origin, cookie)`：同步转发宿主（[`WsHost::connect`] 契约
     ///   非阻塞，网络 I/O 全在宿主自有线程；并发由宿主 [`MAX_OPEN_WS_CONNECTIONS`] 槽位
     ///   上限钳制）；宿主未注入 → 直接 emit `Error`+`Close`（fetch no-handler 同型，不悬挂）。
     /// - `__zw_ws_send(id, kind, dataWire)` / `__zw_ws_close(id, code, reason)`：转发宿主
@@ -377,6 +377,8 @@ impl WsBridge {
                     .filter(|p| !p.is_empty())
                     .map(str::to_string)
                     .collect();
+                let origin = args.get(3).map(String::as_str).unwrap_or("");
+                let cookie = args.get(4).map(String::as_str).unwrap_or("");
                 let host = host_cell.lock().ok().and_then(|c| c.as_ref().cloned());
                 match host {
                     Some(h) => {
@@ -387,7 +389,7 @@ impl WsBridge {
                         // close 在插槽前查不到槽位丢失仲裁；connect 与 reset_context 同在
                         // JS worker 线程串行，直接调用后两个窗口均不存在。并发由宿主
                         // [`MAX_OPEN_WS_CONNECTIONS`] 槽位上限统一钳制。
-                        h.connect(&id, &url, &protocols);
+                        h.connect(&id, &url, &protocols, origin, cookie);
                     }
                     None => {
                         // no-handler（宿主尚未注入/未配置）：fetch 同型——不悬挂，快速失败。
@@ -502,7 +504,7 @@ struct NetWsHost {
 }
 
 impl WsHost for NetWsHost {
-    fn connect(&self, id: &str, url: &str, protocols: &[String]) {
+    fn connect(&self, id: &str, url: &str, protocols: &[String], origin: &str, cookie: &str) {
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<HostCmd>();
         // 代际在本函数入口捕获。调用契约（见 [`WsHost`] trait 文档）：connect 非阻塞、
         // 且由 JS 回调线程同步调用——捕获与下方插槽插入之间没有跨线程窗口，
@@ -540,12 +542,16 @@ impl WsHost for NetWsHost {
         let conns = Arc::clone(&self.conns);
         let id = id.to_string();
         let url = url.to_string();
+        let handshake = zero_net::websocket::WebSocketHandshake {
+            origin: origin.to_string(),
+            cookie: cookie.to_string(),
+        };
         let _protocols = protocols.to_vec(); // FIXME(t8k): Sec-WebSocket-Protocol 协商头与 101 选定子协议未透出（zero_net::WebSocket 不暴露握手响应）——本切片先发空协议头，子协议协商面留待 net 层扩展
         std::thread::spawn(move || {
             // 阻塞 TCP/TLS/握手（OS 级 TCP 超时兜底；服务端 accept 后不回 101 的
             // 无限阻塞缺口见 defect-r1 N2，非本次返修范围）。
             let mut ws = zero_net::websocket::WebSocket::new(&url);
-            if let Err(e) = ws.connect() {
+            if let Err(e) = ws.connect_with_handshake(&handshake) {
                 // 终结权仲裁：槽位已消失（close-during-connect 的 close() 仲裁已发唯一
                 // Close）、已 Closed、或已被跨代际重连覆盖（新代际持有终结权）——本线程
                 // 一律静默，且只删除仍属本代际的槽位（t8k defect-r1 D1）。
@@ -647,6 +653,7 @@ impl WsHost for NetWsHost {
                         emitter.emit_gen(&id, WsEvent::Binary(b), nav_gen);
                     }
                     Ok(Some(zero_net::websocket::WebSocketMessage::Close(code, reason))) => {
+                        // net 层 receive 已对服务端 Close 回送 Close 帧（RFC 6455 §7.1.5）。
                         emitter.emit_gen(
                             &id,
                             WsEvent::Close {
@@ -944,11 +951,11 @@ mod tests {
         cmds: Mutex<Vec<String>>,
     }
     impl WsHost for LogHost {
-        fn connect(&self, id: &str, url: &str, protocols: &[String]) {
+        fn connect(&self, id: &str, url: &str, protocols: &[String], origin: &str, cookie: &str) {
             self.cmds
                 .lock()
                 .unwrap()
-                .push(format!("connect {id} {url} {protocols:?}"));
+                .push(format!("connect {id} {url} {protocols:?} origin={origin} cookie={cookie}"));
         }
         fn send(&self, id: &str, data: &WsData) {
             self.cmds.lock().unwrap().push(format!("send {id} {data:?}"));

@@ -388,7 +388,7 @@ struct CspGateWsHost {
 }
 
 impl zero_engine::ws_bridge::WsHost for CspGateWsHost {
-    fn connect(&self, id: &str, url: &str, protocols: &[String]) {
+    fn connect(&self, id: &str, url: &str, protocols: &[String], origin: &str, cookie: &str) {
         let page = self.page_url.lock().map(|u| u.clone()).unwrap_or_default();
         let abs = zero_engine::resolve_document_url(&page, url);
         if let Some(violation) = self.ctx.check_connect(&abs) {
@@ -417,7 +417,7 @@ impl zero_engine::ws_bridge::WsHost for CspGateWsHost {
             );
             return;
         }
-        self.inner.connect(id, url, protocols);
+        self.inner.connect(id, url, protocols, origin, cookie);
     }
     fn send(&self, id: &str, data: &zero_engine::ws_bridge::WsData) {
         self.inner.send(id, data);

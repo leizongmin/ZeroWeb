@@ -5,9 +5,20 @@
 //! 支持连接到 `ws://` 和 `wss://` 服务器，发送和接收文本/二进制消息，
 //! 以及正常关闭连接。
 
+use tungstenite::client::IntoClientRequest;
+use tungstenite::http::header::{COOKIE, ORIGIN};
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket as TungWebSocket};
 use url::Url;
+
+/// 可选 WebSocket 握手请求头（WHATWG HTML「establish a WebSocket connection」）。
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct WebSocketHandshake {
+    /// 文档 `Origin`（序列化 origin）；空则省略。
+    pub origin: String,
+    /// `Cookie` 请求头值；空则省略。
+    pub cookie: String,
+}
 
 /// WebSocket 连接状态。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,6 +115,11 @@ impl WebSocket {
     /// - 无法建立 TCP/TLS 连接或握手失败时返回
     ///   [`ConnectionFailed`](WebSocketError::ConnectionFailed)。
     pub fn connect(&mut self) -> Result<(), WebSocketError> {
+        self.connect_with_handshake(&WebSocketHandshake::default())
+    }
+
+    /// 建立连接并附带文档 `Origin` / `Cookie` 握手头（空串字段省略）。
+    pub fn connect_with_handshake(&mut self, handshake: &WebSocketHandshake) -> Result<(), WebSocketError> {
         if self.state == WebSocketState::Open {
             return Ok(());
         }
@@ -119,8 +135,31 @@ impl WebSocket {
             )));
         }
 
+        let mut request = parsed_url
+            .as_str()
+            .into_client_request()
+            .map_err(|e| WebSocketError::ConnectionFailed(e.to_string()))?;
+        if !handshake.origin.is_empty() {
+            request.headers_mut().insert(
+                ORIGIN,
+                handshake
+                    .origin
+                    .parse()
+                    .map_err(|e| WebSocketError::ConnectionFailed(format!("invalid Origin header: {e}")))?,
+            );
+        }
+        if !handshake.cookie.is_empty() {
+            request.headers_mut().insert(
+                COOKIE,
+                handshake
+                    .cookie
+                    .parse()
+                    .map_err(|e| WebSocketError::ConnectionFailed(format!("invalid Cookie header: {e}")))?,
+            );
+        }
+
         let (socket, _response) =
-            tungstenite::connect(parsed_url.as_str()).map_err(|e| WebSocketError::ConnectionFailed(e.to_string()))?;
+            tungstenite::connect(request).map_err(|e| WebSocketError::ConnectionFailed(e.to_string()))?;
 
         self.inner = Some(socket);
         self.state = WebSocketState::Open;
@@ -170,6 +209,8 @@ impl WebSocket {
                     let (code, reason) = close_frame
                         .map(|cf| (Some(cf.code.into()), Some(cf.reason.to_string())))
                         .unwrap_or((None, None));
+                    // RFC 6455 §7.1.5：收到 Close 后须回送 Close（若尚未发送）。
+                    let _ = ws.close(close_frame);
                     self.state = WebSocketState::Closed;
                     self.inner = None;
                     Ok(Some(WebSocketMessage::Close(code, reason)))
