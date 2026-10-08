@@ -54,3 +54,5 @@
 1. slice27 静态单命中面（安装期元素全局）不 live、stale 至换代——申报保持（slice42 :69 口径）。
 2. **静态选择器查询面 parsed 子树移除 stale**（本轮探针新证）：`querySelectorAll('img')` / `querySelector('#w43 img')` 对已移除 parsed 后代仍可解析至换代回收——独立枚举路径（part04 querySelectorAll 系），不消费 pendingRemoved；与①同族（parsed 面换代即愈），归后续轮次。ID 查询面（getElementById）已随本轮 remFlat 展开顺带修复（探针实证 null 即时）。
 3. morph 跟随面 >1 命中不升格集合——slice42 :62 口径保持。
+4. **added 方向效应无钉覆盖**（双首轮评审测效轮 xS-1 / 缺陷轮 I-3 同证）：展开块位于 `_zwHCCollectSubtree` sel 父共享分支，remFlat 与 addFlat 两方向同函数消费——sel 父带 parsed 后代**移回文档**时后代经 addFlat 重并集合（R333 门 :10452 起）、并从 pendingRemoved 摘除（:10439-10446）。语义与规范一致（集合视图限当下 document tree，重并即复见），本轮 pin1 仅覆盖移除向（对照臂 p43c 为脚本建树桶面），卡面/verdict 原文未明示该面——明示申报归后续（move 生命周期钉候选：移除→回插→集合长度回 2 / fresh 查询复见）。
+5. **pin2 第三态无断言**（测效轮 xI-1）：「账内 detached 自愈剔除」无独立断言亦无成文论证——修后所有入账路径均带连接性门（attr join :10903 本轮门、childList R54/R333 in-doc 门、动态注册门），该态经公共 API 近乎不可诱导，自然红 + 变异 RED 主判别链不依赖；备案不补钉。
