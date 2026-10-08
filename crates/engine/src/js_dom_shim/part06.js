@@ -2124,7 +2124,32 @@
         try { globalThis._zwScheduleAllTrackLoads(); } catch (_eDqsT) {}
       }
       var hit = __zw_query_match(sel);
-      if (hit) return _zwQueryWrapIdentity(hit);
+      if (hit) {
+        // slice44：pendingRemoved sel 剔除——已移除 parsed 后代在 host apply 前仍被
+        // 快照命中，视为未命中（spec：查询面限当下 document tree；R310 元素面同族
+        // 口径的对齐面）。
+        // https://dom.spec.whatwg.org/#concept-node-list-alive
+        var _s44stale = false;
+        if (_zwPendingRemoved.length) {
+          try { _s44stale = _zwPendingRemovedSels().has(String(hit)); } catch (_e44qs) { _s44stale = false; }
+        }
+        if (!_s44stale) return _zwQueryWrapIdentity(hit);
+        // 首命中被剔除时单查只返回首命中——从全查列取首个非移除命中（树序同源，
+        // spec 单查 = 首个在树命中）；查无则 fall through 至 pending 回退路径
+        //（pending 扫描面不含已移除节点）。
+        try {
+          if (_zwPendingRemoved.length) {
+            var _s44rsQ = _zwPendingRemovedSels();
+            var _s44all = __zw_query_all(sel);
+            if (_s44all) {
+              var _s44list = _s44all.split('|').filter(Boolean);
+              for (var _s44i = 0; _s44i < _s44list.length; _s44i++) {
+                if (!_s44rsQ.has(_s44list[_s44i])) return _zwQueryWrapIdentity(_s44list[_s44i]);
+              }
+            }
+          }
+        } catch (_e44rq) {}
+      }
       // js-dom M4 R51c：host 快照未命中 → 回落 pending added 扫描（同步 turn 内 append/insert 的
       // 节点对查询不可见是 testharness mega-case 的系统性破损源：WPT dom/common.js
       // setupRangeTests 每次开头 `querySelector('#test')` 取旧树 removeChild 重建——pending 旧树
@@ -2504,7 +2529,23 @@
       // 已含 li 时由 host 判定命中）+ pending 归并（R322 链）消费 handle proxy，同一 li 两
       // identity 双计（lis:A,B,A,B，vue_reconciliation 首渲染回归 R322 轮未发现——A/B 列表
       // 未含 vue e2e）。反查命中 → 原复用 = 双源合流；未命中 → 原 sel wrapper 零变化。
-      var out161 = all ? all.split('|').filter(Boolean).map(_zwQueryWrapIdentity) : [];
+      var _s44sels = all ? all.split('|').filter(Boolean) : [];
+      // slice44：pendingRemoved sel 剔除（document 面全查，包装前按 sel 过滤——
+      // 已移除 parsed 后代在 host apply 前仍被快照命中，spec 查询面限当下
+      // document tree）。https://dom.spec.whatwg.org/#concept-node-list-alive
+      if (_s44sels.length && _zwPendingRemoved.length) {
+        try {
+          var _s44rs = _zwPendingRemovedSels();
+          if (_s44rs.size) {
+            var _s44kept = [];
+            for (var _s44k = 0; _s44k < _s44sels.length; _s44k++) {
+              if (!_s44rs.has(_s44sels[_s44k])) _s44kept.push(_s44sels[_s44k]);
+            }
+            _s44sels = _s44kept;
+          }
+        } catch (_e44qsa) {}
+      }
+      var out161 = _s44sels.map(_zwQueryWrapIdentity);
       var tagM161 = /^[A-Za-z][\w-]*$/.exec(q);
       if (tagM161 && typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded.length) {
         var seen161 = {};

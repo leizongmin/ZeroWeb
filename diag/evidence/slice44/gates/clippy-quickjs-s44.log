@@ -1,0 +1,5 @@
+TREE_SHA=7c44d04de16a520e55101b6c65e8040467ad4007
+    Checking zero-engine v0.1.0 (/home/lei/work/ZeroWeb/crates/engine)
+    Checking zero-page-runtime v0.1.0 (/home/lei/work/ZeroWeb/crates/page-runtime)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.09s
+CLIPPY_QJS_EXIT=0

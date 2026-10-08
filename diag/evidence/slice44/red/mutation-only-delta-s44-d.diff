@@ -1,0 +1,17 @@
+diff --git a/crates/engine/src/js_dom_shim/part05.js b/crates/engine/src/js_dom_shim/part05.js
+index 6fb877ec4..23c6e7319 100644
+--- a/crates/engine/src/js_dom_shim/part05.js
++++ b/crates/engine/src/js_dom_shim/part05.js
+@@ -10410,12 +10410,6 @@
+         var nd0 = addFlat[a1];
+         if (!nd0) continue;
+         if (!_zwPASet().has(nd0)) { _zwPendingAdded.push(nd0); _zwPendingAddedSet.add(nd0); _zwPAIdAdd(nd0); }
+-        // R51c：removed 剔除不再全表重建——Set 命中才 splice（多数 mutation 不命中，零分配）。
+-        if (_zwPendingRemovedSet && _zwPendingRemovedSet.has(nd0)) {
+-          var ri = _zwPendingRemoved.indexOf(nd0);
+-          if (ri >= 0) _zwPendingRemoved.splice(ri, 1);
+-          _zwPendingRemovedSet.delete(nd0);
+-        }
+       }
+     }
+     // R54：本批挂载点非主文档（detached/foreign 容器）→ 子树不并入文档级 live collection
