@@ -397,6 +397,48 @@ pub(super) fn adjust_inline_block_positions(
     // 将 fragment 坐标应用到 inline-block 子元素的 LayoutBox
     // 使用 all_fragments_with_line_y() 获取包含行盒 Y 偏移的绝对坐标
     let fragments = inline_ctx.all_fragments_with_line_y();
+    // R5011（CSS2 §9.2.1.1 块混排行 y 锚定）：fresh IFC 从容器 content **原点**起排，
+    // 无前驱块兄弟感知——容器含前驱 in-flow 块级子（transform-input-001：body 内
+    // `<p>` 后继 inline-block input）时 fragment.y 整体偏小（input 被定到容器原点+
+    // margin=10 而非流位 35，整栈上移 25px）。以**首个原子 inline 的 taffy 流位**为
+    // 块偏移锚：offset = 首个匹配 fragment 的 (taffy y − fragment y)，加到全部原子
+    // inline 的 fragment y 上（x 与行分配保持 IFC 结果）。
+    // 门控 = 与 R4108 gate 同款「无非空白直接文本」：文本在场的容器其 IFC 行盒是
+    // **真行盒**（baseline 对齐 y 正确、taffy 堆叠位才错），锚定会反把正确 y 拉向
+    // 错误 taffy 位（inline-block-alignment/inline-table-alignment 族回归实证）；
+    // 无文本的块混排容器 IFC 行盒是伪行（原点偏置），锚定即修复。
+    let has_non_ws_dom_text = root.node_id.is_some_and(|id| {
+        doc.child_nodes(id).iter().any(|c| {
+            doc.get(*c).is_some_and(|n| match &n.kind {
+                zero_dom::NodeKind::Text(t) => !t.content.trim().is_empty(),
+                _ => false,
+            })
+        })
+    });
+    // 前驱 in-flow 块级子存在 = 原点偏置的必要条件（纯 inline 容器的 IFC 行盒本就
+    // 从原点起排，无偏置；inline-replaced-width-012 的 p>img 双 img 页面回退实证）。
+    let has_block_child = root
+        .children
+        .iter()
+        .any(|c| c.is_block_level && !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None));
+    // 垂直书写模式块轴为 X（box-offsets-rel-pos-vrl-002 谱系）：y 锚定仅水平模式。
+    let is_vertical_wm = root.writing_mode.is_vertical_block_flow();
+    let block_offset_y = if has_non_ws_dom_text || !has_block_child || is_vertical_wm {
+        0.0
+    } else {
+        ib_indices
+            .iter()
+            .find_map(|idx| {
+                let child = &root.children[*idx];
+                let child_node_id = child.node_id?;
+                let fragment = fragments
+                    .iter()
+                    .find(|f| f.node_id == child_node_id && f.font_size == 0.0 && f.width > 0.0)?;
+                Some(child.y - fragment.y)
+            })
+            .unwrap_or(0.0)
+    };
+
     for idx in &ib_indices {
         let child = &mut root.children[*idx];
         let Some(child_node_id) = child.node_id else {
@@ -409,7 +451,7 @@ pub(super) fn adjust_inline_block_positions(
             .find(|f| f.node_id == child_node_id && f.font_size == 0.0 && f.width > 0.0)
         {
             child.x = fragment.x;
-            child.y = fragment.y;
+            child.y = fragment.y + block_offset_y;
         }
     }
 }

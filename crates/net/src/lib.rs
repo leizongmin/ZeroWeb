@@ -29,7 +29,8 @@ pub mod websocket;
 
 pub use client::*;
 pub use cookie::{
-    Cookie, CookieStore, RequestContext, SameSite, is_same_site, parse_expires_date, request_context, same_site_allows,
+    Cookie, CookieStore, RequestContext, SameSite, is_same_site, merge_cookie_request_header, parse_expires_date,
+    request_context, same_site_allows, shared_cookie_store, store_set_cookie_headers,
 };
 pub use disk_cache::{DiskHttpCache, default_cache_dir};
 pub use fetch_priority::{FetchPriority, infer_resource_type_from_url};

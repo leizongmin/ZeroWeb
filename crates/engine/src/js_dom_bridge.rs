@@ -2955,6 +2955,26 @@ pub fn anchor_hash_target(html: &str, selector: &str) -> Option<String> {
     }
 }
 
+/// navigation-compat S4I：判定激活目标是否锚（命中元素或其最近 `a`/`area` 祖先带 href——
+/// [`anchor_activation_target`] 事件路径行走）。供 host 激活管线判定是否做锚线程
+///（`__zwNavSourceElement`/`__zwNavDownloadRequest` 前置脚本）。
+pub fn anchor_activation_matches(html: &str, selector: &str) -> bool {
+    let doc = parse_html(html);
+    anchor_activation_target(&doc, find_by_selector(&doc, selector)).is_some()
+}
+
+/// navigation-compat S4I：解析 anchor `download` 属性值（presence 判定——`download=""` 同下载，
+/// 值为文件名）。供 host 激活管线把 downloadRequest 线程进页面 JS
+///（`__zwNavDownloadRequest`——`_navFireNavigate` 读取，WPT navigate-anchor-download-userInitiated
+/// 「downloadRequest ''」）。返回 `Some(value)` 当命中元素或其最近 `a`/`area` 祖先带 download
+/// 属性（空值归一 `""`）；否则 `None`。
+pub fn anchor_download_request(html: &str, selector: &str) -> Option<String> {
+    let doc = parse_html(html);
+    let node = anchor_activation_target(&doc, find_by_selector(&doc, selector))?;
+    doc.get_attribute(node, "download")
+        .map(|value| if value.is_empty() { String::new() } else { value })
+}
+
 /// P1a 导航：解析 anchor `<a href="javascript:...">` click 的 JS 体（R3057，闭合 R3052 限制②）。供 renderer
 /// click 路由判定「点击 javascript: 链接是否 eval JS」。返回 `Some(js 体)` 当命中元素或其最近 `a`/`area` 祖先
 /// （[`anchor_activation_target`] 事件路径行走）的 href（trim 后）以 `javascript:` 开头（大小写不敏感）；

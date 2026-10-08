@@ -5,9 +5,20 @@
 //! 支持连接到 `ws://` 和 `wss://` 服务器，发送和接收文本/二进制消息，
 //! 以及正常关闭连接。
 
+use tungstenite::client::IntoClientRequest;
+use tungstenite::http::header::{COOKIE, ORIGIN};
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket as TungWebSocket};
 use url::Url;
+
+/// 可选 WebSocket 握手请求头（WHATWG HTML「establish a WebSocket connection」）。
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct WebSocketHandshake {
+    /// 文档 `Origin`（序列化 origin）；空则省略。
+    pub origin: String,
+    /// `Cookie` 请求头值；空则省略。
+    pub cookie: String,
+}
 
 /// WebSocket 连接状态。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,6 +115,11 @@ impl WebSocket {
     /// - 无法建立 TCP/TLS 连接或握手失败时返回
     ///   [`ConnectionFailed`](WebSocketError::ConnectionFailed)。
     pub fn connect(&mut self) -> Result<(), WebSocketError> {
+        self.connect_with_handshake(&WebSocketHandshake::default())
+    }
+
+    /// 建立连接并附带文档 `Origin` / `Cookie` 握手头（空串字段省略）。
+    pub fn connect_with_handshake(&mut self, handshake: &WebSocketHandshake) -> Result<(), WebSocketError> {
         if self.state == WebSocketState::Open {
             return Ok(());
         }
@@ -119,8 +135,31 @@ impl WebSocket {
             )));
         }
 
+        let mut request = parsed_url
+            .as_str()
+            .into_client_request()
+            .map_err(|e| WebSocketError::ConnectionFailed(e.to_string()))?;
+        if !handshake.origin.is_empty() {
+            request.headers_mut().insert(
+                ORIGIN,
+                handshake
+                    .origin
+                    .parse()
+                    .map_err(|e| WebSocketError::ConnectionFailed(format!("invalid Origin header: {e}")))?,
+            );
+        }
+        if !handshake.cookie.is_empty() {
+            request.headers_mut().insert(
+                COOKIE,
+                handshake
+                    .cookie
+                    .parse()
+                    .map_err(|e| WebSocketError::ConnectionFailed(format!("invalid Cookie header: {e}")))?,
+            );
+        }
+
         let (socket, _response) =
-            tungstenite::connect(parsed_url.as_str()).map_err(|e| WebSocketError::ConnectionFailed(e.to_string()))?;
+            tungstenite::connect(request).map_err(|e| WebSocketError::ConnectionFailed(e.to_string()))?;
 
         self.inner = Some(socket);
         self.state = WebSocketState::Open;
@@ -168,8 +207,11 @@ impl WebSocket {
                 Message::Binary(data) => Ok(Some(WebSocketMessage::Binary(data.to_vec()))),
                 Message::Close(close_frame) => {
                     let (code, reason) = close_frame
+                        .as_ref()
                         .map(|cf| (Some(cf.code.into()), Some(cf.reason.to_string())))
                         .unwrap_or((None, None));
+                    // RFC 6455 §7.1.5：收到 Close 后须回送 Close（若尚未发送）。
+                    let _ = ws.close(close_frame);
                     self.state = WebSocketState::Closed;
                     self.inner = None;
                     Ok(Some(WebSocketMessage::Close(code, reason)))
@@ -178,8 +220,10 @@ impl WebSocket {
                 Message::Pong(data) => Ok(Some(WebSocketMessage::Pong(data.to_vec()))),
                 _ => Ok(None),
             },
-            Err(tungstenite::Error::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                // 非阻塞模式：暂无消息
+            Err(tungstenite::Error::Io(e))
+                if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                // 读超时 / 非阻塞：暂无消息（SO_RCVTIMEO 在 Windows 等映射为 TimedOut）。
                 Ok(None)
             }
             Err(tungstenite::Error::ConnectionClosed) => {
@@ -202,6 +246,44 @@ impl WebSocket {
         self.state = WebSocketState::Closed;
         self.inner = None;
         Ok(())
+    }
+
+    /// 发送带状态码/原因的关闭帧并关闭连接（WHATWG HTML §WebSocket close(code, reason)）。
+    pub fn close_with(&mut self, code: u16, reason: &str) -> Result<(), WebSocketError> {
+        if let Some(ws) = self.inner.as_mut() {
+            let frame = tungstenite::protocol::CloseFrame {
+                code: code.into(),
+                reason: tungstenite::Utf8Bytes::from(reason),
+            };
+            let _ = ws.close(Some(frame));
+        }
+        self.state = WebSocketState::Closed;
+        self.inner = None;
+        Ok(())
+    }
+
+    /// 给底层 TCP 流设置读超时（宿主桥读泵用：阻塞 `read()` 超时返回 WouldBlock 或
+    /// TimedOut（平台相关），
+    /// 泵循环得以轮询发送通道）。仅 Open 状态生效；wss 路径同样作用在内层 TCP 流。
+    /// TLS 后端由 workspace 统一为 rustls（tungstenite `rustls-tls-webpki-roots`，与
+    /// reqwest HTTP 栈同族 webpki-roots 信任源）——变更 tungstenite TLS feature 时
+    /// 此处 match 须同步。
+    pub fn set_read_timeout(&self, dur: Option<std::time::Duration>) -> Result<(), WebSocketError> {
+        let ws = self.inner.as_ref().ok_or(WebSocketError::NotOpen)?;
+        match ws.get_ref() {
+            MaybeTlsStream::Plain(tcp) => tcp
+                .set_read_timeout(dur)
+                .map_err(|e| WebSocketError::ReceiveFailed(e.to_string())),
+            MaybeTlsStream::Rustls(tls) => tls
+                .get_ref()
+                .set_read_timeout(dur)
+                .map_err(|e| WebSocketError::ReceiveFailed(e.to_string())),
+            // MaybeTlsStream 标记 non-exhaustive（后续 tungstenite 版本可能增变体）——未知
+            // 流形态拒设读超时（泵循环保持默认阻塞语义，不静默假成功）。
+            _ => Err(WebSocketError::ReceiveFailed(
+                "unsupported TLS stream variant".to_string(),
+            )),
+        }
     }
 
     /// 返回当前连接状态。

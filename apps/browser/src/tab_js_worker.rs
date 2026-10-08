@@ -9,7 +9,7 @@ use std::time::Duration;
 use zero_browser_shell::TabId;
 use zero_engine::{
     AsyncResolver, DomMutation, ElementFromPointBridge, ElementFromPointCache, FetchBridge, FetchHandler, FetchRequest,
-    FetchResponse, HandleSelectorMap, LayoutRectSnapshot, RectBridge, TimerBridge, generate_js_dom_shim,
+    FetchResponse, HandleSelectorMap, LayoutRectSnapshot, RectBridge, TimerBridge, WsBridge, generate_js_dom_shim,
     make_dom_html_rect_handler, new_element_from_point_cache, new_handle_selector_map, new_layout_rect_snapshot,
     register_dom_callbacks,
 };
@@ -67,6 +67,11 @@ enum JsWorkerCommand {
     /// 供 `__zw_fetch` 回调读取。chicken-and-egg 解：js_worker spawn 时 WebView 未就绪。
     SetFetchHandler {
         handler: FetchHandler,
+    },
+    /// t8k：注入 WebSocket 宿主工厂（tab_worker 在 WebView 初始化后发送；factory 消费
+    /// bridge emitter 造生产宿主——renderer js_worker 同款 chicken-and-egg 解）。
+    SetWsHandler {
+        factory: zero_engine::ws_bridge::WsHostFactory,
     },
     /// media-playback M2a 切片 5b：注入播放器注册表（tab_worker 在 WebView 初始化后
     /// 发送 `wv.video_players()` Arc）——worker 据此注册 `__zw_video_*` 宿主桥回调。
@@ -264,6 +269,12 @@ impl TabJsWorkerHandle {
         let _ = self.cmd_tx.send(JsWorkerCommand::SetFetchHandler { handler });
     }
 
+    /// t8k：注入 WebSocket 宿主工厂（tab_worker 启动后调用；factory 消费 bridge emitter
+    /// 造生产宿主——[`zero_engine::ws_bridge::default_net_ws_host`] 或测试合成实现）。
+    pub fn set_ws_handler(&self, factory: zero_engine::ws_bridge::WsHostFactory) {
+        let _ = self.cmd_tx.send(JsWorkerCommand::SetWsHandler { factory });
+    }
+
     /// media-playback M2a 切片 5b：注入播放器注册表（WebView 初始化后发送；
     /// worker 注册 `__zwVideoBridge` 宿主桥——shim play/pause/currentTime 真值面）。
     pub fn set_video_players(
@@ -441,6 +452,10 @@ fn js_worker_main(
     });
     let fetch_bridge = FetchBridge::new(resolver.clone());
     fetch_bridge.register(&mut *sandbox);
+    // t8k：WebSocket bridge——__zw_ws_connect/send/close/next 注册。生产宿主经 SetWsHandler
+    // factory 注入（host 需 bridge 的 emitter 推事件）；未注入时连接快速失败（err+close）。
+    let ws_bridge = WsBridge::new(resolver.clone());
+    ws_bridge.register(&mut *sandbox);
     // P1b S5：TimerBridge 注 __zw_setTimeout——shim setTimeout/setInterval 真实延迟
     // （子线程 sleep + resolver.resolve → __zwResolveCallback 调用 JS 回调）。
     let timer_bridge = TimerBridge::new(resolver);
@@ -517,6 +532,11 @@ fn js_worker_main(
             JsWorkerCommand::SetFetchHandler { handler } => {
                 // P1b S3 incr-a：注入 fetch handler（tab_worker 在 WebView 初始化后发送）。
                 fetch_bridge.set_handler(handler);
+            }
+            JsWorkerCommand::SetWsHandler { factory } => {
+                // t8k：注入生产 WS 宿主（factory 消费 bridge emitter）。
+                let host = factory(ws_bridge.emitter());
+                ws_bridge.set_host(host);
             }
             JsWorkerCommand::SetVideoPlayers { registry, clock_ms } => {
                 // M2a 切片 5b：注册宿主桥回调族 + 注入 __zwVideoBridge JS 门面

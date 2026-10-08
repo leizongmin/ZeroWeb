@@ -2,8 +2,8 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-09（M2-S1~S4H 十一片——location-interface 95.3% / traversal 93.3% /
-history-interface 91.8% / navigation-api 72.6%；全量 20.9%→69.2%）
+**最后更新**: 2026-10-09（M2-S1~S4I 十二片——location-interface 95.3% / traversal 93.3% /
+history-interface 91.8% / navigation-api 73.5%；全量 20.9%→69.7%）
 
 ---
 
@@ -26,9 +26,9 @@ history-interface 91.8% / navigation-api 72.6%；全量 20.9%→69.2%）
 | P1 | 四 corpus 导入 + 基线 | ✅ 落地（fetch 三域 + 嵌套 resources 2026-10-07 恢复后入库；基线 20.9%，S1+S2 后全量 29.2%） |
 | P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口：the-history-interface 81.6%→**91.8%**（traverse 入队 + 空串 URL + 跨源 SecurityError）；余 xhr helper infra ×1 + 速率限制 optional ×2 挂账 |
 | P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | 🔶 S1+S2+S4F 落地：location-interface 41.9%→**95.3%**（exotic 内部方法面 Proxy 承载收口）、traversal 62.2%→**93.3%**；余 2F = runner 无端口 URL（形态缺口挂账）+ create-script-set-location（归 ③ 跨文档簇） |
-| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4H 十一段落地（→**72.6%**）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest 全收；余 host 激活路径锚线程（S4I——testdriver click 面 3T+1F）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域）、userInitiated/跨文档（runner 形态） |
+| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4I 十二段落地（→**73.5%**）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程全收；余静态锚 href IDL 落 attr 面（2 案——回流 element IDL 域）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域）、form submit navigate 族 5T（S4J 评估） |
 | P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | ⏳ M3 **用户门控** |
-| P5 | bfcache / fission 挂账定稿 | ⏳ M4 |
+| P5 | bfcache / fission 挂账定稿 | ✅ M4 定稿（bfcache：无实现面，依赖 frame tree→Document 快照管线，挂账至 M3 后续立项；fission：charter 排除维持。见 [M4 评估](evidence/2026-10-09-m4-closeout-assessment.md)） |
 
 ## 已完成切片
 
@@ -105,20 +105,37 @@ history-interface 91.8% / navigation-api 72.6%；全量 20.9%→69.2%）
   navigation-api 69.7%→**72.6%**（anchor-download 族 6T/F→10P）；全量 67.4%→**69.2%**；
   per-subtest 精确 diff 零回归。余 host 激活路径锚线程 = S4I。
   证据：[evidence/2026-10-09-m2-s4h-anchor-download.md](evidence/2026-10-09-m2-s4h-anchor-download.md)。
-- **质量门禁（十一片）**：`make test` 全绿 20,228 P / 0 F（S4H 轮）；`make reftest` 704/704
+- **M2-S4I host 激活路径锚线程（2026-10-09）**：`__zwNavAnchorNavigate` 全局暴露（状态回传
+  'canceled'/'intercepted'/'download'/'host'——host 导航决策外移）+ user_actions.rs SetFragment
+  前置线程（sourceElement/downloadRequest）+ Navigate effect 锚预导航（状态 ≠ host 跳过 host
+  导航）+ 锚 href expando-first 读（hasOwnProperty 门）。
+  navigation-api 72.6%→**73.5%**（userInitiated/download-userInitiated 两案收口）；全量
+  69.2%→**69.7%**；per-subtest 精确 diff 零回归。余静态锚 href IDL 落 attr 面回流 element
+  IDL 域。
+  证据：[evidence/2026-10-09-m2-s4i-host-activation.md](evidence/2026-10-09-m2-s4i-host-activation.md)。
+- **质量门禁（十二片）**：`make test` 全绿 20,233 P / 0 F（S4I 轮；renderer js_worker reset_purge
+  全量负载偶发 flake 已归因兄弟流 crate——solo 82/82 过、复跑全绿）；`make reftest` 704/704
   零失败（2026-10-08 复验）；clippy -D warnings 零 warning；fmt 零 diff；每轮全量语料零回归
   （per-subtest 精确 diff）。全量批墙钟 TIME_LIMIT=2700（批内不与 make test 并发）。
 
+## M4 收口评估（2026-10-09）
+
+**判定**：DC-1 ✅ / DC-2 ✅（主簇） / DC-4 ✅；**DC-3 ⏳ 用户门控 pending（未获豁免）→ goal
+不判 DONE，维持 Active 推进态**。残余 136 Fail/Timeout 全量盘点定性：A 域回流（DOM 焦点
+~9 / 渲染 ~20 / element IDL 2）、B runner 形态（replace-before-load 38 + bfcache 族 ~10 +
+跨文档链 ~6）、C 可切片 ~25（form submit 5、state 分槽 2、activation 暴露 4、dispose 深簇 6
+等）。P5 bfcache/fission 定稿：bfcache 无实现面挂账至 M3 后续立项；fission charter 排除维持。
+证据：[evidence/2026-10-09-m4-closeout-assessment.md](evidence/2026-10-09-m4-closeout-assessment.md)。
+
 ## 下一步计划
 
-1. **M2-S4I host 激活路径锚线程**：testdriver click 的 host `Activate` 管线（user_actions.rs
-  `PageEffect::SetFragment`/`Navigate`）绕过 JS 锚分支——前置线程脚本（sourceElement/
-  downloadRequest）+ `_navAnchorNavigate` 全局暴露；form submit navigate 族（5T）一并评估。
+1. **M2-S4J form submit navigate 族**（5T——form.submit()/requestSubmit → navigate 事件
+   formData/sourceElement 面，参照锚路径 S4H 模式）。
+2. **C 类可切片余项**：state classic/nav 分槽 2F → navigation-activation 暴露 4F → dispose
+   深簇 ~6F（每案带语料断言，逐簇出数字）。
 2. **replace-before-load 38F 重定性 → M3 依赖**（2026-10-09 勘察）：全簇为 iframe 载体
    （setupSentinelIframe/insertIframe + 子文档 load 前自导航），断言 iframe 自有 session
    history 的 replace 语义——单文档 runner 形态不可达，随 M3 frame tree 一并解锁。
-3. **M4 收口评估**：DC 逐项判定（DC-1 ✓ / DC-2 轻面主簇已收 / DC-4 门禁连续全绿；DC-3
-   用户门控维持 pending）；bfcache/fission 挂账定稿。
 4. **M2 ③ 跨文档导航语义**（navigating-across-documents 2/42）：主体依赖跨文档导航链
    + testdriver 用户手势，单文档 runner 形态不可达——runner 形态升级前仅记账。
 5. **M2 ④-D 残余挂账域回流点**：Tab 键顺序焦点导航 + autofocus load 期处理（DOM 焦点域）；

@@ -2989,9 +2989,14 @@ pub(crate) fn remeasure_inline_only_containers(
     // IFC 重测以容器内容原点为行盒起点（无视块级子已占据的流高度），重跑后
     // sync_inline_child_boxes_from_ifc 把 inline 子 y 从 taffy 正确堆叠位（body>p+svg 的
     // y=35）覆写回 0 → inline svg 与块级 p 重叠（view-box 五案 2.92% 像素 y 偏 36px 根因）。
-    // **限 replaced 标签**：含非 replaced inline 子（span 等 R109 split-inline 域）的混排
+    // **限 replaced 类**：含非 replaced inline 子（span 等 R109 split-inline 域）的混排
     // 容器照常 remeasure——首版无此限定时 block-in-inline-insert 九案 diff 翻倍回归
     //（其 inline 子几何依赖 IFC 同步）。
+    // R5011：replaced 类判定从八类**标签**（is_replaced_element_tag）扩为 R4489 口径
+    //（is_replaced_element，含 input/select/textarea/button 原子表单控件）——body>p+input
+    // 形态的原子 inline-block 与 svg 同属「converter 映射 taffy Block 堆叠、几何已正确」，
+    // IFC 原点偏置同步同样有害（transform-input-001 带 17 案：input 栈被定到容器原点
+    // +margin，较流位整体上移 25px）。span 等非 replaced 仍走 IFC 同步（限定不变）。
     let in_flow_children: Vec<&LayoutBox> = box_node
         .children
         .iter()
@@ -3027,8 +3032,20 @@ pub(crate) fn remeasure_inline_only_containers(
             })
             .all(|c| {
                 c.node_id
-                    .is_some_and(|id| crate::tree::is_replaced_element_tag(doc, id))
+                    .is_some_and(|id| crate::inline_block_split::is_replaced_element(&id, doc))
             })
+        // R5011 收窄：容器有**非空白直接文本**时保留 IFC 重测——真实行盒存在，原子
+        // inline 的 baseline 对齐依赖 IFC 同步（inline-block-alignment/inline-table-
+        // alignment 族回退实证）；纯「块级子 + 原子控件交替、无文本」的容器才整跳
+        //（此时 IFC 原点偏置行盒是伪行，仅有害）。
+        && !box_node.node_id.is_some_and(|id| {
+            doc.child_nodes(id).iter().any(|c| {
+                doc.get(*c).is_some_and(|n| match &n.kind {
+                    NodeKind::Text(t) => !t.content.trim().is_empty(),
+                    _ => false,
+                })
+            })
+        })
         // R4108 收窄：inline replaced 子声明百分比尺寸（如 height="100%"）时块化堆叠会把
         // % 高相对块级 CB 解析（replaced-element-008：svg height=100% + aspect-ratio 从
         // 100×100 爆成 782×548），与 atomic inline 的行盒内解析分叉——此类保留旧 IFC 路径。
