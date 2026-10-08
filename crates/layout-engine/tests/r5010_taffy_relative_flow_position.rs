@@ -14,7 +14,10 @@ fn relative_child_places_at_static_flow_position() {
     let prev = taffy
         .new_leaf(Style {
             display: Display::Block,
-            size: taffy::Size { width: taffy::Dimension::length(100.0), height: taffy::Dimension::length(19.0) },
+            size: taffy::Size {
+                width: taffy::Dimension::length(100.0),
+                height: taffy::Dimension::length(19.0),
+            },
             margin: taffy::Rect {
                 left: taffy::LengthPercentageAuto::length(0.0),
                 right: taffy::LengthPercentageAuto::length(0.0),
@@ -28,7 +31,10 @@ fn relative_child_places_at_static_flow_position() {
         .new_leaf(Style {
             display: Display::Block,
             position: Position::Relative,
-            size: taffy::Size { width: taffy::Dimension::length(100.0), height: taffy::Dimension::length(32.0) },
+            size: taffy::Size {
+                width: taffy::Dimension::length(100.0),
+                height: taffy::Dimension::length(32.0),
+            },
             margin: taffy::Rect {
                 left: taffy::LengthPercentageAuto::length(0.0),
                 right: taffy::LengthPercentageAuto::length(0.0),
@@ -38,10 +44,19 @@ fn relative_child_places_at_static_flow_position() {
             ..Default::default()
         })
         .unwrap();
-    let root_style = Style { display: Display::Block, ..Default::default() };
+    let root_style = Style {
+        display: Display::Block,
+        ..Default::default()
+    };
     let root = taffy.new_with_children(root_style, &[prev, rel]).unwrap();
     taffy
-        .compute_layout(root, taffy::Size { width: AvailableSpace::Definite(800.0), height: AvailableSpace::MaxContent })
+        .compute_layout(
+            root,
+            taffy::Size {
+                width: AvailableSpace::Definite(800.0),
+                height: AvailableSpace::MaxContent,
+            },
+        )
         .unwrap();
     let loc = taffy.layout(rel).unwrap().location;
     assert!(
