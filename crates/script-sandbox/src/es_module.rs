@@ -2507,6 +2507,31 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
     }
 
     #[test]
+    fn test_export_star_as_eval_arguments_no_local_var() {
+        // 包裹体总在 'use strict' 下运行：`var eval`/`var arguments` 是 strict 早
+        // 错误（SyntaxError），与保留字同类（sib-6，c986462ad）——`export * as
+        // eval/arguments from` 须跳过局部声明，仅保留导出绑定。
+        // https://tc39.es/ecma262/#sec-identifiers-static-semantics-early-errors
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("https://a.test/shared.js", "export const v=7;");
+        let r = sb
+            .execute_module(
+                concat!(
+                    "export*as eval from\"./shared.js\";",
+                    "export*as arguments from\"./shared.js\";",
+                    "export const o='ok';",
+                ),
+                Some("https://a.test/entry.js"),
+            )
+            .unwrap();
+        let nsj = &r.namespace_json;
+        assert!(
+            nsj.contains("\"o\":\"ok\"") && nsj.contains("\"eval\"") && nsj.contains("\"arguments\""),
+            "namespace={nsj}",
+        );
+    }
+
+    #[test]
     fn test_entry_self_import_shares_own_exports() {
         // 入口自导入（github.com environment 入口真实结构，2026-10-08 home-reload 证据：
         // `import*as i from"./environment-*.js";e.C(i)`）：自导入不得再内联一份入口体
