@@ -663,10 +663,14 @@ fn module_provides_export(
         // export * [as N] from 'module'（压缩形态 export*from"m" 同样命中）
         if let Some(after_star) = rest.strip_prefix('*') {
             let after = after_star.trim_start();
-            if let Some(after_as) = after.strip_prefix("as").map(str::trim_start)
-                && let Some((namespace, _)) = split_from_clause(after_as)
-            {
-                if namespace.trim() == name {
+            // export * as ns from 'dep' 仅提供命名空间绑定 ns 本身，不透传 dep 的
+            // 具名导出（https://tc39.es/ecma262/#prod-ExportDeclaration
+            // StarAsNamespaceExportClause）——不得落入下方 re-export-all 递归，
+            // 否则 import{k} 会错误命中并运行时得到 undefined（审查 F5）。
+            if let Some(after_as) = after.strip_prefix("as").map(str::trim_start) {
+                if let Some((namespace, _)) = split_from_clause(after_as)
+                    && namespace.trim() == name
+                {
                     return true;
                 }
                 continue;
@@ -859,8 +863,13 @@ fn transform_export(
 
 /// `/` 是否为正则字面量起点（而非除号）：按前一个有效字符判定。
 /// 无前文/运算符后 → 正则；标识符组成字符后仅关键字（return/typeof/in 等）→ 正则，
-/// 其余标识符与数字 → 除号；`)`/`]`/`.` 后 → 除号；`}` 按块语句结尾 → 正则。
-/// 误判方向是安全的：两条路径都原样保留文本，只影响切分点位置，不破坏字面量。
+/// 其余标识符与数字 → 除号；`)`/`]`/`.`/`+`/`-`/引号后 → 除号；`}` 按块语句结尾 → 正则。
+/// 两条路径都原样保留文本，误判只影响切分点位置，不破坏字面量。
+///
+/// 已知限制（审查 F2）：前缀归除号侧的字符后接正则时（如 `if(x)/re/.test(y)`、
+/// `a-/re/.test(s)`）不原子消费——正则体按普通文本扫描，仅当体内含引号或
+/// 语句边界字符时才产生错误切分；true 误判则把除法两侧当正则消费。
+/// 两者都产生错误切分而非文本破坏，暂以穷举关键字清单控制误判面。
 fn is_regex_literal_start(prev: Option<&char>, prev_word: &str) -> bool {
     match prev {
         None => true,
@@ -1660,6 +1669,29 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
     }
 
     #[test]
+    fn test_export_star_as_namespace_does_not_reexport_named() {
+        // export * as ns 只提供命名空间绑定 ns 本身，不透传 dep 的具名导出
+        // （审查 F5；红态：import{k} 错误命中 → 运行时 undefined）。
+        let mut registry = ModuleRegistry::new();
+        registry.register("./dep.js", "export const k = 1;");
+        registry.register("./mid.js", "export*as ns from'./dep.js';");
+        let error = compile_module_script(
+            "import { k } from './mid.js';",
+            "https://example.test/entry.js",
+            &registry,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("does not provide an export named k"));
+        // 命名空间绑定本身仍可导入。
+        let ok = compile_module_script(
+            "import { ns } from './mid.js';",
+            "https://example.test/entry.js",
+            &registry,
+        );
+        assert!(ok.is_ok(), "export * as ns 应满足同名具名导入");
+    }
+
+    #[test]
     fn imported_classic_script_exposes_top_level_lexical_binding() {
         assert_eq!(
             expose_classic_script_lexicals("const imported = 'value';"),
@@ -2003,7 +2035,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
 
     #[test]
     fn test_multiline_template_body_stays_one_statement() {
-        // 模板正文含裸换行 + 插值内含字符串（github.com app-runtime 真实形态，
+        // 模板正文含裸换行 + 插值内含字符串（github.com fetch-utilities 真实形态，
         // 2026-10-08 environment 图编译证据）：插值闭合后必须恢复模板上下文，
         // 否则正文换行被当作语句边界、插值内引号开启虚假字符串。
         let src = concat!(
@@ -2017,11 +2049,40 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
     }
 
     #[test]
+    fn test_template_interpolation_string_with_backtick_splits_after() {
+        // 插值内字符串含反引号（PR #114 审查 A2 变异验证样例）：旧实现（引号交替、
+        // 无插值上下文机）把整条切成 1 条（尾句被吞），插值上下文机须切成 2 条。
+        let src = "var s=`a${f('`')}b`;var t=1;";
+        let stmts = split_statements(src);
+        assert_eq!(stmts.len(), 2, "stmts={stmts:?}");
+        assert!(stmts[0].starts_with("var s=`a${f('`')}b`"), "stmts={stmts:?}");
+        assert_eq!(stmts[1], "var t=1");
+    }
+
+    #[test]
+    fn test_template_interpolation_regex_and_comments_dont_leak_context() {
+        // 插值内正则字面量与注释（PR #114 审查 F1 回归：TemplateBrace 分支
+        // 原先不消费正则、不识别注释——正则内引号开启幽灵字符串上下文，
+        // 模块其余部分的 import/export 不再被识别/改写；HTML 转义习语
+        // `${t.replace(/[' "]/g,…)}` 实测触发）。尾部 import/export 必须仍被识别。
+        let src = concat!(
+            "var tag=`<a title=${t.replace(/[' \"]/g,String.fromCharCode(95))}>`;",
+            "import{a}from\"./dep.js\";",
+            "export const v=a;",
+        );
+        let stmts = split_statements(src);
+        assert_eq!(stmts.len(), 3, "stmts={stmts:?}");
+        assert!(stmts[0].contains("String.fromCharCode(95)"), "stmts={stmts:?}");
+        assert!(stmts[1].starts_with("import{a}"), "stmts={stmts:?}");
+        assert!(stmts[2].starts_with("export const"), "stmts={stmts:?}");
+    }
+
+    #[test]
     fn test_template_trailing_newline_before_close_stays_one_statement() {
-        // 模板正文末尾裸换行紧邻闭合反引号（github.com react-core 真实形态，
-        // 2026-10-08 t2g 轮 "Loading chunk cmi failed" 证据）：
-        // `${r\n}`——裸换行位于插值内部，随后的 `}` 闭合插值、反引号闭合模板。
-        // 整体是单条 var 声明（f 与 x 同声明），插值内换行不得触发切分。
+        // 插值内部裸换行的上下文恢复守卫：`${r\n}`——裸换行位于插值内部，
+        // 随后的 `}` 闭合插值、反引号闭合模板。整体是单条 var 声明
+        // （f 与 x 同声明），插值内换行不得触发切分（2026-10-08 模板
+        // 上下文机设计样例）。
         let src = "var f=(e,t)=>`${e}${t}=${r\n}`,x=1;";
         let stmts = split_statements(src);
         assert_eq!(stmts.len(), 1, "stmts={stmts:?}");
