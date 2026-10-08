@@ -865,6 +865,8 @@
         // `_zwFragmentAdded` 解析树，与 R83 childNodes 融合视图同源）；firstChild/lastChild
         // 派生；nodeType=11。
         if (prop === 'content' && _realTag(sel, handle) === 'TEMPLATE') {
+          // t8i 修复：content 身份缓存命中（恒等语义见下方返回处注记）。
+          if (proxy._zwTplContentView) return proxy._zwTplContentView;
           // R145（js-dom M4）：sel-based 模板（静态 HTML 解析产物）content 同样可读——
           // 子经 `_childNodeList(sel)`（host `__zw_child_nodes` JSON 的 parsed 子树，
           // 与 R83 融合视图同源）。WPT pointer-event-document-move：
@@ -1082,35 +1084,54 @@
               return c;
             },
           };
-          if (!handle) {
-            _tplContent.cloneNode = function (deep) {
-              // R145：内联 fragment 克隆（不经 Node.prototype 泛型——泛型的 own-property
-              // 委托守卫会命中本 own cloneNode 再委托回来 → 无限递归）。建真 fragment
-              // handle + 递归 clone 子。
-              // WC-M2：contents 子是深 JSON 本地构建的 plain 节点（无 sel/handle）——
-              // plain 子的 cloneNode 产物仍 plain，replaceWith(fragment) 的 R321 展开只认
-              // handle 子（host wire + 桶记账）→ 静默丢弃。此处以 **document 重建**
-              //（createElement + attrs + textContent 递归）产 handle 子，与旧 proxy 子
-              // 的 host-wire 语义对齐（R380 的 replaceWith 消费面）。
-              var _r145F = globalThis.document.createDocumentFragment();
-              if (deep) {
-                var _r145K = _r145SelKids();
-                for (var _r145i = 0; _r145i < _r145K.length; _r145i++) {
-                  var _r145c = _r145K[_r145i];
-                  if (!_r145c) continue;
-                  try {
-                    if (_r145c.__zwHandle || (_r145c.__zwSelector && typeof _r145c.cloneNode === 'function')) {
-                      _r145F.appendChild(_r145c.cloneNode(true));
-                    } else {
-                      _r145F.appendChild(_wcRebuildAsHandle(_r145c));
-                    }
-                  } catch (_e145c) {}
-                }
+          // t8i 修复（site-compat bilibili-20261002-r1）：cloneNode 补齐 **handle 形态**——
+          // 旧 `if (!handle)` 门只补给 sel 形态；handle 形态（createElement('template')，
+          // Vue legacy insertStaticContent 与 lit 同款创建路径）视图为普通字面对象、
+          // 原型链 Object.prototype，注释所称「走 Node.prototype 泛型克隆」对普通对象
+          // 不可达（t8i 形判探针实证：typeof content.cloneNode === 'undefined'，
+          // bilibili 首页 Vue legacy hydration 抛 "i.cloneNode is not a function" 簇，
+          // 见 evidence/t8g-merged-smoke/r1/clone-probe-*.json 基线对照）。
+          // R145 历史注记：早期 own 版本（委托 Node.prototype 泛型）曾遮蔽泛型致 lit
+          // 首渲染链断——本实现为自包含内联克隆（不经泛型、无委托回环），与 sel 形态
+          // 现行实现同款；e2e_lit_library 为 lit 回归网。
+          _tplContent.cloneNode = function (deep) {
+            // R145：内联 fragment 克隆（不经 Node.prototype 泛型——泛型的 own-property
+            // 委托守卫会命中本 own cloneNode 再委托回来 → 无限递归）。建真 fragment
+            // handle + 递归 clone 子。
+            // WC-M2：sel 形态 contents 子是深 JSON 本地构建的 plain 节点（无
+            // sel/handle）——plain 子的 cloneNode 产物仍 plain，replaceWith(fragment)
+            // 的 R321 展开只认 handle 子（host wire + 桶记账）→ 静默丢弃。此处以
+            // **document 重建**（createElement + attrs + textContent 递归）产 handle 子，
+            // 与 proxy 子的 host-wire 语义对齐（R380 的 replaceWith 消费面）；
+            // handle 形态子本就是 handle/proxy（首个分支直接 clone，rebuild 分支不触发）。
+            var _r145F = globalThis.document.createDocumentFragment();
+            if (deep) {
+              var _r145K = _r145SelKids();
+              for (var _r145i = 0; _r145i < _r145K.length; _r145i++) {
+                var _r145c = _r145K[_r145i];
+                if (!_r145c) continue;
+                try {
+                  if (_r145c.__zwHandle || (_r145c.__zwSelector && typeof _r145c.cloneNode === 'function')) {
+                    _r145F.appendChild(_r145c.cloneNode(true));
+                  } else {
+                    _r145F.appendChild(_wcRebuildAsHandle(_r145c));
+                  }
+                } catch (_e145c) {}
               }
-              return _r145F;
-            };
-          }
-return _tplContent;
+            }
+            return _r145F;
+          };
+          // t8i 修复：content 身份恒等（spec the-template-element：content 返回模板
+          // contents 的同一 DocumentFragment，`t.content === t.content`）——旧实现每读
+          // 新建视图字面量（t8i 形判探针 identity=false 实证）。视图为无内部状态的活读
+          // 包装（childNodes 等 getter 每读现取 _r145SelKids），缓存不陈旧。
+          proxy._zwTplContentView = _tplContent;
+          // t8i：handle 形态视图带自导入标记——importNode 对其保持修复前「返回视图
+          // 本体」行为（lit 的 importNode(content) 消费面；克隆子树的 text-ref 插入
+          // 路径未打通，拷贝分发放大响应式二次 render 不落地）。sel 形态不带本标记，
+          // importNode 走既有 cloneNode 拷贝分发（part27 createTestTree 依赖）。
+          if (handle) _tplContent.__zwTplViewSelfImport = true;
+          return proxy._zwTplContentView;
         }
         if (prop === 'innerHTML') {
           // js-dom M4 R83：handle 元素（createElement 容器）——host 回调只反映
@@ -6226,11 +6247,92 @@ return _tplContent;
                 } else if (_r97cc && _r97cc.nodeType) {
                   if (_r97Pos >= 0) _r97Kb.splice(_r97Pos, 0, _r97cc);
                   else _r97Kb.push(_r97cc);
+                  // t8i：M 域解析子收编（adoption）——innerHTML= 的 _zwFragmentAdded 产物
+                  //（_zwMEl：无 handle 无 sel，script 路径 fabric，见 part03）。三步：
+                  // ① _zwForceParentLink 重挂 parentNode（R3018 兄弟 getter 经
+                  // node.parentNode 动态走新父 overlay/registry——Vue legacy
+                  // insertStaticContent 缓存路径 `i=i.nextSibling` 即通）；
+                  // ② _zwSelPendingParent 槽（R304 同款）——dual 身份父（sel+handle 并存，
+                  // 站点 #app）childNodes 读走 _childNodeList+overlay，槽缺失即同步视图
+                  // 死区（探针 fresh kids=1 实证）；③ cloneNode 补齐（缓存路径对捕获边界
+                  // 调 `i.cloneNode(!0)`，域重建同款 shallow 剥子）。noWire 槽标记：本分支
+                  // 无宿主 wire，apply 代际清除（R3254-K3，前提「节点已进 host 快照」）
+                  // 须豁免，否则跨 turn 可见性二次丢失。
+                  try {
+                    if (typeof _zwForceParentLink === 'function' && typeof _makeProxy === 'function') {
+                      _zwForceParentLink(_r97cc, _makeProxy(null, handle));
+                    }
+                  } catch (_e97fp) {}
+                  try { _r97cc._zwSelPendingParent = { parentSel: sel, parentHandle: handle, nextSibling: refNode || null, noWire: true }; } catch (_e97sp) {}
+                  try {
+                    if (typeof _r97cc.cloneNode !== 'function' && typeof _wcRebuildAsHandle === 'function') {
+                      Object.defineProperty(_r97cc, 'cloneNode', {
+                        value: (function (_r97src) {
+                          return function (deep) {
+                            var _r97cl = _wcRebuildAsHandle(_r97src);
+                            if (deep !== true && _r97cl && _r97cl.nodeType === 1 && _r97cl.childNodes && _r97cl.childNodes.length) {
+                              var _r97clk = _r97cl.childNodes.slice();
+                              for (var _r97ci = 0; _r97ci < _r97clk.length; _r97ci++) {
+                                try { _r97cl.removeChild(_r97clk[_r97ci]); } catch (_e97sh) {}
+                              }
+                            }
+                            return _r97cl;
+                          };
+                        })(_r97cc),
+                        writable: true, configurable: true,
+                      });
+                    }
+                  } catch (_e97cn) {}
                 }
               }
               _mo_notify(sel, handle, { type: 'childList', addedNodes: _r97Fb.slice(), removedNodes: [], previousSibling: null, nextSibling: refNode || null });
               var _r97Pb = _ceParentConnected(sel, handle);
               for (var _r97l = 0; _r97l < _r97Fb.length; _r97l++) _ceApplyConn(_r97Fb[_r97l], _r97Pb);
+              return newNode;
+            }
+            // t8i：fragment 视图插入 **sel-only 容器**（handle 空——querySelector 产物
+            // 容器，Vue root mount 形态；R97 的 handle 门使本形态此前静默 no-op，探针
+            // B fresh kids=1 实证）。可见性走 sel 域 overlay：解析子收编三步同 R97
+            //（重挂 parentNode → `_makeProxy(sel, null)`；`_zwSelPendingParent` 槽
+            // parentSel=sel 供 `_childNodeList` 的 `!handle` 基底缓存分支 overlay 并入；
+            // cloneNode 域重建补齐——缓存挂载边界克隆同款）。noWire：sel 域子无 sel/
+            // handle 无法落地宿主，K3 apply 清除豁免同 R97（前提「节点已进快照」不
+            // 成立）。本形态此前为静默 no-op 死区，分支只从 no-op 转正确语义。
+            if (newNode && !newNode.__zwHandle && newNode.nodeType === 11 && !handle && sel) {
+              var _r97sFb = [];
+              try { _r97sFb = Array.prototype.slice.call(newNode.childNodes || []); } catch (_e97sg) {}
+              for (var _r97s = 0; _r97s < _r97sFb.length; _r97s++) {
+                var _r97sc = _r97sFb[_r97s];
+                if (!_r97sc || !_r97sc.nodeType) continue;
+                try {
+                  if (typeof _zwForceParentLink === 'function' && typeof _makeProxy === 'function') {
+                    _zwForceParentLink(_r97sc, _makeProxy(sel, null));
+                  }
+                } catch (_e97sfp) {}
+                try { _r97sc._zwSelPendingParent = { parentSel: sel, nextSibling: refNode || null, noWire: true }; } catch (_e97ssp) {}
+                try {
+                  if (typeof _r97sc.cloneNode !== 'function' && typeof _wcRebuildAsHandle === 'function') {
+                    Object.defineProperty(_r97sc, 'cloneNode', {
+                      value: (function (_r97sSrc) {
+                        return function (deep) {
+                          var _r97sCl = _wcRebuildAsHandle(_r97sSrc);
+                          if (deep !== true && _r97sCl && _r97sCl.nodeType === 1 && _r97sCl.childNodes && _r97sCl.childNodes.length) {
+                            var _r97sClKids = _r97sCl.childNodes.slice();
+                            for (var _r97sCi = 0; _r97sCi < _r97sClKids.length; _r97sCi++) {
+                              try { _r97sCl.removeChild(_r97sClKids[_r97sCi]); } catch (_e97ssh) {}
+                            }
+                          }
+                          return _r97sCl;
+                        };
+                      })(_r97sc),
+                      writable: true, configurable: true,
+                    });
+                  }
+                } catch (_e97scn) {}
+              }
+              _mo_notify(sel, null, { type: 'childList', addedNodes: _r97sFb.slice(), removedNodes: [], previousSibling: null, nextSibling: refNode || null });
+              var _r97sPb = _ceParentConnected(sel, null);
+              for (var _r97sl = 0; _r97sl < _r97sFb.length; _r97sl++) _ceApplyConn(_r97sFb[_r97sl], _r97sPb);
               return newNode;
             }
             // R5001 M3 片 a 收口（html-syntax-compat）：plain 节点（_zwMEl 解析子——无
@@ -6313,11 +6415,144 @@ return _tplContent;
                     __zw_append_fragment_children_handle(handle, newNode.__zwHandle);
                   else if (typeof __zw_append_fragment_children === 'function')
                     __zw_append_fragment_children(sel, newNode.__zwHandle);
+                  // t8i（site-compat bilibili-20261002-r1）：handle 容器 JS registry
+                  // 尾部展开——旧版只发 host wire（host 侧移动，`_handleChildren` 不
+                  // 更新，而 handle 容器融合视图以 registry 为权威）→ 视图零增
+                  //（探针 nullRef:0）。lit render() 根 Part endAnchor=null，commit 为
+                  // `container.insertBefore(importedFragment, null)` 精确命中本形态。
+                  // 正序 push 尾部（appendChild 等价语义）。
+                  if (handle && ceAdded.length) {
+                    var _t8iRegN = _handleChildren[handle];
+                    if (!_t8iRegN) { _handleChildren[handle] = []; _t8iRegN = _handleChildren[handle]; }
+                    for (var _t8iN = 0; _t8iN < ceAdded.length; _t8iN++) {
+                      var _t8iKN = ceAdded[_t8iN];
+                      if (!_t8iKN || !_t8iKN.nodeType) continue;
+                      _t8iRegN.push(_t8iKN);
+                      if (_t8iKN.__zwHandle) {
+                        try {
+                          if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+                            _zwNodeParent[_t8iKN.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
+                          }
+                        } catch (_eT8inpN) {}
+                      } else {
+                        // t8i：M 域解析代理（innerHTML= 的 _zwFragmentAdded 产物，无
+                        // __zwHandle——script 路径 template.content 的同步视图成员）。
+                        // ① 重挂 parentNode（appendChild fragment 分支的
+                        // _zwForceParentLink 同款）：R3018 兄弟 getter 经
+                        // node.parentNode.childNodes 动态求值，重挂后 Vue
+                        // insertStaticContent 缓存路径的 i=i.nextSibling 走新父 registry。
+                        try {
+                          if (typeof _zwForceParentLink === 'function' && typeof _makeProxy === 'function') {
+                            _zwForceParentLink(_t8iKN, _makeProxy(null, handle));
+                          }
+                        } catch (_eT8ifpN) {}
+                        // ② _zwSelPendingParent 槽（R304 同款）：dual 身份父（有 sel）的
+                        // childNodes 走 host 快照 + overlay，overlay 对无 handle 子按本槽
+                        // 定位并入；null = 尾部（本分支为 append 语义）。
+                        try { _t8iKN._zwSelPendingParent = { parentSel: sel, nextSibling: null }; } catch (_eT8ispN) {}
+                        // ③ cloneNode：M 域解析代理缺 Node 方法（Vue 缓存路径
+                        // i.cloneNode(!0) 首个消费面）——_wcRebuildAsHandle 同域重建
+                        //（attributes/childNodes 面匹配），shallow 剥子。
+                        try {
+                          if (typeof _t8iKN.cloneNode !== 'function' && typeof _wcRebuildAsHandle === 'function') {
+                            Object.defineProperty(_t8iKN, 'cloneNode', {
+                              value: (function (_t8iSrc) {
+                                return function (deep) {
+                                  var _t8iCl = _wcRebuildAsHandle(_t8iSrc);
+                                  if (deep !== true && _t8iCl && _t8iCl.nodeType === 1 && _t8iCl.childNodes && _t8iCl.childNodes.length) {
+                                    var _t8iClKids = _t8iCl.childNodes.slice();
+                                    for (var _t8iCi = 0; _t8iCi < _t8iClKids.length; _t8iCi++) {
+                                      try { _t8iCl.removeChild(_t8iClKids[_t8iCi]); } catch (_eT8ish) {}
+                                    }
+                                  }
+                                  return _t8iCl;
+                                };
+                              })(_t8iKN),
+                              writable: true, configurable: true,
+                            });
+                          }
+                        } catch (_eT8icnN) {}
+                      }
+                    }
+                    // R225 平展语义：fragment registry 清空（子已移动，防同 fragment
+                    // 二次插入复制子）。
+                    var _t8iFragRegN = _handleChildren[newNode.__zwHandle];
+                    if (_t8iFragRegN && _t8iFragRegN.length) _t8iFragRegN.length = 0;
+                  }
                 } else if (refNode.__zwSelector) {
                   if (handle && typeof __zw_insert_fragment_before_handle === 'function')
                     __zw_insert_fragment_before_handle(handle, newNode.__zwHandle, refNode.__zwSelector);
                   else if (typeof __zw_insert_fragment_before === 'function')
                     __zw_insert_fragment_before(sel, newNode.__zwHandle, refNode.__zwSelector);
+                } else if (handle && refNode && refNode.__zwHandle) {
+                  // t8i（site-compat bilibili-20261002-r1）：ref 为 comment marker /
+                  // create 句柄节点（有 handle 无 selector）——lit commit 的
+                  // `marker.parentNode.insertBefore(importedFragment, endNode)` 精确
+                  // 形态：旧版 host wire 双分支（ref==null / ref.__zwSelector）全
+                  // miss → fragment 子滞留原位（探针实证：容器零增、fragment
+                  // childNodes 不清；lit render 后容器只剩 marker，模板静态子全丢）。
+                  // https://dom.spec.whatwg.org/#concept-node-pre-insert（fragment
+                  // 参数逐子插入，appendChild 已有同语义路径）。R101 同款：host
+                  // wire `__zw_insert_before_handle_handle`（apply 侧 ref handle
+                  // miss 降级 append 尾部）+ JS registry 按 ref 位 splice + 反链。
+                  // 顺序保持：**倒序**逐子插同一 ref 前位（同位 splice/insert-before-ref
+                  // 语义下倒序迭代 = 正序落位，R97 视图分支同款）；末尾清空
+                  // fragment registry（R225 平展语义）。ceAdded 已在分支顶取好，共享
+                  // 尾段以 fragment 子为 addedNodes 单次通知（不逐子重复）。
+                  var _t8iFK = ceAdded;
+                  var _t8iReg = _handleChildren[handle];
+                  if (!_t8iReg) { _handleChildren[handle] = []; _t8iReg = _handleChildren[handle]; }
+                  var _t8iAt = _t8iReg.indexOf(refNode);
+                  // host wire：以 fragment 句柄整体 flatten 到 ref 前（子可能为 M 域
+                  // 解析代理无 handle，per-kid wire 不适用；apply 侧
+                  // move_fragment_children(ref) 平展，ref miss 降级 append）。
+                  if (typeof __zw_insert_fragment_children_before_handle === 'function') {
+                    try { __zw_insert_fragment_children_before_handle(handle, newNode.__zwHandle, refNode.__zwHandle); } catch (_eT8iw) {}
+                  }
+                  for (var _t8ii = _t8iFK.length - 1; _t8ii >= 0; _t8ii--) {
+                    var _t8ik = _t8iFK[_t8ii];
+                    if (!_t8ik || !_t8ik.nodeType) continue;
+                    if (_t8iAt >= 0) _t8iReg.splice(_t8iAt, 0, _t8ik);
+                    else _t8iReg.push(_t8ik);
+                    if (_t8ik.__zwHandle) {
+                      try {
+                        if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+                          _zwNodeParent[_t8ik.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
+                        }
+                      } catch (_eT8inp) {}
+                    } else {
+                      // t8i：M 域解析代理收编（语义同上方 null-ref 分支①②③——
+                      // 重挂 parentNode + _zwSelPendingParent 槽 + cloneNode 补齐；
+                      // 槽 nextSibling = refNode：overlay 按 ref 位并入）。
+                      try {
+                        if (typeof _zwForceParentLink === 'function' && typeof _makeProxy === 'function') {
+                          _zwForceParentLink(_t8ik, _makeProxy(null, handle));
+                        }
+                      } catch (_eT8ifp) {}
+                      try { _t8ik._zwSelPendingParent = { parentSel: sel, nextSibling: refNode }; } catch (_eT8isp) {}
+                      try {
+                        if (typeof _t8ik.cloneNode !== 'function' && typeof _wcRebuildAsHandle === 'function') {
+                          Object.defineProperty(_t8ik, 'cloneNode', {
+                            value: (function (_t8iSrc) {
+                              return function (deep) {
+                                var _t8iCl = _wcRebuildAsHandle(_t8iSrc);
+                                if (deep !== true && _t8iCl && _t8iCl.nodeType === 1 && _t8iCl.childNodes && _t8iCl.childNodes.length) {
+                                  var _t8iClKids = _t8iCl.childNodes.slice();
+                                  for (var _t8iCi = 0; _t8iCi < _t8iClKids.length; _t8iCi++) {
+                                    try { _t8iCl.removeChild(_t8iClKids[_t8iCi]); } catch (_eT8ish) {}
+                                  }
+                                }
+                                return _t8iCl;
+                              };
+                            })(_t8ik),
+                            writable: true, configurable: true,
+                          });
+                        }
+                      } catch (_eT8icn) {}
+                    }
+                  }
+                  var _t8iFragReg = _handleChildren[newNode.__zwHandle];
+                  if (_t8iFragReg && _t8iFragReg.length) _t8iFragReg.length = 0;
                 }
               } else if (refNode == null) {
                 // `insertBefore(node, null)` 等价于 appendChild。
