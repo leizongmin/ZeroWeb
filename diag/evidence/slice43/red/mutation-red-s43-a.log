@@ -1,0 +1,26 @@
+TREE_SHA=c2d1cc741059fafa2724de83206ea2ca3e423adc
+MUTATION=working-tree delta red/mutation-only-delta-s43-a.diff（vs 8a43654d7，单腿撤 _zwHCCollectSubtree parsed 展开）
+   Compiling zero-engine v0.1.0 (/home/lei/work/ZeroWeb/crates/engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.69s
+
+running 2 tests
+test js_dom_bridge::tests::named_access_attr_join_detached_gate_s43 ... ok
+test js_dom_bridge::tests::named_access_collection_parsed_subtree_remove_s43 ... FAILED
+
+failures:
+
+---- js_dom_bridge::tests::named_access_collection_parsed_subtree_remove_s43 stdout ----
+
+thread 'js_dom_bridge::tests::named_access_collection_parsed_subtree_remove_s43' (796869) panicked at crates/engine/src/js_dom_bridge_tests/part43.rs:82:5:
+assertion `left == right` failed: held NA 集合随子树移除清空（spec：named objects 限当下 document tree；修前 stale 2）
+  left: "2"
+ right: "0"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    js_dom_bridge::tests::named_access_collection_parsed_subtree_remove_s43
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 2903 filtered out; finished in 0.06s
+
+EXIT=101

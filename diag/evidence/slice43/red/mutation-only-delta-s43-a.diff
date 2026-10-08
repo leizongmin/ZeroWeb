@@ -1,0 +1,16 @@
+diff --git a/crates/engine/src/js_dom_shim/part05.js b/crates/engine/src/js_dom_shim/part05.js
+index 4e7f42fea..2248ac9c4 100644
+--- a/crates/engine/src/js_dom_shim/part05.js
++++ b/crates/engine/src/js_dom_shim/part05.js
+@@ -10232,11 +10232,6 @@
+       // identity 稳定）；与桶 added 重叠的条目由下游 Set 判重吸收（对冲/removed
+       // 记账均幂等）。spec：集合视图限当下 document tree，子树移除成员随树离场。
+       // https://dom.spec.whatwg.org/#concept-collection
+-      var _s43parsed = null;
+-      try { _s43parsed = _childNodeList(node.__zwSelector); } catch (_e43pc) { _s43parsed = null; }
+-      if (_s43parsed) {
+-        for (var p43i = 0; p43i < _s43parsed.length; p43i++) _zwHCCollectSubtree(_s43parsed[p43i], out);
+-      }
+       return;
+     }
+     if (kids) {
