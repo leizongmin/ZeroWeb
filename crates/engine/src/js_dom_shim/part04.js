@@ -4260,7 +4260,13 @@ return _tplContent;
                 var _r154Href = '';
                 try { _r154Href = handle ? __zw_get_attr_handle(handle, 'href') : (sel ? __zw_get_attr(sel, 'href') : ''); } catch (_e154h) { _r154Href = ''; }
                 if (_r154Href && String(_r154Href).charAt(0) === '#' && globalThis.location) {
+                  // M2-S4B（navigation-compat）：sourceElement 线程——navigate 事件的 sourceElement
+                  // = 触发导航的 anchor（WPT navigate-anchor-fragment `e.sourceElement ===
+                  // document.getElementById('a')` 身份断言）。本作用域 sel 为选择器串 → 经
+                  // querySelector 物化为元素代理（R333 代理缓存保身份）。hash-setter hook 读后即清。
+                  try { globalThis.__zwNavSourceElement = (sel && globalThis.document) ? globalThis.document.querySelector(sel) : null; } catch (_e154se) { globalThis.__zwNavSourceElement = null; }
                   try { globalThis.location.hash = String(_r154Href).slice(1); } catch (_e154s) {}
+                  globalThis.__zwNavSourceElement = null;
                 }
               }
               // R155（js-dom M4）：LABEL 的 click default action——转发激活到内部第一个
