@@ -303,7 +303,7 @@ impl ResourceLoader {
     /// 受理 HTTP 请求并将导航与资源目的地写入匿名加载事件。
     pub fn submit_http_with_context_in_partition(
         &self,
-        request: HttpRequest,
+        mut request: HttpRequest,
         priority: FetchPriority,
         partition: impl Into<String>,
         navigation_id: Option<u64>,
@@ -335,7 +335,8 @@ impl ResourceLoader {
         let (tx, rx) = mpsc::channel();
         crate::client::async_runtime().spawn(async move {
             {
-                let store = shared_cookie_store().lock().expect("shared cookie store lock");
+                let jar = shared_cookie_store();
+                let store = jar.lock().expect("shared cookie store lock");
                 merge_cookie_request_header(&store, &request.url, &mut request.headers);
             }
             let result = HttpClient::send_async_with_timeout(30, request)
@@ -343,7 +344,8 @@ impl ResourceLoader {
                 .map_err(|error| error.to_string());
             if let Ok(response) = &result {
                 {
-                    let mut store = shared_cookie_store().lock().expect("shared cookie store lock");
+                    let jar = shared_cookie_store();
+                    let mut store = jar.lock().expect("shared cookie store lock");
                     store_set_cookie_headers(&mut store, &url, &response.headers);
                 }
                 if response.is_success() {
@@ -383,7 +385,8 @@ impl ResourceLoader {
             }
         }
         {
-            let store = shared_cookie_store().lock().expect("shared cookie store lock");
+            let jar = shared_cookie_store();
+            let store = jar.lock().expect("shared cookie store lock");
             merge_cookie_request_header(&store, &request.url, &mut headers);
         }
         let key = request.identity_key();
@@ -432,7 +435,8 @@ impl ResourceLoader {
                     .ok_or_else(|| "304 without cached entry".to_string()),
                 Ok(response) => {
                     {
-                        let mut store = shared_cookie_store().lock().expect("shared cookie store lock");
+                        let jar = shared_cookie_store();
+                        let mut store = jar.lock().expect("shared cookie store lock");
                         store_set_cookie_headers(&mut store, &url, &response.headers);
                     }
                     if may_store && response.is_success() {

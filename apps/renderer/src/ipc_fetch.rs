@@ -62,9 +62,8 @@ impl InflightIpcFetches {
         };
         let InflightEntry { reply, request_url } = entry;
         {
-            let mut jar = zero_net::shared_cookie_store()
-                .lock()
-                .expect("shared cookie store lock");
+            let store = zero_net::shared_cookie_store();
+            let mut jar = store.lock().expect("shared cookie store lock");
             zero_net::store_set_cookie_headers(&mut jar, &request_url, headers);
         }
         if (200..300).contains(status_code)
@@ -553,7 +552,10 @@ mod tests {
         ));
         assert!(matches!(
             inflight.pending.get(&1),
-            Some(InflightReply::StreamBytes { .. })
+            Some(InflightEntry {
+                reply: InflightReply::StreamBytes { .. },
+                ..
+            })
         ));
     }
 
@@ -569,7 +571,13 @@ mod tests {
         }
 
         assert_eq!(next_id, 8);
-        assert!(matches!(inflight.pending.get(&7), Some(InflightReply::Ignore)));
+        assert!(matches!(
+            inflight.pending.get(&7),
+            Some(InflightEntry {
+                reply: InflightReply::Ignore,
+                ..
+            })
+        ));
         let frame = buf.0.lock().unwrap();
         let payload_len = u32::from_le_bytes(frame[..4].try_into().unwrap()) as usize;
         assert_eq!(payload_len, frame.len() - 4);
@@ -622,7 +630,13 @@ mod tests {
             }) if method == "DNS-PREFETCH" && headers.is_empty()
         ));
         drop(frame);
-        assert!(matches!(inflight.pending.get(&9), Some(InflightReply::Ignore)));
+        assert!(matches!(
+            inflight.pending.get(&9),
+            Some(InflightEntry {
+                reply: InflightReply::Ignore,
+                ..
+            })
+        ));
     }
 
     #[test]
