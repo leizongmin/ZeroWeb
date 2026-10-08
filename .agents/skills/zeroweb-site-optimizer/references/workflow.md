@@ -2,6 +2,7 @@
 
 启动、恢复、重新规划及整体完成判断前读取。总控由当前宿主 Agent 执行；
 检查器只读，不创建后台服务，也不自动调用子 Agent、Git 或浏览器。
+压缩、交接和阶段切换按 [恢复入口](recovery.md) 重新加载规则及原账本。
 
 ## 从输入形成完成条件
 
@@ -121,7 +122,8 @@ status 为 intended/running/completed：
 result。失败也是 completed，但结果明确失败，不据此将任务记 done。
 当前 Agent 自行执行时 executor_ref 使用可核对的宿主任务身份，同样记录开始/结束。
 completed 后不能改 result，重试用新 ID。结果未知时保留未决操作。
-publish 在 verifying、代码 review 在 pr_review、merge 在 merging、integrate 在
+首次 publish 在 verifying；已有 PR 的正文、附件和审查状态更新也可在 pr_review 派发
+publish，无须重开实施。代码 review 在 pr_review、merge 在 merging、integrate 在
 integrating 派发；本地验证 review 可在 verifying。合并操作的 subject 必须保存
 delivery 中的 repo/pr/base_branch/base_sha/head_sha，持久化后不得改写。
 子任务工具不支持某种角色时用当前主控实际宿主身份执行其获准操作，不虚构 child ID。
@@ -141,11 +143,11 @@ subject 固定为 `{manifest_sha256,contract_sha256}`，分别绑定派发时的
   "kind": "pr", "repo": "owner/repository", "pr": 123,
   "base_branch": "已授权集成分支", "base_sha": "完整 Git SHA", "head_sha": "完整 Git SHA",
   "candidate_manifest": null,
-  "review": null, "merge": null, "integration": null
+  "review": null, "presentation": null, "merge": null, "integration": null
 }
 ```
 
-candidate_manifest 与三项回执均为运行目录内 `{path,sha256}`。候选 manifest 须明确
+candidate_manifest 与各项回执均为运行目录内 `{path,sha256}`。候选 manifest 须明确
 source_sha、base_sha、dirty_patch；前两项分别等于 PR head/base，dirty_patch=null
 表示验证的是干净提交。沿用现有构建清单的二进制、features 等证据，字段不同则生成
 引用原清单摘要的适配清单，禁止猜填。尚未取得候选身份时引用可为 null，但不能合并。
@@ -162,10 +164,16 @@ artifacts（非空原始证据引用）。审查和合并报告还须包含同�
 
 - review：verdict=PASS 或 CHANGES_REQUIRED、open_findings 数组、
   subject（候选 manifest 摘要）、reviewer={executor_ref,independent}。
+  stage、review_scope、角色报告和完成 operation 按 [双审查字段契约](independent-review.md)。
   交付前须 PASS、零未解决阻断项，汇总 reviewer 不是总控或该运行的任何实施者。
   适用双审查时，artifacts 引用两份独立首轮、发现处置及必要的非作者补丁复核；
   各首轮与复核分别作为串行 review operation 保存，不能把首轮单独填为 delivery.review。
   返修和 base/head 漂移后定向复核并生成当前版本的汇总报告；旧报告保留，不能重绑 SHA。
+- presentation：远端正文与附件核验回执，字段见 [GitHub 交付](github-delivery.md)。
+  Draft 阶段可为 null；进入 merging、integrating 或远端 done 时须通过正文与截图检查。
+  正文修改后保存新的回读和回执；head 未变也不能复用旧 body 摘要。
+  更新汇总后，旧 presentation 自动视为过期，pr_review 仍允许登记 publish 补齐；
+  过期状态不能进入 merging 或记 done。
 - merge：confirmed=true、commit（服务端确认的完整合并 SHA）、
   review_sha256（使用的 review 引用摘要）。未知结果保持引用 null、操作未决；
   明确未合并则完成失败操作并回 pr_review，不能把失败回执放入成功 merge 字段。
@@ -183,8 +191,10 @@ repairs_task_id 指向原任务；返修任务不得直接或间接依赖未完�
 整体验收失败同样追加任务，关联原 goals，保留已 done 的历史。
 
 检查器核对结构、摘要、状态转换和回执身份，不查询 GitHub 或判断报告是否造假。
-双角色报告齐全、非作者复核、CI、保护规则、PR 当前状态、原始日志语义和上下文独立性仍由主控实查；
+双角色、非作者复核、报告版本和 completed operation 关系已进入机器检查；
+CI、保护规则、PR 当前状态、原始日志语义和上下文独立性仍由主控实查；
 不得把本地 review 回执伪装成 GitHub required approval。
+合并前另运行 delivery-check.mjs ready 回读当前正文；离线 workflow PASS 不能证明远端未变。
 
 首次建立后，每次保存必须带上一个不可变 workflow 快照：
 
@@ -197,6 +207,14 @@ node .agents/skills/zeroweb-site-optimizer/scripts/verify-workflow.mjs \
 转换或证据错误，不可推进。`next` 是阶段建议，不是权限或实际调度：
 continue、wait_or_recover、estimate_budget、verify_executor、final_acceptance、replan、stop。
 必须实际核对宿主、原始报告、授权及预算。检查器不证明 Agent 已持续执行。
+
+升级前的回执没有 stage/review_scope，且 delivery 没有 presentation 字段时，按旧格式
+核验 previous 快照。当前快照只保留两类旧交付：与 previous 完全一致的 done 任务，
+以及 previous 已确认合并且身份、review/merge 回执不变的任务；后者继续完成集成验证。
+输出 `legacy_delivery_tasks` 明确列出这些历史任务，不能宣称其已通过新增双审查或正文检查。
+尚未交付的旧任务须回到 pr_review，保留旧证据文件、清空过期 delivery.review 引用后，
+通过新的 review/publish operations 补齐再交付。不得改旧 operation、预算或已 done 记录。
+新合并、新的 pr_only done 和无 previous 的检查始终要求完整新版回执。
 
 新目标需要初始规划；旧运行已有冻结任务时从原记录迁移，保留 original/best/trial、
 已有次数上限、deadline、失败和消费。缺失字段按原始证据补齐，不能猜补为成功。

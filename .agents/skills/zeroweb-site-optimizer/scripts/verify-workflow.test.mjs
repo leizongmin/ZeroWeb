@@ -1,19 +1,21 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { chmod, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { verifyWorkflow } from './verify-workflow.mjs';
+import { reviewSection } from './pr-body.mjs';
+import { recoveryPacket } from './recover.mjs';
 
 const now = Date.parse('2026-01-01T00:10:00Z');
 const hash = data => createHash('sha256').update(data).digest('hex');
 
 /** 构造独立的合成目标、候选证据与累计预算，不启动产品或访问网络。 */
 async function fixture(t) {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'zeroweb-workflow-'));
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'zeroweb-workflow-')));
   t.after(() => rm(root, { recursive: true, force: true }));
   let sequence = 0;
   async function save(value) {
@@ -300,6 +302,46 @@ test('CLI separates ready records, incomplete work and invalid evidence', async 
   assert.ok(!invalid.stderr.includes(f.root));
 });
 
+/** 保存合成双审查及正文，真实派发转换由专门的相邻状态测试覆盖。 */
+async function recordReview(f, task, fields = {}) {
+  const identity = Object.fromEntries(['repo', 'pr', 'base_branch', 'base_sha', 'head_sha']
+    .map(key => [key, task.delivery[key]]));
+  const common = { schema_version: 1, task_id: task.id, ...identity,
+    candidate_manifest: task.delivery.candidate_manifest, subject: task.delivery.candidate_manifest.sha256,
+    verdict: 'PASS', open_findings: [], artifacts: [f.raw] };
+  const artifacts = [];
+  for (const role of ['test_validity', 'defects']) {
+    const report = { ...common, stage: 'first', role,
+      reviewer: { executor_ref: `${task.id}-${role}`, independent: true } };
+    const ref = await f.save(report);
+    artifacts.push(ref);
+    if (!f.workflow.operations.some(op => op.result?.sha256 === ref.sha256)) {
+      f.workflow.operations.push({ id: `review-${f.workflow.operations.length}`, task_id: task.id,
+        kind: 'review', status: 'completed', executor_ref: report.reviewer.executor_ref, result: ref });
+    }
+  }
+  const summary = { ...common, stage: 'summary', review_scope: 'dual', artifacts,
+    reviewer: { executor_ref: 'code-reviewer', independent: true }, ...fields };
+  task.delivery.review = await f.save(summary);
+  f.workflow.operations.push({ id: `summary-${f.workflow.operations.length}`, task_id: task.id,
+    kind: 'review', status: 'completed', executor_ref: summary.reviewer.executor_ref, result: task.delivery.review });
+  await recordPresentation(f, task);
+}
+
+/** 模拟已回读的无产品画面 PR，不用真实图片或网络为测试凑证据。 */
+async function recordPresentation(f, task) {
+  const body = ['## 解决了什么\n修复导航。', '## 怎么验证\n行为回归。',
+    '## 还有什么问题\n无已知问题。', '## 优化前后截图\n纯合成测试，无产品画面。',
+    await reviewSection(f.root, task, f.workflow)].join('\n\n');
+  const name = `body-${randomUUID()}.md`;
+  await writeFile(path.join(f.root, name), body);
+  const bodyRef = { path: name, sha256: hash(body) };
+  task.delivery.presentation = await f.save({ schema_version: 1, task_id: task.id,
+    ...Object.fromEntries(['repo', 'pr', 'base_branch', 'base_sha', 'head_sha'].map(key => [key, task.delivery[key]])),
+    review_sha256: task.delivery.review.sha256, body_ref: bodyRef, artifacts: [f.raw],
+    screenshots: { status: 'not_applicable', reason: '纯合成测试，无产品画面。', evidence_ref: f.raw } });
+}
+
 /** 模拟阶段 PR 的服务端回执；测试不访问 GitHub、不产生远端副作用。 */
 async function remoteFixture(t) {
   const f = await fixture(t);
@@ -326,9 +368,7 @@ async function remoteFixture(t) {
   }
   await validateCandidate();
   async function review(fields = {}) {
-    task.delivery.review = await receipt({ ...identity(), subject: task.delivery.candidate_manifest.sha256,
-      verdict: 'PASS', open_findings: [],
-      reviewer: { executor_ref: 'code-reviewer', independent: true }, ...fields });
+    await recordReview(f, task, fields);
   }
   async function merge() {
     task.delivery.merge = await receipt({ ...identity(), confirmed: true, commit: 'c'.repeat(40),
@@ -383,7 +423,7 @@ test('review findings lead to repair and fresh review of the same PR', async t =
   f.task.status = 'pr_review';
   await f.validateCandidate();
   await f.review();
-  await f.check(previous);
+  await f.check();
   previous = await f.flush();
   f.workflow.revision++;
   f.task.status = 'merging';
@@ -508,7 +548,7 @@ for (const change of ['head_sha', 'base_sha', 'implementer', 'controller', 'find
     const f = await remoteFixture(t);
     await f.review();
     if (change.endsWith('_sha')) f.task.delivery[change] = 'd'.repeat(40);
-    if (change === 'implementer') f.workflow.operations.push({ id: 'impl', task_id: f.task.id,
+    if (change === 'implementer') f.workflow.operations.unshift({ id: 'impl', task_id: f.task.id,
       kind: 'implement', status: 'completed', executor_ref: 'code-reviewer', result: f.raw });
     if (change === 'controller') await f.review({
       reviewer: { executor_ref: 'controller', independent: true } });
@@ -529,8 +569,8 @@ test('unknown merge blocks dependencies, confirmed integration releases the next
   f.task.status = 'integrating';
   await assert.rejects(f.check(), /Confirmed merge/);
   await f.merge();
-  f.workflow.operations[0].status = 'completed';
-  f.workflow.operations[0].result = f.task.delivery.merge;
+  f.workflow.operations.at(-1).status = 'completed';
+  f.workflow.operations.at(-1).result = f.task.delivery.merge;
   assert.deepEqual((await f.check()).ready_tasks, [f.task.id]);
   let previous = await f.flush();
   f.workflow.revision++;
@@ -598,7 +638,7 @@ test('user stop forbids merge, and merge intent must match exact reviewed identi
     status: 'intended', executor_ref: null, result: null, subject: f.identity() });
   await assert.rejects(f.check(previous), /stopped workflow/);
   f.workflow.stop_reason = null;
-  f.workflow.operations = [];
+  f.workflow.operations.pop();
   previous = await f.flush();
   f.workflow.revision++;
   f.workflow.operations.push({ id: 'merge', task_id: f.task.id, kind: 'merge',
@@ -644,11 +684,10 @@ test('integration of a separate repair unblocks the original and its dependent',
   const identity = { ...f.identity(), pr: 2, base_sha: 'c'.repeat(40), head_sha: 'd'.repeat(40) };
   const receipt = fields => f.save({ schema_version: 1, task_id: repair.id, artifacts: [f.raw], ...fields });
   const manifest = await f.save({ source_sha: identity.head_sha, base_sha: identity.base_sha, dirty_patch: null });
-  repair.delivery = { kind: 'pr', ...identity, candidate_manifest: manifest, review: await receipt({ ...identity,
-    subject: manifest.sha256,
-    verdict: 'PASS', open_findings: [], reviewer: { executor_ref: 'repair-reviewer', independent: true } }),
-  merge: null, integration: null };
-  await f.check(previous);
+  repair.delivery = { kind: 'pr', ...identity, candidate_manifest: manifest,
+    review: null, merge: null, integration: null };
+  await recordReview(f, repair);
+  await f.check();
   await f.check(await advance('merging'));
   previous = await advance('integrating');
   repair.delivery.merge = await receipt({ ...identity, confirmed: true, commit: 'e'.repeat(40),
@@ -683,8 +722,8 @@ test('merge gates, receipt identity and integration best cannot be substituted',
   await assert.rejects(f.check(previous), /passing candidate gates/);
   gate.result = result;
   await f.merge();
-  f.workflow.operations[0].status = 'completed';
-  f.workflow.operations[0].result = f.task.delivery.merge;
+  f.workflow.operations.at(-1).status = 'completed';
+  f.workflow.operations.at(-1).result = f.task.delivery.merge;
   f.task.status = 'integrating';
   previous = await f.flush();
   f.workflow.revision++;
@@ -703,12 +742,12 @@ test('merge gates, receipt identity and integration best cannot be substituted',
 test('regression: a newly reviewed PR head cannot reuse old candidate gates', async t => {
   const f = await remoteFixture(t);
   await f.review();
-  const previous = await f.flush();
-  f.workflow.revision++;
   f.task.delivery.head_sha = 'f'.repeat(40);
   f.task.delivery.candidate_manifest = await f.save({ source_sha: f.task.delivery.head_sha,
     base_sha: f.task.delivery.base_sha, dirty_patch: null });
   await f.review({ subject: f.task.delivery.candidate_manifest.sha256 });
+  const previous = await f.flush();
+  f.workflow.revision++;
   f.task.status = 'merging';
   f.workflow.operations.push({ id: 'new-head-merge', task_id: f.task.id, kind: 'merge',
     status: 'intended', executor_ref: null, result: null, subject: f.identity() });
@@ -883,4 +922,320 @@ test('iteration cap permits final acceptance but not another implementation or d
   assert.equal((await f.check(previous)).next, 'wait_or_recover');
   f.cp.deadline_at = '2026-01-01T00:05:00Z';
   assert.equal((await f.check()).reason, 'budget_exhausted');
+});
+
+/** 新汇总另记终态，保留所有旧报告与操作；用于定向破坏证据链。 */
+async function newSummary(f, report) {
+  const id = `summary-${randomUUID()}`;
+  f.task.delivery.review = await f.save({ ...report, operation_id: id });
+  f.workflow.operations.push({ id, task_id: f.task.id,
+    kind: 'review', status: 'completed', executor_ref: report.reviewer.executor_ref,
+    result: f.task.delivery.review });
+  await recordPresentation(f, f.task);
+}
+
+for (const mutation of ['missing-role', 'same-executor', 'missing-operation', 'different-candidate']) {
+  test(`review completeness rejects ${mutation}`, async t => {
+    const f = await remoteFixture(t);
+    await f.review();
+    const summary = JSON.parse(await readFile(path.join(f.root, f.task.delivery.review.path)));
+    if (mutation === 'missing-role') summary.artifacts.pop();
+    if (mutation === 'missing-operation') f.workflow.operations.shift();
+    if (mutation === 'same-executor' || mutation === 'different-candidate') {
+      const ref = summary.artifacts[1];
+      const report = JSON.parse(await readFile(path.join(f.root, ref.path)));
+      if (mutation === 'same-executor') report.reviewer.executor_ref = `${f.task.id}-test_validity`;
+      else {
+        report.head_sha = 'e'.repeat(40);
+        report.candidate_manifest = await f.save({ source_sha: report.head_sha,
+          base_sha: report.base_sha, dirty_patch: null });
+        report.subject = report.candidate_manifest.sha256;
+      }
+      const replacement = await f.save(report);
+      const op = f.workflow.operations.find(item => item.result?.sha256 === ref.sha256);
+      op.result = replacement;
+      op.executor_ref = report.reviewer.executor_ref;
+      summary.artifacts[1] = replacement;
+    }
+    await newSummary(f, summary);
+    f.task.status = 'merging';
+    await assert.rejects(f.check(), /roles required|reviewers must differ|matching completed operation|candidates must match/);
+  });
+}
+
+test('changed head retains first reports and requires non-author recheck of every patch', async t => {
+  const f = await remoteFixture(t);
+  await f.review();
+  const summary = JSON.parse(await readFile(path.join(f.root, f.task.delivery.review.path)));
+  const originalFirst = structuredClone(summary.artifacts);
+  const from = { ...f.identity(), subject: summary.subject };
+  f.workflow.operations.push({ id: 'repair', task_id: f.task.id, kind: 'implement',
+    status: 'completed', executor_ref: 'patch-author', result: f.raw });
+  f.task.delivery.head_sha = 'd'.repeat(40);
+  await f.validateCandidate();
+  Object.assign(summary, f.identity(), { subject: f.task.delivery.candidate_manifest.sha256 });
+  await newSummary(f, summary);
+  f.task.status = 'merging';
+  await assert.rejects(f.check(), /Changed candidate requires recheck/);
+  const recheck = { schema_version: 1, task_id: f.task.id, ...f.identity(),
+    subject: summary.subject, candidate_manifest: f.task.delivery.candidate_manifest,
+    stage: 'recheck', role: 'defects', from, covers_operations: ['repair'],
+    reviewer: { executor_ref: 'patch-author', independent: true },
+    verdict: 'PASS', open_findings: [], artifacts: [f.raw] };
+  async function appendRecheck() {
+    const ref = await f.save(recheck);
+    f.workflow.operations.push({ id: `recheck-${f.workflow.operations.length}`, task_id: f.task.id,
+      kind: 'review', status: 'completed', executor_ref: recheck.reviewer.executor_ref, result: ref });
+    summary.artifacts = [...originalFirst, ref];
+    await newSummary(f, summary);
+  }
+  await appendRecheck();
+  await assert.rejects(f.check(), /non-author/);
+  recheck.reviewer.executor_ref = 'non-author';
+  recheck.covers_operations = [];
+  await appendRecheck();
+  await assert.rejects(f.check(), /Missing patch recheck/);
+  recheck.covers_operations = ['repair'];
+  await appendRecheck();
+  assert.equal((await f.check()).next, 'continue');
+  for (const ref of originalFirst) {
+    const report = JSON.parse(await readFile(path.join(f.root, ref.path)));
+    assert.equal(report.head_sha, 'b'.repeat(40));
+  }
+});
+
+test('new repair can persist intent before new review exists', async t => {
+  const f = await remoteFixture(t);
+  await f.review();
+  f.task.status = 'needs_fix';
+  const previous = await f.flush();
+  f.workflow.revision++;
+  f.task.status = 'implementing';
+  f.workflow.operations.push({ id: 'repair-intent', task_id: f.task.id, kind: 'implement',
+    status: 'intended', executor_ref: null, result: null });
+  assert.equal((await f.check(previous)).next, 'wait_or_recover');
+  f.task.status = 'merging';
+  await assert.rejects(f.check(), /independent review/);
+});
+
+test('editorial exemption still requires an independent completed summary and scope evidence', async t => {
+  const f = await remoteFixture(t);
+  await f.review();
+  const summary = JSON.parse(await readFile(path.join(f.root, f.task.delivery.review.path)));
+  summary.review_scope = 'editorial';
+  summary.artifacts = [f.raw];
+  summary.scope_reason = 'Spelling only';
+  await newSummary(f, summary);
+  f.task.status = 'merging';
+  await assert.rejects(f.check(), /scope evidence/);
+  summary.scope_evidence = f.raw;
+  await newSummary(f, summary);
+  assert.equal((await f.check()).next, 'continue');
+});
+
+test('reviewed PR cannot merge or finish PR-only without current presentation', async t => {
+  const f = await remoteFixture(t);
+  await f.review();
+  f.task.delivery.presentation = null;
+  f.task.status = 'merging';
+  await assert.rejects(f.check(), /presentation required/);
+  f.workflow.delivery_mode = 'pr_only';
+  f.task.status = 'done';
+  f.task.evidence = f.raw;
+  await assert.rejects(f.check(), /presentation required/);
+});
+
+test('recovery reloads stage rules while preserving stop, deadline and unknown merge', async t => {
+  const f = await remoteFixture(t);
+  await f.review();
+  f.task.status = 'merging';
+  f.workflow.stop_reason = 'user_stopped';
+  f.workflow.operations.push({ id: 'merge-unknown', task_id: f.task.id, kind: 'merge',
+    status: 'running', executor_ref: 'controller', result: null, subject: f.identity() });
+  const packet = await recoveryPacket(await f.flush(), null, now);
+  assert.equal(packet.stop_reason, 'user_stopped');
+  assert.equal(packet.deadline_at, f.cp.deadline_at);
+  assert.equal(packet.verdict.next, 'stop');
+  assert.equal(packet.unresolved_operations[0].id, 'merge-unknown');
+  assert.ok(packet.required_reads.some(item => item.path.endsWith('github-delivery.md') && item.sha256));
+  f.workflow.revision++;
+  const missingPrevious = await recoveryPacket(await f.flush(), null, now);
+  assert.equal(missingPrevious.verdict.next, 'repair_records');
+  assert.equal(missingPrevious.stop_reason, 'user_stopped');
+});
+
+test('operation chronology cannot be rewritten across snapshots', async t => {
+  const f = await remoteFixture(t);
+  await f.review();
+  const previous = await f.flush();
+  f.workflow.revision++;
+  [f.workflow.operations[0], f.workflow.operations[1]] = [f.workflow.operations[1], f.workflow.operations[0]];
+  await recordPresentation(f, f.task);
+  await assert.rejects(f.check(previous), /Operation order changed/);
+});
+
+test('dual review advances through persisted intents, results, presentation and merge intent', async t => {
+  const f = await remoteFixture(t);
+  await f.review();
+  const operations = structuredClone(f.workflow.operations);
+  const review = f.task.delivery.review;
+  f.workflow.operations = [];
+  f.task.delivery.review = null;
+  f.task.delivery.presentation = null;
+  for (const completed of operations) {
+    let previous = await f.flush();
+    f.workflow.revision++;
+    const op = { ...completed, status: 'intended', executor_ref: null, result: null };
+    f.workflow.operations.push(op);
+    assert.equal((await f.check(previous)).next, 'wait_or_recover');
+    previous = await f.flush();
+    f.workflow.revision++;
+    op.status = 'running';
+    op.executor_ref = completed.executor_ref;
+    await f.check(previous);
+    previous = await f.flush();
+    f.workflow.revision++;
+    Object.assign(op, completed);
+    if (completed.result.sha256 === review.sha256) {
+      f.task.delivery.review = review;
+      await recordPresentation(f, f.task);
+    }
+    await f.check(previous);
+  }
+  const previous = await f.flush();
+  f.workflow.revision++;
+  f.task.status = 'merging';
+  f.workflow.operations.push({ id: 'merge', task_id: f.task.id, kind: 'merge',
+    status: 'intended', executor_ref: null, result: null, subject: f.identity() });
+  assert.equal((await f.check(previous)).next, 'wait_or_recover');
+});
+
+test('delivery CLI reads remote body, rejects edits and checks stop before querying',
+  { skip: process.platform === 'win32' ? 'Fake gh uses a POSIX shell' : false }, async t => {
+  const f = await remoteFixture(t);
+  await f.review();
+  f.cp.deadline_at = null;
+  const presentation = JSON.parse(await readFile(path.join(f.root, f.task.delivery.presentation.path)));
+  const body = await readFile(path.join(f.root, presentation.body_ref.path), 'utf8');
+  const remote = { number: f.task.delivery.pr, baseRefName: f.task.delivery.base_branch,
+    headRefOid: f.task.delivery.head_sha, baseRefOid: f.task.delivery.base_sha,
+    state: 'OPEN', isDraft: true, body };
+  const remoteFile = path.join(f.root, 'remote.json');
+  const marker = path.join(f.root, 'queried');
+  const gh = path.join(f.root, 'gh');
+  // 仅测试子进程使用这个假 gh，不访问网络、不替换系统工具。
+  await writeFile(gh, '#!/bin/sh\nprintf queried > "$QUERY_MARKER"\ncat "$FAKE_PR"\n');
+  await chmod(gh, 0o700);
+  const cli = fileURLToPath(new URL('./delivery-check.mjs', import.meta.url));
+  async function invoke() {
+    await writeFile(remoteFile, JSON.stringify(remote));
+    return spawnSync(process.execPath, [cli, 'ready', await f.flush(), f.task.id],
+      { encoding: 'utf8', timeout: 5000, env: { ...process.env,
+        PATH: `${f.root}${path.delimiter}${process.env.PATH}`,
+        FAKE_PR: remoteFile, QUERY_MARKER: marker } });
+  }
+  assert.equal((await invoke()).status, 0);
+  remote.body += '\nRemote edit\n';
+  assert.equal((await invoke()).status, 2);
+  await rm(marker);
+  f.workflow.stop_reason = 'user_stopped';
+  assert.equal((await invoke()).status, 2);
+  await assert.rejects(readFile(marker), { code: 'ENOENT' });
+  const render = spawnSync(process.execPath, [cli, 'render', await f.flush(), f.task.id],
+    { encoding: 'utf8', timeout: 5000 });
+  assert.equal(render.status, 0);
+  assert.ok(render.stdout.includes('测试有效性首轮 | PASS'));
+  assert.ok(!render.stdout.includes('{{用 delivery-check'));
+});
+
+test('review-stage body update can persist a publish operation without reopening implementation', async t => {
+  const f = await remoteFixture(t);
+  await f.review();
+  const previous = await f.flush();
+  f.workflow.revision++;
+  f.task.delivery.presentation = null;
+  f.workflow.operations.push({ id: 'publish-review', task_id: f.task.id, kind: 'publish',
+    status: 'intended', executor_ref: null, result: null });
+  assert.equal((await f.check(previous)).next, 'wait_or_recover');
+});
+
+test('a new summary invalidates old presentation without blocking its publication', async t => {
+  const f = await remoteFixture(t);
+  await f.review();
+  const presentation = f.task.delivery.presentation;
+  const report = JSON.parse(await readFile(path.join(f.root, f.task.delivery.review.path)));
+  await newSummary(f, report);
+  f.task.delivery.presentation = presentation;
+  assert.equal((await f.check()).next, 'continue');
+  f.task.status = 'merging';
+  await assert.rejects(f.check(), /presentation required/);
+});
+
+/** 还原升级前的汇总结构；旧原始证据原样保留，不伪造新双审查。 */
+async function legacyReview(f) {
+  f.task.delivery.review = await f.receipt({ ...f.identity(), subject: f.task.delivery.candidate_manifest.sha256,
+    verdict: 'PASS', open_findings: [], reviewer: { executor_ref: 'legacy-reviewer', independent: true } });
+  delete f.task.delivery.presentation;
+}
+
+for (const stage of ['done', 'integrating']) {
+  test(`legacy ${stage} evidence remains historical across upgrade`, async t => {
+    const f = await remoteFixture(t);
+    await legacyReview(f);
+    await f.merge();
+    await f.integrate();
+    f.task.status = stage;
+    if (stage === 'done') f.task.evidence = f.raw;
+    const previous = await f.flush();
+    f.workflow.revision++;
+    if (stage === 'integrating') {
+      f.task.status = 'done';
+      f.task.evidence = f.raw;
+    }
+    const result = await f.check(previous);
+    assert.deepEqual(result.legacy_delivery_tasks, [f.task.id]);
+    assert.ok(result.ready_tasks.includes('read-fix'));
+    // 不能在没有历史参照时凭旧格式认定新交付已完成。
+    await assert.rejects(f.check());
+  });
+}
+
+test('legacy active review can be cleared for upgrade but cannot authorize a new merge', async t => {
+  const f = await remoteFixture(t);
+  await legacyReview(f);
+  const previous = await f.flush();
+  f.workflow.revision++;
+  f.task.status = 'merging';
+  await assert.rejects(f.check(previous));
+  f.task.status = 'pr_review';
+  f.task.delivery.review = null;
+  assert.equal((await f.check(previous)).next, 'continue');
+});
+
+test('review summary permits original Markdown attachments beside role reports', async t => {
+  const f = await remoteFixture(t);
+  await f.review();
+  const report = JSON.parse(await readFile(path.join(f.root, f.task.delivery.review.path)));
+  const content = '# Original review notes\nObserved behavior and evidence.\n';
+  await writeFile(path.join(f.root, 'notes.md'), content);
+  report.artifacts.push({ path: 'notes.md', sha256: hash(content) });
+  await newSummary(f, report);
+  f.task.status = 'merging';
+  assert.equal((await f.check()).next, 'continue');
+});
+
+test('visible history does not impersonate a pending current summary', async t => {
+  const f = await remoteFixture(t);
+  await f.review();
+  const originalReview = f.task.delivery.review;
+  f.task.delivery.review = null;
+  let body = await reviewSection(f.root, f.task, f.workflow);
+  assert.ok(body.includes('PASS（历史报告）'));
+  assert.ok(body.includes('| 汇总 | 待执行 |'));
+  assert.ok(body.includes('未解决阻断项：未汇总'));
+  f.task.delivery.review = originalReview;
+  f.task.delivery.head_sha = 'f'.repeat(40);
+  body = await reviewSection(f.root, f.task, f.workflow);
+  assert.ok(body.includes('| 汇总 | 待执行 |'));
+  assert.ok(body.includes('未解决阻断项：未汇总'));
 });

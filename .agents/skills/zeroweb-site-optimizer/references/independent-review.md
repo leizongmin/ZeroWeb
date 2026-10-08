@@ -79,8 +79,37 @@ intended/running/completed 和原报告；角色与阶段记在 result 报告，
 证据写明实际角色 ID、受审身份、行为与断言、发现及处置理由、补丁作者/非作者复核者、
 修复前后结果、实际门禁及未验证范围。最终回执绑定当前 head/base/manifest；
 旧报告保留原身份，新增差异由非作者复核并重跑受影响验证，不能改旧 SHA 冒充新执行。
-不新增账本或修改 checkpoint/schema。**检查器目前不检查双角色报告齐全或上下文
-隔离；主控必须实际读取核验，不能以 verify-workflow 通过代替双审查完成。**
+不新增账本或修改 checkpoint。检查器解析现有 artifacts，核对以下字段及 operation；
+主控仍须核验上下文隔离、输入包和报告内容，不能以结构通过代替真实执行。
+
+### 可检查的报告字段
+
+每份首轮和复核使用 JSON：保留 schema_version=1、task_id、五项 PR 身份、
+subject、reviewer、verdict、open_findings、artifacts；另含：
+
+- `stage: "first" | "recheck"`，`role: "test_validity" | "defects"`。
+- `candidate_manifest: {path,sha256}`，subject 等于此摘要；清单的 source_sha/base_sha
+  与报告一致、dirty_patch=null。artifacts 引用原始输入/派发完成记录及实际审查产物。
+- recheck 的 `from` 保存原双首轮的五项 PR 身份和 subject；
+  `covers_operations` 列出此次已复核补丁的 implement operation ID。每个返修操作
+  都须在非作者复核之前完成。复核绑定当前候选，并检查原首轮到当前的完整差异；
+  只改 base/head、没有新增 implement 时也需复核，covers_operations 可为空。
+
+汇总保留原公共字段并增加 `stage: "summary"`、`review_scope: "dual"`，artifacts
+引用同候选两份首轮及当前复核。存在发现时加 `resolution_ref`，指向处置及验证证据。
+每份报告及汇总都必须是对应 completed review operation 的 result，执行者须一致。
+artifacts 还可引用原始日志、Markdown 等附件；这些只校验摘要，不当作角色报告解析。
+operations 按真实派发顺序追加；首轮之间不得夹入实施。历史报告保持不可变，
+新汇总可引用原首轮，但不能将旧复核改绑当前版本。无发现无需制造补丁或复核。
+
+纯拼写/排版沿用单独汇总，`review_scope: "editorial"`，另给 `scope_reason` 和
+`scope_evidence`（完整 diff 的证据引用）；独立汇总者、完成 operation 仍必需。
+主控核对确属纯文字，不能凭此字符串豁免规则、脚本或产品行为变更。
+旧运行缺字段时保留原报告及宿主记录；没有证据则保持未完成，不把已发生的旧 operation
+重写成新报告。需要适配时，另记实际核验旧报告的 review operation，在新报告的 artifacts
+引用原摘要，按原预算完成缺失角色和汇总。已 done 或升级前已确认合并的历史任务不补造
+新审查；按 workflow 的相邻快照兼容规则保留，并披露 legacy_delivery_tasks。
+尚未交付的任务须补齐新契约，不以跳过 previous 或伪造成功绕过。
 
 只阻断本次引入/加剧的已确认缺陷、重要行为缺少必要证据和相关测试失败。
 高后果风险有具体线索但缺关键证据时保留未完成；建议及已证伪项保存处置理由，

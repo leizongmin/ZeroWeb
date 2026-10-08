@@ -42,7 +42,7 @@ function withinPrBudget(current, task) {
 }
 
 /** 读取不可变检查点引用，复用候选检查器的路径、摘要和门禁核验。 */
-async function load(file, now) {
+async function load(file, now, previous = null, readingPrevious = false) {
   const root = path.dirname(await realpath(file));
   const state = await readJson(file);
   requireValue(state.schema_version === 1 && text(state.run_id)
@@ -128,7 +128,15 @@ async function load(file, now) {
   const deliveries = new Map();
   if (deliveryMode !== 'local') {
     for (const task of state.tasks) {
-      deliveries.set(task.id, await verifyDelivery(root, task, state, checkpoint));
+      const old = previous?.state.tasks.find(item => item.id === task.id);
+      // 已完成或已经合并的旧任务保持历史含义；升级不能为新的合并补造授权。
+      const historical = old && ((old.status === 'done' && equal(old, task))
+        || (previous.deliveries.get(task.id)?.merged
+          && equal(old.delivery.review, task.delivery?.review)
+          && equal(old.delivery.merge, task.delivery?.merge)
+          && task.delivery?.kind === 'pr'
+          && equal(deliveryIdentity(old.delivery), deliveryIdentity(task.delivery))));
+      deliveries.set(task.id, await verifyDelivery(root, task, state, checkpoint, readingPrevious || historical));
     }
   }
   const prUsed = deliveryMode === 'local' ? 0 : new Set(state.tasks
@@ -262,6 +270,8 @@ function transition(previous, current) {
   for (const task of b.tasks.filter(task => !a.tasks.some(old => old.id === task.id))) {
     requireValue(task.status === 'pending', 'New task must be pending');
   }
+  requireValue(equal(a.operations.map(op => op.id), b.operations.slice(0, a.operations.length).map(op => op.id)),
+    'Operation order changed');
   for (const old of a.operations) {
     const op = b.operations.find(item => item.id === old.id);
     requireValue(op && op.task_id === old.task_id && op.kind === old.kind
@@ -288,7 +298,8 @@ function transition(previous, current) {
     requireValue(!['implement', 'publish'].includes(op.kind) || withinPrBudget(current, task),
       'PR iteration limit prevents new work');
     const expectedStage = { implement: 'implementing', review: task?.status === 'pr_review'
-      ? 'pr_review' : 'verifying', publish: 'verifying', merge: 'merging', integrate: 'integrating' };
+      ? 'pr_review' : 'verifying', publish: task?.delivery?.kind === 'pr' && task.status === 'pr_review'
+        ? 'pr_review' : 'verifying', merge: 'merging', integrate: 'integrating' };
     requireValue(op.status === 'intended' && op.executor_ref === null && op.result === null,
       'Persist dispatch intent before execution');
     if (op.kind === 'final_acceptance') {
@@ -319,8 +330,9 @@ function transition(previous, current) {
 
 /** 只读判断目标证据及下一阶段；不启动任务、不查询宿主、不授予执行权限。 */
 export async function verifyWorkflow(file, previousFile = null, now = Date.now()) {
-  const current = await load(file, now);
-  if (previousFile !== null) transition(await load(previousFile, now), current);
+  const previous = previousFile === null ? null : await load(previousFile, now, null, true);
+  const current = await load(file, now, previous);
+  if (previous !== null) transition(previous, current);
   const { state, checkpoint, gates, finalPassed, finalCurrent } = current;
   const unresolved = state.operations.some(op => op.status !== 'completed');
   const completed = state.tasks.every(task => task.status === 'done')
@@ -356,6 +368,7 @@ export async function verifyWorkflow(file, previousFile = null, now = Date.now()
     ready_tasks: next === 'continue' ? ready.map(task => task.id) : [],
     pr_iterations_used: current.prUsed, pr_iteration_limit: current.prLimit,
     pr_iteration_available: current.prAvailable,
+    legacy_delivery_tasks: [...current.deliveries].filter(([, value]) => value.legacy).map(([id]) => id),
     live_verified: false, delivery_verdict: gates.delivery_verdict,
   };
 }

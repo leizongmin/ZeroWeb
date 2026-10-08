@@ -19,7 +19,8 @@ description 包含正负触发范围，以及所有相对 Markdown 链接能找�
 ```bash
 ./target/test-guard --per-proc-mem 2 --total-mem 4 --time-limit 60 -- \
   node --test .agents/skills/zeroweb-site-optimizer/scripts/verify-run.test.mjs \
-    .agents/skills/zeroweb-site-optimizer/scripts/verify-workflow.test.mjs
+    .agents/skills/zeroweb-site-optimizer/scripts/verify-workflow.test.mjs \
+    .agents/skills/zeroweb-site-optimizer/scripts/pr-body.test.mjs
 ```
 
 测试只创建并回收自己的临时目录，不启动浏览器、不访问网络、不修改产品。覆盖完整
@@ -48,7 +49,8 @@ PR-only 不得合并和人工停止屏障。回执均为合成输入，不实际
 eval 38–45 对照 [双审查契约](../references/independent-review.md)，覆盖同候选的
 独立首轮、无效断言、已有上游保护、非作者补丁复核、预算停止、纯拼写豁免、
 中断期间候选变化及生产证据缺失。eval 24 同时核对返修后的定向复核。
-检查器仍只检查现有汇总回执，不校验双角色报告齐全；其测试通过不证明双审查执行。
+检查器解析汇总 artifacts，核对双角色、版本、非作者复核、完成 operation 和正文证据；
+测试通过仅证明记录关系的校验，不证明独立上下文或报告语义真实。
 
 进行独立场景验证时，只给新上下文 prompt、契约及必要原始材料，不给 expected_output
 或 expectations。检查实际输入/读取顺序、报告和下一动作，不能只匹配“双审查”等词。
@@ -146,3 +148,14 @@ expected_output 不交给被测 Agent。报告区分：
 仅修改本 Skill 时不启动付费或网站 Campaign。真实验收另在授权预算内选择一个
 固定静态站和一个交互站，验证多轮推进、失败重规划、中断接续及停止回收；不得将
 脚本输出的 next 或 live_verified=false 包装为已有后台调度器。
+
+## 多次压缩与交付边界
+
+eval 46–49 和确定性脚本测试覆盖恢复导航、缺失审查、旧版本接续及正文变化。
+CLI 回归使用临时假 gh 验证真实命令路径及停止前置检查，不访问 GitHub；此测试需 POSIX shell，
+Windows 跳过该项，纯函数检查仍可执行。
+模拟上下文只保留提示中的摘要、原运行目录指针和原始证据，不传期待答案。
+观察是否实际重读阶段规则、查询未决操作、使用原 deadline，并拒绝不完整交付。
+上传部分成功后只补缺图；合并未知先查询；不得重跑有效验证或覆盖历史报告。
+确定性测试、规则静态核对、模拟宿主行为、真实压缩 hook 分开报告。
+本仓尚未接入真实压缩 hook，离线通过不能证明宿主自动触发恢复或阻止绕过。

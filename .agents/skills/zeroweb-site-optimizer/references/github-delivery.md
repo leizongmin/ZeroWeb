@@ -104,7 +104,8 @@ PR description 是评审入口：按问题 ID/任务场景说明原行为、新�
 4. 合并前重查远端 head/base、CI、保护规则、可合并状态、停止屏障与本轮授权。
    按 workflow 核对 candidate_manifest 的 source_sha/base_sha/dirty_patch、review.subject
    及 checkpoint 当前门禁身份；新 head 的审查不能代替新 head 的实际验证。
-   主控实际读取汇总 artifacts 中两份首轮、发现处置及非作者复核；检查器不校验双报告齐全。
+   主控实际读取汇总 artifacts 中两份首轮、发现处置及非作者复核；检查器核对角色、
+   completed operation、版本和非作者关系，实际隔离与报告语义仍须核验。
    版本变化使受影响验证/review 失效。必须通过仓库门禁与原生保护，不以管理员绕过、
    review 文本或本地脚本 PASS 代替。审批/评论等对他人的消息不从 merge 权限推导。
 5. 主控在运行目录保存不可变 merge 意图（唯一 operation ID、repo/PR、head/base），
@@ -124,3 +125,87 @@ GitHub 与 merge receipts 保存于私有运行目录，字段和机器检查统
 “PR 证据与合并后返修”；operations 包含 publish/merge/integrate，合并意图先持久化。
 检查器只核验回执结构与身份，主控恢复前必须核对未决操作与真实服务端状态。不能把远端能力缺失
 变成再次启动已完成网站优化的理由。仅 push/PR 授权时止于对应交付，不进入本合并循环。
+
+## 正文与审查可见性检查
+
+发布/更新、派发审查、标记就绪与合并前，按 [恢复入口](recovery.md) 重新读取当前阶段原文。
+首次创建 Draft 可以尚无审查和图片，但正文须如实说明缺口，不以空占位符发布。
+先复制模板填写内容，运行检查后按既有 publish operation 发布：
+
+```bash
+node .agents/skills/zeroweb-site-optimizer/scripts/delivery-check.mjs draft "$BODY_FILE"
+```
+
+已创建 PR 后，从 completed review operations 生成状态表；也可以不传 BODY_FILE，
+从模板生成新骨架。输出到新的本地文件，人工核对后使用，不直接覆盖远端正文：
+
+```bash
+node .agents/skills/zeroweb-site-optimizer/scripts/delivery-check.mjs \
+  render "$RUN_DIR/workflow.json" "$TASK_ID" "$BODY_FILE"
+```
+
+状态表显示首轮、复核、汇总的真实 head/base、结论和报告 SHA-256；无报告显示待执行，
+当前汇总缺失或过期时显示待执行，旧汇总标为历史报告，阻断项数量显示“未汇总”。
+当前汇总存在时显示阻断项数量。默认只公开摘要和本地证据标识，不公开宿主 ID、路径或私有日志。
+可以另附已经获准公开的持久报告链接；本地路径不能冒充远端可访问证据。
+审查字段及报告格式见 [双审查](independent-review.md)。首轮输入仍须裁去已有审查结论。
+新汇总落盘后，在 pr_review 登记 publish 更新正文；旧 presentation 此时仅表示过期，
+不会阻止保存进展。正文回读完成并保存新 presentation 后，再运行 ready 预检。
+
+发布后回读正文，保留原始 Markdown 和服务端查询结果，在 delivery.presentation 中引用
+如下 JSON（所有文件均保存在原运行目录、引用均为 `{path,sha256}`）：
+
+```json
+{
+  "schema_version": 1, "task_id": "原任务 ID",
+  "repo": "owner/repository", "pr": 123, "base_branch": "原授权分支",
+  "base_sha": "完整 SHA", "head_sha": "完整 SHA",
+  "review_sha256": "当前汇总回执 SHA-256",
+  "body_ref": {"path": "pr-body.md", "sha256": "远端原始正文 SHA-256"},
+  "artifacts": [{"path": "pr-readback.json", "sha256": "查询结果 SHA-256"}],
+  "screenshots": {
+    "status": "paired",
+    "pairs": [{
+      "scene": "正文中的场景名",
+      "before": {
+        "url": "GitHub 实际返回的持久附件 URL", "sha256": "脱敏图片 SHA-256",
+        "revision": "original 或 parent best 的完整源码 SHA",
+        "content_verified": true, "render_verified": true,
+        "evidence_ref": {"path": "before-verification.json", "sha256": "核验证据 SHA-256"}
+      },
+      "after": {
+        "url": "GitHub 实际返回的持久附件 URL", "sha256": "脱敏图片 SHA-256",
+        "revision": "当前 PR head",
+        "content_verified": true, "render_verified": true,
+        "evidence_ref": {"path": "after-verification.json", "sha256": "核验证据 SHA-256"}
+      }
+    }]
+  }
+}
+```
+
+上例为结构示意，不能直接通过。每个 image.evidence_ref 指向 JSON，含 `url`、`revision`、
+`download_ref: {path,sha256}`、`content_type`、`width`、`height`、`render_verified`，
+download_ref 引用实际下载的脱敏附件，摘要须等于 image.sha256。两个 verified 字段只能由
+实际核验填写。检查器核对下载文件摘要、正文同一表格行的前后图片引用、版本及核验记录，
+不能代替查看图片、确认可比性、排版或发现敏感信息。
+无适用画面或用户禁止公开时，screenshots 使用 `status: "not_applicable" | "prohibited"`，
+给出 `reason`（正文同样展示）及 `evidence_ref`（实际变更或授权依据）。
+工具不可用或缺图使用 `status: "blocked"`，保持未就绪，不能改成“不适用”过门禁。
+
+标记交付就绪、pr_only 记 done、合并前，运行相邻快照检查及远端回读：
+
+```bash
+node .agents/skills/zeroweb-site-optimizer/scripts/delivery-check.mjs \
+  ready "$RUN_DIR/workflow.json" "$TASK_ID" "$RUN_DIR/workflow-previous.json"
+```
+
+ready 只读调用 `gh pr view`，核对最新 head/base、OPEN 状态和正文摘要；退出 0 表示本次
+预检通过，退出 2 表示缺口或查询失败。Draft 可通过预检以便随后获准标记 ready。
+输出保存为本次交付证据，操作后回读真实终态；合并意图仍先写入现有 operations。
+若修改了正文、报告或 head/base，重新生成并回读，不继续使用旧预检结果。
+未知合并结果必须先恢复，不再运行新的合并。停止或预算不足时不启动远端预检。
+
+verify-workflow 已将 presentation 和双审查完整性接入 merging/远端 done 门禁；
+离线检查只证明保存的快照。ready 预检与后续远端写入仍存在时间间隔，实际写入前核对
+身份并使用工具支持的 head 匹配保护。尚未接入宿主拦截或远端必需检查，不宣称不可绕过。

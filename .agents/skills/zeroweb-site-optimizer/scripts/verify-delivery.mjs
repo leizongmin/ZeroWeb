@@ -1,4 +1,6 @@
 import { evidence, readJson } from './verify-run.mjs';
+import { verifyReview } from './verify-review.mjs';
+import { verifyPresentation } from './pr-body.mjs';
 
 const text = value => typeof value === 'string' && value.trim().length > 0;
 const sha = value => typeof value === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
@@ -13,7 +15,7 @@ export function deliveryIdentity(delivery) {
 }
 
 /** 核验阶段交付的不可变回执；不访问 GitHub，也不替代真实保护规则检查。 */
-export async function verifyDelivery(root, task, state, checkpoint) {
+export async function verifyDelivery(root, task, state, checkpoint, allowLegacy = false) {
   const delivery = task.delivery ?? null;
   if (delivery === null) {
     requireValue(!['pr_review', 'merging', 'integrating', 'done'].includes(task.status),
@@ -46,12 +48,20 @@ export async function verifyDelivery(root, task, state, checkpoint) {
   const candidateMatches = candidate !== null && candidate.source_sha === delivery.head_sha
     && candidate.base_sha === delivery.base_sha && candidate.dirty_patch === null;
   const review = receipts.review;
+  // 仅相邻历史核验可保留升级前的交付；新交付入口默认禁止旧格式放行。
+  const legacy = allowLegacy && review !== undefined && review.stage === undefined
+    && review.review_scope === undefined && !Object.hasOwn(delivery, 'presentation');
   const implementers = state.operations.filter(op => op.kind === 'implement').map(op => op.executor_ref);
-  const reviewed = matches(review) && candidateMatches && review.subject === subject && review.verdict === 'PASS'
+  const currentReview = matches(review) && candidateMatches && review.subject === subject;
+  const reviewEvidence = legacy ? { complete: true } : currentReview
+    ? await verifyReview(root, task, state, checkpoint, review) : { complete: false };
+  const reviewed = currentReview && reviewEvidence.complete && review.verdict === 'PASS'
     && Array.isArray(review.open_findings) && review.open_findings.length === 0
     && review.reviewer?.independent === true && text(review.reviewer.executor_ref)
     && review.reviewer.executor_ref !== checkpoint.activity.executor?.ref
     && !implementers.includes(review.reviewer.executor_ref);
+  // 旧截图回执不能给新 head 放行；修复中允许保留历史回执直到重新交付。
+  const presented = reviewed && (legacy || await verifyPresentation(root, task, state));
   const merge = receipts.merge;
   const merged = reviewed && matches(merge) && merge.confirmed === true && sha(merge.commit)
     && merge.review_sha256 === delivery.review.sha256;
@@ -61,10 +71,12 @@ export async function verifyDelivery(root, task, state, checkpoint) {
     && typeof integration.subject === 'string' && /^[a-f0-9]{64}$/.test(integration.subject);
   requireValue(!['merging', 'integrating', 'done'].includes(task.status) || reviewed,
     'Current independent review required');
+  requireValue(!['merging', 'integrating', 'done'].includes(task.status) || presented,
+    'Current PR presentation required');
   requireValue(!(task.status === 'integrating' || (task.status === 'done'
     && state.delivery_mode === 'auto_merge')) || merged,
     'Confirmed merge required');
   requireValue(task.status !== 'done' || state.delivery_mode === 'pr_only' || integrated,
     'Passing integration required');
-  return { reviewed, merged, integrated, integration, subject };
+  return { reviewed, presented, merged, integrated, integration, subject, legacy };
 }
