@@ -197,8 +197,9 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry) -> Result<String,
     // 旧实现以原始 specifier 为键——两个不同目录的模块各自 `import('./config.js')` 时后者命中
     // 前者条目，静默拿到错误模块。宿主（renderer/tab/webview）已按 parent 解析出绝对 URL，
     // 回传改为 `resolved\u{1f}code`：缓存键取宿主解析键，跨目录同名相对 spec 不再碰撞；
-    // 旧契约（无分隔符的裸 code）回退 spec 键（base 语义）。宿主自身有 runtime_iifes 编译缓存，
-    // 重复调用不重复取回。
+    // 旧契约（无分隔符的裸 code）回退 spec 键（base 语义）。renderer/tab 宿主有 runtime_iifes
+    // 编译缓存，重复调用不重复取回；webview 进程内路径无宿主缓存（重复动态 import 同模块
+    // 重复取回+编译，副作用不重复——转池候选）。
     out.push_str("  var r = __zw_compile_module(spec, parent);\n");
     out.push_str("  if (!r) throw new Error('Module not found: ' + spec);\n");
     out.push_str("  var sep = r.indexOf('\\u001f');\n");
