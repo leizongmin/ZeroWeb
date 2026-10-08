@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::manifest::extract_reftest_links;
+use crate::manifest::{FuzzyMeta, extract_reftest_links};
 use crate::reftest::{ReftestCase, ReftestCategory, ReftestConfig};
 
 /// 从指定目录加载所有上游 WPT reftest。
@@ -102,6 +102,7 @@ pub fn load_file_reftests(wpt_data_dir: &Path) -> Vec<FileReftestCase> {
                 refs,
                 category: ReftestCategory::from_path(&relative_str),
                 base_dir: test_base,
+                fuzzy: parse_fuzzy_meta(&test_html),
             });
         }
     }
@@ -136,6 +137,40 @@ pub struct FileRef {
 }
 
 /// 文件加载的上游 reftest case。
+/// R5001b（WPT reftests.org fuzzy 注解）：解析 `<meta name="fuzzy"
+/// content="maxDifference=A-B;totalPixels=C-D">`——区间取**上界**（上游语义：容差上限）。
+/// name/content 引号单双皆收；无 fuzzy meta 返回 None。文件发现路径（非 MANIFEST）的
+/// 容差来源；消费方 `FileReftestCase::to_config` → `ReftestConfig::with_fuzzy_override`。
+fn parse_fuzzy_meta(html: &str) -> Option<FuzzyMeta> {
+    let lower = html.to_ascii_lowercase();
+    let name_pos = lower.find("name=\"fuzzy\"").or_else(|| lower.find("name=fuzzy"))?;
+    let tag_start = lower[..name_pos].rfind("<meta")?;
+    let tag_end = tag_start + lower[tag_start..].find('>')?;
+    let tag = &html[tag_start..tag_end];
+    let content_pos = tag.to_ascii_lowercase().find("content=")?;
+    let rest = &tag[content_pos + "content=".len()..];
+    let quote = rest.chars().next()?;
+    let content = if quote == '"' || quote == '\'' {
+        &rest[1..rest[1..].find(quote)? + 1]
+    } else {
+        rest.split_whitespace().next()?
+    };
+    let mut max_diff = None;
+    let mut total_pixels = None;
+    for pair in content.split(';') {
+        let pair = pair.trim();
+        if let Some(v) = pair.strip_prefix("maxDifference=") {
+            max_diff = v.rsplit('-').next().and_then(|s| s.trim().parse::<u32>().ok());
+        } else if let Some(v) = pair.strip_prefix("totalPixels=") {
+            total_pixels = v.rsplit('-').next().and_then(|s| s.trim().parse::<u32>().ok());
+        }
+    }
+    if max_diff.is_none() && total_pixels.is_none() {
+        return None;
+    }
+    Some(FuzzyMeta { max_diff, total_pixels })
+}
+
 pub struct FileReftestCase {
     /// 测试标识符（相对于 wpt-data 的路径；多参考测试不再展开 `#N` 变体后缀）。
     pub id: String,
@@ -147,6 +182,11 @@ pub struct FileReftestCase {
     pub category: ReftestCategory,
     /// 测试文件所在目录（用于解析相对图片路径）。
     pub base_dir: Option<PathBuf>,
+    /// WPT fuzzy 注解（`<meta name="fuzzy" content="maxDifference=A-B;totalPixels=C-D">`，
+    /// 取区间上界）。R5001b：文件发现路径此前不解析 fuzzy——transform-background-005
+    /// 类声明容差（镜像 1px 边缘 22923px 超差）被按严格阈值误判（上游语义：maxDiff 内
+    /// 像素不计、总数 ≤ totalPixels 即 pass）。
+    pub fuzzy: Option<FuzzyMeta>,
 }
 
 impl FileReftestCase {
@@ -170,7 +210,11 @@ impl FileReftestCase {
 
     /// 生成 ReftestConfig。
     pub fn to_config(&self, viewport_width: u32, viewport_height: u32) -> ReftestConfig {
-        ReftestConfig::for_category(self.category).with_viewport(viewport_width, viewport_height)
+        let mut config = ReftestConfig::for_category(self.category).with_viewport(viewport_width, viewport_height);
+        if let Some(fuzzy) = &self.fuzzy {
+            config.with_fuzzy_override(fuzzy);
+        }
+        config
     }
 }
 
