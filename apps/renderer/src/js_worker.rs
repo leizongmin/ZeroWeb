@@ -1009,6 +1009,28 @@ fn js_worker_main(
             }),
         );
     }
+    // slice45：`__zw_selector_for_handle` handle→selector 正置桥——镜像 webview
+    // `register_forward_identity_bridge_callback`。shim R51c 消零谓词
+    //（`_zwHandleInHostSnapshot`：apply 后 remove 的 handle 节点按「host 快照真含」
+    // 判定是否照常入 removed 表，part45 钉
+    // handle_form_remove_document_query_stale_s45）依赖此向把 handle 锚回 selector
+    // 后走 `__zw_contains` 核验；缺注册时谓词恒返 false（消零保持 = 修复前行为）。
+    // worker 的 `handle_selector_map` 本就是 handle→selector 正置表，O(1) get。
+    {
+        let fwd_map = Arc::clone(&handle_selector_map);
+        sandbox.register_callback(
+            "__zw_selector_for_handle",
+            Box::new(move |args: &[String]| -> String {
+                let handle = args.first().map(String::as_str).unwrap_or("");
+                fwd_map
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .get(handle)
+                    .cloned()
+                    .unwrap_or_default()
+            }),
+        );
+    }
     // S11（cdp-protocol value-only console 面）：覆盖引擎的 `__zw_console_log`（后注册者
     // 胜——execute 边界按注册序 re-bind 全局），tracing 行为保持 + 逐条推入共享队列供
     // renderer 主循环 drain → browser/headless（`Runtime.consoleAPICalled` 事件源）。
