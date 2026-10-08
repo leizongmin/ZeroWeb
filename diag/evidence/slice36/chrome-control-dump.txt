@@ -1,1 +1,0 @@
-<div id="out">dyn36 resolved: true | nm36: resolved | after-remove nm36: unregistered

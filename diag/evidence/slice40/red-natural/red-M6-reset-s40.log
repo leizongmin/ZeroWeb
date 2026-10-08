@@ -1,5 +1,0 @@
-thread 'js_dom_bridge::tests::named_access_reset_registry_functional_s40' (954259) panicked at crates/engine/src/js_dom_bridge_tests/part38.rs:672:5:
-assertion `left == right` failed: 快照换代钩子清动态注册面（__zwNADynElsStore 清空）
-  left: "false"
- right: "true"
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2889 filtered out; finished in 0.06s

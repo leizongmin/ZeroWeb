@@ -621,6 +621,20 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             let ay = vals.get(1).copied();
             Some(TransformFunction::Skew(ax, ay))
         }
+        // R5008（css-transforms-1 §funcdef-skew-x / §funcdef-skew-y）：单轴 skew 函数。
+        // 缺臂 → 未知函数使整个 transform list 按语法失效被丢弃（transform-percent-001
+        // ~008 全列含 skewx(10deg) → 整体 no-op，mismatch notref 恒等判红）。矩阵面：
+        // skewX(ax) = matrix(1, 0, tan(ax), 1, 0, 0) → Skew(ax, None)（helpers 层
+        // b=tan(ay)=0, c=tan(ax)）；skewY(ay) = matrix(1, tan(ay), 0, 1, 0, 0) →
+        // Skew(0, Some(ay))。角度语法与 rotate 系同源（parse_angle，unitless 0 合法）。
+        "skewx" => {
+            let ax = parse_angle(args)?;
+            Some(TransformFunction::Skew(ax, None))
+        }
+        "skewy" => {
+            let ay = parse_angle(args)?;
+            Some(TransformFunction::Skew(0.0, Some(ay)))
+        }
         "rotatex" => {
             let angle = parse_angle(args)?;
             Some(TransformFunction::RotateX(angle))

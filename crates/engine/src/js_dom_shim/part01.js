@@ -5343,11 +5343,14 @@
     };
   }
 
-  // FIXME(M2 后续切片)：spec location-setprototypeof / location-preventextensions——Location
-  // 为 exotic object，[[SetPrototypeOf]]（非原 prototype 恒返 false）与 [[PreventExtensions]]
-  // （恒返 false，Object.preventExtensions 抛 TypeError）未实现（plain object 无自定义内部
-  // 方法，与 immutable-prototype 同族）。WPT location-prevent-extensions 2 子测试 +
-  // location-prototype-setting-*（需 /common/test-setting-immutable-prototype.js，未拉）。
+  // M2-S4F（navigation-compat）：spec location-setprototypeof / location-preventextensions /
+  // location-defineownproperty——Location 为 exotic object：[[PreventExtensions]] 恒 false
+  //（Object.preventExtensions 抛 TypeError / Reflect 返 false）、[[SetPrototypeOf]] 不可变
+  //（非原 prototype 返 false——Object.setPrototypeOf 抛、__proto__ 抛、Reflect 返 false；
+  // 原 prototype 是 no-op 返 true）、新 own 属性 [[DefineOwnProperty]]/[[Set]] 恒 false
+  //（LegacyUnforgeable 面——已有属性照常 get/set）。plain object 无自定义内部方法，用
+  // **Proxy 包裹**承载（invariant 安全：target 恒 extensible）。WPT location-prevent-extensions /
+  // location-prototype-setting-same-origin（/common/test-setting-immutable-prototype.js）。
   function _makeLocation() {
     function href() {
       var base = typeof __zw_get_page_url === 'function' ? __zw_get_page_url() : 'about:blank';
@@ -5427,7 +5430,34 @@
     Object.defineProperty(loc, Symbol.toPrimitive, {
       value: undefined, writable: false, enumerable: false, configurable: false,
     });
-    return loc;
+    // M2-S4F：实例 prototype = Location.prototype（spec——Location 已先行装配，见调用点）。
+    try {
+      if (globalThis.Location && globalThis.Location.prototype) {
+        Object.setPrototypeOf(loc, globalThis.Location.prototype);
+      }
+    } catch (_eLocProto) {}
+    // M2-S4F：exotic 内部方法面（Proxy 包裹——见函数头注释）。get/getOwnPropertyDescriptor/
+    // has 等**不设 trap**（默认行为透传 target，LegacyUnforgeable own 属性照常可见）；
+    // set/defineProperty 仅放行**已存在**属性的常规写（href 等 setter 语义），新属性拒。
+    var locExotic = new Proxy(loc, {
+      preventExtensions: function () { return false; },
+      setPrototypeOf: function (target, v) {
+        return Object.getPrototypeOf(target) === v;
+      },
+      set: function (target, key, value, receiver) {
+        // `__proto__` 走原型链 setter（Object.prototype accessor——this=receiver 即本
+        // proxy，setter 内 [[SetPrototypeOf]] 回落本 trap：原 proto no-op、否则 TypeError
+        //——WPT immutable-prototype __proto__ 面）。
+        if (key === '__proto__') return Reflect.set(target, key, value, receiver);
+        if (!Object.getOwnPropertyDescriptor(target, key)) return false;
+        return Reflect.set(target, key, value, receiver);
+      },
+      defineProperty: function (target, key, desc) {
+        if (!Object.getOwnPropertyDescriptor(target, key)) return false;
+        return Reflect.defineProperty(target, key, desc);
+      },
+    });
+    return locExotic;
   }
 
   // M2-S1：Location 接口对象（WebIDL interface object——callable，调用即 TypeError「Illegal
@@ -5449,6 +5479,9 @@
   // sameDocument-after-fragment `location = "#hash"` push 语义）。get 返 Location 对象。
   // `_setLocationPart` 在 part02 定义（同 IIFE 提升，typeof guard 防御——裸 reftest 无回调路径
   // 时 setter no-op 降级，行为同旧 plain 属性可覆写形态）。
+  // M2-S4F：接口对象先于实例装配（实例 prototype 链 Location.prototype——`instanceof`
+  // 面 + immutable-prototype 判「原 prototype」基准）。
+  globalThis.Location = _makeLocationInterface();
   var _zwLocation = _makeLocation();
   Object.defineProperty(globalThis, 'location', {
     enumerable: true, configurable: true,
@@ -5457,7 +5490,6 @@
       if (typeof _setLocationPart === 'function') _setLocationPart('href', String(v));
     },
   });
-  globalThis.Location = _makeLocationInterface();
   globalThis.self = globalThis;
   globalThis.top = globalThis;
   globalThis.parent = globalThis;

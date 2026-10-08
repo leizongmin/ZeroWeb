@@ -150,6 +150,37 @@ fn test_transform_skew_xy() {
     }
 }
 
+/// R5008（css-transforms-1 §funcdef-skew-x / §funcdef-skew-y）：单轴 skew 函数。
+/// 缺臂时未知函数使整个 transform list 按语法失效被丢弃（transform-percent-001
+/// ~008 全列含 skewx(10deg) → 整体 no-op）。矩阵面：skewX(ax) = matrix(1, 0,
+/// tan(ax), 1, 0, 0) → Skew(ax, None)；skewY(ay) = matrix(1, tan(ay), 0, 1, 0, 0)
+/// → Skew(0, Some(ay))（helpers 层 b=tan(ay)/c=tan(ax) 映射一致）。
+#[test]
+fn test_transform_skewx_skewy_single_axis() {
+    // skewx(ax)：Skew(ax, None)。
+    let t = parse_transform("skewx(10deg)").unwrap();
+    if let TransformValue::List(fs) = t {
+        assert!(
+            matches!(fs[0], TransformFunction::Skew(ax, None) if ax == 10.0),
+            "skewx 应解析为 Skew(ax, None)"
+        );
+    }
+    // skewy(ay)：Skew(0, Some(ay))。
+    let t = parse_transform("skewy(20deg)").unwrap();
+    if let TransformValue::List(fs) = t {
+        assert!(
+            matches!(fs[0], TransformFunction::Skew(0.0, Some(ay)) if ay == 20.0),
+            "skewy 应解析为 Skew(0, Some(ay))"
+        );
+    }
+    // 混合列表含 skewx → 整列保留（回归钉：缺臂时整列被丢弃 → transform 整体 no-op）。
+    let t = parse_transform("rotate(10deg) translatex(50%) skewx(10deg) translate(25px, 25px)").unwrap();
+    if let TransformValue::List(fs) = t {
+        assert_eq!(fs.len(), 4, "混合列表含 skewx 应整列保留");
+        assert!(matches!(fs[2], TransformFunction::Skew(_, None)));
+    }
+}
+
 #[test]
 fn test_transform_perspective() {
     let t = parse_transform("perspective(500px)").unwrap();

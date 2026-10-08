@@ -94,14 +94,10 @@ tests/wpt-runner/scripts/chrome/
 # 官网 metrics 数据——pages.yml 部署时由 scripts/generate-website-metrics.py 重新生成，仓库内旧产物是假事实源
 website/metrics.json
 
-# 评审/证据截图不入库（github-delivery 契约：PR 正文图片走 GitHub 附件上传；文本类证据 log/md 不受限）
-diag/**/*.png
-diag/**/*.jpg
-diag/**/*.jpeg
-diag/**/*.gif
-diag/**/*.webp
-diag/**/*.bmp
-diag/**/*.avif
+# 评审/证据截图不入库（github-delivery 契约：PR 正文图片走 GitHub 附件上传）
+# diag/ 诊断与验收证据整体不入库（2026-10-09 决定）：文本类证据归档到已忽略的运行目录
+# （.acceptance/site-optimizer/<run-id>/）；历史已归档文件仍可在 git 历史中考查
+diag/
 
 # devtools 评审截图同政策（github-delivery 契约：PR 正文图片走 GitHub 附件上传）
 docs/goal/devtools/evidence/*.png

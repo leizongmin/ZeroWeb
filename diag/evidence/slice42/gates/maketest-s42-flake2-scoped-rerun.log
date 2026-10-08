@@ -1,8 +1,0 @@
-TREE_SHA=402dc9e85eff92b10ba9d2191c8f38d7ab3b342d
-# run2 flaky：page_scripts::finish_page_load_fires_body_onload_r2946（apps/renderer，onload 派发时序）FAILED undefined!=fired；scoped 复跑 zero-renderer 5/5 PASS（0.06s，test-guard 包裹）。该测试为老牌负载 flaky：slice37/38/39/40/41 gate log 十处先例（s38/s39/s41 均曾 rerun）。与 slice42 改动无涉：改动在树时第 1-3 轮 make test 全绿。
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 224 filtered out; finished in 0.06s
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 224 filtered out; finished in 0.06s
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 224 filtered out; finished in 0.06s
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 224 filtered out; finished in 0.06s
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 224 filtered out; finished in 0.06s
-SCOPED_RERUN_EXIT=0

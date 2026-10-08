@@ -187,6 +187,21 @@
     };
   }
 
+  // slice46：R161 pending-tag 回退 dedup 的身份键提取（原调用点引用未定义符号——
+  // ReferenceError 被 catch 吞 → seen161 恒空 → dedup 恒死：apply 后 tag 形查询重复
+  // 计入 pending 条目，part46 钉 qsa_pending_tag_dedup_identity_s46 自然红实证）。
+  // 键与 pending 循环的 k161 同构（'@'+handle / 'id:'+id）：R331 identity 反查把
+  // 快照命中升格为原 handle proxy 时，与 R379 PA 保留的同一节点同键对齐；无 handle
+  // 无 id 的 wrapper 返 null → 调用点回落 's'+si（不与 pending dedup——无身份键
+  // 无法判定同一，保守不剔）。
+  function _elKeyOf(el) {
+    try {
+      if (el && el.__zwHandle) return '@' + el.__zwHandle;
+      if (el && el.id) return 'id:' + el.id;
+    } catch (_e46k) {}
+    return null;
+  }
+
   // WAB2-M3-s1：fullscreen steps 异步化——spec「run the fullscreen steps」在渲染机会
   // （update the rendering）执行，非微任务/同步（WPT after-error 案：requestFullscreen 后
   // step_timeout(0) 内移除元素 → step 见 disconnected → 拒绝；同步/微任务 step 会先跑而误进
@@ -2131,7 +2146,10 @@
         // https://dom.spec.whatwg.org/#concept-node-list-alive
         var _s44stale = false;
         if (_zwPendingRemoved.length) {
-          try { _s44stale = _zwPendingRemovedSels().has(String(hit)); } catch (_e44qs) { _s44stale = false; }
+          // slice45：共享漏斗 `_zwHitPendingRemoved`（sel 直比 + handle-form 反查
+          // identity 核对）——原 sel-Set 直比对 handle-form 移除条目（`__zwSelector`
+          // 恒 null）失效。
+          try { _s44stale = _zwHitPendingRemoved(hit); } catch (_e44qs) { _s44stale = false; }
         }
         if (!_s44stale) return _zwQueryWrapIdentity(hit);
         // 首命中被剔除时单查只返回首命中——从全查列取首个非移除命中（树序同源，
@@ -2139,12 +2157,12 @@
         //（pending 扫描面不含已移除节点）。
         try {
           if (_zwPendingRemoved.length) {
-            var _s44rsQ = _zwPendingRemovedSels();
+            // slice45：共享漏斗（同首查位点）。
             var _s44all = __zw_query_all(sel);
             if (_s44all) {
               var _s44list = _s44all.split('|').filter(Boolean);
               for (var _s44i = 0; _s44i < _s44list.length; _s44i++) {
-                if (!_s44rsQ.has(_s44list[_s44i])) return _zwQueryWrapIdentity(_s44list[_s44i]);
+                if (!_zwHitPendingRemoved(_s44list[_s44i])) return _zwQueryWrapIdentity(_s44list[_s44i]);
               }
             }
           }
@@ -2535,14 +2553,13 @@
       // document tree）。https://dom.spec.whatwg.org/#concept-node-list-alive
       if (_s44sels.length && _zwPendingRemoved.length) {
         try {
-          var _s44rs = _zwPendingRemovedSels();
-          if (_s44rs.size) {
-            var _s44kept = [];
-            for (var _s44k = 0; _s44k < _s44sels.length; _s44k++) {
-              if (!_s44rs.has(_s44sels[_s44k])) _s44kept.push(_s44sels[_s44k]);
-            }
-            _s44sels = _s44kept;
+          // slice45：共享漏斗 `_zwHitPendingRemoved`（sel 直比 + handle-form 反查
+          // identity 核对）——原 sel-Set 直比对 handle-form 移除条目失效。
+          var _s44kept = [];
+          for (var _s44k = 0; _s44k < _s44sels.length; _s44k++) {
+            if (!_zwHitPendingRemoved(_s44sels[_s44k])) _s44kept.push(_s44sels[_s44k]);
           }
+          _s44sels = _s44kept;
         } catch (_e44qsa) {}
       }
       var out161 = _s44sels.map(_zwQueryWrapIdentity);

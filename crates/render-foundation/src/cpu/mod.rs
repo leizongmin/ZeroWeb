@@ -1394,28 +1394,59 @@ fn apply_transform_post(fb: &mut FrameBuffer, transform: &TransformPrimitive, sc
         }
     }
 
-    // 反向采样
+    // 反向采样（R5007：像素中心 + 双线性插值，对齐 chromium/Skia 变换栅格化约定）
     // R3833：inv_tx/inv_ty 已是「含 origin 的全矩阵」的逆平移分量（由 tx/ty 推得，
     // tx/ty 在 helpers 层已并入 origin 项），故源采样 = inv*p + inv_t——旧实现再做
     // 一次 (p - o) + o 的 origin 补偿 = 双重补偿，origin ≠ (0,0) 且矩阵含 d<0 /
     // 镜像等时源点采样越界 → 内容丢失（scaleY(-1) 镜像渲染全白，
     // transform3d-scale-007 ref 页；chromium 镜像就位）。
+    //
+    // R5007（css-transforms-1 §transform-rendering 渲染精度对齐）：旧实现以像素
+    // **角点** (x, y) 为采样坐标 + round 最近邻——变换后边缘相位偏移 1px 且 AA 渐变
+    // 被二值化（transform-background-001：fringe 值 (191,191,207) 与 ref 逐字节相同
+    // 但位置 +1px，788px 超差）。chromium/Skia 以像素**中心** (x+0.5, y+0.5) 反向
+    // 映射 + 双线性重采样（旋转/缩放层的标准栅格化路径）。整型对齐映射（90°/180°
+    // 整数 origin）下双线性退化为精确 texel 拷贝（fx=fy=0），内部实心区不受影响，
+    // 仅 AA fringe 亚像素相位得到插值。采样点落在保存区域外 → 保持清白（区域闭合
+    // 语义不变）；区域内边界 texel 索引 clamp（边缘扩展，仅影响区域内 1px 带）。
     for y in top..bottom {
         for x in left..right {
-            let px = x as f32;
-            let py = y as f32;
+            let px = x as f32 + 0.5;
+            let py = y as f32 + 0.5;
 
             // 应用逆变换
             let src_x = inv_a * px + inv_c * py + inv_tx;
             let src_y = inv_b * px + inv_d * py + inv_ty;
 
-            let sx = src_x.round() as i32;
-            let sy = src_y.round() as i32;
-
-            if sx >= left as i32 && sx < right as i32 && sy >= top as i32 && sy < bottom as i32 {
-                let src_color = src_pixels[(sy as usize - top as usize) * w + (sx as usize - left as usize)];
-                fb.set_pixel(x, y, src_color);
+            if src_x < left as f32 || src_x >= right as f32 || src_y < top as f32 || src_y >= bottom as f32 {
+                continue; // 采样点在区域外 → 保持清白
             }
+
+            // texel 中心约定：texel i 的中心在 i+0.5；u = s − 0.5 ∈ [i, i+1) → i0 = ⌊u⌋
+            let u = src_x - 0.5;
+            let v = src_y - 0.5;
+            let x0 = u.floor() as i32;
+            let y0 = v.floor() as i32;
+            let fx = u - x0 as f32;
+            let fy = v - y0 as f32;
+            // 区域内 clamp（边缘扩展；仅采样点贴近区域边界 1px 时生效）
+            let x0c = x0.clamp(left as i32, right as i32 - 1);
+            let y0c = y0.clamp(top as i32, bottom as i32 - 1);
+            let x1c = (x0 + 1).clamp(left as i32, right as i32 - 1);
+            let y1c = (y0 + 1).clamp(top as i32, bottom as i32 - 1);
+
+            let base = |cx: i32, cy: i32| -> usize { (cy as usize - top as usize) * w + (cx as usize - left as usize) };
+            let p00 = &src_pixels[base(x0c, y0c)];
+            let p10 = &src_pixels[base(x1c, y0c)];
+            let p01 = &src_pixels[base(x0c, y1c)];
+            let p11 = &src_pixels[base(x1c, y1c)];
+            let mut out = [0u8; 4];
+            for ch in 0..4 {
+                let topv = p00[ch] as f32 + (p10[ch] as f32 - p00[ch] as f32) * fx;
+                let botv = p01[ch] as f32 + (p11[ch] as f32 - p01[ch] as f32) * fx;
+                out[ch] = (topv + (botv - topv) * fy).round().clamp(0.0, 255.0) as u8;
+            }
+            fb.set_pixel(x, y, out);
         }
     }
 }

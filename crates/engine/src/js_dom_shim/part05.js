@@ -10128,16 +10128,36 @@
     return out;
   };
   function _zwPAIdAdd(nd) {
+    // slice45：代际戳**首次登记时盖、不覆盖**——part04 的 id 重登记路径
+    //（对已 pending 的跨 turn 节点补 `id`）不得刷新代际，否则消零谓词的代际门把
+    // 已 apply 的节点误判为同 turn（stale 复活）。remove→re-add 的真重进：条目
+    // 已带旧戳，旧戳只会让谓词多跑一次桥判定（未 apply 时桥 miss → 消零保持，
+    // 语义仍正确），无需清戳。
+    if (nd && nd._zwPaGen45 == null) {
+      try { nd._zwPaGen45 = (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0); } catch (_e45s2) {}
+    }
     var id = '';
     try { id = nd && nd.id != null ? String(nd.id) : ''; } catch (_e) { id = ''; }
     if (!id) return;
+    // slice45：登记时盖 id 戳——登记点的 attr 读链可用（同 turn 队列未 drain，
+    // `__zw_get_attr_handle` latest-wins 命中 SetAttrOnHandle）；remove 侧（跨 apply）
+    // 读链落空（队列已 drain，attr 无 history/快照回落）→ `_zwPAIdRemove` 回退读戳。
+    try { nd._zwPaId45 = id; } catch (_e45s1) {}
     var arr = _zwPendingAddedById.get(id);
     if (!arr) { arr = []; _zwPendingAddedById.set(id, arr); }
     if (arr.indexOf(nd) < 0) arr.push(nd);
   }
   function _zwPAIdRemove(nd) {
+    // slice45：`nd.id` 跨 apply 读空（`__zw_get_attr_handle` 只查当前批队列）→
+    // byId 条目残留 → 换代后 R51c by-id 查询回落（querySelector `#id` 快径 /
+    // getElementById pending 面）复活已移除节点（part45 钉 gen2 观测臂实证）。
+    // 回退读登记戳（`_zwPAIdAdd` 盖，attr 读链可用时点）——活 id 优先（remove 前
+    // 改 id 的场景以最新为准）。
     var id = '';
     try { id = nd && nd.id != null ? String(nd.id) : ''; } catch (_e) { id = ''; }
+    if (!id) {
+      try { id = nd && nd._zwPaId45 != null ? String(nd._zwPaId45) : ''; } catch (_e45r) { id = ''; }
+    }
     if (!id) return;
     var arr = _zwPendingAddedById.get(id);
     if (!arr) return;
@@ -10229,6 +10249,72 @@
       if (s44e && s44e.__zwSelector) s44.add(String(s44e.__zwSelector));
     }
     return s44;
+  }
+  // slice45：document 面查询剔除的共享漏斗——sel-form 条目走 `_zwPendingRemovedSels`
+  // 直比（slice44 语义不变），handle-form 条目（createElement 产物 `_wrapHandle` →
+  // `_makeProxy(null, handle)` 的 `__zwSelector` trap 恒 null，从不进 sel 集）经反查桥
+  // `__zw_handle_for_selector` 把 host 命中 sel 归到 handle 后与 removed 条目 identity
+  // 核对（与 ID 面同法，slice44 verdict 残余⑤方向）。桥未注册（engine 纯测试环境）或
+  // sel 未锚 handle → 返 false，行为与修复前一致。
+  // https://dom.spec.whatwg.org/#concept-node-list-alive
+  function _zwHitPendingRemoved(hit) {
+    var s45 = String(hit == null ? '' : hit);
+    if (!s45) return false;
+    if (_zwPendingRemovedSels().has(s45)) return true;
+    var h45 = '';
+    try {
+      h45 = String((typeof __zw_handle_for_selector === 'function'
+        ? __zw_handle_for_selector(s45) : '') || '');
+    } catch (_e45f) { return false; }
+    if (!h45) return false;
+    for (var i45 = 0; i45 < _zwPendingRemoved.length; i45++) {
+      var e45 = _zwPendingRemoved[i45];
+      if (e45 && e45.__zwHandle && String(e45.__zwHandle) === h45) return true;
+    }
+    return false;
+  }
+  // slice45：handle 条目的 host 快照真含判定（R51c 消零前提修复的谓词）。正置桥
+  // `__zw_selector_for_handle` 取 sel → `__zw_contains('html', sel)` 核验 → 反查桥
+  // `__zw_handle_for_selector` 归属核对（防 stacked same-sel innerHTML 重建把旧 sel
+  // 重绑到新节点后误判旧条目真含）。任一桥未注册/调用失败/未锚定 → 返 false
+  //（消零保持 = 修复前行为，零回归）。html/body/head 层级免 contains（文档级节点
+  // 恒在快照，且 element_contains_doc 的容器自含语义不必依赖）。
+  function _zwHandleInHostSnapshot(handle) {
+    var h = String(handle == null ? '' : handle);
+    if (!h || typeof __zw_selector_for_handle !== 'function') return false;
+    var sel = '';
+    try { sel = String(__zw_selector_for_handle(h) || ''); } catch (_e45a) { return false; }
+    if (!sel) return false;
+    if (sel !== 'html' && sel !== 'body' && sel !== 'head') {
+      if (typeof __zw_contains !== 'function') return false;
+      try {
+        if (__zw_contains('html', sel) !== '1') return false;
+      } catch (_e45b) { return false; }
+    }
+    if (typeof __zw_handle_for_selector === 'function') {
+      try {
+        if (String(__zw_handle_for_selector(sel) || '') !== h) return false;
+      } catch (_e45c) { return false; }
+    }
+    return true;
+  }
+  // slice46：sel 条目的 host 快照真含判定（R51c 消零前提修复的 sel-form 谓词，与
+  // `_zwHandleInHostSnapshot` 同构）。sel 即身份锚——`__zw_contains('html', sel)` 直判
+  //（html/body/head 层级免 contains，文档级节点恒在快照）。slice45 层1 的反查归属核对
+  //（handle→sel→contains→反查闭环）对 sel-form 不可表达（无 handle 锚）；R334 移挂的
+  // host 语义是 reparent 同一节点（`__zw_insert_adjacent_sel_element`），sel 身份跨
+  // apply 稳定，直判充分。桥未注册（engine 纯测试环境）/调用失败/空 sel → 返 false
+  //（消零保持 = 修复前行为，零回归）。
+  function _zwSelInHostSnapshot(sel) {
+    var s = String(sel == null ? '' : sel);
+    if (!s) return false;
+    if (s !== 'html' && s !== 'body' && s !== 'head') {
+      if (typeof __zw_contains !== 'function') return false;
+      try {
+        if (__zw_contains('html', s) !== '1') return false;
+      } catch (_e46s) { return false; }
+    }
+    return true;
   }
   function _zwHCCollectSubtree(node, out) {
     if (!node) return;
@@ -10324,7 +10410,9 @@
       var _cmp = [];
       for (var c0 = 0; c0 < _zwPendingRemoved.length; c0++) {
         var _c0e = _zwPendingRemoved[c0];
-        if (_c0e && (_c0e.__zwSelector || (_c0e.__zwIsText && !_c0e.__zwHandle))) _cmp.push(_c0e);
+        // slice45：`_zwAppl45` 标记条目（apply 后快照真移除的 handle 节点，消零谓词
+        // 立项）不再是纯死数据——identity 剔除漏斗依赖，压实保留。
+        if (_c0e && (_c0e.__zwSelector || (_c0e.__zwIsText && !_c0e.__zwHandle) || _c0e._zwAppl45)) _cmp.push(_c0e);
       }
       _zwPendingRemoved = _cmp;
       _zwPendingRemovedSet = null; // 惰性重建（_zwPRSet）
@@ -10342,10 +10430,11 @@
       // R51c：桶 removed 压实（同全局表语义——handle-only 死条目丢弃，512 软上限）。
       if (_pb.removed.length > 512) {
         // siteopt slice24：parsed CharacterData 条目同全局表例外——快照真实节点，压实保留。
+        // slice45：`_zwAppl45` 标记同豁免（apply 后快照真移除的 handle 条目）。
         var _bc = [];
         for (var bc = 0; bc < _pb.removed.length; bc++) {
           var _bce = _pb.removed[bc];
-          if (_bce && (_bce.__zwSelector || (_bce.__zwIsText && !_bce.__zwHandle))) _bc.push(_bce);
+          if (_bce && (_bce.__zwSelector || (_bce.__zwIsText && !_bce.__zwHandle) || _bce._zwAppl45)) _bc.push(_bce);
         }
         _pb.removed = _bc;
         _pb.removedSet = new Set(_bc);
@@ -10381,7 +10470,42 @@
       // 数线性膨胀（每 subtest 重建丢弃 ~30 个旧 proxy，剔除 no-op 却永久占表）→ body 桶每次
       // childNodes 读全扫 → Range-mutations dataChange（~5000 subtest）O(n²) 超时。
       var _wasPA = [];
-      for (var r2 = 0; r2 < remFlat.length; r2++) _wasPA.push(_zwPASet().has(remFlat[r2]));
+      for (var r2 = 0; r2 < remFlat.length; r2++) {
+        var _rv45 = remFlat[r2];
+        var _pa45 = _zwPASet().has(_rv45);
+        // slice45：R51c 消零前提「pending-added ⇒ host 快照未见」仅在 apply 前成立。
+        // R379 bump 有意保留 handle 条目（re-append 移动语义），apply 后 host 快照已含
+        // 该节点，此时 remove 是真实树变更，须照常入 removed 表——否则 identity 消费面
+        //（getElementById `_zwPRSet` / R125 祖先行走 / document 查询剔除漏斗）对已落
+        // 快照的 handle 节点全部失去剔除依据（document QS/QSA/gEBI 返回已移除节点，
+        // part45 钉 handle_form_remove_document_query_stale_s45 自然红实证）。
+        // 代际门：条目登记代际 === 当前代际 ⇒ 本 turn 内 append+remove（未 apply，
+        // 快照结构上不含）→ 消零保持——R51c 热路径（testharness 每 subtest 全量重建）
+        // 零桥回调回归。跨代际才走快照真含判定（`_zwHandleInHostSnapshot`：任一桥
+        // 未注册返 false → 消零保持，零回归）。
+        // https://dom.spec.whatwg.org/#concept-node-remove
+        if (_pa45 && _rv45 && _rv45.__zwHandle
+            && _rv45._zwPaGen45 !== (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0)
+            && _zwHandleInHostSnapshot(_rv45.__zwHandle)) {
+          _rv45._zwAppl45 = true; // 压实豁免标记：handle-only 但快照真移除，非死数据
+          _pa45 = false;
+        }
+        // slice46：sel-form 对称门——快照 sel 节点（R334 移挂）apply 后 PA 保留（R379
+        // 全量保留带 `__zwSelector` 条目），remove 时上方 handle 门第 3 合取元
+        //（`__zwHandle`）恒假 → 消零保持 → 不入 removed 表 → 至下次 apply 前 document
+        // QS/QSA 对该 sel stale 命中（part46 钉 sel_form_move_apply_remove_document_
+        // query_stale_s46 自然红实证）。与 handle 门同构：代际门（同 turn append+
+        // remove 未 apply → 消零保持，R51c 热路径零桥回调回归）+ host 快照真含判定
+        //（`_zwSelInHostSnapshot`）。sel 条目压实天然豁免（`__zwSelector` 真），无需
+        // `_zwAppl45` 标记。
+        // https://dom.spec.whatwg.org/#concept-node-remove
+        if (_pa45 && _rv45 && !_rv45.__zwHandle && _rv45.__zwSelector
+            && _rv45._zwPaGen45 !== (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0)
+            && _zwSelInHostSnapshot(_rv45.__zwSelector)) {
+          _pa45 = false;
+        }
+        _wasPA.push(_pa45);
+      }
       // R52：惰性剔除——旧全表 keep 过滤每 remove O(pa)（testharness 每 subtest +10 泄漏条目
       // → O(n²) 残余增长根源）。改为 Set 命中才定点 splice（indexOf O(pa) 仅在命中时发生，
       // 未命中零成本——多数 remove 的节点不在 pa 表）。
@@ -10881,7 +11005,7 @@
         }
       } else if (_zwNAMorphEls[name] === g) {
         // slice42：morph 产物跟随——0 命中回收（账本 identity 核对，脚本自有改写
-        // 不追删）；>1 命中不升格（morph 跟随面不升格口径保持，残余申报）。
+        // 不追删）。
         var elsM = null;
         try { elsM = installed.__zwHC(); } catch (_e42m) { return; }
         if (elsM.length === 0) {
@@ -10890,6 +11014,15 @@
             if (typeof globalThis.__zwNADelete === 'function') globalThis.__zwNADelete(name);
             else { try { delete globalThis[name]; } catch (_e42d1) {} }
           } catch (_e42d2) {}
+        } else if (elsM.length > 1) {
+          // slice45：>1 命中升格（slice42 残余申报收口）——spec 取值算法多命中返
+          // HTMLCollection（named objects 同名 ≥2 → rooted collection），morph 产物
+          // 停留元素全局为 spec 偏差。写面镜像恢复臂（g === undefined 臂 ≥2 恢复
+          // 集合）：`globalThis[name] = installed` 覆盖 own expando 形态 + 账本清除，
+          // 集合面接管后 live 维护自然延续；脚本自有改写不在此臂（identity 门在上）。
+          // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
+          try { globalThis[name] = installed; } catch (_e45u1) {}
+          delete _zwNAMorphEls[name];
         }
       }
       return;
@@ -12780,6 +12913,8 @@
   // per-event 实例（part02 _navFireNavigate 构造）。
   function NavigationDestination(url, sameDocument, key, id, index, bind) {
     Object.defineProperty(this, 'url', { enumerable: true, configurable: true, get: function () { return url; } });
+    // M2-S4G：precommitController.redirect(url) 改写 destination URL（闭包单元格重绑）。
+    this._zwSetUrl = function (u) { url = u; };
     Object.defineProperty(this, 'sameDocument', { enumerable: true, configurable: true, get: function () { return !!sameDocument; } });
     Object.defineProperty(this, 'key', { enumerable: true, configurable: true, get: function () { return key === undefined ? null : key; } });
     Object.defineProperty(this, 'id', { enumerable: true, configurable: true, get: function () { return id === undefined ? null : id; } });
@@ -12796,6 +12931,9 @@
       if (bind && typeof bind.getState === 'function') return bind.getState();
       return undefined;
     };
+    // M2-S4G：precommitController.redirect(url, {state}) 改写目的地 state（bind.state 单元格
+    // 重绑——commit 前 destination.getState() 即反映，WPT redirect-options）。
+    this._zwSetState = function (s) { if (bind) bind.state = s; };
   }
   globalThis.NavigationDestination = globalThis.NavigationDestination || NavigationDestination;
   // M2-S4B：NavigateEvent——navigate 导航事件（destination/signal **必填**——WPT event-constructor
@@ -12836,6 +12974,12 @@
       if (o.handler === null) {
         throw new globalThis.TypeError("Failed to execute 'intercept' on 'NavigateEvent': required member handler is null.");
       }
+      // M2-S4G：precommitHandler 列表（与 handler 分列——commit **前**运行，可 redirect/
+      // addHandler；reject/throw → 取消导航无提交）。多次 intercept() 追加。
+      if (typeof o.precommitHandler === 'function') {
+        if (!this._zwPrecommit) this._zwPrecommit = [];
+        this._zwPrecommit.push(o.precommitHandler);
+      }
       // M2-S4B：多次 intercept() 合法——handler **顺序链**（WPT intercept-multiple-times——
       // finished 依序 await 全部 handler promise）。M2-S4D：scroll 模式（'after-transition'
       // 缺省 | 'manual'——WPT scroll-behavior manual-basic）。M2-S4E：focusReset 模式
@@ -12869,9 +13013,13 @@
         throw new (globalThis.DOMException || DOMException)('scroll() can only be called after intercept().', 'InvalidStateError');
       }
       // M2-S4D：**dispatch 期**（事件监听器内）scroll() 抛 InvalidStateError（spec——导航未
-      // 提交不可滚；WPT manual-immediate-scroll）。
+      // 提交不可滚；WPT manual-immediate-scroll）。M2-S4G：precommit pending（未提交）同样抛
+      //（spec interception state 须 'committed'；WPT manual-scroll-in-precommit-handler）。
       if (this._zwDispatching) {
         throw new (globalThis.DOMException || DOMException)('scroll() can only be called after the navigate event has finished dispatching.', 'InvalidStateError');
+      }
+      if (this._zwPrecommitPending) {
+        throw new (globalThis.DOMException || DOMException)('scroll() can only be called after the navigation has committed.', 'InvalidStateError');
       }
       // M2-S4D：重复 scroll() 抛 InvalidStateError（WPT manual-scroll-repeated）；导航已
       // 结算（finished fulfill/reject 链尾）后再调抛 InvalidStateError（WPT

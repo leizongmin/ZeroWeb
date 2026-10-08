@@ -1,5 +1,0 @@
-thread 'js_dom_bridge::tests::named_access_l36_ledger_delete_aligned_s40' (949044) panicked at crates/engine/src/js_dom_bridge_tests/part38.rs:538:5:
-assertion `left == right` failed: 改写形态下 L36u 同步删除（与 dyn 账本对齐；修前残留 true 至换代回收）
-  left: "false"
- right: "true"
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2889 filtered out; finished in 0.05s

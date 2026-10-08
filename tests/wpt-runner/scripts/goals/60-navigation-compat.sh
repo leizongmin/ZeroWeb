@@ -38,6 +38,8 @@ DIRS=(
   # M2-S4E（2026-10-08）：focus-reset 簇 helpers.mjs（basic/multiple-intercept 的 module
   # 依赖——缺失时 module compile error，2 案 decl 0 tests）
   "navigation-api/focus-reset/resources"
+  # M2-S4G（2026-10-08）：ordering-and-transition 簇 helpers.mjs（Recorder 模块依赖）
+  "navigation-api/ordering-and-transition/resources"
   "navigation-api/navigate-event/resources"
   "navigation-api/navigation-activation/resources"
   "navigation-api/per-entry-events/resources"
@@ -62,5 +64,7 @@ goals_fetch_all
 # 内联。/common/test-setting-immutable-prototype.js 不拉（immutable-prototype 面需 exotic
 # [[SetPrototypeOf]]，plain object 未实现——见 testharness.rs NAVIGATION_ABSOLUTE_HELPERS 注）。
 fetch_raw "common/stringifiers.js"
+# M2-S4F：immutable prototype helper（location-prototype-setting-same-origin——[[SetPrototypeOf]] 面）
+fetch_raw "common/test-setting-immutable-prototype.js"
 goals_inventory
 goals_next_steps "${GOAL}"
