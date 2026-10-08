@@ -1514,6 +1514,11 @@ fn js_worker_main(
                 // A cross-document navigation creates a new global object. Keeping the
                 // renderer worker is an implementation detail, not page-visible state.
                 sandbox.reset_context();
+                // t8k 返修（defect-r1 D1）：WS 宿主状态以 worker 生命周期存活，而 shim 连接
+                // 计数器随上下文重建归零——不推进代际，新文档首个连接（同名 ws1）事件被旧代
+                // 残留 pending 吞掉、旧泵终态可误删新槽位。作废旧代际事件面（WHATWG HTML：
+                // 文档销毁其 WebSocket 连接随之作废）。
+                ws_bridge.reset_generation();
                 // t8 返修（defect-r1 D1）：reset 竞态窗加固——主线程 `reset_document_state`
                 // 已先清一次队列，但 worker 串行处理下，旧页脚本/timer 回调
                 // （ResolveAsyncCallback 的 microtask checkpoint）可能在其之后、本 arm 之前

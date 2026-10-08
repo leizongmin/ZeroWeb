@@ -12,9 +12,12 @@
 //! 队列兜底服务端先发消息的时序）。
 //!
 //! **安全/资源边界**：
-//! - connect 线程受 [`MAX_INFLIGHT_WS_CONNECT`] gate 钳制（R3401 同型，guidelines #21 统一
-//!   资源预算防 FD/线程耗尽）；open 连接数上限（[`MAX_OPEN_WS_CONNECTIONS`]）由宿主实现
-//!   持注册表负责（默认 [`NetWsHost`] 内置）。
+//! - 并发/长连接预算：open 及连接中（握手进行中）连接数上限（[`MAX_OPEN_WS_CONNECTIONS`]）
+//!   由宿主实现持注册表负责（默认 [`NetWsHost`] 内置）。t8k 返修删除了原「connect wrapper
+//!   线程 + 16 槽 gate」组合：connect 本身非阻塞（trait 契约），wrapper 只把连接代际捕获
+//!   推迟到 wrapper 调度点（跨文档 reset 下错标代际、close-before-insert 仲裁丢失），gate
+//!   计数的是 wrapper 生命周期、从未真正钳制握手并发——握手并发现由 [`MAX_OPEN_WS_CONNECTIONS`]
+//!   槽位上限统一承载（连接中槽位同样计入）。
 //! - wire 字段过滤：`reason`/`protocol`/`error` 消息剥离 `\x1f`/`\x1e` 控制分隔符（网络输入
 //!   不可携带 wire 元字符）；text/binary 数据字段恒为末字段（取首个分隔符后全部，与 fetch
 //!   body 约定一致，数据可含 `\x1f`）。
@@ -72,6 +75,11 @@ pub enum WsData {
 /// 线程；`send`/`close` 只入宿主内部通道立即返回。事件经 [`WsEmitter`] 回投。
 pub trait WsHost: Send + Sync {
     /// 发起连接（异步）：成功后宿主须依次 emit `Open`…；失败 emit `Error` + `Close{clean:false}`。
+    ///
+    /// **必须非阻塞**（阻塞 TCP/TLS/握手与读泵放宿主自有线程），且实现须假定本方法由
+    /// JS 回调线程**同步**调用——连接的导航代际在入口捕获，bridge 侧不得再包 wrapper
+    /// 线程推迟调用点（t8k 返修实证：wrapper 调度延迟晚于 `reset_context` 时代际错标、
+    /// close-before-insert 仲裁丢失）。
     fn connect(&self, id: &str, url: &str, protocols: &[String]);
     /// 发送数据（连接不存在/未 open 时静默忽略——JS 侧已按 readyState 前置拦截）。
     fn send(&self, id: &str, data: &WsData);
@@ -84,8 +92,6 @@ const FIELD_SEP: char = '\x1f';
 /// 每连接事件队列上限——溢出时桥主动合成 `Close{1008,"event-queue-overflow"}` 并丢弃后续
 /// （病态服务端洪水不耗内存；正常页面远不可达）。宿主收到 overflow close 自行收线。
 const EVENT_QUEUE_CAP: usize = 4096;
-/// 并发 connect 线程上限（R3401 同型 gate；connect 线程短生命周期：TCP+TLS+握手）。
-const MAX_INFLIGHT_WS_CONNECT: usize = 16;
 
 /// wire 元字符过滤：`\x1f`/`\x1e` 是事件 wire 的字段/记录分隔符，网络输入（服务端 close
 /// reason、子协议、错误消息）不得携带——剥除。
@@ -148,11 +154,19 @@ pub fn decode_send_data(kind: &str, wire: &str) -> Option<WsData> {
     }
 }
 
-/// 事件路由核心：每连接事件队列 + pending-next（resolveId）登记。
+/// 事件路由核心：每连接事件队列 + pending-next（resolveId）登记 + 导航代际。
+///
+/// 代际（t8k defect-r1 D1）：renderer 路径跨文档导航 `reset_context` 重建 JS 上下文后
+/// shim 连接计数器（`_zwWsConnSeq`）归零，而本核心与宿主连接表以 worker 生命周期存活——
+/// 新文档首个连接（同名 `ws1`）会撞上旧文档残留的 pending/队列/泵线程。`generation` 在
+/// [`WsBridge::reset_generation`] 推进：旧 pending/队列清空，旧泵线程残余事件凭代际戳
+/// 在 [`WsEmitter::emit_gen`] 栅栏处丢弃。
 #[derive(Default)]
 struct WsCore {
     queues: HashMap<String, VecDeque<WsEvent>>,
     pending: HashMap<String, VecDeque<String>>,
+    /// 导航代际（`reset_generation` 递增）；连接事件带建立时代际戳，不匹配即弃。
+    generation: u64,
 }
 
 /// 事件投递柄——宿主实现持有（`WsBridge::emitter()`），从任意线程回投事件。
@@ -182,12 +196,38 @@ impl WsEmitter {
 }
 
 impl WsEmitter {
-    /// 投递一条连接事件：有 pending-next → 立即 resolve；否则入队（超 [`EVENT_QUEUE_CAP`]
-    /// 合成 overflow close 并丢弃本事件）。
+    /// 当前导航代际（[`WsCore::generation`]）——宿主在连接建立时捕获作事件戳。
+    fn current_generation(&self) -> u64 {
+        self.core.lock().expect("ws core lock").generation
+    }
+
+    /// 推进导航代际并清空 pending/队列（跨文档导航 `reset_context` 后调用）：旧文档的
+    /// 残留 pending（未 resolve 的 pid 指向已销毁上下文）与积压消息随之作废；仍在运行的
+    /// 旧泵线程后续 emit 因代际不匹配被 [`WsEmitter::emit_gen`] 丢弃。
+    fn reset_generation(&self) {
+        let mut core = self.core.lock().expect("ws core lock");
+        core.generation += 1;
+        core.pending.clear();
+        core.queues.clear();
+    }
+
+    /// 投递一条连接事件（捕获当前代际——JS 回调线程同步路径用）。
     pub fn emit(&self, conn_id: &str, ev: WsEvent) {
+        let nav_gen = self.current_generation();
+        self.emit_gen(conn_id, ev, nav_gen);
+    }
+
+    /// 投递一条带代际戳的连接事件：代际不匹配（`reset_generation` 后仍在运行的旧泵线程）
+    /// → 静默丢弃，不入新文档队列；有 pending-next → 立即 resolve；否则入队（超
+    /// [`EVENT_QUEUE_CAP`] 合成 overflow close 并丢弃本事件）。
+    fn emit_gen(&self, conn_id: &str, ev: WsEvent, nav_gen: u64) {
         let wire = serialize_event(&ev);
         let (pid, overflow_teardown) = {
             let mut core = self.core.lock().expect("ws core lock");
+            if core.generation != nav_gen {
+                // 旧代际残余事件（reset 后未退出的泵线程）——丢弃，不入新文档队列。
+                return;
+            }
             let mut overflow_teardown = false;
             let pid = if let Some(pids) = core.pending.get_mut(conn_id) {
                 if let Some(pid) = pids.pop_front() {
@@ -300,10 +340,23 @@ impl WsBridge {
         self.emitter.bind_host(host);
     }
 
+    /// 跨文档导航代际推进（t8k defect-r1 D1）：renderer `reset_context` 重建 JS 上下文后
+    /// shim 连接计数器归零（`_zwWsConnSeq` 从 0 重来），而本桥的 WsCore 与宿主连接表以
+    /// worker 生命周期存活——不推进代际，新文档首个连接（同名 `ws1`）的事件会被旧代际
+    /// 残留 pending 吞掉、旧泵终态分支可误删新槽位、旧连接消息可串入新文档（WHATWG
+    /// HTML：文档销毁其 WebSocket 连接随之作废）。reset 后：旧 pending/队列清空、旧泵
+    /// 线程 emit 因代际不匹配丢弃、旧槽位由新 connect 覆盖（[`ConnSlot::nav_gen`] 保证
+    /// 旧泵只删本代槽位）。tab worker（持久 context）与 webview（shim 幂等单装）路径无
+    /// reset_context 调用点，不作废——FIXME(t8k/N1)：该两路径文档销毁仍不关闭 WS 连接。
+    pub fn reset_generation(&self) {
+        self.emitter.reset_generation();
+    }
+
     /// 注册 4 个回调（均**非阻塞**，JS worker 线程绝不在 WS 路径上等待网络）：
     ///
-    /// - `__zw_ws_connect(id, url, protocolsWire)`：connect 线程受 [`MAX_INFLIGHT_WS_CONNECT`]
-    ///   gate 钳制；宿主未注入 → 直接 emit `Error`+`Close`（fetch no-handler 同型，不悬挂）。
+    /// - `__zw_ws_connect(id, url, protocolsWire)`：同步转发宿主（[`WsHost::connect`] 契约
+    ///   非阻塞，网络 I/O 全在宿主自有线程；并发由宿主 [`MAX_OPEN_WS_CONNECTIONS`] 槽位
+    ///   上限钳制）；宿主未注入 → 直接 emit `Error`+`Close`（fetch no-handler 同型，不悬挂）。
     /// - `__zw_ws_send(id, kind, dataWire)` / `__zw_ws_close(id, code, reason)`：转发宿主
     ///   （宿主内部通道，非阻塞）。
     /// - `__zw_ws_next(id, pid)`：pending Promise 登记（见 [`WsEmitter::next`]）。
@@ -327,29 +380,14 @@ impl WsBridge {
                 let host = host_cell.lock().ok().and_then(|c| c.as_ref().cloned());
                 match host {
                     Some(h) => {
-                        // gate：connect 线程钳 MAX_INFLIGHT_WS_CONNECT。满载不排队——直接
-                        // 拒绝（err+close）：WS 连接是长生命周期资源，排队语义（fetch 的
-                        // pending 队列）会让恶意页以极低成本堆积 pending；满载即失败更符合
-                        // 资源预算语义。
-                        let inflight = CONNECT_GATE.inflight.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-                        if inflight >= MAX_INFLIGHT_WS_CONNECT {
-                            CONNECT_GATE.inflight.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-                            emitter.emit(&id, WsEvent::Error("too many concurrent connects".to_string()));
-                            emitter.emit(
-                                &id,
-                                WsEvent::Close {
-                                    code: 1013,
-                                    reason: "connect-gate-full".to_string(),
-                                    clean: false,
-                                },
-                            );
-                            return String::new();
-                        }
-                        let id2 = id.clone();
-                        std::thread::spawn(move || {
-                            h.connect(&id2, &url, &protocols);
-                            CONNECT_GATE.inflight.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-                        });
+                        // 同步转发（`WsHost::connect` 契约非阻塞，网络 I/O 全在宿主自有
+                        // 线程——JS worker 线程不在 WS 路径上等待网络）。t8k 返修：此处曾
+                        // 把 connect 包进一层 wrapper 线程，连接代际捕获被推迟到 wrapper
+                        // 调度点——晚于 reset_context 执行时旧文档连接被错标成新代际，且
+                        // close 在插槽前查不到槽位丢失仲裁；connect 与 reset_context 同在
+                        // JS worker 线程串行，直接调用后两个窗口均不存在。并发由宿主
+                        // [`MAX_OPEN_WS_CONNECTIONS`] 槽位上限统一钳制。
+                        h.connect(&id, &url, &protocols);
                     }
                     None => {
                         // no-handler（宿主尚未注入/未配置）：fetch 同型——不悬挂，快速失败。
@@ -413,18 +451,11 @@ impl WsBridge {
     }
 }
 
-/// connect gate（进程级原子计数；见 [`WsBridge::register`] connect 分支）。
-struct ConnectGate {
-    inflight: std::sync::atomic::AtomicUsize,
-}
-static CONNECT_GATE: ConnectGate = ConnectGate {
-    inflight: std::sync::atomic::AtomicUsize::new(0),
-};
-
 // ── 生产宿主实现（zero_net::WebSocket + 每连接专用线程读泵）──
 
-/// 同宿主 open/连接中连接数上限（guidelines #21 资源预算：WS 长连接占 FD+线程，比 fetch
-/// inflight 更贵——connect gate 16 之上再设表级上限；恶意页无法以极低成本堆积 socket）。
+/// 同宿主 open/连接中（握手进行中）连接数上限（guidelines #21 资源预算：WS 长连接占
+/// FD+线程，比 fetch inflight 更贵；恶意页无法以极低成本堆积 socket）。连接中槽位同样
+/// 计入——并发握手上限即本值。
 const MAX_OPEN_WS_CONNECTIONS: usize = 128;
 /// 读泵轮询间隔（阻塞 `receive()` 的读超时——超时返 WouldBlock/TimedOut，泵得以轮询发送通道）。
 const WS_PUMP_POLL_MS: u64 = 50;
@@ -449,6 +480,18 @@ enum ConnState {
 struct ConnSlot {
     state: ConnState,
     cmd_tx: std::sync::mpsc::Sender<HostCmd>,
+    /// 建立时的导航代际（[`WsCore::generation`]）——同 id 跨文档重连时新槽位覆盖旧槽，
+    /// 旧泵线程终态分支凭本戳只删本代槽位（t8k defect-r1 D1 概率性孤儿化臂）。
+    nav_gen: u64,
+}
+
+/// 泵线程终态清理：只删除仍属本代际的槽位——同 id 已被新文档重连覆盖时不得误删
+/// （t8k defect-r1 D1 概率性孤儿化：旧泵删新槽 → 新连接零事件孤儿化）。
+fn remove_conn_if_current(conns: &std::sync::Mutex<HashMap<String, ConnSlot>>, id: &str, nav_gen: u64) {
+    let mut conns = conns.lock().expect("ws conn table lock");
+    if conns.get(id).is_some_and(|s| s.nav_gen == nav_gen) {
+        conns.remove(id);
+    }
 }
 
 /// 生产 WS 宿主：[`default_net_ws_host`] 产物。每连接一条专用泵线程（阻塞 connect →
@@ -461,6 +504,13 @@ struct NetWsHost {
 impl WsHost for NetWsHost {
     fn connect(&self, id: &str, url: &str, protocols: &[String]) {
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<HostCmd>();
+        // 代际在本函数入口捕获。调用契约（见 [`WsHost`] trait 文档）：connect 非阻塞、
+        // 且由 JS 回调线程同步调用——捕获与下方插槽插入之间没有跨线程窗口，
+        // `reset_context`（同在 JS worker 线程串行执行）无法插队错标代际（t8k 返修：
+        // 曾把 connect 包进一层 wrapper 线程、握手也在 wrapper 阻塞，捕获被推迟到
+        // wrapper 调度点，可晚于 reset 而错标代际；且 close 在插槽前查不到槽位丢失
+        // 仲裁——该 wrapper 已删除，阻塞握手移回泵线程）。
+        let nav_gen = self.emitter.current_generation();
         {
             let mut conns = self.conns.lock().expect("ws conn table lock");
             if conns.len() >= MAX_OPEN_WS_CONNECTIONS {
@@ -482,6 +532,7 @@ impl WsHost for NetWsHost {
                 ConnSlot {
                     state: ConnState::Connecting,
                     cmd_tx,
+                    nav_gen,
                 },
             );
         }
@@ -490,56 +541,63 @@ impl WsHost for NetWsHost {
         let id = id.to_string();
         let url = url.to_string();
         let _protocols = protocols.to_vec(); // FIXME(t8k): Sec-WebSocket-Protocol 协商头与 101 选定子协议未透出（zero_net::WebSocket 不暴露握手响应）——本切片先发空协议头，子协议协商面留待 net 层扩展
-        // 阻塞 TCP/TLS/握手在 connect 调用线程（register 的 gate 线程）——握手完成后再起读泵。
-        let mut ws = zero_net::websocket::WebSocket::new(&url);
-        if let Err(e) = ws.connect() {
-            let terminated_early = {
-                let mut conns = conns.lock().expect("ws conn table lock");
-                let early = matches!(
-                    conns.get(&id).map(|s| s.state),
-                    None | Some(ConnState::Closed)
-                );
-                conns.remove(&id);
-                early
-            };
-            if !terminated_early {
+        std::thread::spawn(move || {
+            // 阻塞 TCP/TLS/握手（OS 级 TCP 超时兜底；服务端 accept 后不回 101 的
+            // 无限阻塞缺口见 defect-r1 N2，非本次返修范围）。
+            let mut ws = zero_net::websocket::WebSocket::new(&url);
+            if let Err(e) = ws.connect() {
+                // 终结权仲裁：槽位已消失（close-during-connect 的 close() 仲裁已发唯一
+                // Close）、已 Closed、或已被跨代际重连覆盖（新代际持有终结权）——本线程
+                // 一律静默，且只删除仍属本代际的槽位（t8k defect-r1 D1）。
+                let mine = {
+                    let mut conns = conns.lock().expect("ws conn table lock");
+                    let mine = conns.get(&id).is_some_and(|s| s.nav_gen == nav_gen);
+                    if mine {
+                        conns.remove(&id);
+                    }
+                    mine
+                };
+                if !mine {
+                    return;
+                }
                 // 恰好一条 Close 契约：connect 失败 → err + close(1006)。
-                emitter.emit(&id, WsEvent::Error(format!("connect failed: {e}")));
-                emitter.emit(
+                emitter.emit_gen(&id, WsEvent::Error(format!("connect failed: {e}")), nav_gen);
+                emitter.emit_gen(
                     &id,
                     WsEvent::Close {
                         code: 1006,
                         reason: String::new(),
                         clean: false,
                     },
+                    nav_gen,
                 );
+                return;
             }
-            return;
-        }
-        // 握手成功——close-during-connect 竞态：close() 已仲裁终结（发过 close 事件），
-        // 本路径静默弃连。
-        {
-            let mut conns = conns.lock().expect("ws conn table lock");
-            match conns.get(&id).map(|s| s.state) {
-                Some(ConnState::Closed) | None => {
-                    conns.remove(&id);
-                    return;
-                }
-                _ => {
-                    if let Some(slot) = conns.get_mut(&id) {
+            // 握手成功——close-during-connect 竞态：close() 已仲裁终结（发过 close 事件），
+            // 或跨代际重连已覆盖槽位——本线程静默弃连，不动新代际槽位。
+            {
+                let mut conns = conns.lock().expect("ws conn table lock");
+                match conns.get_mut(&id) {
+                    Some(slot) if slot.nav_gen == nav_gen => {
+                        if slot.state == ConnState::Closed {
+                            conns.remove(&id);
+                            return;
+                        }
                         slot.state = ConnState::Open;
                     }
+                    _ => return,
                 }
             }
-        }
-        // 读泵：阻塞 read() 超时返 WouldBlock/TimedOut → 轮询发送通道（tungstenite read 自动回 Pong）。
-        let _ = ws.set_read_timeout(Some(std::time::Duration::from_millis(WS_PUMP_POLL_MS)));
-        std::thread::spawn(move || {
-            emitter.emit(
+            // 读泵：阻塞 read() 超时返 WouldBlock/TimedOut → 轮询发送通道（tungstenite
+            // read 自动回 Pong）。全部 emit 带 connect 时捕获的代际戳——跨文档 reset 后
+            // 旧泵残余事件在 emit_gen 栅栏处丢弃。
+            let _ = ws.set_read_timeout(Some(std::time::Duration::from_millis(WS_PUMP_POLL_MS)));
+            emitter.emit_gen(
                 &id,
                 WsEvent::Open {
                     protocol: String::new(),
                 },
+                nav_gen,
             );
             loop {
                 loop {
@@ -547,13 +605,13 @@ impl WsHost for NetWsHost {
                         Ok(HostCmd::Text(t)) => {
                             let n = t.len();
                             if ws.send(&t).is_ok() {
-                                emitter.emit(&id, WsEvent::Sent { bytes: n });
+                                emitter.emit_gen(&id, WsEvent::Sent { bytes: n }, nav_gen);
                             }
                         }
                         Ok(HostCmd::Bytes(b)) => {
                             let n = b.len();
                             if ws.send_binary(&b).is_ok() {
-                                emitter.emit(&id, WsEvent::Sent { bytes: n });
+                                emitter.emit_gen(&id, WsEvent::Sent { bytes: n }, nav_gen);
                             }
                         }
                         Ok(HostCmd::Close { code, reason }) => {
@@ -564,15 +622,16 @@ impl WsHost for NetWsHost {
                             } else {
                                 let _ = ws.close_with(code, &reason);
                             }
-                            emitter.emit(
+                            emitter.emit_gen(
                                 &id,
                                 WsEvent::Close {
                                     code: if code == 0 { 1005 } else { code },
                                     reason,
                                     clean: true,
                                 },
+                                nav_gen,
                             );
-                            conns.lock().expect("ws conn table lock").remove(&id);
+                            remove_conn_if_current(&conns, &id, nav_gen);
                             return;
                         }
                         Err(std::sync::mpsc::TryRecvError::Empty) => break,
@@ -582,21 +641,22 @@ impl WsHost for NetWsHost {
                 }
                 match ws.receive() {
                     Ok(Some(zero_net::websocket::WebSocketMessage::Text(t))) => {
-                        emitter.emit(&id, WsEvent::Text(t));
+                        emitter.emit_gen(&id, WsEvent::Text(t), nav_gen);
                     }
                     Ok(Some(zero_net::websocket::WebSocketMessage::Binary(b))) => {
-                        emitter.emit(&id, WsEvent::Binary(b));
+                        emitter.emit_gen(&id, WsEvent::Binary(b), nav_gen);
                     }
                     Ok(Some(zero_net::websocket::WebSocketMessage::Close(code, reason))) => {
-                        emitter.emit(
+                        emitter.emit_gen(
                             &id,
                             WsEvent::Close {
                                 code: code.unwrap_or(1005),
                                 reason: reason.unwrap_or_default(),
                                 clean: true,
                             },
+                            nav_gen,
                         );
-                        conns.lock().expect("ws conn table lock").remove(&id);
+                        remove_conn_if_current(&conns, &id, nav_gen);
                         return;
                     }
                     // Ping/Pong：tungstenite read 期间自动回 Pong，页面不可见（spec：UA 处理）。
@@ -604,16 +664,17 @@ impl WsHost for NetWsHost {
                     | Ok(Some(zero_net::websocket::WebSocketMessage::Pong(_))) => {}
                     Ok(None) => {} // 读超时（WouldBlock/TimedOut）或连接已静默关闭——下轮重查
                     Err(e) => {
-                        emitter.emit(&id, WsEvent::Error(format!("receive: {e}")));
-                        emitter.emit(
+                        emitter.emit_gen(&id, WsEvent::Error(format!("receive: {e}")), nav_gen);
+                        emitter.emit_gen(
                             &id,
                             WsEvent::Close {
                                 code: 1006,
                                 reason: String::new(),
                                 clean: false,
                             },
+                            nav_gen,
                         );
-                        conns.lock().expect("ws conn table lock").remove(&id);
+                        remove_conn_if_current(&conns, &id, nav_gen);
                         return;
                     }
                 }
@@ -915,7 +976,7 @@ mod tests {
         send(&["w1".into(), "b".into(), "1,2,3".into()]);
         let close = sandbox.take("__zw_ws_close");
         close(&["w1".into(), "1000".into(), "done".into()]);
-        // connect 是异步 spawn——轮询等命令落齐。
+        // connect 同步转发（非阻塞契约）——命令立即落齐；循环兜底保留。
         for _ in 0..100 {
             let n = host.cmds.lock().unwrap().len();
             if n >= 4 {
@@ -979,14 +1040,24 @@ mod tests {
     }
 
     /// RFC6455 最小 echo server：握手（Sec-WebSocket-Accept 校验由 tungstenite 客户端承担）
-    /// → 帧 echo（text/binary 原样回、close 回空 close、ping 回 pong）。
+    /// → 帧 echo（text/binary 原样回、close 回空 close、ping 回 pong）。多连接（每连接
+    /// 一线程）——代际钉测需同 id 跨代重连到同一 server。
     fn spawn_echo_server() -> std::net::SocketAddr {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind fixture");
         let addr = listener.local_addr().expect("addr");
         std::thread::spawn(move || {
+            for sock in listener.incoming() {
+                let Ok(sock) = sock else { return };
+                std::thread::spawn(move || handle_echo_conn(sock));
+            }
+        });
+        addr
+    }
+
+    /// 单连接 echo 处理（[`spawn_echo_server`] 每连接一线程）。
+    fn handle_echo_conn(mut sock: std::net::TcpStream) {
+        {
             use std::io::{BufRead, BufReader, Read, Write};
-            let Ok((sock, _)) = listener.accept() else { return };
-            let mut sock = sock;
             let mut reader = BufReader::new(sock.try_clone().expect("clone"));
             let mut key = String::new();
             let mut line = String::new();
@@ -1064,8 +1135,7 @@ mod tests {
                     _ => {}
                 }
             }
-        });
-        addr
+        }
     }
 
     /// 轮询等 resolver log 落齐 n 条（泵线程异步 emit）。
@@ -1093,25 +1163,160 @@ mod tests {
         let send = sb.take("__zw_ws_send");
         let close = sb.take("__zw_ws_close");
         connect(&["e1".into(), format!("ws://{addr}/echo"), "chat".into()]);
-        // 串行泵：逐条取事件（bridge 队列兜底先到事件）。
+        // 串行泵：逐条取事件（bridge 队列兜底先到事件）。send 成功后宿主回投
+        // `sent{sep}{bytes}`（bufferedAmount 递减依据）——事件序 open → sent → echo msg。
         next(&["e1".into(), "q1".into()]);
         let l = wait_log(&log, 1, std::time::Duration::from_secs(5));
         assert_eq!(l.len(), 1, "open 事件超时：{l:?}");
         assert_eq!(l[0].1, "open\x1f", "open wire（子协议面未协商——FIXME 记录）");
-        // 文本 echo。
+        // 文本 echo：sent:9（hello-t8k UTF-8 字节数）→ msg 回显。
         send(&["e1".into(), "t".into(), "hello-t8k".into()]);
         next(&["e1".into(), "q2".into()]);
         let l = wait_log(&log, 2, std::time::Duration::from_secs(5));
-        assert_eq!(l[1].1, "msg\x1fhello-t8k");
-        // 二进制 echo（csv 往返）。
+        assert_eq!(l[1].1, "sent\x1f9");
+        next(&["e1".into(), "q2b".into()]);
+        let l = wait_log(&log, 3, std::time::Duration::from_secs(5));
+        assert_eq!(l[2].1, "msg\x1fhello-t8k");
+        // 二进制 echo（csv 往返）：sent:3（3 字节）→ bin 回显。
         send(&["e1".into(), "b".into(), "104,105,255".into()]);
         next(&["e1".into(), "q3".into()]);
-        let l = wait_log(&log, 3, std::time::Duration::from_secs(5));
-        assert_eq!(l[2].1, "bin\x1f104,105,255");
+        let l = wait_log(&log, 4, std::time::Duration::from_secs(5));
+        assert_eq!(l[3].1, "sent\x1f3");
+        next(&["e1".into(), "q3b".into()]);
+        let l = wait_log(&log, 5, std::time::Duration::from_secs(5));
+        assert_eq!(l[4].1, "bin\x1f104,105,255");
         // 带码 close：宿主发 Close 帧（服务端回空 close）→ 终态 close wire clean。
         close(&["e1".into(), "1000".into(), "done".into()]);
         next(&["e1".into(), "q4".into()]);
-        let l = wait_log(&log, 4, std::time::Duration::from_secs(5));
-        assert_eq!(l[3].1, "close\x1f1000\x1f1\x1fdone", "本地 close 帧码/原因回投：{l:?}");
+        let l = wait_log(&log, 6, std::time::Duration::from_secs(5));
+        assert_eq!(l[5].1, "close\x1f1000\x1f1\x1fdone", "本地 close 帧码/原因回投：{l:?}");
+    }
+
+    // ── 跨文档代际（t8k defect-r1 D1 返修钉）──
+
+    #[test]
+    fn reset_generation_fences_stale_generation_events() {
+        let (resolver, log) = logging_resolver();
+        let em = WsEmitter {
+            core: Arc::new(Mutex::new(WsCore::default())),
+            resolver,
+            host: Arc::new(Mutex::new(None)),
+        };
+        // 旧代残余事件（reset 前捕获代际的泵线程）——reset 后到达须被栅栏丢弃。
+        let stale_gen = em.current_generation();
+        em.reset_generation();
+        em.next("ws1", "p_new"); // 新文档泵 pending 登记（reset 后的新上下文）
+        let em2 = em.clone();
+        std::thread::spawn(move || {
+            em2.emit_gen(
+                "ws1",
+                WsEvent::Open {
+                    protocol: String::new(),
+                },
+                stale_gen,
+            );
+            em2.emit_gen("ws1", WsEvent::Text("stale".to_string()), stale_gen);
+        })
+        .join()
+        .unwrap();
+        // 新代事件正常投递。
+        em.emit("ws1", WsEvent::Text("fresh".to_string()));
+        let l = log.lock().unwrap();
+        assert_eq!(l.len(), 1, "旧代残余事件须被栅栏丢弃：{l:?}");
+        assert_eq!(l[0], ("p_new".to_string(), "msg\x1ffresh".to_string()));
+    }
+
+    #[test]
+    fn net_ws_host_reset_generation_purges_and_reconnects_same_id() {
+        let addr = spawn_echo_server();
+        let (resolver, log) = logging_resolver();
+        let bridge = WsBridge::new(resolver);
+        bridge.set_host(default_net_ws_host(bridge.emitter()));
+        let mut sb = CaptureCb::new();
+        bridge.register(&mut sb);
+        let connect = sb.take("__zw_ws_connect");
+        let next = sb.take("__zw_ws_next");
+        // 旧代文档：connect 即导航（open 未消费、泵 pending 随 reset 作废）。
+        connect(&["ws1".into(), format!("ws://{addr}/echo"), "".into()]);
+        next(&["ws1".into(), "p_old".into()]);
+        bridge.reset_generation();
+        // 新文档同 id 重连（shim 计数器归零 → 同名 ws1——D1 触发条件）。
+        connect(&["ws1".into(), format!("ws://{addr}/echo"), "".into()]);
+        next(&["ws1".into(), "p_new".into()]);
+        // 等待窗口覆盖两个连接的握手完成：旧代 open（gen0 戳）若漏栅栏会在此到达。
+        let l = wait_log(&log, 2, std::time::Duration::from_secs(2));
+        assert_eq!(l.len(), 1, "旧代残余 open 须被代际栅栏丢弃、新代 open 须到达：{l:?}");
+        assert_eq!(l[0].0, "p_new", "新代 open resolve 新文档泵");
+        assert_eq!(l[0].1, "open\x1f");
+    }
+
+    #[test]
+    fn net_ws_host_stale_connect_failure_does_not_orphan_new_generation() {
+        // gen1 握手挂起服务端（accept 后不回 101）——泵阻塞在握手中。
+        let stall = std::net::TcpListener::bind("127.0.0.1:0").expect("bind stall fixture");
+        let stall_addr = stall.local_addr().expect("stall addr");
+        let _stall_thread = std::thread::spawn(move || {
+            let Ok((s, _)) = stall.accept() else { return };
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            drop(s); // EOF → gen1 泵迟到失败
+        });
+        let addr = spawn_echo_server();
+        let (resolver, log) = logging_resolver();
+        let bridge = WsBridge::new(resolver);
+        bridge.set_host(default_net_ws_host(bridge.emitter()));
+        let mut sb = CaptureCb::new();
+        bridge.register(&mut sb);
+        let connect = sb.take("__zw_ws_connect");
+        let next = sb.take("__zw_ws_next");
+        let send = sb.take("__zw_ws_send");
+        // gen1：连挂起服务端（同 id ws1 首连）。
+        connect(&["ws1".into(), format!("ws://{stall_addr}/x"), "".into()]);
+        // 跨文档 reset + gen2 同 id 重连（D1：新文档首连同名 ws1）。
+        bridge.reset_generation();
+        connect(&["ws1".into(), format!("ws://{addr}/echo"), "".into()]);
+        next(&["ws1".into(), "p1".into()]);
+        let l = wait_log(&log, 1, std::time::Duration::from_secs(5));
+        assert_eq!(l[0].1, "open\x1f", "gen2 open 到达：{l:?}");
+        // gen1 泵迟到失败（500ms EOF）：不得删 gen2 槽位（孤儿化臂）、失败事件被栅栏丢弃。
+        std::thread::sleep(std::time::Duration::from_millis(1200));
+        send(&["ws1".into(), "t".into(), "alive".into()]);
+        next(&["ws1".into(), "p2".into()]); // sent:5（send 成功回投）
+        next(&["ws1".into(), "p3".into()]); // msg 回显
+        let l = wait_log(&log, 3, std::time::Duration::from_secs(5));
+        assert_eq!(l[2].1, "msg\x1falive", "gen1 迟到失败不得孤儿化 gen2 连接：{l:?}");
+        assert_eq!(l.len(), 3, "gen1 失败事件（err/close）须被栅栏丢弃：{l:?}");
+    }
+
+    #[test]
+    fn net_ws_host_close_during_connect_emits_exactly_one_close() {
+        // 握手挂起服务端——slot 停留 Connecting（close-during-connect 窗口）。
+        let stall = std::net::TcpListener::bind("127.0.0.1:0").expect("bind stall fixture");
+        let stall_addr = stall.local_addr().expect("stall addr");
+        let _stall_thread = std::thread::spawn(move || {
+            let Ok((s, _)) = stall.accept() else { return };
+            std::thread::sleep(std::time::Duration::from_millis(800));
+            drop(s); // EOF → 泵迟到失败分支
+        });
+        let (resolver, log) = logging_resolver();
+        let bridge = WsBridge::new(resolver);
+        bridge.set_host(default_net_ws_host(bridge.emitter()));
+        let mut sb = CaptureCb::new();
+        bridge.register(&mut sb);
+        let connect = sb.take("__zw_ws_connect");
+        let next = sb.take("__zw_ws_next");
+        let close = sb.take("__zw_ws_close");
+        connect(&["ws1".into(), format!("ws://{stall_addr}/x"), "".into()]);
+        // 连接中关闭：本地仲裁——恰好一条 close(1006, clean=false)。
+        close(&["ws1".into(), "1000".into(), "bye".into()]);
+        next(&["ws1".into(), "p1".into()]);
+        let l = wait_log(&log, 1, std::time::Duration::from_secs(5));
+        assert_eq!(
+            l[0].1, "close\x1f1006\x1f0\x1f",
+            "Connecting 期 close → 仲裁唯一 close：{l:?}"
+        );
+        // 泵迟到失败（800ms EOF）不得再发第二条 close（恰好一条 Close 契约）。
+        std::thread::sleep(std::time::Duration::from_millis(1200));
+        let l = log.lock().unwrap();
+        assert_eq!(l.len(), 1, "close-during-connect 后泵须静默：{l:?}");
     }
 }

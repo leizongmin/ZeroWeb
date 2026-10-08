@@ -179,8 +179,7 @@ impl WebSocket {
                 _ => Ok(None),
             },
             Err(tungstenite::Error::Io(e))
-                if e.kind() == std::io::ErrorKind::WouldBlock
-                    || e.kind() == std::io::ErrorKind::TimedOut =>
+                if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut =>
             {
                 // 读超时 / 非阻塞：暂无消息（SO_RCVTIMEO 在 Windows 等映射为 TimedOut）。
                 Ok(None)
