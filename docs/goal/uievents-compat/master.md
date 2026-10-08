@@ -1,7 +1,7 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M4 尾簇 41——CANDIDATE 池收口，DC-1~4 全满足，goal Done）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-08（goal Done 维持；待决策清单 4 项首次征询登记）
 
 ## 当前状态
 
@@ -729,3 +729,7 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
 declarative shadow DOM 立项（15F/3TO 重入条件）；runner `.https.html` scheme
 分流专项（2F）；testharness 交互层 TO 专项（59TO——跨 corpus 基建，非本 goal 单独
 可关）。pointerlock/IME/touch-events 维持排除（入口文档排除项，无需决策）。
+**2026-10-08 已征询待批复**（goal 待决策巡检 msg `om_x100b634e253428a0c3401b05db3a524`；
+建议 = ①Arc 化暂不立项（渲染流战役在途）②shadow DOM 暂缓并入 web-components 盘点
+③scheme 分流不立项（仅 2F）④testharness TO 专项待 navigation M2 收口后评估——
+四项批复前均维持挂账，不影响在途流）。
