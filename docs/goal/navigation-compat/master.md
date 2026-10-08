@@ -88,9 +88,10 @@ history-interface 91.8% / navigation-api 40.1%；全量 20.9%→52.9%）
   资产启用。location-interface 86.1%→**95.3%**（消 M2-S1 遗留 FIXME）；全量 50.6%→**52.9%**。
   余 2F = runner 无端口 URL（形态挂账）+ create-script-set-location（③ 跨文档簇）。
   证据：[evidence/2026-10-08-m2-s4f-location-exotic.md](evidence/2026-10-08-m2-s4f-location-exotic.md)。
-- **质量门禁（九切片）**：`make test` 全绿 20,209 P / 0 F（S4F 轮）；clippy -D warnings
-  零 warning；fmt 零 diff；每轮全量语料零回归（per-subtest 精确 diff）。全量批墙钟
-  TIME_LIMIT=2700（批内不与 make test 并发）。
+- **质量门禁（九切片）**：`make test` 全绿 20,209 P / 0 F（S4F 轮）；`make reftest` 704/704
+  零失败（2026-10-08 S4D~S4F 三轮 shim 变更后统一复验——滚锚/焦点面涉 reftest 消费路径）；
+  clippy -D warnings 零 warning；fmt 零 diff；每轮全量语料零回归（per-subtest 精确 diff）。
+  全量批墙钟 TIME_LIMIT=2700（批内不与 make test 并发）。
 
 ## 下一步计划
 
