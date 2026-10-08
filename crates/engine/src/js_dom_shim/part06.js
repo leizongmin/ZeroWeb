@@ -187,6 +187,21 @@
     };
   }
 
+  // slice46：R161 pending-tag 回退 dedup 的身份键提取（原调用点引用未定义符号——
+  // ReferenceError 被 catch 吞 → seen161 恒空 → dedup 恒死：apply 后 tag 形查询重复
+  // 计入 pending 条目，part46 钉 qsa_pending_tag_dedup_identity_s46 自然红实证）。
+  // 键与 pending 循环的 k161 同构（'@'+handle / 'id:'+id）：R331 identity 反查把
+  // 快照命中升格为原 handle proxy 时，与 R379 PA 保留的同一节点同键对齐；无 handle
+  // 无 id 的 wrapper 返 null → 调用点回落 's'+si（不与 pending dedup——无身份键
+  // 无法判定同一，保守不剔）。
+  function _elKeyOf(el) {
+    try {
+      if (el && el.__zwHandle) return '@' + el.__zwHandle;
+      if (el && el.id) return 'id:' + el.id;
+    } catch (_e46k) {}
+    return null;
+  }
+
   // WAB2-M3-s1：fullscreen steps 异步化——spec「run the fullscreen steps」在渲染机会
   // （update the rendering）执行，非微任务/同步（WPT after-error 案：requestFullscreen 后
   // step_timeout(0) 内移除元素 → step 见 disconnected → 拒绝；同步/微任务 step 会先跑而误进

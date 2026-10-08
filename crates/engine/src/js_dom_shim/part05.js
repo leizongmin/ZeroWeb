@@ -10298,6 +10298,24 @@
     }
     return true;
   }
+  // slice46：sel 条目的 host 快照真含判定（R51c 消零前提修复的 sel-form 谓词，与
+  // `_zwHandleInHostSnapshot` 同构）。sel 即身份锚——`__zw_contains('html', sel)` 直判
+  //（html/body/head 层级免 contains，文档级节点恒在快照）。slice45 层1 的反查归属核对
+  //（handle→sel→contains→反查闭环）对 sel-form 不可表达（无 handle 锚）；R334 移挂的
+  // host 语义是 reparent 同一节点（`__zw_insert_adjacent_sel_element`），sel 身份跨
+  // apply 稳定，直判充分。桥未注册（engine 纯测试环境）/调用失败/空 sel → 返 false
+  //（消零保持 = 修复前行为，零回归）。
+  function _zwSelInHostSnapshot(sel) {
+    var s = String(sel == null ? '' : sel);
+    if (!s) return false;
+    if (s !== 'html' && s !== 'body' && s !== 'head') {
+      if (typeof __zw_contains !== 'function') return false;
+      try {
+        if (__zw_contains('html', s) !== '1') return false;
+      } catch (_e46s) { return false; }
+    }
+    return true;
+  }
   function _zwHCCollectSubtree(node, out) {
     if (!node) return;
     out.push(node);
@@ -10470,6 +10488,20 @@
             && _rv45._zwPaGen45 !== (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0)
             && _zwHandleInHostSnapshot(_rv45.__zwHandle)) {
           _rv45._zwAppl45 = true; // 压实豁免标记：handle-only 但快照真移除，非死数据
+          _pa45 = false;
+        }
+        // slice46：sel-form 对称门——快照 sel 节点（R334 移挂）apply 后 PA 保留（R379
+        // 全量保留带 `__zwSelector` 条目），remove 时上方 handle 门第 3 合取元
+        //（`__zwHandle`）恒假 → 消零保持 → 不入 removed 表 → 至下次 apply 前 document
+        // QS/QSA 对该 sel stale 命中（part46 钉 sel_form_move_apply_remove_document_
+        // query_stale_s46 自然红实证）。与 handle 门同构：代际门（同 turn append+
+        // remove 未 apply → 消零保持，R51c 热路径零桥回调回归）+ host 快照真含判定
+        //（`_zwSelInHostSnapshot`）。sel 条目压实天然豁免（`__zwSelector` 真），无需
+        // `_zwAppl45` 标记。
+        // https://dom.spec.whatwg.org/#concept-node-remove
+        if (_pa45 && _rv45 && !_rv45.__zwHandle && _rv45.__zwSelector
+            && _rv45._zwPaGen45 !== (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0)
+            && _zwSelInHostSnapshot(_rv45.__zwSelector)) {
           _pa45 = false;
         }
         _wasPA.push(_pa45);
