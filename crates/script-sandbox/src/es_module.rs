@@ -1338,13 +1338,17 @@ fn safe_ident(specifier: &str) -> String {
     }
 }
 
-/// tc39 ModuleExportName 允许保留字（`export * as class from` 合法），但局部绑定
-/// `var <ReservedWord>` 是语法错误——保留字不发局部声明（recheck-b3 B3-2）。
+/// tc39 ModuleExportName 允许保留字（`export * as class from` 合法），但包裹体
+/// 总在 `'use strict'` 下运行：局部 `var <name>` 对保留字及 `eval`/`arguments` 均为
+/// 语法错误——这些名字不发局部声明（recheck-b3 B3-2）。
 /// https://tc39.es/ecma262/#sec-keywords-and-reserved-words
+/// https://tc39.es/ecma262/#sec-identifiers-static-semantics-early-errors
 fn is_reserved_word(name: &str) -> bool {
     matches!(
         name,
-        "await"
+        "arguments"
+            | "await"
+            | "eval"
             | "break"
             | "case"
             | "catch"
