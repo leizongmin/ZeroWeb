@@ -800,8 +800,8 @@ fn transform_export(
             // export * as N 同时产生 LocalName=N 的 import 绑定，模块体内可裸标识符
             // 访问（具名重导出 export {a as b} from 则不产生局部绑定）
             // https://tc39.es/ecma262/#sec-exports-static-semantics-importentries
-            // default 是保留字，无法被裸标识符引用，跳过局部声明以免语法错误。
-            if namespace.trim() != "default" {
+            // 保留字无法被裸标识符引用，跳过局部声明以免语法错误。
+            if !is_reserved_word(namespace.trim()) {
                 result.push_str(&format!("  var {} = {exports_var};\n", namespace.trim()));
             }
             return Ok(result);
@@ -1297,6 +1297,9 @@ fn json_stringify(s: &str) -> String {
 
 /// 将模块标识符转换为安全的 JS 标识符。
 fn safe_ident(specifier: &str) -> String {
+    // 折叠不可逆（"/"与"_"折叠出同一标识符），不同 URL 会碰撞到同一 _mod_ 变量，
+    // 菱形重入改读 var _mod_{safe} 后会静默绑定到错误模块实例（recheck-b3 B3-1）——
+    // 追加 FNV-1a 摘要后缀使 URL→标识符映射可注入。
     let mut safe = String::new();
     for c in specifier.chars() {
         if c.is_alphanumeric() || c == '_' {
@@ -1305,15 +1308,76 @@ fn safe_ident(specifier: &str) -> String {
             safe.push('_');
         }
     }
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in specifier.as_bytes() {
+        hash ^= u64::from(*b);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    let suffix = format!("_h{hash:016x}");
     let safe = safe.trim_matches('_');
     if safe.is_empty() {
-        return "_mod".to_string();
+        return format!("_mod{suffix}");
     }
     if safe.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
-        format!("_{safe}")
+        format!("_{safe}{suffix}")
     } else {
-        safe.to_string()
+        format!("{safe}{suffix}")
     }
+}
+
+/// tc39 ModuleExportName 允许保留字（`export * as class from` 合法），但局部绑定
+/// `var <ReservedWord>` 是语法错误——保留字不发局部声明（recheck-b3 B3-2）。
+/// https://tc39.es/ecma262/#sec-keywords-and-reserved-words
+fn is_reserved_word(name: &str) -> bool {
+    matches!(
+        name,
+        "await"
+            | "break"
+            | "case"
+            | "catch"
+            | "class"
+            | "const"
+            | "continue"
+            | "debugger"
+            | "default"
+            | "delete"
+            | "do"
+            | "else"
+            | "enum"
+            | "export"
+            | "extends"
+            | "false"
+            | "finally"
+            | "for"
+            | "function"
+            | "if"
+            | "import"
+            | "in"
+            | "instanceof"
+            | "new"
+            | "null"
+            | "return"
+            | "super"
+            | "switch"
+            | "this"
+            | "throw"
+            | "true"
+            | "try"
+            | "typeof"
+            | "var"
+            | "void"
+            | "while"
+            | "with"
+            | "yield"
+            | "let"
+            | "static"
+            | "implements"
+            | "interface"
+            | "package"
+            | "private"
+            | "protected"
+            | "public"
+    )
 }
 
 #[cfg(test)]
@@ -1982,11 +2046,18 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
 
     #[test]
     fn test_safe_ident() {
-        assert_eq!(safe_ident("./utils.js"), "utils_js");
-        assert_eq!(safe_ident("https://example.com/mod.js"), "https___example_com_mod_js");
-        assert_eq!(safe_ident("123"), "_123");
-        assert_eq!(safe_ident("abc"), "abc");
-        assert_eq!(safe_ident("../a.js"), "a_js");
+        // 折叠名后追加 FNV-1a 摘要后缀："/"与"_"折叠同像，摘要使 URL→标识符可注入
+        //（recheck-b3 B3-1：碰撞会令菱形重入静默绑到错误实例）
+        assert_eq!(safe_ident("./utils.js"), "utils_js_h4234e0a339b229f0");
+        assert_eq!(
+            safe_ident("https://example.com/mod.js"),
+            "https___example_com_mod_js_h01cece26c5dc6d41"
+        );
+        assert_eq!(safe_ident("123"), "_123_h456fc2181822c4db");
+        assert_eq!(safe_ident("abc"), "abc_he71fa2190541574b");
+        assert_eq!(safe_ident("../a.js"), "a_js_h88d6723821338496");
+        // 可注入性：折叠同像的不同 URL 摘要不同
+        assert_ne!(safe_ident("a/b.js"), safe_ident("a_b.js"));
     }
 
     #[test]
@@ -2353,6 +2424,53 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let nsj = &r.namespace_json;
         assert!(
             nsj.contains("\"o\":\"ok\"") && nsj.contains("\"default\""),
+            "namespace={nsj}",
+        );
+    }
+
+    #[test]
+    fn test_safe_ident_collision_binds_distinct_instances() {
+        // safe_ident 折叠不可逆：a/b.js 与 a_b.js 折叠出同一标识符。菱形重入改读
+        // var _mod_{safe} 后碰撞会静默绑定到错误实例（recheck-b3 B3-1：m1b 读到
+        // M2 的导出）——摘要后缀使映射可注入后，重入须各自解析到正确实例。
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("https://a.test/a/b.js", "export const who='M1';");
+        sb.register_module("https://a.test/a_b.js", "export const who='M2';");
+        let r = sb
+            .execute_module(
+                concat!(
+                    "import*as m1 from\"./a/b.js\";",
+                    "import*as m2 from\"./a_b.js\";",
+                    "import*as m1b from\"./a/b.js\";",
+                    "export const w1=m1.who;",
+                    "export const w2=m2.who;",
+                    "export const w1b=m1b.who;",
+                ),
+                Some("https://a.test/entry.js"),
+            )
+            .unwrap();
+        let nsj = &r.namespace_json;
+        assert!(
+            nsj.contains("\"w1\":\"M1\"") && nsj.contains("\"w2\":\"M2\"") && nsj.contains("\"w1b\":\"M1\""),
+            "碰撞实例串扰: namespace={nsj}",
+        );
+    }
+
+    #[test]
+    fn test_export_star_as_reserved_word_no_local_var() {
+        // `export * as class from` 是合法 ESM（ModuleExportName 允许保留字），只是
+        // 不能发 var class 局部声明（recheck-b3 B3-2）——语句须可执行且导出绑定在。
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("https://a.test/shared.js", "export const v=7;");
+        let r = sb
+            .execute_module(
+                concat!("export*as class from\"./shared.js\";", "export const o='ok';",),
+                Some("https://a.test/entry.js"),
+            )
+            .unwrap();
+        let nsj = &r.namespace_json;
+        assert!(
+            nsj.contains("\"o\":\"ok\"") && nsj.contains("\"class\""),
             "namespace={nsj}",
         );
     }
