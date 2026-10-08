@@ -10241,8 +10241,24 @@
       // 读 e.newURL 断言导航达成）。
       if ((tag152 === 'a' || tag152 === 'area')) {
         var href152 = node.getAttribute && node.getAttribute('href');
-        if (href152 && String(href152).charAt(0) === '#' && globalThis.location) {
-          try { globalThis.location.hash = String(href152).slice(1); } catch (_e152h) {}
+        if (href152 && globalThis.location) {
+          // M2-S4H（navigation-compat）：锚激活线程 sourceElement/downloadRequest（与 part04
+          // 代理侧分支同面——test_driver 合成 click 走本 plain-node 路径）；非 hash href 走
+          // _navAnchorNavigate 通用面（part02，intercept/download/cross-origin）。
+          var _r152Se = null;
+          try { _r152Se = _makeProxy(node.__zwSelector || null, node.__zwHandle || null); } catch (_e152s) { _r152Se = null; }
+          var _r152Dl = null;
+          try { if (node.download !== undefined && node.download !== null) _r152Dl = String(node.download); } catch (_e152d) {}
+          if (String(href152).charAt(0) === '#') {
+            try { globalThis.__zwDbg152 = String(node.__zwSelector) + '|' + String(node.__zwHandle) + '|' + String(_r152Se && _r152Se.id) + '|prevent=' + String(node.__zwClickPrevented); } catch (_eDbg) {}
+            try { globalThis.__zwNavSourceElement = _r152Se; } catch (_e152s2) {}
+            try { globalThis.__zwNavDownloadRequest = _r152Dl; } catch (_e152d2) {}
+            try { globalThis.location.hash = String(href152).slice(1); } catch (_e152h) {}
+            try { globalThis.__zwNavSourceElement = null; } catch (_e152c1) {}
+            try { globalThis.__zwNavDownloadRequest = null; } catch (_e152c2) {}
+          } else if (typeof _navAnchorNavigate === 'function') {
+            try { _navAnchorNavigate(String(href152), _r152Se, _r152Dl); } catch (_e152n) {}
+          }
         }
       }
       return notPrevented;

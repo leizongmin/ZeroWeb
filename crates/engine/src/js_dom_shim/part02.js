@@ -5287,6 +5287,9 @@
         // 前置断言）。
         destState: o.state,
         resultCtrl: ctrl,
+        // M2-S4H：sameDocument = 是否 hash-only（非 hash push 本源跨文档——
+        // WPT navigate-anchor-download「sameDocument false」）。
+        sameDocument: hashChange,
       });
       if (ev.defaultPrevented) {
         // M2-S4G：dispatch 期已被 abort（重入面）→ 双 promise 已 reject、navigateerror 已派。
@@ -5589,16 +5592,24 @@
     // key/id 断言面）；push/replace 目的地 key/id = ''（anchor 面）。
     var destKey = o.destRec ? o.destRec.key : (o.destKey !== undefined ? o.destKey : '');
     var destId = o.destRec ? o.destRec.id : (o.destId !== undefined ? o.destId : '');
-    var dest = new NavigationDestination(o.url, true, destKey, destId, -1, bind);
+    // M2-S4H：destination.sameDocument 按导航本源（hash-only/pushState=true、非 hash
+    // href/assign/navigate=false——WPT navigate-anchor-download「sameDocument false」）。
+    var dest = new NavigationDestination(o.url, o.sameDocument === undefined ? true : !!o.sameDocument, destKey, destId, -1, bind);
     var ev = new NavigateEvent('navigate', {
       navigationType: o.navigationType || 'push',
       destination: dest,
-      canIntercept: true,
-      userInitiated: !!o.userInitiated,
+      // M2-S4H：canIntercept 可由调用方降（锚跨源 → false——spec「can have its URL rewritten」；
+      // WPT navigate-anchor-cross-origin「canIntercept false」）。
+      canIntercept: o.canIntercept === undefined ? true : !!o.canIntercept,
+      // M2-S4H：userInitiated ← 瞬态激活（testdriver click 签发——WPT
+      // navigate-anchor-download-userInitiated）；读后清（一次激活归一次导航）。
+      userInitiated: !!o.userInitiated || _zwTransientActive === true,
       hashChange: !!o.hashChange,
       signal: ctrl.signal,
       formData: null,
-      downloadRequest: null,
+      // M2-S4H：anchor download 属性线程（part04 读后即清 `__zwNavDownloadRequest`）。
+      downloadRequest: o.downloadRequest !== undefined ? o.downloadRequest
+        : (globalThis.__zwNavDownloadRequest || null),
       info: o.info,
       hasUAVisualTransition: false,
       sourceElement: o.sourceElement !== undefined ? o.sourceElement : null,
@@ -5640,6 +5651,7 @@
     // M2-S4G：保留 AbortController——导航 abort 时 signal 同步中止（abort 事件 + reason——
     // WPT precommitHandler-back-and-forth 的 signal abort 监听拒绝 precommit）。
     ev._zwAbortCtl = ctrl;
+    if (ev.userInitiated === true) { try { _zwTransientActive = false; } catch (_eTa) {} }
     // 嵌套导航抢占进行中的 traversal（traverse 自身派发带 _zwSelf 标记，不自抢占）。
     if (_navTraverseDispatching && !o._zwSelf) _navPreempted = true;
     _navDispatchAny(ev);
@@ -5944,6 +5956,9 @@
       sourceElement: globalThis.__zwNavSourceElement !== undefined ? globalThis.__zwNavSourceElement : null,
     });
     if (_zwNavEv.defaultPrevented) { if (!_zwNavEv._zwErrored) _navCancelNavigation(_zwNavEv, null); return; }
+    // M2-S4H：download 导航未 intercept → 不提交不重载（下载吞导航，导航永不结算——
+    // WPT anchor-download「fires navigate, but not navigatesuccess/navigateerror」）。
+    if (_zwNavEv.downloadRequest !== null && !_zwNavEv._zwIntercepted) return;
     _pushHistNav(newHref, oldHref);
     // M2-S2（navigation-compat）：fragment navigation 派 popstate **同步**（setter 返回前；spec
     // URL and history update steps——同文档导航的 popstate 在导航算法内同步派发，先于 queued
@@ -5991,8 +6006,11 @@
     if (!newHref || newHref === oldHref) return; // 解析失败 / 未变 → no-op
     // M2-S4B：navigate 'push' 先行（href-setter 同文档面——WPT intercept-resolve 等）；
     // preventDefault → 中止。
-    var _zwNavEv = _navFireNavigate({ navigationType: 'push', url: newHref, hashChange: _navIsHashOnly(oldHref, newHref) });
+    var _zwNavEv = _navFireNavigate({ navigationType: 'push', url: newHref, hashChange: _navIsHashOnly(oldHref, newHref), sameDocument: _navIsHashOnly(oldHref, newHref) });
     if (_zwNavEv.defaultPrevented) { if (!_zwNavEv._zwErrored) _navCancelNavigation(_zwNavEv, null); return; }
+    // M2-S4H：download 导航未 intercept → 不提交不重载（下载吞导航，导航永不结算——
+    // WPT anchor-download「fires navigate, but not navigatesuccess/navigateerror」）。
+    if (_zwNavEv.downloadRequest !== null && !_zwNavEv._zwIntercepted) return;
     _pushHistNav(newHref, oldHref);
     // M2-S4：Navigation API href-setter 面——**push**（同文档；WPT sameDocument-after-fragment
     // `location = "#hash"` entries 增长 + fresh key；跨文档 host 导航近似同面）。
@@ -6046,8 +6064,11 @@
     var newHref = _resolveHistUrl(String(url));
     if (!newHref || newHref === oldHref) return; // 解析失败 / 未变 → no-op
     // M2-S4B：navigate 'push' 先行（assign ≡ href-setter 语义）。
-    var _zwNavEv = _navFireNavigate({ navigationType: 'push', url: newHref, hashChange: _navIsHashOnly(oldHref, newHref) });
+    var _zwNavEv = _navFireNavigate({ navigationType: 'push', url: newHref, hashChange: _navIsHashOnly(oldHref, newHref), sameDocument: _navIsHashOnly(oldHref, newHref) });
     if (_zwNavEv.defaultPrevented) { if (!_zwNavEv._zwErrored) _navCancelNavigation(_zwNavEv, null); return; }
+    // M2-S4H：download 导航未 intercept → 不提交不重载（下载吞导航，导航永不结算——
+    // WPT anchor-download「fires navigate, but not navigatesuccess/navigateerror」）。
+    if (_zwNavEv.downloadRequest !== null && !_zwNavEv._zwIntercepted) return;
     _pushHistNav(newHref, oldHref);
     // M2-S4：Navigation API assign 面——**push**（assign ≡ href-setter 语义，fresh key）。
     if (_zwNavEv._zwBind) _zwNavEv._zwBind.rec = _navPushCurrent(_hist_current());
@@ -6056,6 +6077,33 @@
     if (_isCrossDocumentNav(oldHref, newHref) && typeof __zw_request_navigate === 'function') {
       __zw_request_navigate(newHref);
     }
+  }
+  // M2-S4H：锚点击通用导航（A/AREA 非 hash href）——navigate 事件（sameDocument=false、
+  // canIntercept=同源可重写、downloadRequest 线程）→ preventDefault 取消 → intercept 同文档
+  // 提交链 → download 未拦截 = 吞导航 → 其余 host 真导航（跨文档语义）。
+  // WPT navigate-anchor-download / -cross-origin / -same-origin-cross-document / -same-url 族。
+  function _navAnchorNavigate(url, sourceElement, downloadRequest) {
+    var oldHref = globalThis.location.href;
+    var newHref = _resolveHistUrl(String(url));
+    if (!newHref) return;
+    var hashOnly = _navIsHashOnly(oldHref, newHref);
+    var sameOrigin = true;
+    try { sameOrigin = (new URL(newHref).origin === new URL(oldHref).origin); } catch (_eAnO) {}
+    var ev = _navFireNavigate({
+      // M2-S4H：同 URL 锚点击 → **replace**（WPT navigate-anchor-same-url navigationType 断言）。
+      navigationType: (newHref === oldHref) ? 'replace' : 'push',
+      url: newHref,
+      hashChange: hashOnly, sameDocument: hashOnly,
+      sourceElement: sourceElement,
+      downloadRequest: downloadRequest !== undefined ? downloadRequest : null,
+      canIntercept: sameOrigin,
+    });
+    if (ev.defaultPrevented) { if (!ev._zwErrored) _navCancelNavigation(ev, null); return; }
+    if (ev.downloadRequest !== null && !ev._zwIntercepted) return; // download 吞导航
+    _pushHistNav(newHref, oldHref);
+    if (ev._zwBind) ev._zwBind.rec = _navPushCurrent(_hist_current());
+    if (ev._zwIntercepted) { _navRunIntercept(ev, null); return; }
+    if (!hashOnly && typeof __zw_request_navigate === 'function') __zw_request_navigate(newHref);
   }
   function _locationReplace(url) {
     var oldHref = globalThis.location.href;
@@ -6069,7 +6117,7 @@
     var newHref = _resolveHistUrl(String(url));
     if (!newHref || newHref === oldHref) return;
     // M2-S4B：navigate 'replace' 先行（location.replace 语义）。
-    var _zwNavEv = _navFireNavigate({ navigationType: 'replace', url: newHref, hashChange: _navIsHashOnly(oldHref, newHref) });
+    var _zwNavEv = _navFireNavigate({ navigationType: 'replace', url: newHref, hashChange: _navIsHashOnly(oldHref, newHref), sameDocument: _navIsHashOnly(oldHref, newHref) });
     if (_zwNavEv.defaultPrevented) { if (!_zwNavEv._zwErrored) _navCancelNavigation(_zwNavEv, null); return; }
     _replaceHistNav(newHref, oldHref);
     // M2-S4：Navigation API location.replace 面——**replace**（保 key 新 id，旧 entry detach）。

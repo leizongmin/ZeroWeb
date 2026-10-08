@@ -2,8 +2,8 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-09（M2-S1~S4G 十切片——location-interface 95.3% / traversal 93.3% /
-history-interface 91.8% / navigation-api 69.7%；全量 20.9%→67.4%）
+**最后更新**: 2026-10-09（M2-S1~S4H 十一片——location-interface 95.3% / traversal 93.3% /
+history-interface 91.8% / navigation-api 72.6%；全量 20.9%→69.2%）
 
 ---
 
@@ -26,7 +26,7 @@ history-interface 91.8% / navigation-api 69.7%；全量 20.9%→67.4%）
 | P1 | 四 corpus 导入 + 基线 | ✅ 落地（fetch 三域 + 嵌套 resources 2026-10-07 恢复后入库；基线 20.9%，S1+S2 后全量 29.2%） |
 | P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口：the-history-interface 81.6%→**91.8%**（traverse 入队 + 空串 URL + 跨源 SecurityError）；余 xhr helper infra ×1 + 速率限制 optional ×2 挂账 |
 | P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | 🔶 S1+S2+S4F 落地：location-interface 41.9%→**95.3%**（exotic 内部方法面 Proxy 承载收口）、traversal 62.2%→**93.3%**；余 2F = runner 无端口 URL（形态缺口挂账）+ create-script-set-location（归 ③ 跨文档簇） |
-| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4G 十段落地（→**69.7%**）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort 事件序全收；余 anchor-download ×2T（downloadRequest 面）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域）、userInitiated/跨文档（runner 形态） |
+| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4H 十一段落地（→**72.6%**）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest 全收；余 host 激活路径锚线程（S4I——testdriver click 面 3T+1F）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域）、userInitiated/跨文档（runner 形态） |
 | P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | ⏳ M3 **用户门控** |
 | P5 | bfcache / fission 挂账定稿 | ⏳ M4 |
 
@@ -98,15 +98,22 @@ history-interface 91.8% / navigation-api 69.7%；全量 20.9%→67.4%）
   navigation-api 40.1%→**69.7%**（precommit-handler 0→38P、ordering 1→28P）；全量
   52.9%→**67.4%**；per-subtest 精确 diff 零回归。
   证据：[evidence/2026-10-09-m2-s4g-precommit-traverseto.md](evidence/2026-10-09-m2-s4g-precommit-traverseto.md)。
-- **质量门禁（十切片）**：`make test` 全绿 20,225 P / 0 F（S4G 轮；锚 20,209 → 20,225 含兄弟
-  流新增）；`make reftest` 704/704 零失败（2026-10-08 S4D~S4F 三轮 shim 变更后统一复验）；
-  clippy -D warnings 零 warning；fmt 零 diff；每轮全量语料零回归（per-subtest 精确 diff）。
-  全量批墙钟 TIME_LIMIT=2700（批内不与 make test 并发）。
+- **M2-S4H anchor downloadRequest + 锚点击通用导航面（2026-10-09）**：anchor download 属性
+  → downloadRequest（expando 优先/attr 回落）+ 通用锚导航 helper（sameDocument 按本源/
+  canIntercept=同源可重写/同 URL=replace/download 未拦截吞导航）+ userInitiated ← 瞬态激活
+  （读后清）+ 锚激活 sourceElement 物化（part04 代理侧 + part03 plain-node 双路径）。
+  navigation-api 69.7%→**72.6%**（anchor-download 族 6T/F→10P）；全量 67.4%→**69.2%**；
+  per-subtest 精确 diff 零回归。余 host 激活路径锚线程 = S4I。
+  证据：[evidence/2026-10-09-m2-s4h-anchor-download.md](evidence/2026-10-09-m2-s4h-anchor-download.md)。
+- **质量门禁（十一片）**：`make test` 全绿 20,228 P / 0 F（S4H 轮）；`make reftest` 704/704
+  零失败（2026-10-08 复验）；clippy -D warnings 零 warning；fmt 零 diff；每轮全量语料零回归
+  （per-subtest 精确 diff）。全量批墙钟 TIME_LIMIT=2700（批内不与 make test 并发）。
 
 ## 下一步计划
 
-1. **M2 残余小簇**：anchor-download（2T——anchor download 属性 → downloadRequest/canIntercept
-   面，锚点击导航管线小改）；scroll-to-fragid 变体（编码/几何，部分回流渲染/焦点域）。
+1. **M2-S4I host 激活路径锚线程**：testdriver click 的 host `Activate` 管线（user_actions.rs
+  `PageEffect::SetFragment`/`Navigate`）绕过 JS 锚分支——前置线程脚本（sourceElement/
+  downloadRequest）+ `_navAnchorNavigate` 全局暴露；form submit navigate 族（5T）一并评估。
 2. **replace-before-load 38F 重定性 → M3 依赖**（2026-10-09 勘察）：全簇为 iframe 载体
    （setupSentinelIframe/insertIframe + 子文档 load 前自导航），断言 iframe 自有 session
    history 的 replace 语义——单文档 runner 形态不可达，随 M3 frame tree 一并解锁。
