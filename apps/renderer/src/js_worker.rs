@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use zero_engine::{
     AsyncResolver, DomMutation, ElementFromPointBridge, ElementFromPointCache, FetchBridge, FetchHandler, FetchRequest,
-    FetchResponse, HandleSelectorMap, LayoutRectSnapshot, RectBridge, TimerBridge, generate_js_dom_shim,
+    FetchResponse, HandleSelectorMap, LayoutRectSnapshot, RectBridge, TimerBridge, WsBridge, generate_js_dom_shim,
     make_dom_html_rect_handler, new_element_from_point_cache, new_handle_selector_map, new_layout_rect_snapshot,
     register_dom_callbacks,
 };
@@ -95,6 +95,12 @@ enum JsWorkerCommand {
     /// P1b S3：注入 fetch handler（renderer 在 WebView 初始化后发送；测试用合成 handler）。
     SetFetchHandler {
         handler: FetchHandler,
+    },
+    /// t8k：注入 WebSocket 宿主工厂（renderer 启动后发送）。factory 消费 bridge 的
+    /// [`WsEmitter`] 造生产宿主（chicken-and-egg 解同 fetch handler cell——js_worker
+    /// spawn 时 emitter 未就绪，宿主又必须持 emitter 推事件）。
+    SetWsHandler {
+        factory: zero_engine::ws_bridge::WsHostFactory,
     },
     /// media-playback M2c 后续：注入播放器注册表（镜像 browser tab_js_worker 同名命令
     /// ——多进程路径的 `__zwVideoBridge` 宿主桥一致性；renderer 主循环在 WebView 初始化
@@ -688,6 +694,12 @@ impl RendererJsWorker {
         let _ = self.cmd_tx.send(JsWorkerCommand::SetFetchHandler { handler });
     }
 
+    /// t8k：注入 WebSocket 宿主工厂（renderer 启动后调用）。factory 消费 bridge 的
+    /// emitter 造生产宿主（[`zero_engine::ws_bridge::default_net_ws_host`] 或测试合成实现）。
+    pub fn set_ws_handler(&self, factory: zero_engine::ws_bridge::WsHostFactory) {
+        let _ = self.cmd_tx.send(JsWorkerCommand::SetWsHandler { factory });
+    }
+
     /// media-playback M2c 后续：注入播放器注册表（renderer 主循环 WebView 初始化后调用；
     /// worker 注册 `__zwVideoBridge` 宿主桥——镜像 browser tab_js_worker，多进程路径
     /// 与 tabworker 路径的媒体播放真值面一致）。
@@ -884,6 +896,7 @@ impl WorkerCensus {
                 }
             }
             JsWorkerCommand::SetFetchHandler { .. } => "SetFetchHandler",
+            JsWorkerCommand::SetWsHandler { .. } => "SetWsHandler",
             JsWorkerCommand::SetVideoPlayers { .. } => "SetVideoPlayers",
             JsWorkerCommand::SetWebAudio { .. } => "SetWebAudio",
             JsWorkerCommand::ResetDocumentState { .. } => "ResetDocumentState",
@@ -1134,6 +1147,11 @@ fn js_worker_main(
     });
     let fetch_bridge = FetchBridge::new(resolver.clone());
     fetch_bridge.register(&mut *sandbox);
+    // t8k：WebSocket bridge——__zw_ws_connect/send/close/next 注册。生产宿主经 SetWsHandler
+    // factory 注入（host 需 bridge 的 emitter 推事件，两步构造解 chicken-and-egg）；未注入时
+    // 连接快速失败（err+close，fetch no-handler 同型）。
+    let ws_bridge = WsBridge::new(resolver.clone());
+    ws_bridge.register(&mut *sandbox);
     // R2949 FontFace.load() 桥——__zw_load_font 回调 push 请求到共享队列（runtime drain 后 fetch+register+resolve）。
     font_bridge.register(&mut *sandbox);
     // R3058 JS 跨文档导航桥——__zw_request_navigate 回调 push URL 到共享队列（runtime drain 后 handle_navigate）。
@@ -1437,6 +1455,11 @@ fn js_worker_main(
                 // P1b S3：注入 fetch handler（renderer 在 WebView 初始化后发送）。
                 fetch_bridge.set_handler(handler);
             }
+            JsWorkerCommand::SetWsHandler { factory } => {
+                // t8k：注入生产 WS 宿主（factory 消费 bridge emitter）。
+                let host = factory(ws_bridge.emitter());
+                ws_bridge.set_host(host);
+            }
             JsWorkerCommand::SetVideoPlayers { registry, pump_clock } => {
                 // M2c 后续：注册宿主桥回调族 + 注入 __zwVideoBridge JS 门面（镜像
                 // browser tab_js_worker 同名分支——多进程路径媒体播放真值面）。
@@ -1491,6 +1514,11 @@ fn js_worker_main(
                 // A cross-document navigation creates a new global object. Keeping the
                 // renderer worker is an implementation detail, not page-visible state.
                 sandbox.reset_context();
+                // t8k 返修（defect-r1 D1）：WS 宿主状态以 worker 生命周期存活，而 shim 连接
+                // 计数器随上下文重建归零——不推进代际，新文档首个连接（同名 ws1）事件被旧代
+                // 残留 pending 吞掉、旧泵终态可误删新槽位。作废旧代际事件面（WHATWG HTML：
+                // 文档销毁其 WebSocket 连接随之作废）。
+                ws_bridge.reset_generation();
                 // t8 返修（defect-r1 D1）：reset 竞态窗加固——主线程 `reset_document_state`
                 // 已先清一次队列，但 worker 串行处理下，旧页脚本/timer 回调
                 // （ResolveAsyncCallback 的 microtask checkpoint）可能在其之后、本 arm 之前

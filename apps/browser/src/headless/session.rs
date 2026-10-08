@@ -3,7 +3,9 @@
 //! 发布构建只持有 renderer IPC（进程隔离）；进程内 WebView 仅用于单元测试。
 
 use serde_json::Value;
+use std::sync::{Arc, Mutex};
 use zero_browser_shell::BrowserShell;
+
 use zero_net::cookie::CookieStore;
 #[cfg(not(test))]
 use zero_net::{HttpClient, HttpMethod, HttpRequest};
@@ -64,8 +66,8 @@ pub(super) struct HeadlessSession {
     pub(super) next_request_id: u64,
     /// addScriptToEvaluateOnNewDocument 注册的脚本（新文档加载后重放）。
     pub(super) injected_scripts: Vec<InjectedScript>,
-    /// Cookie jar（Storage 域 + proxy_fetch 双向接线；会话级——单会话模型即浏览器级）。
-    pub(super) cookie_store: CookieStore,
+    /// Cookie jar（Storage 域 + proxy_fetch 双向接线；与 WS [`zero_net::shared_cookie_store`] 同进程共享）。
+    pub(super) cookie_store: Arc<Mutex<CookieStore>>,
     /// Emulation.setUserAgentOverride（None = 默认 UA）。
     pub(super) user_agent_override: Option<String>,
     /// Network.enable 门控（Network 域事件源开关）。
@@ -182,7 +184,7 @@ impl HeadlessSession {
             shell,
             webview,
             injected_scripts: Vec::new(),
-            cookie_store: CookieStore::new(),
+            cookie_store: zero_net::shared_cookie_store(),
             user_agent_override: None,
             network_enabled: false,
             pending_network_events: Vec::new(),
@@ -235,7 +237,7 @@ impl HeadlessSession {
             navigation_epoch: 0,
             next_request_id: 1,
             injected_scripts: Vec::new(),
-            cookie_store: CookieStore::new(),
+            cookie_store: zero_net::shared_cookie_store(),
             user_agent_override: None,
             network_enabled: false,
             pending_network_events: Vec::new(),
@@ -532,7 +534,11 @@ impl HeadlessSession {
         // Cookie 注入（Storage jar → 请求头）+ UA override
         let mut headers = params.headers;
         if let Some(parsed) = &parsed_url {
-            let cookie_header = self.cookie_store.cookie_header(parsed);
+            let cookie_header = self
+                .cookie_store
+                .lock()
+                .expect("headless cookie store lock")
+                .cookie_header(parsed);
             if !cookie_header.is_empty() {
                 headers.retain(|(k, _)| !k.eq_ignore_ascii_case("cookie"));
                 headers.push(("Cookie".to_string(), cookie_header));
@@ -690,7 +696,10 @@ impl HeadlessSession {
                         .collect();
                     for header_value in set_cookies {
                         if let Ok(cookie) = CookieStore::parse_set_cookie(&header_value) {
-                            self.cookie_store.add_from_url(cookie, parsed);
+                            self.cookie_store
+                                .lock()
+                                .expect("headless cookie store lock")
+                                .add_from_url(cookie, parsed);
                         }
                     }
                 }

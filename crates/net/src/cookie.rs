@@ -3,6 +3,7 @@
 //! 提供 HTTP Cookie 解析、存储和匹配功能。
 
 use std::str::FromStr;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::NetError;
@@ -569,6 +570,39 @@ impl CookieStore {
 impl Default for CookieStore {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// 进程内共享 cookie jar（与 [`crate::http_cache::shared_http_cache`] 同形态；fetch/WS 等子系统复用）。
+pub fn shared_cookie_store() -> Arc<Mutex<CookieStore>> {
+    static STORE: OnceLock<Arc<Mutex<CookieStore>>> = OnceLock::new();
+    STORE.get_or_init(|| Arc::new(Mutex::new(CookieStore::new()))).clone()
+}
+
+/// 将响应中的 `Set-Cookie` 头写入 jar（请求 URL 作 default-path / host-only 来源）。
+pub fn store_set_cookie_headers(store: &mut CookieStore, request_url: &str, headers: &[(String, String)]) {
+    let Some(parsed) = crate::parse_url(request_url).ok() else {
+        return;
+    };
+    for (name, value) in headers {
+        if name.eq_ignore_ascii_case("set-cookie")
+            && let Ok(cookie) = CookieStore::parse_set_cookie(value)
+        {
+            store.add_from_url(cookie, &parsed);
+        }
+    }
+}
+
+/// 按请求 URL 向 headers 注入 `Cookie`（调用方已设 `Cookie` 时不覆盖）。
+pub fn merge_cookie_request_header(store: &CookieStore, request_url: &str, headers: &mut Vec<(String, String)>) {
+    if headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("cookie")) {
+        return;
+    }
+    if let Ok(parsed) = crate::parse_url(request_url) {
+        let cookie_header = store.cookie_header(&parsed);
+        if !cookie_header.is_empty() {
+            headers.push(("Cookie".to_string(), cookie_header));
+        }
     }
 }
 

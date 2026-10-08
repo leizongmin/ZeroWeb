@@ -59,6 +59,9 @@ pub mod text_metrics;
 #[cfg(feature = "script-runtime")]
 pub mod timer_bridge;
 pub mod transition;
+// t8k：WebSocket 页面 API 宿主桥（复用 __zw_pending Promise 通道；形态对齐 fetch_bridge）。
+#[cfg(feature = "script-runtime")]
+pub mod ws_bridge;
 
 pub use animation::*;
 #[cfg(feature = "script-runtime")]
@@ -89,6 +92,8 @@ pub use text_metrics::{
 };
 #[cfg(feature = "script-runtime")]
 pub use timer_bridge::*;
+#[cfg(feature = "script-runtime")]
+pub use ws_bridge::*;
 /// 渲染媒体类型（DC-12 @media print/screen；R1992 webview 生产接线）。
 pub use zero_css_parser::media_query::MediaType;
 pub use zero_css_parser::media_query::PrefersColorSchemeValue;

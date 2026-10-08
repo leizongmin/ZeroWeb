@@ -20,9 +20,14 @@ enum InflightReply {
     Ignore,
 }
 
+struct InflightEntry {
+    reply: InflightReply,
+    request_url: String,
+}
+
 /// 进行中的 IPC fetch（request_id → 完成通道）。
 pub struct InflightIpcFetches {
-    pending: HashMap<u64, InflightReply>,
+    pending: HashMap<u64, InflightEntry>,
     document_url: Option<String>,
 }
 
@@ -52,9 +57,15 @@ impl InflightIpcFetches {
         else {
             return false;
         };
-        let Some(reply) = self.pending.remove(request_id) else {
+        let Some(entry) = self.pending.remove(request_id) else {
             return false;
         };
+        let InflightEntry { reply, request_url } = entry;
+        {
+            let store = zero_net::shared_cookie_store();
+            let mut jar = store.lock().expect("shared cookie store lock");
+            zero_net::store_set_cookie_headers(&mut jar, &request_url, headers);
+        }
         if (200..300).contains(status_code)
             && headers
                 .iter()
@@ -72,8 +83,13 @@ impl InflightIpcFetches {
         {
             if is_stream_chunk(headers) {
                 collected.extend_from_slice(body);
-                self.pending
-                    .insert(*request_id, InflightReply::StreamBytes { tx, body: collected });
+                self.pending.insert(
+                    *request_id,
+                    InflightEntry {
+                        reply: InflightReply::StreamBytes { tx, body: collected },
+                        request_url,
+                    },
+                );
             } else {
                 deliver_reply(InflightReply::StreamBytes { tx, body: collected }, *status_code, body);
             }
@@ -193,7 +209,13 @@ impl<'a> IpcAsyncFetchHost<'a> {
             }),
         };
         self.outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
-        self.inflight.pending.insert(request_id, reply);
+        self.inflight.pending.insert(
+            request_id,
+            InflightEntry {
+                reply,
+                request_url: url.to_string(),
+            },
+        );
         Ok(())
     }
 
@@ -216,7 +238,13 @@ impl<'a> IpcAsyncFetchHost<'a> {
         self.outbound
             .send(msg)
             .map_err(|e| format!("IPC fetch send failed: {e}"))?;
-        self.inflight.pending.insert(request_id, InflightReply::Ignore);
+        self.inflight.pending.insert(
+            request_id,
+            InflightEntry {
+                reply: InflightReply::Ignore,
+                request_url: origin.to_string(),
+            },
+        );
         Ok(())
     }
 
@@ -238,7 +266,13 @@ impl<'a> IpcAsyncFetchHost<'a> {
         self.outbound
             .send(msg)
             .map_err(|e| format!("IPC DNS prefetch send failed: {e}"))?;
-        self.inflight.pending.insert(request_id, InflightReply::Ignore);
+        self.inflight.pending.insert(
+            request_id,
+            InflightEntry {
+                reply: InflightReply::Ignore,
+                request_url: origin.to_string(),
+            },
+        );
         Ok(())
     }
 }
@@ -328,7 +362,13 @@ mod tests {
     fn fetch_response_delivers_bytes() {
         let mut inflight = InflightIpcFetches::new();
         let (tx, rx) = channel();
-        inflight.pending.insert(42, InflightReply::Bytes(tx));
+        inflight.pending.insert(
+            42,
+            InflightEntry {
+                reply: InflightReply::Bytes(tx),
+                request_url: "https://example.com/".into(),
+            },
+        );
         let msg = IpcMessage {
             id: 0,
             kind: IpcMessageKind::FetchResponse(FetchResponseParams {
@@ -347,9 +387,13 @@ mod tests {
     fn streamed_image_chunks_wait_for_final_response() {
         let mut inflight = InflightIpcFetches::new();
         let (tx, rx) = channel();
-        inflight
-            .pending
-            .insert(42, InflightReply::StreamBytes { tx, body: Vec::new() });
+        inflight.pending.insert(
+            42,
+            InflightEntry {
+                reply: InflightReply::StreamBytes { tx, body: Vec::new() },
+                request_url: "https://example.com/img.png".into(),
+            },
+        );
         let chunk = IpcMessage {
             id: 0,
             kind: IpcMessageKind::FetchResponse(FetchResponseParams {
@@ -363,7 +407,10 @@ mod tests {
         assert!(rx.try_recv().is_err());
         assert!(matches!(
             inflight.pending.get(&42),
-            Some(InflightReply::StreamBytes { .. })
+            Some(InflightEntry {
+                reply: InflightReply::StreamBytes { .. },
+                ..
+            })
         ));
 
         let final_response = IpcMessage {
@@ -398,7 +445,13 @@ mod tests {
     fn fetch_response_delivers_text() {
         let mut inflight = InflightIpcFetches::new();
         let (tx, rx) = channel();
-        inflight.pending.insert(7, InflightReply::Text(tx));
+        inflight.pending.insert(
+            7,
+            InflightEntry {
+                reply: InflightReply::Text(tx),
+                request_url: "https://example.com/page".into(),
+            },
+        );
         let msg = IpcMessage {
             id: 0,
             kind: IpcMessageKind::FetchResponse(FetchResponseParams {
@@ -423,7 +476,13 @@ mod tests {
     fn fetch_response_http_error_propagates() {
         let mut inflight = InflightIpcFetches::new();
         let (tx, rx) = channel();
-        inflight.pending.insert(1, InflightReply::Bytes(tx));
+        inflight.pending.insert(
+            1,
+            InflightEntry {
+                reply: InflightReply::Bytes(tx),
+                request_url: "https://example.com/missing".into(),
+            },
+        );
         let msg = IpcMessage {
             id: 0,
             kind: IpcMessageKind::FetchResponse(FetchResponseParams {
@@ -451,7 +510,13 @@ mod tests {
     fn clear_drops_pending_replies() {
         let mut inflight = InflightIpcFetches::new();
         let (tx, _rx) = channel();
-        inflight.pending.insert(1, InflightReply::Bytes(tx));
+        inflight.pending.insert(
+            1,
+            InflightEntry {
+                reply: InflightReply::Bytes(tx),
+                request_url: "https://example.com/".into(),
+            },
+        );
         inflight.clear();
         assert!(inflight.pending.is_empty());
     }
@@ -487,7 +552,10 @@ mod tests {
         ));
         assert!(matches!(
             inflight.pending.get(&1),
-            Some(InflightReply::StreamBytes { .. })
+            Some(InflightEntry {
+                reply: InflightReply::StreamBytes { .. },
+                ..
+            })
         ));
     }
 
@@ -503,7 +571,13 @@ mod tests {
         }
 
         assert_eq!(next_id, 8);
-        assert!(matches!(inflight.pending.get(&7), Some(InflightReply::Ignore)));
+        assert!(matches!(
+            inflight.pending.get(&7),
+            Some(InflightEntry {
+                reply: InflightReply::Ignore,
+                ..
+            })
+        ));
         let frame = buf.0.lock().unwrap();
         let payload_len = u32::from_le_bytes(frame[..4].try_into().unwrap()) as usize;
         assert_eq!(payload_len, frame.len() - 4);
@@ -556,7 +630,13 @@ mod tests {
             }) if method == "DNS-PREFETCH" && headers.is_empty()
         ));
         drop(frame);
-        assert!(matches!(inflight.pending.get(&9), Some(InflightReply::Ignore)));
+        assert!(matches!(
+            inflight.pending.get(&9),
+            Some(InflightEntry {
+                reply: InflightReply::Ignore,
+                ..
+            })
+        ));
     }
 
     #[test]

@@ -203,6 +203,11 @@ pub struct WebViewConfig {
     /// ok:false stub——浏览器路径由 app 层 `FetchBridge` 注册异步 `__zw_fetch`，二者互斥）。
     /// 经本配置注册的 `__zw_fetch` 走**同步返回**契约（回调直接返 wire；shim R34xx 支持）。
     pub fetch_handler: Option<zero_engine::fetch_bridge::FetchHandler>,
+    /// t8k：WebSocket 宿主工厂（进程内路径——webview-demo / 嵌入宿主；None → 不注册
+    /// `__zw_ws_*`，shim 宿主缺失优雅降级 error+close(1006)）。浏览器路径由 renderer/tab
+    /// js_worker `SetWsHandler` 注入，与本字段互斥——`fetch_handler` 同款分野。CSP
+    /// enforcement on 时宿主外套 connect-src 门（与 fetch/XHR/beacon/eventsource 同位）。
+    pub ws_host_factory: Option<zero_engine::ws_bridge::WsHostFactory>,
     // R384（js-dom M5 收尾）：kill-switch `native_dom` 字段已删——双引擎 default-on 后
     // 原生绑定是唯一生产路径（DC-1；用户 2026-08-19/30 批复）。原生 DOM 绑定安装见
     // `install_native_dom_bindings`（`engine::dom_bindings` / `quickjs_dom_bindings`，
@@ -266,6 +271,7 @@ impl Default for WebViewConfig {
             service_worker_script_fetcher: None,
             image_source_fetcher: None,
             fetch_handler: None,
+            ws_host_factory: None,
             // R384（js-dom M5/M7 收尾）：kill-switch 字段已删，原生绑定无条件安装。
         }
     }
@@ -289,6 +295,7 @@ impl std::fmt::Debug for WebViewConfig {
             )
             .field("image_source_fetcher", &self.image_source_fetcher.is_some())
             .field("fetch_handler", &self.fetch_handler.is_some())
+            .field("ws_host_factory", &self.ws_host_factory.is_some())
             .finish()
     }
 }
@@ -366,6 +373,58 @@ struct PendingCspStyleViolation {
     target_selector: Option<String>,
     /// 外链 stylesheet 附带 link error 事件（abs href）。
     link_error: Option<String>,
+}
+
+/// t8k：webview 进程内 WS 宿主的 connect-src 门（security-hardening M2-s5 同位——
+/// fetch/XHR/beacon/eventsource 统一桥后的第四 connect-src 消费者；csp.rs
+/// `is_connect_allowed` 已覆盖 ws/wss scheme）。拒绝 → violation 入共享队列（run 尾
+/// document 站派发）+ err/close(1006) 快速失败（shim 收到即页面可见 onerror/onclose）。
+struct CspGateWsHost {
+    inner: std::sync::Arc<dyn zero_engine::ws_bridge::WsHost>,
+    emitter: zero_engine::ws_bridge::WsEmitter,
+    ctx: SecurityContext,
+    page_url: std::sync::Arc<std::sync::Mutex<String>>,
+    violations: std::sync::Arc<std::sync::Mutex<Vec<PendingCspStyleViolation>>>,
+}
+
+impl zero_engine::ws_bridge::WsHost for CspGateWsHost {
+    fn connect(&self, id: &str, url: &str, protocols: &[String], origin: &str, cookie: &str) {
+        let page = self.page_url.lock().map(|u| u.clone()).unwrap_or_default();
+        let abs = zero_engine::resolve_document_url(&page, url);
+        if let Some(violation) = self.ctx.check_connect(&abs) {
+            if let Ok(mut queue) = self.violations.lock() {
+                queue.push(PendingCspStyleViolation {
+                    effective_directive: violation.effective_directive,
+                    blocked_uri: violation.blocked_uri,
+                    original_policy: violation.original_policy,
+                    target_tag: "",
+                    target_ordinal: usize::MAX,
+                    target_selector: None,
+                    link_error: None,
+                });
+            }
+            self.emitter.emit(
+                id,
+                zero_engine::ws_bridge::WsEvent::Error("csp-connect-src-blocked".to_string()),
+            );
+            self.emitter.emit(
+                id,
+                zero_engine::ws_bridge::WsEvent::Close {
+                    code: 1006,
+                    reason: String::new(),
+                    clean: false,
+                },
+            );
+            return;
+        }
+        self.inner.connect(id, url, protocols, origin, cookie);
+    }
+    fn send(&self, id: &str, data: &zero_engine::ws_bridge::WsData) {
+        self.inner.send(id, data);
+    }
+    fn close(&self, id: &str, code: u16, reason: &str) {
+        self.inner.close(id, code, reason);
+    }
 }
 
 /// WebView — 可嵌入的网页渲染表面。
@@ -3011,6 +3070,35 @@ impl WebView {
                 }
             }),
         );
+
+        // t8k：WebSocket——config.ws_host_factory 注入时注册 WsBridge（__zw_ws_connect/
+        // send/close/next 回调族）+ 宿主（默认 default_net_ws_host）。事件经 webview
+        // 异步回调通路（async_callback_tx → 泵循环 resolve_async_callback——timer 同款）；
+        // None → 不注册（shim 宿主缺失优雅降级：异步 error+close(1006)，不 ReferenceError）。
+        // CSP enforcement on 时宿主外套 connect-src 门（CspGateWsHost）；off → 零变更。
+        if let Some(factory) = &self.config.ws_host_factory {
+            let ws_resolver = zero_engine::AsyncResolver::new({
+                let tx = self.async_callback_tx.clone();
+                move |id: &str, result: &str| {
+                    let _ = tx.send((id.to_string(), result.to_string()));
+                }
+            });
+            let ws_bridge = zero_engine::WsBridge::new(ws_resolver);
+            let inner = factory(ws_bridge.emitter());
+            let host: std::sync::Arc<dyn zero_engine::ws_bridge::WsHost> =
+                match self.config.csp_enforcement.then(|| self.security_context.clone()) {
+                    Some(ctx) => std::sync::Arc::new(CspGateWsHost {
+                        inner,
+                        emitter: ws_bridge.emitter(),
+                        ctx,
+                        page_url: std::sync::Arc::clone(&self.page_url_wire),
+                        violations: std::sync::Arc::clone(&self.pending_csp_connect_violations),
+                    }),
+                    None => inner,
+                };
+            ws_bridge.set_host(host);
+            ws_bridge.register(sandbox.as_mut());
+        }
 
         // R34xx：__zw_fetch（同步契约）——headless/testharness 宿主经 config.fetch_handler 提供
         // 本地资源（wpt-data 文件映射：/images/*、/fonts/* 等）。None → 不注册（shim typeof-check

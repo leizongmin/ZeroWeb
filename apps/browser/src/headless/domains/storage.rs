@@ -12,6 +12,8 @@ impl HeadlessServer {
     pub(super) fn cmd_storage_get_cookies(&self, session: &mut HeadlessSession) -> Value {
         let cookies: Vec<Value> = session
             .cookie_store
+            .lock()
+            .expect("headless cookie store lock")
             .all()
             .iter()
             .map(|c| Self::cookie_to_cdp(c))
@@ -62,7 +64,11 @@ impl HeadlessServer {
                     } else {
                         builder.path = Some(parsed.path.trim_end_matches('/').to_string());
                     }
-                    session.cookie_store.add(builder);
+                    session
+                        .cookie_store
+                        .lock()
+                        .expect("headless cookie store lock")
+                        .add(builder);
                     continue;
                 }
             }
@@ -82,14 +88,18 @@ impl HeadlessServer {
             if let Some(expires) = descriptor.get("expires").and_then(|v| v.as_f64()) {
                 builder.expires = if expires < 0.0 { None } else { Some(expires as u64) };
             }
-            session.cookie_store.add(builder);
+            session
+                .cookie_store
+                .lock()
+                .expect("headless cookie store lock")
+                .add(builder);
         }
         Ok(serde_json::json!({}))
     }
 
     /// Storage.clearCookies — 清空 jar。
     pub(super) fn cmd_storage_clear_cookies(&self, session: &mut HeadlessSession) -> Value {
-        session.cookie_store.clear();
+        session.cookie_store.lock().expect("headless cookie store lock").clear();
         serde_json::json!({})
     }
 
@@ -106,6 +116,8 @@ impl HeadlessServer {
             .unwrap_or_default();
         let cookies: Vec<Value> = session
             .cookie_store
+            .lock()
+            .expect("headless cookie store lock")
             .all()
             .iter()
             .filter(|c| {
@@ -139,7 +151,7 @@ impl HeadlessServer {
     ///
     /// https://chromedevtools.github.io/devtools-protocol/tot/Network/#method-clearBrowserCookies
     pub(super) fn cmd_network_clear_browser_cookies(&self, session: &mut HeadlessSession) -> Value {
-        session.cookie_store.clear();
+        session.cookie_store.lock().expect("headless cookie store lock").clear();
         serde_json::json!({})
     }
 

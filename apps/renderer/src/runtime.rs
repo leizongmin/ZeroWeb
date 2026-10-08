@@ -378,6 +378,9 @@ impl RendererRuntime {
             });
             js_worker.set_fetch_handler(observer);
         }
+        // t8k：WebSocket 生产宿主（zero_net::WebSocket + 泵线程；renderer 直连网络与
+        // fetch 同位——factory 消费 bridge emitter）。
+        js_worker.set_ws_handler(Arc::new(zero_engine::ws_bridge::default_net_ws_host));
         // 视口提示初值：renderer 默认 1280x800（webview config 同源）——快照换代后 shim
         // innerWidth/innerHeight 校正（headless 经 SetViewport 覆写为真实值）。
         js_worker.set_viewport_hint(1280, 800);

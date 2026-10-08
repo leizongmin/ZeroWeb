@@ -252,6 +252,9 @@ fn tab_worker_main(
             // P1b S3 / R2923：注入生产 fetch handler（经 ResourceLoader 真实 HTTP，支持全方法/头/体）。
             // js_worker 早于 WebView 创建；共享加载器不依赖 WebView 句柄，故可在 spawn 后立即注入。
             js_worker.set_fetch_handler(crate::tab_js_worker::default_fetch_handler());
+            // t8k：WebSocket 生产宿主（zero_net::WebSocket + 泵线程；直连网络与 fetch 同位
+            // ——factory 消费 bridge emitter）。
+            js_worker.set_ws_handler(std::sync::Arc::new(zero_engine::ws_bridge::default_net_ws_host));
             Some(js_worker)
         }
         #[cfg(test)]

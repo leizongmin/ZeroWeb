@@ -540,6 +540,18 @@ pub(super) fn native_prevent_default_invoke(
 /// 重置 event 为「已初始化未派发」态——复用 [`set_event_init`] 设 type/bubbles/cancelable + 派发态默认
 ///（target/currentTarget=null、eventPhase=0、defaultPrevented=false）。dispatchEvent 派发前复位 stop flag，
 /// 故 initEvent 不必显式清。子类（MouseEvent 等）经原型链继承可达（spec 各有 initXxxEvent，本切片基类通用）。
+///
+/// t8k（bilibili 页空白菜第二断层）：initEvent 是 spec 的 **initialize** 路径
+///（`concept-event-initialize`），须置 initialized flag——shim `document.createEvent`
+/// 在 native 实例上置 `_zwUninitialized = true`（js-dom M4 R106），dispatch 守卫
+///（shim `_zwDispatchGuard`）见 flag 仍置即抛 InvalidStateError。native 版此前不清
+/// flag，且 shim 版 initEvent 因「`Event.prototype.initEvent` 已存在则不覆盖」守卫
+/// 永不安装 → legacy 页面三连 `createEvent + initEvent + dispatchEvent` 全灭
+///（bili-header emitter / core-js unhandledrejection polyfill 实证）。
+/// FIXME（native initEvent 剩余 spec 面）：派发中调用应 no-op（`concept-event-initialize`
+/// 步骤 1，shim 版 R106 已实现）；首参 mandatory TypeError（shim 版 R110 同款）。
+// https://dom.spec.whatwg.org/#dom-event-initevent
+// https://dom.spec.whatwg.org/#concept-event-initialize
 fn native_init_event_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -550,6 +562,11 @@ fn native_init_event_invoke(
     let bubbles = args.get(1).is_true();
     let cancelable = args.get(2).is_true();
     set_event_init(scope, this, &event_type, bubbles, cancelable);
+    // initialize 步骤：置 initialized flag（清 shim R106 的未初始化印记；未印记实例
+    // 写 false 无副作用——own data 属性）。
+    if let Some(k) = v8::String::new(scope, "_zwUninitialized") {
+        let _ = this.set(scope, k.into(), v8::Boolean::new(scope, false).into());
+    }
 }
 
 /// `__zw_native_create_event(type)`：spec `dom-document-createevent`（legacy 事件创建——`document.createEvent`）。

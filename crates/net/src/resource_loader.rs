@@ -11,7 +11,7 @@ use std::time::Instant;
 use crate::fetch_scheduler::FetchTelemetry;
 use crate::{
     CacheLookup, FetchJobResult, FetchPriority, HttpCache, HttpClient, HttpMethod, HttpRequest,
-    PerOriginFetchScheduler, shared_http_cache,
+    PerOriginFetchScheduler, shared_cookie_store, shared_http_cache, store_set_cookie_headers,
 };
 
 const MAX_RESOURCE_LOAD_EVENTS: usize = 1024;
@@ -333,15 +333,25 @@ impl ResourceLoader {
         let events = Arc::clone(&self.events);
         let (tx, rx) = mpsc::channel();
         crate::client::async_runtime().spawn(async move {
+            // FIXME(t8k-delta F1)：此处曾有 HTTP 请求 cookie 注入（merge_cookie_request_header），
+            // 因 context-free 超发 SameSite=Lax/Strict（RFC 6265bis §5.4）且注入头不参与
+            // identity_key/缓存查找/写入（跨 cookie 态同 partition 条目串味），已在合并前摘除
+            // （HTTP 注入面无功能依赖，WS 握手走 ws_handshake_cookie 自行取 jar）。
+            // 恢复注入前须：context 计算 + merge 前移到 identity/lookup 之前。
             let result = HttpClient::send_async_with_timeout(30, request)
                 .await
                 .map_err(|error| error.to_string());
-            if let Ok(response) = &result
-                && response.is_success()
-            {
-                let mut cache = cache.lock().expect("HTTP cache lock");
-                for target in unsafe_invalidation_targets(&url, response) {
-                    cache.invalidate(&target);
+            if let Ok(response) = &result {
+                {
+                    let jar = shared_cookie_store();
+                    let mut store = jar.lock().expect("shared cookie store lock");
+                    store_set_cookie_headers(&mut store, &url, &response.headers);
+                }
+                if response.is_success() {
+                    let mut cache = cache.lock().expect("HTTP cache lock");
+                    for target in unsafe_invalidation_targets(&url, response) {
+                        cache.invalidate(&target);
+                    }
                 }
             }
             let bytes = result.as_ref().map(|response| response.body.len() as u64).unwrap_or(0);
@@ -373,6 +383,8 @@ impl ResourceLoader {
                 headers.push((name, value));
             }
         }
+        // FIXME(t8k-delta F1)：cookie 注入摘除理由同 submit_http_with_context_in_partition 内注释
+        // （SameSite 超发 + 缓存身份不一致；恢复前须 context 计算并前移到 identity_key 之前）。
         let key = request.identity_key();
         let (rx, telemetry_rx, owns_telemetry) = PerOriginFetchScheduler::submit_shared_with_key_headers_and_telemetry(
             &self.scheduler,
@@ -418,6 +430,11 @@ impl ResourceLoader {
                     .map(|cached| cached.into_response())
                     .ok_or_else(|| "304 without cached entry".to_string()),
                 Ok(response) => {
+                    {
+                        let jar = shared_cookie_store();
+                        let mut store = jar.lock().expect("shared cookie store lock");
+                        store_set_cookie_headers(&mut store, &url, &response.headers);
+                    }
                     if may_store && response.is_success() {
                         let _ =
                             cache
