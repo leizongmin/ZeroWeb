@@ -525,13 +525,12 @@ fn transform_import(
     if clause.starts_with('\'') || clause.starts_with('"') || clause.starts_with('`') {
         let raw_specifier = extract_string_literal(clause.split(';').next().unwrap_or(clause).trim())?;
         let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
-        // 执行副作用（内联执行模块体但不使用返回值）
-        if !visited.contains(&specifier) {
-            visited.insert(specifier.clone());
-            let dep_code = build_dep_iife(&specifier, registry, visited)?;
-            return Ok(format!("  {dep_code};\n"));
-        }
-        return Ok(String::new());
+        let safe = safe_ident(&specifier);
+        let dep = inline_dep_once(&specifier, registry, visited)?;
+        return match &dep {
+            DepInline::Fresh(code) => Ok(format!("  var _mod_{safe} = {code};\n")),
+            DepInline::Visited(_) => Ok(String::new()),
+        };
     }
 
     // import * as X from 'module'（压缩形态 import*as X from"m" 同样命中）
@@ -782,8 +781,23 @@ fn transform_export(
             };
             let raw_specifier = extract_import_specifier_from_rest(spec_part)?;
             let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
+            let safe = safe_ident(&specifier);
             let dep = inline_dep_once(&specifier, registry, visited)?;
-            return Ok(format!("  _exports.{} = {};\n", namespace.trim(), dep.exports_expr()));
+            let exports_var = match &dep {
+                DepInline::Fresh(_) => format!("_mod_{safe}"),
+                DepInline::Visited(_) => format!("_modref_{safe}"),
+            };
+            let mut result = String::new();
+            match &dep {
+                DepInline::Fresh(code) => {
+                    result.push_str(&format!("  var {exports_var} = {code};\n"));
+                }
+                DepInline::Visited(_) => {
+                    result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
+                }
+            }
+            result.push_str(&format!("  _exports.{} = {exports_var};\n", namespace.trim()));
+            return Ok(result);
         }
         let Some((_empty, spec_part)) = split_from_clause(after) else {
             return Err(ScriptError::CompileError(format!("unsupported export: {clause}")));
@@ -824,7 +838,20 @@ fn transform_export(
             ensure_module_export(&specifier, imported, registry)?;
         }
         let dep = inline_dep_once(&specifier, registry, visited)?;
-        let mut result = format!("  var _reexport_{safe} = {};\n", dep.exports_expr());
+        let exports_var = match &dep {
+            DepInline::Fresh(_) => format!("_mod_{safe}"),
+            DepInline::Visited(_) => format!("_modref_{safe}"),
+        };
+        let mut result = String::new();
+        match &dep {
+            DepInline::Fresh(code) => {
+                result.push_str(&format!("  var {exports_var} = {code};\n"));
+            }
+            DepInline::Visited(_) => {
+                result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
+            }
+        }
+        result.push_str(&format!("  var _reexport_{safe} = {exports_var};\n"));
         for item in before[1..end].split(',').map(str::trim).filter(|item| !item.is_empty()) {
             if let Some(pos) = item.find(" as ") {
                 let imported = item[..pos].trim();
