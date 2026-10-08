@@ -9245,7 +9245,10 @@ promise_test(async function() {
             "local-send-keys-sequence.html",
             html,
             MINI_HARNESS,
-            Duration::from_secs(2),
+            // R3254-K5 fixture：三段多键序列 + microtask 链，solo ~1.05s；2s 案超时在
+            // workspace 并行负载下间歇超限（连续四轮 make test 折在此处、solo 恒过）——
+            // 提到 10s 负载容限（case 级超时非语义断言，放宽无语义影响）。
+            Duration::from_secs(10),
         );
         assert!(
             results.iter().all(|r| r.status == HarnessStatus::Pass),

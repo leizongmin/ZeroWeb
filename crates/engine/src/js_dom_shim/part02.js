@@ -4697,7 +4697,7 @@
   var _hist_entries = [{ state: null, url: '', scrollRestoration: 'auto' }]; // cursor 0 = 初始 entry（M2-S2：+ per-entry scrollRestoration）
   var _hist_cursor = 0;
   function _hist_current() { return _hist_entries[_hist_cursor]; }
-  function _hist_dispatchPopState(oldHrefBefore) {
+  function _hist_dispatchPopState(oldHrefBefore, skipScroll) {
     // spec：back/forward/go 触发 popstate（pushState/replaceState 不触发），异步派发。
     // R3007：跨 hash 变更的导航同时派 hashchange（spec：hash 变更导航派 popstate + hashchange）。
     // oldHrefBefore = cursor 移动**前**的 entry url（back/forward/go 捕获传入）；hash 变化时派 hashchange。
@@ -4708,7 +4708,8 @@
       && String(oldHrefBefore).split('#')[1] !== String(newHref).split('#')[1];
     // R3065：back/forward/go 到 hash entry → 滚到锚元素（闭合 R3061 限制②）。real browser 跨 hash 导航滚锚
     //（back 到 #sec entry 滚到 id/name="sec"）。同步滚（mirror _setLocationHash），popstate/hashchange 仍 defer。
-    if (hashChanged) {
+    // M2-S4C：skipScroll——intercept 取代默认滚锚行为（spec intercept 替换默认 scroll 面近似）。
+    if (hashChanged && !skipScroll) {
       _scrollToAnchorForHash(String(newHref).split('#')[1] || '');
     }
     _defer(function () {
@@ -4783,15 +4784,16 @@
   }
   // M2-S4B：push/replace 应用共通内部（**不派 navigate**——调用方先行派发并防中止；
   // history.pushState/replaceState 与 navigation.navigate() 共用）。含 S4 的 Navigation API
-  // push/replace CCE 面。
-  function _histApplyNav(state, url, replace) {
+  // push/replace CCE 面。M2-S4C：bind 单元格提交后绑记录（destination 动态 index/getState）。
+  function _histApplyNav(state, url, replace, bind) {
     if (replace) {
       var newUrl = _histStateUrlOrNull(url);
       if (newUrl === null && url != null && String(url) !== '') return; // 跨源已抛
       var cur = _hist_current();
       cur.state = state;
       if (newUrl !== null) cur.url = newUrl;
-      _navReplaceCurrent(cur);
+      var freshR = _navReplaceCurrent(cur);
+      if (bind) bind.rec = freshR;
       return;
     }
     var newUrl2 = _histStateUrlOrNull(url);
@@ -4801,31 +4803,104 @@
     var _zwHe = { state: state, url: newUrl2, scrollRestoration: _zwSR };
     _hist_entries.push(_zwHe);
     _hist_cursor = _hist_entries.length - 1;
-    _navPushCurrent(_zwHe);
+    var freshP = _navPushCurrent(_zwHe);
+    if (bind) bind.rec = freshP;
   }
   // M2-S3：traverse 命令队列——back/forward/go 仅入队（delta），_defer 任务按 FIFO 逐条结算：
   // 位置在**执行时**对当期 cursor 计算（非入队时快照），越界条目跳过，每条生效即派 popstate
-  //（+ 跨 hash 派 hashchange，_hist_applyTraversal 内同步派发）。
+  //（+ 跨 hash 派 hashchange，_hist_applyTraversal 内同步派发）。M2-S4C：ctrl 载荷——
+  // navigation.back/forward 携 committed/finished 控制柄（越界 → InvalidStateError reject）。
   var _hist_pendingTraversals = [];
-  function _hist_queueTraversal(delta) {
-    _hist_pendingTraversals.push(delta);
+  function _hist_queueTraversal(delta, ctrl) {
+    _hist_pendingTraversals.push({ delta: delta, ctrl: ctrl || null });
     _defer(_hist_runQueuedTraversals);
   }
   function _hist_runQueuedTraversals() {
     while (_hist_pendingTraversals.length) {
-      _hist_applyTraversal(_hist_pendingTraversals.shift());
+      var item = _hist_pendingTraversals.shift();
+      _hist_applyTraversal(item.delta, item.ctrl);
     }
   }
-  function _hist_applyTraversal(delta) {
+  function _hist_applyTraversal(delta, ctrl) {
     var target = _hist_cursor + delta;
-    if (target < 0 || target > _hist_entries.length - 1) return; // 越界 no-op
-    if (target === _hist_cursor) return;
+    if (target < 0 || target > _hist_entries.length - 1) {
+      // 越界：history.back/forward 静默 no-op（R3004）；navigation.back/forward reject
+      // InvalidStateError（spec canGoBack/canGoForward 前置面）。
+      if (ctrl) {
+        var ie = new (globalThis.DOMException || DOMException)('Cannot go back or forward.', 'InvalidStateError');
+        ctrl.reject(ie);
+        ctrl.finishedSettle(ie);
+      }
+      return;
+    }
+    if (target === _hist_cursor) {
+      if (ctrl) {
+        _defer(function () {
+          if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+          if (ctrl.finishedSettle) ctrl.finishedSettle(null);
+        });
+      }
+      return;
+    }
     var oldHref = _hist_current().url;
+    // M2-S4C：navigate 'traverse' 同步派发（queue 任务内）——destination = 目标 record（真实
+    // key/id/index——WPT navigate-history-back-after-fragment）；preventDefault → 取消整个
+    // traversal（不动 cursor/不派 popstate）；intercept → 应用后走 handler 生命周期（WPT
+    // intercept-navigation-back——traversal 照常、committed 于链后结算）。
+    // 复活：hash-setter/replace 让位的 record（he 已 detach）按 he 从场外登记找回并**在位顶替**——
+    // key/id 保真（destination 断言面），当位 record 让位入场外（forward 回访对称复活）。
+    var _navTgtRec = _navFindRecord(_hist_entries[target]);
+    if (_navTgtRec && _navList.indexOf(_navTgtRec) === -1) {
+      var _navOld = _navList[_navPos];
+      _navList[_navPos] = _navTgtRec;
+      _navDetached.push(_navOld);
+      if (_navDetached.length > 16) _navDetached.shift();
+    }
+    // M2-S4C：preemption——traverse 事件 dispatch 期间嵌套导航（navigate()/hash/pushState...）
+    // 即抢占本 traversal（spec：新导航使进行中导航 abort，committed/finished reject AbortError；
+    // WPT navigate-destination-dynamic-index forward 面 + abort-in-nested-navigations）。
+    // 复位/读取均走 IIFE 旗标（_navFireNavigate 内嵌套 fire 置位；勿加 var 遮蔽）。
+    _navPreempted = false;
+    _navTraverseDispatching = true;
+    var _navEv = _navFireNavigate({
+      navigationType: 'traverse',
+      _zwSelf: true,
+      url: _histEntryUrl(_hist_entries[target]),
+      hashChange: _navIsHashOnly(_histEntryUrl(_hist_current()), _histEntryUrl(_hist_entries[target])),
+      destRec: _navTgtRec,
+      destState: _navTgtRec ? _navTgtRec.navState : undefined,
+    });
+    _navTraverseDispatching = false;
+    if (_navEv.defaultPrevented) {
+      if (ctrl) {
+        var ce = new (globalThis.DOMException || DOMException)('The operation was aborted.', 'AbortError');
+        ctrl.reject(ce);
+        ctrl.finishedSettle(ce);
+      }
+      return;
+    }
+    if (_navPreempted) {
+      if (ctrl) {
+        var pe = new (globalThis.DOMException || DOMException)('The navigation was preempted.', 'AbortError');
+        ctrl.reject(pe);
+        ctrl.finishedSettle(pe);
+      } else {
+        try { globalThis.__zwDbgPreemptNoCtrl = String(_hist_cursor) + '/' + String(target) + '/' + String(delta); } catch (_eDbg) {}
+      }
+      return;
+    }
     _hist_cursor = target;
     // M2-S4：Navigation API traverse 面——currentEntry 恢复到目标 session entry 的 record
     //（按 he 反查，key/id 还原——WPT key-id-back-same-document）+ 'traverse' currententrychange。
     if (typeof _navTraverse === 'function') _navTraverse(_hist_current());
-    _hist_dispatchPopState(oldHref);
+    _hist_dispatchPopState(oldHref, _navEv._zwIntercepted);
+    if (_navEv._zwIntercepted) _navRunIntercept(_navEv, ctrl);
+    else if (ctrl) {
+      _defer(function () {
+        if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+        if (ctrl.finishedSettle) ctrl.finishedSettle(null);
+      });
+    }
   }
   globalThis.history = {
     get length() { return _hist_entries.length; },
@@ -4851,7 +4926,7 @@
       var abs = (url == null || String(url) === '') ? oldHref : (_resolveHistUrl(String(url)) || oldHref);
       var ev = _navFireNavigate({ navigationType: 'push', url: abs, hashChange: _navIsHashOnly(oldHref, abs) });
       if (ev.defaultPrevented) return;
-      _histApplyNav(state, url, false);
+      _histApplyNav(state, url, false, ev._zwBind);
       if (ev._zwIntercepted) _navRunIntercept(ev, null);
     },
     // replaceState(state, unused, url?)：原地替换当前 entry 的 state/url（不触发 popstate）。
@@ -4863,7 +4938,7 @@
       var abs = (url == null || String(url) === '') ? oldHref : (_resolveHistUrl(String(url)) || oldHref);
       var ev = _navFireNavigate({ navigationType: 'replace', url: abs, hashChange: _navIsHashOnly(oldHref, abs) });
       if (ev.defaultPrevented) return;
-      _histApplyNav(state, url, true);
+      _histApplyNav(state, url, true, ev._zwBind);
       if (ev._zwIntercepted) _navRunIntercept(ev, null);
     },
     // M2-S3（navigation-compat）：back/forward/go **入队**到 task 末尾执行（spec——traverse 步骤
@@ -4892,6 +4967,7 @@
     _hist_cursor = 0;
     _hist_pendingTraversals = []; // M2-S3：清跨文档残留 traverse 队列（新文档不复现旧页 go()）
     if (typeof _navReset === 'function') _navReset(); // M2-S4：同步重置 Navigation API entry list
+    _navTransition = null; // M2-S4C：清进行中 transition（跨文档导航终止拦截链）
   };
 
   // ===== M2-S4（navigation-compat）：Navigation API 最小面（read side + currententrychange）=====
@@ -4910,6 +4986,7 @@
   // spec 未实现步骤：navigate event 的 destination/canIntercept/intercept() 全簇 +
   // 专用派发序（currententrychange 现走自有 registry，不共享 window 站）。
   var _navList = []; // entry list（record：{key,id,navState,he,_pub}——he 反查 session entry）
+  var _navDetached = []; // M2-S4C：replace 语义让位的 record（traverse 回访复活用）
   var _navPos = 0; // currentEntry 在 _navList 的位置
   function _navUuid() {
     try { return crypto.randomUUID(); } catch (_eNavUuid) {
@@ -4958,18 +5035,30 @@
     ev.target = globalThis.navigation;
     var list = (_navListeners.currententrychange || []).slice();
     var on = _navOnHandlers.currententrychange;
-    if (typeof on === 'function') list.push(on);
+    if (typeof on === 'function') list.push({ fn: on });
     for (var i = 0; i < list.length; i++) {
-      try { list[i].call(globalThis.navigation, ev); } catch (_eNavFire) {}
+      var entry = (list[i] && typeof list[i] === 'object') ? list[i] : { fn: list[i] };
+      if (entry.once) {
+        var arr = _navListeners.currententrychange;
+        if (arr) { var ai = arr.indexOf(entry); if (ai >= 0) arr.splice(ai, 1); }
+      }
+      try { (typeof entry.fn === 'function' ? entry.fn : entry).call(globalThis.navigation, ev); } catch (_eNavFire) {}
     }
   }
   // replace 语义共通：当前 record 让位（detach）→ 同 key 新 id 新 record（navState 清）。
-  // keepHe=false 时绑新 session entry（hash-setter/location.replace 已 push/改写 session entry）。
-  function _navReplaceCurrent(newHe) {
+  // M2-S4C：carryState=true 时承继旧 record navState（fragment/location.replace 导航承继——
+  // WPT navigate-destination-getState-fragment-via-href；history.replaceState 仍清——WPT
+  // state/history-replaceState）。
+  function _navReplaceCurrent(newHe, carryState) {
     var old = _navCurrent() || _navMakeRecord(_hist_current());
     if (!_navList.length) _navList.push(old);
     var fresh = _navMakeRecord(newHe || old.he, old.key); // key 保留（current-basic sixth / replaceState）
+    if (carryState) fresh.navState = old.navState;
     _navList[_navPos] = fresh;
+    // M2-S4C：detach 的 record 入场外登记（traverse 回访该 session entry 时按 he 复活——
+    // WPT navigate-history-back-after-fragment destination.key = 原 entry key）。
+    _navDetached.push(old);
+    if (_navDetached.length > 16) _navDetached.shift();
     _navFire('currententrychange', 'replace', old);
     return fresh;
   }
@@ -4988,8 +5077,23 @@
   // 无则 fallback 新建——key 不保，spec 跨文档重置面近似）。
   function _navTraverse(targetHe) {
     var from = _navCurrent();
+    var rec = _navFindRecord(targetHe);
     var found = -1;
-    for (var i = 0; i < _navList.length; i++) { if (_navList[i].he === targetHe) { found = i; break; } }
+    if (rec) {
+      found = _navList.indexOf(rec);
+      if (found === -1) {
+        // 复活：从场外登记挪回在位（当位 record 让位入场外，forward 回访对称）。
+        var dj = _navDetached.indexOf(rec);
+        if (dj >= 0) _navDetached.splice(dj, 1);
+        var oldCur = _navList[_navPos];
+        if (oldCur && oldCur !== rec) {
+          _navDetached.push(oldCur);
+          if (_navDetached.length > 16) _navDetached.shift();
+        }
+        _navList[_navPos] = rec;
+        found = _navPos;
+      }
+    }
     if (found < 0) {
       _navList = _navList.slice(0, _navPos + 1);
       _navList.push(_navMakeRecord(targetHe));
@@ -5001,6 +5105,7 @@
   function _navReset() {
     _navList = [_navMakeRecord(_hist_entries[0])];
     _navPos = 0;
+    _navDetached = []; // M2-S4C：清场外登记
   }
   _navReset();
 
@@ -5020,9 +5125,17 @@
       _navFire('currententrychange', null, rec);
     },
     // back/forward：委托 history traverse 队列（复用 S3 结算——popstate/hashchange/currententrychange
-    // 全走既有链）。返回 spec 形 Promise + finished（resolve 于队列结算后——_defer 两跳近似 task 边界）。
-    back: function () { _hist_queueTraversal(-1); return _navNavPromise(); },
-    forward: function () { _hist_queueTraversal(1); return _navNavPromise(); },
+    // 全走既有链）。M2-S4C：携 committed/finished 控制柄——navigate 'traverse' 事件在队列任务内
+    // 派发（preventDefault 取消 traversal → AbortError reject；intercept → 链后结算；越界 →
+    // InvalidStateError reject——spec canGoBack/canGoForward 前置面）。
+    back: function () { return _navTraverseBy(-1); },
+    forward: function () { return _navTraverseBy(1); },
+    // M2-S4C：canGoBack/canGoForward（WPT intercept-navigation-back canGoBack 断言面）。
+    get canGoBack() { return _hist_cursor > 0; },
+    get canGoForward() { return _hist_cursor < _hist_entries.length - 1; },
+    // M2-S4C：transition——intercept 链进行中的 NavigationTransition（finished + navigationType）；
+    // 无进行中导航 → null（spec）。滚动/聚焦行为面 defer。
+    get transition() { return _navTransition; },
     // M2-S4B：navigate(url, {state, history, info})——同步派 navigate（cancelable/interceptable）；
     // preventDefault → 双 reject AbortError（WPT navigation-navigate-preventDefault——CCE 不发因
     // 无提交）；否则同文档提交（push/replace session entry + CCE，state 入 classic 槽——WPT
@@ -5045,7 +5158,7 @@
         ctrl.finishedSettle(de);
         return { committed: ctrl.committed, finished: ctrl.finished };
       }
-      _histApplyNav(o.state, abs, replace);
+      _histApplyNav(o.state, abs, replace, ev._zwBind);
       if (ev._zwIntercepted) _navRunIntercept(ev, ctrl);
       else {
         _defer(function () {
@@ -5076,15 +5189,17 @@
       }
       return { committed: ctrl.committed, finished: ctrl.finished };
     },
-    addEventListener: function (type, fn) {
+    addEventListener: function (type, fn, options) {
       if (typeof fn !== 'function') return;
-      (_navListeners[type] = _navListeners[type] || []).push(fn);
+      var o = (options == null || typeof options !== 'object') ? {} : options;
+      // M2-S4C：once 语义（WPT navigate-destination-dynamic-index 的 {once:true} listener——
+      // 未实现时捕获到后续 replace 事件的 destination → index 断言错位）。
+      (_navListeners[type] = _navListeners[type] || []).push({ fn: fn, once: !!o.once });
     },
     removeEventListener: function (type, fn) {
       var l = _navListeners[type];
       if (!l) return;
-      var i = l.indexOf(fn);
-      if (i >= 0) l.splice(i, 1);
+      for (var i = 0; i < l.length; i++) { if (l[i] && l[i].fn === fn) { l.splice(i, 1); return; } }
     },
     dispatchEvent: function (ev) { return _navFire(ev && ev.type, undefined, _navCurrent()) !== false; },
   };
@@ -5101,13 +5216,6 @@
   _navDefineOn('navigatesuccess');
   _navDefineOn('navigateerror');
   _navDefineOn('currententrychange');
-  function _navNavPromise() {
-    var obj = {};
-    obj.finished = new Promise(function (res) { _defer(function () { _defer(function () { res(undefined); }); }); });
-    obj.committed = obj.finished;
-    return obj;
-  }
-
   // ===== M2-S4B：navigate 事件 + navigation.navigate()/reload() + intercept 拦截面 =====
   // spec：nav-history-apis#navigate-event。navigate 在导航算法内**同步**派发（cancelable；
   // preventDefault → 导航中止——pushState/replaceState/hash-setter/href/assign 无 entry 无
@@ -5120,9 +5228,15 @@
     var type = ev.type;
     var list = (_navListeners[type] || []).slice();
     var on = _navOnHandlers[type];
-    if (typeof on === 'function') list.push(on);
+    if (typeof on === 'function') list.push({ fn: on });
     for (var i = 0; i < list.length; i++) {
-      try { list[i].call(globalThis.navigation, ev); } catch (_eNda) {}
+      var entry = (list[i] && typeof list[i] === 'object') ? list[i] : { fn: list[i] };
+      // once：调用**前**移除（spec inner invoke——WPT dynamic-index {once:true} 面）。
+      if (entry.once) {
+        var arr = _navListeners[type];
+        if (arr) { var ai = arr.indexOf(entry); if (ai >= 0) arr.splice(ai, 1); }
+      }
+      try { (typeof entry.fn === 'function' ? entry.fn : entry).call(globalThis.navigation, ev); } catch (_eNda) {}
     }
   }
   // 仅 hash 段不同（同文档片段导航判定——navigate event hashChange 面）。
@@ -5130,11 +5244,41 @@
     return String(oldHref).split('#')[0] === String(newHref).split('#')[0]
       && String(oldHref).split('#')[1] !== String(newHref).split('#')[1];
   }
+  // M2-S4C：session entry 的**有效 URL**——初始 entry url=''（fallback 口）→ 读页面 URL
+  //（traverse destination.url 须绝对可解析——WPT navigate-history-back-after-fragment
+  // `new URL(e.destination.url)` + hashChange 对比基面）。
+  function _histEntryUrl(he) {
+    if (he && he.url) return he.url;
+    return typeof __zw_get_page_url === 'function' ? __zw_get_page_url() : 'about:blank';
+  }
+  // M2-S4C：traverse dispatch 期间的嵌套导航抢占标记 + record 查找（list → 场外 detach 登记）。
+  var _navTraverseDispatching = false;
+  var _navPreempted = false;
+  function _navFindRecord(he) {
+    for (var i = 0; i < _navList.length; i++) { if (_navList[i].he === he) return _navList[i]; }
+    for (var j = 0; j < _navDetached.length; j++) { if (_navDetached[j].he === he) return _navDetached[j]; }
+    return null;
+  }
   function _navFireNavigate(o) {
     var ctrl = new AbortController();
-    // 同文档 push 目的地：key/id = ''、index = -1（entry 未建——WPT navigate-anchor-fragment；
-    // commit 后动态重算面 = ④-C traverse/navigate() 深化）。
-    var dest = new NavigationDestination(o.url, true, '', '', -1);
+    // M2-S4C：bind 单元格——commit 后挂钩 getIndex/getState（index 动态 + state 承继）。
+    // traverse 目的地带真实 key/id（目标 entry record——WPT navigate-history-back-after-fragment）；
+    // push/replace 目的地 key/id = ''（anchor 面）。
+    var bind = { rec: o.destRec || null, state: o.destState };
+    // 闭包直读 _navList（part02 IIFE 内）——index 动态随 entry list 重算（dispose 后 -1）。
+    bind.getIndex = function () {
+      if (!bind.rec) return -1;
+      return _navList.indexOf(bind.rec);
+    };
+    bind.getState = function () {
+      var s = bind.rec ? bind.rec.navState : bind.state;
+      return s === undefined ? undefined : _zw_structured_clone(s, typeof WeakMap !== 'undefined' ? new WeakMap() : new Map());
+    };
+    // traverse 目的地带目标 record 的真实 key/id（WPT navigate-history-back-after-fragment
+    // key/id 断言面）；push/replace 目的地 key/id = ''（anchor 面）。
+    var destKey = o.destRec ? o.destRec.key : (o.destKey !== undefined ? o.destKey : '');
+    var destId = o.destRec ? o.destRec.id : (o.destId !== undefined ? o.destId : '');
+    var dest = new NavigationDestination(o.url, true, destKey, destId, -1, bind);
     var ev = new NavigateEvent('navigate', {
       navigationType: o.navigationType || 'push',
       destination: dest,
@@ -5151,6 +5295,9 @@
       cancelable: true,
     });
     ev._zwNavFired = true;
+    ev._zwBind = bind;
+    // 嵌套导航抢占进行中的 traversal（traverse 自身派发带 _zwSelf 标记，不自抢占）。
+    if (_navTraverseDispatching && !o._zwSelf) _navPreempted = true;
     _navDispatchAny(ev);
     return ev;
   }
@@ -5159,6 +5306,11 @@
     var ctrl = { resolve: null, reject: null, committed: null, finished: null };
     ctrl.committed = new Promise(function (res, rej) { ctrl.resolve = res; ctrl.reject = rej; });
     ctrl.finished = new Promise(function (res, rej) { ctrl.finishedSettle = function (err) { err ? rej(err) : res(undefined); }; });
+    // M2-S4C：导航 abort/preempt 是**预期**拒绝路径——消费方可选观察。内置 no-op catch 防止
+    // 未观察的 abort（preempt/越界/取消）计为全局 unhandledrejection（WPT 各测试自行挂
+    // promise_rejects_dom 断言，不受影响）。
+    ctrl.committed.catch(function () {});
+    ctrl.finished.catch(function () {});
     return ctrl;
   }
   function _navNavAbortError() {
@@ -5168,8 +5320,19 @@
   // **顺序链**执行（多次 intercept() 依序 await——WPT intercept-multiple-times）；任一
   // throw/reject → navigateerror（ErrorEvent——error/message/filename/lineno/colno 从 err.stack
   // best-effort 提取）+ 双 reject；全成 → navigatesuccess + committed(entry)/finished 结算。
+  // M2-S4C：NavigationTransition——intercept 链进行中暴露（navigation.transition）；
+  // 链 settle（成/败）即结束并清空。
+  var _navTransition = null;
   function _navRunIntercept(ev, ctrl) {
     var handlers = (ev._zwHandlers || []).slice();
+    var tSettle = null;
+    var transition = { navigationType: ev.navigationType || null };
+    transition.finished = new Promise(function (res, rej) { tSettle = function (err) { err ? rej(err) : res(undefined); }; });
+    _navTransition = transition;
+    function done(err) {
+      if (_navTransition === transition) _navTransition = null;
+      if (tSettle) tSettle(err);
+    }
     _defer(function () {
       var idx = 0;
       var settled = false;
@@ -5177,6 +5340,7 @@
         if (settled) return;
         if (idx >= handlers.length) {
           settled = true;
+          done(null);
           var ok = new Event('navigatesuccess');
           _navDispatchAny(ok);
           if (ctrl) {
@@ -5189,11 +5353,17 @@
         var result;
         try {
           result = (typeof h === 'function') ? h() : undefined;
-        } catch (err) { settled = true; _navInterceptFail(err, ctrl); return; }
-        Promise.resolve(result).then(runNext, function (err) { settled = true; _navInterceptFail(err, ctrl); });
+        } catch (err) { settled = true; done(err); _navInterceptFail(err, ctrl); return; }
+        Promise.resolve(result).then(runNext, function (err) { settled = true; done(err); _navInterceptFail(err, ctrl); });
       }
       runNext();
     });
+  }
+  // M2-S4C：navigation.back/forward 的 traverse 队列入口（携 committed/finished 控制柄）。
+  function _navTraverseBy(delta) {
+    var ctrl = _navNavResult();
+    _hist_queueTraversal(delta, ctrl);
+    return { committed: ctrl.committed, finished: ctrl.finished };
   }
   function _navInterceptFail(err, ctrl) {
     // ErrorEvent 定位面：err.stack 末帧 best-effort 解析（V8 形 `at fn (url:line:col)`）；
@@ -5291,7 +5461,10 @@
     _dispatchToListeners(_elKey('html', null), _zwPsEv, 'all', globalThis);
     // M2-S4：Navigation API hash-setter 面——**replace** 语义（保 key 新 id、旧 entry detach；
     // WPT location-api navigationType='replace' + from.index===-1 + current-basic sixth 保 key）。
-    _navReplaceCurrent(_hist_current());
+    // M2-S4C：navState 承继（fragment 导航——WPT navigate-destination-getState-fragment-via-href）
+    // + destination bind 绑新记录（动态 index）。
+    var _zwFreshRec = _navReplaceCurrent(_hist_current(), true);
+    if (_zwNavEv._zwBind) _zwNavEv._zwBind.rec = _zwFreshRec;
     // M2-S4B：intercept → handler 生命周期 + 跳过默认 fragment 滚锚（spec——intercept 替换默认行为；
     // WPT intercept-handler-throws/intercept-resolve 的 location.href='#1' 面断言 URL 已应用）。
     if (_zwNavEv._zwIntercepted) { _navRunIntercept(_zwNavEv, null); return; }
@@ -5329,7 +5502,7 @@
     _pushHistNav(newHref, oldHref);
     // M2-S4：Navigation API href-setter 面——**push**（同文档；WPT sameDocument-after-fragment
     // `location = "#hash"` entries 增长 + fresh key；跨文档 host 导航近似同面）。
-    _navPushCurrent(_hist_current());
+    if (_zwNavEv._zwBind) _zwNavEv._zwBind.rec = _navPushCurrent(_hist_current());
     if (_zwNavEv._zwIntercepted) _navRunIntercept(_zwNavEv, null);
     // R3058：href/pathname/search setter 改的是非 hash 段 → 跨文档导航 → host 真重载。
     //（hash 段经 _setLocationPath 不走此函数；故此处变更恒跨文档。）
@@ -5383,7 +5556,7 @@
     if (_zwNavEv.defaultPrevented) return;
     _pushHistNav(newHref, oldHref);
     // M2-S4：Navigation API assign 面——**push**（assign ≡ href-setter 语义，fresh key）。
-    _navPushCurrent(_hist_current());
+    if (_zwNavEv._zwBind) _zwNavEv._zwBind.rec = _navPushCurrent(_hist_current());
     if (_zwNavEv._zwIntercepted) _navRunIntercept(_zwNavEv, null);
     // R3058：跨文档 assign（非 hash-only）→ host 真导航（fetch 新文档）。hash-only assign = 同文档，不导航。
     if (_isCrossDocumentNav(oldHref, newHref) && typeof __zw_request_navigate === 'function') {
@@ -5406,7 +5579,9 @@
     if (_zwNavEv.defaultPrevented) return;
     _replaceHistNav(newHref, oldHref);
     // M2-S4：Navigation API location.replace 面——**replace**（保 key 新 id，旧 entry detach）。
-    _navReplaceCurrent(_hist_current());
+    // M2-S4C：navState 承继（导航语义同 fragment）+ destination bind。
+    var _zwFreshRec = _navReplaceCurrent(_hist_current(), true);
+    if (_zwNavEv._zwBind) _zwNavEv._zwBind.rec = _zwFreshRec;
     if (_zwNavEv._zwIntercepted) _navRunIntercept(_zwNavEv, null);
     // R3058：跨文档 replace（非 hash-only）→ host 真导航（replace 语义：back 不回旧 url，但跨文档仍重载）。
     if (_isCrossDocumentNav(oldHref, newHref) && typeof __zw_request_navigate === 'function') {
