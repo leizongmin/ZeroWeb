@@ -12774,13 +12774,28 @@
   }
   // M2-S4B（navigation-compat）：NavigationDestination——navigate 目的地（url/sameDocument/key/
   // id/index；同文档 push 目的地 key/id = ''、index = -1——WPT navigate-anchor-fragment）。
+  // M2-S4C：`bind` 单元格——提交后由 part02 绑定 getIndex/getState 闭包，index 变**动态**
+  //（commit 前 -1/占位、后随 entry list 重算——WPT navigate-destination-dynamic-index）+
+  // getState()（fragment/traverse 目的地承继 entry navState——WPT navigate-destination-getState-*）。
   // per-event 实例（part02 _navFireNavigate 构造）。
-  function NavigationDestination(url, sameDocument, key, id, index) {
+  function NavigationDestination(url, sameDocument, key, id, index, bind) {
     Object.defineProperty(this, 'url', { enumerable: true, configurable: true, get: function () { return url; } });
     Object.defineProperty(this, 'sameDocument', { enumerable: true, configurable: true, get: function () { return !!sameDocument; } });
     Object.defineProperty(this, 'key', { enumerable: true, configurable: true, get: function () { return key === undefined ? null : key; } });
     Object.defineProperty(this, 'id', { enumerable: true, configurable: true, get: function () { return id === undefined ? null : id; } });
-    Object.defineProperty(this, 'index', { enumerable: true, configurable: true, get: function () { return index === undefined ? -1 : index; } });
+    Object.defineProperty(this, 'index', {
+      enumerable: true, configurable: true,
+      get: function () {
+        if (bind && typeof bind.getIndex === 'function') return bind.getIndex();
+        return index === undefined ? -1 : index;
+      },
+    });
+    // spec：NavigationDestination.getState()——目的地 entry 的 Navigation API state（结构化
+    // 克隆；未绑定/无 state → undefined）。
+    this.getState = function () {
+      if (bind && typeof bind.getState === 'function') return bind.getState();
+      return undefined;
+    };
   }
   globalThis.NavigationDestination = globalThis.NavigationDestination || NavigationDestination;
   // M2-S4B：NavigateEvent——navigate 导航事件（destination/signal **必填**——WPT event-constructor
