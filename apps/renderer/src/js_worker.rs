@@ -1662,6 +1662,17 @@ fn execute_module_in_sandbox(
     sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string())
 }
 
+/// 模块体仅对 2xx 有效：404 等错误响应的 HTML 错误页若被当 JS 编译，会以难定位的
+/// SyntaxError 形式失败（github.com lazy chunk 404 实测，2026-10-09 t2h 轮）；
+/// 非 2xx 一律按 fetch 失败处理，交上层报错。304 不经此路径：ResourceLoader 在
+/// 条件命中时展开缓存体并带回原始 200 状态。
+fn module_body_from_response(status_code: u16, body: &[u8]) -> Result<String, String> {
+    if !(200..300).contains(&status_code) {
+        return Err(format!("module fetch: HTTP {status_code}"));
+    }
+    Ok(String::from_utf8_lossy(body).into_owned())
+}
+
 fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandbox) {
     // 静态模块依赖由主线程 prefetch + collect_module_deps 经 IPC 加载；动态 import 经 ResourceLoader。
     let runtime_iifes: Arc<std::sync::Mutex<HashMap<String, String>>> = Arc::new(std::sync::Mutex::new(HashMap::new()));
@@ -1697,7 +1708,7 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
                         .map_err(|_| "module loader worker exited".to_string())?
                         .map_err(|e| format!("module fetch: {e}"))?
                 };
-                Ok(String::from_utf8_lossy(&response.body).into_owned())
+                module_body_from_response(response.status_code, &response.body)
             };
 
             let mut registry = HashMap::new();
@@ -1846,6 +1857,25 @@ mod tests {
             !calls.iter().any(|u| u.ends_with("/_")),
             "动态 import spec 不得当依赖收集（红态：'_ ' 被提取为依赖硬失败中止模块）：{calls:?}"
         );
+    }
+
+    /// fix ⑥（PR #114 审查 A1）：模块 fetch 非 2xx 拒绝——404 错误页 HTML 不得被当
+    /// JS 源码编译（旧行为：body 原样进入 compile_dependency_iife，失败形态为误导性
+    /// SyntaxError + chunk 3 次重试）。
+    #[test]
+    fn module_body_rejects_non_2xx_status() {
+        let err = module_body_from_response(404, b"<html>Not Found</html>").unwrap_err();
+        assert_eq!(err, "module fetch: HTTP 404");
+        assert!(module_body_from_response(500, b"err").is_err());
+        // 2xx 与边界值通过
+        assert_eq!(
+            module_body_from_response(200, b"export default 1").unwrap(),
+            "export default 1"
+        );
+        assert!(module_body_from_response(299, b"ok").is_ok());
+        // 199/304 拒绝（304 实际不经此路径，防御性拒绝）
+        assert!(module_body_from_response(199, b"").is_err());
+        assert!(module_body_from_response(304, b"").is_err());
     }
 
     /// js-dom R386（DC-1 多进程生产路径）：RendererJsWorker 沙箱装原生 DOM 绑定——
