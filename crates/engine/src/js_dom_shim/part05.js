@@ -10526,7 +10526,17 @@
           //（_ceApplyConn 子树展开）仍依赖它们，R2994 测试实证提前清破坏 disconnectedCallback）。
           delete _proxyCache['@' + _rv.__zwHandle];
           if (typeof _clsProxyCache !== 'undefined') delete _clsProxyCache['@' + _rv.__zwHandle];
-          if (typeof _expando !== 'undefined') delete _expando['@' + _rv.__zwHandle];
+          // slice47：`_zwAppl45` 压实豁免标记存于 per-element `_expando` 旁表（set trap
+          // R3069 fallthrough 落表，part05.js `_ex2[p] = value`）——本清除在豁免标记
+          // **同一 invalidate 内后执行**（上方 slice45 豁免门 10507 置标 → 此处删表），
+          // 无条件删会把刚打的标记一并湮灭 → 下一次 512 压实经 get trap（R3042 expando
+          // 读）读到 undefined → 豁免条目当死数据丢弃 → identity 剔除漏斗失去依据，
+          // document QS/QSA 对快照真移除的 handle 节点 stale（slice45 修复在压实场景
+          // 恒失效；part47 钉 compaction_exemption_appl45_generation_lifecycle_s47
+          // 修前自然红实证）。未打标条目（R51c 纯消零热路径）falsy 照删，行为不变。
+          // 旁表保留范围：仅本 invalidate 被豁免的 handle 条目（快照真移除，罕见类），
+          // E2 代际整表作废后条目出表、旁表条目随 handle 死键不可达。
+          if (typeof _expando !== 'undefined' && !_rv._zwAppl45) delete _expando['@' + _rv.__zwHandle];
         }
       }
       for (var r3 = 0; r3 < remFlat.length; r3++) {
