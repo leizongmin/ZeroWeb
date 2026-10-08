@@ -3484,6 +3484,9 @@
           return function() {
             var oldKey = _activeElKey;
             if (oldKey === key) return; // 已聚焦 → no-op（spec：不重派 focus）
+            // M2-S4E：导航期间焦点变更标记（focus changed during ongoing navigation——WPT
+            // focus-reset 族「focus() during intercept → 不重置」判定面）。
+            if (typeof _navMarkFocusChanged === 'function') { try { _navMarkFocusChanged(); } catch (_eNfc) {} }
             // R148（js-dom M4）：旧焦点为解析节点（_zwMElFocused——shadow innerHTML 解析
             // 子等无 sel/handle 形态）时的焦点迁移——relatedTarget 计算 + retargeting：
             // 旧焦点在 shadow 树内（__zwFragHostHandle 命中 _shadowHandleMeta）→ 泄露
@@ -3546,6 +3549,8 @@
           return function() {
             if (_activeElKey !== key) return; // 非当前焦点元素 → no-op
             _activeElKey = null;
+            // M2-S4E：导航期间焦点变更标记（同 focus 面——WPT change-focus-again-in-blur）。
+            if (typeof _navMarkFocusChanged === 'function') { try { _navMarkFocusChanged(); } catch (_eNfcB) {} }
             try {
               // 尾簇 6b：blur 先于 focusout（WPT focus-events 断言序，同 focus 迁移序）。
               _dispatchWithBubble(key, sel, handle, _makeEvent('blur', { bubbles: false, cancelable: false }));
@@ -7047,6 +7052,9 @@
             // R2994：移除自身（含 handle 子树）→ 断连（仅此前已连入的 custom element 分派 disconnectedCallback）。
             // R34xx：本地移除标记（同步脚本内 parentNode 立即返 null——host mutation 异步应用）。
             var ceSelf = _makeProxy(sel, handle);
+            // M2-S4E：el.remove() 移除聚焦元素 → unfocus（同 removeChild 面配套——
+            // WPT change-focus-then-remove 走 el.remove()）。
+            try { if (typeof _zwUnfocusIfFocused === 'function') _zwUnfocusIfFocused({ __zwSelector: sel, __zwHandle: handle }); } catch (_eUfRm) {}
             // js-dom M4 R47：childList removed record——el.remove() 须发 MutationObserver record
             //（spec `dom-child-remove`；旧缺——WPT surroundContents 期望每 removed 各 1 条）。
             // previous/nextSibling 在移除前捕获（移除后兄弟链断）。

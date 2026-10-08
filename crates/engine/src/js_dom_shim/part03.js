@@ -10613,6 +10613,9 @@
         throw new globalThis.TypeError(
           "Failed to execute 'removeChild' on 'Node': parameter 1 is not of type 'Node'.");
       }
+      // M2-S4E：移除聚焦元素 → unfocus（spec unfocusing steps；导航焦点重置面配套——
+      // _zwUnfocusIfFocused 定义于 part02，同闭包）。
+      try { if (typeof _zwUnfocusIfFocused === 'function') _zwUnfocusIfFocused(c); } catch (_eUfRc) {}
       var i = node.childNodes.indexOf(c);
       if (i < 0) {
         throw new (globalThis.DOMException || Error)(

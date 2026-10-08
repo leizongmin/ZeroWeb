@@ -5319,6 +5319,55 @@
       _zwFireScroll(null, null, null);
     }
   }
+  // M2-S4E：焦点变更追踪 + 导航结算焦点重置（spec nav-history-apis focus changed during
+  // ongoing navigation + potentially-reset-the-focus——finish event 步骤 4，先于 scroll 与
+  // navigatesuccess/navigateerror 派发）。导航期间（dispatch 起）focus()/blur() 均记变；
+  // 有变或 focusReset 'manual' → 跳过；否则焦点落 autofocus 委托（文档序首个 [autofocus]）
+  // 或 body（清 activeElement，**不派** body focus 事件——WPT change-focus-then-remove
+  // 「onfocus shouldn't fire due to focus reset」）。
+  var _navFocusChanged = false;
+  function _navMarkFocusChanged() { _navFocusChanged = true; }
+  function _navMaybeResetFocus(ev) {
+    var fc = _navFocusChanged;
+    _navFocusChanged = false;
+    if (fc) return;
+    if ((ev && ev._zwFocusReset) === 'manual') return;
+    var _at = null;
+    try { _at = globalThis.document.querySelector('[autofocus]'); } catch (_eAf) {}
+    if (_at && typeof _at.focus === 'function') {
+      try { _at.focus(); } catch (_eAf2) {}
+    } else {
+      // body 聚焦走**完整 focusing 序**（blur(+focusout) 落旧焦点——监听器可重入导航，
+      // WPT reentry-from-focus-reset-navigate-api-tracker；focus/focusin 落 body）。
+      // body proxy 与 document.body 同源 _makeProxy 缓存（identity 相等——activeElement
+      // 断言面）。
+      var _bp = null;
+      try { _bp = _makeProxy('body', null); } catch (_eBp) {}
+      if (_bp && typeof _bp.focus === 'function') {
+        try { _bp.focus(); } catch (_eBf) {}
+      } else {
+        try { _activeElKey = null; } catch (_eAeK) {}
+        try { if (typeof __zw_focus_changed === 'function') __zw_focus_changed(''); } catch (_eHfc) {}
+      }
+    }
+  }
+  // M2-S4E：移除聚焦元素 → unfocus（spec unfocusing steps——blur/focusout 落被移元素、
+  // activeElement 回落 body、**无** body focus 事件；记焦点变更使导航结算跳过重置——
+  // WPT change-focus-then-remove「onfocus shouldn't fire due to focus reset」）。限定
+  // 被移节点即焦点元素（子树含焦点的移除面 defer）。
+  function _zwUnfocusIfFocused(node) {
+    var k = null;
+    try { k = _elKey(node && node.__zwSelector || null, node && node.__zwHandle || null); } catch (_eUfK) {}
+    if (!k || _activeElKey !== k) return;
+    var p = _proxyCache[k] || null;
+    _activeElKey = null;
+    _navMarkFocusChanged();
+    if (p) {
+      try { p.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_eUfB) {}
+      try { p.dispatchEvent(_makeEvent('focusout', { bubbles: true, cancelable: false })); } catch (_eUfFo) {}
+    }
+    try { if (typeof __zw_focus_changed === 'function') __zw_focus_changed(''); } catch (_eUfH) {}
+  }
   // M2-S4D：traverse 提交后恢复目标 entry 滚动位（scrollRestoration auto 且目标有保存数据且
   // 非 fragment 变更——fragment 走既有滚锚面）。
   function _histRestoreScroll(target) {
@@ -5345,6 +5394,9 @@
     return null;
   }
   function _navFireNavigate(o) {
+    // M2-S4E：focus changed during ongoing navigation（spec nav-tracking——dispatch 置位起点，
+    // finish 消费；focus()/blur() 经 _navMarkFocusChanged 记变）。WPT focus-reset 族。
+    _navFocusChanged = false;
     var ctrl = new AbortController();
     // M2-S4C：bind 单元格——commit 后挂钩 getIndex/getState（index 动态 + state 承继）。
     // traverse 目的地带真实 key/id（目标 entry record——WPT navigate-history-back-after-fragment）；
@@ -5401,11 +5453,15 @@
   function _navNavAbortError() {
     return new (globalThis.DOMException || DOMException)('The operation was aborted.', 'AbortError');
   }
-  // intercept handler 生命周期：defer 起跑（spec——handler 在事件 dispatch 完成后的任务里调），
-  // **顺序链**执行（多次 intercept() 依序 await——WPT intercept-multiple-times）；任一
-  // throw/reject → navigateerror（ErrorEvent——error/message/filename/lineno/colno 从 err.stack
-  // best-effort 提取）+ 双 reject；全成 → after-transition 滚动恢复 + navigatesuccess + finished
-  // 结算。M2-S4D：committed 于链任务头（handler 起跑前）结算——intercept 链只挡 finished。
+  // intercept handler 生命周期：**同步起跑**（spec——navigate event intercept commit handler
+  // steps 在 commit 事件内的 prepare-to-run-script 抑制段执行，handler 于 navigate()/back()
+  // 返回**前**已调——WPT change-focus-during-intercept 在 navigate() 同步返回后即调
+  // intercept_resolve；S4B 旧 defer 起跑与 manual-scroll-after-dispatch 的「await committed
+  // 续延须晚于 handler 同步段」同根修正），**顺序链**执行（多次 intercept() 依序 await——WPT
+  // intercept-multiple-times）；任一 throw/reject → navigateerror（ErrorEvent——error/message/
+  // filename/lineno/colno 从 err.stack best-effort 提取）+ 双 reject；全成 → 焦点重置 +
+  // after-transition 滚动恢复 + navigatesuccess + finished 结算。M2-S4D：committed 于 handler
+  // 起跑前结算——intercept 链只挡 finished。
   // M2-S4C：NavigationTransition——intercept 链进行中暴露（navigation.transition）；
   // 链 settle（成/败）即结束并清空。
   var _navTransition = null;
@@ -5419,47 +5475,46 @@
       if (_navTransition === transition) _navTransition = null;
       if (tSettle) tSettle(err);
     }
-    _defer(function () {
-      // M2-S4D：committed 于链任务头结算（spec——commit 后、handler 起跑前），且 handler 在
-      // **同一任务内**被调——`await committed` 的续延（microtask）晚于 handler 同步段，使
-      // handler 内创建的 promise（WPT manual-scroll-after-dispatch 的 intercept_resolve）
-      // 对续延可见。
-      if (ctrl && ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
-      var idx = 0;
-      var settled = false;
-      function runNext() {
-        if (settled) return;
-        if (idx >= handlers.length) {
-          settled = true;
-          ev._zwSettled = true;
-          done(null);
-          // M2-S4D：after-transition 滚动恢复（链尾，先于 navigatesuccess——WPT
-          // after-transition-timing 事件序断言）——manual / e.scroll() 已滚 / 导航期间文档被
-          // 滚动（代次变化）均跳过（WPT scroll-behavior after-transition-* 三面）。**不读**
-          // history.scrollRestoration（Navigation API restore 独立于 entry mode——WPT
-          // after-transition-with-history-scroll-restoration-manual / -during-promise）。
-          var _rs = ev._zwRestore;
-          var _mode = ev._zwScrollMode || 'after-transition';
-          if (_rs && _mode !== 'manual' && !ev._zwScrollRequested && _rs.gen === _winScrollGen) {
-            _navApplyRestoreSpec(_rs);
-          }
-          var ok = new Event('navigatesuccess');
-          _navDispatchAny(ok);
-          if (ctrl) {
-            // committed 已于提交时结算（M2-S4D）——链尾仅 finished。
-            if (ctrl.finishedSettle) ctrl.finishedSettle(null);
-          }
-          return;
+    // M2-S4D：committed 于 handler 起跑前结算（spec notify-about-committed-to-entry 先于
+    // handler 调用；同任务——同步 JS 无微任务检查点插入点，await 续延天然晚于本同步段）。
+    if (ctrl && ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+    var idx = 0;
+    var settled = false;
+    function runNext() {
+      if (settled) return;
+      if (idx >= handlers.length) {
+        settled = true;
+        ev._zwSettled = true;
+        done(null);
+        // M2-S4E：焦点重置（finish event 步骤 4——先于 scroll 与 navigatesuccess；WPT
+        // focus-reset-timing「before navigatesuccess」）。
+        _navMaybeResetFocus(ev);
+        // M2-S4D：after-transition 滚动恢复（链尾，先于 navigatesuccess——WPT
+        // after-transition-timing 事件序断言）——manual / e.scroll() 已滚 / 导航期间文档被
+        // 滚动（代次变化）均跳过（WPT scroll-behavior after-transition-* 三面）。**不读**
+        // history.scrollRestoration（Navigation API restore 独立于 entry mode——WPT
+        // after-transition-with-history-scroll-restoration-manual / -during-promise）。
+        var _rs = ev._zwRestore;
+        var _mode = ev._zwScrollMode || 'after-transition';
+        if (_rs && _mode !== 'manual' && !ev._zwScrollRequested && _rs.gen === _winScrollGen) {
+          _navApplyRestoreSpec(_rs);
         }
-        var h = handlers[idx++];
-        var result;
-        try {
-          result = (typeof h === 'function') ? h() : undefined;
-        } catch (err) { settled = true; ev._zwSettled = true; done(err); _navInterceptFail(err, ctrl); return; }
-        Promise.resolve(result).then(runNext, function (err) { settled = true; ev._zwSettled = true; done(err); _navInterceptFail(err, ctrl); });
+        var ok = new Event('navigatesuccess');
+        _navDispatchAny(ok);
+        if (ctrl) {
+          // committed 已于提交时结算（M2-S4D）——链尾仅 finished。
+          if (ctrl.finishedSettle) ctrl.finishedSettle(null);
+        }
+        return;
       }
-      runNext();
-    });
+      var h = handlers[idx++];
+      var result;
+      try {
+        result = (typeof h === 'function') ? h() : undefined;
+      } catch (err) { settled = true; ev._zwSettled = true; done(err); _navInterceptFail(err, ev, ctrl); return; }
+      Promise.resolve(result).then(runNext, function (err) { settled = true; ev._zwSettled = true; done(err); _navInterceptFail(err, ev, ctrl); });
+    }
+    runNext();
   }
   // M2-S4C：navigation.back/forward 的 traverse 队列入口（携 committed/finished 控制柄）。
   function _navTraverseBy(delta) {
@@ -5467,7 +5522,7 @@
     _hist_queueTraversal(delta, ctrl);
     return { committed: ctrl.committed, finished: ctrl.finished };
   }
-  function _navInterceptFail(err, ctrl) {
+  function _navInterceptFail(err, ev, ctrl) {
     // ErrorEvent 定位面：err.stack 末帧 best-effort 解析（V8 形 `at fn (url:line:col)`）；
     // 空帧/<anonymous> 回落页面 URL（WPT intercept-handler-throws 断言 filename=页面 URL +
     // line/col>0——eval 源栈帧名在 runner 形态下不可信）。
@@ -5487,6 +5542,9 @@
       error: err !== undefined ? err : null, message: msg,
       filename: file, lineno: line, colno: col,
     });
+    // M2-S4E：焦点重置先于 navigateerror（spec finish event 失败路径——WPT
+    // focus-reset-timing「before navigateerror」）。
+    _navMaybeResetFocus(ev);
     _navDispatchAny(ee);
     if (ctrl) {
       // M2-S4D：handler 拒绝原因**原样**透传（Promise.reject() → undefined 也原样——

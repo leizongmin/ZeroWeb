@@ -35,6 +35,9 @@ DIRS=(
   "navigation-api/navigation-history-entry/resources"
   "navigation-api/state/resources"
   "navigation-api/precommit-handler/resources"
+  # M2-S4E（2026-10-08）：focus-reset 簇 helpers.mjs（basic/multiple-intercept 的 module
+  # 依赖——缺失时 module compile error，2 案 decl 0 tests）
+  "navigation-api/focus-reset/resources"
   "navigation-api/navigate-event/resources"
   "navigation-api/navigation-activation/resources"
   "navigation-api/per-entry-events/resources"

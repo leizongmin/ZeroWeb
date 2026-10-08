@@ -4187,9 +4187,18 @@
     // document.activeElement——当前焦点元素（focus()/blur() 操作 _activeElKey）；无焦点回落 body（spec）。
     // R148：解析节点焦点（_zwMElFocused——R114 focus() 设置）优先于 proxy 态（所有权互斥，
     // _zwMEl focus 已清 _activeElKey，双态并存时解析节点为准是防御性回落）。
+    // M2-S4E：焦点元素**失连**（remove 等）→ 焦点回落 body（spec unfocusing steps——WPT
+    // change-focus-then-remove「Removing the element reset focus」）。惰性校验（读时判
+    // isConnected），不派 body focus 事件（测试断言 onfocus 不发）。
     get activeElement() {
       if (globalThis._zwMElFocused) return globalThis._zwMElFocused;
-      if (_activeElKey && _proxyCache[_activeElKey]) return _proxyCache[_activeElKey];
+      var _aeP = (_activeElKey && _proxyCache[_activeElKey]) || null;
+      if (_aeP) {
+        var _aeCn = true;
+        try { _aeCn = _aeP.isConnected !== false; } catch (_eAeCn) {}
+        if (!_aeCn) { try { _activeElKey = null; } catch (_eAeK2) {} _aeP = null; }
+      }
+      if (_aeP) return _aeP;
       return globalThis.document.body;
     },
     // Page Visibility + 焦点状态（R2824）——headless 页面恒「可见 + 已聚焦」。hidden=false /

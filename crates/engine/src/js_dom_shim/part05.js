@@ -12838,8 +12838,17 @@
       }
       // M2-S4B：多次 intercept() 合法——handler **顺序链**（WPT intercept-multiple-times——
       // finished 依序 await 全部 handler promise）。M2-S4D：scroll 模式（'after-transition'
-      // 缺省 | 'manual'——WPT scroll-behavior manual-basic）。
+      // 缺省 | 'manual'——WPT scroll-behavior manual-basic）。M2-S4E：focusReset 模式
+      //（同枚举——导航结算后焦点重置开关；WPT focus-reset 族）。两枚举非法值 → TypeError
+      //（WebIDL enum 转换——WPT focus-reset basic「Invalid values for focusReset throw」）。
+      if (o.scroll !== undefined && o.scroll !== null && o.scroll !== 'after-transition' && o.scroll !== 'manual') {
+        throw new globalThis.TypeError("Failed to read the 'scroll' property from 'NavigationInterceptOptions': The provided value '" + String(o.scroll) + "' is not a valid enum value of type NavigationScrollBehavior.");
+      }
+      if (o.focusReset !== undefined && o.focusReset !== null && o.focusReset !== 'after-transition' && o.focusReset !== 'manual') {
+        throw new globalThis.TypeError("Failed to read the 'focusReset' property from 'NavigationInterceptOptions': The provided value '" + String(o.focusReset) + "' is not a valid enum value of type NavigationFocusReset.");
+      }
       this._zwScrollMode = (o.scroll === 'manual') ? 'manual' : 'after-transition';
+      this._zwFocusReset = (o.focusReset === 'manual') ? 'manual' : 'after-transition';
       if (!this._zwHandlers) this._zwHandlers = [];
       this._zwHandlers.push(typeof o.handler === 'function' ? o.handler : undefined);
       this._zwIntercepted = true;

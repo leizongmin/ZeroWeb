@@ -3539,14 +3539,30 @@ impl WebView {
                 // 预注册空存根 + 编译（import→空 namespace、export→_exports；动态 import() 经 prelude）。
                 // R3093：fetcher 配置时只用**静态** import 预存根（动态 import() 留给运行时 __zw_compile_module
                 // fetch，避免预存根 empty namespace 短路）；无 fetcher 仍用全量（动态 import 预存根返空 namespace）。
+                // M2-S4E（navigation-compat）：fetcher 配置时静态 import 拉**真实源**（旧为空存根——
+                // ensure_module_export 对空源报「does not provide an export」，模块化 corpus 的命名
+                // 导入全数 compile error；WPT focus-reset basic/multiple-intercept 首证）。递归收集
+                // （transitive deps 一并入册）；单 spec 失败回落空存根（保旧「不阻塞模块 body 执行」语义）。
                 let mut registry = zero_script_sandbox::ModuleRegistry::new();
                 let specs = if self.script_source_fetcher.is_some() {
                     zero_script_sandbox::extract_static_module_import_specifiers(&code)
                 } else {
                     zero_script_sandbox::extract_module_import_specifiers(&code)
                 };
-                for spec in specs {
-                    registry.register(&spec, "");
+                if let Some(fetcher_m) = self.script_source_fetcher.clone() {
+                    let page_url_m = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+                    let mut visited_m = std::collections::HashSet::new();
+                    for spec in &specs {
+                        if collect_module_deps_recursive(&fetcher_m, &page_url_m, spec, &mut registry, &mut visited_m)
+                            .is_err()
+                        {
+                            registry.register(spec, "");
+                        }
+                    }
+                } else {
+                    for spec in &specs {
+                        registry.register(spec, "");
+                    }
                 }
                 let url = self.current_url.as_deref().unwrap_or("about:blank");
                 match zero_script_sandbox::compile_module_script(&code, url, &registry) {
