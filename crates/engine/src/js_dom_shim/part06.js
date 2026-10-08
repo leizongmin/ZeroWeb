@@ -14468,6 +14468,10 @@ function _zwCaretFromPoint(x, y) {
   var _zwWsSeq = 0; // pump pending id 单调计数器
   var _zwWsConnSeq = 0; // 连接 id 单调计数器（独立于 pump seq：conn id 不随泵跳动，可预测）
 
+  function _zwWsUtf8ByteLength(str) {
+    return (typeof TextEncoder === 'function') ? new TextEncoder().encode(str).length : str.length;
+  }
+
   function WebSocket(url, protocols) {
     // spec 构造（HTML §network WebSocket(url, protocols) step 2）：url = parse(url, API base
     // URL)，失败抛 SyntaxError DOMException。base 取 location.href（about:blank 兜底）。
@@ -14635,7 +14639,7 @@ function _zwCaretFromPoint(x, y) {
       }
       if (typeof __zw_ws_send !== 'function') return;
       if (typeof data === 'string') {
-        this.bufferedAmount += data.length;
+        this.bufferedAmount += _zwWsUtf8ByteLength(data);
         __zw_ws_send(this._connId, 't', data);
         return;
       }
@@ -14648,7 +14652,7 @@ function _zwCaretFromPoint(x, y) {
         // shim 内部 Blob：_parts 串接（string 面尽力而为；非 string part 走 String 化）。
         var acc = '';
         for (var i = 0; i < data._parts.length; i++) acc += String(data._parts[i]);
-        this.bufferedAmount += acc.length;
+        this.bufferedAmount += _zwWsUtf8ByteLength(acc);
         __zw_ws_send(this._connId, 't', acc);
         return;
       }

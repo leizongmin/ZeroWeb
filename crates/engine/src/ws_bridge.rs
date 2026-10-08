@@ -22,7 +22,7 @@
 //!   renderer/tab 生产路径与既有页面 fetch 一致（当前无 CSP 接线——既有设计缺口，如实记录）。
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use crate::async_resolver::AsyncResolver;
 use zero_script_sandbox::Sandbox;
@@ -160,20 +160,21 @@ struct WsCore {
 pub struct WsEmitter {
     core: Arc<Mutex<WsCore>>,
     resolver: AsyncResolver,
-    host: Arc<Mutex<Option<Arc<dyn WsHost>>>>,
+    host: Arc<Mutex<Option<Weak<dyn WsHost>>>>,
 }
 
 impl WsEmitter {
     /// 绑定宿主——事件队列溢出时调用 [`WsHost::close`] 收线。
     pub fn bind_host(&self, host: Arc<dyn WsHost>) {
         if let Ok(mut cell) = self.host.lock() {
-            *cell = Some(host);
+            *cell = Some(Arc::downgrade(&host));
         }
     }
 
     fn teardown_on_overflow(&self, conn_id: &str) {
         if let Ok(cell) = self.host.lock()
-            && let Some(h) = cell.as_ref()
+            && let Some(weak) = cell.as_ref()
+            && let Some(h) = weak.upgrade()
         {
             h.close(conn_id, 1008, "event-queue-overflow");
         }
