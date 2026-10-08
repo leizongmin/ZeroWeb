@@ -1,5 +1,0 @@
-{
- "mode": "pass",
- "round": 1,
- "panel": "isCol=true len=3 items=alpha|beta|gamma-3 truth=3"
-}

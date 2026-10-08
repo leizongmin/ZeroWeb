@@ -1,5 +1,0 @@
-thread 'js_dom_bridge::tests::named_access_iframe_name_delegation_s40' (953893) panicked at crates/engine/src/js_dom_bridge_tests/part38.rs:632:5:
-assertion `left == right` failed: iframe 名解析到 contentWindow（R139 委托通道，动态创建同享）
-  left: "false"
- right: "true"
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2890 filtered out; finished in 0.06s
