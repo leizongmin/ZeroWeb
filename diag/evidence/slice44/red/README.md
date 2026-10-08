@@ -40,6 +40,8 @@ __r_qsa_body_cls = 1     （同桶类选择器，绿）
 
 任务② 修前 `window.hd44`（head 内 id 命名元素）为 `undefined`（body 根谓词漏判），即 natural-red pin2 的 `__r_head_named="false"`。
 
+> **探针值溯源勘误（双首轮评审 I-3/xI-1）**：上表全值来自独立 TEMP-PROBE 交互会话（工作树头 `716fdc069`，产品码与钉提交 `cfec8f59e` 等价），原始输出未逐行归档；归档的 `natural-red-first-probe-s44.log` 为首版草稿 run——pin1 草稿脚本在 :61:10 TypeError 崩溃，`__r_*` 值未在该 log 打印。各值主证链：`qsa_doc=3` = natural-red-s44.log:25 首红左值；`qs_deep="false"` = M-B log 左值（变异还原修前形态实测）；`qsa_html/qsa_body` = HEAD 钉内边界断言（元素面修前修后同值）；**`qs_first="c44"` 无 log 首手行**（与 M-A/M-B 行为链机械自洽：修前首命中=已移除 c44）。后续切片探针值随手以 `--nocapture` 附加段落盘。
+
 ## 变异 RED 判定位
 
 - **M-A**（撤 document QSA 过滤，part06.js:2534-2548 块）：pin1 红在 `__r_qsa_doc`（left "3" vs "1"，回到修前 stale 值，与探针 `__r_qsa_doc=3` 互证）。
