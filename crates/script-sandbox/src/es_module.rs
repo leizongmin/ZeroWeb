@@ -797,6 +797,13 @@ fn transform_export(
                 }
             }
             result.push_str(&format!("  _exports.{} = {exports_var};\n", namespace.trim()));
+            // export * as N 同时产生 LocalName=N 的 import 绑定，模块体内可裸标识符
+            // 访问（具名重导出 export {a as b} from 则不产生局部绑定）
+            // https://tc39.es/ecma262/#sec-exports-static-semantics-importentries
+            // default 是保留字，无法被裸标识符引用，跳过局部声明以免语法错误。
+            if namespace.trim() != "default" {
+                result.push_str(&format!("  var {} = {exports_var};\n", namespace.trim()));
+            }
             return Ok(result);
         }
         let Some((_empty, spec_part)) = split_from_clause(after) else {
@@ -2262,6 +2269,91 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
                 && ns.contains("\"x1\":\"ok\"")
                 && ns.contains("\"x2\":\"ok\""),
             "namespace={ns}",
+        );
+    }
+
+    #[test]
+    fn test_side_effect_import_first_visit_binding() {
+        // sib-4（270613038）判别测试：副作用导入（`import "m"`）作为 shared **首访者**时，
+        // Fresh 臂须绑定 `var _mod_{safe} = IIFE`——后续具名重入读到的才是同一实例
+        // （旧实现只 visited.insert 不绑定，重入守卫回落空对象；共享可变状态可见分裂）。
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("https://a.test/shared.js", "export const state={n:0};");
+        sb.register_module(
+            "https://a.test/chunk.js",
+            concat!(
+                "import{state}from\"./shared.js\";",
+                "export const marker=(state&&state.n===5)?'ok':'split';",
+            ),
+        );
+        let r = sb
+            .execute_module(
+                concat!(
+                    "import\"./shared.js\";",
+                    "import{state}from\"./shared.js\";",
+                    "state.n=5;",
+                    "import*as c from\"./chunk.js\";",
+                    "export const out=c.marker;",
+                ),
+                Some("https://a.test/entry.js"),
+            )
+            .unwrap();
+        assert!(
+            r.namespace_json.contains("\"out\":\"ok\""),
+            "namespace={}",
+            r.namespace_json
+        );
+    }
+
+    #[test]
+    fn test_reexport_arms_first_visit_bindings() {
+        // sib-4 另两臂：`export * as ns from` 与具名重导出 `export { v as w } from` 作为
+        // shared **首访者**时同样须绑定 `var _mod_{safe}`，供后续具名重入读取；缺绑定时
+        // 重导出副本自身可读（旧实现直发 IIFE 表达式），但重入守卫回落空对象——断言
+        // 逐键核对。
+        // 局部绑定差异（tc39 #sec-exports-static-semantics-importentries）：
+        // `export * as ns` 产生 LocalName=ns 的 import 绑定，模块体内可裸引用；
+        // `export { v as w2 } from` 不产生局部绑定，w2 只经导出可见。
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("https://a.test/shared.js", "export const v=7;");
+        let r = sb
+            .execute_module(
+                concat!(
+                    "export*as ns from\"./shared.js\";",
+                    "export{v as w2}from\"./shared.js\";",
+                    "import{v as w}from\"./shared.js\";",
+                    "export const o1=(ns.v===w&&w===7)?'ok':'split';",
+                    "export const o2=w;",
+                ),
+                Some("https://a.test/entry.js"),
+            )
+            .unwrap();
+        let nsj = &r.namespace_json;
+        assert!(
+            nsj.contains("\"o1\":\"ok\"") && nsj.contains("\"o2\":7"),
+            "namespace={nsj}",
+        );
+        assert!(nsj.contains("\"w2\":7"), "具名重导出导出绑定缺失: namespace={nsj}",);
+    }
+
+    #[test]
+    fn test_export_star_as_default_no_local_var() {
+        // `export * as default from` 的名字是保留字，不能发 `var default = …`
+        //（会整体语法错误）；导出绑定 default 仍须指向依赖命名空间对象。
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("https://a.test/shared.js", "export const v=7;");
+        let entry = concat!(
+            "export*as default from\"./shared.js\";",
+            "import*as self from\"./entry.js\";",
+            "export const o=(self.default&&self.default.v===7)?'ok':'split';",
+        );
+        // collect_module_deps 会把入口自身注册进 registry（js_worker.rs）——镜像该行为
+        sb.register_module("https://a.test/entry.js", entry);
+        let r = sb.execute_module(entry, Some("https://a.test/entry.js")).unwrap();
+        let nsj = &r.namespace_json;
+        assert!(
+            nsj.contains("\"o\":\"ok\"") && nsj.contains("\"default\""),
+            "namespace={nsj}",
         );
     }
 
