@@ -404,6 +404,16 @@ pub(crate) fn shrink_vertical_blocks_to_content(
                 LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
             )
         });
+        // R4997（css-sizing-4 §4.1）：CSS aspect-ratio 元素的 shrink-to-fit 有**地板**——
+        // 固有 inline 尺寸经 ratio 传递的 block 尺寸（definite height × w/h，taffy leaf
+        // 已落）不得被内容块轴跨度抹 0（flex-aspect-ratio-006：vertical-lr item ar 1/2 +
+        // height:100 无内容 → 50 塌 0，chromium 50）；反过来内容也不被传递值钳制（§4.1
+        // automatic minimum：block-aspect-ratio-014：ar 1/2 + h:100 + 子 w:100 → 内容跨度
+        // 100 胜传递建议 50，chromium 100×100）。故 ar 盒取 max(内容跨度, taffy 传递宽)。
+        let has_ar = box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.aspect_ratio, Some(r) if r > 0.0));
         if width_auto {
             // 内容块轴跨度 = 最右侧流内子元素 margin-box 右缘（相对父 border-box）。
             // R4194 注：勿改回 max(子自身宽)——多列 block 子（block-flow-direction-vrl-005
@@ -445,6 +455,13 @@ pub(crate) fn shrink_vertical_blocks_to_content(
                 box_node.border_left + box_node.border_right + box_node.padding_left + box_node.padding_right;
             let frame_delta = if container_is_float { 0.0 } else { frame_bb };
             let new_width = (content_extent + frame_delta).max(min_w).min(max_w);
+            // R4997：ar 盒传递建议地板——max(内容跨度, taffy ratio 传递宽)（§4.1 双向语义，
+            // 见上方 has_ar 注）。非 ar 盒维持既有单向 content-based 语义（R4450）。
+            let new_width = if has_ar {
+                new_width.max(box_node.width)
+            } else {
+                new_width
+            };
             // R4195：table 有专属 vertical 路径（table_vertical.rs step 8 自管
             // table_block_extent + caption 逻辑 block 轴定位）——本收缩臂的宽度改写会被
             // step 8 覆盖，但**右锚平移改写子 x** 与 step 8 的 caption/行盒定位打架

@@ -905,6 +905,21 @@ impl LayoutEngine {
                     } else {
                         cross_resolved
                     };
+                    // R4997（css-flexbox §9.2.3.E + css-sizing-4 §4.1）：ar item 的 taffy
+                    // ratio 反推会内容塌缩——内容 main（子块高 0）经 ratio 反推 cross → 双 0，
+                    // base 随之塌 0（flex-aspect-ratio-037：column + ar 1/1 + 子 w:100 +
+                    // align:start → item 0×0；chromium 100×100 = inline max-content 100 ×
+                    // ratio）。cross 塌缩时回落流内子 max outer（块容器 max-content 近似），
+                    // 让 base 由 cross 传递（spec 方向：inline max-content → block）。
+                    let cross_resolved = if cross_resolved <= 0.5 {
+                        b.children
+                            .iter()
+                            .filter(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
+                            .map(|c| c.width + c.margin_left + c.margin_right)
+                            .fold(0.0f32, f32::max)
+                    } else {
+                        cross_resolved
+                    };
                     let expected_main = if is_column {
                         cross_resolved / ratio
                     } else {
@@ -1308,7 +1323,18 @@ impl LayoutEngine {
                 && let Some(item_style) = styles.get(&item_id)
                 && !item.is_absolute
                 && let Some(ratio) = item_style.aspect_ratio.filter(|&r| r > 0.0)
-                && matches!(item_style.width, LengthValue::Px(_))
+                // R4997（css-flexbox §9.2.3.B flex base size → §9.4 容器 cross）：main 来源
+                // 放宽——CSS width Px 之外，`width:auto + flex-basis definite`（basis 钉主轴
+                // 基准）同样成立：flex-aspect-ratio-012（ar 1/1 + flex:1 1 50px + 容器
+                // width:100）首趟 flexed main=100 → transferred cross=100 → 容器高 100、
+                // item 100×100（chromium 实测同值）。basis auto/content 时 main 仍 content
+                // 驱动，不在此列（037 类由内容建议臂处理）。
+                && (matches!(item_style.width, LengthValue::Px(_))
+                    || (matches!(item_style.width, LengthValue::Auto)
+                        && matches!(
+                            item_style.flex_basis,
+                            zero_style_system::FlexBasisValue::Length(_)
+                        )))
                 && matches!(item_style.height, LengthValue::Auto)
                 && let Some(&item_tid) = dom_to_taffy.get(&item_id)
                 && let Some(&container_tid) = dom_to_taffy.get(&id)
@@ -1922,6 +1948,27 @@ impl LayoutEngine {
                     v = v.max(mn);
                 }
                 my_definite = Some((v.max(0.0)) as f32);
+            }
+
+            // R4997（css-flexbox §9.6.2）：flex **item** + aspect-ratio + height:auto +
+            // width:auto（cross 经 align-stretch 从 definite 宽容器拉 definite）→ transferred
+            // main definite（= cross / ratio），对子元素百分比高度是明确包含块。
+            // flex-aspect-ratio-032：column item（ar 1/1，stretch 宽 100）内 height:100% 子
+            // 应 100（chromium 实测 100×100）；旧实现 CSS 双 auto → my_definite=None →
+            // 子 % compute-to-auto 塌 0。与 R4147 差异：cross definite 来源是 **stretch 拉
+            // 伸后的 laid 宽**（非 CSS Px 声明），故用 b.width。非 flex item 或 laid 宽无效
+            // 时维持旧行为。
+            if let Some(s) = style
+                && parent_is_flex_grid
+                && !matches!(s.position, PositionValue::Absolute | PositionValue::Fixed)
+                && let Some(ratio) = s.aspect_ratio.filter(|r| *r > 0.0)
+                && matches!(s.height, LengthValue::Auto)
+                && matches!(s.width, LengthValue::Auto)
+                && b.width > 0.5
+            {
+                let pb = b.padding_left + b.padding_right + b.border_left + b.border_right;
+                let content_cross = (b.width - pb).max(0.0);
+                my_definite = Some(content_cross / ratio);
             }
 
             // 子元素是否为 flex/grid item（其 %height 走独立语义，本 pass 跳过）。
