@@ -12738,6 +12738,91 @@
     NCECECtor.prototype.constructor = NCECECtor;
     globalThis.NavigationCurrentEntryChangeEvent = NCECECtor;
   }
+  // M2-S4B（navigation-compat）：NavigationDestination——navigate 目的地（url/sameDocument/key/
+  // id/index；同文档 push 目的地 key/id = ''、index = -1——WPT navigate-anchor-fragment）。
+  // per-event 实例（part02 _navFireNavigate 构造）。
+  function NavigationDestination(url, sameDocument, key, id, index) {
+    Object.defineProperty(this, 'url', { enumerable: true, configurable: true, get: function () { return url; } });
+    Object.defineProperty(this, 'sameDocument', { enumerable: true, configurable: true, get: function () { return !!sameDocument; } });
+    Object.defineProperty(this, 'key', { enumerable: true, configurable: true, get: function () { return key === undefined ? null : key; } });
+    Object.defineProperty(this, 'id', { enumerable: true, configurable: true, get: function () { return id === undefined ? null : id; } });
+    Object.defineProperty(this, 'index', { enumerable: true, configurable: true, get: function () { return index === undefined ? -1 : index; } });
+  }
+  globalThis.NavigationDestination = globalThis.NavigationDestination || NavigationDestination;
+  // M2-S4B：NavigateEvent——navigate 导航事件（destination/signal **必填**——WPT event-constructor
+  // 'destination is required'/'signal is required'；defaults：navigationType 'push'/canIntercept
+  // false/userInitiated false/hashChange false/formData null/downloadRequest null/info
+  // undefined/sourceElement null——WPT 'defaults are as expected'）。intercept()（dispatch 期
+  // 可调——_zwNavFired 印记拦 synthetic 构造事件；canIntercept false 抛 InvalidStateError；
+  // handler 显式 null 抛 TypeError、显式 undefined 合法——WPT intercept-handler-null-or-undefined）
+  // 与 scroll()（headless no-op）挂 prototype。hasUAVisualTransition init 面（同 PopStateEvent）。
+  _defineEventSubclass('NavigateEvent', 'Event', [
+    ['navigationType', 'navigationType', 'push'],
+    ['destination', 'destination', null],
+    ['canIntercept', 'canIntercept', false],
+    ['userInitiated', 'userInitiated', false],
+    ['hashChange', 'hashChange', false],
+    ['signal', 'signal', null],
+    ['formData', 'formData', null],
+    ['downloadRequest', 'downloadRequest', null],
+    ['info', 'info', undefined],
+    ['hasUAVisualTransition', 'hasUAVisualTransition', false],
+    ['sourceElement', 'sourceElement', null],
+  ]);
+  var NavigateEventBase = globalThis.NavigateEvent;
+  if (NavigateEventBase) {
+    NavigateEventBase.prototype.intercept = function (options) {
+      if (!this._zwNavFired) {
+        // spec：isTrusted false 的事件（synthetic 构造）intercept() 抛 SecurityError
+        //（WPT intercept-on-synthetic-event——DOMException SecurityError code 18）。
+        throw new (globalThis.DOMException || DOMException)('intercept() can only be called on a trusted navigate event.', 'SecurityError');
+      }
+      if (!this.canIntercept) {
+        throw new (globalThis.DOMException || DOMException)('Cannot intercept this navigation.', 'InvalidStateError');
+      }
+      if (this._defaultPrevented || this.defaultPrevented) {
+        throw new (globalThis.DOMException || DOMException)('Cannot intercept a navigation that has already been canceled.', 'InvalidStateError');
+      }
+      var o = (options == null || typeof options !== 'object') ? {} : options;
+      if (o.handler === null) {
+        throw new globalThis.TypeError("Failed to execute 'intercept' on 'NavigateEvent': required member handler is null.");
+      }
+      // M2-S4B：多次 intercept() 合法——handler **顺序链**（WPT intercept-multiple-times——
+      // finished 依序 await 全部 handler promise）。
+      if (!this._zwHandlers) this._zwHandlers = [];
+      this._zwHandlers.push(typeof o.handler === 'function' ? o.handler : undefined);
+      this._zwIntercepted = true;
+      // spec：intercept() 后 preventDefault 失效（事件已"处理"）——派发器按 _zwIntercepted 分支。
+      this._defaultPrevented = false;
+      this.defaultPrevented = false;
+    };
+    NavigateEventBase.prototype.scroll = function () {
+      // spec：synthetic（非 UA 派发）事件 scroll() 抛 SecurityError（WPT scroll-on-synthetic-event）；
+      // 未 intercept 的 UA 事件抛 InvalidStateError（WPT scroll-without-intercept）；intercept 后
+      // headless 无真滚动 → no-op。
+      if (!this._zwNavFired) {
+        throw new (globalThis.DOMException || DOMException)('scroll() can only be called on a trusted navigate event.', 'SecurityError');
+      }
+      if (!this._zwIntercepted) {
+        throw new (globalThis.DOMException || DOMException)('scroll() can only be called after intercept().', 'InvalidStateError');
+      }
+    };
+    var NavigateEventCtor = function NavigateEvent(type) {
+      var options = arguments.length > 1 ? arguments[1] : undefined;
+      var o = (options == null || typeof options !== 'object') ? {} : options;
+      if (o.destination === undefined) {
+        throw new globalThis.TypeError("Failed to construct 'NavigateEvent': required member destination is undefined.");
+      }
+      if (o.signal === undefined) {
+        throw new globalThis.TypeError("Failed to construct 'NavigateEvent': required member signal is undefined.");
+      }
+      return NavigateEventBase.apply(this, arguments);
+    };
+    try { Object.defineProperty(NavigateEventCtor, 'name', { value: 'NavigateEvent', configurable: true }); } catch (_eNeNm) {}
+    NavigateEventCtor.prototype = NavigateEventBase.prototype;
+    NavigateEventCtor.prototype.constructor = NavigateEventCtor;
+    globalThis.NavigateEvent = NavigateEventCtor;
+  }
   _defineEventSubclass('StorageEvent', 'Event', [
     ['key', 'key', null], ['newValue', 'newValue', null], ['oldValue', 'oldValue', null],
     ['url', 'url', ''], ['storageArea', 'storageArea', null],
