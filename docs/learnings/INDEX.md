@@ -216,8 +216,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（26）
+## Platform — 平台与环境相关经验（27）
 
+- 2026-10-08 [shim js 变更后 cargo 未重编 engine：探针打到旧 renderer 的构建盲区](platform/2026-10/2026-10-08-shim-js-include-str-rebuild-gap.md) — engine
 - 2026-10-07 [zero-wpt-runner 组级过滤的正确调用形态：testharness-dom + 路径，不是 `run <组名>`](platform/2026-10/2026-10-07-wpt-runner-group-invocation-form.md) — tests/wpt-runner
 - 2026-10-07 [陈旧 sibling 二进制使进程级二分定位全盘失效（zero-renderer 未随 zero-browser 重建）](platform/2026-10/2026-10-07-stale-sibling-binary-bisect-corruption.md) — renderer,protocol,diag
 - 2026-10-04 [包裹构建的三个假阳性/假破损陷阱（看门狗空转、pgrep 自匹配、cd 后台化）](platform/2026-10/2026-10-04-wrapped-build-verification-pitfalls.md) — docs/rally
