@@ -2284,8 +2284,11 @@ mod tests {
         // 无 <script>：run_page_scripts no-op，finish_page_load 反射 body onload + 派 load 触发。
         run_scripts(html, &worker);
         finish_page_load(&worker, Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        // R5006：等待 1000ms → 30s（R3254-K5/R5005 谱系同款放宽——轮询 deadline 非语义
+        // 断言（断言在值），workspace 全量并行负载（V8 worker 启动 + 事件泵 CPU 竞争）
+        // 下 1s 窗口间歇超限（make test 忙窗折 · solo 0.06s 恒过），30s 只在真挂起时咬合。
         assert_eq!(
-            wait_for_global(&worker, "__bodyload", 1000),
+            wait_for_global(&worker, "__bodyload", 30_000),
             "fired",
             "<body onload> 经反射为 window.onload，finish_page_load 派 load 触发"
         );

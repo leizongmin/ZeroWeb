@@ -914,3 +914,96 @@ fn r4107_html_content_box_reference_for_transform_origin() {
         "默认 transform-box 语义不变：origin 相对 border-box"
     );
 }
+
+/// R5006（CSS Transforms 1 §transform-rendering + css-backgrounds-3 #root-background
+/// 画布传播语义）：子树零可见图元（自身背景/边框/内容均空）的 transform 元素不发射
+/// TransformPrimitive——raster 侧 apply_transform_post 是「rect 内清白 + 反向采样」的
+/// 全场景像素后处理，空内容变换的本征渲染 = 无可见变化（isolating renderer 语义），
+/// 但清白步骤会把 rect 内已绘制的画布传播背景当变换源抹除重排（driving:
+/// transform-background-006/007/008——root/body transform × 画布传播背景 28-50% 红）。
+/// 例外：backdrop-filter 空盒从「背后内容」取样，本身是可见输出，变换照常发射
+///（backdrop-filter-transform 族）；filters/blend_modes 不在 PrimitiveCounts 快照内，
+/// 子树内 backdrop-filter 后代同样按有内容处理（backdrop-filter-scale-transform）。
+#[test]
+fn r5006_empty_subtree_transform_skips_primitive_and_keeps_canvas_bg() {
+    fn paint_transforms(html: &str, css: &str) -> usize {
+        let doc = zero_dom::parse_html(html);
+        let sheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[sheet]);
+        let mut engine = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let mut painter = Painter::new();
+        // 画布传播块以 viewport_w > 0 为门（真实管线由 pipeline 设置）——单测须同设。
+        painter.viewport_w = 800.0;
+        painter.viewport_h = 600.0;
+        painter.paint(&result.root, &styles, Some(&doc));
+        painter.primitives().transforms.len()
+    }
+
+    // ① 空子树 div（无背景无内容）→ 不发射 TransformPrimitive。
+    assert_eq!(
+        paint_transforms(
+            r##"<html><head><style>
+                div { width: 100px; height: 100px; transform: rotate(90deg); }
+            </style></head><body style="margin:0"><div></div></body></html>"##,
+            "div { width: 100px; height: 100px; transform: rotate(90deg); }",
+        ),
+        0,
+        "空子树 transform 元素不应发射 TransformPrimitive（R5006）"
+    );
+
+    // ② 对照：有背景（可见内容）→ 照常发射。
+    assert_eq!(
+        paint_transforms(
+            r##"<html><head><style>
+                div { width: 100px; height: 100px; background: green; transform: rotate(90deg); }
+            </style></head><body style="margin:0"><div></div></body></html>"##,
+            "div { width: 100px; height: 100px; background: green; transform: rotate(90deg); }",
+        ),
+        1,
+        "有内容的 transform 元素照常发射（既有行为不变）"
+    );
+
+    // ③ backdrop-filter 空盒：backdrop 取样是可见输出 → 照常发射。
+    assert_eq!(
+        paint_transforms(
+            r##"<html><head><style>
+                div { position: absolute; width: 100px; height: 100px;
+                      backdrop-filter: invert(1); transform: rotate(30deg); }
+            </style></head><body style="margin:0"><div></div></body></html>"##,
+            "div { position: absolute; width: 100px; height: 100px; backdrop-filter: invert(1); transform: rotate(30deg); }",
+        ),
+        1,
+        "backdrop-filter 空盒变换照常发射（backdrop 取样是可见输出）"
+    );
+
+    // ④ driving 形态：html transform + body 背景传播到画布——body 背景跳绘后 html
+    // 子树零图元 → 不发射 TransformPrimitive（画布背景不被清白重排）。
+    assert_eq!(
+        paint_transforms(
+            r##"<html><head><style>
+                html { transform: rotate(90deg); transform-origin: 50px 50px; }
+                body { margin: 0; background: blue; }
+            </style></head><body></body></html>"##,
+            "html { transform: rotate(90deg); transform-origin: 50px 50px; } body { margin: 0; background: blue; }",
+        ),
+        0,
+        "root transform × 画布传播背景：html 空子树不发射 TransformPrimitive"
+    );
+
+    // ⑤ 子树内 backdrop-filter 后代（自身无内容）：filters 计数覆盖 → 父变换照常发射
+    //（backdrop-filter-scale-transform：container scale(1.1) × backdropfilter 子盒）。
+    assert_eq!(
+        paint_transforms(
+            r##"<html><head><style>
+                #c { position: relative; width: 200px; height: 200px; transform: scale(1.1); }
+                #b { backdrop-filter: invert(1); width: 100%; height: 100%; }
+            </style></head><body style="margin:0"><div id="c"><div id="b"></div></div></body></html>"##,
+            "#c { position: relative; width: 200px; height: 200px; transform: scale(1.1); } #b { backdrop-filter: invert(1); width: 100%; height: 100%; }",
+        ),
+        1,
+        "子树含 backdrop-filter 后代时父变换照常发射"
+    );
+}

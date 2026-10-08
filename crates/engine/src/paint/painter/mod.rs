@@ -2114,6 +2114,10 @@ impl Painter {
         // 获取该节点对应的计算样式
         // 记录绘制前的图元数量，用于 opacity 应用
         let counts_before = PrimitiveCounts::snapshot(&self.primitives);
+        // R5006：filters/blend_modes 不在 PrimitiveCounts 内（backdrop-filter 等区域
+        // 效果图元），CSS transform 发射点的「子树零可见图元」判定需一并快照。
+        let filters_before = self.primitives.filters.len();
+        let blend_modes_before = self.primitives.blend_modes.len();
 
         // R792：overflow 裁剪基线快照（默认覆盖匿名文本项/无样式分支）；有样式分支在装饰
         // 绘制后、paint_text 前重赋值，使裁剪范围含 list marker/img/content/自身文本/列背景/
@@ -2995,32 +2999,60 @@ impl Painter {
             // 保持既有行为。
             let in_svg = doc.is_some_and(|d| in_svg_subtree(d, node_id));
             if !in_svg {
-                let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
-                // R4107（CSS Transforms 1 §transform-box）：html 元素声明
-                // content-box/fill-box（fill-box 在 CSS 布局盒上 = content-box 别名，
-                // cssbox-fill-box 案注释实证）时参考框 = 内容盒——transform-origin 与
-                // 百分比 translate 相对内容盒解析；联合 bbox 仍以 border-box rect 为基。
-                let ref_box = match style.transform_box {
-                    zero_style_system::TransformBoxValue::ContentBox
-                    | zero_style_system::TransformBoxValue::FillBox => {
-                        let ox = box_node.border_left + box_node.padding_left;
-                        let oy = box_node.border_top + box_node.padding_top;
-                        Some(Rect::new(
-                            abs_x + ox,
-                            abs_y + oy,
-                            box_node.content_width,
-                            box_node.content_height,
-                        ))
+                // R5006（CSS Transforms 1 §transform-rendering + css-backgrounds-3 #root-background
+                // 传播语义）：子树零可见图元（自身背景/边框/内容均空）时跳过 TransformPrimitive
+                // 发射。raster 侧 apply_transform_post 是「rect 内清白 + 反向采样」的全场景像素
+                // 后处理——空内容变换的本征渲染结果 = 无可见变化（isolating renderer 语义），
+                // 但清白步骤会把 rect 内已绘制的画布背景（css-backgrounds 传播背景，绘制于主
+                // 遍之前）连同祖先/兄弟内容一并抹除，再把画布背景像素当变换源重排
+                //（transform-background-006/007/008：root/body transform × 画布传播背景 →
+                // 50.58%/28.47% 红；空子树跳过后画布背景原样保留 = chromium 行为）。
+                // 例外：backdrop-filter 空盒——从「背后内容」取样的滤镜本身是可见输出
+                //（filter-effects-2 §BackdropFilterProperty），变换必须照常发射
+                //（backdrop-filter-transform 族：rotate(30deg) 盒的反演区域须随盒旋转）。
+                // FilterPrimitive/BlendModePrimitive 不在 PrimitiveCounts 快照内，另以
+                // filters/blend_modes 计数覆盖子树内的 backdrop-filter 后代
+                //（backdrop-filter-scale-transform：父 scale(1.1) × 子 backdrop-filter 盒）。
+                // 纯 translate 的图元级平移在空差集上本就是 no-op，一并跳过；后续
+                // opacity/mask/指示器绘制照常走（不提前 return）。
+                let subtree_visually_empty = style.backdrop_filter.is_empty()
+                    && counts_before.fills == self.primitives.fills.len()
+                    && counts_before.rounded_rects == self.primitives.rounded_rects.len()
+                    && counts_before.gradients == self.primitives.gradients.len()
+                    && counts_before.shadows == self.primitives.shadows.len()
+                    && counts_before.images == self.primitives.images.len()
+                    && counts_before.glyphs == self.primitives.glyphs.len()
+                    && counts_before.strokes == self.primitives.strokes.len()
+                    && filters_before == self.primitives.filters.len()
+                    && blend_modes_before == self.primitives.blend_modes.len();
+                if !subtree_visually_empty {
+                    let rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
+                    // R4107（CSS Transforms 1 §transform-box）：html 元素声明
+                    // content-box/fill-box（fill-box 在 CSS 布局盒上 = content-box 别名，
+                    // cssbox-fill-box 案注释实证）时参考框 = 内容盒——transform-origin 与
+                    // 百分比 translate 相对内容盒解析；联合 bbox 仍以 border-box rect 为基。
+                    let ref_box = match style.transform_box {
+                        zero_style_system::TransformBoxValue::ContentBox
+                        | zero_style_system::TransformBoxValue::FillBox => {
+                            let ox = box_node.border_left + box_node.padding_left;
+                            let oy = box_node.border_top + box_node.padding_top;
+                            Some(Rect::new(
+                                abs_x + ox,
+                                abs_y + oy,
+                                box_node.content_width,
+                                box_node.content_height,
+                            ))
+                        }
+                        _ => None,
+                    };
+                    super::helpers::apply_transform_with_ref_box(style, &rect, ref_box.as_ref(), &mut self.primitives);
+                    // R3901：纯 translate 列表走图元级平移（CSS Transforms §transform-rendering：
+                    // transform 作用于元素及其整个子树）。counts_before = paint_node 起点快照，
+                    // 差集即自子树全部图元。不用 TransformPrimitive（raster 全场景像素后处理会
+                    // 清白与元素框相交的祖先/兄弟内容，transform-descendant-001 回归实证）。
+                    if let Some((tx, ty)) = super::helpers::translate_offset(style) {
+                        super::helpers::translate_primitives_since(&mut self.primitives, &counts_before, tx, ty);
                     }
-                    _ => None,
-                };
-                super::helpers::apply_transform_with_ref_box(style, &rect, ref_box.as_ref(), &mut self.primitives);
-                // R3901：纯 translate 列表走图元级平移（CSS Transforms §transform-rendering：
-                // transform 作用于元素及其整个子树）。counts_before = paint_node 起点快照，
-                // 差集即自子树全部图元。不用 TransformPrimitive（raster 全场景像素后处理会
-                // 清白与元素框相交的祖先/兄弟内容，transform-descendant-001 回归实证）。
-                if let Some((tx, ty)) = super::helpers::translate_offset(style) {
-                    super::helpers::translate_primitives_since(&mut self.primitives, &counts_before, tx, ty);
                 }
             }
         }
