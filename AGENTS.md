@@ -128,7 +128,7 @@
 
 ZeroWeb — 用 Rust 构建的跨平台浏览器。两个交付物：
 1. 可复用的嵌入式 `ZeroWebView` 库（Rust lib）
-2. 桌面 `ZeroBrowser` 浏览器应用（macOS、Linux、Windows；Android 为后续适配目标）
+2. `ZeroBrowser` 浏览器应用（桌面支持 macOS、Linux、Windows；Android 已有 Kotlin/Jetpack Compose 宿主和 Rust JNI 桥，进度见 [Android 任务](docs/goal/android-browser/master.md)）
 
 项目自建浏览器核心：DOM、CSSOM、样式系统、布局、渲染管线、导航、安全/运行时边界。外部 Rust crate 用于底层能力（html5ever、v8/rquickjs、wasmtime/wasmi、wgpu+winit、taffy）。
 
@@ -138,25 +138,28 @@ ZeroWeb — 用 Rust 构建的跨平台浏览器。两个交付物：
 
 ## Setup 命令
 
-- Linux/macOS 首次构建前：`make setup-rusty-v8`
-- Windows 首次构建前：设置 `RUSTY_V8_ARCHIVE` 指向 `rusty_v8` release `.lib`
-- 启动浏览器：`cargo run --bin zero-browser`
+- 开发环境：[Linux/macOS](docs/development/linux-macos.md)、[Windows](docs/development/windows.md)
+- 准备 V8：`make setup-rusty-v8`（按平台调用下载脚本；Windows 也可设置 `RUSTY_V8_ARCHIVE` 指向匹配版本和架构的预编译库）
+- 启动浏览器：`make browser`（release + GPU，先构建浏览器及 renderer/compositor/image-decoder）；仅构建用 `make browser-build`
 - 启动 WebView demo：`cargo run --bin webview-demo`
-- 启动开发（自动处理 V8 下载）：`make browser`
-- 运行测试：`cargo test --workspace`
-- 构建：`cargo build --workspace`
-- Release 构建：`cargo build --release --workspace`
-- 运行 WPT reftest：`make reftest`（release + test-guard；等价于 `cargo run --release --bin zero-wpt-runner -- reftest`）
+- 运行测试：`make test`（先构建配套子进程，再经 test-guard 执行测试；包含 QuickJS 检查，具体矩阵见 [Makefile](Makefile)）
+- 构建工作区：`make build`（准备 V8，分别构建其余 workspace 和 `zero-browser`，避免 workspace feature 合并掩盖浏览器单包依赖问题）
+- 准备 WPT 数据：`make fetch-wpt-data`（首次运行依赖真实字体等资产的 WPT runner 测试前执行；`make reftest` 会自动调用）
+- 运行 WPT reftest：`make reftest`（先完成 release 构建，再经 test-guard 执行）
+- 定向上游 reftest：`make reftest-upstream FILTER=css-tables`
 - 运行基准测试：`./scripts/run-benchmarks.sh`
 - 检查覆盖率：`./scripts/check-coverage.sh`
 - 运行 clippy：`cargo clippy --workspace --all-targets -- -D warnings`
+- Android 环境检查与构建：`make android-preflight`、`make android-apk`、`make android-release-apk`；renderer feature 的前置条件见 [Android 构建说明](apps/android-browser/rust/README.md)
+
+这些命令按任务需要执行，不是每次修改都要运行的清单。无人值守的构建、测试和 clippy 仍须遵循下文运行安全约束；Makefile 中有磁盘守卫不代表所有编译步骤都有内存和超时保护。
 
 ## 代码风格
 
 - 语言：Rust
 - 格式化工具：`rustfmt`（`cargo fmt`）
 - 代码检查：`clippy`（`cargo clippy --workspace --all-targets -- -D warnings`，CI 强制）
-- CI：GitHub Actions — 在 ubuntu/macos/windows 上运行 cargo check、clippy（deny warnings）、test、build（macos-x86_64 仅 check/clippy/build，跳过测试执行）
+- CI：[PR Precheck](.github/workflows/pr-precheck.yml) 对非 Draft PR 执行格式和 workspace check，忽略纯 Markdown/docs 变更；[主 CI](.github/workflows/ci.yml) 由手动触发或 OWNER 批准 PR 触发，包含多平台 clippy、测试、启动冒烟和 Android 构建。macos-x86_64 跳过测试执行，桌面 release 构建需手动启用。实际覆盖范围以工作流条件和矩阵为准。
 - 文档注释：公共 API 必须有 `///` 文档注释
 - 日志：使用 `tracing` crate，不使用 `println!`
 - **规范驱动注释（第三轮调研建议 #2，2026-08-07）**：实现 web 规范行为（HTML/CSS/DOM/JS API 语义）处，必须添加对应规范链接注释（如 `// https://html.spec.whatwg.org/#xxx`、`// https://drafts.csswg.org/css-xxx/`）；规范算法的未实现步骤标 `// FIXME:`；优化路径标 `// OPTIMIZATION:` 并说明理由。依据：Ladybird 全库 4,750 处 spec 链接注释是 90%+ WPT 的代码层基石（调研报告 §6.3 质量文化注记），规范链接同时是 AI 生成代码时的锚点
@@ -173,7 +176,7 @@ apps/
 ├── compositor/       # zero-compositor — 合成器进程（C2）
 ├── webdriver/        # zero-webdriver — WebDriver 服务（W3C 协议）
 ├── webview-demo/     # zero-webview-demo — WebView 嵌入示例
-└── android-browser/  # zero-android-browser — Android 浏览器（Kotlin chrome + Rust JNI 桥，M0）
+└── android-browser/  # Android Kotlin/Compose 宿主；rust/ 为 zero-android-browser JNI crate
 
 crates/
 ├── dom/              # zero-dom — DOM 树（基于 html5ever）
@@ -207,12 +210,15 @@ tools/
 └── icon-gen/         # zero-icon-gen — 图标资产生成（不随发布产物分发）
 ```
 
+`crates/taffy-local/` 是通过根 `Cargo.toml` 的 `[patch.crates-io]` 接入的本地 Taffy 补丁，不在上述显式 member 清单中。`build-support/` 保存共享构建代码；`website/` 是官网；`.agents/skills/` 保存项目专用工作流。
+
 关键职责与设计边界：
 
 - `zero-webview` 是稳定嵌入边界。`zero-browser` 也应像外部宿主一样优先通过它接入页面能力，不要随意绕过到更底层 crate。
 - `zero-protocol` + `apps/renderer` 定义多进程边界。涉及导航、输入、存储、网络代理时，先确认消息契约，再同步修改浏览器主进程和渲染进程两端。
 - `zero-engine` 负责把 DOM / CSS / 样式 / 布局 / 绘制串成页面管线；`render-foundation` 负责真正的 GPU/CPU 图元输出，二者不要混写职责。
 - `zero-media` 是解码与播放的进程内管线（webm demux / VP9/AV1 视频 / 音频解码 / 播放驱动 / 音频输出面），解码与播放解耦；HTMLMediaElement 语义层在 engine/webview，不与本 crate 混写。
+- `apps/android-browser` 的 Kotlin 宿主经 JNI 复用共享浏览器状态与角色运行循环；修改 JNI、角色生命周期或输入转发时，同步核对 Kotlin 声明、Rust 桥和 IPC 契约。
 - `script-sandbox` 和 `wasm-sandbox` 是隔离执行层。改动脚本或 WASM 集成时，优先保持 feature gate、宿主桥接和错误边界清晰。
 - `tests/integration` 覆盖跨 crate 管线，`tests/wpt-runner` 覆盖规范兼容性和 reftest。行为变化优先补这两层里最贴近的测试。
 
@@ -229,11 +235,13 @@ tools/
 ## 测试指引
 
 - 测试框架：Rust 内置（`#[test]`）
-- 运行全部测试：`cargo test --workspace`
-- 运行单个测试：`cargo test -p <crate名> --test <测试名>`
-- 运行单个 crate 的测试：`cargo test -p zero-dom`
-- 运行并显示输出：`cargo test -- --nocapture`
+- 运行完整测试门禁：`make test`
+- 定向测试先准备守卫：`make target/test-guard`；macOS/Linux 示例：`./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-dom`
+- 选择集成测试 target：在上述 Cargo 参数中加 `--test <target名>`；选择具体测试加名称过滤器；显示输出加 `-- --nocapture`
+- 涉及多进程测试时，先构建与当前源码及 feature 一致的 renderer/compositor/image-decoder，不能复用旧版本子进程；全量入口已包含此步骤
 - 覆盖率报告：`./scripts/check-coverage.sh`
+
+`--compile-first` 先在不设内存阈值的阶段编译，再保护测试运行。病态输入和 fuzz 工件使用下文专门的 `fuzz-repro-guard.sh` 入口。
 
 **重要**：提交前按下文“提交前质量门禁”判断实际影响和检查范围。Rust 产品代码变更须通过格式、workspace 测试和严格 clippy；仅文档、Skill、官网或独立工具变更不触发浏览器全量检查。
 
@@ -252,6 +260,16 @@ tools/
 - 裁决为 **PASS** 时允许提交
 - 裁决为 **BLOCK** 时，输出发现报告并等待用户确认或修复后重新扫描
 - 用户明确要求跳过时可豁免
+
+### 网站任务 PR 独立审查
+
+`zeroweb-site-optimizer` 任务 PR 按已有的 [双审查流程](.agents/skills/zeroweb-site-optimizer/references/independent-review.md) 和 [GitHub 交付规则](.agents/skills/zeroweb-site-optimizer/references/github-delivery.md) 执行：
+
+- PR 创建后，由两个未参与实现的新上下文分别审查测试有效性和缺陷；首轮只读同一精确 base/head 的完整变更，不继承作者自评或另一角色结论。
+- 两份首轮完成后统一返修，补丁由非作者复核；汇总回执、验证证据和 PR 正文审查状态绑定当前版本。
+- 标记就绪、pr_only 完成或合并前，按交付规则核验正文、适用截图、远端状态与审查证据；本地检查器通过不能代替真实审查、CI 或 GitHub 审批。
+
+适用范围和纯拼写/排版例外以原流程为准；不将任务 PR 双审查扩大为所有本地提交的前提。暂存区安全扫描、行为审查和仓库审批分别记录，任一通过都不自动授予提交、发布或合并权限。
 
 ### 提交前质量门禁
 
@@ -275,7 +293,7 @@ tools/
 - 调用 `lei-pre-commit-guard` 并获得 **PASS**
 - 按变更类型执行上表中适用的检查，不为纯规则或文案修改启动浏览器
 
-涉及 Rust 产品代码变更时，提交前仍须通过 `cargo test --workspace` 及以下门禁：
+涉及 Rust 产品代码变更时，提交前仍须通过 workspace 测试（使用上述 `make test` 入口）及以下门禁：
 - `cargo fmt --all -- --check` 必须无 diff（有 diff 先 `cargo fmt --all` 修复再提交）
 - `cargo clippy --workspace --all-targets -- -D warnings` 必须无 warning/error（CI 用 `-D warnings` 强制，本地须同等严格）
 - 若默认 feature（v8）因环境（如缺 rusty_v8 预编译库）无法本地编译，至少在能编译的 feature 下跑 clippy（如 `--no-default-features --features quickjs`），并在提交说明中注明覆盖范围
