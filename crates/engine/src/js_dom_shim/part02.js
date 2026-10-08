@@ -6098,13 +6098,20 @@
       downloadRequest: downloadRequest !== undefined ? downloadRequest : null,
       canIntercept: sameOrigin,
     });
-    if (ev.defaultPrevented) { if (!ev._zwErrored) _navCancelNavigation(ev, null); return; }
-    if (ev.downloadRequest !== null && !ev._zwIntercepted) return; // download 吞导航
+    if (ev.defaultPrevented) { if (!ev._zwErrored) _navCancelNavigation(ev, null); return 'canceled'; }
+    if (ev.downloadRequest !== null && !ev._zwIntercepted) return 'download'; // download 吞导航
     _pushHistNav(newHref, oldHref);
     if (ev._zwBind) ev._zwBind.rec = _navPushCurrent(_hist_current());
-    if (ev._zwIntercepted) { _navRunIntercept(ev, null); return; }
-    if (!hashOnly && typeof __zw_request_navigate === 'function') __zw_request_navigate(newHref);
+    if (ev._zwIntercepted) { _navRunIntercept(ev, null); return 'intercepted'; }
+    // M2-S4I：host 导航决策外移（返回 'host'——调用方执行真导航；JS a.click() 路径由 part04
+    // 调 __zw_request_navigate，host Activate 管线由 user_actions.rs 决定）。
+    return 'host';
   }
+  // M2-S4I：host 激活管线入口（user_actions.rs 前置调用——testdriver click 面 navigate 事件
+  // 与 sourceElement/downloadRequest 线程；状态回传决定 host 导航是否继续）。
+  globalThis.__zwNavAnchorNavigate = function (url, sourceElement, downloadRequest) {
+    try { return _navAnchorNavigate(String(url), sourceElement || null, downloadRequest === undefined ? null : downloadRequest); } catch (_eEx) { return 'host'; }
+  };
   function _locationReplace(url) {
     var oldHref = globalThis.location.href;
     // M2-S1：解析失败 → SYNTAX_ERR DOMException（同 _locationAssign；WPT location_replace

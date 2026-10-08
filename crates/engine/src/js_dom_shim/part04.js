@@ -4284,7 +4284,20 @@
               var _r154Tag = _realTag(sel, handle);
               if (_r154Tag === 'A' || _r154Tag === 'AREA') {
                 var _r154Href = '';
-                try { _r154Href = handle ? __zw_get_attr_handle(handle, 'href') : (sel ? __zw_get_attr(sel, 'href') : ''); } catch (_e154h) { _r154Href = ''; }
+                try {
+                  // M2-S4H：href expando 优先（`a.href = v` IDL 未反射为 attr 的形态——静态锚
+                  // `a.href=...` 走 proxy expando；WPT navigate-anchor-cross-origin），attr 桥回落。
+                  var _p154h = _makeProxy(sel, handle);
+                  // **own** expando 判定（href IDL accessor 在原型上——`a.href = v` 为 own
+                  // 数据属性；静态锚 hasOwnProperty false → 回落 attr，避免读到 resolved URL）。
+                  if (_p154h && Object.prototype.hasOwnProperty.call(_p154h, 'href')
+                      && _p154h.href !== undefined && _p154h.href !== null && _p154h.href !== '') {
+                    _r154Href = String(_p154h.href);
+                  }
+                } catch (_e154hx) {}
+                if (!_r154Href) {
+                  try { _r154Href = handle ? __zw_get_attr_handle(handle, 'href') : (sel ? __zw_get_attr(sel, 'href') : ''); } catch (_e154h) { _r154Href = ''; }
+                }
                 // M2-S4H（navigation-compat）：anchor download 属性 → navigate downloadRequest
                 //（presence 判定——`download=""` 同下载；值为文件名。WPT anchor-download-intercept
                 // 「download 锚点击可 intercept」）。线程后由 _navFireNavigate 读取、此处读后即清。
@@ -4326,9 +4339,13 @@
                   try { _r154Se = (sel || handle) ? _makeProxy(sel, handle) : null; } catch (_e154se2) { _r154Se = null; }
                   try {
                     if (typeof _navAnchorNavigate === 'function') {
-                      _navAnchorNavigate(String(_r154Href), _r154Se, _r154HasDl ? _r154DlVal : null);
-                    }
-                  } catch (_e154an) {}
+                      var _r154St = _navAnchorNavigate(String(_r154Href), _r154Se, _r154HasDl ? _r154DlVal : null);
+                      try { globalThis.__zwNavAnchorSt = String(_r154St); } catch (_eSt) {}
+                      if (_r154St === 'host' && _r154Href && typeof __zw_request_navigate === 'function') {
+                        __zw_request_navigate(String(_r154Href));
+                      }
+                    } else { try { globalThis.__zwNavAnchorSt = 'NO-FN'; } catch (_eSt2) {} }
+                  } catch (_e154an) { try { globalThis.__zwNavAnchorSt = 'THREW:' + _e154an.message; } catch (_eSt3) {} }
                   globalThis.__zwNavDownloadRequest = null;
                 }
               }

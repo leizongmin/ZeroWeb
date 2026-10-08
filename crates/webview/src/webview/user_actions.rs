@@ -477,6 +477,27 @@ impl WebView {
             }
         }
         let mut effects = Vec::new();
+        // navigation-compat S4I：锚激活线程（testdriver click 的 host 管线此前绕过 JS 锚分支
+        // ——navigate 事件的 sourceElement/downloadRequest 恒缺）。在 hash/锚导航 effect 执行前
+        // 把触发元素 + download 属性线程进页面（`__zwNavSourceElement`/`__zwNavDownloadRequest`
+        // ——shim hash-setter 读取），执行后清除。
+        let anchor_activated = zero_engine::anchor_activation_matches(&html, &selector);
+        let anchor_thread_scripts = if anchor_activated {
+            let dl = zero_engine::anchor_download_request(&html, &selector)
+                .map(|value| serde_json::to_string(&value).unwrap_or_else(|_| "\"\"".into()))
+                .unwrap_or_else(|| "null".into());
+            let thread_script = format!(
+                "(function(){{var el=document.querySelector({sel});try{{globalThis.__zwNavSourceElement=el||null;}}catch(_e){{}}try{{var d={dl};if(d===null&&el&&el.getAttribute){{var v=el.getAttribute('download');if(v!==null&&v!==undefined)d=String(v);}}globalThis.__zwNavDownloadRequest=d;}}catch(_e2){{}}}})();",
+                sel = serde_json::to_string(&selector).unwrap_or_else(|_| "null".into()),
+                dl = dl,
+            );
+            Some((
+                thread_script,
+                "try{globalThis.__zwNavSourceElement=null;}catch(_e){}try{globalThis.__zwNavDownloadRequest=null;}catch(_e){}".to_string(),
+            ))
+        } else {
+            None
+        };
         for effect in outcome.effects {
             match effect {
                 PageEffect::Focus(next) => {
@@ -488,7 +509,55 @@ impl WebView {
                         effects.push(PageEffect::Navigate(intent));
                     }
                 }
+                PageEffect::Navigate(intent) => {
+                    // M2-S4I：锚点击的 host 导航先过页面导航面（navigate 事件 + intercept/
+                    // download/cancel——`__zwNavAnchorNavigate` 返回状态决定 host 是否继续；
+                    // 'host' = 页面未消化（跨文档默认）→ 既有 host 导航。表单提交不经此
+                    //（anchor_activated 门——SubmitForm 产生的 Navigate 不受影响）。
+                    let anchor_url = zero_engine::anchor_click_target(
+                        &html,
+                        &selector,
+                        self.current_url.as_deref().unwrap_or("about:blank"),
+                    );
+                    if javascript_enabled && anchor_activated && anchor_url.as_deref() == Some(intent.url.as_str()) {
+                        let dl = zero_engine::anchor_download_request(&html, &selector)
+                            .map(|value| serde_json::to_string(&value).unwrap_or_else(|_| "\"\"".into()))
+                            .unwrap_or_else(|| "null".into());
+                        let call = format!(
+                            "(function(){{var se=null;try{{se=document.querySelector({sel});}}catch(_e){{}}var r='host';try{{r=globalThis.__zwNavAnchorNavigate({url},se,{dl});}}catch(_e2){{r='host';}}try{{globalThis.__zwNavSourceElement=null;}}catch(_e3){{}}try{{globalThis.__zwNavDownloadRequest=null;}}catch(_e4){{}}return String(r);}})();",
+                            sel = serde_json::to_string(&selector).unwrap_or_else(|_| "null".into()),
+                            url = serde_json::to_string(&intent.url).unwrap_or_else(|_| "\"\"".into()),
+                            dl = dl,
+                        );
+                        // 统一走 execute_dom_script（内部沙箱/外部 executor 两态；DomScriptResult.value
+                        // = 脚本完成值——'canceled'/'intercepted'/'download'/'host'）。
+                        match self.execute_dom_script(executor, &call) {
+                            Ok(result) => {
+                                let status = result.value.trim().trim_matches('"').trim_matches('"').to_string();
+                                if status != "host" {
+                                    // 页面已消化（canceled/intercepted/download）——跳过
+                                    // host 导航；同文档提交态同步 host URL。
+                                    if status == "intercepted" {
+                                        self.current_url = Some(intent.url.clone());
+                                    }
+                                    continue;
+                                }
+                            }
+                            Err(_) => {} // 脚本失败 → 既有 host 导航兜底
+                        }
+                    }
+                    effects.push(PageEffect::Navigate(intent));
+                }
                 PageEffect::SetFragment { hash } => {
+                    if let (true, Some((thread_script, cleanup))) = (javascript_enabled, anchor_thread_scripts.as_ref())
+                    {
+                        let _ = self.execute_dom_script(executor, thread_script)?;
+                        changed |= self
+                            .execute_dom_script(executor, &script_call_set_location_hash(&hash))?
+                            .changed;
+                        let _ = self.execute_dom_script(executor, cleanup)?;
+                        continue;
+                    }
                     changed |= self
                         .execute_dom_script(executor, &script_call_set_location_hash(&hash))?
                         .changed;
@@ -499,7 +568,6 @@ impl WebView {
                         self.current_url = Some(url.to_string());
                     }
                 }
-                effect => effects.push(effect),
             }
         }
         Ok(WebViewUserActionResult {
