@@ -10224,6 +10224,19 @@
       if (b && b.added.length) {
         for (var j = 0; j < b.added.length; j++) _zwHCCollectSubtree(b.added[j], out);
       }
+      // slice43（RP-3）：parsed 后代展开——R51c 桶仅含本 sel 的 pending-added（脚本
+      // appendChild 面），快照解析后代（原始 HTML / 已应用 innerHTML 态）不入桶，
+      // 缺席使 remFlat 不含 parsed 集合成员 → live 集合/查询面成员 stale 至换代
+      //（slice42 残余申报，s43 常驻钉实证自然红）。经 `_childNodeList`（R55 基底
+      // 缓存 + overlay）枚举当下子面，元素与集合持有 proxy 同源（`_wrapSelector`
+      // identity 稳定）；与桶 added 重叠的条目由下游 Set 判重吸收（对冲/removed
+      // 记账均幂等）。spec：集合视图限当下 document tree，子树移除成员随树离场。
+      // https://dom.spec.whatwg.org/#concept-collection
+      var _s43parsed = null;
+      try { _s43parsed = _childNodeList(node.__zwSelector); } catch (_e43pc) { _s43parsed = null; }
+      if (_s43parsed) {
+        for (var p43i = 0; p43i < _s43parsed.length; p43i++) _zwHCCollectSubtree(_s43parsed[p43i], out);
+      }
       return;
     }
     if (kids) {
@@ -10880,8 +10893,14 @@
       var els32 = lc32.elements();
       var has32 = false;
       for (var j32 = 0; j32 < els32.length; j32++) if (els32[j32] === el) { has32 = true; break; }
+      // slice43（RP-3，slice42 缺陷轮 I-5）：join 臂连接性门对齐 R54/R333 in-doc 口径——
+      // detached 元素 setAttribute('id'/'name') 命中集合名不并入文档级 NA 集合（spec
+      // named objects 限当下 document tree，WPT basics "not reachable" 面；与
+      // `_zwNAAttrDynamicSync` 动态注册面 `_zwDocContains36` 门同口径）。账内 detached
+      // 陈旧成员经同门失格剔除；in-doc 插入经 childList 面重新并入，无永久丢失。
+      // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
       var m32 = false;
-      try { m32 = lc32.matches(el); } catch (_e32am) { m32 = false; }
+      try { m32 = lc32.matches(el) && _zwDocContains36(el); } catch (_e32am) { m32 = false; }
       if (has32 === m32) continue;
       var out32 = [];
       if (m32) {
