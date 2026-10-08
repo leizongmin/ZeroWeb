@@ -2926,3 +2926,67 @@ fn r4296_probe_expanded_filter_rect_applies() {
     let q = fb.get_pixel(30, 150); // 条带内：同样反转
     assert_eq!((q[0], q[1], q[2]), (0, 90, 255), "strip pixel");
 }
+
+/// R5007（css-transforms-1 §transform-rendering 渲染精度对齐）：TransformPrimitive
+/// 反向采样 = 像素**中心** (x+0.5, y+0.5) + **双线性插值**（chromium/Skia 变换栅格化
+/// 约定）。旧实现角点 + round 最近邻 → 旋转后边缘相位偏移 1px、AA 渐变二值化
+///（transform-background-001：fringe 值逐字节同但位置 +1px）。本测钉两个面：
+/// ①半像素平移 → 跨黑/白边界的设备列 50/50 混合（最近邻整列跳变）；②整型平移 →
+/// 精确 texel 拷贝（双线性退化为恒等，既有绿基线不回归）；③采样点出界 → 保持清白。
+#[test]
+fn cpu_transform_post_center_bilinear_resampling() {
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let mut mk_scene = |tx: f32| {
+        let mut primitives = RenderPrimitives::new();
+        // 左侧黑 fill（x ∈ [0,16)），其余白（fb 初始白）
+        primitives.fills.push(FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 16.0, 4.0),
+            color: Color::BLACK,
+        });
+        primitives.transforms = vec![TransformPrimitive {
+            rect: Rect::new(0.0, 0.0, 32.0, 4.0),
+            origin_x: 0.0,
+            origin_y: 0.0,
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            tx,
+            ty: 0.0,
+        }];
+        render_full_scene(
+            32,
+            4,
+            1.0,
+            &primitives,
+            &font_loader,
+            &mut glyph_cache,
+            None,
+            &[],
+            &[],
+            &[],
+            &[],
+        )
+    };
+    let black = [0, 0, 0, 255];
+    let white = [255, 255, 255, 255];
+
+    // ① tx=0.5：设备列 16 中心 16.5 → 源 16.0 → u=15.5 → texel 15(黑)/16(白) 各半 → 128。
+    //    （最近邻在同位置会整列取单侧：0 或 255。）
+    let fb = mk_scene(0.5);
+    assert_eq!(
+        fb.get_pixel(16, 2)[0],
+        128,
+        "半像素平移的跨界列应为 50% 双线性混合，最近邻会输出 0 或 255"
+    );
+    assert_eq!(fb.get_pixel(17, 2), white, "混合列右侧回到白（fx=0 精确 texel 16）");
+
+    // ② tx=8（整型）：设备列 20 中心 20.5 → 源 12.5 → u=12.0 → fx=0 精确 texel 12（黑）
+    //    ——整型对齐映射下双线性 = 恒等拷贝。
+    let fb2 = mk_scene(8.0);
+    assert_eq!(fb2.get_pixel(20, 2), black, "整型平移保持精确 texel 拷贝");
+
+    // ③ 采样点出界：设备列 7 中心 7.5 → 源 −0.5 < 区域左界 → 保持清白。
+    assert_eq!(fb2.get_pixel(7, 2), white, "采样点出界列保持清白（区域闭合语义不变）");
+}
