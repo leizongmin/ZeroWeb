@@ -2010,9 +2010,11 @@ impl Painter {
 
         // R3831：奇异 transform（CSS Transforms：变换矩阵不可逆）→ 元素及其子树整体
         // 不渲染（chrome 同此，transform3d-scale-004：scale3d(2,2,0) 全不可见）。
-        // 快速路径同上（transform: none 直接跳过）。
+        // 快速路径同上（transform: none 直接跳过）。R5013：individual `scale: 0`
+        // （transform: none + individual_scale 奇异）同判——旧门控把它挡在门外
+        //（individual-transform-3：scale: 0 系 11 个红条照绘，ref 纯绿方块）；
+        // is_singular_transform 对 None+无 individual 恒 false，无条件调用即等价快速路径。
         if let Some(style) = box_node.node_id.and_then(|id| styles.get(&id))
-            && !matches!(style.transform, TransformValue::None)
             && super::helpers::is_singular_transform(style)
         {
             return;
