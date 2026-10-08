@@ -56,8 +56,9 @@
 | slice43 合并基线 | 8c5752049 | 20,200/0/198/70 | 主证据逐行求和重算（gates/maketest-mergetree-s43.log：70 测试二进制，P=20,200 F=0 I=198），非照抄卡面；fetch 实测 main 未前进 |
 | slice44 终态 | 7c44d04de | **20,203/0/198/70**（实测，gates/maketest-s44.log 求和） | +3 = slice44 三钉（part44.rs，engine lib v8 腿）；engine 不在 QUICKJS_TEST_CRATES → quickjs 腿零变化、腿数 70 恒 |
 | branchmerge2 树（main@3de8e949d 二次合入） | eb2ee1b82 | **20,209/0/198/70**（实测，gates/maketest-branchmerge2-s44.log 求和） | +6 = main 侧新增：t8i 2（part44.rs add/add 合流，engine lib v8 腿 2908→2910）+ integration e2e 2（zero-integration-tests 在 QUICKJS_TEST_CRATES，v8+quickjs 双腿 ×2=4）；slice44 三钉与 t8i 两测试同文件合流全 ok（逐腿归因实测） |
+| branchmerge3 树（main@ed2cc4a8e 三次合入） | d81f766e4 | **20,209/0/198/70**（实测，gates/maketest-branchmerge3-s44.log 求和） | +0 = drift3 零新增 Rust 测试（M2-S4C 仅 testharness case 超时 2s→10s）；part05 新 hunk 落点 :12774 区与 PR 触点（:10225/:10413/:11008）零区域重叠实测；合并时点锚预期（阻塞④）以此树为准 |
 
-20,200 + 3 = 20,203 精确闭合；20,203 + 6 = 20,209 精确闭合（汇总评审 REQUEST_CHANGES 阻塞③，锚重推导不沿用 +0 前提）。
+20,200 + 3 = 20,203 精确闭合；20,203 + 6 = 20,209 精确闭合（汇总评审 REQUEST_CHANGES 阻塞③，锚重推导不沿用 +0 前提）；branchmerge3 +0 = 20,209 维持（合并时点实测，若合并瞬间 main 再前进则由合并树集成验收实测兜底）。
 
 ## 门禁（终锚 `7c44d04de`）
 
