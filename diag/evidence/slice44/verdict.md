@@ -55,8 +55,9 @@
 |---|---|---|---|
 | slice43 合并基线 | 8c5752049 | 20,200/0/198/70 | 主证据逐行求和重算（gates/maketest-mergetree-s43.log：70 测试二进制，P=20,200 F=0 I=198），非照抄卡面；fetch 实测 main 未前进 |
 | slice44 终态 | 7c44d04de | **20,203/0/198/70**（实测，gates/maketest-s44.log 求和） | +3 = slice44 三钉（part44.rs，engine lib v8 腿）；engine 不在 QUICKJS_TEST_CRATES → quickjs 腿零变化、腿数 70 恒 |
+| branchmerge2 树（main@3de8e949d 二次合入） | eb2ee1b82 | **20,209/0/198/70**（实测，gates/maketest-branchmerge2-s44.log 求和） | +6 = main 侧新增：t8i 2（part44.rs add/add 合流，engine lib v8 腿 2908→2910）+ integration e2e 2（zero-integration-tests 在 QUICKJS_TEST_CRATES，v8+quickjs 双腿 ×2=4）；slice44 三钉与 t8i 两测试同文件合流全 ok（逐腿归因实测） |
 
-20,200 + 3 = 20,203 精确闭合。
+20,200 + 3 = 20,203 精确闭合；20,203 + 6 = 20,209 精确闭合（汇总评审 REQUEST_CHANGES 阻塞③，锚重推导不沿用 +0 前提）。
 
 ## 门禁（终锚 `7c44d04de`）
 
