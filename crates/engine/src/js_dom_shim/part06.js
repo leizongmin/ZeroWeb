@@ -2131,7 +2131,10 @@
         // https://dom.spec.whatwg.org/#concept-node-list-alive
         var _s44stale = false;
         if (_zwPendingRemoved.length) {
-          try { _s44stale = _zwPendingRemovedSels().has(String(hit)); } catch (_e44qs) { _s44stale = false; }
+          // slice45：共享漏斗 `_zwHitPendingRemoved`（sel 直比 + handle-form 反查
+          // identity 核对）——原 sel-Set 直比对 handle-form 移除条目（`__zwSelector`
+          // 恒 null）失效。
+          try { _s44stale = _zwHitPendingRemoved(hit); } catch (_e44qs) { _s44stale = false; }
         }
         if (!_s44stale) return _zwQueryWrapIdentity(hit);
         // 首命中被剔除时单查只返回首命中——从全查列取首个非移除命中（树序同源，
@@ -2139,12 +2142,12 @@
         //（pending 扫描面不含已移除节点）。
         try {
           if (_zwPendingRemoved.length) {
-            var _s44rsQ = _zwPendingRemovedSels();
+            // slice45：共享漏斗（同首查位点）。
             var _s44all = __zw_query_all(sel);
             if (_s44all) {
               var _s44list = _s44all.split('|').filter(Boolean);
               for (var _s44i = 0; _s44i < _s44list.length; _s44i++) {
-                if (!_s44rsQ.has(_s44list[_s44i])) return _zwQueryWrapIdentity(_s44list[_s44i]);
+                if (!_zwHitPendingRemoved(_s44list[_s44i])) return _zwQueryWrapIdentity(_s44list[_s44i]);
               }
             }
           }
@@ -2535,14 +2538,13 @@
       // document tree）。https://dom.spec.whatwg.org/#concept-node-list-alive
       if (_s44sels.length && _zwPendingRemoved.length) {
         try {
-          var _s44rs = _zwPendingRemovedSels();
-          if (_s44rs.size) {
-            var _s44kept = [];
-            for (var _s44k = 0; _s44k < _s44sels.length; _s44k++) {
-              if (!_s44rs.has(_s44sels[_s44k])) _s44kept.push(_s44sels[_s44k]);
-            }
-            _s44sels = _s44kept;
+          // slice45：共享漏斗 `_zwHitPendingRemoved`（sel 直比 + handle-form 反查
+          // identity 核对）——原 sel-Set 直比对 handle-form 移除条目失效。
+          var _s44kept = [];
+          for (var _s44k = 0; _s44k < _s44sels.length; _s44k++) {
+            if (!_zwHitPendingRemoved(_s44sels[_s44k])) _s44kept.push(_s44sels[_s44k]);
           }
+          _s44sels = _s44kept;
         } catch (_e44qsa) {}
       }
       var out161 = _s44sels.map(_zwQueryWrapIdentity);
