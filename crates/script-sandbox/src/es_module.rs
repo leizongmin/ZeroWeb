@@ -2158,6 +2158,87 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
     }
 
     #[test]
+    fn test_namespace_first_visit_binding_shares_instance_with_reentry() {
+        // sib-3（5c79691d1）判别测试：命名空间导入作为 shared 模块**首访者**时，Fresh 臂
+        // 须绑定 `var _mod_{safe} = IIFE`——后续重入经 exports_expr() 的 `typeof _mod_`
+        // 守卫读到的才是首份实例。无首访绑定时守卫回落空对象（旧故障形态：重入读空，
+        // marker=broken-empty），且全套既有测试无报警（2026-10-09 复核 TA1 突变实证）。
+        // 同入口 namespace+具名双导入须解析到同一实例（_modref_ 守卫不遮蔽首访绑定）。
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("https://a.test/shared.js", "export const v=7;");
+        sb.register_module(
+            "https://a.test/chunk.js",
+            "import{v as vv}from\"./shared.js\";export const marker=(vv===7)?'ok':'broken-empty';",
+        );
+        let r = sb
+            .execute_module(
+                concat!(
+                    "import*as s from\"./shared.js\";",
+                    "import*as c from\"./chunk.js\";",
+                    "import{v as w}from\"./shared.js\";",
+                    "export const out=c.marker;",
+                    "export const same=(s.v===w&&w===7)?'same':'split';",
+                ),
+                Some("https://a.test/entry.js"),
+            )
+            .unwrap();
+        assert!(
+            r.namespace_json.contains("\"out\":\"ok\""),
+            "namespace={}",
+            r.namespace_json
+        );
+        assert!(
+            r.namespace_json.contains("\"same\":\"same\""),
+            "namespace={}",
+            r.namespace_json
+        );
+    }
+
+    #[test]
+    fn test_default_and_export_star_first_visit_bindings() {
+        // sib-3 另两臂：default 导入与 export * from 作为 shared **首访者**时同样须在
+        // 入口作用域绑定 `var _mod_{safe}`，供后续重入（含嵌套 chunk 内双臂）读取；
+        // 缺绑定时首访自身可读（旧实现直发 IIFE 表达式），但重入守卫回落空对象——
+        // 断言须逐键核对，不能只看 contains("ok")。深层菱形（首访发生在嵌套模块
+        // IIFE 内部）作用域不外溢、守卫回落空对象，为 exports_expr 文档化边界，
+        // 不在本测试断言范围。
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("https://a.test/shared.js", "export const v=7;export default 42;");
+        sb.register_module(
+            "https://a.test/chunk.js",
+            concat!(
+                "import{v as vv}from\"./shared.js\";",
+                "import dd from\"./shared.js\";",
+                "export const m1=(vv===7)?'ok':'broken';",
+                "export const m2=(dd===42)?'ok':'broken';",
+            ),
+        );
+        let r = sb
+            .execute_module(
+                concat!(
+                    "import d from\"./shared.js\";",
+                    "export*from\"./shared.js\";",
+                    "import*as s from\"./shared.js\";",
+                    "import*as c from\"./chunk.js\";",
+                    "export const e1=(d===42)?'ok':'broken';",
+                    "export const e2=(s.v===7)?'ok':'broken';",
+                    "export const x1=c.m1;",
+                    "export const x2=c.m2;",
+                ),
+                Some("https://a.test/entry.js"),
+            )
+            .unwrap();
+        let ns = &r.namespace_json;
+        assert!(
+            ns.contains("\"e1\":\"ok\"")
+                && ns.contains("\"e2\":\"ok\"")
+                && ns.contains("\"x1\":\"ok\"")
+                && ns.contains("\"x2\":\"ok\""),
+            "namespace={ns}",
+        );
+    }
+
+    #[test]
     fn test_entry_self_import_shares_own_exports() {
         // 入口自导入（github.com environment 入口真实结构，2026-10-08 home-reload 证据：
         // `import*as i from"./environment-*.js";e.C(i)`）：自导入不得再内联一份入口体
