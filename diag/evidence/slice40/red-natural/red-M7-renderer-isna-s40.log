@@ -1,5 +1,0 @@
-thread 'js_worker::tests::renderer_js_worker_named_access_document_reset_s40' (955258) panicked at apps/renderer/src/js_worker.rs:2352:9:
-assertion `left == right` failed: 旧文档动态名跨换代回收（不留悬挂）
-  left: "false"
- right: "true"
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 223 filtered out; finished in 0.07s

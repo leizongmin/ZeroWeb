@@ -1,5 +1,0 @@
-thread 'js_dom_bridge::tests::named_access_subtree_descendant_unregister_s40' (947997) panicked at crates/engine/src/js_dom_bridge_tests/part38.rs:453:5:
-assertion `left == right` failed: 子树移除后后代动态名失格（spec 断开连接即不再暴露；修前 stale 可解析至换代回收）
-  left: "false"
- right: "true"
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2889 filtered out; finished in 0.06s

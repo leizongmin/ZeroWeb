@@ -1,6 +1,0 @@
-TREE_SHA=402dc9e85eff92b10ba9d2191c8f38d7ab3b342d
-# slice41 同款 SW 时序 flaky（navigator_update_activates_replacement_without_a_controlled_client，run1 FAILED pending!=ready）；scoped 复跑 3/3 PASS（0.07s，test-guard 包裹）后全量重跑本 log。先例：diag/evidence/slice41/gates/maketest-mergetree-s41-rerun.log 同测试同形态。
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 744 filtered out; finished in 0.07s
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 744 filtered out; finished in 0.07s
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 744 filtered out; finished in 0.07s
-SCOPED_RERUN_EXIT=0
