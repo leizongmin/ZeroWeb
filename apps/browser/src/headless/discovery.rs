@@ -33,15 +33,29 @@ pub(super) fn per_tab_frontend_url(addr: SocketAddr, target_id: &str) -> String 
 }
 
 impl HeadlessServer {
+    /// 请求头中是否携带 `Upgrade: websocket`。
+    ///
+    /// 字段名与 token 值按 RFC 9110 大小写不敏感比较（§5.1、§5.6.2）：
+    /// Node undici（原生 WebSocket）发送小写 `upgrade: websocket`，
+    /// 大小写敏感分类会把它误判为普通 HTTP 发现请求（根路径 404 → 客户端 1006）。
+    /// https://httpwg.org/specs/rfc9110.html#fields
+    fn has_websocket_upgrade_header(head: &str) -> bool {
+        head.lines()
+            .filter_map(|line| line.split_once(':'))
+            .any(|(name, value)| {
+                name.trim().eq_ignore_ascii_case("upgrade") && value.trim().eq_ignore_ascii_case("websocket")
+            })
+    }
+
     /// 判断是否为普通 HTTP GET 请求（非 WebSocket 升级）。
     pub(super) fn is_http_get_request(data: &[u8]) -> bool {
         let s = String::from_utf8_lossy(data);
-        s.starts_with("GET ") && !s.contains("Upgrade: websocket")
+        s.starts_with("GET ") && !Self::has_websocket_upgrade_header(&s)
     }
 
     /// 判断是否为 WebSocket 升级请求（多路复用分类用）。
     pub(super) fn is_ws_upgrade(data: &[u8]) -> bool {
-        String::from_utf8_lossy(data).contains("Upgrade: websocket")
+        Self::has_websocket_upgrade_header(&String::from_utf8_lossy(data))
     }
 
     /// 从 HTTP 请求头中提取 Origin 值。

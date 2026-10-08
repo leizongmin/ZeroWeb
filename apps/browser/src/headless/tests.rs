@@ -244,6 +244,22 @@ fn test_is_http_get_request() {
 }
 
 #[test]
+fn test_ws_upgrade_classification_case_insensitive() {
+    // undici（Node 原生 WebSocket）发送全小写头；RFC 9110 §5.1/§5.6.2 字段名与
+    // token 大小写不敏感，分类不得依赖首字母大写（修复前小写升级被当 HTTP 发现 404）。
+    // https://httpwg.org/specs/rfc9110.html#fields
+    let undici = b"GET / HTTP/1.1\r\nhost: 127.0.0.1:9242\r\nconnection: upgrade\r\nupgrade: websocket\r\nsec-websocket-key: ezE9o0UKKB19y7gGBdSiFA==\r\nsec-websocket-version: 13\r\n\r\n";
+    assert!(HeadlessServer::is_ws_upgrade(undici));
+    assert!(!HeadlessServer::is_http_get_request(undici));
+    // 大小写混合仍识别；非 websocket 升级值与纯发现请求不误判。
+    assert!(HeadlessServer::is_ws_upgrade(
+        b"GET / HTTP/1.1\r\nUpgrade: WebSocket\r\n"
+    ));
+    assert!(!HeadlessServer::is_ws_upgrade(b"GET / HTTP/1.1\r\nUpgrade: h2c\r\n"));
+    assert!(!HeadlessServer::is_ws_upgrade(b"GET /json HTTP/1.1\r\n"));
+}
+
+#[test]
 fn test_server_event_serialize() {
     let event = ServerEvent {
         method: "browsingContext.load".into(),
@@ -2008,6 +2024,59 @@ fn test_partial_request_does_not_wedge_mux() {
     assert!(
         response.starts_with("HTTP/1.1 200 OK"),
         "discovery must be served while a partial request is pending, got: {response}"
+    );
+}
+
+#[test]
+fn test_lowercase_ws_upgrade_handshake_t1() {
+    // T1 预检实测缺陷回归：undici（Node 原生 WebSocket）形状的小写升级请求
+    // 必须完成 101 握手；修复前被大小写敏感分类误判为 HTTP 发现 → 根路径 404。
+    // https://httpwg.org/specs/rfc9110.html#fields
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    let server = Arc::new(HeadlessServer::new(0, 800.0, 600.0));
+    let srv = Arc::clone(&server);
+    std::thread::spawn(move || {
+        let _ = srv.run();
+    });
+    let addr = {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let guard = server.addr.lock().unwrap();
+            if guard.port() != 0 {
+                break *guard;
+            }
+            drop(guard);
+            assert!(Instant::now() < deadline, "server did not bind in time");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+
+    let mut stream = TcpStream::connect(addr).expect("connect");
+    stream
+        .write_all(
+            b"GET / HTTP/1.1\r\nhost: localhost\r\nconnection: upgrade\r\nupgrade: websocket\r\nsec-websocket-key: dGhlIHNhbXBsZSBub25jZQ==\r\nsec-websocket-version: 13\r\n\r\n",
+        )
+        .expect("write ws upgrade");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("set read timeout");
+    let mut buf: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 256];
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+        assert!(Instant::now() < deadline, "no handshake response in time");
+        let n = stream.read(&mut chunk).expect("read handshake response");
+        assert!(n > 0, "connection closed before handshake");
+        buf.extend_from_slice(&chunk[..n]);
+    }
+    let response = String::from_utf8_lossy(&buf).to_string();
+    assert!(
+        response.starts_with("HTTP/1.1 101"),
+        "lowercase upgrade must complete WS handshake, got: {response}"
     );
 }
 
