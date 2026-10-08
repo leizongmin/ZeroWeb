@@ -1929,10 +1929,20 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
         // hint 写 height:% 会把 computed 从 Auto 改为 % 使该臂失活（落 default 150）。
         "svg" => {
             for attr in ["width", "height"] {
+                // R5000（SVG2 §7.2 width/height attribute）：attr 值接受 CSS 长度——
+                // `width="100px"` 与 `width="100"` 同为 definite 100。旧过滤只收纯数字，
+                // px 后缀 attr 被丢 → computed width Auto → R4000 viewBox ratio-only 臂
+                // 「隐式 100%」把 svg 拉满容器（replaced-element-008：ar 1/1 + w:100px
+                // → 784×784，chromium 100×100）。% 值不透传（见上注：R4018 语义）。
                 if let Some(v) = elem_attr(elem, attr)
-                    .filter(|v| v.trim().chars().all(|c| c.is_ascii_digit() || c == '.') && v.trim() != "")
+                    .map(|v| v.trim().to_string())
+                    .filter(|v| !v.is_empty())
                 {
-                    hints.push((attr.to_string(), format!("{v}px")));
+                    let digits = v.strip_suffix("px").unwrap_or(&v);
+                    let is_len = !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit() || c == '.');
+                    if is_len {
+                        hints.push((attr.to_string(), format!("{digits}px")));
+                    }
                 }
             }
         }

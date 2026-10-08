@@ -865,3 +865,16 @@ fn svg_percentage_size_attrs_not_mapped() {
         "svg % attr 不应产生 hint: {hints:?}"
     );
 }
+
+/// R5000（SVG2 §7.2）：`width="100px"`（px 后缀）同为 CSS 长度——与纯数字同映射
+/// px hint。旧过滤只收纯数字，px 后缀被丢 → computed Auto → R4000 ratio-only 隐式 100%。
+#[test]
+fn svg_width_px_suffix_maps_to_px_hint() {
+    let doc = parse_html(r#"<svg width="100px" viewBox="0 0 50 50"><rect width="50" height="50"/></svg>"#);
+    let svg = doc.get_elements_by_tag_name("svg")[0];
+    let hints = collect_presentational_hints(&doc, svg);
+    assert!(
+        hints.iter().any(|(p, v)| p == "width" && v == "100px"),
+        "px-suffixed width attr should map to width:100px hint, got {hints:?}"
+    );
+}
