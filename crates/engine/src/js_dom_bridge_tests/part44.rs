@@ -1,8 +1,10 @@
 // slice44（live 集合残余三件）：
 // ①静态选择器查询面 parsed 子树移除 stale（slice43 verdict 残余②探针新证在册）：
 //   `querySelectorAll` / `querySelector` 对已移除 parsed 后代仍可解析至换代回收——
-//   document 面（part06 `__zw_query_all`/`__zw_query_match`）无 pendingRemoved 消费，
-//   元素面 R310 桶过滤仅覆盖「查询容器 === mutation 父」形态，跨容器桶外 stale。
+//   document 面（part06 `__zw_query_all`/`__zw_query_match`）无 pendingRemoved 消费。
+//   修复面 = document 面（消费全局 pendingRemoved）；元素面（part04 R310）经评估
+//   **边界保持**：全局过滤破坏内部写 API 的 stale 窗口契约（.rows→deleteRow 定位
+//   依赖快照 stale 行，r3243 实证），跨容器桶外 stale 维持换代即愈（verdict 残余③）。
 //   本钉以常驻形态实证自然红（slice43 探针为一次性过程证据，未入提交）。
 // ②`_zwDocContains36` 根部统一评估（slice43 缺陷轮 I-2 转池）：谓词以 body 为根，
 //   head 子树 / documentElement 自身的命名元素漏判（spec named objects 限 document
@@ -38,9 +40,9 @@ macro_rules! s44_sandbox {
 }
 
 // ①静态选择器查询面：parsed 容器（sel 父）整树移除后，host 快照未 apply 窗口内
-// document 面全查/单查与跨容器元素面查询仍可解析已移除 parsed 后代（spec：查询
-// 面限当下 document tree——NodeList/查询结果不含已离树节点）。s43 已修复面
-// （id 查询面 / NA 集合面 / fresh tag 面）作对照臂，证同族缺口收窄在查询面。
+// document 面全查/单查仍可解析已移除 parsed 后代（spec：查询面限当下 document
+// tree——查询结果不含已离树节点）。s43 已修复面（id 查询面 / NA 集合面 / fresh
+// tag 面）与元素面同桶 R310 形态作对照臂。
 #[test]
 fn static_selector_query_parsed_subtree_remove_s44() {
     let mut sandbox = s44_sandbox!(
@@ -97,8 +99,8 @@ fn static_selector_query_parsed_subtree_remove_s44() {
     );
     assert_eq!(
         sandbox.execute("globalThis.__r_qsa_html").unwrap().value,
-        "1",
-        "跨容器元素面（documentElement）查询不含已移除后代（R310 桶过滤仅覆盖 mutation 父桶；修前 stale 3）"
+        "3",
+        "边界保持（残余申报，slice44 verdict ③）：跨容器元素面（documentElement）QSA 对已移除后代维持 stale 3 至换代——元素面有意不消费全局 pendingRemoved（R310 同桶口径是内部写 API 的 stale 窗口契约：.rows→deleteRow 靠快照 stale 行定位删除目标，r3243 实证）；document 面已修复为本钉主判定"
     );
     assert_eq!(
         sandbox.execute("globalThis.__r_qsa_body").unwrap().value,

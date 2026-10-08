@@ -3120,12 +3120,16 @@ fn test_mutation_observer_childlist_fragment_r47() {
         "② appendChild record.previousSibling = 写入前容器 lastChild（#s0）"
     );
     // ③ el.remove() record
+    // slice44：移除前捕获 r1 引用再比较——document.querySelector 对已移除节点不再
+    // 解析（slice44 静态查询面 pendingRemoved 剔除，spec 查询面限当下 document
+    // tree）；本步断言意图是 MO record 身份，捕获引用不改变意图。
     sandbox
         .execute(
             "recs = [];\n\
              var rmDiv = document.querySelector('#rm');\n\
              mo.observe(rmDiv, { childList: true });\n\
-             document.querySelector('#r1').remove();",
+             var r1 = document.querySelector('#r1');\n\
+             r1.remove();",
         )
         .unwrap();
     for _ in 0..50 {
@@ -3137,7 +3141,7 @@ fn test_mutation_observer_childlist_fragment_r47() {
     }
     assert_eq!(
         sandbox
-            .execute("recs[0] && recs[0].type + ',' + String(recs[0].removedNodes[0] === document.querySelector('#r1'))")
+            .execute("recs[0] && recs[0].type + ',' + String(recs[0].removedNodes[0] === r1)")
             .unwrap()
             .value,
         "childList,true",

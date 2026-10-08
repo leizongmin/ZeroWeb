@@ -10205,6 +10205,25 @@
     }
     return _zwPendingRemovedSet;
   }
+  // slice44（静态查询面 parsed 子树移除剔除）：全局 removed 表的 sel 视图。remFlat
+  // 展开已含 sel 父的 parsed 后代（slice43 RP-3），表内 sel 条目即「已离树、host
+  // apply 未落」窗口的快照节点；document 面静态查询（part06 querySelector /
+  // querySelectorAll）对这批 sel 的命中须剔除（spec：查询面限当下 document tree）。
+  // 元素面（part04 R310）**有意不消费本表**：R310 同桶过滤已覆盖「查询容器 ===
+  // mutation 父」，全局过滤会破坏内部写 API 的 stale 窗口契约（.rows→deleteRow
+  // 靠快照 stale 行定位删除目标——test_html_table_delete_row_and_section_r3243
+  // 实证），跨容器桶外 stale 维持换代即愈（残余申报，slice44 verdict ③）。
+  // 空表零成本（消费点先判 length）；apply 代际边界整表作废（R3254-E2），sel 不会
+  // 跨换代误伤换代后同位新节点。
+  // https://dom.spec.whatwg.org/#concept-node-list-alive
+  function _zwPendingRemovedSels() {
+    var s44 = new Set();
+    for (var s44i = 0; s44i < _zwPendingRemoved.length; s44i++) {
+      var s44e = _zwPendingRemoved[s44i];
+      if (s44e && s44e.__zwSelector) s44.add(String(s44e.__zwSelector));
+    }
+    return s44;
+  }
   function _zwHCCollectSubtree(node, out) {
     if (!node) return;
     out.push(node);
@@ -10971,9 +10990,18 @@
   // 文档树成员判定——R79 `_zwNodeContains`（JS 链 + pending 即时真值）。isConnected
   // / `__zw_contains` 走 host 视图，同 execute 内 remove 后仍 true（host 批量应用
   // 滞后，探针实证 body.children/contains 即时而 isConnected 滞后）。
+  // slice44（根部统一）：根从 body 收敛为 documentElement，对齐 spec named objects
+  // 的 document tree 判定——原 body 根对 head 子树 / documentElement 自身漏判
+  //（`_zwNodeContains` 含自身，documentElement 分支无需单列）。widening-only：
+  // body.contains(el) ⇒ documentElement.contains(el)，body 子树内四消费面
+  //（attr join / collectMatches / register 重核 / 注销与补偿扫）行为零变化；
+  // detached / shadow / 异文档 contains 恒 false，既有排除面保持
+  //（钉网 named_access_shadow_tree_excluded_s40 / attr_join_detached_gate_s43 覆盖）。
+  // https://dom.spec.whatwg.org/#concept-document-tree
+  // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
   function _zwDocContains36(el) {
     try {
-      var root36 = globalThis.document.body || globalThis.document.documentElement;
+      var root36 = globalThis.document.documentElement;
       return !!(root36 && root36.contains(el));
     } catch (_e36dc) { return false; }
   }

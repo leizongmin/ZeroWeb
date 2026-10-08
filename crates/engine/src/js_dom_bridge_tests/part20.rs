@@ -550,10 +550,15 @@ fn test_iframe_content_window_fetch_resolves_against_iframe_url() {
             "__zwfr:200\x1fOK\x1f\x1f".to_string()
         }),
     );
+    // slice44：innerHTML 替换前捕获 iframe 引用——document.querySelector 对已移除
+    // 节点不再解析（slice44 静态查询面 pendingRemoved 剔除，spec 查询面限当下
+    // document tree）；本断言意图是 contentWindow.fetch 的 URL 归基，捕获引用
+    // 不改变意图（修前同 turn 查询命中的也是被替换的旧 iframe proxy，同一身份）。
     sandbox
         .execute(
-            "document.body.innerHTML = '<iframe src=\"/frames/page.html\"></iframe>';
-             document.querySelector('iframe').contentWindow.fetch('sibling.txt');",
+            "var ifr = document.querySelector('iframe');
+             document.body.innerHTML = '<iframe src=\"/frames/page.html\"></iframe>';
+             ifr.contentWindow.fetch('sibling.txt');",
         )
         .unwrap();
     assert_eq!(
