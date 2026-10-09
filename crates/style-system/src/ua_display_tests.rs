@@ -177,3 +177,58 @@ fn hidden_attribute_suppresses_output_element() {
     assert_ne!(styles[&visible].display, DisplayValue::None);
     assert_eq!(styles[&hidden].display, DisplayValue::None);
 }
+
+/// r2s1：`<input type=hidden>` UA 不渲染——computed `display:none`，且作者 display 声明
+/// 不可覆盖（Chrome 154 实测：`style="display:block;width:100px;height:30px"` 仍 none、
+/// gBCR 0×0、不占布局空间；UA !important 高于 author important）。`type` 值按 HTML
+/// enumerated attribute 规则 ASCII 大小写不敏感匹配；缺 type / 非 hidden type 不受影响
+///（保持 tag 默认 inline-block）。此前缺失 → hidden input 按 inline-block 生成盒并占位
+///（baidu 首页 15 个 hidden input cs=inline-block、兄弟被推移；Chrome 恒 none）。
+/// https://html.spec.whatwg.org/multipage/input.html#hidden-state-(type=hidden)
+/// https://html.spec.whatwg.org/multipage/rendering.html#hidden-elements
+#[test]
+fn input_type_hidden_not_rendered_and_author_cannot_override() {
+    let mut system = StyleSystem::new();
+
+    // plain hidden → none
+    let doc = zero_dom::parse_html(r#"<input id="h" type="hidden"><input id="t" type="text">"#);
+    let styles = system.compute_styles(&doc, &[]);
+    let h = doc.get_element_by_id("h").expect("hidden input");
+    let t = doc.get_element_by_id("t").expect("text input");
+    assert_eq!(
+        styles[&h].display,
+        DisplayValue::None,
+        "input[type=hidden] → display:none"
+    );
+    assert_ne!(
+        styles[&t].display,
+        DisplayValue::None,
+        "input[type=text] 不受影响（tag 默认 inline-block）"
+    );
+
+    // 作者 display:block 不可覆盖（Chrome 同）
+    let doc = zero_dom::parse_html(r#"<input id="h2" type="hidden" style="display:block;width:100px;height:30px">"#);
+    let styles = system.compute_styles(&doc, &[]);
+    let h2 = doc.get_element_by_id("h2").expect("authored hidden input");
+    assert_eq!(
+        styles[&h2].display,
+        DisplayValue::None,
+        "作者 display:block 不可令 input[type=hidden] 生成盒（Chrome 154 实测同）"
+    );
+
+    // type 值 ASCII 大小写不敏感（HTML enumerated attribute）
+    let doc = zero_dom::parse_html(r#"<input id="h3" type="HIDDEN">"#);
+    let styles = system.compute_styles(&doc, &[]);
+    let h3 = doc.get_element_by_id("h3").expect("upper type hidden input");
+    assert_eq!(styles[&h3].display, DisplayValue::None, "type=HIDDEN 同样不渲染");
+
+    // 缺 type 属性 → text state，不受本规则影响
+    let doc = zero_dom::parse_html(r#"<input id="p">"#);
+    let styles = system.compute_styles(&doc, &[]);
+    let p = doc.get_element_by_id("p").expect("typeless input");
+    assert_ne!(
+        styles[&p].display,
+        DisplayValue::None,
+        "缺 type 的 input 保持 inline-block"
+    );
+}
