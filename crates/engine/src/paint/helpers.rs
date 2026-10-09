@@ -148,6 +148,19 @@ pub fn compute_transform_matrix_with_ref_box(
         return None;
     }
     let funcs: Vec<TransformFunction> = individual.into_iter().chain(own_funcs).collect();
+    // R5016（css-transforms-1 §13.1）：rotate3d 单轴精确恒等——rotate3d(±n,0,0,α) ≡
+    // rotateX(±α)（spec 矩阵对轴归一化，轴长度不影响旋转角）。单轴分解后走 rotateX/
+    // rotateY 的 cos 2D 投影（正交精确），与 transform 属性同函数一致——旧 Rotate3d
+    // 恒等近似致 `rotate: x 45deg`（RotateX 投影）与 `transform: rotate3d(1,0,0,45deg)`
+    //（恒等）同页异像（driving: individual-transform-1 rotate_2/rotate_3）。
+    // parse 层不分解：CSSOM 序列化须回写 rotate3d 原形（computed_style.rs）。
+    let funcs: Vec<TransformFunction> = funcs
+        .into_iter()
+        .map(|f| match f {
+            TransformFunction::Rotate3d(x, y, z, deg) => rotate3d_unit_axis(x, y, z, deg),
+            other => other,
+        })
+        .collect();
 
     // 检查是否只有 translate 函数（由 offset 处理，不需要 TransformPrimitive）。
     // individual translate 亦为 Translate/TranslateMixed——TranslateMixed 归 matrix
@@ -459,6 +472,18 @@ pub fn apply_transform_with_ref_box(
     }
 }
 
+/// R5016（css-transforms-1 §13.1）：rotate3d 单轴分解——轴仅一个分量非零时精确等价
+/// 于对应轴函数（角度符号随轴分量符号；全零轴 spec 语义 = 恒等，保持 Rotate3d 恒等
+/// 近似不变）。任意轴（多分量非零）不分解（真 3D 合成为 R3833 已知局限）。
+fn rotate3d_unit_axis(x: f64, y: f64, z: f64, deg: f64) -> TransformFunction {
+    match (x != 0.0, y != 0.0, z != 0.0) {
+        (true, false, false) => TransformFunction::RotateX(if x < 0.0 { -deg } else { deg }),
+        (false, true, false) => TransformFunction::RotateY(if y < 0.0 { -deg } else { deg }),
+        (false, false, true) => TransformFunction::RotateZ(if z < 0.0 { -deg } else { deg }),
+        _ => TransformFunction::Rotate3d(x, y, z, deg),
+    }
+}
+
 /// 求纯 translate 列表的累计位移 `(tx, ty)`（CSS Transforms §translate）。
 ///
 /// R3901：旧实现承诺「仅 translate 的列表由 offset 路径处理」（compute_transform_matrix
@@ -466,9 +491,26 @@ pub fn apply_transform_with_ref_box(
 /// 纯 px translate 的位移从未进入渲染（driving: transform-overflow-001 /
 /// ttwf-transform-translatex-001 / translate.html 等 4.17% 簇）。
 /// 混合列表（含非 translate 函数）返回 None（走 matrix 路径，平移分量已并入矩阵）。
+///
+/// R5016（css-transforms-2 §individual-transforms）：individual translate（纯 px 形态，
+/// `Translate` 承载）并入累计位移——used transform 固定序 translate · rotate · scale ·
+/// transform，纯平移可加性合成（次序无关）。两路互斥守卫：individual 含 rotate/scale、
+/// 或 translate 为 % 形态（`TranslateMixed` 系）时 matrix 路径持有合成（has_non_translate
+/// 命中 / 非 translate 函数在场），本函数返回 None 防平移双计。
+/// driving: change-translate-property（translate: -100px 0px 动态改写后仍按
+/// transform-only 平移 +100px）与 individual-transform-1（translate_1/translate_2 缺位）。
 pub fn translate_offset(style: &ComputedStyle) -> Option<(f32, f32)> {
-    let funcs = match &style.transform {
-        TransformValue::None => return None,
+    if style.individual_rotate.is_some() || style.individual_scale.is_some() {
+        return None;
+    }
+    let individual = match &style.individual_translate {
+        None => (0.0_f32, 0.0_f32),
+        // % 形态走 matrix 路径（rect 语境求值），此处让位。
+        Some(TransformFunction::Translate(tx, ty)) => (*tx as f32, *ty as f32),
+        Some(_) => return None,
+    };
+    let funcs: &[TransformFunction] = match &style.transform {
+        TransformValue::None => &[],
         TransformValue::List(f) => f,
     };
     let only_translate = funcs.iter().all(|f| {
@@ -480,8 +522,8 @@ pub fn translate_offset(style: &ComputedStyle) -> Option<(f32, f32)> {
     if !only_translate {
         return None;
     }
-    let mut tx = 0.0_f32;
-    let mut ty = 0.0_f32;
+    let mut tx = individual.0;
+    let mut ty = individual.1;
     for f in funcs {
         match f {
             TransformFunction::Translate(dx, dy) => {
