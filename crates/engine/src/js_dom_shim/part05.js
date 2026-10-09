@@ -9988,6 +9988,13 @@
   // 快照替换形态）。id 覆盖表同源清理（旧快照的 id 变更对新文档无意义）。
   globalThis.__zw_reset_pending_state = function () {
     _zwLiveCollections.length = 0;
+    // r2s2（导航后 TITLE 一致性）：document.title 缓存随快照换代失效。getter 首访惰性读
+    // `<title>` 后与 setter 显式值共用 `_doc_title`（part06）永久驻留——同 worker 就地换
+    // 文档（表单提交/location.assign 导航落地形态）后残留旧文档标题：旧页读过的旅程提交后
+    // 读回旧标题；占位文档期首读的缓存空串致新文档换入后仍读空。置 null → getter 按新文档
+    // 惰性重读（document.title getter：当前文档首 <title> 元素子文本）。
+    // https://html.spec.whatwg.org/multipage/dom.html#document.title
+    _doc_title = null;
     // t8e：children 集合缓存随换代重置（与注册表清空同点）——旧集合自此刻起与旧文档
     // 一样失聪（页面持旧引用冻结 = 旧文档语义，slice32 dead 标记同款）；不重置则换代后
     // 缓存命中绕过重建，新快照内容不可见（R357 stale 根因同形）。

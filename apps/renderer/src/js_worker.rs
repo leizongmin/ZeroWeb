@@ -2220,6 +2220,64 @@ mod tests {
         worker.shutdown();
     }
 
+    // r2s2（导航后 TITLE 一致性）：document.title 随快照换代重读——同 worker 就地换文档
+    // （表单提交/location.assign 等渲染进程内导航的落地形态）后，getter 不得返回旧文档
+    // 缓存。修前形态：getter 首读惰性缓存（part06 `_doc_title`）后永久驻留，导航后仍返回
+    // 上一文档标题（baidu 表单提交旅程实测：提交后 title 滞留首页标题）；占位文档期首读
+    // 则缓存空串，真文档换入后仍读空。修法：`__zw_reset_pending_state`（SetDomSnapshot
+    // 每次安装调用，含同 URL 重载形态）置 `_doc_title = null`。
+    // https://html.spec.whatwg.org/multipage/dom.html#document.title
+    #[test]
+    fn renderer_js_worker_document_title_refreshes_on_snapshot_swap_r2s2() {
+        let mut worker = RendererJsWorker::spawn(69);
+        // 文档 A：读一次 title（缓存落「PAGE1-TITLE」——旅程/埋点导航前读 title 的常态）。
+        worker.set_dom_snapshot(
+            "<html><head><title>PAGE1-TITLE</title></head><body></body></html>",
+            "https://example.test/p1.html",
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(document.title)").unwrap(),
+            "PAGE1-TITLE",
+            "文档 A title getter 读首 <title> 文本"
+        );
+        // 导航：URL 变化换文档 B → title 须重读为新文档值（修前残留 PAGE1-TITLE）。
+        // 镜像 navigate_with 序列：先 reset_document_state（清旧文档 pending mutations/
+        // timer 桥状态），后 SetDomSnapshot 安装新文档。
+        worker.reset_document_state();
+        worker.set_dom_snapshot(
+            "<html><head><title>SERP-TITLE</title></head><body></body></html>",
+            "https://example.test/p2.html",
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(document.title)").unwrap(),
+            "SERP-TITLE",
+            "导航换文档后 document.title 反映新文档（缓存随换代失效）"
+        );
+        // 变体：显式 set 过的缓存同样随换代失效（新文档值非 setter 残留）。
+        worker.execute_script_direct("document.title = 'SCRIPT-SET';").unwrap();
+        worker.reset_document_state();
+        worker.set_dom_snapshot(
+            "<html><head><title>POST-TITLE</title></head><body></body></html>",
+            "https://example.test/p3.html",
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(document.title)").unwrap(),
+            "POST-TITLE",
+            "显式 set 后导航，document.title 反映新文档（setter 缓存不跨文档）"
+        );
+        // 变体：同 URL 快照替换（重载形态）——服务端标题可能已变，title 同步重读。
+        worker.set_dom_snapshot(
+            "<html><head><title>RELOAD-TITLE</title></head><body></body></html>",
+            "https://example.test/p3.html",
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(document.title)").unwrap(),
+            "RELOAD-TITLE",
+            "同 URL 快照替换后 document.title 重读（重载语义）"
+        );
+        worker.shutdown();
+    }
+
     // slice32（RP-3）renderer 面 live 钉：重装（登记·回收链路等价形态：删全局 +
     // __zwInstallNamedAccess）产出的 live 集合同代内接棒维护——appendChild 即时 +1。
     // 原 PD（ledger 在快照落地时点安装的集合对同代脚本 childList 变异聋化——probe 实证
