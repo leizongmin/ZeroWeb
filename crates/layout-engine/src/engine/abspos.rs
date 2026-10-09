@@ -865,6 +865,38 @@ pub(super) fn fix_abspos_static_position_y(box_node: &mut LayoutBox, styles: &Ha
             .rev()
             .find(|c| c.is_block_level && !c.is_absolute && !c.is_fixed)
         else {
+            // R5017（css-tables §17.5.3 × css-position-3 §static-position）：无前 in-flow
+            // 兄弟且容器为 table-cell 时，静态位 = valign 后的内容流原点——cell 的 in-flow
+            // 内容经 vertical-align 居中/沉底后，假设 static 的盒落在流原点（padding box
+            // 顶 + valign 位移）。chromium 空内容 cell（middle）静态位 = content 顶 +50，
+            // abspos translate 后绿块恰盖红（position-absolute-dynamic-static-position-
+            // table-cell 实证：taffy 静态位滞留 cell 顶；table.rs 期的 valign 位移会被
+            // taffy absolute 覆写，故在本 post-pass 补）。
+            if let Some(cell_node_id) = box_node.node_id
+                && let Some(cell_style) = styles.get(&cell_node_id)
+                && cell_style.display == zero_css_parser::values::DisplayValue::TableCell
+            {
+                // 与 table.rs valign 同口径：仅 in-flow 子计入内容高。
+                let in_flow_h: f32 = box_node
+                    .children
+                    .iter()
+                    .filter(|c| !c.is_absolute && !c.is_fixed)
+                    .map(|c| c.height + c.margin_top + c.margin_bottom)
+                    .sum();
+                let available = box_node.content_height - in_flow_h;
+                if available > 0.0 {
+                    let dy = match cell_style.vertical_align {
+                        zero_css_parser::values::VerticalAlignValue::Middle => available / 2.0,
+                        zero_css_parser::values::VerticalAlignValue::Bottom
+                        | zero_css_parser::values::VerticalAlignValue::TextBottom => available,
+                        _ => 0.0,
+                    };
+                    if dy > 0.0 {
+                        let pad_top = box_node.padding_top;
+                        fixes.push((idx, pad_top + dy));
+                    }
+                }
+            }
             continue;
         };
         // margin 折叠：max(prev mb, my mt)（Px/长度解析，% margin 对 abspos 静态位记 0）。

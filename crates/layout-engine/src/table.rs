@@ -1733,9 +1733,16 @@ fn position_cells(
             if let Some(cell_node_id) = cell_box.node_id
                 && let Some(cell_style) = styles.get(&cell_node_id)
             {
+                // R5017（css-tables §17.5.3 + css-position-3 §static-position）：valign
+                // 对齐的是 **in-flow 内容**——OOF 子（absolute/fixed）不计入 content_height。
+                // 旧实现把 OOF 计入求和：空内容 cell 里唯一 abspos 子把 available 压成 0，
+                // valign 失效；且 abspos 静态位 = valign 后的内容流原点（chromium 空内容
+                // cell middle 居中 +50 → 绿块恰盖红；position-absolute-dynamic-static-
+                // position-table-cell 实证：ZW 旧静态位滞留 cell 顶，translate 后露红）。
                 let content_height: f32 = cell_box
                     .children
                     .iter()
+                    .filter(|c| !c.is_absolute && !c.is_fixed)
                     .map(|c| c.height + c.margin_top + c.margin_bottom)
                     .sum();
                 // 子元素 y 是相对单元格 content box 度量的，故可用对齐空间应基于
@@ -1752,6 +1759,22 @@ fn position_cells(
                     };
                     if dy > 0.0 {
                         for child in &mut cell_box.children {
+                            // fixed 子为视口定位域（adjust_fixed_to_viewport），不参与 cell
+                            // 内容流对齐；abspos 子仅在 static-position 域（top/bottom 均
+                            // auto）随内容流位移——definite inset 的 abspos 相对 CB 定位，
+                            // 与 valign 无关（css-position-3 §static-position）。
+                            if child.is_fixed {
+                                continue;
+                            }
+                            if child.is_absolute {
+                                let static_pos = child.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                                    matches!(s.top, zero_css_parser::values::LengthValue::Auto)
+                                        && matches!(s.bottom, zero_css_parser::values::LengthValue::Auto)
+                                });
+                                if !static_pos {
+                                    continue;
+                                }
+                            }
                             child.y += dy;
                         }
                     }
