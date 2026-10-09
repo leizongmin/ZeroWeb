@@ -33,3 +33,7 @@ pub use runtime::run_android_role;
 #[cfg(test)]
 #[path = "gpu_isolation_tests.rs"]
 mod gpu_isolation_tests;
+
+#[cfg(test)]
+#[path = "identity_bridge_tests_s48.rs"]
+mod identity_bridge_tests_s48;

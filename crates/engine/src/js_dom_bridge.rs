@@ -3783,6 +3783,14 @@ pub fn query_text_from_pending_mutations(html: &str, mutations: &[DomMutation], 
 /// 从已记录变更中查询 create 句柄上的属性（脚本执行期间只读）。
 pub fn query_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: &str) -> String {
     // 逆序扫描，latest-wins：最近的 SetAttrOnHandle 决定值，最近的 RemoveAttrOnHandle 表 absent（R2993）。
+    attr_value_from_mutations_opt(mutations, handle, name).unwrap_or_default()
+}
+
+/// slice48：带「批内是否命中」信号的 [`query_attr_from_mutations`] 变体——Some(值) 表批内命中
+///（值可能为空串：set-empty 与 Remove-absent 在值面同形，presence 由
+/// [`has_attr_from_mutations_opt`] 判），None 表批内无该 (handle, name) 记录（调用方回落
+/// 历史层）。逆序 latest-wins 语义与原函数一致。
+pub fn attr_value_from_mutations_opt(mutations: &[DomMutation], handle: &str, name: &str) -> Option<String> {
     for m in mutations.iter().rev() {
         if let DomMutation::SetAttrOnHandle {
             handle: h,
@@ -3792,16 +3800,16 @@ pub fn query_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: 
             && h == handle
             && n == name
         {
-            return v.clone();
+            return Some(v.clone());
         }
         if let DomMutation::RemoveAttrOnHandle { handle: h, name: n } = m
             && h == handle
             && n == name
         {
-            return String::new();
+            return Some(String::new());
         }
     }
-    String::new()
+    None
 }
 
 /// 从已记录变更中判定 create 句柄元素是否设有某属性（脚本执行期间只读）。句柄元素不存在于
@@ -3811,14 +3819,24 @@ pub fn query_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: 
 /// 供 `__zw_has_attr_handle` 回调 → `new Option()` 创建的句柄 option 的 `.selected`/`.defaultSelected` 读
 /// + handle 元素 `hasAttribute`（R2992+）+ custom element attributeChangedCallback old-value 判定（R2992）。
 pub fn has_attr_from_mutations(mutations: &[DomMutation], handle: &str, name: &str) -> bool {
+    has_attr_from_mutations_opt(mutations, handle, name).unwrap_or(false)
+}
+
+/// slice48：带「批内是否命中」信号的 [`has_attr_from_mutations`] 变体——Some(presence) 表
+/// 批内命中，None 表批内无该 (handle, name) 记录（调用方回落历史层）。
+pub fn has_attr_from_mutations_opt(mutations: &[DomMutation], handle: &str, name: &str) -> Option<bool> {
     for m in mutations.iter().rev() {
         match m {
-            DomMutation::SetAttrOnHandle { handle: h, name: n, .. } if h == handle && n == name => return true,
-            DomMutation::RemoveAttrOnHandle { handle: h, name: n } if h == handle && n == name => return false,
+            DomMutation::SetAttrOnHandle { handle: h, name: n, .. } if h == handle && n == name => {
+                return Some(true);
+            }
+            DomMutation::RemoveAttrOnHandle { handle: h, name: n } if h == handle && n == name => {
+                return Some(false);
+            }
             _ => {}
         }
     }
-    false
+    None
 }
 
 /// sel-based 元素属性的 latest-wins 覆盖判定（R2995）。
