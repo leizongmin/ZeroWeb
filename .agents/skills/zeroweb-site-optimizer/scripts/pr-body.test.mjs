@@ -28,7 +28,7 @@ async function fixture(t) {
   const task = { id: 'fix', delivery: { repo: 'example/browser', pr: 12, base_branch: 'main',
     head_sha: 'b'.repeat(40), base_sha: 'a'.repeat(40), review: null } };
   const state = { operations: [] };
-  let body = `## 解决了什么\n修复返回。\n\n## 怎么验证\n真实任务回归。\n\n## 还有什么问题\n无。\n\n## 优化前后截图\n返回列表\n\n| 前 | 后 |\n|---|---|\n| ![前](${before}) | ![后](${after}) |\n\n${await reviewSection(root, task, state)}\n`;
+  let body = `## 解决了什么\n修复返回。\n\n## 怎么验证\n真实任务回归。\n\n## 还有什么问题\n无。\n\n## 优化前后截图\n返回列表\n\n| 前 | 后 |\n|---|---|\n| 修复前返回后内容空白，列表无法回到详情 | 修复后返回正常显示详情内容 |\n| ![前](${before}) | ![后](${after}) |\n\n${await reviewSection(root, task, state)}\n`;
   const image = async (url, revision) => ({ url, revision, sha256: raw.sha256,
     content_verified: true, render_verified: true, evidence_ref: await save({
       url, revision, download_ref: raw, render_verified: true, content_type: 'image/png', width: 10, height: 10,
@@ -145,6 +145,25 @@ test('ready gate probes each attachment URL and rejects unreachable ones', async
     verifyPresentation(f.root, f.task, f.state, { probeAttachment: async () => false }),
     /Attachment not accessible/,
   );
+});
+
+test('image row requires an adjacent text description row above it', async t => {
+  const f = await fixture(t);
+  assert.equal(await f.check(), true);
+  const valid = f.body;
+  // 缺描述行（分隔行紧邻图片行）→ 拒绝。
+  f.body = valid.replace('| 修复前返回后内容空白，列表无法回到详情 | 修复后返回正常显示详情内容 |\n', '');
+  await assert.rejects(f.check(), /text description row/);
+  // 表头行紧邻图片行（描述行错位到别处）→ 拒绝：表头不是描述。
+  f.body = valid.replace('| 前 | 后 |\n|---|---|\n| 修复前返回后内容空白，列表无法回到详情 | 修复后返回正常显示详情内容 |\n',
+    '| 前 | 后 |\n| 修复前返回后内容空白，列表无法回到详情 | 修复后返回正常显示详情内容 |\n|---|---|\n');
+  await assert.rejects(f.check(), /text description row/);
+  // 描述行内嵌图片引用 → 不算纯文字描述。
+  f.body = valid.replace('修复前返回后内容空白，列表无法回到详情', `修复前见 ![x](${before})`);
+  await assert.rejects(f.check(), /text description row/);
+  // 描述行单格为空 → 拒绝。
+  f.body = valid.replace('修复前返回后内容空白，列表无法回到详情', '');
+  await assert.rejects(f.check(), /text description row/);
 });
 
 test('attachmentAccessible requires 2xx plus image magic or content type', async t => {

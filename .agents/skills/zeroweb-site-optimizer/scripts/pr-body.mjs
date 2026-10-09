@@ -141,6 +141,17 @@ export async function verifyPresentation(root, task, state,
     requireValue(visible.split('\n').some(line => line.startsWith('|')
       && line.includes(`](${pair.before?.url})`) && line.includes(`](${pair.after?.url})`)),
     'Before and after must share a comparison table row');
+    // 图片行紧邻上方须有一行纯文字描述（两格非空、无图片引用）——只看图难以理解
+    // 差异，至少给读者文字锚点（2026-10-09 用户要求）；两图相同时描述行说明为何
+    // 相同是预期。表头/分隔行/再上一行的描述都不满足"紧邻"要求。
+    const lines = visible.split('\n');
+    const imageRowIdx = lines.findIndex(line => line.startsWith('|')
+      && line.includes(`](${pair.before?.url})`) && line.includes(`](${pair.after?.url})`));
+    const descRow = imageRowIdx > 0 ? lines[imageRowIdx - 1] : '';
+    const descCells = descRow.startsWith('|') && !/^[\s|:-]+$/.test(descRow)
+      ? descRow.split('|').slice(1, -1).map(cell => cell.trim()) : [];
+    requireValue(descCells.length >= 2 && descCells.every(cell => cell.length > 0 && !cell.includes('](')),
+      'Image row must have a one-sentence text description row directly above it');
     for (const role of ['before', 'after']) {
       const image = pair[role];
       requireValue(image && attachmentUrl(image.url) && digest(image.sha256)
