@@ -13017,7 +13017,10 @@
         throw new (globalThis.DOMException || DOMException)('intercept() can only be called on a trusted navigate event.', 'SecurityError');
       }
       if (!this.canIntercept) {
-        throw new (globalThis.DOMException || DOMException)('Cannot intercept this navigation.', 'InvalidStateError');
+        // M2-S4R：canIntercept false → SecurityError（spec intercept() 步骤；WPT
+        // intercept-cross-origin「跨源导航 e.intercept() 抛 SecurityError」——
+        // 原 InvalidStateError 系误记，synthetic 面同为 SecurityError 先例）。
+        throw new (globalThis.DOMException || DOMException)('Cannot intercept this navigation.', 'SecurityError');
       }
       if (this._defaultPrevented || this.defaultPrevented) {
         throw new (globalThis.DOMException || DOMException)('Cannot intercept a navigation that has already been canceled.', 'InvalidStateError');

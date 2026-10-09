@@ -4737,8 +4737,10 @@
     // R3065：back/forward/go 到 hash entry → 滚到锚元素（闭合 R3061 限制②）。real browser 跨 hash 导航滚锚
     //（back 到 #sec entry 滚到 id/name="sec"）。同步滚（mirror _setLocationHash），popstate/hashchange 仍 defer。
     // M2-S4C：skipScroll——intercept 取代默认滚锚行为（spec intercept 替换默认 scroll 面近似）。
+    // M2-S4R：traverse 无匹配 hash 不做滚顶回退（_noTopFallback——不得覆写 entry 恢复滚动位；
+    // WPT scroll-restoration-navigation-samedoc 回归门）。
     if (hashChanged && !skipScroll) {
-      _scrollToAnchorForHash(String(newHref).split('#')[1] || '');
+      _scrollToAnchorForHash(String(newHref).split('#')[1] || '', true);
     }
     _defer(function () {
       // M2-S2（navigation-compat）：back/forward/go 派发的 popstate/hashchange 为 UA 生成事件
@@ -6172,12 +6174,42 @@
   // 闭合 R3061 限制②）复用。real browser 同文档片段导航滚锚（<a href="#sec"> / location.hash= / history.back()
   // 到 #sec entry 均滚到 id="sec" 或 name="sec" 元素）。headless 无真 viewport → scrollIntoView 更新 scrollTop
   //（R3060）+ 派 scroll 事件（documented 近似）。无匹配元素 → 不滚。函数声明提升：_hist_dispatchPopState（前定义）可调。
-  function _scrollToAnchorForHash(frag) {
+  function _scrollToAnchorForHash(frag, _noTopFallback) {
     if (!frag || !globalThis.document) return;
     var anchor = null;
+    // M2-S4R：spec find a potential indicated element——raw ID 面在先；
+    // https://html.spec.whatwg.org/multipage/browsing-the-web.html#find-a-potential-indicated-element
     try { anchor = globalThis.document.getElementById(frag); } catch (_e) {}
+    // M2-S4R：decoded ID 面——percent-decode 后 UTF-8 解码（lossy U+FFFD 替换）。ignoreBOM:
+    // true = **不剥**前导 BOM（缺省 false 会剥——恰是本面断言点）。WPT
+    // fragment-and-encoding「%EF%BB%BF → U+FEFF 命中」「%FF → U+FFFD 不命中（单字节经替换解
+    // 非 isomorphic）」「%E2%99%A1%FF → U+2661 U+FFFD 不命中」、fragment-and-encoding-2
+    //「%C2 → U+FFFD 命中」。
+    var _s4rDec = null;
+    if (!anchor) {
+      try { _s4rDec = new TextDecoder('utf-8', { ignoreBOM: true }).decode(_zwPercentDecodeBytes(String(frag))); } catch (_eS4rD) { _s4rDec = null; }
+      if (_s4rDec !== null && _s4rDec !== String(frag)) {
+        try { anchor = globalThis.document.getElementById(_s4rDec); } catch (_eS4rD2) {}
+      }
+    }
     if (!anchor) {
       try { anchor = globalThis.document.querySelector('[name="' + frag + '"]'); } catch (_e) {}
+    }
+    if (!anchor && _s4rDec !== null && _s4rDec !== String(frag)) {
+      try { anchor = globalThis.document.querySelector('[name="' + _s4rDec + '"]'); } catch (_eS4rD3) {}
+    }
+    // M2-S4R：无指示元素 → 滚回文档开头（spec scroll to the fragment——target element 为
+    // null 时 scroll to the beginning of the document；WPT fragment-and-encoding goToTop
+    // 「无匹配 hash → scrollY 0」）。已在顶部时不重滚不派 scroll。**traverse 路径不回退**
+    //（noTopFallback——back/forward 到无匹配 hash entry 不得覆写 entry 恢复滚动位；
+    // WPT scroll-restoration-navigation-samedoc「back 到 #4 → 保存位 555」回归门）。
+    if (!anchor) {
+      if (_noTopFallback !== true && _winScroll.top !== 0) {
+        _winScroll.top = 0;
+        _winScrollGen++;
+        _zwFireScroll(null, null, null);
+      }
+      return;
     }
     // M2-S4D：窗口滚动位同步——fragment 导航后 window.scrollY 可观测（WPT scroll-behavior
     // after-transition-* 「navigate('#frag') 后 scrollY ≠ 0」基面）。先取**滚动前**几何算绝对
@@ -6254,8 +6286,13 @@
     // M2-S4C：navState 承继（fragment 导航——WPT navigate-destination-getState-fragment-via-href）
     // + destination bind 绑新记录（动态 index）。
     var _zwFreshRec;
-    if (globalThis.__zwDocCompletelyLoaded === true) {
-      // M2-S4O：载入后 push 同承继（同文档恒承继——S4C 仅盖载入前 replace 支路）。
+    // M2-S4R：record 分派与 navigate 事件同谓词（_s4qNavType）——锚激活例外恒 push 也适用于
+    // record 侧（spec Following Hyperlink 传 push，不随载入态；S4Q 只盖事件侧，record 侧仍按
+    // 载入态 replace 使 from detach / entries 不增长——WPT currententrychange-event/anchor-click
+    // 「载入前 a.click() → e.from 在位 + index +1」）。location API 直写路径无 sourceElement，
+    // 载入前仍 replace（S4M location-api 面不变）。
+    if (_s4qNavType === 'push') {
+      // M2-S4O：push 同承继（同文档恒承继——S4C 仅盖载入前 replace 支路）。
       _zwFreshRec = _navPushCurrent(_hist_current(), true);
     } else {
       _zwFreshRec = _navReplaceCurrent(_hist_current(), true);
@@ -6307,7 +6344,12 @@
     // preventDefault → 中止。M2-S4Q：同文档（hash-only）navigationType 随载入态
     //（载入前 replace——WPT navigate-location；跨文档恒 push）。
     var _s4qSame = _navIsHashOnly(oldHref, newHref);
-    var _zwNavEv = _navFireNavigate({ navigationType: (_s4qSame && globalThis.__zwDocCompletelyLoaded !== true) ? 'replace' : 'push', url: newHref, hashChange: _s4qSame, sameDocument: _s4qSame, destState: _navInheritedNavState(oldHref, newHref) });
+    // M2-S4R：canIntercept 同源判定（spec「can have its URL rewritten to app URL」——跨源
+    // false；锚路径 S4H 已同面）。WPT intercept-cross-origin「location.href = 跨源 →
+    // canIntercept false + intercept() SecurityError」。
+    var _s4rSO = true;
+    try { _s4rSO = (new URL(newHref).origin === new URL(oldHref).origin); } catch (_eS4rO) {}
+    var _zwNavEv = _navFireNavigate({ navigationType: (_s4qSame && globalThis.__zwDocCompletelyLoaded !== true) ? 'replace' : 'push', url: newHref, hashChange: _s4qSame, sameDocument: _s4qSame, canIntercept: _s4rSO, destState: _navInheritedNavState(oldHref, newHref) });
     if (_zwNavEv.defaultPrevented) { if (!_zwNavEv._zwErrored) _navCancelNavigation(_zwNavEv, null); return; }
     // M2-S4H：download 导航未 intercept → 不提交不重载（下载吞导航，导航永不结算——
     // WPT anchor-download「fires navigate, but not navigatesuccess/navigateerror」）。

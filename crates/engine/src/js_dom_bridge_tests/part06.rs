@@ -3573,7 +3573,9 @@ fn test_scroll_into_view_r3060() {
 #[test]
 fn test_hash_scroll_to_anchor_r3061() {
     // R3061：location.hash= 设值（含 <a href="#sec"> click 经 R3053 路径）滚到锚元素（id/name=hash），
-    // 闭合 R3053 限制①。复用 R3060 scrollIntoView（更新 scrollTop + 派 scroll 事件）。无匹配元素 → 不滚。
+    // 闭合 R3053 限制①。复用 R3060 scrollIntoView（更新 scrollTop + 派 scroll 事件）。
+    // M2-S4R（navigation-compat）：无匹配元素 → 滚回文档开头（spec scroll to the fragment——
+    // target element 为 null 时 scroll to the beginning；WPT fragment-and-encoding goToTop）。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
@@ -3611,12 +3613,12 @@ fn test_hash_scroll_to_anchor_r3061() {
         "hashchange 仍派发（R3006 不受 R3061 滚锚影响）"
     );
 
-    // ② 无匹配元素的 hash（#nope）→ 不滚（scrollY 不变）但 hashchange 派发。
+    // ② 无匹配元素的 hash（#nope）→ 滚回文档开头（M2-S4R spec 面）+ hashchange 派发。
     sandbox.execute("globalThis.__hc=0; location.hash = '#nope';").unwrap();
     assert_eq!(
         sandbox.execute("window.scrollY").unwrap().value,
-        "500",
-        "无匹配元素 -> 不滚（scrollY 保持 500）"
+        "0",
+        "无匹配元素 -> 滚回文档开头（M2-S4R：scroll to the beginning，scrollY=0）"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__hc)").unwrap().value,
