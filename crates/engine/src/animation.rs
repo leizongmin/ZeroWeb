@@ -14,7 +14,9 @@
 use std::collections::HashMap;
 
 use zero_css_parser::ast::{KeyframeBlock, KeyframeSelector, KeyframesRule};
-use zero_css_parser::values::{AnimationDirectionValue, AnimationFillModeValue, TimingFunctionValue};
+use zero_css_parser::values::{
+    AnimationDirectionValue, AnimationFillModeValue, TimingFunctionValue, TransformFunction,
+};
 use zero_style_system::{ComputedStyle, FilterComputedValue};
 
 /// 关键帧点 — 某个时间进度处的属性快照。
@@ -217,6 +219,72 @@ pub struct InterpolatedProperty {
     pub name: String,
     /// 插值后的值字符串。
     pub value: String,
+}
+
+/// R5018（css-animations §keyframes，implicit keyframes）：0%/100% 合成边界帧缺失的
+/// 属性以元素 underlying（当前 computed）值为该侧端点——规范语义「缺失关键帧 = 回退
+/// underlying value」。仅覆盖 individual transform 三属性（与 R4202 插值臂同域，
+/// driving: translate-explicit-and-implicit-keyframes）；其余属性维持既有回退
+///（parse 失败 = 属性初值近似）。非合成但显式空声明（`from {}`）同语义（spec 同款
+/// 回退），一并填充。
+fn resolve_implicit_boundaries(points: &mut [KeyframePoint], style: &ComputedStyle) {
+    if points.len() < 2 {
+        return;
+    }
+    let last = points.len() - 1;
+    // 首帧（0%）← 邻帧属性集；末帧（100%）← 前邻帧属性集。序列化失败（None）不填，
+    // 保持既有回退。
+    let heads: [(usize, usize); 2] = [(0, 1), (last, last - 1)];
+    for (boundary, adjacent) in heads {
+        let missing: Vec<String> = points[adjacent]
+            .properties
+            .keys()
+            .filter(|name| !points[boundary].properties.contains_key(*name))
+            .cloned()
+            .collect();
+        for name in missing {
+            if let Some(v) = underlying_individual_value(style, &name) {
+                points[boundary].properties.insert(name, v);
+            }
+        }
+    }
+}
+
+/// 元素 individual transform 属性的 underlying 值序列化（css-transforms-2
+/// §individual-transforms）。声明在场：纯 px Translate / RotateZ / Scale 序列化
+///（与插值臂的解析语境一致；% 形态（Mixed）与非 Z 轴旋转近似回初值）。声明缺席：
+/// 属性初值（translate ≡ 0px、rotate ≡ 0deg、scale ≡ 1——css-values §initial），
+/// 保证空边界帧被填充、插值段不因 to 侧 properties 空而整段无输出。
+fn underlying_individual_value(style: &ComputedStyle, name: &str) -> Option<String> {
+    let declared = match name {
+        "translate" => style.individual_translate.as_ref(),
+        "rotate" => style.individual_rotate.as_ref(),
+        "scale" => style.individual_scale.as_ref(),
+        _ => return None,
+    };
+    match (name, declared) {
+        ("translate", Some(TransformFunction::Translate(x, y))) => {
+            if *y == 0.0 {
+                Some(format!("{x}px"))
+            } else {
+                Some(format!("{x}px {y}px"))
+            }
+        }
+        ("rotate", Some(TransformFunction::RotateZ(a))) => Some(format!("{a}deg")),
+        ("scale", Some(TransformFunction::Scale(sx, sy))) => {
+            let sy = sy.unwrap_or(*sx);
+            if (sx - sy).abs() < 1e-9 {
+                Some(format!("{sx}"))
+            } else {
+                Some(format!("{sx} {sy}"))
+            }
+        }
+        // 声明缺席或 % / 非单轴形态 → 属性初值近似（none 的 used value）。
+        ("translate", _) => Some("0px".to_string()),
+        ("rotate", _) => Some("0deg".to_string()),
+        ("scale", _) => Some("1".to_string()),
+        _ => None,
+    }
 }
 
 /// 对两个关键帧之间的属性值进行插值（线性，无 timing——测试/纯几何辅助用）。
@@ -687,9 +755,27 @@ impl AnimationClock {
     ///
     /// 使用 `AnimationConfig` 结构体配置动画参数。
     pub fn start_animation(&mut self, element_id: u64, config: &AnimationConfig) -> bool {
-        let Some(keyframes) = self.keyframes_registry.get(&config.name).cloned() else {
+        self.start_animation_with_underlying(element_id, config, None)
+    }
+
+    /// R5018（css-animations §keyframes，implicit keyframes）：带 underlying value 的
+    /// 启动——0%/100% 合成边界帧（`register_keyframes` 补齐的空 properties 帧）缺失的
+    /// 属性以**元素当前 computed 值**为该侧插值端点。registry 全局、基值逐元素，故
+    /// 解析在 start 时对 per-animation 的 keyframes 克隆进行（注册表零污染）。
+    /// driving: translate-explicit-and-implicit-keyframes（base-value-from 渲染 50 应 125
+    /// ——from 缺失合成 0 实证）。
+    pub fn start_animation_with_underlying(
+        &mut self,
+        element_id: u64,
+        config: &AnimationConfig,
+        underlying: Option<&ComputedStyle>,
+    ) -> bool {
+        let Some(mut keyframes) = self.keyframes_registry.get(&config.name).cloned() else {
             return false;
         };
+        if let Some(style) = underlying {
+            resolve_implicit_boundaries(&mut keyframes, style);
+        }
 
         let state = AnimationState {
             name: config.name.clone(),
@@ -767,7 +853,7 @@ impl AnimationClock {
                 .cloned()
                 .unwrap_or(AnimationFillModeValue::None);
 
-            self.start_animation(
+            self.start_animation_with_underlying(
                 element_id,
                 &AnimationConfig {
                     name: name.clone(),
@@ -779,6 +865,7 @@ impl AnimationClock {
                     fill_mode,
                     current_time,
                 },
+                Some(style),
             );
         }
     }
