@@ -7,7 +7,8 @@
 // ②控制臂：setAttribute 面（R122 实例层既有覆盖，防过度修复破坏实例互操作）+ absent/remove
 //   面（latest-wins 序：历史层 Remove 必须压过更早 Set；未设属性不得被他 handle 命中）。
 //   批次边界装配镜像 part45 钉①（drain → append_mutation_history → apply_dom_mutations_
-//   with_persistent → 快照换代 → 代际 bump），即 webview apply 前同款路径。
+//   with_persistent → 快照换代 → 代际 bump）——harness 装配镜像 R100 契约（drain→append），
+//   生产接线未落地（webview/renderer apply 链均无 append_mutation_history 调用方，残余在册）。
 //   https://dom.spec.whatwg.org/#dom-element-getattribute
 //   https://dom.spec.whatwg.org/#dom-element-hasattribute
 
@@ -44,7 +45,7 @@ fn handle_attr_idl_boolean_survives_apply_s48() {
         )
         .unwrap();
 
-    // 批次边界 apply #1（webview apply 前同款装配，part45 钉①先例）。
+    // 批次边界 apply #1（harness 装配镜像 R100 契约：drain→append；生产接线未落地，见头注）。
     let batch1: Vec<DomMutation> = {
         let mut guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
         guard.drain(..).collect()

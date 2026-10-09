@@ -1389,8 +1389,9 @@ pub fn register_dom_callbacks(
     // 元素不在 HTML 快照（无 sel 面的 applied-view 回落），apply 批次边界 drain 后当前批
     // 恒空，属性读落空（spec：属性是元素状态，https://dom.spec.whatwg.org/#dom-element-getattribute
     // ——属性面无 NodeList alive 概念）。批序 [history…, current] 单调，逆序 latest-wins
-    // 先见当前批、再见历史，批间覆盖序正确。part45 批次边界装配注释「供 handle attr 读回
-    // 走 latest-wins 重放」与实测不符（attr 回调从未接历史）——本层补齐该接线。
+    // 先见当前批、再见历史，批间覆盖序正确。attr 读侧回落机制就此就绪；R100 契约的宿主
+    // 半边（apply 前 append_mutation_history）生产未接线——webview/renderer apply 链均无
+    // append 调用方，text/tag/attr 三面同债，残余在册（交付卡残留申报）。
     sandbox.register_callback(
         "__zw_get_attr_handle",
         Box::new(move |args| {
