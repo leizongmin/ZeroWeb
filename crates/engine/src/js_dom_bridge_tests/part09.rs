@@ -3803,6 +3803,48 @@ fn test_media_bridge_hit_upgrades_placeholder_dims_t8o() {
 }
 
 #[test]
+fn test_media_current_time_getter_defaults_to_zero_t8o() {
+    // t8o 返修 G-2（PR #126 审查缺口，R8 负控证明硬化面零判别覆盖）：currentTime getter
+    // 硬化钉——mediaState 对象已建但 currentTime 字段未写时 getter 返 0 而非 undefined；
+    // undefined 泄出让页面 `.toFixed(2)` 抛 TypeError、render 循环死（G1 激活暴露的
+    // pre-existing 缺陷，attr 探针页基线 `cur: ""` 同构）。判别构造须绕开初始化面：
+    // src=/play 路径经 _zwMediaScheduleLoad 无条件写 currentTime=0（part06 invoke 步 6），
+    // 只有纯 IDL 写（状态数值面 set trap，如 volume）建态才留 currentTime 未写。
+    // https://html.spec.whatwg.org/multipage/media.html#offsets-into-the-media-resource
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox.execute(
+        "var v = document.createElement('video');\
+         v.volume = 0.5;\
+         globalThis.__v = v;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("typeof globalThis.__v.currentTime").unwrap().value,
+        "number",
+        "getter 恒数值（回退态返 'undefined'）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__v.currentTime").unwrap().value,
+        "0",
+        "mediaState 已建但 currentTime 未写 → 返 0（undefined 面让页面 .toFixed 抛错）"
+    );
+}
+
+#[test]
 fn test_media_can_play_type_capability_table_m4gd() {
     // media-elements M4g-d（跨 goal 联动：media-playback M0 选型落地后能力表更新）——
     // canPlayType 由解码面真值驱动（zero-media 路线 C：webm/ogg 容器 + VP9 视频 +

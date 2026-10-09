@@ -1422,15 +1422,22 @@ pub fn register_video_bridge_callbacks(
                 }
                 None => args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0),
             };
-            let mut reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
-            if !reg.play(src, now_ms) && !reg.audio_play(src, now_ms) {
+            let first = {
+                let mut reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
+                reg.play(src, now_ms) || reg.audio_play(src, now_ms)
+            };
+            if !first {
                 // M3 切片 2：供给方在位且源未登记 → 同步补登记后重评一次（decode
                 // 可达性仍由 open_webm 决定——失败回落 false，字节留存可重试）。
                 if let Some(provider) = source_provider.as_ref() {
+                    // t8o 返修 D1：登记判定与补登记各自短锁，provider 取字节（生产
+                    // 直联 GET，秒级上界）在锁外——registry 锁被 renderer 主循环泵
+                    // 每 tick 争用（is_any_playing 门/tick_all），持锁做网络 I/O 使
+                    // 主循环与页面 JS 线程在首次 miss 期间整体停摆。调用方（js_worker
+                    // 脚本线程）串行，无并发双 fetch 面。
                     let present = {
-                        let key = registry_key(src);
-                        let sources = &reg.sources;
-                        sources.contains_key(&key)
+                        let reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
+                        reg.sources.contains_key(&registry_key(src))
                     };
                     if !present && let Some(bytes) = provider(src) {
                         // audio 判定 strip query/fragment（WPT cache-buster URL——
@@ -1438,18 +1445,23 @@ pub fn register_video_bridge_callbacks(
                         // 音频条目永不登记 → 桥 play 恒 miss，audio_loop_* 族超时）。
                         let bare = src.split(['?', '#']).next().unwrap_or(src);
                         let audio_guess = bare.ends_with(".oga") || bare.ends_with(".mp3");
-                        reg.register_source(src, bytes.clone());
+                        let mut reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
+                        // 非 audio 常规路径 move 字节（免全量 body clone 双份峰值——
+                        // t8o 审查 D2 的锁外收窄）；audio 双登记才 clone。
                         if audio_guess {
+                            reg.register_source(src, bytes.clone());
                             reg.register_audio_source(src, bytes);
+                        } else {
+                            reg.register_source(src, bytes);
                         }
                     }
                 }
             }
-            if reg.play(src, now_ms) || reg.audio_play(src, now_ms) {
-                "1".into()
-            } else {
-                "0".into()
-            }
+            let ok = {
+                let mut reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
+                reg.play(src, now_ms) || reg.audio_play(src, now_ms)
+            };
+            if ok { "1".into() } else { "0".into() }
         }),
     );
 
