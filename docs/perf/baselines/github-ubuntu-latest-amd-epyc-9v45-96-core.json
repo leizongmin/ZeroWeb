@@ -42,9 +42,9 @@
     },
     {
       "id": "mb/zero-browser-shell/history_search_1k",
-      "p95": 12.250986600421681,
+      "p95": 12.205085315667315,
       "tier": "budget",
-      "tightened_at": "2026-10-07T20:47:49Z"
+      "tightened_at": "2026-10-09T19:21:08Z"
     },
     {
       "id": "mb/zero-browser-shell/tab_creation_100",
@@ -444,8 +444,9 @@
     },
     {
       "id": "mb/zero-storage/indexeddb_write_100",
-      "p95": 28373.205736348595,
-      "tier": "budget"
+      "p95": 28071.36733161733,
+      "tier": "budget",
+      "tightened_at": "2026-10-09T19:21:08Z"
     },
     {
       "id": "mb/zero-storage/local_storage_read_1000",
@@ -521,9 +522,9 @@
     },
     {
       "id": "mb/zero-wasm-sandbox/wasm_module_compile",
-      "p95": 1947.1527929901424,
+      "p95": 1860.3110402042118,
       "tier": "budget",
-      "tightened_at": "2026-10-07T20:47:49Z"
+      "tightened_at": "2026-10-09T19:21:08Z"
     },
     {
       "id": "mb/zero-wasm-sandbox/wasm_module_instantiate",
@@ -557,15 +558,15 @@
     },
     {
       "id": "mb/zero-webview/webview_load_html_with_css",
-      "p95": 105965.8843386829,
+      "p95": 104752.9116698904,
       "tier": "budget",
-      "tightened_at": "2026-10-07T20:47:49Z"
+      "tightened_at": "2026-10-09T19:21:08Z"
     },
     {
       "id": "mb/zero-webview/webview_render",
-      "p95": 160804.55277777778,
+      "p95": 160380.25159051476,
       "tier": "budget",
-      "tightened_at": "2026-10-07T20:47:49Z"
+      "tightened_at": "2026-10-09T19:21:08Z"
     },
     {
       "id": "mb/zero-webview/webview_resize_and_render",
@@ -674,15 +675,15 @@
     },
     {
       "id": "page/medium/first_paint_wall_ms",
-      "p95": 301.998961,
+      "p95": 301.352663,
       "tier": "budget",
-      "tightened_at": "2026-10-07T20:47:49Z"
+      "tightened_at": "2026-10-09T19:21:08Z"
     },
     {
       "id": "page/morning/first_paint_wall_ms",
-      "p95": 234.878419,
+      "p95": 128.968728,
       "tier": "budget",
-      "tightened_at": "2026-10-07T20:47:49Z"
+      "tightened_at": "2026-10-09T19:21:08Z"
     },
     {
       "id": "resource/peak_rss_mb",
