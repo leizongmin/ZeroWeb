@@ -788,6 +788,10 @@ fn tab_worker_main(
                 wv.load_html(&html, css.as_deref());
             });
             page_script_runner = tab_scripts::PageScriptRunner::start(&wv, javascript_enabled);
+            // t8m：脚本阶段起点 readyState → "loading"（先于首个 tick 的首条页面脚本）。
+            if page_script_runner.is_some() {
+                tab_scripts::script_phase_begin(_js_worker.as_ref());
+            }
             if let Some(title) = pages::extract_html_title(&html) {
                 wv.set_title(&title);
             }
@@ -876,6 +880,10 @@ fn tab_worker_main(
                     let _ = msg_tx.send(TabWorkerMessage::Title("加载失败".to_string()));
                 } else {
                     page_script_runner = tab_scripts::PageScriptRunner::start(&wv, javascript_enabled);
+                    // t8m：脚本阶段起点 readyState → "loading"（先于首个 tick 的首条页面脚本）。
+                    if page_script_runner.is_some() {
+                        tab_scripts::script_phase_begin(_js_worker.as_ref());
+                    }
                     // R2942：drain async_load 期收集的子资源 fetch/decode 失败（stylesheet/image），
                     // 注入 runner——finish() 在页面脚本之后、window load 前派发 window error。
                     let failed: Vec<(String, String)> = load

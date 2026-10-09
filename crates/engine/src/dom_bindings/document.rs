@@ -126,7 +126,9 @@ pub(super) fn native_content_type_getter(
 
 /// `document.readyState` getter（spec `dom-document-readystate`）：headless 全解析后固定 "complete"
 ///（简化：无 loading/interactive 加载生命周期追踪；run_script 模型脚本于全解析后执行，"complete" 准确。
-/// 框架 DOMContentLoaded/load 等待高频读取）。
+/// 框架 DOMContentLoaded/load 等待高频读取）。t8m 注：页面可见 `document` 为 shim 字面量
+///（part06.js，readyState 经 `__zwReadyState` 状态宿三态化）；本 native 模板仅 A/B 对照
+/// 测试路径（`__zw_native_get_document()`）实例化，保持 run_script 模型固定值。
 pub(super) fn native_ready_state_getter(
     scope: &mut v8::PinScope,
     _name: v8::Local<v8::Name>,

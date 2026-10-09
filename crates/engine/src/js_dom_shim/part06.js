@@ -4076,7 +4076,16 @@
     // R81：inputEncoding（spec DOM Document.inputEncoding = characterSet 别名，readonly）。
     get inputEncoding() { return this.characterSet; },
     contentType: 'text/html',
-    readyState: 'complete',
+    // t8m（spec dom-document-readystate——https://html.spec.whatwg.org/multipage/dom.html
+    // #dom-document-readystate）：三态生命周期状态宿 `__zwReadyState`——宿主在页面脚本
+    // 阶段起点置 "loading"、DOMContentLoaded 前 "interactive"、window load 前 "complete"
+    //（script_gen `script_transition_ready_state` 赋值 + readystatechange 派发原子单串）。
+    // 未注入（WPT run_script 模型等无宿主过渡场景——脚本于全解析后执行，"complete" 准确）/
+    // 非字符串 / 非规范三态值 → 缺省 "complete"（既有行为零回归，页面脚本篡改不外泄非标准态）。
+    get readyState() {
+      var _rs8m = globalThis.__zwReadyState;
+      return (_rs8m === 'loading' || _rs8m === 'interactive' || _rs8m === 'complete') ? _rs8m : 'complete';
+    },
     // R5007 M3 片 c（html-syntax-compat）：Document legacy 颜色/dir 别名（spec HTML
     // Document 接口——fgColor↔body text、linkColor↔body link、vlinkColor↔body vlink、
     // alinkColor↔body alink、bgColor↔body bgcolor、dir↔html dir）。getter 读 body/html
@@ -12133,6 +12142,17 @@
         altKey: _mMod8.altKey,
         metaKey: _mMod8.metaKey
       });
+    } else if (type === 'readystatechange') {
+      // t8m（HTML §the end / §dom-document-readystate——https://html.spec.whatwg.org/
+      // multipage/syntax.html#the-end）：readystatechange = plain Event，**不冒泡不可取消**
+      // （fires at the Document——event.target = document，window 侧无转发）。派发经尾部
+      // `_dispatchWithBubble` 的 targetSlot='doc'（R40 document target 语义：target 站触发
+      // doc 槽位——document.addEventListener 注册 + document.onreadystatechange IDL handler；
+      // bubbles:false 跳过 bubble 阶段 → doc/win 虚站不触发）。宿主过渡命令（script_gen
+      // `script_transition_ready_state`）在 DCL 前（'interactive'）/ load 前（'complete'）
+      // 各派发一次；脚本串内先赋值 `__zwReadyState` 再派发，handler 内读 readyState 与
+      // 过渡值一致。
+      ev = _makeEvent(type, { bubbles: false, cancelable: false });
     } else {
       ev = _makeEvent(type, { bubbles: true, cancelable: true });
       // uievents-compat M2 片 1：泛型分支 detail 注入（UIEvent.detail——click 连击
@@ -12219,7 +12239,11 @@
       if (typeof __zw_handle_for_selector === 'function') r145Handle = __zw_handle_for_selector(sel) || '';
     } catch (_e145h) {}
     var r145Key = r145Handle ? _elKey(null, r145Handle) : _elKey(sel, null);
-    var ok = _dispatchWithBubble(r145Key, r145Handle ? null : sel, r145Handle || null, ev);
+    // t8m：readystatechange 的 spec target 是 Document 本体（非 html 元素）——R40 targetSlot
+    // 'doc'：target 站触发 doc 槽位（document.addEventListener + document.onreadystatechange），
+    // bubbles:false（上方分支）不向 window 虚站冒泡。sel='html' 仅为 doc 槽位的三合一 key 入口。
+    var ok = _dispatchWithBubble(r145Key, r145Handle ? null : sel, r145Handle || null, ev,
+      type === 'readystatechange' ? 'doc' : undefined);
     // R312（js-dom M4）：UA 通道印记一次性——本（宿主）dispatch 完成即消费；同一
     // 事件对象再经页面脚本 dispatchEvent 时 guard 按 legacy DOM3 语义翻
     // isTrusted=false（WPT Event-dispatch-redispatch 的 before/after 断言对）。

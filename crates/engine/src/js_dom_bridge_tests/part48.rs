@@ -358,3 +358,164 @@ fn handle_attr_absent_and_remove_faces_s48() {
         "apply#2 后 getAttribute(data-y) 保持 null"
     );
 }
+
+// slice48（t8m 页面加载生命周期：document.readyState 三态 + readystatechange 双过渡派发）：
+// 红证据（bilibili 运行 evidence/t8m-lifecycle/，2026-10-09）：native getter 硬编码
+// "complete" → 页面脚本执行期（React/Next hydration 调度门控读点）恒 complete +
+// 全页零 readystatechange——事件序「先 complete 后 DCL」在真实浏览器不可能出现，
+// 框架生命周期假设错乱（#425/#418 水合错误簇根因）。Chrome oracle：脚本期 loading →
+// rs(interactive) → DCL → rs(complete) → load，各恰 1 次。
+// 修复面（三件）：①native getter 读 shim 全局 `__zwReadyState`（未注入/非字符串/越界值
+// 缺省 "complete"——WPT run_script 模型零回归）；②script_gen `script_set_ready_state`/
+// `script_transition_ready_state` 过渡命令（赋值 + 派发原子单串）；③shim
+// `__zw_dispatch_event` readystatechange 分支——plain Event 不冒泡不可取消，经
+// `_dispatchWithBubble` targetSlot='doc'（R40 document target 语义：event.target =
+// document，doc 槽位监听在 target 站触发，window 虚站不触发）。
+// 宿主序镜像（renderer `page_scripts::finish_page_load` / tab `PageScriptRunner::finish`
+// + 阶段起点注入）：set('loading') → [页面脚本] → transition('interactive') → DCL →
+// transition('complete') → load。
+// https://html.spec.whatwg.org/multipage/dom.html#dom-document-readystate
+// https://html.spec.whatwg.org/multipage/syntax.html#the-end
+
+/// t8m 钉①：readyState 缺省 "complete" + 状态宿越界值不外泄。
+/// 断言翻转语义：getter 改回硬编码 "complete" → ①臂脚本期断言红；白名单撤除 →
+/// bogus/非字符串臂红（非标准态外泄）。WPT run_script 模型（无宿主过渡）由
+/// 「未注入缺省」臂钉住（既有断言零回归面）。
+#[test]
+fn ready_state_default_complete_and_host_whitelist_s48() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head></head><body><p>s48</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://zero.test/s48".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 未注入（WPT run_script 模型）：缺省 "complete"，状态宿自身 undefined。
+    assert_eq!(
+        sandbox.execute("String(document.readyState)").unwrap().value,
+        "complete",
+        "未注入状态宿时 readyState 缺省 complete（run_script 模型零回归面）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__zwReadyState)").unwrap().value,
+        "undefined",
+        "状态宿未注入时全局不存在"
+    );
+
+    // 宿主阶段起点：set('loading') → getter 读状态宿。
+    sandbox.execute(&script_set_ready_state("loading")).unwrap();
+    assert_eq!(
+        sandbox.execute("String(document.readyState)").unwrap().value,
+        "loading",
+        "阶段起点后脚本期 readyState = loading（Chrome oracle）"
+    );
+
+    // 页面脚本篡改越界值 / 非字符串值 → 缺省 complete（不外泄非标准态）。
+    sandbox.execute("globalThis.__zwReadyState = 'bogus'").unwrap();
+    assert_eq!(
+        sandbox.execute("String(document.readyState)").unwrap().value,
+        "complete",
+        "越界值按缺省处理（readystate 枚举仅三态）"
+    );
+    sandbox.execute("globalThis.__zwReadyState = 42").unwrap();
+    assert_eq!(
+        sandbox.execute("String(document.readyState)").unwrap().value,
+        "complete",
+        "非字符串值按缺省处理"
+    );
+}
+
+/// t8m 钉②：三态过渡序 + readystatechange 派发契约（spec HTML §the end）。
+/// 断言翻转语义：①getter 回硬编码 → 脚本期 loading / handler 内 rs 值断言红；
+/// ②过渡命令撤除或派发与赋值分裂（分两次提交）→ 序列 join / rs 恰 2 次断言红；
+/// ③shim 分支落泛型（bubbles:true）→ bubbles/cancelable/window-rs 监听断言红；
+/// ④targetSlot='doc' 撤（落 html 元素 target）→ `e.target === document` 断言红。
+#[test]
+fn ready_state_lifecycle_transitions_and_rs_dispatch_s48() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head></head><body><p>s48</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://zero.test/s48".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 宿主阶段起点（先于页面脚本）。
+    sandbox.execute(&script_set_ready_state("loading")).unwrap();
+
+    // 页面脚本：注册 document/window 监听 + 记录脚本期 readyState。
+    sandbox
+        .execute(
+            "window.__evts = [];\
+             window.__rsScript = document.readyState;\
+             document.addEventListener('readystatechange', function () { window.__evts.push('rs:' + document.readyState); });\
+             window.addEventListener('readystatechange', function () { window.__evts.push('rs-win'); });\
+             document.addEventListener('DOMContentLoaded', function () { window.__evts.push('DCL:' + document.readyState); });\
+             window.addEventListener('load', function () { window.__evts.push('load:' + document.readyState); });\
+             globalThis.__rsFlags = {};\
+             document.addEventListener('readystatechange', function (e) { globalThis.__rsFlags.bubbles = e.bubbles; globalThis.__rsFlags.cancelable = e.cancelable; globalThis.__rsFlags.targetIsDoc = (e.target === document); globalThis.__rsFlags.trusted = e.isTrusted; });",
+        )
+        .unwrap();
+
+    // 宿主序：DCL 前过渡 interactive → DCL；load 前过渡 complete → load。
+    // 过渡命令 = 赋值 + readystatechange 派发原子单串（script_transition_ready_state）。
+    sandbox.execute(&script_transition_ready_state("interactive")).unwrap();
+    sandbox
+        .execute(&script_dispatch_dom_event("html", "DOMContentLoaded", None))
+        .unwrap();
+    sandbox.execute(&script_transition_ready_state("complete")).unwrap();
+    sandbox.execute(&script_dispatch_dom_event("html", "load", None)).unwrap();
+
+    // 脚本期 readyState = loading（红证据反转面：修前恒 complete）。
+    assert_eq!(
+        sandbox.execute("window.__rsScript").unwrap().value,
+        "loading",
+        "页面脚本执行期 readyState = loading"
+    );
+    // 事件序与次数：rs(interactive) → DCL → rs(complete) → load，各恰 1 次；
+    // handler 内读 readyState 与过渡值一致（原子单串面）。
+    assert_eq!(
+        sandbox.execute("window.__evts.join('|')").unwrap().value,
+        "rs:interactive|DCL:interactive|rs:complete|load:complete",
+        "事件序须为 rs(interactive) → DCL → rs(complete) → load，各恰 1 次"
+    );
+    // 终态 complete。
+    assert_eq!(
+        sandbox.execute("String(document.readyState)").unwrap().value,
+        "complete",
+        "load 前过渡后终态 complete"
+    );
+    // readystatechange 事件契约：不冒泡不可取消、target = document、UA 印章 isTrusted。
+    assert_eq!(
+        sandbox.execute("[String(globalThis.__rsFlags.bubbles), String(globalThis.__rsFlags.cancelable), String(globalThis.__rsFlags.targetIsDoc), String(globalThis.__rsFlags.trusted)].join(',')").unwrap().value,
+        "false,false,true,true",
+        "rs 事件 bubbles=false cancelable=false target=document isTrusted=true（HTML §the end + R312）"
+    );
+    // window 侧 rs 监听 0 次（fires at the Document——不冒泡到 window）。
+    assert_eq!(
+        sandbox.execute("window.__evts.indexOf('rs-win')").unwrap().value,
+        "-1",
+        "window 侧 readystatechange 监听不触发"
+    );
+}

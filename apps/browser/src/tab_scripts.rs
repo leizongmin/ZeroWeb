@@ -6,8 +6,8 @@ use tracing::warn;
 use zero_engine::{
     DomEventDetail, PageScript, extract_page_scripts_indexed, page_script_error_check, resolve_document_url,
     script_commit_resource_element_state, script_dispatch_dom_event, script_report_error, script_run_classic_page,
-    script_text_control_snapshot, script_text_delete, script_text_delete_without_event, script_text_input,
-    script_text_input_without_event,
+    script_set_ready_state, script_text_control_snapshot, script_text_delete, script_text_delete_without_event,
+    script_text_input, script_text_input_without_event, script_transition_ready_state,
 };
 use zero_webview::{ResourceElementEvent, WebView};
 
@@ -174,6 +174,9 @@ impl PageScriptRunner {
         if self.html != self.original_html && wv.html_content() != self.html {
             wv.reload_html_after_script(&self.html);
         }
+        // t8m：DCL 前 readyState 过渡 "interactive" + document readystatechange（spec HTML
+        // §the end；与 renderer `page_scripts::finish_page_load` 对齐）。
+        dispatch_ready_state_transition(js_worker, "interactive");
         dispatch_page_lifecycle(js_worker, "DOMContentLoaded");
         // R2942：页面脚本注册 handler 后、window load 前派发资源 window 'error'。
         for (kind, url) in &self.resource_errors {
@@ -196,7 +199,32 @@ impl PageScriptRunner {
         let had_loaded = self.font_events.iter().any(|(_, t)| *t == "loaded");
         let had_error = self.font_events.iter().any(|(_, t)| *t == "error");
         dispatch_font_settle(js_worker, had_loaded, had_error);
+        // t8m：load 前 readyState 过渡 "complete" + readystatechange（先于 load 派发）。
+        dispatch_ready_state_transition(js_worker, "complete");
         dispatch_page_lifecycle(js_worker, "load");
+    }
+}
+
+/// t8m：页面脚本阶段起点——readyState 置 "loading"（native getter 读 shim 全局
+/// `__zwReadyState`）。在 `PageScriptRunner::start` 成功后、首个 `tick` 前调用（同步
+/// execute 保序）；同 isolate 跨文档由下一文档的阶段起点无条件复位。与 renderer
+/// `runtime::after_page_html_loaded_with_cache` 的阶段起点注入对齐。
+pub fn script_phase_begin(js_worker: Option<&TabJsWorkerHandle>) {
+    let Some(worker) = js_worker else { return };
+    let script = script_set_ready_state("loading");
+    if let Err(e) = worker.execute_script_direct(&script) {
+        warn!("set readyState loading: {e}");
+    }
+}
+
+/// t8m：readyState 过渡 + document readystatechange 派发（[`script_transition_ready_state`]
+/// 生成的原子单串）。与相邻生命周期派发同通道同步执行（tab worker 循环内串行，调用序即
+/// 执行序）。best-effort（失败仅 `warn!`）。
+fn dispatch_ready_state_transition(js_worker: Option<&TabJsWorkerHandle>, state: &str) {
+    let Some(worker) = js_worker else { return };
+    let script = script_transition_ready_state(state);
+    if let Err(e) = worker.execute_script_direct(&script) {
+        warn!("dispatch readystatechange transition ({state}): {e}");
     }
 }
 

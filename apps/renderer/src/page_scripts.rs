@@ -9,7 +9,7 @@ use zero_engine::{
     apply_mutations_to_html_with_handles, extract_page_scripts_indexed, page_script_error_check, resolve_document_url,
     script_call_set_location_hash, script_commit_resource_element_state, script_dispatch_dom_event,
     script_dispatch_link_event, script_dispatch_script_event, script_host_focus, script_report_error,
-    script_run_classic_page,
+    script_run_classic_page, script_transition_ready_state,
 };
 #[cfg(test)]
 use zero_engine::{
@@ -287,6 +287,9 @@ pub fn finish_page_load(
     link_events: Vec<(String, &'static str)>,
     font_events: Vec<(String, &'static str)>,
 ) {
+    // t8m：DCL 前 readyState 过渡 "interactive" + document readystatechange（单提交原子序，
+    // 与随后 DCL 同在优先 FIFO，提交序即执行序——spec HTML §the end）。
+    dispatch_ready_state_transition(js_worker, "interactive");
     dispatch_page_lifecycle(js_worker, "DOMContentLoaded");
     // R2942：页面脚本注册 handler 后、window load 前派发资源 window 'error'。
     for (kind, url) in &resource_errors {
@@ -327,7 +330,19 @@ pub fn finish_page_load(
     let had_loaded = font_events.iter().any(|(_, t)| *t == "loaded");
     let had_error = font_events.iter().any(|(_, t)| *t == "error");
     dispatch_font_settle(js_worker, had_loaded, had_error);
+    // t8m：load 前 readyState 过渡 "complete" + readystatechange（同上，先于 load 派发）。
+    dispatch_ready_state_transition(js_worker, "complete");
     dispatch_page_lifecycle(js_worker, "load");
+}
+
+/// t8m：readyState 过渡 + document readystatechange 派发（[`script_transition_ready_state`]
+/// 生成的原子单串）。走优先队列 fire-and-forget（t2-pb1 fix#5/#12 同款——与相邻生命周期
+/// 派发同 FIFO，不新增等待点）。best-effort（失败仅 `warn!`）。
+fn dispatch_ready_state_transition(js_worker: &RendererJsWorker, state: &str) {
+    let script = script_transition_ready_state(state);
+    if let Err(e) = js_worker.submit_script_priority(&script) {
+        warn!("dispatch readystatechange transition ({state}): {e}");
+    }
 }
 
 /// 派发一个页面生命周期事件。资源 settle 事件位于 DOMContentLoaded 与 window load 之间。
