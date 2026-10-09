@@ -11,7 +11,7 @@
 - **构建器模式** — 通过 `WebViewBuilder` 链式配置视口尺寸、透明背景、用户代理、初始 URL、开发者工具等参数
 - **加载内容** — `load_html` 直接渲染 HTML 字符串（可附带 CSS），`load_url` 发起导航；`async_load` 异步加载面（媒体/资源元数据 settle 探针）
 - **页面运行时** — 页面脚本执行（V8/QuickJS）、Service Worker 注册与 fetch 拦截、Web Worker、WASM 自动桥接、`SecurityContext` 安全检查（HSTS 升级 / 混合内容阻止）
-- **媒体注册表** — `video_registry`（HTMLVideoElement 解码面桥接，VP9/AV1 codec 自路由）与 `webaudio_registry`（Web Audio `AudioContext` 门面 → `zero-media` 输出面）
+- **媒体注册表** — `video_registry`（HTMLVideoElement 解码面桥接，VP9/AV1/H.264 codec 自路由，`blob:` MSE 流式源经 `mse_create/append/end` 喂入）与 `webaudio_registry`（Web Audio `AudioContext` 门面 → `zero-media` 输出面）
 - **渲染管线** — 自动完成 DOM 解析、样式计算、布局、渲染，返回图元和耗时统计
 - **CSS 注入** — `inject_css` 向已加载页面追加样式并重新渲染；外链样式表中的相对 URL（`url()` 引用）按样式表地址绝对化后再参与加载
 - **下载字体贯通** — 页面 `@font-face` 网络下载字体经多进程字体载荷管线送达合成器，参与生产渲染与 headless 截图

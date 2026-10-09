@@ -47,5 +47,5 @@ macOS 发布包将解码器封装为独立 Helper App；Linux 与 Windows 发布
 
 ## 相关文档
 
-- D1 目标：`docs/goal/` 图像解码独立进程切片
+- D1 目标：图像解码独立进程切片（见 `docs/goal/rendering-compat.md` 执行记录）
 - 图像解码实现：`zero-render-foundation` 的 `image_cache` 模块

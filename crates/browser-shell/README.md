@@ -21,7 +21,6 @@
 
 ```rust
 use zero_browser_shell::BrowserShell;
-use zero_webview::WebViewBuilder;
 
 // 创建浏览器 Shell 实例
 let mut shell = BrowserShell::new();

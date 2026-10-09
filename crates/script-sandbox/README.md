@@ -12,9 +12,9 @@
 - **脚本执行** — `execute`（返回字符串结果）与 `execute_json`（`JSON.stringify` 包装）；支持编译/运行时错误与超时（`set_timeout_ms`）
 - **未捕获异常收集** — `take_uncaught_reports` 取走自上次调用以来的未捕获异常报告（`(text, line, column)`；V8 经 isolate message listener + promise-reject 回调覆盖未处理 Promise rejection，QuickJS 返回空）。V8 侧同 execute 内 reject 后才挂上 handler 的 rejection 会经 `PromiseHandlerAddedAfterReject` 按 promise 身份自动撤回报告（对齐 Chrome 已处理 rejection 报 0 语义）
 - **宿主回调** — `register_callback` 把 Rust 闭包挂为 JS 全局函数 `name(...)`，参数/返回经字符串桥；`resolve_async_callback` 支持 P1b 异步回调 resolve（V8 后端）
-- **持久化 Context** — `SandboxConfig::persistent_context` 复用 V8 全局 Context，`reset_context` 清空 JS 状态
+- **持久化 Context** — `SandboxConfig::persistent_context` 复用 V8 全局 Context，`reset_context` 清空 JS 状态；`initial_heap_size` 可配，V8 堆限制参数按 initial ≤ max 钳制（防 `SetHeapLimits` 非法参数 abort）
 - **Dedicated Worker** — 独立线程 V8 持久上下文 + postMessage/onmessage 通道（`worker.rs` / `quickjs_worker.rs`）
-- **ES Modules** — 源码转换式 import/export 支持、`import.meta.url`、链式依赖解析（`es_module.rs`）
+- **ES Modules** — 源码转换式 import/export 支持、`import.meta.url`、链式依赖解析；循环/菱形 import 防护（重入返回首份内联导出，防栈溢出 abort）（`es_module.rs`）
 - **P1b 原生绑定 escape-hatch** — `install_native_bindings` 在持久 V8 Context 内安装 `ObjectTemplate`/`FunctionTemplate`/accessor 等原生 DOM 绑定（仅 V8 后端，QuickJS 降级 no-op）
 
 ## 使用示例

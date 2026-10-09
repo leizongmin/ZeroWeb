@@ -12,6 +12,7 @@
 - **基本事件循环**：`run()` 方法提供窗口事件回调，适合纯 CPU 渲染场景
 - **GPU 事件循环**：`run_with_window()` 方法额外传递 `Arc<Window>` 引用，用于创建 wgpu Surface
 - **统一事件类型**：`AppEvent` 枚举涵盖重绘、缩放、关闭、焦点、键盘输入等常见窗口事件
+- **窗口图标**：内置 256px RGBA 图标资产（`app_icon::window_icon()`），供窗口与任务栏设置
 - **跨平台支持**：基于 winit，支持 macOS、Linux、Windows 等主流桌面平台
 
 ## 使用示例

@@ -15,6 +15,7 @@
 - **音频输出面** — `AudioSink` trait（`start` / `write` 交错 f32 PCM）：`NullSink`（headless/CI 默认，帧数/过零率可观测断言）与 `CpalSink`（`audio-cpal` feature，真实设备 ALSA 输出）
 - **混音总线** — `Mixer` 多源 f32 帧叠加 + per-source `volume`/`muted` 增益（软削幅 clamp [-1,1]），`SourceHandle` 独立挂载/卸载
 - **Web Audio 最小面** — `OscillatorState`（四型波形纯函数合成，相位累积防 alias）+ `WebAudioContext`（源列表 → per-source 增益 → 下游 sink 的 `advance` 推进）
+- **MSE 流式源**（`mse_feed`，`decode-h264` feature）— `MseFeed` / `MseFeedHandle`：appendBuffer 字节增长缓冲 + `endOfStream` ended 闩锁，fMP4（ftyp+moov 惰性 probe，moof/mdat 段序）经 symphonia isomp4 流式 demux 喂 H.264 解码，供 webview `video_registry` 的 `blob:` MSE 源消费（HTMLMediaElement `MediaSource` shim 面）
 - **feature gate** — `audio-cpal`（真实设备输出，编译需 ALSA dev 头）、`decode-av1`（AV1 解码，链接系统 libdav1d）与 `decode-h264`（H.264 解码，openh264 构建期源码编译）默认关闭，headless/CI 走默认面
 
 ## 使用示例

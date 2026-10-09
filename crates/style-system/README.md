@@ -12,8 +12,9 @@
 - **级联算法** — 按 `!important`、来源（UA / User / Author）、`@layer`、选择器特异性、源码顺序五个维度决定胜出声明
 - **属性继承** — 处理 `inherit`、`initial`、`unset`、`revert`、`revert-layer` 全局关键字，以及可继承属性的隐式继承
 - **计算值生成** — 将 em、rem、vh、vw、vmin、vmax、ch 等相对单位转换为绝对像素值，支持 `var()` 自定义属性引用和回退值；逻辑属性（margin/padding/border/inset 的 `-inline-`/`-block-` 系列）按 writing-mode 确定后延迟解析应用
-- **`ComputedStyle` 结构体** — 覆盖盒模型、边框、颜色/背景、字体、文本、Flexbox、定位、Overflow 共 250+ 个 CSS 属性的 typed 字段（含 `corner-shape` 等较新属性）
+- **`ComputedStyle` 结构体** — 覆盖盒模型、边框、颜色/背景、字体、文本、Flexbox、定位、Overflow 共 250+ 个 CSS 属性的 typed 字段（含 `corner-shape`、`filter()` 图像函数（`background-image` / `content` 的 Filtered 计算值变体）等较新属性）
 - **`PropertyRegistry`** — 提供属性初始值查询、继承性判断、已知属性枚举
+- **UA 默认样式** — 内置 UA 样式表（含 `input[type=hidden]` display:none 等表单控件默认面）
 
 ## 使用示例
 

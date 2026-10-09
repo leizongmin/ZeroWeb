@@ -1,5 +1,6 @@
 [package]
 name = "zero-wpt-runner"
+description = "ZeroWeb WPT 测试运行器 — WPT testharness/reftest、Chromium Oracle 像素对比与兼容性工具"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

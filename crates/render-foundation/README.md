@@ -16,6 +16,7 @@
 - **图像缓存** — `image_cache` 图片解码缓存 + GC（优先级淘汰），供多进程帧发布去重与 drawImage 复用
 - **几何与脏区域追踪** — Point / Size / Rect 基础几何类型，DamageTracker 管理增量重绘区域，支持智能合并
 - **帧缓冲** — CPU 侧 RGBA 像素数据管理，支持逐像素读写与批量清除；`backing_store` 双缓冲管理（合成器消费）
+- **CPU 光栅化与效果**（`cpu`）— display list 光栅化与渲染线程调度；`effects` 滤镜效果链（blur / drop-shadow / 混合合成等 `FilterPrimitive` 求值，含图像函数 `filter()` 的 DropShadow 阴影通道——按解码数据 alpha 逆采样阴影形状）、`Color::lerp` 预乘 alpha 颜色插值
 
 ## 使用示例
 
