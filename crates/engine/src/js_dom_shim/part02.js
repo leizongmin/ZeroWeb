@@ -4742,6 +4742,12 @@
     if (hashChanged && !skipScroll) {
       _scrollToAnchorForHash(String(newHref).split('#')[1] || '', true);
     }
+    // M2-S4T 挂账注记：popstate/hashchange 维持 _defer microtask 近似（spec 为 task）。
+    // intercepted traverse 的空链面存在 WPT 双案时序冲突——ordering/currententrychange-
+    // before-popstate-intercept（绿面）要求 finished 结算时 popstate 已发、intercept-popstate-
+    // no-handler 要求未发——两案结构相同仅期望相反，Chromium 经其 task 管线排序同时满足；
+    // 本沙箱同步结算模型二者互斥，宏任务化收 no-handler 即破 ordering 绿面（S4T 首跑实测
+    // 回归），维持微任务保 ordering 族、no-handler 记账。
     _defer(function () {
       // M2-S2（navigation-compat）：back/forward/go 派发的 popstate/hashchange 为 UA 生成事件
       // → isTrusted true（spec：traverse 步骤 fire 的事件非合成；WPT popstate_event/
@@ -5071,7 +5077,10 @@
       if (!_histRateAllow()) return;
       var oldHref = globalThis.location.href;
       var abs = (url == null || String(url) === '') ? oldHref : (_resolveHistUrl(String(url)) || oldHref);
-      var ev = _navFireNavigate({ navigationType: 'push', url: abs, hashChange: _navIsHashOnly(oldHref, abs) });
+      // M2-S4T：hashChange 恒 false——pushState/replaceState 非「片段导航」（spec hashChange
+      // = fragment navigation 面专属，即使 url 仅差 fragment；WPT navigate-history-pushState
+      // 「pushState(1, null, '#1') → assert_false(e.hashChange)」）。
+      var ev = _navFireNavigate({ navigationType: 'push', url: abs, hashChange: false });
       if (ev.defaultPrevented) { if (!ev._zwErrored) _navCancelNavigation(ev, null); return; }
       // M2-S4G：precommit 存在 → 提交延迟（abort → 无 entry——WPT back-and-forth「pushState
       // precommit pending 期 back() 取消」）。classic state 恒入 classic 槽；redirect state 入
@@ -5100,7 +5109,9 @@
       if (!_histRateAllow()) return;
       var oldHref = globalThis.location.href;
       var abs = (url == null || String(url) === '') ? oldHref : (_resolveHistUrl(String(url)) || oldHref);
-      var ev = _navFireNavigate({ navigationType: 'replace', url: abs, hashChange: _navIsHashOnly(oldHref, abs) });
+      // M2-S4T：hashChange 恒 false（同 pushState——spec hashChange = fragment navigation 面专属；
+      // WPT navigate-history-replaceState）。
+      var ev = _navFireNavigate({ navigationType: 'replace', url: abs, hashChange: false });
       if (ev.defaultPrevented) { if (!ev._zwErrored) _navCancelNavigation(ev, null); return; }
       // M2-S4G：precommit 延迟提交（同 pushState 面）。
       if (ev._zwIntercepted && (ev._zwPrecommit || []).length) {

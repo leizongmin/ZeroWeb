@@ -2,8 +2,8 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-10（M2-S1~S4R 二十一片——location-interface 97.7% / traversal 93.3% /
-history-interface 98.0% / navigation-api 92.5%；全量 20.9%→79.2%（377/476））
+**最后更新**: 2026-10-10（M2-S1~S4T 二十二片——location-interface 97.7% / traversal 93.3% /
+history-interface 98.0% / navigation-api 93.3%；全量 20.9%→79.6%（379/476））
 
 ---
 
@@ -26,7 +26,7 @@ history-interface 98.0% / navigation-api 92.5%；全量 20.9%→79.2%（377/476�
 | P1 | 四 corpus 导入 + 基线 | ✅ 落地（fetch 三域 + 嵌套 resources 2026-10-07 恢复后入库；基线 20.9%，S1+S2 后全量 29.2%） |
 | P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口 + S4P 速率限制：the-history-interface 81.6%→**98.0%**（traverse 入队 + 空串 URL + 跨源 SecurityError + push/replaceState 10s/100 次速率窗）；余 007/008 外部脚本基建挂账 |
 | P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | 🔶 S1+S2+S4F+S4P 落地：location-interface 41.9%→**97.7%**（exotic 内部方法面 Proxy 承载收口 + 动态 append 脚本执行通道）、traversal 62.2%→**93.3%**；余 2F = runner 无端口 URL（形态缺口挂账） |
-| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4R 二十一段落地（→**92.5%**，236/255）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程/form submit navigate/activation 暴露/transition 派发时机/dispose 深簇/navState 入槽克隆/同文档 navState 承继/reentrant 孤儿 transition/提交期 abort/`:target` URL 同步/window.stop abort 面/session history 50 条上限/traverse 语义面/navigationType 随载入态（锚激活例外恒 push）/片段指示元素 decoded 匹配 + 无匹配滚顶 + 锚 record push 例外 + 跨源 canIntercept 全收；余静态锚 href IDL 落 attr 面（2 案——回流 element IDL 域）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域） |
+| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4T 二十二段落地（→**93.3%**，238/255）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程/form submit navigate/activation 暴露/transition 派发时机/dispose 深簇/navState 入槽克隆/同文档 navState 承继/reentrant 孤儿 transition/提交期 abort/`:target` URL 同步/window.stop abort 面/session history 50 条上限/traverse 语义面/navigationType 随载入态（锚激活例外恒 push）/片段指示元素 decoded 匹配 + 无匹配滚顶 + 锚 record push 例外 + 跨源 canIntercept/pushState·replaceState hashChange=false 全收；余静态锚 href IDL 落 attr 面（2 案——回流 element IDL 域）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域） |
 | P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | ⏳ M3 **用户门控** |
 | P5 | bfcache / fission 挂账定稿 | ✅ M4 定稿（bfcache：无实现面，依赖 frame tree→Document 快照管线，挂账至 M3 后续立项；fission：charter 排除维持。见 [M4 评估](evidence/2026-10-09-m4-closeout-assessment.md)） |
 
@@ -207,8 +207,19 @@ history-interface 98.0% / navigation-api 92.5%；全量 20.9%→79.2%（377/476�
   ×6 + anchor-click + intercept-cross-origin）；navigation-api 91.8%→**92.5%**（236/255）；
   全量 77.5%→**79.2%**（377/476）。scroll-to-fragid 余项（几何/竖排 8 案）记账回流渲染域。
   证据：[evidence/2026-10-10-m2-s4r-fragment-indicated.md](evidence/2026-10-10-m2-s4r-fragment-indicated.md)。
-- **质量门禁（二十一片）**：`make test` 全绿 **20,359 P / 0 F**（R3061 hash 滚锚 pin 随
-  S4R 语义更新后全量复跑）；clippy -D warnings 零 warning；fmt 零 diff。
+- **M2-S4T pushState/replaceState hashChange 面（2026-10-10）**：pushState/replaceState 的
+  navigate 事件 hashChange 恒 false（spec hashChange = fragment navigation 专属——原按
+  hash-only URL 差计算误 true）。2 翻 Fail→Pass 零回归（navigate-history-pushState +
+  navigate-history-replaceState）；navigation-api 92.5%→**93.3%**（238/255）；全量
+  79.2%→**79.6%**（379/476）。首跑回归定稿挂账：intercepted traverse popstate 宏任务化
+  （spec task）收 intercept-popstate-no-handler 即破 currententrychange-before-popstate-
+  intercept 绿面（两案期望相反，Chromium task 管线排序可达、本沙箱同步结算模型互斥）
+  ——维持微任务、no-handler 记账；form-submit-and-window-stop（helpers.js pin/master 双
+  404 资产偏斜，归 same-url-replace 族）+ navigate-svg-anchor-fragment（svg:a dispatched
+  click 激活缺失）入账。
+  证据：[evidence/2026-10-10-m2-s4t-pushstate-face.md](evidence/2026-10-10-m2-s4t-pushstate-face.md)。
+- **质量门禁（二十二片）**：`make test` 全绿 **20,363 P / 0 F**；clippy/fmt 无 `.rs` 变更
+  维持 S4R 干净基线。
 
 ## M4 收口评估（2026-10-09）
 
