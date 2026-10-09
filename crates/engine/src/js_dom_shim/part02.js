@@ -5633,6 +5633,20 @@
     ev._zwBind = bind;
     // M2-S4G：transition.from 捕获（dispatch 时刻 currentEntry——commit 前）。
     try { ev._zwFromPub = _navPub(_navCurrent()); } catch (_eFp) {}
+    // M2-S4L：transition 于 **dispatch 后、commit 前**创建（spec inner fire step 29——
+    // currententrychange 派发时 transition 须已暴露；旧在 _navRunIntercept 创建晚于 CCE）。
+    if (ev._zwIntercepted) {
+      var _tSettlePre = null;
+      var _tPre = { navigationType: ev.navigationType || null };
+      try { Object.setPrototypeOf(_tPre, globalThis.NavigationTransition.prototype); } catch (_eTp) {}
+      _tPre.from = ev._zwFromPub || null;
+      _tPre.to = ev.destination || null;
+      _tPre.finished = new Promise(function (res, rej) { _tSettlePre = function (err) { err ? rej(err) : res(undefined); }; });
+      _navTransition = _tPre;
+      ev._zwTransitionObj = _tPre;
+      ev._zwFinishTransition = function (err) { if (_tSettlePre) _tSettlePre(err); };
+      ev._zwClearTransition = function () { if (_navTransition === _tPre) _navTransition = null; };
+    }
     // M2-S4G：结果控制柄挂钩（abort 面在 dispatch 期即可 reject 双 promise）。
     ev._zwResultCtrl = o.resultCtrl || null;
     // M2-S4G：进行中导航 abort（dispatch 期即挂——重入导航于 nav1 监听器内派发时，nav1 须
@@ -5668,6 +5682,21 @@
     // 嵌套导航抢占进行中的 traversal（traverse 自身派发带 _zwSelf 标记，不自抢占）。
     if (_navTraverseDispatching && !o._zwSelf) _navPreempted = true;
     _navDispatchAny(ev);
+    // M2-S4L：transition 于 **dispatch 后、commit 前**创建（spec inner fire step 29——
+    // currententrychange 派发时 transition 须已暴露；旧在 _navRunIntercept 创建晚于 CCE。
+    // 首版误插 dispatch 前——intercept() 未调 _zwIntercepted 恒 false 恒不创建）。
+    if (ev._zwIntercepted) {
+      var _tSettlePre = null;
+      var _tPre = { navigationType: ev.navigationType || null };
+      try { Object.setPrototypeOf(_tPre, globalThis.NavigationTransition.prototype); } catch (_eTp) {}
+      _tPre.from = ev._zwFromPub || null;
+      _tPre.to = ev.destination || null;
+      _tPre.finished = new Promise(function (res, rej) { _tSettlePre = function (err) { err ? rej(err) : res(undefined); }; });
+      _navTransition = _tPre;
+      ev._zwTransitionObj = _tPre;
+      ev._zwFinishTransition = function (err) { if (_tSettlePre) _tSettlePre(err); };
+      ev._zwClearTransition = function () { if (_navTransition === _tPre) _navTransition = null; };
+    }
     return ev;
   }
   // committed/finished 双 Promise 控制柄（navigate()/reload() 返回；spec 形 {committed, finished}）。
@@ -5708,14 +5737,20 @@
   // commitFn：提交动作闭包（M2-S4G——precommitHandler 存在时由调用方延迟提供：提交须等
   // precommit 全 fulfill；无 precommit 时 doCommit() 立即调 → 与旧「先提交后起链」时序一致）。
   function _navRunIntercept(ev, ctrl, commitFn) {
-    var tSettle = null;
-    var transition = { navigationType: ev.navigationType || null };
-    try { Object.setPrototypeOf(transition, globalThis.NavigationTransition.prototype); } catch (_eNtP) {}
-    // M2-S4G：transition.from（spec——dispatch 时刻 currentEntry；commit 前捕获）+ to（destination）。
-    transition.from = ev._zwFromPub || null;
-    transition.to = ev.destination || null;
-    transition.finished = new Promise(function (res, rej) { tSettle = function (err) { err ? rej(err) : res(undefined); }; });
-    _navTransition = transition;
+    // M2-S4L：transition 由 _navFireNavigate 于 dispatch 后创建（CCE 派发时已暴露）；此处
+    // 复用同一对象/结算钩子；防御兜底缺省创建（非 fire 路径进 here 的形态）。
+    var transition = ev._zwTransitionObj;
+    var tSettle = ev._zwFinishTransition;
+    if (!transition) {
+      transition = { navigationType: ev.navigationType || null };
+      try { Object.setPrototypeOf(transition, globalThis.NavigationTransition.prototype); } catch (_eNtP) {}
+      transition.from = ev._zwFromPub || null;
+      transition.to = ev.destination || null;
+      transition.finished = new Promise(function (res, rej) { tSettle = function (err) { err ? rej(err) : res(undefined); }; });
+      _navTransition = transition;
+      ev._zwFinishTransition = function (err) { if (tSettle) tSettle(err); };
+      ev._zwClearTransition = function () { if (_navTransition === transition) _navTransition = null; };
+    }
     // M2-S4G：transition 生命周期对齐 spec success/failure steps——**navigatesuccess/
     // navigateerror 派发时 transition 仍暴露**（Recorder 于事件监听器内挂
     // transition.finished——ordering 簇），settled 后再 resolve transition.finished、最后清。
@@ -5728,6 +5763,7 @@
     ev._zwClearTransition = clearTransition;
     // M2-S4G：链期 abort 用**链感知 wrapper**（先落链 settled 门——doCommit/runNext 的守卫
     // 读闭包 `settled`，window.stop 等外部 abort 须过此路径；再走 ev 级 fn 派 abort 序）。
+    var settled = false;
     var _navAbortOngoing = function (reason) {
       if (settled) return;
       settled = true;
@@ -5735,7 +5771,6 @@
     };
     _navOngoing = { ev: ev, abort: _navAbortOngoing };
     var idx = 0;
-    var settled = false;
     function runNext() {
       if (settled) return;
       // 链读取放 runNext 内（M2-S4G——precommitHandler 经 controller.addHandler 追加后可见）。
