@@ -5324,7 +5324,12 @@
         // M2-S4G：navigate({state}) → entry **navState** 槽（与 classic history.state 分槽——
         // pushState 只入 classic；WPT redirect-options「currentEntry.getState() 反映 redirect
         // state」）。
-        if (ev._zwBind && ev._zwBind.rec) ev._zwBind.rec.navState = st;
+        // M2-S4N：入槽即结构化克隆（spec StructuredSerializeForStorage 在导航时——页面脚本
+        // 后续对原对象的变更不得渗入已存状态；WPT state away-and-back「entry1.getState()
+        // 不含 startvar2」别名污染面）。
+        if (ev._zwBind && ev._zwBind.rec && st !== undefined) {
+          ev._zwBind.rec.navState = _zw_structured_clone(st, typeof WeakMap !== 'undefined' ? new WeakMap() : new Map());
+        }
         // M2-S4D：restore 规格（push/replace——destination fragment 锚滚 | 无 fragment 滚到文档
         // 顶；WPT scroll-behavior manual-scroll-resets-when-no-fragment / -fragment-does-not-exist）。
         ev._zwRestore = _navRestoreSpecForUrl(u);
