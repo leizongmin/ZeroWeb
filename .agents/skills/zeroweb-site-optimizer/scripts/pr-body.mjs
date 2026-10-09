@@ -72,10 +72,45 @@ export function checkBody(body) {
     const section = visible.match(new RegExp(`^## ${heading}\\s*\\n([\\s\\S]*?)(?=^## |$(?![\\s\\S]))`, 'm'));
     requireValue(section && text(section[1]), `Missing PR section: ${heading}`);
   }
+  // 图片引用必须是已上传的 GitHub 持久附件——本地/相对路径在 PR 页面必然破图
+  // （2026-10-09 PR #117 实测：对比表残留运行目录相对路径漏发布），发布前在此拦下。
+  for (const [, target] of visible.matchAll(/!\[[^\]]*\]\(([^()\s]+)[^)]*\)/g)) {
+    requireValue(attachmentUrl(target), `Image reference is not an uploaded attachment: ${target}`);
+  }
 }
 
-/** 核验回读正文、当前汇总和截图映射；实际下载/呈现由所引用的人机证据证明。 */
-export async function verifyPresentation(root, task, state) {
+const imageMagic = [
+  [0x89, 0x50, 0x4e, 0x47], // PNG
+  [0xff, 0xd8, 0xff], // JPEG
+  [0x47, 0x49, 0x46, 0x38], // GIF87a/89a
+  [0x52, 0x49, 0x46, 0x46], // RIFF（WebP 容器）
+];
+
+/** 附件探活：GET 首块字节，须 2xx 且为真实图片（魔数或 image/* 类型）。
+ * 入口 URL 已由 attachmentUrl 限定为 GitHub 附件域；重定向按浏览器语义跟随
+ * （附件 302 到 S3 预签名地址），不带凭据、仅读首块字节；网络失败/超时一律按不可达处理。 */
+export async function attachmentAccessible(url, fetchImpl = fetch) {
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      headers: { range: 'bytes=0-15' },
+      signal: AbortSignal.timeout(15_000),
+      redirect: 'follow',
+    });
+  } catch {
+    return false;
+  }
+  if (!response.ok) return false;
+  const type = (response.headers.get('content-type') ?? '').toLowerCase();
+  if (type.startsWith('image/')) return true;
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  return imageMagic.some(sig => sig.every((byte, i) => bytes[i] === byte));
+}
+
+/** 核验回读正文、当前汇总和截图映射；实际下载/呈现由所引用的人机证据证明。
+ * options.probeAttachment 供离线测试注入；线上逐个探活附件 URL（2xx + 图片内容）。 */
+export async function verifyPresentation(root, task, state,
+  { probeAttachment = attachmentAccessible } = {}) {
   if (!task.delivery.presentation) return false;
   const report = await readJson(await evidence(root, task.delivery.presentation));
   requireValue(report.schema_version === 1 && report.task_id === task.id,
@@ -124,6 +159,8 @@ export async function verifyPresentation(root, task, state) {
         && Number.isSafeInteger(capture.height) && capture.height > 0,
       'Screenshot verification evidence mismatch');
       await evidence(root, capture.download_ref);
+      // 上传后仍可能失效（附件被删/仓库权限变化）；就绪门禁逐个探活当前可达性。
+      requireValue(await probeAttachment(image.url), `Attachment not accessible: ${image.url}`);
     }
   }
   return true;

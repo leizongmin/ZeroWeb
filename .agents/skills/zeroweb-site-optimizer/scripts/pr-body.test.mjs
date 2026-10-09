@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { attachmentUrl, checkBody, reviewSection, verifyPresentation } from './pr-body.mjs';
+import { attachmentAccessible, attachmentUrl, checkBody, reviewSection, verifyPresentation } from './pr-body.mjs';
 import { checkRemote } from './delivery-check.mjs';
 
 const hash = data => createHash('sha256').update(data).digest('hex');
@@ -40,7 +40,7 @@ async function fixture(t) {
   async function check() {
     report.body_ref = await save(body);
     task.delivery.presentation = await save(report);
-    return verifyPresentation(root, task, state);
+    return verifyPresentation(root, task, state, { probeAttachment: async () => true });
   }
   return { root, state, task, report, save, raw, check, get body() { return body; },
     set body(value) { body = value; } };
@@ -120,4 +120,46 @@ test('draft CLI has no remote dependency and rejects the raw template', async t 
     { encoding: 'utf8', timeout: 5000 });
   assert.equal(invoke(path.join(f.root, ref.path)).status, 0);
   assert.equal(invoke(fileURLToPath(new URL('../templates/github-pr.md', import.meta.url))).status, 2);
+});
+
+test('body image references must be uploaded attachments, not local paths', () => {
+  // PR #117 实测回归：对比表残留运行目录相对路径，附件 URL 另起一行漏替换。
+  const f = { body: `## 解决了什么\n修复返回。\n\n## 怎么验证\n真实任务回归。\n\n## 还有什么问题\n无。\n\n## 优化前后截图\n\n| 前 | 后 |\n|---|---|\n| ![前](evidence/t2l-zw-home-p6b.png) | ![后](evidence/t2l-zw-home-p6c.png) |\n\n## 独立审查\n\n| 环节 | 报告状态 |\n|---|---|\n` };
+  assert.throws(() => checkBody(f.body), /not an uploaded attachment.*evidence\//);
+  assert.throws(() => checkBody(f.body.replace(/evidence\/t2l-zw-home-p6[bc]\.png/g, './shot.png')), /not an uploaded attachment/);
+  assert.doesNotThrow(() => checkBody(f.body
+    .replace('](evidence/t2l-zw-home-p6b.png)', `](${before})`)
+    .replace('](evidence/t2l-zw-home-p6c.png)', `](${after})`)));
+  // 围栏代码块内的示例不拦截：表格用合法附件 URL，代码块里保留本地路径样例。
+  const fenced = f.body
+    .replace('](evidence/t2l-zw-home-p6b.png)', `](${before})`)
+    .replace('](evidence/t2l-zw-home-p6c.png)', `](${after})`)
+    .replace('## 优化前后截图\n', '## 优化前后截图\n\n```\n![示例](evidence/local.png)\n```\n');
+  assert.doesNotThrow(() => checkBody(fenced));
+});
+
+test('ready gate probes each attachment URL and rejects unreachable ones', async t => {
+  const f = await fixture(t);
+  assert.equal(await f.check(), true);
+  await assert.rejects(
+    verifyPresentation(f.root, f.task, f.state, { probeAttachment: async () => false }),
+    /Attachment not accessible/,
+  );
+});
+
+test('attachmentAccessible requires 2xx plus image magic or content type', async t => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  const html = new Uint8Array([0x3c, 0x68, 0x74, 0x6d, 0x6c, 0x3e]);
+  const respond = (status, body, type) => async url => {
+    assert.match(String(url), /^https:\/\/github\.com\//);
+    return { ok: 200 <= status && status < 300, status,
+      headers: { get: key => (key === 'content-type' ? type : null) },
+      arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) };
+  };
+  assert.equal(await attachmentAccessible(before, respond(200, png, 'binary/octet-stream')), true);
+  assert.equal(await attachmentAccessible(before, respond(206, png, null)), true);
+  assert.equal(await attachmentAccessible(before, respond(200, html, 'text/html')), false);
+  assert.equal(await attachmentAccessible(before, respond(200, html, 'image/png')), true);
+  assert.equal(await attachmentAccessible(before, respond(404, png, 'image/png')), false);
+  assert.equal(await attachmentAccessible(before, async () => { throw new Error('down'); }), false);
 });

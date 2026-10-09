@@ -51,6 +51,9 @@ PR description 是评审入口：按问题 ID/任务场景说明原行为、新�
 4. 创建/更新后回读 PR，核对 head SHA、base/head、最终正文与预期附件数量，确认
    每组 before/after 的图片引用已替换为 GitHub 返回的持久附件 URL。不得拼造 URL，
    不使用本地路径、临时签名 URL 或仓库 blob/raw 链接替代。
+   正文中的图片引用由检查器机械校验：`delivery-check.mjs draft` 即拒绝非附件
+   URL 的 `![…]` 引用（含本地/相对路径，2026-10-09 PR #117 对比表漏替换实测），
+   ready 阶段再对每个附件 URL 逐个探活（2xx + 图片魔数/类型），不可达即拒绝。
 5. 按目标权限下载附件到私有临时目录，核对内容类型、尺寸和 SHA-256；只访问核对过
    的 GitHub 附件域名，不向任意重定向目标转发认证头。实际查看 PR 页面中图片是否
    加载、前后是否对应。仅下载成功时写“附件内容已核验、PR 呈现未验证”。
@@ -111,6 +114,10 @@ PR description 是评审入口：按问题 ID/任务场景说明原行为、新�
 5. 主控在运行目录保存不可变 merge 意图（唯一 operation ID、repo/PR、head/base），
    再执行获准的普通合并。未知结果先查询服务端，核验 merge commit、目标分支及包含
    关系后保存结果；没有确认前不重试合并、不派发依赖任务。
+   合并确认后删除该 PR 的远端 head 分支（`git push origin --delete <branch>`），
+   避免任务分支长期累积；同分支仍有开启 PR（串行 PR 复用运行分支）时保留并在
+   merge 回执记 branch_kept_reason，待该分支最后一个 PR 合并时删除。回执记录
+   head_branch 与 branch_deleted；删除失败如实记录，不静默跳过。
 6. 确认本任务工作已提交、工作区干净且没有在途 worker 后，在同一工作区 fetch，
    切回约定的集成分支（默认 main）并仅快进到最新远端 SHA；本地分支不存在则从该
    SHA 创建。分叉、被其他 worktree 占用或出现他人改动时保留现场并报告阻塞，
