@@ -360,13 +360,14 @@ fn handle_attr_absent_and_remove_faces_s48() {
 }
 
 // slice48（t8m 页面加载生命周期：document.readyState 三态 + readystatechange 双过渡派发）：
-// 红证据（bilibili 运行 evidence/t8m-lifecycle/，2026-10-09）：native getter 硬编码
-// "complete" → 页面脚本执行期（React/Next hydration 调度门控读点）恒 complete +
+// 红证据（bilibili 运行 evidence/t8m-lifecycle/，2026-10-09）：shim document readyState
+// 为 plain 属性硬编码 "complete"（part06.js）→ 页面脚本执行期（React/Next hydration
+// 调度门控读点）恒 complete +
 // 全页零 readystatechange——事件序「先 complete 后 DCL」在真实浏览器不可能出现，
 // 框架生命周期假设错乱（#425/#418 水合错误簇根因）。Chrome oracle：脚本期 loading →
 // rs(interactive) → DCL → rs(complete) → load，各恰 1 次。
-// 修复面（三件）：①native getter 读 shim 全局 `__zwReadyState`（未注入/非字符串/越界值
-// 缺省 "complete"——WPT run_script 模型零回归）；②script_gen `script_set_ready_state`/
+// 修复面（三件）：①shim readyState 改 getter 读宿主全局 `__zwReadyState`（未注入/非字符串/越界值
+// 缺省 "complete"——WPT run_script 模型零回归；native 模板 document.rs 不读它，保持固定值）；②script_gen `script_set_ready_state`/
 // `script_transition_ready_state` 过渡命令（赋值 + 派发原子单串）；③shim
 // `__zw_dispatch_event` readystatechange 分支——plain Event 不冒泡不可取消，经
 // `_dispatchWithBubble` targetSlot='doc'（R40 document target 语义：event.target =
@@ -438,9 +439,11 @@ fn ready_state_default_complete_and_host_whitelist_s48() {
 
 /// t8m 钉②：三态过渡序 + readystatechange 派发契约（spec HTML §the end）。
 /// 断言翻转语义：①getter 回硬编码 → 脚本期 loading / handler 内 rs 值断言红；
-/// ②过渡命令撤除或派发与赋值分裂（分两次提交）→ 序列 join / rs 恰 2 次断言红；
+/// ②过渡命令撤除 → 序列 join / rs 恰 2 次断言红（赋值+派发原子单串防生产队列中间态
+/// 插入——该插入面单测模型不可构造，集成序由探针证据保证）；
 /// ③shim 分支落泛型（bubbles:true）→ bubbles/cancelable/window-rs 监听断言红；
-/// ④targetSlot='doc' 撤（落 html 元素 target）→ `e.target === document` 断言红。
+/// ④targetSlot='doc' 撤（落 html 元素 target）→ `e.target === document` 断言红；
+/// ⑤'readystatechange' 未列入 _defineDocOnHandler → IDL `__rsIdl` 计数恒 0 断言红。
 #[test]
 fn ready_state_lifecycle_transitions_and_rs_dispatch_s48() {
     use std::sync::{Arc, Mutex};
@@ -474,7 +477,9 @@ fn ready_state_lifecycle_transitions_and_rs_dispatch_s48() {
              document.addEventListener('DOMContentLoaded', function () { window.__evts.push('DCL:' + document.readyState); });\
              window.addEventListener('load', function () { window.__evts.push('load:' + document.readyState); });\
              globalThis.__rsFlags = {};\
-             document.addEventListener('readystatechange', function (e) { globalThis.__rsFlags.bubbles = e.bubbles; globalThis.__rsFlags.cancelable = e.cancelable; globalThis.__rsFlags.targetIsDoc = (e.target === document); globalThis.__rsFlags.trusted = e.isTrusted; });",
+             document.addEventListener('readystatechange', function (e) { globalThis.__rsFlags.bubbles = e.bubbles; globalThis.__rsFlags.cancelable = e.cancelable; globalThis.__rsFlags.targetIsDoc = (e.target === document); globalThis.__rsFlags.trusted = e.isTrusted; });\
+             globalThis.__rsIdl = 0;\
+             document.onreadystatechange = function () { globalThis.__rsIdl++; };",
         )
         .unwrap();
 
@@ -517,5 +522,11 @@ fn ready_state_lifecycle_transitions_and_rs_dispatch_s48() {
         sandbox.execute("window.__evts.indexOf('rs-win')").unwrap().value,
         "-1",
         "window 侧 readystatechange 监听不触发"
+    );
+    // document.onreadystatechange IDL handler 经 doc 槽位触达（defect-r1 N1）。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rsIdl)").unwrap().value,
+        "2",
+        "IDL document.onreadystatechange 每次过渡各触发 1 次（共 2 次）"
     );
 }

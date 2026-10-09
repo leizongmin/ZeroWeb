@@ -4497,7 +4497,11 @@
     'transitionstart', 'transitionend', 'transitionrun', 'transitioncancel',
     'securitypolicyviolation', 'slotchange', 'scroll',
   ].forEach(_defineDocOnHandler);
-  ['fullscreenchange', 'fullscreenerror', 'pointerlockchange', 'pointerlockerror', 'DOMContentLoaded'].forEach(_defineDocOnHandler);
+  // t8m 返修（defect-r1 N1）：readystatechange 补入 Document IDL 事件处理器（spec
+  // https://html.spec.whatwg.org/multipage/webappapis.html#handler-onreadystatechange ）——
+  // setter 经 document.addEventListener 落 doc 槽位，与 __zw_dispatch_event
+  // targetSlot='doc' 派发同链路可触（`document.onreadystatechange = fn` 随过渡各触发 1 次）。
+  ['fullscreenchange', 'fullscreenerror', 'pointerlockchange', 'pointerlockerror', 'DOMContentLoaded', 'readystatechange'].forEach(_defineDocOnHandler);
 
   // R2947 CSS Font Loading API：`document.fonts` FontFaceSet——@font-face 字体加载事件的 JS 入口。
   // 常见用法：`document.fonts.ready.then(重排/重测)`（字体加载库 / icon font / FOUT 处理）、

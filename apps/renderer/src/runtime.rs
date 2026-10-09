@@ -558,8 +558,8 @@ impl RendererRuntime {
         let js_enabled = self.javascript_enabled;
         let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let skip = page_scripts::should_skip_scripts(&current_url);
-        // t8m：页面脚本阶段起点——readyState 置 "loading"（native getter 读 shim 全局
-        // `__zwReadyState`）。与阶段脚本同优先通道同步执行（execute_chunk 同款
+        // t8m：页面脚本阶段起点——readyState 置 "loading"（shim readyState getter 读状态宿
+        // 全局 `__zwReadyState`）。与阶段脚本同优先通道同步执行（execute_chunk 同款
         // `execute_script_direct_priority`），保证先于首条页面脚本；导航让路中止时新文档
         // 的阶段起点会再次无条件复位（同 isolate 跨文档天然复位）。
         if js_enabled && !skip {

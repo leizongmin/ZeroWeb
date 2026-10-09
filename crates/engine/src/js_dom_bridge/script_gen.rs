@@ -127,7 +127,8 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
 }
 
 /// 构造「设置 document.readyState 状态宿」的脚本（t8m，spec `dom-document-readystate`）。
-/// 写 shim 全局 `__zwReadyState`——native getter（`dom_bindings/document.rs`）读该全局，
+/// 写 shim 全局 `__zwReadyState`——页面可见 shim document 的 readyState getter（part06.js）
+/// 读该全局（`dom_bindings/document.rs` native 模板不读它，按 run_script 模型保持固定值），
 /// 未注入/非字符串/非规范三态值缺省 "complete"。宿主在页面脚本阶段起点提交
 ///（state="loading"），与首条页面脚本同执行通道 FIFO 保序（renderer 走
 /// `execute_script_direct_priority` 同步执行，保证先于阶段脚本）。

@@ -205,8 +205,8 @@ impl PageScriptRunner {
     }
 }
 
-/// t8m：页面脚本阶段起点——readyState 置 "loading"（native getter 读 shim 全局
-/// `__zwReadyState`）。在 `PageScriptRunner::start` 成功后、首个 `tick` 前调用（同步
+/// t8m：页面脚本阶段起点——readyState 置 "loading"（shim readyState getter 读状态宿
+/// 全局 `__zwReadyState`）。在 `PageScriptRunner::start` 成功后、首个 `tick` 前调用（同步
 /// execute 保序）；同 isolate 跨文档由下一文档的阶段起点无条件复位。与 renderer
 /// `runtime::after_page_html_loaded_with_cache` 的阶段起点注入对齐。
 pub fn script_phase_begin(js_worker: Option<&TabJsWorkerHandle>) {
