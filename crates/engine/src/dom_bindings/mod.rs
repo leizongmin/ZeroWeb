@@ -591,6 +591,14 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     // 5. 全局工厂 __zw_native_create_element(tag) —— spec `dom-document-createelement`：
     //    `Document::create_element` 造新 Element NodeId → native 对象（未挂载，appendChild 落位）。
     //    解锁原生树构建（createElement + appendChild 全 native，无 polyfill String 桥）。
+    // 5b. M2-S4O（navigation-compat）__zw_native_set_document_url(url)——同文档内存导航的
+    //     live doc URL 同步（`:target` 判定读 doc.url；导航 shim chokepoint 调用）。
+    let sdu = v8::FunctionTemplate::builder(factories::native_set_document_url_invoke).build(scope);
+    let sdu_fn = sdu.get_function(scope);
+    let sdu_key = v8::String::new(scope, "__zw_native_set_document_url");
+    if let (Some(f), Some(key)) = (sdu_fn, sdu_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
     let ce = v8::FunctionTemplate::builder(factories::native_create_element_invoke).build(scope);
     let ce_fn = ce.get_function(scope);
     let ce_key = v8::String::new(scope, "__zw_native_create_element");

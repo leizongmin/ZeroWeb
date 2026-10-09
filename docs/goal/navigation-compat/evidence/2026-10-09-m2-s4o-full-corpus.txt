@@ -64,7 +64,7 @@ curl: (22) The requested URL returned error: 404
   4. 回填：docs/compat/trends/wpt-suites.csv planned 行转数据行（evidence 列给来源）
 rustc -O scripts/test-guard.rs -o target/test-guard
 cargo build --release --bin zero-wpt-runner
-    Finished `release` profile [optimized] target(s) in 0.21s
+    Finished `release` profile [optimized] target(s) in 0.40s
 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 2700 -- ./target/release/zero-wpt-runner testharness-navigation 
 Fail navigation-api/currententrychange-event/anchor-click.html :: currententrychange fires for link click
   assert_equals: expected object "[object Object]" but got object "[object Object]"
@@ -233,10 +233,8 @@ Pass navigation-api/navigation-methods/navigate-info-and-state.html :: navigate(
 Fail navigation-api/navigation-methods/navigate-intercept-history-state.html :: history.story should be nulled by navigate() handled by intercept()
   assert_equals: expected (object) null but got (undefined) undefined
 Pass navigation-api/navigation-methods/navigate-replace-same-document.html :: navigate() with history: 'replace' option
-Fail navigation-api/navigation-methods/navigate-same-document.html :: navigate() navigates same-document and fires onnavigate (sync)
-  assert_equals: expected Element node <div id="d"></div> but got null
-Fail navigation-api/navigation-methods/navigate-same-document.html :: navigate() navigates same-document and fires onnavigate (async)
-  assert_equals: expected Element node <div id="d"></div> but got null
+Pass navigation-api/navigation-methods/navigate-same-document.html :: navigate() navigates same-document and fires onnavigate (sync)
+Pass navigation-api/navigation-methods/navigate-same-document.html :: navigate() navigates same-document and fires onnavigate (async)
 Pass navigation-api/navigation-methods/navigate-state-repeated-await.html :: navigate() with state should work correctly when called repeatedly - with awaits
 Pass navigation-api/navigation-methods/navigate-state-repeated.html :: navigate() with state should work correctly when called repeatedly
 Fail navigation-api/navigation-methods/reload-service-worker-fetch-event.html :: navigation-api/navigation-methods/reload-service-worker-fetch-event.html
@@ -648,8 +646,7 @@ Fail html/browsers/browsing-the-web/scroll-to-fragid/scroll-to-id-top.html :: Fr
   assert_equals: expected 200 but got 0
 Fail html/browsers/browsing-the-web/scroll-to-fragid/scroll-to-top.html :: Fragment Navigation: When fragid is TOP scroll to the top of the document
   assert_not_equals: got disallowed value 0
-Fail html/browsers/browsing-the-web/scroll-to-fragid/target-pseudo-after-reinsertion.html :: :target should match the target element even after it is removed and reinserted.
-  assert_equals: :target should match before reinsertion. expected Element node <div id="target">target</div> but got null
+Pass html/browsers/browsing-the-web/scroll-to-fragid/target-pseudo-after-reinsertion.html :: :target should match the target element even after it is removed and reinserted.
 Fail html/browsers/browsing-the-web/unloading-documents/prompt-and-unload-script-closeable.html :: beforeunload and unload events fire after window.close() in script-closeable browsing context
   window.close is not a function
 Fail html/semantics/embedded-content/the-iframe-element/iframe_sandbox_allow_top_navigation_by_user_activation_with_user_gesture.html :: iframe_sandbox_allow_top_navigation_by_user_activation_with_user_gesture

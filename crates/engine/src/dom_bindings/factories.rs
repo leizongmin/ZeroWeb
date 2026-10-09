@@ -96,6 +96,22 @@ pub(super) fn native_query_selector_all_invoke(
     rv.set(arr.into());
 }
 
+/// `__zw_native_set_document_url(url)`：同文档导航的 URL 同步——内存导航
+///（hash-setter/href/assign/pushState/replaceState/navigate）不重载文档，live doc 的
+/// `url` 槽停留在载入时值 → `:target`（[`zero_dom::Document::is_target_element`] 读
+/// `self.url`）恒 miss。由导航 shim 在 URL 变更 chokepoint 调用（spec：文档 URL 随
+/// session history entry 切换更新——HTML §7.11 URL and history update steps）。
+/// 失败静默（best-effort，URL 同步不应阻断导航）。
+pub(super) fn native_set_document_url_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let url = string_arg(scope, &args, 0);
+    let _ = with_dom_mut(|d| d.set_url(if url.is_empty() { None } else { Some(url) }));
+    rv.set(v8::undefined(scope).into());
+}
+
 /// `__zw_native_create_element(tag)`：spec `dom-document-createelement`——
 /// `Document::create_element(tag)` 造新 Element NodeId → native 对象（**未挂载**，需 appendChild）。
 /// 空/缺省 tag → `div`（与 polyfill create_element 一致，spec 实际应抛，本切片 best-effort）。

@@ -4788,6 +4788,15 @@
   // M2-S4B：push/replace 应用共通内部（**不派 navigate**——调用方先行派发并防中止；
   // history.pushState/replaceState 与 navigation.navigate() 共用）。含 S4 的 Navigation API
   // push/replace CCE 面。M2-S4C：bind 单元格提交后绑记录（destination 动态 index/getState）。
+  // M2-S4O：同文档 URL 变更同步——`:target` 判定读文档 URL 槽（shim `_zwFragmentUrl`
+  // 供 R160/R173 查询路径 + 原生 live doc url 供 `Document::is_target_element`）。
+  // 内存导航（hash-setter/href/assign/replace/pushState/replaceState/navigate）不重载
+  // 文档，两层 URL 槽不更新则 `:target` 永远落在载入时 fragment（WPT
+  // navigate-same-document「querySelector(':target')」；HTML URL and history update steps）。
+  function _zwSyncDocUrl(u) {
+    try { if (globalThis.document) globalThis.document._zwFragmentUrl = u; } catch (_eSd1) {}
+    try { if (typeof __zw_native_set_document_url === 'function') __zw_native_set_document_url(u); } catch (_eSd2) {}
+  }
   function _histApplyNav(state, url, replace, bind) {
     _histSaveCurrentScroll(); // M2-S4D：离开当前 entry 前存滚动位
     if (replace) {
@@ -4795,7 +4804,7 @@
       if (newUrl === null && url != null && String(url) !== '') return; // 跨源已抛
       var cur = _hist_current();
       cur.state = state;
-      if (newUrl !== null) cur.url = newUrl;
+      if (newUrl !== null) { cur.url = newUrl; _zwSyncDocUrl(newUrl); }
       var freshR = _navReplaceCurrent(cur);
       if (bind) bind.rec = freshR;
       return;
@@ -4807,6 +4816,7 @@
     var _zwHe = { state: state, url: newUrl2, scrollRestoration: _zwSR };
     _hist_entries.push(_zwHe);
     _hist_cursor = _hist_entries.length - 1;
+    if (newUrl2 !== null) _zwSyncDocUrl(newUrl2);
     var freshP = _navPushCurrent(_zwHe);
     if (bind) bind.rec = freshP;
   }
@@ -5997,6 +6007,7 @@
     _hist_entries = _hist_entries.slice(0, _hist_cursor + 1);
     _hist_entries.push({ state: null, url: newHref, scrollRestoration: _zwSR });
     _hist_cursor = _hist_entries.length - 1;
+    _zwSyncDocUrl(newHref);
     if (String(oldHref).split('#')[1] !== String(newHref).split('#')[1]) {
       var oldU = oldHref, newU = newHref;
       _defer(function () {
@@ -6143,6 +6154,7 @@
   // 与 replaceState 对称——pushState/replaceState 不触发 popstate）。供 location.replace 复用（DRY，与 _pushHistNav 对称）。
   function _replaceHistNav(newHref, oldHref) {
     _hist_current().url = newHref;
+    _zwSyncDocUrl(newHref);
     if (String(oldHref).split('#')[1] !== String(newHref).split('#')[1]) {
       var oldU = oldHref, newU = newHref;
       _defer(function () {
