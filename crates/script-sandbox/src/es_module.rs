@@ -322,6 +322,36 @@ fn split_from_clause(clause: &str) -> Option<(&str, &str)> {
     None
 }
 
+// https://tc39.es/ecma262/#sec-imports — ImportClause 仅允许 ImportedDefaultBinding、
+// `*` NameSpaceImport、NamedImports（前两者可 `,` 组合）。识别到 import 关键字不代表
+// 语句形态合法：非绑定形态语句（webpack bundle 的 `export const __webpack_modules__=
+// {…}` 巨型赋值实测，react-core 2026-10-09）会把正文里错误消息字符串的
+// `from \`react-router/dom\`` 文本当 from 子句切出幻影依赖 → 404 → 模块编译整体失败
+// → 站点 chunk 加载三连重试后报错。绑定/名字部分只含标识符与标点，先验形态再扫 from。
+fn import_clause_shape_ok(clause: &str) -> bool {
+    match clause.chars().next() {
+        // 字符串形态（import"m"）、命名空间、命名导入
+        Some('{') | Some('*') | Some('\'') | Some('"') | Some('`') => true,
+        Some(first) if first.is_alphanumeric() || first == '_' || first == '$' => {
+            // ImportedDefaultBinding：IDENT 后只允许空白与 `from`/`,`
+            let ident_end = clause
+                .char_indices()
+                .find(|(_, c)| !(c.is_alphanumeric() || *c == '_' || *c == '$'))
+                .map_or(clause.len(), |(i, _)| i);
+            let after_ident = clause[ident_end..].trim_start();
+            after_ident.starts_with("from") || after_ident.starts_with(',')
+        }
+        _ => false,
+    }
+}
+
+// https://tc39.es/ecma262/#sec-exports — 再导出仅 `export {…}` 与 `export *`（可带
+// from 子句）。`export const …` 等声明形态不是再导出，须整句跳过（防线上移到形态
+// 检查，理由同 [`import_clause_shape_ok`]）。
+fn reexport_clause_shape_ok(clause: &str) -> bool {
+    matches!(clause.chars().next(), Some('{') | Some('*'))
+}
+
 /// 仅提取**静态** `import` 依赖标识符（不含 `import()` 动态导入）。
 /// 供动态 import() 运行时 fetch 路径（R3093）：预注册空存根只用静态 import（headless 单遍，transitive defer），
 /// 动态 import() 留给运行时 `__zw_load_module → __zw_compile_module` fetch——避免预存根（empty namespace）
@@ -331,8 +361,14 @@ pub fn extract_static_module_import_specifiers(source: &str) -> Vec<String> {
     for stmt in split_statements(source) {
         let trimmed = stmt.trim();
         let specifier = if let Some(clause) = strip_import_keyword(trimmed) {
+            if !import_clause_shape_ok(clause) {
+                continue;
+            }
             extract_import_specifier(clause)
         } else if let Some(clause) = strip_export_keyword(trimmed) {
+            if !reexport_clause_shape_ok(clause) {
+                continue;
+            }
             extract_reexport_specifier(clause)
         } else {
             continue;
@@ -2666,6 +2702,56 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         // 不得误伤：动态 import( 表达式、import.meta 元属性、含 import 前缀的标识符
         let src = "const x = import.meta.url; important(); var y = import('./dyn.js');";
         assert!(extract_static_module_import_specifiers(src).is_empty());
+    }
+
+    #[test]
+    fn test_export_declaration_body_string_not_extracted_as_reexport() {
+        // github react-core 真实形态（2026-10-09 pricing 活体）：`export const __webpack_modules__=
+        // {…}` 巨型赋值的正文含错误消息字符串，串内 `from \`react-router/dom\`` 文本被
+        // split_from_clause 当 from 子句 → 幻影依赖 → fetch 404 → 模块编译整体失败 →
+        // 站点 chunk（cmi）三次重试后报 `Loading chunk cmi failed`。声明形态须整句跳过。
+        let src = concat!(
+            "export const __webpack_modules__={e(){aR(!1,'You provided the `flushSync` option ",
+            "to a router update, but you are not using the `<RouterProvider>` from ",
+            "`react-router/dom` so `ReactDOM.flushSync()` is unavailable.  Please update your ",
+            "app to `import { RouterProvider } from \"react-router/dom\"` and ensure.');}};"
+        );
+        assert!(
+            extract_static_module_import_specifiers(src).is_empty(),
+            "红态：声明语句正文字符串里的 from 形态被当再导出切出幻影依赖"
+        );
+    }
+
+    #[test]
+    fn test_import_clause_shape_guard_rejects_non_binding_forms() {
+        // import 侧同防线：IDENT 后跟 `=`/`(` 等非 from/`,` 形态不是 ImportClause
+        let src = "import d={from\"phantom\"};import x(from'phantom2');";
+        assert!(extract_static_module_import_specifiers(src).is_empty());
+    }
+
+    #[test]
+    fn test_clause_shape_guard_keeps_real_import_forms() {
+        // 形态守卫不得误伤真实 import 形态：默认/组合/命名空间/字符串/压缩形态
+        let src = concat!(
+            "import d from\"./d.js\";",
+            "import x, {a as b} from './c.js';",
+            "import*as ns from\"./ns.js\";",
+            "import{p}from\"./p.js\";",
+            "import\"./side.js\";"
+        );
+        assert_eq!(
+            extract_static_module_import_specifiers(src),
+            vec!["./d.js", "./c.js", "./ns.js", "./p.js", "./side.js"]
+        );
+    }
+
+    #[test]
+    fn test_reexport_shape_guard_keeps_real_reexport_forms() {
+        let src = "export{a}from\"./x.js\";export*from\"./y.js\";export*as ns from\"./z.js\";export const k=1;";
+        assert_eq!(
+            extract_static_module_import_specifiers(src),
+            vec!["./x.js", "./y.js", "./z.js"]
+        );
     }
 
     #[test]
