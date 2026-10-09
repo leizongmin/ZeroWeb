@@ -699,6 +699,47 @@ fn test_parse_background_image_url_quoted() {
     );
 }
 
+// R5021：filter(<image>, <filter-value-list>?) 图像函数（filter-effects-1
+// #FilterCSSImageValue）——顶层逗号分参（渐变内逗号不越级）、image 递归、
+// filter 列表复用 filter 属性语法。
+#[test]
+fn test_parse_background_image_filter_function() {
+    use crate::values::FilterValue;
+    // 渐变 + 单滤镜（filter-function-linear-gradient 案形态）
+    match parse_background_image("filter(linear-gradient(red, orange), invert(1))") {
+        Some(BackgroundImageValue::Filtered { image, filters }) => {
+            assert_eq!(
+                *image,
+                BackgroundImageValue::Gradient(parse_gradient("linear-gradient(red, orange)").unwrap())
+            );
+            assert_eq!(filters, vec![FilterValue::Invert(1.0)]);
+        }
+        other => panic!("filter() image function not parsed: {other:?}"),
+    }
+    // 嵌套滤镜参数内的空格（drop-shadow 四参）+ 多滤镜列表
+    match parse_background_image("filter(url(a.png), drop-shadow(50px 0 0 green) blur(2px))") {
+        Some(BackgroundImageValue::Filtered { image, filters }) => {
+            assert_eq!(*image, BackgroundImageValue::Url("a.png".to_string()));
+            assert_eq!(filters.len(), 2);
+        }
+        other => panic!("multi-filter list not parsed: {other:?}"),
+    }
+    // 单参形态 filter(<image>)：无滤镜
+    match parse_background_image("filter(linear-gradient(red, blue))") {
+        Some(BackgroundImageValue::Filtered { image, filters }) => {
+            assert!(matches!(*image, BackgroundImageValue::Gradient(_)));
+            assert!(filters.is_empty());
+        }
+        other => panic!("single-arg filter() not parsed: {other:?}"),
+    }
+    // <image> 不含 none；大小写不敏感
+    assert_eq!(parse_background_image("filter(none, invert(1))"), None);
+    assert!(matches!(
+        parse_background_image("FILTER(linear-gradient(red, blue), invert(0.5))"),
+        Some(BackgroundImageValue::Filtered { .. })
+    ));
+}
+
 #[test]
 fn test_parse_background_image_url_with_path() {
     assert_eq!(

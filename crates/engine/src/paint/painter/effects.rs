@@ -730,6 +730,18 @@ impl super::Painter {
                 }
             };
 
+            // R5021：filter(<image>, <filter-list>) 图像函数（filter-effects-1
+            // #FilterCSSImageValue）——内层图像按同一图层语法绘制，滤镜以 FilterPrimitive
+            // 紧随每个图像图元发射（draw_order 渲染按插入序应用 → 只滤镜已绘背景像素，
+            // 不影响其后绘制的内容/文本，与 ref 页「背景子元素单独 filter」同像）。
+            // Gradient 内层全支持；Url 内层暂不施加滤镜（FIXME: 图像解码面滤镜，
+            // corpus 未涉及）。
+            let layer_filters: Option<&Vec<FilterComputedValue>> = match layer {
+                BackgroundImageComputedValue::Filtered { filters, .. } => Some(filters),
+                _ => None,
+            };
+            let layer = layer.inner();
+
             // R4351：固有维回退逐层解析——img_w/img_h 的 positioning-area 回退必须用
             // **本层** origin（fixed 层 = 视口、scroll/local 层 = 元素/根盒）。旧实现
             // 在函数顶一次性取 origin_*（canvas 调用 = 视口），逐层 origin 切换后渐变
@@ -919,6 +931,9 @@ impl super::Painter {
                             gradient_to_primitive_with_font_size(gradient, &rect, &style.color, font_size as f32)
                         {
                             self.primitives.add_gradient(prim);
+                            if let Some(filters) = layer_filters {
+                                self.emit_image_layer_filter(rect, filters);
+                            }
                         }
                     } else {
                         let paint_area = Rect::new(clip_x, clip_y, clip_w, clip_h);
@@ -976,6 +991,9 @@ impl super::Painter {
                                 gradient_to_primitive_with_font_size(gradient, &rect, &style.color, font_size as f32)
                         {
                             self.primitives.add_gradient(prim);
+                            if let Some(filters) = layer_filters {
+                                self.emit_image_layer_filter(rect, filters);
+                            }
                         }
                         let mut y = y0;
                         while y < y1 {
@@ -1001,6 +1019,12 @@ impl super::Painter {
                                             prim.clip = Some(rc);
                                         }
                                         self.primitives.add_gradient(prim);
+                                        if let Some(filters) = layer_filters {
+                                            // 裁剪 tile 滤镜 rect 取交集（tile 原矩形越出
+                                            // painting area 的部分没有本 tile 像素可滤镜）。
+                                            let fr = if is_main { tile_rect } else { rc };
+                                            self.emit_image_layer_filter(fr, filters);
+                                        }
                                     }
                                 }
                                 x += step_w;
@@ -1009,6 +1033,8 @@ impl super::Painter {
                         }
                     }
                 }
+                // loop 顶 inner() 已剥 filter() 壳——静态穷尽防御臂（运行时不可达）。
+                BackgroundImageComputedValue::Filtered { .. } => {}
             }
         }
     }
@@ -1222,6 +1248,17 @@ impl super::Painter {
             box_node.height + 2.0 * outset_y,
         );
         self.primitives.add_filter(FilterPrimitive { rect, filters });
+    }
+
+    /// R5021：filter() 图像函数（filter-effects-1 #FilterCSSImageValue）——滤镜图元
+    /// 紧随其图像图元发射（同 rect）。draw_order 渲染按插入序应用 → 仅作用于已绘
+    /// 背景像素，不影响其后绘制的内容/文本（元素级 `filter` 属性的语义分界：后者
+    /// 滤镜整个元素含内容）。
+    fn emit_image_layer_filter(&mut self, rect: Rect, filters: &[FilterComputedValue]) {
+        let kinds: Vec<_> = filters.iter().filter_map(filter_computed_to_kind).collect();
+        if !kinds.is_empty() {
+            self.primitives.add_filter(FilterPrimitive { rect, filters: kinds });
+        }
     }
 
     /// R4273（filter-effects-1 #typedef-filter-url）：CSS `filter: url(#id)` 引用
@@ -1837,6 +1874,10 @@ impl super::Painter {
         let mask_rect = Rect::new(abs_x, abs_y, box_node.width, box_node.height);
 
         for layer in &style.mask_image {
+            // R5021：mask-image 的 filter() 图像函数——mask 蒙版面暂按内层图像施加，
+            // 滤镜不生效（FIXME: mask 像素面滤镜，corpus 未涉及；mask 渲染与背景
+            // 不同面，蒙版 clip 生成时机不宜插 FilterPrimitive）。
+            let layer = layer.inner();
             match layer {
                 BackgroundImageComputedValue::Gradient(gradient) => {
                     let font_size = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
@@ -1868,6 +1909,8 @@ impl super::Painter {
                     // URL 蒙版需要图像加载基础设施，暂不实现
                 }
                 BackgroundImageComputedValue::None => {}
+                // loop 顶 inner() 已剥 filter() 壳——静态穷尽防御臂（运行时不可达）。
+                BackgroundImageComputedValue::Filtered { .. } => {}
             }
         }
     }

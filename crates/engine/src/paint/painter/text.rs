@@ -80,6 +80,9 @@ pub(super) fn bg_clip_text_solid_color(
     let mut acc = resolve_color_current(&st.background_color, &st.color);
     let mut layer_idx = 0usize;
     for layer in &st.background_image {
+        // R5021：filter() 图像函数层——clip:text 纯色提取按内层图像取色
+        //（滤镜作用于最终绘制面，纯色近似不消费）。
+        let layer = layer.inner();
         let c = match layer {
             BackgroundImageComputedValue::None => continue,
             BackgroundImageComputedValue::Gradient(g) => gradient_solid_color(g, &st.color)?,
@@ -94,6 +97,8 @@ pub(super) fn bg_clip_text_solid_color(
                 let rgba = solid_colors.get(&key).filter(|_| tiled)?;
                 Color::rgba(rgba[0], rgba[1], rgba[2], rgba[3])
             }
+            // loop 顶 inner() 已剥 filter() 壳——静态穷尽防御臂（运行时不可达）。
+            BackgroundImageComputedValue::Filtered { .. } => continue,
         };
         acc = color_over(c, acc);
         layer_idx += 1;

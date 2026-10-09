@@ -637,6 +637,25 @@ pub enum BackgroundImageValue {
     Url(String),
     /// 渐变函数 — linear-gradient / radial-gradient / conic-gradient。
     Gradient(GradientValue),
+    /// filter(<image>, <filter-value-list>?) — 对图像施加滤镜的图像函数
+    ///（filter-effects-1 #FilterCSSImageValue：https://drafts.fxtf.org/filter-effects-1/#funcdef-filter）。
+    /// 滤镜列表空（`filter(<image>)`）= 无滤镜等价内层图像。
+    Filtered {
+        /// 被滤镜的内层图像（url / gradient / 嵌套 filter）。
+        image: Box<BackgroundImageValue>,
+        /// 空格分隔的滤镜函数列表（filter 属性同一语法，可为空）。
+        filters: Vec<FilterValue>,
+    },
+}
+
+impl BackgroundImageValue {
+    /// filter() 包裹时返回内层图像，否则返回自身（消费方递归处理内层时用）。
+    pub fn inner(&self) -> &BackgroundImageValue {
+        match self {
+            BackgroundImageValue::Filtered { image, .. } => image,
+            other => other,
+        }
+    }
 }
 
 /// 解析 CSS background-image 属性值。
@@ -661,6 +680,45 @@ pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
         return Some(BackgroundImageValue::Gradient(gradient));
     }
 
+    // filter(<image>, <filter-value-list>?) 图像函数（filter-effects-1 #funcdef-filter）：
+    // 首个顶层逗号分 image 与 filter 列表两参；image 递归走 background-image 语法
+    //（url/gradient/filter 皆可嵌套），filter 列表按 filter 属性同一语法解析。
+    if value.len() > 7 && value[..7].eq_ignore_ascii_case("filter(") && value.ends_with(')') {
+        let args = &value[7..value.len() - 1];
+        let (image_part, filters_part) = match split_top_level_comma(args) {
+            Some((l, r)) => (l, Some(r)),
+            // 单参形态 filter(<image>)：无滤镜
+            None => (args, None),
+        };
+        let image = parse_background_image(image_part)?;
+        if matches!(image, BackgroundImageValue::None) {
+            return None; // <image> 不含 none
+        }
+        let filters = match filters_part {
+            Some(f) => parse_filter_list(f)?,
+            None => Vec::new(),
+        };
+        return Some(BackgroundImageValue::Filtered {
+            image: Box::new(image),
+            filters,
+        });
+    }
+
+    None
+}
+
+/// 按第一个**括号深度为零**的逗号切分（`linear-gradient(red, orange), invert(1)` →
+/// image=`linear-gradient(red, orange)`、filters=`invert(1)`）；无顶层逗号返回 None。
+fn split_top_level_comma(s: &str) -> Option<(&str, &str)> {
+    let mut depth = 0usize;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => return Some((&s[..i], &s[i + 1..])),
+            _ => {}
+        }
+    }
     None
 }
 

@@ -2601,6 +2601,21 @@ fn image_layer_list_to_css(
             BackgroundImageComputedValue::Gradient(GradientValue::Conic(g)) => {
                 conic_gradient_to_css(g, element_color, font_size_px)
             }
+            // R5021：filter() 图像函数——`filter(<image>, <filter-list>?)`；列表空省略
+            // 第二参（filter-effects-1 #funcdef-filter 语法）。
+            BackgroundImageComputedValue::Filtered { image, filters } => {
+                let inner = image_layer_list_to_css(std::slice::from_ref(image), element_color, font_size_px);
+                if filters.is_empty() {
+                    format!("filter({inner})")
+                } else {
+                    let list = filters
+                        .iter()
+                        .map(|f| filter_function_to_css(f, element_color))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    format!("filter({inner}, {list})")
+                }
+            }
         })
         .collect::<Vec<_>>()
         .join(", ")

@@ -433,6 +433,41 @@ fn parse_origin_length_percentage(value: &str) -> Option<LengthValue> {
     }
 }
 
+/// css-parser 背景图像值 → 计算值（filter() 图像函数内层递归用；filter 属性臂的
+/// `filter` 属性语义不走此路径）。
+fn bg_image_value_to_computed(v: zero_css_parser::values::BackgroundImageValue) -> BackgroundImageComputedValue {
+    match v {
+        zero_css_parser::values::BackgroundImageValue::None => BackgroundImageComputedValue::None,
+        zero_css_parser::values::BackgroundImageValue::Url(url) => BackgroundImageComputedValue::Url(url),
+        zero_css_parser::values::BackgroundImageValue::Gradient(g) => BackgroundImageComputedValue::Gradient(g),
+        zero_css_parser::values::BackgroundImageValue::Filtered { image, filters } => {
+            BackgroundImageComputedValue::Filtered {
+                image: Box::new(bg_image_value_to_computed(*image)),
+                filters: filters.into_iter().map(filter_value_to_computed).collect(),
+            }
+        }
+    }
+}
+
+/// css-parser FilterValue → FilterComputedValue（filter 属性同一映射，背景图像
+/// filter() 图像函数臂复用）。
+fn filter_value_to_computed(v: zero_css_parser::values::FilterValue) -> FilterComputedValue {
+    match v {
+        zero_css_parser::values::FilterValue::None => FilterComputedValue::None,
+        zero_css_parser::values::FilterValue::Blur(n) => FilterComputedValue::Blur(n),
+        zero_css_parser::values::FilterValue::Brightness(n) => FilterComputedValue::Brightness(n),
+        zero_css_parser::values::FilterValue::Contrast(n) => FilterComputedValue::Contrast(n),
+        zero_css_parser::values::FilterValue::Grayscale(n) => FilterComputedValue::Grayscale(n),
+        zero_css_parser::values::FilterValue::HueRotate(n) => FilterComputedValue::HueRotate(n),
+        zero_css_parser::values::FilterValue::Invert(n) => FilterComputedValue::Invert(n),
+        zero_css_parser::values::FilterValue::Opacity(n) => FilterComputedValue::Opacity(n),
+        zero_css_parser::values::FilterValue::Saturate(n) => FilterComputedValue::Saturate(n),
+        zero_css_parser::values::FilterValue::Sepia(n) => FilterComputedValue::Sepia(n),
+        zero_css_parser::values::FilterValue::DropShadow(x, y, b, c) => FilterComputedValue::DropShadow(x, y, b, c),
+        zero_css_parser::values::FilterValue::Url(u) => FilterComputedValue::Url(u),
+    }
+}
+
 pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, value: &str) -> bool {
     let value = value.trim();
     match property {
@@ -1696,6 +1731,12 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                         zero_css_parser::values::BackgroundImageValue::Gradient(g) => {
                             BackgroundImageComputedValue::Gradient(g)
                         }
+                        zero_css_parser::values::BackgroundImageValue::Filtered { image, filters } => {
+                            BackgroundImageComputedValue::Filtered {
+                                image: Box::new(bg_image_value_to_computed(*image)),
+                                filters: filters.into_iter().map(filter_value_to_computed).collect(),
+                            }
+                        }
                     })
                     .collect();
                 return true;
@@ -1712,6 +1753,12 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                         }
                         zero_css_parser::values::BackgroundImageValue::Gradient(g) => {
                             BackgroundImageComputedValue::Gradient(g)
+                        }
+                        zero_css_parser::values::BackgroundImageValue::Filtered { image, filters } => {
+                            BackgroundImageComputedValue::Filtered {
+                                image: Box::new(bg_image_value_to_computed(*image)),
+                                filters: filters.into_iter().map(filter_value_to_computed).collect(),
+                            }
                         }
                     })
                     .collect();

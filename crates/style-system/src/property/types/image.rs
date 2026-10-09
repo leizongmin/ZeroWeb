@@ -3,9 +3,10 @@
 //! 涵盖 `background-image`/`-position`/`-repeat`/`-size`/`-attachment`/`-clip`/`-origin`、
 //! `mask-mode`、`border-image-*` 与 `list-style-image` 的计算值定义。R2534 从
 //! `property/types.rs` 抽出为子模块，以满足单文件 ≤2000 行约束（CLAUDE.md §5 / rally
-//! run-rules）；均为纯数据类型（`#[derive]`，无 inherent `impl`），机械迁移，原
+//! run-rules）；均为纯数据类型（`#[derive]`，机械迁移，原
 //! `property::types::*` 公共路径与 types.rs 内部引用通过 `types.rs` 的 `pub use image::*`
-//! 保持不变。
+//! 保持不变；例外：`BackgroundImageComputedValue::inner` 单一辅助方法，服务
+//! filter() 图像函数的内层递归消费）。
 
 /// CSS background-image 属性值。
 #[derive(Debug, Clone, PartialEq)]
@@ -16,6 +17,24 @@ pub enum BackgroundImageComputedValue {
     Url(String),
     /// 渐变函数 — linear-gradient / radial-gradient / conic-gradient。
     Gradient(zero_css_parser::values::GradientValue),
+    /// filter(<image>, <filter-value-list>?) — filter-effects-1 #FilterCSSImageValue。
+    /// 滤镜经图像函数施加于内层图像（非元素 filter 属性，不含文本/边框）。
+    Filtered {
+        /// 被滤镜的内层图像（url / gradient / 嵌套 filter）。
+        image: Box<BackgroundImageComputedValue>,
+        /// 滤镜函数计算值列表（可为空 = 无滤镜）。
+        filters: Vec<super::FilterComputedValue>,
+    },
+}
+
+impl BackgroundImageComputedValue {
+    /// filter() 包裹时返回内层图像，否则返回自身。
+    pub fn inner(&self) -> &BackgroundImageComputedValue {
+        match self {
+            BackgroundImageComputedValue::Filtered { image, .. } => image,
+            other => other,
+        }
+    }
 }
 
 /// CSS mask-mode 计算值。
