@@ -1591,6 +1591,7 @@ fn filter_blur_softens_hard_edge() {
     primitives.filters.push(FilterPrimitive {
         rect: Rect::new(0.0, 0.0, 100.0, 100.0),
         filters: vec![FilterKind::Blur(3.0)],
+        raster_drop_shadow_source: None,
     });
 
     let font_loader = FontLoader::new();
@@ -1626,6 +1627,7 @@ fn filter_brightness_makes_image_brighter() {
     primitives.filters.push(FilterPrimitive {
         rect: Rect::new(0.0, 0.0, 10.0, 10.0),
         filters: vec![FilterKind::Brightness(2.0)],
+        raster_drop_shadow_source: None,
     });
 
     let font_loader = FontLoader::new();
@@ -2907,6 +2909,7 @@ fn r4296_probe_expanded_filter_rect_applies() {
     primitives.add_filter(FilterPrimitive {
         rect: Rect::new(10.0, 50.0, 50.0, 200.0),
         filters: vec![FilterKind::Invert(1.0)],
+        raster_drop_shadow_source: None,
     });
     let fb = render_full_scene(
         100,

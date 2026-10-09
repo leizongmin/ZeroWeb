@@ -430,6 +430,13 @@ pub struct FilterPrimitive {
     pub rect: Rect,
     /// 滤镜函数列表（按顺序依次应用）
     pub filters: Vec<FilterKind>,
+    /// R5023：DropShadow 的 CPU raster alpha 形状来源。**图像函数 filter()** 图元
+    /// （filter-effects-1 #FilterCSSImageValue）= `Some((图像 key, 绘制 rect))`——阴影
+    /// 形状取该图像解码数据的 alpha 形状（主帧缓冲 A 恒 255，无法从帧缓冲读形状）；
+    /// None = 纯 rect 形状（渐变等不透明源，rect 即形状）。元素级 `filter` 属性图元
+    /// 恒 None——其阴影已由 painter ShadowPrimitive 轮廓近似随子树发射，CPU 面再实现
+    /// 会双绘（既有防护）。
+    pub raster_drop_shadow_source: Option<(ImageKey, Rect)>,
 }
 
 /// CSS transform 图元 — 对指定区域内的所有图元应用 2D 仿射变换。

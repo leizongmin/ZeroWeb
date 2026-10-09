@@ -666,6 +666,8 @@ impl super::Painter {
             content_y,
         );
 
+        // R5023：阴影形状采样键（add_image 以 shorthand move 所有权，先克隆）。
+        let shadow_image_key = image_key.clone();
         self.primitives.add_image(ImagePrimitive {
             rect: Rect::new(img_x, img_y, img_w, img_h),
             image_key,
@@ -702,6 +704,9 @@ impl super::Painter {
                     .add_filter(zero_render_foundation::primitive::FilterPrimitive {
                         rect: Rect::new(img_x - ox, img_y - oy, img_w + 2.0 * ox, img_h + 2.0 * oy),
                         filters: kinds,
+                        // 图像函数 filter()：DropShadow 走 CPU raster alpha 形状上色（R5023）——
+                        // 携带图像 key + 绘制 rect 供形状采样。
+                        raster_drop_shadow_source: Some((shadow_image_key, Rect::new(img_x, img_y, img_w, img_h))),
                     });
             }
         }

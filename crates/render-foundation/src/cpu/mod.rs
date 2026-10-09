@@ -526,9 +526,9 @@ fn render_typed_buckets(
         apply_transform_post(fb, transform, scale);
     }
 
-    // 12. 滤镜 — 后处理效果
+    // 12. 滤镜 — 后处理效果（image_cache 供图像函数 filter() DropShadow 形状采样）
     for filter in &primitives.filters {
-        effects::apply_filter(fb, filter, scale);
+        effects::apply_filter(fb, filter, scale, image_cache.as_deref_mut());
     }
 
     // 13. 混合模式 — 后处理合成
@@ -668,7 +668,7 @@ fn render_draw_order(
             }
             DrawOp::Filter(i) => {
                 if let Some(p) = primitives.filters.get(*i) {
-                    effects::apply_filter(target, p, scale);
+                    effects::apply_filter(target, p, scale, image_cache.as_deref_mut());
                 }
             }
             DrawOp::BlendMode(_) => unreachable!("BlendMode 已在循环头处理"),

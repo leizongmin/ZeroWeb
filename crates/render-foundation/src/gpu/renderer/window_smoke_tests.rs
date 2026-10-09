@@ -135,6 +135,7 @@ fn window_mode_filters_render_successfully() {
     primitives.filters.push(FilterPrimitive {
         rect: Rect::new(0.0, 0.0, 32.0, 32.0),
         filters: vec![FilterKind::Opacity(0.5)],
+        raster_drop_shadow_source: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);

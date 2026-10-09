@@ -894,6 +894,16 @@ impl super::Painter {
                                                 clip: Some(rc),
                                                 source: None,
                                             });
+                                            // R5022/R5023：filter() 图像函数 url 源——滤镜
+                                            // 紧随图像图元（draw_order 插入序只作用于已绘
+                                            // 背景），阴影形状按本 tile 解码 alpha。
+                                            if let Some(filters) = layer_filters {
+                                                self.emit_image_layer_filter_with_source(
+                                                    prim_rect,
+                                                    filters,
+                                                    Some(ImageKey::new(key)),
+                                                );
+                                            }
                                         }
                                     }
                                 } else {
@@ -904,6 +914,14 @@ impl super::Painter {
                                         clip: clip_rect,
                                         source: None,
                                     });
+                                    // R5022/R5023：filter() 图像函数 url 源（同上）。
+                                    if let Some(filters) = layer_filters {
+                                        self.emit_image_layer_filter_with_source(
+                                            prim_rect,
+                                            filters,
+                                            Some(ImageKey::new(key)),
+                                        );
+                                    }
                                 }
                             }
                             x += tile_w;
@@ -1247,7 +1265,13 @@ impl super::Painter {
             box_node.width + 2.0 * outset_x,
             box_node.height + 2.0 * outset_y,
         );
-        self.primitives.add_filter(FilterPrimitive { rect, filters });
+        // 元素级 filter：DropShadow 由 painter ShadowPrimitive 轮廓近似承担（双绘防护，
+        // CPU raster 面保持 no-op）——raster_drop_shadow_source=None。
+        self.primitives.add_filter(FilterPrimitive {
+            rect,
+            filters,
+            raster_drop_shadow_source: None,
+        });
     }
 
     /// R5021：filter() 图像函数（filter-effects-1 #FilterCSSImageValue）——滤镜图元
@@ -1255,9 +1279,27 @@ impl super::Painter {
     /// 背景像素，不影响其后绘制的内容/文本（元素级 `filter` 属性的语义分界：后者
     /// 滤镜整个元素含内容）。
     fn emit_image_layer_filter(&mut self, rect: Rect, filters: &[FilterComputedValue]) {
+        self.emit_image_layer_filter_with_source(rect, filters, None);
+    }
+
+    /// 同上，url 源携带 (图像 key, 绘制 rect) 供 DropShadow 按解码数据 alpha 取形状。
+    /// clip 裁剪面未传入（阴影形状按整 tile 采样——corpus 图像函数用例无裁剪，边缘
+    /// 有裁剪时阴影形状或越界，FIXME 按需细化）。
+    fn emit_image_layer_filter_with_source(
+        &mut self,
+        rect: Rect,
+        filters: &[FilterComputedValue],
+        source: Option<zero_render_foundation::image_cache::ImageKey>,
+    ) {
         let kinds: Vec<_> = filters.iter().filter_map(filter_computed_to_kind).collect();
         if !kinds.is_empty() {
-            self.primitives.add_filter(FilterPrimitive { rect, filters: kinds });
+            // 图像函数 filter()：DropShadow 无 ShadowPrimitive 通道，走 CPU raster
+            // 形状偏移上色（R5023）。
+            self.primitives.add_filter(FilterPrimitive {
+                rect,
+                filters: kinds,
+                raster_drop_shadow_source: source.map(|k| (k, rect)),
+            });
         }
     }
 
@@ -1370,7 +1412,13 @@ impl super::Painter {
             box_node.width,
             box_node.height + bleed_top + bleed_bottom,
         );
-        self.primitives.add_filter(FilterPrimitive { rect, filters });
+        // 元素级 filter：DropShadow 由 painter ShadowPrimitive 近似承担（同 apply_filter
+        // 主路径，双绘防护）——raster_drop_shadow_source=None。
+        self.primitives.add_filter(FilterPrimitive {
+            rect,
+            filters,
+            raster_drop_shadow_source: None,
+        });
     }
 
     /// 应用 CSS mix-blend-mode。

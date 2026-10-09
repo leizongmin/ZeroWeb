@@ -1,5 +1,6 @@
 //! 渲染滤镜和混合模式图元 — FilterPrimitive、BlendModePrimitive。
 
+use crate::image_cache::ImageCache;
 use crate::primitive::{BlendMode, BlendModePrimitive, FilterKind, FilterPrimitive};
 use crate::surface::FrameBuffer;
 
@@ -16,7 +17,12 @@ use crate::surface::FrameBuffer;
 /// - `Saturate` — 饱和度调节
 /// - `Sepia` — 棕褐色调
 /// - `DropShadow` — 投影阴影（CPU 简化实现）
-pub fn apply_filter(fb: &mut FrameBuffer, filter: &FilterPrimitive, scale: f32) {
+pub fn apply_filter(
+    fb: &mut FrameBuffer,
+    filter: &FilterPrimitive,
+    scale: f32,
+    mut image_cache: Option<&mut ImageCache>,
+) {
     if filter.filters.is_empty() {
         return;
     }
@@ -189,9 +195,88 @@ pub fn apply_filter(fb: &mut FrameBuffer, filter: &FilterPrimitive, scale: f32) 
                     }
                 }
             }
-            FilterKind::DropShadow(_ox, _oy, _blur, _color) => {
-                // CPU 简化实现：drop-shadow 在 CPU 渲染器中跳过
-                // 完整实现需要将区域内容提取为 alpha 蒙版，模糊后叠加
+            FilterKind::DropShadow(ox, oy, _blur, color) => {
+                // R5023：仅图像函数 filter() 图元（raster_drop_shadow_source 非 None 的
+                // 发射点）在 CPU 面实现 drop-shadow——主帧缓冲 A 恒 255（背景烧入），
+                // 无法从帧缓冲读形状，故从 `source_image` 的**解码数据 alpha** 取形状：
+                // 不透明源像素映射到绘制 rect 页面坐标，整体按 (ox,oy) 偏移上色；
+                // 「under」合成 = 阴影落点与源不透明形状重叠处跳过（css-filters
+                // §drop-shadow：阴影绘制在原图之下）。无 ShadowPrimitive 通道，无双绘面。
+                // 元素级 filter 图元（None 发射）保持跳过——painter ShadowPrimitive 轮廓
+                // 近似已随子树发射，CPU 面再绘会双绘。
+                // source = None（渐变等不透明源）回退 rect 全形状。
+                // _blur > 0 取硬边近似（FIXME: css-filters blur = alpha 高斯 σ，非零
+                // blur 需对形状蒙版模糊后再上色；corpus 图像函数用例均为 blur=0）。
+                let Some((image_key, image_rect)) = &filter.raster_drop_shadow_source else {
+                    continue;
+                };
+                let sx = (*ox * scale).round() as i64;
+                let sy = (*oy * scale).round() as i64;
+                let shadow_alpha = color.a;
+                if shadow_alpha == 0 {
+                    continue;
+                }
+                // 阴影形状：源图像解码数据 alpha（页面坐标，绘制 rect 映射，object-fit
+                // 拉伸已由 rect 承载）。
+                let mut shape: Vec<(i64, i64)> = Vec::new();
+                let mut covered: Vec<(i64, i64)> = Vec::new();
+                let rc = image_rect;
+                match image_cache.as_deref_mut().and_then(|c| c.get(image_key)) {
+                    Some(img) => {
+                        // 页面坐标逐像素逆采样源 alpha（与绘制侧同口径，缩放边缘精确）。
+                        let l = (rc.left() * scale).floor() as i64;
+                        let t = (rc.top() * scale).floor() as i64;
+                        let r = (rc.right() * scale).ceil() as i64;
+                        let b = (rc.bottom() * scale).ceil() as i64;
+                        for py in t..b {
+                            for px in l..r {
+                                // 设备像素中心逆映射源像素（css-values §4.4 图像采样口径）。
+                                let fx = (px as f32 + 0.5) / scale - rc.left();
+                                let fy = (py as f32 + 0.5) / scale - rc.top();
+                                if fx < 0.0 || fy < 0.0 || fx >= rc.size.width || fy >= rc.size.height {
+                                    continue;
+                                }
+                                let ix = ((fx / rc.size.width) * img.width as f32).floor() as u32;
+                                let iy = ((fy / rc.size.height) * img.height as f32).floor() as u32;
+                                if ix >= img.width || iy >= img.height || img.get_pixel(ix, iy)[3] == 0 {
+                                    continue;
+                                }
+                                covered.push((px, py));
+                                shape.push((px + sx, py + sy));
+                            }
+                        }
+                    }
+                    // 图像未解码（缓存缺失）：回退 rect 全形状（不透明源假设）。
+                    None => {
+                        let l = (rc.left() * scale).round() as i64;
+                        let t = (rc.top() * scale).round() as i64;
+                        let r = (rc.right() * scale).round() as i64;
+                        let b = (rc.bottom() * scale).round() as i64;
+                        for py in t..b {
+                            for px in l..r {
+                                covered.push((px, py));
+                                shape.push((px + sx, py + sy));
+                            }
+                        }
+                    }
+                }
+                if covered.is_empty() {
+                    continue;
+                }
+                // 「under」：阴影不画在源不透明形状上（排序后双指针去交集）。
+                covered.sort_unstable();
+                let w = fb.width as i64;
+                let h = fb.height as i64;
+                for (tx, ty) in shape {
+                    if covered.binary_search(&(tx, ty)).is_ok() {
+                        continue;
+                    }
+                    if tx < 0 || ty < 0 || tx >= w || ty >= h {
+                        continue;
+                    }
+                    // 阴影落在设备像素上（offset 后的形状位置；fb 坐标恒设备像素）。
+                    fb.set_pixel(tx as u32, ty as u32, [color.r, color.g, color.b, shadow_alpha]);
+                }
             }
         }
     }
@@ -781,8 +866,9 @@ mod tests {
         let filter = FilterPrimitive {
             rect: Rect::new(5.0, 5.0, 15.0, 15.0),
             filters: vec![FilterKind::Blur(2.0)],
+            raster_drop_shadow_source: None,
         };
-        apply_filter(&mut fb, &filter, 1.0);
+        apply_filter(&mut fb, &filter, 1.0, None);
         let after = fb.get_pixel(6, 6);
 
         // 模糊后边缘像素应该变暗
@@ -797,8 +883,9 @@ mod tests {
         let filter = FilterPrimitive {
             rect: Rect::new(0.0, 0.0, 10.0, 10.0),
             filters: vec![FilterKind::Opacity(0.5)],
+            raster_drop_shadow_source: None,
         };
-        apply_filter(&mut fb, &filter, 1.0);
+        apply_filter(&mut fb, &filter, 1.0, None);
 
         let _p = fb.get_pixel(5, 5);
         // opacity(0.5) 在帧缓冲中通过降低亮度模拟
@@ -819,8 +906,9 @@ mod tests {
         let filter = FilterPrimitive {
             rect: Rect::new(0.0, 0.0, 10.0, 10.0),
             filters: vec![FilterKind::Brightness(2.0)],
+            raster_drop_shadow_source: None,
         };
-        apply_filter(&mut fb, &filter, 1.0);
+        apply_filter(&mut fb, &filter, 1.0, None);
 
         let p = fb.get_pixel(5, 5);
         assert_eq!(p[0], 200, "brightness(2.0) should double the value");

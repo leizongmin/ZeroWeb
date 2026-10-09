@@ -287,6 +287,7 @@ pub fn to_render_primitives(params: PaintSnapshotParams) -> RenderPrimitives {
     }
     for filter in params.filters {
         primitives.filters.push(FilterPrimitive {
+            raster_drop_shadow_source: None,
             rect: ipc_rect_to_rect(filter.rect),
             filters: filter.filters.into_iter().map(ipc_filter_kind_to_kind).collect(),
         });
