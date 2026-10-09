@@ -205,9 +205,13 @@ pub fn apply_filter(
                 // 元素级 filter 图元（None 发射）保持跳过——painter ShadowPrimitive 轮廓
                 // 近似已随子树发射，CPU 面再绘会双绘。
                 // source = None（渐变等不透明源）回退 rect 全形状。
+                // R5024：形状采样按 (绘制 rect, 源子矩形) 二元组逆映射——border-image
+                // 9-slice 片发射的源子矩形非整图（filter() 先滤镜后切片，#funcdef-filter），
+                // 整图假设会把片源区域错采成整图缩放。偏移 (ox,oy) 恒页面坐标（不随
+                // 片缩放——filter 尺寸为绝对尺寸，filter-effects-1 #funcdef-filter）。
                 // _blur > 0 取硬边近似（FIXME: css-filters blur = alpha 高斯 σ，非零
                 // blur 需对形状蒙版模糊后再上色；corpus 图像函数用例均为 blur=0）。
-                let Some((image_key, image_rect)) = &filter.raster_drop_shadow_source else {
+                let Some((image_key, image_rect, src_rect)) = &filter.raster_drop_shadow_source else {
                     continue;
                 };
                 let sx = (*ox * scale).round() as i64;
@@ -230,14 +234,18 @@ pub fn apply_filter(
                         let b = (rc.bottom() * scale).ceil() as i64;
                         for py in t..b {
                             for px in l..r {
-                                // 设备像素中心逆映射源像素（css-values §4.4 图像采样口径）。
+                                // 设备像素中心逆映射源像素（css-values §4.4 图像采样口径）：
+                                // 先到绘制 rect 归一化坐标，再经源子矩形到图像归一化坐标
+                                //（整图发射 src=[0,1]² 时与 R5023 整图映射逐位同值）。
                                 let fx = (px as f32 + 0.5) / scale - rc.left();
                                 let fy = (py as f32 + 0.5) / scale - rc.top();
                                 if fx < 0.0 || fy < 0.0 || fx >= rc.size.width || fy >= rc.size.height {
                                     continue;
                                 }
-                                let ix = ((fx / rc.size.width) * img.width as f32).floor() as u32;
-                                let iy = ((fy / rc.size.height) * img.height as f32).floor() as u32;
+                                let nx = src_rect.left() + (fx / rc.size.width) * src_rect.size.width;
+                                let ny = src_rect.top() + (fy / rc.size.height) * src_rect.size.height;
+                                let ix = (nx * img.width as f32).floor() as u32;
+                                let iy = (ny * img.height as f32).floor() as u32;
                                 if ix >= img.width || iy >= img.height || img.get_pixel(ix, iy)[3] == 0 {
                                     continue;
                                 }
@@ -983,4 +991,75 @@ mod tests {
         let p = fb.get_pixel(6, 4);
         assert_eq!(p, [0, 0, 0, 255], "multiply(透明源=0, 灰) 应黑，got {p:?}");
     }
+}
+
+// R5024：border-image 9-slice 片源的 DropShadow 形状采样——covered 按
+// (绘制 rect, 源子矩形) 二元组逆映射（filter-function-002 几何：200×200 源图
+// 中央 100×100 绿块，slice 75 → TL 片 [0,0,0.375,0.375]；绘制 rect 75×75）。
+#[test]
+fn drop_shadow_piece_src_subrect_shape() {
+    use crate::color::Color;
+    use crate::geometry::Rect;
+    use crate::image_cache::{ImageData, ImageKey};
+    // 源图 4×4：右下角 2×2 不透明绿（对应归一化 [0.5,1]²——类比 200 图的
+    // [0.25,0.75]² 与片 [0,0.375]² 交集 [0.25,0.375]² 的同构缩小面）。
+    let mut px = vec![0u8; 4 * 4 * 4];
+    for y in 2..4 {
+        for x in 2..4 {
+            let i = (y * 4 + x) * 4;
+            px[i] = 0;
+            px[i + 1] = 128;
+            px[i + 2] = 0;
+            px[i + 3] = 255;
+        }
+    }
+    let img = ImageData::from_rgba(px, 4, 4).unwrap();
+    let mut cache = ImageCache::new(8, 1 << 20);
+    cache.insert_with_key(ImageKey::new(7), img);
+
+    // 片绘制 rect 30×30 @ (0,0)，源子矩形 [0,0,0.75,0.75]（图像归一化）。
+    // covered = 源 [0.5,1]²∩[0,0.75]² = [0.5,0.75]² → rect 内 [2/3,1]² → 设备 [20,30)²。
+    let filter = FilterPrimitive {
+        rect: Rect::new(0.0, 0.0, 30.0, 30.0),
+        filters: vec![FilterKind::DropShadow(
+            10.0,
+            0.0,
+            0.0,
+            Color {
+                r: 0,
+                g: 128,
+                b: 0,
+                a: 255,
+            },
+        )],
+        raster_drop_shadow_source: Some((
+            ImageKey::new(7),
+            Rect::new(0.0, 0.0, 30.0, 30.0),
+            Rect::new(0.0, 0.0, 0.75, 0.75),
+        )),
+    };
+    let mut fb = FrameBuffer::new(60, 30);
+    fb.clear(255, 255, 255, 255);
+    // 源不透明形状处画源绿（covered 深绿），阴影应落 [30,40)×[20,30)（covered+10px）。
+    for y in 20..30 {
+        for x in 20..30 {
+            fb.set_pixel(x, y, [0, 128, 0, 255]);
+        }
+    }
+    apply_filter(&mut fb, &filter, 1.0, Some(&mut cache));
+    // 阴影落点（源形状右移 10px）：[30,40)×[20,30) 为绿。
+    assert_eq!(
+        fb.get_pixel(35, 25),
+        [0, 128, 0, 255],
+        "shadow must land at covered+10px"
+    );
+    // 阴影「under」：covered 区不被阴影覆盖（保持源绿）。
+    assert_eq!(fb.get_pixel(25, 25), [0, 128, 0, 255]);
+    // 片外（源子矩形采样为透明的位置）无阴影。
+    assert_eq!(fb.get_pixel(5, 5), [255, 255, 255, 255], "no shadow outside shape");
+    assert_eq!(
+        fb.get_pixel(45, 25),
+        [255, 255, 255, 255],
+        "no shadow beyond shape+offset"
+    );
 }

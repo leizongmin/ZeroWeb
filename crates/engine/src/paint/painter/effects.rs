@@ -1294,11 +1294,11 @@ impl super::Painter {
         let kinds: Vec<_> = filters.iter().filter_map(filter_computed_to_kind).collect();
         if !kinds.is_empty() {
             // 图像函数 filter()：DropShadow 无 ShadowPrimitive 通道，走 CPU raster
-            // 形状偏移上色（R5023）。
+            // 形状偏移上色（R5023）。源子矩形 = 整图（背景 tile 不切片）。
             self.primitives.add_filter(FilterPrimitive {
                 rect,
                 filters: kinds,
-                raster_drop_shadow_source: source.map(|k| (k, rect)),
+                raster_drop_shadow_source: source.map(|k| (k, rect, Rect::new(0.0, 0.0, 1.0, 1.0))),
             });
         }
     }

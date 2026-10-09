@@ -908,10 +908,14 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
         // 此前只识别 url()/none，渐变 token 落入 remaining 被并进 slice 组 →
         // parse_border_image_slice 失败 → 整条简写被丢（driving: outset-003
         // linear-gradient 源 + border-image-image-type-003 简写源）。
+        // R5024：filter(<image>, <list>?) 图像函数同为 source（filter-effects-1
+        // #FilterCSSImageValue）——token 含内层逗号与空格，split_outside_parens 已
+        // 保证整体成组，此处只按函数名前缀认领。
         if source.is_none()
             && (t.get(..4).is_some_and(|prefix| prefix.eq_ignore_ascii_case("url("))
                 || t.eq_ignore_ascii_case("none")
-                || (t.ends_with(')') && is_gradient_source_token(t)))
+                || (t.ends_with(')') && is_gradient_source_token(t))
+                || (t.get(..7).is_some_and(|prefix| prefix.eq_ignore_ascii_case("filter(")) && t.ends_with(')')))
         {
             source = Some(t.to_string());
         } else {

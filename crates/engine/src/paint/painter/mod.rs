@@ -2137,6 +2137,55 @@ impl Painter {
                 text::bg_clip_text_solid_color(st, &self.image_solid_colors, self.document_url.as_deref()).is_some()
             });
 
+        let self_positioned = box_node.is_absolute || box_node.is_fixed || box_node.is_relative || box_node.is_sticky;
+
+        // CSS 2.1 Appendix E 全局 positioned-descendant 延迟（step 2/6/7）：
+        // scope 根（positioned 元素、根 html、或任何建立堆叠上下文的元素）收集其子树中
+        // **所有** positioned 后代（z-index:auto pseudo-SC + real-SC，含嵌套，经
+        // collect_positioned_descendants 按 tree order），按 z_index 分三段绘制：step 2
+        //（z<0，normal flow 之前，最负优先）→ steps 3-5（in-flow/float）→ step 6
+        //（z==0，即 z-index:auto/0，tree order）→ step 7（z>0，最正优先）。非 scope 节点
+        // 不收集/flush，但其主循环只绘制 in-flow/float（positioned 子元素一律由最近 scope
+        // 祖先收集）。per-node 排序无法实现全局 tree-order（R503 (3,0) 在 abspos-016 与
+        // static-inside-inline/z-index-abspos-004 间不可兼得），故显式收集。
+        // ★ creates_stacking_context 含 opacity<1 等 CSS3 SC 触发器（见 engine.rs）：
+        // 这些元素的 per-node 效果（opacity/filter/transform/...，paint_node 末尾对
+        // [counts_before, now] 应用）必须覆盖其 positioned 后代；若它们非 scope，后代会被
+        // 上提到祖先而漏掉效果（opacity:0 不隐藏内容的 R505 回归）。详见 R505。
+        let is_scope = self_positioned || box_node.creates_stacking_context || is_root_scope;
+        let mut collected_positioned: Vec<DeferredPositioned> = Vec::new();
+        if is_scope {
+            collect_positioned_descendants(box_node, abs_x, abs_y, styles, &mut collected_positioned, doc);
+        }
+
+        // R5024：z-index:auto positioned 元素（pseudo-SC，不建堆叠上下文）的负 z-index
+        // positioned 后代按 CSS 2.1 Appendix E 属**祖先真实 SC**的 step 2——先于本元素
+        // 自身装饰（背景/边框/border-image）绘制（chromium 行为：负 z 子在父背景之后）。
+        // 真实 SC 元素（creates_stacking_context，App E step 1 自身装饰 → step 2 负 z
+        // 后代）与根 scope 保持既有序。flush 仍在本元素 per-node 效果窗口内（paint_node
+        // 包裹 paint_node_inner，R505 opacity/filter 覆盖不回退）；steps 6/7 的
+        // z:auto/z>0 后代序不变。
+        // driving: filter-function-002/006（.red z-index:-1 于 position:relative 父，
+        // border-image 绿必须盖过红）。
+        let neg_z_early_flushed = if is_scope && self_positioned && !box_node.creates_stacking_context && !is_root_scope
+        {
+            let mut neg_z: Vec<&DeferredPositioned> =
+                collected_positioned.iter().filter(|i| i.node.z_index < 0).collect();
+            neg_z.sort_by_key(|i| i.node.z_index);
+            for item in &neg_z {
+                let off_x = item.abs_x - item.node.x;
+                let off_y = item.abs_y - item.node.y;
+                let counts_before_item = PrimitiveCounts::snapshot(&self.primitives);
+                self.paint_node(item.node, styles, off_x, off_y, doc, false);
+                if let Some(clip) = item.clip_rect {
+                    super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_item, &clip);
+                }
+            }
+            true
+        } else {
+            false
+        };
+
         let is_hidden = if box_node.is_anonymous_text_item {
             // 匿名文本项（flex/grid 容器中的文本节点）
             if let Some(doc) = doc
@@ -2534,32 +2583,13 @@ impl Painter {
         // multicol 方式绘其子（breaking 子按 column_span_offsets 逐片段绘）。精确 flag gate
         //（仅 R1341 wrapper），区别于 R1351 any_child_has_cso（误触 deep-nesting regression）。
         let paint_as_multicol = is_multicol || box_node.is_nested_spanner_wrapper;
-        let self_positioned = box_node.is_absolute || box_node.is_fixed || box_node.is_relative || box_node.is_sticky;
         let defer_abspos = needs_clip && !self_positioned && !is_multicol;
 
-        // CSS 2.1 Appendix E 全局 positioned-descendant 延迟（step 2/6/7）：
-        // scope 根（positioned 元素、根 html、或任何建立堆叠上下文的元素）收集其子树中
-        // **所有** positioned 后代（z-index:auto pseudo-SC + real-SC，含嵌套，经
-        // collect_positioned_descendants 按 tree order），按 z_index 分三段绘制：step 2
-        //（z<0，normal flow 之前，最负优先）→ steps 3-5（in-flow/float）→ step 6
-        //（z==0，即 z-index:auto/0，tree order）→ step 7（z>0，最正优先）。非 scope 节点
-        // 不收集/flush，但其主循环只绘制 in-flow/float（positioned 子元素一律由最近 scope
-        // 祖先收集）。per-node 排序无法实现全局 tree-order（R503 (3,0) 在 abspos-016 与
-        // static-inside-inline/z-index-abspos-004 间不可兼得），故显式收集。
-        // ★ creates_stacking_context 含 opacity<1 等 CSS3 SC 触发器（见 engine.rs）：
-        // 这些元素的 per-node 效果（opacity/filter/transform/...，paint_node 末尾对
-        // [counts_before, now] 应用）必须覆盖其 positioned 后代；若它们非 scope，后代会被
-        // 上提到祖先而漏掉效果（opacity:0 不隐藏内容的 R505 回归）。详见 R505。
-        let is_scope = self_positioned || box_node.creates_stacking_context || is_root_scope;
-        let mut collected_positioned: Vec<DeferredPositioned> = Vec::new();
-        if is_scope {
-            collect_positioned_descendants(box_node, abs_x, abs_y, styles, &mut collected_positioned, doc);
-        }
-
-        // step 2：负 z-index SC（normal flow 之前；collected 已 tree-order，按 z_index 升序稳定排序）
+        // R5024：pseudo-SC（z-index:auto positioned）的负 z 后代已在装饰绘制前 flush
+        //（见上方 neg_z_early_flushed）；真实 SC 与根 scope 此处按 App E step 2 保持原序。
         // R3922：flush 晚于中间层 overflow 裁剪步骤，收集项携带的裁剪矩形在此补裁
         //（CSS §11.1.1 relative/sticky 后代 CB = overflow 元素；R1080 multicol 同款模式）。
-        if is_scope {
+        if is_scope && !neg_z_early_flushed {
             let mut neg_z: Vec<&DeferredPositioned> =
                 collected_positioned.iter().filter(|i| i.node.z_index < 0).collect();
             neg_z.sort_by_key(|i| i.node.z_index);

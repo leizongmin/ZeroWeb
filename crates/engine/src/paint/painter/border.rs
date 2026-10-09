@@ -8,11 +8,11 @@ use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
-use zero_render_foundation::primitive::{ImagePrimitive, LineCap, LineStyle, StrokePrimitive};
+use zero_render_foundation::primitive::{FilterPrimitive, ImagePrimitive, LineCap, LineStyle, StrokePrimitive};
 use zero_style_system::{
     AppearanceComputedValue, BorderCollapseValue, BorderImageOutsetComputedComponent, BorderImageRepeatComputedMode,
     BorderImageSliceComputedComponent, BorderImageSourceComputedValue, BorderImageWidthComputedComponent,
-    BorderStyleValue, ComputedStyle,
+    BorderStyleValue, ComputedStyle, FilterComputedValue,
 };
 
 use super::super::color::{color_value_to_render, resolve_color_current};
@@ -361,22 +361,66 @@ impl super::Painter {
         }
     }
 
+    /// R5024：border-image 片发射——图像图元 +（filter() 图像函数时）紧随滤镜图元
+    ///（draw_order 插入序：阴影只作用于已绘本片像素，「under」合成由 CPU raster
+    /// DropShadow 臂的 covered 跳过承担，R5023）。`src` = 本片源子矩形（归一化；
+    /// None = 整图映射回退）——阴影形状采样按该片子矩形逆映射（filter() 先滤镜后
+    /// 切片，每片阴影内容 = 滤镜结果图对应源子区，见 #funcdef-filter）。
+    fn add_border_image_piece(
+        &mut self,
+        prim: ImagePrimitive,
+        src: Option<Rect>,
+        filters: &[FilterComputedValue],
+        key: u64,
+    ) {
+        let rect = prim.rect;
+        self.primitives.add_image(prim);
+        let kinds: Vec<_> = filters
+            .iter()
+            .filter_map(super::effects::filter_computed_to_kind)
+            .collect();
+        if !kinds.is_empty() {
+            self.primitives.add_filter(FilterPrimitive {
+                rect,
+                filters: kinds,
+                raster_drop_shadow_source: Some((
+                    ImageKey::new(key),
+                    rect,
+                    src.unwrap_or(Rect::new(0.0, 0.0, 1.0, 1.0)),
+                )),
+            });
+        }
+    }
+
     /// 绘制 border-image。
     ///
     /// 当 border-image-source 不为 none 时，将图片按 slice 分割为
     /// 9 个区域（4 角 + 4 边 + 中心），分别绘制到边框的对应区域。
     /// 支持所有 border-image-repeat 模式：stretch/repeat/round/space。
     pub(super) fn paint_border_image(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
-        let url = match &style.border_image_source {
+        // R5024：filter() 图像函数剥壳（filter-effects-1 #FilterCSSImageValue）——滤镜
+        // 产出 <image> 后整体走 9-slice（切片作用于滤镜结果图）。嵌套 filter 取最外层
+        // 滤镜列表 + 最内层图像（嵌套滤镜组合深域，FIXME 按需细化）。
+        let mut source = &style.border_image_source;
+        let mut layer_filters: &[FilterComputedValue] = &[];
+        while let BorderImageSourceComputedValue::Filtered { image, filters } = source {
+            if layer_filters.is_empty() {
+                layer_filters = filters;
+            }
+            source = image;
+        }
+        let url = match source {
             BorderImageSourceComputedValue::None => return,
             BorderImageSourceComputedValue::Url(u) => u.clone(),
             // R3909：gradient 源按同款 9-slice 几何切分绘制（css-backgrounds-3 §6.1）。
             // 渐变无固有尺寸——一次构造覆盖**整个 border-image 绘制区**（含 outset）的
             // 基础图元，随后逐片以 clip 窗口发射（crop 语义，渐变绝对坐标定义不变）。
             BorderImageSourceComputedValue::Gradient(gradient) => {
-                self.paint_border_image_gradient(box_node, abs_x, abs_y, style, gradient);
+                self.paint_border_image_gradient(box_node, abs_x, abs_y, style, gradient, layer_filters);
                 return;
             }
+            // while-let 剥壳后不可达（防御臂保持穷尽）。
+            BorderImageSourceComputedValue::Filtered { .. } => return,
         };
 
         let bt = box_node.border_top;
@@ -509,30 +553,45 @@ impl super::Painter {
 
         // 中心区域（当 fill 为 true 时绘制，始终 stretch）
         if fill && edge_h_w > 0.0 && edge_v_h > 0.0 {
-            self.primitives.add_image(make_img(
-                Rect::new(bx + bl, by + bt, edge_h_w, edge_v_h),
+            self.add_border_image_piece(
+                make_img(Rect::new(bx + bl, by + bt, edge_h_w, edge_v_h), src_of(|s| &s.center)),
                 src_of(|s| &s.center),
-            ));
+                layer_filters,
+                key,
+            );
         }
 
         // 四个角（始终 stretch，不受 repeat 模式影响）
         if bl > 0.0 && bt > 0.0 {
-            self.primitives
-                .add_image(make_img(Rect::new(bx, by, bl, bt), src_of(|s| &s.top_left)));
+            let src = src_of(|s| &s.top_left);
+            self.add_border_image_piece(make_img(Rect::new(bx, by, bl, bt), src), src, layer_filters, key);
         }
         if br > 0.0 && bt > 0.0 {
-            self.primitives
-                .add_image(make_img(Rect::new(bx + w - br, by, br, bt), src_of(|s| &s.top_right)));
+            let src = src_of(|s| &s.top_right);
+            self.add_border_image_piece(
+                make_img(Rect::new(bx + w - br, by, br, bt), src),
+                src,
+                layer_filters,
+                key,
+            );
         }
         if br > 0.0 && bb > 0.0 {
-            self.primitives.add_image(make_img(
-                Rect::new(bx + w - br, by + h - bb, br, bb),
-                src_of(|s| &s.bottom_right),
-            ));
+            let src = src_of(|s| &s.bottom_right);
+            self.add_border_image_piece(
+                make_img(Rect::new(bx + w - br, by + h - bb, br, bb), src),
+                src,
+                layer_filters,
+                key,
+            );
         }
         if bl > 0.0 && bb > 0.0 {
-            self.primitives
-                .add_image(make_img(Rect::new(bx, by + h - bb, bl, bb), src_of(|s| &s.bottom_left)));
+            let src = src_of(|s| &s.bottom_left);
+            self.add_border_image_piece(
+                make_img(Rect::new(bx, by + h - bb, bl, bb), src),
+                src,
+                layer_filters,
+                key,
+            );
         }
 
         // 四条边 — 根据 border-image-repeat 模式生成图元
@@ -544,6 +603,8 @@ impl super::Painter {
             self.paint_border_image_edge_h(
                 &make_img,
                 src_of(|s| &s.top),
+                layer_filters,
+                key,
                 bx + bl,
                 by,
                 edge_h_w,
@@ -557,6 +618,8 @@ impl super::Painter {
             self.paint_border_image_edge_v(
                 &make_img,
                 src_of(|s| &s.right),
+                layer_filters,
+                key,
                 bx + w - br,
                 by + bt,
                 br,
@@ -570,6 +633,8 @@ impl super::Painter {
             self.paint_border_image_edge_h(
                 &make_img,
                 src_of(|s| &s.bottom),
+                layer_filters,
+                key,
                 bx + bl,
                 by + h - bb,
                 edge_h_w,
@@ -583,6 +648,8 @@ impl super::Painter {
             self.paint_border_image_edge_v(
                 &make_img,
                 src_of(|s| &s.left),
+                layer_filters,
+                key,
                 bx,
                 by + bt,
                 bl,
@@ -608,6 +675,7 @@ impl super::Painter {
         abs_y: f32,
         style: &ComputedStyle,
         gradient: &zero_css_parser::values::GradientValue,
+        filters: &[FilterComputedValue],
     ) {
         use super::super::helpers::gradient_to_primitive_with_font_size;
 
@@ -660,6 +728,20 @@ impl super::Painter {
             piece.rect = rect;
             piece.clip = Some(rect);
             p.primitives.add_gradient(piece);
+            // R5024：filter() 图像函数渐变源——滤镜图元紧随片图元（R5021 同式）。
+            // raster 源 = None（渐变不透明源回退既有臂，DropShadow CPU 面跳过——
+            // 与背景/内容渐变源一致）。
+            let kinds: Vec<_> = filters
+                .iter()
+                .filter_map(super::effects::filter_computed_to_kind)
+                .collect();
+            if !kinds.is_empty() {
+                p.primitives.add_filter(FilterPrimitive {
+                    rect,
+                    filters: kinds,
+                    raster_drop_shadow_source: None,
+                });
+            }
         };
 
         let edge_h_w = (w - bl - br).max(0.0);
@@ -751,6 +833,8 @@ impl super::Painter {
         &mut self,
         make_img: &impl Fn(Rect, Option<Rect>) -> ImagePrimitive,
         src: Option<Rect>,
+        filters: &[FilterComputedValue],
+        key: u64,
         start_x: f32,
         y: f32,
         total_w: f32,
@@ -761,8 +845,8 @@ impl super::Painter {
         match mode {
             BorderImageRepeatComputedMode::Stretch => {
                 // 拉伸单个 tile 覆盖整条边
-                self.primitives
-                    .add_image(make_img(Rect::new(start_x, y, total_w, edge_h), src));
+                let rect = Rect::new(start_x, y, total_w, edge_h);
+                self.add_border_image_piece(make_img(rect, src), src, filters, key);
             }
             BorderImageRepeatComputedMode::Repeat => {
                 // 以自然 tile 大小重复，从中心向两边展开
@@ -772,7 +856,8 @@ impl super::Painter {
                 for _ in 0..n {
                     let clipped = Self::clip_tile(x, y, tile_w, edge_h, start_x, y, total_w, edge_h);
                     if let Some((cx, cy, cw, ch)) = clipped {
-                        self.primitives.add_image(make_img(Rect::new(cx, cy, cw, ch), src));
+                        let rect = Rect::new(cx, cy, cw, ch);
+                        self.add_border_image_piece(make_img(rect, src), src, filters, key);
                     }
                     x += tile_w;
                 }
@@ -783,8 +868,8 @@ impl super::Painter {
                 let stretched = total_w / n as f32;
                 let mut x = start_x;
                 for _ in 0..n {
-                    self.primitives
-                        .add_image(make_img(Rect::new(x, y, stretched, edge_h), src));
+                    let rect = Rect::new(x, y, stretched, edge_h);
+                    self.add_border_image_piece(make_img(rect, src), src, filters, key);
                     x += stretched;
                 }
             }
@@ -792,14 +877,14 @@ impl super::Painter {
                 // 均匀分布 tile，不足 2 个时退化为 stretch
                 let n = (total_w / tile_w).floor().max(0.0) as usize;
                 if n <= 1 {
-                    self.primitives
-                        .add_image(make_img(Rect::new(start_x, y, total_w, edge_h), src));
+                    let rect = Rect::new(start_x, y, total_w, edge_h);
+                    self.add_border_image_piece(make_img(rect, src), src, filters, key);
                 } else {
                     let gap = (total_w - n as f32 * tile_w) / (n + 1) as f32;
                     let mut x = start_x + gap;
                     for _ in 0..n {
-                        self.primitives
-                            .add_image(make_img(Rect::new(x, y, tile_w, edge_h), src));
+                        let rect = Rect::new(x, y, tile_w, edge_h);
+                        self.add_border_image_piece(make_img(rect, src), src, filters, key);
                         x += tile_w + gap;
                     }
                 }
@@ -813,6 +898,8 @@ impl super::Painter {
         &mut self,
         make_img: &impl Fn(Rect, Option<Rect>) -> ImagePrimitive,
         src: Option<Rect>,
+        filters: &[FilterComputedValue],
+        key: u64,
         x: f32,
         start_y: f32,
         edge_w: f32,
@@ -822,8 +909,8 @@ impl super::Painter {
     ) {
         match mode {
             BorderImageRepeatComputedMode::Stretch => {
-                self.primitives
-                    .add_image(make_img(Rect::new(x, start_y, edge_w, total_h), src));
+                let rect = Rect::new(x, start_y, edge_w, total_h);
+                self.add_border_image_piece(make_img(rect, src), src, filters, key);
             }
             BorderImageRepeatComputedMode::Repeat => {
                 let n = (total_h / tile_h).ceil().max(1.0) as usize;
@@ -832,7 +919,8 @@ impl super::Painter {
                 for _ in 0..n {
                     let clipped = Self::clip_tile(x, y, edge_w, tile_h, x, start_y, edge_w, total_h);
                     if let Some((cx, cy, cw, ch)) = clipped {
-                        self.primitives.add_image(make_img(Rect::new(cx, cy, cw, ch), src));
+                        let rect = Rect::new(cx, cy, cw, ch);
+                        self.add_border_image_piece(make_img(rect, src), src, filters, key);
                     }
                     y += tile_h;
                 }
@@ -842,22 +930,22 @@ impl super::Painter {
                 let stretched = total_h / n as f32;
                 let mut y = start_y;
                 for _ in 0..n {
-                    self.primitives
-                        .add_image(make_img(Rect::new(x, y, edge_w, stretched), src));
+                    let rect = Rect::new(x, y, edge_w, stretched);
+                    self.add_border_image_piece(make_img(rect, src), src, filters, key);
                     y += stretched;
                 }
             }
             BorderImageRepeatComputedMode::Space => {
                 let n = (total_h / tile_h).floor().max(0.0) as usize;
                 if n <= 1 {
-                    self.primitives
-                        .add_image(make_img(Rect::new(x, start_y, edge_w, total_h), src));
+                    let rect = Rect::new(x, start_y, edge_w, total_h);
+                    self.add_border_image_piece(make_img(rect, src), src, filters, key);
                 } else {
                     let gap = (total_h - n as f32 * tile_h) / (n + 1) as f32;
                     let mut y = start_y + gap;
                     for _ in 0..n {
-                        self.primitives
-                            .add_image(make_img(Rect::new(x, y, edge_w, tile_h), src));
+                        let rect = Rect::new(x, y, edge_w, tile_h);
+                        self.add_border_image_piece(make_img(rect, src), src, filters, key);
                         y += tile_h + gap;
                     }
                 }

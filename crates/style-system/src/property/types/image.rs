@@ -183,6 +183,24 @@ pub enum BorderImageSourceComputedValue {
     Url(String),
     /// 渐变函数（linear/radial/conic-gradient，同 BackgroundImageComputedValue）。
     Gradient(zero_css_parser::values::GradientValue),
+    /// filter(<image>, <filter-value-list>?) 图像函数（filter-effects-1
+    /// #FilterCSSImageValue，R5024）。滤镜列表空 = 无滤镜等价内层图像。
+    Filtered {
+        /// 被滤镜的内层图像（url / gradient / 嵌套 filter）。
+        image: Box<BorderImageSourceComputedValue>,
+        /// 滤镜函数列表（filter 属性同一语义）。
+        filters: Vec<super::FilterComputedValue>,
+    },
+}
+
+impl BorderImageSourceComputedValue {
+    /// filter() 包裹时返回内层图像引用，否则返回自身（paint 侧递归剥壳用）。
+    pub fn inner(&self) -> &BorderImageSourceComputedValue {
+        match self {
+            BorderImageSourceComputedValue::Filtered { image, .. } => image,
+            other => other,
+        }
+    }
 }
 
 /// CSS border-image-slice 单个分量的计算值。

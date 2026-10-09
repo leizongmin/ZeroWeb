@@ -433,6 +433,22 @@ fn parse_origin_length_percentage(value: &str) -> Option<LengthValue> {
     }
 }
 
+/// css-parser border-image-source 值 → 计算值（R5024：filter() 图像函数内层递归剥壳）。
+fn border_image_source_to_computed(
+    v: zero_css_parser::values::BorderImageSourceValue,
+) -> BorderImageSourceComputedValue {
+    use zero_css_parser::values::BorderImageSourceValue;
+    match v {
+        BorderImageSourceValue::None => BorderImageSourceComputedValue::None,
+        BorderImageSourceValue::Url(url) => BorderImageSourceComputedValue::Url(url),
+        BorderImageSourceValue::Gradient(g) => BorderImageSourceComputedValue::Gradient(g),
+        BorderImageSourceValue::Filtered { image, filters } => BorderImageSourceComputedValue::Filtered {
+            image: Box::new(border_image_source_to_computed(*image)),
+            filters: filters.into_iter().map(filter_value_to_computed).collect(),
+        },
+    }
+}
+
 /// css-parser 背景图像值 → 计算值（filter() 图像函数内层递归用；filter 属性臂的
 /// `filter` 属性语义不走此路径）。
 fn bg_image_value_to_computed(v: zero_css_parser::values::BackgroundImageValue) -> BackgroundImageComputedValue {
@@ -1984,15 +2000,7 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         }
         "border-image-source" => {
             if let Some(v) = values::parse_border_image_source(value) {
-                style.border_image_source = match v {
-                    zero_css_parser::values::BorderImageSourceValue::None => BorderImageSourceComputedValue::None,
-                    zero_css_parser::values::BorderImageSourceValue::Url(url) => {
-                        BorderImageSourceComputedValue::Url(url)
-                    }
-                    zero_css_parser::values::BorderImageSourceValue::Gradient(g) => {
-                        BorderImageSourceComputedValue::Gradient(g)
-                    }
-                };
+                style.border_image_source = border_image_source_to_computed(v);
                 return true;
             }
         }

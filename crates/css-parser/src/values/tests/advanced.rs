@@ -762,6 +762,41 @@ fn test_parse_content_filter_function() {
     ));
 }
 
+// R5024：border-image-source 的 filter() 图像函数（filter-effects-1
+// #FilterCSSImageValue）——内层递归走 border-image-source 语法（url/gradient/filter）。
+#[test]
+fn test_parse_border_image_source_filter_function() {
+    use crate::values::FilterValue;
+    // url 内层 + drop-shadow（filter-function-002 border-image 案形态）
+    match parse_border_image_source("filter(url(resources/green.png), drop-shadow(50px 0 0 green))") {
+        Some(BorderImageSourceValue::Filtered { image, filters }) => {
+            assert_eq!(*image, BorderImageSourceValue::Url("resources/green.png".to_string()));
+            match filters[..] {
+                [FilterValue::DropShadow(x, y, blur, _)] => {
+                    assert_eq!((x, y, blur), (50.0, 0.0, 0.0));
+                }
+                ref other => panic!("expected single drop-shadow, got {other:?}"),
+            }
+        }
+        other => panic!("border-image filter() not parsed: {other:?}"),
+    }
+    // 渐变内层（逗号不越级）+ 单参形态无滤镜
+    assert!(matches!(
+        parse_border_image_source("filter(linear-gradient(red, orange), invert(1))"),
+        Some(BorderImageSourceValue::Filtered { .. })
+    ));
+    match parse_border_image_source("filter(url(a.png))") {
+        Some(BorderImageSourceValue::Filtered { image, filters }) => {
+            assert_eq!(*image, BorderImageSourceValue::Url("a.png".to_string()));
+            assert!(filters.is_empty());
+        }
+        other => panic!("single-arg border-image filter() not parsed: {other:?}"),
+    }
+    // <image> 不含 none；非图像函数拒收
+    assert_eq!(parse_border_image_source("filter(none, invert(1))"), None);
+    assert_eq!(parse_border_image_source("filter(invalid)"), None);
+}
+
 #[test]
 fn test_parse_background_image_url_with_path() {
     assert_eq!(

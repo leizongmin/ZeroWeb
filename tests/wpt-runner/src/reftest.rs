@@ -840,6 +840,7 @@ fn render_with_layout_inner(
             }
         }
         eprintln!("  gradients: {}", result.primitives().gradients.len());
+        eprintln!("  filters: {}", result.primitives().filters.len());
         eprintln!("  strokes: {}", result.primitives().strokes.len());
         for (i, fill) in result.primitives().fills.iter().enumerate().take(20) {
             eprintln!(

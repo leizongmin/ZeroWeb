@@ -298,6 +298,28 @@ fn test_border_image_shorthand_repeat() {
     assert!(result.iter().any(|d| d.0 == "border-image-repeat" && d.1 == "round"));
 }
 
+// R5024：filter() 图像函数作为 source token（含逗号/空格不裂组，filter-effects-1
+// #FilterCSSImageValue；filter-function-002 简写形态）。
+#[test]
+fn test_border_image_shorthand_filter_function_source() {
+    let result = expand_one(
+        "border-image",
+        "filter(url(resources/green.png), drop-shadow(50px 0 0 green)) 75 / 75px / 50px",
+        false,
+        (0, 0, 1),
+    );
+    assert!(
+        result
+            .iter()
+            .any(|d| d.0 == "border-image-source"
+                && d.1 == "filter(url(resources/green.png), drop-shadow(50px 0 0 green))"),
+        "filter() source token not recognized: {result:?}"
+    );
+    assert!(result.iter().any(|d| d.0 == "border-image-slice" && d.1 == "75"));
+    assert!(result.iter().any(|d| d.0 == "border-image-width" && d.1 == "75px"));
+    assert!(result.iter().any(|d| d.0 == "border-image-outset" && d.1 == "50px"));
+}
+
 #[test]
 fn test_border_image_shorthand_with_slash() {
     let result = expand_one("border-image", "25 / 2", false, (0, 0, 1));

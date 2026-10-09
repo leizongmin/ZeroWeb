@@ -705,8 +705,12 @@ impl super::Painter {
                         rect: Rect::new(img_x - ox, img_y - oy, img_w + 2.0 * ox, img_h + 2.0 * oy),
                         filters: kinds,
                         // 图像函数 filter()：DropShadow 走 CPU raster alpha 形状上色（R5023）——
-                        // 携带图像 key + 绘制 rect 供形状采样。
-                        raster_drop_shadow_source: Some((shadow_image_key, Rect::new(img_x, img_y, img_w, img_h))),
+                        // 携带图像 key + 绘制 rect + 整图源子矩形供形状采样。
+                        raster_drop_shadow_source: Some((
+                            shadow_image_key,
+                            Rect::new(img_x, img_y, img_w, img_h),
+                            Rect::new(0.0, 0.0, 1.0, 1.0),
+                        )),
                     });
             }
         }

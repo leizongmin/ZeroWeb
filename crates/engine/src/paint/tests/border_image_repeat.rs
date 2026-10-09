@@ -546,3 +546,131 @@ fn test_border_image_shorthand_gradient_source_expands() {
     let width = decls.iter().find(|(p, _, _, _)| p == "border-image-width");
     assert!(width.is_some_and(|(_, v, _, _)| v == "10px"));
 }
+
+// R5024：filter() 图像函数 border-image-source——每片图像图元后随滤镜图元
+//（filter-effects-1 #FilterCSSImageValue：filter() 产出 <image> 后整体 9-slice，
+// 片源子矩形携带给 CPU raster DropShadow 形状采样）。
+#[test]
+fn test_border_image_filter_function_emits_piece_filters() {
+    use zero_render_foundation::color::Color;
+    use zero_render_foundation::primitive::FilterKind;
+    use zero_style_system::{
+        BorderImageRepeatComputedMode, BorderImageRepeatComputedValue, BorderImageSourceComputedValue,
+        FilterComputedValue,
+    };
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let mut layout = make_box(Some(nid), 0.0, 0.0, 50.0, 100.0);
+    layout.border_top = 25.0;
+    layout.border_right = 25.0;
+    layout.border_bottom = 25.0;
+    layout.border_left = 25.0;
+
+    let mut style = ComputedStyle::default();
+    style.border_image_source = BorderImageSourceComputedValue::Filtered {
+        image: Box::new(BorderImageSourceComputedValue::Url("green.png".to_string())),
+        filters: vec![FilterComputedValue::DropShadow(
+            50.0,
+            0.0,
+            0.0,
+            zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255),
+        )],
+    };
+    style.border_image_slice = zero_style_system::BorderImageSliceComputedValue {
+        top: zero_style_system::BorderImageSliceComputedComponent::Number(75.0),
+        right: zero_style_system::BorderImageSliceComputedComponent::Number(75.0),
+        bottom: zero_style_system::BorderImageSliceComputedComponent::Number(75.0),
+        left: zero_style_system::BorderImageSliceComputedComponent::Number(75.0),
+        fill: false,
+    };
+    style.border_image_width = zero_style_system::BorderImageWidthComputedValue {
+        top: zero_style_system::BorderImageWidthComputedComponent::Length(75.0),
+        right: zero_style_system::BorderImageWidthComputedComponent::Length(75.0),
+        bottom: zero_style_system::BorderImageWidthComputedComponent::Length(75.0),
+        left: zero_style_system::BorderImageWidthComputedComponent::Length(75.0),
+    };
+    style.border_image_outset = zero_style_system::BorderImageOutsetComputedValue {
+        top: zero_style_system::BorderImageOutsetComputedComponent::Length(50.0),
+        right: zero_style_system::BorderImageOutsetComputedComponent::Length(50.0),
+        bottom: zero_style_system::BorderImageOutsetComputedComponent::Length(50.0),
+        left: zero_style_system::BorderImageOutsetComputedComponent::Length(50.0),
+    };
+    style.border_image_repeat = BorderImageRepeatComputedValue {
+        horizontal: BorderImageRepeatComputedMode::Stretch,
+        vertical: BorderImageRepeatComputedMode::Stretch,
+    };
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    // 解码尺寸在案（真实管线由 image_sizes 缓存提供）→ 9-slice 源子矩形生效。
+    painter.image_natural_sizes.insert(
+        super::super::helpers::image_resource_key("green.png", None),
+        (200.0, 200.0),
+    );
+    painter.paint(&layout, &styles, None);
+
+    // 4 角 + 左右边条 = 6 片（无 fill，上下边条宽 0）。
+    let images = &painter.primitives().images;
+    assert_eq!(images.len(), 6, "expected 6 border-image pieces, got {images:?}");
+    // 绘制区 = border box(0,0,50,100) 外扩 outset 50 → (-50,-50,150,200)；width 75px
+    // 四边 → 角 75×75 + 左右边条 75×50（上下边条宽 0）。
+    let piece_of = |x: f32, y: f32| {
+        images
+            .iter()
+            .find(|img| (img.rect.origin.x - x).abs() < 0.5 && (img.rect.origin.y - y).abs() < 0.5)
+            .unwrap_or_else(|| panic!("piece at ({x},{y}) not found, got {images:?}"))
+    };
+    let tl = piece_of(-50.0, -50.0);
+    let tr = piece_of(25.0, -50.0);
+    // TL 片源子矩形 = [0,0,0.375,0.375]（slice 75 / 200px）。
+    assert!(
+        (tl.source.as_ref().unwrap().size.width - 0.375).abs() < 1e-4,
+        "TL source subrect must be the slice 75/200 region, got {:?}",
+        tl.source
+    );
+    // TR 片源起点 x = (200-75)/200 = 0.625。
+    assert!(
+        (tr.source.as_ref().unwrap().origin.x - 0.625).abs() < 1e-4,
+        "TR source subrect origin must be 0.625, got {:?}",
+        tr.source
+    );
+
+    // 每片紧随一个滤镜图元，rect = 片 rect，源子矩形 = 片源子矩形。
+    let filters = &painter.primitives().filters;
+    assert_eq!(filters.len(), 6, "each piece must be followed by a filter primitive");
+    for f in filters {
+        assert!(
+            f.raster_drop_shadow_source.is_some(),
+            "filter primitive must carry raster drop-shadow source"
+        );
+        let (_, rect, src) = f.raster_drop_shadow_source.as_ref().unwrap();
+        assert!(
+            src.size.width < 1.0 && src.size.height < 1.0,
+            "piece source subrect must not be the whole image, got {src:?}"
+        );
+        assert!(
+            images.iter().any(|img| img.rect == *rect
+                && img
+                    .source
+                    .as_ref()
+                    .is_some_and(|s| (s.origin.x - src.origin.x).abs() < 1e-4)),
+            "filter rect/src must mirror its piece, got rect {rect:?} src {src:?}"
+        );
+        assert!(
+            f.filters.contains(&FilterKind::DropShadow(
+                50.0,
+                0.0,
+                0.0,
+                Color {
+                    r: 0,
+                    g: 128,
+                    b: 0,
+                    a: 255
+                }
+            )),
+            "drop-shadow kind must be preserved, got {:?}",
+            f.filters
+        );
+    }
+}
