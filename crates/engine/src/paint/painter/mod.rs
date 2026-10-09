@@ -4181,7 +4181,10 @@ pub(crate) fn collect_css_transforms(
     out: &mut Vec<(NodeId, String)>,
 ) {
     if let Some(st) = styles.get(&subtree_root)
-        && st.transform != zero_css_parser::values::TransformValue::None
+        && (st.transform != zero_css_parser::values::TransformValue::None
+            || st.individual_translate.is_some()
+            || st.individual_rotate.is_some()
+            || st.individual_scale.is_some())
     {
         // 参考框 + origin 换算（CSS Transforms 1 §transform-box / §transform-origin）。
         let font_size_px = zero_style_system::computed::resolve_length(&st.font_size, 16.0, None, None) as f32;
@@ -4240,7 +4243,31 @@ pub(crate) fn collect_css_transforms(
             ox += rx;
             oy += ry;
         }
-        if let Some(svg) = transform_value_to_svg(&st.transform, ref_box, (ox, oy)) {
+        // R5015（css-transforms-2 §individual-transforms）：SVG 元素（无关联 CSS 布局盒）
+        // 的 individual rotate/scale/translate 走同一条位图路径注入——合成顺序按 §规范
+        // 固定 translate · rotate · scale · transform；% 分量复用 transform_value_to_svg
+        // 的参考框换算（R4098），origin/transform-box 与 transform 属性共享（上方 ox/oy）。
+        // 旧实现只消费 transform 属性——individual 属性在 SVG 子树整体丢失
+        //（translate-view-box/fill-box：translate: 50% 不生效，绿块缺位）。
+        let mut funcs: Vec<zero_css_parser::values::TransformFunction> = Vec::with_capacity(4);
+        if let Some(f) = &st.individual_translate {
+            funcs.push(f.clone());
+        }
+        if let Some(f) = &st.individual_rotate {
+            funcs.push(f.clone());
+        }
+        if let Some(f) = &st.individual_scale {
+            funcs.push(f.clone());
+        }
+        if let zero_css_parser::values::TransformValue::List(own) = &st.transform {
+            funcs.extend(own.iter().cloned());
+        }
+        let composed = if funcs.is_empty() {
+            zero_css_parser::values::TransformValue::None
+        } else {
+            zero_css_parser::values::TransformValue::List(funcs)
+        };
+        if let Some(svg) = transform_value_to_svg(&composed, ref_box, (ox, oy)) {
             out.push((subtree_root, svg));
         }
     }
@@ -4627,6 +4654,10 @@ pub(crate) fn transform_value_to_svg(
                 format!("translate(0 {y})")
             }
             Tf::Rotate(a) => format!("rotate({a})"),
+            // R5015：RotateZ = 2D rotate（individual `rotate: <angle>` 载荷为 RotateZ，
+            // parse_individual_rotate 单值臂）——跳过会使 individual rotate 在 SVG 位图
+            // 路径整体丢失（translate-view-box target4：rotate: 180deg 象限缺位）。
+            Tf::RotateZ(a) => format!("rotate({a})"),
             Tf::Scale(sx, Some(sy)) => format!("scale({sx} {sy})"),
             Tf::Scale(sx, None) => format!("scale({sx})"),
             Tf::ScaleX(sx) => format!("scale({sx} 1)"),
@@ -4637,7 +4668,9 @@ pub(crate) fn transform_value_to_svg(
                 format!("matrix({a} {b} {c} {d} {e} {f_})")
             }
             // 3D 函数：ZW 无 3D 渲染语义（css-transforms-2 域挂账），恒等投影跳过。
-            Tf::ScaleZ(_) | Tf::RotateX(_) | Tf::RotateY(_) | Tf::RotateZ(_) => continue,
+            // R5015：RotateZ 摘出——2D rotate（见上方 arm），跳过会使 individual
+            // `rotate: <angle>` 在 SVG 位图路径整体丢失。
+            Tf::ScaleZ(_) | Tf::RotateX(_) | Tf::RotateY(_) => continue,
             Tf::Translate3d(tx, ty, _) => format!("translate({tx} {ty})"),
             Tf::Scale3d(sx, sy, _) => {
                 if sx == sy {
