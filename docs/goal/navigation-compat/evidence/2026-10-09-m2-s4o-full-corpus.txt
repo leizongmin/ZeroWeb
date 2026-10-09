@@ -64,7 +64,7 @@ curl: (22) The requested URL returned error: 404
   4. 回填：docs/compat/trends/wpt-suites.csv planned 行转数据行（evidence 列给来源）
 rustc -O scripts/test-guard.rs -o target/test-guard
 cargo build --release --bin zero-wpt-runner
-    Finished `release` profile [optimized] target(s) in 0.40s
+    Finished `release` profile [optimized] target(s) in 0.17s
 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 2700 -- ./target/release/zero-wpt-runner testharness-navigation 
 Fail navigation-api/currententrychange-event/anchor-click.html :: currententrychange fires for link click
   assert_equals: expected object "[object Object]" but got object "[object Object]"
@@ -196,16 +196,12 @@ Fail navigation-api/navigate-event/same-url-replace-cross-document.html :: navig
 Fail navigation-api/navigate-event/same-url-replace-same-document.html :: navigation-api/navigate-event/same-url-replace-same-document.html
   page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: navigation-api/navigate-event/resources/helpers.js (No such file or directory (os error 2))
 Pass navigation-api/navigate-event/signal-abort-intercept.html :: event.intercept() does not signal event.signal
-Fail navigation-api/navigate-event/signal-abort-preventDefault.html :: event.preventDefault() signals event.signal
-  assert_array_equals: lengths differ, expected array ["onabort", "onnavigateerror"] length 2, got ["onnavigateerror"] length 1
+Pass navigation-api/navigate-event/signal-abort-preventDefault.html :: event.preventDefault() signals event.signal
 Pass navigation-api/navigate-event/signal-abort-reentry-navigate-api-tracker.html :: Re-entry via abort signal using pushState
 Pass navigation-api/navigate-event/signal-abort-reentry-navigate-api-tracker.html :: Re-entry via abort signal using navigate()
-Fail navigation-api/navigate-event/signal-abort-window-stop-after-intercept.html :: window.stop() cancels the navigate event's intercept() and signals event.signal
-  assert_greater_than: expected a number greater than 0 but got 0
-Timeout navigation-api/navigate-event/signal-abort-window-stop-in-onnavigate.html :: navigation-api/navigate-event/signal-abort-window-stop-in-onnavigate.html
-  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 748], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
-Fail navigation-api/navigate-event/signal-abort-window-stop.html :: window.stop() signals event.signal
-  assert_true: expected true got false
+Pass navigation-api/navigate-event/signal-abort-window-stop-after-intercept.html :: window.stop() cancels the navigate event's intercept() and signals event.signal
+Pass navigation-api/navigate-event/signal-abort-window-stop-in-onnavigate.html :: window.stop() signals event.signal inside a navigate event handler
+Pass navigation-api/navigate-event/signal-abort-window-stop.html :: window.stop() signals event.signal
 Fail navigation-api/navigation-activation/activation-after-bfcache-cross-origin.html :: navigation-api/navigation-activation/activation-after-bfcache-cross-origin.html
   page script threw (declared tests: 0): Script error: external script /common/dispatcher/dispatcher.js: script fetch failed: common/dispatcher/dispatcher.js (No such file or directory (os error 2))
 Fail navigation-api/navigation-activation/activation-after-bfcache.html :: navigation-api/navigation-activation/activation-after-bfcache.html

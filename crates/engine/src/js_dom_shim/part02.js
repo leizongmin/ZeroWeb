@@ -253,6 +253,12 @@
     for (var i = 0; i < ls.length; i++) {
       try { ls[i]({ type: 'abort', target: signal }); } catch (_) {}
     }
+    // M2-S4O：`onabort` 事件处理器属性同步触发（spec：abort 事件派发——event handler
+    // 本质是 addEventListener('abort') 注册面；WPT signal-abort-window-stop 族
+    // `signal.onabort = () => onabort_called = true` 断言面）。
+    try {
+      if (typeof signal.onabort === 'function') signal.onabort.call(signal, { type: 'abort', target: signal });
+    } catch (_) {}
   }
   AbortSignal.abort = function (reason) {
     var s = new AbortSignal();
@@ -4917,7 +4923,7 @@
     // traverse 面「popstate before handler starts 不发」）；无 precommit 时 doCommit() 立即调
     // → 与旧内联时序一致。
     var _navCommitTraversal = function () {
-      // M2-S4O：提交期印记（同 _navCommitNav——提交中 abort 不 reject committed）。
+      // M2-S4O：提交期印记（同 _navCommitNav——提交中 abort 不 reject committed；块末清零）。
       _navEv._zwCommitting = true;
       _hist_cursor = target;
       // M2-S4：Navigation API traverse 面——currentEntry 恢复到目标 session entry 的 record
@@ -4929,6 +4935,7 @@
         _histRestoreScroll(_hist_entries[target]);
       }
       _hist_dispatchPopState(oldHref, _navEv._zwIntercepted);
+      _navEv._zwCommitting = false;
     };
     if (_navEv._zwIntercepted) _navRunIntercept(_navEv, ctrl, _navCommitTraversal);
     else {
@@ -5338,7 +5345,9 @@
         // 不再 reject（spec：已提交导航的 abort 只 reject finished——committed 照常兑现；
         // WPT dispose-same-document-navigate-during「the committed promise should still
         // fulfill」。旧版 ctrl.resolve 在本闭包返回后才调，提交中 abort 的 committed 仍
-        // pending 即被 reject）。
+        // pending 即被 reject）。**块末清零**——提交块结束后的 abort（如同步返回后的
+        // window.stop()）照常 reject 仍 pending 的 committed（跨文档微任务结算面，
+        // WPT signal-abort-window-stop）。
         ev._zwCommitting = true;
         var u = ev._zwRedirectUrl || abs;
         var rep = ev._zwRedirectHistory === 'replace' ? true
@@ -5357,21 +5366,42 @@
         // M2-S4D：restore 规格（push/replace——destination fragment 锚滚 | 无 fragment 滚到文档
         // 顶；WPT scroll-behavior manual-scroll-resets-when-no-fragment / -fragment-does-not-exist）。
         ev._zwRestore = _navRestoreSpecForUrl(u);
+        ev._zwCommitting = false;
       };
       if (ev._zwIntercepted && (ev._zwPrecommit || []).length) {
         _navRunIntercept(ev, ctrl, _navCommitNav);
       }
       else {
         _navCommitNav();
-        // M2-S4G：committed 于提交即结算（spec notify-about-committed——先于 success steps 微任务）。
-        if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
         if (ev._zwIntercepted) {
+          // M2-S4G：committed 于提交即结算（spec notify-about-committed——先于 handler 链）。
+          if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
           _navRunIntercept(ev, ctrl);
+        }
+        else if (!hashChange) {
+          // M2-S4O：**跨文档**（非 hash-only）navigate()——committed/success **微任务**结算。
+          // spec 真跨文档的 committed 到新文档 commit 才兑现；本 shim 内存近似提交，但结算
+          // 须保持同步块内 pending（WPT signal-abort-window-stop「navigate('?1') 后同步
+          // window.stop() → committed reject AbortError」——同步结算则 stop 无法 reject）。
+          // 同文档（hash-only）维持同步立即结算（ordering/dispose 簇断言基面）。
+          if (ev._zwErrored) {
+            if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+            return { committed: ctrl.committed, finished: ctrl.finished };
+          }
+          var _runCrossDocSuccess = function () {
+            if (!ctrl._cDone && ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+            if (ev._zwErrored || ev._zwSettled) return;
+            if (ctrl.finishedSettle) ctrl.finishedSettle(null, false, _navPub(_navCurrent()));
+            _navDispatchAny(new Event('navigatesuccess'));
+            if (_navOngoing && _navOngoing.ev === ev) _navOngoing = null;
+          };
+          if (typeof queueMicrotask === 'function') queueMicrotask(_runCrossDocSuccess);
+          else _runCrossDocSuccess();
         }
         else {
           // M2-S4D：fragment 导航提交后滚锚（WPT scroll-behavior after-transition-basic
           // 「navigate('#frag') 后 scrollY ≠ 0」基面）。
-          if (hashChange && String(abs).indexOf('#') >= 0) {
+          if (String(abs).indexOf('#') >= 0) {
             _scrollToAnchorForHash(String(abs).split('#')[1] || '');
           }
           // M2-S4M：非 intercept 同文档导航——committed **同步立即**结算（spec「committed
@@ -5770,7 +5800,13 @@
     return ctrl;
   }
   function _navNavAbortError() {
-    return new (globalThis.DOMException || DOMException)('The operation was aborted.', 'AbortError');
+    var e = new (globalThis.DOMException || DOMException)('The operation was aborted.', 'AbortError');
+    // M2-S4O：附 stack——navigateerror ErrorEvent 的 filename/lineno/colno 自 err.stack
+    // best-effort 提取（_navFireNavigateerror），DOMException 本身无栈 → 全 0；
+    // WPT signal-abort-window-stop-after-intercept「lineno/colno > 0 + filename = 页面 URL」。
+    // 帧文件为 shim 匿名脚本 → 提取侧回退页面 URL。
+    try { e.stack = new Error().stack; } catch (_eNs) {}
+    return e;
   }
   // intercept handler 生命周期：**同步起跑**（spec——navigate event intercept commit handler
   // steps 在 commit 事件内的 prepare-to-run-script 抑制段执行，handler 于 navigate()/back()
