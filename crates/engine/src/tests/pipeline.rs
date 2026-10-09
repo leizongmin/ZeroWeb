@@ -1180,6 +1180,11 @@ fn test_pipeline_balanced_multicol_growth_pushes_following_content_down() {
 }
 
 /// 测试渲染管线处理深嵌套 HTML 不 panic。
+///
+/// 栈前提：管线的样式/布局/paint 按树深递归（debug 帧大，paint 侧 R4248 注释
+/// 「栈余量以字节计」），20 层嵌套在 libtest 缺省 2MiB 测试线程栈下会栈溢出
+/// abort，≥4MiB 通过（2026-10-09 slice48 实测）；须在 `RUST_MIN_STACK`≥4MiB
+/// 下运行——`make test` 已设 32MiB（Makefile），裸 `cargo test` 不具备此前提。
 #[test]
 fn test_pipeline_deeply_nested_html() {
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
