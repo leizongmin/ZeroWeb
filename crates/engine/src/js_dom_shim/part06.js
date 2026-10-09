@@ -4362,6 +4362,13 @@
     if (event && event.type === 'load' && typeof globalThis.__zwRegisterNamedIframes === 'function') {
       try { globalThis.__zwRegisterNamedIframes(); } catch (_e139r) {}
     }
+    // M2-S4M（navigation-compat）：window 'load' 派发 = 文档 completely loaded 标记——
+    // 此后 hash-setter 片段导航 historyHandling 由 replace 转 push（spec form/navigate
+    // 「未完全加载 → replace」规则的镜像面；WPT dispose-same-document push 面 vs
+    // location-api 载入前 replace 面）。
+    if (event && event.type === 'load') {
+      try { globalThis.__zwDocCompletelyLoaded = true; } catch (_eS4M) {}
+    }
     return _dispatchWithBubble(_elKey('html', null), 'html', null, event, 'win');
   };
   // R2983 `window.postMessage(message, targetOrigin [, transfer])`——canonical 跨窗口消息 API。

@@ -2,8 +2,8 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-09（M2-S1~S4L 十五片——location-interface 95.3% / traversal 93.3% /
-history-interface 91.8% / navigation-api 78.4%；全量 20.9%→71.2%（339/476））
+**最后更新**: 2026-10-09（M2-S1~S4M 十六片——location-interface 95.3% / traversal 93.3% /
+history-interface 91.8% / navigation-api 79.2%；全量 20.9%→71.6%（341/476））
 
 ---
 
@@ -26,7 +26,7 @@ history-interface 91.8% / navigation-api 78.4%；全量 20.9%→71.2%（339/476�
 | P1 | 四 corpus 导入 + 基线 | ✅ 落地（fetch 三域 + 嵌套 resources 2026-10-07 恢复后入库；基线 20.9%，S1+S2 后全量 29.2%） |
 | P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口：the-history-interface 81.6%→**91.8%**（traverse 入队 + 空串 URL + 跨源 SecurityError）；余 xhr helper infra ×1 + 速率限制 optional ×2 挂账 |
 | P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | 🔶 S1+S2+S4F 落地：location-interface 41.9%→**95.3%**（exotic 内部方法面 Proxy 承载收口）、traversal 62.2%→**93.3%**；余 2F = runner 无端口 URL（形态缺口挂账）+ create-script-set-location（归 ③ 跨文档簇） |
-| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4L 十五段落地（→**78.4%**）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程/form submit navigate/activation 暴露/transition 派发时机全收；余静态锚 href IDL 落 attr 面（2 案——回流 element IDL 域）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域）、re-entrant 嵌套 fire 时序 2T（C 类余项） |
+| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4M 十六段落地（→**79.2%**）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程/form submit navigate/activation 暴露/transition 派发时机/dispose 深簇全收；余静态锚 href IDL 落 attr 面（2 案——回流 element IDL 域）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域）、dispose-navigate-during unhandled 定位 1F（C 类余项） |
 | P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | ⏳ M3 **用户门控** |
 | P5 | bfcache / fission 挂账定稿 | ✅ M4 定稿（bfcache：无实现面，依赖 frame tree→Document 快照管线，挂账至 M3 后续立项；fission：charter 排除维持。见 [M4 评估](evidence/2026-10-09-m4-closeout-assessment.md)） |
 
@@ -135,11 +135,20 @@ history-interface 91.8% / navigation-api 78.4%；全量 20.9%→71.2%（339/476�
   `?currententrychange` 变体 Fail 簇 11 案全收。navigation-api 74.5%→**78.4%**；全量
   69.1%→**71.2%**；per-subtest 精确 diff 零回归。余 re-entrant 嵌套 fire 时序 2T。
   证据：[evidence/2026-10-09-m2-s4l-transition-lifecycle.md](evidence/2026-10-09-m2-s4l-transition-lifecycle.md)。
-- **质量门禁（十五片）**：`make test` 全绿 20,317 P / 0 F（S4L 轮；renderer R2946 onload
-  时序钉负载 flake solo 复跑即绿——兄弟流 crate 归因同 S4I/S4J 先例）；`make reftest`
-  704/704 零失败（2026-10-08 复验）；clippy -D warnings 零 warning；fmt 零 diff；每轮
-  全量语料零回归（per-subtest 精确 diff）。全量批墙钟 TIME_LIMIT=2700（批内不与 make test
-  并发）。
+- **M2-S4M dispose 深簇收口 + 载入后 hash-setter push 语义 + ongoing 槽生命周期（2026-10-09）**：
+  window 'load' 置载入标记 → hash-setter 片段导航 Navigation API 侧载入前 replace/载入后 push
+  分派（dispose-same-document「entries=start+3」与 location-api「replace+index 不变」由载入态
+  区分）+ ongoing 槽 commit 清除（dispose 处理器内后续导航不被过期槽 abort）+ 非 intercept
+  同文档导航同步立即结算 + finished 标记 handled（spec Mark as handled）+ ordering
+  `?currententrychange` CCE 变体 11 案（transition 前移 dispatch 后）+ 顺修 traverse 提交
+  双调用（r3065 门禁捕获）。navigation-api 74.5%→**79.2%**（dispose 深簇 3F 收口 + CCE
+  变体 11 案）；全量 69.1%→**71.6%**；per-subtest 精确 diff 零回归。
+  证据：[evidence/2026-10-09-m2-s4m-dispose-cluster.md](evidence/2026-10-09-m2-s4m-dispose-cluster.md)。
+- **质量门禁（十六片）**：`make test` 全绿 20,319 P / 0 F（S4M 轮；r3065 双 commit 回归被
+  门禁当场捕获修复；renderer 时序钉负载 flake 两例 solo 复跑即绿——兄弟流 crate 归因同先例）；
+  `make reftest` 704/704 零失败（2026-10-08 复验）；clippy -D warnings 零 warning；fmt 零
+  diff；每轮全量语料零回归（per-subtest 精确 diff）。全量批墙钟 TIME_LIMIT=2700（批内不与
+  make test 并发）。
 
 ## M4 收口评估（2026-10-09）
 
@@ -152,8 +161,9 @@ history-interface 91.8% / navigation-api 78.4%；全量 20.9%→71.2%（339/476�
 
 ## 下一步计划
 
-1. **C 类可切片余项**：re-entrant 嵌套 fire 时序 2T（ordering-intercept-reentrant 双变体）
-   → dispose 深簇 ~6F → state same-document-away-and-back ×2（traverse navState 还原语义）。
+1. **C 类可切片余项**：dispose-navigate-during unhandled AbortError 源定位 1F → state
+   same-document-away-and-back ×2（traverse navState 还原语义）→ ordering
+   location-href-intercept-reentrant 双变体 2T。
 2. **replace-before-load 38F 重定性 → M3 依赖**（2026-10-09 勘察）：全簇为 iframe 载体
    （setupSentinelIframe/insertIframe + 子文档 load 前自导航），断言 iframe 自有 session
    history 的 replace 语义——单文档 runner 形态不可达，随 M3 frame tree 一并解锁。

@@ -4817,9 +4817,6 @@
   var _hist_pendingTraversals = [];
   function _hist_queueTraversal(delta, ctrl) {
     _hist_pendingTraversals.push({ delta: delta, ctrl: ctrl || null });
-    // M2-S4G：traverse 步骤入 **task** 队列（spec session history traversal steps——非微任务；
-    // back() 后同任务内排队的 promise 微任务先于 traverse 事件——WPT ordering back-same-document
-    // 「promise microtask 先于 navigate」）。旧 _defer(queueMicrotask) 顺序不符。
     if (typeof setTimeout === 'function') {
       setTimeout(_hist_runQueuedTraversals, 0);
     } else {
@@ -4923,6 +4920,9 @@
     };
     if (_navEv._zwIntercepted) _navRunIntercept(_navEv, ctrl, _navCommitTraversal);
     else {
+      // M2-S4M：commit 开始即清 ongoing 槽（commit 本身不可再被抢占；dispose 中触发的
+      // 后续导航不被本 traverse 的过期槽 abort——WPT dispose-same-document-navigate-during）。
+      if (_navOngoing && _navOngoing.ev === _navEv) _navOngoing = null;
       _navCommitTraversal();
       if (ctrl) {
         // M2-S4G：committed 提交即结算（spec notify）。
@@ -5345,15 +5345,32 @@
           if (hashChange && String(abs).indexOf('#') >= 0) {
             _scrollToAnchorForHash(String(abs).split('#')[1] || '');
           }
-          _defer(function () {
-            // M2-S4G：非 intercept 同文档导航同样走 success steps（spec——空 handler 链的
-            // wait-for-all；WPT ordering navigate-same-document「navigatesuccess」）。
-            // 被后续导航抢占（_zwErrored）→ 跳过（navigateerror 已派——WPT
-            // navigate-multiple-navigation-navigate 事件序）。
-            if (ev._zwErrored) return;
+          // M2-S4M：非 intercept 同文档导航——committed **同步立即**结算（spec「committed
+          // fulfill immediately」）；finished + navigatesuccess 走 success-steps **微任务**
+          //（spec wait-for-all 零 handler 也是 resolved promise → 微任务；WPT ordering
+          // navigate-same-document 序）。ongoing 槽**微任务**清除（同步段内后续导航仍可按
+          // spec abort 本导航——WPT navigate-multiple-navigation-navigate「#1 被 #2 abort」；
+          // 微任务后清——dispose 中触发的导航不被过期槽 abort）。被抢占（_zwErrored）→ 跳过
+          // success steps（navigateerror 已派）。
+          if (ev._zwErrored) {
+            if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+            return { committed: ctrl.committed, finished: ctrl.finished };
+          }
+          if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+          var _runSuccessSteps = function () {
+            if (ev._zwErrored || ev._zwSettled) return;
             if (ctrl.finishedSettle) ctrl.finishedSettle(null, false, _navPub(_navCurrent()));
             _navDispatchAny(new Event('navigatesuccess'));
-          });
+          };
+          if (typeof queueMicrotask === 'function') {
+            queueMicrotask(function () {
+              _runSuccessSteps();
+              if (_navOngoing && _navOngoing.ev === ev) _navOngoing = null;
+            });
+          } else {
+            _runSuccessSteps();
+            if (_navOngoing && _navOngoing.ev === ev) _navOngoing = null;
+          }
         }
       }
       return { committed: ctrl.committed, finished: ctrl.finished };
@@ -5716,6 +5733,10 @@
     // 未观察的 abort（preempt/越界/取消）计为全局 unhandledrejection（WPT 各测试自行挂
     // promise_rejects_dom 断言，不受影响）。
     ctrl.committed.catch(function () {});
+    // M2-S4M：spec「Mark as handled finishedPromise」——finished 同样标记（被后续导航
+    // abort 的导航其 finished 兑现/reject 均不产生 unhandledrejection——WPT
+    // dispose-same-document-navigate-during 的 spoon.finished 面）。
+    ctrl.finished.catch(function () {});
     ctrl.finished.catch(function () {});
     return ctrl;
   }
@@ -6022,6 +6043,8 @@
     // M2-S4H：download 导航未 intercept → 不提交不重载（下载吞导航，导航永不结算——
     // WPT anchor-download「fires navigate, but not navigatesuccess/navigateerror」）。
     if (_zwNavEv.downloadRequest !== null && !_zwNavEv._zwIntercepted) return;
+    // M2-S4M：commit 开始即清本导航 ongoing 槽。
+    if (_navOngoing && _navOngoing.ev === _zwNavEv) _navOngoing = null;
     _pushHistNav(newHref, oldHref);
     // M2-S2（navigation-compat）：fragment navigation 派 popstate **同步**（setter 返回前；spec
     // URL and history update steps——同文档导航的 popstate 在导航算法内同步派发，先于 queued
@@ -6031,11 +6054,19 @@
     var _zwPsEv = new PopStateEvent('popstate', { state: _hist_current().state, __zwTrusted: true });
     _zwPsEv.target = globalThis;
     _dispatchToListeners(_elKey('html', null), _zwPsEv, 'all', globalThis);
-    // M2-S4：Navigation API hash-setter 面——**replace** 语义（保 key 新 id、旧 entry detach；
+    // M2-S4：Navigation API hash-setter 面——replace 语义（保 key 新 id、旧 entry detach；
     // WPT location-api navigationType='replace' + from.index===-1 + current-basic sixth 保 key）。
+    // M2-S4M：**载入后转 push**（spec——文档完全加载后片段导航 historyHandling=push：
+    // entries 增长 + forward-pruning dispose 面；WPT dispose-same-document
+    // 「entries().length = start+3」。载入前维持 replace——location-api 面）。
     // M2-S4C：navState 承继（fragment 导航——WPT navigate-destination-getState-fragment-via-href）
     // + destination bind 绑新记录（动态 index）。
-    var _zwFreshRec = _navReplaceCurrent(_hist_current(), true);
+    var _zwFreshRec;
+    if (globalThis.__zwDocCompletelyLoaded === true) {
+      _zwFreshRec = _navPushCurrent(_hist_current());
+    } else {
+      _zwFreshRec = _navReplaceCurrent(_hist_current(), true);
+    }
     if (_zwNavEv._zwBind) _zwNavEv._zwBind.rec = _zwFreshRec;
     // M2-S4B：intercept → handler 生命周期 + 跳过默认 fragment 滚锚（spec——intercept 替换默认行为；
     // WPT intercept-handler-throws/intercept-resolve 的 location.href='#1' 面断言 URL 已应用）。
