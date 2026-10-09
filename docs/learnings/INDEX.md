@@ -5,10 +5,12 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（146）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（148）
 
 - 2026-10-09 [target-disk-guard 三级全量清空会抹除多段链前序段的 release 产物](bugs/2026-10/2026-10-09-target-disk-guard-wipes-release-artifacts.md) — build-support,apps/browser
 - 2026-10-09 [回执 schema 以校验器代码为单一事实源，不镜像既有文件的形状](bugs/2026-10/2026-10-09-receipt-schema-single-source-validator.md) — .agents/skills/zeroweb-site-optimizer
+- 2026-10-09 [长时链运行期的工作树纪律：HEAD guard 与 log 追加语义的两件实证](bugs/2026-10/2026-10-09-long-chain-worktree-discipline.md) — .agents/skills/zeroweb-site-optimizer
+- 2026-10-09 [账本状态机的字段约束以转换器代码为准——回填/绑定/位置三坑](bugs/2026-10/2026-10-09-ledger-state-machine-field-contracts.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-10-09 [校验器惰性实跑：角色报告在首次绑定时才被校验](bugs/2026-10/2026-10-09-lazy-validator-first-binding-exposure.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-10-08 [符号链接路径调用 Node CLI 脚本导致入口守卫空转（rc=0 但未校验）](bugs/2026-10/2026-10-08-symlink-cli-entry-guard-noop.md) — build-support
 - 2026-10-08 [门禁 log 链中单个 `>` 重定向截断掉已写头部](bugs/2026-10/2026-10-08-append-redirect-truncate-gate-logs.md) — build-support
@@ -154,8 +156,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（20）
+## Patterns — 可复用代码模式与最佳实践（21）
 
+- 2026-10-09 [final_acceptance 派发与回执契约速查](patterns/2026-10/2026-10-09-final-acceptance-dispatch-contract.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-10-09 [已落账证据的不可变性与纯路径转写勘误规程](patterns/2026-10/2026-10-09-evidence-transcription-path-only-correction.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-10-07 [无 perf/gdb/Profiler 下定位 js worker 饱和的方法阶梯（bilibili 输入卡死案）](patterns/2026-10/2026-10-07-js-worker-saturation-diagnosis-without-perf.md)
 - 2026-10-06 [V8 无名脚本命名：sourceURL 注释的末行规则与失效形态](patterns/2026-10/2026-10-06-v8-sourceurl-naming.md) — script-sandbox,renderer,engine
@@ -222,8 +225,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（27）
+## Platform — 平台与环境相关经验（28）
 
+- 2026-10-09 [symlink 路径调用 skill 脚本会静默空转（.claude/skills → .agents/skills）](platform/2026-10/2026-10-09-symlinked-skill-script-silent-noop.md) — tools
 - 2026-10-08 [shim js 变更后 cargo 未重编 engine：探针打到旧 renderer 的构建盲区](platform/2026-10/2026-10-08-shim-js-include-str-rebuild-gap.md) — engine
 - 2026-10-07 [zero-wpt-runner 组级过滤的正确调用形态：testharness-dom + 路径，不是 `run <组名>`](platform/2026-10/2026-10-07-wpt-runner-group-invocation-form.md) — tests/wpt-runner
 - 2026-10-07 [陈旧 sibling 二进制使进程级二分定位全盘失效（zero-renderer 未随 zero-browser 重建）](platform/2026-10/2026-10-07-stale-sibling-binary-bisect-corruption.md) — renderer,protocol,diag
