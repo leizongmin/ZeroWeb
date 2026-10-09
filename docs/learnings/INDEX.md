@@ -5,8 +5,13 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（141）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（146）
 
+- 2026-10-09 [target-disk-guard 三级全量清空会抹除多段链前序段的 release 产物](bugs/2026-10/2026-10-09-target-disk-guard-wipes-release-artifacts.md) — build-support,apps/browser
+- 2026-10-09 [回执 schema 以校验器代码为单一事实源，不镜像既有文件的形状](bugs/2026-10/2026-10-09-receipt-schema-single-source-validator.md) — .agents/skills/zeroweb-site-optimizer
+- 2026-10-09 [校验器惰性实跑：角色报告在首次绑定时才被校验](bugs/2026-10/2026-10-09-lazy-validator-first-binding-exposure.md) — .agents/skills/zeroweb-site-optimizer
+- 2026-10-08 [符号链接路径调用 Node CLI 脚本导致入口守卫空转（rc=0 但未校验）](bugs/2026-10/2026-10-08-symlink-cli-entry-guard-noop.md) — build-support
+- 2026-10-08 [门禁 log 链中单个 `>` 重定向截断掉已写头部](bugs/2026-10/2026-10-08-append-redirect-truncate-gate-logs.md) — build-support
 - 2026-10-07 [workspace 根 `--bin` 构建的全成员 feature 统一解析把 v8 拖进 quickjs 臂](bugs/2026-10/2026-10-07-workspace-bin-build-feature-unification-v8-leak.md) — ci,build
 - 2026-10-07 [taffy 的 aspect-ratio 传递不与内容取大，且项目内既有传递臂全部 HorizontalTb 门控](bugs/2026-10/2026-10-07-taffy-ar-transfer-no-content-max-vertical.md) — zero-layout-engine
 - 2026-10-07 [多进程二进制分工：DOM shim 在 zero-renderer，`-p zero-browser` 构建不覆盖它](bugs/2026-10/2026-10-07-renderer-shim-not-in-browser-binary.md) — engine,renderer
@@ -149,8 +154,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（19）
+## Patterns — 可复用代码模式与最佳实践（20）
 
+- 2026-10-09 [已落账证据的不可变性与纯路径转写勘误规程](patterns/2026-10/2026-10-09-evidence-transcription-path-only-correction.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-10-07 [无 perf/gdb/Profiler 下定位 js worker 饱和的方法阶梯（bilibili 输入卡死案）](patterns/2026-10/2026-10-07-js-worker-saturation-diagnosis-without-perf.md)
 - 2026-10-06 [V8 无名脚本命名：sourceURL 注释的末行规则与失效形态](patterns/2026-10/2026-10-06-v8-sourceurl-naming.md) — script-sandbox,renderer,engine
 - 2026-10-04 [make test 锚算术对 zero-renderer/zero-browser 测试结构性失明——回归钉的落点必须核对 target 归属](patterns/2026-10/2026-10-04-make-test-target-blindspot-pins.md) — apps/renderer, apps/browser, tests/wpt-runner
