@@ -1248,6 +1248,15 @@ mod tests {
         assert!(!reg.play(MSE_SRC, 0));
     }
 
+    /// 封顶/未登记拒绝面（t8n 返修 B2）：未登记键 `mse_append` → false
+    /// （registry 侧入口；回调层映射 "0" → shim error + updateend 失败面）。
+    #[cfg(feature = "decode-h264")]
+    #[test]
+    fn registry_mse_append_unregistered_key_rejected() {
+        let mut reg = VideoPlayerRegistry::new();
+        assert!(!reg.mse_append("blob:https://example.com/never-created", &[0u8; 8]));
+    }
+
     /// MSE 显式 duration 优先钉：`mediaSource.duration` 赋值面在容器声明缺失
     ///（fragmented 常 0/None）时供语义层真值。
     #[cfg(feature = "decode-h264")]

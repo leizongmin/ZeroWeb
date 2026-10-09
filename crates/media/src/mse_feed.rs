@@ -280,7 +280,15 @@ impl MseVideoFeed {
             return Ok(Some(frame));
         }
         if self.eof {
-            return Ok(None);
+            // 流末续喂感知（t8n 返修 B1）：sticky eof 闩锁只在读边缘赋值，
+            // append 不经该路径——缓冲已增长即闩锁陈旧，就地解除后交既有
+            // 增长重建续读（下方 Ok(None) 臂：陈旧 reader 读边缘 → 重建 +
+            // skip_until_new）；未增长仍是真流末等待面。
+            if self.handle.byte_len() > self.len_at_probe {
+                self.eof = false;
+            } else {
+                return Ok(None);
+            }
         }
         if !self.try_probe()? {
             return Ok(None);
@@ -741,6 +749,53 @@ mod tests {
         (init, moofmdat)
     }
 
+    /// 追加媒体段构造器：复刻 `build_fragmented` 的 moof+mdat 单 fragment 面，
+    /// tfdt 基准偏移到 `base_dts`（高 pts 续段，不落 skip_until_new 相）、mfhd
+    /// 序号 `seq`。供流末续喂（append-after-endOfStream）读侧钉测。
+    fn build_media_segment_cont(samples: &[(Vec<u8>, bool)], base_dts: u32, seq: u32) -> Vec<u8> {
+        let frame_dur: u32 = 40;
+        let mut trun_payload = be32(samples.len() as u32).to_vec();
+        trun_payload.extend_from_slice(&be32(0));
+        for (_, is_key) in samples {
+            let flags = if *is_key { 0x0200_0000 } else { 0x0101_0000 };
+            trun_payload.extend_from_slice(&be32(frame_dur));
+            trun_payload.extend_from_slice(&be32(0));
+            trun_payload.extend_from_slice(&be32(flags));
+        }
+        let trun = full_box(b"trun", 0, 0x000701, trun_payload);
+        let tfhd = full_box(b"tfhd", 0, 0x020000, be32(1).to_vec());
+        let tfdt = full_box(b"tfdt", 1, 0, be32(base_dts).to_vec());
+        let mfhd = full_box(b"mfhd", 0, 0, be32(seq).to_vec());
+        let trun_len = trun.len();
+        let traf_body = [tfhd, tfdt, trun].concat();
+        let traf = box_header(b"traf", traf_body.len())
+            .into_iter()
+            .chain(traf_body)
+            .collect::<Vec<u8>>();
+        let moof_body = [mfhd, traf].concat();
+        let moof = box_header(b"moof", moof_body.len())
+            .into_iter()
+            .chain(moof_body)
+            .collect::<Vec<u8>>();
+        let mut mdat_payload = Vec::new();
+        for (au, _) in samples {
+            mdat_payload.extend_from_slice(au);
+        }
+        let mut moofmdat = moof.clone();
+        let mdat_start = moofmdat.len();
+        moofmdat.extend_from_slice(&box_header(b"mdat", mdat_payload.len()));
+        moofmdat.extend_from_slice(&mdat_payload);
+        // 回填逻辑与 build_fragmented 一致（trun 头 12B + data_offset 前置 4B）。
+        let trun_data_start = moof.len() - trun_len + 12 + 4;
+        moofmdat[trun_data_start..trun_data_start + 4].copy_from_slice(&be32((mdat_start + 8) as u32));
+        let mut off = trun_data_start + 4;
+        for (au, _) in samples {
+            moofmdat[off + 4..off + 8].copy_from_slice(&be32(au.len() as u32));
+            off += 12;
+        }
+        moofmdat
+    }
+
     /// 钉①（渐进式流喂）：同一 progressive mp4 分两块 append——probe 惰性建
     /// reader，帧解码与整文件 open 等价；未 end() 前 None ≠ 真流末。
     #[test]
@@ -803,6 +858,7 @@ mod tests {
     fn mse_feed_append_after_end_clears_eof_latch_t8n() {
         let (avcc, samples) = fixture_material();
         let (init, media) = build_fragmented(&avcc, &samples);
+        let n = samples.len();
         let (mut feed, handle) = MseVideoFeed::new();
         handle.append(&init);
         handle.append(&media);
@@ -816,5 +872,37 @@ mod tests {
         // 重新 end()：闩锁再置，恢复真流末。
         handle.end();
         assert!(feed.is_exhausted(), "重新 end() 恢复真流末");
+
+        // 读侧钉（t8n 返修 B1）：旗标面不证读侧——feed 内 sticky eof 闩锁只在
+        // 读边缘赋值（demux 边缘 `eof = is_ended()`），若 append 增长不解闩，
+        // 同一 feed 对象排帧恒 None（n2=0）。tfdt 偏移高 pts 续段续喂后必须
+        // 能从同一对象排出续段帧；seek_to_ms(0) 对照（seek 清闩锁 + 重建
+        // reader）证明续段字节本身可解析（≥2N 全量排出）。
+        let cont = build_media_segment_cont(&samples, (n as u32) * 40, 2);
+        let (mut feed, handle) = MseVideoFeed::new();
+        handle.append(&init);
+        handle.append(&media);
+        handle.end();
+        let mut n1 = 0;
+        while feed.next_frame().unwrap().is_some() {
+            n1 += 1;
+        }
+        assert_eq!(n1, n, "首段 N 帧排空");
+        assert!(feed.is_exhausted(), "end() 后真流末");
+        handle.append(&cont);
+        assert!(!feed.is_exhausted(), "续喂后写入边缘回等待面");
+        let mut n2 = 0;
+        while feed.next_frame().unwrap().is_some() {
+            n2 += 1;
+        }
+        feed.seek_to_ms(0).unwrap();
+        let mut n3 = 0;
+        while feed.next_frame().unwrap().is_some() {
+            n3 += 1;
+        }
+        assert!(
+            n2 > 0 && n3 >= 2 * n,
+            "n1={n1} n2={n2} n3={n3}（n2=0 → sticky eof 闩锁咬合；n3<2N → 续段解析另有问题）"
+        );
     }
 }
