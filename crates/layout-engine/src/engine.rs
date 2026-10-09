@@ -1392,7 +1392,7 @@ impl LayoutEngine {
         // R1733：终末 inline-block float 排斥（在所有重定位 pass 之后，避免被重置；R1732 教训）。
         // kill-switch ZW_BFC_INLINEBLOCK_AVOID=0。默认 on。
         if std::env::var("ZW_BFC_INLINEBLOCK_AVOID").as_deref() != Ok("0") {
-            crate::float_positioning::apply_inline_block_float_avoidance(&mut root_box);
+            crate::float_positioning::apply_inline_block_float_avoidance(&mut root_box, styles);
         }
 
         // R1999/R2000 Phase P1a：Print 媒体分页（独立 post-process，在所有重定位之后）。

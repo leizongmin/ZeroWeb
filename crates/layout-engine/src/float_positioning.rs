@@ -44,7 +44,7 @@ pub(crate) fn adjust_float_positions(box_node: &mut LayoutBox) {
 /// floats-wrap-top-below-bfc l 变体 REF（inline-block 旁 float 应 x=161 非 x=11）。
 /// 非 R109 匿名块重写（RFC Slice 1+2 高风险）的低风险终末近似——终末跑使坐标已最终
 ///（y 已匹配 chromium），仅 x 需修正且不被覆盖。kill-switch `ZW_BFC_INLINEBLOCK_AVOID=0`。
-pub(crate) fn apply_inline_block_float_avoidance(box_node: &mut LayoutBox) {
+pub(crate) fn apply_inline_block_float_avoidance(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
     use zero_css_parser::values::FloatValue;
     // 收集本容器直接 float 子几何（与子同坐标系）。
     let floats: Vec<(FloatValue, f32, f32, f32, f32, f32)> = box_node
@@ -118,8 +118,38 @@ pub(crate) fn apply_inline_block_float_avoidance(box_node: &mut LayoutBox) {
                 } else if let Some(width) = child.declared_width_px {
                     child.width = width;
                     shrink_bfc_content_width(child);
+                    // R5026：不可行（左右 float 夹空 < 盒宽）→ 盒下推到 float 群底并
+                    // 回到流位 x=0（CSS 2.1 §9.5「a line box ... placed below the floated
+                    // boxes」：declared-width 盒收缩救不了可行性；chromium 002r oracle
+                    // 实证 span2 须 x=流位 0、y=下推 float 底——y 下推后 float 约束解除，
+                    // x 也须解除）。R1733「不可行保持原位」校准只对了 x、漏了 y（当时
+                    // 渲染恰未暴露 y 差）。kill-switch ZW_FLOAT_PUSH_BELOW=1 启用
+                    //（**default-off**，独立于高度门——A/B 归因：case 级中性，随高度门
+                    // 一同待 cleared-br 行位修清后启用）。
+                    if std::env::var("ZW_FLOAT_PUSH_BELOW").as_deref() == Ok("1") {
+                        child.x = 0.0;
+                        child.y = overlapping
+                            .iter()
+                            .map(|(_, _, fy, _, fh, _)| fy + fh)
+                            .fold(child.y, f32::max);
+                        // 下推后容器 auto 高须覆盖新内容底（行盒高不再代表内容底，
+                        // chromium 002r：body 底框随 span2 下探到 float 群底之下）。
+                        // definite height 容器不涨（R1616：显式高不被 float 子覆盖）。
+                        let is_auto = box_node
+                            .node_id
+                            .and_then(|id| styles.get(&id))
+                            .is_some_and(|s| matches!(s.height, LengthValue::Auto));
+                        if is_auto {
+                            let needed = child.y + child.height + child.margin_bottom;
+                            if needed > box_node.content_height + 0.5 {
+                                let delta = needed - box_node.content_height;
+                                box_node.height += delta;
+                                box_node.content_height = needed;
+                            }
+                        }
+                    }
                 }
-                // 不可行 → 不动（避免错位）
+                // 不可行（无 declared width）→ 不动（避免错位）
             } else if overlapping.len() == 1 {
                 // 单 float：per-float（左推右、右收缩宽）。
                 let (fd, fx, _fy, fw, _fh, fmr) = overlapping[0];
@@ -164,7 +194,7 @@ pub(crate) fn apply_inline_block_float_avoidance(box_node: &mut LayoutBox) {
         }
     }
     for child in &mut box_node.children {
-        apply_inline_block_float_avoidance(child);
+        apply_inline_block_float_avoidance(child, styles);
     }
 }
 

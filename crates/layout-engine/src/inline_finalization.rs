@@ -13,7 +13,7 @@ use zero_style_system::ComputedStyle;
 use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign, TextGroupAlign, WordBreakMode};
 pub(crate) use crate::inline_content::{has_direct_text, has_inline_content};
 pub(crate) use crate::inline_metric_storage::store_font_sizes_from_ifc;
-use crate::types::LayoutBox;
+use crate::types::{LayoutBox, OverflowClip};
 use crate::{NodeIdMap, NodeIdSet};
 use zero_style_system::WritingModeValue;
 use zero_style_system::property::types::ColumnSpanComputedValue;
@@ -2713,7 +2713,33 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 .fold(0.0_f32, f32::max);
 
             // 使用文本和 float 中较大的高度
-            let content_height = text_height.max(float_bottom);
+            // R5026（CSS 2.1 §10.6.3 vs §10.6.7）：float 底**仅 BFC 根**计入 auto 高——
+            // plain block（IFC 容器，overflow:visible 非 BFC）的 auto 高 = 行盒底，float
+            // 子溢出容器不撑高（chromium：floats-wrap-top-below-inline-001l body{border}
+            // 高 105 不含 150 float，ZW 旧无条件 max(float_bottom) 致 border 底下探 50px）。
+            // BFC 触发集（§9.4.1）：is_flow_root（flow-root/inline-block/contain:layout|
+            // paint）+ float/abspos/fixed 自身 + multicol + 布局容器（flex/grid/table 系，
+            // 高度路径不同但保守并入）+ table-caption + overflow 非 visible。
+            // env ZW_IFC_AUTOHEIGHT_BFC=1 启用（**default-off**——机制按 §10.6.3/§10.6.7
+            // 正确且 chromium oracle 探针吻合，但 floats-no-content-beside-001 /
+            // floats-clear-multicol-001 暴露 cleared-br 行位/多列内部两处被旧高度掩盖
+            // 的既存偏差，default-on 为净 +1 红；待后续轮修清后翻默认）。default-off =
+            // 退回无条件 max(float_bottom) 旧行为。
+            let establishes_bfc = box_node.is_flow_root
+                || !matches!(box_node.float, FloatValue::None)
+                || box_node.is_absolute
+                || box_node.is_fixed
+                || box_node.is_multicol
+                || box_node.is_layout_container
+                || box_node.is_table_caption
+                || !matches!(box_node.overflow_x, OverflowClip::Visible)
+                || !matches!(box_node.overflow_y, OverflowClip::Visible);
+            let bfc_gate = std::env::var("ZW_IFC_AUTOHEIGHT_BFC").as_deref() == Ok("1");
+            let content_height = if bfc_gate && !establishes_bfc {
+                text_height
+            } else {
+                text_height.max(float_bottom)
+            };
             // 更新容器的内容高度：文本环绕 float 后可能需要更大的高度。
             // ★ R1616：仅 height:auto 容器才按 float/文本底扩展——definite height
             //（如 height:100px）容器 float 应溢出而非撑高（CSS §10.5/§10.6：显式高度

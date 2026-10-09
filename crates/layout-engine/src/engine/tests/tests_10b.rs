@@ -1132,7 +1132,7 @@ fn r3857_replaced_beside_float_pushes_below_at_full_width() {
         children: vec![float_box.clone(), replaced.clone()],
         ..Default::default()
     };
-    crate::float_positioning::apply_inline_block_float_avoidance(&mut container);
+    crate::float_positioning::apply_inline_block_float_avoidance(&mut container, &std::collections::HashMap::new());
 
     let fl = &container.children[0];
     let flw = &container.children[1];
@@ -1163,7 +1163,7 @@ fn r3857_replaced_beside_float_pushes_below_at_full_width() {
         children: vec![float_box, bfc],
         ..Default::default()
     };
-    crate::float_positioning::apply_inline_block_float_avoidance(&mut container2);
+    crate::float_positioning::apply_inline_block_float_avoidance(&mut container2, &std::collections::HashMap::new());
     let bfc_out = &container2.children[1];
     assert!(
         (bfc_out.width - 300.0).abs() < 0.5,
