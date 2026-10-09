@@ -1,6 +1,6 @@
 //! 渲染进程 JS 线程 — V8 与页面渲染分离。
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -1469,11 +1469,13 @@ fn js_worker_main(
                 // browser tab_js_worker 同名分支——多进程路径媒体播放真值面）。
                 // M3 切片 2（D4）：pump_clock 注入——桥 play 锚与 renderer 主循环
                 // 泵 tick 同源（扩批 XXV 原点错位缺陷的 renderer 路径消除）。
+                // t8o：媒体源供给方在位——IDL setter 形态动态 src 经 provider 直联
+                // GET 补登记（renderer 进程直接联网，同 default_fetch_handler）。
                 video_bridge_armed = true;
                 zero_webview::video_registry::register_video_bridge_callbacks(
                     &mut *sandbox,
                     registry,
-                    None,
+                    Some(renderer_media_source_provider()),
                     pump_clock,
                 );
             }
@@ -1585,6 +1587,39 @@ fn js_worker_main(
             }
         }
     }
+}
+
+/// t8o：生产媒体源供给方——`__zw_video_play` 桥 miss 且源未登记时同步补登记。IDL setter
+/// 形态（`video.src=` 动态赋值）不经初始 HTML 提取（extract_media_resources 只扫解析期
+/// 元素），此前 renderer 路径无生产 fetch/登记通路 → shim 退避重试 5000 次永空、合成
+/// march w0h0 冻结。直联 [`ResourceLoader`] GET（同 [`default_fetch_handler`] 模式：
+/// recv() 阻塞调用线程、无 IPC 往返，#24 主循环互等死锁面不适用）；失败 URL 记负缓存
+/// ——shim 重试循环内 provider 秒回 None 不重复打网。成功字节交 registry 登记（重试时
+/// 源已 present，不再调 provider），首次命中后零额外成本。
+pub fn renderer_media_source_provider() -> zero_webview::MediaSourceProvider {
+    let fetch_failed: Arc<std::sync::Mutex<HashSet<String>>> = Arc::default();
+    Arc::new(move |url: &str| {
+        if fetch_failed.lock().unwrap_or_else(|e| e.into_inner()).contains(url) {
+            return None;
+        }
+        let req = HttpRequest {
+            method: HttpMethod::Get,
+            url: url.to_string(),
+            headers: Vec::new(),
+            body: None,
+        };
+        match ResourceLoader::shared().submit_http(req, FetchPriority::MEDIUM).recv() {
+            // 空 2xx 体不可能是有效媒体：负缓存短路，避免登记空源后 play 恒 miss。
+            Ok(Ok(resp)) if (200..300).contains(&resp.status_code) && !resp.body.is_empty() => Some(resp.body),
+            _ => {
+                fetch_failed
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(url.to_string());
+                None
+            }
+        }
+    })
 }
 
 /// R2923 fetch 完整化：生产 fetch handler——经 `zero_net::ResourceLoader` 发起真实 HTTP 请求，

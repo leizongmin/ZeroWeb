@@ -103,6 +103,13 @@ impl InflightIpcFetches {
     pub fn take_document_url(&mut self) -> Option<String> {
         self.document_url.take()
     }
+
+    /// 测试面：在飞请求 id——测试据此注入 FetchResponse，复现「资源完成晚于脚本
+    /// 阶段收尾」的迟到序（outbound=sink 吞请求使 fetch 天然挂起）。
+    #[cfg(test)]
+    pub(crate) fn pending_request_ids(&self) -> Vec<u64> {
+        self.pending.keys().copied().collect()
+    }
 }
 
 fn deliver_reply(reply: InflightReply, status_code: u16, body: &[u8]) {

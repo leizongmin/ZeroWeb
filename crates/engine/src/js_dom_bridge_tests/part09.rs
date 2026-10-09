@@ -3634,6 +3634,175 @@ fn test_media_bridge_playpath_m2a_5b() {
 }
 
 #[test]
+fn test_media_bridge_hit_upgrades_placeholder_dims_t8o() {
+    // t8o G2b：IDL setter 形态（`video.src=` 动态赋值）两时序面的桥真值。
+    // play-后-settle：settle 先占 w0h0 占位（_zwSettleResourceKey 幂等门阻断真值
+    // commit 重派）→ 桥命中经 _zwMediaBridgeDimsUpgrade 就地升级占位维度——getter
+    // 终态真值、不重派 loadedmetadata。
+    // play-先-settle（同脚本 turn）：settle 建态时桥真值协商（mediaMeta 非零 →
+    // 占位不产生，直接以解码真值出生）。
+    // 守卫面：非 0 既有真值不覆盖、mediaMeta "0|0|0"（未登记/解码失败）不升级、
+    // 重试命中路径同样升级。mock 桥 mediaMeta 以 __registered 模拟 provider 登记
+    // 时序（play 成功 = 源登记，此前 "0|0|0"）。
+    // https://html.spec.whatwg.org/multipage/media.html#dom-video-videowidth
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // #b 静态 attribute 形态（commit 经快照读可达）；IDL 形态元素用例内 createElement。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><video id=\"b\" src=\"/media/truth.webm\"></video></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 定时器 stub（重试路径泵）+ mediaMeta 真值桥：登记前恒 "0|0|0"（provider 未
+    // 打到字节），play 成功 = 登记；none.webm 恒 "0|0|0"（解码失败模拟）。
+    sandbox.execute(
+        "globalThis.__zw_pending = {}; globalThis.__zw_timers = [];\
+         globalThis.__zw_setTimeout = function(id, delay) {\
+           globalThis.__zw_timers.push({ id: id, at: Date.now() + (delay | 0) }); };\
+         globalThis.__zw_fire_due_timers = function() {\
+           var now = Date.now(); var rest = [], due = [];\
+           var timers = globalThis.__zw_timers || [];\
+           for (var i = 0; i < timers.length; i++) {\
+             if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]); }\
+           globalThis.__zw_timers = rest;\
+           for (var d = 0; d < due.length; d++) {\
+             var fn = globalThis.__zw_pending[due[d].id];\
+             if (fn) { delete globalThis.__zw_pending[due[d].id]; try { fn(); } catch (_e) {} } } };\
+         globalThis.__metaMap = {\
+           'movie.webm': '640|360|2000',\
+           'truth.webm': '999|111|1000',\
+           'retry.webm': '800|600|5000'};\
+         globalThis.__registered = {};\
+         globalThis.__alwaysZero = {};\
+         globalThis.__playFails = { 'retry.webm': 1 };\
+         globalThis.__zwVideoBridge = {\
+           play: function (src) {\
+             var k = src.split('/').pop();\
+             if (globalThis.__playFails[k]) { globalThis.__playFails[k]--; return false; }\
+             globalThis.__registered[k] = 1;\
+             return true; },\
+           pause: function () {},\
+           currentTime: function () { return 0; },\
+           duration: function () { return 1; },\
+           isPlaying: function () { return true; },\
+           mediaMeta: function (src) {\
+             var k = src.split('/').pop();\
+             if (globalThis.__alwaysZero[k] || !globalThis.__registered[k]) return '0|0|0';\
+             return globalThis.__metaMap[k] || '0|0|0'; }\
+         };",
+    ).unwrap();
+
+    // ① play-后-settle 升级路径：IDL 形态自然 settle（桥未登记 → 占位 w0h0，microtask
+    // checkpoint 排空）→ play（登记 + 同步命中）→ 升级 640/360，loadedmetadata 不重派。
+    sandbox.execute(
+        "globalThis.__ev = [];\
+         var a = document.createElement('video');\
+         a.addEventListener('loadedmetadata', function () { globalThis.__ev.push('loadedmetadata'); });\
+         a.src = '/media/movie.webm';\
+         document.body.appendChild(a);\
+         globalThis.__a = a;",
+    ).unwrap();
+    let _ = sandbox.execute(";"); // microtask checkpoint——settle 续段排空（w0h0 占位）
+    assert_eq!(
+        sandbox.execute("[globalThis.__a.videoWidth, globalThis.__a.videoHeight].join(',')").unwrap().value,
+        "0,0",
+        "桥未登记源时 settle 维持 w0h0 占位（缺陷前提）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.length").unwrap().value,
+        "1",
+        "loadedmetadata 已派一次（w0h0）"
+    );
+    sandbox.execute("globalThis.__a.play();").unwrap();
+    assert_eq!(
+        sandbox.execute("[globalThis.__a.videoWidth, globalThis.__a.videoHeight].join(',')").unwrap().value,
+        "640,360",
+        "桥同步命中 → 占位维度就地升级解码真值"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.length").unwrap().value,
+        "1",
+        "升级不重派 loadedmetadata（事件序稳定优先）"
+    );
+
+    // ② 非 0 既有真值不覆盖：attribute 形态预 commit 320×240（attribute 形态无自然
+    // settle，commit 即首 settle）→ play → mediaMeta 999×111 不落。
+    sandbox.execute(
+        "__zw_commit_resource_element_state('video', 'https://wpt.test/media/truth.webm', 'available', 320, 240, 600);\
+         globalThis.__b = document.querySelector('#b');\
+         globalThis.__b.play();",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("[globalThis.__b.videoWidth, globalThis.__b.videoHeight].join(',')").unwrap().value,
+        "320,240",
+        "已有非 0 真值不被 mediaMeta 覆盖"
+    );
+
+    // ③ mediaMeta "0|0|0"（登记后仍解码失败）不升级：占位态保持。
+    sandbox.execute(
+        "var c = document.createElement('video');\
+         c.src = '/media/none.webm';\
+         document.body.appendChild(c);\
+         globalThis.__c = c;\
+         globalThis.__alwaysZero['none.webm'] = 1;",
+    ).unwrap();
+    let _ = sandbox.execute(";");
+    sandbox.execute("globalThis.__c.play();").unwrap();
+    assert_eq!(
+        sandbox.execute("[globalThis.__c.videoWidth, globalThis.__c.videoHeight].join(',')").unwrap().value,
+        "0,0",
+        "mediaMeta 零真值 → 占位态保持不升级"
+    );
+
+    // ④ 重试命中路径：play 首 miss（provider 补登记期，未登记）→ 退避重试命中 → 同样升级。
+    sandbox.execute(
+        "var d = document.createElement('video');\
+         d.src = '/media/retry.webm';\
+         document.body.appendChild(d);\
+         globalThis.__d = d;\
+         globalThis.__d.play();",
+    ).unwrap();
+    let _ = sandbox.execute(";");
+    assert_eq!(
+        sandbox.execute("[globalThis.__d.videoWidth, globalThis.__d.videoHeight].join(',')").unwrap().value,
+        "0,0",
+        "首 miss 期占位态保持"
+    );
+    sandbox.execute("globalThis.__zw_fire_due_timers();").unwrap();
+    assert_eq!(
+        sandbox.execute("[globalThis.__d.videoWidth, globalThis.__d.videoHeight].join(',')").unwrap().value,
+        "800,600",
+        "重试命中 → 同面升级解码真值"
+    );
+
+    // ⑤ play 先于 settle（IDL 动态形态同脚本 turn：src= + play() 后 checkpoint 才
+    // settle）——settle 建态时桥真值协商：play 已登记源（mediaMeta 非零）→ 真值出生、
+    // 占位不产生。修前此序出生即 w0h0 且幂等门阻断真值（探针页 direct.html 形态）。
+    sandbox.execute(
+        "var e = document.createElement('video');\
+         e.src = '/media/movie.webm';\
+         document.body.appendChild(e);\
+         globalThis.__e = e;\
+         globalThis.__e.play();",
+    ).unwrap();
+    let _ = sandbox.execute(";"); // checkpoint——settle 续段（桥真值协商在建态时生效）
+    assert_eq!(
+        sandbox.execute("[globalThis.__e.videoWidth, globalThis.__e.videoHeight].join(',')").unwrap().value,
+        "640,360",
+        "play 先于 settle：settle 以桥真值出生（占位不产生）"
+    );
+}
+
+#[test]
 fn test_media_can_play_type_capability_table_m4gd() {
     // media-elements M4g-d（跨 goal 联动：media-playback M0 选型落地后能力表更新）——
     // canPlayType 由解码面真值驱动（zero-media 路线 C：webm/ogg 容器 + VP9 视频 +

@@ -423,3 +423,103 @@ fn dynamic_crossorigin_script_no_false_error_end_to_end() {
         "跨域动态脚本单执行语义：宿主 no-cors 取回执行恰一次、onload 恰一次、无 ACAO 不误派 error（修前 err==1）"
     );
 }
+
+fn runtime_with_sink(renderer_id: u64) -> RendererRuntime {
+    let mut runtime = RendererRuntime::new(renderer_id);
+    runtime.compositor_publish = None;
+    runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
+    runtime
+}
+
+// t8o G1：脚本阶段收尾先于 load 完成时（无外链脚本页面 prefetch 秒完），其后完成的
+// 媒体资源事件在 load 完成 drain 点立即派发——不再滞留 stash 永不派发。修复前活体
+// 证据 out-t8o-attr-diag3（merged main 构建）：fetch 200/94294B 落定、自然态零事件
+//（stash 唯一消费者 finish 已过场）；手动 commit 全链可达证明 shim 侧无缺口。
+// 判别：媒体 fetch 走 IPC 挂起（outbound=sink 吞请求），脚本阶段收尾完成后经
+// inflight 注入 FetchResponse 复现迟到序；settle 状态（currentSrc）同步写，不依赖
+// 定时器泵。修前 cur==''（事件滞留 stash）转红。
+// https://html.spec.whatwg.org/multipage/media.html#concept-media-load-algorithm
+#[test]
+fn late_media_resource_events_dispatched_after_script_finish_t8o() {
+    let html = r#"<html><head><script>
+      globalThis.__ev = [];
+      var v = document.getElementById('v');
+      ['loadstart', 'loadedmetadata', 'error'].forEach(function (e) {
+        v.addEventListener(e, function () { globalThis.__ev.push(e); });
+      });
+    </script></head>
+    <body><video id="v" src="/media/t8o.mp4" width="320" height="240"></video></body></html>"#;
+    let url = "https://zero.test/t8o-late-media";
+    let mut runtime = runtime_with_sink(9141);
+    runtime
+        .dispatch_message(IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::LoadHtml(LoadHtmlParams {
+                html: html.to_string(),
+                css: None,
+                url: Some(url.to_string()),
+                navigation_epoch: 1,
+            }),
+        })
+        .unwrap();
+    // 媒体 fetch 走 IPC 挂起（outbound 吞请求）→ pending_load 保持活跃、prefetch
+    // （无外链脚本）先收口——复现「finish 先于 load 完成」迟到序。
+    let mut ticks = 0;
+    loop {
+        runtime.tick_pending_load().unwrap();
+        runtime.tick_script_prefetch().unwrap();
+        if runtime.pending_load.is_some() && runtime.pending_script_prefetch.is_none() {
+            break;
+        }
+        ticks += 1;
+        assert!(ticks < 500, "prefetch 未先于挂起媒体收口");
+    }
+    let cur_before = runtime
+        .js_worker
+        .execute_script_direct("document.getElementById('v').currentSrc")
+        .unwrap();
+    assert_eq!(
+        cur_before.trim(),
+        "",
+        "收尾时媒体未 settle，currentSrc 恒空（此断言在误先 settle 的实现下转红）"
+    );
+    // 注入迟到 FetchResponse（媒体字节垃圾 → 探针 None → Available w0h0 合成序，
+    // 与 decode feature 无关）并推 load 至完成 drain。settle 状态同步写——
+    // currentSrc 非空即迟到派发达成，不定时器面。
+    let request_id = *runtime
+        .inflight_fetches
+        .pending_request_ids()
+        .first()
+        .expect("媒体 IPC fetch 应在飞");
+    let (inject_tx, inject_rx) = mpsc::channel();
+    inject_tx
+        .send(IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id,
+                status_code: 200,
+                headers: Vec::new(),
+                body: b"t8o-not-a-container".to_vec(),
+            }),
+        })
+        .unwrap();
+    drop(inject_tx);
+    runtime.inbound_rx = inject_rx;
+    runtime.drain_inflight_fetch_responses();
+    runtime.tick_pending_load().unwrap();
+    runtime.tick_pending_load().unwrap();
+    let cur_after = runtime
+        .js_worker
+        .execute_script_direct("document.getElementById('v').currentSrc")
+        .unwrap();
+    assert_eq!(
+        runtime.pending_resource_element_events.len(),
+        0,
+        "迟到事件应在 drain 点派发清空，不得滞留 stash"
+    );
+    assert_ne!(
+        cur_after.trim(),
+        "",
+        "收尾后完成的媒体事件须迟到派发（settle 状态同步可达）；修前滞留 stash 恒空"
+    );
+}
