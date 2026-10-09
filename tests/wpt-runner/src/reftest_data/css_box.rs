@@ -493,6 +493,33 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><head><style>body{margin:0}</style></head><body><div style=\"width:800px;height:100px;background:#008000\"></div></body></html>",
         is_match: true,
     },
+    // ── r2s3（R5024）：content-sized 祖先子树内的「文本 + inline 元素」混合级入 R1024
+    // leaf 路径（css-flexbox-1 §9.9.1 item 固有主轴尺寸由内容 max-content 馈入 +
+    // css-sizing-3 §5 固有尺寸沿嵌套块传播）──
+    // 回归形态：flex row 中 h3（flex:0 1 auto）子树 h3 > a > span > em+text——span 级
+    // 此前 R1024 语境不满足走「仅元素子」路径，inline 文本兄弟被丢出 taffy 树 → h3
+    // flex base size = em 段宽（~85px，应 ~470px）→ 绿色 flex:1 兄弟左移 ~385px
+    //（缺陷态 diff ≈ 385×46 = 17710px ≈ 3.7% ≫ Layout 1% 阈值）。ref 页去 em 包装
+    //（字形序列/度量逐值一致，em 置 font-style:normal 消除斜体度量差）——修复态两页
+    // 逐像素相等。kill-switch ZW_FLEX_SUBTREE_INLINE_LEAF=0 → 本案红。
+    // 文件孪生：local-reftests/css/css-sizing/flex-subtree-nested-em-text-zw-001*.html。
+    InlineReftestDef {
+        id: "css-box/flex-subtree-nested-em-text-zw-001",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0}em{font-style:normal}</style></head><body><div style=\"display:flex;flex-direction:row;width:800px\"><h3 style=\"margin:0;font:36px/46px Arial,sans-serif\"><a style=\"display:block\"><span><em>ZERO</em> Browser minimal fast</span></a></h3><span style=\"flex:1 1 auto;height:46px;background:#008000\"></span></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0}</style></head><body><div style=\"display:flex;flex-direction:row;width:800px\"><h3 style=\"margin:0;font:36px/46px Arial,sans-serif\"><a style=\"display:block\"><span>ZERO Browser minimal fast</span></a></h3><span style=\"flex:1 1 auto;height:46px;background:#008000\"></span></div></body></html>",
+        is_match: true,
+    },
+    // r2s3 变体：inline-block 祖先子树内同一混合级——inline-block 收缩宽由 em 段
+    // （~85px）应到全文（~470px），绿底宽度即信号（缺陷态 diff ≈ 385×46 ≈ 3.7%）。
+    // 文件孪生：local-reftests/css/css-sizing/inline-block-subtree-nested-em-text-zw-002*.html。
+    InlineReftestDef {
+        id: "css-box/inline-block-subtree-nested-em-text-zw-002",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0}em{font-style:normal}</style></head><body><div style=\"display:inline-block;height:46px;background:#008000\"><div style=\"font:36px/46px Arial,sans-serif\"><a style=\"display:block\"><span><em>ZERO</em> Browser minimal fast</span></a></div></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0}</style></head><body><div style=\"display:inline-block;height:46px;background:#008000\"><div style=\"font:36px/46px Arial,sans-serif\"><a style=\"display:block\"><span>ZERO Browser minimal fast</span></a></div></div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {
