@@ -11038,7 +11038,9 @@
     // https://dom.spec.whatwg.org/#dom-node-textcontent
     Object.defineProperty(node, 'textContent', { get: function () { var t = ''; for (var i = 0; i < node.childNodes.length; i++) { var c = node.childNodes[i]; if (c.nodeType === 3) t += c.nodeValue; else if (c.nodeType === 1) t += c.textContent; } return t; },
       set: function (v) {
-        var s = v == null ? '' : String(v);
+        // R310 返修（defect-r1 N2）：仅 null 按 LegacyNullToEmptyString 归 ''；
+        // undefined 走标准 DOMString 转换 → 'undefined'（与主文档路径 R3184 一致）。
+        var s = v === null ? '' : String(v);
         // t7（js-dom P15）：被整体替换的旧 handle 子同步摘 host——与 R181 innerHTML
         // setter 的替换面同款，防只清 JS 世界残留幽灵。
         for (var _t7t = 0; _t7t < node.childNodes.length; _t7t++) _zwT7EmitHostRemove(node.childNodes[_t7t], null, null);
@@ -16405,10 +16407,14 @@ return e;
             // Extended(0x58) 不在解码面 → 维持 ''（不虚报）。
             // https://html.spec.whatwg.org/multipage/media.html#dom-navigator-canplaytype
             var _avcPpccll = /^avc[13]\.([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/;
+            // R310 返修（defect-r1 F1）：PPCCLL 语义判定只对 avc 家族在册的容器生效
+            //（当前仅 video/mp4）——audio/ogg、video/webm、audio/mp4 等容器探测
+            // avc1/avc3 三元组按未知 codec 走 _known miss → ''，不跨容器虚报。
+            var _avcContainer = !!_known.avc1;
             for (_i = 0; _i < _codecs.length; _i++) {
               var _avcM = _avcPpccll.exec(_codecs[_i]);
               if (_avcM) {
-                if ((_avcM[1] === '42' || _avcM[1] === '4d') && parseInt(_avcM[3], 16) <= 0x34) continue;
+                if (_avcContainer && (_avcM[1] === '42' || _avcM[1] === '4d') && parseInt(_avcM[3], 16) <= 0x34) continue;
                 return '';
               }
               if (!_known[_codecs[_i]]) return '';

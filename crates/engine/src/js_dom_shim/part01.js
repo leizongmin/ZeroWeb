@@ -3921,7 +3921,9 @@
       } catch (_e188m) {}
     }
     _mo_deliverToId(id, baseRecord, false); // 精确 id，不要求 subtree
-    // R3026：subtree——mutation 冒泡到 subtree:true 的祖先 observer（record.target=祖先 proxy）。
+    // R3026：subtree——mutation 冒泡到 subtree:true 的祖先 observer（R311：record.target=
+    // mutation 目标自身——祖先观察只决定谁收到记录，不改变 target 值；spec
+    // dom-mutationrecord-target）。
     // 仅在有 subtree observer 且 sel-based（live DOM 有 __zw_parent 父链）时走祖先链；handle-only detached defer。
     if (sel && typeof __zw_parent === 'function' && _mo_any_subtree()) {
       var chain = _ancestorChain(sel); // [self, parent, ..., root]

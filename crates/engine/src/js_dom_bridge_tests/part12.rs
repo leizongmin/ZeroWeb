@@ -1820,7 +1820,8 @@ fn test_mutation_observer_attr_filter_and_old_value_r3025() {
 #[test]
 fn test_mutation_observer_subtree_r3026() {
     // R3026：MutationObserver subtree（ancestor 解析）。observe(container,{...,subtree:true}) 时后代 mutation
-    // 冒泡到 container observer（record.target=container）；非 subtree observer 不收后代 mutation。框架「观测整个子树」
+    // 冒泡到 container observer（record.target=实际变更节点——R311/spec dom-mutationrecord-target）；
+    // 非 subtree observer 不收后代 mutation。框架「观测整个子树」
     // 第一高频用法。经 _ancestorChain（__zw_parent 父链）上行，_mo_any_subtree guard 无 subtree observer 时零开销。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
@@ -1836,7 +1837,7 @@ fn test_mutation_observer_subtree_r3026() {
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
-    // ① subtree childList：后代（leaf）appendChild → container observer 收记录（target=container）。
+    // ① subtree childList：后代（leaf）appendChild → container observer 收记录（target=leaf——子列表变更的容器自身）。
     sandbox
         .execute(
             "var container = document.getElementById('container');\
@@ -1885,7 +1886,7 @@ fn test_mutation_observer_subtree_r3026() {
         "非 subtree observer 不收后代 leaf 的 childList mutation（仅 container 直接子）"
     );
 
-    // ③ subtree attributes：后代 leaf.setAttribute → container observer 收记录（target=container）。
+    // ③ subtree attributes：后代 leaf.setAttribute → container observer 收记录（target=leaf——属性所属元素）。
     sandbox
         .execute(
             "mo2.disconnect();\

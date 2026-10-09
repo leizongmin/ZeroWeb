@@ -3364,6 +3364,8 @@ fn test_textcontent_setter_factory_r310() {
                __r.push('empty/' + el.childNodes.length + '/' + String(el.firstChild === null));\
                el.textContent = null;\
                __r.push('null/' + el.childNodes.length + '/' + el.textContent);\
+               el.textContent = undefined;\
+               __r.push('undef/' + el.childNodes.length + '/' + el.textContent);\
                var sp = doc.createElement('span');\
                sp.textContent = 'x';\
                __r.push('fresh/' + sp.textContent + '/' + sp.childNodes[0].nodeType);\
@@ -3372,8 +3374,8 @@ fn test_textcontent_setter_factory_r310() {
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__r.join('|')").unwrap().value,
-        "set/ok|1/3/hello|true|true|true|hello|empty/0/true|null/0/|fresh/x/3",
-        "textContent setter：replace-all 单 Text 子 + 空串/null 不留空 Text + parent/ownerDocument 继承 + 全程不抛"
+        "set/ok|1/3/hello|true|true|true|hello|empty/0/true|null/0/|undef/1/undefined|fresh/x/3",
+        "textContent setter：replace-all 单 Text 子 + 空串/null 不留空 Text + null 归空串而 undefined 归 'undefined'（R310 返修 N2）+ parent/ownerDocument 继承 + 全程不抛"
     );
 }
 
@@ -3440,6 +3442,53 @@ fn test_qsa_mirror_class_key_r310b() {
 }
 
 #[test]
+fn test_qsa_mirror_class_key_domparser_r310b() {
+    // R310 返修（defect-r1 N1）：DOMParser 产物（_zwParseEl）querySelectorAll 的镜像
+    // 剔除与 part03 活 DOM 路径同步三键（tag+id+class 归一后全同才剔）——旧 tag+id
+    // 双键把「无 id/带 class 根 + 首命中同 tag 不同 class 后代」误剔。sanitizer/模板
+    // 引擎走 DOMParser 面时同一缺陷形态。① 带 class 根 + 同 tag 不同 class 后代命中
+    // ② 异 tag 后代不受波及 ③ 无 id 无 class 根 + 同 tag 带 class 后代命中
+    // ④ 真镜像（三键全同）仍剔除（只剔 arr[0]，真实同名后代保留）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var d = new DOMParser().parseFromString('<div class=\\\"zt-root\\\"><div class=\\\"bpx-video-area\\\"><span class=\\\"qs-target\\\"></span></div></div>', 'text/html');\
+             var b = d.querySelector('.zt-root');\
+             var d5 = new DOMParser().parseFromString('<div><div class=\\\"x\\\"></div></div>', 'text/html');\
+             var r5 = d5.querySelector('div');\
+             var d3 = new DOMParser().parseFromString('<div id=\\\"m\\\" class=\\\"mc\\\"><div id=\\\"m\\\" class=\\\"mc\\\"></div></div>', 'text/html');\
+             var r3 = d3.querySelector('#m');\
+             globalThis.__p = [\
+               b.querySelectorAll('.bpx-video-area').length,\
+               b.querySelectorAll('.qs-target').length,\
+               r5.querySelectorAll('.x').length,\
+               r3.querySelectorAll('#m').length\
+             ];",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__p.join('|')").unwrap().value,
+        "1|1|1|1",
+        "DOMParser querySelectorAll 三键剔除：①③ 同 tag 同 id 不同 class 后代命中（双键下为 0）② 异 tag 不波及 ④ 真镜像仍剔而真实同名后代保留"
+    );
+}
+
+#[test]
 fn test_canplaytype_avc1_ppccll_r310c() {
     // canPlayType avc1/avc3 PPCCLL 语义判定（RFC 6381 §3.3 avc1.PPCCLL hex 三元组）。
     // 旧仅枚举 avc1.42e01e/4d401e 两个完整串——站点 SDK 以任意 level 变体探测
@@ -3480,14 +3529,19 @@ fn test_canplaytype_avc1_ppccll_r310c() {
                cpt('video/mp4; codecs=\"avc1.640028, mp4a.40.2\"'),\
                cpt('video/mp4; codecs=\"avc1\"'),\
                cpt('video/mp4; codecs=\"avc3.42e01e\"'),\
-               cpt('video/mp4; codecs=\"avc1.42e0\"')\
+               cpt('video/mp4; codecs=\"avc1.42e0\"'),\
+               cpt('audio/ogg; codecs=\"avc1.42e01e\"'),\
+               cpt('video/webm; codecs=\"avc1.4d4028\"'),\
+               cpt('audio/mp4; codecs=\"avc3.42e01e\"'),\
+               cpt('video/webm; codecs=\"vp9\"'),\
+               cpt('audio/ogg; codecs=\"vorbis\"')\
              ];",
         )
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__o.join('|')").unwrap().value,
-        "probably|probably|probably|EMPTY|EMPTY|EMPTY|probably|probably|EMPTY|probably|probably|EMPTY",
-        "PPCCLL：Baseline/Main 全 level(≤L5.2) probably；High/Extended/越界 level/缺尾码 EMPTY；配对面任一不支持即 EMPTY"
+        "probably|probably|probably|EMPTY|EMPTY|EMPTY|probably|probably|EMPTY|probably|probably|EMPTY|EMPTY|EMPTY|EMPTY|probably|probably",
+        "PPCCLL：Baseline/Main 全 level(≤L5.2) probably；High/Extended/越界 level/缺尾码 EMPTY；配对面任一不支持即 EMPTY；R310 返修 F1——avc 三元组仅 video/mp4 容器生效，ogg/webm/mp4-audio 容器 EMPTY 且既有容器面（webm vp9/ogg vorbis）不回归"
     );
 }
 
