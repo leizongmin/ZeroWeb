@@ -467,6 +467,32 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><head><style>body{margin:0}input{display:inline-block;margin:0;padding:0;border:0;background:#03c;vertical-align:top}</style></head><body><div style=\"width:300px\"><input style=\"width:200px;height:40px\"><svg width=\"200\" height=\"40\" style=\"vertical-align:top\"><rect width=\"200\" height=\"40\" fill=\"#c30\"/></svg></div></body></html>",
         is_match: true,
     },
+    // ── r2s1：`<input type=hidden>` 不渲染（HTML 规范 Hidden state「The element is
+    // not rendered」+ 渲染规范 UA 样式表 `input[type=hidden i]{display:none}`；
+    // Chrome 154 实测作者 display 亦不可覆盖）──
+    // 回归形态：hidden input 此前按 tag 默认 inline-block 生成盒并占位（活体 baidu
+    // 首页 15 个 hidden input cs=inline-block、兄弟被推移）。信号 = 绿块被 hidden
+    // input 匿名块推下暴露红底（缺陷态 ≥800×32 ≈ 5.3% ≫ Layout 1% 阈值）；修复态
+    // hidden input 无盒，两页逐像素相等。
+    // 文件孪生：local-reftests/css/CSS2/box-display/hidden-input-not-rendered-zw-001*.html。
+    InlineReftestDef {
+        id: "css-box/hidden-input-not-rendered-zw-001",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0}</style></head><body><div style=\"width:800px;height:100px;background:red\"><input type=\"hidden\"><div style=\"width:800px;height:100px;background:#008000\"></div></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0}</style></head><body><div style=\"width:800px;height:100px;background:#008000\"></div></body></html>",
+        is_match: true,
+    },
+    // r2s1 变体：作者 `display:block` 覆盖尝试同样无效（UA !important > author
+    // important，Chrome 实测作者 CSS 无法令 hidden input 生成盒）。若回归为 UA
+    // normal 规则或丢失注入，作者臂会生成 800×50 盒把绿块推下暴露红底。
+    // 文件孪生：local-reftests/css/CSS2/box-display/hidden-input-not-rendered-zw-002*.html。
+    InlineReftestDef {
+        id: "css-box/hidden-input-not-rendered-zw-002",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0}</style></head><body><div style=\"width:800px;height:100px;background:red\"><input type=\"hidden\" style=\"display:block;width:800px;height:50px;background:#008000\"><div style=\"width:800px;height:100px;background:#008000\"></div></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0}</style></head><body><div style=\"width:800px;height:100px;background:#008000\"></div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {

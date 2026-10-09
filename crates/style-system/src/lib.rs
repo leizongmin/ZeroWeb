@@ -1193,6 +1193,23 @@ impl StyleSystem {
         {
             ua_decl_inputs.push(("display".to_string(), "none".to_string(), true, (0, 0, 0), None));
         }
+        // r2s1：`<input type=hidden>` 不渲染且作者样式不可覆盖。HTML 规范 Hidden state
+        // 硬性要求「The element is not rendered」（渲染规范 UA 样式表同列
+        // `input[type=hidden i] { display: none }`）。Chrome 154 实测：作者
+        // `style="display:block;width:100px;height:30px"` 仍 computed display:none、
+        // gBCR 0×0、不占布局空间——故按 UA !important 注入（CSS Cascade 4：UA important
+        // 高于 author important，任何作者 display 声明均不可覆盖）。此前缺失 → hidden
+        // input 按 tag 默认 inline-block 生成盒并占位（baidu 首页 15 个 hidden input
+        // cs=inline-block、兄弟被推移；Chrome 侧恒 none）。
+        // https://html.spec.whatwg.org/multipage/input.html#hidden-state-(type=hidden)
+        // https://html.spec.whatwg.org/multipage/rendering.html#hidden-elements
+        if tag_name.as_deref() == Some("input")
+            && doc
+                .get_attribute(element, "type")
+                .is_some_and(|value| value.eq_ignore_ascii_case("hidden"))
+        {
+            ua_decl_inputs.push(("display".to_string(), "none".to_string(), true, (0, 0, 0), None));
+        }
         if let Some(ref tag) = tag_name
             && let Some(display) = ua_default_display(tag)
         {
