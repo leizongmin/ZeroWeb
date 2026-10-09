@@ -2220,5 +2220,11 @@ impl LayoutEngine {
             || !matches!(s.clip_path, ClipPathComputedValue::None)
             || contain_sc
             || !matches!(s.transform, zero_css_parser::values::TransformValue::None)
+            // R5014（css-transforms-2 §individual-transforms）：rotate/scale/translate
+            // 独立属性非 none 即建立堆叠上下文（即使值为恒等——rotate: 0deg 也建 SC，
+            // stacking-context-002：z-index:-1 子须画在父红背景之上）。
+            || s.individual_rotate.is_some()
+            || s.individual_scale.is_some()
+            || s.individual_translate.is_some()
     }
 }
