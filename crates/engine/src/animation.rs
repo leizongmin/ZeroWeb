@@ -686,13 +686,21 @@ fn parse_color(s: &str) -> Rgba {
 }
 
 /// 颜色插值。
+/// R5019（css-color-4 §15.1 Interpolation）：颜色动画在**预乘 alpha** 空间插值——
+/// 各通道先按 alpha 预乘、lerp、再按插值后 alpha 反预乘（等 alpha 端点与直插等价，
+/// alpha 有差时非预乘直插偏离 chromium：background-color-animation-half-opaque
+/// 实证 rgba(0,200,0,1)→rgba(200,0,0,0.6) @50% chromium (111,151,51)，直插 (131,131,·)）。
+/// alpha=0 端点通道值无意义（未定义色），反预乘除零保护回 0。
 fn lerp_color(from: Rgba, to: Rgba, t: f64) -> Rgba {
-    (
-        lerp(from.0, to.0, t).clamp(0.0, 255.0),
-        lerp(from.1, to.1, t).clamp(0.0, 255.0),
-        lerp(from.2, to.2, t).clamp(0.0, 255.0),
-        lerp(from.3, to.3, t).clamp(0.0, 1.0),
-    )
+    let a = lerp(from.3, to.3, t).clamp(0.0, 1.0);
+    let chan = |fc: f64, tc: f64| -> f64 {
+        if a <= 1e-6 {
+            0.0
+        } else {
+            ((lerp(fc * from.3, tc * to.3, t)) / a).clamp(0.0, 255.0)
+        }
+    };
+    (chan(from.0, to.0), chan(from.1, to.1), chan(from.2, to.2), a)
 }
 
 // ── AnimationClock 实现 ───────────────────────────────────────────────
