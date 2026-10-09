@@ -355,6 +355,9 @@ pub struct VideoPlayerRegistry {
     /// A/V pair 源字节留存（切片 E）：伴生轨 seek 重建 `WebmAudioTrack` 所需——
     /// play 消费 sources 后双轨源的字节保到这里（release/clear 同步清理）。
     av_sources: HashMap<u64, Vec<u8>>,
+    /// 播放器创建时探得的媒体元 (w, h, durMs)（t8o）——源字节被 play 消费后桥
+    /// 升级面的真值来源（release/clear 同步清理）。
+    media_meta: HashMap<u64, (u32, u32, u64)>,
     /// MSE 面（t8n）：blob:MSE 源键 → append 句柄（`mse_create` 建，shim 桥
     /// appendBuffer/endOfStream 跨线程写入；play 懒建 `MseVideoFeed` 挂接）。
     #[cfg(feature = "decode-h264")]
@@ -395,6 +398,7 @@ impl VideoPlayerRegistry {
         self.audio_entries.remove(&key);
         self.av_audio_entries.remove(&key);
         self.av_sources.remove(&key);
+        self.media_meta.remove(&key);
         #[cfg(feature = "decode-h264")]
         {
             self.mse_feeds.remove(&key);
@@ -430,6 +434,7 @@ impl VideoPlayerRegistry {
         self.audio_entries.clear();
         self.av_audio_entries.clear();
         self.av_sources.clear();
+        self.media_meta.clear();
         #[cfg(feature = "decode-h264")]
         {
             self.mse_feeds.clear();
@@ -605,6 +610,15 @@ impl VideoPlayerRegistry {
             let Ok(decoder) = VideoTrackDecoder::open_media(&bytes) else {
                 return false;
             };
+            // t8o：创建即探媒体元（w/h/容器声明时长）——源字节随后被消费
+            //（sources.remove），桥升级面（`source_media_meta`）经缓存读真值。
+            // 独立探针解码器，不消费播放流首帧（与 probe_dimensions 同入口）。
+            if let Ok(mut probe) = VideoTrackDecoder::open_media(&bytes) {
+                let dur_ms = probe.duration_ms().unwrap_or(0);
+                if let Ok(Some(frame)) = probe.next_frame() {
+                    self.media_meta.insert(key, (frame.width, frame.height, dur_ms));
+                }
+            }
             self.sources.remove(&key);
             self.players.insert(key, VideoPlayer::new(decoder));
             // 音频轨伴生（A/V pair）：A_VORBIS（OGG 重封装 + symphonia）优先、
@@ -801,6 +815,24 @@ impl VideoPlayerRegistry {
         self.players.get(&key).and_then(|p| p.duration())
     }
 
+    /// t8o：登记/播放源的媒体元 (w, h, durMs)——桥命中后 shim 升级 settle 占位
+    /// (w0h0) 面消费。读取序：播放器创建时的探针缓存（字节已被 play 消费后的
+    /// 真值面）→ 源字节现存时现场探针（同 [`Self::probe_dimensions`] 探针入口，
+    /// 另读容器声明时长）；两处皆无 → None（shim 保持占位态不升级）。
+    pub fn source_media_meta(&self, abs_src: &str) -> Option<(u32, u32, u64)> {
+        let key = registry_key(abs_src);
+        if let Some(meta) = self.media_meta.get(&key) {
+            return Some(*meta);
+        }
+        let bytes = self.sources.get(&key).or_else(|| self.av_sources.get(&key))?;
+        let mut decoder = zero_media::VideoTrackDecoder::open_media(bytes).ok()?;
+        let dur_ms = decoder.duration_ms().unwrap_or(0);
+        match decoder.next_frame() {
+            Ok(Some(frame)) => Some((frame.width, frame.height, dur_ms)),
+            _ => None,
+        }
+    }
+
     /// 固有尺寸真值（W×H；M3 扩批 XXX——runner 静态 settle 提交 videoWidth/Height
     /// 链：async_load 探针同款开解码器读首帧（webm VP9/AV1 自路由；fixture 级
     /// 解码 ~10ms 可接受），非 webm/解码失败 → (0,0)（语义层占位）。
@@ -963,6 +995,24 @@ mod tests {
         assert_eq!(reg.current_time(SRC), 0.0);
         assert_eq!(reg.duration(SRC), None);
         assert!(!reg.is_playing(SRC));
+    }
+
+    #[test]
+    fn registry_source_media_meta_read_paths_t8o() {
+        // t8o：媒体元两读路径——源字节现存时现场探针；play 消费源字节后经创建时
+        // 探针缓存读真值（两态读数一致，桥升级面不因 play 时序失真值）。未登记 →
+        // None（shim 保持占位态）。
+        let mut reg = VideoPlayerRegistry::new();
+        assert_eq!(reg.source_media_meta(SRC), None, "未登记 → None");
+        reg.register_source(SRC, fixture_bytes());
+        let before = reg.source_media_meta(SRC).expect("源字节现存 → 探针真值");
+        assert_eq!(before.0, 320, "fixture 首帧宽（webm 真值面）");
+        assert_eq!(before.1, 240, "fixture 首帧高");
+        assert_eq!(before.2, 2000, "容器声明时长 ms（fixture 2.0s）");
+        assert!(reg.play(SRC, 1000), "play 建播放器（消费源字节）");
+        assert!(!reg.contains_source(SRC), "play 消费源字节");
+        let after = reg.source_media_meta(SRC).expect("play 后缓存真值可达");
+        assert_eq!(before, after, "两读路径同真值（缓存 = 现场探针）");
     }
 
     #[test]
@@ -1313,7 +1363,8 @@ pub fn video_bridge_facade_script() -> String {
            isEnded: function (src) { return __zw_video_is_ended(src) === '1'; },\
            setRate: function (src, rate) { __zw_video_set_rate(src, Number(rate)); },\
            setGain: function (src, volume, muted) { __zw_video_set_gain(src, Number(volume), muted ? '1' : '0'); },\
-           setLoop: function (src, on) { __zw_video_set_loop(src, on ? '1' : '0'); }\
+           setLoop: function (src, on) { __zw_video_set_loop(src, on ? '1' : '0'); },\
+           mediaMeta: function (src) { return __zw_video_media_meta(src); }\
          };",
     );
     // MSE 面 shim 契约（feature-detect 面）：`__zwVideoBridge.mseCreate` 在位 =
@@ -1371,15 +1422,22 @@ pub fn register_video_bridge_callbacks(
                 }
                 None => args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0),
             };
-            let mut reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
-            if !reg.play(src, now_ms) && !reg.audio_play(src, now_ms) {
+            let first = {
+                let mut reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
+                reg.play(src, now_ms) || reg.audio_play(src, now_ms)
+            };
+            if !first {
                 // M3 切片 2：供给方在位且源未登记 → 同步补登记后重评一次（decode
                 // 可达性仍由 open_webm 决定——失败回落 false，字节留存可重试）。
                 if let Some(provider) = source_provider.as_ref() {
+                    // t8o 返修 D1：登记判定与补登记各自短锁，provider 取字节（生产
+                    // 直联 GET，秒级上界）在锁外——registry 锁被 renderer 主循环泵
+                    // 每 tick 争用（is_any_playing 门/tick_all），持锁做网络 I/O 使
+                    // 主循环与页面 JS 线程在首次 miss 期间整体停摆。调用方（js_worker
+                    // 脚本线程）串行，无并发双 fetch 面。
                     let present = {
-                        let key = registry_key(src);
-                        let sources = &reg.sources;
-                        sources.contains_key(&key)
+                        let reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
+                        reg.sources.contains_key(&registry_key(src))
                     };
                     if !present && let Some(bytes) = provider(src) {
                         // audio 判定 strip query/fragment（WPT cache-buster URL——
@@ -1387,17 +1445,38 @@ pub fn register_video_bridge_callbacks(
                         // 音频条目永不登记 → 桥 play 恒 miss，audio_loop_* 族超时）。
                         let bare = src.split(['?', '#']).next().unwrap_or(src);
                         let audio_guess = bare.ends_with(".oga") || bare.ends_with(".mp3");
-                        reg.register_source(src, bytes.clone());
+                        let mut reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
+                        // 非 audio 常规路径 move 字节（免全量 body clone 双份峰值——
+                        // t8o 审查 D2 的锁外收窄）；audio 双登记才 clone。
                         if audio_guess {
+                            reg.register_source(src, bytes.clone());
                             reg.register_audio_source(src, bytes);
+                        } else {
+                            reg.register_source(src, bytes);
                         }
                     }
                 }
             }
-            if reg.play(src, now_ms) || reg.audio_play(src, now_ms) {
-                "1".into()
-            } else {
-                "0".into()
+            let ok = {
+                let mut reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
+                reg.play(src, now_ms) || reg.audio_play(src, now_ms)
+            };
+            if ok { "1".into() } else { "0".into() }
+        }),
+    );
+
+    // t8o：登记/播放源的媒体元——桥命中后 shim 升级 settle 占位 (w0h0) 面。
+    // "w|h|durMs" 管道串（数字跨 host 边界的既有串契约）；未登记/解码失败
+    // "0|0|0"（shim 以 0 判定保持占位态）。
+    let reg_meta = std::sync::Arc::clone(&registry);
+    sandbox.register_callback(
+        "__zw_video_media_meta",
+        Box::new(move |args| {
+            let src = args.first().map(String::as_str).unwrap_or("");
+            let reg = reg_meta.lock().unwrap_or_else(|e| e.into_inner());
+            match reg.source_media_meta(src) {
+                Some((w, h, dur_ms)) => format!("{w}|{h}|{dur_ms}"),
+                None => "0|0|0".into(),
             }
         }),
     );

@@ -542,6 +542,9 @@ fn js_worker_main(
                 // M2a 切片 5b：注册宿主桥回调族 + 注入 __zwVideoBridge JS 门面
                 //（shim play/pause/currentTime feature-detect 消费）。M3 扩批
                 // XXXIX+：泵时钟注入（扩批 XXV 同款——桥 play 锚与泵 tick 同源）。
+                // FIXME(t8o)：source_provider 仍 None——tab 路径 IDL setter 形态动态 src
+                // 无生产登记通路（renderer 路径经 renderer_media_source_provider 补齐）；
+                // tab 单进程生产面转池。
                 zero_webview::video_registry::register_video_bridge_callbacks(&mut *sandbox, registry, None, clock_ms);
             }
             JsWorkerCommand::SetWebAudio { registry } => {

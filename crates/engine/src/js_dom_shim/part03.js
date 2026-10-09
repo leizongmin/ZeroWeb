@@ -16088,6 +16088,11 @@ return e;
                       try {
                         if (globalThis.__zwVideoBridge.play(_pAbs, 0)) {
                           _pMs.bridgeOn = true;
+                          // t8o：桥命中升级 settle 占位维度（IDL 形态 w0h0 → 解码真值；
+                          // 重试命中路径——provider 补登记后首播）。
+                          if (typeof globalThis._zwMediaBridgeDimsUpgrade === 'function') {
+                            globalThis._zwMediaBridgeDimsUpgrade(_pKey, _pAbs);
+                          }
                           // M3 扩批 XVI：pending seek 补推（seek-before-play 时序——
                           // 桥未接通期的 currentTime= 赋值在此落位，spec 播放启动
                           // 位置 = 请求 seek 目标）。
@@ -16135,6 +16140,11 @@ return e;
                 }
                 if (_hit) {
                   _pMs.bridgeOn = true;
+                  // t8o：桥命中升级 settle 占位维度（IDL 形态 w0h0 → 解码真值；
+                  // 同步命中路径——源字节 settle 登记在先）。
+                  if (typeof globalThis._zwMediaBridgeDimsUpgrade === 'function') {
+                    globalThis._zwMediaBridgeDimsUpgrade(_pKey, _pAbs);
+                  }
                   // M3 扩批 XVI：pending seek 补推（同步命中路径——seek 发生在 play 前、
                   // 桥登记落位前，与重试路径同语义；spec 播放启动位置 = 请求 seek 目标）。
                   if (typeof _pMs._zwSeekPendingMs === 'number') {

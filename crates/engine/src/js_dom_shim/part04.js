@@ -276,7 +276,7 @@
               }
             } catch (_eVbCt) {}
           }
-          if (prop === 'currentTime') return _ms ? _ms.currentTime : 0;
+          if (prop === 'currentTime') return _ms ? (_ms.currentTime != null ? _ms.currentTime : 0) : 0;
           if (prop === 'duration') {
             // 切片 5b：桥接元素 duration 真值优先（Rust VideoPlayer 容器时长）。
             if (_ms && _ms.bridgeOn && _ms.bridgeSrc && typeof globalThis.__zwVideoBridge === 'object') {

@@ -12125,9 +12125,25 @@
   var _zwTrackFetchSeq = 0;
   function _zwSettleResourceKey(key, sel, handle, tag, url, outcome, width, height, errorCode, durationMs) {
     if (_resourceStates[key]) return false; // 每个资源请求只 settle / 派发一次。
+    var _zwW = Math.max(0, Number(width) || 0), _zwH = Math.max(0, Number(height) || 0);
+    // t8o：桥真值 settle 协商——IDL 动态形态（`video.src=` + play() 同脚本 turn）play
+    // 先于 settle（续段 microtask 在 turn 末），桥命中升级助手无处落笔（_resourceStates
+    // 未建），w0h0 占位随后落地、幂等门阻断真值。settle 建态时若占位 (0x0) 且桥已登记
+    // 源（play/provider 补登记先行），直接以 mediaMeta 解码真值出生——占位不再产生。
+    // 无桥（testharness/reftest 沙箱）或未登记（mediaMeta "0|0|0"）维持原占位，零回归。
+    if (tag === 'video' && outcome !== 'error' && _zwW === 0 && _zwH === 0) {
+      try {
+        var _vbSettle = globalThis.__zwVideoBridge;
+        if (_vbSettle && typeof _vbSettle.mediaMeta === 'function' && url) {
+          var _sm = String(_vbSettle.mediaMeta(url) || '').split('|');
+          var _sw = _sm[0] | 0, _sh = _sm[1] | 0;
+          if (_sw > 0 && _sh > 0) { _zwW = _sw; _zwH = _sh; }
+        }
+      } catch (_eSettleMeta) {}
+    }
     var state = {
       url: String(url), outcome: String(outcome),
-      width: Math.max(0, Number(width) || 0), height: Math.max(0, Number(height) || 0),
+      width: _zwW, height: _zwH,
       // media-playback M2a：容器时长真值（毫秒，宿主解码器头部读取；video 面专用）。
       // null/undefined → 语义层 _zwMediaLoadSequence 回落 headless 定值（测试零回归）。
       durationMs: durationMs == null ? null : Math.max(0, Number(durationMs) || 0),
@@ -12184,6 +12200,28 @@
     }
     return true;
   }
+  // t8o：桥命中后媒体元静默升级——IDL setter 形态（`video.src=` 动态赋值）settle 先占
+  // w0h0 占位（_zwSettleResourceKey 幂等门阻断真值 commit 重派），videoWidth/Height
+  // getter 读 settle 态恒 0。桥命中（源字节经 provider 补登记、播放器建出）后经
+  // __zwVideoBridge.mediaMeta 取解码真值就地升级占位维度；不重派事件（loadedmetadata
+  // 已派，事件序稳定优先）。"0|0|0"（未登记/解码失败）与已非 0 的既有真值均不覆盖。
+  // https://html.spec.whatwg.org/multipage/media.html#dom-video-videowidth
+  globalThis._zwMediaBridgeDimsUpgrade = function (mediaKey, absSrc) {
+    try {
+      if (!mediaKey || !absSrc) return;
+      var _vb = globalThis.__zwVideoBridge;
+      if (!_vb || typeof _vb.mediaMeta !== 'function') return;
+      var _meta = String(_vb.mediaMeta(absSrc) || '').split('|');
+      var _w = _meta[0] | 0;
+      var _h = _meta[1] | 0;
+      if (!(_w > 0 && _h > 0)) return;
+      var _st = (typeof _resourceStates !== 'undefined') ? _resourceStates[mediaKey] : null;
+      if (_st && ((_st.width | 0) === 0 || (_st.height | 0) === 0)) {
+        _st.width = _w;
+        _st.height = _h;
+      }
+    } catch (_eDimUp) {}
+  };
   // M3 扩批 XXVI：seekable/buffered TimeRanges 共享面（part04 get trap 调用）。
   // headless 近似：readyState>=1 后恒 [0, duration] 单区间；HAVE_NOTHING 空集合。
   // duration 解析序：桥真值 → _mediaState.duration → settle durationMs → headless

@@ -239,6 +239,10 @@ pub(crate) struct RendererRuntime {
     /// `AsyncPageLoad.take_font_events` drain 并 stash，脚本阶段经 `finish_page_load` 派 FontFaceSet
     /// 'loadingdone'/'loadingerror' + 解析 `document.fonts.ready`。
     pending_font_events: Vec<(String, &'static str)>,
+    /// t8o：脚本阶段收尾（finish_page_load，四类事件 stash 的唯一正常消费者）已跑——
+    /// 其后完成的 load 迟到事件在 drain 点立即派发，不再滞留 stash 永不派发。
+    /// 新文档脚本阶段起点复位（收尾未跑即 false，维持既有 stash→finish 派发序）。
+    page_load_finish_dispatched: bool,
     /// SW runtime 托管：browser 命令由 IPC reader 线程直接投递托管线程（求值/派发/
     /// 停止在独立线程执行，事件由托管线程直接回传——不经主循环，避免与同步
     /// automation 请求互等死锁）。本字段仅持有托管句柄的生命周期（Drop 时停线程）。
@@ -462,6 +466,7 @@ impl RendererRuntime {
             pending_resource_element_events: Vec::new(),
             pending_link_events: Vec::new(),
             pending_font_events: Vec::new(),
+            page_load_finish_dispatched: false,
             service_worker_host: sw_runtime_host,
         }
     }
@@ -558,6 +563,9 @@ impl RendererRuntime {
         let js_enabled = self.javascript_enabled;
         let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let skip = page_scripts::should_skip_scripts(&current_url);
+        // t8o：新文档脚本阶段起点复位迟到派发标记（本阶段收尾未跑前，load 完成事件
+        // 维持既有 stash→finish 派发序；P-B1 让路中止时同样保持 false）。
+        self.page_load_finish_dispatched = false;
         // t8m：页面脚本阶段起点——readyState 置 "loading"（shim readyState getter 读状态宿
         // 全局 `__zwReadyState`）。与阶段脚本同优先通道同步执行（execute_chunk 同款
         // `execute_script_direct_priority`），保证先于首条页面脚本；导航让路中止时新文档
@@ -621,6 +629,8 @@ impl RendererRuntime {
                 link_events,
                 font_events,
             );
+            // t8o：收尾里程碑已派发——其后 load 完成的迟到事件走 drain 点立即派发。
+            self.page_load_finish_dispatched = true;
         }
         Ok(true)
     }
@@ -1982,6 +1992,23 @@ impl RendererRuntime {
         self.pending_resource_element_events = pending.load.take_resource_element_events();
         self.pending_link_events = pending.load.take_link_element_events();
         self.pending_font_events = pending.load.take_font_events();
+        // t8o：脚本阶段收尾已跑（无外链脚本页面 prefetch 秒完，媒体资源其后才 fetch
+        // 落定）时，事件滞留 stash 永不派发——唯一消费者 finish 已过场。迟到事件在
+        // drain 点立即派资源面（不重派 DCL/load 一次性里程碑；t8o G1 活体证据
+        // out-t8o-attr-diag3：fetch 200 落定、自然态零事件）。
+        if self.page_load_finish_dispatched {
+            let resource_errors = std::mem::take(&mut self.pending_resource_errors);
+            let resource_events = std::mem::take(&mut self.pending_resource_element_events);
+            let link_events = std::mem::take(&mut self.pending_link_events);
+            let font_events = std::mem::take(&mut self.pending_font_events);
+            page_scripts::dispatch_late_resource_events(
+                &self.js_worker,
+                resource_errors,
+                resource_events,
+                link_events,
+                font_events,
+            );
+        }
 
         self.sync_cached_html_from_webview();
         self.try_publish_progress(true)?;

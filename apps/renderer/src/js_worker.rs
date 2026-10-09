@@ -1469,11 +1469,13 @@ fn js_worker_main(
                 // browser tab_js_worker 同名分支——多进程路径媒体播放真值面）。
                 // M3 切片 2（D4）：pump_clock 注入——桥 play 锚与 renderer 主循环
                 // 泵 tick 同源（扩批 XXV 原点错位缺陷的 renderer 路径消除）。
+                // t8o：媒体源供给方在位——IDL setter 形态动态 src 经 provider 直联
+                // GET 补登记（renderer 进程直接联网，同 default_fetch_handler）。
                 video_bridge_armed = true;
                 zero_webview::video_registry::register_video_bridge_callbacks(
                     &mut *sandbox,
                     registry,
-                    None,
+                    Some(renderer_media_source_provider()),
                     pump_clock,
                 );
             }
@@ -1585,6 +1587,80 @@ fn js_worker_main(
             }
         }
     }
+}
+
+/// t8o：生产媒体源供给方——`__zw_video_play` 桥 miss 且源未登记时同步补登记。IDL setter
+/// 形态（`video.src=` 动态赋值）不经初始 HTML 提取（extract_media_resources 只扫解析期
+/// 元素），此前 renderer 路径无生产 fetch/登记通路 → shim 退避重试 5000 次永空、合成
+/// march w0h0 冻结。直联 [`ResourceLoader`] GET（同 [`default_fetch_handler`] 模式：
+/// recv() 阻塞调用线程、无 IPC 往返，#24 主循环互等死锁面不适用）；失败 URL 记负缓存
+/// ——shim 重试循环内 provider 秒回 None 不重复打网。成功字节交 registry 登记（重试时
+/// 源已 present，不再调 provider），首次命中后零额外成本。
+pub fn renderer_media_source_provider() -> zero_webview::MediaSourceProvider {
+    media_source_provider_with_fetcher(Arc::new(media_http_bytes)).0
+}
+
+/// 媒体取字节通路：URL → 字节；None = 失败（进负缓存）。
+type MediaBytesFetcher = Arc<dyn Fn(&str) -> Option<Vec<u8>> + Send + Sync>;
+
+/// t8o 返修 D3：负缓存条目存活窗口。shim 重试泵窗口（重试 5000 次 × 2ms ≈ 10s 量级）远
+/// 小于该值——负缓存防打网目的不受影响；瞬态失败（503/超时/空 2xx）60s 后可重试，不再
+/// 随进程生命周期毒化（同一 URL 后续导航恒不可播）。
+const MEDIA_NEGATIVE_CACHE_TTL: Duration = Duration::from_secs(60);
+
+/// 生产取字节通路：直联 GET，仅接受非空 2xx 体（空 2xx 体不可能是有效媒体，按失败处理
+/// 进负缓存，避免登记空源后 play 恒 miss）。返回 None 的一切分支都进负缓存。
+fn media_http_bytes(url: &str) -> Option<Vec<u8>> {
+    let req = HttpRequest {
+        method: HttpMethod::Get,
+        url: url.to_string(),
+        headers: Vec::new(),
+        body: None,
+    };
+    match ResourceLoader::shared().submit_http(req, FetchPriority::MEDIUM).recv() {
+        Ok(Ok(resp)) if media_http_response_ok(resp.status_code, &resp.body) => Some(resp.body),
+        _ => None,
+    }
+}
+
+/// provider 成功判据：非空 2xx。独立纯函数便于钉测（空 2xx / 非 2xx → false）。
+fn media_http_response_ok(status_code: u16, body: &[u8]) -> bool {
+    (200..300).contains(&status_code) && !body.is_empty()
+}
+
+/// 负缓存语义与取字节通路解耦：fetch 失败记 URL → 当前时刻，TTL 内同 URL 秒回 None
+/// （重试循环内不打网）；过期条目清除并重新 fetch。返回供给方与负缓存状态句柄——
+/// 后者仅测试观测/过期态注入用（生产侧丢弃）。
+fn media_source_provider_with_fetcher(
+    fetch: MediaBytesFetcher,
+) -> (
+    zero_webview::MediaSourceProvider,
+    Arc<std::sync::Mutex<HashMap<String, std::time::Instant>>>,
+) {
+    let fetch_failed: Arc<std::sync::Mutex<HashMap<String, std::time::Instant>>> = Arc::default();
+    let cache = fetch_failed.clone();
+    let provider: zero_webview::MediaSourceProvider = Arc::new(move |url: &str| {
+        {
+            let mut failed = cache.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(t) = failed.get(url) {
+                if t.elapsed() < MEDIA_NEGATIVE_CACHE_TTL {
+                    return None;
+                }
+                failed.remove(url);
+            }
+        }
+        match fetch(url) {
+            Some(body) => Some(body),
+            None => {
+                cache
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(url.to_string(), std::time::Instant::now());
+                None
+            }
+        }
+    });
+    (provider, fetch_failed)
 }
 
 /// R2923 fetch 完整化：生产 fetch handler——经 `zero_net::ResourceLoader` 发起真实 HTTP 请求，
@@ -1869,6 +1945,74 @@ mod tests {
             !calls.iter().any(|u| u.ends_with("/_")),
             "动态 import spec 不得当依赖收集（红态：'_ ' 被提取为依赖硬失败中止模块）：{calls:?}"
         );
+    }
+
+    /// t8o 返修 G-1（PR #126 审查缺口，R9 负控证明生产登记通路零判别覆盖）：provider
+    /// 负缓存语义钉——失败 URL 在 TTL 内秒回 None 不重复打网（防 shim 重试泵打网），
+    /// 过期后清除条目重新 fetch（D3：不再随进程生命周期毒化）；成功不进负缓存。
+    #[test]
+    fn media_source_provider_negative_cache_ttl_t8o() {
+        let calls = Arc::new(AtomicU64::new(0));
+        let calls_c = calls.clone();
+        let fetch: MediaBytesFetcher = Arc::new(move |_url| {
+            calls_c.fetch_add(1, Ordering::Relaxed);
+            None
+        });
+        let (provider, state) = media_source_provider_with_fetcher(fetch);
+        let url = "https://zero.test/v.webm";
+        assert_eq!(provider(url), None, "失败首查返 None");
+        assert_eq!(provider(url), None, "TTL 内秒回 None");
+        assert_eq!(calls.load(Ordering::Relaxed), 1, "负缓存命中不重复打网");
+        assert!(
+            state.lock().unwrap_or_else(|e| e.into_inner()).contains_key(url),
+            "失败 URL 进负缓存"
+        );
+        // 过期态注入（不等真实 60s）：条目时刻回拨到 TTL 之前 → 重新 fetch。
+        state.lock().unwrap_or_else(|e| e.into_inner()).insert(
+            url.to_string(),
+            std::time::Instant::now() - MEDIA_NEGATIVE_CACHE_TTL - Duration::from_secs(1),
+        );
+        assert_eq!(provider(url), None);
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            2,
+            "过期条目清除并重新 fetch（D3 前恒 1）"
+        );
+    }
+
+    /// t8o 返修 G-1：成功取字节不进负缓存（毒化面只覆盖失败）。
+    #[test]
+    fn media_source_provider_success_not_negatively_cached_t8o() {
+        let calls = Arc::new(AtomicU64::new(0));
+        let calls_c = calls.clone();
+        let fetch: MediaBytesFetcher = Arc::new(move |_url| {
+            calls_c.fetch_add(1, Ordering::Relaxed);
+            Some(b"media-bytes".to_vec())
+        });
+        let (provider, state) = media_source_provider_with_fetcher(fetch);
+        let url = "https://zero.test/v.webm";
+        assert_eq!(provider(url), Some(b"media-bytes".to_vec()), "成功返字节");
+        assert!(
+            state.lock().unwrap_or_else(|e| e.into_inner()).is_empty(),
+            "成功不进负缓存"
+        );
+        assert_eq!(provider(url), Some(b"media-bytes".to_vec()));
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            2,
+            "成功态无负缓存条目，每次调用都打网（生产由 registry present 门挡第二跳）"
+        );
+    }
+
+    /// t8o 返修 G-1：provider 成功判据钉——空 2xx 体按失败处理（负缓存短路，避免登记
+    /// 空源后 play 恒 miss），非 2xx 同败。
+    #[test]
+    fn media_http_response_ok_requires_nonempty_2xx_t8o() {
+        assert!(media_http_response_ok(200, b"x"), "非空 2xx 是有效媒体");
+        assert!(!media_http_response_ok(200, b""), "空 2xx 体按失败（负缓存）");
+        assert!(!media_http_response_ok(204, b""), "空 2xx 体按失败（负缓存）");
+        assert!(!media_http_response_ok(404, b"x"), "非 2xx 失败");
+        assert!(!media_http_response_ok(503, b"x"), "非 2xx 失败");
     }
 
     /// fix ⑥（PR #114 审查 A1）：模块 fetch 非 2xx 拒绝——404 错误页 HTML 不得被当

@@ -291,6 +291,22 @@ pub fn finish_page_load(
     // 与随后 DCL 同在优先 FIFO，提交序即执行序——spec HTML §the end）。
     dispatch_ready_state_transition(js_worker, "interactive");
     dispatch_page_lifecycle(js_worker, "DOMContentLoaded");
+    dispatch_resource_outcomes(js_worker, resource_errors, resource_events, link_events, font_events);
+    // t8m：load 前 readyState 过渡 "complete" + readystatechange（同上，先于 load 派发）。
+    dispatch_ready_state_transition(js_worker, "complete");
+    dispatch_page_lifecycle(js_worker, "load");
+}
+
+/// 资源结果派发共享体（finish 里程碑与 t8o 迟到派发同款）：资源 window 'error' +
+/// img/media/source/track 元素级事件 + stylesheet load/error + @font-face 批与 settle。
+/// 生命周期里程碑（readyState/DCL/load）归 [`finish_page_load`]，此处不重派。
+fn dispatch_resource_outcomes(
+    js_worker: &RendererJsWorker,
+    resource_errors: Vec<(String, String)>,
+    resource_events: Vec<ResourceElementEvent>,
+    link_events: Vec<(String, &'static str)>,
+    font_events: Vec<(String, &'static str)>,
+) {
     // R2942：页面脚本注册 handler 后、window load 前派发资源 window 'error'。
     for (kind, url) in &resource_errors {
         // t2-pb1 fix#5：load 前的导航里程碑派发走优先队列（脚本阶段的同类报告走普通队列）。
@@ -330,9 +346,19 @@ pub fn finish_page_load(
     let had_loaded = font_events.iter().any(|(_, t)| *t == "loaded");
     let had_error = font_events.iter().any(|(_, t)| *t == "error");
     dispatch_font_settle(js_worker, had_loaded, had_error);
-    // t8m：load 前 readyState 过渡 "complete" + readystatechange（同上，先于 load 派发）。
-    dispatch_ready_state_transition(js_worker, "complete");
-    dispatch_page_lifecycle(js_worker, "load");
+}
+
+/// t8o：迟到资源事件派发——脚本阶段收尾（finish 里程碑）先于 load 完成时（无外链
+/// 脚本页面 prefetch 秒完，媒体资源其后才 fetch 落定），事件在 load 完成 drain 点
+/// 直接派资源面；不重派 readyState/DCL/load 一次性里程碑。
+pub fn dispatch_late_resource_events(
+    js_worker: &RendererJsWorker,
+    resource_errors: Vec<(String, String)>,
+    resource_events: Vec<ResourceElementEvent>,
+    link_events: Vec<(String, &'static str)>,
+    font_events: Vec<(String, &'static str)>,
+) {
+    dispatch_resource_outcomes(js_worker, resource_errors, resource_events, link_events, font_events);
 }
 
 /// t8m：readyState 过渡 + document readystatechange 派发（[`script_transition_ready_state`]
