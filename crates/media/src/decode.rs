@@ -405,6 +405,11 @@ pub enum VideoTrackDecoder {
     /// mp4 容器 + H.264 位流（D-RFC-3 获批；feature `decode-h264`）。
     #[cfg(feature = "decode-h264")]
     Mp4H264(Box<crate::mp4_h264::Mp4H264Decoder>),
+    /// MSE 流式源（t8n：appendBuffer 增长缓冲 → 流式 fMP4 demux + H.264；
+    /// feature `decode-h264`——真流末由 feed `ended` 旗标消解，见
+    /// [`crate::mse_feed::MseVideoFeed::is_exhausted`]）。
+    #[cfg(feature = "decode-h264")]
+    Mse(Box<crate::mse_feed::MseVideoFeed>),
 }
 
 impl VideoTrackDecoder {
@@ -432,6 +437,8 @@ impl VideoTrackDecoder {
             Self::Webm(d) => d.duration_ms(),
             #[cfg(feature = "decode-h264")]
             Self::Mp4H264(d) => d.duration_ms(),
+            #[cfg(feature = "decode-h264")]
+            Self::Mse(d) => d.duration_ms(),
         }
     }
 
@@ -441,6 +448,20 @@ impl VideoTrackDecoder {
             Self::Webm(d) => d.next_frame(),
             #[cfg(feature = "decode-h264")]
             Self::Mp4H264(d) => d.next_frame(),
+            #[cfg(feature = "decode-h264")]
+            Self::Mse(d) => d.next_frame(),
+        }
+    }
+
+    /// 真流末判定：静态容器 `None` 即流末（契约恒真）；MSE 面由 feed `ended`
+    /// 旗标消解「写入边缘等待」与「真 EOF」（player Ended 判定消费方）。
+    pub fn is_exhausted(&self) -> bool {
+        match self {
+            Self::Webm(_) => true,
+            #[cfg(feature = "decode-h264")]
+            Self::Mp4H264(_) => true,
+            #[cfg(feature = "decode-h264")]
+            Self::Mse(d) => d.is_exhausted(),
         }
     }
 
@@ -450,6 +471,8 @@ impl VideoTrackDecoder {
             Self::Webm(d) => d.un_read(frame),
             #[cfg(feature = "decode-h264")]
             Self::Mp4H264(d) => d.un_read(frame),
+            #[cfg(feature = "decode-h264")]
+            Self::Mse(d) => d.un_read(frame),
         }
     }
 
@@ -462,6 +485,8 @@ impl VideoTrackDecoder {
             Self::Webm(d) => d.seek_to_ms(target_ms),
             #[cfg(feature = "decode-h264")]
             Self::Mp4H264(d) => d.seek_to_ms(target_ms),
+            #[cfg(feature = "decode-h264")]
+            Self::Mse(d) => d.seek_to_ms(target_ms),
         }
     }
 
@@ -475,6 +500,8 @@ impl VideoTrackDecoder {
             }
             #[cfg(feature = "decode-h264")]
             Self::Mp4H264(d) => d.flush(),
+            #[cfg(feature = "decode-h264")]
+            Self::Mse(d) => d.flush(),
         }
     }
 }

@@ -119,7 +119,14 @@ impl VideoPlayer {
         self.last_tick_ms = Some(now_ms);
         let delta = now_ms.saturating_sub(last) as f64;
         self.position_ms += delta * self.playback_rate;
-        self.present_pending()
+        let r = self.present_pending();
+        // MSE 等待面 stall-hold：无新帧且未真流末时位置回持（currentTime 不虚进
+        // ——等待 appendBuffer 的窗口期时钟不空转）。仅 tick 墙钟路径生效；
+        // A/V 主时钟路径（sync_to_media_time）位置由音频游标授权，不钳制。
+        if matches!(&r, Ok(None)) && self.state != PlayerState::Ended {
+            self.position_ms = self.presented_pts.map_or(0.0, |p| p as f64);
+        }
+        r
     }
 
     /// 主时钟对齐呈现（A/V 同步——audio clock 主时钟，media-audio M2 契约）：
@@ -161,7 +168,12 @@ impl VideoPlayer {
                     }
                 }
                 None => {
-                    self.state = PlayerState::Ended;
+                    // MSE 等待面：非真流末的 None = 写入边缘（appendBuffer 在途）
+                    // ——保持 Playing 待下次 tick；静态容器 is_exhausted 恒真，
+                    // Ended 语义零回归。
+                    if self.decoder.is_exhausted() {
+                        self.state = PlayerState::Ended;
+                    }
                     break;
                 }
             }

@@ -36,6 +36,8 @@ mod decode;
 mod mixer;
 #[cfg(feature = "decode-h264")]
 mod mp4_h264;
+#[cfg(feature = "decode-h264")]
+mod mse_feed;
 mod opus_decode;
 mod player;
 mod webaudio;
@@ -53,6 +55,8 @@ pub use decode::*;
 pub use mixer::*;
 #[cfg(feature = "decode-h264")]
 pub use mp4_h264::*;
+#[cfg(feature = "decode-h264")]
+pub use mse_feed::*;
 pub use opus_decode::*;
 pub use player::*;
 pub use webaudio::*;
