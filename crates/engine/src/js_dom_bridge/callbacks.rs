@@ -1385,6 +1385,12 @@ pub fn register_dom_callbacks(
     );
 
     let m = Arc::clone(mutations);
+    // slice48：当前批 miss → MUTATION_HISTORY 重放（R100 text/tag 同构第 2 层）——handle
+    // 元素不在 HTML 快照（无 sel 面的 applied-view 回落），apply 批次边界 drain 后当前批
+    // 恒空，属性读落空（spec：属性是元素状态，https://dom.spec.whatwg.org/#dom-element-getattribute
+    // ——属性面无 NodeList alive 概念）。批序 [history…, current] 单调，逆序 latest-wins
+    // 先见当前批、再见历史，批间覆盖序正确。part45 批次边界装配注释「供 handle attr 读回
+    // 走 latest-wins 重放」与实测不符（attr 回调从未接历史）——本层补齐该接线。
     sandbox.register_callback(
         "__zw_get_attr_handle",
         Box::new(move |args| {
@@ -1392,13 +1398,19 @@ pub fn register_dom_callbacks(
                 return String::new();
             }
             let list = m.lock().unwrap_or_else(|e| e.into_inner());
-            query_attr_from_mutations(&list, &args[0], &args[1])
+            if let Some(v) = attr_value_from_mutations_opt(&list, &args[0], &args[1]) {
+                return v;
+            }
+            drop(list);
+            MUTATION_HISTORY
+                .with(|h| attr_value_from_mutations_opt(&h.borrow(), &args[0], &args[1]).unwrap_or_default())
         }),
     );
 
     // create 句柄元素的属性存在性（`new Option()` 创建的句柄 option `.selected`/`.defaultSelected`
     // 读——句柄元素不在 HTML 快照，sel-based `__zw_has_attr` 对其恒 false）。返 "1"/"0"。
     let m = Arc::clone(mutations);
+    // slice48：当前批 miss → MUTATION_HISTORY 重放（同 `__zw_get_attr_handle` 第 2 层注）。
     sandbox.register_callback(
         "__zw_has_attr_handle",
         Box::new(move |args| {
@@ -1406,11 +1418,17 @@ pub fn register_dom_callbacks(
                 return "0".to_string();
             }
             let list = m.lock().unwrap_or_else(|e| e.into_inner());
-            if has_attr_from_mutations(&list, &args[0], &args[1]) {
-                "1".into()
-            } else {
-                "0".into()
+            if let Some(present) = has_attr_from_mutations_opt(&list, &args[0], &args[1]) {
+                return if present { "1".to_string() } else { "0".to_string() };
             }
+            drop(list);
+            MUTATION_HISTORY.with(|h| {
+                if has_attr_from_mutations_opt(&h.borrow(), &args[0], &args[1]).unwrap_or(false) {
+                    "1".to_string()
+                } else {
+                    "0".to_string()
+                }
+            })
         }),
     );
 
