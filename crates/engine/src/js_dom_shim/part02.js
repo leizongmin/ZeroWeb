@@ -4703,7 +4703,15 @@
   // `location`，同源导航 defer host 桥）；② popstate 仅 dispatch 给 window listener（headless 无真用户
   // back 按钮，浏览器 chrome 导航 defer）；③ popstate 经 `_defer` microtask 派发（spec 为 task，本沙箱异步
   // 模型近似）；④ go(delta) 同步移 cursor + microtask 派发（spec 批量合并简化）。
-  var _hist_entries = [{ state: null, url: '', scrollRestoration: 'auto' }]; // cursor 0 = 初始 entry（M2-S2：+ per-entry scrollRestoration）
+  // cursor 0 = 初始 entry（M2-S2：+ per-entry scrollRestoration）。M2-S4P3：url 落
+  // **求值时** page url——空 url 会让 `_navPub`/`_histEntryUrl` 回退 `__zw_get_page_url()`
+  // 共享槽，而该槽现随同文档导航同步（`__zw_set_page_url`）→ 回退漂移成「历史 entry 读
+  // 当前 URL」（WPT navigate-navigation-back-same-document hashChange 面）。
+  var _hist_entries = [{
+    state: null,
+    url: (typeof __zw_get_page_url === 'function') ? (__zw_get_page_url() || '') : '',
+    scrollRestoration: 'auto',
+  }];
   // M2-S4P：pushState/replaceState 速率窗（spec session history push/replace rate limit——
   // 10s 内超 100 次即静默 no-op；WPT history_pushstate/replacestate_too_many_calls.optional）。
   var _histRateStamps = [];
@@ -4805,6 +4813,18 @@
   // M2-S4B：push/replace 应用共通内部（**不派 navigate**——调用方先行派发并防中止；
   // history.pushState/replaceState 与 navigation.navigate() 共用）。含 S4 的 Navigation API
   // push/replace CCE 面。M2-S4C：bind 单元格提交后绑记录（destination 动态 index/getState）。
+  // M2-S4P3：初始 entry url 补章——shim IIFE 求值时 `__zw_get_page_url` 回调未就绪
+  //（声明落 ''），而 `_navPub` url getter 对空 url 回退该共享槽；槽随同文档导航同步
+  //（`__zw_set_page_url`）后回退漂移成「历史 entry 读当前 URL」。首次导航前以彼时
+  // host url（= 载入 url）补齐 entry0.url。WPT navigate-navigation-back-same-document
+  // hashChange 面。
+  function _histStampInitialUrl() {
+    try {
+      if (_hist_entries.length && !_hist_entries[0].url && typeof __zw_get_page_url === 'function') {
+        _hist_entries[0].url = __zw_get_page_url() || '';
+      }
+    } catch (_eStmp) {}
+  }
   // M2-S4P：joint session history **50 条上限**——spec 未定义上限（WPT
   // dispose-for-full-session-history.tentative 注记），浏览器共识 50。超限最旧 entry 出列：
   // classic 列表 shift + cursor 前移；Navigation API 侧同源记录出列（_navList/_navDetached
@@ -4830,18 +4850,36 @@
   // 内存导航（hash-setter/href/assign/replace/pushState/replaceState/navigate）不重载
   // 文档，两层 URL 槽不更新则 `:target` 永远落在载入时 fragment（WPT
   // navigate-same-document「querySelector(':target')」；HTML URL and history update steps）。
-  function _zwSyncDocUrl(u) {
+  function _zwSyncDocUrl(u, syncPageUrl) {
     try { if (globalThis.document) globalThis.document._zwFragmentUrl = u; } catch (_eSd1) {}
     try { if (typeof __zw_native_set_document_url === 'function') __zw_native_set_document_url(u); } catch (_eSd2) {}
+    // M2-S4P3：host page_url 同步——**仅片段级（hash-only）变更** + syncPageUrl 门。
+    // 跨文档/查询级变更在本引擎为内存近似提交，被 stop/preempt 中止后 URL 已在内存生效、
+    // host 文档未换——filename 消费面须停留载入文档（WPT
+    // signal-abort-window-stop-after-intercept「e.filename === start_url」）。
+    // **hash-setter 不得开此门**（syncPageUrl 省略）——锚/href hash 片段导航走 host 交接
+    // （host 以 page_url 为当前 URL 判 no-op），shim 抢写 page_url 会让 host 导航失效
+    //（fragment_anchor_updates_history_without_new_document AREA 激活回归）。
+    // navigate() API 路径（_histApplyNav）开门——不经 host 交接，闭合
+    // navigation-back-same-document-preventDefault「e.filename === location.href」。
+    if (syncPageUrl !== true) return;
+    try {
+      if (typeof __zw_set_page_url === 'function' && typeof __zw_get_page_url === 'function'
+          && _navIsHashOnly(__zw_get_page_url(), u)) {
+        __zw_set_page_url(u);
+      }
+    } catch (_eSd3) {}
   }
   function _histApplyNav(state, url, replace, bind) {
+    _histStampInitialUrl();
+
     _histSaveCurrentScroll(); // M2-S4D：离开当前 entry 前存滚动位
     if (replace) {
       var newUrl = _histStateUrlOrNull(url);
       if (newUrl === null && url != null && String(url) !== '') return; // 跨源已抛
       var cur = _hist_current();
       cur.state = state;
-      if (newUrl !== null) { cur.url = newUrl; _zwSyncDocUrl(newUrl); }
+      if (newUrl !== null) { cur.url = newUrl; _zwSyncDocUrl(newUrl, true); }
       var freshR = _navReplaceCurrent(cur);
       if (bind) bind.rec = freshR;
       return;
@@ -4853,7 +4891,7 @@
     var _zwHe = { state: state, url: newUrl2, scrollRestoration: _zwSR };
     _hist_entries.push(_zwHe);
     _hist_cursor = _hist_entries.length - 1;
-    if (newUrl2 !== null) _zwSyncDocUrl(newUrl2);
+    if (newUrl2 !== null) _zwSyncDocUrl(newUrl2, true);
     var freshP = _navPushCurrent(_zwHe);
     if (bind) bind.rec = freshP;
     _histTrimOldest();
@@ -4863,8 +4901,15 @@
   //（+ 跨 hash 派 hashchange，_hist_applyTraversal 内同步派发）。M2-S4C：ctrl 载荷——
   // navigation.back/forward 携 committed/finished 控制柄（越界 → InvalidStateError reject）。
   var _hist_pendingTraversals = [];
-  function _hist_queueTraversal(delta, ctrl) {
-    _hist_pendingTraversals.push({ delta: delta, ctrl: ctrl || null });
+  function _hist_queueTraversal(delta, ctrl, info) {
+    // M2-S4P3：入队时目标可达性快照——执行前被 push 截断剪除的 traverse 走 AbortError
+    // abort（非入队即越界的 InvalidStateError）。
+    var _qtTarget = _hist_cursor + delta;
+    _hist_pendingTraversals.push({
+      delta: delta, ctrl: ctrl || null,
+      atEnd: _qtTarget >= 0 && _qtTarget <= _hist_entries.length - 1,
+      info: info,
+    });
     if (typeof setTimeout === 'function') {
       setTimeout(_hist_runQueuedTraversals, 0);
     } else {
@@ -4874,18 +4919,28 @@
   function _hist_runQueuedTraversals() {
     while (_hist_pendingTraversals.length) {
       var item = _hist_pendingTraversals.shift();
-      _hist_applyTraversal(item.delta, item.ctrl);
+      _hist_applyTraversal(item.delta, item.ctrl, item.atEnd, item.info);
     }
   }
-  function _hist_applyTraversal(delta, ctrl) {
+  function _hist_applyTraversal(delta, ctrl, atEnd, info) {
     var target = _hist_cursor + delta;
     if (target < 0 || target > _hist_entries.length - 1) {
       // 越界：history.back/forward 静默 no-op（R3004）；navigation.back/forward reject
       // InvalidStateError（spec canGoBack/canGoForward 前置面）。
+      // M2-S4P3：入队时可达、执行时目标已被剪除（push 截断）→ **AbortError abort**
+      //（spec traverse abort——committed/finished 双 reject，navigate 事件未派故
+      // navigateerror 不发；WPT forward-to-pruned-entry）。入队时即越界（canGoBack/canGoForward
+      // 假）维持 InvalidStateError。
       if (ctrl) {
-        var ie = new (globalThis.DOMException || DOMException)('Cannot go back or forward.', 'InvalidStateError');
-        ctrl.reject(ie);
-        ctrl.finishedSettle(ie, true);
+        if (atEnd) {
+          var pe = _navNavAbortError();
+          ctrl.reject(pe);
+          ctrl.finishedSettle(pe, true);
+        } else {
+          var ie = new (globalThis.DOMException || DOMException)('Cannot go back or forward.', 'InvalidStateError');
+          ctrl.reject(ie);
+          ctrl.finishedSettle(ie, true);
+        }
       }
       return;
     }
@@ -4927,6 +4982,8 @@
       hashChange: _navIsHashOnly(_histEntryUrl(_hist_current()), _histEntryUrl(_hist_entries[target])),
       destRec: _navTgtRec,
       destState: _navTgtRec ? _navTgtRec.navState : undefined,
+      // M2-S4P3：back/forward {info} 线程（traverse 事件 e.info）。
+      info: info,
     });
     _navTraverseDispatching = false;
     // M2-S4D：restore 规格（目标 entry 保存滚动位 + 派发时刻滚动代次）——intercept 链
@@ -5298,8 +5355,16 @@
     // 全走既有链）。M2-S4C：携 committed/finished 控制柄——navigate 'traverse' 事件在队列任务内
     // 派发（preventDefault 取消 traversal → AbortError reject；intercept → 链后结算；越界 →
     // InvalidStateError reject——spec canGoBack/canGoForward 前置面）。
-    back: function () { return _navTraverseBy(-1); },
-    forward: function () { return _navTraverseBy(1); },
+    // M2-S4P3：back/forward 携 {info}——traverse navigate 事件 e.info 线程（WPT
+    // navigate-navigation-back-same-document「back({info:'hi'}) → e.info === 'hi'」）。
+    back: function (options) {
+      var o = (options == null || typeof options !== 'object') ? {} : options;
+      return _navTraverseBy(-1, o.info);
+    },
+    forward: function (options) {
+      var o = (options == null || typeof options !== 'object') ? {} : options;
+      return _navTraverseBy(1, o.info);
+    },
     // M2-S4G：traverseTo(key)——按 entry key 找回 record 反查 session entry 位；无此 key /
     // 位不可达 → 双 reject InvalidStateError（spec early error result）；key 即当前 → 双 fulfill
     //（WPT traverseTo-same-location）；否则按 delta 入 traverse 队列（携 committed/finished）。
@@ -5390,7 +5455,11 @@
         var rep = ev._zwRedirectHistory === 'replace' ? true
           : (ev._zwRedirectHistory === 'push' ? false : replace);
         var st = ev._zwRedirectState !== undefined ? ev._zwRedirectState : o.state;
-        _histApplyNav(st, u, rep, ev._zwBind);
+        // M2-S4P2：classic 槽 **null 化**——navigate() 未带 state 时新 entry 的 classic
+        // history.state 为 null（非 undefined；navState 分槽不动——getState() 仍 undefined）。
+        // WPT navigate-history-state / -history-state-replace「history.state should be
+        // nulled by navigate()」。
+        _histApplyNav(st === undefined ? null : st, u, rep, ev._zwBind);
         // M2-S4G：navigate({state}) → entry **navState** 槽（与 classic history.state 分槽——
         // pushState 只入 classic；WPT redirect-options「currentEntry.getState() 反映 redirect
         // state」）。
@@ -6001,9 +6070,10 @@
     });
   }
   // M2-S4C：navigation.back/forward 的 traverse 队列入口（携 committed/finished 控制柄）。
-  function _navTraverseBy(delta) {
+  // M2-S4P3：info 可选线程（back({info}) → traverse 事件 e.info）。
+  function _navTraverseBy(delta, info) {
     var ctrl = _navNavResult();
-    _hist_queueTraversal(delta, ctrl);
+    _hist_queueTraversal(delta, ctrl, info);
     return { committed: ctrl.committed, finished: ctrl.finished };
   }
   // M2-S4G：navigate 事件被 preventDefault → 导航取消 = abort 面（signal abort → 双 reject →
@@ -6076,12 +6146,15 @@
   // scroll restoration mode 随 entry 克隆」——WPT scroll-restoration-navigation-samedoc
   // 'retained after pushing new state'）。
   function _pushHistNav(newHref, oldHref) {
+    _histStampInitialUrl();
+
     var _zwSR = _hist_current().scrollRestoration || 'auto';
     _hist_entries = _hist_entries.slice(0, _hist_cursor + 1);
     _hist_entries.push({ state: null, url: newHref, scrollRestoration: _zwSR });
     _hist_cursor = _hist_entries.length - 1;
     _histTrimOldest();
-    _zwSyncDocUrl(newHref);
+    // M2-S4P3：本函数为锚/href/assign 共享 push 通道（部分调用方后续 host 交接）——
+    // page_url 同步在自应用调用点（_setLocationHash 等）做，不在此处（见 _zwSyncDocUrl 注记）。
     if (String(oldHref).split('#')[1] !== String(newHref).split('#')[1]) {
       var oldU = oldHref, newU = newHref;
       _defer(function () {
@@ -6152,6 +6225,10 @@
     // M2-S4M：commit 开始即清本导航 ongoing 槽。
     if (_navOngoing && _navOngoing.ev === _zwNavEv) _navOngoing = null;
     _pushHistNav(newHref, oldHref);
+    // M2-S4P3：`:target` doc-url 槽同步（`_zwFragmentUrl` + live doc url）——**不开
+    // page_url 门**（hash 片段导航走 host 交接，抢写 page_url 会让 host 导航失效；
+    // 见 _zwSyncDocUrl 注记）。WPT scroll-to-fragid target-pseudo-after-reinsertion。
+    _zwSyncDocUrl(newHref);
     // M2-S2（navigation-compat）：fragment navigation 派 popstate **同步**（setter 返回前；spec
     // URL and history update steps——同文档导航的 popstate 在导航算法内同步派发，先于 queued
     // hashchange task。WPT event-order/before-load-hash「setter 后立即断言 popstate 已计数」、
@@ -6178,7 +6255,19 @@
     // M2-S4B：intercept → handler 生命周期 + 跳过默认 fragment 滚锚（spec——intercept 替换默认行为；
     // WPT intercept-handler-throws/intercept-resolve 的 location.href='#1' 面断言 URL 已应用）。
     if (_zwNavEv._zwIntercepted) { _navRunIntercept(_zwNavEv, null); return; }
-    // R3061：滚到锚元素（frag = hash 去 '#'）——闭合 R3053 限制①。real browser 同文档片段导航滚锚。
+    // M2-S4P3：同文档片段导航成功步骤——navigatesuccess 微任务（spec success steps；
+    // hash-only 锚点击经 `location.hash=` 通道到此——part04 A/AREA click hash 分支——
+    // WPT navigatesuccess-same-document「a.click() → navigatesuccess + hash === '#1'」）。
+    // 被抢占（_zwErrored）不发；非 intercept 无 transition（仅 intercept 建）。
+    if (_navOngoing && _navOngoing.ev === _zwNavEv) _navOngoing = null;
+    var _s4pOk = new Event('navigatesuccess');
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(function () {
+        if (!_zwNavEv._zwErrored && !_zwNavEv._zwSettled) _navDispatchAny(_s4pOk);
+      });
+    } else {
+      if (!_zwNavEv._zwErrored && !_zwNavEv._zwSettled) _navDispatchAny(_s4pOk);
+    }
     _scrollToAnchorForHash(h.charAt(0) === '#' ? h.slice(1) : '');
   }
 
@@ -6213,6 +6302,10 @@
     // WPT anchor-download「fires navigate, but not navigatesuccess/navigateerror」）。
     if (_zwNavEv.downloadRequest !== null && !_zwNavEv._zwIntercepted) return;
     _pushHistNav(newHref, oldHref);
+    // M2-S4P3：hash-only（同文档片段）href-setter 的 `:target` doc-url 槽同步——**不开
+    // page_url 门**（host 交接面，见 _zwSyncDocUrl 注记）。WPT scroll-to-fragid
+    // target-pseudo-after-reinsertion「location.href='#target' → :target 命中」。
+    if (_navIsHashOnly(oldHref, newHref)) _zwSyncDocUrl(newHref);
     // M2-S4：Navigation API href-setter 面——**push**（同文档；WPT sameDocument-after-fragment
     // `location = "#hash"` entries 增长 + fresh key；跨文档 host 导航近似同面）。
     // M2-S4O：同文档（hash-only）承继源 entry navState；跨文档不承继。

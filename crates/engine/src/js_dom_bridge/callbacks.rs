@@ -310,6 +310,22 @@ pub fn register_dom_callbacks(
         Box::new(move |_args| url.lock().unwrap_or_else(|e| e.into_inner()).clone()),
     );
 
+    // M2-S4P3（navigation-compat）：同文档导航的 host page_url 同步 setter——shim
+    // `_zwSyncDocUrl` 在内存 URL 变更 chokepoint 调用（hash-setter/href/pushState 等），
+    // 使 `__zw_get_page_url` 消费面（navigateerror filename / referrer / location fallback）
+    // 与 shim location.href 一致（含空 fragment 形如 `page#`——WPT
+    // navigation-back-same-document-preventDefault「e.filename === location.href」）。
+    let set_url = Arc::clone(page_url);
+    sandbox.register_callback(
+        "__zw_set_page_url",
+        Box::new(move |args: &[String]| {
+            if let Some(u) = args.first() {
+                *set_url.lock().unwrap_or_else(|e| e.into_inner()) = u.clone();
+            }
+            String::new()
+        }),
+    );
+
     // `performance.now()`——DOMHighResTimeStamp（ms，单调时钟，自 time origin 起，子毫秒精度）。
     // analytics / 动画计时 / rAF timestamp 高频查询。time origin = 回调注册时刻（页面/脚本启动近似），
     // 回调返 elapsed ms（f64 串）。Instant 单调且 Send+Sync，闭包仅借 &origin 故为 Fn。

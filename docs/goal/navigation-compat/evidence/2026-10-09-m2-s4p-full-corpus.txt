@@ -33,8 +33,8 @@ curl: (22) The requested URL returned error: 404
   html/browsers/browsing-the-web/unloading-documents: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
   html/semantics/embedded-content/the-iframe-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
 == 语料盘点（wpt-data 本地 .html，含子目录）==
-  navigation-api                 436 案
-  navigation-api/navigation-methods/return-value    70 案
+  navigation-api                 439 案
+  navigation-api/navigation-methods/return-value    73 案
   navigation-api/navigation-methods/resources     4 案
   navigation-api/navigation-history-entry/resources     6 案
   navigation-api/state/resources     0 案
@@ -64,7 +64,7 @@ curl: (22) The requested URL returned error: 404
   4. 回填：docs/compat/trends/wpt-suites.csv planned 行转数据行（evidence 列给来源）
 rustc -O scripts/test-guard.rs -o target/test-guard
 cargo build --release --bin zero-wpt-runner
-    Finished `release` profile [optimized] target(s) in 0.16s
+    Finished `release` profile [optimized] target(s) in 0.19s
 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 2700 -- ./target/release/zero-wpt-runner testharness-navigation 
 Fail navigation-api/currententrychange-event/anchor-click.html :: currententrychange fires for link click
   assert_equals: expected object "[object Object]" but got object "[object Object]"
@@ -126,7 +126,8 @@ Pass navigation-api/navigate-event/intercept-handler-returns-non-promise.html ::
 Pass navigation-api/navigate-event/intercept-handler-throws.html :: event.intercept() should abort if the handler throws
 Pass navigation-api/navigate-event/intercept-history-pushState.html :: event.intercept() should proceed if the given promise resolves
 Pass navigation-api/navigate-event/intercept-history-replaceState.html :: event.intercept() should proceed if the given promise resolves
-Pass navigation-api/navigate-event/intercept-multiple-times-reject.html :: event.intercept() is called multiple times and one of the promises rejects
+Fail navigation-api/navigate-event/intercept-multiple-times-reject.html :: event.intercept() is called multiple times and one of the promises rejects
+  assert_equals: expected "https://wpt.test/navigation-api/navigate-event/intercept-multiple-times-reject.html" but got "https://wpt.test/navigation-api/navigate-event/intercept-multiple-times-reject.html#1"
 Pass navigation-api/navigate-event/intercept-multiple-times.html :: navigation.navigate() returns a finished promise that awaits all promises if event.intercept() is called multiple times
 Pass navigation-api/navigate-event/intercept-navigation-back.html :: event.intercept() can intercept navigation.back()
 Pass navigation-api/navigate-event/intercept-on-synthetic-event.html :: event.intercept() throws if invoked on a synthetic event
@@ -177,15 +178,12 @@ Timeout navigation-api/navigate-event/navigate-multiple-history-pushState.html :
 Timeout navigation-api/navigate-event/navigate-multiple-location.html :: navigation-api/navigate-event/navigate-multiple-location.html
   testharness completion callback was not called (test=function, hook=function, scripts=[201271, 830], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
 Pass navigation-api/navigate-event/navigate-multiple-navigation-navigate.html :: navigation.navigate() multiple times gives correct event order
-Fail navigation-api/navigate-event/navigate-navigation-back-same-document.html :: navigate event for navigation.back() - same-document
-  assert_equals: expected (string) "hi" but got (undefined) undefined
+Pass navigation-api/navigate-event/navigate-navigation-back-same-document.html :: navigate event for navigation.back() - same-document
 Pass navigation-api/navigate-event/navigate-navigation-navigate.html :: navigate event for navigation.navigate()
 Timeout navigation-api/navigate-event/navigate-svg-anchor-fragment.html :: navigation-api/navigate-event/navigate-svg-anchor-fragment.html
   testharness completion callback was not called (test=function, hook=function, scripts=[201271, 838], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
-Timeout navigation-api/navigate-event/navigatesuccess-same-document.html :: navigation-api/navigate-event/navigatesuccess-same-document.html
-  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 183], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
-Fail navigation-api/navigate-event/navigation-back-same-document-preventDefault.html :: navigation.back() same-document preventDefault
-  assert_equals: expected "https://wpt.test/navigation-api/navigate-event/navigation-back-same-document-preventDefault.html#" but got "https://wpt.test/navigation-api/navigate-event/navigation-back-same-document-preventDefault.html"
+Pass navigation-api/navigate-event/navigatesuccess-same-document.html :: navigatesuccess fires for a same-document navigation
+Pass navigation-api/navigate-event/navigation-back-same-document-preventDefault.html :: navigation.back() same-document preventDefault
 Pass navigation-api/navigate-event/reentry-from-focus-reset-navigate-api-tracker.html :: Re-entry via focus reset using pushState
 Pass navigation-api/navigate-event/reentry-from-focus-reset-navigate-api-tracker.html :: Re-entry via focus reset using navigate()
 Timeout navigation-api/navigate-event/replaceState-inside-back-handler-infinite.optional.html :: navigation-api/navigate-event/replaceState-inside-back-handler-infinite.optional.html
@@ -215,19 +213,15 @@ Pass navigation-api/navigation-history-entry/entries-array-equality.html :: navi
 Pass navigation-api/navigation-history-entry/entries-when-inactive.html :: A non-active entry in navigation.entries() should not be modified when a different entry is modified
 Pass navigation-api/navigation-history-entry/key-id-back-same-document.html :: NavigationHistoryEntry's key and id on same-document back navigation
 Pass navigation-api/navigation-history-entry/sameDocument-after-fragment-navigate.html :: entry.sameDocument after same-document navigations
-Fail navigation-api/navigation-methods/forward-to-pruned-entry.html :: If forward pruning clobbers the target of a traverse, abort
-  promise_rejects_dom: function "function() { throw e; }" threw object "InvalidStateError: Cannot go back or forward." that is not a DOMException AbortError: property "code" is equal to 11, expected 20
+Pass navigation-api/navigation-methods/forward-to-pruned-entry.html :: If forward pruning clobbers the target of a traverse, abort
 Fail navigation-api/navigation-methods/navigate-history-push-not-loaded.html :: navigation-api/navigation-methods/navigate-history-push-not-loaded.html
   page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: navigation-api/navigation-methods/resources/helpers.js (No such file or directory (os error 2))
 Fail navigation-api/navigation-methods/navigate-history-push-same-url.html :: navigation-api/navigation-methods/navigate-history-push-same-url.html
   page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: navigation-api/navigation-methods/resources/helpers.js (No such file or directory (os error 2))
-Fail navigation-api/navigation-methods/navigate-history-state-replace.html :: history.state should be nulled by navigate()
-  assert_equals: expected (object) null but got (undefined) undefined
-Fail navigation-api/navigation-methods/navigate-history-state.html :: history.state should be nulled by navigate()
-  assert_equals: expected (object) null but got (undefined) undefined
+Pass navigation-api/navigation-methods/navigate-history-state-replace.html :: history.state should be nulled by navigate()
+Pass navigation-api/navigation-methods/navigate-history-state.html :: history.state should be nulled by navigate()
 Pass navigation-api/navigation-methods/navigate-info-and-state.html :: navigate() with info and state
-Fail navigation-api/navigation-methods/navigate-intercept-history-state.html :: history.story should be nulled by navigate() handled by intercept()
-  assert_equals: expected (object) null but got (undefined) undefined
+Pass navigation-api/navigation-methods/navigate-intercept-history-state.html :: history.story should be nulled by navigate() handled by intercept()
 Pass navigation-api/navigation-methods/navigate-replace-same-document.html :: navigate() with history: 'replace' option
 Pass navigation-api/navigation-methods/navigate-same-document.html :: navigate() navigates same-document and fires onnavigate (sync)
 Pass navigation-api/navigation-methods/navigate-same-document.html :: navigate() navigates same-document and fires onnavigate (async)
