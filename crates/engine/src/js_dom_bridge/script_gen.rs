@@ -126,6 +126,31 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
     format!("__zw_dispatch_event('{esc_sel}', '{esc_ty}', {detail_json})")
 }
 
+/// 构造「设置 document.readyState 状态宿」的脚本（t8m，spec `dom-document-readystate`）。
+/// 写 shim 全局 `__zwReadyState`——页面可见 shim document 的 readyState getter（part06.js）
+/// 读该全局（`dom_bindings/document.rs` native 模板不读它，按 run_script 模型保持固定值），
+/// 未注入/非字符串/非规范三态值缺省 "complete"。宿主在页面脚本阶段起点提交
+///（state="loading"），与首条页面脚本同执行通道 FIFO 保序（renderer 走
+/// `execute_script_direct_priority` 同步执行，保证先于阶段脚本）。
+pub fn script_set_ready_state(state: &str) -> String {
+    let st = escape_js_string(state);
+    format!("try{{globalThis.__zwReadyState='{st}';}}catch(_e){{}}")
+}
+
+/// 构造「readyState 过渡 + document readystatechange 派发」的原子单提交脚本（t8m，
+/// spec HTML §the end：readystatechange 于 DOMContentLoaded 后（"interactive"）与
+/// window load 前（"complete"）各派发一次，fires at the Document）。
+/// 赋值与派发在同一脚本串内顺序完成，保证 handler 内读到的 readyState 与过渡值一致、
+/// 事件恰一次；readystatechange 不冒泡不可取消（shim `__zw_dispatch_event` 的
+/// readystatechange 分支硬编码 bubbles:false/cancelable:false）。
+pub fn script_transition_ready_state(state: &str) -> String {
+    format!(
+        "{};{}",
+        script_set_ready_state(state),
+        script_dispatch_dom_event("html", "readystatechange", None)
+    )
+}
+
 /// 构造「派发过渡事件」的脚本（R3248 transitionend + R3252 transitionrun/transitionstart，CSS Transitions）。
 /// 宿主在过渡创建/启动/完成帧（`TransitionClock::drain_just_run` / `drain_just_started` /
 /// `drain_just_finished` → pipeline `take_pending_transition_events`）执行：`querySelector(selector)` 取唯一

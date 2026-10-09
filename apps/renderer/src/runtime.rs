@@ -27,8 +27,9 @@ use std::time::{Duration, Instant};
 
 use std::io;
 use zero_engine::{
-    DomEventDetail, MediaType, PrefersColorSchemeValue, query_text_from_html, selector_from_element_hit,
-    set_char_measure_fn, set_fallback_line_metrics_fn, set_hmtx_measure_fn, set_text_shape_fn,
+    DomEventDetail, MediaType, PrefersColorSchemeValue, query_text_from_html, script_set_ready_state,
+    selector_from_element_hit, set_char_measure_fn, set_fallback_line_metrics_fn, set_hmtx_measure_fn,
+    set_text_shape_fn,
 };
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
@@ -557,6 +558,16 @@ impl RendererRuntime {
         let js_enabled = self.javascript_enabled;
         let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let skip = page_scripts::should_skip_scripts(&current_url);
+        // t8m：页面脚本阶段起点——readyState 置 "loading"（shim readyState getter 读状态宿
+        // 全局 `__zwReadyState`）。与阶段脚本同优先通道同步执行（execute_chunk 同款
+        // `execute_script_direct_priority`），保证先于首条页面脚本；导航让路中止时新文档
+        // 的阶段起点会再次无条件复位（同 isolate 跨文档天然复位）。
+        if js_enabled && !skip {
+            let script = script_set_ready_state("loading");
+            if let Err(e) = self.js_worker.execute_script_direct_priority(&script) {
+                tracing::warn!("set readyState loading: {e}");
+            }
+        }
         // 预注入先于本阶段（P-B1 让路中止时注册表跨文档持久，新文档会再次执行）。
         self.execute_pre_document_scripts(js_enabled, &current_url);
         let phase = {
