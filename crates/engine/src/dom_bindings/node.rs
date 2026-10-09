@@ -266,6 +266,101 @@ fn insert_with_fragment_flatten(
     }
 }
 
+/// M2-S4P：脚本候选预收集——fragment 参 flatten 后实际入文档的是其子（flatten 前快照），
+/// 普通节点 → 自身。供 appendChild/insertBefore/replaceChild/insert_variadic 插入路径
+/// 在变更前取候选。
+fn fragment_or_self_children(node: NodeId) -> Vec<NodeId> {
+    with_dom(|d| {
+        if d.get(node)
+            .is_some_and(|n| matches!(n.kind, NodeKind::DocumentFragment))
+        {
+            d.get(node).map(|n| n.children.clone()).unwrap_or_default()
+        } else {
+            vec![node]
+        }
+    })
+    .unwrap_or_default()
+}
+
+/// M2-S4P（navigation-compat create-script-set-location）：native 插入后的**动态 classic
+/// 脚本执行**——spec「prepare the script element」：无 src 的 inline 脚本元素连接入文档时
+/// 同步执行（createElement('script') + textContent + append 是 SPA/分析 SDK 标准装载路径；
+/// WPT create-script-set-location「appended script 内 location.href 导航」断言面）。
+/// run-once：已执行标记记 native 元素对象 `_zwScriptRan` 属性（同元素同对象——缓存身份），
+/// 重插不重跑（spec a "script is not executed" flag）。src 型脚本不在此执行（异步 fetch 面
+/// 未接——记账）。`innerHTML`/`insertAdjacentHTML` 路径**不**调本函数（spec 解析注入脚本
+/// 不执行）。https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+pub(super) fn run_prepared_scripts(scope: &mut v8::PinScope, candidates: &[NodeId]) {
+    for id in candidates {
+        let Some((text, has_src)) = with_dom(|d| -> Option<(String, bool)> {
+            // 连接态：父链上行到 Document（spec「inserted into a document」前置）。
+            let mut connected = false;
+            let mut cur = Some(*id);
+            while let Some(c) = cur {
+                match d.get(c) {
+                    Some(n) => match &n.kind {
+                        NodeKind::Document(_) => {
+                            connected = true;
+                            break;
+                        }
+                        _ => cur = n.parent,
+                    },
+                    None => break,
+                }
+            }
+            if !connected {
+                return None;
+            }
+            let n = d.get(*id)?;
+            let NodeKind::Element(el) = &n.kind else { return None };
+            if !el.name.local.as_ref().eq_ignore_ascii_case("script") {
+                return None;
+            }
+            let has_src = el
+                .attributes
+                .iter()
+                .any(|a| a.name.local.as_ref().eq_ignore_ascii_case("src"));
+            let mut text = String::new();
+            for ch in &n.children {
+                if let Some(c) = d.get(*ch)
+                    && let NodeKind::Text(t) = &c.kind
+                {
+                    text.push_str(&t.content);
+                }
+            }
+            Some((text, has_src))
+        })
+        .flatten() else {
+            continue;
+        };
+        // src 型 / 空 text → 不执行（空 inline script 无语义副作用）。
+        if has_src || text.is_empty() {
+            continue;
+        }
+        let Some(obj) = get_or_create_native_element(scope, *id) else {
+            continue;
+        };
+        // run-once 标记（native 元素对象属性——同元素重插不重跑）。
+        let marker = v8::String::new(scope, "_zwScriptRan");
+        let already_ran = marker
+            .and_then(|k| obj.get(scope, k.into()))
+            .is_some_and(|v| v.boolean_value(scope));
+        if already_ran {
+            continue;
+        }
+        if let Some(k) = marker {
+            let _ = obj.set(scope, k.into(), v8::Boolean::new(scope, true).into());
+        }
+        // 同步执行（spec inline classic script「becomes ready」即跑；异常 best-effort
+        // 不阻断插入流——宿主 onerror 上报面挂账）。
+        if let Some(code) = v8::String::new(scope, &text)
+            && let Some(script) = v8::Script::compile(scope, code, None)
+        {
+            let _ = script.run(scope);
+        }
+    }
+}
+
 /// dom crate `DomError` → DOMException (name, message) 映射（spec `dom-node-insertbefore` /
 /// `dom-node-replacechild` / `dom-node-removechild` 错误步）。
 ///
@@ -307,10 +402,14 @@ pub(super) fn native_append_child_invoke(
     let Some(child) = node_id_from_value(scope, args.get(0)) else {
         return;
     };
+    // M2-S4P：脚本候选预收集（fragment 参 → flatten 后实际入文档的是其子）。
+    let script_candidates = fragment_or_self_children(child);
     match with_dom_mut(|d| insert_with_fragment_flatten(d, parent, child, None)) {
         Some(Ok(())) => {
             // R3266 S5c：custom 元素连接态变化 → 桥接 JS 派发 connectedCallback/disconnectedCallback。
             super::custom_elements::notify_connect_after_insert(scope, parent, child);
+            // M2-S4P：动态 classic 脚本执行（prepare the script element）。
+            run_prepared_scripts(scope, &script_candidates);
             set_native_element(scope, child, &mut rv);
         }
         Some(Err(e)) => {
@@ -339,10 +438,14 @@ pub(super) fn native_insert_before_invoke(
     };
     // refChild null/缺省 → 末尾追加（spec：ref 为 null 时同 appendChild）。
     let ref_child = node_id_from_value(scope, args.get(1));
+    // M2-S4P：脚本候选预收集（同 appendChild）。
+    let script_candidates = fragment_or_self_children(new_child);
     match with_dom_mut(|d| insert_with_fragment_flatten(d, parent, new_child, ref_child)) {
         Some(Ok(())) => {
             // R3266 S5c：custom 元素连接态变化 → 桥接 JS 派发（同 appendChild）。
             super::custom_elements::notify_connect_after_insert(scope, parent, new_child);
+            // M2-S4P：动态 classic 脚本执行（prepare the script element）。
+            run_prepared_scripts(scope, &script_candidates);
             set_native_element(scope, new_child, &mut rv);
         }
         Some(Err(e)) => {
@@ -421,11 +524,15 @@ pub(super) fn native_replace_child_invoke(
     let Some(old_child) = node_id_from_value(scope, args.get(1)) else {
         return;
     };
+    // M2-S4P：脚本候选预收集（同 appendChild）。
+    let script_candidates = fragment_or_self_children(new_child);
     match with_dom_mut(|d| d.replace_child(parent, new_child, old_child)) {
         Some(Ok(_old)) => {
             // R3266 S5c：newChild 连入（connect）+ oldChild 断开（disconnect）→ 桥接派发。
             super::custom_elements::notify_connect_after_insert(scope, parent, new_child);
             super::custom_elements::notify_disconnect_after_remove(scope, old_child);
+            // M2-S4P：动态 classic 脚本执行（prepare the script element）。
+            run_prepared_scripts(scope, &script_candidates);
             // spec：返被替换的 oldChild。
             set_native_element(scope, old_child, &mut rv);
         }
@@ -510,6 +617,15 @@ fn insert_variadic(scope: &mut v8::PinScope, args: v8::FunctionCallbackArguments
     // Pass 2：DOM mutation——算 (parent, ref_node, remove_self) 后逐 item 插入。返
     // (parent, inserted_node_ids, removed_self?) 供 R3266 S5c lifecycle 桥接（闭包外触发）。
     // detached（before/after/replaceWith 无 parent）→ outer None（no-op，不派发 lifecycle）。
+    // M2-S4P：Node 参的脚本候选预收集（fragment → flatten 前子快照，普通 → 自身）。
+    let script_candidates: Vec<NodeId> = items
+        .iter()
+        .filter_map(|item| match item {
+            InsertItem::Node(id) => Some(fragment_or_self_children(*id)),
+            InsertItem::Text(_) => None,
+        })
+        .flatten()
+        .collect();
     let outcome = with_dom_mut(|d| {
         let (parent, ref_node, remove_self) = match pos {
             InsertPos::Append => (self_id, None, false),
@@ -552,6 +668,8 @@ fn insert_variadic(scope: &mut v8::PinScope, args: v8::FunctionCallbackArguments
         if let Some(removed) = removed_self {
             super::custom_elements::notify_disconnect_after_remove(scope, removed);
         }
+        // M2-S4P：动态 classic 脚本执行（prepare the script element）。
+        run_prepared_scripts(scope, &script_candidates);
     }
 }
 

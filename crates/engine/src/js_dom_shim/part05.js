@@ -11621,6 +11621,30 @@
         added.push({ __zwHandle: tn, __zwSelector: '' });
       }
     }
+    // M2-S4P（navigation-compat create-script-set-location）：动态 classic 脚本执行——
+    // spec「prepare the script element」：inline（textContent 非空）脚本连接入文档即同步执行。
+    // appendChild 分支同语义在 R387（part04）；本函数是 append/replaceChildren 的共享插入
+    // 通道，缺执行段则经 .append 注入的脚本静默不跑（WPT create-script-set-location
+    // 「appended script 内 location.href 导航」断言面）。run-once 同 _zwRanScripts 表
+    //（R387 同源，双通道不重跑）；src 型不在此执行（R387b fetch 通道面）；**sel-backed
+    // 父**（文档内元素按 selector 寻址）才执行——handle-only 父是 createElement/detached
+    // 容器（视图 parentNode 链不镜像连接态，spec 连接判定以 sel 面近似）。
+    if (sel) {
+      for (var _s4pI = 0; _s4pI < added.length; _s4pI++) {
+        var _s4pN = added[_s4pI];
+        if (!_s4pN || typeof _s4pN !== 'object' || !_s4pN.__zwHandle) continue;
+        try {
+          if (String(_s4pN.tagName || '').toUpperCase() !== 'SCRIPT') continue;
+          var _s4pSrc = '';
+          try { _s4pSrc = String(_s4pN.textContent || ''); } catch (_eS4pt) {}
+          if (_s4pSrc && !(globalThis._zwRanScripts && globalThis._zwRanScripts[_s4pN.__zwHandle])) {
+            if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
+            globalThis._zwRanScripts[_s4pN.__zwHandle] = true;
+            (0, eval).call(globalThis, _s4pSrc);
+          }
+        } catch (_eS4p) {}
+      }
+    }
     return added;
   }
 

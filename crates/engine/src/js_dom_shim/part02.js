@@ -4704,6 +4704,17 @@
   // back 按钮，浏览器 chrome 导航 defer）；③ popstate 经 `_defer` microtask 派发（spec 为 task，本沙箱异步
   // 模型近似）；④ go(delta) 同步移 cursor + microtask 派发（spec 批量合并简化）。
   var _hist_entries = [{ state: null, url: '', scrollRestoration: 'auto' }]; // cursor 0 = 初始 entry（M2-S2：+ per-entry scrollRestoration）
+  // M2-S4P：pushState/replaceState 速率窗（spec session history push/replace rate limit——
+  // 10s 内超 100 次即静默 no-op；WPT history_pushstate/replacestate_too_many_calls.optional）。
+  var _histRateStamps = [];
+  // 速率门：10s 滑动窗计数，≥100 → 拒（静默 no-op，不派 navigate 无 entry）；未超 → 记账放行。
+  function _histRateAllow() {
+    var nowMs = (typeof Date.now === 'function') ? Date.now() : 0;
+    while (_histRateStamps.length && nowMs - _histRateStamps[0] >= 10000) _histRateStamps.shift();
+    if (_histRateStamps.length >= 100) return false;
+    _histRateStamps.push(nowMs);
+    return true;
+  }
   var _hist_cursor = 0;
   function _hist_current() { return _hist_entries[_hist_cursor]; }
   function _hist_dispatchPopState(oldHrefBefore, skipScroll) {
@@ -4794,6 +4805,26 @@
   // M2-S4B：push/replace 应用共通内部（**不派 navigate**——调用方先行派发并防中止；
   // history.pushState/replaceState 与 navigation.navigate() 共用）。含 S4 的 Navigation API
   // push/replace CCE 面。M2-S4C：bind 单元格提交后绑记录（destination 动态 index/getState）。
+  // M2-S4P：joint session history **50 条上限**——spec 未定义上限（WPT
+  // dispose-for-full-session-history.tentative 注记），浏览器共识 50。超限最旧 entry 出列：
+  // classic 列表 shift + cursor 前移；Navigation API 侧同源记录出列（_navList/_navDetached
+  // 摘除 + 位次前移）+ dispose 派发（spec entry 移除即 dispose 面）。幂等——仅超限时动作。
+  function _histTrimOldest() {
+    if (_hist_entries.length <= 50) return;
+    var oldHe = _hist_entries.shift();
+    _hist_cursor--;
+    var rec = _navFindRecord(oldHe);
+    if (rec) {
+      var di = _navDetached.indexOf(rec);
+      if (di >= 0) _navDetached.splice(di, 1);
+      var li = _navList.indexOf(rec);
+      if (li >= 0) {
+        _navList.splice(li, 1);
+        if (_navPos >= li) _navPos--;
+      }
+      _navFireDispose(rec);
+    }
+  }
   // M2-S4O：同文档 URL 变更同步——`:target` 判定读文档 URL 槽（shim `_zwFragmentUrl`
   // 供 R160/R173 查询路径 + 原生 live doc url 供 `Document::is_target_element`）。
   // 内存导航（hash-setter/href/assign/replace/pushState/replaceState/navigate）不重载
@@ -4825,6 +4856,7 @@
     if (newUrl2 !== null) _zwSyncDocUrl(newUrl2);
     var freshP = _navPushCurrent(_zwHe);
     if (bind) bind.rec = freshP;
+    _histTrimOldest();
   }
   // M2-S3：traverse 命令队列——back/forward/go 仅入队（delta），_defer 任务按 FIFO 逐条结算：
   // 位置在**执行时**对当期 cursor 计算（非入队时快照），越界条目跳过，每条生效即派 popstate
@@ -4976,6 +5008,8 @@
     // SecurityError DOMException。M2-S4B：先同步派 navigate（'push'，WPT navigate-history-pushState
     // navigationType 断言）——preventDefault 则中止（无 entry 无 CCE）；intercept → handler 生命周期。
     pushState: function (state, _unused, url) {
+      // M2-S4P：速率限制前置（spec——超限静默 no-op，不派 navigate 无 entry）。
+      if (!_histRateAllow()) return;
       var oldHref = globalThis.location.href;
       var abs = (url == null || String(url) === '') ? oldHref : (_resolveHistUrl(String(url)) || oldHref);
       var ev = _navFireNavigate({ navigationType: 'push', url: abs, hashChange: _navIsHashOnly(oldHref, abs) });
@@ -5003,6 +5037,8 @@
     // M2-S4：Navigation API replace 面（保 key 新 id + 旧 entry detach + 'replace' 同步派）。
     // M2-S4B：navigate 'replace' 先行（WPT navigate-history-replaceState），防中止/拦截同 pushState。
     replaceState: function (state, _unused, url) {
+      // M2-S4P：速率限制前置（同 pushState——push/replace 共享同一窗）。
+      if (!_histRateAllow()) return;
       var oldHref = globalThis.location.href;
       var abs = (url == null || String(url) === '') ? oldHref : (_resolveHistUrl(String(url)) || oldHref);
       var ev = _navFireNavigate({ navigationType: 'replace', url: abs, hashChange: _navIsHashOnly(oldHref, abs) });
@@ -5048,6 +5084,7 @@
     _hist_entries = [{ state: null, url: '', scrollRestoration: 'auto' }];
     _hist_cursor = 0;
     _hist_pendingTraversals = []; // M2-S3：清跨文档残留 traverse 队列（新文档不复现旧页 go()）
+    _histRateStamps = []; // M2-S4P：速率窗随文档重置
     if (typeof _navReset === 'function') _navReset(); // M2-S4：同步重置 Navigation API entry list
     _navTransition = null; // M2-S4C：清进行中 transition（跨文档导航终止拦截链）
   };
@@ -6043,6 +6080,7 @@
     _hist_entries = _hist_entries.slice(0, _hist_cursor + 1);
     _hist_entries.push({ state: null, url: newHref, scrollRestoration: _zwSR });
     _hist_cursor = _hist_entries.length - 1;
+    _histTrimOldest();
     _zwSyncDocUrl(newHref);
     if (String(oldHref).split('#')[1] !== String(newHref).split('#')[1]) {
       var oldU = oldHref, newU = newHref;
