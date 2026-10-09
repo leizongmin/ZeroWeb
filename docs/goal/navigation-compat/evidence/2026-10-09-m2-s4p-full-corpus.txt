@@ -64,7 +64,7 @@ curl: (22) The requested URL returned error: 404
   4. 回填：docs/compat/trends/wpt-suites.csv planned 行转数据行（evidence 列给来源）
 rustc -O scripts/test-guard.rs -o target/test-guard
 cargo build --release --bin zero-wpt-runner
-    Finished `release` profile [optimized] target(s) in 0.19s
+    Finished `release` profile [optimized] target(s) in 0.18s
 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 2700 -- ./target/release/zero-wpt-runner testharness-navigation 
 Fail navigation-api/currententrychange-event/anchor-click.html :: currententrychange fires for link click
   assert_equals: expected object "[object Object]" but got object "[object Object]"
@@ -171,8 +171,7 @@ Fail navigation-api/navigate-event/navigate-history-pushState.html :: history.pu
   assert_false: expected false got true
 Fail navigation-api/navigate-event/navigate-history-replaceState.html :: history.replaceState() fires the navigate event
   assert_false: expected false got true
-Fail navigation-api/navigate-event/navigate-location.html :: location API fires navigate event
-  assert_equals: expected "replace" but got "push"
+Pass navigation-api/navigate-event/navigate-location.html :: location API fires navigate event
 Timeout navigation-api/navigate-event/navigate-multiple-history-pushState.html :: navigation-api/navigate-event/navigate-multiple-history-pushState.html
   testharness completion callback was not called (test=function, hook=function, scripts=[201271, 875], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
 Timeout navigation-api/navigate-event/navigate-multiple-location.html :: navigation-api/navigate-event/navigate-multiple-location.html

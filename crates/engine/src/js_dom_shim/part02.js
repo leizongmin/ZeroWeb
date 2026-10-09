@@ -6209,10 +6209,19 @@
     var oldHref = globalThis.location.href;
     var newHref = oldHref.split('#')[0] + h;
     if (newHref === oldHref) return; // hash 未变 → no-op（spec：不派 hashchange / 不派 navigate）
-    // M2-S4B：navigate 'push' 先行（hash-setter 片段导航——anchor fragment 同 'push' 面）；
+    // M2-S4Q：navigate 事件 navigationType 随载入态（spec historyHandling——文档完全加载前
+    // 片段导航 = **replace**、加载后 = push，与 record 分派一致——S4M 已按此分派 record；
+    // 事件侧此前恒 'push' 与 record 不一致。WPT navigate-location「载入前 href='#1' →
+    // navigationType === 'replace'」）。**锚激活例外**：超链接激活恒 push（spec Following
+    // Hyperlink 传 push；WPT navigate-anchor-fragment「载入前 a.click() → 'push'」——
+    // 以 __zwNavSourceElement 在场判定锚来源，读后即清前仍可见）。
+    var _s4qNavType = (globalThis.__zwNavSourceElement !== undefined && globalThis.__zwNavSourceElement !== null)
+      ? 'push'
+      : ((globalThis.__zwDocCompletelyLoaded === true) ? 'push' : 'replace');
+    // M2-S4B：navigate 先行（hash-setter 片段导航——anchor fragment 同 'push' 面）；
     // preventDefault → 中止（无 session entry / popstate / CCE）。
     var _zwNavEv = _navFireNavigate({
-      navigationType: 'push', url: newHref, hashChange: true,
+      navigationType: _s4qNavType, url: newHref, hashChange: true,
       // M2-S4O：承继态随 fire 下发（handler 内 destination.getState() 可见）。
       destState: _navInheritedNavState(oldHref, newHref),
       // M2-S4B：anchor click 触发时由 part04 R154 线程 sourceElement（读后即清）。
@@ -6294,9 +6303,11 @@
       }
     }
     if (!newHref || newHref === oldHref) return; // 解析失败 / 未变 → no-op
-    // M2-S4B：navigate 'push' 先行（href-setter 同文档面——WPT intercept-resolve 等）；
-    // preventDefault → 中止。
-    var _zwNavEv = _navFireNavigate({ navigationType: 'push', url: newHref, hashChange: _navIsHashOnly(oldHref, newHref), sameDocument: _navIsHashOnly(oldHref, newHref), destState: _navInheritedNavState(oldHref, newHref) });
+    // M2-S4B：navigate 先行（href-setter 同文档面——WPT intercept-resolve 等）；
+    // preventDefault → 中止。M2-S4Q：同文档（hash-only）navigationType 随载入态
+    //（载入前 replace——WPT navigate-location；跨文档恒 push）。
+    var _s4qSame = _navIsHashOnly(oldHref, newHref);
+    var _zwNavEv = _navFireNavigate({ navigationType: (_s4qSame && globalThis.__zwDocCompletelyLoaded !== true) ? 'replace' : 'push', url: newHref, hashChange: _s4qSame, sameDocument: _s4qSame, destState: _navInheritedNavState(oldHref, newHref) });
     if (_zwNavEv.defaultPrevented) { if (!_zwNavEv._zwErrored) _navCancelNavigation(_zwNavEv, null); return; }
     // M2-S4H：download 导航未 intercept → 不提交不重载（下载吞导航，导航永不结算——
     // WPT anchor-download「fires navigate, but not navigatesuccess/navigateerror」）。
