@@ -5,7 +5,9 @@ use std::sync::mpsc::Receiver;
 
 use zero_engine::{PageScript, extract_page_scripts, resolve_document_url};
 use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
-use zero_script_sandbox::extract_static_module_import_specifiers;
+use zero_script_sandbox::{ImportMap, extract_static_module_import_specifiers};
+
+use crate::js_worker::parse_page_import_map;
 
 /// 进行中的脚本预取。
 pub struct PendingScriptPrefetch {
@@ -13,11 +15,13 @@ pub struct PendingScriptPrefetch {
     cache: HashMap<String, String>,
     seen: HashSet<String>,
     inflight: Vec<(String, Receiver<Result<String, String>>)>,
+    import_map: Option<ImportMap>,
 }
 
 impl PendingScriptPrefetch {
     /// 从 HTML 构造脚本预取队列。
     pub fn from_html(base_url: &str, html: &str) -> Self {
+        let import_map = parse_page_import_map(html, base_url);
         let mut queue = VecDeque::new();
         let mut seen = HashSet::new();
         for script in extract_page_scripts(html) {
@@ -36,6 +40,7 @@ impl PendingScriptPrefetch {
             cache: HashMap::new(),
             seen,
             inflight: Vec::new(),
+            import_map,
         }
     }
 
@@ -64,8 +69,15 @@ impl PendingScriptPrefetch {
                             // t8j：只预取**静态** import 依赖（R3093：动态 import() 留给运行时
                             // `__zw_compile_module` fetch）——全量提取器会把 Vite `import("_")`
                             // 能力探测当依赖网络预取（404 噪声 + cache 污染）。
+                            // P6：裸说明符先经本代页面 import map 映射（仅实际命中映射键时改写，
+                            // 与 js_worker `collect_module_deps` 同判据）；未命中保持
+                            // `resolve_document_url` 原路径（URL 形态说明符零漂移）。
                             for spec in extract_static_module_import_specifiers(&text) {
-                                let dep = resolve_document_url(url, &spec);
+                                let dep = self
+                                    .import_map
+                                    .as_ref()
+                                    .and_then(|m| m.resolve_mapped(&spec, url))
+                                    .unwrap_or_else(|| resolve_document_url(url, &spec));
                                 if self.seen.insert(dep.clone()) {
                                     self.queue.push_back(dep);
                                 }
@@ -328,6 +340,65 @@ mod dynamic_scripts_tests {
                 "https://zero.test/t.js".to_string(),
             ],
             "只预取静态 import 依赖（红态：'./s.js' 与 '_' 被动态提取进预取队列）：{requested:?}"
+        );
+    }
+
+    /// P6：静态 import 依赖的裸说明符先经页面 import map 映射再预取——未命中 map 的
+    /// 相对说明符保持 document 相对路径（零漂移）。与 js_worker `collect_module_deps`
+    /// 同判据（github home：无 map 时 `assets/react` 裸 join 404，map 命中后取哈希 URL）。
+    #[test]
+    fn prefetch_applies_page_import_map_to_bare_specifiers() {
+        struct RecordingHost {
+            requested: std::sync::Mutex<Vec<String>>,
+            responses: HashMap<String, String>,
+        }
+        impl AsyncFetchHost for RecordingHost {
+            fn fetch_text_meta(&mut self, url: &str, _: ResourceFetchMeta) -> Receiver<Result<String, String>> {
+                self.requested.lock().unwrap().push(url.to_string());
+                let (tx, rx) = channel();
+                let _ = tx.send(
+                    self.responses
+                        .get(url)
+                        .cloned()
+                        .map(Ok)
+                        .unwrap_or_else(|| Err("not stubbed".into())),
+                );
+                rx
+            }
+
+            fn fetch_bytes_meta(&mut self, _: &str, _: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
+                let (tx, rx) = channel();
+                let _ = tx.send(Err("not used".into()));
+                rx
+            }
+        }
+
+        let html = r#"<script type="importmap">{"imports":{"react":"https://zero.test/react-e27d1b3e.js"}}</script>
+<script type="module" src="m.js"></script>"#;
+        let mut host = RecordingHost {
+            requested: std::sync::Mutex::new(Vec::new()),
+            responses: HashMap::from([(
+                "https://zero.test/m.js".to_string(),
+                "import React from 'react'\nimport t from './t.js'\nexport default React(t)".to_string(),
+            )]),
+        };
+        let mut pending = PendingScriptPrefetch::from_html("https://zero.test/", html);
+        let mut guard = 0;
+        while pending.is_active() && guard < 10 {
+            pending.tick(&mut host, 4);
+            guard += 1;
+        }
+        let mut requested = host.requested.into_inner().unwrap();
+        requested.sort();
+        assert_eq!(
+            requested,
+            vec![
+                "https://zero.test/m.js".to_string(),
+                "https://zero.test/react-e27d1b3e.js".to_string(),
+                "https://zero.test/t.js".to_string(),
+            ],
+            "裸说明符 'react' 经 map 取哈希 URL，'./t.js' 保持相对路径（红态：'react' 裸 join 成 \
+             https://zero.test/react 404）：{requested:?}"
         );
     }
 

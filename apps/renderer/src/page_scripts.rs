@@ -1045,8 +1045,11 @@ fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     ctx.js_worker.set_dom_snapshot_priority(html, ctx.url);
     ctx.js_worker.clear_mutations_fresh();
     if is_module {
+        // P6：从同一份页面 HTML 解析 import map（与 worker 侧 SetDomSnapshot 同源确定性），
+        // 预取路径据此把裸说明符解析为映射 URL 抓取，编译侧才能按映射键命中注册模块。
+        let page_map = crate::js_worker::parse_page_import_map(html, ctx.url);
         let mut registry: HashMap<String, String> = HashMap::new();
-        collect_module_deps(fetch_text, module_url, code, &mut registry)?;
+        collect_module_deps(fetch_text, module_url, code, &mut registry, page_map.as_ref())?;
         let deps: Vec<(String, String)> = registry.into_iter().collect();
         ctx.js_worker.execute_module(code, module_url, &deps)?;
     } else {

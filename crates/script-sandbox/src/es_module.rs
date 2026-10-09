@@ -17,10 +17,15 @@ use crate::SandboxConfig;
 use crate::ScriptError;
 use std::collections::{HashMap, HashSet};
 
+use crate::import_map::{ImportMap, ImportMapResolution};
+
 /// 模块注册表 — 存储已注册的 ES Module 源代码。
 #[derive(Debug, Clone, Default)]
 pub struct ModuleRegistry {
     modules: HashMap<String, String>,
+    /// 页面 import map（HTML `<script type="importmap">` 解析产物）。
+    /// `None` = 未设置，行为与无 import map 时完全一致。
+    import_map: Option<ImportMap>,
 }
 
 impl ModuleRegistry {
@@ -57,6 +62,16 @@ impl ModuleRegistry {
     /// 列出所有已注册模块的标识符。
     pub fn specifiers(&self) -> Vec<&str> {
         self.modules.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// 设置页面 import map（HTML `<script type="importmap">` 解析产物）。
+    pub fn set_import_map(&mut self, map: ImportMap) {
+        self.import_map = Some(map);
+    }
+
+    /// 读取当前 import map（未设置时返回 `None`）。
+    pub fn import_map(&self) -> Option<&ImportMap> {
+        self.import_map.as_ref()
     }
 }
 
@@ -631,6 +646,16 @@ fn transform_import(
 fn resolve_registered_specifier(specifier: &str, importer_url: &str, registry: &ModuleRegistry) -> String {
     if registry.get(specifier).is_some() {
         return specifier.to_string();
+    }
+    // 注册表直击未命中时先过页面 import map（HTML 规范 resolve a module specifier
+    // 的 map 阶段）；无 map 或未命中（Miss）按原相对路径解析继续。
+    // FIXME(spec)：Blocked（null 条目）规范要求抛 TypeError 终止全部回退，此处受
+    // `String` 返回签名所限按 Miss 降级；键迭代顺序为 serde_json Map 排序序（非
+    // JSON 插入序），仅嵌套尾斜杠前缀键 / 多 scope 重叠时可观察（见 import_map.rs 模块注释）。
+    if let Some(map) = registry.import_map()
+        && let ImportMapResolution::Resolved(mapped) = map.resolve(specifier, importer_url)
+    {
+        return mapped;
     }
     let Ok(base) = url::Url::parse(importer_url) else {
         return specifier.to_string();
@@ -1432,6 +1457,36 @@ mod tests {
         let mut specs = reg.specifiers();
         specs.sort();
         assert_eq!(specs, vec!["./a.js", "./b.js"]);
+    }
+
+    // P6 import map：裸说明符经 map 命中已注册模块；无 map 时保持既有行为（判别）。
+    #[test]
+    fn test_import_map_resolves_bare_specifier_to_registered_module() {
+        let base = url::Url::parse("https://github.com/").unwrap();
+        let map = ImportMap::parse(r#"{"imports": {"react": "https://assets.test/react.js"}}"#, &base).unwrap();
+        let mut reg = ModuleRegistry::new();
+        reg.set_import_map(map);
+        reg.register("https://assets.test/react.js", "export default 1;");
+        assert_eq!(
+            resolve_registered_specifier("react", "https://github.com/page", &reg),
+            "https://assets.test/react.js"
+        );
+    }
+
+    #[test]
+    fn test_without_import_map_bare_specifier_unchanged() {
+        let mut reg = ModuleRegistry::new();
+        reg.register("https://github.com/react.js", "export default 1;");
+        // 无 map：裸说明符按相对路径解析未命中 → 原样返回（既有行为）。
+        assert_eq!(
+            resolve_registered_specifier("react", "https://github.com/page", &reg),
+            "react"
+        );
+        // 相对路径命中注册模块仍走原路径（无 map 回归保护）。
+        assert_eq!(
+            resolve_registered_specifier("./react.js", "https://github.com/page", &reg),
+            "https://github.com/react.js"
+        );
     }
 
     #[test]

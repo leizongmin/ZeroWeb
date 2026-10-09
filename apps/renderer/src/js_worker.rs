@@ -15,8 +15,8 @@ use zero_engine::{
 };
 use zero_net::{FetchPriority, HttpMethod, HttpRequest, ResourceLoader, ResourceRequest};
 use zero_script_sandbox::{
-    ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
-    extract_static_module_import_specifiers,
+    ImportMap, ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife,
+    compile_module_script, extract_static_module_import_specifiers,
 };
 
 use crate::ipc_service_worker::ServiceWorkerIpcClient;
@@ -224,6 +224,11 @@ impl RendererJsWorker {
         let nav_bridge = zero_engine::NavigationBridge::new();
         let navigations = nav_bridge.queue();
         let focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>> = Arc::default();
+        // P6 import map：页面 `<script type="importmap">` 解析产物共享槽——仅 worker
+        // 线程使用（SetDomSnapshot 换代写入；ExecuteModule 编译与 __zw_compile_module
+        // 动态 import 读取）。宿主侧预取（page_scripts）从同一份 HTML 经
+        // parse_page_import_map 自行解析同型 map（同源确定性，不经共享槽）。
+        let import_map_for_worker: Arc<std::sync::Mutex<Option<ImportMap>>> = Arc::default();
         // S11（cdp-protocol value-only console 面）：page console 输出队列——worker 回调
         // 推入，runtime 主循环 drain → browser/headless（`Runtime.consoleAPICalled`）。
         let console_logs: Arc<std::sync::Mutex<Vec<(String, String, String)>>> = Arc::default();
@@ -295,6 +300,7 @@ impl RendererJsWorker {
                     indexed_db_handler,
                     service_worker_client,
                     async_callbacks_ready_for_worker,
+                    import_map_for_worker,
                     #[cfg(test)]
                     execution_count_for_worker,
                 )
@@ -975,6 +981,7 @@ fn js_worker_main(
     indexed_db_handler: zero_engine::IndexedDbHandler,
     service_worker_client: Option<ServiceWorkerIpcClient>,
     async_callbacks_ready: Arc<AtomicBool>,
+    import_map: Arc<std::sync::Mutex<Option<ImportMap>>>,
     #[cfg(test)] execution_count: Arc<AtomicU64>,
 ) {
     let js_config = SandboxConfig {
@@ -1115,7 +1122,7 @@ fn js_worker_main(
     if let Some(client) = service_worker_client {
         client.register_callbacks(&mut *sandbox);
     }
-    register_module_compile_callback(&mut *sandbox);
+    register_module_compile_callback(&mut *sandbox, Arc::clone(&import_map));
     // P1a gBCR（Slice 1）：RectBridge 注 `__zw_getBoundingClientRect(identity)` 同步回调。
     // handler 解析 identity(selector) → NodeId（fresh-parse dom_html，与渲染管线确定性一致）
     // → 查 rect_snapshot。kill-switch `ZW_REAL_RECT=0` 关闭（回落零 rect = 当前行为，零回归）。
@@ -1288,10 +1295,18 @@ fn js_worker_main(
                 reply,
                 ..
             } => {
-                let result = execute_module_in_sandbox(&mut *sandbox, &source, &url, &deps);
+                // P6：按本代页面 import map 编译（裸说明符 import 经映射键命中注册模块）。
+                let map_opt = import_map.lock().ok().and_then(|g| g.clone());
+                let result = execute_module_in_sandbox(&mut *sandbox, &source, &url, &deps, map_opt.as_ref());
                 let _ = reply.send(result);
             }
             JsWorkerCommand::SetDomSnapshot { html, url, reply, .. } => {
+                // P6 import map：快照换代即从页面 HTML 重取 `<script type="importmap">`——
+                // 后续 ExecuteModule 编译与动态 import 均按本代 map 解析。每代无条件清空
+                // 重设（无 map/解析失败 → None，按规范整张不注册；保留上一代会跨页污染）。
+                if let Ok(mut slot) = import_map.lock() {
+                    *slot = parse_page_import_map(&html, &url);
+                }
                 // 视口提示校正：shim 缺省 innerWidth/innerHeight 1280x800 与真实视口失配时
                 // （首次 install 后必失配）按 hint 校正（幂等——匹配即 no-op，零事件噪声）。
                 if viewport_hint.0 > 0 && viewport_hint.1 > 0 {
@@ -1739,10 +1754,15 @@ fn execute_module_in_sandbox(
     source: &str,
     url: &str,
     deps: &[(String, String)],
+    import_map: Option<&ImportMap>,
 ) -> Result<String, String> {
     let mut registry = ModuleRegistry::new();
     for (spec, src) in deps {
         registry.register(spec, src);
+    }
+    // P6：模块体内裸说明符 import 的解析面（transform_import 单钩子）同按本代 map。
+    if let Some(map) = import_map {
+        registry.set_import_map(map.clone());
     }
     let prelude = build_module_runtime_prelude(&registry).map_err(|e| e.to_string())?;
     let transformed = compile_module_script(source, url, &registry).map_err(|e| e.to_string())?;
@@ -1761,7 +1781,10 @@ fn module_body_from_response(status_code: u16, body: &[u8]) -> Result<String, St
     Ok(String::from_utf8_lossy(body).into_owned())
 }
 
-fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandbox) {
+fn register_module_compile_callback(
+    sandbox: &mut dyn zero_script_sandbox::Sandbox,
+    import_map: Arc<std::sync::Mutex<Option<ImportMap>>>,
+) {
     // 静态模块依赖由主线程 prefetch + collect_module_deps 经 IPC 加载；动态 import 经 ResourceLoader。
     let runtime_iifes: Arc<std::sync::Mutex<HashMap<String, String>>> = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
@@ -1773,7 +1796,13 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
             }
             let spec = &args[0];
             let parent = args.get(1).map(String::as_str).unwrap_or("about:blank");
-            let url = zero_engine::resolve_document_url(parent, spec);
+            // P6：动态 import 同样先过本代页面 import map（仅实际命中映射键时改写；
+            // 未命中保持 resolve_document_url 原路径）。
+            let map_opt = import_map.lock().ok().and_then(|g| g.clone());
+            let url = map_opt
+                .as_ref()
+                .and_then(|m| m.resolve_mapped(spec, parent))
+                .unwrap_or_else(|| zero_engine::resolve_document_url(parent, spec));
 
             // t8j-r2（D1）：回传 `resolved\x1fcode`——JS 侧 `__moduleCache` 以宿主解析键为缓存
             // 键（ECMA-262 §sec-hostresolveimportedmodule），跨目录同名相对 spec 不再碰撞。
@@ -1807,7 +1836,7 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
                     return String::new();
                 }
             };
-            if let Err(e) = collect_module_deps(&fetch, &url, &src, &mut registry) {
+            if let Err(e) = collect_module_deps(&fetch, &url, &src, &mut registry, map_opt.as_ref()) {
                 tracing::warn!("module deps {url}: {e}");
                 return String::new();
             }
@@ -1831,11 +1860,16 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
 }
 
 /// 递归抓取模块依赖图（specifier URL → 源码）。
+///
+/// `import_map` 为本代页面 import map：裸说明符先经映射（仅实际命中映射键时改写，
+/// 见 [`ImportMap::resolve_mapped`]），未命中保持 `resolve_document_url` 原路径
+/// （URL 形态说明符零漂移）。
 pub fn collect_module_deps(
     fetch: &dyn Fn(&str) -> Result<String, String>,
     entry_url: &str,
     source: &str,
     registry: &mut HashMap<String, String>,
+    import_map: Option<&ImportMap>,
 ) -> Result<(), String> {
     if registry.contains_key(entry_url) {
         return Ok(());
@@ -1846,13 +1880,28 @@ pub fn collect_module_deps(
     // 作为硬依赖中止模块执行。全量提取器把 `import("_")` 能力探测（Vite 现代浏览器检测
     // `import("_").catch(()=>1)`）当静态依赖 → 预取 cache miss → 模块整体不执行。
     for spec in extract_static_module_import_specifiers(source) {
-        let dep_url = zero_engine::resolve_document_url(entry_url, &spec);
+        let dep_url = import_map
+            .and_then(|m| m.resolve_mapped(&spec, entry_url))
+            .unwrap_or_else(|| zero_engine::resolve_document_url(entry_url, &spec));
         if !registry.contains_key(&dep_url) {
             let dep_src = fetch(&dep_url)?;
-            collect_module_deps(fetch, &dep_url, &dep_src, registry)?;
+            collect_module_deps(fetch, &dep_url, &dep_src, registry, import_map)?;
         }
     }
     Ok(())
+}
+
+/// 从页面 HTML 提取并解析第一张合法 import map；无 map 或全部解析失败 → `None`。
+/// FIXME(spec)：多张 import map 的规范合并（merge-existing-and-new-import-maps）
+/// 暂未实现——当前取第一张解析成功的 map，其余忽略并告警。
+pub(crate) fn parse_page_import_map(html: &str, base_url: &str) -> Option<ImportMap> {
+    for json in zero_engine::extract_import_map_json(html) {
+        match ImportMap::parse_from_page(&json, base_url) {
+            Ok(map) => return Some(map),
+            Err(e) => tracing::warn!("invalid import map ignored: {e}"),
+        }
+    }
+    None
 }
 
 /// renderer 的 JS worker 实现统一脚本执行器契约（T4）。
@@ -1935,7 +1984,7 @@ mod tests {
         };
         let mut reg = HashMap::new();
         let source = "import { a } from './static-dep.js'\nimport('_').catch(function () {})\nexport default a";
-        collect_module_deps(&fetch, "https://zero.test/m.js", source, &mut reg).unwrap();
+        collect_module_deps(&fetch, "https://zero.test/m.js", source, &mut reg, None).unwrap();
         let calls = calls.into_inner().unwrap();
         assert!(
             calls.contains(&"https://zero.test/static-dep.js".to_string()),
@@ -2013,6 +2062,57 @@ mod tests {
         assert!(!media_http_response_ok(204, b""), "空 2xx 体按失败（负缓存）");
         assert!(!media_http_response_ok(404, b"x"), "非 2xx 失败");
         assert!(!media_http_response_ok(503, b"x"), "非 2xx 失败");
+    }
+
+    /// P6 import map：预取路径把裸说明符经映射键解析为映射 URL 抓取；无命中保持
+    /// resolve_document_url 原路径（判别：同一 import 无 map 时抓相对解析 URL）。
+    #[test]
+    fn collect_module_deps_resolves_bare_specifier_via_import_map() {
+        let calls: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        let fetch = |url: &str| -> Result<String, String> {
+            calls.lock().unwrap().push(url.to_string());
+            Ok("export default 1".to_string())
+        };
+        let map = ImportMap::parse_from_page(
+            r#"{"imports": {"react": "https://assets.test/react.js"}}"#,
+            "https://zero.test/",
+        )
+        .unwrap();
+        let mut reg = HashMap::new();
+        collect_module_deps(&fetch, "https://zero.test/m.js", "import 'react'", &mut reg, Some(&map)).unwrap();
+        let calls = calls.into_inner().unwrap();
+        assert!(
+            calls.contains(&"https://assets.test/react.js".to_string()),
+            "裸说明符按映射 URL 抓取：{calls:?}"
+        );
+
+        // 判别臂：无 map 同一 import → 相对解析路径抓取（旧路径，可检出误回退）。
+        let calls2: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        let fetch2 = |url: &str| -> Result<String, String> {
+            calls2.lock().unwrap().push(url.to_string());
+            Ok("export default 1".to_string())
+        };
+        let mut reg2 = HashMap::new();
+        collect_module_deps(&fetch2, "https://zero.test/m.js", "import 'react'", &mut reg2, None).unwrap();
+        let calls2 = calls2.into_inner().unwrap();
+        assert!(
+            calls2.contains(&"https://zero.test/react".to_string()),
+            "无 map 保持相对解析原路径：{calls2:?}"
+        );
+    }
+
+    /// P6：parse_page_import_map——首张合法 map 生效；解析失败忽略（多张时取后续合法张）。
+    #[test]
+    fn parse_page_import_map_first_valid_wins() {
+        let html = r#"<script type="importmap">not json</script>
+<script type="importmap">{"imports": {"react": "https://assets.test/react.js"}}</script>"#;
+        let map = parse_page_import_map(html, "https://zero.test/page").expect("第二张合法 map 生效");
+        assert_eq!(
+            map.resolve_mapped("react", "https://zero.test/page"),
+            Some("https://assets.test/react.js".into())
+        );
+        // 无 map 页面 → None。
+        assert!(parse_page_import_map("<p>no map</p>", "https://zero.test/page").is_none());
     }
 
     /// fix ⑥（PR #114 审查 A1）：模块 fetch 非 2xx 拒绝——404 错误页 HTML 不得被当
