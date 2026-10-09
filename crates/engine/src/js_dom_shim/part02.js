@@ -4907,6 +4907,8 @@
     // traverse 面「popstate before handler starts 不发」）；无 precommit 时 doCommit() 立即调
     // → 与旧内联时序一致。
     var _navCommitTraversal = function () {
+      // M2-S4O：提交期印记（同 _navCommitNav——提交中 abort 不 reject committed）。
+      _navEv._zwCommitting = true;
       _hist_cursor = target;
       // M2-S4：Navigation API traverse 面——currentEntry 恢复到目标 session entry 的 record
       //（按 he 反查，key/id 还原——WPT key-id-back-same-document）+ 'traverse' currententrychange。
@@ -5152,13 +5154,19 @@
     return fresh;
   }
   // push 语义：插入新 record（fresh key/id），截断前方，推进 _navPos。
-  function _navPushCurrent(newHe) {
+  // M2-S4O：carryState=true 时承继源 record navState（spec apply the push or replace
+  // history step——同文档导航新 entry 的 navigation API state 承继 current entry 的，
+  // 跨文档恒 StructuredSerializeForStorage(undefined)；
+  // https://html.spec.whatwg.org/multipage/nav-history-apis.html#apply-the-push-or-replace-history-step
+  // WPT state/updateCurrentEntry-method same-document-away-and-back-location-api）。
+  function _navPushCurrent(newHe, carryState) {
     var old = _navCurrent() || _navMakeRecord(_hist_current());
     if (!_navList.length) _navList.push(old);
     // M2-S4G：截断的 forward entries → dispose（spec push dispose 面）。
     var _navDisposed = _navList.slice(_navPos + 1);
     _navList = _navList.slice(0, _navPos + 1);
     var fresh = _navMakeRecord(newHe);
+    if (carryState) fresh.navState = old.navState;
     _navList.push(fresh);
     _navPos = _navList.length - 1;
     _navFire('currententrychange', 'push', old);
@@ -5316,6 +5324,12 @@
       // 延迟到其结算（redirect 后的 url/history/state 生效——WPT precommitHandler-redirect-push
       // 「committed 后 hash = #redirect2」；reject → 不提交）。
       var _navCommitNav = function () {
+        // M2-S4O：提交期印记——提交块内 dispose/重入触发的新导航 abort 本导航时，committed
+        // 不再 reject（spec：已提交导航的 abort 只 reject finished——committed 照常兑现；
+        // WPT dispose-same-document-navigate-during「the committed promise should still
+        // fulfill」。旧版 ctrl.resolve 在本闭包返回后才调，提交中 abort 的 committed 仍
+        // pending 即被 reject）。
+        ev._zwCommitting = true;
         var u = ev._zwRedirectUrl || abs;
         var rep = ev._zwRedirectHistory === 'replace' ? true
           : (ev._zwRedirectHistory === 'push' ? false : replace);
@@ -5482,6 +5496,15 @@
   function _navIsHashOnly(oldHref, newHref) {
     return String(oldHref).split('#')[0] === String(newHref).split('#')[0]
       && String(oldHref).split('#')[1] !== String(newHref).split('#')[1];
+  }
+  // M2-S4O：同文档导航的承继态（fire 时随 navigate 事件下发——handler 内
+  // destination.getState() 直读 bind.state，先于 commit 绑 rec；跨文档 undefined 不承继）。
+  // spec apply the push or replace history step：同文档新 entry navigation API state 承继
+  // current entry（https://html.spec.whatwg.org/multipage/nav-history-apis.html#apply-the-push-or-replace-history-step）。
+  function _navInheritedNavState(oldHref, newHref) {
+    if (!_navIsHashOnly(oldHref, newHref)) return undefined;
+    var cur = _navCurrent();
+    return cur ? cur.navState : undefined;
   }
   // M2-S4D：离开 entry 前保存滚动位（session entry scrollX/Y——traverse 回访恢复基面；
   // WPT scroll-behavior after-transition-*）。
@@ -5658,20 +5681,6 @@
     ev._zwBind = bind;
     // M2-S4G：transition.from 捕获（dispatch 时刻 currentEntry——commit 前）。
     try { ev._zwFromPub = _navPub(_navCurrent()); } catch (_eFp) {}
-    // M2-S4L：transition 于 **dispatch 后、commit 前**创建（spec inner fire step 29——
-    // currententrychange 派发时 transition 须已暴露；旧在 _navRunIntercept 创建晚于 CCE）。
-    if (ev._zwIntercepted) {
-      var _tSettlePre = null;
-      var _tPre = { navigationType: ev.navigationType || null };
-      try { Object.setPrototypeOf(_tPre, globalThis.NavigationTransition.prototype); } catch (_eTp) {}
-      _tPre.from = ev._zwFromPub || null;
-      _tPre.to = ev.destination || null;
-      _tPre.finished = new Promise(function (res, rej) { _tSettlePre = function (err) { err ? rej(err) : res(undefined); }; });
-      _navTransition = _tPre;
-      ev._zwTransitionObj = _tPre;
-      ev._zwFinishTransition = function (err) { if (_tSettlePre) _tSettlePre(err); };
-      ev._zwClearTransition = function () { if (_navTransition === _tPre) _navTransition = null; };
-    }
     // M2-S4G：结果控制柄挂钩（abort 面在 dispatch 期即可 reject 双 promise）。
     ev._zwResultCtrl = o.resultCtrl || null;
     // M2-S4G：进行中导航 abort（dispatch 期即挂——重入导航于 nav1 监听器内派发时，nav1 须
@@ -5687,7 +5696,10 @@
       try { if (ev._zwAbortCtl) ev._zwAbortCtl.abort(reason); } catch (_eAo1) {}
       var rc = ev._zwResultCtrl;
       if (rc) {
-        if (!rc._cDone && rc.reject) rc.reject(reason);
+        // M2-S4O：提交期（_zwCommitting）abort 不 reject committed——committed 随后照常
+        // 兑现（spec：已提交导航 abort 只 reject finished；WPT
+        // dispose-same-document-navigate-during forkPromise 面）。
+        if (!rc._cDone && rc.reject && !ev._zwCommitting) rc.reject(reason);
         if (rc.finishedSettle) rc.finishedSettle(reason, true);
       }
       if (ev._zwDispatching) {
@@ -5708,9 +5720,11 @@
     if (_navTraverseDispatching && !o._zwSelf) _navPreempted = true;
     _navDispatchAny(ev);
     // M2-S4L：transition 于 **dispatch 后、commit 前**创建（spec inner fire step 29——
-    // currententrychange 派发时 transition 须已暴露；旧在 _navRunIntercept 创建晚于 CCE。
-    // 首版误插 dispatch 前——intercept() 未调 _zwIntercepted 恒 false 恒不创建）。
-    if (ev._zwIntercepted) {
+    // currententrychange 派发时 transition 须已暴露；旧在 _navRunIntercept 创建晚于 CCE）。
+    // M2-S4O：dispatch 期被抢占/中止的导航不建 transition（apply the push or replace
+    // history step 不会运行——孤儿 transition 会覆盖后继导航的在位 transition，其 finished
+    // 永不结算；WPT ordering intercept-reentrant 双变体「transition.finished fulfilled」）。
+    if (ev._zwIntercepted && !ev._zwErrored && !ev._zwSettled) {
       var _tSettlePre = null;
       var _tPre = { navigationType: ev.navigationType || null };
       try { Object.setPrototypeOf(_tPre, globalThis.NavigationTransition.prototype); } catch (_eTp) {}
@@ -6041,6 +6055,8 @@
     // preventDefault → 中止（无 session entry / popstate / CCE）。
     var _zwNavEv = _navFireNavigate({
       navigationType: 'push', url: newHref, hashChange: true,
+      // M2-S4O：承继态随 fire 下发（handler 内 destination.getState() 可见）。
+      destState: _navInheritedNavState(oldHref, newHref),
       // M2-S4B：anchor click 触发时由 part04 R154 线程 sourceElement（读后即清）。
       sourceElement: globalThis.__zwNavSourceElement !== undefined ? globalThis.__zwNavSourceElement : null,
     });
@@ -6068,7 +6084,8 @@
     // + destination bind 绑新记录（动态 index）。
     var _zwFreshRec;
     if (globalThis.__zwDocCompletelyLoaded === true) {
-      _zwFreshRec = _navPushCurrent(_hist_current());
+      // M2-S4O：载入后 push 同承继（同文档恒承继——S4C 仅盖载入前 replace 支路）。
+      _zwFreshRec = _navPushCurrent(_hist_current(), true);
     } else {
       _zwFreshRec = _navReplaceCurrent(_hist_current(), true);
     }
@@ -6105,7 +6122,7 @@
     if (!newHref || newHref === oldHref) return; // 解析失败 / 未变 → no-op
     // M2-S4B：navigate 'push' 先行（href-setter 同文档面——WPT intercept-resolve 等）；
     // preventDefault → 中止。
-    var _zwNavEv = _navFireNavigate({ navigationType: 'push', url: newHref, hashChange: _navIsHashOnly(oldHref, newHref), sameDocument: _navIsHashOnly(oldHref, newHref) });
+    var _zwNavEv = _navFireNavigate({ navigationType: 'push', url: newHref, hashChange: _navIsHashOnly(oldHref, newHref), sameDocument: _navIsHashOnly(oldHref, newHref), destState: _navInheritedNavState(oldHref, newHref) });
     if (_zwNavEv.defaultPrevented) { if (!_zwNavEv._zwErrored) _navCancelNavigation(_zwNavEv, null); return; }
     // M2-S4H：download 导航未 intercept → 不提交不重载（下载吞导航，导航永不结算——
     // WPT anchor-download「fires navigate, but not navigatesuccess/navigateerror」）。
@@ -6113,7 +6130,8 @@
     _pushHistNav(newHref, oldHref);
     // M2-S4：Navigation API href-setter 面——**push**（同文档；WPT sameDocument-after-fragment
     // `location = "#hash"` entries 增长 + fresh key；跨文档 host 导航近似同面）。
-    if (_zwNavEv._zwBind) _zwNavEv._zwBind.rec = _navPushCurrent(_hist_current());
+    // M2-S4O：同文档（hash-only）承继源 entry navState；跨文档不承继。
+    if (_zwNavEv._zwBind) _zwNavEv._zwBind.rec = _navPushCurrent(_hist_current(), _navIsHashOnly(oldHref, newHref));
     if (_zwNavEv._zwIntercepted) _navRunIntercept(_zwNavEv, null);
     // R3058：href/pathname/search setter 改的是非 hash 段 → 跨文档导航 → host 真重载。
     //（hash 段经 _setLocationPath 不走此函数；故此处变更恒跨文档。）
@@ -6163,14 +6181,15 @@
     var newHref = _resolveHistUrl(String(url));
     if (!newHref || newHref === oldHref) return; // 解析失败 / 未变 → no-op
     // M2-S4B：navigate 'push' 先行（assign ≡ href-setter 语义）。
-    var _zwNavEv = _navFireNavigate({ navigationType: 'push', url: newHref, hashChange: _navIsHashOnly(oldHref, newHref), sameDocument: _navIsHashOnly(oldHref, newHref) });
+    var _zwNavEv = _navFireNavigate({ navigationType: 'push', url: newHref, hashChange: _navIsHashOnly(oldHref, newHref), sameDocument: _navIsHashOnly(oldHref, newHref), destState: _navInheritedNavState(oldHref, newHref) });
     if (_zwNavEv.defaultPrevented) { if (!_zwNavEv._zwErrored) _navCancelNavigation(_zwNavEv, null); return; }
     // M2-S4H：download 导航未 intercept → 不提交不重载（下载吞导航，导航永不结算——
     // WPT anchor-download「fires navigate, but not navigatesuccess/navigateerror」）。
     if (_zwNavEv.downloadRequest !== null && !_zwNavEv._zwIntercepted) return;
     _pushHistNav(newHref, oldHref);
     // M2-S4：Navigation API assign 面——**push**（assign ≡ href-setter 语义，fresh key）。
-    if (_zwNavEv._zwBind) _zwNavEv._zwBind.rec = _navPushCurrent(_hist_current());
+    // M2-S4O：同文档（hash-only）承继源 entry navState；跨文档不承继。
+    if (_zwNavEv._zwBind) _zwNavEv._zwBind.rec = _navPushCurrent(_hist_current(), _navIsHashOnly(oldHref, newHref));
     if (_zwNavEv._zwIntercepted) _navRunIntercept(_zwNavEv, null);
     // R3058：跨文档 assign（非 hash-only）→ host 真导航（fetch 新文档）。hash-only assign = 同文档，不导航。
     if (_isCrossDocumentNav(oldHref, newHref) && typeof __zw_request_navigate === 'function') {
@@ -6193,6 +6212,8 @@
       navigationType: (newHref === oldHref) ? 'replace' : 'push',
       url: newHref,
       hashChange: hashOnly, sameDocument: hashOnly,
+      // M2-S4O：hash-only 承继态随 fire 下发（handler 内 destination.getState() 可见）。
+      destState: _navInheritedNavState(oldHref, newHref),
       sourceElement: sourceElement,
       downloadRequest: downloadRequest !== undefined ? downloadRequest : null,
       canIntercept: sameOrigin,
@@ -6200,7 +6221,8 @@
     if (ev.defaultPrevented) { if (!ev._zwErrored) _navCancelNavigation(ev, null); return 'canceled'; }
     if (ev.downloadRequest !== null && !ev._zwIntercepted) return 'download'; // download 吞导航
     _pushHistNav(newHref, oldHref);
-    if (ev._zwBind) ev._zwBind.rec = _navPushCurrent(_hist_current());
+    // M2-S4O：hash-only 锚导航承继源 entry navState（同文档 push 面）。
+    if (ev._zwBind) ev._zwBind.rec = _navPushCurrent(_hist_current(), hashOnly);
     if (ev._zwIntercepted) { _navRunIntercept(ev, null); return 'intercepted'; }
     // M2-S4I：host 导航决策外移（返回 'host'——调用方执行真导航；JS a.click() 路径由 part04
     // 调 __zw_request_navigate，host Activate 管线由 user_actions.rs 决定）。
