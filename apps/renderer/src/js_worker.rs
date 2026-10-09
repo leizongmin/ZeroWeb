@@ -1844,6 +1844,12 @@ fn register_module_compile_callback(
             for (spec, body) in &registry {
                 reg.register(spec, body);
             }
+            // P6C：依赖图内裸说明符（如 chunk 的 `import*as r from"react"`）的解析面
+            // （transform_import → resolve_registered_specifier 的 map 阶段）同按本代 map，
+            // 与 execute_module_in_sandbox 静态路径一致；否则 registry.get("react") miss。
+            if let Some(map) = map_opt.as_ref() {
+                reg.set_import_map(map.clone());
+            }
             let iife = match compile_dependency_iife(&url, &reg) {
                 Ok(i) => i,
                 Err(e) => {

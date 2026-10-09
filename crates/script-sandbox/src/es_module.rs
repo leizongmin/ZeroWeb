@@ -1525,6 +1525,34 @@ mod tests {
         );
     }
 
+    // P6C 回归（2026-10-09 github.com pricing 实测）：动态 import 路径的
+    // `__zw_compile_module` 回调把依赖图 registry 接上本代页面 map 后，chunk 静态
+    // `import*as r from"react"` 的裸说明符才能在 transform 阶段解析内联；漏接 map 时
+    // `registry.get("react")` miss → "Module not found: react"（回调吞为空串 → 上层
+    // 重试 3 次报 Loading chunk failed）。
+    #[test]
+    fn test_compile_dependency_iife_resolves_bare_specifier_via_import_map() {
+        let base = url::Url::parse("https://github.com/").unwrap();
+        let map = ImportMap::parse(r#"{"imports": {"react": "https://assets.test/react.js"}}"#, &base).unwrap();
+        let chunk = r#"import*as r from"react";export const x = r.version;"#;
+        let react = r#"export const version = "19.1.0";"#;
+
+        // 无 map（P6C 前动态路径形态）：编译失败，错误点名裸说明符。
+        let mut reg = ModuleRegistry::new();
+        reg.register("https://github.test/chunk.js", chunk);
+        reg.register("https://assets.test/react.js", react);
+        let err = compile_dependency_iife("https://github.test/chunk.js", &reg).unwrap_err();
+        assert!(matches!(err, ScriptError::RuntimeError(ref m) if m.contains("Module not found: react")));
+
+        // 有 map（P6C 后）：react 按映射 URL 解析命中，依赖源码内联进 IIFE。
+        let mut reg = ModuleRegistry::new();
+        reg.set_import_map(map);
+        reg.register("https://github.test/chunk.js", chunk);
+        reg.register("https://assets.test/react.js", react);
+        let iife = compile_dependency_iife("https://github.test/chunk.js", &reg).unwrap();
+        assert!(iife.contains("19.1.0"));
+    }
+
     #[test]
     fn test_es_module_sandbox_new() {
         assert!(EsModuleSandbox::new().is_ok());
