@@ -1820,7 +1820,8 @@ fn test_mutation_observer_attr_filter_and_old_value_r3025() {
 #[test]
 fn test_mutation_observer_subtree_r3026() {
     // R3026：MutationObserver subtree（ancestor 解析）。observe(container,{...,subtree:true}) 时后代 mutation
-    // 冒泡到 container observer（record.target=container）；非 subtree observer 不收后代 mutation。框架「观测整个子树」
+    // 冒泡到 container observer（record.target=实际变更节点——R311/spec dom-mutationrecord-target）；
+    // 非 subtree observer 不收后代 mutation。框架「观测整个子树」
     // 第一高频用法。经 _ancestorChain（__zw_parent 父链）上行，_mo_any_subtree guard 无 subtree observer 时零开销。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
@@ -1836,7 +1837,7 @@ fn test_mutation_observer_subtree_r3026() {
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
-    // ① subtree childList：后代（leaf）appendChild → container observer 收记录（target=container）。
+    // ① subtree childList：后代（leaf）appendChild → container observer 收记录（target=leaf——子列表变更的容器自身）。
     sandbox
         .execute(
             "var container = document.getElementById('container');\
@@ -1857,10 +1858,16 @@ fn test_mutation_observer_subtree_r3026() {
         "childList",
         "subtree 记录 type=childList"
     );
+    // R311 语义修正（spec `dom-mutationrecord-target`：record.target = mutation 所影响的
+    // 节点）——childList on leaf 的 target 是 leaf（其 childList 变更），subtree 冒泡到
+    // container observer 不改变 target。旧断言 target=container 是 R188 前「祖先 proxy
+    // 充当 target」的缺陷语义，与 WPT MutationObserver-document（target=mutation 目标
+    // 而非 document）同一口径；本仓 corpus 无 MutationObserver-subtree.html（上游无此
+    // 文件），target 语义由本断言 + R311 单测（test_mo_record_target_subtree_r311）承载。
     assert_eq!(
         sandbox.execute("globalThis.__recs[0].target.id").unwrap().value,
-        "container",
-        "subtree 记录 target=container（祖先 observer 的 target，非 leaf）"
+        "leaf",
+        "subtree 记录 target=leaf（spec：mutation 影响的节点，非观察注册点）"
     );
 
     // ② 非 subtree observer 不收后代 mutation（仅收 container 自身直接 childList）。
@@ -1879,7 +1886,7 @@ fn test_mutation_observer_subtree_r3026() {
         "非 subtree observer 不收后代 leaf 的 childList mutation（仅 container 直接子）"
     );
 
-    // ③ subtree attributes：后代 leaf.setAttribute → container observer 收记录（target=container）。
+    // ③ subtree attributes：后代 leaf.setAttribute → container observer 收记录（target=leaf——属性所属元素）。
     sandbox
         .execute(
             "mo2.disconnect();\
@@ -1899,10 +1906,11 @@ fn test_mutation_observer_subtree_r3026() {
         "data-x",
         "subtree 属性记录 attributeName=data-x"
     );
+    // R311 语义修正（同 ①）：attributes on leaf 的 target 是 leaf 自身。
     assert_eq!(
         sandbox.execute("globalThis.__recs3[0].target.id").unwrap().value,
-        "container",
-        "subtree 属性记录 target=container"
+        "leaf",
+        "subtree 属性记录 target=leaf（spec：mutation 影响的节点）"
     );
 
     // ④ 子树内多层深度（leaf 在 inner 在 container）：仍冒泡到 container（ancestor 链长度无关）。

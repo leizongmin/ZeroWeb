@@ -3232,6 +3232,320 @@ fn test_mo_native_notify_entry_m2_s1() {
 }
 
 #[test]
+fn test_mo_record_target_subtree_r311() {
+    // R311：MutationRecord.target 全站生效（spec `dom-mutationrecord-target`——record 的
+    // target 恒为实际变更节点，与投递给哪个观察站无关）。旧实现 _r188Target 仅 doc 站
+    // （id='doc'）生效，subtree 祖先冒泡的 record 回落 obs._targetProxies[id]＝被观察
+    // 元素 proxy——observe(祖先,{subtree}) 下深层 attr/childList 变更 target 恒报祖先
+    // （真实站 bilibili 探针实证：observe(html,{subtree}) 下 meta content 变更 30+ 条
+    // 全报 html）。① ② 锁祖先站 target=后代自身；③ 精确观测 identity 不回归（同一
+    // proxy——_proxyCache 身份缓存）；④ characterData 文本节点 target 语义不变（R49）。
+    // 上游 WPT dom/nodes/MO 族无此断言路径（唯一 subtree 子测试 target=被观察元素自身），
+    // 本单测为等价本地测试；真实站回归由 .acceptance 探针承担。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"root\"><p id=\"mid\"><span id=\"leaf\">x</span></p></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__recs = [];
+             var mo = new MutationObserver(function(rs) { globalThis.__recs = globalThis.__recs.concat(rs); });\
+             mo.observe(document.getElementById('root'), { subtree: true, childList: true, attributes: true });\
+             // ① 后代属性变更 → target = leaf（非 root）
+             document.getElementById('leaf').setAttribute('data-x', '1');\
+             // ② 后代子列表变更（向 mid append）→ target = mid（非 root）
+             document.getElementById('mid').appendChild(document.createElement('i'));",
+        )
+        .unwrap();
+    let mut filled = false;
+    for _ in 0..50 {
+        if sandbox.execute("globalThis.__recs.length").unwrap().value == "2" {
+            filled = true;
+            break;
+        }
+        let _ = sandbox.execute("0");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(filled, "MO 回调应经 microtask flush 收到 2 条 record");
+    assert_eq!(
+        sandbox
+            .execute(
+                "globalThis.__recs[0].type + '/' + globalThis.__recs[0].target.id + '/' +\
+                 globalThis.__recs[1].type + '/' + globalThis.__recs[1].target.id"
+            )
+            .unwrap()
+            .value,
+        "attributes/leaf/childList/mid",
+        "① ② subtree 祖先站的 record.target = 实际变更节点（leaf attr / mid childList），非被观察 root"
+    );
+    // ③ 精确观测 identity 不回归：observe(leaf,{attributes}) 自身变更 target 与
+    // observe() 传入 proxy 同一对象（_proxyCache 身份缓存）。
+    sandbox
+        .execute(
+            "globalThis.__exact = null;\
+             var mo2 = new MutationObserver(function(rs) { globalThis.__exact = rs[0]; });\
+             var leaf = document.getElementById('leaf');\
+             mo2.observe(leaf, { attributes: true });\
+             leaf.setAttribute('data-y', '2');\
+             globalThis.__leafRef = leaf;",
+        )
+        .unwrap();
+    for _ in 0..50 {
+        if sandbox.execute("!!globalThis.__exact").unwrap().value == "true" {
+            break;
+        }
+        let _ = sandbox.execute("0");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__exact.target === globalThis.__leafRef)")
+            .unwrap()
+            .value,
+        "true",
+        "③ 精确观测 record.target 与 observe() 传入元素同一 proxy（identity 不回归）"
+    );
+}
+
+#[test]
+fn test_textcontent_setter_factory_r310() {
+    // R310（js-dom M4 对偶补齐）：textContent setter（spec `dom-node-textcontent`——
+    // null 按 LegacyNullToEmptyString 归 ''；replace-all 为单 Text 子；空串不留空
+    // Text 节点）。旧工厂元素（_zwMEl——createHTMLDocument/iframe 工厂产物）只有
+    // getter，严格模式代码赋值即抛 "which has only a getter"（bilibili nano SDK
+    // 播放器模板 `span.textContent = 文案` 断链 → 播放器控制面全缺）。上游 WPT
+    // dom/nodes/Node-textContent.html 走主文档代理路径（R184 起常驻 81P/81），
+    // 不覆盖本工厂形态——本单测为等价本地测试。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var doc = document.implementation.createHTMLDocument('t');\
+             var el = doc.createElement('div');\
+             el.innerHTML = '<p>a</p>mid<b>b</b>';\
+             globalThis.__r = [];
+             try {\
+               el.textContent = 'hello';\
+               __r.push('set/ok');\
+               __r.push(el.childNodes.length + '/' + el.childNodes[0].nodeType + '/' + el.childNodes[0].nodeValue);\
+               __r.push(String(el.firstChild === el.childNodes[0]));\
+               __r.push(String(el.childNodes[0].parentNode === el));\
+               __r.push(String(el.childNodes[0].ownerDocument === doc));\
+               __r.push(el.textContent);\
+               el.textContent = '';\
+               __r.push('empty/' + el.childNodes.length + '/' + String(el.firstChild === null));\
+               el.textContent = null;\
+               __r.push('null/' + el.childNodes.length + '/' + el.textContent);\
+               el.textContent = undefined;\
+               __r.push('undef/' + el.childNodes.length + '/' + el.textContent);\
+               var sp = doc.createElement('span');\
+               sp.textContent = 'x';\
+               __r.push('fresh/' + sp.textContent + '/' + sp.childNodes[0].nodeType);\
+             } catch (e) { __r.push('THROW:' + e.message); }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r.join('|')").unwrap().value,
+        "set/ok|1/3/hello|true|true|true|hello|empty/0/true|null/0/|undef/1/undefined|fresh/x/3",
+        "textContent setter：replace-all 单 Text 子 + 空串/null 不留空 Text + null 归空串而 undefined 归 'undefined'（R310 返修 N2）+ parent/ownerDocument 继承 + 全程不抛"
+    );
+}
+
+#[test]
+fn test_qsa_mirror_class_key_r310b() {
+    // R310b：querySelector 镜像剔除补 class 比对——旧 tag+id 双键把「无 id 根 div +
+    // 首命中同 tag 不同 class 的后代 div」误判为根镜像剔除（真镜像经序列化重解析
+    // 属性恒一致，tag+id+class 三键同值才剔除）。真实站 bilibili：nano 播放器模板
+    // querySelector('.bpx-video-area') 在无 id div 树里恒空 → ctrlStore addEvents
+    // null.addEventListener → connect 断 → 页面构造器 TypeError。
+    // ① 无 id 根 + 后代 div.bpx（class 不同）→ 必须命中；② 真镜像（tag+id+class 全
+    // 同）仍剔除（spec：querySelector 只查后代，不含根自身）；③ 后代真命中不被
+    // arr[0] 剔除波及（slice(1) 语义）。上游 WPT ParentNode-querySelector-All 的
+    // 树序断言不覆盖「无 id 根 + 同 tag 后代」组合——本单测为等价本地测试。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var doc = document.implementation.createHTMLDocument('t');\
+             var root = doc.createElement('div');\
+             root.className = 'zt-root';\
+             var sec = doc.createElement('section');\
+             var bpx = doc.createElement('div');\
+             bpx.className = 'bpx-video-area';\
+             var sp = doc.createElement('span');\
+             sp.className = 'qs-target';\
+             bpx.appendChild(sp);\
+             sec.appendChild(bpx);\
+             root.appendChild(sec);\
+             globalThis.__o = [];
+             var hit = root.querySelector('.bpx-video-area');\
+             __o.push(String(hit !== null) + '/' + (hit ? hit.className : 'null'));\
+             __o.push(String(root.querySelector('.qs-target') !== null));\
+             var root2 = doc.createElement('div');\
+             root2.id = 'mirror';\
+             root2.className = 'mcls';\
+             __o.push(String(root2.querySelector('#mirror') === null));\
+             var inner = doc.createElement('div');\
+             inner.id = 'mirror';\
+             inner.className = 'mcls-child';\
+             root2.appendChild(inner);\
+             __o.push(String(root2.querySelector('#mirror') === inner));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__o.join('|')").unwrap().value,
+        "true/bpx-video-area|true|true|true",
+        "① 后代 div.bpx 命中（class 键防误剔）② 真镜像仍剔除 ③ 同 tag+id 不同 class 的后代命中不受波及"
+    );
+}
+
+#[test]
+fn test_qsa_mirror_class_key_domparser_r310b() {
+    // R310 返修（defect-r1 N1）：DOMParser 产物（_zwParseEl）querySelectorAll 的镜像
+    // 剔除与 part03 活 DOM 路径同步三键（tag+id+class 归一后全同才剔）——旧 tag+id
+    // 双键把「无 id/带 class 根 + 首命中同 tag 不同 class 后代」误剔。sanitizer/模板
+    // 引擎走 DOMParser 面时同一缺陷形态。① 带 class 根 + 同 tag 不同 class 后代命中
+    // ② 异 tag 后代不受波及 ③ 无 id 无 class 根 + 同 tag 带 class 后代命中
+    // ④ 真镜像（三键全同）仍剔除（只剔 arr[0]，真实同名后代保留）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var d = new DOMParser().parseFromString('<div class=\\\"zt-root\\\"><div class=\\\"bpx-video-area\\\"><span class=\\\"qs-target\\\"></span></div></div>', 'text/html');\
+             var b = d.querySelector('.zt-root');\
+             var d5 = new DOMParser().parseFromString('<div><div class=\\\"x\\\"></div></div>', 'text/html');\
+             var r5 = d5.querySelector('div');\
+             var d3 = new DOMParser().parseFromString('<div id=\\\"m\\\" class=\\\"mc\\\"><div id=\\\"m\\\" class=\\\"mc\\\"></div></div>', 'text/html');\
+             var r3 = d3.querySelector('#m');\
+             globalThis.__p = [\
+               b.querySelectorAll('.bpx-video-area').length,\
+               b.querySelectorAll('.qs-target').length,\
+               r5.querySelectorAll('.x').length,\
+               r3.querySelectorAll('#m').length\
+             ];",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__p.join('|')").unwrap().value,
+        "1|1|1|1",
+        "DOMParser querySelectorAll 三键剔除：①③ 同 tag 同 id 不同 class 后代命中（双键下为 0）② 异 tag 不波及 ④ 真镜像仍剔而真实同名后代保留"
+    );
+}
+
+#[test]
+fn test_canplaytype_avc1_ppccll_r310c() {
+    // canPlayType avc1/avc3 PPCCLL 语义判定（RFC 6381 §3.3 avc1.PPCCLL hex 三元组）。
+    // 旧仅枚举 avc1.42e01e/4d401e 两个完整串——站点 SDK 以任意 level 变体探测
+    // （bilibili nano 默认探针 avc1.42E01E,mp4a.40.2 之外还有 42001E 等），枚举
+    // 面外恒 ''。openh264 解码面：Baseline(0x42)/Main(0x4D) 支持、level_idc ≤
+    // 0x34（Level 5.2）；High(0x64)/Extended(0x58) 不支持——维持 ''（不虚报）。
+    // constraint_flags 位不影响可解码性。上游 WPT mime-types/canPlayType.html
+    // 枚举面不覆盖任意 level 组合——本单测为等价本地测试。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var v = document.createElement('video');\
+             var cpt = function (t) { return v.canPlayType(t) || 'EMPTY'; };\
+             globalThis.__o = [\
+               cpt('video/mp4; codecs=\"avc1.42E01E\"'),\
+               cpt('video/mp4; codecs=\"avc1.42001f\"'),\
+               cpt('video/mp4; codecs=\"avc1.4d4034\"'),\
+               cpt('video/mp4; codecs=\"avc1.4d4035\"'),\
+               cpt('video/mp4; codecs=\"avc1.640028\"'),\
+               cpt('video/mp4; codecs=\"avc1.584000\"'),\
+               cpt('video/mp4; codecs=\"avc1.42ff0a\"'),\
+               cpt('video/mp4; codecs=\"avc1.42E01E, mp4a.40.2\"'),\
+               cpt('video/mp4; codecs=\"avc1.640028, mp4a.40.2\"'),\
+               cpt('video/mp4; codecs=\"avc1\"'),\
+               cpt('video/mp4; codecs=\"avc3.42e01e\"'),\
+               cpt('video/mp4; codecs=\"avc1.42e0\"'),\
+               cpt('audio/ogg; codecs=\"avc1.42e01e\"'),\
+               cpt('video/webm; codecs=\"avc1.4d4028\"'),\
+               cpt('audio/mp4; codecs=\"avc3.42e01e\"'),\
+               cpt('video/webm; codecs=\"vp9\"'),\
+               cpt('audio/ogg; codecs=\"vorbis\"')\
+             ];",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__o.join('|')").unwrap().value,
+        "probably|probably|probably|EMPTY|EMPTY|EMPTY|probably|probably|EMPTY|probably|probably|EMPTY|EMPTY|EMPTY|EMPTY|probably|probably",
+        "PPCCLL：Baseline/Main 全 level(≤L5.2) probably；High/Extended/越界 level/缺尾码 EMPTY；配对面任一不支持即 EMPTY；R310 返修 F1——avc 三元组仅 video/mp4 容器生效，ogg/webm/mp4-audio 容器 EMPTY 且既有容器面（webm vp9/ogg vorbis）不回归"
+    );
+}
+
+#[test]
 fn test_parsed_text_characterdata_r48() {
     // R48：parsed DOM 文本节点的 CharacterData 编辑 + MutationObserver record（WPT
     // MutationObserver-characterData 4P/12F→18P/0F 驱动）：

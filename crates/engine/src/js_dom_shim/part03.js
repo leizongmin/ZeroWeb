@@ -2396,9 +2396,18 @@
         if (arr && arr.length && n && n.nodeType === 1) {
           var _r188T = String(n.localName || (n.tagName || '').toLowerCase() || '').toLowerCase();
           var _r188I = String(n.id != null ? n.id : '');
+          // R310b：镜像判定补 class 比对——旧 tag+id 双键把「根 div（无 id）+ 首命中
+          // 同 tag 不同 class 的后代 div」误判为镜像（无 id 的 div 树里任何 div 命中
+          // 都被切掉：bilibili nano 播放器模板 querySelector('.bpx-video-area') 恒空
+          // → ctrlStore addEvents null.addEventListener → connect 断 → store 不全 →
+          // 页面 React 构造器 TypeError → Next 全局错误页）。真镜像经序列化重解析
+          // 属性恒一致——tag+id+class 三键同值才剔除；class 归一空白后比对。
+          var _r188C = '';
+          try { _r188C = String(n.getAttribute && (n.getAttribute('class') != null ? n.getAttribute('class') : (n.className != null ? n.className : '')) || '').replace(/\s+/g, ' ').trim(); } catch (_e188cr) {}
           var _r188F = arr[0];
           if (_r188F && String(_r188F.tag || '').toLowerCase() === _r188T
-              && String(_r188F.id || '') === _r188I) {
+              && String(_r188F.id || '') === _r188I
+              && String(_r188F.cls != null ? _r188F.cls : '').replace(/\s+/g, ' ').trim() === _r188C) {
             arr = arr.slice(1);
           }
         }
@@ -11019,7 +11028,39 @@
       if (typeof globalThis.__zwQueuePlainSlotchange === 'function') globalThis.__zwQueuePlainSlotchange(node);
       return o;
     };
-    Object.defineProperty(node, 'textContent', { get: function () { var t = ''; for (var i = 0; i < node.childNodes.length; i++) { var c = node.childNodes[i]; if (c.nodeType === 3) t += c.nodeValue; else if (c.nodeType === 1) t += c.textContent; } return t; }, configurable: true });
+    // R310（js-dom M4 对偶补齐）：textContent setter（spec `dom-node-textcontent`——
+    // null 按 LegacyNullToEmptyString 归 ''，replace-all 为单 Text 子；空串不留空 Text
+    // 节点，firstChild === null）。旧只有 getter——严格模式代码（站点 bundle 的 class
+    // 字段）赋值即抛 "which has only a getter"（bilibili nano SDK 播放器模板
+    // querySelector 后 `span.textContent = 文案` 断链）。簿记镜像下方 R181 innerHTML
+    // setter：替换子的 t7 host 摘除 + 解析子继承创建域。Text 子走 _zwMText（R209：
+    // 完整方法面，compareDocumentPosition/substringData 等可调）。
+    // https://dom.spec.whatwg.org/#dom-node-textcontent
+    Object.defineProperty(node, 'textContent', { get: function () { var t = ''; for (var i = 0; i < node.childNodes.length; i++) { var c = node.childNodes[i]; if (c.nodeType === 3) t += c.nodeValue; else if (c.nodeType === 1) t += c.textContent; } return t; },
+      set: function (v) {
+        // R310 返修（defect-r1 N2）：仅 null 按 LegacyNullToEmptyString 归 ''；
+        // undefined 走标准 DOMString 转换 → 'undefined'（与主文档路径 R3184 一致）。
+        var s = v === null ? '' : String(v);
+        // t7（js-dom P15）：被整体替换的旧 handle 子同步摘 host——与 R181 innerHTML
+        // setter 的替换面同款，防只清 JS 世界残留幽灵。
+        for (var _t7t = 0; _t7t < node.childNodes.length; _t7t++) _zwT7EmitHostRemove(node.childNodes[_t7t], null, null);
+        node.childNodes = s === '' ? [] : [_zwMText(s, node)];
+        // R310：Text 子继承创建域（spec：replace-all 的新节点属 node 的 node
+        // document）——镜像 R181 解析子的 ownerDocument accessor。
+        if (node.childNodes.length) {
+          try { node.childNodes[0].parentNode = node; } catch (_e310tp) {}
+          try {
+            var _310od = node.ownerDocument;
+            if (_310od) {
+              Object.defineProperty(node.childNodes[0], 'ownerDocument', {
+                get: function () { return _310od; },
+                set: function () {},
+                configurable: true,
+              });
+            }
+          } catch (_e310od) {}
+        }
+      }, configurable: true });
     // R181（js-dom M4）：innerHTML setter（spec `dom-inner-html-setter`——解析 markup 整体替换
     // 子节点）。detached doc / iframe 工厂的 createElement 产物（_zwMEl）旧只有 getter——
     // `container.innerHTML = "<p></p>"` 在非严格模式静默 no-op（readonly 属性赋值被吞），
@@ -16356,7 +16397,26 @@ return e;
             for (_i = 0; _i < _entry.video.length; _i++) _known[_entry.video[_i]] = 1;
             // 全部 codec 都在支持面 → 'probably'；任一不认识 → ''（spec：部分支持
             // 不报 'maybe'——「can the resource be played」保守面）。
+            // avc1/avc3 PPCCLL 语义解析（RFC 6381 §3.3：avc1.PPCCLL hex 三元组，
+            // profile_idc/constraint_flags/level_idc）：H.264 站点 SDK 以完整三元组
+            // 探测（如 avc1.42001E Baseline L3.0——bilibili nano 默认探针），完整串
+            // 枚举无法覆盖全部 constraint/level 组合 → 按 profile/level 语义判定。
+            // Baseline(0x42)/Main(0x4D) 在 openh264 解码面（见上 avc1.42e01e/4d401e
+            // 注）；constraint 标志位不降低可解码性（解码器不依赖 constraint_set
+            // 位）；level_idc ≤ 0x34（Level 5.2，openh264 官方面）。High(0x64)/
+            // Extended(0x58) 不在解码面 → 维持 ''（不虚报）。
+            // https://html.spec.whatwg.org/multipage/media.html#dom-navigator-canplaytype
+            var _avcPpccll = /^avc[13]\.([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/;
+            // R310 返修（defect-r1 F1）：PPCCLL 语义判定只对 avc 家族在册的容器生效
+            //（当前仅 video/mp4）——audio/ogg、video/webm、audio/mp4 等容器探测
+            // avc1/avc3 三元组按未知 codec 走 _known miss → ''，不跨容器虚报。
+            var _avcContainer = !!_known.avc1;
             for (_i = 0; _i < _codecs.length; _i++) {
+              var _avcM = _avcPpccll.exec(_codecs[_i]);
+              if (_avcM) {
+                if (_avcContainer && (_avcM[1] === '42' || _avcM[1] === '4d') && parseInt(_avcM[3], 16) <= 0x34) continue;
+                return '';
+              }
               if (!_known[_codecs[_i]]) return '';
             }
             return 'probably';
