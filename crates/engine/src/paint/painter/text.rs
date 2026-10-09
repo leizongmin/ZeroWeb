@@ -237,7 +237,9 @@ impl super::Painter {
         // element-becomes-replaced-with-gradient——按内容盒绘制渐变（R2439 element-replacement
         // 的非 url 分支；div 100×100 content:linear-gradient 实证页）。draw_list 语义与
         // background-image 渐变一致（gradient_to_primitive 复用）。
-        if let zero_style_system::property::types::ContentComputedValue::Gradient(g) = &style.content {
+        // R5022：filter() 图像函数剥壳——Gradient 内层照常绘制，滤镜不施加
+        //（FIXME: 渐变面滤镜 corpus 未涉及）。
+        if let zero_style_system::property::types::ContentComputedValue::Gradient(g) = style.content.inner() {
             let content_x = abs_x + box_node.border_left + box_node.padding_left;
             let content_y = abs_y + box_node.border_top + box_node.padding_top;
             let rect = Rect::new(content_x, content_y, box_node.content_width, box_node.content_height);
@@ -600,7 +602,14 @@ impl super::Painter {
         // 覆盖任何元素含 `<img>` 的正常内容）——src 取自 style.content 的 Url；否则 `<img>`
         // 用 src 属性（src 缺失回退 srcset 首 URL，R2419）。build_subtree 已抑制 content:url
         // 元素的子节点，pipeline 已按 image 固有尺寸 sizing。
-        let src = if let zero_style_system::property::types::ContentComputedValue::Url(u) = &style.content {
+        // R5022：filter() 图像函数——剥壳取内层 url，滤镜列表随图元后随 FilterPrimitive
+        //（draw_order 插入序：只滤镜已绘图像像素）。
+        let content_filters: Option<&Vec<zero_style_system::property::types::FilterComputedValue>> =
+            match &style.content {
+                zero_style_system::property::types::ContentComputedValue::Filtered { filters, .. } => Some(filters),
+                _ => None,
+            };
+        let src = if let zero_style_system::property::types::ContentComputedValue::Url(u) = style.content.inner() {
             u.clone()
         } else {
             match &node.kind {
@@ -663,6 +672,39 @@ impl super::Painter {
             clip: Some(Rect::new(content_x, content_y, container_w, container_h)),
             source: None,
         });
+
+        // R5022：filter() 图像函数（filter-effects-1 #FilterCSSImageValue）——滤镜图元
+        // 紧随图像图元发射，rect = 图像绘制区外扩阴影/模糊偏移（css-filters §6 filter
+        // region；drop-shadow 位移进滤镜 rect 内采样）。draw_order 按插入序应用 → 只
+        // 滤镜已绘图像像素（含 alpha 形状的 drop-shadow 上色），不影响其后续图元。
+        if let Some(filters) = content_filters {
+            let kinds: Vec<_> = filters
+                .iter()
+                .filter_map(super::effects::filter_computed_to_kind)
+                .collect();
+            if !kinds.is_empty() {
+                let mut ox = 0.0f32;
+                let mut oy = 0.0f32;
+                for f in &kinds {
+                    match f {
+                        zero_render_foundation::primitive::FilterKind::DropShadow(dx, dy, blur, _) => {
+                            ox = ox.max(dx.abs() + blur);
+                            oy = oy.max(dy.abs() + blur);
+                        }
+                        zero_render_foundation::primitive::FilterKind::Blur(r) => {
+                            ox = ox.max(*r);
+                            oy = oy.max(*r);
+                        }
+                        _ => {}
+                    }
+                }
+                self.primitives
+                    .add_filter(zero_render_foundation::primitive::FilterPrimitive {
+                        rect: Rect::new(img_x - ox, img_y - oy, img_w + 2.0 * ox, img_h + 2.0 * oy),
+                        filters: kinds,
+                    });
+            }
+        }
     }
 
     /// 绘制 `<video>` 元素的当前帧（media-playback M1b 帧上屏通路）。

@@ -623,7 +623,8 @@ impl RenderPipeline {
         // 页面对 diff 1.04%）。普通元素（span/before 注入 img 等，无维度属性）照旧按图固有尺寸。
         let mut targets: Vec<(NodeId, f32, f32)> = Vec::new();
         for (&nid, st) in styles.iter() {
-            if let ContentComputedValue::Url(u) = &st.content {
+            // R5022：filter() 图像函数内层 url 同样按图像固有尺寸定尺（剥壳取 url）。
+            if let ContentComputedValue::Url(u) = st.content.inner() {
                 if doc.get(nid).is_some_and(|n| match &n.kind {
                     zero_dom::NodeKind::Element(e) => {
                         e.get_attribute("width").is_some() || e.get_attribute("height").is_some()
@@ -2756,9 +2757,9 @@ pub(crate) fn inject_pseudo_text_nodes(
                     _ => None,
                 }
             };
-        // R1988：content:url() → 图片 url。
+        // R1988：content:url() → 图片 url。R5022：filter() 图像函数剥壳取内层 url。
         let resolve_url = |content: &ContentComputedValue| -> Option<String> {
-            match content {
+            match content.inner() {
                 ContentComputedValue::Url(u) => Some(u.clone()),
                 _ => None,
             }

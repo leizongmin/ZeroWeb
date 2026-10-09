@@ -984,7 +984,7 @@ impl Painter {
             //——driving: element-replacement-root-canvas-bg chromium 全绿断言）。
             let html_content_replaced = html_style.is_some_and(|hs| {
                 matches!(
-                    hs.content,
+                    hs.content.inner(),
                     ContentComputedValue::Url(_) | ContentComputedValue::Gradient(_)
                 )
             });

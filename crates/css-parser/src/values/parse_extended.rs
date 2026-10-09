@@ -523,11 +523,30 @@ pub enum ContentValue {
     /// 渐变是 image 的子类型）。元素 content:\<gradient\> → element-becomes-replaced-with-
     /// gradient，按 content 盒绘制渐变。
     Gradient(crate::values::parse_transform::GradientValue),
+    /// filter(<image>, <filter-value-list>?) 图像函数（filter-effects-1 #FilterCSSImageValue，
+    /// R5022）——content 接受 \<image\>，filter() 是 image 的函数形态。内层限 url/gradient/
+    /// filter（\<image\> 语法域）；滤镜列表空 = 无滤镜等价内层图像。
+    Filtered {
+        /// 被滤镜的内层图像（url / gradient / 嵌套 filter）。
+        image: Box<ContentValue>,
+        /// 空格分隔的滤镜函数列表（filter 属性同一语法，可为空）。
+        filters: Vec<crate::values::FilterValue>,
+    },
     /// 多 item 混合内容序列（如 `content: "Chapter " counter(c) ": "`）。
     /// CSS Content §content-property：content 值可是多个 component value 串联，
     /// 字符串与 counter() 交替（counter() 真实用法）。仅 string + counter() item；
     /// 含 url()/attr() 的多 item 暂不支持（defer，回退 None 同旧行为）。
     List(Vec<ContentListItem>),
+}
+
+impl ContentValue {
+    /// filter() 包裹时返回内层图像，否则返回自身（消费方递归剥壳用，R5022）。
+    pub fn inner(&self) -> &ContentValue {
+        match self {
+            ContentValue::Filtered { image, .. } => image,
+            other => other,
+        }
+    }
 }
 
 /// content 混合序列的单个 item（CSS Content §content-property 多 component value）。
@@ -641,6 +660,25 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
         let url = super::parse_extended_visual::parse_css_url_payload(inner)?;
         return Some(ContentValue::Url(url));
     }
+    // filter(<image>, <filter-value-list>?) 图像函数（filter-effects-1 #FilterCSSImageValue，
+    // R5022）——首个顶层逗号分参（内层渐变的逗号不越级），image 递归限 \<image\> 语法域
+    //（url/gradient/filter，其余 content 值如 counter 非图像拒收），filter 列表复用
+    // filter 属性同一语法；单参形态 filter(<image>) = 空滤镜。
+    if let Some(args) = extract_single_function_inner(input, "filter(") {
+        let (image_part, filters_part) = match super::parse_extended_visual::split_top_level_comma(args) {
+            Some((l, r)) => (l, Some(r)),
+            None => (args, None),
+        };
+        let image = parse_content_image(image_part)?;
+        let filters = match filters_part {
+            Some(f) => super::parse_extended_visual::parse_filter_list(f)?,
+            None => Vec::new(),
+        };
+        return Some(ContentValue::Filtered {
+            image: Box::new(image),
+            filters,
+        });
+    }
     // 渐变函数（R4045，CSS Content 3：content 接受 \<image\>，渐变为 image 子类型）。
     // 函数名大小写不敏感（LINEAR-GRADIENT ≡ linear-gradient）；函数体内的大小写/空白由
     // parse_gradient 自行处理。非渐变函数 parse_gradient 返 None 自然回落。
@@ -650,6 +688,15 @@ pub fn parse_content(input: &str) -> Option<ContentValue> {
         return Some(ContentValue::Gradient(g));
     }
     None
+}
+
+/// 解析 content 的 \<image\> 语法域（filter() 图像函数内层递归用）：仅 url/gradient/
+/// filter 合法，其余 content 值（string/counter/attr/none/normal/list）非图像拒收。
+fn parse_content_image(input: &str) -> Option<ContentValue> {
+    match parse_content(input)? {
+        v @ ContentValue::Url(_) | v @ ContentValue::Gradient(_) | v @ ContentValue::Filtered { .. } => Some(v),
+        _ => None,
+    }
 }
 
 /// 解析 content 多 item 混合序列。返回 List 当且仅当 ≥2 个合法 string/counter item；

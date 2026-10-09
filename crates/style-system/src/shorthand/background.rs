@@ -69,6 +69,9 @@ fn parse_background_layer(layer: &str) -> Option<(String, BgSlots)> {
         "conic-gradient(",
         "repeating-conic-gradient(",
         "image-set(",
+        // R5022：filter() 图像函数（filter-effects-1 #FilterCSSImageValue）——括号感知
+        // 提取整段 `filter(...)` 后按 background-image 同一语法解析（内含逗号不越级）。
+        "filter(",
     ];
     let lower = layer.to_ascii_lowercase();
     let earliest: Option<usize> = image_funcs.iter().filter_map(|f| lower.find(f)).min();
@@ -285,6 +288,9 @@ fn expand_background_inner(value: &str, important: bool, specificity: (u32, u32,
         "conic-gradient(",
         "repeating-conic-gradient(",
         "image-set(",
+        // R5022：filter() 图像函数（filter-effects-1 #FilterCSSImageValue）——括号感知
+        // 提取整段 `filter(...)` 后按 background-image 同一语法解析（内含逗号不越级）。
+        "filter(",
     ];
     // CSS function names are ASCII case-insensitive.
     let lower_value = value.to_ascii_lowercase();

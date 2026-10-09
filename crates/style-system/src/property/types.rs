@@ -1498,6 +1498,24 @@ pub enum ContentComputedValue {
     /// 多 item 混合内容序列（`"Chapter " counter(c) ": "`）。复用 css-parser
     /// 的 ContentListItem（Str/Counter）；paint 期逐 item 解析拼文本。
     List(Vec<values::ContentListItem>),
+    /// filter(<image>, <filter-value-list>?) 图像函数（filter-effects-1 #FilterCSSImageValue，
+    /// R5022）——content 接受 \<image\>，滤镜经图像函数施加于内层图像。
+    Filtered {
+        /// 被滤镜的内层图像（url / gradient / 嵌套 filter）。
+        image: Box<ContentComputedValue>,
+        /// 滤镜函数计算值列表（可为空 = 无滤镜）。
+        filters: Vec<FilterComputedValue>,
+    },
+}
+
+impl ContentComputedValue {
+    /// filter() 包裹时返回内层图像，否则返回自身（消费方递归剥壳用，R5022）。
+    pub fn inner(&self) -> &ContentComputedValue {
+        match self {
+            ContentComputedValue::Filtered { image, .. } => image,
+            other => other,
+        }
+    }
 }
 
 /// CSS grid line 值（用于 grid-column-start/end、grid-row-start/end）。

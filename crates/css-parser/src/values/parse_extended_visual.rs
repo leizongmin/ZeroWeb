@@ -709,7 +709,7 @@ pub fn parse_background_image(value: &str) -> Option<BackgroundImageValue> {
 
 /// 按第一个**括号深度为零**的逗号切分（`linear-gradient(red, orange), invert(1)` →
 /// image=`linear-gradient(red, orange)`、filters=`invert(1)`）；无顶层逗号返回 None。
-fn split_top_level_comma(s: &str) -> Option<(&str, &str)> {
+pub(crate) fn split_top_level_comma(s: &str) -> Option<(&str, &str)> {
     let mut depth = 0usize;
     for (i, ch) in s.char_indices() {
         match ch {

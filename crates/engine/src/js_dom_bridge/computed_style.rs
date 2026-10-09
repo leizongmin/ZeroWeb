@@ -2967,6 +2967,20 @@ fn content_to_css(c: &ContentComputedValue, element_color: &ColorValue, font_siz
         C::Gradient(GradientValue::Radial(g)) => radial_gradient_to_css(g, element_color, font_size_px),
         C::Gradient(GradientValue::Conic(g)) => conic_gradient_to_css(g, element_color, font_size_px),
         C::List(items) => items.iter().map(content_list_item_to_css).collect::<Vec<_>>().join(" "),
+        // R5022：filter() 图像函数——`filter(<image>, <filter-list>?)`；列表空省略第二参。
+        C::Filtered { image, filters } => {
+            let inner = content_to_css(image, element_color, font_size_px);
+            if filters.is_empty() {
+                format!("filter({inner})")
+            } else {
+                let list = filters
+                    .iter()
+                    .map(|f| filter_function_to_css(f, element_color))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!("filter({inner}, {list})")
+            }
+        }
     }
 }
 

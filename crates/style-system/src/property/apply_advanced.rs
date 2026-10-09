@@ -449,6 +449,27 @@ fn bg_image_value_to_computed(v: zero_css_parser::values::BackgroundImageValue) 
     }
 }
 
+/// css-parser content 值 → 计算值（filter() 图像函数内层递归用，R5022；parser 已限
+/// 内层为 url/gradient/filter，防御臂保持穷尽）。
+fn content_value_to_computed(v: zero_css_parser::values::ContentValue) -> ContentComputedValue {
+    use zero_css_parser::values::ContentValue;
+    match v {
+        ContentValue::Normal => ContentComputedValue::Normal,
+        ContentValue::None => ContentComputedValue::None,
+        ContentValue::String(s) => ContentComputedValue::String(s),
+        ContentValue::Attr(a) => ContentComputedValue::Attr(a),
+        ContentValue::Counter { name, style } => ContentComputedValue::Counter { name, style },
+        ContentValue::Counters { name, separator, style } => ContentComputedValue::Counters { name, separator, style },
+        ContentValue::Url(u) => ContentComputedValue::Url(u),
+        ContentValue::Gradient(g) => ContentComputedValue::Gradient(g),
+        ContentValue::List(items) => ContentComputedValue::List(items),
+        ContentValue::Filtered { image, filters } => ContentComputedValue::Filtered {
+            image: Box::new(content_value_to_computed(*image)),
+            filters: filters.into_iter().map(filter_value_to_computed).collect(),
+        },
+    }
+}
+
 /// css-parser FilterValue → FilterComputedValue（filter 属性同一映射，背景图像
 /// filter() 图像函数臂复用）。
 fn filter_value_to_computed(v: zero_css_parser::values::FilterValue) -> FilterComputedValue {
@@ -863,6 +884,11 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                     ContentValue::Url(u) => ContentComputedValue::Url(u),
                     ContentValue::Gradient(g) => ContentComputedValue::Gradient(g),
                     ContentValue::List(items) => ContentComputedValue::List(items),
+                    // R5022：filter() 图像函数——内层递归映射（parser 已限 \<image\> 语法域）。
+                    ContentValue::Filtered { image, filters } => ContentComputedValue::Filtered {
+                        image: Box::new(content_value_to_computed(*image)),
+                        filters: filters.into_iter().map(filter_value_to_computed).collect(),
+                    },
                 };
                 return true;
             }

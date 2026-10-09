@@ -740,6 +740,28 @@ fn test_parse_background_image_filter_function() {
     ));
 }
 
+// R5022：content 的 filter() 图像函数——content 接受 <image>，filter() 为其函数形态
+//（filter-effects-1 #FilterCSSImageValue；内层限 url/gradient/filter）。
+#[test]
+fn test_parse_content_filter_function() {
+    use crate::values::ContentValue;
+    // url 内层 + drop-shadow（filter-function-001 案形态）
+    match parse_content("filter(url(resources/green.png), drop-shadow(50px 0 0 green))") {
+        Some(ContentValue::Filtered { image, filters }) => {
+            assert_eq!(*image, ContentValue::Url("resources/green.png".to_string()));
+            assert_eq!(filters.len(), 1);
+        }
+        other => panic!("content filter() url-inner not parsed: {other:?}"),
+    }
+    // 非图像内层拒收（counter 非 <image>）
+    assert_eq!(parse_content("filter(counter(c), invert(1))"), None);
+    // 大小写不敏感
+    assert!(matches!(
+        parse_content("FILTER(url(a.png), blur(2px))"),
+        Some(ContentValue::Filtered { .. })
+    ));
+}
+
 #[test]
 fn test_parse_background_image_url_with_path() {
     assert_eq!(
