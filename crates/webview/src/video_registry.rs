@@ -365,6 +365,12 @@ pub struct VideoPlayerRegistry {
     mse_durations: HashMap<u64, f64>,
 }
 
+/// MSE 单 feed 共享缓冲总量封顶（t8n 返修 N2——页面 appendBuffer 字节跨信任
+/// 边界，无界驻留 renderer 堆放大 OOM 面；spec source buffer 配额 →
+/// QuotaExceededError 的最小面。区间淘汰/精确配额归 FIXME(mse-full-semantics)）。
+#[cfg(feature = "decode-h264")]
+const MSE_FEED_MAX_BYTES: usize = 256 * 1024 * 1024;
+
 impl VideoPlayerRegistry {
     /// 新建空注册表。
     pub fn new() -> Self {
@@ -441,10 +447,21 @@ impl VideoPlayerRegistry {
     }
 
     /// MSE appendBuffer：字节追入共享缓冲（解码侧惰性 probe + 增长重建续读）。
+    /// 返 false = 未登记键或超容量封顶（shim 走 append error 面——spec
+    /// QuotaExceededError 语义的最小面）。
     #[cfg(feature = "decode-h264")]
-    pub fn mse_append(&mut self, abs_src: &str, data: &[u8]) {
-        if let Some(handle) = self.mse_feeds.get(&registry_key(abs_src)) {
-            handle.append(data);
+    pub fn mse_append(&mut self, abs_src: &str, data: &[u8]) -> bool {
+        match self.mse_feeds.get(&registry_key(abs_src)) {
+            Some(handle) => {
+                // t8n 返修 N2：页面字节跨信任边界无界驻留 renderer 堆的 OOM 面，
+                // 总量封顶（区间淘汰归 FIXME(mse-full-semantics) 完整语义）。
+                if handle.byte_len().saturating_add(data.len()) > MSE_FEED_MAX_BYTES {
+                    return false;
+                }
+                handle.append(data);
+                true
+            }
+            None => false,
         }
     }
 
@@ -1206,13 +1223,13 @@ mod tests {
         reg.mse_create(MSE_SRC);
         let data = fixture_bytes_named("sample-mp4-h264.mp4");
         let cut = data.len() / 2;
-        reg.mse_append(MSE_SRC, &data[..cut]);
+        assert!(reg.mse_append(MSE_SRC, &data[..cut]));
         // play 在 init 段未到齐时照常建 player（等待面——零帧不炸）。
         assert!(reg.play(MSE_SRC, 0), "MSE 句柄在位即建 player");
         let mut cache = ImageCache::new(16, 64 * 1024 * 1024);
         assert!(!reg.tick_all(16, &mut cache), "init 未到齐 tick 零帧");
         // 补齐 + endOfStream：帧泵经增长重建续读，帧注入 cache。
-        reg.mse_append(MSE_SRC, &data[cut..]);
+        assert!(reg.mse_append(MSE_SRC, &data[cut..]));
         reg.mse_end(MSE_SRC);
         let mut now = 16u64;
         let mut saw_frame = false;
@@ -1256,9 +1273,9 @@ mod tests {
         assert_eq!(reg.mse_probe_dims(MSE_SRC), None, "空缓冲无 moov");
         let data = fixture_bytes_named("sample-mp4-h264.mp4");
         let cut = data.len() / 2;
-        reg.mse_append(MSE_SRC, &data[..cut]);
+        assert!(reg.mse_append(MSE_SRC, &data[..cut]));
         assert_eq!(reg.mse_probe_dims(MSE_SRC), None, "moov 在尾部未到齐");
-        reg.mse_append(MSE_SRC, &data[cut..]);
+        assert!(reg.mse_append(MSE_SRC, &data[cut..]));
         assert_eq!(
             reg.mse_probe_dims(MSE_SRC),
             Some((320, 240)),
@@ -1513,9 +1530,11 @@ pub fn register_video_bridge_callbacks(
                 let src = args.first().map(String::as_str).unwrap_or("");
                 let b64 = args.get(1).map(String::as_str).unwrap_or("");
                 match crate::webview::base64_decode(b64) {
+                    // t8n 返修 N2：封顶拒绝 → "0"（shim 按既有 append 失败面派
+                    // error + updateend）。
                     Ok(bytes) => {
-                        reg_ms.lock().unwrap_or_else(|e| e.into_inner()).mse_append(src, &bytes);
-                        "1".into()
+                        let ok = reg_ms.lock().unwrap_or_else(|e| e.into_inner()).mse_append(src, &bytes);
+                        if ok { "1".into() } else { "0".into() }
                     }
                     Err(_) => "0".into(),
                 }

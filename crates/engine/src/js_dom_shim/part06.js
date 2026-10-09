@@ -8699,7 +8699,10 @@
   // 不短路，blob: 走普通 fetch 失败面）。
   // FIXME(mse-full-semantics)：buffered 真实区间解析（现保守：ended 且时长已知才报
   // [0, duration]，否则空）、SourceBuffer.remove/appendStream/changeType、音频轨
-  // MSE（audio/* 恒不支持）、src 移除时 MediaSource → 'closed' 回落。
+  // MSE（audio/* 恒不支持）、src 移除时 MediaSource → 'closed' 回落；append-after-
+  // endOfStream 仅回转 shim 状态机 + 清 feed 闩锁，已呈 Ended 的 player 复活归既有
+  // play/reset 链（不自动续播）；解码硬错误无出口（不可解 payload 下 player 恒
+  // Playing——error 事件 + 失败态映射归后续切片）。
   // https://www.w3.org/TR/media-source/
   // https://html.spec.whatwg.org/multipage/media.html#mediasource-urls
   function _zwMseEt() { this._zwEtL = {}; }
@@ -8820,6 +8823,16 @@
         }
       } catch (_eMseAp) {}
       if (ok) {
+        // spec append buffer 算法步 6：'ended' → 'open' + 派 sourceopen——
+        // append-after-endOfStream 回转（ABR 切换等流末续喂形态；duration setter
+        // 的 'ended' → 'open' 同款但 spec 不派 sourceopen）。feed 侧 ended 闩锁
+        // 随 append 清除（字节不再被 EOF 闩死）；player 已 Ended 的复活归既有
+        // play/reset 链（单向流模型，见块头 FIXME）。
+        // https://www.w3.org/TR/media-source/#dom-sourcebuffer-appendbuffer
+        if (msObj.readyState === 'ended') {
+          msObj.readyState = 'open';
+          msObj._zwFire('sourceopen');
+        }
         self._zwFire('update');
         self._zwFire('updateend');
         _zwMseFirstAppendSettle(msObj);

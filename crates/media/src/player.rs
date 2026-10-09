@@ -35,6 +35,10 @@ pub struct VideoPlayer {
     playback_rate: f64,
     /// 已呈现的最后一帧 pts（ended 判定 + 换帧去重）。
     presented_pts: Option<u64>,
+    /// present_pending 末次是否命中「未来帧退回」分支（R3936——下一帧 pts 在
+    /// position 之前，帧已退回队首）。tick 的 stall-hold 据此区分两种 `Ok(None)`：
+    /// 未来帧退回不是等待面，位置须继续前进直至跨越下一帧 pts（t8n 返修 N1）。
+    future_frame_pending: bool,
 }
 
 impl VideoPlayer {
@@ -47,6 +51,7 @@ impl VideoPlayer {
             last_tick_ms: None,
             playback_rate: 1.0,
             presented_pts: None,
+            future_frame_pending: false,
         }
     }
 
@@ -120,10 +125,14 @@ impl VideoPlayer {
         let delta = now_ms.saturating_sub(last) as f64;
         self.position_ms += delta * self.playback_rate;
         let r = self.present_pending();
-        // MSE 等待面 stall-hold：无新帧且未真流末时位置回持（currentTime 不虚进
-        // ——等待 appendBuffer 的窗口期时钟不空转）。仅 tick 墙钟路径生效；
+        // MSE 等待面 stall-hold：decoder 层无帧（写入边缘等待）且未真流末时位置
+        // 回持（currentTime 不虚进——等待 appendBuffer 的窗口期时钟不空转）。
+        // 「未来帧退回」（future_frame_pending，R3936）不是等待面：位置已合法
+        // 前进到下一帧 pts 之前，钳回 presented_pts 会在泵节拍短于帧间隔时
+        // （renderer 16ms / tab ~1ms vs 24-30fps 帧间隔 33-42ms）使位置永不
+        // 跨越下一帧 pts——首帧后永久冻结（t8n 返修 N1）。仅 tick 墙钟路径生效；
         // A/V 主时钟路径（sync_to_media_time）位置由音频游标授权，不钳制。
-        if matches!(&r, Ok(None)) && self.state != PlayerState::Ended {
+        if matches!(&r, Ok(None)) && !self.future_frame_pending && self.state != PlayerState::Ended {
             self.position_ms = self.presented_pts.map_or(0.0, |p| p as f64);
         }
         r
@@ -149,6 +158,7 @@ impl VideoPlayer {
     /// 帧调度共用核：弹出 `pts ≤ position` 的帧并返回最新可展示帧（tick 与
     /// sync_to_media_time 的公共尾部）。
     fn present_pending(&mut self) -> Result<Option<DecodedVideoFrame>, crate::DecodeError> {
+        self.future_frame_pending = false;
         let mut newest: Option<DecodedVideoFrame> = None;
         loop {
             match self.decoder.next_frame()? {
@@ -164,6 +174,7 @@ impl VideoPlayer {
                         // spec ended：「currentTime 到达媒体资源末尾」——帧调度
                         // 不得超越时钟消费时间线。
                         self.decoder.un_read(frame);
+                        self.future_frame_pending = true;
                         break;
                     }
                 }
@@ -253,6 +264,39 @@ mod tests {
         assert!(f2.pts_ms > 0, "第二帧应为后续帧，got pts={}", f2.pts_ms);
         assert_eq!(p.presented_pts_ms(), Some(f2.pts_ms));
         assert!(p.current_time() > 0.0);
+    }
+
+    #[test]
+    fn player_fine_pump_16ms_advances_past_frame_interval_t8n() {
+        // t8n 返修 N1 回归钉：生产泵节拍（renderer LOAD_TICK_INTERVAL=16ms、
+        // tab ~1ms）短于 24fps 帧间隔（≈41.7ms）时，stall-hold 不得钳制「未来帧
+        // 退回」路径的位置——返修前两种 Ok(None) 合流使位置钉回 presented_pts=0，
+        // 16ms 泵 300 tick 仅呈现 1 帧、Ended 永不可达（既有测试全绿因其步进
+        // ≥ 帧间隔，掩盖面）。MSE 写入边缘等待面仍由 hold 覆盖（feed 钉测）。
+        let mut p = fixture_player();
+        p.play(0);
+        let mut now = 0u64;
+        let mut presented = 0u32;
+        for _ in 0..300 {
+            now += 16;
+            if p.tick(now).unwrap().is_some() {
+                presented += 1;
+            }
+            if p.state() == PlayerState::Ended {
+                break;
+            }
+        }
+        assert_eq!(
+            p.state(),
+            PlayerState::Ended,
+            "2s 流在 16ms×300 tick（4.8s 墙钟）内应到达 Ended"
+        );
+        assert!(presented > 1, "细粒度泵应呈现多帧，got {presented}");
+        assert!(
+            p.current_time() >= 1.9,
+            "位置应推进越过来回退帧的 pts 区间直至流末（末帧 pts ≈1.958），got {}",
+            p.current_time()
+        );
     }
 
     #[test]

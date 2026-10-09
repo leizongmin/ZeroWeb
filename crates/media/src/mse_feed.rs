@@ -49,8 +49,12 @@ impl MseFeedHandle {
     }
 
     /// 追加字节（appendBuffer 面；bytes 须整段拷入——调用方缓冲随宿主 op 释放）。
+    /// `end()` 后再 append = 流末续喂（spec append buffer 算法步 6 的 feed 侧——
+    /// readyState 回 'open'，写入边缘不再是 EOF）→ 清除 ended 闩锁；已呈 Ended 的
+    /// player 复活归既有 play/reset 链（单向流模型），此处只保写入口不闩死。
     pub fn append(&self, bytes: &[u8]) {
         let mut sh = self.shared.lock().unwrap();
+        sh.ended = false;
         sh.data.extend_from_slice(bytes);
     }
 
@@ -253,9 +257,10 @@ impl MseVideoFeed {
                     self.parameter_set_prefix = crate::mp4_h264::avcc_record_to_annex_b(&ed.data);
                 }
                 if let (Some(tb), Some(dur)) = (track.time_base, track.duration) {
-                    self.container_duration_ms = Some(
-                        (dur.get() as u128 * 1_000 * u128::from(tb.numer.get()) / u128::from(tb.denom.get())) as u64,
-                    );
+                    // t8n 返修 N6：容器可控值换算按 u64 饱和（`as` 低位回绕会让
+                    // 构造性极端时长在 duration/skip_until_new 比较中失真）。
+                    let ms128 = dur.get() as u128 * 1_000 * u128::from(tb.numer.get()) / u128::from(tb.denom.get());
+                    self.container_duration_ms = Some(u64::try_from(ms128).unwrap_or(u64::MAX));
                 }
                 break;
             }
@@ -296,8 +301,10 @@ impl MseVideoFeed {
                     if packet.track_id != self.video_track_id {
                         continue;
                     }
-                    let pts_ms = (packet.pts.get() as u128 * 1_000 * u128::from(self.time_base.numer.get())
-                        / u128::from(self.time_base.denom.get())) as u64;
+                    // 同 N6：pts 换算 u64 饱和（容器可控极端值不回绕）。
+                    let pts128 = packet.pts.get() as u128 * 1_000 * u128::from(self.time_base.numer.get())
+                        / u128::from(self.time_base.denom.get());
+                    let pts_ms = u64::try_from(pts128).unwrap_or(u64::MAX);
                     // 重建后的跳过相：丢弃 pts ≤ 已交付的（stale total_len 下
                     // 重读的）包，不对解码器重放。
                     if self.skip_until_new && self.last_delivered_pts_ms.is_some_and(|last| pts_ms <= last) {
@@ -786,5 +793,28 @@ mod tests {
         assert_eq!(frames, samples.len(), "逐 sample 解码帧数=N");
         handle.end();
         assert!(feed.is_exhausted(), "end() 后真流末");
+    }
+
+    /// 钉③（t8n 返修 F3/N4①）：end() 后续喂（append-after-endOfStream）清除 ended
+    /// 闩锁——写入边缘回「等待面」，流末旗标须重新 end() 才再置（spec append
+    /// buffer 算法步 6 的 feed 侧；shim 状态机回转由 engine part09 阶段⑤钉）。
+    /// 已呈 Ended 的 player 复活归 play/reset 链，此处只保写入口不闩死。
+    #[test]
+    fn mse_feed_append_after_end_clears_eof_latch_t8n() {
+        let (avcc, samples) = fixture_material();
+        let (init, media) = build_fragmented(&avcc, &samples);
+        let (mut feed, handle) = MseVideoFeed::new();
+        handle.append(&init);
+        handle.append(&media);
+        handle.end();
+        while feed.next_frame().unwrap().is_some() {}
+        assert!(feed.is_exhausted(), "end() 后耗尽即真流末");
+        // 流末续喂：闩锁清除 → 真流末撤销（同段重喂不解码，只验旗标面）。
+        handle.append(&media);
+        assert!(!handle.is_ended(), "append 清除 ended 闩锁");
+        assert!(!feed.is_exhausted(), "续喂后写入边缘回等待面");
+        // 重新 end()：闩锁再置，恢复真流末。
+        handle.end();
+        assert!(feed.is_exhausted(), "重新 end() 恢复真流末");
     }
 }

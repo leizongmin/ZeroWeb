@@ -5870,4 +5870,31 @@ fn test_media_source_mse_face_t8n() {
             == "true",
         "endOfStream 流末旗标过桥（mseEnd 调用）"
     );
+
+    // ⑤ append-after-endOfStream：spec append buffer 算法步 6——'ended' → 'open' +
+    // 重派 sourceopen（流末续喂回转，ABR 形态；duration setter 的 'ended'→'open'
+    // 同款但 spec 不派 sourceopen）。sourceopen 先于 update 派发（步 6 在 append
+    // 完成事件之前）。重派连带执行阶段③ sourceopen 监听器（open 态重复
+    // addSourceBuffer 合法）→ __sb 重指新 sb2（带新注册的完成事件监听）；两组
+    // update/updateend 分别来自 sb1（_done 闭包 self）与 sb2，事件序尾 6 项钉住
+    // 回转全貌。
+    // https://www.w3.org/TR/media-source/#dom-sourcebuffer-appendbuffer
+    sandbox.execute(
+        r#"
+        globalThis.__soReopen = 0;
+        __ms.addEventListener('sourceopen', function () { globalThis.__soReopen++; });
+        __sb.appendBuffer(new Uint8Array([5, 6]));
+        void 0;"#,
+    )
+    .unwrap();
+    assert_eq!(
+        sandbox
+            .execute(
+                "[__ms.readyState, String(__soReopen), globalThis.__log.slice(-6).join(',')].join(',')"
+            )
+            .unwrap()
+            .value,
+        "open,1,sourceopen:open,sb:2,false,update,updateend,update,updateend",
+        "append-after-endOfStream：readyState 回转 open + sourceopen 重派（先于 update）+ sb1/sb2 完成事件序"
+    );
 }
