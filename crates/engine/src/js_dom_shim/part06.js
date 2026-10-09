@@ -8688,6 +8688,316 @@
       else _rsPost.networkState = 2; // 有候选 → fetch 启动（headless：LOADING 面）
     });
   };
+  // t8n（Media Source Extensions）：MediaSource / SourceBuffer / SourceBufferList shim。
+  // 真值链：SourceBuffer.appendBuffer → base64 → __zwVideoBridge.mseAppend（registry
+  // 共享缓冲，symphonia isomp4 + openh264 解码）；video.src = blob: URL
+  //（createObjectURL(MediaSource)）→ _zwMediaScheduleLoad 短路 _zwMediaAttachMse
+  //（mseCreate 登记 + sourceopen）；首次 append 成功 → mseDims 维度探针（moov 真值）
+  // → _zwSettleResourceKey 走既有 loaded settle 面（loadedmetadata/canplay 序列 +
+  // videoWidth/Height 真值链）。feature-detect 单点 = `__zwVideoBridge.mseCreate`
+  //（decode-h264 feature 关闭 → isTypeSupported 恒 false，不虚报支持面；MSE 通路
+  // 不短路，blob: 走普通 fetch 失败面）。
+  // FIXME(mse-full-semantics)：buffered 真实区间解析（现保守：ended 且时长已知才报
+  // [0, duration]，否则空）、SourceBuffer.remove/appendStream/changeType、音频轨
+  // MSE（audio/* 恒不支持）、src 移除时 MediaSource → 'closed' 回落；append-after-
+  // endOfStream 仅回转 shim 状态机 + 清 feed 闩锁，已呈 Ended 的 player 复活归既有
+  // play/reset 链（不自动续播）；解码硬错误无出口（不可解 payload 下 player 恒
+  // Playing——error 事件 + 失败态映射归后续切片）。
+  // https://www.w3.org/TR/media-source/
+  // https://html.spec.whatwg.org/multipage/media.html#mediasource-urls
+  function _zwMseEt() { this._zwEtL = {}; }
+  _zwMseEt.prototype.addEventListener = function (type, cb) {
+    if (typeof type !== 'string' || cb == null) return;
+    (this._zwEtL[type] = this._zwEtL[type] || []).push(cb);
+  };
+  _zwMseEt.prototype.removeEventListener = function (type, cb) {
+    var arr = this._zwEtL[type];
+    if (!arr) return;
+    var i = arr.indexOf(cb);
+    if (i >= 0) arr.splice(i, 1);
+  };
+  _zwMseEt.prototype.dispatchEvent = function (ev) {
+    ev.target = this;
+    ev.currentTarget = this;
+    var type = String((ev && ev.type) || '');
+    var arr = (this._zwEtL[type] || []).slice();
+    for (var i = 0; i < arr.length; i++) {
+      if (typeof arr[i] === 'function') { try { arr[i].call(this, ev); } catch (_eMseD) {} }
+    }
+    var h = this['on' + type];
+    if (typeof h === 'function') { try { h.call(this, ev); } catch (_eMseH) {} }
+    return true;
+  };
+  _zwMseEt.prototype._zwFire = function (type) {
+    try {
+      this.dispatchEvent((typeof _makeEvent === 'function')
+        ? _makeEvent(type, { bubbles: false, cancelable: false }) : { type: type });
+    } catch (_eMseF) {}
+  };
+  function _zwMseThrow(name, msg) {
+    throw new (globalThis.DOMException || Error)(msg, name);
+  }
+  // ArrayBuffer/TypedArray → base64（chunked fromCharCode——大 append 分段避免
+  // apply 参数上限）；btoa 为 shim 既有面（part01b）。
+  function _zwMseToBase64(data) {
+    var bytes = null;
+    if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+    else if (data && data.buffer instanceof ArrayBuffer && typeof data.byteLength === 'number') {
+      bytes = new Uint8Array(data.buffer, data.byteOffset | 0, data.byteLength);
+    }
+    if (!bytes) return null;
+    var bin = '';
+    var CH = 0x8000;
+    for (var i = 0; i < bytes.length; i += CH) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + CH, bytes.length)));
+    }
+    return (typeof globalThis.btoa === 'function') ? globalThis.btoa(bin) : null;
+  }
+  globalThis.SourceBufferList = globalThis.SourceBufferList || function SourceBufferList() {
+    _zwMseEt.call(this);
+    this._zwArr = [];
+  };
+  // EventTarget 原型链接（addEventListener/removeEventListener/dispatchEvent 面）。
+  globalThis.SourceBufferList.prototype = Object.create(_zwMseEt.prototype);
+  Object.defineProperty(globalThis.SourceBufferList.prototype, 'length', {
+    get: function () { return this._zwArr.length; }
+  });
+  globalThis.SourceBufferList.prototype.item = function (i) { return this._zwArr[i] || null; };
+  globalThis.SourceBufferList.prototype._zwPush = function (sb) {
+    var idx = this._zwArr.length;
+    this._zwArr.push(sb);
+    // indexed getter 面（list[i] 直取——页脚本标准取法）。
+    Object.defineProperty(this, String(idx), {
+      get: function () { return this._zwArr[idx] || null; },
+      configurable: true
+    });
+    this._zwFire('addsourcebuffer');
+  };
+  globalThis.SourceBuffer = globalThis.SourceBuffer || function SourceBuffer(mediaSource) {
+    _zwMseEt.call(this);
+    this._zwMs = mediaSource || null;
+    this._zwUpdating = false;
+  };
+  globalThis.SourceBuffer.prototype = Object.create(_zwMseEt.prototype);
+  Object.defineProperty(globalThis.SourceBuffer.prototype, 'updating', {
+    get: function () { return !!this._zwUpdating; }
+  });
+  // FIXME(mse-full-semantics)：buffered 保守面（见块头 FIXME）——ended（全量在
+  // 缓冲）且时长已知才报 [0, duration]，否则空集合（不虚报中途缓冲进度）。
+  Object.defineProperty(globalThis.SourceBuffer.prototype, 'buffered', {
+    get: function () {
+      var _idxErr = function () { throw new (globalThis.DOMException || Error)('IndexSizeError', 'IndexSizeError'); };
+      var msObj = this._zwMs;
+      if (msObj && msObj.readyState === 'ended' && typeof msObj.duration === 'number'
+          && isFinite(msObj.duration) && msObj.duration > 0) {
+        var d = msObj.duration;
+        return {
+          length: 1,
+          start: function (i) { if (i !== 0) _idxErr(); return 0; },
+          end: function (i) { if (i !== 0) _idxErr(); return d; }
+        };
+      }
+      return { length: 0, start: _idxErr, end: _idxErr };
+    }
+  });
+  // spec appendBuffer：异步段——updating=true，任务完成派 update/updateend
+  //（失败改派 error + updateend）；bridge 返 '1' 之外一律按 append 失败面。
+  // https://www.w3.org/TR/media-source/#dom-sourcebuffer-appendbuffer
+  globalThis.SourceBuffer.prototype.appendBuffer = function (data) {
+    if (this._zwUpdating) _zwMseThrow('InvalidStateError', 'append already in progress');
+    if (!this._zwMs || this._zwMs.readyState === 'closed') {
+      _zwMseThrow('InvalidStateError', 'MediaSource is closed');
+    }
+    var b64 = _zwMseToBase64(data);
+    if (b64 == null) throw new TypeError('appendBuffer: expected ArrayBuffer or ArrayBufferView');
+    var self = this;
+    var msObj = this._zwMs;
+    this._zwUpdating = true;
+    var _done = function () {
+      self._zwUpdating = false;
+      var ok = false;
+      try {
+        if (msObj._zwUrl && typeof globalThis.__zwVideoBridge === 'object'
+            && typeof globalThis.__zwVideoBridge.mseAppend === 'function') {
+          ok = globalThis.__zwVideoBridge.mseAppend(msObj._zwUrl, b64) === true;
+        }
+      } catch (_eMseAp) {}
+      if (ok) {
+        // spec append buffer 算法步 6：'ended' → 'open' + 派 sourceopen——
+        // append-after-endOfStream 回转（ABR 切换等流末续喂形态；duration setter
+        // 的 'ended' → 'open' 同款但 spec 不派 sourceopen）。feed 侧 ended 闩锁
+        // 随 append 清除（字节不再被 EOF 闩死）；player 已 Ended 的复活归既有
+        // play/reset 链（单向流模型，见块头 FIXME）。
+        // https://www.w3.org/TR/media-source/#dom-sourcebuffer-appendbuffer
+        if (msObj.readyState === 'ended') {
+          msObj.readyState = 'open';
+          msObj._zwFire('sourceopen');
+        }
+        self._zwFire('update');
+        self._zwFire('updateend');
+        _zwMseFirstAppendSettle(msObj);
+      } else {
+        self._zwFire('error');
+        self._zwFire('updateend');
+      }
+    };
+    if (typeof setTimeout === 'function') setTimeout(_done, 0);
+    else _done();
+  };
+  globalThis.SourceBuffer.prototype.abort = function () {
+    if (!this._zwMs || this._zwMs.readyState !== 'open') {
+      _zwMseThrow('InvalidStateError', 'MediaSource is not open');
+    }
+    if (!this._zwUpdating) return;
+    this._zwUpdating = false;
+    this._zwFire('abort');
+    this._zwFire('updateend');
+  };
+  globalThis.MediaSource = globalThis.MediaSource || function MediaSource() {
+    _zwMseEt.call(this);
+    this.readyState = 'closed';
+    this.sourceBuffers = new globalThis.SourceBufferList();
+    // 通路身份（_zwMediaAttachMse 写入）：blob URL（registry 键）+ 目标元素 settle 身份。
+    this._zwUrl = '';
+    this._zwElementKey = null;
+    this._zwAttach = null;
+  };
+  globalThis.MediaSource.prototype = Object.create(_zwMseEt.prototype);
+  // spec isTypeSupported 真值表不虚报：唯一真实可解面 = video/mp4 + H.264
+  //（avc1/avc3）；audio/*（音频轨 MSE 未实现）与其他容器恒 false；容器无 codecs
+  // 查询按 Chromium 口径 true（载荷不可解时 appendBuffer error 事件如实报）。
+  // decode-h264 feature 关闭（桥缺失）→ 恒 false。
+  // https://www.w3.org/TR/media-source/#dom-mediasource-istypesupported
+  globalThis.MediaSource.isTypeSupported = function (type) {
+    if (typeof globalThis.__zwVideoBridge !== 'object'
+        || typeof globalThis.__zwVideoBridge.mseCreate !== 'function') return false;
+    var t = String(type == null ? '' : type).trim().toLowerCase();
+    if (t.indexOf('video/mp4') !== 0) return false;
+    var m = /codecs\s*=\s*"([^"]*)"/.exec(t) || /codecs\s*=\s*'([^']*)'/.exec(t)
+      || /codecs\s*=\s*([^;]+)/.exec(t);
+    if (!m) return true;
+    var parts = m[1].split(',');
+    for (var i = 0; i < parts.length; i++) {
+      var c = parts[i].trim();
+      if (c && !/^avc[13]\./.test(c)) return false;
+    }
+    return true;
+  };
+  globalThis.MediaSource.prototype.addSourceBuffer = function (type) {
+    var t = String(type == null ? '' : type);
+    // spec addSourceBuffer：type 不支持 → NotSupportedError；readyState 非 open →
+    // InvalidStateError。
+    // https://www.w3.org/TR/media-source/#dom-mediasource-addsourcebuffer
+    if (!globalThis.MediaSource.isTypeSupported(t)) {
+      _zwMseThrow('NotSupportedError', 'unsupported source buffer type: ' + t);
+    }
+    if (this.readyState !== 'open') {
+      _zwMseThrow('InvalidStateError', 'MediaSource is not open');
+    }
+    var sb = new globalThis.SourceBuffer(this);
+    this.sourceBuffers._zwPush(sb);
+    return sb;
+  };
+  globalThis.MediaSource.prototype.endOfStream = function () {
+    // spec endOfStream：closed / 任一 append 进行中 → InvalidStateError；readyState
+    // → 'ended'，流末旗标经桥（registry player Ended 可达）。
+    // https://www.w3.org/TR/media-source/#dom-mediasource-endofstream
+    if (this.readyState === 'closed') _zwMseThrow('InvalidStateError', 'MediaSource is closed');
+    var sbs = this.sourceBuffers._zwArr;
+    for (var i = 0; i < sbs.length; i++) {
+      if (sbs[i].updating) _zwMseThrow('InvalidStateError', 'append in progress');
+    }
+    this.readyState = 'ended';
+    try {
+      if (this._zwUrl && typeof globalThis.__zwVideoBridge === 'object'
+          && typeof globalThis.__zwVideoBridge.mseEnd === 'function') {
+        globalThis.__zwVideoBridge.mseEnd(this._zwUrl);
+      }
+    } catch (_eMseEos) {}
+  };
+  // duration 属性面：getter 初始 NaN（未确定）；setter NaN/负值 → TypeError
+  //（spec duration setter），'ended' → 'open'，真值桥推（registry duration 优先面）。
+  // https://www.w3.org/TR/media-source/#dom-mediasource-duration
+  Object.defineProperty(globalThis.MediaSource.prototype, 'duration', {
+    get: function () { return this._zwDuration === undefined ? NaN : this._zwDuration; },
+    set: function (v) {
+      var d = Number(v);
+      if (isNaN(d) || d < 0) throw new TypeError('duration must be a non-negative number');
+      this._zwDuration = d;
+      if (this.readyState === 'ended') this.readyState = 'open';
+      try {
+        if (this._zwUrl && typeof globalThis.__zwVideoBridge === 'object'
+            && typeof globalThis.__zwVideoBridge.mseSetDuration === 'function') {
+          globalThis.__zwVideoBridge.mseSetDuration(this._zwUrl, d);
+        }
+      } catch (_eMseDur) {}
+    }
+  });
+  // 首次成功 append → 元数据 settle：mseDims 探针（moov 已入缓冲则得真值；
+  // progressive 布局 moov 在尾部未到齐 → 返回空，留待后续 append 重试）。settle
+  // 走既有 loaded 面（_zwSettleResourceKey → _zwMediaLoadSequence：durationchange/
+  // loadedmetadata/…/canplaythrough 序列 + videoWidth/Height 真值）。显式 duration
+  //（mediaSource.duration setter）优先入 settle；NaN → settle 无时长真值，duration
+  // getter 走 registry/回落链。
+  function _zwMseFirstAppendSettle(msObj) {
+    try {
+      var att = msObj && msObj._zwAttach;
+      var key = msObj && msObj._zwElementKey;
+      if (!att || !key || typeof _zwSettleResourceKey !== 'function') return;
+      if (_resourceStates[key]) return; // 已 settle（幂等，先探针省成本）
+      var dims = null;
+      try {
+        if (typeof globalThis.__zwVideoBridge === 'object'
+            && typeof globalThis.__zwVideoBridge.mseDims === 'function') {
+          var m = /^(\d+)x(\d+)$/.exec(String(globalThis.__zwVideoBridge.mseDims(msObj._zwUrl) || ''));
+          if (m) dims = { w: Number(m[1]), h: Number(m[2]) };
+        }
+      } catch (_eMseDim) {}
+      if (!dims) return; // 元数据未可解——不 settle（loadedmetadata 待真值）
+      var durMs;
+      if (typeof msObj.duration === 'number' && isFinite(msObj.duration) && msObj.duration > 0) {
+        durMs = msObj.duration * 1000;
+      }
+      _zwSettleResourceKey(key, att.sel, att.handle, att.tag, att.url, 'loaded', dims.w, dims.h, undefined, durMs);
+    } catch (_eMseSt) {}
+  }
+  // MSE attach 短路（_zwMediaScheduleLoad 专用）：src 为 blob: URL 且
+  // createObjectURL 注册表命中 MediaSource 实例 → provider object 通路（不进
+  // fetch/settle 失败面）。spec 资源选择：loadstart → sourceopen（readyState
+  // 'open'）；HAVE_METADATA 前移由首 append settle 承载（真 init segment 解析时序，
+  // 不在 attach 时虚报元数据就绪）。
+  // https://html.spec.whatwg.org/multipage/media.html#resource-selection
+  function _zwMediaAttachMse(sel, handle, key, tag, absUrl, msObj, epoch) {
+    var ms = _mediaState[key] || (_mediaState[key] = {});
+    msObj._zwUrl = absUrl;
+    msObj._zwElementKey = key;
+    msObj._zwAttach = { sel: sel, handle: handle, tag: tag, url: absUrl };
+    ms._zwMse = msObj;
+    // registry 登记（feed 句柄新建——load() 重跑幂等替换）；attach 前已设的显式
+    // duration 随 create 清除 → 重推。
+    try {
+      if (typeof globalThis.__zwVideoBridge === 'object'
+          && typeof globalThis.__zwVideoBridge.mseCreate === 'function') {
+        globalThis.__zwVideoBridge.mseCreate(absUrl);
+        if (typeof msObj.duration === 'number' && isFinite(msObj.duration) && msObj.duration > 0
+            && typeof globalThis.__zwVideoBridge.mseSetDuration === 'function') {
+          globalThis.__zwVideoBridge.mseSetDuration(absUrl, msObj.duration);
+        }
+      }
+    } catch (_eMseCr) {}
+    var _open = function () {
+      if ((ms.loadEpoch || 0) !== epoch) return; // load() 已重调度 → 作废
+      var _msNow = _mediaState[key];
+      if (_msNow) _msNow.networkState = 1; // NETWORK_IDLE——provider object 已接通
+      // loadstart 不在此派：首 append settle 的加载序列（_zwMediaLoadSequence）是
+      // 唯一 loadstart 源（headless 模型「数据在首 append 才开始流动」——attach 时
+      // 派会与 settle 序列双发）。
+      msObj.readyState = 'open';
+      msObj._zwFire('sourceopen');
+    };
+    if (typeof setTimeout === 'function') setTimeout(_open, 0);
+    else _open();
+  }
   function _zwMediaScheduleLoad(sel, handle, tag, absUrl, isEmptySrc, sourceChild) {
     var key = _elKey(sel, handle);
     if (typeof setTimeout !== 'function') return;
@@ -8767,6 +9077,24 @@
     // M3 扩批 XI：加载触发同置资源选择同步段语义（invoke 后同步 NO_SOURCE）。
     if (typeof globalThis._zwMediaResourceSelect === 'function') {
       globalThis._zwMediaResourceSelect(sel, handle, key);
+    }
+    // t8n MSE 通路短路：blob: URL 且 createObjectURL 注册表（_zwBlobStore，part02）
+    // 命中 MediaSource 实例 → provider object 分支（mseCreate + sourceopen，首 append
+    // 后才 settle HAVE_METADATA），不进普通 fetch 候选面。桥缺失（decode-h264 关闭）
+    // → 不短路，blob: 走普通候选面（fetch 失败 → error，不虚报通路）。
+    var _mseObj = null;
+    try {
+      if (String(absUrl).indexOf('blob:') === 0 && typeof _zwBlobStore === 'object' && _zwBlobStore
+          && Object.prototype.hasOwnProperty.call(_zwBlobStore, absUrl)
+          && typeof MediaSource === 'function'
+          && _zwBlobStore[absUrl] instanceof MediaSource) {
+        _mseObj = _zwBlobStore[absUrl];
+      }
+    } catch (_eMseDet) {}
+    if (_mseObj && typeof globalThis.__zwVideoBridge === 'object'
+        && typeof globalThis.__zwVideoBridge.mseCreate === 'function') {
+      _zwMediaAttachMse(sel, handle, key, tag, absUrl, _mseObj, _ldMyEpoch);
+      return;
     }
     // M3 扩批 XI：settle 触发时**重验候选**（spec 同步段「await a stable state」后续段——
     // stable state 前候选被移除（removeAttribute('src') / source 子被移除）→ 加载中断，

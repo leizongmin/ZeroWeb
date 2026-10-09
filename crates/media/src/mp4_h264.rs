@@ -221,7 +221,7 @@ impl Mp4H264Decoder {
 }
 
 /// mp4 长度前缀 NALU 序列（4 字节大端长度 + NALU）→ Annex-B（0001 起始码）。
-fn length_prefixed_to_annex_b(data: &[u8]) -> Vec<u8> {
+pub(crate) fn length_prefixed_to_annex_b(data: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(data.len() + 64);
     let mut i = 0usize;
     while i + 4 <= data.len() {
@@ -244,7 +244,7 @@ fn length_prefixed_to_annex_b(data: &[u8]) -> Vec<u8> {
 /// `[4]` 0xFF（6bit reserved + 2bit lengthSizeMinusOne）、`[5]` 0xE1（3bit
 /// reserved + 5bit numOfSequenceParameterSets），随后逐个 2 字节长度前缀的
 /// SPS；末字节为 numOfPictureParameterSets，随后 PPS。
-fn avcc_record_to_annex_b(record: &[u8]) -> Vec<u8> {
+pub(crate) fn avcc_record_to_annex_b(record: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     if record.len() < 7 {
         return out;

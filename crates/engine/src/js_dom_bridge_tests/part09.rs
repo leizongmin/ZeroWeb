@@ -5692,3 +5692,209 @@ fn test_webaudio_oscillator_subsample_start_face_m3w7() {
         "亚帧起点 ceil 语义：帧 5 静默 + 帧 6 起振（sub-sample-start 面）"
     );
 }
+
+// t8n（MSE）：MediaSource / SourceBuffer / SourceBufferList shim 面 + blob: attach
+// 短路 + 首 append settle 真值链（mock 桥——engine 侧不依赖 zero-webview registry，
+// 桥面真值由 webview bridge_tests 单独钉）。验证：
+// ① feature-detect 不虚报（无桥 isTypeSupported 恒 false + addSourceBuffer
+//   NotSupportedError）；② isTypeSupported 真值表（avc1/avc3 大小写不敏感 true、
+//   vp9/复合 codec/audio 容器/webm false、裸 video/mp4 容器 true）；③ blob: attach
+//   → sourceopen → addSourceBuffer → appendBuffer → update/updateend → loaded settle
+//   序列（loadedmetadata/canplaythrough）+ videoWidth/Height 探针真值 + duration 真值；
+// ④ 状态面（readyState closed→open→ended、duration NaN 初始 / 负值 TypeError、
+//   endOfStream 后 buffered [0,duration]、updating 中二次 append InvalidStateError）。
+// https://www.w3.org/TR/media-source/
+#[test]
+fn test_media_source_mse_face_t8n() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① 无桥（engine 沙箱默认无 __zwVideoBridge，等价 decode-h264 关闭）：isTypeSupported
+    // 恒 false（不虚报支持面）+ addSourceBuffer NotSupportedError。
+    sandbox.execute(
+        r#"
+        globalThis.__nb = [
+          String(MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"')),
+          String(MediaSource.isTypeSupported('video/mp4')),
+          String(new MediaSource().readyState)];
+        try { new MediaSource().addSourceBuffer('video/mp4; codecs="avc1.42E01E"'); globalThis.__nbErr = ''; }
+        catch (e) { globalThis.__nbErr = e.name; }"#,
+    )
+    .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__nb.join(',')").unwrap().value,
+        "false,false,closed",
+        "无桥：isTypeSupported 恒 false（feature-detect 单点 = mseCreate 在位）+ readyState closed"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nbErr)").unwrap().value,
+        "NotSupportedError",
+        "无桥：addSourceBuffer 不支持类型 → NotSupportedError"
+    );
+
+    // mock 桥（生产宿主由 zero-webview register_video_bridge_callbacks 注入；append
+    // 字节真值由 webview 侧钉——此处验 shim 侧调用契约与 settle 真值链）。
+    sandbox.execute(
+        r#"
+        globalThis.__zwVideoBridge = {
+          __calls: [],
+          mseCreate: function (src) { this.__calls.push('create'); return true; },
+          mseAppend: function (src, b64) { this.__calls.push('append:' + atob(b64).length); return true; },
+          mseEnd: function (src) { this.__calls.push('end'); return true; },
+          mseSetDuration: function (src, s) { this.__calls.push('dur:' + s); },
+          mseDims: function (src) { return '320x240'; }
+        };
+        globalThis.__ts = [
+          String(MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"')),
+          String(MediaSource.isTypeSupported('video/mp4; codecs="avc1.640028"')),
+          String(MediaSource.isTypeSupported('video/mp4; CODECS="avc1.42E01E"')),
+          String(MediaSource.isTypeSupported('video/mp4; codecs="vp9"')),
+          String(MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E, mp4a.40.2"')),
+          String(MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"')),
+          String(MediaSource.isTypeSupported('video/webm; codecs="vp9"')),
+          String(MediaSource.isTypeSupported('video/mp4'))];"#,
+    )
+    .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ts.join(',')").unwrap().value,
+        "true,true,true,false,false,false,false,true",
+        "有桥 isTypeSupported 真值表：avc1/avc3（大小写不敏感）true；vp9/复合 codec/audio 容器/webm false；裸 video/mp4 true"
+    );
+
+    // ③ blob: attach 全链：createObjectURL(MediaSource) → video.src= → sourceopen →
+    // addSourceBuffer → appendBuffer → update/updateend → loaded settle（loadedmetadata
+    // /canplaythrough + videoWidth/Height 探针真值 + duration 12.5）。attach 前设的
+    // duration 经 attach 重推（mseCreate 清显式时长 → mseSetDuration 补回）。
+    sandbox.execute(
+        r#"
+        var ms = new MediaSource();
+        globalThis.__ms = ms;
+        globalThis.__durInit = String(ms.duration);
+        var url = URL.createObjectURL(ms);
+        globalThis.__msUrl = url;
+        ms.duration = 12.5;
+        globalThis.__log = [];
+        ms.addEventListener('sourceopen', function () {
+          globalThis.__log.push('sourceopen:' + ms.readyState);
+          var sb = ms.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
+          globalThis.__sb = sb;
+          globalThis.__log.push('sb:' + ms.sourceBuffers.length + ',' + (ms.sourceBuffers[0] === sb));
+          sb.addEventListener('update', function () { globalThis.__log.push('update'); });
+          sb.addEventListener('updateend', function () { globalThis.__log.push('updateend'); });
+          sb.addEventListener('error', function () { globalThis.__log.push('error'); });
+          sb.appendBuffer(new Uint8Array([1, 2, 3, 4]));
+          try { sb.appendBuffer(new Uint8Array([9])); globalThis.__dbl = ''; }
+          catch (e) { globalThis.__dbl = e.name; }
+        });
+        var v = document.createElement('video');
+        globalThis.__v = v;
+        v.addEventListener('loadedmetadata', function () { globalThis.__log.push('loadedmetadata'); });
+        v.addEventListener('canplaythrough', function () { globalThis.__log.push('canplaythrough'); });
+        v.src = url;"#,
+    )
+    .unwrap();
+    // engine 沙箱无 host timer → shim setTimeout 回落 microtask，execute 边界即排空
+    // 全链（attach open → sourceopen → append done → settle 序列）。
+    sandbox.execute("void 0").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__log.join(',')").unwrap().value,
+        "sourceopen:open,sb:1,true,update,updateend,loadedmetadata,canplaythrough",
+        "attach→append→settle 事件序（sourceopen open 态 + update 先于 updateend + loaded 序列）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dbl)").unwrap().value,
+        "InvalidStateError",
+        "updating 中二次 appendBuffer → InvalidStateError"
+    );
+    assert_eq!(
+        sandbox
+            .execute("[String(__v.videoWidth), String(__v.videoHeight), String(__v.duration), String(__v.readyState), String(__v.networkState)].join(',')")
+            .unwrap()
+            .value,
+        "320,240,12.5,4,1",
+        "settle 真值链：videoWidth/Height 探针真值 + duration 12.5 + HAVE_ENOUGH_DATA + NETWORK_IDLE"
+    );
+    assert_eq!(
+        sandbox
+            .execute("[__ms.readyState, String(__sb.updating), String(__sb.buffered.length), __zwVideoBridge.__calls.join('|')].join(',')")
+            .unwrap()
+            .value,
+        "open,false,0,create|dur:12.5|append:4",
+        "MediaSource open 态 + append 完成后 updating 复位 + open 态 buffered 保守空面 + 桥调用序（create→dur 重推→append 4B）"
+    );
+
+    // ④ endOfStream：readyState → ended + 流末旗标过桥 + buffered 保守面转 [0, duration]；
+    // duration setter TypeError 面（负值 / NaN）。
+    sandbox.execute(
+        r#"
+        __ms.endOfStream();
+        var ms2 = new MediaSource();
+        var __err = [];
+        try { ms2.duration = -1; } catch (e) { __err.push(e.constructor.name + ':' + e.name); }
+        try { ms2.duration = NaN; } catch (e) { __err.push(e.constructor.name + ':' + e.name); }
+        globalThis.__durErr = __err.join('|');
+        globalThis.__eos = [
+          __ms.readyState,
+          String(__sb.buffered.length),
+          String(__sb.buffered.start(0)),
+          String(__sb.buffered.end(0)),
+          String(__ms.duration)].join(',');"#,
+    )
+    .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__eos").unwrap().value,
+        "ended,1,0,12.5,12.5",
+        "endOfStream：readyState ended + buffered [0, 12.5]（ended 且时长已知）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__durErr").unwrap().value,
+        "TypeError:TypeError|TypeError:TypeError",
+        "duration setter 负值 / NaN → TypeError"
+    );
+    assert!(
+        sandbox
+            .execute("__zwVideoBridge.__calls.indexOf('end') >= 0")
+            .unwrap()
+            .value
+            == "true",
+        "endOfStream 流末旗标过桥（mseEnd 调用）"
+    );
+
+    // ⑤ append-after-endOfStream：spec append buffer 算法步 6——'ended' → 'open' +
+    // 重派 sourceopen（流末续喂回转，ABR 形态；duration setter 的 'ended'→'open'
+    // 同款但 spec 不派 sourceopen）。sourceopen 先于 update 派发（步 6 在 append
+    // 完成事件之前）。重派连带执行阶段③ sourceopen 监听器（open 态重复
+    // addSourceBuffer 合法）→ __sb 重指新 sb2（带新注册的完成事件监听）；两组
+    // update/updateend 分别来自 sb1（_done 闭包 self）与 sb2，事件序尾 6 项钉住
+    // 回转全貌。
+    // https://www.w3.org/TR/media-source/#dom-sourcebuffer-appendbuffer
+    sandbox.execute(
+        r#"
+        globalThis.__soReopen = 0;
+        __ms.addEventListener('sourceopen', function () { globalThis.__soReopen++; });
+        __sb.appendBuffer(new Uint8Array([5, 6]));
+        void 0;"#,
+    )
+    .unwrap();
+    assert_eq!(
+        sandbox
+            .execute(
+                "[__ms.readyState, String(__soReopen), globalThis.__log.slice(-6).join(',')].join(',')"
+            )
+            .unwrap()
+            .value,
+        "open,1,sourceopen:open,sb:2,false,update,updateend,update,updateend",
+        "append-after-endOfStream：readyState 回转 open + sourceopen 重派（先于 update）+ sb1/sb2 完成事件序"
+    );
+}

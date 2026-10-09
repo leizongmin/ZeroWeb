@@ -1169,6 +1169,10 @@ fn js_worker_main(
     // `ResetDocumentState` 走 `sandbox.reset_context()`（context 销毁重建）→ 置 false，
     // 下一快照换代全量重 install。
     let mut native_installed = true;
+    // t8n：`__zwVideoBridge` 门面武装踪迹——SetVideoPlayers 到达时置位；ResetDocumentState
+    // 的 context 重建会丢一次性 execute 的门面全局（native 回调表自动重挂，门面不会），
+    // shim 重装后按此踪迹补挂（`video_bridge_facade_script`）。
+    let mut video_bridge_armed = false;
     let shim = generate_js_dom_shim();
     if let Err(e) = sandbox.execute(shim) {
         tracing::error!("JS DOM shim init failed: {e}");
@@ -1465,6 +1469,7 @@ fn js_worker_main(
                 // browser tab_js_worker 同名分支——多进程路径媒体播放真值面）。
                 // M3 切片 2（D4）：pump_clock 注入——桥 play 锚与 renderer 主循环
                 // 泵 tick 同源（扩批 XXV 原点错位缺陷的 renderer 路径消除）。
+                video_bridge_armed = true;
                 zero_webview::video_registry::register_video_bridge_callbacks(
                     &mut *sandbox,
                     registry,
@@ -1541,6 +1546,13 @@ fn js_worker_main(
                 }
                 if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
                     tracing::error!("JS DOM shim reinit failed after document reset: {e}");
+                }
+                // t8n：门面补挂——context 重建丢弃一次性 execute 的 `__zwVideoBridge` 全局
+                //（native 回调随回调表自动重挂，门面不会）；不补挂则新文档页面侧
+                // feature-detect（play 真值路径 / MSE isTypeSupported）恒回落 headless
+                // 近似。重复注册 native 回调会令回调表无界增长，故仅重执行门面脚本。
+                if video_bridge_armed {
+                    let _ = sandbox.execute(&zero_webview::video_registry::video_bridge_facade_script());
                 }
                 // t2-pb1 fix#19：context 重建即重置宿主动态脚本旗标（见 bootstrap 处注释）。
                 let _ = sandbox.execute("globalThis.__zwHostDynamicScripts = true;");

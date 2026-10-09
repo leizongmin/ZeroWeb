@@ -286,6 +286,35 @@ fn reset_clears_writes_landed_after_main_thread_clear_d1() {
     );
 }
 
+// t8n：真导航 reset_context 丢弃一次性 execute 的 `__zwVideoBridge` 门面全局
+//（native 回调随 sandbox 回调表自动重挂，门面不会）——SetVideoPlayers 武装后须随
+// shim 重装补挂，否则新文档页面侧 feature-detect（play 真值路径 / MSE
+// isTypeSupported）恒回落 headless 近似（活体探针证据：bridge=undefined →
+// isTypeSupported false → blob: 短路失联，loadedmetadata 600s fallback）。
+// 变异判别：移除 ResetDocumentState 臂的门面补挂 → rearmed 落 -1 → 本测转红。
+#[test]
+fn video_bridge_facade_rearmed_after_document_reset_t8n() {
+    let runtime = runtime_with_observer_page(9121);
+    let worker = &runtime.js_worker;
+    let count = "typeof __zwVideoBridge === 'object' ? Object.keys(__zwVideoBridge).length : -1";
+    let initial: i64 = worker.execute_script_direct(count).unwrap().trim().parse().unwrap();
+    assert!(initial > 0, "构造期 SetVideoPlayers 已注入门面，实际 {initial}");
+    worker.reset_document_state();
+    let rearmed: i64 = worker.execute_script_direct(count).unwrap().trim().parse().unwrap();
+    assert_eq!(rearmed, initial, "reset 后门面须补挂（方法数一致），实际 {rearmed}");
+    // t8n 返修 N5：reset 后实调门面方法——键数一致不证方法体可调（natives 回调表
+    // 若改为 context 级，门面方法将 ReferenceError；实调击穿该静默面）。isPlaying
+    // 走 `__zw_video_1` native 往返（未登记键 → falsy 返回），返回值本身不重于
+    // 「可调用且不抛」。
+    let callable = worker
+        .execute_script_direct(
+            "typeof __zwVideoBridge.isPlaying === 'function' ? String(__zwVideoBridge.isPlaying('x')) : 'MISSING'",
+        )
+        .unwrap();
+    assert_ne!(callable.trim(), "MISSING", "reset 后门面方法缺失");
+    assert_eq!(callable.trim(), "false", "isPlaying 未登记键回落 falsy");
+}
+
 // slice18 评审收尾 S1：loadmatrix 最小判别案（同源基本型 + 真跨域）renderer 真管线
 // 端到端钉——页面脚本 createElement('script')+src+appendChild → 宿主
 // PendingDynamicScripts 取回执行 → onload/onerror 派发。单执行者归属契约

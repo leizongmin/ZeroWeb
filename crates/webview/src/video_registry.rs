@@ -355,7 +355,21 @@ pub struct VideoPlayerRegistry {
     /// A/V pair 源字节留存（切片 E）：伴生轨 seek 重建 `WebmAudioTrack` 所需——
     /// play 消费 sources 后双轨源的字节保到这里（release/clear 同步清理）。
     av_sources: HashMap<u64, Vec<u8>>,
+    /// MSE 面（t8n）：blob:MSE 源键 → append 句柄（`mse_create` 建，shim 桥
+    /// appendBuffer/endOfStream 跨线程写入；play 懒建 `MseVideoFeed` 挂接）。
+    #[cfg(feature = "decode-h264")]
+    mse_feeds: HashMap<u64, zero_media::MseFeedHandle>,
+    /// MSE 显式时长（秒；`mediaSource.duration` 赋值面——fragmented 容器常缺
+    /// 声明，语义层 duration 以此优先）。
+    #[cfg(feature = "decode-h264")]
+    mse_durations: HashMap<u64, f64>,
 }
+
+/// MSE 单 feed 共享缓冲总量封顶（t8n 返修 N2——页面 appendBuffer 字节跨信任
+/// 边界，无界驻留 renderer 堆放大 OOM 面；spec source buffer 配额 →
+/// QuotaExceededError 的最小面。区间淘汰/精确配额归 FIXME(mse-full-semantics)）。
+#[cfg(feature = "decode-h264")]
+const MSE_FEED_MAX_BYTES: usize = 256 * 1024 * 1024;
 
 impl VideoPlayerRegistry {
     /// 新建空注册表。
@@ -381,6 +395,11 @@ impl VideoPlayerRegistry {
         self.audio_entries.remove(&key);
         self.av_audio_entries.remove(&key);
         self.av_sources.remove(&key);
+        #[cfg(feature = "decode-h264")]
+        {
+            self.mse_feeds.remove(&key);
+            self.mse_durations.remove(&key);
+        }
     }
 
     /// settle 时登记音频源（`<audio>` settle 面；解码器立即构建——音频探测轻量）。
@@ -411,6 +430,62 @@ impl VideoPlayerRegistry {
         self.audio_entries.clear();
         self.av_audio_entries.clear();
         self.av_sources.clear();
+        #[cfg(feature = "decode-h264")]
+        {
+            self.mse_feeds.clear();
+            self.mse_durations.clear();
+        }
+    }
+
+    /// MSE 面（t8n，decode-h264 feature）：blob:MSE 源注册——新建 append 句柄
+    ///（重复 create 幂等替换，同 MediaSource 对象重建语义）。
+    #[cfg(feature = "decode-h264")]
+    pub fn mse_create(&mut self, abs_src: &str) {
+        let key = registry_key(abs_src);
+        self.mse_feeds.insert(key, zero_media::MseFeedHandle::new());
+        self.mse_durations.remove(&key);
+    }
+
+    /// MSE appendBuffer：字节追入共享缓冲（解码侧惰性 probe + 增长重建续读）。
+    /// 返 false = 未登记键或超容量封顶（shim 走 append error 面——spec
+    /// QuotaExceededError 语义的最小面）。
+    #[cfg(feature = "decode-h264")]
+    pub fn mse_append(&mut self, abs_src: &str, data: &[u8]) -> bool {
+        match self.mse_feeds.get(&registry_key(abs_src)) {
+            Some(handle) => {
+                // t8n 返修 N2：页面字节跨信任边界无界驻留 renderer 堆的 OOM 面，
+                // 总量封顶（区间淘汰归 FIXME(mse-full-semantics) 完整语义）。
+                if handle.byte_len().saturating_add(data.len()) > MSE_FEED_MAX_BYTES {
+                    return false;
+                }
+                handle.append(data);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// MSE endOfStream：置流末旗标（此后写入边缘 = 真 EOF，player Ended 可达）。
+    #[cfg(feature = "decode-h264")]
+    pub fn mse_end(&mut self, abs_src: &str) {
+        if let Some(handle) = self.mse_feeds.get(&registry_key(abs_src)) {
+            handle.end();
+        }
+    }
+
+    /// MSE 显式时长（秒；`mediaSource.duration` 赋值面）。
+    #[cfg(feature = "decode-h264")]
+    pub fn mse_set_duration(&mut self, abs_src: &str, seconds: f64) {
+        self.mse_durations.insert(registry_key(abs_src), seconds);
+    }
+
+    /// MSE 维度探针（shim settle 真值链：首 append 后读 moov 面宽高，供
+    /// videoWidth/videoHeight 与 loadedmetadata settle）；未注册键或 moov 未到齐
+    /// → `None`。
+    #[cfg(feature = "decode-h264")]
+    pub fn mse_probe_dims(&self, abs_src: &str) -> Option<(u32, u32)> {
+        let handle = self.mse_feeds.get(&registry_key(abs_src))?.clone();
+        zero_media::MseVideoFeed::probe_dims_from(handle)
     }
 
     /// 音频 play（桥面；已登记源 → 播放态 + 时钟锚点）。
@@ -508,6 +583,15 @@ impl VideoPlayerRegistry {
     /// media-audio M2 后续切片）。
     pub fn play(&mut self, abs_src: &str, now_ms: u64) -> bool {
         let key = registry_key(abs_src);
+        // MSE 面（t8n）：源不经 settle 字节——句柄在位即懒建 MseVideoFeed（挂接
+        // 共享增长缓冲；无伴生音频轨探针——MSE 音频为后续切片）。
+        #[cfg(feature = "decode-h264")]
+        if !self.players.contains_key(&key)
+            && let Some(handle) = self.mse_feeds.get(&key).cloned()
+        {
+            let decoder = VideoTrackDecoder::Mse(Box::new(zero_media::MseVideoFeed::from_handle(handle)));
+            self.players.insert(key, VideoPlayer::new(decoder));
+        }
         if !self.players.contains_key(&key) {
             // M3 扩批 XVI：解码器构建失败不再消费源字节（此前 sources.remove 前置——
             // 非 webm/损坏源一次 play 即丢字节，后续重试/登记恒 no-op）。字节留存，
@@ -557,8 +641,17 @@ impl VideoPlayerRegistry {
             // demux 已尽）；经 reset 重建解码器（源字节留存面，与 AudioEntry.restart
             // 同语义）。重建失败回落 Ended（桥 play 返 true 语义层照常推进）。
             if player.state() == zero_media::PlayerState::Ended {
+                // MSE 面（t8n）：同句柄重建 feed——reader 状态全新，重放消费
+                // 已写缓冲（= 重头播放语义）。
+                #[cfg(feature = "decode-h264")]
+                if let Some(handle) = self.mse_feeds.get(&key).cloned() {
+                    player.reset(VideoTrackDecoder::Mse(Box::new(zero_media::MseVideoFeed::from_handle(
+                        handle,
+                    ))));
+                }
                 // 源字节：单轨源 play 首次即消费（sources.remove），双轨源经 av_sources
-                // 留存（伴生轨 seek 重建共用）——两处任一在即可重建。
+                // 留存（伴生轨 seek 重建共用）——两处任一在即可重建；MSE 键两处皆空
+                //（不经 settle 登记），天然 no-op。
                 let bytes = self.sources.get(&key).or_else(|| self.av_sources.get(&key)).cloned();
                 if let Some(bytes) = bytes
                     && let Ok(decoder) = VideoTrackDecoder::open_media(&bytes)
@@ -698,8 +791,13 @@ impl VideoPlayerRegistry {
     }
 
     /// duration 真值（秒；元数据未就绪/不存在 → None——spec NaN 面）。
+    /// MSE 显式时长优先（fragmented 容器常缺声明——`mediaSource.duration` 真值）。
     pub fn duration(&self, abs_src: &str) -> Option<f64> {
         let key = registry_key(abs_src);
+        #[cfg(feature = "decode-h264")]
+        if let Some(d) = self.mse_durations.get(&key) {
+            return Some(*d);
+        }
         self.players.get(&key).and_then(|p| p.duration())
     }
 
@@ -1110,6 +1208,125 @@ mod tests {
         assert!(reg.audio_play(MP3, now));
         assert!(!reg.is_ended(MP3), "play 消费 wrap_pending 后 isEnded 复位");
     }
+
+    // ---- MSE 面（t8n，decode-h264 feature）----
+
+    #[cfg(feature = "decode-h264")]
+    const MSE_SRC: &str = "blob:https://example.com/zw-mse-test-1";
+
+    /// MSE 流式起播钉：create → 渐进 append（play 时 probe 未到齐 → tick 零帧
+    /// 等待）→ 补齐 + endOfStream → 帧泵产出并注入 cache → 耗尽后 Ended。
+    #[cfg(feature = "decode-h264")]
+    #[test]
+    fn registry_mse_streaming_play_ticks_frames() {
+        let mut reg = VideoPlayerRegistry::new();
+        reg.mse_create(MSE_SRC);
+        let data = fixture_bytes_named("sample-mp4-h264.mp4");
+        let cut = data.len() / 2;
+        assert!(reg.mse_append(MSE_SRC, &data[..cut]));
+        // play 在 init 段未到齐时照常建 player（等待面——零帧不炸）。
+        assert!(reg.play(MSE_SRC, 0), "MSE 句柄在位即建 player");
+        let mut cache = ImageCache::new(16, 64 * 1024 * 1024);
+        assert!(!reg.tick_all(16, &mut cache), "init 未到齐 tick 零帧");
+        // 补齐 + endOfStream：帧泵经增长重建续读，帧注入 cache。
+        assert!(reg.mse_append(MSE_SRC, &data[cut..]));
+        reg.mse_end(MSE_SRC);
+        let mut now = 16u64;
+        let mut saw_frame = false;
+        while reg.is_playing(MSE_SRC) {
+            now += 100;
+            saw_frame |= reg.tick_all(now, &mut cache);
+            assert!(now < 60_000, "runaway loop");
+        }
+        assert!(saw_frame, "补齐后帧泵应产出帧");
+        let key = ImageKey::new(image_resource_key(MSE_SRC, None));
+        let frame = cache.get(&key).expect("MSE 帧应注入 cache");
+        assert_eq!((frame.width, frame.height), (320, 240));
+        assert!(reg.is_ended(MSE_SRC), "耗尽 + endOfStream → Ended");
+        // release 清面：再 play 失败（句柄已随 release 丢弃）。
+        reg.release(MSE_SRC);
+        assert!(!reg.play(MSE_SRC, 0));
+    }
+
+    /// 封顶/未登记拒绝面（t8n 返修 B2）：未登记键 `mse_append` → false
+    /// （registry 侧入口；回调层映射 "0" → shim error + updateend 失败面）。
+    #[cfg(feature = "decode-h264")]
+    #[test]
+    fn registry_mse_append_unregistered_key_rejected() {
+        let mut reg = VideoPlayerRegistry::new();
+        assert!(!reg.mse_append("blob:https://example.com/never-created", &[0u8; 8]));
+    }
+
+    /// MSE 显式 duration 优先钉：`mediaSource.duration` 赋值面在容器声明缺失
+    ///（fragmented 常 0/None）时供语义层真值。
+    #[cfg(feature = "decode-h264")]
+    #[test]
+    fn registry_mse_duration_explicit_priority() {
+        let mut reg = VideoPlayerRegistry::new();
+        reg.mse_create(MSE_SRC);
+        assert_eq!(reg.duration(MSE_SRC), None, "未赋值 NaN 面");
+        reg.mse_set_duration(MSE_SRC, 12.5);
+        assert_eq!(reg.duration(MSE_SRC), Some(12.5), "显式 duration 优先");
+        // mse_create 重建（同键新 MediaSource）清显式 duration。
+        reg.mse_create(MSE_SRC);
+        assert_eq!(reg.duration(MSE_SRC), None, "重建后 duration 复位");
+    }
+
+    /// MSE 维度探针钉（shim settle 真值链）：moov 未到齐（半文件，mdat-先布局）
+    /// → None 留待重试；全量在缓冲 → fixture 真值 (320, 240)。
+    #[cfg(feature = "decode-h264")]
+    #[test]
+    fn registry_mse_probe_dims_progressive() {
+        let mut reg = VideoPlayerRegistry::new();
+        reg.mse_create(MSE_SRC);
+        assert_eq!(reg.mse_probe_dims(MSE_SRC), None, "空缓冲无 moov");
+        let data = fixture_bytes_named("sample-mp4-h264.mp4");
+        let cut = data.len() / 2;
+        assert!(reg.mse_append(MSE_SRC, &data[..cut]));
+        assert_eq!(reg.mse_probe_dims(MSE_SRC), None, "moov 在尾部未到齐");
+        assert!(reg.mse_append(MSE_SRC, &data[cut..]));
+        assert_eq!(
+            reg.mse_probe_dims(MSE_SRC),
+            Some((320, 240)),
+            "moov 到齐 → fixture 真值 (320, 240)"
+        );
+        assert_eq!(reg.mse_probe_dims("blob:x/absent"), None, "未注册键 → None");
+    }
+}
+
+/// `__zwVideoBridge` JS 门面脚本。native 回调（`__zw_video_*`/`__zw_ms_*`）由 sandbox
+/// 回调表随每次 context 重建自动重挂，但门面是一次性 `execute` 的普通全局——js_worker
+/// ResetDocument（真导航 reset_context + shim 重装）后会丢失，须由调用方在 shim 重装后
+/// 重新执行本脚本补挂（renderer js_worker 路径；learning #25 武装时机同模式）。
+/// decode-h264 关闭时仅含基础播放面（无 mse* 方法 → shim isTypeSupported 恒 false，
+/// 不虚报）。
+pub fn video_bridge_facade_script() -> String {
+    let mut s = String::new();
+    s.push_str(
+        "globalThis.__zwVideoBridge = {\
+           play: function (src, nowMs) { return __zw_video_play(src, nowMs | 0) === '1'; },\
+           pause: function (src) { __zw_video_pause(src); },\
+           seek: function (src, targetMs) { return __zw_video_seek(src, targetMs | 0) === '1'; },\
+           currentTime: function (src) { return Number(__zw_video_current_time(src)); },\
+           duration: function (src) { return Number(__zw_video_duration(src)); },\
+           isPlaying: function (src) { return __zw_video_is_playing(src) === '1'; },\
+           isEnded: function (src) { return __zw_video_is_ended(src) === '1'; },\
+           setRate: function (src, rate) { __zw_video_set_rate(src, Number(rate)); },\
+           setGain: function (src, volume, muted) { __zw_video_set_gain(src, Number(volume), muted ? '1' : '0'); },\
+           setLoop: function (src, on) { __zw_video_set_loop(src, on ? '1' : '0'); }\
+         };",
+    );
+    // MSE 面 shim 契约（feature-detect 面）：`__zwVideoBridge.mseCreate` 在位 =
+    // 宿主 MSE 通路可用——shim MediaSource/SourceBuffer 据此走真值挂接。
+    #[cfg(feature = "decode-h264")]
+    s.push_str(
+        "globalThis.__zwVideoBridge.mseCreate = function (src) { return __zw_ms_create(src) === '1'; };\
+         globalThis.__zwVideoBridge.mseAppend = function (src, b64) { return __zw_ms_append(src, b64) === '1'; };\
+         globalThis.__zwVideoBridge.mseEnd = function (src) { return __zw_ms_end(src) === '1'; };\
+         globalThis.__zwVideoBridge.mseSetDuration = function (src, secs) { __zw_ms_set_duration(src, String(secs)); };\
+         globalThis.__zwVideoBridge.mseDims = function (src) { return __zw_ms_dims(src); };",
+    );
+    s
 }
 
 /// 宿主桥 — 在 sandbox 上注册 `__zw_video_*` 回调族并注入 `__zwVideoBridge` JS 对象
@@ -1126,6 +1343,7 @@ mod tests {
 /// M3 切片 2（2026-09-03）：`source_provider` 可选——play 未命中（源未登记）时同步
 /// 回调取字节补登记后重评一次（WPT runner 注册竞态消除：宿主侧已知 wpt-data 布局，
 /// registry 不感知文件系统；None = 未设置，维持「未登记 → false」原语义零回归）。
+/// t8n：门面执行改消费 [`video_bridge_facade_script`]（与 ResetDocument 补挂同源）。
 pub fn register_video_bridge_callbacks(
     sandbox: &mut dyn zero_script_sandbox::Sandbox,
     registry: std::sync::Arc<std::sync::Mutex<VideoPlayerRegistry>>,
@@ -1299,21 +1517,79 @@ pub fn register_video_bridge_callbacks(
         }),
     );
 
+    // MSE 面（t8n，decode-h264 feature）：MediaSource 生命周期 op 族——shim
+    // SourceBuffer.appendBuffer/endOfStream 与 duration 赋值经此入共享缓冲。
+    // appendBuffer 二进制经 base64 字符串过桥（sandbox 回调 string-only 契约，
+    // atob/btoa 为 Web 平台既有面——shim 侧 btoa 编码，宿主侧 base64_decode）。
+    #[cfg(feature = "decode-h264")]
+    {
+        let reg_ms = std::sync::Arc::clone(&registry);
+        sandbox.register_callback(
+            "__zw_ms_create",
+            Box::new(move |args| {
+                let src = args.first().map(String::as_str).unwrap_or("");
+                reg_ms.lock().unwrap_or_else(|e| e.into_inner()).mse_create(src);
+                "1".into()
+            }),
+        );
+        let reg_ms = std::sync::Arc::clone(&registry);
+        sandbox.register_callback(
+            "__zw_ms_append",
+            Box::new(move |args| {
+                let src = args.first().map(String::as_str).unwrap_or("");
+                let b64 = args.get(1).map(String::as_str).unwrap_or("");
+                match crate::webview::base64_decode(b64) {
+                    // t8n 返修 N2：封顶拒绝 → "0"（shim 按既有 append 失败面派
+                    // error + updateend）。
+                    Ok(bytes) => {
+                        let ok = reg_ms.lock().unwrap_or_else(|e| e.into_inner()).mse_append(src, &bytes);
+                        if ok { "1".into() } else { "0".into() }
+                    }
+                    Err(_) => "0".into(),
+                }
+            }),
+        );
+        let reg_ms = std::sync::Arc::clone(&registry);
+        sandbox.register_callback(
+            "__zw_ms_end",
+            Box::new(move |args| {
+                let src = args.first().map(String::as_str).unwrap_or("");
+                reg_ms.lock().unwrap_or_else(|e| e.into_inner()).mse_end(src);
+                "1".into()
+            }),
+        );
+        let reg_ms = std::sync::Arc::clone(&registry);
+        sandbox.register_callback(
+            "__zw_ms_set_duration",
+            Box::new(move |args| {
+                let src = args.first().map(String::as_str).unwrap_or("");
+                let secs: f64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(f64::NAN);
+                if secs.is_finite() && secs >= 0.0 {
+                    reg_ms
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mse_set_duration(src, secs);
+                }
+                "1".into()
+            }),
+        );
+        // __zw_ms_dims(absSrc) -> "WxH"/""——首 append 后的 moov 维度真值探针
+        //（shim settle 真值链：loadedmetadata/videoWidth/Height 消费）。
+        let reg_ms = std::sync::Arc::clone(&registry);
+        sandbox.register_callback(
+            "__zw_ms_dims",
+            Box::new(move |args| {
+                let src = args.first().map(String::as_str).unwrap_or("");
+                match reg_ms.lock().unwrap_or_else(|e| e.into_inner()).mse_probe_dims(src) {
+                    Some((w, h)) => format!("{w}x{h}"),
+                    None => String::new(),
+                }
+            }),
+        );
+    }
+
     // JS 侧门面对象：shim 只认它（feature-detect 单点）。
-    let _ = sandbox.execute(
-        "globalThis.__zwVideoBridge = {\
-           play: function (src, nowMs) { return __zw_video_play(src, nowMs | 0) === '1'; },\
-           pause: function (src) { __zw_video_pause(src); },\
-           seek: function (src, targetMs) { return __zw_video_seek(src, targetMs | 0) === '1'; },\
-           currentTime: function (src) { return Number(__zw_video_current_time(src)); },\
-           duration: function (src) { return Number(__zw_video_duration(src)); },\
-           isPlaying: function (src) { return __zw_video_is_playing(src) === '1'; },\
-           isEnded: function (src) { return __zw_video_is_ended(src) === '1'; },\
-           setRate: function (src, rate) { __zw_video_set_rate(src, Number(rate)); },\
-           setGain: function (src, volume, muted) { __zw_video_set_gain(src, Number(volume), muted ? '1' : '0'); },\
-           setLoop: function (src, on) { __zw_video_set_loop(src, on ? '1' : '0'); }\
-         };",
-    );
+    let _ = sandbox.execute(&video_bridge_facade_script());
 }
 
 #[cfg(all(test, feature = "v8"))]
@@ -1419,6 +1695,78 @@ mod bridge_tests {
                 .unwrap()
                 .value,
             "false"
+        );
+    }
+
+    /// MSE 桥端到端（t8n，decode-h264+v8）：mseCreate → mseAppend（base64 过桥）
+    /// → play 真值 → duration 显式面经 __zwVideoBridge.duration 读回。
+    #[cfg(feature = "decode-h264")]
+    #[test]
+    fn video_bridge_mse_face_roundtrip() {
+        const MSE_SRC: &str = "blob:https://example.com/zw-mse-test-1";
+        let registry = std::sync::Arc::new(std::sync::Mutex::new(VideoPlayerRegistry::new()));
+        let config = zero_script_sandbox::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).expect("v8 sandbox");
+        register_video_bridge_callbacks(&mut sandbox, registry, None, None);
+        // mseCreate + 显式 duration 读回（NaN 面 → 赋值 → 真值）。
+        assert_eq!(
+            sandbox
+                .execute(&format!("String(__zwVideoBridge.mseCreate('{MSE_SRC}'))"))
+                .unwrap()
+                .value,
+            "true"
+        );
+        assert_eq!(
+            sandbox
+                .execute(&format!("String(__zwVideoBridge.duration('{MSE_SRC}'))"))
+                .unwrap()
+                .value,
+            "NaN"
+        );
+        sandbox
+            .execute(&format!("__zwVideoBridge.mseSetDuration('{MSE_SRC}', 12.5);"))
+            .unwrap();
+        assert_eq!(
+            sandbox
+                .execute(&format!("String(__zwVideoBridge.duration('{MSE_SRC}'))"))
+                .unwrap()
+                .value,
+            "12.5"
+        );
+        // appendBuffer 过桥（base64）→ play 真值（等待面也建 player——tick 推进在
+        // registry 单测已钉，此处钉桥面往返）。
+        let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        p.pop();
+        p.pop();
+        p.push("tests/fixtures/media/sample-mp4-h264.mp4");
+        let data = std::fs::read(p).expect("mp4 fixture present");
+        let b64 = crate::webview::base64_encode(&data);
+        assert_eq!(
+            sandbox
+                .execute(&format!("String(__zwVideoBridge.mseAppend('{MSE_SRC}', '{b64}'))"))
+                .unwrap()
+                .value,
+            "true"
+        );
+        sandbox
+            .execute(&format!("__zwVideoBridge.mseEnd('{MSE_SRC}');"))
+            .unwrap();
+        assert_eq!(
+            sandbox
+                .execute(&format!("String(__zwVideoBridge.play('{MSE_SRC}', 0))"))
+                .unwrap()
+                .value,
+            "true"
+        );
+        assert_eq!(
+            sandbox
+                .execute(&format!("String(__zwVideoBridge.isPlaying('{MSE_SRC}'))"))
+                .unwrap()
+                .value,
+            "true"
         );
     }
 }
@@ -1653,5 +2001,3 @@ mod audio_tests {
         }
     }
 }
-
-// probe runner-path check appended by debug session
