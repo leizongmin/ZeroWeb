@@ -3324,11 +3324,52 @@
     //（spec concept-node-adopt 前置——WPT "Explicitly adopting a DocumentType" 断言
     // adopt 后 parentNode null）；③ 子树 ownerDocument 重指本文档（handle 注册表 +
     // plain defineProperty，与 R191 appendChild adopt 同款）；④ 返回节点自身。
+    // t8q（site-compat bilibili-20261002-r1 P7）：**DOMParser 快照元素落地**——
+    // 快照产物（_zwParseEl，R2790 查询工厂）无 __zwHandle/__zwSelector 身份，旧
+    // R192 第 3 分支只补 ownerDocument 后原样返回：append 进文档后 ① 无 `.style`
+    //（站点模板引擎 tr.t = parseFromString + adoptNode 链的样式操作全 TypeError
+    // ——bilibili nano 播放器 7 处崩溃实证）；② 序列化为空壳 `<div></div>`；
+    // ③ 不进文档查询。spec https://dom.spec.whatwg.org/#concept-node-adopt 要求
+    // adopt 把节点完整搬入本文档——此处经 R3019 lazy 可变子树桥（_ensureMutTree）
+    // + `_wcRebuildAsHandle`（WC-M2 既有重建器）物化为 handle 树（真 wrapper：
+    // 同回合完整接口，mutation 队列异步 apply 与页面 createElement 同时序）。
+    // 识别 _zwParseEl 实例（R2790 查询工厂）与本地可变树产物（_zwMEl 印章
+    // `__zwIsMEl`——工厂产物是 plain 对象无共享 prototype 可 instanceof，覆盖
+    // R3019 懒桥树与 detached 归建树两类解析域产物；主文档 handle 元素带
+    // `__zwHandle` 身份不进本分支）。物化只发生在 adopt 时刻，物化成功即从
+    // 原父摘除（concept-node-adopt 第 1 步）；真 wrapper 走下方既有分支零变化。
     adoptNode: function(node) {
       if (!node || typeof node !== 'object') return node;
       if ((node.nodeType | 0) === 9) {
         throw new (globalThis.DOMException || Error)(
           'Cannot adopt a Document node.', 'NotSupportedError');
+      }
+      if (node.nodeType === 1 && !node.__zwHandle && !node.__zwSelector
+          && ((typeof _zwParseEl === 'function' && node instanceof _zwParseEl)
+              || node.__zwIsMEl === true)) {
+        try {
+          // 查询产物（_zwParseEl）经 R3019 lazy 桥转 live 可变树（_zwMEl）；本地
+          // 可变树产物（_zwMEl，如 doc.body.firstChild）直接物化。
+          var _t8qTree = (typeof node._ensureMutTree === 'function' && node instanceof _zwParseEl)
+            ? node._ensureMutTree() : node;
+          if (_t8qTree) {
+            var _t8qMat = _wcRebuildAsHandle(_t8qTree);
+            if (_t8qMat && _t8qMat !== node && _t8qMat.nodeType === 1) {
+              // t8q 返修（PR #129 双审查②#1/#2）：spec concept-node-adopt 第 1 步
+              // ——adopt 先从原父摘除。物化返回的是重建副本，原节点若留在原树，
+              // adopt 退化为复制（站点双引用消费时内容重复；快照文档
+              // body.firstChild 仍返原节点）。经原父 removeChild 摘除（_zwParseEl
+              // R3019 桥与 _zwMEl 本地树同一语义面）；失败不阻断物化（残留回旧
+              // 状态——detached 弃置文档域，无实际消费面）。
+              try {
+                var _t8qP = node.parentNode;
+                if (_t8qP && typeof _t8qP.removeChild === 'function') _t8qP.removeChild(node);
+              } catch (_eT8qCut) {}
+              return _t8qMat;
+            }
+          }
+        } catch (_eT8qMat) {}
+        // 物化不可行 → 落入下方既有分支（identity 返回兜底）。
       }
       try {
         if (node.parentNode && typeof node.parentNode.removeChild === 'function') {

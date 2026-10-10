@@ -2095,3 +2095,118 @@ fn test_synthetic_click_pre_activation_r108() {
         "R108 合成 click pre-activation 核心三面（全六语义由 WPT Event-dispatch-click 31P 守）"
     );
 }
+
+// t8q（site-compat bilibili-20261002-r1 P7）：DOMParser 解析快照 adoptNode 落地。
+// 真站链：tr.t = `document.adoptNode(new DOMParser().parseFromString(tpl, 'text/html').body.firstChild)`
+// ——快照产物（_zwParseEl）此前 adopt 恒 identity no-op：无 .style（widget 样式操作
+// `nodes.X.style.foo` 全崩）、append 后序列化为空 `<div></div>`、不进文档查询。
+// spec https://dom.spec.whatwg.org/#concept-node-adopt —— adopt 把节点完整搬入本文档。
+#[test]
+fn t8q_adopt_node_materializes_dom_parser_snapshot_element() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new("<html><body><div id='host'></div></body></html>".to_string()));
+    let page_url = Arc::new(Mutex::new("https://zero.test/t8q-adopt".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            r#"(function(){
+  var tpl = '<div class="bpx-player-container"><div class="bpx-player-video-area"><div class="bpx-player-video-wrap"></div></div></div>';
+  var doc = new DOMParser().parseFromString(tpl, 'text/html');
+  var snap = doc.body.firstChild;
+  if (!snap || snap.nodeType !== 1) return 'setup:no-first-child';
+  var adopted = document.adoptNode(snap);
+  var r = [];
+  // ① 物化：adopt 产物带 .style 接口（快照对象无 style——真站 7 处 TypeError 根面）。
+  r.push('style:' + typeof adopted.style);
+  r.push('styleSet:' + typeof (adopted.style && adopted.style.setProperty));
+  // ② 原父摘除（spec concept-node-adopt 第 1 步）：物化返回副本后，原节点已从
+  // 快照文档树摘除——body.firstChild 不再返回它（PR #129 审查②：不摘则 adopt
+  // 退化为复制，双引用消费时内容重复）。
+  r.push('snapGone:' + (doc.body.firstChild ? 'bad' : 'ok'));
+  // ③ 结构保真：tagName/子树查询（真站 nodes 注册表同款相对查询）。
+  r.push('tag:' + adopted.tagName);
+  r.push('relQ:' + (adopted.querySelector('.bpx-player-video-wrap') ? 'hit' : 'miss'));
+  // ④ append 进文档：父相对查询 + 序列化可见（快照 append 后为空 <div></div>）。
+  var host = document.getElementById('host');
+  host.appendChild(adopted);
+  r.push('parentQ:' + (host.querySelector('.bpx-player-video-wrap') ? 'hit' : 'miss'));
+  r.push('serial:' + (host.innerHTML.indexOf('bpx-player-video-wrap') >= 0 ? 'hit' : 'miss'));
+  return r.join('|');
+})()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "style:object|styleSet:function|snapGone:ok|tag:DIV|relQ:hit|parentQ:hit|serial:hit",
+        "t8q：DOMParser 快照 adoptNode 物化落地（style 接口 + 原父摘除 + 相对查询 + append 后查询/序列化）"
+    );
+}
+
+// t8q 邻近变体：① 快照后代元素（querySelector 产物）adopt 同样物化；② 元素物化的
+// 子树保真——根元素重建时内部 Text/Comment 经 _wcRebuildAsHandle 递归物化为对应
+// 类型节点（顶层裸 Text/Comment 快照直接 adopt 的物化不在本修复域，见池记录）；
+// ③ 同文档真元素 adoptNode 保持 identity 返回（R192 语义零回归）。
+#[test]
+fn t8q_adopt_node_snapshot_variants_and_identity_regression() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url = Arc::new(Mutex::new("https://zero.test/t8q-adopt-var".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            r#"(function(){
+  var doc = new DOMParser().parseFromString('<ul class="u"><li class="i">t</li><!-- lc --></ul>', 'text/html');
+  var root = doc.body.firstChild;
+  var r = [];
+  // ① 元素物化的子树保真：li 内文本 + ul 内注释随根物化（createTextNode/createComment）。
+  // （先 adopt 根——adopt 有摘除副作用，后代臂用独立文档，避免序列互相污染。）
+  var ul = document.adoptNode(root);
+  var liText = ul.firstChild && ul.firstChild.firstChild;
+  var ulCmt = ul.childNodes[1];
+  r.push('text:' + (liText && liText.nodeType === 3 && liText.data === 't' ? 'ok' : 'bad'));
+  r.push('comment:' + (ulCmt && ulCmt.nodeType === 8 && ulCmt.data === ' lc ' ? 'ok' : 'bad'));
+  // ② 快照后代（querySelector 产物）adopt 物化 + 属性保真（独立文档）。
+  var doc2 = new DOMParser().parseFromString('<ul><li class="i">t</li></ul>', 'text/html');
+  var li = document.adoptNode(doc2.body.firstChild.querySelector('li'));
+  r.push('li:' + (li && li.tagName === 'LI' && typeof li.style === 'object' && li.className === 'i' ? 'ok' : 'bad'));
+  // ③ 同文档真元素 adopt 仍 identity（R192）。
+  var real = document.createElement('div');
+  r.push('identity:' + (document.adoptNode(real) === real ? 'ok' : 'bad'));
+  // ④ Document adopt 仍抛 NotSupportedError（R192；审查①：断言异常类型防退化）。
+  var threw = '';
+  try { document.adoptNode(new DOMParser().parseFromString('<x/>', 'text/html')); } catch (e) { threw = e.name; }
+  r.push('docThrow:' + (threw === 'NotSupportedError' ? 'ok' : 'bad:' + threw));
+  return r.join('|');
+})()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "text:ok|comment:ok|li:ok|identity:ok|docThrow:ok",
+        "t8q：子树文本/注释保真 + 快照后代物化 + 真元素 identity 与 Document 抛错零回归"
+    );
+}
