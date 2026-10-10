@@ -638,6 +638,493 @@ lineNumber:{line},columnNumber:{column}}});\
 /// `undefined`，抛错时设为错误消息字符串。调用方经 [`page_script_error_check`] 读取。
 pub const PAGE_SCRIPT_ERROR_GLOBAL: &str = "__zw_pgerr__";
 
+/// `var` 声明的 accessor 转导出片段（R201）：get/set 双向转发 eval 绑定——后续脚本
+/// 读 `globalThis.NAME` 得当前值，写落回 eval 绑定（WPT dom/common.js 的跨脚本再赋值
+/// 流）。仅 strict eval 使用：非 strict 的间接 eval 里 var 本已泄漏为全局数据属性，
+/// accessor 重定义会换成 getter，getter 内 `return NAME` 解析到全局属性 = accessor
+/// 自身 → 无限递归（lit e2e template_content_fragment_view 回归实证）。
+fn var_accessor_export(name: &str) -> String {
+    format!(
+        "try{{Object.defineProperty(globalThis,'{name}',{{configurable:true,get:function(){{return {name};}},set:function(_zw_v){{{name}=_zw_v;}}}});}}catch(_zw_ex){{}}"
+    )
+}
+
+/// classic 脚本源首指令序言的 'use strict' 判定（Directive Prologue，
+/// https://tc39.es/ecma262/#sec-directive-prologues-early-errors）：前导空白、
+/// `//` 行注释与 `/* */` 块注释（含跨行）不产生语句；序言内出现 'use strict'
+/// （单/双引号，其后为空或 `;` 起始）即 strict；其他字符串字面量指令（如
+/// `"use x";`）之后序言继续，遇非指令语句终止。
+///
+/// bing-t2（site-optimizer 2026-10-10）：旧「首非空行恰为指令」漏掉前导注释形态
+/// ——bing 全站内联脚本 `//<![CDATA[\n"use strict";` 起头，V8 按规范进入 strict
+/// eval（顶层 var 困独立变量环境）而导出机制不启动 → `_w/_d/_ge` 全局蒸发、下游
+/// 全站 ReferenceError 级联（离线 fixture 复现；真浏览器对照 Chrome `_w`=object）。
+fn script_directive_is_strict(code: &str) -> bool {
+    let mut in_block_comment = false;
+    for line in code.lines() {
+        let mut rest = line.trim();
+        if in_block_comment {
+            match rest.find("*/") {
+                Some(end) => {
+                    in_block_comment = false;
+                    rest = rest[end + 2..].trim_start();
+                    if rest.is_empty() {
+                        continue;
+                    }
+                }
+                None => continue,
+            }
+        }
+        // 剥离行首交替注释前缀（`/*a*/ /*b*/ "use strict";`）；行注释覆盖至行尾。
+        loop {
+            if rest.starts_with("//") {
+                rest = "";
+                break;
+            }
+            if let Some(stripped) = rest.strip_prefix("/*") {
+                match stripped.find("*/") {
+                    Some(end) => {
+                        rest = stripped[end + 2..].trim_start();
+                    }
+                    None => {
+                        in_block_comment = true;
+                        rest = "";
+                        break;
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+        if rest.is_empty() {
+            continue;
+        }
+        // 候选指令语句：引号起始的字符串字面量；非字符串语句 = 序言终止。
+        let quote = match rest.as_bytes().first() {
+            Some(b'\'') => '\'',
+            Some(b'"') => '"',
+            _ => return false,
+        };
+        let after = &rest[1..];
+        let Some(close) = after.find(quote) else {
+            return false; // 未闭合（跨行字符串非指令）
+        };
+        let directive = &after[..close];
+        let tail = after[close + 1..].trim_start();
+        let directive_like = tail.is_empty() || tail.starts_with(';');
+        if directive == "use strict" {
+            return directive_like;
+        }
+        // 字符串后接非 `;` 语法（拼接/调用）不是指令——序言终止。
+        if !directive_like {
+            return false;
+        }
+    }
+    false
+}
+
+/// bing-t2（site-optimizer 2026-10-10）：classic 脚本顶层声明导出的**单遍字符
+/// 状态机扫描**，取代旧行首零缩进锚定——minified 脚本全部顶层声明在单行中部
+/// （bing #6 的 `};;var _w=window,_d=document,...` @col 26588），行锚扫描全漏。
+///
+/// 状态：括号深度 `(`/`[`/`{`、单/双引号字符串、模板字面量（`${}` 花括号计数）、
+/// 行/块注释、正则字面量（除法/正则歧义按前一有效字符 + 关键字启发式——误判
+/// 最坏漏一个导出或经 try 包裹静默 no-op，不改变脚本自身执行语义）。语句边界 =
+/// 深度 0 且前一有效字符为起点/`;`/`}`/`)`（`}` 覆盖 if/for/try 块尾，`)` 覆盖
+/// `if(x)var y=1;` 无大括号臂）。
+///
+/// 导出语义逐项沿用既有回执：var 仅 strict 时 accessor 转发（R201 非 strict 数据
+/// 属性自递归教训）；const 值快照；let accessor 转发（M2-S2 跨脚本递减可见性）；
+/// function/async function/class 恒值导出（R147/R3254/WAB2-M1 的 WPT 依据）；
+/// 每名 try 包裹（lit bundle IIFE 内部同名消亡不炸整个后缀）；同名去重。
+/// 已知接受缺口（与旧行为一致地保守）：`for(var i=..)` 头内声明（深度>0）、
+/// `label: var` 形态不导出；const/let 多声明符只发布首名。
+fn scan_top_level_decl_exports(code: &str, is_strict: bool) -> String {
+    fn is_ident_char(c: char) -> bool {
+        c.is_ascii_alphanumeric() || c == '_' || c == '$'
+    }
+    /// 正则字面量可出现的关键字前缀（`return /x/` vs `a / b`）。
+    const REGEX_KEYWORDS: [&str; 13] = [
+        "return",
+        "typeof",
+        "instanceof",
+        "in",
+        "of",
+        "new",
+        "delete",
+        "void",
+        "throw",
+        "case",
+        "do",
+        "yield",
+        "await",
+    ];
+    fn skip_ws_comments(src: &[char], i: &mut usize) {
+        let n = src.len();
+        loop {
+            while *i < n && src[*i].is_whitespace() {
+                *i += 1;
+            }
+            if *i + 1 < n && src[*i] == '/' && src[*i + 1] == '/' {
+                while *i < n && src[*i] != '\n' {
+                    *i += 1;
+                }
+                continue;
+            }
+            if *i + 1 < n && src[*i] == '/' && src[*i + 1] == '*' {
+                *i += 2;
+                while *i + 1 < n && !(src[*i] == '*' && src[*i + 1] == '/') {
+                    *i += 1;
+                }
+                *i = (*i + 2).min(n);
+                continue;
+            }
+            break;
+        }
+    }
+    /// var 链解析的子阶段：Name=期待声明符名；End=初始化器/表达式（期待深度 0 的
+    /// `,` 推进或 `;`/EOF 终结）。
+    enum VarPhase {
+        Name,
+        End,
+    }
+    fn push_export(out: &mut Vec<String>, seen: &mut std::collections::HashSet<String>, name: &str, accessor: bool) {
+        if name.is_empty() || !seen.insert(name.to_string()) {
+            return;
+        }
+        if accessor {
+            out.push(var_accessor_export(name));
+        } else {
+            out.push(format!("try{{globalThis.{name}={name};}}catch(_zw_ex){{}}"));
+        }
+    }
+
+    let src: Vec<char> = code.chars().collect();
+    let n = src.len();
+    let mut out: Vec<String> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut i = 0usize;
+    let mut depth: i32 = 0;
+    let mut prev_sig: char = '\0'; // 前一有效字符（注释/空白透明）
+    let mut last_ident = String::new();
+    // ASI：自上一有效 token 以来是否出现过换行（含块注释内换行）——声明关键字
+    // 不可能延续表达式，操作数结尾（'x'/`)`/`]`）+ 换行即语句边界（WPT
+    // prefixed-animation-event-tests.js 形态：`'use strict'` 无分号 + 注释块 +
+    // 换行后的缩进 `function name(`——行锚旧扫描按行首可命中，语句边界判定须补）。
+    let mut saw_newline = false;
+    // var 链模式：Some((base, phase))——base 为链起始深度，声明符按深度 0（相对 base）
+    // 的 `,` 分隔，`;` 消费终结，其他有效字符按 ASI 终结（不消费）。
+    let mut var_phase: Option<(i32, VarPhase)> = None;
+
+    while i < n {
+        let c = src[i];
+        match c {
+            '/' if i + 1 < n && src[i + 1] == '/' => {
+                while i < n && src[i] != '\n' {
+                    i += 1;
+                }
+            }
+            '/' if i + 1 < n && src[i + 1] == '*' => {
+                i += 2;
+                let start = i;
+                while i + 1 < n && !(src[i] == '*' && src[i + 1] == '/') {
+                    i += 1;
+                }
+                if src[start..i].contains(&'\n') {
+                    saw_newline = true;
+                }
+                i = (i + 2).min(n);
+            }
+            '\'' | '"' => {
+                let q = c;
+                i += 1;
+                while i < n {
+                    if src[i] == '\\' {
+                        i += 2;
+                        continue;
+                    }
+                    if src[i] == q || src[i] == '\n' {
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+                prev_sig = 'x';
+                last_ident.clear();
+                saw_newline = false;
+            }
+            '`' => {
+                // 模板字面量整体消费到匹配反引号；${} 花括号计数。串内嵌套模板/
+                // ${} 内含花括号字符串的极端组合误读方向 = 漏导出（保守），不伪导出。
+                i += 1;
+                let mut braces = 0i32;
+                while i < n {
+                    let t = src[i];
+                    if t == '\\' {
+                        i += 2;
+                        continue;
+                    }
+                    if t == '`' && braces == 0 {
+                        i += 1;
+                        break;
+                    }
+                    if t == '$' && i + 1 < n && src[i + 1] == '{' {
+                        braces += 1;
+                        i += 2;
+                        continue;
+                    }
+                    if t == '{' {
+                        braces += 1;
+                    } else if t == '}' {
+                        braces -= 1;
+                    }
+                    i += 1;
+                }
+                prev_sig = 'x';
+                last_ident.clear();
+                saw_newline = false;
+            }
+            '/' => {
+                // 除法 vs 正则：正则出现于表达式位置（前一有效字符非操作数结尾）或
+                // 关键字后。`)`（if 头尾）按正则处理——误判方向 = 多跳一段代码漏导出
+                // （保守），避免把正则内容当代码产生伪 accessor。
+                let regex_pos = matches!(
+                    prev_sig,
+                    '\0' | ';'
+                        | '('
+                        | ')'
+                        | '{'
+                        | '}'
+                        | ','
+                        | '='
+                        | ':'
+                        | '['
+                        | '!'
+                        | '&'
+                        | '|'
+                        | '?'
+                        | '+'
+                        | '-'
+                        | '*'
+                        | '%'
+                        | '<'
+                        | '>'
+                        | '~'
+                        | '^'
+                ) || REGEX_KEYWORDS.contains(&last_ident.as_str());
+                if regex_pos {
+                    i += 1;
+                    let mut in_class = false;
+                    while i < n {
+                        let r = src[i];
+                        if r == '\\' {
+                            i += 2;
+                            continue;
+                        }
+                        if r == '\n' {
+                            break; // 正则不跨行——保守退出
+                        }
+                        if r == '[' {
+                            in_class = true;
+                        } else if r == ']' {
+                            in_class = false;
+                        } else if r == '/' && !in_class {
+                            i += 1;
+                            while i < n && src[i].is_ascii_alphabetic() {
+                                i += 1; // flags
+                            }
+                            break;
+                        }
+                        i += 1;
+                    }
+                    prev_sig = 'x';
+                    last_ident.clear();
+                    saw_newline = false;
+                } else {
+                    i += 1;
+                    prev_sig = '/';
+                    last_ident.clear();
+                    saw_newline = false;
+                }
+            }
+            '(' | '[' | '{' => {
+                depth += 1;
+                prev_sig = c;
+                last_ident.clear();
+                saw_newline = false;
+                i += 1;
+            }
+            ')' | ']' | '}' => {
+                depth = (depth - 1).max(0);
+                prev_sig = c;
+                last_ident.clear();
+                saw_newline = false;
+                i += 1;
+            }
+            _ if c.is_whitespace() => {
+                if c == '\n' {
+                    saw_newline = true;
+                }
+                i += 1;
+            }
+            _ if is_ident_char(c) => {
+                let start = i;
+                while i < n && is_ident_char(src[i]) {
+                    i += 1;
+                }
+                let word: String = src[start..i].iter().collect();
+                // var 链模式内不匹配新声明（初始化器内文本按普通 token 消费）。
+                let chain_base = var_phase.as_ref().map(|(b, _)| *b);
+                if let Some(base) = chain_base {
+                    if depth == base {
+                        if matches!(var_phase, Some((_, VarPhase::Name))) {
+                            push_export(&mut out, &mut seen, &word, is_strict);
+                            skip_ws_comments(&src, &mut i);
+                            // `=`（无 or 有初始化都进入 End——初始化器内标识符按
+                            // 表达式 token 消费，链仅在深度 0 的 `,`/`;`/EOF 推进或
+                            // 终结；在此 ASI 终结会吃掉 `var a=globalThis,b=1`
+                            // 的后续声明符——bing #6 链实证）。
+                            if i < n && src[i] == '=' {
+                                i += 1;
+                            }
+                            var_phase = Some((base, VarPhase::End));
+                            prev_sig = 'x';
+                            last_ident.clear();
+                            continue;
+                        }
+                        // End 阶段 ASI：换行后遇**声明关键字**（不可能延续表达式）→
+                        // var 语句终结，当前关键字落入下方新语句匹配（`var a = 1
+                        // \nasync function f(){}`——WPT 无分号形态）；其他标识符按
+                        // 表达式 token 消费不终结链。
+                        if saw_newline
+                            && matches!(word.as_str(), "var" | "function" | "async" | "class" | "const" | "let")
+                        {
+                            var_phase = None; // 贯通至下方语句匹配（不 continue）
+                        } else {
+                            prev_sig = 'x';
+                            last_ident = word;
+                            saw_newline = false;
+                            continue;
+                        }
+                    } else {
+                        prev_sig = 'x';
+                        last_ident.clear();
+                        continue;
+                    }
+                }
+                let at_stmt_start = depth == 0
+                    && (matches!(prev_sig, '\0' | ';' | '}' | ')')
+                        || (saw_newline && matches!(prev_sig, 'x' | ')' | ']' | '}')));
+                saw_newline = false;
+                if at_stmt_start {
+                    match word.as_str() {
+                        "var" => {
+                            var_phase = Some((depth, VarPhase::Name));
+                            prev_sig = 'x';
+                            last_ident.clear();
+                            continue;
+                        }
+                        "function" | "async" => {
+                            // `function NAME(` / `function* NAME(` / `async function NAME(`
+                            let mut j = i;
+                            if word == "async" {
+                                skip_ws_comments(&src, &mut j);
+                                let s = j;
+                                while j < n && is_ident_char(src[j]) {
+                                    j += 1;
+                                }
+                                if src[s..j].iter().collect::<String>() != "function" {
+                                    prev_sig = 'x';
+                                    last_ident = word;
+                                    continue;
+                                }
+                            }
+                            skip_ws_comments(&src, &mut j);
+                            if j < n && src[j] == '*' {
+                                j += 1;
+                                skip_ws_comments(&src, &mut j);
+                            }
+                            let s = j;
+                            while j < n && is_ident_char(src[j]) {
+                                j += 1;
+                            }
+                            let name: String = src[s..j].iter().collect();
+                            skip_ws_comments(&src, &mut j);
+                            if !name.is_empty() && j < n && src[j] == '(' {
+                                push_export(&mut out, &mut seen, &name, false);
+                            }
+                            prev_sig = 'x';
+                            last_ident.clear();
+                            continue;
+                        }
+                        "class" => {
+                            let mut j = i;
+                            skip_ws_comments(&src, &mut j);
+                            let s = j;
+                            while j < n && is_ident_char(src[j]) {
+                                j += 1;
+                            }
+                            let name: String = src[s..j].iter().collect();
+                            skip_ws_comments(&src, &mut j);
+                            let valid = (j < n && src[j] == '{')
+                                || src[j..].iter().take(7).collect::<String>().starts_with("extends");
+                            if !name.is_empty() && valid {
+                                push_export(&mut out, &mut seen, &name, false);
+                            }
+                            prev_sig = 'x';
+                            last_ident.clear();
+                            continue;
+                        }
+                        "const" | "let" => {
+                            let mut j = i;
+                            skip_ws_comments(&src, &mut j);
+                            let s = j;
+                            while j < n && is_ident_char(src[j]) {
+                                j += 1;
+                            }
+                            let name: String = src[s..j].iter().collect();
+                            // 声明符后（允许空白）须 `=` 或行尾（伪匹配 `letName` 排除）。
+                            let mut k = j;
+                            skip_ws_comments(&src, &mut k);
+                            if !name.is_empty() && (k >= n || src[k] == '=') {
+                                push_export(&mut out, &mut seen, &name, word == "let");
+                            }
+                            prev_sig = 'x';
+                            last_ident.clear();
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+                prev_sig = 'x';
+                last_ident = word;
+            }
+            _ => {
+                // `,` / `;` / 运算符等：var 链深度 0 边界处理，其余记有效字符
+                if let Some((base, phase)) = var_phase.as_mut()
+                    && depth == *base
+                    && (c == ',' || c == ';')
+                {
+                    if c == ',' {
+                        *phase = VarPhase::Name;
+                    } else {
+                        var_phase = None; // `;` 消费，链终结
+                    }
+                    i += 1;
+                    prev_sig = c;
+                    last_ident.clear();
+                    continue;
+                }
+                prev_sig = c;
+                last_ident.clear();
+                saw_newline = false;
+                i += 1;
+            }
+        }
+    }
+    out.join("")
+}
+
 /// 将 classic 页面 `<script>` 体包进顶层 try-catch，使未捕获的 throw 被捕获进 sentinel 全局
 /// （[`PAGE_SCRIPT_ERROR_GLOBAL`]）而非污染持久 V8 Isolate；并在执行期设/清 `document.currentScript`
 ///（HTML §4.11.3.1：classic 脚本执行期间 currentScript 指向自身元素）。
@@ -684,202 +1171,21 @@ pub fn script_run_classic_page(code: &str, script_index: usize, source_url: Opti
     // 六测试 NO-REPORT/EXEC-ERR 实证）。每名 `try{...}catch(_){}` 包裹：作用域外的
     // 名字静默跳过，顶层名正常导出。R147 的 function 导出同样补包裹（lit bundle 无
     // 行首 function 故未暴露，防御同款形态）。
-    // R201：var 声明的 accessor 转导出片段（见下方 var 分支注记——get/set 双向
-    // 转发 eval 绑定）。
-    fn var_accessor_export(name: &str) -> String {
-        format!(
-            "try{{Object.defineProperty(globalThis,'{name}',{{configurable:true,get:function(){{return {name};}},set:function(_zw_v){{{name}=_zw_v;}}}});}}catch(_zw_ex){{}}"
-        )
-    }
-    // 从 var 声明行/续行收集**裸声明符名**（无初始化）。遇带初始化声明符（`= ...`）
-    // 停止切分（后续 `,` 在表达式内，名字切分不可靠）。返回 (names, 未闭合)——
-    // 行尾是 `,` 表示 var 语句跨行（续行的缩进声明符同属顶层声明）。
-    fn collect_var_names(fragment: &str) -> (Vec<String>, bool) {
-        let mut names = Vec::new();
-        // 剥行尾 `;`（末声明符的语句终结符——`a, b;` 的 b 不带 `;` 不算裸名）。
-        let trimmed = fragment.trim_end().trim_end_matches(';').trim_end();
-        let open = trimmed.ends_with(',');
-        for declarator in trimmed.split(',') {
-            let d = declarator.trim();
-            let name: String = d
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
-                .collect();
-            if name.is_empty() || name.len() != d.len() {
-                // 带初始化（`a = 1`）或非纯名——终止（保守：只收裸名串）。
-                break;
-            }
-            names.push(name);
-        }
-        (names, open)
-    }
     // R201：**strict 判定**——var accessor 导出仅在 strict eval 有意义。非 strict 的
     //间接 eval 里 var 本就泄漏到全局（globalThis.NAME 数据属性）——accessor 重定义
     //会把数据属性换成 getter，getter 内 `return NAME` 解析到全局属性 = accessor 自身
     //→ 无限递归（lit e2e template_content_fragment_view 回归实证：非 strict 页面脚本
-    //`var log = []` 后 accessor 自递归 Maximum call stack）。判定 = 源首非空行是
-    //'use strict'/"use strict" 指令（双/单引号两形态）。
-    let is_strict = code.lines().find(|l| !l.trim().is_empty()).is_some_and(|first| {
-        let t = first.trim();
-        t == "'use strict';" || t == "\"use strict\";" || t == "'use strict'" || t == "\"use strict\""
-    });
-    let mut var_stmt_open = false;
-    let exports = code
-        .lines()
-        .filter_map(|line| {
-            // 仅**行首零缩进**的 `function NAME(` / `const NAME =` / `let NAME =` /
-            // `var NAME...`（真顶层声明——WPT 测试库无缩进顶层 + IIFE/块内部缩进声明
-            // 不误匹配；const/let 多声明符形态 `const a = 1, b = 2` 只发布首名，后续名
-            // 困在局部（罕见，接受））。
-            // R3254-E2 切片 7（editing goal，2026-09-07）：顶层 `class NAME` 同款全局
-            // 发布——strict eval 的类声明同样困在独立变量环境（WPT editing/include/
-            // editor-test-utils.js 顶层 `class EditorTestUtils` 跨 `<script>` 不可见 →
-            // deleteFromDocument-HTMLDetails 的 test() 全部不注册）。导出形态 = 类绑定
-            // 本身（非实例）。
-            if let Some(rest) = line.strip_prefix("class ") {
-                let name: String = rest
-                    .chars()
-                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
-                    .collect();
-                let after = rest.get(name.len()..).unwrap_or_default();
-                let after_trim = after.trim_start();
-                let valid =
-                    name.len() < rest.len() && (after_trim.starts_with('{') || after_trim.starts_with("extends"));
-                if !name.is_empty() && valid {
-                    return Some(format!("try{{globalThis.{name}={name};}}catch(_zw_ex){{}}"));
-                }
-                return None;
-            }
-            if let Some(rest) = line.strip_prefix("function ") {
-                let name: String = rest
-                    .chars()
-                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
-                    .collect();
-                let after = rest.get(name.len()..).unwrap_or_default();
-                if name.is_empty() || !after.trim_start().starts_with('(') {
-                    return None;
-                }
-                return Some(format!("try{{globalThis.{name}={name};}}catch(_zw_ex){{}}"));
-            }
-            // WAB2-M1（web-api-batch2 goal M1 基线，2026-09-23）：`async function NAME(` /
-            // `function* NAME` / `async function* NAME` 变体与 `function` 同款全局发布——
-            // strict eval 的 async/生成器函数声明同样困在独立变量环境。WPT clipboard-apis/
-            // resources/user-activation.js 顶层四个 helper 全 `async function` 形态 →
-            // web-api-batch2 M1 基线 clipboard 24 案 "ReferenceError: trySetPermission is
-            // not defined"（案未触 API 面先折在 helper 装配）。`async` 前缀剥离 + 可选
-            // `*`/空白容忍后与 function 分支共路；`functional(` 等伪前缀经「剥离后必须
-            // 出现过 `*` 或空白」守卫排除。
-            let function_decl = line.strip_prefix("async ").unwrap_or(line);
-            if let Some(rest) = function_decl.strip_prefix("function") {
-                let starred = rest.trim_start_matches('*');
-                let spaced = starred.strip_prefix(' ');
-                let had_star_or_space = starred.len() < rest.len() || spaced.is_some();
-                if !had_star_or_space {
-                    return None;
-                }
-                let rest = spaced.unwrap_or(starred);
-                let name: String = rest
-                    .chars()
-                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
-                    .collect();
-                let after = rest.get(name.len()..).unwrap_or_default();
-                if name.is_empty() || !after.trim_start().starts_with('(') {
-                    return None;
-                }
-                return Some(format!("try{{globalThis.{name}={name};}}catch(_zw_ex){{}}"));
-            }
-            if var_stmt_open && is_strict {
-                // R201：多行 var 语句的**续行**（上行尾 `,`）——缩进裸声明符同属顶层
-                // 声明（dom/common.js 的 `var testDiv, paras,\n    foreignDoc, ...`
-                // 七行形态；只收裸名，遇带初始化声明符闭合语句）。
-                let (names, still_open) = collect_var_names(line.trim());
-                var_stmt_open = still_open && line.starts_with(' ');
-                if names.is_empty() {
-                    return None;
-                }
-                return Some(
-                    names
-                        .iter()
-                        .map(|name| var_accessor_export(name))
-                        .collect::<Vec<_>>()
-                        .join(""),
-                );
-            }
-            if is_strict && let Some(rest) = line.strip_prefix("var ") {
-                // R201（js-dom M4）：`var` 声明的**accessor 转发导出**（仅 strict eval——
-                // 非 strict 的 var 泄漏全局，accessor 重定义自递归，见 is_strict 注记）。strict eval 的
-                // var 困在独立变量环境（WPT dom/ranges/Range-mutations.js 顶层
-                // `var insertDataTests = []` 等 12 个测试表跨 `<script>` 不可见 →
-                // "xxxTests is not defined" 整族 12F；dom/common.js 的 `var testDiv,
-                // paras, ...` 同源）。与 const/let 的**值快照**导出不同，var 常见
-                // 「声明后跨脚本再赋值」流（common.js 的 setupRangeTests 在 harness
-                // 回调里给 testDiv/paras 赋值，后续脚本的 `testDiv.style` 读的是
-                // 赋值后的值）——快照恒 undefined 会破坏赋值流。accessor 闭包捕获
-                // eval 作用域，get/set 双向转发：后续脚本读 globalThis.NAME 得当前
-                // 值，写 globalThis.NAME 落回 eval 绑定。
-                // 多声明符：行内 `,` 分隔的裸名全导出；带初始化的声明符（`var a = 1,
-                // b`）只导出首名（accessor 对带初始化同样成立——get 读当前值，set
-                // 写回）；行尾 `,` = 语句跨行（续行经上方 var_stmt_open 分支收集）。
-                let (names, open) = collect_var_names(rest);
-                var_stmt_open = open;
-                let exported: Vec<&String> = if names.is_empty() {
-                    // `var a = 1, b`——首声明符带初始化：单收首名。
-                    let name: String = rest
-                        .trim_start()
-                        .chars()
-                        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
-                        .collect();
-                    if name.is_empty() {
-                        return None;
-                    }
-                    // 覆写 names 以复用导出路径（collect 返回空时手动补首名）。
-                    return Some(var_accessor_export(&name));
-                } else {
-                    names.iter().collect()
-                };
-                return Some(
-                    exported
-                        .iter()
-                        .map(|name| var_accessor_export(name))
-                        .collect::<Vec<_>>()
-                        .join(""),
-                );
-            }
-            for keyword in ["const ", "let "] {
-                if let Some(rest) = line.strip_prefix(keyword) {
-                    let name: String = rest
-                        .chars()
-                        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
-                        .collect();
-                    let after = rest.get(name.len()..).unwrap_or_default();
-                    // 声明符后（允许空白）须紧跟 `=`（初始化）或行尾（`const x` 无初始化
-                    // 是 SyntaxError，实际源不会出现；跳过伪匹配如 `letName`）。const/let
-                    // 只读不重赋——`globalThis.NAME=NAME` 读取局部绑定写入全局属性，合法。
-                    let after_trim = after.trim_start();
-                    if name.is_empty() || !(after_trim.starts_with('=') || after_trim.is_empty()) {
-                        return None;
-                    }
-                    // M2-S2（navigation-compat）：`let` 声明改 **accessor 转发导出**（R201 var
-                    // 同款 get/set 双向转发）。旧值快照 `globalThis.NAME=NAME` 只同步导出时刻
-                    // 的值——顶层 `let` 声明后被闭包（如 `window.onpopstate = () =>
-                    // popstatesLeft--`）再赋值时，后续脚本经 globalThis 读到的是**过期快照**
-                    //（WPT history-traversal/event-order/before-load-hash 族断言
-                    // `popstatesLeft` 跨脚本递减可见性）。真浏览器 classic 脚本共享全局
-                    // lexical binding，跨脚本读赋同源。accessor 闭包捕获 eval 作用域双向
-                    // 转发即复现该语义。**非 strict 也安全**：let 是 lexical declaration 恒
-                    // 不泄漏 global（var 的 accessor 自递归坑仅 var 数据属性泄漏形态——
-                    // R201 is_strict 注记），getter 内 `return NAME` 恒解析 eval 绑定。
-                    // const 保持值快照（不可重赋，快照 ≡ 转发）。
-                    if keyword == "let " {
-                        return Some(var_accessor_export(&name));
-                    }
-                    return Some(format!("try{{globalThis.{name}={name};}}catch(_zw_ex){{}}"));
-                }
-            }
-            None
-        })
-        .collect::<Vec<_>>()
-        .join("");
+    //`var log = []` 后 accessor 自递归 Maximum call stack）。
+    // bing-t2（site-optimizer 2026-10-10）：判定按 Directive Prologue 规则实现
+    //（[`script_directive_is_strict`]）——旧「首非空行恰为指令」漏掉前导注释形态
+    //（bing 全站 `//<![CDATA[` 起头），V8 已进 strict eval 而导出不启动。
+    let is_strict = script_directive_is_strict(code);
+    // bing-t2（site-optimizer 2026-10-10）：顶层声明导出改**单遍状态机扫描**
+    //（[`scan_top_level_decl_exports`]）——minified 脚本的全部顶层声明在单行中部
+    //（bing #6 `};;var _w=window,_d=document,...` @col 26588），旧行首零缩进锚定全漏。
+    // 导出语义（var 仅 strict accessor/const 快照/let accessor/function·class 恒值、
+    // 每名 try 包裹、R147/R198/R201/M2-S2/R3254 各自的 WPT/lit 依据）见该函数注记。
+    let exports = scan_top_level_decl_exports(code, is_strict);
     // R147：eval 源拼接形态 `(0,eval)('<源>'+';globalThis.x=x;')`——后缀是**带引号的
     // 字符串字面量**（与源同串相接），在 eval 的同一变量环境内执行（strict 局部声明
     // 可见），且不改 'use strict' 必须为源首语句的语义（拼接发生在两侧而非插入）。
@@ -899,7 +1205,11 @@ pub fn script_run_classic_page(code: &str, script_index: usize, source_url: Opti
     let export_suffix = if tail.is_empty() {
         String::new()
     } else {
-        format!("+'{}'", escape_js_string(&format!(";{tail}")))
+        // bing-t2（site-optimizer 2026-10-10）：后缀分隔用**换行**而非 `;`——源码以
+        // 行注释结尾时（bing 全站 `//]]>`），`;` 后缀与注释同行被整体吞掉，导出后缀
+        // 静默失效（离线 fixture 实证：后缀已生成但 defineProperty 从未执行）。
+        // 换行不改指令序言（directive 仍为源首语句）与 eval 同变量环境语义。
+        format!("+'{}'", escape_js_string(&format!("\n{tail}")))
     };
     format!(
         // security-hardening M2-s6：`(0,globalThis.__zwRealEval||eval)`——eval 门禁

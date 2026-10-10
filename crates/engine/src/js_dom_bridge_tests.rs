@@ -49,3 +49,4 @@ include!("js_dom_bridge_tests/part46.rs");
 include!("js_dom_bridge_tests/part47.rs");
 include!("js_dom_bridge_tests/part48.rs");
 include!("js_dom_bridge_tests/part49.rs");
+include!("js_dom_bridge_tests/part50.rs");
