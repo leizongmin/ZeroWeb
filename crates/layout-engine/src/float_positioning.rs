@@ -1863,10 +1863,22 @@ pub(crate) fn adjust_float_positions_with_context(
     // 须走主 clearance 路径（else 分支 R1389 按「无 float context」处理，clear 看不到嵌套
     // 浮动）。窄 gate：仅同时有 clear 子 + 嵌套浮动才扩 has_active_float_context，避免影响
     // 普通容器。env `ZW_ADJOINING_FLOAT_CLEARANCE=0` 关闭（kill-switch，default-on）。
+    // R5028：clear 子认领扩到 **cleared inline-level br 盒**（display:inline，
+    // is_block_level=false 被 R1393 旧门拒之门外——p1{float 子}+br{clear}+p2 的 body
+    // 走 else 路径，br 的 clear 整体旁路，p2 比 chromium 低一个 strut）。br-only 位移
+    // 块零高度由 R5027 折叠臂（ZW_BR_CLEAR_ZEROH）承接。env
+    // `ZW_BR_CLEAR_ELSE_PATH=0` 关闭（kill-switch，default-on）。
+    let br_clear_gate = std::env::var("ZW_BR_CLEAR_ELSE_PATH").as_deref() != Ok("0");
     let has_active_float_context = has_active_float_context
         || (std::env::var("ZW_ADJOINING_FLOAT_CLEARANCE").as_deref() != Ok("0")
             && box_node.children.iter().any(|c| {
-                c.is_block_level
+                (c.is_block_level
+                    || (br_clear_gate
+                        && c.node_id.is_some_and(|id| {
+                            doc.get(id).is_some_and(
+                    |n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br")),
+                )
+                        })))
                     && !c.is_absolute
                     && !c.is_fixed
                     && !matches!(
@@ -2039,7 +2051,19 @@ pub(crate) fn adjust_float_positions_with_context(
             let original_taffy_y = child.y;
 
             // CSS 规范：clear 属性仅适用于块级元素（CSS 2.1 §13.5）
-            if !child.is_block_level {
+            // R5028：cleared br 盒豁免本 early-continue——br 自成块级载体盒（ZW 树：
+            // w=全宽 h=strut）须入 §9.5.2 clearance 路径（配合 R1393 门扩认领 +
+            // R5027 位移后零高度折叠）。env 同 ZW_BR_CLEAR_ELSE_PATH 门。
+            let is_cleared_br_box = br_clear_gate
+                && !matches!(child.clear, ClearValue::None)
+                && child
+                    .node_id
+                    .is_some_and(|id| {
+                        doc.get(id).is_some_and(|n| {
+                            matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br"))
+                        })
+                    });
+            if !child.is_block_level && !is_cleared_br_box {
                 // 非块级元素（如 inline）：扣除 float offset，不处理 clear
                 if float_y_offset > 0.0 {
                     child.y -= float_y_offset;
