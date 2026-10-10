@@ -869,6 +869,13 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
     let font_id = intrinsic_font_id(styles.get(&node_id));
     let tab = intrinsic_tab_metrics(styles.get(&node_id), font_size, is_ahem, font_id);
     let mut segments: Vec<f32> = vec![0.0];
+    let mut state = DomWalkState {
+        pending_space: false,
+        line_has_content: false,
+        font_size,
+        is_ahem,
+        font_id,
+    };
     text_max_width_walk(
         node_id,
         doc,
@@ -879,6 +886,7 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
         font_id,
         tab,
         &mut segments,
+        &mut state,
         per_font_intrinsic_on(),
         // 既有消费方（float 垂直臂/legend/leaf intrinsic/单测）维持旧口径——原子 gate
         // 仅在「Σ 侧同时计盒宽」的 float 纯文本臂（text_content_max_width_scoped）启用。
@@ -913,6 +921,13 @@ pub(crate) fn text_content_max_width_scoped(
     let font_id = intrinsic_font_id(styles.get(&node_id));
     let tab = intrinsic_tab_metrics(styles.get(&node_id), font_size, is_ahem, font_id);
     let mut segments: Vec<f32> = vec![0.0];
+    let mut state = DomWalkState {
+        pending_space: false,
+        line_has_content: false,
+        font_size,
+        is_ahem,
+        font_id,
+    };
     text_max_width_walk(
         node_id,
         doc,
@@ -923,6 +938,7 @@ pub(crate) fn text_content_max_width_scoped(
         font_id,
         tab,
         &mut segments,
+        &mut state,
         per_font_intrinsic_on(),
         stop_at_definite_atomic,
     );
@@ -1097,15 +1113,47 @@ fn text_max_width_walk(
     font_id: Option<u32>,
     tab: (f32, f32),
     segments: &mut Vec<f32>,
+    state: &mut DomWalkState,
     per_font: bool,
     stop_at_definite_atomic: bool,
 ) {
     let Some(node) = doc.get(node_id) else { return };
     match &node.kind {
         zero_dom::NodeKind::Text(t) => {
-            accumulate_text_width(&t.content, white_space, font_size, is_ahem, font_id, tab, segments);
+            let preserve_spaces = matches!(
+                white_space,
+                WhiteSpaceValue::Pre | WhiteSpaceValue::PreWrap | WhiteSpaceValue::BreakSpaces
+            );
+            if preserve_spaces {
+                // 保留换行模式：pre 系空白保留、无行缘折叠丢弃语义，维持 accumulate 逐字计宽。
+                accumulate_text_width(&t.content, white_space, font_size, is_ahem, font_id, tab, segments);
+                state.line_has_content = true;
+                return;
+            }
+            // R4397（css-text-3 §white-space-phase-1）：pre-line 保留 \n 为强制换行——按 \n
+            // 切段（段前 pending 随行尾丢弃），段内空白照常折叠。与 dom_inline_text_walk 同款。
+            if matches!(white_space, WhiteSpaceValue::PreLine) && t.content.contains('\n') {
+                for part in t.content.split('\n') {
+                    walk_collapsible_text(part, segments, state);
+                    // \n 强制断：行尾 pending 丢弃，开新段。
+                    state.pending_space = false;
+                    state.line_has_content = false;
+                    segments.push(0.0);
+                }
+                return;
+            }
+            // R5034（css-text-3 §3 white-space processing phase 1/2 + css-sizing-3）：折叠语境
+            // （normal/nowrap）行缘可折叠空白丢弃——行首缩进/行尾换行折叠出的空格不计入
+            // max-content（nowrap 只禁软换行）。旧实现整段计宽（accumulate 折叠臂无行缘语义），
+            // 源码跨行排版的容器 intrinsic 被行缘空白吹胀（slice/clone-nowrap-intrinsic-size
+            // 四案 test 页 +10px 实证）。与 dom_inline_text_walk 共用 walk_collapsible_text
+            // 跨节点折叠状态（pending_space/line_has_content）。
+            walk_collapsible_text(&t.content, segments, state);
         }
         zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br") => {
+            // 强制换行：行尾待定空白丢弃，开新段（同 dom_inline_text_walk）。
+            state.pending_space = false;
+            state.line_has_content = false;
             segments.push(0.0);
         }
         zero_dom::NodeKind::Element(_) => {
@@ -1170,6 +1218,12 @@ fn text_max_width_walk(
                 let child_tab = child_style
                     .map(|cs| intrinsic_tab_metrics(Some(cs), child_fs, child_ahem, child_font_id))
                     .unwrap_or(tab);
+                // R4919：per-element 字体语境换入/换出（同 dom_inline_text_walk）——折叠
+                // pending 空格的 flush 度量随当前子语境，递归返回恢复父语境。
+                let (prev_fs, prev_ahem, prev_fid) = (state.font_size, state.is_ahem, state.font_id);
+                state.font_size = child_fs;
+                state.is_ahem = child_ahem;
+                state.font_id = child_font_id;
                 text_max_width_walk(
                     child,
                     doc,
@@ -1180,9 +1234,13 @@ fn text_max_width_walk(
                     child_font_id,
                     child_tab,
                     segments,
+                    state,
                     per_font,
                     stop_at_definite_atomic,
                 );
+                state.font_size = prev_fs;
+                state.is_ahem = prev_ahem;
+                state.font_id = prev_fid;
             }
         }
         _ => {}
@@ -1536,6 +1594,15 @@ pub(crate) fn fragment_inline_max_width(
     let font_id = intrinsic_font_id(Some(inline_style));
     let tab = intrinsic_tab_metrics(Some(inline_style), font_size, is_ahem, font_id);
     let mut segments: Vec<f32> = vec![0.0];
+    // R5034：跨节点折叠状态随片段序列连续（同 dom_inline_text_max_width）——片段边界
+    // 行缘可折叠空格不入账。
+    let mut state = DomWalkState {
+        pending_space: false,
+        line_has_content: false,
+        font_size,
+        is_ahem,
+        font_id,
+    };
     for nid in fragment_node_ids {
         text_max_width_walk(
             *nid,
@@ -1547,6 +1614,7 @@ pub(crate) fn fragment_inline_max_width(
             font_id,
             tab,
             &mut segments,
+            &mut state,
             // R4919：fragment 语境无样式表可用（styles=None，R4367）——per-element 字体
             // 语境无从解析，维持 split inline 自身 font 近似。
             // R4921：原子 gate 需查子 display/width（styles=None 无从解析）且 split inline
@@ -3175,6 +3243,120 @@ AAAA</div></body></html>"#,
         assert!(
             (dy - 16.0).abs() < 1.0,
             "non-float definite-height inline-block must stay excluded from remeasure (children block-stacked, y diff = icon 16), got {dy}"
+        );
+    }
+
+    // ── R5034（css-text-3 §3 + css-sizing-3）：max-content 不计行缘可折叠空白 ──
+    //
+    // slice/clone-nowrap-intrinsic-size 四案根因（R5032/R5033 定谳）：div 源码行首缩进
+    // + 行尾换行折叠后各 1 空格（10px mono = 5px/个）被 max-content 计入（+10px），
+    // test 页比 ref 页宽 10px → 盒位差。chromium 语义：行缘可折叠空白在 white-space
+    // 处理 phase 1 丢弃（nowrap 只禁软换行，不禁行缘空白折叠）。
+    //
+    // 注意：`<style>` 元素不经本测试路径收集——样式表显式 parse_stylesheet 传入。
+
+    /// 跑完整引擎后对 div#t 直调 block_max_content_width（R5034 观测/断言共用 helper）。
+    fn r5034_block_max(html_body: &str, css: &str) -> f32 {
+        let doc = zero_dom::parse_html(&format!(r#"<html><head></head><body>{html_body}</body></html>"#));
+        let ss = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[ss]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let target = find("t", &doc, &result.root).expect("div#t found");
+        block_max_content_width(target, &doc, &styles)
+    }
+
+    const R5034_CSS: &str =
+        "html,body{font:10px/1 monospace;margin:0;padding:0}div#t{white-space:nowrap;width:max-content}";
+
+    /// 四案同构最小页：div 源码带行缘空白（ws1）vs 无空白（ws2）——max-content 须相等。
+    #[test]
+    fn r5034_max_content_excludes_line_edge_whitespace() {
+        let ws1 = r5034_block_max(
+            r#"<div id="t">
+  <span>aaa</span><span>aaa</span>
+</div>"#,
+            R5034_CSS,
+        );
+        let ws2 = r5034_block_max(r#"<div id="t"><span>aaa</span><span>aaa</span></div>"#, R5034_CSS);
+        assert!(
+            (ws1 - ws2).abs() < 0.5,
+            "line-edge collapsible whitespace must not contribute to max-content (ws1={ws1} ws2={ws2})"
+        );
+    }
+
+    /// 四案真实 span 形态（padding+border frame）：带行缘空白页 max-content 仍须与
+    /// 无空白版相等——frame 分工（loop 计 frame、walk 计文本）不引入行缘空白。
+    #[test]
+    fn r5034_max_content_excludes_line_edge_whitespace_with_span_frame() {
+        let css = &format!("{R5034_CSS}span{{padding:0 10px 0 6px;border-width:0 8px 0 5px;border-style:solid}}");
+        let ws1 = r5034_block_max(
+            r#"<div id="t">
+  <span>aaa</span><span>aaa</span>
+</div>"#,
+            css,
+        );
+        let ws2 = r5034_block_max(r#"<div id="t"><span>aaa</span><span>aaa</span></div>"#, css);
+        assert!(
+            (ws1 - ws2).abs() < 0.5,
+            "span frame + text must not double-count nor include line-edge whitespace (ws1={ws1} ws2={ws2})"
+        );
+    }
+
+    /// R5034 布局级守护：`width:max-content` div 的**布局后盒宽**（经
+    /// apply_intrinsic_content_sizing 的 first-pass 叶测量路径 text_content_max_width）
+    /// 不得含行缘空白。修复前该路径 ws1=38 vs ws2=33（+5）；最终树单次
+    /// block_max_content_width 反而干净——缺陷只在 first-pass 树形态（div 无子）。
+    /// 注意：`<style>` 元素不经此测试路径收集（样式表须显式 parse_stylesheet 传入）。
+    #[test]
+    fn r5034_max_content_layout_width_excludes_line_edge_whitespace() {
+        let css = "html,body{font:10px/1 monospace;margin:0;padding:0}div{white-space:nowrap;width:max-content}";
+        fn layout_w(html: &str, css: &str) -> f32 {
+            let doc = zero_dom::parse_html(html);
+            let ss = zero_css_parser::Parser::parse_stylesheet(css);
+            let mut sys = zero_style_system::StyleSystem::new();
+            sys.set_viewport(800.0, 600.0);
+            let styles = sys.compute_styles(&doc, &[ss]);
+            let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+            let result = engine.compute(&doc, &styles);
+            fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+                if let Some(nid) = b.node_id
+                    && let Some(n) = doc.get(nid)
+                    && let NodeKind::Element(e) = &n.kind
+                    && e.get_attribute("id").as_deref() == Some(id)
+                {
+                    return Some(b);
+                }
+                b.children.iter().find_map(|c| find(id, doc, c))
+            }
+            let t = find("t", &doc, &result.root).expect("div#t");
+            t.width
+        }
+        let w1 = layout_w(
+            r#"<html><head></head><body><div id="t">
+  <span>aaa</span><span>aaa</span>
+</div></body></html>"#,
+            css,
+        );
+        let w2 = layout_w(
+            r#"<html><head></head><body><div id="t"><span>aaa</span><span>aaa</span></div></body></html>"#,
+            css,
+        );
+        assert!(
+            (w1 - w2).abs() < 0.5,
+            "width:max-content div must not include line-edge whitespace in laid-out width (ws1={w1} ws2={w2})"
         );
     }
 }
