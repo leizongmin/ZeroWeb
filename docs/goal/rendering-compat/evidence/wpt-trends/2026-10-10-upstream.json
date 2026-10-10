@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-10",
+  "mode": "upstream",
+  "wpt_data_ref": "v1.10",
+  "total": 16058,
+  "passed": 14820,
+  "rate_pct": 92.3,
+  "extra": "failed=1238;skipped=0",
+  "git_sha": "7fd20cb",
+  "note": ""
+}
