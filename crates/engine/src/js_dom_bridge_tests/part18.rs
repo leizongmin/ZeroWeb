@@ -2529,7 +2529,7 @@ fn t8r4_sel_path_variants_and_ce_once() {
 // t8r-4 返修（PR #131 双审查统一返修轮）：扩扫臂豁免面 + K3 作废臂钉测——
 // ① K3 `_zwMatParsed` 作废（审查① blocking）：innerHTML → 查询触发物化 → host apply
 //    （apply → bump 代际）→ re-register → 断言 childNodes 无重复并入（K3 新臂禁用
-//    变异下物化 wrapper 留桶 + 反链，overlay 重复并入 = 4）；
+//    变异下物化 wrapper 留桶 + 反链，overlay 重复并入 = 3：仅被查询物化的首子）；
 // ② noWire 豁免（审查② F1）：createContextualFragment + insertBefore 的 noWire 解析
 //    子匹配查询按代理返回（可见性=代理匹配面一致），apply 代际 bump 后不消失（豁免
 //    禁用变异下物化打标被 K3 作废 → post 丢子）；
