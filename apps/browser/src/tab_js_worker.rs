@@ -15,8 +15,8 @@ use zero_engine::{
 };
 use zero_net::{FetchPriority, HttpMethod, HttpRequest, ResourceLoader, ResourceRequest};
 use zero_script_sandbox::{
-    ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
-    extract_static_module_import_specifiers,
+    ImportMap, ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife,
+    compile_module_script, extract_static_module_import_specifiers,
 };
 
 /// 页面 `<script>` 执行超时（毫秒）— 短于事件派发，避免死循环拖死 tab worker。
@@ -123,6 +123,10 @@ impl TabJsWorkerHandle {
         let rect_snapshot_for_worker = Arc::clone(&rect_snapshot);
         let handle_selector_map_for_worker = Arc::clone(&handle_selector_map);
         let element_from_point_cache_for_worker = Arc::clone(&element_from_point_cache);
+        // P6 import map：页面 `<script type="importmap">` 解析产物共享槽——仅 worker 线程
+        // 使用（SetDomSnapshot 换代写入；ExecuteModule 编译与 __zw_compile_module 动态
+        // import 读取）。宿主侧预取（tab_scripts）从同一份 HTML 自行解析同型 map。
+        let import_map_for_worker: Arc<std::sync::Mutex<Option<ImportMap>>> = Arc::default();
 
         let join = thread::Builder::new()
             .name(format!("tab-js-{}", tab_id.0))
@@ -134,6 +138,7 @@ impl TabJsWorkerHandle {
                     rect_snapshot_for_worker,
                     handle_selector_map_for_worker,
                     element_from_point_cache_for_worker,
+                    import_map_for_worker,
                 )
             })
             .expect("spawn tab js worker");
@@ -388,6 +393,7 @@ fn js_worker_main(
     rect_snapshot: LayoutRectSnapshot,
     handle_selector_map: HandleSelectorMap,
     element_from_point_cache: ElementFromPointCache,
+    import_map: Arc<std::sync::Mutex<Option<ImportMap>>>,
 ) {
     let js_config = SandboxConfig {
         persistent_context: true,
@@ -419,7 +425,7 @@ fn js_worker_main(
         std::sync::Mutex::new(zero_storage::StorageManager::new()),
     )));
     indexed_db_bridge.register(&mut *sandbox, &page_url);
-    register_module_compile_callback(&mut *sandbox);
+    register_module_compile_callback(&mut *sandbox, Arc::clone(&import_map));
     // P1a gBCR（镜像 renderer js_worker）：RectBridge 注 `__zw_getBoundingClientRect(identity)`
     // 同步回调。handler 解析 identity(selector) → NodeId（fresh-parse dom_html，与渲染管线确定性一致）
     // → 查 rect_snapshot。kill-switch `ZW_REAL_RECT=0` 关闭（回落零 rect = 当前行为，零回归）。
@@ -488,10 +494,17 @@ fn js_worker_main(
                 deps,
                 reply,
             } => {
-                let result = execute_module_in_sandbox(&mut *sandbox, &source, &url, &deps);
+                // P6：按本代页面 import map 编译（裸说明符 import 经映射键命中注册模块）。
+                let map_opt = import_map.lock().ok().and_then(|g| g.clone());
+                let result = execute_module_in_sandbox(&mut *sandbox, &source, &url, &deps, map_opt.as_ref());
                 let _ = reply.send(result);
             }
             JsWorkerCommand::SetDomSnapshot { html, url } => {
+                // P6 import map：快照换代即从页面 HTML 重取 `<script type="importmap">`；
+                // 每代无条件清空重设（无 map/解析失败 → None，保留上一代会跨页污染）。
+                if let Ok(mut slot) = import_map.lock() {
+                    *slot = parse_page_import_map(&html, &url);
+                }
                 // 导航（URL 变化）→ 旧页 handle 在新页无效，清 handle→selector map（path A）。
                 let url_changed = page_url.lock().map(|u| *u != url).unwrap_or(true);
                 if let Ok(mut snap) = dom_html.lock() {
@@ -642,10 +655,15 @@ fn execute_module_in_sandbox(
     source: &str,
     url: &str,
     deps: &[(String, String)],
+    import_map: Option<&ImportMap>,
 ) -> Result<String, String> {
     let mut registry = ModuleRegistry::new();
     for (spec, src) in deps {
         registry.register(spec, src);
+    }
+    // P6：模块体内裸说明符 import 的解析面（transform_import 单钩子）同按本代 map。
+    if let Some(map) = import_map {
+        registry.set_import_map(map.clone());
     }
     let prelude = build_module_runtime_prelude(&registry).map_err(|e| e.to_string())?;
     let transformed = compile_module_script(source, url, &registry).map_err(|e| e.to_string())?;
@@ -653,7 +671,10 @@ fn execute_module_in_sandbox(
     sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string())
 }
 
-fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandbox) {
+fn register_module_compile_callback(
+    sandbox: &mut dyn zero_script_sandbox::Sandbox,
+    import_map: Arc<std::sync::Mutex<Option<ImportMap>>>,
+) {
     let runtime_iifes: Arc<std::sync::Mutex<HashMap<String, String>>> = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
     sandbox.register_callback(
@@ -664,7 +685,12 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
             }
             let spec = &args[0];
             let parent = args.get(1).map(String::as_str).unwrap_or("about:blank");
-            let url = zero_engine::resolve_document_url(parent, spec);
+            // P6：动态 import 同样先过本代页面 import map（仅实际命中映射键时改写）。
+            let map_opt = import_map.lock().ok().and_then(|g| g.clone());
+            let url = map_opt
+                .as_ref()
+                .and_then(|m| m.resolve_mapped(spec, parent))
+                .unwrap_or_else(|| zero_engine::resolve_document_url(parent, spec));
 
             // t8j-r2（D1）：回传 `resolved\x1fcode`——JS 侧 `__moduleCache` 以宿主解析键为缓存
             // 键（ECMA-262 §sec-hostresolveimportedmodule），跨目录同名相对 spec 不再碰撞。
@@ -698,13 +724,19 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
                     return String::new();
                 }
             };
-            if let Err(e) = collect_module_deps(&fetch, &url, &src, &mut registry) {
+            if let Err(e) = collect_module_deps(&fetch, &url, &src, &mut registry, map_opt.as_ref()) {
                 tracing::warn!("module deps {url}: {e}");
                 return String::new();
             }
             let mut reg = ModuleRegistry::new();
             for (spec, body) in &registry {
                 reg.register(spec, body);
+            }
+            // P6C：依赖图内裸说明符（如 chunk 的 `import*as r from"react"`）的解析面
+            // （transform_import → resolve_registered_specifier 的 map 阶段）同按本代 map，
+            // 与 execute_module_in_sandbox 静态路径一致；否则 registry.get("react") miss。
+            if let Some(map) = map_opt.as_ref() {
+                reg.set_import_map(map.clone());
             }
             let iife = match compile_dependency_iife(&url, &reg) {
                 Ok(i) => i,
@@ -722,11 +754,15 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
 }
 
 /// 递归抓取模块依赖图（specifier URL → 源码）。
+///
+/// `import_map` 为本代页面 import map：裸说明符先经映射（仅实际命中映射键时改写，
+/// 见 [`ImportMap::resolve_mapped`]），未命中保持 `resolve_document_url` 原路径。
 pub fn collect_module_deps(
     fetch: &dyn Fn(&str) -> Result<String, String>,
     entry_url: &str,
     source: &str,
     registry: &mut HashMap<String, String>,
+    import_map: Option<&ImportMap>,
 ) -> Result<(), String> {
     if registry.contains_key(entry_url) {
         return Ok(());
@@ -736,13 +772,28 @@ pub fn collect_module_deps(
     // 动态 import() 留给运行时 `__zw_compile_module` fetch，失败以 rejection 呈现，不得作为
     // 硬依赖中止模块执行（Vite `import("_")` 能力探测形态）。
     for spec in extract_static_module_import_specifiers(source) {
-        let dep_url = zero_engine::resolve_document_url(entry_url, &spec);
+        let dep_url = import_map
+            .and_then(|m| m.resolve_mapped(&spec, entry_url))
+            .unwrap_or_else(|| zero_engine::resolve_document_url(entry_url, &spec));
         if !registry.contains_key(&dep_url) {
             let dep_src = fetch(&dep_url)?;
-            collect_module_deps(fetch, &dep_url, &dep_src, registry)?;
+            collect_module_deps(fetch, &dep_url, &dep_src, registry, import_map)?;
         }
     }
     Ok(())
+}
+
+/// 从页面 HTML 提取并解析第一张合法 import map；无 map 或全部解析失败 → `None`。
+/// FIXME(spec)：多张 import map 的规范合并暂未实现——当前取第一张解析成功的 map，
+/// 其余忽略并告警（与 renderer `js_worker::parse_page_import_map` 同实现）。
+pub(crate) fn parse_page_import_map(html: &str, base_url: &str) -> Option<ImportMap> {
+    for json in zero_engine::extract_import_map_json(html) {
+        match ImportMap::parse_from_page(&json, base_url) {
+            Ok(map) => return Some(map),
+            Err(e) => tracing::warn!("invalid import map ignored: {e}"),
+        }
+    }
+    None
 }
 
 /// tabworker 的 JS worker 实现统一脚本执行器契约（T4）——与 renderer 的 RendererJsWorker 同契约。
@@ -778,7 +829,7 @@ mod tests {
         };
         let mut reg = HashMap::new();
         let source = "import { a } from './static-dep.js'\nimport('_').catch(function () {})\nexport default a";
-        collect_module_deps(&fetch, "https://zero.test/m.js", source, &mut reg).unwrap();
+        collect_module_deps(&fetch, "https://zero.test/m.js", source, &mut reg, None).unwrap();
         let calls = calls.into_inner().unwrap();
         assert!(
             calls.contains(&"https://zero.test/static-dep.js".to_string()),
