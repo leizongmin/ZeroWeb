@@ -1194,11 +1194,27 @@ fn apply_replaced_element_sizing(
                     computed.max_height,
                     LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
                 );
-                if max_height_kw {
+                // R5048（css-sizing-4 §4.1 + csswg #12333）：min-height content 关键字 =
+                // max-content 传送值**地板**——与 max_height_kw 的钳制对称（CSS2 §10.4 min
+                // 胜 max）。converter 把 min-height:max-content 映射 length(0)（地板全丢，
+                // replaced-element-047：canvas 100×50 + width:max-content + height:0 +
+                // min-height:max-content + ar 1 应 100×100，旧 100×0 红透）：传送值 =
+                // 固有宽 / 比，height 取 max(definite, 传送值)，width 设固有宽。
+                let min_height_kw = matches!(
+                    computed.min_height,
+                    LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                );
+                if max_height_kw || min_height_kw {
                     let css_ar = computed.aspect_ratio.unwrap_or(w / h);
                     let max_content_h = w / css_ar;
-                    let used_h = max_content_h
-                        .min(resolve_tree_definite_real_length(&computed.height, computed).unwrap_or(f32::INFINITY));
+                    let used_h = if min_height_kw {
+                        resolve_tree_definite_real_length(&computed.height, computed)
+                            .unwrap_or(0.0)
+                            .max(max_content_h)
+                    } else {
+                        max_content_h
+                            .min(resolve_tree_definite_real_length(&computed.height, computed).unwrap_or(f32::INFINITY))
+                    };
                     taffy_style.size.height = taffy::style::Dimension::length(used_h.max(0.5));
                     taffy_style.size.width = taffy::style::Dimension::length(w.max(0.5));
                 }
@@ -1296,8 +1312,44 @@ fn apply_replaced_element_sizing(
                     // width 显式，height auto → 用真实固有高或 default 150
                     taffy_style.size.height = taffy::style::Dimension::length(h_opt.unwrap_or(150.0).max(0.5));
                 } else if width_auto && !height_auto {
-                    // height 显式，width auto → 用真实固有宽或 default 300
-                    taffy_style.size.width = taffy::style::Dimension::length(w_opt.unwrap_or(300.0).max(0.5));
+                    // R5048（css-sizing-4 §4.1-4.2 + css-sizing-3 §5.1）：height content
+                    // 关键字（min/max-content）+ CSS ratio + border-box + 内联 frame>0 +
+                    // 自然宽已知——块轴关键字值 = 内联 min/max-content 经比传送，而
+                    // border-box 口径的内联关键字值 = 自然宽 + frame（replaced-element-034：
+                    // svg 自然宽 50 + padding-left 50 + ar 1/1 + height:min-content 应
+                    // 100×100，旧落本臂写宽 50 由 taffy content 口径传送 50×50）。传送高 =
+                    // (自然宽 + frame) / ratio，宽 = definite 高传送；清 ratio 防 taffy 按
+                    // 自然宽二次传送。content-box / 无 frame / 无自然宽形态保持旧径
+                    //（taffy 比传送即 content 口径正确值）。kill-switch
+                    // `ZW_REPLACED_KW_BORDER_BOX=0`。
+                    let height_kw = matches!(
+                        computed.height,
+                        LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                    );
+                    let border_box = matches!(
+                        computed.box_sizing,
+                        zero_style_system::property::types::BoxSizingValue::BorderBox
+                    );
+                    let frame_inline = frame_size(computed).0;
+                    let kw_ratio = computed.aspect_ratio.filter(|&r| r > 0.0);
+                    let h_bb = match (w_opt, kw_ratio) {
+                        (Some(nw), Some(r)) => (nw + frame_inline) / r,
+                        _ => 0.0,
+                    };
+                    if height_kw
+                        && border_box
+                        && frame_inline > 0.5
+                        && std::env::var("ZW_REPLACED_KW_BORDER_BOX").as_deref() != Ok("0")
+                        && h_bb.is_finite()
+                        && h_bb > 0.5
+                    {
+                        taffy_style.size.height = taffy::style::Dimension::length(h_bb);
+                        taffy_style.size.width = taffy::style::Dimension::length(h_bb * kw_ratio.unwrap());
+                        taffy_style.aspect_ratio = None;
+                    } else {
+                        // height 显式，width auto → 用真实固有宽或 default 300
+                        taffy_style.size.width = taffy::style::Dimension::length(w_opt.unwrap_or(300.0).max(0.5));
+                    }
                 }
                 // 两侧都显式：由 converter 处理，不干预
             } else if let Some(&(w, h)) = img_intrinsic_sizes.get(&dom_id) {

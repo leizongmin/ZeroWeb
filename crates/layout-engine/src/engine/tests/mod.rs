@@ -679,3 +679,5 @@ mod s10_hotlist_geometry_tests;
 mod s19_inline_atomic_geometry_tests;
 
 mod r5047_flex_ar_flexed_main_tests;
+
+mod r5048_replaced_kw_border_box_tests;
