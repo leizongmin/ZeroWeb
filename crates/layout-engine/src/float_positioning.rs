@@ -1783,6 +1783,31 @@ pub(crate) fn adjust_float_positions_with_context(
                     child.width = used_border_box;
                     child.content_width = content_max_w;
                 }
+            } else if child.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                // R5045（css-sizing-4 §4.1）：叶/空 float 的 AR transferred preferred——
+                // ratio + definite height + width:auto 的 preferred = transfer 宽
+                //（intrinsic-size-003：height:100px + ratio 1/1 → shrink-to-fit =
+                // min(max(100, available=0), 100) = 100 而非 taffy 塌 0）。preferred 与
+                // min-content 同源可测（block_max/min_content_width 叶 own_ar，R5042）。
+                // 纯文本 float（无 ratio）仍不入——preferred 需 IFC 整行测量
+                //（R5043 变体 A 教训：preferred=0 会让地板塌成词宽）。
+                s.aspect_ratio.filter(|&r| r > 0.0).is_some()
+                    && crate::intrinsic_sizing::resolve_intrinsic_real_length(&s.height, s).is_some()
+                    && matches!(s.width, LengthValue::Auto)
+            }) {
+                let frame = child.padding_left + child.padding_right + child.border_left + child.border_right;
+                let preferred_border_box = crate::intrinsic_sizing::block_max_content_width(child, doc, styles) + frame;
+                let available_border_box = (container_width - child.margin_left - child.margin_right).max(0.0);
+                let min_content_border_box =
+                    crate::intrinsic_sizing::block_min_content_width(child, doc, styles) + frame;
+                let used_border_box = preferred_border_box
+                    .min(available_border_box)
+                    .max(min_content_border_box)
+                    .max(0.0);
+                if (used_border_box - child.width).abs() > 0.5 {
+                    child.width = used_border_box;
+                    child.content_width = (used_border_box - frame).max(0.0);
+                }
             }
         }
 
