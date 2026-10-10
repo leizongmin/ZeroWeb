@@ -4739,7 +4739,11 @@
     // M2-S4C：skipScroll——intercept 取代默认滚锚行为（spec intercept 替换默认 scroll 面近似）。
     // M2-S4R：traverse 无匹配 hash 不做滚顶回退（_noTopFallback——不得覆写 entry 恢复滚动位；
     // WPT scroll-restoration-navigation-samedoc 回归门）。
-    if (hashChanged && !skipScroll) {
+    // M2-S4Z：traverse 锚滚按**目标 entry** scrollRestoration 门——manual 不做任何恢复滚动
+    //（spec apply-the-history step scroll restoration mode；WPT scroll-restoration-
+    // fragment-scrolling-samedoc「manual 优先于片段滚」）。hash-setter 新导航不受门
+    //（同案「new navigations should scroll to fragment」基面）。
+    if (hashChanged && !skipScroll && (cur.scrollRestoration || 'auto') !== 'manual') {
       _scrollToAnchorForHash(String(newHref).split('#')[1] || '', true);
     }
     // M2-S4T 挂账注记：popstate/hashchange 维持 _defer microtask 近似（spec 为 task）。
