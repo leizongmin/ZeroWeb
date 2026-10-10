@@ -97,3 +97,54 @@ fn r3861_grid_align_stretch_with_definite_inline_ignores_ratio() {
         item.height
     );
 }
+
+/// R5038（css-sizing-4 §4.1）：inline stretch + 另轴 definite（Px）= 双轴约束，ratio
+/// 完全让位——width = 列轨、height 定值不动（grid-aspect-ratio-018 同构：height:50px +
+/// ratio 1/2 + justify-self:stretch → 100×50，非 ratio 传递 25×50）。
+#[test]
+fn r5038_grid_justify_stretch_with_definite_block_ignores_ratio() {
+    let html = r#"<html><body>
+<div id="g" style="display:grid; grid-template: 50px / 100px">
+  <div id="item" style="height: 50px; aspect-ratio: 1/2; justify-self: stretch; background: green"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let item_id = doc.get_element_by_id("item").expect("item");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let item = find(&result.root, item_id).unwrap();
+    assert!(
+        (item.width - 100.0).abs() < 0.5 && (item.height - 50.0).abs() < 0.5,
+        "R5038: inline-stretch + definite height → ratio 让位（100×50），got {}x{}",
+        item.width,
+        item.height
+    );
+}
+
+/// R5038：justify-self 缺省时回退容器 `justify-items: stretch`（grid-aspect-ratio-018
+/// 第二网格同构），同臂语义——width = 列轨、ratio 让位。
+#[test]
+fn r5038_grid_justify_items_stretch_with_definite_block_ignores_ratio() {
+    let html = r#"<html><body>
+<div id="g" style="display:grid; grid-template: 50px / 100px; justify-items: stretch">
+  <div id="item" style="height: 50px; aspect-ratio: 1/2; background: green"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let item_id = doc.get_element_by_id("item").expect("item");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let item = find(&result.root, item_id).unwrap();
+    assert!(
+        (item.width - 100.0).abs() < 0.5 && (item.height - 50.0).abs() < 0.5,
+        "R5038: justify-items:stretch 回退同臂（100×50），got {}x{}",
+        item.width,
+        item.height
+    );
+}

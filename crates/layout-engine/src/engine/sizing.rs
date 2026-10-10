@@ -1488,7 +1488,11 @@ impl LayoutEngine {
                 && matches!(ps.display, DisplayValue::Grid | DisplayValue::InlineGrid)
                 && let Some(item_style) = my_style
                 && matches!(item_style.width, LengthValue::Auto | LengthValue::Percentage(_))
-                && matches!(item_style.height, LengthValue::Auto)
+                // R5038：height 非 Auto（definite Px / %）仅在 inline-stretch 形状（下方
+                // 新臂）参与——双轴约束 ratio 让位；Auto 语义不变。
+                && let item_height_auto = matches!(item_style.height, LengthValue::Auto)
+                && (item_height_auto
+                    || matches!(item_style.height, LengthValue::Px(_) | LengthValue::Percentage(_)))
                 && let Some(&tid) = dom_to_taffy.get(&id)
                 && let Some(parent_tid) = parent_taffy_id
                 && let Ok(mut st) = taffy_tree.style(tid).cloned()
@@ -1544,6 +1548,28 @@ impl LayoutEngine {
                     //（可溢出列轨，029 列 50 item 100）。
                     st.size.height = taffy::style::Dimension::length(row_h.max(0.5));
                     st.size.width = taffy::style::Dimension::length((row_h * ratio).max(0.5));
+                    let _ = taffy_tree.set_style(tid, st);
+                    let _ = taffy_tree.mark_dirty(tid);
+                    changed = true;
+                } else if !align_stretch
+                    && !item_height_auto
+                    && matches!(item_style.width, LengthValue::Auto)
+                    && let Some(col_w) = col_definite
+                    && item_overflowing_col
+                    && (justify_stretch
+                        || (st.justify_self.is_none()
+                            && matches!(
+                                parent_tstyle.justify_items.map(|j| j.keyword),
+                                Some(AlignItemsKeyword::Stretch)
+                            )))
+                {
+                    // R5038（css-sizing-4 §4.1）：inline 轴 stretch + 另轴 definite（Px/%）
+                    // = 双轴约束，ratio 完全让位——width = 列轨，height 定值不动
+                    //（018 height:50px + ratio 1/2 + justify-self:stretch → 100×50 而非
+                    // ratio 传递 25×50；036/037 height:100% + grid-template 100px/100px 同）。
+                    // justify-self 缺省时回退容器 justify-items:stretch（018 第二网格），
+                    // 仅此新臂生效，不改既有臂的「仅显式 self 关键字」口径。
+                    st.size.width = taffy::style::Dimension::length(col_w.max(0.5));
                     let _ = taffy_tree.set_style(tid, st);
                     let _ = taffy_tree.mark_dirty(tid);
                     changed = true;

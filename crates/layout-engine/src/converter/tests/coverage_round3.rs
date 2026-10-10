@@ -182,8 +182,9 @@ fn test_parse_repeat_auto_fit() {
 fn test_minmax_parsing_complex() {
     let track = parse_single_track("minmax(min-content, max-content)");
     if let taffy::style::GridTemplateComponent::Single(taffy::geometry::MinMax { min, max }) = track {
-        assert!(min.is_auto());
-        assert!(max.is_auto());
+        // R5038（css-grid-2 §7.2）：内容关键字映射 taffy Content 尺寸（旧近似 = 双 auto）。
+        assert_eq!(min, taffy::style::MinTrackSizingFunction::MIN_CONTENT);
+        assert_eq!(max, taffy::style::MaxTrackSizingFunction::MAX_CONTENT);
     } else {
         panic!("Expected GridTemplateComponent::Single");
     }

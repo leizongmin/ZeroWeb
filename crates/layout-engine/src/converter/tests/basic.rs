@@ -858,3 +858,41 @@ fn test_direction_default_ltr() {
     let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(taffy_style.direction, taffy::style::Direction::Ltr);
 }
+
+/// R5038（css-grid-2 §7.2.3）：min-content/max-content 内容关键字轨道——bare 关键字映射
+/// taffy Content 尺寸（min-content ≡ minmax(min-content, max-content)、max-content ≡
+/// minmax(max-content, max-content)），repeat() 内与 minmax() 两侧同。此前声明在
+/// style-system 校验即被拒绝整体丢弃（grid-aspect-ratio 005/006 塌单列实证）。
+#[test]
+fn test_parse_grid_tracks_content_keywords() {
+    let tracks = parse_grid_tracks(&Some("min-content max-content".to_string()));
+    assert_eq!(tracks.len(), 2);
+    if let taffy::style::GridTemplateComponent::Single(f) = &tracks[0] {
+        assert_eq!(
+            f.min_sizing_function(),
+            taffy::style::MinTrackSizingFunction::MIN_CONTENT
+        );
+        assert_eq!(
+            f.max_sizing_function(),
+            taffy::style::MaxTrackSizingFunction::MAX_CONTENT
+        );
+    } else {
+        panic!("min-content 应展开为单条 MinMax 轨道");
+    }
+    if let taffy::style::GridTemplateComponent::Single(f) = &tracks[1] {
+        assert_eq!(
+            f.min_sizing_function(),
+            taffy::style::MinTrackSizingFunction::MAX_CONTENT
+        );
+        assert_eq!(
+            f.max_sizing_function(),
+            taffy::style::MaxTrackSizingFunction::MAX_CONTENT
+        );
+    } else {
+        panic!("max-content 应展开为单条 MinMax 轨道");
+    }
+    let tracks = parse_grid_tracks(&Some("repeat(2, min-content)".to_string()));
+    assert_eq!(tracks.len(), 2);
+    let tracks = parse_grid_tracks(&Some("minmax(min-content, auto)".to_string()));
+    assert_eq!(tracks.len(), 1);
+}

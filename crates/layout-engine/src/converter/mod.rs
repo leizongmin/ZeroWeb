@@ -1241,6 +1241,20 @@ fn parse_single_track_as_non_repeated(s: &str) -> taffy::style::TrackSizingFunct
     if s.eq_ignore_ascii_case("auto") {
         return TrackSizingFunction::AUTO;
     }
+    // R5038：内容关键字轨道（同 parse_single_track——min-content ≡ minmax(min-content,
+    // max-content)、max-content ≡ minmax(max-content, max-content)）。
+    if s.eq_ignore_ascii_case("min-content") {
+        return taffy::geometry::MinMax {
+            min: taffy::style::MinTrackSizingFunction::MIN_CONTENT,
+            max: taffy::style::MaxTrackSizingFunction::MAX_CONTENT,
+        };
+    }
+    if s.eq_ignore_ascii_case("max-content") {
+        return taffy::geometry::MinMax {
+            min: taffy::style::MinTrackSizingFunction::MAX_CONTENT,
+            max: taffy::style::MaxTrackSizingFunction::MAX_CONTENT,
+        };
+    }
     if let Some(flex) = parse_non_negative_number_with_suffix(s, "fr") {
         return TrackSizingFunction::from_fr(flex);
     }
@@ -1353,6 +1367,22 @@ fn parse_single_track(s: &str) -> taffy::style::GridTemplateComponent<String> {
     if s.eq_ignore_ascii_case("auto") {
         return TrackSizingFunction::AUTO.into();
     }
+    // R5038（css-grid-2 §7.2.3）：内容关键字轨道——`min-content` ≡ minmax(min-content,
+    // max-content)、`max-content` ≡ minmax(max-content, max-content)。
+    if s.eq_ignore_ascii_case("min-content") {
+        return taffy::geometry::MinMax {
+            min: taffy::style::MinTrackSizingFunction::MIN_CONTENT,
+            max: taffy::style::MaxTrackSizingFunction::MAX_CONTENT,
+        }
+        .into();
+    }
+    if s.eq_ignore_ascii_case("max-content") {
+        return taffy::geometry::MinMax {
+            min: taffy::style::MinTrackSizingFunction::MAX_CONTENT,
+            max: taffy::style::MaxTrackSizingFunction::MAX_CONTENT,
+        }
+        .into();
+    }
     if let Some(flex) = parse_non_negative_number_with_suffix(s, "fr") {
         return TrackSizingFunction::from_fr(flex).into();
     }
@@ -1425,6 +1455,13 @@ fn parse_min_track(s: &str) -> taffy::style::MinTrackSizingFunction {
     if s.eq_ignore_ascii_case("auto") {
         return MinTrackSizingFunction::auto();
     }
+    // R5038（css-grid-2 §7.2 `<inflexible-breadth>`）：minmax() min 侧接受内容关键字。
+    if s.eq_ignore_ascii_case("min-content") {
+        return MinTrackSizingFunction::MIN_CONTENT;
+    }
+    if s.eq_ignore_ascii_case("max-content") {
+        return MinTrackSizingFunction::MAX_CONTENT;
+    }
     if let Some(pct) = parse_non_negative_number_with_suffix(s, "%") {
         return MinTrackSizingFunction::percent(pct / 100.0);
     }
@@ -1446,6 +1483,13 @@ fn parse_max_track(s: &str) -> taffy::style::MaxTrackSizingFunction {
 
     if s.eq_ignore_ascii_case("auto") {
         return MaxTrackSizingFunction::auto();
+    }
+    // R5038（css-grid-2 §7.2 `<track-breadth>`）：minmax() max 侧接受内容关键字。
+    if s.eq_ignore_ascii_case("min-content") {
+        return MaxTrackSizingFunction::MIN_CONTENT;
+    }
+    if s.eq_ignore_ascii_case("max-content") {
+        return MaxTrackSizingFunction::MAX_CONTENT;
     }
     if let Some(flex) = parse_non_negative_number_with_suffix(s, "fr") {
         return MaxTrackSizingFunction::from_fr(flex);

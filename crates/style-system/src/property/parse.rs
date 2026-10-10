@@ -215,7 +215,7 @@ fn parse_grid_repeat_track_count(token: &str) -> Option<usize> {
 
 fn grid_single_track_supported(token: &str, allow_fit_content: bool) -> bool {
     let token = token.trim();
-    if token.eq_ignore_ascii_case("auto") {
+    if token.eq_ignore_ascii_case("auto") || grid_content_track_keyword(token) {
         return true;
     }
     if grid_non_negative_number_with_suffix(token, "fr").is_some()
@@ -243,13 +243,22 @@ fn grid_single_track_supported(token: &str, allow_fit_content: bool) -> bool {
 }
 
 fn grid_min_track_supported(value: &str) -> bool {
-    value.eq_ignore_ascii_case("auto") || grid_length_percentage_supported(value)
+    value.eq_ignore_ascii_case("auto") || grid_content_track_keyword(value) || grid_length_percentage_supported(value)
 }
 
 fn grid_max_track_supported(value: &str) -> bool {
     value.eq_ignore_ascii_case("auto")
+        || grid_content_track_keyword(value)
         || grid_length_percentage_supported(value)
         || grid_non_negative_number_with_suffix(value, "fr").is_some()
+}
+
+/// R5038（css-grid-2 §7.2 `<track-breadth>` / `<inflexible-breadth>`）：min-content /
+/// max-content 关键字是合法轨道尺寸（bare 关键字与 minmax() 两侧）——此前整条
+/// grid-template-* 声明因校验拒绝被丢弃，网格塌成单列自增行（grid-aspect-ratio
+/// 005/006 实证 items 纵向堆叠）。
+fn grid_content_track_keyword(value: &str) -> bool {
+    value.eq_ignore_ascii_case("min-content") || value.eq_ignore_ascii_case("max-content")
 }
 
 fn grid_length_percentage_supported(value: &str) -> bool {
@@ -1343,5 +1352,19 @@ mod tests {
         assert_eq!(child.font_size_adjust, adjust(None, FontSizeAdjustBasis::Number(0.9)));
         // is_inherited 标记
         assert!(crate::property::PropertyRegistry::is_inherited("font-size-adjust"));
+    }
+
+    /// R5038（css-grid-2 §7.2）：min-content/max-content 是合法轨道尺寸——bare 关键字、
+    /// repeat() 内、minmax() 两侧均接受。此前整条 grid-template-* 声明被校验拒绝丢弃，
+    /// 网格塌单列自增行（grid-aspect-ratio 005/006、contain-size-064 实证）。
+    #[test]
+    fn parse_grid_track_list_accepts_content_keywords() {
+        assert!(parse_grid_template_track_list("min-content max-content").is_some());
+        assert!(parse_grid_template_track_list("repeat(2, min-content)").is_some());
+        assert!(parse_grid_template_track_list("minmax(min-content, auto)").is_some());
+        assert!(parse_grid_template_track_list("minmax(auto, max-content)").is_some());
+        // 近似拼写仍拒绝
+        assert!(parse_grid_template_track_list("min-contentt").is_none());
+        assert!(parse_grid_template_track_list("max-contentt").is_none());
     }
 }
