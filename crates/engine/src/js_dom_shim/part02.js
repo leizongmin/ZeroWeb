@@ -5558,7 +5558,9 @@
     reload: function (options) {
       var o = (options == null || typeof options !== 'object') ? {} : options;
       var ctrl = _navNavResult();
-      var ev = _navFireNavigate({ navigationType: 'reload', url: globalThis.location.href, hashChange: false, info: o.info, resultCtrl: ctrl });
+      // M2-S4U：reload 目的态承继当前 entry navState（spec reload 导航 destination 复用当前
+      // entry——getState() 可见 updateCurrentEntry 写入态；WPT navigate-destination-getState-reload）。
+      var ev = _navFireNavigate({ navigationType: 'reload', url: globalThis.location.href, hashChange: false, info: o.info, destState: _navCurrent() ? _navCurrent().navState : undefined, resultCtrl: ctrl });
       if (ev.defaultPrevented) {
         // M2-S4G：dispatch 期已被 abort（重入面）→ 双 promise 已 reject、navigateerror 已派。
         if (!ev._zwErrored) _navCancelNavigation(ev, ctrl);

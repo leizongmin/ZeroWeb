@@ -5407,9 +5407,16 @@
     // replace(url) replace 当前 entry。
     defOp('assign', function (url) { if (typeof _locationAssign === 'function') _locationAssign(url); });
     defOp('replace', function (url) { if (typeof _locationReplace === 'function') _locationReplace(url); });
-    // headless 无真文档重载——synthesized page 无原始 fetch 可重取。no-op（不抛，spec reload 返 void）。
-    // host 真重载（重新 fetch + 解析 + 执行页面脚本）defer。
-    defOp('reload', function () {});
+    // M2-S4U：location.reload() 接线 Navigation API reload 面（navigate 'reload' 事件 +
+    // intercept 生命周期；headless 仍无真文档重载——no-op reapply 语义维持，与
+    // navigation.reload() 同一 documented 近似）。原 no-op 存根不派事件——WPT
+    // navigate-destination-getState-reload「location.reload() → onnavigate 'reload' +
+    // destination.getState() 承继」超时根因。
+    defOp('reload', function () {
+      if (globalThis.navigation && typeof globalThis.navigation.reload === 'function') {
+        globalThis.navigation.reload();
+      }
+    });
     // stringifier（stringifier attribute USVString href）→ own **data** property，值 = getter
     // 函数（WebIDL es-stringifier——属性值为 getter 函数，调用时以 this 过 brand check 后返回
     // 属性值；[LegacyUnforgeable] → {writable: false, enumerable: true, configurable: false}。

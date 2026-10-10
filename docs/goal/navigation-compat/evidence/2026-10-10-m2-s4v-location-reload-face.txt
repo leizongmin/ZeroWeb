@@ -1,0 +1,628 @@
+bash tests/wpt-runner/scripts/goals/60-navigation-compat.sh
+== fetch 语料（pin 315976933，FORCE=0）==
+  navigation-api/currententrychange-event: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/focus-reset: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigate-event: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-activation: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-history-entry: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-methods: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/ordering-and-transition: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/per-entry-events: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/precommit-handler: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/scroll-behavior: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/state: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/updateCurrentEntry-method: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-methods/return-value: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-methods/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-history-entry/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/ordering-and-transition/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigate-event/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-activation/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+curl: (22) The requested URL returned error: 404
+  navigation-api/per-entry-events/resources: API 列目录失败（限流/网络）——跳过，稍后重跑续拉
+  html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/navigating-across-documents/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/the-history-interface: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/the-location-interface: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/the-session-history-of-browsing-contexts: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/joint-session-history: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/history-traversal: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/navigating-across-documents: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/scroll-to-fragid: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/unloading-documents: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/embedded-content/the-iframe-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+== 语料盘点（wpt-data 本地 .html，含子目录）==
+  navigation-api                 439 案
+  navigation-api/navigation-methods/return-value    73 案
+  navigation-api/navigation-methods/resources     4 案
+  navigation-api/navigation-history-entry/resources     6 案
+  navigation-api/state/resources     0 案
+  navigation-api/precommit-handler/resources     0 案
+  navigation-api/focus-reset/resources     0 案
+  navigation-api/ordering-and-transition/resources     1 案
+  navigation-api/navigate-event/resources     9 案
+  navigation-api/navigation-activation/resources     1 案
+  navigation-api/per-entry-events/resources     0 案
+  html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources     4 案
+  html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document/resources     1 案
+  html/browsers/browsing-the-web/navigating-across-documents/multiple-globals/resources     0 案
+  html/browsers/browsing-the-web/navigating-across-documents/resources    24 案
+  html/browsers/history/the-history-interface   111 案
+  html/browsers/history/the-location-interface    98 案
+  html/browsers/history/the-session-history-of-browsing-contexts     5 案
+  html/browsers/history/joint-session-history     8 案
+  html/browsers/browsing-the-web/history-traversal    59 案
+  html/browsers/browsing-the-web/navigating-across-documents   149 案
+  html/browsers/browsing-the-web/scroll-to-fragid    24 案
+  html/browsers/browsing-the-web/unloading-documents    83 案
+  html/semantics/embedded-content/the-iframe-element   161 案
+== M1 下一步（rally 轮，契约见 docs/goal/navigation-compat.md DC-1）==
+  1. runner 通道：zero-wpt-runner 新增 testharness 子命令 + per-dir skip 规则
+  2. Makefile：fetch-wpt / testharness target（test-guard 包裹，照 testharness-fs 先例）
+  3. 基线：分类通过率（文本 + JSON）落 docs/goal/navigation-compat/evidence/
+  4. 回填：docs/compat/trends/wpt-suites.csv planned 行转数据行（evidence 列给来源）
+rustc -O scripts/test-guard.rs -o target/test-guard
+cargo build --release --bin zero-wpt-runner
+    Finished `release` profile [optimized] target(s) in 0.20s
+./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1800 -- ./target/release/zero-wpt-runner testharness-navigation 
+Pass navigation-api/currententrychange-event/anchor-click.html :: currententrychange fires for link click
+Pass navigation-api/currententrychange-event/constructor.html :: can't bypass required members by omitting the dictionary entirely
+Pass navigation-api/currententrychange-event/constructor.html :: from is required
+Pass navigation-api/currententrychange-event/constructor.html :: all properties are reflected back
+Pass navigation-api/currententrychange-event/constructor.html :: defaults are as expected
+Pass navigation-api/currententrychange-event/history-back-same-doc.html :: currententrychange fires for history.back()
+Pass navigation-api/currententrychange-event/history-pushState.html :: currententrychange fires for history.pushState()
+Pass navigation-api/currententrychange-event/history-replaceState.html :: currententrychange fires for history.replaceState()
+Pass navigation-api/currententrychange-event/location-api.html :: currententrychange fires for location API navigations
+Pass navigation-api/currententrychange-event/navigation-back-forward-same-doc.html :: currententrychange fires for same-document navigation.back() and navigation.forward()
+Pass navigation-api/currententrychange-event/navigation-navigate-preventDefault.html :: currententrychange does not fire when onnavigate preventDefault() is called
+Pass navigation-api/currententrychange-event/navigation-navigate-replace-same-doc.html :: currententrychange fires for navigation.navigate() with replace
+Pass navigation-api/currententrychange-event/navigation-navigate-same-doc.html :: currententrychange fires for navigation.navigate()
+Pass navigation-api/currententrychange-event/navigation-updateCurrentEntry.html :: currententrychange fires for navigation.updateCurrentEntry()
+Pass navigation-api/currententrychange-event/not-on-load.html :: No navigation API events happen on initial page load
+Pass navigation-api/currententrychange-event/properties.html :: NavigationCurrentEntryChangeEvent's properties
+NotRun navigation-api/focus-reset/autofocus.html?delayed-checkpoint :: An element with autofocus, present before navigation, gets focused
+NotRun navigation-api/focus-reset/autofocus.html?delayed-checkpoint :: Two elements with autofocus, present before navigation; the first gets focused
+NotRun navigation-api/focus-reset/autofocus.html?delayed-checkpoint :: An element with autofocus, present before navigation but disabled before finished, does not get focused
+NotRun navigation-api/focus-reset/autofocus.html?delayed-checkpoint :: An element with autofocus, present before navigation but with its autofocus attribute removed before finished, does not get focused
+NotRun navigation-api/focus-reset/autofocus.html?delayed-checkpoint :: Two elements with autofocus, present before navigation, but the first gets disabled; the second gets focused
+NotRun navigation-api/focus-reset/autofocus.html?delayed-checkpoint :: An element with autofocus, introduced between committed and finished, gets focused
+NotRun navigation-api/focus-reset/autofocus.html?delayed-checkpoint :: An element with autofocus, introduced after finished, does not get focused
+NotRun navigation-api/focus-reset/autofocus.html?same-checkpoint :: An element with autofocus, present before navigation, gets focused
+NotRun navigation-api/focus-reset/autofocus.html?same-checkpoint :: Two elements with autofocus, present before navigation; the first gets focused
+NotRun navigation-api/focus-reset/autofocus.html?same-checkpoint :: An element with autofocus, present before navigation but disabled before finished, does not get focused
+NotRun navigation-api/focus-reset/autofocus.html?same-checkpoint :: An element with autofocus, present before navigation but with its autofocus attribute removed before finished, does not get focused
+NotRun navigation-api/focus-reset/autofocus.html?same-checkpoint :: Two elements with autofocus, present before navigation, but the first gets disabled; the second gets focused
+NotRun navigation-api/focus-reset/autofocus.html?same-checkpoint :: An element with autofocus, introduced between committed and finished, gets focused
+NotRun navigation-api/focus-reset/autofocus.html?same-checkpoint :: An element with autofocus, introduced after finished, does not get focused
+Pass navigation-api/focus-reset/basic.html :: Invalid values for focusReset throw
+Timeout navigation-api/focus-reset/basic.html :: navigation-api/focus-reset/basic.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 21877, 2059], state={"loaded":true,"pending":7,"phase":4,"tests":8}, test_wait=false)
+Pass navigation-api/focus-reset/change-focus-again-in-blur-during-intercept.html :: change-focus-again-in-blur-during-intercept
+Pass navigation-api/focus-reset/change-focus-back-to-origial-during-intercept.html :: change-focus-back-to-origial-during-intercept
+Pass navigation-api/focus-reset/change-focus-during-intercept.html :: change-focus-during-intercept
+Pass navigation-api/focus-reset/change-focus-then-remove-during-intercept.html :: change-focus-then-remove-during-intercept
+Pass navigation-api/focus-reset/focus-reset-timing.html :: Focus should be reset before navigatesuccess
+Pass navigation-api/focus-reset/focus-reset-timing.html :: Focus should be reset before navigateerror
+Timeout navigation-api/focus-reset/multiple-intercept.html :: navigation-api/focus-reset/multiple-intercept.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 21877, 1945], state={"loaded":true,"pending":6,"phase":4,"tests":6}, test_wait=false)
+Pass navigation-api/navigate-event/defaultPrevented-navigation-preempted.html :: navigateEvent.defaultPrevented isn't affected when the navigation is preempted after dispatch
+Pass navigation-api/navigate-event/defaultPrevented-window-stop-after-dispatch.html :: window.stop() doesn't affect navigateEvent.defaultPrevented after dispatch
+Pass navigation-api/navigate-event/event-constructor.html :: can't bypass required members by omitting the dictionary entirely
+Pass navigation-api/navigate-event/event-constructor.html :: destination is required
+Pass navigation-api/navigate-event/event-constructor.html :: signal is required
+Pass navigation-api/navigate-event/event-constructor.html :: all properties are reflected back
+Pass navigation-api/navigate-event/event-constructor.html :: defaults are as expected
+Pass navigation-api/navigate-event/event-constructor.html :: hasUAVisualTransition is default false
+Pass navigation-api/navigate-event/intercept-and-navigate.html :: Using intercept() then navigate() in the ensuing currententrychange should abort the finished promise (but not the committed promise)
+Pass navigation-api/navigate-event/intercept-cross-document-same-origin.html :: event.intercept() intercepts a same-origin cross-document navigation
+Pass navigation-api/navigate-event/intercept-cross-origin.html :: event.intercept() should throw if called for a cross origin navigation
+Pass navigation-api/navigate-event/intercept-handler-null-or-undefined.html :: event.intercept() should throw if the handler is null
+Pass navigation-api/navigate-event/intercept-handler-null-or-undefined.html :: event.intercept() should not throw if the handler is explicit undefined
+Pass navigation-api/navigate-event/intercept-handler-returns-non-promise.html :: event.intercept() should resolve immediately if the handler doesn't return a promise
+Pass navigation-api/navigate-event/intercept-handler-throws.html :: event.intercept() should abort if the handler throws
+Pass navigation-api/navigate-event/intercept-history-pushState.html :: event.intercept() should proceed if the given promise resolves
+Pass navigation-api/navigate-event/intercept-history-replaceState.html :: event.intercept() should proceed if the given promise resolves
+Fail navigation-api/navigate-event/intercept-multiple-times-reject.html :: event.intercept() is called multiple times and one of the promises rejects
+  assert_equals: expected "https://wpt.test/navigation-api/navigate-event/intercept-multiple-times-reject.html" but got "https://wpt.test/navigation-api/navigate-event/intercept-multiple-times-reject.html#1"
+Pass navigation-api/navigate-event/intercept-multiple-times.html :: navigation.navigate() returns a finished promise that awaits all promises if event.intercept() is called multiple times
+Pass navigation-api/navigate-event/intercept-navigation-back.html :: event.intercept() can intercept navigation.back()
+Pass navigation-api/navigate-event/intercept-on-synthetic-event.html :: event.intercept() throws if invoked on a synthetic event
+Fail navigation-api/navigate-event/intercept-popstate-no-handler.html :: event.intercept() should provide popstate with a valid state object
+  assert_false: expected false got true
+Pass navigation-api/navigate-event/intercept-popstate.html :: event.intercept() should provide popstate with a valid state object 2
+Pass navigation-api/navigate-event/intercept-reject.html :: event.intercept() should abort if the given promise rejects
+Pass navigation-api/navigate-event/intercept-resolve.html :: event.intercept() should proceed if the given promise resolves
+Pass navigation-api/navigate-event/intercept-same-document-history-back.html :: event.intercept() can intercept same-document history.back()
+Timeout navigation-api/navigate-event/navigate-anchor-cross-origin.html :: navigation-api/navigate-event/navigate-anchor-cross-origin.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 0, 765], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Pass navigation-api/navigate-event/navigate-anchor-download-userInitiated.html :: <a download> click fires navigate event
+Pass navigation-api/navigate-event/navigate-anchor-download.html :: <a> fires navigate and populates downloadRequest with ''
+Pass navigation-api/navigate-event/navigate-anchor-download.html :: <a> fires navigate and populates downloadRequest with 'filename'
+Pass navigation-api/navigate-event/navigate-anchor-download.html :: <area> fires navigate and populates downloadRequest with ''
+Pass navigation-api/navigate-event/navigate-anchor-download.html :: <area> fires navigate and populates downloadRequest with 'filename'
+Pass navigation-api/navigate-event/navigate-anchor-fragment.html :: Fragment <a> click fires navigate event
+Fail navigation-api/navigate-event/navigate-anchor-same-origin-cross-document.html :: <a> cross-document (but same-origin) navigate event
+  assert_equals: expected (object) null but got (string) ""
+Pass navigation-api/navigate-event/navigate-anchor-same-url.html :: <a> to identical url is a replace navigation
+Pass navigation-api/navigate-event/navigate-anchor-userInitiated.html :: Fragment <a> click fires navigate event
+Pass navigation-api/navigate-event/navigate-destination-dynamic-index.html :: navigate event destination.index should be dynamic
+Pass navigation-api/navigate-event/navigate-destination-getState-back-forward.html :: navigate event destination.getState() on back/forward navigation
+Pass navigation-api/navigate-event/navigate-destination-getState-fragment-via-href.html :: navigate event destination.getState() carries over the previous entry's state on a user-initiated fragment navigation
+Pass navigation-api/navigate-event/navigate-destination-getState-fragment-via-navigate.html :: navigate event destination.getState() carries over the previous entry's state on a user-initiated fragment navigation
+Pass navigation-api/navigate-event/navigate-destination-getState-navigate.html :: navigate event destination.getState() should be the state given to navigate()
+Pass navigation-api/navigate-event/navigate-destination-getState-reload.html :: navigate event destination.getState() on location.reload()
+Pass navigation-api/navigate-event/navigate-event-canintercept-cross-port.html :: canIntercept should be false for cross-port navigations
+Pass navigation-api/navigate-event/navigate-form-get-sourceElement.html :: <form> submission with GET method and submitter passed into requestSubmit
+Pass navigation-api/navigate-event/navigate-form-get-sourceElement.html :: <form> submission with GET method and submitter is clicked
+Pass navigation-api/navigate-event/navigate-form-get.html :: <form> submission with GET method fires navigate event but with formData null
+Pass navigation-api/navigate-event/navigate-form-requestSubmit.html :: <form> requestSubmit() sets sourceElement
+Pass navigation-api/navigate-event/navigate-form-userInitiated.html :: <form> submission fires navigate event
+Pass navigation-api/navigate-event/navigate-form.html :: <form> submission fires navigate event
+Pass navigation-api/navigate-event/navigate-history-back-after-fragment.html :: history.back() fires the navigate event and sets hashChange when reversing a fragment navigation
+Pass navigation-api/navigate-event/navigate-history-back-after-pushState.html :: history.back() fires the navigate event when reversing a pushState()
+Fail navigation-api/navigate-event/navigate-history-back-bfcache.html :: navigation-api/navigate-event/navigate-history-back-bfcache.html
+  page script threw (declared tests: 0): Script error: external script /common/dispatcher/dispatcher.js: script fetch failed: common/dispatcher/dispatcher.js (No such file or directory (os error 2))
+Pass navigation-api/navigate-event/navigate-history-pushState.html :: history.pushState() fires the navigate event
+Pass navigation-api/navigate-event/navigate-history-replaceState.html :: history.replaceState() fires the navigate event
+Pass navigation-api/navigate-event/navigate-location.html :: location API fires navigate event
+Timeout navigation-api/navigate-event/navigate-multiple-history-pushState.html :: navigation-api/navigate-event/navigate-multiple-history-pushState.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 875], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout navigation-api/navigate-event/navigate-multiple-location.html :: navigation-api/navigate-event/navigate-multiple-location.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 830], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Pass navigation-api/navigate-event/navigate-multiple-navigation-navigate.html :: navigation.navigate() multiple times gives correct event order
+Pass navigation-api/navigate-event/navigate-navigation-back-same-document.html :: navigate event for navigation.back() - same-document
+Pass navigation-api/navigate-event/navigate-navigation-navigate.html :: navigate event for navigation.navigate()
+Timeout navigation-api/navigate-event/navigate-svg-anchor-fragment.html :: navigation-api/navigate-event/navigate-svg-anchor-fragment.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 838], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Pass navigation-api/navigate-event/navigatesuccess-same-document.html :: navigatesuccess fires for a same-document navigation
+Pass navigation-api/navigate-event/navigation-back-same-document-preventDefault.html :: navigation.back() same-document preventDefault
+Pass navigation-api/navigate-event/reentry-from-focus-reset-navigate-api-tracker.html :: Re-entry via focus reset using pushState
+Pass navigation-api/navigate-event/reentry-from-focus-reset-navigate-api-tracker.html :: Re-entry via focus reset using navigate()
+Timeout navigation-api/navigate-event/replaceState-inside-back-handler-infinite.optional.html :: navigation-api/navigate-event/replaceState-inside-back-handler-infinite.optional.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 5896, 609], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Pass navigation-api/navigate-event/replaceState-inside-back-handler.html :: replaceState inside a navigate event for navigation.back()
+Fail navigation-api/navigate-event/same-url-replace-cross-document.html :: navigation-api/navigate-event/same-url-replace-cross-document.html
+  page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: navigation-api/navigate-event/resources/helpers.js (No such file or directory (os error 2))
+Fail navigation-api/navigate-event/same-url-replace-same-document.html :: navigation-api/navigate-event/same-url-replace-same-document.html
+  page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: navigation-api/navigate-event/resources/helpers.js (No such file or directory (os error 2))
+Pass navigation-api/navigate-event/signal-abort-intercept.html :: event.intercept() does not signal event.signal
+Pass navigation-api/navigate-event/signal-abort-preventDefault.html :: event.preventDefault() signals event.signal
+Pass navigation-api/navigate-event/signal-abort-reentry-navigate-api-tracker.html :: Re-entry via abort signal using pushState
+Pass navigation-api/navigate-event/signal-abort-reentry-navigate-api-tracker.html :: Re-entry via abort signal using navigate()
+Pass navigation-api/navigate-event/signal-abort-window-stop-after-intercept.html :: window.stop() cancels the navigate event's intercept() and signals event.signal
+Pass navigation-api/navigate-event/signal-abort-window-stop-in-onnavigate.html :: window.stop() signals event.signal inside a navigate event handler
+Pass navigation-api/navigate-event/signal-abort-window-stop.html :: window.stop() signals event.signal
+Fail navigation-api/navigation-activation/activation-after-bfcache-cross-origin.html :: navigation-api/navigation-activation/activation-after-bfcache-cross-origin.html
+  page script threw (declared tests: 0): Script error: external script /common/dispatcher/dispatcher.js: script fetch failed: common/dispatcher/dispatcher.js (No such file or directory (os error 2))
+Fail navigation-api/navigation-activation/activation-after-bfcache.html :: navigation-api/navigation-activation/activation-after-bfcache.html
+  page script threw (declared tests: 0): Script error: external script /common/dispatcher/dispatcher.js: script fetch failed: common/dispatcher/dispatcher.js (No such file or directory (os error 2))
+Pass navigation-api/navigation-activation/activation-history-pushState.html :: navigation.activation.entry should not change due to history.pushState()
+Pass navigation-api/navigation-activation/activation-history-replaceState.html :: navigation.activation.entry should be orphaned by history.replaceState()
+Pass navigation-api/navigation-history-entry/current-basic.html :: Basic tests for navigation.currentEntry
+Fail navigation-api/navigation-history-entry/entries-after-bfcache.html :: navigation-api/navigation-history-entry/entries-after-bfcache.html
+  page script threw (declared tests: 0): Script error: external script /common/dispatcher/dispatcher.js: script fetch failed: common/dispatcher/dispatcher.js (No such file or directory (os error 2))
+Pass navigation-api/navigation-history-entry/entries-array-equality.html :: navigation.entries() should not return an identical object on repeated invocations
+Pass navigation-api/navigation-history-entry/entries-when-inactive.html :: A non-active entry in navigation.entries() should not be modified when a different entry is modified
+Pass navigation-api/navigation-history-entry/key-id-back-same-document.html :: NavigationHistoryEntry's key and id on same-document back navigation
+Pass navigation-api/navigation-history-entry/sameDocument-after-fragment-navigate.html :: entry.sameDocument after same-document navigations
+Pass navigation-api/navigation-methods/forward-to-pruned-entry.html :: If forward pruning clobbers the target of a traverse, abort
+Fail navigation-api/navigation-methods/navigate-history-push-not-loaded.html :: navigation-api/navigation-methods/navigate-history-push-not-loaded.html
+  page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: navigation-api/navigation-methods/resources/helpers.js (No such file or directory (os error 2))
+Fail navigation-api/navigation-methods/navigate-history-push-same-url.html :: navigation-api/navigation-methods/navigate-history-push-same-url.html
+  page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: navigation-api/navigation-methods/resources/helpers.js (No such file or directory (os error 2))
+Pass navigation-api/navigation-methods/navigate-history-state-replace.html :: history.state should be nulled by navigate()
+Pass navigation-api/navigation-methods/navigate-history-state.html :: history.state should be nulled by navigate()
+Pass navigation-api/navigation-methods/navigate-info-and-state.html :: navigate() with info and state
+Pass navigation-api/navigation-methods/navigate-intercept-history-state.html :: history.story should be nulled by navigate() handled by intercept()
+Pass navigation-api/navigation-methods/navigate-replace-same-document.html :: navigate() with history: 'replace' option
+Pass navigation-api/navigation-methods/navigate-same-document.html :: navigate() navigates same-document and fires onnavigate (sync)
+Pass navigation-api/navigation-methods/navigate-same-document.html :: navigate() navigates same-document and fires onnavigate (async)
+Pass navigation-api/navigation-methods/navigate-state-repeated-await.html :: navigate() with state should work correctly when called repeatedly - with awaits
+Pass navigation-api/navigation-methods/navigate-state-repeated.html :: navigate() with state should work correctly when called repeatedly
+Fail navigation-api/navigation-methods/reload-service-worker-fetch-event.html :: navigation-api/navigation-methods/reload-service-worker-fetch-event.html
+  page script threw (declared tests: 0): Script error: external script /service-workers/service-worker/resources/test-helpers.sub.js: script fetch failed: service-workers/service-worker/resources/test-helpers.sub.js (No such file or directory (os error 2))
+Pass navigation-api/navigation-methods/traverseTo-multiple-steps.html :: goto() can precisely traverse multiple steps in the joint session history
+Pass navigation-api/navigation-methods/traverseTo-same-document.html :: same-document navigate.traverseTo(), back(), and forward()
+Pass navigation-api/ordering-and-transition/anchor-download-intercept-reject.html?no-currententrychange :: event and promise ordering for <a download> intercepted by passing a rejected promise to intercept()
+Pass navigation-api/ordering-and-transition/anchor-download-intercept-reject.html?currententrychange :: event and promise ordering for <a download> intercepted by passing a rejected promise to intercept()
+Pass navigation-api/ordering-and-transition/anchor-download-intercept.html?no-currententrychange :: event and promise ordering for <a download> intercepted by intercept()
+Pass navigation-api/ordering-and-transition/anchor-download-intercept.html?currententrychange :: event and promise ordering for <a download> intercepted by intercept()
+Pass navigation-api/ordering-and-transition/back-same-document-intercept-reject.html?no-currententrychange :: event and promise ordering for same-document navigation.back() intercepted by passing a rejected promise to intercept()
+Pass navigation-api/ordering-and-transition/back-same-document-intercept-reject.html?currententrychange :: event and promise ordering for same-document navigation.back() intercepted by passing a rejected promise to intercept()
+Pass navigation-api/ordering-and-transition/back-same-document-intercept.html?no-currententrychange :: event and promise ordering for same-document navigation.back() intercepted by intercept()
+Pass navigation-api/ordering-and-transition/back-same-document-intercept.html?currententrychange :: event and promise ordering for same-document navigation.back() intercepted by intercept()
+Pass navigation-api/ordering-and-transition/back-same-document.html?no-currententrychange :: event and promise ordering for same-document navigation.back()
+Pass navigation-api/ordering-and-transition/back-same-document.html?currententrychange :: event and promise ordering for same-document navigation.back()
+Pass navigation-api/ordering-and-transition/currententrychange-before-popstate-intercept.html :: currententrychange fires before popstate for navigation.back() and navigation.forward()
+Pass navigation-api/ordering-and-transition/currententrychange-dispose-ordering.html :: Ordering between Navigation currententrychange and NavigationHistoryEntry dispose events
+Pass navigation-api/ordering-and-transition/intercept-async.html?no-currententrychange :: ordering when intercept() handler has sync and async blocks
+Pass navigation-api/ordering-and-transition/intercept-async.html?currententrychange :: ordering when intercept() handler has sync and async blocks
+Pass navigation-api/ordering-and-transition/location-href-canceled.html :: event and promise ordering for the location.href setter where the navigate event is canceled
+Pass navigation-api/ordering-and-transition/location-href-double-intercept.html?no-currententrychange :: event and promise ordering when location.href is set repeatedly and handled by intercept()
+Pass navigation-api/ordering-and-transition/location-href-double-intercept.html?currententrychange :: event and promise ordering when location.href is set repeatedly and handled by intercept()
+Pass navigation-api/ordering-and-transition/location-href-intercept-reentrant.html?no-currententrychange :: event and promise ordering for the location.href setter intercepted by intercept() where we set location.href again inside the navigate handler
+Pass navigation-api/ordering-and-transition/location-href-intercept-reentrant.html?currententrychange :: event and promise ordering for the location.href setter intercepted by intercept() where we set location.href again inside the navigate handler
+Pass navigation-api/ordering-and-transition/location-href-intercept-reject.html?no-currententrychange :: event and promise ordering for location.href setter intercepted by passing a rejected promise to intercept()
+Pass navigation-api/ordering-and-transition/location-href-intercept-reject.html?currententrychange :: event and promise ordering for location.href setter intercepted by passing a rejected promise to intercept()
+Pass navigation-api/ordering-and-transition/location-href-intercept.html?no-currententrychange :: event and promise ordering for location.href setter intercepted by intercept()
+Pass navigation-api/ordering-and-transition/location-href-intercept.html?currententrychange :: event and promise ordering for location.href setter intercepted by intercept()
+Pass navigation-api/ordering-and-transition/navigate-canceled.html :: event and promise ordering for navigation.navigate() where the navigate event is canceled
+Pass navigation-api/ordering-and-transition/navigate-double-intercept.html?no-currententrychange :: event and promise ordering when navigate() is called repeatedly and handled by intercept()
+Pass navigation-api/ordering-and-transition/navigate-double-intercept.html?currententrychange :: event and promise ordering when navigate() is called repeatedly and handled by intercept()
+Pass navigation-api/ordering-and-transition/navigate-in-transition-finished.html?no-currententrychange :: event and promise ordering when navigate() is called inside the transition.finished promise handler
+Pass navigation-api/ordering-and-transition/navigate-in-transition-finished.html?currententrychange :: event and promise ordering when navigate() is called inside the transition.finished promise handler
+Pass navigation-api/ordering-and-transition/navigate-intercept-precommitHandler-redirect.html?no-currententrychange :: event and promise ordering for same-document navigation.navigate() intercepted by intercept() with a precommitHandler that redirects
+Pass navigation-api/ordering-and-transition/navigate-intercept-precommitHandler-redirect.html?currententrychange :: event and promise ordering for same-document navigation.navigate() intercepted by intercept() with a precommitHandler that redirects
+Pass navigation-api/ordering-and-transition/navigate-intercept-precommitHandler-reject.tentative.html?no-currententrychange :: event and promise ordering for same-document navigation.navigate() intercepted by intercept() with a precommitHandler
+Pass navigation-api/ordering-and-transition/navigate-intercept-precommitHandler-reject.tentative.html?currententrychange :: event and promise ordering for same-document navigation.navigate() intercepted by intercept() with a precommitHandler
+Pass navigation-api/ordering-and-transition/navigate-intercept-precommitHandler.html?no-currententrychange :: event and promise ordering for same-document navigation.navigate() intercepted by intercept() with a precommitHandler
+Pass navigation-api/ordering-and-transition/navigate-intercept-precommitHandler.html?currententrychange :: event and promise ordering for same-document navigation.navigate() intercepted by intercept() with a precommitHandler
+Pass navigation-api/ordering-and-transition/navigate-intercept-stop.html?no-currententrychange :: event and promise ordering for navigation.navigate() intercepted by intercept() but then stopped using window.stop()
+Pass navigation-api/ordering-and-transition/navigate-intercept-stop.html?currententrychange :: event and promise ordering for navigation.navigate() intercepted by intercept() but then stopped using window.stop()
+Pass navigation-api/ordering-and-transition/navigate-intercept.html?no-currententrychange :: event and promise ordering for same-document navigation.navigate() intercepted by intercept()
+Pass navigation-api/ordering-and-transition/navigate-intercept.html?currententrychange :: event and promise ordering for same-document navigation.navigate() intercepted by intercept()
+Pass navigation-api/ordering-and-transition/navigate-same-document-intercept-reentrant.html?no-currententrychange :: event and promise ordering for same-document navigation.navigate() inside the navigate handler
+Pass navigation-api/ordering-and-transition/navigate-same-document-intercept-reentrant.html?currententrychange :: event and promise ordering for same-document navigation.navigate() inside the navigate handler
+Pass navigation-api/ordering-and-transition/navigate-same-document-intercept-reject.html?no-currententrychange :: event and promise ordering for same-document navigation.navigate() intercepted by passing a rejected promise to intercept()
+Pass navigation-api/ordering-and-transition/navigate-same-document-intercept-reject.html?currententrychange :: event and promise ordering for same-document navigation.navigate() intercepted by passing a rejected promise to intercept()
+Pass navigation-api/ordering-and-transition/navigate-same-document.html?no-currententrychange :: event and promise ordering for same-document navigation.navigate()
+Pass navigation-api/ordering-and-transition/navigate-same-document.html?currententrychange :: event and promise ordering for same-document navigation.navigate()
+Pass navigation-api/ordering-and-transition/reload-canceled.html :: event and promise ordering for navigation.reload() where the navigate event is canceled
+Pass navigation-api/ordering-and-transition/reload-intercept-reject.html?no-currententrychange :: event and promise ordering for navigation.reload() intercepted by intercept()
+Pass navigation-api/ordering-and-transition/reload-intercept-reject.html?currententrychange :: event and promise ordering for navigation.reload() intercepted by intercept()
+Pass navigation-api/ordering-and-transition/reload-intercept.html?no-currententrychange :: event and promise ordering for navigation.reload() intercepted by intercept()
+Pass navigation-api/ordering-and-transition/reload-intercept.html?currententrychange :: event and promise ordering for navigation.reload() intercepted by intercept()
+Pass navigation-api/ordering-and-transition/reload-no-popstate.html :: event and promise ordering for navigation.reload() intercepted by intercept()
+Pass navigation-api/ordering-and-transition/transition-finished-mark-as-handled.html :: navigation.transition.finished must not trigger unhandled rejections
+Pass navigation-api/ordering-and-transition/transition-to.html :: navigation.transition.to matches the navigate event's destination
+Fail navigation-api/per-entry-events/dispose-after-bfcache.html :: navigation-api/per-entry-events/dispose-after-bfcache.html
+  page script threw (declared tests: 0): Script error: external script /common/dispatcher/dispatcher.js: script fetch failed: common/dispatcher/dispatcher.js (No such file or directory (os error 2))
+Pass navigation-api/per-entry-events/dispose-for-full-session-history.tentative.html :: Dispose should fire when an entry is removed from session history due to too many entries
+Pass navigation-api/per-entry-events/dispose-same-document-intercept.html :: dispose events when forward-pruning same-document entries
+Pass navigation-api/per-entry-events/dispose-same-document-navigate-during.html :: navigate() during a same-document-navigation-initiated dispose works (since it's after the previous navigation)
+Pass navigation-api/per-entry-events/dispose-same-document-reload-with-intercept.html :: dispose events are not fired when doing a same-document reload using navigation.reload() and intercept()
+Pass navigation-api/per-entry-events/dispose-same-document-replace-with-intercept.html :: dispose events when doing a same-document replace using navigation.navigate() and intercept()
+Pass navigation-api/per-entry-events/dispose-same-document-replaceState.html :: dispose events when doing a same-document replace using history.replaceState()
+Pass navigation-api/per-entry-events/dispose-same-document.html :: dispose events when forward-pruning same-document entries
+Pass navigation-api/precommit-handler/multiple-intercept.html :: precommitHandler + precommitHandler
+Pass navigation-api/precommit-handler/multiple-intercept.html :: precommitHandler + (not provided)
+Pass navigation-api/precommit-handler/multiple-intercept.html :: precommitHandler + handler
+Pass navigation-api/precommit-handler/multiple-intercept.html :: handler + precommitHandler
+Pass navigation-api/precommit-handler/multiple-intercept.html :: handler + (not provided)
+Pass navigation-api/precommit-handler/multiple-intercept.html :: handler + handler
+Pass navigation-api/precommit-handler/multiple-intercept.html :: (not provided) + precommitHandler
+Pass navigation-api/precommit-handler/multiple-intercept.html :: (not provided) + handler
+Pass navigation-api/precommit-handler/precommitHandler-addHandler.html :: handler added in addHandler() delays navigation finish
+Pass navigation-api/precommit-handler/precommitHandler-addHandler.html :: handler added in addHandler() is executed in the correct order
+Pass navigation-api/precommit-handler/precommitHandler-back-and-forth.html :: 
+  Test that going back and forward during a precommitHandler ends up in the
+  correct entry
+
+Pass navigation-api/precommit-handler/precommitHandler-new-navigation-before-commit.html :: Cancel a navigation with a precommitHandler before commit by starting a new navigation
+Pass navigation-api/precommit-handler/precommitHandler-push.html :: precommitHandler for a push navigation, reject before commit
+Pass navigation-api/precommit-handler/precommitHandler-push.html :: precommitHandler for a push navigation, reject after commit
+Pass navigation-api/precommit-handler/precommitHandler-push.html :: precommitHandler for a push navigation, success
+Pass navigation-api/precommit-handler/precommitHandler-redirect-options.html :: precommitHandler redirect() with options dictionary
+Pass navigation-api/precommit-handler/precommitHandler-redirect-push-changed-to-replace.html :: precommitHandler redirect() push changed to replace
+Pass navigation-api/precommit-handler/precommitHandler-redirect-push.html :: precommitHandler redirect() push
+Pass navigation-api/precommit-handler/precommitHandler-redirect-replace-changed-to-push.html :: precommitHandler redirect() replace changed to push
+Pass navigation-api/precommit-handler/precommitHandler-redirect-replace.html :: precommitHandler redirect() replace
+Pass navigation-api/precommit-handler/precommitHandler-reload.html :: precommitHandler for a reload navigation, reject before commit
+Pass navigation-api/precommit-handler/precommitHandler-reload.html :: precommitHandler for a reload navigation, reject after commit
+Pass navigation-api/precommit-handler/precommitHandler-reload.html :: precommitHandler for a reload navigation, success
+Pass navigation-api/precommit-handler/precommitHandler-replace.html :: precommitHandler for a replace navigation, reject before commit
+Pass navigation-api/precommit-handler/precommitHandler-replace.html :: precommitHandler for a replace navigation, reject after commit
+Pass navigation-api/precommit-handler/precommitHandler-replace.html :: precommitHandler for a replace navigation, success
+Pass navigation-api/precommit-handler/precommitHandler-traversal-commit-new-navigation-before-commit.html :: Cancel a precommitHandler traversal before commit by starting a new navigation
+Pass navigation-api/precommit-handler/precommitHandler-traversal-window-stop-before-commit.html :: precommitHandler traversal is not aborted by window.stop() before commit
+Pass navigation-api/precommit-handler/precommitHandler-traverse.html :: precommitHandler for a traverse navigation, reject before commit
+Pass navigation-api/precommit-handler/precommitHandler-traverse.html :: precommitHandler for a traverse navigation, reject after commit
+Pass navigation-api/precommit-handler/precommitHandler-traverse.html :: precommitHandler for a traverse navigation, success
+Pass navigation-api/precommit-handler/precommitHandler-window-stop-before-commit.html :: Setup
+Pass navigation-api/precommit-handler/precommitHandler-window-stop-before-commit.html ::  precommitHandler with window.stop() before navigation commit
+Pass navigation-api/precommit-handler/precommitHandler-window-stop-before-commit.html ::  precommitHandler with window.stop() before fragment navigation commit
+Pass navigation-api/scroll-behavior/after-transition-basic.html :: scroll: after-transition should scroll when back completes
+Pass navigation-api/scroll-behavior/after-transition-change-history-scroll-restoration-during-promise.html :: scroll: after-transition should ignore history.scrollRestoration even if it changes in the middle of the navigation
+Pass navigation-api/scroll-behavior/after-transition-explicit-scroll.html :: scroll: scroll() should preempt after-transition
+Pass navigation-api/scroll-behavior/after-transition-intercept-handler-modifies.html :: scroll: state should be saved before intercept handlers run
+Pass navigation-api/scroll-behavior/after-transition-push.html :: scroll: after-transition should work on a push navigation
+Pass navigation-api/scroll-behavior/after-transition-reject.html :: scroll: after-transition should not scroll when the intercept() handler rejects
+Fail navigation-api/scroll-behavior/after-transition-reload-no-scroll-anchoring.html :: scroll: after-transition should work on a reload navigation
+  assert_equals: expected 8 but got 1008
+Fail navigation-api/scroll-behavior/after-transition-reload.html :: scroll: after-transition should work on a reload navigation
+  assert_equals: expected 18 but got 1018
+Pass navigation-api/scroll-behavior/after-transition-replace.html :: scroll: after-transition should work on a replace navigation
+Pass navigation-api/scroll-behavior/after-transition-skips-restore-when-scrolled.html :: scroll: after-transition should not restore scroll if the document was scrolled during the navigation
+Pass navigation-api/scroll-behavior/after-transition-timing.html :: scroll: after-transition should scroll when back completes, just before navigatesuccess
+Pass navigation-api/scroll-behavior/manual-basic.html :: scroll: manual should prevent auto scroll on back.
+Pass navigation-api/scroll-behavior/manual-immediate-scroll.html :: scroll: scroll() should not work inside a navigate event handler
+Pass navigation-api/scroll-behavior/manual-scroll-after-dispatch.html :: scroll: scroll() should work after a navigate event dispatch
+Pass navigation-api/scroll-behavior/manual-scroll-after-resolve.html :: scroll: scroll() should throw after a navigation finished promise fulfills
+Pass navigation-api/scroll-behavior/manual-scroll-fragment-does-not-exist.html :: scroll: scroll() should scroll to beginning of document when the fragment does not exist
+Pass navigation-api/scroll-behavior/manual-scroll-in-precommit-handler.html :: scroll: scroll() in precommitHandler throws
+Pass navigation-api/scroll-behavior/manual-scroll-push.html :: scroll: scroll() should work on a push navigation
+Fail navigation-api/scroll-behavior/manual-scroll-reload-no-scroll-anchoring.html :: scroll: scroll() should work on a reload navigation
+  assert_equals: expected 8 but got 1008
+Fail navigation-api/scroll-behavior/manual-scroll-reload.html :: scroll: scroll() should work on a reload navigation
+  assert_equals: expected 18 but got 1018
+Pass navigation-api/scroll-behavior/manual-scroll-repeated.html :: scroll: scroll() should throw if called a second time
+Pass navigation-api/scroll-behavior/manual-scroll-replace.html :: scroll: scroll() should work on a replace navigation
+Pass navigation-api/scroll-behavior/manual-scroll-resets-when-no-fragment.html :: scroll: scroll() should reset scroll position when the destination url contains no fragment
+Pass navigation-api/scroll-behavior/scroll-after-preventDefault.html :: scroll: scroll() should throw after preventDefault
+Pass navigation-api/scroll-behavior/scroll-on-synthetic-event.html :: scroll: scroll() should throw if invoked on a synthetic event.
+Pass navigation-api/scroll-behavior/scroll-without-intercept.html :: scroll: scroll() should throw for non-intercept
+Pass navigation-api/state/history-pushState.html?method=navigate :: entry.getState() after history.pushState()
+Pass navigation-api/state/history-pushState.html?method=updateCurrentEntry :: entry.getState() after history.pushState()
+Pass navigation-api/state/history-replaceState.html?method=navigate :: entry.getState() after history.replaceState()
+Pass navigation-api/state/history-replaceState.html?method=updateCurrentEntry :: entry.getState() after history.replaceState()
+Pass navigation-api/state/same-document-away-and-back-location-api.html :: entry.getState() behavior after navigating away using a fragment change, then back
+Pass navigation-api/state/same-document-away-and-back-navigation-api.html :: entry.getState() behavior after navigating away using the navigation API, then back
+Pass navigation-api/updateCurrentEntry-method/basic.html :: updateCurrentEntry() works as expected
+Pass navigation-api/updateCurrentEntry-method/no-args.html :: updateCurrentEntry() must throw if state is not given
+Pass navigation-api/updateCurrentEntry-method/same-document-away-and-back-location-api.html :: entry.getState() behavior after navigating away using the location API, then back
+Pass html/browsers/history/the-history-interface/004.html :: .go commands should be queued until the thread has ended
+Pass html/browsers/history/the-history-interface/004.html :: browser needs to support hashchange events for this testcase
+Pass html/browsers/history/the-history-interface/004.html :: queued .go commands should all be executed when the queue is processed
+Pass html/browsers/history/the-history-interface/004.html :: history position should be calculated when executing, not when calling the .go command
+Pass html/browsers/history/the-history-interface/005.html :: history.pushState support is needed for this testcase
+Pass html/browsers/history/the-history-interface/005.html :: <body onpopstate="..."> should register a listener for the popstate event
+Pass html/browsers/history/the-history-interface/005.html :: window.onpopstate should register a listener for the popstate event
+Pass html/browsers/history/the-history-interface/006.html :: history.state should initially be null
+Pass html/browsers/history/the-history-interface/006.html :: popstate event should not fire before onload fires
+Pass html/browsers/history/the-history-interface/006.html :: history.state should still be null onload
+Pass html/browsers/history/the-history-interface/006.html :: popstate event should not fire after onload fires
+Pass html/browsers/history/the-history-interface/006.html :: history.state should still be null after onload
+Pass html/browsers/history/the-history-interface/006.html :: writing to history.state should be silently ignored and not throw an error
+Fail html/browsers/history/the-history-interface/007.html :: html/browsers/history/the-history-interface/007.html
+  page script threw (declared tests: 3): Script error: external script /xhr/resources/delay.py?ms=2500: script fetch failed: xhr/resources/delay.py (No such file or directory (os error 2))
+Timeout html/browsers/history/the-history-interface/008.html :: html/browsers/history/the-history-interface/008.html
+  testharness completed without reporting registered tests (state={"loaded":true,"pending":0,"phase":4,"tests":0})
+Pass html/browsers/history/the-history-interface/011.html :: pushState should be able to set the location state
+Pass html/browsers/history/the-history-interface/011.html :: pushed location should be reflected immediately
+Pass html/browsers/history/the-history-interface/011.html :: pushed location should be retained after the page has loaded
+Pass html/browsers/history/the-history-interface/012.html :: replaceState should be able to set the location state
+Pass html/browsers/history/the-history-interface/012.html :: replaced location should be reflected immediately
+Pass html/browsers/history/the-history-interface/012.html :: replaced location should be retained after the page has loaded
+Pass html/browsers/history/the-history-interface/back-pushstate-back-history-state.html :: history.state is null after pushState+back+pushState+back
+Pass html/browsers/history/the-history-interface/combination_history_001.html :: Combine pushState and replaceSate methods
+Pass html/browsers/history/the-history-interface/combination_history_002.html :: After calling of pushState method, check length
+Pass html/browsers/history/the-history-interface/combination_history_003.html :: After calling of pushState and replaceState methods, check length
+Pass html/browsers/history/the-history-interface/combination_history_004.html :: After calling of back method, check length
+Pass html/browsers/history/the-history-interface/combination_history_005.html :: After calling of forward method, check length
+Pass html/browsers/history/the-history-interface/combination_history_006.html :: After calling of go method, check length
+Pass html/browsers/history/the-history-interface/combination_history_007.html :: After calling of back and pushState method, check length
+Pass html/browsers/history/the-history-interface/history_back.html :: history back
+Pass html/browsers/history/the-history-interface/history_forward.html :: history forward
+Pass html/browsers/history/the-history-interface/history_go_minus.html :: history go minus
+Pass html/browsers/history/the-history-interface/history_go_plus.html :: history go plus
+Pass html/browsers/history/the-history-interface/history_pushstate.html :: history pushState
+Pass html/browsers/history/the-history-interface/history_pushstate_err.html :: history pushState SECURITY_ERR
+Pass html/browsers/history/the-history-interface/history_pushstate_nooptionalparam.html :: history pushState NoOptionalParam
+Pass html/browsers/history/the-history-interface/history_pushstate_too_many_calls.optional.html :: history pushState too many calls
+Pass html/browsers/history/the-history-interface/history_pushstate_url.html :: history pushState sets url
+Pass html/browsers/history/the-history-interface/history_replacestate.html :: history replaceState
+Pass html/browsers/history/the-history-interface/history_replacestate_err.html :: history replaceState SECURITY_ERR
+Pass html/browsers/history/the-history-interface/history_replacestate_nooptionalparam.html :: history replaceStateNoOptionalParam
+Pass html/browsers/history/the-history-interface/history_replacestate_too_many_calls.optional.html :: history replaceState too many calls
+Pass html/browsers/history/the-history-interface/history_state.html :: history state
+Pass html/browsers/history/the-history-interface/pushstate-replacestate-empty-string/pushstate-base.html :: history.pushState() with an empty string URL and base URL different from document's URL
+Pass html/browsers/history/the-history-interface/pushstate-replacestate-empty-string/pushstate-whitespace.html :: history.pushState() with a whitespace URL
+Pass html/browsers/history/the-history-interface/pushstate-replacestate-empty-string/pushstate.html :: history.pushState() with an empty string URL
+Pass html/browsers/history/the-history-interface/pushstate-replacestate-empty-string/replacestate-base.html :: history.replaceState() with an empty string URL and base URL different from document's URL
+Pass html/browsers/history/the-history-interface/pushstate-replacestate-empty-string/replacestate-whitespace.html :: history.replaceState() with a whitespace URL
+Pass html/browsers/history/the-history-interface/pushstate-replacestate-empty-string/replacestate.html :: history.replaceState() with an empty string URL
+Pass html/browsers/history/the-location-interface/create-script-set-location.html :: Setting href in appended script still creates history entry
+Pass html/browsers/history/the-location-interface/document_location.html :: document not in a browsing context
+Pass html/browsers/history/the-location-interface/document_location.html :: document.location equals window.location
+Pass html/browsers/history/the-location-interface/document_location.html :: Attribute getter deduplication
+Pass html/browsers/history/the-location-interface/document_location.html :: Attribute setter deduplication
+Pass html/browsers/history/the-location-interface/location-non-configurable-toString-valueOf.html :: 'toString' redefinition with accessor fails
+Pass html/browsers/history/the-location-interface/location-non-configurable-toString-valueOf.html :: 'valueOf' redefinition with accessor fails
+Pass html/browsers/history/the-location-interface/location-prevent-extensions.html :: Object.preventExtensions throws a TypeError
+Pass html/browsers/history/the-location-interface/location-prevent-extensions.html :: Reflect.preventExtensions returns false
+Pass html/browsers/history/the-location-interface/location-prototype-no-toString-valueOf.html :: 'toString' accessor property is defined
+Pass html/browsers/history/the-location-interface/location-prototype-no-toString-valueOf.html :: 'toString' data property is created via [[Set]]
+Pass html/browsers/history/the-location-interface/location-prototype-no-toString-valueOf.html :: 'valueOf' accessor property is defined
+Pass html/browsers/history/the-location-interface/location-prototype-no-toString-valueOf.html :: 'valueOf' data property is created via [[Set]]
+Pass html/browsers/history/the-location-interface/location-prototype-setting-same-origin.html :: Same-origin prerequisite check: the original prototype is accessible
+Pass html/browsers/history/the-location-interface/location-prototype-setting-same-origin.html :: Same-origin: setting the prototype to an empty object via Object.setPrototypeOf should throw a TypeError
+Pass html/browsers/history/the-location-interface/location-prototype-setting-same-origin.html :: Same-origin: setting the prototype to an empty object via __proto__ should throw a TypeError
+Pass html/browsers/history/the-location-interface/location-prototype-setting-same-origin.html :: Same-origin: setting the prototype to an empty object via Reflect.setPrototypeOf should return false
+Pass html/browsers/history/the-location-interface/location-prototype-setting-same-origin.html :: Same-origin: the prototype must still be its original value
+Pass html/browsers/history/the-location-interface/location-prototype-setting-same-origin.html :: Same-origin: setting the prototype to its original value via Object.setPrototypeOf should not throw
+Pass html/browsers/history/the-location-interface/location-prototype-setting-same-origin.html :: Same-origin: setting the prototype to its original value via __proto__ should not throw
+Pass html/browsers/history/the-location-interface/location-prototype-setting-same-origin.html :: Same-origin: setting the prototype to its original value via Reflect.setPrototypeOf should return true
+Pass html/browsers/history/the-location-interface/location-stringifier.html :: Location stringifier
+Pass html/browsers/history/the-location-interface/location-stringifier.html :: Location stringifier 1
+Pass html/browsers/history/the-location-interface/location-stringifier.html :: Location stringifier 2
+Pass html/browsers/history/the-location-interface/location-stringifier.html :: Location stringifier 3
+Pass html/browsers/history/the-location-interface/location-stringifier.html :: Location stringifier 4
+Pass html/browsers/history/the-location-interface/location-stringifier.html :: Location stringifier 5
+Pass html/browsers/history/the-location-interface/location-symbol-toprimitive.html :: Location Symbol.toPrimitive
+Pass html/browsers/history/the-location-interface/location-tojson.html :: Location has no toJSON
+Pass html/browsers/history/the-location-interface/location-valueof.html :: Location valueOf
+Pass html/browsers/history/the-location-interface/location_assign.html :: location assign
+Pass html/browsers/history/the-location-interface/location_assign.html :: URL that fails to parse
+Pass html/browsers/history/the-location-interface/location_hash_set_empty_string.html :: window.location.hash is an empty string
+Pass html/browsers/history/the-location-interface/location_hashchange_infinite_loop.html :: Setting window.location.hash to same value while handling hashchange event shouldn't cause an infinite loop.
+Pass html/browsers/history/the-location-interface/location_host.html :: location host
+Pass html/browsers/history/the-location-interface/location_hostname.html :: location hostname
+Pass html/browsers/history/the-location-interface/location_href.html :: location href
+Pass html/browsers/history/the-location-interface/location_origin.html :: location origin
+Pass html/browsers/history/the-location-interface/location_pathname.html :: location pathname
+Fail html/browsers/history/the-location-interface/location_port.html :: location port
+  assert_equals: port expected "wpt.test" but got ""
+Pass html/browsers/history/the-location-interface/location_protocol.html :: location protocol
+Pass html/browsers/history/the-location-interface/location_replace.html :: location replace
+Pass html/browsers/history/the-location-interface/location_replace.html :: URL that fails to parse
+Pass html/browsers/browsing-the-web/history-traversal/PopStateEvent.html :: PopStateEvent constructor called as normal function
+Pass html/browsers/browsing-the-web/history-traversal/PopStateEvent.html :: initPopStateEvent
+Pass html/browsers/browsing-the-web/history-traversal/PopStateEvent.html :: Initial value of PopStateEvent.state must be null
+Pass html/browsers/browsing-the-web/history-traversal/PopStateEvent.html :: Initial value of PopStateEvent.hasUAVisualTransition must be false
+Pass html/browsers/browsing-the-web/history-traversal/PopStateEvent.html :: Dispatching a synthetic PopStateEvent
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pageshow event
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pagehide event
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pageshow event, persisted true
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pagehide event, persisted true
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pageshow event, empty options
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pagehide event, empty options
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pageshow event, missing options
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pagehide event, missing options
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pageshow event, persisted:null
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pagehide event, persisted:null
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pageshow event, persisted:undefined
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pagehide event, persisted:undefined
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pageshow event, bubbles:true
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pagehide event, bubbles:true
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pageshow event, cancelable:true
+Pass html/browsers/browsing-the-web/history-traversal/events.html :: Constructing pagehide event, cancelable:true
+Pass html/browsers/browsing-the-web/history-traversal/hash-empty-string.html :: URL has no hash
+Pass html/browsers/browsing-the-web/history-traversal/hash-empty-string.html :: changing the hash from an empty string to an empty string does not trigger a popstate event
+Pass html/browsers/browsing-the-web/history-traversal/hash-empty-string.html :: changing the hash from an empty string to an empty string does not trigger a hashchange event
+Pass html/browsers/browsing-the-web/history-traversal/hashchange-same-fragment-does-not-fire.html :: Setting the same location.hash twice must not fire hashchange the second time
+Pass html/browsers/browsing-the-web/history-traversal/hashchange_event.html :: Queue a task to fire hashchange event
+Pass html/browsers/browsing-the-web/history-traversal/popstate_event.html :: Queue a task to fire popstate event
+Pass html/browsers/browsing-the-web/history-traversal/event-order/after-load-hash-twice.html :: when changing hash, after the load event
+Pass html/browsers/browsing-the-web/history-traversal/event-order/after-load-hash.html :: when changing hash, after the load event
+Pass html/browsers/browsing-the-web/history-traversal/event-order/after-load-pushState.html :: when pushing state, after the load event
+Pass html/browsers/browsing-the-web/history-traversal/event-order/after-load-replaceState.html :: when replacing state, after the load event
+Pass html/browsers/browsing-the-web/history-traversal/event-order/before-load-hash-twice.html :: when changing hash twice, before load
+Pass html/browsers/browsing-the-web/history-traversal/event-order/before-load-hash.html :: when changing hash, before load
+Pass html/browsers/browsing-the-web/history-traversal/event-order/before-load-pushState.html :: when pushing state, before load
+Pass html/browsers/browsing-the-web/history-traversal/event-order/before-load-replaceState.html :: when replacing state, before load
+Pass html/browsers/browsing-the-web/history-traversal/event-order/pushState-inside-popstate.html :: pushState inside popstate
+Pass html/browsers/browsing-the-web/history-traversal/event-order/same-document-traverse-immediate.html :: when traversing back, before hashchange
+Pass html/browsers/browsing-the-web/history-traversal/event-order/same-document-traverse-wait.html :: when traversing back, after hashchange
+Fail html/browsers/browsing-the-web/history-traversal/pagereveal/order-in-bfcache-restore.html :: html/browsers/browsing-the-web/history-traversal/pagereveal/order-in-bfcache-restore.html
+  page script threw (declared tests: 0): Script error: external script /common/dispatcher/dispatcher.js: script fetch failed: common/dispatcher/dispatcher.js (No such file or directory (os error 2))
+Fail html/browsers/browsing-the-web/history-traversal/pagereveal/order-in-new-document-navigation.html :: pagereveal event fires and in correct order on new-document navigation
+  assert_equals: expected "pagereveal,rAF" but got "rAF"
+Pass html/browsers/browsing-the-web/history-traversal/persisted-user-state-restoration/scroll-restoration-basic.html :: Default value is "auto"
+Pass html/browsers/browsing-the-web/history-traversal/persisted-user-state-restoration/scroll-restoration-basic.html :: It is writable
+Pass html/browsers/browsing-the-web/history-traversal/persisted-user-state-restoration/scroll-restoration-basic.html :: Invalid values are ignored
+Fail html/browsers/browsing-the-web/history-traversal/persisted-user-state-restoration/scroll-restoration-fragment-scrolling-samedoc.html :: Manual scroll restoration should take precedent over scrolling to fragment in cross doc navigation
+  assert_equals: should not scroll to fragment expected 0 but got 800
+Pass html/browsers/browsing-the-web/history-traversal/persisted-user-state-restoration/scroll-restoration-navigation-samedoc.html :: history.{push,replace}State retain scroll restoration mode and navigation in the same document respects it
+Fail html/browsers/browsing-the-web/navigating-across-documents/form-submit-and-window-stop.html :: html/browsers/browsing-the-web/navigating-across-documents/form-submit-and-window-stop.html
+  page script threw (declared tests: 0): Script error: external script resources/helpers.js: script fetch failed: html/browsers/browsing-the-web/navigating-across-documents/resources/helpers.js (No such file or directory (os error 2))
+Pass html/browsers/browsing-the-web/navigating-across-documents/javascript-url-global-scope.html :: javascript: scheme urls should be executed in current global scope
+Pass html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document/iframe-src-204-pushState-replaceState.html :: history.pushState
+Pass html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document/iframe-src-204-pushState-replaceState.html :: history.replaceState
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 938], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 946], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click.html :: aElement.click() before the load event must NOT replace
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20a%20%3D%20document.createElement(%22a%22)%3B%0A%20%20%20%20a.href%20%3D%20%22%2Fcommon%2Fblank.html%3Fthereplacement%22%3B%0A%20%20%20%20document.currentScript.before(a)%3B%0A%20%20%20%20a.click()%3B%0A%20%20"
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 21877, 1052], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 21877, 1060], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click.html :: User click on <a> before the load event must NOT replace
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20a%20%3D%20document.createElement(%22a%22)%3B%0A%20%20%20%20a.href%20%3D%20%22%2Fcommon%2Fblank.html%3Fthereplacement%22%3B%0A%20%20%20%20a.id%20%3D%20%22the-anchor%22%3B%0A%20%20%20%20a.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20document.currentScript.before(a)%3B%0A%20%20%20%20parent.test_driver.click(a)%3B%0A%20%20"
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 1286], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 1294], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit.html :: Replace before load, triggered by formElement.requestSubmit()
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement=" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20form%20%3D%20document.createElement(%22form%22)%3B%0A%20%20%20%20form.action%20%3D%20%22%2Fcommon%2Fblank.html%22%3B%0A%0A%20%20%20%20const%20input%20%3D%20document.createElement(%22input%22)%3B%0A%20%20%20%20input.type%20%3D%20%22hidden%22%3B%0A%20%20%20%20input.name%20%3D%20%22thereplacement%22%3B%0A%20%20%20%20form.append(input)%3B%0A%0A%20%20%20%20document.currentScript.before(form)%3B%0A%20%20%20%20form.requestSubmit()%3B%0A%20%20"
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 1383], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 1391], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click.html :: Replace before load, triggered by submitButton.click()
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement=" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20form%20%3D%20document.createElement(%22form%22)%3B%0A%20%20%20%20form.action%20%3D%20%22%2Fcommon%2Fblank.html%22%3B%0A%0A%20%20%20%20const%20input%20%3D%20document.createElement(%22input%22)%3B%0A%20%20%20%20input.type%20%3D%20%22hidden%22%3B%0A%20%20%20%20input.name%20%3D%20%22thereplacement%22%3B%0A%20%20%20%20form.append(input)%3B%0A%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.type%20%3D%20%22submit%22%3B%0A%20%20%20%20form.append(button)%3B%0A%0A%20%20%20%20document.currentScript.before(form)%3B%0A%20%20%20%20button.click()%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-cross-frame-crossorigin.sub.html :: No replace before load, triggered by cross-iframe formElement.submit() [iframe is cross-origin]
+  promise_test: Unhandled rejection with value: object "TypeError: Invalid URL host: {{hosts[][www]}}"
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-cross-frame.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-cross-frame.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 1674], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 1279], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 1287], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit.html :: Replace before load, triggered by same-document formElement.submit()
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement=" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20form%20%3D%20document.createElement(%22form%22)%3B%0A%20%20%20%20form.action%20%3D%20%22%2Fcommon%2Fblank.html%22%3B%0A%0A%20%20%20%20const%20input%20%3D%20document.createElement(%22input%22)%3B%0A%20%20%20%20input.type%20%3D%20%22hidden%22%3B%0A%20%20%20%20input.name%20%3D%20%22thereplacement%22%3B%0A%20%20%20%20form.append(input)%3B%0A%0A%20%20%20%20document.currentScript.before(form)%3B%0A%20%20%20%20form.submit()%3B%0A%20%20"
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 876], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 894], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate.html :: history.pushState() before the load event must NOT replace
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=history.pushState(null%2C%20null%2C%20%60%2Fcommon%2Fblank.html%3Fthereplacement%60)%3B"
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 1082], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 1090], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 1323], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 1039], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 1047], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-user-click.html :: NO replace before load, triggered by location.assign()
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onclick%20%3D%20()%20%3D%3E%20%7B%20location.assign(%22%2Fcommon%2Fblank.html%3Fthereplacement%22)%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign.html :: Replace before load, triggered by location.assign()
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=location.assign(%60%2Fcommon%2Fblank.html%3Fthereplacement%60)%3B"
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 2764], state={"loaded":true,"pending":3,"phase":4,"tests":3}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3211, 2786], state={"loaded":true,"pending":3,"phase":4,"tests":3}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-click.html :: href
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onclick%20%3D%20()%20%3D%3E%20%7B%20location.href%20%3D%20%22%2Fcommon%2Fblank.html%3Fthereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-click.html :: search
+  assert_equals: expected "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onclick%20%3D%20()%20%3D%3E%20%7B%20location.search%20%3D%20%22thereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-click.html :: hash
+  assert_equals: expected "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onclick%20%3D%20()%20%3D%3E%20%7B%20location.hash%20%3D%20%22thereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20#thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onclick%20%3D%20()%20%3D%3E%20%7B%20location.hash%20%3D%20%22thereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-mouseup.html :: href
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onmouseup%20%3D%20()%20%3D%3E%20%7B%20location.href%20%3D%20%22%2Fcommon%2Fblank.html%3Fthereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-mouseup.html :: search
+  assert_equals: expected "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onmouseup%20%3D%20()%20%3D%3E%20%7B%20location.search%20%3D%20%22thereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-mouseup.html :: hash
+  assert_equals: expected "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onmouseup%20%3D%20()%20%3D%3E%20%7B%20location.hash%20%3D%20%22thereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20#thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onmouseup%20%3D%20()%20%3D%3E%20%7B%20location.hash%20%3D%20%22thereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter.html :: href
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=location.href%20%3D%20%60%2Fcommon%2Fblank.html%3Fthereplacement%60%3B"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter.html :: search
+  assert_equals: expected "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=location.search%20%3D%20%60thereplacement%60%3B"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter.html :: hash
+  assert_equals: expected "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=location.hash%20%3D%20%60thereplacement%60%3B#thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=location.hash%20%3D%20%60thereplacement%60%3B"
+Pass html/browsers/browsing-the-web/scroll-to-fragid/001.html :: Fragment Navigation: Updating document address
+Pass html/browsers/browsing-the-web/scroll-to-fragid/002.html :: Fragment Navigation: Updating document address twice
+Fail html/browsers/browsing-the-web/scroll-to-fragid/003.html :: Fragment Navigation: Updating scroll position
+  assert_true: expected true got false
+Pass html/browsers/browsing-the-web/scroll-to-fragid/004.html :: Fragment Navigation: hashchange event
+Pass html/browsers/browsing-the-web/scroll-to-fragid/005.html :: Fragment Navigation: hashchange event
+Pass html/browsers/browsing-the-web/scroll-to-fragid/006.html :: Fragment Navigation: hashchange event multiple changes old/newURL
+Pass html/browsers/browsing-the-web/scroll-to-fragid/007.html :: Fragment Navigation: hashchange event multiple changes old/newURL
+Fail html/browsers/browsing-the-web/scroll-to-fragid/focus-changes-after-scroll-to-fragment.html :: Fragment Navigation: Scrolling to a fragment focuses the fragment, falling back to the viewport
+  assert_equals: expected Element node <div id="target1" tabindex="1">Target 1</div> but got Element node <div id="initial" tabindex="1">Initial</div>
+Pass html/browsers/browsing-the-web/scroll-to-fragid/fragment-and-encoding-2.html :: Invalid percent-encoded UTF-8 byte should decode as U+FFFD
+Pass html/browsers/browsing-the-web/scroll-to-fragid/fragment-and-encoding-2.html :: Percent-encoded UTF-8 BOM followed by invalid UTF-8 byte should decode as U+FEFF U+FFFD
+Pass html/browsers/browsing-the-web/scroll-to-fragid/fragment-and-encoding-2.html :: Percent-encoded UTF-8 byte sequence for U+FFFD should decode as U+FFFD
+Pass html/browsers/browsing-the-web/scroll-to-fragid/fragment-and-encoding.html :: U+00FF should find U+00FF
+Pass html/browsers/browsing-the-web/scroll-to-fragid/fragment-and-encoding.html :: Percent-encoded UTF-8 BOM should find U+FEFF as BOM is not stripped when decoding
+Pass html/browsers/browsing-the-web/scroll-to-fragid/fragment-and-encoding.html :: %FF should not find U+00FF as decoding it gives U+FFFD
+Pass html/browsers/browsing-the-web/scroll-to-fragid/fragment-and-encoding.html :: Valid UTF-8 + invalid UTF-8 should not be matched to the utf8-decoded former + the isomorphic-decoded latter
+Pass html/browsers/browsing-the-web/scroll-to-fragid/scroll-frag-non-utf8-encoded-document.html :: Fragment Navigation: fragment id should not be found in non UTF8 document
+Fail html/browsers/browsing-the-web/scroll-to-fragid/scroll-frag-percent-encoded.html :: Fragment Navigation: fragment id should be percent-decoded
+  assert_equals: expected 100 but got 0
+Fail html/browsers/browsing-the-web/scroll-to-fragid/scroll-position-inline-nearest.html :: ScrollToFragment
+  assert_true: expected true got false
+Fail html/browsers/browsing-the-web/scroll-to-fragid/scroll-position-vertical-lr.html :: Fragment Navigation: Scroll to block start position in vertical-lr writing mode
+  assert_equals: Scroll to the left border edge of #test expected 14 but got 0
+Fail html/browsers/browsing-the-web/scroll-to-fragid/scroll-position-vertical-rl.html :: Fragment Navigation: Scroll to block start position in vertical-rl writing mode
+  assert_equals: Scroll to the right border edge of #test expected -14 but got 0
+Pass html/browsers/browsing-the-web/scroll-to-fragid/scroll-position.html :: Fragment Navigation: Scroll to block start position
+Fail html/browsers/browsing-the-web/scroll-to-fragid/scroll-to-anchor-name.html :: Fragment Navigation: scroll to anchor name is lower priority than equal id
+  assert_equals: expected 200 but got 0
+Fail html/browsers/browsing-the-web/scroll-to-fragid/scroll-to-id-top.html :: Fragment Navigation: TOP is a valid element id, which overrides navigating to top of the document
+  assert_equals: expected 200 but got 0
+Fail html/browsers/browsing-the-web/scroll-to-fragid/scroll-to-top.html :: Fragment Navigation: When fragid is TOP scroll to the top of the document
+  assert_not_equals: got disallowed value 0
+Pass html/browsers/browsing-the-web/scroll-to-fragid/target-pseudo-after-reinsertion.html :: :target should match the target element even after it is removed and reinserted.
+Pass html/browsers/browsing-the-web/unloading-documents/prompt-and-unload-script-closeable.html :: beforeunload and unload events fire after window.close() in script-closeable browsing context
+Fail html/semantics/embedded-content/the-iframe-element/iframe_sandbox_allow_top_navigation_by_user_activation_with_user_gesture.html :: iframe_sandbox_allow_top_navigation_by_user_activation_with_user_gesture
+  Cannot read properties of null (reading 'addEventListener')
+Fail html/semantics/embedded-content/the-iframe-element/iframe_sandbox_allow_top_navigation_by_user_activation_without_user_gesture.html :: iframe_sandbox_allow_top_navigation_by_user_activation_without_user_gesture
+  Cannot read properties of null (reading 'addEventListener')
+make: *** [Makefile:422：testharness-navigation] 错误 1

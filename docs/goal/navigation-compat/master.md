@@ -2,8 +2,8 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-10（M2-S1~S4U 二十三片——location-interface 97.7% / traversal 93.3% /
-history-interface 98.0% / navigation-api 93.3%；全量 20.9%→**80.0%**（381/476，首次破 80））
+**最后更新**: 2026-10-10（M2-S1~S4V 二十四片——location-interface 97.7% / traversal 93.3% /
+history-interface 98.0% / navigation-api 93.7%；全量 20.9%→**80.3%**（382/476））
 
 ---
 
@@ -26,7 +26,7 @@ history-interface 98.0% / navigation-api 93.3%；全量 20.9%→**80.0%**（381/
 | P1 | 四 corpus 导入 + 基线 | ✅ 落地（fetch 三域 + 嵌套 resources 2026-10-07 恢复后入库；基线 20.9%，S1+S2 后全量 29.2%） |
 | P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口 + S4P 速率限制：the-history-interface 81.6%→**98.0%**（traverse 入队 + 空串 URL + 跨源 SecurityError + push/replaceState 10s/100 次速率窗）；余 007/008 外部脚本基建挂账 |
 | P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | 🔶 S1+S2+S4F+S4P 落地：location-interface 41.9%→**97.7%**（exotic 内部方法面 Proxy 承载收口 + 动态 append 脚本执行通道）、traversal 62.2%→**93.3%**；余 2F = runner 无端口 URL（形态缺口挂账） |
-| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4T 二十二段落地（→**93.3%**，238/255）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程/form submit navigate/activation 暴露/transition 派发时机/dispose 深簇/navState 入槽克隆/同文档 navState 承继/reentrant 孤儿 transition/提交期 abort/`:target` URL 同步/window.stop abort 面/session history 50 条上限/traverse 语义面/navigationType 随载入态（锚激活例外恒 push）/片段指示元素 decoded 匹配 + 无匹配滚顶 + 锚 record push 例外 + 跨源 canIntercept/pushState·replaceState hashChange=false 全收；余静态锚 href IDL 落 attr 面（2 案——回流 element IDL 域）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域） |
+| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4V 二十四段落地（→**93.7%**，239/255）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程/form submit navigate/activation 暴露/transition 派发时机/dispose 深簇/navState 入槽克隆/同文档 navState 承继/reentrant 孤儿 transition/提交期 abort/`:target` URL 同步/window.stop abort 面/session history 50 条上限/traverse 语义面/navigationType 随载入态（锚激活例外恒 push）/片段指示元素 decoded 匹配 + 无匹配滚顶 + 锚 record push 例外 + 跨源 canIntercept/pushState·replaceState hashChange=false/location.reload 接线 + 目的态承继全收；余静态锚 href IDL 落 attr 面（2 案——回流 element IDL 域）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域） |
 | P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | ⏳ M3 **用户门控** |
 | P5 | bfcache / fission 挂账定稿 | ✅ M4 定稿（bfcache：无实现面，依赖 frame tree→Document 快照管线，挂账至 M3 后续立项；fission：charter 排除维持。见 [M4 评估](evidence/2026-10-09-m4-closeout-assessment.md)） |
 
@@ -226,8 +226,15 @@ history-interface 98.0% / navigation-api 93.3%；全量 20.9%→**80.0%**（381/
   临时探针页定位）。2 翻 Fail/Timeout→Pass 零回归；全量 79.6%→**80.0%**（381/476，
   首次破 80）；navigation-api 域计数不变（两案均 html/browsers 域）。
   证据：[evidence/2026-10-10-m2-s4u-window-close-jsurl.md](evidence/2026-10-10-m2-s4u-window-close-jsurl.md)。
-- **质量门禁（二十三片）**：`make test` 20,362 P + r2946 已知 load-flake（renderer 姊妹
-  crate，solo 复跑即绿——S4L/S4M/S4Q 先例）；clippy/fmt 无 `.rs` 变更维持 S4R 干净基线。
+- **M2-S4V location.reload() 接线 Navigation API reload 面（2026-10-10）**：location.reload
+  原 no-op 存根不派事件——接线 `navigation.reload()`（navigate 'reload' + intercept 生命周期，
+  no-op reapply 近似维持）+ reload 目的态承继（destState ← 当前 entry navState）。收
+  navigate-destination-getState-reload（Timeout→Pass）；navigation-api 93.3%→**93.7%**
+  （239/255）；全量 80.0%→**80.3%**（382/476）；零回归。corpus 内其余 location.reload
+  使用者均 iframe 门控/未导入（零波及，逐案核对）。
+  证据：[evidence/2026-10-10-m2-s4v-location-reload-face.md](evidence/2026-10-10-m2-s4v-location-reload-face.md)。
+- **质量门禁（二十四片）**：`make test` 全绿 **20,361 P / 0 F**；clippy/fmt 无 `.rs` 变更
+  维持 S4R 干净基线。
 
 ## M4 收口评估（2026-10-09）
 
