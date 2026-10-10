@@ -1,0 +1,7 @@
+<!DOCTYPE html>
+<!-- r2s3（R5024）邻近变体钉：inline-block 祖先子树内同一混合级，钉全文宽（缺陷态与
+     修复态均 ~433.8px——base 已有 leaf 路径补宽，对本修复 kill-switch 零判别力，实测
+     0.00%）；判别负控在 zw-001。
+     孪生：tests/wpt-runner/src/reftest_data/css_box.rs css-box/inline-block-subtree-nested-em-text-zw-002。 -->
+<html><head><meta charset="utf-8"><style>body{margin:0}em{font-style:normal}</style></head>
+<body><div style="display:inline-block;height:46px;background:#008000"><div style="font:36px/46px Arial,sans-serif"><a style="display:block"><span><em>ZERO</em> Browser minimal fast</span></a></div></div></body></html>

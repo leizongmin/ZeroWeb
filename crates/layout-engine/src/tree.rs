@@ -706,6 +706,44 @@ fn is_flex_grid_item(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, do
         })
 }
 
+/// R5024：dom_id 是否处于 content-sized 子树内——祖先链上有 flex/grid 容器（即位于某
+/// flex/grid item 子树内）、inline-block 或 float 祖先。
+///
+/// 依据 css-flexbox-1 §9.9.1（item 的固有主轴尺寸由其内容的 max-content 馈入）与
+/// css-sizing-3 §5（固有尺寸沿嵌套块向根传播）：item 内部的 block 链（item → block →
+/// inline）上任一「文本 + inline 元素」混合级都在该传播路径上。这些级若不走 R1024
+/// leaf 路径，「仅处理元素子节点」会把 inline 文本兄弟丢出 taffy 树，item 的 flex base
+/// size 只聚合到元素子段的宽度（baidu SERP 标题 h3 → a → span → em+text：span 级丢
+/// 文本 → h3 量得 em 段 94px 而非全文 433px，paint 侧 IFC 仍按 94px 折成 5 行 120px 高
+/// 叠压下方摘要；Chrome 单行 433px）。
+///
+/// 与 R1494 已证伪的 plain-block 全量 leaf 扩展不同：本判定只对 content-sized 祖先
+/// 子树内的容器放行，fill-width 普通块流不受影响。
+/// kill-switch：`ZW_FLEX_SUBTREE_INLINE_LEAF=0` 回退 R1024 原语境。
+fn in_content_sized_subtree(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, dom_id: NodeId) -> bool {
+    if std::env::var("ZW_FLEX_SUBTREE_INLINE_LEAF").as_deref() == Ok("0") {
+        return false;
+    }
+    let mut cur = doc.parent_node(dom_id);
+    while let Some(pid) = cur {
+        if let Some(s) = styles.get(&pid) {
+            if matches!(
+                s.display,
+                DisplayValue::Flex
+                    | DisplayValue::InlineFlex
+                    | DisplayValue::Grid
+                    | DisplayValue::InlineGrid
+                    | DisplayValue::InlineBlock
+            ) || !matches!(s.float, FloatValue::None)
+            {
+                return true;
+            }
+        }
+        cur = doc.parent_node(pid);
+    }
+    false
+}
+
 /// 标签级 replaced 判定（CSS2 §10.3.2 语义域）。与 engine.rs 构盒时的 is_replaced 同表：
 /// img/video/iframe/embed/object/svg/canvas/applet。用于 converter 之外的独立 replaced
 /// 语境判定（R4054 inline 垂直 padding 恢复）。
@@ -3683,7 +3721,8 @@ fn build_subtree(
                     && all_inline
                     && (is_flex_grid_item(doc, styles, dom_id)
                         || matches!(computed.display, DisplayValue::InlineBlock)
-                        || !matches!(computed.float, FloatValue::None))
+                        || !matches!(computed.float, FloatValue::None)
+                        || in_content_sized_subtree(doc, styles, dom_id))
                 {
                     // R1024/R1025：content-sized block（flex/grid item / inline-block / float）的全 inline 子
                     // 作 leaf——让 measure 经 has_inline_content 把全部 inline 文本作一个 IFC 单位测量，
@@ -3691,6 +3730,11 @@ fn build_subtree(
                     //（w=800，应 shrink-to-fit）。fill-width block（multicol 容器、普通 div/table-cell）
                     // 不入此路径（multicol -6 回归、table auto-layout 独立、welcome 非必需）。
                     // inline Element 须无 Element 子（abspos-in-inline 簇的 span 内 abspos 须保留 CB）。
+                    // R5024：语境扩至 content-sized 祖先子树内的混合 inline 级（css-flexbox-1
+                    // §9.9.1 + css-sizing-3 §5 固有尺寸传播）——item 内 block 链（如 SERP 标题
+                    // span > em+text）若仍走「仅元素子」路径，inline 文本被丢出 taffy 树，item 的
+                    // flex base size 只聚到元素段宽（94px），paint 侧 IFC 却按该宽折 5 行叠压下方
+                    // 内容。`ZW_FLEX_SUBTREE_INLINE_LEAF=0` 回退。
                 } else {
                     // 仅处理元素子节点（原有行为）
                     //

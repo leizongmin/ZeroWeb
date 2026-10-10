@@ -674,5 +674,6 @@ mod r4941_hoisted_atomic_probe;
 mod r4986_vertical_ar_tests;
 mod r4987_abspos_ar_tests;
 mod r4988_flex_ar_min_tests;
+mod r5024_flex_subtree_inline_leaf_tests;
 mod s10_hotlist_geometry_tests;
 mod s19_inline_atomic_geometry_tests;

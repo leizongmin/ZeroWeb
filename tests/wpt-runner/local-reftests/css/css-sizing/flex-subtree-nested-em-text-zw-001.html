@@ -1,0 +1,7 @@
+<!DOCTYPE html>
+<!-- r2s3（R5024）：flex item 子树内「文本 + inline 元素」混合级（span > em+text）须入
+     R1024 leaf 路径——inline 文本参与 item 固有主轴尺寸聚合（css-flexbox-1 §9.9.1 +
+     css-sizing-3 §5）。缺陷态 h3 塌到 em 段宽，绿色 flex:1 兄弟左移 ~385px。
+     孪生：tests/wpt-runner/src/reftest_data/css_box.rs css-box/flex-subtree-nested-em-text-zw-001。 -->
+<html><head><meta charset="utf-8"><style>body{margin:0}em{font-style:normal}</style></head>
+<body><div style="display:flex;flex-direction:row;width:800px"><h3 style="margin:0;font:36px/46px Arial,sans-serif"><a style="display:block"><span><em>ZERO</em> Browser minimal fast</span></a></h3><span style="flex:1 1 auto;height:46px;background:#008000"></span></div></body></html>
