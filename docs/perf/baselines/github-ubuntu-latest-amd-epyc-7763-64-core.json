@@ -450,15 +450,15 @@
     },
     {
       "id": "mb/zero-storage/indexeddb_write_100",
-      "p95": 45875.176848874595,
+      "p95": 45417.016792125076,
       "tier": "budget",
-      "tightened_at": "2026-10-02T13:26:32Z"
+      "tightened_at": "2026-10-10T16:06:38Z"
     },
     {
       "id": "mb/zero-storage/local_storage_read_1000",
-      "p95": 65975.88508064517,
+      "p95": 65826.03197004608,
       "tier": "budget",
-      "tightened_at": "2026-10-04T15:15:48Z"
+      "tightened_at": "2026-10-10T16:06:38Z"
     },
     {
       "id": "mb/zero-storage/local_storage_write_1000",
