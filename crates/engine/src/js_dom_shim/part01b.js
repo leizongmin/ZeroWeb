@@ -932,6 +932,23 @@
   globalThis.print = globalThis.print || function print() {};
   globalThis.stop = globalThis.stop || function stop() {};
 
+  // M2-S4U（navigation-compat）：window.close()——script-closeable browsing context 关闭面
+  //（https://html.spec.whatwg.org/multipage/window-object.html#dom-window-close；spec close
+  // 触发 unload document 算法——beforeunload 先于 unload）。headless 单文档 in-memory 近似：
+  // 派 beforeunload（cancelable）→ unload 两事件后不真关宿主（真关即毁 runner；documented
+  // 限制）。WPT prompt-and-unload-script-closeable「onload close() → onbeforeunload →
+  // onunload」。此前全缺——`window.close()` 抛 TypeError 中断后续脚本。
+  globalThis.close = globalThis.close || function close() {
+    try {
+      var _be = new Event('beforeunload', { cancelable: true });
+      _dispatchToListeners(_elKey('html', null), _be, 'all', globalThis);
+    } catch (_eS4uBU) {}
+    try {
+      var _ue = new Event('unload');
+      _dispatchToListeners(_elKey('html', null), _ue, 'all', globalThis);
+    } catch (_eS4uUL) {}
+  };
+
   // Performance API（R2768 now + R2821 mark/measure/entry buffer + PerformanceObserver）——
   // DOMHighResTimeStamp（ms，自 time origin 起单调）。host `__zw_performance_now` 返 elapsed ms（子毫秒）；
   // 未注册（polyfill/reftest 路径）走 Date.now() 兜底。mark/measure 产 PerformanceEntry 存 entry buffer，

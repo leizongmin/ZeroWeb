@@ -2,8 +2,8 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-10（M2-S1~S4T 二十二片——location-interface 97.7% / traversal 93.3% /
-history-interface 98.0% / navigation-api 93.3%；全量 20.9%→79.6%（379/476））
+**最后更新**: 2026-10-10（M2-S1~S4U 二十三片——location-interface 97.7% / traversal 93.3% /
+history-interface 98.0% / navigation-api 93.3%；全量 20.9%→**80.0%**（381/476，首次破 80））
 
 ---
 
@@ -218,8 +218,16 @@ history-interface 98.0% / navigation-api 93.3%；全量 20.9%→79.6%（379/476�
   404 资产偏斜，归 same-url-replace 族）+ navigate-svg-anchor-fragment（svg:a dispatched
   click 激活缺失）入账。
   证据：[evidence/2026-10-10-m2-s4t-pushstate-face.md](evidence/2026-10-10-m2-s4t-pushstate-face.md)。
-- **质量门禁（二十二片）**：`make test` 全绿 **20,363 P / 0 F**；clippy/fmt 无 `.rs` 变更
-  维持 S4R 干净基线。
+- **M2-S4U window.close 卸载事件面 + javascript: 锚执行面（2026-10-10）**：window.close()
+  此前全缺（TypeError）——headless in-memory 近似派 beforeunload（cancelable）→ unload
+  （不真关宿主）；javascript: 锚激活在 `_navAnchorNavigate` chokepoint 前置判定——间接
+  eval 全局执行 + **_defer 微任务**（首版同步 eval 超时根因：真案 t.done() 闭包变量在
+  async_test 构造期未赋值，真实浏览器于导航 task 执行——不在 click 栈内；FILTER 单案 +
+  临时探针页定位）。2 翻 Fail/Timeout→Pass 零回归；全量 79.6%→**80.0%**（381/476，
+  首次破 80）；navigation-api 域计数不变（两案均 html/browsers 域）。
+  证据：[evidence/2026-10-10-m2-s4u-window-close-jsurl.md](evidence/2026-10-10-m2-s4u-window-close-jsurl.md)。
+- **质量门禁（二十三片）**：`make test` 20,362 P + r2946 已知 load-flake（renderer 姊妹
+  crate，solo 复跑即绿——S4L/S4M/S4Q 先例）；clippy/fmt 无 `.rs` 变更维持 S4R 干净基线。
 
 ## M4 收口评估（2026-10-09）
 

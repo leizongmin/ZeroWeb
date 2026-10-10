@@ -6444,6 +6444,20 @@
   // 提交链 → download 未拦截 = 吞导航 → 其余 host 真导航（跨文档语义）。
   // WPT navigate-anchor-download / -cross-origin / -same-origin-cross-document / -same-url 族。
   function _navAnchorNavigate(url, sourceElement, downloadRequest) {
+    // M2-S4U：javascript: URL 锚激活——**当前全局作用域执行**（spec the javascript: scheme——
+    // 脚本执行；结果字符串为导航体，非字符串 → 无导航），不走 navigate 事件/host 交接
+    //（WPT navigate-to-javascript「navigate event does not fire for javascript: URL」面同源；
+    // WPT javascript-url-global-scope「click javascript: 锚 → 脚本执行」）。间接 eval 落全局；
+    // **_defer 微任务执行**（spec 于导航 task 中跑——真实浏览器不在 click 同步栈内执行：
+    // javascript-url-global-scope 的 t.done() 闭包变量在 async_test 构造期未赋值，同步
+    // eval 必 TypeError）。
+    var _s4uRaw = String(url);
+    var _s4uTrim = _s4uRaw.replace(/^[\t\n\f\r ]+/, '');
+    if (_s4uTrim.length >= 11 && _s4uTrim.slice(0, 11).toLowerCase() === 'javascript:') {
+      var _s4uBody = _s4uTrim.slice(11);
+      _defer(function () { try { (0, eval)(_s4uBody); } catch (_eS4uJs) {} });
+      return;
+    }
     var oldHref = globalThis.location.href;
     var newHref = _resolveHistUrl(String(url));
     if (!newHref) return;
