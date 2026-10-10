@@ -213,3 +213,148 @@ fn t2_no_semicolon_directive_newline_asi_function_r147() {
         "无分号指令 + 注释 + 换行 ASI 后的缩进 function/var/async function 须全局可见"
     );
 }
+
+/// 返修钉（TV-1，测试有效性首轮）：CDATA 前缀 strict 形态的 var 导出必须是
+/// **accessor 转发**而非值快照——恢复旧 is_strict 判定的变异下，扫描器对误判
+/// sloppy 的 var 不导出（R201 门控），本钉的红态由 descriptor.get 断言与跨脚本
+/// 再赋值流共同钉住（值快照在再赋值流下读过期值）。
+#[test]
+fn t2_cdata_strict_var_accessor_not_snapshot_tv1() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let first = crate::js_dom_bridge::script_run_classic_page(
+        "//<![CDATA[\n\"use strict\";\nglobalThis._G={};;var holder2, snap2 = 'init';;function assign2() { holder2 = 'assigned'; snap2 = 'updated'; }\n//]]>",
+        0,
+        None,
+    );
+    sandbox.execute(&first).unwrap();
+    let err = sandbox
+        .execute(&crate::js_dom_bridge::page_script_error_check())
+        .unwrap()
+        .value;
+    assert_eq!(err, "", "TV-1 声明段无抛错（sentinel 干净）");
+    // accessor 形态断言：strict 判定正确时 var 导出为 get/set 转发而非数据属性。
+    sandbox
+        .execute("globalThis.__kind2 = (function(d){return d ? (d.get ? 'accessor' : 'data') : 'none';})(Object.getOwnPropertyDescriptor(globalThis, 'holder2'));")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__kind2").unwrap().value,
+        "accessor",
+        "CDATA strict var 须 accessor 转发（值快照破坏跨脚本再赋值流——TV-1）"
+    );
+    // 跨脚本再赋值流：声明脚本内函数赋值 + 消费脚本读取须见新值（accessor 转发语义）。
+    let second = crate::js_dom_bridge::script_run_classic_page(
+        "assign2(); globalThis.__flow2 = [globalThis.holder2, globalThis.snap2].join(',');",
+        1,
+        None,
+    );
+    sandbox.execute(&second).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__flow2").unwrap().value,
+        "assigned,updated",
+        "CDATA strict var accessor 双向转发（声明内函数赋值→消费脚本可见）"
+    );
+}
+
+/// 返修钉（TV-2）：注释前缀但**无指令**的脚本须判 sloppy——var 泄漏为全局数据
+/// 属性（is_strict 假阳性会在 sloppy 页面装 accessor → R201 自递归栈溢出）。
+#[test]
+fn t2_comment_prefix_without_directive_stays_sloppy_tv2() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let first = crate::js_dom_bridge::script_run_classic_page(
+        "//<![CDATA[\nvar tv2_a = 5;\n//]]>",
+        0,
+        None,
+    );
+    sandbox.execute(&first).unwrap();
+    let err = sandbox
+        .execute(&crate::js_dom_bridge::page_script_error_check())
+        .unwrap()
+        .value;
+    assert_eq!(err, "", "TV-2 sloppy 段无抛错");
+    sandbox
+        .execute("globalThis.__tv2 = String(globalThis.tv2_a) + ':' + (function(d){return d ? (d.get ? 'accessor' : 'data') : 'none';})(Object.getOwnPropertyDescriptor(globalThis, 'tv2_a'));")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__tv2").unwrap().value,
+        "5:data",
+        "注释前缀无指令 = sloppy：var 数据属性泄漏，不得装 accessor（TV-2）"
+    );
+}
+
+/// 返修钉（D1-D3，缺陷首轮）：解构模式不伪导出 RHS 标识符；正则初始化器整体
+/// 消费不产生伪声明符；伪名不进导出后缀（sloppy 脚本不被语法错误击杀）。
+#[test]
+fn t2_destructuring_regex_initializer_no_false_export_d1d2d3() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    // strict：解构 + 正则初始化器
+    let first = crate::js_dom_bridge::script_run_classic_page(
+        "//<![CDATA[\n\"use strict\";\nglobalThis.lib = { x: 1 };;var { x } = globalThis.lib;;var re1 = /a,b/, re2 = /\\s*,\\s*/;;var ok1 = re1 instanceof RegExp\n//]]>",
+        0,
+        None,
+    );
+    sandbox.execute(&first).unwrap();
+    let err = sandbox
+        .execute(&crate::js_dom_bridge::page_script_error_check())
+        .unwrap()
+        .value;
+    assert_eq!(err, "", "D1-D3 声明段无抛错（sentinel 干净）");
+    // D1：`lib` 不得被伪装 accessor（读取栈溢出）；解构弃链方向 = x 不导出。
+    sandbox
+        .execute("globalThis.__d1 = (function(d){return d ? (d.get ? 'POISON-accessor' : 'data') : 'none';})(Object.getOwnPropertyDescriptor(globalThis, 'lib'));")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__d1").unwrap().value,
+        "data",
+        "D1：解构 RHS 标识符不得伪导出为 accessor（读取栈溢出毒化）"
+    );
+    // D2：正则内容标识符不得成为伪声明符。
+    sandbox
+        .execute("globalThis.__d2 = String(typeof globalThis.b) + '/' + String(typeof globalThis.a) + '/' + (Object.getOwnPropertyDescriptor(globalThis, 'b') ? 'HAS-b' : 'no-b');")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__d2").unwrap().value,
+        "undefined/undefined/no-b",
+        "D2：正则初始化器内容不产生伪声明符/伪 accessor"
+    );
+    // D2 正向：正则声明符本身照常导出。
+    sandbox
+        .execute("globalThis.__d2ok = String(globalThis.re1 instanceof RegExp) + '/' + String(globalThis.re2.test('a, b')) + '/' + String(globalThis.ok1);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__d2ok").unwrap().value,
+        "true/true/true",
+        "正则声明符 re1/re2/ok1 正常导出且值有效"
+    );
+    // D3：数字起头伪名不进后缀（sloppy 脚本不被 eval 源语法错误击杀）。
+    let sloppy = crate::js_dom_bridge::script_run_classic_page(
+        "var re3 = /a,2/; globalThis.__d3 = 'alive:' + (re3 instanceof RegExp);",
+        1,
+        None,
+    );
+    sandbox.execute(&sloppy).unwrap();
+    let err2 = sandbox
+        .execute(&crate::js_dom_bridge::page_script_error_check())
+        .unwrap()
+        .value;
+    assert_eq!(err2, "", "D3：sloppy 伪名不击杀 eval 源（sentinel 干净）");
+    assert_eq!(
+        sandbox.execute("globalThis.__d3").unwrap().value,
+        "alive:true",
+        "D3：含数字伪名场景脚本完整存活"
+    );
+}

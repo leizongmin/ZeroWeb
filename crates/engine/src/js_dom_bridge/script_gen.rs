@@ -737,8 +737,11 @@ fn script_directive_is_strict(code: &str) -> bool {
 /// 属性自递归教训）；const 值快照；let accessor 转发（M2-S2 跨脚本递减可见性）；
 /// function/async function/class 恒值导出（R147/R3254/WAB2-M1 的 WPT 依据）；
 /// 每名 try 包裹（lit bundle IIFE 内部同名消亡不炸整个后缀）；同名去重。
-/// 已知接受缺口（与旧行为一致地保守）：`for(var i=..)` 头内声明（深度>0）、
-/// `label: var` 形态不导出；const/let 多声明符只发布首名。
+/// 已知接受缺口（保守方向=漏导出）：`for(var i=..)` 头内声明（深度>0）、
+/// `label: var`、顶层块内 var（`{ var x }`——真实浏览器 var 穿块全局，旧行锚
+/// 会导出，状态机按深度判定不导出）与解构声明符（`var {x} = lib`——弃链，
+/// 见 Name 相 D1 注记）不导出；const/let 多声明符只发布首名；`)` 后 `/` 按正则
+/// 处理（`(a)/2` 形态漏导出，正则内容当代码的风险反向更重——D4 权衡）。
 fn scan_top_level_decl_exports(code: &str, is_strict: bool) -> String {
     fn is_ident_char(c: char) -> bool {
         c.is_ascii_alphanumeric() || c == '_' || c == '$'
@@ -789,7 +792,15 @@ fn scan_top_level_decl_exports(code: &str, is_strict: bool) -> String {
         End,
     }
     fn push_export(out: &mut Vec<String>, seen: &mut std::collections::HashSet<String>, name: &str, accessor: bool) {
-        if name.is_empty() || !seen.insert(name.to_string()) {
+        // D3（缺陷首轮）：导出名须是合法 JS 标识符（首字符非数字）——误读的正则/
+        // 模式内容可能产生 `2` 之类伪名，值形式 `globalThis.2=2` 是语法错误，会
+        // 击杀整个 eval 源（脚本级回归）。
+        let mut chars = name.chars();
+        let legal = match chars.next() {
+            Some(first) => first.is_ascii_alphabetic() || first == '_' || first == '$',
+            None => false,
+        } && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$');
+        if !legal || !seen.insert(name.to_string()) {
             return;
         }
         if accessor {
@@ -948,6 +959,17 @@ fn scan_top_level_decl_exports(code: &str, is_strict: bool) -> String {
                 }
             }
             '(' | '[' | '{' => {
+                // D1（缺陷首轮）：Name 相遇 `{`/`[` = 解构声明符模式起点
+                // （`var { x } = lib` / `var [a] = arr`——合法 var 声明符不可能是
+                // 括号开头，成员表达式 `var a[0]` 亦非法）——弃链（模式绑定名不
+                // 导出，保守漏导出；否则模式后 `}` `=` 的 RHS 首标识符会命中 Name
+                // 相被伪导出为 accessor——实测毒化 globalThis 自身致全页读取栈溢出）。
+                if let Some((base, phase)) = var_phase.as_ref()
+                    && matches!(*phase, VarPhase::Name)
+                    && depth == *base
+                {
+                    var_phase = None;
+                }
                 depth += 1;
                 prev_sig = c;
                 last_ident.clear();
@@ -978,14 +1000,25 @@ fn scan_top_level_decl_exports(code: &str, is_strict: bool) -> String {
                 if let Some(base) = chain_base {
                     if depth == base {
                         if matches!(var_phase, Some((_, VarPhase::Name))) {
-                            push_export(&mut out, &mut seen, &word, is_strict);
+                            // R201 门控：var 导出仅 strict（非 strict 间接 eval 的 var
+                            // 本泄漏全局数据属性，后缀冗余且形态风险见 R201 注记）。
+                            if is_strict {
+                                push_export(&mut out, &mut seen, &word, true);
+                            }
                             skip_ws_comments(&src, &mut i);
                             // `=`（无 or 有初始化都进入 End——初始化器内标识符按
                             // 表达式 token 消费，链仅在深度 0 的 `,`/`;`/EOF 推进或
                             // 终结；在此 ASI 终结会吃掉 `var a=globalThis,b=1`
                             // 的后续声明符——bing #6 链实证）。
+                            // D2（缺陷首轮）：消费 `=` 后 prev_sig 须记 `=`——正则
+                            // 字面量可出现于表达式位置（`var re = /a,b/`），记 'x'
+                            // 会判除法、正则内容当代码、内部逗号触发伪声明符。
                             if i < n && src[i] == '=' {
                                 i += 1;
+                                var_phase = Some((base, VarPhase::End));
+                                prev_sig = '=';
+                                last_ident.clear();
+                                continue;
                             }
                             var_phase = Some((base, VarPhase::End));
                             prev_sig = 'x';
