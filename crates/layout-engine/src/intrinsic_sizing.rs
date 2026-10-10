@@ -163,7 +163,22 @@ pub(crate) fn box_content_max_width(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) -> f32 {
-    kw_aware_max_width(box_node, doc, styles, box_content_max_width_inner)
+    kw_aware_max_width(box_node, doc, styles, |b, d, s| {
+        box_content_max_width_inner(b, d, s, true)
+    })
+}
+
+/// R5037：content-only max-content——不含自身 definite width 的 own_explicit 抬升
+///（fit-content() 公式的 W_max 口径：内在尺寸按内容基测量，specified 宽在使用侧钳制）。
+/// 仅 R5037 贡献钳制消费。
+pub(crate) fn box_content_max_width_content_only(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> f32 {
+    kw_aware_max_width(box_node, doc, styles, |b, d, s| {
+        box_content_max_width_inner(b, d, s, false)
+    })
 }
 
 /// R4151（css-sizing-3 §5.2）：content 关键字 max/min-width 参与固有贡献——子盒带
@@ -239,7 +254,12 @@ fn resolve_kw_real_length(value: &LengthValue, style: &zero_style_system::Comput
     }
 }
 
-fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+fn box_content_max_width_inner(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    include_own_width: bool,
+) -> f32 {
     // R4946（css-flexbox §9.9 intrinsic main size）：被通用递归测到的 flex/grid 容器
     //（典型：flex item 自身是 flex 行容器 → `flex_item_base_size` 第 3 步落到本函数；
     // R4032 inline-block 族递归遇 inline-flex 同理）须用专用 intrinsic 测量——flex 行
@@ -478,6 +498,7 @@ fn box_content_max_width_inner(box_node: &LayoutBox, doc: &Document, styles: &Ha
         .unwrap_or(0.0);
     let own_explicit = own_style
         .and_then(|s| resolve_intrinsic_real_length(&s.width, s))
+        .filter(|_| include_own_width)
         .unwrap_or(0.0)
         .max(own_cis);
     // R3792：aspect-ratio transferred width（css-sizing-4 §4.1 transferred size）——
@@ -643,11 +664,140 @@ pub(crate) fn block_min_content_width(
     block_intrinsic_width(box_node, doc, styles, true)
 }
 
+/// R5037：content-only min-content——不含自身 definite width 的 own_explicit 抬升
+///（fit-content() 公式的 W_min 口径：内在尺寸按内容基测量，specified 宽在使用侧钳制，
+/// 不进公式）。仅 R5037 贡献钳制消费。
+pub(crate) fn block_min_content_width_content_only(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> f32 {
+    block_intrinsic_width_ex(box_node, doc, styles, true, false)
+}
+
+/// R5037（css-sizing-3 #intrinsic-contribution + #valdef-width-fit-content-length-percentage）：
+/// fit-content 尺寸参与 min/max-content 贡献传播——block 子对父固有宽的贡献须被其自身
+/// fit-content 宽钳制（fit-content-length-percentage-011..016 取证：width:fit-content(100px)
+/// 子贡献 = 公式值 100 而非内容 max 124；width:50px + min-width:fit-content(100px) 子贡献 =
+/// max(50, 100) = 100；width:200px + max-width:fit-content(100px) 子贡献 = min(200, 100) =
+/// 100）。仅 width/min/max-width 含 `fit-content()` 时触发（blast radius 窄）；content
+/// 关键字（min-content/max-content min/max-width）仍归 R4151 kw_aware 路径不重复处理。
+///
+/// base（specified 宽主导，R4149 同口径）：definite width → 该宽 + frame；
+/// width:fit-content(definite) → 公式值；width:fit-content(%) / auto / content 关键字 →
+/// 内容 intrinsic（min 模式 = 真 min-content，max 模式 = raw max-content）。
+///
+/// 循环百分比语境（% arg 固有测量中无 CB 可依；WPT 011/012/013 案注释明示规则）：
+/// width:fit-content(%) → 按 auto；min-width:fit-content(%) → floor 到 min-content
+///（fit-content(0) 公式退化 = W_min）；max-width:fit-content(%) → cap 到 max-content
+///（= W_max，无额外收缩）。
+///
+/// kill-switch `ZW_FIT_CONTRIBUTION=0` 回退。
+fn clamp_fit_content_child_contribution(
+    child: &LayoutBox,
+    cs: &ComputedStyle,
+    raw: f32,
+    min_mode: bool,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> f32 {
+    if std::env::var("ZW_FIT_CONTRIBUTION").as_deref() == Ok("0") {
+        return raw;
+    }
+    let width_fit = matches!(cs.width, LengthValue::FitContent(_));
+    let min_fit = matches!(cs.min_width, LengthValue::FitContent(_));
+    let max_fit = matches!(cs.max_width, LengthValue::FitContent(_));
+    if !width_fit && !min_fit && !max_fit {
+        return raw;
+    }
+    let frame = child.padding_left + child.padding_right + child.border_left + child.border_right;
+    // 子盒自身 content intrinsic（border-box 口径同 raw）。fit-content() 公式的 W_max/W_min
+    // 是**内容基**内在尺寸（LayoutNG 同语义：specified 宽在使用侧钳制，不进公式）——子带
+    // definite width 时 raw/max 测量含 own_explicit 抬升（max(内容, 定宽)），须换 content-only
+    // 测量；无定宽时两者同值，直接复用 raw 免重测。W_min 缺测/塌 0 → None（公式退化不塌）。
+    let has_definite_width = resolve_intrinsic_real_length(&cs.width, cs).is_some();
+    let w_max = if has_definite_width {
+        box_content_max_width_content_only(child, doc, styles)
+    } else {
+        raw
+    };
+    let w_min_measured = if has_definite_width {
+        block_min_content_width_content_only(child, doc, styles)
+    } else {
+        block_min_content_width(child, doc, styles)
+    };
+    let w_min = (w_min_measured > 0.5).then_some(w_min_measured);
+    // fit-content(arg) 公式：min(W_max, max(W_min, arg))；W_min 缺测退化 min(W_max, arg)
+    //（R3925 旧行为同款兼容）。
+    let fit_formula = |arg: f32| -> f32 { w_max.min(w_min.map_or(arg, |min_c| min_c.max(arg))) };
+    // fit-content arg：definite → Some(Some(len))；percent（循环语境）→ Some(None)。
+    let fit_arg = |v: &LengthValue| -> Option<Option<f32>> {
+        match v {
+            LengthValue::FitContent(inner) => Some(match inner.as_ref() {
+                LengthValue::Percentage(_) => None,
+                other => resolve_intrinsic_real_length(other, cs),
+            }),
+            _ => None,
+        }
+    };
+    let base = if let Some(w) = resolve_intrinsic_real_length(&cs.width, cs) {
+        w + frame
+    } else if width_fit {
+        match fit_arg(&cs.width) {
+            Some(Some(arg)) => fit_formula(arg),
+            // fit-content(%)（循环 → auto 语义）及其余 content-based 宽。
+            _ => {
+                if min_mode {
+                    w_min.unwrap_or(raw)
+                } else {
+                    raw
+                }
+            }
+        }
+    } else if min_mode {
+        w_min.unwrap_or(raw)
+    } else {
+        raw
+    };
+    // floor/cap：definite min/max-width → len + frame；fit-content(definite) → 公式值；
+    // fit-content(%) → 循环语境退化（floor = W_min / cap = W_max）；content 关键字 →
+    // 不在此钳（R4151 域）。
+    let limit = |v: &LengthValue, is_fit: bool, cyclic_value: Option<f32>| -> Option<f32> {
+        if let Some(len) = resolve_intrinsic_real_length(v, cs) {
+            return Some(len + frame);
+        }
+        if !is_fit {
+            return None;
+        }
+        match fit_arg(v) {
+            Some(Some(arg)) => Some(fit_formula(arg)),
+            Some(None) => cyclic_value,
+            None => None,
+        }
+    };
+    let floor = limit(&cs.min_width, min_fit, w_min);
+    let cap = limit(&cs.max_width, max_fit, Some(w_max));
+    base.max(floor.unwrap_or(0.0)).min(cap.unwrap_or(f32::MAX))
+}
+
 fn block_intrinsic_width(
     box_node: &LayoutBox,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     min_mode: bool,
+) -> f32 {
+    block_intrinsic_width_ex(box_node, doc, styles, min_mode, true)
+}
+
+/// `include_own_width = false`（R5037 content-only 口径）时不把自身 definite CSS 宽计入
+/// intrinsic（`own_explicit` 的 width 臂置 0）——containment CIS 替代与 aspect-ratio
+/// transferred 仍保留（同属内容基内在尺寸语义）。
+fn block_intrinsic_width_ex(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    min_mode: bool,
+    include_own_width: bool,
 ) -> f32 {
     let mut inline_sum = 0.0f32;
     let mut block_max = 0.0f32;
@@ -772,6 +922,21 @@ fn block_intrinsic_width(
                 _ => box_content_max_width(child, doc, styles),
             })
             .unwrap_or_else(|| box_content_max_width(child, doc, styles));
+        // R5037：fit-content 尺寸参与贡献传播（仅 block 子——flex/grid 的主轴贡献由专用
+        // intrinsic 自算，关键词域已有独立接线，不在此交叉钳制）。
+        let is_flex_grid_child = child_style.is_some_and(|s| {
+            matches!(
+                s.display,
+                DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+            )
+        });
+        let child_intrinsic = if is_flex_grid_child {
+            child_intrinsic
+        } else {
+            child_style.map_or(child_intrinsic, |cs| {
+                clamp_fit_content_child_contribution(child, cs, child_intrinsic, min_mode, doc, styles)
+            })
+        };
         let with_margins = child_intrinsic + ml + mr;
         // R4397：float 子横向叠加 + clear 换行（见 loop 头注）；与 spanner 记账正交
         //（column-span:all float 非常规形态，不参与 spanner_max）。
@@ -829,6 +994,7 @@ fn block_intrinsic_width(
         .unwrap_or(0.0);
     let own_explicit = own_style
         .and_then(|s| resolve_intrinsic_real_length(&s.width, s))
+        .filter(|_| include_own_width)
         .unwrap_or(0.0)
         .max(own_cis);
     let inner = if !has_in_flow_child {
@@ -3644,6 +3810,88 @@ AAAA</div></body></html>"#,
             (t.width - 100.0).abs() < 1.0,
             "min-width:fit-content(100px) with two 60px inline-blocks must floor at 100, got {}",
             t.width
+        );
+    }
+
+    // ── R5037（css-sizing-3 #intrinsic-contribution）：fit-content 贡献传播 ──
+
+    /// 跑完整引擎后取 div#p（min/max-content 父）布局宽（R5037 断言 helper）。
+    fn r5037_parent_width(css: &str, inner_html: &str) -> f32 {
+        let doc = zero_dom::parse_html(&format!(
+            r#"<html><head></head><body><div id="p" style="{css}">{inner_html}</div></body></html>"#
+        ));
+        let ss = zero_css_parser::Parser::parse_stylesheet("html,body{font:10px/1 monospace;margin:0;padding:0}");
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[ss]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        find("p", &doc, &result.root).expect("div#p found").width
+    }
+
+    /// 011 同构：min-content 父 + width:fit-content(100px) 子（2×60 inline-block）——
+    /// 子贡献 = 公式值 min(W_max, max(W_min, 100)) = 100，父 min-content = 100 而非内容 max。
+    #[test]
+    fn r5037_fit_width_child_contributes_formula_value() {
+        let w = r5037_parent_width(
+            "width:min-content;height:50px",
+            r#"<div style="width:fit-content(100px)"><div style="display:inline-block;width:60px"></div><div style="display:inline-block;width:60px"></div></div>"#,
+        );
+        assert!(
+            (w - 100.0).abs() < 1.0,
+            "min-content parent with width:fit-content(100px) child must size 100 (formula contribution), got {w}"
+        );
+    }
+
+    /// 012 同构：min-content 父 + width:50px + min-width:fit-content(100px) 子——贡献 =
+    /// max(50, 100) = 100。
+    #[test]
+    fn r5037_min_width_fit_child_contribution_floors() {
+        let w = r5037_parent_width(
+            "width:min-content;height:50px",
+            r#"<div style="width:50px;min-width:fit-content(100px)"><div style="display:inline-block;width:60px"></div><div style="display:inline-block;width:60px"></div></div>"#,
+        );
+        assert!(
+            (w - 100.0).abs() < 1.0,
+            "min-content parent contribution of min-width:fit-content(100px) child must be 100, got {w}"
+        );
+    }
+
+    /// 013 同构：min-content 父 + width:200px + max-width:fit-content(100px) 子——贡献 =
+    /// min(200, 100) = 100。
+    #[test]
+    fn r5037_max_width_fit_child_contribution_caps() {
+        let w = r5037_parent_width(
+            "width:min-content;height:50px",
+            r#"<div style="width:200px;max-width:fit-content(100px)"><div style="display:inline-block;width:60px"></div><div style="display:inline-block;width:60px"></div></div>"#,
+        );
+        assert!(
+            (w - 100.0).abs() < 1.0,
+            "min-content parent contribution of max-width:fit-content(100px) child must be 100, got {w}"
+        );
+    }
+
+    /// 015 同构：max-content 父 + width:50px + min-width:fit-content(100px) 子——
+    /// max-content 贡献同样被 min-width floor 到 100。
+    #[test]
+    fn r5037_max_content_parent_min_width_fit_child() {
+        let w = r5037_parent_width(
+            "width:max-content;height:50px",
+            r#"<div style="width:50px;min-width:fit-content(100px)"><div style="display:inline-block;width:60px"></div><div style="display:inline-block;width:60px"></div></div>"#,
+        );
+        assert!(
+            (w - 100.0).abs() < 1.0,
+            "max-content parent contribution of min-width:fit-content(100px) child must be 100, got {w}"
         );
     }
 }
