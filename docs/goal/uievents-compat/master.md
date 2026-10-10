@@ -733,3 +733,6 @@ declarative shadow DOM 立项（15F/3TO 重入条件）；runner `.https.html` s
 建议 = ①Arc 化暂不立项（渲染流战役在途）②shadow DOM 暂缓并入 web-components 盘点
 ③scheme 分流不立项（仅 2F）④testharness TO 专项待 navigation M2 收口后评估——
 四项批复前均维持挂账，不影响在途流）。
+**2026-10-10 48h 跟进提醒已发（一次性，到期）**（合并消息含 multicol-2 新征询，msg
+`om_x100b6390da10c06cc2463a02747595b`）：仍零回复——不回复即默认四项全部维持挂账，
+此后不再催。

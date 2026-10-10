@@ -1483,6 +1483,15 @@
 - **圆角裁剪边专项战役**（R4579 试作回退+升级挂账 2026-09-21，GB-20260921 补登记）：rounded-clip-edge 自身即系统性深域——overflow:clip+radius 页面族（attachment-local / backdrop-filter-nested / inner-border / corner-shape / border-shape / clip-margin ≥6 族）存在成片自源掩蔽平衡（双侧 ZW 均矩形裁剪路径→相等→pass），形状精确裁剪逐族拆 Mask 部分家族 ref 页用非 shadow 手法（radial-gradient 等）形成嵌套依赖；两轮试作（R4577/R4579）净 +1/−9 定谳回退，**技术资产已验证可行**（阴影环带构造/方影板条差集/凸 SH 臂/rounded clip arm），重启成本=战役组织非技术攻关。**为何 user-gated**：RFC 级逐家族调和 + clip 体系形状化设计，深结构多会话战役。重开条件=用户点名专项或家族成生产诉求。
 - **corner-shape 族五子域全谱归档**（R4583 口径订正 2026-09-21，GB-20260921 补登记；订正 R4572「余 2 fail」过窄记账）：全谱 ≈107 页 RFC 级深域非 scoped-fix 可达——A.backdrop-filter 核心族 18 页（边缘采样/区域对齐 + clip/mask/transform 交互 + backdrop root 边界 + reference/SVG filter 接入）；B.SVG filter 原语族 ~61 页（fe* 渲染管线域，孤立修复无性价比，与 resvg ②③ 挂账同谱）；C.iframe 子文档渲染族 6 页（src 子文档未加载渲染白芯 + replaced 盒 border-radius 未裁剪 + corner-shape variants 三缺口叠加）；D.top-layer ::backdrop 族 2 页（dialog showModal/popover API top-layer 提升 + ::backdrop 渲染全缺，**DOM/引擎域跨流需用户点名立项**）；E.corner-shape variant 域 1 页（R4573 记档）。重开条件=A/B filter-effects 管线专项（RFC 级，与 resvg ②③ filter-effects 收口统一裁决同通道）、C 子文档渲染专项+圆角裁剪边战役顺带、D top-layer 立项、E 已记档。
 - **transform-box 双案碰头信号处置点名**（R4853 立案 → R4856 挂账执行；R4853 下轮方向④预设三轮在册条件成立）：`css/css-transforms/animation/transform-box.html` + `transform-box-will-change-transform-layer.html`——兄弟流 timing-animation-compat M3 shim 域确定性回归（归因窗口 e915712fa..db7b6cbd5 仅兄弟流腿；双案 3.17%=15220/480000px **逐字节恒值三轮零收敛**（R4853/R4854/R4855 定向复测同值）；机制域 = element.animate WAAPI transformBox/borderColor 关键帧 + fill:forwards + pause/seek 终态渲染，落 M3-S1/M3-S2 js_dom_shim part03.js；精确 leg 未 bisect，兄弟流可三点定向复测定界）。兄弟流 goal 已 M4 DONE（221fdfe25）修复无既定排序 → **请用户点名流间处置**：①立项修复（任一流排期；修复后本流定向复测回收账册 1421→1419、corpus 回 91.45%）②账册 re-baseline（1421 固化为新常态口径）。挂账期间渲染流维持 1421 口径记账（固化 md5 493240ca/5f8f2c95）；lark 已通报（R4853 归因通报 + R4855 决策预告 + 本轮挂账确认）。
+- **multicol-2 多列分片引擎立项**（R5025 立项挂账 2026-10-10，R5031 产出分族评估
+  [`multicol2-scoping-2026-10-10.md`](./multicol2-scoping-2026-10-10.md)，GB-20261010 补登记+首判征询）：
+  column-height/column-wrap 全库零实现（parser/computed/layout grep 实证），multicol 136 案 =
+  全量最大连续域；分族 S1 column-height 属性面（14 案低风险先行）→ S2 基础行盒精度（26 案，
+  floats-clear-multicol 掩体在此解）→ S3 spanner/fixedpos 深域缓议，预期收口 60-90 案。
+  **为何 user-gated**：渲染管线级分片引擎深结构（同族 Phase 2 multicol fragmentation，见下
+  「深结构性方向」2），多会话切片。**GB-20261010 首判征询已发**（msg
+  `om_x100b6390da10c06cc2463a02747595b`，建议 = 可批 S1+S2 起步、S3 另议，或维持挂账待
+  fail-list 再降）；流内 R5032-R5038 收口节奏（1365→1347）待拍板期间不受阻。
 
 ### 轻量修复候选
 
