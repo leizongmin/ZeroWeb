@@ -2300,9 +2300,12 @@ fn t8s1_adopted_snapshot_comment_ref_and_identity_regressions() {
         .execute(
             r#"(function(){
   var r = [];
-  // ① adopted Comment 作 ref：后续 insert 元素不丢。
+  // ① adopted Comment 作 ref：后续 insert 元素不丢；物化 Comment data 逐字保真。
   var d1 = new DOMParser().parseFromString('<i>px</i><!--anchor-->', 'text/html');
   var cf = document.createDocumentFragment();
+  var ac = document.adoptNode(d1.body.lastChild);
+  r.push('cData:' + (ac.nodeType === 8 && ac.data === 'anchor' ? 'ok' : 'bad:' + ac.nodeType + '/' + JSON.stringify(ac.data)));
+  cf.insertBefore(ac, cf.firstChild || null);
   while (d1.body.lastChild) cf.insertBefore(document.adoptNode(d1.body.lastChild), cf.firstChild || null);
   r.push('cFrag:' + (cf.querySelector('i') ? 'hit' : 'miss') + '/' + (cf.childNodes.length >= 2 ? 'both' : 'part:' + cf.childNodes.length));
   // ② 快照文本物化保真：data 内容逐字保留 + 原父摘除。
@@ -2314,9 +2317,12 @@ fn t8s1_adopted_snapshot_comment_ref_and_identity_regressions() {
   var d3 = new DOMParser().parseFromString('<u>plain</u>\nraw', 'text/html');
   var raw = d3.body.lastChild;
   r.push('rawRead:' + (raw && raw.nodeType === 3 && raw.data === '\nraw' ? 'ok' : 'bad'));
-  // ④ handle 真文本 adopt identity（R192 语义）。
+  // ④ handle 真文本 adopt identity（R192 语义）；物化产物（带 handle）二次 adopt 同样 identity。
   var lt = document.createTextNode('live');
   r.push('liveIdent:' + (document.adoptNode(lt) === lt ? 'ok' : 'bad'));
+  var d4 = new DOMParser().parseFromString('<s>q</s>\nagain', 'text/html');
+  var mat = document.adoptNode(d4.body.lastChild);
+  r.push('readopt:' + (document.adoptNode(mat) === mat ? 'ok' : 'bad'));
   return r.join('|');
 })()"#,
         )
@@ -2324,8 +2330,8 @@ fn t8s1_adopted_snapshot_comment_ref_and_identity_regressions() {
         .value;
     assert_eq!(
         out,
-        "cFrag:hit/both|matType:3|data:exact|cut:ok|rawRead:ok|liveIdent:ok",
-        "t8s1：adopted Comment ref 同域 + 物化数据保真/原父摘除 + 快照与 handle 文本 identity 零回归"
+        "cData:ok|cFrag:hit/both|matType:3|data:exact|cut:ok|rawRead:ok|liveIdent:ok|readopt:ok",
+        "t8s1：adopted Comment ref 同域 + 物化数据保真/原父摘除 + 快照与 handle/物化产物 identity 零回归"
     );
 }
 

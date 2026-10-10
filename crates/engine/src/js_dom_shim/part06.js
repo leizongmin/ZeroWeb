@@ -3367,7 +3367,7 @@
       // t8s1（site-compat bilibili-20261002-r1）：物化域扩展到快照顶层裸 Text/Comment
       // ——t8q 只覆盖元素（nodeType 1）；真站 bilibili 播放器模板引擎 T.d 用
       // `while(body.lastChild) frag.insertBefore(adoptNode(body.lastChild), frag.firstChild||null)`
-      // 倒序排空（renderFragment HTML 带前导空白 → 首子是文本）：快照文本 adopt 后
+      // 倒序排空（renderFragment HTML 尾随空白 → body 末子是文本）：快照文本 adopt 后
       // 无 host handle，插入 fragment 成功但其作 ref 时 host 桥按 ref handle 定位
       // 失败 → 后续元素静默丢失 → `.bpx-video-info` 注册表查询全 miss → npd.314
       // 四处 `template.info/online` null 崩。spec concept-node-adopt 要求完整搬入

@@ -11945,8 +11945,11 @@
   // 快照域顶层裸文本（_ensureMutTree 的 _zwMText 产物）无本印时 adoptNode 落地分支
   // 不识别 → identity 返回无 host handle 的快照文本；其作 insertBefore ref 时 host
   // 桥按 ref handle 定位失败静默丢节点（bilibili npd.314 播放器崩簇根因——模板
-  // renderFragment HTML 前导空白经 T.d `while(body.lastChild)` 倒序排空首子为文本）。
+  // renderFragment HTML 尾随空白经 T.d `while(body.lastChild)` 倒序排空末子为文本）。
   // spec https://dom.spec.whatwg.org/#concept-node-adopt「adopt 完整搬入本文档」。
+  // 已知偏差面（PR #132 审查 B）：盖章面含 new Text()/cloneNode 等全部 M 家族产物——
+  // 其同文档 adopt 由 R192 identity 变为物化副本（spec adopt-node 要求返回自身）；
+  // 当前无内部 adoptNode 调用方、无测试/站点消费面受害；如需 identity 保真再拆独立印章。
   try { Object.defineProperty(n, '__zwIsMEl', { value: true, enumerable: false }); } catch (_eMElTagT) {}
   _zwAttachCharacterDataMethods(n);
   return n; }
