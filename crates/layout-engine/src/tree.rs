@@ -901,6 +901,61 @@ fn apply_replaced_element_sizing(
             .collect();
         let bbox = crate::svg_default_size::svg_content_bbox(&shape_children);
         if let Some((dw, dh)) = crate::svg_default_size::svg_default_used_size(elem, computed, bbox) {
+            // R5047（css-sizing-4 §4.4 + css-sizing-3 §5.1 + CSS2 §10.3.2）：块轴
+            // definite（CSS height Px / 可解析 %）+ 比信号（dh<0，宽 auto/%）→ 内联
+            // 轴 = 块 × 比定值写入，内联 min/max 不参与——replaced-aspect-ratio-stretch
+            // -fit-003：svg viewBox 1:1 + height:100% + min-width:max-content +
+            // max-width:50px 在 100×100 容器应 100×100，旧 % 宽被 max-width 钳 50 后
+            // 比推高塌 50×50。依据：intrinsic sizing 在「该轴无 min/max」下求值
+            //（css-sizing-3 §5.1 开篇），definite 块经比转移的内联值不被内联约束钳
+            //（§4.4 note：definite 尺寸完全不受 transferred 约束影响）。块轴 min/max
+            // **照常参与**（001/002 语义：stretch-fit 的块轴钳制）——height auto +
+            // min-height 驱动形态不走本臂（R4007 径保持）。哨兵 dh=-150（% 无比）
+            // 排除。-dh = svg_default_used_size 编码的有效比（与既有 aspect_ratio
+            // 写入同源）。kill-switch `ZW_SVG_DEF_BLOCK_TRANSFER=0`。
+            if dh < 0.0
+                && dw.is_none()
+                && !svg_ratio_cleared(dh)
+                && std::env::var("ZW_SVG_DEF_BLOCK_TRANSFER").as_deref() != Ok("0")
+                && let Some(block_css_px) = match &computed.height {
+                    LengthValue::Px(h) if h.is_finite() && *h > 0.0 => Some(*h as f32),
+                    LengthValue::Percentage(p) => {
+                        doc.parent_node(dom_id)
+                            .and_then(|par| styles.get(&par))
+                            .and_then(|ps| match ps.height {
+                                LengthValue::Px(ph) if ph.is_finite() && ph > 0.0 => {
+                                    Some(ph as f32 * *p as f32 / 100.0)
+                                }
+                                _ => None,
+                            })
+                    }
+                    _ => None,
+                }
+            {
+                let mut block_used = block_css_px;
+                if let LengthValue::Px(mn) = computed.min_height
+                    && mn.is_finite()
+                    && mn > 0.0
+                {
+                    block_used = block_used.max(mn as f32);
+                }
+                if let LengthValue::Px(mx) = computed.max_height
+                    && mx.is_finite()
+                    && mx > 0.0
+                {
+                    block_used = block_used.min(mx as f32);
+                }
+                let r = -dh;
+                if r > 0.0 && block_used > 0.5 {
+                    taffy_style.size.width = taffy::style::Dimension::length(block_used * r);
+                    taffy_style.size.height = taffy::style::Dimension::length(block_used);
+                    taffy_style.aspect_ratio = None;
+                    // 内联 min/max 不参与（css-sizing-3 §5.1 max-content 求值无 min/max）。
+                    taffy_style.min_size.width = taffy::style::Dimension::auto();
+                    taffy_style.max_size.width = taffy::style::Dimension::auto();
+                    return;
+                }
+            }
             taffy_style.size.width = match dw {
                 Some(w) => taffy::style::Dimension::length(w),
                 // width %（含 ratio-only 隐式 100%）：taffy 对 CB 解析（definite 块宽

@@ -1141,6 +1141,67 @@ impl LayoutEngine {
                         let _ = taffy_tree.set_style(tid, st);
                         let _ = taffy_tree.mark_dirty(tid);
                         changed = true;
+                    } else if !b.is_replaced {
+                        // R5047（csswg #10997 + css-flexbox §9.2 + css-sizing-4 §4.4）：
+                        // flexing 驱动 main 的叶 AR 条目——taffy 把 definite max-cross 经比
+                        // 反传为 transferred max-main 钳 flexed main（aspect-ratio-transferred
+                        // -max-size：flex:1 + ratio 1/2 + max-height:100 在 definite 100 容器
+                        // 渲 50×100；interop（FF/WebKit 及 Chromium 回退后）应 main=100（flex
+                        // 求解胜）+ cross = clamp(transfer(100), 100) = 100）。首趟 laid_cross
+                        // 未测（0），签名以 main 侧为准：laid main ≈ transfer(max-cross) 说明
+                        // 钳已绑定——此形态 final cross = max-cross（min-cross 地板）恒成立，
+                        // 写定值不改结果；main 保持 auto/flex → 重跑 taffy 以 flex 求解 main。
+                        // grow = 0 时 main 为 content 驱动（039 语义域 taffy 已正确）；auto
+                        // margin 让路（空间分配非 grow 驱动）；cross CSS definite 让路（§4.4
+                        // definite 尺寸不受 transferred 约束，属另一语义域）。修复 = 清 taffy
+                        // aspect_ratio（R4990 arm-3 同法防反传）+ cross 写定值。
+                        let max_cross_px = if is_column {
+                            resolve_sizing_definite_real_length(&item_style.max_width, item_style)
+                        } else {
+                            resolve_sizing_definite_real_length(&item_style.max_height, item_style)
+                        };
+                        // taffy ratio = width/height。row（main=width）：transfer(max_h) =
+                        // max_h × ratio；column（main=height）：transfer(max_w) = max_w / ratio。
+                        let transferred_max_main = match max_cross_px {
+                            Some(mx) if is_column => Some(mx / ratio),
+                            Some(mx) => Some(mx * ratio),
+                            None => None,
+                        };
+                        let any_margin_auto3 = matches!(item_style.margin_left, LengthValue::Auto)
+                            || matches!(item_style.margin_right, LengthValue::Auto)
+                            || matches!(item_style.margin_top, LengthValue::Auto)
+                            || matches!(item_style.margin_bottom, LengthValue::Auto);
+                        let cross_css_auto = if is_column {
+                            matches!(item_style.width, LengthValue::Auto)
+                        } else {
+                            matches!(item_style.height, LengthValue::Auto)
+                        };
+                        let laid_main = if is_column { b.height } else { b.width };
+                        if st.flex_grow > 0.0
+                            && !any_margin_auto3
+                            && cross_css_auto
+                            && laid_main > 0.5
+                            && let Some(mx) = max_cross_px
+                            && let Some(tmm) = transferred_max_main
+                            && (laid_main - tmm).abs() <= 0.5
+                        {
+                            // final cross = max(min-cross 地板, max-cross 钳)。
+                            let definite_min_cross = if is_column {
+                                resolve_sizing_definite_real_length(&item_style.min_width, item_style)
+                            } else {
+                                resolve_sizing_definite_real_length(&item_style.min_height, item_style)
+                            };
+                            let cross_target = definite_min_cross.map_or(mx, |mn| mn.max(mx));
+                            if is_column {
+                                st.size.width = taffy::style::Dimension::length(cross_target);
+                            } else {
+                                st.size.height = taffy::style::Dimension::length(cross_target);
+                            }
+                            st.aspect_ratio = None;
+                            let _ = taffy_tree.set_style(tid, st.clone());
+                            let _ = taffy_tree.mark_dirty(tid);
+                            changed = true;
+                        }
                     }
                 } else if !b.is_replaced {
                     // R4988 臂 2（css-flexbox §4.5 + css-sizing-4 §4.1）：definite main
