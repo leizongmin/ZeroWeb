@@ -2130,10 +2130,14 @@ fn t8q_adopt_node_materializes_dom_parser_snapshot_element() {
   // ① 物化：adopt 产物带 .style 接口（快照对象无 style——真站 7 处 TypeError 根面）。
   r.push('style:' + typeof adopted.style);
   r.push('styleSet:' + typeof (adopted.style && adopted.style.setProperty));
-  // ② 结构保真：tagName/子树查询（真站 nodes 注册表同款相对查询）。
+  // ② 原父摘除（spec concept-node-adopt 第 1 步）：物化返回副本后，原节点已从
+  // 快照文档树摘除——body.firstChild 不再返回它（PR #129 审查②：不摘则 adopt
+  // 退化为复制，双引用消费时内容重复）。
+  r.push('snapGone:' + (doc.body.firstChild ? 'bad' : 'ok'));
+  // ③ 结构保真：tagName/子树查询（真站 nodes 注册表同款相对查询）。
   r.push('tag:' + adopted.tagName);
   r.push('relQ:' + (adopted.querySelector('.bpx-player-video-wrap') ? 'hit' : 'miss'));
-  // ③ append 进文档：父相对查询 + 序列化可见（快照 append 后为空 <div></div>）。
+  // ④ append 进文档：父相对查询 + 序列化可见（快照 append 后为空 <div></div>）。
   var host = document.getElementById('host');
   host.appendChild(adopted);
   r.push('parentQ:' + (host.querySelector('.bpx-player-video-wrap') ? 'hit' : 'miss'));
@@ -2145,13 +2149,15 @@ fn t8q_adopt_node_materializes_dom_parser_snapshot_element() {
         .value;
     assert_eq!(
         out,
-        "style:object|styleSet:function|tag:DIV|relQ:hit|parentQ:hit|serial:hit",
-        "t8q：DOMParser 快照 adoptNode 物化落地（style 接口 + 相对查询 + append 后查询/序列化）"
+        "style:object|styleSet:function|snapGone:ok|tag:DIV|relQ:hit|parentQ:hit|serial:hit",
+        "t8q：DOMParser 快照 adoptNode 物化落地（style 接口 + 原父摘除 + 相对查询 + append 后查询/序列化）"
     );
 }
 
-// t8q 邻近变体：① 快照后代元素（querySelector 产物）adopt 同样物化；② 文本/注释快照
-// adopt 物化为对应类型节点；③ 同文档真元素 adoptNode 保持 identity 返回（R192 语义零回归）。
+// t8q 邻近变体：① 快照后代元素（querySelector 产物）adopt 同样物化；② 元素物化的
+// 子树保真——根元素重建时内部 Text/Comment 经 _wcRebuildAsHandle 递归物化为对应
+// 类型节点（顶层裸 Text/Comment 快照直接 adopt 的物化不在本修复域，见池记录）；
+// ③ 同文档真元素 adoptNode 保持 identity 返回（R192 语义零回归）。
 #[test]
 fn t8q_adopt_node_snapshot_variants_and_identity_regression() {
     use std::sync::{Arc, Mutex};
@@ -2175,22 +2181,24 @@ fn t8q_adopt_node_snapshot_variants_and_identity_regression() {
   var doc = new DOMParser().parseFromString('<ul class="u"><li class="i">t</li><!-- lc --></ul>', 'text/html');
   var root = doc.body.firstChild;
   var r = [];
-  // ① 快照后代（querySelector 产物）adopt 物化 + 属性保真。
-  var li = document.adoptNode(root.querySelector('li'));
-  r.push('li:' + (li && li.tagName === 'LI' && typeof li.style === 'object' && li.className === 'i' ? 'ok' : 'bad'));
-  // ② 元素物化的子树保真：li 内文本 + ul 内注释随根物化（createTextNode/createComment）。
+  // ① 元素物化的子树保真：li 内文本 + ul 内注释随根物化（createTextNode/createComment）。
+  // （先 adopt 根——adopt 有摘除副作用，后代臂用独立文档，避免序列互相污染。）
   var ul = document.adoptNode(root);
   var liText = ul.firstChild && ul.firstChild.firstChild;
   var ulCmt = ul.childNodes[1];
   r.push('text:' + (liText && liText.nodeType === 3 && liText.data === 't' ? 'ok' : 'bad'));
   r.push('comment:' + (ulCmt && ulCmt.nodeType === 8 && ulCmt.data === ' lc ' ? 'ok' : 'bad'));
+  // ② 快照后代（querySelector 产物）adopt 物化 + 属性保真（独立文档）。
+  var doc2 = new DOMParser().parseFromString('<ul><li class="i">t</li></ul>', 'text/html');
+  var li = document.adoptNode(doc2.body.firstChild.querySelector('li'));
+  r.push('li:' + (li && li.tagName === 'LI' && typeof li.style === 'object' && li.className === 'i' ? 'ok' : 'bad'));
   // ③ 同文档真元素 adopt 仍 identity（R192）。
   var real = document.createElement('div');
   r.push('identity:' + (document.adoptNode(real) === real ? 'ok' : 'bad'));
-  // ④ Document adopt 仍抛 NotSupportedError（R192）。
-  var threw = false;
-  try { document.adoptNode(new DOMParser().parseFromString('<x/>', 'text/html')); } catch (e) { threw = true; }
-  r.push('docThrow:' + (threw ? 'ok' : 'bad'));
+  // ④ Document adopt 仍抛 NotSupportedError（R192；审查①：断言异常类型防退化）。
+  var threw = '';
+  try { document.adoptNode(new DOMParser().parseFromString('<x/>', 'text/html')); } catch (e) { threw = e.name; }
+  r.push('docThrow:' + (threw === 'NotSupportedError' ? 'ok' : 'bad:' + threw));
   return r.join('|');
 })()"#,
         )
@@ -2198,7 +2206,7 @@ fn t8q_adopt_node_snapshot_variants_and_identity_regression() {
         .value;
     assert_eq!(
         out,
-        "li:ok|text:ok|comment:ok|identity:ok|docThrow:ok",
-        "t8q：快照后代/文本/注释物化 + 真元素 identity 与 Document 抛错零回归"
+        "text:ok|comment:ok|li:ok|identity:ok|docThrow:ok",
+        "t8q：子树文本/注释保真 + 快照后代物化 + 真元素 identity 与 Document 抛错零回归"
     );
 }

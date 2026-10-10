@@ -3333,8 +3333,11 @@
     // adopt 把节点完整搬入本文档——此处经 R3019 lazy 可变子树桥（_ensureMutTree）
     // + `_wcRebuildAsHandle`（WC-M2 既有重建器）物化为 handle 树（真 wrapper：
     // 同回合完整接口，mutation 队列异步 apply 与页面 createElement 同时序）。
-    // 仅识别 _zwParseEl 实例（DOMParser 文档域与主文档隔离，物化只发生在 adopt
-    // 时刻，文档内读语义零变化）；真 wrapper 走下方既有分支零变化。
+    // 识别 _zwParseEl 实例（R2790 查询工厂）与本地可变树产物（_zwMEl 印章
+    // `__zwIsMEl`——工厂产物是 plain 对象无共享 prototype 可 instanceof，覆盖
+    // R3019 懒桥树与 detached 归建树两类解析域产物；主文档 handle 元素带
+    // `__zwHandle` 身份不进本分支）。物化只发生在 adopt 时刻，物化成功即从
+    // 原父摘除（concept-node-adopt 第 1 步）；真 wrapper 走下方既有分支零变化。
     adoptNode: function(node) {
       if (!node || typeof node !== 'object') return node;
       if ((node.nodeType | 0) === 9) {
@@ -3351,7 +3354,19 @@
             ? node._ensureMutTree() : node;
           if (_t8qTree) {
             var _t8qMat = _wcRebuildAsHandle(_t8qTree);
-            if (_t8qMat && _t8qMat !== node && _t8qMat.nodeType === 1) return _t8qMat;
+            if (_t8qMat && _t8qMat !== node && _t8qMat.nodeType === 1) {
+              // t8q 返修（PR #129 双审查②#1/#2）：spec concept-node-adopt 第 1 步
+              // ——adopt 先从原父摘除。物化返回的是重建副本，原节点若留在原树，
+              // adopt 退化为复制（站点双引用消费时内容重复；快照文档
+              // body.firstChild 仍返原节点）。经原父 removeChild 摘除（_zwParseEl
+              // R3019 桥与 _zwMEl 本地树同一语义面）；失败不阻断物化（残留回旧
+              // 状态——detached 弃置文档域，无实际消费面）。
+              try {
+                var _t8qP = node.parentNode;
+                if (_t8qP && typeof _t8qP.removeChild === 'function') _t8qP.removeChild(node);
+              } catch (_eT8qCut) {}
+              return _t8qMat;
+            }
           }
         } catch (_eT8qMat) {}
         // 物化不可行 → 落入下方既有分支（identity 返回兜底）。
