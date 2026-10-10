@@ -30,9 +30,13 @@ use crate::types::LayoutBox;
 static FLOAT_CLAMP_CONTENT_REL: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_CLAMP_CONTENT_REL").as_deref() != Ok("0"));
 
-pub(crate) fn adjust_float_positions(box_node: &mut LayoutBox, doc: &zero_dom::Document) {
+pub(crate) fn adjust_float_positions(
+    box_node: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
     let content_abs_y = box_node.y + box_node.content_y;
-    adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0, &[], doc);
+    adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0, &[], doc, styles);
 }
 
 /// R1733：inline-block（atomic inline-level BFC，`is_flow_root && !is_block_level`）float 排斥
@@ -1502,6 +1506,7 @@ pub(crate) fn adjust_float_positions_with_context(
     // env ZW_NESTED_BFC_FLOAT_AVOID=0 关闭（kill-switch，default-on）。
     inherited_floats: &[FloatGeom],
     doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
 ) {
     use zero_css_parser::values::ClearValue;
     use zero_css_parser::values::FloatValue;
@@ -1760,7 +1765,20 @@ pub(crate) fn adjust_float_positions_with_context(
                 let preferred_border_box =
                     content_max_w + child.padding_left + child.padding_right + child.border_left + child.border_right;
                 let available_border_box = (container_width - child.margin_left - child.margin_right).max(0.0);
-                let used_border_box = preferred_border_box.min(available_border_box);
+                // R5044（css-sizing-3 shrink-to-fit = min(max(min-content, available),
+                // preferred)）：available < min-content 时地板胜（width:0 容器内带块级子的
+                // float 不塌 0）。仅限本臂（有 block/replaced/floated 子——preferred 可信；
+                // 纯文本/空 float 的 preferred 未测不入——R5043 变体 A 教训）；min-content
+                // 经 R5044 min 模式递归真测量（fit-content 中间层 50 非 max 近似 150）。
+                let min_content_border_box = (crate::intrinsic_sizing::block_min_content_width(child, doc, styles)
+                    + child.padding_left
+                    + child.padding_right
+                    + child.border_left
+                    + child.border_right)
+                    .max(0.0);
+                let used_border_box = preferred_border_box
+                    .min(available_border_box)
+                    .max(min_content_border_box);
                 if used_border_box < child.width || floated_children_width > 0.0 {
                     child.width = used_border_box;
                     child.content_width = content_max_w;
@@ -2873,7 +2891,7 @@ pub(crate) fn adjust_float_positions_with_context(
         let child_content_abs_y = box_content_abs_y + child.y + child.content_y;
         if crate::margin_collapse::establishes_bfc(child) {
             // BFC 子：独立浮动上下文，祖先 float 不透传。
-            adjust_float_positions_with_context(child, child_content_abs_y, 0.0, 0.0, &[], doc);
+            adjust_float_positions_with_context(child, child_content_abs_y, 0.0, 0.0, &[], doc, styles);
         } else {
             // 非 BFC 子：其内 float 与外层同 BFC 上下文。R1619 Slice 2 透传 all_floats
             //（祖先 + 自身）到子 border-box 帧（减 child.x/child.y），使嵌套 BFC 后代能避开外层 float。
@@ -2894,6 +2912,7 @@ pub(crate) fn adjust_float_positions_with_context(
                 box_content_abs_y + right_ctx,
                 &child_inherited,
                 doc,
+                styles,
             );
         }
     }

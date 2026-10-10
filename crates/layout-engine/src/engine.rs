@@ -990,7 +990,7 @@ impl LayoutEngine {
                 let inline_fonts = self.inline_font_context(&font_overrides);
                 pre_size_float_tables(&mut root_box, doc, styles, inline_fonts);
             }
-            adjust_float_positions(&mut root_box, doc);
+            adjust_float_positions(&mut root_box, doc, styles);
         } else {
             adjust_no_float_page(&mut root_box);
         }

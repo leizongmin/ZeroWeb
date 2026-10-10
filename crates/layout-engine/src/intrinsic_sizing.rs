@@ -729,7 +729,10 @@ fn clamp_fit_content_child_contribution(
     // definite width 时 raw/max 测量含 own_explicit 抬升（max(内容, 定宽)），须换 content-only
     // 测量；无定宽时两者同值，直接复用 raw 免重测。W_min 缺测/塌 0 → None（公式退化不塌）。
     let has_definite_width = resolve_intrinsic_real_length(&cs.width, cs).is_some();
-    let w_max = if has_definite_width {
+    // R5044：min 模式父测量经递归后 raw = 子**min**-content——width:fit-content(definite)
+    // 公式的 W_max 须内容 max-content（R5037 单测 011 同构：W_max=124 时公式 100；min 递归
+    // 60 代入即塌 60），故 width_fit 一并显式测 content-only max。
+    let w_max = if has_definite_width || width_fit {
         box_content_max_width_content_only(child, doc, styles)
     } else {
         raw
@@ -932,9 +935,24 @@ fn block_intrinsic_width_ex(
                 DisplayValue::Grid | DisplayValue::InlineGrid => {
                     grid_intrinsic_width_ex(child, doc, styles, min_mode).unwrap_or(0.0)
                 }
+                // R5044（css-sizing-3 §min-content）：min 模式 block 子**递归真测量**——
+                // 替换 R5036 的 max 近似（「min 模式 block 子仍取 max = 过宽安全向」FIXME）。
+                // fit-content-contribution-001 取证：float 内 max-width:fit-content 中间层
+                // （3 个可换行 float 词）max 近似测 150，真 min-content = 50（float 不适配
+                // 时换行堆叠，逐 float 独立断点取 max）——max 近似经 fit-content 贡献钳制
+                // 链放大（R5037 clamp min_width 地板 → float 地板）即翻转绿案。definite
+                // width 子由递归自身 own_explicit 口径处理（R4149：min-content 贡献 =
+                // specified 宽）；include_own_width 透传（content-only 语境同口径）。
+                _ if min_mode => block_intrinsic_width_ex(child, doc, styles, true, include_own_width),
                 _ => box_content_max_width(child, doc, styles),
             })
-            .unwrap_or_else(|| box_content_max_width(child, doc, styles));
+            .unwrap_or_else(|| {
+                if min_mode {
+                    block_intrinsic_width_ex(child, doc, styles, true, include_own_width)
+                } else {
+                    box_content_max_width(child, doc, styles)
+                }
+            });
         // R5037：fit-content 尺寸参与贡献传播（仅 block 子——flex/grid 的主轴贡献由专用
         // intrinsic 自算，关键词域已有独立接线，不在此交叉钳制）。
         let is_flex_grid_child = child_style.is_some_and(|s| {
@@ -1010,14 +1028,14 @@ fn block_intrinsic_width_ex(
         .filter(|_| include_own_width)
         .unwrap_or(0.0)
         .max(own_cis);
-    let inner = if !has_in_flow_child {
-        let text_w = box_node.node_id.map_or(0.0, |id| {
-            if min_mode {
-                text_content_min_width(id, doc, styles)
-            } else {
-                text_content_max_width(id, doc, styles)
-            }
-        });
+    let text_w = box_node.node_id.map_or(0.0, |id| {
+        if min_mode {
+            text_content_min_width(id, doc, styles)
+        } else {
+            text_content_max_width(id, doc, styles)
+        }
+    });
+    let mut inner = if !has_in_flow_child {
         // R5042（css-sizing-4 §4.1）：叶盒 AR transferred——width content-based + ratio +
         // definite height（min/max 钳后）→ transfer 宽（intrinsic-size-003 float：
         // height:100px + ratio 1/1 → shrink-to-fit 贡献 100 而非 0 塌缩）。与
@@ -1063,6 +1081,29 @@ fn block_intrinsic_width_ex(
     } else {
         children_inner
     };
+    // R5044（css-sizing-3 §5.2）：min-content 受 max-width 钳——definite Px → 值；
+    // min/max-content 关键字 → 内容基 min-content（剥 own_explicit 定宽抬升）。
+    // shrink-to-fit-sizing-max-width-min-content：width:600px + max-width:min-content
+    // → min-content 100（旧测 600，经 float 地板放大即翻转绿案）。仅 min 模式
+    //（max 模式的关键字 cap 归 R4151 kw_aware 域）。
+    if min_mode
+        && let Some(s) = own_style
+        // R5044：width/max-width 是物理水平轴属性，垂直书写模式（max-inline-size 别名
+        // 落 max_width 槽但物理轴不同）不入——table-intrinsic-size-004 vertical-rl 表
+        // max-inline-size:30px 被误钳物理宽实证。
+        && matches!(s.writing_mode, zero_style_system::property::types::WritingModeValue::HorizontalTb)
+    {
+        let max_cap = match &s.max_width {
+            LengthValue::Px(v) if v.is_finite() && *v >= 0.0 => Some(*v as f32),
+            LengthValue::MinContent | LengthValue::MaxContent => {
+                Some(if !has_in_flow_child { text_w } else { children_inner })
+            }
+            _ => None,
+        };
+        if let Some(cap) = max_cap {
+            inner = inner.min(cap.max(0.0));
+        }
+    }
 
     let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
 
