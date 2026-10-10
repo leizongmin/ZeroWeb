@@ -196,7 +196,9 @@ impl LayoutEngine {
                     Some(crate::intrinsic_sizing::block_max_content_width(b, doc, styles))
                 }
             } else if matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid) {
-                crate::intrinsic_sizing::grid_intrinsic_width(b, doc, styles)
+                // R5040：grid 自身 width:min/max-content——min-content 语境传 min_mode
+                //（scroller item 贡献 0，css-overflow-3）。
+                crate::intrinsic_sizing::grid_intrinsic_width_ex(b, doc, styles, mincontent_block)
             } else if matches!(
                 s.flex_direction,
                 FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
@@ -439,6 +441,72 @@ impl LayoutEngine {
             let vertical = child_vertical;
             // 块流盒域：Block/InlineBlock/FlowRoot/ListItem（taffy Block 语义）；flex/grid/
             // table-internal 各有独立尺寸机制排除。
+            // R5040：grid 容器 height content 关键字单臂接入（此前整域排除 → converter
+            // 把关键字映射 length(0)，容器塌 0 高——grid-aspect-ratio-026 实证）：row flow
+            // 各 item 独占一行 → 内容高 = Σ item 块轴贡献；column flow 单行 → max。item
+            // 贡献仅认「definite Px 宽 + aspect-ratio」形状 = 宽/ratio（% 高循环按 auto，
+            // css-sizing-4 §4.1 transferred）；任一 item 出形状 → 整盒跳过保持旧径。
+            if matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid) {
+                if !content_kw(&s.height) || vertical {
+                    continue;
+                }
+                let column_flow = matches!(
+                    s.grid_auto_flow,
+                    zero_style_system::property::types::GridAutoFlowValue::Column
+                        | zero_style_system::property::types::GridAutoFlowValue::ColumnDense
+                );
+                let mut measured_h = 0.0f32;
+                let mut items = 0usize;
+                let mut shape_ok = true;
+                for c in &b.children {
+                    if c.is_absolute || c.is_fixed {
+                        continue;
+                    }
+                    let Some(cs) = c.node_id.and_then(|cid| styles.get(&cid)) else {
+                        shape_ok = false;
+                        break;
+                    };
+                    if matches!(cs.display, DisplayValue::None | DisplayValue::Contents) {
+                        continue;
+                    }
+                    match (
+                        resolve_sizing_definite_real_length(&cs.width, cs),
+                        cs.aspect_ratio.filter(|&r| r > 0.0),
+                    ) {
+                        (Some(w), Some(ratio)) => {
+                            let h = w / ratio;
+                            if column_flow {
+                                measured_h = measured_h.max(h);
+                            } else {
+                                measured_h += h;
+                            }
+                            items += 1;
+                        }
+                        _ => {
+                            shape_ok = false;
+                            break;
+                        }
+                    }
+                }
+                if !shape_ok || items == 0 || measured_h <= 0.5 {
+                    continue;
+                }
+                if let Some(&taffy_id) = dom_to_taffy.get(&id)
+                    && let Ok(mut style) = taffy_tree.style(taffy_id).cloned()
+                {
+                    let frame = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+                    let target = if matches!(style.box_sizing, taffy::style::BoxSizing::BorderBox) {
+                        measured_h + frame
+                    } else {
+                        measured_h
+                    };
+                    style.size.height = taffy::style::Dimension::length(target);
+                    let _ = taffy_tree.set_style(taffy_id, style);
+                    let _ = taffy_tree.mark_dirty(taffy_id);
+                    changed = true;
+                }
+                continue;
+            }
             if !matches!(
                 s.display,
                 DisplayValue::Block | DisplayValue::InlineBlock | DisplayValue::FlowRoot | DisplayValue::ListItem

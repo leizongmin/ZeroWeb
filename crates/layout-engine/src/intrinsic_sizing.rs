@@ -13,7 +13,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use zero_css_parser::values::{
-    BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, VisibilityValue,
+    BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, OverflowValue,
+    VisibilityValue,
 };
 use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
@@ -517,9 +518,17 @@ fn box_content_max_width_inner(
             // 宽——transferred 同样适用（intrinsic-size-014：`width:min-content; height:100px;
             // aspect-ratio:1/1` 子对 min-content 父应贡献 100px，旧 gate 仅认 Auto → 子测 0
             // → 父满宽）。converter 把关键字映射 length(0)，非 transferred 不可。
+            // R5040：% 宽在固有测量语境必为循环（本函数仅 shrink-to-fit 链调用，CB 即被测
+            // 父）→ 按 auto 处理，transferred 适用（grid-aspect-ratio-025：min-content 网格
+            // 内 `width:50%; height:100px; aspect-ratio:1/1` item 应 transferred 100，旧测 0
+            // → 容器塌 0 宽）。
             matches!(
                 s.width,
-                LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+                LengthValue::Auto
+                    | LengthValue::MinContent
+                    | LengthValue::MaxContent
+                    | LengthValue::FitContent(_)
+                    | LengthValue::Percentage(_)
             ) && !matches!(
                 s.display,
                 DisplayValue::TableRow
@@ -917,7 +926,7 @@ fn block_intrinsic_width_ex(
                     base.unwrap_or(0.0)
                 }
                 DisplayValue::Grid | DisplayValue::InlineGrid => {
-                    grid_intrinsic_width(child, doc, styles).unwrap_or(0.0)
+                    grid_intrinsic_width_ex(child, doc, styles, min_mode).unwrap_or(0.0)
                 }
                 _ => box_content_max_width(child, doc, styles),
             })
@@ -2153,6 +2162,20 @@ pub(crate) fn grid_intrinsic_width(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) -> Option<f32> {
+    grid_intrinsic_width_ex(box_node, doc, styles, false)
+}
+
+/// `min_mode = true`（min-content 语境）：scroll container（overflow x/y auto/scroll）的
+/// item min-content 贡献 = 0——scroller 可收缩到任意小，内容滚动（css-overflow-3 +
+/// css-sizing-3 #scroll-container-intrinsic；grid-aspect-ratio-027 取证：`width:min-content`
+/// 列流网格内 overflow:auto + ratio 2/1 item 的列宽应 0 而非 transfer 200）。max-content
+/// 语境不适用（scroller 的 max-content 仍是内容 fit 宽）。
+pub(crate) fn grid_intrinsic_width_ex(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    min_mode: bool,
+) -> Option<f32> {
     let style = box_node.node_id.and_then(|id| styles.get(&id));
     let is_column_flow = style
         .map(|s| {
@@ -2198,9 +2221,45 @@ pub(crate) fn grid_intrinsic_width(
             .unwrap_or(true);
         if is_item && child.is_block_level {
             count += 1;
+            // R5040：min-content 语境 scroller 内容贡献 = 0（css-overflow-3——scroller
+            // 可收缩任意小、内容滚动），但 **definite min-width 仍地板**（027 item2：
+            // ratio 1/2 + min-width:100px + overflow:auto → 列 100 而非 0/50）。
+            let is_scroller = child.node_id.and_then(|id| styles.get(&id)).is_some_and(|cs| {
+                matches!(cs.overflow_x, OverflowValue::Auto | OverflowValue::Scroll)
+                    || matches!(cs.overflow_y, OverflowValue::Auto | OverflowValue::Scroll)
+            });
+            if min_mode && is_scroller {
+                let scroller_floor = child
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .and_then(|cs| {
+                        resolve_intrinsic_real_length(&cs.min_width, cs).map(|w| {
+                            w + child.padding_left + child.padding_right + child.border_left + child.border_right
+                        })
+                    })
+                    .map(|w| (w + child.margin_left + child.margin_right).max(0.0))
+                    .unwrap_or(0.0);
+                sum += scroller_floor;
+                max_w = max_w.max(scroller_floor);
+                continue;
+            }
             let base = box_content_max_width(child, doc, styles) + child.margin_left + child.margin_right;
-            sum += base;
-            max_w = max_w.max(base);
+            // R5040（css-grid-1 #algo-track-sizing + css-sizing-4 §4.1）：item 的
+            // min/max-content 轨道贡献被其 definite min/max-width 钳——比例 transfer 宽
+            // 超 max-width 收窄（024 item2：transfer 100 超 25 → 列 25）、不足 min-width
+            // 抬升（024 item3：transfer 10 不足 25 → 列 25）。fit-content()/content
+            // 关键字 min/max-width 有独立接线域，不在此重复处理。
+            let clamped_base = child
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .map(|cs| {
+                    let min_w = resolve_intrinsic_real_length(&cs.min_width, cs);
+                    let max_w_def = resolve_intrinsic_real_length(&cs.max_width, cs);
+                    base.max(min_w.unwrap_or(0.0)).min(max_w_def.unwrap_or(f32::MAX))
+                })
+                .unwrap_or(base);
+            sum += clamped_base;
+            max_w = max_w.max(clamped_base);
         }
     }
     if count == 0 {
@@ -2693,6 +2752,77 @@ AAAA</div></body></html>"#,
         </body></html>"#;
         let w = compute_grid_intrinsic(html, "g").expect("grid intrinsic");
         assert!((w - 180.0).abs() < 2.0, "expected ~180px (2×(50+40)), got {}", w);
+    }
+
+    // ── R5040（css-grid-1 #algo-track-sizing + css-sizing-4 §4.1 + css-overflow-3）──
+
+    /// 跑完整引擎后对 grid#t 直调 min-content 语境固有宽（R5040 断言 helper）。
+    fn r5040_grid_intrinsic_min(html: &str) -> Option<f32> {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let target = find("t", &doc, &result.root)?;
+        grid_intrinsic_width_ex(target, &doc, &styles, true)
+    }
+
+    /// item 轨道贡献被 definite max-width 钳（grid-aspect-ratio-024 item2 同构）：
+    /// height:100px + ratio 1/1 → transfer 宽 100，max-width:25px → 列 25。
+    #[test]
+    fn r5040_grid_item_contribution_clamped_by_max_width() {
+        let w = r5040_grid_intrinsic_min(
+            r#"<html><body><div id="t" style="display:grid;grid-auto-flow:column;width:min-content">
+            <div style="height:100px;aspect-ratio:1/1;max-width:25px"></div></div></body></html>"#,
+        );
+        assert_eq!(w, Some(25.0), "transfer 宽 100 须被 max-width 钳至列 25");
+    }
+
+    /// item 轨道贡献被 definite min-width 抬升（grid-aspect-ratio-024 item3 同构）：
+    /// ratio .1/1 → transfer 宽 10，min-width:25px → 列 25。
+    #[test]
+    fn r5040_grid_item_contribution_floored_by_min_width() {
+        let w = r5040_grid_intrinsic_min(
+            r#"<html><body><div id="t" style="display:grid;grid-auto-flow:column;width:min-content">
+            <div style="height:100px;aspect-ratio:0.1/1;min-width:25px"></div></div></body></html>"#,
+        );
+        assert_eq!(w, Some(25.0), "transfer 宽 10 须被 min-width 抬至列 25");
+    }
+
+    /// scroller（overflow:auto）内容 min-content 贡献 = 0，definite min-width 仍地板
+    ///（grid-aspect-ratio-027 同构）：item1 ratio 2/1 overflow:auto 无 min-width → 列 0；
+    /// item2 ratio 1/2 + min-width:100px + overflow:auto → 列 100；总 100。
+    #[test]
+    fn r5040_grid_scroller_content_zero_min_width_floors() {
+        let w = r5040_grid_intrinsic_min(
+            r#"<html><body><div id="t" style="display:grid;grid-auto-flow:column;width:min-content">
+            <div style="height:100px;aspect-ratio:2/1;overflow:auto"></div>
+            <div style="height:100px;aspect-ratio:1/2;min-width:100px;overflow:auto"></div>
+            </div></body></html>"#,
+        );
+        assert_eq!(w, Some(100.0), "scroller 列 0 + min-width 地板列 100，总 100");
+    }
+
+    /// % 宽在固有语境循环按 auto → ratio transferred（grid-aspect-ratio-025 同构）：
+    /// width:50% + height:100px + ratio 1/1 → 贡献 100（旧测 0 容器塌 0）。
+    #[test]
+    fn r5040_grid_percent_width_cyclic_transfers_via_ratio() {
+        let w = r5040_grid_intrinsic_min(
+            r#"<html><body><div id="t" style="display:grid;width:min-content">
+            <div style="height:100px;width:50%;aspect-ratio:1/1"></div></div></body></html>"#,
+        );
+        assert_eq!(w, Some(100.0), "% 宽循环按 auto → transferred 100");
     }
 
     #[test]
