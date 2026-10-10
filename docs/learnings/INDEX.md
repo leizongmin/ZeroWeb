@@ -5,8 +5,11 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（148）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（151）
 
+- 2026-10-11 [A/B 基线臂重建后恢复源码未重建 release 二进制——守成跑测到旧产物出假回归](bugs/2026-10/2026-10-11-ab-baseline-rebuild-stale-release-binary.md) — engine,tests/wpt-runner
+- 2026-10-10 [沙箱宿主回调重复注册只增不减 → 整页脚本二次方退化](bugs/2026-10/2026-10-10-sandbox-register-callback-quadratic-accumulation.md) — script-sandbox,webview,engine
+- 2026-10-10 [`git checkout HEAD -- <paths>` 误用冲掉暂存区——dangling blob 全量恢复实录](bugs/2026-10/2026-10-10-git-checkout-head-resets-index-staged-loss.md) — tooling
 - 2026-10-09 [target-disk-guard 三级全量清空会抹除多段链前序段的 release 产物](bugs/2026-10/2026-10-09-target-disk-guard-wipes-release-artifacts.md) — build-support,apps/browser
 - 2026-10-09 [回执 schema 以校验器代码为单一事实源，不镜像既有文件的形状](bugs/2026-10/2026-10-09-receipt-schema-single-source-validator.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-10-09 [长时链运行期的工作树纪律：HEAD guard 与 log 追加语义的两件实证](bugs/2026-10/2026-10-09-long-chain-worktree-discipline.md) — .agents/skills/zeroweb-site-optimizer
