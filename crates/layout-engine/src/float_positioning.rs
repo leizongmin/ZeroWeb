@@ -98,7 +98,25 @@ pub(crate) fn apply_inline_block_float_avoidance(box_node: &mut LayoutBox, style
                     }
                 }
                 if x_lo <= x_hi + 0.5 {
-                    child.x = x_lo;
+                    // R5030：可行区间内按 text-align 取位——Left/Start → x_lo（区间左缘，
+                    // 旧行为），Right/End → x_hi（区间右缘），Center → 区间中点。
+                    // chromium 001r（text-align:right + 右 float 群）：span2 落区间右缘
+                    // x=100（页面 111），旧 x_lo=0 错位左缘。justify 按左缘（多 float 带
+                    // 内两端对齐的基线位=左缘，与单行文本同口径）。
+                    // kill-switch `ZW_IFC_ALIGN_PLACE=0` 关闭（default-on）。
+                    let align_place = std::env::var("ZW_IFC_ALIGN_PLACE").as_deref() != Ok("0");
+                    let align = if align_place {
+                        child
+                            .node_id
+                            .map(|id| crate::inline_finalization::resolve_text_align(styles.get(&id)))
+                    } else {
+                        None
+                    };
+                    child.x = match align {
+                        Some(crate::inline::TextAlign::Right) => x_hi,
+                        Some(crate::inline::TextAlign::Center) => (x_lo + x_hi) / 2.0,
+                        _ => x_lo,
+                    };
                     let max_w = (container_w - child.x).max(0.0);
                     if used_width > max_w {
                         if is_definite {
