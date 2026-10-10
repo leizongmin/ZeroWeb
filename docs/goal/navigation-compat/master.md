@@ -325,7 +325,12 @@ history-interface 98.2% / navigation-api 93.3%（txt 原始 Pass 行 239/255）�
   证据：[evidence/2026-10-11-m2-s9-anchor-href-lw.md](evidence/2026-10-11-m2-s9-anchor-href-lw.md)。
 - **质量门禁（三十三片）**：`make test` 全绿 **20,404 P / 0 F**（两次全量各 1 例不同忙窗
   flake，solo 恒过 + 第 3 次全量全绿实证，归因记录见 S9 evidence）；纯 .js shim 变更无
-  .rs（fmt/clippy 不适用）。
+  .rs（fmt/clippy 不适用）。**2026-10-11 复核**：组成态（R5048/R5049 合入后重建 release）
+  全量复跑与 S9 evidence 逐行恒等；`make reftest` 708 比较 **0 不一致**（550 可信 +
+  111 可疑 + 47 近似，与 S7 分布同）——S8/S9 两轮 shim 变更 + 兄弟流布局提交零渲染回归，
+  DC-4 reftest 账龄清零。首跑 407 假信号 = A/B 基线臂陈旧 release 二进制（上轮 stash pop
+  后未重建），learning 见
+  [docs/learnings/bugs/2026-10/2026-10-11-ab-baseline-rebuild-stale-release-binary.md](../../learnings/bugs/2026-10/2026-10-11-ab-baseline-rebuild-stale-release-binary.md)。
 
 ## M4 收口评估（2026-10-09）
 
