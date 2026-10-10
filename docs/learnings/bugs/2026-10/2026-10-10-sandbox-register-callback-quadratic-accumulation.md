@@ -29,10 +29,12 @@ modules: script-sandbox,webview,engine
 
 双引擎 `register_callback` 同名重注册改**替换语义**（最后注册者胜）：
 
-- V8：`self.callbacks` 查同名条目，命中则复用其槽位 `HOST_CALLBACKS[slot] = cb`（就地 drop 旧闭包，thread-local 读者零改动）；未命中才 append。
-- QuickJS：`iter_mut().find` 原位替换 `slot.1 = cb`。
+- V8：`self.callbacks` 查同名条目，命中则复用其自有槽位（`HOST_CALLBACKS` 槽位为 `Option<HostCallback>`，原位替换就地 drop 旧闭包）；未命中才 append。`V8Sandbox::drop` 同步改 **own-slot 清空**（只把本 sandbox 注册过的槽位置 None），不再整表 `clear_host_callbacks()`——该函数保留为公开 API，仅限确认整线程无存活 sandbox 的拆卸场景。
+- QuickJS：`iter_mut().find` 原位替换 `slot.1 = cb`（`callbacks` 为 per-sandbox `Vec`，无 thread-local 共享，无 own-slot 面）。
 
-替换语义与修前可见行为**一致**——修前 `execute` 全量重装时后安装条目本就覆盖前者（最后注册者胜），修复只消除表累积，不改变任何 JS 可观测语义。钉测双引擎各一（50 次重注册 + 1 异名：表长断言 + latest-wins + 异名不受影响），红态回退 append-only 双红。
+**语义影响（如实记录，首版修复声明被审查证伪后更正）**：单 sandbox 场景替换语义与修前可见行为一致——修前 `execute` 全量重装时后安装条目本就覆盖前者（最后注册者胜），仅消除表累积。**同线程多 sandbox 场景语义有变**：旧 `Drop` 整表清空会杀死幸存 sandbox 的宿主回调（invoke 静默退回 `""`），且幸存者陈旧槽位索引在表重填后会越界 panic（盲写复用槽位）或撞写他人活槽位（跨实例回调被静默替换）；own-slot 清空 + 槽位所有权（`Vec<Option<HostCallback>>`、洞不复用、表长上界 = 线程历史不同名字注册总数）后幸存者回调保持可用——这一行为变化正是审查发现 D1/D2 的修复本身，不是回归。
+
+钉测：双引擎各一「50 次重注册 + 1 异名」（表长断言 + latest-wins + 异名不受影响，红态回退 append-only 双红）；V8 侧另加三钉覆盖 D1/D2（他 sandbox drop 后重注册不 panic、他实例重注册不撞写本实例槽位、空 sandbox drop 后幸存者回调仍可 invoke），红态为整表清空 + 盲写槽位的旧实现。
 
 ## 如何避免
 

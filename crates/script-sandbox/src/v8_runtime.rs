@@ -42,20 +42,31 @@ pub type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync + 'static>
 // 宿主回调注册表（线程局部）。FunctionTemplate 回调须为 `Copy`
 //（MapFnTo<FunctionCallback>），无法捕获 Arc 状态；故回调闭包存于此注册表，
 // FunctionTemplate 经 builder().data(idx) 携带索引，fn 回调按 idx 查表调用。
+//
+// 槽位为 `Option<HostCallback>`（所有权语义）：sandbox 自有槽位由其 `Drop`
+// 置 None（own-slot 清空），他 sandbox 的槽位不受影响——t8p 审查 D1/D2：
+// 旧实现整表 `Vec<HostCallback>` + Drop 无条件整表清空，同线程多 sandbox
+// 存活期重叠时，幸存者记录的 idx 失效（同名重注册越界 panic）或撞写他人
+// 活槽位（跨实例回调被静默替换）。置 None 的洞不再复用（无 free-list），
+// 表长以线程历史上**不同名字的注册总数**为上界。
 thread_local! {
-    static HOST_CALLBACKS: RefCell<Vec<HostCallback>> = RefCell::new(Vec::new());
+    static HOST_CALLBACKS: RefCell<Vec<Option<HostCallback>>> = RefCell::new(Vec::new());
 }
 
-/// 清空线程局部宿主回调注册表。
+/// 清空线程局部宿主回调注册表（整表）。
 ///
 /// 2026-08-10 windows tab_js_worker 全量挂起修复（根因）：回调闭包捕获的资源
 /// 可能拥有后台线程（如 `__zw_compile_module` 捕获的 `HttpClient` = reqwest
 /// blocking Client，构造即 spawn dispatcher 线程）。若闭包留到**线程退出**才由
 /// Rust TLS 析构 drop——Windows 上 TLS 析构在 loader lock 下运行，闭包内资源的
 /// drop（join 后台线程）与后台线程自身退出（同样需要 loader lock）互锁死锁；
-/// Linux 无 loader lock 故不复现。调用方（`V8Sandbox::drop`）在正常线程上下文
-/// 提前清空，使闭包在无 loader lock 时 drop。清空后旧 idx 查询返 None（调用方
+/// Linux 无 loader lock 故不复现。清空后旧 idx 查询返 None（调用方
 /// `unwrap_or_default` 兜底），语义安全。
+///
+/// **注意（t8p 审查 D1/D2）**：本函数清**整表**，会同时杀死同线程所有存活
+/// sandbox 的宿主回调。`V8Sandbox::drop` 自 t8p 起改为 own-slot 清空（只置
+/// None 自己的槽位），不再调用本函数；仅限「确认整线程无存活 sandbox」的
+/// 整线程拆卸场景使用。
 pub fn clear_host_callbacks() {
     HOST_CALLBACKS.with(|cbs| cbs.borrow_mut().clear());
 }
@@ -70,7 +81,13 @@ fn host_callback_invoke(scope: &mut v8::PinScope, args: v8::FunctionCallbackArgu
     let strs: Vec<String> = (0..n)
         .filter_map(|i| args.get(i).to_string(scope).map(|s| s.to_rust_string_lossy(scope)))
         .collect();
-    let result = HOST_CALLBACKS.with(|cbs| cbs.borrow().get(idx as usize).map(|cb| cb(&strs)).unwrap_or_default());
+    let result = HOST_CALLBACKS.with(|cbs| {
+        cbs.borrow()
+            .get(idx as usize)
+            .and_then(|slot| slot.as_ref())
+            .map(|cb| cb(&strs))
+            .unwrap_or_default()
+    });
     if let Some(s) = v8::String::new(scope, &result) {
         rv.set(s.into());
     }
@@ -389,17 +406,28 @@ impl V8Sandbox {
         // `execute_dom_script` 每脚本两遍 `register_dom_callbacks`），不去重时
         // `self.callbacks` 与 `HOST_CALLBACKS` 随脚本数无界增长，且 `execute` 每次按
         // 注册史全量重装 O(n)、整页脚本累计 O(n²)（t8p deterministic replay 二次方
-        // 退化根因：445 脚本后单脚本 ~1s）。复用既有槽位，旧闭包就地 drop。
-        if let Some(slot) = self.callbacks.iter_mut().find(|(n, _)| n == name).map(|(_, idx)| *idx) {
-            let cb: HostCallback = Arc::from(callback);
-            HOST_CALLBACKS.with(|cbs| cbs.borrow_mut()[slot] = cb);
+        // 退化根因：445 脚本后单脚本 ~1s）。复用**自有**槽位（旧闭包就地 drop；
+        // 槽位所有权语义见 HOST_CALLBACKS 注释——他 sandbox 的槽位不可达）；槽位
+        // 失效（None 洞/越界，仅防御面——own-slot 清空下活 sandbox 不可达）时退化
+        // 为新注册占新槽，不越界不撞写。
+        let cb: HostCallback = Arc::from(callback);
+        if let Some(entry) = self.callbacks.iter_mut().find(|(n, _)| n == name) {
+            HOST_CALLBACKS.with(|cbs| {
+                let mut cbs = cbs.borrow_mut();
+                if entry.1 < cbs.len() && cbs[entry.1].is_some() {
+                    cbs[entry.1] = Some(cb);
+                } else {
+                    let idx = cbs.len();
+                    cbs.push(Some(cb));
+                    entry.1 = idx;
+                }
+            });
             return;
         }
-        let cb: HostCallback = Arc::from(callback);
         let idx = HOST_CALLBACKS.with(|cbs| {
             let mut cbs = cbs.borrow_mut();
             let idx = cbs.len();
-            cbs.push(cb);
+            cbs.push(Some(cb));
             idx
         });
         self.callbacks.push((name.to_string(), idx));
@@ -757,13 +785,26 @@ impl V8Sandbox {
 
 impl Drop for V8Sandbox {
     fn drop(&mut self) {
-        // 2026-08-10 windows tab_js_worker 挂起修复：提前清空线程局部回调注册表
-        //（正常线程上下文 drop 闭包——含 reqwest HttpClient 等带后台线程的资源——
-        // 避免其留到线程退出时在 Windows loader lock 下 drop 死锁，见
-        // [`clear_host_callbacks`]）。随后停看门狗线程并 join（防其持
-        // IsolateHandle 对即将销毁的 isolate 调 terminate_execution），再释放
-        // isolate 与 context。
-        clear_host_callbacks();
+        // 2026-08-10 windows tab_js_worker 挂起修复：提前在本线程 drop 线程局部
+        // 注册表中**本 sandbox 自有**的回调（含 reqwest HttpClient 等带后台线程的
+        // 资源——避免其留到线程退出时在 Windows loader lock 下 drop 死锁，见
+        // [`clear_host_callbacks`]）。
+        //
+        // t8p 审查 D1/D2 起改 own-slot 清空（此前整表 `clear_host_callbacks()`）：
+        // 同线程多 sandbox 并存时整表清空会 (1) 悬空幸存 sandbox 记录的槽位索引
+        // （重注册越界 panic 或撞写他人活槽位），(2) 杀死幸存者回调使其 invoke
+        // 静默退回 ""。own-slot 清空后幸存者不受影响；置 None 的洞不复用（无
+        // free-list），表长上界 = 线程历史不同名字注册总数。整线程拆卸场景仍可
+        // 显式调用 [`clear_host_callbacks`]。
+        let slots: Vec<usize> = self.callbacks.iter().map(|(_, slot)| *slot).collect();
+        HOST_CALLBACKS.with(|cbs| {
+            let mut cbs = cbs.borrow_mut();
+            for slot in slots {
+                if slot < cbs.len() {
+                    cbs[slot] = None;
+                }
+            }
+        });
         // 未处理 rejection 撤回暂存持有本 isolate 的 `Global<Promise>` 句柄；
         // 若 drop 前未排空（异常路径/测试直落），残留句柄会在同线程下一个
         // sandbox 的事件比较中触碰已销毁 isolate（"Handle hosted by disposed
@@ -1127,6 +1168,94 @@ mod tests {
         assert_eq!(latest.value, "v49");
         let other = sandbox.execute("__zw_other()").unwrap();
         assert_eq!(other.value, "other");
+    }
+
+    // ── t8p 审查 D1/D2（own-slot 清空与槽位所有权）：同线程多 sandbox 场景 ──
+    // HOST_CALLBACKS 为 thread-local 且 sandbox Drop 会清理自有槽位；同线程并存、
+    // 生存期重叠的 sandbox 组合下，旧实现（Drop 整表清空 + 重注册盲写槽位）有
+    // panic（D1）与跨实例静默替换（D2）两面。红态各钉一处。
+
+    #[test]
+    fn test_register_callback_survives_foreign_sandbox_drop_t8p() {
+        // D1：a 注册后，b 注册同名（占新槽），b drop（旧实现整表清空 → a 的槽位
+        // 记录失效），a 重注册同名——旧实现盲写已清空的槽位越界 panic。
+        let mut a = V8Sandbox::new().unwrap();
+        a.register_callback("__zw_d1", Box::new(|_| "a1".to_string()));
+        let mut b = V8Sandbox::new().unwrap();
+        b.register_callback("__zw_d1", Box::new(|_| "b1".to_string()));
+        drop(b);
+        // 修前红态：此处 panic（index out of bounds）。
+        a.register_callback("__zw_d1", Box::new(|_| "a2".to_string()));
+        let r = a.execute("__zw_d1()").unwrap();
+        assert_eq!(r.value, "a2");
+    }
+
+    #[test]
+    fn test_drop_does_not_clobber_survivor_slots_t8p() {
+        // D2：幸存者 b 的槽位记录在「整表清空 + 他人重填」后指向他人活槽位，
+        // b 重注册同名会静默替换他人回调。（V8 isolate 须按创建逆序 drop，
+        // 故 b 先创建——它才是持陈旧槽位索引的幸存者。）
+        let mut b = V8Sandbox::new().unwrap();
+        b.register_callback("__zw_b", Box::new(|_| "b-old".to_string()));
+        let mut a = V8Sandbox::new().unwrap();
+        a.register_callback("__zw_a", Box::new(|_| "a".to_string()));
+        drop(a); // 修前整表清空 → b 的槽位记录（0）失效；t8p 修后仅清 a 自有槽位
+        let mut c = V8Sandbox::new().unwrap();
+        c.register_callback("__zw_c", Box::new(|_| "c".to_string()));
+        // 修前红态：c 重填槽位 0（b 的陈旧索引），此调用盲写 cbs[0] 静默替换
+        // c 的回调。
+        b.register_callback("__zw_b", Box::new(|_| "b-new".to_string()));
+        let c_r = c.execute("__zw_c()").unwrap();
+        assert_eq!(c_r.value, "c", "他实例重注册不得撞写本实例回调（D2）");
+        let b_r = b.execute("__zw_b()").unwrap();
+        assert_eq!(b_r.value, "b-new");
+    }
+
+    #[test]
+    fn test_survivor_callback_invokable_after_foreign_drop_t8p() {
+        // D2 伴随面：空 sandbox drop（旧实现也整表清空）不得杀死幸存者的回调。
+        let mut a = V8Sandbox::new().unwrap();
+        a.register_callback("__zw_alive", Box::new(|_| "alive".to_string()));
+        let b = V8Sandbox::new().unwrap();
+        drop(b);
+        // 修前红态：整表清空后 invoke 查表落空，静默退回 ""。
+        let r = a.execute("__zw_alive()").unwrap();
+        assert_eq!(r.value, "alive");
+    }
+
+    #[test]
+    fn test_reregister_does_not_disturb_other_name_slot_t8p() {
+        // 审查① G2 加固：替换实现若写错槽（如写 last 而非按名命中的槽），先注册
+        // 的异名回调会被串扰——B 先注册占槽，重注册 A ×N 后 B 须仍返 B 值。
+        let mut s = V8Sandbox::new().unwrap();
+        s.register_callback("__zw_g2a", Box::new(|_| "A1".to_string()));
+        s.register_callback("__zw_g2b", Box::new(|_| "B".to_string()));
+        for i in 0..10 {
+            let tag = format!("A2-{i}");
+            s.register_callback("__zw_g2a", Box::new(move |_| tag.clone()));
+        }
+        let b = s.execute("__zw_g2b()").unwrap();
+        assert_eq!(b.value, "B", "同名重注册不得串扰异名槽位");
+        let a = s.execute("__zw_g2a()").unwrap();
+        assert_eq!(a.value, "A2-9");
+    }
+
+    #[test]
+    fn test_persistent_captured_callback_reference_latest_t8p() {
+        // 审查① G3 语义显式化钉（persistent context）：页面捕获的旧函数对象跨
+        // 重注册解析到**当前**注册（FunctionTemplate 携带槽位索引，invoke 查表
+        // 命中替换后的闭包）。注意引擎分歧（审查② N1）：QuickJS 旧函数对象持
+        // 旧闭包 Arc 恒调旧值，本钉仅钉 V8 共享表语义，不作跨引擎一致断言。
+        let config = SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut s = V8Sandbox::with_config(config).unwrap();
+        s.register_callback("__zw_g3", Box::new(|_| "v1".to_string()));
+        s.execute("globalThis.captured = __zw_g3;").unwrap();
+        s.register_callback("__zw_g3", Box::new(|_| "v2".to_string()));
+        let r = s.execute("captured()").unwrap();
+        assert_eq!(r.value, "v2", "捕获的旧函数引用跨重注册调当前注册（最后注册者胜）");
     }
 
     // ── P1b S1 异步回调 resolve（方案 A）──
