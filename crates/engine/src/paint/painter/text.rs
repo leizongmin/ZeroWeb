@@ -411,12 +411,19 @@ impl super::Painter {
         }
 
         let color = if is_placeholder {
-            zero_render_foundation::color::Color {
-                r: 117,
-                g: 117,
-                b: 117,
-                a: 255,
-            }
+            // R5051（css-pseudo-4 §4 placeholder-pseudo）：作者 ::placeholder color 优先
+            //（style-system 存 owner placeholder_pseudo，仅 color 改变时非 None），
+            // 缺省回退 UA 灰（chromium #757575 同值）。
+            style
+                .placeholder_pseudo
+                .as_ref()
+                .map(|p| super::super::color::color_value_to_render(&p.color))
+                .unwrap_or(zero_render_foundation::color::Color {
+                    r: 117,
+                    g: 117,
+                    b: 117,
+                    a: 255,
+                })
         } else {
             super::super::color::color_value_to_render(&style.color)
         };

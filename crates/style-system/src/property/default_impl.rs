@@ -394,6 +394,7 @@ impl Default for ComputedStyle {
             before_pseudo: None,
             after_pseudo: None,
             marker_pseudo: None,
+            placeholder_pseudo: None,
             first_letter_pseudo: None,
         }
     }

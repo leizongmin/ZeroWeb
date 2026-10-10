@@ -714,6 +714,56 @@ impl StyleSystem {
                         computed.marker_pseudo = Some(marker);
                     }
                 }
+                // R5051（css-pseudo-4 §4 placeholder-pseudo）：`::placeholder` 伪样式——
+                // 占位文本 paint 默认 UA 灰（engine 兜底），作者 color 需经 owner 存储
+                // 传递（≡ R3867 ::marker 模式）。门：带非空 placeholder 属性的文本类
+                // input/textarea（≡ R1659 `_` 臂类型集 + textarea）；仅 color 与元素
+                // 不同时存储（本切片 paint 只消费 color，未消费属性不入账）。
+                let is_placeholder_host = |kind: &NodeKind| -> bool {
+                    let NodeKind::Element(e) = kind else { return false };
+                    let tag = e.local_name();
+                    if tag != "input" && tag != "textarea" {
+                        return false;
+                    }
+                    if !doc.get_attribute(node, "placeholder").is_some_and(|p| !p.is_empty()) {
+                        return false;
+                    }
+                    // input 类型集门（≡ R1659 `_` 臂 + 排除不可见/非文本类型）
+                    if tag == "input" {
+                        let itype = doc.get_attribute(node, "type").unwrap_or_default().to_lowercase();
+                        !matches!(
+                            itype.as_str(),
+                            "checkbox"
+                                | "radio"
+                                | "color"
+                                | "submit"
+                                | "reset"
+                                | "button"
+                                | "image"
+                                | "hidden"
+                                | "file"
+                                | "range"
+                        )
+                    } else {
+                        true
+                    }
+                };
+                let is_placeholder_host = is_placeholder_host(&node_data.kind);
+                if is_placeholder_host {
+                    let ph = self.compute_element_style_internal(
+                        doc,
+                        node,
+                        stylesheets,
+                        rule_index,
+                        Some(&elem_style),
+                        &saved_custom,
+                        quirks_mode,
+                        Some("placeholder"),
+                    );
+                    if ph.color != elem_style.color {
+                        computed.placeholder_pseudo = Some(ph);
+                    }
+                }
                 // R4257（CSS Overflow 5 §scroll-marker-group）：`::scroll-marker-group`
                 // 伪元素——元素声明 `scroll-marker-group` 非 none 时计算并存储。组盒的
                 // 布局生成（tree.rs before/after 滚动内容）与绘制（paint 伪样式覆盖）

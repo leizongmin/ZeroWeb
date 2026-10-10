@@ -1031,3 +1031,63 @@ sample text 2 sample text 2</textarea>
         t2.height
     );
 }
+
+/// R5051（css-pseudo-4 §4 placeholder-pseudo）：`::placeholder` 作者 color 存 owner
+/// `placeholder_pseudo`（≡ R3867 ::marker 门——color 未变不存）。驱动:
+/// placeholder-input-number（mismatch 关系，占位文本作者色 vs notref 蓝须可区分）。
+#[test]
+fn placeholder_pseudo_color_stored_on_text_inputs() {
+    use zero_css_parser::values::ColorValue;
+
+    let doc = parse_html(
+        r#"<body>
+             <input id="a" type="number" placeholder="Placeholder">
+             <input id="b" placeholder="No rules">
+             <input id="c" type="checkbox" placeholder="x">
+             <textarea placeholder="t"></textarea>
+           </body>"#,
+    );
+    // 经 stylesheet 注入 ::placeholder 规则（inline style 无法表达伪元素选择器）。
+    let css = zero_css_parser::parser::Parser::parse_stylesheet(
+        "#a::placeholder { color: green } #c::placeholder { color: red } textarea::placeholder { color: blue }",
+    );
+    let mut system = StyleSystem::new();
+    let styles = system.compute_styles(&doc, &[css]);
+    let by_id = |id: &str| {
+        doc.get_elements_by_tag_name("input")
+            .iter()
+            .copied()
+            .find(|&e| doc.get_attribute(e, "id").as_deref() == Some(id))
+            .expect("input")
+    };
+    // ① number 输入：作者绿 → 存储（与元素色不同）。
+    let a = styles.get(&by_id("a")).expect("a styled");
+    assert!(
+        matches!(&a.placeholder_pseudo, Some(p) if matches!(&p.color, ColorValue::Rgba(0, 128, 0, _))),
+        "::placeholder color should be stored on number input, got {:?}",
+        a.placeholder_pseudo
+    );
+    // ② 无 ::placeholder 规则 → 不存。
+    let b = styles.get(&by_id("b")).expect("b styled");
+    assert!(
+        b.placeholder_pseudo.is_none(),
+        "no ::placeholder rule → no storage, got {:?}",
+        b.placeholder_pseudo
+    );
+    // ③ checkbox：非占位宿主（类型集门）→ 即使有规则也不存。
+    let c = styles.get(&by_id("c")).expect("c styled");
+    assert!(
+        c.placeholder_pseudo.is_none(),
+        "checkbox is not a placeholder host, got {:?}",
+        c.placeholder_pseudo
+    );
+    // ④ textarea：宿主，blue 存储。
+    let ta = styles
+        .get(&doc.get_elements_by_tag_name("textarea")[0])
+        .expect("textarea styled");
+    assert!(
+        matches!(&ta.placeholder_pseudo, Some(p) if matches!(&p.color, ColorValue::Rgba(0, 0, 255, _))),
+        "textarea ::placeholder color stored, got {:?}",
+        ta.placeholder_pseudo
+    );
+}
