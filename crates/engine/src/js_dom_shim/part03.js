@@ -3657,7 +3657,8 @@
     }
     if (!entry) entry = _ce_registry[tag] || null;
     if (entry && entry.ctor) {
-      // 已是 custom 实例（原型已挂）不重放。
+      // 已是 custom 实例（原型已挂）不重放。_ceRunCtor = 升级原语：ctor + 初始 attr 派发
+      // （克隆携带的 markup 属性在升级时初始派发——返修 F1，spec upgrade enqueue step）。
       if (Object.getPrototypeOf(el) !== entry.ctor.prototype) {
         _ceRunCtor(entry.ctor, el);
       }
@@ -3700,6 +3701,14 @@
     } else {
       try { ctor.call(el); } catch (_eCall) {}
     }
+    // R3274 + spec「upgrade a custom element」enqueue step：升级时对**已存在**的 observed
+    // 属性派发初始 attributeChangedCallback(name, null, value)，先于 connectedCallback。
+    // 统一收口进升级原语——walk 面 / clone 面（_ceUpgradeElIfRegistered）/ R365/R366
+    // innerHTML 面共用本函数；createElement 面（part03/part06）升级时元素无 markup 属性，
+    // 此处自然空派发（'is' 在本调用之后 setAttribute，走实时派发）。返修 F1（PR117 双审查
+    // 缺陷首轮实证）：base 的初始 attr 派发由非法 ctor 重放携带，P13 消灭重放后各升级面
+    // 须自带此步——否则克隆/innerHTML 面丢失组件属性初始化回调（lit/stencil 依赖该路径）。
+    _ceFireInitialAttrChanges(el, ctor);
     return el;
   }
   var _CE_RESERVED = {
@@ -4396,21 +4405,17 @@
       }
       if (entry && entry.ctor) {
         // P13：升级一次性（见 `_ceRunCtor` 注）——再遍历（define 重走 / upgrade / attach）早退，
-        // 不重放 ctor + 初始 attributeChanged。按元素实例 WeakMap 章判定（与 `_ceRunCtor` 同源）；
-        // 创建面（R90 createElement、R365/R366 innerHTML、clone `_ceUpgradeElIfRegistered`）已
-        // 升级的元素同样早退——其属性经升级后 setAttribute 实时派发，无需重放。
+        // 不重放 ctor。按元素实例 WeakMap 章判定（与 `_ceRunCtor` 同源）；创建面（R90 createElement、
+        // R365/R366 innerHTML、clone `_ceUpgradeElIfRegistered`）已升级的元素同样早退。初始
+        // attributeChangedCallback 派发收口在 `_ceRunCtor` 内（升级原语统一，clone/R365/R366
+        // 面携带的 markup 属性由升级时初始派发覆盖；升级后 setAttribute 走实时派发）。
         if (!_ceUpgraded.get(el)) {
-          // js-dom M3 R94：升级 = 原型挂接 + **用户 ctor 体执行**（`_ceRunCtor`——super() 返回值注入
-          // this，闭合 R90「ctor 体不可重放」限制；spec `custom-elements-upgrades` upgrade step 的
-          // ctor 执行）。旧版仅 setPrototypeOf，lit 的 constructor 内初始化面（attachShadow/属性初
-          // 始化）不可达。ctor 异常吞（`_ceRunCtor` 内 try/catch，升级失败不中断子树遍历）。
-          // `_ceRunCtor` 内部先盖章再执行 ctor 体——ctor 体内同步再入本 walk 不重放。
+          // js-dom M3 R94：升级 = 原型挂接 + **用户 ctor 体执行** + 初始 attr 派发（`_ceRunCtor`
+          // ——super() 返回值注入 this，闭合 R90「ctor 体不可重放」限制；spec `custom-elements-upgrades`
+          // upgrade step 的 ctor 执行 + enqueue step）。ctor 异常吞（`_ceRunCtor` 内 try/catch，
+          // 升级失败不中断子树遍历）。`_ceRunCtor` 内部先盖章再执行 ctor 体——ctor 体内同步再入
+          // 本 walk 不重放。
           _ceRunCtor(entry.ctor, el);
-          // R3274：升级时对 ctor.observedAttributes 派发初始 attributeChangedCallback（name, null, 当前值）。
-          // 元素升级前可能已设属性（parser 建 / createElement + setAttribute 未注册时），升级后组件须能响应
-          // 这些既有属性（lit/stencil 等框架依赖此初始化路径）。spec `custom-elements-upgrades`「upgrade a
-          // custom element」enqueue step。在 connectedCallback 前派发（spec：attr change 先于 connected）。
-          _ceFireInitialAttrChanges(el, entry.ctor);
         }
         // 升级后若已连入 document，触发 connectedCallback（spec：upgrade 已 connected 的元素触发回调）。
         // connect 派发独立于升级一次性（创建面升级 / define 前已连的元素首连仍由此派发）；重复派发

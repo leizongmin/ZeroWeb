@@ -613,3 +613,56 @@ out.join(' ; ');
          同 key 多实例逐实例升级（spec 对齐）"
     );
 }
+
+// F1 返修钉（PR117 双审查缺陷首轮实证）：未升级元素的初始 attributeChangedCallback。
+// base 的初始派发由非法 ctor 重放携带；P13 消灭重放后，升级原语 `_ceRunCtor` 统一承担
+// 初始 attr 派发（spec「upgrade a custom element」enqueue step：对升级时已存在的 observed
+// 属性派 (name, null, value)，先于 connected）。携带 markup 属性的未升级元素（createElement
+// 属性、克隆产物、innerHTML 产物同面）在升级点必须恰好初始派发一次，且重走不重放。
+// 本引擎克隆升级为延迟式（cloneNode 不同步构造，base 同源既有时序；克隆产物经
+// customElements.upgrade / 文档遍历升级），故克隆腿断言空、upgrade 腿断言完整派发。
+#[test]
+fn wc_m1_ce_clone_initial_attr() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = r#"
+var out = [];
+var log = [];
+class Attrd extends HTMLElement {
+  static get observedAttributes() { return ['foo', 'bar']; }
+  constructor() { super(); log.push('ctor'); }
+  attributeChangedCallback(n, o, v) { log.push('attr:' + n + ':' + o + '->' + v); }
+}
+customElements.define('p13-attrd', Attrd);
+var src = document.createElement('p13-attrd');
+src.setAttribute('foo', 'hello');
+out.push('src[' + log.join(',') + ']'); log.length = 0;
+var cl = src.cloneNode(true);
+out.push('clone[' + log.join(',') + ']'); log.length = 0;
+customElements.upgrade(cl);
+out.push('rewalk[' + log.join(',') + ']');
+out.push('proto[' + (Object.getPrototypeOf(cl) === Attrd.prototype) + ',' + cl.getAttribute('foo') + ']');
+out.join(' ; ');
+"#;
+    let out = sandbox.execute(js).unwrap().value;
+    assert_eq!(
+        out,
+        "src[ctor,attr:foo:null->hello] ; clone[] ; rewalk[ctor,attr:foo:null->hello] ; proto[true,hello]",
+        "未升级元素在升级点 = ctor + 携带属性初始 attr 恰好一次（F1：升级原语统一派发，\
+         spec upgrade enqueue step 顺序 ctor→attr），重走不重放；克隆腿为本引擎既有延迟升级时序（base 同源）"
+    );
+}
