@@ -7997,30 +7997,54 @@
                         // wrapper，R309 identity 双源教训），`_zwMatParsed` 标记供 apply
                         // 代际边界 K3 定点清除（快照已含本 turn——与解析补偿 added 同批
                         // 作废）。物化失败回退代理原样（可见性保持既有 R3254-K3 代理匹配
-                        // 语义）。已 upgrade 的 CE 代理不物化——createElement 会二次 ctor
-                        // （t8r N1 查询面变体），原型已挂、instanceof 语义成立，按代理
-                        // 原样返回。
+                        // 语义）。两类豁免（返修轮，双审查发现）：
+                        // ① noWire 槽（R97 fragment 视图/createContextualFragment 形态）
+                        //   ——子从未 wire 进 host 快照，物化打标会被 K3 在 apply 代际
+                        //   边界作废而整体消失（t8i 同源语义）；匹配命中按代理返回
+                        //   （可见性与代理匹配面一致），不物化不打标。
+                        // ② 子树含已 upgrade CE（含根）——物化经 createElement 会对已
+                        //   upgrade 元素重复 ctor（setter 期 __zwCeAttachForAdded 已递归
+                        //   upgrade 全子树，t8r N1 查询面变体）；展平逐元素反查 registry +
+                        //   prototype 印记（_ceRunCtor 挂接语义），命中整条目回退代理。
                         // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
                         if (!_r322qn || _r322qn.nodeType !== 1 || _r322qn.__zwSelector
                             || !_r322qn._zwSelPendingParent || _r322qn._zwSelPendingParent.parentSel !== sel) continue;
                         try {
                           if (!_matchCompoundOf(_r322qn, _r322compQ)) continue;
-                          var _r322tag = '';
-                          try { _r322tag = String(_r322qn.localName || _r322qn.tagName || '').toLowerCase(); } catch (_e322tg) {}
-                          var _r322isName = null;
-                          try { _r322isName = _r322qn.getAttribute('is'); } catch (_e322is) {}
-                          var _r322reg = null;
-                          if (_r322isName && globalThis.__zwCERegistryLookup) {
-                            try { _r322reg = globalThis.__zwCERegistryLookup(String(_r322isName), _r322tag); } catch (_e322lk) {}
-                          }
-                          if (!_r322reg && _r322tag && typeof _ce_registry !== 'undefined') _r322reg = _ce_registry[_r322tag] || null;
-                          if (_r322reg && _r322reg.ctor) {
-                            var _r322ceUp = false;
-                            try { _r322ceUp = Object.getPrototypeOf(_r322qn) === _r322reg.ctor.prototype; } catch (_e322gp) {}
-                            if (_r322ceUp) return _r322qn;
-                          }
+                          // noWire 槽（R97 fragment 视图/createContextualFragment 形态）：
+                          // 子从未 wire 进 host 快照，K3 apply 代际清除对它不豁免就会在
+                          // bump 后从 overlay 整体消失（t8i 同源语义）——匹配命中按代理
+                          // 返回（可见性与代理匹配面一致），不物化不打标。
+                          if (_r322qn._zwSelPendingParent.noWire) return _r322qn;
+                          var _r322ceHit = false;
+                          try {
+                            var _r322flat = [];
+                            _zwHCCollectSubtree(_r322qn, _r322flat);
+                            for (var _r322fi = 0; _r322fi < _r322flat.length; _r322fi++) {
+                              var _r322fe = _r322flat[_r322fi];
+                              if (!_r322fe || _r322fe.nodeType !== 1) continue;
+                              var _r322ftag = '';
+                              try { _r322ftag = String(_r322fe.localName || _r322fe.tagName || '').toLowerCase(); } catch (_e322ft) {}
+                              var _r322fis = null;
+                              try { _r322fis = _r322fe.getAttribute('is'); } catch (_e322fi2) {}
+                              var _r322freg = null;
+                              if (_r322fis && globalThis.__zwCERegistryLookup) {
+                                try { _r322freg = globalThis.__zwCERegistryLookup(String(_r322fis), _r322ftag); } catch (_e322fl) {}
+                              }
+                              if (!_r322freg && _r322ftag && typeof _ce_registry !== 'undefined') _r322freg = _ce_registry[_r322ftag] || null;
+                              if (_r322freg && _r322freg.ctor) {
+                                var _r322fup = false;
+                                try { _r322fup = Object.getPrototypeOf(_r322fe) === _r322freg.ctor.prototype; } catch (_e322fp) {}
+                                if (_r322fup) { _r322ceHit = true; break; }
+                              }
+                            }
+                          } catch (_e322cf) {}
+                          if (_r322ceHit) return _r322qn;
                           var _r322mw = (typeof _wcRebuildAsHandle === 'function') ? _wcRebuildAsHandle(_r322qn) : _r322qn;
                           if (_r322mw && _r322mw !== _r322qn && _r322mw.__zwHandle) {
+                            // 物化（CE ctor 可同步执行页面代码）后写前校验桶槽未被重入
+                            // 改动——重入 splice/清空时按物化前索引写会腐化无关条目。
+                            if (_r322bq.added[_r322qa] !== _r322qn) continue;
                             _r322bq.added[_r322qa] = _r322mw;
                             if (_r322bq.addedSet) { _r322bq.addedSet.delete(_r322qn); _r322bq.addedSet.add(_r322mw); }
                             var _r322gi = _zwPendingAdded.indexOf(_r322qn);

@@ -2460,12 +2460,14 @@ fn t8r4_sel_path_inner_html_immediate_query_materialized() {
   // ⑥ 结构保真（第二顶层子 + 深层文本）。
   var dm = sendbar.querySelector('.bpx-video-dm');
   r.push('sib:' + (dm && online && online.textContent === 'x' ? 'ok' : 'bad'));
+  // ⑦ 负控制：不匹配选择器必须仍为 null（防过匹配护栏）。
+  r.push('nope:' + (sendbar.querySelector('.nope') === null ? 'null' : 'hit'));
   return r.join('|');
 })()"#).unwrap().value;
     assert_eq!(
         out,
-        "info:wrapper|online:ok|qsa:ok|fc:ok|cc:ok|parent:ok|styleWrite:ok|sib:ok",
-        "t8r-4：sel 路径 innerHTML 后立即相对查询命中物化 wrapper（querySelector/querySelectorAll/childNodes/反链/接口写读回/结构保真）"
+        "info:wrapper|online:ok|qsa:ok|fc:ok|cc:ok|parent:ok|styleWrite:ok|sib:ok|nope:null",
+        "t8r-4：sel 路径 innerHTML 后立即相对查询命中物化 wrapper（querySelector/querySelectorAll/childNodes/反链/接口写读回/结构保真/负控制）"
     );
 }
 
@@ -2521,5 +2523,138 @@ fn t8r4_sel_path_variants_and_ce_once() {
         out,
         "text:ok|mix:ok|reIh:ok|ctor:1|isInst:ok",
         "t8r-4：纯文本/混合顶层/清空重注零回归 + sel 域 CE attach ctor 恰 1 次"
+    );
+}
+
+// t8r-4 返修（PR #131 双审查统一返修轮）：扩扫臂豁免面 + K3 作废臂钉测——
+// ① K3 `_zwMatParsed` 作废（审查① blocking）：innerHTML → 查询触发物化 → host apply
+//    （apply → bump 代际）→ re-register → 断言 childNodes 无重复并入（K3 新臂禁用
+//    变异下物化 wrapper 留桶 + 反链，overlay 重复并入 = 4）；
+// ② noWire 豁免（审查② F1）：createContextualFragment + insertBefore 的 noWire 解析
+//    子匹配查询按代理返回（可见性=代理匹配面一致），apply 代际 bump 后不消失（豁免
+//    禁用变异下物化打标被 K3 作废 → post 丢子）；
+// ③ CE 后代单 ctor（审查② F2）：setter 期 attach 已递归 upgrade 后代，匹配根的查询
+//    展平检测命中印记 → 整条目回退代理语义、ctor 恒 1（CE 检测禁用变异下 createElement
+//    二次构造 → ctor:2）。
+// spec https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
+#[test]
+fn t8r4_k3_invalidate_nowire_and_ce_subtree() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><div id='k3c'></div><div id='nw'></div><div id='cec'></div></body></html>"
+            .to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/t8r4-k3nw".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+
+    // 宿主 apply 语义（镜像 part26.rs slice13 的 host_apply：apply → bump，代际边界；
+    // bump 生产调用点 crates/webview/src/webview.rs:2245/4085）。
+    fn host_apply(
+        sandbox: &mut V8Sandbox,
+        mutations: &Arc<Mutex<Vec<DomMutation>>>,
+        dom_html: &Arc<Mutex<String>>,
+    ) {
+        let tail: Vec<DomMutation> = mutations.lock().unwrap().clone();
+        if tail.is_empty() {
+            return;
+        }
+        let new_html = crate::js_dom_bridge::apply_mutations_to_html(
+            &dom_html.lock().unwrap().clone(),
+            &tail,
+        )
+        .unwrap();
+        *dom_html.lock().unwrap() = new_html;
+        crate::js_dom_bridge::bump_dom_view_gen();
+        mutations.lock().unwrap().clear();
+        crate::js_dom_bridge::bump_mut_drain_gen();
+        sandbox
+            .execute("if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();")
+            .unwrap();
+    }
+
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 臂 ③：CE 后代单 ctor（纯 JS；先跑避免后续 re-register/reset 清桶干扰）。
+    let ce_out = sandbox.execute(r#"(function(){
+  var r = [];
+  globalThis.__ceMade = 0;
+  class T8r4CeSub extends HTMLElement {
+    constructor() { super(); globalThis.__ceMade++; }
+  }
+  customElements.define('t8r4-ce-sub', T8r4CeSub);
+  var cec = document.getElementById('cec');
+  cec.innerHTML = '<div class="ce-root"><t8r4-ce-sub></t8r4-ce-sub></div>';
+  r.push('ceAfterSet:' + globalThis.__ceMade);
+  var q = cec.querySelector('.ce-root');
+  r.push('ceHit:' + (q ? 'ok' : 'null'));
+  r.push('ceAfterQ:' + globalThis.__ceMade);
+  return r.join('|');
+})()"#).unwrap().value;
+    assert_eq!(
+        ce_out,
+        "ceAfterSet:1|ceHit:ok|ceAfterQ:1",
+        "t8r-4 返修③：CE 后代已 upgrade 时匹配根查询回退代理语义，ctor 恒 1"
+    );
+
+    // 臂 ②：noWire 豁免（纯 JS；bump 直调为忠实模拟生产调用点 webview.rs:2245/4085）。
+    let nw_out = sandbox.execute(r#"(function(){
+  var r = [];
+  var cnw = document.getElementById('nw');
+  var fw = document.createRange().createContextualFragment('<b class="nwel">x</b>');
+  cnw.insertBefore(fw, null);
+  var h1 = cnw.querySelector('.nwel');
+  r.push('nwPre:' + (h1 ? 'ok' : 'null'));
+  r.push('nwMat:' + (h1 && typeof h1.style === 'object' ? 'wrapper' : 'proxy'));
+  if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();
+  r.push('nwPost:' + (cnw.querySelector('.nwel') !== null ? 'ok' : 'lost'));
+  r.push('nwFc:' + (cnw.firstChild ? 'yes' : 'null'));
+  return r.join('|');
+})()"#).unwrap().value;
+    assert_eq!(
+        nw_out,
+        "nwPre:ok|nwMat:proxy|nwPost:ok|nwFc:yes",
+        "t8r-4 返修②：noWire 解析子匹配查询按代理返回，apply 代际 bump 后不消失"
+    );
+
+    // 臂 ①：K3 `_zwMatParsed` 作废（Rust host apply 序列，镜像 slice13）。
+    sandbox
+        .execute(
+            "var c1 = document.getElementById('k3c');\n\
+             c1.innerHTML = '<span class=\"k1\">a</span><span class=\"k2\">b</span>';\n\
+             var m1 = c1.querySelector('.k1');\n\
+             globalThis.__k3mat = (m1 && typeof m1.style === 'object') ? 'wrapper' : (m1 ? 'proxy' : 'null');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__k3mat").unwrap().value,
+        "wrapper",
+        "t8r-4 返修①：查询触发物化为 wrapper"
+    );
+    host_apply(&mut sandbox, &mutations, &dom_html);
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "globalThis.__k3post = c1.childNodes.length;\n\
+             globalThis.__k3c0 = c1.childNodes[0] ? c1.childNodes[0].textContent : '';",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__k3post").unwrap().value,
+        "2",
+        "t8r-4 返修①：apply 代际后物化 wrapper 已被 K3 作废，fresh 基底无重复并入"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__k3c0").unwrap().value,
+        "a",
+        "t8r-4 返修①：fresh 基底内容正确"
     );
 }
