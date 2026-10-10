@@ -10079,19 +10079,38 @@
         _r3kStale.push(_r3knd);
         _zwPendingAdded.splice(_r3kpa, 1);
       }
+      // t8r-4：查询面物化的 wrapper（R322 兜底臂打 `_zwMatParsed`）同批作废——
+      // 它带 handle，上方解析补偿条件豁免它；但 apply 后快照已含该子，桶内
+      // wrapper + 父反链残留会让 overlay 重复并入（vue_mount_lands 双份
+      // `<p class="msg">` 同型）。物化 wrapper 无槽，桶定位走父反链（下方清理
+      // 循环 `_r3kMatLink` 臂），反链与标记同批清除。
+      else if (_r3knd && _r3knd.__zwHandle && _r3knd._zwMatParsed) {
+        _r3kStale.push(_r3knd);
+        _zwPendingAdded.splice(_r3kpa, 1);
+      }
     }
     if (_r3kStale.length) {
       for (var _r3ks = 0; _r3ks < _r3kStale.length; _r3ks++) {
         _zwPendingAddedSet && _zwPendingAddedSet.delete(_r3kStale[_r3ks]);
         _zwPAIdRemove(_r3kStale[_r3ks]);
         var _r3kSlot = _r3kStale[_r3ks]._zwSelPendingParent;
-        var _r3kB = _zwPendingByParent.get(_r3kSlot && _r3kSlot.parentSel ? _r3kSlot.parentSel : '_h:' + String(_r3kSlot && _r3kSlot.parentHandle == null ? '' : _r3kSlot && _r3kSlot.parentHandle));
+        // t8r-4：物化 wrapper 无槽——桶定位走父反链，并同批清反链与物化标记。
+        var _r3kMatLink = (!_r3kSlot && _r3kStale[_r3ks]._zwMatParsed && _r3kStale[_r3ks].__zwHandle
+            && typeof _zwNodeParent !== 'undefined' && _zwNodeParent)
+          ? _zwNodeParent[_r3kStale[_r3ks].__zwHandle] : null;
+        var _r3kLink = _r3kMatLink || _r3kSlot;
+        var _r3kB = _zwPendingByParent.get(_r3kLink && _r3kLink.parentSel ? _r3kLink.parentSel : '_h:' + String(_r3kLink && _r3kLink.parentHandle == null ? '' : _r3kLink && _r3kLink.parentHandle));
         if (_r3kB) {
           var _r3ki = _r3kB.added.indexOf(_r3kStale[_r3ks]);
           if (_r3ki >= 0) _r3kB.added.splice(_r3ki, 1);
           _r3kB.addedSet && _r3kB.addedSet.delete(_r3kStale[_r3ks]);
         }
-        delete _r3kStale[_r3ks]._zwSelPendingParent;
+        if (_r3kMatLink) {
+          try { delete _zwNodeParent[_r3kStale[_r3ks].__zwHandle]; } catch (_e3kmu) {}
+          try { delete _r3kStale[_r3ks]._zwMatParsed; } catch (_e3kmu2) {}
+        } else {
+          delete _r3kStale[_r3ks]._zwSelPendingParent;
+        }
       }
     }
     // R3254-E2 切片 13（editing goal，2026-09-08）：**removed 补偿同批作废**——
