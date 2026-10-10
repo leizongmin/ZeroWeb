@@ -15537,6 +15537,85 @@ return e;
     });
   }
 
+  // M2-S6（navigation-compat，2026-10-10）：A/AREA 锚激活默认动作共享 helper——click()
+  // API 路径与 dispatchEvent 派发路径同面（spec activation behavior 经 click 事件默认
+  // 动作运行——synthetic 派发 click 同样跑激活；WPT navigate-svg-anchor-fragment
+  // 派发 MouseEvent('click') 须 fire navigate 事件）。自 part04 R154 click 分支原样
+  // 抽出（href own-expando-first 读 + download own 门 presence + hash/非 hash 双路）。
+  // svg:a 同分支命中（tagName 'a' 经 _zwAsciiUpper → 'A'）。
+  function _zwAnchorActivate(sel, handle) {
+    var _r154Href = '';
+    try {
+      // M2-S4H：href expando 优先（`a.href = v` IDL 未反射为 attr 的形态——静态锚
+      // `a.href=...` 走 proxy expando；WPT navigate-anchor-cross-origin），attr 桥回落。
+      var _p154h = _makeProxy(sel, handle);
+      // **own** expando 判定（href IDL accessor 在原型上——`a.href = v` 为 own
+      // 数据属性；静态锚 hasOwnProperty false → 回落 attr，避免读到 resolved URL）。
+      if (_p154h && Object.prototype.hasOwnProperty.call(_p154h, 'href')
+          && _p154h.href !== undefined && _p154h.href !== null && _p154h.href !== '') {
+        _r154Href = String(_p154h.href);
+      }
+    } catch (_e154hx) {}
+    if (!_r154Href) {
+      try { _r154Href = handle ? __zw_get_attr_handle(handle, 'href') : (sel ? __zw_get_attr(sel, 'href') : ''); } catch (_e154h) { _r154Href = ''; }
+    }
+    // M2-S4H（navigation-compat）：anchor download 属性 → navigate downloadRequest
+    //（presence 判定——`download=""` 同下载；值为文件名。WPT anchor-download-intercept
+    // 「download 锚点击可 intercept」）。线程后由 _navFireNavigate 读取、此处读后即清。
+    var _r154HasDl = false;
+    var _r154DlVal = '';
+    try {
+      // IDL `a.download = v` 走 proxy expando（download 非反射 IDL）→ expando 优先，
+      // setAttribute 形态回落 attr 桥（presence 判定——`download=""` 同下载）。
+      // M2-S4Y：own expando 门（href 同款——proxy get trap 反射 attr 不物化 own，
+      // 缺席 attr 的 `.download` 读到反射 '' 误判 presence；WPT
+      // navigate-anchor-same-origin-cross-document「downloadRequest null」）。
+      var _p154d = (sel || handle) ? _makeProxy(sel, handle) : null;
+      var _p154OwnDl = false;
+      try { _p154OwnDl = !!_p154d && Object.prototype.hasOwnProperty.call(_p154d, 'download'); } catch (_e154do) {}
+      if (_p154OwnDl && _p154d.download !== undefined && _p154d.download !== null) {
+        _r154HasDl = true;
+        _r154DlVal = String(_p154d.download);
+      } else {
+        _r154HasDl = (handle ? __zw_has_attr_handle(handle, 'download') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'download') : __zw_has_attr(sel, 'download'))) === '1';
+        if (_r154HasDl) {
+          _r154DlVal = handle ? (__zw_get_attr_handle(handle, 'download') || '') : ((sel ? __zw_get_attr(sel, 'download') : '') || '');
+        }
+      }
+    } catch (_e154dl) { _r154HasDl = false; }
+    globalThis.__zwNavDownloadRequest = _r154HasDl ? _r154DlVal : null;
+    if (_r154Href && String(_r154Href).charAt(0) === '#' && globalThis.location) {
+      // M2-S4B（navigation-compat）：sourceElement 线程——navigate 事件的 sourceElement
+      // = 触发导航的 anchor（WPT navigate-anchor-fragment `e.sourceElement ===
+      // document.getElementById('a')` 身份断言）。本作用域 sel 为选择器串 → 经
+      // querySelector 物化为元素代理（R333 代理缓存保身份）。hash-setter hook 读后即清。
+      // M2-S4H：sourceElement 经 _makeProxy 物化（handle-identified 的
+      // createElement 锚 sel 可为 null——querySelector 形态漏元素；proxy 缓存保
+      // 与测试持有引用的同一身份）。
+      try { globalThis.__zwNavSourceElement = (sel || handle) ? _makeProxy(sel, handle) : null; } catch (_e154se) { globalThis.__zwNavSourceElement = null; }
+      try { globalThis.location.hash = String(_r154Href).slice(1); } catch (_e154s) {}
+      globalThis.__zwNavSourceElement = null;
+      globalThis.__zwNavDownloadRequest = null;
+    }
+    // M2-S4H：**非 hash** 锚点击 → 通用锚导航 helper（navigate 事件 + intercept/
+    // download/cross-origin 面——WPT navigate-anchor-download / -cross-origin /
+    // -same-origin-cross-document / -same-url 族）。
+    else if (_r154Href && globalThis.location) {
+      var _r154Se = null;
+      try { _r154Se = (sel || handle) ? _makeProxy(sel, handle) : null; } catch (_e154se2) { _r154Se = null; }
+      try {
+        if (typeof _navAnchorNavigate === 'function') {
+          var _r154St = _navAnchorNavigate(String(_r154Href), _r154Se, _r154HasDl ? _r154DlVal : null);
+          try { globalThis.__zwNavAnchorSt = String(_r154St); } catch (_eSt) {}
+          if (_r154St === 'host' && _r154Href && typeof __zw_request_navigate === 'function') {
+            __zw_request_navigate(String(_r154Href));
+          }
+        } else { try { globalThis.__zwNavAnchorSt = 'NO-FN'; } catch (_eSt2) {} }
+      } catch (_e154an) { try { globalThis.__zwNavAnchorSt = 'THREW:' + _e154an.message; } catch (_eSt3) {} }
+      globalThis.__zwNavDownloadRequest = null;
+    }
+  }
+
 
 
   function _makeProxy(sel, handle) {

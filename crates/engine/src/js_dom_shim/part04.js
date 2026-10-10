@@ -4137,7 +4137,21 @@
             // WC-M3 切片 8 第九增量（web-components goal）：receiver proxy 透传
             // ——event.target 保持页面持有对象 identity（R52 消零后 `_makeProxy`
             // 重建分裂 proxy 的 countermeasure；见 _dispatchWithBubble 注记）。
-            return _dispatchWithBubble(key, sel, handle, event, undefined, this);
+            var notPrevented = _dispatchWithBubble(key, sel, handle, event, undefined, this);
+            // M2-S6（navigation-compat，2026-10-10）：派发 click 的激活行为——synthetic
+            // 派发 click 同样跑默认动作（real browser 对 dispatchEvent(new
+            // MouseEvent('click')) 触发锚导航——WPT navigate-svg-anchor-fragment
+            // upstream 面）。此前派发路径无任何默认动作（仅 click() API/part03
+            // plain-node click() 有）。仅 A/AREA 锚面接 `_zwAnchorActivate` 共享
+            // helper；preventDefault（notPrevented false）跳过；transient activation
+            // 不签发（untrusted——userInitiated 恒 false 断言面）。
+            if (notPrevented && event && event.type === 'click') {
+              try {
+                var _r106dt = _realTag(sel, handle);
+                if (_r106dt === 'A' || _r106dt === 'AREA') _zwAnchorActivate(sel, handle);
+              } catch (_e106da) {}
+            }
+            return notPrevented;
           };
         }
         if (prop === 'click') {
@@ -4281,78 +4295,11 @@
               // 更新 + 异步 hashchange；与 node.click() 本地版 A/AREA 分支同源）。WPT
               // single-activation 的 A/AREA click 期望 window.onhashchange(e.newURL) 收
               // href 字符串——旧 proxy 侧 click 无此分支（activation 缺失 → 空数组）。
+              // M2-S6（navigation-compat）：实体现移 `_zwAnchorActivate`（part03）——
+              // click() API 与 dispatchEvent 派发路径共享（见彼处注记）。
               var _r154Tag = _realTag(sel, handle);
               if (_r154Tag === 'A' || _r154Tag === 'AREA') {
-                var _r154Href = '';
-                try {
-                  // M2-S4H：href expando 优先（`a.href = v` IDL 未反射为 attr 的形态——静态锚
-                  // `a.href=...` 走 proxy expando；WPT navigate-anchor-cross-origin），attr 桥回落。
-                  var _p154h = _makeProxy(sel, handle);
-                  // **own** expando 判定（href IDL accessor 在原型上——`a.href = v` 为 own
-                  // 数据属性；静态锚 hasOwnProperty false → 回落 attr，避免读到 resolved URL）。
-                  if (_p154h && Object.prototype.hasOwnProperty.call(_p154h, 'href')
-                      && _p154h.href !== undefined && _p154h.href !== null && _p154h.href !== '') {
-                    _r154Href = String(_p154h.href);
-                  }
-                } catch (_e154hx) {}
-                if (!_r154Href) {
-                  try { _r154Href = handle ? __zw_get_attr_handle(handle, 'href') : (sel ? __zw_get_attr(sel, 'href') : ''); } catch (_e154h) { _r154Href = ''; }
-                }
-                // M2-S4H（navigation-compat）：anchor download 属性 → navigate downloadRequest
-                //（presence 判定——`download=""` 同下载；值为文件名。WPT anchor-download-intercept
-                // 「download 锚点击可 intercept」）。线程后由 _navFireNavigate 读取、此处读后即清。
-                var _r154HasDl = false;
-                var _r154DlVal = '';
-                try {
-                  // IDL `a.download = v` 走 proxy expando（download 非反射 IDL）→ expando 优先，
-                  // setAttribute 形态回落 attr 桥（presence 判定——`download=""` 同下载）。
-                  // M2-S4Y：own expando 门（href 同款——proxy get trap 反射 attr 不物化 own，
-                  // 缺席 attr 的 `.download` 读到反射 '' 误判 presence；WPT
-                  // navigate-anchor-same-origin-cross-document「downloadRequest null」）。
-                  var _p154d = (sel || handle) ? _makeProxy(sel, handle) : null;
-                  var _p154OwnDl = false;
-                  try { _p154OwnDl = !!_p154d && Object.prototype.hasOwnProperty.call(_p154d, 'download'); } catch (_e154do) {}
-                  if (_p154OwnDl && _p154d.download !== undefined && _p154d.download !== null) {
-                    _r154HasDl = true;
-                    _r154DlVal = String(_p154d.download);
-                  } else {
-                    _r154HasDl = (handle ? __zw_has_attr_handle(handle, 'download') : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'download') : __zw_has_attr(sel, 'download'))) === '1';
-                    if (_r154HasDl) {
-                      _r154DlVal = handle ? (__zw_get_attr_handle(handle, 'download') || '') : ((sel ? __zw_get_attr(sel, 'download') : '') || '');
-                    }
-                  }
-                } catch (_e154dl) { _r154HasDl = false; }
-                globalThis.__zwNavDownloadRequest = _r154HasDl ? _r154DlVal : null;
-                if (_r154Href && String(_r154Href).charAt(0) === '#' && globalThis.location) {
-                  // M2-S4B（navigation-compat）：sourceElement 线程——navigate 事件的 sourceElement
-                  // = 触发导航的 anchor（WPT navigate-anchor-fragment `e.sourceElement ===
-                  // document.getElementById('a')` 身份断言）。本作用域 sel 为选择器串 → 经
-                  // querySelector 物化为元素代理（R333 代理缓存保身份）。hash-setter hook 读后即清。
-                  // M2-S4H：sourceElement 经 _makeProxy 物化（handle-identified 的
-                  // createElement 锚 sel 可为 null——querySelector 形态漏元素；proxy 缓存保
-                  // 与测试持有引用的同一身份）。
-                  try { globalThis.__zwNavSourceElement = (sel || handle) ? _makeProxy(sel, handle) : null; } catch (_e154se) { globalThis.__zwNavSourceElement = null; }
-                  try { globalThis.location.hash = String(_r154Href).slice(1); } catch (_e154s) {}
-                  globalThis.__zwNavSourceElement = null;
-                  globalThis.__zwNavDownloadRequest = null;
-                }
-                // M2-S4H：**非 hash** 锚点击 → 通用锚导航 helper（navigate 事件 + intercept/
-                // download/cross-origin 面——WPT navigate-anchor-download / -cross-origin /
-                // -same-origin-cross-document / -same-url 族）。
-                else if (_r154Href && globalThis.location) {
-                  var _r154Se = null;
-                  try { _r154Se = (sel || handle) ? _makeProxy(sel, handle) : null; } catch (_e154se2) { _r154Se = null; }
-                  try {
-                    if (typeof _navAnchorNavigate === 'function') {
-                      var _r154St = _navAnchorNavigate(String(_r154Href), _r154Se, _r154HasDl ? _r154DlVal : null);
-                      try { globalThis.__zwNavAnchorSt = String(_r154St); } catch (_eSt) {}
-                      if (_r154St === 'host' && _r154Href && typeof __zw_request_navigate === 'function') {
-                        __zw_request_navigate(String(_r154Href));
-                      }
-                    } else { try { globalThis.__zwNavAnchorSt = 'NO-FN'; } catch (_eSt2) {} }
-                  } catch (_e154an) { try { globalThis.__zwNavAnchorSt = 'THREW:' + _e154an.message; } catch (_eSt3) {} }
-                  globalThis.__zwNavDownloadRequest = null;
-                }
+                _zwAnchorActivate(sel, handle);
               }
               // R155（js-dom M4）：LABEL 的 click default action——转发激活到内部第一个
               // labelable 控件（spec the-label-element activation behavior；与

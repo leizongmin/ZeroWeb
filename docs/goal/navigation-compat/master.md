@@ -2,8 +2,8 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-10（M2-S1~S5 二十九片——location-interface 97.7% / traversal 93.3% /
-history-interface 98.2% / navigation-api 92.9%；全量 20.9%→**83.8%**（399/476）；
+**最后更新**: 2026-10-10（M2-S1~S6 三十片——location-interface 97.7% / traversal 93.3% /
+history-interface 98.2% / navigation-api 92.9%；全量 20.9%→**84.0%**（400/476）；
 计数口径自 S4W 起按 evidence txt 原始 Pass 行）
 
 ---
@@ -283,8 +283,18 @@ history-interface 98.2% / navigation-api 92.9%；全量 20.9%→**83.8%**（399/
   bfcache-restore 形仍挂。1 翻 Fail→Pass；全量 83.6%→**83.8%**（399/476）；零回归
   （rAF 包裹全页面触达，语料树 grep 证惰性面）。
   证据：[evidence/2026-10-10-m2-s5-pagereveal-reveal-face.md](evidence/2026-10-10-m2-s5-pagereveal-reveal-face.md)。
-- **质量门禁（二十九片）**：`make test` 全绿（数字见本轮终态行）；clippy -D warnings
-  零 warning（testharness.rs 变更轮）；fmt 零 diff。
+- **M2-S6 派发 click 激活行为 + 锚默认动作 helper 化（2026-10-10）**：proxy
+  dispatchEvent 派发路径此前**零默认动作**（S4T 挂账「svg:a 激活缺失」实为通用派发
+  路径缺口，非 svg 专属）——A/AREA 锚派发 click 现跑激活（`_zwAnchorActivate` 共享
+  helper，自 click() 分支原样抽出；svg:a 同分支命中）；untrusted 不签发 transient
+  activation。收 navigate-svg-anchor-fragment（Timeout→Pass）；全量 83.8%→**84.0%**
+  （400/476）；零回归（共享面双臂：navigation diff 恰一行 + 语料 grep 派发 click
+  载体零 A/AREA）。挂账核验：bfcache 族 6 案 helper 资产双缺口（helper.sub.js/
+  dispatcher.js 均不在本地语料 + 需 popup/真跨文档）、focus-reset 2T 需 send_keys
+  TAB——两域挂账均属实维持。
+  证据：[evidence/2026-10-10-m2-s6-dispatched-click-activation.md](evidence/2026-10-10-m2-s6-dispatched-click-activation.md)。
+- **质量门禁（三十片）**：`make test` 全绿（数字见本轮终态行）；纯 .js shim 变更无
+  .rs（fmt/clippy 不适用）。
 
 ## M4 收口评估（2026-10-09）
 
@@ -297,7 +307,7 @@ history-interface 98.2% / navigation-api 92.9%；全量 20.9%→**83.8%**（399/
 
 ## 下一步计划
 
-1. **C 类余项定稿（S5 后）**：可切片项已清——navigate-multiple-location/-pushState 2T
+1. **C 类余项定稿（S6 后）**：可切片项已清——navigate-multiple-location/-pushState 2T
    （task 排队模型）经评估挂账（风险/收益不成立，见 S4Q evidence）；same-url-replace 双案
    与 007（S4W strict 收窄 + 同 URL replace 面翻绿，原「资产偏斜/外部脚本基建」挂账撤销）；
    navigate-history-push-not-loaded（S4X readyState 宿过渡收口，net-api 红利 +1）；
@@ -305,8 +315,10 @@ history-interface 98.2% / navigation-api 92.9%；全量 20.9%→**83.8%**（399/
    （S4Y 收口——S4P 回归追认 + download presence own 门）；
    scroll-restoration-fragment-scrolling-samedoc（S4Z traverse 锚滚 manual 门）；
    order-in-new-document-navigation（S5 pagereveal reveal 面——new-document 形从 bfcache
-   族拆出收口）；scroll-to-fragid 几何/竖排 8 案记账回流渲染域（S4R evidence）；剩余全为
-   A 域回流与 B 类形态缺口（下两条）。
+   族拆出收口）；navigate-svg-anchor-fragment（S6 派发 click 激活面——通用派发路径
+   缺口定性，非 svg 专属）；scroll-to-fragid 几何/竖排 8 案记账回流渲染域（S4R
+   evidence）；剩余全为 A 域回流与 B 类形态缺口（下两条），且本轮对 bfcache 族
+   （helper 资产双缺口）与 focus-reset 2T（send_keys TAB）做了逐案核验挂账属实。
 2. **replace-before-load 38F 重定性 → M3 依赖**（2026-10-09 勘察）：全簇为 iframe 载体
    （setupSentinelIframe/insertIframe + 子文档 load 前自导航），断言 iframe 自有 session
    history 的 replace 语义——单文档 runner 形态不可达，随 M3 frame tree 一并解锁。
