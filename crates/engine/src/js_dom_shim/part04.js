@@ -4306,8 +4306,13 @@
                 try {
                   // IDL `a.download = v` 走 proxy expando（download 非反射 IDL）→ expando 优先，
                   // setAttribute 形态回落 attr 桥（presence 判定——`download=""` 同下载）。
+                  // M2-S4Y：own expando 门（href 同款——proxy get trap 反射 attr 不物化 own，
+                  // 缺席 attr 的 `.download` 读到反射 '' 误判 presence；WPT
+                  // navigate-anchor-same-origin-cross-document「downloadRequest null」）。
                   var _p154d = (sel || handle) ? _makeProxy(sel, handle) : null;
-                  if (_p154d && _p154d.download !== undefined && _p154d.download !== null) {
+                  var _p154OwnDl = false;
+                  try { _p154OwnDl = !!_p154d && Object.prototype.hasOwnProperty.call(_p154d, 'download'); } catch (_e154do) {}
+                  if (_p154OwnDl && _p154d.download !== undefined && _p154d.download !== null) {
                     _r154HasDl = true;
                     _r154DlVal = String(_p154d.download);
                   } else {

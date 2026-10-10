@@ -5791,6 +5791,11 @@
   // precommitHandler-new-navigation-before-commit + ordering double-intercept 族）。
   var _navOngoing = null;
   function _navFireNavigate(o) {
+    // M2-S4Y：fire 时页面 URL 快照（提交前）——navigateerror 的 filename fallback 用快照，
+    // 不读派发时刻的活 URL（navigate() API 路径 S4P 起提交时同步 page_url hash-only，
+    // handler 拒绝晚于提交 → 活 URL 已带片段；WPT intercept-multiple-times-reject
+    // 「e.filename = start_href」）。
+    var firePageUrl = typeof __zw_get_page_url === 'function' ? __zw_get_page_url() : '';
     // M2-S4G：新导航先抢占进行中导航（spec「while ongoing navigate event is not null: abort」
     // ——循环：navigateerror 监听器内可再起导航，逐个抢占；traverse 自身派发 _zwSelf 不触发。
     // 非 intercept 导航同样参与——已提交未走 success steps 的导航被抢 → navigateerror（WPT
@@ -5847,6 +5852,7 @@
     });
     ev._zwNavFired = true;
     ev._zwBind = bind;
+    ev._zwFirePageUrl = firePageUrl;
     // M2-S4G：transition.from 捕获（dispatch 时刻 currentEntry——commit 前）。
     try { ev._zwFromPub = _navPub(_navCurrent()); } catch (_eFp) {}
     // M2-S4G：结果控制柄挂钩（abort 面在 dispatch 期即可 reject 双 promise）。
@@ -6130,7 +6136,9 @@
       }
     } catch (_eStk) {}
     if (!file || file === '<anonymous>' || file === 'about:blank') {
-      file = typeof __zw_get_page_url === 'function' ? __zw_get_page_url() : '';
+      // M2-S4Y：优先 fire 时快照（提交前 URL），活 URL 兜底（无 ev 形态防回归）。
+      file = (ev && ev._zwFirePageUrl)
+        || (typeof __zw_get_page_url === 'function' ? __zw_get_page_url() : '');
     }
     var ee = new ErrorEvent('navigateerror', {
       error: err !== undefined ? err : null, message: msg,
