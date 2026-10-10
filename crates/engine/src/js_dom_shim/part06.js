@@ -2358,7 +2358,27 @@
           }
         }
       }
-      var hit = globalThis.document.querySelector('[id="' + idText.replace(/"/g, '\\"') + '"]');
+      var hit = null;
+      // M2-S7（navigation-compat，2026-10-10）：id 含 CSS 属性选择器语法外字符
+      //（%/[/(:) 等）时 `[id="…"]` 不可解析（querySelector 抛 SyntaxError）——此前
+      // 无捕获使 getElementById 对此类 id **整体抛错**（WPT
+      // scroll-frag-percent-encoded「location.hash='has%20two%20spaces' → 滚动到
+      // id="has two spaces"」的锚查找根因）。spec getElementById = 精确 id 匹配
+      //（树序），不经选择器解析——选择器面失败回落 [id] 枚举精确比对（R125
+      // pending-removed/祖先移除门同面适用）。
+      try {
+        hit = globalThis.document.querySelector('[id="' + idText.replace(/"/g, '\\"') + '"]');
+      } catch (_eIdSel) {
+        try {
+          var _zwIdAll = globalThis.document.querySelectorAll('[id]');
+          for (var _zwIdI = 0; _zwIdI < _zwIdAll.length; _zwIdI++) {
+            var _zwIdC = _zwIdAll[_zwIdI];
+            try {
+              if (_zwIdC.getAttribute && _zwIdC.getAttribute('id') === idText) { hit = _zwIdC; break; }
+            } catch (_eIdA) {}
+          }
+        } catch (_eIdSel2) {}
+      }
       // R125：快照命中但元素已 remove（pending-removed 表）→ 继续找下一个（spec tree
       // order 的下一候选）——removeChild 的 Remove mutation 不入查询视图（R3029 removed
       // proxy 属性读回落快照的约束），getElementById 侧定点消费 pending-removed。

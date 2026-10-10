@@ -6247,11 +6247,15 @@
     // after-transition-* 「navigate('#frag') 后 scrollY ≠ 0」基面）。先取**滚动前**几何算绝对
     // 目标位；scrollIntoView 已落窗口位（scroll-to-fragid/scroll-position 的 border-edge 精确值）
     // 时不覆写——仅在 scrollIntoView 未动窗口位时以几何近似补写。
+    // M2-S7（navigation-compat，2026-10-10）：native gBCR 为**文档绝对**坐标（探针实证——
+    // scrollTo 后 rect.top 不随滚动漂移，R3060 scrollIntoView 同约定 scrollTo(0, gBCR.y)）——
+    // 绝对目标位 = rect.top 本身，不再 +滚动前位（原 +_preTop 按视口相对坐标假设双计，
+    // WPT scroll-frag-percent-encoded「scrollTop 100 得 200」根因）。
     var _preTop = _winScroll.top;
     var _targetTop = null;
     try {
       var _rt = anchor && anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : null;
-      _targetTop = (_rt && isFinite(_rt.top)) ? Math.max(0, Math.round(_rt.top + _preTop)) : null;
+      _targetTop = (_rt && isFinite(_rt.top)) ? Math.max(0, Math.round(_rt.top)) : null;
     } catch (_eWSc0) {}
     if (anchor && typeof anchor.scrollIntoView === 'function') {
       try { anchor.scrollIntoView(); } catch (_e) {}
@@ -6261,6 +6265,34 @@
       _winScrollGen++;
       _zwFireScroll(null, null, null);
     }
+    // M2-S7（navigation-compat，2026-10-10）：fragment 滚动聚焦（spec scrolling-to-a-
+    // fragment:focusing steps——指示元素为 focusable area → 聚焦它（focus 事件派发）；
+    // 否则 run the focusing steps for the viewport（现焦点 blur → activeElement 回落
+    // body）。WPT focus-changes-after-scroll-to-fragment「tabindex 目标聚焦 / 非可聚焦
+    // 目标落 viewport」）。可聚焦判定 = 内在可聚焦标签或 tabindex 属性（focusability
+    // 近似——headless 无 heuristic 面板）。
+    try {
+      var _s7Tag = '';
+      if (typeof _realTag === 'function') {
+        _s7Tag = _realTag(anchor.__zwSelector || null, anchor.__zwHandle || null) || '';
+      }
+      var _s7Focusable = (_s7Tag === 'BUTTON' || _s7Tag === 'INPUT' || _s7Tag === 'SELECT'
+        || _s7Tag === 'TEXTAREA' || _s7Tag === 'A' || _s7Tag === 'AREA'
+        || _s7Tag === 'IFRAME' || _s7Tag === 'SUMMARY' || _s7Tag === 'DETAILS');
+      if (!_s7Focusable && anchor.hasAttribute) {
+        try { _s7Focusable = anchor.hasAttribute('tabindex'); } catch (_eS7t) {}
+      }
+      if (_s7Focusable && typeof anchor.focus === 'function') {
+        anchor.focus();
+      } else {
+        // viewport 焦点步——现焦点元素 blur（activeElement 回落 body；spec focusing
+        // steps for the viewport）。已落 body/无焦点时 no-op（blur 非 CURRENT 恒 no-op）。
+        try {
+          var _s7Ae = globalThis.document.activeElement;
+          if (_s7Ae && _s7Ae !== globalThis.document.body && typeof _s7Ae.blur === 'function') _s7Ae.blur();
+        } catch (_eS7b) {}
+      }
+    } catch (_eS7f) {}
   }
 
   // R3006：`location.hash = v` setter——更新 hash + 新 history entry + 异步派发 hashchange（SPA hash 路由核心，

@@ -8910,7 +8910,17 @@
           return r ? r.h : 0;
         }
         // R3047：scrollTop/scrollLeft 读 `_scrollOffsets[key]`（程序化滚动 round-trip 自洽；默认未滚动 → 0）。
+        // M2-S7（navigation-compat，2026-10-10）：viewport 滚动元素（documentElement——
+        // standards 模式 scrollingElement 同物）的 scrollTop/scrollLeft 镜像**窗口**滚动位
+        //（spec scrollingElement 语义——documentElement.scrollTop === window.scrollY；
+        // WPT scroll-to-fragid 族经 document.scrollingElement.scrollTop 断言锚滚位）。
+        // 此前读 _scrollOffsets 独立槽恒 0，与 scrollTo/_winScroll 面脱钩。
         if (prop === 'scrollTop' || prop === 'scrollLeft') {
+          try {
+            if (_realTag(sel, handle) === 'HTML') {
+              return prop === 'scrollTop' ? (_winScroll ? _winScroll.top : 0) : (_winScroll ? _winScroll.left : 0);
+            }
+          } catch (_eVSg) {}
           var _sg = _scrollOffsets[key];
           return _sg ? (prop === 'scrollTop' ? _sg.top : _sg.left) : 0;
         }

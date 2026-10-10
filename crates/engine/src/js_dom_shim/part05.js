@@ -568,6 +568,20 @@
           // R3047：scrollTop/scrollLeft setter（headless 无真滚动 → JS-side 状态追踪）。Number 归一（NaN/负 → 0）→
           // 存 `_scrollOffsets[key]`（与 scrollTo/scrollBy/getter 自洽）。无 moAttr（非内容属性）。不写 attr（旧 generic
           // fallthrough 误写 scrolltop="50" 垃圾属性）。
+          // M2-S7：viewport 滚动元素（documentElement）写侧镜像窗口滚动——委托 scrollTo
+          //（绝对位语义 + _winScroll 槽 + scroll 事件），与 getter 镜像面成对（见 part04 getter 注）。
+          if (p === 'scrollTop' || p === 'scrollLeft') {
+            try {
+              if (_realTag(sel, handle) === 'HTML') {
+                var _svv = Number(value);
+                if (isNaN(_svv) || _svv < 0) _svv = 0;
+                var _curX = (typeof globalThis.scrollX === 'number') ? globalThis.scrollX : (_winScroll ? _winScroll.left : 0);
+                var _curY = (typeof globalThis.scrollY === 'number') ? globalThis.scrollY : (_winScroll ? _winScroll.top : 0);
+                globalThis.scrollTo(p === 'scrollLeft' ? _svv : _curX, p === 'scrollTop' ? _svv : _curY);
+                return;
+              }
+            } catch (_eVSs) {}
+          }
           var _sv = Number(value);
           if (isNaN(_sv) || _sv < 0) _sv = 0;
           var _sss = _scrollOffsets[key] || (_scrollOffsets[key] = { top: 0, left: 0 });

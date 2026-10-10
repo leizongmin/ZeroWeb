@@ -2,8 +2,8 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-10（M2-S1~S6 三十片——location-interface 97.7% / traversal 93.3% /
-history-interface 98.2% / navigation-api 92.9%；全量 20.9%→**84.0%**（400/476）；
+**最后更新**: 2026-10-10（M2-S1~S7 三十一片——location-interface 97.7% / traversal 93.3% /
+history-interface 98.2% / navigation-api 92.9%；全量 20.9%→**85.3%**（406/476）；
 计数口径自 S4W 起按 evidence txt 原始 Pass 行）
 
 ---
@@ -293,8 +293,22 @@ history-interface 98.2% / navigation-api 92.9%；全量 20.9%→**84.0%**（400/
   dispatcher.js 均不在本地语料 + 需 popup/真跨文档）、focus-reset 2T 需 send_keys
   TAB——两域挂账均属实维持。
   证据：[evidence/2026-10-10-m2-s6-dispatched-click-activation.md](evidence/2026-10-10-m2-s6-dispatched-click-activation.md)。
-- **质量门禁（三十片）**：`make test` 全绿（数字见本轮终态行）；纯 .js shim 变更无
-  .rs（fmt/clippy 不适用）。
+- **M2-S7 fragid 滚动/聚焦三面 + getElementById 特殊字符 id（2026-10-10）**：探针页
+  逐值定位三叠加根因——①主文档 `getElementById` 经 `[id="…"]` 属性选择器实现且无
+  捕获，id 含选择器语法外字符（%/[ 等）时**整体抛错**（raw/decoded 锚查找全灭）→
+  选择器面 try/catch + `[id]` 枚举精确比对回落；②`documentElement.scrollTop` 读
+  独立槽恒 0（spec scrollingElement 应镜像 window.scrollY）→ getter/setter HTML 门
+  镜像窗口滚动；③`_scrollToAnchorForHash` 目标位按视口相对假设 +`_preTop` 双计
+  （探针证 native gBCR 文档绝对，R3060 同约定）。第四面同 chokepoint：fragment
+  滚动 focusing steps（可聚焦 → focus()；否则 viewport blur 回落 body）。六翻
+  Fail→Pass 全 scroll-to-fragid 族；零回归（focus-reset/scroll-restoration 同
+  chokepoint 恒绿）；全量 84.0%→**85.3%**（406/476）。家族余项重定性：竖排/书写
+  模式滚动边 3F + reload scroll-anchoring 4F 维持渲染域。DC-4 reftest 账龄清零
+  （S6 态 708 比较 0 不一致）。
+  证据：[evidence/2026-10-10-m2-s7-fragid-scroll-focus-faces.md](evidence/2026-10-10-m2-s7-fragid-scroll-focus-faces.md)。
+- **质量门禁（三十一片）**：`make test` 全绿（数字见本轮终态行）；纯 .js shim 变更无
+  .rs（fmt/clippy 不适用）；`make reftest` 零不一致（S7 态复跑见下轮终态行/本轮
+  evidence）。
 
 ## M4 收口评估（2026-10-09）
 
@@ -307,18 +321,17 @@ history-interface 98.2% / navigation-api 92.9%；全量 20.9%→**84.0%**（400/
 
 ## 下一步计划
 
-1. **C 类余项定稿（S6 后）**：可切片项已清——navigate-multiple-location/-pushState 2T
+1. **C 类余项定稿（S7 后）**：可切片项已清——navigate-multiple-location/-pushState 2T
    （task 排队模型）经评估挂账（风险/收益不成立，见 S4Q evidence）；same-url-replace 双案
-   与 007（S4W strict 收窄 + 同 URL replace 面翻绿，原「资产偏斜/外部脚本基建」挂账撤销）；
-   navigate-history-push-not-loaded（S4X readyState 宿过渡收口，net-api 红利 +1）；
-   intercept-multiple-times-reject + navigate-anchor-same-origin-cross-document
-   （S4Y 收口——S4P 回归追认 + download presence own 门）；
-   scroll-restoration-fragment-scrolling-samedoc（S4Z traverse 锚滚 manual 门）；
-   order-in-new-document-navigation（S5 pagereveal reveal 面——new-document 形从 bfcache
-   族拆出收口）；navigate-svg-anchor-fragment（S6 派发 click 激活面——通用派发路径
-   缺口定性，非 svg 专属）；scroll-to-fragid 几何/竖排 8 案记账回流渲染域（S4R
-   evidence）；剩余全为 A 域回流与 B 类形态缺口（下两条），且本轮对 bfcache 族
-   （helper 资产双缺口）与 focus-reset 2T（send_keys TAB）做了逐案核验挂账属实。
+   与 007（S4W strict 收窄 + 同 URL replace 面翻绿）；navigate-history-push-not-loaded
+   （S4X readyState 宿过渡）；intercept-multiple-times-reject + 同源跨文档锚（S4Y）；
+   scroll-restoration-fragment-scrolling-samedoc（S4Z）；order-in-new-document-navigation
+   （S5 pagereveal）；navigate-svg-anchor-fragment（S6 派发 click 激活）；
+   **scroll-to-fragid 族 6 案（S7——getElementById 特殊字符 id 抛错 +
+   documentElement.scrollTop 镜像 + 目标位双计 + fragment 聚焦步）**；剩余余项：
+   竖排/书写模式滚动边 3F 与 reload scroll-anchoring 4F 记账回流渲染域、bfcache 族
+   （helper 资产双缺口）、focus-reset 2T（send_keys TAB）逐案核验挂账属实；其余全为
+   A 域回流与 B 类形态缺口（下两条）。
 2. **replace-before-load 38F 重定性 → M3 依赖**（2026-10-09 勘察）：全簇为 iframe 载体
    （setupSentinelIframe/insertIframe + 子文档 load 前自导航），断言 iframe 自有 session
    history 的 replace 语义——单文档 runner 形态不可达，随 M3 frame tree 一并解锁。
