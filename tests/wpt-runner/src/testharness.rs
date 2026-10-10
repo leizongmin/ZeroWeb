@@ -6976,6 +6976,12 @@ fn run_testharness_html_inner(
         let _ = webview.execute_script("globalThis.__ZW_TIMER_PER_TASK = true;");
     }
     let _zw_hb2 = std::fs::write("/tmp/zw-hb.txt", format!("pre-scripts {}\n", case_name));
+    // M2-S4X（navigation-compat，t8m renderer/tab_scripts 路径镜像——spec dom-document-readystate）：
+    // 脚本阶段起点置 "loading"——页面脚本语义位置 = parser-inserted classic script（此前
+    // testharness 路径 `__zwReadyState` 未注入、getter 缺省 "complete"，WPT
+    // navigate-history-push-not-loaded「Document must not have loaded yet」即此根因）。
+    // interactive/complete 两过渡随下方生命周期 timer 任务原子派发（含 readystatechange）。
+    let _ = webview.execute_script(&zero_engine::script_set_ready_state("loading"));
     let script_result = webview.run_page_scripts_strict();
     let _zw_hb3 = std::fs::write("/tmp/zw-hb2.txt", format!("post-scripts {}\n", case_name));
     // R3254-E2 切片（editing goal，2026-09-07）：DOMContentLoaded/load 派发 + harness_loaded
@@ -6991,7 +6997,7 @@ fn run_testharness_html_inner(
         // Document——预写 target，shim dispatch 不覆写，part02 pageshow 同款先例）；
         // ④pageshow bubbles+cancelable:true（whatwg#6794）+ PageTransitionEvent 原型
         //（assert_class_string）；⑤关 shim 首监听自派发钩子防双发。
-        "(function () {var mk = globalThis.__zwMakeTrustedEvent;function protoLink(ev, proto) {try { if (proto && proto.prototype) Object.setPrototypeOf(ev, proto.prototype); } catch (_e5000pl) {}return ev;}setTimeout(function () {var dcl = protoLink(mk ? mk('DOMContentLoaded', { bubbles: true }) : new Event('DOMContentLoaded', { bubbles: true }), globalThis.Event);document.dispatchEvent(dcl);var load = protoLink(mk ? mk('load') : new Event('load'), globalThis.Event);try { load._zwTargetOverride = true; load.target = document; } catch (_e5000lt) {}globalThis.dispatchEvent(load);var ps = protoLink(mk ? mk('pageshow', { bubbles: true, cancelable: true }) : new Event('pageshow', { bubbles: true, cancelable: true }), globalThis.PageTransitionEvent);try { ps.persisted = false; } catch (_e5000pp) {}try { ps._zwTargetOverride = true; ps.target = document; } catch (_e5000pt) {}globalThis.dispatchEvent(ps);}, 0);})();if (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.__zw_mark_harness_loaded();}",
+        "(function () {var mk = globalThis.__zwMakeTrustedEvent;function protoLink(ev, proto) {try { if (proto && proto.prototype) Object.setPrototypeOf(ev, proto.prototype); } catch (_e5000pl) {}return ev;}setTimeout(function () {try {globalThis.__zwReadyState='interactive';} catch (_ers8m1) {}try {var rs1 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs1);} catch (_ers8m1d) {}var dcl = protoLink(mk ? mk('DOMContentLoaded', { bubbles: true }) : new Event('DOMContentLoaded', { bubbles: true }), globalThis.Event);document.dispatchEvent(dcl);try {globalThis.__zwReadyState='complete';} catch (_ers8m2) {}try {var rs2 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs2);} catch (_ers8m2d) {}var load = protoLink(mk ? mk('load') : new Event('load'), globalThis.Event);try { load._zwTargetOverride = true; load.target = document; } catch (_e5000lt) {}globalThis.dispatchEvent(load);var ps = protoLink(mk ? mk('pageshow', { bubbles: true, cancelable: true }) : new Event('pageshow', { bubbles: true, cancelable: true }), globalThis.PageTransitionEvent);try { ps.persisted = false; } catch (_e5000pp) {}try { ps._zwTargetOverride = true; ps.target = document; } catch (_e5000pt) {}globalThis.dispatchEvent(ps);}, 0);})();if (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.__zw_mark_harness_loaded();}",
     );
     // M3 扩批（2026-09-02，fixture-mounted 播放切片）：播放宿主桥 + 媒体源登记。
     // 页面 <video>/<audio> src（经 extract_media_resources 提取、相对 case 目录解析）
