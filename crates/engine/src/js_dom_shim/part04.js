@@ -3507,6 +3507,21 @@
               } else {
                 r148Related = r148OldMEl;
               }
+            } else if (oldProxy && oldProxy.__zwHandle) {
+              // t8r：旧焦点为 handle/proxy 域——innerHTML 产物物化后 shadow 子是真
+              // handle（解析节点臂不再命中），retarget 语义须同源：沿父反链上行判
+              // shadow 归属，命中 _shadowHandleMeta → 以 host 为 relatedTarget（spec
+              // UI Events shadow DOM retargeting，同上）。非 shadow 的 handle 焦点
+              // 上行 miss → r148Related 保持 null，rtForNew 回落 oldProxy（既有语义）。
+              // 焦点迁移是交互级频率（非热路径），guard 32 足够浅。
+              var _r148Up = oldProxy.__zwHandle;
+              var _r148Guard = 0;
+              while (_r148Up != null && _r148Guard++ < 32) {
+                var _r148Meta = (typeof _shadowHandleMeta !== 'undefined') ? _shadowHandleMeta[_r148Up] : null;
+                if (_r148Meta) { r148Related = _makeProxy(_r148Meta.hostSel, _r148Meta.hostHandle); break; }
+                var _r148Link = (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) ? _zwNodeParent[_r148Up] : null;
+                _r148Up = (_r148Link && _r148Link.parentHandle != null) ? _r148Link.parentHandle : null;
+              }
             }
             // uievents-compat M3 尾簇 6b（2026-10-04）：失焦相位**先于**获焦相位且
             // blur 先于 focusout（WPT focus-events expected「blur@a → focusout@a →
@@ -9594,7 +9609,33 @@
             // R100：纯文本 innerHTML 且 handle 容器——下方 _zwRegisterTextEl 已建本地文本
             // 视图，此处不再同时入 registry（R81 textContent getter 融合两源会双计文本，
             // e2e 'Hello WorldHello World' 实证）。含 markup 时保持 registry（结构子树）。
-            if (handle && !(_ihVal.indexOf('<') < 0)) _handleChildren[handle] = _ihAdded;
+            if (handle && !(_ihVal.indexOf('<') < 0)) {
+              // t8r：注入产物物化为真 handle 树——_zwMEl 解析代理无 .style/classList
+              // 等元素接口，相对查询（_handleChildren 扫描）返回代理后站点脚本读 .style
+              // 抛 TypeError（bilibili nano 播放器 volume/progress 两簇：area.innerHTML
+              // 注入 → elements.bar 相对查询产物无接口）。复用 t8q 重建设施
+              // [_wcRebuildAsHandle]：顶层元素子重建为 detached 真 handle 树（属性/
+              // 深层子递归），与 createElement+appendChild 路径成员类型同构（appendChild
+              // push wrapper、R380 存 wrapper——_handleChildren 混合容器两种皆合法）。
+              // 文本/注释子保持原样（cloneNode 复制分支读 .data 兼容）。物化失败回退
+              // 代理原样（_wcRebuildAsHandle catch 返原 node）。R136 的宿主 parentNode
+              // 语义经 _zwNodeParent 反链保持（append 家族同款——_parentNodeFor handle
+              // 分支消费）。R3031 MO addedNodes 仍持 setter 时快照的代理原件（既有钉测
+              // 纯 introspect；identity 双表示 documented）。已知限制：物化 wrapper 是
+              // detached 新建 handle，与宿主树 innerHTML 产物 handle 不同源——对查询
+              // 产物的样式/属性写不穿透渲染（本切片消「.style 抛 TypeError 脚本中断」面）。
+              // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
+              var _ihMat = [];
+              for (var _ihMi = 0; _ihMi < _ihAdded.length; _ihMi++) {
+                var _ihMk = _ihAdded[_ihMi];
+                var _ihMw = (_ihMk && _ihMk.nodeType === 1) ? _wcRebuildAsHandle(_ihMk) : _ihMk;
+                if (_ihMw && _ihMw !== _ihMk && _ihMw.__zwHandle && _zwNodeParent) {
+                  _zwNodeParent[_ihMw.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
+                }
+                _ihMat.push(_ihMw);
+              }
+              _handleChildren[handle] = _ihMat;
+            }
             else if (handle && _ihVal.indexOf('<') < 0) _handleChildren[handle] = [];
             // WC-M3 切片 8 第九增量：slotchange 队列钩子**下移**到本地文本视图重注册
             // （下方 _zwRegisterTextEl/_zwUnregisterTextEl）之后——queue 时 diff 读的
