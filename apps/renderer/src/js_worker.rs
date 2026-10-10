@@ -1327,11 +1327,32 @@ fn js_worker_main(
                 let _ = sandbox.execute("globalThis.__zwHostOwnsDynamicScripts = true;");
                 // P1a form input：URL 变化（导航）→ 清 shim value 缓存，防跨页同选择器 stale value。
                 let url_changed = page_url.lock().map(|u| *u != url).unwrap_or(true);
+                let was_native_installed = native_installed;
                 if let Ok(mut snap) = dom_html.lock() {
                     // js-dom R386：快照换代同步刷新原生绑定 DOM 源（native 路径与 polyfill
                     // 桥同源读到新快照；首代 bootstrap 已 install → 走 refresh 快路径）。
                     refresh_worker_native_dom_source(&mut *sandbox, &html, &mut native_installed);
                     *snap = html;
+                }
+                // js-dom R384 不变式（github home exc1 根因修复，2026-10-09）：跨代际全量
+                // native install（上臂 `refresh_worker_native_dom_source` 走 install 分支）
+                // 之后**重申 shim HTMLElement ctor 桥**。native install 无条件
+                // `global.set("HTMLElement")`（html_element.rs build_and_register）覆盖
+                // reset 臂刚重放的 shim 桥 → 页面 `class X extends HTMLElement` 的
+                // super() 落到 native ctor（this 预分配 + polyfill 路径 upgrade ffi 空 →
+                // 新建 detached div 绑定），shim `_ceRunCtor` 丢弃构造产物 → ctor 体 own
+                // property（turbo FrameElement 的 delegate 等）全部落空 →
+                // `Object.getPrototypeOf(undefined)` TypeError。重申的是 reset 臂 shim
+                // eval 登记的**同一函数对象**（`__zwShimHTMLElementCtor`，见 part03.js
+                // 桥块）：同代唯一 closure，`_zwCeExisting` 消费与 WC-M1 分支语义原样
+                // 保留；不可用二次 eval 整体补装（`customElements || ` 存在守卫产生
+                // closure 割裂）。Event 等其余 native 全局覆盖与 bootstrap 序（native 先
+                // shim 后）一致，无需重申——R384 唯一必须 shim 独占的全局名就是
+                // HTMLElement（桥注释原文）。
+                if !was_native_installed {
+                    let _ = sandbox.execute(
+                        "if (typeof __zwShimHTMLElementCtor === 'function') globalThis.HTMLElement = __zwShimHTMLElementCtor;",
+                    );
                 }
                 // R358/R3243：就地换代（Arc 被回调捕获不可换装）→ bump 宿主视图缓存代际，
                 // 防同 count 查询命中换代前解析的视图文档/备忘。
@@ -2852,6 +2873,39 @@ mod tests {
                 .unwrap(),
             "true",
             "换代后标志重新置位（先于页面脚本就位）"
+        );
+        worker.shutdown();
+    }
+
+    // js-dom R384 不变式钉（github home exc1 根因修复，2026-10-09）：跨文档导航 =
+    // ResetDocumentState（reset_context，native 工厂随 context 销毁）→ 下一
+    // SetDomSnapshot 跨代际全量 native install。native HTMLElement FunctionTemplate
+    // build_and_register 无条件 `global.set("HTMLElement")`；修复前 reset 臂先重放
+    // shim、本序列 native 后至覆盖之 → 页面 CE 类 `class X extends HTMLElement` 的
+    // 升级走 shim `_ceRunCtor` class 分支（依赖 shim ctor 桥消费 `_zwCeExisting` 注入
+    // this 为既有元素）时 base 落到 native ctor：this 预分配（polyfill 路径 upgrade
+    // ffi 空 → `or_else` 新建 detached div 绑定），ctor 体 own property 落到被
+    // `_ceRunCtor` 丢弃的构造产物 → createElement 产物仅原型正确、字段全空。live 复现：
+    // turbo FrameElement `this.delegate = new h.delegateConstructor(this)` 缺失 →
+    // `Object.getPrototypeOf(undefined)` TypeError（behaviors SANDBOX-ERR，beacon 链
+    // 见 .acceptance/site-optimizer/20261008-github/evidence/t2-series-diagnosis.md §t2g）。
+    #[test]
+    fn renderer_js_worker_ce_upgrade_survives_cross_gen_native_install() {
+        let mut worker = RendererJsWorker::spawn(6143);
+        worker.set_dom_snapshot("<html><body><p>p1</p></body></html>", "https://zero.test/p1");
+        worker.reset_document_state();
+        worker.set_dom_snapshot("<html><body><p>p2</p></body></html>", "https://zero.test/p2");
+        assert_eq!(
+            worker
+                .execute_script_direct(
+                    "(function(){try{class XFoo extends HTMLElement{constructor(){super();this.marker='ok';}}\
+                     customElements.define('x-foo',XFoo);\
+                     var el=document.createElement('x-foo');\
+                     return String(el && el.marker === 'ok');}catch(e){return 'ERR: '+String(e&&(e.stack||e.message)||e).slice(0,200);}})()",
+                )
+                .unwrap(),
+            "true",
+            "跨代导航（reset→快照全量 native install）后 shim 必须后于 native 补装：CE 升级保 ctor 体 own property（红态：native 覆盖 shim 桥 → marker 落到被丢弃的构造产物）"
         );
         worker.shutdown();
     }

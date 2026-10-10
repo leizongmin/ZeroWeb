@@ -927,6 +927,15 @@
     };
     // R384：shim 自建标记（`_zwBuiltNodeChain` 复判依据，防止 shim 二次装载时误判）。
     try { globalThis.HTMLElement.prototype.__zwShimCtorBridge = true; } catch (_e) {}
+    // R384 补装锚点（github home exc1 根因修复，2026-10-09）：renderer worker 跨文档
+    // 导航 = reset 臂重放 shim（本闭包）→ 下一 `SetDomSnapshot` 跨代际全量 native
+    // install 无条件 `global.set("HTMLElement")` 覆盖本桥 → 页面 CE 升级 base 落到
+    // native ctor，ctor 体 own property 落空（js_worker SetDomSnapshot 臂注释详证）。
+    // 此处登记本闭包桥函数对象，由该臂在 native install 之后重申同一对象（同代唯一
+    // closure，`_zwCeExisting` 消费/WC-M1 分支语义原样保留；二次 eval 整体补装会因
+    // `customElements = globalThis.customElements || {...}` 存在守卫产生 closure 割裂，
+    // 不可用）。
+    globalThis.__zwShimHTMLElementCtor = globalThis.HTMLElement;
   }
   // prototype 链仅当 polyfill 自建三者时设（native 已注册则不重设——避免破坏 native prototype）。
   if (_zwBuiltNodeChain) {
@@ -3620,6 +3629,8 @@
       whenDefined: function (name) {
         return _ceWhenDefined(child_registry, child_pending, name);
       },
+      // 同主 registry：Chromium 相容面（语义与依据见 part03 主 registry 注）。
+      polyfillWrapFlushCallback: function (_callback) {},
     };
   }
   // js-dom M3 R94：对既有元素执行用户 ctor 体（Proxy-ctor 桥）。设 `_zwCeExisting = el`（HTMLElement
@@ -3823,6 +3834,17 @@
         _ceUpgradeSubtree(root);
       } catch (_e) {}
     },
+    // polyfillWrapFlushCallback（Chromium 相容面，非 HTML spec API）：webcomponents
+    // polyfill 的升级冲洗钩子。Chrome 原生暴露此方法 → github ce-vendors 等以真值
+    // 探测「原生 customElements」并早退 legacy HTMLElement 补丁；shim 缺失时补丁误
+    // 触发：window.HTMLElement 被 `Reflect.construct(HTMLElement,[],this.constructor)`
+    // 仿制函数替换，后续 `class X extends HTMLElement` 构造面全断——生产实测 turbo
+    // FrameElement 的 delegate 为 undefined → `Object.getPrototypeOf(undefined)` 抛
+    // "Cannot convert undefined or null to object"（2026-10-09 t2e 同运行 dump 定位）。
+    // 最小语义切片：方法存在且可调用（no-op，实参透传校验同 Chrome 不抛）；
+    // 真实 deferred-upgrade 冲洗语义为 Chromium 内部实现，未复刻。
+    // FIXME: 有站点实际调用（polyfill 协同延迟升级）时按 Chromium 行为补冲洗门。
+    polyfillWrapFlushCallback: function (_callback) {},
   };
 
   // WC-M1 切片 2b：`CustomElementRegistry` 接口对象（spec

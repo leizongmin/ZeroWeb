@@ -3978,6 +3978,19 @@
     // nextNode(document) 助手无法下行 → NodeIterator.html document root 变体 8F）。
     get firstChild() { return this._docDtorRemoved ? _wrapSelector('html') : this.doctype; },
     get lastChild() { return _wrapSelector('html'); },
+    // js-dom ParentNode mixin（Document 面）读侧——spec
+    // https://dom.spec.whatwg.org/#interface-parentnode（Document/DocumentFragment/Element
+    // 共有 children/firstElementChild/lastElementChild/childElementCount）。github home
+    // exc2（2026-10-09 t2r2/t2s 实证）：behaviors 模块顶层
+    // `document.firstElementChild.classList.contains(...)` → TypeError（undefined.classList）。
+    // Document 的元素子恒 documentElement（childNodes 面含 doctype/comment，nodeType 过滤后
+    // 只剩它）；实现形态与 part04 template.content fragment 的 children 面同构（plain array）。
+    get children() {
+      return this.childNodes.filter(function (k) { return k && k.nodeType === 1; });
+    },
+    get firstElementChild() { var ek = this.children; return ek.length ? ek[0] : null; },
+    get lastElementChild() { var ek = this.children; return ek.length ? ek[ek.length - 1] : null; },
+    get childElementCount() { return this.children.length; },
     // js-dom M4 R87：主文档的 removeChild/insertBefore（WPT NodeIterator-removal 的
     // doctype 子测试经 oldParent= document remove/恢复——旧缺方法 TypeError 崩用例）。
     // host DOM 无 doctype 移除能力——JS 侧本地标记（_zwDocDtorRemoved）：移除后
