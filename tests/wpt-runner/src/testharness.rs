@@ -6982,6 +6982,16 @@ fn run_testharness_html_inner(
     // navigate-history-push-not-loaded「Document must not have loaded yet」即此根因）。
     // interactive/complete 两过渡随下方生命周期 timer 任务原子派发（含 readystatechange）。
     let _ = webview.execute_script(&zero_engine::script_set_ready_state("loading"));
+    // M2-S5（navigation-compat，2026-10-10）：pagereveal 于首次渲染机会派发——rAF 同步
+    // stub（part01 reftest 兼容模型）在**注册时**即跑回调，页面首 listener→rAF 序里
+    // reveal 必须先于首个 rAF 回调（spec reveal steps 先于该渲染机会的 rAF 回调批）。
+    // 包一层 rAF：首次调用先派 pagereveal（trusted，__zwPagerevealFired 门）再透传；
+    // 页面从不调 rAF 时由下方生命周期 timer 兜底派发（同门防双发）。仅 testharness
+    // runner 路径包裹，零产品面。WPT pagereveal/order-in-new-document-navigation
+    // 「pagereveal,rAF」。
+    let _ = webview.execute_script(
+        "(function(){try{if(globalThis.__zwPagerevealFired===undefined){globalThis.__zwPagerevealFired=false;}var _zwOrigRaf=globalThis.requestAnimationFrame;if(typeof _zwOrigRaf==='function'){globalThis.requestAnimationFrame=function(fn){try{if(!globalThis.__zwPagerevealFired){globalThis.__zwPagerevealFired=true;var mk=globalThis.__zwMakeTrustedEvent;var pr=mk?mk('pagereveal'):new Event('pagereveal');try{if(globalThis.Event&&globalThis.Event.prototype){Object.setPrototypeOf(pr,globalThis.Event.prototype);}}catch(_e5prp){}globalThis.dispatchEvent(pr);}}catch(_e5pr){}return _zwOrigRaf.call(globalThis,fn);};}}catch(_e5pr0){}})();",
+    );
     let script_result = webview.run_page_scripts_strict();
     let _zw_hb3 = std::fs::write("/tmp/zw-hb2.txt", format!("post-scripts {}\n", case_name));
     // R3254-E2 切片（editing goal，2026-09-07）：DOMContentLoaded/load 派发 + harness_loaded
@@ -6997,7 +7007,11 @@ fn run_testharness_html_inner(
         // Document——预写 target，shim dispatch 不覆写，part02 pageshow 同款先例）；
         // ④pageshow bubbles+cancelable:true（whatwg#6794）+ PageTransitionEvent 原型
         //（assert_class_string）；⑤关 shim 首监听自派发钩子防双发。
-        "(function () {var mk = globalThis.__zwMakeTrustedEvent;function protoLink(ev, proto) {try { if (proto && proto.prototype) Object.setPrototypeOf(ev, proto.prototype); } catch (_e5000pl) {}return ev;}setTimeout(function () {try {globalThis.__zwReadyState='interactive';} catch (_ers8m1) {}try {var rs1 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs1);} catch (_ers8m1d) {}var dcl = protoLink(mk ? mk('DOMContentLoaded', { bubbles: true }) : new Event('DOMContentLoaded', { bubbles: true }), globalThis.Event);document.dispatchEvent(dcl);try {globalThis.__zwReadyState='complete';} catch (_ers8m2) {}try {var rs2 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs2);} catch (_ers8m2d) {}var load = protoLink(mk ? mk('load') : new Event('load'), globalThis.Event);try { load._zwTargetOverride = true; load.target = document; } catch (_e5000lt) {}globalThis.dispatchEvent(load);var ps = protoLink(mk ? mk('pageshow', { bubbles: true, cancelable: true }) : new Event('pageshow', { bubbles: true, cancelable: true }), globalThis.PageTransitionEvent);try { ps.persisted = false; } catch (_e5000pp) {}try { ps._zwTargetOverride = true; ps.target = document; } catch (_e5000pt) {}globalThis.dispatchEvent(ps);}, 0);})();if (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.__zw_mark_harness_loaded();}",
+        // M2-S5（navigation-compat，2026-10-10）：⑥pagereveal 于 pageshow 后同任务派发
+        //（spec reveal steps——新文档显示时 window 上派 pagereveal，早于首个渲染机会/rAF；
+        // persisted=false 新载入形。WPT pagereveal/order-in-new-document-navigation
+        // 「pagereveal,rAF」——此前无此事件面，log 恒 'rAF'）。
+        "(function () {var mk = globalThis.__zwMakeTrustedEvent;function protoLink(ev, proto) {try { if (proto && proto.prototype) Object.setPrototypeOf(ev, proto.prototype); } catch (_e5000pl) {}return ev;}setTimeout(function () {try {globalThis.__zwReadyState='interactive';} catch (_ers8m1) {}try {var rs1 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs1);} catch (_ers8m1d) {}var dcl = protoLink(mk ? mk('DOMContentLoaded', { bubbles: true }) : new Event('DOMContentLoaded', { bubbles: true }), globalThis.Event);document.dispatchEvent(dcl);try {globalThis.__zwReadyState='complete';} catch (_ers8m2) {}try {var rs2 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs2);} catch (_ers8m2d) {}var load = protoLink(mk ? mk('load') : new Event('load'), globalThis.Event);try { load._zwTargetOverride = true; load.target = document; } catch (_e5000lt) {}globalThis.dispatchEvent(load);var ps = protoLink(mk ? mk('pageshow', { bubbles: true, cancelable: true }) : new Event('pageshow', { bubbles: true, cancelable: true }), globalThis.PageTransitionEvent);try { ps.persisted = false; } catch (_e5000pp) {}try { ps._zwTargetOverride = true; ps.target = document; } catch (_e5000pt) {}globalThis.dispatchEvent(ps);try {if(!globalThis.__zwPagerevealFired){globalThis.__zwPagerevealFired=true;var pr = protoLink(mk ? mk('pagereveal') : new Event('pagereveal'), globalThis.Event);globalThis.dispatchEvent(pr);}} catch (_ers5pr) {}}, 0);})();if (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.__zw_mark_harness_loaded();}",
     );
     // M3 扩批（2026-09-02，fixture-mounted 播放切片）：播放宿主桥 + 媒体源登记。
     // 页面 <video>/<audio> src（经 extract_media_resources 提取、相对 case 目录解析）
