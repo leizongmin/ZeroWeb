@@ -84,9 +84,14 @@ impl Procs {
 /// 1) 进程组 kill（root 作为 process_group(0) 的 leader，pgid == root）
 /// 2) ps 重建树，对每个后代 pid 发 KILL（兜底，防子进程 setsid 脱组）
 /// 3) 短暂等待后再扫一遍残留强制 kill
+#[cfg(unix)]
+fn process_group_kill_args(root: u32) -> [String; 3] {
+    ["-TERM".to_string(), "--".to_string(), format!("-{root}")]
+}
+
 fn kill_tree(root: u32) {
     #[cfg(unix)]
-    let _ = Command::new("kill").args(["-TERM", &format!("-{}", root)]).output();
+    let _ = Command::new("kill").args(process_group_kill_args(root)).output();
     let kill_pid = |pid: u32| {
         #[cfg(unix)]
         let _ = Command::new("kill").args(["-KILL", &pid.to_string()]).output();
@@ -452,6 +457,12 @@ fn main() -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::cargo_test_compile_command;
+
+    #[cfg(unix)]
+    #[test]
+    fn process_group_kill_uses_end_of_options_before_negative_pgid() {
+        assert_eq!(super::process_group_kill_args(1_428_427), ["-TERM", "--", "-1428427"]);
+    }
 
     #[test]
     fn compile_command_preserves_cargo_options() {
