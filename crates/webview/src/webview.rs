@@ -2915,6 +2915,11 @@ impl WebView {
     /// 严格模式页面脚本执行——与 [`run_page_scripts`](Self::run_page_scripts) 一致，但**首个内联脚本抛异常时
     /// 返 `Err`**（非 warn+continue）。供 WPT runner 等「脚本必须无异常」语义的调用方用（闭合 web_api/js_dom
     /// 测试用例「空洞通过」——既不执行内联 JS，故 API 真损/行为错不会被发现）。
+    ///
+    /// M2-S4W（navigation-compat）收窄：外链脚本/模块 **fetch 失败不再 abort**（含 strict）——
+    /// spec fetch-a-classic-script 失败派 script 元素 error 后页面继续；原 strict abort 使
+    /// WPT 上游资产缺失（helpers.js pin/master 双 404）的用例以 declared=0 全页 Fail，
+    /// 掩盖内联测试真断言。
     pub fn run_page_scripts_strict(&mut self) -> Result<String, WebViewError> {
         self.run_page_scripts_impl(true)
     }
@@ -3590,9 +3595,11 @@ impl WebView {
                             match fetch(page_url, fetch_src) {
                                 Ok(code) => (code, false),
                                 Err(e) => {
-                                    if strict {
-                                        return Err(WebViewError::Script(format!("external script {src}: {e}")));
-                                    }
+                                    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-classic-script
+                                    // fetch 失败 → script 元素 error + 页面继续（不 abort）——strict 亦不例外：
+                                    // strict 门面收窄为**内联抛错**（WPT runner 的「空洞通过」闭合目标）；
+                                    // 外链 404 abort 会以 declared=0 掩盖内联用例真断言（WPT 上游
+                                    // helpers.js pin/master 双 404 家族实测）。非 strict 行为不变。
                                     tracing::warn!("外链脚本 fetch 失败 {src}: {e}");
                                     continue;
                                 }
@@ -3612,9 +3619,7 @@ impl WebView {
                             match fetch(page_url, fetch_src) {
                                 Ok(code) => (code, true),
                                 Err(e) => {
-                                    if strict {
-                                        return Err(WebViewError::Script(format!("external module {src}: {e}")));
-                                    }
+                                    // 同外链经典脚本：fetch 失败页面继续（strict 门面收窄为内联抛错）。
                                     tracing::warn!("外链模块 fetch 失败 {src}: {e}");
                                     continue;
                                 }

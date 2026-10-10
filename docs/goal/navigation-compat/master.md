@@ -2,8 +2,9 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-10（M2-S1~S4V 二十四片——location-interface 97.7% / traversal 93.3% /
-history-interface 98.0% / navigation-api 93.7%；全量 20.9%→**80.3%**（382/476））
+**最后更新**: 2026-10-10（M2-S1~S4W 二十五片——location-interface 97.7% / traversal 93.3% /
+history-interface 98.2% / navigation-api 91.8%；全量 20.9%→**82.8%**（394/476）；
+计数口径自本轮起按 evidence txt 原始 Pass 行）
 
 ---
 
@@ -24,9 +25,9 @@ history-interface 98.0% / navigation-api 93.7%；全量 20.9%→**80.3%**（382/
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | 四 corpus 导入 + 基线 | ✅ 落地（fetch 三域 + 嵌套 resources 2026-10-07 恢复后入库；基线 20.9%，S1+S2 后全量 29.2%） |
-| P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口 + S4P 速率限制：the-history-interface 81.6%→**98.0%**（traverse 入队 + 空串 URL + 跨源 SecurityError + push/replaceState 10s/100 次速率窗）；余 007/008 外部脚本基建挂账 |
+| P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口 + S4P 速率限制：the-history-interface 81.6%→**98.2%**（55/56——traverse 入队 + 空串 URL + 跨源 SecurityError + push/replaceState 10s/100 次速率窗；S4W 撤销 007「外部脚本基建」挂账——实为外链 404 abort 掩盖，7 子测试真实翻绿）；余 008 Timeout 挂账 |
 | P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | 🔶 S1+S2+S4F+S4P 落地：location-interface 41.9%→**97.7%**（exotic 内部方法面 Proxy 承载收口 + 动态 append 脚本执行通道）、traversal 62.2%→**93.3%**；余 2F = runner 无端口 URL（形态缺口挂账） |
-| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4V 二十四段落地（→**93.7%**，239/255）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程/form submit navigate/activation 暴露/transition 派发时机/dispose 深簇/navState 入槽克隆/同文档 navState 承继/reentrant 孤儿 transition/提交期 abort/`:target` URL 同步/window.stop abort 面/session history 50 条上限/traverse 语义面/navigationType 随载入态（锚激活例外恒 push）/片段指示元素 decoded 匹配 + 无匹配滚顶 + 锚 record push 例外 + 跨源 canIntercept/pushState·replaceState hashChange=false/location.reload 接线 + 目的态承继全收；余静态锚 href IDL 落 attr 面（2 案——回流 element IDL 域）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域） |
+| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4W 二十五段落地（→**91.8%**，234/255）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程/form submit navigate/activation 暴露/transition 派发时机/dispose 深簇/navState 入槽克隆/同文档 navState 承继/reentrant 孤儿 transition/提交期 abort/`:target` URL 同步/window.stop abort 面/session history 50 条上限/traverse 语义面/navigationType 随载入态（锚激活例外恒 push）/片段指示元素 decoded 匹配 + 无匹配滚顶 + 锚 record push 例外 + 跨源 canIntercept/pushState·replaceState hashChange=false/location.reload 接线 + 目的态承继/navigate() 同 URL auto→replace 全收；余静态锚 href IDL 落 attr 面（2 案——回流 element IDL 域）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域）、navigate-history-push-not-loaded 1F（runner readyState 宿过渡——跨域独立轮） |
 | P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | ⏳ M3 **用户门控** |
 | P5 | bfcache / fission 挂账定稿 | ✅ M4 定稿（bfcache：无实现面，依赖 frame tree→Document 快照管线，挂账至 M3 后续立项；fission：charter 排除维持。见 [M4 评估](evidence/2026-10-09-m4-closeout-assessment.md)） |
 
@@ -233,8 +234,23 @@ history-interface 98.0% / navigation-api 93.7%；全量 20.9%→**80.3%**（382/
   （239/255）；全量 80.0%→**80.3%**（382/476）；零回归。corpus 内其余 location.reload
   使用者均 iframe 门控/未导入（零波及，逐案核对）。
   证据：[evidence/2026-10-10-m2-s4v-location-reload-face.md](evidence/2026-10-10-m2-s4v-location-reload-face.md)。
-- **质量门禁（二十四片）**：`make test` 全绿 **20,361 P / 0 F**；clippy/fmt 无 `.rs` 变更
-  维持 S4R 干净基线。
+- **M2-S4W strict 外链 fetch 失败收窄 + navigate() 同 URL replace 面（2026-10-10）**：两独立
+  根因同轮——① `run_page_scripts_strict` 对外链脚本/模块 fetch 失败不再 abort（spec
+  fetch-a-classic-script 失败派 script 元素 error 后页面继续；strict 门面收窄为「内联抛错」
+  本意）——上游 helpers.js pin/master 双 404 掩盖的内联真断言暴露，push-same-url +
+  form-submit-and-window-stop 直接翻绿、**007.html 全案 7 子测试翻绿**（撤销「外部脚本基建」
+  与 S4T「资产偏斜」两族挂账；008 仍 Timeout）；② navigate() history 'auto' 且目标 URL
+  等于当前 URL → replace（spec navigate-to-a-url auto 步；显式 'push' 不改写）收
+  same-url-replace 双变体。12 Pass 新增 / 5 案 Fail→Pass 零回归；全量 80.3%→**82.8%**
+  （394/476）；navigation-api 231→**234**/255；history-interface 48→**55**/56。
+  记账：navigate-history-push-not-loaded 余 1F = runner 脚本阶段 readyState 宿未注入
+  （t8m 三态过渡缺 testharness 路径镜像）——全语料 21 案跨 goal 域断言 readyState，
+  须独立轮次跨域测量，不并入切片。计数口径勘误：S4V 标题 93.7% 与其 txt 不符
+  （原始 231/255 = 90.6%，疑中途读数；+1 案判定确凿），本轮起按 txt 原始行计数。
+  证据：[evidence/2026-10-10-m2-s4w-strict-narrow-family.md](evidence/2026-10-10-m2-s4w-strict-narrow-family.md)。
+- **质量门禁（二十五片）**：`make test` 全绿 **20,363 P / 0 F**（首跑单 F = 兄弟流并发争用
+  flake，solo 复跑过、先例 S4U r2946）；clippy -D warnings 零 warning（webview.rs 变更轮）；
+  fmt 零 diff。
 
 ## M4 收口评估（2026-10-09）
 
@@ -247,10 +263,15 @@ history-interface 98.0% / navigation-api 93.7%；全量 20.9%→**80.3%**（382/
 
 ## 下一步计划
 
-1. **C 类余项定稿（S4R 后）**：可切片项已清——navigate-multiple-location/-pushState 2T
-   （task 排队模型）与 same-url-replace 双案（helpers.js 资产 pin 偏斜 404）经评估挂账
-   （风险/收益不成立，见 S4Q evidence）；scroll-to-fragid 几何/竖排 8 案记账回流渲染域
-   （S4R evidence）；剩余全为 A 域回流与 B 类形态缺口（下两条）。
+1. **C 类余项定稿（S4W 后）**：可切片项已清——navigate-multiple-location/-pushState 2T
+   （task 排队模型）经评估挂账（风险/收益不成立，见 S4Q evidence）；same-url-replace 双案
+   与 007（S4W strict 收窄 + 同 URL replace 面翻绿，原「资产偏斜/外部脚本基建」挂账撤销）；
+   scroll-to-fragid 几何/竖排 8 案记账回流渲染域（S4R evidence）；剩余全为 A 域回流与 B 类
+   形态缺口（下两条）。
+1b. **runner readyState 宿过渡（S4W 新记账）**：testharness runner 路径缺 `__zwReadyState`
+   loading→interactive→complete 注入（t8m 已落 renderer/tab_scripts 路径），收
+   navigate-history-push-not-loaded 1F——但全语料 21 案跨 goal 域断言 document.readyState
+   （css/selectors、fetch、CSP、xhr 等），共享 runner 语义变更须独立轮次跨域测量后落地。
 2. **replace-before-load 38F 重定性 → M3 依赖**（2026-10-09 勘察）：全簇为 iframe 载体
    （setupSentinelIframe/insertIframe + 子文档 load 前自导航），断言 iframe 自有 session
    history 的 replace 语义——单文档 runner 形态不可达，随 M3 frame tree 一并解锁。

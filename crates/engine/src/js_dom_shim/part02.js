@@ -5434,6 +5434,13 @@
       var replace = o.history === 'replace';
       var oldHref = globalThis.location.href;
       var abs = _resolveHistUrl(String(url));
+      // M2-S4X：history 'auto'（缺省）且目标 URL 等于当前 URL → replace（spec
+      // navigate-to-a-url historyHandling auto 步——https://html.spec.whatwg.org/multipage/
+      // document-lifecycle.html#navigate-to-a-url；WPT same-url-replace-same-document/
+      // -cross-document「navigate() to the current URL should replace」——原恒 push，404
+      // helpers abort 掩盖后由 S4W strict 收窄暴露）。显式 history:'push' 不改写——
+      // WPT navigate-history-push-same-url「history: 'push' 恒 push」。
+      if (!replace && o.history !== 'push' && abs === oldHref) replace = true;
       var hashChange = _navIsHashOnly(oldHref, abs);
       var ctrl = _navNavResult();
       var ev = _navFireNavigate({
