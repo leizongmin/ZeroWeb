@@ -6265,6 +6265,26 @@
       _winScrollGen++;
       _zwFireScroll(null, null, null);
     }
+    // M2-S8（navigation-compat，2026-10-10）：垂直书写模式根（vertical-lr）块轴 = 水平
+    // ——fragment 滚动按**块起始边**对齐（spec scroll to the fragment 逻辑坐标）：
+    // vertical-lr 原点在左 → scrollX = 元素 border-box 左缘（native gBCR 文档绝对，S7
+    // 探针同约定——探针 rect.left=14 即期望位；WPT scroll-position-vertical-lr
+    // 「window.scrollX 14」）。vertical-rl 原点在右（scrollX 负向）须滚动区宽度换算——
+    // headless 无布局滚动范围，维持渲染域挂账。writing-mode 读法沿 part06 轴向判定
+    // 同款 style 串正则（inline style 面）。
+    try {
+      var _s8de = globalThis.document.documentElement;
+      var _s8st = _s8de && _s8de.getAttribute ? String(_s8de.getAttribute('style') || '') : '';
+      if (/writing-mode[^;]*vertical[^;]*lr/i.test(_s8st)) {
+        var _s8r = anchor && anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : null;
+        var _s8x = (_s8r && isFinite(_s8r.left)) ? Math.max(0, Math.round(_s8r.left)) : null;
+        if (_s8x !== null && _s8x !== _winScroll.left) {
+          _winScroll.left = _s8x;
+          _winScrollGen++;
+          _zwFireScroll(null, null, null);
+        }
+      }
+    } catch (_eS8) {}
     // M2-S7（navigation-compat，2026-10-10）：fragment 滚动聚焦（spec scrolling-to-a-
     // fragment:focusing steps——指示元素为 focusable area → 聚焦它（focus 事件派发）；
     // 否则 run the focusing steps for the viewport（现焦点 blur → activeElement 回落
