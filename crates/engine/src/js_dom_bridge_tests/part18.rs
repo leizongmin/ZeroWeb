@@ -2406,3 +2406,120 @@ fn t8r_inner_html_materialized_custom_element_ctor_once() {
         "t8r N1：innerHTML 物化的自定义元素 ctor 恰 1 次，查询产物为真实升级实例，createElement 基线不受扰"
     );
 }
+
+// t8r-4（site-compat bilibili-20261002-r1 续）：sel 路径 innerHTML 同步查询可见性。
+// 真站链：bilibili nano sendBar（树内元素）`(0,v.W)(sendBar, renderFragment())`（HTML
+// 串注入）→ `this.template = { info: sendBar.querySelector('.{i}-video-info'), online:
+// sendBar.querySelector('.{i}-video-info-online'), … }` → `template.info.style` 消费。
+// ZW 现状：树内容器 innerHTML 后 host apply 异步，立即相对查询走 host 快照 miss →
+// null（注册表成员全 null → resize/hideDm/renderOnlineCount 消费崩，npd.314 null 簇）。
+// 修复：R322 host-miss 兜底臂扩扫桶 added 的解析顶层代理（R304 槽、无 handle 无
+// sel）——compound 匹配命中现场 _wcRebuildAsHandle 物化为 detached 真 handle 树
+//（全接口），原位替换桶成员/全局表/by-id 索引 + 写 sel 域父反链 + `_zwMatParsed`
+// 标记（apply 代际边界 K3 定点清除）。setter 记账面（mutation 队列/CE attach/
+// _mo_notify/K3）保持解析代理原样零变化。已 upgrade CE 代理按代理返回不物化
+//（防二次 ctor）。
+// spec https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
+#[test]
+fn t8r4_sel_path_inner_html_immediate_query_materialized() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new("<html><body><div id='host'><div id='sendbar'></div></div></body></html>".to_string()));
+    let page_url = Arc::new(Mutex::new("https://zero.test/t8r4-sel".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox.execute(r#"(function(){
+  var r = [];
+  var sendbar = document.querySelector('#sendbar');
+  sendbar.innerHTML = '<div class="bpx-video-info"><div class="bpx-video-info-online">x</div></div><span class="bpx-video-dm"></span>';
+  // ① 立即相对查询命中且全接口（真站 TypeError 根面）。
+  var info = sendbar.querySelector('.bpx-video-info');
+  r.push('info:' + (info === null ? 'null' : (typeof info.style === 'object' ? 'wrapper' : 'proxy')));
+  var online = info ? info.querySelector('.bpx-video-info-online') : null;
+  r.push('online:' + (online && typeof online.style === 'object' ? 'ok' : 'bad'));
+  // ② querySelectorAll 融合（R309 兜底面）。
+  var all = sendbar.querySelectorAll('div');
+  r.push('qsa:' + (all.length === 2 ? 'ok' : 'len:' + all.length));
+  // ③ childNodes/firstChild 融合（R304/R56 既有面零回归）。
+  r.push('fc:' + (sendbar.firstChild && sendbar.firstChild.nodeType === 1 ? 'ok' : 'bad'));
+  r.push('cc:' + (sendbar.childNodes.length === 2 ? 'ok' : 'len:' + sendbar.childNodes.length));
+  // ④ parentNode 反链（sel 域 append 家族同款）。
+  r.push('parent:' + (info && info.parentNode === sendbar ? 'ok' : 'bad'));
+  // ⑤ 接口写读回（真站消费形态：this.template.info.style.width = …）。
+  var sw = 'ok';
+  try { info.style.setProperty('opacity', '0.6'); sw = info.style.getPropertyValue('opacity') === '0.6' ? 'ok' : 'bad'; }
+  catch (e) { sw = 'throw:' + e.name; }
+  r.push('styleWrite:' + sw);
+  // ⑥ 结构保真（第二顶层子 + 深层文本）。
+  var dm = sendbar.querySelector('.bpx-video-dm');
+  r.push('sib:' + (dm && online && online.textContent === 'x' ? 'ok' : 'bad'));
+  return r.join('|');
+})()"#).unwrap().value;
+    assert_eq!(
+        out,
+        "info:wrapper|online:ok|qsa:ok|fc:ok|cc:ok|parent:ok|styleWrite:ok|sib:ok",
+        "t8r-4：sel 路径 innerHTML 后立即相对查询命中物化 wrapper（querySelector/querySelectorAll/childNodes/反链/接口写读回/结构保真）"
+    );
+}
+
+// t8r-4 变体：① 纯文本 sel 路径零回归（R34xx/R100 文本注册面）；② 混合 markup+文本顶层；
+// ③ 清空重注（二次 innerHTML 后新产物仍可查）；④ sel 域 CE attach——setter 链已对解析
+// 代理 upgrade（prototype 印记），R322 扩扫臂判已 upgrade 按代理返回不物化，ctor 恒 1。
+#[test]
+fn t8r4_sel_path_variants_and_ce_once() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new("<html><body><div id='host'><div id='sb2'></div><div id='sb3'></div></div></body></html>".to_string()));
+    let page_url = Arc::new(Mutex::new("https://zero.test/t8r4-var".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let out = sandbox.execute(r#"(function(){
+  var r = [];
+  // ① 纯文本 sel 路径零回归。
+  var sb = document.querySelector('#sb2');
+  sb.innerHTML = 'plain text';
+  r.push('text:' + (sb.firstChild && sb.firstChild.nodeType === 3 && sb.firstChild.data === 'plain text' ? 'ok' : 'bad'));
+  // ② 混合 markup+文本顶层：元素子物化、尾文本子保持代理。
+  sb.innerHTML = '<b class="h">x</b>tail';
+  var hb = sb.querySelector('.h');
+  var tl = sb.childNodes[1];
+  r.push('mix:' + (hb && typeof hb.style === 'object' && tl && tl.nodeType === 3 && tl.data === 'tail' ? 'ok' : 'bad'));
+  // ③ 清空重注：二次 innerHTML 后新产物仍可查（旧物化树被替换）。
+  var sb3 = document.querySelector('#sb3');
+  sb3.innerHTML = '<i class="a">1</i>';
+  var first = sb3.querySelector('.a');
+  sb3.innerHTML = '<em class="b">2</em>';
+  var second = sb3.querySelector('.b');
+  r.push('reIh:' + (first && second && typeof second.style === 'object' ? 'ok' : 'bad'));
+  // ④ sel 域 CE attach ctor 恒 1（createElement 物化构造 + attach 不重复 upgrade）。
+  var made = 0;
+  class T8r4Ce extends HTMLElement {
+    constructor() { super(); made++; }
+  }
+  customElements.define('t8r4-ce', T8r4Ce);
+  sb3.innerHTML = '<t8r4-ce class="ce1"></t8r4-ce>';
+  var q = sb3.querySelector('t8r4-ce');
+  r.push('ctor:' + made);
+  r.push('isInst:' + (q instanceof T8r4Ce ? 'ok' : 'bad'));
+  return r.join('|');
+})()"#).unwrap().value;
+    assert_eq!(
+        out,
+        "text:ok|mix:ok|reIh:ok|ctor:1|isInst:ok",
+        "t8r-4：纯文本/混合顶层/清空重注零回归 + sel 域 CE attach ctor 恰 1 次"
+    );
+}
