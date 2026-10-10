@@ -30,9 +30,9 @@ use crate::types::LayoutBox;
 static FLOAT_CLAMP_CONTENT_REL: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_CLAMP_CONTENT_REL").as_deref() != Ok("0"));
 
-pub(crate) fn adjust_float_positions(box_node: &mut LayoutBox) {
+pub(crate) fn adjust_float_positions(box_node: &mut LayoutBox, doc: &zero_dom::Document) {
     let content_abs_y = box_node.y + box_node.content_y;
-    adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0, &[]);
+    adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0, &[], doc);
 }
 
 /// R1733：inline-block（atomic inline-level BFC，`is_flow_root && !is_block_level`）float 排斥
@@ -1483,6 +1483,7 @@ pub(crate) fn adjust_float_positions_with_context(
     // 祖先 float（CSS §9.5：BFC border-box 不重叠同 BFC 上下文内任意 float）。
     // env ZW_NESTED_BFC_FLOAT_AVOID=0 关闭（kill-switch，default-on）。
     inherited_floats: &[FloatGeom],
+    doc: &zero_dom::Document,
 ) {
     use zero_css_parser::values::ClearValue;
     use zero_css_parser::values::FloatValue;
@@ -2119,6 +2120,26 @@ pub(crate) fn adjust_float_positions_with_context(
                         // collapse-through（§8.3.1），它建立流位置，且其后所有兄弟
                         // 须以 flow_bottom 重定位（taffy 未知 clearance）。
                         clearance_applied = true;
+                        // R5027（CSS 2.1 §9.4.2 零行盒 + §9.5.2）：**仅含强制换行的清除
+                        // 块**（br 自成块级盒）被正 clearance 位移后高度归零——行盒被
+                        // 推到 float 底时 strut 不再加高（chromium：p1(float)+br{clear}+p2
+                        // 的 p2 top = float margin-box 底 89；ZW 旧 = 89 + strut 19 = 108，
+                        // floats-no-content-beside-001 / floats-wrap-top-below 系连坐）。
+                        // 未位移（无 float）时 strut 高保持（chromium 变体 A 实证 +19）。
+                        // env ZW_BR_CLEAR_ZEROH=0 关闭（kill-switch，default-on）。
+                        let is_br_box = child
+                            .node_id
+                            .and_then(|id| doc.get(id))
+                            .is_some_and(|n| {
+                                matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br"))
+                            });
+                        if is_br_box
+                            && child.children.is_empty()
+                            && std::env::var("ZW_BR_CLEAR_ZEROH").as_deref() != Ok("0")
+                        {
+                            child.height = 0.0;
+                            child.content_height = 0.0;
+                        }
                         // R1318 §8.3.1 containment：clearance 「消耗」了空 cleared 块的 margin-top
                         //（hypothetical 用它定位，clearance 填充余下到 clear_bottom 的间隙）。
                         // 计算 contained parent height 时须从 trailing 折叠链扣除，避免双计。
@@ -2810,7 +2831,7 @@ pub(crate) fn adjust_float_positions_with_context(
         let child_content_abs_y = box_content_abs_y + child.y + child.content_y;
         if crate::margin_collapse::establishes_bfc(child) {
             // BFC 子：独立浮动上下文，祖先 float 不透传。
-            adjust_float_positions_with_context(child, child_content_abs_y, 0.0, 0.0, &[]);
+            adjust_float_positions_with_context(child, child_content_abs_y, 0.0, 0.0, &[], doc);
         } else {
             // 非 BFC 子：其内 float 与外层同 BFC 上下文。R1619 Slice 2 透传 all_floats
             //（祖先 + 自身）到子 border-box 帧（减 child.x/child.y），使嵌套 BFC 后代能避开外层 float。
@@ -2830,6 +2851,7 @@ pub(crate) fn adjust_float_positions_with_context(
                 box_content_abs_y + left_ctx,
                 box_content_abs_y + right_ctx,
                 &child_inherited,
+                doc,
             );
         }
     }

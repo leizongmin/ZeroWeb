@@ -114,7 +114,7 @@ fn fix_inner(
     let content_width = root.content_width;
 
     // === A: re-wrap table 子树内层 float（收窄 td 内 inner float 堆叠）===
-    adjust_float_positions(&mut root.children[tidx]);
+    adjust_float_positions(&mut root.children[tidx], doc);
 
     // === B: 重算 table 高度（inner float 堆叠后 table h 增长，如 100→200）===
     layout_table(&mut root.children[tidx], doc, styles, inline_fonts);
