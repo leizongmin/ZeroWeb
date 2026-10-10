@@ -626,6 +626,29 @@ pub(crate) fn block_max_content_width(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) -> f32 {
+    block_intrinsic_width(box_node, doc, styles, false)
+}
+
+/// R5036（css-sizing-3 §min-content）：block 容器的 min-content 内容宽——软换行
+/// 机会全部使用。与 max-content 共用 [`block_intrinsic_width`] 结构，语义分叉：
+/// inline 级子（含原子盒/float 行）由「同行求和」改「独立断点取 max」（每个原子盒
+/// /不可断词可独占一行）；文本经 `dom_inline_text_min_width`（词级）；叶文本经
+/// `text_content_min_width`。block/flex/grid 子仍取 max（各自成行，两模式同；
+/// flex/grid 的真 min-content 独立子问题，沿用 max 口径=过宽安全向，FIXME）。
+pub(crate) fn block_min_content_width(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> f32 {
+    block_intrinsic_width(box_node, doc, styles, true)
+}
+
+fn block_intrinsic_width(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    min_mode: bool,
+) -> f32 {
     let mut inline_sum = 0.0f32;
     let mut block_max = 0.0f32;
     // R1431 L3②：spanner-aware multicol intrinsic sizing 须区分 spanner / 非 spanner block 子。
@@ -678,7 +701,11 @@ pub(crate) fn block_max_content_width(
                 && let Some(style) = child_style
                 && let Some(contribution) = crate::svg_default_size::svg_max_content_contribution(elem, style)
             {
-                inline_sum += (contribution + ml + mr).max(0.0);
+                if min_mode {
+                    inline_sum = inline_sum.max((contribution + ml + mr).max(0.0));
+                } else {
+                    inline_sum += (contribution + ml + mr).max(0.0);
+                }
                 continue;
             }
             // R4355（css-sizing-3 §max-content；ruby-overhang-spaces-002 取证）：intrinsic
@@ -695,7 +722,16 @@ pub(crate) fn block_max_content_width(
                 && child_style.is_some_and(|s| matches!(s.display, DisplayValue::Inline));
             if is_plain_inline {
                 let frame = child.padding_left + child.padding_right + child.border_left + child.border_right;
-                inline_sum += (frame + ml + mr).max(0.0);
+                // FIXME(R5036)：min 模式透明 inline 的 frame 未与其内容词并合（近似偏窄），
+                // fit-content 族案面均为无 frame inline，frame 并合后续 slice。
+                if min_mode {
+                    inline_sum = inline_sum.max((frame + ml + mr).max(0.0));
+                } else {
+                    inline_sum += (frame + ml + mr).max(0.0);
+                }
+            } else if min_mode {
+                // 原子盒独立断点（UAX14：atomic inline 前后可断）——取 max 非求和。
+                inline_sum = inline_sum.max((child.width + ml + mr).max(0.0));
             } else {
                 inline_sum += (child.width + ml + mr).max(0.0);
             }
@@ -744,7 +780,11 @@ pub(crate) fn block_max_content_width(
                 float_max = float_max.max(float_row);
                 float_row = 0.0;
             }
-            float_row += with_margins.max(0.0);
+            if min_mode {
+                float_row = float_row.max(with_margins.max(0.0));
+            } else {
+                float_row += with_margins.max(0.0);
+            }
             continue;
         }
         block_max = block_max.max(with_margins);
@@ -758,7 +798,12 @@ pub(crate) fn block_max_content_width(
     // R4355：裸文本与纯 inline 后代（span/ruby 等）的文本固有宽（见 inline 分支注）。
     // 杀开关 `ZW_INLINE_DOM_INTRINSIC=0` 整体回退（含 inline 分支的 DOM 递归）。
     if std::env::var("ZW_INLINE_DOM_INTRINSIC").as_deref() != Ok("0") {
-        inline_sum += dom_inline_text_max_width(box_node, doc, styles);
+        if min_mode {
+            // min 模式文本与原子盒同为独立断点——取 max 非求和。
+            inline_sum = inline_sum.max(dom_inline_text_min_width(box_node, doc, styles));
+        } else {
+            inline_sum += dom_inline_text_max_width(box_node, doc, styles);
+        }
     }
 
     // R4397：float 行（float 外宽和 + inline 内容同行并排）与 block 行（max）正交取 max。
@@ -787,9 +832,13 @@ pub(crate) fn block_max_content_width(
         .unwrap_or(0.0)
         .max(own_cis);
     let inner = if !has_in_flow_child {
-        let text_w = box_node
-            .node_id
-            .map_or(0.0, |id| text_content_max_width(id, doc, styles));
+        let text_w = box_node.node_id.map_or(0.0, |id| {
+            if min_mode {
+                text_content_min_width(id, doc, styles)
+            } else {
+                text_content_max_width(id, doc, styles)
+            }
+        });
         own_explicit.max(text_w)
     } else if children_inner < own_explicit {
         own_explicit
@@ -875,6 +924,7 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
         font_size,
         is_ahem,
         font_id,
+        min_mode: false,
     };
     text_max_width_walk(
         node_id,
@@ -927,6 +977,7 @@ pub(crate) fn text_content_max_width_scoped(
         font_size,
         is_ahem,
         font_id,
+        min_mode: false,
     };
     text_max_width_walk(
         node_id,
@@ -941,6 +992,50 @@ pub(crate) fn text_content_max_width_scoped(
         &mut state,
         per_font_intrinsic_on(),
         stop_at_definite_atomic,
+    );
+    segments.into_iter().fold(0.0f32, f32::max)
+}
+
+/// R5036（css-sizing-3 §min-content）：[`text_content_max_width`] 的 min-content 变体
+/// ——折叠空格为软换行断点、文本按不可断词取最宽（state.min_mode 驱动，见
+/// walk_collapsible_text）；pre 系保留空白无断点 = max-content。原子 gate 口径与
+/// scoped max 版一致（stop_at_definite_atomic 恒 false——本函数无 Σ 配对侧）。
+pub(crate) fn text_content_min_width(node_id: NodeId, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+    let style = styles.get(&node_id);
+    let (font_size, _line_height) = crate::inline::resolve_font_metrics(style);
+    let is_ahem = style.is_some_and(|s| {
+        s.font_family
+            .iter()
+            .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"))
+    });
+    let white_space = styles
+        .get(&node_id)
+        .map(|s| s.white_space.clone())
+        .unwrap_or(WhiteSpaceValue::Normal);
+    let font_id = intrinsic_font_id(styles.get(&node_id));
+    let tab = intrinsic_tab_metrics(styles.get(&node_id), font_size, is_ahem, font_id);
+    let mut segments: Vec<f32> = vec![0.0];
+    let mut state = DomWalkState {
+        pending_space: false,
+        line_has_content: false,
+        font_size,
+        is_ahem,
+        font_id,
+        min_mode: true,
+    };
+    text_max_width_walk(
+        node_id,
+        doc,
+        font_size,
+        is_ahem,
+        &white_space,
+        Some(styles),
+        font_id,
+        tab,
+        &mut segments,
+        &mut state,
+        per_font_intrinsic_on(),
+        false,
     );
     segments.into_iter().fold(0.0f32, f32::max)
 }
@@ -1278,6 +1373,44 @@ fn dom_inline_text_max_width(box_node: &LayoutBox, doc: &Document, styles: &Hash
         font_size,
         is_ahem,
         font_id,
+        min_mode: false,
+    };
+    dom_inline_text_walk(
+        id,
+        doc,
+        styles,
+        &white_space,
+        tab,
+        &mut segments,
+        &mut state,
+        per_font_intrinsic_on(),
+    );
+    segments.into_iter().fold(0.0f32, f32::max)
+}
+
+/// R5036（css-sizing-3 §min-content）：[`dom_inline_text_max_width`] 的 min-content
+/// 变体——软换行机会全部使用：折叠空格为断点不计宽、文本按不可断词取最宽。pre 系
+/// 保留空白无软断点（= max-content），由 DomWalkState.min_mode + walk 分派；pre-line
+/// 的 \n 强制行切段语义两模式同。原子盒宽仍由调用方 loop 侧单边入账（分工同 max）。
+fn dom_inline_text_min_width(box_node: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+    let Some(id) = box_node.node_id else { return 0.0 };
+    let Some(style) = styles.get(&id) else { return 0.0 };
+    let (font_size, _line_height) = crate::inline::resolve_font_metrics(Some(style));
+    let is_ahem = style
+        .font_family
+        .iter()
+        .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+    let white_space = style.white_space.clone();
+    let font_id = intrinsic_font_id(Some(style));
+    let tab = intrinsic_tab_metrics(Some(style), font_size, is_ahem, font_id);
+    let mut segments: Vec<f32> = vec![0.0];
+    let mut state = DomWalkState {
+        pending_space: false,
+        line_has_content: false,
+        font_size,
+        is_ahem,
+        font_id,
+        min_mode: true,
     };
     dom_inline_text_walk(
         id,
@@ -1295,16 +1428,25 @@ fn dom_inline_text_max_width(box_node: &LayoutBox, doc: &Document, styles: &Hash
 /// R4355：跨节点空白折叠状态——CSS 白空格折叠跨 inline 盒边界连续（源内连续空白串
 /// 折叠为一个空格；行首/行尾空白丢弃）。`pending_space` = 已见待定空白（尚不计宽）；
 /// `line_has_content` = 本段已见非空白内容或原子盒（决定 pending 空白是否为行首丢弃）。
+/// R5036：`min_mode` = min-content 口径（css-sizing-3 §min-content——软换行机会全部
+/// 使用）：折叠空格是断点不计宽、文本按不可断词取最宽而非整段累加；pre 系保留空白
+/// 无断点（= max-content），由调用方分派。
 struct DomWalkState {
     pending_space: bool,
     line_has_content: bool,
     font_size: f32,
     is_ahem: bool,
     font_id: Option<u32>,
+    min_mode: bool,
 }
 
 impl DomWalkState {
     fn flush_space(&mut self, segments: &mut [f32]) {
+        if self.min_mode {
+            // R5036：min-content 语境空格 = 软换行断点，永不入账。
+            self.pending_space = false;
+            return;
+        }
         if self.pending_space && self.line_has_content {
             *segments.last_mut().expect("segments 非空") +=
                 measure_intrinsic_char(' ', self.font_id, self.font_size, self.is_ahem);
@@ -1333,11 +1475,32 @@ fn walk_collapsible_text(content: &str, segments: &mut [f32], state: &mut DomWal
         state.pending_space = true;
     }
     state.flush_space(segments);
-    let w: f32 = trimmed
-        .chars()
-        .map(|ch| measure_intrinsic_char(ch, state.font_id, state.font_size, state.is_ahem))
-        .sum();
-    *segments.last_mut().expect("segments 非空") += w;
+    // R5036（css-sizing-3 §min-content）：min 模式按软换行断点（折叠空格）切词取最宽
+    // 不可断单元；max 模式整段累加（不换行假设）。跨 inline 盒边界的词不合并（断点
+    // 语义保守——本函数只处理单文本节点，跨节点词边界由空格 pending 状态自然分段）。
+    let w: f32 = if state.min_mode {
+        trimmed
+            .split(' ')
+            .filter(|word| !word.is_empty())
+            .map(|word| {
+                word.chars()
+                    .map(|ch| measure_intrinsic_char(ch, state.font_id, state.font_size, state.is_ahem))
+                    .sum::<f32>()
+            })
+            .fold(0.0f32, f32::max)
+    } else {
+        trimmed
+            .chars()
+            .map(|ch| measure_intrinsic_char(ch, state.font_id, state.font_size, state.is_ahem))
+            .sum()
+    };
+    let last = segments.last_mut().expect("segments 非空");
+    if state.min_mode {
+        // 段语义切换：min = 本强制行内最宽不可断单元（fold max 取全行最宽）。
+        *last = last.max(w);
+    } else {
+        *last += w;
+    }
     state.line_has_content = true;
     if trailing {
         state.pending_space = true;
@@ -1602,6 +1765,7 @@ pub(crate) fn fragment_inline_max_width(
         font_size,
         is_ahem,
         font_id,
+        min_mode: false,
     };
     for nid in fragment_node_ids {
         text_max_width_walk(
@@ -3357,6 +3521,129 @@ AAAA</div></body></html>"#,
         assert!(
             (w1 - w2).abs() < 0.5,
             "width:max-content div must not include line-edge whitespace in laid-out width (ws1={w1} ws2={w2})"
+        );
+    }
+
+    // ── R5036（css-sizing-3 §min-content）：真 min-content 测量 ──
+
+    /// 跑完整引擎后对 div#t 直调 block_min_content_width（R5036 断言 helper）。
+    fn r5036_block_min(html_body: &str, css: &str) -> f32 {
+        let doc = zero_dom::parse_html(&format!(r#"<html><head></head><body>{html_body}</body></html>"#));
+        let ss = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[ss]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let target = find("t", &doc, &result.root).expect("div#t found");
+        block_min_content_width(target, &doc, &styles)
+    }
+
+    const R5036_CSS: &str = "html,body{font:10px/1 monospace;margin:0;padding:0}div#t{white-space:nowrap}";
+
+    /// 纯文本词级 min：min-content = 最宽词（< max-content 全串宽）。
+    #[test]
+    fn r5036_min_content_word_level_narrower_than_max() {
+        let min_w = r5036_block_min(r#"<div id="t">aaa bb cccc</div>"#, R5036_CSS);
+        let max_w = {
+            let doc = zero_dom::parse_html(r#"<html><head></head><body><div id="t">aaa bb cccc</div></body></html>"#);
+            let ss = zero_css_parser::Parser::parse_stylesheet(R5036_CSS);
+            let mut sys = zero_style_system::StyleSystem::new();
+            sys.set_viewport(800.0, 600.0);
+            let styles = sys.compute_styles(&doc, &[ss]);
+            let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+            let result = engine.compute(&doc, &styles);
+            fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+                if let Some(nid) = b.node_id
+                    && let Some(n) = doc.get(nid)
+                    && let NodeKind::Element(e) = &n.kind
+                    && e.get_attribute("id").as_deref() == Some(id)
+                {
+                    return Some(b);
+                }
+                b.children.iter().find_map(|c| find(id, doc, c))
+            }
+            let t = find("t", &doc, &result.root).unwrap();
+            block_max_content_width(t, &doc, &styles)
+        };
+        assert!(
+            min_w < max_w - 0.5,
+            "min-content (widest word) must be narrower than max-content (full run), min={min_w} max={max_w}"
+        );
+    }
+
+    /// fit-content-length-percentage-002 同构：两个 100px inline-block 连写，
+    /// min-content = 单个原子盒宽（原子独立断点），width:fit-content(50px) 布局宽 = 100
+    /// （公式 min(W_max=200, max(W_min=100, 50))）。
+    #[test]
+    fn r5036_fit_content_formula_floor_at_min_content() {
+        let css = "html,body{font:10px/1 monospace;margin:0;padding:0}div#t{width:fit-content(50px)}";
+        let doc = zero_dom::parse_html(
+            r#"<html><head></head><body><div id="t"><div style="display:inline-block;width:100px"></div><div style="display:inline-block;width:100px"></div></div></body></html>"#,
+        );
+        let ss = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[ss]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let t = find("t", &doc, &result.root).expect("div#t found");
+        assert!(
+            (t.width - 100.0).abs() < 1.0,
+            "fit-content(50px) with two 100px inline-blocks must floor at min-content 100, got {}",
+            t.width
+        );
+    }
+
+    /// min-width: fit-content(100px) + width:50px：floor = min(W_max, max(W_min, 100))
+    /// ——fit-content-length-percentage-012 同构（2×60 inline-block → 100）。
+    #[test]
+    fn r5036_min_width_fit_content_floors_formula() {
+        let css = "html,body{font:10px/1 monospace;margin:0;padding:0}div#t{width:50px;min-width:fit-content(100px)}";
+        let doc = zero_dom::parse_html(
+            r#"<html><head></head><body><div id="t"><div style="display:inline-block;width:60px"></div><div style="display:inline-block;width:60px"></div></div></body></html>"#,
+        );
+        let ss = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[ss]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let t = find("t", &doc, &result.root).expect("div#t found");
+        assert!(
+            (t.width - 100.0).abs() < 1.0,
+            "min-width:fit-content(100px) with two 60px inline-blocks must floor at 100, got {}",
+            t.width
         );
     }
 }

@@ -16,7 +16,13 @@ use super::*;
 /// content 关键字——按 intrinsic floor 会把 fit-content-length-percentage-007/008
 /// 测到 max-content（120 应 100）。width 的 bare fit-content 归 R3925 专用臂。
 fn content_kw(v: &LengthValue) -> bool {
-    matches!(v, LengthValue::MinContent | LengthValue::MaxContent)
+    // R5036：扩 FitContent(arg)——min/max-width: fit-content(L) 的公式值
+    // min(max-content, max(min-content, L)) 现可精确计算（真 min-content 测量就位），
+    // 不再是「按 intrinsic floor 会测到 max-content」的近似坑（R4149 当时的排除理由）。
+    matches!(
+        v,
+        LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+    )
 }
 
 fn resolve_sizing_definite_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
@@ -61,9 +67,13 @@ impl LayoutEngine {
         doc: &Document,
     ) -> bool {
         let mut changed = false;
-        let mut stack: Vec<&LayoutBox> = vec![root];
-        while let Some(b) = stack.pop() {
-            stack.extend(b.children.iter());
+        // R5036：栈携带第一趟 content CB 宽——fit-content(%) 的 arg 相对 CB 解析
+        //（css-sizing-3 #valdef-width-fit-content-length-percentage；root 的 CB = viewport）。
+        let mut stack: Vec<(&LayoutBox, f32)> = vec![(root, root.width.max(0.0))];
+        while let Some((b, cb_w)) = stack.pop() {
+            let self_frame = b.padding_left + b.padding_right + b.border_left + b.border_right;
+            let child_cb = (b.width - self_frame).max(0.0);
+            stack.extend(b.children.iter().map(|c| (c, child_cb)));
             let Some(id) = b.node_id else { continue };
             let Some(s) = styles.get(&id) else { continue };
             // 仅水平书写模式的 flex/grid 容器，或 R1018 block-level（width:max-content/fit-content）
@@ -114,8 +124,34 @@ impl LayoutEngine {
             // 语义下安全（首版担心的高估塌盒发生在 kw_min floor 臂，已由显式定宽子收窄
             // 守卫处理）。dynamic-012（float 链中段 div max-width:min-content width:200
             // 内 canvas 传宽 100 应 cap 到 100）。
-            let kw_min = std::env::var("ZW_WIDTH_KEYWORD_CLAMP").as_deref() != Ok("0") && content_kw(&s.min_width);
-            let kw_max = std::env::var("ZW_WIDTH_KEYWORD_CLAMP").as_deref() != Ok("0") && content_kw(&s.max_width);
+            // R5036：FitContent(arg) 关键字仅在 **arg definite**（Px/Em 等可解析长度）时
+            // 入公式臂——percent arg（fit-content(50%) 相对 CB）保持 converter 原生 percent
+            // 映射（fit-content-length-percentage-008 的旧绿机制，公式臂无 CB 语境会把它
+            // 覆盖成 max-content 定长）。
+            let kw_content = |v: &LengthValue| match v {
+                LengthValue::MinContent | LengthValue::MaxContent => true,
+                LengthValue::FitContent(inner) => {
+                    crate::intrinsic_sizing::resolve_intrinsic_real_length(inner, s).is_some()
+                }
+                _ => false,
+            };
+            let kw_min = std::env::var("ZW_WIDTH_KEYWORD_CLAMP").as_deref() != Ok("0") && kw_content(&s.min_width);
+            let kw_max = std::env::var("ZW_WIDTH_KEYWORD_CLAMP").as_deref() != Ok("0") && kw_content(&s.max_width);
+            // R5036：fit-content(L) 关键字的 arg 与目标值标记（公式 min(W_max, max(W_min, L))）。
+            let kw_fit_arg = |v: &LengthValue| match v {
+                LengthValue::FitContent(inner) => crate::intrinsic_sizing::resolve_intrinsic_real_length(inner, s),
+                _ => None,
+            };
+            let kw_min_fit_arg = if matches!(s.min_width, LengthValue::FitContent(_)) {
+                Some(kw_fit_arg(&s.min_width))
+            } else {
+                None
+            };
+            let kw_max_fit_arg = if matches!(s.max_width, LengthValue::FitContent(_)) {
+                Some(kw_fit_arg(&s.max_width))
+            } else {
+                None
+            };
             let is_kw_clamp = (kw_min || kw_max) && !b.is_replaced;
             if !is_max_min && !is_auto_float && !is_fitcontent && !is_kw_clamp {
                 continue;
@@ -170,13 +206,58 @@ impl LayoutEngine {
                 crate::intrinsic_sizing::flex_row_intrinsic_width(b, doc, styles)
             };
             let Some(intrinsic) = intrinsic else { continue };
+            // R5036（css-sizing-3 §min-content + #valdef-width-fit-content-length-percentage）：
+            // 真 min-content 测量（block 域）。服务三支：width:min-content（R1304 近似换真）、
+            // width:fit-content(arg) 公式内层 max(W_min, arg)（R3925 近似升级）、min/max-width:
+            // fit-content(L) 公式值（R4149 扩域）。flex/grid 域 min-content 独立子问题，缺测时
+            // None → fit 公式退化 min(W_max, arg)（= R3925 旧行为，向后兼容）。
+            let fit_width_arg = match &s.width {
+                LengthValue::FitContent(inner) => match inner.as_ref() {
+                    // R5036：% arg 相对第一趟 content CB（width 臂 converter 映射 auto，
+                    // 必须在此解析；R3925 旧 b.width 近似废弃）。
+                    LengthValue::Percentage(p) => Some(cb_w * (*p as f32) / 100.0),
+                    other => crate::intrinsic_sizing::resolve_intrinsic_real_length(other, s),
+                },
+                _ => None,
+            };
+            let need_min = mincontent_block || is_fitcontent || kw_min_fit_arg.is_some() || kw_max_fit_arg.is_some();
+            let min_intrinsic = if need_min && is_block {
+                let w = crate::intrinsic_sizing::block_min_content_width(b, doc, styles);
+                (w > 0.5).then_some(w)
+            } else {
+                None
+            };
+            let intrinsic = if mincontent_block {
+                // R5036：R1304 max-content 近似换真 min-content（测量失败/塌 0 退化旧近似）。
+                min_intrinsic.unwrap_or(intrinsic)
+            } else {
+                intrinsic
+            };
+            // fit-content 公式目标值：min(W_max, max(W_min, arg))；W_min 缺测 → min(W_max, arg)
+            //（= R3925 近似）；arg 缺失（percent/indefinite）→ W_max。
+            let fit_target = |arg: Option<f32>| -> f32 {
+                let max_c = intrinsic;
+                match arg {
+                    Some(a) => match min_intrinsic {
+                        Some(min_c) => max_c.min(min_c.max(a)),
+                        None => max_c.min(a),
+                    },
+                    None => max_c,
+                }
+            };
+            let width_target = if is_fitcontent {
+                fit_target(fit_width_arg)
+            } else {
+                intrinsic
+            };
             // R4149 收窄守卫（kw_min 臂）：css-sizing-3 §5.2——子元素有显式 definite width
             // 时，其 min-content 贡献 = 该显式宽（文本溢出不改变 specified size）。
             // block_max_content_width 叶盒分支取 max(own_explicit, text_w)，未断开的
             // 长词会把贡献测到显式宽之外（min-content-min-width-000 第 4 容器：child
             // width:100px + 55 字长词 → 484，应 100）。kw 语境下把每个显式定宽 in-flow
             // 块级子的 border-box 显式宽作为该子贡献上限（同 R3912 content_min_child 口径）。
-            let intrinsic = if kw_min {
+            let kw_min_fit = kw_min_fit_arg.is_some();
+            let intrinsic = if kw_min && !kw_min_fit {
                 let child_cap = b
                     .children
                     .iter()
@@ -224,19 +305,21 @@ impl LayoutEngine {
                 continue;
             }
             let should_apply = if is_fitcontent {
-                // R3925：fit-content(arg) 双向钳制——target = min(解析后 arg, intrinsic)
-                //（spec min(W_max, max(W_min, arg)) 的 max-content 近似），当前宽偏离
-                // target >1px 即重设（converter 定宽 arg 在内容窄于 arg 时不会收缩）。
-                let target = b.width.min(intrinsic);
-                (b.width - target).abs() > 1.0
+                // R3925（R5036 升级）：fit-content(arg) 双向钳制——target = 完整公式
+                // min(W_max, max(W_min, arg))（W_min 真测量就位；缺测退化 min(W_max, arg)），
+                // 当前宽偏离 target >1px 即重设（converter 定宽 arg 在内容窄于 arg 时不会收缩）。
+                (b.width - width_target).abs() > 1.0
             } else if is_kw_clamp {
                 // R4149：min 关键字 floor（宽 < intrinsic 须撑到 intrinsic）；max 关键字 cap
                 //（宽 > intrinsic 须收到 intrinsic）。双关键字并存时 §5.2 min 优先于 max，
                 // floor 后 b.width ≥ intrinsic，cap 自然 no-op——按 min 语义取 grow 判定。
+                // R5036：fit-content(L) 关键字用公式值替代 intrinsic。
                 if kw_min {
-                    b.width < intrinsic - 1.0
+                    let target = kw_min_fit_arg.map_or(intrinsic, fit_target);
+                    b.width < target - 1.0
                 } else {
-                    b.width > intrinsic + 1.0
+                    let target = kw_max_fit_arg.map_or(intrinsic, fit_target);
+                    b.width > target + 1.0
                 }
             } else if is_auto_float {
                 b.width > intrinsic + 1.0
@@ -250,11 +333,7 @@ impl LayoutEngine {
                 continue;
             };
             if let Ok(mut style) = taffy_tree.style(taffy_id).cloned() {
-                let width = if is_fitcontent {
-                    b.width.min(intrinsic)
-                } else {
-                    intrinsic
-                };
+                let width = if is_fitcontent { width_target } else { intrinsic };
                 if is_kw_clamp {
                     // R4149：关键字语义写入 **min/max 约束**而非定宽——min-width:min-content
                     // → min_size.width=intrinsic（taffy 布局算法按约束自行求解，flex item 的
@@ -263,12 +342,14 @@ impl LayoutEngine {
                     // 的 length(0) 伪影（min_width 关键字被映射 length(0)，会与新 min_size 冲突
                     // 取 0——须同步抬到 intrinsic）。
                     if kw_min {
+                        let target = kw_min_fit_arg.map_or(intrinsic, fit_target);
                         style.size.width = taffy::style::Dimension::auto();
-                        style.min_size.width = taffy::style::Dimension::length(intrinsic);
+                        style.min_size.width = taffy::style::Dimension::length(target);
                     }
                     if kw_max {
+                        let target = kw_max_fit_arg.map_or(intrinsic, fit_target);
                         style.size.width = taffy::style::Dimension::auto();
-                        style.max_size.width = taffy::style::Dimension::length(intrinsic);
+                        style.max_size.width = taffy::style::Dimension::length(target);
                     }
                 } else {
                     // R4360（css-sizing-3 §5.1 max-content）：block_max_content_width 返回
