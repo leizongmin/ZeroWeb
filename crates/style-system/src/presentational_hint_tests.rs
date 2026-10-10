@@ -589,12 +589,13 @@ fn input_gets_intrinsic_sizing_from_ua_by_type() {
     let mut system = StyleSystem::new();
     let styles = system.compute_styles(&doc, &[]);
     let inputs = doc.get_elements_by_tag_name("input");
-    // 文本类（type=text/password）：默认 size=20 → 20*8.5+8 = 178px，height 24px。
+    // 文本类（type=text/password）：默认 size=20 → R5050 字体相对 20*ch(8)+8 = 168px
+    //（默认 16px serif ch_width≈0.5em），height 24px。
     for &i in &inputs[0..2] {
         let s = styles.get(&i).expect("text input styled");
         assert!(
-            matches!(s.width, LengthValue::Px(w) if (174.0..=182.0).contains(&w)),
-            "text input default-size width ~178px, got {:?}",
+            matches!(s.width, LengthValue::Px(w) if (164.0..=172.0).contains(&w)),
+            "text input default-size width ~168px, got {:?}",
             s.width
         );
         assert!(
@@ -603,11 +604,11 @@ fn input_gets_intrinsic_sizing_from_ua_by_type() {
             s.height
         );
     }
-    // 显式 size=10（无 type → 文本类）→ 10*8.5+8 = 93px（窄于默认 20）。
+    // 显式 size=10（无 type → 文本类）→ 10*8+8 = 88px（窄于默认 20）。
     let sized = styles.get(&inputs[2]).expect("size=10 input styled");
     assert!(
-        matches!(sized.width, LengthValue::Px(w) if (89.0..=97.0).contains(&w)),
-        "size=10 input width ~93px, got {:?}",
+        matches!(sized.width, LengthValue::Px(w) if (84.0..=92.0).contains(&w)),
+        "size=10 input width ~88px, got {:?}",
         sized.width
     );
     // checkbox / radio：固定 13px 方框。
@@ -647,13 +648,14 @@ fn input_gets_intrinsic_sizing_from_ua_by_type() {
         "reset value=Clear width ~49px, got {:?}",
         reset.width
     );
-    // textarea：自 R1681 起按 cols（默认 20）/rows（默认 2）注入 UA 固有尺寸。
-    // <textarea>t</textarea>（无 cols/rows）→ width=20×7+8≈148px / height=2×19≈38px。
+    // textarea：自 R1681 起按 cols（默认 20）/rows（默认 2）注入 UA 固有尺寸；R5050
+    // 起字体相对（16px serif ch≈8px）。
+    // <textarea>t</textarea>（无 cols/rows）→ width=20×8+8≈168px / height=2×19.2≈38px。
     let textarea_id = doc.get_elements_by_tag_name("textarea")[0];
     let ts = styles.get(&textarea_id).expect("textarea styled");
     assert!(
-        matches!(ts.width, LengthValue::Px(w) if (140.0..=160.0).contains(&w)),
-        "textarea default cols=20 width ~148px, got {:?}",
+        matches!(ts.width, LengthValue::Px(w) if (164.0..=172.0).contains(&w)),
+        "textarea default cols=20 width ~168px, got {:?}",
         ts.width
     );
     assert!(
@@ -665,8 +667,9 @@ fn input_gets_intrinsic_sizing_from_ua_by_type() {
 
 #[test]
 fn textarea_uses_cols_rows_intrinsic_size() {
-    // R1681：cols/rows 属性驱动 UA 固有尺寸（≡ R1659 input size 谱系）。
-    // cols=10 rows=4 → width=10×7+8≈78px / height=4×19≈76px。
+    // R1681：cols/rows 属性驱动 UA 固有尺寸（≡ R1659 input size 谱系）；R5050 起字体
+    // 相对（16px serif ch≈8px，row≈19.2px）。
+    // cols=10 rows=4 → width=10×8+8≈88px / height=4×19.2≈77px。
     use zero_css_parser::values::LengthValue;
     let doc = parse_html("<body><textarea cols=\"10\" rows=\"4\">txt</textarea></body>");
     let mut system = StyleSystem::new();
@@ -674,13 +677,13 @@ fn textarea_uses_cols_rows_intrinsic_size() {
     let ta = doc.get_elements_by_tag_name("textarea")[0];
     let s = styles.get(&ta).expect("textarea styled");
     assert!(
-        matches!(s.width, LengthValue::Px(w) if (72.0..=84.0).contains(&w)),
-        "textarea cols=10 width ~78px, got {:?}",
+        matches!(s.width, LengthValue::Px(w) if (84.0..=92.0).contains(&w)),
+        "textarea cols=10 width ~88px, got {:?}",
         s.width
     );
     assert!(
         matches!(s.height, LengthValue::Px(h) if (70.0..=82.0).contains(&h)),
-        "textarea rows=4 height ~76px, got {:?}",
+        "textarea rows=4 height ~77px, got {:?}",
         s.height
     );
 }
@@ -700,16 +703,16 @@ fn form_control_intrinsic_sizing_rejects_non_finite_attributes() {
     let input = doc.get_elements_by_tag_name("input")[0];
     let input_style = styles.get(&input).expect("input styled");
     assert!(
-        matches!(input_style.width, LengthValue::Px(w) if (174.0..=182.0).contains(&w)),
-        "non-finite input size should fall back to default size=20 width ~178px, got {:?}",
+        matches!(input_style.width, LengthValue::Px(w) if (164.0..=172.0).contains(&w)),
+        "non-finite input size should fall back to default size=20 width ~168px, got {:?}",
         input_style.width
     );
 
     let textarea = doc.get_elements_by_tag_name("textarea")[0];
     let textarea_style = styles.get(&textarea).expect("textarea styled");
     assert!(
-        matches!(textarea_style.width, LengthValue::Px(w) if (140.0..=160.0).contains(&w)),
-        "non-finite textarea cols should fall back to default cols=20 width ~148px, got {:?}",
+        matches!(textarea_style.width, LengthValue::Px(w) if (164.0..=172.0).contains(&w)),
+        "non-finite textarea cols should fall back to default cols=20 width ~168px, got {:?}",
         textarea_style.width
     );
     assert!(
@@ -946,5 +949,85 @@ fn select_aspect_ratio_transfers_from_definite_height() {
         matches!(styles3.get(&sel3).map(|s| s.width.clone()), Some(LengthValue::Px(w)) if (w - 24.0).abs() < 0.5),
         "no ratio → R1679 chrome-only fallback 24, got {:?}",
         styles3.get(&sel3).map(|s| s.width.clone())
+    );
+}
+
+/// R5050（css-sizing-3 §6 form-control intrinsic × R1659/R1681 字体相对升级）：
+/// input/textarea content 关键字翻译 + size/cols/rows 字体相对（ch_width×font_size /
+/// font_size×1.2）。driving: max-content-input-001（font:20px monospace）。
+#[test]
+fn form_control_keyword_and_font_relative_intrinsic() {
+    use zero_css_parser::values::LengthValue;
+
+    // input width:max-content = value 字符 advance（无 chrome，与作者 11ch 同口径）；
+    // height:max-content = 单行行高 fs×1.2。
+    let doc = parse_html(
+        r#"<body>
+           <input style="font:20px monospace; width:max-content; height:max-content" value="sample text"></body>"#,
+    );
+    let mut system = StyleSystem::new();
+    let styles = system.compute_styles(&doc, &[]);
+    let input = doc.get_elements_by_tag_name("input")[0];
+    let s = styles.get(&input).expect("input styled");
+    let metrics = system.font_relative_metrics_for(&s.font_family);
+    let ch_px = (metrics.map(|m| m.ch_width).unwrap_or(0.5) as f32) * 20.0;
+    assert!(
+        matches!(s.width, LengthValue::Px(w) if (w as f32 - 11.0 * ch_px).abs() < 1.0),
+        "input width:max-content = 11 chars × ch({ch_px}px), got {:?}",
+        s.width
+    );
+    assert!(
+        matches!(s.height, LengthValue::Px(h) if (h as f32 - 24.0).abs() < 0.5),
+        "input height:max-content = 20×1.2 = 24, got {:?}",
+        s.height
+    );
+
+    // textarea：width:max-content = 最宽逻辑行×ch + 8（≡ cols 口径）；height:max-content =
+    // 逻辑行数×fs×1.2；无作者的 cols/rows 轴字体相对（cols=27 → 27ch+8，rows=7 → 7×24）。
+    let doc2 = parse_html(
+        r#"<body>
+           <textarea rows=3 cols=12 style="font:20px monospace; width:max-content; height:max-content">sample text 1 sample text 1
+sample text 2 sample text 2</textarea>
+           <textarea rows=7 cols=27 style="font:20px monospace"></textarea></body>"#,
+    );
+    let mut system2 = StyleSystem::new();
+    let styles2 = system2.compute_styles(&doc2, &[]);
+    let tas = doc2.get_elements_by_tag_name("textarea");
+    let t0 = styles2.get(&tas[0]).expect("t0 styled");
+    assert!(
+        matches!(t0.width, LengthValue::Px(w) if (w as f32 - 27.0 * ch_px - 8.0).abs() < 1.0),
+        "textarea width:max-content = 27ch + 8 chrome, got {:?}",
+        t0.width
+    );
+    assert!(
+        matches!(t0.height, LengthValue::Px(h) if (h as f32 - 2.0 * 24.0).abs() < 0.5),
+        "textarea height:max-content = 2 logical lines × 24, got {:?}",
+        t0.height
+    );
+    let t1 = styles2.get(&tas[1]).expect("t1 styled");
+    assert!(
+        matches!(t1.width, LengthValue::Px(w) if (w as f32 - 27.0 * ch_px - 8.0).abs() < 1.0),
+        "textarea cols=27 width font-relative = 27ch + 8, got {:?}",
+        t1.width
+    );
+    assert!(
+        matches!(t1.height, LengthValue::Px(h) if (h as f32 - 7.0 * 24.0).abs() < 0.5),
+        "textarea rows=7 height font-relative = 7×24, got {:?}",
+        t1.height
+    );
+
+    // 作者 definite 值胜出：显式 width/height 不被改写。
+    let doc3 = parse_html(r#"<body><textarea rows=7 cols=27 style="width:120px; height:50px"></textarea></body>"#);
+    let mut system3 = StyleSystem::new();
+    let styles3 = system3.compute_styles(&doc3, &[]);
+    let t2 = styles3
+        .get(&doc3.get_elements_by_tag_name("textarea")[0])
+        .expect("t2 styled");
+    assert!(
+        matches!(t2.width, LengthValue::Px(w) if (w - 120.0).abs() < 0.5)
+            && matches!(t2.height, LengthValue::Px(h) if (h - 50.0).abs() < 0.5),
+        "author definite width/height win, got {:?}/{:?}",
+        t2.width,
+        t2.height
     );
 }

@@ -1918,6 +1918,101 @@ impl StyleSystem {
             }
         }
 
+        // 9.6 R5050（css-sizing-3 §6 form-control intrinsic sizes × R1659/R1681 常量谱系）：
+        // 文本类 input/textarea 的 content 关键字与 size/cols/rows 固有值升级为字体相对：
+        //   - 关键字翻译：converter 把 min/max-content 映射 0（R5048-047 同款地板全丢，
+        //     max-content-input-001 input width:max-content 塌 8px）——input width 关键字 =
+        //     value 字符 advance（单行不折，无 chrome——与作者 `11ch` 显式宽同口径），
+        //     height 关键字 = 单行行高；textarea width 关键字 = 最宽逻辑行 advance +
+        //     WIDTH_CHROME（≡ cols 公式口径，与 ref cols=N 同式），height 关键字 =
+        //     逻辑行数 × 行高（white-space:pre 不折行近似；min-content 高 = 单行地板）
+        //   - 字体相对升级：size/cols 宽、rows 高从 8.5/7/19px 固定常量升级为
+        //     ch_width × font_size 与 font_size × 1.2（默认 16px 下 ≈ 旧常量幅度，styled
+        //     font 页面与 Chromium cols=平均字符宽语义一致；仅作者未声明该轴时改写）
+        // 门：text-like input（≡ R1659 `_` 臂类型集）/ textarea + content-box；作者声明的
+        // Px/%/% 轴胜出形态不动。kill-switch `ZW_FORM_INTRINSIC_FONT=0`。
+        if pseudo.is_none()
+            && matches!(tag_name.as_deref(), Some("input") | Some("textarea"))
+            && std::env::var("ZW_FORM_INTRINSIC_FONT").as_deref() != Ok("0")
+            && !matches!(resolved.box_sizing, property::types::BoxSizingValue::BorderBox)
+        {
+            let is_input = tag_name.as_deref() == Some("input");
+            let text_like = !is_input || {
+                let itype = doc.get_attribute(element, "type").unwrap_or_default().to_lowercase();
+                !matches!(
+                    itype.as_str(),
+                    "checkbox" | "radio" | "color" | "submit" | "reset" | "button" | "image"
+                )
+            };
+            if text_like {
+                let fs = match resolved.font_size {
+                    zero_css_parser::values::LengthValue::Px(v) => v as f32,
+                    _ => 16.0,
+                };
+                let ch_px = (self
+                    .font_relative_metrics_for(&resolved.font_family)
+                    .map(|m| m.ch_width)
+                    .unwrap_or(0.5)) as f32
+                    * fs;
+                let row_px = fs * 1.2;
+                let is_kw = |v: &zero_css_parser::values::LengthValue| {
+                    matches!(
+                        v,
+                        zero_css_parser::values::LengthValue::MinContent
+                            | zero_css_parser::values::LengthValue::MaxContent
+                    )
+                };
+                let author_w = expanded_with_layer.iter().any(|(p, ..)| p == "width");
+                let author_h = expanded_with_layer.iter().any(|(p, ..)| p == "height");
+                if is_input {
+                    let chars = doc
+                        .get_attribute(element, "value")
+                        .map(|v| v.chars().count())
+                        .unwrap_or(0) as f32;
+                    let size = doc
+                        .get_attribute(element, "size")
+                        .and_then(|s| parse_positive_finite_html_dimension_attr(&s))
+                        .unwrap_or(20.0);
+                    if is_kw(&resolved.width) {
+                        resolved.width = zero_css_parser::values::LengthValue::Px((chars * ch_px) as f64);
+                    } else if !author_w {
+                        resolved.width = zero_css_parser::values::LengthValue::Px((size * ch_px + 8.0) as f64);
+                    }
+                    if is_kw(&resolved.height) {
+                        resolved.height = zero_css_parser::values::LengthValue::Px(row_px as f64);
+                    }
+                } else {
+                    let text = doc.text_content(element).unwrap_or_default();
+                    let line_chars = text.lines().map(|l| l.chars().count()).max().unwrap_or(0) as f32;
+                    let line_count = text.lines().count().max(1) as f32;
+                    let cols = doc
+                        .get_attribute(element, "cols")
+                        .and_then(|s| parse_positive_finite_html_dimension_attr(&s))
+                        .unwrap_or(20.0);
+                    let rows = doc
+                        .get_attribute(element, "rows")
+                        .and_then(|s| parse_positive_finite_html_dimension_attr(&s))
+                        .unwrap_or(2.0);
+                    if is_kw(&resolved.width) {
+                        // 最宽逻辑行 + WIDTH_CHROME（≡ cols 公式口径）
+                        resolved.width = zero_css_parser::values::LengthValue::Px((line_chars * ch_px + 8.0) as f64);
+                    } else if !author_w {
+                        resolved.width = zero_css_parser::values::LengthValue::Px((cols * ch_px + 8.0) as f64);
+                    }
+                    if is_kw(&resolved.height) {
+                        let h = if matches!(resolved.height, zero_css_parser::values::LengthValue::MinContent) {
+                            row_px
+                        } else {
+                            line_count * row_px
+                        };
+                        resolved.height = zero_css_parser::values::LengthValue::Px(h as f64);
+                    } else if !author_h {
+                        resolved.height = zero_css_parser::values::LengthValue::Px((rows * row_px) as f64);
+                    }
+                }
+            }
+        }
+
         resolve_font_variant_alternates(&mut resolved, &self.font_feature_values);
         if parent_style.is_none() && pseudo.is_none() {
             let root_font_size = match &resolved.font_size {
