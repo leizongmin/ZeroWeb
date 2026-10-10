@@ -409,7 +409,13 @@ impl QuickJSSandbox {
     #[allow(clippy::type_complexity)]
     pub fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
         let cb: HostCallback = Arc::from(callback);
-        self.callbacks.push((name.to_string(), cb));
+        // 同名重注册 = 替换（最后注册者胜）——与 V8Sandbox 同型修复：宿主每次脚本
+        // 执行都会全量重注册回调面，不去重时 `callbacks` 随脚本数无界增长、
+        // `install_callbacks` 每次按注册史全量重装 O(n)、整页脚本累计 O(n²)。
+        match self.callbacks.iter_mut().find(|(n, _)| n == name) {
+            Some(slot) => slot.1 = cb,
+            None => self.callbacks.push((name.to_string(), cb)),
+        }
     }
 
     /// 设置脚本执行超时（毫秒），0 表示无超时。
@@ -840,6 +846,34 @@ mod tests {
         // 3. 持久上下文下跨 execute 仍可调用
         let r2 = sandbox.execute("__zw_probe_cb('x')").unwrap();
         assert_eq!(r2.value, "cb:x");
+    }
+
+    // ── t8p（webview deterministic replay 二次方退化根因）：同名重注册须替换不累积 ──
+    // 宿主每次脚本执行都全量重注册回调面（webview execute_dom_script 每脚本两遍
+    // register_dom_callbacks）；不去重时 `callbacks` 随脚本数无界增长，install_callbacks
+    // 每次按注册史全量重装 O(n)、整页脚本累计 O(n²)（445 脚本后单脚本 ~1s，replay
+    // 测试挂死）。修前 callbacks.len() 随注册次数线性增长，本钉红态可判别。
+
+    #[test]
+    fn test_register_callback_same_name_replaces_not_accumulates() {
+        let mut sandbox = QuickJSSandbox::with_config(SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        sandbox.register_callback("__zw_pin", Box::new(|_| "first".to_string()));
+        // 同名重注册 50 次 + 一个不同名回调：表不得累积。
+        for i in 0..50 {
+            let tag = format!("v{i}");
+            sandbox.register_callback("__zw_pin", Box::new(move |_| tag.clone()));
+        }
+        sandbox.register_callback("__zw_other", Box::new(|_| "other".to_string()));
+        assert_eq!(sandbox.callbacks.len(), 2, "同名重注册去重（修前 51+）");
+        // 最后注册者胜 + 其他回调不受影响。
+        let latest = sandbox.execute("__zw_pin()").unwrap();
+        assert_eq!(latest.value, "v49");
+        let other = sandbox.execute("__zw_other()").unwrap();
+        assert_eq!(other.value, "other");
     }
 
     // ── R3400：QuickJS set_timeout_ms 须被 execute/execute_json 强制执行（SEC-13 对称）──
