@@ -2210,3 +2210,199 @@ fn t8q_adopt_node_snapshot_variants_and_identity_regression() {
         "t8q：子树文本/注释保真 + 快照后代物化 + 真元素 identity 与 Document 抛错零回归"
     );
 }
+
+// t8r（site-compat bilibili-20261002-r1，t8q-1 本地产物接口完整化）：innerHTML 注入
+// 本地视图产物物化。真站链：`area.innerHTML = tpl()` → `area.querySelector(".bar-normal")`
+// → `bar.style.webkitTransform = …`（volume npd.586 @425567、progress npd.911 @72303 同型）——
+// innerHTML setter 的 handle 路径（detached createElement 容器）把 _zwFragmentAdded 的
+// _zwMEl 解析代理存入 _handleChildren，相对查询返回 truthy 节点但无 .style 接口 → TypeError
+// 脚本中断。spec https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
+// ——innerHTML 产物应与 createElement 产物同体系（完整元素接口）。
+#[test]
+fn t8r_inner_html_local_view_materializes_query_artifacts() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new("<html><body><div id='host'></div></body></html>".to_string()));
+    let page_url = Arc::new(Mutex::new("https://zero.test/t8r-innerhtml".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            r#"(function(){
+  var area = document.createElement('div');
+  area.innerHTML = '<div class="bar-normal"><div class="bar-fill"></div></div><span class="tip"></span>';
+  var bar = area.querySelector('.bar-normal');
+  if (!bar) return 'setup:no-bar';
+  var r = [];
+  // ① 元素接口：查询产物带 .style（真站 TypeError 根面）。
+  r.push('style:' + typeof bar.style);
+  r.push('styleSet:' + typeof (bar.style && bar.style.setProperty));
+  var sw = 'ok';
+  try { bar.style.setProperty('opacity', '0.5'); } catch (e) { sw = 'throw:' + e.name; }
+  r.push('styleWrite:' + sw);
+  r.push('styleRead:' + (bar.style ? bar.style.getPropertyValue('opacity') : 'nostyle'));
+  // ② 结构与属性：tagName/className（物化重建保真）。
+  r.push('tag:' + bar.tagName);
+  r.push('class:' + (bar.className === 'bar-normal' ? 'ok' : 'bad'));
+  // ③ 树内深查：物化子树的相对查询产物同为完整元素（递归物化）。
+  var fill = bar.querySelector('.bar-fill');
+  r.push('nested:' + (fill && typeof fill.style === 'object' ? 'ok' : 'bad'));
+  // ④ 多顶层子：第二个顶层子同样物化。
+  var tip = area.querySelector('.tip');
+  r.push('tip:' + (tip && typeof tip.style === 'object' ? 'ok' : 'bad'));
+  // ⑤ parentNode 反链（append 家族同款）：查询产物上行到宿主容器。
+  r.push('parent:' + (bar.parentNode === area ? 'ok' : 'bad'));
+  return r.join('|');
+})()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "style:object|styleSet:function|styleWrite:ok|styleRead:0.5|tag:DIV|class:ok|nested:ok|tip:ok|parent:ok",
+        "t8r：innerHTML 本地视图产物物化（style 接口 + 写读回 + 深查 + 多顶层子 + parentNode 反链）"
+    );
+}
+
+// t8r 邻近变体：① 纯文本 innerHTML 分支零回归（R34xx 文本注册面）；② 清空语义；
+// ③ 二次 innerHTML 重物化（旧物化树被替换、新查询产物仍全接口）；④ 混合容器——
+// innerHTML 物化成员与 appendChild wrapper 成员共存（_handleChildren 混合类型契约）；
+// ⑤ 物化树 introspection 护栏（属性/结构保真——_zwMEl 代理时代已有的消费面不变坏）；
+// ⑥ 混合 markup+文本顶层注入（审查①#1：顶层文本子保持代理、元素子物化）；⑦ 物化
+// 成员跨查询 identity 稳定（审查①#2，对照 ④ 的 append 成员断言）。
+#[test]
+fn t8r_inner_html_local_view_variants_and_text_path_regression() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url = Arc::new(Mutex::new("https://zero.test/t8r-innerhtml-var".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            r#"(function(){
+  var r = [];
+  // ① 纯文本 innerHTML：firstChild 文本节点路径（不物化分支）零回归。
+  var t = document.createElement('div');
+  t.innerHTML = 'plain text';
+  r.push('text:' + (t.firstChild && t.firstChild.nodeType === 3 && t.firstChild.data === 'plain text' ? 'ok' : 'bad'));
+  // ② 清空：innerHTML='' 后无子。
+  t.innerHTML = '';
+  r.push('clear:' + (t.firstChild ? 'bad' : 'ok'));
+  // ③ 二次 innerHTML：重物化替换，新查询产物仍全接口。
+  var d2 = document.createElement('div');
+  d2.innerHTML = '<b class="a">x</b>';
+  var first = d2.querySelector('.a');
+  d2.innerHTML = '<i class="b">y</i>';
+  var second = d2.querySelector('.b');
+  r.push('reIh:' + (first && second && typeof second.style === 'object' && second.tagName === 'I' ? 'ok' : 'bad'));
+  // ④ 混合容器：物化成员 + appendChild wrapper 成员共存（结构计数 + append 成员接口）。
+  var d3 = document.createElement('div');
+  d3.innerHTML = '<em class="m">z</em>';
+  var app = document.createElement('strong');
+  d3.appendChild(app);
+  r.push('mix:' + (d3.querySelectorAll('*').length === 2 && d3.querySelector('strong') === app ? 'ok' : 'bad'));
+  // ⑤ introspection 护栏：物化树属性保真 + 结构计数（_zwMEl 代理时代已有消费面）。
+  var d4 = document.createElement('div');
+  d4.innerHTML = '<div data-k="v" class="w"><p class="p1">1</p><p class="p2">2</p></div>';
+  var w = d4.querySelector('.w');
+  r.push('deep:' + (w && w.querySelectorAll('p').length === 2 && w.getAttribute('data-k') === 'v' ? 'ok' : 'bad'));
+  // ⑥ 混合 markup+文本顶层注入：顶层元素子物化，尾文本子保持解析代理（.data 可读），
+  // 元素子接口完整（审查①#1 缺口护栏）。
+  var d5 = document.createElement('div');
+  d5.innerHTML = '<b class="h">x</b>tail';
+  var hb = d5.querySelector('.h');
+  var tl = d5.childNodes[1];
+  r.push('mixText:' + (hb && typeof hb.style === 'object' && hb.firstChild.data === 'x' &&
+    tl && tl.nodeType === 3 && tl.data === 'tail' && d5.childNodes.length === 2 ? 'ok' : 'bad'));
+  // ⑦ 物化成员跨查询 identity 稳定（对照 appendChild 成员 ④ 的 === app 断言；审查①#2）。
+  var q1 = d5.querySelector('.h');
+  var q2 = d5.querySelector('.h');
+  r.push('ident:' + (q1 && q1 === q2 && q1 === d5.firstElementChild ? 'ok' : 'bad'));
+  return r.join('|');
+})()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "text:ok|clear:ok|reIh:ok|mix:ok|deep:ok|mixText:ok|ident:ok",
+        "t8r：纯文本/清空分支零回归 + 重物化 + 混合容器共存 + introspection 保真 + 混合 markup/文本顶层注入 + 物化成员 identity"
+    );
+}
+
+// t8r 返修（审查② N1）：innerHTML 物化与 `__zwCeAttachForAdded` 双轨——物化经
+// createElement 已对 registry 命中的 CE 跑过 ctor，attach 再对原解析代理整表 upgrade
+//（_ceUpgradeNode 无幂等门）→ ctor ×2、connectedCallback 落孤儿代理。修复后回退代理
+// 才走 upgrade、成功 wrapper 只补连接态派发：ctor 恒 1 次，查询产物是真实升级实例。
+#[test]
+fn t8r_inner_html_materialized_custom_element_ctor_once() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url = Arc::new(Mutex::new("https://zero.test/t8r-ce-once".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            r#"(function(){
+  var made = 0;
+  class T8rCe extends HTMLElement {
+    constructor() { super(); made++; }
+  }
+  customElements.define('t8r-ce', T8rCe);
+  var c = document.createElement('div');
+  c.innerHTML = '<t8r-ce class="ce1"></t8r-ce>';
+  var q = c.querySelector('t8r-ce');
+  var r = [];
+  // ctor 恰 1 次（createElement 物化时构造；attach 不再对丢弃代理重复 upgrade）。
+  r.push('ctor:' + made);
+  // 查询产物仍是真实升级实例（接口完整 + instanceof 命中）。
+  r.push('iface:' + (q && typeof q.style === 'object' ? 'ok' : 'bad'));
+  r.push('isInst:' + (q instanceof T8rCe ? 'ok' : 'bad'));
+  // createElement 基线路径不受扰（ctor 恒 1）。
+  var made2 = 0;
+  class T8rCe2 extends HTMLElement {
+    constructor() { super(); made2++; }
+  }
+  customElements.define('t8r-ce2', T8rCe2);
+  var solo = document.createElement('t8r-ce2');
+  r.push('solo:' + (made2 === 1 && solo instanceof T8rCe2 ? 'ok' : 'bad'));
+  return r.join('|');
+})()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "ctor:1|iface:ok|isInst:ok|solo:ok",
+        "t8r N1：innerHTML 物化的自定义元素 ctor 恰 1 次，查询产物为真实升级实例，createElement 基线不受扰"
+    );
+}
