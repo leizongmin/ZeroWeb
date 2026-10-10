@@ -2156,7 +2156,8 @@ fn t8q_adopt_node_materializes_dom_parser_snapshot_element() {
 
 // t8q 邻近变体：① 快照后代元素（querySelector 产物）adopt 同样物化；② 元素物化的
 // 子树保真——根元素重建时内部 Text/Comment 经 _wcRebuildAsHandle 递归物化为对应
-// 类型节点（顶层裸 Text/Comment 快照直接 adopt 的物化不在本修复域，见池记录）；
+// 类型节点（顶层裸 Text/Comment 快照直接 adopt 的物化已由 t8s1 扩入修复域——
+// npd.314 播放器崩簇根因，见下方 t8s1 钉测）；
 // ③ 同文档真元素 adoptNode 保持 identity 返回（R192 语义零回归）。
 #[test]
 fn t8q_adopt_node_snapshot_variants_and_identity_regression() {
@@ -2208,6 +2209,129 @@ fn t8q_adopt_node_snapshot_variants_and_identity_regression() {
         out,
         "text:ok|comment:ok|li:ok|identity:ok|docThrow:ok",
         "t8q：子树文本/注释保真 + 快照后代物化 + 真元素 identity 与 Document 抛错零回归"
+    );
+}
+
+// t8s1（site-compat bilibili-20261002-r1）：快照顶层裸 Text/Comment adopt 物化——
+// 真站 bilibili 播放器模板引擎 T.d（模块 86806）用
+// `while(body.lastChild) frag.insertBefore(adoptNode(body.lastChild), frag.firstChild||null)`
+// 倒序排空 DOMParser 快照 body（renderFragment HTML 带尾随空白 → body 末子是文本）：
+// 首轮 adopt 的快照文本（t8q 物化域外 → 无 host handle）作 ref 时，host 桥按 ref
+// handle 定位失败 → 第二轮的元素静默丢失 → `.bpx-video-info` 注册表查询全 miss →
+// npd.314 四处 `template.info/online` null 崩（resize/hideDm/renderParts/classList）。
+// spec https://dom.spec.whatwg.org/#concept-node-adopt（adopt 完整搬入本文档）。
+#[test]
+fn t8s1_adopted_snapshot_text_ref_does_not_silently_drop_element() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url = Arc::new(Mutex::new("https://zero.test/t8s1-adopt-text".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            r#"(function(){
+  var r = [];
+  // T.d 倒序排空真站同构形态：div（含嵌套 online）+ 尾空白 → body [1,3]。
+  var doc = new DOMParser().parseFromString('<div class="bpx-video-info"><div class="bpx-video-info-online">5</div></div>\n        ', 'text/html');
+  var frag = document.createDocumentFragment();
+  var guard = 0;
+  while (doc.body.lastChild && guard++ < 20) {
+    frag.insertBefore(document.adoptNode(doc.body.lastChild), frag.firstChild || null);
+  }
+  // ① 排空完成且元素在 frag（修复前：ref=无 handle 快照文本 → 元素静默丢失）。
+  var types = [];
+  for (var i = 0; i < frag.childNodes.length; i++) types.push(frag.childNodes[i].nodeType);
+  r.push('fragTypes:' + types.join(','));
+  r.push('fragInfo:' + (frag.querySelector('.bpx-video-info') ? 'hit' : 'miss'));
+  // ② v.W 式消费：清空容器 + append fragment → 相对查询 + style 写（npd.314 四崩点消费面）。
+  var bar = document.createElement('div');
+  bar.appendChild(document.createElement('span'));
+  while (bar.lastChild) bar.removeChild(bar.lastChild);
+  bar.appendChild(frag);
+  var info = bar.querySelector('.bpx-video-info');
+  r.push('barInfo:' + (info ? 'hit' : 'null'));
+  var sw = 'nostyle';
+  try { if (info && info.style) { info.style.width = '100px'; sw = String(info.style.width); } } catch (e) { sw = 'throw:' + e.name; }
+  r.push('styleW:' + sw);
+  r.push('online:' + (bar.querySelector('.bpx-video-info-online') ? 'hit' : 'null'));
+  return r.join('|');
+})()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "fragTypes:1,3|fragInfo:hit|barInfo:hit|styleW:100px|online:hit",
+        "t8s1：快照文本 adopt 物化后 T.d 倒序排空元素不再静默丢失（frag 保元素 + 注册表查询/style 消费全通）"
+    );
+}
+
+// t8s1 邻近变体：① adopted Comment 作 ref 同域；② 快照文本物化数据保真 + 原父摘除
+//（spec concept-node-adopt 第 1 步，t8q 返修同款）；③ 快照文本不 adopt 的 identity
+// 消费零回归（data/textContent 读照旧）；④ handle 真文本 adopt 保持 identity（R192）。
+#[test]
+fn t8s1_adopted_snapshot_comment_ref_and_identity_regressions() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url = Arc::new(Mutex::new("https://zero.test/t8s1-adopt-comment".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            r#"(function(){
+  var r = [];
+  // ① adopted Comment 作 ref：后续 insert 元素不丢；物化 Comment data 逐字保真。
+  var d1 = new DOMParser().parseFromString('<i>px</i><!--anchor-->', 'text/html');
+  var cf = document.createDocumentFragment();
+  var ac = document.adoptNode(d1.body.lastChild);
+  r.push('cData:' + (ac.nodeType === 8 && ac.data === 'anchor' ? 'ok' : 'bad:' + ac.nodeType + '/' + JSON.stringify(ac.data)));
+  cf.insertBefore(ac, cf.firstChild || null);
+  while (d1.body.lastChild) cf.insertBefore(document.adoptNode(d1.body.lastChild), cf.firstChild || null);
+  r.push('cFrag:' + (cf.querySelector('i') ? 'hit' : 'miss') + '/' + (cf.childNodes.length >= 2 ? 'both' : 'part:' + cf.childNodes.length));
+  // ② 快照文本物化保真：data 内容逐字保留 + 原父摘除。
+  var d2 = new DOMParser().parseFromString('<b>x</b>\n  tail  ', 'text/html');
+  var at = document.adoptNode(d2.body.lastChild);
+  r.push('matType:' + at.nodeType + '|data:' + (at.data === '\n  tail  ' ? 'exact' : 'bad:' + JSON.stringify(at.data)));
+  r.push('cut:' + (d2.body.lastChild && d2.body.lastChild.nodeType === 1 ? 'ok' : 'bad'));
+  // ③ 快照文本不 adopt 的 identity 消费零回归。
+  var d3 = new DOMParser().parseFromString('<u>plain</u>\nraw', 'text/html');
+  var raw = d3.body.lastChild;
+  r.push('rawRead:' + (raw && raw.nodeType === 3 && raw.data === '\nraw' ? 'ok' : 'bad'));
+  // ④ handle 真文本 adopt identity（R192 语义）；物化产物（带 handle）二次 adopt 同样 identity。
+  var lt = document.createTextNode('live');
+  r.push('liveIdent:' + (document.adoptNode(lt) === lt ? 'ok' : 'bad'));
+  var d4 = new DOMParser().parseFromString('<s>q</s>\nagain', 'text/html');
+  var mat = document.adoptNode(d4.body.lastChild);
+  r.push('readopt:' + (document.adoptNode(mat) === mat ? 'ok' : 'bad'));
+  return r.join('|');
+})()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "cData:ok|cFrag:hit/both|matType:3|data:exact|cut:ok|rawRead:ok|liveIdent:ok|readopt:ok",
+        "t8s1：adopted Comment ref 同域 + 物化数据保真/原父摘除 + 快照与 handle/物化产物 identity 零回归"
     );
 }
 
