@@ -1873,6 +1873,51 @@ impl StyleSystem {
             resolved.display = zero_css_parser::values::DisplayValue::Block;
         }
 
+        // 9.5 R5049（css-sizing-4 §4.2 transferred size suggestion × R1679 select UA width
+        // 兜底）：作者未声明 definite width 的 select，R1679 的 UA width 兜底是显式宽度
+        // ——不参与比传送（ratio 失效），且作者 width:auto 会胜过它塌成 sliver
+        //（select-element-001：test 三子态内容宽应 50/50/205，ZW 旧 24/199/199；ref
+        // width:auto 子态塌 ~6px vs Chromium 205）。按 Chromium select 内容式 sizing 语义
+        // 在 cascade 后改写 resolved.width（作者 definite width 胜出形态不动）：
+        //   - ratio + definite content-box height → 传送宽 = height × ratio（§4.2 与
+        //     block 传递同源）；否则 → 内容宽 = select_intrinsic_width（最宽 option 标签
+        //     + chrome，≡ R1679 兜底口径——width 缺席形态结果与旧径相同）
+        //   - 地板 = 内容宽，仅 min-width:auto（automatic content-based minimum，
+        //     css-sizing-3 §5.2）时生效——作者 min-width 非 auto（0px）清除地板，
+        //     >width 的 Px 由 used-value 既有钳制处理
+        // 门：作者 definite width / border-box / ratio 形态高非 Px → 不改写。kill-switch
+        // `ZW_SELECT_AR_TRANSFER=0`。
+        let author_definite_width = expanded_with_layer
+            .iter()
+            .any(|(p, v, ..)| p == "width" && !v.trim().eq_ignore_ascii_case("auto"));
+        if tag_name.as_deref() == Some("select")
+            && std::env::var("ZW_SELECT_SUPPRESS_OPTIONS").as_deref() != Ok("0")
+            && std::env::var("ZW_SELECT_AR_TRANSFER").as_deref() != Ok("0")
+            && !author_definite_width
+            && !matches!(resolved.box_sizing, property::types::BoxSizingValue::BorderBox)
+        {
+            let transferred = match resolved.aspect_ratio.filter(|&r| r > 0.0) {
+                Some(ratio) => match resolved.height {
+                    zero_css_parser::values::LengthValue::Px(h) if h > 0.0 => Some(h as f32 * ratio),
+                    _ => None,
+                },
+                None => None,
+            };
+            if let Some(t) = transferred {
+                // 地板 = 自动内容最小宽（min-width:auto），作者 min-width 非 auto 清除。
+                let floor = if matches!(resolved.min_width, zero_css_parser::values::LengthValue::Auto) {
+                    select_intrinsic_width(doc, element)
+                } else {
+                    0.0
+                };
+                resolved.width = zero_css_parser::values::LengthValue::Px(t.max(floor) as f64);
+            } else if matches!(resolved.width, zero_css_parser::values::LengthValue::Auto) {
+                // 作者 width:auto：内容式 sizing（≡ Chromium menulist 固有宽），
+                // 修复 R1679 UA width 被 auto 胜出后塌 sliver 的 R1659 遗留。
+                resolved.width = zero_css_parser::values::LengthValue::Px(select_intrinsic_width(doc, element) as f64);
+            }
+        }
+
         resolve_font_variant_alternates(&mut resolved, &self.font_feature_values);
         if parent_style.is_none() && pseudo.is_none() {
             let root_font_size = match &resolved.font_size {

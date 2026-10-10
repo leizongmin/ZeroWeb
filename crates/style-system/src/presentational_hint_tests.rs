@@ -878,3 +878,73 @@ fn svg_width_px_suffix_maps_to_px_hint() {
         "px-suffixed width attr should map to width:100px hint, got {hints:?}"
     );
 }
+
+/// R5049（css-sizing-4 §4.2 transferred size suggestion × R1679 UA width 兜底）：
+/// select 带 CSS aspect-ratio + definite content-box height + 作者未声明 width 时，
+/// UA width 兜底是显式宽度不参与比传送——改写为 max(height×ratio, 自动内容地板)。
+/// select-element-001 三子态：空 option / min-width:0 / min-width:auto 长文本。
+#[test]
+fn select_aspect_ratio_transfers_from_definite_height() {
+    use zero_css_parser::values::LengthValue;
+
+    // 公共形态：height:50px + aspect-ratio:1/1；三子态 width 期望（内容宽）：
+    // ①空 option → 传送 50（地板 chrome 24 不敌）②min-width:0 → 50（地板清除）
+    // ③min-width:auto + 25 字符 → 内容地板 25×7+24=199 胜传送 50。
+    let doc = parse_html(
+        r#"<body>
+             <select style="height:50px; aspect-ratio:1/1"><option value=""></option></select>
+             <select style="height:50px; aspect-ratio:1/1; min-width:0px"><option>The long text is selected</option></select>
+             <select style="height:50px; aspect-ratio:1/1"><option>The long text is selected</option></select>
+           </body>"#,
+    );
+    let mut system = StyleSystem::new();
+    let styles = system.compute_styles(&doc, &[]);
+    let selects = doc.get_elements_by_tag_name("select");
+    assert_eq!(selects.len(), 3, "three selects");
+    let widths: Vec<f64> = selects
+        .iter()
+        .map(|&id| match styles.get(&id).map(|s| s.width.clone()) {
+            Some(LengthValue::Px(w)) => w,
+            other => panic!("select width should be Px, got {other:?}"),
+        })
+        .collect();
+    assert!(
+        (widths[0] - 50.0).abs() < 0.5,
+        "① empty option: transferred 50 wins over chrome floor, got {}",
+        widths[0]
+    );
+    assert!(
+        (widths[1] - 50.0).abs() < 0.5,
+        "② author min-width:0 clears content floor → transferred 50, got {}",
+        widths[1]
+    );
+    assert!(
+        (widths[2] - 199.0).abs() < 2.0,
+        "③ min-width:auto content floor (25ch×7+24=199) beats transferred 50, got {}",
+        widths[2]
+    );
+
+    // 作者 width 已声明：显式 width 胜传送（CSS2 §10.4），保持作者值。
+    let doc2 = parse_html(
+        r#"<body><select style="width:120px; height:50px; aspect-ratio:1/1"><option value=""></option></select></body>"#,
+    );
+    let mut system2 = StyleSystem::new();
+    let styles2 = system2.compute_styles(&doc2, &[]);
+    let sel2 = doc2.get_elements_by_tag_name("select")[0];
+    assert!(
+        matches!(styles2.get(&sel2).map(|s| s.width.clone()), Some(LengthValue::Px(w)) if (w - 120.0).abs() < 0.5),
+        "author width wins over transfer, got {:?}",
+        styles2.get(&sel2).map(|s| s.width.clone())
+    );
+
+    // 无 ratio：R1679 原径不动（UA width 兜底 = 最宽 option + chrome）。
+    let doc3 = parse_html(r#"<body><select style="height:50px"><option value=""></option></select></body>"#);
+    let mut system3 = StyleSystem::new();
+    let styles3 = system3.compute_styles(&doc3, &[]);
+    let sel3 = doc3.get_elements_by_tag_name("select")[0];
+    assert!(
+        matches!(styles3.get(&sel3).map(|s| s.width.clone()), Some(LengthValue::Px(w)) if (w - 24.0).abs() < 0.5),
+        "no ratio → R1679 chrome-only fallback 24, got {:?}",
+        styles3.get(&sel3).map(|s| s.width.clone())
+    );
+}
