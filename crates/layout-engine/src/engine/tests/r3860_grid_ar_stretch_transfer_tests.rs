@@ -202,3 +202,32 @@ fn r5039_grid_ratio_min_width_clamp_floors() {
         item.height
     );
 }
+
+/// R5041（css-sizing-4 §4.1）：transferred main 取 used height——CSS height 被 definite
+/// min/max-height 钳（intrinsic-size-012 同构：height:10px + min-height:25px + ratio 4/1
+/// + border-box → min-content 父贡献 100 而非 40）。
+#[test]
+fn r5041_transferred_main_clamped_by_min_max_height() {
+    let html = r#"<html><body style="margin:0">
+<div id="p" style="width:min-content; height:25px; background:green">
+  <div style="height:10px; aspect-ratio:4/1; min-height:25px; box-sizing:border-box; padding-top:15px"></div>
+</div>
+<div id="q" style="width:min-content; height:25px; background:green">
+  <div style="height:100px; aspect-ratio:4/1; max-height:25px; box-sizing:border-box; padding-top:15px"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let p = find(&result.root, doc.get_element_by_id("p").expect("p")).unwrap();
+    let q = find(&result.root, doc.get_element_by_id("q").expect("q")).unwrap();
+    assert!(
+        (p.width - 100.0).abs() < 1.0 && (q.width - 100.0).abs() < 1.0,
+        "transferred main 须取 min/max 钳后高（min-height 25 → 100；max-height 25 → 100），got p={} q={}",
+        p.width,
+        q.width
+    );
+}

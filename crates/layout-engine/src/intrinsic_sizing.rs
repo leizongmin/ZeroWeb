@@ -550,16 +550,20 @@ fn box_content_max_width_inner(
             // 满宽。R1018 flex_row 容器 cross 同款回退（读第一趟 border-box 减 frame）。
             // 仅叶盒回退：有 in-flow 子时子内容才决定 main（上方 children_inner 分支），
             // 避免把 taffy 对整棵子树解析的 border-box 高误当 transferred 源。
-            let main = s.and_then(|s| resolve_intrinsic_real_length(&s.height, s)).or_else(|| {
-                if !has_in_flow_child {
-                    let vframe =
-                        box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
-                    let resolved = (box_node.height - vframe).max(0.0);
-                    (resolved > 0.5).then_some(resolved)
-                } else {
-                    None
-                }
-            });
+            let main = s
+                .and_then(|s| resolve_intrinsic_real_length(&s.height, s).map(|m| clamp_transferred_main(s, m)))
+                .or_else(|| {
+                    if !has_in_flow_child {
+                        let vframe = box_node.padding_top
+                            + box_node.padding_bottom
+                            + box_node.border_top
+                            + box_node.border_bottom;
+                        let resolved = (box_node.height - vframe).max(0.0);
+                        (resolved > 0.5).then_some(resolved)
+                    } else {
+                        None
+                    }
+                });
             main.map(|main| aspect_ratio_transferred_width(s.unwrap(), box_node, main, ratio))
         })
         .unwrap_or(0.0);
@@ -2018,6 +2022,7 @@ fn flex_item_base_size(
         && let Some(ratio) = s.aspect_ratio.filter(|&r| r > 0.0)
     {
         let main = resolve_intrinsic_real_length(&s.height, s)
+            .map(|m| clamp_transferred_main(s, m))
             .or_else(|| resolve_intrinsic_real_length(&s.min_height, s))
             .or(container_cross);
         if let Some(main) = main {
@@ -2041,6 +2046,16 @@ fn aspect_ratio_transferred_width(s: &ComputedStyle, box_node: &LayoutBox, main:
     } else {
         main * ratio + frame
     }
+}
+
+/// R5041（css-sizing-4 §4.1）：transferred main 取 **used** height——CSS 声明 height 被
+/// definite min/max-height 钳（min/max 与 height 同 box-sizing 口径，直接比较；
+/// intrinsic-size-012/013：height:10px + min-height:25px + ratio 4/1 → transfer 100
+/// 而非 40；height:100px + max-height:25px → 100 而非 400）。
+fn clamp_transferred_main(s: &ComputedStyle, main: f32) -> f32 {
+    let min_h = resolve_intrinsic_real_length(&s.min_height, s);
+    let max_h = resolve_intrinsic_real_length(&s.max_height, s);
+    main.max(min_h.unwrap_or(0.0)).min(max_h.unwrap_or(f32::MAX))
 }
 
 /// 计算一个**水平 flex 行容器**的固有宽度（max-content 主尺寸）。

@@ -440,7 +440,25 @@ pub fn computed_style_to_taffy(
             width: convert_max_length_to_dimension(&style.max_width, vw, vh),
             height: convert_max_length_to_dimension(&style.max_height, vw, vh),
         },
-        aspect_ratio: style.aspect_ratio,
+        // R5041（css-sizing-4 §4.1）：aspect-ratio 不适用于内部表盒（table-internal boxes
+        // ——css-sizing-4 明示排除；table-element-001 取证：th width:100px + ratio 1/1 被
+        // taffy transfer 成高 100，应保持行高 50）。converter 源头清零，taffy/测量层不再
+        // 各自防御。
+        aspect_ratio: if matches!(
+            style.display,
+            DisplayValue::TableRow
+                | DisplayValue::TableRowGroup
+                | DisplayValue::TableHeaderGroup
+                | DisplayValue::TableFooterGroup
+                | DisplayValue::TableCell
+                | DisplayValue::TableCaption
+                | DisplayValue::TableColumn
+                | DisplayValue::TableColumnGroup
+        ) {
+            None
+        } else {
+            style.aspect_ratio
+        },
         margin: if is_margin_suppressed {
             taffy::geometry::Rect::zero()
         } else {
