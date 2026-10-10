@@ -9618,20 +9618,28 @@
               // 深层子递归），与 createElement+appendChild 路径成员类型同构（appendChild
               // push wrapper、R380 存 wrapper——_handleChildren 混合容器两种皆合法）。
               // 文本/注释子保持原样（cloneNode 复制分支读 .data 兼容）。物化失败回退
-              // 代理原样（_wcRebuildAsHandle catch 返原 node）。R136 的宿主 parentNode
-              // 语义经 _zwNodeParent 反链保持（append 家族同款——_parentNodeFor handle
-              // 分支消费）。R3031 MO addedNodes 仍持 setter 时快照的代理原件（既有钉测
-              // 纯 introspect；identity 双表示 documented）。已知限制：物化 wrapper 是
+              // 代理原样（_wcRebuildAsHandle catch 返原 node）。_zwNodeParent 反链的
+              // 承重面是焦点注册/retargeting 上行链（R148 handle 域臂沿它上行判 shadow
+              // 归属）与事件冒泡；parentNode 读另有 _parentNodeFor 的 R155
+              // _handleChildren 反查 fallback 兜底。R3031 MO addedNodes 仍持 setter 时
+              // 快照的代理原件（既有钉测纯 introspect；identity 双表示 documented）。
+              // 已知限制：物化 wrapper 是
               // detached 新建 handle，与宿主树 innerHTML 产物 handle 不同源——对查询
               // 产物的样式/属性写不穿透渲染（本切片消「.style 抛 TypeError 脚本中断」面）。
               // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
               var _ihMat = [];
+              var _ihFallback = [];
               for (var _ihMi = 0; _ihMi < _ihAdded.length; _ihMi++) {
                 var _ihMk = _ihAdded[_ihMi];
                 var _ihMw = (_ihMk && _ihMk.nodeType === 1) ? _wcRebuildAsHandle(_ihMk) : _ihMk;
                 if (_ihMw && _ihMw !== _ihMk && _ihMw.__zwHandle && _zwNodeParent) {
                   _zwNodeParent[_ihMw.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
                 }
+                // t8r 返修（N1）：物化失败的顶层元素子（_wcRebuildAsHandle catch 返原
+                // node，_ihMw === _ihMk）未经 createElement 构造，仍需 CE upgrade——
+                // 下方 attach 分流时交给 __zwCeAttachForAdded；成功 wrapper 已由
+                // createElement ctor（registry 命中即构造），不得再 upgrade。
+                if (_ihMk && _ihMk.nodeType === 1 && _ihMw === _ihMk) _ihFallback.push(_ihMk);
                 _ihMat.push(_ihMw);
               }
               _handleChildren[handle] = _ihMat;
@@ -9711,7 +9719,30 @@
             // 'innerHTML on ...' inserting-markup 簇 + builtin-coverage 解析实例化面）。
             if (typeof globalThis.__zwCeAttachForAdded === 'function') {
               try {
-                globalThis.__zwCeAttachForAdded(_ihAdded, _ceParentConnected(sel, handle));
+                if (_ihMat) {
+                  // t8r 返修（N1）：物化生效时顶层元素子已经 createElement 构造
+                  //（registry 命中的 CE ctor 在 createElement 内跑过一次），不能再对
+                  // 原解析代理整表 upgrade——_ceUpgradeNode 无幂等门（_ceRunCtor 无条件
+                  // 执行），重复 ctor 副作用翻倍，且 connectedCallback 会派发到被丢弃
+                  // 的孤儿代理上。改为：物化失败回退的代理（未构造）仍走 upgrade；
+                  // 成功 wrapper 只补连接态派发（同 __zwCeAttachForAdded 的 pc 双源
+                  // 判定 + _ceApplyConn 递归派发，无 ctor）。
+                  // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
+                  var _ihPc = _ceParentConnected(sel, handle);
+                  if (_ihFallback.length) globalThis.__zwCeAttachForAdded(_ihFallback, _ihPc);
+                  for (var _ihCi = 0; _ihCi < _ihMat.length; _ihCi++) {
+                    var _ihCw = _ihMat[_ihCi];
+                    if (_ihCw && _ihCw.__zwHandle) {
+                      var _ihCpc = _ihPc === true;
+                      if (!_ihCpc) { try { _ihCpc = _elConnected(_ihCw); } catch (_eIhCp) { _ihCpc = _ihCpc; } }
+                      if (_ihCpc && typeof _ceApplyConn === 'function') {
+                        try { _ceApplyConn(_ihCw, true); } catch (_eIhCc) {}
+                      }
+                    }
+                  }
+                } else {
+                  globalThis.__zwCeAttachForAdded(_ihAdded, _ceParentConnected(sel, handle));
+                }
               } catch (_eCeIh) {}
             }
             // R304（js-dom M4）：innerHTML 解析 wrapper 打挂父槽（sel 容器的同 turn
