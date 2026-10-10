@@ -1598,6 +1598,60 @@ impl LayoutEngine {
                 }
             }
 
+            // R5039（css-sizing-4 §4.1 + csswg #5257）：definite 轴 + ratio + 另轴
+            // max/min Px 钳——钳绑定后钳值不得回传 definite 轴（taffy grid 双重 transfer：
+            // 022 item2 width:100px + ratio 1/1 + max-height:25 → 25×25 应 100×25；024
+            // item2 height:100px + ratio 1/1 + max-width:25 → 25×25 应 25×100），且行/列轨
+            // 按未钳 ratio 值 sizing（022 row2=100 / 024 col2=100）。显式写入钳后尺寸：
+            // taffy 双轴 definite → 无回传，轨随钳后值 sizing。仅 clamp 真绑定（超 max /
+            // 不足 min）时写入，已守规形状零改写；仅 Px 定值（% 钳在固有轨语境循环，
+            // 独立子问题）。
+            if let Some(id) = b.node_id
+                && let Some(ps) = parent_style
+                && matches!(ps.display, DisplayValue::Grid | DisplayValue::InlineGrid)
+                && let Some(item_style) = my_style
+                && let Some(&tid) = dom_to_taffy.get(&id)
+                && let Ok(mut st) = taffy_tree.style(tid).cloned()
+                && let Some(ratio) = st.aspect_ratio
+                && ratio > 0.0
+            {
+                const EPS: f32 = 0.5;
+                let definite_px = |v: &LengthValue| match v {
+                    LengthValue::Px(x) if x.is_finite() && *x >= 0.0 => Some(*x as f32),
+                    _ => None,
+                };
+                // 支 1：width definite + max/min-height 钳 → height = clamp(宽/ratio)。
+                if let Some(w) = definite_px(&item_style.width) {
+                    let ratio_h = w / ratio;
+                    let clamped_h = match (definite_px(&item_style.max_height), definite_px(&item_style.min_height)) {
+                        (Some(max_h), _) if ratio_h > max_h + EPS => Some(max_h),
+                        (_, Some(min_h)) if ratio_h < min_h - EPS => Some(min_h),
+                        _ => None,
+                    };
+                    if let Some(h) = clamped_h {
+                        st.size.height = taffy::style::Dimension::length(h.max(0.5));
+                        let _ = taffy_tree.set_style(tid, st.clone());
+                        let _ = taffy_tree.mark_dirty(tid);
+                        changed = true;
+                    }
+                }
+                // 支 2：height definite + max/min-width 钳 → width = clamp(高×ratio)。
+                if let Some(h) = definite_px(&item_style.height) {
+                    let ratio_w = h * ratio;
+                    let clamped_w = match (definite_px(&item_style.max_width), definite_px(&item_style.min_width)) {
+                        (Some(max_w), _) if ratio_w > max_w + EPS => Some(max_w),
+                        (_, Some(min_w)) if ratio_w < min_w - EPS => Some(min_w),
+                        _ => None,
+                    };
+                    if let Some(ww) = clamped_w {
+                        st.size.width = taffy::style::Dimension::length(ww.max(0.5));
+                        let _ = taffy_tree.set_style(tid, st);
+                        let _ = taffy_tree.mark_dirty(tid);
+                        changed = true;
+                    }
+                }
+            }
+
             for c in &b.children {
                 changed |= walk(c, my_style, my_taffy_id, taffy_tree, dom_to_taffy, styles);
             }

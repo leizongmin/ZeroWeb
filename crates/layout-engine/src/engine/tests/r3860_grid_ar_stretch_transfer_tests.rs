@@ -148,3 +148,57 @@ fn r5038_grid_justify_items_stretch_with_definite_block_ignores_ratio() {
         item.height
     );
 }
+
+/// R5039（css-sizing-4 §4.1 + csswg #5257）：definite 轴 + ratio + 另轴 max/min Px 钳
+/// 绑定 → 行/列轨按**钳后**尺寸 sizing（grid-aspect-ratio-022 同构：width:100px +
+/// ratio 1/1 + max-height:25px 的 item，其 auto 行高 = 钳后 25 而非未钳 ratio 高 100
+/// ——旧径容器 175 高暴露参照区外红底）。item 自身宽经 taffy max-size ratio transfer
+///（max-height→max-width）钳至 25，属 css-sizing-4 transferred min/max 域，此处不断言。
+#[test]
+fn r5039_grid_ratio_max_height_clamp_no_retransfer() {
+    let html = r#"<html><body>
+<div id="g" style="display:grid; grid-template-columns:100px; width:max-content;">
+  <div id="item" style="width:100px; aspect-ratio:1/1; max-height:25px; background:green"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let item_id = doc.get_element_by_id("item").expect("item");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let item = find(&result.root, item_id).unwrap();
+    let grid = find(&result.root, doc.get_element_by_id("g").expect("g")).unwrap();
+    assert!(
+        (grid.height - 25.0).abs() < 0.5 && (item.height - 25.0).abs() < 0.5,
+        "R5039: max-height 钳须传导至行轨（行高 25 非 ratio 高 100），got grid_h={} item_h={}",
+        grid.height,
+        item.height
+    );
+}
+
+/// R5039：min-width floor 对称形状（grid-aspect-ratio-024 item3 同构：height:100px +
+/// ratio .1/1 → ratio 宽 10 < min-width 25px → 25×100）。
+#[test]
+fn r5039_grid_ratio_min_width_clamp_floors() {
+    let html = r#"<html><body>
+<div id="g" style="display:grid; grid-auto-flow:column; width:max-content;">
+  <div id="item" style="height:100px; aspect-ratio:0.1/1; min-width:25px; background:green"></div>
+</div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let item_id = doc.get_element_by_id("item").expect("item");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let item = find(&result.root, item_id).unwrap();
+    assert!(
+        (item.width - 25.0).abs() < 0.5 && (item.height - 100.0).abs() < 0.5,
+        "R5039: min-width floor ratio 宽（25×100），got {}x{}",
+        item.width,
+        item.height
+    );
+}
