@@ -2,8 +2,8 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-10（M2-S1~S8 三十二片——location-interface 97.7% / traversal 93.3% /
-history-interface 98.2% / navigation-api 92.9%；全量 20.9%→**85.5%**（407/476）；
+**最后更新**: 2026-10-11（M2-S1~S9 三十三片——location-interface 97.7% / traversal 93.3% /
+history-interface 98.2% / navigation-api 93.3%（txt 原始 Pass 行 239/255）；全量 20.9%→**85.7%**（408/476）；
 计数口径自 S4W 起按 evidence txt 原始 Pass 行）
 
 ---
@@ -27,7 +27,7 @@ history-interface 98.2% / navigation-api 92.9%；全量 20.9%→**85.5%**（407/
 | P1 | 四 corpus 导入 + 基线 | ✅ 落地（fetch 三域 + 嵌套 resources 2026-10-07 恢复后入库；基线 20.9%，S1+S2 后全量 29.2%） |
 | P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口 + S4P 速率限制：the-history-interface 81.6%→**98.2%**（55/56——traverse 入队 + 空串 URL + 跨源 SecurityError + push/replaceState 10s/100 次速率窗；S4W 撤销 007「外部脚本基建」挂账——实为外链 404 abort 掩盖，7 子测试真实翻绿）；余 008 Timeout 挂账 |
 | P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | 🔶 S1+S2+S4F+S4P 落地：location-interface 41.9%→**97.7%**（exotic 内部方法面 Proxy 承载收口 + 动态 append 脚本执行通道）、traversal 62.2%→**93.3%**；余 2F = runner 无端口 URL（形态缺口挂账） |
-| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4Y 二十七段落地（→**92.9%**，237/255）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程/form submit navigate/activation 暴露/transition 派发时机/dispose 深簇/navState 入槽克隆/同文档 navState 承继/reentrant 孤儿 transition/提交期 abort/`:target` URL 同步/window.stop abort 面/session history 50 条上限/traverse 语义面/navigationType 随载入态（锚激活例外恒 push）/片段指示元素 decoded 匹配 + 无匹配滚顶 + 锚 record push 例外 + 跨源 canIntercept/pushState·replaceState hashChange=false/location.reload 接线 + 目的态承继/navigate() 同 URL auto→replace/runner readyState 宿过渡/navigateerror filename fire 时快照（S4P 回归追认收口）/锚 download presence own 门全收；余静态锚 href IDL 落 attr 面（2 案——回流 element IDL 域）、Tab 焦点导航 2T + autofocus load 期 7 NotRun（DOM 焦点域）、scroll-behavior reload 族 4F（渲染域） |
+| P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4Y 二十七段落地 + S9 锚 href 动态写可见性（→**93.3%**，txt 原始 Pass 行 239/255）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程/form submit navigate/activation 暴露/transition 派发时机/dispose 深簇/navState 入槽克隆/同文档 navState 承继/reentrant 孤儿 transition/提交期 abort/`:target` URL 同步/window.stop abort 面/session history 50 条上限/traverse 语义面/navigationType 随载入态（锚激活例外恒 push）/片段指示元素 decoded 匹配 + 无匹配滚顶 + 锚 record push 例外 + 跨源 canIntercept/pushState·replaceState hashChange=false/location.reload 接线 + 目的态承继/navigate() 同 URL auto→replace/runner readyState 宿过渡/navigateerror filename fire 时快照（S4P 回归追认收口）/锚 download presence own 门/锚激活 href 动态写 latest-wins 读全收；「静态锚 href IDL 落 attr 回流 element IDL 域」**销项**（S9 定因勘误——attr 持久化从未缺失，纯快照读 stale；双案全绿）；余 Tab 焦点导航 2T + autofocus load 期 14 NotRun（7 断言 × 2 variants，DOM 焦点域）、scroll-behavior reload 族 4F（渲染域） |
 | P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | ⏳ M3 **用户门控** |
 | P5 | bfcache / fission 挂账定稿 | ✅ M4 定稿（bfcache：无实现面，依赖 frame tree→Document 快照管线，挂账至 M3 后续立项；fission：charter 排除维持。见 [M4 评估](evidence/2026-10-09-m4-closeout-assessment.md)） |
 
@@ -312,7 +312,19 @@ history-interface 98.2% / navigation-api 92.9%；全量 20.9%→**85.5%**（407/
   三分维持渲染域（滚动区宽度/内容高 clamp/scroll anchoring 均布局滚动范围缺）。
   1 翻 Fail→Pass；全量 85.3%→**85.5%**（407/476）；零回归（diff 恰一行）。
   证据：[evidence/2026-10-10-m2-s8-vertical-blockstart-scrollx.md](evidence/2026-10-10-m2-s8-vertical-blockstart-scrollx.md)。
-- **质量门禁（三十二片）**：`make test` 全绿（数字见本轮终态行）；纯 .js shim 变更无
+- **M2-S9 锚激活 href 动态写可见性 + 复核轮（2026-10-11）**：复核轮双项——① main 组成态
+  （兄弟流 R5044-R5047/t8r-4 合入后）全量复跑与 S8 evidence 逐行恒等 + 残余 76 案逐案
+  处置核对（C 类清零属实；reload-service-worker-fetch-event = SW fetch 管线 + iframe +
+  跨文档三重门控补记入账）；② S4I 挂账定因勘误收口——探针证 `a.href = v` **确实落 attr**
+  （R3069 → pending SetAttr mutation），缺口是读侧纯快照 stale（URL 分解分支 +
+  `_zwAnchorActivate` attr 回落读不到同批写）：两点改 latest-wins（R3202 FORM 反射 /
+  S4Y download presence 同款先例）收 navigate-anchor-cross-origin（Timeout→Pass，
+  9 项断言全过）。「attr 持久化面回流 dom goal」销项。全量 407→**408**/476（85.7%）；
+  零回归双臂（navigation per-subtest 恰一行 Timeout→Pass + html-syntax 全套件
+  pre-change 基线构建逐行恒等 0 diff）。残余 75（35F + 26T + 14NR）。
+  证据：[evidence/2026-10-11-m2-s9-anchor-href-lw.md](evidence/2026-10-11-m2-s9-anchor-href-lw.md)。
+- **质量门禁（三十三片）**：`make test` 全绿 **20,404 P / 0 F**（两次全量各 1 例不同忙窗
+  flake，solo 恒过 + 第 3 次全量全绿实证，归因记录见 S9 evidence）；纯 .js shim 变更无
   .rs（fmt/clippy 不适用）。
 
 ## M4 收口评估（2026-10-09）

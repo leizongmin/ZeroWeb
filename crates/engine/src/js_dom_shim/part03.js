@@ -15557,7 +15557,10 @@ return e;
       }
     } catch (_e154hx) {}
     if (!_r154Href) {
-      try { _r154Href = handle ? __zw_get_attr_handle(handle, 'href') : (sel ? __zw_get_attr(sel, 'href') : ''); } catch (_e154h) { _r154Href = ''; }
+      // M2-S9：attr 回落同走 latest-wins（同批 IDL/setAttribute 写 apply 前可见——
+      // download presence 的 `__zw_has_attr_lw` M2-S4Y 同款；纯快照读在「脚本设 href
+      // 后同步 click」形态下恒空 → navigate 缺发超时，WPT navigate-anchor-cross-origin）。
+      try { _r154Href = handle ? __zw_get_attr_handle(handle, 'href') : (sel ? (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'href') : __zw_get_attr(sel, 'href')) : ''); } catch (_e154h) { _r154Href = ''; }
     }
     // M2-S4H（navigation-compat）：anchor download 属性 → navigate downloadRequest
     //（presence 判定——`download=""` 同下载；值为文件名。WPT anchor-download-intercept
@@ -16626,7 +16629,12 @@ return e;
               return JSON.parse(_r5blJson).href || String(_r5blRaw);
             } catch (_eR5bl) { return String(_r5blRaw); }
           }
-          var aRaw = handle ? __zw_get_attr_handle(handle, 'href') : __zw_get_attr(sel, 'href');
+          // M2-S9（navigation-compat）：sel 路径改走 latest-wins（R3202 FORM 反射同款）——
+          // `a.href = v` IDL setter 经 R3069 落 pending SetAttr mutation（render apply 前
+          // 不入快照），纯快照 `__zw_get_attr` 读 stale ''：getter round-trip 断（真浏览器
+          // `a.href = v; a.href` 即返解析绝对 URL）且激活链读空 → navigate 缺发超时
+          //（WPT navigate-anchor-cross-origin「脚本设 href 后同步 click」形态）。
+          var aRaw = handle ? __zw_get_attr_handle(handle, 'href') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'href') : __zw_get_attr(sel, 'href'));
           if (!aRaw) {
             // R5009 片 e：空/缺失 href → ''——WPT reflection.js 的 url 期望经
             // resolveUrl（引擎自身 detached-a 组件实现：空串 parse 失败 → 组件 ''
