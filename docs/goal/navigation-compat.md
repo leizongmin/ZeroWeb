@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active（M2 推进中——2026-10-09 M2-S1~S4I 十二片落地，全量 20.9%→69.7%（location-interface 95.3% / traversal 93.3% / history-interface 91.8% / navigation-api 73.5%）；M4 收口评估 DC-1/2/4 满足、DC-3 维持用户门控 pending，残余 136 案定性 + bfcache/fission 挂账定稿；控制面见 [master.md](navigation-compat/master.md)）
+**状态**: Active（M2 收口——2026-10-11 M2-S1~S9 三十三片落地，全量 20.9%→**85.7%**（408/476；location-interface 97.7% / traversal 93.3% / history-interface 98.2% / navigation-api 93.3%）；M4 收口评估 DC-1/2/4 满足、DC-3 维持用户门控 pending（M3 iframe 深结构切片为唯一剩余项，2026-10-04 征询维持挂起默认）；残余 75 案逐案有账 + bfcache/fission 挂账定稿；控制面见 [master.md](navigation-compat/master.md)）
 **执行模式**: WPT 驱动（上游导航面 corpus 为验收标尺）+ 语义修齐；
 iframe 浏览上下文为**用户门控深结构切片**（先例：R1043 vertical-mode / Phase A IFC）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——导航与浏览上下文面）
