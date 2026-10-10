@@ -1018,7 +1018,46 @@ fn block_intrinsic_width_ex(
                 text_content_max_width(id, doc, styles)
             }
         });
-        own_explicit.max(text_w)
+        // R5042（css-sizing-4 §4.1）：叶盒 AR transferred——width content-based + ratio +
+        // definite height（min/max 钳后）→ transfer 宽（intrinsic-size-003 float：
+        // height:100px + ratio 1/1 → shrink-to-fit 贡献 100 而非 0 塌缩）。与
+        // own_explicit（definite width）语义互斥（gate 已限 width 关键字/% 侧）；替换
+        // 元素归 apply_replaced_element_sizing 固有比域（replaced-element-048 canvas
+        // width:max-content + ratio + height:500 双 transfer 实证）；内部表盒排除同
+        // R5041 converter/tree 口径。
+        let own_ar = own_style
+            .filter(|s| {
+                !box_node.is_replaced
+                    && matches!(
+                        s.width,
+                        LengthValue::Auto
+                            | LengthValue::MinContent
+                            | LengthValue::MaxContent
+                            | LengthValue::FitContent(_)
+                            | LengthValue::Percentage(_)
+                    )
+                    && !matches!(
+                        s.display,
+                        DisplayValue::TableRow
+                            | DisplayValue::TableRowGroup
+                            | DisplayValue::TableHeaderGroup
+                            | DisplayValue::TableFooterGroup
+                            | DisplayValue::TableCell
+                            | DisplayValue::TableCaption
+                            | DisplayValue::TableColumn
+                            | DisplayValue::TableColumnGroup
+                    )
+            })
+            .and_then(|_| {
+                let s = own_style.unwrap();
+                s.aspect_ratio.filter(|&r| r > 0.0).and_then(|ratio| {
+                    resolve_intrinsic_real_length(&s.height, s)
+                        .map(|m| clamp_transferred_main(s, m))
+                        .map(|main| aspect_ratio_transferred_width(s, box_node, main, ratio))
+                })
+            })
+            .unwrap_or(0.0);
+        own_explicit.max(text_w).max(own_ar)
     } else if children_inner < own_explicit {
         own_explicit
     } else {

@@ -2998,6 +2998,23 @@ fn build_subtree(
     // 输入，转后 taffy_style.box_sizing 不再反映作者声明；R3912 pass 以此为 gate）。
     let original_box_sizing = taffy_style.box_sizing;
 
+    // R5042（css-sizing-4 §4.1）：aspect-ratio 不适用于内部表盒（table-internal boxes
+    // 明示排除）——converter 源头清零（R5041）只挡 taffy_style.aspect_ratio 通路，本
+    // R3854/R3912 两 pass 直读 computed.aspect_ratio 写 transferred 尺寸（table-element-
+    // 001 th width:100 + ratio 1/1 → 高 100 应行高 50），须同源排除。表元素自身
+    //（display:Table）不排除（ratio 适用，017 第二表 ✓）。
+    let is_table_internal = matches!(
+        computed.display,
+        DisplayValue::TableRow
+            | DisplayValue::TableRowGroup
+            | DisplayValue::TableHeaderGroup
+            | DisplayValue::TableFooterGroup
+            | DisplayValue::TableCell
+            | DisplayValue::TableCaption
+            | DisplayValue::TableColumn
+            | DisplayValue::TableColumnGroup
+    );
+
     // R3854：CSS Sizing 4 §3.1 `aspect-ratio: auto && <ratio>` 的 ratio 恒作用于 **content box**
     //（裸 `<ratio>` 作用于 box-sizing 指定的盒；两值语义 spec 明文分立）。apply 层剥掉 auto 只留
     // ratio float，taffy 在 box_sizing=BorderBox 时把 ratio 施于 border-box → `auto <ratio>` +
@@ -3021,6 +3038,7 @@ fn build_subtree(
         if computed.aspect_ratio_auto
             && computed.aspect_ratio.is_some()
             && !is_replaced_tag
+            && !is_table_internal
             && taffy_style.box_sizing == taffy::style::BoxSizing::BorderBox
             && matches!(computed.writing_mode, WritingModeValue::HorizontalTb)
             && !computed.contain.has_size()
@@ -3092,6 +3110,7 @@ fn build_subtree(
         if std::env::var("ZW_AR_CONTENT_TRANSFER").as_deref() != Ok("0")
             && let Some(ratio) = computed.aspect_ratio
             && !is_replaced_tag
+            && !is_table_internal
             && !parent_is_flex_grid
             && !is_abspos
             && matches!(computed.writing_mode, WritingModeValue::HorizontalTb)
