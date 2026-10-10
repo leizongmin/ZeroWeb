@@ -368,6 +368,7 @@ pub(super) fn adjust_inline_block_positions(
                 y: rel_y + c.margin_top,
                 height: c.height + c.margin_bottom,
                 width: c.width + c.margin_left + c.margin_right,
+                x: c.x + c.margin_left,
                 is_left: matches!(c.float, FloatValue::Left),
             })
         })

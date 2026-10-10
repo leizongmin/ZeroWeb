@@ -1226,6 +1226,7 @@ pub(crate) fn compute_final_inline_layouts(
                     y: rel_y + c.margin_top,
                     height: c.height + c.margin_bottom,
                     width: c.width + c.margin_left + c.margin_right,
+                    x: c.x + c.margin_left,
                     is_left: matches!(c.float, zero_css_parser::values::FloatValue::Left),
                 },
             ))
@@ -1235,11 +1236,12 @@ pub(crate) fn compute_final_inline_layouts(
     // 递归子节点。CSS float 侵入：祖先 BFC 内的 float 会侵入未建 BFC 的后代 block 的 line box，
     // 故把（祖先 float + 本容器直接 float）换算到每个子节点 box 坐标系后向其传播。
     // **排除子节点自身**：float 不应在自身 IFC 中排除自己（float-005 回归实证）。
-    // FloatExclusion 无 x 字段（IFC 仅按 left/right + width 缩减行盒可用宽），故只需平移 y。
+    // R5028：x 同步平移到子内容盒坐标系（float band 模型按 min-right/max-left 消费 x）。
     let transform = |f: &crate::inline::FloatExclusion, child: &LayoutBox| crate::inline::FloatExclusion {
         y: f.y - child.y,
         height: f.height,
         width: f.width,
+        x: f.x - child.x,
         is_left: f.is_left,
     };
     for child in &mut root.children {
@@ -2593,6 +2595,7 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                     y: rel_y + c.margin_top,
                     height: height + c.margin_bottom,
                     width: c.width + c.margin_left + c.margin_right,
+                    x: c.x + c.margin_left,
                     is_left: matches!(c.float, FloatValue::Left),
                 })
             })

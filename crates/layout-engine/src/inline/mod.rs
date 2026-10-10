@@ -1004,8 +1004,13 @@ impl InlineFormattingContext {
     /// - `left_offset` — 左侧浮动占据的宽度（文本起始 x 坐标）
     /// - `available_width` — 扣除左右浮动后的剩余可用宽度
     fn effective_content_area(&self, line_y: f32, line_height: f32) -> (f32, f32) {
-        let mut left_offset = 0.0_f32;
-        let mut right_reduction = 0.0_f32;
+        // R5028：float band 模型（CSS 2.1 §9.5）——行盒可用带 = 行盒 y 范围内重叠
+        // float 的 [max-left-edge, min-right-edge]。左 float 锚左缘（edge = x+width 取
+        // max，并排/堆叠皆正确），右 float 锚右缘（edge = x 取 min）。旧模型按方向
+        // **累加**宽度——clear 堆叠的右 float（50+100）被双计（band 250 应 300，
+        // floats-wrap-top-below-inline-001r line2 右对齐位 x=50 应 100）。
+        let mut left_edge = 0.0_f32;
+        let mut right_edge = self.container_width;
 
         for excl in &self.float_exclusions {
             // 检查排除区域是否与当前行的 y 范围重叠
@@ -1013,17 +1018,15 @@ impl InlineFormattingContext {
             let line_bottom = line_y + line_height;
             if excl.y < line_bottom && excl_bottom > line_y {
                 if excl.is_left {
-                    // 左浮动：累加宽度（多个左浮动堆叠）
-                    left_offset += excl.width;
+                    left_edge = left_edge.max(excl.x + excl.width);
                 } else {
-                    // 右浮动：累加缩减
-                    right_reduction += excl.width;
+                    right_edge = right_edge.min(excl.x);
                 }
             }
         }
 
-        let available = (self.container_width - left_offset - right_reduction).max(0.0);
-        (left_offset, available)
+        let available = (right_edge - left_edge).max(0.0);
+        (left_edge, available)
     }
 
     /// 从 ComputedStyle 提取 inline 元素的垂直 padding 和 border。

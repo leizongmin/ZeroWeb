@@ -522,6 +522,12 @@ pub struct FloatExclusion {
     pub height: f32,
     /// 排除区域占据的宽度（px）。
     pub width: f32,
+    /// R5028：排除区域左边缘 x（相对于容器内容区域左侧）。行盒 float band 模型
+    ///（CSS 2.1 §9.5：行盒可用带 = 行盒 y 范围内重叠 float 的 min-right/max-left）
+    /// 需要每 float 的横向位置区分「并排」与「clear 堆叠」——旧模型按方向累加宽度，
+    /// clear 堆叠的右 float（50+100）被双计（floats-wrap-top-below-inline-001r
+    /// line2 band 250 应 300）。
+    pub x: f32,
     /// 浮动方向：true = 左浮动，false = 右浮动。
     pub is_left: bool,
 }

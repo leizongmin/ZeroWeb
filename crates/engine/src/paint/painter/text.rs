@@ -195,8 +195,9 @@ impl super::Painter {
     ) -> Vec<FloatExclusion> {
         let mut exclusions = Vec::new();
 
-        // 容器内容区域的原点 y 偏移（浮动排除区域相对于内容区域顶部计算）
+        // 容器内容区域的原点偏移（浮动排除区域相对于内容区域左上角计算）
         let content_offset_y = box_node.border_top + box_node.padding_top;
+        let content_offset_x = box_node.border_left + box_node.padding_left;
 
         for child in &box_node.children {
             // 跳过绝对定位子元素（不参与浮动流）
@@ -217,6 +218,7 @@ impl super::Painter {
                         y: rel_y,
                         height: child.height,
                         width: child.width,
+                        x: child.x - content_offset_x,
                         is_left,
                     });
                 }

@@ -38,6 +38,7 @@ fn test_float_exclusion_left_float() {
         y: 0.0,
         height: 100.0,
         width: 80.0,
+        x: 0.0,
         is_left: true,
     }]);
     let runs = vec![TextRun::simple(
@@ -67,6 +68,7 @@ fn test_float_exclusion_right_float() {
         y: 0.0,
         height: 100.0,
         width: 80.0,
+        x: 0.0,
         is_left: false,
     }]);
     // 使用一个会换行的长文本
@@ -88,18 +90,21 @@ fn test_float_exclusion_right_float() {
 /// 测试左右浮动同时存在 — 文本排列在中间缝隙中。
 #[test]
 fn test_float_exclusion_both_sides() {
-    // 容器 200px，左浮动 60px，右浮动 60px，可用 80px
+    // 容器 200px，左浮动 60px（锚左缘 x=0），右浮动 60px（锚右缘 x=140），可用带
+    // [60,140) = 80px（R5028 band 模型：右 float x = 其左边缘）。
     let mut ctx = InlineFormattingContext::new(200.0).with_float_exclusions(vec![
         FloatExclusion {
             y: 0.0,
             height: 100.0,
             width: 60.0,
+            x: 0.0,
             is_left: true,
         },
         FloatExclusion {
             y: 0.0,
             height: 100.0,
             width: 60.0,
+            x: 140.0,
             is_left: false,
         },
     ]);
@@ -130,6 +135,7 @@ fn test_float_exclusion_only_affects_overlapping_lines() {
         y: 0.0,
         height: 20.0,
         width: 80.0,
+        x: 0.0,
         is_left: true,
     }]);
     // 使用足够多的文本产生多行（每行约 20px 高）
@@ -169,17 +175,21 @@ fn test_float_exclusion_only_affects_overlapping_lines() {
 /// 测试 effective_content_area 辅助函数。
 #[test]
 fn test_effective_content_area() {
+    // R5028 band 模型：左 float 锚左缘（x=0 w=100 → edge 100），右 float 锚右缘
+    // （x=220 w=80 → 右缘 220）——可用带 [100,220) = 120。
     let ctx = InlineFormattingContext::new(300.0).with_float_exclusions(vec![
         FloatExclusion {
             y: 0.0,
             height: 50.0,
             width: 100.0,
+            x: 0.0,
             is_left: true,
         },
         FloatExclusion {
             y: 0.0,
             height: 50.0,
             width: 80.0,
+            x: 220.0,
             is_left: false,
         },
     ]);
@@ -668,7 +678,8 @@ fn r3786_newline_after_block_break_in_flow_block() {
 /// 与 floats-wrap-top-below-bfc-003l/r。
 #[test]
 fn r4234_line_initial_inline_block_pushed_below_float_band() {
-    // 场景 ①：container 250，两 float 带 [10,110) 各占宽 100、第三带 [110,210) 占宽 100。
+    // 场景 ①：container 250，两 float 并排 [0,200) 占带 [10,110)、第三 float 带
+    // [110,210) 占宽 100（R5028 band 模型：并排左 float x=0/x=100，edge=max=200）。
     // 首行 [0,100) 缩窄后 avail=50 < 盒宽 100 → 下移至 y=110（p1/p2 带底），该带
     // 左缘=100、avail=150 ≥ 100 → 原子盒落 (100, 110)。
     let mut ctx = InlineFormattingContext::new(250.0).with_float_exclusions(vec![
@@ -676,18 +687,21 @@ fn r4234_line_initial_inline_block_pushed_below_float_band() {
             y: 10.0,
             height: 100.0,
             width: 100.0,
+            x: 0.0,
             is_left: true,
         },
         FloatExclusion {
             y: 10.0,
             height: 100.0,
             width: 100.0,
+            x: 100.0,
             is_left: true,
         },
         FloatExclusion {
             y: 110.0,
             height: 100.0,
             width: 100.0,
+            x: 0.0,
             is_left: true,
         },
     ]);
@@ -721,6 +735,7 @@ fn r4234_line_initial_inline_block_pushed_below_float_band() {
         y: 500.0,
         height: 100.0,
         width: 100.0,
+        x: 0.0,
         is_left: true,
     }]);
     ctx2.break_items_into_lines(vec![InlineItem::InlineBlock(InlineBlockBox {
