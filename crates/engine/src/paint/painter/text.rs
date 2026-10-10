@@ -2108,7 +2108,7 @@ impl super::Painter {
                         .filter(|s| s.background_color != ColorValue::Transparent)
                         .map(|s| color_value_to_render(&s.background_color));
                     macro_rules! render_fragment {
-                        ($frag_x:expr, $frag_y:expr, $frag_line_top:expr, $frag_edge:expr, $frag_width:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr, $frag_ls:expr) => {{
+                        ($frag_x:expr, $frag_y:expr, $frag_line_top:expr, $frag_edge:expr, $frag_width:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr, $frag_ls:expr, $frag_sel:expr) => {{
                             // R4233：per-fragment letter-spacing（镜像 R4133 per-fragment
                             // word-spacing）——片段所属 run 声明的 ls 与容器盒不同时
                             //（span{letter-spacing} / 容器内 normal 重置），glyph advance、
@@ -2224,6 +2224,11 @@ impl super::Painter {
                                 Some(clip_bg) => color_over(frag_color, clip_bg),
                                 None => frag_color,
                             };
+                            // R5053：整行选中 → ::selection color 覆写（owner+行盒顶查表，
+                            // 调用点按活跃片段序列预算；None = 未选中行保持原色）。置于
+                            // clip:text 预混之后——选中行伪色直接生效（clip:text × selection
+                            // 同时态罕见，取 selection 优先语义）。
+                            let frag_color = $frag_sel.unwrap_or(frag_color);
 
                             // R1021：text-emphasis 取自片段 owner 样式（<span> 上设）。
                             let shaping_style = owner_style_opt.unwrap_or(style);
@@ -2958,6 +2963,100 @@ impl super::Painter {
                         }};
                     }
 
+                    // R5053（css-pseudo-4 §highlight-selectors）：IFC 文本路径 ::selection
+                    // 行级高亮——textarea 无 retained 值的可见文本走本路径（R5052 只接了
+                    // paint_input_value 的 attr/retained 路径），普通元素直接文本同门。
+                    // 门：本盒自身即选区 owner（harness 回流 selector 解析的 NodeId ==
+                    // box_node.node_id）+ 作者 ::selection 规则 + LTR + 水平书写 + 非折叠
+                    // 选区。粒度 = 整行（≡ R5052）：行内本 owner 片段 utf16 区间 ⊆ 选区
+                    // → 该行字形用伪样式 color（经 render_fragment! 调用点传入覆写）；
+                    // 全部内容行选中 → 一枚 padding box 高亮（≡ ref 页 background-color
+                    // 可见区域）。渲染序累计 utf16 对 select-all 形态无对齐偏差；部分选区
+                    // 的空白折叠偏移与后代 owner（span::selection）均不在本切片（FIXME）。
+                    let mut sel_line_colors: HashMap<(NodeId, u32), Color> = HashMap::new();
+                    let mut sel_padbox_fill: Option<Color> = None;
+                    if let Some(box_id) = box_node.node_id
+                        && !is_vertical
+                        && matches!(style.direction, zero_style_system::DirectionValue::Ltr)
+                        && let Some(&(sel_start, sel_end)) = self.text_selections.get(&box_id)
+                        && let Some(pseudo) = &style.selection_pseudo
+                    {
+                        let sel_color = super::super::color::resolve_color_current(&pseudo.color, &style.color);
+                        let sel_bg = super::super::color::resolve_color_current(&pseudo.background_color, &style.color);
+                        // 活跃路径的 (node_id, 行盒顶, 片段文本) 序列（渲染序 ≈ 文档序）。
+                        let active_frags: Vec<(NodeId, f32, &str)> = if use_stored {
+                            stored_fragments
+                                .iter()
+                                .map(|f| (f.node_id, f.line_top_rel, f.text.as_str()))
+                                .collect()
+                        } else {
+                            fragments
+                                .iter()
+                                .enumerate()
+                                .map(|(gi, f)| {
+                                    (
+                                        f.node_id,
+                                        frag_line_tops.get(gi).copied().unwrap_or(0.0),
+                                        f.text.as_str(),
+                                    )
+                                })
+                                .collect()
+                        };
+                        // owner 解析 ≡ render_fragment! r4332_owner（文本节点取父元素）。
+                        let owner_of = |nid: NodeId| -> NodeId {
+                            if doc.get(nid).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))) {
+                                doc.parent_node(nid).unwrap_or(nid)
+                            } else {
+                                nid
+                            }
+                        };
+                        // 逐 owner utf16 累计 + 行分组（软换行不消耗字符；同行连续片段
+                        // 首片段前偏移即行起点）。
+                        let mut owner_off: HashMap<NodeId, usize> = HashMap::new();
+                        let mut line_ranges: Vec<((NodeId, u32), usize, usize)> = Vec::new();
+                        for (nid, line_top, text) in &active_frags {
+                            let owner = owner_of(*nid);
+                            let off = owner_off.entry(owner).or_insert(0);
+                            let len16 = text.encode_utf16().count();
+                            match line_ranges
+                                .iter_mut()
+                                .find(|((o, l), _, _)| *o == owner && *l == line_top.to_bits())
+                            {
+                                Some((_, _, end)) => *end += len16,
+                                None => line_ranges.push(((owner, line_top.to_bits()), *off, *off + len16)),
+                            }
+                            *off += len16;
+                        }
+                        let mut any_line = false;
+                        let mut all_selected = true;
+                        for ((owner, ltb), line_start, line_end) in &line_ranges {
+                            if *owner != box_id || line_end <= line_start {
+                                continue;
+                            }
+                            any_line = true;
+                            if sel_start <= *line_start && *line_end <= sel_end {
+                                sel_line_colors.insert((*owner, *ltb), sel_color);
+                            } else {
+                                all_selected = false;
+                            }
+                        }
+                        if any_line && all_selected && sel_bg.a > 0 {
+                            sel_padbox_fill = Some(sel_bg);
+                        }
+                    }
+                    if let Some(sel_bg) = sel_padbox_fill {
+                        // 高亮铺 padding box（背景绘制区内、UA 边框内缘，R5052 同式）。
+                        self.primitives.add_fill(
+                            Rect::new(
+                                abs_x + box_node.border_left,
+                                abs_y + box_node.border_top,
+                                (box_node.width - box_node.border_left - box_node.border_right).max(0.0),
+                                (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0),
+                            ),
+                            sel_bg,
+                        );
+                    }
+
                     if use_stored {
                         // R4332：owner 片段序首/末旗标（宏参数传入，见宏首注释）。
                         let r4332_edges = owner_fragment_edge_flags(
@@ -2997,7 +3096,20 @@ impl super::Painter {
                                 frag.node_id,
                                 frag.is_ahem,
                                 frag.source.as_ref(),
-                                frag.letter_spacing
+                                frag.letter_spacing,
+                                sel_line_colors
+                                    .get(&(
+                                        if doc
+                                            .get(frag.node_id)
+                                            .is_some_and(|n| matches!(n.kind, NodeKind::Text(_)))
+                                        {
+                                            doc.parent_node(frag.node_id).unwrap_or(frag.node_id)
+                                        } else {
+                                            frag.node_id
+                                        },
+                                        frag.line_top_rel.to_bits()
+                                    ))
+                                    .copied()
                             );
                         }
                     } else {
@@ -3036,7 +3148,20 @@ impl super::Painter {
                                 fragment.node_id,
                                 fragment.is_ahem,
                                 fragment.source.as_ref(),
-                                fragment.letter_spacing
+                                fragment.letter_spacing,
+                                sel_line_colors
+                                    .get(&(
+                                        if doc
+                                            .get(fragment.node_id)
+                                            .is_some_and(|n| matches!(n.kind, NodeKind::Text(_)))
+                                        {
+                                            doc.parent_node(fragment.node_id).unwrap_or(fragment.node_id)
+                                        } else {
+                                            fragment.node_id
+                                        },
+                                        frag_line_tops.get(frag_gi).copied().unwrap_or(0.0).to_bits()
+                                    ))
+                                    .copied()
                             );
                         }
                     }
