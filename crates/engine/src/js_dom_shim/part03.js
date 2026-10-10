@@ -9286,6 +9286,11 @@
       childNodes: [],
       parentNode: parent || null
     };
+    // t8q（site-compat）：本地产物标记（non-enumerable 防 for-in/序列化扩散）——
+    // _zwMEl 是工厂返回的 plain 对象（无共享 prototype 可 instanceof）；DOMParser
+    // 文档 body.firstChild 经 _ensureMutTree 返回的就是本形态节点，adoptNode
+    // 落地分支（part06）以 `__zwIsMEl === true` 识别物化对象。
+    try { Object.defineProperty(node, '__zwIsMEl', { value: true, enumerable: false }); } catch (_eMElTag) {}
     // R167（js-dom M1 L2-d3b）：ownerDocument accessor——查询产物归一到 mutTree 真实
     // 节点后，消费面（WPT Element-matches 的 runSpecialMatchesTests
     // `element.ownerDocument.defaultView.TypeError`）经此读文档。归建树设
