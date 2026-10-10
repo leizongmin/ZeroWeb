@@ -331,6 +331,12 @@ history-interface 98.2% / navigation-api 93.3%（txt 原始 Pass 行 239/255）�
   DC-4 reftest 账龄清零。首跑 407 假信号 = A/B 基线臂陈旧 release 二进制（上轮 stash pop
   后未重建），learning 见
   [docs/learnings/bugs/2026-10/2026-10-11-ab-baseline-rebuild-stale-release-binary.md](../../learnings/bugs/2026-10/2026-10-11-ab-baseline-rebuild-stale-release-binary.md)。
+  **R5050/R5051 组成态追认（2026-10-11）**：t8s1 合并 + style-compat R5050/R5051 入
+  main 后全量复跑（release 零重编译 = 二进制即 HEAD `1430038a3` 组成），per-subtest
+  语义 diff vs S9 evidence **逐行恒等**（408P/35F/26T/14NR，同组成连三跑全同）——
+  残余处置抽核维持（sandbox allow_top_navigation 2F = popup+iframe+beforeunload 载体、
+  history 008 = `www.` 跨主机脚本 URL，均属实挂账）。证据：
+  [evidence/2026-10-11-composition-recheck-r5050-r5051.md](evidence/2026-10-11-composition-recheck-r5050-r5051.md)。
 
 ## M4 收口评估（2026-10-09）
 
