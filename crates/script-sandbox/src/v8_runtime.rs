@@ -384,6 +384,17 @@ impl V8Sandbox {
     /// 无 `register_callback` 调用时行为完全同今（零回归）。须在 `execute` 之前调用。
     #[allow(clippy::type_complexity)]
     pub fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
+        // 同名重注册 = 替换（最后注册者胜——execute 全量重装时后安装覆盖前者，此处
+        // 把该既有可见语义显式化）。宿主每次脚本执行都会全量重注册回调面（webview
+        // `execute_dom_script` 每脚本两遍 `register_dom_callbacks`），不去重时
+        // `self.callbacks` 与 `HOST_CALLBACKS` 随脚本数无界增长，且 `execute` 每次按
+        // 注册史全量重装 O(n)、整页脚本累计 O(n²)（t8p deterministic replay 二次方
+        // 退化根因：445 脚本后单脚本 ~1s）。复用既有槽位，旧闭包就地 drop。
+        if let Some(slot) = self.callbacks.iter_mut().find(|(n, _)| n == name).map(|(_, idx)| *idx) {
+            let cb: HostCallback = Arc::from(callback);
+            HOST_CALLBACKS.with(|cbs| cbs.borrow_mut()[slot] = cb);
+            return;
+        }
         let cb: HostCallback = Arc::from(callback);
         let idx = HOST_CALLBACKS.with(|cbs| {
             let mut cbs = cbs.borrow_mut();
@@ -1088,6 +1099,34 @@ mod tests {
         // 第二次 execute 复用缓存 Context，回调仍可用。
         let r2 = sandbox.execute("__zw_greet('again')").unwrap();
         assert_eq!(r2.value, "hi again");
+    }
+
+    // ── t8p（webview deterministic replay 二次方退化根因）：同名重注册须替换不累积 ──
+    // 宿主每次脚本执行都全量重注册回调面（webview execute_dom_script 每脚本两遍
+    // register_dom_callbacks）；不去重时 `callbacks` 与 `HOST_CALLBACKS` 随脚本数无界
+    // 增长，`execute` 每次按注册史全量重装 O(n)、整页脚本累计 O(n²)（445 脚本后单
+    // 脚本 ~1s，replay 测试挂死）。修前两表长度随注册次数线性增长，本钉红态可判别。
+    // HOST_CALLBACKS 为 thread-local（同线程跨测试共享），断言用注册前后差值。
+
+    #[test]
+    fn test_register_callback_same_name_replaces_not_accumulates() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let host_before = HOST_CALLBACKS.with(|cbs| cbs.borrow().len());
+        sandbox.register_callback("__zw_pin", Box::new(|_| "first".to_string()));
+        // 同名重注册 50 次 + 一个不同名回调：两表都不得累积。
+        for i in 0..50 {
+            let tag = format!("v{i}");
+            sandbox.register_callback("__zw_pin", Box::new(move |_| tag.clone()));
+        }
+        sandbox.register_callback("__zw_other", Box::new(|_| "other".to_string()));
+        assert_eq!(sandbox.callbacks.len(), 2, "同名重注册去重（修前 51+）");
+        let host_after = HOST_CALLBACKS.with(|cbs| cbs.borrow().len());
+        assert_eq!(host_after - host_before, 2, "HOST_CALLBACKS 槽位复用（修前 51+）");
+        // 最后注册者胜 + 其他回调不受影响。
+        let latest = sandbox.execute("__zw_pin()").unwrap();
+        assert_eq!(latest.value, "v49");
+        let other = sandbox.execute("__zw_other()").unwrap();
+        assert_eq!(other.value, "other");
     }
 
     // ── P1b S1 异步回调 resolve（方案 A）──
