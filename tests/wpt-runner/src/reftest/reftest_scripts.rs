@@ -21,7 +21,18 @@ pub struct ScrollOffsetRecord {
     pub scroll_top: f32,
 }
 
-/// 返回 (JS 后最终 HTML, 页面最终焦点 selector, 脚本化滚动偏移表)。焦点 selector 取
+/// R5052：脚本化文本选区记录（`input.select()`/`setSelectionRange()` → shim
+/// `_textSelection` 经 `__zw_dump_text_selections` 导出；照 R4353 滚动偏移回流模式）。
+/// start/end 为 UTF-16 码元区间 [start, end)（shim selectionStart/End 同语义）。
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct TextSelectionRecord {
+    pub selector: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+/// 返回 (JS 后最终 HTML, 页面最终焦点 selector, 脚本化滚动偏移表, 脚本化文本选区表)。
+/// 焦点 selector 取
 /// FocusChanged 记录的**最后一条**（spec 焦点转移语义：最后一次 focus/blur 胜出），供渲染
 /// 管线 `set_focused_selector` 注入 `:focus`/`:focus-within` 样式判定（R4241——serialize→re-parse
 /// 边界不携带焦点，须显式跨接）。
@@ -30,11 +41,16 @@ pub(super) fn apply_scripted_dom_mutations(
     base_dir: Option<&Path>,
     wpt_root: Option<&Path>,
     canvas_registry: &std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>>,
-) -> (String, Option<String>, Vec<ScrollOffsetRecord>) {
+) -> (
+    String,
+    Option<String>,
+    Vec<ScrollOffsetRecord>,
+    Vec<TextSelectionRecord>,
+) {
     let scripts = extract_page_scripts(html);
     let onload_handlers = extract_onload_handlers(html);
     if scripts.is_empty() && onload_handlers.is_empty() {
-        return (html.to_string(), None, Vec::new());
+        return (html.to_string(), None, Vec::new(), Vec::new());
     }
 
     use std::sync::Arc;
@@ -50,13 +66,13 @@ pub(super) fn apply_scripted_dom_mutations(
     #[cfg(feature = "v8")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> = match zero_script_sandbox::V8Sandbox::with_config(config) {
         Ok(s) => Box::new(s),
-        Err(_) => return (html.to_string(), None, Vec::new()),
+        Err(_) => return (html.to_string(), None, Vec::new(), Vec::new()),
     };
     #[cfg(feature = "quickjs")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
         match zero_script_sandbox::QuickJSSandbox::with_config(config) {
             Ok(s) => Box::new(s),
-            Err(_) => return (html.to_string(), None, Vec::new()),
+            Err(_) => return (html.to_string(), None, Vec::new(), Vec::new()),
         };
 
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
@@ -69,7 +85,7 @@ pub(super) fn apply_scripted_dom_mutations(
 
     if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
         eprintln!("  [reftest JS] DOM shim init warning: {e}");
-        return (html.to_string(), None, Vec::new());
+        return (html.to_string(), None, Vec::new(), Vec::new());
     }
     // reftest harness 自有更完整的 <body>/<frameset>/<html> onload 处理（下方直接执行 handler 体 + 派发
     // 'load'）；禁用 R2946 body→window 反射以避免双 fire（重复 mutation 致 apply_mutations_to_html 失败）。
@@ -256,7 +272,17 @@ pub(super) fn apply_scripted_dom_mutations(
         eprintln!("  [reftest JS] scroll offsets: {scroll_offsets:?}");
     }
 
-    (current, focus_selector, scroll_offsets)
+    // R5052：脚本化文本选区导出（shim `_textSelection`；非折叠选区条目）。
+    let text_selections: Vec<TextSelectionRecord> = sandbox
+        .execute_json("(typeof __zw_dump_text_selections === 'function') ? __zw_dump_text_selections() : '[]'")
+        .ok()
+        .and_then(|r| serde_json::from_str::<Vec<TextSelectionRecord>>(&r.value).ok())
+        .unwrap_or_default();
+    if std::env::var("REFTEST_DEBUG").is_ok() {
+        eprintln!("  [reftest JS] text selections: {text_selections:?}");
+    }
+
+    (current, focus_selector, scroll_offsets, text_selections)
 }
 
 /// R4344：解析期 `appendChild` 位置锚定——把单个内联脚本执行期间（`range`）记录的

@@ -1963,6 +1963,12 @@ impl WebView {
         self.pipeline.set_scroll_offsets(offsets);
     }
 
+    /// R5052：脚本化文本选区回流（reftest harness shim `_textSelection` 记录，
+    /// ≡ set_scroll_offsets 同型透传）。
+    pub fn set_text_selections(&mut self, selections: Vec<(String, usize, usize)>) {
+        self.pipeline.set_text_selections(selections);
+    }
+
     /// 从当前 live Document 查询 selector 对应的 opaque node handle。
     pub fn page_node_handle_for_selector(&self, selector: &str) -> Option<u64> {
         self.pipeline.page_node_handle_for_selector(selector)

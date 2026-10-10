@@ -73,6 +73,20 @@
   // headless 无真 caret/选择渲染，故 selection 为纯 JS 跟踪（供文本编辑器 / 自动选择 / Range 算法读状态）。
   // 同 _inputValues/_classCache 经 `__zw_reset_form_state` 清空。
   var _textSelection = {};
+  // R5052：文本选区导出（reftest harness 消费）——非折叠选区条目（'@handle' 键 =
+  // detached createElement 元素不在文档不渲染，跳过；折叠 start===end 无高亮，跳过）。
+  // 返回 JSON 数组 [{selector, start, end}]（UTF-16 码元区间），随渲染参数回流
+  //（照 __zw_dump_scroll_offsets / R4241 focus_selector 模式）。
+  globalThis.__zw_dump_text_selections = function () {
+    var out = [];
+    for (var k in _textSelection) {
+      var v = _textSelection[k];
+      if (!v || k.charAt(0) === '@') continue;
+      if (!(v.end > v.start)) continue;
+      out.push({ selector: k, start: v.start, end: v.end });
+    }
+    return out;
+  };
   // HTMLOutputElement（R2846）：value 独立于 textContent（<output> 按 children 渲染非 value；spec：设 .value
   // 不触碰 DOM text）。_outputDefault = 默认值（= 初始 textContent，lazy 捕获一次跨 value 变更稳定）；
   // _outputValue = dirty 后的当前值（key 存在即 dirty）。同 _inputValues 经 `__zw_reset_form_state` 清空。

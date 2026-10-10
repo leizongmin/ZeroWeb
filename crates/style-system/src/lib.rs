@@ -764,6 +764,55 @@ impl StyleSystem {
                         computed.placeholder_pseudo = Some(ph);
                     }
                 }
+                // R5052（css-pseudo-4 §highlight-selectors）：`::selection` 伪样式——
+                // 脚本化选区（reftest harness 回流，照 R4241 focus 模式）的选中行高亮
+                // 与字形色需经 owner 存储传递（≡ R5051 ::placeholder 模式）。门：文本类
+                // input/textarea（≡ placeholder 宿主类型集再排除 password——paint 侧
+                // bullet 逐字符映射选区歧义）；存储判据 = 作者规则改了 color，或设了
+                // 非 transparent 背景（不能比 elem_style——UA 表单默认值是非继承属性，
+                // 无规则时 pseudo 计算回落 initial 值即与元素 UA 背景相异，误存）。
+                // UA 默认高亮色未实现（FIXME）：无作者规则不存储，paint 无高亮
+                //（零新红——老页面选区渲染零变化）。
+                let is_selection_host = |kind: &NodeKind| -> bool {
+                    let NodeKind::Element(e) = kind else { return false };
+                    let tag = e.local_name();
+                    if tag == "textarea" {
+                        return true;
+                    }
+                    if tag != "input" {
+                        return false;
+                    }
+                    let itype = doc.get_attribute(node, "type").unwrap_or_default().to_lowercase();
+                    !matches!(
+                        itype.as_str(),
+                        "checkbox"
+                            | "radio"
+                            | "color"
+                            | "submit"
+                            | "reset"
+                            | "button"
+                            | "image"
+                            | "hidden"
+                            | "file"
+                            | "range"
+                            | "password"
+                    )
+                };
+                if is_selection_host(&node_data.kind) {
+                    let sel = self.compute_element_style_internal(
+                        doc,
+                        node,
+                        stylesheets,
+                        rule_index,
+                        Some(&elem_style),
+                        &saved_custom,
+                        quirks_mode,
+                        Some("selection"),
+                    );
+                    if sel.color != elem_style.color || !matches!(sel.background_color, ColorValue::Transparent) {
+                        computed.selection_pseudo = Some(sel);
+                    }
+                }
                 // R4257（CSS Overflow 5 §scroll-marker-group）：`::scroll-marker-group`
                 // 伪元素——元素声明 `scroll-marker-group` 非 none 时计算并存储。组盒的
                 // 布局生成（tree.rs before/after 滚动内容）与绘制（paint 伪样式覆盖）

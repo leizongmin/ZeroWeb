@@ -427,6 +427,26 @@ impl super::Painter {
         } else {
             super::super::color::color_value_to_render(&style.color)
         };
+        // R5052（css-pseudo-4 §highlight-selectors）：::selection 选中行高亮 + 字形色。
+        // 门：作者 ::selection 规则（style-system 存 owner selection_pseudo）+ harness
+        // 注入的非折叠选区 + LTR + 非 password（bullet 映射歧义，两门对齐）。粒度 =
+        // 整行：行 UTF-16 区间 ⊆ 选区才着色——部分选中行零变化（部分行高亮 FIXME
+        // 挂账；驱动案 selection-input/textarea-011 均为 select() 全选）。
+        let line_selection: Option<(usize, usize, Color, Color)> =
+            match (self.text_selections.get(&node_id), style.selection_pseudo.as_ref()) {
+                (Some(&(start, end)), Some(pseudo))
+                    if !is_placeholder
+                        && itype != "password"
+                        && matches!(style.direction, zero_style_system::DirectionValue::Ltr) =>
+                {
+                    let sel_bg = super::super::color::resolve_color_current(&pseudo.background_color, &style.color);
+                    let sel_color = super::super::color::resolve_color_current(&pseudo.color, &style.color);
+                    let total = boundary_value.encode_utf16().count();
+                    let (start, end) = (start.min(total), end.min(total));
+                    (start < end).then_some((start, end, sel_bg, sel_color))
+                }
+                _ => None,
+            };
         let (default_font_id, synthetic_italic) = self.resolve_style_font_id(&style.font_family, style);
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
@@ -438,6 +458,35 @@ impl super::Painter {
         let line_height = font_size * 1.2;
         let lines: Vec<&str> = label.split('\n').collect();
         let boundary_lines: Vec<&str> = boundary_value.split('\n').collect();
+        // 行 UTF-16 区间预表（≡ 下方 line_utf16_start 累计口径：行长 + 行间 '\n'）。
+        let line_ranges: Vec<(usize, usize)> = {
+            let mut off = 0usize;
+            boundary_lines
+                .iter()
+                .map(|bl| {
+                    let r = (off, off + bl.encode_utf16().count());
+                    off = r.1 + 1;
+                    r
+                })
+                .collect()
+        };
+        // 全行选中 → 高亮矩形铺 padding box（背景绘制区内、UA 边框内缘——≡ ref 页
+        // background-color 可见区域，红底测试页由此完全被高亮覆盖）。
+        if let Some((s, e, sel_bg, _)) = line_selection
+            && sel_bg.a > 0
+            && !line_ranges.is_empty()
+            && line_ranges.iter().all(|&(a, b)| b == a || (s <= a && b <= e))
+        {
+            self.primitives.add_fill(
+                Rect::new(
+                    abs_x + box_node.border_left,
+                    abs_y + box_node.border_top,
+                    (box_node.width - box_node.border_left - box_node.border_right).max(0.0),
+                    (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0),
+                ),
+                sel_bg,
+            );
+        }
         let node_handle = crate::hit_test::node_id_to_u64(node_id);
         let text_direction = match style.direction {
             zero_style_system::DirectionValue::Ltr => TextDirection::LeftToRight,
@@ -489,6 +538,16 @@ impl super::Painter {
                 content_x
             };
             let boundary_line = boundary_lines.get(line_index).copied().unwrap_or_default();
+            // R5052：整行选中 → 该行字形用 ::selection color（行区间 ⊆ 选区；空行不算）。
+            let line_fully_selected = line_selection.is_some_and(|(s, e, _, _)| {
+                line_ranges
+                    .get(line_index)
+                    .is_some_and(|&(a, b)| b > a && s <= a && b <= e)
+            });
+            let line_color = match line_selection {
+                Some((_, _, _, sel_color)) if line_fully_selected => sel_color,
+                _ => color,
+            };
             let mut utf16_offset = line_utf16_start;
             if has_text_boundaries {
                 self.primitives.add_text_control_boundary(TextControlBoundary {
@@ -520,7 +579,7 @@ impl super::Painter {
                         x: char_x + glyph.x_offset,
                         y: baseline_y - glyph.y_offset,
                         font_size: glyph.font_size,
-                        color,
+                        color: line_color,
                         glyph_id: glyph.code_point as u32,
                         font_glyph_index: u16::try_from(glyph.glyph_id).ok(),
                         source,
@@ -551,7 +610,7 @@ impl super::Painter {
                         x: char_x,
                         y: baseline_y,
                         font_size,
-                        color,
+                        color: line_color,
                         glyph_id: ch as u32,
                         font_glyph_index: None,
                         source: None,

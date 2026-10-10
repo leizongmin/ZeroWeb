@@ -181,6 +181,11 @@ pub struct Painter {
     /// R4353：脚本化滚动偏移（selector 字符串未解析态 + paint 期解析后的 NodeId 态）。
     pub(crate) pending_scroll_offsets: Vec<(String, f32, f32)>,
     pub(crate) scroll_offsets: HashMap<NodeId, (f32, f32)>,
+    /// R5052：脚本化文本选区（reftest harness 回流，照 R4241/R4353 模式）——selector
+    /// 未解析态 + paint 期解析后的 NodeId 态。值 = UTF-16 码元区间 [start, end)（shim
+    /// `_textSelection` 同语义）。
+    pub(crate) pending_text_selections: Vec<(String, usize, usize)>,
+    pub(crate) text_selections: HashMap<NodeId, (usize, usize)>,
 }
 
 fn is_positioned_child(box_node: &LayoutBox) -> bool {
@@ -594,6 +599,8 @@ impl Painter {
             list_inside_marker_advance: HashMap::new(),
             pending_scroll_offsets: Vec::new(),
             scroll_offsets: HashMap::new(),
+            pending_text_selections: Vec::new(),
+            text_selections: HashMap::new(),
         }
     }
 
@@ -872,6 +879,13 @@ impl Painter {
         self.pending_scroll_offsets = offsets;
     }
 
+    /// R5052：脚本化文本选区（selector 未解析态——paint 期经 doc 解析为 NodeId，
+    /// ≡ set_scroll_offsets 模式）。仅 reftest harness 注入；产品路径不回流（生产选区
+    /// 高亮属后续切片）。
+    pub fn set_text_selections(&mut self, selections: Vec<(String, usize, usize)>) {
+        self.pending_text_selections = selections;
+    }
+
     /// R4241 谱系：宿主焦点 NodeId 注入（:focus/:focus-within 样式判定消费）。
     pub fn set_focused_node(&mut self, node: Option<NodeId>) {
         self.focused_node = node;
@@ -924,6 +938,15 @@ impl Painter {
             .filter_map(|(sel, x, y)| {
                 doc.and_then(|d| d.query_selector(d.root(), zero_dom::trim_ascii_ws(sel)))
                     .map(|id| (id, (*x, *y)))
+            })
+            .collect();
+        // R5052：文本选区 selector → NodeId 解析（≡ 滚动偏移；折叠选区上游已过滤）。
+        self.text_selections = self
+            .pending_text_selections
+            .iter()
+            .filter_map(|(sel, s, e)| {
+                doc.and_then(|d| d.query_selector(d.root(), zero_dom::trim_ascii_ws(sel)))
+                    .map(|id| (id, (*s, *e)))
             })
             .collect();
         let (layout_width, layout_height) = layout_canvas_extent(layout, 0.0, 0.0);

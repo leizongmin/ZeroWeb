@@ -1091,3 +1091,70 @@ fn placeholder_pseudo_color_stored_on_text_inputs() {
         ta.placeholder_pseudo
     );
 }
+
+/// R5052（css-pseudo-4 §highlight-selectors）：`::selection` 作者 color/background-color
+/// 存 owner `selection_pseudo`（≡ R5051 ::placeholder 门——均未变不存）。驱动:
+/// selection-input-011/textarea-011（select() 全选 + ::selection 黄底绿字）。
+#[test]
+fn selection_pseudo_stored_on_text_inputs() {
+    use zero_css_parser::values::ColorValue;
+
+    let doc = parse_html(
+        r#"<body>
+             <input id="a" type="text" value="Selected Text">
+             <input id="b" value="No rules">
+             <input id="c" type="checkbox" value="x">
+             <input id="d" type="password" value="pw">
+             <textarea>Selected Selected </textarea>
+           </body>"#,
+    );
+    let css = zero_css_parser::parser::Parser::parse_stylesheet(
+        "#a::selection { background-color: yellow; color: green } #c::selection { color: red } textarea::selection { background-color: yellow; color: green }",
+    );
+    let mut system = StyleSystem::new();
+    let styles = system.compute_styles(&doc, &[css]);
+    let by_id = |id: &str| {
+        doc.get_elements_by_tag_name("input")
+            .iter()
+            .copied()
+            .find(|&e| doc.get_attribute(e, "id").as_deref() == Some(id))
+            .expect("input")
+    };
+    // ① text 输入：黄底绿字均与元素默认不同 → 存储。
+    let a = styles.get(&by_id("a")).expect("a styled");
+    assert!(
+        matches!(&a.selection_pseudo, Some(p) if matches!(&p.color, ColorValue::Rgba(0, 128, 0, _))),
+        "::selection should be stored on text input, got {:?}",
+        a.selection_pseudo
+    );
+    // ② 无 ::selection 规则 → 不存（UA 默认高亮色未实现，零新红）。
+    let b = styles.get(&by_id("b")).expect("b styled");
+    assert!(
+        b.selection_pseudo.is_none(),
+        "no ::selection rule → no storage, got {:?}",
+        b.selection_pseudo
+    );
+    // ③ checkbox：非文本控件（类型集门）→ 即使有规则也不存。
+    let c = styles.get(&by_id("c")).expect("c styled");
+    assert!(
+        c.selection_pseudo.is_none(),
+        "checkbox is not a selection host, got {:?}",
+        c.selection_pseudo
+    );
+    // ④ password：bullet 映射选区歧义，paint 不消费 → 不存。
+    let d = styles.get(&by_id("d")).expect("d styled");
+    assert!(
+        d.selection_pseudo.is_none(),
+        "password is not a selection host, got {:?}",
+        d.selection_pseudo
+    );
+    // ⑤ textarea：宿主，green 存储。
+    let ta = styles
+        .get(&doc.get_elements_by_tag_name("textarea")[0])
+        .expect("textarea styled");
+    assert!(
+        matches!(&ta.selection_pseudo, Some(p) if matches!(&p.color, ColorValue::Rgba(0, 128, 0, _))),
+        "textarea ::selection color stored, got {:?}",
+        ta.selection_pseudo
+    );
+}

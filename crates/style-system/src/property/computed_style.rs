@@ -612,6 +612,11 @@ pub struct ComputedStyle {
     /// 覆盖 engine 占位文本的 UA 灰兜底；仅 color 改变时存储（≡ R3867 ::marker 门，
     /// 避免每输入框一份样式快照）。
     pub placeholder_pseudo: Option<Box<ComputedStyle>>,
+    /// `::selection` 伪元素的计算样式（css-pseudo-4 §highlight-selectors；仅文本类
+    /// input/textarea 计算，继承自本元素）。R5052 仅消费 color + background-color——
+    /// paint 侧脚本化选区（reftest harness 回流）按其绘制选中行高亮与字形色；仅二者
+    /// 改变时存储（≡ R3867 ::marker 门）。UA 默认高亮色未实现：无作者规则不存储不绘制。
+    pub selection_pseudo: Option<Box<ComputedStyle>>,
     /// R4257（CSS Overflow 5）：`scroll-marker-group` + `::scroll-marker-group` 伪样式
     /// 合一载荷（单指针，帧体量纪律）。None = 无组盒；Some = side（before/after）+ 伪
     /// 计算样式（layout 生成组盒 / paint 伪样式绘制）。

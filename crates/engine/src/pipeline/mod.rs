@@ -177,6 +177,10 @@ pub struct RenderPipeline {
     /// R4353：脚本化滚动偏移（selector 未解析态）——paint 期解析 NodeId 并应用
     /// 内容 origin 平移 + local 背景相位。
     scroll_offsets: Vec<(String, f32, f32)>,
+    /// R5052：脚本化文本选区（reftest harness 自 shim `_textSelection` 回流，照
+    /// R4241/R4353 模式）——paint 期经 doc 解析 selector → NodeId，消费 ::selection
+    /// 伪样式绘制选中行高亮与字形色。
+    text_selections: Vec<(String, usize, usize)>,
     /// 是否跳过属性指示器（用于 reftest 精确像素对比）。
     pub(crate) skip_indicators: bool,
     /// 图像固有尺寸缓存（image_key hash → (width, height)）。
@@ -347,6 +351,12 @@ impl RenderPipeline {
         self.scroll_offsets = offsets;
     }
 
+    /// R5052：脚本化文本选区回流（selector 未解析态；仅 reftest harness 注入——产品
+    /// 路径不回流，生产选区高亮属后续切片）。
+    pub fn set_text_selections(&mut self, selections: Vec<(String, usize, usize)>) {
+        self.text_selections = selections;
+    }
+
     /// 返回当前宿主焦点 selector。
     pub fn focused_selector(&self) -> Option<&str> {
         self.focused_selector.as_deref()
@@ -400,6 +410,7 @@ impl RenderPipeline {
             defer_render: false,
             focused_selector: None,
             scroll_offsets: Vec::new(),
+            text_selections: Vec::new(),
             cached_layout: None,
             cached_doc: None,
             cached_css_text: None,
@@ -1166,6 +1177,8 @@ impl RenderPipeline {
         );
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
+        // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
+        painter.set_text_selections(self.text_selections.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.set_canvas_registry(self.canvas_registry.clone());
         painter.register_counter_styles(&flatten_conditional_rules(&stylesheets, &self.media_context()));
@@ -1435,6 +1448,8 @@ impl RenderPipeline {
         );
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
+        // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
+        painter.set_text_selections(self.text_selections.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.set_canvas_registry(self.canvas_registry.clone());
         painter.register_counter_styles(&flatten_conditional_rules(&stylesheets, &self.media_context()));
@@ -1552,6 +1567,8 @@ impl RenderPipeline {
         painter.skip_indicators = self.skip_indicators;
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
+        // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
+        painter.set_text_selections(self.text_selections.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
@@ -1653,6 +1670,8 @@ impl RenderPipeline {
         );
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
+        // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
+        painter.set_text_selections(self.text_selections.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
@@ -2027,6 +2046,8 @@ impl RenderPipeline {
         );
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
+        // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
+        painter.set_text_selections(self.text_selections.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
@@ -2149,6 +2170,8 @@ impl RenderPipeline {
         );
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
+        // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
+        painter.set_text_selections(self.text_selections.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;

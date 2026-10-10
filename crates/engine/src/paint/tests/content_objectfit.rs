@@ -1078,3 +1078,87 @@ fn paint_background_table_without_caption_unaffected() {
         bg.rect
     );
 }
+
+// ── R5052 ::selection 选中行高亮（css-pseudo-4 §highlight-selectors）──────────
+
+/// 全选 + 作者 ::selection 规则 → padding box 高亮 fill + 全行字形用伪样式 color
+///（驱动: selection-input-011——红底 input 全选后黄底绿字）。
+#[test]
+fn paint_input_value_selection_highlights_full_line() {
+    let doc = zero_dom::parse_html(r#"<body><input type="text" value="abc"></body>"#);
+    let input_id = doc.get_elements_by_tag_name("input")[0];
+    let mut painter = Painter::new();
+    painter.text_selections.insert(input_id, (0, 3));
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(255, 255, 0, 255);
+    style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    let mut pseudo = Box::new(ComputedStyle::default());
+    pseudo.color = ColorValue::Rgba(0, 128, 0, 255);
+    pseudo.background_color = ColorValue::Rgba(255, 255, 0, 255);
+    style.selection_pseudo = Some(pseudo);
+
+    let mut box_node = make_box(80.0, 22.0);
+    box_node.node_id = Some(input_id);
+    let fills_before = painter.primitives().fills.len();
+    let glyphs_before = painter.primitives().glyphs.len();
+    painter.paint_input_value(&box_node, 0.0, 0.0, &style, &doc);
+    // 高亮 fill 恰一枚（padding box ≡ border box，无边框）。
+    assert_eq!(
+        painter.primitives().fills.len(),
+        fills_before + 1,
+        "全选应有 1 枚高亮 fill"
+    );
+    let hl = &painter.primitives().fills[fills_before];
+    assert_eq!(hl.color, zero_render_foundation::color::Color::rgba(255, 255, 0, 255));
+    assert_eq!(
+        painter.primitives().glyphs.len(),
+        glyphs_before + 3,
+        "value='abc' → 3 字形"
+    );
+    // 全部字形绿色（::selection color 覆盖元素黄）。
+    assert!(
+        painter.primitives().glyphs[glyphs_before..]
+            .iter()
+            .all(|g| g.color == zero_render_foundation::color::Color::rgba(0, 128, 0, 255)),
+        "选中行字形应用 ::selection color"
+    );
+}
+
+/// 无选区 / 折叠选区 / 无 ::selection 规则 → 零高亮零着色（零新红面）。
+#[test]
+fn paint_input_value_selection_requires_selection_and_rules() {
+    let doc = zero_dom::parse_html(r#"<body><input type="text" value="abc"></body>"#);
+    let input_id = doc.get_elements_by_tag_name("input")[0];
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    style.color = ColorValue::Rgba(255, 255, 0, 255);
+    style.background_color = ColorValue::Rgba(255, 0, 0, 255);
+    let mut pseudo = Box::new(ComputedStyle::default());
+    pseudo.color = ColorValue::Rgba(0, 128, 0, 255);
+    pseudo.background_color = ColorValue::Rgba(255, 255, 0, 255);
+    style.selection_pseudo = Some(pseudo);
+
+    // ① 无选区注入。
+    let mut painter = Painter::new();
+    let mut box_node = make_box(80.0, 22.0);
+    box_node.node_id = Some(input_id);
+    let fills_before = painter.primitives().fills.len();
+    painter.paint_input_value(&box_node, 0.0, 0.0, &style, &doc);
+    assert_eq!(painter.primitives().fills.len(), fills_before, "无选区 → 无高亮");
+    assert!(
+        painter
+            .primitives()
+            .glyphs
+            .iter()
+            .all(|g| g.color == zero_render_foundation::color::Color::rgba(255, 255, 0, 255)),
+        "无选区 → 字形保持元素色"
+    );
+
+    // ② 折叠选区（caret）→ 无高亮。
+    let mut painter2 = Painter::new();
+    painter2.text_selections.insert(input_id, (1, 1));
+    let fills_before2 = painter2.primitives().fills.len();
+    painter2.paint_input_value(&box_node, 0.0, 0.0, &style, &doc);
+    assert_eq!(painter2.primitives().fills.len(), fills_before2, "折叠选区 → 无高亮");
+}
