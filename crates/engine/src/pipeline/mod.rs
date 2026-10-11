@@ -23,6 +23,7 @@ use crate::hit_test;
 use crate::paint::Painter;
 use crate::transition::TransitionClock;
 
+mod css_vars;
 mod extract;
 pub use extract::*;
 
@@ -1367,6 +1368,28 @@ impl RenderPipeline {
     /// - `html` — HTML 字符串
     /// - `css` — CSS 字符串
     pub fn render_html(&mut self, html: &str, css: &str) -> RenderResult {
+        // bing-t5（C3+C4 根因，2026-10-11）：CSS Custom Properties 文本级 var() 替换。
+        // 替换作用于合并后的 CSS（含 HTML <style> 块 + 外链 CSS inline 化后）。
+        let css = &crate::pipeline::css_vars::substitute_vars(
+            css,
+            &crate::pipeline::css_vars::collect_custom_properties(css),
+        );
+        // 同时替换 HTML <style> 块内的 var()（外链 CSS + 内联 CSS 都受影响）
+        let html_owned;
+        let html = if html.contains("var(--") {
+            let css_props = crate::pipeline::css_vars::collect_custom_properties(css);
+            let html_props = crate::pipeline::css_vars::collect_custom_properties(html);
+            let mut all_props = css_props;
+            for (n, v) in html_props {
+                if !all_props.iter().any(|(en, _)| *en == n) {
+                    all_props.push((n, v));
+                }
+            }
+            html_owned = crate::pipeline::css_vars::substitute_vars(html, &all_props);
+            html_owned.as_str()
+        } else {
+            html
+        };
         let total_start = Instant::now();
 
         // 1. 解析 HTML → DOM
