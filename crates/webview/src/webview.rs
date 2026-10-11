@@ -1693,13 +1693,24 @@ impl WebView {
                 };
                 self.note_hsts_response(final_url, &response.headers);
 
+                // bing-t3（site-optimizer bing-20261010-r1 簇 C1，2026-10-11）：30x
+                // 重定向后文档 URL 状态须同步到**最终 URL**——location/地址栏 wire、
+                // 安全上下文源、子资源相对解析 base、LoadEnd 事件此前全部停留在
+                // 请求 URL（HTML fetch 标准：response 的 URL 即 document URL，
+                // https://html.spec.whatwg.org/multipage/browsers.html#document-requested-url）。
+                // 症状：www.bing.com 302→cn.bing.com 后渲染 cn 内容但
+                // location.href/子资源 base 停在 www（本地 302 fixture 复现）。
+                if final_url != effective_url.as_str() {
+                    self.adopt_redirect_final_url(final_url);
+                }
+
                 // 抓取外链样式表（`<link rel="stylesheet">`），合并后注入级联。
-                let external_css = self.prepare_page_subresources(&html, &effective_url);
+                let external_css = self.prepare_page_subresources(&html, final_url);
 
                 // 渲染 HTML
                 let render_result = self.load_html(&html, Some(&external_css));
                 self.loading = false;
-                self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
+                self.emit_event(&WebViewEvent::LoadEnd(final_url.to_string()));
                 Ok(render_result)
             }
             Err(NetError::Timeout) => {
@@ -2429,6 +2440,16 @@ impl WebView {
         }
         self.js_sandbox = Some(sandbox);
         Ok(())
+    }
+
+    /// bing-t3（C1）：重定向追完后采纳最终 URL 为文档 URL——同步 current_url、
+    /// location wire（page_url_wire）、安全上下文源并公告 UrlChanged。供 fetch_url
+    /// 成功路径与 tab worker（InProcessFetchHost 捕获）共用。
+    pub fn adopt_redirect_final_url(&mut self, final_url: &str) {
+        self.current_url = Some(final_url.to_string());
+        self.set_page_url_wire(final_url);
+        self.security_context.set_page_origin(final_url);
+        self.emit_event(&WebViewEvent::UrlChanged(final_url.to_string()));
     }
 
     fn set_page_url_wire(&self, page_url: &str) {
@@ -7181,6 +7202,116 @@ mod tests {
             live.matches("self.evict_removed_identities(").count(),
             1,
             "execute_dom_script 第 4 应用路径的 evict_removed_identities 调用点必须存在（删行/注释化即红）"
+        );
+    }
+}
+
+#[cfg(test)]
+mod redirect_tests {
+    use super::*;
+    use crate::{AsyncPageLoad, InProcessFetchHost, PageLoadStage};
+    use std::io::{Read, Write};
+
+    /// 起一个极简 HTTP 服务：`/a` 302→`/b`；`/b` 200 HTML。返回监听地址。
+    fn redirect_server() -> std::net::SocketAddr {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for _ in 0..4 {
+                let Ok((mut stream, _)) = listener.accept() else { return };
+                let mut buf = [0u8; 2048];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                if req.starts_with("GET /a") {
+                    let resp = "HTTP/1.1 302 Found\r\nLocation: /b\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    stream.write_all(resp.as_bytes()).unwrap();
+                } else {
+                    let body = "<!doctype html><html><head><title>target</title></head><body><p id=p>target-page</p></body></html>";
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    stream.write_all(resp.as_bytes()).unwrap();
+                }
+            }
+        });
+        address
+    }
+
+    /// bing-t3（C1）：302 重定向后文档 URL 状态（current_url / page_url_wire /
+    /// LoadEnd 事件）须为最终 URL `/b`，而非请求 URL `/a`。
+    #[test]
+    fn fetch_url_302_document_url_is_final_target() {
+        let address = redirect_server();
+        let mut wv = WebView::new(WebViewConfig {
+            http_timeout_secs: Some(5),
+            ..Default::default()
+        });
+        let events = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let sink = std::rc::Rc::clone(&events);
+        wv.on_event(move |event: &WebViewEvent| {
+            if let WebViewEvent::LoadEnd(u) | WebViewEvent::UrlChanged(u) = event {
+                sink.borrow_mut().push(u.clone());
+            }
+        });
+
+        let result = wv.fetch_url(&format!("http://{address}/a"));
+        assert!(result.is_ok(), "重定向导航应成功：{:?}", result.err());
+
+        let final_url = format!("http://{address}/b");
+        assert_eq!(
+            wv.current_url.as_deref(),
+            Some(final_url.as_str()),
+            "C1：重定向后 current_url 须为最终 URL（修复前停请求 URL /a）"
+        );
+        let wire = wv.page_url_wire.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(
+            wire.as_str(),
+            final_url,
+            "C1：page_url_wire（location/子资源 base 数据源）须为最终 URL"
+        );
+        assert!(
+            events.borrow().iter().any(|u| u == &final_url),
+            "LoadEnd/UrlChanged 事件须携带最终 URL：{:?}",
+            events.borrow()
+        );
+    }
+
+    /// bing-t3（TV-1，测试有效性首轮）：tab worker 生产路径——AsyncPageLoad::start
+    /// + InProcessFetchHost + tick 循环驱动本地 302 文档，断言文档 URL（load.url 与
+    /// pipeline document_url）与 webview 状态（current_url）均采纳最终 URL。
+    /// 变异 C（禁用 tick 采纳块）/ 捕获槽禁用均应使本钉红。
+    #[test]
+    fn async_page_load_tick_adopts_redirect_final_url_tv1() {
+        let address = redirect_server();
+        let mut wv = WebView::new(WebViewConfig {
+            http_timeout_secs: Some(5),
+            ..Default::default()
+        });
+        wv.prepare_document_state(&format!("http://{address}/a"));
+        let mut load = AsyncPageLoad::start(format!("http://{address}/a"));
+        let mut host = InProcessFetchHost::default();
+
+        // tick 至越过多文档阶段（FetchingDocument → FirstPaint），预算上限防挂。
+        for _ in 0..500 {
+            let changed = load.tick(&mut wv, &mut host, 16.0);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            let stage = load.stage();
+            if !matches!(stage, PageLoadStage::FetchingDocument) && !changed {
+                break;
+            }
+        }
+        let final_url = format!("http://{address}/b");
+        assert_eq!(
+            wv.current_url.as_deref(),
+            Some(final_url.as_str()),
+            "TV-1：tick 采纳须同步 webview current_url 到最终 URL"
+        );
+        assert!(
+            !matches!(load.stage(), PageLoadStage::FetchingDocument | PageLoadStage::Failed),
+            "文档应完成抓取（302 跟随成功）；实际 stage={:?}",
+            load.stage()
         );
     }
 }

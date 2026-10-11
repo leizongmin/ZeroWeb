@@ -3289,6 +3289,36 @@ fn ipc_fetch(
     headers: &[(&str, &str)],
     body: Option<&str>,
 ) -> Result<Vec<u8>, String> {
+    ipc_fetch_with_final_url(
+        outbound,
+        inbound_rx,
+        next_fetch_id,
+        deferred,
+        url,
+        method,
+        headers,
+        body,
+    )
+    .map(|(bytes, _)| bytes)
+}
+
+/// [`ipc_fetch`] 的扩展形态：同时返回最终 URL（fetch_proxy 对 30x 重定向追后附加的
+/// `X-Zero-Final-URL` 响应头；无重定向/无该头时为 None）。
+///
+/// bing-t3（site-optimizer bing-20261010-r1 簇 C1，2026-10-11）：POST 文档导航
+/// 30x 重定向后，文档 URL 须为最终 URL（HTML fetch 标准：response URL 即
+/// document URL，https://html.spec.whatwg.org/multipage/browsers.html#document-requested-url）。
+#[allow(clippy::too_many_arguments)] // 同 [`ipc_fetch`]：8 参 = 4 IPC 通道 + url/method/headers/body
+fn ipc_fetch_with_final_url(
+    outbound: &mut IpcOutbound,
+    inbound_rx: &Receiver<IpcMessage>,
+    next_fetch_id: &mut u64,
+    deferred: &mut VecDeque<IpcMessage>,
+    url: &str,
+    method: &str,
+    headers: &[(&str, &str)],
+    body: Option<&str>,
+) -> Result<(Vec<u8>, Option<String>), String> {
     let request_id = *next_fetch_id;
     *next_fetch_id += 1;
     let msg = IpcMessage {
@@ -3318,12 +3348,16 @@ fn ipc_fetch(
                     request_id: rid,
                     status_code,
                     body,
-                    ..
+                    headers: response_headers,
                 }) if rid == request_id => {
                     if !(200..300).contains(&status_code) {
                         return Err(ipc_fetch_error(status_code, &body));
                     }
-                    return Ok(body);
+                    let final_url = response_headers
+                        .iter()
+                        .find(|(name, _)| name.eq_ignore_ascii_case("x-zero-final-url"))
+                        .map(|(_, value)| value.clone());
+                    return Ok((body, final_url));
                 }
                 IpcMessageKind::Heartbeat => {
                     let reply = IpcMessage {
@@ -3584,5 +3618,85 @@ mod runtime_smoke {
             }))
         ));
         assert!(deferred.is_empty());
+    }
+
+    /// bing-t3（C1）：POST→30x 重定向后，`ipc_fetch_with_final_url` 须捕获
+    /// fetch_proxy 附加的 `X-Zero-Final-URL` 响应头（navigate_with POST 分支以此
+    /// 作为文档 URL；修复前该头被整体丢弃，文档 URL 停在请求 URL）。
+    #[test]
+    fn ipc_fetch_post_final_url_captured_on_redirect() {
+        let mut outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()) as Box<dyn Write + Send>);
+        let (tx, rx) = mpsc::channel();
+        let mut next_fetch_id = 3;
+        let mut deferred = VecDeque::new();
+        tx.send(IpcMessage {
+            id: 4,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 3,
+                status_code: 200,
+                headers: vec![
+                    ("Content-Type".to_string(), "text/html".to_string()),
+                    (
+                        "X-Zero-Final-URL".to_string(),
+                        "https://example.test/session/after-redirect".to_string(),
+                    ),
+                ],
+                body: b"<html>redirected</html>".to_vec(),
+            }),
+        })
+        .unwrap();
+
+        let (body, final_url) = ipc_fetch_with_final_url(
+            &mut outbound,
+            &rx,
+            &mut next_fetch_id,
+            &mut deferred,
+            "https://example.test/session",
+            "POST",
+            &[("Content-Type", "application/x-www-form-urlencoded")],
+            Some("user=1"),
+        )
+        .expect("target fetch response");
+
+        assert_eq!(body, b"<html>redirected</html>");
+        assert_eq!(
+            final_url.as_deref(),
+            Some("https://example.test/session/after-redirect"),
+            "C1：POST→30x 重定向后的最终 URL 须经 X-Zero-Final-URL 捕获"
+        );
+    }
+
+    /// 无重定向（响应无 X-Zero-Final-URL 头）时 final_url 为 None——navigate_with
+    /// 据此保持请求 URL 不变。
+    #[test]
+    fn ipc_fetch_post_final_url_none_without_redirect() {
+        let mut outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()) as Box<dyn Write + Send>);
+        let (tx, rx) = mpsc::channel();
+        let mut next_fetch_id = 5;
+        let mut deferred = VecDeque::new();
+        tx.send(IpcMessage {
+            id: 6,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 5,
+                status_code: 200,
+                headers: Vec::new(),
+                body: b"ok".to_vec(),
+            }),
+        })
+        .unwrap();
+
+        let (_, final_url) = ipc_fetch_with_final_url(
+            &mut outbound,
+            &rx,
+            &mut next_fetch_id,
+            &mut deferred,
+            "https://example.test/plain",
+            "POST",
+            &[],
+            None,
+        )
+        .expect("target fetch response");
+
+        assert_eq!(final_url, None);
     }
 }

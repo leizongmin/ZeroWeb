@@ -295,7 +295,7 @@ fn tab_worker_main(
     let _ = WebViewConfig::default();
 
     let mut async_load: Option<AsyncPageLoad> = None;
-    let mut fetch_host = InProcessFetchHost;
+    let mut fetch_host = InProcessFetchHost::default();
     let mut pending_sync_html: Option<(String, Option<String>, Option<String>)> = None;
     let mut page_script_runner: Option<tab_scripts::PageScriptRunner> = None;
     let mut javascript_enabled = true;

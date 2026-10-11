@@ -18,7 +18,7 @@ use zero_render_foundation::image_cache::{ImageKey, decode_data_uri, decode_data
 use crate::image_decoder::decode_image;
 
 use crate::net_pool::{
-    dns_prefetch_async, fetch_bytes_async_meta, fetch_bytes_stream_async_meta, fetch_document_async,
+    dns_prefetch_async, fetch_bytes_async_meta, fetch_bytes_stream_async_meta, fetch_document_async_with_capture,
     fetch_text_async_meta, preconnect_async,
 };
 use crate::webview::WebView;
@@ -131,7 +131,14 @@ fn probe_video_media_meta(bytes: &[u8]) -> Option<(u64, u32, u32, Vec<u8>)> {
 }
 
 /// in-process 异步抓取宿主：经 webview net_pool 线程池抓取（tabworker 默认）。
-pub struct InProcessFetchHost;
+/// 进程内抓取宿主（tab worker / 单进程路径）：主文档抓取时捕获 30x 重定向追完后的
+/// 最终 URL，供 [`AsyncPageLoad::tick`] 经 `take_document_final_url` 同步文档 URL
+///（bing-t3，簇 C1）。
+#[derive(Default)]
+pub struct InProcessFetchHost {
+    /// 最近一次主文档响应的最终 URL（net 跟随重定向后的 response URL）。
+    document_final_url: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+}
 
 impl AsyncFetchHost for InProcessFetchHost {
     fn preconnect(&mut self, origin: &str) {
@@ -143,7 +150,16 @@ impl AsyncFetchHost for InProcessFetchHost {
     }
 
     fn fetch_document(&mut self, url: &str, method: &str, body: Option<&[u8]>) -> Receiver<Result<String, String>> {
-        fetch_document_async(url.to_string(), method, body)
+        fetch_document_async_with_capture(
+            url.to_string(),
+            method,
+            body,
+            Some(std::sync::Arc::clone(&self.document_final_url)),
+        )
+    }
+
+    fn take_document_final_url(&mut self) -> Option<String> {
+        self.document_final_url.lock().ok().and_then(|mut slot| slot.take())
     }
 
     fn fetch_text_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<String, String>> {
@@ -427,6 +443,17 @@ impl AsyncPageLoad {
             self.document_rx = None;
             match result {
                 Ok(html) => {
+                    // bing-t3（C1）：重定向追完后的最终 URL 先行替换文档 URL——
+                    // 后续 preload hints / 子资源 base / location 全以最终 URL 为准；
+                    // 并同步 webview URL 状态（current_url/wire/安全源/UrlChanged，
+                    // 快照与地址栏随之更新）。
+                    if let Some(final_url) = host.take_document_final_url()
+                        && final_url != self.url
+                    {
+                        self.set_document_url(final_url.clone());
+                        self.url = final_url.clone();
+                        webview.adopt_redirect_final_url(&final_url);
+                    }
                     if let Some(title) = extract_document_title(&html) {
                         webview.set_title(&title);
                     }

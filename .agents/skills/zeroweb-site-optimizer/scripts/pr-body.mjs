@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
 import { evidence, readJson } from './verify-run.mjs';
 
@@ -98,13 +99,29 @@ export async function attachmentAccessible(url, fetchImpl = fetch) {
       redirect: 'follow',
     });
   } catch {
-    return false;
+    // bing-t2（site-optimizer 2026-10-11）：WSL2 NAT 环境下 node/undici 对 GitHub
+    // 附件域直连持续超时（curl 同 URL 可达，302→200 image/*，传输层差异非附件失效
+    // ——网络错误时以 curl 传输探活兜底，检查语义不变：仍要求当前 2xx + image 类型。
+    return curlAccessible(url);
   }
   if (!response.ok) return false;
   const type = (response.headers.get('content-type') ?? '').toLowerCase();
   if (type.startsWith('image/')) return true;
   const bytes = new Uint8Array(await response.arrayBuffer());
   return imageMagic.some(sig => sig.every((byte, i) => bytes[i] === byte));
+}
+
+/** curl 传输探活兜底（见 attachmentAccessible 的网络错误分支）：仍按当前可达性
+ * 判定（最终 2xx + image 类型），不放宽任何证据语义。 */
+function curlAccessible(url) {
+  try {
+    // GET + range（S3 预签名链接只签 GET，HEAD 会 403）；最终响应须 2xx + image 类型。
+    const out = execFileSync('curl', ['-4', '-sL', '--max-time', '60', '-r', '0-15',
+      '-D', '-', '-o', '/dev/null', url], { encoding: 'utf8', timeout: 70_000 });
+    return /^HTTP\/\S+\s+20\d/m.test(out) && /content-type:\s*image\//i.test(out);
+  } catch {
+    return false;
+  }
 }
 
 /** 核验回读正文、当前汇总和截图映射；实际下载/呈现由所引用的人机证据证明。

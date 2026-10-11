@@ -81,6 +81,17 @@ pub trait AsyncFetchHost {
     fn fetch_text_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<String, String>>;
     /// 带元数据的二进制抓取。
     fn fetch_bytes_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>>;
+
+    /// 取出主文档响应的最终 URL（30x 重定向追完后的 response URL；无重定向或宿主
+    /// 不支持时为 None，取出即清）。
+    ///
+    /// bing-t3（site-optimizer bing-20261010-r1 簇 C1，2026-10-11）：HTML fetch 标准
+    /// ——response URL 即 document URL
+    /// （https://html.spec.whatwg.org/multipage/browsers.html#document-requested-url），
+    /// 加载器据此把 location/子资源 base 同步到最终 URL。
+    fn take_document_final_url(&mut self) -> Option<String> {
+        None
+    }
 }
 
 /// 阻塞抓取宿主：把一个**同步阻塞**的 fetch（如 renderer 的 IPC 抓取）适配成 [`AsyncFetchHost`]。
