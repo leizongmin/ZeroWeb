@@ -29,11 +29,6 @@ pub fn collect_custom_properties(css: &str) -> Vec<(String, String)> {
                 }
                 i += 2;
             }
-            b'/' if i + 1 < len && bytes[i + 1] == b'/' => {
-                while i < len && bytes[i] != b'\n' {
-                    i += 1;
-                }
-            }
             b'{' => {
                 depth += 1;
                 i += 1;
@@ -106,83 +101,63 @@ pub fn substitute_vars(css: &str, props: &[(String, String)]) -> String {
 }
 
 /// 单层 var() 替换。
+/// 单层 var() 替换。用 str::find + &str 切片保证 UTF-8 安全。
 fn substitute_vars_once(css: &str, props: &[(String, String)]) -> String {
-    let bytes = css.as_bytes();
-    let len = bytes.len();
-    let mut out = String::with_capacity(len);
-    let mut i = 0;
+    let mut out = String::with_capacity(css.len());
+    let mut search_from = 0;
 
-    while i < len {
-        // 查找 "var(" 子串
-        if i + 4 <= len && &bytes[i..i + 4] == b"var(" {
-            // 找匹配的 ')'（考虑嵌套括号）
-            let open = i + 3; // '(' 位置
-            let mut depth = 0;
-            let mut j = open;
-            let mut found_close = false;
-            while j < len {
-                match bytes[j] {
-                    b'(' => depth += 1,
-                    b')' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            found_close = true;
-                            break;
+    while search_from < css.len() {
+        match css[search_from..].find("var(") {
+            Some(rel) => {
+                let var_start = search_from + rel;
+                out.push_str(&css[search_from..var_start]);
+
+                let open = var_start + 3;
+                let bytes = css.as_bytes();
+                let mut depth = 0usize;
+                let mut j = open;
+                let mut found = false;
+                while j < bytes.len() {
+                    match bytes[j] {
+                        b'(' => depth += 1,
+                        b')' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                found = true;
+                                break;
+                            }
                         }
+                        _ => {}
                     }
-                    _ => {}
+                    j += 1;
                 }
-                j += 1;
-            }
-            if found_close {
-                let inner = &css[open + 1..j];
-                if let Some((name, fallback)) = parse_var_ref(inner) {
-                    if let Some((_, value)) = props.iter().find(|(n, _)| *n == name) {
-                        out.push_str(value);
-                        i = j + 1;
-                        continue;
-                    }
-                    if let Some(fb) = fallback {
-                        out.push_str(fb.trim());
-                        i = j + 1;
-                        continue;
-                    }
-                }
-                // 无法解析的 var() —— 输出原样（保留让下游报 invalid）
-                out.push_str(&css[i..j + 1]);
-                i = j + 1;
-                continue;
-            }
-        }
-        // 跳过字符串字面量
-        if bytes[i] == b'"' || bytes[i] == b'\'' {
-            let q = bytes[i];
-            out.push(bytes[i] as char);
-            i += 1;
-            while i < len {
-                if bytes[i] == b'\\' && i + 1 < len {
-                    out.push(bytes[i] as char);
-                    out.push(bytes[i + 1] as char);
-                    i += 2;
-                    continue;
-                }
-                if bytes[i] == q {
-                    out.push(bytes[i] as char);
-                    i += 1;
+                if !found {
+                    out.push_str(&css[var_start..]);
                     break;
                 }
-                out.push(bytes[i] as char);
-                i += 1;
+
+                let inner = &css[open + 1..j];
+                if let Some((name, fallback)) = parse_var_ref(inner) {
+                    if let Some((_, val)) = props.iter().find(|(n, _)| *n == name) {
+                        out.push_str(val);
+                    } else if let Some(fb) = fallback {
+                        out.push_str(fb.trim());
+                    } else {
+                        out.push_str(&css[var_start..=j]);
+                    }
+                } else {
+                    out.push_str(&css[var_start..=j]);
+                }
+                search_from = j + 1;
             }
-            continue;
+            None => {
+                out.push_str(&css[search_from..]);
+                break;
+            }
         }
-        out.push(bytes[i] as char);
-        i += 1;
     }
     out
 }
-
-/// 解析 var() 内部参数为 (name, Option<fallback>)。
 fn parse_var_ref(inner: &str) -> Option<(String, Option<String>)> {
     let inner = inner.trim();
     if !inner.starts_with("--") {
@@ -247,6 +222,30 @@ mod tests {
         let props = collect_custom_properties(css);
         let out = substitute_vars(css, &props);
         assert!(out.contains("color: rgba(0,0,0,.7)"), "got: {out}");
+    }
+
+    #[test]
+    fn chinese_text_not_mojibaked() {
+        // bing-t5 审查 F1 实证：bytes[i] as char 逐字节 push 导致中文变 mojibake。
+        // 修正后 var( 之间的中文文本（导航标签、字体名）须原样保留。
+        let css = "body { font-family: var(--lfd); color: var(--cda); }\n/* 导航栏 */\n.nav { content: \"图片\"; font-family: 微软雅黑, sans-serif; }";
+        let props = collect_custom_properties(css);
+        let out = substitute_vars(css, &props);
+        assert!(out.contains("微软雅黑"), "中文字体名须原样保留: {out}");
+        assert!(out.contains("导航栏"), "中文注释须原样保留: {out}");
+        assert!(out.contains("图片"), "中文字符串须原样保留: {out}");
+        assert!(!out.contains("\u{c3}"), "不得出现 UTF-8 mojibake 特征码点");
+    }
+
+    #[test]
+    fn url_with_double_slash_not_eaten() {
+        // bing-t5 审查 F2：url(https://...) 中 // 不应被当注释吃掉后续声明
+        let css = ".a { background: url(\"https://example.com/img.png\"); --bg: blue; }\n.b { color: var(--bg); }";
+        let props = collect_custom_properties(css);
+        assert!(
+            props.iter().any(|(n, _)| n == "--bg"),
+            "url 后的 --bg 声明须可见: {props:?}"
+        );
     }
 
     #[test]
