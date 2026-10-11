@@ -8862,6 +8862,9 @@
     _zwMseEt.call(this);
     this._zwMs = mediaSource || null;
     this._zwUpdating = false;
+    // t8s-3 轨类型章（'video'|'audio'）——addSourceBuffer 按 mimeType 盖章，
+    // appendBuffer 据此路由视频/音频独立字节流（DASH 双轨分缓冲）。
+    this._zwTrackKind = 'video';
   };
   globalThis.SourceBuffer.prototype = Object.create(_zwMseEt.prototype);
   Object.defineProperty(globalThis.SourceBuffer.prototype, 'updating', {
@@ -8904,7 +8907,15 @@
       try {
         if (msObj._zwUrl && typeof globalThis.__zwVideoBridge === 'object'
             && typeof globalThis.__zwVideoBridge.mseAppend === 'function') {
-          ok = globalThis.__zwVideoBridge.mseAppend(msObj._zwUrl, b64) === true;
+          // t8s-3 轨路由：video SB → 视频流；audio SB → 独立音频流；audio SB
+          // 遇门面缺席（不可达面——addSourceBuffer 同源守卫已挡）走失败面，
+          // 绝不把音频字节写入视频流（能力诚实）。
+          if (self._zwTrackKind === 'audio') {
+            ok = typeof globalThis.__zwVideoBridge.mseAppendAudio === 'function'
+              && globalThis.__zwVideoBridge.mseAppendAudio(msObj._zwUrl, b64) === true;
+          } else {
+            ok = globalThis.__zwVideoBridge.mseAppend(msObj._zwUrl, b64) === true;
+          }
         }
       } catch (_eMseAp) {}
       if (ok) {
@@ -8948,23 +8959,41 @@
     this._zwAttach = null;
   };
   globalThis.MediaSource.prototype = Object.create(_zwMseEt.prototype);
-  // spec isTypeSupported 真值表不虚报：唯一真实可解面 = video/mp4 + H.264
-  //（avc1/avc3）；audio/*（音频轨 MSE 未实现）与其他容器恒 false；容器无 codecs
-  // 查询按 Chromium 口径 true（载荷不可解时 appendBuffer error 事件如实报）。
-  // decode-h264 feature 关闭（桥缺失）→ 恒 false。
+  // spec isTypeSupported 真值表不虚报：video/mp4 + H.264（avc1/avc3）恒真值；
+  // audio/mp4 + AAC 与组合串音频腿以「音频 append 流在位」（mseAppendAudio
+  // 门面 = 音频解码链可用，t8s-3）为支持面真值——门面缺席恒 false（能力诚实）。
+  // 其他容器恒 false；容器无 codecs 查询按 Chromium 口径 true（载荷不可解时
+  // appendBuffer error 事件如实报）。decode-h264 feature 关闭（桥缺失）→ 恒 false。
   // https://www.w3.org/TR/media-source/#dom-mediasource-istypesupported
   globalThis.MediaSource.isTypeSupported = function (type) {
     if (typeof globalThis.__zwVideoBridge !== 'object'
         || typeof globalThis.__zwVideoBridge.mseCreate !== 'function') return false;
     var t = String(type == null ? '' : type).trim().toLowerCase();
-    if (t.indexOf('video/mp4') !== 0) return false;
+    // t8s-3 音频腿：audio/mp4 + AAC（mp4a.40.x/aac）——音频 append 流在位才真
+    //（mseAppendAudio 门面 = 解码链可用；组合串逐 leg 全支持才 true——
+    // bilibili DASH 探针 'video/mp4; codecs="avc1.42E01E,mp4a.40.2"' 形态）。
+    var isAudio = t.indexOf('audio/mp4') === 0;
+    if (!isAudio && t.indexOf('video/mp4') !== 0) return false;
+    // 音频 leg 支持面 = 音频 append 流在位（解码链可用，能力诚实）。
+    var audioOk = typeof globalThis.__zwVideoBridge.mseAppendAudio === 'function'
+      && typeof globalThis.__zwVideoBridge.mseAppend === 'function';
+    if (isAudio && !audioOk) return false;
     var m = /codecs\s*=\s*"([^"]*)"/.exec(t) || /codecs\s*=\s*'([^']*)'/.exec(t)
       || /codecs\s*=\s*([^;]+)/.exec(t);
     if (!m) return true;
     var parts = m[1].split(',');
     for (var i = 0; i < parts.length; i++) {
       var c = parts[i].trim();
-      if (c && !/^avc[13]\./.test(c)) return false;
+      if (!c) continue;
+      // AAC 家族：mp4a.40.x（MPEG-4 Audio，AAC-LC 主形态）与 'aac' 别名。
+      var isAac = audioOk && /^(mp4a\.40|aac)\b/.test(c);
+      if (isAudio) {
+        if (!isAac) return false;
+      } else if (!/^avc[13]\./.test(c) && !isAac) {
+        // 组合串逐 leg（bilibili DASH 探针 'avc1…,mp4a.40.2' 形态）——视频腿
+        // avc1/avc3 或音频腿 AAC 全支持才 true。
+        return false;
+      }
     }
     return true;
   };
@@ -8980,6 +9009,8 @@
       _zwMseThrow('InvalidStateError', 'MediaSource is not open');
     }
     var sb = new globalThis.SourceBuffer(this);
+    // t8s-3 轨章：audio/mp4 → 音频流（registry 独立 feed）；其余按视频。
+    sb._zwTrackKind = t.trim().toLowerCase().indexOf('audio/') === 0 ? 'audio' : 'video';
     this.sourceBuffers._zwPush(sb);
     return sb;
   };
