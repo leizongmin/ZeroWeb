@@ -4037,7 +4037,16 @@ fn collect_css_svg_presentation(
     if let Some(style) = styles.get(&subtree_root) {
         if let Some(fill) = &style.fill {
             let css_fill = fill_color_to_css(fill);
-            { use std::io::Write as _; if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/t5-svg-fill.log") { let _ = writeln!(f, "SVG-FILL node={:?} fill={}", subtree_root, css_fill); } }
+            {
+                use std::io::Write as _;
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open("/tmp/t5-svg-fill.log")
+                {
+                    let _ = writeln!(f, "SVG-FILL node={:?} fill={}", subtree_root, css_fill);
+                }
+            }
             fills.push((subtree_root, css_fill));
         }
         let geo =
