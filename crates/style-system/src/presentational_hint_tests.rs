@@ -1158,3 +1158,55 @@ fn selection_pseudo_stored_on_text_inputs() {
         ta.selection_pseudo
     );
 }
+
+/// R5065（css-pseudo-4 §highlight-styling）：::selection 规则只改动非 bg/color 高亮
+/// 属性（text-decoration 族）时，UA 默认高亮表面入种子——bg=Highlight、color=
+/// HighlightText（active-selection-014 同构）。作者声明 color/bg（含显式同值）与
+/// 无有效声明（invalid/empty 规则）均不种子（corpus 锁定行为保持）。
+#[test]
+fn r5065_selection_default_highlight_seeded_for_decoration_only_rules() {
+    use zero_css_parser::values::ColorValue;
+
+    let doc = parse_html(
+        r#"<body>
+             <div id="t" class="hl">Selected Text</div>
+             <div id="u" class="cl">Colored</div>
+             <div id="v" class="iv">Invalid</div>
+           </body>"#,
+    );
+    let css = zero_css_parser::parser::Parser::parse_stylesheet(
+        "#t::selection { text-decoration: underline } #u::selection { color: green } #v::selection { foo: bar }",
+    );
+    let mut system = StyleSystem::new();
+    let styles = system.compute_styles(&doc, &[css]);
+    let by_id = |id: &str| {
+        doc.get_elements_by_tag_name("div")
+            .iter()
+            .copied()
+            .find(|&e| doc.get_attribute(e, "id").as_deref() == Some(id))
+            .expect("div")
+    };
+    // ① decoration-only：种子 Highlight/HighlightText 并存储。
+    let t = styles.get(&by_id("t")).expect("t styled");
+    assert!(
+        matches!(&t.selection_pseudo, Some(p)
+            if matches!(&p.background_color, ColorValue::Rgba(51, 153, 255, _))
+                && matches!(&p.color, ColorValue::Rgba(255, 255, 255, _))),
+        "decoration-only ::selection 应种子 UA 默认高亮色，got {:?}",
+        t.selection_pseudo
+    );
+    // ② 作者声明 color → 不种子（作者值保留）。
+    let u = styles.get(&by_id("u")).expect("u styled");
+    assert!(
+        matches!(&u.selection_pseudo, Some(p) if matches!(&p.color, ColorValue::Rgba(0, 128, 0, _))),
+        "作者 color 应保留，got {:?}",
+        u.selection_pseudo
+    );
+    // ③ 无有效声明（invalid property）→ 不种子（旧模型零表面保持）。
+    let v = styles.get(&by_id("v")).expect("v styled");
+    assert!(
+        v.selection_pseudo.is_none(),
+        "invalid ::selection 规则不存储，got {:?}",
+        v.selection_pseudo
+    );
+}
