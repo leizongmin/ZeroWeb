@@ -482,9 +482,12 @@ fn execute_script_chunk(
     }
     if is_module {
         let worker = js_worker.ok_or("ES module requires JS worker")?;
+        // P6：从同一份页面 HTML 解析 import map（与 worker 侧 SetDomSnapshot 同源确定性），
+        // 预取路径据此把裸说明符解析为映射 URL 抓取，编译侧才能按映射键命中注册模块。
+        let page_map = crate::tab_js_worker::parse_page_import_map(html, page_url);
         let mut registry: HashMap<String, String> = HashMap::new();
         let fetch = |url: &str| wv.fetch_text_at(url).map_err(|e| e.to_string());
-        collect_module_deps(&fetch, module_url, code, &mut registry)?;
+        collect_module_deps(&fetch, module_url, code, &mut registry, page_map.as_ref())?;
         let deps: Vec<(String, String)> = registry.into_iter().collect();
         worker.execute_module(code, module_url, &deps)?;
     } else if let Some(worker) = js_worker {

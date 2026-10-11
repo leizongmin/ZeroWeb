@@ -31,6 +31,9 @@ mod worker;
 // js-dom R84：模块声明移至下方 not(v8) 门控区（union 态 dead-code）。
 mod es_module;
 
+// P6 import map：仅依赖 serde_json/url，与引擎 feature 无关，无条件编译。
+mod import_map;
+
 #[cfg(feature = "v8")]
 pub use v8_runtime::*;
 
@@ -49,6 +52,8 @@ mod quickjs_worker;
 pub use quickjs_worker::*;
 
 pub use es_module::*;
+
+pub use import_map::{ImportMap, ImportMapResolution};
 
 #[cfg(feature = "quickjs")]
 mod quickjs_runtime;

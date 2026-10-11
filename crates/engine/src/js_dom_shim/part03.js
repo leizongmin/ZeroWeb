@@ -927,6 +927,15 @@
     };
     // R384：shim 自建标记（`_zwBuiltNodeChain` 复判依据，防止 shim 二次装载时误判）。
     try { globalThis.HTMLElement.prototype.__zwShimCtorBridge = true; } catch (_e) {}
+    // R384 补装锚点（github home exc1 根因修复，2026-10-09）：renderer worker 跨文档
+    // 导航 = reset 臂重放 shim（本闭包）→ 下一 `SetDomSnapshot` 跨代际全量 native
+    // install 无条件 `global.set("HTMLElement")` 覆盖本桥 → 页面 CE 升级 base 落到
+    // native ctor，ctor 体 own property 落空（js_worker SetDomSnapshot 臂注释详证）。
+    // 此处登记本闭包桥函数对象，由该臂在 native install 之后重申同一对象（同代唯一
+    // closure，`_zwCeExisting` 消费/WC-M1 分支语义原样保留；二次 eval 整体补装会因
+    // `customElements = globalThis.customElements || {...}` 存在守卫产生 closure 割裂，
+    // 不可用）。
+    globalThis.__zwShimHTMLElementCtor = globalThis.HTMLElement;
   }
   // prototype 链仅当 polyfill 自建三者时设（native 已注册则不重设——避免破坏 native prototype）。
   if (_zwBuiltNodeChain) {
@@ -3620,6 +3629,8 @@
       whenDefined: function (name) {
         return _ceWhenDefined(child_registry, child_pending, name);
       },
+      // 同主 registry：Chromium 相容面（语义与依据见 part03 主 registry 注）。
+      polyfillWrapFlushCallback: function (_callback) {},
     };
   }
   // js-dom M3 R94：对既有元素执行用户 ctor 体（Proxy-ctor 桥）。设 `_zwCeExisting = el`（HTMLElement
@@ -3646,14 +3657,36 @@
     }
     if (!entry) entry = _ce_registry[tag] || null;
     if (entry && entry.ctor) {
-      // 已是 custom 实例（原型已挂）不重放。
+      // 已是 custom 实例（原型已挂）不重放。_ceRunCtor = 升级原语：ctor + 初始 attr 派发
+      // （克隆携带的 markup 属性在升级时初始派发——返修 F1，spec upgrade enqueue step）。
       if (Object.getPrototypeOf(el) !== entry.ctor.prototype) {
         _ceRunCtor(entry.ctor, el);
       }
     }
     return el;
   }
+  // P13（spec 升级一次性）：https://html.spec.whatwg.org/multipage/custom-elements.html
+  // #upgrade-a-custom-element 第 2 步——升级即置**该元素** custom 态，后续遍历早退。已升级元素
+  // 再走任一升级面（define 末步全文档重走 / customElements.upgrade / innerHTML attach /
+  // clone 重升级）不得重放 ctor。缺此门时页内 CE 回调中再 define/attach（github 首屏常态）
+  // 对同元素重放回调 → 重入升级无界递归（RangeError / Execution timeout 异常簇）。
+  // 记账按**元素实例**（WeakMap 以对象身份为键，天然逐元素唯一）——不得按 `_ceConnKeyFor`
+  // key 记账：sel-form 元素（快照树 `_wrapSelector` → `_makeProxy(sel, null)`）的 key 是
+  // bridge stable selector（#id / tag.class / tag，js_dom_bridge `stable_selector_for_node`，
+  // 同 tag+首 class 的不同元素同 key），且 proxy 缓存导航/移除消零后同元素会重建**新
+  // proxy 对象**——key 记账会把换代后的新对象整段跳过（不挂原型不跑 ctor 的 husk →
+  // 页面 TypeError → hydration 中断 → Execution timeout 簇；P13 首版回归根因，github
+  // repo 页动态 apply 常态触发，端到端判据由门禁 repo-vscode-clean 承载）。WeakMap 亦不经
+  // 元素 Proxy 的 get/set trap（expando 章会卷入 trap 语义且污染 for-in 面），生命周期随
+  // 元素回收（普通对象 map 的 key 永久持有会泄漏）。升级后不移除（spec custom 态终身，
+  // 断连不清；元素被 GC 则记账随 WeakMap 一并回收）。
+  var _ceUpgraded = new WeakMap(); // element object → true
   function _ceRunCtor(ctor, el) {
+    // 先查章、先盖章再执行 ctor 体（spec：ctor 执行前已置 custom 态——ctor 体内同步再入
+    // 升级面不重放）。el 恒为对象（walk/创建面只传元素节点），WeakMap 读写不触及元素自身
+    // trap，不会抛。
+    if (_ceUpgraded.get(el)) return el;
+    _ceUpgraded.set(el, true);
     // 原型先挂（ctor 体内 this.bump() 等方法访问经原型链可达——探针实证 chain-set-before-body）。
     try { Object.setPrototypeOf(el, ctor.prototype); } catch (_e) {}
     // class/function 判别：`class` 语法的 toString() 恒以 'class' 字面开头（语法关键字，minifier 不可
@@ -3668,6 +3701,14 @@
     } else {
       try { ctor.call(el); } catch (_eCall) {}
     }
+    // R3274 + spec「upgrade a custom element」enqueue step：升级时对**已存在**的 observed
+    // 属性派发初始 attributeChangedCallback(name, null, value)，先于 connectedCallback。
+    // 统一收口进升级原语——walk 面 / clone 面（_ceUpgradeElIfRegistered）/ R365/R366
+    // innerHTML 面共用本函数；createElement 面（part03/part06）升级时元素无 markup 属性，
+    // 此处自然空派发（'is' 在本调用之后 setAttribute，走实时派发）。返修 F1（PR117 双审查
+    // 缺陷首轮实证）：base 的初始 attr 派发由非法 ctor 重放携带，P13 消灭重放后各升级面
+    // 须自带此步——否则克隆/innerHTML 面丢失组件属性初始化回调（lit/stencil 依赖该路径）。
+    _ceFireInitialAttrChanges(el, ctor);
     return el;
   }
   var _CE_RESERVED = {
@@ -3823,6 +3864,17 @@
         _ceUpgradeSubtree(root);
       } catch (_e) {}
     },
+    // polyfillWrapFlushCallback（Chromium 相容面，非 HTML spec API）：webcomponents
+    // polyfill 的升级冲洗钩子。Chrome 原生暴露此方法 → github ce-vendors 等以真值
+    // 探测「原生 customElements」并早退 legacy HTMLElement 补丁；shim 缺失时补丁误
+    // 触发：window.HTMLElement 被 `Reflect.construct(HTMLElement,[],this.constructor)`
+    // 仿制函数替换，后续 `class X extends HTMLElement` 构造面全断——生产实测 turbo
+    // FrameElement 的 delegate 为 undefined → `Object.getPrototypeOf(undefined)` 抛
+    // "Cannot convert undefined or null to object"（2026-10-09 t2e 同运行 dump 定位）。
+    // 最小语义切片：方法存在且可调用（no-op，实参透传校验同 Chrome 不抛）；
+    // 真实 deferred-upgrade 冲洗语义为 Chromium 内部实现，未复刻。
+    // FIXME: 有站点实际调用（polyfill 协同延迟升级）时按 Chromium 行为补冲洗门。
+    polyfillWrapFlushCallback: function (_callback) {},
   };
 
   // WC-M1 切片 2b：`CustomElementRegistry` 接口对象（spec
@@ -4352,25 +4404,29 @@
         }
       }
       if (entry && entry.ctor) {
-        // js-dom M3 R94：升级 = 原型挂接 + **用户 ctor 体执行**（`_ceRunCtor`——super() 返回值注入
-        // this，闭合 R90「ctor 体不可重放」限制；spec `custom-elements-upgrades` upgrade step 的
-        // ctor 执行）。旧版仅 setPrototypeOf，lit 的 constructor 内初始化面（attachShadow/属性初
-        // 始化）不可达。ctor 异常吞（`_ceRunCtor` 内 try/catch，升级失败不中断子树遍历）。
-        _ceRunCtor(entry.ctor, el);
-        // R3274：升级时对 ctor.observedAttributes 派发初始 attributeChangedCallback（name, null, 当前值）。
-        // 元素升级前可能已设属性（parser 建 / createElement + setAttribute 未注册时），升级后组件须能响应
-        // 这些既有属性（lit/stencil 等框架依赖此初始化路径）。spec `custom-elements-upgrades`「upgrade a
-        // custom element」enqueue step。在 connectedCallback 前派发（spec：attr change 先于 connected）。
-        _ceFireInitialAttrChanges(el, entry.ctor);
+        // P13：升级一次性（见 `_ceRunCtor` 注）——再遍历（define 重走 / upgrade / attach）早退，
+        // 不重放 ctor。按元素实例 WeakMap 章判定（与 `_ceRunCtor` 同源）；创建面（R90 createElement、
+        // R365/R366 innerHTML、clone `_ceUpgradeElIfRegistered`）已升级的元素同样早退。初始
+        // attributeChangedCallback 派发收口在 `_ceRunCtor` 内（升级原语统一，clone/R365/R366
+        // 面携带的 markup 属性由升级时初始派发覆盖；升级后 setAttribute 走实时派发）。
+        if (!_ceUpgraded.get(el)) {
+          // js-dom M3 R94：升级 = 原型挂接 + **用户 ctor 体执行** + 初始 attr 派发（`_ceRunCtor`
+          // ——super() 返回值注入 this，闭合 R90「ctor 体不可重放」限制；spec `custom-elements-upgrades`
+          // upgrade step 的 ctor 执行 + enqueue step）。ctor 异常吞（`_ceRunCtor` 内 try/catch，
+          // 升级失败不中断子树遍历）。`_ceRunCtor` 内部先盖章再执行 ctor 体——ctor 体内同步再入
+          // 本 walk 不重放。
+          _ceRunCtor(entry.ctor, el);
+        }
         // 升级后若已连入 document，触发 connectedCallback（spec：upgrade 已 connected 的元素触发回调）。
-        if (_elConnected(el)) {
+        // connect 派发独立于升级一次性（创建面升级 / define 前已连的元素首连仍由此派发）；重复派发
+        // 由 `_ceConn` was 门抑制——记账值语义：`'prop'` = 已连未派（`_ceApplyConn` 传播面，define 前
+        // 已连元素），`true` = 已派。此处 `!== true` 判定 + **先记账再调**（与 _ceApplyConn 同序）——
+        // 回调体内同步再入 upgrade 重走时记账已置，P13 重入环在此收敛；断连 delete 记账，
+        // re-connect 重新派发（spec 生命周期）。
+        if (_elConnected(el) && _ceConn[_ceConnKeyFor(el)] !== true) {
+          _ceConn[_ceConnKeyFor(el)] = true;
           var ccb = entry.ctor.prototype && entry.ctor.prototype.connectedCallback;
           if (typeof ccb === 'function') { try { ccb.call(el); } catch (_e) {} }
-          // WC-M3 切片 8 第十一小步（web-components goal）：连接态记账同步——upgrade 期
-          // 已派 connected 的元素登记 `_ceConn`（key 经 _ceConnKeyFor，与 _ceApplyConn
-          // 同源），防 markup 构造面（parentNode 先指容器的形态——upgrade 的
-          // _elConnected 判真）后续 _ceApplyConn 重复派发。
-          _ceConn[_ceConnKeyFor(el)] = true;
         }
       }
     }
@@ -5175,7 +5231,11 @@
         }
       } else if (nh && !ns) {
         // 非 custom 纯 handle 元素：追踪连接态作传播（detached container 场景）。
-        if (connected) _ceConn[key] = true; else delete _ceConn[key];
+        // 记账值 'prop'（真值）：已连未派 connectedCallback——P13 记账语义（见
+        // `_ceUpgradeNode` connect 派发注）：传播面元素 define 后经升级 walk 首派
+        // （`!== true` 判定放行）；'true' 才代表已派发。真值性不变（'prop' 对
+        // was 门/父连接查询与旧 true 等价）。
+        if (connected) _ceConn[key] = 'prop'; else delete _ceConn[key];
       }
       // 递归后代：handle registry 容器 + plain childNodes 双源（pre-order：先 shift
       // 自身再压子）。seen 身份去重防 childNodes 回指环（嵌套 template 装配挂账）。

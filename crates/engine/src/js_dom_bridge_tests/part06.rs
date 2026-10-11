@@ -4787,3 +4787,44 @@ __probe2.push(__ev2 ? 'fired' : 'missed');
         "第二轮插入：form1 解析 + named access + submit listener 同 identity 命中",
     );
 }
+
+// TV-F3 返修钉（PR117 双审查测试有效性首轮）：Document ParentNode 读侧四 getter
+// （part06 Document children/firstElementChild/lastElementChild/childElementCount——
+// exc2 同批带上）。原生产错误形态：behaviors 顶层 `document.firstElementChild.classList`
+// TypeError（getter 缺失时 undefined.classList）——回归发生时全部套件仍绿，属测试资产
+// 缺口。按仓库测试资产化规则补行为钉：读侧只含元素子节点、classList 可达。
+#[test]
+fn test_document_parent_node_read_getters() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let js = r#"
+var out = [];
+out.push('ch=' + document.children.length);
+out.push('fe=' + (document.firstElementChild && document.firstElementChild.tagName));
+out.push('le=' + (document.lastElementChild && document.lastElementChild.tagName));
+out.push('cc=' + document.childElementCount);
+out.push('fe_is_le=' + (document.firstElementChild === document.lastElementChild));
+out.push('classlist=' + (document.firstElementChild.classList ? 'ok' : 'bad'));
+out.push('contains_html=' + (document.children[0] === document.firstElementChild));
+out.join(' ; ');
+"#;
+    let out = sandbox.execute(js).unwrap().value;
+    assert_eq!(
+        out,
+        "ch=1 ; fe=HTML ; le=HTML ; cc=1 ; fe_is_le=true ; classlist=ok ; contains_html=true",
+        "Document ParentNode 读侧四 getter：只含元素子节点（html），classList 可达\
+         （exc2 原 TypeError 面）"
+    );
+}

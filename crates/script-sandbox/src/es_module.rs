@@ -17,10 +17,15 @@ use crate::SandboxConfig;
 use crate::ScriptError;
 use std::collections::{HashMap, HashSet};
 
+use crate::import_map::{ImportMap, ImportMapResolution};
+
 /// 模块注册表 — 存储已注册的 ES Module 源代码。
 #[derive(Debug, Clone, Default)]
 pub struct ModuleRegistry {
     modules: HashMap<String, String>,
+    /// 页面 import map（HTML `<script type="importmap">` 解析产物）。
+    /// `None` = 未设置，行为与无 import map 时完全一致。
+    import_map: Option<ImportMap>,
 }
 
 impl ModuleRegistry {
@@ -57,6 +62,16 @@ impl ModuleRegistry {
     /// 列出所有已注册模块的标识符。
     pub fn specifiers(&self) -> Vec<&str> {
         self.modules.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// 设置页面 import map（HTML `<script type="importmap">` 解析产物）。
+    pub fn set_import_map(&mut self, map: ImportMap) {
+        self.import_map = Some(map);
+    }
+
+    /// 读取当前 import map（未设置时返回 `None`）。
+    pub fn import_map(&self) -> Option<&ImportMap> {
+        self.import_map.as_ref()
     }
 }
 
@@ -307,6 +322,36 @@ fn split_from_clause(clause: &str) -> Option<(&str, &str)> {
     None
 }
 
+// https://tc39.es/ecma262/#sec-imports — ImportClause 仅允许 ImportedDefaultBinding、
+// `*` NameSpaceImport、NamedImports（前两者可 `,` 组合）。识别到 import 关键字不代表
+// 语句形态合法：非绑定形态语句（webpack bundle 的 `export const __webpack_modules__=
+// {…}` 巨型赋值实测，react-core 2026-10-09）会把正文里错误消息字符串的
+// `from \`react-router/dom\`` 文本当 from 子句切出幻影依赖 → 404 → 模块编译整体失败
+// → 站点 chunk 加载三连重试后报错。绑定/名字部分只含标识符与标点，先验形态再扫 from。
+fn import_clause_shape_ok(clause: &str) -> bool {
+    match clause.chars().next() {
+        // 字符串形态（import"m"）、命名空间、命名导入
+        Some('{') | Some('*') | Some('\'') | Some('"') | Some('`') => true,
+        Some(first) if first.is_alphanumeric() || first == '_' || first == '$' => {
+            // ImportedDefaultBinding：IDENT 后只允许空白与 `from`/`,`
+            let ident_end = clause
+                .char_indices()
+                .find(|(_, c)| !(c.is_alphanumeric() || *c == '_' || *c == '$'))
+                .map_or(clause.len(), |(i, _)| i);
+            let after_ident = clause[ident_end..].trim_start();
+            after_ident.starts_with("from") || after_ident.starts_with(',')
+        }
+        _ => false,
+    }
+}
+
+// https://tc39.es/ecma262/#sec-exports — 再导出仅 `export {…}` 与 `export *`（可带
+// from 子句）。`export const …` 等声明形态不是再导出，须整句跳过（防线上移到形态
+// 检查，理由同 [`import_clause_shape_ok`]）。
+fn reexport_clause_shape_ok(clause: &str) -> bool {
+    matches!(clause.chars().next(), Some('{') | Some('*'))
+}
+
 /// 仅提取**静态** `import` 依赖标识符（不含 `import()` 动态导入）。
 /// 供动态 import() 运行时 fetch 路径（R3093）：预注册空存根只用静态 import（headless 单遍，transitive defer），
 /// 动态 import() 留给运行时 `__zw_load_module → __zw_compile_module` fetch——避免预存根（empty namespace）
@@ -316,8 +361,14 @@ pub fn extract_static_module_import_specifiers(source: &str) -> Vec<String> {
     for stmt in split_statements(source) {
         let trimmed = stmt.trim();
         let specifier = if let Some(clause) = strip_import_keyword(trimmed) {
+            if !import_clause_shape_ok(clause) {
+                continue;
+            }
             extract_import_specifier(clause)
         } else if let Some(clause) = strip_export_keyword(trimmed) {
+            if !reexport_clause_shape_ok(clause) {
+                continue;
+            }
             extract_reexport_specifier(clause)
         } else {
             continue;
@@ -631,6 +682,16 @@ fn transform_import(
 fn resolve_registered_specifier(specifier: &str, importer_url: &str, registry: &ModuleRegistry) -> String {
     if registry.get(specifier).is_some() {
         return specifier.to_string();
+    }
+    // 注册表直击未命中时先过页面 import map（HTML 规范 resolve a module specifier
+    // 的 map 阶段）；无 map 或未命中（Miss）按原相对路径解析继续。
+    // FIXME(spec)：Blocked（null 条目）规范要求抛 TypeError 终止全部回退，此处受
+    // `String` 返回签名所限按 Miss 降级；键迭代顺序为 serde_json Map 排序序（非
+    // JSON 插入序），仅嵌套尾斜杠前缀键 / 多 scope 重叠时可观察（见 import_map.rs 模块注释）。
+    if let Some(map) = registry.import_map()
+        && let ImportMapResolution::Resolved(mapped) = map.resolve(specifier, importer_url)
+    {
+        return mapped;
     }
     let Ok(base) = url::Url::parse(importer_url) else {
         return specifier.to_string();
@@ -1432,6 +1493,64 @@ mod tests {
         let mut specs = reg.specifiers();
         specs.sort();
         assert_eq!(specs, vec!["./a.js", "./b.js"]);
+    }
+
+    // P6 import map：裸说明符经 map 命中已注册模块；无 map 时保持既有行为（判别）。
+    #[test]
+    fn test_import_map_resolves_bare_specifier_to_registered_module() {
+        let base = url::Url::parse("https://github.com/").unwrap();
+        let map = ImportMap::parse(r#"{"imports": {"react": "https://assets.test/react.js"}}"#, &base).unwrap();
+        let mut reg = ModuleRegistry::new();
+        reg.set_import_map(map);
+        reg.register("https://assets.test/react.js", "export default 1;");
+        assert_eq!(
+            resolve_registered_specifier("react", "https://github.com/page", &reg),
+            "https://assets.test/react.js"
+        );
+    }
+
+    #[test]
+    fn test_without_import_map_bare_specifier_unchanged() {
+        let mut reg = ModuleRegistry::new();
+        reg.register("https://github.com/react.js", "export default 1;");
+        // 无 map：裸说明符按相对路径解析未命中 → 原样返回（既有行为）。
+        assert_eq!(
+            resolve_registered_specifier("react", "https://github.com/page", &reg),
+            "react"
+        );
+        // 相对路径命中注册模块仍走原路径（无 map 回归保护）。
+        assert_eq!(
+            resolve_registered_specifier("./react.js", "https://github.com/page", &reg),
+            "https://github.com/react.js"
+        );
+    }
+
+    // P6C 回归（2026-10-09 github.com pricing 实测）：动态 import 路径的
+    // `__zw_compile_module` 回调把依赖图 registry 接上本代页面 map 后，chunk 静态
+    // `import*as r from"react"` 的裸说明符才能在 transform 阶段解析内联；漏接 map 时
+    // `registry.get("react")` miss → "Module not found: react"（回调吞为空串 → 上层
+    // 重试 3 次报 Loading chunk failed）。
+    #[test]
+    fn test_compile_dependency_iife_resolves_bare_specifier_via_import_map() {
+        let base = url::Url::parse("https://github.com/").unwrap();
+        let map = ImportMap::parse(r#"{"imports": {"react": "https://assets.test/react.js"}}"#, &base).unwrap();
+        let chunk = r#"import*as r from"react";export const x = r.version;"#;
+        let react = r#"export const version = "19.1.0";"#;
+
+        // 无 map（P6C 前动态路径形态）：编译失败，错误点名裸说明符。
+        let mut reg = ModuleRegistry::new();
+        reg.register("https://github.test/chunk.js", chunk);
+        reg.register("https://assets.test/react.js", react);
+        let err = compile_dependency_iife("https://github.test/chunk.js", &reg).unwrap_err();
+        assert!(matches!(err, ScriptError::RuntimeError(ref m) if m.contains("Module not found: react")));
+
+        // 有 map（P6C 后）：react 按映射 URL 解析命中，依赖源码内联进 IIFE。
+        let mut reg = ModuleRegistry::new();
+        reg.set_import_map(map);
+        reg.register("https://github.test/chunk.js", chunk);
+        reg.register("https://assets.test/react.js", react);
+        let iife = compile_dependency_iife("https://github.test/chunk.js", &reg).unwrap();
+        assert!(iife.contains("19.1.0"));
     }
 
     #[test]
@@ -2611,6 +2730,56 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         // 不得误伤：动态 import( 表达式、import.meta 元属性、含 import 前缀的标识符
         let src = "const x = import.meta.url; important(); var y = import('./dyn.js');";
         assert!(extract_static_module_import_specifiers(src).is_empty());
+    }
+
+    #[test]
+    fn test_export_declaration_body_string_not_extracted_as_reexport() {
+        // github react-core 真实形态（2026-10-09 pricing 活体）：`export const __webpack_modules__=
+        // {…}` 巨型赋值的正文含错误消息字符串，串内 `from \`react-router/dom\`` 文本被
+        // split_from_clause 当 from 子句 → 幻影依赖 → fetch 404 → 模块编译整体失败 →
+        // 站点 chunk（cmi）三次重试后报 `Loading chunk cmi failed`。声明形态须整句跳过。
+        let src = concat!(
+            "export const __webpack_modules__={e(){aR(!1,'You provided the `flushSync` option ",
+            "to a router update, but you are not using the `<RouterProvider>` from ",
+            "`react-router/dom` so `ReactDOM.flushSync()` is unavailable.  Please update your ",
+            "app to `import { RouterProvider } from \"react-router/dom\"` and ensure.');}};"
+        );
+        assert!(
+            extract_static_module_import_specifiers(src).is_empty(),
+            "红态：声明语句正文字符串里的 from 形态被当再导出切出幻影依赖"
+        );
+    }
+
+    #[test]
+    fn test_import_clause_shape_guard_rejects_non_binding_forms() {
+        // import 侧同防线：IDENT 后跟 `=`/`(` 等非 from/`,` 形态不是 ImportClause
+        let src = "import d={from\"phantom\"};import x(from'phantom2');";
+        assert!(extract_static_module_import_specifiers(src).is_empty());
+    }
+
+    #[test]
+    fn test_clause_shape_guard_keeps_real_import_forms() {
+        // 形态守卫不得误伤真实 import 形态：默认/组合/命名空间/字符串/压缩形态
+        let src = concat!(
+            "import d from\"./d.js\";",
+            "import x, {a as b} from './c.js';",
+            "import*as ns from\"./ns.js\";",
+            "import{p}from\"./p.js\";",
+            "import\"./side.js\";"
+        );
+        assert_eq!(
+            extract_static_module_import_specifiers(src),
+            vec!["./d.js", "./c.js", "./ns.js", "./p.js", "./side.js"]
+        );
+    }
+
+    #[test]
+    fn test_reexport_shape_guard_keeps_real_reexport_forms() {
+        let src = "export{a}from\"./x.js\";export*from\"./y.js\";export*as ns from\"./z.js\";export const k=1;";
+        assert_eq!(
+            extract_static_module_import_specifiers(src),
+            vec!["./x.js", "./y.js", "./z.js"]
+        );
     }
 
     #[test]

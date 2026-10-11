@@ -142,6 +142,38 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
     scripts
 }
 
+/// 按文档顺序提取 `<script type="importmap">` 的内联 JSON 文本。
+///
+/// <https://html.spec.whatwg.org/multipage/webappapis.html#import-maps> —— import map
+/// 经内联 script 元素交付（type 属性为 "importmap"，子文本内容为 JSON 表示）；
+/// 带 `src` 属性的不合规元素忽略；`<template>` 子树内 inert（R328 同规则）跳过。
+/// 多张 map 全部返回、按文档顺序；JSON 合法性由调用方（`ImportMap::parse`）判定。
+pub fn extract_import_map_json(html: &str) -> Vec<String> {
+    let doc = zero_dom::parse_html(html);
+    let mut maps = Vec::new();
+    for script_id in doc.get_elements_by_tag_name("script") {
+        let Some(type_attr) = doc.get_attribute(script_id, "type") else {
+            continue;
+        };
+        if !type_attr.trim().eq_ignore_ascii_case("importmap") {
+            continue;
+        }
+        if doc.get_attribute(script_id, "src").is_some() {
+            continue;
+        }
+        if is_inside_template(&doc, script_id) {
+            continue;
+        }
+        if let Some(raw) = doc.text_content(script_id) {
+            let json = raw.trim();
+            if !json.is_empty() {
+                maps.push(json.to_string());
+            }
+        }
+    }
+    maps
+}
+
 /// 提取 HTML 中所有 `<img src="...">` 的 src 原始值。
 ///
 /// 用于 URL 导航路径下图片子资源的加载（goal doc P1 缺口「图片子资源 / ImageCache

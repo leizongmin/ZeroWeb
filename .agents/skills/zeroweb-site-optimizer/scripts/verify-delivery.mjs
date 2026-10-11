@@ -64,7 +64,12 @@ export async function verifyDelivery(root, task, state, checkpoint, allowLegacy 
   const presented = reviewed && (legacy || await verifyPresentation(root, task, state));
   const merge = receipts.merge;
   const merged = reviewed && matches(merge) && merge.confirmed === true && sha(merge.commit)
-    && merge.review_sha256 === delivery.review.sha256;
+    && merge.review_sha256 === delivery.review.sha256
+    // 合并后不留远端任务分支（2026-10-09 用户要求：防止分支长期累积）：回执须记录
+    // head_branch 与删除结果；串行 PR 复用运行分支时保留须写明原因，待该分支最后一个
+    // PR 的合并回执删除。历史回执经 legacy 路径放行，不追溯。
+    && (legacy || (text(merge.head_branch) && typeof merge.branch_deleted === 'boolean'
+      && (merge.branch_deleted || text(merge.branch_kept_reason))));
   const integration = receipts.integration;
   const integrated = merged && integration?.status === 'PASS' && sha(integration.commit)
     && integration.merge_commit === merge.commit && integration.contains_merge === true

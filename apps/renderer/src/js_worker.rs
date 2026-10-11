@@ -15,8 +15,8 @@ use zero_engine::{
 };
 use zero_net::{FetchPriority, HttpMethod, HttpRequest, ResourceLoader, ResourceRequest};
 use zero_script_sandbox::{
-    ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
-    extract_static_module_import_specifiers,
+    ImportMap, ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife,
+    compile_module_script, extract_static_module_import_specifiers,
 };
 
 use crate::ipc_service_worker::ServiceWorkerIpcClient;
@@ -224,6 +224,11 @@ impl RendererJsWorker {
         let nav_bridge = zero_engine::NavigationBridge::new();
         let navigations = nav_bridge.queue();
         let focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>> = Arc::default();
+        // P6 import map：页面 `<script type="importmap">` 解析产物共享槽——仅 worker
+        // 线程使用（SetDomSnapshot 换代写入；ExecuteModule 编译与 __zw_compile_module
+        // 动态 import 读取）。宿主侧预取（page_scripts）从同一份 HTML 经
+        // parse_page_import_map 自行解析同型 map（同源确定性，不经共享槽）。
+        let import_map_for_worker: Arc<std::sync::Mutex<Option<ImportMap>>> = Arc::default();
         // S11（cdp-protocol value-only console 面）：page console 输出队列——worker 回调
         // 推入，runtime 主循环 drain → browser/headless（`Runtime.consoleAPICalled`）。
         let console_logs: Arc<std::sync::Mutex<Vec<(String, String, String)>>> = Arc::default();
@@ -295,6 +300,7 @@ impl RendererJsWorker {
                     indexed_db_handler,
                     service_worker_client,
                     async_callbacks_ready_for_worker,
+                    import_map_for_worker,
                     #[cfg(test)]
                     execution_count_for_worker,
                 )
@@ -975,6 +981,7 @@ fn js_worker_main(
     indexed_db_handler: zero_engine::IndexedDbHandler,
     service_worker_client: Option<ServiceWorkerIpcClient>,
     async_callbacks_ready: Arc<AtomicBool>,
+    import_map: Arc<std::sync::Mutex<Option<ImportMap>>>,
     #[cfg(test)] execution_count: Arc<AtomicU64>,
 ) {
     let js_config = SandboxConfig {
@@ -1115,7 +1122,7 @@ fn js_worker_main(
     if let Some(client) = service_worker_client {
         client.register_callbacks(&mut *sandbox);
     }
-    register_module_compile_callback(&mut *sandbox);
+    register_module_compile_callback(&mut *sandbox, Arc::clone(&import_map));
     // P1a gBCR（Slice 1）：RectBridge 注 `__zw_getBoundingClientRect(identity)` 同步回调。
     // handler 解析 identity(selector) → NodeId（fresh-parse dom_html，与渲染管线确定性一致）
     // → 查 rect_snapshot。kill-switch `ZW_REAL_RECT=0` 关闭（回落零 rect = 当前行为，零回归）。
@@ -1288,10 +1295,18 @@ fn js_worker_main(
                 reply,
                 ..
             } => {
-                let result = execute_module_in_sandbox(&mut *sandbox, &source, &url, &deps);
+                // P6：按本代页面 import map 编译（裸说明符 import 经映射键命中注册模块）。
+                let map_opt = import_map.lock().ok().and_then(|g| g.clone());
+                let result = execute_module_in_sandbox(&mut *sandbox, &source, &url, &deps, map_opt.as_ref());
                 let _ = reply.send(result);
             }
             JsWorkerCommand::SetDomSnapshot { html, url, reply, .. } => {
+                // P6 import map：快照换代即从页面 HTML 重取 `<script type="importmap">`——
+                // 后续 ExecuteModule 编译与动态 import 均按本代 map 解析。每代无条件清空
+                // 重设（无 map/解析失败 → None，按规范整张不注册；保留上一代会跨页污染）。
+                if let Ok(mut slot) = import_map.lock() {
+                    *slot = parse_page_import_map(&html, &url);
+                }
                 // 视口提示校正：shim 缺省 innerWidth/innerHeight 1280x800 与真实视口失配时
                 // （首次 install 后必失配）按 hint 校正（幂等——匹配即 no-op，零事件噪声）。
                 if viewport_hint.0 > 0 && viewport_hint.1 > 0 {
@@ -1312,11 +1327,32 @@ fn js_worker_main(
                 let _ = sandbox.execute("globalThis.__zwHostOwnsDynamicScripts = true;");
                 // P1a form input：URL 变化（导航）→ 清 shim value 缓存，防跨页同选择器 stale value。
                 let url_changed = page_url.lock().map(|u| *u != url).unwrap_or(true);
+                let was_native_installed = native_installed;
                 if let Ok(mut snap) = dom_html.lock() {
                     // js-dom R386：快照换代同步刷新原生绑定 DOM 源（native 路径与 polyfill
                     // 桥同源读到新快照；首代 bootstrap 已 install → 走 refresh 快路径）。
                     refresh_worker_native_dom_source(&mut *sandbox, &html, &mut native_installed);
                     *snap = html;
+                }
+                // js-dom R384 不变式（github home exc1 根因修复，2026-10-09）：跨代际全量
+                // native install（上臂 `refresh_worker_native_dom_source` 走 install 分支）
+                // 之后**重申 shim HTMLElement ctor 桥**。native install 无条件
+                // `global.set("HTMLElement")`（html_element.rs build_and_register）覆盖
+                // reset 臂刚重放的 shim 桥 → 页面 `class X extends HTMLElement` 的
+                // super() 落到 native ctor（this 预分配 + polyfill 路径 upgrade ffi 空 →
+                // 新建 detached div 绑定），shim `_ceRunCtor` 丢弃构造产物 → ctor 体 own
+                // property（turbo FrameElement 的 delegate 等）全部落空 →
+                // `Object.getPrototypeOf(undefined)` TypeError。重申的是 reset 臂 shim
+                // eval 登记的**同一函数对象**（`__zwShimHTMLElementCtor`，见 part03.js
+                // 桥块）：同代唯一 closure，`_zwCeExisting` 消费与 WC-M1 分支语义原样
+                // 保留；不可用二次 eval 整体补装（`customElements || ` 存在守卫产生
+                // closure 割裂）。Event 等其余 native 全局覆盖与 bootstrap 序（native 先
+                // shim 后）一致，无需重申——R384 唯一必须 shim 独占的全局名就是
+                // HTMLElement（桥注释原文）。
+                if !was_native_installed {
+                    let _ = sandbox.execute(
+                        "if (typeof __zwShimHTMLElementCtor === 'function') globalThis.HTMLElement = __zwShimHTMLElementCtor;",
+                    );
                 }
                 // R358/R3243：就地换代（Arc 被回调捕获不可换装）→ bump 宿主视图缓存代际，
                 // 防同 count 查询命中换代前解析的视图文档/备忘。
@@ -1739,10 +1775,15 @@ fn execute_module_in_sandbox(
     source: &str,
     url: &str,
     deps: &[(String, String)],
+    import_map: Option<&ImportMap>,
 ) -> Result<String, String> {
     let mut registry = ModuleRegistry::new();
     for (spec, src) in deps {
         registry.register(spec, src);
+    }
+    // P6：模块体内裸说明符 import 的解析面（transform_import 单钩子）同按本代 map。
+    if let Some(map) = import_map {
+        registry.set_import_map(map.clone());
     }
     let prelude = build_module_runtime_prelude(&registry).map_err(|e| e.to_string())?;
     let transformed = compile_module_script(source, url, &registry).map_err(|e| e.to_string())?;
@@ -1761,7 +1802,10 @@ fn module_body_from_response(status_code: u16, body: &[u8]) -> Result<String, St
     Ok(String::from_utf8_lossy(body).into_owned())
 }
 
-fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandbox) {
+fn register_module_compile_callback(
+    sandbox: &mut dyn zero_script_sandbox::Sandbox,
+    import_map: Arc<std::sync::Mutex<Option<ImportMap>>>,
+) {
     // 静态模块依赖由主线程 prefetch + collect_module_deps 经 IPC 加载；动态 import 经 ResourceLoader。
     let runtime_iifes: Arc<std::sync::Mutex<HashMap<String, String>>> = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
@@ -1773,7 +1817,13 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
             }
             let spec = &args[0];
             let parent = args.get(1).map(String::as_str).unwrap_or("about:blank");
-            let url = zero_engine::resolve_document_url(parent, spec);
+            // P6：动态 import 同样先过本代页面 import map（仅实际命中映射键时改写；
+            // 未命中保持 resolve_document_url 原路径）。
+            let map_opt = import_map.lock().ok().and_then(|g| g.clone());
+            let url = map_opt
+                .as_ref()
+                .and_then(|m| m.resolve_mapped(spec, parent))
+                .unwrap_or_else(|| zero_engine::resolve_document_url(parent, spec));
 
             // t8j-r2（D1）：回传 `resolved\x1fcode`——JS 侧 `__moduleCache` 以宿主解析键为缓存
             // 键（ECMA-262 §sec-hostresolveimportedmodule），跨目录同名相对 spec 不再碰撞。
@@ -1807,13 +1857,19 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
                     return String::new();
                 }
             };
-            if let Err(e) = collect_module_deps(&fetch, &url, &src, &mut registry) {
+            if let Err(e) = collect_module_deps(&fetch, &url, &src, &mut registry, map_opt.as_ref()) {
                 tracing::warn!("module deps {url}: {e}");
                 return String::new();
             }
             let mut reg = ModuleRegistry::new();
             for (spec, body) in &registry {
                 reg.register(spec, body);
+            }
+            // P6C：依赖图内裸说明符（如 chunk 的 `import*as r from"react"`）的解析面
+            // （transform_import → resolve_registered_specifier 的 map 阶段）同按本代 map，
+            // 与 execute_module_in_sandbox 静态路径一致；否则 registry.get("react") miss。
+            if let Some(map) = map_opt.as_ref() {
+                reg.set_import_map(map.clone());
             }
             let iife = match compile_dependency_iife(&url, &reg) {
                 Ok(i) => i,
@@ -1831,11 +1887,16 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
 }
 
 /// 递归抓取模块依赖图（specifier URL → 源码）。
+///
+/// `import_map` 为本代页面 import map：裸说明符先经映射（仅实际命中映射键时改写，
+/// 见 [`ImportMap::resolve_mapped`]），未命中保持 `resolve_document_url` 原路径
+/// （URL 形态说明符零漂移）。
 pub fn collect_module_deps(
     fetch: &dyn Fn(&str) -> Result<String, String>,
     entry_url: &str,
     source: &str,
     registry: &mut HashMap<String, String>,
+    import_map: Option<&ImportMap>,
 ) -> Result<(), String> {
     if registry.contains_key(entry_url) {
         return Ok(());
@@ -1846,13 +1907,28 @@ pub fn collect_module_deps(
     // 作为硬依赖中止模块执行。全量提取器把 `import("_")` 能力探测（Vite 现代浏览器检测
     // `import("_").catch(()=>1)`）当静态依赖 → 预取 cache miss → 模块整体不执行。
     for spec in extract_static_module_import_specifiers(source) {
-        let dep_url = zero_engine::resolve_document_url(entry_url, &spec);
+        let dep_url = import_map
+            .and_then(|m| m.resolve_mapped(&spec, entry_url))
+            .unwrap_or_else(|| zero_engine::resolve_document_url(entry_url, &spec));
         if !registry.contains_key(&dep_url) {
             let dep_src = fetch(&dep_url)?;
-            collect_module_deps(fetch, &dep_url, &dep_src, registry)?;
+            collect_module_deps(fetch, &dep_url, &dep_src, registry, import_map)?;
         }
     }
     Ok(())
+}
+
+/// 从页面 HTML 提取并解析第一张合法 import map；无 map 或全部解析失败 → `None`。
+/// FIXME(spec)：多张 import map 的规范合并（merge-existing-and-new-import-maps）
+/// 暂未实现——当前取第一张解析成功的 map，其余忽略并告警。
+pub(crate) fn parse_page_import_map(html: &str, base_url: &str) -> Option<ImportMap> {
+    for json in zero_engine::extract_import_map_json(html) {
+        match ImportMap::parse_from_page(&json, base_url) {
+            Ok(map) => return Some(map),
+            Err(e) => tracing::warn!("invalid import map ignored: {e}"),
+        }
+    }
+    None
 }
 
 /// renderer 的 JS worker 实现统一脚本执行器契约（T4）。
@@ -1935,7 +2011,7 @@ mod tests {
         };
         let mut reg = HashMap::new();
         let source = "import { a } from './static-dep.js'\nimport('_').catch(function () {})\nexport default a";
-        collect_module_deps(&fetch, "https://zero.test/m.js", source, &mut reg).unwrap();
+        collect_module_deps(&fetch, "https://zero.test/m.js", source, &mut reg, None).unwrap();
         let calls = calls.into_inner().unwrap();
         assert!(
             calls.contains(&"https://zero.test/static-dep.js".to_string()),
@@ -2013,6 +2089,57 @@ mod tests {
         assert!(!media_http_response_ok(204, b""), "空 2xx 体按失败（负缓存）");
         assert!(!media_http_response_ok(404, b"x"), "非 2xx 失败");
         assert!(!media_http_response_ok(503, b"x"), "非 2xx 失败");
+    }
+
+    /// P6 import map：预取路径把裸说明符经映射键解析为映射 URL 抓取；无命中保持
+    /// resolve_document_url 原路径（判别：同一 import 无 map 时抓相对解析 URL）。
+    #[test]
+    fn collect_module_deps_resolves_bare_specifier_via_import_map() {
+        let calls: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        let fetch = |url: &str| -> Result<String, String> {
+            calls.lock().unwrap().push(url.to_string());
+            Ok("export default 1".to_string())
+        };
+        let map = ImportMap::parse_from_page(
+            r#"{"imports": {"react": "https://assets.test/react.js"}}"#,
+            "https://zero.test/",
+        )
+        .unwrap();
+        let mut reg = HashMap::new();
+        collect_module_deps(&fetch, "https://zero.test/m.js", "import 'react'", &mut reg, Some(&map)).unwrap();
+        let calls = calls.into_inner().unwrap();
+        assert!(
+            calls.contains(&"https://assets.test/react.js".to_string()),
+            "裸说明符按映射 URL 抓取：{calls:?}"
+        );
+
+        // 判别臂：无 map 同一 import → 相对解析路径抓取（旧路径，可检出误回退）。
+        let calls2: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        let fetch2 = |url: &str| -> Result<String, String> {
+            calls2.lock().unwrap().push(url.to_string());
+            Ok("export default 1".to_string())
+        };
+        let mut reg2 = HashMap::new();
+        collect_module_deps(&fetch2, "https://zero.test/m.js", "import 'react'", &mut reg2, None).unwrap();
+        let calls2 = calls2.into_inner().unwrap();
+        assert!(
+            calls2.contains(&"https://zero.test/react".to_string()),
+            "无 map 保持相对解析原路径：{calls2:?}"
+        );
+    }
+
+    /// P6：parse_page_import_map——首张合法 map 生效；解析失败忽略（多张时取后续合法张）。
+    #[test]
+    fn parse_page_import_map_first_valid_wins() {
+        let html = r#"<script type="importmap">not json</script>
+<script type="importmap">{"imports": {"react": "https://assets.test/react.js"}}</script>"#;
+        let map = parse_page_import_map(html, "https://zero.test/page").expect("第二张合法 map 生效");
+        assert_eq!(
+            map.resolve_mapped("react", "https://zero.test/page"),
+            Some("https://assets.test/react.js".into())
+        );
+        // 无 map 页面 → None。
+        assert!(parse_page_import_map("<p>no map</p>", "https://zero.test/page").is_none());
     }
 
     /// fix ⑥（PR #114 审查 A1）：模块 fetch 非 2xx 拒绝——404 错误页 HTML 不得被当
@@ -2746,6 +2873,39 @@ mod tests {
                 .unwrap(),
             "true",
             "换代后标志重新置位（先于页面脚本就位）"
+        );
+        worker.shutdown();
+    }
+
+    // js-dom R384 不变式钉（github home exc1 根因修复，2026-10-09）：跨文档导航 =
+    // ResetDocumentState（reset_context，native 工厂随 context 销毁）→ 下一
+    // SetDomSnapshot 跨代际全量 native install。native HTMLElement FunctionTemplate
+    // build_and_register 无条件 `global.set("HTMLElement")`；修复前 reset 臂先重放
+    // shim、本序列 native 后至覆盖之 → 页面 CE 类 `class X extends HTMLElement` 的
+    // 升级走 shim `_ceRunCtor` class 分支（依赖 shim ctor 桥消费 `_zwCeExisting` 注入
+    // this 为既有元素）时 base 落到 native ctor：this 预分配（polyfill 路径 upgrade
+    // ffi 空 → `or_else` 新建 detached div 绑定），ctor 体 own property 落到被
+    // `_ceRunCtor` 丢弃的构造产物 → createElement 产物仅原型正确、字段全空。live 复现：
+    // turbo FrameElement `this.delegate = new h.delegateConstructor(this)` 缺失 →
+    // `Object.getPrototypeOf(undefined)` TypeError（behaviors SANDBOX-ERR，beacon 链
+    // 见 .acceptance/site-optimizer/20261008-github/evidence/t2-series-diagnosis.md §t2g）。
+    #[test]
+    fn renderer_js_worker_ce_upgrade_survives_cross_gen_native_install() {
+        let mut worker = RendererJsWorker::spawn(6143);
+        worker.set_dom_snapshot("<html><body><p>p1</p></body></html>", "https://zero.test/p1");
+        worker.reset_document_state();
+        worker.set_dom_snapshot("<html><body><p>p2</p></body></html>", "https://zero.test/p2");
+        assert_eq!(
+            worker
+                .execute_script_direct(
+                    "(function(){try{class XFoo extends HTMLElement{constructor(){super();this.marker='ok';}}\
+                     customElements.define('x-foo',XFoo);\
+                     var el=document.createElement('x-foo');\
+                     return String(el && el.marker === 'ok');}catch(e){return 'ERR: '+String(e&&(e.stack||e.message)||e).slice(0,200);}})()",
+                )
+                .unwrap(),
+            "true",
+            "跨代导航（reset→快照全量 native install）后 shim 必须后于 native 补装：CE 升级保 ctor 体 own property（红态：native 覆盖 shim 桥 → marker 落到被丢弃的构造产物）"
         );
         worker.shutdown();
     }

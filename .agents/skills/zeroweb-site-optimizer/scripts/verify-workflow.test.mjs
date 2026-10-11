@@ -372,7 +372,7 @@ async function remoteFixture(t) {
   }
   async function merge() {
     task.delivery.merge = await receipt({ ...identity(), confirmed: true, commit: 'c'.repeat(40),
-      review_sha256: task.delivery.review.sha256 });
+      review_sha256: task.delivery.review.sha256, head_branch: 'task/branch', branch_deleted: true });
   }
   async function integrate(status = 'PASS') {
     task.delivery.integration = await receipt({ status, commit: 'c'.repeat(40),
@@ -691,7 +691,7 @@ test('integration of a separate repair unblocks the original and its dependent',
   await f.check(await advance('merging'));
   previous = await advance('integrating');
   repair.delivery.merge = await receipt({ ...identity, confirmed: true, commit: 'e'.repeat(40),
-    review_sha256: repair.delivery.review.sha256 });
+    review_sha256: repair.delivery.review.sha256, head_branch: 'repair/branch', branch_deleted: true });
   await f.check(previous);
   previous = await advance('done');
   repair.evidence = f.raw;

@@ -177,6 +177,9 @@ artifacts（非空原始证据引用）。审查和合并报告还须包含同�
 - merge：confirmed=true、commit（服务端确认的完整合并 SHA）、
   review_sha256（使用的 review 引用摘要）。未知结果保持引用 null、操作未决；
   明确未合并则完成失败操作并回 pr_review，不能把失败回执放入成功 merge 字段。
+  head_branch（合并的远端分支名）与 branch_deleted（合并确认后是否已删除该远端
+  分支）；同分支仍有开启 PR（串行 PR 复用运行分支）时为 false 并记
+  branch_kept_reason，待该分支最后一个 PR 合并的回执删除。历史回执不追溯。
 - integration：status=PASS/FAIL/INCONCLUSIVE、commit（实际验证的集成 SHA）、
   merge_commit、contains_merge（真实 Git 包含关系）、subject（集成 manifest SHA）。
   主控核对实际构建、smoke、受影响任务及原始门禁；进入 done 时 subject 必须是
