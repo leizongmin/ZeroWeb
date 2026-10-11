@@ -144,13 +144,34 @@ pub fn fetch_text_async_meta(url: impl Into<String>, meta: ResourceFetchMeta) ->
 }
 
 /// 异步抓取主文档请求。GET 复用缓存调度器；unsafe 方法 write-through 后失效相关缓存。
-pub(crate) fn fetch_document_async(
+/// bing-t3（C1，2026-10-11）：文档抓取变体——30x 重定向追完后把最终 URL（response
+/// `.url`，HTML fetch 标准的 document URL）写入 `final_url_slot`，供宿主
+/// `take_document_final_url` 读取并同步 location/子资源 base。
+pub(crate) fn fetch_document_async_with_capture(
     url: impl Into<String>,
     method: &str,
     body: Option<&[u8]>,
+    final_url_slot: Option<std::sync::Arc<std::sync::Mutex<Option<String>>>>,
 ) -> Receiver<HttpTextResult> {
     let url = url.into();
     if method.eq_ignore_ascii_case("GET") && body.is_none() {
+        if let Some(slot) = final_url_slot {
+            // 文档 GET 走缓存感知提交（与 fetch_text_async_meta 同路），在桥接映射层
+            // 捕获 response.url（重定向追完后的最终 URL）。
+            let rx = ResourceLoader::shared().submit(
+                zero_net::ResourceRequest::get(url.clone(), FetchPriority::CRITICAL)
+                    .with_destination(ResourceFetchMeta::DOCUMENT.resource_type),
+            );
+            return bridge_rx(rx, move |result| {
+                if let Ok(resp) = &result
+                    && !resp.url.is_empty()
+                    && let Ok(mut slot) = slot.lock()
+                {
+                    *slot = Some(resp.url.clone());
+                }
+                map_fetch_text(result)
+            });
+        }
         return fetch_text_async_meta(url, ResourceFetchMeta::DOCUMENT);
     }
     if method.eq_ignore_ascii_case("POST") {
@@ -316,10 +337,16 @@ mod tests {
         });
 
         let url = format!("http://{addr}/submit");
-        let response = fetch_document_async(&url, "POST", Some(b"name=zero&go=1"))
-            .recv_timeout(Duration::from_secs(5))
-            .expect("POST response")
-            .expect("successful POST");
+        let final_url_slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let response = fetch_document_async_with_capture(
+            &url,
+            "POST",
+            Some(b"name=zero&go=1"),
+            Some(std::sync::Arc::clone(&final_url_slot)),
+        )
+        .recv_timeout(Duration::from_secs(5))
+        .expect("POST response")
+        .expect("successful POST");
         assert!(response.contains("<title>posted</title>"));
         let request = request_rx
             .recv_timeout(Duration::from_secs(5))
