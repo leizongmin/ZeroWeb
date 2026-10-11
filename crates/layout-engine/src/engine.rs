@@ -1395,6 +1395,10 @@ impl LayoutEngine {
             crate::float_positioning::apply_inline_block_float_avoidance(&mut root_box, styles);
         }
 
+        // R5070：终末 inline 载体右浮 CB 修正（CSS §9.5/§10.3.5 包含块 = 最近块级祖先；
+        // 载体 x 终值确定后重定）。kill-switch ZW_FLOAT_CB_BLOCK=0。
+        crate::float_positioning::fix_inline_carrier_right_float_abs(&mut root_box, 0.0, None);
+
         // R1999/R2000 Phase P1a：Print 媒体分页（独立 post-process，在所有重定位之后）。
         // gate = media_type==Print + env ZW_PRINT_PAGINATE（default-on；=0 紧急关闭）。
         // Screen 路径（默认）双重 gate 跳过 → LayoutResult 逐字段不变（零回归）。

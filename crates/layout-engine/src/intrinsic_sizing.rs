@@ -4542,3 +4542,43 @@ mod r5068_tests {
         );
     }
 }
+
+/// R5070（CSS §9.5/§10.3.5）：inline 载体内 float:right 包含块 = 最近块级祖先容器
+/// content box——终末 pass 按载体 x 终值定 abs（float-nowrap-4 同构：div 10ch 载体
+/// span 内 5ch 右浮应容器右缘，非载体盒宽对齐）。
+#[cfg(test)]
+mod r5070_tests {
+    /// div content 80 内 nowrap 载体 + 5ch(40px) 右浮 → 浮点 abs x = 8+80-40 = 48
+    ///（CB = div content box；旧口径按载体盒宽对齐得 96）。abs 沿链累计。
+    #[test]
+    fn r5070_inline_carrier_right_float_aligns_to_block_cb() {
+        let html = r#"<body>
+            <div style="width: 80px; font: 16px monospace;">
+                <span style="white-space: nowrap;">
+                    <span style="float: right; width: 40px; height: 40px; background: blue;"></span>
+                    text that overflows
+                </span>
+            </div>
+        </body>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        // body content abs = 8；沿 div(x) → span(x) → float(x) 累计。
+        let body = &result.root.children[1];
+        let div = &body.children[0];
+        let carrier = &div.children[0];
+        let float = &carrier.children[0];
+        let abs_x = 8.0 + div.x + carrier.x + float.x;
+        assert!(
+            matches!(float.float, zero_css_parser::values::FloatValue::Right),
+            "目标盒应为右浮"
+        );
+        assert!(
+            (abs_x - 48.0).abs() < 1.0,
+            "inline 载体内右浮应对齐块级 CB 右缘（abs 48），实际 {abs_x}"
+        );
+    }
+}
