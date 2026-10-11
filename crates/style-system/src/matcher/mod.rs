@@ -2487,16 +2487,21 @@ fn collect_from_rules(
                                 // 此处仅做布尔求值；索引缺失（无嵌套表的防御分支）回退
                                 // 现场解析，语义不变。
                                 if let Some(ctx) = media_ctx {
-                                    let queries = idx
-                                        .nested
-                                        .get(&ri)
-                                        .and_then(|b| b.media_queries.clone())
-                                        .or_else(|| zero_css_parser::media_query::parse_media_query(&at_rule.prelude))
-                                        .unwrap_or_default();
-                                    if queries
-                                        .iter()
-                                        .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx))
-                                    {
+                                    // P11 返修（TV-4/DF-1）：预解析查询借用求值，省去
+                                    // 每元素×每 @media 块一次 Vec clone（GitHub pricing
+                                    // ~12k 元素 × 1,230 块的分配热点）。索引侧 None
+                                    // （构建时不可解析）与块缺失同样回退现场解析，语义
+                                    // 与旧 clone 版逐点相同。
+                                    let hit = match idx.nested.get(&ri).and_then(|b| b.media_queries.as_deref()) {
+                                        Some(queries) => queries
+                                            .iter()
+                                            .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx)),
+                                        None => zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
+                                            .unwrap_or_default()
+                                            .iter()
+                                            .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx)),
+                                    };
+                                    if hit {
                                         let nested_index = idx.nested.get(&ri).map(|b| &b.index);
                                         collect_from_rules(
                                             doc,

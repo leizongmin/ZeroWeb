@@ -65,6 +65,8 @@ const ADVERSARIAL_CSS: &str = r#"
 /* tag 桶 */
 div { color: black; }
 li, p { margin: 1px; }
+/* TV-2：tag 主键小写归一——大写 tag 选择器须落 div 桶，否则索引路径漏配 */
+DIV { letter-spacing: 2px; }
 /* class 桶（含链、同规则多选择器跨界桶） */
 .card { color: red; }
 .card.featured { color: blue; }
@@ -147,6 +149,9 @@ const ADVERSARIAL_HTML: &str = r##"<html><body>
 <em class="card">e</em>
 <div>plain</div>
 <div class="menu"><li class="item">mi</li></div>
+<!-- TV-1：同规则多选择器跨桶双匹配——.special 与 .card 同规则分落两 class 桶，
+     元素两类命中产生同 (ri, 异 si) 双候选，last_matched_rule 去重须保持单份声明 -->
+<div class="special card">sc</div>
 </body></html>"##;
 
 fn elements_by_tags(doc: &Document, tags: &[&str]) -> Vec<NodeId> {
