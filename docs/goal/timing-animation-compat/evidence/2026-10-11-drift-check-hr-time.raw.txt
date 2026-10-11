@@ -1,0 +1,70 @@
+bash tests/wpt-runner/scripts/goals/10-timing-animation-compat.sh
+== fetch 语料（pin 315976933，FORCE=0）==
+  hr-time: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  performance-timeline: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  user-timing: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/animation-model: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/animation-trigger: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/crashtests: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/responsive: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/Animatable: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/Animation: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/AnimationEffect: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/AnimationPlaybackEvent: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/Document: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/DocumentTimeline: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/KeyframeEffect: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/TimelineTrigger: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/timing-model/animation-effects: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/timing-model/animations: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/timing-model/time-transformations: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/timing-model/timelines: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+== fetch .any.js window 变体 + /resources/ 依赖（43 文件）==
+== 语料盘点（wpt-data 本地 .html，含子目录）==
+  hr-time                         15 案
+  performance-timeline            17 案
+  user-timing                     15 案
+  web-animations                 153 案
+  web-animations/interfaces/Animatable     5 案
+  web-animations/interfaces/Animation    20 案
+  web-animations/interfaces/AnimationEffect     2 案
+  web-animations/interfaces/AnimationPlaybackEvent     1 案
+  web-animations/interfaces/Document     1 案
+  web-animations/interfaces/DocumentTimeline     3 案
+  web-animations/interfaces/KeyframeEffect    10 案
+  web-animations/interfaces/TimelineTrigger     1 案
+  web-animations/timing-model/animation-effects     5 案
+  web-animations/timing-model/animations    29 案
+  web-animations/timing-model/time-transformations     1 案
+  web-animations/timing-model/timelines     7 案
+== M1 下一步（rally 轮，契约见 docs/goal/timing-animation-compat.md DC-1）==
+  1. runner 通道：zero-wpt-runner 新增 testharness 子命令 + per-dir skip 规则
+  2. Makefile：fetch-wpt / testharness target（test-guard 包裹，照 testharness-fs 先例）
+  3. 基线：分类通过率（文本 + JSON）落 docs/goal/timing-animation-compat/evidence/
+  4. 回填：docs/compat/trends/wpt-suites.csv planned 行转数据行（evidence 列给来源）
+rustc -O scripts/test-guard.rs -o target/test-guard
+cargo build --release --bin zero-wpt-runner
+    Finished `release` profile [optimized] target(s) in 0.16s
+./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- ./target/release/zero-wpt-runner testharness-hr-time 
+Fail hr-time/clamped-time-origin-isolated.https.html :: timeOrigins are clamped.
+  assert_equals: crossOriginIsolated is properly set expected true but got false
+Fail hr-time/cross-origin-isolated-timing-attack.https.html :: The recommended minimum resolution of the Performance interface has been set to 5 microseconds for cross-origin isolated contexts.
+  assert_equals: Document cross-origin isolated value matches expected true but got false
+Pass hr-time/performance-tojson.html :: Test performance.toJSON()
+Fail hr-time/raf-coarsened-time.https.html :: raf-coarsened-time
+  assert_approx_equals: timestamp should be coarsened expected a number but got a "string"
+Pass hr-time/timeOrigin.html :: Window timeOrigin is close to Date.now() when there is no system clock adjustment.
+Fail hr-time/timeOrigin.html :: Window and worker timeOrigins are close when created one after another.
+  assert_greater_than_equal: Worker timeOrigin should be greater than the window timeOrigin. expected a number greater than or equal to 1791685406396.9 but got 1791685406130
+Fail hr-time/timeOrigin.html :: Window and worker timeOrigins differ when worker is created after a delay.
+  assert_greater_than_equal: We waited 200ms to spawn the second worker, so its timeOrigin should be greater than that of the window. expected a number greater than or equal to 200 but got 0
+Pass hr-time/timing-attack.html :: The recommended minimum resolution of the Performance interface has been set to 100 microseconds for cross-origin isolated contexts.
+Pass hr-time/basic.any.js :: self.performance.now() is a function that returns a number
+Pass hr-time/basic.any.js :: self.performance.now() returns a positive number
+Pass hr-time/basic.any.js :: self.performance.now() difference is not negative
+Pass hr-time/basic.any.js :: Performance interface extends EventTarget.
+Pass hr-time/basic.any.js :: High resolution time has approximately the right relative magnitude
+Pass hr-time/monotonic-clock.any.js :: self.performance.now() returns a positive number
+Pass hr-time/monotonic-clock.any.js :: self.performance.now() difference is not negative
+Pass hr-time/clamped-time-origin.html :: timeOrigins are clamped.
+make: *** [Makefile:491：testharness-hr-time] 错误 1

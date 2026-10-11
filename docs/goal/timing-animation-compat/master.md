@@ -2,7 +2,7 @@
 
 **入口文档**: [../timing-animation-compat.md](../timing-animation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-09-28（M4 收口判定：DC-1~4 全 ✅，goal DONE）
+**最后更新**: 2026-10-11（收口后漂移核对：四通道复跑零净回归，DONE 态维持）
 
 ---
 
@@ -20,6 +20,15 @@ navigation-compat M2 落地后评估（归入排除面 ×11 全部分类）；�
 （COOP/COEP 隔离 infra、worker 面、L1/L2 legacy、playState 派生〔DC-3 如实标注〕、
 渲染效果断言〔rendering-compat〕）。判定 evidence：
 [evidence/2026-09-28-m4-dc-verdict.md](evidence/2026-09-28-m4-dc-verdict.md)。
+
+**收口后漂移核对（2026-10-11，并行双流 main 组合态 ~350 engine 提交后）**：
+四通道复跑 **1110/1589**（hr-time 11/16、performance-timeline 36/44、
+user-timing 561/570、web-animations 502/959）——**零净回归（+3~4P），DONE 态
+维持**。performance-timeline/user-timing 与收口快照逐 subtest 恒等；hr-time +1P；
+web-animations 唯一 flip（playback-rate progress 1 案）已单变量 A/B 归因到
+navigation-compat M2-S5 pagereveal wrapper 的 ~0.2ms 时序消耗（属已记账
+「瞬间完成」残差族，按 §9 记账不硬解）；运行间方差 ±2 如实记账。详见
+[evidence/2026-10-11-post-close-drift-check.md](evidence/2026-10-11-post-close-drift-check.md)。
 
 **轨迹**：M1 资产（319/1376 = 23.2%）→ M2-S1 user-timing 异常语义（241→518P）→
 M2-S2 PerformanceObserver 语义（performance-timeline 20→35P）→ M2-S3 hr-time 语义

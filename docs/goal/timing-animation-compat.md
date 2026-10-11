@@ -89,23 +89,23 @@
 
 ### DC-1: WPT 导入与基线
 
-- [ ] 四 corpus window 可执行子集导入（fetch 脚本 + 通道 + imported 账本）
-- [ ] 分类通过率基线落 evidence/，并回填 docs/compat/trends/wpt-suites.csv planned 行
+- [x] 四 corpus window 可执行子集导入（fetch 脚本 + 通道 + imported 账本）
+- [x] 分类通过率基线落 evidence/，并回填 docs/compat/trends/wpt-suites.csv planned 行
 
 ### DC-2: 计时面收敛
 
-- [ ] hr-time 精度/单调性/timeOrigin 语义修齐
-- [ ] user-timing mark/measure + getEntries* 语义；PerformanceObserver 评估结论记账
+- [x] hr-time 精度/单调性/timeOrigin 语义修齐
+- [x] user-timing mark/measure + getEntries* 语义；PerformanceObserver 评估结论记账
 
 ### DC-3: WAAPI 收敛
 
-- [ ] Animation/KeyframeEffect/getAnimations/playState + finish/cancel promise 语义
-- [ ] headless 帧精度约束如实标注（不放宽容差粉饰）
+- [x] Animation/KeyframeEffect/getAnimations/playState + finish/cancel promise 语义
+- [x] headless 帧精度约束如实标注（不放宽容差粉饰）
 
 ### DC-4: 测试与质量不可退让
 
-- [ ] `make test` 全绿零失败 + clippy `-D warnings` + fmt 干净
-- [ ] 每语义切片带单测/集成测试；`make reftest` 零回归
+- [x] `make test` 全绿零失败 + clippy `-D warnings` + fmt 干净
+- [x] 每语义切片带单测/集成测试；`make reftest` 零回归
 
 ---
 

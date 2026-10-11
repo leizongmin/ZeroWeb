@@ -1,0 +1,628 @@
+bash tests/wpt-runner/scripts/goals/10-timing-animation-compat.sh
+== fetch 语料（pin 315976933，FORCE=0）==
+  hr-time: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  performance-timeline: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  user-timing: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/animation-model: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/animation-trigger: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/crashtests: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/responsive: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/Animatable: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/Animation: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/AnimationEffect: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/AnimationPlaybackEvent: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/Document: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/DocumentTimeline: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/KeyframeEffect: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/interfaces/TimelineTrigger: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/timing-model/animation-effects: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/timing-model/animations: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/timing-model/time-transformations: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  web-animations/timing-model/timelines: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+== fetch .any.js window 变体 + /resources/ 依赖（43 文件）==
+== 语料盘点（wpt-data 本地 .html，含子目录）==
+  hr-time                         15 案
+  performance-timeline            17 案
+  user-timing                     15 案
+  web-animations                 153 案
+  web-animations/interfaces/Animatable     5 案
+  web-animations/interfaces/Animation    20 案
+  web-animations/interfaces/AnimationEffect     2 案
+  web-animations/interfaces/AnimationPlaybackEvent     1 案
+  web-animations/interfaces/Document     1 案
+  web-animations/interfaces/DocumentTimeline     3 案
+  web-animations/interfaces/KeyframeEffect    10 案
+  web-animations/interfaces/TimelineTrigger     1 案
+  web-animations/timing-model/animation-effects     5 案
+  web-animations/timing-model/animations    29 案
+  web-animations/timing-model/time-transformations     1 案
+  web-animations/timing-model/timelines     7 案
+== M1 下一步（rally 轮，契约见 docs/goal/timing-animation-compat.md DC-1）==
+  1. runner 通道：zero-wpt-runner 新增 testharness 子命令 + per-dir skip 规则
+  2. Makefile：fetch-wpt / testharness target（test-guard 包裹，照 testharness-fs 先例）
+  3. 基线：分类通过率（文本 + JSON）落 docs/goal/timing-animation-compat/evidence/
+  4. 回填：docs/compat/trends/wpt-suites.csv planned 行转数据行（evidence 列给来源）
+rustc -O scripts/test-guard.rs -o target/test-guard
+cargo build --release --bin zero-wpt-runner
+    Finished `release` profile [optimized] target(s) in 0.19s
+./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- ./target/release/zero-wpt-runner testharness-user-timing 
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "". There should be 2 entries.
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "". Entries in entrylist should be in order.
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "". Entry_list 0. Entry "1" should be one that we have set.
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "". Entry_list 0. entryType should be "mark".
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "". Entry_list 0. startTime should greater than 0.
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "". Entry_list 0. duration of mark should be 0.
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "". Entry_list 1. Entry "abc" should be one that we have set.
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "". Entry_list 1. entryType should be "mark".
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "". Entry_list 1. startTime should greater than 0.
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "". Entry_list 1. duration of mark should be 0.
+Pass user-timing/clearMarks.html :: First loop: marks that we cleared for "" should not exist anymore.
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "1". There should be 1 entries.
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "1". Entries in entrylist should be in order.
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "1". Entry_list 0. Entry "abc" should be one that we have set.
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "1". Entry_list 0. entryType should be "mark".
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "1". Entry_list 0. startTime should greater than 0.
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "1". Entry_list 0. duration of mark should be 0.
+Pass user-timing/clearMarks.html :: First loop: marks that we cleared for "1" should not exist anymore.
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "abc". There should be 0 entries.
+Pass user-timing/clearMarks.html :: First loop: checking entries after removing "abc". Entries in entrylist should be in order.
+Pass user-timing/clearMarks.html :: First loop: marks that we cleared for "abc" should not exist anymore.
+Pass user-timing/clearMarks.html :: No marks should exist after we clear all.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". There should be 4 entries.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entries in entrylist should be in order.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 0. Entry "1" should be one that we have set.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 0. entryType should be "mark".
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 0. startTime should greater than 0.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 0. duration of mark should be 0.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 1. Entry "abc" should be one that we have set.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 1. entryType should be "mark".
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 1. startTime should greater than 0.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 1. duration of mark should be 0.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 2. Entry "1" should be one that we have set.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 2. entryType should be "mark".
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 2. startTime should greater than 0.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 2. duration of mark should be 0.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 3. Entry "abc" should be one that we have set.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 3. entryType should be "mark".
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 3. startTime should greater than 0.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "". Entry_list 3. duration of mark should be 0.
+Pass user-timing/clearMarks.html :: Second loop: marks that we cleared for "" should not exist anymore.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "1". There should be 2 entries.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "1". Entries in entrylist should be in order.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "1". Entry_list 0. Entry "abc" should be one that we have set.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "1". Entry_list 0. entryType should be "mark".
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "1". Entry_list 0. startTime should greater than 0.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "1". Entry_list 0. duration of mark should be 0.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "1". Entry_list 1. Entry "abc" should be one that we have set.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "1". Entry_list 1. entryType should be "mark".
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "1". Entry_list 1. startTime should greater than 0.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "1". Entry_list 1. duration of mark should be 0.
+Pass user-timing/clearMarks.html :: Second loop: marks that we cleared for "1" should not exist anymore.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "abc". There should be 0 entries.
+Pass user-timing/clearMarks.html :: Second loop: checking entries after removing "abc". Entries in entrylist should be in order.
+Pass user-timing/clearMarks.html :: Second loop: marks that we cleared for "abc" should not exist anymore.
+Pass user-timing/clearMarks.html :: Nothing should happen if we clear a non-exist mark.
+Pass user-timing/clearMarks.html :: No marks should exist when we clear all.
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "". There should be 2 entries.
+Fail user-timing/clearMeasures.html :: First loop: checking entries after removing "". Entries in entrylist should be in order.
+  assert_true: First loop: checking entries after removing "". Entries in entrylist should be in order. expected true got false
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "". Entry_list 0. Entry "2" should be one that we have set.
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "". Entry_list 0. entryType should be "measure".
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "". Entry_list 0. startTime should be a number.
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "". Entry_list 0. duration should be a number.
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "". Entry_list 1. Entry "aaa" should be one that we have set.
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "". Entry_list 1. entryType should be "measure".
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "". Entry_list 1. startTime should be a number.
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "". Entry_list 1. duration should be a number.
+Pass user-timing/clearMeasures.html :: First loop: measure "" should not exist anymore after we cleared it.
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "2". There should be 1 entries.
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "2". Entries in entrylist should be in order.
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "2". Entry_list 0. Entry "aaa" should be one that we have set.
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "2". Entry_list 0. entryType should be "measure".
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "2". Entry_list 0. startTime should be a number.
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "2". Entry_list 0. duration should be a number.
+Pass user-timing/clearMeasures.html :: First loop: measure "2" should not exist anymore after we cleared it.
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "aaa". There should be 0 entries.
+Pass user-timing/clearMeasures.html :: First loop: checking entries after removing "aaa". Entries in entrylist should be in order.
+Pass user-timing/clearMeasures.html :: First loop: measure "aaa" should not exist anymore after we cleared it.
+Pass user-timing/clearMeasures.html :: No measures should exist after we clear all (after first loop).
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". There should be 4 entries.
+Fail user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entries in entrylist should be in order.
+  assert_true: Second loop: checking entries after removing "". Entries in entrylist should be in order. expected true got false
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 0. Entry "2" should be one that we have set.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 0. entryType should be "measure".
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 0. startTime should be a number.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 0. duration should be a number.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 1. Entry "aaa" should be one that we have set.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 1. entryType should be "measure".
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 1. startTime should be a number.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 1. duration should be a number.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 2. Entry "2" should be one that we have set.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 2. entryType should be "measure".
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 2. startTime should be a number.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 2. duration should be a number.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 3. Entry "aaa" should be one that we have set.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 3. entryType should be "measure".
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 3. startTime should be a number.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "". Entry_list 3. duration should be a number.
+Pass user-timing/clearMeasures.html :: Second loop: measure "" should not exist anymore after we cleared it.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "2". There should be 2 entries.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "2". Entries in entrylist should be in order.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "2". Entry_list 0. Entry "aaa" should be one that we have set.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "2". Entry_list 0. entryType should be "measure".
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "2". Entry_list 0. startTime should be a number.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "2". Entry_list 0. duration should be a number.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "2". Entry_list 1. Entry "aaa" should be one that we have set.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "2". Entry_list 1. entryType should be "measure".
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "2". Entry_list 1. startTime should be a number.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "2". Entry_list 1. duration should be a number.
+Pass user-timing/clearMeasures.html :: Second loop: measure "2" should not exist anymore after we cleared it.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "aaa". There should be 0 entries.
+Pass user-timing/clearMeasures.html :: Second loop: checking entries after removing "aaa". Entries in entrylist should be in order.
+Pass user-timing/clearMeasures.html :: Second loop: measure "aaa" should not exist anymore after we cleared it.
+Pass user-timing/clearMeasures.html :: Nothing should happen if we clear a non-exist measure
+Pass user-timing/clearMeasures.html :: No measures should exist when we clear all (after second loop).
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute navigationStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute unloadEventStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute unloadEventEnd
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute redirectStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute redirectEnd
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute fetchStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute domainLookupStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute domainLookupEnd
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute connectStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute connectEnd
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute secureConnectionStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute requestStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute responseStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute responseEnd
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute domLoading
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute domInteractive
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute domContentLoadedEventStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute domContentLoadedEventEnd
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute domComplete
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute loadEventStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.mark should throw if used with timing attribute loadEventEnd
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute navigationStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute unloadEventStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute unloadEventEnd
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute redirectStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute redirectEnd
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute fetchStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute domainLookupStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute domainLookupEnd
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute connectStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute connectEnd
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute secureConnectionStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute requestStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute responseStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute responseEnd
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute domLoading
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute domInteractive
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute domContentLoadedEventStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute domContentLoadedEventEnd
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute domComplete
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute loadEventStart
+Pass user-timing/invoke_with_timing_attributes.html :: performance.measure should not throw if used with timing attribute loadEventEnd
+Pass user-timing/invoke_without_parameter.html :: window.performance.mark() throws a TypeError exception when invoke without a parameter.
+Pass user-timing/invoke_without_parameter.html :: window.performance.measure() throws a TypeError exception when invoke without a parameter.
+Fail user-timing/mark-measure-feature-detection.html :: Test PerformanceMark existence and feature detection
+  assert_equals: performance.mark should be void in UserTiming L2. expected "undefined" but got "object"
+Fail user-timing/mark-measure-feature-detection.html :: Test PerformanceMeasure existence and feature detection
+  assert_equals: performance.measure should be void in UserTiming L2. expected "undefined" but got "object"
+Pass user-timing/mark.html :: There should be 0 marks
+Pass user-timing/mark.html :: Checking all entries.There should be 3 entries.
+Pass user-timing/mark.html :: Checking all entries.Entries in entrylist should be in order.
+Pass user-timing/mark.html :: Checking all entries.Entry_list 0. Entry "" should be one that we have set.
+Pass user-timing/mark.html :: Checking all entries.Entry_list 0. entryType should be "mark".
+Pass user-timing/mark.html :: Checking all entries.Entry_list 0. startTime should greater than 0.
+Pass user-timing/mark.html :: Checking all entries.Entry_list 0. duration of mark should be 0.
+Pass user-timing/mark.html :: Checking all entries.Entry_list 1. Entry "1" should be one that we have set.
+Pass user-timing/mark.html :: Checking all entries.Entry_list 1. entryType should be "mark".
+Pass user-timing/mark.html :: Checking all entries.Entry_list 1. startTime should greater than 0.
+Pass user-timing/mark.html :: Checking all entries.Entry_list 1. duration of mark should be 0.
+Pass user-timing/mark.html :: Checking all entries.Entry_list 2. Entry "abc" should be one that we have set.
+Pass user-timing/mark.html :: Checking all entries.Entry_list 2. entryType should be "mark".
+Pass user-timing/mark.html :: Checking all entries.Entry_list 2. startTime should greater than 0.
+Pass user-timing/mark.html :: Checking all entries.Entry_list 2. duration of mark should be 0.
+Pass user-timing/mark.html :: First loop: checking entry of name "".There should be 1 entries.
+Pass user-timing/mark.html :: First loop: checking entry of name "".Entries in entrylist should be in order.
+Pass user-timing/mark.html :: First loop: checking entry of name "".Entry_list 0. Entry "" should be one that we have set.
+Pass user-timing/mark.html :: First loop: checking entry of name "".Entry_list 0. entryType should be "mark".
+Pass user-timing/mark.html :: First loop: checking entry of name "".Entry_list 0. startTime should greater than 0.
+Pass user-timing/mark.html :: First loop: checking entry of name "".Entry_list 0. duration of mark should be 0.
+Pass user-timing/mark.html :: First loop: checking entry of name "1".There should be 1 entries.
+Pass user-timing/mark.html :: First loop: checking entry of name "1".Entries in entrylist should be in order.
+Pass user-timing/mark.html :: First loop: checking entry of name "1".Entry_list 0. Entry "1" should be one that we have set.
+Pass user-timing/mark.html :: First loop: checking entry of name "1".Entry_list 0. entryType should be "mark".
+Pass user-timing/mark.html :: First loop: checking entry of name "1".Entry_list 0. startTime should greater than 0.
+Pass user-timing/mark.html :: First loop: checking entry of name "1".Entry_list 0. duration of mark should be 0.
+Pass user-timing/mark.html :: First loop: checking entry of name "abc".There should be 1 entries.
+Pass user-timing/mark.html :: First loop: checking entry of name "abc".Entries in entrylist should be in order.
+Pass user-timing/mark.html :: First loop: checking entry of name "abc".Entry_list 0. Entry "abc" should be one that we have set.
+Pass user-timing/mark.html :: First loop: checking entry of name "abc".Entry_list 0. entryType should be "mark".
+Pass user-timing/mark.html :: First loop: checking entry of name "abc".Entry_list 0. startTime should greater than 0.
+Pass user-timing/mark.html :: First loop: checking entry of name "abc".Entry_list 0. duration of mark should be 0.
+Pass user-timing/mark.html :: Checking all doubly marked entries.There should be 6 entries.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entries in entrylist should be in order.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 0. Entry "" should be one that we have set.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 0. entryType should be "mark".
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 0. startTime should greater than 0.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 0. duration of mark should be 0.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 1. Entry "1" should be one that we have set.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 1. entryType should be "mark".
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 1. startTime should greater than 0.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 1. duration of mark should be 0.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 2. Entry "abc" should be one that we have set.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 2. entryType should be "mark".
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 2. startTime should greater than 0.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 2. duration of mark should be 0.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 3. Entry "" should be one that we have set.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 3. entryType should be "mark".
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 3. startTime should greater than 0.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 3. duration of mark should be 0.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 4. Entry "1" should be one that we have set.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 4. entryType should be "mark".
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 4. startTime should greater than 0.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 4. duration of mark should be 0.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 5. Entry "abc" should be one that we have set.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 5. entryType should be "mark".
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 5. startTime should greater than 0.
+Pass user-timing/mark.html :: Checking all doubly marked entries.Entry_list 5. duration of mark should be 0.
+Pass user-timing/mark.html :: Second loop step 0: checking entries of name "".There should be 2 entries.
+Pass user-timing/mark.html :: Second loop step 0: checking entries of name "".Entries in entrylist should be in order.
+Pass user-timing/mark.html :: Second loop step 0: checking entries of name "".Entry_list 0. Entry "" should be one that we have set.
+Pass user-timing/mark.html :: Second loop step 0: checking entries of name "".Entry_list 0. entryType should be "mark".
+Pass user-timing/mark.html :: Second loop step 0: checking entries of name "".Entry_list 0. startTime should greater than 0.
+Pass user-timing/mark.html :: Second loop step 0: checking entries of name "".Entry_list 0. duration of mark should be 0.
+Pass user-timing/mark.html :: Second loop step 0: checking entries of name "".Entry_list 1. Entry "" should be one that we have set.
+Pass user-timing/mark.html :: Second loop step 0: checking entries of name "".Entry_list 1. entryType should be "mark".
+Pass user-timing/mark.html :: Second loop step 0: checking entries of name "".Entry_list 1. startTime should greater than 0.
+Pass user-timing/mark.html :: Second loop step 0: checking entries of name "".Entry_list 1. duration of mark should be 0.
+Pass user-timing/mark.html :: Second loop step 1: checking entries of name "1".There should be 2 entries.
+Pass user-timing/mark.html :: Second loop step 1: checking entries of name "1".Entries in entrylist should be in order.
+Pass user-timing/mark.html :: Second loop step 1: checking entries of name "1".Entry_list 0. Entry "1" should be one that we have set.
+Pass user-timing/mark.html :: Second loop step 1: checking entries of name "1".Entry_list 0. entryType should be "mark".
+Pass user-timing/mark.html :: Second loop step 1: checking entries of name "1".Entry_list 0. startTime should greater than 0.
+Pass user-timing/mark.html :: Second loop step 1: checking entries of name "1".Entry_list 0. duration of mark should be 0.
+Pass user-timing/mark.html :: Second loop step 1: checking entries of name "1".Entry_list 1. Entry "1" should be one that we have set.
+Pass user-timing/mark.html :: Second loop step 1: checking entries of name "1".Entry_list 1. entryType should be "mark".
+Pass user-timing/mark.html :: Second loop step 1: checking entries of name "1".Entry_list 1. startTime should greater than 0.
+Pass user-timing/mark.html :: Second loop step 1: checking entries of name "1".Entry_list 1. duration of mark should be 0.
+Pass user-timing/mark.html :: Second loop step 2: checking entries of name "abc".There should be 2 entries.
+Pass user-timing/mark.html :: Second loop step 2: checking entries of name "abc".Entries in entrylist should be in order.
+Pass user-timing/mark.html :: Second loop step 2: checking entries of name "abc".Entry_list 0. Entry "abc" should be one that we have set.
+Pass user-timing/mark.html :: Second loop step 2: checking entries of name "abc".Entry_list 0. entryType should be "mark".
+Pass user-timing/mark.html :: Second loop step 2: checking entries of name "abc".Entry_list 0. startTime should greater than 0.
+Pass user-timing/mark.html :: Second loop step 2: checking entries of name "abc".Entry_list 0. duration of mark should be 0.
+Pass user-timing/mark.html :: Second loop step 2: checking entries of name "abc".Entry_list 1. Entry "abc" should be one that we have set.
+Pass user-timing/mark.html :: Second loop step 2: checking entries of name "abc".Entry_list 1. entryType should be "mark".
+Pass user-timing/mark.html :: Second loop step 2: checking entries of name "abc".Entry_list 1. startTime should greater than 0.
+Pass user-timing/mark.html :: Second loop step 2: checking entries of name "abc".Entry_list 1. duration of mark should be 0.
+Pass user-timing/mark.html :: Second loop step 3: checking entries of name "".There should be 2 entries.
+Pass user-timing/mark.html :: Second loop step 3: checking entries of name "".Entries in entrylist should be in order.
+Pass user-timing/mark.html :: Second loop step 3: checking entries of name "".Entry_list 0. Entry "" should be one that we have set.
+Pass user-timing/mark.html :: Second loop step 3: checking entries of name "".Entry_list 0. entryType should be "mark".
+Pass user-timing/mark.html :: Second loop step 3: checking entries of name "".Entry_list 0. startTime should greater than 0.
+Pass user-timing/mark.html :: Second loop step 3: checking entries of name "".Entry_list 0. duration of mark should be 0.
+Pass user-timing/mark.html :: Second loop step 3: checking entries of name "".Entry_list 1. Entry "" should be one that we have set.
+Pass user-timing/mark.html :: Second loop step 3: checking entries of name "".Entry_list 1. entryType should be "mark".
+Pass user-timing/mark.html :: Second loop step 3: checking entries of name "".Entry_list 1. startTime should greater than 0.
+Pass user-timing/mark.html :: Second loop step 3: checking entries of name "".Entry_list 1. duration of mark should be 0.
+Pass user-timing/mark.html :: Second loop step 4: checking entries of name "1".There should be 2 entries.
+Pass user-timing/mark.html :: Second loop step 4: checking entries of name "1".Entries in entrylist should be in order.
+Pass user-timing/mark.html :: Second loop step 4: checking entries of name "1".Entry_list 0. Entry "1" should be one that we have set.
+Pass user-timing/mark.html :: Second loop step 4: checking entries of name "1".Entry_list 0. entryType should be "mark".
+Pass user-timing/mark.html :: Second loop step 4: checking entries of name "1".Entry_list 0. startTime should greater than 0.
+Pass user-timing/mark.html :: Second loop step 4: checking entries of name "1".Entry_list 0. duration of mark should be 0.
+Pass user-timing/mark.html :: Second loop step 4: checking entries of name "1".Entry_list 1. Entry "1" should be one that we have set.
+Pass user-timing/mark.html :: Second loop step 4: checking entries of name "1".Entry_list 1. entryType should be "mark".
+Pass user-timing/mark.html :: Second loop step 4: checking entries of name "1".Entry_list 1. startTime should greater than 0.
+Pass user-timing/mark.html :: Second loop step 4: checking entries of name "1".Entry_list 1. duration of mark should be 0.
+Pass user-timing/mark.html :: Second loop step 5: checking entries of name "abc".There should be 2 entries.
+Pass user-timing/mark.html :: Second loop step 5: checking entries of name "abc".Entries in entrylist should be in order.
+Pass user-timing/mark.html :: Second loop step 5: checking entries of name "abc".Entry_list 0. Entry "abc" should be one that we have set.
+Pass user-timing/mark.html :: Second loop step 5: checking entries of name "abc".Entry_list 0. entryType should be "mark".
+Pass user-timing/mark.html :: Second loop step 5: checking entries of name "abc".Entry_list 0. startTime should greater than 0.
+Pass user-timing/mark.html :: Second loop step 5: checking entries of name "abc".Entry_list 0. duration of mark should be 0.
+Pass user-timing/mark.html :: Second loop step 5: checking entries of name "abc".Entry_list 1. Entry "abc" should be one that we have set.
+Pass user-timing/mark.html :: Second loop step 5: checking entries of name "abc".Entry_list 1. entryType should be "mark".
+Pass user-timing/mark.html :: Second loop step 5: checking entries of name "abc".Entry_list 1. startTime should greater than 0.
+Pass user-timing/mark.html :: Second loop step 5: checking entries of name "abc".Entry_list 1. duration of mark should be 0.
+Pass user-timing/mark_exceptions.html :: window.performance.mark() throws a TypeError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("navigationStart") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("unloadEventStart") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("unloadEventEnd") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("redirectStart") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("redirectEnd") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("fetchStart") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("domainLookupStart") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("domainLookupEnd") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("connectStart") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("connectEnd") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("secureConnectionStart") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("requestStart") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("responseStart") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("responseEnd") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("domLoading") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("domInteractive") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("domContentLoadedEventStart") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("domContentLoadedEventEnd") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("domComplete") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("loadEventStart") throws a SyntaxError exception.
+Pass user-timing/mark_exceptions.html :: window.performance.mark("loadEventEnd") throws a SyntaxError exception.
+Pass user-timing/measure-exceptions.html :: Passing 'unloadEventStart' as a mark to measure API should cause error when the mark is empty.
+Pass user-timing/measure-exceptions.html :: Passing 'unloadEventEnd' as a mark to measure API should cause error when the mark is empty.
+Pass user-timing/measure-exceptions.html :: Passing 'redirectStart' as a mark to measure API should cause error when the mark is empty.
+Pass user-timing/measure-exceptions.html :: Passing 'redirectEnd' as a mark to measure API should cause error when the mark is empty.
+Pass user-timing/measure-exceptions.html :: Passing 'secureConnectionStart' as a mark to measure API should cause error when the mark is empty.
+Pass user-timing/measure-exceptions.html :: Passing 'domInteractive' as a mark to measure API should cause error when the mark is empty.
+Pass user-timing/measure-exceptions.html :: Passing 'domContentLoadedEventStart' as a mark to measure API should cause error when the mark is empty.
+Pass user-timing/measure-exceptions.html :: Passing 'domContentLoadedEventEnd' as a mark to measure API should cause error when the mark is empty.
+Pass user-timing/measure-exceptions.html :: Passing 'domComplete' as a mark to measure API should cause error when the mark is empty.
+Pass user-timing/measure-exceptions.html :: Passing 'loadEventStart' as a mark to measure API should cause error when the mark is empty.
+Pass user-timing/measure-exceptions.html :: Passing 'loadEventEnd' as a mark to measure API should cause error when the mark is empty.
+Pass user-timing/measure-exceptions.html :: Passing 51.15 as a mark to measure API should cause error.
+Pass user-timing/measure-exceptions.html :: Passing DoesNotExist as a mark to measure API should cause error.
+Pass user-timing/measure.html :: window.performance is defined
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_no_end")[0].name == "measure_no_start_no_end"
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_no_end")[0].startTime is correct
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_no_end")[0].entryType == "measure"
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_no_end")[0].duration is approximately correct (up to 20ms difference allowed)
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_start_no_end")[0].name == "measure_start_no_end"
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_start_no_end")[0].startTime is correct
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_start_no_end")[0].entryType == "measure"
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_start_no_end")[0].duration is approximately correct (up to 20ms difference allowed)
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_start_end")[0].name == "measure_start_end"
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_start_end")[0].startTime is correct
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_start_end")[0].entryType == "measure"
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_start_end")[0].duration is approximately correct (up to 20ms difference allowed)
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_end")[0].name == "measure_no_start_end"
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_end")[0].startTime is correct
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_end")[0].entryType == "measure"
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_end")[0].duration is approximately correct (up to 20ms difference allowed)
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_no_end")[1].name == "measure_no_start_no_end"
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_no_end")[1].startTime is correct
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_no_end")[1].entryType == "measure"
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_no_end")[1].duration is approximately correct (up to 20ms difference allowed)
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_no_end", "measure")[0] returns an object containing the "measure_no_start_no_end" measure in the correct order, and its value matches the "measure_no_start_no_end" measure returned by window.performance.getEntriesByName("measure_no_start_no_end")
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_start_no_end", "measure")[0] returns an object containing the "measure_start_no_end" measure in the correct order, and its value matches the "measure_start_no_end" measure returned by window.performance.getEntriesByName("measure_start_no_end")
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_start_end", "measure")[0] returns an object containing the "measure_start_end" measure in the correct order, and its value matches the "measure_start_end" measure returned by window.performance.getEntriesByName("measure_start_end")
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_end", "measure")[0] returns an object containing the "measure_no_start_end" measure in the correct order, and its value matches the "measure_no_start_end" measure returned by window.performance.getEntriesByName("measure_no_start_end")
+Pass user-timing/measure.html :: window.performance.getEntriesByName("measure_no_start_no_end", "measure")[1] returns an object containing the "measure_no_start_no_end" measure in the correct order, and its value matches the "measure_no_start_no_end" measure returned by window.performance.getEntriesByName("measure_no_start_no_end")
+Pass user-timing/measure.html :: window.performance.getEntries() returns an object containing the "measure_no_start_no_end" measure, and it's value matches the measure returned by window.performance.getEntriesByName("measure_no_start_no_end")[0].
+Pass user-timing/measure.html :: window.performance.getEntries() returns an object containing the "measure_start_no_end" measure, and it's value matches the measure returned by window.performance.getEntriesByName("measure_start_no_end")[0].
+Pass user-timing/measure.html :: window.performance.getEntries() returns an object containing the "measure_start_end" measure, and it's value matches the measure returned by window.performance.getEntriesByName("measure_start_end")[0].
+Pass user-timing/measure.html :: window.performance.getEntries() returns an object containing the "measure_no_start_end" measure, and it's value matches the measure returned by window.performance.getEntriesByName("measure_no_start_end")[0].
+Pass user-timing/measure.html :: window.performance.getEntries() returns an object containing the "measure_no_start_no_end" measure, and it's value matches the measure returned by window.performance.getEntriesByName("measure_no_start_no_end")[1].
+Fail user-timing/measure.html :: window.performance.getEntries() returns an object containing all test measures in order.
+  assert_true: window.performance.getEntries() returns an object containing all test measures in order. expected true got false
+Pass user-timing/measure.html :: window.performance.getEntriesByType("measure") returns an object containing the "measure_no_start_no_end" measure, and it's value matches the measure returned by window.performance.getEntriesByName("measure_no_start_no_end")[0].
+Pass user-timing/measure.html :: window.performance.getEntriesByType("measure") returns an object containing the "measure_start_no_end" measure, and it's value matches the measure returned by window.performance.getEntriesByName("measure_start_no_end")[0].
+Pass user-timing/measure.html :: window.performance.getEntriesByType("measure") returns an object containing the "measure_start_end" measure, and it's value matches the measure returned by window.performance.getEntriesByName("measure_start_end")[0].
+Pass user-timing/measure.html :: window.performance.getEntriesByType("measure") returns an object containing the "measure_no_start_end" measure, and it's value matches the measure returned by window.performance.getEntriesByName("measure_no_start_end")[0].
+Pass user-timing/measure.html :: window.performance.getEntriesByType("measure") returns an object containing the "measure_no_start_no_end" measure, and it's value matches the measure returned by window.performance.getEntriesByName("measure_no_start_no_end")[1].
+Fail user-timing/measure.html :: window.performance.getEntriesByType("measure") returns an object containing all test measures in order.
+  assert_true: window.performance.getEntriesByType("measure") returns an object containing all test measures in order. expected true got false
+Timeout user-timing/measure_associated_with_navigation_timing.html :: user-timing/measure_associated_with_navigation_timing.html
+  testharness completed without reporting registered tests (state={"loaded":true,"pending":0,"phase":4,"tests":0})
+Pass user-timing/measure_exception.html :: Invocation of performance.measure() should throw TypeError Exception.
+Pass user-timing/measure_exception.html :: Invocation of performance.measure("Exception1", "NonExistMark1") should throw SYNTAX_ERR Exception.
+Pass user-timing/measure_exception.html :: Invocation of performance.measure("Exception2", "NonExistMark1", "navigationStart") should throw SYNTAX_ERR Exception.
+Pass user-timing/measure_exception.html :: Invocation of performance.measure("Exception3", "navigationStart", "NonExistMark1") should throw SYNTAX_ERR Exception.
+Pass user-timing/measure_exception.html :: Invocation of performance.measure("Exception4", "NonExistMark1", "ExistMark") should throw SYNTAX_ERR Exception.
+Pass user-timing/measure_exception.html :: Invocation of performance.measure("Exception5", "ExistMark", "NonExistMark1") should throw SYNTAX_ERR Exception.
+Pass user-timing/measure_exception.html :: Invocation of performance.measure("Exception6", "NonExistMark1", "NonExistMark2") should throw SYNTAX_ERR Exception.
+Pass user-timing/measure_exception.html :: Invocation of performance.measure("Exception7", "redirectStart") should throw INVALID_ACCESS_ERR Exception.
+Pass user-timing/measure_exception.html :: Invocation of performance.measure("Exception8", {"detail": "non-empty"}) should throw TypeError Exception.
+Pass user-timing/measure_exception.html :: Invocation of performance.measure("Exception9", {"start": 1, "duration": 2, "end": 3}) should throw TypeError Exception.
+Pass user-timing/measure_exceptions_navigation_timing.html :: window.performance.measure("measure", "loadEventEnd"), where "loadEventEnd" is a navigation timing attribute with a value of 0, throws a InvalidAccessError exception.
+Pass user-timing/measure_exceptions_navigation_timing.html :: window.performance.measure("measure", "loadEventEnd", "responseEnd"), where "loadEventEnd" is a navigation timing attribute with a value of 0, throws a InvalidAccessError exception.
+Pass user-timing/measure_exceptions_navigation_timing.html :: window.performance.measure("measure", "navigationStart", "loadEventEnd"), where "loadEventEnd" is a navigation timing attribute with a value of 0, throws a InvalidAccessError exception.
+Pass user-timing/measure_exceptions_navigation_timing.html :: window.performance.measure("measure", "loadEventEnd", "loadEventEnd"), where "loadEventEnd" is a navigation timing attribute with a value of 0, throws a InvalidAccessError exception.
+Pass user-timing/measure_navigation_timing.html :: window.performance is defined
+Pass user-timing/measures.html :: There should be 0 entries returned.
+Pass user-timing/measures.html :: Checking all entries.There should be 3 entries.
+Fail user-timing/measures.html :: Checking all entries.Entries in entrylist should be in order.
+  assert_true: Checking all entries.Entries in entrylist should be in order. expected true got false
+Pass user-timing/measures.html :: Checking all entries.Entry_list 0. Entry "" should be one that we have set.
+Pass user-timing/measures.html :: Checking all entries.Entry_list 0. entryType should be "measure".
+Pass user-timing/measures.html :: Checking all entries.Entry_list 0. startTime should be a number.
+Pass user-timing/measures.html :: Checking all entries.Entry_list 0. duration should be a number.
+Pass user-timing/measures.html :: Checking all entries.Entry_list 1. Entry "2" should be one that we have set.
+Pass user-timing/measures.html :: Checking all entries.Entry_list 1. entryType should be "measure".
+Pass user-timing/measures.html :: Checking all entries.Entry_list 1. startTime should be a number.
+Pass user-timing/measures.html :: Checking all entries.Entry_list 1. duration should be a number.
+Pass user-timing/measures.html :: Checking all entries.Entry_list 2. Entry "aaa" should be one that we have set.
+Pass user-timing/measures.html :: Checking all entries.Entry_list 2. entryType should be "measure".
+Pass user-timing/measures.html :: Checking all entries.Entry_list 2. startTime should be a number.
+Pass user-timing/measures.html :: Checking all entries.Entry_list 2. duration should be a number.
+Pass user-timing/measures.html :: First loop: checking entry of name "".There should be 1 entries.
+Pass user-timing/measures.html :: First loop: checking entry of name "".Entries in entrylist should be in order.
+Pass user-timing/measures.html :: First loop: checking entry of name "".Entry_list 0. Entry "" should be one that we have set.
+Pass user-timing/measures.html :: First loop: checking entry of name "".Entry_list 0. entryType should be "measure".
+Pass user-timing/measures.html :: First loop: checking entry of name "".Entry_list 0. startTime should be a number.
+Pass user-timing/measures.html :: First loop: checking entry of name "".Entry_list 0. duration should be a number.
+Pass user-timing/measures.html :: First loop: checking entry of name "2".There should be 1 entries.
+Pass user-timing/measures.html :: First loop: checking entry of name "2".Entries in entrylist should be in order.
+Pass user-timing/measures.html :: First loop: checking entry of name "2".Entry_list 0. Entry "2" should be one that we have set.
+Pass user-timing/measures.html :: First loop: checking entry of name "2".Entry_list 0. entryType should be "measure".
+Pass user-timing/measures.html :: First loop: checking entry of name "2".Entry_list 0. startTime should be a number.
+Pass user-timing/measures.html :: First loop: checking entry of name "2".Entry_list 0. duration should be a number.
+Pass user-timing/measures.html :: First loop: checking entry of name "aaa".There should be 1 entries.
+Pass user-timing/measures.html :: First loop: checking entry of name "aaa".Entries in entrylist should be in order.
+Pass user-timing/measures.html :: First loop: checking entry of name "aaa".Entry_list 0. Entry "aaa" should be one that we have set.
+Pass user-timing/measures.html :: First loop: checking entry of name "aaa".Entry_list 0. entryType should be "measure".
+Pass user-timing/measures.html :: First loop: checking entry of name "aaa".Entry_list 0. startTime should be a number.
+Pass user-timing/measures.html :: First loop: checking entry of name "aaa".Entry_list 0. duration should be a number.
+Pass user-timing/measures.html :: Checking all doubly measured entries.There should be 6 entries.
+Fail user-timing/measures.html :: Checking all doubly measured entries.Entries in entrylist should be in order.
+  assert_true: Checking all doubly measured entries.Entries in entrylist should be in order. expected true got false
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 0. Entry "" should be one that we have set.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 0. entryType should be "measure".
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 0. startTime should be a number.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 0. duration should be a number.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 1. Entry "2" should be one that we have set.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 1. entryType should be "measure".
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 1. startTime should be a number.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 1. duration should be a number.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 2. Entry "aaa" should be one that we have set.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 2. entryType should be "measure".
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 2. startTime should be a number.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 2. duration should be a number.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 3. Entry "" should be one that we have set.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 3. entryType should be "measure".
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 3. startTime should be a number.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 3. duration should be a number.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 4. Entry "2" should be one that we have set.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 4. entryType should be "measure".
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 4. startTime should be a number.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 4. duration should be a number.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 5. Entry "aaa" should be one that we have set.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 5. entryType should be "measure".
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 5. startTime should be a number.
+Pass user-timing/measures.html :: Checking all doubly measured entries.Entry_list 5. duration should be a number.
+Pass user-timing/measures.html :: Second loop step 0: checking entry of name "".There should be 2 entries.
+Pass user-timing/measures.html :: Second loop step 0: checking entry of name "".Entries in entrylist should be in order.
+Pass user-timing/measures.html :: Second loop step 0: checking entry of name "".Entry_list 0. Entry "" should be one that we have set.
+Pass user-timing/measures.html :: Second loop step 0: checking entry of name "".Entry_list 0. entryType should be "measure".
+Pass user-timing/measures.html :: Second loop step 0: checking entry of name "".Entry_list 0. startTime should be a number.
+Pass user-timing/measures.html :: Second loop step 0: checking entry of name "".Entry_list 0. duration should be a number.
+Pass user-timing/measures.html :: Second loop step 0: checking entry of name "".Entry_list 1. Entry "" should be one that we have set.
+Pass user-timing/measures.html :: Second loop step 0: checking entry of name "".Entry_list 1. entryType should be "measure".
+Pass user-timing/measures.html :: Second loop step 0: checking entry of name "".Entry_list 1. startTime should be a number.
+Pass user-timing/measures.html :: Second loop step 0: checking entry of name "".Entry_list 1. duration should be a number.
+Pass user-timing/measures.html :: Second loop step 1: checking entry of name "2".There should be 2 entries.
+Pass user-timing/measures.html :: Second loop step 1: checking entry of name "2".Entries in entrylist should be in order.
+Pass user-timing/measures.html :: Second loop step 1: checking entry of name "2".Entry_list 0. Entry "2" should be one that we have set.
+Pass user-timing/measures.html :: Second loop step 1: checking entry of name "2".Entry_list 0. entryType should be "measure".
+Pass user-timing/measures.html :: Second loop step 1: checking entry of name "2".Entry_list 0. startTime should be a number.
+Pass user-timing/measures.html :: Second loop step 1: checking entry of name "2".Entry_list 0. duration should be a number.
+Pass user-timing/measures.html :: Second loop step 1: checking entry of name "2".Entry_list 1. Entry "2" should be one that we have set.
+Pass user-timing/measures.html :: Second loop step 1: checking entry of name "2".Entry_list 1. entryType should be "measure".
+Pass user-timing/measures.html :: Second loop step 1: checking entry of name "2".Entry_list 1. startTime should be a number.
+Pass user-timing/measures.html :: Second loop step 1: checking entry of name "2".Entry_list 1. duration should be a number.
+Pass user-timing/measures.html :: Second loop step 2: checking entry of name "aaa".There should be 2 entries.
+Pass user-timing/measures.html :: Second loop step 2: checking entry of name "aaa".Entries in entrylist should be in order.
+Pass user-timing/measures.html :: Second loop step 2: checking entry of name "aaa".Entry_list 0. Entry "aaa" should be one that we have set.
+Pass user-timing/measures.html :: Second loop step 2: checking entry of name "aaa".Entry_list 0. entryType should be "measure".
+Pass user-timing/measures.html :: Second loop step 2: checking entry of name "aaa".Entry_list 0. startTime should be a number.
+Pass user-timing/measures.html :: Second loop step 2: checking entry of name "aaa".Entry_list 0. duration should be a number.
+Pass user-timing/measures.html :: Second loop step 2: checking entry of name "aaa".Entry_list 1. Entry "aaa" should be one that we have set.
+Pass user-timing/measures.html :: Second loop step 2: checking entry of name "aaa".Entry_list 1. entryType should be "measure".
+Pass user-timing/measures.html :: Second loop step 2: checking entry of name "aaa".Entry_list 1. startTime should be a number.
+Pass user-timing/measures.html :: Second loop step 2: checking entry of name "aaa".Entry_list 1. duration should be a number.
+Pass user-timing/measures.html :: Second loop step 3: checking entry of name "".There should be 2 entries.
+Pass user-timing/measures.html :: Second loop step 3: checking entry of name "".Entries in entrylist should be in order.
+Pass user-timing/measures.html :: Second loop step 3: checking entry of name "".Entry_list 0. Entry "" should be one that we have set.
+Pass user-timing/measures.html :: Second loop step 3: checking entry of name "".Entry_list 0. entryType should be "measure".
+Pass user-timing/measures.html :: Second loop step 3: checking entry of name "".Entry_list 0. startTime should be a number.
+Pass user-timing/measures.html :: Second loop step 3: checking entry of name "".Entry_list 0. duration should be a number.
+Pass user-timing/measures.html :: Second loop step 3: checking entry of name "".Entry_list 1. Entry "" should be one that we have set.
+Pass user-timing/measures.html :: Second loop step 3: checking entry of name "".Entry_list 1. entryType should be "measure".
+Pass user-timing/measures.html :: Second loop step 3: checking entry of name "".Entry_list 1. startTime should be a number.
+Pass user-timing/measures.html :: Second loop step 3: checking entry of name "".Entry_list 1. duration should be a number.
+Pass user-timing/measures.html :: Second loop step 4: checking entry of name "2".There should be 2 entries.
+Pass user-timing/measures.html :: Second loop step 4: checking entry of name "2".Entries in entrylist should be in order.
+Pass user-timing/measures.html :: Second loop step 4: checking entry of name "2".Entry_list 0. Entry "2" should be one that we have set.
+Pass user-timing/measures.html :: Second loop step 4: checking entry of name "2".Entry_list 0. entryType should be "measure".
+Pass user-timing/measures.html :: Second loop step 4: checking entry of name "2".Entry_list 0. startTime should be a number.
+Pass user-timing/measures.html :: Second loop step 4: checking entry of name "2".Entry_list 0. duration should be a number.
+Pass user-timing/measures.html :: Second loop step 4: checking entry of name "2".Entry_list 1. Entry "2" should be one that we have set.
+Pass user-timing/measures.html :: Second loop step 4: checking entry of name "2".Entry_list 1. entryType should be "measure".
+Pass user-timing/measures.html :: Second loop step 4: checking entry of name "2".Entry_list 1. startTime should be a number.
+Pass user-timing/measures.html :: Second loop step 4: checking entry of name "2".Entry_list 1. duration should be a number.
+Pass user-timing/measures.html :: Second loop step 5: checking entry of name "aaa".There should be 2 entries.
+Pass user-timing/measures.html :: Second loop step 5: checking entry of name "aaa".Entries in entrylist should be in order.
+Pass user-timing/measures.html :: Second loop step 5: checking entry of name "aaa".Entry_list 0. Entry "aaa" should be one that we have set.
+Pass user-timing/measures.html :: Second loop step 5: checking entry of name "aaa".Entry_list 0. entryType should be "measure".
+Pass user-timing/measures.html :: Second loop step 5: checking entry of name "aaa".Entry_list 0. startTime should be a number.
+Pass user-timing/measures.html :: Second loop step 5: checking entry of name "aaa".Entry_list 0. duration should be a number.
+Pass user-timing/measures.html :: Second loop step 5: checking entry of name "aaa".Entry_list 1. Entry "aaa" should be one that we have set.
+Pass user-timing/measures.html :: Second loop step 5: checking entry of name "aaa".Entry_list 1. entryType should be "measure".
+Pass user-timing/measures.html :: Second loop step 5: checking entry of name "aaa".Entry_list 1. startTime should be a number.
+Pass user-timing/measures.html :: Second loop step 5: checking entry of name "aaa".Entry_list 1. duration should be a number.
+Pass user-timing/user-timing-tojson.html :: Test toJSON() in PerformanceMark
+Pass user-timing/user-timing-tojson.html :: Test toJSON() in PerformanceMeasure
+Pass user-timing/buffered-flag.any.js :: PerformanceObserver with buffered flag sees previous marks
+Pass user-timing/buffered-flag.any.js :: PerformanceObserver with buffered flag sees previous measures
+Pass user-timing/case-sensitivity.any.js :: getEntriesByType values are case sensitive
+Pass user-timing/clear_all_marks.any.js :: Clearing all marks remove all of them.
+Pass user-timing/clear_all_measures.any.js :: Clearing all marks remove all of them.
+Pass user-timing/clear_non_existent_mark.any.js :: Clearing a non-existent mark doesn't affect existing marks
+Pass user-timing/clear_non_existent_measure.any.js :: Clearing a non-existent measure doesn't affect existing measures
+Pass user-timing/clear_one_mark.any.js :: Clearing an existent mark doesn't affect other existing marks
+Pass user-timing/clear_one_measure.any.js :: Clearing an existent measure doesn't affect other existing measures
+Pass user-timing/entry_type.any.js :: Validate the user timing entry type PerformanceMark
+Pass user-timing/entry_type.any.js :: Validate the user timing entry type PerformanceMeasure
+Pass user-timing/mark-entry-constructor.any.js :: Mark entry can be created by 'new PerformanceMark(string)'.
+Pass user-timing/mark-entry-constructor.any.js :: Mark entry can be created by 'new PerformanceMark(string, {})'.
+Pass user-timing/mark-entry-constructor.any.js :: Mark entry can be created by 'new PerformanceMark(string, {startTime})'.
+Pass user-timing/mark-entry-constructor.any.js :: Mark entry can be created by 'new PerformanceMark(string, {detail})'.
+Pass user-timing/mark-entry-constructor.any.js :: Mark entry can be created by 'new PerformanceMark(string, {startTime, detail})'.
+Pass user-timing/mark-entry-constructor.any.js :: Using new PerformanceMark() shouldn't add the entry to performance timeline.
+Pass user-timing/mark-errors.any.js :: [performance.mark]: Number should be rejected as the mark-options.
+Pass user-timing/mark-errors.any.js :: [new PerformanceMark]: Number should be rejected as the mark-options.
+Pass user-timing/mark-errors.any.js :: [performance.mark]: NaN should be rejected as the mark-options.
+Pass user-timing/mark-errors.any.js :: [new PerformanceMark]: NaN should be rejected as the mark-options.
+Pass user-timing/mark-errors.any.js :: [performance.mark]: Infinity should be rejected as the mark-options.
+Pass user-timing/mark-errors.any.js :: [new PerformanceMark]: Infinity should be rejected as the mark-options.
+Pass user-timing/mark-errors.any.js :: [performance.mark]: String should be rejected as the mark-options.
+Pass user-timing/mark-errors.any.js :: [new PerformanceMark]: String should be rejected as the mark-options.
+Pass user-timing/mark-errors.any.js :: [performance.mark]: Negative startTime in mark-options should be rejected
+Pass user-timing/mark-errors.any.js :: [new PerformanceMark]: Negative startTime in mark-options should be rejected
+Pass user-timing/mark-l3.any.js :: mark entries' detail and startTime are customizable.
+Pass user-timing/mark-measure-return-objects.any.js :: L3: performance.measure(name) should return an entry.
+Pass user-timing/mark-measure-return-objects.any.js :: L3: performance.measure(name, param1) should return an entry.
+Pass user-timing/mark-measure-return-objects.any.js :: L3: performance.measure(name, param1, param2) should return an entry.
+Pass user-timing/mark-measure-return-objects.any.js :: L3: performance.mark(name) should return an entry.
+Pass user-timing/mark-measure-return-objects.any.js :: L3: performance.mark(name, param) should return an entry.
+Pass user-timing/mark.any.js :: Entry 0 is properly created
+Pass user-timing/mark.any.js :: Entry 1 is properly created
+Pass user-timing/mark.any.js :: Entry 0 has the proper name
+Pass user-timing/mark.any.js :: Entry 0 startTime is approximately correct (up to 20ms difference allowed)
+Pass user-timing/mark.any.js :: Entry 0 has the proper entryType
+Pass user-timing/mark.any.js :: Entry 0 duration == 0
+Pass user-timing/mark.any.js :: getEntriesByName("mark", "mark")[0] returns an object containing a "mark" mark
+Pass user-timing/mark.any.js :: The mark returned by getEntriesByName("mark", "mark")[0] matches the mark returned by getEntriesByName("mark")[0]
+Pass user-timing/mark.any.js :: getEntries()[0] returns an object containing a "mark" mark
+Pass user-timing/mark.any.js :: The mark returned by getEntries()[0] matches the mark returned by getEntriesByName("mark")[0]
+Pass user-timing/mark.any.js :: getEntriesByType("mark")[0] returns an object containing a "mark" mark
+Pass user-timing/mark.any.js :: The mark returned by getEntriesByType("mark")[0] matches the mark returned by getEntriesByName("mark")[0]
+Pass user-timing/mark.any.js :: Entry 1 has the proper name
+Pass user-timing/mark.any.js :: Entry 1 startTime is approximately correct (up to 20ms difference allowed)
+Pass user-timing/mark.any.js :: Entry 1 has the proper entryType
+Pass user-timing/mark.any.js :: Entry 1 duration == 0
+Pass user-timing/mark.any.js :: getEntriesByName("mark", "mark")[1] returns an object containing a "mark" mark
+Pass user-timing/mark.any.js :: The mark returned by getEntriesByName("mark", "mark")[1] matches the mark returned by getEntriesByName("mark")[1]
+Pass user-timing/mark.any.js :: getEntries()[1] returns an object containing a "mark" mark
+Pass user-timing/mark.any.js :: The mark returned by getEntries()[1] matches the mark returned by getEntriesByName("mark")[1]
+Pass user-timing/mark.any.js :: getEntriesByType("mark")[1] returns an object containing a "mark" mark
+Pass user-timing/mark.any.js :: The mark returned by getEntriesByType("mark")[1] matches the mark returned by getEntriesByName("mark")[1]
+Pass user-timing/measure-l3.any.js :: When the end mark is given and the start is unprovided, the end time of the measure entry should be the end mark's time, the start time should be 0.
+Pass user-timing/measure-l3.any.js :: When the start mark is given and the end is unprovided, the start time of the measure entry should be the start mark's time, the end should be now.
+Pass user-timing/measure-l3.any.js :: When start and end mark are both given, the start time and end time of the measure entry should be the marks' time, repectively
+Pass user-timing/measure-with-dict.any.js :: measure should throw a TypeError when passed an invalid argument combination
+Pass user-timing/measure-with-dict.any.js :: measure entries' detail and start/end are customizable
+Pass user-timing/measure_syntax_err.any.js :: Create a mark "existing_mark"
+Pass user-timing/measure_syntax_err.any.js :: self.performance.measure("measure", "mark"), where "mark" is a non-existent mark, throws a SyntaxError exception.
+Pass user-timing/measure_syntax_err.any.js :: self.performance.measure("measure", "mark", "existing_mark"), where "mark" is a non-existent mark, throws a SyntaxError exception.
+Pass user-timing/measure_syntax_err.any.js :: self.performance.measure("measure", "existing_mark", "mark"), where "mark" is a non-existent mark, throws a SyntaxError exception.
+Pass user-timing/measure_syntax_err.any.js :: self.performance.measure("measure", "mark", "mark"), where "mark" is a non-existent mark, throws a SyntaxError exception.
+Pass user-timing/structured-serialize-detail.any.js :: The detail property in the mark constructor should be structured-clone.
+Pass user-timing/structured-serialize-detail.any.js :: The detail property in the mark method should be structured-clone.
+Pass user-timing/structured-serialize-detail.any.js :: When accessing detail from a mark entry and the detail is not provided, just return a null value.
+Pass user-timing/structured-serialize-detail.any.js :: Mark: Throw an exception when the detail property cannot be structured-serialized.
+Pass user-timing/structured-serialize-detail.any.js :: The detail property in the measure method should be structured-clone.
+Pass user-timing/structured-serialize-detail.any.js :: The detail property in the measure method should be the same reference.
+Pass user-timing/structured-serialize-detail.any.js :: When accessing detail from a measure entry and the detail is not provided, just return a null value.
+Pass user-timing/structured-serialize-detail.any.js :: Measure: Throw an exception when the detail property cannot be structured-serialized.
+Pass user-timing/structured-serialize-detail.any.js :: The detail object is cloned when passed to mark API.
+Pass user-timing/supported-usertiming-types.any.js :: supportedEntryTypes contains 'mark' and 'measure'.
+Pass user-timing/supported-usertiming-types.any.js :: 'mark' entries should be observable.
+Pass user-timing/supported-usertiming-types.any.js :: 'measure' entries should be observable.
+Pass user-timing/user_timing_exists.any.js :: self.performance.mark is defined.
+Pass user-timing/user_timing_exists.any.js :: self.performance.clearMarks is defined.
+Pass user-timing/user_timing_exists.any.js :: self.performance.measure is defined.
+Pass user-timing/user_timing_exists.any.js :: self.performance.clearMeasures is defined.
+make: *** [Makefile:497：testharness-user-timing] 错误 1
