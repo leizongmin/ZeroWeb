@@ -13148,6 +13148,55 @@
     ['key', 'key', null], ['newValue', 'newValue', null], ['oldValue', 'oldValue', null],
     ['url', 'url', ''], ['storageArea', 'storageArea', null],
   ]);
+  // M3（webstorage-compat）：StorageEvent 接口保真（WPT event_constructor /
+  // event_initstorageevent 口径）——①接口构造器无 [[Call]]（无 new 抛 TypeError，
+  // PopStateEvent 先例）②type 必填（0 参 TypeError；`length === 1`）③url 非空
+  // USVString：dict 显式 null → 'null'（基类泛型 `!= null` 回落把 null 吞成 ''，
+  // null-type 案口径；undefined/缺省仍 ''）④initStorageEvent 成员（8 参全反射、
+  // type 必填、重置语义、`length === 1`）。
+  // https://html.spec.whatwg.org/multipage/webstorage.html#the-storageevent-interface
+  var StorageEventBase = globalThis.StorageEvent;
+  if (StorageEventBase) {
+    var StorageEventCtor = function StorageEvent(type) {
+      if (!(this instanceof StorageEventCtor)) {
+        throw new globalThis.TypeError(
+          "Failed to construct 'StorageEvent': Please use the 'new' operator, " +
+          "this DOM object constructor cannot be called as a function.");
+      }
+      if (arguments.length === 0) {
+        throw new globalThis.TypeError(
+          "Failed to construct 'StorageEvent': 1 argument required, but only 0 present.");
+      }
+      var result = StorageEventBase.apply(this, arguments);
+      var inst = (result && typeof result === 'object') ? result : this;
+      var o = arguments.length > 1 ? arguments[1] : undefined;
+      if (o != null && typeof o === 'object' && o.url === null) inst.url = 'null';
+      return result !== undefined ? result : inst;
+    };
+    try { Object.defineProperty(StorageEventCtor, 'name', { value: 'StorageEvent', configurable: true }); } catch (_eStNm) {}
+    StorageEventCtor.prototype = StorageEventBase.prototype;
+    StorageEventCtor.prototype.constructor = StorageEventCtor;
+    StorageEventCtor.prototype.initStorageEvent = function initStorageEvent(type) {
+      if (arguments.length === 0) {
+        throw new globalThis.TypeError(
+          "Failed to execute 'initStorageEvent' on 'StorageEvent': " +
+          "1 argument required, but only 0 present.");
+      }
+      // 重置语义（spec initStorageEvent = initEvent 基础字段 + 专属字段）：
+      // bubbles/cancelable Boolean 化（null/undefined → false）；key/oldValue/newValue/
+      // storageArea 可空（undefined → 缺省 null，显式 null → null）；url 非空
+      // USVString（undefined → 缺省 ''，null → 'null'），不解析相对 URL。
+      this.type = String(type);
+      this.bubbles = Boolean(arguments.length > 1 ? arguments[1] : undefined);
+      this.cancelable = Boolean(arguments.length > 2 ? arguments[2] : undefined);
+      this.key = (arguments.length > 3 && arguments[3] !== undefined) ? arguments[3] : null;
+      this.oldValue = (arguments.length > 4 && arguments[4] !== undefined) ? arguments[4] : null;
+      this.newValue = (arguments.length > 5 && arguments[5] !== undefined) ? arguments[5] : null;
+      this.url = (arguments.length > 6 && arguments[6] !== undefined) ? String(arguments[6]) : '';
+      this.storageArea = (arguments.length > 7 && arguments[7] !== undefined) ? arguments[7] : null;
+    };
+    globalThis.StorageEvent = StorageEventCtor;
+  }
   // net-api M4-S16：ProgressEvent 专设定义（原 _defineEventSubclass 泛型形态——
   // progressevent-interface WebIDL interface-object 保真面：①prototype 属性描述符
   // non-writable/non-enum/non-config ②attribute getter-only（enumerable+configurable，

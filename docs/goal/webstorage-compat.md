@@ -1,8 +1,9 @@
 # Web Storage 兼容 — localStorage / sessionStorage
 
-**版本**: v1.1
-**日期**: 2026-10-08（立项）| 2026-10-11（M1 基线落档）
-**状态**: Active（M1 完成：通道 + 基线 1187/1251 = 94.9%；下一步 M2 存取/配额语义收敛）
+**版本**: v1.2
+**日期**: 2026-10-08（立项）| 2026-10-11（收口——DC-1~4 全满足）
+**状态**: Completed（可执行子集 1251/1251 = 100%；排除面 30 案全分类挂账；
+判定文档 [webstorage-compat/evidence/2026-10-11-m3-close-verdict.md](webstorage-compat/evidence/2026-10-11-m3-close-verdict.md)）
 **执行模式**: WPT 驱动（上游 webstorage corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——存储面）
 
@@ -89,38 +90,49 @@ JS 面语义（存取/枚举/配额/异常），使真实站点的偏好与会�
 
 ### DC-2: 存取与配额语义收敛
 
-- [ ] getItem/setItem/removeItem/clear/key/length 上游语义对齐（异常类型/消息
-      按 corpus 口径）
-- [ ] origin 隔离与键序语义修正收口出数字（分级通过率不再下行两个连续轮次）
+- [x] getItem/setItem/removeItem/clear/key/length 上游语义对齐（异常类型/消息
+      按 corpus 口径）（M2-P1/P2：named property 语义 + WebIDL arity/ToUint32，
+      [evidence/2026-10-11-m2-p1](webstorage-compat/evidence/2026-10-11-m2-p1-named-property.md) /
+      [m2-p2](webstorage-compat/evidence/2026-10-11-m2-p2-arity-key-index.md)）
+- [x] origin 隔离与键序语义修正收口出数字（分级通过率不再下行两个连续轮次）
+      （键序 enumerate/key/indexing 全绿；轨迹 94.9%→97.6%→99.0%→99.4% 单调无下行；
+      origin 跨上下文面挂账见 DC-3 甄别）
 
 ### DC-3: storage 事件（甄别切片）
 
-- [ ] 可执行性甄别结论落 evidence/；可执行子集语义收敛；不可执行面记录挂账
+- [x] 可执行性甄别结论落 evidence/；可执行子集语义收敛；不可执行面记录挂账
       理由（frame 树依赖 → navigation-compat M3 同门槛）
-      甄别结论已落档（2026-10-11，M1）：runner 可执行子集 = StorageEvent 构造/init
-      2 案（`event_constructor/initstorageevent.window.js`）；派发面 event_*.html
-      19 案 + window.open/iframe 5 案挂账（harness 经 iframe 跨文档派发，runner 无
-      多 frame 管道）。可执行子集语义收敛仍待 M3（当前 3/11 subtests）。
+      （M3 全绿：StorageEvent 构造/init 17/17，
+      [evidence/2026-10-11-m3-close-verdict](webstorage-compat/evidence/2026-10-11-m3-close-verdict.md)；
+      派发面 19 案 + window.open/iframe 5 案 + 分区/document-domain 4 案 + manual 2 案
+      全分类挂账 navigation-compat M3）
 
 ### DC-4: 测试与质量不可退让
 
-- [ ] 每个语义修复附带回归测试（单测或导入 WPT 常驻断言集，imported-tests.txt
-      账本纪律）
-- [ ] make test 全绿、make reftest 零回归、product-smoke welcome 逐字节恒值
+- [x] 每个语义修复附带回归测试（单测或导入 WPT 常驻断言集，imported-tests.txt
+      账本纪律）（每切片 A/B + `WEBSTORAGE_CASES` 常驻断言集：runner 固定清单 +
+      `make testharness-webstorage` 可重建，encoding 先例——testharness corpus
+      gitignored 按需重拉，不占 reftest 账本）
+- [x] make test 全绿、make reftest 零回归、product-smoke welcome 逐字节恒值
+      （分解逐腿全 0 failed；reftest 708/708；welcome oracle diff 15.40% ≤ 20% +
+      struct 6/6 PASS，fixture 资产字节不变）
 
 ---
 
-## 活跃里程碑
+## 活跃里程碑（已全部完成，2026-10-11 收口）
 
-### M1 — WPT 导入与基线
+### M1 — WPT 导入与基线 ✅
 
-fetch 语料 + runner 通道（testharness 子命令 + per-dir skip + Makefile target）
-+ 分类通过率基线 + csv 回填。
+fetch 语料 + runner 通道（`testharness-webstorage` 子命令 + `WEBSTORAGE_CASES`
+固定清单 + Makefile target）+ 基线 1187/1251 = 94.9% + csv 回填。
 
-### M2 — 存取/配额/origin 语义收敛
+### M2 — 存取/配额/origin 语义收敛 ✅
 
-DC-2 清单逐项修齐，每项独立提交附 A/B。
+DC-2 清单逐项修齐，每项独立提交附 A/B：P1 named property 语义（+34P）、
+P2 WebIDL arity/ToUint32（+18P）、P3 配额强制 + QuotaExceededError 接口（+4P，
+附带 native DOMException 补 QuotaExceededError→22 共享路径根因）。
 
-### M3 — storage 事件甄别切片 + 收口
+### M3 — storage 事件甄别切片 + 收口 ✅
 
-DC-3 + 最终账本（分级通过率）+ 收口归档。
+DC-3 可执行子集（StorageEvent 构造/init）全绿（+8P → 1251/1251 = 100%）+
+最终账本 + 收口归档（判定文档见状态行链接）。
