@@ -1422,6 +1422,11 @@ impl LayoutEngine {
             r109,
         });
 
+        // R5061：definite-width plain block + ar 传递高 max-height 终值钳（须在全部
+        // auto 块高改写 pass 之后；fieldset 除外——form 域内容高语义；kill-switch 同
+        // ZW_AR_TRANSFER）。
+        crate::aspect_ratio_transfer::clamp_ar_definite_width_max_height(&mut root_box, doc, styles);
+
         LayoutResult {
             root: std::sync::Arc::new(root_box),
             viewport_width: self.viewport_width,
