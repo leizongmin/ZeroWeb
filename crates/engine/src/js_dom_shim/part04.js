@@ -6703,6 +6703,20 @@
                     }
                   } catch (_eR265p) {}
                 } catch (_eR265m) {}
+              } else if (sel && refNode && newNode.nodeType === 3
+                  && typeof __zw_insert_adjacent_text === 'function') {
+                // R5058：**sel 父 + 文本子 ref**——静态元素 childNodes 的文本代理无
+                // selector/handle（且非 textEl 注册形态），上方 wire 分支全不命中 →
+                // 变异静默丢弃（仅 CreateTextNode 在册——driving:
+                // first-letter-insert-text-node-dynamic 插入文本未落地，::first-letter
+                // 仍样式旧首字母）。文本子不可寻址，wire 只有整节点粒度：ref ===
+                // firstChild → afterbegin 精确；否则 beforeend 兜底（旧行为整条丢弃，
+                // 文本缺失比错位更劣）。JS 视图由尾部 R140 live sync 刷新。
+                var _r5058t = String(newNode.data != null ? newNode.data : (newNode.__nv || ''));
+                var _r5058fc = null;
+                try { _r5058fc = _makeProxy(sel, handle).firstChild; } catch (_e5058f) {}
+                var _r5058pos = (refNode === _r5058fc) ? 'afterbegin' : 'beforeend';
+                try { __zw_insert_adjacent_text(sel, _r5058pos, _r5058t); } catch (_e5058w) {}
               }
               // refNode 为 create 句柄（无 selector）且父非 handle 时不支持（罕见）。
               // js-dom M4 R47：fragment flatten record——addedNodes 用 ceAdded（fragment 子节点，
