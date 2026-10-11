@@ -132,6 +132,13 @@ fn select_value(snapshot_enabled: bool, cached: bool, live: impl FnOnce() -> boo
     if snapshot_enabled { cached } else { live() }
 }
 
+/// R5068（CSS 2.1 §8.3）：inline 水平 margin advance 无符号——负 margin 同效推进。
+/// default-on；`ZW_INLINE_NEG_MARGIN=0` 回退旧 `> 0.0` 门（负 margin 静默丢弃）。
+pub(super) fn inline_neg_margin_on() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_INLINE_NEG_MARGIN"));
+    selected(*VALUE, || default_on("ZW_INLINE_NEG_MARGIN"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::select_value;

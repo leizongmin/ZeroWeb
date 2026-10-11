@@ -129,7 +129,10 @@ impl InlineFormattingContext {
                         if run.box_height() > current_line.height {
                             current_line.height = run.box_height();
                         }
-                        // 即使空元素也要消费 margin（CSS 2.1 §10.2：inline 元素的 margin 水平方向有效）
+                        // 即使空元素也要消费 margin（CSS 2.1 §10.2：inline 元素的 margin 水平方向有效）。
+                        // R5068 限定：负值 advance 只开放给**非空** run（下方 R5068 臂）——
+                        // 空 inline 的负 margin advance 改变 word-space-transform-012
+                        // （.mbp 空 span padding/margin 抵消形态，corpus 锁定零净 advance）。
                         if run.margin_left > 0.0 {
                             current_x += run.margin_left;
                         }
@@ -203,7 +206,14 @@ impl InlineFormattingContext {
                     last_was_collapsible_ws = false;
 
                     // 在第一个词之前添加 margin-left
-                    if run.margin_left > 0.0 {
+                    // R5068：负值同效（CSS 2.1 §8.3）——run 带水平 padding 时保持旧口径
+                    //（≡ margin_right 臂同款补偿形态判据，word-space-transform-012）。
+                    if run.margin_left > 0.0
+                        || (runtime_flags::inline_neg_margin_on()
+                            && run.margin_left < 0.0
+                            && run.padding_left <= 0.0
+                            && run.padding_right <= 0.0)
+                    {
                         current_x += run.margin_left;
                     }
                     // R4357 临时诊断：ruby 悬挂模型 margin 落点追踪（ZW_DEBUG_IFC=1）。
@@ -658,7 +668,15 @@ impl InlineFormattingContext {
                     }
 
                     // 在最后一个词之后添加 margin-right
-                    if run.margin_right > 0.0 {
+                    // R5068（CSS 2.1 §8.3）：负值同效——但 run 带水平 padding 时保持旧
+                    // 口径（padding/margin 抵消补偿形态，word-space-transform-012 .mbp
+                    // 族 corpus 锁定旧净值）。
+                    if run.margin_right > 0.0
+                        || (runtime_flags::inline_neg_margin_on()
+                            && run.margin_right < 0.0
+                            && run.padding_left <= 0.0
+                            && run.padding_right <= 0.0)
+                    {
                         current_x += run.margin_right;
                     }
                     // R3837：inline 水平 padding 右侧推进（CSS2.1 §8.4，同 padding_left）。

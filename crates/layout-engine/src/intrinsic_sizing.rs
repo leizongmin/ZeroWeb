@@ -4500,3 +4500,45 @@ mod r5067_tests {
         );
     }
 }
+
+/// R5068（CSS 2.1 §8.3）：inline 水平 margin advance 无符号——负 margin 同效推进
+///（c5502/c5504 同构：span 负 margin 不推进时断行错位）。带水平 padding 的 run 保持
+/// 旧口径（padding/margin 抵消补偿形态，word-space-transform-012 corpus 锁定）。
+#[cfg(test)]
+mod r5068_tests {
+    fn div_height(html: &str) -> f32 {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        result.root.children[1].children[0].height
+    }
+
+    /// width:60 容纳 90px 内容：负 margin-right -30 使 advance 60 → 单行（高 15）；
+    /// 旧行为（负值丢弃）advance 90 → 两行（高 30）。
+    #[test]
+    fn r5068_negative_inline_margin_right_advances() {
+        let h = div_height(
+            r#"<body><div style="font: 15px/1 Ahem; width: 60px;">ab<span style="margin-right: -30px;">cd</span>ef</div></body>"#,
+        );
+        assert!(
+            (h - 15.0).abs() < 0.5,
+            "负 margin-right 应参与 advance（单行高 15），实际 {h}"
+        );
+    }
+
+    /// 带水平 padding 的补偿形态（012 同构）：padding 与负 margin 并存 → 旧口径
+    /// 保持（kill-switch 双态实测同值 45——本断言锁定「新旧行为逐位一致」）。
+    #[test]
+    fn r5068_padding_margin_compensation_keeps_legacy_net() {
+        let h = div_height(
+            r#"<body><div style="font: 15px/1 Ahem; width: 60px;">ab<span style="padding: 0 5px; margin: 0 -10px;">cd</span>ef</div></body>"#,
+        );
+        assert!(
+            (h - 45.0).abs() < 0.5,
+            "padding+负 margin 抵消形态应保持旧净值（3 行高 45，新旧行为一致），实际 {h}"
+        );
+    }
+}
