@@ -1,40 +1,42 @@
 # Web Messaging 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../webmessaging-compat.md](../webmessaging-compat.md)
-**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-12（M1 基线落地）
+**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-12（M2-P1 落地）
 
 ## 当前状态
 
-**M1 完成（2026-10-12）**：corpus 导入（131 文件，WPT pin
-`315976933870b34d6ea30e3f6643403edae678ba`）+ runner 通道
-（`testharness-webmessaging`，Makefile target 同名）+ 可执行子集甄别
-**72 案 134 子测试 87 Pass = 64.9%**（46 F + 1 T，零静默误伤对账）。基线证据：
-[evidence/2026-10-12-m1-baseline.md](evidence/2026-10-12-m1-baseline.md)。
+**M1 + M2-P1 完成（2026-10-12）**：基线 64.9%（87/134）→ **M2-P1 后 93.3%
+（126/135，净 +39P）**——window.postMessage spec 化重写（options dictionary +
+targetOrigin URL 解析/静默丢弃 + transfer 序列校验）、port 转移克隆-改挂、task 承载
+投递、trusted message 事件、structuredClone 平台对象/普通对象更正。证据：
+[evidence/2026-10-12-m2-p1-postmessage-spec.md](evidence/2026-10-12-m2-p1-postmessage-spec.md)。
+影响面复跑：zero-engine lib 2998P/0F（R2983 桥接断言按 spec 更正）、fileapi
+493/499 恒等、dom 54304P ≥ 基线。
 
-**下一步（M2）**：按失败簇收敛——① targetOrigin URL 解析 + options dictionary
-签名簇（~19 F，最大簇，含 R2983 的 spec 误读：失配应静默丢弃而非抛 SecurityError、
-不可解析应 SYNTAX_ERR）；② transfer/ports 传递簇（~11 F，window.postMessage 第三
-参数 WebIDL sequence 校验 + ports 随消息转移——fileapi M2-P4 已修
-serialize-with-transfer 序，此处补 window 面）；③ BroadcastChannel IDL/语义簇
-（7 F）；④ 零散面（isTrusted、port 投递 task 承载）。DC-2 门 = 分级通过率不再
-下行两个连续轮次。
+**下一步（M2-P2）**：BroadcastChannel IDL/语义簇（6F：constructor no-new/缺名
+TypeError、postMessage 必参/close 后 InvalidStateError、投递序
+closing-and-creating、e.origin 已随 P1 修）+ messageerror 内容属性面（P3）。
+残余挂账：garbage-collected（GC 联动）、user-activation（缺
+`navigator.userActivation`，跨域 user-activation 域）。
 
 ## 里程碑台账
 
 - **M1（2026-10-12）**：导入 + 通道 + 甄别 + 基线 64.9%。传输注记：raw.githubusercontent.com
   当轮持续超时，语料经 cdn.jsdelivr.net 同 pin 镜像等价落地（脚本仍指 raw 权威源）。
-- **M2（未开始）**：失败簇收敛（见下一步）。
+- **M2-P1（2026-10-12）**：postMessage spec 化重写 + transfer/ports + task 承载 +
+  trusted 事件 + structuredClone 更正 → 93.3%（+39P）；影响面复跑全绿（见当前状态）。
+- **M2-P2（未开始）**：BroadcastChannel IDL/语义簇。
+- **M2-P3（未开始）**：零散面（messageerror 内容属性等）。
 - **M3（未开始）**：跨 document 场景挂 navigation-compat M3 门槛；收口归档。
 
-## 失败簇 → M2 计划（47 non-pass）
+## 残余失败面（9 non-pass，P1 后）
 
-| 簇 | non-pass | 要点 |
+| 簇 | non-pass | 归属 |
 |---|---|---|
-| targetOrigin 解析 + options dictionary | ~19 | SYNTAX_ERR/origin 归一/失配静默丢弃/`{targetOrigin,transfer}` 解包 |
-| transfer/ports 传递 | ~11 | window.postMessage transfer 序列校验、ports 转移、e.ports frozen |
-| BroadcastChannel IDL/语义 | 7 | constructor/postMessage/close 的 TypeError/InvalidStateError、e.origin、投递序 |
-| 零散面 | 4 | isTrusted、port 投递 task 承载（fileapi M2-P3 先例）、onmessageerror 内容属性、structured clone own-properties |
-| 挂账（跨域/超 shim 面） | 2 | garbage-collected GC 驱动 close（引擎 GC 联动）；user-activation 缺 `navigator.userActivation` |
+| BroadcastChannel IDL/语义 | 6 | M2-P2 |
+| messageerror 内容属性 | 1 | M2-P3 |
+| garbage-collected（GC 联动 close） | 1 Timeout | 挂账（引擎 GC 面） |
+| user-activation（缺 navigator.userActivation） | 1 | 挂账（user-activation 域） |
 
 ## 排除面（挂账，非待办）
 

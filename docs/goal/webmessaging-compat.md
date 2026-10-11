@@ -7,15 +7,12 @@
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——页面间通信面）
 **运行时控制面板**: [webmessaging-compat/master.md](webmessaging-compat/master.md)
 
-> **▶ 当前状态（2026-10-12，M1 轮）**：corpus 导入（131 文件，WPT pin
-> `315976933870b34d6ea30e3f6643403edae678ba`）+ runner 通道
-> `testharness-webmessaging` + 可执行子集甄别 **72 案 134 子测试 87 Pass =
-> 64.9%**（46 F + 1 T）。证据：
-> [evidence/2026-10-12-m1-baseline.md](webmessaging-compat/evidence/2026-10-12-m1-baseline.md)。
-> **下一步（M2）**：失败簇收敛——① targetOrigin URL 解析 + options dictionary
-> 签名簇（~19 F，含 R2983 spec 误读：失配应静默丢弃、不可解析应 SYNTAX_ERR）；
-> ② transfer/ports 传递簇（~11 F）；③ BroadcastChannel IDL/语义簇（7 F）；
-> ④ 零散面（isTrusted、port 投递 task 承载）。
+> **▶ 当前状态（2026-10-12，M2-P1 轮）**：M1（corpus 导入 + 通道 + 甄别，基线
+> 64.9%）与 M2-P1（window.postMessage spec 化重写 + port 转移克隆 + task 承载 +
+> trusted 事件 + structuredClone 更正，**93.3% = 126/135，净 +39P**）均已落地。
+> 证据：[evidence/2026-10-12-m2-p1-postmessage-spec.md](webmessaging-compat/evidence/2026-10-12-m2-p1-postmessage-spec.md)。
+> **下一步（M2-P2）**：BroadcastChannel IDL/语义簇（6F）→ P3 零散面（messageerror
+> 内容属性）。
 >
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：多进程
 > IPC（zero-protocol）有底子，但 window.postMessage/BroadcastChannel 的 Web 面

@@ -5013,7 +5013,7 @@
   // structuredClone——深拷贝（postMessage / React state / immer-like 高频）。递归：primitive/array/
   // plain object/Date/RegExp/Map/Set/ArrayBuffer/TypedArray；循环引用经 WeakMap 记忆不爆栈；
   // function/symbol 抛 DataCloneError（spec）。**已知限制**：symbol-keyed 属性不拷（Object.keys 仅
-  // string-keyed）；class 实例 prototype 保留但构造器不重跑（同 spec 平台对象外行为）。
+  // string-keyed）；非特殊对象一律克隆为普通对象（spec StructuredSerialize，M2-P1 更正——原型不保留）。
   function _zw_structured_clone(val, seen) {
     if (val === null) return val;
     var t = typeof val;
@@ -5043,7 +5043,22 @@
       var ta = new val.constructor(val); // TypedArray/DataView 拷贝构造
       seen.set(val, ta); return ta;
     }
-    var out = Array.isArray(val) ? [] : Object.create(Object.getPrototypeOf(val));
+    // webmessaging-compat M2-P1：平台对象克隆保持类型（spec StructuredSerialize platform-object
+    // 情形——Blob/File 克隆为同类型实例，Channel_postMessage_Blob「Messages can contain
+    // Blobs」钉 instanceof）；File 先判（继承 Blob）。
+    if (typeof File === 'function' && val instanceof File) {
+      var fc = new File([val], val.name, { type: val.type, lastModified: val.lastModified });
+      seen.set(val, fc); return fc;
+    }
+    if (typeof Blob === 'function' && val instanceof Blob) {
+      var bc = new Blob([val], { type: val.type });
+      seen.set(val, bc); return bc;
+    }
+    // webmessaging-compat M2-P1（2026-10-12）：非特殊对象克隆为**普通对象**（Object.prototype，
+    // spec StructuredSerialize ordinary-object 情形）——旧版保留原原型致原型链属性随读可见
+    //（without-ports/023「own properties only, don't follow prototype」钉 cloned.c ≠ 原型值）；
+    // class 实例同此（真实浏览器一致，方法不随克隆存活）。
+    var out = Array.isArray(val) ? [] : {};
     seen.set(val, out); // 先记忆，再递归子属性（解循环）
     var keys = Object.keys(val);
     for (var i = 0; i < keys.length; i++) out[keys[i]] = _zw_structured_clone(val[keys[i]], seen);

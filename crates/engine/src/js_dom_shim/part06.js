@@ -4466,28 +4466,78 @@
     return _dispatchWithBubble(_elKey('html', null), 'html', null, event, 'win');
   };
   // R2983 `window.postMessage(message, targetOrigin [, transfer])`——canonical 跨窗口消息 API。
-  // 此前缺（MessagePort/MessageChannel/BroadcastChannel 既有，但 window.postMessage 本身零定义）→
-  // `window.postMessage({x:1}, '*')` + `addEventListener('message')` 同窗口异步消息模式（routing /
-  // polyfill / iframe-bridge mock / 测试）抛 TypeError。headless 单窗口：经 structuredClone 深拷贝 payload +
-  // queueMicrotask **异步**派发 MessageEvent 到自身（spec 异步语义），触发 window 'message' listener + onmessage。
-  // targetOrigin 安全校验（spec：不匹配 → 同步 throw SecurityError）：'*' / '/'（同源简写）/ 当前 origin 放行；
-  // 其余 origin 同步抛。缺省（undefined/null）按 '*' 放行（lenient，兼容 `postMessage(msg)` 简写）。
-  globalThis.postMessage = function (message, targetOrigin, _transfer) {
+  // webmessaging-compat M2-P1（2026-10-12）spec 化重写
+  //（https://html.spec.whatwg.org/multipage/web-messaging.html#dom-window-postmessage，
+  // window post message steps）：
+  // ① message 必参——零参 TypeError（without-ports/009 钉；旧 lenient 零参放行不符 spec）。
+  // ② WebIDL 重载甄别（区分第二参）：string → legacy 形态（targetOrigin, transfer 序列）；
+  //    其余（对象/null/undefined）→ options dictionary `WindowPostMessageOptions
+  //    {targetOrigin = "/", transfer = []}`——成员 undefined 按 WebIDL 视作未给（回落默认）。
+  //    字符串外的原始值（42 等）→ dictionary 转换 TypeError（with-options/null-transfer 同面）。
+  // ③ targetOrigin 步骤：'/' → 本窗口 origin 简写；'*' → 放行；其余 **无 base 绝对 URL
+  //    解析**——失败 → SyntaxError DOMException（without-ports/001/003 钉 'http://foo bar'
+  //    与 'example.org'；旧版抛 SecurityError 不符）；解析成功按 serialized origin 比较，
+  //    **失配 → 静默丢弃（return，非抛）**（without-ports/015 钉异步 done 而非异常；旧版
+  //    同步 SecurityError 为 spec 误读，本轮更正）；'https://wpt.test//' 尾斜杠形态按
+  //    URL 归一后同源放行（without-ports/002/006 钉）。
+  // ④ transfer：sequence<object> WebIDL 转换（part05 ①）→ port 转移克隆（②）→ 非 port
+  //    transferable detach（③）；接收侧 e.ports 为 frozen 数组（part05 MessageEvent 构造器）。
+  // ⑤ 消息 structuredClone 深拷贝 + task 承载异步派发 MessageEvent 到自身（④ 工厂：
+  //    trusted 印记 + undefined data 直置——without-ports/010 钉 e.data === undefined）。
+  //    headless 单窗口：目标窗口即自身（跨 document 投递挂 navigation-compat M3 门槛）。
+  globalThis.postMessage = function (message, targetOriginOrOptions, transferArg) {
     var self = globalThis;
-    var origin = (self.location && self.location.origin) || '';
-    var t = (targetOrigin == null) ? '*' : String(targetOrigin);
-    if (t !== '*' && t !== '/' && t !== origin) {
-      throw new DOMException(
-        "Failed to execute 'postMessage' on 'Window': The target origin provided ('" + t + "') does not match the recipient window's origin ('" + origin + "').",
-        'SecurityError'
-      );
+    if (arguments.length < 1) {
+      throw new TypeError("Failed to execute 'postMessage' on 'Window': 1 argument required, but only 0 present.");
     }
-    var payload = (typeof structuredClone === 'function') ? structuredClone(message) : message;
-    queueMicrotask(function () {
+    var origin = (self.location && self.location.origin) || '';
+    var targetOriginSpec, transferList;
+    if (typeof targetOriginOrOptions === 'string') {
+      targetOriginSpec = targetOriginOrOptions;
+      transferList = _zwConvertTransferSequence(transferArg);
+    } else {
+      var opts = targetOriginOrOptions;
+      if (opts === null || opts === undefined) {
+        opts = {};
+      } else if (typeof opts !== 'object') {
+        throw new TypeError("Failed to execute 'postMessage' on 'Window': The provided value cannot be converted to a dictionary.");
+      }
+      targetOriginSpec = (opts.targetOrigin === undefined) ? '/' : opts.targetOrigin;
+      transferList = _zwConvertTransferSequence(opts.transfer === undefined ? undefined : opts.transfer);
+    }
+    if (targetOriginSpec === '/') {
+      targetOriginSpec = origin;
+    }
+    if (targetOriginSpec !== '*') {
+      var parsedOrigin;
       try {
-        self.dispatchEvent(new MessageEvent('message', { data: payload, origin: origin, source: self }));
+        parsedOrigin = new URL(String(targetOriginSpec)).origin;
+      } catch (_eUrl) {
+        parsedOrigin = null;
+      }
+      if (parsedOrigin === null) {
+        // R9/R382 wrong-global 先例：globalThis 构造器优先（testharness 断言按页面全局
+        // DOMException 甄别——「threw an exception from the wrong global」）。
+        var _zwDE = globalThis.DOMException || DOMException;
+        throw new _zwDE(
+          "Failed to execute 'postMessage' on 'Window': The target origin provided ('" + targetOriginSpec + "') is not a valid URL.",
+          'SyntaxError'
+        );
+      }
+      if (parsedOrigin !== origin) {
+        return; // spec：失配静默丢弃（不派发、不抛）。
+      }
+    }
+    // serialize-with-transfer 序（fileapi-compat P4 先例）：先克隆消息，后消费 transfer 列表。
+    var payload = (typeof structuredClone === 'function') ? structuredClone(message) : message;
+    var ports = Object.freeze(_zwConsumeTransferList(transferList, null));
+    _zwDetachTransferables(transferList);
+    var ev = _zwMakeMessageEvent('message', { data: payload, origin: origin, source: self, ports: ports }, payload);
+    setTimeout(function () {
+      try {
+        self.dispatchEvent(ev);
       } catch (_e) {}
-    });
+    }, 0);
   };
   // R376（js-dom M4/DC-3）：**window 级 attachEvent/detachEvent 移除**——spec 已从
   // Window 删除（IE 专有遗留；WPT dom/historical "Window member must be removed:
