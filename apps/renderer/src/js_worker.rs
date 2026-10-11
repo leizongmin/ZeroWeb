@@ -862,25 +862,42 @@ fn prio_snapshot_barrier_seq(cmd: &JsWorkerCommand) -> Option<u64> {
     }
 }
 
-/// r2946：非阻塞 drain 普通通道，按提交代际分桶——`seq < prio_seq` 的 SetDomSnapshot
-/// 入 barriers（须先于优先命令应用），其余原序入 stash（优先通道清空后补跑）。
-/// `held` = 已出队未派发的普通命令（fix#18 搁置件），提交序早于通道内容，先于 drain
-/// 参与分桶。通道 try_recv 失败（空/断连）即停止——断连由阻塞 recv 路径统一处理。
+/// r2946（F1 返修）：非阻塞 drain 普通通道，切出「屏障前缀」。优先命令 picked 时，
+/// 普通通道里**提交序更早**（seq 更小）的 SetDomSnapshot 必须先应用；同通道 FIFO 即
+/// 提交序，故不重排桶内元素，直接把 drain 序列在**最后一个**此类快照处切成两段：
+/// `prefix` = 截至该快照的全部命令（通道原序，须先于优先命令派发——前缀内的普通命令
+/// 提交序先于屏障快照，由屏障的不变式传递性地也须先于优先命令）；
+/// `post` = 其后命令（提交序晚于屏障快照，优先先取语义保持——不因屏障阻塞它们，
+/// 优先通道清空后补跑，长回调级联不重新压住优先派发）。
+/// `held` = 已出队未派发的普通命令（fix#18 搁置件），提交序早于通道内容，置于序列头部。
+/// 无此类快照时 prefix 为空、post 即整个 drain，优先命令照常立即派发。
+/// 通道 try_recv 失败（空/断连）即停止——断连由阻塞 recv 路径统一处理。
 fn take_snapshot_barrier(
     prio_seq: u64,
     cmd_rx: &Receiver<JsWorkerCommand>,
     held: Option<JsWorkerCommand>,
 ) -> (VecDeque<JsWorkerCommand>, VecDeque<JsWorkerCommand>) {
-    let mut barriers = VecDeque::new();
-    let mut stash: VecDeque<JsWorkerCommand> = VecDeque::new();
-    for cmd in held.into_iter().chain(cmd_rx.try_iter()) {
-        if matches!(&cmd, JsWorkerCommand::SetDomSnapshot { seq, .. } if *seq < prio_seq) {
-            barriers.push_back(cmd);
+    let seq: VecDeque<JsWorkerCommand> = held.into_iter().chain(cmd_rx.try_iter()).collect();
+    // rposition 取最后一个更早快照作切点：其前（含自身）全部进 prefix，其后进 post。
+    // （跨发送方 seq 与通道序理论可交错——异步回调解析线程与主线程并发提交时，
+    // 个别更早快照可落入 post，此时退化为屏障前行为：优先命令越过它先跑，
+    // 不劣于修复前，不为此引入跨线程定序。）
+    let Some(split) = seq
+        .iter()
+        .rposition(|c| matches!(c, JsWorkerCommand::SetDomSnapshot { seq, .. } if *seq < prio_seq))
+    else {
+        return (VecDeque::new(), seq);
+    };
+    let mut prefix = VecDeque::new();
+    let mut post = VecDeque::new();
+    for (i, cmd) in seq.into_iter().enumerate() {
+        if i <= split {
+            prefix.push_back(cmd);
         } else {
-            stash.push_back(cmd);
+            post.push_back(cmd);
         }
     }
-    (barriers, stash)
+    (prefix, post)
 }
 
 /// t7 诊断基座：js worker 命令成本普查（`ZW_JS_WORKER_CENSUS` 启用）。
@@ -1238,7 +1255,10 @@ fn js_worker_main(
     // 的空 DOM 上跑一次即被钉死，<body onload> 永不触发（r2946 单测全量腿实证：
     // solo 0.06s 恒过、239 连跑必挂 30s 窗）。屏障在 worker 端恢复「同提交序」不变式，
     // 一个 guard 覆盖全部 fire-and-forget 优先派发（生命周期/资源/字体/动画/过渡）。
-    let mut barrier_snapshots: VecDeque<JsWorkerCommand> = VecDeque::new();
+    // F1 返修：屏障不只是快照本身——是 drain 序列截至最后一个更早快照的**前缀**
+    // （含此前提交的普通命令，通道原序；跨轮再归并 deferred_normal 于头部），随后
+    // 才是 barrier_prio；post 部分（提交序晚于屏障）保持优先先取。
+    let mut barrier_prefix: VecDeque<JsWorkerCommand> = VecDeque::new();
     let mut barrier_prio: Option<JsWorkerCommand> = None;
     // t2-pb1 F1：复位臂存活的滞留命令本地续派队列。不经通道回送（fix#20 的自馈送
     // 教训在此结构性免疫），且通道回送会让复位臂执行期间新到的命令插队到回送命令
@@ -1251,27 +1271,32 @@ fn js_worker_main(
             if let Some(cmd) = retained_after_reset.pop_front() {
                 break 'dispatch Some(cmd);
             }
-            // r2946 屏障：更早提交的普通通道快照先应用，随后才是被屏障让位的优先命令。
-            if let Some(cmd) = barrier_snapshots.pop_front() {
+            // r2946 屏障前缀：更早提交的普通通道快照及其之前的普通命令（通道原序）
+            // 先应用/执行，随后才是被屏障让位的优先命令。
+            if let Some(cmd) = barrier_prefix.pop_front() {
                 break 'dispatch Some(cmd);
             }
             if let Some(cmd) = barrier_prio.take() {
                 break 'dispatch Some(cmd);
             }
             // 优先命令先取（每轮一条；循环回到顶部即继续清空）。picked 时做快照屏障
-            // 扫描：普通通道非阻塞 drain，提交序早于本命令的 SetDomSnapshot 提前应用，
-            // 其余命令原序入 deferred_normal（优先通道清空后补跑）。
+            // 扫描：普通通道非阻塞 drain，按最后一个更早快照切前缀；有前缀时连同
+            // deferred_normal 先派发，post 部分（优先通道清空后补跑）入 deferred_normal。
             if let Ok(cmd) = prio_rx.try_recv() {
                 if let Some(prio_seq) = prio_snapshot_barrier_seq(&cmd) {
-                    let (barriers, stash) = take_snapshot_barrier(prio_seq, &cmd_rx, None);
-                    if !barriers.is_empty() {
-                        barrier_snapshots = barriers;
-                        // extend 而非覆盖：前一轮扫描的 stash 可能未消费（提交序更早，须先跑）。
-                        deferred_normal.extend(stash);
+                    let (prefix, post) = take_snapshot_barrier(prio_seq, &cmd_rx, None);
+                    if !prefix.is_empty() {
+                        // F1 返修：deferred_normal 是前轮 drain 的尾部，提交序先于本轮
+                        // drain 全部内容（通道 FIFO 跨 drain 单调），故整体排在新前缀
+                        // 头部——新发现的快照只越过它之后提交的命令，不越前轮 stash。
+                        let mut merged = std::mem::take(&mut deferred_normal);
+                        merged.extend(prefix);
+                        barrier_prefix = merged;
+                        deferred_normal = post;
                         barrier_prio = Some(cmd);
                         continue 'dispatch;
                     }
-                    deferred_normal.extend(stash);
+                    deferred_normal.extend(post);
                 }
                 break 'dispatch Some(cmd);
             }
@@ -1287,17 +1312,20 @@ fn js_worker_main(
                     // 「提交顺序即执行顺序」破坏后的旧状态，四例齐失败。搁置普通命令
                     // 一轮，下一轮循环优先队列清空后在此处补跑。
                     // r2946：刚醒来的普通命令本身可能就是更早提交的快照——与通道 drain
-                    // 内容一起走同一分桶，不落 held 单槽。
+                    // 内容一起切前缀，不落 held 单槽。
                     if let Ok(prio_cmd) = prio_rx.try_recv() {
                         if let Some(prio_seq) = prio_snapshot_barrier_seq(&prio_cmd) {
-                            let (barriers, stash) = take_snapshot_barrier(prio_seq, &cmd_rx, Some(cmd));
-                            if !barriers.is_empty() {
-                                barrier_snapshots = barriers;
-                                deferred_normal.extend(stash);
+                            let (prefix, post) = take_snapshot_barrier(prio_seq, &cmd_rx, Some(cmd));
+                            if !prefix.is_empty() {
+                                // F1 返修：归并规则同上——前轮 stash 先于本轮前缀。
+                                let mut merged = std::mem::take(&mut deferred_normal);
+                                merged.extend(prefix);
+                                barrier_prefix = merged;
+                                deferred_normal = post;
                                 barrier_prio = Some(prio_cmd);
                                 continue 'dispatch;
                             }
-                            deferred_normal.extend(stash);
+                            deferred_normal.extend(post);
                         } else {
                             deferred_normal.push_back(cmd);
                         }
@@ -1617,10 +1645,10 @@ fn js_worker_main(
                         retained_after_reset.push_back(cmd);
                     }
                 }
-                // fix#18/r2946：搁置普通命令与快照屏障暂存命令（屏障快照、被让位的
-                // 优先命令、drain 出的普通命令）同属复位时刻的旧队列，按同代际判定
+                // fix#18/r2946：搁置普通命令与快照屏障暂存命令（屏障前缀、被让位的
+                // 优先命令、drain 尾部）同属复位时刻的旧队列，按同代际判定
                 // 续派或丢弃——屏障不改变复位清队语义。
-                for cmd in barrier_snapshots
+                for cmd in barrier_prefix
                     .drain(..)
                     .chain(barrier_prio.take())
                     .chain(deferred_normal.drain(..))
