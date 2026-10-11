@@ -8960,8 +8960,9 @@
   };
   globalThis.MediaSource.prototype = Object.create(_zwMseEt.prototype);
   // spec isTypeSupported 真值表不虚报：video/mp4 + H.264（avc1/avc3）恒真值；
-  // audio/mp4 + AAC 与组合串音频腿以「音频 append 流在位」（mseAppendAudio
-  // 门面 = 音频解码链可用，t8s-3）为支持面真值——门面缺席恒 false（能力诚实）。
+  // audio/mp4 + AAC-LC（mp4a.40.2 / 'aac' 别名）与组合串音频腿以「音频 append
+  // 流在位」（mseAppendAudio 门面 = 音频解码链可用，t8s-3）为支持面真值——门面
+  // 缺席恒 false（能力诚实）；HE-AAC/SBR（40.5）等非 LC 面恒 false（解码面不虚报，t8s-4）。
   // 其他容器恒 false；容器无 codecs 查询按 Chromium 口径 true（载荷不可解时
   // appendBuffer error 事件如实报）。decode-h264 feature 关闭（桥缺失）→ 恒 false。
   // https://www.w3.org/TR/media-source/#dom-mediasource-istypesupported
@@ -8985,8 +8986,10 @@
     for (var i = 0; i < parts.length; i++) {
       var c = parts[i].trim();
       if (!c) continue;
-      // AAC 家族：mp4a.40.x（MPEG-4 Audio，AAC-LC 主形态）与 'aac' 别名。
-      var isAac = audioOk && /^(mp4a\.40|aac)\b/.test(c);
+      // 音频解码面真值：symphonia aac 仅 AAC-LC（mp4a.40.2；aac/mod.rs 显式拒
+      // Main/SSR/LTP/SBR——40.5 HE-AAC append 必 "aac too complex" 失败）→
+      // 只宣称 40.2 与 'aac' 别名（t8s-4 诚实面收窄，40.5 等恒 false）。
+      var isAac = audioOk && /^(mp4a\.40\.2|aac)\b/.test(c);
       if (isAudio) {
         if (!isAac) return false;
       } else if (!/^avc[13]\./.test(c) && !isAac) {
@@ -9002,7 +9005,34 @@
     // spec addSourceBuffer：type 不支持 → NotSupportedError；readyState 非 open →
     // InvalidStateError。
     // https://www.w3.org/TR/media-source/#dom-mediasource-addsourcebuffer
-    if (!globalThis.MediaSource.isTypeSupported(t)) {
+    // 受理面（ingest face）与 isTypeSupported 的解码面**解耦**（UA 纬度——Chrome 同
+    // 款：SB 创建按容器/家族受理，解码失败走 error/静音降级）：音频家族 mp4a.40.x/aac
+    // 全受理（HE-AAC 40.5 创建成功但解码不支持 → 音频静音降级，视频轨照常——t8s-4
+    // bilibili 未登录默认音轨 30216=40.5，硬拒使 nano sourceopen handler 中断、
+    // 双轨 append 全不发生 → 起播死循环）。视频面 avc1/avc3 不变。
+    // 桥存在门（feature-detect 单点，t8n 契约）：无 MSE 通路 → NotSupportedError。
+    if (typeof globalThis.__zwVideoBridge !== 'object'
+        || typeof globalThis.__zwVideoBridge.mseCreate !== 'function') {
+      _zwMseThrow('NotSupportedError', 'unsupported source buffer type: ' + t);
+    }
+    var _tl = t.trim().toLowerCase();
+    var _m = /codecs\s*=\s*"([^"]*)"/.exec(_tl) || /codecs\s*=\s*([^;]+)/.exec(_tl);
+    var _accepted = false;
+    if (_tl.indexOf('video/mp4') === 0 || _tl.indexOf('audio/mp4') === 0) {
+      if (!_m) _accepted = true;
+      else {
+        var _parts = _m[1].split(',');
+        _accepted = true;
+        for (var _pi = 0; _pi < _parts.length; _pi++) {
+          var _pc = _parts[_pi].trim();
+          if (!_pc) continue;
+          if (/^avc[13]\./.test(_pc) || /^(mp4a\.40|aac)\b/.test(_pc)) continue;
+          _accepted = false;
+          break;
+        }
+      }
+    }
+    if (!_accepted) {
       _zwMseThrow('NotSupportedError', 'unsupported source buffer type: ' + t);
     }
     if (this.readyState !== 'open') {

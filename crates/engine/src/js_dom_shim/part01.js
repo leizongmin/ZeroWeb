@@ -2231,7 +2231,18 @@
         }
         continue;
       }
-      push(ln); // accept-language/content-language/range/其余自定义头
+      if (ln === 'range') {
+        // fetch spec CORS-safelisted request-header（2022+ Range 面）：值 = 单一
+        // simple range（`bytes=start-end` / `start-` / `-suffix`）→ 免 preflight；
+        // 多段/畸形仍触发。Chrome/FF 同面——媒体 CDN 拉取（MSE/DASH init+media
+        // segment 的 Range 请求）从不预检；误预检使按 Origin 条件回 ACAO 的 CDN
+        // 对 OPTIONS 拒答 → 全候选 Failed to fetch（t8s-4 bilibili 起播断链面）。
+        // https://fetch.spec.whatwg.org/#cors-safelisted-request-header
+        if (/^bytes\s*=\s*\d*\s*-\s*\d*$/.test(val)) continue;
+        push(ln);
+        continue;
+      }
+      push(ln); // accept-language/content-language/其余自定义头
     }
     return names;
   }
