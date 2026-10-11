@@ -17,6 +17,7 @@ mod runner;
 mod runner_text_metrics;
 mod testharness;
 mod testharness_fileapi;
+mod testharness_webmessaging;
 mod wpt_file_loader;
 
 use rayon::prelude::*;
@@ -50,6 +51,8 @@ Commands:
   testharness-wasm  Run pinned WebAssembly (wasm/jsapi) window testharness cases (page-wasm goal M1 / DC-1)
   testharness-webstorage  Run pinned WebStorage window testharness cases (webstorage-compat goal M1 / DC-1)
   testharness-fileapi  Run imported FileAPI (blob/file/FileReader/url) window testharness cases (fileapi-compat goal M1 / DC-1)
+  testharness-webmessaging  Run imported webmessaging (postMessage/MessageChannel/BroadcastChannel)
+                       window testharness cases (webmessaging-compat goal M1 / DC-1)
   testharness-web-components  Run imported custom-elements/shadow-dom/the-template-element
                        testharness cases (web-components goal M1 / DC-1)
   testharness-intersection-observer  Run imported IntersectionObserver testharness cases
@@ -290,6 +293,9 @@ fn main() {
         "testharness-webstorage" => cmd_testharness_webstorage(&options, filter.as_deref()),
         "testharness-fileapi" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_fileapi::run_fileapi_cases(wpt_root, filter)
+        }),
+        "testharness-webmessaging" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness_webmessaging::run_webmessaging_cases(wpt_root, filter)
         }),
         "testharness-web-components" => cmd_testharness_web_components(&options, filter.as_deref()),
         "testharness-intersection-observer" => cmd_testharness_intersection_observer(&options, filter.as_deref()),
