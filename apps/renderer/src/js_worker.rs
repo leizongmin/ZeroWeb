@@ -851,6 +851,38 @@ fn survives_document_reset(cmd: &JsWorkerCommand, reset_seq: u64) -> bool {
     }
 }
 
+/// r2946 快照屏障的适用命令——优先通道中需要「先提交的普通快照先应用」不变式的命令。
+/// `ResetDocumentState` 不适用：其复位臂自带按提交代际的清队判定（t2-pb1 F1），早于
+/// 复位的快照会被 `survives_document_reset` 正确丢弃，屏障反而会把旧文档快照提前应用。
+/// 其余优先命令（无 seq 的注入/注册类）不经本通道或无文档语义，返回 None 即跳过屏障。
+fn prio_snapshot_barrier_seq(cmd: &JsWorkerCommand) -> Option<u64> {
+    match cmd {
+        JsWorkerCommand::Execute { seq, .. } | JsWorkerCommand::SetDomSnapshot { seq, .. } => Some(*seq),
+        _ => None,
+    }
+}
+
+/// r2946：非阻塞 drain 普通通道，按提交代际分桶——`seq < prio_seq` 的 SetDomSnapshot
+/// 入 barriers（须先于优先命令应用），其余原序入 stash（优先通道清空后补跑）。
+/// `held` = 已出队未派发的普通命令（fix#18 搁置件），提交序早于通道内容，先于 drain
+/// 参与分桶。通道 try_recv 失败（空/断连）即停止——断连由阻塞 recv 路径统一处理。
+fn take_snapshot_barrier(
+    prio_seq: u64,
+    cmd_rx: &Receiver<JsWorkerCommand>,
+    held: Option<JsWorkerCommand>,
+) -> (VecDeque<JsWorkerCommand>, VecDeque<JsWorkerCommand>) {
+    let mut barriers = VecDeque::new();
+    let mut stash: VecDeque<JsWorkerCommand> = VecDeque::new();
+    for cmd in held.into_iter().chain(cmd_rx.try_iter()) {
+        if matches!(&cmd, JsWorkerCommand::SetDomSnapshot { seq, .. } if *seq < prio_seq) {
+            barriers.push_back(cmd);
+        } else {
+            stash.push_back(cmd);
+        }
+    }
+    (barriers, stash)
+}
+
 /// t7 诊断基座：js worker 命令成本普查（`ZW_JS_WORKER_CENSUS` 启用）。
 /// 按命令类型累计「执行次数 / 累计耗时 / 单次最大耗时」，窗口 ≥5s 输出一行，
 /// 用于把稳态满核分解为可排序的成本桶。纯观测：默认关闭，关闭时每命令仅一次
@@ -1196,8 +1228,18 @@ fn js_worker_main(
     // 发起的异步续体推迟；本 worker 原先单 FIFO 通道，bilibili 脚本阶段遗留的 promise/
     // timer 续体级联（单臂最长 2.6s）把已入队的 DCL Execute 压 7-25s → 导航 15s 超时
     // ERR_FAILED。仅调序不并行：生命周期派发仍在本 worker 串行执行。
-    // fix#18：被下方「醒来再查」搁置的普通命令——优先通道清空后立即补跑。
-    let mut held_normal: Option<JsWorkerCommand> = None;
+    // fix#18：被「醒来再查」搁置的普通命令与快照屏障扫描出的普通命令——优先通道
+    // 清空后立即按原序补跑（r2946 屏障前 held_normal 单槽，屏障需要多槽 stash）。
+    let mut deferred_normal: VecDeque<JsWorkerCommand> = VecDeque::new();
+    // r2946 快照屏障：优先命令 picked 时，普通通道里**提交序更早**（seq 更小）的
+    // SetDomSnapshot 必须先应用。fix#21 的有界等待（250ms）在 worker 忙臂/bootstrap
+    // 超时放行后，快照滞留普通通道，而 fix#12 fire-and-forget 生命周期派发 + fix#18
+    // 醒来再查让优先命令先于快照执行——body onload 反射（按页 URL 去重）在安装前
+    // 的空 DOM 上跑一次即被钉死，<body onload> 永不触发（r2946 单测全量腿实证：
+    // solo 0.06s 恒过、239 连跑必挂 30s 窗）。屏障在 worker 端恢复「同提交序」不变式，
+    // 一个 guard 覆盖全部 fire-and-forget 优先派发（生命周期/资源/字体/动画/过渡）。
+    let mut barrier_snapshots: VecDeque<JsWorkerCommand> = VecDeque::new();
+    let mut barrier_prio: Option<JsWorkerCommand> = None;
     // t2-pb1 F1：复位臂存活的滞留命令本地续派队列。不经通道回送（fix#20 的自馈送
     // 教训在此结构性免疫），且通道回送会让复位臂执行期间新到的命令插队到回送命令
     // 之前、破坏快照+执行的成对序——本地队列保持原相对序，下一轮分派最先消费。
@@ -1209,11 +1251,31 @@ fn js_worker_main(
             if let Some(cmd) = retained_after_reset.pop_front() {
                 break 'dispatch Some(cmd);
             }
-            // 优先命令先取（每轮一条；循环回到顶部即继续清空）。
-            if let Ok(cmd) = prio_rx.try_recv() {
+            // r2946 屏障：更早提交的普通通道快照先应用，随后才是被屏障让位的优先命令。
+            if let Some(cmd) = barrier_snapshots.pop_front() {
                 break 'dispatch Some(cmd);
             }
-            if let Some(cmd) = held_normal.take() {
+            if let Some(cmd) = barrier_prio.take() {
+                break 'dispatch Some(cmd);
+            }
+            // 优先命令先取（每轮一条；循环回到顶部即继续清空）。picked 时做快照屏障
+            // 扫描：普通通道非阻塞 drain，提交序早于本命令的 SetDomSnapshot 提前应用，
+            // 其余命令原序入 deferred_normal（优先通道清空后补跑）。
+            if let Ok(cmd) = prio_rx.try_recv() {
+                if let Some(prio_seq) = prio_snapshot_barrier_seq(&cmd) {
+                    let (barriers, stash) = take_snapshot_barrier(prio_seq, &cmd_rx, None);
+                    if !barriers.is_empty() {
+                        barrier_snapshots = barriers;
+                        // extend 而非覆盖：前一轮扫描的 stash 可能未消费（提交序更早，须先跑）。
+                        deferred_normal.extend(stash);
+                        barrier_prio = Some(cmd);
+                        continue 'dispatch;
+                    }
+                    deferred_normal.extend(stash);
+                }
+                break 'dispatch Some(cmd);
+            }
+            if let Some(cmd) = deferred_normal.pop_front() {
                 break 'dispatch Some(cmd);
             }
             match cmd_rx.recv_timeout(WORKER_IDLE_POLL) {
@@ -1224,8 +1286,21 @@ fn js_worker_main(
                     // 后续脚本）可越过 DCL/load 先行执行——r2943 类单测探针读到
                     // 「提交顺序即执行顺序」破坏后的旧状态，四例齐失败。搁置普通命令
                     // 一轮，下一轮循环优先队列清空后在此处补跑。
+                    // r2946：刚醒来的普通命令本身可能就是更早提交的快照——与通道 drain
+                    // 内容一起走同一分桶，不落 held 单槽。
                     if let Ok(prio_cmd) = prio_rx.try_recv() {
-                        held_normal = Some(cmd);
+                        if let Some(prio_seq) = prio_snapshot_barrier_seq(&prio_cmd) {
+                            let (barriers, stash) = take_snapshot_barrier(prio_seq, &cmd_rx, Some(cmd));
+                            if !barriers.is_empty() {
+                                barrier_snapshots = barriers;
+                                deferred_normal.extend(stash);
+                                barrier_prio = Some(prio_cmd);
+                                continue 'dispatch;
+                            }
+                            deferred_normal.extend(stash);
+                        } else {
+                            deferred_normal.push_back(cmd);
+                        }
                         break 'dispatch Some(prio_cmd);
                     }
                     break 'dispatch Some(cmd);
@@ -1542,11 +1617,17 @@ fn js_worker_main(
                         retained_after_reset.push_back(cmd);
                     }
                 }
-                // fix#18：搁置中的普通命令同属复位时刻的旧队列，按同代际判定续派或丢弃。
-                if let Some(cmd) = held_normal.take()
-                    && survives_document_reset(&cmd, reset_seq)
+                // fix#18/r2946：搁置普通命令与快照屏障暂存命令（屏障快照、被让位的
+                // 优先命令、drain 出的普通命令）同属复位时刻的旧队列，按同代际判定
+                // 续派或丢弃——屏障不改变复位清队语义。
+                for cmd in barrier_snapshots
+                    .drain(..)
+                    .chain(barrier_prio.take())
+                    .chain(deferred_normal.drain(..))
                 {
-                    retained_after_reset.push_back(cmd);
+                    if survives_document_reset(&cmd, reset_seq) {
+                        retained_after_reset.push_back(cmd);
+                    }
                 }
                 while let Ok(cmd) = cmd_rx.try_recv() {
                     if survives_document_reset(&cmd, reset_seq) {

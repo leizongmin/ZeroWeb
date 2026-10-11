@@ -2339,6 +2339,34 @@ mod tests {
         worker.shutdown();
     }
 
+    /// R2946 mirror：快照屏障——fix#21 有界等待（250ms）在 worker 忙臂时超时放行后，
+    /// 快照滞留普通通道，finish_page_load 的 fire-and-forget 优先派发（fix#12）不得
+    /// 先于快照执行：否则 body onload 反射（按页 URL 去重）在安装前的旧 DOM 上跑一次
+    /// 即被钉死，<body onload> 永不触发（r2946 全量腿 239 连跑必挂、solo 恒过的根因）。
+    /// 确定性复现：50ms 有界放行的 1s 忙普通脚本占臂 → 快照 250ms 等待必超时滞留 →
+    /// 优先派发须等快照应用后反射新 DOM（js_worker 快照屏障，按提交 seq 排序）。
+    #[test]
+    fn snapshot_barrier_orders_priority_dispatch_after_pending_snapshot_r2946() {
+        let mut worker = RendererJsWorker::spawn(119);
+        // ① 1s 忙臂经 50ms 有界等待提交：放行后脚本仍占 worker ~950ms。
+        let _ = worker.execute_script_direct_bounded(
+            "const __t = Date.now(); while (Date.now() - __t < 1000) {}",
+            std::time::Duration::from_millis(50),
+        );
+        let html = "<html><body onload=\"globalThis.__bodyload='fired'\"></body></html>";
+        // ② 快照的有界等待（250ms < 剩余忙臂）必超时放行——普通通道顺序：忙臂 → 快照。
+        worker.set_dom_snapshot(html, "https://example.com/barrier");
+        // ③ 无屏障时优先脚本越过忙臂+快照先执行，反射在旧 DOM 上被 URL 去重钉死；
+        //    屏障下优先派发排在快照应用之后，反射命中 <body onload> → load 触发。
+        finish_page_load(&worker, Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        assert_eq!(
+            wait_for_global(&worker, "__bodyload", 30_000),
+            "fired",
+            "快照滞留普通通道时，优先生命周期派发须等快照应用后执行（r2946 屏障）"
+        );
+        worker.shutdown();
+    }
+
     /// R2946 mirror：有 `<script>` 页面，body onload 反射在首个脚本执行前（__zw_begin_script）发生，
     /// 随后脚本可读 window.onload（=反射的 body handler）——验证反射时序对脚本可见。
     #[test]
