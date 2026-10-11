@@ -1373,7 +1373,7 @@ fn substitute_css_vars_text(css: &str) -> String {
     substitute_var_refs(css, &props)
 }
 
-fn collect_custom_props(css: &str) -> Vec<(String, String)> {
+pub(crate) fn collect_custom_props(css: &str) -> Vec<(String, String)> {
     let mut map: Vec<(String, String)> = Vec::new();
     let bytes = css.as_bytes();
     let len = bytes.len();
