@@ -127,3 +127,24 @@ fn inline_block_relative_offset_applied_once() {
         "inline-block relative top:60px 应单次偏移 +60（双重计数 +120）：static {static_y} vs {y60}"
     );
 }
+
+// ── R5055：nbsp-only 文本子可绘制（CSS Text §3 保留内容；trim() 按 Unicode
+// White_Space 剔除 U+00A0 曾致元素零渲染）──────────────
+
+/// `<div>&nbsp;</div>` 应产出 nbsp 字形（div::selection 高亮同帧可用）。
+#[test]
+fn nbsp_only_text_child_renders() {
+    let mut pipeline = RenderPipeline::new(400.0, 300.0);
+    pipeline.set_text_selections(vec![("#d".to_string(), 0, 1)]);
+    let result = pipeline.render_html(
+        r#"<body><div id="d" style="color: green; font: 100px/1 Ahem;">&nbsp;</div></body>"#,
+        "div::selection { background-color: green; }",
+    );
+    let prims = result.primitives();
+    // Ahem nbsp = 1em 方块字形（选择高亮与字形同为绿，fills 不强断言）。
+    assert!(
+        prims.glyphs.iter().any(|g| g.glyph_id == 0x00A0_u32),
+        "nbsp 字形应入图元，实际 glyphs={}",
+        prims.glyphs.len()
+    );
+}

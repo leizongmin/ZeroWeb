@@ -3748,7 +3748,11 @@ pub(super) fn has_direct_paintable_text(
     let direct = doc.child_nodes(node_id).iter().any(|child_id| {
         matches!(
             doc.get(*child_id).map(|node| &node.kind),
-            Some(NodeKind::Text(text)) if !text.content.trim().is_empty()
+            // R5055：可绘制判据 = 含 white-space 处理后保留的内容（CSS Text §3 窄集合
+            // 口径，`zero_layout_engine::has_preserved_content`）。旧 `trim().is_empty()`
+            // 按 Unicode White_Space 剔除 U+00A0 → 仅含 `&nbsp;` 的文本子误判为空 →
+            // 元素零渲染（driving: selection-background-color-001 `<div>&nbsp;</div>`）。
+            Some(NodeKind::Text(text)) if zero_layout_engine::has_preserved_content(&text.content)
         )
     });
     if direct {

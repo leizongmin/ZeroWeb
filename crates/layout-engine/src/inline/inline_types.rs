@@ -471,6 +471,18 @@ pub(crate) fn collapse_whitespace_keep_newlines(text: &str) -> String {
 /// 本函数 = Rust `is_whitespace` 排除 U+00A0，用于 collapse + 断行判定。
 /// 旧实现 `is_whitespace()` / `split_whitespace()` 含 U+00A0 → `&nbsp;` 被折叠为普通空格再被
 /// 行首尾 trim → 仅含 `&nbsp;` 的元素塌缩为 0 行盒（`line-height-applies-to` 簇 4.75%）。
+/// 字符串是否含 white-space 处理后保留的内容（任一不可折叠字符——CSS Text §3
+/// collapse 后仍存在的字符：非空白字符与 U+00A0/U+3000 等保留空白）。
+///
+/// R5055：paint 侧「直系文本可绘制」判定旧用 `str::trim().is_empty()`——Rust `trim`
+/// 按 Unicode White_Space 剔除 U+00A0 → 仅含 `&nbsp;` 的文本子被误判为空 →
+/// `has_direct_paintable_text` false → 元素零渲染（driving: selection-background-color-001
+/// 的 `<div>&nbsp;</div>`）。IFC/断行侧 R4034 已按 `is_collapsible_ws` 修正，本函数把
+/// 同一窄集合口径接到 paint 门上。
+pub fn has_preserved_content(s: &str) -> bool {
+    s.chars().any(|ch| !is_collapsible_ws(ch))
+}
+
 pub(crate) fn is_collapsible_ws(ch: char) -> bool {
     // R3892：CSS Text 3 §3 white space processing——可折叠白空间仅限 document white
     // space 字符（SPACE/TAB/LF/CR，及折叠阶段视为空格的其他格式字符如 U+3000 等
