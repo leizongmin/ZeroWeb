@@ -420,6 +420,20 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><div style=\"font-size:20px\"><div style=\"font-size:10px\">Overridden to 10px</div></div></body></html>",
         is_match: true,
     },
+    // ── P9-D2（R5072）：system-ui 族 w700 须命中 bold face（CSS Fonts 4 §5.2）──
+    // 回归形态：build_font_resolver 缺 system-ui:700 键，resolve_font_face 的
+    // [":700",""] 查找直接落 regular face——GitHub system-ui 栈粗体标题渲染细体。
+    // ref 页用 sans-serif:700（R3993 键恒 bold）；修复态 system-ui:700 与
+    // sans-serif:700 同 face → 两页逐像素相等。缺陷态 regular vs bold 字形差
+    // 远超 1% 阈值（判别）。文件孪生：
+    // tests/wpt-runner/local-reftests/css/css-fonts/system-ui-bold-zw-001*.html。
+    InlineReftestDef {
+        id: "css-fonts/system-ui-bold-zw-001",
+        category: ReftestCategory::Text,
+        test_html: "<html><body style=\"margin:0\"><div style=\"font-family:system-ui;font-weight:700;font-size:32px\">Bold heading text</div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"font-family:sans-serif;font-weight:700;font-size:32px\">Bold heading text</div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {

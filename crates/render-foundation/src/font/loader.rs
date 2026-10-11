@@ -351,6 +351,13 @@ impl FontLoader {
         // monospace
         let mono_id = self.resolve_generic_family(&mono_names).unwrap_or(default_id);
         resolver.insert("monospace".to_string(), mono_id);
+        // P9-D2（R5072，CSS Fonts 4 §5.2 weight 匹配在族内 face 集上进行）：mono 族
+        // 常仅一个 face（Noto Sans Mono CJK SC），w700 须族内回退到唯一 face——不套
+        // 用 R3993 sans 链的跨族兜底（跨族会把 sans bold 塞给 monospace）。
+        resolver.insert(
+            "monospace:700".to_string(),
+            self.bold_face_of_same_family(mono_id).unwrap_or(mono_id),
+        );
 
         // cursive / fantasy / system-ui → 暂映射到 sans-serif
         if std::env::var("ZW_RESOLVER_TRACE").is_ok() {
@@ -367,6 +374,12 @@ impl FontLoader {
         resolver.insert("cursive".to_string(), sans_id);
         resolver.insert("fantasy".to_string(), sans_id);
         resolver.insert("system-ui".to_string(), sans_id);
+        // P9-D2（R5072）：三族与 sans-serif 同族，w700 共用 sans-serif:700 值（R3993
+        // 链）——缺 :700 键时 resolve_font_face 的 [":700",""] 查找直接落 regular face
+        //（probe2 B1：system-ui w700 渲染 regular；GitHub system-ui 栈粗体标题细体）。
+        resolver.insert("cursive:700".to_string(), sans_bold_id);
+        resolver.insert("fantasy:700".to_string(), sans_bold_id);
+        resolver.insert("system-ui:700".to_string(), sans_bold_id);
 
         resolver
     }
@@ -1221,6 +1234,61 @@ mod tests {
             "R3993: serif:700 must not resolve to the sans regular face"
         );
         assert!(resolver.contains_key("serif:700") && serif != u32::MAX);
+    }
+
+    /// P9-D2（R5072）：system-ui/cursive/fantasy 与 sans-serif 共用 :700 face；
+    /// monospace:700 族内回退（无同族 Bold 时 = 自身，不得跨族取 sans bold）。
+    /// 手工加载 Liberation R+B 构造确定性环境（无字体时跳过，同 R3993 口径）。
+    #[test]
+    fn p9d2_generic_and_system_ui_bold_aliases_registered() {
+        let Some(data) = std::fs::read("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf").ok() else {
+            eprintln!("p9d2: Liberation Sans not found, skip");
+            return;
+        };
+        let Some(bold) = std::fs::read("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf").ok() else {
+            eprintln!("p9d2: Liberation Sans Bold not found, skip");
+            return;
+        };
+        let mut loader = FontLoader::new();
+        loader.load_font(&data).expect("load Liberation Sans");
+        loader.load_font(&bold).expect("load Liberation Sans Bold");
+        let resolver = loader.build_font_resolver();
+
+        let sans_bold = resolver
+            .get("sans-serif:700")
+            .copied()
+            .expect("sans-serif:700 registered");
+        for family in ["system-ui", "cursive", "fantasy"] {
+            let key = format!("{family}:700");
+            assert_eq!(
+                resolver.get(&key),
+                Some(&sans_bold),
+                "P9-D2: {key} must share the sans-serif:700 face (same family), got {:?}",
+                resolver.get(&key)
+            );
+        }
+
+        // 单 face mono 族（DejaVu Sans Mono，不载其 Bold）：monospace:700 =
+        // monospace 自身——族内回退，禁止跨族取「任意族第二 face」（sans bold）。
+        // 注：mono 关键字解析不到任何清单族时落 default face，此时「解析族」的
+        // bold face 即正确答案（族语义跟随解析结果，不跟随关键字）。
+        let Some(mono_data) = std::fs::read("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf").ok() else {
+            eprintln!("p9d2: DejaVu Sans Mono not found, skip mono assertion");
+            return;
+        };
+        loader.load_font(&mono_data).expect("load DejaVu Sans Mono");
+        let resolver = loader.build_font_resolver();
+        let mono = resolver.get("DejaVu Sans Mono").copied().expect("mono face registered");
+        assert_eq!(
+            resolver.get("monospace"),
+            Some(&mono),
+            "P9-D2: monospace must resolve to the loaded mono face"
+        );
+        assert_eq!(
+            resolver.get("monospace:700"),
+            Some(&mono),
+            "P9-D2: monospace:700 must stay within the mono family when no mono Bold face exists"
+        );
     }
 
     #[test]

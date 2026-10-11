@@ -24,6 +24,17 @@ pub fn load_platform_fonts() -> PlatformFonts {
         };
     };
 
+    // P9-D2（R5072）：primary 族同样须 [Regular, Bold] 成对——GitHub 栈含
+    // "Noto Sans"（先于 sans-serif），只载 NotoSans-Regular 时该族单 face，w700
+    // 标题命中 regular 停在栈中途（真机复验实证：补齐 sans-serif:700 后首页标题
+    // 仍细体）。
+    let _ = load_first(&mut loader, primary_bold_font_paths(), 0, "primary-bold");
+    // P9-D2（R5072）：bold 角色须与同族 Regular 成对注册——family_map 约定首 face
+    // Regular、第二 face Bold（build_font_resolver 据此注册 {family} 与 {family}:700，
+    // CSS Fonts 4 §5.2）。只载 Bold 时该族单 face：任意字重（含 w400）都命中 Bold，
+    // 且族内无 :700 键（probe2 A3："DejaVu Sans" w400 渲染粗体）。两清单同族序一致，
+    // 保证 Regular 先于 Bold 进 family_map。
+    let _ = load_first(&mut loader, bold_regular_font_paths(), 0, "bold-regular");
     let _ = load_first(&mut loader, bold_font_paths(), 0, "bold");
 
     // R4377：generic 族 face 与 reftest harness 对齐（R1259 serif / R1263 sans / R4373 mono
@@ -175,6 +186,53 @@ fn bold_font_paths() -> &'static [&'static str] {
     }
 }
 
+/// P9-D2（R5072）：bold 角色的同族 Regular face，与 `bold_font_paths` 同族序配对，
+/// 先于 Bold 加载。仅覆盖 Linux（本切片证据环境）；macOS/Windows 的 bold 角色同样
+/// 只载 Bold——macOS 的 Arial Regular 由 `generic_family_font_paths` 在其后补载，
+/// family_map 序为 [Bold, Regular]，resolver["Arial"] 仍取 Bold。FIXME: 各平台
+/// 族谱成对加载待清单核对后统一（对齐 harness reftest_fonts 的成对加载口径）。
+fn bold_regular_font_paths() -> &'static [&'static str] {
+    #[cfg(target_os = "macos")]
+    {
+        &[] as &[&str]
+    }
+    #[cfg(target_os = "windows")]
+    {
+        &[] as &[&str]
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        &[
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        ]
+    }
+}
+
+/// P9-D2（R5072）：primary 族（`primary_font_paths` 前两项 NotoSans-Regular）的
+/// 同族 Bold face，紧随 primary 加载，保证 family_map 序 [Regular, Bold]。仅覆盖
+/// Linux（本切片证据环境）；清单首项须与 primary 实际命中的族对应。macOS/Windows
+/// 同病 FIXME：各平台族谱成对加载待清单核对后统一（对齐 harness reftest_fonts
+/// 的成对加载口径）。
+fn primary_bold_font_paths() -> &'static [&'static str] {
+    #[cfg(target_os = "macos")]
+    {
+        &[] as &[&str]
+    }
+    #[cfg(target_os = "windows")]
+    {
+        &[] as &[&str]
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        &[
+            "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+            "/usr/share/fonts/opentype/noto/NotoSans-Bold.ttf",
+        ]
+    }
+}
+
 fn platform_fallback_font_paths() -> &'static [&'static str] {
     #[cfg(target_os = "macos")]
     {
@@ -305,5 +363,71 @@ mod tests {
                 family_of("monospace")
             );
         }
+    }
+
+    /// P9-D2（R5072）：bold 角色族须有完整 [Regular, Bold] 谱——w400 命中 Regular、
+    /// w700 命中 Bold。此前只载 DejaVuSans-Bold：family_map 单 face，"DejaVu Sans"
+    /// 任意字重都命中 Bold（probe2 A3）。system-ui/cursive/fantasy 的 :700 与
+    /// sans-serif:700 同值；monospace:700 族内回退（生产清单下 mono 族单 face）。
+    /// DejaVu Regular 缺失（极简环境）时跳过族谱断言。
+    #[test]
+    fn p9d2_bold_role_family_pairs_regular_with_bold() {
+        let platform = load_platform_fonts();
+        let resolver = platform.loader.build_font_resolver();
+
+        if std::path::Path::new("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf").exists() {
+            let regular = resolver
+                .get("DejaVu Sans")
+                .copied()
+                .expect("DejaVu Sans registered when its Regular face is loaded");
+            let bold = resolver
+                .get("DejaVu Sans:700")
+                .copied()
+                .expect("DejaVu Sans:700 registered (family_map second face)");
+            assert_ne!(
+                regular, bold,
+                "P9-D2: 'DejaVu Sans' w400 must resolve to the Regular face, not the Bold face"
+            );
+        } else {
+            eprintln!("p9d2: DejaVu Sans Regular not found, skip family-pair assertion");
+        }
+
+        // primary 族（Noto Sans）：GitHub 栈含 "Noto Sans"（先于 sans-serif），
+        // w700 须能命中 Bold face（R5072 首页标题细体残口的回归锚）。
+        if std::path::Path::new("/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf").exists() {
+            let regular = resolver
+                .get("Noto Sans")
+                .copied()
+                .expect("Noto Sans registered (primary role)");
+            let bold = resolver
+                .get("Noto Sans:700")
+                .copied()
+                .expect("Noto Sans:700 registered (primary-bold companion)");
+            assert_ne!(
+                regular, bold,
+                "P9-D2: 'Noto Sans' w700 must reach the Bold face, not stop at Regular"
+            );
+        }
+
+        assert_eq!(
+            resolver.get("system-ui:700"),
+            resolver.get("sans-serif:700"),
+            "P9-D2: system-ui:700 must share the sans-serif:700 face (same family)"
+        );
+        assert_eq!(
+            resolver.get("cursive:700"),
+            resolver.get("sans-serif:700"),
+            "P9-D2: cursive:700 must share the sans-serif:700 face (same family)"
+        );
+        assert_eq!(
+            resolver.get("fantasy:700"),
+            resolver.get("sans-serif:700"),
+            "P9-D2: fantasy:700 must share the sans-serif:700 face (same family)"
+        );
+        assert_eq!(
+            resolver.get("monospace:700"),
+            resolver.get("monospace"),
+            "P9-D2: monospace:700 must stay within the mono family (single-face family falls back to itself)"
+        );
     }
 }
