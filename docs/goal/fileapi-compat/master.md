@@ -1,28 +1,26 @@
 # File API 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../fileapi-compat.md](../fileapi-compat.md)
-**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-11（M2-P5 元素代理面收口）
+**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-11（M3 收口——Completed）
 
 ## 当前状态
 
-**目标 Active（M2 全簇收口——98.8%，残余 6F 全部跨域）**：35 案 499 子测试
-**493 Pass**（M1 62.3% → M2-P1 87.2% → M2-P3 93.6% → M2-P4 97.8% → M2-P5 98.8%，
-单调上行，0 Timeout）。
-M2-P5（10-11）：元素代理面专轮——String(el) 改 spec class 串（'body' →
-'[object HTMLBodyElement]'，trap @@toPrimitive/toString 与 toStringTag 同表）+4、
-HTMLCollection value iterator 每步重读 length（劫持 getter 异常传播）+1、
-select.length/索引项（sel+handle 双形态）+ BlobPart sequence 元素代理品牌判据 +1。
-影响面全量复跑：dom 54303P（diff 甄别仅消息文本 + 既有 timestamp flake 族）、
-html-syntax 逐字节恒等、html/selection 恒等、engine lib 2987P/0F。M2-P4 evidence
-一处错误归因已更正（「XHR with a fragment」从未翻绿）。证据：
-[evidence/2026-10-11-m2-p5-element-proxy.md](evidence/2026-10-11-m2-p5-element-proxy.md)。
+**目标 Completed（2026-10-11 收口）**：可执行子集 35 案 499 子测试 **493 Pass =
+98.8%**（M1 62.3% → M2-P1 87.2% → M2-P3 93.6% → M2-P4 97.8% → M2-P5 98.8% →
+M3 复跑 98.8% 恒值，单调不下行，0 Timeout）。DC-1~3 逐项核对通过（收口判定：
+[evidence/2026-10-11-m3-closure.md](evidence/2026-10-11-m3-closure.md)）——
+本轮全量门禁：make test 71 suite 全绿、make reftest 708/708 零不一致、
+product-smoke 15.40% ≤ 20% + struct 全 PASS、legacy smoke 39/39 struct PASS、
+uievents 通道首次在 guard 墙钟内跑完（1795P/170F+T，TIME_LIMIT=3600，基线自此
+建立；M2-P5 挂账销项）。残余 6F 全部跨域记账（Request 生命周期 5 → net-api、
+ports 转移 1 → webmessaging），重入条件在案。
 
 里程碑台账：M1（10-11）通道 + 甄别 + 基线 62.3%；M2-P1（10-11）构造器 WebIDL
 +124P → 87.2%（endings 簇随构造器收口，上游语料冲突 chromium 仲裁记档见下）；
 M2-P3（10-11）readAs* 状态机 +32P → 93.6%（事件 task 语义，见 learning
 docs/learnings/platform/2026-10/2026-10-11-wpt-eventwatcher-task-dispatch.md）；
-M2-P4（10-11）零散面 +21P → 97.8%；M2-P5（10-11）元素代理面 +5P → 98.8%。
-逐轮证据见 evidence/。
+M2-P4（10-11）零散面 +21P → 97.8%；M2-P5（10-11）元素代理面 +5P → 98.8%；
+M3（10-11）DC-2 恒值确认 + DC-3 全量门禁 + 收口。逐轮证据见 evidence/。
 
 ## 缺口清单（残余 6F，全部跨域挂账）
 
@@ -54,16 +52,16 @@ U+0020~U+007E + ASCII 小写化。chromium headless 实测与 FileAPI 一致
 
 ## 后续重入条件（记账）
 
-- DC-2 门禁参照 webstorage 先例：分级通过率不再下行两个连续轮次 + DC-3 逐修复
-  回归测试（本 goal 以 testharness-fileapi 通道 + evidence JSON 为常驻断言集）+
-  make test 全绿 / make reftest 零回归 / product-smoke 恒值。当前 98.8% 且残余 6F
-  全部跨域定域挂账——**DC-2 需下一轮复跑确认不再下行后走 M3 归档评审**
-  （M2-P4 97.8% → M2-P5 98.8% 两轮上行，尚缺一轮不下行确认）。
-- 数字维护：每轮修齐后向 `docs/compat/trends/wpt-suites.csv` 追加行
-  （M2-P5 行 2026-10-11 = active，499/493）。
+- **Completed 后重入**：残余 6F 两簇重入条件——Request/blob URL 生命周期随
+  net-api Request 语义推进复验；e.ports 随 webmessaging 面推进复验。排除面
+  （multi-global/worker/streams/表单回显/idlharness/BlobURL 分区）维持 M1 甄别
+  记账。上游语料冲突仲裁（mimesniff 865 腿）如上游跟进 FileAPI 算法更新自然回绿。
+- 常驻断言集：testharness-fileapi 通道（`make testharness-fileapi`）+ evidence/
+  六份 JSON——后续涉及 js_dom_shim Blob/File/FileReader/URL.createObjectURL 的
+  变更跑该通道防回归。
 - 元素代理 String 形态已改 spec class 串（'[object IfaceName]'）——后续轮次若见
-  dom 族 assert 消息文本 diff（format_value 串化元素）属预期，非回归；uievents
-  通道 M2-P5 轮 test-guard 1200s 超时未获双侧对比，下轮以 TIME_LIMIT=2400 复跑
-  建基线。
+  dom 族 assert 消息文本 diff（format_value 串化元素）属预期，非回归。uievents
+  通道基线 = 2026-10-11 M3 轮 1795P/170F+T（TIME_LIMIT=3600）；后续复跑低于
+  TIME_LIMIT=3600 会撞 guard 墙钟。
 - 事件派发粒度经验：FileReader 族事件必须 task 承载（setTimeout），microtask 链与
   promise_test 完成回调竞速——后续 shim 内新增异步事件接口（XHR 进度、IDB 等）照此先例。

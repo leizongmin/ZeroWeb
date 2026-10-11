@@ -1,8 +1,11 @@
 # File API 兼容 — Blob / File / FileReader / objectURL
 
-**版本**: v1.5
-**日期**: 2026-10-08（立项） | 2026-10-11（M1 基线 + M2-P1/P3/P4/P5）
-**状态**: Active（M2 全簇收口——98.8%；残余 6F 跨域挂账，DC-2 下轮确认后 M3 归档）
+**版本**: v1.6
+**日期**: 2026-10-08（立项） | 2026-10-11（M1 基线 + M2-P1/P3/P4/P5 + M3 收口）
+**状态**: Completed（2026-10-11 收口——493/499 = 98.8%，DC-1~3 逐项核对通过；
+控制面见 `fileapi-compat/master.md`，收口判定见
+`fileapi-compat/evidence/2026-10-11-m3-closure.md`；残余 6F 全部跨域记账项，
+重入条件在案）
 **执行模式**: WPT 驱动（上游 FileAPI corpus 为验收标尺）+ 语义/实现修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——文件与二进制面）
 **运行时控制面板**: [fileapi-compat/master.md](fileapi-compat/master.md)
@@ -40,7 +43,8 @@ drag-drop 文件入口（uievents/rendering 面依赖）。
 
 ## 里程碑
 
-M1 导入与基线（含可执行性甄别）✅ → M2 语义/实现修齐 → M3 收口归档。
+M1 导入与基线（含可执行性甄别）✅ → M2 语义/实现修齐 ✅（P1/P3/P4/P5 五轮，
+62.3% → 98.8%）→ M3 收口归档 ✅（2026-10-11，DC-1~3 逐项核对）。
 
 ## 依赖约束（run-rules §9）
 
