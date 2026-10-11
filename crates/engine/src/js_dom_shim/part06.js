@@ -8907,11 +8907,12 @@
       try {
         if (msObj._zwUrl && typeof globalThis.__zwVideoBridge === 'object'
             && typeof globalThis.__zwVideoBridge.mseAppend === 'function') {
-          // t8s-3 轨路由：audio SourceBuffer 走独立音频流（mseAppendAudio；
-          // 未挂该门面的旧宿主回落失败面——能力诚实）。
-          if (self._zwTrackKind === 'audio'
-              && typeof globalThis.__zwVideoBridge.mseAppendAudio === 'function') {
-            ok = globalThis.__zwVideoBridge.mseAppendAudio(msObj._zwUrl, b64) === true;
+          // t8s-3 轨路由：video SB → 视频流；audio SB → 独立音频流；audio SB
+          // 遇门面缺席（不可达面——addSourceBuffer 同源守卫已挡）走失败面，
+          // 绝不把音频字节写入视频流（能力诚实）。
+          if (self._zwTrackKind === 'audio') {
+            ok = typeof globalThis.__zwVideoBridge.mseAppendAudio === 'function'
+              && globalThis.__zwVideoBridge.mseAppendAudio(msObj._zwUrl, b64) === true;
           } else {
             ok = globalThis.__zwVideoBridge.mseAppend(msObj._zwUrl, b64) === true;
           }
@@ -8958,10 +8959,11 @@
     this._zwAttach = null;
   };
   globalThis.MediaSource.prototype = Object.create(_zwMseEt.prototype);
-  // spec isTypeSupported 真值表不虚报：唯一真实可解面 = video/mp4 + H.264
-  //（avc1/avc3）；audio/*（音频轨 MSE 未实现）与其他容器恒 false；容器无 codecs
-  // 查询按 Chromium 口径 true（载荷不可解时 appendBuffer error 事件如实报）。
-  // decode-h264 feature 关闭（桥缺失）→ 恒 false。
+  // spec isTypeSupported 真值表不虚报：video/mp4 + H.264（avc1/avc3）恒真值；
+  // audio/mp4 + AAC 与组合串音频腿以「音频 append 流在位」（mseAppendAudio
+  // 门面 = 音频解码链可用，t8s-3）为支持面真值——门面缺席恒 false（能力诚实）。
+  // 其他容器恒 false；容器无 codecs 查询按 Chromium 口径 true（载荷不可解时
+  // appendBuffer error 事件如实报）。decode-h264 feature 关闭（桥缺失）→ 恒 false。
   // https://www.w3.org/TR/media-source/#dom-mediasource-istypesupported
   globalThis.MediaSource.isTypeSupported = function (type) {
     if (typeof globalThis.__zwVideoBridge !== 'object'

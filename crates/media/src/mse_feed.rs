@@ -1306,6 +1306,95 @@ mod tests {
         assert!(feed.is_exhausted(), "end() 后真流末");
     }
 
+    /// 音频续段构造器（t8s-3 返修 N1）：复刻 build_fragmented_audio 的 moof+mdat
+    /// 单 fragment 面，tfdt 基准偏移到 `base_dts`（高 pts 续段）、mfhd 序号 `seq`。
+    fn build_media_segment_cont_audio(samples: &[Vec<u8>], base_dts: u32, seq: u32) -> Vec<u8> {
+        let frame_dur: u32 = 1024;
+        let mut trun_payload = be32(samples.len() as u32).to_vec();
+        trun_payload.extend_from_slice(&be32(0));
+        for _ in samples {
+            trun_payload.extend_from_slice(&be32(frame_dur));
+            trun_payload.extend_from_slice(&be32(0));
+            trun_payload.extend_from_slice(&be32(0x02000000));
+        }
+        let trun = full_box(b"trun", 0, 0x000701, trun_payload);
+        let tfhd = full_box(b"tfhd", 0, 0x020000, be32(2).to_vec());
+        let tfdt = full_box(b"tfdt", 1, 0, be32(base_dts).to_vec());
+        let mfhd = full_box(b"mfhd", 0, 0, be32(seq).to_vec());
+        let trun_len = trun.len();
+        let traf_body = [tfhd, tfdt, trun].concat();
+        let traf = box_header(b"traf", traf_body.len())
+            .into_iter()
+            .chain(traf_body)
+            .collect::<Vec<u8>>();
+        let moof_body = [mfhd, traf].concat();
+        let moof = box_header(b"moof", moof_body.len())
+            .into_iter()
+            .chain(moof_body)
+            .collect::<Vec<u8>>();
+        let mut mdat_payload = Vec::new();
+        for s in samples {
+            mdat_payload.extend_from_slice(s);
+        }
+        let mut moofmdat = moof.clone();
+        let mdat_start = moofmdat.len();
+        moofmdat.extend_from_slice(&box_header(b"mdat", mdat_payload.len()));
+        moofmdat.extend_from_slice(&mdat_payload);
+        let trun_data_start = moof.len() - trun_len + 12 + 4;
+        moofmdat[trun_data_start..trun_data_start + 4].copy_from_slice(&be32((mdat_start + 8) as u32));
+        let mut off = trun_data_start + 4;
+        for s in samples {
+            moofmdat[off + 4..off + 8].copy_from_slice(&be32(s.len() as u32));
+            off += 12;
+        }
+        moofmdat
+    }
+
+    /// 钉⑥（t8s-3 返修 N1，重建跳相）：读边缘 + 缓冲增长触发重建——skip 相按
+    /// last_pts_ms 生效，已交付段不得重放（生产形态：解码泵排到写入边缘 →
+    /// appendBuffer 续段 → 下次 next_batch 边缘重建续读）。中途（未到边缘）
+    /// append 走顺序读不触发重建，不在本钉场景。
+    #[test]
+    fn mse_audio_feed_rebuild_skip_phase_t8s3() {
+        let rate = crate::AudioDecoder::open(&fixture_bytes())
+            .expect("fixture 音轨可解")
+            .sample_rate();
+        let (esds, samples) = fixture_audio_material();
+        let (init, media) = build_fragmented_audio(&esds, rate, &samples);
+        let cont = build_media_segment_cont_audio(&samples, (samples.len() as u32) * 1024, 2);
+        let handle = MseFeedHandle::new();
+        let mut feed = MseAudioFeed::from_handle(handle.clone());
+        handle.append(&init);
+        handle.append(&media);
+        // 排到读边缘：首段 87 批全交付（last_pts_ms = 首段最大 pts）。
+        let mut seg1 = 0usize;
+        let mut last_pts = 0u64;
+        while let Some(b) = feed.next_batch().unwrap() {
+            assert!(b.pts_ms >= last_pts, "首段批 pts 单调（亚毫秒间隔允许等值）");
+            last_pts = b.pts_ms;
+            seg1 += 1;
+        }
+        assert_eq!(seg1, samples.len(), "首段排空至边缘");
+        assert!(!feed.is_exhausted(), "未 end() 的边缘是等待面");
+        // 边缘后续喂（缓冲增长）→ 重建 → skip 相丢弃已交付段重放包。
+        handle.append(&cont);
+        let mut seg2 = 0usize;
+        let mut replays = 0usize;
+        while let Some(b) = feed.next_batch().unwrap() {
+            if b.pts_ms <= last_pts {
+                replays += 1;
+            }
+            assert!(b.pts_ms >= last_pts, "续段批 pts 单调（重建后不得回跳/重放）");
+            last_pts = b.pts_ms;
+            seg2 += 1;
+            assert!(seg2 <= 10_000, "runaway batches");
+        }
+        assert_eq!(replays, 0, "重建后零重放（skip 相生效）");
+        assert_eq!(seg2, samples.len(), "续段批数与样本表等价");
+        handle.end();
+        assert!(feed.is_exhausted(), "end() 后真流末");
+    }
+
     /// 钉①（渐进式流喂）：同一 progressive mp4 分两块 append——probe 惰性建
     /// reader，帧解码与整文件 open 等价；未 end() 前 None ≠ 真流末。
     #[test]
