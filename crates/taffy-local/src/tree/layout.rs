@@ -133,6 +133,13 @@ pub struct LayoutInput {
     pub available_space: Size<AvailableSpace>,
     /// Specific to CSS Block layout. Used for correctly computing margin collapsing. You probably want to set this to `Line::FALSE`.
     pub vertical_margins_are_collapsible: Line<bool>,
+    /// ZW R5063（css-flexbox-1 §9.2 flex base size）：base size 探针旗标——真值时被测
+    /// 节点自身的 min/max 尺寸钳不参与 ComputeSize 结果（§9.2 base 求解须忽略 item 的
+    /// min/max main size；min-height 经 aspect-ratio 摊到 min-width 的传递钳亦不可经
+    /// cross 测量回流——flex-aspect-ratio-038：min_height 100 摊入 min_width 使 cross
+    /// max-content 测 100 应 1）。仅 determine_flex_base_size 的测量调用置位；后代
+    /// 节点照常钳制（各自的 inputs 不携带本旗标）。
+    pub flex_base_probe: bool,
 }
 
 impl LayoutInput {
@@ -147,6 +154,7 @@ impl LayoutInput {
         sizing_mode: SizingMode::InherentSize,
         axis: RequestedAxis::Both,
         vertical_margins_are_collapsible: Line::FALSE,
+        flex_base_probe: false,
     };
 }
 

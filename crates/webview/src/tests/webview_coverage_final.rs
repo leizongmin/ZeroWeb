@@ -608,7 +608,9 @@ fn test_fetch_url_same_url_no_second_url_changed() {
     // 第二次 fetch 相同 URL
     let _ = wv.fetch_url("https://example.com");
 
-    // UrlChanged 只应该在 URL 不同时触发一次
+    // bing-t3（C1）语义更新：example.com 实际 302 → www.example.com，每次加载
+    // 先公告请求 URL 再公告最终 URL（标准浏览器行为）；两次加载后末次 UrlChanged
+    // 须为最终 URL 且与 current_url 一致（状态收敛），不再钉"恰好一次"。
     let events_received = events.borrow();
     let url_changed_events: Vec<String> = events_received
         .iter()
@@ -616,7 +618,12 @@ fn test_fetch_url_same_url_no_second_url_changed() {
         .cloned()
         .collect();
 
-    assert_eq!(url_changed_events.len(), 1); // 第一次 fetch 从 None→Some 触发一次 UrlChanged
+    assert!(
+        !url_changed_events.is_empty(),
+        "至少一次请求→最终 URL 的 UrlChanged 序列"
+    );
+    let last = url_changed_events.last().unwrap().trim_start_matches("UrlChanged:");
+    assert_eq!(wv.url(), Some(last), "末次 UrlChanged 应与最终文档 URL 一致");
 }
 
 /// 测试 execute_wasm 无效字节

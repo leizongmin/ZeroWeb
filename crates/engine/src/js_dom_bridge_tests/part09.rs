@@ -6109,3 +6109,93 @@ fn test_media_source_mse_face_t8n() {
         "append-after-endOfStream：readyState 回转 open + sourceopen 重派（先于 update）+ sb1/sb2 完成事件序"
     );
 }
+
+/// t8s-3 音频轨 MSE 面：isTypeSupported 音频腿真值（mseAppendAudio 门面在位才
+/// true——能力诚实）+ 组合串逐 leg（bilibili DASH 探针形态翻转）+ audio
+/// SourceBuffer 盖章与 appendBuffer 路由（mock 桥记录调用通道）。
+#[test]
+fn test_media_source_mse_audio_face_t8s3() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① 能力诚实（双向判别）：无 mseAppendAudio（旧宿主形态）→ audio 腿 false、
+    // 组合串 false（既有 t8n 钉读数不变）；补挂 mseAppendAudio 后同一查询翻 true。
+    sandbox.execute(
+        r#"
+        globalThis.__zwVideoBridge = {
+          mseCreate: function () { return true; },
+          mseAppend: function () { return true; },
+          mseEnd: function () { return true; },
+          mseSetDuration: function () {},
+          mseDims: function () { return '320x240'; }
+        };
+        globalThis.__t = [
+          String(MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E,mp4a.40.2"')),
+          String(MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"')),
+          String(MediaSource.isTypeSupported('audio/mp4; codecs="opus"')),
+          String(MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E,vp9"'))];"#,
+    )
+    .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__t.join(',')").unwrap().value,
+        "false,false,false,false",
+        "无 mseAppendAudio：audio 腿 false + 组合串 false（既有能力面不虚报）"
+    );
+    sandbox.execute(
+        r#"
+        globalThis.__zwVideoBridge.mseAppendAudio = function (src, b64) {
+          this.__a = (this.__a || []); this.__a.push('audio:' + atob(b64).length); return true;
+        };
+        globalThis.__zwVideoBridge.mseAppend = function (src, b64) {
+          this.__a = (this.__a || []); this.__a.push('video:' + atob(b64).length); return true;
+        };
+        globalThis.__t2 = [
+          String(MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E,mp4a.40.2"')),
+          String(MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"')),
+          String(MediaSource.isTypeSupported('audio/mp4; codecs="opus"')),
+          String(MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E,vp9"')),
+          String(MediaSource.isTypeSupported('audio/mp4'))];"#,
+    )
+    .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__t2.join(',')").unwrap().value,
+        "true,true,false,false,true",
+        "有 mseAppendAudio：bilibili 组合探针翻 true + audio/mp4 aac true + opus/复合 vp9 false + 裸 audio/mp4 true"
+    );
+
+    // ② 双 SourceBuffer 轨章 + appendBuffer 路由：video SB 走 mseAppend、audio SB
+    // 走 mseAppendAudio（registry 双 feed 的 shim 侧契约面）。
+    sandbox.execute(
+        r#"
+        globalThis.__zwVideoBridge.__a = [];
+        var ms = new MediaSource();
+        globalThis.__msA = ms;
+        var url = URL.createObjectURL(ms);
+        ms.addEventListener('sourceopen', function () {
+          var vsb = ms.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
+          var asb = ms.addSourceBuffer('audio/mp4; codecs="mp4a.40.2"');
+          vsb.appendBuffer(new Uint8Array([1, 1, 1, 1]));
+          asb.appendBuffer(new Uint8Array([2, 2, 2, 2]));
+        });
+        var v = document.createElement('video');
+        v.src = url;"#,
+    )
+    .unwrap();
+    sandbox.execute("void 0").unwrap();
+    assert_eq!(
+        sandbox.execute("__zwVideoBridge.__a.join(',')").unwrap().value,
+        "video:4,audio:4",
+        "appendBuffer 轨路由：video SB→mseAppend、audio SB→mseAppendAudio（各 4B）"
+    );
+}

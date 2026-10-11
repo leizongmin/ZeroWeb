@@ -1,8 +1,11 @@
 # File API 兼容 — Blob / File / FileReader / objectURL
 
-**版本**: v1.1
-**日期**: 2026-10-08（立项） | 2026-10-11（M1 基线）
-**状态**: Active（M1 完成——基线 62.3%；M2 语义修齐待启动）
+**版本**: v1.6
+**日期**: 2026-10-08（立项） | 2026-10-11（M1 基线 + M2-P1/P3/P4/P5 + M3 收口）
+**状态**: Completed（2026-10-11 收口——493/499 = 98.8%，DC-1~3 逐项核对通过；
+控制面见 `fileapi-compat/master.md`，收口判定见
+`fileapi-compat/evidence/2026-10-11-m3-closure.md`；残余 6F 全部跨域记账项，
+重入条件在案）
 **执行模式**: WPT 驱动（上游 FileAPI corpus 为验收标尺）+ 语义/实现修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——文件与二进制面）
 **运行时控制面板**: [fileapi-compat/master.md](fileapi-compat/master.md)
@@ -11,10 +14,18 @@
 > M2 打过 Blob.type MIME parse-serialize 底，但 FileAPI 全语义面（FileReader 异步
 > 读、createObjectURL 生命周期、slice/构造器）从未系统度量。
 >
-> **▶ 基线事实（2026-10-11 M1 实测）**：Blob/File/FileReader/FormData/
-> createObjectURL 均已在 js_dom_shim 纯 JS 落地；可执行子集 35 案 499 子测试
-> 311 Pass = 62.3%（甄别与失败簇见
-> [evidence/2026-10-11-m1-baseline.md](fileapi-compat/evidence/2026-10-11-m1-baseline.md)）。
+> **▶ 基线事实（2026-10-11 M1 实测 + M2 修齐）**：Blob/File/FileReader/FormData/
+> createObjectURL 均已在 js_dom_shim 纯 JS 落地；M1 基线 62.3%（甄别与失败簇见
+> [evidence/2026-10-11-m1-baseline.md](fileapi-compat/evidence/2026-10-11-m1-baseline.md)），
+> M2-P1 构造器 WebIDL +124P → 87.2%（上游语料冲突 chromium 仲裁见
+> [evidence/2026-10-11-m2-p1-constructor-webidl.md](fileapi-compat/evidence/2026-10-11-m2-p1-constructor-webidl.md)），
+> M2-P3 readAs* 状态机 +32P → 93.6%（簇 53/53，见
+> [evidence/2026-10-11-m2-p3-readas-state-machine.md](fileapi-compat/evidence/2026-10-11-m2-p3-readas-state-machine.md)），
+> M2-P4 零散面 +21P → 97.8%（残余跨域挂账，见
+> [evidence/2026-10-11-m2-p4-scattered.md](fileapi-compat/evidence/2026-10-11-m2-p4-scattered.md)），
+> M2-P5 元素代理面 +5P → **98.8%**（String(el) spec class 串/HC value iterator/
+> select 索引面，见
+> [evidence/2026-10-11-m2-p5-element-proxy.md](fileapi-compat/evidence/2026-10-11-m2-p5-element-proxy.md)）。
 
 ## Mission
 
@@ -32,7 +43,8 @@ drag-drop 文件入口（uievents/rendering 面依赖）。
 
 ## 里程碑
 
-M1 导入与基线（含可执行性甄别）✅ → M2 语义/实现修齐 → M3 收口归档。
+M1 导入与基线（含可执行性甄别）✅ → M2 语义/实现修齐 ✅（P1/P3/P4/P5 五轮，
+62.3% → 98.8%）→ M3 收口归档 ✅（2026-10-11，DC-1~3 逐项核对）。
 
 ## 依赖约束（run-rules §9）
 

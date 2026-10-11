@@ -1,29 +1,33 @@
 # File API 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../fileapi-compat.md](../fileapi-compat.md)
-**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-11（M1 基线落地）
+**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-12（收口记账修正——csv completed 行 + evidence 计数对齐磁盘实际）
 
 ## 当前状态
 
-**目标 Active（M1 完成，M2 语义修齐待启动）**：M1 通道 + 甄别 + 基线落地——
-可执行子集 **35 案 499 子测试 311 Pass = 62.3%**（6 案全绿，0 Timeout）。
-通道：`testharness-fileapi` 子命令（独立模块 `src/testharness_fileapi.rs`，不并入
-10.5k 行 testharness.rs）+ `fetch-wpt-fileapi`/`testharness-fileapi` Makefile target +
-`scripts/goals/16-fileapi-compat.sh` 语料预置（96 文件，排除面双处记账）。
-基线与甄别：[evidence/2026-10-11-m1-baseline.md](evidence/2026-10-11-m1-baseline.md)。
+**目标 Completed（2026-10-11 收口）**：可执行子集 35 案 499 子测试 **493 Pass =
+98.8%**（M1 62.3% → M2-P1 87.2% → M2-P3 93.6% → M2-P4 97.8% → M2-P5 98.8% →
+M3 复跑 98.8% 恒值，单调不下行，0 Timeout）。DC-1~3 逐项核对通过（收口判定：
+[evidence/2026-10-11-m3-closure.md](evidence/2026-10-11-m3-closure.md)）——
+本轮全量门禁：make test 71 suite 全绿、make reftest 708/708 零不一致、
+product-smoke 15.40% ≤ 20% + struct 全 PASS、legacy smoke 39/39 struct PASS、
+uievents 通道首次在 guard 墙钟内跑完（1795P/170F+T，TIME_LIMIT=3600，基线自此
+建立；M2-P5 挂账销项）。残余 6F 全部跨域记账（Request 生命周期 5 → net-api、
+ports 转移 1 → webmessaging），重入条件在案。
 
-既有实现底（核查于 M1 时点）：Blob/File/FileReader/FormData/createObjectURL 均已在
-`crates/engine/src/js_dom_shim/part02.js` 纯 JS 落地（R2791 FileReader、R31xx worker
-blob URL 先例）；`<img src=blob:>`/fetch/XHR 消费路径实测存活（url 面基线 84%）。
+里程碑台账：M1（10-11）通道 + 甄别 + 基线 62.3%；M2-P1（10-11）构造器 WebIDL
++124P → 87.2%（endings 簇随构造器收口，上游语料冲突 chromium 仲裁记档见下）；
+M2-P3（10-11）readAs* 状态机 +32P → 93.6%（事件 task 语义，见 learning
+docs/learnings/platform/2026-10/2026-10-11-wpt-eventwatcher-task-dispatch.md）；
+M2-P4（10-11）零散面 +21P → 97.8%；M2-P5（10-11）元素代理面 +5P → 98.8%；
+M3（10-11）DC-2 恒值确认 + DC-3 全量门禁 + 收口。逐轮证据见 evidence/。
 
-## 缺口清单（M2 簇，按预期收敛顺序）
+## 缺口清单（残余 6F，全部跨域挂账）
 
-| # | 簇 | 规模（F） | 状态 |
-|---|---|---|---|
-| P1 | Blob/File 构造器 WebIDL 转换（blobParts/fileBits sequence+iterator、TypeError、interface object） | ~110 | ⬜ |
-| P2 | endings 规范化（Blob/File 构造器 native line ending，.any.js+.html 双形态同根因） | ~40 | ⬜ |
-| P3 | readAs* 读取状态机（result 阶段 null、结果类型、multiple-reads 队列、abort、Determining-Encoding） | ~31 | ⬜ |
-| P4 | 零散面：Blob.bytes() 缺失、detached ArrayBuffer、FileList 空表、url origin 序列化残余 | ~15 | ⬜ |
+| 簇 | F | 归属 |
+|---|---|---|
+| url-with-fetch/xhr（Request 构造/revoke 生命周期、fetch/xhr fragment） | 5 | net-api Request 语义 |
+| FrozenArray\<MessagePort\>（e.ports 转移后为空） | 1 | webmessaging ports 面 |
 
 ## 排除面（挂账，非待办）
 
@@ -35,11 +39,29 @@ blob URL 先例）；`<img src=blob:>`/fetch/XHR 消费路径实测存活（url 
 - idlharness 3 案（WebIDLParser build 资产缺失）→ 上游资产导入评估。
 - BlobURL 分区/HTTPS 5 案 → security-hardening 分区面。
 
+## 上游语料冲突（记档，2026-10-11 仲裁）
+
+mimesniff `parsing.any.js` 的 (Blob/File) 腿（865 子测试，mime-types.json +
+generated-mime-types.json 全量输入 ×Blob/File 两断言）钉 MIME parse-serialize；
+FileAPI corpus（Blob-constructor type_tests + File-constructor type 表）钉范围判据
+U+0020~U+007E + ASCII 小写化。chromium headless 实测与 FileAPI 一致
+（`TEXT/HTML;CHARSET=GBK` → `text/html;charset=gbk`、` image/gif ` 空格保留、
+`gbk(` 不加引号）→ 保留 FileAPI 语义。**影响**：net-api 通道（已归档 goal）mimesniff
+分从 100% 降至 ~54%（该腿 865 全挂），属上游语料间冲突非本仓回归；net-api CSV
+历史行不改写，此记录为准。若上游 mimesniff 语料跟进 FileAPI 算法更新，该腿自然回绿。
+
 ## 后续重入条件（记账）
 
-- DC-2 门禁参照 webstorage 先例：分级通过率不再下行两个连续轮次 + DC-3 逐修复
-  imported-tests.txt 账本 + make test 全绿 / make reftest 零回归 / product-smoke 恒值。
-- 数字维护：每轮修齐后向 `docs/compat/trends/wpt-suites.csv` 追加行（M1 行
-  2026-10-11 = active，499/311）。
-- js_dom_shim 的 blob 已知限制注释（part02.js 「blob: 不被 net/fetch 实际解析」）与
-  基线实测不符，M2 动 part02 时顺手更正注释（不单独开轮）。
+- **Completed 后重入**：残余 6F 两簇重入条件——Request/blob URL 生命周期随
+  net-api Request 语义推进复验；e.ports 随 webmessaging 面推进复验。排除面
+  （multi-global/worker/streams/表单回显/idlharness/BlobURL 分区）维持 M1 甄别
+  记账。上游语料冲突仲裁（mimesniff 865 腿）如上游跟进 FileAPI 算法更新自然回绿。
+- 常驻断言集：testharness-fileapi 通道（`make testharness-fileapi`）+ evidence/
+  五份 JSON（m1-baseline / m2-p1 / m2-p3 / m2-p4 / m2-p5）——后续涉及
+  js_dom_shim Blob/File/FileReader/URL.createObjectURL 的变更跑该通道防回归。
+- 元素代理 String 形态已改 spec class 串（'[object IfaceName]'）——后续轮次若见
+  dom 族 assert 消息文本 diff（format_value 串化元素）属预期，非回归。uievents
+  通道基线 = 2026-10-11 M3 轮 1795P/170F+T（TIME_LIMIT=3600）；后续复跑低于
+  TIME_LIMIT=3600 会撞 guard 墙钟。
+- 事件派发粒度经验：FileReader 族事件必须 task 承载（setTimeout），microtask 链与
+  promise_test 完成回调竞速——后续 shim 内新增异步事件接口（XHR 进度、IDB 等）照此先例。

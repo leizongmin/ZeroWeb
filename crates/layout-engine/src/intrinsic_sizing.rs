@@ -551,7 +551,34 @@ fn box_content_max_width_inner(
             // 仅叶盒回退：有 in-flow 子时子内容才决定 main（上方 children_inner 分支），
             // 避免把 taffy 对整棵子树解析的 border-box 高误当 transferred 源。
             let main = s
-                .and_then(|s| resolve_intrinsic_real_length(&s.height, s).map(|m| clamp_transferred_main(s, m)))
+                .and_then(|s| {
+                    // R5062（css-sizing-4 §5.2 transferred size suggestion + R5041 used 高口径）：
+                    // min/max-height 为百分比时 clamp_transferred_main 的 real 解析见不到
+                    //（resolve_intrinsic_real_length 对 Percentage 返 None）——CSS height 显式
+                    // 侧恒胜出，第一趟 taffy 已对 definite 父块高链解析出的 used 高被弃
+                    //（block-aspect-ratio-031：ar 1/1 + height:50px + min-height:100% × 父 100，
+                    // 变更后 used 100 但 transferred 仍 50 → max-content 父宽滞留 50）。叶盒
+                    //（同下方回退口径）改读第一趟 used content 高——taffy 已合成
+                    // clamp(height, %min, %max)，即 css-sizing-3 §5 used 高语义。
+                    // kill-switch `ZW_AR_PCT_CLAMP_TRANSFER=0` 回退。
+                    let css_main = resolve_intrinsic_real_length(&s.height, s).map(|m| clamp_transferred_main(s, m));
+                    let pct_block_clamp = matches!(s.min_height, LengthValue::Percentage(_))
+                        || matches!(s.max_height, LengthValue::Percentage(_));
+                    if pct_block_clamp
+                        && !has_in_flow_child
+                        && std::env::var("ZW_AR_PCT_CLAMP_TRANSFER").as_deref() != Ok("0")
+                    {
+                        let vframe = box_node.padding_top
+                            + box_node.padding_bottom
+                            + box_node.border_top
+                            + box_node.border_bottom;
+                        let used = (box_node.height - vframe).max(0.0);
+                        if used > 0.5 {
+                            return Some(used);
+                        }
+                    }
+                    css_main
+                })
                 .or_else(|| {
                     if !has_in_flow_child {
                         let vframe = box_node.padding_top
@@ -4209,4 +4236,349 @@ fn r5060_ar_min_height_transfers_to_inline_min() {
     let min_w = block_min_content_width(target, &doc, &styles);
     // 无传递时 = 内层 50px；传递后 ≥ 100。
     assert!(min_w >= 99.5, "min-height 传递应把 min-content 抬到 ≥100，实际 {min_w}");
+}
+
+/// R5062（css-sizing-4 §5.2 transferred size suggestion）：叶盒 ar + 百分比 min/max-height
+/// 的 transferred main 读第一趟 used content 高（taffy 已合成 clamp）——CSS height 显式
+/// 侧不再屏蔽已解析的百分比钳（block-aspect-ratio-031 同构：height:50px + min-height:100%
+/// × 父高 100 → used 100，max-content 父宽应 100 而非滞留 50）。
+#[cfg(test)]
+mod r5062_tests {
+    use super::*;
+    use zero_dom::NodeKind;
+
+    fn layout_width_of(html: &str, id: &str) -> f32 {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        find(id, &doc, &result.root).expect("target found").width
+    }
+
+    /// 031 驱动形态（脚本变更后终态）：height:50px + min-height:100% 的 ar 叶盒，
+    /// used 高 100 → max-content 父宽 100。
+    #[test]
+    fn r5062_pct_min_height_uses_first_pass_used_height() {
+        let w = layout_width_of(
+            r#"<body>
+                <div id="t" style="width: max-content; height: 100px; background: green;">
+                    <div style="height: 100%;">
+                        <div style="aspect-ratio: 1/1; min-height: 100%; height: 50px;"></div>
+                    </div>
+                </div>
+            </body>"#,
+            "t",
+        );
+        assert!(
+            (w - 100.0).abs() < 0.5,
+            "百分比 min-height 链解析后 max-content 宽应 100，实际 {w}"
+        );
+    }
+
+    /// 无百分比钳回归臂：min-height:auto → used 高 = CSS height 50 → 宽 50（旧行为保持）。
+    #[test]
+    fn r5062_no_pct_clamp_keeps_css_height() {
+        let w = layout_width_of(
+            r#"<body>
+                <div id="t" style="width: max-content; height: 100px; background: green;">
+                    <div style="height: 100%;">
+                        <div style="aspect-ratio: 1/1; height: 50px;"></div>
+                    </div>
+                </div>
+            </body>"#,
+            "t",
+        );
+        assert!(
+            (w - 50.0).abs() < 0.5,
+            "无百分比钳时 transferred main 应仍取 CSS height 50，实际 {w}"
+        );
+    }
+}
+
+/// R5063（css-flexbox-1 §9.2）：flex base size 求解须忽略 item 的 min/max main size
+///（min/max 经 aspect-ratio 摊到对侧轴的传递钳亦不得经测量回流）。taffy-local
+/// LayoutInput.flex_base_probe 旗标 + block.rs 自身钳点位尊重。
+#[cfg(test)]
+mod r5063_tests {
+    use super::*;
+    use zero_dom::NodeKind;
+
+    fn layout_box_of(html: &str, id: &str) -> (f32, f32) {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let b = find(id, &doc, &result.root).expect("target found");
+        (b.width, b.height)
+    }
+
+    /// flex-aspect-ratio-038 同构：column flex + item ar 1/1 + min-height:100px +
+    /// flex:1 0 auto（子 w:1px）——base 应为 fit-content cross 1 × ratio（min 忽略），
+    /// 自由空间均分后 item 终态 100×100（min-height 恰好满足），非 149×150。
+    #[test]
+    fn r5063_flex_base_ignores_min_main_size() {
+        let (w, h) = layout_box_of(
+            r#"<body>
+                <div style="display: flex; flex-flow: column; align-items: start; height: 200px;">
+                    <div id="t" style="aspect-ratio: 1/1; background: green; min-height: 100px; flex: 1 0 auto;">
+                        <div style="width: 1px;"></div>
+                    </div>
+                    <div style="flex: 1 0 1px;"></div>
+                </div>
+            </body>"#,
+            "t",
+        );
+        assert!(
+            (w - 100.0).abs() < 0.5 && (h - 100.0).abs() < 0.5,
+            "base 忽略 min 后 item 应 100×100（分配 99+1 后恰触 min 地板），实际 {w}×{h}"
+        );
+    }
+
+    /// 无 min 对照臂：min-height 移除后探针输入不变（无 min/max 可跳）→ 行为须与
+    /// 修复前逐位一致（基线实测 100×150——非零 grow 分配另有机制，非本旗标域，
+    /// 基线保真断言防旗标误伤无 min 形态）。
+    #[test]
+    fn r5063_no_min_unchanged_by_probe_flag() {
+        let (w, h) = layout_box_of(
+            r#"<body>
+                <div style="display: flex; flex-flow: column; align-items: start; height: 200px;">
+                    <div id="t" style="aspect-ratio: 1/1; background: green; flex: 1 0 auto;">
+                        <div style="width: 1px;"></div>
+                    </div>
+                    <div style="flex: 1 0 1px;"></div>
+                </div>
+            </body>"#,
+            "t",
+        );
+        assert!(
+            (w - 100.0).abs() < 0.5 && (h - 150.0).abs() < 0.5,
+            "无 min 形态应保持基线 100×150（旗标不影响），实际 {w}×{h}"
+        );
+    }
+}
+
+/// R5064（css-sizing-4 §5.2）：% height compute-to-auto 重写后的叶盒清 taffy
+/// aspect_ratio——transferred size 只作用于 auto 尺寸，百分比声明非 auto，不得经
+/// stretch 宽反推 main（flex-aspect-ratio-042 同构：button height:100% + ar 1 +
+/// min-height:50px 在 flex item CB 下应 content 0 → min 地板 50，父 100×100）。
+#[cfg(test)]
+mod r5064_tests {
+    use super::*;
+    use zero_dom::NodeKind;
+
+    fn layout_box_of(html: &str, id: &str) -> (f32, f32) {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let b = find(id, &doc, &result.root).expect("target found");
+        (b.width, b.height)
+    }
+
+    /// 042 驱动形态（静态化）：flex 行容器 > item（无尺寸样式）> [50×100 块, ar 叶盒
+    /// height:100% + min-height:50px]。ar 不得经 stretch 宽 100 反推高——父应 100×100。
+    #[test]
+    fn r5064_pct_auto_leaf_clears_ar_transfer() {
+        let (w, h) = layout_box_of(
+            r#"<body>
+                <div style="display: flex;">
+                    <div id="t" style="background: green;">
+                        <div style="height: 50px; width: 100px;"></div>
+                        <div style="display: block; height: 100%; line-height: 0; aspect-ratio: 1; min-height: 50px;"></div>
+                    </div>
+                </div>
+            </body>"#,
+            "t",
+        );
+        assert!(
+            (w - 100.0).abs() < 0.5 && (h - 100.0).abs() < 0.5,
+            "ar 经 stretch 宽反推被阻断后 flex item 应 100×100（50+50），实际 {w}×{h}"
+        );
+    }
+
+    /// 无百分比回归臂：height auto 的 ar 叶盒在 stretch CB 下仍按既有行为 transfer
+    ///（基线 100×150 保真——R5063 对照臂同款形态，非本改动域）。
+    #[test]
+    fn r5064_no_pct_keeps_transfer() {
+        let (w, h) = layout_box_of(
+            r#"<body>
+                <div style="display: flex; flex-flow: column; align-items: start; height: 200px;">
+                    <div id="t" style="aspect-ratio: 1/1; background: green; flex: 1 0 auto;">
+                        <div style="width: 1px;"></div>
+                    </div>
+                    <div style="flex: 1 0 1px;"></div>
+                </div>
+            </body>"#,
+            "t",
+        );
+        assert!(
+            (w - 100.0).abs() < 0.5 && (h - 150.0).abs() < 0.5,
+            "无百分比声明的 ar transfer 行为应保持基线 100×150，实际 {w}×{h}"
+        );
+    }
+}
+
+/// R5067（CSS2 §10.1 + §10.3.3）：in-flow 子百分比 margin 相对包含块 content box 宽
+///（非 border-box）——taffy-local block.rs perform_final_layout margin basis 修正。
+#[cfg(test)]
+mod r5067_tests {
+    use super::*;
+    use zero_dom::NodeKind;
+
+    fn layout_box_of(html: &str, id: &str) -> (f32, f32) {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let b = find(id, &doc, &result.root).expect("target found");
+        (b.x, b.width)
+    }
+
+    /// c62-percent-000 同构：父 content 180 + border 3 → 子 margin-left/right 25% =
+    /// 45（content box 口径；非 border-box 的 46.5）→ 子 stretch 宽 90、x = 3+45 = 48。
+    #[test]
+    fn r5067_pct_margin_resolves_against_content_box() {
+        let (x, w) = layout_box_of(
+            r#"<body>
+                <div style="width: 180px; border: 3px solid black; padding: 0;">
+                    <div id="t" style="margin-left: 25%; margin-right: 25%;"></div>
+                </div>
+            </body>"#,
+            "t",
+        );
+        assert!(
+            (x - 45.0).abs() < 0.5 && (w - 90.0).abs() < 0.5,
+            "25% margin 应相对父 content 180（45/侧 → x = 45、子宽 90；border-box 口径为 46.5/87），实际 x={x} w={w}"
+        );
+    }
+}
+
+/// R5068（CSS 2.1 §8.3）：inline 水平 margin advance 无符号——负 margin 同效推进
+///（c5502/c5504 同构：span 负 margin 不推进时断行错位）。带水平 padding 的 run 保持
+/// 旧口径（padding/margin 抵消补偿形态，word-space-transform-012 corpus 锁定）。
+#[cfg(test)]
+mod r5068_tests {
+    fn div_height(html: &str) -> f32 {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        result.root.children[1].children[0].height
+    }
+
+    /// width:60 容纳 90px 内容：负 margin-right -30 使 advance 60 → 单行（高 15）；
+    /// 旧行为（负值丢弃）advance 90 → 两行（高 30）。
+    #[test]
+    fn r5068_negative_inline_margin_right_advances() {
+        let h = div_height(
+            r#"<body><div style="font: 15px/1 Ahem; width: 60px;">ab<span style="margin-right: -30px;">cd</span>ef</div></body>"#,
+        );
+        assert!(
+            (h - 15.0).abs() < 0.5,
+            "负 margin-right 应参与 advance（单行高 15），实际 {h}"
+        );
+    }
+
+    /// 带水平 padding 的补偿形态（012 同构）：padding 与负 margin 并存 → 旧口径
+    /// 保持（kill-switch 双态实测同值 45——本断言锁定「新旧行为逐位一致」）。
+    #[test]
+    fn r5068_padding_margin_compensation_keeps_legacy_net() {
+        let h = div_height(
+            r#"<body><div style="font: 15px/1 Ahem; width: 60px;">ab<span style="padding: 0 5px; margin: 0 -10px;">cd</span>ef</div></body>"#,
+        );
+        assert!(
+            (h - 45.0).abs() < 0.5,
+            "padding+负 margin 抵消形态应保持旧净值（3 行高 45，新旧行为一致），实际 {h}"
+        );
+    }
+}
+
+/// R5070（CSS §9.5/§10.3.5）：inline 载体内 float:right 包含块 = 最近块级祖先容器
+/// content box——终末 pass 按载体 x 终值定 abs（float-nowrap-4 同构：div 10ch 载体
+/// span 内 5ch 右浮应容器右缘，非载体盒宽对齐）。
+#[cfg(test)]
+mod r5070_tests {
+    /// div content 80 内 nowrap 载体 + 5ch(40px) 右浮 → 浮点 abs x = 8+80-40 = 48
+    ///（CB = div content box；旧口径按载体盒宽对齐得 96）。abs 沿链累计。
+    #[test]
+    fn r5070_inline_carrier_right_float_aligns_to_block_cb() {
+        let html = r#"<body>
+            <div style="width: 80px; font: 16px monospace;">
+                <span style="white-space: nowrap;">
+                    <span style="float: right; width: 40px; height: 40px; background: blue;"></span>
+                    text that overflows
+                </span>
+            </div>
+        </body>"#;
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        // body content abs = 8；沿 div(x) → span(x) → float(x) 累计。
+        let body = &result.root.children[1];
+        let div = &body.children[0];
+        let carrier = &div.children[0];
+        let float = &carrier.children[0];
+        let abs_x = 8.0 + div.x + carrier.x + float.x;
+        assert!(
+            matches!(float.float, zero_css_parser::values::FloatValue::Right),
+            "目标盒应为右浮"
+        );
+        assert!(
+            (abs_x - 48.0).abs() < 1.0,
+            "inline 载体内右浮应对齐块级 CB 右缘（abs 48），实际 {abs_x}"
+        );
+    }
 }

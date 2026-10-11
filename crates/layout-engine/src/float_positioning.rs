@@ -3075,3 +3075,49 @@ pub(crate) fn adjust_no_float_page(box_node: &mut LayoutBox) {
         recompute_bfc_auto_height(box_node, content_y_offset);
     }
 }
+
+/// R5070（CSS §9.5/§10.3.5）：终末 inline 载体右浮 CB 修正——float 的包含块 = 最近
+/// **块级**祖先容器 content box（inline 元素盒不构成包含块）。IFC 载体（span.nowrap
+/// 型）内的 `float:right` 由 adjust_float_positions 的 Right 臂按载体盒自身宽右对齐
+///（CB 选取错误），且该 pass 跑在载体 x 终值确定之前（abs 锚定不可行——R5070 首版
+/// walk 内实现探针实证 box_abs_x=8 为 div 位）。本终末 pass 于全部重定位之后（载体
+/// x 终值已定，R1733 终末位之后）重定：`float:right` 且直接父为 inline 载体
+///（非 block_level 非 flow_root）→ border-box 左缘 = 最近块级 CB content 右缘 −
+/// float margin-box 宽。kill-switch `ZW_FLOAT_CB_BLOCK=0`（default-on）。
+pub(crate) fn fix_inline_carrier_right_float_abs(
+    box_node: &mut LayoutBox,
+    parent_content_abs_x: f32,
+    cb_content_right_abs: Option<f32>,
+) {
+    if std::env::var("ZW_FLOAT_CB_BLOCK").as_deref() == Ok("0") {
+        return;
+    }
+    let content_left_abs =
+        parent_content_abs_x + box_node.x + box_node.margin_left + box_node.border_left + box_node.padding_left;
+    // 本盒块级（BFC flow root 亦构成 float 包含块）→ 升级为最近块级 CB；inline 载体继承。
+    let cb_right = if box_node.is_block_level || box_node.is_flow_root || cb_content_right_abs.is_none() {
+        Some(content_left_abs + box_node.content_width)
+    } else {
+        cb_content_right_abs
+    };
+    let is_inline_carrier = !box_node.is_block_level && !box_node.is_flow_root;
+    for child in &mut box_node.children {
+        if child.is_absolute || child.is_fixed {
+            continue;
+        }
+        if is_inline_carrier
+            && matches!(child.float, FloatValue::Right)
+            && let Some(cr) = cb_right
+        {
+            let outer_w = child.width
+                + child.margin_left
+                + child.margin_right
+                + child.border_left
+                + child.border_right
+                + child.padding_left
+                + child.padding_right;
+            child.x = cr - outer_w - content_left_abs;
+        }
+        fix_inline_carrier_right_float_abs(child, content_left_abs, cb_right);
+    }
+}

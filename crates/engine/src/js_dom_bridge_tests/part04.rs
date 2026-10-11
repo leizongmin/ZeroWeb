@@ -1719,11 +1719,11 @@ fn test_blob_and_object_url_r2789() {
         )
         .unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__b)").unwrap().value, "hi");
-    // arrayBuffer()：Promise<Uint8Array>——'AB' UTF-8 = [65,66]。
+    // arrayBuffer()：Promise<ArrayBuffer>（fileapi-compat M2-P1 spec 对齐）——'AB' UTF-8 = [65,66]。
     sandbox
         .execute(
             "globalThis.__ab = '(pending)';\
-             new Blob(['AB']).arrayBuffer().then(function(a){ globalThis.__ab = a.length + ':' + a[0] + ',' + a[1]; });",
+             new Blob(['AB']).arrayBuffer().then(function(a){ var u = new Uint8Array(a); globalThis.__ab = u.length + ':' + u[0] + ',' + u[1]; });",
         )
         .unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__ab)").unwrap().value, "2:65,66");

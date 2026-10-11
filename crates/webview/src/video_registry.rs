@@ -333,6 +333,101 @@ impl WebmAudioEntry {
     }
 }
 
+/// MSE 伴生音频条目（t8s-3）——audio SourceBuffer 独立字节流的播放面。
+///
+/// 与 [`WebmAudioEntry`] 同 sink/cursor/增益契约，差异：源是 [`zero_media::MseAudioFeed`]
+/// 增长流——`next_batch` 的 None 是「等待更多 append」而非流末，停止判定走
+/// `is_exhausted()`（ended 旗标 + demux 耗尽）；loop 回卷不适用（流式源，FIXME(mse-full-semantics)）。
+#[cfg(feature = "decode-h264")]
+struct MseAudioEntry {
+    feed: zero_media::MseAudioFeed,
+    sink: NullSink,
+    sink_started: bool,
+    playing: bool,
+    /// 已解码累计游标（毫秒）——audio clock 主时钟的媒体时间真值面。
+    cursor_ms: u64,
+    /// seek 追赶区静默线（毫秒）。
+    skip_until_ms: u64,
+    last_tick_ms: Option<u64>,
+    volume: f32,
+    muted: bool,
+}
+
+#[cfg(feature = "decode-h264")]
+impl MseAudioEntry {
+    fn new(feed: zero_media::MseAudioFeed) -> Self {
+        Self {
+            feed,
+            sink: NullSink::new(),
+            sink_started: false,
+            playing: false,
+            cursor_ms: 0,
+            skip_until_ms: 0,
+            last_tick_ms: None,
+            volume: 1.0,
+            muted: false,
+        }
+    }
+
+    /// 推进到墙钟 `now_ms`（WebmAudioEntry 同面——batch pts + 采样计数游标）。
+    fn advance_to(&mut self, now_ms: u64) -> bool {
+        if !self.playing {
+            return false;
+        }
+        let last = self.last_tick_ms.unwrap_or(now_ms);
+        self.last_tick_ms = Some(now_ms);
+        let target = self.cursor_ms + now_ms.saturating_sub(last);
+        let gain = if self.muted { 0.0 } else { self.volume };
+        let mut wrote = false;
+        while self.cursor_ms < target {
+            match self.feed.next_batch() {
+                Ok(Some(batch)) => {
+                    if !self.sink_started {
+                        let _ = self.sink.start(AudioFormat {
+                            sample_rate: batch.sample_rate,
+                            channels: batch.channels,
+                        });
+                        self.sink_started = true;
+                    }
+                    // saturating：pts 饱和值（u64::MAX，负 pts/edit-list 形态）
+                    // 不进裸加法（debug overflow panic / release 回绕）。
+                    self.cursor_ms = batch.pts_ms.saturating_add(
+                        (batch.samples.len() as u64 * 1000)
+                            / (u64::from(batch.sample_rate) * u64::from(batch.channels).max(1)),
+                    );
+                    if self.cursor_ms <= self.skip_until_ms {
+                        continue;
+                    }
+                    if gain == 1.0 {
+                        let _ = self.sink.write(&batch.samples);
+                    } else {
+                        let gained: Vec<f32> = batch.samples.iter().map(|s| s * gain).collect();
+                        let _ = self.sink.write(&gained);
+                    }
+                    wrote = true;
+                    if self.cursor_ms >= target {
+                        break;
+                    }
+                }
+                Ok(None) => {
+                    // MSE 流边缘：ended + 耗尽才停；增长等待面保持播放态
+                    //（下一 tick 续解码——appendBuffer 与解码泵异步交错）。
+                    if self.feed.is_exhausted() {
+                        self.playing = false;
+                    }
+                    break;
+                }
+                Err(_) => {
+                    // 解码错误停轨（事件面归后续切片——FIXME(mse-full-semantics)）。
+                    self.playing = false;
+                    break;
+                }
+            }
+        }
+        wrote
+    }
+}
+
 /// 注册表规范化键（M3 扩批 XXIV）：query/fragment 不敏感——WPT 用例的 cache-buster
 /// query（`?...Math.random()`）指向同一 fixture 字节；shim 侧 IDL getter 与 runner
 /// 快照的 URL 编码形态可能不一致（空格/括号编码差异），strip 后以路径为键，两侧
@@ -366,6 +461,13 @@ pub struct VideoPlayerRegistry {
     /// 声明，语义层 duration 以此优先）。
     #[cfg(feature = "decode-h264")]
     mse_durations: HashMap<u64, f64>,
+    /// MSE 音频 append 句柄（t8s-3）：audio SourceBuffer 的独立字节流（DASH
+    /// 音轨独立 init/media 段——与视频 feed 分缓冲，同键不同流）。
+    #[cfg(feature = "decode-h264")]
+    mse_audio_feeds: HashMap<u64, zero_media::MseFeedHandle>,
+    /// MSE 伴生音频条目（t8s-3）：play 懒建——audio clock 主时钟面。
+    #[cfg(feature = "decode-h264")]
+    mse_audio_entries: HashMap<u64, MseAudioEntry>,
 }
 
 /// MSE 单 feed 共享缓冲总量封顶（t8n 返修 N2——页面 appendBuffer 字节跨信任
@@ -403,6 +505,8 @@ impl VideoPlayerRegistry {
         {
             self.mse_feeds.remove(&key);
             self.mse_durations.remove(&key);
+            self.mse_audio_feeds.remove(&key);
+            self.mse_audio_entries.remove(&key);
         }
     }
 
@@ -439,6 +543,8 @@ impl VideoPlayerRegistry {
         {
             self.mse_feeds.clear();
             self.mse_durations.clear();
+            self.mse_audio_feeds.clear();
+            self.mse_audio_entries.clear();
         }
     }
 
@@ -448,7 +554,27 @@ impl VideoPlayerRegistry {
     pub fn mse_create(&mut self, abs_src: &str) {
         let key = registry_key(abs_src);
         self.mse_feeds.insert(key, zero_media::MseFeedHandle::new());
+        // t8s-3：audio SourceBuffer 注册同步建音频句柄（同 MediaSource 重建语义
+        // ——旧流/旧播放面一并复位）。
+        self.mse_audio_feeds.insert(key, zero_media::MseFeedHandle::new());
+        self.mse_audio_entries.remove(&key);
         self.mse_durations.remove(&key);
+    }
+
+    /// MSE appendBuffer（音频轨，t8s-3）：audio SourceBuffer 字节追入独立缓冲。
+    /// 容量封顶/未登记键语义与视频 append 同面。
+    #[cfg(feature = "decode-h264")]
+    pub fn mse_append_audio(&mut self, abs_src: &str, data: &[u8]) -> bool {
+        match self.mse_audio_feeds.get(&registry_key(abs_src)) {
+            Some(handle) => {
+                if handle.byte_len().saturating_add(data.len()) > MSE_FEED_MAX_BYTES {
+                    return false;
+                }
+                handle.append(data);
+                true
+            }
+            None => false,
+        }
     }
 
     /// MSE appendBuffer：字节追入共享缓冲（解码侧惰性 probe + 增长重建续读）。
@@ -470,10 +596,22 @@ impl VideoPlayerRegistry {
         }
     }
 
+    /// MSE 伴生音频游标读数（毫秒；t8s-3 观测面——未建条目/未登记键 → None）。
+    #[cfg(feature = "decode-h264")]
+    pub fn mse_audio_cursor_ms(&self, abs_src: &str) -> Option<u64> {
+        self.mse_audio_entries.get(&registry_key(abs_src)).map(|e| e.cursor_ms)
+    }
+
     /// MSE endOfStream：置流末旗标（此后写入边缘 = 真 EOF，player Ended 可达）。
+    /// spec endOfStream 是 MediaSource 级 op——视频/音频全 source buffer 的流末
+    /// 旗标一并置位（t8s-3 双 feed 面）。
     #[cfg(feature = "decode-h264")]
     pub fn mse_end(&mut self, abs_src: &str) {
-        if let Some(handle) = self.mse_feeds.get(&registry_key(abs_src)) {
+        let key = registry_key(abs_src);
+        if let Some(handle) = self.mse_feeds.get(&key) {
+            handle.end();
+        }
+        if let Some(handle) = self.mse_audio_feeds.get(&key) {
             handle.end();
         }
     }
@@ -567,7 +705,13 @@ impl VideoPlayerRegistry {
             entry.volume = volume.clamp(0.0, 1.0);
             entry.muted = muted;
         }
-        // A/V pair 伴生轨同步增益（video 元素的 volume/muted setter 桥推面）。
+        // A/V pair 伴生轨同步增益（video 元素的 volume/muted setter 桥推面）；
+        // MSE 伴生音频同 clamp 契约（t8s-3 返修 N3）。
+        #[cfg(feature = "decode-h264")]
+        if let Some(entry) = self.mse_audio_entries.get_mut(&key) {
+            entry.volume = volume.clamp(0.0, 1.0);
+            entry.muted = muted;
+        }
         if let Some(entry) = self.av_audio_entries.get_mut(&key) {
             entry.volume = volume.clamp(0.0, 1.0);
             entry.muted = muted;
@@ -596,6 +740,17 @@ impl VideoPlayerRegistry {
         {
             let decoder = VideoTrackDecoder::Mse(Box::new(zero_media::MseVideoFeed::from_handle(handle)));
             self.players.insert(key, VideoPlayer::new(decoder));
+            // t8s-3：audio SourceBuffer 已有字节才建伴生音频条目（纯视频流零
+            // 开销——条目缺席走墙钟 tick，t8n 单轨形态零回归）；probe 惰性——
+            // 音轨 init 段未到齐时 next_batch 返回等待面，播放态保持。
+            if let Some(audio_handle) = self.mse_audio_feeds.get(&key).cloned()
+                && audio_handle.byte_len() > 0
+            {
+                self.mse_audio_entries.insert(
+                    key,
+                    MseAudioEntry::new(zero_media::MseAudioFeed::from_handle(audio_handle)),
+                );
+            }
         }
         if !self.players.contains_key(&key) {
             // M3 扩批 XVI：解码器构建失败不再消费源字节（此前 sources.remove 前置——
@@ -663,6 +818,19 @@ impl VideoPlayerRegistry {
                         handle,
                     ))));
                 }
+                // MSE 伴生音频同面回卷（t8s-3 返修 B1）：同句柄重建 feed + 游标
+                // 归零——与 av 伴生轨回卷块同契约（audio clock 主时钟读数随
+                // reset 归零，复活重播音频腿不静默）。
+                #[cfg(feature = "decode-h264")]
+                if let Some(audio_handle) = self.mse_audio_feeds.get(&key).cloned().filter(|h| h.byte_len() > 0) {
+                    if let Some(entry) = self.mse_audio_entries.get_mut(&key) {
+                        entry.feed = zero_media::MseAudioFeed::from_handle(audio_handle);
+                        entry.sink_started = false;
+                        entry.cursor_ms = 0;
+                        entry.skip_until_ms = 0;
+                        entry.last_tick_ms = None;
+                    }
+                }
                 // 源字节：单轨源 play 首次即消费（sources.remove），双轨源经 av_sources
                 // 留存（伴生轨 seek 重建共用）——两处任一在即可重建；MSE 键两处皆空
                 //（不经 settle 登记），天然 no-op。
@@ -698,6 +866,13 @@ impl VideoPlayerRegistry {
             entry.playing = true;
             entry.last_tick_ms = Some(now_ms);
         }
+        // MSE 伴生音频起播（t8s-3，与视频同锚点时钟；Ended 复活=同句柄重建 feed
+        // ——reset 面经 players 重建分支，音频条目随 play 重建游标归零）。
+        #[cfg(feature = "decode-h264")]
+        if let Some(entry) = self.mse_audio_entries.get_mut(&key) {
+            entry.playing = true;
+            entry.last_tick_ms = Some(now_ms);
+        }
         self.players.contains_key(&key)
     }
 
@@ -708,6 +883,11 @@ impl VideoPlayerRegistry {
             player.pause();
         }
         if let Some(entry) = self.av_audio_entries.get_mut(&key) {
+            entry.playing = false;
+            entry.last_tick_ms = None;
+        }
+        #[cfg(feature = "decode-h264")]
+        if let Some(entry) = self.mse_audio_entries.get_mut(&key) {
             entry.playing = false;
             entry.last_tick_ms = None;
         }
@@ -745,6 +925,19 @@ impl VideoPlayerRegistry {
                     }
                 }
             }
+        }
+        // MSE 伴生音频 seek（t8s-3 返修 N2）：同句柄重建 feed（读游标归流首）
+        // + 主时钟游标对齐 target + 追赶区静默线消费 skip_until_ms——播放中
+        // seek 后下一 tick 主时钟分支以新游标同步视频（不回拉）。
+        #[cfg(feature = "decode-h264")]
+        if let Some(audio_handle) = self.mse_audio_feeds.get(&key).cloned().filter(|h| h.byte_len() > 0)
+            && let Some(entry) = self.mse_audio_entries.get_mut(&key)
+        {
+            entry.feed = zero_media::MseAudioFeed::from_handle(audio_handle);
+            entry.sink_started = false;
+            entry.cursor_ms = target_ms;
+            entry.skip_until_ms = target_ms;
+            entry.last_tick_ms = None;
         }
         // 伴生音频轨 seek（重建 + 追赶区静默）——master clock 游标对齐 target，
         // 后续 tick 视频 sync_to_media_time 跟随（不脱轨）。
@@ -795,6 +988,11 @@ impl VideoPlayerRegistry {
     /// 由组合时钟驱动；无伴生轨回落视频位置）。
     pub fn current_time(&self, abs_src: &str) -> f64 {
         let key = registry_key(abs_src);
+        // MSE 伴生音频游标优先（t8s-3 返修 N4——audio clock 主时钟契约与 av 面一致）。
+        #[cfg(feature = "decode-h264")]
+        if let Some(e) = self.mse_audio_entries.get(&key) {
+            return e.cursor_ms as f64 / 1000.0;
+        }
         if let Some(cursor_ms) = self.av_audio_entries.get(&key).map(|e| e.cursor_ms) {
             return cursor_ms as f64 / 1000.0;
         }
@@ -879,6 +1077,13 @@ impl VideoPlayerRegistry {
         self.players.values().any(|p| p.is_playing())
             || self.audio_entries.values().any(|e| e.playing)
             || self.av_audio_entries.values().any(|e| e.playing)
+            || {
+                #[cfg(feature = "decode-h264")]
+                if self.mse_audio_entries.values().any(|e| e.playing) {
+                    return true;
+                }
+                false
+            }
     }
 
     /// 音频泵推进（tab_worker 帧泵同节拍调用）：所有播放中的音频条目按实时节奏
@@ -904,6 +1109,18 @@ impl VideoPlayerRegistry {
                 && entry.advance_to(now_ms, restart)
             {
                 wrote = true;
+            }
+        }
+        // MSE 伴生音频轨推进（t8s-3）。
+        #[cfg(feature = "decode-h264")]
+        {
+            let mse_keys: Vec<u64> = self.mse_audio_entries.keys().copied().collect();
+            for key in mse_keys {
+                if let Some(entry) = self.mse_audio_entries.get_mut(&key)
+                    && entry.advance_to(now_ms)
+                {
+                    wrote = true;
+                }
             }
         }
         wrote
@@ -942,6 +1159,20 @@ impl VideoPlayerRegistry {
                 entry.advance_to(now_ms, restart);
             }
         }
+        // MSE 伴生音频轨主时钟先行（t8s-3）。
+        #[cfg(feature = "decode-h264")]
+        let mse_keys: Vec<u64> = self
+            .mse_audio_entries
+            .keys()
+            .copied()
+            .filter(|k| self.players.contains_key(k))
+            .collect();
+        #[cfg(feature = "decode-h264")]
+        for key in mse_keys {
+            if let Some(entry) = self.mse_audio_entries.get_mut(&key) {
+                entry.advance_to(now_ms);
+            }
+        }
         let mut changed = false;
         let keys: Vec<u64> = self.players.keys().copied().collect();
         for key in keys {
@@ -949,6 +1180,18 @@ impl VideoPlayerRegistry {
                 continue;
             };
             // A/V pair：视频对齐音频主时钟；纯视频：墙钟 tick。
+            #[cfg(feature = "decode-h264")]
+            if self.mse_audio_entries.get(&key).is_some_and(|e| e.playing) {
+                let media_ms = self.mse_audio_entries.get(&key).map(|e| e.cursor_ms).unwrap_or(0);
+                let ticked = player.sync_to_media_time(media_ms as f64);
+                if let Ok(Some(frame)) = ticked
+                    && let Ok(data) = ImageData::from_rgba(frame.rgba, frame.width, frame.height)
+                {
+                    image_cache.insert_with_key(ImageKey::new(key), data);
+                    changed = true;
+                }
+                continue;
+            }
             let ticked = if self.av_audio_entries.contains_key(&key) {
                 let media_ms = self.av_audio_entries.get(&key).map(|e| e.cursor_ms).unwrap_or(0);
                 player.sync_to_media_time(media_ms as f64)
@@ -1298,6 +1541,110 @@ mod tests {
         assert!(!reg.play(MSE_SRC, 0));
     }
 
+    /// t8s-3 双轨接线钉：audio SourceBuffer 流（独立 feed）→ play 懒建伴生音频
+    /// 条目 → 音频泵解码推进（cursor 走 batch pts 真值）+ 视频帧照常产出——
+    /// audio clock 主时钟面在 MSE 双轨源上成立。
+    #[cfg(feature = "decode-h264")]
+    #[test]
+    fn registry_mse_audio_dual_track_t8s3() {
+        let mut reg = VideoPlayerRegistry::new();
+        reg.mse_create(MSE_SRC);
+        let data = fixture_bytes_named("sample-mp4-h264.mp4");
+        assert!(reg.mse_append(MSE_SRC, &data));
+        // 音轨流：同 fixture（音轨内嵌——MseAudioFeed probe 取音轨，钉 media 层）。
+        assert!(reg.mse_append_audio(MSE_SRC, &data));
+        assert!(reg.play(MSE_SRC, 0), "MSE 双轨 play 建 player + 伴生音频条目");
+        assert!(reg.is_any_playing(), "播放态（视频 player + 音频条目）");
+        // 音频泵推进：cursor 走 batch pts 真值推进（等待面/等待重试不炸）。
+        let mut now = 0u64;
+        let mut wrote = false;
+        for _ in 0..200 {
+            now += 100;
+            wrote |= reg.audio_advance_all(now);
+            if reg.mse_audio_cursor_ms(MSE_SRC).is_some_and(|c| c > 0) {
+                break;
+            }
+        }
+        assert!(wrote, "音频泵应产出写入");
+        assert!(
+            reg.mse_audio_cursor_ms(MSE_SRC).is_some_and(|c| c > 0),
+            "MSE 伴生音频游标推进（batch pts 真值）"
+        );
+        // 视频帧照常产出（音频主时钟分支不破坏视频面）。
+        let mut cache = ImageCache::new(16, 64 * 1024 * 1024);
+        reg.mse_end(MSE_SRC);
+        let mut now3 = now;
+        let mut saw_frame = false;
+        while reg.is_playing(MSE_SRC) {
+            now3 += 100;
+            saw_frame |= reg.tick_all(now3, &mut cache);
+            assert!(now3 < 120_000, "runaway loop");
+        }
+        assert!(saw_frame, "双轨源视频帧泵照常产出");
+        // 流末（双 feed 均 end）→ 音频条目解码至耗尽后自停 + is_any_playing 复位
+        //（视频 Ended 先到——音频残余批次按泵节奏排空）。
+        let mut now4 = now3;
+        while reg.is_any_playing() {
+            now4 += 100;
+            reg.audio_advance_all(now4);
+            assert!(now4 < 180_000, "runaway loop（音频条目未随流末停）");
+        }
+        assert!(!reg.is_any_playing(), "流末后视频/音频条目全停");
+    }
+
+    /// t8s-3 返修 B1 复活面钉：Ended→play 重头播放契约的音频腿——双轨播放至
+    /// 流末全停后再次 play，伴生音频条目须随 reset 重建（feed 重置 + 游标归零）
+    /// 并可继续推进（复活前游标冻结在流末即为缺陷形态）。
+    #[cfg(feature = "decode-h264")]
+    #[test]
+    fn registry_mse_audio_play_after_ended_rebuilds_entry_t8s3() {
+        let mut reg = VideoPlayerRegistry::new();
+        reg.mse_create(MSE_SRC);
+        let data = fixture_bytes_named("sample-mp4-h264.mp4");
+        assert!(reg.mse_append(MSE_SRC, &data));
+        assert!(reg.mse_append_audio(MSE_SRC, &data));
+        assert!(reg.play(MSE_SRC, 0));
+        let mut now = 0u64;
+        // 播至流末（视频 Ended + 音频耗尽自停）。
+        let mut cache = ImageCache::new(16, 64 * 1024 * 1024);
+        reg.mse_end(MSE_SRC);
+        loop {
+            now += 100;
+            reg.audio_advance_all(now);
+            reg.tick_all(now, &mut cache);
+            if !reg.is_any_playing() {
+                break;
+            }
+            assert!(now < 120_000, "runaway loop（首轮未到流末）");
+        }
+        let cursor_before = reg.mse_audio_cursor_ms(MSE_SRC).unwrap_or(0);
+        assert!(cursor_before > 0, "首轮音频游标应已推进");
+        // 复活：play 重头——音频游标须归零并可继续推进（B1 缺陷形态 = 冻结在
+        // cursor_before 且泵零写入）。
+        assert!(reg.play(MSE_SRC, now), "Ended 后 play = 重头播放");
+        let now2 = now;
+        assert_eq!(
+            reg.mse_audio_cursor_ms(MSE_SRC),
+            Some(0),
+            "复活后音频游标归零（同句柄 feed 重建）"
+        );
+        let mut wrote = false;
+        let mut now3 = now2;
+        for _ in 0..100 {
+            now3 += 100;
+            wrote |= reg.audio_advance_all(now3);
+            if wrote && reg.mse_audio_cursor_ms(MSE_SRC).is_some_and(|c| c > 0) {
+                break;
+            }
+        }
+        assert!(wrote, "复活后音频泵应恢复写入");
+        assert!(
+            reg.mse_audio_cursor_ms(MSE_SRC)
+                .is_some_and(|c| c > 0 && c < cursor_before),
+            "复活后游标重头推进（非冻结）"
+        );
+    }
+
     /// 封顶/未登记拒绝面（t8n 返修 B2）：未登记键 `mse_append` → false
     /// （registry 侧入口；回调层映射 "0" → shim error + updateend 失败面）。
     #[cfg(feature = "decode-h264")]
@@ -1373,6 +1720,7 @@ pub fn video_bridge_facade_script() -> String {
     s.push_str(
         "globalThis.__zwVideoBridge.mseCreate = function (src) { return __zw_ms_create(src) === '1'; };\
          globalThis.__zwVideoBridge.mseAppend = function (src, b64) { return __zw_ms_append(src, b64) === '1'; };\
+         globalThis.__zwVideoBridge.mseAppendAudio = function (src, b64) { return __zw_ms_append_audio(src, b64) === '1'; };\
          globalThis.__zwVideoBridge.mseEnd = function (src) { return __zw_ms_end(src) === '1'; };\
          globalThis.__zwVideoBridge.mseSetDuration = function (src, secs) { __zw_ms_set_duration(src, String(secs)); };\
          globalThis.__zwVideoBridge.mseDims = function (src) { return __zw_ms_dims(src); };",
@@ -1622,6 +1970,24 @@ pub fn register_video_bridge_callbacks(
                     // error + updateend）。
                     Ok(bytes) => {
                         let ok = reg_ms.lock().unwrap_or_else(|e| e.into_inner()).mse_append(src, &bytes);
+                        if ok { "1".into() } else { "0".into() }
+                    }
+                    Err(_) => "0".into(),
+                }
+            }),
+        );
+        let reg_ms = std::sync::Arc::clone(&registry);
+        sandbox.register_callback(
+            "__zw_ms_append_audio",
+            Box::new(move |args| {
+                let src = args.first().map(String::as_str).unwrap_or("");
+                let b64 = args.get(1).map(String::as_str).unwrap_or("");
+                match crate::webview::base64_decode(b64) {
+                    Ok(bytes) => {
+                        let ok = reg_ms
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .mse_append_audio(src, &bytes);
                         if ok { "1".into() } else { "0".into() }
                     }
                     Err(_) => "0".into(),

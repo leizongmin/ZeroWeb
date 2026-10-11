@@ -82,6 +82,7 @@ fn walk(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
             b.height = target + frame;
         }
     }
+
     // R4986（css-sizing-4 §4.2 transferred size suggestion·vertical 写入模式臂）：
     // vertical 容器 plain block + definite 块轴（vertical 下块轴 = 物理宽）+ Auto 内联轴
     // （物理高）+ AR——taffy 已按 ratio 传递高（block-aspect-ratio-017：w:100 + AR 2/1
@@ -350,5 +351,162 @@ pub(crate) fn clamp_flex_ar_column_transferred_max(
                 )
         });
         clamp_flex_ar_column_transferred_max(child, if child_is_column_flex { child_style } else { None }, styles);
+    }
+}
+
+/// R5061（css-sizing-4 §aspect-ratio-minimum + CSS2 §10.4）：**definite-width** plain
+/// block + ar 的传递高 max-height 终值钳——taffy 0.12 对定宽 + ar 的块高传递不经
+/// max_size 钳（aspect-ratio-block-039：w:100 + ar 1/2 + max-height:100 + 内容 200 →
+/// 100×200 溢出；应 100×100——definite max-height 胜过 automatic content-based
+/// minimum）。须在全部可能改写 auto 块高的后处理（auto-height 重算/内容收缩等）
+/// **之后**运行（transfer 内联时会被后续 pass 复写回 200）。box-sizing 口径与
+/// converter/taffy 同源：content-box（默认）cap 钳 content 盒（总高 cap + frame）；
+/// border-box cap 钳边盒。fieldset 排除：其块高由 form 域 machinery 管理（内容高
+/// 语义，无 ar 的配对 ref 页同值），钳制会破坏页面对称性（fieldset-element-002）。
+/// kill-switch 同 `ZW_AR_TRANSFER=0`。
+pub(crate) fn clamp_ar_definite_width_max_height(
+    root: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    if std::env::var("ZW_AR_TRANSFER").as_deref() == Ok("0") {
+        return;
+    }
+    walk_clamp(root, doc, styles);
+}
+
+fn is_fieldset_element(node_id: Option<NodeId>, doc: &zero_dom::Document) -> bool {
+    node_id.is_some_and(|id| {
+        doc.get(id)
+            .is_some_and(|node| matches!(&node.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "fieldset"))
+    })
+}
+
+fn walk_clamp(b: &mut LayoutBox, doc: &zero_dom::Document, styles: &HashMap<NodeId, ComputedStyle>) {
+    if let Some(id) = b.node_id
+        && let Some(style) = styles.get(&id)
+        && matches!(b.writing_mode, WritingModeValue::HorizontalTb)
+        && style.aspect_ratio.is_some()
+        && matches!(style.display, DisplayValue::Block | DisplayValue::FlowRoot)
+        && !b.is_replaced
+        && !b.is_flex_grid_item
+        && !b.is_absolute
+        && !b.is_fixed
+        && !is_fieldset_element(b.node_id, doc)
+        && resolve_definite(&style.width).is_some()
+        && matches!(style.height, LengthValue::Auto)
+        && let Some(cap) = resolve_definite(&style.max_height)
+    {
+        let frame = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+        let cap_full = if matches!(
+            style.box_sizing,
+            zero_style_system::property::types::BoxSizingValue::BorderBox
+        ) {
+            cap
+        } else {
+            cap + frame
+        };
+        if b.height > cap_full + 0.5 {
+            b.height = cap_full;
+            b.content_height = (cap_full - frame).max(0.0);
+        }
+    }
+    for child in &mut b.children {
+        walk_clamp(child, doc, styles);
+    }
+}
+
+#[cfg(test)]
+mod r5061_tests {
+    use super::*;
+    use zero_dom::NodeKind;
+
+    /// block-aspect-ratio-039 同构：定宽 + ar + definite max-height 胜过内容最小高。
+    #[test]
+    fn r5061_ar_definite_max_height_clamps_block_height() {
+        let html = r#"<body>
+            <div id="t" style="background: green; width: 100px; aspect-ratio: 1 / 2; max-height: 100px;">
+                <div style="height:200px;"></div>
+            </div>
+        </body>"#;
+        let b = layout_target(html, "t");
+        // 无钳时 = max(传递 200, 内容 200)；钳后 100×100。
+        assert!(
+            (b.height - 100.0).abs() < 0.5,
+            "definite max-height 应钳传递高至 100，实际 {}",
+            b.height
+        );
+    }
+
+    /// content-box（默认）带 frame：cap 钳 content 盒，总高 = cap + frame（taffy 同款
+    /// 口径，fieldset-element-002 形态——既有绿不因本 pass 误钳变小）。
+    #[test]
+    fn r5061_content_box_cap_adds_frame() {
+        let html = r#"<body>
+            <div id="t" style="width: 100px; aspect-ratio: 1 / 2; max-height: 100px; padding: 10px; border: 5px solid;">
+                <div style="height:300px;"></div>
+            </div>
+        </body>"#;
+        let b = layout_target(html, "t");
+        assert!(
+            (b.height - 130.0).abs() < 0.5,
+            "content-box cap 应钳 content 100 + frame 30 = 130，实际 {}",
+            b.height
+        );
+    }
+
+    /// border-box 带 frame：cap 钳边盒总高（css-ui-3 box-sizing 语义反侧）。
+    #[test]
+    fn r5061_border_box_cap_is_total() {
+        let html = r#"<body>
+            <div id="t" style="box-sizing: border-box; width: 100px; aspect-ratio: 1 / 2; max-height: 100px; padding: 10px; border: 5px solid;">
+                <div style="height:300px;"></div>
+            </div>
+        </body>"#;
+        let b = layout_target(html, "t");
+        assert!(
+            (b.height - 100.0).abs() < 0.5,
+            "border-box cap 应钳总高至 100，实际 {}",
+            b.height
+        );
+    }
+
+    /// fieldset 排除（fieldset-element-002 页面对称性）：fieldset 块高由 form 域
+    /// machinery 管理（内容高语义，ref 侧无 ar 页面同值），max-height 钳不参与——
+    /// 否则仅 ar 侧被钳、ref 侧保持内容高 → 配对页失衡（82.87 vs 24 失配 1.15%）。
+    #[test]
+    fn r5061_fieldset_keeps_content_height() {
+        let html = r#"<body><form><fieldset id="t" style="inline-size: 200px; aspect-ratio: 20 / 1; max-block-size: 20px; background: yellow;">
+            <legend style="background: black; color: white; padding: 3px 6px;">Choose one item:</legend>
+            <input type="radio" id="item1" name="item"><label for="item1">item 1</label><br/>
+            <input type="radio" id="item2" name="item"><label for="item2">item 2</label><br/>
+            <input type="radio" id="item3" name="item"><label for="item3">item 3</label>
+        </fieldset></form></body>"#;
+        let b = layout_target(html, "t");
+        assert!(
+            b.height > 80.0,
+            "fieldset 内容高语义应保持（不被 max-height 钳），实际 {}",
+            b.height
+        );
+    }
+
+    fn layout_target(html: &str, id: &str) -> LayoutBox {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        find(id, &doc, &result.root).expect("target found").clone()
     }
 }

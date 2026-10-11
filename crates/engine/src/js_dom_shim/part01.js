@@ -2005,6 +2005,10 @@
     }
     if (target._bs) { target._bs._locked = true; target._bs._disturbed = true; }
     var bytes = target._bodyBytes != null ? target._bodyBytes : _zw_utf8_encode(target._bodyText == null ? '' : String(target._bodyText));
+    // fileapi-compat M2-P1：统一 Uint8Array 形态——_zw_utf8_encode 返普通 Array，直进
+    // new Blob([bytes]) 会被 BlobPart union 转 USVString（'hi' → "104,105"；spec 行为，
+    // 浏览器一致）——body bytes 交界（blob()/bytes() 消费面）须为 BufferSource。
+    if (!(bytes instanceof Uint8Array)) bytes = new Uint8Array(bytes);
     return Promise.resolve(_zwBytesThenableSafe(bytes));
   }
   // 收集 headers 源（Object / [[k,v]] / Headers-like forEach）→ `name\x1evalue\x1e...` wire（空 → ''）。

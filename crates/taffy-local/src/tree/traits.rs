@@ -342,6 +342,40 @@ pub(crate) trait LayoutPartialTreeExt: LayoutPartialTree {
                 axis: axis.into(),
                 run_mode: RunMode::ComputeSize,
                 vertical_margins_are_collapsible,
+                flex_base_probe: false,
+            },
+        )
+        .size
+        .get_abs(axis)
+    }
+
+    /// ZW R5063（css-flexbox-1 §9.2）：flex base size 探针测量——同 `measure_child_size`，
+    /// 但被测节点自身的 min/max 尺寸钳不参与 ComputeSize 结果（`flex_base_probe` 旗标）。
+    /// §9.2 base 求解须忽略 item 的 min/max main size；min/max 经 aspect-ratio 摊到对侧
+    /// 轴的传递钳同样不可回流。后代节点的钳制不受影响。
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    fn measure_child_base_size(
+        &mut self,
+        node_id: NodeId,
+        known_dimensions: Size<Option<f32>>,
+        parent_size: Size<Option<f32>>,
+        available_space: Size<AvailableSpace>,
+        sizing_mode: SizingMode,
+        axis: AbsoluteAxis,
+        vertical_margins_are_collapsible: Line<bool>,
+    ) -> f32 {
+        self.compute_child_layout(
+            node_id,
+            LayoutInput {
+                known_dimensions,
+                parent_size,
+                available_space,
+                sizing_mode,
+                axis: axis.into(),
+                run_mode: RunMode::ComputeSize,
+                vertical_margins_are_collapsible,
+                flex_base_probe: true,
             },
         )
         .size
@@ -370,6 +404,7 @@ pub(crate) trait LayoutPartialTreeExt: LayoutPartialTree {
                 axis: RequestedAxis::Both,
                 run_mode: RunMode::ComputeSize,
                 vertical_margins_are_collapsible,
+                flex_base_probe: false,
             },
         )
         .size
@@ -396,6 +431,7 @@ pub(crate) trait LayoutPartialTreeExt: LayoutPartialTree {
                 axis: RequestedAxis::Both,
                 run_mode: RunMode::PerformLayout,
                 vertical_margins_are_collapsible,
+                flex_base_probe: false,
             },
         )
     }

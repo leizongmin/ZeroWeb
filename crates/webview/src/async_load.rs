@@ -18,7 +18,7 @@ use zero_render_foundation::image_cache::{ImageKey, decode_data_uri, decode_data
 use crate::image_decoder::decode_image;
 
 use crate::net_pool::{
-    dns_prefetch_async, fetch_bytes_async_meta, fetch_bytes_stream_async_meta, fetch_document_async,
+    dns_prefetch_async, fetch_bytes_async_meta, fetch_bytes_stream_async_meta, fetch_document_async_with_capture,
     fetch_text_async_meta, preconnect_async,
 };
 use crate::webview::WebView;
@@ -131,7 +131,14 @@ fn probe_video_media_meta(bytes: &[u8]) -> Option<(u64, u32, u32, Vec<u8>)> {
 }
 
 /// in-process 异步抓取宿主：经 webview net_pool 线程池抓取（tabworker 默认）。
-pub struct InProcessFetchHost;
+/// 进程内抓取宿主（tab worker / 单进程路径）：主文档抓取时捕获 30x 重定向追完后的
+/// 最终 URL，供 [`AsyncPageLoad::tick`] 经 `take_document_final_url` 同步文档 URL
+///（bing-t3，簇 C1）。
+#[derive(Default)]
+pub struct InProcessFetchHost {
+    /// 最近一次主文档响应的最终 URL（net 跟随重定向后的 response URL）。
+    document_final_url: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+}
 
 impl AsyncFetchHost for InProcessFetchHost {
     fn preconnect(&mut self, origin: &str) {
@@ -143,7 +150,16 @@ impl AsyncFetchHost for InProcessFetchHost {
     }
 
     fn fetch_document(&mut self, url: &str, method: &str, body: Option<&[u8]>) -> Receiver<Result<String, String>> {
-        fetch_document_async(url.to_string(), method, body)
+        fetch_document_async_with_capture(
+            url.to_string(),
+            method,
+            body,
+            Some(std::sync::Arc::clone(&self.document_final_url)),
+        )
+    }
+
+    fn take_document_final_url(&mut self) -> Option<String> {
+        self.document_final_url.lock().ok().and_then(|mut slot| slot.take())
     }
 
     fn fetch_text_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<String, String>> {
@@ -427,6 +443,17 @@ impl AsyncPageLoad {
             self.document_rx = None;
             match result {
                 Ok(html) => {
+                    // bing-t3（C1）：重定向追完后的最终 URL 先行替换文档 URL——
+                    // 后续 preload hints / 子资源 base / location 全以最终 URL 为准；
+                    // 并同步 webview URL 状态（current_url/wire/安全源/UrlChanged，
+                    // 快照与地址栏随之更新）。
+                    if let Some(final_url) = host.take_document_final_url()
+                        && final_url != self.url
+                    {
+                        self.set_document_url(final_url.clone());
+                        self.url = final_url.clone();
+                        webview.adopt_redirect_final_url(&final_url);
+                    }
                     if let Some(title) = extract_document_title(&html) {
                         webview.set_title(&title);
                     }
@@ -545,7 +572,10 @@ impl AsyncPageLoad {
             }
             webview.set_cached_content(&html, &self.css);
             tracing::info!(url = %self.url, stage = ?self.stage, "page load: budget render start");
-            self.render_session = Some(BudgetedRenderSession::new(html, self.css.clone()));
+            // bing-t5（C3+C4 根因）：CSS Custom Properties var() 替换——
+            // 在进入渲染前做文本级替换（collect --name: value → substitute var(--name, fallback)）。
+            let css_for_render = substitute_css_vars_text(&self.css);
+            self.render_session = Some(BudgetedRenderSession::new(html, css_for_render));
         }
 
         let session = self.render_session.as_mut().expect("session");
@@ -1330,6 +1360,153 @@ fn extract_document_title(html: &str) -> Option<String> {
         i += 1;
     }
     None
+}
+
+/// bing-t5（C3+C4 根因，2026-10-11）：CSS 文本级 CSS Custom Properties 替换。
+/// 收集 `--name: value` 声明 → 替换 `var(--name, fallback)`（迭代至收敛，最多 8 层）。
+/// 自包含纯文本处理（零依赖），供 `advance_render` 在渲染前调用。
+fn substitute_css_vars_text(css: &str) -> String {
+    let props = collect_custom_props(css);
+    if props.is_empty() {
+        return css.to_string();
+    }
+    substitute_var_refs(css, &props)
+}
+
+fn collect_custom_props(css: &str) -> Vec<(String, String)> {
+    let mut map: Vec<(String, String)> = Vec::new();
+    let bytes = css.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut depth: i32 = 0;
+    while i < len {
+        match bytes[i] {
+            b'/' if i + 1 < len && bytes[i + 1] == b'*' => {
+                i += 2;
+                while i + 1 < len && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                    i += 1;
+                }
+                i += 2;
+            }
+            b'{' => {
+                depth += 1;
+                i += 1;
+            }
+            b'}' => {
+                depth -= 1;
+                i += 1;
+            }
+            b'-' if i + 2 < len && bytes[i + 1] == b'-' && depth >= 1 => {
+                let start = i;
+                let mut j = i + 2;
+                while j < len && bytes[j] != b':' && bytes[j] != b'{' && bytes[j] != b'}' && bytes[j] != b';' {
+                    j += 1;
+                }
+                if j < len && bytes[j] == b':' {
+                    let name = css[start..j].trim();
+                    if name.starts_with("--") && name.len() > 2 {
+                        let val_start = j + 1;
+                        let mut k = val_start;
+                        let mut ld = 0i32;
+                        while k < len {
+                            match bytes[k] {
+                                b'(' | b'[' => ld += 1,
+                                b')' | b']' => ld -= 1,
+                                b';' if ld <= 0 => break,
+                                b'}' if ld <= 0 => break,
+                                _ => {}
+                            }
+                            k += 1;
+                        }
+                        let value = css[val_start..k].trim().to_string();
+                        if !value.is_empty() {
+                            let ns = name.to_string();
+                            if let Some(e) = map.iter_mut().find(|(n, _)| *n == ns) {
+                                e.1 = value;
+                            } else {
+                                map.push((ns, value));
+                            }
+                        }
+                        i = if k < len && bytes[k] == b';' { k + 1 } else { k };
+                        continue;
+                    }
+                }
+                i = j;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    map
+}
+
+fn substitute_var_refs(css: &str, props: &[(String, String)]) -> String {
+    let mut result = css.to_string();
+    for _ in 0..8 {
+        let sub = sub_vars_once(&result, props);
+        if sub == result {
+            break;
+        }
+        result = sub;
+    }
+    result
+}
+
+fn sub_vars_once(css: &str, props: &[(String, String)]) -> String {
+    let mut out = String::with_capacity(css.len());
+    let mut from = 0;
+    while from < css.len() {
+        match css[from..].find("var(") {
+            Some(rel) => {
+                let vs = from + rel;
+                out.push_str(&css[from..vs]);
+                let open = vs + 3;
+                let bytes = css.as_bytes();
+                let mut depth = 0usize;
+                let mut j = open;
+                let mut found = false;
+                while j < bytes.len() {
+                    match bytes[j] {
+                        b'(' => depth += 1,
+                        b')' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                found = true;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    j += 1;
+                }
+                if !found {
+                    out.push_str(&css[vs..]);
+                    break;
+                }
+                let inner = &css[open + 1..j];
+                let trimmed = inner.trim();
+                if trimmed.starts_with("--") {
+                    let name = trimmed.split(',').next().unwrap_or(trimmed).trim().to_string();
+                    if let Some((_, val)) = props.iter().find(|(n, _)| *n == name) {
+                        out.push_str(val);
+                    } else if let Some(comma) = trimmed.find(',') {
+                        out.push_str(trimmed[comma + 1..].trim());
+                    } else {
+                        out.push_str(&css[vs..=j]);
+                    }
+                } else {
+                    out.push_str(&css[vs..=j]);
+                }
+                from = j + 1;
+            }
+            None => {
+                out.push_str(&css[from..]);
+                break;
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]

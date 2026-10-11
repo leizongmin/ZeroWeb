@@ -825,6 +825,29 @@ impl StyleSystem {
                         quirks_mode,
                         Some("selection"),
                     );
+                    // R5065（css-pseudo-4 §highlight-styling）：UA 默认高亮表面——
+                    // ::selection 规则改动了非 bg/color 高亮属性（text-decoration 族）
+                    // 而未声明 bg/color 时，未指定面按 UA 默认取 Highlight 背景 +
+                    // HighlightText 前景（active-selection-014 型）。判据全部后值比较：
+                    // 作者声明 bg/color（含显式 transparent/同值——011/003/currentcolor
+                    // 族）→ 不种子；规则无有效声明（invalid/empty——051/053/054 族，
+                    // 旧模型锁定绿）→ 不种子。kill-switch
+                    // `ZW_SELECTION_HIGHLIGHT_DEFAULT=0` 回退。
+                    let highlight_default = std::env::var("ZW_SELECTION_HIGHLIGHT_DEFAULT").as_deref() != Ok("0")
+                        && matches!(sel.background_color, ColorValue::Transparent)
+                        && sel.color == elem_style.color
+                        && (sel.text_decoration_line != elem_style.text_decoration_line
+                            || sel.text_decoration_color != elem_style.text_decoration_color
+                            || sel.text_decoration_style != elem_style.text_decoration_style);
+                    let mut sel = sel;
+                    if highlight_default {
+                        if let Some(bg) = zero_css_parser::values::parse_named_color("highlight") {
+                            sel.background_color = bg;
+                        }
+                        if let Some(fg) = zero_css_parser::values::parse_named_color("highlighttext") {
+                            sel.color = fg;
+                        }
+                    }
                     if sel.color != elem_style.color || !matches!(sel.background_color, ColorValue::Transparent) {
                         computed.selection_pseudo = Some(sel);
                     }

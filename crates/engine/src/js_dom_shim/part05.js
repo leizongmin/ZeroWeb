@@ -9852,12 +9852,23 @@
     } catch (_eHP2) {}
     // 恢复被 R120 段误删的原有定义（@@iterator value iterator——for-of 消费路径 +
     // WPT HTMLCollection-iterator；Symbol.toPrimitive）。
+    // fileapi-compat 残余（2026-10-11）：spec value iterator **每步重读 length**
+    //（HTMLCollection #iterable declaration 的 value iterator 语义——旧实现迭代创建期
+    // 快照恒读 els.length，`Object.defineProperty(list, 'length', {get: throws})` 劫持
+    // 不生效——dom.window「overwritten 'length'」期望 getter 异常原样传播）。
     if (typeof Symbol === 'function' && Symbol.iterator) {
       Object.defineProperty(p, Symbol.iterator, {
         value: function () {
           if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
-          var els = this.__zwHC(), idx = 0;
-          return { next: function () { return idx < els.length ? { value: els[idx++], done: false } : { value: undefined, done: true }; } };
+          var coll = this, idx = 0;
+          return {
+            next: function () {
+              // 每步经 getter 重读 length（劫持/抛错原样传播）；元素走 live 集合。
+              var els = coll.__zwHC();
+              var len = coll.length;
+              return idx < len ? { value: els[idx++], done: false } : { value: undefined, done: true };
+            },
+          };
         },
         writable: true, enumerable: false, configurable: true,
       });
@@ -13944,6 +13955,20 @@
     } catch (_e114x) {}
   }
 
+  // fileapi-compat M2-P3：FileReader 接 EventTarget 原型链（XHR 同款）——addEventListener/
+  // removeEventListener/dispatchEvent 由 EventTarget.prototype 提供（listener map 在
+  // FileReader ctor 初始化为 _et_listeners）。WPT EventWatcher（testharness 内建）依赖
+  // watchedNode.addEventListener 注册派发监听（filereader_result/events/abort 全簇）。
+  // spec https://w3c.github.io/FileAPI/#FileReader-interface
+  if (globalThis.FileReader && globalThis.EventTarget) {
+    try {
+      var _zwFcFrProto = globalThis.FileReader.prototype;
+      if (_zwFcFrProto && Object.getPrototypeOf(_zwFcFrProto) !== globalThis.EventTarget.prototype) {
+        Object.setPrototypeOf(_zwFcFrProto, globalThis.EventTarget.prototype);
+      }
+    } catch (_zwFcFre) {}
+  }
+
   // R3089：DedicatedWorker——`new Worker(url)`。真 worker 消息往返（闭合 R3080 defer 项「无真 worker 执行」）。
   // script-sandbox 为单上下文（无 sub-context API），真独立沙箱需多嵌入器 host 接线（browser/webview/reftest
   // 各提供 __zw_create_worker，defer）。本切片用 **同沙箱 IIFE 影子执行**（对称 compile_module_script R3083）：
@@ -14405,6 +14430,11 @@
       return;
     }
     if (this._closed || !this._other) return;
+    // fileapi-compat P4：先序列化消息、后 detach transfer 列表（spec serialize-with-transfer
+    // 顺序）——旧序先 detach 再 structuredClone，克隆碰到 detached buffer 抛
+    // 「Cannot perform Construct on a detached ArrayBuffer」
+    //（Blob-constructor-detached-buffer.detachBuffer 首行即炸）。
+    var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
     // R56h：transferable 语义——transfer 列表中的 OffscreenCanvas 位图被转移
     //（detached），后续 drawImage 抛 InvalidStateError（2d.drawImage.detachedcanvas）。
     if (transfer && typeof transfer.forEach === 'function') {
@@ -14418,7 +14448,6 @@
         }
       });
     }
-    var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
     var other = this._other;
     // R-baidu4：对端未启用 → 消息入队保留（spec port message queue），启用后按序投递。
     if (!other._zwStarted) {

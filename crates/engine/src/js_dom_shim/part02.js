@@ -3484,11 +3484,19 @@
       for (var i = 0; i < enc.length; i++) a[i] = enc[i];
       return a;
     }
-    if (p instanceof ArrayBuffer) return new Uint8Array(p);
+    // detached buffer（postMessage transfer 后）：ArrayBuffer/视图 byteLength 均 0——
+    // spec 构造按空 part 处理（Blob-constructor-detached-buffer 全簇）；buffer.slice /
+    // new Uint8Array(detached) 会抛 TypeError，必须先经 byteLength 0 短路。
+    if (p instanceof ArrayBuffer) {
+      if (p.byteLength === 0) return new Uint8Array(0);
+      return new Uint8Array(p);
+    }
     if (p.buffer instanceof ArrayBuffer) {
       // TypedArray / DataView：取其字节范围（byteOffset/byteLength）拷贝（避免视图别名）。
       var off = p.byteOffset || 0;
-      return new Uint8Array(p.buffer.slice(off, off + (p.byteLength || 0)));
+      var len = p.byteLength || 0;
+      if (len === 0) return new Uint8Array(0);
+      return new Uint8Array(p.buffer.slice(off, off + len));
     }
     if (p instanceof Blob) return _zw_blobBytes(p); // 递归物化 Blob part
     return new Uint8Array(0);
@@ -3508,21 +3516,176 @@
     return out;
   }
   var _zwBlobStore = {}; // url → Blob（createObjectURL 注册表，revokeObjectURL 清理）
+  // https://w3c.github.io/FileAPI/#constructorBlob —— fileapi-compat M2-P1（R 系
+  // fileapi 通道 35 案基线 62.3%）：构造器补齐 WebIDL 转换层——
+  // ① blobParts/fileBits 为 sequence<BlobPart>：非对象或缺可调用 @@iterator → TypeError
+  //   （原始值即使原型挂 @@iterator 也抛——WebIDL sequence 只认对象）；经真迭代器协议
+  //   物化（getter/valueOf 副作用序、迭代中 pop/unshift 反射全部原生语义）。
+  // ② 元素联合（Blob or BufferSource or USVString）按序转换：Blob→原样（File is-a Blob）、
+  //   ArrayBuffer/TypedArray/DataView→原样、余者 ToString（null→'null'、对象→toString/
+  //   valueOf 回退），构造期完成（后续 text()/size 与构造期副作用解耦）。
+  // ③ USVString：unpaired surrogate → U+FFFD（unicode.any.js 大小/字节一致）。
+  // ④ options 字典：非对象 → TypeError（null/undefined/正则/函数为合法对象）；成员按
+  //   字典序读取（endings 先于 type——getter 记序断言）；endings 枚举非法值 TypeError
+  //   （undefined → 缺省 'transparent'；null 也抛——枚举不接受 null），'native' 时
+  //   USVString 元素行尾归一（\r\n|\r → 平台行尾，navigator.platform Win 探测）。
+  // ⑤ type：https://w3c.github.io/FileAPI/#constructorBlob 规定范围判据——含 U+0020
+  //   ~U+007E 之外字符 → 空串（\t/\0/\x7f/非 ASCII 全拒），否则 ASCII 小写化**原样保留**
+  //   （' image/gif ' 保留空格、'TEXT/HTML'→'text/html'、'nonparsable' 无斜杠也保留）。
+  //   不走 MIME parse-serialize——那是 mimesniff 面的头部解析语义（_zwParseMimeType 仍供
+  //   XHR/fetch Content-Type 使用），Blob.type 消费方按 case-insensitive essence 比较，
+  //   小写化无回归。
+  // ⑥ 接口对象：length=0（WebIDL 必参个数）、无 new 调用 TypeError、prototype 挂
+  //   Symbol.toStringTag（String(blob) === '[object Blob]'）。
+  // arrayBuffer() 返真 ArrayBuffer（spec；FileReader readAs* 消费端同步改 Uint8Array 包裹）。
+  // **已知限制（记录）**：① slice 物化全字节 O(n)（典型用量可接受）；② lastModified 用
+  //   截断 + 2^64 取模近似 ToUnsignedLongLong（>2^53 精度受 double 限制，V8 同源限制）。
+  // USVString 归一——WebIDL USVString 转换：unpaired surrogate → U+FFFD。快路径：无
+  // surrogate 原样返回（unicode.any.js 大小/字节断言依赖）。
+  function _zw_usv_string(s) {
+    if (!/[\uD800-\uDFFF]/.test(s)) return s;
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length) {
+        var n = s.charCodeAt(i + 1);
+        if (n >= 0xDC00 && n <= 0xDFFF) { out += s.charAt(i) + s.charAt(i + 1); i++; continue; }
+      }
+      if (c >= 0xD800 && c <= 0xDFFF) { out += '�'; continue; }
+      out += s.charAt(i);
+    }
+    return out;
+  }
+  // endings='native' 行尾归一：\r\n 与裸 \r → 平台行尾（Win 探测与上游 endings 用例一致）。
+  function _zw_native_endings(s) {
+    var win = globalThis.navigator && navigator.platform && String(navigator.platform).indexOf('Win') === 0;
+    var nl = win ? '\r\n' : '\n';
+    return s.replace(/\r\n|\r|\n/g, nl);
+  }
+  // Blob.type 范围判据（见构造器注释 ⑤）。
+  function _zw_blob_type(s) {
+    if (s === '') return '';
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c < 0x20 || c > 0x7e) return '';
+    }
+    return s.toLowerCase();
+  }
+  // WebIDL [Clamp] long long 转换（FileAPI Blob.slice start/end）：ToNumber → NaN→0 →
+  // clamp [−2^63, 2^63−1] → **最近整数取整、恰半取偶**（0.5→0、1.5→2、2.5→2、3.5→4——
+  // Blob-slice double start/end 簇；非 truncate）。
+  function _zwClampLongLong(v) {
+    var n = +v;
+    if (n !== n) return 0;
+    if (n === Infinity) return 9223372036854775807;
+    if (n === -Infinity) return -9223372036854775808;
+    var f = Math.floor(n), diff = n - f, r;
+    if (diff > 0.5) r = f + 1;
+    else if (diff < 0.5) r = f;
+    else r = (f % 2 === 0) ? f : f + 1; // 恰 .5 → 取偶
+    if (r > 9223372036854775807) return 9223372036854775807;
+    if (r < -9223372036854775808) return -9223372036854775808;
+    return r;
+  }
+  // 元素联合转换（Blob or BufferSource or USVString）——序即 WebIDL union 序。
+  function _zw_blob_part(p) {
+    if (typeof p === 'string') return p;
+    if (p instanceof Blob) return p;
+    if (p instanceof ArrayBuffer || ArrayBuffer.isView(p)) return p;
+    // 沙箱边界兜底：宿主桥路径（response.blob() 的 _zwConsumeBodyBytes 产出等）的字节
+    // 视图可能以 Proxy 包装——isView/instanceof 探测不到内部槽；沿用 _partSize/_partText
+    // 同款鸭子形态（byteLength 存在即按 BufferSource 保留）， Blob.size/String.length 无
+    // byteLength 字段不误伤。
+    if (p != null && typeof p === 'object' && p.byteLength != null) return p;
+    return String(p); // USVString：null→'null'、对象→toString/valueOf 回退（WebIDL DOMString 转换）
+  }
   globalThis.Blob = globalThis.Blob || function Blob(parts, options) {
-    if (!(this instanceof Blob)) return new Blob(parts, options);
-    parts = parts || [];
-    this._parts = parts;
+    if (!(this instanceof Blob)) {
+      throw new TypeError("Failed to construct 'Blob': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+    }
+    var hasDict = options != null && (typeof options === 'object' || typeof options === 'function');
+    if (options != null && !hasDict) {
+      throw new TypeError("Failed to construct 'Blob': The provided value is not of type 'BlobPropertyBag'.");
+    }
+    // 左→右求值：① parts 序列逐元素「迭代 + 转换」交错（'Getters and value conversions
+    // should happen in order' 断言记序——元素 0 的 toString 先于数组迭代器第二次 length
+    // 复查；'Arguments should be evaluated from left to right' 断言元素 toString 抛出时
+    // type getter 不被调用）；② options 字典成员按字典序读取：endings（枚举）→ type
+    // （DOMString）（'options properties should be accessed in lexicographic order'）；
+    // ③ endings='native' 行尾归一在字典读取后应用（spec：process blob parts 消费已转换
+    // 的 options，无新可观察副作用）。
+    var mat = [];
     var size = 0;
-    for (var i = 0; i < parts.length; i++) size += Blob._partSize(parts[i]);
+    if (parts !== undefined) {
+      if (parts == null || (typeof parts !== 'object' && typeof parts !== 'function')) {
+        throw new TypeError("Failed to construct 'Blob': The provided value is not of type '(Blob or BufferSource or USVString)'.");
+      }
+      var iterator = parts[Symbol.iterator];
+      // fileapi-compat 残余（2026-10-11）：平台对象带 indexed properties 的 sequence
+      // 转换（WebIDL create a sequence from V——平台对象分支）——以**元素代理品牌**
+      // （__zwSelector/__zwHandle）判定：select 等表单控件的 supported property
+      // indices（length + 索引 getter）物化为 sequence（dom.window select 案）。
+      // 普通对象（含 `{0:'FAIL', length:1}`）仍 TypeError——上游 Blob-constructor
+      // non-objects 簇钉死，结构判据不可行、品牌判据可行（专轮定位）。
+      if (typeof iterator !== 'function') {
+        var seqLen = null;
+        if (parts != null && typeof parts === 'object') {
+          var _zwPlatform = false;
+          try { _zwPlatform = parts.__zwSelector != null || parts.__zwHandle != null; } catch (_eBr) {}
+          if (_zwPlatform) seqLen = parts.length;
+        }
+        if (typeof seqLen !== 'number' || seqLen !== seqLen || seqLen < 0 || seqLen !== Math.floor(seqLen)) {
+          throw new TypeError("Failed to construct 'Blob': The provided value is not iterable.");
+        }
+        for (var si = 0; si < seqLen; si++) {
+          var pi2s = _zw_blob_part(parts[si]);
+          if (typeof pi2s === 'string') pi2s = _zw_usv_string(pi2s);
+          mat.push(pi2s);
+          size += Blob._partSize(pi2s);
+        }
+      } else {
+        var step = iterator.call(parts);
+        for (;;) {
+          var r = step.next();
+          if (!r || typeof r !== 'object') {
+            throw new TypeError("Failed to construct 'Blob': Iterator result is not an object.");
+          }
+          if (r.done) break;
+          var p = _zw_blob_part(r.value);
+          if (typeof p === 'string') p = _zw_usv_string(p);
+          mat.push(p);
+          size += Blob._partSize(p);
+        }
+      }
+    }
+    var native = false;
+    var typeStr = '';
+    if (hasDict) {
+      var e = options.endings;
+      if (e !== undefined) {
+        e = String(e);
+        if (e !== 'transparent' && e !== 'native') {
+          throw new TypeError("Failed to construct 'Blob': The provided value '" + e + "' is not a valid enum value of type Endings.");
+        }
+        native = e === 'native';
+      }
+      var t = options.type;
+      if (t !== undefined) typeStr = String(t);
+    }
+    if (native) {
+      size = 0;
+      for (var i = 0; i < mat.length; i++) {
+        if (typeof mat[i] === 'string') mat[i] = _zw_native_endings(mat[i]);
+        size += Blob._partSize(mat[i]);
+      }
+    }
+    this._parts = mat;
     this.size = size;
-    // net-api M2-S1：type 经 MIME parse 失败 → 空串，成功 → 序列化形态（FileAPI Blob
-    // constructor + mimesniff mime-types.json——'x/x; bonus=x' → 'x/x;bonus=x'、
-    // charset=" gbk" 引号保留）。_zwParseMimeType/_zwSerializeMimeType 为 part01 同
-    // IIFE 作用域共享函数。
-    var typeRaw = (options && options.type != null) ? String(options.type) : '';
-    var typeParsed = _zwParseMimeType(typeRaw);
-    this.type = typeParsed ? _zwSerializeMimeType(typeParsed) : '';
+    this.type = _zw_blob_type(typeStr);
   };
+  // 接口对象保真：WebIDL length = 必参个数（Blob 无必参 → 0）。（toStringTag 在下方
+  // prototype 字面量赋值**之后**挂——赋值会整体替换 prototype 对象。）
+  Object.defineProperty(globalThis.Blob, 'length', { value: 0 });
   // part 字节长：string→UTF-8；ArrayBuffer/TypedArray/DataView→byteLength；Blob→size；余 0。
   globalThis.Blob._partSize = function (p) {
     if (p == null) return 0;
@@ -3536,7 +3699,9 @@
     if (typeof p === 'string') return p;
     if (p == null) return '';
     if (p instanceof ArrayBuffer || p.buffer != null || typeof p.length === 'number') {
-      return new TextDecoder().decode(p);
+      // detached buffer（postMessage transfer 后）的 decode 构造会抛——spec 按空 part 处理
+      //（Blob-constructor-detached-buffer：detached part ignored，text ''）。
+      try { return new TextDecoder().decode(p); } catch (_eDet) { return ''; }
     }
     if (p instanceof Blob) return p.text(); // Promise<string>（递归）
     return '';
@@ -3545,14 +3710,18 @@
     // R3011：slice 返真字节范围（物化全字节 → 取 [start,end) → 包成单 Uint8Array part 的 Blob）。
     // 旧浅拷 _parts（slice().text() 返全内容）；现跨 part 边界正确。start/end 负值相对末尾，clamp + type 重设。
     slice: function (start, end, contentType) {
-      var s = start != null ? (start | 0) : 0;
+      // fileapi-compat P4：start/end 为 WebIDL [Clamp] long long——恰半取偶最近整数
+      //（slice(1.5)='cd' 而非 truncate 的 'bcd'，Blob-slice double start/end 簇）。
+      var s = start != null ? _zwClampLongLong(start) : 0;
       if (s < 0) s = Math.max(0, this.size + s);
-      var e = end != null ? (end | 0) : this.size;
+      var e = end != null ? _zwClampLongLong(end) : this.size;
       if (e < 0) e = Math.max(0, this.size + e);
       e = Math.min(e, this.size);
       if (s > e) s = e; // spec：start > end → 空 Blob
       var sliced = _zw_blobBytes(this).slice(s, e); // 真字节范围（Uint8Array.slice 拷贝）
-      var b = new Blob([], { type: contentType != null ? String(contentType) : this.type });
+      // fileapi-compat M2-P1：contentType 仅 undefined 缺省继承 this.type（null → 'null'
+      // 串——WebIDL DOMString 转换），有效性与小写化交由 Blob 构造器 type 判据统一。
+      var b = new Blob([], { type: contentType === undefined ? this.type : contentType });
       b._parts = [sliced];
       b.size = sliced.length;
       return b;
@@ -3565,8 +3734,16 @@
       return Promise.all(pro).then(function (strs) { return strs.join(''); });
     },
     // R3011：arrayBuffer() 返真拼接字节（二进制 TypedArray part 不再经 text() UTF-8 往返损坏）。
-    // 返 Uint8Array（spec ArrayBuffer，既有接口保留——库多按 .length/索引访问）。
+    // fileapi-compat M2-P1：返 spec 的 ArrayBuffer（_zw_blobBytes 产出的 Uint8Array 独占
+    // 底层缓冲，.buffer 即全量字节）；FileReader readAs* 消费端以 Uint8Array 包裹取索引。
     arrayBuffer: function () {
+      return Promise.resolve(_zw_blobBytes(this).buffer);
+    },
+    // fileapi-compat P4：bytes() → Promise<Uint8Array>（spec
+    // https://w3c.github.io/FileAPI/#dom-blob-bytes）——[NewObject] 每次新视图
+    //（_zw_blobBytes 每调用新建）；Blob-bytes 全簇（含 concurrent reads、
+    // Blob-newobject [NewObject] 断言）。
+    bytes: function () {
       return Promise.resolve(_zw_blobBytes(this));
     },
     // R3011：stream() 单真字节 chunk 后 close（二进制保真；常配 pipeThrough(TextDecoderStream)）。
@@ -3586,35 +3763,117 @@
       });
     }
   };
+  // class string '[object Blob]'（assert_class_string / String(blob) 断言面）——挂在
+  // prototype 字面量赋值之后，避免被整体替换。
+  Object.defineProperty(globalThis.Blob.prototype, Symbol.toStringTag, { value: 'Blob', configurable: true });
 
   // File——Blob 子类 + 文件名/时间戳（`<input type=file>` / 文件上传构造高频）。完成 Blob→File→
   // FileReader→FormData 文件处理簇。constructor 复用 `Blob.call(this, parts, options)`（File 实例
-  // `instanceof Blob` 为真，故 Blob 构造体在 this 上设 `_parts`/`size`/`type`），再加 `name`/
-  // `lastModified`（默认 `Date.now()`，V8 原生单调时钟）/`lastModifiedDate`（deprecated 但常见）。
+  // `instanceof Blob` 为真，故 Blob 构造体在 this 上设 `_parts`/`size`/`type`——含 WebIDL
+  // sequence/字典转换与 options 校验，https://w3c.github.io/FileAPI/#constructorFile），再加
+  // `name`（USVString：null→'null'、对象→ToString）/`lastModified`（缺省 `Date.now()`；
+  // ToUnsignedLongLong 截断 + 2^64 取模）/`lastModifiedDate`（deprecated 但常见）。
   // prototype = Object.create(Blob.prototype) → 继承 slice/text/arrayBuffer；File is-a Blob 故
   // FormData.append(name, file) / FileReader.readAsDataURL(file) 自动互通。
+  // fileapi-compat M2-P1：补 bits/name 必参 TypeError（WebIDL length=2）、无 new 调用 TypeError、
+  // Symbol.toStringTag（'[object File]'）。
   // **已知限制（记录）**：① `lastModifiedDate` 取 lastModified 构造（spec 已 deprecated 但库仍读）；
   //   ② 无 webkitRelativePath（目录上传，rare，defer）；③ 不校验 name 非空（spec 允许空名）。
-  function File(parts, name, options) {
-    if (!(this instanceof File)) return new File(parts, name, options);
-    Blob.call(this, parts, options); // 复用 Blob 构造（this instanceof Blob 为真 → 设 _parts/size/type）
-    this.name = name == null ? '' : String(name);
-    this.lastModified = (options && options.lastModified != null) ? +options.lastModified : Date.now();
+  function File(fileBits, fileName, options) {
+    if (!(this instanceof File)) {
+      throw new TypeError("Failed to construct 'File': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+    }
+    if (arguments.length < 2) {
+      throw new TypeError("Failed to construct 'File': 2 arguments required, but only " + arguments.length + " present.");
+    }
+    Blob.call(this, fileBits, options); // 复用 Blob 构造（this instanceof Blob 为真 → 设 _parts/size/type）
+    this.name = _zw_usv_string(String(fileName));
+    var lm = options ? options.lastModified : undefined;
+    if (lm === undefined) {
+      this.lastModified = Date.now();
+    } else {
+      // ToUnsignedLongLong：ToNumber → NaN→0 → 截断 → 2^64 取模（double 精度内近似）。
+      var n = +lm;
+      if (n !== n) n = 0;
+      n = Math.trunc(n);
+      n = n % 18446744073709551616;
+      if (n < 0) n += 18446744073709551616;
+      this.lastModified = n;
+    }
     this.lastModifiedDate = new Date(this.lastModified);
   }
   File.prototype = Object.create(Blob.prototype);
   File.prototype.constructor = File;
   globalThis.File = globalThis.File || File;
+  // 接口对象保真（同 Blob）：length=2（bits+name 必参）、class string '[object File]'。
+  Object.defineProperty(globalThis.File, 'length', { value: 2 });
+  Object.defineProperty(globalThis.File.prototype, Symbol.toStringTag, { value: 'File', configurable: true });
 
-  // FileReader——异步读 Blob（文件上传 / 图片预览 / data URL 高频）。纯 JS，builds on Blob.text()/
-  // arrayBuffer()（R2789）+ btoa（R2770）。**readAsDataURL 为 Blob 未覆盖的唯一能力**（图片预览
-  // `img.src = reader.result` 高频）。事件经 microtask：readyState=LOADING（同步）→ loadstart（同步）
-  // → Blob Promise resolve（execute 末 checkpoint drain）→ result 赋值 + readyState=DONE → load + loadend。
-  // **已知限制（记录）**：① loadstart 同步派发（spec 为 task 异步，多数代码只关心 load/loadend，零影响）；
-  //   ② 无真 abort（abort 仅置 readyState=DONE + 派发 abort/loadend，不中断已 in-flight 的 Blob Promise——
-  //   纯 JS 无取消原语，best-effort）；③ encoding 参数忽略（恒 UTF-8，同 TextDecoder 限制）；
-  //   ④ 不扩展 EventTarget（仅 onXxx handler 属性，非 addEventListener——覆盖 `reader.onload = ...` 主流用法）；
-  //   ⑤ readAsDataURL 对非 Latin-1 字节按逐字节 Latin-1→btoa（与 spec 一致：base64 编码原始字节）。
+  // FileList——文件列表接口（`<input type=file>.files`；fileapi-compat P4
+  // filelist-section：'FileList' in window、FileList.length===0、fileList.item/length
+  // 须在**原型链**（assert_inherits——R2830 裸对象 own 属性不满足）、item(0)→null）。
+  // headless 无真选档 → 恒空列表（length 0）；R2830 共享空单例经下方 setPrototypeOf
+  // 升级为本接口实例。
+  // spec https://w3c.github.io/FileAPI/#filelist-section
+  function FileList() {
+    if (!(this instanceof FileList)) {
+      throw new TypeError("Failed to construct 'FileList': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+    }
+    this._zwFiles = [];
+  }
+  Object.defineProperty(FileList, 'length', { value: 0 }); // WebIDL 必参个数
+  FileList.prototype.item = function (index) {
+    var files = this._zwFiles || []; // R2830 升级单例无 _zwFiles 槽——容错为空列表
+    var f = files[index >>> 0];
+    return f != null ? f : null; // spec：越界 → null
+  };
+  Object.defineProperty(FileList.prototype, 'length', {
+    get: function () { return (this._zwFiles || []).length; },
+    set: function (v) { /* IDL unsigned long 只读——静默忽略（legacy lenient） */ },
+    enumerable: true,
+    configurable: true
+  });
+  FileList.prototype[Symbol.iterator] = function* () {
+    var files = this._zwFiles || [];
+    for (var i = 0; i < files.length; i++) yield files[i];
+  };
+  globalThis.FileList = globalThis.FileList || FileList;
+  Object.defineProperty(globalThis.FileList.prototype, Symbol.toStringTag, { value: 'FileList', configurable: true });
+  // R2830 _emptyFileList（part01 同 IIFE 共享单例）升级为 FileList 实例——own
+  // length/item 删除走原型（assert_inherits 口径）。
+  try {
+    if (_emptyFileList) {
+      Object.setPrototypeOf(_emptyFileList, FileList.prototype);
+      delete _emptyFileList.length;
+      delete _emptyFileList.item;
+      delete _emptyFileList[Symbol.iterator];
+    }
+  } catch (_eFl) {}
+
+  // FileReader——异步读 Blob（文件上传 / 图片预览 / data URL 高频）。纯 JS，builds on Blob.arrayBuffer()/
+  // TextDecoder + btoa（R2770）。**readAsDataURL 为 Blob 未覆盖的唯一能力**（图片预览
+  // `img.src = reader.result` 高频）。fileapi-compat M2-P3 读取状态机
+  // （https://w3c.github.io/FileAPI/#reader-general-update-steps）：
+  // ① readAs* 同步置 LOADING（重入读抛 InvalidStateError——multiple-reads）；
+  // ② 事件按 spec 逐个 **task** 派发（setTimeout 承载——runner `__zw_test_setTimeout`
+  //   stub 确定性 FIFO 队列；无 host 环境回落 microtask）：loadstart →（bytes settle）→
+  //   progress → load → loadend。task 间隔使页面 promise 链（EventWatcher.wait_for →
+  //   断言 → 下一个 wait_for）在事件间完整 drain——microtask 链承载时尾事件与
+  //   promise_test 完成回调竞态（filereader_result progress 变体实证）；
+  // ③ result 在 loadstart/progress 阶段恒 null，readyState 恒 LOADING；result 赋值 + DONE
+  //   在 progress 之后、load 之前（filereader_result 记序）；
+  // ④ progress 仅在有字节被读出时派发（空 Blob 无 progress——filereader_events 口径）；
+  // ⑤ abort 同步派发 abort + loadend（filereader_abort 口径），代计数使 in-flight 读链
+  //   静默（不补发 load/progress/loadend）；
+  // ⑥ encoding 确定（#determining-encoding）：BOM 嗅探（UTF-8/UTF-16BE/UTF-16LE）优先，
+  //   次 encoding 参数（合法标签），次 type 的 charset 参数，缺省 UTF-8——经 TextDecoder
+  //   （encoding-compat M2 host decoder）解码；
+  // ⑦ readAsDataURL 空 type → 'application/octet-stream'（spec datatype 缺省）。
+  // addEventListener/removeEventListener/dispatchEvent 由 part05 接 EventTarget 原型链
+  //（XHR R114 同款；EventWatcher 依赖 addEventListener 注册派发监听）。
+  // **已知限制（记录）**：① readAsDataURL 对非 Latin-1 字节按逐字节 Latin-1→btoa（与 spec
+  //   一致：base64 编码原始字节）；② host 无 __zw_text_encoding_of 时（无 script-runtime
+  //   环境）encoding 判定回落 UTF-8。
   function FileReader() {
     this.readyState = 0; // EMPTY
     this.result = null;
@@ -3625,6 +3884,7 @@
     this.onabort = null;
     this.onerror = null;
     this.onloadend = null;
+    this._et_listeners = {}; // EventTarget 内部 listener map（原型链 part05 接线）
   }
   FileReader.EMPTY = 0;
   FileReader.LOADING = 1;
@@ -3632,78 +3892,153 @@
   FileReader.prototype.EMPTY = 0;
   FileReader.prototype.LOADING = 1;
   FileReader.prototype.DONE = 2;
-  // 派发命名事件：构造 ProgressEvent-like {type,target,lengthComputable,loaded,total}，调 onXxx handler。
+  // 派发命名事件：ProgressEvent（bubbles/cancelable 恒 false——progress_event_bubbles_cancelable）
+  // 经 dispatchEvent（listeners + on* handler 同键去重派发）；无 EventTarget 环境（part05 未加载
+  // 的 polyfill 形态）回落 on* handler 直调。
   FileReader.prototype._fire = function (type, loaded, total) {
-    var ev = {
-      type: type,
-      target: this,
-      lengthComputable: total != null && total >= 0,
-      loaded: loaded || 0,
-      total: total != null ? total : 0
-    };
+    var ev;
+    if (typeof globalThis.ProgressEvent === 'function') {
+      ev = new globalThis.ProgressEvent(type, {
+        lengthComputable: total != null && total >= 0,
+        loaded: loaded || 0,
+        total: total != null ? total : 0
+      });
+    } else {
+      ev = {
+        type: type,
+        bubbles: false,
+        cancelable: false,
+        target: this,
+        currentTarget: this,
+        lengthComputable: total != null && total >= 0,
+        loaded: loaded || 0,
+        total: total != null ? total : 0
+      };
+    }
+    if (typeof this.dispatchEvent === 'function') {
+      try { this.dispatchEvent(ev); } catch (_e) { /* handler 异常不中断读取流程 */ }
+      return;
+    }
     var h = this['on' + type];
     if (typeof h === 'function') {
-      try { h.call(this, ev); } catch (_e) { /* handler 异常不中断读取流程 */ }
+      try { h.call(this, ev); } catch (_e2f) { /* handler 异常不中断读取流程 */ }
     }
   };
-  // 读取启动：readyState=LOADING + 派发 loadstart（同步）。
-  FileReader.prototype._start = function (blob) {
+  // 读取失败收尾：error 赋值 + readyState=DONE + 同步派发 error + loadend。
+  FileReader.prototype._zwFail = function (err, total) {
+    this.readyState = 2;
+    this.error = err;
+    this._fire('error', 0, total);
+    this._fire('loadend', 0, total);
+  };
+  // readAs* 共享读取算法（见类注释 ①-⑤）。bytesPromise resolve ArrayBuffer；finish(bytes)
+  // 同步产出 result（throw → error 路径）。gen 代计数：abort/重读使旧读链后续 task 全部
+  // 静默（filereader_abort「aborted read 不补发 load/loadend」）。
+  FileReader.prototype._zwRead = function (blob, bytesPromise, finish) {
+    var self = this;
+    if (this.readyState === 1) {
+      throw new (globalThis.DOMException || DOMException)("Failed to execute 'read' on 'FileReader': The object is already busy reading Blobs.", 'InvalidStateError');
+    }
+    var gen = this._zwGen = (this._zwGen || 0) + 1;
+    var total = (blob && blob.size != null) ? blob.size : 0;
     this.readyState = 1;
     this.result = null;
     this.error = null;
-    this._total = (blob && blob.size != null) ? blob.size : 0;
-    this._fire('loadstart', 0, this._total);
+    this._total = total;
+    setTimeout(function () { // task：loadstart
+      if (gen !== self._zwGen) return;
+      self._fire('loadstart', 0, total);
+      bytesPromise.then(function (bytes) {
+        if (gen !== self._zwGen) return;
+        var result;
+        try { result = finish(bytes); }
+        catch (e2r) { self._zwFail(e2r, total); return; }
+        setTimeout(function () { // task：progress
+          if (gen !== self._zwGen) return;
+          if (total > 0) self._fire('progress', total, total);
+          setTimeout(function () { // task：load（result 赋值在 progress 之后、load 之前）
+            if (gen !== self._zwGen) return;
+            self.readyState = 2;
+            self.result = result;
+            self._fire('load', total, total);
+            setTimeout(function () { // task：loadend
+              if (gen !== self._zwGen) return;
+              self._fire('loadend', total, total);
+            }, 0);
+          }, 0);
+        }, 0);
+      }, function (e) {
+        if (gen !== self._zwGen) return;
+        self._zwFail(e, total);
+      });
+    }, 0);
   };
-  // 读取成功收尾：result 赋值 + readyState=DONE + 派发 load + loadend。
-  FileReader.prototype._done = function (result) {
-    this.readyState = 2;
-    this.result = result;
-    this._fire('progress', this._total, this._total);
-    this._fire('load', this._total, this._total);
-    this._fire('loadend', this._total, this._total);
-  };
-  // 读取失败收尾：error 赋值 + readyState=DONE + 派发 error + loadend。
-  FileReader.prototype._fail = function (err) {
-    this.readyState = 2;
-    this.error = err;
-    this._fire('error', 0, this._total);
-    this._fire('loadend', 0, this._total);
-  };
-  FileReader.prototype.readAsText = function (blob /*, encoding */) {
-    var self = this;
-    this._start(blob);
-    blob.text().then(function (s) { self._done(s); }, function (e) { self._fail(e); });
+  // encoding 确定（见类注释 ⑥）。label 合法性经 host 全表（与 TextDecoder 构造同源）。
+  function _zwEncodingLabelOf(label) {
+    if (typeof __zw_text_encoding_of !== 'function') return '';
+    try { return __zw_text_encoding_of(String(label)) || ''; } catch (_e) { return ''; }
+  }
+  function _zwFileReadEncoding(bytes, typeStr, encodingArg) {
+    var u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    if (u8.length >= 3 && u8[0] === 0xEF && u8[1] === 0xBB && u8[2] === 0xBF) return 'utf-8';
+    if (u8.length >= 2 && u8[0] === 0xFE && u8[1] === 0xFF) return 'utf-16be';
+    if (u8.length >= 2 && u8[0] === 0xFF && u8[1] === 0xFE) return 'utf-16le';
+    if (encodingArg != null) {
+      var a = _zwEncodingLabelOf(encodingArg);
+      if (a !== '') return a;
+    }
+    if (typeStr) {
+      var mt = _zwParseMimeType(typeStr);
+      if (mt) {
+        for (var i = 0; i < mt.params.length; i++) {
+          if (mt.params[i][0] === 'charset') {
+            var c = _zwEncodingLabelOf(mt.params[i][1]);
+            if (c !== '') return c;
+          }
+        }
+      }
+    }
+    return 'utf-8';
+  }
+  // readAsText：encoding 参数（DOMString，spec 第二参）——bytes 经 determining encoding 解码。
+  FileReader.prototype.readAsText = function (blob, encoding) {
+    var typeStr = (blob && blob.type) || '';
+    this._zwRead(blob, blob.arrayBuffer(), function (bytes) {
+      var enc = _zwFileReadEncoding(bytes, typeStr, encoding);
+      return new TextDecoder(enc).decode(bytes);
+    });
     return; // void（spec）
   };
+  // readAsArrayBuffer：result 为 ArrayBuffer（M2-P1 对齐 spec——Blob.arrayBuffer() 返 ArrayBuffer；
+  // 上游 'Result should be an ArrayBuffer' 断言）。
   FileReader.prototype.readAsArrayBuffer = function (blob) {
-    var self = this;
-    this._start(blob);
-    blob.arrayBuffer().then(function (a) { self._done(a); }, function (e) { self._fail(e); });
+    this._zwRead(blob, blob.arrayBuffer(), function (bytes) { return bytes; });
   };
   // readAsBinaryString：逐字节 Latin-1 串（spec 保留方法，已弃用但仍可用）。
   FileReader.prototype.readAsBinaryString = function (blob) {
-    var self = this;
-    this._start(blob);
-    blob.arrayBuffer().then(function (buf) {
+    this._zwRead(blob, blob.arrayBuffer(), function (bytes) {
+      var u8 = new Uint8Array(bytes);
       var s = '';
-      for (var i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
-      self._done(s);
-    }, function (e) { self._fail(e); });
+      for (var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+      return s;
+    });
   };
-  // readAsDataURL：data:<type>;base64,<b64>——逐字节 Latin-1 → btoa（base64 编码原始字节，spec 一致）。
+  // readAsDataURL：data:<type>;base64,<b64>——逐字节 Latin-1 → btoa（base64 编码原始字节，spec 一致）；
+  // 空 type → 'application/octet-stream'（spec datatype 缺省）。
   FileReader.prototype.readAsDataURL = function (blob) {
-    var self = this;
-    this._start(blob);
-    blob.arrayBuffer().then(function (buf) {
+    var type = (blob && blob.type) ? blob.type : 'application/octet-stream';
+    this._zwRead(blob, blob.arrayBuffer(), function (bytes) {
+      var u8 = new Uint8Array(bytes);
       var s = '';
-      for (var i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
-      var type = (blob && blob.type) || '';
-      self._done('data:' + type + ';base64,' + btoa(s));
-    }, function (e) { self._fail(e); });
+      for (var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+      return 'data:' + type + ';base64,' + btoa(s);
+    });
   };
-  // abort：best-effort——仅 EMPTY/DONE 时 no-op；否则置 DONE + 派发 abort + loadend（不中断 in-flight Promise）。
+  // abort：EMPTY/DONE 时 no-op；LOADING 时代计数使 in-flight 读链静默 + 同步派发 abort + loadend
+  //（filereader_abort 口径——'abort' and 'loadend' events are dispatched synchronously）。
   FileReader.prototype.abort = function () {
     if (this.readyState === 0 || this.readyState === 2) return;
+    this._zwGen = (this._zwGen || 0) + 1;
     this.readyState = 2;
     this.result = null;
     this._fire('abort', 0, this._total);
@@ -4632,17 +4967,39 @@
   globalThis.URL = globalThis.URL || URL;
 
   // URL.createObjectURL / revokeObjectURL——blob: URL 注册表（`<img src>` / `<a download>` /
-  // 文件预览高频）。纯 JS：createObjectURL 生成 `blob:<origin>/<n>` 并在 `_zwBlobStore` 注册 Blob，
-  // 返 URL 串；revokeObjectURL 从 store 移除。**已知限制（记录）**：blob: URL 不被 net/fetch 实际
-  // 解析为内容（无 blob store→字节回流路径，follow-up）——但消除 `URL.createObjectURL is not a
-  // function` ReferenceError，库可正常调用 + 传给 img.src/a.href。origin 取 location.origin 或 'null'。
+  // 文件预览高频）。纯 JS：createObjectURL 生成 `blob:<origin>/<uuid-v4>` 并在 `_zwBlobStore`
+  // 注册 Blob，
+  // 返 URL 串；revokeObjectURL 从 store 移除。blob: URL 消费路径（img/fetch/XHR）已实测
+  // 打通（fileapi-compat M1 基线 url 面 84%，url-with-fetch/xhr + url_xmlhttprequest_img
+  // 存活）——M1 前注释「blob: 不被 net/fetch 实际解析」已过时，此处更正。
+  // **已知限制（记录）**：跨全局 revoke/iframe 装载面排除（runner 无 iframe 管道）。
+  // origin 取 location.origin 或 'null'。
+  // fileapi-compat P4：blob: URL path 为 UUID v4（url-format.any.js——path 须以合法
+  // UUID 结尾且 new URL(path) 语义成立）。crypto.randomUUID 优先，无则 RFC 4122 v4
+  // 手工拼装（randomValues 缺失回落 Math.random——运行去重够用）。
+  function _zwUuidV4() {
+    if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+      try { return globalThis.crypto.randomUUID(); } catch (_eUu) {}
+    }
+    var b = new Uint8Array(16);
+    if (globalThis.crypto && typeof globalThis.crypto.getRandomValues === 'function') {
+      globalThis.crypto.getRandomValues(b);
+    } else {
+      for (var i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+    }
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    var h = '';
+    for (var j = 0; j < 16; j++) {
+      if (j === 4 || j === 6 || j === 8 || j === 10) h += '-';
+      h += (b[j] >> 4).toString(16) + (b[j] & 15).toString(16);
+    }
+    return h;
+  }
   if (!globalThis.URL.createObjectURL) {
     globalThis.URL.createObjectURL = function (obj) {
       var origin = (globalThis.location && globalThis.location.origin) || 'null';
-      // 单调 id（counter）+ Math.random 去重（不依赖未定义 crypto.randomUUID 顺序）。
-      globalThis.__zwBlobSeq = (globalThis.__zwBlobSeq | 0) + 1;
-      var url = 'blob:' + origin + '/' + globalThis.__zwBlobSeq + '-' +
-        Math.floor(Math.random() * 1e9).toString(36);
+      var url = 'blob:' + origin + '/' + _zwUuidV4();
       _zwBlobStore[url] = obj;
       return url;
     };
