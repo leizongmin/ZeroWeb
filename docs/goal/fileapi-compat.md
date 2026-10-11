@@ -1,17 +1,20 @@
 # File API 兼容 — Blob / File / FileReader / objectURL
 
-**版本**: v1.0
-**日期**: 2026-10-08
-**状态**: Active（已立项——无用户门控项）
+**版本**: v1.1
+**日期**: 2026-10-08（立项） | 2026-10-11（M1 基线）
+**状态**: Active（M1 完成——基线 62.3%；M2 语义修齐待启动）
 **执行模式**: WPT 驱动（上游 FileAPI corpus 为验收标尺）+ 语义/实现修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——文件与二进制面）
+**运行时控制面板**: [fileapi-compat/master.md](fileapi-compat/master.md)
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：net-api
 > M2 打过 Blob.type MIME parse-serialize 底，但 FileAPI 全语义面（FileReader 异步
 > 读、createObjectURL 生命周期、slice/构造器）从未系统度量。
 >
-> **▶ 基线事实（立项时点，M1 盘点复核）**：Blob 面部分存在（net-api M2 腿）；
-> FileReader/createObjectURL/revokeObjectURL 可用性未盘点。
+> **▶ 基线事实（2026-10-11 M1 实测）**：Blob/File/FileReader/FormData/
+> createObjectURL 均已在 js_dom_shim 纯 JS 落地；可执行子集 35 案 499 子测试
+> 311 Pass = 62.3%（甄别与失败簇见
+> [evidence/2026-10-11-m1-baseline.md](fileapi-compat/evidence/2026-10-11-m1-baseline.md)）。
 
 ## Mission
 
@@ -21,7 +24,7 @@ drag-drop 文件入口（uievents/rendering 面依赖）。
 
 ## Done Criteria
 
-- **DC-1** 导入 + 基线 + csv planned 行回填（可执行子集甄别落 evidence/）
+- **DC-1** 导入 + 基线 + csv planned 行回填（可执行子集甄别落 evidence/）——✅ 2026-10-11
 - **DC-2** Blob/File 构造器与 slice 语义、FileReader 读状态机、objectURL 生命周期
   对齐，分级通过率不再下行两个连续轮次
 - **DC-3** 每修复附回归测试（imported-tests.txt 账本纪律）；make test 全绿、
@@ -29,7 +32,7 @@ drag-drop 文件入口（uievents/rendering 面依赖）。
 
 ## 里程碑
 
-M1 导入与基线（含可执行性甄别）→ M2 语义/实现修齐 → M3 收口归档。
+M1 导入与基线（含可执行性甄别）✅ → M2 语义/实现修齐 → M3 收口归档。
 
 ## 依赖约束（run-rules §9）
 

@@ -16,6 +16,7 @@ mod report;
 mod runner;
 mod runner_text_metrics;
 mod testharness;
+mod testharness_fileapi;
 mod wpt_file_loader;
 
 use rayon::prelude::*;
@@ -48,6 +49,7 @@ Commands:
   testharness-fs  Run pinned File System (OPFS) window testharness cases (storage-opfs goal M1)
   testharness-wasm  Run pinned WebAssembly (wasm/jsapi) window testharness cases (page-wasm goal M1 / DC-1)
   testharness-webstorage  Run pinned WebStorage window testharness cases (webstorage-compat goal M1 / DC-1)
+  testharness-fileapi  Run imported FileAPI (blob/file/FileReader/url) window testharness cases (fileapi-compat goal M1 / DC-1)
   testharness-web-components  Run imported custom-elements/shadow-dom/the-template-element
                        testharness cases (web-components goal M1 / DC-1)
   testharness-intersection-observer  Run imported IntersectionObserver testharness cases
@@ -286,6 +288,9 @@ fn main() {
         "testharness-fs" => cmd_testharness_fs(&options, filter.as_deref()),
         "testharness-wasm" => cmd_testharness_wasm(&options, filter.as_deref()),
         "testharness-webstorage" => cmd_testharness_webstorage(&options, filter.as_deref()),
+        "testharness-fileapi" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness_fileapi::run_fileapi_cases(wpt_root, filter)
+        }),
         "testharness-web-components" => cmd_testharness_web_components(&options, filter.as_deref()),
         "testharness-intersection-observer" => cmd_testharness_intersection_observer(&options, filter.as_deref()),
         "testharness-resize-observer" => cmd_testharness_resize_observer(&options, filter.as_deref()),

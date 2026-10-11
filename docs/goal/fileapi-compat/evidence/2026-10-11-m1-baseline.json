@@ -1,0 +1,2672 @@
+[
+  [
+    "FileAPI/FileReader/progress_event_bubbles_cancelable.html",
+    [
+      {
+        "name": "Check the values of bubbles and cancelable are false when the progress event is dispatched",
+        "status": "Fail",
+        "message": "assert_false: The bubbles must be false when the event is dispatched expected false got undefined"
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-array-buffer.any.js",
+    [
+      {
+        "name": "Blob.arrayBuffer()",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Blob.arrayBuffer() empty Blob data",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Blob.arrayBuffer() non-ascii input",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.arrayBuffer() non-unicode input",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.arrayBuffer() concurrent reads",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-bytes.any.js",
+    [
+      {
+        "name": "Blob.bytes()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: blob.bytes is not a function\""
+      },
+      {
+        "name": "Blob.bytes() empty Blob data",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: blob.bytes is not a function\""
+      },
+      {
+        "name": "Blob.bytes() non-ascii input",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: blob.bytes is not a function\""
+      },
+      {
+        "name": "Blob.bytes() non-unicode input",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: blob.bytes is not a function\""
+      },
+      {
+        "name": "Blob.bytes() concurrent reads",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: blob.bytes is not a function\""
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-constructor-detached-buffer.any.js",
+    [
+      {
+        "name": "Blob from a detached ArrayBufferView should be empty",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot perform Construct on a detached ArrayBuffer\""
+      },
+      {
+        "name": "Blob from a detached ArrayBufferView with offset should be empty",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot perform Construct on a detached ArrayBuffer\""
+      },
+      {
+        "name": "Blob from a detached ArrayBuffer should be empty",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot perform Construct on a detached ArrayBuffer\""
+      },
+      {
+        "name": "Blob from a detached ArrayBufferView mixed with string, detached part ignored",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot perform Construct on a detached ArrayBuffer\""
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-constructor-dom.window.js",
+    [
+      {
+        "name": "Passing platform objects for blobParts should throw a TypeError.",
+        "status": "Fail",
+        "message": "assert_throws_js: Should throw for argument Element node <div></div>. function \"function() {\n      new Blob(arg);\n    }\" did not throw"
+      },
+      {
+        "name": "A platform object that supports indexed properties should be treated as a sequence for the blobParts argument (overwritten 'length'.)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing an platform object that supports indexed properties as the blobParts array should work (select).",
+        "status": "Fail",
+        "message": "assert_equals: expected 26 but got 0"
+      },
+      {
+        "name": "Passing an platform object that supports indexed properties as the blobParts array should work (attributes).",
+        "status": "Fail",
+        "message": "assert_equals: expected 13 but got 0"
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-constructor-endings.any.js",
+    [
+      {
+        "name": "Valid \"endings\" value: \"transparent\"",
+        "status": "Fail",
+        "message": "assert_class_string: Constructor should allow \"transparent\" endings expected \"[object Blob]\" but got \"[object Object]\""
+      },
+      {
+        "name": "Valid \"endings\" value: \"native\"",
+        "status": "Fail",
+        "message": "assert_class_string: Constructor should allow \"native\" endings expected \"[object Blob]\" but got \"[object Object]\""
+      },
+      {
+        "name": "Invalid \"endings\" value: null",
+        "status": "Fail",
+        "message": "assert_throws_js: Blob constructor should throw function \"() => new Blob([], {endings: value})\" did not throw"
+      },
+      {
+        "name": "Invalid \"endings\" value: \"\"",
+        "status": "Fail",
+        "message": "assert_throws_js: Blob constructor should throw function \"() => new Blob([], {endings: value})\" did not throw"
+      },
+      {
+        "name": "Invalid \"endings\" value: \"invalidEnumValue\"",
+        "status": "Fail",
+        "message": "assert_throws_js: Blob constructor should throw function \"() => new Blob([], {endings: value})\" did not throw"
+      },
+      {
+        "name": "Invalid \"endings\" value: \"Transparent\"",
+        "status": "Fail",
+        "message": "assert_throws_js: Blob constructor should throw function \"() => new Blob([], {endings: value})\" did not throw"
+      },
+      {
+        "name": "Invalid \"endings\" value: \"NATIVE\"",
+        "status": "Fail",
+        "message": "assert_throws_js: Blob constructor should throw function \"() => new Blob([], {endings: value})\" did not throw"
+      },
+      {
+        "name": "Invalid \"endings\" value: 0",
+        "status": "Fail",
+        "message": "assert_throws_js: Blob constructor should throw function \"() => new Blob([], {endings: value})\" did not throw"
+      },
+      {
+        "name": "Invalid \"endings\" value: {}",
+        "status": "Fail",
+        "message": "assert_throws_js: Blob constructor should throw function \"() => new Blob([], {endings: value})\" did not throw"
+      },
+      {
+        "name": "Exception propagation from options",
+        "status": "Fail",
+        "message": "assert_throws_exactly: Blob constructor should propagate exceptions from \"endings\" property function \"() => new Blob([], { get endings() { throw test_error; }})\" did not throw"
+      },
+      {
+        "name": "The \"endings\" options property is used",
+        "status": "Fail",
+        "message": "assert_true: The \"endings\" property was accessed during construction. expected true got false"
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-constructor-endings.html",
+    [
+      {
+        "name": "Input LF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LF with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\" but got \"\\n\""
+      },
+      {
+        "name": "Input CR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CR with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\" but got \"\\r\""
+      },
+      {
+        "name": "Input CRLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCR with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\\r\\n\" but got \"\\r\\r\""
+      },
+      {
+        "name": "Input LFCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCR with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\\r\\n\" but got \"\\n\\r\""
+      },
+      {
+        "name": "Input LFLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFLF with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\\r\\n\" but got \"\\n\\n\""
+      },
+      {
+        "name": "Input CRCRLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCRLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCRLF with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\\r\\n\" but got \"\\r\\r\\n\""
+      },
+      {
+        "name": "Input CRLFLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFLF with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\\r\\n\" but got \"\\r\\n\\n\""
+      },
+      {
+        "name": "Input CRLFCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCR with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCRLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCRLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCRLF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCRLFCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCRLFCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCRLFCR with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\\r\\n\\r\\n\" but got \"\\n\\r\\n\\r\""
+      },
+      {
+        "name": "CR/LF in adjacent input strings",
+        "status": "Fail",
+        "message": "assert_equals: CR/LF in adjacent strings should be converted to two platform newlines expected \"\\r\\n\\r\\n\" but got \"\\r\\n\""
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-constructor.any.js",
+    [
+      {
+        "name": "Blob interface object",
+        "status": "Fail",
+        "message": "assert_equals: Blob.length should be 0. expected 0 but got 2"
+      },
+      {
+        "name": "Blob constructor with no arguments",
+        "status": "Fail",
+        "message": "assert_equals: expected \"[object Blob]\" but got \"[object Object]\""
+      },
+      {
+        "name": "Blob constructor with no arguments, without 'new'",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { var blob = Blob(); }\" did not throw"
+      },
+      {
+        "name": "Blob constructor without brackets",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob constructor with undefined as first argument",
+        "status": "Fail",
+        "message": "assert_equals: expected \"[object Blob]\" but got \"[object Object]\""
+      },
+      {
+        "name": "Passing non-objects, Dates and RegExps for blobParts should throw a TypeError.",
+        "status": "Fail",
+        "message": "assert_throws_js: Should throw for argument null. function \"function() {\n      new Blob(arg);\n    }\" did not throw"
+      },
+      {
+        "name": "A plain object with custom @@iterator should be treated as a sequence for the blobParts argument.",
+        "status": "Fail",
+        "message": "assert_equals: Custom @@iterator should be treated as a sequence expected 5 but got 0"
+      },
+      {
+        "name": "blobParts not an object: boolean",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { new Blob(true) }\" did not throw"
+      },
+      {
+        "name": "blobParts not an object: boolean with Boolean.prototype[Symbol.iterator]",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { new Blob(true) }\" did not throw"
+      },
+      {
+        "name": "blobParts not an object: string",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { new Blob(\"fail\") }\" did not throw"
+      },
+      {
+        "name": "blobParts not an object: string with String.prototype[Symbol.iterator]",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { new Blob(\"fail\") }\" did not throw"
+      },
+      {
+        "name": "blobParts not an object: number",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { new Blob(7) }\" did not throw"
+      },
+      {
+        "name": "blobParts not an object: number with Number.prototype[Symbol.iterator]",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { new Blob(7) }\" did not throw"
+      },
+      {
+        "name": "blobParts not an object: BigInt",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { new Blob(7n) }\" did not throw"
+      },
+      {
+        "name": "blobParts not an object: BigInt with BigInt.prototype[Symbol.iterator]",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { new Blob(7n) }\" did not throw"
+      },
+      {
+        "name": "blobParts not an object: Symbol",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { new Blob(symbol) }\" did not throw"
+      },
+      {
+        "name": "blobParts not an object: Symbol with Symbol.prototype[Symbol.iterator]",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { new Blob(symbol) }\" did not throw"
+      },
+      {
+        "name": "The length getter should be invoked and any exceptions should be propagated.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ToUint32 should be applied to the length and any exceptions should be propagated.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Getters and value conversions should happen in order until an exception is thrown.",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"Symbol.iterator\", \"length getter\", \"length valueOf\", \"0 getter\", \"0 toString\", \"length getter\", \"length valueOf\", \"1 getter\"] length 8, got [\"length getter\", \"length valueOf\", \"0 getter\", \"length getter\", \"length valueOf\", \"1 getter\"] length 6"
+      },
+      {
+        "name": "ToString should be called on elements of the blobParts array and any exceptions should be propagated.",
+        "status": "Fail",
+        "message": "assert_throws_exactly: Throwing toString function \"function() {\n    new Blob([{ toString: function() { throw test_error; } }]);\n  }\" did not throw"
+      },
+      {
+        "name": "options properties should be accessed in lexicographic order.",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"endings\", \"type\"] length 2, got [\"type\"] length 1"
+      },
+      {
+        "name": "Arguments should be evaluated from left to right.",
+        "status": "Fail",
+        "message": "assert_unreached: type getter should not be called. Reached unreachable code"
+      },
+      {
+        "name": "Passing 123 for options should throw",
+        "status": "Fail",
+        "message": "assert_throws_js: Blob constructor should throw with invalid property bag function \"() => new Blob([], arg)\" did not throw"
+      },
+      {
+        "name": "Passing 123.4 for options should throw",
+        "status": "Fail",
+        "message": "assert_throws_js: Blob constructor should throw with invalid property bag function \"() => new Blob([], arg)\" did not throw"
+      },
+      {
+        "name": "Passing true for options should throw",
+        "status": "Fail",
+        "message": "assert_throws_js: Blob constructor should throw with invalid property bag function \"() => new Blob([], arg)\" did not throw"
+      },
+      {
+        "name": "Passing \"abc\" for options should throw",
+        "status": "Fail",
+        "message": "assert_throws_js: Blob constructor should throw with invalid property bag function \"() => new Blob([], arg)\" did not throw"
+      },
+      {
+        "name": "Blob with type \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"a\"",
+        "status": "Fail",
+        "message": "assert_equals: expected \"a\" but got \"\""
+      },
+      {
+        "name": "Blob with type \"A\"",
+        "status": "Fail",
+        "message": "assert_equals: expected \"a\" but got \"\""
+      },
+      {
+        "name": "Blob with type \"text/html\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"TEXT/HTML\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"text/plain;charset=utf-8\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"å\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"𐑾\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \" image/gif \"",
+        "status": "Fail",
+        "message": "assert_equals: expected \" image/gif \" but got \"image/gif\""
+      },
+      {
+        "name": "Blob with type \"\\timage/gif\\t\"",
+        "status": "Fail",
+        "message": "assert_equals: expected \"\" but got \"image/gif\""
+      },
+      {
+        "name": "Blob with type \"image/gif;\"",
+        "status": "Fail",
+        "message": "assert_equals: expected \"\" but got \"image/gif\""
+      },
+      {
+        "name": "Blob with type \"İmage/gif\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"ımage/gif\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"image/gif\\0\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"unknown/unknown\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"text/plain\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"image/png\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing a FrozenArray as the blobParts array should work (FrozenArray<MessagePort>).",
+        "status": "Fail",
+        "message": "assert_equals: expected 20 but got 0"
+      },
+      {
+        "name": "A plain object with @@iterator should be treated as a sequence for the blobParts argument.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "A plain object with @@iterator and a length property should be treated as a sequence for the blobParts argument.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "A String object should be treated as a sequence for the blobParts argument.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "A Uint8Array object should be treated as a sequence for the blobParts argument.",
+        "status": "Fail",
+        "message": "assert_equals: expected 3 but got 0"
+      },
+      {
+        "name": "Changes to the blobParts array should be reflected in the returned Blob (pop).",
+        "status": "Fail",
+        "message": "assert_equals: expected 4 but got 0"
+      },
+      {
+        "name": "Changes to the blobParts array should be reflected in the returned Blob (unshift).",
+        "status": "Fail",
+        "message": "assert_equals: expected 4 but got 0"
+      },
+      {
+        "name": "ToString should be called on elements of the blobParts array.",
+        "status": "Fail",
+        "message": "assert_equals: expected 98 but got 0"
+      },
+      {
+        "name": "ArrayBuffer elements of the blobParts array should be supported.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing typed arrays as elements of the blobParts array should work.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing a Float16Array as element of the blobParts array should work.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing a Float64Array as element of the blobParts array should work.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing BigInt typed arrays as elements of the blobParts array should work.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Array with two blobs",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Array with two buffers",
+        "status": "Fail",
+        "message": "assert_true: Result should be an ArrayBuffer expected true got false"
+      },
+      {
+        "name": "Array with two bufferviews",
+        "status": "Fail",
+        "message": "assert_true: Result should be an ArrayBuffer expected true got false"
+      },
+      {
+        "name": "Array with mixed types",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing null (index 0) for options should use the defaults.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing null (index 0) for options should use the defaults (with newlines).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing undefined (index 1) for options should use the defaults.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing undefined (index 1) for options should use the defaults (with newlines).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing object \"[object Object]\" (index 2) for options should use the defaults.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing object \"[object Object]\" (index 2) for options should use the defaults (with newlines).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing object \"[object Object]\" (index 3) for options should use the defaults.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing object \"[object Object]\" (index 3) for options should use the defaults (with newlines).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing object \"/regex/\" (index 4) for options should use the defaults.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing object \"/regex/\" (index 4) for options should use the defaults (with newlines).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing function \"function() {}\" (index 5) for options should use the defaults.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing function \"function() {}\" (index 5) for options should use the defaults (with newlines).",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-newobject.any.js",
+    [
+      {
+        "name": "Blob.stream() returns [NewObject]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() returns [NewObject]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.arrayBuffer() returns [NewObject]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.bytes() returns [NewObject]",
+        "status": "Fail",
+        "message": "blob[method] is not a function"
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-slice-overflow.any.js",
+    [
+      {
+        "name": "slice start is negative, relativeStart will be max((size + start), 0)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "slice start is greater than blob size, relativeStart will be min(start, size)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "slice end is negative, relativeEnd will be max((size + end), 0)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "slice end is greater than blob size, relativeEnd will be min(end, size)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-slice.any.js",
+    [
+      {
+        "name": "Slicing test (0,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,5).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,6).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,7).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,8).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,5).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,6).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,7).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,8).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,9).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,5).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,6).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,7).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (3,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (3,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (3,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (3,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (4,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (4,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (4,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (4,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (4,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (4,5).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (5,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (5,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (5,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (5,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (5,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (6,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (6,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (6,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (6,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (7,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (7,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (7,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (8,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (8,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (8,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (8,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (9,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (9,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (9,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (9,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slices",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "no-argument Blob slice",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blob1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blob2.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "undefined start/end Blob slice",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "undefined start Blob slice",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "undefined end Blob slice",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "null type Blob slice",
+        "status": "Fail",
+        "message": "assert_equals: expected \"null\" but got \"\""
+      },
+      {
+        "name": "undefined type Blob slice",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "no type Blob slice",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,5).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,6).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,7).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,8).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (1,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (1,1).",
+        "status": "Fail",
+        "message": "assert_equals: expected 2 but got 3"
+      },
+      {
+        "name": "Slicing test: slice (1,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (1,3).",
+        "status": "Fail",
+        "message": "assert_equals: expected 0 but got 1"
+      },
+      {
+        "name": "Slicing test: slice (1,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (1,5).",
+        "status": "Fail",
+        "message": "assert_equals: expected 2 but got 1"
+      },
+      {
+        "name": "Slicing test: slice (1,6).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (1,7).",
+        "status": "Fail",
+        "message": "assert_equals: expected 4 but got 3"
+      },
+      {
+        "name": "Slicing test: slice (1,8).",
+        "status": "Fail",
+        "message": "assert_equals: expected 0 but got 1"
+      },
+      {
+        "name": "Slicing test: slice (1,9).",
+        "status": "Fail",
+        "message": "assert_equals: expected \"cd\" but got \"bc\""
+      },
+      {
+        "name": "Slicing test: slice (2,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (2,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (2,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (2,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (2,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (2,5).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (2,6).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (2,7).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (3,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (3,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (3,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (3,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (4,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (4,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (4,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (4,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (4,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (4,5).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (5,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (5,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (5,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (5,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (5,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (6,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (6,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (6,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (6,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (7,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (7,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (7,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (8,0).",
+        "status": "Fail",
+        "message": "assert_equals: expected \"3ABCDEFG\" but got \"ABCDEFGH\""
+      },
+      {
+        "name": "Slicing test: slice (8,1).",
+        "status": "Fail",
+        "message": "assert_equals: expected \"HIJKLMNOPf\" but got \"IJKLMNOPfo\""
+      },
+      {
+        "name": "Slicing test: slice (8,2).",
+        "status": "Fail",
+        "message": "assert_equals: expected 3 but got 2"
+      },
+      {
+        "name": "Slicing test: slice (8,3).",
+        "status": "Fail",
+        "message": "assert_equals: expected \"DEFGHIJK\" but got \"EFGHIJKL\""
+      },
+      {
+        "name": "Slicing test: slice (9,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (9,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (9,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (9,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid contentType (\"ÿ\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid contentType (\"te\\txt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid contentType (\"te\\0xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid contentType (\"te\\x1fxt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid contentType (\"text/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te(xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te(xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te)xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te)xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te<xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te<xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te>xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te>xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te@xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te@xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te,xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te,xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te;xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te;xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te:xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te:xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te\\\\xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te\\\\xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te\\\"xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te\\\"xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te/xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te/xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te[xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te[xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te]xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te]xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te?xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te?xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te=xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te=xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te{xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te{xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te}xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te}xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"te xt/plain\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"te xt/plain\" but got \"\""
+      },
+      {
+        "name": "Valid contentType (\"TEXT/PLAIN\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"text/plain;charset = UTF-8\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"text/plain;charset = utf-8\" but got \"text/plain\""
+      },
+      {
+        "name": "Valid contentType (\"text/plain;charset=UTF-8\")",
+        "status": "Fail",
+        "message": "assert_equals: expected \"text/plain;charset=utf-8\" but got \"text/plain;charset=UTF-8\""
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-text.any.js",
+    [
+      {
+        "name": "Blob.text()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() empty blob data",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() multi-element array in constructor",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() non-unicode",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() different charset param in type option",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() different charset param with non-ascii input",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() invalid utf-8 input",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() concurrent reads",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/file/File-constructor-endings.any.js",
+    [
+      {
+        "name": "Valid \"endings\" value: \"transparent\"",
+        "status": "Fail",
+        "message": "assert_class_string: Constructor should allow \"transparent\" endings expected \"[object File]\" but got \"[object Object]\""
+      },
+      {
+        "name": "Valid \"endings\" value: \"native\"",
+        "status": "Fail",
+        "message": "assert_class_string: Constructor should allow \"native\" endings expected \"[object File]\" but got \"[object Object]\""
+      },
+      {
+        "name": "Invalid \"endings\" value: null",
+        "status": "Fail",
+        "message": "assert_throws_js: File constructor should throw function \"() => new File([], \"name\", {endings: value})\" did not throw"
+      },
+      {
+        "name": "Invalid \"endings\" value: \"\"",
+        "status": "Fail",
+        "message": "assert_throws_js: File constructor should throw function \"() => new File([], \"name\", {endings: value})\" did not throw"
+      },
+      {
+        "name": "Invalid \"endings\" value: \"invalidEnumValue\"",
+        "status": "Fail",
+        "message": "assert_throws_js: File constructor should throw function \"() => new File([], \"name\", {endings: value})\" did not throw"
+      },
+      {
+        "name": "Invalid \"endings\" value: \"Transparent\"",
+        "status": "Fail",
+        "message": "assert_throws_js: File constructor should throw function \"() => new File([], \"name\", {endings: value})\" did not throw"
+      },
+      {
+        "name": "Invalid \"endings\" value: \"NATIVE\"",
+        "status": "Fail",
+        "message": "assert_throws_js: File constructor should throw function \"() => new File([], \"name\", {endings: value})\" did not throw"
+      },
+      {
+        "name": "Invalid \"endings\" value: 0",
+        "status": "Fail",
+        "message": "assert_throws_js: File constructor should throw function \"() => new File([], \"name\", {endings: value})\" did not throw"
+      },
+      {
+        "name": "Invalid \"endings\" value: {}",
+        "status": "Fail",
+        "message": "assert_throws_js: File constructor should throw function \"() => new File([], \"name\", {endings: value})\" did not throw"
+      },
+      {
+        "name": "Exception propagation from options",
+        "status": "Fail",
+        "message": "assert_throws_exactly: File constructor should propagate exceptions from \"endings\" property function \"() => new File([], \"name\", { get endings() { throw test_error; }})\" did not throw"
+      },
+      {
+        "name": "The \"endings\" options property is used",
+        "status": "Fail",
+        "message": "assert_true: The \"endings\" property was accessed during construction. expected true got false"
+      }
+    ]
+  ],
+  [
+    "FileAPI/file/File-constructor-endings.html",
+    [
+      {
+        "name": "Input LF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LF with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\" but got \"\\n\""
+      },
+      {
+        "name": "Input CR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CR with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\" but got \"\\r\""
+      },
+      {
+        "name": "Input CRLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCR with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\\r\\n\" but got \"\\r\\r\""
+      },
+      {
+        "name": "Input LFCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCR with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\\r\\n\" but got \"\\n\\r\""
+      },
+      {
+        "name": "Input LFLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFLF with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\\r\\n\" but got \"\\n\\n\""
+      },
+      {
+        "name": "Input CRCRLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCRLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCRLF with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\\r\\n\" but got \"\\r\\r\\n\""
+      },
+      {
+        "name": "Input CRLFLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFLF with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\\r\\n\" but got \"\\r\\n\\n\""
+      },
+      {
+        "name": "Input CRLFCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCR with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCRLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCRLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCRLF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCRLFCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCRLFCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCRLFCR with endings 'native'",
+        "status": "Fail",
+        "message": "assert_equals: Newlines should match the platform with endings \"native\" expected \"\\r\\n\\r\\n\\r\\n\" but got \"\\n\\r\\n\\r\""
+      },
+      {
+        "name": "CR/LF in adjacent input strings",
+        "status": "Fail",
+        "message": "assert_equals: CR/LF in adjacent strings should be converted to two platform newlines expected \"\\r\\n\\r\\n\" but got \"\\r\\n\""
+      }
+    ]
+  ],
+  [
+    "FileAPI/file/File-constructor.any.js",
+    [
+      {
+        "name": "File interface object exists",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Required arguments",
+        "status": "Fail",
+        "message": "assert_throws_js: Bits argument is required function \"() => new File()\" did not throw"
+      },
+      {
+        "name": "empty fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "DOMString fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unicode DOMString fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "String object fileBits",
+        "status": "Fail",
+        "message": "assert_equals: expected 13 but got 0"
+      },
+      {
+        "name": "Empty Blob fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Empty File fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "File fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ArrayBuffer fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Typed array fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Various fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Number in fileBits",
+        "status": "Fail",
+        "message": "assert_equals: expected 2 but got 0"
+      },
+      {
+        "name": "Array in fileBits",
+        "status": "Fail",
+        "message": "assert_equals: expected 5 but got 0"
+      },
+      {
+        "name": "Object in fileBits",
+        "status": "Fail",
+        "message": "assert_equals: expected 15 but got 0"
+      },
+      {
+        "name": "HTMLBodyElement in fileBits",
+        "status": "Fail",
+        "message": "assert_equals: expected 24 but got 0"
+      },
+      {
+        "name": "Object with toString in fileBits",
+        "status": "Fail",
+        "message": "assert_equals: expected 8 but got 0"
+      },
+      {
+        "name": "Custom @@iterator",
+        "status": "Fail",
+        "message": "assert_equals: expected 5 but got 0"
+      },
+      {
+        "name": "Invalid bits argument: \"hello\"",
+        "status": "Fail",
+        "message": "assert_throws_js: Constructor should throw for invalid bits argument function \"() => new File(arg, 'world.html')\" did not throw"
+      },
+      {
+        "name": "Invalid bits argument: 0",
+        "status": "Fail",
+        "message": "assert_throws_js: Constructor should throw for invalid bits argument function \"() => new File(arg, 'world.html')\" did not throw"
+      },
+      {
+        "name": "Invalid bits argument: null",
+        "status": "Fail",
+        "message": "assert_throws_js: Constructor should throw for invalid bits argument function \"() => new File(arg, 'world.html')\" did not throw"
+      },
+      {
+        "name": "Bits argument: object that throws",
+        "status": "Fail",
+        "message": "assert_throws_js: Constructor should propagate exceptions function \"() => new File([to_string_throws], 'name.txt')\" did not throw"
+      },
+      {
+        "name": "Using fileName",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "No replacement when using special character in fileName",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using null fileName",
+        "status": "Fail",
+        "message": "assert_equals: expected \"null\" but got \"\""
+      },
+      {
+        "name": "Using number fileName",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using empty string fileName",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using object fileName",
+        "status": "Fail",
+        "message": "assert_equals: expected \"[object HTMLBodyElement]\" but got \"body\""
+      },
+      {
+        "name": "Using type in File constructor: text/plain",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: text/plain;charset=UTF-8",
+        "status": "Fail",
+        "message": "assert_equals: expected \"text/plain;charset=utf-8\" but got \"text/plain;charset=UTF-8\""
+      },
+      {
+        "name": "Using type in File constructor: TEXT/PLAIN",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: 𝓽𝓮𝔁𝓽/𝔭𝔩𝔞𝔦𝔫",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: ascii/nonprintable\u001f",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: ascii/nonprintable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: nonasciiî",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: nonasciiሴ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: nonparsable",
+        "status": "Fail",
+        "message": "assert_equals: expected \"nonparsable\" but got \"\""
+      },
+      {
+        "name": "Using lastModified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Misusing name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unknown properties are ignored",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid property bag: 123",
+        "status": "Fail",
+        "message": "assert_throws_js: Constructor should throw for invalid property bag type function \"() => new File(['bits'], 'name.txt', arg)\" did not throw"
+      },
+      {
+        "name": "Invalid property bag: 123.4",
+        "status": "Fail",
+        "message": "assert_throws_js: Constructor should throw for invalid property bag type function \"() => new File(['bits'], 'name.txt', arg)\" did not throw"
+      },
+      {
+        "name": "Invalid property bag: true",
+        "status": "Fail",
+        "message": "assert_throws_js: Constructor should throw for invalid property bag type function \"() => new File(['bits'], 'name.txt', arg)\" did not throw"
+      },
+      {
+        "name": "Invalid property bag: \"abc\"",
+        "status": "Fail",
+        "message": "assert_throws_js: Constructor should throw for invalid property bag type function \"() => new File(['bits'], 'name.txt', arg)\" did not throw"
+      },
+      {
+        "name": "Unusual but valid property bag: null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unusual but valid property bag: undefined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unusual but valid property bag: 1,2,3",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unusual but valid property bag: /regex/",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unusual but valid property bag: function() {}",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property bag propagates exceptions",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/fileReader.any.js",
+    [
+      {
+        "name": "FileReader interface object",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "no-argument FileReader constructor",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FileReader States -- abort",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FileReader States -- events",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 2"
+      }
+    ]
+  ],
+  [
+    "FileAPI/filelist-section/filelist.html",
+    [
+      {
+        "name": "Check if window has a FileList property",
+        "status": "Fail",
+        "message": "assert_true: window has a FileList property expected true got false"
+      },
+      {
+        "name": "Check if FileList.length is 0",
+        "status": "Fail",
+        "message": "FileList is not defined"
+      },
+      {
+        "name": "Check if item is a instanceof Function",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check if item is a method of fileList",
+        "status": "Fail",
+        "message": "assert_inherits: item is a method of fileList property \"item\" found on object expected in prototype chain"
+      },
+      {
+        "name": "Check if the item method returns null when no file selected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check if length is fileList's attribute",
+        "status": "Fail",
+        "message": "assert_inherits: length is fileList attribute property \"length\" found on object expected in prototype chain"
+      },
+      {
+        "name": "Check if the fileList length is 0 when no file selected",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/Determining-Encoding.any.js",
+    [
+      {
+        "name": "Blob Determing Encoding with encoding argument",
+        "status": "Fail",
+        "message": "assert_equals: The FileReader should read the ArrayBuffer through UTF-16BE. expected \"hello\" but got \"\\ufffd\\ufffd\\0h\\0e\\0l\\0l\\0o\""
+      },
+      {
+        "name": "Blob Determing Encoding with type attribute",
+        "status": "Fail",
+        "message": "assert_equals: The FileReader should read the ArrayBuffer through UTF-16BE. expected \"hello\" but got \"\\ufffd\\ufffd\\0h\\0e\\0l\\0l\\0o\""
+      },
+      {
+        "name": "Blob Determing Encoding with UTF-8 BOM",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob Determing Encoding without anything implying charset.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob Determing Encoding with UTF-16BE BOM",
+        "status": "Fail",
+        "message": "assert_equals: The FileReader should read the ArrayBuffer through UTF-16BE. expected \"hello\" but got \"\\ufffd\\ufffd\\0h\\0e\\0l\\0l\\0o\""
+      },
+      {
+        "name": "Blob Determing Encoding with UTF-16LE BOM",
+        "status": "Fail",
+        "message": "assert_equals: The FileReader should read the ArrayBuffer through UTF-16LE. expected \"hello\" but got \"\\ufffd\\ufffdh\\0e\\0l\\0l\\0o\\0\""
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/FileReader-event-handler-attributes.any.js",
+    [
+      {
+        "name": "FileReader.onloadstart: initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FileReader.onprogress: initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FileReader.onload: initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FileReader.onabort: initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FileReader.onerror: initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FileReader.onloadend: initial value",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/FileReader-multiple-reads.any.js",
+    [
+      {
+        "name": "test FileReader InvalidStateError exception for readAsText",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n    reader.readAsText(blob_2)\n  }\" did not throw"
+      },
+      {
+        "name": "test FileReader InvalidStateError exception for readAsDataURL",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n    reader.readAsDataURL(blob_2)\n  }\" did not throw"
+      },
+      {
+        "name": "test FileReader InvalidStateError exception for readAsArrayBuffer",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function () {\n    reader.readAsArrayBuffer(blob_2)\n  }\" did not throw"
+      },
+      {
+        "name": "test FileReader InvalidStateError exception in onloadstart event for readAsArrayBuffer",
+        "status": "Fail",
+        "message": "assert_false: Only one loadstart event should be dispatched expected false got true"
+      },
+      {
+        "name": "test FileReader no InvalidStateError exception in loadend event handler for readAsArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "test abort and restart in onloadstart event for readAsText",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_abort.any.js",
+    [
+      {
+        "name": "Aborting before read",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Aborting after read",
+        "status": "Fail",
+        "message": "watchedNode.addEventListener is not a function"
+      },
+      {
+        "name": "Aborting a reused reader after a previous read completed",
+        "status": "Fail",
+        "message": "watchedNode.addEventListener is not a function"
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_error.any.js",
+    [
+      {
+        "name": "filereader_error",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_events.any.js",
+    [
+      {
+        "name": "events are dispatched in the correct order for an empty blob",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: watchedNode.addEventListener is not a function\""
+      },
+      {
+        "name": "events are dispatched in the correct order for a non-empty blob",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: watchedNode.addEventListener is not a function\""
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_readAsArrayBuffer.any.js",
+    [
+      {
+        "name": "filereader_readAsArrayBuffer",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 2"
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_readAsBinaryString.any.js",
+    [
+      {
+        "name": "filereader_readAsBinaryString",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 2"
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_readAsDataURL.any.js",
+    [
+      {
+        "name": "FileReader readyState during readAsDataURL",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 2"
+      },
+      {
+        "name": "readAsDataURL result for Blob with specified MIME type",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "readAsDataURL result for Blob with unspecified MIME type",
+        "status": "Fail",
+        "message": "assert_equals: expected \"data:application/octet-stream;base64,VEVTVA==\" but got \"data:;base64,VEVTVA==\""
+      },
+      {
+        "name": "readAsDataURL result for empty Blob",
+        "status": "Fail",
+        "message": "assert_equals: expected \"data:application/octet-stream;base64,\" but got \"data:;base64,\""
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_readAsText.any.js",
+    [
+      {
+        "name": "readAsText should correctly read UTF-8.",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 2"
+      },
+      {
+        "name": "readAsText should correctly read UTF-16.",
+        "status": "Fail",
+        "message": "assert_equals: The result is not TEST expected \"䕔呓\" but got \"TEST\""
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_readAsText_blob_type_charset.any.js",
+    [
+      {
+        "name": "readAsText() uses the charset parameter of the Blob's type (windows-1252)",
+        "status": "Fail",
+        "message": "assert_equals: readAsText should honor the windows-1252 charset from the Blob type and decode 0x80 as U+20AC, not UTF-8 U+FFFD. expected \"€\" but got \"\\ufffd\""
+      },
+      {
+        "name": "readAsText() decodes a windows-1252 Blob body using the type's charset",
+        "status": "Fail",
+        "message": "assert_equals: readAsText should decode the body using the windows-1252 charset declared in the Blob type. expected \"héllo\" but got \"h\\ufffdllo\""
+      },
+      {
+        "name": "readAsText() encoding argument overrides the Blob type's charset",
+        "status": "Fail",
+        "message": "assert_equals: An explicit encoding argument takes precedence over the Blob type's charset. expected \"€\" but got \"\\ufffd\""
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_readystate.any.js",
+    [
+      {
+        "name": "filereader_readystate",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_result.any.js",
+    [
+      {
+        "name": "readAsDataURL",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "readAsArrayBuffer",
+        "status": "Fail",
+        "message": "assert_true: The result is instanceof ArrayBuffer expected true got false"
+      },
+      {
+        "name": "readAsBinaryString",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "result is null during \"loadstart\" event for readAsText",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: watchedNode.addEventListener is not a function\""
+      },
+      {
+        "name": "readAsText",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "result is null during \"loadstart\" event for readAsDataURL",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: watchedNode.addEventListener is not a function\""
+      },
+      {
+        "name": "result is null during \"loadstart\" event for readAsArrayBuffer",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: watchedNode.addEventListener is not a function\""
+      },
+      {
+        "name": "result is null during \"loadstart\" event for readAsBinaryString",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: watchedNode.addEventListener is not a function\""
+      },
+      {
+        "name": "result is null during \"progress\" event for readAsText",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: watchedNode.addEventListener is not a function\""
+      },
+      {
+        "name": "result is null during \"progress\" event for readAsDataURL",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: watchedNode.addEventListener is not a function\""
+      },
+      {
+        "name": "result is null during \"progress\" event for readAsArrayBuffer",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: watchedNode.addEventListener is not a function\""
+      },
+      {
+        "name": "result is null during \"progress\" event for readAsBinaryString",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: watchedNode.addEventListener is not a function\""
+      }
+    ]
+  ],
+  [
+    "FileAPI/unicode.any.js",
+    [
+      {
+        "name": "Test that strings are not NFC normalized by Blob constructor",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test that strings are not NFC normalized by File constructor",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test that unpaired surrogates are replaced by Blob constructor",
+        "status": "Fail",
+        "message": "assert_equals: Unpaired surrogates should be replaced. expected \"abc\\ufffddef\\ufffdghi\" but got \"abcU+dc00defU+d800ghi\""
+      },
+      {
+        "name": "Test that unpaired surrogates are replaced by File constructor",
+        "status": "Fail",
+        "message": "assert_equals: Unpaired surrogates should be replaced. expected \"abc\\ufffddef\\ufffdghi\" but got \"abcU+dc00defU+d800ghi\""
+      }
+    ]
+  ],
+  [
+    "FileAPI/url/url-format.any.js",
+    [
+      {
+        "name": "Generated Blob URLs are unique",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob URL starts with \"blob:\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob URL starts with \"blob:\" for Files",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Origin of Blob URL matches our origin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob URL parses correctly",
+        "status": "Fail",
+        "message": "assert_true: Path must end with a valid UUID expected true got false"
+      },
+      {
+        "name": "Origin of Blob URL matches our origin for Files",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/url/url-with-fetch.any.js",
+    [
+      {
+        "name": "Blob URLs can be used in fetch",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch with a fragment should succeed",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to fetch\""
+      },
+      {
+        "name": "fetch of a revoked URL should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Only exact matches should revoke URLs, using fetch",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Appending a query string should cause fetch to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Appending a path should cause fetch to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch with method \"HEAD\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch with method \"POST\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch with method \"DELETE\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch with method \"OPTIONS\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch with method \"PUT\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch with method \"CUSTOM\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch should return Content-Type from Blob",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Revoke blob URL after creating Request, will fetch",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to fetch\""
+      },
+      {
+        "name": "Revoke blob URL after creating Request, then clone Request, will fetch",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to fetch\""
+      },
+      {
+        "name": "Revoke blob URL after calling fetch, fetch should succeed",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/url/url-with-xhr.any.js",
+    [
+      {
+        "name": "XHR should return Content-Type from Blob",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Revoke blob URL after open(), will fetch",
+        "status": "Fail",
+        "message": "assert_unreached: Got unexpected error event Reached unreachable code"
+      },
+      {
+        "name": "Blob URLs can be used in XHR",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XHR with a fragment should succeed",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: \"Got unexpected error event\""
+      },
+      {
+        "name": "XHR of a revoked URL should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Only exact matches should revoke URLs, using XHR",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Appending a query string should cause XHR to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Appending a path should cause XHR to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XHR with method \"HEAD\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XHR with method \"POST\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XHR with method \"DELETE\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XHR with method \"OPTIONS\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XHR with method \"PUT\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XHR with method \"CUSTOM\" should fail",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/url/url_xmlhttprequest_img.html",
+    [
+      {
+        "name": "FileAPI/url/url_xmlhttprequest_img.html",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]

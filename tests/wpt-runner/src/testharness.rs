@@ -21,7 +21,7 @@ const CORPUS_CASE_TIMEOUT: Duration = Duration::from_secs(30);
 /// 单案 wall-clock 预算——`ZW_CORPUS_CASE_TIMEOUT_SECS` 按跑覆盖（html-syntax-compat
 /// M2 记账：html5lib 全量语料 × document.write 面在 30s 案预算内跑不完，切片跑法用；
 /// 缺省维持 30s，零行为变化）。
-fn corpus_case_timeout() -> Duration {
+pub(crate) fn corpus_case_timeout() -> Duration {
     std::env::var("ZW_CORPUS_CASE_TIMEOUT_SECS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
@@ -3387,7 +3387,7 @@ fn run_timing_subdirs(
 
 /// `.any.js` 单案 window 变体执行（[`run_wasm_cases`] 同款：META script 自动解析 +
 /// [`any_js_window_wrapper`]；support 缺失按 Fail 记账不静默跳过）。
-fn run_any_js_window_case(
+pub(crate) fn run_any_js_window_case(
     wpt_root: &Path,
     relative: &str,
     source: &str,
@@ -6942,7 +6942,7 @@ fn wpt_status_text(status: u16) -> &'static str {
     }
 }
 
-fn run_testharness_html_inner(
+pub(crate) fn run_testharness_html_inner(
     wpt_root: &Path,
     case_name: &str,
     source: &str,
