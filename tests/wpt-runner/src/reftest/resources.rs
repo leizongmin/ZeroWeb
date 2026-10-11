@@ -14,7 +14,7 @@ use percent_encoding::percent_decode;
 /// 从 HTML 中提取所有 `<img src="...">` 的 URL。
 /// R4162：img 无 src/srcset 且位于 `<picture>` 内时，回退首个 `<source srcset>` 首 URL
 /// （HTML §4.8.5 picture 选择；不评估 media/type 条件，match-all）。
-fn extract_img_srcs(html: &str) -> Vec<String> {
+pub(super) fn extract_img_srcs(html: &str) -> Vec<String> {
     let mut srcs = Vec::new();
     let mut pos = 0;
     while let Some(idx) = html[pos..].find("<img") {
@@ -73,7 +73,7 @@ fn extract_img_srcs(html: &str) -> Vec<String> {
 
 /// 向上/向前扫描：img 无自身图源时，找其所在 `<picture>` 内首个 `<source srcset>` 的首 URL。
 /// `img_pos` 为 `<img` 标签在 html 中的起始偏移。
-fn find_picture_source_srcset(html: &str, img_pos: usize) -> Option<String> {
+pub(super) fn find_picture_source_srcset(html: &str, img_pos: usize) -> Option<String> {
     // 向前找最近的 <picture 开（且中间无 </picture> 闭合）
     let before = &html[..img_pos];
     let pic_open = before.rfind("<picture")?;
@@ -88,7 +88,12 @@ fn find_picture_source_srcset(html: &str, img_pos: usize) -> Option<String> {
     let src_tag = &src_seg[..seg_end];
     for attr in ["srcset=\"", "srcset='"] {
         if let Some(a) = src_tag.find(attr) {
-            let quote = &src_tag[a + attr.len() - 1..];
+            // R5056：quote 须为**单字符**切片（≡ R3995 data=/src= 提取同款端界）——
+            // 旧 `&src_tag[a+attr.len()-1..]` 截到 tag 尾，find(quote) 在值区间内永不
+            // 命中 → picture/source 回退恒 None → 图源缺失零渲染（R4162 落地即坏，
+            // replaced-element-012 自引入起恒红）。单测见 reftest/tests.rs probe 同款
+            // 断言（find_picture_source_srcset_basic）。
+            let quote = &src_tag[a + attr.len() - 1..a + attr.len()];
             let vs = a + attr.len();
             if let Some(ve) = src_tag[vs..].find(quote) {
                 let v = &src_tag[vs..vs + ve];
@@ -808,7 +813,6 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
 
     for url in &all_urls {
         let key = ImageKey::new(simple_hash(url));
-
         // R1706：data:image/svg+xml → decode_data_uri 真 resvg 栅格化（支持任意 SVG：
         // 渐变/路径/多形状，不再仅单色 rect 近似）。fixture 24 实测像素与旧纯色近似一致。
         if url.starts_with("data:image/svg+xml")

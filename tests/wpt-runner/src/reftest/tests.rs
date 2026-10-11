@@ -4763,3 +4763,34 @@ fn debug_r4193_cis_computed() {
         }
     }
 }
+
+/// R5056：picture/source 回退提取（R4162 落地即坏——quote 切片截到 tag 尾致
+/// find 永不命中，replaced-element-012 自引入起恒红）。三断言：回退取首 URL、
+/// img 自身 srcset 优先、非 picture 场景不误取。
+#[test]
+fn find_picture_source_srcset_basic() {
+    use crate::reftest::resources::{extract_img_srcs, find_picture_source_srcset};
+
+    // ① 驱动案形态：img 在 picture 内、无自身图源 → 首个 source srcset 首 URL。
+    let html = r#"<body><picture>
+  <source srcset="support/20x50-green.png">
+  <img style="width: 100px; aspect-ratio: 1/1;">
+</picture></body>"#;
+    let img_pos = html.find("<img").expect("img pos");
+    assert_eq!(
+        find_picture_source_srcset(html, img_pos).as_deref(),
+        Some("support/20x50-green.png")
+    );
+    assert_eq!(extract_img_srcs(html), vec!["support/20x50-green.png".to_string()]);
+
+    // ② img 自身 src 存在 → 不走回退。
+    let html2 = r#"<picture><source srcset="a.png"><img src="b.png"></picture>"#;
+    let srcs2 = extract_img_srcs(html2);
+    assert!(srcs2.contains(&"b.png".to_string()), "自 src 优先: {srcs2:?}");
+    assert!(!srcs2.contains(&"a.png".to_string()), "不并取 source: {srcs2:?}");
+
+    // ③ 非 picture 场景（无 source）→ None。
+    let html3 = r#"<div><img style="width:10px"></div>"#;
+    let pos3 = html3.find("<img").expect("img pos");
+    assert_eq!(find_picture_source_srcset(html3, pos3), None);
+}
