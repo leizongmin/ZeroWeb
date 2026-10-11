@@ -15,6 +15,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 
 use symphonia::core::codecs::CodecParameters;
+use symphonia::core::codecs::audio::{AudioCodecParameters, AudioDecoderOptions};
 use symphonia::core::codecs::video::well_known::CODEC_ID_H264;
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, FormatReader};
@@ -22,6 +23,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::units::TimeBase;
 
+use crate::audio_decode::{AudioDecodeError, DecodedAudio};
 use crate::decode::{ColorSpace, DecodeError, DecodedVideoFrame};
 
 /// append 与解码共享的缓冲（单一写入面：append 互斥；解码只读）。
@@ -448,6 +450,217 @@ impl MseVideoFeed {
     }
 }
 
+/// 音轨 probe 选中集：（轨 id、时基、采样率、声道、解码器）。
+type SelectedAudioTrack = (
+    u32,
+    TimeBase,
+    u32,
+    u16,
+    Box<dyn symphonia::core::codecs::audio::AudioDecoder>,
+);
+
+/// MSE 流式音频轨（t8s-3）：共享缓冲 + 惰性 symphonia reader + 音频解码。
+///
+/// 边缘语义与 [`MseVideoFeed`] 同构（增长重建 / `ended` 真流末 / 读边缘归一），
+/// 差异：轨选择取**音频轨**（symphonia registry 可解的 codec——aac feature 随
+/// workspace features 启用），解码输出 [`DecodedAudio`] 批（f32 交错——
+/// `WebmAudioEntry`/audio clock 消费契约，pts 取包真值非帧计数推导——重建后
+/// 时间轴不回跳）。skip 相按 pts 单调（重建后重放包不对解码器重放）。
+pub struct MseAudioFeed {
+    handle: MseFeedHandle,
+    reader: Option<Box<dyn FormatReader>>,
+    decoder: Option<Box<dyn symphonia::core::codecs::audio::AudioDecoder>>,
+    track_id: u32,
+    time_base: TimeBase,
+    sample_rate: u32,
+    channels: u16,
+    at_edge: bool,
+    /// probe（或重建）时的缓冲长度——symphonia 建 reader 固化 total_len，
+    /// append 增长对它不可见；读边缘据此判重建。
+    len_at_probe: usize,
+    /// 已交付批的最大 pts（毫秒）——重建跳过相基准。
+    last_pts_ms: Option<u64>,
+    skip_until_new: bool,
+}
+
+impl MseAudioFeed {
+    fn blank(handle: MseFeedHandle) -> Self {
+        Self {
+            handle,
+            reader: None,
+            decoder: None,
+            track_id: 0,
+            time_base: TimeBase::try_new(1, 1_000).expect("1/1000 non-zero"),
+            sample_rate: 48_000,
+            channels: 2,
+            at_edge: false,
+            len_at_probe: 0,
+            last_pts_ms: None,
+            skip_until_new: false,
+        }
+    }
+
+    /// 从既有 append 句柄构造（registry MSE 面：audio SourceBuffer 的 append
+    /// 流挂独立句柄，play 懒建解码器时经此挂接）。
+    pub fn from_handle(handle: MseFeedHandle) -> Self {
+        Self::blank(handle)
+    }
+
+    fn try_probe(&mut self) -> Result<bool, AudioDecodeError> {
+        if self.reader.is_some() {
+            return Ok(true);
+        }
+        let src = FeedSource {
+            shared: Arc::clone(&self.handle.shared),
+            pos: 0,
+        };
+        let mss = MediaSourceStream::new(Box::new(src), Default::default());
+        let mut hint = Hint::new();
+        hint.with_extension("mp4");
+        // 数据不足 / moov 未到齐 → 留待重试（与视频 feed 同：ended 仍失败才硬错）。
+        let probed = match symphonia::default::get_probe().probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                if self.handle.is_ended() {
+                    return Err(AudioDecodeError::Probe(e.to_string()));
+                }
+                return Ok(false);
+            }
+        };
+        // 轨选择：首个 symphonia registry 可解的音频轨（make_audio_decoder 即
+        // 支持面真值——aac feature 在位 → mp4a.40.2 可解；不支持 codec 错误上抛）。
+        let mut selected: Option<SelectedAudioTrack> = None;
+        for track in probed.tracks() {
+            let Some(CodecParameters::Audio(params)) = &track.codec_params else {
+                continue;
+            };
+            let Some(rate) = params.sample_rate else {
+                continue;
+            };
+            let audio_params = AudioCodecParameters {
+                codec: params.codec,
+                profile: params.profile,
+                sample_rate: params.sample_rate,
+                sample_format: params.sample_format,
+                bits_per_sample: params.bits_per_sample,
+                bits_per_coded_sample: params.bits_per_coded_sample,
+                channels: params.channels.clone(),
+                max_frames_per_packet: params.max_frames_per_packet,
+                verification_check: params.verification_check,
+                extra_data: params.extra_data.clone(),
+                frames_per_block: params.frames_per_block,
+            };
+            let decoder = match symphonia::default::get_codecs()
+                .make_audio_decoder(&audio_params, &AudioDecoderOptions::default())
+            {
+                Ok(d) => d,
+                // 该轨 codec 不在注册表 → 尝试下一音轨（多音轨面）；全失败 →
+                //Ok(None) 等待面不适用（init 段已到齐才进到这里），按不支持硬错。
+                Err(_) => continue,
+            };
+            let channels = params.channels.as_ref().map(|c| c.count()).unwrap_or(1) as u16;
+            let tb = track
+                .time_base
+                .unwrap_or_else(|| TimeBase::try_new(1, rate).expect("1/rate non-zero"));
+            selected = Some((track.id, tb, rate, channels, decoder));
+            break;
+        }
+        let Some((track_id, tb, rate, channels, decoder)) = selected else {
+            return Err(AudioDecodeError::NoTrack);
+        };
+        self.track_id = track_id;
+        self.time_base = tb;
+        self.sample_rate = rate;
+        self.channels = channels;
+        self.decoder = Some(decoder);
+        self.reader = Some(probed);
+        self.len_at_probe = self.handle.byte_len();
+        Ok(true)
+    }
+
+    /// 解码下一批（一个 media packet 一批；等待更多数据 / 真流末 → `Ok(None)`，
+    /// 区分经 [`Self::is_exhausted`]）。
+    pub fn next_batch(&mut self) -> Result<Option<DecodedAudio>, AudioDecodeError> {
+        if !self.try_probe()? {
+            return Ok(None);
+        }
+        loop {
+            let next = match self.reader.as_mut().expect("probed").next_packet() {
+                Ok(x) => Ok(x),
+                Err(symphonia::core::errors::Error::IoError(ref e))
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    Ok(None)
+                }
+                Err(e) => Err(e),
+            };
+            match next {
+                Ok(Some(packet)) => {
+                    if packet.track_id != self.track_id {
+                        continue;
+                    }
+                    // 同视频 feed N6：pts 换算 u64 饱和。
+                    let pts128 = packet.pts.get() as u128 * 1_000 * u128::from(self.time_base.numer.get())
+                        / u128::from(self.time_base.denom.get());
+                    let pts_ms = u64::try_from(pts128).unwrap_or(u64::MAX);
+                    // 重建跳过相：pts ≤ 已交付的重放包不重解（时间轴由包 pts
+                    // 真值承载，重复批会使 audio clock 游标回跳）。
+                    if self.skip_until_new && self.last_pts_ms.is_some_and(|last| pts_ms <= last) {
+                        continue;
+                    }
+                    self.skip_until_new = false;
+                    self.at_edge = false;
+                    let decoded = self
+                        .decoder
+                        .as_mut()
+                        .expect("probed")
+                        .decode(&packet)
+                        .map_err(|e| AudioDecodeError::Decode(e.to_string()))?;
+                    let mut samples = Vec::with_capacity(decoded.samples_interleaved());
+                    decoded.copy_to_vec_interleaved::<f32>(&mut samples);
+                    if samples.is_empty() {
+                        continue;
+                    }
+                    self.last_pts_ms = Some(pts_ms);
+                    return Ok(Some(DecodedAudio {
+                        samples,
+                        sample_rate: self.sample_rate,
+                        channels: self.channels,
+                        pts_ms,
+                    }));
+                }
+                Ok(None) => {
+                    self.at_edge = true;
+                    if self.handle.is_ended() {
+                        return Ok(None);
+                    }
+                    if self.handle.byte_len() > self.len_at_probe {
+                        self.reader = None;
+                        self.decoder = None;
+                        self.track_id = 0;
+                        self.skip_until_new = self.last_pts_ms.is_some();
+                        if self.try_probe()? {
+                            continue;
+                        }
+                    }
+                    return Ok(None);
+                }
+                Err(e) => return Err(AudioDecodeError::Decode(e.to_string())),
+            }
+        }
+    }
+
+    /// 真流末（`ended` 且 demux 耗尽）——伴生音频条目停止判定的 MSE 面。
+    pub fn is_exhausted(&self) -> bool {
+        self.at_edge && self.handle.is_ended()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -794,6 +1007,303 @@ mod tests {
             off += 12;
         }
         moofmdat
+    }
+
+    /// 提取 fixture 音轨素材（t8s-3 钉测）：esds payload + 逐 AAC 包字节。
+    /// 提取走 symphonia 自身 demux（与生产同路径——手搓 stsc/stco 样本表遍历
+    /// 已证易错，弃用）：probe fixture → 音轨包序列原样收集。
+    fn fixture_audio_material() -> (Vec<u8>, Vec<Vec<u8>>) {
+        use symphonia::core::formats::{FormatOptions, probe::Hint};
+        use symphonia::core::io::MediaSourceStream;
+        use symphonia::core::meta::MetadataOptions;
+        let data = fixture_bytes();
+        let mss = MediaSourceStream::new(Box::new(std::io::Cursor::new(data.clone())), Default::default());
+        let mut probed = symphonia::default::get_probe()
+            .probe(&Hint::new(), mss, FormatOptions::default(), MetadataOptions::default())
+            .expect("fixture probe");
+        let audio_track_id = probed
+            .tracks()
+            .iter()
+            .find(|t| t.codec_params.as_ref().is_some_and(|c| c.is_audio()))
+            .map(|t| t.id)
+            .expect("fixture 音轨");
+        // esds：从 stsd 手取（demux 层不透出）——moov → soun trak → stbl/stsd。
+        let (moov, _, _) = find_box(&data, b"moov").expect("moov");
+        let mut esds: Option<Vec<u8>> = None;
+        for (f, s, e) in top_boxes(moov) {
+            if f != *b"trak" {
+                continue;
+            }
+            let trak = &moov[s..e];
+            let (mdia, _, _) = find_box(trak, b"mdia").expect("mdia");
+            let (hdlr, _, _) = find_box(mdia, b"hdlr").expect("hdlr");
+            if hdlr[8..12] != *b"soun" {
+                continue;
+            }
+            let (minf, _, _) = find_box(mdia, b"minf").expect("minf");
+            let (stbl, _, _) = find_box(minf, b"stbl").expect("stbl");
+            let (stsd, _, _) = find_box(stbl, b"stsd").expect("stsd");
+            let entry_size = u32_at(stsd, 8) as usize;
+            let entry = &stsd[8..8 + entry_size];
+            // mp4a 子 box 从 entry body 28B 固定段后开始（8B 头 + 28B 音频样目）。
+            for (cf, cs, ce) in top_boxes(&entry[8 + 28..]) {
+                if cf == *b"esds" {
+                    esds = Some(entry[8 + 28 + cs..8 + 28 + ce].to_vec());
+                }
+            }
+        }
+        let esds = esds.expect("fixture 音轨 esds");
+        let mut samples = Vec::new();
+        while let Ok(Some(pkt)) = probed.next_packet() {
+            if pkt.track_id == audio_track_id {
+                samples.push(pkt.data.to_vec());
+            }
+        }
+        assert!(!samples.is_empty(), "fixture 音轨样本提取");
+        (esds, samples)
+    }
+
+    fn u32_at(buf: &[u8], off: usize) -> u32 {
+        u32::from_be_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]])
+    }
+
+    /// 手造最小 fragmented fMP4 **音频-only** 流（DASH 音频轨形态，t8s-3）：
+    /// ftyp + moov(mvhd/trak(tkhd+mdia(mdhd/hdlr(soun)/minf(smhd/dinf/stbl(
+    /// stsd(mp4a+esds))/stts/stsc/stsz/stco)))+mvex(trex)) + moof(mfhd/traf(
+    /// tfhd/tfdt/trun)) + mdat。timescale = 真实采样率（测试先经
+    /// `AudioDecoder::open` 取 esds 真值），trex/trun 样本时长 = 1024
+    /// （AAC 每帧 1024 样本约定）。
+    fn build_fragmented_audio(esds: &[u8], rate: u32, samples: &[Vec<u8>]) -> (Vec<u8>, Vec<u8>) {
+        let timescale: u32 = rate;
+        let frame_dur: u32 = 1024;
+        // mp4a sample entry body：6B reserved + 2B dri + 8B reserved + 2B chan
+        // + 2B size + 2B pre_defined + 2B reserved + 4B rate(16.16)，随后 esds。
+        let mut mp4a_body = Vec::new();
+        mp4a_body.extend_from_slice(&[0u8; 6]);
+        mp4a_body.extend_from_slice(&be32(1)[2..]);
+        mp4a_body.extend_from_slice(&[0u8; 8]);
+        mp4a_body.extend_from_slice(&be32(1)[2..]); // channelcount = 1（fixture 单声道）
+        mp4a_body.extend_from_slice(&be32(16)[2..]); // samplesize
+        mp4a_body.extend_from_slice(&be32(0)[2..]);
+        mp4a_body.extend_from_slice(&be32(0)[2..]);
+        mp4a_body.extend_from_slice(&be32(rate << 16)); // samplerate 16.16
+        mp4a_body.extend_from_slice(&box_header(b"esds", esds.len()));
+        mp4a_body.extend_from_slice(esds);
+        let mp4a = box_header(b"mp4a", mp4a_body.len())
+            .into_iter()
+            .chain(mp4a_body)
+            .collect::<Vec<u8>>();
+        let mut stsd_payload = be32(1).to_vec();
+        stsd_payload.extend_from_slice(&mp4a);
+        let stsd = full_box(b"stsd", 0, 0, stsd_payload);
+        let stts = full_box(b"stts", 0, 0, be32(0).to_vec());
+        let stsc = full_box(b"stsc", 0, 0, be32(0).to_vec());
+        let mut stsz_payload = be32(0).to_vec();
+        stsz_payload.extend_from_slice(&be32(0));
+        let stsz = full_box(b"stsz", 0, 0, stsz_payload);
+        let stco = full_box(b"stco", 0, 0, be32(0).to_vec());
+        let stbl_body = [stsd, stts, stsc, stsz, stco].concat();
+        let stbl = box_header(b"stbl", stbl_body.len())
+            .into_iter()
+            .chain(stbl_body)
+            .collect::<Vec<u8>>();
+        let smhd = full_box(b"smhd", 0, 0, be32(0).to_vec());
+        let dref = full_box(b"dref", 0, 0, {
+            let mut p = be32(1).to_vec();
+            p.extend_from_slice(&full_box(b"url ", 0, 1, Vec::new()));
+            p
+        });
+        let dinf = box_header(b"dinf", dref.len())
+            .into_iter()
+            .chain(dref)
+            .collect::<Vec<u8>>();
+        let minf_body = [smhd, dinf, stbl].concat();
+        let minf = box_header(b"minf", minf_body.len())
+            .into_iter()
+            .chain(minf_body)
+            .collect::<Vec<u8>>();
+        let hdlr = full_box(b"hdlr", 0, 0, {
+            let mut p = be32(0).to_vec();
+            p.extend_from_slice(b"soun");
+            p.extend_from_slice(&[0u8; 12]);
+            p.extend_from_slice(b"SoundHandler\0");
+            p
+        });
+        let mdhd = full_box(b"mdhd", 0, 0, {
+            let mut p = Vec::new();
+            p.extend_from_slice(&be32(0));
+            p.extend_from_slice(&be32(0));
+            p.extend_from_slice(&be32(timescale));
+            p.extend_from_slice(&be32(0));
+            p.extend_from_slice(&be32(0x55C00000));
+            p
+        });
+        let mdia_body = [mdhd, hdlr, minf].concat();
+        let mdia = box_header(b"mdia", mdia_body.len())
+            .into_iter()
+            .chain(mdia_body)
+            .collect::<Vec<u8>>();
+        let tkhd = full_box(b"tkhd", 0, 7, {
+            let mut p = Vec::new();
+            p.extend_from_slice(&be32(0));
+            p.extend_from_slice(&be32(0));
+            p.extend_from_slice(&be32(2)); // track_id = 2（音轨）
+            p.extend_from_slice(&be32(0));
+            p.extend_from_slice(&be32(0));
+            p.extend_from_slice(&[0u8; 8]);
+            p.extend_from_slice(&be32(0)[2..]);
+            p.extend_from_slice(&be32(0)[2..]);
+            p.extend_from_slice(&be32(0x0100)[2..]); // volume = 1.0（音轨）
+            p.extend_from_slice(&be32(0)[2..]);
+            p.extend_from_slice(&UNITY_MATRIX.iter().flat_map(|v| v.to_be_bytes()).collect::<Vec<u8>>());
+            p.extend_from_slice(&be32(0));
+            p.extend_from_slice(&be32(0));
+            p
+        });
+        let trak_body = [tkhd, mdia].concat();
+        let trak = box_header(b"trak", trak_body.len())
+            .into_iter()
+            .chain(trak_body)
+            .collect::<Vec<u8>>();
+        let mvhd = full_box(b"mvhd", 0, 0, {
+            let mut p = Vec::new();
+            p.extend_from_slice(&be32(0));
+            p.extend_from_slice(&be32(0));
+            p.extend_from_slice(&be32(timescale));
+            p.extend_from_slice(&be32(0));
+            p.extend_from_slice(&be32(0x00010000));
+            p.extend_from_slice(&be32(0x01000000)[..2]);
+            p.extend_from_slice(&[0u8; 2]);
+            p.extend_from_slice(&[0u8; 8]);
+            p.extend_from_slice(&UNITY_MATRIX.iter().flat_map(|v| v.to_be_bytes()).collect::<Vec<u8>>());
+            p.extend_from_slice(&[0u8; 24]);
+            p.extend_from_slice(&be32(3));
+            p
+        });
+        let trex = full_box(b"trex", 0, 0, {
+            let mut p = be32(2).to_vec(); // track_id = 2
+            p.extend_from_slice(&be32(1));
+            p.extend_from_slice(&be32(frame_dur));
+            p.extend_from_slice(&be32(0));
+            p.extend_from_slice(&be32(0x02000000)); // 关键帧旗标
+            p
+        });
+        let mvex = box_header(b"mvex", trex.len())
+            .into_iter()
+            .chain(trex)
+            .collect::<Vec<u8>>();
+        let moov_body = [mvhd, trak, mvex].concat();
+        let moov = box_header(b"moov", moov_body.len())
+            .into_iter()
+            .chain(moov_body)
+            .collect::<Vec<u8>>();
+        let ftyp = box_header(b"ftyp", 12)
+            .into_iter()
+            .chain(b"iso5".to_vec())
+            .chain(be32(0))
+            .chain(b"iso5".to_vec())
+            .collect::<Vec<u8>>();
+        let init = [ftyp, moov].concat();
+        // media 段：moof + mdat（全部 AAC 帧一个 fragment）。
+        let mut trun_payload = be32(samples.len() as u32).to_vec();
+        trun_payload.extend_from_slice(&be32(0));
+        for _ in samples {
+            trun_payload.extend_from_slice(&be32(frame_dur));
+            trun_payload.extend_from_slice(&be32(0));
+            trun_payload.extend_from_slice(&be32(0x02000000));
+        }
+        let trun = full_box(b"trun", 0, 0x000701, trun_payload);
+        let tfhd = full_box(b"tfhd", 0, 0x020000, be32(2).to_vec());
+        let tfdt = full_box(b"tfdt", 1, 0, be32(0).to_vec());
+        let mfhd = full_box(b"mfhd", 0, 0, be32(1).to_vec());
+        let trun_len = trun.len();
+        let traf_body = [tfhd, tfdt, trun].concat();
+        let traf = box_header(b"traf", traf_body.len())
+            .into_iter()
+            .chain(traf_body)
+            .collect::<Vec<u8>>();
+        let moof_body = [mfhd, traf].concat();
+        let moof = box_header(b"moof", moof_body.len())
+            .into_iter()
+            .chain(moof_body)
+            .collect::<Vec<u8>>();
+        let mut mdat_payload = Vec::new();
+        for s in samples {
+            mdat_payload.extend_from_slice(s);
+        }
+        let mut moofmdat = moof.clone();
+        let mdat_start = moofmdat.len();
+        moofmdat.extend_from_slice(&box_header(b"mdat", mdat_payload.len()));
+        moofmdat.extend_from_slice(&mdat_payload);
+        let trun_data_start = moof.len() - trun_len + 12 + 4;
+        moofmdat[trun_data_start..trun_data_start + 4].copy_from_slice(&be32((mdat_start + 8) as u32));
+        let mut off = trun_data_start + 4;
+        for s in samples {
+            moofmdat[off + 4..off + 8].copy_from_slice(&be32(s.len() as u32));
+            off += 12;
+        }
+        (init, moofmdat)
+    }
+
+    /// 钉④（t8s-3 渐进面）：双轨 mp4 渐进流喂——音轨惰性 probe + 分块边缘语义
+    /// 与视频 feed 同构；批 pts 单调、采样率/声道一致。
+    #[test]
+    fn mse_audio_feed_progressive_streaming_t8s3() {
+        let rate = crate::AudioDecoder::open(&fixture_bytes())
+            .expect("fixture 音轨可解")
+            .sample_rate();
+        let data = fixture_bytes();
+        let cut = data.len() / 2;
+        let handle = MseFeedHandle::new();
+        let mut feed = MseAudioFeed::from_handle(handle.clone());
+        handle.append(&data[..cut]);
+        assert!(feed.next_batch().unwrap().is_none(), "moov 未到齐=等待面");
+        assert!(!feed.is_exhausted(), "未 end() 的边缘不是流末");
+        handle.append(&data[cut..]);
+        let mut batches = 0;
+        let mut last_pts = 0u64;
+        while let Some(b) = feed.next_batch().unwrap() {
+            assert_eq!(b.sample_rate, rate);
+            assert_eq!(b.channels, 1, "fixture 单声道");
+            assert!(b.pts_ms >= last_pts, "批 pts 单调");
+            assert!(!b.samples.is_empty());
+            last_pts = b.pts_ms;
+            batches += 1;
+            assert!(batches <= 10_000, "runaway batches");
+        }
+        assert!(batches > 0, "音轨应产出批");
+        assert!(!feed.is_exhausted(), "未 end() 前 demux 耗尽仍非真流末");
+        handle.end();
+        assert!(feed.next_batch().unwrap().is_none());
+        assert!(feed.is_exhausted(), "end() 后耗尽即真流末");
+    }
+
+    /// 钉⑤（t8s-3 fragmented 面，DASH 音频轨形态）：音频-only fMP4 init+media
+    /// 段逐段 append——symphonia mvex 流式 demux + AAC 解码，批数与样本表等价。
+    #[test]
+    fn mse_audio_feed_fragmented_fmp4_t8s3() {
+        let rate = crate::AudioDecoder::open(&fixture_bytes())
+            .expect("fixture 音轨可解")
+            .sample_rate();
+        let (esds, samples) = fixture_audio_material();
+        let (init, media) = build_fragmented_audio(&esds, rate, &samples);
+        let handle = MseFeedHandle::new();
+        let mut feed = MseAudioFeed::from_handle(handle.clone());
+        handle.append(&init);
+        assert!(feed.next_batch().unwrap().is_none(), "init 段无批（等 media 段）");
+        assert!(!feed.is_exhausted());
+        handle.append(&media);
+        let mut batches = 0;
+        let mut last_pts = 0u64;
+        while let Some(b) = feed.next_batch().unwrap() {
+            assert!(b.pts_ms >= last_pts, "批 pts 单调（tfdt/trun 时序）");
+            last_pts = b.pts_ms;
+            batches += 1;
+            assert!(batches <= 10_000, "runaway batches");
+        }
+        assert_eq!(batches, samples.len(), "逐 AAC 帧一批");
+        handle.end();
+        assert!(feed.is_exhausted(), "end() 后真流末");
     }
 
     /// 钉①（渐进式流喂）：同一 progressive mp4 分两块 append——probe 惰性建

@@ -8862,6 +8862,9 @@
     _zwMseEt.call(this);
     this._zwMs = mediaSource || null;
     this._zwUpdating = false;
+    // t8s-3 轨类型章（'video'|'audio'）——addSourceBuffer 按 mimeType 盖章，
+    // appendBuffer 据此路由视频/音频独立字节流（DASH 双轨分缓冲）。
+    this._zwTrackKind = 'video';
   };
   globalThis.SourceBuffer.prototype = Object.create(_zwMseEt.prototype);
   Object.defineProperty(globalThis.SourceBuffer.prototype, 'updating', {
@@ -8904,7 +8907,14 @@
       try {
         if (msObj._zwUrl && typeof globalThis.__zwVideoBridge === 'object'
             && typeof globalThis.__zwVideoBridge.mseAppend === 'function') {
-          ok = globalThis.__zwVideoBridge.mseAppend(msObj._zwUrl, b64) === true;
+          // t8s-3 轨路由：audio SourceBuffer 走独立音频流（mseAppendAudio；
+          // 未挂该门面的旧宿主回落失败面——能力诚实）。
+          if (self._zwTrackKind === 'audio'
+              && typeof globalThis.__zwVideoBridge.mseAppendAudio === 'function') {
+            ok = globalThis.__zwVideoBridge.mseAppendAudio(msObj._zwUrl, b64) === true;
+          } else {
+            ok = globalThis.__zwVideoBridge.mseAppend(msObj._zwUrl, b64) === true;
+          }
         }
       } catch (_eMseAp) {}
       if (ok) {
@@ -8957,14 +8967,31 @@
     if (typeof globalThis.__zwVideoBridge !== 'object'
         || typeof globalThis.__zwVideoBridge.mseCreate !== 'function') return false;
     var t = String(type == null ? '' : type).trim().toLowerCase();
-    if (t.indexOf('video/mp4') !== 0) return false;
+    // t8s-3 音频腿：audio/mp4 + AAC（mp4a.40.x/aac）——音频 append 流在位才真
+    //（mseAppendAudio 门面 = 解码链可用；组合串逐 leg 全支持才 true——
+    // bilibili DASH 探针 'video/mp4; codecs="avc1.42E01E,mp4a.40.2"' 形态）。
+    var isAudio = t.indexOf('audio/mp4') === 0;
+    if (!isAudio && t.indexOf('video/mp4') !== 0) return false;
+    // 音频 leg 支持面 = 音频 append 流在位（解码链可用，能力诚实）。
+    var audioOk = typeof globalThis.__zwVideoBridge.mseAppendAudio === 'function'
+      && typeof globalThis.__zwVideoBridge.mseAppend === 'function';
+    if (isAudio && !audioOk) return false;
     var m = /codecs\s*=\s*"([^"]*)"/.exec(t) || /codecs\s*=\s*'([^']*)'/.exec(t)
       || /codecs\s*=\s*([^;]+)/.exec(t);
     if (!m) return true;
     var parts = m[1].split(',');
     for (var i = 0; i < parts.length; i++) {
       var c = parts[i].trim();
-      if (c && !/^avc[13]\./.test(c)) return false;
+      if (!c) continue;
+      // AAC 家族：mp4a.40.x（MPEG-4 Audio，AAC-LC 主形态）与 'aac' 别名。
+      var isAac = audioOk && /^(mp4a\.40|aac)\b/.test(c);
+      if (isAudio) {
+        if (!isAac) return false;
+      } else if (!/^avc[13]\./.test(c) && !isAac) {
+        // 组合串逐 leg（bilibili DASH 探针 'avc1…,mp4a.40.2' 形态）——视频腿
+        // avc1/avc3 或音频腿 AAC 全支持才 true。
+        return false;
+      }
     }
     return true;
   };
@@ -8980,6 +9007,8 @@
       _zwMseThrow('InvalidStateError', 'MediaSource is not open');
     }
     var sb = new globalThis.SourceBuffer(this);
+    // t8s-3 轨章：audio/mp4 → 音频流（registry 独立 feed）；其余按视频。
+    sb._zwTrackKind = t.trim().toLowerCase().indexOf('audio/') === 0 ? 'audio' : 'video';
     this.sourceBuffers._zwPush(sb);
     return sb;
   };
