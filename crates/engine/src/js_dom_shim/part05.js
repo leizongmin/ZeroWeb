@@ -14626,12 +14626,27 @@
   globalThis.MessageChannel = globalThis.MessageChannel || MessageChannel;
 
   // BroadcastChannel——同源广播通信（所有同名 channel 实例互收消息，**发送者不收自己**）。extends
-  // EventTarget（R2779）。postMessage 经 structuredClone（R2773）深拷贝 + queueMicrotask（R2782 同款异步
-  // 派发）到所有同名其他实例。注册表 `_bc_registry`（name → channel 数组）同 JS 上下文共享。**已知限制**：
-  // 仅同 JS 上下文广播（跨 worker/进程广播需 host 接线，defer）；sender 不收自己（spec 一致）。
+  // EventTarget（R2779）。webmessaging-compat M2-P2（2026-10-12）spec 化
+  //（https://html.spec.whatwg.org/multipage/web-messaging.html#broadcastchannel）：
+  // ① 构造器 IDL——无 new TypeError（basics 钉，旧 lenient `return new` 移除）、name 必参
+  //    TypeError（缺参才抛；null/undefined/数字按 USVString 转 'null'/'undefined'/'123'）。
+  // ② postMessage IDL——message 必参 TypeError（interface 钉）；**close 后必抛
+  //    InvalidStateError 且先于序列化**（interface 钉 `postMessage(Symbol())` close 后为
+  //    InvalidStateError 非 DataCloneError；open 时 uncloneable 仍 DataCloneError）。
+  // ③ 投递对象快照（post 时成员）+ task 承载（P1 ④ 同款）——create-in-onmessage 钉
+  //    「投递期新建 channel 不收早前已 post 消息」；派发时已 close 的成员跳过
+  //    （closed-after-postMessage 钉）。注册表 `_bc_registry` 同 JS 上下文共享。
+  // **已知限制**：仅同 JS 上下文广播（跨 worker/进程广播需 host 接线，defer）；sender
+  // 不收自己（spec 一致）。
   var _bc_registry = {};
   function BroadcastChannel(name) {
-    if (!(this instanceof BroadcastChannel)) return new BroadcastChannel(name);
+    var _zwDE = globalThis.DOMException || DOMException;
+    if (!(this instanceof BroadcastChannel)) {
+      throw new TypeError("Failed to construct 'BroadcastChannel': Please use the 'new' operator.");
+    }
+    if (arguments.length < 1) {
+      throw new TypeError("Failed to construct 'BroadcastChannel': 1 argument required, but only 0 present.");
+    }
     this._et_listeners = {}; // EventTarget 内部 listener map（构造器未自动调，手动初始化）
     this._name = String(name);
     this._closed = false;
@@ -14646,22 +14661,26 @@
     get: function () { return this._name; },
   });
   BroadcastChannel.prototype.postMessage = function (message) {
-    // spec broadcast post message steps：close 后投递 InvalidStateError（M2-P2 面在此一并
-    // 记账——interface.any 钉）；message 必参（TypeError）面 M2-P2 与构造器 IDL 一并修。
-    if (this._closed) return;
+    // spec broadcast post message steps：message 必参 TypeError；close 后先于序列化抛
+    // InvalidStateError（uncloneable 数据同抛 InvalidStateError，interface 钉）。
+    if (arguments.length < 1) {
+      throw new TypeError("Failed to execute 'postMessage' on 'BroadcastChannel': 1 argument required, but only 0 present.");
+    }
+    var _zwDE = globalThis.DOMException || DOMException;
+    if (this._closed) {
+      throw new _zwDE("Failed to execute 'postMessage' on 'BroadcastChannel': Channel is closed.", 'InvalidStateError');
+    }
     var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
     var sender = this;
-    var name = this._name;
+    // M2-P2：投递对象快照 = post 时注册表成员（create-in-onmessage 钉投递期新建不收）。
+    var snapshot = (_bc_registry[this._name] || []).slice();
     // M2-P1：task 承载 + undefined data 直置 + trusted 印记（同 ④ 共享出口）。e.origin
     // spec = 派发方 origin（basics.any 钉非空——本窗口单源广播即 document origin）。
     var origin = (globalThis.location && globalThis.location.origin) || '';
     setTimeout(function () {
-      var peers = _bc_registry[name];
-      if (!peers) return;
-      peers = peers.slice();
-      for (var i = 0; i < peers.length; i++) {
-        var p = peers[i];
-        if (p === sender || p._closed) continue;
+      for (var i = 0; i < snapshot.length; i++) {
+        var p = snapshot[i];
+        if (p === sender || p._closed) continue; // 派发时已关跳过（closed-after-post 钉）
         p.dispatchEvent(_zwMakeMessageEvent('message', { data: data, origin: origin }, data));
       }
     }, 0);

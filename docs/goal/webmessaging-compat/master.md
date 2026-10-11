@@ -1,23 +1,24 @@
 # Web Messaging 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../webmessaging-compat.md](../webmessaging-compat.md)
-**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-12（M2-P1 落地）
+**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-12（M2-P2+P3 落地）
 
 ## 当前状态
 
-**M1 + M2-P1 完成（2026-10-12）**：基线 64.9%（87/134）→ **M2-P1 后 93.3%
-（126/135，净 +39P）**——window.postMessage spec 化重写（options dictionary +
-targetOrigin URL 解析/静默丢弃 + transfer 序列校验）、port 转移克隆-改挂、task 承载
-投递、trusted message 事件、structuredClone 平台对象/普通对象更正。证据：
-[evidence/2026-10-12-m2-p1-postmessage-spec.md](evidence/2026-10-12-m2-p1-postmessage-spec.md)。
-影响面复跑：zero-engine lib 2998P/0F（R2983 桥接断言按 spec 更正）、fileapi
-493/499 恒等、dom 54304P ≥ 基线。
+**M1 + M2 全部落地（2026-10-12）**：基线 64.9%（87/134）→ M2-P1 93.3%（126/135，
++39P）→ **M2-P2+P3 后 98.5%（133/135，+7P）**。M2-P2：BroadcastChannel spec 化
+（构造器 no-new/缺名 TypeError、postMessage 必参 + close 后先于序列化抛
+InvalidStateError、投递对象快照 + task 承载）；M2-P3：messageerror 内容属性
+（body/frameset Window-forwarding handler 全集补齐 + setAttribute 转发路径消费
+R134 新值编译 fn）。证据：
+[evidence/2026-10-12-m2-p2-p3-broadcastchannel-messageerror.md](evidence/2026-10-12-m2-p2-p3-broadcastchannel-messageerror.md)。
+影响面复跑：zero-engine lib 2998P/0F 恒等、dom 54303P（non-Pass 集为通道既有
+已知面，见 evidence 门禁表）。
 
-**下一步（M2-P2）**：BroadcastChannel IDL/语义簇（6F：constructor no-new/缺名
-TypeError、postMessage 必参/close 后 InvalidStateError、投递序
-closing-and-creating、e.origin 已随 P1 修）+ messageerror 内容属性面（P3）。
-残余挂账：garbage-collected（GC 联动）、user-activation（缺
-`navigator.userActivation`，跨域 user-activation 域）。
+**下一步（M3 + 收口）**：跨 document 场景挂 navigation-compat M3 frame 树门槛
+（goal 契约，不单方面开）；可执行面残余 2 non-pass 全挂账（GC 联动 close、
+user-activation 跨域）。收口按 DC-3 走全量门禁：make test 全绿 + make reftest
+零回归 + product-smoke 恒值，随后归档。
 
 ## 里程碑台账
 
@@ -25,17 +26,16 @@ closing-and-creating、e.origin 已随 P1 修）+ messageerror 内容属性面�
   当轮持续超时，语料经 cdn.jsdelivr.net 同 pin 镜像等价落地（脚本仍指 raw 权威源）。
 - **M2-P1（2026-10-12）**：postMessage spec 化重写 + transfer/ports + task 承载 +
   trusted 事件 + structuredClone 更正 → 93.3%（+39P）；影响面复跑全绿（见当前状态）。
-- **M2-P2（未开始）**：BroadcastChannel IDL/语义簇。
-- **M2-P3（未开始）**：零散面（messageerror 内容属性等）。
+- **M2-P2+P3（2026-10-12，同轮落地）**：BroadcastChannel IDL/语义 spec 化 +
+  messageerror 内容属性（body WindowEventHandlers 全集 + setAttribute 转发消费
+  R134 新值 fn）→ 98.5%（+7P）；可执行面失败簇清零，残余全挂账。
 - **M3（未开始）**：跨 document 场景挂 navigation-compat M3 门槛；收口归档。
 
-## 残余失败面（9 non-pass，P1 后）
+## 残余失败面（2 non-pass，P2+P3 后，全挂账）
 
 | 簇 | non-pass | 归属 |
 |---|---|---|
-| BroadcastChannel IDL/语义 | 6 | M2-P2 |
-| messageerror 内容属性 | 1 | M2-P3 |
-| garbage-collected（GC 联动 close） | 1 Timeout | 挂账（引擎 GC 面） |
+| garbage-collected（GC 联动 close） | 1 Timeout | 挂账（引擎 GC 面，超 JS shim 面） |
 | user-activation（缺 navigator.userActivation） | 1 | 挂账（user-activation 域） |
 
 ## 排除面（挂账，非待办）

@@ -1,18 +1,20 @@
 # Web Messaging 兼容 — postMessage / MessageChannel / BroadcastChannel
 
-**版本**: v1.1
+**版本**: v1.2
 **日期**: 2026-10-12
-**状态**: Active（M1 完成，M2 失败簇收敛未开始）
+**状态**: Active（M1 + M2 完成，M3 跨 document 挂门槛 + 收口待执行）
 **执行模式**: WPT 驱动（上游 webmessaging corpus 为验收标尺）+ 实现/语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——页面间通信面）
 **运行时控制面板**: [webmessaging-compat/master.md](webmessaging-compat/master.md)
 
-> **▶ 当前状态（2026-10-12，M2-P1 轮）**：M1（corpus 导入 + 通道 + 甄别，基线
-> 64.9%）与 M2-P1（window.postMessage spec 化重写 + port 转移克隆 + task 承载 +
-> trusted 事件 + structuredClone 更正，**93.3% = 126/135，净 +39P**）均已落地。
-> 证据：[evidence/2026-10-12-m2-p1-postmessage-spec.md](webmessaging-compat/evidence/2026-10-12-m2-p1-postmessage-spec.md)。
-> **下一步（M2-P2）**：BroadcastChannel IDL/语义簇（6F）→ P3 零散面（messageerror
-> 内容属性）。
+> **▶ 当前状态（2026-10-12，M2-P2+P3 轮）**：M1（基线 64.9%）、M2-P1（postMessage
+> spec 化，93.3%）、M2-P2+P3（BroadcastChannel IDL/语义 + messageerror 内容属性，
+> **98.5% = 133/135**）均已落地，同 document 可执行面失败簇清零，残余 2 non-pass
+> 全挂账（GC 联动 close、user-activation 跨域）。证据：
+> [evidence/2026-10-12-m2-p2-p3-broadcastchannel-messageerror.md](webmessaging-compat/evidence/2026-10-12-m2-p2-p3-broadcastchannel-messageerror.md)。
+> **下一步（M3 + 收口）**：跨 document 场景挂 navigation-compat M3 frame 树门槛
+> 不单方面开；可执行面收口走 DC-3 全量门禁（make test / make reftest /
+> product-smoke）后归档。
 >
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：多进程
 > IPC（zero-protocol）有底子，但 window.postMessage/BroadcastChannel 的 Web 面
@@ -44,9 +46,9 @@ targetOrigin/transfer）/投递序语义。排除：worker 内 messaging（worke
 
 ## 里程碑
 
-M1 导入与基线（✅ 2026-10-12，64.9%）→ M2 同源/单 document 面收敛（失败簇见
-master.md）→ M3 跨 document 场景（frame 树依赖部分挂 navigation-compat M3 门槛）
-+ 收口归档。
+M1 导入与基线（✅ 2026-10-12，64.9%）→ M2 同源/单 document 面收敛（✅ 2026-10-12，
+98.5%，失败簇清零见 master.md）→ M3 跨 document 场景（frame 树依赖部分挂
+navigation-compat M3 门槛）+ 收口归档。
 
 ## 依赖约束（run-rules §9）
 

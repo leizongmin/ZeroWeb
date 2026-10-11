@@ -3838,9 +3838,18 @@
   };
 
   // js-dom M4 R107：body/frameset 的 Window-forwarding event handler 名集（spec HTML
-  // handler-body-attributes / handler-frameset-attributes——onblur/onerror/onfocus/
-  // onload/onscroll/onresize 的 IDL 与 content attribute 均转发到 window）。
-  globalThis._ZW_BODY_FORWARD_ON = { blur: 1, error: 1, focus: 1, load: 1, scroll: 1, resize: 1 };
+  // handler-body-attributes / handler-frameset-attributes——IDL 与 content attribute 均转发
+  // 到 window）。webmessaging-compat M2-P2（2026-10-12）补齐 spec WindowEventHandlers 全集
+  //（onafterprint/onbeforeprint/onbeforeunload/onhashchange/onlanguagechange/onmessage/
+  // onmessageerror/onoffline/ononline/onpagehide/onpageshow/onpopstate/onrejectionhandled/
+  // onstorage/onunhandledrejection/onunload——messageerror.html 钉 body onmessageerror
+  // 内容属性经 window 派发触发）。
+  globalThis._ZW_BODY_FORWARD_ON = {
+    blur: 1, error: 1, focus: 1, load: 1, scroll: 1, resize: 1,
+    afterprint: 1, beforeprint: 1, beforeunload: 1, hashchange: 1, languagechange: 1,
+    message: 1, messageerror: 1, offline: 1, online: 1, pagehide: 1, pageshow: 1,
+    popstate: 1, rejectionhandled: 1, storage: 1, unhandledrejection: 1, unload: 1,
+  };
   // js-dom M4 R113：prefixed animation/transition 事件 handler 的「event handler event type」
   // 映射（spec HTML webappapis「event handlers on elements…」表）——`onwebkitanimationend`
   // 等 handler IDL 名全小写，但其 event type 是 camelCase（webkitAnimationEnd）。on* setter
