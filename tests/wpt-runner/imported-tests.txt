@@ -543,3 +543,4 @@ css/CSS2/floats/float-nowrap-4.html css/CSS2/floats/float-nowrap-4-ref.html == 2
 css/CSS2/positioning/absolute-non-replaced-width-023.xht css/CSS2/positioning/absolute-non-replaced-width-021-ref.xht == 2026-10-12 R5073 abspos float 子 shrink-to-fit（taffy Definite 臂 float 贡献）
 css/CSS2/positioning/absolute-non-replaced-width-024.xht css/CSS2/positioning/absolute-non-replaced-width-021-ref.xht == 2026-10-12 R5073 abspos float 子 shrink-to-fit（taffy Definite 臂 float 贡献）
 css/CSS2/positioning/abspos-009.xht css/CSS2/positioning/abspos-009-ref.xht == 2026-10-12 R5074 abspos auto margin inset 门（§10.3.7 rule 3/4）
+css/css-transforms/transform-scale-percent-001.html css/css-transforms/transform-scale-percent-ref.html == 2026-10-12 R5076 scale 族百分比参数（css-transforms-1 §funcdef-scale）
