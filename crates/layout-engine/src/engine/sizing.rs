@@ -1917,6 +1917,10 @@ impl LayoutEngine {
             // 会撑出 784×784（应 content 0）。definite CB（030 width:100px）保留 ar 供
             // transferred（child 100×100 ✓）。
             cb_width_intrinsic: bool,
+            // R5064：当前 box 的包含块宽度是否 CSS 明确（resolve 可解）——transferred
+            // aspect_ratio 保留判据（030 width:100px definite 保留 vs 042 content-derived
+            // 清除）。
+            cb_width_definite_css: bool,
             // R2101：当前 box 是否处于 table-cell 子树内（含自身为 table-cell）。
             // CSS Quirks §percentage-height：百分比高度 quirk（不明确 CB 按 ICB 解析）**不适用**
             // 于 table-cell 的后代——后代 height:% 须 compute-to-auto（standards 行为）。
@@ -2126,10 +2130,27 @@ impl LayoutEngine {
                                         // cross 是可用宽伪影（784），taffy 经 aspect_ratio 反推
                                         // main → 784×784 红满屏（chromium 不 transfer，应
                                         // content 0）。清 aspect_ratio 阻断。definite CB
-                                        //（030 width:100px → child 拉伸 cross 100 definite）保留
-                                        // ar 供 transferred（100×100 ✓）。仅叶盒 + 非替换
-                                        //（替换元素 ar 供固有尺寸回退）。
-                                        if cb_width_intrinsic && b.children.is_empty() && !b.is_replaced {
+                                        //（030 width:100px → child 拉伸 cross 100 definite，走
+                                        // 上方 Some 分支不重写）保留 ar 供 transferred（100×100
+                                        // ✓）。仅叶盒 + 非替换（替换元素 ar 供固有尺寸回退）。
+                                        // R5064（css-sizing-4 §5.2 transferred size 只作用于
+                                        // **auto** 尺寸——height:100% 是百分比声明，computed 值非
+                                        // auto，%→auto 重写后不得经 stretch 宽反推 main；
+                                        // flex-aspect-ratio-042：all:unset button height:100%
+                                        // + ar 1 + min-height:50px，CB（flex item 宽 100）下
+                                        // stretch 宽 100 被 block.rs derive 成高 100（应 content
+                                        // 0 → min 地板 50，ref 100×100）→ 本臂叶盒一律清 ar，
+                                        // 不再限 intrinsic CB。kill-switch
+                                        // `ZW_PCT_AUTO_AR_CLEAR=0` 回退 R3795 门。
+                                        let pct_ar_clear = std::env::var("ZW_PCT_AUTO_AR_CLEAR").as_deref() != Ok("0");
+                                        let clear_ar = if pct_ar_clear {
+                                            // R5064：CB 宽 CSS 明确 → 保留（030 transfer ✓）；
+                                            // content-derived/intrinsic CB → 清除（042/R3795）。
+                                            !cb_width_definite_css
+                                        } else {
+                                            cb_width_intrinsic
+                                        };
+                                        if clear_ar && b.children.is_empty() && !b.is_replaced {
                                             st.aspect_ratio = None;
                                         }
                                         // 替换元素补设固有绝对尺寸：taffy 需要绝对值才能
@@ -2285,6 +2306,11 @@ impl LayoutEngine {
                     LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
                 )
             });
+            // R5064：子代 CB 宽是否 CSS 明确（resolve 可解）——transferred 保留判据
+            //（030 父 width:100px → 保留 ar 供 transfer；042 green div width auto
+            //（content-derived）→ 清 ar 防 stretch 宽反推）。
+            let child_cb_width_definite_css =
+                style.is_some_and(|s| resolve_sizing_definite_real_length(&s.width, s).is_some());
 
             let own_wm = style
                 .map(|s| s.writing_mode.clone())
@@ -2295,6 +2321,7 @@ impl LayoutEngine {
                     my_definite,
                     child_parent_flex_grid,
                     child_cb_width_intrinsic,
+                    child_cb_width_definite_css,
                     child_inside_table_cell,
                     child_inside_flex_grid,
                     child_quirks_nearest,
@@ -2316,6 +2343,7 @@ impl LayoutEngine {
             Some(viewport_height),
             false,
             false,
+            true,
             false,
             false,
             Some(viewport_height),

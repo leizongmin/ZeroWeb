@@ -4380,3 +4380,76 @@ mod r5063_tests {
         );
     }
 }
+
+/// R5064（css-sizing-4 §5.2）：% height compute-to-auto 重写后的叶盒清 taffy
+/// aspect_ratio——transferred size 只作用于 auto 尺寸，百分比声明非 auto，不得经
+/// stretch 宽反推 main（flex-aspect-ratio-042 同构：button height:100% + ar 1 +
+/// min-height:50px 在 flex item CB 下应 content 0 → min 地板 50，父 100×100）。
+#[cfg(test)]
+mod r5064_tests {
+    use super::*;
+    use zero_dom::NodeKind;
+
+    fn layout_box_of(html: &str, id: &str) -> (f32, f32) {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let b = find(id, &doc, &result.root).expect("target found");
+        (b.width, b.height)
+    }
+
+    /// 042 驱动形态（静态化）：flex 行容器 > item（无尺寸样式）> [50×100 块, ar 叶盒
+    /// height:100% + min-height:50px]。ar 不得经 stretch 宽 100 反推高——父应 100×100。
+    #[test]
+    fn r5064_pct_auto_leaf_clears_ar_transfer() {
+        let (w, h) = layout_box_of(
+            r#"<body>
+                <div style="display: flex;">
+                    <div id="t" style="background: green;">
+                        <div style="height: 50px; width: 100px;"></div>
+                        <div style="display: block; height: 100%; line-height: 0; aspect-ratio: 1; min-height: 50px;"></div>
+                    </div>
+                </div>
+            </body>"#,
+            "t",
+        );
+        assert!(
+            (w - 100.0).abs() < 0.5 && (h - 100.0).abs() < 0.5,
+            "ar 经 stretch 宽反推被阻断后 flex item 应 100×100（50+50），实际 {w}×{h}"
+        );
+    }
+
+    /// 无百分比回归臂：height auto 的 ar 叶盒在 stretch CB 下仍按既有行为 transfer
+    ///（基线 100×150 保真——R5063 对照臂同款形态，非本改动域）。
+    #[test]
+    fn r5064_no_pct_keeps_transfer() {
+        let (w, h) = layout_box_of(
+            r#"<body>
+                <div style="display: flex; flex-flow: column; align-items: start; height: 200px;">
+                    <div id="t" style="aspect-ratio: 1/1; background: green; flex: 1 0 auto;">
+                        <div style="width: 1px;"></div>
+                    </div>
+                    <div style="flex: 1 0 1px;"></div>
+                </div>
+            </body>"#,
+            "t",
+        );
+        assert!(
+            (w - 100.0).abs() < 0.5 && (h - 150.0).abs() < 0.5,
+            "无百分比声明的 ar transfer 行为应保持基线 100×150，实际 {w}×{h}"
+        );
+    }
+}
