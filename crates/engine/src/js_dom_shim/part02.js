@@ -8781,8 +8781,16 @@
   // 站点脚本以 `Storage` 标识符作为 DI token / `instanceof Storage` / Storage.prototype
   // 方法补丁引用（缺失时类定义期 ReferenceError 中止整段脚本，baidu aas.js 判例）。
   // localStorage/sessionStorage 为 Storage 实例；named property 即存储项（spec supported
-  // property names），经 Proxy 拦截。简化（FIXME）：接口成员（prototype）查找先于 named
-  // item，与 WebIDL legacy platform object 的 [[Get]] 顺序相反（仅当存储项与成员同名时可见）。
+  // property names），经 Proxy 拦截。
+  // legacy platform object 语义（WPT webstorage set/defineProperty/symbol-props/
+  // storage_builtins 语料口径，webstorage-compat M2-P1）：
+  // - 接口成员（Storage.prototype，含动态新增）遮蔽 named property（无
+  //   [LegacyOverrideBuiltIns]）——[[Get]]/[[GetOwnProperty]] 成员优先；
+  // - named setter（setItem 语义）拦截全部 string 键写入（含成员同名键与
+  //   defineProperty data descriptor），成员不被覆盖、原型 setter 不被调用；
+  // - Symbol 键不属 named property 面，走 ordinary own property（含
+  //   configurable:false 尊重）。
+  // https://webidl.spec.whatwg.org/#LegacyPlatformObjectGetOwnProperty
   // https://html.spec.whatwg.org/multipage/webstorage.html#the-storage-interface
   function Storage() {
     throw new globalThis.TypeError("Illegal constructor");
@@ -8818,29 +8826,50 @@
     return new Proxy(target, {
       get: function(t, p) {
         if (p === '__zwItems') return t.__zwItems;
-        if (p in globalThis.Storage.prototype) return t[p];
-        if (typeof p === 'string' && Object.prototype.hasOwnProperty.call(t.__zwItems, p)) return t.__zwItems[p];
-        return undefined;
+        if (typeof p !== 'string') return Reflect.get(t, p);
+        if (p in globalThis.Storage.prototype) return Reflect.get(t, p);
+        if (Object.prototype.hasOwnProperty.call(t.__zwItems, p)) return t.__zwItems[p];
+        // 非成员非存储项：原型链兜底（Object.prototype 面，如 toString）。
+        return Reflect.get(t, p);
       },
       set: function(t, p, v) {
-        if (p in globalThis.Storage.prototype || typeof p !== 'string') { t[p] = v; return true; }
+        // Symbol 键走 ordinary own property（respect configurable，Proxy 默认不变式）。
+        if (typeof p !== 'string') { t[p] = v; return true; }
+        // named setter：string 键一律入存储（含成员同名键——成员不可被覆盖）。
         t.__zwItems[p] = String(v);
         return true;
       },
       has: function(t, p) {
+        if (typeof p !== 'string') return Reflect.has(t, p);
         return (p in globalThis.Storage.prototype) ||
-          (typeof p === 'string' && Object.prototype.hasOwnProperty.call(t.__zwItems, p));
+          Object.prototype.hasOwnProperty.call(t.__zwItems, p);
       },
       deleteProperty: function(t, p) {
-        if (typeof p === 'string' && !(p in globalThis.Storage.prototype)) delete t.__zwItems[p];
+        if (typeof p !== 'string') return Reflect.deleteProperty(t, p);
+        delete t.__zwItems[p];
         return true;
       },
-      ownKeys: function(t) { return Object.keys(t.__zwItems); },
+      defineProperty: function(t, p, desc) {
+        if (typeof p !== 'string') return Reflect.defineProperty(t, p, desc);
+        // named setter 语义：data descriptor 按 setItem 入存储（writable/enumerable/
+        // configurable 标志不参与，named setter 语义即覆盖语义）；非 data descriptor
+        // 走 ordinary 路径。
+        if (desc && 'value' in desc) { t.__zwItems[p] = String(desc.value); return true; }
+        return Reflect.defineProperty(t, p, desc);
+      },
+      ownKeys: function(t) {
+        return Object.keys(t.__zwItems).concat(Reflect.ownKeys(t).filter(function(k) {
+          return k !== '__zwItems';
+        }));
+      },
       getOwnPropertyDescriptor: function(t, p) {
-        if (typeof p === 'string' && Object.prototype.hasOwnProperty.call(t.__zwItems, p)) {
+        if (typeof p !== 'string') return Reflect.getOwnPropertyDescriptor(t, p);
+        // 成员遮蔽 named property：同名时 gOPD 必须报 undefined（交原型链作答）。
+        if (p in globalThis.Storage.prototype) return undefined;
+        if (Object.prototype.hasOwnProperty.call(t.__zwItems, p)) {
           return { configurable: true, enumerable: true, writable: true, value: t.__zwItems[p] };
         }
-        return undefined;
+        return Reflect.getOwnPropertyDescriptor(t, p);
       }
     });
   }
