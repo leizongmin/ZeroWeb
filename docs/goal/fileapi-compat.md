@@ -1,8 +1,8 @@
 # File API 兼容 — Blob / File / FileReader / objectURL
 
-**版本**: v1.2
-**日期**: 2026-10-08（立项） | 2026-10-11（M1 基线 + M2-P1）
-**状态**: Active（M1 + M2-P1 完成——87.2%；下一切片 M2-P3 readAs* 状态机）
+**版本**: v1.3
+**日期**: 2026-10-08（立项） | 2026-10-11（M1 基线 + M2-P1 + M2-P3）
+**状态**: Active（M1 + M2-P1 + M2-P3 完成——93.6%；下一切片 P4 零散面）
 **执行模式**: WPT 驱动（上游 FileAPI corpus 为验收标尺）+ 语义/实现修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——文件与二进制面）
 **运行时控制面板**: [fileapi-compat/master.md](fileapi-compat/master.md)
@@ -11,11 +11,13 @@
 > M2 打过 Blob.type MIME parse-serialize 底，但 FileAPI 全语义面（FileReader 异步
 > 读、createObjectURL 生命周期、slice/构造器）从未系统度量。
 >
-> **▶ 基线事实（2026-10-11 M1 实测 + M2-P1 修齐）**：Blob/File/FileReader/FormData/
+> **▶ 基线事实（2026-10-11 M1 实测 + M2 修齐）**：Blob/File/FileReader/FormData/
 > createObjectURL 均已在 js_dom_shim 纯 JS 落地；M1 基线 62.3%（甄别与失败簇见
 > [evidence/2026-10-11-m1-baseline.md](fileapi-compat/evidence/2026-10-11-m1-baseline.md)），
-> M2-P1 构造器 WebIDL 转换层 +124P → **87.2%**（上游语料冲突 chromium 仲裁见
-> [evidence/2026-10-11-m2-p1-constructor-webidl.md](fileapi-compat/evidence/2026-10-11-m2-p1-constructor-webidl.md)）。
+> M2-P1 构造器 WebIDL 转换层 +124P → 87.2%（上游语料冲突 chromium 仲裁见
+> [evidence/2026-10-11-m2-p1-constructor-webidl.md](fileapi-compat/evidence/2026-10-11-m2-p1-constructor-webidl.md)），
+> M2-P3 readAs* 读取状态机 +32P → **93.6%**（簇 53/53 全绿，见
+> [evidence/2026-10-11-m2-p3-readas-state-machine.md](fileapi-compat/evidence/2026-10-11-m2-p3-readas-state-machine.md)）。
 
 ## Mission
 

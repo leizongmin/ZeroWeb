@@ -13944,6 +13944,20 @@
     } catch (_e114x) {}
   }
 
+  // fileapi-compat M2-P3：FileReader 接 EventTarget 原型链（XHR 同款）——addEventListener/
+  // removeEventListener/dispatchEvent 由 EventTarget.prototype 提供（listener map 在
+  // FileReader ctor 初始化为 _et_listeners）。WPT EventWatcher（testharness 内建）依赖
+  // watchedNode.addEventListener 注册派发监听（filereader_result/events/abort 全簇）。
+  // spec https://w3c.github.io/FileAPI/#FileReader-interface
+  if (globalThis.FileReader && globalThis.EventTarget) {
+    try {
+      var _zwFcFrProto = globalThis.FileReader.prototype;
+      if (_zwFcFrProto && Object.getPrototypeOf(_zwFcFrProto) !== globalThis.EventTarget.prototype) {
+        Object.setPrototypeOf(_zwFcFrProto, globalThis.EventTarget.prototype);
+      }
+    } catch (_zwFcFre) {}
+  }
+
   // R3089：DedicatedWorker——`new Worker(url)`。真 worker 消息往返（闭合 R3080 defer 项「无真 worker 执行」）。
   // script-sandbox 为单上下文（无 sub-context API），真独立沙箱需多嵌入器 host 接线（browser/webview/reftest
   // 各提供 __zw_create_worker，defer）。本切片用 **同沙箱 IIFE 影子执行**（对称 compile_module_script R3083）：

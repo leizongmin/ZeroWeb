@@ -1,29 +1,32 @@
 # File API 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../fileapi-compat.md](../fileapi-compat.md)
-**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-11（M2-P1 收口）
+**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-11（M2-P3 收口）
 
 ## 当前状态
 
-**目标 Active（M1 + M2-P1 完成，下一切片 M2-P3 readAs* 状态机）**：可执行子集
-35 案 499 子测试 **435 Pass = 87.2%**（M1 基线 62.3% → +124P，单调上行）。
-M2-P1（10-11）：Blob/File 构造器 WebIDL 转换层（sequence/联合/字典/type 判据/
-接口对象）+ endings 随收口 + Blob.arrayBuffer→ArrayBuffer + `_zwConsumeBodyBytes`
-Uint8Array 交界；**上游语料冲突经 chromium 实测仲裁**——mimesniff parsing.any.js
-(Blob/File) 腿 865 子测试钉 parse-serialize 与 FileAPI/chromium 钉的范围判据互斥，
-保留 FileAPI 语义（net-api 通道 mimesniff 该腿转失败已记档，fetch+xhr/streams/url
-零回归）。证据：[evidence/2026-10-11-m2-p1-constructor-webidl.md](evidence/2026-10-11-m2-p1-constructor-webidl.md)。
+**目标 Active（M1 + M2-P1 + M2-P3 完成，下一切片 P4 零散面）**：可执行子集
+35 案 499 子测试 **467 Pass = 93.6%**（M1 62.3% → M2-P1 87.2% → +32P，单调上行，
+0 Timeout）；reading-data-section + FileReader/ + fileReader.any.js 簇 53/53 全绿。
+M2-P3（10-11）：FileReader 读取状态机重写——重入读 InvalidStateError、事件按 spec
+逐 task 派发（setTimeout 承载 runner 确定性 FIFO 队列）、result 阶段 null、abort
+代计数真取消、Determining-Encoding（BOM 嗅探 → encoding 参数 → type charset →
+UTF-8，经 TextDecoder host decoder）、readAsDataURL 空 type 缺省、ProgressEvent 经
+dispatchEvent + part05 接 EventTarget 原型链（EventWatcher 前提）。定位要点：microtask
+链承载事件派发与 promise_test 完成回调竞速（filereader_result progress 变体），task
+语义修复。证据：[evidence/2026-10-11-m2-p3-readas-state-machine.md](evidence/2026-10-11-m2-p3-readas-state-machine.md)。
 
 里程碑台账：M1（10-11）通道 + 甄别 + 基线 62.3%；M2-P1（10-11）构造器 WebIDL
-+124P → 87.2%（endings 簇随构造器收口）。逐轮证据见 evidence/。
++124P → 87.2%（endings 簇随构造器收口，上游语料冲突 chromium 仲裁记档见下）；
+M2-P3（10-11）readAs* 状态机 +32P → 93.6%。逐轮证据见 evidence/。
 
 ## 缺口清单（M2 剩余簇）
 
 | # | 簇 | 规模（F） | 状态 |
 |---|---|---|---|
 | P1 | Blob/File 构造器 WebIDL 转换（含 endings） | ~150 | ✅ M2-P1（→87.2%） |
-| P3 | readAs* 读取状态机（result 阶段 null、multiple-reads 队列、abort、Determining-Encoding、readAsDataURL type 串） | ~31 | ⬜ 下一切片 |
-| P4 | 零散面：Blob.bytes() 缺失 5、detached ArrayBuffer 4、slice 多字节解码 6、filelist 空表 4、dom.window 平台对象 3、HTMLBodyElement String 化 2、url 边界 6、事件面 2 | ~33 | ⬜ |
+| P3 | readAs* 读取状态机 | ~31 | ✅ M2-P3（→93.6%，簇 53/53） |
+| P4 | 零散面：Blob.bytes() 缺失 5、detached ArrayBuffer 4、slice 多字节解码 6、filelist 空表 4、dom.window 平台对象 3、url 边界 5、File-constructor 2、其余零散 3 | 32 | ⬜ 下一切片 |
 
 ## 排除面（挂账，非待办）
 
@@ -52,7 +55,8 @@ U+0020~U+007E + ASCII 小写化。chromium headless 实测与 FileAPI 一致
   回归测试（本 goal 以 testharness-fileapi 通道 + evidence JSON 为常驻断言集）+
   make test 全绿 / make reftest 零回归 / product-smoke 恒值。
 - 数字维护：每轮修齐后向 `docs/compat/trends/wpt-suites.csv` 追加行
-  （M2-P1 行 2026-10-11 = active，499/435）。
-- M2-P3 动 FileReader 时同步核对 `result` 阶段语义（loadstart/progress 为 null）与
-  `_start/_done/_fail` 状态机，spec 依据
-  https://w3c.github.io/FileAPI/#reader-general-update-steps 。
+  （M2-P3 行 2026-10-11 = active，499/467）。
+- P4 动 slice/bytes 时核对 `_zw_blobBytes` 物化路径与 BlobPart 鸭子形态兜底
+  （`byteLength` 存在即保留——response.blob() 交界依赖，勿破坏）。
+- 事件派发粒度经验：FileReader 族事件必须 task 承载（setTimeout），microtask 链与
+  promise_test 完成回调竞速——后续 shim 内新增异步事件接口（XHR 进度、IDB 等）照此先例。

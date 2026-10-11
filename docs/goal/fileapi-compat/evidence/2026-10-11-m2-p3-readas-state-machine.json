@@ -1,0 +1,2672 @@
+[
+  [
+    "FileAPI/FileReader/progress_event_bubbles_cancelable.html",
+    [
+      {
+        "name": "Check the values of bubbles and cancelable are false when the progress event is dispatched",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-array-buffer.any.js",
+    [
+      {
+        "name": "Blob.arrayBuffer()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.arrayBuffer() empty Blob data",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.arrayBuffer() non-ascii input",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.arrayBuffer() non-unicode input",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.arrayBuffer() concurrent reads",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-bytes.any.js",
+    [
+      {
+        "name": "Blob.bytes()",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: blob.bytes is not a function\""
+      },
+      {
+        "name": "Blob.bytes() empty Blob data",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: blob.bytes is not a function\""
+      },
+      {
+        "name": "Blob.bytes() non-ascii input",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: blob.bytes is not a function\""
+      },
+      {
+        "name": "Blob.bytes() non-unicode input",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: blob.bytes is not a function\""
+      },
+      {
+        "name": "Blob.bytes() concurrent reads",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: blob.bytes is not a function\""
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-constructor-detached-buffer.any.js",
+    [
+      {
+        "name": "Blob from a detached ArrayBufferView should be empty",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot perform Construct on a detached ArrayBuffer\""
+      },
+      {
+        "name": "Blob from a detached ArrayBufferView with offset should be empty",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot perform Construct on a detached ArrayBuffer\""
+      },
+      {
+        "name": "Blob from a detached ArrayBuffer should be empty",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot perform Construct on a detached ArrayBuffer\""
+      },
+      {
+        "name": "Blob from a detached ArrayBufferView mixed with string, detached part ignored",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot perform Construct on a detached ArrayBuffer\""
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-constructor-dom.window.js",
+    [
+      {
+        "name": "Passing platform objects for blobParts should throw a TypeError.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "A platform object that supports indexed properties should be treated as a sequence for the blobParts argument (overwritten 'length'.)",
+        "status": "Fail",
+        "message": "assert_throws_exactly: function \"function() {\n    new Blob(list);\n  }\" did not throw"
+      },
+      {
+        "name": "Passing an platform object that supports indexed properties as the blobParts array should work (select).",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'Blob': The provided value is not iterable.\""
+      },
+      {
+        "name": "Passing an platform object that supports indexed properties as the blobParts array should work (attributes).",
+        "status": "Fail",
+        "message": "assert_equals: expected 13 but got 15"
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-constructor-endings.any.js",
+    [
+      {
+        "name": "Valid \"endings\" value: \"transparent\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid \"endings\" value: \"native\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid \"endings\" value: null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid \"endings\" value: \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid \"endings\" value: \"invalidEnumValue\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid \"endings\" value: \"Transparent\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid \"endings\" value: \"NATIVE\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid \"endings\" value: 0",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid \"endings\" value: {}",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Exception propagation from options",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The \"endings\" options property is used",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-constructor-endings.html",
+    [
+      {
+        "name": "Input LF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CR with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCR with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCR with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFLF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCRLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCRLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCRLF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFLF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCR with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCRLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCRLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCRLF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCRLFCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCRLFCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCRLFCR with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "CR/LF in adjacent input strings",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-constructor.any.js",
+    [
+      {
+        "name": "Blob interface object",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob constructor with no arguments",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob constructor with no arguments, without 'new'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob constructor without brackets",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob constructor with undefined as first argument",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing non-objects, Dates and RegExps for blobParts should throw a TypeError.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "A plain object with custom @@iterator should be treated as a sequence for the blobParts argument.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blobParts not an object: boolean",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blobParts not an object: boolean with Boolean.prototype[Symbol.iterator]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blobParts not an object: string",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blobParts not an object: string with String.prototype[Symbol.iterator]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blobParts not an object: number",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blobParts not an object: number with Number.prototype[Symbol.iterator]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blobParts not an object: BigInt",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blobParts not an object: BigInt with BigInt.prototype[Symbol.iterator]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blobParts not an object: Symbol",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blobParts not an object: Symbol with Symbol.prototype[Symbol.iterator]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The length getter should be invoked and any exceptions should be propagated.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ToUint32 should be applied to the length and any exceptions should be propagated.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Getters and value conversions should happen in order until an exception is thrown.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ToString should be called on elements of the blobParts array and any exceptions should be propagated.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "options properties should be accessed in lexicographic order.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Arguments should be evaluated from left to right.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing 123 for options should throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing 123.4 for options should throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing true for options should throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing \"abc\" for options should throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"a\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"A\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"text/html\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"TEXT/HTML\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"text/plain;charset=utf-8\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"å\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"𐑾\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \" image/gif \"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"\\timage/gif\\t\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"image/gif;\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"İmage/gif\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"ımage/gif\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"image/gif\\0\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"unknown/unknown\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"text/plain\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob with type \"image/png\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing a FrozenArray as the blobParts array should work (FrozenArray<MessagePort>).",
+        "status": "Fail",
+        "message": "assert_equals: expected 20 but got 0"
+      },
+      {
+        "name": "A plain object with @@iterator should be treated as a sequence for the blobParts argument.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "A plain object with @@iterator and a length property should be treated as a sequence for the blobParts argument.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "A String object should be treated as a sequence for the blobParts argument.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "A Uint8Array object should be treated as a sequence for the blobParts argument.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Changes to the blobParts array should be reflected in the returned Blob (pop).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Changes to the blobParts array should be reflected in the returned Blob (unshift).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ToString should be called on elements of the blobParts array.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ArrayBuffer elements of the blobParts array should be supported.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing typed arrays as elements of the blobParts array should work.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing a Float16Array as element of the blobParts array should work.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing a Float64Array as element of the blobParts array should work.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing BigInt typed arrays as elements of the blobParts array should work.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Array with two blobs",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Array with two buffers",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Array with two bufferviews",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Array with mixed types",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing null (index 0) for options should use the defaults.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing null (index 0) for options should use the defaults (with newlines).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing undefined (index 1) for options should use the defaults.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing undefined (index 1) for options should use the defaults (with newlines).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing object \"[object Object]\" (index 2) for options should use the defaults.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing object \"[object Object]\" (index 2) for options should use the defaults (with newlines).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing object \"[object Object]\" (index 3) for options should use the defaults.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing object \"[object Object]\" (index 3) for options should use the defaults (with newlines).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing object \"/regex/\" (index 4) for options should use the defaults.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing object \"/regex/\" (index 4) for options should use the defaults (with newlines).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing function \"function() {}\" (index 5) for options should use the defaults.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Passing function \"function() {}\" (index 5) for options should use the defaults (with newlines).",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-newobject.any.js",
+    [
+      {
+        "name": "Blob.stream() returns [NewObject]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() returns [NewObject]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.arrayBuffer() returns [NewObject]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.bytes() returns [NewObject]",
+        "status": "Fail",
+        "message": "blob[method] is not a function"
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-slice-overflow.any.js",
+    [
+      {
+        "name": "slice start is negative, relativeStart will be max((size + start), 0)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "slice start is greater than blob size, relativeStart will be min(start, size)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "slice end is negative, relativeEnd will be max((size + end), 0)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "slice end is greater than blob size, relativeEnd will be min(end, size)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-slice.any.js",
+    [
+      {
+        "name": "Slicing test (0,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,5).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,6).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,7).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (0,8).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,5).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,6).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,7).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,8).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (1,9).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,5).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,6).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (2,7).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (3,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (3,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (3,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (3,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (4,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (4,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (4,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (4,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (4,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (4,5).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (5,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (5,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (5,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (5,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (5,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (6,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (6,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (6,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (6,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (7,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (7,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (7,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (8,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (8,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (8,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (8,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (9,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (9,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (9,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test (9,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slices",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "no-argument Blob slice",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blob1.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "blob2.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "undefined start/end Blob slice",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "undefined start Blob slice",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "undefined end Blob slice",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "null type Blob slice",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "undefined type Blob slice",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "no type Blob slice",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,5).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,6).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,7).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (0,8).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (1,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (1,1).",
+        "status": "Fail",
+        "message": "assert_equals: expected 2 but got 3"
+      },
+      {
+        "name": "Slicing test: slice (1,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (1,3).",
+        "status": "Fail",
+        "message": "assert_equals: expected 0 but got 1"
+      },
+      {
+        "name": "Slicing test: slice (1,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (1,5).",
+        "status": "Fail",
+        "message": "assert_equals: expected 2 but got 1"
+      },
+      {
+        "name": "Slicing test: slice (1,6).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (1,7).",
+        "status": "Fail",
+        "message": "assert_equals: expected 4 but got 3"
+      },
+      {
+        "name": "Slicing test: slice (1,8).",
+        "status": "Fail",
+        "message": "assert_equals: expected 0 but got 1"
+      },
+      {
+        "name": "Slicing test: slice (1,9).",
+        "status": "Fail",
+        "message": "assert_equals: expected \"cd\" but got \"bc\""
+      },
+      {
+        "name": "Slicing test: slice (2,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (2,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (2,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (2,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (2,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (2,5).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (2,6).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (2,7).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (3,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (3,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (3,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (3,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (4,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (4,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (4,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (4,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (4,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (4,5).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (5,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (5,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (5,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (5,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (5,4).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (6,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (6,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (6,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (6,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (7,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (7,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (7,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (8,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (8,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (8,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (8,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (9,0).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (9,1).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (9,2).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Slicing test: slice (9,3).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid contentType (\"ÿ\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid contentType (\"te\\txt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid contentType (\"te\\0xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid contentType (\"te\\x1fxt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid contentType (\"text/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te(xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te)xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te<xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te>xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te@xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te,xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te;xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te:xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te\\\\xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te\\\"xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te/xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te[xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te]xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te?xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te=xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te{xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te}xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"te xt/plain\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"TEXT/PLAIN\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"text/plain;charset = UTF-8\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid contentType (\"text/plain;charset=UTF-8\")",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/blob/Blob-text.any.js",
+    [
+      {
+        "name": "Blob.text()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() empty blob data",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() multi-element array in constructor",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() non-unicode",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() different charset param in type option",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() different charset param with non-ascii input",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() invalid utf-8 input",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob.text() concurrent reads",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/file/File-constructor-endings.any.js",
+    [
+      {
+        "name": "Valid \"endings\" value: \"transparent\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Valid \"endings\" value: \"native\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid \"endings\" value: null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid \"endings\" value: \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid \"endings\" value: \"invalidEnumValue\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid \"endings\" value: \"Transparent\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid \"endings\" value: \"NATIVE\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid \"endings\" value: 0",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid \"endings\" value: {}",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Exception propagation from options",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The \"endings\" options property is used",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/file/File-constructor-endings.html",
+    [
+      {
+        "name": "Input LF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CR with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCR with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCR with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFLF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCRLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCRLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRCRLF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFLF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCR with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCRLF with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCRLF with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input CRLFCRLF with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCRLFCR with endings unspecified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCRLFCR with endings 'transparent'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Input LFCRLFCR with endings 'native'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "CR/LF in adjacent input strings",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/file/File-constructor.any.js",
+    [
+      {
+        "name": "File interface object exists",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Required arguments",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "empty fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "DOMString fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unicode DOMString fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "String object fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Empty Blob fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Empty File fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "File fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ArrayBuffer fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Typed array fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Various fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Number in fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Array in fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Object in fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLBodyElement in fileBits",
+        "status": "Fail",
+        "message": "assert_equals: expected 24 but got 4"
+      },
+      {
+        "name": "Object with toString in fileBits",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Custom @@iterator",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid bits argument: \"hello\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid bits argument: 0",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid bits argument: null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Bits argument: object that throws",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using fileName",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "No replacement when using special character in fileName",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using null fileName",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using number fileName",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using empty string fileName",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using object fileName",
+        "status": "Fail",
+        "message": "assert_equals: expected \"[object HTMLBodyElement]\" but got \"body\""
+      },
+      {
+        "name": "Using type in File constructor: text/plain",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: text/plain;charset=UTF-8",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: TEXT/PLAIN",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: 𝓽𝓮𝔁𝓽/𝔭𝔩𝔞𝔦𝔫",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: ascii/nonprintable\u001f",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: ascii/nonprintable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: nonasciiî",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: nonasciiሴ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using type in File constructor: nonparsable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using lastModified",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Misusing name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unknown properties are ignored",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid property bag: 123",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid property bag: 123.4",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid property bag: true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Invalid property bag: \"abc\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unusual but valid property bag: null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unusual but valid property bag: undefined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unusual but valid property bag: 1,2,3",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unusual but valid property bag: /regex/",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Unusual but valid property bag: function() {}",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property bag propagates exceptions",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/fileReader.any.js",
+    [
+      {
+        "name": "FileReader interface object",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "no-argument FileReader constructor",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FileReader States -- abort",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FileReader States -- events",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/filelist-section/filelist.html",
+    [
+      {
+        "name": "Check if window has a FileList property",
+        "status": "Fail",
+        "message": "assert_true: window has a FileList property expected true got false"
+      },
+      {
+        "name": "Check if FileList.length is 0",
+        "status": "Fail",
+        "message": "FileList is not defined"
+      },
+      {
+        "name": "Check if item is a instanceof Function",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check if item is a method of fileList",
+        "status": "Fail",
+        "message": "assert_inherits: item is a method of fileList property \"item\" found on object expected in prototype chain"
+      },
+      {
+        "name": "Check if the item method returns null when no file selected",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Check if length is fileList's attribute",
+        "status": "Fail",
+        "message": "assert_inherits: length is fileList attribute property \"length\" found on object expected in prototype chain"
+      },
+      {
+        "name": "Check if the fileList length is 0 when no file selected",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/Determining-Encoding.any.js",
+    [
+      {
+        "name": "Blob Determing Encoding with encoding argument",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob Determing Encoding with type attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob Determing Encoding with UTF-8 BOM",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob Determing Encoding without anything implying charset.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob Determing Encoding with UTF-16BE BOM",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob Determing Encoding with UTF-16LE BOM",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/FileReader-event-handler-attributes.any.js",
+    [
+      {
+        "name": "FileReader.onloadstart: initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FileReader.onprogress: initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FileReader.onload: initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FileReader.onabort: initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FileReader.onerror: initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FileReader.onloadend: initial value",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/FileReader-multiple-reads.any.js",
+    [
+      {
+        "name": "test FileReader InvalidStateError exception for readAsText",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "test FileReader InvalidStateError exception for readAsDataURL",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "test FileReader InvalidStateError exception for readAsArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "test FileReader InvalidStateError exception in onloadstart event for readAsArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "test FileReader no InvalidStateError exception in loadend event handler for readAsArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "test abort and restart in onloadstart event for readAsText",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_abort.any.js",
+    [
+      {
+        "name": "Aborting before read",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Aborting after read",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Aborting a reused reader after a previous read completed",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_error.any.js",
+    [
+      {
+        "name": "filereader_error",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_events.any.js",
+    [
+      {
+        "name": "events are dispatched in the correct order for an empty blob",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "events are dispatched in the correct order for a non-empty blob",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_readAsArrayBuffer.any.js",
+    [
+      {
+        "name": "filereader_readAsArrayBuffer",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_readAsBinaryString.any.js",
+    [
+      {
+        "name": "filereader_readAsBinaryString",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_readAsDataURL.any.js",
+    [
+      {
+        "name": "FileReader readyState during readAsDataURL",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "readAsDataURL result for Blob with specified MIME type",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "readAsDataURL result for Blob with unspecified MIME type",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "readAsDataURL result for empty Blob",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_readAsText.any.js",
+    [
+      {
+        "name": "readAsText should correctly read UTF-8.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "readAsText should correctly read UTF-16.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_readAsText_blob_type_charset.any.js",
+    [
+      {
+        "name": "readAsText() uses the charset parameter of the Blob's type (windows-1252)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "readAsText() decodes a windows-1252 Blob body using the type's charset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "readAsText() encoding argument overrides the Blob type's charset",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_readystate.any.js",
+    [
+      {
+        "name": "filereader_readystate",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/reading-data-section/filereader_result.any.js",
+    [
+      {
+        "name": "readAsText",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "readAsDataURL",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "readAsArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "readAsBinaryString",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "result is null during \"loadstart\" event for readAsText",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "result is null during \"loadstart\" event for readAsDataURL",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "result is null during \"loadstart\" event for readAsArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "result is null during \"loadstart\" event for readAsBinaryString",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "result is null during \"progress\" event for readAsText",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "result is null during \"progress\" event for readAsDataURL",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "result is null during \"progress\" event for readAsArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "result is null during \"progress\" event for readAsBinaryString",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/unicode.any.js",
+    [
+      {
+        "name": "Test that strings are not NFC normalized by Blob constructor",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test that strings are not NFC normalized by File constructor",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test that unpaired surrogates are replaced by Blob constructor",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test that unpaired surrogates are replaced by File constructor",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/url/url-format.any.js",
+    [
+      {
+        "name": "Generated Blob URLs are unique",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob URL starts with \"blob:\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob URL starts with \"blob:\" for Files",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Origin of Blob URL matches our origin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob URL parses correctly",
+        "status": "Fail",
+        "message": "assert_true: Path must end with a valid UUID expected true got false"
+      },
+      {
+        "name": "Origin of Blob URL matches our origin for Files",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/url/url-with-fetch.any.js",
+    [
+      {
+        "name": "Blob URLs can be used in fetch",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch with a fragment should succeed",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to fetch\""
+      },
+      {
+        "name": "fetch of a revoked URL should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Only exact matches should revoke URLs, using fetch",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Appending a query string should cause fetch to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Appending a path should cause fetch to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch with method \"HEAD\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch with method \"POST\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch with method \"DELETE\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch with method \"OPTIONS\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch with method \"PUT\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch with method \"CUSTOM\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetch should return Content-Type from Blob",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Revoke blob URL after creating Request, will fetch",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to fetch\""
+      },
+      {
+        "name": "Revoke blob URL after creating Request, then clone Request, will fetch",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to fetch\""
+      },
+      {
+        "name": "Revoke blob URL after calling fetch, fetch should succeed",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/url/url-with-xhr.any.js",
+    [
+      {
+        "name": "XHR should return Content-Type from Blob",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Revoke blob URL after open(), will fetch",
+        "status": "Fail",
+        "message": "assert_unreached: Got unexpected error event Reached unreachable code"
+      },
+      {
+        "name": "Blob URLs can be used in XHR",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XHR with a fragment should succeed",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: \"Got unexpected error event\""
+      },
+      {
+        "name": "XHR of a revoked URL should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Only exact matches should revoke URLs, using XHR",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Appending a query string should cause XHR to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Appending a path should cause XHR to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XHR with method \"HEAD\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XHR with method \"POST\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XHR with method \"DELETE\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XHR with method \"OPTIONS\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XHR with method \"PUT\" should fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "XHR with method \"CUSTOM\" should fail",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "FileAPI/url/url_xmlhttprequest_img.html",
+    [
+      {
+        "name": "FileAPI/url/url_xmlhttprequest_img.html",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]

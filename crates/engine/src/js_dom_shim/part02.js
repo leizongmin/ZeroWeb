@@ -3753,15 +3753,30 @@
   Object.defineProperty(globalThis.File, 'length', { value: 2 });
   Object.defineProperty(globalThis.File.prototype, Symbol.toStringTag, { value: 'File', configurable: true });
 
-  // FileReader——异步读 Blob（文件上传 / 图片预览 / data URL 高频）。纯 JS，builds on Blob.text()/
-  // arrayBuffer()（R2789）+ btoa（R2770）。**readAsDataURL 为 Blob 未覆盖的唯一能力**（图片预览
-  // `img.src = reader.result` 高频）。事件经 microtask：readyState=LOADING（同步）→ loadstart（同步）
-  // → Blob Promise resolve（execute 末 checkpoint drain）→ result 赋值 + readyState=DONE → load + loadend。
-  // **已知限制（记录）**：① loadstart 同步派发（spec 为 task 异步，多数代码只关心 load/loadend，零影响）；
-  //   ② 无真 abort（abort 仅置 readyState=DONE + 派发 abort/loadend，不中断已 in-flight 的 Blob Promise——
-  //   纯 JS 无取消原语，best-effort）；③ encoding 参数忽略（恒 UTF-8，同 TextDecoder 限制）；
-  //   ④ 不扩展 EventTarget（仅 onXxx handler 属性，非 addEventListener——覆盖 `reader.onload = ...` 主流用法）；
-  //   ⑤ readAsDataURL 对非 Latin-1 字节按逐字节 Latin-1→btoa（与 spec 一致：base64 编码原始字节）。
+  // FileReader——异步读 Blob（文件上传 / 图片预览 / data URL 高频）。纯 JS，builds on Blob.arrayBuffer()/
+  // TextDecoder + btoa（R2770）。**readAsDataURL 为 Blob 未覆盖的唯一能力**（图片预览
+  // `img.src = reader.result` 高频）。fileapi-compat M2-P3 读取状态机
+  // （https://w3c.github.io/FileAPI/#reader-general-update-steps）：
+  // ① readAs* 同步置 LOADING（重入读抛 InvalidStateError——multiple-reads）；
+  // ② 事件按 spec 逐个 **task** 派发（setTimeout 承载——runner `__zw_test_setTimeout`
+  //   stub 确定性 FIFO 队列；无 host 环境回落 microtask）：loadstart →（bytes settle）→
+  //   progress → load → loadend。task 间隔使页面 promise 链（EventWatcher.wait_for →
+  //   断言 → 下一个 wait_for）在事件间完整 drain——microtask 链承载时尾事件与
+  //   promise_test 完成回调竞态（filereader_result progress 变体实证）；
+  // ③ result 在 loadstart/progress 阶段恒 null，readyState 恒 LOADING；result 赋值 + DONE
+  //   在 progress 之后、load 之前（filereader_result 记序）；
+  // ④ progress 仅在有字节被读出时派发（空 Blob 无 progress——filereader_events 口径）；
+  // ⑤ abort 同步派发 abort + loadend（filereader_abort 口径），代计数使 in-flight 读链
+  //   静默（不补发 load/progress/loadend）；
+  // ⑥ encoding 确定（#determining-encoding）：BOM 嗅探（UTF-8/UTF-16BE/UTF-16LE）优先，
+  //   次 encoding 参数（合法标签），次 type 的 charset 参数，缺省 UTF-8——经 TextDecoder
+  //   （encoding-compat M2 host decoder）解码；
+  // ⑦ readAsDataURL 空 type → 'application/octet-stream'（spec datatype 缺省）。
+  // addEventListener/removeEventListener/dispatchEvent 由 part05 接 EventTarget 原型链
+  //（XHR R114 同款；EventWatcher 依赖 addEventListener 注册派发监听）。
+  // **已知限制（记录）**：① readAsDataURL 对非 Latin-1 字节按逐字节 Latin-1→btoa（与 spec
+  //   一致：base64 编码原始字节）；② host 无 __zw_text_encoding_of 时（无 script-runtime
+  //   环境）encoding 判定回落 UTF-8。
   function FileReader() {
     this.readyState = 0; // EMPTY
     this.result = null;
@@ -3772,6 +3787,7 @@
     this.onabort = null;
     this.onerror = null;
     this.onloadend = null;
+    this._et_listeners = {}; // EventTarget 内部 listener map（原型链 part05 接线）
   }
   FileReader.EMPTY = 0;
   FileReader.LOADING = 1;
@@ -3779,82 +3795,153 @@
   FileReader.prototype.EMPTY = 0;
   FileReader.prototype.LOADING = 1;
   FileReader.prototype.DONE = 2;
-  // 派发命名事件：构造 ProgressEvent-like {type,target,lengthComputable,loaded,total}，调 onXxx handler。
+  // 派发命名事件：ProgressEvent（bubbles/cancelable 恒 false——progress_event_bubbles_cancelable）
+  // 经 dispatchEvent（listeners + on* handler 同键去重派发）；无 EventTarget 环境（part05 未加载
+  // 的 polyfill 形态）回落 on* handler 直调。
   FileReader.prototype._fire = function (type, loaded, total) {
-    var ev = {
-      type: type,
-      target: this,
-      lengthComputable: total != null && total >= 0,
-      loaded: loaded || 0,
-      total: total != null ? total : 0
-    };
+    var ev;
+    if (typeof globalThis.ProgressEvent === 'function') {
+      ev = new globalThis.ProgressEvent(type, {
+        lengthComputable: total != null && total >= 0,
+        loaded: loaded || 0,
+        total: total != null ? total : 0
+      });
+    } else {
+      ev = {
+        type: type,
+        bubbles: false,
+        cancelable: false,
+        target: this,
+        currentTarget: this,
+        lengthComputable: total != null && total >= 0,
+        loaded: loaded || 0,
+        total: total != null ? total : 0
+      };
+    }
+    if (typeof this.dispatchEvent === 'function') {
+      try { this.dispatchEvent(ev); } catch (_e) { /* handler 异常不中断读取流程 */ }
+      return;
+    }
     var h = this['on' + type];
     if (typeof h === 'function') {
-      try { h.call(this, ev); } catch (_e) { /* handler 异常不中断读取流程 */ }
+      try { h.call(this, ev); } catch (_e2f) { /* handler 异常不中断读取流程 */ }
     }
   };
-  // 读取启动：readyState=LOADING + 派发 loadstart（同步）。
-  FileReader.prototype._start = function (blob) {
+  // 读取失败收尾：error 赋值 + readyState=DONE + 同步派发 error + loadend。
+  FileReader.prototype._zwFail = function (err, total) {
+    this.readyState = 2;
+    this.error = err;
+    this._fire('error', 0, total);
+    this._fire('loadend', 0, total);
+  };
+  // readAs* 共享读取算法（见类注释 ①-⑤）。bytesPromise resolve ArrayBuffer；finish(bytes)
+  // 同步产出 result（throw → error 路径）。gen 代计数：abort/重读使旧读链后续 task 全部
+  // 静默（filereader_abort「aborted read 不补发 load/loadend」）。
+  FileReader.prototype._zwRead = function (blob, bytesPromise, finish) {
+    var self = this;
+    if (this.readyState === 1) {
+      throw new (globalThis.DOMException || DOMException)("Failed to execute 'read' on 'FileReader': The object is already busy reading Blobs.", 'InvalidStateError');
+    }
+    var gen = this._zwGen = (this._zwGen || 0) + 1;
+    var total = (blob && blob.size != null) ? blob.size : 0;
     this.readyState = 1;
     this.result = null;
     this.error = null;
-    this._total = (blob && blob.size != null) ? blob.size : 0;
-    this._fire('loadstart', 0, this._total);
+    this._total = total;
+    setTimeout(function () { // task：loadstart
+      if (gen !== self._zwGen) return;
+      self._fire('loadstart', 0, total);
+      bytesPromise.then(function (bytes) {
+        if (gen !== self._zwGen) return;
+        var result;
+        try { result = finish(bytes); }
+        catch (e2r) { self._zwFail(e2r, total); return; }
+        setTimeout(function () { // task：progress
+          if (gen !== self._zwGen) return;
+          if (total > 0) self._fire('progress', total, total);
+          setTimeout(function () { // task：load（result 赋值在 progress 之后、load 之前）
+            if (gen !== self._zwGen) return;
+            self.readyState = 2;
+            self.result = result;
+            self._fire('load', total, total);
+            setTimeout(function () { // task：loadend
+              if (gen !== self._zwGen) return;
+              self._fire('loadend', total, total);
+            }, 0);
+          }, 0);
+        }, 0);
+      }, function (e) {
+        if (gen !== self._zwGen) return;
+        self._zwFail(e, total);
+      });
+    }, 0);
   };
-  // 读取成功收尾：result 赋值 + readyState=DONE + 派发 load + loadend。
-  FileReader.prototype._done = function (result) {
-    this.readyState = 2;
-    this.result = result;
-    this._fire('progress', this._total, this._total);
-    this._fire('load', this._total, this._total);
-    this._fire('loadend', this._total, this._total);
-  };
-  // 读取失败收尾：error 赋值 + readyState=DONE + 派发 error + loadend。
-  FileReader.prototype._fail = function (err) {
-    this.readyState = 2;
-    this.error = err;
-    this._fire('error', 0, this._total);
-    this._fire('loadend', 0, this._total);
-  };
-  FileReader.prototype.readAsText = function (blob /*, encoding */) {
-    var self = this;
-    this._start(blob);
-    blob.text().then(function (s) { self._done(s); }, function (e) { self._fail(e); });
+  // encoding 确定（见类注释 ⑥）。label 合法性经 host 全表（与 TextDecoder 构造同源）。
+  function _zwEncodingLabelOf(label) {
+    if (typeof __zw_text_encoding_of !== 'function') return '';
+    try { return __zw_text_encoding_of(String(label)) || ''; } catch (_e) { return ''; }
+  }
+  function _zwFileReadEncoding(bytes, typeStr, encodingArg) {
+    var u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    if (u8.length >= 3 && u8[0] === 0xEF && u8[1] === 0xBB && u8[2] === 0xBF) return 'utf-8';
+    if (u8.length >= 2 && u8[0] === 0xFE && u8[1] === 0xFF) return 'utf-16be';
+    if (u8.length >= 2 && u8[0] === 0xFF && u8[1] === 0xFE) return 'utf-16le';
+    if (encodingArg != null) {
+      var a = _zwEncodingLabelOf(encodingArg);
+      if (a !== '') return a;
+    }
+    if (typeStr) {
+      var mt = _zwParseMimeType(typeStr);
+      if (mt) {
+        for (var i = 0; i < mt.params.length; i++) {
+          if (mt.params[i][0] === 'charset') {
+            var c = _zwEncodingLabelOf(mt.params[i][1]);
+            if (c !== '') return c;
+          }
+        }
+      }
+    }
+    return 'utf-8';
+  }
+  // readAsText：encoding 参数（DOMString，spec 第二参）——bytes 经 determining encoding 解码。
+  FileReader.prototype.readAsText = function (blob, encoding) {
+    var typeStr = (blob && blob.type) || '';
+    this._zwRead(blob, blob.arrayBuffer(), function (bytes) {
+      var enc = _zwFileReadEncoding(bytes, typeStr, encoding);
+      return new TextDecoder(enc).decode(bytes);
+    });
     return; // void（spec）
   };
-  // readAsArrayBuffer：result 为 ArrayBuffer（fileapi-compat M2-P1 对齐 spec——Blob.arrayBuffer()
-  // 现返 ArrayBuffer；上游 'Result should be an ArrayBuffer' 断言）。
+  // readAsArrayBuffer：result 为 ArrayBuffer（M2-P1 对齐 spec——Blob.arrayBuffer() 返 ArrayBuffer；
+  // 上游 'Result should be an ArrayBuffer' 断言）。
   FileReader.prototype.readAsArrayBuffer = function (blob) {
-    var self = this;
-    this._start(blob);
-    blob.arrayBuffer().then(function (a) { self._done(a); }, function (e) { self._fail(e); });
+    this._zwRead(blob, blob.arrayBuffer(), function (bytes) { return bytes; });
   };
   // readAsBinaryString：逐字节 Latin-1 串（spec 保留方法，已弃用但仍可用）。
   FileReader.prototype.readAsBinaryString = function (blob) {
-    var self = this;
-    this._start(blob);
-    blob.arrayBuffer().then(function (buf) {
-      var u8 = new Uint8Array(buf);
+    this._zwRead(blob, blob.arrayBuffer(), function (bytes) {
+      var u8 = new Uint8Array(bytes);
       var s = '';
       for (var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
-      self._done(s);
-    }, function (e) { self._fail(e); });
+      return s;
+    });
   };
-  // readAsDataURL：data:<type>;base64,<b64>——逐字节 Latin-1 → btoa（base64 编码原始字节，spec 一致）。
+  // readAsDataURL：data:<type>;base64,<b64>——逐字节 Latin-1 → btoa（base64 编码原始字节，spec 一致）；
+  // 空 type → 'application/octet-stream'（spec datatype 缺省）。
   FileReader.prototype.readAsDataURL = function (blob) {
-    var self = this;
-    this._start(blob);
-    blob.arrayBuffer().then(function (buf) {
-      var u8 = new Uint8Array(buf);
+    var type = (blob && blob.type) ? blob.type : 'application/octet-stream';
+    this._zwRead(blob, blob.arrayBuffer(), function (bytes) {
+      var u8 = new Uint8Array(bytes);
       var s = '';
       for (var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
-      var type = (blob && blob.type) || '';
-      self._done('data:' + type + ';base64,' + btoa(s));
-    }, function (e) { self._fail(e); });
+      return 'data:' + type + ';base64,' + btoa(s);
+    });
   };
-  // abort：best-effort——仅 EMPTY/DONE 时 no-op；否则置 DONE + 派发 abort + loadend（不中断 in-flight Promise）。
+  // abort：EMPTY/DONE 时 no-op；LOADING 时代计数使 in-flight 读链静默 + 同步派发 abort + loadend
+  //（filereader_abort 口径——'abort' and 'loadend' events are dispatched synchronously）。
   FileReader.prototype.abort = function () {
     if (this.readyState === 0 || this.readyState === 2) return;
+    this._zwGen = (this._zwGen || 0) + 1;
     this.readyState = 2;
     this.result = null;
     this._fire('abort', 0, this._total);
