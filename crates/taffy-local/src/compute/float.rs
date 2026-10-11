@@ -531,19 +531,38 @@ pub struct FloatIntrinsicWidthCalculator {
     available_width: AvailableSpace,
     /// The running total intrinsic width contribution
     contribution: f32,
+    /// ZW R5073：Definite available space 下 float 贡献是否计数（kill-switch
+    /// `ZW_ABSPOS_FLOAT_SHRINK=0` 关闭，default-on）
+    definite_counts: bool,
 }
 
 impl FloatIntrinsicWidthCalculator {
     /// Create a new `FloatIntrinsicWidthCalculator`
     pub fn new(available_width: AvailableSpace) -> Self {
-        Self { available_width, contribution: 0.0 }
+        Self {
+            available_width,
+            contribution: 0.0,
+            definite_counts: std::env::var("ZW_ABSPOS_FLOAT_SHRINK").as_deref() != Ok("0"),
+        }
     }
 
     /// Add a float to the computation
     pub fn add_float(&mut self, width: f32, _direction: FloatDirection, _clear: Clear) {
         match self.available_width {
             AvailableSpace::Definite(_) => {
-                // We will never hit this code path with definite available space
+                // ZW R5073（CSS2 §10.3.7 shrink-to-fit）：taffy 自身的 abspos 测量路径
+                // （block.rs `perform_absolute_layout_on_absolute_children`）以
+                // `Definite(CB 宽)` 作 available space 进入 content-based 宽度计算，此前
+                // 本臂零贡献 → abspos `width:auto` 的 shrink-to-fit 在只有 float 子时塌 0
+                //（driving: css/CSS2/positioning absolute-non-replaced-width-023/024，
+                // float 子 max-width 钳 120 应为 preferred 宽）。§10.3.5 preferred 宽
+                // 按 float 内容求和（同 MaxContent 臂语义）；Definite 在该分支仅来源
+                // abspos 测量（final layout 的 in-flow 子一律带已知 stretch 宽，不走
+                // content-based 分支）。kill-switch `ZW_ABSPOS_FLOAT_SHRINK=0` 回退
+                //（构造时读 env，非热循环逐 float 读）。
+                if self.definite_counts {
+                    self.contribution += width;
+                }
             }
             AvailableSpace::MinContent => self.contribution = self.contribution.max(width),
             AvailableSpace::MaxContent => self.contribution += width,

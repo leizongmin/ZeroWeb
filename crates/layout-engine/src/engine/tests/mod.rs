@@ -681,3 +681,5 @@ mod s19_inline_atomic_geometry_tests;
 mod r5047_flex_ar_flexed_main_tests;
 
 mod r5048_replaced_kw_border_box_tests;
+/// R5073 abspos float 子 shrink-to-fit（taffy Definite 臂 float 贡献）测试。
+mod r5073_abspos_float_shrink_tests;
