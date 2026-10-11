@@ -352,8 +352,11 @@ impl FontLoader {
         let mono_id = self.resolve_generic_family(&mono_names).unwrap_or(default_id);
         resolver.insert("monospace".to_string(), mono_id);
         // P9-D2（R5072，CSS Fonts 4 §5.2 weight 匹配在族内 face 集上进行）：mono 族
-        // 常仅一个 face（Noto Sans Mono CJK SC），w700 须族内回退到唯一 face——不套
-        // 用 R3993 sans 链的跨族兜底（跨族会把 sans bold 塞给 monospace）。
+        // 常仅一个 face（Noto Sans Mono CJK SC），w700 须族内回退到唯一 face。:700
+        // 语义跟随解析结果族：mono_id 命中专属 mono 族时取该族 Bold（无 Bold 则自
+        // 身）；generic 关键字全落空（mono_id = default）时取 default 族自身谱系的
+        // Bold/自身——不套用 R3993 sans 链的「任意族第二 face」兜底（那才会把不相干
+        // 的 sans bold 塞给 monospace）。
         resolver.insert(
             "monospace:700".to_string(),
             self.bold_face_of_same_family(mono_id).unwrap_or(mono_id),
