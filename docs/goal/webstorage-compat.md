@@ -1,8 +1,8 @@
 # Web Storage 兼容 — localStorage / sessionStorage
 
-**版本**: v1.0
-**日期**: 2026-10-08
-**状态**: Active（已立项，快赢切片——无用户门控项）
+**版本**: v1.1
+**日期**: 2026-10-08（立项）| 2026-10-11（M1 基线落档）
+**状态**: Active（M1 完成：通道 + 基线 1187/1251 = 94.9%；下一步 M2 存取/配额语义收敛）
 **执行模式**: WPT 驱动（上游 webstorage corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——存储面）
 
@@ -82,8 +82,10 @@ JS 面语义（存取/枚举/配额/异常），使真实站点的偏好与会�
 
 ### DC-1: WPT 导入与基线
 
-- [ ] webstorage corpus window 可执行子集导入（可执行性甄别记录落 evidence/）
-- [ ] 分类通过率基线落 evidence/，并回填 docs/compat/trends/wpt-suites.csv planned 行
+- [x] webstorage corpus window 可执行子集导入（可执行性甄别记录落 evidence/）
+- [x] 分类通过率基线落 evidence/，并回填 docs/compat/trends/wpt-suites.csv planned 行
+      （2026-10-11：25 案 `.window.js` 可执行子集 1187/1251 = 94.9%；
+      [evidence/2026-10-11-m1-baseline.md](webstorage-compat/evidence/2026-10-11-m1-baseline.md)）
 
 ### DC-2: 存取与配额语义收敛
 
@@ -95,6 +97,10 @@ JS 面语义（存取/枚举/配额/异常），使真实站点的偏好与会�
 
 - [ ] 可执行性甄别结论落 evidence/；可执行子集语义收敛；不可执行面记录挂账
       理由（frame 树依赖 → navigation-compat M3 同门槛）
+      甄别结论已落档（2026-10-11，M1）：runner 可执行子集 = StorageEvent 构造/init
+      2 案（`event_constructor/initstorageevent.window.js`）；派发面 event_*.html
+      19 案 + window.open/iframe 5 案挂账（harness 经 iframe 跨文档派发，runner 无
+      多 frame 管道）。可执行子集语义收敛仍待 M3（当前 3/11 subtests）。
 
 ### DC-4: 测试与质量不可退让
 

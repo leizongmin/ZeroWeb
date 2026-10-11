@@ -1,0 +1,6382 @@
+[
+  [
+    "webstorage/defineProperty.window.js",
+    [
+      {
+        "name": "Defining data property for key 9 on localStorage",
+        "status": "Fail",
+        "message": "'get' on proxy: property '9' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'value' but got 'undefined')"
+      },
+      {
+        "name": "Defining data property for key 9 on localStorage twice",
+        "status": "Fail",
+        "message": "'get' on proxy: property '9' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'value' but got 'undefined')"
+      },
+      {
+        "name": "Defining data property with toString for key 9 on localStorage",
+        "status": "Fail",
+        "message": "'get' on proxy: property '9' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'value' but got 'undefined')"
+      },
+      {
+        "name": "Defining data property for key x on localStorage",
+        "status": "Fail",
+        "message": "'get' on proxy: property 'x' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'value' but got 'undefined')"
+      },
+      {
+        "name": "Defining data property for key x on localStorage twice",
+        "status": "Fail",
+        "message": "'get' on proxy: property 'x' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'value' but got 'undefined')"
+      },
+      {
+        "name": "Defining data property with toString for key x on localStorage",
+        "status": "Fail",
+        "message": "'get' on proxy: property 'x' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'value' but got 'undefined')"
+      },
+      {
+        "name": "Defining data property for key 9 on sessionStorage",
+        "status": "Fail",
+        "message": "'get' on proxy: property '9' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'value' but got 'undefined')"
+      },
+      {
+        "name": "Defining data property for key 9 on sessionStorage twice",
+        "status": "Fail",
+        "message": "'get' on proxy: property '9' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'value' but got 'undefined')"
+      },
+      {
+        "name": "Defining data property with toString for key 9 on sessionStorage",
+        "status": "Fail",
+        "message": "'get' on proxy: property '9' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'value' but got 'undefined')"
+      },
+      {
+        "name": "Defining data property for key x on sessionStorage",
+        "status": "Fail",
+        "message": "'get' on proxy: property 'x' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'value' but got 'undefined')"
+      },
+      {
+        "name": "Defining data property for key x on sessionStorage twice",
+        "status": "Fail",
+        "message": "'get' on proxy: property 'x' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'value' but got 'undefined')"
+      },
+      {
+        "name": "Defining data property with toString for key x on sessionStorage",
+        "status": "Fail",
+        "message": "'get' on proxy: property 'x' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'value' but got 'undefined')"
+      }
+    ]
+  ],
+  [
+    "webstorage/event_constructor.window.js",
+    [
+      {
+        "name": "StorageEvent constructor called as normal function",
+        "status": "Fail",
+        "message": "assert_throws_js: Calling StorageEvent constructor without 'new' must throw function \"() => StorageEvent(\"\")\" did not throw"
+      },
+      {
+        "name": "constructor with no arguments",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => new StorageEvent()\" did not throw"
+      },
+      {
+        "name": "constructor with just type argument",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "constructor with sensible type argument and members",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "constructor with null type argument and members",
+        "status": "Fail",
+        "message": "assert_equals: url expected \"null\" but got \"\""
+      },
+      {
+        "name": "constructor with undefined type argument and members",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/event_initstorageevent.window.js",
+    [
+      {
+        "name": "initStorageEvent with 0 arguments",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'length')"
+      },
+      {
+        "name": "initStorageEvent with 1 argument",
+        "status": "Fail",
+        "message": "event.initStorageEvent is not a function"
+      },
+      {
+        "name": "initStorageEvent with 8 sensible arguments",
+        "status": "Fail",
+        "message": "event.initStorageEvent is not a function"
+      },
+      {
+        "name": "initStorageEvent with 8 null arguments",
+        "status": "Fail",
+        "message": "event.initStorageEvent is not a function"
+      },
+      {
+        "name": "initStorageEvent with 8 undefined arguments",
+        "status": "Fail",
+        "message": "event.initStorageEvent is not a function"
+      }
+    ]
+  ],
+  [
+    "webstorage/missing_arguments.window.js",
+    [
+      {
+        "name": "Should throw TypeError for function \"function() { localStorage.key(); }\".",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { localStorage.key(); }\" did not throw"
+      },
+      {
+        "name": "Should throw TypeError for function \"function() { localStorage.getItem(); }\".",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { localStorage.getItem(); }\" did not throw"
+      },
+      {
+        "name": "Should throw TypeError for function \"function() { localStorage.setItem(); }\".",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { localStorage.setItem(); }\" did not throw"
+      },
+      {
+        "name": "Should throw TypeError for function \"function() { localStorage.setItem(\"a\"); }\".",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { localStorage.setItem(\"a\"); }\" did not throw"
+      },
+      {
+        "name": "Should throw TypeError for function \"function() { localStorage.removeItem(); }\".",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { localStorage.removeItem(); }\" did not throw"
+      },
+      {
+        "name": "Should throw TypeError for function \"function() { sessionStorage.key(); }\".",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { sessionStorage.key(); }\" did not throw"
+      },
+      {
+        "name": "Should throw TypeError for function \"function() { sessionStorage.getItem(); }\".",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { sessionStorage.getItem(); }\" did not throw"
+      },
+      {
+        "name": "Should throw TypeError for function \"function() { sessionStorage.setItem(); }\".",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { sessionStorage.setItem(); }\" did not throw"
+      },
+      {
+        "name": "Should throw TypeError for function \"function() { sessionStorage.setItem(\"a\"); }\".",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { sessionStorage.setItem(\"a\"); }\" did not throw"
+      },
+      {
+        "name": "Should throw TypeError for function \"function() { sessionStorage.removeItem(); }\".",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() { sessionStorage.removeItem(); }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "webstorage/set.window.js",
+    [
+      {
+        "name": "Setting property for key 9 on localStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting property with toString for key 9 on localStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting property for key 9 on localStorage with data property on prototype",
+        "status": "Fail",
+        "message": "assert_equals: expected \"proto for Setting property for key 9 on localStorage with data property on prototype\" but got \"value for Setting property for key 9 on localStorage with data property on prototype\""
+      },
+      {
+        "name": "Setting property for key 9 on localStorage with data property on prototype and existing item",
+        "status": "Fail",
+        "message": "assert_equals: expected \"proto for Setting property for key 9 on localStorage with data property on prototype and existing item\" but got \"value for Setting property for key 9 on localStorage with data property on prototype\""
+      },
+      {
+        "name": "Setting property for key 9 on localStorage with accessor property on prototype",
+        "status": "Fail",
+        "message": "assert_equals: expected \"proto getter for Setting property for key 9 on localStorage with accessor property on prototype\" but got \"value for Setting property for key 9 on localStorage with data property on prototype\""
+      },
+      {
+        "name": "Setting property for key x on localStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting property with toString for key x on localStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting property for key x on localStorage with data property on prototype",
+        "status": "Fail",
+        "message": "assert_equals: expected \"proto for Setting property for key x on localStorage with data property on prototype\" but got \"value for Setting property for key x on localStorage with data property on prototype\""
+      },
+      {
+        "name": "Setting property for key x on localStorage with data property on prototype and existing item",
+        "status": "Fail",
+        "message": "assert_equals: expected \"proto for Setting property for key x on localStorage with data property on prototype and existing item\" but got \"value for Setting property for key x on localStorage with data property on prototype\""
+      },
+      {
+        "name": "Setting property for key x on localStorage with accessor property on prototype",
+        "status": "Fail",
+        "message": "assert_equals: expected \"proto getter for Setting property for key x on localStorage with accessor property on prototype\" but got \"value for Setting property for key x on localStorage with data property on prototype\""
+      },
+      {
+        "name": "Setting property for key 9 on sessionStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting property with toString for key 9 on sessionStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting property for key 9 on sessionStorage with data property on prototype",
+        "status": "Fail",
+        "message": "assert_equals: expected \"proto for Setting property for key 9 on sessionStorage with data property on prototype\" but got \"value for Setting property for key 9 on sessionStorage with data property on prototype\""
+      },
+      {
+        "name": "Setting property for key 9 on sessionStorage with data property on prototype and existing item",
+        "status": "Fail",
+        "message": "assert_equals: expected \"proto for Setting property for key 9 on sessionStorage with data property on prototype and existing item\" but got \"value for Setting property for key 9 on sessionStorage with data property on prototype\""
+      },
+      {
+        "name": "Setting property for key 9 on sessionStorage with accessor property on prototype",
+        "status": "Fail",
+        "message": "assert_equals: expected \"proto getter for Setting property for key 9 on sessionStorage with accessor property on prototype\" but got \"value for Setting property for key 9 on sessionStorage with data property on prototype\""
+      },
+      {
+        "name": "Setting property for key x on sessionStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting property with toString for key x on sessionStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting property for key x on sessionStorage with data property on prototype",
+        "status": "Fail",
+        "message": "assert_equals: expected \"proto for Setting property for key x on sessionStorage with data property on prototype\" but got \"value for Setting property for key x on sessionStorage with data property on prototype\""
+      },
+      {
+        "name": "Setting property for key x on sessionStorage with data property on prototype and existing item",
+        "status": "Fail",
+        "message": "assert_equals: expected \"proto for Setting property for key x on sessionStorage with data property on prototype and existing item\" but got \"value for Setting property for key x on sessionStorage with data property on prototype\""
+      },
+      {
+        "name": "Setting property for key x on sessionStorage with accessor property on prototype",
+        "status": "Fail",
+        "message": "assert_equals: expected \"proto getter for Setting property for key x on sessionStorage with accessor property on prototype\" but got \"value for Setting property for key x on sessionStorage with data property on prototype\""
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_builtins.window.js",
+    [
+      {
+        "name": "Builtins in localStorage",
+        "status": "Fail",
+        "message": "assert_array_equals: b expected property 0 to be function \"function key(index) {\n    var keys = Object.keys(this.__zwItems || {});\n    return index >= 0 && index < keys.length ? keys[index] : null;\n  }\" but got \"key\" (expected array [function \"function key(index) {\n    var keys = Object.keys(this.__zwItems || {});\n    return index >= 0 && index < keys.length ? keys[index] : null;\n  }\", function \"function getItem(key) {\n    var items = this.__zwItems || {};\n    return Object.prototype.hasOwnProperty.call(items, key) ? items[key] : null;\n  }\", function \"function setItem(key, value) {\n    this.__zwItems[String(key)] = String(value);\n  }\", function \"function removeItem(key) {\n    delete this.__zwItems[String(key)];\n  }\", function \"function clear() {\n    var items = this.__zwItems || {};\n    for (var k in items) { delete items[k]; }\n  }\"] got [\"key\", \"getItem\", \"setItem\", \"removeItem\", \"clear\"])"
+      },
+      {
+        "name": "Builtins in sessionStorage",
+        "status": "Fail",
+        "message": "assert_array_equals: b expected property 0 to be function \"function key(index) {\n    var keys = Object.keys(this.__zwItems || {});\n    return index >= 0 && index < keys.length ? keys[index] : null;\n  }\" but got \"key\" (expected array [function \"function key(index) {\n    var keys = Object.keys(this.__zwItems || {});\n    return index >= 0 && index < keys.length ? keys[index] : null;\n  }\", function \"function getItem(key) {\n    var items = this.__zwItems || {};\n    return Object.prototype.hasOwnProperty.call(items, key) ? items[key] : null;\n  }\", function \"function setItem(key, value) {\n    this.__zwItems[String(key)] = String(value);\n  }\", function \"function removeItem(key) {\n    delete this.__zwItems[String(key)];\n  }\", function \"function clear() {\n    var items = this.__zwItems || {};\n    for (var k in items) { delete items[k]; }\n  }\"] got [\"key\", \"getItem\", \"setItem\", \"removeItem\", \"clear\"])"
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_clear.window.js",
+    [
+      {
+        "name": "Clear in localStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Clear in sessionStorage",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_enumerate.window.js",
+    [
+      {
+        "name": "localStorage: enumerate a Storage object and get only the keys as a result and the built-in properties of the Storage object should be ignored",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage: test enumeration of numeric and non-numeric keys",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage: enumerate a Storage object and get only the keys as a result and the built-in properties of the Storage object should be ignored",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage: test enumeration of numeric and non-numeric keys",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_functions_not_overwritten.window.js",
+    [
+      {
+        "name": "localStorage should be not rendered unusable by setting a key with the same name as a storage function such that the function is hidden",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage should be not rendered unusable by setting a key with the same name as a storage function such that the function is hidden",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_getitem.window.js",
+    [
+      {
+        "name": "All items should be added to localStorage.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Named access to localStorage should be correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.getItem should be correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Get value by getIten(key) and named access in localStorage.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "All items should be added to sessionStorage.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Named access to sessionStorage should be correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.getItem should be correct",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Get value by getIten(key) and named access in sessionStorage.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_indexing.window.js",
+    [
+      {
+        "name": "Getting number properties on localStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Getting number-valued string properties on localStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Getting existing number-valued properties on localStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Indexed getter on localStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Getting number properties on sessionStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Getting number-valued string properties on sessionStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Getting existing number-valued properties on sessionStorage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Indexed getter on sessionStorage",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_in.window.js",
+    [
+      {
+        "name": "The in operator in localStorage: property access",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The in operator in localStorage: method access",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The in operator in sessionStorage: property access",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The in operator in sessionStorage: method access",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_key_empty_string.window.js",
+    [
+      {
+        "name": "localStorage.key with empty string",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.key with empty string",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_key.window.js",
+    [
+      {
+        "name": "localStorage.key(0) should return the right thing.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.key(4294967296) should return the right thing.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value null"
+      },
+      {
+        "name": "localStorage.key(1) should return the right thing.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.key(4294967297) should return the right thing.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value null"
+      },
+      {
+        "name": "localStorage.key(2) should return the right thing.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.key(4294967298) should return the right thing.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value null"
+      },
+      {
+        "name": "localStorage.key(3) should return the right thing.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.key(4294967299) should return the right thing.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value null"
+      },
+      {
+        "name": "localStorage.key() should return null for out-of-range arguments.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.key",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.key with value changes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.key(0) should return the right thing.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.key(4294967296) should return the right thing.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value null"
+      },
+      {
+        "name": "sessionStorage.key(1) should return the right thing.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.key(4294967297) should return the right thing.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value null"
+      },
+      {
+        "name": "sessionStorage.key(2) should return the right thing.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.key(4294967298) should return the right thing.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value null"
+      },
+      {
+        "name": "sessionStorage.key(3) should return the right thing.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.key(4294967299) should return the right thing.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value null"
+      },
+      {
+        "name": "sessionStorage.key() should return null for out-of-range arguments.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.key",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.key with value changes",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_length.window.js",
+    [
+      {
+        "name": "localStorage.length (method access)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.length (proprty access)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.length (method access)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.length (proprty access)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_local_quota_independent_from_session.window.js",
+    [
+      {
+        "name": "localStorage retains comparable quota after sessionStorage exhaustion",
+        "status": "Fail",
+        "message": "assert_throws_quotaexceedederror: function \"() => {\n        while (true) {\n            localStorage.setItem(\"\" + key + indexBefore, \"\" + val + indexBefore);\n            indexBefore++;\n        }\n    }\" threw object \"RangeError: Too many properties to enumerate\" that is not a correct QuotaExceededError: property \"code\" is equal to undefined, expected 22"
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_local_setitem_quotaexceedederr.window.js",
+    [
+      {
+        "name": "Throws QuotaExceededError when the quota has been exceeded",
+        "status": "Fail",
+        "message": "assert_throws_quotaexceedederror: function \"() => {\n        while (true) {\n            index++;\n            localStorage.setItem(\"\" + key + index, \"\" + val + index);\n        }\n    }\" threw object \"RangeError: Too many properties to enumerate\" that is not a correct QuotaExceededError: property \"code\" is equal to undefined, expected 22"
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_removeitem.window.js",
+    [
+      {
+        "name": "localStorage.removeItem()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "delete localStorage[]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.removeItem(null)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.removeItem(undefined)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.removeItem()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "delete sessionStorage[]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.removeItem(null)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.removeItem(undefined)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_session_quota_independent_from_local.window.js",
+    [
+      {
+        "name": "sessionStorage retains comparable quota after localStorage exhaustion",
+        "status": "Fail",
+        "message": "assert_throws_quotaexceedederror: function \"() => {\n        while (true) {\n            sessionStorage.setItem(\"\" + key + indexBefore, \"\" + val + indexBefore);\n            indexBefore++;\n        }\n    }\" threw object \"RangeError: Too many properties to enumerate\" that is not a correct QuotaExceededError: property \"code\" is equal to undefined, expected 22"
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_session_setitem_quotaexceedederr.window.js",
+    [
+      {
+        "name": "Throws QuotaExceededError when the quota has been exceeded",
+        "status": "Fail",
+        "message": "assert_throws_quotaexceedederror: function \"() => {\n        while (true) {\n            index++;\n            sessionStorage.setItem(\"\" + key + index, \"\" + val + index);\n        }\n    }\" threw object \"RangeError: Too many properties to enumerate\" that is not a correct QuotaExceededError: property \"code\" is equal to undefined, expected 22"
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_setitem.window.js",
+    [
+      {
+        "name": "localStorage.setItem()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] update",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.setItem(_, null)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.setItem(_, undefined)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = undefined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.setItem({ throws })",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = { throws }",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.setItem(undefined, _)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[undefined]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage.setItem(null, _)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[null]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage key containing null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage value containing null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"퟿\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"퟿\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"�\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"�\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"�\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"�\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"�\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"�\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"�\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"�\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\ufffd\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\ufffd\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\ufffe\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\ufffe\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\uffff\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\uffff\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"🍍\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"🍍\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"�a\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"�a\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"a�\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"a�\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"􏿿\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"􏿿\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\0\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\0\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x01\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x01\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x02\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x02\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x03\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x03\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x04\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x04\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x05\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x05\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x06\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x06\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x07\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x07\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\b\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\b\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\t\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\t\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\n\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\n\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\v\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\v\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\f\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\f\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\r\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\r\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x0e\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x0e\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x0f\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x0f\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x10\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x10\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x11\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x11\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x12\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x12\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x13\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x13\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x14\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x14\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x15\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x15\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x16\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x16\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x17\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x17\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x18\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x18\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x19\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x19\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x1a\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x1a\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x1b\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x1b\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x1c\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x1c\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x1d\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x1d\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x1e\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x1e\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\x1f\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\x1f\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\" \"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \" \"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"!\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"!\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\\"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"#\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"#\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"$\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"$\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"%\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"%\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"&\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"&\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"'\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"'\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"(\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"(\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\")\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \")\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"*\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"*\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"+\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"+\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\",\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \",\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"-\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"-\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\".\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \".\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"/\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"/\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"0\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"0\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"1\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"1\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"2\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"2\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"3\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"3\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"4\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"4\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"5\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"5\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"6\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"6\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"7\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"7\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"8\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"8\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"9\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"9\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\":\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \":\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\";\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \";\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"<\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"<\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"=\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"=\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\">\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \">\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"?\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"?\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"@\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"@\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"A\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"A\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"B\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"B\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"C\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"C\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"D\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"D\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"E\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"E\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"F\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"F\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"G\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"G\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"H\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"H\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"I\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"I\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"J\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"J\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"K\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"K\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"L\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"L\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"M\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"M\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"N\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"N\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"O\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"O\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"P\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"P\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Q\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Q\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"R\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"R\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"S\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"S\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"T\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"T\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"U\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"U\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"V\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"V\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"W\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"W\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"X\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"X\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Y\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Y\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Z\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Z\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"[\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"[\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\\\\\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\\\\\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"]\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"]\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"^\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"^\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"_\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"_\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"`\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"`\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"a\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"a\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"b\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"b\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"c\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"c\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"d\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"d\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"e\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"e\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"f\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"f\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"g\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"g\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"h\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"h\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"i\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"i\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"j\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"j\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"k\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"k\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"l\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"l\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"m\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"m\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"n\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"n\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"o\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"o\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"p\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"p\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"q\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"q\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"r\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"r\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"s\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"s\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"t\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"t\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"u\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"u\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"v\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"v\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"w\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"w\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"x\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"x\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"y\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"y\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"z\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"z\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"{\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"{\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"|\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"|\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"}\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"}\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"~\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"~\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\" \"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \" \"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"¡\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"¡\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"¢\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"¢\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"£\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"£\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"¤\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"¤\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"¥\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"¥\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"¦\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"¦\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"§\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"§\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"¨\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"¨\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"©\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"©\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ª\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ª\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"«\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"«\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"¬\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"¬\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"­\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"­\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"®\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"®\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"¯\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"¯\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"°\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"°\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"±\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"±\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"²\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"²\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"³\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"³\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"´\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"´\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"µ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"µ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"¶\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"¶\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"·\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"·\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"¸\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"¸\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"¹\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"¹\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"º\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"º\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"»\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"»\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"¼\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"¼\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"½\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"½\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"¾\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"¾\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"¿\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"¿\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"À\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"À\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Á\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Á\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Â\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Â\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ã\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ã\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ä\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ä\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Å\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Å\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Æ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Æ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ç\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ç\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"È\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"È\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"É\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"É\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ê\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ê\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ë\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ë\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ì\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ì\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Í\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Í\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Î\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Î\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ï\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ï\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ð\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ð\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ñ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ñ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ò\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ò\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ó\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ó\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ô\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ô\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Õ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Õ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ö\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ö\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"×\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"×\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ø\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ø\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ù\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ù\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ú\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ú\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Û\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Û\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ü\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ü\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Ý\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Ý\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"Þ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"Þ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ß\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ß\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"à\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"à\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"á\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"á\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"â\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"â\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ã\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ã\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ä\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ä\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"å\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"å\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"æ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"æ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ç\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ç\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"è\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"è\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"é\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"é\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ê\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ê\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ë\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ë\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ì\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ì\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"í\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"í\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"î\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"î\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ï\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ï\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ð\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ð\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ñ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ñ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ò\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ò\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ó\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ó\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ô\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ô\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"õ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"õ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ö\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ö\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"÷\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"÷\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ø\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ø\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ù\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ù\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ú\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ú\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"û\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"û\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ü\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ü\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ý\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ý\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"þ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"þ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[\"ÿ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage[] = \"ÿ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.setItem()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] update",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.setItem(_, null)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.setItem(_, undefined)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = undefined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.setItem({ throws })",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = { throws }",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.setItem(undefined, _)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[undefined]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage.setItem(null, _)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[null]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage key containing null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage value containing null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"퟿\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"퟿\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"�\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"�\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"�\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"�\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"�\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"�\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"�\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"�\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\ufffd\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\ufffd\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\ufffe\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\ufffe\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\uffff\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\uffff\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"🍍\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"🍍\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"�a\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"�a\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"a�\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"a�\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"􏿿\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"􏿿\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\0\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\0\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x01\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x01\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x02\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x02\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x03\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x03\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x04\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x04\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x05\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x05\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x06\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x06\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x07\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x07\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\b\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\b\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\t\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\t\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\n\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\n\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\v\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\v\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\f\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\f\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\r\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\r\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x0e\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x0e\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x0f\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x0f\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x10\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x10\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x11\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x11\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x12\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x12\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x13\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x13\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x14\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x14\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x15\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x15\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x16\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x16\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x17\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x17\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x18\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x18\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x19\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x19\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x1a\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x1a\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x1b\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x1b\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x1c\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x1c\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x1d\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x1d\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x1e\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x1e\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\x1f\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\x1f\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\" \"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \" \"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"!\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"!\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\\"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"#\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"#\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"$\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"$\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"%\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"%\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"&\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"&\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"'\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"'\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"(\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"(\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\")\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \")\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"*\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"*\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"+\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"+\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\",\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \",\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"-\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"-\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\".\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \".\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"/\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"/\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"0\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"0\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"1\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"1\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"2\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"2\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"3\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"3\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"4\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"4\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"5\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"5\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"6\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"6\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"7\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"7\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"8\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"8\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"9\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"9\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\":\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \":\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\";\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \";\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"<\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"<\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"=\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"=\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\">\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \">\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"?\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"?\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"@\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"@\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"A\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"A\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"B\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"B\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"C\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"C\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"D\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"D\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"E\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"E\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"F\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"F\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"G\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"G\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"H\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"H\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"I\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"I\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"J\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"J\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"K\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"K\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"L\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"L\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"M\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"M\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"N\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"N\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"O\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"O\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"P\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"P\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Q\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Q\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"R\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"R\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"S\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"S\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"T\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"T\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"U\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"U\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"V\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"V\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"W\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"W\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"X\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"X\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Y\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Y\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Z\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Z\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"[\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"[\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\\\\\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\\\\\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"]\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"]\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"^\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"^\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"_\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"_\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"`\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"`\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"a\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"a\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"b\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"b\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"c\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"c\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"d\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"d\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"e\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"e\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"f\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"f\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"g\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"g\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"h\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"h\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"i\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"i\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"j\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"j\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"k\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"k\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"l\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"l\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"m\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"m\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"n\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"n\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"o\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"o\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"p\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"p\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"q\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"q\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"r\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"r\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"s\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"s\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"t\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"t\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"u\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"u\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"v\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"v\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"w\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"w\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"x\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"x\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"y\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"y\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"z\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"z\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"{\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"{\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"|\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"|\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"}\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"}\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"~\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"~\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\" \"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \" \"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"¡\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"¡\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"¢\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"¢\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"£\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"£\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"¤\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"¤\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"¥\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"¥\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"¦\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"¦\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"§\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"§\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"¨\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"¨\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"©\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"©\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ª\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ª\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"«\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"«\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"¬\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"¬\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"­\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"­\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"®\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"®\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"¯\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"¯\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"°\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"°\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"±\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"±\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"²\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"²\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"³\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"³\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"´\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"´\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"µ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"µ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"¶\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"¶\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"·\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"·\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"¸\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"¸\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"¹\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"¹\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"º\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"º\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"»\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"»\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"¼\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"¼\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"½\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"½\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"¾\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"¾\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"¿\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"¿\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"À\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"À\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Á\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Á\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Â\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Â\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ã\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ã\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ä\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ä\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Å\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Å\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Æ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Æ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ç\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ç\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"È\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"È\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"É\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"É\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ê\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ê\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ë\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ë\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ì\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ì\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Í\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Í\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Î\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Î\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ï\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ï\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ð\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ð\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ñ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ñ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ò\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ò\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ó\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ó\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ô\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ô\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Õ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Õ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ö\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ö\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"×\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"×\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ø\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ø\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ù\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ù\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ú\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ú\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Û\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Û\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ü\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ü\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Ý\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Ý\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"Þ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"Þ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ß\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ß\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"à\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"à\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"á\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"á\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"â\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"â\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ã\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ã\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ä\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ä\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"å\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"å\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"æ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"æ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ç\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ç\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"è\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"è\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"é\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"é\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ê\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ê\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ë\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ë\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ì\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ì\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"í\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"í\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"î\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"î\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ï\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ï\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ð\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ð\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ñ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ñ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ò\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ò\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ó\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ó\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ô\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ô\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"õ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"õ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ö\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ö\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"÷\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"÷\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ø\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ø\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ù\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ù\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ú\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ú\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"û\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"û\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ü\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ü\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ý\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ý\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"þ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"þ\"",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[\"ÿ\"]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage[] = \"ÿ\"",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_set_value_enumerate.window.js",
+    [
+      {
+        "name": "enumerate a localStorage object with the key and get the values",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "enumerate a sessionStorage object with the key and get the values",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_string_conversion.window.js",
+    [
+      {
+        "name": "localStorage only stores strings",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage only stores strings",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/storage_supported_property_names.window.js",
+    [
+      {
+        "name": "Object.getOwnPropertyNames on localStorage Storage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Object.getOwnPropertyNames on localStorage storage with empty collection",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Object.getOwnPropertyNames on sessionStorage Storage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Object.getOwnPropertyNames on sessionStorage storage with empty collection",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "webstorage/symbol-props.window.js",
+    [
+      {
+        "name": "localStorage: plain set + get (loose)",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"test\" but got (undefined) undefined"
+      },
+      {
+        "name": "localStorage: plain set + get (strict)",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"test\" but got (undefined) undefined"
+      },
+      {
+        "name": "localStorage: defineProperty + get",
+        "status": "Fail",
+        "message": "'get' on proxy: property 'Symbol()' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'test' but got 'undefined')"
+      },
+      {
+        "name": "localStorage: defineProperty not configurable",
+        "status": "Fail",
+        "message": "'get' on proxy: property 'Symbol()' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'test' but got 'undefined')"
+      },
+      {
+        "name": "localStorage: get with symbol on prototype",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage: delete existing property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "localStorage: delete non-existent property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage: plain set + get (loose)",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"test\" but got (undefined) undefined"
+      },
+      {
+        "name": "sessionStorage: plain set + get (strict)",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"test\" but got (undefined) undefined"
+      },
+      {
+        "name": "sessionStorage: defineProperty + get",
+        "status": "Fail",
+        "message": "'get' on proxy: property 'Symbol()' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'test' but got 'undefined')"
+      },
+      {
+        "name": "sessionStorage: defineProperty not configurable",
+        "status": "Fail",
+        "message": "'get' on proxy: property 'Symbol()' is a read-only and non-configurable data property on the proxy target but the proxy did not return its actual value (expected 'test' but got 'undefined')"
+      },
+      {
+        "name": "sessionStorage: get with symbol on prototype",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage: delete existing property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "sessionStorage: delete non-existent property",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]

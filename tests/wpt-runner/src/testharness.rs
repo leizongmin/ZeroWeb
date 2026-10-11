@@ -879,6 +879,50 @@ pub const WASM_CASES: &[&str] = &[
     "wasm/jsapi/table/toString.any.js",
 ];
 
+/// WebStorage goal（webstorage-compat M1 / DC-1）pinned upstream window subset——
+/// Storage 接口语义（getItem/setItem/removeItem/clear/key/length、named property、
+/// 枚举序、配额异常、字符串转换）+ StorageEvent 构造面可执行子集。Cases are
+/// fetched by `scripts/goals/15-webstorage-compat.sh`（WPT
+/// 315976933870b34d6ea30e3f6643403edae678ba）into `wpt-data/webstorage/`（gitignored）.
+///
+/// `.window.js` 用例以 window 变体执行（[`any_js_window_wrapper`]，无 META support
+/// 依赖——仅被 skip 的案才引 resources/）。skip 域（DC-3 甄别结论，evidence 落档）：
+/// - `*window_open*.window.js` / `storage_session_window_reopen.window.js` /
+///   `localstorage-cross-origin-iframe.https.window.js`——window.open/iframe 第二
+///   browsing context（runner 无跨文档管道）
+/// - 全部 `event_*.html` 派发面——`eventTestHarness.js` 经 iframe + storage 事件跨
+///   文档派发（同上；frame 树依赖 → navigation-compat M3 同门槛挂账）
+/// - `document-domain.html`、`*.partitioned*.html`、`localstorage-share-data-
+///   unrelated-origins.html`——document.domain / 存储分区 / 跨源 iframe
+/// - `*-manual.html`——需真实用户操作
+pub const WEBSTORAGE_CASES: &[&str] = &[
+    "webstorage/defineProperty.window.js",
+    "webstorage/event_constructor.window.js",
+    "webstorage/event_initstorageevent.window.js",
+    "webstorage/missing_arguments.window.js",
+    "webstorage/set.window.js",
+    "webstorage/storage_builtins.window.js",
+    "webstorage/storage_clear.window.js",
+    "webstorage/storage_enumerate.window.js",
+    "webstorage/storage_functions_not_overwritten.window.js",
+    "webstorage/storage_getitem.window.js",
+    "webstorage/storage_indexing.window.js",
+    "webstorage/storage_in.window.js",
+    "webstorage/storage_key_empty_string.window.js",
+    "webstorage/storage_key.window.js",
+    "webstorage/storage_length.window.js",
+    "webstorage/storage_local_quota_independent_from_session.window.js",
+    "webstorage/storage_local_setitem_quotaexceedederr.window.js",
+    "webstorage/storage_removeitem.window.js",
+    "webstorage/storage_session_quota_independent_from_local.window.js",
+    "webstorage/storage_session_setitem_quotaexceedederr.window.js",
+    "webstorage/storage_setitem.window.js",
+    "webstorage/storage_set_value_enumerate.window.js",
+    "webstorage/storage_string_conversion.window.js",
+    "webstorage/storage_supported_property_names.window.js",
+    "webstorage/symbol-props.window.js",
+];
+
 const ZEROWEB_CACHE_FILTERED_RESPONSE_TYPES_SOURCE: &str = r#"
 // META: title=ZeroWeb CacheStorage filtered response type generation
 // META: global=window
@@ -2699,6 +2743,56 @@ pub fn run_wasm_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec
                 .map(|(name, source)| (name.as_str(), source.as_str()))
                 .collect::<Vec<_>>();
             let html = any_js_window_wrapper(path, &support_refs, &case_source);
+            let results = run_testharness_html(wpt_root, path, &html, &harness_source, CASE_TIMEOUT);
+            ((*path).to_string(), results)
+        })
+        .collect()
+}
+
+/// Run the pinned upstream WebStorage window subset
+/// （webstorage-compat goal M1 / DC-1）。结构同 [`run_wasm_cases`]：固定清单 +
+/// [`any_js_window_wrapper`] window 变体执行；用例无 META support 依赖（skip 域见
+/// [`WEBSTORAGE_CASES`] 文档）。配额用例（`while(true) setItem`）依赖
+/// [`CASE_TIMEOUT`] 单案超时记账为 Fail，不挂起全量。
+pub fn run_webstorage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return WEBSTORAGE_CASES
+                .iter()
+                .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
+                .map(|path| {
+                    (
+                        (*path).to_string(),
+                        vec![HarnessSubtestResult {
+                            name: "load testharness.js".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    )
+                })
+                .collect();
+        }
+    };
+
+    WEBSTORAGE_CASES
+        .iter()
+        .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
+        .map(|path| {
+            let case_source = match std::fs::read_to_string(wpt_root.join(path)) {
+                Ok(source) => source,
+                Err(error) => {
+                    return (
+                        (*path).to_string(),
+                        vec![HarnessSubtestResult {
+                            name: "load WebStorage case".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    );
+                }
+            };
+            let html = any_js_window_wrapper(path, &[], &case_source);
             let results = run_testharness_html(wpt_root, path, &html, &harness_source, CASE_TIMEOUT);
             ((*path).to_string(), results)
         })
