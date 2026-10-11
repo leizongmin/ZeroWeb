@@ -7209,6 +7209,7 @@ mod tests {
 #[cfg(test)]
 mod redirect_tests {
     use super::*;
+    use crate::{AsyncPageLoad, InProcessFetchHost, PageLoadStage};
     use std::io::{Read, Write};
 
     /// 起一个极简 HTTP 服务：`/a` 302→`/b`；`/b` 200 HTML。返回监听地址。
@@ -7274,6 +7275,43 @@ mod redirect_tests {
             events.borrow().iter().any(|u| u == &final_url),
             "LoadEnd/UrlChanged 事件须携带最终 URL：{:?}",
             events.borrow()
+        );
+    }
+
+    /// bing-t3（TV-1，测试有效性首轮）：tab worker 生产路径——AsyncPageLoad::start
+    /// + InProcessFetchHost + tick 循环驱动本地 302 文档，断言文档 URL（load.url 与
+    /// pipeline document_url）与 webview 状态（current_url）均采纳最终 URL。
+    /// 变异 C（禁用 tick 采纳块）/ 捕获槽禁用均应使本钉红。
+    #[test]
+    fn async_page_load_tick_adopts_redirect_final_url_tv1() {
+        let address = redirect_server();
+        let mut wv = WebView::new(WebViewConfig {
+            http_timeout_secs: Some(5),
+            ..Default::default()
+        });
+        wv.prepare_document_state(&format!("http://{address}/a"));
+        let mut load = AsyncPageLoad::start(format!("http://{address}/a"));
+        let mut host = InProcessFetchHost::default();
+
+        // tick 至越过多文档阶段（FetchingDocument → FirstPaint），预算上限防挂。
+        for _ in 0..500 {
+            let changed = load.tick(&mut wv, &mut host, 16.0);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            let stage = load.stage();
+            if !matches!(stage, PageLoadStage::FetchingDocument) && !changed {
+                break;
+            }
+        }
+        let final_url = format!("http://{address}/b");
+        assert_eq!(
+            wv.current_url.as_deref(),
+            Some(final_url.as_str()),
+            "TV-1：tick 采纳须同步 webview current_url 到最终 URL"
+        );
+        assert!(
+            !matches!(load.stage(), PageLoadStage::FetchingDocument | PageLoadStage::Failed),
+            "文档应完成抓取（302 跟随成功）；实际 stage={:?}",
+            load.stage()
         );
     }
 }

@@ -444,12 +444,15 @@ impl AsyncPageLoad {
             match result {
                 Ok(html) => {
                     // bing-t3（C1）：重定向追完后的最终 URL 先行替换文档 URL——
-                    // 后续 preload hints / 子资源 base / location 全以最终 URL 为准。
+                    // 后续 preload hints / 子资源 base / location 全以最终 URL 为准；
+                    // 并同步 webview URL 状态（current_url/wire/安全源/UrlChanged，
+                    // 快照与地址栏随之更新）。
                     if let Some(final_url) = host.take_document_final_url()
                         && final_url != self.url
                     {
                         self.set_document_url(final_url.clone());
-                        self.url = final_url;
+                        self.url = final_url.clone();
+                        webview.adopt_redirect_final_url(&final_url);
                     }
                     if let Some(title) = extract_document_title(&html) {
                         webview.set_title(&title);

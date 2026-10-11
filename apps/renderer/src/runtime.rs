@@ -1682,16 +1682,6 @@ impl RendererRuntime {
             break;
         }
         if let Some(final_url) = self.inflight_fetches.take_document_url() {
-            {
-                use std::io::Write as _;
-                if let Ok(mut f) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open("/tmp/t3-diag.log")
-                {
-                    let _ = writeln!(f, "T3DIAG document_url propagated: {final_url}");
-                }
-            }
             if let Some(pending) = self.pending_load.as_mut() {
                 pending.page_url = final_url.clone();
                 pending.load.set_document_url(final_url.clone());
@@ -2193,11 +2183,11 @@ impl RendererRuntime {
     /// 经浏览器 IPC 代理 POST 请求（R3055 form POST 导航）。body = urlencoded form data，
     /// Content-Type=application/x-www-form-urlencoded（FetchParams 经浏览器侧 default_fetch_handler
     /// → HttpClient::send POST，与页面 fetch() API R2923 同通路）。
-    fn fetch_post(&mut self, url: &str, body: &str) -> Result<(Vec<u8>, Option<String>), String> {
+    fn fetch_post(&mut self, url: &str, body: &str) -> Result<Vec<u8>, String> {
         if self.stub_network {
             return Err(format!("stub network (no browser process): {url}"));
         }
-        ipc_fetch_with_final_url(
+        ipc_fetch(
             &mut self.outbound,
             &self.inbound_rx,
             &mut self.next_fetch_id,
@@ -2353,12 +2343,8 @@ impl RendererRuntime {
         // R3055：POST 导航——同步 fetch POST body → from_html。POST fetch 失败（stub_network / 网络/HTTP
         // 错误）→ 不命中此分支，回落下方 GET `start`（保 load 状态机一致，复用既有 load-failure 处理）。
         if method.eq_ignore_ascii_case("POST")
-            && let Ok((bytes, post_final_url)) = self.fetch_post(&page_url, body.unwrap_or_default())
+            && let Ok(bytes) = self.fetch_post(&page_url, body.unwrap_or_default())
         {
-            // bing-t3（C1）：POST→30x 重定向后以最终 URL 作为文档 URL（响应头
-            // X-Zero-Final-URL 由 fetch_proxy 附加；无重定向时为 None，保持原 URL）。
-            let page_url = post_final_url.unwrap_or(page_url);
-            self.current_url = Some(page_url.clone());
             let html = String::from_utf8_lossy(&bytes).into_owned();
             let r = self.start_pending_load(PendingLoad {
                 load: AsyncPageLoad::from_html(page_url.clone(), html),

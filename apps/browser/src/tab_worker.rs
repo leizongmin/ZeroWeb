@@ -8,7 +8,6 @@ use std::time::Duration;
 use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::{set_char_measure_fn, set_fallback_line_metrics_fn, set_text_shape_fn};
-use zero_page_runtime::AsyncFetchHost;
 use zero_protocol::message::{ImeEventParams, ImeEventType};
 use zero_render_foundation::font::loader::FontLoader;
 use zero_webview::{AsyncPageLoad, InProcessFetchHost, PageLoadStage, WebView, WebViewBuilder, WebViewConfig};
@@ -818,11 +817,6 @@ fn tab_worker_main(
             let changed = with_measure(&font_loader, font_id, || {
                 load.tick(&mut wv, &mut fetch_host, TAB_WORKER_FRAME_BUDGET_MS)
             });
-            // bing-t3（C1）：30x 重定向追完后采纳最终 URL（location/子资源 base/
-            // 安全上下文/UrlChanged）——快照（地址栏 URL）随之更新。
-            if let Some(final_url) = fetch_host.take_document_final_url() {
-                wv.adopt_redirect_final_url(&final_url);
-            }
             // R2408+ slice 2：drain @font-face 字节 → load_font + register_family_alias →
             // 刷新 webview font_resolver → 请求重绘。须在 with_measure 闭包外（闭包内
             // font_loader 被不可变借做文本度量）。env `ZW_LIVE_FONTFACE` kill-switch 默认开。
