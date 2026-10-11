@@ -1319,6 +1319,9 @@ fn perform_absolute_layout_on_absolute_children(
                 height: absolute_auto_margin_space.y - final_size.height - non_auto_margin.vertical_axis_sum(),
             };
 
+            // ZW R5074：kill-switch 两轴共用单次 env 读取（热循环逐项双读曾入 GATE FAIL
+            // 嫌疑窗；实测 FAIL 集两窗漂移归因兄弟流争用，仍收口为单次读取降本）。
+            let auto_margin_inset_gate = std::env::var("ZW_ABSPOS_AUTO_MARGIN_INSET").as_deref() != Ok("0");
             let auto_margin_size = Size {
                 // If all three of 'left', 'width', and 'right' are 'auto': First set any 'auto' values for 'margin-left' and 'margin-right' to 0.
                 // Then, if the 'direction' property of the element establishing the static-position containing block is 'ltr' set 'left' to the
@@ -1331,11 +1334,24 @@ fn perform_absolute_layout_on_absolute_children(
                 // the 'direction' property of the containing block is 'rtl') or 'right' (in case 'direction' is 'ltr') and solve for that value.
                 width: {
                     let auto_margin_count = margin.left.is_none() as u8 + margin.right.is_none() as u8;
+                    // ZW R5074（CSS2 §10.3.7 rule 3/4）：auto margin 均分/单边分配（视觉居中）
+                    // 仅适用于 left/width/right **三者全部非 auto**（rule 3 over-constrained
+                    // 求解）；任一 inset 为 auto 时 auto margin 一律归 0、解该 inset（rule 4）。
+                    // 上游门只看 auto margin 计数与 width/free_space 比较——left:auto +
+                    // right:0 + 定宽 + margin:auto 被错误居中（abspos-009：绿条应贴 CB 右缘
+                    // x=632，旧渲 x=320）。kill-switch `ZW_ABSPOS_AUTO_MARGIN_INSET=0` 回退
+                    //（OnceLock 进程级缓存——热循环逐项读 env 曾致 block_layout 微基准
+                    // GATE FAIL，R5074 实测）。
+                    let mut insets_definite = left.is_some() && right.is_some() && style_size.width.is_some();
+                    if !auto_margin_inset_gate {
+                        insets_definite = true;
+                    }
                     if auto_margin_count == 2
-                        && (style_size.width.is_none() || style_size.width.unwrap() >= free_space.width)
+                        && (!insets_definite
+                            || (style_size.width.unwrap() >= free_space.width))
                     {
                         0.0
-                    } else if auto_margin_count > 0 {
+                    } else if insets_definite && auto_margin_count > 0 {
                         free_space.width / auto_margin_count as f32
                     } else {
                         0.0
@@ -1343,11 +1359,18 @@ fn perform_absolute_layout_on_absolute_children(
                 },
                 height: {
                     let auto_margin_count = margin.top.is_none() as u8 + margin.bottom.is_none() as u8;
+                    // ZW R5074：垂直臂同 §10.3.7/§10.6.4 rule 3/4 门（top/height/bottom 全
+                    // 非 auto 才分配 auto margin）。
+                    let mut insets_definite = top.is_some() && bottom.is_some() && style_size.height.is_some();
+                    if !auto_margin_inset_gate {
+                        insets_definite = true;
+                    }
                     if auto_margin_count == 2
-                        && (style_size.height.is_none() || style_size.height.unwrap() >= free_space.height)
+                        && (!insets_definite
+                            || (style_size.height.unwrap() >= free_space.height))
                     {
                         0.0
-                    } else if auto_margin_count > 0 {
+                    } else if insets_definite && auto_margin_count > 0 {
                         free_space.height / auto_margin_count as f32
                     } else {
                         0.0

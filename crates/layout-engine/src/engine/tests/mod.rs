@@ -683,3 +683,5 @@ mod r5047_flex_ar_flexed_main_tests;
 mod r5048_replaced_kw_border_box_tests;
 /// R5073 abspos float 子 shrink-to-fit（taffy Definite 臂 float 贡献）测试。
 mod r5073_abspos_float_shrink_tests;
+/// R5074 abspos auto margin inset 门（§10.3.7 rule 3/4）测试。
+mod r5074_abspos_auto_margin_inset_tests;
