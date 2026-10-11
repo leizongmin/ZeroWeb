@@ -968,6 +968,61 @@ fn block_intrinsic_width_ex(
                 clamp_fit_content_child_contribution(child, cs, child_intrinsic, min_mode, doc, styles)
             })
         };
+        // R5060（css-sizing-4 §5.2 + csswg#5257）：block 子 aspect-ratio + min-height 的
+        // **传递 inline 最小值**——min-height 可解析（real，或百分比 × definite 父块高）
+        // 时，子固有宽贡献 ≥ min-height × ratio（block-aspect-ratio-024：
+        // min-height:100% × 父高 100 → 贡献 100；width:min-content 父由子贡献取 100）。
+        // 门：plain block/flow-root 子 + width/height 均 auto + ratio>0 + min-height 非
+        // auto（纯内容驱动的 auto 高不传递——§4.1 automatic minimum 语义）。max-height
+        // 传递 cap 挂账（驱动案无 max）。kill-switch `ZW_AR_MINH_TRANSFER=0` 回退。
+        let child_intrinsic = if std::env::var("ZW_AR_MINH_TRANSFER").as_deref() == Ok("0") {
+            child_intrinsic
+        } else if let Some(cs) = child_style
+            && !is_flex_grid_child
+            && matches!(cs.display, DisplayValue::Block | DisplayValue::FlowRoot)
+            && matches!(cs.width, LengthValue::Auto)
+            && matches!(cs.height, LengthValue::Auto)
+            && !matches!(cs.min_height, LengthValue::Auto)
+            && let Some(ratio) = cs.aspect_ratio.filter(|&r| r > 0.0)
+            && !child.is_replaced
+        {
+            let frame = child.padding_left + child.padding_right + child.border_left + child.border_right;
+            let resolved_min = match &cs.min_height {
+                LengthValue::Percentage(pcv) => {
+                    // 百分比 × 父 definite 块高（父 height real 才可解析；content 口径）。
+                    box_node
+                        .node_id
+                        .and_then(|pid| styles.get(&pid))
+                        .and_then(|ps| resolve_intrinsic_real_length(&ps.height, ps))
+                        .map(|ph| {
+                            let pframe = box_node.padding_top
+                                + box_node.padding_bottom
+                                + box_node.border_top
+                                + box_node.border_bottom;
+                            let border_box = box_node
+                                .node_id
+                                .and_then(|pid| styles.get(&pid))
+                                .is_some_and(|ps| matches!(ps.box_sizing, BoxSizingValue::BorderBox));
+                            let content = if border_box { ph - pframe } else { ph };
+                            (content.max(0.0)) * (*pcv as f32 / 100.0)
+                        })
+                }
+                other => resolve_intrinsic_real_length(other, cs),
+            };
+            match resolved_min {
+                Some(mh) if mh > 0.0 => {
+                    let floor = if matches!(cs.box_sizing, BoxSizingValue::BorderBox) {
+                        mh * ratio
+                    } else {
+                        mh * ratio + frame
+                    };
+                    child_intrinsic.max(floor)
+                }
+                _ => child_intrinsic,
+            }
+        } else {
+            child_intrinsic
+        };
         let with_margins = child_intrinsic + ml + mr;
         // R4397：float 子横向叠加 + clear 换行（见 loop 头注）；与 spanner 记账正交
         //（column-span:all float 非常规形态，不参与 spanner_max）。
@@ -4119,4 +4174,39 @@ AAAA</div></body></html>"#,
             "max-content parent contribution of min-width:fit-content(100px) child must be 100, got {w}"
         );
     }
+}
+
+/// R5060（css-sizing-4 §5.2）：block 子 aspect-ratio + min-height 传递 inline 最小值——
+/// 父 width:min-content 由子贡献抬升（block-aspect-ratio-024 同构：min-height:100% ×
+/// 父高 100 → 贡献 100，纯内容贡献 50）。
+#[test]
+fn r5060_ar_min_height_transfers_to_inline_min() {
+    use zero_dom::NodeKind;
+    let html = r#"<body>
+        <div id="t" style="height: 100px; width: min-content; background: green;">
+            <div style="min-height: 100%; aspect-ratio: 1/1;">
+                <div style="width: 50px"></div>
+            </div>
+        </div>
+    </body>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let NodeKind::Element(e) = &n.kind
+            && e.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+    let target = find("t", &doc, &result.root).expect("target found");
+    let min_w = block_min_content_width(target, &doc, &styles);
+    // 无传递时 = 内层 50px；传递后 ≥ 100。
+    assert!(min_w >= 99.5, "min-height 传递应把 min-content 抬到 ≥100，实际 {min_w}");
 }
