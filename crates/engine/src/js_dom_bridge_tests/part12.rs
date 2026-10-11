@@ -393,18 +393,19 @@ fn test_blob_real_bytes_r3011() {
     assert_eq!(sandbox.execute("String(globalThis.__sl2)").unwrap().value, "cde", "slice 跨 part 边界返 'cde'");
 
     // arrayBuffer() 二进制保真：TypedArray 含非 UTF-8 字节（0xff 0xfe 0x00）→ 原样返回（旧经 UTF-8 往返损坏）。
+    // fileapi-compat M2-P1：返 spec ArrayBuffer——断言经 Uint8Array 视图取字节。
     sandbox
         .execute(
             "globalThis.__bin = '(pending)';\
              new Blob([new Uint8Array([0xff,0xfe,0x00,0x41])]).arrayBuffer()\
-               .then(function(a){ globalThis.__bin = a[0] + ',' + a[1] + ',' + a[2] + ',' + a[3]; });",
+               .then(function(a){ var u = new Uint8Array(a); globalThis.__bin = u[0] + ',' + u[1] + ',' + u[2] + ',' + u[3]; });",
         )
         .unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__bin)").unwrap().value, "255,254,0,65", "arrayBuffer 二进制保真（0xff 0xfe 0x00 0x41，旧 UTF-8 往返损坏）");
 
-    // string arrayBuffer 不变（'AB' → [65,66]，既有行为）。
+    // string arrayBuffer 不变（'AB' → [65,66]，既有行为；返 spec ArrayBuffer 经视图取索引）。
     sandbox
-        .execute("globalThis.__ab2 = '(pending)'; new Blob(['AB']).arrayBuffer().then(function(a){ globalThis.__ab2 = a.length + ':' + a[0] + ',' + a[1]; });")
+        .execute("globalThis.__ab2 = '(pending)'; new Blob(['AB']).arrayBuffer().then(function(a){ var u = new Uint8Array(a); globalThis.__ab2 = u.length + ':' + u[0] + ',' + u[1]; });")
         .unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__ab2)").unwrap().value, "2:65,66", "string arrayBuffer 不变（'AB'→[65,66]）");
 
@@ -1377,7 +1378,7 @@ fn test_fetch_response_binary_body_r3021() {
     sandbox.resolve_async_callback(&id2, wire);
     sandbox.execute("0;").unwrap();
     sandbox.execute("0;").unwrap(); // 三级 .then 链须再多一次 flush
-    sandbox.execute("globalThis.__bytes2 = globalThis.__ab2 ? Array.prototype.slice.call(globalThis.__ab2).join(',') : '(unset)';").unwrap();
+    sandbox.execute("globalThis.__bytes2 = globalThis.__ab2 ? Array.prototype.slice.call(new Uint8Array(globalThis.__ab2)).join(',') : '(unset)';").unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__bytes2").unwrap().value,
         "255,0,128,72,105",

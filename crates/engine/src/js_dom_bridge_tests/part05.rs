@@ -154,12 +154,12 @@ fn test_file_reader_r2791() {
     );
     assert_eq!(sandbox.execute("String(rd.readyState)").unwrap().value, "2"); // DONE
     assert_eq!(sandbox.execute("String(rd.result)").unwrap().value, "hello world");
-    // readAsArrayBuffer：result=Uint8Array（'AB' → [65,66]）。
+    // readAsArrayBuffer：result=ArrayBuffer（fileapi-compat M2-P1 spec 对齐；'AB' → [65,66]）。
     sandbox
         .execute(
             "globalThis.__ab = '(pending)';\
              var rd2 = new FileReader();\
-             rd2.onload = function(e){ globalThis.__ab = e.target.result.length + ':' + e.target.result[0]; };\
+             rd2.onload = function(e){ globalThis.__ab = e.target.result.byteLength + ':' + new Uint8Array(e.target.result)[0]; };\
              rd2.readAsArrayBuffer(new Blob(['AB']));",
         )
         .unwrap();
@@ -272,7 +272,7 @@ fn test_file_r2792() {
     sandbox
         .execute(
             "globalThis.__ft = '(pending)';\
-             new File(['hello',' ','file']).text().then(function(s){ globalThis.__ft = s; });",
+             new File(['hello',' ','file'], 'f.txt').text().then(function(s){ globalThis.__ft = s; });",
         )
         .unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__ft)").unwrap().value, "hello file");
@@ -303,13 +303,13 @@ fn test_file_r2792() {
         sandbox.execute("String(globalThis.__furl)").unwrap().value,
         "data:text/plain;base64,aGk="
     );
-    // 无 new 调用亦可构造。
-    assert_eq!(
+    // 无 new 调用 → TypeError（fileapi-compat M2-P1 spec 对齐：WebIDL 接口构造器
+    // 无 [[Construct]] new.target 路径不可作函数调用）。
+    assert!(
         sandbox
-            .execute("String(File(['x'],'y') instanceof File)")
-            .unwrap()
-            .value,
-        "true"
+            .execute("File(['x'],'y') instanceof File")
+            .is_err(),
+        "File 无 new 调用应抛 TypeError（WebIDL 接口构造器语义）"
     );
 }
 
