@@ -8908,8 +8908,9 @@
         if (msObj._zwUrl && typeof globalThis.__zwVideoBridge === 'object'
             && typeof globalThis.__zwVideoBridge.mseAppend === 'function') {
           // t8s-3 轨路由：video SB → 视频流；audio SB → 独立音频流；audio SB
-          // 遇门面缺席（不可达面——addSourceBuffer 同源守卫已挡）走失败面，
-          // 绝不把音频字节写入视频流（能力诚实）。
+          // 遇 mseAppendAudio 门面缺席（decode-h264 关闭构建——addSourceBuffer
+          // 桥门放行的唯一形态）走失败面，绝不把音频字节写入视频流（能力诚实）；
+          // 该形态下 SB 创建成功而 append 恒败（error 事件面），非「不可达」。
           if (self._zwTrackKind === 'audio') {
             ok = typeof globalThis.__zwVideoBridge.mseAppendAudio === 'function'
               && globalThis.__zwVideoBridge.mseAppendAudio(msObj._zwUrl, b64) === true;
@@ -9016,7 +9017,8 @@
       _zwMseThrow('NotSupportedError', 'unsupported source buffer type: ' + t);
     }
     var _tl = t.trim().toLowerCase();
-    var _m = /codecs\s*=\s*"([^"]*)"/.exec(_tl) || /codecs\s*=\s*([^;]+)/.exec(_tl);
+    var _m = /codecs\s*=\s*"([^"]*)"/.exec(_tl) || /codecs\s*=\s*'([^']*)'/.exec(_tl)
+      || /codecs\s*=\s*([^;]+)/.exec(_tl);
     var _accepted = false;
     if (_tl.indexOf('video/mp4') === 0 || _tl.indexOf('audio/mp4') === 0) {
       if (!_m) _accepted = true;

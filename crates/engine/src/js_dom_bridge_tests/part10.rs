@@ -2905,11 +2905,22 @@ fn test_fetch_range_safelisted_preflight_t8s4() {
         .execute("globalThis.__st2='pending'; fetch('https://cdn.test/seg.m4s', { headers: { Range: 'bytes=0-1,2-3' } }).then(function (r) { globalThis.__st2 = 'ok:' + r.status + ':' + r.type; }, function (e) { globalThis.__st2 = 'err:' + e + ':' + (e && e.stack || '').slice(0, 300); }); void 0;")
         .unwrap();
     let seen2 = seen_all(&methods_seen);
-    println!("DBG st2={}", sandbox.execute("globalThis.__st2").unwrap().value);
     assert_eq!(
         seen2,
         vec!["OPTIONS".to_string(), "GET".to_string()],
         "多段 range → preflight OPTIONS 先行"
+    );
+
+    // ②b suffix range（bytes=-500）：spec 明言不 safelist → preflight OPTIONS
+    // 先行（t8s-4 返修 D1 收窄的回归守卫；新 origin 避开 ② 的 preflight cache）。
+    sandbox
+        .execute("fetch('https://suffix.test/seg.m4s', { headers: { Range: 'bytes=-500' } }).then(function () {}, function () {}); void 0;")
+        .unwrap();
+    let seen2b = seen_all(&methods_seen);
+    assert_eq!(
+        seen2b,
+        vec!["OPTIONS".to_string(), "GET".to_string()],
+        "suffix range → preflight（spec 拒收 suffix safelist 面）"
     );
 
     // ③ 普通自定义头：OPTIONS 先行（既有面回归守卫；新 origin——②的 preflight
