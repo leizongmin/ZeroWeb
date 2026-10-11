@@ -14419,6 +14419,11 @@
       return;
     }
     if (this._closed || !this._other) return;
+    // fileapi-compat P4：先序列化消息、后 detach transfer 列表（spec serialize-with-transfer
+    // 顺序）——旧序先 detach 再 structuredClone，克隆碰到 detached buffer 抛
+    // 「Cannot perform Construct on a detached ArrayBuffer」
+    //（Blob-constructor-detached-buffer.detachBuffer 首行即炸）。
+    var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
     // R56h：transferable 语义——transfer 列表中的 OffscreenCanvas 位图被转移
     //（detached），后续 drawImage 抛 InvalidStateError（2d.drawImage.detachedcanvas）。
     if (transfer && typeof transfer.forEach === 'function') {
@@ -14432,7 +14437,6 @@
         }
       });
     }
-    var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
     var other = this._other;
     // R-baidu4：对端未启用 → 消息入队保留（spec port message queue），启用后按序投递。
     if (!other._zwStarted) {

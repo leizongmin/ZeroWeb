@@ -3484,11 +3484,19 @@
       for (var i = 0; i < enc.length; i++) a[i] = enc[i];
       return a;
     }
-    if (p instanceof ArrayBuffer) return new Uint8Array(p);
+    // detached buffer（postMessage transfer 后）：ArrayBuffer/视图 byteLength 均 0——
+    // spec 构造按空 part 处理（Blob-constructor-detached-buffer 全簇）；buffer.slice /
+    // new Uint8Array(detached) 会抛 TypeError，必须先经 byteLength 0 短路。
+    if (p instanceof ArrayBuffer) {
+      if (p.byteLength === 0) return new Uint8Array(0);
+      return new Uint8Array(p);
+    }
     if (p.buffer instanceof ArrayBuffer) {
       // TypedArray / DataView：取其字节范围（byteOffset/byteLength）拷贝（避免视图别名）。
       var off = p.byteOffset || 0;
-      return new Uint8Array(p.buffer.slice(off, off + (p.byteLength || 0)));
+      var len = p.byteLength || 0;
+      if (len === 0) return new Uint8Array(0);
+      return new Uint8Array(p.buffer.slice(off, off + len));
     }
     if (p instanceof Blob) return _zw_blobBytes(p); // 递归物化 Blob part
     return new Uint8Array(0);
@@ -3563,6 +3571,22 @@
     }
     return s.toLowerCase();
   }
+  // WebIDL [Clamp] long long 转换（FileAPI Blob.slice start/end）：ToNumber → NaN→0 →
+  // clamp [−2^63, 2^63−1] → **最近整数取整、恰半取偶**（0.5→0、1.5→2、2.5→2、3.5→4——
+  // Blob-slice double start/end 簇；非 truncate）。
+  function _zwClampLongLong(v) {
+    var n = +v;
+    if (n !== n) return 0;
+    if (n === Infinity) return 9223372036854775807;
+    if (n === -Infinity) return -9223372036854775808;
+    var f = Math.floor(n), diff = n - f, r;
+    if (diff > 0.5) r = f + 1;
+    else if (diff < 0.5) r = f;
+    else r = (f % 2 === 0) ? f : f + 1; // 恰 .5 → 取偶
+    if (r > 9223372036854775807) return 9223372036854775807;
+    if (r < -9223372036854775808) return -9223372036854775808;
+    return r;
+  }
   // 元素联合转换（Blob or BufferSource or USVString）——序即 WebIDL union 序。
   function _zw_blob_part(p) {
     if (typeof p === 'string') return p;
@@ -3597,6 +3621,10 @@
         throw new TypeError("Failed to construct 'Blob': The provided value is not of type '(Blob or BufferSource or USVString)'.");
       }
       var iterator = parts[Symbol.iterator];
+      // fileapi-compat P4 记账：平台对象带 indexed properties（HTMLCollection/NamedNodeMap）
+      // 的 sequence 转换须经平台对象**品牌**判定（上游 Blob-constructor 钉
+      // `{0:'FAIL', length:1}` 普通对象仍 TypeError——结构判据不可行），待元素代理面
+      // 专轮（@@toPrimitive/toString 同域）。
       if (typeof iterator !== 'function') {
         throw new TypeError("Failed to construct 'Blob': The provided value is not iterable.");
       }
@@ -3654,7 +3682,9 @@
     if (typeof p === 'string') return p;
     if (p == null) return '';
     if (p instanceof ArrayBuffer || p.buffer != null || typeof p.length === 'number') {
-      return new TextDecoder().decode(p);
+      // detached buffer（postMessage transfer 后）的 decode 构造会抛——spec 按空 part 处理
+      //（Blob-constructor-detached-buffer：detached part ignored，text ''）。
+      try { return new TextDecoder().decode(p); } catch (_eDet) { return ''; }
     }
     if (p instanceof Blob) return p.text(); // Promise<string>（递归）
     return '';
@@ -3663,9 +3693,11 @@
     // R3011：slice 返真字节范围（物化全字节 → 取 [start,end) → 包成单 Uint8Array part 的 Blob）。
     // 旧浅拷 _parts（slice().text() 返全内容）；现跨 part 边界正确。start/end 负值相对末尾，clamp + type 重设。
     slice: function (start, end, contentType) {
-      var s = start != null ? (start | 0) : 0;
+      // fileapi-compat P4：start/end 为 WebIDL [Clamp] long long——恰半取偶最近整数
+      //（slice(1.5)='cd' 而非 truncate 的 'bcd'，Blob-slice double start/end 簇）。
+      var s = start != null ? _zwClampLongLong(start) : 0;
       if (s < 0) s = Math.max(0, this.size + s);
-      var e = end != null ? (end | 0) : this.size;
+      var e = end != null ? _zwClampLongLong(end) : this.size;
       if (e < 0) e = Math.max(0, this.size + e);
       e = Math.min(e, this.size);
       if (s > e) s = e; // spec：start > end → 空 Blob
@@ -3689,6 +3721,13 @@
     // 底层缓冲，.buffer 即全量字节）；FileReader readAs* 消费端以 Uint8Array 包裹取索引。
     arrayBuffer: function () {
       return Promise.resolve(_zw_blobBytes(this).buffer);
+    },
+    // fileapi-compat P4：bytes() → Promise<Uint8Array>（spec
+    // https://w3c.github.io/FileAPI/#dom-blob-bytes）——[NewObject] 每次新视图
+    //（_zw_blobBytes 每调用新建）；Blob-bytes 全簇（含 concurrent reads、
+    // Blob-newobject [NewObject] 断言）。
+    bytes: function () {
+      return Promise.resolve(_zw_blobBytes(this));
     },
     // R3011：stream() 单真字节 chunk 后 close（二进制保真；常配 pipeThrough(TextDecoderStream)）。
     stream: function () {
@@ -3752,6 +3791,47 @@
   // 接口对象保真（同 Blob）：length=2（bits+name 必参）、class string '[object File]'。
   Object.defineProperty(globalThis.File, 'length', { value: 2 });
   Object.defineProperty(globalThis.File.prototype, Symbol.toStringTag, { value: 'File', configurable: true });
+
+  // FileList——文件列表接口（`<input type=file>.files`；fileapi-compat P4
+  // filelist-section：'FileList' in window、FileList.length===0、fileList.item/length
+  // 须在**原型链**（assert_inherits——R2830 裸对象 own 属性不满足）、item(0)→null）。
+  // headless 无真选档 → 恒空列表（length 0）；R2830 共享空单例经下方 setPrototypeOf
+  // 升级为本接口实例。
+  // spec https://w3c.github.io/FileAPI/#filelist-section
+  function FileList() {
+    if (!(this instanceof FileList)) {
+      throw new TypeError("Failed to construct 'FileList': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+    }
+    this._zwFiles = [];
+  }
+  Object.defineProperty(FileList, 'length', { value: 0 }); // WebIDL 必参个数
+  FileList.prototype.item = function (index) {
+    var files = this._zwFiles || []; // R2830 升级单例无 _zwFiles 槽——容错为空列表
+    var f = files[index >>> 0];
+    return f != null ? f : null; // spec：越界 → null
+  };
+  Object.defineProperty(FileList.prototype, 'length', {
+    get: function () { return (this._zwFiles || []).length; },
+    set: function (v) { /* IDL unsigned long 只读——静默忽略（legacy lenient） */ },
+    enumerable: true,
+    configurable: true
+  });
+  FileList.prototype[Symbol.iterator] = function* () {
+    var files = this._zwFiles || [];
+    for (var i = 0; i < files.length; i++) yield files[i];
+  };
+  globalThis.FileList = globalThis.FileList || FileList;
+  Object.defineProperty(globalThis.FileList.prototype, Symbol.toStringTag, { value: 'FileList', configurable: true });
+  // R2830 _emptyFileList（part01 同 IIFE 共享单例）升级为 FileList 实例——own
+  // length/item 删除走原型（assert_inherits 口径）。
+  try {
+    if (_emptyFileList) {
+      Object.setPrototypeOf(_emptyFileList, FileList.prototype);
+      delete _emptyFileList.length;
+      delete _emptyFileList.item;
+      delete _emptyFileList[Symbol.iterator];
+    }
+  } catch (_eFl) {}
 
   // FileReader——异步读 Blob（文件上传 / 图片预览 / data URL 高频）。纯 JS，builds on Blob.arrayBuffer()/
   // TextDecoder + btoa（R2770）。**readAsDataURL 为 Blob 未覆盖的唯一能力**（图片预览
@@ -4870,19 +4950,39 @@
   globalThis.URL = globalThis.URL || URL;
 
   // URL.createObjectURL / revokeObjectURL——blob: URL 注册表（`<img src>` / `<a download>` /
-  // 文件预览高频）。纯 JS：createObjectURL 生成 `blob:<origin>/<n>` 并在 `_zwBlobStore` 注册 Blob，
+  // 文件预览高频）。纯 JS：createObjectURL 生成 `blob:<origin>/<uuid-v4>` 并在 `_zwBlobStore`
+  // 注册 Blob，
   // 返 URL 串；revokeObjectURL 从 store 移除。blob: URL 消费路径（img/fetch/XHR）已实测
   // 打通（fileapi-compat M1 基线 url 面 84%，url-with-fetch/xhr + url_xmlhttprequest_img
   // 存活）——M1 前注释「blob: 不被 net/fetch 实际解析」已过时，此处更正。
   // **已知限制（记录）**：跨全局 revoke/iframe 装载面排除（runner 无 iframe 管道）。
   // origin 取 location.origin 或 'null'。
+  // fileapi-compat P4：blob: URL path 为 UUID v4（url-format.any.js——path 须以合法
+  // UUID 结尾且 new URL(path) 语义成立）。crypto.randomUUID 优先，无则 RFC 4122 v4
+  // 手工拼装（randomValues 缺失回落 Math.random——运行去重够用）。
+  function _zwUuidV4() {
+    if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+      try { return globalThis.crypto.randomUUID(); } catch (_eUu) {}
+    }
+    var b = new Uint8Array(16);
+    if (globalThis.crypto && typeof globalThis.crypto.getRandomValues === 'function') {
+      globalThis.crypto.getRandomValues(b);
+    } else {
+      for (var i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+    }
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    var h = '';
+    for (var j = 0; j < 16; j++) {
+      if (j === 4 || j === 6 || j === 8 || j === 10) h += '-';
+      h += (b[j] >> 4).toString(16) + (b[j] & 15).toString(16);
+    }
+    return h;
+  }
   if (!globalThis.URL.createObjectURL) {
     globalThis.URL.createObjectURL = function (obj) {
       var origin = (globalThis.location && globalThis.location.origin) || 'null';
-      // 单调 id（counter）+ Math.random 去重（不依赖未定义 crypto.randomUUID 顺序）。
-      globalThis.__zwBlobSeq = (globalThis.__zwBlobSeq | 0) + 1;
-      var url = 'blob:' + origin + '/' + globalThis.__zwBlobSeq + '-' +
-        Math.floor(Math.random() * 1e9).toString(36);
+      var url = 'blob:' + origin + '/' + _zwUuidV4();
       _zwBlobStore[url] = obj;
       return url;
     };

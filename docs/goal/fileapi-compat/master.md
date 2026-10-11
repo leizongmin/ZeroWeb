@@ -1,32 +1,32 @@
 # File API 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../fileapi-compat.md](../fileapi-compat.md)
-**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-11（M2-P3 收口）
+**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-11（M2-P4 部分收口）
 
 ## 当前状态
 
-**目标 Active（M1 + M2-P1 + M2-P3 完成，下一切片 P4 零散面）**：可执行子集
-35 案 499 子测试 **467 Pass = 93.6%**（M1 62.3% → M2-P1 87.2% → +32P，单调上行，
-0 Timeout）；reading-data-section + FileReader/ + fileReader.any.js 簇 53/53 全绿。
-M2-P3（10-11）：FileReader 读取状态机重写——重入读 InvalidStateError、事件按 spec
-逐 task 派发（setTimeout 承载 runner 确定性 FIFO 队列）、result 阶段 null、abort
-代计数真取消、Determining-Encoding（BOM 嗅探 → encoding 参数 → type charset →
-UTF-8，经 TextDecoder host decoder）、readAsDataURL 空 type 缺省、ProgressEvent 经
-dispatchEvent + part05 接 EventTarget 原型链（EventWatcher 前提）。定位要点：microtask
-链承载事件派发与 promise_test 完成回调竞速（filereader_result progress 变体），task
-语义修复。证据：[evidence/2026-10-11-m2-p3-readas-state-machine.md](evidence/2026-10-11-m2-p3-readas-state-machine.md)。
+**目标 Active（M1 + M2-P1/P3/P4 完成——可执行子集 97.8%，残余 11F 全部跨域）**：
+35 案 499 子测试 **488 Pass**（M1 62.3% → M2-P1 87.2% → M2-P3 93.6% → M2-P4 97.8%，
+单调上行，0 Timeout）。
+M2-P4（10-11）：Blob.bytes() +6、slice [Clamp] 恰半取偶 +6、detached buffer 按 part
+空（根因 postMessage 先 detach 后 clone 的序错）+4、FileList 接口原型化 +4、
+createObjectURL path UUID v4 +1。探索后回退记账：indexed-properties 结构判据不可行
+（上游钉 `{0:'FAIL',length:1}` 普通对象 TypeError），须元素代理品牌。证据：
+[evidence/2026-10-11-m2-p4-scattered.md](evidence/2026-10-11-m2-p4-scattered.md)。
 
 里程碑台账：M1（10-11）通道 + 甄别 + 基线 62.3%；M2-P1（10-11）构造器 WebIDL
 +124P → 87.2%（endings 簇随构造器收口，上游语料冲突 chromium 仲裁记档见下）；
-M2-P3（10-11）readAs* 状态机 +32P → 93.6%。逐轮证据见 evidence/。
+M2-P3（10-11）readAs* 状态机 +32P → 93.6%（事件 task 语义，见 learning
+docs/learnings/platform/2026-10/2026-10-11-wpt-eventwatcher-task-dispatch.md）；
+M2-P4（10-11）零散面 +21P → 97.8%。逐轮证据见 evidence/。
 
-## 缺口清单（M2 剩余簇）
+## 缺口清单（残余 11F，全部跨域挂账）
 
-| # | 簇 | 规模（F） | 状态 |
-|---|---|---|---|
-| P1 | Blob/File 构造器 WebIDL 转换（含 endings） | ~150 | ✅ M2-P1（→87.2%） |
-| P3 | readAs* 读取状态机 | ~31 | ✅ M2-P3（→93.6%，簇 53/53） |
-| P4 | 零散面：Blob.bytes() 缺失 5、detached ArrayBuffer 4、slice 多字节解码 6、filelist 空表 4、dom.window 平台对象 3、url 边界 5、File-constructor 2、其余零散 3 | 32 | ⬜ 下一切片 |
+| 簇 | F | 归属 |
+|---|---|---|
+| 元素代理 String 化（String(el)='body' vs '[object HTMLBodyElement]'、Attr/toStringTag、select.length/索引） | 5 | 元素代理面专轮（js-dom 通道须复跑） |
+| url-with-fetch/xhr（Request 构造/revoke 生命周期、fetch fragment） | 4 | net-api Request 语义 |
+| FrozenArray\<MessagePort\>（e.ports 转移后为空） | 1 | webmessaging ports 面 |
 
 ## 排除面（挂账，非待办）
 
@@ -53,10 +53,11 @@ U+0020~U+007E + ASCII 小写化。chromium headless 实测与 FileAPI 一致
 
 - DC-2 门禁参照 webstorage 先例：分级通过率不再下行两个连续轮次 + DC-3 逐修复
   回归测试（本 goal 以 testharness-fileapi 通道 + evidence JSON 为常驻断言集）+
-  make test 全绿 / make reftest 零回归 / product-smoke 恒值。
+  make test 全绿 / make reftest 零回归 / product-smoke 恒值。当前 97.8% 且残余 11F
+  已全部定域挂账——本 goal 可执行面已收口，达标后走 M3 归档评审。
 - 数字维护：每轮修齐后向 `docs/compat/trends/wpt-suites.csv` 追加行
-  （M2-P3 行 2026-10-11 = active，499/467）。
-- P4 动 slice/bytes 时核对 `_zw_blobBytes` 物化路径与 BlobPart 鸭子形态兜底
-  （`byteLength` 存在即保留——response.blob() 交界依赖，勿破坏）。
+  （M2-P4 行 2026-10-11 = active，499/488）。
+- 元素代理专轮动 @@toPrimitive/toString 时：同轮复跑 js-dom + html-syntax 通道
+  （String(el) 现返 tag 名被 R34xx canvas 断言消息消费，移除影响面全语料）。
 - 事件派发粒度经验：FileReader 族事件必须 task 承载（setTimeout），microtask 链与
   promise_test 完成回调竞速——后续 shim 内新增异步事件接口（XHR 进度、IDB 等）照此先例。
