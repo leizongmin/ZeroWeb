@@ -190,6 +190,16 @@ impl ElementData {
             .map(|a| a.value.to_string())
     }
 
+    /// 获取指定属性值的零拷贝借用（P11：样式匹配每元素×候选选择器的高频路径，
+    /// `get_attribute` 的 String 分配在十万级调用下成为热点）。
+    pub fn get_attribute_str(&self, name: &str) -> Option<&str> {
+        let name = self.attr_name_effective(name);
+        self.attributes
+            .iter()
+            .find(|a| attr_full_name_eq(a, &name))
+            .map(|a| &*a.value)
+    }
+
     /// 设置属性值。如属性已存在则更新，否则添加。
     pub fn set_attribute(&mut self, name: &str, value: &str) {
         use markup5ever::{LocalName, Namespace, QualName};

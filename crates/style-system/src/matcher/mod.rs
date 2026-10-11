@@ -180,7 +180,8 @@ fn matches_subclass(doc: &Document, element: NodeId, sub: &SubclassSelector) -> 
 
 /// 检查 ID 选择器是否匹配。
 fn matches_id(doc: &Document, element: NodeId, id: &str) -> bool {
-    doc.get_attribute(element, "id").is_some_and(|v| v == id)
+    // P11：零拷贝属性读取（每元素×候选选择器高频路径）
+    doc.get_attribute_str(element, "id").is_some_and(|v| v == id)
 }
 
 /// 检查类选择器是否匹配。
@@ -198,7 +199,8 @@ fn matches_class(doc: &Document, element: NodeId, cls: &str) -> bool {
 
 /// 检查属性选择器是否匹配。
 fn matches_attribute(doc: &Document, element: NodeId, attr: &AttributeSelector) -> bool {
-    let value = match doc.get_attribute(element, &attr.name) {
+    // P11：零拷贝属性读取 + 零分配比较（每元素×候选选择器高频路径）。
+    let value = match doc.get_attribute_str(element, &attr.name) {
         Some(v) => v,
         None => return false,
     };
@@ -209,25 +211,10 @@ fn matches_attribute(doc: &Document, element: NodeId, attr: &AttributeSelector) 
     //   缺省 → 按文档语言默认（HTML 不敏感、XML/XHTML 敏感）。
     match attr.case {
         AttrCaseModifier::Insensitive => {
-            let value_lower = value.to_ascii_lowercase();
-            return match &attr.matcher {
-                AttributeMatcher::Exists => true,
-                AttributeMatcher::Exact(v) => value_lower == v.to_ascii_lowercase(),
-                AttributeMatcher::Includes(v) => {
-                    let vl = v.to_ascii_lowercase();
-                    value.split_whitespace().any(|part| part.to_ascii_lowercase() == vl)
-                }
-                AttributeMatcher::DashMatch(v) => {
-                    let vl = v.to_ascii_lowercase();
-                    value_lower == vl || value_lower.starts_with(&format!("{vl}-"))
-                }
-                AttributeMatcher::Prefix(v) => value_lower.starts_with(&v.to_ascii_lowercase()),
-                AttributeMatcher::Suffix(v) => value_lower.ends_with(&v.to_ascii_lowercase()),
-                AttributeMatcher::Substring(v) => value_lower.contains(&v.to_ascii_lowercase()),
-            };
+            return match_attr_value_ascii_ci(&attr.matcher, value);
         }
         AttrCaseModifier::Sensitive => {
-            return match_attr_value_exact(&attr.matcher, &value);
+            return match_attr_value_exact(&attr.matcher, value);
         }
         AttrCaseModifier::Default => {}
     }
@@ -240,25 +227,40 @@ fn matches_attribute(doc: &Document, element: NodeId, attr: &AttributeSelector) 
     // ZW 用 html5ever 统一按 HTML 解析，但 parser 检测 DOCTYPE public_id 含 "XHTML" 时置位
     // `content_is_xml`，此处据此分发大小写语义。
     if doc.content_is_xml() {
-        return match_attr_value_exact(&attr.matcher, &value);
+        return match_attr_value_exact(&attr.matcher, value);
     }
 
-    // HTML：属性值匹配 ASCII 大小写不敏感（to_ascii_lowercase 后比较）。
-    let value_lower = value.to_ascii_lowercase();
-    match &attr.matcher {
+    // HTML：属性值匹配 ASCII 大小写不敏感。
+    match_attr_value_ascii_ci(&attr.matcher, value)
+}
+
+/// ASCII 大小写不敏感的属性值匹配（`to_ascii_lowercase` 后比较的零分配等价——
+/// to_ascii_lowercase 仅映射 A-Z 且逐字节，故 lower 后相等 ⇔ eq_ignore_ascii_case，
+/// 前缀/后缀/子串同理）。P11：候选评估高频路径，旧实现每次评估 2-3 次堆分配。
+fn match_attr_value_ascii_ci(matcher: &AttributeMatcher, value: &str) -> bool {
+    match matcher {
         AttributeMatcher::Exists => true,
-        AttributeMatcher::Exact(v) => value_lower == v.to_ascii_lowercase(),
-        AttributeMatcher::Includes(v) => {
-            let vl = v.to_ascii_lowercase();
-            value.split_whitespace().any(|part| part.to_ascii_lowercase() == vl)
-        }
+        AttributeMatcher::Exact(v) => value.eq_ignore_ascii_case(v),
+        AttributeMatcher::Includes(v) => value.split_whitespace().any(|part| part.eq_ignore_ascii_case(v)),
         AttributeMatcher::DashMatch(v) => {
-            let vl = v.to_ascii_lowercase();
-            value_lower == vl || value_lower.starts_with(&format!("{vl}-"))
+            // lower(value) == vl 或 lower(value).starts_with(vl + "-") 的等价：
+            // 前缀 ASCII-ci 相等且随后字节恰为 '-'（'-' 不受大小写映射影响）。
+            value.eq_ignore_ascii_case(v)
+                || (value.len() > v.len()
+                    && value.is_char_boundary(v.len())
+                    && value.as_bytes()[..v.len()].eq_ignore_ascii_case(v.as_bytes())
+                    && value.as_bytes()[v.len()] == b'-')
         }
-        AttributeMatcher::Prefix(v) => value_lower.starts_with(&v.to_ascii_lowercase()),
-        AttributeMatcher::Suffix(v) => value_lower.ends_with(&v.to_ascii_lowercase()),
-        AttributeMatcher::Substring(v) => value_lower.contains(&v.to_ascii_lowercase()),
+        AttributeMatcher::Prefix(v) => value.get(..v.len()).is_some_and(|p| p.eq_ignore_ascii_case(v)),
+        AttributeMatcher::Suffix(v) => {
+            let (n, m) = (value.len(), v.len());
+            n >= m && value.get(n - m..).is_some_and(|s| s.eq_ignore_ascii_case(v))
+        }
+        AttributeMatcher::Substring(v) => {
+            // 空串子串恒真（str::contains("") 语义）；windows(0) 会 panic，须先挡。
+            let (h, n) = (value.as_bytes(), v.as_bytes());
+            n.is_empty() || (h.len() >= n.len() && h.windows(n.len()).any(|w| w.eq_ignore_ascii_case(n)))
+        }
     }
 }
 
@@ -548,13 +550,13 @@ fn is_checked(doc: &Document, element: NodeId) -> bool {
     };
     match tag.as_str() {
         "input" => {
-            let ty = doc
-                .get_attribute(element, "type")
-                .unwrap_or_default()
-                .to_ascii_lowercase();
-            (ty == "checkbox" || ty == "radio") && doc.get_attribute(element, "checked").is_some()
+            // P11：零拷贝属性读取
+            let is_ck = doc
+                .get_attribute_str(element, "type")
+                .is_some_and(|ty| ty.eq_ignore_ascii_case("checkbox") || ty.eq_ignore_ascii_case("radio"));
+            is_ck && doc.get_attribute_str(element, "checked").is_some()
         }
-        "option" => doc.get_attribute(element, "selected").is_some(),
+        "option" => doc.get_attribute_str(element, "selected").is_some(),
         _ => false,
     }
 }
@@ -586,7 +588,7 @@ fn is_disabled(doc: &Document, element: NodeId) -> bool {
         doc.is_effectively_disabled(element)
     } else {
         // fieldset 自身：按 disabled 属性直判。
-        is_disableable_tag(&tag) && doc.get_attribute(element, "disabled").is_some()
+        is_disableable_tag(&tag) && doc.get_attribute_str(element, "disabled").is_some()
     }
 }
 
@@ -599,7 +601,7 @@ fn is_enabled(doc: &Document, element: NodeId) -> bool {
     if is_form_control_tag(&tag) {
         !doc.is_effectively_disabled(element)
     } else {
-        is_disableable_tag(&tag) && doc.get_attribute(element, "disabled").is_none()
+        is_disableable_tag(&tag) && doc.get_attribute_str(element, "disabled").is_none()
     }
 }
 
@@ -614,7 +616,7 @@ fn is_required(doc: &Document, element: NodeId) -> bool {
         Some(t) => t,
         None => return false,
     };
-    is_requireable_tag(&tag) && doc.get_attribute(element, "required").is_some()
+    is_requireable_tag(&tag) && doc.get_attribute_str(element, "required").is_some()
 }
 
 /// `:optional` 匹配：可约束元素无 `required` 属性（`:required` 在可约束元素上的补集）。
@@ -623,7 +625,7 @@ fn is_optional(doc: &Document, element: NodeId) -> bool {
         Some(t) => t,
         None => return false,
     };
-    is_requireable_tag(&tag) && doc.get_attribute(element, "required").is_none()
+    is_requireable_tag(&tag) && doc.get_attribute_str(element, "required").is_none()
 }
 
 /// `:read-write` 匹配（CSS Basic UI）：可编辑表单文本控件——委派
@@ -665,7 +667,7 @@ fn is_any_link(doc: &Document, element: NodeId) -> bool {
     if !matches!(tag.as_str(), "a" | "area" | "link") {
         return false;
     }
-    doc.get_attribute(element, "href").is_some()
+    doc.get_attribute_str(element, "href").is_some()
 }
 
 /// 检查元素是否是同类型中的第一个。
@@ -2096,62 +2098,255 @@ fn matches_selector_for_pseudo(doc: &Document, element: NodeId, selector: &Selec
     matches_selector(doc, element, &stripped)
 }
 
-/// 单样式表的选择器索引桶：tag（小写）→ 该样式表内 Style 规则的 (规则下标, 选择器下标)。
+/// 单一规则列表（样式表顶层或某个 at-rule 块内）的候选桶。
 ///
-/// 正确性依据：选择器最右复合选择器含 `TypeSelector::Tag(t)` 时，匹配元素 E 的
-/// 必要条件即 E 的 tag == t（大小写不敏感）——按 tag 分桶只减少候选、不改变
-/// 匹配结果（零语义损失）。无 type selector（`.class`/`#id`/`*` 等）的选择器
-/// 可匹配任意 tag，进 `universal` 桶。
-struct SheetBuckets {
-    /// tag（小写）→ 候选 (规则下标, 选择器下标)，按 (规则, 选择器) 有序。
+/// P11（2026-10-11）：桶键从「仅 tag」扩展为「最右复合选择器主键」，优先级
+/// id > class > tag。正确性依据：选择器最右复合选择器含直接子类选择器
+/// `#id` / `.class` 或 `TypeSelector::Tag(t)` 时，匹配元素 E 的必要条件即
+/// E 持有对应 id / class token / tag（大小写语义与 matches_id/matches_class/
+/// matches_type 一致：id/class 精确串比较，tag 小写）——按主键分桶只减少
+/// 候选、不改变匹配结果（零语义损失）。
+///
+/// 边界纪律：
+/// - 只取最右复合选择器的**直接**子类选择器；`:not(.x)`/`:is(.x)` 参数内的
+///   class 不是匹配必要条件（元素无 `.x` 反而可能匹配），不挖。
+/// - `&`（Nesting）、`[attr]`、裸伪类等无 id/class/tag 主键 → universal 桶。
+/// - 每个选择器恰好进一个桶（主键唯一）→ 候选天然无重复，按 (规则, 选择器)
+///   升序拼接即为源码序。
+struct RuleListBuckets {
+    /// 最右含 `#id`（无更高优先级键时）：id → 候选 (规则下标, 选择器下标)。
+    ids: std::collections::HashMap<String, Vec<(usize, usize)>>,
+    /// 最右含 `.class`（无 `#id` 主键时）：class → 候选。
+    classes: std::collections::HashMap<String, Vec<(usize, usize)>>,
+    /// 最右含 type selector tag（无 id/class 主键时）：tag（小写）→ 候选。
     tagged: std::collections::HashMap<String, Vec<(usize, usize)>>,
-    /// 无 type selector / Universal → 任意 tag 候选。
+    /// 无 id/class/tag 主键 → 任意元素候选。
     universal: Vec<(usize, usize)>,
+}
+
+/// 带内层规则表的块（@media/@layer/@supports/@container）的预建索引。
+///
+/// P11：旧实现内层规则递归传 `None` → 每元素全量扫所有嵌套块（github.com
+/// 定价页 1,230 个 @media 块实测为 style 阶段热点的一半）。嵌套块随索引树
+/// 一次建桶，递归查表。`media_queries` 为 @media 块的 prelude 预解析结果
+///（None = 非 @media 块）——旧实现每元素每块重复 `parse_media_query`，
+/// 12k 元素 × 1,230 块 = 千万次重复解析，预解析后仅剩布尔求值。
+struct NestedBlock {
+    index: RuleListIndex,
+    /// @media 块：`Some(已解析查询列表)`（逗号分隔 OR；prelude 不可解析亦为 None）；
+    /// 非 @media：None。
+    media_queries: Option<Vec<zero_css_parser::media_query::MediaQuery>>,
+}
+
+/// 单一规则列表的索引（桶 + 嵌套块子索引）。
+struct RuleListIndex {
+    buckets: RuleListBuckets,
+    /// 规则下标 → 内层块索引（@media/@layer/@supports/@container 有内层规则的规则）。
+    nested: std::collections::HashMap<usize, NestedBlock>,
 }
 
 /// 全样式表的选择器索引（compute_styles 每帧构建一次，元素共享）。
 pub struct StylesheetIndex {
-    sheets: Vec<SheetBuckets>,
+    sheets: Vec<RuleListIndex>,
 }
 
-/// 从选择器最右复合选择器提取 type selector tag（小写）；无/Universal → None。
-/// R3757：`prefix|name` 的 name 参与分桶（同 Tag 语义——命名空间匹配在 matches_type
-/// 精判，分桶只按本地名粗筛）；`*|`/`prefix|*`（空 name）按 Universal 处理。
-fn selector_leading_tag(selector: &zero_css_parser::ast::Selector) -> Option<String> {
-    use zero_css_parser::ast::{Selector, TypeSelector};
-    let Selector { complex } = selector;
-    let (compound, _) = complex.parts.last()?;
+/// 选择器最右复合选择器的分桶主键（优先级 id > class > tag）。
+enum RightmostKey {
+    Id(String),
+    Class(String),
+    Tag(String),
+    None,
+}
+
+/// 提取分桶主键。type selector 部分沿用原 tag 语义（R3757：`prefix|name` 的
+/// name 参与分桶，命名空间匹配在 matches_type 精判；`*|`/`prefix|*` 按 Universal）。
+fn selector_rightmost_key(selector: &zero_css_parser::ast::Selector) -> RightmostKey {
+    use zero_css_parser::ast::TypeSelector;
+    let Some((compound, _)) = selector.complex.parts.last() else {
+        return RightmostKey::None;
+    };
+    // 直接子类选择器：首个 id 即 Id 主键（扫完防 id 在 class 之后）；否则首个 class。
+    let mut first_class: Option<&String> = None;
+    for sub in &compound.subclass_selectors {
+        match sub {
+            zero_css_parser::ast::SubclassSelector::Id(id) => {
+                return RightmostKey::Id(id.clone());
+            }
+            zero_css_parser::ast::SubclassSelector::Class(cls) if first_class.is_none() => {
+                first_class = Some(cls);
+            }
+            _ => {}
+        }
+    }
+    if let Some(cls) = first_class {
+        return RightmostKey::Class(cls.clone());
+    }
     match &compound.type_selector {
-        Some(TypeSelector::Tag(tag)) => Some(tag.to_ascii_lowercase()),
-        Some(TypeSelector::Namespaced { name, .. }) if !name.is_empty() => Some(name.to_ascii_lowercase()),
-        Some(TypeSelector::Universal) | Some(TypeSelector::Namespaced { .. }) | None => None,
+        Some(TypeSelector::Tag(tag)) => RightmostKey::Tag(tag.to_ascii_lowercase()),
+        Some(TypeSelector::Namespaced { name, .. }) if !name.is_empty() => RightmostKey::Tag(name.to_ascii_lowercase()),
+        Some(TypeSelector::Universal) | Some(TypeSelector::Namespaced { .. }) | None => RightmostKey::None,
     }
 }
 
-/// 构建全样式表的 tag 分桶索引（O(规则 × 选择器)，每帧一次）。
-pub fn build_stylesheet_index(stylesheets: &[zero_css_parser::Stylesheet]) -> StylesheetIndex {
-    let mut sheets = Vec::with_capacity(stylesheets.len());
-    for stylesheet in stylesheets {
-        let mut tagged: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
-        let mut universal: Vec<(usize, usize)> = Vec::new();
-        for (ri, rule) in stylesheet.rules.iter().enumerate() {
-            let zero_css_parser::ast::Rule::Style(style_rule) = rule else {
-                continue; // At 规则不进索引（collect_from_rules 原样遍历）
-            };
-            for (si, selector) in style_rule.selectors.iter().enumerate() {
-                match selector_leading_tag(selector) {
-                    Some(tag) => tagged.entry(tag).or_default().push((ri, si)),
-                    None => universal.push((ri, si)),
+/// 构建单一规则列表的索引（含嵌套块递归；O(规则 × 选择器)，每帧一次）。
+fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex {
+    let mut ids: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
+    let mut classes: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
+    let mut tagged: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
+    let mut universal: Vec<(usize, usize)> = Vec::new();
+    let mut nested = std::collections::HashMap::new();
+    for (ri, rule) in rules.iter().enumerate() {
+        // 带内层规则表的块随走查预建子索引（@media 另预解析查询）。
+        match rule {
+            zero_css_parser::ast::Rule::At(at_rule) => {
+                if let zero_css_parser::ast::AtRuleBody::Block(inner_rules) = &at_rule.body {
+                    if at_rule.name.eq_ignore_ascii_case("media") {
+                        nested.insert(
+                            ri,
+                            NestedBlock {
+                                index: build_rule_list_index(inner_rules),
+                                // parse_media_query 返回 Option<Vec<_>>：prelude 不可解析
+                                // 时 None 与非 @media 块同义（collect 侧回退现场解析后同样跳过）。
+                                media_queries: zero_css_parser::media_query::parse_media_query(&at_rule.prelude),
+                            },
+                        );
+                    } else {
+                        // 非 @media 的 Block at-rule：collect_from_rules 不递归
+                        //（未知 at-rule body 不应用），不建子索引。
+                    }
                 }
             }
+            zero_css_parser::ast::Rule::Layer(layer_rule) if !layer_rule.rules.is_empty() => {
+                nested.insert(
+                    ri,
+                    NestedBlock {
+                        index: build_rule_list_index(&layer_rule.rules),
+                        media_queries: None,
+                    },
+                );
+            }
+            zero_css_parser::ast::Rule::Supports(supports_rule) => {
+                nested.insert(
+                    ri,
+                    NestedBlock {
+                        index: build_rule_list_index(&supports_rule.rules),
+                        media_queries: None,
+                    },
+                );
+            }
+            zero_css_parser::ast::Rule::Container(container_rule) => {
+                nested.insert(
+                    ri,
+                    NestedBlock {
+                        index: build_rule_list_index(&container_rule.rules),
+                        media_queries: None,
+                    },
+                );
+            }
+            _ => {}
         }
-        for bucket in tagged.values_mut() {
-            bucket.sort_unstable();
+        let zero_css_parser::ast::Rule::Style(style_rule) = rule else {
+            continue; // At 规则不进选择器桶（collect_from_rules 原样遍历）
+        };
+        for (si, selector) in style_rule.selectors.iter().enumerate() {
+            match selector_rightmost_key(selector) {
+                RightmostKey::Id(id) => ids.entry(id).or_default().push((ri, si)),
+                RightmostKey::Class(cls) => classes.entry(cls).or_default().push((ri, si)),
+                RightmostKey::Tag(tag) => tagged.entry(tag).or_default().push((ri, si)),
+                RightmostKey::None => universal.push((ri, si)),
+            }
         }
-        universal.sort_unstable();
-        sheets.push(SheetBuckets { tagged, universal });
     }
+    for bucket in ids.values_mut().chain(classes.values_mut()).chain(tagged.values_mut()) {
+        bucket.sort_unstable();
+    }
+    universal.sort_unstable();
+    RuleListIndex {
+        buckets: RuleListBuckets {
+            ids,
+            classes,
+            tagged,
+            universal,
+        },
+        nested,
+    }
+}
+
+/// 构建全样式表的选择器索引（每帧一次，元素共享）。
+pub fn build_stylesheet_index(stylesheets: &[zero_css_parser::Stylesheet]) -> StylesheetIndex {
+    let sheets = stylesheets.iter().map(|s| build_rule_list_index(&s.rules)).collect();
     StylesheetIndex { sheets }
+}
+
+/// 元素在单一规则表内的候选 (规则, 选择器) 集：各主键精确桶 + universal，
+/// 按 (规则, 选择器) 升序 = 源码序。collect_from_rules 与测试统计共用。
+fn element_candidates(idx: &RuleListIndex, doc: &Document, element: NodeId) -> Vec<(usize, usize)> {
+    let elem_tag = element_tag_name(doc, element).unwrap_or_default();
+    let elem_id = doc.get_attribute_str(element, "id");
+    // class 候选桶按元素 class_list token 精确取（matches_class 同语义：精确串比较）。
+    let elem_classes: &[String] = doc
+        .get(element)
+        .and_then(|n| match &n.kind {
+            zero_dom::NodeKind::Element(e) => Some(e.class_list.as_slice()),
+            _ => None,
+        })
+        .unwrap_or(&[]);
+    // 候选 = 各精确桶 + universal，拼接后按 (规则,选择器) 排序即源码序。
+    // 桶均为升序有序（构建期排序），候选总量为元素相关选择器数。
+    let mut candidates: Vec<(usize, usize)> = Vec::with_capacity(idx.buckets.universal.len() + 16);
+    if let Some(id) = elem_id
+        && let Some(b) = idx.buckets.ids.get(id)
+    {
+        candidates.extend_from_slice(b);
+    }
+    for cls in elem_classes {
+        if let Some(b) = idx.buckets.classes.get(cls.as_str()) {
+            candidates.extend_from_slice(b);
+        }
+    }
+    if let Some(b) = idx.buckets.tagged.get(&elem_tag) {
+        candidates.extend_from_slice(b);
+    }
+    candidates.extend_from_slice(idx.buckets.universal.as_slice());
+    candidates.sort_unstable();
+    candidates
+}
+
+impl StylesheetIndex {
+    /// [cfg(test)] 索引规模统计：(选择器总条目, universal 条目, class 桶数,
+    /// id 桶数, tag 桶数, 递归嵌套块数)。
+    #[cfg(test)]
+    pub(crate) fn stats(&self) -> (usize, usize, usize, usize, usize, usize) {
+        fn walk(idx: &RuleListIndex, acc: &mut (usize, usize, usize, usize, usize, usize)) {
+            let b = &idx.buckets;
+            acc.0 += b.ids.values().map(Vec::len).sum::<usize>()
+                + b.classes.values().map(Vec::len).sum::<usize>()
+                + b.tagged.values().map(Vec::len).sum::<usize>()
+                + b.universal.len();
+            acc.1 += b.universal.len();
+            acc.2 += b.classes.len();
+            acc.3 += b.ids.len();
+            acc.4 += b.tagged.len();
+            for nb in idx.nested.values() {
+                acc.5 += 1;
+                walk(&nb.index, acc);
+            }
+        }
+        let mut acc = (0, 0, 0, 0, 0, 0);
+        for sheet in &self.sheets {
+            walk(sheet, &mut acc);
+        }
+        acc
+    }
+
+    /// [cfg(test)] 元素在顶层各样式表的候选总数（诊断抽样用）。
+    #[cfg(test)]
+    pub(crate) fn candidate_count(&self, doc: &Document, element: NodeId) -> usize {
+        self.sheets
+            .iter()
+            .map(|s| element_candidates(s, doc, element).len())
+            .sum()
+    }
 }
 
 /// 匹配单个选择器并收集其声明；返回是否匹配。
@@ -2235,7 +2430,7 @@ fn collect_from_rules(
     doc: &Document,
     element: NodeId,
     rules: &[zero_css_parser::ast::Rule],
-    index: Option<&SheetBuckets>,
+    index: Option<&RuleListIndex>,
     results: &mut Vec<MatchingDecl>,
     media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
     container_ctx: Option<&ContainerContext>,
@@ -2248,46 +2443,25 @@ fn collect_from_rules(
     // 先收集全部顶层 Style 规则、再单独遍历 At 规则——@media 块内规则的级联位置被
     // 推到所有顶层规则之后，违反源码顺序（at-media-001：`@media all { .t2 { red } }`
     // 在前、`.t2 { green }` 在后，后者应胜出，旧实现前者胜出）。合并走查：候选流
-    //（tagged + universal，各按 (规则,选择器) 有序）与规则流按规则下标归并，At 规则
-    // 在其源码位置原位递归，声明收集顺序 = 真实源码顺序。
-    // 索引候选：元素 tag 的精确桶 + 通用桶（无 type selector 的选择器）。
+    //（P11：id/class/tag 三桶按元素键取 + universal，各按 (规则,选择器) 有序）与
+    // 规则流按规则下标归并，At 规则在其源码位置原位递归，声明收集顺序 = 真实源码顺序。
+    // 索引候选：元素 id/class_list/tag 的精确桶 + 通用桶（无主键的选择器）。
+    // 每个选择器只进一个桶（主键唯一）→ 候选无重复。
     // 同规则多选择器匹配时只收集一次（原语义 break）。
     match index {
         Some(idx) => {
-            let elem_tag = element_tag_name(doc, element).unwrap_or_default();
-            let tagged = idx.tagged.get(&elem_tag).map(Vec::as_slice).unwrap_or(&[]);
-            let universal = idx.universal.as_slice();
+            let candidates = element_candidates(idx, doc, element);
             let mut last_matched_rule = usize::MAX;
-            let mut ti = 0usize; // tagged 流游标
-            let mut ui = 0usize; // universal 流游标
+            let mut ci = 0usize; // 候选流游标
             for (ri, rule) in rules.iter().enumerate() {
-                // 该规则的候选选择器：两桶按 si 归并（tagged/universal 同规则互斥——
-                // 每个选择器只进一个桶，故逐条取 si 较小者即得完整 si 升序）
-                loop {
-                    let t_take = ti < tagged.len() && tagged[ti].0 == ri;
-                    let u_take = ui < universal.len() && universal[ui].0 == ri;
-                    if !t_take && !u_take {
-                        break;
-                    }
-                    let take_tagged = match (t_take, u_take) {
-                        (true, true) => tagged[ti].1 < universal[ui].1,
-                        (true, false) => true,
-                        (false, true) => false,
-                        (false, false) => unreachable!(),
-                    };
-                    let (ri_c, si) = if take_tagged {
-                        let c = tagged[ti];
-                        ti += 1;
-                        c
-                    } else {
-                        let c = universal[ui];
-                        ui += 1;
-                        c
-                    };
-                    let zero_css_parser::ast::Rule::Style(style_rule) = &rules[ri_c] else {
+                // 该规则的候选选择器：候选流按 (ri, si) 升序，顺序消费 ri 相同段
+                while ci < candidates.len() && candidates[ci].0 == ri {
+                    let si = candidates[ci].1;
+                    ci += 1;
+                    let zero_css_parser::ast::Rule::Style(style_rule) = &rules[ri] else {
                         continue;
                     };
-                    if ri_c != last_matched_rule
+                    if ri != last_matched_rule
                         && collect_style_rule_decls(
                             doc,
                             element,
@@ -2298,7 +2472,7 @@ fn collect_from_rules(
                             pseudo,
                         )
                     {
-                        last_matched_rule = ri_c;
+                        last_matched_rule = ri;
                     }
                 }
                 // 该规则候选耗尽后仍可能处于 last_matched_rule（由上面收集）——At 分支无关。
@@ -2309,26 +2483,35 @@ fn collect_from_rules(
                             if at_rule.name.eq_ignore_ascii_case("media") {
                                 // @media 规则：需要评估媒体条件
                                 // 逗号分隔的查询表示 OR 关系——任一匹配即通过
-                                if let Some(ctx) = media_ctx
-                                    && let Some(queries) =
-                                        zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
-                                    && queries
+                                // P11：查询列表随索引预解析（NestedBlock.media_queries），
+                                // 此处仅做布尔求值；索引缺失（无嵌套表的防御分支）回退
+                                // 现场解析，语义不变。
+                                if let Some(ctx) = media_ctx {
+                                    let queries = idx
+                                        .nested
+                                        .get(&ri)
+                                        .and_then(|b| b.media_queries.clone())
+                                        .or_else(|| zero_css_parser::media_query::parse_media_query(&at_rule.prelude))
+                                        .unwrap_or_default();
+                                    if queries
                                         .iter()
                                         .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx))
-                                {
-                                    collect_from_rules(
-                                        doc,
-                                        element,
-                                        inner_rules,
-                                        None, // @media 内层规则未进索引，全量匹配
-                                        results,
-                                        media_ctx,
-                                        container_ctx,
-                                        current_layer,
-                                        layer_counter,
-                                        layer_map,
-                                        pseudo,
-                                    );
+                                    {
+                                        let nested_index = idx.nested.get(&ri).map(|b| &b.index);
+                                        collect_from_rules(
+                                            doc,
+                                            element,
+                                            inner_rules,
+                                            nested_index,
+                                            results,
+                                            media_ctx,
+                                            container_ctx,
+                                            current_layer,
+                                            layer_counter,
+                                            layer_map,
+                                            pseudo,
+                                        );
+                                    }
                                 }
                                 // 没有 media_ctx 时，@media 规则不应用（安全默认值）
                             } else {
@@ -2373,7 +2556,8 @@ fn collect_from_rules(
                                 doc,
                                 element,
                                 &layer_rule.rules,
-                                None, // @layer 内层规则未进索引，全量匹配
+                                // P11：内层规则表随索引树预分桶
+                                idx.nested.get(&ri).map(|b| &b.index),
                                 results,
                                 media_ctx,
                                 container_ctx,
@@ -2394,7 +2578,8 @@ fn collect_from_rules(
                                 doc,
                                 element,
                                 &supports_rule.rules,
-                                None, // @supports 内层规则未进索引，全量匹配
+                                // P11：内层规则表随索引树预分桶
+                                idx.nested.get(&ri).map(|b| &b.index),
                                 results,
                                 media_ctx,
                                 container_ctx,
@@ -2412,7 +2597,8 @@ fn collect_from_rules(
                                 doc,
                                 element,
                                 &container_rule.rules,
-                                None, // @container 内层规则未进索引，全量匹配
+                                // P11：内层规则表随索引树预分桶
+                                idx.nested.get(&ri).map(|b| &b.index),
                                 results,
                                 media_ctx,
                                 container_ctx,
