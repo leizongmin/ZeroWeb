@@ -8795,18 +8795,40 @@
   function Storage() {
     throw new globalThis.TypeError("Illegal constructor");
   }
+  // WebIDL 操作语义（webstorage-compat M2-P2）：required 参数缺失抛 TypeError
+  // （arity 校验）；key(index) 的 unsigned long 按 ToUint32 取模（`>>> 0`）——
+  // key(4294967296) 应读回 index 0（WPT storage_key 口径）。
+  // https://webidl.spec.whatwg.org/#es-operations
   Storage.prototype.key = function key(index) {
+    if (arguments.length === 0) {
+      throw new globalThis.TypeError(
+        "Failed to execute 'key' on 'Storage': 1 argument required, but only 0 present.");
+    }
+    index = index >>> 0;
     var keys = Object.keys(this.__zwItems || {});
-    return index >= 0 && index < keys.length ? keys[index] : null;
+    return index < keys.length ? keys[index] : null;
   };
   Storage.prototype.getItem = function getItem(key) {
+    if (arguments.length === 0) {
+      throw new globalThis.TypeError(
+        "Failed to execute 'getItem' on 'Storage': 1 argument required, but only 0 present.");
+    }
     var items = this.__zwItems || {};
     return Object.prototype.hasOwnProperty.call(items, key) ? items[key] : null;
   };
   Storage.prototype.setItem = function setItem(key, value) {
+    if (arguments.length < 2) {
+      throw new globalThis.TypeError(
+        "Failed to execute 'setItem' on 'Storage': 2 arguments required, but only " +
+        arguments.length + " present.");
+    }
     this.__zwItems[String(key)] = String(value);
   };
   Storage.prototype.removeItem = function removeItem(key) {
+    if (arguments.length === 0) {
+      throw new globalThis.TypeError(
+        "Failed to execute 'removeItem' on 'Storage': 1 argument required, but only 0 present.");
+    }
     delete this.__zwItems[String(key)];
   };
   Storage.prototype.clear = function clear() {
