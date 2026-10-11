@@ -2198,8 +2198,10 @@
   // ACRH 覆盖检查；content-type 走 essence safelist 判定，亦不入）。
   // net-api M4-S26：CORS 变量头名单（fetch spec CORS-safelisted request-header 值面）——
   // accept/accept-language/content-language/content-type **值条件安全名单**（值破格即
-  // 入列——长度 <128、无 forbidden 字节、accept 无 `"`、CT essence 三形），range 恒入列
-  // （强制 preflight 面），accept-language/content-language 2024 spec 移出安全名单恒入列；
+  // 入列——长度 <128、无 forbidden 字节、accept 无 `"`、CT essence 三形），range 为
+  // 值条件 safelist（单一 simple range `bytes=\d+-\d*` 免预检；suffix/多段/空白/畸形
+  // 入列——t8s-4 修正：旧「恒入列」使媒体 CDN Range 拉取误预检），accept-language/
+  // content-language 2024 spec 移出安全名单恒入列；
   // origin/content-length/access-control-*/referer/last-event-id/user-agent 恒跳过。
   // preflight 触发与 ACRH/ACAH 覆盖检查共用本名单（单一事实源）。
   function _zwPreNamesOf(headersWire) {
@@ -2231,7 +2233,21 @@
         }
         continue;
       }
-      push(ln); // accept-language/content-language/range/其余自定义头
+      if (ln === 'range') {
+        // fetch spec CORS-safelisted request-header（2022+ Range 面）：值经
+        // 「parse a single range header value(allowWhitespace=false)」成功且
+        // start 非空才 safelist——`bytes=\d+-\d*`（无空白、字面量大小写敏感、
+        // start 必填）；suffix（`bytes=-500`，spec 注释明言不 safelist——浏览器
+        // 历史上不发）、多段、空白、畸形仍触发 preflight。Chrome/FF 同面——
+        // 媒体 CDN 拉取（MSE/DASH init+media segment 的 Range 请求）从不预检；
+        // 误预检使按 Origin 条件回 ACAO 的 CDN 对 OPTIONS 拒答 → 全候选
+        // Failed to fetch（t8s-4 bilibili 起播断链面）。
+        // https://fetch.spec.whatwg.org/#cors-safelisted-request-header
+        if (/^bytes=\d+-\d*$/.test(val)) continue;
+        push(ln);
+        continue;
+      }
+      push(ln); // accept-language/content-language/其余自定义头
     }
     return names;
   }
