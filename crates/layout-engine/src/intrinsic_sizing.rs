@@ -4306,3 +4306,77 @@ mod r5062_tests {
         );
     }
 }
+
+/// R5063（css-flexbox-1 §9.2）：flex base size 求解须忽略 item 的 min/max main size
+///（min/max 经 aspect-ratio 摊到对侧轴的传递钳亦不得经测量回流）。taffy-local
+/// LayoutInput.flex_base_probe 旗标 + block.rs 自身钳点位尊重。
+#[cfg(test)]
+mod r5063_tests {
+    use super::*;
+    use zero_dom::NodeKind;
+
+    fn layout_box_of(html: &str, id: &str) -> (f32, f32) {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let b = find(id, &doc, &result.root).expect("target found");
+        (b.width, b.height)
+    }
+
+    /// flex-aspect-ratio-038 同构：column flex + item ar 1/1 + min-height:100px +
+    /// flex:1 0 auto（子 w:1px）——base 应为 fit-content cross 1 × ratio（min 忽略），
+    /// 自由空间均分后 item 终态 100×100（min-height 恰好满足），非 149×150。
+    #[test]
+    fn r5063_flex_base_ignores_min_main_size() {
+        let (w, h) = layout_box_of(
+            r#"<body>
+                <div style="display: flex; flex-flow: column; align-items: start; height: 200px;">
+                    <div id="t" style="aspect-ratio: 1/1; background: green; min-height: 100px; flex: 1 0 auto;">
+                        <div style="width: 1px;"></div>
+                    </div>
+                    <div style="flex: 1 0 1px;"></div>
+                </div>
+            </body>"#,
+            "t",
+        );
+        assert!(
+            (w - 100.0).abs() < 0.5 && (h - 100.0).abs() < 0.5,
+            "base 忽略 min 后 item 应 100×100（分配 99+1 后恰触 min 地板），实际 {w}×{h}"
+        );
+    }
+
+    /// 无 min 对照臂：min-height 移除后探针输入不变（无 min/max 可跳）→ 行为须与
+    /// 修复前逐位一致（基线实测 100×150——非零 grow 分配另有机制，非本旗标域，
+    /// 基线保真断言防旗标误伤无 min 形态）。
+    #[test]
+    fn r5063_no_min_unchanged_by_probe_flag() {
+        let (w, h) = layout_box_of(
+            r#"<body>
+                <div style="display: flex; flex-flow: column; align-items: start; height: 200px;">
+                    <div id="t" style="aspect-ratio: 1/1; background: green; flex: 1 0 auto;">
+                        <div style="width: 1px;"></div>
+                    </div>
+                    <div style="flex: 1 0 1px;"></div>
+                </div>
+            </body>"#,
+            "t",
+        );
+        assert!(
+            (w - 100.0).abs() < 0.5 && (h - 150.0).abs() < 0.5,
+            "无 min 形态应保持基线 100×150（旗标不影响），实际 {w}×{h}"
+        );
+    }
+}

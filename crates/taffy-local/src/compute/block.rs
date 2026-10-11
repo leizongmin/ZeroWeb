@@ -446,7 +446,14 @@ fn compute_inner(
         let available_width = available_space.width.maybe_sub(content_box_inset.horizontal_axis_sum());
         let intrinsic_width = determine_content_based_container_width(tree, &items, available_width)
             + content_box_inset.horizontal_axis_sum();
-        intrinsic_width.maybe_clamp(min_size.width, max_size.width).maybe_max(Some(padding_border_size.width))
+        // R5063（css-flexbox-1 §9.2）：flex base size 探针（flex_base_probe）不应用被测
+        // 节点自身的 min/max 钳——min_height 经 aspect-ratio 摊到 min_width 的传递钳会把
+        // cross max-content 测量从内容宽抬到 min（flex-aspect-ratio-038：1px 内容测 100）。
+        if inputs.flex_base_probe {
+            intrinsic_width.max(padding_border_size.width)
+        } else {
+            intrinsic_width.maybe_clamp(min_size.width, max_size.width).maybe_max(Some(padding_border_size.width))
+        }
     });
 
     // Short-circuit if computing size and both dimensions known
@@ -490,7 +497,16 @@ fn compute_inner(
 
     let container_outer_height = known_dimensions
         .height
-        .unwrap_or(intrinsic_outer_height.maybe_clamp(min_size.height, max_size.height))
+        .unwrap_or({
+            // R5063：flex base size 探针跳过自身 min/max 高钳（同上方宽臂；column item
+            // 的 main 测量路径——min-height 不得抬 base）。
+            let intrinsic = intrinsic_outer_height;
+            if inputs.flex_base_probe {
+                intrinsic.max(padding_border_size.height)
+            } else {
+                intrinsic.maybe_clamp(min_size.height, max_size.height)
+            }
+        })
         .maybe_max(Some(padding_border_size.height));
     let final_outer_size = Size { width: container_outer_width, height: container_outer_height };
 
@@ -937,6 +953,7 @@ fn perform_final_layout_on_in_flow_children(
                 parent_size,
                 available_space: available_space.map_width(|_| AvailableSpace::Definite(stretch_width)),
                 vertical_margins_are_collapsible: if item.is_in_same_bfc { Line::TRUE } else { Line::FALSE },
+                flex_base_probe: false,
             };
 
             #[cfg(feature = "float_layout")]

@@ -790,7 +790,11 @@ fn determine_flex_base_size(
                 && item_ar.is_some_and(|r| r > 0.0 && r.is_finite())
                 && child.size.cross(dir).is_none()
             {
-                let cross_max_content = tree.measure_child_size(
+                // R5063（css-flexbox-1 §9.2）：base 求解须忽略 item 的 min/max main size
+                //——min_height 经 maybe_apply_aspect_ratio 摊到 min_width 的传递钳不得经
+                // cross 测量回流（flex-aspect-ratio-038：min-height:100px + ar 1/1 + 子
+                // w:1px，cross max-content 应测 1 非 min 摊入的 100）。
+                let cross_max_content = tree.measure_child_base_size(
                     child.node,
                     Size::NONE,
                     child_parent_size,
@@ -807,7 +811,9 @@ fn determine_flex_base_size(
                 let inner_cross = (cross_fit - pb_cross).max(0.0);
                 break 'flex_basis inner_cross * item_ar.unwrap();
             }
-            break 'flex_basis tree.measure_child_size(
+            // R5063（css-flexbox-1 §9.2）：同上——content-based main 测量亦不得被 item
+            // 自身 min/max main 钳污染（route：column item min-height → base 抬到 min）。
+            break 'flex_basis tree.measure_child_base_size(
                 child.node,
                 child_known_dimensions,
                 child_parent_size,
