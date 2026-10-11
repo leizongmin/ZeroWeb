@@ -551,7 +551,34 @@ fn box_content_max_width_inner(
             // 仅叶盒回退：有 in-flow 子时子内容才决定 main（上方 children_inner 分支），
             // 避免把 taffy 对整棵子树解析的 border-box 高误当 transferred 源。
             let main = s
-                .and_then(|s| resolve_intrinsic_real_length(&s.height, s).map(|m| clamp_transferred_main(s, m)))
+                .and_then(|s| {
+                    // R5062（css-sizing-4 §5.2 transferred size suggestion + R5041 used 高口径）：
+                    // min/max-height 为百分比时 clamp_transferred_main 的 real 解析见不到
+                    //（resolve_intrinsic_real_length 对 Percentage 返 None）——CSS height 显式
+                    // 侧恒胜出，第一趟 taffy 已对 definite 父块高链解析出的 used 高被弃
+                    //（block-aspect-ratio-031：ar 1/1 + height:50px + min-height:100% × 父 100，
+                    // 变更后 used 100 但 transferred 仍 50 → max-content 父宽滞留 50）。叶盒
+                    //（同下方回退口径）改读第一趟 used content 高——taffy 已合成
+                    // clamp(height, %min, %max)，即 css-sizing-3 §5 used 高语义。
+                    // kill-switch `ZW_AR_PCT_CLAMP_TRANSFER=0` 回退。
+                    let css_main = resolve_intrinsic_real_length(&s.height, s).map(|m| clamp_transferred_main(s, m));
+                    let pct_block_clamp = matches!(s.min_height, LengthValue::Percentage(_))
+                        || matches!(s.max_height, LengthValue::Percentage(_));
+                    if pct_block_clamp
+                        && !has_in_flow_child
+                        && std::env::var("ZW_AR_PCT_CLAMP_TRANSFER").as_deref() != Ok("0")
+                    {
+                        let vframe = box_node.padding_top
+                            + box_node.padding_bottom
+                            + box_node.border_top
+                            + box_node.border_bottom;
+                        let used = (box_node.height - vframe).max(0.0);
+                        if used > 0.5 {
+                            return Some(used);
+                        }
+                    }
+                    css_main
+                })
                 .or_else(|| {
                     if !has_in_flow_child {
                         let vframe = box_node.padding_top
@@ -4209,4 +4236,73 @@ fn r5060_ar_min_height_transfers_to_inline_min() {
     let min_w = block_min_content_width(target, &doc, &styles);
     // 无传递时 = 内层 50px；传递后 ≥ 100。
     assert!(min_w >= 99.5, "min-height 传递应把 min-content 抬到 ≥100，实际 {min_w}");
+}
+
+/// R5062（css-sizing-4 §5.2 transferred size suggestion）：叶盒 ar + 百分比 min/max-height
+/// 的 transferred main 读第一趟 used content 高（taffy 已合成 clamp）——CSS height 显式
+/// 侧不再屏蔽已解析的百分比钳（block-aspect-ratio-031 同构：height:50px + min-height:100%
+/// × 父高 100 → used 100，max-content 父宽应 100 而非滞留 50）。
+#[cfg(test)]
+mod r5062_tests {
+    use super::*;
+    use zero_dom::NodeKind;
+
+    fn layout_width_of(html: &str, id: &str) -> f32 {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        find(id, &doc, &result.root).expect("target found").width
+    }
+
+    /// 031 驱动形态（脚本变更后终态）：height:50px + min-height:100% 的 ar 叶盒，
+    /// used 高 100 → max-content 父宽 100。
+    #[test]
+    fn r5062_pct_min_height_uses_first_pass_used_height() {
+        let w = layout_width_of(
+            r#"<body>
+                <div id="t" style="width: max-content; height: 100px; background: green;">
+                    <div style="height: 100%;">
+                        <div style="aspect-ratio: 1/1; min-height: 100%; height: 50px;"></div>
+                    </div>
+                </div>
+            </body>"#,
+            "t",
+        );
+        assert!(
+            (w - 100.0).abs() < 0.5,
+            "百分比 min-height 链解析后 max-content 宽应 100，实际 {w}"
+        );
+    }
+
+    /// 无百分比钳回归臂：min-height:auto → used 高 = CSS height 50 → 宽 50（旧行为保持）。
+    #[test]
+    fn r5062_no_pct_clamp_keeps_css_height() {
+        let w = layout_width_of(
+            r#"<body>
+                <div id="t" style="width: max-content; height: 100px; background: green;">
+                    <div style="height: 100%;">
+                        <div style="aspect-ratio: 1/1; height: 50px;"></div>
+                    </div>
+                </div>
+            </body>"#,
+            "t",
+        );
+        assert!(
+            (w - 50.0).abs() < 0.5,
+            "无百分比钳时 transferred main 应仍取 CSS height 50，实际 {w}"
+        );
+    }
 }
