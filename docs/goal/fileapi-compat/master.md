@@ -1,7 +1,7 @@
 # File API 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../fileapi-compat.md](../fileapi-compat.md)
-**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-11（M3 收口——Completed）
+**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-12（收口记账修正——csv completed 行 + evidence 计数对齐磁盘实际）
 
 ## 当前状态
 
@@ -57,8 +57,8 @@ U+0020~U+007E + ASCII 小写化。chromium headless 实测与 FileAPI 一致
   （multi-global/worker/streams/表单回显/idlharness/BlobURL 分区）维持 M1 甄别
   记账。上游语料冲突仲裁（mimesniff 865 腿）如上游跟进 FileAPI 算法更新自然回绿。
 - 常驻断言集：testharness-fileapi 通道（`make testharness-fileapi`）+ evidence/
-  六份 JSON——后续涉及 js_dom_shim Blob/File/FileReader/URL.createObjectURL 的
-  变更跑该通道防回归。
+  五份 JSON（m1-baseline / m2-p1 / m2-p3 / m2-p4 / m2-p5）——后续涉及
+  js_dom_shim Blob/File/FileReader/URL.createObjectURL 的变更跑该通道防回归。
 - 元素代理 String 形态已改 spec class 串（'[object IfaceName]'）——后续轮次若见
   dom 族 assert 消息文本 diff（format_value 串化元素）属预期，非回归。uievents
   通道基线 = 2026-10-11 M3 轮 1795P/170F+T（TIME_LIMIT=3600）；后续复跑低于
