@@ -273,11 +273,18 @@ pub(super) fn apply_scripted_dom_mutations(
     }
 
     // R5052：脚本化文本选区导出（shim `_textSelection`；非折叠选区条目）。
-    let text_selections: Vec<TextSelectionRecord> = sandbox
+    // R5054：拼接 DOM Range 选区（getSelection().addRange() 路径，普通元素 ::selection）。
+    let mut text_selections: Vec<TextSelectionRecord> = sandbox
         .execute_json("(typeof __zw_dump_text_selections === 'function') ? __zw_dump_text_selections() : '[]'")
         .ok()
         .and_then(|r| serde_json::from_str::<Vec<TextSelectionRecord>>(&r.value).ok())
         .unwrap_or_default();
+    if let Ok(r) =
+        sandbox.execute_json("(typeof __zw_dump_dom_selections === 'function') ? __zw_dump_dom_selections() : '[]'")
+        && let Ok(dom_sels) = serde_json::from_str::<Vec<TextSelectionRecord>>(&r.value)
+    {
+        text_selections.extend(dom_sels);
+    }
     if std::env::var("REFTEST_DEBUG").is_ok() {
         eprintln!("  [reftest JS] text selections: {text_selections:?}");
     }

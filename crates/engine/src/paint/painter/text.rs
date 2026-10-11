@@ -2969,12 +2969,16 @@ impl super::Painter {
                     // 门：本盒自身即选区 owner（harness 回流 selector 解析的 NodeId ==
                     // box_node.node_id）+ 作者 ::selection 规则 + LTR + 水平书写 + 非折叠
                     // 选区。粒度 = 整行（≡ R5052）：行内本 owner 片段 utf16 区间 ⊆ 选区
-                    // → 该行字形用伪样式 color（经 render_fragment! 调用点传入覆写）；
-                    // 全部内容行选中 → 一枚 padding box 高亮（≡ ref 页 background-color
-                    // 可见区域）。渲染序累计 utf16 对 select-all 形态无对齐偏差；部分选区
-                    // 的空白折叠偏移与后代 owner（span::selection）均不在本切片（FIXME）。
+                    // → 该行字形用伪样式 color（经 render_fragment! 调用点传入覆写）。
+                    // 高亮矩形：R5054 分形——表单控件 owner（input/textarea）铺 padding
+                    // box（≡ chromium 文本控件选区铺满内区；全部内容行选中才发）；
+                    // 其余 owner 逐行铺**片段横向范围**（≡ chromium 普通文本选区只盖
+                    // 文本延伸，driving: selection-background-color-001 ref=100px 方块）。
+                    // 渲染序累计 utf16 对 select-all 形态无对齐偏差；部分选区的空白折叠
+                    // 偏移与后代 owner（span::selection）均不在本切片（FIXME）。
                     let mut sel_line_colors: HashMap<(NodeId, u32), Color> = HashMap::new();
                     let mut sel_padbox_fill: Option<Color> = None;
+                    let mut sel_line_fills: Vec<(Rect, Color)> = Vec::new();
                     if let Some(box_id) = box_node.node_id
                         && !is_vertical
                         && matches!(style.direction, zero_style_system::DirectionValue::Ltr)
@@ -2983,11 +2987,19 @@ impl super::Painter {
                     {
                         let sel_color = super::super::color::resolve_color_current(&pseudo.color, &style.color);
                         let sel_bg = super::super::color::resolve_color_current(&pseudo.background_color, &style.color);
-                        // 活跃路径的 (node_id, 行盒顶, 片段文本) 序列（渲染序 ≈ 文档序）。
-                        let active_frags: Vec<(NodeId, f32, &str)> = if use_stored {
+                        // 表单控件 owner（padding box 形态判据）。
+                        let owner_is_text_control = doc.get(box_id).is_some_and(|n| {
+                            matches!(
+                                &n.kind,
+                                NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("input")
+                                    || e.local_name().eq_ignore_ascii_case("textarea")
+                            )
+                        });
+                        // 活跃路径的 (node_id, 行盒顶, 片段文本, x, 宽) 序列（渲染序 ≈ 文档序）。
+                        let active_frags: Vec<(NodeId, f32, &str, f32, f32)> = if use_stored {
                             stored_fragments
                                 .iter()
-                                .map(|f| (f.node_id, f.line_top_rel, f.text.as_str()))
+                                .map(|f| (f.node_id, f.line_top_rel, f.text.as_str(), f.x, f.width))
                                 .collect()
                         } else {
                             fragments
@@ -2998,6 +3010,8 @@ impl super::Painter {
                                         f.node_id,
                                         frag_line_tops.get(gi).copied().unwrap_or(0.0),
                                         f.text.as_str(),
+                                        f.x,
+                                        f.width,
                                     )
                                 })
                                 .collect()
@@ -3011,36 +3025,60 @@ impl super::Painter {
                             }
                         };
                         // 逐 owner utf16 累计 + 行分组（软换行不消耗字符；同行连续片段
-                        // 首片段前偏移即行起点）。
+                        // 首片段前偏移即行起点）+ 行内横向范围。
                         let mut owner_off: HashMap<NodeId, usize> = HashMap::new();
-                        let mut line_ranges: Vec<((NodeId, u32), usize, usize)> = Vec::new();
-                        for (nid, line_top, text) in &active_frags {
+                        let mut line_ranges: Vec<((NodeId, u32), usize, usize, f32, f32)> = Vec::new();
+                        for (nid, line_top, text, fx, fw) in &active_frags {
                             let owner = owner_of(*nid);
                             let off = owner_off.entry(owner).or_insert(0);
                             let len16 = text.encode_utf16().count();
                             match line_ranges
                                 .iter_mut()
-                                .find(|((o, l), _, _)| *o == owner && *l == line_top.to_bits())
+                                .find(|((o, l), _, _, _, _)| *o == owner && *l == line_top.to_bits())
                             {
-                                Some((_, _, end)) => *end += len16,
-                                None => line_ranges.push(((owner, line_top.to_bits()), *off, *off + len16)),
+                                Some((_, _, end, min_x, max_xw)) => {
+                                    *end += len16;
+                                    *min_x = min_x.min(*fx);
+                                    *max_xw = max_xw.max(*fx + *fw);
+                                }
+                                None => {
+                                    line_ranges.push(((owner, line_top.to_bits()), *off, *off + len16, *fx, *fx + *fw))
+                                }
                             }
                             *off += len16;
                         }
+                        let line_h = match &style.line_height {
+                            zero_style_system::LineHeightValue::Normal => font_size * 1.2,
+                            zero_style_system::LineHeightValue::Number(n) => font_size * (*n as f32),
+                            zero_style_system::LineHeightValue::Length(length) => {
+                                zero_style_system::computed::resolve_length(length, font_size as f64, None, None) as f32
+                            }
+                        };
                         let mut any_line = false;
                         let mut all_selected = true;
-                        for ((owner, ltb), line_start, line_end) in &line_ranges {
+                        for ((owner, ltb), line_start, line_end, min_x, max_xw) in &line_ranges {
                             if *owner != box_id || line_end <= line_start {
                                 continue;
                             }
                             any_line = true;
                             if sel_start <= *line_start && *line_end <= sel_end {
                                 sel_line_colors.insert((*owner, *ltb), sel_color);
+                                if !owner_is_text_control && sel_bg.a > 0 {
+                                    sel_line_fills.push((
+                                        Rect::new(
+                                            content_x + min_x,
+                                            content_y + f32::from_bits(*ltb),
+                                            (max_xw - min_x).max(0.0),
+                                            line_h,
+                                        ),
+                                        sel_bg,
+                                    ));
+                                }
                             } else {
                                 all_selected = false;
                             }
                         }
-                        if any_line && all_selected && sel_bg.a > 0 {
+                        if owner_is_text_control && any_line && all_selected && sel_bg.a > 0 {
                             sel_padbox_fill = Some(sel_bg);
                         }
                     }
@@ -3055,6 +3093,9 @@ impl super::Painter {
                             ),
                             sel_bg,
                         );
+                    }
+                    for (r, c) in &sel_line_fills {
+                        self.primitives.add_fill(*r, *c);
                     }
 
                     if use_stored {

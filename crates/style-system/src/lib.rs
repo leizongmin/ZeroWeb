@@ -405,6 +405,9 @@ impl StyleSystem {
         let has_pseudo_rules = stylesheets.iter().any(|s| stylesheet_has_pseudo_rules(&s.rules));
         // R4262：scroll-button 规则预扫描（S10 同型）——无则跳过每元素按钮探针。
         let has_scroll_button_rules = stylesheets.iter().any(|s| stylesheet_has_scroll_button_rules(&s.rules));
+        // R5054：`::selection` 规则在页扫描——通用元素 owner 伪样式存储的零成本门禁
+        //（无规则页逐元素伪计算跳过；≡ has_scroll_button_rules S10 同型）。
+        let has_selection_rules = stylesheets.iter().any(|s| stylesheet_has_selection_rules(&s.rules));
         // S11：样式键缓存可用性（无属性选择器/伪类/var——计算样式仅依赖键）
         let cache_safe = stylesheet_cache_safe(stylesheets);
         let delay_parent_insert = std::env::var("ZW_STYLE_DELAY_PARENT_INSERT").as_deref() != Ok("0");
@@ -427,6 +430,7 @@ impl StyleSystem {
             quirks_mode,
             has_pseudo_rules,
             has_scroll_button_rules,
+            has_selection_rules,
             cache_safe,
             &mut style_cache,
             delay_parent_insert,
@@ -466,6 +470,9 @@ impl StyleSystem {
         let quirks_mode = doc.quirks_mode();
         let has_pseudo_rules = stylesheets.iter().any(|s| stylesheet_has_pseudo_rules(&s.rules));
         let has_scroll_button_rules = stylesheets.iter().any(|s| stylesheet_has_scroll_button_rules(&s.rules));
+        // R5054：`::selection` 规则在页扫描——通用元素 owner 伪样式存储的零成本门禁
+        //（无规则页逐元素伪计算跳过；≡ has_scroll_button_rules S10 同型）。
+        let has_selection_rules = stylesheets.iter().any(|s| stylesheet_has_selection_rules(&s.rules));
         let cache_safe = stylesheet_cache_safe(stylesheets);
         let delay_parent_insert = std::env::var("ZW_STYLE_DELAY_PARENT_INSERT").as_deref() != Ok("0");
         let mut style_cache: std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle> =
@@ -511,6 +518,7 @@ impl StyleSystem {
                 quirks_mode,
                 has_pseudo_rules,
                 has_scroll_button_rules,
+                has_selection_rules,
                 cache_safe,
                 &mut style_cache,
                 delay_parent_insert,
@@ -558,6 +566,7 @@ impl StyleSystem {
         quirks_mode: QuirksMode,
         has_pseudo_rules: bool,
         has_scroll_button_rules: bool,
+        has_selection_rules: bool,
         cache_safe: bool,
         style_cache: &mut std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle>,
         delay_parent_insert: bool,
@@ -768,35 +777,42 @@ impl StyleSystem {
                 // 脚本化选区（reftest harness 回流，照 R4241 focus 模式）的选中行高亮
                 // 与字形色需经 owner 存储传递（≡ R5051 ::placeholder 模式）。门：文本类
                 // input/textarea（≡ placeholder 宿主类型集再排除 password——paint 侧
-                // bullet 逐字符映射选区歧义）；存储判据 = 作者规则改了 color，或设了
-                // 非 transparent 背景（不能比 elem_style——UA 表单默认值是非继承属性，
-                // 无规则时 pseudo 计算回落 initial 值即与元素 UA 背景相异，误存）。
-                // UA 默认高亮色未实现（FIXME）：无作者规则不存储，paint 无高亮
-                //（零新红——老页面选区渲染零变化）。
+                // bullet 逐字符映射选区歧义）；R5054 扩：页面含 `::selection` 规则
+                //（has_selection_rules 零成本前置门）时通用元素同存——paint_text 已
+                // owner 泛化消费（R5053），display:none/contents 不产盒跳过；存储判据
+                // = 作者规则改了 color，或设了非 transparent 背景（不能比 elem_style
+                // ——UA 表单默认值是非继承属性，无规则时 pseudo 计算回落 initial 值即
+                // 与元素 UA 背景相异，误存）。UA 默认高亮色未实现（FIXME）：无作者
+                // 规则不存储，paint 无高亮（零新红——老页面选区渲染零变化）。
                 let is_selection_host = |kind: &NodeKind| -> bool {
                     let NodeKind::Element(e) = kind else { return false };
                     let tag = e.local_name();
                     if tag == "textarea" {
                         return true;
                     }
-                    if tag != "input" {
+                    if tag == "input" {
+                        let itype = doc.get_attribute(node, "type").unwrap_or_default().to_lowercase();
+                        return !matches!(
+                            itype.as_str(),
+                            "checkbox"
+                                | "radio"
+                                | "color"
+                                | "submit"
+                                | "reset"
+                                | "button"
+                                | "image"
+                                | "hidden"
+                                | "file"
+                                | "range"
+                                | "password"
+                        );
+                    }
+                    // R5054：通用元素（div/span 等）——仅页面含 ::selection 规则时到达
+                    //（has_selection_rules 前置）；无盒形态跳过。
+                    if !has_selection_rules {
                         return false;
                     }
-                    let itype = doc.get_attribute(node, "type").unwrap_or_default().to_lowercase();
-                    !matches!(
-                        itype.as_str(),
-                        "checkbox"
-                            | "radio"
-                            | "color"
-                            | "submit"
-                            | "reset"
-                            | "button"
-                            | "image"
-                            | "hidden"
-                            | "file"
-                            | "range"
-                            | "password"
-                    )
+                    !matches!(elem_style.display, DisplayValue::None | DisplayValue::Contents)
                 };
                 if is_selection_host(&node_data.kind) {
                     let sel = self.compute_element_style_internal(
@@ -1054,6 +1070,7 @@ impl StyleSystem {
                 quirks_mode,
                 has_pseudo_rules,
                 has_scroll_button_rules,
+                has_selection_rules,
                 cache_safe,
                 style_cache,
                 delay_parent_insert,
@@ -2979,6 +2996,31 @@ fn stylesheet_has_scroll_button_rules(rules: &[zero_css_parser::ast::Rule]) -> b
             zero_css_parser::ast::Rule::At(at) => {
                 if let zero_css_parser::ast::AtRuleBody::Block(nested) = &at.body
                     && stylesheet_has_scroll_button_rules(nested)
+                {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// R5054（css-pseudo-4 §highlight-selectors）：规则树是否含 `::selection` 选择器。
+/// 通用元素 owner 伪样式存储的零成本门禁（无规则页不逐元素计算）。
+fn stylesheet_has_selection_rules(rules: &[zero_css_parser::ast::Rule]) -> bool {
+    for rule in rules {
+        match rule {
+            zero_css_parser::ast::Rule::Style(style_rule) => {
+                for selector in &style_rule.selectors {
+                    if matcher::selector_pseudo_element(selector).is_some_and(|p| p == "selection") {
+                        return true;
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::At(at) => {
+                if let zero_css_parser::ast::AtRuleBody::Block(nested) = &at.body
+                    && stylesheet_has_selection_rules(nested)
                 {
                     return true;
                 }

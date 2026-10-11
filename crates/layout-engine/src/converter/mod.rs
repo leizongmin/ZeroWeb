@@ -161,11 +161,32 @@ pub fn computed_style_to_taffy(
                 bottom: taffy::style::LengthPercentageAuto::auto(),
             }
         } else {
-            taffy::geometry::Rect {
-                left: convert_length_to_lpa(&style.left, false, vw, vh),
-                right: convert_length_to_lpa(&style.right, false, vw, vh),
-                top: convert_length_to_lpa(&style.top, false, vw, vh),
-                bottom: convert_length_to_lpa(&style.bottom, false, vw, vh),
+            // R5054（css-position-3 §relative-positioning）：display:inline-block 的
+            // relative inset 不交给 taffy——converter 把 inline-block 映射为 taffy
+            // Block，taffy 对块流直子应用 inset，而后 apply_relative_offsets_inline 又
+            // 按 inline-level 施加 → 双重计数（highlight-z-index-001 top:1.25em 实测
+            // 位移 2×60px）；而 IFC 定位的原子内联（input 等，storeless IFC 坐标覆写
+            // taffy inset）靠该臂唯一生效（撤臂实测 32 案翻红）。统一口径：inline-block
+            // 的 relative 偏移以后处理臂为唯一施加点，此处 inset 全 Auto。display:inline
+            // 保持 taffy 口径不动（R109 split inline 族按 taffy 单次施加 + 臂跳过，
+            // inline-box-002/position-relative-001 实证不可改）；sticky 的 taffy inset
+            // 保留（滚动宿主层消费）。block-level 不变。
+            let inline_level_relative =
+                matches!(style.position, PositionValue::Relative) && matches!(style.display, DisplayValue::InlineBlock);
+            if inline_level_relative {
+                taffy::geometry::Rect {
+                    left: taffy::style::LengthPercentageAuto::auto(),
+                    right: taffy::style::LengthPercentageAuto::auto(),
+                    top: taffy::style::LengthPercentageAuto::auto(),
+                    bottom: taffy::style::LengthPercentageAuto::auto(),
+                }
+            } else {
+                taffy::geometry::Rect {
+                    left: convert_length_to_lpa(&style.left, false, vw, vh),
+                    right: convert_length_to_lpa(&style.right, false, vw, vh),
+                    top: convert_length_to_lpa(&style.top, false, vw, vh),
+                    bottom: convert_length_to_lpa(&style.bottom, false, vw, vh),
+                }
             }
         },
         size: if style.contain.has_size() || style.contain.has_inline_size() {

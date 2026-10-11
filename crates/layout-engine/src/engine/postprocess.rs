@@ -795,11 +795,11 @@ pub(super) fn apply_relative_offsets_inline(root: &mut LayoutBox, styles: &HashM
                 .is_some_and(|s| matches!(s.display, DisplayValue::Inline | DisplayValue::InlineBlock))
         });
         if is_inline_level {
-            // R109 §9.2.1.1：split inline（display:inline，converter 映射为 taffy Block）
-            // 及其匿名块片段共享 inline 的 node_id。taffy 已按 block 单次施加 relative
-            // offset；此处再按 computed-Inline 施加会双重计数（inline-box-002 的
-            // position:relative;top:2in 致片段偏低 2×192px 出视口）。is_r109_split 对
-            // 父盒与片段均为 true，整体跳过让 taffy 单次处理。
+            // R5054：display:inline-block 的 relative 偏移以本臂为唯一施加点——converter
+            // 已对其 Relative 清空 taffy inset（converter 把 inline-block 映射 taffy
+            // Block，taffy 施加 + 本臂再施加 = 双重计数，highlight-z-index-001 位移
+            // 2×60px 实证）。display:inline 保持 taffy 口径：split inline（R109）族按
+            // taffy 单次施加，本臂照旧跳过（inline-box-002 守卫不变）。
             if !root.is_r109_split {
                 let (dx, dy) = resolve_relative_inset(root, styles);
                 if dx != 0.0 || dy != 0.0 {

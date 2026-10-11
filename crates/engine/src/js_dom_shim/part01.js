@@ -87,6 +87,39 @@
     }
     return out;
   };
+  // R5054：DOM Range 选区导出（reftest harness 消费）——`getSelection().addRange()`
+  // 路径（selections.js selectNodeContents 族）落 shim Selection `_ranges`，此处映射
+  // 为 {selector, start, end}（UTF-16 码元，与 `_textSelection` 同形，两 dump 由
+  // harness 拼接回流）。本切片支持：① selectNodeContents(元素)（_mode.kind==='contents'
+  // 且容器为元素）→ 整元素文本 [0, len)；② 同一文本节点切片（两端 nodeType===3 且
+  // 同父选择器）→ 偏移直读。跨容器/元素部分区间不在本切片（跳过——渲染零变化）。
+  // '@handle' 键（detached createElement 元素不在文档不渲染）跳过。
+  globalThis.__zw_dump_dom_selections = function () {
+    var out = [];
+    if (typeof _getSelection !== 'function') return out;
+    var sel = _getSelection();
+    if (!sel || !sel._ranges || !sel._ranges.length) return out;
+    for (var i = 0; i < sel._ranges.length; i++) {
+      var r = sel._ranges[i];
+      var sc = r.startContainer, ec = r.endContainer;
+      if (!sc || !ec) continue;
+      var sSel = sc.__zwSelector || (sc.parentNode && sc.parentNode.__zwSelector);
+      var eSel = ec.__zwSelector || (ec.parentNode && ec.parentNode.__zwSelector);
+      if (!sSel || sSel.charAt(0) === '@' || sSel !== eSel) continue;
+      var s16, e16;
+      if (sc === ec && sc.nodeType === 1 && r._mode && r._mode.kind === 'contents') {
+        var t = '';
+        try { t = String(sc.textContent || ''); } catch (_eTs) {}
+        s16 = 0; e16 = t.length;
+      } else if (sc.nodeType === 3 && ec.nodeType === 3) {
+        s16 = r.startOffset | 0; e16 = r.endOffset | 0;
+      } else {
+        continue;
+      }
+      if (e16 > s16) out.push({ selector: sSel, start: s16, end: e16 });
+    }
+    return out;
+  };
   // HTMLOutputElement（R2846）：value 独立于 textContent（<output> 按 children 渲染非 value；spec：设 .value
   // 不触碰 DOM text）。_outputDefault = 默认值（= 初始 textContent，lazy 捕获一次跨 value 变更稳定）；
   // _outputValue = dirty 后的当前值（key 存在即 dirty）。同 _inputValues 经 `__zw_reset_form_state` 清空。
