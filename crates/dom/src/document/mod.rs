@@ -890,6 +890,14 @@ impl Document {
         })
     }
 
+    /// 获取元素节点指定属性值的零拷贝借用（P11 高频样式匹配路径）。
+    pub fn get_attribute_str(&self, id: NodeId, name: &str) -> Option<&str> {
+        self.nodes.get(id).and_then(|n| match &n.kind {
+            NodeKind::Element(elem) => elem.get_attribute_str(name),
+            _ => None,
+        })
+    }
+
     /// 设置元素节点的属性值。
     pub fn set_attribute(&mut self, id: NodeId, name: &str, value: &str) {
         let old_value = self.get_attribute(id, name);

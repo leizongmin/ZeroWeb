@@ -4,6 +4,7 @@ mod coverage;
 mod coverage_round2;
 mod coverage_round3;
 mod coverage_round4;
+mod index_buckets;
 mod nth_container;
 mod pseudo;
 mod source_order_at_rules;
