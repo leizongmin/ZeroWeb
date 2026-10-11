@@ -9852,12 +9852,23 @@
     } catch (_eHP2) {}
     // 恢复被 R120 段误删的原有定义（@@iterator value iterator——for-of 消费路径 +
     // WPT HTMLCollection-iterator；Symbol.toPrimitive）。
+    // fileapi-compat 残余（2026-10-11）：spec value iterator **每步重读 length**
+    //（HTMLCollection #iterable declaration 的 value iterator 语义——旧实现迭代创建期
+    // 快照恒读 els.length，`Object.defineProperty(list, 'length', {get: throws})` 劫持
+    // 不生效——dom.window「overwritten 'length'」期望 getter 异常原样传播）。
     if (typeof Symbol === 'function' && Symbol.iterator) {
       Object.defineProperty(p, Symbol.iterator, {
         value: function () {
           if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
-          var els = this.__zwHC(), idx = 0;
-          return { next: function () { return idx < els.length ? { value: els[idx++], done: false } : { value: undefined, done: true }; } };
+          var coll = this, idx = 0;
+          return {
+            next: function () {
+              // 每步经 getter 重读 length（劫持/抛错原样传播）；元素走 live 集合。
+              var els = coll.__zwHC();
+              var len = coll.length;
+              return idx < len ? { value: els[idx++], done: false } : { value: undefined, done: true };
+            },
+          };
         },
         writable: true, enumerable: false, configurable: true,
       });

@@ -1,31 +1,34 @@
 # File API 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../fileapi-compat.md](../fileapi-compat.md)
-**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-11（M2-P4 部分收口）
+**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-11（M2-P5 元素代理面收口）
 
 ## 当前状态
 
-**目标 Active（M1 + M2-P1/P3/P4 完成——可执行子集 97.8%，残余 11F 全部跨域）**：
-35 案 499 子测试 **488 Pass**（M1 62.3% → M2-P1 87.2% → M2-P3 93.6% → M2-P4 97.8%，
+**目标 Active（M2 全簇收口——98.8%，残余 6F 全部跨域）**：35 案 499 子测试
+**493 Pass**（M1 62.3% → M2-P1 87.2% → M2-P3 93.6% → M2-P4 97.8% → M2-P5 98.8%，
 单调上行，0 Timeout）。
-M2-P4（10-11）：Blob.bytes() +6、slice [Clamp] 恰半取偶 +6、detached buffer 按 part
-空（根因 postMessage 先 detach 后 clone 的序错）+4、FileList 接口原型化 +4、
-createObjectURL path UUID v4 +1。探索后回退记账：indexed-properties 结构判据不可行
-（上游钉 `{0:'FAIL',length:1}` 普通对象 TypeError），须元素代理品牌。证据：
-[evidence/2026-10-11-m2-p4-scattered.md](evidence/2026-10-11-m2-p4-scattered.md)。
+M2-P5（10-11）：元素代理面专轮——String(el) 改 spec class 串（'body' →
+'[object HTMLBodyElement]'，trap @@toPrimitive/toString 与 toStringTag 同表）+4、
+HTMLCollection value iterator 每步重读 length（劫持 getter 异常传播）+1、
+select.length/索引项（sel+handle 双形态）+ BlobPart sequence 元素代理品牌判据 +1。
+影响面全量复跑：dom 54303P（diff 甄别仅消息文本 + 既有 timestamp flake 族）、
+html-syntax 逐字节恒等、html/selection 恒等、engine lib 2987P/0F。M2-P4 evidence
+一处错误归因已更正（「XHR with a fragment」从未翻绿）。证据：
+[evidence/2026-10-11-m2-p5-element-proxy.md](evidence/2026-10-11-m2-p5-element-proxy.md)。
 
 里程碑台账：M1（10-11）通道 + 甄别 + 基线 62.3%；M2-P1（10-11）构造器 WebIDL
 +124P → 87.2%（endings 簇随构造器收口，上游语料冲突 chromium 仲裁记档见下）；
 M2-P3（10-11）readAs* 状态机 +32P → 93.6%（事件 task 语义，见 learning
 docs/learnings/platform/2026-10/2026-10-11-wpt-eventwatcher-task-dispatch.md）；
-M2-P4（10-11）零散面 +21P → 97.8%。逐轮证据见 evidence/。
+M2-P4（10-11）零散面 +21P → 97.8%；M2-P5（10-11）元素代理面 +5P → 98.8%。
+逐轮证据见 evidence/。
 
-## 缺口清单（残余 11F，全部跨域挂账）
+## 缺口清单（残余 6F，全部跨域挂账）
 
 | 簇 | F | 归属 |
 |---|---|---|
-| 元素代理 String 化（String(el)='body' vs '[object HTMLBodyElement]'、Attr/toStringTag、select.length/索引） | 5 | 元素代理面专轮（js-dom 通道须复跑） |
-| url-with-fetch/xhr（Request 构造/revoke 生命周期、fetch fragment） | 4 | net-api Request 语义 |
+| url-with-fetch/xhr（Request 构造/revoke 生命周期、fetch/xhr fragment） | 5 | net-api Request 语义 |
 | FrozenArray\<MessagePort\>（e.ports 转移后为空） | 1 | webmessaging ports 面 |
 
 ## 排除面（挂账，非待办）
@@ -53,11 +56,14 @@ U+0020~U+007E + ASCII 小写化。chromium headless 实测与 FileAPI 一致
 
 - DC-2 门禁参照 webstorage 先例：分级通过率不再下行两个连续轮次 + DC-3 逐修复
   回归测试（本 goal 以 testharness-fileapi 通道 + evidence JSON 为常驻断言集）+
-  make test 全绿 / make reftest 零回归 / product-smoke 恒值。当前 97.8% 且残余 11F
-  已全部定域挂账——本 goal 可执行面已收口，达标后走 M3 归档评审。
+  make test 全绿 / make reftest 零回归 / product-smoke 恒值。当前 98.8% 且残余 6F
+  全部跨域定域挂账——**DC-2 需下一轮复跑确认不再下行后走 M3 归档评审**
+  （M2-P4 97.8% → M2-P5 98.8% 两轮上行，尚缺一轮不下行确认）。
 - 数字维护：每轮修齐后向 `docs/compat/trends/wpt-suites.csv` 追加行
-  （M2-P4 行 2026-10-11 = active，499/488）。
-- 元素代理专轮动 @@toPrimitive/toString 时：同轮复跑 js-dom + html-syntax 通道
-  （String(el) 现返 tag 名被 R34xx canvas 断言消息消费，移除影响面全语料）。
+  （M2-P5 行 2026-10-11 = active，499/493）。
+- 元素代理 String 形态已改 spec class 串（'[object IfaceName]'）——后续轮次若见
+  dom 族 assert 消息文本 diff（format_value 串化元素）属预期，非回归；uievents
+  通道 M2-P5 轮 test-guard 1200s 超时未获双侧对比，下轮以 TIME_LIMIT=2400 复跑
+  建基线。
 - 事件派发粒度经验：FileReader 族事件必须 task 承载（setTimeout），microtask 链与
   promise_test 完成回调竞速——后续 shim 内新增异步事件接口（XHR 进度、IDB 等）照此先例。

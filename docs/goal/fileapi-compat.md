@@ -1,8 +1,8 @@
 # File API 兼容 — Blob / File / FileReader / objectURL
 
-**版本**: v1.4
-**日期**: 2026-10-08（立项） | 2026-10-11（M1 基线 + M2-P1/P3/P4）
-**状态**: Active（M2 收口——97.8%；残余 11F 全部跨域挂账，达标后 M3 归档评审）
+**版本**: v1.5
+**日期**: 2026-10-08（立项） | 2026-10-11（M1 基线 + M2-P1/P3/P4/P5）
+**状态**: Active（M2 全簇收口——98.8%；残余 6F 跨域挂账，DC-2 下轮确认后 M3 归档）
 **执行模式**: WPT 驱动（上游 FileAPI corpus 为验收标尺）+ 语义/实现修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——文件与二进制面）
 **运行时控制面板**: [fileapi-compat/master.md](fileapi-compat/master.md)
@@ -18,8 +18,11 @@
 > [evidence/2026-10-11-m2-p1-constructor-webidl.md](fileapi-compat/evidence/2026-10-11-m2-p1-constructor-webidl.md)），
 > M2-P3 readAs* 状态机 +32P → 93.6%（簇 53/53，见
 > [evidence/2026-10-11-m2-p3-readas-state-machine.md](fileapi-compat/evidence/2026-10-11-m2-p3-readas-state-machine.md)），
-> M2-P4 零散面 +21P → **97.8%**（残余 11F 全部跨域挂账，见
-> [evidence/2026-10-11-m2-p4-scattered.md](fileapi-compat/evidence/2026-10-11-m2-p4-scattered.md)）。
+> M2-P4 零散面 +21P → 97.8%（残余跨域挂账，见
+> [evidence/2026-10-11-m2-p4-scattered.md](fileapi-compat/evidence/2026-10-11-m2-p4-scattered.md)），
+> M2-P5 元素代理面 +5P → **98.8%**（String(el) spec class 串/HC value iterator/
+> select 索引面，见
+> [evidence/2026-10-11-m2-p5-element-proxy.md](fileapi-compat/evidence/2026-10-11-m2-p5-element-proxy.md)）。
 
 ## Mission
 

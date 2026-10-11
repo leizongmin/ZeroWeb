@@ -24,7 +24,10 @@
    length/item/@@iterator 删除走原型；item/length getter 对无 `_zwFiles` 槽容错）。
 5. **createObjectURL path 改 UUID v4**（+1P）：url-format「Path must end with a valid
    UUID」——crypto.randomUUID 优先，无则 RFC 4122 v4 手工拼装（随机字节缺省回落
-   Math.random）。url-with-xhr「XHR with a fragment」随之翻绿（原 path 形态不符解析）。
+   Math.random）。
+   **更正（M2-P5 轮，2026-10-11）**：原句「url-with-xhr『XHR with a fragment』随之
+   翻绿」不实——该案自 M1 起持续失败（p4/p4b/p4d 三份运行日志均在 Fail 列），UUID
+   修复实际只翻绿 url-format 1 案；+1P 算术不受影响。
 
 ## 探索后回退（记账）
 

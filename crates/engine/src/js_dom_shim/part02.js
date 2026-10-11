@@ -3621,24 +3621,41 @@
         throw new TypeError("Failed to construct 'Blob': The provided value is not of type '(Blob or BufferSource or USVString)'.");
       }
       var iterator = parts[Symbol.iterator];
-      // fileapi-compat P4 记账：平台对象带 indexed properties（HTMLCollection/NamedNodeMap）
-      // 的 sequence 转换须经平台对象**品牌**判定（上游 Blob-constructor 钉
-      // `{0:'FAIL', length:1}` 普通对象仍 TypeError——结构判据不可行），待元素代理面
-      // 专轮（@@toPrimitive/toString 同域）。
+      // fileapi-compat 残余（2026-10-11）：平台对象带 indexed properties 的 sequence
+      // 转换（WebIDL create a sequence from V——平台对象分支）——以**元素代理品牌**
+      // （__zwSelector/__zwHandle）判定：select 等表单控件的 supported property
+      // indices（length + 索引 getter）物化为 sequence（dom.window select 案）。
+      // 普通对象（含 `{0:'FAIL', length:1}`）仍 TypeError——上游 Blob-constructor
+      // non-objects 簇钉死，结构判据不可行、品牌判据可行（专轮定位）。
       if (typeof iterator !== 'function') {
-        throw new TypeError("Failed to construct 'Blob': The provided value is not iterable.");
-      }
-      var step = iterator.call(parts);
-      for (;;) {
-        var r = step.next();
-        if (!r || typeof r !== 'object') {
-          throw new TypeError("Failed to construct 'Blob': Iterator result is not an object.");
+        var seqLen = null;
+        if (parts != null && typeof parts === 'object') {
+          var _zwPlatform = false;
+          try { _zwPlatform = parts.__zwSelector != null || parts.__zwHandle != null; } catch (_eBr) {}
+          if (_zwPlatform) seqLen = parts.length;
         }
-        if (r.done) break;
-        var p = _zw_blob_part(r.value);
-        if (typeof p === 'string') p = _zw_usv_string(p);
-        mat.push(p);
-        size += Blob._partSize(p);
+        if (typeof seqLen !== 'number' || seqLen !== seqLen || seqLen < 0 || seqLen !== Math.floor(seqLen)) {
+          throw new TypeError("Failed to construct 'Blob': The provided value is not iterable.");
+        }
+        for (var si = 0; si < seqLen; si++) {
+          var pi2s = _zw_blob_part(parts[si]);
+          if (typeof pi2s === 'string') pi2s = _zw_usv_string(pi2s);
+          mat.push(pi2s);
+          size += Blob._partSize(pi2s);
+        }
+      } else {
+        var step = iterator.call(parts);
+        for (;;) {
+          var r = step.next();
+          if (!r || typeof r !== 'object') {
+            throw new TypeError("Failed to construct 'Blob': Iterator result is not an object.");
+          }
+          if (r.done) break;
+          var p = _zw_blob_part(r.value);
+          if (typeof p === 'string') p = _zw_usv_string(p);
+          mat.push(p);
+          size += Blob._partSize(p);
+        }
       }
     }
     var native = false;

@@ -1006,6 +1006,12 @@
   // R3024：Attr 构造器占位——_zwMakeAttr 经 Object.create(Attr.prototype) 建真实例，使 `attr instanceof Attr`
   // 为 true（闭合 R3023 限制①；消费者按 nodeType===2 / instanceof Attr 校验属性节点）。
   globalThis.Attr = globalThis.Attr || function Attr() {};
+  // fileapi-compat 残余（2026-10-11）：'[object Attr]' class 串（spec Attr interface
+  // toStringTag）——dom.window「blobParts (attributes)」经 NamedNodeMap 迭代产 Attr
+  // 实例进 BlobPart USVString 转换；无 toStringTag → '[object Object]'（15 字节 ≠ 13）。
+  try {
+    Object.defineProperty(globalThis.Attr.prototype, Symbol.toStringTag, { value: 'Attr', configurable: true });
+  } catch (_eAttrTag) {}
   // R128：Attr.prototype → Node.prototype 链（spec interface-attr : Node；WPT Node-cloneNode
   // "createAttribute" 的 attr.cloneNode() 经 Node.prototype 解析——旧 Attr.prototype 直挂
   // Object.prototype，cloneNode 不可达）。
@@ -14994,6 +15000,29 @@ return e;
   // P1a select：`select.options` 集合（live）——`length`/索引访问/`item(i)` + `selectedIndex`/`value`
   // （与 select 同）。每次访问经 `querySelectorAll(sel + ' option')`（live，反映 dom_html）。
   // 各 option 经 R2664 唯一选择器，`.value`/`.selected` 读对。
+  // fileapi-compat 残余（2026-10-11）：select 的 option 元素列表——sel 经 host 查询
+  //（_selectOptions 同源）；handle（createElement detached select——dom.window select
+  // 案形态）经 JS 侧 handle 子树递归收集 OPTION。返回统一按索引访问的数组形态。
+  function _selectOptionEls(sel, handle) {
+    if (sel) {
+      try { return globalThis.document.querySelectorAll(sel + ' option'); } catch (_eSeq) { return []; }
+    }
+    var out = [];
+    (function walk(h) {
+      var kids = _handleChildren[h] || [];
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (!k) continue;
+        var tag = '';
+        try { tag = String(k.tagName || '').toUpperCase(); } catch (_eTag) {}
+        if (tag === 'OPTION') { out.push(k); continue; }
+        var kh = null;
+        try { kh = k.__zwHandle; } catch (_eH) {}
+        if (kh) walk(kh);
+      }
+    })(handle);
+    return out;
+  }
   function _selectOptions(sel) {
     return new Proxy({}, {
       get: function(_t, prop) {
@@ -15800,8 +15829,13 @@ return e;
         // QuickJS Proxy ToPrimitive 差异（2026-08-08）：V8 对 get(Symbol.toPrimitive)
         // 返回 undefined 时回退默认 valueOf/toString；QuickJS 直接抛 TypeError: toPrimitive
         //（createElement handle proxy 被隐式字符串化——appendChild/observer id 等——
-        // 在 QuickJS 下中断脚本）。显式返回字符串化函数（有 sel 用 sel，否则 handle），
-        // 保证 v8/quickjs 接口行为一致。
+        // 在 QuickJS 下中断脚本）。显式返回字符串化函数保证 v8/quickjs 接口行为一致。
+        // fileapi-compat 残余（2026-10-11）：串化**值**由 tag 名（'body'）改 spec
+        // Object.prototype.toString 形态（'[object HTMLBodyElement]'）——真实 DOM 元素
+        // 无 @@toPrimitive，String(el)/`el.toString()` 恒 '[object <Iface>]'（fileapi
+        // dom.window/File-constructor：new Blob([bodyEl]) 的 BlobPart USVString 转换、
+        // object fileName；R34xx 原 tag 名形态仅 assert 消息构建消费——值语义非契约）。
+        // 函数仍返回（QuickJS 非抛前提保持）。
         // R134（js-dom M4）：`Symbol.unscopables`（spec WebIDL §[Unscopable]——ChildNode
         // 四方法 + prepend/append 在 with(element) 词法域不可见；WPT remove-unscopable：
         // inline handler `with(this){ remove }` 期望裸 remove 解析到 window 变量非元素
@@ -15817,13 +15851,21 @@ return e;
           } catch (_e134u) {}
           return undefined;
         }
+        // spec class 串：'[object <IfaceName>]'（与下方 toStringTag 同表查询；分支内联——
+        // trap 每属性 get 都走，避免 hoisted 闭包按调用分配）。
         if (prop === Symbol.toPrimitive) {
-          return function() { return sel ? sel : String(handle); };
+          return function() {
+            var _tagIf2p = globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface[_realTag(sel, handle).toLowerCase()];
+            return '[object ' + (_tagIf2p || 'HTMLElement') + ']';
+          };
         }
-        // R34xx：显式 toString（_valToString 等直接调 .toString()——canvas WPT 的
-        // assert 消息构建；与 Symbol.toPrimitive 同串化）。
+        // R34xx：显式 toString——`el.toString()` spec 无 own override（落 Object.prototype.
+        // toString → toStringTag）；本 trap 保持函数供给（同 @@toPrimitive 值语义）。
         if (prop === 'toString') {
-          return function() { return sel ? sel : String(handle); };
+          return function() {
+            var _tagIf2t = globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface[_realTag(sel, handle).toLowerCase()];
+            return '[object ' + (_tagIf2t || 'HTMLElement') + ']';
+          };
         }
         // R351：`__zwHandle`/`__zwSelector` 已提到 trap 顶部（见顶部注记）——此处原
         // 分支删除，语义不变（同一返回值，仅执行位置前移）。
@@ -16122,6 +16164,19 @@ return e;
         if (prop === 'options' && !handle && sel && _isTag(sel, 'SELECT')) {
           // P1a select：`select.options` live 集合（length/索引/item + selectedIndex/value）。
           return _selectOptions(sel);
+        }
+        // fileapi-compat 残余（2026-10-11）：HTMLSelectElement.length = options 数
+        //（spec https://html.spec.whatwg.org/multipage/form-elements.html#dom-select-length）
+        // + select[i] 索引项——dom.window「platform object as blobParts (select)」的
+        // indexed-properties sequence 面（length + 索引 getter 经 options）。sel/handle
+        // 双形态（detached createElement select 走 handle 子树收集）。
+        if (prop === 'length' && _realTag(sel, handle) === 'SELECT') {
+          return _selectOptionEls(sel, handle).length;
+        }
+        // 索引分支：数字开头快检先于 _realTag（trap 热路径——每属性 get 都过）。
+        if (typeof prop === 'string' && prop.charCodeAt(0) >= 48 && prop.charCodeAt(0) <= 57
+            && /^(0|[1-9][0-9]*)$/.test(prop) && _realTag(sel, handle) === 'SELECT') {
+          return _selectOptionEls(sel, handle)[Number(prop)];
         }
         if (prop === 'selectedOptions' && !handle && sel && _isTag(sel, 'SELECT')) {
           // P1a select：`select.selectedOptions` 选中 option 数组。
