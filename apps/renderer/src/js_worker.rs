@@ -879,9 +879,11 @@ fn take_snapshot_barrier(
 ) -> (VecDeque<JsWorkerCommand>, VecDeque<JsWorkerCommand>) {
     let seq: VecDeque<JsWorkerCommand> = held.into_iter().chain(cmd_rx.try_iter()).collect();
     // rposition 取最后一个更早快照作切点：其前（含自身）全部进 prefix，其后进 post。
-    // （跨发送方 seq 与通道序理论可交错——异步回调解析线程与主线程并发提交时，
-    // 个别更早快照可落入 post，此时退化为屏障前行为：优先命令越过它先跑，
-    // 不劣于修复前，不为此引入跨线程定序。）
+    // 已入通道的匹配快照不可能落到切点之后（rposition 语义）；真实的退化窗是
+    // 「扫描时尚未入通道的更晚发送快照」——跨发送方 fetch_add→send 间隙使其对本轮
+    // 扫描不可见，优先命令越过它先跑，与屏障前行为一致。反向错位（seq/通道序交错）
+    // 只会把 seq≥prio_seq 的命令过度拉入 prefix，仅扩大屏障窗、FIFO 仍安全。
+    // 两个方向都不劣于屏障前，不为此引入跨线程定序。
     let Some(split) = seq
         .iter()
         .rposition(|c| matches!(c, JsWorkerCommand::SetDomSnapshot { seq, .. } if *seq < prio_seq))
