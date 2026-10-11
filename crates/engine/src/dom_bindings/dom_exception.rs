@@ -34,6 +34,7 @@ fn code_for_name(name: &str) -> u32 {
         "NetworkError" => 19,
         "AbortError" => 20,
         "URLMismatchError" => 21,
+        "QuotaExceededError" => 22,
         "TimeoutError" => 23,
         "InvalidNodeTypeError" => 24,
         "DataCloneError" => 25,
@@ -182,6 +183,7 @@ pub(super) fn build_and_register(scope: &mut v8::PinScope, global: v8::Local<v8:
     register_const("NETWORK_ERR", 19);
     register_const("ABORT_ERR", 20);
     register_const("URL_MISMATCH_ERR", 21);
+    register_const("QUOTA_EXCEEDED_ERR", 22);
     register_const("TIMEOUT_ERR", 23);
     register_const("INVALID_NODE_TYPE_ERR", 24);
     register_const("DATA_CLONE_ERR", 25);

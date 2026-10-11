@@ -1504,6 +1504,29 @@
   DOMException.DATA_CLONE_ERR = 25;
   globalThis.DOMException = globalThis.DOMException || DOMException;
 
+  // QuotaExceededError 接口（spec WebIDL quotaexceedederror）——DOMException 子接口，
+  // 带 requested/quota 附加属性（缺省 null）。webstorage setItem 配额抛它；WPT
+  // assert_throws_quotaexceedederror 校验 e.constructor === self.QuotaExceededError。
+  // 实例属性直接填（不经 DOMException.call——V8 native 构造器 flip 后 globalThis
+  // 优先挂原生构造器，若 QE.prototype 链在原生侧，词法 polyfill 的
+  // `this instanceof DOMException` 判 false 会填替身对象，R384 同族坑）。
+  // https://webidl.spec.whatwg.org/#quotaexceedederror
+  function QuotaExceededError(message, requested, quota) {
+    var self = (this instanceof QuotaExceededError)
+      ? this
+      : Object.create(QuotaExceededError.prototype);
+    self.message = (message === undefined) ? '' : String(message);
+    self.name = 'QuotaExceededError';
+    self.code = 22;
+    self.requested = (requested === undefined) ? null : requested;
+    self.quota = (quota === undefined) ? null : quota;
+    return self;
+  }
+  QuotaExceededError.prototype = Object.create(
+    (typeof globalThis.DOMException === 'function' ? globalThis.DOMException : DOMException).prototype);
+  QuotaExceededError.prototype.constructor = QuotaExceededError;
+  globalThis.QuotaExceededError = globalThis.QuotaExceededError || QuotaExceededError;
+
   // spec DOM `validate`（Name production，`dom-document-createelement`）：判定 String(tag) 后的名
   // 是否合法 createElement 标签名。与 native dom_bindings is_valid_qualified_name 逻辑对齐（A/B 等价）：
   // 空串 → 非法；首字符须 name-start（ASCII 字母 / `_` / `:` / 非 ASCII）；后续须 name-char（name-start

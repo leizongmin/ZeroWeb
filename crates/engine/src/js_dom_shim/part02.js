@@ -8822,18 +8822,20 @@
         "Failed to execute 'setItem' on 'Storage': 2 arguments required, but only " +
         arguments.length + " present.");
     }
-    this.__zwItems[String(key)] = String(value);
+    // 经 named setter（set trap）——方法与 named property 写入共用同一 quota 路径。
+    this[String(key)] = value;
   };
   Storage.prototype.removeItem = function removeItem(key) {
     if (arguments.length === 0) {
       throw new globalThis.TypeError(
         "Failed to execute 'removeItem' on 'Storage': 1 argument required, but only 0 present.");
     }
-    delete this.__zwItems[String(key)];
+    delete this[String(key)];
   };
   Storage.prototype.clear = function clear() {
     var items = this.__zwItems || {};
     for (var k in items) { delete items[k]; }
+    this.__zwBytes = 0;
   };
   Object.defineProperty(Storage.prototype, 'length', {
     get: function() { return Object.keys(this.__zwItems || {}).length; },
@@ -8842,12 +8844,39 @@
   });
   globalThis.Storage = globalThis.Storage || Storage;
 
+  // 配额强制（webstorage-compat M2-P3）：UA 定义值取规范常见 5MiB/origin，且
+  // localStorage/sessionStorage 独立计数（各自 _createStorage 实例各自 target）。
+  // 单项 size = key.length + value.length（UTF-16 code units，Chrome 口径）；超限
+  // 写入不落项并抛 QuotaExceededError。字节计数存 target 内部槽 __zwBytes，
+  // 写入面统一收口 _storageWrite（set trap / defineProperty trap / setItem）。
+  // https://html.spec.whatwg.org/multipage/webstorage.html#storage-set-item-steps
+  var _STORAGE_QUOTA = 5 * 1024 * 1024;
+  function _storageWrite(t, k, v) {
+    var items = t.__zwItems;
+    var old = Object.prototype.hasOwnProperty.call(items, k) ? items[k].length : 0;
+    var delta = k.length + v.length - old;
+    if (delta > 0 && t.__zwBytes + delta > _STORAGE_QUOTA) {
+      throw new (globalThis.QuotaExceededError || globalThis.DOMException || Error)(
+        "Failed to set the '" + k + "' property on 'Storage': The quota has been exceeded.");
+    }
+    items[k] = v;
+    t.__zwBytes += delta;
+  }
+  function _storageRemove(t, k) {
+    var items = t.__zwItems;
+    if (Object.prototype.hasOwnProperty.call(items, k)) {
+      t.__zwBytes -= k.length + items[k].length;
+      delete items[k];
+    }
+  }
+
   function _createStorage() {
     var target = Object.create(globalThis.Storage.prototype);
     target.__zwItems = {};
+    target.__zwBytes = 0;
     return new Proxy(target, {
       get: function(t, p) {
-        if (p === '__zwItems') return t.__zwItems;
+        if (p === '__zwItems' || p === '__zwBytes') return t[p];
         if (typeof p !== 'string') return Reflect.get(t, p);
         if (p in globalThis.Storage.prototype) return Reflect.get(t, p);
         if (Object.prototype.hasOwnProperty.call(t.__zwItems, p)) return t.__zwItems[p];
@@ -8855,10 +8884,12 @@
         return Reflect.get(t, p);
       },
       set: function(t, p, v) {
+        // 内部槽经 get/set trap 特例直达 target（方法 clear 复位计数用）。
+        if (p === '__zwItems' || p === '__zwBytes') { t[p] = v; return true; }
         // Symbol 键走 ordinary own property（respect configurable，Proxy 默认不变式）。
         if (typeof p !== 'string') { t[p] = v; return true; }
         // named setter：string 键一律入存储（含成员同名键——成员不可被覆盖）。
-        t.__zwItems[p] = String(v);
+        _storageWrite(t, p, String(v));
         return true;
       },
       has: function(t, p) {
@@ -8868,7 +8899,7 @@
       },
       deleteProperty: function(t, p) {
         if (typeof p !== 'string') return Reflect.deleteProperty(t, p);
-        delete t.__zwItems[p];
+        _storageRemove(t, p);
         return true;
       },
       defineProperty: function(t, p, desc) {
@@ -8876,15 +8907,16 @@
         // named setter 语义：data descriptor 按 setItem 入存储（writable/enumerable/
         // configurable 标志不参与，named setter 语义即覆盖语义）；非 data descriptor
         // 走 ordinary 路径。
-        if (desc && 'value' in desc) { t.__zwItems[p] = String(desc.value); return true; }
+        if (desc && 'value' in desc) { _storageWrite(t, p, String(desc.value)); return true; }
         return Reflect.defineProperty(t, p, desc);
       },
       ownKeys: function(t) {
         return Object.keys(t.__zwItems).concat(Reflect.ownKeys(t).filter(function(k) {
-          return k !== '__zwItems';
+          return k !== '__zwItems' && k !== '__zwBytes';
         }));
       },
       getOwnPropertyDescriptor: function(t, p) {
+        if (p === '__zwItems' || p === '__zwBytes') return undefined;
         if (typeof p !== 'string') return Reflect.getOwnPropertyDescriptor(t, p);
         // 成员遮蔽 named property：同名时 gOPD 必须报 undefined（交原型链作答）。
         if (p in globalThis.Storage.prototype) return undefined;
