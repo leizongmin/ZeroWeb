@@ -4453,3 +4453,50 @@ mod r5064_tests {
         );
     }
 }
+
+/// R5067（CSS2 §10.1 + §10.3.3）：in-flow 子百分比 margin 相对包含块 content box 宽
+///（非 border-box）——taffy-local block.rs perform_final_layout margin basis 修正。
+#[cfg(test)]
+mod r5067_tests {
+    use super::*;
+    use zero_dom::NodeKind;
+
+    fn layout_box_of(html: &str, id: &str) -> (f32, f32) {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(id: &str, doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        let b = find(id, &doc, &result.root).expect("target found");
+        (b.x, b.width)
+    }
+
+    /// c62-percent-000 同构：父 content 180 + border 3 → 子 margin-left/right 25% =
+    /// 45（content box 口径；非 border-box 的 46.5）→ 子 stretch 宽 90、x = 3+45 = 48。
+    #[test]
+    fn r5067_pct_margin_resolves_against_content_box() {
+        let (x, w) = layout_box_of(
+            r#"<body>
+                <div style="width: 180px; border: 3px solid black; padding: 0;">
+                    <div id="t" style="margin-left: 25%; margin-right: 25%;"></div>
+                </div>
+            </body>"#,
+            "t",
+        );
+        assert!(
+            (x - 45.0).abs() < 0.5 && (w - 90.0).abs() < 0.5,
+            "25% margin 应相对父 content 180（45/侧 → x = 45、子宽 90；border-box 口径为 46.5/87），实际 x={x} w={w}"
+        );
+    }
+}

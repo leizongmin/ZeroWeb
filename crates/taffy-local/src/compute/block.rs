@@ -815,9 +815,18 @@ fn perform_final_layout_on_in_flow_children(
             };
             item.static_position = Point { x, y: y_offset_for_absolute }
         } else {
+            // ZW R5067（CSS2 §10.1 + §10.3.3）：in-flow 子的百分比 margin 相对**包含块
+            // 宽度 = 父 content box 宽**（非 border-box）——旧用 container_outer_width
+            // 把 25% 解析成 46.5（应 45，c62-percent-000 实证 3px/侧偏移露红）。
+            // kill-switch `ZW_PCT_MARGIN_CONTENT_BOX=0` 回退。
+            let margin_basis = if std::env::var("ZW_PCT_MARGIN_CONTENT_BOX").as_deref() == Ok("0") {
+                container_outer_width
+            } else {
+                container_inner_width
+            };
             let item_margin = item
                 .margin
-                .map(|margin| margin.resolve_to_option(container_outer_width, |val, basis| tree.calc(val, basis)));
+                .map(|margin| margin.resolve_to_option(margin_basis, |val, basis| tree.calc(val, basis)));
             let item_non_auto_margin = item_margin.map(|m| m.unwrap_or(0.0));
             let item_non_auto_x_margin_sum = item_non_auto_margin.horizontal_axis_sum();
 
