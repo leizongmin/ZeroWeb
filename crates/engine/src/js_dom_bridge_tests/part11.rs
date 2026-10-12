@@ -557,7 +557,11 @@ fn test_window_post_message_r2983() {
         "targetOrigin '*' / 当前 origin / '/' 均放行（3 次派发）"
     );
 
-    // targetOrigin 不匹配 → 同步 throw SecurityError。
+    // targetOrigin 不匹配 → **静默丢弃非抛**（webmessaging-compat M2-P1 spec 更正：
+    // window post message steps「parsedURL origin 失配 → return」；旧 R2983 同步抛
+    // SecurityError 为 spec 误读——WPT without-ports/015 钉「异步 done 且无消息」，
+    // 真实浏览器一致不抛）。不可解析 targetOrigin → 同步 SyntaxError（spec：无 base
+    // 绝对 URL 解析失败抛；WPT without-ports/001/003 钉 legacy code 12）。
     sandbox
         .execute(
             "globalThis.__threw = 'no'; globalThis.__errName = '';\
@@ -567,13 +571,25 @@ fn test_window_post_message_r2983() {
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__threw)").unwrap().value,
+        "no",
+        "targetOrigin 不匹配 → 静默丢弃（不抛）"
+    );
+    sandbox
+        .execute(
+            "globalThis.__synThrew = 'no'; globalThis.__synName = '';\
+             try { window.postMessage('x', 'http://foo bar'); }\
+             catch (e) { globalThis.__synThrew = 'yes'; globalThis.__synName = (e && e.name) || ''; }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__synThrew)").unwrap().value,
         "yes",
-        "targetOrigin 不匹配 → throw"
+        "targetOrigin 不可解析 → 同步抛"
     );
     assert_eq!(
-        sandbox.execute("String(globalThis.__errName)").unwrap().value,
-        "SecurityError",
-        "targetOrigin 不匹配 → SecurityError"
+        sandbox.execute("String(globalThis.__synName)").unwrap().value,
+        "SyntaxError",
+        "targetOrigin 不可解析 → SyntaxError"
     );
 }
 

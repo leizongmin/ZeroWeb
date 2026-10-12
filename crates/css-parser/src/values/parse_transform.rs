@@ -525,13 +525,13 @@ pub fn parse_individual_scale(value: &str) -> Option<TransformFunction> {
     if parts.is_empty() || parts.len() > 3 {
         return None;
     }
-    let sx: f64 = parts.first()?.parse().ok()?;
+    let sx = parse_scale_number_arg(parts.first()?)?;
     let sy = match parts.get(1) {
-        Some(s) => s.parse::<f64>().ok()?,
+        Some(s) => parse_scale_number_arg(s)?,
         None => sx,
     };
     if let Some(z) = parts.get(2) {
-        z.parse::<f64>().ok()?;
+        parse_scale_number_arg(z)?;
     }
     Some(TransformFunction::Scale(sx, Some(sy)))
 }
@@ -588,7 +588,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             Some(TransformFunction::Rotate(angle))
         }
         "scale" => {
-            let vals = parse_transform_number_args(args)?;
+            let vals = parse_transform_scale_args(args)?;
             if vals.len() > 2 {
                 return None;
             }
@@ -597,7 +597,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             Some(TransformFunction::Scale(sx, sy))
         }
         "scalex" => {
-            let vals = parse_transform_number_args(args)?;
+            let vals = parse_transform_scale_args(args)?;
             if vals.len() != 1 {
                 return None;
             }
@@ -605,7 +605,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             Some(TransformFunction::ScaleX(sx))
         }
         "scaley" => {
-            let vals = parse_transform_number_args(args)?;
+            let vals = parse_transform_scale_args(args)?;
             if vals.len() != 1 {
                 return None;
             }
@@ -665,7 +665,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             if parts.len() != 1 {
                 return None;
             }
-            let sz = parse_transform_number(parts[0])?;
+            let sz = parse_scale_number_arg(parts[0])?;
             Some(TransformFunction::ScaleZ(sz))
         }
         "scale3d" => {
@@ -673,9 +673,9 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             if parts.len() != 3 {
                 return None;
             }
-            let sx = parse_transform_number(parts[0])?;
-            let sy = parse_transform_number(parts[1])?;
-            let sz = parse_transform_number(parts[2])?;
+            let sx = parse_scale_number_arg(parts[0])?;
+            let sy = parse_scale_number_arg(parts[1])?;
+            let sz = parse_scale_number_arg(parts[2])?;
             Some(TransformFunction::Scale3d(sx, sy, sz))
         }
         "rotate3d" => {
@@ -726,9 +726,31 @@ fn parse_transform_number_args(args: &str) -> Option<Vec<f64>> {
     if result.is_empty() { None } else { Some(result) }
 }
 
+/// R5076：scale 族参数序列（逗号/空白分隔，各元为 `<number> | <percentage>`）。
+fn parse_transform_scale_args(args: &str) -> Option<Vec<f64>> {
+    let mut result = Vec::new();
+    for part in split_transform_args(args)? {
+        result.push(parse_scale_number_arg(part)?);
+    }
+    if result.is_empty() { None } else { Some(result) }
+}
+
 fn parse_transform_number(value: &str) -> Option<f64> {
     // https://drafts.csswg.org/css-transforms-1/#transform-functions
     parse_css_number(value).or_else(|| parse_finite_number_math(value))
+}
+
+/// R5076（css-transforms-1 §funcdef-scale 系）：scale 族的参数语法为
+/// `<number> | <percentage>`（% 同义 number/100）。仅 scale/scaleX/Y/Z/3d 与独立
+/// `scale` 属性接受百分比；rotate3d 分量与 matrix 系仍纯 `<number>`
+///（经 [`parse_transform_number`]）。`scale(50%, 75%)` 旧解析失败使整个 transform
+/// 被丢弃（transform-scale-percent-001：应缩至 50×75 居中，旧渲原尺寸不缩放）。
+/// 语法纯收紧：先前无效 → 现解析成功，`Scale(f64)` 语义面零新增变体。
+fn parse_scale_number_arg(value: &str) -> Option<f64> {
+    if let Some(stripped) = value.trim().strip_suffix('%') {
+        return parse_css_number(stripped).map(|n| n / 100.0);
+    }
+    parse_transform_number(value)
 }
 
 /// 按逗号/空白拆分 translate 参数为原始 token（保留 `%` 后缀供 [`parse_len_or_pct`] 判定）。

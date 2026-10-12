@@ -325,6 +325,45 @@ fn extract_css_urls(html: &str) -> Vec<String> {
         .collect()
 }
 
+/// `<link>` 标签的 rel 是否为 stylesheet（含 HTML 属性**无引号**形态）。
+///
+/// R5079：旧判定只认 `rel="stylesheet"` / `rel='stylesheet'` 四种带引号形态——
+/// 上游 WPT 页常用无引号属性语法 `<link rel=stylesheet href=...>`（HTML 属性值
+/// 无引号合法），外部样式表整表丢失 → 页面按无样式布局渲染（backdrop-filter-
+/// backdrop-root-filter 等 filter-effects/resources 案双侧塌缩）。无引号属性值不能
+/// 含空格（"alternate stylesheet" 必带引号），故无引号形态只可能恰为 `stylesheet`。
+fn tag_rel_is_stylesheet(tag_lower: &str) -> bool {
+    if tag_lower.contains("rel=\"stylesheet\"")
+        || tag_lower.contains("rel='stylesheet'")
+        || tag_lower.contains("rel=\"alternate stylesheet\"")
+        || tag_lower.contains("rel='alternate stylesheet'")
+    {
+        return true;
+    }
+    let mut search_from = 0;
+    while let Some(i) = tag_lower[search_from..].find("rel=") {
+        let abs = search_from + i;
+        let after = &tag_lower[abs + 4..];
+        // 前界：`data-rel=` 等连字符属性不得误匹配（rel 前须为非字母/数字/连字符）
+        let prev_ok = abs == 0
+            || !tag_lower
+                .as_bytes()
+                .get(abs - 1)
+                .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'-' || *c == b'_');
+        // 后界：值恰为 `stylesheet` 且后随空白/标签界
+        let next_ok = after.starts_with("stylesheet")
+            && after["stylesheet".len()..]
+                .chars()
+                .next()
+                .is_none_or(|c| c.is_ascii_whitespace() || c == '>' || c == '/');
+        if prev_ok && next_ok {
+            return true;
+        }
+        search_from = abs + 4;
+    }
+    false
+}
+
 pub(super) fn extract_stylesheet_hrefs(html: &str) -> Vec<String> {
     let mut hrefs = Vec::new();
     let mut pos = 0;
@@ -335,11 +374,7 @@ pub(super) fn extract_stylesheet_hrefs(html: &str) -> Vec<String> {
         };
         let tag = &html[tag_start..tag_start + tag_end];
         let tag_lower = tag.to_ascii_lowercase();
-        if !tag_lower.contains("rel=\"stylesheet\"")
-            && !tag_lower.contains("rel='stylesheet'")
-            && !tag_lower.contains("rel=\"alternate stylesheet\"")
-            && !tag_lower.contains("rel='alternate stylesheet'")
-        {
+        if !tag_rel_is_stylesheet(&tag_lower) {
             pos = tag_start + tag_end + 1;
             continue;
         }
@@ -1072,6 +1107,28 @@ pub(super) fn extract_image_sizes(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// R5079：无引号 rel 属性 `<link rel=stylesheet href=...>` 须识别为样式表
+    /// （HTML 属性值无引号合法；上游 WPT 页常用此形态——backdrop-filter-backdrop-root
+    /// 系 resources CSS 双侧整表丢失，页面按无样式布局塌缩）。
+    #[test]
+    fn unquoted_rel_stylesheet_link_is_recognized() {
+        let html = r#"<html><head><link rel=stylesheet  href="resources/a.css"><link rel="stylesheet" href="resources/b.css"><link rel=copyright href="x"></head></html>"#;
+        let hrefs = extract_stylesheet_hrefs(html);
+        assert_eq!(hrefs.len(), 2, "无引号 + 带引号 stylesheet 各取一，rel=copyright 不取");
+        assert_eq!(hrefs[0], "resources/a.css");
+        assert_eq!(hrefs[1], "resources/b.css");
+    }
+
+    /// R5079：无引号形态的边界——`data-rel=stylesheet` / `rel=stylesheets` 不得误匹配。
+    #[test]
+    fn unquoted_rel_boundary_cases_rejected() {
+        let html = r#"<html><head><link data-rel=stylesheet href="resources/a.css"><link rel=stylesheets href="resources/b.css"><link rel=stylesheetx href="resources/c.css"></head></html>"#;
+        assert!(
+            extract_stylesheet_hrefs(html).is_empty(),
+            "非 stylesheet rel（含前缀/后缀污染）不得取 href"
+        );
+    }
 
     /// R1703：`data:image/svg+xml` URI 须在无 base_dir 时也解码（自包含，无文件系统依赖）。
     /// 此前 build_image_cache 在 base_dir=None 时早返回空 cache，致 product-smoke fixture 24

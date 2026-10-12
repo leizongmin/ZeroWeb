@@ -249,6 +249,38 @@ mod tests {
     }
 
     #[test]
+    fn bing_end_to_end_var_resolution() {
+        // bing-t5（C3+C4）：模拟 bing 真实 CSS 变量使用模式——
+        // :root 定义变量 → 其他规则引用 var(--name) → background-image 引用
+        let css = concat!(
+            "html{--mpm:0 0 0 1px rgba(0,0,0,.05),0 2px 4px 1px rgba(0,0,0,.14);",
+            "--lfd:\"Segoe UI\",arial,sans-serif;",
+            "--cda:rgba(0,0,0,.7);",
+            "--bby:normal 400 18px/28px var(--lfd);}",
+            "body{background:rgba(34,34,34,.902);color:var(--cda);font:var(--bby);",
+            "background-image:url(data:image/svg+xml,%3Csvg%3E);}",
+            ".nav{font:var(--dxf,var(--bby));box-shadow:var(--mpm)}"
+        );
+        let props = collect_custom_properties(css);
+        // 变量数（不含嵌套 var(--lfd) 内层引用重复计数）
+        assert!(
+            props.len() >= 4,
+            "应收集至少 5 个自定义属性: {:?}",
+            props.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>()
+        );
+        let out = substitute_vars(css, &props);
+        // --cda 替换
+        assert!(out.contains("color:rgba(0,0,0,.7)"), "color var 替换: {out}");
+        // --mpm 替换
+        assert!(out.contains("box-shadow:0 0 0 1px rgba(0,0,0,.05)"), "mpm 替换: {out}");
+        // background-image 保留（data-URI 不受 var 影响）
+        assert!(
+            out.contains("background-image:url(data:image/svg+xml"),
+            "data-URI bg 保留: {out}"
+        );
+    }
+
+    #[test]
     fn unresolvable_var_kept() {
         let css = ".a { color: var(--unknown); }";
         let props = vec![];

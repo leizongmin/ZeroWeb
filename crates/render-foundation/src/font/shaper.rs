@@ -527,11 +527,35 @@ impl<'a> TextShaper<'a> {
     fn shape_fallback(&self, text: &str, font_size: f32, font_id: FontId) -> Vec<ShapedGlyph> {
         let mut glyphs = Vec::with_capacity(text.len());
 
+        // bing-t5（C3 豆腐块根因修正）：主字体缺字形时遍历 fallback_chain 中的
+        // 字体找替代——`.notdef`（glyph_id=0）即豆腐块。fallback_chain 由
+        // `set_fallback_chain` 设置（system.rs 加载 CJK 字体后注入）。
+        let fallback_ids: Vec<u32> = self.font_loader.fallback_chain().to_vec();
+
         for (cluster, ch) in text.char_indices() {
             let (glyph_id, advance_x) = if let Some(fid) = self.default_font_id {
                 match self.query_glyph_metrics(fid.0, ch, font_size) {
                     Some((gid, adv)) => (gid, adv),
-                    None => (0u32, font_size * 0.6),
+                    None => {
+                        // 主字体缺字形 → 依次尝试 fallback_chain 字体
+                        let mut found: Option<(u32, f32)> = None;
+                        for &fb_fid in &fallback_ids {
+                            if fb_fid == fid.0 {
+                                continue;
+                            }
+                            match self.query_glyph_metrics(fb_fid, ch, font_size) {
+                                Some((gid, adv)) => {
+                                    found = Some((gid, adv));
+                                    break;
+                                }
+                                None => continue,
+                            }
+                        }
+                        match found {
+                            Some((gid, adv)) => (gid, adv),
+                            None => (0u32, font_size * 0.6),
+                        }
+                    }
                 }
             } else {
                 (ch as u32, font_size * 0.6)

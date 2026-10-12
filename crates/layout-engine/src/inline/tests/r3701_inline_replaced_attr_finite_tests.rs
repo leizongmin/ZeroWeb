@@ -24,13 +24,14 @@ fn collect_single_replaced_attr_item(tag: &str, width: &str, height: &str) -> Ve
 
 /// R3701: inline replaced collection consumes HTML dimension attrs directly; non-finite
 /// dimension attrs must not enter inline atomic box sizing.
+/// R5078：iframe 不在本表——无效 attr 视同缺省 → default object size 300×150
+///（下一测试），不再整体回落非 InlineBlock。
 #[test]
 fn r3701_inline_replaced_attr_intrinsic_rejects_non_finite_size() {
     for (tag, width, height) in [
         ("canvas", "Infinity", "100"),
         ("canvas", "100", "Infinity"),
         ("video", "Infinity", "100"),
-        ("iframe", "100", "Infinity"),
         ("embed", "Infinity", "100"),
         ("object", "100", "Infinity"),
         ("applet", "Infinity", "100"),
@@ -44,6 +45,18 @@ fn r3701_inline_replaced_attr_intrinsic_rejects_non_finite_size() {
             );
         }
     }
+}
+
+/// R5078（CSS2 §10.3.2）：iframe 非有限 attr 视同缺省——有效侧（width 100）保留，
+/// 无效侧（height Infinity → 缺省）落 default 150。
+#[test]
+fn r5078_iframe_non_finite_attr_treated_as_absent_uses_default() {
+    let items = collect_single_replaced_attr_item("iframe", "100", "Infinity");
+    let Some(InlineItem::InlineBlock(block)) = items.first() else {
+        panic!("expected iframe 100xInfinity to yield InlineBlock(100x150), got {items:?}");
+    };
+    assert_eq!(block.width, 100.0, "有效 width attr 保留");
+    assert_eq!(block.height, 150.0, "无效 height attr 视同缺省 → default 150");
 }
 
 #[test]

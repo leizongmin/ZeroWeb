@@ -6163,6 +6163,7 @@ fn test_media_source_mse_audio_face_t8s3() {
         globalThis.__t2 = [
           String(MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E,mp4a.40.2"')),
           String(MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"')),
+          String(MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.5"')),
           String(MediaSource.isTypeSupported('audio/mp4; codecs="opus"')),
           String(MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E,vp9"')),
           String(MediaSource.isTypeSupported('audio/mp4'))];"#,
@@ -6170,8 +6171,40 @@ fn test_media_source_mse_audio_face_t8s3() {
     .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__t2.join(',')").unwrap().value,
-        "true,true,false,false,true",
-        "有 mseAppendAudio：bilibili 组合探针翻 true + audio/mp4 aac true + opus/复合 vp9 false + 裸 audio/mp4 true"
+        "true,true,false,false,false,true",
+        "有 mseAppendAudio：bilibili 组合探针翻 true + audio/mp4 AAC-LC(40.2) true + HE-AAC(40.5)/opus/复合 vp9 false（symphonia 只解 LC——解码面不虚报，t8s-4）+ 裸 audio/mp4 true"
+    );
+
+    // ①b 双面设计（t8s-4）：isTypeSupported 解码面 40.5 false（symphonia 只解 LC）；
+    // addSourceBuffer ingest 面受理 40.5（SB 创建成功——nano handler 不因音频 SB
+    // 硬拒中断，音频解码失败走静音降级，视频轨照常）。
+    sandbox.execute(
+        r#"
+        globalThis.__t3 = [
+          String(MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.5"'))];
+        var msD = new MediaSource();
+        globalThis.__msD = msD;
+        var urlD = URL.createObjectURL(msD);
+        msD.addEventListener('sourceopen', function () {
+          try {
+            var asb = msD.addSourceBuffer('audio/mp4; codecs="mp4a.40.5"');
+            globalThis.__asbD = asb ? 'created:' + asb._zwTrackKind : 'null';
+          } catch (e) { globalThis.__asbD = 'threw:' + e.name; }
+        });
+        var vd = document.createElement('video');
+        vd.src = urlD;"#,
+    )
+    .unwrap();
+    sandbox.execute("void 0").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__t3.join(',')").unwrap().value,
+        "false",
+        "isTypeSupported(HE-AAC 40.5) = false（解码面诚实——symphonia 只解 LC）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__asbD").unwrap().value,
+        "created:audio",
+        "addSourceBuffer(HE-AAC 40.5) ingest 面受理（轨章 audio）"
     );
 
     // ② 双 SourceBuffer 轨章 + appendBuffer 路由：video SB 走 mseAppend、audio SB

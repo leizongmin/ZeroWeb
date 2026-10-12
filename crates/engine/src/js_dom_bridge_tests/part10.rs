@@ -2838,7 +2838,103 @@ fn test_response_body_used_redirect_and_blob_formdata_cache_put_support() {
     );
 }
 
+/// t8s-4（Range CORS-safelisted）：fetch spec CORS-safelisted request-header 的
+/// Range 面——单一 simple range（bytes=start-end / start- / -suffix）免 preflight
+///（媒体 CDN 拉取形态）；多段 range 与普通自定义头仍触发 OPTIONS。mock 宿主
+/// 回调记录每次 __zw_fetch 派发的 method 序列。
 #[test]
+fn test_fetch_range_safelisted_preflight_t8s4() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://www.test.com/page".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let methods_seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    {
+        let methods_seen = Arc::clone(&methods_seen);
+        sandbox
+            .register_callback(
+                "__zw_fetch",
+                Box::new(move |args| {
+                    let method = args.get(1).cloned().unwrap_or_default();
+                    methods_seen
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push(method.clone());
+                    // 同步 wire 契约（宿主 __zw_fetch 同步返响应 wire）：预检 200 +
+                    // ACAM/ACAH 覆盖；主请求 200 + ACAO。
+                    if method == "OPTIONS" {
+                        // headersWire = name\u{001e}value 全 \\u{001e} 连接（_headersToWire 同构）。
+                        "__zwfr:200\u{001f}OK\u{001f}Access-Control-Allow-Origin\u{001e}*\u{001e}Access-Control-Allow-Methods\u{001e}GET, OPTIONS\u{001e}Access-Control-Allow-Headers\u{001e}*\u{001f}ok".to_string()
+                    } else {
+                        "__zwfr:200\u{001f}OK\u{001f}Access-Control-Allow-Origin\u{001e}*\u{001f}ok".to_string()
+                    }
+                }),
+            );
+    }
+    let seen_all = |methods_seen: &Arc<Mutex<Vec<String>>>| -> Vec<String> {
+        std::mem::take(&mut *methods_seen.lock().unwrap_or_else(|e| e.into_inner()))
+    };
+
+    // ① 单一 simple range：免 preflight——仅主 GET 一次派发。
+    sandbox
+        .execute("globalThis.__fl = []; var __of2 = globalThis.fetch; globalThis.__ofType = typeof __of2; globalThis.fetch = function (a, b) { globalThis.__fl.push('call:' + a); return __of2.call(this, a, b).then(function (r) { globalThis.__fl.push('res:' + r.status + ':' + r.type); return r; }, function (e) { globalThis.__fl.push('rej:' + e); throw e; }); };")
+        .unwrap();
+    sandbox
+        .execute("globalThis.__st1='pending'; fetch('https://cdn.test/seg.m4s', { headers: { Range: 'bytes=0-1547' } }).then(function (r) { globalThis.__st1 = 'ok:' + r.status + ':' + r.type; }, function (e) { globalThis.__st1 = 'err:' + e; }); void 0;")
+        .unwrap();
+    let seen1 = seen_all(&methods_seen);
+    assert_eq!(
+        seen1,
+        vec!["GET".to_string()],
+        "simple range → 零 OPTIONS（safelisted 免预检）(st1={})",
+        sandbox.execute("globalThis.__st1").unwrap().value
+    );
+
+    // ② 多段 range：非 safelisted → OPTIONS 先行。
+    sandbox
+        .execute("globalThis.__st2='pending'; fetch('https://cdn.test/seg.m4s', { headers: { Range: 'bytes=0-1,2-3' } }).then(function (r) { globalThis.__st2 = 'ok:' + r.status + ':' + r.type; }, function (e) { globalThis.__st2 = 'err:' + e + ':' + (e && e.stack || '').slice(0, 300); }); void 0;")
+        .unwrap();
+    let seen2 = seen_all(&methods_seen);
+    assert_eq!(
+        seen2,
+        vec!["OPTIONS".to_string(), "GET".to_string()],
+        "多段 range → preflight OPTIONS 先行"
+    );
+
+    // ②b suffix range（bytes=-500）：spec 明言不 safelist → preflight OPTIONS
+    // 先行（t8s-4 返修 D1 收窄的回归守卫；新 origin 避开 ② 的 preflight cache）。
+    sandbox
+        .execute("fetch('https://suffix.test/seg.m4s', { headers: { Range: 'bytes=-500' } }).then(function () {}, function () {}); void 0;")
+        .unwrap();
+    let seen2b = seen_all(&methods_seen);
+    assert_eq!(
+        seen2b,
+        vec!["OPTIONS".to_string(), "GET".to_string()],
+        "suffix range → preflight（spec 拒收 suffix safelist 面）"
+    );
+
+    // ③ 普通自定义头：OPTIONS 先行（既有面回归守卫；新 origin——②的 preflight
+    // cache 对同 origin 合法命中会跳过 OPTIONS）。
+    sandbox
+        .execute("fetch('https://other.test/api', { headers: { 'X-Custom': 'v' } }).then(function () {}, function () {}); void 0;")
+        .unwrap();
+    let seen3 = seen_all(&methods_seen);
+    assert_eq!(
+        seen3,
+        vec!["OPTIONS".to_string(), "GET".to_string()],
+        "普通自定义头 → preflight（既有面守卫）"
+    );
+}
 fn test_request_null_body_text_does_not_mark_body_used() {
     // https://fetch.spec.whatwg.org/#body-mixin
     // WPT Cache.add reads a body-less GET Request; null body consumption must

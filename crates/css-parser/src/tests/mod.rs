@@ -95,6 +95,8 @@ mod parser_coverage_extra;
 mod parser_coverage_final;
 mod parser_coverage_simple;
 mod property_at_rule;
+/// R5076 scale 族百分比参数解析测试。
+mod r5076_scale_percent_tests;
 mod review_r3344;
 mod tests_1;
 mod tests_10;

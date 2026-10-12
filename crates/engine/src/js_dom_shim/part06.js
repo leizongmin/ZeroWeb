@@ -4466,28 +4466,78 @@
     return _dispatchWithBubble(_elKey('html', null), 'html', null, event, 'win');
   };
   // R2983 `window.postMessage(message, targetOrigin [, transfer])`——canonical 跨窗口消息 API。
-  // 此前缺（MessagePort/MessageChannel/BroadcastChannel 既有，但 window.postMessage 本身零定义）→
-  // `window.postMessage({x:1}, '*')` + `addEventListener('message')` 同窗口异步消息模式（routing /
-  // polyfill / iframe-bridge mock / 测试）抛 TypeError。headless 单窗口：经 structuredClone 深拷贝 payload +
-  // queueMicrotask **异步**派发 MessageEvent 到自身（spec 异步语义），触发 window 'message' listener + onmessage。
-  // targetOrigin 安全校验（spec：不匹配 → 同步 throw SecurityError）：'*' / '/'（同源简写）/ 当前 origin 放行；
-  // 其余 origin 同步抛。缺省（undefined/null）按 '*' 放行（lenient，兼容 `postMessage(msg)` 简写）。
-  globalThis.postMessage = function (message, targetOrigin, _transfer) {
+  // webmessaging-compat M2-P1（2026-10-12）spec 化重写
+  //（https://html.spec.whatwg.org/multipage/web-messaging.html#dom-window-postmessage，
+  // window post message steps）：
+  // ① message 必参——零参 TypeError（without-ports/009 钉；旧 lenient 零参放行不符 spec）。
+  // ② WebIDL 重载甄别（区分第二参）：string → legacy 形态（targetOrigin, transfer 序列）；
+  //    其余（对象/null/undefined）→ options dictionary `WindowPostMessageOptions
+  //    {targetOrigin = "/", transfer = []}`——成员 undefined 按 WebIDL 视作未给（回落默认）。
+  //    字符串外的原始值（42 等）→ dictionary 转换 TypeError（with-options/null-transfer 同面）。
+  // ③ targetOrigin 步骤：'/' → 本窗口 origin 简写；'*' → 放行；其余 **无 base 绝对 URL
+  //    解析**——失败 → SyntaxError DOMException（without-ports/001/003 钉 'http://foo bar'
+  //    与 'example.org'；旧版抛 SecurityError 不符）；解析成功按 serialized origin 比较，
+  //    **失配 → 静默丢弃（return，非抛）**（without-ports/015 钉异步 done 而非异常；旧版
+  //    同步 SecurityError 为 spec 误读，本轮更正）；'https://wpt.test//' 尾斜杠形态按
+  //    URL 归一后同源放行（without-ports/002/006 钉）。
+  // ④ transfer：sequence<object> WebIDL 转换（part05 ①）→ port 转移克隆（②）→ 非 port
+  //    transferable detach（③）；接收侧 e.ports 为 frozen 数组（part05 MessageEvent 构造器）。
+  // ⑤ 消息 structuredClone 深拷贝 + task 承载异步派发 MessageEvent 到自身（④ 工厂：
+  //    trusted 印记 + undefined data 直置——without-ports/010 钉 e.data === undefined）。
+  //    headless 单窗口：目标窗口即自身（跨 document 投递挂 navigation-compat M3 门槛）。
+  globalThis.postMessage = function (message, targetOriginOrOptions, transferArg) {
     var self = globalThis;
-    var origin = (self.location && self.location.origin) || '';
-    var t = (targetOrigin == null) ? '*' : String(targetOrigin);
-    if (t !== '*' && t !== '/' && t !== origin) {
-      throw new DOMException(
-        "Failed to execute 'postMessage' on 'Window': The target origin provided ('" + t + "') does not match the recipient window's origin ('" + origin + "').",
-        'SecurityError'
-      );
+    if (arguments.length < 1) {
+      throw new TypeError("Failed to execute 'postMessage' on 'Window': 1 argument required, but only 0 present.");
     }
-    var payload = (typeof structuredClone === 'function') ? structuredClone(message) : message;
-    queueMicrotask(function () {
+    var origin = (self.location && self.location.origin) || '';
+    var targetOriginSpec, transferList;
+    if (typeof targetOriginOrOptions === 'string') {
+      targetOriginSpec = targetOriginOrOptions;
+      transferList = _zwConvertTransferSequence(transferArg);
+    } else {
+      var opts = targetOriginOrOptions;
+      if (opts === null || opts === undefined) {
+        opts = {};
+      } else if (typeof opts !== 'object') {
+        throw new TypeError("Failed to execute 'postMessage' on 'Window': The provided value cannot be converted to a dictionary.");
+      }
+      targetOriginSpec = (opts.targetOrigin === undefined) ? '/' : opts.targetOrigin;
+      transferList = _zwConvertTransferSequence(opts.transfer === undefined ? undefined : opts.transfer);
+    }
+    if (targetOriginSpec === '/') {
+      targetOriginSpec = origin;
+    }
+    if (targetOriginSpec !== '*') {
+      var parsedOrigin;
       try {
-        self.dispatchEvent(new MessageEvent('message', { data: payload, origin: origin, source: self }));
+        parsedOrigin = new URL(String(targetOriginSpec)).origin;
+      } catch (_eUrl) {
+        parsedOrigin = null;
+      }
+      if (parsedOrigin === null) {
+        // R9/R382 wrong-global 先例：globalThis 构造器优先（testharness 断言按页面全局
+        // DOMException 甄别——「threw an exception from the wrong global」）。
+        var _zwDE = globalThis.DOMException || DOMException;
+        throw new _zwDE(
+          "Failed to execute 'postMessage' on 'Window': The target origin provided ('" + targetOriginSpec + "') is not a valid URL.",
+          'SyntaxError'
+        );
+      }
+      if (parsedOrigin !== origin) {
+        return; // spec：失配静默丢弃（不派发、不抛）。
+      }
+    }
+    // serialize-with-transfer 序（fileapi-compat P4 先例）：先克隆消息，后消费 transfer 列表。
+    var payload = (typeof structuredClone === 'function') ? structuredClone(message) : message;
+    var ports = Object.freeze(_zwConsumeTransferList(transferList, null));
+    _zwDetachTransferables(transferList);
+    var ev = _zwMakeMessageEvent('message', { data: payload, origin: origin, source: self, ports: ports }, payload);
+    setTimeout(function () {
+      try {
+        self.dispatchEvent(ev);
       } catch (_e) {}
-    });
+    }, 0);
   };
   // R376（js-dom M4/DC-3）：**window 级 attachEvent/detachEvent 移除**——spec 已从
   // Window 删除（IE 专有遗留；WPT dom/historical "Window member must be removed:
@@ -8908,8 +8958,9 @@
         if (msObj._zwUrl && typeof globalThis.__zwVideoBridge === 'object'
             && typeof globalThis.__zwVideoBridge.mseAppend === 'function') {
           // t8s-3 轨路由：video SB → 视频流；audio SB → 独立音频流；audio SB
-          // 遇门面缺席（不可达面——addSourceBuffer 同源守卫已挡）走失败面，
-          // 绝不把音频字节写入视频流（能力诚实）。
+          // 遇 mseAppendAudio 门面缺席（decode-h264 关闭构建——addSourceBuffer
+          // 桥门放行的唯一形态）走失败面，绝不把音频字节写入视频流（能力诚实）；
+          // 该形态下 SB 创建成功而 append 恒败（error 事件面），非「不可达」。
           if (self._zwTrackKind === 'audio') {
             ok = typeof globalThis.__zwVideoBridge.mseAppendAudio === 'function'
               && globalThis.__zwVideoBridge.mseAppendAudio(msObj._zwUrl, b64) === true;
@@ -8960,8 +9011,9 @@
   };
   globalThis.MediaSource.prototype = Object.create(_zwMseEt.prototype);
   // spec isTypeSupported 真值表不虚报：video/mp4 + H.264（avc1/avc3）恒真值；
-  // audio/mp4 + AAC 与组合串音频腿以「音频 append 流在位」（mseAppendAudio
-  // 门面 = 音频解码链可用，t8s-3）为支持面真值——门面缺席恒 false（能力诚实）。
+  // audio/mp4 + AAC-LC（mp4a.40.2 / 'aac' 别名）与组合串音频腿以「音频 append
+  // 流在位」（mseAppendAudio 门面 = 音频解码链可用，t8s-3）为支持面真值——门面
+  // 缺席恒 false（能力诚实）；HE-AAC/SBR（40.5）等非 LC 面恒 false（解码面不虚报，t8s-4）。
   // 其他容器恒 false；容器无 codecs 查询按 Chromium 口径 true（载荷不可解时
   // appendBuffer error 事件如实报）。decode-h264 feature 关闭（桥缺失）→ 恒 false。
   // https://www.w3.org/TR/media-source/#dom-mediasource-istypesupported
@@ -8985,8 +9037,10 @@
     for (var i = 0; i < parts.length; i++) {
       var c = parts[i].trim();
       if (!c) continue;
-      // AAC 家族：mp4a.40.x（MPEG-4 Audio，AAC-LC 主形态）与 'aac' 别名。
-      var isAac = audioOk && /^(mp4a\.40|aac)\b/.test(c);
+      // 音频解码面真值：symphonia aac 仅 AAC-LC（mp4a.40.2；aac/mod.rs 显式拒
+      // Main/SSR/LTP/SBR——40.5 HE-AAC append 必 "aac too complex" 失败）→
+      // 只宣称 40.2 与 'aac' 别名（t8s-4 诚实面收窄，40.5 等恒 false）。
+      var isAac = audioOk && /^(mp4a\.40\.2|aac)\b/.test(c);
       if (isAudio) {
         if (!isAac) return false;
       } else if (!/^avc[13]\./.test(c) && !isAac) {
@@ -9002,7 +9056,35 @@
     // spec addSourceBuffer：type 不支持 → NotSupportedError；readyState 非 open →
     // InvalidStateError。
     // https://www.w3.org/TR/media-source/#dom-mediasource-addsourcebuffer
-    if (!globalThis.MediaSource.isTypeSupported(t)) {
+    // 受理面（ingest face）与 isTypeSupported 的解码面**解耦**（UA 纬度——Chrome 同
+    // 款：SB 创建按容器/家族受理，解码失败走 error/静音降级）：音频家族 mp4a.40.x/aac
+    // 全受理（HE-AAC 40.5 创建成功但解码不支持 → 音频静音降级，视频轨照常——t8s-4
+    // bilibili 未登录默认音轨 30216=40.5，硬拒使 nano sourceopen handler 中断、
+    // 双轨 append 全不发生 → 起播死循环）。视频面 avc1/avc3 不变。
+    // 桥存在门（feature-detect 单点，t8n 契约）：无 MSE 通路 → NotSupportedError。
+    if (typeof globalThis.__zwVideoBridge !== 'object'
+        || typeof globalThis.__zwVideoBridge.mseCreate !== 'function') {
+      _zwMseThrow('NotSupportedError', 'unsupported source buffer type: ' + t);
+    }
+    var _tl = t.trim().toLowerCase();
+    var _m = /codecs\s*=\s*"([^"]*)"/.exec(_tl) || /codecs\s*=\s*'([^']*)'/.exec(_tl)
+      || /codecs\s*=\s*([^;]+)/.exec(_tl);
+    var _accepted = false;
+    if (_tl.indexOf('video/mp4') === 0 || _tl.indexOf('audio/mp4') === 0) {
+      if (!_m) _accepted = true;
+      else {
+        var _parts = _m[1].split(',');
+        _accepted = true;
+        for (var _pi = 0; _pi < _parts.length; _pi++) {
+          var _pc = _parts[_pi].trim();
+          if (!_pc) continue;
+          if (/^avc[13]\./.test(_pc) || /^(mp4a\.40|aac)\b/.test(_pc)) continue;
+          _accepted = false;
+          break;
+        }
+      }
+    }
+    if (!_accepted) {
       _zwMseThrow('NotSupportedError', 'unsupported source buffer type: ' + t);
     }
     if (this.readyState !== 'open') {

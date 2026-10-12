@@ -575,7 +575,6 @@ impl AsyncPageLoad {
             // bing-t5（C3+C4 根因）：CSS Custom Properties var() 替换——
             // 在进入渲染前做文本级替换（collect --name: value → substitute var(--name, fallback)）。
             let css_for_render = substitute_css_vars_text(&self.css);
-            self.render_session = Some(BudgetedRenderSession::new(html, css_for_render));
         }
 
         let session = self.render_session.as_mut().expect("session");
@@ -1373,7 +1372,7 @@ fn substitute_css_vars_text(css: &str) -> String {
     substitute_var_refs(css, &props)
 }
 
-fn collect_custom_props(css: &str) -> Vec<(String, String)> {
+pub(crate) fn collect_custom_props(css: &str) -> Vec<(String, String)> {
     let mut map: Vec<(String, String)> = Vec::new();
     let bytes = css.as_bytes();
     let len = bytes.len();

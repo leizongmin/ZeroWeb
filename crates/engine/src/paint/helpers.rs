@@ -1520,7 +1520,15 @@ pub fn gradient_to_primitive_with_font_size(
     match gradient {
         GradientValue::Linear(lg) => {
             let kind = linear_direction_to_kind(&lg.direction, rect);
-            let stops = convert_color_stops_with_font_size(&lg.stops, element_color, font_size_px);
+            // R5077（css-images-1 §3.2）：色标绝对长度（px）位置定义在渐变线上，
+            // 须按渐变线长归一到 [0,1]（渲染侧 t = 线上投影参数）。旧实现 raw px
+            // 直接入 offset——t 恒 ≤ 首个色标 offset，整条渐变渲染为首色标纯色
+            //（clear-on-replaced-element：90px 高 red/green 硬停带渲全红）。
+            let line_length = match kind {
+                GradientKind::Linear { x0, y0, x1, y1 } => ((x1 - x0).hypot(y1 - y0)).max(0.0),
+                _ => 0.0,
+            };
+            let stops = convert_color_stops_with_font_size(&lg.stops, element_color, font_size_px, line_length);
             Some(GradientPrimitive {
                 interpolation: map_interpolation(lg.interpolation),
                 rect: *rect,
@@ -1558,7 +1566,9 @@ pub fn gradient_to_primitive_with_font_size(
                 }
                 RadialSize::Length(lv) => resolve_gradient_length(lv, font_size_px),
             };
-            let stops = convert_color_stops_with_font_size(&rg.stops, element_color, font_size_px);
+            // R5077：径向色标绝对长度相对终止形状半径（outer）归一。
+            let line_length = outer.max(0.0);
+            let stops = convert_color_stops_with_font_size(&rg.stops, element_color, font_size_px, line_length);
             Some(GradientPrimitive {
                 interpolation: map_interpolation(rg.interpolation),
                 rect: *rect,
@@ -1577,7 +1587,8 @@ pub fn gradient_to_primitive_with_font_size(
             let cx = rect.left() + resolve_position_with_font_size(&cg.position_x, w, font_size_px);
             let cy = rect.top() + resolve_position_with_font_size(&cg.position_y, h, font_size_px);
             let start_angle = cg.from_angle.to_radians() as f32;
-            let stops = convert_color_stops_with_font_size(&cg.stops, element_color, font_size_px);
+            // R5077：conic 色标位置为 angle/%（解析期已归一），无绝对长度——不归一。
+            let stops = convert_color_stops_with_font_size(&cg.stops, element_color, font_size_px, 0.0);
             Some(GradientPrimitive {
                 interpolation: map_interpolation(cg.interpolation),
                 rect: *rect,
@@ -1711,11 +1722,17 @@ fn convert_color_stops_with_font_size(
     stops: &[GradientColorStop],
     element_color: &ColorValue,
     font_size_px: f32,
+    // R5077：渐变线长（linear）/终止形状半径（radial）；0 = 不归一（conic 等无绝对
+    // 长度色标）。绝对长度色标除以它归一到 [0,1]。
+    line_length: f32,
 ) -> Vec<GradientStop> {
     convert_color_stops_with_resolver(stops, element_color, |lv| match lv {
         LengthValue::Percentage(p) => *p as f32 / 100.0,
         LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => 0.0,
-        other => resolve_gradient_length(other, font_size_px),
+        other => {
+            let px = resolve_gradient_length(other, font_size_px);
+            if line_length > 1e-3 { px / line_length } else { px }
+        }
     })
 }
 
@@ -3267,6 +3284,60 @@ mod tests {
         } else {
             panic!("expected linear gradient");
         }
+    }
+
+    /// R5077（css-images-1 §3.2）：px 色标按渐变线长归一到 [0,1]——90px 高
+    /// to bottom 渐变的 `red 30px` → offset 1/3。旧实现 raw px 直入 offset，
+    /// 渲染 t∈[0,1] 恒 ≤ 首色标 → 整条渐变渲首色标纯色。
+    /// driving: css/CSS2/floats-clear clear-on-replaced-element（90px red/green 硬停带）。
+    #[test]
+    fn test_r5077_px_stops_normalize_to_gradient_line() {
+        let grad = GradientValue::Linear(LinearGradient {
+            interpolation: Default::default(),
+            direction: GradientDirection::ToBottom,
+            stops: vec![
+                GradientColorStop {
+                    color: ColorValue::Rgba(255, 0, 0, 255),
+                    position: Some(LengthValue::Px(30.0)),
+                },
+                GradientColorStop {
+                    color: ColorValue::Rgba(0, 128, 0, 255),
+                    position: Some(LengthValue::Px(60.0)),
+                },
+            ],
+            repeating: false,
+        });
+        let rect = Rect::new(0.0, 0.0, 90.0, 90.0);
+        let prim = gradient_to_primitive(&grad, &rect, &ColorValue::Rgba(0, 0, 0, 255))
+            .expect("linear gradient should convert");
+        assert_eq!(prim.stops.len(), 2);
+        assert!(
+            (prim.stops[0].offset - 30.0 / 90.0).abs() < 1e-4,
+            "px 30 在 90px 渐变线上应归一为 1/3，实际 {}",
+            prim.stops[0].offset
+        );
+        assert!(
+            (prim.stops[1].offset - 60.0 / 90.0).abs() < 1e-4,
+            "px 60 在 90px 渐变线上应归一为 2/3，实际 {}",
+            prim.stops[1].offset
+        );
+        // 百分比色标不参与归一（语义已相对线长）。
+        let grad_pct = GradientValue::Linear(LinearGradient {
+            interpolation: Default::default(),
+            direction: GradientDirection::ToBottom,
+            stops: vec![GradientColorStop {
+                color: ColorValue::Rgba(255, 0, 0, 255),
+                position: Some(LengthValue::Percentage(50.0)),
+            }],
+            repeating: false,
+        });
+        let prim_pct = gradient_to_primitive(&grad_pct, &rect, &ColorValue::Rgba(0, 0, 0, 255))
+            .expect("pct gradient should convert");
+        assert!(
+            (prim_pct.stops[0].offset - 0.5).abs() < 1e-4,
+            "百分比色标保持 p/100，实际 {}",
+            prim_pct.stops[0].offset
+        );
     }
 
     #[test]

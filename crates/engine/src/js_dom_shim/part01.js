@@ -2198,8 +2198,10 @@
   // ACRH 覆盖检查；content-type 走 essence safelist 判定，亦不入）。
   // net-api M4-S26：CORS 变量头名单（fetch spec CORS-safelisted request-header 值面）——
   // accept/accept-language/content-language/content-type **值条件安全名单**（值破格即
-  // 入列——长度 <128、无 forbidden 字节、accept 无 `"`、CT essence 三形），range 恒入列
-  // （强制 preflight 面），accept-language/content-language 2024 spec 移出安全名单恒入列；
+  // 入列——长度 <128、无 forbidden 字节、accept 无 `"`、CT essence 三形），range 为
+  // 值条件 safelist（单一 simple range `bytes=\d+-\d*` 免预检；suffix/多段/空白/畸形
+  // 入列——t8s-4 修正：旧「恒入列」使媒体 CDN Range 拉取误预检），accept-language/
+  // content-language 2024 spec 移出安全名单恒入列；
   // origin/content-length/access-control-*/referer/last-event-id/user-agent 恒跳过。
   // preflight 触发与 ACRH/ACAH 覆盖检查共用本名单（单一事实源）。
   function _zwPreNamesOf(headersWire) {
@@ -2231,7 +2233,21 @@
         }
         continue;
       }
-      push(ln); // accept-language/content-language/range/其余自定义头
+      if (ln === 'range') {
+        // fetch spec CORS-safelisted request-header（2022+ Range 面）：值经
+        // 「parse a single range header value(allowWhitespace=false)」成功且
+        // start 非空才 safelist——`bytes=\d+-\d*`（无空白、字面量大小写敏感、
+        // start 必填）；suffix（`bytes=-500`，spec 注释明言不 safelist——浏览器
+        // 历史上不发）、多段、空白、畸形仍触发 preflight。Chrome/FF 同面——
+        // 媒体 CDN 拉取（MSE/DASH init+media segment 的 Range 请求）从不预检；
+        // 误预检使按 Origin 条件回 ACAO 的 CDN 对 OPTIONS 拒答 → 全候选
+        // Failed to fetch（t8s-4 bilibili 起播断链面）。
+        // https://fetch.spec.whatwg.org/#cors-safelisted-request-header
+        if (/^bytes=\d+-\d*$/.test(val)) continue;
+        push(ln);
+        continue;
+      }
+      push(ln); // accept-language/content-language/其余自定义头
     }
     return names;
   }
@@ -3822,9 +3838,18 @@
   };
 
   // js-dom M4 R107：body/frameset 的 Window-forwarding event handler 名集（spec HTML
-  // handler-body-attributes / handler-frameset-attributes——onblur/onerror/onfocus/
-  // onload/onscroll/onresize 的 IDL 与 content attribute 均转发到 window）。
-  globalThis._ZW_BODY_FORWARD_ON = { blur: 1, error: 1, focus: 1, load: 1, scroll: 1, resize: 1 };
+  // handler-body-attributes / handler-frameset-attributes——IDL 与 content attribute 均转发
+  // 到 window）。webmessaging-compat M2-P2（2026-10-12）补齐 spec WindowEventHandlers 全集
+  //（onafterprint/onbeforeprint/onbeforeunload/onhashchange/onlanguagechange/onmessage/
+  // onmessageerror/onoffline/ononline/onpagehide/onpageshow/onpopstate/onrejectionhandled/
+  // onstorage/onunhandledrejection/onunload——messageerror.html 钉 body onmessageerror
+  // 内容属性经 window 派发触发）。
+  globalThis._ZW_BODY_FORWARD_ON = {
+    blur: 1, error: 1, focus: 1, load: 1, scroll: 1, resize: 1,
+    afterprint: 1, beforeprint: 1, beforeunload: 1, hashchange: 1, languagechange: 1,
+    message: 1, messageerror: 1, offline: 1, online: 1, pagehide: 1, pageshow: 1,
+    popstate: 1, rejectionhandled: 1, storage: 1, unhandledrejection: 1, unload: 1,
+  };
   // js-dom M4 R113：prefixed animation/transition 事件 handler 的「event handler event type」
   // 映射（spec HTML webappapis「event handlers on elements…」表）——`onwebkitanimationend`
   // 等 handler IDL 名全小写，但其 event type 是 camelCase（webkitAnimationEnd）。on* setter

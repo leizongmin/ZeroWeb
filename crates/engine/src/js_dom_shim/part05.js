@@ -14361,7 +14361,7 @@
     ev.origin = (options && options.origin) || '';
     ev.lastEventId = (options && options.lastEventId) || '';
     ev.source = (options && options.source) || null;
-    ev.ports = options && options.ports ? Array.prototype.slice.call(options.ports) : [];
+    ev.ports = Object.freeze(options && options.ports ? Array.prototype.slice.call(options.ports) : []); // spec frozen array（ports_readonly_array 钉 push 抛）
     return ev;
   }
   MessageEvent.prototype = Object.create(Event.prototype);
@@ -14399,16 +14399,112 @@
   PromiseRejectionEvent.prototype.constructor = PromiseRejectionEvent;
   globalThis.PromiseRejectionEvent = globalThis.PromiseRejectionEvent || PromiseRejectionEvent;
 
+  // webmessaging-compat M2-P1（2026-10-12）：window/MessagePort 两发送面共享的 WebIDL
+  // transfer 面Helpers（https://html.spec.whatwg.org/multipage/web-messaging.html#web-messaging）。
+  // ① sequence<object> 转换（WebIDL es-sequence）：undefined → []（缺省）；null / 非对象 /
+  //    非迭代且非 old-style（length 数字 + item 函数）→ TypeError——with-ports/023（null）、
+  //    025（1）、026（{length:1} 无 item）、027（通道对象）钉死四形态。
+  function _zwConvertTransferSequence(value) {
+    if (value === undefined) return [];
+    if (value === null || typeof value !== 'object') {
+      throw new TypeError("Failed to execute 'postMessage': The provided value cannot be converted to a sequence.");
+    }
+    var out = [];
+    var symIt = (typeof Symbol === 'function' && Symbol.iterator) ? value[Symbol.iterator] : null;
+    if (typeof symIt === 'function') {
+      try {
+        var it = symIt.call(value);
+        while (true) {
+          var step = it.next();
+          if (step.done) break;
+          out.push(step.value);
+        }
+      } catch (_eSeq) {
+        throw new TypeError("Failed to execute 'postMessage': The provided value cannot be converted to a sequence.");
+      }
+      return out;
+    }
+    // old-style sequence：length + item 函数（{length:1} 无 item → TypeError）。
+    if (typeof value.length === 'number' && typeof value.item === 'function') {
+      for (var i = 0; i < value.length; i++) out.push(value.item(i));
+      return out;
+    }
+    throw new TypeError("Failed to execute 'postMessage': The provided value cannot be converted to a sequence.");
+  }
+  // ② transfer 列表消费：MessagePort 转移 = **克隆**——新 port 对象接管原 port 的配对
+  //（对端改挂 clone，Channel_postMessage_clone_port 钉「clone ≠ 原对象且 clone 可收对端
+  // 消息」）+ port message queue / enabled 状态随迁（with_transfer_incoming_messages：
+  // 未启用 port 多手转移，enable 后按序收齐）；原 port 脱离（_zwDetached，再转移/再用即
+  // 不可用）。closed/脱离 port 进列表 → DataCloneError（close.any 钉；transfer 含发送
+  // port 自身 → DataCloneError，clone_port_error 钉）。返回接收侧 ports（frozen，由调用
+  // 方在 MessageEvent 构造期 freeze——此处仅返回数组）。
+  // ArrayBuffer 等非 port 项交 ③ detach；**调用序 = spec serialize-with-transfer**：
+  // 先 structuredClone 消息（fileapi-compat P4 序——克隆不得碰已 detach buffer），后消费列表。
+  function _zwConsumeTransferList(list, sourcePort) {
+    var ports = [];
+    var _cloneDE = globalThis.DOMException || DOMException;
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      if (item && typeof item === 'object' && typeof MessagePort === 'function' && item instanceof MessagePort) {
+        if (item === sourcePort || item._closed || item._zwDetached) {
+          throw new _cloneDE('Failed to execute \'postMessage\' on \'MessagePort\': ' +
+            (item === sourcePort ? 'Source port cannot be transferred.' : 'MessagePort in transfer list is closed or detached.'), 'DataCloneError');
+        }
+        var clone = new MessagePort();
+        clone._other = item._other;
+        if (item._other) item._other._other = clone;
+        clone._zwQueue = item._zwQueue;
+        clone._zwStarted = item._zwStarted;
+        item._other = null;
+        item._zwQueue = [];
+        item._zwDetached = true;
+        ports.push(clone);
+      }
+    }
+    return ports;
+  }
+  // ③ transferable detach（R56h 语义抽共用——OffscreenCanvas 位图 / ArrayBuffer 真 detach，
+  // 其余 transferable `_detached` 标记；port 项已在 ② 处理，跳过）。
+  function _zwDetachTransferables(list) {
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      if (item && typeof item === 'object') {
+        if (typeof MessagePort === 'function' && item instanceof MessagePort) continue;
+        if (item instanceof ArrayBuffer && typeof item.transfer === 'function') {
+          item.transfer();
+        } else {
+          item._detached = true;
+        }
+      }
+    }
+  }
+  // ④ UA 派发通道 message 事件工厂——构造后补 data（payload === undefined 时构造器
+  // dictionary 缺省语义落 null，而 UA 派发按内部槽直置——without-ports/010 钉 e.data
+  // === undefined）+ trusted 印记（R312 `__zwTrusted` + `_zwUaDispatch`：UA 派发的
+  // message 事件 isTrusted=true，页面脚本再 dispatch 同对象才翻 false——
+  // MessageEvent-trusted.window 钉）。投递承载统一 setTimeout（spec「queue a global
+  // task on the posted message task source」；沙箱无 host 时 shim setTimeout 回落
+  // microtask——桥接测试「下 execute 可读」契约不变；runner 走真 task，port
+  // onmessage 自馈环不再饿死 timer——infinite_loop 钉）。
+  function _zwMakeMessageEvent(type, init, payload) {
+    init = init || {};
+    init.__zwTrusted = true; // R312 UA 派发通道印记（MessageEvent-trusted 钉 isTrusted=true）
+    var ev = new MessageEvent(type, init);
+    ev.data = payload;
+    try { ev._zwUaDispatch = true; } catch (_eUa) {}
+    return ev;
+  }
+
   // MessagePort——消息端口（MessageChannel 双端口之一，部分库经此做结构化通信）。extends EventTarget
-  //（R2779）。postMessage 经 structuredClone（R2773）深拷贝消息 + queueMicrotask（R2774）**异步**派发
-  // 'message' 事件到配对端口（spec 为 task；sandbox 经 execute 末 microtask checkpoint 派发，下 execute
-  // 可读）。onmessage 属性 setter 内部走 addEventListener('message')。ArrayBuffer transfer 优先用
-  // 原生 `transfer()` 真正 detach，其他 transferable 保留 `_detached` 标记；同执行上下文端口对
-  //（跨 worker/进程通信需 host 接线，defer）。
+  //（R2779）。postMessage 经 structuredClone（R2773）深拷贝消息 + task 承载**异步**派发
+  // 'message' 事件到配对端口（spec 为 task，见 ④；sandbox 无 host 时回落 microtask，下 execute
+  // 可读）。onmessage 属性 setter 内部走 addEventListener('message')。transfer 面见 ①②③；
+  // 同执行上下文端口对（跨 worker/进程通信需 host 接线，defer）。
   function MessagePort() {
     this._et_listeners = {}; // EventTarget 内部 listener map（构造器未自动调，手动初始化）
     this._other = null; // 配对端口（MessageChannel 构造时互连）
     this._closed = false;
+    this._zwDetached = false; // M2-P1：转移后脱离标记（原 port 不可再用/再转移）
     this._onmessage = null;
     this._zwSwPortId = null;
     this._zwSwWorker = null;
@@ -14424,42 +14520,53 @@
   MessagePort.prototype = Object.create(EventTarget.prototype);
   MessagePort.prototype.constructor = MessagePort;
   MessagePort.prototype.postMessage = function (message, transfer) {
+    // spec port post message steps（#dom-messageport-postmessage）：message 必参（TypeError）。
+    if (arguments.length < 1) {
+      throw new TypeError("Failed to execute 'postMessage' on 'MessagePort': 1 argument required, but only 0 present.");
+    }
     if (this._zwSwPortId !== null) {
       if (this._closed || this._zwSwDetached || !this._zwSwWorker) return;
       this._zwSwWorker._postPortMessage(this, message, transfer);
       return;
     }
+    // M2-P1：transfer 面双形态（spec MessagePort IDL 双重载——sequence<object> vs
+    // WindowPostMessageOptions dictionary）：第二参为带 @@iterator 的对象 → legacy
+    // sequence；其余对象/null/undefined → options dictionary（取 transfer 成员，
+    // undefined 缺省 []）。dictionary-transferrable 钉 `port.postMessage(ab,
+    // {transfer:[ab]})` 送达。SW 管道路径保持旧签名透传。
+    var transferList;
+    var _portOpts = transfer;
+    if (_portOpts !== undefined && _portOpts !== null && typeof _portOpts === 'object' &&
+        !(typeof Symbol === 'function' && Symbol.iterator &&
+          typeof _portOpts[Symbol.iterator] === 'function')) {
+      transferList = _zwConvertTransferSequence(_portOpts.transfer === undefined ? undefined : _portOpts.transfer);
+    } else {
+      transferList = _zwConvertTransferSequence(_portOpts === null ? undefined : _portOpts);
+    }
     if (this._closed || !this._other) return;
-    // fileapi-compat P4：先序列化消息、后 detach transfer 列表（spec serialize-with-transfer
+    // fileapi-compat P4：先序列化消息、后消费 transfer 列表（spec serialize-with-transfer
     // 顺序）——旧序先 detach 再 structuredClone，克隆碰到 detached buffer 抛
     // 「Cannot perform Construct on a detached ArrayBuffer」
     //（Blob-constructor-detached-buffer.detachBuffer 首行即炸）。
     var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
-    // R56h：transferable 语义——transfer 列表中的 OffscreenCanvas 位图被转移
-    //（detached），后续 drawImage 抛 InvalidStateError（2d.drawImage.detachedcanvas）。
-    if (transfer && typeof transfer.forEach === 'function') {
-      transfer.forEach(function (item) {
-        if (item && typeof item === 'object') {
-          if (item instanceof ArrayBuffer && typeof item.transfer === 'function') {
-            item.transfer();
-          } else {
-            item._detached = true;
-          }
-        }
-      });
-    }
+    // M2-P1：port 转移（②——closed/source port → DataCloneError；克隆-改挂 + 队列随迁），
+    // 再 R56h 非 port transferable detach（③）。
+    var ports = Object.freeze(_zwConsumeTransferList(transferList, this));
+    _zwDetachTransferables(transferList);
     var other = this._other;
-    // R-baidu4：对端未启用 → 消息入队保留（spec port message queue），启用后按序投递。
+    var ev = _zwMakeMessageEvent('message', { data: data, origin: '', ports: ports }, data);
+    // R-baidu4：对端未启用 → 消息入队保留（spec port message queue），启用后按序投递；
+    // 对端已关 → 丢弃（close.any「sent to closed port should not arrive」）。
+    if (other._closed) return;
     if (!other._zwStarted) {
-      other._zwQueue.push(new MessageEvent('message', { data: data, origin: '' }));
+      other._zwQueue.push(ev);
       return;
     }
-    if (typeof queueMicrotask === 'function') {
-      queueMicrotask(function () {
-        if (other._closed) return;
-        other.dispatchEvent(new MessageEvent('message', { data: data, origin: '' }));
-      });
-    }
+    // M2-P1：task 承载（④）。
+    setTimeout(function () {
+      if (other._closed) return;
+      other.dispatchEvent(ev);
+    }, 0);
   };
   MessagePort.prototype.start = function () {
     this._zwStarted = true;
@@ -14470,15 +14577,16 @@
         for (var i = 0; i < swQueued.length; i++) port.dispatchEvent(swQueued[i]);
       });
     }
-    // R-baidu4：启用时排空本地待投递队列（保序）。
+    // R-baidu4：启用时排空本地待投递队列（保序）。M2-P1：task 承载（同 ④——沙箱无
+    // host 回落 microtask，桥接测试契约不变）。
     if (this._zwQueue.length > 0) {
       var queued = this._zwQueue.splice(0, this._zwQueue.length);
-      queueMicrotask(function() {
+      setTimeout(function() {
         for (var i = 0; i < queued.length; i++) {
           if (port._closed) return;
           port.dispatchEvent(queued[i]);
         }
-      });
+      }, 0);
     }
   };
   MessagePort.prototype.close = function () {
@@ -14518,12 +14626,27 @@
   globalThis.MessageChannel = globalThis.MessageChannel || MessageChannel;
 
   // BroadcastChannel——同源广播通信（所有同名 channel 实例互收消息，**发送者不收自己**）。extends
-  // EventTarget（R2779）。postMessage 经 structuredClone（R2773）深拷贝 + queueMicrotask（R2782 同款异步
-  // 派发）到所有同名其他实例。注册表 `_bc_registry`（name → channel 数组）同 JS 上下文共享。**已知限制**：
-  // 仅同 JS 上下文广播（跨 worker/进程广播需 host 接线，defer）；sender 不收自己（spec 一致）。
+  // EventTarget（R2779）。webmessaging-compat M2-P2（2026-10-12）spec 化
+  //（https://html.spec.whatwg.org/multipage/web-messaging.html#broadcastchannel）：
+  // ① 构造器 IDL——无 new TypeError（basics 钉，旧 lenient `return new` 移除）、name 必参
+  //    TypeError（缺参才抛；null/undefined/数字按 USVString 转 'null'/'undefined'/'123'）。
+  // ② postMessage IDL——message 必参 TypeError（interface 钉）；**close 后必抛
+  //    InvalidStateError 且先于序列化**（interface 钉 `postMessage(Symbol())` close 后为
+  //    InvalidStateError 非 DataCloneError；open 时 uncloneable 仍 DataCloneError）。
+  // ③ 投递对象快照（post 时成员）+ task 承载（P1 ④ 同款）——create-in-onmessage 钉
+  //    「投递期新建 channel 不收早前已 post 消息」；派发时已 close 的成员跳过
+  //    （closed-after-postMessage 钉）。注册表 `_bc_registry` 同 JS 上下文共享。
+  // **已知限制**：仅同 JS 上下文广播（跨 worker/进程广播需 host 接线，defer）；sender
+  // 不收自己（spec 一致）。
   var _bc_registry = {};
   function BroadcastChannel(name) {
-    if (!(this instanceof BroadcastChannel)) return new BroadcastChannel(name);
+    var _zwDE = globalThis.DOMException || DOMException;
+    if (!(this instanceof BroadcastChannel)) {
+      throw new TypeError("Failed to construct 'BroadcastChannel': Please use the 'new' operator.");
+    }
+    if (arguments.length < 1) {
+      throw new TypeError("Failed to construct 'BroadcastChannel': 1 argument required, but only 0 present.");
+    }
     this._et_listeners = {}; // EventTarget 内部 listener map（构造器未自动调，手动初始化）
     this._name = String(name);
     this._closed = false;
@@ -14538,22 +14661,29 @@
     get: function () { return this._name; },
   });
   BroadcastChannel.prototype.postMessage = function (message) {
-    if (this._closed) return;
+    // spec broadcast post message steps：message 必参 TypeError；close 后先于序列化抛
+    // InvalidStateError（uncloneable 数据同抛 InvalidStateError，interface 钉）。
+    if (arguments.length < 1) {
+      throw new TypeError("Failed to execute 'postMessage' on 'BroadcastChannel': 1 argument required, but only 0 present.");
+    }
+    var _zwDE = globalThis.DOMException || DOMException;
+    if (this._closed) {
+      throw new _zwDE("Failed to execute 'postMessage' on 'BroadcastChannel': Channel is closed.", 'InvalidStateError');
+    }
     var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
     var sender = this;
-    var name = this._name;
-    if (typeof queueMicrotask === 'function') {
-      queueMicrotask(function () {
-        var peers = _bc_registry[name];
-        if (!peers) return;
-        peers = peers.slice();
-        for (var i = 0; i < peers.length; i++) {
-          var p = peers[i];
-          if (p === sender || p._closed) continue;
-          p.dispatchEvent(new MessageEvent('message', { data: data, origin: '' }));
-        }
-      });
-    }
+    // M2-P2：投递对象快照 = post 时注册表成员（create-in-onmessage 钉投递期新建不收）。
+    var snapshot = (_bc_registry[this._name] || []).slice();
+    // M2-P1：task 承载 + undefined data 直置 + trusted 印记（同 ④ 共享出口）。e.origin
+    // spec = 派发方 origin（basics.any 钉非空——本窗口单源广播即 document origin）。
+    var origin = (globalThis.location && globalThis.location.origin) || '';
+    setTimeout(function () {
+      for (var i = 0; i < snapshot.length; i++) {
+        var p = snapshot[i];
+        if (p === sender || p._closed) continue; // 派发时已关跳过（closed-after-post 钉）
+        p.dispatchEvent(_zwMakeMessageEvent('message', { data: data, origin: origin }, data));
+      }
+    }, 0);
   };
   BroadcastChannel.prototype.close = function () {
     if (this._closed) return;

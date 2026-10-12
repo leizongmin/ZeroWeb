@@ -2068,11 +2068,27 @@ pub(crate) fn adjust_float_positions_with_context(
                 } else {
                     child.y - content_y_offset - child.margin_top
                 };
-                if child_hypothetical_y < flow_bottom {
+                // R5077（CSS 2.1 §9.5.1 + §8.3.1）：float 的 margin 不折叠，其 margin-box
+                // 顶边不得高于前一流内兄弟的**底边距边缘** = flow_bottom + last_flow_mb。
+                // 旧 floor 只用 flow_border 底——正 clearance 后 flow_bottom 虽已权威
+                //（R1316），但缺 last_flow_mb：float 被放在前驱 border 底而非 margin 底
+                //（clear-on-replaced-element：canvas2 clear mt:10 mb:10 后，canvas3 float
+                // mt:10 margin-box 顶 30 应 40、border 顶 40 应 50，后续 clear 链整体 -10）。
+                // Phase 1 的 min_float_y 公式同此（flow_bottom + last_flow_mb），但其
+                // flow_bottom 是 clearance 前假设值无从修正——本钳是权威修正点。负 mb
+                // 不抬 floor（.max(0) 严守旧下界；负 margin-top 合法偏移归 R4176 域）。
+                // 无正 clearance 时 Phase 1 已按同式定位 → 本钳 no-op，爆炸半径限于
+                // clearance 后浮点链。kill-switch `ZW_FLOAT_PREV_MB_FLOOR=0` 回退。
+                let float_floor = if std::env::var("ZW_FLOAT_PREV_MB_FLOOR").as_deref() != Ok("0") {
+                    flow_bottom + last_flow_mb.max(0.0)
+                } else {
+                    flow_bottom
+                };
+                if child_hypothetical_y < float_floor {
                     child.y = if clamp_content_rel {
-                        flow_bottom + child.margin_top
+                        float_floor + child.margin_top
                     } else {
-                        content_y_offset + flow_bottom + child.margin_top
+                        content_y_offset + float_floor + child.margin_top
                     };
                     // R1832：修复 float/clear Y-staircase。旧代码在此 `active_*_float_bottom
                     // += shift`，但 active_*_float_bottom 追踪「前序 float 底边」非本 float
@@ -2083,7 +2099,7 @@ pub(crate) fn adjust_float_positions_with_context(
                     // 真实底边已由下方 `.max(child_bottom)` 正确更新。kill-switch
                     // `ZW_FLOAT_YSTAIRCASE_FIX=0` 恢复旧行为。
                     if std::env::var("ZW_FLOAT_YSTAIRCASE_FIX").as_deref() == Ok("0") {
-                        let shift = flow_bottom - child_hypothetical_y;
+                        let shift = float_floor - child_hypothetical_y;
                         match child.float {
                             FloatValue::Left => active_left_float_bottom += shift,
                             FloatValue::Right => active_right_float_bottom += shift,

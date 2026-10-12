@@ -3017,8 +3017,10 @@
             }
             if (_r107n.length && globalThis._ZW_BODY_FORWARD_ON[_r107n]
                 && (_r107tag === 'BODY' || _r107tag === 'FRAMESET') && globalThis.window) {
-              if (_onHandlers[key]) _onHandlers[key][_r107n] = undefined;
-              _ensureInlineHandler(key, sel, handle, _r107n);
+              // webmessaging-compat M2-P2：直接消费 R134 块刚用**新值 v** 编译出的 fn——
+              // 旧版此处清缓存再按 attr 回读重编译，host set_attr 异步批处理未应用时
+              // 回读为空 → fn 丢失 → getter 转发 window 落 null（messageerror.html
+              // 「compiled into property」钉 typeof function）。
               var _r107f = _onHandlers[key] && _onHandlers[key][_r107n];
               if (typeof _r107f === 'function') globalThis.window['on' + _r107n] = _r107f;
             }
