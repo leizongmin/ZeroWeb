@@ -2059,9 +2059,16 @@ pub(super) fn clamp_percentage_max_height(
         }
     }
 
+    // R5080（CSS2 §17.3 Applies-to）：min/max-height 不适用于 table-column-group /
+    // table-column——taffy 层已清（converter column_vsize_suppressed），本后处理钳制层
+    // （1)/1a)/1b)）须同门，否则 min-height 直写 box_node.height（min-height-applies-
+    // to-005：colgroup min-height:1in 渲 96×96 红块，应无红）。
+    let column_vsize_box =
+        |s: &ComputedStyle| matches!(s.display, DisplayValue::TableColumn | DisplayValue::TableColumnGroup);
     // 1) 收紧：百分比 max-height 相对包含块内容高度解析
     if let (Some(style), Some(cb_h)) = (style.as_ref(), cb_content_height)
         && let LengthValue::Percentage(p) = &style.max_height
+        && !column_vsize_box(style)
     {
         let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
         let is_border_box = matches!(style.box_sizing, BoxSizingValue::BorderBox);
@@ -2093,7 +2100,10 @@ pub(super) fn clamp_percentage_max_height(
     // env ZW_VERT_MAXKW_NOCAP=0 回退旧行为（kill-switch，default-on）。
     let vert_maxkw_nocap =
         std::env::var("ZW_VERT_MAXKW_NOCAP").as_deref() != Ok("0") && box_node.writing_mode.is_vertical_block_flow();
-    if let Some(style) = style.as_ref().filter(|_| !box_node.is_absolute && !vert_maxkw_nocap) {
+    if let Some(style) = style
+        .as_ref()
+        .filter(|s| !box_node.is_absolute && !vert_maxkw_nocap && !column_vsize_box(s))
+    {
         let content_kw = |v: &LengthValue| {
             matches!(
                 v,
@@ -2129,7 +2139,7 @@ pub(super) fn clamp_percentage_max_height(
     // min-height:100% on child of definite-height parent → 解析为 cb_h 的百分比作内容高度下限。
     // min-height-094/095：div2 min-height:100%（父 div1 height:1in 明确）→ 96px。
     // 置于 max-height 之后使 min 优先于 max（§10.4）。
-    if let Some(style) = style.as_ref() {
+    if let Some(style) = style.as_ref().filter(|s| !column_vsize_box(s)) {
         let min_box_h = match &style.min_height {
             LengthValue::Percentage(p) => cb_content_height.map(|cb_h| *p as f32 / 100.0 * cb_h),
             other => resolve_postprocess_real_length(other, style),

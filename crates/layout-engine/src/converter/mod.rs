@@ -94,6 +94,17 @@ pub fn computed_style_to_taffy(
             | DisplayValue::TableCell
     );
 
+    // R5080（CSS2 §17.3 Applies-to）：table-column-group / table-column 的 min/max-height
+    // 不适用（表格仅 width 参与列 sizing）——旧值直入 taffy，colgroup 被撑高且背景外泄
+    // 成独立红块（min-height-applies-to-006：column min-height:1in 渲 96 泄漏）。
+    // **abspos 除外**（§9.7 display 后 blockify + §10.3.7/§10.6.2 abspos sizing 合法消费
+    // min/max——positioning bottom/left/right/top-applies-to-005/006 十案：abspos
+    // colgroup height:100 + bottom:0 依赖 taffy min/max 通道，清零则盒消失）。
+    let column_vsize_suppressed = matches!(style.position, PositionValue::Static)
+        && matches!(
+            style.display,
+            DisplayValue::TableColumn | DisplayValue::TableColumnGroup
+        );
     taffy::Style {
         display: convert_display(&style.display),
         // M3 step(b) 试：native float 激活，但保留 ZW adjust_float_positions（覆盖 native 定位）
@@ -435,6 +446,7 @@ pub fn computed_style_to_taffy(
                 },
                 height: match &style.min_height {
                     LengthValue::Auto => taffy::style::Dimension::length(0.0),
+                    _ if column_vsize_suppressed => taffy::style::Dimension::length(0.0),
                     _ => convert_min_length_to_dimension(&style.min_height, vw, vh),
                 },
             }
@@ -448,18 +460,27 @@ pub fn computed_style_to_taffy(
                 },
                 height: match (&style.min_height, style.writing_mode.is_vertical_block_flow()) {
                     (LengthValue::Auto, true) => taffy::style::Dimension::length(0.0),
+                    _ if column_vsize_suppressed => taffy::style::Dimension::length(0.0),
                     (v, _) => convert_min_length_to_dimension(v, vw, vh),
                 },
             }
         } else {
             taffy::geometry::Size {
                 width: convert_min_length_to_dimension(&style.min_width, vw, vh),
-                height: convert_min_length_to_dimension(&style.min_height, vw, vh),
+                height: if column_vsize_suppressed {
+                    taffy::style::Dimension::length(0.0)
+                } else {
+                    convert_min_length_to_dimension(&style.min_height, vw, vh)
+                },
             }
         },
         max_size: taffy::geometry::Size {
             width: convert_max_length_to_dimension(&style.max_width, vw, vh),
-            height: convert_max_length_to_dimension(&style.max_height, vw, vh),
+            height: if column_vsize_suppressed {
+                taffy::style::Dimension::length(0.0)
+            } else {
+                convert_max_length_to_dimension(&style.max_height, vw, vh)
+            },
         },
         // R5041（css-sizing-4 §4.1）：aspect-ratio 不适用于内部表盒（table-internal boxes
         // ——css-sizing-4 明示排除；table-element-001 取证：th width:100px + ratio 1/1 被

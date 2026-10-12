@@ -544,3 +544,7 @@ css/CSS2/positioning/absolute-non-replaced-width-023.xht css/CSS2/positioning/ab
 css/CSS2/positioning/absolute-non-replaced-width-024.xht css/CSS2/positioning/absolute-non-replaced-width-021-ref.xht == 2026-10-12 R5073 abspos float 子 shrink-to-fit（taffy Definite 臂 float 贡献）
 css/CSS2/positioning/abspos-009.xht css/CSS2/positioning/abspos-009-ref.xht == 2026-10-12 R5074 abspos auto margin inset 门（§10.3.7 rule 3/4）
 css/css-transforms/transform-scale-percent-001.html css/css-transforms/transform-scale-percent-ref.html == 2026-10-12 R5076 scale 族百分比参数（css-transforms-1 §funcdef-scale）
+css/CSS2/normal-flow/min-height-applies-to-005.xht css/CSS2/reference/ref-if-there-is-no-red.xht == 2026-10-12 R5080 colgroup min/max-height 不适用（§17.3）
+css/CSS2/normal-flow/min-height-applies-to-006.xht css/CSS2/reference/ref-if-there-is-no-red.xht == 2026-10-12 R5080 column min/max-height 不适用（§17.3）
+css/CSS2/tables/table-column-rendering-001.xht css/CSS2/reference/no-red-on-blank-page-ref.xht == 2026-10-12 R5080 colgroup min/max-height 不适用（§17.3）
+css/CSS2/tables/table-column-rendering-002.xht css/CSS2/reference/no-red-on-blank-page-ref.xht == 2026-10-12 R5080 colgroup min/max-height 不适用（§17.3）
