@@ -1,24 +1,19 @@
 # Web Messaging 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../webmessaging-compat.md](../webmessaging-compat.md)
-**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-12（M2-P2+P3 落地）
+**创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-12（M3 收口）
 
 ## 当前状态
 
-**M1 + M2 全部落地（2026-10-12）**：基线 64.9%（87/134）→ M2-P1 93.3%（126/135，
-+39P）→ **M2-P2+P3 后 98.5%（133/135，+7P）**。M2-P2：BroadcastChannel spec 化
-（构造器 no-new/缺名 TypeError、postMessage 必参 + close 后先于序列化抛
-InvalidStateError、投递对象快照 + task 承载）；M2-P3：messageerror 内容属性
-（body/frameset Window-forwarding handler 全集补齐 + setAttribute 转发路径消费
-R134 新值编译 fn）。证据：
-[evidence/2026-10-12-m2-p2-p3-broadcastchannel-messageerror.md](evidence/2026-10-12-m2-p2-p3-broadcastchannel-messageerror.md)。
-影响面复跑：zero-engine lib 2998P/0F 恒等、dom 54303P（non-Pass 集为通道既有
-已知面，见 evidence 门禁表）。
+**Goal 收口（2026-10-12，DC-1~3 逐项核对通过）**：可执行面 **133/135 = 98.5%**
+（轨迹 64.9% → 93.3% → 98.5%，失败簇清零），残余 2 non-pass 全挂账。收口门禁：
+make test 71 suites 20539P/0F 全绿 + make reftest 708/708 零不一致 +
+product-smoke 15.40%（与 fileapi 收口记录同值）+ product-smoke-legacy 42 fixtures
+struct 零失败。证据：
+[evidence/2026-10-12-m3-closure.md](evidence/2026-10-12-m3-closure.md)。
 
-**下一步（M3 + 收口）**：跨 document 场景挂 navigation-compat M3 frame 树门槛
-（goal 契约，不单方面开）；可执行面残余 2 non-pass 全挂账（GC 联动 close、
-user-activation 跨域）。收口按 DC-3 走全量门禁：make test 全绿 + make reftest
-零回归 + product-smoke 恒值，随后归档。
+**无待办**。跨 document 场景（M3 主体）挂 navigation-compat M3 frame 树门槛重入
+（goal 契约）；worker 侧 messaging 归 workers-compat 域；重入条件见下文记账。
 
 ## 里程碑台账
 
@@ -29,7 +24,8 @@ user-activation 跨域）。收口按 DC-3 走全量门禁：make test 全绿 + 
 - **M2-P2+P3（2026-10-12，同轮落地）**：BroadcastChannel IDL/语义 spec 化 +
   messageerror 内容属性（body WindowEventHandlers 全集 + setAttribute 转发消费
   R134 新值 fn）→ 98.5%（+7P）；可执行面失败簇清零，残余全挂账。
-- **M3（未开始）**：跨 document 场景挂 navigation-compat M3 门槛；收口归档。
+- **M3 收口（2026-10-12）**：DC-1~3 逐项核对通过，全量门禁绿（见当前状态）；
+  跨 document 主体挂 navigation-compat M3 门槛重入，goal 归档。
 
 ## 残余失败面（2 non-pass，P2+P3 后，全挂账）
 
@@ -56,5 +52,6 @@ user-activation 跨域）。收口按 DC-3 走全量门禁：make test 全绿 + 
 - R2983 spec 误读修正是 M2 第一簇的一部分：现 shim 失配抛 SecurityError、缺省按
   '*' 放行两处与 spec 不符（spec：失配静默丢弃；缺省 targetOrigin 为必参——
   单参形式走 options dictionary 重载）。
-- fileapi-compat 残余挂账「FrozenArray<MessagePort> e.ports transfer 1（webmessaging）」
-  待本 goal M2 簇 ② 落地后复验回流。
+- fileapi-compat 残余挂账「FrozenArray<MessagePort> e.ports transfer 1（webmessaging）」：
+  M2 簇 ②（port 转移克隆）落地后已复验——fileapi 493/499 恒等（M2-P1 evidence），
+  该案仍 F，挂账维持（跨域 face，非本 goal 可执行面）。
