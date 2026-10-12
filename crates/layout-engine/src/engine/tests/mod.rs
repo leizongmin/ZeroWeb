@@ -685,3 +685,5 @@ mod r5048_replaced_kw_border_box_tests;
 mod r5073_abspos_float_shrink_tests;
 /// R5074 abspos auto margin inset 门（§10.3.7 rule 3/4）测试。
 mod r5074_abspos_auto_margin_inset_tests;
+/// R5077 float 底边距边缘 floor（§9.5.1 + §8.3.1）测试。
+mod r5077_float_prev_mb_floor_tests;

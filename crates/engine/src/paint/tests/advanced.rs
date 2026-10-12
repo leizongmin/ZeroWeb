@@ -509,7 +509,12 @@ fn test_paint_linear_gradient_relative_length_stop_position() {
     painter.paint(&layout, &styles, None);
 
     let grad = &painter.primitives().gradients[0];
-    assert_eq!(grad.stops[0].offset, 40.0, "2em at font-size:20px 应解析为 40px");
+    // R5077（css-images-1 §3.2）：2em@20px = 40px，按 100px 渐变线归一 → 0.4
+    //（旧断言 40.0 = raw px 直入 offset，t∈[0,1] 恒 ≤ 首色标 → 整条渐变渲首色标）。
+    assert_eq!(
+        grad.stops[0].offset, 0.4,
+        "2em at font-size:20px = 40px，100px 渐变线归一为 0.4"
+    );
 }
 
 /// 测试 radial-gradient 生成 GradientPrimitive。
