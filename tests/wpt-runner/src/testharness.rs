@@ -4159,7 +4159,7 @@ fn wpt_js_has_long_timeout(source: &str) -> bool {
         .any(|line| line.trim().eq_ignore_ascii_case("// META: timeout=long"))
 }
 
-fn apply_wpt_substitutions(source: &str) -> String {
+pub(crate) fn apply_wpt_substitutions(source: &str) -> String {
     source
         .replace("{{host}}", "wpt.test")
         .replace("{{domains[www1]}}", "www1.wpt.test")
@@ -7955,12 +7955,16 @@ fn unsupported_testdriver_dependencies(source: &str) -> Vec<String> {
         // WAB2-M3-s1（2026-09-24）：bless 白名单——stub 授予瞬态激活（`__zwUserActivate`）+
         // 执行回调，fullscreen bless 依赖案（after-error/options/same-element/display-contents/
         // consume-user-activation）解除整体 Unsupported。
+        // cookies-compat M1（2026-10-12）：delete_all_cookies 白名单——stub 转发 shim
+        // `__zwDeleteAllCookies` 钩子（清 in-JS cookie store）；上游 corpus 的
+        // domCookieTest 每子测试前后清 jar 是 exact-match 断言的隔离前提。
         if !name.is_empty()
             && name != "click"
             && name != "send_keys"
             && name != "Actions"
             && name != "set_permission"
             && name != "bless"
+            && name != "delete_all_cookies"
             && !dependencies.contains(&name)
         {
             dependencies.push(name);
@@ -9041,6 +9045,22 @@ const TESTDRIVER_STUB: &str = r#"<script>
         }
       }
       return Promise.resolve();
+    },
+    // cookies-compat M1（2026-10-12）：delete_all_cookies——清空页面 cookie store，不经宿主
+    // 命令队列（无宿主 cookie jar 语义，操作面就是 shim 的 in-JS store）。转发 shim
+    // `__zwDeleteAllCookies` 钩子（domCookieTest 每子测试前后清 jar——exact-match 序列化
+    // 断言的隔离前提）。钩子缺失（老宿主/精简 shim）→ 拒绝（调用方 promise_test 以 Fail
+    // 记账，不静默）。
+    delete_all_cookies: function() {
+      if (typeof globalThis.__zwDeleteAllCookies !== 'function') {
+        return Promise.reject(new Error('testdriver delete_all_cookies is not supported'));
+      }
+      try {
+        globalThis.__zwDeleteAllCookies();
+        return Promise.resolve();
+      } catch (e) {
+        return Promise.reject(e);
+      }
     }
   };
   // R142：test_driver.Actions（指针动作链）——镜像上游 testdriver-actions.js 的

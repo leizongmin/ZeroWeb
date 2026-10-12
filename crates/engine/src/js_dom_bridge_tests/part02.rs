@@ -2971,3 +2971,157 @@ fn test_text_decoder_legacy_labels_encoding_compat_m2() {
         "z"
     );
 }
+
+#[test]
+fn test_document_cookie_semantics_c2k() {
+    // cookies-compat M2（2026-10-12）：document.cookie 语义收敛回归——RFC 6265bis
+    // §5.1/§5.5/§5.6 window 面核心语义单测（WPT cookies corpus 可执行子集为验收
+    // 标尺，`make testharness-cookies` 为常驻断言集；此处锁最小语义不随 shim 回退）。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // CTL 拒收（整串 %x00-08/%x0A-1F/%x7F → 忽略整条；HTAB 豁免）。
+    sandbox.execute("__zwDeleteAllCookies()").unwrap();
+    sandbox
+        .execute("document.cookie = 'bad\\u0000name=1'").unwrap();
+    sandbox
+        .execute("document.cookie = 'badname=\\u00071'").unwrap();
+    assert_eq!(sandbox.execute("document.cookie").unwrap().value, "");
+    sandbox.execute("document.cookie = 'tab\\tname=1'").unwrap();
+    assert_eq!(
+        sandbox.execute("document.cookie").unwrap().value,
+        "tab\tname=1",
+        "HTAB 在 name 内豁免，原样存储"
+    );
+
+    // 无 '=' 或空 name → 忽略。
+    sandbox.execute("__zwDeleteAllCookies()").unwrap();
+    sandbox.execute("document.cookie = 'novalue'").unwrap();
+    sandbox.execute("document.cookie = '=empty'").unwrap();
+    assert_eq!(sandbox.execute("document.cookie").unwrap().value, "");
+
+    // expires：过去拒收，未来保留（RFC 1123 cookie-date）。
+    sandbox.execute("__zwDeleteAllCookies()").unwrap();
+    sandbox
+        .execute("document.cookie = 'past=1; Expires=Thu, 10 Apr 1980 16:33:12 GMT'")
+        .unwrap();
+    assert_eq!(sandbox.execute("document.cookie").unwrap().value, "");
+    sandbox
+        .execute("document.cookie = 'future=1; Expires=Fri, 01 Jan 2038 00:00:00 GMT'")
+        .unwrap();
+    assert_eq!(sandbox.execute("document.cookie").unwrap().value, "future=1");
+
+    // max-age：<=0 即刻过期；非法值仅忽略属性。
+    sandbox.execute("__zwDeleteAllCookies()").unwrap();
+    sandbox.execute("document.cookie = 'gone=1; Max-Age=0'").unwrap();
+    assert_eq!(sandbox.execute("document.cookie").unwrap().value, "");
+    sandbox.execute("document.cookie = 'keep=1; Max-Age=1000'").unwrap();
+    assert_eq!(sandbox.execute("document.cookie").unwrap().value, "keep=1");
+    sandbox.execute("__zwDeleteAllCookies()").unwrap();
+    sandbox.execute("document.cookie = 'nan=1; Max-Age=abc, 500'").unwrap();
+    assert_eq!(
+        sandbox.execute("document.cookie").unwrap().value,
+        "nan=1",
+        "Max-Age 非法值忽略属性，cookie 本体保留"
+    );
+
+    // 覆盖语义：同 name 替换值且保留创建序。
+    sandbox.execute("__zwDeleteAllCookies()").unwrap();
+    sandbox.execute("document.cookie = 'a=1'").unwrap();
+    sandbox.execute("document.cookie = 'b=2'").unwrap();
+    sandbox.execute("document.cookie = 'a=3'").unwrap();
+    assert_eq!(
+        sandbox.execute("document.cookie").unwrap().value,
+        "a=3; b=2",
+        "覆盖保留首设创建序（bis §5.6 creation-time）"
+    );
+
+    // path 可见性：Path=/a 在默认文档（/）不可见；显式 Path=/ 可见。
+    sandbox.execute("__zwDeleteAllCookies()").unwrap();
+    sandbox.execute("document.cookie = 'deep=1; Path=/a'").unwrap();
+    sandbox.execute("document.cookie = 'root=2; Path=/'").unwrap();
+    assert_eq!(
+        sandbox.execute("document.cookie").unwrap().value,
+        "root=2",
+        "Path 不匹配（默认文档 /）不可见"
+    );
+
+    // domain 属性：非本源域整废；同域保留。默认沙箱 host 为空 → 任何 Domain 属性
+    // 都不 domain-match → 整废。
+    sandbox.execute("__zwDeleteAllCookies()").unwrap();
+    sandbox
+        .execute("document.cookie = 'alien=1; Domain=example.com'")
+        .unwrap();
+    assert_eq!(sandbox.execute("document.cookie").unwrap().value, "");
+
+    // __Host- / __Secure- prefix（大小写不敏感）。
+    sandbox.execute("__zwDeleteAllCookies()").unwrap();
+    sandbox.execute("document.cookie = '__Secure-a=1; Path=/'").unwrap();
+    assert_eq!(sandbox.execute("document.cookie").unwrap().value, "");
+    sandbox
+        .execute("document.cookie = '__SeCuRe-a=1; Secure; Path=/'")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("document.cookie").unwrap().value,
+        "__SeCuRe-a=1",
+        "name 大小写原样保留（仅前缀匹配不敏感）"
+    );
+    sandbox.execute("__zwDeleteAllCookies()").unwrap();
+    sandbox
+        .execute("document.cookie = '__Host-b=1; Secure; Path=/'")
+        .unwrap();
+    assert_eq!(sandbox.execute("document.cookie").unwrap().value, "__Host-b=1");
+    sandbox.execute("__zwDeleteAllCookies()").unwrap();
+    sandbox
+        .execute("document.cookie = '__Host-b=1; Secure; Path=/; Domain=example.com'")
+        .unwrap();
+    assert_eq!(sandbox.execute("document.cookie").unwrap().value, "");
+    sandbox
+        .execute("document.cookie = '__HOST-b=1; Path=/'")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("document.cookie").unwrap().value,
+        "",
+        "__Host- 缺 Secure → 拒（默认沙箱非 https）"
+    );
+
+    // HttpOnly 属性经 document.cookie 整条忽略（RFC 6265 §5.3 步骤 6）；HTAB 在属性
+    // 名内部（"Http\tOnly"）不识别为 HttpOnly——cookie 本体保留。
+    sandbox.execute("__zwDeleteAllCookies()").unwrap();
+    sandbox.execute("document.cookie = 'hp=1; HttpOnly'").unwrap();
+    assert_eq!(
+        sandbox.execute("document.cookie").unwrap().value,
+        "",
+        "HttpOnly 属性 → 整条忽略"
+    );
+    sandbox.execute("document.cookie = 'hptab=1; Http\\tOnly;'").unwrap();
+    assert_eq!(
+        sandbox.execute("document.cookie").unwrap().value,
+        "hptab=1",
+        "HTAB 在 HttpOnly 属性名内部 → 属性未知，cookie 保留"
+    );
+
+    // __Http- / __Host-Http- 前缀（Chromium HttpOnly 前缀扩展，WPT corpus 口径）：
+    // 经 DOM 恒拒收（HttpOnly 属性整条忽略 → 前缀必需属性不可达）。
+    sandbox.execute("__zwDeleteAllCookies()").unwrap();
+    sandbox.execute("document.cookie = '__Http-c=1; Path=/'").unwrap();
+    sandbox
+        .execute("document.cookie = '__Http-c=1; Secure; Path=/'")
+        .unwrap();
+    sandbox
+        .execute("document.cookie = '__Http-c=1; Secure; Path=/; HttpOnly'")
+        .unwrap();
+    sandbox
+        .execute("document.cookie = '__Host-Http-d=1; Secure; Path=/'")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("document.cookie").unwrap().value,
+        "",
+        "__Http- / __Host-Http- 经 document.cookie 恒拒收"
+    );
+}

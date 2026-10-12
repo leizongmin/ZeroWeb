@@ -1,0 +1,4297 @@
+[
+  [
+    "cookies/attributes/attributes-ctl.sub.html",
+    [
+      {
+        "name": "Cookie with %x0 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x0 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x0 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x0 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x0 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x0 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x0 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x0 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x0 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x0 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x0 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x0 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x0 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f in Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f after Domain attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f in Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f after Path attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f in Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f after Max-Age attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f in Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f after Expires attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f in Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f after Secure attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f in HttpOnly attribute is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f in SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f after SameSite attribute value is handled correctly.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "cookies/attributes/expires.html",
+    [
+      {
+        "name": "Set cookie with expires value containing a comma via HTTP headers",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with expires value followed by comma via HTTP headers",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with future expiration via HTTP headers",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set expired cookie along with valid cookie via HTTP headers",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Don't set cookie with expires set to the past via HTTP headers",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with expires value containing a comma via document.cookie",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set cookie with expires value followed by comma via document.cookie",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set cookie with future expiration via document.cookie",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Set expired cookie along with valid cookie via document.cookie",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Don't set cookie with expires set to the past via document.cookie",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "cookies/attributes/invalid.html",
+    [
+      {
+        "name": "Set cookie with invalid attribute",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie ending with invalid attribute.",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie ending with quoted invalid attribute.",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie ending with double-quoted invalid attribute.",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie ending with invalid attribute equals.",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with two invalid attributes (lol=\"aaa and bbb).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie ending with two invalid attributes (lol=\"aaa and bbb).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie for quoted Secure attribute",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie for Secure qux",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore invalid attribute name with comma",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore invalid attribute value with comma",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie ignoring multiple invalid attributes, whitespace, and semicolons",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with multiple '='s in its value, ignoring multiple invalid attributes, whitespace, and semicolons",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with (invalid) version=1 attribute",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with (invalid) version=1000 attribute",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie ignoring anything after ; (which looks like an invalid attribute)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie ignoring anything after ; (which looks like an invalid attribute, with no trailing semicolon)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore keys after semicolon",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore attributes after semicolon",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore `Set-Cookie: =`",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore empty cookie string",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore `Set-Cookie: =` with other `Set-Cookie` headers",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore name- and value-less `Set-Cookie: ; bar`",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore name- and value-less `Set-Cookie:    `",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore name- and value-less `Set-Cookie: \\t`",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore cookie with domain that won't domain match (along with other invalid noise)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/attributes/max-age.html",
+    [
+      {
+        "name": "Ignore max-age attribute with invalid non-zero-digit (containing a comma)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with age",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set no cookie with max-age=0",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set no cookie with max-age=-1",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set no cookie with max-age=-20",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set multiple cookies with max-age attribute",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Expire later cookie with same name and max-age=0",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Expire later cookie with same name and max-age=0, and don't set cookie with max-age=0",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set multiple cookies with valid max-age values",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Don't set multiple cookies with max-age=0",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/attributes/path-redirect.html",
+    [
+      {
+        "name": "Cookie sent for exact redirected path match",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie sent for exact redirected path match, one level deeper",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie sent for redirected path with trailing '/' and the redirected URL is one level deeper",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie sent for redirected path with trailing '/' and a double '/' in the redirected URL",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie sent for redirected path match with a trailing ';' after an unquoted Path",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie sent for redirected path match with a trailing ';' inside a quoted Path",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie sent for redirected path match with partially URL encoded path",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Multiple cookies sent for multiple redirected path matches, sorted by length",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie sent for redirected path mismatch where path and redirected URL begin with same string",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie sent for redirected path mismatch where final path directory component and redirected URL resource begin with same string",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie sent for redirected path mismatch where final path directory component begins with same string as redirected URL final directory component",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie sent for redirected path mismatch for different resources inside the same final directory component",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie sent for redirected path mismatch where final path directory component ends in '/' and does not match redirected URL",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie sent for redirected path mismatch with a similar start to the redirected URL",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie sent for redirected path mismatch with trailing '?' after unquoted Path",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie sent for redirected path mismatch with trailing '#' after unquoted Path",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie sent for redirected path mismatch with trailing '/' after unquoted Path",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/attributes/path.html",
+    [
+      {
+        "name": "Set cookie for bare Path",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie for Path=",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie for Path=/",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie returned for mismatched path",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie returned for path space equals mismatched path",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie returned for path equals space mismatched path",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie returned for mismatched path and attribute",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie for mismatched and root path",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie returned for root and mismatched path",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie returned for multiple mismatched paths",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Return 2 cookies sorted by matching path length (earlier name with shorter path set first)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Return 2 cookies sorted by matching path length (later name with shorter path set first)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Return 2 cookies sorted by matching path length (earlier name with longer path set first)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Return 2 cookies sorted by matching path length (later name with longer path set first)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie returned for partial path match",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie returned for partial path match, return cookie for default path",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Return cookie for path= / (whitespace after equals)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie returned for case mismatched path",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Return cookie A on path match, no cookie returned for path mismatch (plus whitespace)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "No cookie returned for mismatched path (after bare path=)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Return cookie for bare path= (after mismatched path)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/attributes/secure.https.html",
+    [
+      {
+        "name": "Set cookie for Secure attribute",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie for seCURe attribute",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie for for Secure= attribute",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie for Secure=aaaa",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie for Secure space equals",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie for Secure equals space",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie for spaced Secure",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie for space Secure with ;",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore name- and value-less `Set-Cookie: ; secure`",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/encoding/charset.html",
+    [
+      {
+        "name": "ASCII name and utf-8 value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "utf-8 name and ASCII value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "ASCII name and quoted utf-8 value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "utf-8 name and value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "quoted utf-8 name and value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "utf-8 name and value, with (invalid) utf-8 attribute",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/meta-blocked.html",
+    [
+      {
+        "name": "Cookie is not set from `<meta>`.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "cookies/name/name-ctl.html",
+    [
+      {
+        "name": "Cookie with %x0 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 in name is accepted (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f in name is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x0 in name is rejected or modified (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x1 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x2 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x3 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x4 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x5 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x6 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x7 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x8 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x9 in name is accepted (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %xa in name is rejected or modified (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %xb in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %xc in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %xd in name is rejected or modified (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %xe in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %xf in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x10 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x11 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x12 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x13 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x14 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x15 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x16 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x17 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x18 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x19 in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x1a in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x1b in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x1c in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x1d in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x1e in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x1f in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x7f in name is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/name/name.html",
+    [
+      {
+        "name": "Set valueless cookie to its name with empty value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set a nameless cookie (that has an = in its value)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set a nameless cookie (that has multiple ='s in its value)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set a nameless cookie",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Remove trailing WSP characters from the name string",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Remove leading WSP characters from the name string",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Only return the new cookie (with the same name)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore invalid attributes after nameless cookie",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore invalid attributes after valid name (that looks like Cookie2 Version attribute)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set a cookie that has whitespace in its name",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set a nameless cookie ignoring characters after first ;",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set a nameless cookie ignoring characters after first ; (2)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Return the most recent nameless cookie",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Return the most recent nameless cookie, without leading =",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Return the most recent nameless cookie, even if preceded by =",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Return the most recent nameless cookie, even if preceded by =, in addition to other valid cookie",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Use last value for cookies with identical names",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Keep first-in, first-out name order",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Keep first-in, first-out single-char name order",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Keep non-alphabetic first-in, first-out name order",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Keep first-in, first-out order if comma-separated",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set nameless cookie, given `Set-Cookie: =test16`",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Overwrite nameless cookie",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore nameless cookies that impersonate cookie prefixes",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore cookie with empty name and empty value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore cookie with no name or value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "URL-encoded cookie name is not decoded",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for a=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for 1=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for $=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for !a=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for @a=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for #a=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for $a=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for %a=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for ^a=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for &a=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for *a=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for (a=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for )a=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for -a=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for _a=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for +=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for \"a=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Name is set as expected for \"a=b\"=test",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/prefix/__Host-Http.https.html",
+    [
+      {
+        "name": "__Host-Http: Does not set via DOM 'Secure; Path=/'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Host-Http: Does not set via DOM with Domain attribute 'Secure; Path=/; Domain=wpt.test'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Host-Http: Does not set via HTTP with 'Secure; Path=/'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Host-Http: Set via HTTP with 'Secure; Path=/; httponly'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Host-Http: Does not set via HTTP with 'Secure; Path=/cookies/; httponly'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Host-Http: Does not set via HTTP with 'Path=/;' (without Secure)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Host-Http: Does not set via HTTP with Domain attribute 'Secure; Path=/; Domain=wpt.test'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/prefix/__Http.https.html",
+    [
+      {
+        "name": "__Http: Does not set via DOM 'Path=/'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Http: Does not set via DOM 'Secure; Path=/'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Http: Does not set via DOM 'Secure; Path=/; httponly'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Http: Does not set via HTTP with 'Path=/;' (without Secure)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Http: Does not set via HTTP with 'Secure; Path=/'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Http: Does set via HTTP with 'Secure; Path=/;httponly'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Http: Does set via HTTP with 'Secure; Path=/cookies/;httponly'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/prefix/__host.document-cookie.https.html",
+    [
+      {
+        "name": "__Host: Secure origin: Does not set 'Path=/;'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__HoSt: Secure origin: Does not set 'Path=/;'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Host: Secure origin: Does set 'Secure; Path=/;'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__HoSt: Secure origin: Does set 'Secure; Path=/;'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Host: Secure origin: Does not set 'Secure; Path=/; Domain=wpt.test; '",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__HoSt: Secure origin: Does not set 'Secure; Path=/; Domain=wpt.test; '",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Host: Secure origin: Does not set 'Path=/;MaxAge=10'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__HoSt: Secure origin: Does not set 'Path=/;MaxAge=10'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Host: Secure origin: Does set 'Secure; Path=/;MaxAge=10'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__HoSt: Secure origin: Does set 'Secure; Path=/;MaxAge=10'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Host: Secure origin: Does not set 'Secure; Path=/; Domain=wpt.test; MaxAge=10'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__HoSt: Secure origin: Does not set 'Secure; Path=/; Domain=wpt.test; MaxAge=10'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Host: Secure origin: Does not set 'Secure; Path=/cookies/resources/list.py'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__HoSt: Secure origin: Does not set 'Secure; Path=/cookies/resources/list.py'",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "cookies/prefix/__host.header.https.html",
+    [
+      {
+        "name": "__Host: Secure origin: Does not set 'Path=/;'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__HoSt: Secure origin: Does not set 'Path=/;'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Host: Secure origin: Does set 'Secure; Path=/;'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__HoSt: Secure origin: Does set 'Secure; Path=/;'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Host: Secure origin: Does not set 'Secure; Path=/; Domain=wpt.test; '",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__HoSt: Secure origin: Does not set 'Secure; Path=/; Domain=wpt.test; '",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Host: Secure origin: Does not set 'Path=/;MaxAge=10'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__HoSt: Secure origin: Does not set 'Path=/;MaxAge=10'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Host: Secure origin: Does set 'Secure; Path=/;MaxAge=10'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__HoSt: Secure origin: Does set 'Secure; Path=/;MaxAge=10'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Host: Secure origin: Does not set 'Secure; Path=/; Domain=wpt.test; MaxAge=10'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__HoSt: Secure origin: Does not set 'Secure; Path=/; Domain=wpt.test; MaxAge=10'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Host: Secure origin: Does not set 'Path=/;HttpOnly'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__HoSt: Secure origin: Does not set 'Path=/;HttpOnly'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Host: Secure origin: Does set 'Secure; Path=/;HttpOnly'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__HoSt: Secure origin: Does set 'Secure; Path=/;HttpOnly'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Host: Secure origin: Does not set 'Secure; Path=/; Domain=wpt.test; HttpOnly'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__HoSt: Secure origin: Does not set 'Secure; Path=/; Domain=wpt.test; HttpOnly'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Host: Secure origin: Does not set 'Secure; Path=/cookies/resources/list.py'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__HoSt: Secure origin: Does not set 'Secure; Path=/cookies/resources/list.py'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/prefix/__secure.document-cookie.https.html",
+    [
+      {
+        "name": "__Secure: Secure origin: Should not set 'Path=/;'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__SeCuRe: Secure origin: Should not set 'Path=/;'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Secure: Secure origin: Should set 'Secure; Path=/;'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__SeCuRe: Secure origin: Should set 'Secure; Path=/;'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Secure: Secure origin: Should not set 'Path=/;MaxAge=10'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__SeCuRe: Secure origin: Should not set 'Path=/;MaxAge=10'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Secure: Secure origin: Should set 'Secure; Path=/;MaxAge=10'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__SeCuRe: Secure origin: Should set 'Secure; Path=/;MaxAge=10'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Secure: Secure origin: Should not set 'Path=/;domain=wpt.test'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__SeCuRe: Secure origin: Should not set 'Path=/;domain=wpt.test'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__Secure: Secure origin: Should set 'Secure; Path=/;domain=wpt.test'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "__SeCuRe: Secure origin: Should set 'Secure; Path=/;domain=wpt.test'",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "cookies/prefix/__secure.header.https.html",
+    [
+      {
+        "name": "__Secure: secure origin: Should not set 'Path=/;'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__SeCuRe: secure origin: Should not set 'Path=/;'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Secure: secure origin: Should set 'Secure;Path=/;'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__SeCuRe: secure origin: Should set 'Secure;Path=/;'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Secure: secure origin: Should not set 'Path=/;MaxAge=10'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__SeCuRe: secure origin: Should not set 'Path=/;MaxAge=10'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Secure: secure origin: Should set 'Secure;Path=/;MaxAge=10'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__SeCuRe: secure origin: Should set 'Secure;Path=/;MaxAge=10'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Secure: secure origin: Should not set 'Path=/;HttpOnly'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__SeCuRe: secure origin: Should not set 'Path=/;HttpOnly'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Secure: secure origin: Should set 'Secure;Path=/;HttpOnly'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__SeCuRe: secure origin: Should set 'Secure;Path=/;HttpOnly'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Secure: secure origin: Should not set 'Path=/;domain=alt.wpt.test'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__SeCuRe: secure origin: Should not set 'Path=/;domain=alt.wpt.test'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__Secure: secure origin: Should set 'Secure;Path=/;domain=alt.wpt.test'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "__SeCuRe: secure origin: Should set 'Secure;Path=/;domain=alt.wpt.test'",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/secure/set-from-dom.https.sub.html",
+    [
+      {
+        "name": "'secure' cookie visible in `document.cookie`",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "cookies/secure/set-from-dom.https.sub.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 1206, 1093], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":2}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "cookies/size/attributes.www.sub.html",
+    [
+      {
+        "name": "Too long path attribute (>1024 bytes) is ignored; previous valid path wins.",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Too long path attribute (>1024 bytes) is ignored; next valid path wins.",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Max size path attribute (1024 bytes) is not ignored",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Too long path attribute (>1024 bytes) is ignored",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Too long domain attribute (>1024 bytes) is ignored; previous valid domain wins.",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Too long domain attribute (>1024 bytes) is ignored; next valid domain wins.",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Max size domain attribute (1024 bytes) is not ignored",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Too long domain attribute (>1024 bytes) is ignored",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with max size name/value pair and max size attribute value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with max size name/value pair and multiple max size attributes (>8k bytes total)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Max length Max-Age attribute value (1024 bytes) doesn't cause cookie rejection",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Too long Max-Age attribute value (>1024 bytes) doesn't cause cookie rejection",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Max length negative Max-Age attribute value (1024 bytes) doesn't get ignored",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Too long negative Max-Age attribute value (>1024 bytes) gets ignored",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/size/name-and-value.html",
+    [
+      {
+        "name": "Set max-size cookie with largest possible name and value (4096 bytes)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore cookie with name larger than 4096 and 1 byte value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set max-size value-less cookie",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore value-less cookie with name larger than 4096 bytes",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set max-size cookie with largest possible value (4095 bytes)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore named cookie (with non-zero length) and value larger than 4095 bytes",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore named cookie with length larger than 4095 bytes, and a non-zero value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set max-size name-less cookie",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore name-less cookie with value larger than 4096 bytes",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore name-less cookie (without leading =) with value larger than 4096 bytes",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set max-size cookie that also has an attribute",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/value/value-ctl.html",
+    [
+      {
+        "name": "Cookie with %x0 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x2 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x3 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x4 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x5 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x6 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x8 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x9 in value is accepted (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xa in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xb in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xc in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xd in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xe in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %xf in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x10 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x11 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x12 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x13 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x14 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x15 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x16 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x17 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x18 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x19 in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1a in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1b in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1c in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1d in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1e in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x1f in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x7f in value is rejected (DOM).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cookie with %x0 in name is rejected or modified (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x1 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x2 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x3 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x4 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x5 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x6 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x7 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x8 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x9 in value is accepted (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %xa in name is rejected or modified (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %xb in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %xc in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %xd in name is rejected or modified (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %xe in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %xf in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x10 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x11 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x12 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x13 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x14 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x15 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x16 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x17 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x18 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x19 in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x1a in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x1b in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x1c in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x1d in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x1e in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x1f in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Cookie with %x7f in value is rejected (HTTP).",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ],
+  [
+    "cookies/value/value.html",
+    [
+      {
+        "name": "Set value containing a comma",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set quoted value containing a comma",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore values after semicolon",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore whitespace at the end of value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set value including quotes and whitespace up until semicolon",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set value with a single quote excluding whitespace",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set nameless cookie to its value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set nameless cookie to its value with an escaped quote",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set value with unbalanced leading quote",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set nameless cookie followed by '=' to its value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with large name + value ( = 4kb)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore cookie with large name + value ( > 4kb)",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie but ignore value after LF",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie ignoring whitespace after value endquote",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore whitespace and ; after value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Ignore whitespace preceding value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with quotes in value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie keeping whitespace inside quoted value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie value ignoring characters after semicolon",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with another = inside quoted value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie ignoring whitespace surrounding value and characters after first semicolon",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set valueless cookie, given `Set-Cookie: test22=`",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "URL-encoded cookie value is not decoded",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with value set to =",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with one = inside an unquoted value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with two = inside an unquoted value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set cookie with a space character in the value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      },
+      {
+        "name": "Set a nameless cookie with a space character in the value",
+        "status": "Fail",
+        "message": "assert_true: zw-static-corpus: HTTP-header-driven cookie set is not executable in static corpus (no server-side Set-Cookie channel) expected true got false"
+      }
+    ]
+  ]
+]

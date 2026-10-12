@@ -689,3 +689,5 @@ mod r5074_abspos_auto_margin_inset_tests;
 mod r5077_float_prev_mb_floor_tests;
 /// R5078 iframe default object size（§10.3.2 + §10.6.2）测试。
 mod r5078_iframe_default_size_tests;
+/// R5080 colgroup/column min-max-height 不适用（§17.3）测试。
+mod r5080_column_vsize_tests;
