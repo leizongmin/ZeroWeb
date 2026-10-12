@@ -2010,6 +2010,43 @@ fn r816_linebox_metrics_populated() {
     assert!(line.descent >= 0.0, "descent 非负");
 }
 
+/// R5087（CSS2 §10.8.1 leading）：line-height < 字体 content 高时 half-leading 为负，
+/// 行基线 = max(各 run 含自身 half-leading 的 ascent) < 裸字形 ascent（字形越出行盒顶 =
+/// bleed，chromium 同）。旧行为只对 tallest run 经 strut 施加 leading、其余 run 裸 ascent
+/// 参与并托底基线 → 紧 line-height 行字形整体下坠 |half-leading|
+///（driving: line-height-bleed-001/002）。kill-switch ZW_STRUT_NEG_LEADING=0 恢复钳制。
+#[test]
+fn r5087_run_leading_adjusted_ascent_allows_negative_half_leading() {
+    let build_baseline = |line_height: f32| {
+        let mut ctx = InlineFormattingContext::new(800.0);
+        let runs = vec![TextRun::simple(
+            "Hello".to_string(),
+            NodeId::default(),
+            100.0, // font-size（A+D ≈ fs 近似口径）
+            line_height,
+            zero_css_parser::values::VerticalAlignValue::Baseline,
+        )];
+        ctx.break_into_lines(runs);
+        ctx.lines[0].baseline_y
+    };
+
+    // 紧 line-height（0 = 极限 bleed）：half-leading = (0 − 100)/2 = −50，
+    // 基线 = −50 + 100×ratio < 裸 ascent（100×ratio）。
+    let tight = build_baseline(0.0);
+    let normal = build_baseline(200.0); // line-height 2：half-leading = +50
+    assert!(
+        (tight - (normal - 100.0)).abs() < 1.0,
+        "基线差应 = 行高差 100（half-leading 各 ±50），tight={tight} normal={normal}"
+    );
+    assert!(
+        tight < 100.0 * 0.95,
+        "紧 line-height 基线应明显小于裸 ascent，实际 {tight}"
+    );
+
+    // 宽 line-height 与紧 line-height 的基线差 = 100（half-leading 差 100）。
+    // （上面第一断言的精确形式；分开放置以便失败时定位。）
+}
+
 /// R817 linebox 度量统一 Phase 2：验证 IFC 片段的 `is_ahem`（实际字体）按**每个片段**传播，
 /// 而非容器级。这是 paint Phase 2 基线定位公式（仅对真正 Ahem 方块 `baseline_y - font_size`
 /// 应用）所依赖的数据——Ahem 容器内的非 Ahem 片段（如 font-051 的 serif span）必须为 false，

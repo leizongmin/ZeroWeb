@@ -10,6 +10,13 @@ pub(super) fn plaintext_line_direction() -> bool {
     selected(*VALUE, || default_on("ZW_PLAINTEXT_LINE_DIRECTION"))
 }
 
+/// R5087（CSS2 §10.8.1 leading）：strut half-leading 允许为负（line-height < 字体
+/// content 高时字形越出行盒顶 = bleed）。default-on，`ZW_STRUT_NEG_LEADING=0` 回退钳制。
+pub(super) fn strut_neg_leading() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_STRUT_NEG_LEADING"));
+    selected(*VALUE, || default_on("ZW_STRUT_NEG_LEADING"))
+}
+
 pub(super) fn debug_ifc() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| std::env::var("ZW_DEBUG_IFC").is_ok());
     selected(*VALUE, || std::env::var("ZW_DEBUG_IFC").is_ok())

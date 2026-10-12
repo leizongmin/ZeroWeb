@@ -2167,7 +2167,18 @@ impl InlineFormattingContext {
                     .map(|r| r.height)
                     .fold(0.0f32, f32::max);
                 let strut_lh = if strut_lh > 0.0 { strut_lh } else { line_height };
-                (strut_lh - dominant_fs).max(0.0) / 2.0 + dominant_fs * dominant_ratio
+                // R5087（CSS2 §10.8.1 leading）：half-leading 允许为负——line-height <
+                // 字体 content 高（A+D ≈ fs 近似）时 half-leading = (strut_lh − fs)/2 < 0，
+                // strut 基线越出行盒顶（字形上溢 = bleed，chromium 同）。旧 `.max(0.0)`
+                // 钳制把基线钉在字形 ascent 处，紧 line-height（headings 常态）与
+                // line-height:0 案（driving: line-height-bleed-001/002）字形整体下坠
+                // |half-leading|。kill-switch ZW_STRUT_NEG_LEADING=0 恢复钳制。
+                let strut_half_leading = if runtime_flags::strut_neg_leading() {
+                    (strut_lh - dominant_fs) / 2.0
+                } else {
+                    ((strut_lh - dominant_fs) / 2.0).max(0.0)
+                };
+                strut_half_leading + dominant_fs * dominant_ratio
             } else {
                 self.container_font_size * 0.8
             };
@@ -2200,9 +2211,21 @@ impl InlineFormattingContext {
                         }
                         // R4412：符号语义分向——正（over）叠 ascent（行顶上扩），负
                         //（under）扩 descent 侧（基线下方）；base ascent 恒参与。
+                        // R5087（CSS2 §10.8.1）：每个 inline box 的 ascent 参与 = **含自身
+                        // half-leading**——(run 行高 − fs)/2 + ascent 度量（A+D≈fs 近似同
+                        // strut 口径）。line-height < content 高时 half-leading 为负、字形
+                        // 越出行盒顶（bleed-001/002 driving）；旧行为只对 tallest run 经
+                        // strut 施加 leading、其余 run 裸 ascent 参与 → 紧 line-height 行
+                        // 基线被裸 ascent 托底、字形整体下坠。kill-switch 同 strut 臂。
+                        let run_half_leading = if runtime_flags::strut_neg_leading() {
+                            (run.height - run.font_size) / 2.0
+                        } else {
+                            0.0
+                        };
+                        let run_leaded_ascent = run_half_leading + run.font_size * run_ratio;
                         max_ascent = max_ascent
-                            .max(run.font_size * run_ratio + run.ruby_rt_ascent.max(0.0))
-                            .max(run.font_size * run_ratio);
+                            .max(run_leaded_ascent + run.ruby_rt_ascent.max(0.0))
+                            .max(run_leaded_ascent);
                         if run.ruby_rt_ascent < 0.0 {
                             max_glyph_descent = max_glyph_descent.max(-run.ruby_rt_ascent);
                             // R4413：under rt 要求行堆叠高度容纳「基线下方 = base descent
