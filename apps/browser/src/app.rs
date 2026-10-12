@@ -34,6 +34,7 @@ use crate::pages;
 use crate::tab_manager::TabManager;
 use crate::text_input::TextInput;
 use crate::text_metrics;
+use crate::view_source_fetch::ViewSourceFetchState;
 
 const TAB_BAR_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(450);
 
@@ -205,6 +206,8 @@ pub struct BrowserApp {
     scrollbar_visible_until: Option<Instant>,
     /// 进行中的 favicon 异步拉取。
     favicon_fetch: FaviconFetchState,
+    /// 进行中的 view-source 源码异步抓取（后台线程 + 主循环 poll）。
+    view_source_fetch: ViewSourceFetchState,
     /// 是否显示下载浮动面板（也可因活动下载自动展开）。
     download_panel_open: bool,
     /// 最近一次「在文件夹中显示」动作打开的目录（演示流断言面）。
@@ -323,6 +326,7 @@ impl BrowserApp {
             scrollbar_hover: None,
             scrollbar_visible_until: None,
             favicon_fetch: FaviconFetchState::new(),
+            view_source_fetch: ViewSourceFetchState::new(),
             download_panel_open: false,
             last_opened_download_dir: None,
             find_match_ranges: Vec::new(),
@@ -381,6 +385,14 @@ impl BrowserApp {
         }
         if self.favicon_fetch.poll_bookmarks(&mut self.font_loader) {
             self.needs_redraw = true;
+        }
+        // view-source 后台抓取完成：取结果并开源码/错误内页（异步，不阻塞事件循环）。
+        for completed in self.view_source_fetch.take_completed() {
+            let page = match completed.result {
+                Ok(html) => pages::generate_view_source_page(&completed.target, &html),
+                Err(error) => pages::generate_error_page(&completed.view_url, &error),
+            };
+            self.open_internal_document_tab(page, &completed.view_url, "查看源代码");
         }
         if self.tabs.poll(self.shell.active_tab_id(), self.gpu_renderer_is_some()) {
             self.needs_redraw = true;
@@ -2102,34 +2114,22 @@ impl BrowserApp {
         self.open_internal_document_tab(page, &view_url, "查看源代码");
     }
 
-    /// 地址栏 `view-source:<url>` 入口：抓取目标内容并以内页展示源码。
+    /// 地址栏 `view-source:<url>` 入口：后台线程抓取目标内容，主循环 poll 到结果后
+    /// 以内页展示源码（参照 favicon_fetch 异步模式；抓取线程自带 30s 超时，事件
+    /// 循环不再被慢/黑洞目标阻塞）。
     ///
     /// 内层 URL 与地址栏普通输入走同一 normalize 路径，因此
     /// `view-source:127.0.0.1:8080/x` 等无 scheme 简写同样生效。
     fn open_view_source_page(&mut self, inner: &str) {
         let inner = inner.trim();
         if inner.is_empty() {
+            // 空内层（含仅空白）明确出错误内页而非静默无动作（对齐 Chrome 空内层错误视图）
+            let page = pages::generate_error_page("view-source:", "view-source 缺少内层 URL");
+            self.open_internal_document_tab(page, "view-source:", "查看源代码");
             return;
         }
         let target = normalize_url(inner, &self.shell);
-        let view_url = format!("view-source:{target}");
-        let page = match Self::fetch_document_source(&target) {
-            Ok(html) => pages::generate_view_source_page(&target, &html),
-            Err(error) => pages::generate_error_page(&view_url, &error),
-        };
-        self.open_internal_document_tab(page, &view_url, "查看源代码");
-    }
-
-    /// 同步抓取目标 URL 响应体（view-source 源码展示；复用 zero_net 阻塞客户端，
-    /// 带默认 30s 超时，与 tab_js_worker 的直连读取同一路径家族）。
-    fn fetch_document_source(target: &str) -> Result<String, String> {
-        if !target.starts_with("http://") && !target.starts_with("https://") {
-            return Err(format!("view-source 仅支持 http/https URL，实际为 {target}"));
-        }
-        let response = zero_net::HttpClient::new()
-            .get(target)
-            .map_err(|error| format!("无法加载 {target}: {error}"))?;
-        Ok(String::from_utf8_lossy(&response.body).to_string())
+        self.view_source_fetch.request(target);
     }
 
     /// 审查右键点击位置的元素。
@@ -2392,11 +2392,14 @@ impl BrowserApp {
 
     pub(crate) fn looks_like_search_query(text: &str) -> bool {
         let trimmed = text.trim();
+        let authority = split_authority(trimmed).0;
         !trimmed.is_empty()
             && !trimmed.contains("://")
             && !trimmed.starts_with("localhost")
-            // host:port（数字端口，如 myserver:8080）是 URL 而非搜索词的强信号
-            && !authority_has_numeric_port(split_authority(trimmed).0)
+            // host:port（数字端口，如 myserver:8080）是 URL 而非搜索词的强信号；
+            // authority 含空白时不适用（`meeting at 10:30` 的尾部 `:30` 不是端口），
+            // 与 normalize_url 的空白守卫保持导航层一致
+            && (authority_has_whitespace(authority) || !authority_has_numeric_port(authority))
             && (!trimmed.contains('.') || trimmed.contains(' '))
     }
 

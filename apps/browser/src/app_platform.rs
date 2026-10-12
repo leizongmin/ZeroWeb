@@ -1096,6 +1096,28 @@ fn authority_host(authority: &str) -> &str {
     }
 }
 
+/// authority 段是否含空白字符。空白不可能是合法 host 的一部分
+///（https://url.spec.whatwg.org/#host-writing），含空白的「词 :数字」输入
+///（如 `meeting at 10:30`、`尺寸 16:9`）应维持搜索回退而非拼成 URL。
+fn authority_has_whitespace(authority: &str) -> bool {
+    authority.chars().any(char::is_whitespace)
+}
+
+/// authority 以 `[` 开头时的 IPv6 方括号形态校验：必须有 `]`，且 `]` 后只允许为空
+/// 或 `:数字端口`。`[::1]`、`[::1]:8080` 合法；`[::1junk`（无 `]`）与
+/// `[::1]junk`、`[::1]:abc`（`]` 后带残渣）不是合法 URL authority。
+fn bracketed_authority_wellformed(authority: &str) -> bool {
+    let Some(rest) = authority.strip_prefix('[') else {
+        return false;
+    };
+    match rest.split_once(']') {
+        Some((_, tail)) => {
+            tail.is_empty() || tail.strip_prefix(':').is_some_and(|port| port.parse::<u16>().is_ok())
+        }
+        None => false,
+    }
+}
+
 /// authority 段是否为 `host:port` 且端口为数字（1-65535，u16 可解析）。
 /// 这是 URL 而非搜索词的强信号。
 fn authority_has_numeric_port(authority: &str) -> bool {
@@ -1134,6 +1156,7 @@ fn host_is_local_or_private(host: &str) -> bool {
 ///   192.168/16）用 `http://`——本地/内网服务通常无 TLS，https 升级必然失败；
 /// - 公网域名维持 `https://` 升级；
 /// - `host:port`（端口为数字）是 URL 而非搜索词的强信号；
+/// - authority 含空白（多词搜索查询）或方括号 IPv6 形态残缺/带残渣时维持搜索回退；
 /// - 其余输入维持搜索引擎回退。
 pub fn normalize_url(input: &str, shell: &BrowserShell) -> String {
     if input.starts_with("http://")
@@ -1151,6 +1174,16 @@ pub fn normalize_url(input: &str, shell: &BrowserShell) -> String {
     }
 
     let (authority, rest) = split_authority(input);
+    // authority 含空白时不可能是合法 host（https://url.spec.whatwg.org/#host-writing），
+    // 含空格的冒号查询（如 `meeting at 10:30`、`尺寸 16:9`）维持搜索回退
+    if authority_has_whitespace(authority) {
+        return shell.settings().search(input);
+    }
+    // 方括号 IPv6 authority 残缺或带残渣（`[::1junk`、`[::1]junk`、`[::1]:abc`）
+    // 不是合法 URL authority（https://url.spec.whatwg.org/#host-writing），维持搜索回退
+    if authority.starts_with('[') && !bracketed_authority_wellformed(authority) {
+        return shell.settings().search(input);
+    }
     // 裸 IPv6（如 ::1）：仅回环识别为 URL，且主机须加方括号才是合法 URL
     //（https://url.spec.whatwg.org/#host-writing）；其余维持搜索回退
     if !authority.starts_with('[')

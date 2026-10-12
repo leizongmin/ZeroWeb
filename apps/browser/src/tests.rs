@@ -2108,6 +2108,16 @@ fn normalize_url_scheme_heuristics_table() {
         ("172.32.0.1", "https://172.32.0.1"),
         // host:port（数字端口）是 URL 而非搜索词
         ("myserver:8080", "https://myserver:8080"),
+        // 合法 host:port 不被空格负例误伤
+        ("example.com:443", "https://example.com:443"),
+        ("[::1]:8080", "http://[::1]:8080"),
+        // 含空格的冒号查询维持搜索回退（端口启发式不得把「词 :数字」当 URL）
+        ("meeting at 10:30", "https://www.google.com/search?q=meeting+at+10:30"),
+        ("尺寸 16:9", "https://www.google.com/search?q=尺寸+16:9"),
+        // 方括号 IPv6 残缺或带残渣维持搜索回退（不产出非法 URL）
+        ("[::1]junk", "https://www.google.com/search?q=[::1]junk"),
+        ("[::1]:abc", "https://www.google.com/search?q=[::1]:abc"),
+        ("[::1junk", "https://www.google.com/search?q=[::1junk"),
         // 搜索回退维持现状
         ("hello world", "https://www.google.com/search?q=hello+world"),
         (
@@ -2120,13 +2130,53 @@ fn normalize_url_scheme_heuristics_table() {
     }
 }
 
-/// I5：host:port（数字端口）不应判为搜索词。
+/// I5：host:port（数字端口）不应判为搜索词；含空格的冒号查询仍是搜索词。
 #[test]
 fn looks_like_search_query_treats_numeric_host_port_as_url() {
     assert!(!BrowserApp::looks_like_search_query("myserver:8080"));
     assert!(!BrowserApp::looks_like_search_query("127.0.0.1:18080/index.html"));
     assert!(BrowserApp::looks_like_search_query("hello world"));
     assert!(BrowserApp::looks_like_search_query("rust tutorial"));
+    // authority 含空白时端口启发式不适用（尾部 `:数字` 不是端口）
+    assert!(BrowserApp::looks_like_search_query("meeting at 10:30"));
+    assert!(BrowserApp::looks_like_search_query("尺寸 16:9"));
+}
+
+/// D6：`view-source:` 空内层应打开错误内页而非静默无动作。
+#[test]
+fn view_source_empty_inner_opens_error_page() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.navigate_to("view-source:");
+    let tab = app
+        .shell
+        .active_tab()
+        .expect("empty-inner view-source should open an error page tab");
+    assert_eq!(tab.url(), Some("view-source:"));
+}
+
+/// D1：view-source 抓取在后台线程执行，主循环 poll 到结果后才开页。
+///
+/// 用非 http 内层驱动完整链路（发起 → 后台线程 guard 拒绝 → poll 开错误内页），
+/// guard 路径无网络依赖，轮询窗口内必然完成；http 内层需真实 HTTP 往返，
+/// 留给 ui_driver e2e（diag/t1-verify.jsonl I8）覆盖。
+#[test]
+fn view_source_non_http_inner_opens_error_page_via_poll() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let view_url = "view-source:file:///etc/hosts";
+    app.navigate_to(view_url);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        app.poll_tab_fetch();
+        if app.shell.tabs().any(|tab| tab.url() == Some(view_url)) || std::time::Instant::now() > deadline {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let tab = app
+        .shell
+        .active_tab()
+        .expect("non-http inner view-source should open an error page tab after poll");
+    assert_eq!(tab.url(), Some(view_url));
 }
 
 /// I1：CLI 位置参数作为启动 URL（首个生效，多个报错，不吃掉 flag 的值）。

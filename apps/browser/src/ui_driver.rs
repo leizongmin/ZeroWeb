@@ -13,6 +13,7 @@
 //! {"op":"type","text":"http://127.0.0.1:18080/page2.html"}
 //! {"op":"shot","name":"01-home.png"}
 //! {"op":"assert_url","contains":"page2.html"}
+//! {"op":"assert_url","contains":"view-source:http://…","mode":"prefix"}
 //! {"op":"assert_menu","open":true}
 //! {"op":"log","msg":"menu opened"}
 //! ```
@@ -59,7 +60,10 @@ enum Step {
     Type { text: String },
     Shot { name: String },
     Log { msg: String },
-    AssertUrl { contains: String },
+    // `mode` 为 `"prefix"` 时按前缀匹配（可判别 `https://view-source:…` 类错误形态），
+    // 缺省 `"contains"` 按子串匹配。不用 doc 注释：variant doc 会使 rustfmt 把整个
+    // enum 强制展开为多行。
+    AssertUrl { pattern: String, prefix: bool },
     AssertMenu { open: bool },
 }
 
@@ -115,9 +119,18 @@ impl Step {
             "type" => Ok(Self::Type { text: text("text")? }),
             "shot" => Ok(Self::Shot { name: text("name")? }),
             "log" => Ok(Self::Log { msg: text("msg")? }),
-            "assert_url" => Ok(Self::AssertUrl {
-                contains: text("contains")?,
-            }),
+            "assert_url" => {
+                let mode = value.get("mode").and_then(Value::as_str).unwrap_or("contains");
+                if mode != "contains" && mode != "prefix" {
+                    return Err(format!(
+                        "script line {line_no}: assert_url mode \"{mode}\" must be \"contains\" or \"prefix\""
+                    ));
+                }
+                Ok(Self::AssertUrl {
+                    pattern: text("contains")?,
+                    prefix: mode == "prefix",
+                })
+            }
             "assert_menu" => Ok(Self::AssertMenu {
                 open: value
                     .get("open")
@@ -178,14 +191,13 @@ impl UiDriver {
         app.needs_redraw = true;
     }
 
-    /// 检查整体墙钟上限。
+    /// 检查整体墙钟上限；超时先落盘 result.json 再报错——无人值守 harness 在
+    /// 超时场景同样能读到产物（与步骤失败/正常完成路径同一契约）。
     pub fn check_timeout(&self) -> Result<(), String> {
         if !self.finished && Instant::now() > self.deadline {
-            return Err(format!(
-                "ui driver timed out at step {}/{}",
-                self.next,
-                self.steps.len()
-            ));
+            let detail = format!("timed out at step {}/{}", self.next, self.steps.len());
+            self.write_result(false, &detail);
+            return Err(detail);
         }
         Ok(())
     }
@@ -291,16 +303,22 @@ impl UiDriver {
                 tracing::info!("UI_DRIVER_STEP step={} log={msg}", self.next + 1);
                 Ok(())
             }
-            Step::AssertUrl { contains } => {
+            Step::AssertUrl { pattern, prefix } => {
                 let id = app
                     .smoke_active_tab_id()
                     .ok_or_else(|| "assert_url: no active tab".to_string())?;
                 let url = app
                     .smoke_tab_url(id)
                     .ok_or_else(|| "assert_url: active tab has no url".to_string())?;
-                if !url.contains(contains.as_str()) {
+                let matched = if *prefix {
+                    url.starts_with(pattern.as_str())
+                } else {
+                    url.contains(pattern.as_str())
+                };
+                if !matched {
                     return Err(format!(
-                        "assert_url failed: url is {url}, expected to contain {contains}"
+                        "assert_url failed: url is {url}, expected to {} {pattern}",
+                        if *prefix { "start with" } else { "contain" }
                     ));
                 }
                 tracing::info!("UI_DRIVER_STEP step={} assert_url={url} status=passed", self.next + 1);
@@ -415,5 +433,25 @@ mod tests {
         );
         assert!(Step::parse(r#"{"op":"nonsense"}"#, 1).is_err());
         assert!(Step::parse(r#"{"op":"click","x":10}"#, 1).is_err());
+    }
+
+    /// assert_url 缺省 contains；`mode:"prefix"` 按前缀匹配；未知 mode 拒绝。
+    #[test]
+    fn parse_assert_url_supports_prefix_mode() {
+        assert_eq!(
+            Step::parse(r#"{"op":"assert_url","contains":"page2.html"}"#, 1),
+            Ok(Step::AssertUrl {
+                pattern: "page2.html".into(),
+                prefix: false
+            })
+        );
+        assert_eq!(
+            Step::parse(r#"{"op":"assert_url","contains":"view-source:","mode":"prefix"}"#, 1),
+            Ok(Step::AssertUrl {
+                pattern: "view-source:".into(),
+                prefix: true
+            })
+        );
+        assert!(Step::parse(r#"{"op":"assert_url","contains":"x","mode":"suffix"}"#, 1).is_err());
     }
 }

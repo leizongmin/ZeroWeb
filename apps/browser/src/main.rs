@@ -65,6 +65,7 @@ mod text_input;
 mod text_metrics;
 mod ui_driver;
 mod ui_icons;
+mod view_source_fetch;
 #[cfg(target_os = "windows")]
 mod windows_titlebar;
 
