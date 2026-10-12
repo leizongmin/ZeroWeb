@@ -137,9 +137,9 @@
     },
     {
       "id": "mb/zero-dom/dom/get_elements_by_tag_name_1000",
-      "p95": 11413.258366533864,
+      "p95": 11307.94782572545,
       "tier": "budget",
-      "tightened_at": "2026-10-03T13:26:13Z"
+      "tightened_at": "2026-10-12T19:25:58Z"
     },
     {
       "id": "mb/zero-dom/dom/parse_html_nested_50",
@@ -166,9 +166,9 @@
     },
     {
       "id": "mb/zero-dom/dom/query_selector_1000_elements_by_tag",
-      "p95": 360.5658090509387,
+      "p95": 355.42667342297807,
       "tier": "budget",
-      "tightened_at": "2026-10-06T13:28:26Z"
+      "tightened_at": "2026-10-12T19:25:58Z"
     },
     {
       "id": "mb/zero-dom/dom/tree_construction_10k_nodes",
@@ -314,14 +314,15 @@
     },
     {
       "id": "mb/zero-protocol/ipc_serialize_10000",
-      "p95": 387548.2162162162,
+      "p95": 381372.8539473684,
       "tier": "budget",
-      "tightened_at": "2026-10-02T13:26:32Z"
+      "tightened_at": "2026-10-12T19:25:58Z"
     },
     {
       "id": "mb/zero-render-foundation/damage_tracker/add_damage/100",
-      "p95": 1409.519883560292,
-      "tier": "budget"
+      "p95": 1405.5905098964477,
+      "tier": "budget",
+      "tightened_at": "2026-10-12T19:25:58Z"
     },
     {
       "id": "mb/zero-render-foundation/damage_tracker/add_damage/1000",
@@ -331,9 +332,9 @@
     },
     {
       "id": "mb/zero-render-foundation/damage_tracker/add_damage/500",
-      "p95": 8521.27984496124,
+      "p95": 8520.957637231504,
       "tier": "budget",
-      "tightened_at": "2026-10-03T13:26:13Z"
+      "tightened_at": "2026-10-12T19:25:58Z"
     },
     {
       "id": "mb/zero-render-foundation/damage_tracker/damage_all",
@@ -510,9 +511,9 @@
     },
     {
       "id": "mb/zero-style-system/selector_matching_100_elements",
-      "p95": 13331.43577839678,
+      "p95": 10834.249228439992,
       "tier": "budget",
-      "tightened_at": "2026-10-04T13:26:14Z"
+      "tightened_at": "2026-10-12T19:25:58Z"
     },
     {
       "id": "mb/zero-wasm-sandbox/wasm_call_add_i32_1000",
