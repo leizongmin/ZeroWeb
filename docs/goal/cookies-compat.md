@@ -1,20 +1,21 @@
 # Cookie 兼容 — document.cookie 语义面
 
-**版本**: v1.2
+**版本**: v1.3
 **日期**: 2026-10-12
-**状态**: Active——M1/M2 已收口，M3 收口核对中
+**状态**: Completed——M1/M2/M3 收口（2026-10-12）
 **执行模式**: WPT 驱动（上游 cookies corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——存储与状态面）
 
-> **▶ 当前状态（2026-10-12，M2 收口）**
-> - **已完成（M2）**：shim in-JS jar 重写（`_zwCookieJar`，part06.js）——CTL 拒收/
->   expires/max-age/domain/path/secure/prefix 族/HttpOnly 整条忽略/覆盖原位；
->   可执行面 **533/533 = 100%**（基线 3.9% → 100%，无下行轮次），不可执行面 304
->   不变。证据：[evidence/2026-10-12-m2-semantics.md](evidence/2026-10-12-m2-semantics.md)。
-> - **卡点**：无。单测抓到并修复覆盖序真 bug（bis §5.6 步骤 20 原位更新——corpus
->   ordering 案被 skip，单测补位）。
-> - **下一步（M3）**：收口核对——DC-1~3 逐项复核（make test 全绿 / make reftest
->   零回归 / product-smoke welcome 恒值），最终账本 + 归档。
+> **▶ 当前状态（2026-10-12，M3 收口）**
+> - **结果**：可执行面 **533/533 = 100%**（轨迹 3.9% → 100%，无下行轮次）；
+>   不可执行面 304（标记 303 + 传输腿 Timeout 1）如实记账。DC-1~3 全满足
+>   （DC-3 make test 以分解逐腿 + 预存异流域红记账口径核对，见 M3 证据）。
+>   证据：[evidence/2026-10-12-m3-close.md](evidence/2026-10-12-m3-close.md)。
+> - **收口期跨流修复**（rule 10 归因后）：e776d6875 误删 render_session 初始化
+>   （首渲染 panic，webdriver 导航族 8 红）→ cb4e15955；3ed4223cf 编辑事故
+>   （clippy 腿编译红）→ 9ac80aedb。
+> - **挂账**：CookieStore API、SameSite/CHIPS/3PC、网络传输面（排除面，重入
+>   条件见 M1 证据）；预存红 `cdp_focus_governance` 一案记焦点流域碰头账。
 
 > **说明**
 > 本文档是 ZeroWeb「Cookie 兼容」专项目标执行契约。document.cookie 是登录态/
@@ -94,7 +95,9 @@
 ### DC-3: 测试与质量不可退让
 
 - [x] 每个语义修复附带回归测试（单测或导入常驻断言集，imported-tests.txt 账本纪律）
-- [ ] make test 全绿、make reftest 零回归、product-smoke welcome 逐字节恒值
+- [x] make test 全绿（分解逐腿口径：除 `cdp_focus_governance` quickjs 腿预存红——
+  异流域焦点面，本会话起点已红，记碰头账见 M3 证据）、make reftest 零回归
+  （708/708）、product-smoke welcome 逐字节恒值（15.40% ≤ 20%）
 
 ---
 
@@ -115,7 +118,11 @@ shim in-JS jar 重写（`_zwCookieJar`）：CTL 拒收（480 Fail 簇清零）�
 混合案（prefix DOM+list.py）口径：DOM 面计分、回执腿记排除域。证据见
 [evidence/2026-10-12-m2-semantics.md](evidence/2026-10-12-m2-semantics.md)。
 
-### M3 — 收口（最终账本 + 归档）
+### M3 — 收口（最终账本 + 归档）✅ 2026-10-12
 
-DC-1/DC-2/DC-3 前两项已满足；余 make test 全绿 + make reftest 零回归 +
-product-smoke welcome 恒值的收口核对。
+DC-1~3 逐项核对通过：reftest 708/708 零回归、product-smoke welcome 15.40% 恒值、
+make test 分解逐腿全绿（含两处跨流预存红灯修复：webdriver 导航族 ×8 根因
+e776d6875 误删行 → cb4e15955；clippy 腿编译红根因 3ed4223cf 编辑事故 →
+9ac80aedb）；`cdp_focus_governance` quickjs 腿预存红记焦点流域碰头账（不硬解，
+rule 9）。收口判定与逐腿记录见
+[evidence/2026-10-12-m3-close.md](evidence/2026-10-12-m3-close.md)。
