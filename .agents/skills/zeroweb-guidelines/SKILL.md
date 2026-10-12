@@ -11,7 +11,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 
 - 触发后整个编码任务期间持续生效，不因多轮对话或任务切换遗忘；仅当用户明确说「跳过准则」时暂停，恢复编码后自动重新生效。
 - 动代码前按改动选择主题，CR 时对照触碰到的条目；先核对适用条件，不把局部经验扩展为无条件禁令。
-- **权衡**：这些不变式倾向谨慎而非速度。小改动不必全量过 29 条，自行判断。
+- **权衡**：这些不变式倾向谨慎而非速度。小改动不必全量过 30 条，自行判断。
 - 本 skill 是领域层，叠加在 AGENTS.md 编码准则 / `lei-code-guidelines`（行为层）之上，不复述其行为规则。
 
 | 改动入口 | 必读条目 |
@@ -20,7 +20,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 | 字体 / shaping / 缓存 | #3–5、#8；性能改动加 #11 |
 | 绘制 / 合成 / 帧复用 | #6–8、#12–14、#17 |
 | 布局 / 后处理 pass | #18、#29 |
-| IPC / 同步脚本 / 宿主桥 | #12–15、#24–25 |
+| IPC / 同步脚本 / 宿主桥 | #12–15、#24–25、#30 |
 | 存储 / 并发缓存 | #16、#19、#22 |
 | 性能 / 测试工具 | #9–11、#17–20、#23、#27–28；shim 循环加 #26 |
 
@@ -185,3 +185,9 @@ Fresh 输出、构建耗时、`deps/` 下 rlib 的字符串检索、对另一个
 布局最终几何是 taffy + 十余个后处理 pass 的叠加态，单看最终渲染值无法归因到机制——推断「某 CSS 语义不存在/已被承担」前，先用 kill-switch 环境变量逐个关闭 pass 定位真实承担者（绿案可能是另一条回填/位移 pass 间接撑住的）。给 pass 加臂或按书写模式门控时，必须同时审计：未门控书写模式（vertical）下同一 CSS 语义由谁接管——本项目 vertical 与水平是两套代码，水平臂修的 bug 在 vertical 侧几乎总有对应缺口；以及后续 pass（凡「把 auto 盒长回内容」的回填）是否会覆盖本臂的写入。
 
 依据：[abspos AR 传递与 R1743 回填覆盖](../../../docs/learnings/bugs/2026-10/2026-10-07-abspos-ar-transferred-size-floors.md)、[vertical 写入模式 AR 传递缺口](../../../docs/learnings/bugs/2026-10/2026-10-07-taffy-ar-transfer-no-content-max-vertical.md)。
+
+### 30. shim 异步多事件接口的事件必须 task 承载，禁止用 microtask 链模拟事件间隔
+
+FileReader、XHR 进度族、IDB request 族、MediaElement 族等多事件异步接口，shim 内事件派发一律走 task 粒度（runner 的确定性 setTimeout FIFO stub 是基座），不得用 `Promise.resolve().then` 链逐事件间隔。平台语义里相邻事件是独立 task，promise 续体（含 WPT promise_test 完成回调）在 task 之间全部 drain，EventWatcher 状态机必然推进到位；microtask 链则把「最后一个事件」与 harness 完成回调排进同一条微任务队列竞速，成败取决于测试写法（`wait_for` 位置、中间 await 跳数），失败形态随用例漂移、无法用确定序解释，极难归因。无 host 环境回落 microtask 仅粒度退化、序不变。
+
+依据：[FileReader 事件 task 承载](../../../docs/learnings/platform/2026-10/2026-10-11-wpt-eventwatcher-task-dispatch.md)。

@@ -229,8 +229,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（28）
+## Platform — 平台与环境相关经验（29）
 
+- 2026-10-11 [shim 异步事件必须 task 承载——microtask 链与 promise_test 完成回调竞速](platform/2026-10/2026-10-11-wpt-eventwatcher-task-dispatch.md) — engine
 - 2026-10-09 [symlink 路径调用 skill 脚本会静默空转（.claude/skills → .agents/skills）](platform/2026-10/2026-10-09-symlinked-skill-script-silent-noop.md) — tools
 - 2026-10-08 [shim js 变更后 cargo 未重编 engine：探针打到旧 renderer 的构建盲区](platform/2026-10/2026-10-08-shim-js-include-str-rebuild-gap.md) — engine
 - 2026-10-07 [zero-wpt-runner 组级过滤的正确调用形态：testharness-dom + 路径，不是 `run <组名>`](platform/2026-10/2026-10-07-wpt-runner-group-invocation-form.md) — tests/wpt-runner
