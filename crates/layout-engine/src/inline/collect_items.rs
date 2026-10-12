@@ -155,9 +155,14 @@ impl InlineFormattingContext {
                         // pre 族原始文本不折叠（`\n`/连续空格/制表符保留给 break_lines）；
                         // collapse 有损（`\n`→空格），事后无法恢复。
                         let parent_id = doc.parent_node(child_id);
-                        let run_ws = doc
-                            .parent_node(child_id)
-                            .and_then(|pid| styles.get(&pid))
+                        // R5081：注入伪元素文本节点（inject_pseudo_text_nodes 把伪元素自身
+                        // 样式挂在文本节点 styles 条目上，content `\A` 落成 \n）——white-space
+                        // 须读**文本节点自身**条目（::before nowrap 时 \n 折叠不折行不强制
+                        // 断行，content-white-space-003）；普通 DOM 文本节点无条目 → 落回
+                        // 父级继承（原行为不变）。
+                        let run_ws = styles
+                            .get(&child_id)
+                            .or_else(|| doc.parent_node(child_id).and_then(|pid| styles.get(&pid)))
                             .map(|s| Self::run_white_space(&s.white_space))
                             .or_else(|| {
                                 // R3778：paint Path B（空 styles）——layout 期存储的 run 级

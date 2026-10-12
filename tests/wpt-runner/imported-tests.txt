@@ -548,3 +548,5 @@ css/CSS2/normal-flow/min-height-applies-to-005.xht css/CSS2/reference/ref-if-the
 css/CSS2/normal-flow/min-height-applies-to-006.xht css/CSS2/reference/ref-if-there-is-no-red.xht == 2026-10-12 R5080 column min/max-height 不适用（§17.3）
 css/CSS2/tables/table-column-rendering-001.xht css/CSS2/reference/no-red-on-blank-page-ref.xht == 2026-10-12 R5080 colgroup min/max-height 不适用（§17.3）
 css/CSS2/tables/table-column-rendering-002.xht css/CSS2/reference/no-red-on-blank-page-ref.xht == 2026-10-12 R5080 colgroup min/max-height 不适用（§17.3）
+css/CSS2/generated-content/content-white-space-002.xht css/CSS2/generated-content/content-white-space-002-ref.html == 2026-10-12 R5081 伪元素文本节点 white-space 自身条目优先
+css/CSS2/generated-content/content-white-space-003.xht css/CSS2/generated-content/content-white-space-003-ref.html == 2026-10-12 R5081 伪元素文本节点 white-space 自身条目优先
