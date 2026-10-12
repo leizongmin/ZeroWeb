@@ -56,6 +56,14 @@ Commands:
                        window testharness cases (webmessaging-compat goal M1 / DC-1)
   testharness-cookies  Run imported cookies (document.cookie semantics) window testharness
                        cases (cookies-compat goal M1 / DC-1)
+  testharness-resource-timing  Run pinned resource-timing window testharness cases
+                       (performance-api-compat goal M1 / DC-1)
+  testharness-navigation-timing  Run pinned navigation-timing window testharness cases
+                       (performance-api-compat goal M1 / DC-1)
+  testharness-event-timing  Run pinned event-timing window testharness cases
+                       (performance-api-compat goal M1 / DC-1)
+  testharness-longtask-timing  Run pinned longtask-timing window testharness cases
+                       (performance-api-compat goal M1 / DC-1)
   testharness-web-components  Run imported custom-elements/shadow-dom/the-template-element
                        testharness cases (web-components goal M1 / DC-1)
   testharness-intersection-observer  Run imported IntersectionObserver testharness cases
@@ -315,6 +323,10 @@ fn main() {
         "testharness-performance-timeline" => cmd_testharness_performance_timeline(&options, filter.as_deref()),
         "testharness-user-timing" => cmd_testharness_user_timing(&options, filter.as_deref()),
         "testharness-web-animations" => cmd_testharness_web_animations(&options, filter.as_deref()),
+        "testharness-resource-timing" => cmd_testharness_resource_timing(&options, filter.as_deref()),
+        "testharness-navigation-timing" => cmd_testharness_navigation_timing(&options, filter.as_deref()),
+        "testharness-event-timing" => cmd_testharness_event_timing(&options, filter.as_deref()),
+        "testharness-longtask-timing" => cmd_testharness_longtask_timing(&options, filter.as_deref()),
         "testharness-net-api" => cmd_testharness_net_api(&options, filter.as_deref()),
         "testharness-encoding" => cmd_testharness_encoding(&options, filter.as_deref()),
         "testharness-html-syntax" => cmd_testharness_html_syntax(&options, filter.as_deref()),
@@ -1224,6 +1236,43 @@ fn cmd_testharness_user_timing(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_web_animations(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_web_animations_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-resource-timing` / `testharness-navigation-timing` /
+/// `testharness-event-timing` / `testharness-longtask-timing` 子命令 — 跑导入的上游
+/// performance-api 四 corpus window 可执行子集（performance-api-compat goal M1 /
+/// DC-1）。
+///
+/// 用例由 `tests/wpt-runner/scripts/goals/19-performance-api-compat.sh` 按需拉到
+/// `wpt-data/`（gitignored）：`.html` 直跑 + `.any.js`/`.window.js` 以 window 变体
+/// 执行（timing/wasm 先例），运行面按内容规则筛减（manual/ref/iframe/worker/.py
+/// server handler/dispatcher 跨窗会话等——`performance_api_case_skipped` 同域注释，
+/// 缺面逐项理由落 goal evidence/ M1 甄别报告）。退出码：有用例非 Pass 或用例集为空
+/// → 1（observers 先例）。基线首跑即便大量 Fail 也只用于记录通过率（agent 经
+/// `--json` 捕获后写 evidence/），不作为 land 门禁。filter 按路径子串透传：
+/// make testharness-resource-timing FILTER=buffer-full。
+fn cmd_testharness_resource_timing(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_resource_timing_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_navigation_timing(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_navigation_timing_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_event_timing(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_event_timing_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_longtask_timing(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_longtask_timing_cases(wpt_root, filter)
     });
 }
 

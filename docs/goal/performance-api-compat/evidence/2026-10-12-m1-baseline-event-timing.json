@@ -1,0 +1,682 @@
+[
+  [
+    "event-timing/TapToStopFling.html",
+    [
+      {
+        "name": "Event Timing: test that the second pointerdown event that happens during fling does not have interaction id.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/auxclick.html",
+    [
+      {
+        "name": "Event Timing auxclick.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/buffered-and-duration-threshold.html",
+    [
+      {
+        "name": "PerformanceObserver buffering independent of durationThreshold",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/buffered-flag.html",
+    [
+      {
+        "name": "PerformanceObserver with buffered flag sees previous Event Timing entries",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/click-timing.html",
+    [
+      {
+        "name": "Event Timing: compare click timings.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/click.html",
+    [
+      {
+        "name": "Event Timing click.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/contextmenu.html",
+    [
+      {
+        "name": "Event Timing contextmenu.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/dblclick.html",
+    [
+      {
+        "name": "Event Timing dblclick.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/disconnect-target.html",
+    [
+      {
+        "name": "Event Timing: when target is disconnected, entry.target returns null.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/duration-with-target-low.html",
+    [
+      {
+        "name": "PerformanceObserver with durationThreshold of 300 and processingDelay of 0 doesn't see any entries in the observer",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/event-click-counts.html",
+    [
+      {
+        "name": "Event Timing: eventCounts.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/event-click-visibilitychange.html",
+    [
+      {
+        "name": "Event handlers which change visibility should not measure next paint.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/event-counts-zero.html",
+    [
+      {
+        "name": "Event Timing: eventCounts.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/event-retarget.html",
+    [
+      {
+        "name": "Event Timing: target reports the last Event Target, i.e. nothing from shadow DOM.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/first-input-interactionid-click.html",
+    [
+      {
+        "name": "The interactionId of the first input entry should match the same pointerdown entry of event timing when click.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/first-input-interactionid-key.html",
+    [
+      {
+        "name": "The interactionId of the first input entry should match the same keydown entry of event timing when press a key.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/first-input-interactionid-tap.html",
+    [
+      {
+        "name": "The interactionId of the first input entry should match the same pointerdown entry of event timing when tap.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/first-input-shadow-dom.html",
+    [
+      {
+        "name": "Event Timing: test first input on shadow DOM.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/gap-keydown-keyup.html",
+    [
+      {
+        "name": "event-timing/gap-keydown-keyup.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 22709, 23377, 2095], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "event-timing/gap-pointerdown-pointerup.html",
+    [
+      {
+        "name": "event-timing/gap-pointerdown-pointerup.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 22709, 23377, 2183], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "event-timing/interaction-count-click.html",
+    [
+      {
+        "name": "EventTiming: verify interactionCount for click interaction",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interaction-count-press-key.html",
+    [
+      {
+        "name": "EventTiming: verify interactionCount for key interaction",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interaction-count-tap.html",
+    [
+      {
+        "name": "EventTiming: verify interactionCount for tap interaction",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-aux-pointerdown-and-pointerdown.html",
+    [
+      {
+        "name": "Event Timing: verify pointerdown reporting for mouse aux pointerdown only triggered contextmenu followed immediately by another pointerdown event.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-aux-pointerdown.html",
+    [
+      {
+        "name": "Event Timing: verify pointerdown reporting for mouse aux pointerdown only triggered contextmenu.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-auxclick.html",
+    [
+      {
+        "name": "Event Timing: verify pointerdown & pointerup reporting for mouse aux click triggered contextmenu.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-click.html",
+    [
+      {
+        "name": "Event Timing: compare event timing interactionId.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-keyboard-event-simulated-click-button-space.html",
+    [
+      {
+        "name": "Click event triggered by space key in checkbox should have the same      interaction id as that of the associated keyboard events.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-keyboard-event-simulated-click-checkbox-space.html",
+    [
+      {
+        "name": "Click event triggered by space key in checkbox should have the same      interaction id as that of the associated keyboard events.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-keyboard-event-simulated-click-link-enter.html",
+    [
+      {
+        "name": "Click event triggered by space key in checkbox should have the same      interaction id as that of the associated keyboard events.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-keypress.html",
+    [
+      {
+        "name": "Event Timing: compare event timing interactionId for keypress.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-label-click.html",
+    [
+      {
+        "name": "Event Timing: interactionId for clicks forwarded form controls is zero.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-orphan-pointerup.html",
+    [
+      {
+        "name": "Event Timing: Orphan pointerup should not be measured as an interaction.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-press-key-as-input.html",
+    [
+      {
+        "name": "Event Timing: compare event timing interactionId for key press as input.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-press-key-no-effect.html",
+    [
+      {
+        "name": "Event Timing: compare event timing interactionId for key press with no effect.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-tap.html",
+    [
+      {
+        "name": "Event Timing: compare event timing interactionId for tap.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/keydown-without-paint.tentative.html",
+    [
+      {
+        "name": "keydown timing entry is dispatched without a repaint",
+        "status": "Fail",
+        "message": "step_wait_func: keydown timing entry should be dispatched without a repaint Timed out waiting on condition"
+      }
+    ]
+  ],
+  [
+    "event-timing/keydown.html",
+    [
+      {
+        "name": "Event Timing Keydown.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/keyup.html",
+    [
+      {
+        "name": "Event Timing Keyup.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/large-duration-threshold.html",
+    [
+      {
+        "name": "PerformanceObserver observes events according to its durationThreshold",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/medium-duration-threshold.html",
+    [
+      {
+        "name": "PerformanceObserver observes events according to its durationThreshold",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/min-duration-threshold.html",
+    [
+      {
+        "name": "PerformanceObserver with durationThreshold of 0 sees events of duration >= 16",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/modal-dialog-interrupt-paint.html",
+    [
+      {
+        "name": "Event Timing: showing modal dialogs is an alternative end point.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/mousedown.html",
+    [
+      {
+        "name": "Event Timing mousedown.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/mouseenter.html",
+    [
+      {
+        "name": "Event Timing mouseenter.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/mouseleave.html",
+    [
+      {
+        "name": "Event Timing mouseleave.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/mouseout.html",
+    [
+      {
+        "name": "Event Timing mouseout.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/mouseover.html",
+    [
+      {
+        "name": "Event Timing mouseover.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/mouseup.html",
+    [
+      {
+        "name": "Event Timing mouseup.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/only-observe-firstInput.html",
+    [
+      {
+        "name": "Event Timing: check first-input for a PerformanceObserver observing only first-input.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/orphan-keydown.html",
+    [
+      {
+        "name": "Event Timing: Orphan keydown should be measured as an interaction.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/pointerdown-pointerup-no-overlap.html",
+    [
+      {
+        "name": "pointerdown and pointerup should not overlap when there is no pointerdown handler",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/pointerdown.html",
+    [
+      {
+        "name": "Event Timing pointerdown.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/pointerenter.html",
+    [
+      {
+        "name": "Event Timing pointerenter.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/pointerleave.html",
+    [
+      {
+        "name": "Event Timing pointerleave.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/pointerout.html",
+    [
+      {
+        "name": "Event Timing pointerout.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/pointerover.html",
+    [
+      {
+        "name": "Event Timing pointerover.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/pointerup.html",
+    [
+      {
+        "name": "Event Timing pointerup.",
+        "status": "Fail",
+        "message": "assert_implements: Event Counts isn't supported undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/programmatic-click-not-observed.html",
+    [
+      {
+        "name": "Event Timing: events from programmatic click are not observed",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/retrievability.html",
+    [
+      {
+        "name": "Event Timing: make sure event-timing entries are not retrievable by performance.getEntries*.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/retrieve-firstInput.html",
+    [
+      {
+        "name": "Event Timing: check first-input after onload, observer, click, click.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/selection-autoscroll.html",
+    [
+      {
+        "name": "Event Timing: test that the events received in PerformanceObserver during an active text selection autoscroll does not have interaction id.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/shadow-dom-null-target.html",
+    [
+      {
+        "name": "Event Timing: Move pointer within shadow DOM should create event-timing entry with null target.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/supported-types-consistent-with-self.html",
+    [
+      {
+        "name": "supportedEntryTypes should be consistent with `'PerformanceEventTiming' in Self`",
+        "status": "Fail",
+        "message": "assert_equals: expected false but got true"
+      }
+    ]
+  ],
+  [
+    "event-timing/supported-types.window.js",
+    [
+      {
+        "name": "supportedEntryTypes contains 'event' and 'first-input'.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/target-selector.tentative.html",
+    [
+      {
+        "name": "event-timing/target-selector.tentative.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 22709, 23377, 2942], state={\"loaded\":true,\"pending\":5,\"phase\":2,\"tests\":5}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "event-timing/timingconditions.html",
+    [
+      {
+        "name": "Event Timing only times certain types of trusted event.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "event-timing/toJSON.html",
+    [
+      {
+        "name": "Test toJSON() in PerformanceEventTiming.",
+        "status": "Fail",
+        "message": "assert_implements: Event Timing is not supported. undefined"
+      }
+    ]
+  ]
+]
