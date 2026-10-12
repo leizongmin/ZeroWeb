@@ -939,6 +939,30 @@ impl RendererRuntime {
                 &self.sent_image_keys,
             )
         };
+        // C4 修复：webview 暂存的 canvas_images（内联 SVG 栅格 / Canvas 位图 /
+        // 滤镜 isolate 产物）此前从未发布——渲染侧 ImageCache 无对应 key，
+        // ImagePrimitive 全部画空白（bing logo/图标不可见根因）。按 S8 sent_keys
+        // 去重后并入载荷，随首帧写出、后续帧跳过。
+        let mut payloads = payloads;
+        {
+            let sent_keys = &self.sent_image_keys;
+            let items = self
+                .webview
+                .as_mut()
+                .map(|wv| wv.take_pending_canvas_images())
+                .unwrap_or_default();
+            for (key, width, height, rgba) in items {
+                if sent_keys.contains(&key) {
+                    continue;
+                }
+                payloads.push(zero_protocol::IpcImagePayload {
+                    image_key: key,
+                    width,
+                    height,
+                    rgba,
+                });
+            }
+        }
         let frame = zero_page_runtime::FrameModel {
             viewport: (vw, vh),
             document_height,

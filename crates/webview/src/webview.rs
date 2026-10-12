@@ -566,6 +566,9 @@ pub struct WebView {
     loading: bool,
     /// 上次渲染结果。
     last_render: Option<WebViewRenderResult>,
+    /// 最新帧的 canvas_images（内联 SVG 栅格 / Canvas 位图 / 滤镜 isolate 产物）。
+    /// 每次渲染整体替换；发布侧经 [`Self::take_pending_canvas_images`] 取走。
+    pending_canvas_images: Vec<(u64, u32, u32, Vec<u8>)>,
     /// 缓存的 HTML（用于 inject_css 重新渲染）。
     cached_html: String,
     /// 缓存的 CSS（用于 render 重新渲染）。
@@ -741,6 +744,7 @@ impl WebView {
             title: None,
             loading: false,
             last_render: None,
+            pending_canvas_images: Vec::new(),
             cached_html: String::new(),
             cached_css: String::new(),
             event_callbacks: Vec::new(),
@@ -1006,7 +1010,7 @@ impl WebView {
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.render_html(&html, css_str);
-        let render_result = render_result_to_webview(&result);
+        let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result.clone());
         // R150：render 后刷新布局 rect 快照（gBCR 回调读取源）。
         self.refresh_layout_rect_snapshot();
@@ -1085,7 +1089,7 @@ impl WebView {
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.render_html(html, &self.cached_css);
-        let render_result = render_result_to_webview(&result);
+        let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result.clone());
         render_result
     }
@@ -1136,7 +1140,7 @@ impl WebView {
             self.batch_handle_selectors
                 .extend(handle_selectors.iter().map(|(h, s)| (h.clone(), s.clone())));
         }
-        let render_result = result.as_ref().map(render_result_to_webview);
+        let render_result = result.as_ref().map(|r| self.absorb_render_result(r));
         if let Some(render_result) = &render_result {
             self.last_render = Some(render_result.clone());
         }
@@ -1186,7 +1190,7 @@ impl WebView {
             self.pipeline.set_image_ratios(image_ratios);
             self.pipeline.set_image_no_ratio(image_no_ratio);
         }
-        self.last_render = Some(render_result_to_webview(&result));
+        self.last_render = Some(self.absorb_render_result(&result));
         Ok(true)
     }
 
@@ -1583,6 +1587,27 @@ impl WebView {
         Ok(())
     }
 
+    /// 转换 engine 渲染结果并暂存 canvas_images。
+    ///
+    /// C4 根因修复：engine 的 canvas_images（paint_svg_element 的内联 SVG 栅格、
+    /// Canvas 位图、滤镜 isolate 回注产物）是 `ImagePrimitive` 引用的像素来源，
+    /// 此前在 webview 边界被整体丢弃——multi-process 发布链不含这些像素，渲染侧
+    /// ImageCache 查不到 key，内联 SVG/Canvas 全部画空白。暂存后由发布侧
+    /// [`Self::take_pending_canvas_images`] 取走并入 IpcImagePayload。
+    fn absorb_render_result(&mut self, result: &RenderResult) -> WebViewRenderResult {
+        self.pending_canvas_images = result.canvas_images.clone();
+        render_result_to_webview(result)
+    }
+
+    /// 取走暂存的 canvas_images（发副作用：清空暂存）。
+    ///
+    /// 调用方（renderer 发布路径）按 S8 sent_keys 去重后并入 IpcImagePayload；
+    /// key 与 [`zero_render_foundation::image_cache::ImageKey`] 同域（engine
+    /// `simple_hash(source)`，与 ImagePrimitive.image_key 一致）。
+    pub fn take_pending_canvas_images(&mut self) -> Vec<(u64, u32, u32, Vec<u8>)> {
+        std::mem::take(&mut self.pending_canvas_images)
+    }
+
     /// 复制图片缓存供 UI 线程快照。
     pub fn snapshot_image_cache(&self) -> ImageCache {
         self.image_cache.duplicate_for_snapshot()
@@ -1807,7 +1832,7 @@ impl WebView {
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.render_html(&self.cached_html, &self.cached_css);
-        let render_result = render_result_to_webview(&result);
+        let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result.clone());
         render_result
     }
@@ -1821,7 +1846,7 @@ impl WebView {
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.repaint_cached_viewport(&self.cached_css)?;
-        let render_result = render_result_to_webview(&result);
+        let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result.clone());
         Some(render_result)
     }
@@ -1882,7 +1907,7 @@ impl WebView {
 
     /// 应用预算渲染结果到 WebView 状态。
     pub fn apply_render_result(&mut self, result: RenderResult, page_url: &str, finished: bool) {
-        let render_result = render_result_to_webview(&result);
+        let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result);
         if finished {
             self.loading = false;
@@ -2731,7 +2756,7 @@ impl WebView {
         if let Some(result) = self.pipeline.repaint_cached_viewport(&self.cached_css) {
             // repaint 只读不改 Document，live_html（repaint 前序列化）仍等于当前 DOM。
             self.cached_html = live_html;
-            self.last_render = Some(render_result_to_webview(&result));
+            self.last_render = Some(self.absorb_render_result(&result));
             // R150：native 写后 repaint——刷新 gBCR 快照（布局可能已变）。
             self.refresh_layout_rect_snapshot();
         }
@@ -4068,7 +4093,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                 self.cached_html.clone()
             };
             let result = self.pipeline.render_html(&html, &self.cached_css);
-            self.last_render = Some(render_result_to_webview(&result));
+            self.last_render = Some(self.absorb_render_result(&result));
         }
         let forward: std::collections::HashMap<String, String> = {
             let sel_map = self.selector_handle_map.lock().unwrap_or_else(|e| e.into_inner());
@@ -4100,7 +4125,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         // slice33：apply 成功即履行 R100 失效契约（见 evict_removed_identities 文档）。
         self.evict_removed_identities(&tail, &handles);
         if let Some(render_result) = &render_result {
-            self.last_render = Some(render_result_to_webview(render_result));
+            self.last_render = Some(self.absorb_render_result(render_result));
         }
         // R150：apply 后重渲染，布局已变——刷新 gBCR 快照。
         self.refresh_layout_rect_snapshot();
@@ -4203,7 +4228,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             &self.cached_html
         };
         let result = self.pipeline.render_html(html, &self.cached_css);
-        let render_result = render_result_to_webview(&result);
+        let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result.clone());
         render_result
     }
@@ -6733,6 +6758,37 @@ impl Drop for WebView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// C4 钉测：内联 `<svg>` 的栅格像素必须经 webview 暂存暴露给发布侧。
+    ///
+    /// 回归背景：engine `RenderResult.canvas_images`（paint_svg_element 产
+    /// ImagePrimitive + canvas_images 两段式）此前在 webview 边界被丢弃，
+    /// multi-process 发布链无像素 → 渲染侧 ImageCache MISS → 内联 SVG 全画空白
+    /// （bing logo/搜索图标不可见根因）。契约：load_html 后
+    /// `take_pending_canvas_images` 返回非空像素，且 key 与图元 image_key 同域。
+    #[test]
+    fn c4_inline_svg_canvas_images_staged_for_publish() {
+        let mut wv = wv();
+        let html = r#"<html><body style="margin:0">"<svg viewBox="0 0 20 20" style="width:48px;height:48px;display:block"><rect width="20" height="20" fill="red"/></svg></body></html>"#;
+        let render = wv.load_html(html, Some(""));
+        // 图元侧：svg 产 1 个 ImagePrimitive
+        assert_eq!(render.primitives.images.len(), 1, "内联 svg 应产 1 个 ImagePrimitive");
+        let prim_key = render.primitives.images[0].image_key.0;
+        // 像素侧：暂存非空，key 与图元一致
+        let staged = wv.take_pending_canvas_images();
+        assert!(
+            !staged.is_empty(),
+            "canvas_images 必须经 webview 暂存暴露（修复前为空 = 渲染侧全空白）"
+        );
+        assert!(
+            staged.iter().any(|(k, w, h, rgba)| {
+                *k == prim_key && *w > 0 && *h > 0 && rgba.len() == (*w as usize) * (*h as usize) * 4
+            }),
+            "暂存应含图元同 key 的像素条目"
+        );
+        // take 幂等：取后即空
+        assert!(wv.take_pending_canvas_images().is_empty(), "take 后应清空");
+    }
 
     fn wv() -> WebView {
         WebView::new(WebViewConfig::default())
