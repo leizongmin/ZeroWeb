@@ -25,6 +25,7 @@ use crate::transition::TransitionClock;
 
 mod css_vars;
 mod extract;
+pub use css_vars::*;
 pub use extract::*;
 
 /// 动画事件类型（R3249/R3250/R3251）——区分 animationend（完成）/ animationiteration（迭代边界）/

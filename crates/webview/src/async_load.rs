@@ -1368,149 +1368,15 @@ fn extract_document_title(html: &str) -> Option<String> {
 
 /// bing-t5（C3+C4 根因，2026-10-11）：CSS 文本级 CSS Custom Properties 替换。
 /// 收集 `--name: value` 声明 → 替换 `var(--name, fallback)`（迭代至收敛，最多 8 层）。
-/// 自包含纯文本处理（零依赖），供 `advance_render` 在渲染前调用。
+/// 供 `advance_render` 在渲染前调用；实现委托 engine（CI-2026-10-13 起单一实现，
+/// 含 `!important` 级联合并——此前 webview 本地副本与 engine 各一份，同名合并
+/// 语义曾双份同错）。
 fn substitute_css_vars_text(css: &str) -> String {
-    let props = collect_custom_props(css);
+    let props = zero_engine::pipeline::collect_custom_properties(css);
     if props.is_empty() {
         return css.to_string();
     }
-    substitute_var_refs(css, &props)
-}
-
-pub(crate) fn collect_custom_props(css: &str) -> Vec<(String, String)> {
-    let mut map: Vec<(String, String)> = Vec::new();
-    let bytes = css.as_bytes();
-    let len = bytes.len();
-    let mut i = 0;
-    let mut depth: i32 = 0;
-    while i < len {
-        match bytes[i] {
-            b'/' if i + 1 < len && bytes[i + 1] == b'*' => {
-                i += 2;
-                while i + 1 < len && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
-                    i += 1;
-                }
-                i += 2;
-            }
-            b'{' => {
-                depth += 1;
-                i += 1;
-            }
-            b'}' => {
-                depth -= 1;
-                i += 1;
-            }
-            b'-' if i + 2 < len && bytes[i + 1] == b'-' && depth >= 1 => {
-                let start = i;
-                let mut j = i + 2;
-                while j < len && bytes[j] != b':' && bytes[j] != b'{' && bytes[j] != b'}' && bytes[j] != b';' {
-                    j += 1;
-                }
-                if j < len && bytes[j] == b':' {
-                    let name = css[start..j].trim();
-                    if name.starts_with("--") && name.len() > 2 {
-                        let val_start = j + 1;
-                        let mut k = val_start;
-                        let mut ld = 0i32;
-                        while k < len {
-                            match bytes[k] {
-                                b'(' | b'[' => ld += 1,
-                                b')' | b']' => ld -= 1,
-                                b';' if ld <= 0 => break,
-                                b'}' if ld <= 0 => break,
-                                _ => {}
-                            }
-                            k += 1;
-                        }
-                        let value = css[val_start..k].trim().to_string();
-                        if !value.is_empty() {
-                            let ns = name.to_string();
-                            if let Some(e) = map.iter_mut().find(|(n, _)| *n == ns) {
-                                e.1 = value;
-                            } else {
-                                map.push((ns, value));
-                            }
-                        }
-                        i = if k < len && bytes[k] == b';' { k + 1 } else { k };
-                        continue;
-                    }
-                }
-                i = j;
-            }
-            _ => {
-                i += 1;
-            }
-        }
-    }
-    map
-}
-
-fn substitute_var_refs(css: &str, props: &[(String, String)]) -> String {
-    let mut result = css.to_string();
-    for _ in 0..8 {
-        let sub = sub_vars_once(&result, props);
-        if sub == result {
-            break;
-        }
-        result = sub;
-    }
-    result
-}
-
-fn sub_vars_once(css: &str, props: &[(String, String)]) -> String {
-    let mut out = String::with_capacity(css.len());
-    let mut from = 0;
-    while from < css.len() {
-        match css[from..].find("var(") {
-            Some(rel) => {
-                let vs = from + rel;
-                out.push_str(&css[from..vs]);
-                let open = vs + 3;
-                let bytes = css.as_bytes();
-                let mut depth = 0usize;
-                let mut j = open;
-                let mut found = false;
-                while j < bytes.len() {
-                    match bytes[j] {
-                        b'(' => depth += 1,
-                        b')' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                found = true;
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                    j += 1;
-                }
-                if !found {
-                    out.push_str(&css[vs..]);
-                    break;
-                }
-                let inner = &css[open + 1..j];
-                let trimmed = inner.trim();
-                if trimmed.starts_with("--") {
-                    let name = trimmed.split(',').next().unwrap_or(trimmed).trim().to_string();
-                    if let Some((_, val)) = props.iter().find(|(n, _)| *n == name) {
-                        out.push_str(val);
-                    } else if let Some(comma) = trimmed.find(',') {
-                        out.push_str(trimmed[comma + 1..].trim());
-                    } else {
-                        out.push_str(&css[vs..=j]);
-                    }
-                } else {
-                    out.push_str(&css[vs..=j]);
-                }
-                from = j + 1;
-            }
-            None => {
-                out.push_str(&css[from..]);
-                break;
-            }
-        }
-    }
-    out
+    zero_engine::pipeline::substitute_vars(css, &props)
 }
 
 #[cfg(test)]

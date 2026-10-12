@@ -10,9 +10,12 @@
 //! 不支持 `@property` 注册。对静态站（bing.com 等）足够恢复正确渲染。
 
 /// 收集 CSS 文本中所有自定义属性声明（`--name: value;`），返回有序去重的
-/// name → value 映射。后面出现的同名声明覆盖先前的（cascade 简化模型）。
+/// name → value 映射。同名合并按级联语义：`!important` 压过 normal，
+/// 同重要性时后面的声明覆盖前面的（css-variables-1 §2 —— 自定义属性走
+/// 普通 cascade，`!important` 是声明级标记、不属于值）。
 pub fn collect_custom_properties(css: &str) -> Vec<(String, String)> {
-    let mut map: Vec<(String, String)> = Vec::new();
+    // (name, value, important)——important 参与同名合并裁决，返回时剥掉。
+    let mut map: Vec<(String, String, bool)> = Vec::new();
     let bytes = css.as_bytes();
     let len = bytes.len();
     let mut i = 0;
@@ -62,14 +65,18 @@ pub fn collect_custom_properties(css: &str) -> Vec<(String, String)> {
                             }
                             k += 1;
                         }
-                        let value = css[val_start..k].trim().to_string();
+                        let raw = css[val_start..k].trim();
+                        let (value, important) = split_important(raw);
                         if !value.is_empty() {
-                            // 覆盖同名（cascade 简化）
+                            // 同名合并：important 压过 normal；同级后者覆盖前者
                             let name_s = name.to_string();
-                            if let Some(entry) = map.iter_mut().find(|(n, _)| *n == name_s) {
-                                entry.1 = value;
+                            if let Some(entry) = map.iter_mut().find(|(n, _, _)| *n == name_s) {
+                                if important || !entry.2 {
+                                    entry.1 = value.to_string();
+                                    entry.2 = important;
+                                }
                             } else {
-                                map.push((name_s, value));
+                                map.push((name_s, value.to_string(), important));
                             }
                         }
                         i = if k < len && bytes[k] == b';' { k + 1 } else { k };
@@ -83,7 +90,21 @@ pub fn collect_custom_properties(css: &str) -> Vec<(String, String)> {
             }
         }
     }
-    map
+    map.into_iter().map(|(n, v, _)| (n, v)).collect()
+}
+
+/// 剥离声明值尾部的 `!important` 级联标记，返回 `(纯值, 是否 important)`。
+/// 按 CSS Syntax 声明解析：`!` 与 `important` 间空白任意，匹配大小写不敏感；
+/// 仅在值末尾识别，出现在值中间的 `!important` 字样按普通值保留。
+fn split_important(value: &str) -> (&str, bool) {
+    let t = value.trim();
+    if t.len() >= 10
+        && t[t.len() - 9..].eq_ignore_ascii_case("important")
+        && let Some(head) = t[..t.len() - 9].trim_end().strip_suffix('!')
+    {
+        return (head.trim_end(), true);
+    }
+    (t, false)
 }
 
 /// 替换 CSS 文本中所有 `var(--name)` 和 `var(--name, fallback)` 引用。
@@ -286,6 +307,45 @@ mod tests {
         let props = vec![];
         let out = substitute_vars(css, &props);
         assert!(out.contains("var(--unknown)"), "unresolvable var 应保留");
+    }
+
+    #[test]
+    fn important_beats_later_normal_declaration() {
+        // CI-2026-10-13 smoke 回归根因：driving = WPT
+        // css/css-variables/css-vars-custom-property-inheritance.html——
+        // `--color-1: green !important` 在前、`--color-1: red` 在后，级联应取
+        // important 的 green（同名后覆盖须让位于重要性比较）；值剥离 !important
+        // 尾标记（css-variables-1 §2，标记属声明不属值）。
+        let css = concat!(
+            ":root { --color-1: green !important; }\n",
+            ":root { --color-1: red; }\n",
+            "div.color1 { background-color: var(--color-1); }\n",
+            ":root { --color-2: green; }\n",
+            "div.color2 { background-color: red; background-color: var(--color-2); }\n"
+        );
+        let props = collect_custom_properties(css);
+        assert_eq!(
+            props.iter().find(|(n, _)| n == "--color-1").map(|(_, v)| v.as_str()),
+            Some("green"),
+            "important green 须压过后面的 normal red，且值不含 !important: {props:?}"
+        );
+        let out = substitute_vars(css, &props);
+        assert!(
+            out.contains("background-color: green"),
+            "color1 引用解析为 green: {out}"
+        );
+        assert!(!out.contains("var(--color-1)"), "color1 引用已替换: {out}");
+    }
+
+    #[test]
+    fn later_important_still_wins_over_earlier_normal() {
+        let css = ":root { --x: red; }\n:root { --x: blue !important; }\n.a { color: var(--x); }";
+        let props = collect_custom_properties(css);
+        assert_eq!(
+            props.iter().find(|(n, _)| n == "--x").map(|(_, v)| v.as_str()),
+            Some("blue"),
+            "后置 important 压过前置 normal: {props:?}"
+        );
     }
 
     #[test]
