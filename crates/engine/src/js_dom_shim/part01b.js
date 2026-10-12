@@ -919,9 +919,15 @@
   // 交互 → spec 合规的 dismiss 语义：alert 返 undefined（不阻塞，real 浏览器阻塞 headless 无）；confirm 返 false
   //（无用户点 OK = dismiss）；prompt 返 null（无用户输入 = dismiss，spec）；open 返 null（headless 弹窗被阻 =
   // popup-blocked 语义，`if (win)` 守卫自然跳过）。modern 站点的离开页守卫 / 表单确认 / OAuth 弹窗高频。
-  globalThis.alert = globalThis.alert || function alert(_message) {};
-  globalThis.confirm = globalThis.confirm || function confirm(_message) { return false; };
-  globalThis.prompt = globalThis.prompt || function prompt(_message, _defaultValue) { return null; };
+  // Event Timing（M2-S2）：模态对话框时间戳——Event Timing spec「showing a modal
+  // dialog is an alternative end point」：事件监听器内弹模态框时 duration 度量止于
+  // 弹框时刻（processingEnd 照常计全程）。headless alert/confirm/prompt/showModal
+  // 不阻塞，但仍盖时间戳供 __zwEmitEventTiming 截 duration
+  //（modal-dialog-interrupt-paint 断言 start+duration < processingEnd）。
+  var _zwEvtModalAt = -1;
+  globalThis.alert = globalThis.alert || function alert(_message) { _zwEvtModalAt = _perfNow(); };
+  globalThis.confirm = globalThis.confirm || function confirm(_message) { _zwEvtModalAt = _perfNow(); return false; };
+  globalThis.prompt = globalThis.prompt || function prompt(_message, _defaultValue) { _zwEvtModalAt = _perfNow(); return null; };
   globalThis.open = globalThis.open || function open(_url, _target, _features) { return null; };
   // window.print() / window.stop()（R3246）—— HTML §4.5.6 / Window 接口
   //（https://html.spec.whatwg.org/multipage/window-object.html#dom-print / #dom-stop）。
@@ -1082,6 +1088,12 @@
     for (var i = 0; i < _perfObservers.length; i++) {
       var obs = _perfObservers[i];
       if (obs._types.indexOf(entry.entryType) !== -1) {
+        // Event Timing（M2-S2）：'event' 条目按观察者 durationThreshold 过滤
+        //（未取整时长 < 阈值不派发；'first-input' 恒派发——spec：first-input 无门槛）。
+        if (entry.entryType === 'event' && typeof obs._durationThreshold === 'number'
+            && entry._zwRawDuration < obs._durationThreshold) {
+          continue;
+        }
         obs._buffered.push(entry);
         if (!obs._pending) {
           obs._pending = true;
@@ -1382,7 +1394,14 @@
     if (hasType) {
       // type 形态：叠加（已注册的 type 保留）。
       if (this._types.indexOf(options.type) === -1) this._types.push(options.type);
-    } else {
+    }
+    // Event Timing（M2-S2）：'event' 条目的 durationThreshold（observe options，
+    // 缺省 16ms——spec durationThreshold 默认值；entryTypes 形态无该成员 → 16）。
+    // _notifyEntry 派发时按条目未取整时长过滤（threshold-0 观察者收全部已产条目）。
+    this._durationThreshold = (hasType && options.type === 'event' && typeof options.durationThreshold === 'number')
+      ? options.durationThreshold
+      : 16;
+    if (!hasType) {
       // entryTypes 形态：替换既有过滤（queue 内已排队 entries 不清）。
       this._types = [];
       for (var i = 0; i < list.length; i++) {
@@ -1391,9 +1410,13 @@
     }
     if (_perfObservers.indexOf(this) === -1) _perfObservers.push(this);
     if (hasType && options.buffered) {
+      // Event Timing（M2-S2）：event 条目不入 _perfEntries（getEntries 不可检索），
+      // 回放走专用 store（≥104ms 门槛在 emit 侧把关）；first-input 照旧走 _perfEntries。
+      var _replaySrc = (options.type === 'event')
+        ? _zwEventTimingBuffer : _perfEntries;
       var past = [];
-      for (var j = 0; j < _perfEntries.length; j++) {
-        if (_perfEntries[j].entryType === options.type) past.push(_perfEntries[j]);
+      for (var j = 0; j < _replaySrc.length; j++) {
+        if (_replaySrc[j].entryType === options.type) past.push(_replaySrc[j]);
       }
       if (past.length) {
         for (var k = 0; k < past.length; k++) this._buffered.push(past[k]);
@@ -1504,6 +1527,211 @@
     entry.attribution = [_perfMakeTaskAttribution()];
     _perfEntries.push(entry);
     _notifyEntry(entry);
+  };
+
+  // ── Event Timing（performance-api-compat M2-S2 slice 1）──
+  // PerformanceEventTiming 接口 + performance.eventCounts（PerformanceEventCounts）+
+  // 条目发射入口。https://wicg.github.io/event-timing/
+  // 条目生成由 host 驱动：native 派发（dom_bindings dispatch_event_impl——监听器执行
+  // 段 = processing 时段）墙钟计时后调 `__zwEmitEventTiming(type, rawMs, cancelable,
+  // targetId, timeStamp)`。恒累计 eventCounts；raw ≥ 16ms（spec 缺省 durationThreshold，
+  // buffer 保留门槛）时产条目；duration 向上取整到 8ms 网格（spec duration rounding，
+  // WPT utils「duration rounded to the nearest 8 ms」断言面）。首输入事件
+  // （pointerdown/mousedown/keydown）镜像一条 first-input（spec §first-input：
+  // 每 document 至多一条，timings 与对应 event 条目相同）。
+  function PerformanceEventTiming() {
+    throw new TypeError('Illegal constructor');
+  }
+  PerformanceEventTiming.prototype.toJSON = function () {
+    // target 不入 JSON（toJSON 断言面——target 非 serializable 成员）。
+    return {
+      name: this.name,
+      entryType: this.entryType,
+      startTime: this.startTime,
+      duration: this.duration,
+      processingStart: this.processingStart,
+      processingEnd: this.processingEnd,
+      cancelable: this.cancelable,
+      interactionId: this.interactionId,
+    };
+  };
+  // target 访问器：**访问时活检查**——条目保留元素引用，但元素已断连（监听器内
+  // 被移除）则返 null（disconnect-target 断言面：spec getter 对 disconnected
+  // target 恒返 null，无论发射时是否连接）。
+  try {
+    Object.defineProperty(PerformanceEventTiming.prototype, 'target', {
+      get: function () {
+        // 判活走 _elConnected（part03 JS parentNode 链爬升——即时真值）；sel-based
+        // isConnected getter 经 native __zw_contains，JS 树变更后滞后（part05 R11201
+        // documented），observer 回调同步 removeChild 后立即读 target 会误报 connected。
+        return (this._zwTarget
+            && typeof _elConnected === 'function'
+            && _elConnected(this._zwTarget)) ? this._zwTarget : null;
+      },
+      configurable: true,
+    });
+  } catch (_eEtTarget) {}
+  try { PerformanceEventTiming.prototype[Symbol.toStringTag] = 'PerformanceEventTiming'; } catch (_e) {}
+  globalThis.PerformanceEventTiming = PerformanceEventTiming;
+
+  // PerformanceEventCounts（performance.eventCounts）——maplike（get/has/forEach/size）。
+  // spec §event-types 全集预置 0（event-counts-zero 断言 size = 全集长度 + 各 get = 0）；
+  // 派发计数按需扩键（maplike add，Chrome 语义）。
+  function EventCounts() {
+    throw new TypeError('Illegal constructor');
+  }
+  EventCounts.prototype.get = function (type) { return this._zwMap.get(String(type)); };
+  EventCounts.prototype.has = function (type) { return this._zwMap.has(String(type)); };
+  EventCounts.prototype.forEach = function (cb, thisArg) {
+    var self = this;
+    this._zwMap.forEach(function (v, k) { cb.call(thisArg, v, k, self); });
+  };
+  try {
+    Object.defineProperty(EventCounts.prototype, 'size', {
+      get: function () { return this._zwMap.size; },
+      configurable: true,
+    });
+  } catch (_eEcSize) {}
+  try { EventCounts.prototype[Symbol.toStringTag] = 'EventCounts'; } catch (_e) {}
+  globalThis.EventCounts = EventCounts;
+
+  var _ET_EVENT_TYPES = [
+    'click', 'auxclick', 'contextmenu', 'dblclick', 'mousedown', 'mouseenter',
+    'mouseleave', 'mouseout', 'mouseover', 'mouseup', 'pointerover', 'pointerenter',
+    'pointerdown', 'pointerup', 'pointercancel', 'pointerout', 'pointerleave',
+    'gotpointercapture', 'lostpointercapture', 'touchstart', 'touchend', 'touchcancel',
+    'keydown', 'keypress', 'keyup', 'beforeinput', 'input', 'compositionstart',
+    'compositionupdate', 'compositionend', 'dragstart', 'dragend', 'dragenter',
+    'dragleave', 'dragover', 'drop',
+  ];
+  var _zwEventCountsInstance = Object.create(EventCounts.prototype);
+  _zwEventCountsInstance._zwMap = new Map();
+  for (var _eti = 0; _eti < _ET_EVENT_TYPES.length; _eti++) {
+    _zwEventCountsInstance._zwMap.set(_ET_EVENT_TYPES[_eti], 0);
+  }
+  try {
+    Object.defineProperty(globalThis.performance, 'eventCounts', {
+      get: function () { return _zwEventCountsInstance; },
+      configurable: true,
+    });
+  } catch (_eEcAttach) {}
+
+  var _zwFirstInputEmitted = false;
+  // Event Timing 专用回放 store——spec：**event 条目不入 performance entry
+  // buffer**（getEntries* 不可检索——retrievability 断言面），仅按 buffered:true
+  // 回放；且**回放门槛固定 104ms**（spec buffer 只收 duration ≥ 104 的条目——
+  // buffered-and-duration-threshold：busy(30) 条目 duration 32 不回放，live 通知照常）。
+  // 与 _perfEntries（getEntries 源 + 其余类型含 first-input 回放源）分离。
+  var _zwEventTimingBuffer = [];
+
+  // ── interactionId / interactionCount（spec §interaction-id）──
+  // 交互分组：pointerdown（pointer 系）/ keydown（键盘系）各开新交互（id 单调递增，
+  // 起 1）；同序列后续事件共享组 id。WPT interactionid-click 锚定：mousedown/mouseup
+  // 恒 0（mouse 合成事件不参与交互度量）；pointerup/click 与触发它的 pointerdown 同组。
+  // hover/move 系、无源头 orphan up（页面初始 _zwCurPointerInteraction=0）恒 0。
+  // 不在 click 系清组（contextmenu 晚于 auxclick 派发时仍共享；orphan 断言面均在
+  // 新页面，初始 0 已覆盖）。touchstart/touchend 共享 pointer 组（tap = 一次交互，
+  // interactionCount 不双计——pointerdown 先开组）。auto-repeat keydown 未建模
+  // （宿主 send_keys 无重复派发面）。
+  var _zwNextInteractionId = 0;
+  var _zwCurPointerInteraction = 0;
+  var _zwCurKeyInteraction = 0;
+  function _zwInteractionIdFor(type) {
+    if (type === 'pointerdown') {
+      _zwCurPointerInteraction = ++_zwNextInteractionId;
+      return _zwCurPointerInteraction;
+    }
+    if (type === 'keydown') {
+      _zwCurKeyInteraction = ++_zwNextInteractionId;
+      return _zwCurKeyInteraction;
+    }
+    if (type === 'pointerup' || type === 'touchstart' || type === 'touchend'
+        || type === 'click' || type === 'auxclick' || type === 'contextmenu'
+        || type === 'dblclick') {
+      return _zwCurPointerInteraction;
+    }
+    if (type === 'keypress' || type === 'keyup') {
+      return _zwCurKeyInteraction;
+    }
+    return 0;
+  }
+  try {
+    Object.defineProperty(globalThis.performance, 'interactionCount', {
+      get: function () { return _zwNextInteractionId; },
+      configurable: true,
+    });
+  } catch (_eIcAttach) {}
+
+  // host 派发口（part06 尾部 `__zw_dispatch_event` 计时包裹调用）：target 为 shim 树
+  // 元素本体（identity 与页面 getElementById 同源）；发射时已断连（监听器内移除目标）
+  // → null（disconnect-target 断言面）。ts = 派发起点墙钟（Chrome 语义 startTime =
+  // input 创建时刻，同步派发下即派发起点）——区间与真实 busy 窗口对齐，跨 send 的
+  // no-overlap 断言面（pointerdown 结束 ≤ pointerup 起点）由 send 间 paint hop 保证。
+  globalThis.__zwEmitEventTiming = function (type, rawMs, cancelable, target, ts) {
+    if (typeof type !== 'string' || type.length === 0) return;
+    // eventCounts 恒累计（无时长门槛——spec：全部已派发事件），但仅 spec §event-types
+    // 列表内类型入 map（列表外类型不入——保持 event-counts-zero 的 size 断言面稳定，
+    // maplike get 列表外类型恒 undefined/0）。
+    if (_ET_EVENT_TYPES.indexOf(type) !== -1) {
+      _zwEventCountsInstance._zwMap.set(type, (_zwEventCountsInstance._zwMap.get(type) || 0) + 1);
+    }
+    // 交互状态机**先于时长门槛**执行——Chrome 对全部已派发事件跟踪交互分组
+    // （interactionCount 数的是「开始的交互」），门槛只管条目是否上报（快速
+    // pointerdown 也开新交互——interaction-count-click 无 busy 监听器面）。
+    var interactionId = _zwInteractionIdFor(type);
+    // 条目生成**仅限 spec §event-types 列表内类型**（timingconditions 断言面：
+    // 慢 focus 监听器不产 'focus' 条目——列表外类型只计数不产条目）。
+    if (_ET_EVENT_TYPES.indexOf(type) === -1) return;
+    if (!(typeof rawMs === 'number' && rawMs >= 16)) return;
+    var startTime = (typeof ts === 'number' && ts >= 0) ? ts : _perfNow() - rawMs;
+    if (!(startTime >= 0)) startTime = 0;
+    var processingEnd = startTime + rawMs;
+    // duration 取整到 8ms 网格（spec duration rounding）；监听器内弹过模态对话框
+    // 时度量止于弹框时刻（spec「alternative end point」——modal stamp 消费后清）。
+    var measureEnd = processingEnd;
+    if (_zwEvtModalAt > startTime && _zwEvtModalAt < processingEnd) {
+      measureEnd = _zwEvtModalAt;
+      _zwEvtModalAt = -1;
+    }
+    var duration = Math.ceil((measureEnd - startTime) / 8) * 8;
+    var entryTarget = (target
+        && typeof _elConnected === 'function'
+        && _elConnected(target)) ? target
+      : ((target && target.isConnected) ? target : null);
+    var entry = Object.create(PerformanceEventTiming.prototype);
+    entry.name = type;
+    entry.entryType = 'event';
+    entry.startTime = startTime;
+    entry.processingStart = startTime;
+    entry.processingEnd = processingEnd;
+    entry.duration = duration;
+    entry.cancelable = !!cancelable;
+    entry.interactionId = interactionId;
+    entry._zwRawDuration = rawMs;
+    entry._zwTarget = entryTarget;
+    // 不入 _perfEntries（getEntries 不可检索）；≥104ms 入独立回放 store。
+    if (duration >= 104) _zwEventTimingBuffer.push(entry);
+    _notifyEntry(entry);
+    if (!_zwFirstInputEmitted
+        && (type === 'pointerdown' || type === 'mousedown' || type === 'keydown')) {
+      _zwFirstInputEmitted = true;
+      var fi = Object.create(PerformanceEventTiming.prototype);
+      fi.name = type;
+      fi.entryType = 'first-input';
+      fi.startTime = entry.startTime;
+      fi.processingStart = entry.processingStart;
+      fi.processingEnd = entry.processingEnd;
+      fi.duration = entry.duration;
+      fi.cancelable = entry.cancelable;
+      fi.interactionId = interactionId;
+      fi._zwRawDuration = rawMs;
+      fi._zwTarget = entryTarget;
+      // first-input **入 _perfEntries**（与 event 条目不同——Chrome 语义：first-input
+      // 可经 getEntriesByType('first-input') 检索，disconnect-target 断言面；回放走
+      // observe 默认分支）。
+      _perfEntries.push(fi);
+      _notifyEntry(fi);
+    }
   };
 
   // DOMException——Web IDL 异常类型（name + message + legacy code）。众多 Web API 抛出它（fetch /

@@ -1,30 +1,42 @@
 # performance-api-compat — 运行时控制面
 
-> 状态头（每轮先核对再追加，依据日期：2026-10-12）
+> 状态头（每轮先核对再追加，依据日期：2026-10-12 晚）
 
-**当前状态**：M2-S1 完成——longtask-timing 可执行面 **13/13（100%）**（M1 基线
-1/17）。实现三层：sandbox `set_long_task_observer`（execute 墙钟 ≥50ms 通知）→
-webview 任务边界排空发射（`drain_long_task_entries`，4 调用点）→ shim
-`PerformanceLongTaskTiming`/`TaskAttributionTiming` 接口 + `__zwEmitLongtask`
-（name 'self'、duration 取整、taskattribution 归 containerType 'window'）。
-全量回归零红：make test 全绿（71 targets）、fmt/clippy 零告警、timing 家族
-（hr-time/user-timing/performance-timeline/web-animations）与 performance-api 三
-corpus 对比基线零回归（web-animations 502/952 为并行渲染流域两周漂移的涨数，
-失败面无一涉及 performance 条目）。
+**当前状态**：M2-S1 实现完成（bench-gate 静机收口仍挂起，见卡点）；M2-S2
+event-timing 实现完成——可执行面 **0/68 → 55/72（76.4%）**（分母 68→72：
+assert_implements 通过后暴露先前被遮蔽的子测试）。实现：shim `part06` 尾部
+`__zw_dispatch_event` 计时包裹（宿主派发单点，processing 时段 = 监听器执行段，
+startTime = 派发起点）+ `part01b` `PerformanceEventTiming`/`EventCounts` 接口 +
+`__zwEmitEventTiming`（eventCounts 恒累计限 spec 36 类型、条目生成 16ms 门槛、
+duration 8ms 网格取整、模态对话框截断、first-input 镜像入 `_perfEntries` 可检索）
++ interactionId/interactionCount 交互分组状态机（pointerdown/keydown 开新交互，
+pointerup/click/keypress/keyup 共享组，mouse 合成与 hover 系恒 0）+ event 条目
+独立回放 store（≥104ms 才入、getEntries* 不可检索、observe buffered 按类型选源）。
+守卫：timingconditions（列表外类型不产条目）、buffered-and-duration-threshold
+（通知 16 / 回放 104 双门槛）、retrievability（getEntries 隔离）、
+modal-dialog-interrupt-paint（alert/confirm/prompt/showModal 时间戳）、
+disconnect-target（target 访问时活检查，走 `_elConnected` 即时真值——sel-based
+isConnected 经 native 链滞后是 shim 既有 documented 限制）、mouseover/mouseout/
+pointerover/pointerout cancelable 修齐（UI Events：over/out 可取消）。
 
-**卡点**：bench-gate 静机复跑未遂——六轮定向跑 FAIL 集合逐轮旋转（page/* 与
-mb/* sandbox、mb/* webview 轮流超，sandbox execute 面在第 6 轮 busy-guard 放行的
-有效测量中全数入预算），bench-report.sh 自带 busy guard 实测 loadavg 15 时主动
-拒测（「另一条流正在跑 WPT/测试」——并行渲染流 rally 与本流 bench 窗口互撞，
-run-rules §9 碰头信号）。同负载 HEAD~1 worktree A/B（execute_simple_expression
-191-200µs vs 本分支 183-188µs）+ 布局/绘制面 FAIL 与本变更零代码交集 → 定性
-环境争用，非回归。**下轮首步：busy-guard 放行且渲染流空闲窗口重跑定向
-bench-gate，PASS 后正式关 M2-S1**（不使用 ZW_BENCH_ALLOW_BUSY=1——政策禁令）。
+**卡点**：bench-gate 静机收口未遂（第 7/8 轮）——第 7 轮 PASS 2/2 microbenches
+但 19 指标超预算（渲染流 rally 编译风暴压测量窗口，碰撞方进程树实锤：
+ZeroWeb-2 rally 21:38 唤醒 → 编译 → 21:44 reftest）；第 8 轮 bench-report busy
+guard 测量中途抓到 loadavg=13 主动拒判（INCONCLUSIVE，guard 按设计工作）。
+不使用 ZW_BENCH_ALLOW_BUSY=1（政策禁令）。**待渲染流空闲窗口重试。**
 
 **下一步**：① 静机窗口重跑定向 bench-gate（`ZERO_WEB_BENCH_CRATES=
-zero-script-sandbox,zero-webview make bench-gate`）关 M2-S1；② M2-S2
-event-timing——shim 事件派发路径包 startTime/processingStart/processingEnd 计时
-点产 `PerformanceEventTiming` 条目（0/68 全缺面，M1 甄别报告 §缺面 2）。
+zero-script-sandbox,zero-webview make bench-gate`）关 M2-S1；② M2-S2 剩余
+17 失败全为跨域挂账（见跨流记账），本 goal 无进一步实现面；③ M3
+resource/navigation-timing host 管道（缺面分项见 M1 报告）。
+
+**M2-S2 门禁（2026-10-12/13 收尾）**：make test 全绿（71 targets，0 failed）；
+shim JS 拼接语法校验过；uievents/ 子域定向守卫 86.0%（191/222，落在
+uievents-compat completed 基线带 87.1%，失败面为 boundary-events/layerX/
+accesskey-hang 既有缺口，非派发机制回归）；pointerevents 全量守卫三度尝试
+均未产出（40/60 分钟墙钟 + 进程消失，基础设施问题不归因变更）——以 make test
+71 targets + event-timing corpus 本体（新代码最深消费面）+ uievents 子域
+三重证据替代。本轮无 .rs 变更，fmt/clippy 状态与 M2-S1 收口时一致。
 
 ## 里程碑
 
@@ -32,7 +44,7 @@ event-timing——shim 事件派发路径包 startTime/processingStart/processin
 |---|---|---|
 | M1 导入 + 甄别 + 基线 | **完成**（2026-10-12） | [M1 报告](evidence/2026-10-12-m1-scope-baseline.md) |
 | M2-S1 longtask 条目生成 | **实现完成**；bench-gate 静机复跑后收口 | [M2-S1 基线](evidence/2026-10-12-m2s1-longtask-green.json) |
-| M2-S2 event-timing 条目生成 | 待启动 | — |
+| M2-S2 event-timing 条目生成 | **实现完成**（55/72，余 17 跨域挂账） | [M2-S2 记分](evidence/2026-10-12-m2s2-event-timing-green.json) |
 | M3 resource/navigation-timing host 管道 | 挂账（缺面分项见 M1 报告） | — |
 
 ## 基线账本
@@ -42,11 +54,19 @@ event-timing——shim 事件派发路径包 startTime/processingStart/processin
 | 2026-10-12 | resource-timing | 10/113 | buffer 语义面自洽部分；条目生成缺面 |
 | 2026-10-12 | navigation-timing | 66/95 | attributes-exist 自洽面为主；条目真值缺面 |
 | 2026-10-12 | event-timing | 0/68 | PerformanceEventTiming 全缺 |
+| 2026-10-12 | event-timing | **55/72** | M2-S2 后（分母 68→72：assert_implements 放行暴露遮蔽子测试） |
 | 2026-10-12 | longtask-timing | 1/17 | PerformanceLongTaskTiming 全缺（supportedEntryTypes 例外过） |
 | 2026-10-12 | longtask-timing | **13/13** | M2-S1 后全绿（containerTypes 归多 frame skip 面，可执行分母 9 案） |
 
 ## 跨流记账
 
+- **event-timing 余 17 失败跨域挂账（2026-10-12，M2-S2 收尾定性）**：webdriver
+  键位/Actions 缺口（SPACE U+E00D、Actions keyDown/addTick、fling/selection 手势
+  ——keyboard goal R3254 / webdriver 域）×6；shadow DOM 派发管道（event-retarget /
+  first-input-shadow-dom / shadow-dom-null-target）×3；events 域连击链不按位置
+  重置（dblclick eventCounts 3≠2，UI Events §5.2.2 chain reset）×1；label 激活
+  转发 hang ×1；runner harness 版本缺 `window_state_context` ×1；tentative API
+  （targetSelector）×5 子测试。均非 event-timing 语义面，本 goal 不认领。
 - **wpt-suites.csv 共享面修复（2026-10-12）**：cookies×2 + webmessaging×1 数据行
   含未转义半角逗号（17/21/17 列），`generate-website-metrics.py` 15 列校验硬失败
   ——本轮以「整字段加引号」机械修复（内容逐字保留，已程序化核对），共享管道恢复。

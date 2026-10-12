@@ -1,0 +1,702 @@
+[
+  [
+    "event-timing/TapToStopFling.html",
+    [
+      {
+        "name": "event-timing/TapToStopFling.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 22709, 23377, 1650], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "event-timing/auxclick.html",
+    [
+      {
+        "name": "Event Timing auxclick.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/buffered-and-duration-threshold.html",
+    [
+      {
+        "name": "PerformanceObserver buffering independent of durationThreshold",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/buffered-flag.html",
+    [
+      {
+        "name": "PerformanceObserver with buffered flag sees previous Event Timing entries",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/click-timing.html",
+    [
+      {
+        "name": "Event Timing: compare click timings.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/click.html",
+    [
+      {
+        "name": "Event Timing click.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/contextmenu.html",
+    [
+      {
+        "name": "Event Timing contextmenu.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/dblclick.html",
+    [
+      {
+        "name": "Event Timing dblclick.",
+        "status": "Fail",
+        "message": "assert_equals: Should have 2 dblclick events expected 2 but got 3"
+      }
+    ]
+  ],
+  [
+    "event-timing/disconnect-target.html",
+    [
+      {
+        "name": "Event Timing: when target is disconnected, entry.target returns null.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/duration-with-target-low.html",
+    [
+      {
+        "name": "PerformanceObserver with durationThreshold of 300 and processingDelay of 0 doesn't see any entries in the observer",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/event-click-counts.html",
+    [
+      {
+        "name": "Event Timing: eventCounts.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/event-click-visibilitychange.html",
+    [
+      {
+        "name": "Event handlers which change visibility should not measure next paint.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: window_state_context is not defined\""
+      }
+    ]
+  ],
+  [
+    "event-timing/event-counts-zero.html",
+    [
+      {
+        "name": "Event Timing: eventCounts.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/event-retarget.html",
+    [
+      {
+        "name": "Event Timing: target reports the last Event Target, i.e. nothing from shadow DOM.",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "event-timing/first-input-interactionid-click.html",
+    [
+      {
+        "name": "The interactionId of the first input entry should match the same pointerdown entry of event timing when click.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/first-input-interactionid-key.html",
+    [
+      {
+        "name": "The interactionId of the first input entry should match the same keydown entry of event timing when press a key.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/first-input-interactionid-tap.html",
+    [
+      {
+        "name": "The interactionId of the first input entry should match the same pointerdown entry of event timing when tap.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/first-input-shadow-dom.html",
+    [
+      {
+        "name": "event-timing/first-input-shadow-dom.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 22709, 1231], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "event-timing/gap-keydown-keyup.html",
+    [
+      {
+        "name": "keydown duration shouldn't wait for keyup.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/gap-pointerdown-pointerup.html",
+    [
+      {
+        "name": "pointerdown duration shouldn't wait for pointerup.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/interaction-count-click.html",
+    [
+      {
+        "name": "EventTiming: verify interactionCount for click interaction",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/interaction-count-press-key.html",
+    [
+      {
+        "name": "EventTiming: verify interactionCount for key interaction",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/interaction-count-tap.html",
+    [
+      {
+        "name": "EventTiming: verify interactionCount for tap interaction",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-aux-pointerdown-and-pointerdown.html",
+    [
+      {
+        "name": "Event Timing: verify pointerdown reporting for mouse aux pointerdown only triggered contextmenu followed immediately by another pointerdown event.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-aux-pointerdown.html",
+    [
+      {
+        "name": "Event Timing: verify pointerdown reporting for mouse aux pointerdown only triggered contextmenu.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-auxclick.html",
+    [
+      {
+        "name": "Event Timing: verify pointerdown & pointerup reporting for mouse aux click triggered contextmenu.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-click.html",
+    [
+      {
+        "name": "Event Timing: compare event timing interactionId.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-keyboard-event-simulated-click-button-space.html",
+    [
+      {
+        "name": "Click event triggered by space key in checkbox should have the same      interaction id as that of the associated keyboard events.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: unsupported WebDriver key U+E00D\""
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-keyboard-event-simulated-click-checkbox-space.html",
+    [
+      {
+        "name": "Click event triggered by space key in checkbox should have the same      interaction id as that of the associated keyboard events.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: unsupported WebDriver key U+E00D\""
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-keyboard-event-simulated-click-link-enter.html",
+    [
+      {
+        "name": "Click event triggered by space key in checkbox should have the same      interaction id as that of the associated keyboard events.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: action was not applicable: Some(NotApplicable)\""
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-keypress.html",
+    [
+      {
+        "name": "Event Timing: compare event timing interactionId for keypress.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-label-click.html",
+    [
+      {
+        "name": "event-timing/interactionid-label-click.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 22709, 23377, 1383], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-orphan-pointerup.html",
+    [
+      {
+        "name": "Event Timing: Orphan pointerup should not be measured as an interaction.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-press-key-as-input.html",
+    [
+      {
+        "name": "Event Timing: compare event timing interactionId for key press as input.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-press-key-no-effect.html",
+    [
+      {
+        "name": "Event Timing: compare event timing interactionId for key press with no effect.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/interactionid-tap.html",
+    [
+      {
+        "name": "Event Timing: compare event timing interactionId for tap.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/keydown-without-paint.tentative.html",
+    [
+      {
+        "name": "keydown timing entry is dispatched without a repaint",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/keydown.html",
+    [
+      {
+        "name": "Event Timing Keydown.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/keyup.html",
+    [
+      {
+        "name": "Event Timing Keyup.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/large-duration-threshold.html",
+    [
+      {
+        "name": "PerformanceObserver observes events according to its durationThreshold",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/medium-duration-threshold.html",
+    [
+      {
+        "name": "PerformanceObserver observes events according to its durationThreshold",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/min-duration-threshold.html",
+    [
+      {
+        "name": "PerformanceObserver with durationThreshold of 0 sees events of duration >= 16",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/modal-dialog-interrupt-paint.html",
+    [
+      {
+        "name": "Event Timing: showing modal dialogs is an alternative end point.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/mousedown.html",
+    [
+      {
+        "name": "Event Timing mousedown.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/mouseenter.html",
+    [
+      {
+        "name": "Event Timing mouseenter.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/mouseleave.html",
+    [
+      {
+        "name": "Event Timing mouseleave.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/mouseout.html",
+    [
+      {
+        "name": "Event Timing mouseout.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/mouseover.html",
+    [
+      {
+        "name": "Event Timing mouseover.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/mouseup.html",
+    [
+      {
+        "name": "Event Timing mouseup.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/only-observe-firstInput.html",
+    [
+      {
+        "name": "Event Timing: check first-input for a PerformanceObserver observing only first-input.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/orphan-keydown.html",
+    [
+      {
+        "name": "event-timing/orphan-keydown.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 22709, 23377, 906], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "event-timing/pointerdown-pointerup-no-overlap.html",
+    [
+      {
+        "name": "pointerdown and pointerup should not overlap when there is no pointerdown handler",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/pointerdown.html",
+    [
+      {
+        "name": "Event Timing pointerdown.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/pointerenter.html",
+    [
+      {
+        "name": "Event Timing pointerenter.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/pointerleave.html",
+    [
+      {
+        "name": "Event Timing pointerleave.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/pointerout.html",
+    [
+      {
+        "name": "Event Timing pointerout.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/pointerover.html",
+    [
+      {
+        "name": "Event Timing pointerover.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/pointerup.html",
+    [
+      {
+        "name": "Event Timing pointerup.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/programmatic-click-not-observed.html",
+    [
+      {
+        "name": "Event Timing: events from programmatic click are not observed",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/retrievability.html",
+    [
+      {
+        "name": "Event Timing: make sure event-timing entries are not retrievable by performance.getEntries*.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/retrieve-firstInput.html",
+    [
+      {
+        "name": "Event Timing: check first-input after onload, observer, click, click.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/selection-autoscroll.html",
+    [
+      {
+        "name": "event-timing/selection-autoscroll.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 22709, 23377, 1973], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "event-timing/shadow-dom-null-target.html",
+    [
+      {
+        "name": "event-timing/shadow-dom-null-target.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 22709, 23377, 1765], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "event-timing/supported-types-consistent-with-self.html",
+    [
+      {
+        "name": "supportedEntryTypes should be consistent with `'PerformanceEventTiming' in Self`",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/supported-types.window.js",
+    [
+      {
+        "name": "supportedEntryTypes contains 'event' and 'first-input'.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/target-selector.tentative.html",
+    [
+      {
+        "name": "Test with target that has an ID",
+        "status": "Fail",
+        "message": "assert_true: targetSelector should not be empty expected true got false"
+      },
+      {
+        "name": "Test with simple target (no id)",
+        "status": "Fail",
+        "message": "assert_true: targetSelector should not be empty expected true got false"
+      },
+      {
+        "name": "Test with image target with id and src",
+        "status": "Fail",
+        "message": "assert_true: targetSelector should not be empty expected true got false"
+      },
+      {
+        "name": "Test with image target with src only",
+        "status": "Fail",
+        "message": "assert_true: targetSelector should not be empty expected true got false"
+      },
+      {
+        "name": "Test with disconnected target",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of undefined (reading 'includes')\""
+      }
+    ]
+  ],
+  [
+    "event-timing/timingconditions.html",
+    [
+      {
+        "name": "Event Timing only times certain types of trusted event.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "event-timing/toJSON.html",
+    [
+      {
+        "name": "Test toJSON() in PerformanceEventTiming.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]

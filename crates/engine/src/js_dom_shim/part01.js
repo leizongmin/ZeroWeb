@@ -481,6 +481,8 @@
   function _zwDialogShowModal(key, sel, handle) {
     if (!_zwIsConnected(sel, handle)) throw new DOMException('showModal: dialog is not connected', 'InvalidStateError');
     if (_zwDialogHasOpen(sel, handle) || _zwDialogModal[key]) throw new DOMException('showModal: dialog already open', 'InvalidStateError');
+    // Event Timing：模态对话框是 duration 度量的替代终点（part01b emit 消费）。
+    if (typeof _perfNow === 'function') { try { _zwEvtModalAt = _perfNow(); } catch (_e) {} }
     _zwSetAttr(key, sel, handle, 'open', '');
     _zwTopLayer[key] = true;
     _zwDialogModal[key] = true;

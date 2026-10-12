@@ -15539,3 +15539,42 @@ function _zwCaretFromPoint(x, y) {
   WebSocket.prototype.CLOSING = 2;
   WebSocket.prototype.CLOSED = 3;
   globalThis.WebSocket = globalThis.WebSocket || WebSocket;
+
+  // ── Event Timing（performance-api-compat M2-S2）──
+  // https://wicg.github.io/event-timing/
+  // 宿主派发计时包裹：`__zw_dispatch_event` 是全部宿主驱动事件的 shim 派发单点
+  // （折叠 click 的 pre/cancelable 序列、Actions pointer down/up 序列、send_keys
+  // 键序、表单/焦点事件——script_dispatch_dom_event 与各 pointer/keyboard 序列
+  // 函数最终都汇入本函数）。监听器执行段 = processing 时段：入口起表、返回前调
+  // part01b 的 `__zwEmitEventTiming(type, rawMs, cancelable, target, t0)`（t0 = 派发
+  // 起点墙钟——startTime 语义见 part01b emit 注释）。
+  // **每次派发都调 emit，不设时长下限**——performance.eventCounts 对全部已派发
+  // 事件恒累计（WPT testEventType：两个无监听器快速事件也须 counts += 2）；
+  // 条目生成由 emit 内部按 raw ≥ 16ms（spec 缺省 durationThreshold，buffer 门槛）
+  // 把关（首输入镜像 first-input）。target 取 shim 树元素本体（querySelector 与
+  // 页面 getElementById 同源 identity）；发射时已断连（监听器内移除目标）→ null。
+  // cancelable 按事件类分派（hover/move 系不可取消）。页内合成 dispatchEvent
+  // （不可信面）不经本口——真实浏览器同样不产条目。
+  // **file-tail 赋值时机**：本包裹必须在 `__zw_dispatch_event` 定义之后安装
+  // （内部调用点按全局名解析，赋值后一律命中包裹）。
+  var __zwDispatchEventTimingBase = globalThis.__zw_dispatch_event;
+  var __zwEvtTimingCancelable = {
+    pointerdown: 1, pointerup: 1, mousedown: 1, mouseup: 1, click: 1, auxclick: 1,
+    contextmenu: 1, dblclick: 1, keydown: 1, keyup: 1, keypress: 1, beforeinput: 1,
+    touchstart: 1, touchend: 1,
+    // UI Events：over/out 系可取消（enter/leave 系不可——hover 通知语义）。
+    mouseover: 1, mouseout: 1, pointerover: 1, pointerout: 1,
+  };
+  globalThis.__zw_dispatch_event = function (sel, type, detail) {
+    var t0 = performance.now();
+    var result = __zwDispatchEventTimingBase(sel, type, detail);
+    try {
+      if (typeof __zwEmitEventTiming === 'function' && typeof type === 'string') {
+        var raw = performance.now() - t0;
+        var el = null;
+        try { el = document.querySelector(sel); } catch (_eEtSel) {}
+        __zwEmitEventTiming(type, raw, !!__zwEvtTimingCancelable[type], el, t0);
+      }
+    } catch (_eEtWrap) {}
+    return result;
+  };
