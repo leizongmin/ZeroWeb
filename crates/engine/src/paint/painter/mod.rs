@@ -59,6 +59,9 @@ pub struct Painter {
     /// R5086：行内背景 z 序修正开关（构造期单次读取，热路径零 env 查询）。
     /// `ZW_INLINE_BG_Z_ORDER=0` 关闭（恢复背景后置旧序）。
     pub(crate) inline_bg_z_order_enabled: bool,
+    /// R5088：wrapper inline 背景门修正开关（构造期单次读取）。`ZW_INLINE_WRAPPER_BG=0`
+    /// 关闭（skip 门回旧 has_direct_paintable_text 判据 + 链补录停用）。
+    pub(crate) inline_wrapper_bg_enabled: bool,
     /// R4296：inline 非原子盒垂直 border-box 外延（背景/backdrop-filter 区域按
     /// ComputedStyle 的 CSS padding/border 外延，CSS2 §10.8.1）——**default-off**
     /// （`ZW_INLINE_BLEED=1` 启用）。外延依赖 inline 盒行位准确，ZW 现锚定单行 inline
@@ -579,6 +582,7 @@ impl Painter {
             painted_inline_nodes: HashSet::new(),
             pending_inline_bg_pos: HashMap::new(),
             inline_bg_z_order_enabled: std::env::var("ZW_INLINE_BG_Z_ORDER").as_deref() != Ok("0"),
+            inline_wrapper_bg_enabled: std::env::var("ZW_INLINE_WRAPPER_BG").as_deref() != Ok("0"),
             inline_bleed_enabled: std::env::var("ZW_INLINE_BLEED").as_deref() == Ok("1"),
             paint_skip_nodes: HashSet::new(),
             counters: HashMap::new(),
@@ -1821,7 +1825,21 @@ impl Painter {
                     // content_height 与 fragment 门控（inline_heights，同轮改存 content 域）
                     // 同口径，两路恰一者生效。
                     && box_node.content_height > inline_fs_px * 1.5
-                    && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
+                    && doc.is_some_and(|d| {
+                        // R5088：bg 抑制门改判**直接文本子**——wrapper inline（无直接文本）
+                        // 非 fragment owner，per-fragment 臂不为其发背景，box-level bg 是
+                        // 唯一施画者，不抑制（配合 text.rs wrapper 链补录 + R5086 splice
+                        // 前移，背景与后代字形次序正确）。kill-switch 同 inline_wrapper_bg。
+                        if self.inline_wrapper_bg_enabled
+                            && !in_ruby_subtree(d, node_id)
+                        {
+                            // ruby 豁免：ZW ruby 专属多行片段模型下 box-level bg 抑制旧判据
+                            // 自洽（rb-display-001 族 A/B 实证），维持旧路径。
+                            text::has_direct_text_child(d, node_id)
+                        } else {
+                            text::has_direct_paintable_text(d, node_id, Some(styles))
+                        }
+                    });
                 // R4332：多行 inline 的 box-level **边框**抑制（union 矩形跨行整框 →
                 // paint_text R1442 块逐片段描绘）。门 = bg 门去 bg 色条件，与 paint_node 同款。
                 let skip_inline_box_border = !is_replaced_elem
@@ -2367,7 +2385,21 @@ impl Painter {
                     // 行数代理；单行 padded span 误抑制会丢 box-level bg）。与 inline_heights
                     // （同轮改存 content 域）联动，两路恰一者生效。
                     && box_node.content_height > inline_fs_px * 1.5
-                    && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
+                    && doc.is_some_and(|d| {
+                        // R5088：bg 抑制门改判**直接文本子**——wrapper inline（无直接文本）
+                        // 非 fragment owner，per-fragment 臂不为其发背景，box-level bg 是
+                        // 唯一施画者，不抑制（配合 text.rs wrapper 链补录 + R5086 splice
+                        // 前移，背景与后代字形次序正确）。kill-switch 同 inline_wrapper_bg。
+                        if self.inline_wrapper_bg_enabled
+                            && !in_ruby_subtree(d, node_id)
+                        {
+                            // ruby 豁免：ZW ruby 专属多行片段模型下 box-level bg 抑制旧判据
+                            // 自洽（rb-display-001 族 A/B 实证），维持旧路径。
+                            text::has_direct_text_child(d, node_id)
+                        } else {
+                            text::has_direct_paintable_text(d, node_id, Some(styles))
+                        }
+                    });
                 // R4332：多行 inline 的 box-level **边框**抑制——union 矩形（跨行片段的
                 // 陈旧单矩形）画出一个环绕所有行的整框（左/右竖边贯穿全部行），与
                 // chromium per-fragment 语义（左竖边仅首片段、右竖边仅末片段）相悖；
@@ -4079,6 +4111,25 @@ impl Painter {
 /// R4104（CSS Transforms 1 §transform-box svg 豁免）：元素是否处于 inline `<svg>`
 /// 子树内（沿 parent 链向上找最近 svg 元素祖先；`<svg>` 自身不算——svg 根元素的
 /// CSS transform 作用于盒本身，仍走 html 通路）。
+/// R5088：node 是否处于 ruby 元素子树（含 ruby 自身）。ZW ruby 用专属多行片段
+/// 模型（rt/base 双行同 IFC + per-fragment bg/border 链），wrapper 背景门修正与
+/// 链补录 splice 在该模型下扰动次序（rb-display-001 族 A/B 实证翻红），豁免维持
+/// ruby 旧路径。
+pub(crate) fn in_ruby_subtree(doc: &Document, node_id: NodeId) -> bool {
+    let mut cur = Some(node_id);
+    while let Some(id) = cur {
+        let is_ruby = doc.get(id).is_some_and(|n| {
+            matches!(&n.kind, NodeKind::Element(e)
+                    if matches!(e.local_name(), "ruby" | "rt" | "rb" | "rbc" | "rtc"))
+        });
+        if is_ruby {
+            return true;
+        }
+        cur = doc.parent_node(id);
+    }
+    false
+}
+
 pub(crate) fn in_svg_subtree(doc: &Document, node_id: NodeId) -> bool {
     let mut cur = doc.parent_node(node_id);
     while let Some(id) = cur {

@@ -1014,6 +1014,65 @@ fn r5006_empty_subtree_transform_skips_primitive_and_keeps_canvas_bg() {
         "子树含 backdrop-filter 后代时父变换照常发射"
     );
 }
+/// R5088：wrapper inline（无直接文本、带背景）的背景须施画且先于后代字形。
+/// 旧行为两态皆坏：多行内容器（content_height > 1.5×fs 经 PHASEA 元素子扩展）
+/// box-level bg 被误抑制 → 背景整丢；单行内容器 bg 后置发射 → 覆盖后代字形。
+/// 修 = skip 门改判直接文本子 + R5086 位点链补录（inline bg 祖先同位点点位）。
+/// ruby 子树豁免（专属多行片段模型，rb-display-001 族 A/B 实证）。
+#[test]
+fn r5088_wrapper_inline_bg_paints_before_descendant_glyphs() {
+    fn fill_before_glyph(html: &str, css: &str) -> (bool, bool, Option<usize>, Option<usize>) {
+        let doc = zero_dom::parse_html(html);
+        let sheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[sheet]);
+        let mut engine = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let mut painter = Painter::new();
+        painter.viewport_w = 800.0;
+        painter.viewport_h = 600.0;
+        painter.paint(&result.root, &styles, Some(&doc));
+        let prims = painter.primitives();
+        let mut first_fill = None;
+        let mut first_glyph = None;
+        for (i, op) in prims.draw_order.iter().enumerate() {
+            match op {
+                zero_render_foundation::primitive::DrawOp::Fill(_) if first_fill.is_none() => first_fill = Some(i),
+                zero_render_foundation::primitive::DrawOp::Glyph(_) if first_glyph.is_none() => first_glyph = Some(i),
+                _ => {}
+            }
+        }
+        (first_fill.is_some(), prims.glyphs.len() > 0, first_fill, first_glyph)
+    }
+
+    // ① shape A：span[bg] > b[text]（多行内容器形态）——bg 施画且先于字形。
+    let (has_fill, has_glyph, fpos, gpos) = fill_before_glyph(
+        r##"<html><head><style>
+            span { background-color: yellow; } b { color: purple; font-size: 300%; }
+        </style></head><body style="margin:0"><div><span><b>purple text</b></span></div></body></html>"##,
+        "span { background-color: yellow; } b { color: purple; font-size: 300%; }",
+    );
+    assert!(has_fill && has_glyph, "wrapper bg 与后代字形均须施画");
+    assert!(
+        fpos.unwrap() < gpos.unwrap(),
+        "wrapper bg（draw_order {fpos:?}）须先于后代字形（{gpos:?}）"
+    );
+
+    // ② shape B：span.w[bg] > span[text]（单行内容器形态，旧 bg 后置覆盖字形）。
+    let (has_fill2, has_glyph2, fpos2, gpos2) = fill_before_glyph(
+        r##"<html><head><style>
+            .w { background-color: yellow; }
+        </style></head><body style="margin:0"><div><span class="w"><span>inner text</span></span></div></body></html>"##,
+        ".w { background-color: yellow; }",
+    );
+    assert!(has_fill2 && has_glyph2, "wrapper bg 与后代字形均须施画");
+    assert!(
+        fpos2.unwrap() < gpos2.unwrap(),
+        "wrapper bg（draw_order {fpos2:?}）须先于后代字形（{gpos2:?}）"
+    );
+}
+
 /// R5086（css2.1 附录 E 绘制次序）：行内元素 box-level 背景须先于自身文字字形。
 /// 父 IFC 扁平化先绘行内字形，行内盒 paint_node 递归才发背景 → 背景覆盖自身文字
 ///（driving: active-selection-027 ref 页 `<span>` 黄底页字形整行消失；任何

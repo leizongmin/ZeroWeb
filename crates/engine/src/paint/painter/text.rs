@@ -2750,15 +2750,56 @@ impl super::Painter {
                             // 修复背景覆盖自身文字（active-selection-027 ref 页字形消失）。
                             // 多行/orphan owner 走 R639 fragment 背景（box-level 被 skip），
                             // 位点残留不消费、无害。仅主 render_fragment 路径记录。
-                            if self.inline_bg_z_order_enabled
-                                && !transformed.is_empty()
-                                && let Some(r5086_owner_style) = owner_style_opt
-                                && r5086_owner_style.background_color != ColorValue::Transparent
-                                && matches!(r5086_owner_style.display, DisplayValue::Inline)
-                            {
-                                self.pending_inline_bg_pos
-                                    .entry(owner_id)
-                                    .or_insert(self.primitives.draw_order.len());
+                            if self.inline_bg_z_order_enabled && !transformed.is_empty() {
+                                let r5086_pos = self.primitives.draw_order.len();
+                                // R5086：owner 自身带非透明 bg → 记录位点。
+                                if let Some(r5086_owner_style) = owner_style_opt
+                                    && r5086_owner_style.background_color
+                                        != ColorValue::Transparent
+                                    && matches!(
+                                        r5086_owner_style.display,
+                                        DisplayValue::Inline
+                                    )
+                                {
+                                    self.pending_inline_bg_pos
+                                        .entry(owner_id)
+                                        .or_insert(r5086_pos);
+                                }
+                                // R5088：wrapper 链补录——带非透明 bg 的 inline 祖先（无直接
+                                // 文本时非 fragment owner，owner 是否带 bg 与其无关）其
+                                // box-level bg 在自身 paint_node 后置发射，须同移到本片段
+                                // 字形之前（R3895 链走查同款；嵌套多层 bg 按 paint_node
+                                // 访问序外先内后，splice 后次序保持）。
+                                if self.inline_wrapper_bg_enabled {
+                                    let mut r5086_cur = doc.parent_node(owner_id);
+                                    while let Some(r5086_anc) = r5086_cur {
+                                        let Some(r5086_anc_style) =
+                                            styles.and_then(|s| s.get(&r5086_anc))
+                                        else {
+                                            break;
+                                        };
+                                        if !matches!(
+                                            r5086_anc_style.display,
+                                            DisplayValue::Inline
+                                        ) {
+                                            break;
+                                        }
+                                        if r5086_anc_style.background_color
+                                            != ColorValue::Transparent
+                                            && !super::in_ruby_subtree(doc, r5086_anc)
+                                        {
+                                            // ruby 豁免（R5088 A/B 抓 rb-display-001 /
+                                            // intra-base-white-space-001 翻红）：ZW ruby 用
+                                            // 专属多行片段模型（rt/base 双行同 IFC），box-level
+                                            // bg 与 per-fragment bg 的次序/几何交互自洽，链
+                                            // 补录 splice 反而扰动（旧路径全绿维持）。
+                                            self.pending_inline_bg_pos
+                                                .entry(r5086_anc)
+                                                .or_insert(r5086_pos);
+                                        }
+                                        r5086_cur = doc.parent_node(r5086_anc);
+                                    }
+                                }
                             }
                             for glyph in fragment_glyphs(
                                 &shaping_font_ids,
@@ -3742,6 +3783,22 @@ fn owner_fragment_edge_flags(frags: impl Iterator<Item = (NodeId, f32)>, doc: &D
 }
 
 /// 将数字转换为罗马数字字符串（1-based）。
+/// R5088：仅判**直接文本子**（R5055 preserved-content 口径）——不含
+/// `has_direct_paintable_text` 的 PHASEA「inline 元素子视同可绘」扩展。box-level
+/// 背景抑制门专用：抑制的前提是「本 inline 自身是 fragment owner（有直接文本），
+/// 背景由 R639 per-fragment 臂施加」；无直接文本的 wrapper inline
+///（`<span style=bg><b>text</b></span>`）不是 fragment owner，per-fragment 臂永不
+/// 为其发背景，box-level bg 是唯一施画者——旧判据经元素子扩展误抑制 → wrapper
+/// 背景整丢（多行内容器 probe-a）或后置覆盖后代字形（probe-b）。
+pub(super) fn has_direct_text_child(doc: &Document, node_id: NodeId) -> bool {
+    doc.child_nodes(node_id).iter().any(|child_id| {
+        matches!(
+            doc.get(*child_id).map(|node| &node.kind),
+            Some(NodeKind::Text(text)) if zero_layout_engine::has_preserved_content(&text.content)
+        )
+    })
+}
+
 pub(super) fn has_direct_paintable_text(
     doc: &Document,
     node_id: NodeId,
