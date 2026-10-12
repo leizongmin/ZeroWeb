@@ -1295,12 +1295,110 @@
   }
   globalThis.performance.timing = _perfMakeTimingStub();
   globalThis.performance.navigation = {
+    // Navigation Timing L1 枚举常量（nav2-test-attributes-exist 族
+    // assert_not_equals(window.performance.navigation.TYPE_RELOAD, undefined) 断言面）。
+    TYPE_NAVIGATE: 0,
+    TYPE_RELOAD: 1,
+    TYPE_BACK_FORWARD: 2,
+    TYPE_RESERVED: 255,
     type: 0,
     redirectCount: 0,
     toJSON: function () {
       return { type: this.type, redirectCount: this.redirectCount };
     },
   };
+
+  // ── Navigation Timing L2（performance-api-compat M2-S3）──
+  // PerformanceNavigationTiming 接口 + 每文档单条目。https://w3c.github.io/navigation-timing/
+  // 自洽面：条目存在、属性齐全（attributes-exist `in` 面 31 键）、观察者可达
+  // （po-navigation：entryTypes 形态**无 buffered 也回放**——nav 条目常驻 entry
+  // buffer，observe 时从 _perfEntries 回放）、实例同一性（getEntriesByType /
+  // observer / getEntriesByName 同一对象——unique-nav-instances / instance-accessors）。
+  // 真值缺面如实挂账：导航生命周期真值归 navigation-compat 流域——全部数值属性
+  // unavailable=0（与 performance.timing L1 桩同口径），attributes-values 断言面
+  // 待 M3 host 管道。type 缺省 'navigate'（redirect/reload/backforward 判定无
+  // host 数据，M3 面）；name = 文档地址（location.href）。
+  function PerformanceNavigationTiming() {
+    // spec 无公开构造语义锚定用例（idlharness 走 WebIDLParser，runner 不可执行面）；
+    // 接口对象仅属性面 + toJSON + toStringTag（PerformanceLongTaskTiming 同款先例）。
+    throw new TypeError('Illegal constructor');
+  }
+  PerformanceNavigationTiming.prototype.toJSON = function () {
+    // 全属性 JSON 序列化（attributes-exist 同键集——L2 无 detail 成员）。
+    return {
+      name: this.name,
+      entryType: this.entryType,
+      startTime: this.startTime,
+      duration: this.duration,
+      initiatorType: this.initiatorType,
+      type: this.type,
+      redirectCount: this.redirectCount,
+      unloadEventStart: this.unloadEventStart,
+      unloadEventEnd: this.unloadEventEnd,
+      redirectStart: this.redirectStart,
+      redirectEnd: this.redirectEnd,
+      domainLookupStart: this.domainLookupStart,
+      domainLookupEnd: this.domainLookupEnd,
+      connectStart: this.connectStart,
+      connectEnd: this.connectEnd,
+      secureConnectionStart: this.secureConnectionStart,
+      fetchStart: this.fetchStart,
+      requestStart: this.requestStart,
+      responseStart: this.responseStart,
+      responseEnd: this.responseEnd,
+      domInteractive: this.domInteractive,
+      domContentLoadedEventStart: this.domContentLoadedEventStart,
+      domContentLoadedEventEnd: this.domContentLoadedEventEnd,
+      domComplete: this.domComplete,
+      loadEventStart: this.loadEventStart,
+      loadEventEnd: this.loadEventEnd,
+      nextHopProtocol: this.nextHopProtocol,
+      transferSize: this.transferSize,
+      encodedBodySize: this.encodedBodySize,
+      decodedBodySize: this.decodedBodySize,
+      workerStart: this.workerStart,
+    };
+  };
+  try { PerformanceNavigationTiming.prototype[Symbol.toStringTag] = 'PerformanceNavigationTiming'; } catch (_e) {}
+  globalThis.PerformanceNavigationTiming = PerformanceNavigationTiming;
+
+  // 每文档单实例（unique-nav-instances 断言面）：init 即入 _perfEntries——
+  // getEntries* 立即可检索 + observe 回放（两种 observe 形态）统一从 buffer 取。
+  var _zwNavTimingKeys = ['unloadEventStart', 'unloadEventEnd', 'redirectStart',
+    'redirectEnd', 'domainLookupStart', 'domainLookupEnd', 'connectStart',
+    'connectEnd', 'secureConnectionStart', 'fetchStart', 'requestStart',
+    'responseStart', 'responseEnd', 'domInteractive', 'domContentLoadedEventStart',
+    'domContentLoadedEventEnd', 'domComplete', 'loadEventStart', 'loadEventEnd',
+    'workerStart'];
+  var _zwNavTimingEntry = Object.create(PerformanceNavigationTiming.prototype);
+  // name = 文档地址——**访问时惰性解析**：main location 对象在 part05 才装配
+  // （part01b init 期读 undefined），同文档生命周期内 location 不变（assign/replace
+  // 为 no-op），访问时解析与「创建时快照」语义一致（po-navigation 断言 name ===
+  // location.toString()）。
+  try {
+    Object.defineProperty(_zwNavTimingEntry, 'name', {
+      get: function () {
+        try {
+          return String((globalThis.location && globalThis.location.href) || '');
+        } catch (_e) { return ''; }
+      },
+      configurable: true,
+    });
+  } catch (_eNavName) {}
+  _zwNavTimingEntry.entryType = 'navigation';
+  _zwNavTimingEntry.startTime = 0;
+  _zwNavTimingEntry.duration = 0;
+  _zwNavTimingEntry.initiatorType = 'navigation';
+  _zwNavTimingEntry.type = 'navigate';
+  _zwNavTimingEntry.redirectCount = 0;
+  _zwNavTimingEntry.nextHopProtocol = '';
+  _zwNavTimingEntry.transferSize = 0;
+  _zwNavTimingEntry.encodedBodySize = 0;
+  _zwNavTimingEntry.decodedBodySize = 0;
+  for (var _zk = 0; _zk < _zwNavTimingKeys.length; _zk++) {
+    _zwNavTimingEntry[_zwNavTimingKeys[_zk]] = 0;
+  }
+  _perfEntries.push(_zwNavTimingEntry);
 
   // PerformanceMark（User Timing §2.1）——可构造接口：校验同 mark() 但**不入 entry
   // buffer**（mark-entry-constructor：new PerformanceMark 不进 getEntriesByName）。
@@ -1409,14 +1507,20 @@
       }
     }
     if (_perfObservers.indexOf(this) === -1) _perfObservers.push(this);
-    if (hasType && options.buffered) {
+    // Navigation Timing（M2-S3）：nav 条目常驻 entry buffer——**两种 observe 形态、
+    // 无论 buffered 与否都回放**（po-navigation：entryTypes 形态无 buffered 也须
+    // 收到既有 nav 条目；Chrome 语义 nav 条目即 buffered-always）。
+    var _zwNavReplay = ((!hasType && this._types.indexOf('navigation') !== -1)
+        || (hasType && options.type === 'navigation'));
+    if ((hasType && options.buffered) || _zwNavReplay) {
       // Event Timing（M2-S2）：event 条目不入 _perfEntries（getEntries 不可检索），
       // 回放走专用 store（≥104ms 门槛在 emit 侧把关）；first-input 照旧走 _perfEntries。
-      var _replaySrc = (options.type === 'event')
+      var _replaySrc = (hasType && options.type === 'event')
         ? _zwEventTimingBuffer : _perfEntries;
+      var _replayType = hasType ? options.type : 'navigation';
       var past = [];
       for (var j = 0; j < _replaySrc.length; j++) {
-        if (_replaySrc[j].entryType === options.type) past.push(_replaySrc[j]);
+        if (_replaySrc[j].entryType === _replayType) past.push(_replaySrc[j]);
       }
       if (past.length) {
         for (var k = 0; k < past.length; k++) this._buffered.push(past[k]);

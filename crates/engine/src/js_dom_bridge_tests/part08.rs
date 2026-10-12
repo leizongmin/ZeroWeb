@@ -782,7 +782,8 @@ fn test_performance_mark_measure_observer_r2821() {
         "measure 引用未知 mark 名抛 SyntaxError DOMException"
     );
 
-    // clearMarks / clearMeasures 清 buffer。
+    // clearMarks / clearMeasures 清 mark/measure 条目（M2-S3 起 buffer 常驻
+    // navigation 条目——真实浏览器语义，clear 系列不清其他类型条目）。
     sandbox
         .execute("performance.clearMarks(); performance.clearMeasures();")
         .unwrap();
@@ -791,8 +792,16 @@ fn test_performance_mark_measure_observer_r2821() {
             .execute("String(performance.getEntries().length)")
             .unwrap()
             .value,
-        "0",
-        "clearMarks+clearMeasures 清空 entry buffer"
+        "1",
+        "clearMarks+clearMeasures 只清 mark/measure，buffer 余 navigation 条目"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(performance.getEntries()[0].entryType)")
+            .unwrap()
+            .value,
+        "navigation",
+        "clear 后 buffer 余留条目为 navigation（performance-api-compat M2-S3）"
     );
 
     // PerformanceObserver：typeof function + supportedEntryTypes 含 mark/measure。
