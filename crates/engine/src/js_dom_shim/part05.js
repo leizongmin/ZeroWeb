@@ -733,6 +733,10 @@
           };
           if (_imSrc && typeof fetch === 'function') {
             try {
+              // Resource Timing（M3-S3）：运行时 img 经页面 fetch 取图——置发起方
+              // 旗标（fetch 包裹消费为 initiatorType 'img'；net 元数据经响应对象
+              // __zwRtMeta 携带——resource_timing_test0 的 img encodedBodySize 精确面）。
+              _zwRtPendingInitiator = 'img';
               fetch(_imSrc).then(function (resp) {
                 if (!resp.ok) { _imFail(); return; }
                 resp.blob().then(function (blob) {
