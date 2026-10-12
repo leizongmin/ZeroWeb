@@ -2071,3 +2071,98 @@ fn test_r4436_horizontal_orphan_caption_keeps_legacy_shrink() {
         "horizontal caption 走既有 shrink 路径（content 0 边框壳），不触达 R4436 臂"
     );
 }
+
+/// R5082（CSS2 §17.5.2.1 + R4243 口径）：`<col>` 百分比宽在 separated border-spacing 下
+/// 相对「表 content 宽 − 水平 border-spacing×(列数+1)」解析，与 auto 分配同基准
+///（col_available）。旧实现把原始 content 宽传给 collect_col_widths——
+/// fixed-table-layout-022（533 表 + 58 边框 + 75 spacing → 基准 400）：13% 列
+/// 52px 被 13%×475=61.75 取代，td 全体错位。
+#[test]
+fn test_col_percent_width_resolves_against_spacing_adjusted_base() {
+    use zero_css_parser::values::LengthValue;
+    use zero_style_system::{BorderCollapseValue, BorderSpacingComputedValue};
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let col1_id = doc.create_element("div");
+    let col2_id = doc.create_element("div");
+    let row_id = doc.create_element("div");
+    let cell1_id = doc.create_element("div");
+    let cell2_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+    let _ = doc.append_child(table_id, col1_id);
+    let _ = doc.append_child(table_id, col2_id);
+    let _ = doc.append_child(table_id, row_id);
+    let _ = doc.append_child(row_id, cell1_id);
+    let _ = doc.append_child(row_id, cell2_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    ts.width = LengthValue::Px(400.0);
+    ts.border_collapse = BorderCollapseValue::Separate;
+    ts.border_spacing = BorderSpacingComputedValue {
+        horizontal: 25.0,
+        vertical: 4.0,
+    };
+    styles.insert(table_id, ts);
+    let mut c1 = ComputedStyle::default();
+    c1.display = DisplayValue::TableColumn;
+    c1.width = LengthValue::Percentage(13.0);
+    styles.insert(col1_id, c1);
+    let mut c2 = ComputedStyle::default();
+    c2.display = DisplayValue::TableColumn;
+    styles.insert(col2_id, c2);
+    let mut rs = ComputedStyle::default();
+    rs.display = DisplayValue::TableRow;
+    styles.insert(row_id, rs);
+    for cid in [cell1_id, cell2_id] {
+        let mut cs = ComputedStyle::default();
+        cs.display = DisplayValue::TableCell;
+        styles.insert(cid, cs);
+    }
+
+    let mk_cell = |nid| LayoutBox {
+        node_id: Some(nid),
+        ..Default::default()
+    };
+    let row_box = LayoutBox {
+        node_id: Some(row_id),
+        children: vec![mk_cell(cell1_id), mk_cell(cell2_id)],
+        ..Default::default()
+    };
+    let table_box = LayoutBox {
+        node_id: Some(table_id),
+        content_width: 400.0,
+        children: vec![
+            LayoutBox {
+                node_id: Some(col1_id),
+                ..Default::default()
+            },
+            LayoutBox {
+                node_id: Some(col2_id),
+                ..Default::default()
+            },
+            row_box,
+        ],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+    let (col_widths, _auto_shrunk) =
+        compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
+
+    // 基准 = 400 − 25×3 = 325：col1 = 13%×325 = 42.25；col2（auto）= 325 − 42.25 = 282.75。
+    // 旧实现基准 400：col1 = 52（+9.75 偏移），col2 同步错位。
+    assert!(
+        (col_widths[0] - 42.25).abs() < 1.0,
+        "13% col should resolve against 400−25×3=325 → 42.25, got {}",
+        col_widths[0]
+    );
+    assert!(
+        (col_widths[1] - 282.75).abs() < 1.5,
+        "auto col should take spacing-adjusted leftover 282.75, got {}",
+        col_widths[1]
+    );
+}

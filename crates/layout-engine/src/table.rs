@@ -837,7 +837,7 @@ fn compute_column_widths_inner(
     // 语义，CSS Tables §4：col width 行为同该列每格显式 width）。col 无 box，须在 grid 直接读
     // DOM 属性（compute_column_widths 此前仅读 cell width，col width 被忽略）。auto 扩展期
     // 这些列冻结（同 R364 cell-explicit），仅 auto 列吸收剩余空间。
-    for (i, w) in crate::table_grid::collect_col_widths(table_box, col_count, styles, doc, available_width)
+    for (i, w) in crate::table_grid::collect_col_widths(table_box, col_count, styles, doc, col_available)
         .iter()
         .enumerate()
     {
