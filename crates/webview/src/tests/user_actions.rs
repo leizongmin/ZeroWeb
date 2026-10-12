@@ -584,7 +584,7 @@ fn delete_backward_cancel_propagates_t2pd2a() {
     assert!(canceled.canceled, "DeleteBackward beforeinput 取消须传播 canceled");
     assert!(!canceled.changed, "取消后不得有值变更");
     assert!(
-        webview.form_control_value_overrides().get("#name").is_none(),
+        !webview.form_control_value_overrides().contains_key("#name"),
         "取消后不产生 dirty retained 值（属性初值不变）"
     );
     assert_eq!(
