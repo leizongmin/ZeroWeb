@@ -498,20 +498,23 @@
               // 同步线协议）——**延迟到任务**补条目（buffer-full-add-then-clear 锚定：
               // 同步完成 XHR 的条目在后续任务才入账，本任务内 clear/resize 先生效——
               // entriesAfterAddition=0 面；initiatorType 'xmlhttprequest'，终跳 URL）。
+              // M3-S2：net 元数据经 syncProbe.__zwRtMeta 携带。
+              var _rtSyncMeta = syncProbe ? syncProbe.__zwRtMeta : null;
               setTimeout(function () {
                 try {
                   if (typeof __zwEmitResourceTiming === 'function') {
-                    __zwEmitResourceTiming(syncUrl, 'xmlhttprequest', syncT0, _perfNow());
+                    __zwEmitResourceTiming(syncUrl, 'xmlhttprequest', syncT0, _perfNow(), _rtSyncMeta || null);
                   }
                 } catch (_eRtSync) {}
               }, 0);
               return;
             }
             self._zwFillFromResponse(syncProbe, null);
+            var _rtSyncMeta2 = syncProbe ? syncProbe.__zwRtMeta : null;
             setTimeout(function () {
               try {
                 if (typeof __zwEmitResourceTiming === 'function') {
-                  __zwEmitResourceTiming(syncUrl, 'xmlhttprequest', syncT0, _perfNow());
+                  __zwEmitResourceTiming(syncUrl, 'xmlhttprequest', syncT0, _perfNow(), _rtSyncMeta2 || null);
                 }
               } catch (_eRtSync2) {}
             }, 0);

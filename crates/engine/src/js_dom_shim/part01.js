@@ -1789,6 +1789,44 @@
     //（headers 经 new Response 封装为 Headers 实例，R2977；body getter 同 R2967）。
     var response = new Response(bodyArg, { status: status, statusText: statusText, headers: headers });
     if (swFetchId) response.__zwSwFetchId = swFetchId;
+    // Resource Timing（performance-api-compat M3-S2）：net 元数据挂在响应对象上
+    // （fetch 包裹/sync XHR 发射时读取）——encodedBodySize = content-length 优先，
+    // 否则 body 字节数（TextEncoder 精确；__zw_bytes: 形态即字节数）；本地服务
+    // 无内容编码 → decodedBodySize = encoded；transferSize ≈ headers 线长 + body
+    // 字节（invariants 断言面 >0）；nextHopProtocol 'http/1.1'（runner 内部服务
+    // 管道的协议语义）。失败响应（__zw_fetch_error: 前缀）不走本路径 → 无 meta
+    // → 条目 size=0（spec：失败请求 transferSize 0）。
+    try {
+      var _rtEncoded = null;
+      // content-length 非消费读（_takeHeaderValue 会 delete——吞掉可见 header 会
+      // 破坏 net-api 读 content-length 的用例面）。
+      var _rtCl = null;
+      for (var _rtHk in headers) {
+        if (!Object.prototype.hasOwnProperty.call(headers, _rtHk)) continue;
+        if (String(_rtHk).toLowerCase() === 'content-length') {
+          var _rtHv = headers[_rtHk];
+          _rtCl = Array.isArray(_rtHv) ? _rtHv[_rtHv.length - 1] : _rtHv;
+          break;
+        }
+      }
+      if (_rtCl != null && parseInt(_rtCl, 10) >= 0) _rtEncoded = parseInt(_rtCl, 10);
+      if (_rtEncoded == null) {
+        if (typeof bodyArg === 'string') {
+          _rtEncoded = (typeof TextEncoder === 'function')
+            ? new TextEncoder().encode(bodyArg).length : bodyArg.length;
+        } else if (bodyArg && typeof bodyArg.length === 'number') {
+          _rtEncoded = bodyArg.length; // Uint8Array（__zw_bytes: 解码产物）
+        } else {
+          _rtEncoded = 0;
+        }
+      }
+      response.__zwRtMeta = {
+        encodedBodySize: _rtEncoded,
+        decodedBodySize: _rtEncoded,
+        transferSize: _rtEncoded + (headersWire ? headersWire.length : 0),
+        nextHopProtocol: 'http/1.1',
+      };
+    } catch (_eRtMeta) {}
     // https://fetch.spec.whatwg.org/#concept-response-url
     response.url = finalUrl;
     response.type = responseType;
@@ -3236,15 +3274,19 @@
       } catch (eSync) {
         return Promise.reject(eSync);
       }
-      var _rtEmitOnce = function () {
+      var _rtEmitOnce = function (meta) {
         try {
           if (typeof __zwEmitResourceTiming === 'function') {
-            __zwEmitResourceTiming(_rtUrl, _rtInitiator, _rtT0, _perfNow());
+            __zwEmitResourceTiming(_rtUrl, _rtInitiator, _rtT0, _perfNow(), meta || null);
           }
         } catch (_eRtEmit) {}
       };
-      return p.then(function (v) { _rtEmitOnce(); return v; },
-                    function (e) { _rtEmitOnce(); throw e; });
+      return p.then(function (v) {
+        // net 元数据由响应对象携带（_makeResponseFromWire 挂 __zwRtMeta——
+        // body 字节数/content-length/headers 线长/协议）。
+        _rtEmitOnce(v && v.__zwRtMeta);
+        return v;
+      }, function (e) { _rtEmitOnce(null); throw e; });
     };
   }
 

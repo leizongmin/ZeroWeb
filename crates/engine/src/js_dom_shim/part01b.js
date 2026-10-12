@@ -1505,7 +1505,7 @@
       if (typeof on === 'function') on.call(globalThis.performance, ev);
     } catch (_eOn) {}
   }
-  globalThis.__zwEmitResourceTiming = function (name, initiatorType, startMs, endMs) {
+  globalThis.__zwEmitResourceTiming = function (name, initiatorType, startMs, endMs, meta) {
     if (typeof name !== 'string' || name.length === 0) return;
     var start = (typeof startMs === 'number' && startMs >= 0) ? startMs : 0;
     var end = (typeof endMs === 'number' && endMs >= start) ? endMs : start;
@@ -1515,7 +1515,10 @@
     entry.startTime = start;
     entry.duration = end - start;
     entry.initiatorType = String(initiatorType || 'other');
-    entry.nextHopProtocol = '';
+    // net 元数据（M3-S2）：meta 由响应对象携带（_makeResponseFromWire 挂
+    // __zwRtMeta——content-length/body 字节/headers 线长/协议）；无 meta（失败
+    // 响应、页内构造 Response、宿主派发口路径）保持 0（spec：失败请求 size 0）。
+    entry.nextHopProtocol = (meta && meta.nextHopProtocol) ? String(meta.nextHopProtocol) : '';
     entry.workerStart = 0;
     entry.redirectStart = 0;
     entry.redirectEnd = 0;
@@ -1528,9 +1531,9 @@
     entry.requestStart = start;
     entry.responseStart = start;
     entry.responseEnd = end;
-    entry.transferSize = 0;
-    entry.encodedBodySize = 0;
-    entry.decodedBodySize = 0;
+    entry.transferSize = (meta && meta.transferSize >= 0) ? meta.transferSize : 0;
+    entry.encodedBodySize = (meta && meta.encodedBodySize >= 0) ? meta.encodedBodySize : 0;
+    entry.decodedBodySize = (meta && meta.decodedBodySize >= 0) ? meta.decodedBodySize : 0;
     if (_zwCountResEntries() < _zwResBufCap) {
       _perfEntries.push(entry);
       _notifyEntry(entry);
