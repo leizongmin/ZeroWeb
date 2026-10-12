@@ -137,6 +137,18 @@
   // 不接真 cookie jar（host-layer defer）；per-上下文（无 origin 隔离）。
   var _doc_cookies = {};
 
+
+  // WPT testdriver `delete_all_cookies` 的 shim 钩子（cookies-compat M1，2026-10-12）——
+  // 上游 corpus 的 domCookieTest 每个子测试前后经 `test_driver.delete_all_cookies()` 清
+  // jar（隔离断言前提：exact-match 序列化断言对跨子测试 cookie 残留敏感）。runner 的
+  // TESTDRIVER_STUB 把该操作转发到此钩子，清空 in-JS cookie store（非空操作，语义真实）。
+  // 钩子缺失（精简 shim/老宿主）→ stub 侧拒绝。
+  globalThis.__zwDeleteAllCookies = function () {
+    for (var k in _doc_cookies) {
+      if (Object.prototype.hasOwnProperty.call(_doc_cookies, k)) delete _doc_cookies[k];
+    }
+  };
+
   // document.title 缓存。null = 未初始化（惰性读 <title> 文本）；string = 显式 set 或已读。
   // getter 首访读 document.querySelector('title').textContent（空白折叠）；setter 仅更新缓存。
   var _doc_title = null;

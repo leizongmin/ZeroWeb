@@ -1,10 +1,21 @@
 # Cookie 兼容 — document.cookie 语义面
 
-**版本**: v1.0
-**日期**: 2026-10-08
-**状态**: Active（已立项，快赢切片——无用户门控项）
+**版本**: v1.1
+**日期**: 2026-10-12
+**状态**: Active——M1 已收口，M2 进行中
 **执行模式**: WPT 驱动（上游 cookies corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——存储与状态面）
+
+> **▶ 当前状态（2026-10-12，M1 收口）**
+> - **已完成**：cookies corpus 导入（87 文件，pin `315976933`）+ 可执行子集甄别
+>   （22 案运行）+ runner 通道 `testharness-cookies` + 基线落档——可执行面
+>   **21/533 = 3.9%**，头驱动不可执行面 304（`zw-static-corpus:` 标记计入分母）。
+>   证据：[evidence/2026-10-12-m1-baseline.md](evidence/2026-10-12-m1-baseline.md)。
+> - **卡点**：无。testdriver `delete_all_cookies` 基建已打通（shim
+>   `__zwDeleteAllCookies` 钩子 + stub 白名单），domCookieTest 隔离前提成立。
+> - **下一步（M2）**：shim cookie store 语义重写——CTL 截断/拒收（480 Fail 主簇）、
+>   expires/max-age 过期拒绝、`__Host-`/`__Secure-` 前缀拒收、Path/Domain 可见性
+>   匹配。jar 本体不动；每个语义修复附 imported-tests.txt 账本记录。
 
 > **说明**
 > 本文档是 ZeroWeb「Cookie 兼容」专项目标执行契约。document.cookie 是登录态/
@@ -74,8 +85,8 @@
 
 ### DC-1: WPT 导入与基线
 
-- [ ] cookies corpus 导入 + 可执行子集甄别（不可执行面及理由落 evidence/）
-- [ ] 分类通过率基线落 evidence/，并回填 docs/compat/trends/wpt-suites.csv planned 行
+- [x] cookies corpus 导入 + 可执行子集甄别（不可执行面及理由落 evidence/）
+- [x] 分类通过率基线落 evidence/，并回填 docs/compat/trends/wpt-suites.csv planned 行
 
 ### DC-2: document.cookie 语义收敛
 
@@ -90,8 +101,15 @@
 
 ## 活跃里程碑
 
-### M1 — WPT 导入与基线（含可执行性甄别）
+### M1 — WPT 导入与基线（含可执行性甄别）✅ 2026-10-12
+
+通道 + 甄别 + 基线完成：22 案 837 子测试，可执行面 21/533（3.9%），不可执行面 304
+标记记账。testdriver `delete_all_cookies` 基建打通。证据见
+[evidence/2026-10-12-m1-baseline.md](evidence/2026-10-12-m1-baseline.md)。
 
 ### M2 — document.cookie 语义收敛（DC-2 清单逐项）
+
+失败簇：CTL 截断/拒收（attributes-ctl 416 + name-ctl 32 + value-ctl 32）、
+expires/max-age 过期拒绝、`__Host-`/`__Secure-` 前缀拒收（prefix 31）。
 
 ### M3 — 收口（最终账本 + 归档）
