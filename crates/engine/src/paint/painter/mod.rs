@@ -49,6 +49,16 @@ pub struct Painter {
     pub(crate) measure_cache: std::cell::RefCell<std::collections::HashMap<(u32, u32, u32, bool), f32>>,
     /// 已由父级行内格式化上下文绘制过文本的节点。
     pub(crate) painted_inline_nodes: HashSet<NodeId>,
+    /// R5086（css2.1 附录 E 绘制次序）：行内元素 box-level 背景 z 序修正位点——
+    /// render_fragment 发射 owner 首个字形前记录 draw_order 位点，paint_node 递归到
+    /// 该行内盒发射 box-level 背景（几何 = R4297 border-box 口径不变）后，把背景
+    /// draw_order 段移动到位点（字形之前）。背景父 IFC 字形之后发射会覆盖自身文字
+    ///（driving: active-selection-027 ref 页 `<span>` 黄底页字形消失）。多行/orphan
+    /// 行内走 R639 fragment 路径（box-level 背景被 skip）不消费位点，残留无害。
+    pub(crate) pending_inline_bg_pos: HashMap<NodeId, usize>,
+    /// R5086：行内背景 z 序修正开关（构造期单次读取，热路径零 env 查询）。
+    /// `ZW_INLINE_BG_Z_ORDER=0` 关闭（恢复背景后置旧序）。
+    pub(crate) inline_bg_z_order_enabled: bool,
     /// R4296：inline 非原子盒垂直 border-box 外延（背景/backdrop-filter 区域按
     /// ComputedStyle 的 CSS padding/border 外延，CSS2 §10.8.1）——**default-off**
     /// （`ZW_INLINE_BLEED=1` 启用）。外延依赖 inline 盒行位准确，ZW 现锚定单行 inline
@@ -567,6 +577,8 @@ impl Painter {
             corner_shape_clip: None,
             measure_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             painted_inline_nodes: HashSet::new(),
+            pending_inline_bg_pos: HashMap::new(),
+            inline_bg_z_order_enabled: std::env::var("ZW_INLINE_BG_Z_ORDER").as_deref() != Ok("0"),
             inline_bleed_enabled: std::env::var("ZW_INLINE_BLEED").as_deref() == Ok("1"),
             paint_skip_nodes: HashSet::new(),
             counters: HashMap::new(),
@@ -1837,7 +1849,25 @@ impl Painter {
                 // #[inline(never)] 助手（paint 递归帧敏感，深嵌套页栈溢出史）。
                 self.prepare_corner_shape_clip(style, box_node, abs_x, abs_y);
                 if style.background_color != ColorValue::Transparent && !skip_inline_box_bg {
-                    self.paint_background(box_node, abs_x, abs_y, style, styles);
+                    // R5086：同 paint_node 主路径——行内盒背景移动到父 IFC 已发字形之前。
+                    let r5086_bg_pos =
+                        if self.inline_bg_z_order_enabled && matches!(style.display, DisplayValue::Inline) {
+                            box_node.node_id.and_then(|id| self.pending_inline_bg_pos.remove(&id))
+                        } else {
+                            None
+                        };
+                    match r5086_bg_pos {
+                        Some(pos) => {
+                            let draw_before = self.primitives.draw_order.len();
+                            self.paint_background(box_node, abs_x, abs_y, style, styles);
+                            let end = self.primitives.draw_order.len();
+                            if pos < draw_before && end > draw_before {
+                                // rotate_right 把 [draw_before..end) 段移到 [pos..end) 前端。
+                                self.primitives.draw_order[pos..].rotate_right(end - draw_before);
+                            }
+                        }
+                        None => self.paint_background(box_node, abs_x, abs_y, style, styles),
+                    }
                 }
                 // 0b. box-shadow inset 相位（R4137，CSS Backgrounds 附录 E：背景之上、内容之下）。
                 // R4143：table-internal 同样两相位绘制（见上方 BeforeBackground 注）。
@@ -2383,7 +2413,27 @@ impl Painter {
                     && !spanner_segs_active
                     && !bg_clip_text_solid
                 {
-                    self.paint_background(box_node, abs_x, abs_y, style, styles);
+                    // R5086：行内盒且 render_fragment 已记录字形前位点 → 背景发射后把
+                    // draw_order 段移动到字形之前（css2.1 附录 E：行内背景先于文本）。
+                    // 几何保持 box-level border-box 口径（R4297），仅调 z 序。
+                    let r5086_bg_pos =
+                        if self.inline_bg_z_order_enabled && matches!(style.display, DisplayValue::Inline) {
+                            box_node.node_id.and_then(|id| self.pending_inline_bg_pos.remove(&id))
+                        } else {
+                            None
+                        };
+                    match r5086_bg_pos {
+                        Some(pos) => {
+                            let draw_before = self.primitives.draw_order.len();
+                            self.paint_background(box_node, abs_x, abs_y, style, styles);
+                            let end = self.primitives.draw_order.len();
+                            if pos < draw_before && end > draw_before {
+                                // rotate_right 把 [draw_before..end) 段移到 [pos..end) 前端。
+                                self.primitives.draw_order[pos..].rotate_right(end - draw_before);
+                            }
+                        }
+                        None => self.paint_background(box_node, abs_x, abs_y, style, styles),
+                    }
                 }
 
                 // 1a-2. box-shadow inset 相位（R4137，CSS Backgrounds 附录 E：inset 阴影

@@ -1014,3 +1014,107 @@ fn r5006_empty_subtree_transform_skips_primitive_and_keeps_canvas_bg() {
         "子树含 backdrop-filter 后代时父变换照常发射"
     );
 }
+/// R5086（css2.1 附录 E 绘制次序）：行内元素 box-level 背景须先于自身文字字形。
+/// 父 IFC 扁平化先绘行内字形，行内盒 paint_node 递归才发背景 → 背景覆盖自身文字
+///（driving: active-selection-027 ref 页 `<span>` 黄底页字形整行消失；任何
+/// `<span style="background">text</span>` 产品页同谱）。修复 = render_fragment 发射
+/// owner 首个字形前记录 draw_order 位点，背景发射后移动到位点（几何不变仅调 z 序）。
+#[test]
+fn r5086_inline_box_bg_z_order_precedes_glyphs() {
+    fn draw_positions(html: &str, css: &str) -> (Option<usize>, Option<usize>) {
+        let doc = zero_dom::parse_html(html);
+        let sheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[sheet]);
+        let mut engine = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let mut painter = Painter::new();
+        painter.viewport_w = 800.0;
+        painter.viewport_h = 600.0;
+        painter.paint(&result.root, &styles, Some(&doc));
+        let prims = painter.primitives();
+        let mut first_fill = None;
+        let mut first_glyph = None;
+        for (i, op) in prims.draw_order.iter().enumerate() {
+            match op {
+                zero_render_foundation::primitive::DrawOp::Fill(_) if first_fill.is_none() => first_fill = Some(i),
+                zero_render_foundation::primitive::DrawOp::Glyph(_) if first_glyph.is_none() => first_glyph = Some(i),
+                _ => {}
+            }
+        }
+        (first_fill, first_glyph)
+    }
+    const SPAN_BG_HTML: &str = r##"<html><head><style>
+        span { background-color: yellow; color: purple; }
+    </style></head><body style="margin:0"><div><span>bg text</span></div></body></html>"##;
+    const SPAN_BG_CSS: &str = "span { background-color: yellow; color: purple; }";
+
+    // ① 默认：背景 fill 先于字形。
+    let (bg_fill_pos, glyph_pos) = draw_positions(SPAN_BG_HTML, SPAN_BG_CSS);
+    assert!(bg_fill_pos.is_some(), "bg fill must be emitted");
+    assert!(glyph_pos.is_some(), "glyphs must be emitted");
+    assert!(
+        bg_fill_pos.unwrap() < glyph_pos.unwrap(),
+        "span bg fill (draw_order {bg_fill_pos:?}) must precede its glyphs ({glyph_pos:?})"
+    );
+
+    // ② kill-switch（ZW_INLINE_BG_Z_ORDER=0 语义）：直接置 inline_bg_z_order_enabled=false
+    //（pub(crate) 字段，免进程 env 突变与并行测试互踩——R5085 ENV_LOCK 判例的替代形态）。
+    // draw_positions 内联构建 Painter 后关闸，等价 env=0 构造。
+    {
+        fn draw_positions_switched(html: &str, css: &str) -> (Option<usize>, Option<usize>) {
+            let doc = zero_dom::parse_html(html);
+            let sheet = zero_css_parser::Parser::parse_stylesheet(css);
+            let mut sys = zero_style_system::StyleSystem::new();
+            sys.set_viewport(800.0, 600.0);
+            let styles = sys.compute_styles(&doc, &[sheet]);
+            let mut engine = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+            let result = engine.compute(&doc, &styles);
+            let mut painter = Painter::new();
+            painter.inline_bg_z_order_enabled = false;
+            painter.viewport_w = 800.0;
+            painter.viewport_h = 600.0;
+            painter.paint(&result.root, &styles, Some(&doc));
+            let prims = painter.primitives();
+            let mut first_fill = None;
+            let mut first_glyph = None;
+            for (i, op) in prims.draw_order.iter().enumerate() {
+                match op {
+                    zero_render_foundation::primitive::DrawOp::Fill(_) if first_fill.is_none() => first_fill = Some(i),
+                    zero_render_foundation::primitive::DrawOp::Glyph(_) if first_glyph.is_none() => {
+                        first_glyph = Some(i)
+                    }
+                    _ => {}
+                }
+            }
+            (first_fill, first_glyph)
+        }
+        let (bg_fill_pos_off, glyph_pos_off) = draw_positions_switched(SPAN_BG_HTML, SPAN_BG_CSS);
+        assert!(
+            bg_fill_pos_off.unwrap() > glyph_pos_off.unwrap(),
+            "kill-switch must restore legacy order (bg after glyphs), got fill {:?} vs glyph {:?}",
+            bg_fill_pos_off,
+            glyph_pos_off
+        );
+    }
+
+    // ③ 对照：无背景 span 保持零 fill。
+    let (nf, _) = draw_positions(
+        r##"<html><head><style>
+            span { color: purple; }
+        </style></head><body style="margin:0"><div><span>bg text</span></div></body></html>"##,
+        "span { color: purple; }",
+    );
+    assert!(nf.is_none(), "no-bg span must emit no fill");
+
+    // ④ 空 span（无文本片段）不记录位点——背景维持旧后置序（inline-replaced-width-014：
+    // abspos 空 span 绿底须盖先绘红 img，splice 会把绿底提前到 img 之前翻转堆叠）。
+    let (ef, _) = draw_positions(
+        r##"<html><head><style>
+            span { background-color: yellow; }
+        </style></head><body style="margin:0"><div><span></span>tail</div></body></html>"##,
+        "span { background-color: yellow; }",
+    );
+    assert!(ef.is_some(), "empty span bg must still emit (legacy order)");
+}

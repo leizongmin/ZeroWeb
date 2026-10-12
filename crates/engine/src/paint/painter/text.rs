@@ -2744,6 +2744,22 @@ impl super::Painter {
                                 &variations,
                                 size_adjust,
                             );
+                            // R5086（css2.1 附录 E 绘制次序）：owner 为带非透明背景的行内元素
+                            // 时，在首个字形发射前记录 draw_order 位点——owner 自身 paint_node
+                            // 的 box-level 背景（父 IFC 字形之后才递归发射）据此移动到字形之前，
+                            // 修复背景覆盖自身文字（active-selection-027 ref 页字形消失）。
+                            // 多行/orphan owner 走 R639 fragment 背景（box-level 被 skip），
+                            // 位点残留不消费、无害。仅主 render_fragment 路径记录。
+                            if self.inline_bg_z_order_enabled
+                                && !transformed.is_empty()
+                                && let Some(r5086_owner_style) = owner_style_opt
+                                && r5086_owner_style.background_color != ColorValue::Transparent
+                                && matches!(r5086_owner_style.display, DisplayValue::Inline)
+                            {
+                                self.pending_inline_bg_pos
+                                    .entry(owner_id)
+                                    .or_insert(self.primitives.draw_order.len());
+                            }
                             for glyph in fragment_glyphs(
                                 &shaping_font_ids,
                                 &transformed,
