@@ -940,3 +940,88 @@ fn test_r5084_border_image_draw_process_kill_switch() {
         "kill-switch must restore the legacy 8-piece emission, got {images:?}"
     );
 }
+// ── R5085：变换叶实心盒直绘（transform-origin-01 驱动）─────────────────
+
+/// R5085 组共用 env 锁——kill-switch 用例改写进程全局 `ZW_TRANSFORM_SOLID_FILL_DIRECT`，
+/// 同组用例须串行防互踩（R5083/R5084 同款形态；并行相位无锁时直绘用例会读到
+/// env=0 走旧路径翻红）。
+static R5085_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// R5085：叶实心盒 + transform（rotate）→ 背景以四角映射 path_fill 直绘，
+/// 不发射 TransformPrimitive——CPU raster apply_transform_post 的「union rect
+/// 清白 + 反向采样」会连同 union 内先绘兄弟内容一并重排（transform-origin-01：
+/// 先绘 #blue 在 #red 变换 union 内被 shuffle 成 50×50 碎块）。
+#[test]
+fn test_r5085_transform_solid_leaf_fill_direct_path() {
+    let _guard = R5085_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    use zero_css_parser::values::{TransformFunction, TransformValue};
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    // 盒 (100,50) 100×100，origin left center = (100,100)，rotate(90deg)
+    // → 变换后四边形 (100..200,50..150) → 旋转 bbox (50..200,...) 具体四角断言如下。
+    let mut layout = make_box(Some(nid), 100.0, 50.0, 100.0, 100.0);
+
+    let mut style = ComputedStyle::default();
+    style.background_color = zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255);
+    style.transform = TransformValue::List(vec![TransformFunction::Rotate(90.0)]);
+    style.transform_origin_x = zero_css_parser::values::LengthValue::Px(0.0);
+    style.transform_origin_y = zero_css_parser::values::LengthValue::Px(50.0);
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+
+    let mut painter = Painter::new();
+    // doc 入参（含该 div、无文本子节点）——doc=None 时 paint_text 会为空 run 发射
+    // notdef 占位字形（glyph_id 0，测试语境伪影），干扰「仅实心 fill」门。
+    painter.paint(&layout, &styles, Some(&doc));
+
+    let prims = painter.primitives();
+    // fill 已被替换为 path_fill：fills 空增、恰 1 个新 path_fill、零 TransformPrimitive。
+    assert_eq!(prims.fills.len(), 0, "solid leaf fill must be re-emitted as path_fill");
+    assert_eq!(prims.transforms.len(), 0, "no TransformPrimitive for direct path");
+    assert_eq!(prims.path_fills.len(), 1, "exactly one transformed quad fill");
+    let pf = &prims.path_fills[0];
+    // 四角 = (100,50),(200,50),(200,150),(100,150) 绕 (100,100) 旋转 90°（屏幕 y 向下
+    // 屏坐标系 b=sin>0 顺时针）：→ (100+0,100-50+?)… 精确断言：顶点集应等于
+    // (150,100),(150,200),(50,200),(50,100)。
+    let verts = &pf.vertices;
+    assert_eq!(verts.len(), 8, "quad = 4 points");
+    let mut got: Vec<(u32, u32)> = verts
+        .chunks(2)
+        .map(|c| [(c[0] * 10.0).round() as u32, (c[1] * 10.0).round() as u32])
+        .map(|a| (a[0], a[1]))
+        .collect();
+    got.sort();
+    let mut want: Vec<(u32, u32)> = vec![(1500, 1000), (1500, 2000), (500, 2000), (500, 1000)];
+    want.sort();
+    assert_eq!(got, want, "rotated quad corners, got {got:?}");
+}
+
+/// R5085 kill-switch：`ZW_TRANSFORM_SOLID_FILL_DIRECT=0` 恢复 TransformPrimitive
+/// 后处理路径（fill + transforms 各 1）。env 用例抢锁防并行互踩（R5084 同款）。
+#[test]
+fn test_r5085_transform_solid_fill_direct_kill_switch() {
+    let _guard = R5085_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    unsafe { std::env::set_var("ZW_TRANSFORM_SOLID_FILL_DIRECT", "0") };
+
+    use zero_css_parser::values::{TransformFunction, TransformValue};
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let mut layout = make_box(Some(nid), 100.0, 50.0, 100.0, 100.0);
+
+    let mut style = ComputedStyle::default();
+    style.background_color = zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255);
+    style.transform = TransformValue::List(vec![TransformFunction::Rotate(90.0)]);
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, Some(&doc));
+    let prims = painter.primitives();
+    unsafe { std::env::remove_var("ZW_TRANSFORM_SOLID_FILL_DIRECT") };
+
+    assert_eq!(prims.fills.len(), 1, "legacy path keeps the plain fill");
+    assert_eq!(prims.transforms.len(), 1, "legacy path emits TransformPrimitive");
+    assert_eq!(prims.path_fills.len(), 0, "legacy path emits no path_fill");
+}

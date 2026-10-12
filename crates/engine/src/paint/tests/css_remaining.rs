@@ -662,10 +662,16 @@ fn r4104_svg_subtree_css_transform_exempt_from_html_transform_path() {
     let result2 = engine2.compute(&doc2, &styles2);
     let mut painter2 = Painter::new();
     painter2.paint(&result2.root, &styles2, Some(&doc2));
+    // R5085：html 侧叶实心盒 rotate(90deg) 走直绘 = path_fill 承载（transforms 空、
+    // quad 落地），transform 语义不受 svg 豁免 gate 影响的断言保持等价。
+    assert!(
+        painter2.primitives().transforms.is_empty(),
+        "html 侧叶实心盒 rotate 走 R5085 直绘，不发射 TransformPrimitive"
+    );
     assert_eq!(
-        painter2.primitives().transforms.len(),
+        painter2.primitives().path_fills.len(),
         1,
-        "html 侧 transform 不受 svg 豁免 gate 影响"
+        "html 侧 transform 仍生效（直绘 quad 承载）"
     );
 }
 
@@ -954,17 +960,18 @@ fn r5006_empty_subtree_transform_skips_primitive_and_keeps_canvas_bg() {
         "空子树 transform 元素不应发射 TransformPrimitive（R5006）"
     );
 
-    // ② 对照：有背景（可见内容）→ 照常发射。
-    assert_eq!(
-        paint_transforms(
+    // ② 对照：有背景（可见内容）→ 变换照常生效。R5085 直绘路径：叶实心盒以四角
+    // 映射 path_fill 承载变换（transforms == 0、path_fills == 1），语义等价（变换
+    // 作用于自身内容），不再计 TransformPrimitive。
+    {
+        let n = paint_transforms(
             r##"<html><head><style>
                 div { width: 100px; height: 100px; background: green; transform: rotate(90deg); }
             </style></head><body style="margin:0"><div></div></body></html>"##,
             "div { width: 100px; height: 100px; background: green; transform: rotate(90deg); }",
-        ),
-        1,
-        "有内容的 transform 元素照常发射（既有行为不变）"
-    );
+        );
+        assert_eq!(n, 0, "叶实心盒走 R5085 直绘，不发射 TransformPrimitive");
+    }
 
     // ③ backdrop-filter 空盒：backdrop 取样是可见输出 → 照常发射。
     assert_eq!(

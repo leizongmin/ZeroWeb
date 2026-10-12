@@ -12,7 +12,9 @@ mod text_image;
 
 use std::collections::{HashMap, HashSet};
 
-use zero_css_parser::values::{ColorValue, FloatValue, LengthValue, TransformValue, VisibilityValue};
+use zero_css_parser::values::{
+    ColorValue, FloatValue, LengthValue, TransformFunction, TransformValue, VisibilityValue,
+};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::{NestedSpannerSegKind, OverflowClip};
@@ -3100,11 +3102,133 @@ impl Painter {
                         }
                         _ => None,
                     };
-                    super::helpers::apply_transform_with_ref_box(style, &rect, ref_box.as_ref(), &mut self.primitives);
+                    // R5085：子树恰为单个实色背景填充（叶实心盒）时，变换以「四角矩阵
+                    // 映射 path_fill」直接承载，不发射 TransformPrimitive——CPU raster
+                    // apply_transform_post 是「union rect 清白 + 反向采样」的全场景像素
+                    // 后处理，会把 union 内**先绘兄弟内容**一并重排（transform-origin-01：
+                    // #blue 先绘于 #red 变换 union rect 内 → 旋转 shuffle 出 50×50 蓝块；
+                    // transforms-rotate-degree-90 / rotateY-degree-60 / rotate3d-X 族
+                    // 1.04-1.11% 同谱）。直绘路径与 GPU 顶点逐角变换同构，兄弟内容零扰动。
+                    // 门：恰 +1 fill 且 rect = border-box、其余图元类（圆角/渐变/阴影/图/
+                    // 字形/描边/filter/blend）差集全零、四边边框为 0（边框/圆角须另行映射，
+                    // 不在本域）、opacity = 1、blend = normal（两者走后置处理，替换图元
+                    // 类会绕过）。kill-switch ZW_TRANSFORM_SOLID_FILL_DIRECT=0 恢复
+                    // TransformPrimitive 后处理路径。
+                    // 嵌套变换豁免：祖先带非 translate 变换时走旧路径——直绘 quad 会
+                    // 被祖先的 apply_transform_post 再次重采样（preserve3d-006..013
+                    // 双 rotX 组合：child quad AA 边缘 + 祖先 bilinear 逆采样 →
+                    // 几何/容差双破）。DOM 祖先链走查（transformed 盒稀少，代价可忽）。
+                    // OPTIMIZATION: 走查仅服务「直绘 vs 重采样」分路，自身无变换的盒两条
+                    // 路都是 no-op（compute_transform_matrix 返 None）——先短路再走查，
+                    // 无变换页（常态）零走查成本（paint_*_page bench 500 盒实测可辨）。
+                    let box_has_transform = !matches!(&style.transform, TransformValue::None)
+                        || style.individual_translate.is_some()
+                        || style.individual_rotate.is_some()
+                        || style.individual_scale.is_some();
+                    let inside_transformed_ancestor = box_has_transform
+                        && doc.is_some_and(|d| {
+                            let has_tf = |id: zero_dom::NodeId| {
+                                styles.get(&id).is_some_and(|st| {
+                                    matches!(&st.transform, TransformValue::List(fs) if !fs.is_empty())
+                                        || st.individual_rotate.is_some()
+                                        || st.individual_scale.is_some()
+                                })
+                            };
+                            let mut cur = d.parent_node(node_id);
+                            while let Some(id) = cur {
+                                if has_tf(id) {
+                                    return true;
+                                }
+                                cur = d.parent_node(id);
+                            }
+                            false
+                        });
+                    // 纯 2D 限定：3D 函数（rotateX/Y/3d、scale3d、translate3d、perspective）
+                    // 直绘 quad 与 TP 重采样在 AA/边缘相位有系统性差——
+                    // backdrop-filter-3d-transform-perspective 的 test/ref 配对（test 卡走
+                    // R5006 backdrop 豁免 = 旧路径，ref 卡走直绘）即因单侧改路 0.62% 拆对。
+                    // 2D 集合（rotate/scale/skew/translate）直绘 = 精确几何，无此互斥面。
+                    // individual rotate/scale 同属 3D 载体（rotate: x 45deg 分解 rotateX），
+                    // 一并排除。
+                    let pure_2d_transform = match &style.transform {
+                        TransformValue::None => false,
+                        TransformValue::List(fs) => fs.iter().all(|f| {
+                            matches!(
+                                f,
+                                TransformFunction::Rotate(_)
+                                    | TransformFunction::Scale(_, _)
+                                    | TransformFunction::ScaleX(_)
+                                    | TransformFunction::ScaleY(_)
+                                    | TransformFunction::Skew(_, _)
+                                    | TransformFunction::Translate(_, _)
+                                    | TransformFunction::TranslateX(_)
+                                    | TransformFunction::TranslateY(_)
+                                    | TransformFunction::TranslateMixed(_, _, _, _)
+                                    | TransformFunction::TranslateXMixed(_, _)
+                                    | TransformFunction::TranslateYMixed(_, _)
+                            )
+                        }),
+                    };
+                    let solid_leaf_fill = std::env::var("ZW_TRANSFORM_SOLID_FILL_DIRECT").as_deref() != Ok("0")
+                        && !inside_transformed_ancestor
+                        && style.backdrop_filter.is_empty()
+                        && style.individual_rotate.is_none()
+                        && style.individual_scale.is_none()
+                        && pure_2d_transform
+                        && box_node.border_top == 0.0
+                        && box_node.border_right == 0.0
+                        && box_node.border_bottom == 0.0
+                        && box_node.border_left == 0.0
+                        && style.opacity >= 1.0
+                        && matches!(
+                            style.mix_blend_mode,
+                            zero_style_system::MixBlendModeComputedValue::Normal
+                        )
+                        && self.primitives.fills.len() == counts_before.fills + 1
+                        && self.primitives.rounded_rects.len() == counts_before.rounded_rects
+                        && self.primitives.gradients.len() == counts_before.gradients
+                        && self.primitives.shadows.len() == counts_before.shadows
+                        && self.primitives.images.len() == counts_before.images
+                        && self.primitives.glyphs.len() == counts_before.glyphs
+                        && self.primitives.strokes.len() == counts_before.strokes
+                        && filters_before == self.primitives.filters.len()
+                        && blend_modes_before == self.primitives.blend_modes.len()
+                        && self.primitives.fills[counts_before.fills].rect == rect;
+                    let mut direct_filled = false;
+                    if solid_leaf_fill
+                        && let Some(tp) =
+                            super::helpers::compute_transform_matrix_with_ref_box(style, &rect, ref_box.as_ref())
+                    {
+                        // 仿射映射四角（x' = a·x + c·y + tx，y' = b·x + d·y + ty），
+                        // 以变换后四边形 path_fill 替换原 fill（swap_remove 恰在末位）。
+                        let fill = self.primitives.fills.swap_remove(counts_before.fills);
+                        let map = |x: f32, y: f32| (tp.a * x + tp.c * y + tp.tx, tp.b * x + tp.d * y + tp.ty);
+                        let (x0, y0) = (rect.left(), rect.top());
+                        let (x1, y1) = (rect.right(), rect.bottom());
+                        let pts: Vec<f32> = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+                            .iter()
+                            .flat_map(|&(x, y)| {
+                                let (mx, my) = map(x, y);
+                                [mx, my]
+                            })
+                            .collect();
+                        self.primitives.add_path_fill(pts, fill.color);
+                        direct_filled = true;
+                    }
+                    if !direct_filled {
+                        super::helpers::apply_transform_with_ref_box(
+                            style,
+                            &rect,
+                            ref_box.as_ref(),
+                            &mut self.primitives,
+                        );
+                    }
                     // R3901：纯 translate 列表走图元级平移（CSS Transforms §transform-rendering：
                     // transform 作用于元素及其整个子树）。counts_before = paint_node 起点快照，
                     // 差集即自子树全部图元。不用 TransformPrimitive（raster 全场景像素后处理会
                     // 清白与元素框相交的祖先/兄弟内容，transform-descendant-001 回归实证）。
+                    // R5085 直绘分支吞掉 translate 混合列表（矩阵已含平移），translate_offset
+                    // 此时返 None，不重放。
                     if let Some((tx, ty)) = super::helpers::translate_offset(style) {
                         super::helpers::translate_primitives_since(&mut self.primitives, &counts_before, tx, ty);
                     }
