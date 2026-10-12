@@ -33,11 +33,12 @@ R387b 页面 fetch 通道整体旁路（探针实证零调用）——runner 条
 观察器路径 + webview shim 装载/派发路径均在其覆盖面内）——五个 slice 的性能
 门禁一并闭环。
 
-**下一步**：收口归档（goal 文档里程碑终点——「缺面大则挂账带数字收口」条件
-成立）。DC-1/2/3 全部达成；M3-S3 loader 面经本轮归属核对**定性为跨域挂账**，
-不在本 goal 继续动工：
+**下一步**：无——goal Done，收口归档已完成（2026-10-13，DC-1~3 逐项核对 +
+终态树复跑 191/293 恒等见 [evidence/2026-10-13-closure.md](evidence/2026-10-13-closure.md)）。
+后续无里程碑；M3-S3 loader 面经归属核对**定性为跨域挂账**，
+不在本 goal 动工，重入入口如下：
 - **img 面**：Error.stack 探针定位 onload 派发链 = part05 R56h 页面 fetch 通道
-  （事件已派、条目已产、initiatorType 已归正 'img'——259fe4fae）；剩余失败为
+  （事件已派、条目已产、initiatorType 已归正 'img'——5f5b7b8e5）；剩余失败为
   事件**序列**语义（image-sequence-of-events）与 iframe 案（多 frame 结构性
   skip 面）——img 域。
 - **link/stylesheet 面**：runner 进内路径无 link 完成信号（`.sheet` 惰性构建、
@@ -85,7 +86,7 @@ accesskey-hang 既有缺口，非派发机制回归）；pointerevents 全量守
 | M3-S1 resource-timing 条目生成 | **实现完成**（35/113） | [M3-S1 记分](evidence/2026-10-13-m3s1-resource-timing-green.json) |
 | M3-S2 resource net 元数据桥 | **实现完成**（42/113） | [M3-S2 记分](evidence/2026-10-13-m3s2-resource-timing-meta.json) |
 | M3-S3 loader 面 | **定性为跨域挂账**（img 域/webview 基建/net 真值/环境面——见状态头 §下一步） | Error.stack 探针 + reftest/product-smoke 门禁记录 |
-| 收口归档 | 待执行（下一轮） | — |
+| 收口归档 | **完成**（2026-10-13） | [收口归档记录](evidence/2026-10-13-closure.md)——DC-1~3 逐项核对 + 终态树复跑 191/293 恒等 |
 
 ## 基线账本
 
