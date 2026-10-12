@@ -347,6 +347,134 @@ fn test_painter_border_all_sides() {
     assert_eq!(painter.primitives().fills.len(), 4);
 }
 
+/// R5083（css-backgrounds-3 §4.4 corner transitions）：相邻 Solid 边框颜色不同时，
+/// 角部矩形按「外角点 → 内角点」对角线分色——水平边矩形退让出角部，两侧各补一个
+/// 三角形（chromium mitre join 语义；border-radius-greater-than-width 驱动）。
+///
+/// kill-switch 用例以 env var 表达（`ZW_BORDER_DIAGONAL_JOIN`），本组用例先抢锁
+/// 防并行互踩；毒化容忍（前序 panic 不连坐）——R5077 同款形态。
+static R5083_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[test]
+fn test_r5083_border_corner_diagonal_join_triangles() {
+    let _guard = R5083_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    // 左上角：top 10 红 × left 6 蓝（非方形角部，对角线连 (0,0)→(6,10)）
+    let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 10.0, 0.0, 0.0, 6.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.border_top_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.border_left_color = ColorValue::Rgba(0, 0, 255, 255);
+    style.border_top_style = BorderStyleValue::Solid;
+    style.border_left_style = BorderStyleValue::Solid;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    // top 矩形左端退让出角部（x 从 left_t 起）；left 仍为自身矩形
+    assert_eq!(painter.primitives().fills.len(), 2);
+    let top = &painter.primitives().fills[0];
+    assert_eq!(top.rect.origin.x, 6.0);
+    assert_eq!(top.rect.origin.y, 0.0);
+    assert_eq!(top.rect.size.width, 94.0);
+
+    // 两个角部三角形：红（top 分摊、对角线上方）+ 蓝（left 分摊、对角线下方）
+    let pf = &painter.primitives().path_fills;
+    assert_eq!(pf.len(), 2);
+    assert_eq!(pf[0].color, Color::rgb(255, 0, 0));
+    assert_eq!(
+        pf[0].vertices,
+        vec![0.0, 0.0, 6.0, 0.0, 6.0, 10.0],
+        "top 侧三角 = 外角点→顶边内点→内角点"
+    );
+    assert_eq!(pf[1].color, Color::rgb(0, 0, 255));
+    assert_eq!(
+        pf[1].vertices,
+        vec![0.0, 0.0, 0.0, 10.0, 6.0, 10.0],
+        "left 侧三角 = 外角点→左边缘内点→内角点"
+    );
+}
+
+/// R5083：相邻边框等色时过渡不可见——保留整幅矩形，不发射三角形。
+#[test]
+fn test_r5083_border_corner_diagonal_equal_colors_no_triangles() {
+    let _guard = R5083_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 10.0, 0.0, 0.0, 6.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    let same = ColorValue::Rgba(9, 9, 9, 255);
+    style.border_top_color = same.clone();
+    style.border_left_color = same;
+    style.border_top_style = BorderStyleValue::Solid;
+    style.border_left_style = BorderStyleValue::Solid;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert_eq!(painter.primitives().fills.len(), 2);
+    assert_eq!(painter.primitives().fills[0].rect.origin.x, 0.0, "top 矩形全宽");
+    assert_eq!(painter.primitives().fills[0].rect.size.width, 100.0);
+    assert!(painter.primitives().path_fills.is_empty());
+}
+
+/// R5083：一侧零宽/隐藏时另一边占据整个过渡区（§4.4）——不发射三角形。
+#[test]
+fn test_r5083_border_corner_diagonal_zero_width_side_no_triangles() {
+    let _guard = R5083_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    // left 宽 0（style solid 但 width 0 → 不绘制）
+    let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 10.0, 0.0, 0.0, 0.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.border_top_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.border_left_color = ColorValue::Rgba(0, 0, 255, 255);
+    style.border_top_style = BorderStyleValue::Solid;
+    style.border_left_style = BorderStyleValue::Solid;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert!(painter.primitives().path_fills.is_empty());
+    assert_eq!(painter.primitives().fills[0].rect.size.width, 100.0);
+}
+
+/// R5083：kill-switch ZW_BORDER_DIAGONAL_JOIN=0 恢复整幅矩形（旧行为）。
+#[test]
+fn test_r5083_border_corner_diagonal_kill_switch() {
+    let _guard = R5083_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    // Rust 2024：set_var/remove_var 为 unsafe（进程全局可变）。
+    unsafe { std::env::set_var("ZW_BORDER_DIAGONAL_JOIN", "0") };
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box_with_border(Some(elem), 0.0, 0.0, 100.0, 50.0, 10.0, 0.0, 0.0, 6.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.border_top_color = ColorValue::Rgba(255, 0, 0, 255);
+    style.border_left_color = ColorValue::Rgba(0, 0, 255, 255);
+    style.border_top_style = BorderStyleValue::Solid;
+    style.border_left_style = BorderStyleValue::Solid;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, None);
+
+    assert_eq!(painter.primitives().fills.len(), 2);
+    assert_eq!(painter.primitives().fills[0].rect.origin.x, 0.0, "旧行为：top 矩形全宽");
+    assert!(painter.primitives().path_fills.is_empty());
+    unsafe { std::env::remove_var("ZW_BORDER_DIAGONAL_JOIN") };
+}
+
 /// 测试嵌套盒子的绘制。
 #[test]
 fn test_painter_nested_boxes() {

@@ -283,13 +283,64 @@ impl super::Painter {
             .as_ref()
             .unwrap_or(&style.border_left_style);
 
-        // 上边框
+        // R5083（css-backgrounds-3 §4.4 corner transitions）：相邻两边均非零宽时，角部
+        // 过渡区由两边分摊；chromium 取「外角点 → 内角点（padding edge 角）」对角线
+        // 分色（半径 0 退化为 mitre 直线）。仅 Solid×Solid、解析色不同、双侧有效厚度
+        // ≥1 时启用（更细的角部过渡在像素上不可见，保持整幅矩形避免 AA 噪声）；等色
+        // 过渡不可见，保留整幅矩形省两次路径填充。零宽/隐藏边不适用——§4.4「另一边
+        // 占据整个过渡区」，即现有整幅矩形行为。collapse 表格走冲突解决半厚绘制，
+        // 不在本域。kill-switch ZW_BORDER_DIAGONAL_JOIN=0 恢复整幅矩形（旧行为）。
+        let diagonal_joins = !collapse && std::env::var("ZW_BORDER_DIAGONAL_JOIN").as_deref() != Ok("0");
+        let is_solid_style = |s: &BorderStyleValue| matches!(s, BorderStyleValue::Solid);
+        let corner_join = |a: bool, b: bool, ca: &ColorValue, cb: &ColorValue, ta: f32, tb: f32| {
+            a && b && ca != cb && ta >= 1.0 && tb >= 1.0
+        };
+        let (diag_tl, diag_tr, diag_br, diag_bl) = if diagonal_joins {
+            (
+                corner_join(
+                    box_node.border_top > 0.0 && is_solid_style(top_style),
+                    box_node.border_left > 0.0 && is_solid_style(left_style),
+                    &top_color,
+                    &left_color,
+                    top_t,
+                    left_t,
+                ),
+                corner_join(
+                    box_node.border_top > 0.0 && is_solid_style(top_style),
+                    box_node.border_right > 0.0 && is_solid_style(right_style),
+                    &top_color,
+                    &right_color,
+                    top_t,
+                    right_t,
+                ),
+                corner_join(
+                    box_node.border_bottom > 0.0 && is_solid_style(bottom_style),
+                    box_node.border_right > 0.0 && is_solid_style(right_style),
+                    &bottom_color,
+                    &right_color,
+                    bottom_t,
+                    right_t,
+                ),
+                corner_join(
+                    box_node.border_bottom > 0.0 && is_solid_style(bottom_style),
+                    box_node.border_left > 0.0 && is_solid_style(left_style),
+                    &bottom_color,
+                    &left_color,
+                    bottom_t,
+                    left_t,
+                ),
+            )
+        } else {
+            (false, false, false, false)
+        };
+
+        // 上边框（diag 时左右两端各退让出角部三角区，由下方三角形补足）
         if box_node.border_top > 0.0 && *top_style != BorderStyleValue::None && *top_style != BorderStyleValue::Hidden {
             self.paint_border_edge(
                 &BorderEdgeSpec {
-                    x1: abs_x,
+                    x1: if diag_tl { abs_x + left_t } else { abs_x },
                     y1: abs_y,
-                    x2: abs_x + w,
+                    x2: if diag_tr { abs_x + w - right_t } else { abs_x + w },
                     y2: abs_y,
                     thickness: top_t,
                     is_horizontal: true,
@@ -298,6 +349,24 @@ impl super::Painter {
                 top_style,
                 &top_color,
             );
+            if diag_tl {
+                // 左上角 top 分摊侧：对角线上方三角（外角点→顶边内点→内角点）
+                self.add_corner_triangle(
+                    [(abs_x, abs_y), (abs_x + left_t, abs_y), (abs_x + left_t, abs_y + top_t)],
+                    &top_color,
+                );
+            }
+            if diag_tr {
+                // 右上角 top 分摊侧
+                self.add_corner_triangle(
+                    [
+                        (abs_x + w, abs_y),
+                        (abs_x + w - right_t, abs_y),
+                        (abs_x + w - right_t, abs_y + top_t),
+                    ],
+                    &top_color,
+                );
+            }
         }
 
         // 右边框
@@ -318,6 +387,28 @@ impl super::Painter {
                 right_style,
                 &right_color,
             );
+            if diag_tr {
+                // 右上角 right 分摊侧：对角线下方三角
+                self.add_corner_triangle(
+                    [
+                        (abs_x + w, abs_y),
+                        (abs_x + w, abs_y + top_t),
+                        (abs_x + w - right_t, abs_y + top_t),
+                    ],
+                    &right_color,
+                );
+            }
+            if diag_br {
+                // 右下角 right 分摊侧：对角线上方三角
+                self.add_corner_triangle(
+                    [
+                        (abs_x + w, abs_y + h),
+                        (abs_x + w, abs_y + h - bottom_t),
+                        (abs_x + w - right_t, abs_y + h - bottom_t),
+                    ],
+                    &right_color,
+                );
+            }
         }
 
         // 下边框 — y1 在边框盒底边向上 border_bottom 处（边框区域内侧）
@@ -327,9 +418,9 @@ impl super::Painter {
         {
             self.paint_border_edge(
                 &BorderEdgeSpec {
-                    x1: abs_x,
+                    x1: if diag_bl { abs_x + left_t } else { abs_x },
                     y1: abs_y + h - bottom_t,
-                    x2: abs_x + w,
+                    x2: if diag_br { abs_x + w - right_t } else { abs_x + w },
                     y2: abs_y + h - bottom_t,
                     thickness: bottom_t,
                     is_horizontal: true,
@@ -338,6 +429,28 @@ impl super::Painter {
                 bottom_style,
                 &bottom_color,
             );
+            if diag_bl {
+                // 左下角 bottom 分摊侧：对角线下方三角
+                self.add_corner_triangle(
+                    [
+                        (abs_x, abs_y + h),
+                        (abs_x + left_t, abs_y + h),
+                        (abs_x + left_t, abs_y + h - bottom_t),
+                    ],
+                    &bottom_color,
+                );
+            }
+            if diag_br {
+                // 右下角 bottom 分摊侧
+                self.add_corner_triangle(
+                    [
+                        (abs_x + w, abs_y + h),
+                        (abs_x + w - right_t, abs_y + h),
+                        (abs_x + w - right_t, abs_y + h - bottom_t),
+                    ],
+                    &bottom_color,
+                );
+            }
         }
 
         // 左边框
@@ -358,7 +471,33 @@ impl super::Painter {
                 left_style,
                 &left_color,
             );
+            if diag_tl {
+                // 左上角 left 分摊侧：对角线下方三角
+                self.add_corner_triangle(
+                    [(abs_x, abs_y), (abs_x, abs_y + top_t), (abs_x + left_t, abs_y + top_t)],
+                    &left_color,
+                );
+            }
+            if diag_bl {
+                // 左下角 left 分摊侧：对角线上方三角
+                self.add_corner_triangle(
+                    [
+                        (abs_x, abs_y + h),
+                        (abs_x, abs_y + h - bottom_t),
+                        (abs_x + left_t, abs_y + h - bottom_t),
+                    ],
+                    &left_color,
+                );
+            }
         }
+    }
+
+    /// R5083：角部对角分色三角（css-backgrounds-3 §4.4，chromium mitre join 语义）。
+    fn add_corner_triangle(&mut self, pts: [(f32, f32); 3], color: &ColorValue) {
+        self.primitives.add_path_fill(
+            pts.iter().flat_map(|p| [p.0, p.1]).collect(),
+            color_value_to_render(color),
+        );
     }
 
     /// R5024：border-image 片发射——图像图元 +（filter() 图像函数时）紧随滤镜图元

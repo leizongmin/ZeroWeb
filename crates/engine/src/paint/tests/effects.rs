@@ -1519,8 +1519,24 @@ fn test_paint_border_different_sides() {
     assert_eq!(top_fill.color, Color::rgb(255, 0, 0), "顶部边框应为红色");
     assert_eq!(top_fill.rect.origin.x, 0.0);
     assert_eq!(top_fill.rect.origin.y, 0.0);
-    assert_eq!(top_fill.rect.size.width, 100.0, "顶部边框宽度应等于元素宽度");
+    // R5083（css-backgrounds-3 §4.4）：top×right 相邻实色异色角部对角分色——
+    // top 矩形右端退让出 TR 角部三角（宽 100-5=95），角部由两侧三角形补足
+    assert_eq!(top_fill.rect.size.width, 95.0, "顶部边框宽度 = 元素宽度 - right（TR 角退让）");
     assert_eq!(top_fill.rect.size.height, 3.0, "顶部边框高度应为 3");
+    // TR 角部两个三角形：红（top 分摊）+ 绿（right 分摊）
+    assert_eq!(prims.path_fills.len(), 2, "TR 角部应有一对对角分色三角形");
+    assert_eq!(prims.path_fills[0].color, Color::rgb(255, 0, 0));
+    assert_eq!(
+        prims.path_fills[0].vertices,
+        vec![100.0, 0.0, 95.0, 0.0, 95.0, 3.0],
+        "top 侧三角 = 右上外角→顶边内点→内角点"
+    );
+    assert_eq!(prims.path_fills[1].color, Color::rgb(0, 255, 0));
+    assert_eq!(
+        prims.path_fills[1].vertices,
+        vec![100.0, 0.0, 100.0, 3.0, 95.0, 3.0],
+        "right 侧三角 = 右上外角→右边缘内点→内角点"
+    );
 
     // 第二个填充：右侧边框
     let right_fill = &prims.fills[1];
