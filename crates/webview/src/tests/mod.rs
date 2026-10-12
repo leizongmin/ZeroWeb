@@ -1,6 +1,7 @@
 //! WebView 测试模块。
 
 mod advanced;
+mod async_drain_bound;
 mod basic;
 mod builder_nav;
 mod cache_storage;
