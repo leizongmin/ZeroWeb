@@ -4925,7 +4925,9 @@
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, data: null, inputType: 'deleteContentBackward', isComposing: false
     });
-    if (el.dispatchEvent(before) === false) return;
+    // t2-pd2a 复核 D2：取消语义与 `__zw_text_input` 对齐——返回 'prevented' 供宿主
+    // canceled 契约传播（DeleteBackward 的 canceled 面不回退）。
+    if (el.dispatchEvent(before) === false) return 'prevented';
     el.value = cur.slice(0, start) + cur.slice(end);
     _textSelection[target.key] = { start: start, end: start, direction: 'none' };
     // t2-pd2a：用户编辑标记（同计划管道 script_set_text_control_state）。

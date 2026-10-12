@@ -511,3 +511,87 @@ globalThis.__textSel = globalThis.__form.text ? globalThis.__form.text.__zwSelec
     assert!(!result.canceled, "submit 不应被取消");
     assert_eq!(result.effects.len(), 1, "default button enabled 应产生导航意图");
 }
+
+/// t2-pd2a 复核 D1：JS 禁用路径（无事件变体）仍须标记用户编辑——validity
+/// tooShort 面依赖 `__zw_mark_user_edited`（base SetText 脚本同标记）。
+#[test]
+fn js_disabled_insert_marks_user_edited_t2pd2a() {
+    // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#suffering-from-being-too-short
+    let html = r#"<html><body>
+        <form id="form">
+          <input id="user" minlength="3">
+        </form>
+      <script>
+        document.getElementById('user').addEventListener('beforeinput',function(event){
+          globalThis.__events.push('beforeinput');
+        });
+      </script>
+    </body></html>"#;
+    let mut webview = WebView::new(WebViewConfig::default());
+    webview.prepare_document_state("https://zero.test/minlength-disabled");
+    webview.load_html(html, None);
+    let user = webview.page_node_ref_for_selector("#user").expect("user ref");
+
+    let result = webview
+        .dispatch_user_action_with_javascript(
+            false,
+            request(user, HtmlUserAction::InsertText { text: "A".to_string() }),
+        )
+        .expect("js-disabled insert");
+    assert!(result.changed, "JS 禁用路径 UA 默认插入仍须生效");
+    assert!(!result.canceled);
+
+    // 用户编辑标记生效：tooShort 对 1/3 字符成立（脚本化写入同值则不成立——对照
+    // minlength_validation_only_applies_to_user_edits）。
+    assert_eq!(
+        webview
+            .execute_script(
+                "var user=document.getElementById('user');\
+                 [user.value,user.validity.tooShort].join(',');"
+            )
+            .expect("validity state"),
+        "A,true"
+    );
+}
+
+/// t2-pd2a 复核 D2：DeleteBackward 的 beforeinput 取消经 "prevented" 通道传播
+/// canceled（与 InsertText 对齐，不回退）。
+#[test]
+fn delete_backward_cancel_propagates_t2pd2a() {
+    let html = r#"<html><body>
+        <input id="name" value="base">
+        <script>
+          globalThis.__events=[];
+          var n = document.querySelector('#name');
+          n.addEventListener('beforeinput',function(event){
+            globalThis.__events.push('beforeinput:'+event.inputType);
+            event.preventDefault();
+          });
+          n.addEventListener('input',function(event){
+            globalThis.__events.push('input:'+event.inputType);
+          });
+          n.setSelectionRange(n.value.length, n.value.length);
+        </script>
+    </body></html>"#;
+    let mut webview = WebView::new(WebViewConfig::default());
+    webview.prepare_document_state("https://zero.test/delete-cancel");
+    webview.load_html(html, None);
+    let name = webview.page_node_ref_for_selector("#name").expect("name ref");
+
+    let canceled = webview
+        .dispatch_user_action(request(name, HtmlUserAction::DeleteBackward))
+        .expect("canceled delete");
+    assert!(canceled.canceled, "DeleteBackward beforeinput 取消须传播 canceled");
+    assert!(!canceled.changed, "取消后不得有值变更");
+    assert!(
+        webview.form_control_value_overrides().get("#name").is_none(),
+        "取消后不产生 dirty retained 值（属性初值不变）"
+    );
+    assert_eq!(
+        webview
+            .execute_script("globalThis.__events.join(',')")
+            .expect("event log"),
+        "beforeinput:deleteContentBackward",
+        "取消后不派 input，事件序仅 beforeinput"
+    );
+}
