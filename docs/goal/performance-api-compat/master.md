@@ -15,18 +15,26 @@ decodedBodySize = encoded（本地服务无内容编码），transferSize ≈ he
 R387b 页面 fetch 通道整体旁路（探针实证零调用）——runner 条目生成走 fetch
 包裹通道；宿主派发口包裹服务 renderer/浏览器路径。
 
-**卡点**：bench-gate 静机收口未遂（第 7-11 轮）——环境争用定性证据链已闭合：
-① 渲染流 rally 多次压测量窗口（loadavg 0.81→11.5 两分钟跳变）；② pre-M2-S2
-树 A/B 当前环境同样 FAIL；③ 同指标跨分钟漂移 2.8x；④ ms 级 page/* 全轮 PASS。
-**待静机窗口重跑，PASS 后关 M2-S1**（不使用 ZW_BENCH_ALLOW_BUSY=1；不做基线
-relax）。
+**卡点**：无。**M2-S1 bench-gate 静机收口完成（2026-10-13 03:07）**——定向跑
+（zero-script-sandbox,zero-webview）GATE PASS，35/35 指标全在预算内、exit 0、
+非 suspect（渲染流停摆窗口 loadavg ~1），报告
+`tests/benchmarks/results/benchmark_20261013_030742.json`。此前第 7-11 轮 FAIL
+的争用定性证据链（碰撞方进程实锤 / pre-change 树 A/B 同 FAIL / 同指标跨分钟
+漂移 2.8x / ms 级 page/* 全 PASS）保留如下备查：渲染流 rally 多次压测量窗口
+（loadavg 0.81→11.5 两分钟跳变）；pre-M2-S2 树 A/B 当前环境同样 FAIL；同指标
+跨分钟漂移 2.8x（395µs→142µs）；ms 级 page/* 始终 PASS——环境系统性而非变更
+回归，与本次 PASS 结论互洽。本次测量树含 M2-S1～M3-S2 全部 shim 变更（longtask
+观察器路径 + webview shim 装载/派发路径均在其覆盖面内）——五个 slice 的性能
+门禁一并闭环。
 
-**下一步**：① 静机窗口重跑定向 bench-gate 关 M2-S1（唯一挂起点）；② M3-S3
-loader 面——img/link/fonts 装载完成事件在 runner 语境不派（13x hang +
-test_resource_timing 的 img/link/iframe 案）——需 runner 装载通道补 img/link
-完成信号（webview/R387b 同构通道），属跨 goal 语义面、动工前先与
-html-semantics/navigation-compat 流域核对归属；③ navigation-timing 真值面与
-navigation-compat 流域协调。
+**下一步**：① M3-S3 loader 面——img/link/fonts 装载完成事件在 runner 语境不派
+（13x hang + test_resource_timing 的 img/link/iframe 案）——需 runner 装载通道
+补 img/link 完成信号（webview/R387b 同构通道），属跨 goal 语义面、动工前先与
+html-semantics/navigation-compat 流域核对归属；② navigation-timing 真值面与
+navigation-compat 流域协调；③ 收口评估——四 corpus 可执行面 191/293（65.2%），
+余量分型：loader hang（runner 装载语义）、{{host}} 模板 URL（多主机环境）、
+net 真值（secureConnectionStart/分层时间戳——需真实网络栈遥测）、wptserve
+动态端点（.py handler，结构性不可执行）。
 
 **已知缺口（M3-S1 记账）**：buffer-full-add-entries-during-callback 期望 3 得 2
 ——callback 内 sync XHR 条目的事件循环交错（同步入账 vs 延迟入账在
@@ -54,11 +62,12 @@ accesskey-hang 既有缺口，非派发机制回归）；pointerevents 全量守
 | 里程碑 | 状态 | 证据 |
 |---|---|---|
 | M1 导入 + 甄别 + 基线 | **完成**（2026-10-12） | [M1 报告](evidence/2026-10-12-m1-scope-baseline.md) |
-| M2-S1 longtask 条目生成 | **实现完成**；bench-gate 静机复跑后收口 | [M2-S1 基线](evidence/2026-10-12-m2s1-longtask-green.json) |
+| M2-S1 longtask 条目生成 | **完成**（bench-gate PASS 收口，2026-10-13） | [M2-S1 基线](evidence/2026-10-12-m2s1-longtask-green.json)；benchmark_20261013_030742.json |
 | M2-S2 event-timing 条目生成 | **实现完成**（55/72，余 17 跨域挂账） | [M2-S2 记分](evidence/2026-10-12-m2s2-event-timing-green.json) |
 | M2-S3 navigation-timing 自洽面 | **实现完成**（81/95，余 14 真值/环境面） | [M2-S3 记分](evidence/2026-10-13-m2s3-navigation-timing-green.json) |
 | M3-S1 resource-timing 条目生成 | **实现完成**（35/113，余 78 真值/环境/loader 面） | [M3-S1 记分](evidence/2026-10-13-m3s1-resource-timing-green.json) |
-| M3-S2 resource 真值面（net 元数据桥）+ navigation 真值 | 待启动 | — |
+| M3-S2 resource net 元数据桥 | **实现完成**（42/113） | [M3-S2 记分](evidence/2026-10-13-m3s2-resource-timing-meta.json) |
+| M3-S3 loader 面（img/link 完成信号）+ navigation 真值 | 待启动（跨 goal 归属待核对） | — |
 
 ## 基线账本
 
