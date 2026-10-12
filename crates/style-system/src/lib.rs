@@ -1390,6 +1390,22 @@ impl StyleSystem {
             ua_decl_inputs.push(("overflow".to_string(), "hidden".to_string(), false, (0, 0, 0), None));
         }
 
+        // R5095（HTML 渲染规范 UA 表格默认）：td/th UA `vertical-align: middle`——
+        // chromium/firefox 事实默认（行高分配后高 cell 内容垂直居中；ZW 旧默认 Baseline
+        // 使内容锚行顶，css-tables-3 §3.10.5 行高分配落地后与 test 页锚定差 21px 超模糊
+        // 阈值：box-offsets-rel-pos-vlr-005/vrl-004 ref 页中行 img 实证）。presentational
+        // hint（valign 属性）在 cascade 中高于 UA 声明不受影响；作者样式可覆盖。
+        // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+        if matches!(tag_name.as_deref(), Some("td") | Some("th")) {
+            ua_decl_inputs.push((
+                "vertical-align".to_string(),
+                "middle".to_string(),
+                false,
+                (0, 0, 0),
+                None,
+            ));
+        }
+
         // UA 默认样式
         if let Some(ref tag) = tag_name {
             match tag.as_str() {

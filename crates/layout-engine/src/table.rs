@@ -1417,7 +1417,14 @@ fn position_cells(
         .min(col_sum + spacing_total_x + 2.0 * perimeter_x);
 
     // R89：表格行高分配（CSS 2.1 §17.5.3 — table 的 height 作为最小高度，
-    // 额外高度按行均分到各行，使单元格增长、vertical-align 把内容压到分配后位置）。
+    // 额外高度分配到各行，使单元格增长、vertical-align 把内容压到分配后位置）。
+    // R5095（css-tables-3 §3.10.5 Distribution algorithm）：存在 **auto-height 行**
+    //（行元素与该行独占 cell 均无 definite height，percent 按 0 不算指定）时，
+    // 非 auto 行收足参考高（max(内容高, 指定高)）、余量**均分给 auto 行**；
+    // 无 auto 行时回退 R89 旧行为（全行均分）。旧实现一律均分，把指定行抬高、
+    // auto 行欠分（border-image-repeat-round-003 ref 页 64/auto/64 行被分成
+    // 96/32/96，chromium 64/96/64；中行 32px 高使模拟渐变带 8px ≠ round 平铺
+    // 期望 24px）。
     // 预计算每行内容高度，再根据 table 指定 height 计算每行的额外分配量。
     let row_extras: Vec<f32> = {
         let content_row_heights: Vec<f32> = grid
@@ -1446,7 +1453,50 @@ fn position_cells(
                 h
             })
             .collect();
+        // R5095：每行指定高（css-tables-3 §3.10.1 行最小高来源——行元素 computed
+        // height + **独占该行**（rowspan==1）cell 的 computed height；definite 才算，
+        // percent 按规格视 0 → None）。Some = 非 auto-height 行。
+        let row_specified: Vec<Option<f32>> = grid
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(row_idx, row)| {
+                if grid.collapsed_rows.get(row_idx).copied().unwrap_or(false) {
+                    return None;
+                }
+                let mut spec: Option<f32> = None;
+                if let Some(rb) = get_row_box(table_box, row) {
+                    if let Some(row_id) = rb.node_id {
+                        if let Some(rs) = styles.get(&row_id) {
+                            spec = resolve_table_used_length(&rs.height, rs);
+                        }
+                    }
+                    for cell in &row.cells {
+                        if cell.rowspan != 1 {
+                            continue;
+                        }
+                        let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
+                            rb.children.get(rg_idx).and_then(|rg| rg.children.get(cell.child_index))
+                        } else {
+                            rb.children.get(cell.child_index)
+                        };
+                        if let Some(cb) = cell_box {
+                            if let Some(cid) = cb.node_id {
+                                if let Some(cs) = styles.get(&cid) {
+                                    if let Some(h) = resolve_table_used_length(&cs.height, cs) {
+                                        spec = Some(spec.map_or(h, |s| s.max(h)));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                spec
+            })
+            .collect();
         let num_rows = content_row_heights.len();
+        // R5095 kill-switch：`ZW_TABLE_AUTO_ROW_EXCESS=0` 恢复全行均分（R89 口径）。
+        let auto_row_excess = std::env::var("ZW_TABLE_AUTO_ROW_EXCESS").as_deref() != Ok("0");
         // R585/R586：行高分配目标 = table 的 used content height（CSS §10.4 clamp）。
         // 显式 height 受 min/max 约束（max cap、min floor，min 优先于 max）；
         // height:auto 时仅 min-height 作下限分配（max-height 只 cap box 不展开行）。
@@ -1475,9 +1525,47 @@ fn position_cells(
         });
         match (target_content_h, num_rows > 0) {
             (Some(target), true) => {
-                let content_total: f32 = content_row_heights.iter().sum::<f32>() + (num_rows - 1) as f32 * spacing_y;
-                let extra = (target - content_total).max(0.0);
-                vec![extra / num_rows as f32; num_rows]
+                // R5095：auto-height 行优先吸收余量（§3.10.5）。collapsed 行不参与
+                //（高度恒 0，消费端跳过 extras）；全部行均指定时回退旧行为。
+                let is_active_auto = |idx: usize| -> bool {
+                    row_specified.get(idx).copied().flatten().is_none()
+                        && !grid.collapsed_rows.get(idx).copied().unwrap_or(false)
+                };
+                let has_auto_row = auto_row_excess && (0..num_rows).any(is_active_auto);
+                if has_auto_row {
+                    let spacing_total = (num_rows - 1) as f32 * spacing_y;
+                    let mut spec_ref_total = 0.0f32;
+                    let mut auto_content_total = 0.0f32;
+                    let mut auto_count = 0usize;
+                    for idx in 0..num_rows {
+                        if grid.collapsed_rows.get(idx).copied().unwrap_or(false) {
+                            continue;
+                        }
+                        let content = content_row_heights[idx];
+                        match row_specified[idx] {
+                            Some(s) => spec_ref_total += s.max(content),
+                            None => {
+                                auto_content_total += content;
+                                auto_count += 1;
+                            }
+                        }
+                    }
+                    let extra = (target - spec_ref_total - auto_content_total - spacing_total).max(0.0);
+                    let per_auto = if auto_count > 0 { extra / auto_count as f32 } else { 0.0 };
+                    row_specified
+                        .iter()
+                        .zip(content_row_heights.iter())
+                        .map(|(spec, content)| match spec {
+                            Some(s) => (s - content).max(0.0),
+                            None => per_auto,
+                        })
+                        .collect()
+                } else {
+                    let content_total: f32 =
+                        content_row_heights.iter().sum::<f32>() + (num_rows - 1) as f32 * spacing_y;
+                    let extra = (target - content_total).max(0.0);
+                    vec![extra / num_rows as f32; num_rows]
+                }
             }
             _ => vec![0.0; num_rows],
         }

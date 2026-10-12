@@ -1227,6 +1227,23 @@ fn shift_siblings_after_ifc_grow_inner(
             )
         })
     };
+    // R5095（css-tables-3 inline-table atomic inline）：原子行内级盒判定。连续的行内级
+    // 内容（含原子盒）在块容器中共享同一匿名块内**同一行盒**（CSS2 §9.2.1.1）——
+    // 后继原子盒 y < 前者底边是 vertical-align 对齐的行盒内几何（如 va:bottom 盒
+    // 底对齐行底、顶部悬于前者底边之上），非「前序块长高重叠」。
+    let is_atomic_inline_box = |c: &LayoutBox| {
+        c.node_id.is_some_and(|id| {
+            styles.get(&id).is_some_and(|s| {
+                matches!(
+                    s.display,
+                    DisplayValue::InlineBlock
+                        | DisplayValue::InlineTable
+                        | DisplayValue::InlineFlex
+                        | DisplayValue::InlineGrid
+                )
+            })
+        })
+    };
     // R1502：可被下移的「next 兄弟」——比 is_plain_real_block 多含 Flex/Grid。flex/grid 容器整盒
     // 随前序块长高而下移是正确的（内部弹性/网格布局与容器 y 无关），但**不作 prev**（is_plain_real_block
     // 仍排除 Flex/Grid）：flex/grid 容器作 prev 时其 height 与 item grow/stretch 交互致 prev_bottom
@@ -1301,7 +1318,13 @@ fn shift_siblings_after_ifc_grow_inner(
     let mut cumulative_shift: f32 = 0.0;
     let mut prev_bottom: Option<f32> = None;
     let mut prev_plain = false;
+    let mut prev_atomic_inline = false;
     let mut prev_margin_bottom: f32 = 0.0;
+    // R5095 kill-switch：`ZW_IFC_ATOMIC_PAIR_NO_SHIFT=0` 恢复「atomic inline prev 对
+    // atomic inline next 的重叠下推」旧行为。
+    let atomic_pair_no_shift = PostprocessEnvFlag::new(postprocess_env_snapshot_enabled(), || {
+        std::env::var("ZW_IFC_ATOMIC_PAIR_NO_SHIFT").as_deref() != Ok("0")
+    });
     let auto_parent_height = box_node.declared_height_auto;
     // R3765（css-sizing-4 §5.2）：`aspect-ratio` + definite width + height:auto + **非
     // visible overflow** 的块盒，used block-size 已由 ratio **传递确定**（taffy 已按 100
@@ -1388,6 +1411,13 @@ fn shift_siblings_after_ifc_grow_inner(
             // 重叠（test_block_negative_margin_*），非 R1492 长高重叠，不应下移。
             // R1502：next 用 is_shiftable_next（含 Flex/Grid 作 shiftee），prev 仍用
             // is_plain_real_block（Flex/Grid 不作 prev，避 height 误估回归）。
+            // R5095：prev 与 next **都是原子行内级盒**时豁免重叠下推——两盒共享同一
+            // 行盒（CSS2 §9.2.1.1），next.y < prev.bottom 是 va 对齐的行盒内几何而非
+            // 重叠（border-image-repeat-round-003 族 ref 页：baseline inline-table box1
+            // 0..224 + va:bottom inline-table box2 片段 y=16，「重叠」224−16 误下推回
+            // taffy 块堆叠位 224，吞掉 IFC 定位）。prev atomic inline + 真块级/表列
+            // next 的下推保留（inline-table 长高后块级兄弟 taffy 滞后位仍须下移）。
+            // kill-switch `ZW_IFC_ATOMIC_PAIR_NO_SHIFT=0`。
             // R57（M3）：next 为 inline-level（IFC 定位不含块级 margin）时，prev 的
             // margin-bottom 计入重叠目标（canvas 跟在 p 后：p 底 78 + mb 16 → canvas
             // 应在 94 而非 78，2d.reset.render.global_composite_operation oracle A/B）。
@@ -1401,7 +1431,15 @@ fn shift_siblings_after_ifc_grow_inner(
             } else {
                 0.0
             };
-            if prev_plain && is_shiftable_next(child) && prev_margin_bottom >= 0.0 && child.margin_top >= 0.0 {
+            let atomic_pair = prev_atomic_inline && is_atomic_inline_box(child);
+            if prev_plain
+                && is_shiftable_next(child)
+                && !(atomic_pair
+                    && atomic_pair_no_shift
+                        .value(|| std::env::var("ZW_IFC_ATOMIC_PAIR_NO_SHIFT").as_deref() != Ok("0")))
+                && prev_margin_bottom >= 0.0
+                && child.margin_top >= 0.0
+            {
                 if let Some(pb) = prev_bottom
                     && child.y < pb + margin_target - 0.5
                 {
@@ -1415,6 +1453,7 @@ fn shift_siblings_after_ifc_grow_inner(
         if shift_active {
             prev_bottom = Some(child.y + child.height);
             prev_plain = is_plain_real_block(child);
+            prev_atomic_inline = is_atomic_inline_box(child);
             prev_margin_bottom = child.margin_bottom;
         }
         // R1743：累计最大 in-flow **block-level** 子盒底边 + 负 margin 检测（递归后子 height

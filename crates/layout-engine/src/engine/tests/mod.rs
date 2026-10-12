@@ -693,3 +693,5 @@ mod r5078_iframe_default_size_tests;
 mod r5080_column_vsize_tests;
 /// R5081 伪元素文本节点 white-space 自身条目优先测试。
 mod r5081_pseudo_ws_tests;
+/// R5095 原子行内级盒行盒组装（inline-table va 对齐豁免重叠下推）测试。
+mod r5095_inline_table_line_box_tests;

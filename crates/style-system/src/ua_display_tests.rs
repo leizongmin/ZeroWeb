@@ -232,3 +232,31 @@ fn input_type_hidden_not_rendered_and_author_cannot_override() {
         "缺 type 的 input 保持 inline-block"
     );
 }
+
+/// R5095（HTML 渲染规范 UA 表格默认）：td/th UA `vertical-align: middle`——chromium/
+/// firefox 事实默认（行高分配后高 cell 内容垂直居中）。ZW 旧默认 Baseline 使内容锚行顶，
+/// css-tables-3 §3.10.5 行高分配落地后与 test 页锚定差超模糊阈值
+///（box-offsets-rel-pos-vlr-005/vrl-004 ref 页中行 img 实证）。作者样式可覆盖；
+/// presentational hint（valign 属性）在 cascade 中高于 UA 声明不受影响。
+#[test]
+fn test_td_th_ua_default_vertical_align_middle() {
+    let doc = zero_dom::parse_html("<table><tr><td>cell</td></tr></table>");
+    let td = doc.get_elements_by_tag_name("td")[0];
+    let mut system = StyleSystem::new();
+    let styles = system.compute_styles(&doc, &[]);
+    assert_eq!(
+        styles[&td].vertical_align,
+        zero_css_parser::values::VerticalAlignValue::Middle,
+        "td UA default vertical-align should be middle"
+    );
+
+    // 作者声明覆盖 UA 默认
+    let doc2 = zero_dom::parse_html("<table><tr><td style=\"vertical-align: top\">cell</td></tr></table>");
+    let td2 = doc2.get_elements_by_tag_name("td")[0];
+    let styles2 = system.compute_styles(&doc2, &[]);
+    assert_eq!(
+        styles2[&td2].vertical_align,
+        zero_css_parser::values::VerticalAlignValue::Top,
+        "author vertical-align should override the UA middle default"
+    );
+}

@@ -2166,3 +2166,80 @@ fn test_col_percent_width_resolves_against_spacing_adjusted_base() {
         col_widths[1]
     );
 }
+
+/// R5095（css-tables-3 §3.10.5 Distribution algorithm）：table 指定 height > Σ行内容高时，
+/// 存在 auto-height 行（行元素与独占 cell 均无 definite height）→ 非 auto 行收足参考高、
+/// 余量**均分给 auto 行**；旧行为全行均分把指定行抬高、auto 行欠分
+///（border-image-repeat-round-003 ref 页 64/auto/64 → 96/32/96，chromium 64/96/64）。
+#[test]
+fn test_r5095_table_height_excess_goes_to_auto_row() {
+    use zero_css_parser::values::{DisplayValue, LengthValue};
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    ts.height = LengthValue::Px(224.0);
+    ts.width = LengthValue::Px(224.0);
+    styles.insert(table_id, ts);
+
+    // 3 行：row1/row3 cell 指定高 64，row2 cell 无指定（auto-height 行）
+    let mut row_boxes: Vec<LayoutBox> = Vec::new();
+    for row_i in 0..3 {
+        let row_id = doc.create_element("div");
+        let mut rs = ComputedStyle::default();
+        rs.display = DisplayValue::TableRow;
+        styles.insert(row_id, rs);
+        let mut cell_boxes: Vec<LayoutBox> = Vec::new();
+        for _col_i in 0..3 {
+            let cell_id = doc.create_element("div");
+            let mut cs = ComputedStyle::default();
+            cs.display = DisplayValue::TableCell;
+            cs.width = LengthValue::Px(64.0);
+            // 角行 cell 指定高 64（ref 页 corner cell 形态）；中行 cell auto
+            if row_i != 1 {
+                cs.height = LengthValue::Px(64.0);
+            }
+            styles.insert(cell_id, cs);
+            cell_boxes.push(LayoutBox {
+                node_id: Some(cell_id),
+                width: 64.0,
+                height: if row_i != 1 { 64.0 } else { 0.0 },
+                ..Default::default()
+            });
+        }
+        row_boxes.push(LayoutBox {
+            node_id: Some(row_id),
+            children: cell_boxes,
+            ..Default::default()
+        });
+    }
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        content_width: 224.0,
+        width: 224.0,
+        children: row_boxes,
+        ..Default::default()
+    };
+
+    layout_table(&mut table_box, &doc, &styles, Default::default());
+
+    // 指定行保持 64（不吸收余量），auto 中行收足 224 − 128 = 96
+    let heights: Vec<f32> = table_box.children.iter().map(|r| r.height).collect();
+    assert_eq!(heights.len(), 3, "3 rows expected");
+    assert!(
+        (heights[0] - 64.0).abs() < 0.5 && (heights[2] - 64.0).abs() < 0.5,
+        "R5095: specified rows must keep height 64 (got {:?}); old equal-split raised them to ~74.7",
+        heights
+    );
+    assert!(
+        (heights[1] - 96.0).abs() < 0.5,
+        "R5095: auto row must absorb the excess (224 − 2×64 = 96, got {}); \
+         old equal-split gave ~74.7 (border-image-repeat-round-003 ref 页中行 32px 带症状)",
+        heights[1]
+    );
+}
