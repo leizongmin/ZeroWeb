@@ -474,6 +474,7 @@
         }
         // net-api M4-S17：同步路径 redirect 跟随（与异步同规——301/302 POST→GET、303
         // GET 丢体、307/308 保持；上限 20；跨源跳带文档 Origin）。
+        var syncT0 = (typeof _perfNow === 'function') ? _perfNow() : 0;
         var syncWire = '';
         var syncUrl = self._zwXhrUrl;
         var syncMethod = self._zwXhrMethod;
@@ -493,9 +494,27 @@
             if (syncHops > 0 && syncLoc === null) {
               try { syncProbe.url = syncUrl; } catch (_eSyncUrl) {}
               self._zwFillFromResponse(syncProbe, null);
+              // Resource Timing（M3 slice 1）：sync XHR 传输不经 fetch 包裹（__zw_fetch
+              // 同步线协议）——**延迟到任务**补条目（buffer-full-add-then-clear 锚定：
+              // 同步完成 XHR 的条目在后续任务才入账，本任务内 clear/resize 先生效——
+              // entriesAfterAddition=0 面；initiatorType 'xmlhttprequest'，终跳 URL）。
+              setTimeout(function () {
+                try {
+                  if (typeof __zwEmitResourceTiming === 'function') {
+                    __zwEmitResourceTiming(syncUrl, 'xmlhttprequest', syncT0, _perfNow());
+                  }
+                } catch (_eRtSync) {}
+              }, 0);
               return;
             }
             self._zwFillFromResponse(syncProbe, null);
+            setTimeout(function () {
+              try {
+                if (typeof __zwEmitResourceTiming === 'function') {
+                  __zwEmitResourceTiming(syncUrl, 'xmlhttprequest', syncT0, _perfNow());
+                }
+              } catch (_eRtSync2) {}
+            }, 0);
             return;
           }
           // 逐跳 CORS 门控（与异步同规——跨源跳响应须过 cors check）。
@@ -588,6 +607,10 @@
       // 此处只发出请求；abort-during-upload / timeout / CORS 失败：abort 先至 → 不发题）。
       setTimeout(function () {
         if (reqGen !== self._zwReqGen || self._zwXhrAborted) return;
+        // Resource Timing（M3 slice 1）：XHR 传输经 fetch——置发起方旗标（fetch 包裹
+        // 消费为 initiatorType 'xmlhttprequest'；仅 globalThis.fetch 通道，iframe
+        // _zwXhrFetch 通道不产条目——跨文档 buffer 归属面）。
+        if (fetchFn === globalThis.fetch) _zwRtPendingInitiator = 'xmlhttprequest';
         fetchFn(self._zwXhrUrl, { method: self._zwXhrMethod, headers: self._zwXhrHeaders, body: body,
           credentials: _zwWithCreds ? 'include' : 'same-origin' })
           .then(function(response) {

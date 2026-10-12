@@ -5568,6 +5568,9 @@
                     if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
                     globalThis._zwRanScripts[child.__zwHandle] = true;
                     var _r387el = child;
+                    // Resource Timing（M3 slice 1）：动态外链脚本经页面 fetch 取源——置
+                    // 发起方旗标（fetch 包裹消费为 initiatorType 'script' + 真实时长窗口）。
+                    _zwRtPendingInitiator = 'script';
                     fetch(_r387url).then(function (_r) {
                       if (!_r.ok && _r.status) throw new Error('HTTP ' + _r.status);
                       return _r.text();

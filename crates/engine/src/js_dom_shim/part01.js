@@ -3211,12 +3211,40 @@
     };
     // M2-S2：fetch() 同步异常（Headers init 校验等——fetch 方法步骤 step 2 ctor throw →
     // reject p，非同步抛出）→ 已拒绝 Promise。
+    // Resource Timing（performance-api-compat M3 slice 1）：fetch 完成即产
+    // PerformanceResourceTiming 条目——initiatorType 按发起方旗标（R387b 动态脚本 /
+    // XHR send / 页面 fetch），URL 绝对化，startMs=调用时刻、endMs=promise 落定
+    // 时刻（≈headers 到达；body 读取尾近似——slice 1 精度）。失败 fetch 同样产
+    // 条目（spec：网络错误也入 buffer）。同步抛出（ctor 校验失败，未发起网络）
+    // 不产条目。
     globalThis.fetch = function (input, init) {
+      var _rtT0 = (typeof _perfNow === 'function') ? _perfNow() : 0;
+      var _rtInitiator = _zwRtPendingInitiator || 'fetch';
+      _zwRtPendingInitiator = null;
+      var _rtUrl = '';
       try {
-        return _zwFetchMain(input, init);
+        var _rtRaw = (input && typeof input === 'object' && typeof input.url === 'string')
+          ? input.url : String(input);
+        _rtUrl = (typeof URL === 'function' && globalThis.location && globalThis.location.href)
+          ? new URL(_rtRaw, globalThis.location.href).href : _rtRaw;
+      } catch (_eRtU) {
+        _rtUrl = String((input && input.url) || input || '');
+      }
+      var p;
+      try {
+        p = _zwFetchMain(input, init);
       } catch (eSync) {
         return Promise.reject(eSync);
       }
+      var _rtEmitOnce = function () {
+        try {
+          if (typeof __zwEmitResourceTiming === 'function') {
+            __zwEmitResourceTiming(_rtUrl, _rtInitiator, _rtT0, _perfNow());
+          }
+        } catch (_eRtEmit) {}
+      };
+      return p.then(function (v) { _rtEmitOnce(); return v; },
+                    function (e) { _rtEmitOnce(); throw e; });
     };
   }
 

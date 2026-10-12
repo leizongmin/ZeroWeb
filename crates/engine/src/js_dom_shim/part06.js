@@ -15578,3 +15578,35 @@ function _zwCaretFromPoint(x, y) {
     } catch (_eEtWrap) {}
     return result;
   };
+
+  // ── Resource Timing（performance-api-compat M3 slice 1）──
+  // https://w3c.github.io/resource-timing/
+  // 宿主资源装载完成派发口包裹：img/link/script 的 load/error 派发尾调 part01b
+  // `__zwEmitResourceTiming(绝对URL, initiatorType, startMs, endMs)` 产
+  // PerformanceResourceTiming 条目。error 响应同样产条目（spec：失败 fetch 也入
+  // buffer，transferSize=0）。窗口真值：本口只见完成时刻——startTime=派发起点
+  // （≈responseEnd 近似）、duration=派发时长（≈0）、分层时间戳同值（ordered/≥
+  // 断言面成立）；net 层真值挂 M3 深水面。**file-tail 赋值时机**：三个派发口
+  // 均定义于 part06 中段（~12692-12700），本包裹在尾部安装（内部调用点按全局名
+  // 解析，赋值后一律命中包裹）。
+  (function () {
+    var _rtEmit = globalThis.__zwEmitResourceTiming;
+    if (typeof _rtEmit !== 'function') return;
+    var _rtWrap = function (fnName, initiator) {
+      var base = globalThis[fnName];
+      if (typeof base !== 'function') return;
+      globalThis[fnName] = function (absUrl, type) {
+        var t0 = performance.now();
+        var r = base(absUrl, type);
+        try {
+          if (typeof absUrl === 'string' && absUrl) {
+            _rtEmit(absUrl, initiator, t0, performance.now());
+          }
+        } catch (_eRtW) {}
+        return r;
+      };
+    };
+    _rtWrap('__zw_dispatch_img_event', 'img');
+    _rtWrap('__zw_dispatch_link_event', 'link');
+    _rtWrap('__zw_dispatch_script_event', 'script');
+  })();

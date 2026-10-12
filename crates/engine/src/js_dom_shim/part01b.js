@@ -1400,6 +1400,169 @@
   }
   _perfEntries.push(_zwNavTimingEntry);
 
+  // ── Resource Timing（performance-api-compat M3 slice 1）──
+  // PerformanceResourceTiming 接口 + 条目发射 + buffer 机制。
+  // https://w3c.github.io/resource-timing/
+  // 条目生成由宿主驱动：资源装载完成事件派发口（__zw_dispatch_img_event /
+  // __zw_dispatch_link_event / __zw_dispatch_script_event——part06 尾包裹）调
+  // `__zwEmitResourceTiming(绝对URL, initiatorType, startMs, endMs)`。分层时间戳
+  // 与 transferSize/decodedBodySize 等 net 层真值挂 M3 深水面——本 slice 记录
+  // 完成时刻近似（startTime ≈ responseEnd、duration ≈ 0、分层值与 startTime 同值
+  // ——ordered/≥ 断言面成立、fetchStart>0 成立），unavailable 数值诚实置 0。
+  // resource 条目**入 _perfEntries**（getEntries* 可检索——spec 语义，与 event
+  // 条目的隔离面相反）；buffer 容量只数 resource 类型（缺省 250——spec §buffer），
+  // 满时拒收并触发 resourcetimingbufferfull（once-per-full-transition，清空/
+  // 扩容后复位）；clearResourceTimings 只清 resource 条目。
+  function PerformanceResourceTiming() {
+    throw new TypeError('Illegal constructor');
+  }
+  PerformanceResourceTiming.prototype.toJSON = function () {
+    return {
+      name: this.name,
+      entryType: this.entryType,
+      startTime: this.startTime,
+      duration: this.duration,
+      initiatorType: this.initiatorType,
+      nextHopProtocol: this.nextHopProtocol,
+      workerStart: this.workerStart,
+      redirectStart: this.redirectStart,
+      redirectEnd: this.redirectEnd,
+      fetchStart: this.fetchStart,
+      domainLookupStart: this.domainLookupStart,
+      domainLookupEnd: this.domainLookupEnd,
+      connectStart: this.connectStart,
+      connectEnd: this.connectEnd,
+      secureConnectionStart: this.secureConnectionStart,
+      requestStart: this.requestStart,
+      responseStart: this.responseStart,
+      responseEnd: this.responseEnd,
+      transferSize: this.transferSize,
+      encodedBodySize: this.encodedBodySize,
+      decodedBodySize: this.decodedBodySize,
+    };
+  };
+  try { PerformanceResourceTiming.prototype[Symbol.toStringTag] = 'PerformanceResourceTiming'; } catch (_e) {}
+  globalThis.PerformanceResourceTiming = PerformanceResourceTiming;
+
+  // fetch 发起方旗标（Resource Timing initiatorType 通道）：内部装载方（R387b 动态
+  // 外链脚本 / XHR send）在调 fetch 前**同步**置位，fetch 包裹读后即清——一次 fetch
+  // 一条目，无双记。null = 页面直接 fetch() → 'fetch'。
+  var _zwRtPendingInitiator = null;
+
+  var _zwResBufCap = 250; // spec 缺省容量
+  // 溢出模型（buffer-full-* 族锚定，2026-10-13 三轮迭代定稿）：
+  // - 有空间即收；收下即复位 episode 旗标（满态非持久——add-then-clear：fill 后
+  //   缩容缓冲 1+1 条目不 fire）。
+  // - 到达无空间：本 episode 首次则 fire bufferfull（回调可 clear/扩容），回调后
+  //   **重查余量**——有余量则本条目收下（add-entries-during-callback：回调内
+  //   setSize(3)+sync XHR 三条全入），无余量则丢弃（-that-drop：setSize(2) 下
+  //   回调内 sync 条目占掉余量、触发条目本身丢弃；add-after-full-event：fire 后
+  //   无空间的触发条目不持久滞留）。
+  // - sync XHR 条目**延迟到任务**创建（part03 send 侧）——同步完成 XHR 的条目
+  //   与后续 clear/resize 的先后由任务序决定（add-then-clear 的
+  //   entriesAfterAddition=0 / then-increased 的先 resize 后入账面）。
+  var _zwResBufFired = false;
+  function _zwCountResEntries() {
+    var n = 0;
+    for (var i = 0; i < _perfEntries.length; i++) {
+      if (_perfEntries[i].entryType === 'resource') n++;
+    }
+    return n;
+  }
+  // bufferfull 事件最小派发面：performance.on* 属性 + addEventListener 注册表
+  // （performance 原非 EventTarget；buffer-full-utilities 以两种形态挂回调）。
+  var _zwPerfEvtListeners = {};
+  try {
+    globalThis.performance.addEventListener = function (type, fn) {
+      if (typeof fn !== 'function') return;
+      (_zwPerfEvtListeners[String(type)] = _zwPerfEvtListeners[String(type)] || []).push(fn);
+    };
+    globalThis.performance.removeEventListener = function (type, fn) {
+      var list = _zwPerfEvtListeners[String(type)] || [];
+      var idx = list.indexOf(fn);
+      if (idx !== -1) list.splice(idx, 1);
+    };
+  } catch (_eRtAttach) {}
+  function _zwDispatchOnPerformance(type) {
+    var ev = {
+      type: type,
+      target: globalThis.performance,
+      currentTarget: globalThis.performance,
+      timeStamp: _perfNow(),
+      bubbles: false,
+      cancelable: false,
+      defaultPrevented: false,
+      preventDefault: function () {},
+      stopPropagation: function () {},
+      stopImmediatePropagation: function () {},
+    };
+    var handlers = (_zwPerfEvtListeners[type] || []).slice();
+    for (var i = 0; i < handlers.length; i++) {
+      try { handlers[i].call(globalThis.performance, ev); } catch (_eH) {}
+    }
+    try {
+      var on = globalThis.performance['on' + type];
+      if (typeof on === 'function') on.call(globalThis.performance, ev);
+    } catch (_eOn) {}
+  }
+  globalThis.__zwEmitResourceTiming = function (name, initiatorType, startMs, endMs) {
+    if (typeof name !== 'string' || name.length === 0) return;
+    var start = (typeof startMs === 'number' && startMs >= 0) ? startMs : 0;
+    var end = (typeof endMs === 'number' && endMs >= start) ? endMs : start;
+    var entry = Object.create(PerformanceResourceTiming.prototype);
+    entry.name = name;
+    entry.entryType = 'resource';
+    entry.startTime = start;
+    entry.duration = end - start;
+    entry.initiatorType = String(initiatorType || 'other');
+    entry.nextHopProtocol = '';
+    entry.workerStart = 0;
+    entry.redirectStart = 0;
+    entry.redirectEnd = 0;
+    entry.fetchStart = start;
+    entry.domainLookupStart = start;
+    entry.domainLookupEnd = start;
+    entry.connectStart = start;
+    entry.connectEnd = start;
+    entry.secureConnectionStart = 0;
+    entry.requestStart = start;
+    entry.responseStart = start;
+    entry.responseEnd = end;
+    entry.transferSize = 0;
+    entry.encodedBodySize = 0;
+    entry.decodedBodySize = 0;
+    if (_zwCountResEntries() < _zwResBufCap) {
+      _perfEntries.push(entry);
+      _notifyEntry(entry);
+      _zwResBufFired = false; // 有空间即收 → episode 结束
+      return;
+    }
+    // 溢出：episode 首次 fire（回调可 clear/扩容），回调后重查余量。
+    if (!_zwResBufFired) {
+      _zwResBufFired = true;
+      _zwDispatchOnPerformance('resourcetimingbufferfull');
+    }
+    if (_zwCountResEntries() < _zwResBufCap) {
+      _perfEntries.push(entry);
+      _notifyEntry(entry);
+      _zwResBufFired = false;
+    }
+    // 仍无空间 → 丢弃（触发条目不持久滞留——add-after-full-event 面）。
+  };
+  try {
+    globalThis.performance.clearResourceTimings = function () {
+      _perfEntries = _perfEntries.filter(function (e) {
+        return e.entryType !== 'resource';
+      });
+      _zwResBufFired = false;
+    };
+    globalThis.performance.setResourceTimingBufferSize = function (size) {
+      var n = Number(size);
+      if (!(n > 0)) return; // spec：非正数 no-op（iframe-tests 面）
+      _zwResBufCap = Math.floor(n);
+    };
+  } catch (_eRtApi) {}
+
   // PerformanceMark（User Timing §2.1）——可构造接口：校验同 mark() 但**不入 entry
   // buffer**（mark-entry-constructor：new PerformanceMark 不进 getEntriesByName）。
   // startTime 缺省 now；detail 缺省 null（structured clone）。

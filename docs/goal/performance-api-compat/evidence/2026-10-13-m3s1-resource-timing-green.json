@@ -1,0 +1,782 @@
+[
+  [
+    "resource-timing/body-size-cross-origin.https.html",
+    [
+      {
+        "name": "Retrieving a same-origin resource without Timing-Allow-Origin should expose body size",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: https://{{host}}:{{ports[https][0]}}/images/red.png?uid=956fdd0f-ac8e-4b6b-90fa-b8ff7329f6e3\""
+      },
+      {
+        "name": "Retrieving a same-origin resource with Timing-Allow-Origin should expose body size",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: https://{{host}}:{{ports[https][0]}}/images/red.png?uid=85fa961f-47fe-470f-b247-98b2732297e4\""
+      },
+      {
+        "name": "Retrieving a no-cors resource without Timing-Allow-Origin should not expose body size",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: https://www1.{{host}}:{{ports[https][0]}}/images/red.png?uid=d5c2227b-46a8-4e51-b45a-c68a6b50e2de\""
+      },
+      {
+        "name": "Retrieving a no-cors resource with Timing-Allow-Origin should not expose body size",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: https://www1.{{host}}:{{ports[https][0]}}/images/red.png?uid=a686b1d2-55b3-4e2d-9900-f10021cf0858\""
+      },
+      {
+        "name": "Retrieving a cors resource without Timing-Allow-Origin should expose body size",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: https://www1.{{host}}:{{ports[https][0]}}/images/red.png?uid=8e9abe39-1946-46a9-92e9-ba823bee29ad\""
+      },
+      {
+        "name": "Retrieving a cors resource with Timing-Allow-Origin should expose body size",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: https://www1.{{host}}:{{ports[https][0]}}/images/red.png?uid=7426bb37-7ff8-43ff-b14f-4f16265294f7\""
+      }
+    ]
+  ],
+  [
+    "resource-timing/buffer-full-add-after-full-event.html",
+    [
+      {
+        "name": "Test that entry was added to the buffer after a buffer full event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/buffer-full-add-entries-during-callback-that-drop.html",
+    [
+      {
+        "name": "Test that entries synchronously added to the buffer during the callback are dropped",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/buffer-full-add-entries-during-callback.html",
+    [
+      {
+        "name": "Test that entries synchronously added to the buffer during the callback don't get dropped if the buffer is increased",
+        "status": "Fail",
+        "message": "assert_equals: Number of entries does not match the expected value. expected 3 but got 2"
+      }
+    ]
+  ],
+  [
+    "resource-timing/buffer-full-add-then-clear.html",
+    [
+      {
+        "name": "Test that if the buffer is cleared after entries were added to the secondary buffer, those entries make it into the primary one",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/buffer-full-decrease-buffer-during-callback.html",
+    [
+      {
+        "name": "Test that decreasing the buffer limit during the callback does not drop entries",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/buffer-full-eventually.html",
+    [
+      {
+        "name": "Finite resource timing entries buffer size",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/buffer-full-increase-buffer-during-callback.html",
+    [
+      {
+        "name": "Test that increasing the buffer during the callback is enough for entries not to be dropped",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/buffer-full-inspect-buffer-during-callback.html",
+    [
+      {
+        "name": "Test that entries in the secondary buffer are not exposed during the callback and before they are copied to the primary buffer",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/buffer-full-set-to-current-buffer.html",
+    [
+      {
+        "name": "Test that adding entries and firing the buffer full event happen in the right order.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/buffer-full-store-and-clear-during-callback.html",
+    [
+      {
+        "name": "Test that entries overflowing the buffer trigger the buffer full event, can be stored, and make their way to the primary buffer after it's cleared in the buffer full event.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/buffer-full-then-decreased.html",
+    [
+      {
+        "name": "Test that if the buffer is reduced after entries were added to it, those entries don't get cleared, nor is the resourcetimingbufferfull event being called.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/buffer-full-then-increased.html",
+    [
+      {
+        "name": "Test that overflowing the buffer and immediately increasing its limit does not trigger the resourcetimingbufferfull event",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/buffer-full-when-populate-entries.html",
+    [
+      {
+        "name": "Test that a buffer full event does not bubble and that resourcetimingbufferfull is called only once per overflow",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/buffered-flag.any.js",
+    [
+      {
+        "name": "PerformanceObserver with buffered flag sees previous resource entries.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/cached-image-gets-single-entry.html",
+    [
+      {
+        "name": "When a resource is resolved from cache, there must not be a corresponding entry in the Performance Timeline",
+        "status": "Fail",
+        "message": "assert_equals: There must be exactly 2 entries in the Performance Timeline expected 2 but got 3"
+      }
+    ]
+  ],
+  [
+    "resource-timing/clear-resource-timings.html",
+    [
+      {
+        "name": "Test that clearResourceTimings() clears the performance timeline buffer",
+        "status": "Fail",
+        "message": "assert_equals: Resource timing entries exist expected 2 but got 0"
+      }
+    ]
+  ],
+  [
+    "resource-timing/document-domain-no-impact-opener.html",
+    [
+      {
+        "name": "resource-timing/document-domain-no-impact-opener.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: page script: Cannot read properties of null (reading 'postMessage')"
+      }
+    ]
+  ],
+  [
+    "resource-timing/frameset-timing.html",
+    [
+      {
+        "name": "resource-timing/frameset-timing.html",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/iframe-non-html.html",
+    [
+      {
+        "name": "Iframes should report resource timing for image iframes",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 0"
+      },
+      {
+        "name": "Iframes should report resource timing for xhtml iframes",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 0"
+      },
+      {
+        "name": "Iframes should report resource timing for xml iframes",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 0"
+      },
+      {
+        "name": "Iframes should report resource timing for text iframes",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 0"
+      }
+    ]
+  ],
+  [
+    "resource-timing/iframe-sequence-of-events.html",
+    [
+      {
+        "name": "A iframe should report its RT entry when the response is done and before it is completely loaded",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of undefined (reading 'getEntriesByType')\""
+      },
+      {
+        "name": "Changing the src of an iframe (ORIGIN->ORIGIN) with TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: https://{{host}}:{{ports[https][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (ORIGIN->ORIGIN) without TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: https://{{host}}:{{ports[https][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (ORIGIN->HTTP_REMOTE_ORIGIN) with TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: https://{{host}}:{{ports[https][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (ORIGIN->HTTP_REMOTE_ORIGIN) without TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: https://{{host}}:{{ports[https][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (ORIGIN->HTTP_NOTSAMESITE_ORIGIN) with TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: https://{{host}}:{{ports[https][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (ORIGIN->HTTP_NOTSAMESITE_ORIGIN) without TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: https://{{host}}:{{ports[https][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (HTTP_REMOTE_ORIGIN->ORIGIN) with TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: http://www1.{{host}}:{{ports[http][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (HTTP_REMOTE_ORIGIN->ORIGIN) without TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: http://www1.{{host}}:{{ports[http][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (HTTP_REMOTE_ORIGIN->HTTP_REMOTE_ORIGIN) with TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: http://www1.{{host}}:{{ports[http][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (HTTP_REMOTE_ORIGIN->HTTP_REMOTE_ORIGIN) without TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: http://www1.{{host}}:{{ports[http][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (HTTP_REMOTE_ORIGIN->HTTP_NOTSAMESITE_ORIGIN) with TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: http://www1.{{host}}:{{ports[http][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (HTTP_REMOTE_ORIGIN->HTTP_NOTSAMESITE_ORIGIN) without TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: http://www1.{{host}}:{{ports[http][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (HTTP_NOTSAMESITE_ORIGIN->ORIGIN) with TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: http://{{hosts[alt][]}}:{{ports[http][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (HTTP_NOTSAMESITE_ORIGIN->ORIGIN) without TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: http://{{hosts[alt][]}}:{{ports[http][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (HTTP_NOTSAMESITE_ORIGIN->HTTP_REMOTE_ORIGIN) with TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: http://{{hosts[alt][]}}:{{ports[http][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (HTTP_NOTSAMESITE_ORIGIN->HTTP_REMOTE_ORIGIN) without TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: http://{{hosts[alt][]}}:{{ports[http][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (HTTP_NOTSAMESITE_ORIGIN->HTTP_NOTSAMESITE_ORIGIN) with TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: http://{{hosts[alt][]}}:{{ports[http][0]}}/resource-timing/resources/green.html\""
+      },
+      {
+        "name": "Changing the src of an iframe (HTTP_NOTSAMESITE_ORIGIN->HTTP_NOTSAMESITE_ORIGIN) without TAO should result in an RT entry",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Invalid URL: http://{{hosts[alt][]}}:{{ports[http][0]}}/resource-timing/resources/green.html\""
+      }
+    ]
+  ],
+  [
+    "resource-timing/image-sequence-of-events.html",
+    [
+      {
+        "name": "resource-timing/image-sequence-of-events.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 1004], state={\"loaded\":true,\"pending\":3,\"phase\":4,\"tests\":3}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "resource-timing/initiator-type-for-script.html",
+    [
+      {
+        "name": "Validate initiatorType for scripts is 'script'",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/input-sequence-of-events.html",
+    [
+      {
+        "name": "resource-timing/input-sequence-of-events.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 543], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "resource-timing/internal-resources-not-counted.html",
+    [
+      {
+        "name": "resource-timing/internal-resources-not-counted.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3038, 795], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "resource-timing/link-sequence-of-events.html",
+    [
+      {
+        "name": "test that @imports don't affect link resource timings",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/nested-context-navigations-embed.html",
+    [
+      {
+        "name": "resource-timing/nested-context-navigations-embed.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3038, 2595, 1396], state={\"loaded\":true,\"pending\":9,\"phase\":2,\"tests\":9}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "resource-timing/nested-context-navigations-iframe.html",
+    [
+      {
+        "name": "resource-timing/nested-context-navigations-iframe.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3038, 2595, 1386], state={\"loaded\":true,\"pending\":9,\"phase\":2,\"tests\":9}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "resource-timing/nested-context-navigations-object.html",
+    [
+      {
+        "name": "resource-timing/nested-context-navigations-object.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3038, 2595, 1431], state={\"loaded\":true,\"pending\":9,\"phase\":2,\"tests\":9}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "resource-timing/no-entries-for-cross-origin-css-fetched.sub.html",
+    [
+      {
+        "name": "Make sure that resources fetched by cross origin CSS are not in the timeline.",
+        "status": "Fail",
+        "message": "Invalid URL: //www1.{{host}}:{{ports[http][1]}}{{location[path]}}/../resources/nested.css"
+      }
+    ]
+  ],
+  [
+    "resource-timing/queue-entry-regardless-buffer-size.html",
+    [
+      {
+        "name": "resource-timing/queue-entry-regardless-buffer-size.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 5482, 2587, 832], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "resource-timing/render-blocking-status-link.html",
+    [
+      {
+        "name": "Validate render blocking status of link resources in PerformanceResourceTiming",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/resource-ignore-data-url.html",
+    [
+      {
+        "name": "Resources with data: URIs must not be surfaced in Resource Timing",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/resource-timing-failed-fetch.html",
+    [
+      {
+        "name": "resource-timing/resource-timing-failed-fetch.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 1069], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "resource-timing/resource-timing-level1.sub.html",
+    [
+      {
+        "name": "No timeline entry for about:blank",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'iframe (Populate cache): The initial request populates the cache (if appropriate).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'iframe (Potentially Cached): Immediately fetch the same URL, exercising the cache hit path (if any).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'xmlhttprequest (Populate cache): The initial request populates the cache (if appropriate).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'xmlhttprequest (Potentially Cached): Immediately fetch the same URL, exercising the cache hit path (if any).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "resource-timing/resource-timing-level1.sub.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 27174], state={\"loaded\":true,\"pending\":1,\"phase\":3,\"tests\":6}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "resource-timing/script-rt-entries.html",
+    [
+      {
+        "name": "The RT entry for a non-existent script should be available when the script 'error' event fires",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The RT entry for script should be available when the script 'load' event fires",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/supported_resource_type.any.js",
+    [
+      {
+        "name": "supportedEntryTypes contains 'resource'.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'resource' entries should be observable.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "resource-timing/test_resource_timing.html",
+    [
+      {
+        "name": "window.performance Resource Timing Entries exist",
+        "status": "Fail",
+        "message": "assert_idl_attribute: window.performance.getEntriesByName() is defined property \"getEntriesByName\" found on object expected in prototype chain"
+      },
+      {
+        "name": "window.performance Resource Timing Entries exist 1",
+        "status": "Fail",
+        "message": "assert_idl_attribute: window.performance.getEntriesByType() is defined property \"getEntriesByType\" found on object expected in prototype chain"
+      },
+      {
+        "name": "window.performance Resource Timing Entries exist 2",
+        "status": "Fail",
+        "message": "assert_idl_attribute: window.performance.getEntries() is defined property \"getEntries\" found on object expected in prototype chain"
+      },
+      {
+        "name": "window.performance.getEntriesByName() and window.performance.getEntriesByNameType() return same data (iframe)",
+        "status": "Fail",
+        "message": "assert_equals: should have a single entry for each resource (without type) expected 1 but got 0"
+      },
+      {
+        "name": "PerformanceEntry has correct name, initiatorType, startTime, and duration (iframe)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'name')"
+      },
+      {
+        "name": "PerformanceEntry has correct order of timing attributes (iframe)",
+        "status": "Fail",
+        "message": "assert_equals: There should be a single matching entry expected 1 but got 0"
+      },
+      {
+        "name": "PerformanceEntry has correct network transfer attributes (iframe)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'encodedBodySize')"
+      },
+      {
+        "name": "PerformanceEntry has correct protocol attribute (iframe)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'nextHopProtocol')"
+      },
+      {
+        "name": "window.performance.getEntriesByName() and window.performance.getEntriesByNameType() return same data (script)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "PerformanceEntry has correct name, initiatorType, startTime, and duration (script)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "PerformanceEntry has correct order of timing attributes (script)",
+        "status": "Fail",
+        "message": "assert_greater_than: secureConnectionStart should not be 0 in https expected a number greater than 0 but got 0"
+      },
+      {
+        "name": "PerformanceEntry has correct network transfer attributes (script)",
+        "status": "Fail",
+        "message": "assert_equals: encodedBodySize size expected 133 but got 0"
+      },
+      {
+        "name": "PerformanceEntry has correct protocol attribute (script)",
+        "status": "Fail",
+        "message": "assert_equals: expected protocol expected \"http/1.1\" but got \"\""
+      },
+      {
+        "name": "window.performance.getEntriesByName() and window.performance.getEntriesByNameType() return same data (xmlhttprequest)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "PerformanceEntry has correct name, initiatorType, startTime, and duration (xmlhttprequest)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "PerformanceEntry has correct order of timing attributes (xmlhttprequest)",
+        "status": "Fail",
+        "message": "assert_greater_than: secureConnectionStart should not be 0 in https expected a number greater than 0 but got 0"
+      },
+      {
+        "name": "PerformanceEntry has correct network transfer attributes (xmlhttprequest)",
+        "status": "Fail",
+        "message": "assert_equals: encodedBodySize size expected 112 but got 0"
+      },
+      {
+        "name": "PerformanceEntry has correct protocol attribute (xmlhttprequest)",
+        "status": "Fail",
+        "message": "assert_equals: expected protocol expected \"http/1.1\" but got \"\""
+      },
+      {
+        "name": "resource-timing/test_resource_timing.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 9463], state={\"loaded\":true,\"pending\":10,\"phase\":4,\"tests\":28}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "resource-timing/test_resource_timing.https.html",
+    [
+      {
+        "name": "window.performance Resource Timing Entries exist",
+        "status": "Fail",
+        "message": "assert_idl_attribute: window.performance.getEntriesByName() is defined property \"getEntriesByName\" found on object expected in prototype chain"
+      },
+      {
+        "name": "window.performance Resource Timing Entries exist 1",
+        "status": "Fail",
+        "message": "assert_idl_attribute: window.performance.getEntriesByType() is defined property \"getEntriesByType\" found on object expected in prototype chain"
+      },
+      {
+        "name": "window.performance Resource Timing Entries exist 2",
+        "status": "Fail",
+        "message": "assert_idl_attribute: window.performance.getEntries() is defined property \"getEntries\" found on object expected in prototype chain"
+      },
+      {
+        "name": "window.performance.getEntriesByName() and window.performance.getEntriesByNameType() return same data (iframe)",
+        "status": "Fail",
+        "message": "assert_equals: should have a single entry for each resource (without type) expected 1 but got 0"
+      },
+      {
+        "name": "PerformanceEntry has correct name, initiatorType, startTime, and duration (iframe)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'name')"
+      },
+      {
+        "name": "PerformanceEntry has correct order of timing attributes (iframe)",
+        "status": "Fail",
+        "message": "assert_equals: There should be a single matching entry expected 1 but got 0"
+      },
+      {
+        "name": "PerformanceEntry has correct network transfer attributes (iframe)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'encodedBodySize')"
+      },
+      {
+        "name": "PerformanceEntry has correct protocol attribute (iframe)",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'nextHopProtocol')"
+      },
+      {
+        "name": "window.performance.getEntriesByName() and window.performance.getEntriesByNameType() return same data (script)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "PerformanceEntry has correct name, initiatorType, startTime, and duration (script)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "PerformanceEntry has correct order of timing attributes (script)",
+        "status": "Fail",
+        "message": "assert_greater_than: secureConnectionStart should not be 0 in https expected a number greater than 0 but got 0"
+      },
+      {
+        "name": "PerformanceEntry has correct network transfer attributes (script)",
+        "status": "Fail",
+        "message": "assert_equals: encodedBodySize size expected 133 but got 0"
+      },
+      {
+        "name": "PerformanceEntry has correct protocol attribute (script)",
+        "status": "Fail",
+        "message": "assert_equals: expected protocol expected \"http/1.1\" but got \"\""
+      },
+      {
+        "name": "window.performance.getEntriesByName() and window.performance.getEntriesByNameType() return same data (xmlhttprequest)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "PerformanceEntry has correct name, initiatorType, startTime, and duration (xmlhttprequest)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "PerformanceEntry has correct order of timing attributes (xmlhttprequest)",
+        "status": "Fail",
+        "message": "assert_greater_than: secureConnectionStart should not be 0 in https expected a number greater than 0 but got 0"
+      },
+      {
+        "name": "PerformanceEntry has correct network transfer attributes (xmlhttprequest)",
+        "status": "Fail",
+        "message": "assert_equals: encodedBodySize size expected 112 but got 0"
+      },
+      {
+        "name": "PerformanceEntry has correct protocol attribute (xmlhttprequest)",
+        "status": "Fail",
+        "message": "assert_equals: expected protocol expected \"http/1.1\" but got \"\""
+      },
+      {
+        "name": "resource-timing/test_resource_timing.https.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 9463], state={\"loaded\":true,\"pending\":10,\"phase\":4,\"tests\":28}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "resource-timing/tojson.html",
+    [
+      {
+        "name": "resource-timing/tojson.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 1593], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "resource-timing/workerStart-tao-protected.https.html",
+    [
+      {
+        "name": "resource-timing/workerStart-tao-protected.https.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3038, 14523, 5482, 1857], state={\"loaded\":true,\"pending\":3,\"phase\":4,\"tests\":3}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "resource-timing/worklet-rt-entries.https.html",
+    [
+      {
+        "name": "Worklets should generate Resource Timing Entries",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Cannot read properties of undefined (reading 'addModule')\""
+      }
+    ]
+  ],
+  [
+    "resource-timing/xhr-resource-timing.html",
+    [
+      {
+        "name": "Verify resource timing entry creation for successful XHR",
+        "status": "Fail",
+        "message": "assert_greater_than: transferSize should be greater than 0 expected a number greater than 0 but got 0"
+      },
+      {
+        "name": "Verify resource timing entry creation for XHR failing with CORS",
+        "status": "Fail",
+        "message": "assert_equals: domainLookupStart should be 0 expected 0 but got 397578"
+      }
+    ]
+  ]
+]
