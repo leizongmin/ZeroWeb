@@ -74,6 +74,27 @@ const HEADER_DRIVEN_OVERRIDE: &str = r#"
   if (typeof window.set_prefixed_cookie_via_http_test === 'function') {
     window.set_prefixed_cookie_via_http_test = function(options) { return zwSkipHeaderDriven(options.title); };
   }
+  // 混合案（cookies-compat M2，2026-10-12）：set_prefixed_cookie_via_dom_test =
+  // DOM 腿（document.cookie 写入 + DOM 可见性断言——可执行）+ list.py 服务端回执腿
+  // （credFetch 404 → Unhandled rejection——静态语料不可执行；且「请求附带/响应入
+  // jar」属 goal Mission 排除的传输域）。替换为**仅 DOM 面计分**版本：assert_dom_cookie
+  // 语义逐字保留（含 erase 前置/清理），回执腿不执行。回执面不可执行性在
+  // evidence / wpt-suites.csv note 记账，不静默。
+  if (typeof window.set_prefixed_cookie_via_dom_test === 'function') {
+    window.set_prefixed_cookie_via_dom_test = function(options) {
+      promise_test(function(t) {
+        var name = options.prefix + "prefixtestcookie";
+        erase_cookie_from_js(name, options.params);
+        t.add_cleanup(function() { erase_cookie_from_js(name, options.params); });
+        var value = "foo" + ++window.dom_prefix_counter;
+        document.cookie = name + "=" + value + ";" + options.params;
+        assert_dom_cookie(name, value, options.shouldExistInDOM);
+        // pinned 老版 testharness 的 promise_test 强制返回 thenable（原 helper 的
+        // credFetch 链即 thenable；DOM 面同步断言后补 resolved promise）。
+        return Promise.resolve();
+      }, options.title);
+    };
+  }
 })();
 "#;
 

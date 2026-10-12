@@ -133,20 +133,204 @@
   globalThis.CSS.escape = globalThis.CSS.escape || _zwCssNamespace.escape;
   globalThis.CSS.supports = globalThis.CSS.supports || _zwCssNamespace.supports;
 
-  // document.cookie 的 in-JS 存储（name → value）。document.cookie setter 写入，getter 序列化。
-  // 不接真 cookie jar（host-layer defer）；per-上下文（无 origin 隔离）。
-  var _doc_cookies = {};
+  // document.cookie 的 in-JS cookie jar（cookies-compat M2，2026-10-12）——RFC 6265bis
+  // §5.1/§5.5/§5.6 的 window 面语义（读写/属性/可见性）。数组序 = cookie 创建序（bis
+  // §5.6 检索按 creation-time 排序；同名同域同路径覆盖保留原位置）。**边界**：仍不接
+  // zero-net 真 jar（网络传输/响应入 jar 属 host-layer defer，goal 契约「jar 本体
+  // 不动」）；域/路径/安全上下文对 document.location 即时求值（随导航变化）。
+  var _zwCookieJar = [];
 
+  // —— RFC 6265bis §5.1.1 cookie-date 解析（宽松式）。分隔符切 token，逐 token 依序
+  // 尝试 time(hh:mm:ss)/dayOfMonth/month 名/year；2 位年 70-99 → 1900+、0-69 → 2000+；
+  // 四要素缺一或越界（year<1601、hour>23、min>59、sec>59）→ NaN（属性整体忽略）。
+  function _zwCookieParseDate(str) {
+    var tokens = String(str).split(/[\x09\x20-\x2F\x3B-\x40\x5B-\x60\x7B-\x7E]+/);
+    var hour = null, minute = null, second = null, day = null, month = null, year = null;
+    var months = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+    for (var i = 0; i < tokens.length; i++) {
+      var tok = tokens[i];
+      if (!tok) continue;
+      var m;
+      if (hour === null && (m = tok.match(/^(\d{1,2}):(\d{1,2}):(\d{1,2})(?:\D|$)/))) {
+        hour = +m[1]; minute = +m[2]; second = +m[3];
+      } else if (day === null && (m = tok.match(/^(\d{1,2})(?:\D|$)/))) {
+        var d = +m[1];
+        if (d >= 1 && d <= 31) day = d;
+      } else if (month === null && (m = tok.match(/^([A-Za-z]{3})[A-Za-z]*/))) {
+        var mo = months[m[1].toLowerCase()];
+        if (mo) month = mo;
+      } else if (year === null && (m = tok.match(/^(\d{2,4})(?:\D|$)/))) {
+        year = +m[1];
+      }
+    }
+    if (day === null || month === null || year === null || hour === null) return NaN;
+    if (year >= 70 && year <= 99) year += 1900;
+    else if (year >= 0 && year <= 69) year += 2000;
+    if (year < 1601 || hour > 23 || minute > 59 || second > 59) return NaN;
+    return Date.UTC(year, month - 1, day, hour, minute, second);
+  }
+
+  // —— RFC 6265bis §5.1.3 domain-match。hostOnly 时仅全等；否则 host 等于 domain 或
+  // 以 '.' + domain 结尾（IP 地址不参与后缀匹配）。
+  function _zwCookieDomainMatch(host, domain, hostOnly) {
+    if (host === domain) return true;
+    if (hostOnly) return false;
+    if (/^[\d.]+$/.test(host) || host.indexOf(':') >= 0) return false; // IPv4/IPv6 字面量
+    return host.slice(-(domain.length + 1)) === '.' + domain;
+  }
+
+  // —— RFC 6265bis §5.1.4 path-match。
+  function _zwCookiePathMatch(requestPath, cookiePath) {
+    if (requestPath === cookiePath) return true;
+    if (requestPath.slice(0, cookiePath.length) !== cookiePath) return false;
+    return cookiePath.slice(-1) === '/' || requestPath.charAt(cookiePath.length) === '/';
+  }
+
+  // —— RFC 6265bis §5.1.5 default-path（request-uri path 去掉末段）。
+  function _zwCookieDefaultPath(requestPath) {
+    if (!requestPath || requestPath.charAt(0) !== '/') return '/';
+    var rest = requestPath.slice(1);
+    var slash = rest.lastIndexOf('/');
+    if (slash < 0) return '/';
+    return requestPath.slice(0, 1 + slash);
+  }
+
+  // —— 安全上下文判定（与 shim isSecureContext 同口径：secure 除非 http:/ws:——
+  // part01 isSecureContext getter 注释；about:blank/file/https/wss → secure）。
+  function _zwCookieIsSecureContext() {
+    var protocol = String((globalThis.location || {}).protocol || '');
+    return !/^(http|ws):$/i.test(protocol);
+  }
+
+  // —— RFC 6265bis §5.6 存储模型（document.cookie setter 入口，non-HTTP API）。
+  // 步骤：整串 CTL 拒收（§5.6.1 严格处理，HTAB 豁免）→ name=value 解析（bis 两侧
+  // WSP 裁剪）→ 属性顺序解析（同名后者覆盖；非法值仅忽略属性不废 cookie）→ 安全
+  // 上下文/prefix（§4.1.3，大小写不敏感）/domain-match 整废检查 → 过期判定 → 覆盖
+  // 保留创建序插入。HttpOnly 属性按 §5.7.6 忽略（non-HTTP API 不置位，cookie 对 JS
+  // 可见——Chrome 同款）。
+  function _zwCookieSetFromDocument(raw) {
+    var cookieString = String(raw == null ? '' : raw);
+    for (var ci = 0; ci < cookieString.length; ci++) {
+      var code = cookieString.charCodeAt(ci);
+      // %x00-08 / %x0A-1F / %x7F 拒收整条 cookie（%x09 HTAB 豁免）
+      if (code <= 8 || (code >= 10 && code <= 31) || code === 127) return;
+    }
+    var semi = cookieString.indexOf(';');
+    var pair = semi < 0 ? cookieString : cookieString.slice(0, semi);
+    var unparsed = semi < 0 ? '' : cookieString.slice(semi + 1);
+    var eq = pair.indexOf('=');
+    if (eq < 0) return; // 无 '=' → 忽略整条
+    var name = pair.slice(0, eq).trim();
+    var value = pair.slice(eq + 1).trim();
+    if (!name) return;
+    // 属性解析（bis §5.7：值两侧 WSP 裁剪；Expires/Max-Age/Domain/Path/Secure 语义，
+    // 未知属性忽略——attributes-ctl 的 "Sec\ture" 尾随 tab 裁剪后须仍识别为 Secure）。
+    var expires = null, maxAge = null, domainAttr = null, pathAttr = null, secure = false, httpOnlyAttr = false;
+    var segments = unparsed.split(';');
+    for (var si = 0; si < segments.length; si++) {
+      var seg = segments[si].trim();
+      if (!seg) continue;
+      var aeq = seg.indexOf('=');
+      var aname = (aeq < 0 ? seg : seg.slice(0, aeq)).trim().toLowerCase();
+      var avalue = aeq < 0 ? '' : seg.slice(aeq + 1).trim();
+      if (aname === 'expires') {
+        var parsed = _zwCookieParseDate(avalue);
+        if (!isNaN(parsed)) expires = parsed;
+      } else if (aname === 'max-age') {
+        if (/^-?\d+$/.test(avalue)) maxAge = parseInt(avalue, 10);
+      } else if (aname === 'domain') {
+        if (avalue) domainAttr = avalue.replace(/^\./, '').toLowerCase();
+      } else if (aname === 'path') {
+        pathAttr = avalue;
+      } else if (aname === 'secure') {
+        secure = true;
+      } else if (aname === 'httponly') {
+        httpOnlyAttr = true;
+      }
+      // 'samesite' 及其余：传输策略域，存储不消费
+    }
+    // 作用域基址（document.location 即时求值）
+    var loc = globalThis.location || {};
+    var host = String(loc.hostname || '').toLowerCase();
+    var requestPath = String(loc.pathname || '/');
+    var secureContext = _zwCookieIsSecureContext();
+    // 安全上下文门：Secure cookie 不得出自非安全上下文（set-from-dom 面）
+    if (secure && !secureContext) return;
+    // domain：收齐属性后再做整废检查（bis §5.6——同名属性末值生效，先废会误杀
+    // "Domain=bad; Domain=ok" 形态）
+    var domain, hostOnly;
+    if (domainAttr !== null) {
+      if (!_zwCookieDomainMatch(host, domainAttr, false)) return;
+      domain = domainAttr;
+      hostOnly = false;
+    } else {
+      domain = host;
+      hostOnly = true;
+    }
+    var cookiePath = (pathAttr !== null && pathAttr.charAt(0) === '/') ? pathAttr : _zwCookieDefaultPath(requestPath);
+    // HttpOnly 属性经 non-HTTP API 整条忽略（https://datatracker.ietf.org/doc/html/rfc6265#section-5.3
+    // 步骤 6 "abort these steps and ignore the cookie entirely"；bis §5.6 存储模型同步）
+    // ——Chrome 同款：document.cookie 置 HttpOnly 不落存储。
+    if (httpOnlyAttr) return;
+    // prefix 门（bis §4.1.3 + §5.6；corpus 实证大小写不敏感）。__Http- / __Host-Http-
+    // 为 Chromium HttpOnly 前缀扩展（WPT cookies/prefix 口径）：__Http- 要求
+    // Secure+HttpOnly、__Host-Http- 额外要求 host-only+Path=/；经 DOM 的 HttpOnly
+    // 已在上一步整条忽略，两前缀经 document.cookie 恒拒收。
+    var lowerName = name.toLowerCase();
+    if (lowerName.indexOf('__secure-') === 0 && !secure) return;
+    if (lowerName.indexOf('__host-http-') === 0) return;
+    if (lowerName.indexOf('__host-') === 0 && (!secure || !hostOnly || cookiePath !== '/')) return;
+    if (lowerName.indexOf('__http-') === 0) return;
+    // 过期判定（Max-Age 优先于 Expires；≤0 即刻过期）
+    var now = Date.now();
+    var expiry = null;
+    if (maxAge !== null) expiry = maxAge <= 0 ? (now - 1) : now + maxAge * 1000;
+    else if (expires !== null) expiry = expires;
+    // 覆盖语义：同 (name, domain, path) 原位更新值/属性并保留创建序位置（bis §5.6
+    // 步骤 20：新 cookie 继承旧 cookie 的 creation-time → 检索序保持首设位置）；
+    // 过期 → 仅删除。
+    var key = name + '\n' + domain + '\n' + cookiePath;
+    for (var ji = 0; ji < _zwCookieJar.length; ji++) {
+      if (_zwCookieJar[ji].key !== key) continue;
+      if (expiry !== null && expiry <= now) { _zwCookieJar.splice(ji, 1); return; }
+      _zwCookieJar[ji] = { key: key, name: name, value: value, domain: domain, hostOnly: hostOnly, path: cookiePath, secure: secure, httpOnly: false, expiry: expiry };
+      return;
+    }
+    if (expiry !== null && expiry <= now) return;
+    _zwCookieJar.push({ key: key, name: name, value: value, domain: domain, hostOnly: hostOnly, path: cookiePath, secure: secure, httpOnly: false, expiry: expiry });
+  }
+
+  // —— RFC 6265bis §5.6 检索（document.cookie getter）：过期清除 + httpOnly/secure/
+  // domain/path 可见性过滤，创建序拼接 "name=value; …"。
+  function _zwCookieVisibleString() {
+    var loc = globalThis.location || {};
+    var host = String(loc.hostname || '').toLowerCase();
+    var requestPath = String(loc.pathname || '/');
+    var secureContext = _zwCookieIsSecureContext();
+    var now = Date.now();
+    var parts = [];
+    for (var i = _zwCookieJar.length - 1; i >= 0; i--) {
+      var c = _zwCookieJar[i];
+      if (c.expiry !== null && c.expiry <= now) { _zwCookieJar.splice(i, 1); continue; }
+    }
+    for (var vi = 0; vi < _zwCookieJar.length; vi++) {
+      var ck = _zwCookieJar[vi];
+      if (ck.httpOnly) continue;
+      if (ck.secure && !secureContext) continue;
+      if (!_zwCookieDomainMatch(host, ck.domain, ck.hostOnly)) continue;
+      if (!_zwCookiePathMatch(requestPath, ck.path)) continue;
+      parts.push(ck.name + '=' + ck.value);
+    }
+    return parts.join('; ');
+  }
 
   // WPT testdriver `delete_all_cookies` 的 shim 钩子（cookies-compat M1，2026-10-12）——
   // 上游 corpus 的 domCookieTest 每个子测试前后经 `test_driver.delete_all_cookies()` 清
   // jar（隔离断言前提：exact-match 序列化断言对跨子测试 cookie 残留敏感）。runner 的
-  // TESTDRIVER_STUB 把该操作转发到此钩子，清空 in-JS cookie store（非空操作，语义真实）。
-  // 钩子缺失（精简 shim/老宿主）→ stub 侧拒绝。
+  // TESTDRIVER_STUB 把该操作转发到此钩子，语义对齐 runner 的 in-JS cookie store（清空
+  // 即真删除，非空操作）。钩子缺失（精简 shim/老宿主）→ stub 侧拒绝。
   globalThis.__zwDeleteAllCookies = function () {
-    for (var k in _doc_cookies) {
-      if (Object.prototype.hasOwnProperty.call(_doc_cookies, k)) delete _doc_cookies[k];
-    }
+    _zwCookieJar.length = 0;
   };
 
   // document.title 缓存。null = 未初始化（惰性读 <title> 文本）；string = 显式 set 或已读。
@@ -4348,25 +4532,15 @@
       var el = scripts[_zwCurrentScriptIdx];
       return el || null;
     },
-    // document.cookie——get 返 "n=v; n=v" 串（仅 name=value，无属性）；set 解析 "n=v; Path=...; Max-Age=..."
-    // 取首个 name=value 存/覆盖。**已知限制**：in-JS 存储（不接真 cookie jar / 不随 fetch 发送 / 无 origin
-    // 隔离 / 无 expiry 淘汰——网络/origin 集成属 host-layer defer）；set-then-read 常见模式 tractable。
+    // document.cookie——读写语义见 _zwCookieJar 块（cookies-compat M2，RFC 6265bis
+    // §5.1/§5.5/§5.6：CTL 拒收 / expires / max-age / domain / path / secure / prefix
+    // / 覆盖保留创建序 / 可见性过滤）。**已知限制**：in-JS jar（不接真 cookie jar /
+    // 不随 fetch 发送——网络/origin 集成属 host-layer defer）。
     get cookie() {
-      var parts = [];
-      for (var k in _doc_cookies) {
-        if (Object.prototype.hasOwnProperty.call(_doc_cookies, k)) parts.push(k + '=' + _doc_cookies[k]);
-      }
-      return parts.join('; ');
+      return _zwCookieVisibleString();
     },
     set cookie(str) {
-      var s = String(str == null ? '' : str);
-      var first = s.split(';')[0];
-      var eq = first.indexOf('=');
-      if (eq < 0) return; // 无 name=value → 忽略
-      var name = first.slice(0, eq).trim();
-      var value = first.slice(eq + 1);
-      if (!name) return;
-      _doc_cookies[name] = value;
+      _zwCookieSetFromDocument(str);
     },
     // `document.styleSheets`（R2808）——真 backing：`<style>` 元素 → CSSStyleSheet 数组（经
     // `__zw_query_all('style')` 查询 + `_makeStyleSheet`）。每次访问重新查询（live DOM）。
