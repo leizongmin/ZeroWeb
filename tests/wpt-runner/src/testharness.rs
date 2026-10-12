@@ -3510,6 +3510,175 @@ pub fn run_web_animations_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(S
     run_timing_subdirs(wpt_root, WEB_ANIMATIONS_SUBDIRS, filter, web_animations_case_skipped)
 }
 
+// ── performance-api-compat goal（docs/goal/performance-api-compat.md M1 / DC-1）：
+// resource / navigation / event / longtask 四 corpus window 可执行子集。拉取面 =
+// tests/wpt-runner/scripts/goals/19-performance-api-compat.sh（DIRS 与本表同域双
+// 保险）。WPT 无 performance-api 顶层目录——四件套是四个独立顶层套件（M1 实测）。
+
+/// resource-timing corpus pinned upstream subset（PerformanceResourceTiming 条目
+/// 生成与 buffer 语义面）。
+pub const RESOURCE_TIMING_SUBDIRS: &[&str] = &["resource-timing"];
+
+/// navigation-timing corpus pinned upstream subset（PerformanceNavigationTiming
+/// 导航生命周期条目面）。
+pub const NAVIGATION_TIMING_SUBDIRS: &[&str] = &["navigation-timing"];
+
+/// event-timing corpus pinned upstream subset（PerformanceEventTiming 事件时延
+/// 面——事件循环集成）。
+pub const EVENT_TIMING_SUBDIRS: &[&str] = &["event-timing"];
+
+/// longtask-timing corpus pinned upstream subset（longtask 长任务判定面）。
+pub const LONGTASK_TIMING_SUBDIRS: &[&str] = &["longtask-timing"];
+
+/// performance-api 四 corpus 绝对路径 helper 补充（`timing_absolute_helper_extras`
+/// 消费 TIMING_ABSOLUTE_HELPERS——在此追加本 goal 引用面，本地缺失时跳过该 extra，
+/// 用例按真实缺口失败）。/common/get-host-info.sub.js、/common/utils.js 已在
+/// wpt-data（前序 goal 拉取），此处只补 timing 表未覆盖的两个。
+const PERFORMANCE_API_ABSOLUTE_HELPERS: &[(&str, &str)] =
+    &[("/common/get-host-info.sub.js", "common/get-host-info.sub.js")];
+
+/// performance-api 四 corpus 绝对路径 helper 内联（[`timing_absolute_helper_extras`]
+/// 同款，只装被引用且已拉取的）。
+fn performance_api_absolute_helper_extras(wpt_root: &Path, source: &str) -> Vec<(String, String)> {
+    TIMING_ABSOLUTE_HELPERS
+        .iter()
+        .chain(PERFORMANCE_API_ABSOLUTE_HELPERS.iter())
+        .filter(|(src, _)| source.contains(src))
+        .filter_map(|(src, local)| {
+            std::fs::read_to_string(wpt_root.join(local))
+                .ok()
+                .map(|content| ((*src).to_string(), content))
+        })
+        .collect()
+}
+
+/// performance-api 四 corpus 共用筛减（M1 可执行面定义，缺面逐项理由同步
+/// docs/goal/performance-api-compat/evidence/ M1 甄别报告）：
+/// - timing 基础（manual/ref/idlharness——[`timing_base_case_skipped`]；idlharness
+///   依赖 WebIDLParser build 期生成资产，clipboard idlharness 先例）
+/// - iframe / worker 依赖（runner 无多 frame / worker 文档管道，timing 先例）：
+///   resource-timing 跨 frame 观察面、event-timing crossiframe、longtask subframe
+/// - `.py` server handler 引用（redirect/content-resp 等——wptserve 动态端点，
+///   静态语料不可执行；net-api「server-handler .py 重依赖」先例）
+/// - `/common/dispatcher` 跨窗会话机制（bfcache / navigationId helper 依赖——
+///   performance-timeline 同款记账）
+/// - `custom-cors-response` / `web-bundle` / `compression-dictionary` 引用（CORS
+///   响应整形与未拉取支持目录——TAO/字典装载面在本地 fetch handler 之外）
+/// - bfcache helper（back-forward-cache/resources/helper.sub.js——跨窗会话）
+///
+/// 语义缺面（无 resource/navigation/event/longtask 条目生成管道）**不在 skip 之列**
+/// ——用例照跑、按真实 Fail 记账，这正是基线要度量的分母。
+fn performance_api_case_skipped(relative: &str, source: &str) -> bool {
+    timing_base_case_skipped(relative)
+        || timing_iframe_dependency(source)
+        || timing_worker_dependency(source)
+        || source.contains(".py")
+        || source.contains("/common/dispatcher")
+        || source.contains("custom-cors-response")
+        || source.contains("web-bundle")
+        || source.contains("compression-dictionary")
+        || source.contains("back-forward-cache/resources/helper.sub.js")
+}
+
+/// Run the pinned upstream resource-timing window subset
+/// （performance-api-compat goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_resource_timing_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_performance_api_subdirs(wpt_root, RESOURCE_TIMING_SUBDIRS, filter)
+}
+
+/// Run the pinned upstream navigation-timing window subset
+/// （performance-api-compat goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_navigation_timing_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_performance_api_subdirs(wpt_root, NAVIGATION_TIMING_SUBDIRS, filter)
+}
+
+/// Run the pinned upstream event-timing window subset
+/// （performance-api-compat goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_event_timing_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_performance_api_subdirs(wpt_root, EVENT_TIMING_SUBDIRS, filter)
+}
+
+/// Run the pinned upstream longtask-timing window subset
+/// （performance-api-compat goal M1 / DC-1）。filter 按路径子串过滤。
+pub fn run_longtask_timing_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_performance_api_subdirs(wpt_root, LONGTASK_TIMING_SUBDIRS, filter)
+}
+
+/// performance-api 四 corpus 共用扫描器（[`run_timing_subdirs`] 同构：`.html` 直跑 +
+/// `.any.js`/`.window.js` 以 window 变体执行（upstream `.window.js` 即 window-only
+/// 变体源，META 机制与 .any.js 同款——longtask buffered-flag/long-microtask 核心
+/// 语义案面在此形态）；绝对路径 helper 经 [`performance_api_absolute_helper_extras`]
+/// 内联；skip 用 [`performance_api_case_skipped`]）。与 [`run_timing_subdirs`] 唯一
+/// 差异是 helper 表、skip 函数与 `.window.js` 变体——独立入口避免动 timing 四
+/// corpus 的既有行为。
+fn run_performance_api_subdirs(
+    wpt_root: &Path,
+    subdirs: &[&str],
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                "resources/testharness.js".to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+    let mut cases = Vec::new();
+    for subdir in subdirs {
+        // 拉取面均为 flat 布局（子目录已显式列入 subdirs），无需递归。
+        let Ok(entries) = std::fs::read_dir(wpt_root.join(subdir)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                continue;
+            }
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            let is_html = file_name.ends_with(".html");
+            let is_any_js = file_name.ends_with(".any.js") || file_name.ends_with(".window.js");
+            if !is_html && !is_any_js {
+                continue;
+            }
+            let relative = format!("{subdir}/{file_name}");
+            if filter.is_some_and(|filter| !relative.contains(filter)) {
+                continue;
+            }
+            let Ok(source) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if performance_api_case_skipped(&relative, &source) {
+                continue;
+            }
+            let results = if is_any_js {
+                run_any_js_window_case(wpt_root, &relative, &source, &harness_source)
+            } else {
+                let extras = performance_api_absolute_helper_extras(wpt_root, &source);
+                let extra_refs = extras
+                    .iter()
+                    .map(|(src, body)| (src.as_str(), body.as_str()))
+                    .collect::<Vec<_>>();
+                run_testharness_html_inner(
+                    wpt_root,
+                    &relative,
+                    &source,
+                    &harness_source,
+                    &extra_refs,
+                    CORPUS_CASE_TIMEOUT,
+                )
+            };
+            cases.push((relative, results));
+        }
+    }
+    cases
+}
+
 // ── net-api-compat goal（docs/goal/net-api-compat.md M1 / DC-1）：六 corpus window
 // 可执行子集（fetch / xhr / url / mimesniff / streams / eventsource）。拉取面 =
 // tests/wpt-runner/scripts/goals/20-net-api-compat.sh（DIRS 与本表同域双保险）。

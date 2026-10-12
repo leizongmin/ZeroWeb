@@ -1,0 +1,137 @@
+[
+  [
+    "longtask-timing/buffered-flag.window.js",
+    [
+      {
+        "name": "PerformanceObserver with buffered flag can see previous longtask entries.",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "longtask-timing/containerTypes.html",
+    [
+      {
+        "name": "Performance longtask entries in iframe are observable in parent.",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      },
+      {
+        "name": "Performance longtask entries in frame are observable in parent.",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      },
+      {
+        "name": "Performance longtask entries in object are observable in parent.",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      },
+      {
+        "name": "Performance longtask entries in embed are observable in parent.",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "longtask-timing/long-microtask.window.js",
+    [
+      {
+        "name": "A short task followed by a long microtask is observable.",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "longtask-timing/longtask-attributes.html",
+    [
+      {
+        "name": "Performance longtask entries are observable.",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "longtask-timing/longtask-before-observer.window.js",
+    [
+      {
+        "name": "PerformanceObserver with buffered flag can see previous longtask entries.",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "longtask-timing/longtask-in-externalscript.html",
+    [
+      {
+        "name": "Performance longtask entries are observable.",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "longtask-timing/longtask-in-raf.html",
+    [
+      {
+        "name": "Performance longtask entries are observable.",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "longtask-timing/longtask-promise.html",
+    [
+      {
+        "name": "Performance longtask entries after a promise: successful fetch",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      },
+      {
+        "name": "Performance longtask entries after a promise: Response.text()",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      },
+      {
+        "name": "Performance longtask entries after a promise: rejected fetch",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      },
+      {
+        "name": "Performance longtask entries after a promise: JSON error",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "longtask-timing/longtask-tojson.html",
+    [
+      {
+        "name": "Test toJSON() in PerformanceLongTaskTiming and TaskAttributionTiming",
+        "status": "Fail",
+        "message": "assert_implements: Longtasks are not supported. undefined"
+      }
+    ]
+  ],
+  [
+    "longtask-timing/supported-longtask-types.window.js",
+    [
+      {
+        "name": "supportedEntryTypes contains 'longtask' but not 'taskattribution'.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "longtask-timing/supported-longtask-types.window.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 1475], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":2}, test_wait=false)"
+      }
+    ]
+  ]
+]

@@ -14,7 +14,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
 
 GOAL="performance-api-compat"
-DIRS=( "performance-api" )
+# WPT 无 performance-api 顶层目录（M1 实测：pin 315976933 顶层 295 目录无此名，
+# curl 列目录 404）——wpt.fyi 的 performance-api 标签对应下列四个独立顶层套件，
+# 与契约文档 Mission「四件套」一一对应。
+DIRS=(
+  "resource-timing"
+  "navigation-timing"
+  "event-timing"
+  "longtask-timing"
+  # 四件套共享的 entry-type 注册表支持页（resource-timing 等用例引用其
+  # /timing-entrytypes-registry/resources 支持文件）。
+  "timing-entrytypes-registry"
+)
 
 GOAL_PULL_ANY_JS=1
 goals_fetch_all

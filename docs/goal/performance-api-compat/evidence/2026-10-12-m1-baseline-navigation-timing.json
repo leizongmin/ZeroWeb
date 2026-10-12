@@ -1,0 +1,597 @@
+[
+  [
+    "navigation-timing/buffered-flag.window.js",
+    [
+      {
+        "name": "navigation-timing/buffered-flag.window.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 965], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/content-encoding.https.html",
+    [
+      {
+        "name": "navigation-timing/content-encoding.https.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 415], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/nav2-data-uri.html",
+    [
+      {
+        "name": "navigation-timing/nav2-data-uri.html",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "navigation-timing/nav2-test-attributes-exist.html",
+    [
+      {
+        "name": "navigation-timing/nav2-test-attributes-exist.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 1737], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/nav2-test-attributes-values.html",
+    [
+      {
+        "name": "navigation-timing/nav2-test-attributes-values.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3038, 5190], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/nav2-test-instance-accessible-from-the-start.html",
+    [
+      {
+        "name": "PerformanceNavigationTiming instance exists with reasonable values.",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value undefined"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/nav2-test-instance-accessors.html",
+    [
+      {
+        "name": "navigation-timing/nav2-test-instance-accessors.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 3038, 2434], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/nav2-test-navigate-within-document.html",
+    [
+      {
+        "name": "navigation-timing/nav2-test-navigate-within-document.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 2353], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/nav2-test-navigation-type-navigate.html",
+    [
+      {
+        "name": "navigation-timing/nav2-test-navigation-type-navigate.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 502], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/nav2-test-redirect-none.html",
+    [
+      {
+        "name": "navigation-timing/nav2-test-redirect-none.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 713], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/po-navigation.html",
+    [
+      {
+        "name": "navigation-timing/po-navigation.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 764], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/redirect-tao.html",
+    [
+      {
+        "name": "Exposed when a cross-origin redirect opts in to the destination origin",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Exposed when a cross-origin redirect opts in with a wildcard",
+        "status": "NotRun",
+        "message": null
+      },
+      {
+        "name": "Exposed when every redirect in the chain opts in to the destination origin",
+        "status": "NotRun",
+        "message": null
+      },
+      {
+        "name": "Hidden when the redirect opts in to a non-destination origin",
+        "status": "NotRun",
+        "message": null
+      },
+      {
+        "name": "Hidden when only part of the chain opts in to the destination origin",
+        "status": "NotRun",
+        "message": null
+      },
+      {
+        "name": "Hidden for a no-referrer navigation even when the redirect opts in",
+        "status": "NotRun",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "navigation-timing/secure-connection-start-non-zero.https.html",
+    [
+      {
+        "name": "Test that secureConnectionStart is not zero",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'secureConnectionStart')"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/supported-navigation-type.window.js",
+    [
+      {
+        "name": "supportedEntryTypes contains 'navigation'.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigation-timing/supported-navigation-type.window.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201271, 901], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":2}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/test-document-onload.html",
+    [
+      {
+        "name": "Test that the attributes have a proper value during DOMContentLoaded",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'transferSize')"
+      },
+      {
+        "name": "Test that the attributes have a proper value during onload",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'transferSize')"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/test-document-readiness-exist.html",
+    [
+      {
+        "name": "Document readiness has loading state.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document readiness has interactive state.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document readiness has complete state.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "navigation-timing/test-navigate-within-document.html",
+    [
+      {
+        "name": "window.performance is defined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing is defined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "connectEnd is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "connectStart is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "domComplete is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "domContentLoadedEventEnd is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "domContentLoadedEventStart is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "domInteractive is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "domLoading is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "domainLookupEnd is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "domainLookupStart is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "fetchStart is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "loadEventEnd is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "loadEventStart is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigationStart is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "redirectEnd is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "redirectStart is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "requestStart is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "responseEnd is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "responseStart is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "unloadEventEnd is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "unloadEventStart is the same after in document navigation.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "navigation-timing/test-navigation-attributes-exist.html",
+    [
+      {
+        "name": "window.performance is defined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.navigation is defined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.navigation.type is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.navigation.redirectCount is defined.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "navigation-timing/test-navigation-redirectCount-none.html",
+    [
+      {
+        "name": "window.performance is defined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.navigation is defined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "timing.redirectStart on an non-redirected navigation",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "timing.redirectEnd on an non-redirected navigation",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "navigation.redirectCount on an non-redirected navigation",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "navigation-timing/test-navigation-type-enums.html",
+    [
+      {
+        "name": "window.performance is defined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.navigation is defined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.navigation.TYPE_NAVIGATE is defined.",
+        "status": "Fail",
+        "message": "assert_not_equals: window.performance.navigation.TYPE_NAVIGATE is defined. got disallowed value undefined"
+      },
+      {
+        "name": "window.performance.navigation.TYPE_NAVIGATE = 0",
+        "status": "Fail",
+        "message": "assert_equals: window.performance.navigation.TYPE_NAVIGATE = 0 expected (number) 0 but got (undefined) undefined"
+      },
+      {
+        "name": "window.performance.navigation.TYPE_RELOAD is defined.",
+        "status": "Fail",
+        "message": "assert_not_equals: window.performance.navigation.TYPE_RELOAD is defined. got disallowed value undefined"
+      },
+      {
+        "name": "window.performance.navigation.TYPE_RELOAD = 1",
+        "status": "Fail",
+        "message": "assert_equals: window.performance.navigation.TYPE_RELOAD = 1 expected (number) 1 but got (undefined) undefined"
+      },
+      {
+        "name": "window.performance.navigation.TYPE_BACK_FORWARD is defined.",
+        "status": "Fail",
+        "message": "assert_not_equals: window.performance.navigation.TYPE_BACK_FORWARD is defined. got disallowed value undefined"
+      },
+      {
+        "name": "window.performance.navigation.TYPE_BACK_FORWARD = 2",
+        "status": "Fail",
+        "message": "assert_equals: window.performance.navigation.TYPE_BACK_FORWARD = 2 expected (number) 2 but got (undefined) undefined"
+      },
+      {
+        "name": "window.performance.navigation.TYPE_RESERVED is defined.",
+        "status": "Fail",
+        "message": "assert_not_equals: window.performance.navigation.TYPE_RESERVED is defined. got disallowed value undefined"
+      },
+      {
+        "name": "window.performance.navigation.TYPE_RESERVED = 255",
+        "status": "Fail",
+        "message": "assert_equals: window.performance.navigation.TYPE_RESERVED = 255 expected (number) 255 but got (undefined) undefined"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/test-performance-attributes-exist-in-object.html",
+    [
+      {
+        "name": "navigation-timing/test-performance-attributes-exist-in-object.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "navigation-timing/test-performance-attributes-exist.html",
+    [
+      {
+        "name": "window.performance is defined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.navigation is defined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing is defined",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "navigation-timing/test-readwrite.html",
+    [
+      {
+        "name": "window.performance is defined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance is read/write",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "var performance is read/write",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "navigation-timing/test-timing-attributes-exist.html",
+    [
+      {
+        "name": "window.performance is defined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing is defined",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.connectEnd is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.connectStart is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.domComplete is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.domContentLoadedEventEnd is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.domContentLoadedEventStart is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.domInteractive is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.domLoading is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.domainLookupEnd is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.domainLookupStart is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.fetchStart is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.loadEventEnd is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.loadEventStart is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.navigationStart is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.redirectEnd is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.redirectStart is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.requestStart is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.responseEnd is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.responseStart is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.unloadEventEnd is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "window.performance.timing.unloadEventStart is defined.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]
