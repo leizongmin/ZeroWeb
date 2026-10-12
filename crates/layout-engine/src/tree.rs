@@ -109,7 +109,7 @@ fn is_html_list_item(doc: &Document, dom_id: NodeId) -> bool {
     )
 }
 
-fn resolve_tree_definite_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
+pub(crate) fn resolve_tree_definite_real_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
     match value {
         LengthValue::Auto
         | LengthValue::Percentage(_)
@@ -1023,6 +1023,8 @@ fn apply_replaced_element_sizing(
         }
     }
     // R5001：+ audio（无固有尺寸替换元素，CSS aspect-ratio 走 default object size 臂）
+    // R5078：+ iframe（无固有尺寸替换元素，default object size 300×150 + height attr
+    // % 相对 CB 高解析——旧在此早退，784×0 border 带，inline-block-replaced-height-004/005/007）
     if tag != "img"
         && tag != "canvas"
         && tag != "video"
@@ -1030,6 +1032,7 @@ fn apply_replaced_element_sizing(
         && tag != "object"
         && tag != "applet"
         && tag != "audio"
+        && tag != "iframe"
     {
         return;
     }
@@ -1779,6 +1782,64 @@ fn apply_replaced_element_sizing(
                     // taffy 按 aspect_ratio 从显式侧推导（与 image_sizes BothAbs 路径一致）。
                 }
             }
+        }
+    }
+
+    // R5078（CSS2 §10.3.2 + §10.6.2 replaced sizing；HTML iframe default 300×150）：
+    // iframe 无固有尺寸——CSS auto 侧走 default object size（300×150）+ HTML
+    // width/height 属性：attr px → 定值；attr %（height）相对 CB 高 **可解**（父
+    // computed height definite）→ %×CB 高；不可解或无 attr → default 150。CSS 显式
+    // 侧不干预；attr 双 px 形态保持旧径（R1683 同门）。
+    // driving: inline-block-replaced-height-004（无 attr → 300×150）/ 005（50%×2in
+    // =96）/ 007（父高 auto 不可解 → 150）。旧「iframe 等暂无 driving reftest，
+    // 不处理」注记由本轮三案清偿。kill-switch `ZW_IFRAME_DEFAULT_SIZE=0`。
+    if tag == "iframe" && std::env::var("ZW_IFRAME_DEFAULT_SIZE").as_deref() != Ok("0") {
+        let autoish = |v: &LengthValue| {
+            matches!(
+                v,
+                LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+            )
+        };
+        let attr_both_px = attr_w.is_some_and(|w| w > 0.0) && attr_h.is_some_and(|h| h > 0.0);
+        if autoish(&computed.width) && autoish(&computed.height) && !attr_both_px {
+            let parent_definite_h = doc
+                .parent_node(dom_id)
+                .and_then(|p| styles.get(&p))
+                .and_then(|ps| resolve_tree_definite_real_length(&ps.height, ps));
+            let attr_h_raw = elem
+                .get_attribute("height")
+                .map(|v| v.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let used_h = if let Some(pct) = attr_h_raw.as_deref().and_then(|s| s.strip_suffix('%')) {
+                // % 相对 CB 高：可解 → %×CB；不可解 → default（§10.6.2 → computed auto）
+                pct.parse::<f32>()
+                    .ok()
+                    .filter(|n| n.is_finite() && *n >= 0.0)
+                    .zip(parent_definite_h)
+                    .map(|(p, cb)| cb * p / 100.0)
+            } else {
+                attr_h_raw
+                    .as_deref()
+                    .and_then(|s| s.parse::<f32>().ok())
+                    .filter(|n| n.is_finite() && *n > 0.0)
+            }
+            .unwrap_or(150.0);
+            // width attr % 不解析（§10.3.2 % 宽相对 CB 宽；driving 案无此形态，窄门不收）
+            let used_w = attr_w.filter(|&w| w.is_finite() && w > 0.0).unwrap_or(300.0);
+            // flex item：default size 只入**主轴**（flex base 语义），交叉轴留 auto 保
+            // align stretch（行 flex 破坏 stretch 的对比案 = flexbox-iframe-intrinsic-
+            // size-001：双 iframe flex:1 stretch 400 高，definite 150 → 40.83% 新红；
+            // 「default iframe size 不隐含 aspect ratio/definite cross」正是该案断言）。
+            if is_flex_row_item {
+                taffy_style.size.width = taffy::style::Dimension::length(used_w.max(0.5));
+            } else if is_flex_col_item {
+                taffy_style.size.height = taffy::style::Dimension::length(used_h.max(0.5));
+            } else {
+                taffy_style.size.width = taffy::style::Dimension::length(used_w.max(0.5));
+                taffy_style.size.height = taffy::style::Dimension::length(used_h.max(0.5));
+            }
+            // default object size 回退语义同 no-ratio SVG（R3800：假比会污染 min/max 表）
+            no_ratio_fired = true;
         }
     }
 

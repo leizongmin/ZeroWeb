@@ -687,3 +687,5 @@ mod r5073_abspos_float_shrink_tests;
 mod r5074_abspos_auto_margin_inset_tests;
 /// R5077 float 底边距边缘 floor（§9.5.1 + §8.3.1）测试。
 mod r5077_float_prev_mb_floor_tests;
+/// R5078 iframe default object size（§10.3.2 + §10.6.2）测试。
+mod r5078_iframe_default_size_tests;

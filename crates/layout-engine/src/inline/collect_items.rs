@@ -540,6 +540,55 @@ impl InlineFormattingContext {
                                     }
                                 }
                             }
+                            // R5078（CSS2 §10.3.2 + §10.6.2 replaced sizing）：iframe 无
+                            // 固有尺寸——CSS auto 侧缺省值（attr px 定值 / height attr %
+                            // 相对父 CB definite 高可解 → %×CB 高 / 否则 default）落
+                            // default object size 300×150。旧实现 IFC 原子盒 w=h=0 落
+                            // inline 文本回退（渲 784×6 border 带）。
+                            // driving: inline-block-replaced-height-004（无 attr → 300×150）/
+                            // 005（50%×2in=96）/ 007（父高 auto 不可解 → 150）。
+                            // kill-switch `ZW_IFRAME_DEFAULT_SIZE=0`。
+                            if std::env::var("ZW_IFRAME_DEFAULT_SIZE").as_deref() != Ok("0")
+                                && elem_data.local_name() == "iframe"
+                                && (w <= 0.0 || h <= 0.0)
+                            {
+                                let attr_h_str = elem_data
+                                    .get_attribute("height")
+                                    .map(|v| v.trim().to_string())
+                                    .filter(|s| !s.is_empty());
+                                let used_h = if let Some(pct) =
+                                    attr_h_str.as_deref().and_then(|s| s.strip_suffix('%'))
+                                {
+                                    pct.parse::<f32>()
+                                        .ok()
+                                        .filter(|n| n.is_finite() && *n >= 0.0)
+                                        .zip(
+                                            doc.parent_node(child_id)
+                                                .and_then(|p| styles.get(&p))
+                                                .and_then(|ps| {
+                                                    crate::tree::resolve_tree_definite_real_length(
+                                                        &ps.height, ps,
+                                                    )
+                                                }),
+                                        )
+                                        .map(|(p, cb)| cb * p / 100.0)
+                                } else {
+                                    attr_h_str
+                                        .as_deref()
+                                        .and_then(|s| s.parse::<f32>().ok())
+                                        .filter(|n| n.is_finite() && *n > 0.0)
+                                }
+                                .unwrap_or(150.0);
+                                let used_w =
+                                    Self::parse_html_dimension_attr(elem_data.get_attribute("width"))
+                                        .max(300.0);
+                                if w <= 0.0 {
+                                    w = used_w;
+                                }
+                                if h <= 0.0 {
+                                    h = used_h;
+                                }
+                            }
                             // R4000（css-sizing-3 §intrinsic-sizes + csswg #1801581）：
                             // inline `<svg>` 的 IFC 原子盒 used size——CSS/attr 均无 abs 值时
                             // 按 default object size 规则补齐（viewBox/ar-only → 0×0；无来源
