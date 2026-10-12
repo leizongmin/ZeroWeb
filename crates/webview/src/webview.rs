@@ -2695,6 +2695,13 @@ impl WebView {
         };
         let deadline = std::time::Instant::now() + timeout;
         loop {
+            // 排水预算对每次迭代生效：回调可以 setTimeout(fn, 0) 自续（service
+            // worker 轮询链每跳含宿主调用，解析耗时大于定时器线程 spawn），多条
+            // 并行链的供给会让通道永无空档——仅在 `try_recv` 空档检查 deadline
+            // 会让本循环在 `Ok` 分支无限消耗，execute_script 永不返回。
+            if std::time::Instant::now() >= deadline {
+                return;
+            }
             let callback = match self.async_callback_rx.try_recv() {
                 Ok(callback) => Some(callback),
                 Err(mpsc::TryRecvError::Empty)

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="match" href="system-ui-bold-zw-001-ref.html">
+<title>system-ui w700 resolves to the family bold face</title>
+<!-- 本地自建 reftest（2026-10-12 R5072 P9-D2）：CSS Fonts 4 §5.2 weight 匹配在
+     族内 face 集上进行——system-ui 与 sans-serif 同族，w700 须命中同一 bold face。
+     回归形态：build_font_resolver 缺 system-ui:700 键，resolve_font_face 的
+     [":700",""] 查找直接落 regular face（GitHub system-ui 栈粗体标题渲染细体；
+     probe2 B1 实证）。ref 页用 sans-serif:700（R3993 键恒 bold）；修复态两页
+     逐像素相等，缺陷态 regular vs bold 字形差远超 1% 阈值（判别）。
+     账本：tests/wpt-runner/imported-tests.txt；wpt-data 为独立 repo（gitignored），
+     重拉后按主仓 tests/wpt-runner/local-reftests/ 同路径文件恢复并重跑
+     make import-wpt 重建 manifest。本页另有内联孪生（make reftest 常驻集）：
+     tests/wpt-runner/src/reftest_data/css_fonts.rs
+     id css-fonts/system-ui-bold-zw-001——两处需同步维护。 -->
+<style>
+body { margin: 0; }
+div { font-family: system-ui; font-weight: 700; font-size: 32px; }
+</style>
+</head>
+<body>
+<div>Bold heading text</div>
+</body>
+</html>

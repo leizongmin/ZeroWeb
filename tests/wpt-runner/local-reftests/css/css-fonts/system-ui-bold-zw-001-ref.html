@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>system-ui w700 resolves to the family bold face (ref)</title>
+<!-- R5072 P9-D2 参照臂：sans-serif:700 是 R3993 既有键（恒 bold face）——
+     system-ui 与 sans-serif 同族，修复态两页同一 face 逐像素相等。
+     与 tests/wpt-runner/local-reftests/css/css-fonts/system-ui-bold-zw-001.html
+     成对维护。 -->
+<style>
+body { margin: 0; }
+div { font-family: sans-serif; font-weight: 700; font-size: 32px; }
+</style>
+</head>
+<body>
+<div>Bold heading text</div>
+</body>
+</html>
