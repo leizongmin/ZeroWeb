@@ -19,15 +19,22 @@ disconnect-target（target 访问时活检查，走 `_elConnected` 即时真值�
 isConnected 经 native 链滞后是 shim 既有 documented 限制）、mouseover/mouseout/
 pointerover/pointerout cancelable 修齐（UI Events：over/out 可取消）。
 
-**卡点**：bench-gate 静机收口未遂（第 7/8 轮）——第 7 轮 PASS 2/2 microbenches
-但 19 指标超预算（渲染流 rally 编译风暴压测量窗口，碰撞方进程树实锤：
-ZeroWeb-2 rally 21:38 唤醒 → 编译 → 21:44 reftest）；第 8 轮 bench-report busy
-guard 测量中途抓到 loadavg=13 主动拒判（INCONCLUSIVE，guard 按设计工作）。
-不使用 ZW_BENCH_ALLOW_BUSY=1（政策禁令）。**待渲染流空闲窗口重试。**
+**卡点**：bench-gate 静机收口未遂（第 7-10 轮）——环境争用定性证据链已闭合：
+① 碰撞方进程实锤（ZeroWeb-2 渲染流 rally 21:38/00:26/00:37 多次在测量窗口内
+启动编译/reftest，loadavg 0.81→11.5 两分钟内跳变）；② **pre-M2-S2 树
+（8d1c4526c）A/B 在当前环境同样 FAIL**（load_html_simple 112µs > 预算 104µs、
+webview_render 703µs ≈ 3.2x 预算）——基线在当前机器态本就不可达；③ **同指标
+跨分钟漂移 2.8x**（load_html_with_css：pre 树 395µs → main 树 142µs，纯噪声，
+真实回归不可能使测量变快）；④ ms 级 page/* 指标（噪声容忍）全轮 PASS。结论：
+mb/* FAIL 为环境系统性，非 M2-S1/M2-S2 变更回归。**待渲染流 rally 收敛或换
+静机时段（深夜渲染流停摆窗口）重跑，PASS 后关 M2-S1**（不使用
+ZW_BENCH_ALLOW_BUSY=1——政策禁令；不做基线 relax——无合法变化依据）。
 
 **下一步**：① 静机窗口重跑定向 bench-gate（`ZERO_WEB_BENCH_CRATES=
-zero-script-sandbox,zero-webview make bench-gate`）关 M2-S1；② M2-S2 剩余
-17 失败全为跨域挂账（见跨流记账），本 goal 无进一步实现面；③ M3
+zero-script-sandbox,zero-webview make bench-gate`）关 M2-S1（若渲染流长期不停
+摆，此为唯一挂起点，不阻塞其余面）；② 备选推进：M2-S3 navigation-timing
+自洽面——PerformanceNavigationTiming 条目 + 诚实缺省值（unavailable=0，M1
+甄别报告 §缺面 4；真值仍挂 navigation-compat 流域），shim 层可做；③ M3
 resource/navigation-timing host 管道（缺面分项见 M1 报告）。
 
 **M2-S2 门禁（2026-10-12/13 收尾）**：make test 全绿（71 targets，0 failed）；
