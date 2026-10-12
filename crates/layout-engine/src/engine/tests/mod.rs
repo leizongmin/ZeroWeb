@@ -691,3 +691,5 @@ mod r5077_float_prev_mb_floor_tests;
 mod r5078_iframe_default_size_tests;
 /// R5080 colgroup/column min-max-height 不适用（§17.3）测试。
 mod r5080_column_vsize_tests;
+/// R5081 伪元素文本节点 white-space 自身条目优先测试。
+mod r5081_pseudo_ws_tests;
