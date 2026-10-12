@@ -202,6 +202,17 @@ pub struct InlineFormattingContext {
     pub font_id_overrides: std::rc::Rc<HashMap<NodeId, u32>>,
     /// 文本/inline owner 到有序 CSS face ID 列表的映射。
     pub font_ids_overrides: std::rc::Rc<HashMap<NodeId, Vec<u32>>>,
+    /// T2 丢字形修复（2026-10-13）：run 字体解析专用的有序 CSS face 列表——
+    /// **不参与** `configure_paint_ifc_advance` 的 author-only generic 过滤。
+    ///
+    /// 背景：Path B（paint 重跑 IFC、styles 缺席）下 author-only 策略把 generic
+    /// 字体条目从 `font_ids_overrides` 滤掉（"generic 走 estimate 路径"），而
+    /// `shaping_font_id_for_style` 的兜底链在无覆盖时落 `initial_font_id()`
+    /// （R4365 serif 优先）→ run 按 serif 度量、字形按真实 sans 发射，advance
+    /// 差 ~8%，词间空格被墨宽吞掉（welcome tagline 实证）。本 map 携带
+    /// paint 侧按盒/owner style 解析的字体（含 generic），仅供 run 字体解析
+    /// 消费；shaping 链语义不变。
+    pub run_font_id_overrides: std::rc::Rc<HashMap<NodeId, Vec<u32>>>,
     /// 文本/inline run 的 `font-size-adjust` 计算值。
     pub font_size_adjust_overrides: std::rc::Rc<HashMap<NodeId, zero_style_system::FontSizeAdjustValue>>,
     /// 文本/inline run 的 `font-variation-settings` 计算值。
@@ -374,6 +385,7 @@ impl InlineFormattingContext {
             font_size_overrides: NodeIdMap::default(),
             font_id_overrides: std::rc::Rc::new(HashMap::new()),
             font_ids_overrides: std::rc::Rc::new(HashMap::new()),
+            run_font_id_overrides: std::rc::Rc::new(HashMap::new()),
             font_size_adjust_overrides: std::rc::Rc::new(HashMap::new()),
             font_variation_overrides: std::rc::Rc::new(HashMap::new()),
             is_ahem_overrides: NodeIdMap::default(),
@@ -554,6 +566,12 @@ impl InlineFormattingContext {
         self
     }
 
+    /// 注入 run 字体解析专用映射（不经 author-only generic 过滤；见字段文档）。
+    pub fn with_run_font_id_overrides(mut self, overrides: std::rc::Rc<HashMap<NodeId, Vec<u32>>>) -> Self {
+        self.run_font_id_overrides = overrides;
+        self
+    }
+
     /// 注入逐 run 的 `font-size-adjust` 计算值。
     pub fn with_font_size_adjust_overrides(
         mut self,
@@ -683,18 +701,22 @@ impl InlineFormattingContext {
     }
 
     /// 返回允许受限 shaping 的 run 字体 ID；不满足边界时保留旧 estimate 路径。
+    ///
+    /// T2（2026-10-13）：letter-spacing / word-spacing 不再强制回落 estimate——
+    /// ls/ws 由断行侧在测量值之上按 `ls×count` 追加（break_lines word_width 公式），
+    /// 测量基座与 paint 字形推进同源（真实 hmtx / shaping），否则 ls 段落布局宽度
+    /// 按 0.55em 估计、paint 按 real advance 发射，墨宽覆盖后续片段（welcome
+    /// eyebrow "WELCOME · 欢迎" 的 "·" 被覆盖实证）。
     fn shaping_font_id_for_style(
         &self,
         override_node: Option<NodeId>,
         style: Option<&zero_style_system::ComputedStyle>,
         is_ahem: bool,
-        letter_spacing: f32,
-        word_spacing: f32,
+        _letter_spacing: f32,
+        _word_spacing: f32,
         is_ruby: bool,
     ) -> Option<u32> {
         if is_ahem
-            || letter_spacing != 0.0
-            || word_spacing != 0.0
             || is_ruby
             || !style.map_or_else(
                 // ZRG-2026-08-15 修复 A：paint Path B（空 styles）run 允许继续——
@@ -707,19 +729,41 @@ impl InlineFormattingContext {
         }
         // `collect_font_overrides` 已按相同 resolver 为每个 node 解析字体。优先复用
         // 该结果，避免每个 TextRun 再次 clone/hash font-family 字符串。
-        override_node
+        let resolved = override_node
             .and_then(|node| {
                 self.font_ids_overrides
                     .get(&node)
                     .and_then(|font_ids| font_ids.first())
                     .copied()
             })
+            // T2：run 字体解析专用映射（不经 author-only 过滤；见字段文档）——
+            // author_only 清掉 generic 条目后 run 仍能按 layout 同源字体度量。
+            .or_else(|| {
+                override_node.and_then(|node| {
+                    self.run_font_id_overrides
+                        .get(&node)
+                        .and_then(|font_ids| font_ids.first())
+                        .copied()
+                })
+            })
             .or_else(|| style.and_then(|style| self.font_id_for_style(Some(style))))
             .or_else(|| override_node.and_then(|node| self.font_id_overrides.get(&node).copied()))
             // ZRG-2026-08-15 修复 A：paint Path B（空 styles + 无覆盖）的 run 回退
             // generic / id 0——与 paint 的 resolve_font_id 空 family 语义一致，使这些
             // run 走 hmtx 布局而非 estimate。R4365：initial 语义 serif 优先。
-            .or_else(|| self.initial_font_id())
+            .or_else(|| self.initial_font_id());
+        // T2 实验（2026-10-13）：run 字体解析观测（ZW_SHAPED_ADVANCE_TRACE=1）。
+        if runtime_flags::shaped_advance_trace() {
+            eprintln!(
+                "[zw-runfont] node={:?} style={} overrides={} font_id_overrides={} resolved={:?}",
+                override_node,
+                style.is_some(),
+                override_node.and_then(|n| self.font_ids_overrides.get(&n)).is_some(),
+                override_node.and_then(|n| self.font_id_overrides.get(&n)).is_some(),
+                resolved
+            );
+        }
+        resolved
     }
 
     /// R4365：空 font-family（UA initial）的字体解析——serif 优先（chromium initial
@@ -798,7 +842,18 @@ impl InlineFormattingContext {
                 }
                 width + nbsp_ws
             }
-            _ => self.advance_string_width(text, run.font_id, run.font_size, run.is_ahem_font) + nbsp_ws,
+            _ => {
+                // T2 实验（2026-10-13）：guard 失配时 run 落哪个字体度量——丢空格
+                // 排查的关键观测点（ZW_SHAPED_ADVANCE_TRACE=1 时输出）。
+                let width = self.advance_string_width(text, run.font_id, run.font_size, run.is_ahem_font) + nbsp_ws;
+                if runtime_flags::shaped_advance_trace() {
+                    eprintln!(
+                        "[zw-advance-fallback] text={:?} run_font_id={:?} width={:.3}",
+                        text, run.font_id, width
+                    );
+                }
+                width
+            }
         }
     }
 

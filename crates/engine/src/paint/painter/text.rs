@@ -986,7 +986,7 @@ impl super::Painter {
         // frag_font_id——is_ahem 片段用 ahem_font_id 出 Ahem 方块，非 is_ahem 用 default。
         let ahem_font_id = self.resolve_style_font_id(&["Ahem".to_string()], style).0;
         // R1464/R2497：恢复 Path B 每节点 face/list 与 synthetic-italic 状态。
-        let resolved_text_fonts = self.resolve_text_node_fonts(box_node, style);
+        let resolved_text_fonts = self.resolve_text_node_fonts(box_node, style, doc);
         let text_node_font_ids = resolved_text_fonts.primary;
         let text_node_shaping_font_ids = resolved_text_fonts.shaping;
         let text_node_font_italic = resolved_text_fonts.italic;
@@ -3005,6 +3005,7 @@ impl super::Painter {
                                         fragment: $frag_width,
                                         legacy: text_width,
                                         consumed: char_pos - frag_base_x,
+                                        fragment_x: frag_base_x,
                                     },
                                 );
                             }
