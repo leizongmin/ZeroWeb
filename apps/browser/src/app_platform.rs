@@ -1073,18 +1073,136 @@ pub fn resolve_clicked_link_url(input: &str, document_url: Option<&str>) -> Stri
     zero_engine::resolve_document_url(base, input)
 }
 
-/// URL 规范化 — 支持 URL 和搜索引擎回退
+/// 拆分无 scheme 输入的 authority 段与其余部分（path/query/fragment）。
+fn split_authority(input: &str) -> (&str, &str) {
+    match input.find(['/', '?', '#']) {
+        Some(i) => (&input[..i], &input[i..]),
+        None => (input, ""),
+    }
+}
+
+/// 提取 authority 段中的主机名：剥离数字端口与 IPv6 方括号。
+/// `127.0.0.1:8080` → `127.0.0.1`、`[::1]:8080` → `::1`；端口非数字时原样返回。
+fn authority_host(authority: &str) -> &str {
+    if let Some(rest) = authority.strip_prefix('[') {
+        return match rest.split_once(']') {
+            Some((host, _)) => host,
+            None => authority,
+        };
+    }
+    match authority.rsplit_once(':') {
+        Some((host, port)) if port.parse::<u16>().is_ok() => host,
+        _ => authority,
+    }
+}
+
+/// authority 段是否含空白字符。空白不可能是合法 host 的一部分
+///（https://url.spec.whatwg.org/#host-writing），含空白的「词 :数字」输入
+///（如 `meeting at 10:30`、`尺寸 16:9`）应维持搜索回退而非拼成 URL。
+fn authority_has_whitespace(authority: &str) -> bool {
+    authority.chars().any(char::is_whitespace)
+}
+
+/// authority 以 `[` 开头时的 IPv6 方括号形态校验：必须有 `]`，且 `]` 后只允许为空
+/// 或 `:数字端口`。`[::1]`、`[::1]:8080` 合法；`[::1junk`（无 `]`）与
+/// `[::1]junk`、`[::1]:abc`（`]` 后带残渣）不是合法 URL authority。
+fn bracketed_authority_wellformed(authority: &str) -> bool {
+    let Some(rest) = authority.strip_prefix('[') else {
+        return false;
+    };
+    match rest.split_once(']') {
+        Some((_, tail)) => {
+            tail.is_empty() || tail.strip_prefix(':').is_some_and(|port| port.parse::<u16>().is_ok())
+        }
+        None => false,
+    }
+}
+
+/// authority 段是否为 `host:port` 且端口为数字（1-65535，u16 可解析）。
+/// 这是 URL 而非搜索词的强信号。
+fn authority_has_numeric_port(authority: &str) -> bool {
+    if let Some(rest) = authority.strip_prefix('[') {
+        return match rest.split_once(']') {
+            Some((_, tail)) => tail.strip_prefix(':').is_some_and(|port| port.parse::<u16>().is_ok()),
+            None => false,
+        };
+    }
+    authority
+        .rsplit_once(':')
+        .is_some_and(|(_, port)| port.parse::<u16>().is_ok())
+}
+
+/// 主机是否为回环/本机/私网地址（无 scheme 输入时应用 `http://` 而非 https 升级）。
+///
+/// 覆盖 localhost、`*.localhost`（RFC 6761 §6.3：localhost 恒为回环）、127.0.0.0/8、
+/// ::1 与 RFC 1918 私网段（10/8、172.16/12、192.168/16）——本地/内网服务通常无
+/// TLS，对齐 Chrome 地址栏对本机主机的 https 升级豁免。
+fn host_is_local_or_private(host: &str) -> bool {
+    let lower = host.to_ascii_lowercase();
+    if lower == "localhost" || lower.ends_with(".localhost") {
+        return true;
+    }
+    match host.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(v4)) => v4.is_loopback() || v4.is_private(),
+        Ok(std::net::IpAddr::V6(v6)) => v6.is_loopback(),
+        Err(_) => false,
+    }
+}
+
+/// URL 规范化 — 支持 URL 和搜索引擎回退。
+///
+/// 无 scheme 输入的 scheme 启发式（对齐 Chrome 地址栏，https://url.spec.whatwg.org/）：
+/// - 回环/本机/私网主机（localhost、`*.localhost`、127.0.0.0/8、::1、10/8、172.16/12、
+///   192.168/16）用 `http://`——本地/内网服务通常无 TLS，https 升级必然失败；
+/// - 公网域名维持 `https://` 升级；
+/// - `host:port`（端口为数字）是 URL 而非搜索词的强信号；
+/// - authority 含空白（多词搜索查询）或方括号 IPv6 形态残缺/带残渣时维持搜索回退；
+/// - 其余输入维持搜索引擎回退。
 pub fn normalize_url(input: &str, shell: &BrowserShell) -> String {
-    if input.starts_with("http://") || input.starts_with("https://") {
+    if input.starts_with("http://")
+        || input.starts_with("https://")
+        || input.starts_with("ftp://")
+        || input.starts_with("file://")
+        || input.starts_with("data:")
+        || input.starts_with("zero://")
+    {
         return input.to_string();
     }
-    if input.starts_with("ftp://") || input.starts_with("file://") || input.starts_with("data:") {
+    // view-source:<url> 原样透传：导航入口拆出内层 URL 后再经本函数规范化
+    if input.starts_with("view-source:") {
         return input.to_string();
     }
-    if input.starts_with("zero://") {
-        return input.to_string();
+
+    let (authority, rest) = split_authority(input);
+    // authority 含空白时不可能是合法 host（https://url.spec.whatwg.org/#host-writing），
+    // 含空格的冒号查询（如 `meeting at 10:30`、`尺寸 16:9`）维持搜索回退
+    if authority_has_whitespace(authority) {
+        return shell.settings().search(input);
+    }
+    // 方括号 IPv6 authority 残缺或带残渣（`[::1junk`、`[::1]junk`、`[::1]:abc`）
+    // 不是合法 URL authority（https://url.spec.whatwg.org/#host-writing），维持搜索回退
+    if authority.starts_with('[') && !bracketed_authority_wellformed(authority) {
+        return shell.settings().search(input);
+    }
+    // 裸 IPv6（如 ::1）：仅回环识别为 URL，且主机须加方括号才是合法 URL
+    //（https://url.spec.whatwg.org/#host-writing）；其余维持搜索回退
+    if !authority.starts_with('[')
+        && let Ok(v6) = authority.parse::<std::net::Ipv6Addr>()
+    {
+        if v6.is_loopback() {
+            return format!("http://[{authority}]{rest}");
+        }
+        return shell.settings().search(input);
+    }
+
+    if host_is_local_or_private(authority_host(authority)) {
+        return format!("http://{authority}{rest}");
     }
     if input.contains('.') && !input.contains(' ') {
+        return format!("https://{input}");
+    }
+    // host:port（数字端口）是 URL 强信号；主机类别无法判断时维持 https 升级
+    if authority_has_numeric_port(authority) {
         return format!("https://{input}");
     }
     shell.settings().search(input)

@@ -2074,6 +2074,150 @@ fn normalize_url_preserves_zero_scheme() {
     assert_eq!(crate::app::normalize_url("zero://settings", &shell), "zero://settings");
 }
 
+/// I5：无 scheme 输入的 scheme 启发式表格用例。
+#[test]
+fn normalize_url_scheme_heuristics_table() {
+    let shell = zero_browser_shell::BrowserShell::new();
+    let cases = [
+        // 已带 scheme 原样保留
+        ("http://example.com/", "http://example.com/"),
+        ("https://example.com", "https://example.com"),
+        ("ftp://example.com/file", "ftp://example.com/file"),
+        ("file:///tmp/index.html", "file:///tmp/index.html"),
+        ("data:text/html,hi", "data:text/html,hi"),
+        // view-source: 透传（导航入口拆解内层 URL）
+        (
+            "view-source:http://127.0.0.1:18080/page2.html",
+            "view-source:http://127.0.0.1:18080/page2.html",
+        ),
+        // 回环/本机/私网主机 → http
+        ("127.0.0.1", "http://127.0.0.1"),
+        ("127.0.0.1:18080/index.html", "http://127.0.0.1:18080/index.html"),
+        ("localhost", "http://localhost"),
+        ("localhost:18080", "http://localhost:18080"),
+        ("sub.localhost/x", "http://sub.localhost/x"),
+        ("::1", "http://[::1]"),
+        ("[::1]:8080/x", "http://[::1]:8080/x"),
+        ("10.0.0.5:8000/app", "http://10.0.0.5:8000/app"),
+        ("172.16.1.5", "http://172.16.1.5"),
+        ("172.31.255.254", "http://172.31.255.254"),
+        ("192.168.1.1/index.html", "http://192.168.1.1/index.html"),
+        // 公网域名维持 https 升级
+        ("example.com", "https://example.com"),
+        ("example.com:8080/path", "https://example.com:8080/path"),
+        ("172.32.0.1", "https://172.32.0.1"),
+        // host:port（数字端口）是 URL 而非搜索词
+        ("myserver:8080", "https://myserver:8080"),
+        // 合法 host:port 不被空格负例误伤
+        ("example.com:443", "https://example.com:443"),
+        ("[::1]:8080", "http://[::1]:8080"),
+        // 含空格的冒号查询维持搜索回退（端口启发式不得把「词 :数字」当 URL）
+        ("meeting at 10:30", "https://www.google.com/search?q=meeting+at+10:30"),
+        ("尺寸 16:9", "https://www.google.com/search?q=尺寸+16:9"),
+        // 方括号 IPv6 残缺或带残渣维持搜索回退（不产出非法 URL）
+        ("[::1]junk", "https://www.google.com/search?q=[::1]junk"),
+        ("[::1]:abc", "https://www.google.com/search?q=[::1]:abc"),
+        ("[::1junk", "https://www.google.com/search?q=[::1junk"),
+        // 搜索回退维持现状
+        ("hello world", "https://www.google.com/search?q=hello+world"),
+        (
+            "rust lang tutorial",
+            "https://www.google.com/search?q=rust+lang+tutorial",
+        ),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(crate::app::normalize_url(input, &shell), expected, "input: {input}");
+    }
+}
+
+/// I5：host:port（数字端口）不应判为搜索词；含空格的冒号查询仍是搜索词。
+#[test]
+fn looks_like_search_query_treats_numeric_host_port_as_url() {
+    assert!(!BrowserApp::looks_like_search_query("myserver:8080"));
+    assert!(!BrowserApp::looks_like_search_query("127.0.0.1:18080/index.html"));
+    assert!(BrowserApp::looks_like_search_query("hello world"));
+    assert!(BrowserApp::looks_like_search_query("rust tutorial"));
+    // authority 含空白时端口启发式不适用（尾部 `:数字` 不是端口）
+    assert!(BrowserApp::looks_like_search_query("meeting at 10:30"));
+    assert!(BrowserApp::looks_like_search_query("尺寸 16:9"));
+}
+
+/// D6：`view-source:` 空内层应打开错误内页而非静默无动作。
+#[test]
+fn view_source_empty_inner_opens_error_page() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.navigate_to("view-source:");
+    let tab = app
+        .shell
+        .active_tab()
+        .expect("empty-inner view-source should open an error page tab");
+    assert_eq!(tab.url(), Some("view-source:"));
+}
+
+/// D1：view-source 抓取在后台线程执行，主循环 poll 到结果后才开页。
+///
+/// 用非 http 内层驱动完整链路（发起 → 后台线程 guard 拒绝 → poll 开错误内页），
+/// guard 路径无网络依赖，轮询窗口内必然完成；http 内层需真实 HTTP 往返，
+/// 留给 ui_driver e2e（diag/t1-verify.jsonl I8）覆盖。
+#[test]
+fn view_source_non_http_inner_opens_error_page_via_poll() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let view_url = "view-source:file:///etc/hosts";
+    app.navigate_to(view_url);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        app.poll_tab_fetch();
+        if app.shell.tabs().any(|tab| tab.url() == Some(view_url)) || std::time::Instant::now() > deadline {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let tab = app
+        .shell
+        .active_tab()
+        .expect("non-http inner view-source should open an error page tab after poll");
+    assert_eq!(tab.url(), Some(view_url));
+}
+
+/// I1：CLI 位置参数作为启动 URL（首个生效，多个报错，不吃掉 flag 的值）。
+#[test]
+fn parse_args_takes_first_positional_as_startup_url() {
+    let parsed = parse_args_from(
+        ["--renderer=cpu", "http://127.0.0.1:18080/page2.html", "--scale=1"]
+            .into_iter()
+            .map(str::to_string),
+        None,
+    )
+    .unwrap();
+    assert_eq!(parsed.startup_url.as_deref(), Some("http://127.0.0.1:18080/page2.html"));
+
+    // 无位置参数 → 无启动 URL
+    let parsed = parse_args_from(["--renderer=cpu"].into_iter().map(str::to_string), None).unwrap();
+    assert_eq!(parsed.startup_url, None);
+
+    // 多个位置参数 → 报错
+    assert!(
+        parse_args_from(
+            ["http://a.example/", "http://b.example/"]
+                .into_iter()
+                .map(str::to_string),
+            None,
+        )
+        .is_err()
+    );
+
+    // 分离式 flag 的值不被误认为启动 URL
+    let parsed = parse_args_from(
+        ["--renderer", "cpu", "http://127.0.0.1:9/x"]
+            .into_iter()
+            .map(str::to_string),
+        None,
+    )
+    .unwrap();
+    assert_eq!(parsed.render_mode, RenderMode::Cpu);
+    assert_eq!(parsed.startup_url.as_deref(), Some("http://127.0.0.1:9/x"));
+}
+
 /// 长文档在内容区滚轮应更新 scroll_offset。
 #[test]
 fn handle_scroll_updates_offset_for_tall_page() {

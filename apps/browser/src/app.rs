@@ -34,6 +34,7 @@ use crate::pages;
 use crate::tab_manager::TabManager;
 use crate::text_input::TextInput;
 use crate::text_metrics;
+use crate::view_source_fetch::ViewSourceFetchState;
 
 const TAB_BAR_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(450);
 
@@ -189,6 +190,8 @@ pub struct BrowserApp {
     cached_window_theme: Option<winit::window::Theme>,
     /// 标签页 URL 加载（延迟绘制 loading / 后台 HTTP）
     tab_fetch: TabFetchState,
+    /// CLI 位置参数启动 URL：窗口就绪后由 `ensure_startup_tab` 消费一次。
+    startup_url: Option<String>,
     /// 鼠标悬停链接时在浮动状态栏中显示的 URL
     hovered_link_url: Option<String>,
     /// 单指触摸滚动：`(touch_id, last_y 物理像素)`
@@ -203,6 +206,8 @@ pub struct BrowserApp {
     scrollbar_visible_until: Option<Instant>,
     /// 进行中的 favicon 异步拉取。
     favicon_fetch: FaviconFetchState,
+    /// 进行中的 view-source 源码异步抓取（后台线程 + 主循环 poll）。
+    view_source_fetch: ViewSourceFetchState,
     /// 是否显示下载浮动面板（也可因活动下载自动展开）。
     download_panel_open: bool,
     /// 最近一次「在文件夹中显示」动作打开的目录（演示流断言面）。
@@ -313,6 +318,7 @@ impl BrowserApp {
             chrome_palette: colors::ChromePalette::for_scheme(color_scheme),
             cached_window_theme: None,
             tab_fetch: TabFetchState::None,
+            startup_url: None,
             hovered_link_url: None,
             touch_scroll: None,
             content_pointer_drag: None,
@@ -320,6 +326,7 @@ impl BrowserApp {
             scrollbar_hover: None,
             scrollbar_visible_until: None,
             favicon_fetch: FaviconFetchState::new(),
+            view_source_fetch: ViewSourceFetchState::new(),
             download_panel_open: false,
             last_opened_download_dir: None,
             find_match_ranges: Vec::new(),
@@ -378,6 +385,14 @@ impl BrowserApp {
         }
         if self.favicon_fetch.poll_bookmarks(&mut self.font_loader) {
             self.needs_redraw = true;
+        }
+        // view-source 后台抓取完成：取结果并开源码/错误内页（异步，不阻塞事件循环）。
+        for completed in self.view_source_fetch.take_completed() {
+            let page = match completed.result {
+                Ok(html) => pages::generate_view_source_page(&completed.target, &html),
+                Err(error) => pages::generate_error_page(&completed.view_url, &error),
+            };
+            self.open_internal_document_tab(page, &completed.view_url, "查看源代码");
         }
         if self.tabs.poll(self.shell.active_tab_id(), self.gpu_renderer_is_some()) {
             self.needs_redraw = true;
@@ -1675,6 +1690,17 @@ impl BrowserApp {
         }
 
         let url = normalize_url(&resolve_path_relative_url(url, &self.shell), &self.shell);
+
+        // view-source:<url>：拆出内层 URL 抓取源码并以内部页展示（Chrome 地址栏行为；
+        // 该 scheme 未被 WHATWG 标准化，无规范条目可引）。
+        if method == "GET"
+            && body.is_none()
+            && let Some(inner) = url.strip_prefix("view-source:")
+        {
+            self.open_view_source_page(inner);
+            return;
+        }
+
         tracing::info!("Navigating to: {method} {url}");
 
         self.shell.navigate(&url);
@@ -1817,6 +1843,16 @@ impl BrowserApp {
             return;
         }
         self.init_default_tab();
+        // CLI 位置参数作为启动 URL（对齐 Chrome `zero-browser <url>` 行为）：走
+        // 地址栏同一 navigate_to 路径，normalize_url 的 scheme 启发式对其同样生效。
+        if let Some(url) = self.startup_url.take() {
+            self.navigate_to(&url);
+        }
+    }
+
+    /// 设置 CLI 位置参数给出的启动 URL（窗口就绪后由 `ensure_startup_tab` 消费）。
+    pub fn set_startup_url(&mut self, url: Option<String>) {
+        self.startup_url = url;
     }
 
     /// 初始化 Shell 默认标签页（仅创建 WebView，不额外开 tab）
@@ -2076,6 +2112,24 @@ impl BrowserApp {
         let view_url = format!("view-source:{source_url}");
         let page = pages::generate_view_source_page(&source_url, &html);
         self.open_internal_document_tab(page, &view_url, "查看源代码");
+    }
+
+    /// 地址栏 `view-source:<url>` 入口：后台线程抓取目标内容，主循环 poll 到结果后
+    /// 以内页展示源码（参照 favicon_fetch 异步模式；抓取线程自带 30s 超时，事件
+    /// 循环不再被慢/黑洞目标阻塞）。
+    ///
+    /// 内层 URL 与地址栏普通输入走同一 normalize 路径，因此
+    /// `view-source:127.0.0.1:8080/x` 等无 scheme 简写同样生效。
+    fn open_view_source_page(&mut self, inner: &str) {
+        let inner = inner.trim();
+        if inner.is_empty() {
+            // 空内层（含仅空白）明确出错误内页而非静默无动作（对齐 Chrome 空内层错误视图）
+            let page = pages::generate_error_page("view-source:", "view-source 缺少内层 URL");
+            self.open_internal_document_tab(page, "view-source:", "查看源代码");
+            return;
+        }
+        let target = normalize_url(inner, &self.shell);
+        self.view_source_fetch.request(target);
     }
 
     /// 审查右键点击位置的元素。
@@ -2338,9 +2392,14 @@ impl BrowserApp {
 
     pub(crate) fn looks_like_search_query(text: &str) -> bool {
         let trimmed = text.trim();
+        let authority = split_authority(trimmed).0;
         !trimmed.is_empty()
             && !trimmed.contains("://")
             && !trimmed.starts_with("localhost")
+            // host:port（数字端口，如 myserver:8080）是 URL 而非搜索词的强信号；
+            // authority 含空白时不适用（`meeting at 10:30` 的尾部 `:30` 不是端口），
+            // 与 normalize_url 的空白守卫保持导航层一致
+            && (authority_has_whitespace(authority) || !authority_has_numeric_port(authority))
             && (!trimmed.contains('.') || trimmed.contains(' '))
     }
 
