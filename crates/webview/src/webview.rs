@@ -322,6 +322,14 @@ impl WebViewRenderResult {
     }
 }
 
+/// canvas_images 逐键内容指纹（发布侧 changed 判定；与键域无关，仅比较像素）。
+fn pixel_fingerprint(rgba: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    rgba.hash(&mut hasher);
+    hasher.finish()
+}
+
 fn render_result_to_webview(result: &RenderResult) -> WebViewRenderResult {
     WebViewRenderResult {
         primitives: result.display_list.primitives.clone(),
@@ -569,6 +577,14 @@ pub struct WebView {
     loading: bool,
     /// 上次渲染结果。
     last_render: Option<WebViewRenderResult>,
+    /// 最新帧的 canvas_images（内联 SVG 栅格 / Canvas 位图 / 滤镜 isolate 产物），
+    /// bool = 相对上一帧内容是否变化（新 key 或像素指纹不同）。
+    /// 每次渲染整体替换（不 drain）：稳态帧发布侧只取 new/changed；compositor
+    /// 断线回退的 RequestFrame 会清 sent_image_keys 全量重发布，此时必须仍有
+    /// 完整暂存可取——drain 语义会让回退后 SVG/Canvas 永久空白。
+    pending_canvas_images: Vec<(u64, u32, u32, Vec<u8>, bool)>,
+    /// canvas_images 逐键像素指纹（上一次渲染的 simple_hash(rgba)），驱动 changed 标记。
+    canvas_fingerprints: HashMap<u64, u64>,
     /// 缓存的 HTML（用于 inject_css 重新渲染）。
     cached_html: String,
     /// 缓存的 CSS（用于 render 重新渲染）。
@@ -745,6 +761,8 @@ impl WebView {
             title: None,
             loading: false,
             last_render: None,
+            pending_canvas_images: Vec::new(),
+            canvas_fingerprints: HashMap::new(),
             cached_html: String::new(),
             cached_css: String::new(),
             event_callbacks: Vec::new(),
@@ -1010,7 +1028,7 @@ impl WebView {
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.render_html(&html, css_str);
-        let render_result = render_result_to_webview(&result);
+        let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result.clone());
         // R150：render 后刷新布局 rect 快照（gBCR 回调读取源）。
         self.refresh_layout_rect_snapshot();
@@ -1089,7 +1107,7 @@ impl WebView {
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.render_html(html, &self.cached_css);
-        let render_result = render_result_to_webview(&result);
+        let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result.clone());
         render_result
     }
@@ -1140,7 +1158,7 @@ impl WebView {
             self.batch_handle_selectors
                 .extend(handle_selectors.iter().map(|(h, s)| (h.clone(), s.clone())));
         }
-        let render_result = result.as_ref().map(render_result_to_webview);
+        let render_result = result.as_ref().map(|r| self.absorb_render_result(r));
         if let Some(render_result) = &render_result {
             self.last_render = Some(render_result.clone());
         }
@@ -1190,7 +1208,7 @@ impl WebView {
             self.pipeline.set_image_ratios(image_ratios);
             self.pipeline.set_image_no_ratio(image_no_ratio);
         }
-        self.last_render = Some(render_result_to_webview(&result));
+        self.last_render = Some(self.absorb_render_result(&result));
         Ok(true)
     }
 
@@ -1587,6 +1605,41 @@ impl WebView {
         Ok(())
     }
 
+    /// 转换 engine 渲染结果并暂存 canvas_images（逐键像素指纹标记 changed）。
+    ///
+    /// C4 根因修复：engine 的 canvas_images（paint_svg_element 的内联 SVG 栅格、
+    /// Canvas 位图、滤镜 isolate 回注产物）是 `ImagePrimitive` 引用的像素来源，
+    /// 此前在 webview 边界被整体丢弃——multi-process 发布链不含这些像素，渲染侧
+    /// ImageCache 查不到 key，内联 SVG/Canvas 全部画空白。
+    ///
+    /// 暂存**不 drain**（见字段注释）；changed = 本帧指纹图中的新 key 或像素指纹
+    /// 与上一帧不同（Canvas 稳定 ctx_id 键下内容会变，sent-once 去重对它不成立，
+    /// 发布侧据此重发）。指纹表每帧裁剪到当前键集，导航换代自然收敛。
+    fn absorb_render_result(&mut self, result: &RenderResult) -> WebViewRenderResult {
+        let mut fingerprints = HashMap::with_capacity(result.canvas_images.len());
+        let mut staged = Vec::with_capacity(result.canvas_images.len());
+        for (key, width, height, rgba) in &result.canvas_images {
+            let fp = pixel_fingerprint(rgba);
+            let changed = self.canvas_fingerprints.get(key) != Some(&fp);
+            fingerprints.insert(*key, fp);
+            staged.push((*key, *width, *height, rgba.clone(), changed));
+        }
+        self.canvas_fingerprints = fingerprints;
+        self.pending_canvas_images = staged;
+        render_result_to_webview(result)
+    }
+
+    /// 借用最新帧暂存的 canvas_images（含 changed 标记）。
+    ///
+    /// 调用方（renderer 发布路径）过滤后并入 IpcImagePayload：new（sent_keys 未含）
+    /// 或 changed（同 key 内容变，如 Canvas 重绘）必发；RequestFrame 重发布时
+    /// sent_keys 已被清空，全部暂存自然重发。key 与
+    /// [`zero_render_foundation::image_cache::ImageKey`] 同域（engine
+    /// `simple_hash(source)` / ctx_id，与 ImagePrimitive.image_key 一致）。
+    pub fn pending_canvas_images(&self) -> &[(u64, u32, u32, Vec<u8>, bool)] {
+        &self.pending_canvas_images
+    }
+
     /// 复制图片缓存供 UI 线程快照。
     pub fn snapshot_image_cache(&self) -> ImageCache {
         self.image_cache.duplicate_for_snapshot()
@@ -1811,7 +1864,7 @@ impl WebView {
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.render_html(&self.cached_html, &self.cached_css);
-        let render_result = render_result_to_webview(&result);
+        let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result.clone());
         render_result
     }
@@ -1825,7 +1878,7 @@ impl WebView {
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
         let result = self.pipeline.repaint_cached_viewport(&self.cached_css)?;
-        let render_result = render_result_to_webview(&result);
+        let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result.clone());
         Some(render_result)
     }
@@ -1886,7 +1939,7 @@ impl WebView {
 
     /// 应用预算渲染结果到 WebView 状态。
     pub fn apply_render_result(&mut self, result: RenderResult, page_url: &str, finished: bool) {
-        let render_result = render_result_to_webview(&result);
+        let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result);
         if finished {
             self.loading = false;
@@ -2783,7 +2836,7 @@ impl WebView {
         if let Some(result) = self.pipeline.repaint_cached_viewport(&self.cached_css) {
             // repaint 只读不改 Document，live_html（repaint 前序列化）仍等于当前 DOM。
             self.cached_html = live_html;
-            self.last_render = Some(render_result_to_webview(&result));
+            self.last_render = Some(self.absorb_render_result(&result));
             // R150：native 写后 repaint——刷新 gBCR 快照（布局可能已变）。
             self.refresh_layout_rect_snapshot();
         }
@@ -4131,7 +4184,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                 self.cached_html.clone()
             };
             let result = self.pipeline.render_html(&html, &self.cached_css);
-            self.last_render = Some(render_result_to_webview(&result));
+            self.last_render = Some(self.absorb_render_result(&result));
         }
         let forward: std::collections::HashMap<String, String> = {
             let sel_map = self.selector_handle_map.lock().unwrap_or_else(|e| e.into_inner());
@@ -4163,7 +4216,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         // slice33：apply 成功即履行 R100 失效契约（见 evict_removed_identities 文档）。
         self.evict_removed_identities(&tail, &handles);
         if let Some(render_result) = &render_result {
-            self.last_render = Some(render_result_to_webview(render_result));
+            self.last_render = Some(self.absorb_render_result(render_result));
         }
         // R150：apply 后重渲染，布局已变——刷新 gBCR 快照。
         self.refresh_layout_rect_snapshot();
@@ -4266,7 +4319,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             &self.cached_html
         };
         let result = self.pipeline.render_html(html, &self.cached_css);
-        let render_result = render_result_to_webview(&result);
+        let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result.clone());
         render_result
     }
@@ -6796,6 +6849,52 @@ impl Drop for WebView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// C4 钉测：内联 `<svg>` 的栅格像素必须经 webview 暂存暴露给发布侧。
+    ///
+    /// 回归背景：engine `RenderResult.canvas_images`（paint_svg_element 产
+    /// ImagePrimitive + canvas_images 两段式）此前在 webview 边界被丢弃，
+    /// multi-process 发布链无像素 → 渲染侧 ImageCache MISS → 内联 SVG 全画空白
+    /// （bing logo/搜索图标不可见根因）。契约：load_html 后 pending 非空、key 与
+    /// 图元 image_key 同域、首帧 changed=true；暂存**不 drain**（compositor 断线
+    /// 回退的 RequestFrame 清 sent_keys 全量重发布依赖完整暂存）；同源重渲染
+    /// changed 翻转为 false（发布侧 sent-once 去重对不变内容成立）。
+    #[test]
+    fn c4_inline_svg_canvas_images_staged_for_publish() {
+        let mut wv = wv();
+        let html = r#"<html><body style="margin:0"><svg viewBox="0 0 20 20" style="width:48px;height:48px;display:block"><rect width="20" height="20" fill="red"/></svg></body></html>"#;
+        let render = wv.load_html(html, Some(""));
+        // 图元侧：svg 产 1 个 ImagePrimitive
+        assert_eq!(render.primitives.images.len(), 1, "内联 svg 应产 1 个 ImagePrimitive");
+        let prim_key = render.primitives.images[0].image_key.0;
+        // 像素侧：暂存非空、同 key、首帧 changed
+        {
+            let staged = wv.pending_canvas_images();
+            assert!(
+                !staged.is_empty(),
+                "canvas_images 必须经 webview 暂存暴露（修复前为空 = 渲染侧全空白）"
+            );
+            let (_, w, h, rgba, changed) = staged
+                .iter()
+                .find(|(k, _, _, _, _)| *k == prim_key)
+                .expect("暂存应含图元同 key 的像素条目");
+            assert!(*w > 0 && *h > 0 && rgba.len() == (*w as usize) * (*h as usize) * 4);
+            assert!(changed, "首帧应为 changed（发布侧必发）");
+        }
+        // 不 drain：借用后暂存仍在（RequestFrame 重发布语义依赖）
+        assert!(!wv.pending_canvas_images().is_empty(), "暂存不得被借用清空");
+        // 同源重渲染：同 key 再暂存，changed 翻转为 false（稳态去重依据）
+        wv.load_html(html, Some(""));
+        let staged = wv.pending_canvas_images();
+        let entry = staged
+            .iter()
+            .find(|(k, _, _, _, _)| *k == prim_key)
+            .expect("重渲染后暂存仍应含同 key 条目");
+        assert!(
+            !entry.4,
+            "同 key 同像素重渲染应标记 changed=false（否则 sent-once 去重失效，每帧重发）"
+        );
+    }
 
     fn wv() -> WebView {
         WebView::new(WebViewConfig::default())
