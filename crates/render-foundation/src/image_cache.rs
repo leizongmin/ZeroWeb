@@ -2141,6 +2141,11 @@ mod decode_tests {
         let img = decode_jpeg_bytes(bytes).expect("JPEG decode should succeed");
         assert_eq!(img.width, 4);
         assert_eq!(img.height, 3);
+
+        // bing-t5（C4）：data-URI SVG background-image 解码管线
+        let svg_uri = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2210%22%3E%3Crect%20width%3D%2210%22%20height%3D%2210%22%20fill%3D%22red%22%2F%3E%3C%2Fsvg%3E";
+        let svg_img = decode_data_uri(svg_uri).expect("SVG data-URI should decode");
+        assert!(svg_img.width > 0 && svg_img.height > 0, "SVG 应栅格化为位图");
         // JPEG 有损：断言绿色主导（G 高、R/B 低）而非精确 (0,255,0)。
         let px = img.get_pixel(1, 1);
         assert!(px[1] > 200, "green channel should be high, got {}", px[1]);
@@ -2187,14 +2192,6 @@ mod decode_tests {
 
     /// 分发器：按魔数字节/内容正确路由 PNG / JPEG / WebP / SVG / 未知格式。
     #[test]
-    #[test]
-    fn decode_data_uri_svg_background() {
-        // bing-t5（C4）：data-URI SVG background-image 解码管线——URL-encoded SVG
-        let src = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2210%22%3E%3Crect%20width%3D%2210%22%20height%3D%2210%22%20fill%3D%22red%22%2F%3E%3C%2Fsvg%3E";
-        let img = decode_data_uri(&src).expect("SVG data-URI should decode");
-        assert!(img.width > 0 && img.height > 0, "SVG 应栅格化为位图");
-    }
-
     fn test_decode_image_bytes_dispatches_by_magic() {
         // PNG → 成功
         let png = red_2x2_png();
