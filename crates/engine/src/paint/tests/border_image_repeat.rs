@@ -674,3 +674,269 @@ fn test_border_image_filter_function_emits_piece_filters() {
         );
     }
 }
+
+/// R5084 组共用 env 锁——kill-switch 用例改写进程全局 `ZW_BORDER_IMAGE_DRAW_PROCESS`，
+/// 同组用例须串行防互踩（R5083 `R5083_ENV_LOCK` 同款形态；workspace 并行相位实测
+/// 无锁时 kill-switch 的 env=0 窗口会让 §5.2 用例读到旧路径翻红）。
+static R5084_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// R5084：css-backgrounds-3 §5.2 — slice 值之和 ≥ 源图维时，对应边片与 middle 源
+/// 为空（零面积源矩形 → 不发射），角部切片保持原值整幅参与。驱动案
+/// border-image-006（默认 slice 100% + 1×1 源）与 border-image-slice-006。
+#[test]
+fn test_border_image_slice_overflow_edges_empty() {
+    let _guard = R5084_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    use zero_style_system::{
+        BorderImageRepeatComputedMode, BorderImageRepeatComputedValue, BorderImageSliceComputedComponent,
+        BorderImageSliceComputedValue, BorderImageSourceComputedValue,
+    };
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let mut layout = make_box(Some(nid), 0.0, 0.0, 50.0, 50.0);
+    for b in [
+        &mut layout.border_top,
+        &mut layout.border_right,
+        &mut layout.border_bottom,
+        &mut layout.border_left,
+    ] {
+        *b = 25.0;
+    }
+
+    let mut style = ComputedStyle::default();
+    style.border_image_source = BorderImageSourceComputedValue::Url("one.png".to_string());
+    style.border_image_slice = BorderImageSliceComputedValue {
+        top: BorderImageSliceComputedComponent::Percent(100.0),
+        right: BorderImageSliceComputedComponent::Percent(100.0),
+        bottom: BorderImageSliceComputedComponent::Percent(100.0),
+        left: BorderImageSliceComputedComponent::Percent(100.0),
+        fill: false,
+    };
+    style.border_image_repeat = BorderImageRepeatComputedValue {
+        horizontal: BorderImageRepeatComputedMode::Stretch,
+        vertical: BorderImageRepeatComputedMode::Stretch,
+    };
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter
+        .image_natural_sizes
+        .insert(super::super::helpers::image_resource_key("one.png", None), (1.0, 1.0));
+    painter.paint(&layout, &styles, None);
+
+    // 仅 4 角发射（整幅源图），边片与 middle 源为空不发射。
+    let images = painter.primitives().images.clone();
+    assert_eq!(images.len(), 4, "only 4 corners should be painted, got {images:?}");
+    for img in &images {
+        let src = img.source.expect("corner must carry slice source subrect");
+        assert!(
+            (src.size.width - 1.0).abs() < 1e-4 && (src.size.height - 1.0).abs() < 1e-4,
+            "corner source must be the whole image, got {src:?}"
+        );
+        assert!(
+            (img.rect.size.width - 25.0).abs() < 1e-3 && (img.rect.size.height - 25.0).abs() < 1e-3,
+            "corner dest must be the 25x25 region, got {:?}",
+            img.rect
+        );
+    }
+}
+
+/// R5084：css-backgrounds-3 §5.6 middle 片绘制过程 — 缩放因子（top/left 片，零切片
+/// 回退 bottom/right → 仍无则不缩放）+ repeat 轴自然 tile 居中平铺 + 裁剪窗口同步
+/// src 子矩形。驱动案 border-image-slice-fill-002（slice 0 fill + repeat：middle =
+/// 整图自然尺寸，居中后窗口恰为源图中央 green 区）。
+#[test]
+fn test_border_image_middle_natural_tile_repeat() {
+    let _guard = R5084_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    use zero_style_system::{
+        BorderImageRepeatComputedMode, BorderImageRepeatComputedValue, BorderImageSliceComputedComponent,
+        BorderImageSliceComputedValue, BorderImageSourceComputedValue,
+    };
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    // border box 200×200（内容 100×100 + 50px 边）。
+    let mut layout = make_box(Some(nid), 0.0, 0.0, 200.0, 200.0);
+    for b in [
+        &mut layout.border_top,
+        &mut layout.border_right,
+        &mut layout.border_bottom,
+        &mut layout.border_left,
+    ] {
+        *b = 50.0;
+    }
+
+    let mut style = ComputedStyle::default();
+    style.border_image_source = BorderImageSourceComputedValue::Url("big.png".to_string());
+    style.border_image_slice = BorderImageSliceComputedValue {
+        top: BorderImageSliceComputedComponent::Number(0.0),
+        right: BorderImageSliceComputedComponent::Number(0.0),
+        bottom: BorderImageSliceComputedComponent::Number(0.0),
+        left: BorderImageSliceComputedComponent::Number(0.0),
+        fill: true,
+    };
+    style.border_image_repeat = BorderImageRepeatComputedValue {
+        horizontal: BorderImageRepeatComputedMode::Repeat,
+        vertical: BorderImageRepeatComputedMode::Repeat,
+    };
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.image_natural_sizes.insert(
+        super::super::helpers::image_resource_key("big.png", None),
+        (500.0, 500.0),
+    );
+    painter.paint(&layout, &styles, None);
+
+    // 八片源为零面积不发射；middle 单 tile 500×500 居中于 (50..150)² → 可见窗口
+    // (50..150)² ↔ tile 局部 (200..300)² = src (0.4..0.6)²。
+    let images = painter.primitives().images.clone();
+    assert_eq!(
+        images.len(),
+        1,
+        "only the middle piece should be painted, got {images:?}"
+    );
+    let img = &images[0];
+    assert!(
+        (img.rect.origin.x - 50.0).abs() < 1e-3
+            && (img.rect.origin.y - 50.0).abs() < 1e-3
+            && (img.rect.size.width - 100.0).abs() < 1e-3
+            && (img.rect.size.height - 100.0).abs() < 1e-3,
+        "middle visible rect must be the region, got {:?}",
+        img.rect
+    );
+    let src = img.source.expect("middle must carry clipped source subrect");
+    assert!(
+        (src.origin.x - 0.4).abs() < 1e-4
+            && (src.origin.y - 0.4).abs() < 1e-4
+            && (src.size.width - 0.2).abs() < 1e-4
+            && (src.size.height - 0.2).abs() < 1e-4,
+        "middle source window must be the centered 0.4..0.6 region, got {src:?}"
+    );
+}
+
+/// R5084：middle 缩放因子有限路径 — slice 50 fill（500px 源、50px 边）→ middle
+/// 因子 = 50/50 = 1 → tile = 400 自然尺寸，repeat 居中后窗口 = 源图中央 green 区。
+/// 驱动案 border-image-slice-fill-001。
+#[test]
+fn test_border_image_middle_factor_from_top_slice() {
+    let _guard = R5084_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    use zero_style_system::{
+        BorderImageRepeatComputedMode, BorderImageRepeatComputedValue, BorderImageSliceComputedComponent,
+        BorderImageSliceComputedValue, BorderImageSourceComputedValue,
+    };
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    // border box 200×200（内容 100×100 + 50px 边）。
+    let mut layout = make_box(Some(nid), 0.0, 0.0, 200.0, 200.0);
+    for b in [
+        &mut layout.border_top,
+        &mut layout.border_right,
+        &mut layout.border_bottom,
+        &mut layout.border_left,
+    ] {
+        *b = 50.0;
+    }
+
+    let mut style = ComputedStyle::default();
+    style.border_image_source = BorderImageSourceComputedValue::Url("mid.png".to_string());
+    style.border_image_slice = BorderImageSliceComputedValue {
+        top: BorderImageSliceComputedComponent::Number(50.0),
+        right: BorderImageSliceComputedComponent::Number(50.0),
+        bottom: BorderImageSliceComputedComponent::Number(50.0),
+        left: BorderImageSliceComputedComponent::Number(50.0),
+        fill: true,
+    };
+    style.border_image_repeat = BorderImageRepeatComputedValue {
+        horizontal: BorderImageRepeatComputedMode::Repeat,
+        vertical: BorderImageRepeatComputedMode::Repeat,
+    };
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.image_natural_sizes.insert(
+        super::super::helpers::image_resource_key("mid.png", None),
+        (500.0, 500.0),
+    );
+    painter.paint(&layout, &styles, None);
+
+    // middle 源 = 400×400（slice 50），因子 1 → tile 400；repeat 居中于 100 区域 →
+    // 起点 -150 → 可见窗口 ↔ tile 局部 150..250 = src (50+150)/500..(50+250)/500。
+    let images = painter.primitives().images.clone();
+    let mid: Vec<_> = images
+        .iter()
+        .filter(|img| {
+            (img.rect.origin.x - 50.0).abs() < 1e-3
+                && (img.rect.origin.y - 50.0).abs() < 1e-3
+                && (img.rect.size.width - 100.0).abs() < 1e-3
+        })
+        .collect();
+    assert_eq!(mid.len(), 1, "single visible middle tile expected, got {images:?}");
+    let src = mid[0].source.expect("middle tile must carry clipped source");
+    assert!(
+        (src.origin.x - 0.4).abs() < 1e-4
+            && (src.origin.y - 0.4).abs() < 1e-4
+            && (src.size.width - 0.2).abs() < 1e-4
+            && (src.size.height - 0.2).abs() < 1e-4,
+        "middle source window must be the green center 0.4..0.6, got {src:?}"
+    );
+}
+
+/// R5084 kill-switch：`ZW_BORDER_IMAGE_DRAW_PROCESS=0` 恢复旧近似（重叠切片等比
+/// 缩减使边片非空 + 零面积源片整图映射回退 + middle 恒 stretch）。env var 用例，
+/// 抢锁防并行互踩（R5083 同款形态）。
+#[test]
+fn test_r5084_border_image_draw_process_kill_switch() {
+    let _guard = R5084_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    // Rust 2024：set_var/remove_var 为 unsafe（进程全局可变）。
+    unsafe { std::env::set_var("ZW_BORDER_IMAGE_DRAW_PROCESS", "0") };
+
+    use zero_style_system::{
+        BorderImageRepeatComputedMode, BorderImageRepeatComputedValue, BorderImageSliceComputedComponent,
+        BorderImageSliceComputedValue, BorderImageSourceComputedValue,
+    };
+
+    let mut doc = zero_dom::Document::new();
+    let nid = doc.create_element("div");
+    let mut layout = make_box(Some(nid), 0.0, 0.0, 50.0, 50.0);
+    for b in [
+        &mut layout.border_top,
+        &mut layout.border_right,
+        &mut layout.border_bottom,
+        &mut layout.border_left,
+    ] {
+        *b = 10.0;
+    }
+
+    let mut style = ComputedStyle::default();
+    style.border_image_source = BorderImageSourceComputedValue::Url("one.png".to_string());
+    style.border_image_slice = BorderImageSliceComputedValue {
+        top: BorderImageSliceComputedComponent::Percent(100.0),
+        right: BorderImageSliceComputedComponent::Percent(100.0),
+        bottom: BorderImageSliceComputedComponent::Percent(100.0),
+        left: BorderImageSliceComputedComponent::Percent(100.0),
+        fill: false,
+    };
+    style.border_image_repeat = BorderImageRepeatComputedValue {
+        horizontal: BorderImageRepeatComputedMode::Stretch,
+        vertical: BorderImageRepeatComputedMode::Stretch,
+    };
+    let mut styles = HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter
+        .image_natural_sizes
+        .insert(super::super::helpers::image_resource_key("one.png", None), (1.0, 1.0));
+    painter.paint(&layout, &styles, None);
+
+    // 旧路径：切片等比缩减（各 0.5px）→ 边片源矩形零宽仍发射（整图映射回退）→
+    // 4 角 + 4 边 = 8 片（边区 30×10 非零）。
+    let images = painter.primitives().images.clone();
+    unsafe { std::env::remove_var("ZW_BORDER_IMAGE_DRAW_PROCESS") };
+    assert_eq!(
+        images.len(),
+        8,
+        "kill-switch must restore the legacy 8-piece emission, got {images:?}"
+    );
+}

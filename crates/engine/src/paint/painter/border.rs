@@ -595,7 +595,13 @@ impl super::Painter {
                 BorderImageSliceComputedComponent::Percent(p) => p / 100.0 * total,
             }
         };
-        let nine_slice: Option<NineSliceSources> = img_size.and_then(|(iw, ih)| {
+        // R5084：css-backgrounds-3 §5.2 切片重叠语义 + §5.6 绘制过程（middle 缩放因子
+        // 与 repeat 平铺）。kill-switch ZW_BORDER_IMAGE_DRAW_PROCESS=0 恢复旧近似
+        //（重叠等比缩减使边片非空 + middle 恒 stretch 整区域）。
+        let draw_process = std::env::var("ZW_BORDER_IMAGE_DRAW_PROCESS").as_deref() != Ok("0");
+
+        // 切片几何 = (iw, ih, st, sr, sb, sl)；nine_slice 与 middle 因子共用。
+        let slice_geom: Option<(f32, f32, f32, f32, f32, f32)> = img_size.and_then(|(iw, ih)| {
             if iw <= 0.0 || ih <= 0.0 {
                 return None;
             }
@@ -603,16 +609,23 @@ impl super::Painter {
             let sr = slice_src(&style.border_image_slice.right, iw);
             let sb = slice_src(&style.border_image_slice.bottom, ih);
             let sl = slice_src(&style.border_image_slice.left, iw);
-            // 片间重叠（slice 值之和超过源图维）→ 按比例缩减（css-backgrounds-3 §6.2
-            //「if the sum of the right and left widths is equal to or greater than the width
-            // of the image …」的实用近似：整体等比缩减使左右/上下恰好相接）。
-            let (sl, sr) = if sl + sr > iw {
+            Some((iw, ih, st, sr, sb, sl))
+        });
+        let nine_slice: Option<NineSliceSources> = slice_geom.map(|(iw, ih, st, sr, sb, sl)| {
+            // css-backgrounds-3 §5.2（R5084）：切片区域允许重叠——「if the sum of the
+            // right and left widths is equal to or greater than the width of the image,
+            // the images for the top and bottom edge and the middle part are empty」
+            //（top+bottom ≥ 图像高时对 left/right 边同理）。实现：角部切片保持原值
+            //（可整幅重叠），边/middle 源矩形宽高 `.max(0.0)` 归零 → 发射侧按零面积
+            // 跳过（驱动案 border-image-006 / border-image-slice-006：slice 全幅 →
+            // 仅四角绘制整图，边带透明）。旧路径按比例缩减使边片非空（多绘整带）。
+            let (sl, sr) = if !draw_process && sl + sr > iw {
                 let k = iw / (sl + sr);
                 (sl * k, sr * k)
             } else {
                 (sl, sr)
             };
-            let (st, sb) = if st + sb > ih {
+            let (st, sb) = if !draw_process && st + sb > ih {
                 let k = ih / (st + sb);
                 (st * k, sb * k)
             } else {
@@ -622,7 +635,7 @@ impl super::Painter {
             // 位图坐标与源图 px 坐标脱钩；归一化坐标对两类源一致）。
             let nx = |v: f32| v / iw;
             let ny = |v: f32| v / ih;
-            Some(NineSliceSources {
+            NineSliceSources {
                 top_left: Rect::new(0.0, 0.0, nx(sl), ny(st)),
                 top_right: Rect::new(nx(iw - sr), 0.0, nx(sr), ny(st)),
                 bottom_right: Rect::new(nx(iw - sr), ny(ih - sb), nx(sr), ny(sb)),
@@ -632,8 +645,19 @@ impl super::Painter {
                 bottom: Rect::new(nx(sl), ny(ih - sb), nx((iw - sl - sr).max(0.0)), ny(sb)),
                 left: Rect::new(0.0, ny(st), nx(sl), ny((ih - st - sb).max(0.0))),
                 center: Rect::new(nx(sl), ny(st), nx((iw - sl - sr).max(0.0)), ny((ih - st - sb).max(0.0))),
-            })
+            }
         });
+        // R5084：零面积源片（slice 0 / §5.2 重叠置空）不绘——此前零宽/高源矩形逐片
+        // 整图映射回退（fill-002 驱动案八片全绘整图）。kill-switch 保持旧回退。
+        let piece_drawable = |src: Option<Rect>| -> bool {
+            if !draw_process {
+                return true;
+            }
+            match src {
+                None => true,
+                Some(r) => r.size.width > 0.0 && r.size.height > 0.0,
+            }
+        };
 
         // 辅助：创建 ImagePrimitive（每次创建新的 ImageKey，因为 ImageKey 不是 Copy）。
         // src = 该片对应的源子矩形；None = 整图映射（无解码尺寸时的回退）。
@@ -688,114 +712,196 @@ impl super::Painter {
         let edge_h_w = (w - bl - br).max(0.0);
         let edge_v_h = (h - bt - bb).max(0.0);
 
+        let h_mode = &style.border_image_repeat.horizontal;
+        let v_mode = &style.border_image_repeat.vertical;
         let fill = style.border_image_slice.fill;
 
-        // 中心区域（当 fill 为 true 时绘制，始终 stretch）
-        if fill && edge_h_w > 0.0 && edge_v_h > 0.0 {
-            self.add_border_image_piece(
-                make_img(Rect::new(bx + bl, by + bt, edge_h_w, edge_v_h), src_of(|s| &s.center)),
-                src_of(|s| &s.center),
-                layer_filters,
-                key,
-            );
+        // 中心区域（fill 时绘制）。css-backgrounds-3 §5.6 step 1（R5084）：middle 宽的
+        // 缩放因子取 top 片（「the middle image's width is scaled by the same factor as
+        // the top image」），top 片零切片（因子零/无穷）依次回退 bottom → 仍无则不缩放
+        //（自然尺寸）；高同型取 left → right → 不缩放。step 2：stretch 拉伸到区域；
+        // repeat/space/round 按自然 tile 平铺（裁剪到区域时 src 同步取子矩形——每 tile
+        // 只采样窗口对应源区，fill-001/002/003 驱动案由此把 green 中窗对准 middle 区）。
+        // kill-switch 走旧「恒 stretch」。
+        let center_src = src_of(|s| &s.center);
+        if fill && edge_h_w > 0.0 && edge_v_h > 0.0 && piece_drawable(center_src) {
+            let region = Rect::new(bx + bl, by + bt, edge_h_w, edge_v_h);
+            let drawn = match (draw_process, slice_geom) {
+                (true, Some((iw, ih, st, sr, sb, sl))) => {
+                    let mid_w_src = (iw - sl - sr).max(0.0);
+                    let mid_h_src = (ih - st - sb).max(0.0);
+                    // step 1 缩放因子：切片与区域均须非零（零 = 因子退化，按规格回退）。
+                    let factor = |slice: f32, piece: f32| -> Option<f32> {
+                        if slice > 0.0 && piece > 0.0 {
+                            Some(piece / slice)
+                        } else {
+                            None
+                        }
+                    };
+                    let fw = factor(st, bt).or_else(|| factor(sb, bb));
+                    let fh = factor(sl, bl).or_else(|| factor(sr, br));
+                    let tile_w = fw.map_or(mid_w_src, |f| mid_w_src * f);
+                    let tile_h = fh.map_or(mid_h_src, |f| mid_h_src * f);
+                    let xs = Self::middle_tile_spans(edge_h_w, tile_w, h_mode);
+                    let ys = Self::middle_tile_spans(edge_v_h, tile_h, v_mode);
+                    for &(dx, tw) in &xs {
+                        for &(dy, th) in &ys {
+                            // tile 起点平移到绝对坐标（spans 相对 region 原点）。
+                            let x = region.origin.x + dx;
+                            let y = region.origin.y + dy;
+                            // dest tile ∩ middle region（复用边片 clip_tile）；src 按
+                            // 窗口比例同步裁剪——每 tile 只采样窗口对应源区。
+                            let Some((vx, vy, vw, vh)) = Self::clip_tile(
+                                x,
+                                y,
+                                tw,
+                                th,
+                                region.origin.x,
+                                region.origin.y,
+                                region.size.width,
+                                region.size.height,
+                            ) else {
+                                continue;
+                            };
+                            let src_clip = center_src.map(|s| {
+                                Rect::new(
+                                    s.origin.x + (vx - x) / tw * s.size.width,
+                                    s.origin.y + (vy - y) / th * s.size.height,
+                                    vw / tw * s.size.width,
+                                    vh / th * s.size.height,
+                                )
+                            });
+                            self.add_border_image_piece(
+                                make_img(Rect::new(vx, vy, vw, vh), src_clip),
+                                src_clip,
+                                layer_filters,
+                                key,
+                            );
+                        }
+                    }
+                    true
+                }
+                _ => false,
+            };
+            if !drawn {
+                self.add_border_image_piece(make_img(region, center_src), center_src, layer_filters, key);
+            }
         }
 
-        // 四个角（始终 stretch，不受 repeat 模式影响）
+        // 四个角（始终 stretch，不受 repeat 模式影响；R5084 零面积源片跳过）
         if bl > 0.0 && bt > 0.0 {
             let src = src_of(|s| &s.top_left);
-            self.add_border_image_piece(make_img(Rect::new(bx, by, bl, bt), src), src, layer_filters, key);
+            if piece_drawable(src) {
+                self.add_border_image_piece(make_img(Rect::new(bx, by, bl, bt), src), src, layer_filters, key);
+            }
         }
         if br > 0.0 && bt > 0.0 {
             let src = src_of(|s| &s.top_right);
-            self.add_border_image_piece(
-                make_img(Rect::new(bx + w - br, by, br, bt), src),
-                src,
-                layer_filters,
-                key,
-            );
+            if piece_drawable(src) {
+                self.add_border_image_piece(
+                    make_img(Rect::new(bx + w - br, by, br, bt), src),
+                    src,
+                    layer_filters,
+                    key,
+                );
+            }
         }
         if br > 0.0 && bb > 0.0 {
             let src = src_of(|s| &s.bottom_right);
-            self.add_border_image_piece(
-                make_img(Rect::new(bx + w - br, by + h - bb, br, bb), src),
-                src,
-                layer_filters,
-                key,
-            );
+            if piece_drawable(src) {
+                self.add_border_image_piece(
+                    make_img(Rect::new(bx + w - br, by + h - bb, br, bb), src),
+                    src,
+                    layer_filters,
+                    key,
+                );
+            }
         }
         if bl > 0.0 && bb > 0.0 {
             let src = src_of(|s| &s.bottom_left);
-            self.add_border_image_piece(
-                make_img(Rect::new(bx, by + h - bb, bl, bb), src),
-                src,
-                layer_filters,
-                key,
-            );
+            if piece_drawable(src) {
+                self.add_border_image_piece(
+                    make_img(Rect::new(bx, by + h - bb, bl, bb), src),
+                    src,
+                    layer_filters,
+                    key,
+                );
+            }
         }
 
         // 四条边 — 根据 border-image-repeat 模式生成图元
-        let h_mode = &style.border_image_repeat.horizontal;
-        let v_mode = &style.border_image_repeat.vertical;
 
         // 上边（水平 repeat 模式）
         if edge_h_w > 0.0 && bt > 0.0 {
-            self.paint_border_image_edge_h(
-                &make_img,
-                src_of(|s| &s.top),
-                layer_filters,
-                key,
-                bx + bl,
-                by,
-                edge_h_w,
-                bt,
-                bl, // 自然 tile 宽度 = 左边框宽度
-                h_mode,
-            );
+            let src = src_of(|s| &s.top);
+            if piece_drawable(src) {
+                self.paint_border_image_edge_h(
+                    &make_img,
+                    src,
+                    layer_filters,
+                    key,
+                    bx + bl,
+                    by,
+                    edge_h_w,
+                    bt,
+                    bl, // 自然 tile 宽度 = 左边框宽度
+                    h_mode,
+                );
+            }
         }
         // 右边（垂直 repeat 模式）
         if br > 0.0 && edge_v_h > 0.0 {
-            self.paint_border_image_edge_v(
-                &make_img,
-                src_of(|s| &s.right),
-                layer_filters,
-                key,
-                bx + w - br,
-                by + bt,
-                br,
-                edge_v_h,
-                bt, // 自然 tile 高度 = 上边框高度
-                v_mode,
-            );
+            let src = src_of(|s| &s.right);
+            if piece_drawable(src) {
+                self.paint_border_image_edge_v(
+                    &make_img,
+                    src,
+                    layer_filters,
+                    key,
+                    bx + w - br,
+                    by + bt,
+                    br,
+                    edge_v_h,
+                    bt, // 自然 tile 高度 = 上边框高度
+                    v_mode,
+                );
+            }
         }
         // 下边（水平 repeat 模式）
         if edge_h_w > 0.0 && bb > 0.0 {
-            self.paint_border_image_edge_h(
-                &make_img,
-                src_of(|s| &s.bottom),
-                layer_filters,
-                key,
-                bx + bl,
-                by + h - bb,
-                edge_h_w,
-                bb,
-                bl, // 自然 tile 宽度 = 左边框宽度
-                h_mode,
-            );
+            let src = src_of(|s| &s.bottom);
+            if piece_drawable(src) {
+                self.paint_border_image_edge_h(
+                    &make_img,
+                    src,
+                    layer_filters,
+                    key,
+                    bx + bl,
+                    by + h - bb,
+                    edge_h_w,
+                    bb,
+                    bl, // 自然 tile 宽度 = 左边框宽度
+                    h_mode,
+                );
+            }
         }
         // 左边（垂直 repeat 模式）
         if bl > 0.0 && edge_v_h > 0.0 {
-            self.paint_border_image_edge_v(
-                &make_img,
-                src_of(|s| &s.left),
-                layer_filters,
-                key,
-                bx,
-                by + bt,
-                bl,
-                edge_v_h,
-                bt, // 自然 tile 高度 = 上边框高度
-                v_mode,
-            );
+            let src = src_of(|s| &s.left);
+            if piece_drawable(src) {
+                self.paint_border_image_edge_v(
+                    &make_img,
+                    src,
+                    layer_filters,
+                    key,
+                    bx,
+                    by + bt,
+                    bl,
+                    edge_v_h,
+                    bt, // 自然 tile 高度 = 上边框高度
+                    v_mode,
+                );
+            }
         }
     }
 
@@ -1095,6 +1201,39 @@ impl super::Painter {
     /// 裁剪单个 tile 到边界区域，返回裁剪后的 (x, y, w, h)。
     /// 如果 tile 完全在边界外返回 None。
     #[allow(clippy::too_many_arguments)]
+    /// R5084：middle 片单轴 tile 序列（css-backgrounds-3 §5.6 step 2/3/4）。返回
+    /// (起点, 宽度) 对——stretch = 单片整区域；repeat = 自然 tile 居中向外重复
+    ///（§5.6 step 3「centered」）；round = 重标定 tile 使整数个恰好覆盖；space =
+    /// 均匀分布（不足一个 tile 时按边片同款约定退化为 stretch）。
+    fn middle_tile_spans(total: f32, tile: f32, mode: &BorderImageRepeatComputedMode) -> Vec<(f32, f32)> {
+        if tile <= 0.0 || total <= 0.0 {
+            return vec![(0.0, total)];
+        }
+        match mode {
+            BorderImageRepeatComputedMode::Stretch => vec![(0.0, total)],
+            BorderImageRepeatComputedMode::Repeat => {
+                let n = (total / tile).ceil().max(1.0) as usize;
+                let total_tiles = n as f32 * tile;
+                let start = (total - total_tiles) / 2.0;
+                (0..n).map(|i| (start + i as f32 * tile, tile)).collect()
+            }
+            BorderImageRepeatComputedMode::Round => {
+                let n = ((total / tile).round() as usize).max(1);
+                let stretched = total / n as f32;
+                (0..n).map(|i| (i as f32 * stretched, stretched)).collect()
+            }
+            BorderImageRepeatComputedMode::Space => {
+                let n = (total / tile).floor().max(0.0) as usize;
+                if n <= 1 {
+                    vec![(0.0, total)]
+                } else {
+                    let gap = (total - n as f32 * tile) / (n + 1) as f32;
+                    (0..n).map(|i| (gap + i as f32 * (tile + gap), tile)).collect()
+                }
+            }
+        }
+    }
+
     fn clip_tile(
         tile_x: f32,
         tile_y: f32,
