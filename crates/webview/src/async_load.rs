@@ -575,6 +575,10 @@ impl AsyncPageLoad {
             // bing-t5（C3+C4 根因）：CSS Custom Properties var() 替换——
             // 在进入渲染前做文本级替换（collect --name: value → substitute var(--name, fallback)）。
             let css_for_render = substitute_css_vars_text(&self.css);
+            // 首个渲染预算会话在此创建（R5081 修复恢复：e776d6875「移除 T5DIAG」误删本行
+            // ——render_session 恒 None → 下方 expect("session") 首渲染即 panic，renderer
+            // 进程退出（webdriver 导航族 IPC 通道已关闭 ×8 即此根因）。原引入见
+            // bing-t5 budget session 落地提交。
             self.render_session = Some(BudgetedRenderSession::new(html, css_for_render));
         }
 
