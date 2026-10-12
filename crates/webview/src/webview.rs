@@ -503,6 +503,9 @@ pub struct WebView {
     /// DOM shim（generate_js_dom_shim）是否已注入沙箱（M2：幂等保护——
     /// 重复执行会重置 _nodeMap 丢失监听器，故只注入一次）。
     js_shim_initialized: bool,
+    /// performance-api-compat M2-S1：long task 观察槽（ensure_js_shim 装配）——sandbox
+    /// 观察器推入超阈值执行耗时，任务边界处 [`Self::drain_long_task_entries`] 排空发射。
+    long_task_slot: Option<std::sync::Arc<std::sync::Mutex<Vec<f64>>>>,
     /// event-loop-spec M2 MO-S1：host 侧 mutation 通知排空开关（`drain_native_mutations_to_mo`）。
     /// 2026-09-12 ②b default-on（opt-out `ZW_MO_HOST_TRIGGER=0`）：MO 通知是行为时序变更，
     /// 经 DC-3 门禁（kill-switch 下 A/B 零回归 + 全量 make test ON 臂绿，见
@@ -716,6 +719,7 @@ impl WebView {
             service_worker_event_backlog,
             service_worker_fetch_event_registry,
             js_shim_initialized: false,
+            long_task_slot: None,
             mo_host_trigger: std::env::var("ZW_MO_HOST_TRIGGER").as_deref() != Ok("0"),
             #[cfg(feature = "v8")]
             native_state_gen: None,
@@ -2317,6 +2321,9 @@ impl WebView {
                 // quickjs native 写此前既无重渲染也无 MO 排空，DC-7 对等收口）。
                 #[cfg(any(feature = "v8", feature = "quickjs"))]
                 self.sync_render_after_native_dom();
+                // performance-api-compat M2-S1：本 execute 即一次任务边界——超阈值执行
+                // 的 longtask 条目在此发射（runner 探测环 timer 回调经此路径覆盖）。
+                self.drain_long_task_entries();
                 Ok(result.value)
             }
             Err(e) => Err(WebViewError::Script(format!("{e}"))),
@@ -2590,7 +2597,45 @@ impl WebView {
         sandbox
             .execute(&sync)
             .map_err(|e| WebViewError::Script(format!("viewport sync: {e}")))?;
+        // performance-api-compat M2-S1：shim 就绪后订阅 long task 观察（shim 引导的
+        // 大脚本执行不产生伪 longtask——只观察其后的页面任务）。观察器仅把耗时推入
+        // 共享槽（不重入沙箱）；条目在任务边界由 [`Self::drain_long_task_entries`]
+        // 统一经 `__zwEmitLongtask` 发射。
+        let slot: std::sync::Arc<std::sync::Mutex<Vec<f64>>> = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = std::sync::Arc::clone(&slot);
+        sandbox.set_long_task_observer(Some(std::sync::Arc::new(move |elapsed_ms: f64| {
+            if let Ok(mut queue) = sink.lock() {
+                queue.push(elapsed_ms);
+            }
+        })));
+        self.long_task_slot = Some(slot);
         Ok(())
+    }
+
+    /// performance-api-compat M2-S1：排空 long task 观察槽，把每个超阈值执行的耗时
+    /// 经 shim `__zwEmitLongtask(durationMs)` 回注为 `PerformanceLongTaskTiming` 条目
+    /// （startTime = now - duration，taskattribution 归 containerType 'window'）。
+    /// 发射走 `execute_script_raw`（无 begin 钩子/重渲染，非任务边界）；页面无 shim
+    /// （`typeof` 守卫）时静默跳过。调用点 = 页面任务执行的边界（execute_script /
+    /// execute_script_with_dom / run_page_scripts_impl / dispatch_event 尾部）。
+    fn drain_long_task_entries(&mut self) {
+        let Some(slot) = &self.long_task_slot else {
+            return;
+        };
+        let durations = match slot.lock() {
+            Ok(mut queue) => std::mem::take(&mut *queue),
+            Err(_) => return,
+        };
+        if durations.is_empty() {
+            return;
+        }
+        let Some(sandbox) = self.js_sandbox.as_mut() else {
+            return;
+        };
+        for duration in durations {
+            let js = format!("typeof __zwEmitLongtask==='function'&&__zwEmitLongtask({duration});");
+            let _ = sandbox.execute(&js);
+        }
     }
 
     /// M3 扩批 LI（2026-09-05）：排空挂起的 host 定时器回调直至队列空/超时。
@@ -2922,6 +2967,9 @@ impl WebView {
         // 应用本 execute 新增的 DOM 变更（游标尾部；与 run_page_scripts_impl 同机制：
         // 活 DOM 直改 + cached_html 快照同步 + 重渲染）。
         self.apply_pending_shared_mutations()?;
+
+        // performance-api-compat M2-S1：本 execute 即一次任务边界。
+        self.drain_long_task_entries();
 
         // 检查是否有 WASM 桥接请求
         let bridge_result = self.process_wasm_bridge(&result)?;
@@ -3885,6 +3933,8 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             // event-loop-spec M2：gate 扩 quickjs（同 execute_script 注记）。
             #[cfg(any(feature = "v8", feature = "quickjs"))]
             self.sync_render_after_native_dom();
+            // performance-api-compat M2-S1：页面脚本执行完 = 初始脚本任务边界。
+            self.drain_long_task_entries();
             return Ok(self.cached_html.clone());
         }
         // M3-S9：DOM 变更直接应用到活 DOM（pipeline.cached_doc），不再回写 HTML 重 parse
@@ -3892,6 +3942,8 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         // repaint 后返回新 HTML 快照同步 cached_html（DOM 查询消费的快照须与活 DOM 一致）。
         // R100：共享队列游标尾部（见 apply_pending_shared_mutations 文档）。
         self.apply_pending_shared_mutations()?;
+        // performance-api-compat M2-S1：同上（mutation 应用路径的任务边界）。
+        self.drain_long_task_entries();
         Ok(self.cached_html.clone())
     }
 
@@ -3960,10 +4012,14 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             // event-loop-spec M2：gate 扩 quickjs（同 execute_script 注记）。
             #[cfg(any(feature = "v8", feature = "quickjs"))]
             self.sync_render_after_native_dom();
+            // performance-api-compat M2-S1：事件监听器任务边界。
+            self.drain_long_task_entries();
             return Ok(());
         }
         // M3-S9：DOM 变更直接应用到活 DOM（见 run_page_scripts_impl 同款注释）。
         self.apply_pending_shared_mutations()?;
+        // performance-api-compat M2-S1：事件监听器任务边界（mutation 应用路径）。
+        self.drain_long_task_entries();
         Ok(())
     }
 

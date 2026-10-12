@@ -77,6 +77,8 @@ pub struct QuickJSSandbox {
     /// 把 QuickJS 抛出的 uncatchable 异常映射为 `ScriptError::Timeout`，区别于普通
     /// RuntimeError）。每次 execute 前 reset。
     timeout_fired: Arc<AtomicBool>,
+    /// performance-api-compat M2-S1：long task 观察器（None = 未订阅零开销）。
+    long_task_observer: Option<crate::LongTaskObserver>,
 }
 
 impl QuickJSSandbox {
@@ -128,6 +130,7 @@ impl QuickJSSandbox {
             context: None,
             timeout_deadline,
             timeout_fired,
+            long_task_observer: None,
         })
     }
 
@@ -153,6 +156,7 @@ impl QuickJSSandbox {
 
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
+        self.notify_long_task(elapsed_ms);
         match result {
             Ok(value) => Ok(ScriptResult {
                 value,
@@ -329,6 +333,7 @@ impl QuickJSSandbox {
 
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
+        self.notify_long_task(elapsed_ms);
         match result {
             Ok(value) => Ok(ScriptResult {
                 value,
@@ -423,6 +428,21 @@ impl QuickJSSandbox {
         self.config.timeout_ms = timeout_ms;
     }
 
+    /// performance-api-compat M2-S1：注册/撤销 long task 观察器（trait 委托实现）。
+    pub fn set_long_task_observer(&mut self, observer: Option<crate::LongTaskObserver>) {
+        self.long_task_observer = observer;
+    }
+
+    /// execute 返回前的 long task 通知（≥ [`crate::LONG_TASK_THRESHOLD_MS`]，
+    /// 镜像 [`crate::V8Sandbox`] 同名逻辑；execute 尾部统一触发）。
+    fn notify_long_task(&self, execution_time_ms: f64) {
+        if execution_time_ms >= crate::LONG_TASK_THRESHOLD_MS
+            && let Some(observer) = &self.long_task_observer
+        {
+            observer(execution_time_ms);
+        }
+    }
+
     /// 重置持久上下文，保留宿主回调以便在下一个 document 中重新安装。
     pub fn reset_context(&mut self) {
         self.context = None;
@@ -493,6 +513,9 @@ impl crate::Sandbox for QuickJSSandbox {
     }
     fn set_timeout_ms(&mut self, timeout_ms: u64) {
         QuickJSSandbox::set_timeout_ms(self, timeout_ms)
+    }
+    fn set_long_task_observer(&mut self, observer: Option<crate::LongTaskObserver>) {
+        QuickJSSandbox::set_long_task_observer(self, observer)
     }
     fn reset_context(&mut self) {
         QuickJSSandbox::reset_context(self)

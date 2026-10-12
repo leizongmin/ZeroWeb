@@ -3578,6 +3578,10 @@ fn performance_api_case_skipped(relative: &str, source: &str) -> bool {
         || source.contains("web-bundle")
         || source.contains("compression-dictionary")
         || source.contains("back-forward-cache/resources/helper.sub.js")
+        // longtask 容器归因面（longtask-timing/containerTypes——iframe/frame/object/
+        // embed 四容器经 Container helper 动态构建，`<iframe`/createElement 字面规则
+        // 不达）：跨 frame 条目归因需多 frame 管道，runner 不可执行面。
+        || source.contains("new Container('iframe'")
 }
 
 /// Run the pinned upstream resource-timing window subset

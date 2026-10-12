@@ -1430,6 +1430,82 @@
   PerformanceObserver.supportedEntryTypes = ['element', 'event', 'first-input', 'largest-contentful-paint', 'longtask', 'mark', 'measure', 'navigation', 'paint', 'resource'];
   globalThis.PerformanceObserver = PerformanceObserver;
 
+  // ── Long Tasks（performance-api-compat M2-S1）──
+  // PerformanceLongTaskTiming / TaskAttributionTiming 接口 + 条目发射入口。
+  // https://w3c.github.io/longtasks/
+  // 条目生成由 host 驱动：sandbox execute 墙钟 ≥ LONG_TASK_THRESHOLD_MS(50ms) 时经
+  // webview `drain_long_task_entries` 调 `__zwEmitLongtask(durationMs)` 回注——本引擎的
+  // 「任务」= 一次 execute（页面脚本块 / timer 回调 / 事件监听器执行），host 是唯一
+  // 知道任务边界的一方。entry 经 _perfEntries 进 buffer + _notifyEntry 派发（observer
+  // buffered 回放 / getEntriesByType('longtask') 复用既有 M2 机制，零新面）。
+  function PerformanceLongTaskTiming() {
+    // spec 无公开构造语义锚定用例（idlharness 不可执行）；接口对象仅
+    // instanceof/toString/toJSON 面（PerformanceMeasure 同款先例）。
+    throw new TypeError('Illegal constructor');
+  }
+  PerformanceLongTaskTiming.prototype.toJSON = function () {
+    return {
+      name: this.name,
+      entryType: this.entryType,
+      startTime: this.startTime,
+      duration: this.duration,
+      attribution: this.attribution,
+    };
+  };
+  try { PerformanceLongTaskTiming.prototype[Symbol.toStringTag] = 'PerformanceLongTaskTiming'; } catch (_e) {}
+  globalThis.PerformanceLongTaskTiming = PerformanceLongTaskTiming;
+
+  function TaskAttributionTiming() {
+    throw new TypeError('Illegal constructor');
+  }
+  TaskAttributionTiming.prototype.toJSON = function () {
+    return {
+      name: this.name,
+      entryType: this.entryType,
+      startTime: this.startTime,
+      duration: this.duration,
+      containerType: this.containerType,
+      containerId: this.containerId,
+      containerName: this.containerName,
+      containerSrc: this.containerSrc,
+    };
+  };
+  try { TaskAttributionTiming.prototype[Symbol.toStringTag] = 'TaskAttributionTiming'; } catch (_e) {}
+  globalThis.TaskAttributionTiming = TaskAttributionTiming;
+
+  // taskattribution 条目（同 frame 任务归因 containerType 'window'；跨 frame 归因
+  // 需多 frame 管道，runner 侧不可执行面已记账）。spec：startTime/duration 恒 0。
+  function _perfMakeTaskAttribution() {
+    var attribution = Object.create(TaskAttributionTiming.prototype);
+    attribution.name = 'unknown';
+    attribution.entryType = 'taskattribution';
+    attribution.startTime = 0;
+    attribution.duration = 0;
+    attribution.containerType = 'window';
+    attribution.containerId = '';
+    attribution.containerName = '';
+    attribution.containerSrc = '';
+    return attribution;
+  }
+
+  // host 排空口：durationMs = execute 墙钟耗时。startTime = now - duration（发射点
+  // 紧随任务结束，误差 sub-ms）；duration 取整（WPT utils 断言 Number.isInteger）。
+  // name 'self' = 同文档任务（Long Tasks §责任容器归因：跨 frame 未知来源才是
+  // 'unknown'；WPT utils checkLongTaskEntry 缺省参数即 'self'——corpus pin 语义锚定）。
+  globalThis.__zwEmitLongtask = function (durationMs) {
+    if (!(typeof durationMs === 'number' && durationMs >= 50)) return;
+    var startTime = _perfNow() - durationMs;
+    if (!(startTime >= 0)) startTime = 0;
+    var entry = Object.create(PerformanceLongTaskTiming.prototype);
+    entry.name = 'self';
+    entry.entryType = 'longtask';
+    entry.startTime = startTime;
+    entry.duration = Math.floor(durationMs);
+    entry.attribution = [_perfMakeTaskAttribution()];
+    _perfEntries.push(entry);
+    _notifyEntry(entry);
+  };
+
   // DOMException——Web IDL 异常类型（name + message + legacy code）。众多 Web API 抛出它（fetch /
   // storage / atob / crypto / structuredClone 等），各 API 用 name 子类区分语义（InvalidCharacterError
   // / DataCloneError / QuotaExceededError 等）。V8 embed 不提供，polyfill 之（本地 Chromium 150 oracle

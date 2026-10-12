@@ -348,6 +348,8 @@ pub struct V8Sandbox {
     watchdog_tx: Option<std::sync::mpsc::Sender<WatchdogMsg>>,
     watchdog_seq: u64,
     watchdog_join: Option<std::thread::JoinHandle<()>>,
+    /// performance-api-compat M2-S1：long task 观察器（None = 未订阅零开销）。
+    long_task_observer: Option<crate::LongTaskObserver>,
 }
 
 impl V8Sandbox {
@@ -391,6 +393,7 @@ impl V8Sandbox {
             watchdog_tx: Some(watchdog_tx),
             watchdog_seq: 0,
             watchdog_join: Some(watchdog_join),
+            long_task_observer: None,
         })
     }
 
@@ -453,6 +456,23 @@ impl V8Sandbox {
         self.config.timeout_ms = timeout_ms;
     }
 
+    /// performance-api-compat M2-S1：注册/撤销 long task 观察器（trait 委托实现）。
+    pub fn set_long_task_observer(&mut self, observer: Option<crate::LongTaskObserver>) {
+        self.long_task_observer = observer;
+    }
+
+    /// execute 成功返回前的 long task 通知（≥ [`crate::LONG_TASK_THRESHOLD_MS`]）。
+    /// 观察器在 execute 返回前同步调用——不得重入沙箱（webview 侧排空模式）。
+    /// 关联函数形态：`hs` scope 存续期持有 `self` 的可变借用（isolate.as_mut），
+    /// 观察器须以局部 clone 传入（绕开字段借用冲突）。
+    fn fire_long_task(observer: &Option<crate::LongTaskObserver>, execution_time_ms: f64) {
+        if execution_time_ms >= crate::LONG_TASK_THRESHOLD_MS
+            && let Some(observer) = observer
+        {
+            observer(execution_time_ms);
+        }
+    }
+
     /// 在沙箱中执行JavaScript脚本。
     ///
     /// # 参数
@@ -467,6 +487,8 @@ impl V8Sandbox {
             return Err(ScriptError::InvalidInput("script is empty".into()));
         }
 
+        // long task 观察器以局部 clone 持有（execute 体内 self 被 hs scope 可变借用）。
+        let long_task_observer = self.long_task_observer.clone();
         let persistent = self.config.persistent_context;
         // SAFETY: cached_context 和 isolate 是不同的字段。
         // HandleScope 持有 isolate 的借用，不会触及 cached_context。
@@ -575,6 +597,7 @@ impl V8Sandbox {
 
         // 清理 timeout guard（Drop → Disarm 撤除看门狗；成功与错误路径统一）
         drop(_timeout_guard);
+        Self::fire_long_task(&long_task_observer, execution_time_ms);
 
         Ok(ScriptResult {
             value: result_str,
@@ -587,6 +610,9 @@ impl V8Sandbox {
         if code.trim().is_empty() {
             return Err(ScriptError::InvalidInput("script is empty".into()));
         }
+
+        // long task 观察器以局部 clone 持有（同 [`Self::execute`] 借用注记）。
+        let long_task_observer = self.long_task_observer.clone();
 
         let persistent = self.config.persistent_context;
         // SAFETY: 同 execute() 中的说明
@@ -633,6 +659,7 @@ impl V8Sandbox {
         let json_str = Self::value_to_json_string(try_catch, result);
 
         let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
+        Self::fire_long_task(&long_task_observer, execution_time_ms);
 
         Ok(ScriptResult {
             value: json_str,
@@ -837,6 +864,9 @@ impl crate::Sandbox for V8Sandbox {
     }
     fn set_timeout_ms(&mut self, timeout_ms: u64) {
         V8Sandbox::set_timeout_ms(self, timeout_ms)
+    }
+    fn set_long_task_observer(&mut self, observer: Option<crate::LongTaskObserver>) {
+        V8Sandbox::set_long_task_observer(self, observer)
     }
     fn reset_context(&mut self) {
         V8Sandbox::reset_context(self)

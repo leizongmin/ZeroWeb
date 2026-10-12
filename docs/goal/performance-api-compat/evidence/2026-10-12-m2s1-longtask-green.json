@@ -1,0 +1,112 @@
+[
+  [
+    "longtask-timing/buffered-flag.window.js",
+    [
+      {
+        "name": "PerformanceObserver with buffered flag can see previous longtask entries.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "longtask-timing/long-microtask.window.js",
+    [
+      {
+        "name": "A short task followed by a long microtask is observable.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "longtask-timing/longtask-attributes.html",
+    [
+      {
+        "name": "Performance longtask entries are observable.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "longtask-timing/longtask-before-observer.window.js",
+    [
+      {
+        "name": "PerformanceObserver with buffered flag can see previous longtask entries.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "longtask-timing/longtask-in-externalscript.html",
+    [
+      {
+        "name": "Performance longtask entries are observable.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "longtask-timing/longtask-in-raf.html",
+    [
+      {
+        "name": "Performance longtask entries are observable.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "longtask-timing/longtask-promise.html",
+    [
+      {
+        "name": "Performance longtask entries after a promise: successful fetch",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Performance longtask entries after a promise: Response.text()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Performance longtask entries after a promise: rejected fetch",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Performance longtask entries after a promise: JSON error",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "longtask-timing/longtask-tojson.html",
+    [
+      {
+        "name": "Test toJSON() in PerformanceLongTaskTiming and TaskAttributionTiming",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "longtask-timing/supported-longtask-types.window.js",
+    [
+      {
+        "name": "supportedEntryTypes contains 'longtask' but not 'taskattribution'.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'longtask' entries should be observable.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]

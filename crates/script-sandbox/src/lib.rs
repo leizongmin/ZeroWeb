@@ -96,6 +96,18 @@ pub struct ScriptResult {
     pub execution_time_ms: f64,
 }
 
+/// Long Task 判定阈值（毫秒）——Long Tasks API §2「long task」定义：任务持续
+/// ≥ 50ms 即 long task。host 侧经 [`Sandbox::set_long_task_observer`] 订阅超阈值
+/// 执行并生成 `PerformanceLongTaskTiming` 条目（performance-api-compat M2-S1）。
+///
+/// https://w3c.github.io/longtasks/#dfn-long-task
+pub const LONG_TASK_THRESHOLD_MS: f64 = 50.0;
+
+/// Long task 观察器：单次 `execute` 墙钟耗时（毫秒，≥ [`LONG_TASK_THRESHOLD_MS`])
+/// 通知。观察器内**不得**重入沙箱（在本线程 execute 返回前同步调用）——宿主侧
+/// 惯用法是把耗时推入共享槽，任务边界处统一排空发射（webview `drain_long_task_entries`）。
+pub type LongTaskObserver = std::sync::Arc<dyn Fn(f64) + Send + Sync>;
+
 /// 沙箱配置。
 #[derive(Debug, Clone, Default)]
 pub struct SandboxConfig {
@@ -173,6 +185,12 @@ pub trait Sandbox {
     fn resolve_async_callback(&mut self, _id: &str, _result: &str) {}
     /// 设置脚本执行超时（毫秒），0 表示无超时。
     fn set_timeout_ms(&mut self, timeout_ms: u64);
+    /// performance-api-compat M2-S1：注册 long task 观察器——单次 `execute` 墙钟
+    /// ≥ [`LONG_TASK_THRESHOLD_MS`] 时以实际耗时（毫秒）调用。`None` 撤销。
+    /// 本引擎的任务边界 = 一次 `execute`（页面脚本块 / timer 回调 / 宿主驱动任务）。
+    ///
+    /// **默认 no-op**：未注册即零开销（性能关键路径，`execute` 内仅一次 `Option` 判空）。
+    fn set_long_task_observer(&mut self, _observer: Option<LongTaskObserver>) {}
     /// R-baidu2/P3 slice-2：取走自上次调用以来收集的未捕获异常报告
     /// （`(text, line_number, column_number)`；V8 = isolate message listener +
     /// promise-reject 回调；QuickJS 默认不支持，返回空）。无收集时返回空。
