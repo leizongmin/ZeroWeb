@@ -444,3 +444,145 @@ fn textless_keydown_skips_keypress_and_insertion() {
         Some("")
     );
 }
+
+// ===== t2-pd2：retained 表单值随快照换代回流 =====
+// 根因：dirty value 只存宿主 side table（HTML §concept-fe-dirty），快照换代按裸 HTML
+// 重解析 DOM 源——站点后台 JS 结构变异使 shim 值缓存键漂移后，用户键入静默丢失
+// （DDG 首页 textarea[name=q] 键入 24 字符仅落 "ug" 的根因）。
+
+fn runtime_with_nameless_textarea(renderer_id: u64) -> RendererRuntime {
+    // 无 id/class 的 textarea（位置键形态，DDG 首页 textarea[name=q] 同构）+
+    // 可移动兄弟（结构变异源）。
+    let html = r#"<html><body>
+        <div id="wrap">
+          <textarea></textarea>
+          <p id="p">x</p>
+        </div>
+    </body></html>"#;
+    let url = "https://zero.test/t2pd2-typing";
+    let mut runtime = RendererRuntime::new(renderer_id);
+    runtime.compositor_publish = None;
+    runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
+    runtime.current_url = Some(url.to_string());
+    runtime.cached_html = html.to_string();
+    runtime.webview.as_mut().unwrap().prepare_document_state(url);
+    runtime.webview.as_mut().unwrap().load_html(html, None);
+    {
+        let mut ctx = PageScriptContext {
+            html: &mut runtime.cached_html,
+            url,
+            js_worker: &runtime.js_worker,
+            webview: runtime.webview.as_mut(),
+        };
+        page_scripts::run_page_scripts(&mut ctx, true, |_url| Err::<String, String>("no fetch".into()));
+    }
+    runtime.focus_target("textarea").unwrap();
+    runtime
+}
+
+fn type_text_t2pd2(runtime: &mut RendererRuntime, chars: &str) {
+    for ch in chars.chars() {
+        runtime
+            .handle_keyboard_event(KeyboardEventParams {
+                key: ch.to_string(),
+                code: "KeyT".to_string(),
+                text: Some(ch.to_string()),
+                ctrl: false,
+                shift: false,
+                alt: false,
+                meta: false,
+                event_type: zero_protocol::message::KeyboardEventType::Down,
+            })
+            .unwrap();
+    }
+}
+
+#[test]
+fn typed_value_survives_background_mutation_snapshot_regeneration_t2pd2() {
+    let mut runtime = runtime_with_nameless_textarea(930);
+    type_text_t2pd2(&mut runtime, "abc");
+    // 键入已落值（宿主 retained 表 + shim 缓存双面在位）
+    let overrides = runtime.webview.as_ref().unwrap().form_control_value_overrides();
+    assert_eq!(
+        overrides.values().cloned().collect::<Vec<_>>(),
+        vec!["abc".to_string()],
+        "前置：键入产生宿主 retained value"
+    );
+
+    // 站点后台 JS 结构变异：兄弟移动 → textarea 位置键漂移 → 宿主结构性重解析
+    runtime
+        .js_worker
+        .execute_script_direct("document.querySelector('#wrap').appendChild(document.querySelector('#p')); 'ok'")
+        .unwrap();
+    {
+        let mut ctx = PageScriptContext {
+            html: &mut runtime.cached_html,
+            url: "https://zero.test/t2pd2-typing",
+            js_worker: &runtime.js_worker,
+            webview: runtime.webview.as_mut(),
+        };
+        let html_snap = ctx.html.clone();
+        assert!(
+            page_scripts::apply_recorded_mutations(&mut ctx, &html_snap).is_some(),
+            "前置：结构变异产出新快照"
+        );
+        // 下一帧 tick：快照重装（修复前按无值 HTML 重解析 → 值缓存 orphan → 读回 ""）
+        page_scripts::tick_observers(&mut ctx);
+    }
+    assert_eq!(
+        runtime
+            .js_worker
+            .execute_script_direct("document.querySelector('textarea').value")
+            .unwrap(),
+        "abc",
+        "快照换代重解析后 dirty value 必须存活（HTML §concept-fe-dirty）"
+    );
+    // 邻近边界：回流只写 dirty 当前值缓存，不触碰内容属性（defaultValue 语义，R2996）
+    assert_eq!(
+        runtime
+            .js_worker
+            .execute_script_direct("String(document.querySelector('textarea').getAttribute('value'))")
+            .unwrap(),
+        "null",
+        "retained 回流不得污染 value 内容属性"
+    );
+}
+
+#[test]
+fn navigation_snapshot_still_resets_form_state_t2pd2() {
+    // 回流不得破坏导航清空语义：URL 变化的快照安装（空 retained 表）后值缓存清空。
+    let mut runtime = runtime_with_nameless_textarea(931);
+    type_text_t2pd2(&mut runtime, "abc");
+    assert_eq!(
+        runtime
+            .js_worker
+            .execute_script_direct("document.querySelector('textarea').value")
+            .unwrap(),
+        "abc",
+        "前置：键入落值"
+    );
+    // 导航：新 URL + 新文档 + 宿主 retained 表已随导航换代清空
+    runtime
+        .webview
+        .as_mut()
+        .unwrap()
+        .load_html(r#"<html><body><textarea></textarea></body></html>"#, None);
+    runtime.cached_html = r#"<html><body><textarea></textarea></body></html>"#.to_string();
+    {
+        let mut ctx = PageScriptContext {
+            html: &mut runtime.cached_html,
+            url: "https://zero.test/t2pd2-next",
+            js_worker: &runtime.js_worker,
+            webview: runtime.webview.as_mut(),
+        };
+        page_scripts::tick_observers(&mut ctx);
+    }
+    assert_eq!(
+        runtime
+            .js_worker
+            .execute_script_direct("document.querySelector('textarea').value")
+            .unwrap(),
+        "",
+        "导航换页必须清空上一文档的值缓存（防跨页 stale value）"
+    );
+}

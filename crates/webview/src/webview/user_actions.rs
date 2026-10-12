@@ -7,7 +7,8 @@ use zero_engine::{
     script_contenteditable_enter, script_contenteditable_forward_delete, script_contenteditable_insert,
     script_contenteditable_probe, script_dispatch_dom_event, script_pointer_move, script_reset_form_controls,
     script_set_control_checked, script_set_open, script_set_option_selected, script_set_text_control_state,
-    script_text_control_snapshot,
+    script_text_control_snapshot, script_text_delete, script_text_delete_without_event, script_text_input,
+    script_text_input_without_event,
 };
 use zero_page_runtime::{
     ActionNoopReason, ActionTargetState, EventDispatchResult, FormNavigationIntent, HtmlActionRequest, HtmlUserAction,
@@ -247,13 +248,23 @@ impl WebView {
                         );
                     }
                 }
+                // t2-pd2a：文本控件写入走**原子脚本**（`__zw_text_input`/`__zw_text_delete`
+                // ——活状态读 value+selection、改值、beforeinput→textInput→input 事件序
+                // 一体，单次优先通道往返）。旧「快照读→宿主计划→内嵌全值 SetText」三段
+                // 管线在击键重叠时按陈旧快照整值覆盖写入（lost-update）——页面负载下 2s
+                // 有界等待超时使重叠成为常态（DDG 首页实测 "rust"→"rsut"、24 字符落 2
+                // 字符；迟到脚本按旧计划整值覆盖新状态）。快照读+计划仅承载 noop 契约
+                //（ReadOnlyTarget/MaxLengthReached/NothingToDelete 原因面），不再产生
+                // 写计划；readonly/maxlength/截断守卫同点下沉 shim（活读取）。 canceled
+                // 经脚本 "prevented" 返回值传递（beforeinput 取消语义）。ForwardDelete
+                // 留计划管线（无原子脚本面；非连续键入路径，挂账池）。
                 let snapshot = self.execute_dom_script(executor, &script_text_control_snapshot(&selector))?;
                 let Some((value, selection_start, selection_end)) =
                     serde_json::from_str::<(String, usize, usize)>(&snapshot.value).ok()
                 else {
                     return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
                 };
-                ActionTargetState::Text(TextActionState {
+                let state = TextActionState {
                     value,
                     selection_start,
                     selection_end,
@@ -261,7 +272,52 @@ impl WebView {
                     max_length: zero_engine::query_attr_from_html(&html, &selector, "maxlength")
                         .parse()
                         .ok(),
-                })
+                };
+                // 计划仅作 noop 判定（Err = 旧契约原因面）；Ok 不取其写计划。
+                let plan_only_reason = plan_html_action(
+                    &request,
+                    self.navigation_epoch,
+                    self.document_generation,
+                    &ActionTargetState::Text(state.clone()),
+                )
+                .err();
+                let atomic_script = match (&request.action, plan_only_reason) {
+                    (_, Some(reason)) => return Ok(WebViewUserActionResult::noop(reason)),
+                    (HtmlUserAction::InsertText { text }, _) if !text.is_empty() => {
+                        // JS 禁用（UA 默认动作语义）：无事件变体——插入不派
+                        // beforeinput/input（同计划管线 javascript_enabled=false 臂，
+                        // 页面监听器不参与取消）；JS 启用走完整事件序。
+                        if javascript_enabled {
+                            Some(script_text_input(&selector, text))
+                        } else {
+                            Some(script_text_input_without_event(&selector, text))
+                        }
+                    }
+                    (HtmlUserAction::DeleteBackward, _) => {
+                        if javascript_enabled {
+                            Some(script_text_delete(&selector))
+                        } else {
+                            Some(script_text_delete_without_event(&selector))
+                        }
+                    }
+                    _ => None,
+                };
+                if let Some(script) = atomic_script {
+                    let result = self.execute_dom_script(executor, &script)?;
+                    let canceled = result.value.trim() == "prevented";
+                    return Ok(WebViewUserActionResult {
+                        changed: result.changed,
+                        canceled,
+                        noop_reason: None,
+                        effects: Vec::new(),
+                        invalidation: if result.changed {
+                            InvalidationKind::Paint
+                        } else {
+                            InvalidationKind::None
+                        },
+                    });
+                }
+                ActionTargetState::Text(state)
             }
             HtmlUserAction::Activate if zero_engine::is_checkbox(&html, &selector) => ActionTargetState::Checkbox {
                 checked: zero_engine::has_attribute(&html, &selector, "checked"),
