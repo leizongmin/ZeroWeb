@@ -17,6 +17,20 @@ use crate::property::{
 /// R4643：父元素 font-size 的 Px 解析基准（Em/Percentage font-size 归一化用）。
 /// 父样式恒为归一化后形态（自根向下递归保证），非 Px 残留（如 Ex 系 metric 依赖单位）
 /// 按初始值回落，与 resolve_effect_length 既有口径一致。
+/// R5089：绝对字号表步进（css-fonts-3 §font-size absolute-size 映射；表值与
+/// apply.rs parse_font_size_keyword 同源）。命中父值 → 相邻档（larger 上/smaller 下，
+/// 端点钳制 chromium 同）；未命中 → None（调用方回退倍率）。
+fn step_absolute_font_size(parent_px: f64, larger: bool) -> Option<f64> {
+    const TABLE: [f64; 8] = [9.0, 10.0, 13.0, 16.0, 18.0, 24.0, 32.0, 48.0];
+    let idx = TABLE.iter().position(|&v| (v - parent_px).abs() < 0.01)?;
+    // 端点钳制（chromium 同）：顶档 larger 停 48px、底档 smaller 停 9px。
+    Some(if larger {
+        TABLE[(idx + 1).min(7)]
+    } else {
+        TABLE[idx.saturating_sub(1)]
+    })
+}
+
 fn parent_font_size_px(parent_style: Option<&ComputedStyle>) -> f64 {
     parent_style
         .map(|p| match p.font_size {
@@ -125,6 +139,36 @@ pub fn compute_inherited_style_with_quirks(
             && px > 0.0
         {
             style.font_size = LengthValue::Px(px);
+        }
+        // R5089（css-fonts-3 §font-size 相对关键字）：larger/smaller = 绝对字号表
+        // **上一档/下一档**（父 computed 命中表值时，端点钳制）；未命中表 → 回退既有
+        // 1.2/0.8333 倍率（R4643 判例 20px→24px 保持）。旧实现恒倍率 →
+        // xx-small→larger 10.8px（应为 10px）、嵌套链逐级复合漂移
+        //（driving: font-size-121 七级 larger/smaller 嵌套链）。
+        // 判别 = cascaded 原始声明串（Em(1.2) 与字面 `1.2em` 在类型层不可分，
+        // winner map 串值无歧义）；kill-switch ZW_FONT_RELATIVE_TABLE=0 恒倍率。
+        // OPTIMIZATION: 进程级开关缓存 + eq_ignore_ascii_case 零分配——compute 热路径
+        // 每元素一次 hash lookup 上限，无 env 轮询/字符串分配（bench compute_styles_200
+        // 定界）。
+        static FONT_REL_TABLE: std::sync::LazyLock<bool> =
+            std::sync::LazyLock::new(|| std::env::var("ZW_FONT_RELATIVE_TABLE").as_deref() != Ok("0"));
+        if *FONT_REL_TABLE && let Some(kw_raw) = cascaded.get("font-size") {
+            let kw_trimmed = kw_raw.trim();
+            let is_larger = kw_trimmed.eq_ignore_ascii_case("larger");
+            let is_smaller = !is_larger && kw_trimmed.eq_ignore_ascii_case("smaller");
+            if is_larger || is_smaller {
+                let parent_px = parent_font_size_px(parent_style);
+                let stepped = step_absolute_font_size(parent_px, is_larger).or(match style.font_size {
+                    LengthValue::Em(v) => Some(v * parent_px),
+                    _ => None,
+                });
+                if let Some(px) = stepped
+                    && px.is_finite()
+                    && px > 0.0
+                {
+                    style.font_size = LengthValue::Px(px);
+                }
+            }
         }
     }
     // R4448：逻辑属性（margin/padding/inset/border 的 -inline-/-block- 系列）延迟到
@@ -1220,5 +1264,46 @@ mod tests {
         cascaded_root.insert("font-size".to_string(), "1.5em".to_string());
         let style_root = compute_inherited_style(None, &cascaded_root);
         assert_eq!(style_root.font_size, LengthValue::Px(1.5 * ROOT_FONT_SIZE));
+    }
+
+    /// R5089（css-fonts-3 §font-size 相对关键字）：larger/smaller = 绝对字号表相邻档
+    /// （父命中表值）；端点钳制；未命中表回退倍率（R4643 判例）。
+    #[test]
+    fn r5089_font_size_relative_keyword_table_step() {
+        // xx-small(9) → larger = x-small(10)（旧倍率 10.8）。
+        let mut parent = ComputedStyle::default();
+        parent.font_size = LengthValue::Px(9.0);
+        let mut cascaded = HashMap::new();
+        cascaded.insert("font-size".to_string(), "larger".to_string());
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        assert_eq!(style.font_size, LengthValue::Px(10.0), "9px larger 须步进 10px");
+
+        // 顶档钳制：48px larger → 48px（旧倍率 57.6 溢出表顶）。
+        parent.font_size = LengthValue::Px(48.0);
+        let style_top = compute_inherited_style(Some(&parent), &cascaded);
+        assert_eq!(style_top.font_size, LengthValue::Px(48.0), "顶档 larger 钳制 48px");
+
+        // 底档钳制：9px smaller → 9px（chromium 同：表端钳制）。
+        parent.font_size = LengthValue::Px(9.0);
+        let mut cascaded_sm = HashMap::new();
+        cascaded_sm.insert("font-size".to_string(), "smaller".to_string());
+        let style_floor = compute_inherited_style(Some(&parent), &cascaded_sm);
+        assert_eq!(style_floor.font_size, LengthValue::Px(9.0), "底档 smaller 钳制 9px");
+
+        // 非表值（20px）larger → 倍率 24px（R4643 判例保持）。
+        parent.font_size = LengthValue::Px(20.0);
+        let style20 = compute_inherited_style(Some(&parent), &cascaded);
+        assert_eq!(style20.font_size, LengthValue::Px(24.0), "非表值回退 1.2 倍率");
+
+        // 字面 1.2em 不受表步进影响（判别 = cascaded 原始串）。
+        let mut cascaded_em = HashMap::new();
+        cascaded_em.insert("font-size".to_string(), "1.2em".to_string());
+        parent.font_size = LengthValue::Px(9.0);
+        let style_em = compute_inherited_style(Some(&parent), &cascaded_em);
+        assert!(
+            matches!(style_em.font_size, LengthValue::Px(v) if (v - 10.8).abs() < 1e-6),
+            "字面 1.2em 走 Em 通道，实际 {:?}",
+            style_em.font_size
+        );
     }
 }
