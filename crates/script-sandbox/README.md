@@ -14,7 +14,7 @@
 - **宿主回调** — `register_callback` 把 Rust 闭包挂为 JS 全局函数 `name(...)`，参数/返回经字符串桥；`resolve_async_callback` 支持 P1b 异步回调 resolve（V8 后端）
 - **持久化 Context** — `SandboxConfig::persistent_context` 复用 V8 全局 Context，`reset_context` 清空 JS 状态；`initial_heap_size` 可配，V8 堆限制参数按 initial ≤ max 钳制（防 `SetHeapLimits` 非法参数 abort）
 - **Dedicated Worker** — 独立线程 V8 持久上下文 + postMessage/onmessage 通道（`worker.rs` / `quickjs_worker.rs`）
-- **ES Modules** — 源码转换式 import/export 支持、`import.meta.url`、链式依赖解析；循环/菱形 import 防护（重入返回首份内联导出，防栈溢出 abort）（`es_module.rs`）
+- **ES Modules** — 源码转换式 import/export 支持、`import.meta.url`、链式依赖解析；循环/菱形 import 防护（重入返回首份内联导出，防栈溢出 abort）；Import Maps 说明符映射（`import_map.rs`，WHATWG Import Maps）（`es_module.rs`）
 - **P1b 原生绑定 escape-hatch** — `install_native_bindings` 在持久 V8 Context 内安装 `ObjectTemplate`/`FunctionTemplate`/accessor 等原生 DOM 绑定（仅 V8 后端，QuickJS 降级 no-op）
 
 ## 使用示例

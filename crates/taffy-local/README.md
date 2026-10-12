@@ -5,8 +5,10 @@
 
 > **Note:** This is not a ZeroWeb business crate. It is a vendored local copy of upstream
 > taffy 0.12, wired into the workspace via `[patch.crates-io]` (see the root `Cargo.toml`),
-> carrying one local patch: the `TaffyTree::cached_baselines()` accessor used to extract
-> flex container baselines. The text below is the upstream README, kept as-is.
+> carrying the `TaffyTree::cached_baselines()` accessor (used to extract flex container
+> baselines) plus a set of local CSS-correctness patches (flex base-size probe, percent-margin
+> content-box basis, float shrink-to-fit counting, abspos auto-margin inset rules), each
+> behind a `ZW_*` kill-switch env. The text below is the upstream README, kept as-is.
 
 Taffy is a flexible, high-performance, cross-platform UI layout library written in [Rust](https://www.rust-lang.org).
 

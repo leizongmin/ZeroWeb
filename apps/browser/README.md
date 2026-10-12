@@ -9,7 +9,8 @@
 ## 主要功能
 
 - **多标签页管理** — 创建、关闭、切换、拖拽排序标签页
-- **地址栏** — URL 输入、自动补全（基于历史和书签搜索）
+- **地址栏** — URL 输入、自动补全（基于历史和书签搜索）、`view-source:<url>` 源码查看（含无 scheme 简写）
+- **CLI 启动 URL** — `zero-browser <url>` 位置参数在窗口就绪后直接导航（多个 URL 报错）
 - **导航控制** — 前进、后退、刷新、主页
 - **收藏夹** — 书签/文件夹增删改查、收藏栏展示
 - **历史记录** — 页面访问记录、搜索、清除
@@ -24,6 +25,7 @@
 
 ```bash
 cargo run --bin zero-browser
+cargo run --bin zero-browser -- https://example.com   # CLI 启动 URL
 
 # desktop-browser goal 演示流守成门（M1–M4 四演示流，需 GUI 环境）
 bash scripts/desktop-browser-m1-smoke.sh
@@ -50,6 +52,8 @@ zero-browser
 ├── service_worker_owner.rs — Service Worker 生命周期归属
 ├── pages.rs             — 内置页面（设置页等）
 ├── page_find.rs         — 页面查找匹配（Ctrl+F 命中定位，纯函数 + 单测）
+├── ui_driver.rs         — UI 驱动器（JSONL 动作脚本 → 真实输入事件，`--ui-driver-script` / `--ui-driver-out`）
+├── view_source_fetch.rs — view-source 后台抓取
 ├── *_smoke.rs           — 演示流 smoke 只读访问器（`scripts/desktop-browser-m1~m4-smoke.sh` 守成门驱动）
 ├── main.rs              — 应用入口
 └── lib.rs               — 库入口（供集成测试与 smoke 复用）

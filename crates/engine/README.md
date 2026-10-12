@@ -18,6 +18,7 @@
 - **存储/网络/导航/定时器桥接**（`cache_storage_bridge` / `indexed_db_bridge` / `opfs_bridge` / `fetch_bridge` / `navigation_bridge` / `ws_bridge` / `timer_bridge` / `font_load_bridge`）— 页面脚本对 Cache API、IndexedDB、OPFS、fetch、导航历史、WebSocket、setTimeout、字体加载的宿主桥
 - **命中测试**（`hit_test` / `element_from_point`）— 坐标到 DOM 节点/元素的命中判定
 - **SVG 绘制与滤镜**（`paint/svg_filter_chain` / `svg_filter_taint` / `svg_shape_disable`）— 内联 SVG paint 与 CSS filter url(#id) 引用 SVG filter 输出链（常量/非常量链 SourceGraphic 隔离两遍绘制）、feImage 引用内联、tainting 规则与零尺寸形状渲染禁用
+- **CSS 变量（文本级）**（`pipeline/css_vars`）— 自定义属性收集与 `var()` 替换（静态 CSS 文本级，无 per-element 继承 / 动态变更语义）
 - **性能计时**（`PipelineTimings`）— 记录管线各阶段耗时，便于性能分析和优化
 
 ## 使用示例
