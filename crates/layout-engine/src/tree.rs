@@ -287,6 +287,11 @@ pub(crate) fn run_in_following_block_sibling(
     run_in_id: NodeId,
 ) -> Option<NodeId> {
     let parent_id = doc.parent_node(run_in_id)?;
+    // R5096（CSS2.1 §9.2.2/§9.7 块级判定）：InlineTable 是**行内级**盒（行内级 table
+    // wrapper），不触发「run-in 含块级子 → becomes block」降级、不作块级兄弟
+    //（run-in-contains-inline-table-001：inline-table 子不应阻止 run-in 并入，3.43%；
+    // run-in-inline-table-between-001/002：inline-table 中间层 = 行内中间层阻断并入，
+    // 3.40%——旧实现列入块级使前者降级、后者被误判并入目标）。
     let is_block_level_display = |s: &ComputedStyle| {
         matches!(
             s.display,
@@ -296,7 +301,16 @@ pub(crate) fn run_in_following_block_sibling(
                 | DisplayValue::Flex
                 | DisplayValue::Grid
                 | DisplayValue::Table
-                | DisplayValue::InlineTable
+        )
+    };
+    // R5096（CSS2.1 §9.2.4）：并入目标 = **块容器**（Block/Flow/FlowRoot/ListItem——
+    // run-in 成为该块的首个行内盒）。Table/Flex/Grid 块级但非行内格式化容器，
+    // Gecko 语义不并入（run-in-table-between-001/002 断言「don't run in」3.40%——
+    // 旧实现把 table 兄弟作并入目标，run-in header 被并进表格/后续块致重叠）。
+    let is_block_container_display = |s: &ComputedStyle| {
+        matches!(
+            s.display,
+            DisplayValue::Block | DisplayValue::FlowRoot | DisplayValue::ListItem
         )
     };
     let is_oof = |id: NodeId| {
@@ -410,8 +424,15 @@ pub(crate) fn run_in_following_block_sibling(
             .get(&sib)
             .is_some_and(|s| is_block_level_display(s) && !matches!(s.display, DisplayValue::None));
         if seen_run_in {
-            // 后继：须为 in-flow 块级才并入；inline/inline-block 等中间层阻断。
-            return if sib_is_block { Some(sib) } else { None };
+            // 后继：须为 in-flow **块容器**才并入（R5096，kill-switch
+            // `ZW_RUN_IN_MERGE_BLOCK_CONTAINER=0` 恢复「任意块级并入」旧行为）；
+            // inline/inline-block/inline-table 等行内级中间层阻断。
+            let merge_gate = std::env::var("ZW_RUN_IN_MERGE_BLOCK_CONTAINER").as_deref() != Ok("0");
+            return if sib_is_block && (!merge_gate || styles.get(&sib).is_some_and(&is_block_container_display)) {
+                Some(sib)
+            } else {
+                None
+            };
         }
         if sib_is_block {
             // 有前驱 in-flow 块级兄弟 → 不并入（spec fallback 块盒）。
