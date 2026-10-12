@@ -63,6 +63,7 @@ mod tab_worker;
 mod tab_worker;
 mod text_input;
 mod text_metrics;
+mod ui_driver;
 mod ui_icons;
 #[cfg(target_os = "windows")]
 mod windows_titlebar;
@@ -115,6 +116,10 @@ struct CliArgs {
     find_smoke: Option<find_smoke::FindSmokeConfig>,
     /// 显式启用数据面真实窗口 smoke。
     data_smoke: Option<data_smoke::DataSmokeConfig>,
+    /// 显式启用脚本化真实窗口 UI 驱动器（JSONL 动作 → 真实输入路径）。
+    ui_driver: Option<ui_driver::UiDriverConfig>,
+    /// CLI 位置参数：启动 URL（对齐 Chrome `zero-browser <url>` 启动行为）。
+    startup_url: Option<String>,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
@@ -154,14 +159,26 @@ fn parse_args_from(
     let mut find_smoke_dir = None;
     let mut data_smoke_base = None;
     let mut data_smoke_dir = None;
+    let mut ui_driver_script: Option<PathBuf> = None;
+    let mut ui_driver_out: Option<PathBuf> = None;
     let mut parity_scenario = None;
     let mut parity_output_dir = None;
+    let mut startup_url: Option<String> = None;
 
     while let Some(arg) = args.next() {
         if arg == "--single-process" || arg == "--multi-process" {
             return Err(format!(
                 "{arg} is no longer supported; ZeroBrowser always uses isolated renderer processes"
             ));
+        }
+
+        // CLI 位置参数 = 启动 URL（此前被静默丢弃，导致 zero-browser <url> 停在新标签页）。
+        if !arg.starts_with("--") {
+            if startup_url.is_some() {
+                return Err("multiple startup URLs provided; only one is supported".to_string());
+            }
+            startup_url = Some(arg);
+            continue;
         }
 
         if let Some(value) = arg.strip_prefix("--renderer=") {
@@ -399,6 +416,28 @@ fn parse_args_from(
                 })?));
         }
 
+        if let Some(value) = arg.strip_prefix("--ui-driver-script=") {
+            ui_driver_script = Some(PathBuf::from(value));
+        }
+
+        if arg == "--ui-driver-script" {
+            ui_driver_script =
+                Some(PathBuf::from(args.next().ok_or_else(|| {
+                    "--ui-driver-script requires a JSONL script path".to_string()
+                })?));
+        }
+
+        if let Some(value) = arg.strip_prefix("--ui-driver-out=") {
+            ui_driver_out = Some(PathBuf::from(value));
+        }
+
+        if arg == "--ui-driver-out" {
+            ui_driver_out =
+                Some(PathBuf::from(args.next().ok_or_else(|| {
+                    "--ui-driver-out requires a directory path".to_string()
+                })?));
+        }
+
         if let Some(value) = arg.strip_prefix("--parity-scenario=") {
             parity_scenario = Some(PathBuf::from(value));
         }
@@ -495,6 +534,13 @@ fn parse_args_from(
             return Err("--data-smoke-base and --data-smoke-dir must be provided together".to_string());
         }
     };
+    let ui_driver = match (ui_driver_script, ui_driver_out) {
+        (Some(script), Some(output_dir)) => Some(ui_driver::UiDriverConfig::new(script, output_dir)?),
+        (None, None) => None,
+        _ => {
+            return Err("--ui-driver-script and --ui-driver-out must be provided together".to_string());
+        }
+    };
     let smoke_modes = usize::from(smoke_capture.is_some())
         + usize::from(gui_smoke.is_some())
         + usize::from(parity_smoke.is_some())
@@ -502,10 +548,11 @@ fn parse_args_from(
         + usize::from(addressbar_smoke.is_some())
         + usize::from(download_smoke.is_some())
         + usize::from(menu_zoom_smoke.is_some())
-        + usize::from(find_smoke.is_some());
+        + usize::from(find_smoke.is_some())
+        + usize::from(ui_driver.is_some());
     if smoke_modes > 1 {
         return Err(
-            "smoke modes (capture/gui/parity/tab/addressbar/download/menu-zoom/find) are mutually exclusive"
+            "smoke modes (capture/gui/parity/tab/addressbar/download/menu-zoom/find/ui-driver) are mutually exclusive"
                 .to_string(),
         );
     }
@@ -538,12 +585,18 @@ fn parse_args_from(
         menu_zoom_smoke,
         find_smoke,
         data_smoke,
+        ui_driver,
+        startup_url,
     })
 }
 
 fn print_usage() {
     println!(
-        "Usage: zero-browser [options]
+        "Usage: zero-browser [options] [url]
+
+Arguments:
+  <url>                          Navigate to this URL once the window is ready
+                                 (normalized like address bar input)
 
 Options:
   --renderer=<mode>              Choose rendering backend ({})
@@ -557,6 +610,8 @@ Options:
   --smoke-capture=<png>          Capture the real presented window frame, emit region stats, then exit
   --data-smoke-base=<url>        Data smoke: local fixture origin (http/https)
   --data-smoke-dir=<dir>         Write data smoke step screenshots into this directory
+  --ui-driver-script=<path>      UI driver: JSONL action script (click/move/key/type/wait/shot/assert)
+  --ui-driver-out=<dir>          Write ui driver screenshots and result.json into this directory
   --find-smoke-base=<url>        Find smoke: local fixture origin (http/https)
   --find-smoke-dir=<dir>         Write find smoke step screenshots into this directory
   --menu-zoom-smoke-base=<url>   Menu/zoom smoke: local fixture origin (http/https)
@@ -1025,12 +1080,19 @@ fn main() {
     }
 
     let mut app = BrowserApp::new(cli.render_mode);
+    // I1：CLI 位置参数作为启动 URL，窗口就绪（ensure_startup_tab）后导航加载。
+    app.set_startup_url(cli.startup_url.clone());
     let smoke_viewport = cli
         .parity_smoke
         .as_ref()
         .map(parity_smoke::ParitySmokeConfig::viewport)
         .or_else(|| {
             cli.gui_smoke
+                .as_ref()
+                .map(|_| (cli.viewport_width.round() as u32, cli.viewport_height.round() as u32))
+        })
+        .or_else(|| {
+            cli.ui_driver
                 .as_ref()
                 .map(|_| (cli.viewport_width.round() as u32, cli.viewport_height.round() as u32))
         });
@@ -1047,6 +1109,16 @@ fn main() {
     let mut menu_zoom_smoke = cli.menu_zoom_smoke.map(menu_zoom_smoke::MenuZoomSmoke::new);
     let mut find_smoke = cli.find_smoke.map(find_smoke::FindSmoke::new);
     let mut data_smoke = cli.data_smoke.map(data_smoke::DataSmoke::new);
+    let mut ui_driver = match cli.ui_driver {
+        Some(config) => match ui_driver::UiDriver::new(config) {
+            Ok(driver) => Some(driver),
+            Err(err) => {
+                eprintln!("{err}");
+                std::process::exit(2);
+            }
+        },
+        None => None,
+    };
 
     tracing::info!("Entering event loop...");
 
@@ -1121,6 +1193,28 @@ fn main() {
             app.shutdown_child_processes();
             std::process::exit(3);
         }
+        if let Some(driver) = ui_driver.as_ref()
+            && let Err(error) = driver.check_timeout()
+        {
+            tracing::error!("UI_DRIVER_FAILURE error={error}");
+            app.shutdown_child_processes();
+            std::process::exit(3);
+        }
+        if let Some(driver) = ui_driver.as_mut() {
+            match driver.tick(&mut app) {
+                Ok(true) => {
+                    app.persist_user_data();
+                    app.shutdown_child_processes();
+                    std::process::exit(0);
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    tracing::error!("UI_DRIVER_FAILURE error={error}");
+                    app.shutdown_child_processes();
+                    std::process::exit(3);
+                }
+            }
+        }
         if let Some(smoke) = addressbar_smoke.as_mut()
             && let Err(error) = smoke.sample_mid_load(&mut app)
         {
@@ -1145,6 +1239,7 @@ fn main() {
                     && menu_zoom_smoke.is_none()
                     && find_smoke.is_none()
                     && data_smoke.is_none()
+                    && ui_driver.is_none()
                 {
                     app.needs_redraw = false;
                 } else {
@@ -1219,6 +1314,9 @@ fn main() {
                                 }
                                 if let Some(smoke) = data_smoke.as_mut() {
                                     smoke.start(&mut app);
+                                }
+                                if let Some(driver) = ui_driver.as_mut() {
+                                    driver.start(&mut app);
                                 }
                                 tracing::debug!(
                                     "Surface init — physical: {}x{}, logical: {}x{}, scale: {:.2}",
@@ -1605,7 +1703,8 @@ fn main() {
             || download_smoke.is_some()
             || menu_zoom_smoke.is_some()
             || find_smoke.is_some()
-            || data_smoke.is_some())
+            || data_smoke.is_some()
+            || ui_driver.is_some())
             && (app.window_focused
                 || smoke_capture_path.is_some()
                 || gui_smoke.is_some()
@@ -1615,7 +1714,8 @@ fn main() {
                 || download_smoke.is_some()
                 || menu_zoom_smoke.is_some()
                 || find_smoke.is_some()
-                || data_smoke.is_some())
+                || data_smoke.is_some()
+                || ui_driver.is_some())
             && let Some(ref win) = window
         {
             win.request_redraw();

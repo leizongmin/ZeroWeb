@@ -189,6 +189,8 @@ pub struct BrowserApp {
     cached_window_theme: Option<winit::window::Theme>,
     /// 标签页 URL 加载（延迟绘制 loading / 后台 HTTP）
     tab_fetch: TabFetchState,
+    /// CLI 位置参数启动 URL：窗口就绪后由 `ensure_startup_tab` 消费一次。
+    startup_url: Option<String>,
     /// 鼠标悬停链接时在浮动状态栏中显示的 URL
     hovered_link_url: Option<String>,
     /// 单指触摸滚动：`(touch_id, last_y 物理像素)`
@@ -313,6 +315,7 @@ impl BrowserApp {
             chrome_palette: colors::ChromePalette::for_scheme(color_scheme),
             cached_window_theme: None,
             tab_fetch: TabFetchState::None,
+            startup_url: None,
             hovered_link_url: None,
             touch_scroll: None,
             content_pointer_drag: None,
@@ -1675,6 +1678,17 @@ impl BrowserApp {
         }
 
         let url = normalize_url(&resolve_path_relative_url(url, &self.shell), &self.shell);
+
+        // view-source:<url>：拆出内层 URL 抓取源码并以内部页展示（Chrome 地址栏行为；
+        // 该 scheme 未被 WHATWG 标准化，无规范条目可引）。
+        if method == "GET"
+            && body.is_none()
+            && let Some(inner) = url.strip_prefix("view-source:")
+        {
+            self.open_view_source_page(inner);
+            return;
+        }
+
         tracing::info!("Navigating to: {method} {url}");
 
         self.shell.navigate(&url);
@@ -1817,6 +1831,16 @@ impl BrowserApp {
             return;
         }
         self.init_default_tab();
+        // CLI 位置参数作为启动 URL（对齐 Chrome `zero-browser <url>` 行为）：走
+        // 地址栏同一 navigate_to 路径，normalize_url 的 scheme 启发式对其同样生效。
+        if let Some(url) = self.startup_url.take() {
+            self.navigate_to(&url);
+        }
+    }
+
+    /// 设置 CLI 位置参数给出的启动 URL（窗口就绪后由 `ensure_startup_tab` 消费）。
+    pub fn set_startup_url(&mut self, url: Option<String>) {
+        self.startup_url = url;
     }
 
     /// 初始化 Shell 默认标签页（仅创建 WebView，不额外开 tab）
@@ -2076,6 +2100,36 @@ impl BrowserApp {
         let view_url = format!("view-source:{source_url}");
         let page = pages::generate_view_source_page(&source_url, &html);
         self.open_internal_document_tab(page, &view_url, "查看源代码");
+    }
+
+    /// 地址栏 `view-source:<url>` 入口：抓取目标内容并以内页展示源码。
+    ///
+    /// 内层 URL 与地址栏普通输入走同一 normalize 路径，因此
+    /// `view-source:127.0.0.1:8080/x` 等无 scheme 简写同样生效。
+    fn open_view_source_page(&mut self, inner: &str) {
+        let inner = inner.trim();
+        if inner.is_empty() {
+            return;
+        }
+        let target = normalize_url(inner, &self.shell);
+        let view_url = format!("view-source:{target}");
+        let page = match Self::fetch_document_source(&target) {
+            Ok(html) => pages::generate_view_source_page(&target, &html),
+            Err(error) => pages::generate_error_page(&view_url, &error),
+        };
+        self.open_internal_document_tab(page, &view_url, "查看源代码");
+    }
+
+    /// 同步抓取目标 URL 响应体（view-source 源码展示；复用 zero_net 阻塞客户端，
+    /// 带默认 30s 超时，与 tab_js_worker 的直连读取同一路径家族）。
+    fn fetch_document_source(target: &str) -> Result<String, String> {
+        if !target.starts_with("http://") && !target.starts_with("https://") {
+            return Err(format!("view-source 仅支持 http/https URL，实际为 {target}"));
+        }
+        let response = zero_net::HttpClient::new()
+            .get(target)
+            .map_err(|error| format!("无法加载 {target}: {error}"))?;
+        Ok(String::from_utf8_lossy(&response.body).to_string())
     }
 
     /// 审查右键点击位置的元素。
@@ -2341,6 +2395,8 @@ impl BrowserApp {
         !trimmed.is_empty()
             && !trimmed.contains("://")
             && !trimmed.starts_with("localhost")
+            // host:port（数字端口，如 myserver:8080）是 URL 而非搜索词的强信号
+            && !authority_has_numeric_port(split_authority(trimmed).0)
             && (!trimmed.contains('.') || trimmed.contains(' '))
     }
 

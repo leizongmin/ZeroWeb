@@ -2074,6 +2074,100 @@ fn normalize_url_preserves_zero_scheme() {
     assert_eq!(crate::app::normalize_url("zero://settings", &shell), "zero://settings");
 }
 
+/// I5：无 scheme 输入的 scheme 启发式表格用例。
+#[test]
+fn normalize_url_scheme_heuristics_table() {
+    let shell = zero_browser_shell::BrowserShell::new();
+    let cases = [
+        // 已带 scheme 原样保留
+        ("http://example.com/", "http://example.com/"),
+        ("https://example.com", "https://example.com"),
+        ("ftp://example.com/file", "ftp://example.com/file"),
+        ("file:///tmp/index.html", "file:///tmp/index.html"),
+        ("data:text/html,hi", "data:text/html,hi"),
+        // view-source: 透传（导航入口拆解内层 URL）
+        (
+            "view-source:http://127.0.0.1:18080/page2.html",
+            "view-source:http://127.0.0.1:18080/page2.html",
+        ),
+        // 回环/本机/私网主机 → http
+        ("127.0.0.1", "http://127.0.0.1"),
+        ("127.0.0.1:18080/index.html", "http://127.0.0.1:18080/index.html"),
+        ("localhost", "http://localhost"),
+        ("localhost:18080", "http://localhost:18080"),
+        ("sub.localhost/x", "http://sub.localhost/x"),
+        ("::1", "http://[::1]"),
+        ("[::1]:8080/x", "http://[::1]:8080/x"),
+        ("10.0.0.5:8000/app", "http://10.0.0.5:8000/app"),
+        ("172.16.1.5", "http://172.16.1.5"),
+        ("172.31.255.254", "http://172.31.255.254"),
+        ("192.168.1.1/index.html", "http://192.168.1.1/index.html"),
+        // 公网域名维持 https 升级
+        ("example.com", "https://example.com"),
+        ("example.com:8080/path", "https://example.com:8080/path"),
+        ("172.32.0.1", "https://172.32.0.1"),
+        // host:port（数字端口）是 URL 而非搜索词
+        ("myserver:8080", "https://myserver:8080"),
+        // 搜索回退维持现状
+        ("hello world", "https://www.google.com/search?q=hello+world"),
+        (
+            "rust lang tutorial",
+            "https://www.google.com/search?q=rust+lang+tutorial",
+        ),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(crate::app::normalize_url(input, &shell), expected, "input: {input}");
+    }
+}
+
+/// I5：host:port（数字端口）不应判为搜索词。
+#[test]
+fn looks_like_search_query_treats_numeric_host_port_as_url() {
+    assert!(!BrowserApp::looks_like_search_query("myserver:8080"));
+    assert!(!BrowserApp::looks_like_search_query("127.0.0.1:18080/index.html"));
+    assert!(BrowserApp::looks_like_search_query("hello world"));
+    assert!(BrowserApp::looks_like_search_query("rust tutorial"));
+}
+
+/// I1：CLI 位置参数作为启动 URL（首个生效，多个报错，不吃掉 flag 的值）。
+#[test]
+fn parse_args_takes_first_positional_as_startup_url() {
+    let parsed = parse_args_from(
+        ["--renderer=cpu", "http://127.0.0.1:18080/page2.html", "--scale=1"]
+            .into_iter()
+            .map(str::to_string),
+        None,
+    )
+    .unwrap();
+    assert_eq!(parsed.startup_url.as_deref(), Some("http://127.0.0.1:18080/page2.html"));
+
+    // 无位置参数 → 无启动 URL
+    let parsed = parse_args_from(["--renderer=cpu"].into_iter().map(str::to_string), None).unwrap();
+    assert_eq!(parsed.startup_url, None);
+
+    // 多个位置参数 → 报错
+    assert!(
+        parse_args_from(
+            ["http://a.example/", "http://b.example/"]
+                .into_iter()
+                .map(str::to_string),
+            None,
+        )
+        .is_err()
+    );
+
+    // 分离式 flag 的值不被误认为启动 URL
+    let parsed = parse_args_from(
+        ["--renderer", "cpu", "http://127.0.0.1:9/x"]
+            .into_iter()
+            .map(str::to_string),
+        None,
+    )
+    .unwrap();
+    assert_eq!(parsed.render_mode, RenderMode::Cpu);
+    assert_eq!(parsed.startup_url.as_deref(), Some("http://127.0.0.1:9/x"));
+}
+
 /// 长文档在内容区滚轮应更新 scroll_offset。
 #[test]
 fn handle_scroll_updates_offset_for_tall_page() {
