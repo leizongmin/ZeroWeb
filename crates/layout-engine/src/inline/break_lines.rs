@@ -625,7 +625,12 @@ impl InlineFormattingContext {
                                     .max(run.box_height())
                                     .max(run.glyph_ascent + run.glyph_descent);
                             }
-                            current_x = partial_x;
+                            // T2（2026-10-13）：char-break 分支与正常分支（下方
+                            // `current_x += word_width + trailing_space_width`）同口径——
+                            // 词尾空格已在 :238-250 剥离为 trailing_space_width，此处
+                            // 必须加回作词间 advance，否则断词词与后继词相贴
+                            //（break-word 长词后丢空格，test_e3 实证）。
+                            current_x = partial_x + trailing_space_width;
                         } else {
                             let fragment_height = run.line_height;
                             // word_width 已不含尾部空格（在上方剥离），直接用作可视宽度

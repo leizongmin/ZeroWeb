@@ -25,6 +25,88 @@ use crate::primitive::{DrawOp, FillPrimitive, FilterKind, GradientKind, RenderPr
 
 mod filters;
 
+/// ZW_ATLAS_TRACE=1 诊断计数器（T2 丢字形排查，2026-10-13）。
+///
+/// 进程级 env 快照（不在热路径逐帧读 env）；开启时各 glyph 收集点仅原子自增，
+/// [`report_frame`] 在帧收集结束时输出非零增量，供与丢字截图同帧对账：
+/// - `empty_none`：0 尺寸位图早退（非溢出，upload_glyph_to_atlas 入口）
+/// - `overflow`：atlas 放置失败（伴随整图集 clear，已有 UV 全部失效）
+/// - `page_drop` / `ui_drop`：GPU 全场景页字形 / UI overlay 字形收集遇 None 丢弃
+/// - `raster_err`：光栅化失败跳过（含 indexed 无 codepoint 兜底的分支）
+/// - `cpu_retry`：CPU 兼容路径（render_scene* 重试循环）遇到 None
+pub(crate) mod atlas_trace {
+    use crate::gpu::atlas::GlyphAtlas;
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    pub const EMPTY_NONE: usize = 0;
+    pub const OVERFLOW: usize = 1;
+    pub const PAGE_DROP: usize = 2;
+    pub const UI_DROP: usize = 3;
+    pub const RASTER_ERR: usize = 4;
+    pub const CPU_RETRY: usize = 5;
+
+    const SLOT_NAMES: [&str; 6] = [
+        "empty_none",
+        "overflow",
+        "page_drop",
+        "ui_drop",
+        "raster_err",
+        "cpu_retry",
+    ];
+
+    static COUNTERS: [AtomicU64; 6] = [
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+    ];
+    static LAST_REPORTED: [AtomicU64; 6] = [
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+    ];
+
+    fn enabled() -> bool {
+        static ENABLED: OnceLock<bool> = OnceLock::new();
+        *ENABLED.get_or_init(|| std::env::var("ZW_ATLAS_TRACE").as_deref() == Ok("1"))
+    }
+
+    pub fn add(slot: usize) {
+        if enabled() {
+            COUNTERS[slot].fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// 帧收集结束时输出自上一帧以来的非零增量（仅计数有变化时产生输出）。
+    pub fn report_frame(atlas: &GlyphAtlas) {
+        if !enabled() {
+            return;
+        }
+        let mut parts: Vec<&str> = Vec::new();
+        for slot in 0..COUNTERS.len() {
+            let now = COUNTERS[slot].load(Ordering::Relaxed);
+            let last = LAST_REPORTED[slot].swap(now, Ordering::Relaxed);
+            if now > last {
+                parts.push(SLOT_NAMES[slot]);
+            }
+        }
+        if !parts.is_empty() {
+            eprintln!(
+                "[zw-atlas] +{} gen={} glyphs={}",
+                parts.join("+"),
+                atlas.generation(),
+                atlas.glyph_count()
+            );
+        }
+    }
+}
+
 /// GPU 渲染器创建互斥锁 — 防止并发 wgpu 实例初始化导致 SIGSEGV
 ///
 /// wgpu 驱动在多个线程同时创建 Instance/Adapter/Device 时可能触发段错误，
@@ -545,6 +627,7 @@ impl GpuRenderer {
         advance: f32,
     ) -> Option<crate::gpu::atlas::AtlasPlacement> {
         if width == 0 || height == 0 {
+            atlas_trace::add(atlas_trace::EMPTY_NONE);
             return None;
         }
 
@@ -583,6 +666,7 @@ impl GpuRenderer {
                 // 不在这里重试放置——返回 None 让调用者知道
                 // 之前已生成的顶点数据（引用旧 UV）已失效，
                 // 整个 glyph 收集过程应从头重新开始。
+                atlas_trace::add(atlas_trace::OVERFLOW);
                 self.atlas.clear();
                 None
             }
@@ -768,6 +852,7 @@ impl GpuRenderer {
                     Some(p) => p,
                     None => {
                         // Atlas 已清除，旧 UV 全部失效——丢弃所有 glyph 顶点并重试
+                        atlas_trace::add(atlas_trace::CPU_RETRY);
                         atlas_retries += 1;
                         if atlas_retries > 3 {
                             break 'retry_glyphs;
@@ -835,6 +920,7 @@ impl GpuRenderer {
                 ) {
                     Some(p) => p,
                     None => {
+                        atlas_trace::add(atlas_trace::CPU_RETRY);
                         atlas_retries += 1;
                         if atlas_retries > 3 {
                             break 'retry_glyphs;
@@ -953,6 +1039,7 @@ impl GpuRenderer {
         let overlay_rr_verts = self.collect_rounded_rect_vertices(overlay_rounded_rects, scale);
         // 12. Overlay glyphs
         let overlay_glyph_verts = self.collect_overlay_glyphs_data(overlay_glyphs, font_loader, glyph_cache, scale);
+        atlas_trace::report_frame(&self.atlas);
 
         // ── Phase 2: 提交 GPU 命令 ──
         // Uniform buffer/bind group persist across frames; only dimensions are updated.
@@ -2243,7 +2330,10 @@ impl GpuRenderer {
                     variations,
                 ) {
                     Ok(bitmap) => (font_id, bitmap),
-                    Err(_) => continue,
+                    Err(_) => {
+                        atlas_trace::add(atlas_trace::RASTER_ERR);
+                        continue;
+                    }
                 }
             } else {
                 let Some(code_point) = gp.code_point() else {
@@ -2256,7 +2346,10 @@ impl GpuRenderer {
                     variations,
                 ) {
                     Ok(result) => result,
-                    Err(_) => continue,
+                    Err(_) => {
+                        atlas_trace::add(atlas_trace::RASTER_ERR);
+                        continue;
+                    }
                 }
             };
             let resolved_variations = font_loader.resolved_font_variations(resolved_id, variations);
@@ -2302,7 +2395,10 @@ impl GpuRenderer {
                 cached.advance,
             ) {
                 Some(p) => p,
-                None => continue,
+                None => {
+                    atlas_trace::add(atlas_trace::PAGE_DROP);
+                    continue;
+                }
             };
             let (u0, v0, u1, v1) = placement.uv();
             let (gx, gy) = glyph_top_left(
@@ -2353,6 +2449,7 @@ impl GpuRenderer {
         for gd in overlay_glyphs {
             let physical_font_size = gd.font_size * scale;
             let Some((resolved_id, bitmap)) = gd.rasterize(font_loader, physical_font_size) else {
+                atlas_trace::add(atlas_trace::RASTER_ERR);
                 continue;
             };
             let resolved_variations = font_loader.resolved_font_variations(resolved_id, gd.variations());
@@ -2372,7 +2469,10 @@ impl GpuRenderer {
                 cached.advance,
             ) {
                 Some(p) => p,
-                None => continue,
+                None => {
+                    atlas_trace::add(atlas_trace::UI_DROP);
+                    continue;
+                }
             };
             let (u0, v0, u1, v1) = placement.uv();
             let (gx, gy) = glyph_top_left(

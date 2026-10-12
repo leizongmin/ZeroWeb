@@ -191,6 +191,7 @@ impl super::super::Painter {
         &self,
         box_node: &zero_layout_engine::LayoutBox,
         style: &ComputedStyle,
+        doc: Option<&Document>,
     ) -> ResolvedTextNodeFonts {
         let mut primary = HashMap::with_capacity(box_node.text_node_font_families.len());
         let mut shaping = HashMap::with_capacity(box_node.text_node_font_families.len());
@@ -200,6 +201,52 @@ impl super::super::Painter {
             primary.insert(node_id, font_id);
             shaping.insert(node_id, self.resolve_style_font_ids(families, style));
             italic.insert(node_id, resolved_italic);
+        }
+        // T2 丢字形修复（2026-10-13）：非 stored 盒（paint Path B 重跑 IFC）的直系文本
+        // 节点不在 text_node_font_families（该 map 由 layout stored 路径
+        // store_font_sizes_from_ifc 填充）→ run 字体解析落 initial_font_id()（R4365
+        // serif 优先），与 layout 按盒 style 解析的 face 分歧（Liberation Serif vs Sans
+        // advance 差 ~8%）：片段宽 serif、字形推进 sans，词间空格被墨宽吞掉
+        //（welcome tagline "cross-platformbrowserbuilt" 实证）。R4558 直系文本 font-size
+        // 播种同型缺口——以盒自身 style.font_family（weight-aware，空 family 语义
+        // R4365 serif 优先）为缺失的直系文本节点补齐三张解析表；不覆盖已有键。
+        if let (Some(doc), Some(box_id)) = (doc, box_node.node_id) {
+            for child in doc.child_nodes(box_id) {
+                let is_text = doc
+                    .get(child)
+                    .is_some_and(|node| matches!(&node.kind, NodeKind::Text(_)));
+                if is_text && !primary.contains_key(&child) {
+                    let (font_id, resolved_italic) = self.resolve_style_font_id(&style.font_family, style);
+                    primary.insert(child, font_id);
+                    shaping.insert(child, self.resolve_style_font_ids(&style.font_family, style));
+                    italic.insert(child, resolved_italic);
+                }
+            }
+            // Path B 的 **element 分支**（collect_items flatten run）按 owner 元素 id 查
+            // font ids（shaping_font_id_for_style(Some(elem_id))）——文本节点键须补挂
+            // owner 元素键（R3778 ws_overrides / R4374 glyph_verticals 双键同型）；
+            // 否则元素 run 落 initial_font_id()（serif）与 layout 分歧。
+            let owner_links: Vec<(NodeId, NodeId)> = primary
+                .keys()
+                .filter_map(|&text_node| {
+                    let owner = doc.parent_node(text_node)?;
+                    let is_element = doc
+                        .get(owner)
+                        .is_some_and(|node| matches!(&node.kind, NodeKind::Element(_)));
+                    (is_element && !primary.contains_key(&owner)).then_some((text_node, owner))
+                })
+                .collect();
+            for (text_node, owner) in owner_links {
+                if let Some(&font_id) = primary.get(&text_node) {
+                    primary.insert(owner, font_id);
+                }
+                if let Some(font_ids) = shaping.get(&text_node) {
+                    shaping.insert(owner, std::clone::Clone::clone(font_ids));
+                }
+                if let Some(&resolved_italic) = italic.get(&text_node) {
+                    italic.insert(owner, resolved_italic);
+                }
+            }
         }
         ResolvedTextNodeFonts {
             primary,
@@ -376,7 +423,7 @@ pub(super) fn fragment_shaped_advance_eligible(
 }
 
 pub(super) fn configure_paint_ifc_advance<S: BuildHasher>(
-    context: InlineFormattingContext,
+    mut context: InlineFormattingContext,
     doc: &Document,
     styles: Option<&HashMap<NodeId, ComputedStyle>>,
     text_node_font_ids: &HashMap<NodeId, FontId>,
@@ -386,6 +433,9 @@ pub(super) fn configure_paint_ifc_advance<S: BuildHasher>(
 ) -> InlineFormattingContext {
     let shaped_layout = shaped_layout_enabled();
     let author_shaped_layout = author_shaped_layout_enabled();
+    // T2：run 字体解析映射（不过滤 generic）——须在 shaping 早退之前挂载：
+    // ZW_SHAPED_TEXT=0 / 双门关时 run 字体身份仍须与 layout 同源（见 IFC 字段文档）。
+    context = context.with_run_font_id_overrides(std::rc::Rc::new(text_node_shaping_font_ids.clone()));
     if std::env::var("ZW_SHAPED_TEXT").as_deref() == Ok("0") || !shaped_layout && !author_shaped_layout {
         return context;
     }
@@ -488,6 +538,9 @@ pub(super) struct FragmentPaintWidths {
     pub(super) fragment: f32,
     pub(super) legacy: f32,
     pub(super) consumed: f32,
+    /// T2 丢字形排查（2026-10-13）：片段布局起点 x——相邻片段间隙 =
+    /// x(N+1) − x(N) − fragment(N)，用于区分布局丢空格与 paint 超出。
+    pub(super) fragment_x: f32,
 }
 
 impl FragmentAdvanceTrace {
@@ -505,6 +558,7 @@ impl FragmentAdvanceTrace {
             resolved_font_sizes = ?self.resolved_font_sizes,
             size_adjust = ?self.size_adjust,
             fragment_width = paint.fragment,
+            fragment_x = paint.fragment_x,
             legacy_paint = paint.legacy,
             paint_consumed = paint.consumed,
             "ZW_SHAPED_ADVANCE_TRACE"
@@ -1575,5 +1629,80 @@ mod tests {
     fn paint_ifc_offset_places_glyph_at_fragment_baseline() {
         assert_eq!(paint_ifc_baseline_offset(24.0), 24.0);
         assert_eq!(paint_ifc_baseline_offset(48.0), 48.0);
+    }
+
+    /// T2 丢字形修复回归（2026-10-13）：非 stored 盒（paint Path B）的直系文本节点
+    /// 须从盒 style 播种字体解析（文本节点键 + owner 元素键），不得落
+    /// `initial_font_id()`（serif 优先）与 layout 解析分歧。
+    #[test]
+    fn path_b_seeds_direct_text_fonts_for_text_node_and_owner_keys() {
+        use crate::paint::painter::Painter;
+
+        let mut doc = zero_dom::Document::new();
+        let elem = doc.create_element("div");
+        let text = doc.create_text_node("hello world");
+        doc.append_child(elem, text).expect("append text node");
+
+        let mut painter = Painter::new();
+        let resolver = HashMap::from([("sans-serif".to_string(), 0u32), ("serif".to_string(), 3u32)]);
+        painter.font_resolver = resolver.clone();
+        painter.font_resolver_lower = resolver;
+        painter.generic_font_ids = HashSet::from([0]);
+
+        let mut style = ComputedStyle::default();
+        style.font_family = vec!["sans-serif".to_string()];
+
+        let box_node = LayoutBox {
+            node_id: Some(elem),
+            ..Default::default()
+        };
+
+        let resolved = painter.resolve_text_node_fonts(&box_node, &style, Some(&doc));
+        assert_eq!(resolved.primary.get(&text), Some(&FontId(0)), "直系文本节点键");
+        assert_eq!(resolved.shaping.get(&text), Some(&vec![0]));
+        assert_eq!(
+            resolved.primary.get(&elem),
+            Some(&FontId(0)),
+            "owner 元素键（element 分支）"
+        );
+        assert_eq!(resolved.shaping.get(&elem), Some(&vec![0]));
+    }
+
+    /// T2 丢字形修复回归（2026-10-13）：author-only 策略把 generic 条目从
+    /// `font_ids_overrides`（shaping 用）滤掉时，run 字体解析专用映射
+    /// `run_font_id_overrides` 必须保留——否则 Path B generic run 落 serif 兜底，
+    /// 与 layout 度量分歧（welcome 词间空格被吞根因）。
+    #[test]
+    fn configure_keeps_generic_run_fonts_while_filtering_shaping_ids() {
+        use crate::paint::painter::Painter;
+
+        let doc = zero_dom::Document::new();
+        let node = zero_dom::NodeId::default();
+        let mut painter = Painter::new();
+        let resolver = HashMap::from([("sans-serif".to_string(), 0u32), ("serif".to_string(), 3u32)]);
+        painter.font_resolver = resolver.clone();
+        painter.font_resolver_lower = resolver;
+        painter.generic_font_ids = HashSet::from([0]);
+
+        let shaping: HashMap<zero_dom::NodeId, Vec<u32>> = HashMap::from([(node, vec![0])]);
+        let primary: HashMap<zero_dom::NodeId, FontId> = HashMap::from([(node, FontId(0))]);
+        let configured = configure_paint_ifc_advance::<std::collections::hash_map::RandomState>(
+            InlineFormattingContext::new(100.0),
+            &doc,
+            None,
+            &primary,
+            &shaping,
+            &HashMap::new(),
+            &painter.generic_font_ids,
+        );
+        assert!(
+            configured.font_ids_overrides.get(&node).is_none(),
+            "author_only 应从 shaping 映射滤掉 generic 条目"
+        );
+        assert_eq!(
+            configured.run_font_id_overrides.get(&node),
+            Some(&vec![0]),
+            "run 字体解析映射必须保留 generic 条目"
+        );
     }
 }

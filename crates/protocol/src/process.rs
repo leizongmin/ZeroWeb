@@ -42,6 +42,9 @@ fn spawn_stderr_reader(
     mut stderr: ChildStderr,
     tail: Arc<Mutex<VecDeque<u8>>>,
 ) -> Result<JoinHandle<()>, ProtocolError> {
+    // ZW_RENDERER_STDERR_ECHO=1 诊断（T2 丢字形排查，2026-10-13）：renderer 子进程
+    // stderr 平时只留 16KB crash tail；排查时透传到 browser stderr 便于对账。
+    let echo = std::env::var("ZW_RENDERER_STDERR_ECHO").as_deref() == Ok("1");
     std::thread::Builder::new()
         .name(format!("renderer-{id}-stderr"))
         .spawn(move || {
@@ -49,7 +52,12 @@ fn spawn_stderr_reader(
             loop {
                 match stderr.read(&mut buffer) {
                     Ok(0) | Err(_) => break,
-                    Ok(read) => append_stderr_tail(&tail, &buffer[..read]),
+                    Ok(read) => {
+                        if echo {
+                            eprint!("[renderer-{id}] {}", String::from_utf8_lossy(&buffer[..read]));
+                        }
+                        append_stderr_tail(&tail, &buffer[..read]);
+                    }
                 }
             }
         })

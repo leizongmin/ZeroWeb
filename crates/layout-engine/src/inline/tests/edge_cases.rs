@@ -2038,9 +2038,12 @@ fn paint_ifc_font_id_override_restores_shaping_id_without_styles() {
         ctx.shaping_font_id_for_style(Some(node), None, false, 0.0, 0.0, false),
         Some(7)
     );
+    // T2（2026-10-13）：ls ≠ 0 不再强制回落 estimate——run 字体身份与 ls 无关，
+    // ls 由断行侧在测量值之上按 ls×count 追加（与 paint 字形推进同源），否则
+    // ls 段落布局按估计宽、paint 按真实 advance 发射，墨宽覆盖后续片段。
     assert_eq!(
         ctx.shaping_font_id_for_style(Some(node), None, false, 1.0, 0.0, false),
-        None
+        Some(7)
     );
 
     let ordered_ctx = InlineFormattingContext::new(100.0)
@@ -2631,4 +2634,79 @@ fn test_r4405_pathb_ruby_container_flattens_excluding_rt() {
     assert_eq!(frags.len(), 1, "整段扁平化为单 run（实测 {} fragments)", frags.len());
     // run owner = ruby 元素自身（paint 侧 overlay 据此配对注音）。
     assert_eq!(frags[0].node_id, ruby, "flatten run 应归因 ruby 元素");
+}
+
+/// T2 丢字形修复回归（2026-10-13）：Path B run 字体解析兜底链须消费
+/// `run_font_id_overrides`（不经 author-only 过滤的映射）——font_ids_overrides
+/// 被 configure_paint_ifc_advance 滤掉 generic 条目后，run 仍按 layout 同源
+/// 字体（generic sans）度量，而非落 initial_font_id()（serif 优先）。
+#[test]
+fn run_font_id_overrides_feeds_shaping_font_id_resolution() {
+    let node = NodeId::default();
+    let ctx = InlineFormattingContext::new(100.0)
+        .with_run_font_id_overrides(std::rc::Rc::new(HashMap::from([(node, vec![7u32])])));
+    assert_eq!(
+        ctx.shaping_font_id_for_style(Some(node), None, false, 0.0, 0.0, false),
+        Some(7),
+        "font_ids_overrides 缺席时 run 映射兜底生效"
+    );
+    // 既有契约保持：font_ids_overrides 优先于 run 映射。
+    let both = InlineFormattingContext::new(100.0)
+        .with_font_ids_overrides(std::rc::Rc::new(HashMap::from([(node, vec![9u32])])))
+        .with_run_font_id_overrides(std::rc::Rc::new(HashMap::from([(node, vec![7u32])])));
+    assert_eq!(
+        both.shaping_font_id_for_style(Some(node), None, false, 0.0, 0.0, false),
+        Some(9)
+    );
+}
+
+/// T2 实验 E-3（2026-10-13）：break-word 字符断行词的词尾空格 advance 不得丢失。
+///
+/// 场景：`overflow-wrap:break-word` 容器（50px，Ahem 每字符=16px）内
+/// "MMMMMMMMMM next"——首词 160px 触发 char-break。词尾空格在 :238-250 剥离为
+/// trailing_space_width，正常分支（:658）加回 current_x 作词间距；char-break
+/// 分支（:628 `current_x = partial_x`）未加回 → 后继词前移一个空格宽，
+/// 视觉上 "Mnext" 相贴（GUI 诊断 No bookmarksyet / ClearHistory 同型）。
+#[test]
+fn test_e3_break_word_trailing_space_advance_not_lost() {
+    let mut ctx = InlineFormattingContext::new(50.0).with_break_word(true);
+    let runs = vec![TextRun {
+        text: "MMMMMMMMMM hi".to_string(),
+        node_id: NodeId::default(),
+        font_size: 16.0,
+        line_height: 20.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_left: 0.0,
+        padding_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: true,
+        font_id: None,
+        is_rtl: false,
+        bidi_override: None,
+        is_plaintext_bidi: false,
+        ws_override: None,
+        ruby_rt_ascent: 0.0,
+        glyph_ascent: 0.0,
+        glyph_descent: 0.0,
+    }];
+    ctx.break_into_lines(runs);
+    // 断言语义：char-break 分支把词尾空格 advance（16px）加回 current_x——行 4 =
+    // 第 10 个 "M"（x=0，占 [0,16)）+ 空格（advance 16）→ current_x=32；"hi"（32px）
+    // 超行余（64 > 50）换行 → hi 应在**新行行首 x=0**。实现丢失空格时 current_x=16，
+    // "hi" 挤在行 4（hi.x=16，与 "M" 相贴成 "Mhi"）。
+    let frags: Vec<(String, f32)> = ctx.all_fragments().into_iter().map(|f| (f.text.clone(), f.x)).collect();
+    let hi: Vec<&TextFragment> = ctx.all_fragments().into_iter().filter(|f| f.text == "hi").collect();
+    assert_eq!(hi.len(), 1, "应恰好一个 hi 片段，实际 fragments={frags:?}");
+    assert_eq!(
+        hi[0].x, 0.0,
+        "hi 应因断词词尾空格 advance 计入而换行到行首 x=0，实际 {}（空格丢失时为 16，与 M 相贴）",
+        hi[0].x
+    );
 }
