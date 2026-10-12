@@ -12,17 +12,19 @@ webview 任务边界排空发射（`drain_long_task_entries`，4 调用点）→
 corpus 对比基线零回归（web-animations 502/952 为并行渲染流域两周漂移的涨数，
 失败面无一涉及 performance 条目）。
 
-**卡点**：bench-gate 三连跑 FAIL 集合互不相交（首跑 page/*、二跑 mb/* sandbox、
-三跑 mb/* webview）、load average 4+（并行渲染流 rally 编译并发）——定性为机器
-争用噪声：HEAD worktree A/B 同负载直接测量 execute_simple_expression 191-200µs
-vs 本分支 183-188µs（本分支更快，基线 169µs 为静机读数），实现理论成本仅每次
-execute 一次 Option clone + 空槽 mutex lock。**待静机窗口重跑 bench-gate 确认后
-方可关 M2-S1**（下一轮首步）。
+**卡点**：bench-gate 静机复跑未遂——六轮定向跑 FAIL 集合逐轮旋转（page/* 与
+mb/* sandbox、mb/* webview 轮流超，sandbox execute 面在第 6 轮 busy-guard 放行的
+有效测量中全数入预算），bench-report.sh 自带 busy guard 实测 loadavg 15 时主动
+拒测（「另一条流正在跑 WPT/测试」——并行渲染流 rally 与本流 bench 窗口互撞，
+run-rules §9 碰头信号）。同负载 HEAD~1 worktree A/B（execute_simple_expression
+191-200µs vs 本分支 183-188µs）+ 布局/绘制面 FAIL 与本变更零代码交集 → 定性
+环境争用，非回归。**下轮首步：busy-guard 放行且渲染流空闲窗口重跑定向
+bench-gate，PASS 后正式关 M2-S1**（不使用 ZW_BENCH_ALLOW_BUSY=1——政策禁令）。
 
-**下一步**：① 静机重跑定向 bench-gate（`ZERO_WEB_BENCH_CRATES=zero-script-sandbox,
-zero-webview make bench-gate`）确认零回归；② M2-S2 event-timing——shim 事件派发
-路径包 startTime/processingStart/processingEnd 计时点产 `PerformanceEventTiming`
-条目（0/68 全缺面，M1 甄别报告 §缺面 2）。
+**下一步**：① 静机窗口重跑定向 bench-gate（`ZERO_WEB_BENCH_CRATES=
+zero-script-sandbox,zero-webview make bench-gate`）关 M2-S1；② M2-S2
+event-timing——shim 事件派发路径包 startTime/processingStart/processingEnd 计时
+点产 `PerformanceEventTiming` 条目（0/68 全缺面，M1 甄别报告 §缺面 2）。
 
 ## 里程碑
 
