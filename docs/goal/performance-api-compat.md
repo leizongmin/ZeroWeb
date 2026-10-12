@@ -2,7 +2,11 @@
 
 **版本**: v1.0
 **日期**: 2026-10-08
-**状态**: Active（已立项——缺面甄别在 M1）
+**状态**: Done（2026-10-13 收口——DC-1~3 全 ✅，收口快照 191/293 subtests =
+65.2%（M1 基线 77/293 = 26.3%）：longtask 13/13、navigation-timing 81/95、
+event-timing 55/72、resource-timing 42/113；make test 全绿、reftest 零回归
+（failed 0.0%）、product-smoke PASS、bench-gate PASS 35/35；余量挂账带数字
+分型见 [master.md](performance-api-compat/master.md)）
 **执行模式**: WPT 驱动（上游 performance-api corpus 为验收标尺）+ 实现/语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——可观测性面）
 

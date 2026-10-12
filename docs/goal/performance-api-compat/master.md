@@ -1,6 +1,12 @@
 # performance-api-compat — 运行时控制面
 
-> 状态头（每轮先核对再追加，依据日期：2026-10-13 深夜）
+> 状态头（收口快照，2026-10-13——goal **Done**，DC-1~3 全 ✅，控制面留档备查）
+
+**收口快照**：可执行面 **191/293（65.2%）**（M1 基线 77/293 = 26.3%）——
+longtask **13/13（100%）**、navigation-timing **81/95（85.3%）**、event-timing
+**55/72（76.4%）**、resource-timing **42/113（37.2%）**。门禁：make test 全绿
+（71 targets）、reftest 零回归（failed 0.0%）、product-smoke PASS、bench-gate
+PASS 35/35。目标文档状态已置 Done；余量挂账带数字分型见下方 §下一步。
 
 **当前状态**：M2 三 slice 全部实现完成（longtask 13/13、event-timing 55/72、
 navigation-timing 81/95；M2-S1 的 bench-gate 静机收口仍挂起，见卡点）；M3-S1
