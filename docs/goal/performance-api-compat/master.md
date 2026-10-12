@@ -27,18 +27,29 @@ R387b 页面 fetch 通道整体旁路（探针实证零调用）——runner 条
 观察器路径 + webview shim 装载/派发路径均在其覆盖面内）——五个 slice 的性能
 门禁一并闭环。
 
-**下一步**：① M3-S3 loader 面——img/link/fonts 装载完成事件在 runner 语境不派
-（13x hang + test_resource_timing 的 img/link/iframe 案）——需 runner 装载通道
-补 img/link 完成信号（webview/R387b 同构通道），属跨 goal 语义面、动工前先与
-html-semantics/navigation-compat 流域核对归属；② navigation-timing 真值面与
-navigation-compat 流域协调；③ 收口评估——四 corpus 可执行面 191/293（65.2%），
-余量分型：loader hang（runner 装载语义）、{{host}} 模板 URL（多主机环境）、
-net 真值（secureConnectionStart/分层时间戳——需真实网络栈遥测）、wptserve
-动态端点（.py handler，结构性不可执行）。
+**下一步**：收口归档（goal 文档里程碑终点——「缺面大则挂账带数字收口」条件
+成立）。DC-1/2/3 全部达成；M3-S3 loader 面经本轮归属核对**定性为跨域挂账**，
+不在本 goal 继续动工：
+- **img 面**：Error.stack 探针定位 onload 派发链 = part05 R56h 页面 fetch 通道
+  （事件已派、条目已产、initiatorType 已归正 'img'——259fe4fae）；剩余失败为
+  事件**序列**语义（image-sequence-of-events）与 iframe 案（多 frame 结构性
+  skip 面）——img 域。
+- **link/stylesheet 面**：runner 进内路径无 link 完成信号（`.sheet` 惰性构建、
+  无外部 CSS 装载通道；async_load 的 take_link_element_events 仅 AsyncPageLoad
+  路径消费）——补通道属 webview/html-semantics 域基建，本 goal 不认领。
+- **net 真值余量**：secureConnectionStart/redirect 链/TAO——需真实网络栈遥测。
+- **环境面**：{{host}} 多主机模板 URL。
+- navigation-timing 真值：归 navigation-compat 流域（契约依赖条款）。
 
 **已知缺口（M3-S1 记账）**：buffer-full-add-entries-during-callback 期望 3 得 2
 ——callback 内 sync XHR 条目的事件循环交错（同步入账 vs 延迟入账在
 microtask/task 序上不可兼得，三轮建模取 12/13 面收购点）。
+
+**DC-3 门禁闭环（2026-10-13 凌晨，静机窗口）**：make reftest **零回归**
+（不一致 failed = 0.0%——551 真通过 + 47 近似通过 + Layout 506/506 + Text
+203/203）；product-smoke PASS（exit 0，struct-check 0 issues）；make test 71
+targets 全绿（每轮提交前）。DC-3 三项（make test 全绿 / reftest 零回归 /
+product-smoke 恒值）全部实证。
 
 **M3-S2 门禁（2026-10-13）**：make test 全绿（71 targets）；resource corpus
 42/113（nextHopProtocol 4 桶清零 + invariants/test_resource_timing 面 +3）。
@@ -65,9 +76,10 @@ accesskey-hang 既有缺口，非派发机制回归）；pointerevents 全量守
 | M2-S1 longtask 条目生成 | **完成**（bench-gate PASS 收口，2026-10-13） | [M2-S1 基线](evidence/2026-10-12-m2s1-longtask-green.json)；benchmark_20261013_030742.json |
 | M2-S2 event-timing 条目生成 | **实现完成**（55/72，余 17 跨域挂账） | [M2-S2 记分](evidence/2026-10-12-m2s2-event-timing-green.json) |
 | M2-S3 navigation-timing 自洽面 | **实现完成**（81/95，余 14 真值/环境面） | [M2-S3 记分](evidence/2026-10-13-m2s3-navigation-timing-green.json) |
-| M3-S1 resource-timing 条目生成 | **实现完成**（35/113，余 78 真值/环境/loader 面） | [M3-S1 记分](evidence/2026-10-13-m3s1-resource-timing-green.json) |
+| M3-S1 resource-timing 条目生成 | **实现完成**（35/113） | [M3-S1 记分](evidence/2026-10-13-m3s1-resource-timing-green.json) |
 | M3-S2 resource net 元数据桥 | **实现完成**（42/113） | [M3-S2 记分](evidence/2026-10-13-m3s2-resource-timing-meta.json) |
-| M3-S3 loader 面（img/link 完成信号）+ navigation 真值 | 待启动（跨 goal 归属待核对） | — |
+| M3-S3 loader 面 | **定性为跨域挂账**（img 域/webview 基建/net 真值/环境面——见状态头 §下一步） | Error.stack 探针 + reftest/product-smoke 门禁记录 |
+| 收口归档 | 待执行（下一轮） | — |
 
 ## 基线账本
 
