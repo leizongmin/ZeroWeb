@@ -438,6 +438,27 @@ fn test_border_style_only() {
 }
 
 #[test]
+/// R5090（CSS2 §8.5.2 <line-width> = <length [0,∞]>）：负宽度使 border/outline 简写
+/// 整声明非法（border-width-010 driving：`border: red solid -1px` 须忽略、前序
+/// green 生效；旧接受 -1px 展开致红色覆盖）。kill-switch ZW_SHORTHAND_NEG_WIDTH_INVALID=0。
+fn test_negative_width_invalidates_border_shorthand() {
+    // border 简写：负宽度 → 空展开（整声明忽略）。
+    let result = expand_one("border", "red solid -1px", false, (0, 0, 1));
+    assert!(result.is_empty(), "负 border-width 须使整声明非法，实际 {result:?}");
+
+    // 正常正值不受影响。
+    let ok = expand_one("border", "red solid 1px", false, (0, 0, 1));
+    assert_eq!(ok.len(), 12);
+
+    // outline 简写：负宽度 → 空展开。
+    let outline_neg = expand_one("outline", "solid -2px", false, (0, 0, 1));
+    assert!(outline_neg.is_empty(), "负 outline-width 须使整声明非法");
+
+    let outline_ok = expand_one("outline", "solid 2px", false, (0, 0, 1));
+    assert!(!outline_ok.is_empty(), "正 outline-width 正常展开");
+}
+
+#[test]
 /// border 仅 width
 fn test_border_width_only() {
     let result = expand_one("border", "2px", false, (0, 0, 1));

@@ -1392,6 +1392,16 @@ fn parse_border_shorthand(value: &str) -> Option<BorderShorthand> {
             seen_style = true;
             style = part.to_string();
         } else if looks_like_length(part) {
+            // R5090（CSS2 §8.5.2 <line-width> = <length [0,∞]>）：负宽度使整个简写
+            // 非法，整声明忽略——旧实现接受负值展开，`border: red solid -1px` 的
+            // red 覆盖前序 border-color: green（border-width-010 driving，chromium
+            // 绿边）。
+            // OPTIMIZATION: 负号先行短路——env 读取仅在罕见负 token 路径。
+            if part.trim_start().starts_with('-')
+                && std::env::var("ZW_SHORTHAND_NEG_WIDTH_INVALID").as_deref() != Ok("0")
+            {
+                return None;
+            }
             if seen_width {
                 return None;
             }
@@ -2150,6 +2160,13 @@ fn expand_outline(value: &str, important: bool, specificity: (u32, u32, u32)) ->
             seen_style = true;
             style = part;
         } else if looks_like_length(part) {
+            // R5090：同 border——<line-width> 非负（css-ui-3 §outline-width）。
+            // OPTIMIZATION: 负号先行短路——env 读取仅在罕见负 token 路径。
+            if part.trim_start().starts_with('-')
+                && std::env::var("ZW_SHORTHAND_NEG_WIDTH_INVALID").as_deref() != Ok("0")
+            {
+                return vec![];
+            }
             if seen_width {
                 return vec![];
             }
@@ -2325,6 +2342,13 @@ fn expand_column_rule(value: &str, important: bool, specificity: (u32, u32, u32)
             seen_style = true;
             style = part.to_string();
         } else if looks_like_length(part) {
+            // R5090：同 border——<line-width> 非负（css-ui-3 §outline-width）。
+            // OPTIMIZATION: 负号先行短路——env 读取仅在罕见负 token 路径。
+            if part.trim_start().starts_with('-')
+                && std::env::var("ZW_SHORTHAND_NEG_WIDTH_INVALID").as_deref() != Ok("0")
+            {
+                return vec![];
+            }
             if seen_width {
                 return vec![];
             }
