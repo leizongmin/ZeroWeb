@@ -621,6 +621,10 @@ impl RendererJsWorker {
         if let Ok(mut map) = self.handle_selector_map.lock() {
             map.clear();
         }
+        // P9-9 返修（DEF-1）：external_css 槽同为文档域状态——旧页外部 CSS 跨导航残留
+        // 会在「复位后、下一次 sync_cached_html_from_webview 覆盖前」的窗口被新文档 gCS
+        // 读到。镜像 runtime 侧 cached_css 复位，于此共享复位路径统一清空。
+        self.set_external_css("");
         self.async_callbacks_ready.store(false, Ordering::Release);
         // t2-pb1 fix#11：复位命令走优先队列（跳过页面回调积压；同通道 FIFO 保证新文档
         // 的优先命令排在其后）+ 有界等待——页面回调饱和 / 单臂 30s 级（bilibili timer
@@ -2397,6 +2401,18 @@ mod tests {
                 .unwrap(),
             "",
             "跨文档 css 清空后旧规则不得残留"
+        );
+        // P9-9 返修（DEF-1）第四相：导航复位路径（reset_document_state）必须镜像清槽——
+        // 不经显式 set_external_css("")，装过外部 CSS 的文档导航后旧规则不得进新文档 gCS。
+        worker.set_external_css("h1 { font-family: GithubMono, monospace; }");
+        worker.reset_document_state();
+        worker.set_dom_snapshot("<html><body><h1>v</h1></body></html>", "https://zero.test/p99c");
+        assert_eq!(
+            worker
+                .execute_script_direct("getComputedStyle(document.querySelector('h1')).getPropertyValue('font-family')")
+                .unwrap(),
+            "",
+            "reset_document_state 后旧页外部 CSS 不得残留到新文档 gCS"
         );
         worker.shutdown();
     }
