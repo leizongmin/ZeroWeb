@@ -2,14 +2,14 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-14（**M5-S8 执行**——formdata/FormDataEvent/submitter 簇
-修齐 + sync XHR 账面修正：ctor WebIDL TypeError / nameless image submitter bare
-x/y + selected coordinates / dispatchEvent 派发 click 提交扩面 / Request
-FormData·Blob body 共享序列化 / multipart part 头大小写+File 化；六 corpus
-受控 A/B **+14P/−14F 零回归**；「sync XHR 结构面 4」实测全绿销账）。
-此前：同日 M5-S7（URL 反射基址接线）；2026-10-13 M5-S6（url 基址链 +215）；
-M5-S5（scheme 翻转 +179）；M5-S4（P6 二期收口）；M5-S3（eventsource + WS
-cookie jar）；2026-10-13（M5-S2/S1）；2026-10-01（M4-S29 收口判定）
+**最后更新**: 2026-10-14（**M5-S9 执行**——bad-chunk 注入 2 腿销账：
+`bad-chunk-encoding.py` 内置 fixture + `x-zero-body-error-after` 标记头 → 流
+中段网络错误面（首 N 字节合法、首 read 兑现后 error、consume 族同拒）；
+六 corpus 受控 A/B **+2P/−2F 零回归**）。
+此前：同日 M5-S8（formdata 簇 +14 / sync XHR 销账）；M5-S7（URL 反射基址接线）；
+2026-10-13 M5-S6（url 基址链 +215）；M5-S5（scheme 翻转 +179）；M5-S4（P6
+二期收口）；M5-S3（eventsource + WS cookie jar）；2026-10-13（M5-S2/S1）；
+2026-10-01（M4-S29 收口判定）
 
 ---
 
@@ -36,6 +36,17 @@ IDL 校验 19（shim）、`ws.protocol` 属性面 4 案（shim+bridge）、WS co
 1（017 执行序）。证据
 [evidence/2026-10-13-m5-s1-ws-fixture-baseline.md](evidence/2026-10-13-m5-s1-ws-fixture-baseline.md)。
 不测面：wss/h2 变体、`.https.*` 5 案（TLS）、multi-globals/unload-a-document（结构面）。
+
+**M5-S9 执行（同日）**：bad-chunk 注入 2 腿销账（error-after-response
+0P/2F → 2P/0F）——`bad-chunk-encoding.py` 内置等价 fixture（TEST_CHUNK×count +
+garbage，trickle.py 同型生成器）+ 内部标记头 `x-zero-body-error-after` →
+`_bodyErrorAfter` 字段 → 流中段网络错误面（前 N 字节单 chunk enqueue；错误在
+**首个 read 兑现后**经 getReader 包装触发——start 内同步 error 清空队列令首
+read 拒，首版即此翻车；consume 族 text()/arrayBuffer() 同拒 TypeError，spec
+一致）。六 corpus 受控 A/B **+2P/−2F 零回归**；make test 全绿（**20661P/0F**）
++ clippy + fmt 干净；bench-gate 同族噪声延续（paint_simple 128µs↔381µs 跨轮，
+并行流域负载）。证据
+[evidence/2026-10-14-m5-s9-bad-chunk.md](evidence/2026-10-14-m5-s9-bad-chunk.md)。
 
 **M5-S8 执行（同日）**：formdata 簇修齐 + sync XHR 账面修正。修齐七处：ctor
 WebIDL TypeError（null/'string'）；ctor nameless image submitter bare x/y +
@@ -185,7 +196,7 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
 |---|------|------|
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口 + M4-S23~S26 cors 域收口（fetch **1491/2081 = 71.6%** / mimesniff 100%）；残余：credentials/cookie 管道腿 ~13（跨域挂账）、response-error 族（10） |
-| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口；page-scheme 失配已解（M5-S5 翻转）——**残余：XML 文档面（engine XML DOM 深度——template-element 族）、bad-chunk 注入 2、formdata 残余 5F（iframe 编排 structural 2 + surrogate wire 1 + input-image 几何跨域 2——M5-S8 精确记账）、timeout 族 3**；sync XHR 结构面 4 已实测全绿销账（M5-S8——残 2 案为 permissions-policy API 面跨域记账） |
+| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口；page-scheme 失配已解（M5-S5 翻转）；bad-chunk 注入 2 已销账（M5-S9）——**残余：XML 文档面（engine XML DOM 深度——template-element 族）、formdata 残余 5F（iframe 编排 structural 2 + surrogate wire 1 + input-image 几何跨域 2——M5-S8 精确记账）、timeout 族 3**；sync XHR 结构面 4 已实测全绿销账（M5-S8——残 2 案为 permissions-policy API 面跨域记账） |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 基址链已清偿（M5-S6 +215 零回归）+ URL 反射基址接线已清偿（M5-S7——反射/请求/导航五面接 `_zwDocBaseURL`，无 base 元素行为不变）——残余：urltestdata 全量解析深水（IDNA/toASCII/file: 特例/host 校验）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | ✅ M4-S11 收口（88.6%）+ M4-S28 flow-control 清偿（**88.7%**，piping 全绿含 flow-control 5/5）；**残余：transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿，JS 层不可表达）** |
 | P6 | WebSocket 二期切片（runner WS fixture 端点 + websockets corpus 基线 + 语义修齐） | ✅ **收口（2026-10-14，M5-S1→S4 四切片）**：**376/376 = 100% / case 106/106 = 100%**（基线 334/375 = 89.1%）；不测面维持记账（wss/h2 变体、.https.* TLS、multi-globals/unload-a-document/bfcache 结构面） |
@@ -193,6 +204,11 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
 
 ## 已完成切片
 
+- **M5-S9（2026-10-14）**：bad-chunk 注入 2 腿销账（error-after-response 2/2）：
+  内置 bad-chunk-encoding fixture + `x-zero-body-error-after` 流中段网络错误面
+  （首 read 兑现后 error + consume 族同拒）。六 corpus 受控 A/B **+2P/−2F 零
+  回归**；make test 全绿（20661P/0F）+ clippy + fmt 干净。见
+  [evidence/2026-10-14-m5-s9-bad-chunk.md](evidence/2026-10-14-m5-s9-bad-chunk.md)。
 - **M5-S8（2026-10-14）**：formdata/FormDataEvent/submitter 簇修齐（ctor WebIDL
   TypeError / nameless image submitter + selected coordinates / dispatchEvent
   提交扩面 / Request FormData·Blob body 序列化 / multipart part 头解析）+ sync
@@ -621,9 +637,8 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
    request-cache-control Timeout **已修复归档**（M5-S3——runner fixture preflight
    应答面，非产品缺口）；url crate panic 防护调用点审计（一次性 panic 未复现，
    低优先观察项）
-3. **goal 内结构性挂账（M5-S8 后余量）**：bad-chunk 注入 2 腿（需 .asis +
-   chunked 解析面）；XML 文档解析（engine XML DOM——template-element 族）；
-   timeout 族 3 腿；formdata 残余 5F（structural/wire/跨域几何——M5-S8 精确
-   记账，本 goal 不再实施）
+3. **goal 内结构性挂账（M5-S9 后余量）**：XML 文档解析（engine XML DOM——
+   template-element 族）；timeout 族 3 腿；formdata 残余 5F（structural/wire/
+   跨域几何——M5-S8 精确记账，本 goal 不再实施）
 
 **待用户决策清单**：（空）

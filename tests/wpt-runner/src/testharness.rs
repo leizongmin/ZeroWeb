@@ -6779,6 +6779,33 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(body.into_bytes()),
                 });
             }
+            // net-api M5-S9：fetch/api/resources/bad-chunk-encoding.py（上游 wptserve
+            // 流式端点——count×合法 chunk 后写裸 "garbage"，客户端 chunk 解析失败 →
+            // 中段网络错误）。合成通道无 chunk 帧语义：body = count×TEST_CHUNK +
+            // "garbage"，`x-zero-body-error-after` 内部标记头承载「N 字节后流错误」
+            // 语义（shim 侧消费后从可见 header list 剥离；error-after-response
+            // 两腿 = 首 read 得 TEST_CHUNK、次 read/closed 拒 TypeError）。
+            if clean == "fetch/api/resources/bad-chunk-encoding.py" {
+                let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
+                let count = wpt_query_value(query, "count")
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(1);
+                let count = count.min(128);
+                let mut body_bytes = "TEST_CHUNK".repeat(count).into_bytes();
+                let good_len = body_bytes.len();
+                body_bytes.extend_from_slice(b"garbage");
+                let mut headers = Vec::new();
+                headers.push(("x-zero-body-error-after".into(), good_len.to_string()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                let body = String::from_utf8_lossy(&body_bytes).into_owned();
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body,
+                    body_bytes: Some(body_bytes),
+                });
+            }
             // js-dom R141：dom/nodes/encoding.py（Document-characterSet-normalization 两文件
             // 654 subtest 经 `<iframe src="encoding.py?label=X">` 取子文档）——上游是
             // wptserve Python 脚本，wpt-data 无静态文件。此处内置等价生成器：读 ?label=

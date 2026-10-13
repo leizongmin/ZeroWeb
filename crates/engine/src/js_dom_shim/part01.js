@@ -1778,6 +1778,9 @@
     var finalUrl = _takeHeaderValue(headers, 'x-zero-final-url');
     var responseType = _takeHeaderValue(headers, 'x-zero-response-type') || 'default';
     var bodyError = _takeHeaderValue(headers, 'x-zero-body-error');
+    // net-api M5-S9：中段网络错误标记（bad-chunk-encoding fixture——首 N 字节合法、
+    // 之后流 error，fetch spec mid-body network error 面）。消费后剥离，JS 不可见。
+    var bodyErrorAfter = _takeHeaderValue(headers, 'x-zero-body-error-after');
     _takeHeaderValue(headers, 'x-zero-resource-type');
     // SW fetch body cancel 反传锚：受控页面经 Service Worker respondWith 的响应由
     // webview 附加内部事件 id 头（消费后即从 headers 移除，JS 不可见）。
@@ -1831,6 +1834,8 @@
     response.url = finalUrl;
     response.type = responseType;
     response._bodyError = bodyError;
+    response._bodyErrorAfter = (bodyErrorAfter != null && isFinite(parseInt(bodyErrorAfter, 10)))
+      ? Math.max(0, parseInt(bodyErrorAfter, 10)) : null;
     return response;
   }
   function _zwBytesFromBodyPart(part) {
@@ -1884,7 +1889,12 @@
     if (!target._bodyNull) target._bodyUsed = true;
   }
   function _zwBodyErrorPromise(target) {
-    if (!target._bodyError) return null;
+    if (!target._bodyError) {
+      // net-api M5-S9：中段网络错误——consume 族（text/json/arrayBuffer/...）同拒
+      //（fetch spec：body 传输失败 → 消费 promise 拒 TypeError）。
+      if (target._bodyErrorAfter != null) return Promise.reject(new TypeError('network error'));
+      return null;
+    }
     return Promise.reject(new TypeError(String(target._bodyError)));
   }
   function _zwCreateBodyStream(target) {
@@ -1897,7 +1907,48 @@
             controller.error(new TypeError(String(target._bodyError)));
           }
         })
-      : _bodyToStream(source);
+      // net-api M5-S9：中段网络错误——前 N 字节合法后流 error（fetch spec mid-body
+      // network error：首 read 得合法 chunk、次 read/closed 拒 TypeError；
+      // error-after-response 两腿）。错误在**首个 read 兑现后**触发（getReader
+      // 包装点）——start 内同步 error 会清空队列令首 read 拒，与真网络序（错误
+      // 异步于 chunk 到达）矛盾。
+      : (target._bodyErrorAfter != null
+        ? (function () {
+            var _ctlRef = null;
+            var bs = new ReadableStream({
+              start: function (controller) {
+                _ctlRef = controller;
+                var bytes = source instanceof Uint8Array ? source : _zw_utf8_encode(source || '');
+                var cut = Math.min(target._bodyErrorAfter, bytes.length);
+                if (cut > 0) controller.enqueue(cut === bytes.length ? bytes : bytes.slice(0, cut));
+              }
+            });
+            var _origGetReader = bs.getReader;
+            bs.getReader = function () {
+              var reader = _origGetReader.apply(bs, arguments);
+              var origRead = reader.read;
+              var _errArmed = false;
+              reader.read = function () {
+                var p = origRead.apply(reader, arguments);
+                if (!_errArmed) {
+                  _errArmed = true;
+                  var _fire = function () {
+                    try { _ctlRef.error(new TypeError('network error')); } catch (_eS9e) {}
+                  };
+                  try { p.then(_fire, _fire); } catch (_eS9t) { _fire(); }
+                }
+                return p;
+              };
+              var origCancel = reader.cancel;
+              reader.cancel = function () {
+                _errArmed = true;
+                return origCancel.apply(reader, arguments);
+              };
+              return reader;
+            };
+            return bs;
+          })()
+        : _bodyToStream(source));
     var originalGetReader = stream.getReader;
     stream._zwIsByteStream = true; // net-api M4-S1：response body 为字节流（fetch spec——byob getReader 面）
     stream.getReader = function () {
