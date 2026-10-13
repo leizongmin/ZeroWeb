@@ -428,7 +428,7 @@ pub(crate) fn run_in_following_block_sibling(
             // `ZW_RUN_IN_MERGE_BLOCK_CONTAINER=0` 恢复「任意块级并入」旧行为）；
             // inline/inline-block/inline-table 等行内级中间层阻断。
             let merge_gate = std::env::var("ZW_RUN_IN_MERGE_BLOCK_CONTAINER").as_deref() != Ok("0");
-            return if sib_is_block && (!merge_gate || styles.get(&sib).is_some_and(&is_block_container_display)) {
+            return if sib_is_block && (!merge_gate || styles.get(&sib).is_some_and(is_block_container_display)) {
                 Some(sib)
             } else {
                 None
