@@ -73,6 +73,13 @@ pub struct InlineFormattingContext {
     /// 下的判定信号（layout IFC 有 styles 直判不消费）。CSS2 §9.3 / CSS Display 3
     /// §2.1：display:none 子树不生成任何盒，其文本不得泄入父 IFC。
     pub display_none_walk_nodes: NodeIdSet,
+    /// CSS2 §9.7：布局期分类的 out-of-flow（position:absolute/fixed）**后代** dom id 集
+    ///（painter 从真实 computed styles 注入，容器子树 ∪ run-in 元素子树）——扁平化
+    /// walk / text 收集在空 styles（paint Path B）下无法识别 OOF 后代，其文本被吸收
+    /// 进 run 推进行宽（run-in-contains-inline-006：孙代 abspos 的 "header" 幽灵推进
+    /// 47px）。判定双通道同 display_none_walk_nodes：layout 趟 styles 直判；Path B 由
+    /// 本集判定。
+    pub oof_walk_nodes: NodeIdSet,
     /// R3840：paint Path B 恢复元素级 `unicode-bidi: bidi-override`（key = inline
     /// owner 元素 NodeId，value = 方向 rtl?）。layout 期经
     /// `LayoutBox.text_node_bidi_overrides` 存储。
@@ -361,6 +368,7 @@ impl InlineFormattingContext {
             vertical_walk_nodes: NodeIdSet::default(),
             block_child_walk_nodes: NodeIdSet::default(),
             display_none_walk_nodes: NodeIdSet::default(),
+            oof_walk_nodes: NodeIdSet::default(),
             text_node_bidi_overrides: NodeIdMap::default(),
             text_align_last: None,
             break_word: false,
@@ -531,6 +539,12 @@ impl InlineFormattingContext {
     /// 设置 display:none 元素集（见字段文档）。
     pub fn with_display_none_walk_nodes(mut self, nodes: NodeIdSet) -> Self {
         self.display_none_walk_nodes = nodes;
+        self
+    }
+
+    /// 设置 out-of-flow 后代元素集（见 `oof_walk_nodes` 字段文档）。
+    pub fn with_oof_walk_nodes(mut self, nodes: NodeIdSet) -> Self {
+        self.oof_walk_nodes = nodes;
         self
     }
 
@@ -1317,6 +1331,11 @@ impl InlineFormattingContext {
     /// 双通道同 collect 主路径：layout 趟 `styles` 直判；paint Path B（空 styles）
     /// 由 `none_nodes` 注入集判定。
     ///
+    /// R5102：同款双通道剪枝 out-of-flow 子树（CSS2 §9.7：position:absolute/fixed
+    /// 脱离常规流，其文本不得经扁平化吸收推进行宽——contains-inline-006 孙代
+    /// abspos 的 "header" 幽灵推进 47px）。layout 趟 `styles` 直判；Path B 由
+    /// `oof_nodes` 注入集判定。
+    ///
     /// R1022：用于 `<ruby>` —— 收集 rb 文本作 inline 文本，排除 `<rt>`/`<rp>`
     /// （rt 文本在 paint 期作 zero-width annotation 上移到 rb 之上，不参与 inline 流）。
     fn collect_text_excluding(
@@ -1325,9 +1344,10 @@ impl InlineFormattingContext {
         exclude: &[&str],
         styles: &HashMap<NodeId, ComputedStyle>,
         none_nodes: &NodeIdSet,
+        oof_nodes: &NodeIdSet,
     ) -> String {
         let mut out = String::new();
-        Self::collect_text_excluding_inner(doc, id, exclude, styles, none_nodes, &mut out);
+        Self::collect_text_excluding_inner(doc, id, exclude, styles, none_nodes, oof_nodes, &mut out);
         out
     }
 
@@ -1337,6 +1357,7 @@ impl InlineFormattingContext {
         exclude: &[&str],
         styles: &HashMap<NodeId, ComputedStyle>,
         none_nodes: &NodeIdSet,
+        oof_nodes: &NodeIdSet,
         out: &mut String,
     ) {
         for child_id in doc.child_nodes(id) {
@@ -1355,7 +1376,15 @@ impl InlineFormattingContext {
                         {
                             continue;
                         }
-                        Self::collect_text_excluding_inner(doc, child_id, exclude, styles, none_nodes, out);
+                        // out-of-flow 子树整棵剪枝（文本不得吸收泄入 run，同上双通道）。
+                        if styles
+                            .get(&child_id)
+                            .is_some_and(|s| matches!(s.position, PositionValue::Absolute | PositionValue::Fixed))
+                            || oof_nodes.contains(&child_id)
+                        {
+                            continue;
+                        }
+                        Self::collect_text_excluding_inner(doc, child_id, exclude, styles, none_nodes, oof_nodes, out);
                     }
                     _ => {}
                 }

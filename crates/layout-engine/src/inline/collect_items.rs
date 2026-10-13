@@ -1110,6 +1110,7 @@ impl InlineFormattingContext {
             &["rt", "rp", "rtc"],
             styles,
             &self.display_none_walk_nodes,
+            &self.oof_walk_nodes,
         );
         let trimmed = if run_preserves {
             text
@@ -1560,6 +1561,18 @@ impl InlineFormattingContext {
                         .get(&gc)
                         .is_some_and(|s| matches!(s.display, DisplayValue::None))
                         || self.display_none_walk_nodes.contains(&gc)
+                    {
+                        continue;
+                    }
+                    // R5102（CSS2 §9.7）：out-of-flow 子树同款剪枝——abspos/fixed 后代的
+                    // 文本不得经 walk 折回吸收推进行宽（contains-inline-006：run-in 前缀
+                    // 隐藏 span 内孙代 abspos 的 "header" 幽灵推进 47px）。双通道同上。
+                    if styles
+                        .get(&gc)
+                        .is_some_and(|s| {
+                            matches!(s.position, PositionValue::Absolute | PositionValue::Fixed)
+                        })
+                        || self.oof_walk_nodes.contains(&gc)
                     {
                         continue;
                     }
@@ -2229,14 +2242,14 @@ mod r4395_rtc_annotation_tests {
             r#"<html><body><rbc>B<rt>A</rt></rbc></body></html>"#,
         );
         let rbc = doc.get_elements_by_tag_name("rbc")[0];
-        let text = InlineFormattingContext::collect_text_excluding(&doc, rbc, &["rt", "rp", "rtc"], &HashMap::new(), &NodeIdSet::default());
+        let text = InlineFormattingContext::collect_text_excluding(&doc, rbc, &["rt", "rp", "rtc"], &HashMap::new(), &NodeIdSet::default(), &NodeIdSet::default());
         assert_eq!(text, "B", "rbc 收集 = base 文本，rt 排除");
         // 包裹 span 形态：嵌套 ruby 的注音同样排除。
         let doc = zero_dom::parse_html(
             r#"<html><body><span>x<ruby>y<rt>z</rt></ruby></span></body></html>"#,
         );
         let span = doc.get_elements_by_tag_name("span")[0];
-        let text = InlineFormattingContext::collect_text_excluding(&doc, span, &["rt", "rp", "rtc"], &HashMap::new(), &NodeIdSet::default());
+        let text = InlineFormattingContext::collect_text_excluding(&doc, span, &["rt", "rp", "rtc"], &HashMap::new(), &NodeIdSet::default(), &NodeIdSet::default());
         assert_eq!(text, "xy", "span 收集排除嵌套 rt");
     }
 
@@ -2250,7 +2263,7 @@ mod r4395_rtc_annotation_tests {
         let ruby = doc.get_elements_by_tag_name("ruby")[0];
         // InlineFormattingContext::collect_text_excluding 为 base run 收集入口
         //（collect 主路径同参调用 &["rt", "rp", "rtc"]）。
-        let base = InlineFormattingContext::collect_text_excluding(&doc, ruby, &["rt", "rp", "rtc"], &HashMap::new(), &NodeIdSet::default());
+        let base = InlineFormattingContext::collect_text_excluding(&doc, ruby, &["rt", "rp", "rtc"], &HashMap::new(), &NodeIdSet::default(), &NodeIdSet::default());
         assert_eq!(base, "東南", "base = rb 文本，rt/rtc 子树排除");
     }
 }

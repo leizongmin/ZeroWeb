@@ -1432,6 +1432,11 @@ impl super::Painter {
                     // display:none 元素信号（CSS2 §9.3 / CSS Display 3 §2.1）——Path B
                     // （空 styles）下 author 规则隐藏子门，防 none 文本泄入父 IFC。
                     .with_display_none_walk_nodes(collect_display_none_walk_nodes(box_node, doc, styles))
+                    // R5102（CSS2 §9.7）：out-of-flow 后代集（容器子树 ∪ run-in 元素子树）
+                    // ——Path B 空 styles 下扁平化 walk 无法识别 OOF 后代，其文本被吸收
+                    // 推进行宽（run-in-contains-inline-006 孙代 abspos 幽灵推进）。vertical
+                    // 模式不注入（镜像 layout 期 OOF skip 臂的 vertical 例外）。
+                    .with_oof_walk_nodes(collect_oof_walk_nodes(box_node, doc, styles, is_vertical))
                     // R3840：元素级 bidi-override 恢复（layout 期按文本节点 id 存储）。
                     .with_text_node_bidi_overrides(box_node.text_node_bidi_overrides.clone())
                     // R3778：run 级有效 white-space 覆盖——inline 包裹层声明的 pre 等在
@@ -3783,6 +3788,48 @@ fn collect_display_none_walk_nodes(
         if styles.get(&id).is_some_and(|s| matches!(s.display, DisplayValue::None)) {
             out.insert(id);
             continue; // 子树剪枝：hidden 后代无需入集
+        }
+        stack.extend(doc.child_nodes(id));
+    }
+    out
+}
+
+/// R5102（CSS2 §9.7）：out-of-flow 后代集——容器 DOM 子树 ∪ run-in 元素 DOM 子树中
+/// position:absolute/fixed 的元素（扁平化 walk / text 收集在 Path B 空 styles 下的
+/// 剪枝真值源，镜像 [`collect_display_none_walk_nodes`] 双通道模式）。run-in 前缀子树
+/// 不在容器 DOM 子树内（run-in 是容器的兄弟元素），须单独并入。vertical 模式返回空集
+///（镜像 layout 期 OOF skip 臂的 vertical 例外：vertical-rl 的 abspos shrink-to-fit
+/// 依赖 IFC 内测量，不剪）。
+fn collect_oof_walk_nodes(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: Option<&HashMap<NodeId, ComputedStyle>>,
+    vertical: bool,
+) -> NodeIdSet {
+    if vertical {
+        return NodeIdSet::default();
+    }
+    let Some(styles) = styles else {
+        return NodeIdSet::default();
+    };
+    let mut out = NodeIdSet::default();
+    let mut stack: Vec<NodeId> = Vec::new();
+    if let Some(root) = box_node.node_id {
+        stack.extend(doc.child_nodes(root));
+    }
+    // run-in 前缀子树（build_subtree 注册表：本容器并入的 run-in 源元素）。
+    if let Some(run_in_id) = box_node.run_in_prepended {
+        stack.extend(doc.child_nodes(run_in_id));
+    }
+    while let Some(id) = stack.pop() {
+        if styles.get(&id).is_some_and(|s| {
+            matches!(
+                s.position,
+                zero_css_parser::values::PositionValue::Absolute | zero_css_parser::values::PositionValue::Fixed
+            )
+        }) {
+            out.insert(id);
+            continue; // 子树剪枝：OOF 后代自身即剪枝单元
         }
         stack.extend(doc.child_nodes(id));
     }
