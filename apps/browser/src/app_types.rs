@@ -93,6 +93,9 @@ pub struct ContextMenuState {
     pub items: Vec<zero_browser_shell::MenuItem>,
     /// 悬停索引
     pub hovered_index: Option<usize>,
+    /// 分段行（MenuItemType::Segmented，如 Zoom 行）内悬停/按下的段索引；
+    /// 非分段行或键盘导航时为 None。
+    pub hovered_segment: Option<usize>,
     /// 当前展开的子菜单父项索引（None 表示无子菜单展开）。
     pub open_sub_menu: Option<usize>,
     /// 子菜单内悬停的子项索引。
@@ -122,6 +125,7 @@ impl ContextMenuState {
             context_type: ContextType::Page,
             items: Vec::new(),
             hovered_index: None,
+            hovered_segment: None,
             open_sub_menu: None,
             sub_menu_hovered: None,
             x: 0.0,
@@ -140,6 +144,7 @@ impl ContextMenuState {
         self.visible = false;
         self.items.clear();
         self.hovered_index = None;
+        self.hovered_segment = None;
         self.open_sub_menu = None;
         self.sub_menu_hovered = None;
         self.source_tab_id = None;

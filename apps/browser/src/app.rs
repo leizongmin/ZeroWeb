@@ -365,11 +365,20 @@ impl BrowserApp {
     }
 
     fn update_hovered_link_at(&mut self, x: f64, y: f64) {
-        let href = if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32) {
-            self.tabs.hit_test_link(tab_id, doc_x, doc_y)
-        } else {
-            None
-        };
+        // 菜单覆盖在页面之上时状态栏不跟随（菜单打开即已清除，不因指针扫过
+        // 菜单下的页面区域而重新出现，Chrome 同语义）。
+        if self.context_menu.visible {
+            return;
+        }
+        let href = self
+            .page_doc_point(x as f32, y as f32)
+            .and_then(|(tab_id, doc_x, doc_y)| {
+                let href = self.tabs.hit_test_link(tab_id, doc_x, doc_y)?;
+                // T6-I7：状态栏显示解析后的绝对 URL——与链接点击导航同一 join
+                // 逻辑（resolve_clicked_link_url），保证"所显即所往"。
+                let document_url = self.shell.tab(tab_id).and_then(|tab| tab.url());
+                Some(resolve_clicked_link_url(&href, document_url))
+            });
         self.set_hovered_link_url(href);
     }
 
@@ -969,6 +978,18 @@ impl BrowserApp {
         self.context_menu.items.iter().position(|i| i.id() == id)
     }
 
+    /// 测试用：分段行（如 Zoom 行）的段 `(id, label)` 序列；非分段行返回 None。
+    #[cfg(test)]
+    pub fn context_menu_segments_for_test(&self, id: &str) -> Option<Vec<(String, String)>> {
+        let item = self.context_menu.items.iter().find(|i| i.id() == id)?;
+        Some(
+            item.segments()?
+                .iter()
+                .map(|s| (s.id().to_string(), s.label().to_string()))
+                .collect(),
+        )
+    }
+
     /// 测试用：菜单原点 x。
     #[cfg(test)]
     pub fn context_menu_x_for_test(&self) -> f32 {
@@ -1443,14 +1464,7 @@ impl BrowserApp {
 
     /// 上下文菜单总高度（物理像素），separator 项计入紧凑高度。
     pub(crate) fn context_menu_total_height(&self) -> f32 {
-        let s = self.scale_factor;
-        let normal = layout::CONTEXT_MENU_ROW_HEIGHT * s;
-        let sep = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
-        self.context_menu
-            .items
-            .iter()
-            .map(|it| if it.is_separator() { sep } else { normal })
-            .sum()
+        Self::menu_items_total_height(&self.context_menu.items, self.scale_factor)
     }
 
     /// 子菜单面板中第 `child_idx` 项的 y 偏移（物理像素，相对子面板顶部）。
@@ -1725,6 +1739,10 @@ impl BrowserApp {
     }
 
     fn load_welcome_page(&mut self, tab_id: TabId) {
+        // T4-I6：欢迎页此前只进页面运行时，shell 历史无条目——启动/新标签首次导航后
+        // 返回箭头永远禁用，按钮态与可见历史差一。此处补记初始导航（仅当该标签
+        // 尚无 URL；地址栏路径已先 shell.navigate，不会重复入账）。
+        self.shell.record_initial_navigation(tab_id, "zero://newtab");
         self.tabs.ensure_tab(tab_id);
         self.tabs
             .load_html(tab_id, pages::WELCOME_HTML, None, Some("zero://newtab"));

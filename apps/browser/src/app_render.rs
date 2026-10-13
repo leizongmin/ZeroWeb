@@ -906,11 +906,10 @@ impl BrowserApp {
             },
             crate::ui_icons::Icon::Home,
         ];
-        let can_back = self.shell.active_tab().is_some_and(|tab| tab.history_index() > 0);
-        let can_forward = self.shell.active_tab().is_some_and(|tab| {
-            let history = tab.navigation_history();
-            !history.is_empty() && tab.history_index() < history.len() - 1
-        });
+        // 启用态判定与历史记账同源：Tab::can_go_back/forward 是唯一算式，
+        // smoke 断言面（app_smoke_state）从这里取同一结果（T4-I6）。
+        let can_back = self.shell.active_tab().is_some_and(|tab| tab.can_go_back());
+        let can_forward = self.shell.active_tab().is_some_and(|tab| tab.can_go_forward());
         let nav_enabled = [can_back, can_forward, true, true];
         let hover_diameter = layout::NAV_BUTTON_HOVER_DIAMETER * s;
 
@@ -1813,6 +1812,38 @@ impl BrowserApp {
                     border,
                     self.chrome_palette.context_menu_separator,
                 ));
+                continue;
+            }
+
+            // 分段行（T7 Zoom 行）：整行等分为段，各段标签居中；仅悬停段高亮，
+            // 不渲染快捷键/子菜单箭头。
+            if let Some(segments) = item.segments() {
+                let seg_w = menu_w / segments.len() as f32;
+                for (si, seg) in segments.iter().enumerate() {
+                    let seg_x = menu_x + seg_w * si as f32;
+                    let seg_hovered =
+                        self.context_menu.hovered_index == Some(i)
+                            && self.context_menu.hovered_segment == Some(si)
+                            && seg.enabled();
+                    if seg_hovered {
+                        fills.push(rect_fill(
+                            seg_x + border,
+                            row_y,
+                            (seg_w - 2.0 * border).max(0.0),
+                            row_h,
+                            self.chrome_palette.context_menu_hover_bg,
+                        ));
+                    }
+                    let label_w = self.measure_ui_text_width(seg.label(), font_size);
+                    self.draw_ui_text(
+                        seg.label(),
+                        seg_x + (seg_w - label_w) * 0.5,
+                        row_y + (row_h - font_size) * 0.5,
+                        font_size,
+                        self.chrome_palette.context_menu_text,
+                        glyphs,
+                    );
+                }
                 continue;
             }
 

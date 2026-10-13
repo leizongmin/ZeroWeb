@@ -136,7 +136,8 @@ pub const DOWNLOAD_PANEL_FLOAT_MARGIN: f32 = 12.0;
 /// Corner radius of the floating download panel.
 pub const DOWNLOAD_PANEL_RADIUS: f32 = 8.0;
 /// Width of the context menu panel.
-pub const CONTEXT_MENU_WIDTH: f32 = 220.0;
+/// 240：容纳英文 "Hide Bookmarks Bar" + "Ctrl+Shift+B" 快捷键提示不截断（T7）。
+pub const CONTEXT_MENU_WIDTH: f32 = 240.0;
 /// Row height inside the context menu.
 pub const CONTEXT_MENU_ROW_HEIGHT: f32 = 32.0;
 /// Compact row height for separator items (visual breathing room without bloating the menu).

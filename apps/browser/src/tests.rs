@@ -4019,3 +4019,92 @@ fn ctrl_home_end_scroll_to_top_and_bottom_via_receipt() {
     );
     app.handle_key(BrowserApp::test_modifier_key_name(), false, None);
 }
+
+/// T7-I10：Ctrl+Shift+B 切换书签栏（与主菜单"切换书签栏"项同一 toggle 路径）；
+/// 无 Shift 的 Ctrl+B 无绑定、不切换。
+#[test]
+fn ctrl_shift_b_toggles_bookmarks_bar() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let mod_key = BrowserApp::test_modifier_key_name();
+    let initial = app.shell.settings().show_bookmarks_bar;
+
+    // 无 Shift 的 Ctrl+B：无绑定，不切换。
+    app.handle_key(mod_key, true, None);
+    app.handle_key("b", true, None);
+    app.handle_key("b", false, None);
+    app.handle_key(mod_key, false, None);
+    assert_eq!(
+        app.shell.settings().show_bookmarks_bar,
+        initial,
+        "Ctrl+B must not toggle the bookmarks bar"
+    );
+
+    // Ctrl+Shift+B：切换；再按一次还原。
+    app.handle_key(mod_key, true, None);
+    app.handle_key("Shift", true, None);
+    app.handle_key("b", true, None);
+    app.handle_key("b", false, None);
+    app.handle_key("Shift", false, None);
+    app.handle_key(mod_key, false, None);
+    assert_eq!(
+        app.shell.settings().show_bookmarks_bar,
+        !initial,
+        "Ctrl+Shift+B should toggle the bookmarks bar"
+    );
+    app.handle_key(mod_key, true, None);
+    app.handle_key("Shift", true, None);
+    app.handle_key("b", true, None);
+    app.handle_key("b", false, None);
+    app.handle_key("Shift", false, None);
+    app.handle_key(mod_key, false, None);
+    assert_eq!(app.shell.settings().show_bookmarks_bar, initial);
+}
+
+/// T7-I11：Ctrl+,（逗号键名 ","）打开设置页。
+#[test]
+fn ctrl_comma_opens_settings_page() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let mod_key = BrowserApp::test_modifier_key_name();
+    app.handle_key(mod_key, true, None);
+    app.handle_key(",", true, None);
+    app.handle_key(",", false, None);
+    app.handle_key(mod_key, false, None);
+    assert_eq!(app.address_bar_text(), "zero://settings");
+}
+
+/// T7：主菜单 Zoom 行存在且三段 id 正确；百分比段反映当前缩放。
+/// 经真实工具栏按钮点击打开菜单（与 driver/smoke 同输入路径）。
+#[test]
+fn browser_menu_contains_zoom_row() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    app.shell.set_zoom(1.5);
+
+    let (btn_x, btn_y, btn_w, bar_h) = app.toolbar_menu_button_rect_for_test();
+    let cx = (btn_x + btn_w * 0.5) as f64;
+    let cy = (btn_y + bar_h * 0.5) as f64;
+    app.handle_mouse_click(cx, cy, true, "Left");
+    app.handle_mouse_click(cx, cy, false, "Left");
+    assert!(
+        app.is_context_menu_visible_for_test(),
+        "browser menu should open from the toolbar button"
+    );
+
+    let ids = app.smoke_context_menu_item_ids();
+    assert!(
+        ids.iter().any(|id| id == "browser_menu_zoom"),
+        "main menu should contain the zoom row: {ids:?}"
+    );
+    let segments = app
+        .context_menu_segments_for_test("browser_menu_zoom")
+        .expect("zoom row should be segmented");
+    assert_eq!(
+        segments
+            .iter()
+            .map(|(id, _)| id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["browser_menu_zoom_out", "browser_menu_zoom_reset", "browser_menu_zoom_in"]
+    );
+    assert_eq!(segments[1].1, "150%", "indicator segment shows current zoom");
+}

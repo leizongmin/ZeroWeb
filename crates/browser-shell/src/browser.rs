@@ -446,6 +446,19 @@ impl BrowserShell {
         }
     }
 
+    /// 为指定标签补记首次导航（欢迎页/新标签页）。
+    ///
+    /// 空标签的欢迎页此前只进页面运行时，shell 历史无条目——首次导航后
+    /// 返回箭头不可用，按钮态与可见历史差一。仅在该标签尚无 URL 时记账，
+    /// 避免与 `navigate()` 重复条目（地址栏路径会先 navigate 再载入欢迎页）。
+    pub fn record_initial_navigation(&mut self, id: TabId, url: &str) {
+        if let Some(tab) = self.tabs.get_tab_mut(id)
+            && tab.url().is_none()
+        {
+            tab.navigate(url);
+        }
+    }
+
     /// 刷新当前页面。
     pub fn refresh(&mut self) {
         if let Some(tab) = self.tabs.active_tab_mut()

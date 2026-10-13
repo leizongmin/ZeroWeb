@@ -131,15 +131,22 @@ impl BrowserApp {
             (0.0, 0.0)
         };
 
+        // T6-I2：贴窗口右缘向左展开、贴下缘向上展开（Chrome 行为）；坐标在
+        // 存储时翻转，渲染与命中测试都读这里，几何保持同源。
+        let (menu_x, menu_y) = self.flipped_menu_origin(x, y, &items);
+        // T6-I7：菜单打开即清除链接悬停状态栏，避免残留（菜单期间也不再更新）。
+        self.set_hovered_link_url(None);
+
         self.context_menu = ContextMenuState {
             visible: true,
             context_type,
             items,
             hovered_index: None,
+            hovered_segment: None,
             open_sub_menu: None,
             sub_menu_hovered: None,
-            x: x as f32,
-            y: y as f32,
+            x: menu_x,
+            y: menu_y,
             source_tab_id: self.shell.active_tab_id(),
             page_doc_x,
             page_doc_y,
@@ -159,7 +166,22 @@ impl BrowserApp {
         };
 
         let item_id = match self.context_menu.items.get(idx) {
-            Some(item) if item.enabled() && !item.is_separator() && !item.is_sub_menu() => item.id().to_string(),
+            Some(item) if item.enabled() && !item.is_separator() && !item.is_sub_menu() => {
+                if let Some(segments) = item.segments() {
+                    // 分段行（Zoom 行等）：按按下 x 落段取子项 id；键盘进入时
+                    // 无落段信息，不激活（Chrome 键盘导航同样停在 Zoom 行）。
+                    let seg = match self.context_menu.hovered_segment {
+                        Some(seg) => seg,
+                        None => return,
+                    };
+                    match segments.get(seg) {
+                        Some(child) if child.enabled() => child.id().to_string(),
+                        _ => return,
+                    }
+                } else {
+                    item.id().to_string()
+                }
+            }
             _ => return,
         };
 
@@ -188,13 +210,22 @@ impl BrowserApp {
                     self.sync_webview_viewport();
                 }
             }
-            "browser_menu_toggle_bookmarks_bar" => {
-                let was_visible = self.bookmarks_bar_visible();
-                let show = !self.shell.settings().show_bookmarks_bar;
-                self.shell.apply_settings(|settings| settings.show_bookmarks_bar = show);
-                if self.bookmarks_bar_visible() != was_visible {
-                    self.sync_webview_viewport();
-                }
+            "browser_menu_toggle_bookmarks_bar" => self.toggle_bookmarks_bar(),
+            // T7：Zoom 行三段——与 Ctrl±/Ctrl+0 快捷键同一缩放路径。
+            "browser_menu_zoom_out" => {
+                self.shell.zoom_out();
+                self.show_zoom_indicator();
+                self.apply_page_zoom_change();
+            }
+            "browser_menu_zoom_in" => {
+                self.shell.zoom_in();
+                self.show_zoom_indicator();
+                self.apply_page_zoom_change();
+            }
+            "browser_menu_zoom_reset" => {
+                self.shell.zoom_reset();
+                self.show_zoom_indicator();
+                self.apply_page_zoom_change();
             }
             "browser_menu_about" => {
                 let html = pages::generate_about_browser_html();
@@ -347,6 +378,61 @@ impl BrowserApp {
             _ => {}
         }
         self.needs_redraw = true;
+    }
+
+    /// 切换书签栏显隐（主菜单项与 Ctrl+Shift+B 共享路径，T7-I10）。
+    fn toggle_bookmarks_bar(&mut self) {
+        let was_visible = self.bookmarks_bar_visible();
+        let show = !self.shell.settings().show_bookmarks_bar;
+        self.shell.apply_settings(|settings| settings.show_bookmarks_bar = show);
+        if self.bookmarks_bar_visible() != was_visible {
+            self.sync_webview_viewport();
+        }
+        self.needs_redraw = true;
+    }
+
+    /// 菜单项序列的总高度（物理像素）：普通行/分隔行分别按行高累加。
+    ///
+    /// 渲染（context_menu_total_height）、命中测试与翻转定位共用同一算式，
+    /// 保证几何同源（参照 menu_zoom_smoke 的 click_menu_item 注释）。
+    fn menu_items_total_height(items: &[MenuItem], s: f32) -> f32 {
+        let normal = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+        let sep = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+        items
+            .iter()
+            .map(|it| if it.is_separator() { sep } else { normal })
+            .sum()
+    }
+
+    /// 计算菜单原点（物理像素）：贴窗口右缘向左展开、贴下缘向上展开（T6-I2，
+    /// Chrome 行为）。存储时翻转一次，渲染与命中测试读同一坐标。
+    fn flipped_menu_origin(&self, x: f64, y: f64, items: &[MenuItem]) -> (f32, f32) {
+        let s = self.scale_factor;
+        let menu_w = layout::CONTEXT_MENU_WIDTH * s;
+        let menu_h = Self::menu_items_total_height(items, s);
+        let (win_w, win_h) = (self.physical_size.0 as f32, self.physical_size.1 as f32);
+        let mx = if x as f32 + menu_w > win_w {
+            (x as f32 - menu_w).max(0.0)
+        } else {
+            x as f32
+        };
+        let my = if y as f32 + menu_h > win_h {
+            (y as f32 - menu_h).max(0.0)
+        } else {
+            y as f32
+        };
+        (mx, my)
+    }
+
+    /// 分段行内按物理像素 x 落段（等分，T7 Zoom 行）。
+    fn context_menu_segment_at(&self, idx: usize, x: f64) -> Option<usize> {
+        let item = self.context_menu.items.get(idx)?;
+        let segments = item.segments()?;
+        let s = self.scale_factor;
+        let menu_w = layout::CONTEXT_MENU_WIDTH * s;
+        let seg_w = menu_w / segments.len() as f32;
+        let rel = (x as f32 - self.context_menu.x).clamp(0.0, menu_w - 1.0);
+        Some(((rel / seg_w) as usize).min(segments.len() - 1))
     }
 
     /// 上下文菜单命中检测

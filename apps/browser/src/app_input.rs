@@ -495,6 +495,8 @@ impl BrowserApp {
                 }
                 // 主菜单 hit-test
                 let hovered = self.context_menu_hit_test(x, y);
+                // 分段行（Zoom 行）落段随 x 实时更新；非分段行返回 None。
+                self.context_menu.hovered_segment = hovered.and_then(|i| self.context_menu_segment_at(i, x));
                 // 鼠标不在主菜单项上、但有子菜单展开时，判断是否在桥接区
                 // （主菜单与子菜单面板之间）。若是则视为"仍在前往子菜单的路上"，
                 // 保留当前展开状态，不触发 hover 重算导致子菜单收起。
@@ -801,6 +803,7 @@ impl BrowserApp {
                     return;
                 }
                 self.context_menu.hovered_index = Some(idx);
+                self.context_menu.hovered_segment = self.context_menu_segment_at(idx, x);
                 self.context_menu_suppress_left_up = false;
                 self.activate_context_menu_item();
                 return;
@@ -1141,20 +1144,24 @@ impl BrowserApp {
             UiLanguage::ZhCn => "删除",
             UiLanguage::EnUs => "Delete",
         };
+        let items = vec![
+            MenuItem::action("bookmark_open", open_label),
+            MenuItem::action("bookmark_copy_link", copy_label),
+            MenuItem::separator(),
+            MenuItem::action("bookmark_delete", delete_label),
+        ];
+        // 贴右/下缘翻转（T6-I2），几何与渲染/命中测试同源。
+        let (menu_x, menu_y) = self.flipped_menu_origin(x, y, &items);
         self.context_menu = ContextMenuState {
             visible: true,
             context_type: ContextType::Page,
-            items: vec![
-                MenuItem::action("bookmark_open", open_label),
-                MenuItem::action("bookmark_copy_link", copy_label),
-                MenuItem::separator(),
-                MenuItem::action("bookmark_delete", delete_label),
-            ],
+            items,
             hovered_index: None,
+            hovered_segment: None,
             open_sub_menu: None,
             sub_menu_hovered: None,
-            x: x as f32,
-            y: y as f32,
+            x: menu_x,
+            y: menu_y,
             source_tab_id: self.shell.active_tab_id(),
             page_doc_x: 0.0,
             page_doc_y: 0.0,
@@ -1554,51 +1561,72 @@ impl BrowserApp {
             items
         };
 
+        // T7：Zoom 行（− / 当前百分比 / +），三段等宽可点击；−/+ 与 Ctrl±
+        // 同一缩放路径，点击百分比等同 Ctrl+0 复位。
+        let zoom_items = vec![
+            MenuItem::action("browser_menu_zoom_out", "−"),
+            MenuItem::action("browser_menu_zoom_reset", &format!("{:.0}%", self.shell.zoom() * 100.0)),
+            MenuItem::action("browser_menu_zoom_in", "+"),
+        ];
+
+        let items = vec![
+            MenuItem::action("browser_menu_new_tab", browser_menu_label(BrowserMenuLabel::NewTab, language))
+                .with_shortcut(format!("{}T", mod_prefix())),
+            MenuItem::action("browser_menu_new_private_tab", browser_menu_label(BrowserMenuLabel::NewPrivateTab, language))
+                .with_shortcut(format!("{}Shift+N", mod_prefix())),
+            MenuItem::separator(),
+            MenuItem::action(
+                "browser_menu_reload_all",
+                match language {
+                    UiLanguage::ZhCn => "重新加载所有标签",
+                    UiLanguage::EnUs => "Reload all tabs",
+                },
+            ),
+            MenuItem::sub_menu(
+                "browser_menu_history",
+                browser_menu_label(BrowserMenuLabel::History, language),
+                history_children,
+            ),
+            MenuItem::sub_menu(
+                "browser_menu_downloads",
+                browser_menu_label(BrowserMenuLabel::Downloads, language),
+                downloads_children,
+            ),
+            MenuItem::sub_menu(
+                "browser_menu_bookmarks",
+                browser_menu_label(BrowserMenuLabel::BookmarksManager, language),
+                bookmarks_children,
+            ),
+            MenuItem::separator(),
+            MenuItem::action("browser_menu_toggle_bookmarks_bar", bookmarks_bar_label)
+                .with_shortcut(format!("{}Shift+B", mod_prefix())),
+            MenuItem::separator(),
+            MenuItem::segmented("browser_menu_zoom", zoom_items),
+            MenuItem::separator(),
+            MenuItem::action("browser_menu_about", browser_menu_label(BrowserMenuLabel::AboutBrowser, language)),
+            MenuItem::separator(),
+            MenuItem::action("browser_menu_settings", browser_menu_label(BrowserMenuLabel::Settings, language))
+                .with_shortcut(format!("{},", mod_prefix())),
+        ];
+        // 贴右/下缘翻转（T6-I2），几何与渲染/命中测试同源；菜单打开即清除
+        // 链接悬停状态栏（T6-I7）。
+        let (menu_x, menu_y) = self.flipped_menu_origin(
+            (bx + bw - layout::CONTEXT_MENU_WIDTH * s) as f64,
+            (by + bh + 4.0 * s) as f64,
+            &items,
+        );
+        self.set_hovered_link_url(None);
+
         self.context_menu = ContextMenuState {
             visible: true,
             context_type: ContextType::Page,
-            items: vec![
-                MenuItem::action("browser_menu_new_tab", browser_menu_label(BrowserMenuLabel::NewTab, language))
-                    .with_shortcut(format!("{}T", mod_prefix())),
-                MenuItem::action("browser_menu_new_private_tab", browser_menu_label(BrowserMenuLabel::NewPrivateTab, language))
-                    .with_shortcut(format!("{}Shift+N", mod_prefix())),
-                MenuItem::separator(),
-                MenuItem::action(
-                    "browser_menu_reload_all",
-                    match language {
-                        UiLanguage::ZhCn => "重新加载所有标签",
-                        UiLanguage::EnUs => "Reload all tabs",
-                    },
-                ),
-                MenuItem::sub_menu(
-                    "browser_menu_history",
-                    browser_menu_label(BrowserMenuLabel::History, language),
-                    history_children,
-                ),
-                MenuItem::sub_menu(
-                    "browser_menu_downloads",
-                    browser_menu_label(BrowserMenuLabel::Downloads, language),
-                    downloads_children,
-                ),
-                MenuItem::sub_menu(
-                    "browser_menu_bookmarks",
-                    browser_menu_label(BrowserMenuLabel::BookmarksManager, language),
-                    bookmarks_children,
-                ),
-                MenuItem::separator(),
-                MenuItem::action("browser_menu_toggle_bookmarks_bar", bookmarks_bar_label)
-                    .with_shortcut(format!("{}Shift+B", mod_prefix())),
-                MenuItem::separator(),
-                MenuItem::action("browser_menu_about", browser_menu_label(BrowserMenuLabel::AboutBrowser, language)),
-                MenuItem::separator(),
-                MenuItem::action("browser_menu_settings", browser_menu_label(BrowserMenuLabel::Settings, language))
-                    .with_shortcut(format!("{},", mod_prefix())),
-            ],
+            items,
             hovered_index: None,
+            hovered_segment: None,
             open_sub_menu: None,
             sub_menu_hovered: None,
-            x: bx + bw - layout::CONTEXT_MENU_WIDTH * s,
-            y: by + bh + 4.0 * s,
+            x: menu_x,
+            y: menu_y,
             source_tab_id: self.shell.active_tab_id(),
             page_doc_x: 0.0,
             page_doc_y: 0.0,
@@ -1658,15 +1686,22 @@ impl BrowserApp {
                 .collect()
         };
 
+        // 贴右/下缘翻转（T6-I2），几何与渲染/命中测试同源。
+        let (menu_x, menu_y) = self.flipped_menu_origin(
+            (slot_x + slot_w - layout::CONTEXT_MENU_WIDTH * s) as f64,
+            (slot_y + slot_h + 4.0 * s) as f64,
+            &items,
+        );
         self.context_menu = ContextMenuState {
             visible: true,
             context_type: ContextType::Page,
             items,
             hovered_index: None,
+            hovered_segment: None,
             open_sub_menu: None,
             sub_menu_hovered: None,
-            x: slot_x + slot_w - layout::CONTEXT_MENU_WIDTH * s,
-            y: slot_y + slot_h + 4.0 * s,
+            x: menu_x,
+            y: menu_y,
             source_tab_id: self.shell.active_tab_id(),
             page_doc_x: 0.0,
             page_doc_y: 0.0,
@@ -1718,49 +1753,53 @@ impl BrowserApp {
         } else {
             tab_menu_label(TabMenuLabel::Mute, language)
         };
+        let items = vec![
+            MenuItem::action("tab_reload", tab_menu_label(TabMenuLabel::Reload, language))
+                .with_shortcut(format!("{}R", mod_prefix())),
+            MenuItem::action("tab_pin", pin_label),
+            MenuItem::action("tab_mute", mute_label),
+            MenuItem::separator(),
+            MenuItem::action("tab_duplicate", tab_menu_label(TabMenuLabel::Duplicate, language))
+                .with_shortcut(format!("{}Shift+D", mod_prefix())),
+            MenuItem::action(
+                "tab_copy_url",
+                match language {
+                    UiLanguage::ZhCn => "复制标签 URL",
+                    UiLanguage::EnUs => "Copy tab URL",
+                },
+            ),
+            MenuItem::separator(),
+            MenuItem::action("tab_close", tab_menu_label(TabMenuLabel::Close, language))
+                .with_shortcut(format!("{}W", mod_prefix())),
+            {
+                let mut item = MenuItem::action(
+                    "tab_close_others",
+                    tab_menu_label(TabMenuLabel::CloseOthers, language),
+                );
+                item.set_enabled(can_close_others);
+                item
+            },
+            {
+                let mut item = MenuItem::action(
+                    "tab_close_to_right",
+                    tab_menu_label(TabMenuLabel::CloseToRight, language),
+                );
+                item.set_enabled(can_close_to_right);
+                item
+            },
+        ];
+        // 贴右/下缘翻转（T6-I2），几何与渲染/命中测试同源。
+        let (menu_x, menu_y) = self.flipped_menu_origin(x, y, &items);
         self.context_menu = ContextMenuState {
             visible: true,
             context_type: ContextType::Page,
-            items: vec![
-                MenuItem::action("tab_reload", tab_menu_label(TabMenuLabel::Reload, language))
-                    .with_shortcut(format!("{}R", mod_prefix())),
-                MenuItem::action("tab_pin", pin_label),
-                MenuItem::action("tab_mute", mute_label),
-                MenuItem::separator(),
-                MenuItem::action("tab_duplicate", tab_menu_label(TabMenuLabel::Duplicate, language))
-                    .with_shortcut(format!("{}Shift+D", mod_prefix())),
-                MenuItem::action(
-                    "tab_copy_url",
-                    match language {
-                        UiLanguage::ZhCn => "复制标签 URL",
-                        UiLanguage::EnUs => "Copy tab URL",
-                    },
-                ),
-                MenuItem::separator(),
-                MenuItem::action("tab_close", tab_menu_label(TabMenuLabel::Close, language))
-                    .with_shortcut(format!("{}W", mod_prefix())),
-                {
-                    let mut item = MenuItem::action(
-                        "tab_close_others",
-                        tab_menu_label(TabMenuLabel::CloseOthers, language),
-                    );
-                    item.set_enabled(can_close_others);
-                    item
-                },
-                {
-                    let mut item = MenuItem::action(
-                        "tab_close_to_right",
-                        tab_menu_label(TabMenuLabel::CloseToRight, language),
-                    );
-                    item.set_enabled(can_close_to_right);
-                    item
-                },
-            ],
+            items,
             hovered_index: None,
+            hovered_segment: None,
             open_sub_menu: None,
             sub_menu_hovered: None,
-            x: x as f32,
-            y: y as f32,
+            x: menu_x,
+            y: menu_y,
             source_tab_id: Some(tab_id),
             page_doc_x: 0.0,
             page_doc_y: 0.0,
