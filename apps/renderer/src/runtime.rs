@@ -1189,6 +1189,19 @@ impl RendererRuntime {
         } else if key == "Backspace" {
             self.apply_text_delete_at(target)?;
         } else if key == "Enter" {
+            // t3-pd6：Enter 触发隐式表单提交——textarea 与 input 均适用。
+            // 先通过 execute_dom_script 从 shim 读取活值构造 GET URL，
+            // 再 handle_navigate。此前 textarea 走换行插入而丢导航。
+            let submit_url = self.build_implicit_submit_url(target)?;
+            if let Some(url) = submit_url {
+                self.handle_navigate(zero_protocol::message::NavigateParams {
+                    url,
+                    referrer: self.current_url.clone(),
+                    navigation_epoch: self.navigation_epoch.wrapping_add(1),
+                })?;
+                return Ok(());
+            }
+            // 无表单 → 降级到旧 submit 路径
             self.submit_form_on_enter_at(target)?;
         } else if key == "Escape" {
             // R3254-K3（keyboard-default-actions goal M2 切片 2）：Esc 默认动作——
@@ -1351,6 +1364,57 @@ impl RendererRuntime {
 
     /// P1a form submit：Enter 在单行 input → 解析 enclosing `<form>` 派发 'submit' 事件。
     /// R3054：未 preventDefault 且 method=GET → 导航到 action?query（闭合 click 默认动作族）。
+    /// t3-pd6：读取 shim 活值构造隐式表单提交 GET URL。
+    /// 从 shim 读 target 的 name/value + enclosing form 的 action，
+    /// 拼接 `action?name=value` 返回。target 不在表单中 → None。
+    fn build_implicit_submit_url(&mut self, selector: &str) -> Result<Option<String>, String> {
+        // 1) 找 enclosing form 的 action
+        let Some(form_sel) = zero_engine::enclosing_form_selector(&self.cached_html, selector) else {
+            return Ok(None);
+        };
+        let action = zero_engine::query_attr_from_html(&self.cached_html, &form_sel, "action");
+        if action.is_empty() {
+            return Ok(None);
+        }
+        // 2) 从 shim 读 target 的 name 和 value（活值）
+        let esc_sel = selector.replace('\\', "\\\\").replace('"', "\\\"");
+        let info_script = format!(
+            "(function(){{var el=document.querySelector(\"{esc_sel}\");\
+if(!el)return null;\
+var form=el.closest('form');\
+if(!form)return null;\
+var action=form.getAttribute('action')||'';\
+var name=el.name||'';\
+var val=el.value||'';\
+return JSON.stringify({{action:action,name:name,val:val}});\
+}})()"
+        );
+        let info_json = self.js_worker.execute_script_direct(&info_script)?;
+        let parsed: serde_json::Value = serde_json::from_str(info_json.trim())
+            .unwrap_or(serde_json::Value::Null);
+        let name = parsed["name"].as_str().unwrap_or("").to_string();
+        let val = parsed["val"].as_str().unwrap_or("").to_string();
+        let form_action = parsed["action"].as_str().unwrap_or(&action).to_string();
+        if form_action.is_empty() {
+            return Ok(None);
+        }
+        // 3) 构造 URL：action + separator + name=val（UTF-16 安全的 encode）
+        let encoded: String = val.bytes().map(|b| {
+            if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'~' {
+                (b as char).to_string()
+            } else {
+                format!("%{:02X}", b)
+            }
+        }).collect();
+        let sep = if form_action.contains('?') { '&' } else { '?' };
+        let url = if name.is_empty() {
+            format!("{form_action}{sep}{encoded}")
+        } else {
+            format!("{form_action}{sep}{name}={encoded}")
+        };
+        Ok(Some(url))
+    }
+
     fn submit_form_on_enter_at(&mut self, selector: &str) -> Result<(), String> {
         { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
           if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "submit-enter: sel={selector}"); } }
