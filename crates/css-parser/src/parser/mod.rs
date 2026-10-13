@@ -423,7 +423,18 @@ impl<'a> Parser<'a> {
                 } else if name.eq_ignore_ascii_case("container") {
                     self.consume_container_rule().map(Rule::Container)
                 } else if name.eq_ignore_ascii_case("font-face") {
-                    self.consume_font_face_rule().map(Rule::FontFace)
+                    // https://drafts.csswg.org/css-syntax-3/#consume-an-at-rule —— 无效
+                    // at-rule 只丢弃自身 extent。@font-face 的两条 None 路径（无 `{` 时
+                    // 已自行吃到 `;`/EOF；族名或 url() 源为空时 `{...}` 块已消耗完，
+                    // 如 `src:local(...)`）都已在干净边界，不留残余——共享 None 分支的
+                    // skip_malformed_qualified_rule 面向「中途失败未消费 body」的 at-rule，
+                    // 这里再走会吞掉下一条合法规则（github.com marketing.css：
+                    // MonaSansFallback src:local 使后邻 face 被吞）。故臂内自行收尾。
+                    self.namespace_prologue_ended = true;
+                    return match self.consume_font_face_rule() {
+                        Some(r) => vec![Rule::FontFace(r)],
+                        None => vec![],
+                    };
                 } else if name.eq_ignore_ascii_case("font-feature-values") {
                     self.consume_font_feature_values_rule().map(Rule::FontFeatureValues)
                 } else if name.eq_ignore_ascii_case("page") {

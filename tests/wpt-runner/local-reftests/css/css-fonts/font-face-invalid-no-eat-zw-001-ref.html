@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>invalid @font-face must not swallow following rules (ref)</title>
+<!-- P9-8/R5105 参照臂：与 font-face-invalid-no-eat-zw-001.html 成对维护——
+     同一 div 规则、无前置无效 @font-face。修复态两页逐像素相等。 -->
+<style>
+div { background-color: rgb(0, 128, 0); color: rgb(255, 255, 255); font-size: 32px; }
+</style>
+</head>
+<body>
+<div>survivor rule</div>
+</body>
+</html>
