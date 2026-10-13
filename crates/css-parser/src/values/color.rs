@@ -131,6 +131,21 @@ pub fn parse_color_with_scheme(value: &str, dark: bool) -> Option<ColorValue> {
         return parse_color_mix(value);
     }
 
+    // contrast-color() 函数（CSS Color 5 §contrast-color）：contrast-color(<color>)。
+    // 存为未解析 ContrastColor——实参 paint 时按元素色上下文解析（currentColor 实参
+    // 取元素自身 color），结果白或黑。仅支持单 <color> 实参（<target-contrast> 等
+    // 扩展实参 defer，出现即整值非法）。driving: css-color contrast-color-001。
+    if lower.starts_with("contrast-color(") {
+        let start = value.find('(')?;
+        let end = value.rfind(')')?;
+        let inner = strip_css_comments(value.get(start + 1..end)?);
+        if inner.is_empty() || top_level_byte_index(&inner, b',').is_some() {
+            return None;
+        }
+        let arg = parse_color_with_scheme(inner.trim(), dark)?;
+        return Some(ColorValue::ContrastColor(Box::new(arg)));
+    }
+
     // 命名颜色
     parse_named_color(value)
 }
@@ -2131,5 +2146,36 @@ mod tests {
     fn test_quirks_color_invalid_still_none() {
         assert!(parse_color_quirks("not-a-color").is_none());
         assert!(parse_color_quirks("").is_none());
+    }
+
+    // ── R5107：contrast-color()（CSS Color 5）存为未解析 ContrastColor ──
+
+    #[test]
+    fn r5107_contrast_color_parses_to_deferred_variant() {
+        // 具体颜色实参与 currentColor 实参均存为未解析变体（paint 时按元素色解析）。
+        assert_eq!(
+            parse_color("contrast-color(white)"),
+            Some(ColorValue::ContrastColor(Box::new(ColorValue::Rgba(
+                255, 255, 255, 255
+            ))))
+        );
+        assert_eq!(
+            parse_color("contrast-color(currentColor)"),
+            Some(ColorValue::ContrastColor(Box::new(ColorValue::CurrentColor)))
+        );
+        // 大小写不敏感。
+        assert!(matches!(
+            parse_color("CONTRAST-COLOR(darkblue)"),
+            Some(ColorValue::ContrastColor(_))
+        ));
+    }
+
+    #[test]
+    fn r5107_contrast_color_rejects_extended_and_empty_args() {
+        // 空实参 / 多实参（<target-contrast> 等扩展 defer）→ 整值非法。
+        assert_eq!(parse_color("contrast-color()"), None);
+        assert_eq!(parse_color("contrast-color(red, 50%)"), None);
+        // 实参非颜色 → 非法。
+        assert_eq!(parse_color("contrast-color(nonsense)"), None);
     }
 }

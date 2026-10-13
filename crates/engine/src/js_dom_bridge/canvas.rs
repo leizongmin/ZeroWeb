@@ -987,7 +987,9 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             let cv = zero_css_parser::values::parse_color(arg(0).trim());
             match cv {
                 Some(
-                    zero_css_parser::values::ColorValue::Mix(_) | zero_css_parser::values::ColorValue::RelativeColor(_),
+                    zero_css_parser::values::ColorValue::Mix(_)
+                    | zero_css_parser::values::ColorValue::RelativeColor(_)
+                    | zero_css_parser::values::ColorValue::ContrastColor(_),
                 ) => color_to_css4(&crate::color_value_to_render(&cv.unwrap())),
                 _ => String::new(),
             }
@@ -1222,6 +1224,7 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                     zero_css_parser::values::parse_color(color_str.trim()),
                     Some(zero_css_parser::values::ColorValue::Mix(_))
                         | Some(zero_css_parser::values::ColorValue::RelativeColor(_))
+                        | Some(zero_css_parser::values::ColorValue::ContrastColor(_))
                 ) || modern_fn
                 {
                     style.set_oklab_interpolation(true);

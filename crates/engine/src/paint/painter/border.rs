@@ -1689,7 +1689,10 @@ fn collapsed_border_color(override_color: &Option<u32>, original: &ColorValue) -
 fn resolve_border_current_color(color: ColorValue, current: &ColorValue) -> ColorValue {
     if color == ColorValue::CurrentColor {
         current.clone()
-    } else if matches!(color, ColorValue::Mix(_) | ColorValue::RelativeColor(_)) {
+    } else if matches!(
+        color,
+        ColorValue::Mix(_) | ColorValue::RelativeColor(_) | ColorValue::ContrastColor(_)
+    ) {
         // R3907：color-mix/RCS 内嵌 currentColor 须按元素 color 解析——下游
         // paint_border_edge 用 color_value_to_render（无元素上下文，currentColor 回落
         // 黑色），keyword 替换覆盖不到嵌套形态（driving:

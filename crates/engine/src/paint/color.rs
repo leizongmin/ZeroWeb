@@ -89,6 +89,37 @@ pub fn resolve_color_current(color: &ColorValue, element_color: &ColorValue) -> 
         ColorValue::Transparent => Color::rgba(0, 0, 0, 0),
         ColorValue::Named(name) => named_color_to_render(name),
         ColorValue::Hsla(h, s, l, a) => hsla_to_rgba(*h, *s, *l, *a),
+        // contrast-color(<color>)：实参按元素色上下文解析后取 WCAG 对比色（结果不透明白/黑）。
+        ColorValue::ContrastColor(arg) => contrast_color_of(resolve_color_current(arg, element_color)),
+    }
+}
+
+/// WCAG 2.1 相对亮度（sRGB 线性化，§相对亮度定义）。
+fn wcag_relative_luminance(c: Color) -> f64 {
+    fn linearize(c8: u8) -> f64 {
+        let c = c8 as f64 / 255.0;
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    }
+    0.2126 * linearize(c.r) + 0.7152 * linearize(c.g) + 0.0722 * linearize(c.b)
+}
+
+/// 取 `contrast-color(<color>)` 结果：白/黑中 WCAG 对比比较高者。
+///
+/// css-color-5 §contrast-color：精确对比算法 UA-defined，但结果必须为白或黑中
+/// 「产生最大颜色对比」者。对比度 vs 白 = 1.05/(L+0.05)，vs 黑 = (L+0.05)/0.05；
+/// 白胜出当且仅当 L < √(0.05×1.05) − 0.05 ≈ 0.1791（两比值相等的临界亮度）。
+/// 结果恒不透明（spec：resolves to either white or black）。
+fn contrast_color_of(c: Color) -> Color {
+    let l = wcag_relative_luminance(c);
+    if l < 0.1791 {
+        // 深色 → 白对比更高。
+        Color::rgba(255, 255, 255, 255)
+    } else {
+        Color::rgba(0, 0, 0, 255)
     }
 }
 
@@ -1050,4 +1081,38 @@ fn test_mix_hsl_red_yellow_orange() {
     assert_eq!(c.a, 255, "双不透明 alpha 保持 255");
     // hsl(30,100,50) = rgb(255,128,0)
     assert_eq!((c.r, c.g, c.b), (255, 128, 0), "红+黄短弧中点应为橙色");
+}
+
+#[test]
+/// R5107：contrast-color() 解析——浅色（white/aliceblue/palegreen）→ 黑，深色
+///（darkblue/darkred/purple/black）→ 白（css-color-5 §contrast-color：白/黑中
+/// WCAG 对比较高者；driving: contrast-color-001）。
+fn test_contrast_color_light_to_black_dark_to_white() {
+    let resolve = |v: &str| {
+        let parsed = zero_css_parser::values::parse_color(v).expect("contrast-color 应可解析");
+        let black = zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255);
+        resolve_color_current(&parsed, &black)
+    };
+    for light in ["white", "aliceblue", "mistyrose", "lightyellow", "palegreen"] {
+        let c = resolve(&format!("contrast-color({light})"));
+        assert_eq!((c.r, c.g, c.b, c.a), (0, 0, 0, 255), "{light} 为浅色应取黑");
+    }
+    for dark in ["darkblue", "darkred", "purple", "black"] {
+        let c = resolve(&format!("contrast-color({dark})"));
+        assert_eq!((c.r, c.g, c.b, c.a), (255, 255, 255, 255), "{dark} 为深色应取白");
+    }
+}
+
+#[test]
+/// R5107：contrast-color(currentColor) 实参按元素色解析（currentColor → 元素自身
+/// color）后取对比色——元素紫 → 白。
+fn test_contrast_color_currentcolor_arg() {
+    let parsed = zero_css_parser::values::parse_color("contrast-color(currentColor)").expect("应可解析");
+    let purple = zero_css_parser::values::ColorValue::Rgba(128, 0, 128, 255);
+    let c = resolve_color_current(&parsed, &purple);
+    assert_eq!(
+        (c.r, c.g, c.b, c.a),
+        (255, 255, 255, 255),
+        "紫色元素 contrast-color → 白"
+    );
 }

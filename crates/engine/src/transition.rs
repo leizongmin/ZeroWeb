@@ -361,6 +361,8 @@ fn color_value_to_string(color: &ColorValue) -> String {
         ColorValue::Mix(_) => "color-mix(in srgb, …)".to_string(),
         // RCS 相对色在 transition 串化中罕见，回退为占位（精确动画需插值，defer）。
         ColorValue::RelativeColor(_) => "rgb(from …)".to_string(),
+        // contrast-color() 在 transition 串化中罕见，回退为占位（对比色求值 defer）。
+        ColorValue::ContrastColor(_) => "contrast-color(…)".to_string(),
     }
 }
 

@@ -764,17 +764,12 @@ impl super::Painter {
                         (iw, ih, ratio, None)
                     }
                 }
-                // 渐变/纯色层无固有维——img = 本层 positioning area、ratio = 定位区
-                // 宽高比（旧 default_intrinsic 行为逐位保留——Percent 尺寸的等比维
-                // 语义依赖此 ratio，测试 test_gradient_with_position_and_size 锚定）。
-                _ => {
-                    let ratio = if origin_w > 0.0 && origin_h > 0.0 {
-                        Some(origin_w / origin_h)
-                    } else {
-                        None
-                    };
-                    (origin_w, origin_h, ratio, None)
-                }
+                // R5107：渐变/纯色层无固有维、无固有比例（css-images-3 §2：渐变无
+                // 固有尺寸）——img = 本层 positioning area、ratio = None。§3.9：无
+                // 固有比例且无固有维时，单值尺寸的 auto 维取定位区该维（`200px
+                // auto` 在 400×400 定位区应 200×400）；旧伪比 Some(origin_w/origin_h)
+                // 使 auto 维按定位区比例推导（041/042 渲 200×200）。
+                _ => (origin_w, origin_h, None, None),
             };
 
             // size/position 相对 positioning area（origin）解析（fixed 时 origin=视口）。
@@ -2283,7 +2278,8 @@ fn resolve_background_size(
         }
         BackgroundSizeComputedValue::Length(px) => {
             let w = *px;
-            // R3760：等比维推导仅在图像确有固有比例时生效（img_ratio=None → 定位区高）。
+            // R3760：等比维推导仅在图像确有固有比例时生效（img_ratio=None → 定位区高，
+            // R5107 起含渐变层——css-backgrounds-3 §3.9 无固有比例无固有维臂）。
             let h = match img_ratio {
                 Some(r) if r > 0.0 => w / r,
                 _ => container_h,

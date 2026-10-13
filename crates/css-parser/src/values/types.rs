@@ -96,6 +96,10 @@ pub enum ColorValue {
     /// 通道为关键字引用或数字字面量（无 calc）。identity（channels 恰为自然关键字）在 parse 阶段
     /// 已短路为 origin。driving: css-color relative-currentcolor-rgb-02（g r b swap）/ hsl-02（120 s l 覆盖）。
     RelativeColor(Box<RelativeColorSpec>),
+    /// CSS Color 5 `contrast-color()` —— **未解析**（实参颜色 paint 时按元素色上下文解析
+    /// ——实参可为 currentColor；结果恒为不透明白或黑，对比算法 UA-defined，本实现取
+    /// WCAG 相对亮度对比比较高者）。driving: css-color contrast-color-001。
+    ContrastColor(Box<ColorValue>),
 }
 
 /// `color-mix()` 规范（CSS Color 4）。
