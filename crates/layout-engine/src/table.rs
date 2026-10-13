@@ -1517,74 +1517,76 @@ fn position_cells(
     // 96/32/96，chromium 64/96/64；中行 32px 高使模拟渐变带 8px ≠ round 平铺
     // 期望 24px）。
     // 预计算每行内容高度，再根据 table 指定 height 计算每行的额外分配量。
-    let row_extras: Vec<f32> = {
-        let content_row_heights: Vec<f32> = grid
-            .rows
-            .iter()
-            .enumerate()
-            .map(|(row_idx, row)| {
-                // visibility:collapse 的行高度为 0（CSS Tables §4.1），不取默认最小行高。
-                if grid.collapsed_rows.get(row_idx).copied().unwrap_or(false) {
-                    return 0.0;
-                }
-                let mut h = 0.0f32;
-                if let Some(rb) = get_row_box(table_box, row) {
-                    for cell in &row.cells {
-                        let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
-                            rb.children.get(rg_idx).and_then(|rg| rg.children.get(cell.child_index))
-                        } else {
-                            rb.children.get(cell.child_index)
-                        };
-                        if let Some(cb) = cell_box {
-                            h = h.max(cb.height);
-                        }
+    let content_row_heights: Vec<f32> = grid
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(row_idx, row)| {
+            // visibility:collapse 的行高度为 0（CSS Tables §4.1），不取默认最小行高。
+            if grid.collapsed_rows.get(row_idx).copied().unwrap_or(false) {
+                return 0.0;
+            }
+            let mut h = 0.0f32;
+            if let Some(rb) = get_row_box(table_box, row) {
+                for cell in &row.cells {
+                    let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
+                        rb.children.get(rg_idx).and_then(|rg| rg.children.get(cell.child_index))
+                    } else {
+                        rb.children.get(cell.child_index)
+                    };
+                    if let Some(cb) = cell_box {
+                        h = h.max(cb.height);
                     }
                 }
-                // 空 cell 行高度 0（无 strut，见 position_cells 同步注释）
-                h
-            })
-            .collect();
-        // R5095：每行指定高（css-tables-3 §3.10.1 行最小高来源——行元素 computed
-        // height + **独占该行**（rowspan==1）cell 的 computed height；definite 才算，
-        // percent 按规格视 0 → None）。Some = 非 auto-height 行。
-        let row_specified: Vec<Option<f32>> = grid
-            .rows
-            .iter()
-            .enumerate()
-            .map(|(row_idx, row)| {
-                if grid.collapsed_rows.get(row_idx).copied().unwrap_or(false) {
-                    return None;
-                }
-                let mut spec: Option<f32> = None;
-                if let Some(rb) = get_row_box(table_box, row) {
-                    if let Some(row_id) = rb.node_id {
-                        if let Some(rs) = styles.get(&row_id) {
-                            spec = resolve_table_used_length(&rs.height, rs);
-                        }
+            }
+            // 空 cell 行高度 0（无 strut，见 position_cells 同步注释）
+            h
+        })
+        .collect();
+    // R5095：每行指定高（css-tables-3 §3.10.1 行最小高来源——行元素 computed
+    // height + **独占该行**（rowspan==1）cell 的 computed height；definite 才算，
+    // percent 按规格视 0 → None）。Some = 非 auto-height 行。
+    // R5099：提升到 row_extras 块外——行指定高同时作行高 floor（见装配循环），
+    // 与 table target 分配共享一份解析。
+    let row_specified: Vec<Option<f32>> = grid
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(row_idx, row)| {
+            if grid.collapsed_rows.get(row_idx).copied().unwrap_or(false) {
+                return None;
+            }
+            let mut spec: Option<f32> = None;
+            if let Some(rb) = get_row_box(table_box, row) {
+                if let Some(row_id) = rb.node_id {
+                    if let Some(rs) = styles.get(&row_id) {
+                        spec = resolve_table_used_length(&rs.height, rs);
                     }
-                    for cell in &row.cells {
-                        if cell.rowspan != 1 {
-                            continue;
-                        }
-                        let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
-                            rb.children.get(rg_idx).and_then(|rg| rg.children.get(cell.child_index))
-                        } else {
-                            rb.children.get(cell.child_index)
-                        };
-                        if let Some(cb) = cell_box {
-                            if let Some(cid) = cb.node_id {
-                                if let Some(cs) = styles.get(&cid) {
-                                    if let Some(h) = resolve_table_used_length(&cs.height, cs) {
-                                        spec = Some(spec.map_or(h, |s| s.max(h)));
-                                    }
+                }
+                for cell in &row.cells {
+                    if cell.rowspan != 1 {
+                        continue;
+                    }
+                    let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
+                        rb.children.get(rg_idx).and_then(|rg| rg.children.get(cell.child_index))
+                    } else {
+                        rb.children.get(cell.child_index)
+                    };
+                    if let Some(cb) = cell_box {
+                        if let Some(cid) = cb.node_id {
+                            if let Some(cs) = styles.get(&cid) {
+                                if let Some(h) = resolve_table_used_length(&cs.height, cs) {
+                                    spec = Some(spec.map_or(h, |s| s.max(h)));
                                 }
                             }
                         }
                     }
                 }
-                spec
-            })
-            .collect();
+            }
+            spec
+        })
+        .collect();
+    let row_extras: Vec<f32> = {
         let num_rows = content_row_heights.len();
         // R5095 kill-switch：`ZW_TABLE_AUTO_ROW_EXCESS=0` 恢复全行均分（R89 口径）。
         let auto_row_excess = std::env::var("ZW_TABLE_AUTO_ROW_EXCESS").as_deref() != Ok("0");
@@ -1748,6 +1750,15 @@ fn position_cells(
             // 最小行高 strut 致带 border-spacing 的空表/折叠行表尺寸偏大。
             // R89：应用表格指定 height 的行高分配（额外高度均分到行）
             row_height += row_extras.get(row_idx).copied().unwrap_or(0.0);
+            // R5099（css-tables-3 §3.10.1 行最小高 / CSS2 §17.5.3）：行指定高与
+            // table target 无关地 floored——auto 高表的指定行不可塌 0
+            //（height-applies-to-004：row height:1in 空 cell → 行 0 高黑方块整缺
+            // 1.92%）。target 存在路径的 spec 行 extras 已含 (s−content)+ 分量，
+            // floor 取 max 不双计；全 spec 回退臂（R89 均分）下 floor 保证
+            // 「行高 ≥ 指定高」的 §17.5.3 语义（表随行和增长）。
+            if let Some(Some(spec)) = row_specified.get(row_idx) {
+                row_height = row_height.max(*spec);
+            }
         }
 
         // 设置行盒的位置和尺寸

@@ -697,3 +697,5 @@ mod r5081_pseudo_ws_tests;
 mod r5095_inline_table_line_box_tests;
 /// R5097 display:table 直接散文本子匿名 cell 收缩适应（CSS Tables §17.2.1）测试。
 mod r5097_table_raw_text_anon_cell_tests;
+/// R5099 行指定高 floor（css-tables-3 §3.10.1 / CSS2 §17.5.3）测试。
+mod r5099_row_spec_floor_tests;
