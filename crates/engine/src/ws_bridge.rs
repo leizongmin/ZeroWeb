@@ -462,6 +462,10 @@ const MAX_OPEN_WS_CONNECTIONS: usize = 128;
 /// 读泵轮询间隔（阻塞 `receive()` 的读超时——超时返 WouldBlock/TimedOut，泵得以轮询发送通道）。
 const WS_PUMP_POLL_MS: u64 = 50;
 
+/// 关闭握手等待上限（[`WS_PUMP_POLL_MS`] × 240 = 12s——对端不回关的超时兜底；
+/// 浏览器同款超时语义，超时按本地码 clean 收尾）。
+const WS_CLOSE_WAIT_POLLS: u32 = 240;
+
 /// 泵线程发送命令（JS→宿主 send/close 经通道 marshal 到泵线程——泵独占 socket 写权，
 /// 免互斥锁网络读写交织）。
 enum HostCmd {
@@ -535,6 +539,14 @@ fn ws_handshake_cookie(store: &zero_net::CookieStore, url: &str, document_origin
     store.cookie_header_with_context(&parsed, context, true)
 }
 
+/// 连接建立串行化键（host:port——`ws://user@host:port/path` 权威段；无端口取 scheme
+/// 默认语义不细分，fixture 与生产面 host 均显式带端口）。
+fn ws_host_key(url: &str) -> String {
+    let rest = url.split("://").nth(1).unwrap_or(url);
+    let authority = rest.split('/').next().unwrap_or(rest);
+    authority.rsplit('@').next().unwrap_or(authority).to_string()
+}
+
 impl WsHost for NetWsHost {
     fn connect(&self, id: &str, url: &str, protocols: &[String], origin: &str, _cookie: &str) {
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<HostCmd>();
@@ -581,9 +593,28 @@ impl WsHost for NetWsHost {
         let handshake = zero_net::websocket::WebSocketHandshake {
             origin: origin.to_string(),
             cookie,
+            protocols: protocols.to_vec(),
         };
-        let _protocols = protocols.to_vec(); // FIXME(t8k): Sec-WebSocket-Protocol 协商头与 101 选定子协议未透出（zero_net::WebSocket 不暴露握手响应）——本切片先发空协议头，子协议协商面留待 net 层扩展
         std::thread::spawn(move || {
+            // WHATWG HTML「establish a WebSocket connection」serialization 面：同一
+            // host:port 的连接建立串行——握手完成（open/失败事件发出）前，后续连接
+            // 在此排队（constructor/014 断言面：并发 /handshake_sleep_2 的 open 须
+            // 错开 >1s；013 的 25 连发在快握手下照常全量打开）。guard 只覆盖握手
+            // 段——读泵期间不得持锁（连接存活期会饿死后续连接）。
+            let lock_entry = {
+                static CONNECT_LOCKS: std::sync::OnceLock<
+                    std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<std::sync::Mutex<()>>>>,
+                > = std::sync::OnceLock::new();
+                let map = CONNECT_LOCKS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+                let key = ws_host_key(&url);
+                let mut guard = map.lock().expect("connect-lock map");
+                std::sync::Arc::clone(
+                    guard
+                        .entry(key)
+                        .or_insert_with(|| std::sync::Arc::new(std::sync::Mutex::new(()))),
+                )
+            };
+            let _connect_guard = lock_entry.lock().expect("connect serialization");
             // 阻塞 TCP/TLS/握手（OS 级 TCP 超时兜底；服务端 accept 后不回 101 的
             // 无限阻塞缺口见 defect-r1 N2，非本次返修范围）。
             let mut ws = zero_net::websocket::WebSocket::new(&url);
@@ -634,13 +665,20 @@ impl WsHost for NetWsHost {
             // read 自动回 Pong）。全部 emit 带 connect 时捕获的代际戳——跨文档 reset 后
             // 旧泵残余事件在 emit_gen 栅栏处丢弃。
             let _ = ws.set_read_timeout(Some(std::time::Duration::from_millis(WS_PUMP_POLL_MS)));
-            emitter.emit_gen(
-                &id,
-                WsEvent::Open {
-                    protocol: String::new(),
-                },
-                nav_gen,
-            );
+            // 101 选定子协议落 `ws.protocol`（net 层透出——Create-valid-url-protocol
+            // /option-bag/constructor 009/022 断言面）。emit 前 drop 串行 guard：读泵
+            // 段不得阻塞后续连接（guard 在本块结束时析构）。
+            let selected_protocol = ws.selected_protocol().to_string();
+            {
+                emitter.emit_gen(
+                    &id,
+                    WsEvent::Open {
+                        protocol: selected_protocol,
+                    },
+                    nav_gen,
+                );
+            }
+            drop(_connect_guard);
             loop {
                 loop {
                     match cmd_rx.try_recv() {
@@ -664,15 +702,65 @@ impl WsHost for NetWsHost {
                             } else {
                                 let _ = ws.close_with(code, &reason);
                             }
-                            emitter.emit_gen(
-                                &id,
-                                WsEvent::Close {
-                                    code: if code == 0 { 1005 } else { code },
-                                    reason,
-                                    clean: true,
-                                },
-                                nav_gen,
-                            );
+                            // 关闭握手等待段（RFC 6455 §7.1.1）：close 事件待对端回关
+                            // 才派发——本地立即派发会把 CLOSING 语义折叠成瞬间 CLOSED
+                            //（Close-delayed 断言面：服务端延迟 1s 回关，elapsed 须 ≥900ms）。
+                            // 回关码/原因优先落事件（回显形态）；读错/EOF → 1006 unclean；
+                            // 等待上限 [`WS_CLOSE_WAIT_POLLS`] 轮后按本地码 clean 收尾
+                            //（对端不回关的超时兜底——浏览器同款超时语义）。
+                            let local_code = if code == 0 { 1005 } else { code };
+                            let mut close_emitted = false;
+                            for _ in 0..WS_CLOSE_WAIT_POLLS {
+                                if emitter.current_generation() != nav_gen {
+                                    // 跨文档重置：终结权已移交新代际——静默退出（旧泵
+                                    // 不派发任何事件）。
+                                    return;
+                                }
+                                match ws.receive() {
+                                    Ok(Some(zero_net::websocket::WebSocketMessage::Close(peer_code, peer_reason))) => {
+                                        emitter.emit_gen(
+                                            &id,
+                                            WsEvent::Close {
+                                                code: peer_code.unwrap_or(local_code),
+                                                reason: peer_reason
+                                                    .filter(|r| !r.is_empty())
+                                                    .unwrap_or_else(|| reason.clone()),
+                                                clean: true,
+                                            },
+                                            nav_gen,
+                                        );
+                                        close_emitted = true;
+                                        break;
+                                    }
+                                    Ok(Some(_)) => {} // 关闭中到达的迟到消息：丢弃
+                                    Ok(None) => {}    // 读超时——继续等回关
+                                    Err(_) => {
+                                        // EOF/读错：连接已断——1006 unclean（RFC 6455 §7.1.7）。
+                                        emitter.emit_gen(
+                                            &id,
+                                            WsEvent::Close {
+                                                code: 1006,
+                                                reason: String::new(),
+                                                clean: false,
+                                            },
+                                            nav_gen,
+                                        );
+                                        close_emitted = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if !close_emitted {
+                                emitter.emit_gen(
+                                    &id,
+                                    WsEvent::Close {
+                                        code: local_code,
+                                        reason,
+                                        clean: true,
+                                    },
+                                    nav_gen,
+                                );
+                            }
                             remove_conn_if_current(&conns, &id, nav_gen);
                             return;
                         }
@@ -1103,6 +1191,7 @@ mod tests {
             use std::io::{BufRead, BufReader, Read, Write};
             let mut reader = BufReader::new(sock.try_clone().expect("clone"));
             let mut key = String::new();
+            let mut offered = String::new();
             let mut line = String::new();
             loop {
                 line.clear();
@@ -1115,14 +1204,24 @@ mod tests {
                 if let Some(v) = line.strip_prefix("Sec-WebSocket-Key:") {
                     key = v.trim().to_string();
                 }
+                // M5-S2：客户端请求子协议 → 回显首个（RFC 6455 §4.2.2——client 提供时
+                // server 须选定一个，否则 tungstenite 客户端按 RFC 拒绝连接）。
+                if let Some(v) = line.strip_prefix("Sec-WebSocket-Protocol:") {
+                    offered = v.trim().split(',').next().unwrap_or("").trim().to_string();
+                }
             }
             use sha1::{Digest, Sha1};
             let mut hasher = Sha1::new();
             hasher.update(format!("{key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11"));
             let accept = b64(&hasher.finalize());
+            let proto_hdr = if offered.is_empty() {
+                String::new()
+            } else {
+                format!("Sec-WebSocket-Protocol: {offered}\r\n")
+            };
             let _ = sock.write_all(
                 format!(
-                    "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
+                    "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n{proto_hdr}\r\n"
                 )
                 .as_bytes(),
             );
@@ -1158,7 +1257,18 @@ mod tests {
                 }
                 match opcode {
                     0x8 => {
-                        let _ = sock.write_all(&[0x88, 0x00]); // close → 空 close 帧
+                        // close → 回显同码/原因（RFC 6455 §5.5.1 收到方 SHOULD 原样回带
+                        // ——宿主泵的回关等待段以对端码落 close 事件，空回关会把 1000
+                        // 折叠成 1005）。
+                        let mut reply = vec![0x88u8];
+                        if payload.len() < 126 {
+                            reply.push(payload.len() as u8);
+                        } else {
+                            reply.push(126);
+                            reply.extend_from_slice(&(payload.len() as u16).to_be_bytes());
+                        }
+                        reply.extend_from_slice(&payload);
+                        let _ = sock.write_all(&reply);
                         return;
                     }
                     0x9 => {
@@ -1211,7 +1321,10 @@ mod tests {
         next(&["e1".into(), "q1".into()]);
         let l = wait_log(&log, 1, std::time::Duration::from_secs(5));
         assert_eq!(l.len(), 1, "open 事件超时：{l:?}");
-        assert_eq!(l[0].1, "open\x1f", "open wire（子协议面未协商——FIXME 记录）");
+        assert_eq!(
+            l[0].1, "open\x1fchat",
+            "open wire 携带 101 选定子协议（M5-S2 子协议协商透出）"
+        );
         // 文本 echo：sent:9（hello-t8k UTF-8 字节数）→ msg 回显。
         send(&["e1".into(), "t".into(), "hello-t8k".into()]);
         next(&["e1".into(), "q2".into()]);
@@ -1228,7 +1341,8 @@ mod tests {
         next(&["e1".into(), "q3b".into()]);
         let l = wait_log(&log, 5, std::time::Duration::from_secs(5));
         assert_eq!(l[4].1, "bin\x1f104,105,255");
-        // 带码 close：宿主发 Close 帧（服务端回空 close）→ 终态 close wire clean。
+        // 带码 close：宿主发 Close 帧 → mock 回显同码/原因（RFC 6455 §5.5.1）→ 关闭握手
+        // 等待段以对端码/原因落 close wire clean。
         close(&["e1".into(), "1000".into(), "done".into()]);
         next(&["e1".into(), "q4".into()]);
         let l = wait_log(&log, 6, std::time::Duration::from_secs(5));

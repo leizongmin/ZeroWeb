@@ -15306,6 +15306,11 @@ function _zwCaretFromPoint(x, y) {
   }
 
   function WebSocket(url, protocols) {
+    // WebIDL：必选参数缺省 → TypeError（constructor/001 断言面；SyntaxError 面
+    // 仅适用于「给了参数但解析失败」）。
+    if (arguments.length === 0) {
+      throw new TypeError("Failed to construct 'WebSocket': 1 argument required, but only 0 present.");
+    }
     // spec 构造（HTML §network WebSocket(url, protocols) step 2）：url = parse(url, API base
     // URL)，失败抛 SyntaxError DOMException。base 取 location.href（about:blank 兜底）。
     var base = 'about:blank';
@@ -15319,25 +15324,55 @@ function _zwCaretFromPoint(x, y) {
       var DE = (typeof globalThis.DOMException === 'function') ? globalThis.DOMException : DOMException;
       throw new DE('Invalid URL', 'SyntaxError');
     }
-    // spec step 3：scheme 非 ws/wss → SyntaxError（信任边界：非 WebSocket scheme 不得进宿主桥）。
+    // spec step 4-5（2019+ WHATWG）：http→ws / https→wss **转换**而非拒绝——
+    // Create-http-urls / Create-non-absolute-url / windows-1252 断言面（相对输入解析
+    // 到 http base 后落 ws）。url crate 禁 special↔non-special 换 scheme，经 href 串
+    // 手术重解析（锚定替换，https 先行）。
+    if (resolved.protocol === 'http:' || resolved.protocol === 'https:') {
+      try {
+        resolved = new URL(resolved.href.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:'));
+      } catch (_eWsConv) { /* 转换失败保持原 URL——下方 scheme 校验照常拒绝 */ }
+    }
+    // https://html.spec.whatwg.org/#the-websocket-constructor — spec step 4：fragment
+    // 非 null → SyntaxError（Create-invalid-urls「http://…/#」「http://…/#test」「#test」
+    // 断言面；相对输入解析到 http base 后同样落此门）。URL.hash 非 '' 即含 fragment
+    //（空 fragment「#」返 '#'，亦算非 null）。
+    if (resolved.hash !== '') {
+      var DEf = (typeof globalThis.DOMException === 'function') ? globalThis.DOMException : DOMException;
+      throw new DEf('The URL contains a fragment', 'SyntaxError');
+    }
+    // spec step 5：scheme 非 ws/wss → SyntaxError（信任边界：非 WebSocket scheme 不得进宿主桥）。
     if (resolved.protocol !== 'ws:' && resolved.protocol !== 'wss:') {
       var DE2 = (typeof globalThis.DOMException === 'function') ? globalThis.DOMException : DOMException;
       throw new DE2("The URL's scheme must be ws or wss. '" + resolved.protocol + "' is not valid.", 'SyntaxError');
     }
-    // spec step 4：protocols 归一（string → [string]）；任一空串 / 含非合法字符 / 重复 →
-    // SyntaxError。合法 protocol：非空、0x21–0x7E 可打印 ASCII、无逗号（Sec-WebSocket-Protocol
-    // 元素语法 + 本桥 wire 以逗号 join）。重复按 spec 逐条比对拒绝。
+    // spec step 7-11：protocols 归一（string → [string]）；任一空串 / 含非合法字符 / 重复 →
+    // SyntaxError。合法 protocol = RFC 7230 token（= RFC 2616 token——可打印 ASCII 减
+    // separators「()<>@,;:\"/[]?={} SP HT」，/https://fetch.spec.whatwg.org/#concept-header-value
+    // 邻域；Create-asciiSep「/echo」SYNTAX_ERR 断言面，空格/非 ASCII/逗号同族）。重复按
+    // ASCII case-insensitive 比对拒绝（Create-protocols-repeated-case-insensitive 断言面
+    // ——["echo","eCho"] 即重复）。
     var protoList = [];
+    var _wsProtoTchar = /^[\w!#$%&'*+\-.^`|~]+$/;
     if (protocols !== undefined && protocols !== null) {
+      // options-bag 形态（WHATWG「WebSocket constructor takes an options bag」——
+      // option-bag.any.js 断言面）：`{ protocols: string | sequence<string> }`——
+      // 非 string/数组对象带 `protocols` 属性即展开（空 bag `{}` 无该属性 → 空
+      // 协议集，连接不带 Sec-WebSocket-Protocol）。
+      if (typeof protocols === 'object' && !(protocols instanceof Array)
+          && protocols !== null && protocols.protocols !== undefined) {
+        protocols = protocols.protocols;
+      }
       var given = typeof protocols === 'string' ? [protocols] : Array.prototype.slice.call(protocols);
       for (var pi = 0; pi < given.length; pi++) {
         var p = String(given[pi]);
-        var bad = p === '';
-        for (var ci = 0; ci < p.length; ci++) {
-          var cc = p.charCodeAt(ci);
-          if (cc < 0x21 || cc > 0x7e || cc === 0x2c) { bad = true; break; }
+        var bad = !_wsProtoTchar.test(p);
+        var pu = p.toUpperCase();
+        var dup = false;
+        for (var di = 0; di < protoList.length; di++) {
+          if (protoList[di].toUpperCase() === pu) { dup = true; break; }
         }
-        if (bad || protoList.indexOf(p) >= 0) {
+        if (bad || dup) {
           var DE3 = (typeof globalThis.DOMException === 'function') ? globalThis.DOMException : DOMException;
           throw new DE3('Invalid protocol: ' + p, 'SyntaxError');
         }
@@ -15350,8 +15385,10 @@ function _zwCaretFromPoint(x, y) {
     this.bufferedAmount = 0;
     this.extensions = ''; // 协商扩展面未实现（RFC 6455 permessage-deflate 未协商）
     this.protocol = '';   // 服务端选中子协议（open wire 回填）
-    this.binaryType = 'blob';
-    this.onopen = null; this.onmessage = null; this.onerror = null; this.onclose = null;
+    this._binaryType = 'blob'; // 实例槽——prototype accessor 接管 binaryType 面
+    // on* 经 prototype accessor（LegacyTreatNonCallableAsNull）落 _zwOn* 槽——
+    // 实例直赋会遮蔽 accessor，故不建自有属性。
+    this._zwOnOpen = null; this._zwOnMessage = null; this._zwOnError = null; this._zwOnClose = null;
     this._listeners = {};
     var self = this;
     var connId = 'ws' + (++_zwWsConnSeq);
@@ -15363,7 +15400,8 @@ function _zwCaretFromPoint(x, y) {
       var ev = event || new Event(type, { __zwTrusted: true });
       ev.type = type;
       ev.target = self;
-      var handler = self['on' + type];
+      // on* accessor（prototype）——裸 this['on'+type] 直读走 getter 落 _zwOn* 槽。
+      var handler = self['_zwOn' + type.charAt(0).toUpperCase() + type.slice(1)];
       if (typeof handler === 'function') { try { handler.call(self, ev); } catch (_e) {} }
       var arr = self._listeners[type];
       if (arr) for (var i = 0; i < arr.length; i++) { try { arr[i].call(self, ev); } catch (_e) {} }
@@ -15462,6 +15500,23 @@ function _zwCaretFromPoint(x, y) {
   WebSocket.CLOSED = 3;
   WebSocket.prototype = {
     constructor: WebSocket,
+    // binaryType：spec「on setting, if the new value is not the string 'blob' or
+    // 'arraybuffer', ignore」——非法值静默忽略且**值不变**（binaryType-wrong-value
+    // 断言面：赋非法串后读回仍 'blob'）。
+    get binaryType() { return this._binaryType || 'blob'; },
+    set binaryType(v) {
+      if (v === 'blob' || v === 'arraybuffer') this._binaryType = v;
+    },
+    // on* 事件处理 IDL 面：[LegacyTreatNonCallableAsNull]——非函数赋值落 null
+    //（eventhandlers 断言面：`ws.onopen = 123` 后读回应为 null）。getter 读实例槽。
+    get onopen() { return this._zwOnOpen || null; },
+    set onopen(v) { this._zwOnOpen = (typeof v === 'function') ? v : null; },
+    get onmessage() { return this._zwOnMessage || null; },
+    set onmessage(v) { this._zwOnMessage = (typeof v === 'function') ? v : null; },
+    get onerror() { return this._zwOnError || null; },
+    set onerror(v) { this._zwOnError = (typeof v === 'function') ? v : null; },
+    get onclose() { return this._zwOnClose || null; },
+    set onclose(v) { this._zwOnClose = (typeof v === 'function') ? v : null; },
     addEventListener: function (type, cb) {
       (this._listeners[type] || (this._listeners[type] = [])).push(cb);
     },
@@ -15497,21 +15552,29 @@ function _zwCaretFromPoint(x, y) {
         for (var j = 0; j < bytes.length; j++) csv[j] = bytes[j];
         this.bufferedAmount += bytes.length;
         __zw_ws_send(this._connId, 'b', csv.join(','));
+        return;
       }
-      // 其余类型（不可判定的宿主对象）：静默忽略（IDL 层非法类型本应 TypeError，shim 无
-      // IDL 校验层——不伪造发送成功，也不中断页面）。
+      // WebIDL union 匹配序兜底：非 BufferSource/Blob 落 DOMString 分支（null →
+      // "null"，Send-null 断言面；其余宿主对象按 String 化发文本帧——不伪造成功亦
+      // 不静默丢帧）。
+      var text = String(data);
+      this.bufferedAmount += _zwWsUtf8ByteLength(text);
+      __zw_ws_send(this._connId, 't', text);
     },
-    // spec close(code, reason)：code 存在且非 1000/3000–4999 → SyntaxError；reason UTF-8
-    // 字节长 > 123 → SyntaxError；CLOSING/CLOSED 幂等返回；CONNECTING → fail the connection
+    // spec close(code, reason)（https://html.spec.whatwg.org/#close-the-websocket）：
+    // code 存在且非 1000/3000–4999 → InvalidAccessError（现行 spec——旧版 SyntaxError
+    // 已改；close-invalid/Close-1005/2999/onlyReason 全簇断言面）；reason UTF-8 字节长
+    // > 123 → SyntaxError；CLOSING/CLOSED 幂等返回；CONNECTING → fail the connection
     //（宿主发 close 后回 close wire，wasClean=false）。
     close: function (code, reason) {
-      // spec step 1：code/reason 校验先行（CLOSING/CLOSED 态仍须抛 SyntaxError——校验
-      // 先于幂等返回）。
+      // spec step 1：code/reason 校验先行（CLOSING/CLOSED 态仍须先抛——校验先于幂等
+      // 返回）。WebIDL optional long：仅 undefined 视为缺省，null → 0、非数字串 → NaN
+      // → 落校验拒绝（close-invalid「null/String/NaN on a websocket」面）。
       var DE5 = (typeof globalThis.DOMException === 'function') ? globalThis.DOMException : DOMException;
-      if (code !== undefined && code !== null) {
+      if (code !== undefined) {
         var c = Number(code);
         if (!isFinite(c) || (c !== 1000 && (c < 3000 || c > 4999))) {
-          throw new DE5('Invalid close code: ' + code, 'SyntaxError');
+          throw new DE5('Invalid close code: ' + code, 'InvalidAccessError');
         }
         code = c;
       }

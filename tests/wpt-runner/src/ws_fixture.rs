@@ -26,6 +26,8 @@
 //!     追加 `; HttpOnly` + `Sec-WebSocket-Origin` 回显）
 //!   - `/simple_handshake`：手工响应头（`101 Switching Protocols:` 带冒号 + Set-Cookie）
 //!     与 **1001 `PASS` close 帧同包**发送（上游同包语义）
+//!   - `/delayed-passive-close`：等客户端 close 帧 → sleep 1s → 回显码/原因（无码回空）
+//!     ——`Close-delayed` 的关闭握手耗时/wasClean 断言面
 //! - **宿主改写**（[`FixtureWsHost`]）：corpus 以 `ws://wpt.test:<port>/...`（含
 //!   `www1.`/`alt.` 前缀变体）连接——host 层把 `*.wpt.test` 权威段改写为
 //!   `127.0.0.1:<同端口>` 后委派 [`default_net_ws_host`] 走 zero-net 真 TCP/tungstenite
@@ -444,9 +446,38 @@ fn serve_data(sock: &mut TcpStream, reader: &mut BufReader<TcpStream>, hs: &Hand
                     }
                 }
             }
-            // `/echo`、`/echo_exit`、`/echo_close_data`、`/handshake_sleep_2`、`/`：
-            // echo 语义（`echo_wsh` 家族——loop 常驻直到客户端关闭/`Goodbye`）。
-            _ => echo_loop(sock, reader, hs.path == "/echo_exit"),
+            // `/echo_exit`、`/echo_close_data`：Goodbye 不回显 + 干净关闭（exit 分支）。
+            "/echo_exit" | "/echo_close_data" => echo_loop(sock, reader, true),
+            // `/handshake_sleep_2`：transfer_data return → pywebsocket 服务端关闭
+            //（constructor/014 在 open 后等 close 事件凑满 events==4）。
+            "/handshake_sleep_2" => server_close(sock, reader),
+            // `/echo`、`/`：echo 语义（`echo_wsh`——loop 常驻直到客户端关闭/`Goodbye`）。
+            "/echo" | "/" => echo_loop(sock, reader, false),
+            "/delayed-passive-close" => {
+                // `delayed-passive-close_wsh`：等客户端 close 帧 → sleep 1s → 回显
+                // 码/原因（无状态码回空）——Close-delayed 的关闭握手耗时/wasClean 面。
+                let code_reason = loop {
+                    match read_frame(reader)? {
+                        None => return Ok(()),
+                        Some(WireFrame::Ping(p)) => write_frame(sock, 0xA, &p)?,
+                        Some(WireFrame::Pong) => {}
+                        Some(WireFrame::Close(cr)) => break cr,
+                        Some(WireFrame::Data { .. }) => {}
+                    }
+                };
+                std::thread::sleep(Duration::from_secs(1));
+                let body = match code_reason {
+                    Some((code, reason)) => {
+                        let mut b = code.to_be_bytes().to_vec();
+                        b.extend_from_slice(reason.as_bytes());
+                        b
+                    }
+                    None => Vec::new(),
+                };
+                write_frame(sock, 0x8, &body)
+            }
+            // KNOWN_PATHS 白名单已把未知 path 挡在握手段——此臂仅编译器穷尽性兜底。
+            _ => echo_loop(sock, reader, false),
         }
     })();
     let _ = result;
@@ -534,6 +565,7 @@ const KNOWN_PATHS: &[&str] = &[
     "/set-cookie",
     "/set-cookie_http",
     "/simple_handshake",
+    "/delayed-passive-close",
 ];
 
 fn handle_conn(sock: TcpStream) {

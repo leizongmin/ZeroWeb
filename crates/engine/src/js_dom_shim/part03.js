@@ -1856,6 +1856,26 @@
       }
     });
   });
+  // net-api M5-S2：HTMLAnchorElement/HTMLAreaElement stringifier→href（HTML spec：两接口
+  // 标注 stringifier——`String(a)`/`a.toString()` 返解析后绝对 href，无 href 属性返 ''）。
+  // createElement 产物是**直装方法对象**（_zwMEl，非 trap proxy——属性读走原型链），stringifier
+  // 须挂接口原型；查询产物（_makeProxy trap proxy）不经原型链，由 get-trap R34xx 分支同语义
+  // 供函数（本文件下方）。net-api constructor/006（`new WebSocket(<a>)` USVString 转换）
+  // + 通用 `String(a)`/`'' + a` 断言面。
+  ['HTMLAnchorElement', 'HTMLAreaElement'].forEach(function (_aStrI) {
+    var C = globalThis[_aStrI];
+    if (!C || !C.prototype) return;
+    if (!Object.prototype.hasOwnProperty.call(C.prototype, 'toString')) {
+      try {
+        Object.defineProperty(C.prototype, 'toString', {
+          value: function () {
+            try { return String((this && this.href) || ''); } catch (_eWsaStr) { return ''; }
+          },
+          writable: true, enumerable: false, configurable: true,
+        });
+      } catch (_eAStr) {}
+    }
+  });
   // spec tag → HTML 元素接口名映射（HTMLElement 接口表，html.spec.whatwg.org#toc-named-given）。
   // getPrototypeOf（part05）按元素 tag 查此表返对应子类 prototype；未知/自定义元素 → HTMLUnknownElement。
   // R11：使 `document.createElement('div') instanceof HTMLDivElement` 为 true（Node-cloneNode 用例）。
@@ -15879,7 +15899,17 @@ return e;
         }
         // spec class 串：'[object <IfaceName>]'（与下方 toStringTag 同表查询；分支内联——
         // trap 每属性 get 都走，避免 hoisted 闭包按调用分配）。
+        // 例外：HTMLAnchorElement/HTMLAreaElement（net-api M5-S2，同下方 toString 分支）——
+        // 真实浏览器无 @@toPrimitive（本函数系 QuickJS Proxy ToPrimitive 差异兜底，见上注），
+        // 其 V8 回落 toString 产**绝对 href**；此处对齐该值语义（constructor/006
+        // `new WebSocket(<a>)` ToPrimitive(default) 先取本分支——toString 分支对其不可达）。
         if (prop === Symbol.toPrimitive) {
+          var _aPrimTag = _realTag(sel, handle);
+          if (_aPrimTag === 'A' || _aPrimTag === 'AREA') {
+            return function () {
+              try { return String((this && this.href) || ''); } catch (_eWsaP) { return ''; }
+            };
+          }
           return function() {
             var _tagIf2p = globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface[_realTag(sel, handle).toLowerCase()];
             return '[object ' + (_tagIf2p || 'HTMLElement') + ']';
@@ -15887,7 +15917,16 @@ return e;
         }
         // R34xx：显式 toString——`el.toString()` spec 无 own override（落 Object.prototype.
         // toString → toStringTag）；本 trap 保持函数供给（同 @@toPrimitive 值语义）。
+        // 例外：HTMLAnchorElement/HTMLAreaElement interface 标注 stringifier→href（spec：
+        // `String(a)`/`a.toString()` 返解析后绝对 href）——net-api M5-S2 constructor/006
+        // 断言面（`new WebSocket(<a>)` USVString 转换吃 ToPrimitive(string)）。
         if (prop === 'toString') {
+          var _aStrTag = _realTag(sel, handle);
+          if (_aStrTag === 'A' || _aStrTag === 'AREA') {
+            return function () {
+              try { return String(this && this.href); } catch (_eWsaStr) { return ''; }
+            };
+          }
           return function() {
             var _tagIf2t = globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface[_realTag(sel, handle).toLowerCase()];
             return '[object ' + (_tagIf2t || 'HTMLElement') + ']';

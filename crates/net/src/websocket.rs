@@ -11,6 +11,9 @@ use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket as TungWebSocket};
 use url::Url;
 
+/// `Sec-WebSocket-Protocol` 请求头名（tungstenite http 常量表未收录，自定义）。
+const SEC_WEBSOCKET_PROTOCOL: &str = "sec-websocket-protocol";
+
 /// 可选 WebSocket 握手请求头（WHATWG HTML「establish a WebSocket connection」）。
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct WebSocketHandshake {
@@ -18,6 +21,8 @@ pub struct WebSocketHandshake {
     pub origin: String,
     /// `Cookie` 请求头值；空则省略。
     pub cookie: String,
+    /// 客户端请求的子协议有序集（逗号 join 发 `Sec-WebSocket-Protocol`）；空则省略。
+    pub protocols: Vec<String>,
 }
 
 /// WebSocket 连接状态。
@@ -91,6 +96,8 @@ pub struct WebSocket {
     url: String,
     state: WebSocketState,
     inner: Option<TungWebSocket<WsStream>>,
+    /// 101 响应选定的子协议（`Sec-WebSocket-Protocol` 响应头；未协商为空串）。
+    selected_protocol: String,
 }
 
 impl WebSocket {
@@ -102,6 +109,7 @@ impl WebSocket {
             url: url.to_string(),
             state: WebSocketState::Connecting,
             inner: None,
+            selected_protocol: String::new(),
         }
     }
 
@@ -157,9 +165,28 @@ impl WebSocket {
                     .map_err(|e| WebSocketError::ConnectionFailed(format!("invalid Cookie header: {e}")))?,
             );
         }
+        // 客户端请求的子协议有序集（RFC 6455 §4.1/§11.3.4——逗号 join 发
+        // `Sec-WebSocket-Protocol`；WHATWG HTML establish 步骤 8/9 同序透传）。
+        if !handshake.protocols.is_empty() {
+            request.headers_mut().insert(
+                SEC_WEBSOCKET_PROTOCOL,
+                handshake.protocols.join(", ").parse().map_err(|e| {
+                    WebSocketError::ConnectionFailed(format!("invalid Sec-WebSocket-Protocol header: {e}"))
+                })?,
+            );
+        }
 
-        let (socket, _response) =
+        let (socket, response) =
             tungstenite::connect(request).map_err(|e| WebSocketError::ConnectionFailed(e.to_string()))?;
+
+        // 101 选定子协议透出（WHATWG HTML「process the WebSocket handshake response」
+        // ——响应头选中值经宿主层落到 `ws.protocol` 属性）。
+        self.selected_protocol = response
+            .headers()
+            .get(SEC_WEBSOCKET_PROTOCOL)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
 
         self.inner = Some(socket);
         self.state = WebSocketState::Open;
@@ -195,7 +222,8 @@ impl WebSocket {
     /// 如果没有消息可读，返回 `Ok(None)`。
     /// 如果连接已关闭（收到 Close 帧），返回 `Ok(None)` 并更新状态为 `Closed`。
     pub fn receive(&mut self) -> Result<Option<WebSocketMessage>, WebSocketError> {
-        if self.state != WebSocketState::Open {
+        // Closing 态可读：关闭握手等待段须读到对端回关（RFC 6455 §7.1.1）。
+        if !matches!(self.state, WebSocketState::Open | WebSocketState::Closing) {
             return Err(WebSocketError::NotOpen);
         }
         let ws = self.inner.as_mut().ok_or(WebSocketError::NotOpen)?;
@@ -239,26 +267,37 @@ impl WebSocket {
     ///
     /// 发送 Close 帧后状态变为 `Closed`。
     pub fn close(&mut self) -> Result<(), WebSocketError> {
-        if let Some(ws) = self.inner.as_mut() {
-            // 发送 Close 帧
-            let _ = ws.close(None);
+        match self.inner.as_mut() {
+            // RFC 6455 §7.1.1：发 Close 帧只是**开始**关闭握手——连接在对端回关（或
+            // EOF/超时）后才 Closed。inner 保留，`receive()` 在 Closing 态继续可读。
+            Some(ws) => {
+                ws.close(None).map_err(|e| WebSocketError::CloseFailed(e.to_string()))?;
+                self.state = WebSocketState::Closing;
+            }
+            None => {
+                self.state = WebSocketState::Closed;
+            }
         }
-        self.state = WebSocketState::Closed;
-        self.inner = None;
         Ok(())
     }
 
-    /// 发送带状态码/原因的关闭帧并关闭连接（WHATWG HTML §WebSocket close(code, reason)）。
+    /// 发送带状态码/原因的关闭帧（WHATWG HTML §WebSocket close(code, reason)）——
+    /// 关闭握手语义同 [`WebSocket::close`]：对端回关后方入 Closed。
     pub fn close_with(&mut self, code: u16, reason: &str) -> Result<(), WebSocketError> {
-        if let Some(ws) = self.inner.as_mut() {
-            let frame = tungstenite::protocol::CloseFrame {
-                code: code.into(),
-                reason: tungstenite::Utf8Bytes::from(reason),
-            };
-            let _ = ws.close(Some(frame));
+        match self.inner.as_mut() {
+            Some(ws) => {
+                let frame = tungstenite::protocol::CloseFrame {
+                    code: code.into(),
+                    reason: tungstenite::Utf8Bytes::from(reason),
+                };
+                ws.close(Some(frame))
+                    .map_err(|e| WebSocketError::CloseFailed(e.to_string()))?;
+                self.state = WebSocketState::Closing;
+            }
+            None => {
+                self.state = WebSocketState::Closed;
+            }
         }
-        self.state = WebSocketState::Closed;
-        self.inner = None;
         Ok(())
     }
 
@@ -289,6 +328,11 @@ impl WebSocket {
     /// 返回当前连接状态。
     pub fn state(&self) -> &WebSocketState {
         &self.state
+    }
+
+    /// 101 响应选定的子协议（未协商为空串）。
+    pub fn selected_protocol(&self) -> &str {
+        &self.selected_protocol
     }
 
     /// 返回连接的 URL。

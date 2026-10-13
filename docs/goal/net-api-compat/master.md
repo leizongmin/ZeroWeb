@@ -2,12 +2,11 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-13（**M5-S1 执行**——runner 内嵌 WS fixture 通道 +
-websockets corpus 导入 + 基线 **334/375 = 89.1%**（case 78/106），engine/net
-产品面零改动；同日补记收口后漂移（fileapi 仲裁 mimesniff 865 腿，非回归）与
-P6 重入条件兑现核记）。
-此前：2026-10-01（M4-S29 **收口判定**——DC-1~4 全满足，目标 Completed；
-同日清理下一步计划收口残文并对齐缺口清单至收口口径）
+**最后更新**: 2026-10-13（**M5-S2 执行**——websockets IDL/构造器/状态机修齐：
+**369/375 = 98.4%** 子测试 / case **100/106 = 94.3%** / Timeout 2→0；六 corpus
+零回归逐域实证；残余 6 案全为跨域记账。同日 M5-S1 通道落地 + 收口后漂移补录）。
+此前：2026-10-13（M5-S1 内嵌 WS fixture 通道 + corpus 基线 334/375 = 89.1%）；
+2026-10-01（M4-S29 收口判定——DC-1~4 全满足，目标 Completed）
 
 ---
 
@@ -34,6 +33,19 @@ IDL 校验 19（shim）、`ws.protocol` 属性面 4 案（shim+bridge）、WS co
 1（017 执行序）。证据
 [evidence/2026-10-13-m5-s1-ws-fixture-baseline.md](evidence/2026-10-13-m5-s1-ws-fixture-baseline.md)。
 不测面：wss/h2 变体、`.https.*` 5 案（TLS）、multi-globals/unload-a-document（结构面）。
+
+**M5-S2 执行（同日）**：shim/bridge 归属簇修齐——close 码域 InvalidAccessError
+（spec step 1 现行语义，9 子测试）、构造器 fragment 门（spec step 4，3 子测试）、
+协议 RFC 7230 token 文法（Create-asciiSep）、A/AREA stringifier→href 三层落点
+（trap @@toPrimitive + trap toString + 接口原型直装——前轮死代码定位经探针页实证）、
+`ws.protocol` 透出（net 层 selected_protocol）、per-host 连接串行 + close 握手等待段
+（serialize-establish / Close-delayed）。**369/375 = 98.4% / case 100/106 =
+94.3% / Timeout 0**；六 corpus 零回归逐域实证（fetch 1499P / xhr 562P / url 4429P /
+mimesniff 1033P / streams 905P——与收口分母漂移内持平；eventsource 1 Timeout 经
+stash 对照实证为先在漂移）。残余 6 案全为跨域记账（cookies ×4 storage、basic-auth
+zero-net、017 runner 工件）。碰头核对：part06 WS 段最后触碰 = zero-web 流 caf3b3373，
+无并行编辑。证据
+[evidence/2026-10-13-m5-s2-ws-semantic-fixes.md](evidence/2026-10-13-m5-s2-ws-semantic-fixes.md)。
 
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
@@ -76,11 +88,26 @@ streams/url/eventsource/xhr 与收口一致。逐字节仲裁证据见
 | P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **557/584 = 95.4%**——状态机/事件序/upload ProgressEvent/preflight cache/redirect/preflight/expose/FormData/timeout 面 spec 化）——**残余：page-scheme 失配 2（http vs https 宇宙——需 runner 页面 scheme 对齐）、sync XHR 结构面 4、XML 文档面（engine XML DOM 深度——template-element 族）、bad-chunk 注入 2、formdata FormDataEvent/submitter 族 5、timeout 族 3** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.0%（新分母 6058）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | ✅ M4-S11 收口（88.6%）+ M4-S28 flow-control 清偿（**88.7%**，piping 全绿含 flow-control 5/5）；**残余：transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿，JS 层不可表达）** |
-| P6 | WebSocket 二期切片（runner WS fixture 端点 + websockets corpus 基线） | ✅ M5-S1（2026-10-13，334/375 = 89.1% 子测试）；残余：IDL 校验簇 19 + ws.protocol 4 案（shim，碰头核对）+ cookie jar 4 案（挂账族）+ zero-net 2 案 |
+| P6 | WebSocket 二期切片（runner WS fixture 端点 + websockets corpus 基线 + 语义修齐） | ✅ M5-S1 通道+基线（334/375 = 89.1%）→ **M5-S2 修齐（369/375 = 98.4% / case 100/106 = 94.3%）**；残余：cookie jar 4 案（storage 挂账族）+ basic-auth 1 案（zero-net）+ 017 工件 1 案（runner 预处理） |
 | P7 | runner fixture 通道（.py 端点最小 fixture 集） | ✅ 累计 24+ 端点（M4-S21 增 echo-headers/xhr trickle/form/echo-content-type/access-control-origin-header/over-1-meg.txt；M4-S22 增 preflight cache 族 ×3 等九件；M4-S23 增 preflight.py/clean-stash.py——fetch/api/cors 域页拉取已随域导入收口） |
 
 ## 已完成切片
 
+- **M5-S2（2026-10-13）**：websockets IDL/构造器/状态机修齐（**369/375 = 98.4%**
+  子测试 / case **100/106 = 94.3%** / Timeout 2→0；基线 334/375 = 89.1% → +35 子
+  测试 +22 case 零回归）。shim part06：close 码域 InvalidAccessError（现行 spec——
+  9 子测试）+ 构造器 fragment 门（spec step 4）+ 协议 RFC 7230 token 文法 + options-bag
+  /scheme 转换/无参 TypeError/binaryType·on* accessor/send DOMString 兜底（前轮遗留
+  变更本轮验证收编）。shim part03：A/AREA stringifier→href 三层落点（trap
+  @@toPrimitive 实为吞点——探针页定位，前轮锚点分支加挂系死代码）。net/bridge：
+  `Sec-WebSocket-Protocol` 往返 + `ws.protocol` 透出 + per-host 连接串行 +
+  close 握手等待段（回关码优先/EOF→1006/12s 兜底）。六 corpus 零回归逐域实证；
+  eventsource request-cache-control Timeout 经 stash 对照实证为先在漂移（记账）。
+  前轮 streams 探针残留 2 页清理；存量桥测两处随 spec 翻新（constructor http: 转换
+  放行 + close 码域 InvalidAccessError；echo mock 子协议选定——RFC 6455 §4.2.2
+  tungstenite 客户端强制）。make test 全绿（**20643P/0F**，首跑 2 失败系存量桥测
+  断言旧语义、随 spec 翻新后复绿）+ clippy（engine/net/wpt-runner）+ fmt 干净。见
+  [evidence/2026-10-13-m5-s2-ws-semantic-fixes.md](evidence/2026-10-13-m5-s2-ws-semantic-fixes.md)。
 - **M4-S28（2026-10-01）**：flow-control 背压编排（**9292/11659 = 79.7%**，
   streams 903→**905 = 88.7%**，flow-control **5/5 全绿**，+2 零回归）。shim：
   pipeTo 泵**串行读门**（`pendingRead` 在飞时不再入泵——watchReady/write 完成路径
@@ -436,10 +463,11 @@ streams/url/eventsource/xhr 与收口一致。逐字节仲裁证据见
    TransferArrayBuffer——需宿主 V8 detach 能力，JS 层不可表达——bad-buffers 10
    + non-transferable 4；engine 宿主能力面）；cors credentials/cookie jar +
    Authorization 重定向流 ~13 腿（storage goal / security-hardening 邻域）；
-   WebSocket 二期 P6 M5-S2 候选：① close()/constructor IDL 校验簇 19 子测试 +
-   `ws.protocol` 属性面 4 案（engine shim 共享面——修齐前与 zero-web 流 §9 碰头
-   核对）② WS cookie jar 集成 4 案（storage goal 挂账族并案评估）③ basic-auth/
-   ws-301 2 案（zero-net，跨域记账）④ runner 工件 017 执行序 1 案
+   WS 残余（M5-S3 候选）：① WS cookie jar 集成 4 案（Set-Cookie 落 document.cookie
+   + 握手 Cookie 携带——storage goal 挂账族并案评估）② basic-auth 401 挑战流 1 案
+   （zero-net，跨域记账）③ runner 工件 017 执行序 1 案；④ eventsource
+   request-cache-control Timeout 归因（M5-S2 轮实证为先在漂移，非 WS 面引入）；
+   ⑤ url crate panic 防护调用点审计（一次性 panic 未复现，低优先观察项）
 3. **goal 内结构性挂账**：sync XHR 窗口 onload 阻塞语义 4 腿；bad-chunk 注入
    2 腿（需 .asis + chunked 解析面）；formdata FormDataEvent.entries live 面 +
    submitter 坐标族 5 腿；XML 文档解析（engine XML DOM——template-element 族）

@@ -379,8 +379,9 @@ fn test_t8k_websocket_event_flow_open_message_close() {
 }
 
 // 构造器校验面：URL 解析失败 / 非 ws scheme / 空 protocol / 重复 protocol → SyntaxError
-// DOMException（HTML spec 构造 step 2–4）；close(code) 非 1000/3000–4999、reason > 123 字节
-// → SyntaxError（spec close 校验）。
+// DOMException；close(code) 非 1000/3000–4999 → InvalidAccessError（net-api M5-S2——现行
+// WHATWG spec step 1，旧版 SyntaxError 已改）、reason > 123 字节 → SyntaxError（step 2.2）。
+// http(s): → ws(s): 转换放行（spec step 2–3，M5-S2——Create-http-urls 断言面同源）。
 #[test]
 fn test_t8k_websocket_constructor_validation() {
     let mut sandbox = ws45_sandbox!();
@@ -397,13 +398,14 @@ fn test_t8k_websocket_constructor_validation() {
         ctorErr("new WebSocket('ws://example.com/s', [''])"),
         ctorErr("new WebSocket('ws://example.com/s', ['chat', 'chat'])"),
         ctorErr("new WebSocket('ws://example.com/s', 'a,b')"),
+        ctorErr("new WebSocket('ws://example.com/s#frag')"),
       ].join('|')"#;
     assert_eq!(
         sandbox
             .execute(cases)
             .unwrap()
             .value,
-        "SyntaxError|SyntaxError|SyntaxError|SyntaxError|SyntaxError|SyntaxError"
+        "SyntaxError|none|SyntaxError|SyntaxError|SyntaxError|SyntaxError|SyntaxError"
     );
     // 合法面：string protocols 单条 + 3000–4999 close code 均放行（不再抛）。
     sandbox
@@ -415,13 +417,15 @@ fn test_t8k_websocket_constructor_validation() {
         )
         .unwrap();
     assert_eq!(sandbox.execute("ok").unwrap().value, "yes");
-    // close code 越界（1001 保留段 / 2999 私用段下界外）→ SyntaxError。
+    // close code 越界（1001 保留段 / 2999 私用段下界外）→ InvalidAccessError（M5-S2 现行
+    // spec step 1）；reason > 123 字节 → SyntaxError（step 2.2 不变）。
     assert_eq!(
         sandbox
             .execute(
                 "function closeErr(expr) {\
                    try { eval(expr); return 'none'; } catch (e) {\
-                     return (e instanceof DOMException && e.name === 'SyntaxError') ? 'SyntaxError' : ('wrong:' + e);\
+                     return (e instanceof DOMException && e.name === 'InvalidAccessError') ? 'InvalidAccessError'\
+                       : (e instanceof DOMException && e.name === 'SyntaxError') ? 'SyntaxError' : ('wrong:' + e);\
                    }\
                  }\
                  [closeErr(\"wsp.close(1001)\"), closeErr(\"wsp.close(2999)\"),\
@@ -429,7 +433,7 @@ fn test_t8k_websocket_constructor_validation() {
             )
             .unwrap()
             .value,
-        "SyntaxError|SyntaxError|SyntaxError"
+        "InvalidAccessError|InvalidAccessError|SyntaxError"
     );
 }
 
