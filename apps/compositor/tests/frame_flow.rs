@@ -1109,9 +1109,26 @@ fn compositor_gpu_dmabuf_browser_import_round_trips() {
         return;
     }
     let (mut transport, _comp) = spawn_compositor_gpu_dmabuf();
-    let frame = make_frame(4, 4, [255, 128, 0, 255]);
-    assert_eq!(submit_frame(&mut transport, 1, 14, 1, 1, frame), (14, 1, 1));
-    let (width, height, resolved) = get_frame_delivery(&mut transport, 2, 14, 1, 1);
+    // t9：compositor 启动时在后台线程预热 GPU 上下文，就绪前的帧走 CPU 光栅、
+    // Get 交付回落 Rgba。轮询提交递增帧直到预热完成、恢复 dma-buf 交付；
+    // 断言仍验证同一契约：GPU 就绪后交付必须是 Dmabuf。
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let mut frame_id: u64 = 1;
+    let (width, height, resolved) = loop {
+        frame_id += 1;
+        let frame = make_frame(4, 4, [255, 128, 0, 255]);
+        assert_eq!(
+            submit_frame(&mut transport, frame_id, 14, 1, frame_id, frame),
+            (14, 1, frame_id)
+        );
+        let delivery = get_frame_delivery(&mut transport, frame_id + 1_000_000, 14, 1, frame_id);
+        match delivery.2 {
+            zero_protocol::CompositorResolvedFrame::Rgba(_) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            _ => break delivery,
+        }
+    };
     assert_eq!((width, height), (4, 4));
     match resolved {
         zero_protocol::CompositorResolvedFrame::Dmabuf {

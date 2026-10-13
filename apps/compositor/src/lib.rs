@@ -104,6 +104,27 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
     // 现状：GPU 渲染器覆盖 fills/glyphs 图元子集（render_scene_ext）。
     let gpu_enabled = zero_protocol::compositor_gpu_enabled();
     let mut gpu_renderer: Option<zero_render_foundation::gpu::renderer::GpuRenderer> = None;
+    // t9 首帧预热：wgpu 适配器/设备枚举在 WSL2 等环境可达秒级，原先挂在首个页面帧的
+    // 光栅化路径内惰性创建（gpu_raster::rasterize_gpu），会阻塞整个 compositor 消息循环
+    // ——页面与窗口 chrome 一并停顿，浏览器侧只剩标题占位（首启近空白页 flake）。
+    // 改为启动时后台线程预建上下文；就绪前的帧走下方 CPU 回退路径，循环不阻塞。
+    // 预热失败不吞错：记 warn 后回到原帧内惰性重试语义。
+    let mut gpu_warmup: Option<
+        std::thread::JoinHandle<Result<zero_render_foundation::gpu::renderer::GpuRenderer, String>>,
+    > = if gpu_enabled {
+        match std::thread::Builder::new()
+            .name("compositor-gpu-warmup".into())
+            .spawn(|| zero_render_foundation::gpu::renderer::GpuRenderer::new_headless(1, 1))
+        {
+            Ok(handle) => Some(handle),
+            Err(error) => {
+                tracing::warn!("compositor: GPU 预热线程启动失败，回落帧内惰性初始化: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     tracing::info!(
         "zero-compositor 就绪（C2：IPC 图元 → 线程化光栅化 → 双缓冲；GPU={}）",
@@ -122,6 +143,21 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 continue;
             }
         };
+
+        // 收编已完成的预热结果（任何消息处理前检查，预热完成即对全部路径可见）。
+        if gpu_warmup.as_ref().is_some_and(std::thread::JoinHandle::is_finished) {
+            let handle = gpu_warmup.take().expect("warmup handle checked above");
+            match handle.join() {
+                Ok(Ok(renderer)) => gpu_renderer = Some(renderer),
+                Ok(Err(error)) => {
+                    tracing::warn!("compositor: GPU 上下文预热失败，回落帧内惰性初始化: {error}");
+                }
+                Err(_) => tracing::warn!("compositor: GPU 预热线程异常退出，回落帧内惰性初始化"),
+            }
+        }
+        // 仍在预热：本帧直接走 CPU 回退，不在消息循环内阻塞等待 wgpu 初始化
+        //（t9：阻塞即首帧近空白）。
+        let gpu_warming = gpu_warmup.is_some();
 
         match msg.kind {
             IpcMessageKind::CompositorFrame {
@@ -243,7 +279,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                     surface.backing.copy_front_to_back();
                 }
 
-                if gpu_enabled {
+                if gpu_enabled && !gpu_warming {
                     let gpu_ok = if is_partial {
                         gpu_raster::try_rasterize_partial_into_back(
                             &mut gpu_renderer,
