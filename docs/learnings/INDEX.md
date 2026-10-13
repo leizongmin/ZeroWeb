@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（152）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（153）
 
+- 2026-10-13 [import-wpt 从 upstream master 下载与 pinned 快照不一致——ref 404 时连带删除本地既有案](bugs/2026-10/2026-10-13-import-wpt-master-pinned-mismatch.md) — tests/wpt-runner
 - 2026-10-11 [QuickJS 全局词法作用域重复 `const` 声明使脚本静默死亡](bugs/2026-10/2026-10-11-quickjs-global-const-redeclaration.md) — apps/renderer
 - 2026-10-11 [A/B 基线臂重建后恢复源码未重建 release 二进制——守成跑测到旧产物出假回归](bugs/2026-10/2026-10-11-ab-baseline-rebuild-stale-release-binary.md) — engine,tests/wpt-runner
 - 2026-10-10 [沙箱宿主回调重复注册只增不减 → 整页脚本二次方退化](bugs/2026-10/2026-10-10-sandbox-register-callback-quadratic-accumulation.md) — script-sandbox,webview,engine
