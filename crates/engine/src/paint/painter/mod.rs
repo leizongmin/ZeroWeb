@@ -59,6 +59,9 @@ pub struct Painter {
     /// R5086：行内背景 z 序修正开关（构造期单次读取，热路径零 env 查询）。
     /// `ZW_INLINE_BG_Z_ORDER=0` 关闭（恢复背景后置旧序）。
     pub(crate) inline_bg_z_order_enabled: bool,
+    /// R5098：flat/并入 IFC 片段 visibility 过滤开关（构造期单次读取）。
+    /// `ZW_INLINE_FRAG_VISIBILITY=0` 关闭（恢复 hidden 片段照绘旧行为）。
+    pub(crate) inline_frag_visibility_enabled: bool,
     /// R5088：wrapper inline 背景门修正开关（构造期单次读取）。`ZW_INLINE_WRAPPER_BG=0`
     /// 关闭（skip 门回旧 has_direct_paintable_text 判据 + 链补录停用）。
     pub(crate) inline_wrapper_bg_enabled: bool,
@@ -582,6 +585,7 @@ impl Painter {
             painted_inline_nodes: HashSet::new(),
             pending_inline_bg_pos: HashMap::new(),
             inline_bg_z_order_enabled: std::env::var("ZW_INLINE_BG_Z_ORDER").as_deref() != Ok("0"),
+            inline_frag_visibility_enabled: std::env::var("ZW_INLINE_FRAG_VISIBILITY").as_deref() != Ok("0"),
             inline_wrapper_bg_enabled: std::env::var("ZW_INLINE_WRAPPER_BG").as_deref() != Ok("0"),
             inline_bleed_enabled: std::env::var("ZW_INLINE_BLEED").as_deref() == Ok("1"),
             paint_skip_nodes: HashSet::new(),

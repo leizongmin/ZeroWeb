@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use zero_css_parser::values::types::FontStyleValue;
-use zero_css_parser::values::{ColorValue, DisplayValue, FloatValue, LengthValue};
+use zero_css_parser::values::{ColorValue, DisplayValue, FloatValue, LengthValue, VisibilityValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::inline_finalization::{
     build_text_parent_override_map, resolve_tab_size_length_px, resolve_text_align, resolve_text_align_last,
@@ -2170,6 +2170,21 @@ impl super::Painter {
                             } else {
                                 styles.and_then(|s| s.get(&owner_id))
                             };
+                            // R5098（CSS2.1 visibility）：flat/并入 IFC 的片段 owner 盒不独立
+                            // 绘制（run-in 并入 R3992 叶化、R4332 前缀收集），盒级 hidden skip
+                            // 不覆盖——hidden 片段照绘（run-in-contains-abspos-001/003 族
+                            // `.run-in > span[+span] { visibility: hidden }` 双 header 实证）。
+                            // 片段发射前按 owner 自身样式过滤；可见后代重置继承（visibility
+                            // per-element）由 owner 直判保真。kill-switch
+                            // `ZW_INLINE_FRAG_VISIBILITY=0`。盒级路径（paint_node hidden skip）
+                            // 不变。
+                            if self.inline_frag_visibility_enabled
+                                && owner_style_opt.is_some_and(|s| {
+                                    matches!(s.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse)
+                                })
+                            {
+                                continue;
+                            }
                             let dutch_digraph = {
                                 let mut found = false;
                                 let mut cur = Some(owner_id);

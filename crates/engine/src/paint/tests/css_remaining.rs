@@ -1177,3 +1177,61 @@ fn r5086_inline_box_bg_z_order_precedes_glyphs() {
     );
     assert!(ef.is_some(), "empty span bg must still emit (legacy order)");
 }
+
+/// R5098（CSS2.1 visibility）：flat/并入 IFC 的片段按 owner 自身样式过滤 hidden 字形。
+/// run-in 并入（R3992 叶化 + R4332 前缀收集）后片段经目标 paint_text 发射，owner 盒
+/// 不独立绘制——盒级 hidden skip 不覆盖，hidden 文本照绘（driving:
+/// run-in-contains-abspos-001 `.run-in > span + span { visibility: hidden }` 双
+/// header 实证）。kill-switch：`inline_frag_visibility_enabled` 字段直置（R5086
+/// 免进程 env 突变形态）。
+#[test]
+fn r5098_inline_frag_visibility_filters_hidden_glyphs() {
+    fn glyph_count(html: &str, css: &str, filter_enabled: bool) -> usize {
+        let doc = zero_dom::parse_html(html);
+        let sheet = zero_css_parser::Parser::parse_stylesheet(css);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[sheet]);
+        let mut engine = zero_layout_engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let mut painter = Painter::new();
+        painter.inline_frag_visibility_enabled = filter_enabled;
+        painter.viewport_w = 800.0;
+        painter.viewport_h = 600.0;
+        painter.paint(&result.root, &styles, Some(&doc));
+        painter.primitives().glyphs.len()
+    }
+    // run-in 并入形态：第二个 span visibility:hidden（其 "header" 文本不得出字形）。
+    const HIDDEN_FORM_HTML: &str = r##"<html><head><style>
+        .run-in { display: run-in; font-weight: bold }
+        .run-in > span { position: absolute; top: 0 }
+        .run-in > span + span { position: static; visibility: hidden; }
+    </style></head><body style="margin:0">
+      <div class="run-in">Run-in <span>header</span><span>header</span></div>
+      <div id="target">Start of block.</div>
+    </body></html>"##;
+    const HIDDEN_FORM_CSS: &str = r".run-in { display: run-in; font-weight: bold }
+        .run-in > span { position: absolute; top: 0 }
+        .run-in > span + span { position: static; visibility: hidden; }";
+
+    let filtered = glyph_count(HIDDEN_FORM_HTML, HIDDEN_FORM_CSS, true);
+    let legacy = glyph_count(HIDDEN_FORM_HTML, HIDDEN_FORM_CSS, false);
+    assert!(
+        filtered < legacy,
+        "R5098: hidden span 字形须被过滤（filtered {filtered} < legacy {legacy}）——\
+         run-in 并入 IFC 的 hidden 片段不再照绘"
+    );
+    assert!(legacy > 0, "kill-switch 形态须维持旧行为（hidden 字形照绘）");
+
+    // 对照：全可见内容，开关不影响字形数（过滤只作用于 hidden owner）。
+    const VISIBLE_HTML: &str = r##"<html><body style="margin:0">
+      <div class="run-in" style="display: run-in; font-weight: bold">Run-in header</div>
+      <div>Start of block.</div>
+    </body></html>"##;
+    let visible_on = glyph_count(VISIBLE_HTML, "", true);
+    let visible_off = glyph_count(VISIBLE_HTML, "", false);
+    assert!(
+        visible_on > 0 && visible_on == visible_off,
+        "R5098: 可见内容不受过滤影响（on {visible_on} == off {visible_off}）"
+    );
+}
