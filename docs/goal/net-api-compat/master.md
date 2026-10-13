@@ -2,7 +2,9 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-01（M4-S29 **收口判定**——DC-1~4 全满足，目标 Completed；
+**最后更新**: 2026-10-13（补记收口后漂移——fileapi-compat 仲裁致 net-api 通道
+mimesniff (Blob/File) 865 腿转失败，非回归；目标状态仍 Completed）。
+此前：2026-10-01（M4-S29 **收口判定**——DC-1~4 全满足，目标 Completed；
 同日清理下一步计划收口残文并对齐缺口清单至收口口径）
 
 ---
@@ -28,6 +30,15 @@ make test 19547P/0F + clippy -D warnings + fmt 干净 + **reftest 700/700 = 100%
 S18 泛化 OPTIONS 兜底门之前——假阴性根因）+ redirect.py 对齐上游（redirect_preflight
 落穿 + Location 全量 query）+ 路径点段归一。见
 [evidence/2026-10-01-m4-s23-cors-domain.md](evidence/2026-10-01-m4-s23-cors-domain.md)。
+
+**收口后漂移（2026-10-11 记档，2026-10-13 补录）**：fileapi-compat M2-P1 经 chromium
+实测仲裁改 Blob.type 判据（范围判据 + ASCII 小写化，取代本 goal M2-S1 落的 MIME
+parse-serialize——上游 mimesniff parsing.any.js 与 FileAPI 语料对 Blob.type 断言互斥，
+chromium 站 FileAPI 侧），net-api 通道 mimesniff (Blob/File) **865 腿随之转为失败**
+——上游语料间冲突，非回归；复跑 fetch+xhr 2060 ≈ 收口 2046（corpus +16 漂移内持平），
+streams/url/eventsource/xhr 与收口一致。逐字节仲裁证据见
+[fileapi-compat evidence/2026-10-11-m2-p1-constructor-webidl.md](../fileapi-compat/evidence/2026-10-11-m2-p1-constructor-webidl.md)。
+本 goal 终态数字仍指 2026-10-01 收口快照；重读通道现状时以本注记为准。
 
 **与兄弟 goal 的边界**：
 - security-hardening — CSP 对 fetch 的策略执行归其；本 goal 提供语义钩子位
