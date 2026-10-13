@@ -59,15 +59,15 @@
     },
     {
       "id": "mb/zero-canvas/path_ops_1000_segments",
-      "p95": 10708.700631826943,
+      "p95": 10706.459114778694,
       "tier": "budget",
-      "tightened_at": "2026-10-04T13:26:14Z"
+      "tightened_at": "2026-10-13T14:14:53Z"
     },
     {
       "id": "mb/zero-canvas/save_restore_100_deep",
-      "p95": 50676.575352112675,
+      "p95": 50501.0348200313,
       "tier": "budget",
-      "tightened_at": "2026-10-06T13:28:26Z"
+      "tightened_at": "2026-10-13T14:14:53Z"
     },
     {
       "id": "mb/zero-canvas/stroke_rect_1000",
@@ -137,9 +137,9 @@
     },
     {
       "id": "mb/zero-dom/dom/get_elements_by_tag_name_1000",
-      "p95": 11307.94782572545,
+      "p95": 11284.15905511811,
       "tier": "budget",
-      "tightened_at": "2026-10-12T19:25:58Z"
+      "tightened_at": "2026-10-13T14:14:53Z"
     },
     {
       "id": "mb/zero-dom/dom/parse_html_nested_50",
@@ -154,9 +154,9 @@
     },
     {
       "id": "mb/zero-dom/dom/query_selector_1000_elements_by_class",
-      "p95": 398.7937175315635,
+      "p95": 393.8005262568581,
       "tier": "budget",
-      "tightened_at": "2026-10-05T19:29:56Z"
+      "tightened_at": "2026-10-13T14:14:53Z"
     },
     {
       "id": "mb/zero-dom/dom/query_selector_1000_elements_by_id",
@@ -219,9 +219,9 @@
     },
     {
       "id": "mb/zero-host-runtime/create_100_window_configs",
-      "p95": 6545.515550781716,
+      "p95": 6523.283543885724,
       "tier": "budget",
-      "tightened_at": "2026-10-06T19:26:33Z"
+      "tightened_at": "2026-10-13T14:14:53Z"
     },
     {
       "id": "mb/zero-host-runtime/host_runtime_new",
@@ -332,9 +332,9 @@
     },
     {
       "id": "mb/zero-render-foundation/damage_tracker/add_damage/500",
-      "p95": 8520.957637231504,
+      "p95": 8520.533949116836,
       "tier": "budget",
-      "tightened_at": "2026-10-12T19:25:58Z"
+      "tightened_at": "2026-10-13T14:14:53Z"
     },
     {
       "id": "mb/zero-render-foundation/damage_tracker/damage_all",
