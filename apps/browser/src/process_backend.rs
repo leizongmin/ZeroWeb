@@ -730,17 +730,23 @@ impl ProcessTabBackend {
     fn drain_pending_fetches(&mut self) {
         for item in self.fetch_proxy.drain() {
             self.update_pending_indexed_db_navigation_from_fetch(item.tab_id, &item.headers);
-            if let Some(download) = Self::take_attachment_download(&item) {
-                // 附件响应不进渲染管线：拦截落盘，给 renderer 一个良性占位页
-                // （多进程边界内 browser 侧可独决，不外溢 net/renderer crate）。
-                self.pending_downloads.push(download);
-                let stub_headers = vec![("Content-Type".to_string(), "text/html; charset=utf-8".to_string())];
-                let stub_body = b"<!DOCTYPE html><title>Downloaded</title>".to_vec();
-                self.send_fetch_response_now(item.tab_id, item.request_id, item.status, stub_headers, stub_body);
-                continue;
-            }
-            self.send_fetch_response_now(item.tab_id, item.request_id, item.status, item.headers, item.body);
+            self.deliver_fetch_or_download(item);
         }
+    }
+
+    /// 附件/不可内联文档响应拦截落盘，其余原样回传 renderer。网络响应与 SW
+    /// respondWith 的页面 fetch 共用此路由，避免同一导航因是否经过 SW 产生两种结局。
+    fn deliver_fetch_or_download(&mut self, item: crate::fetch_proxy::CompletedFetch) {
+        if let Some(download) = Self::take_attachment_download(&item) {
+            // 附件响应不进渲染管线：拦截落盘，给 renderer 一个良性占位页
+            // （多进程边界内 browser 侧可独决，不外溢 net/renderer crate）。
+            self.pending_downloads.push(download);
+            let stub_headers = vec![("Content-Type".to_string(), "text/html; charset=utf-8".to_string())];
+            let stub_body = b"<!DOCTYPE html><title>Downloaded</title>".to_vec();
+            self.send_fetch_response_now(item.tab_id, item.request_id, item.status, stub_headers, stub_body);
+            return;
+        }
+        self.send_fetch_response_now(item.tab_id, item.request_id, item.status, item.headers, item.body);
     }
 
     /// 完成的响应 → 待下载条目。两条并行路由共用同一落盘管线（附件与不可内联
@@ -781,9 +787,11 @@ impl ProcessTabBackend {
     }
 
     /// 顶层文档导航的响应是否因 Content-Type 走下载：仅限 document 资源类型
-    /// （fetch_proxy 为每个完成响应推入 X-Zero-Resource-Type）+ 2xx；页面内
-    /// fetch()/子资源不受影响。Content-Type 缺失时保守保持渲染路径——fetch 规范
-    /// 「extract a MIME type」对无 Content-Type 头返回 null
+    /// （fetch_proxy 为每个完成响应推入 X-Zero-Resource-Type，且已先剥离服务器
+    /// 可伪造的同名实例——列表中的实例均为浏览器写入，`any()` 判定不受外部
+    /// 响应头伪造影响）+ 2xx；页面内 fetch()/子资源不受影响。Content-Type 缺失时
+    /// 保守保持渲染路径——fetch 规范「extract a MIME type」对无 Content-Type 头
+    /// 返回 null
     /// （https://fetch.spec.whatwg.org/#concept-header-extract-mime-type）；
     /// 未实现 MIME sniffing（https://mimesniff.spec.whatwg.org/），不扩大拦截。
     fn is_document_download_response(item: &crate::fetch_proxy::CompletedFetch) -> bool {
@@ -927,7 +935,15 @@ impl ProcessTabBackend {
                     body,
                 } => {
                     self.update_pending_indexed_db_navigation_from_fetch(tab_id, &headers);
-                    self.send_fetch_response_now(tab_id, request_id, status, headers, body);
+                    // SW 响应头已由 owner 剥离伪造的内部头并重推真实资源类型，
+                    // 与网络响应同走附件/不可内联文档路由。
+                    self.deliver_fetch_or_download(crate::fetch_proxy::CompletedFetch {
+                        tab_id,
+                        request_id,
+                        status,
+                        headers,
+                        body,
+                    });
                 }
                 CompletedServiceWorkerPageFetch::PassThrough { tab_id, params } => {
                     self.fetch_proxy.enqueue(tab_id, &params);
@@ -2700,6 +2716,124 @@ mod download_route_tests {
         // 畸形 essence（无 '/'）保守渲染。
         assert!(is_inline_renderable_content_type("octet-stream"));
     }
+
+    #[test]
+    fn url_fallback_filename_strips_query_and_fragment() {
+        // 常见签名下载链形态：文件名取 URL 路径末段，不含 query/fragment——
+        // `?` 在 Windows 文件名中非法，落盘会直接失败。
+        for (url, expect) in [
+            ("http://127.0.0.1:9/download?file=report.zip", "download"),
+            ("http://127.0.0.1:9/files/bigfile.bin?token=x", "bigfile.bin"),
+            ("http://127.0.0.1:9/files/bigfile.bin#frag", "bigfile.bin"),
+            ("http://127.0.0.1:9/files/bigfile.bin?token=x#frag", "bigfile.bin"),
+        ] {
+            let item = completed(
+                200,
+                vec![
+                    ("X-Zero-Resource-Type", "document"),
+                    ("X-Zero-Final-URL", url),
+                    ("Content-Type", "application/octet-stream"),
+                ],
+            );
+            let download = ProcessTabBackend::take_attachment_download(&item).unwrap();
+            assert_eq!(download.filename, expect, "url={url}");
+        }
+    }
+
+    /// F1 信任边界：恶意服务器对子资源回 2xx + octet-stream + 伪造 document 头，
+    /// 不得劫持为下载——fetch_proxy drain 先剥离服务器伪造的内部命名空间头，
+    /// 路由决策只认浏览器推入的真实资源类型；对照：浏览器推入 document 照常下载。
+    #[test]
+    fn spoofed_resource_type_header_cannot_hijack_download_route() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            // 顺序应答两个请求：先伪造头的子资源，后无伪造的对照响应。
+            for response in [
+                "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\
+                 X-Zero-Resource-Type: document\r\nX-Zero-Final-URL: https://evil.example/forged\r\n\
+                 Content-Length: 2\r\n\r\nok",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: 2\r\n\r\nok",
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0_u8; 1024];
+                let _ = stream.read(&mut request).unwrap();
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+
+        let mut proxy = crate::fetch_proxy::TabFetchProxy::new();
+        proxy.on_navigate(TabId(1), &base_url);
+        // 请求 1：script 子资源 + 服务器伪造 document 头 → 不走下载。
+        let sub_url = format!("{base_url}/evil.bin");
+        proxy.enqueue(
+            TabId(1),
+            &zero_protocol::message::FetchParams {
+                request_id: 1,
+                url: sub_url.clone(),
+                method: "GET".into(),
+                headers: vec![("X-Zero-Resource-Type".into(), "script".into())],
+                body: None,
+            },
+        );
+        let subresource = wait_for_completed_fetch(&mut proxy);
+        let resource_types: Vec<&str> = subresource
+            .headers
+            .iter()
+            .filter(|(name, _)| name.eq_ignore_ascii_case("x-zero-resource-type"))
+            .map(|(_, value)| value.as_str())
+            .collect();
+        assert_eq!(
+            resource_types,
+            vec!["script"],
+            "服务器伪造实例须剥离，仅存浏览器推入实例"
+        );
+        assert!(
+            !subresource
+                .headers
+                .iter()
+                .any(|(name, value)| name.eq_ignore_ascii_case("x-zero-final-url")
+                    && value == "https://evil.example/forged"),
+            "伪造的 X-Zero-Final-URL 同样须剥离"
+        );
+        assert!(
+            ProcessTabBackend::take_attachment_download(&subresource).is_none(),
+            "伪造 document 头不得劫持子资源为下载"
+        );
+
+        // 请求 2：浏览器推入 document 资源类型 + octet-stream → 照常走下载。
+        let doc_url = format!("{base_url}/doc.bin");
+        proxy.enqueue(
+            TabId(1),
+            &zero_protocol::message::FetchParams {
+                request_id: 2,
+                url: doc_url,
+                method: "GET".into(),
+                headers: vec![("X-Zero-Resource-Type".into(), "document".into())],
+                body: None,
+            },
+        );
+        let document = wait_for_completed_fetch(&mut proxy);
+        let download = ProcessTabBackend::take_attachment_download(&document)
+            .expect("浏览器推入 document + octet-stream 应走下载");
+        assert_eq!(download.filename, "doc.bin");
+        server.join().unwrap();
+    }
+
+    fn wait_for_completed_fetch(proxy: &mut crate::fetch_proxy::TabFetchProxy) -> CompletedFetch {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let mut done = proxy.drain();
+            if let Some(item) = done.pop() {
+                return item;
+            }
+            assert!(std::time::Instant::now() < deadline, "fetch did not complete in time");
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+    }
 }
 
 /// 顶层文档导航可内联渲染的 Content-Type essence 白名单：主类 text/image/audio/
@@ -2724,7 +2858,9 @@ fn is_inline_renderable_content_type(essence: &str) -> bool {
 }
 
 /// 从 Content-Disposition 解析 filename，回退 URL 路径末段，再回退 download.bin。
-/// 拒绝路径分隔符与空值（信任边界：响应头来自外部服务器）。
+/// 拒绝路径分隔符与空值（信任边界：响应头来自外部服务器）。URL 回退先剥
+/// query/fragment 再取末段（如 `/download?file=report.zip` 落盘 `download`）——
+/// `?`/`#` 不是合法文件名字符，Windows 写入会直接失败。
 fn parse_attachment_filename(disposition: &str, url: &str) -> String {
     let sanitize = |raw: &str| -> Option<String> {
         let trimmed = raw.trim().trim_matches('"').trim();
@@ -2750,7 +2886,10 @@ fn parse_attachment_filename(disposition: &str, url: &str) -> String {
             return name;
         }
     }
-    if let Some(last) = url.split('/').next_back()
+    // RFC 3986：query（`?...`）与 fragment（`#...`）不属于 path，先剥离。
+    let no_fragment = url.split('#').next().unwrap_or(url);
+    let path = no_fragment.split('?').next().unwrap_or(no_fragment);
+    if let Some(last) = path.split('/').next_back()
         && let Some(name) = sanitize(last)
     {
         return name;

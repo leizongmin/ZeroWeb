@@ -412,6 +412,9 @@ impl TabFetchProxy {
                         resp.status_code,
                         resp.body.len()
                     );
+                    // 信任边界：响应头来自外部服务器，内部命名空间头（x-zero-*）先剥离
+                    // 再推入浏览器实例，保证下游按「唯一浏览器推入实例」做路由决策。
+                    strip_spoofed_internal_headers(&mut resp.headers);
                     resp.headers.push(("X-Zero-Final-URL".to_string(), resp.url.clone()));
                     resp.headers
                         .push(("X-Zero-Resource-Type".to_string(), pending.resource_type.to_string()));
@@ -451,9 +454,12 @@ impl TabFetchProxy {
             }
         }
         self.pending = still_pending;
-        while let Ok(item) = self.stream_rx.try_recv() {
+        while let Ok(mut item) = self.stream_rx.try_recv() {
             let key = (item.tab_id, item.request_id);
             if self.stream_pending.contains(&key) {
+                // 流式完成块（含最终头）同样先剥离可伪造头；分块头由本地构造、仅含
+                // X-Zero-Stream-Chunk，剥离对其无影响（该路径不推入内部资源类型头）。
+                strip_spoofed_internal_headers(&mut item.headers);
                 if !is_stream_chunk(&item.headers) {
                     self.stream_pending.remove(&key);
                 }
@@ -557,6 +563,16 @@ fn is_stream_chunk(headers: &[(String, String)]) -> bool {
     headers
         .iter()
         .any(|(name, value)| name.eq_ignore_ascii_case("x-zero-stream-chunk") && value == "1")
+}
+
+/// 剥离外部服务器可伪造的内部命名空间响应头（信任边界：响应头来自外部服务器）。
+/// `X-Zero-Resource-Type` / `X-Zero-Final-URL` 只承载浏览器自身写入的路由元数据，
+/// 下游 `any()` / `find()` 判定必须只见到浏览器推入的实例；ServiceWorker 响应侧
+/// 有同样的剥离再重推处理（service_worker_owner 完成页 fetch 时）。
+fn strip_spoofed_internal_headers(headers: &mut Vec<(String, String)>) {
+    headers.retain(|(name, _)| {
+        !name.eq_ignore_ascii_case("x-zero-resource-type") && !name.eq_ignore_ascii_case("x-zero-final-url")
+    });
 }
 
 impl Default for TabFetchProxy {
