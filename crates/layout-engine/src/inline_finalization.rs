@@ -2477,9 +2477,37 @@ pub(crate) fn measure_text_content(
             }),
         };
     }
+    // R5104（CSS2 §10.3.7 shrink-to-fit）：auto 宽 abspos/fixed 叶的 taffy absolute
+    // 测量臂以 Definite(CB 宽) 约束跑 ContentSize（max-content）测量——IFC 以该宽排出
+    // 单行，measured_width = 文本真实 advance（如 247.4）；taffy 盒宽经 round_layout
+    // 取整（247）后 paint Path B 以盒宽复排，247.4 > 247 折行 → layout 单行（h=18）
+    // vs paint 两行（abspos-block-level-001 1.20% 恒红签名）。修 = 单行且未溢出时宽度
+    // 上取整：盒宽 ≥ 文本 advance，paint 复排恰好容纳。abspos 自定尺寸盒不进流内相位
+    // 网格（R4333 网格不变量只约束 in-flow），ceil 不破整页相位；溢出行
+    //（measured_width > IFC 宽）与多行臂不动——盒宽 = avail 与 paint 复排一致
+    //（chromium 窄 CB 语义同）。kill-switch `ZW_ABSPOS_SHRINK_TO_FIT=0`。
+    let width_out = known_dimensions.width.unwrap_or(measured_width);
+    let height_out = known_dimensions.height.unwrap_or(balanced_height);
+    if known_dimensions.width.is_none()
+        && !is_vertical
+        && inline_ctx.lines.len() == 1
+        && measured_width <= width
+        && styles.get(&dom_id).is_some_and(|s| {
+            matches!(
+                s.position,
+                zero_css_parser::values::PositionValue::Absolute | zero_css_parser::values::PositionValue::Fixed
+            )
+        })
+        && std::env::var("ZW_ABSPOS_SHRINK_TO_FIT").as_deref() != Ok("0")
+    {
+        return Size {
+            width: measured_width.ceil(),
+            height: height_out,
+        };
+    }
     Size {
-        width: known_dimensions.width.unwrap_or(measured_width),
-        height: known_dimensions.height.unwrap_or(balanced_height),
+        width: width_out,
+        height: height_out,
     }
 }
 

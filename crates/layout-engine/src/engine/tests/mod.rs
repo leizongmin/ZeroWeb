@@ -701,3 +701,5 @@ mod r5097_table_raw_text_anon_cell_tests;
 mod r5099_row_spec_floor_tests;
 /// R5100 collapse 边框胜出宽度入 cell border-box（CSS2 §17.6.1）测试。
 mod r5100_collapse_border_box_growth_tests;
+/// R5104 auto 宽 abspos 单行测量宽度上取整（CSS2 §10.3.7 shrink-to-fit）测试。
+mod r5104_abspos_shrink_to_fit_ceil_tests;
