@@ -547,7 +547,10 @@ jobs:
         run: make fetch-wpt-data
 
       - name: Run reftest suite (CPU rendering)
-        run: cargo run --release --bin zero-wpt-runner -- reftest --format json
+        # runner CLI 无 --format 选项（手写参数解析，未知 token 落入位置 filter）——
+        # `--format json` 曾使 filter="--format" 匹配 0 案，job 自 2026-06-06 起空转绿；
+        # 正确 flag 为 --json（OutputFormat::Json）。
+        run: cargo run --release --bin zero-wpt-runner -- reftest --json
 
       - name: Upload reftest report
         if: always()
