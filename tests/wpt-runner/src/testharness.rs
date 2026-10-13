@@ -3716,6 +3716,18 @@ pub const NET_API_CORPUS_SUBDIRS: &[&str] = &[
     "streams/transform-streams",
     "streams/writable-streams",
     "eventsource",
+    // P6 二期切片（M5-S1，重入条件 2026-10-13 兑现）：websockets/ 连接面由 runner
+    // 内嵌 WS fixture 端点承接（ws_fixture.rs，语义基准 = 上游 handlers/*.py）。
+    // multi-globals（多文档）/unload-a-document（多页编排）不列——runner 无多文档
+    // 管道，与既有 worker/iframe 筛减同因。
+    "websockets",
+    "websockets/binary",
+    "websockets/closing-handshake",
+    "websockets/constructor",
+    "websockets/cookies",
+    "websockets/keeping-connection-open",
+    "websockets/opening-handshake",
+    "websockets/security",
 ];
 
 /// net-api 六 corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
@@ -3731,6 +3743,12 @@ pub const NET_API_CORPUS_SUBDIRS: &[&str] = &[
 fn net_api_case_skipped(relative: &str, source: &str) -> bool {
     let name = relative.rsplit('/').next().unwrap_or(relative);
     if name.ends_with("-manual.html") || name.starts_with("idlharness.") {
+        return true;
+    }
+    // net-api M5-S1：websockets `.https.*` 案需安全上下文 + TLS wss 端点（上游 ?wss
+    // 变体）——runner 页面为 http origin、fixture 无 TLS，两臂均不可测，筛减记账
+    // （mixed-content 案在 http 页必假阴）。
+    if relative.starts_with("websockets/") && name.contains(".https.") {
         return true;
     }
     if relative.contains("/resources/") {
@@ -4338,11 +4356,18 @@ pub(crate) fn apply_wpt_substitutions(source: &str) -> String {
         .replace("{{domains[www1]}}", "www1.wpt.test")
         .replace("{{domains[www2]}}", "www2.wpt.test")
         .replace("{{hosts[alt][]}}", "alt.wpt.test")
+        .replace("{{hosts[alt][www]}}", "www1.alt.wpt.test")
         .replace("{{hosts[alt][www2]}}", "www2.alt.wpt.test")
         .replace("{{ports[http][0]}}", "80")
         .replace("{{ports[http][1]}}", "8000")
         .replace("{{ports[https][0]}}", "443")
         .replace("{{ports[https][1]}}", "8443")
+        // net-api M5-S1：websockets 常量面（constants.sub.js SCHEME_DOMAIN_PORT）——
+        // ws/wss/h2 三 token 全映射到内嵌 WS fixture 端口（wss/h2 变体不执行，token
+        // 落在未走的分支里；?default 变体走 ws + fixture 端口，宿主改写见 ws_fixture）。
+        .replace("{{ports[ws][0]}}", &crate::ws_fixture::fixture_ws_port().to_string())
+        .replace("{{ports[wss][0]}}", &crate::ws_fixture::fixture_ws_port().to_string())
+        .replace("{{ports[h2][0]}}", &crate::ws_fixture::fixture_ws_port().to_string())
 }
 
 /// Run one canvas testharness case with `canvas-tests.js` inlined.
@@ -6912,6 +6937,27 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(b"<!doctype html>\n<meta charset=\"utf-8\">\n<title>Blank</title>\n".to_vec()),
                 });
             }
+            if clean == "websockets/security/check.py" {
+                // net-api M5-S1 fixture：websockets/security/check.py（上游逐字等价——
+                // `b"FAIL" if b'Sec-WebSocket-Key' in request.headers else b"PASS"`）。
+                // 该头是 Fetch 规范 forbidden header name——XHR setRequestHeader 须被
+                // UA 剥离，服务端收到即 FAIL（security/002 断言面）。
+                let has_key = req
+                    .headers
+                    .iter()
+                    .any(|(n, _)| n.eq_ignore_ascii_case("sec-websocket-key"));
+                let body = if has_key { "FAIL" } else { "PASS" };
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.to_string(),
+                    body_bytes: Some(body.as_bytes().to_vec()),
+                });
+            }
             match std::fs::read(root.join(clean)) {
                 Ok(bytes) => {
                     let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
@@ -6924,6 +6970,15 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     }
                     let status = wpt_pipe_status(query).unwrap_or(200);
                     wpt_add_fetch_metadata(&mut headers, req, status);
+                    // net-api M5-S1：`.sub.js` 服务端替换（上游 wptserve 对 .sub 文件做
+                    // 全集替换的语义；script fetcher 通道 M4-S22 已对齐——websockets/
+                    // *.html 案经 fetch 通道读 constants.sub.js，缺此则 SCHEME_DOMAIN_PORT
+                    // 带 '{{ports[ws][0]}}' 字面量 → Invalid URL）。
+                    let bytes = if clean.ends_with(".sub.js") {
+                        apply_wpt_substitutions(&String::from_utf8_lossy(&bytes)).into_bytes()
+                    } else {
+                        bytes
+                    };
                     // R3254-E2 切片 6（editing goal，2026-09-07）：**iframe 文档的相对
                     // src 脚本内联**——shim iframe 装载（R115 runInlineScripts）只执行
                     // inline `<script>`，外部 src 脚本被跳过（无同步 fetch 通道），iframe
@@ -7177,10 +7232,26 @@ pub(crate) fn run_testharness_html_inner(
         // R34xx（G6）：.worker.js 变体 + worker importScripts 的脚本源。
         script_source_fetcher: wpt_data_script_fetcher(wpt_root),
         service_worker_script_fetcher: wpt_data_service_worker_script_fetcher(wpt_root),
+        // net-api M5-S1：websockets 用例注入 WS 宿主 factory——内嵌 fixture 端点 +
+        // 宿主改写委派 default_net_ws_host 真栈（ws_fixture.rs 模块注释）。仅
+        // `websockets/` 用例启用：CSP/cookies 通道的 WebSocket 用例维持无宿主降级，
+        // 跨通道零耦合（run-rules §10）。
+        ws_host_factory: case_name
+            .starts_with("websockets/")
+            .then(crate::ws_fixture::fixture_ws_host_factory),
         ..WebViewConfig::default()
     });
-    webview.prepare_document_state(&format!("https://wpt.test/{case_name}"));
-    let page_url = format!("https://wpt.test/{case_name}");
+    // net-api M5-S1：websockets 用例页面走 http origin——上游 `?default` 变体语义
+    // 即 http 页面 + ws 连接（constants.sub.js 判 `location.protocol === 'https:'`
+    // 翻 wss 分支；runner 无 TLS fixture，wss 变体不在度量面）。通道级 scheme 翻转
+    // 是 P3 挂账另案（两前置审计），此处仅 websockets 用例局部生效。
+    let page_scheme = if case_name.starts_with("websockets/") {
+        "http"
+    } else {
+        "https"
+    };
+    webview.prepare_document_state(&format!("{page_scheme}://wpt.test/{case_name}"));
+    let page_url = format!("{page_scheme}://wpt.test/{case_name}");
     let _zw_hb = std::fs::write("/tmp/zw-hb.txt", format!("prepared {}\n", case_name));
     // M3 扩批：播放泵时钟原点（tab_worker pump_epoch 同款——registry play/tick 共用
     // 单调毫秒；桥 play 传 0 即本原点）。
@@ -8048,9 +8119,17 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
             } else {
                 normalize_relative(&format!("{case_dir}/{rel}"))
             };
-            std::fs::read_to_string(wpt_root.join(&combined))
-                .ok()
-                .map(|c| (combined, c))
+            std::fs::read_to_string(wpt_root.join(&combined)).ok().map(|c| {
+                // net-api M5-S1：`.sub.js` 服务端替换（上游 wptserve 语义；与
+                // script fetcher M4-S22、fetch 通道本切片同口径——`.html` 案外部
+                // 脚本走本预处理直读，缺此则 constants.sub.js token 原样入页）。
+                let c = if combined.ends_with(".sub.js") {
+                    apply_wpt_substitutions(&c)
+                } else {
+                    c
+                };
+                (combined, c)
+            })
         });
         let rest_start = open_end + 1;
         match resolved {

@@ -22,8 +22,9 @@
 # - streams/transferable（postMessage transfer 面——runner 无跨窗/worker 结构化克隆管道）
 # - mimesniff/sniffing（字节嗅探 .py 支持面——M3 重评估）
 # - eventsource/dedicated-worker（worker 面）
-# - websockets/（P6 二期切片——重入条件 2026-10-13 兑现：zero-web 流已落 WS 页面
-#   API + zero-net 底座；可执行需 runner 内嵌 WS fixture 端点，M5 立案后拉取）
+# - websockets/handshake|create-*（wptserve websocket handler 的服务端行为面——
+#   runner 内嵌 WS fixture 端点承接 echo/echo-raw 等语义端点，服务端握手变体面
+#   按甄别结果记账）
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -72,6 +73,11 @@ DIRS=(
   # ── eventsource：SSE 解析/重连语义（M3；dedicated-worker 记账不拉）──
   "eventsource"
   "eventsource/resources"
+  # ── websockets：P6 二期切片（M5；重入条件 2026-10-13 兑现——zero-web 流落 WS
+  #    页面 API + zero-net 底座；runner 侧需内嵌 WS fixture 端点承接 wptserve
+  #    websocket handler 面，handshake/* 服务端行为面按甄别结果记账）──
+  "websockets"
+  "websockets/resources"
 )
 
 goals_fetch_all

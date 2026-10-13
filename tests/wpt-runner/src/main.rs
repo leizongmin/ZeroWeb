@@ -20,6 +20,7 @@ mod testharness_cookies;
 mod testharness_fileapi;
 mod testharness_webmessaging;
 mod wpt_file_loader;
+mod ws_fixture;
 
 use rayon::prelude::*;
 use runner::{TestContext, builtin_tests, filter_tests_by_category, filter_tests_by_pattern};

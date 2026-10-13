@@ -6,7 +6,7 @@
 逐项核对通过；控制面见 `net-api-compat/master.md`，收口判定见
 `net-api-compat/evidence/2026-10-01-m4-s29-closure.md`；结构性残余为跨域记账项；
 WebSocket 二期（P6）重入条件「zero-net WS 底座就位」已于 2026-10-09 兑现
-（zero-web 流账本），M5 切片待立案）
+（zero-web 流账本），M5-S1 基线已落（334/375 = 89.1%），修齐推进中）
 **执行模式**: WPT 驱动（上游网络面 corpus 为验收标尺）+ 语义修齐；
 照 event-loop-spec / web-components / web-api-batch2 通用打法
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络 API 面）
