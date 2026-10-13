@@ -44,6 +44,10 @@ pub enum WsEvent {
     Binary(Vec<u8>),
     /// 连接层错误（其后必随 Close——err 只驱动 `onerror`，状态终结由 close 承载）。
     Error(String),
+    /// 101 响应 `Set-Cookie`（M5-S3）——内部事件：shim 侧写入页面 cookie jar 后**不**向
+    /// 页面派发任何事件（RFC 6265 §5.3 存储模型，HTTP API 面 HttpOnly 可置位）。
+    /// 恒先于 `Open` 派发（cookies/007「onopen 时已可见、脚本执行期不可见」断言面）。
+    SetCookie(String),
     /// 宿主已把 `send()` 数据写入网络（回投 JS 递减 `bufferedAmount`）。
     Sent {
         /// 已写出字节数。
@@ -131,6 +135,7 @@ pub fn serialize_event(ev: &WsEvent) -> String {
     match ev {
         WsEvent::Open { protocol } => format!("open{FIELD_SEP}{}", sanitize_field(protocol)),
         WsEvent::Text(t) => format!("msg{FIELD_SEP}{t}"),
+        WsEvent::SetCookie(s) => format!("cookie{FIELD_SEP}{}", sanitize_field(s)),
         WsEvent::Binary(b) => format!("bin{FIELD_SEP}{}", encode_bytes_csv(b)),
         WsEvent::Error(m) => format!("err{FIELD_SEP}{}", sanitize_field(m)),
         WsEvent::Sent { bytes } => format!("sent{FIELD_SEP}{bytes}"),
@@ -539,6 +544,36 @@ fn ws_handshake_cookie(store: &zero_net::CookieStore, url: &str, document_origin
     store.cookie_header_with_context(&parsed, context, true)
 }
 
+/// 握手 Cookie 双源合并（M5-S3）：宿主 Rust jar（fetch 响应写入面）检索优先，追加
+/// shim 传入面（JS jar——document.cookie / WS 响应 Set-Cookie）中 jar 未含的名字。
+/// 名同值异以 jar 为准（RFC 6265 同名 cookie 以更先的序为准的近似——跨 jar 双写场景
+/// 语料未约束）。
+fn merge_handshake_cookie(jar: &str, shim_cookie: &str) -> String {
+    if shim_cookie.is_empty() {
+        return jar.to_string();
+    }
+    if jar.is_empty() {
+        return shim_cookie.to_string();
+    }
+    let mut out = jar.to_string();
+    let jar_names: Vec<String> = jar
+        .split("; ")
+        .filter_map(|p| p.split('=').next())
+        .map(str::to_string)
+        .collect();
+    for pair in shim_cookie.split("; ") {
+        if pair.is_empty() {
+            continue;
+        }
+        let name = pair.split('=').next().unwrap_or("");
+        if !jar_names.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+            out.push_str("; ");
+            out.push_str(pair);
+        }
+    }
+    out
+}
+
 /// 连接建立串行化键（host:port——`ws://user@host:port/path` 权威段；无端口取 scheme
 /// 默认语义不细分，fixture 与生产面 host 均显式带端口）。
 fn ws_host_key(url: &str) -> String {
@@ -548,7 +583,7 @@ fn ws_host_key(url: &str) -> String {
 }
 
 impl WsHost for NetWsHost {
-    fn connect(&self, id: &str, url: &str, protocols: &[String], origin: &str, _cookie: &str) {
+    fn connect(&self, id: &str, url: &str, protocols: &[String], origin: &str, cookie: &str) {
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<HostCmd>();
         // 代际在本函数入口捕获。调用契约（见 [`WsHost`] trait 文档）：connect 非阻塞、
         // 且由 JS 回调线程同步调用——捕获与下方插槽插入之间没有跨线程窗口，
@@ -588,7 +623,9 @@ impl WsHost for NetWsHost {
         let url = url.to_string();
         let cookie = {
             let store = self.cookie_store.lock().expect("ws cookie store lock");
-            ws_handshake_cookie(&store, &url, origin)
+            // M5-S3：shim 传入面（JS jar——document.cookie / WS 响应 Set-Cookie）与宿主
+            // jar 双源合并（runner 页面 cookie 全在 JS jar——cookies/001/cross-origin 面）。
+            merge_handshake_cookie(&ws_handshake_cookie(&store, &url, origin), cookie)
         };
         let handshake = zero_net::websocket::WebSocketHandshake {
             origin: origin.to_string(),
@@ -669,6 +706,11 @@ impl WsHost for NetWsHost {
             // /option-bag/constructor 009/022 断言面）。emit 前 drop 串行 guard：读泵
             // 段不得阻塞后续连接（guard 在本块结束时析构）。
             let selected_protocol = ws.selected_protocol().to_string();
+            // M5-S3：101 响应 Set-Cookie 先于 Open 派发（shim 写页面 jar——cookies/002
+            // /007 断言面「onopen 时 document.cookie 已可见」）。
+            for sc in ws.response_cookies().to_vec() {
+                emitter.emit_gen(&id, WsEvent::SetCookie(sc), nav_gen);
+            }
             {
                 emitter.emit_gen(
                     &id,

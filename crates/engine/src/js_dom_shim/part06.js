@@ -202,13 +202,15 @@
     return !/^(http|ws):$/i.test(protocol);
   }
 
-  // —— RFC 6265bis §5.6 存储模型（document.cookie setter 入口，non-HTTP API）。
+  // —— RFC 6265bis §5.6 存储模型（存储核心，scope 双源：document.cookie（non-HTTP
+  // API）与 WS 响应 Set-Cookie（HTTP API，M5-S3——request-uri = 连接 URL））。
   // 步骤：整串 CTL 拒收（§5.6.1 严格处理，HTAB 豁免）→ name=value 解析（bis 两侧
   // WSP 裁剪）→ 属性顺序解析（同名后者覆盖；非法值仅忽略属性不废 cookie）→ 安全
   // 上下文/prefix（§4.1.3，大小写不敏感）/domain-match 整废检查 → 过期判定 → 覆盖
-  // 保留创建序插入。HttpOnly 属性按 §5.7.6 忽略（non-HTTP API 不置位，cookie 对 JS
-  // 可见——Chrome 同款）。
-  function _zwCookieSetFromDocument(raw) {
+  // 保留创建序插入。HttpOnly 属性：non-HTTP API 按 §5.7.6 忽略（cookie 对 JS 可见——
+  // Chrome 同款）；HTTP API（WS 响应）置位存储（bis §5.3 步骤 12——cookie 对
+  // document.cookie 不可见，握手 Cookie 检索仍可见）。
+  function _zwCookieStoreSet(raw, scope) {
     var cookieString = String(raw == null ? '' : raw);
     for (var ci = 0; ci < cookieString.length; ci++) {
       var code = cookieString.charCodeAt(ci);
@@ -249,11 +251,10 @@
       }
       // 'samesite' 及其余：传输策略域，存储不消费
     }
-    // 作用域基址（document.location 即时求值）
-    var loc = globalThis.location || {};
-    var host = String(loc.hostname || '').toLowerCase();
-    var requestPath = String(loc.pathname || '/');
-    var secureContext = _zwCookieIsSecureContext();
+    // 作用域基址（scope：document.location 即时求值 / WS 连接 URL——M5-S3 双源）
+    var host = scope.host;
+    var requestPath = scope.requestPath;
+    var secureContext = scope.secureContext;
     // 安全上下文门：Secure cookie 不得出自非安全上下文（set-from-dom 面）
     if (secure && !secureContext) return;
     // domain：收齐属性后再做整废检查（bis §5.6——同名属性末值生效，先废会误杀
@@ -270,8 +271,9 @@
     var cookiePath = (pathAttr !== null && pathAttr.charAt(0) === '/') ? pathAttr : _zwCookieDefaultPath(requestPath);
     // HttpOnly 属性经 non-HTTP API 整条忽略（https://datatracker.ietf.org/doc/html/rfc6265#section-5.3
     // 步骤 6 "abort these steps and ignore the cookie entirely"；bis §5.6 存储模型同步）
-    // ——Chrome 同款：document.cookie 置 HttpOnly 不落存储。
-    if (httpOnlyAttr) return;
+    // ——Chrome 同款：document.cookie 置 HttpOnly 不落存储。HTTP API（WS 响应，M5-S3）
+    // 置位存储。
+    if (httpOnlyAttr && !scope.viaHttpApi) return;
     // prefix 门（bis §4.1.3 + §5.6；corpus 实证大小写不敏感）。__Http- / __Host-Http-
     // 为 Chromium HttpOnly 前缀扩展（WPT cookies/prefix 口径）：__Http- 要求
     // Secure+HttpOnly、__Host-Http- 额外要求 host-only+Path=/；经 DOM 的 HttpOnly
@@ -293,12 +295,69 @@
     for (var ji = 0; ji < _zwCookieJar.length; ji++) {
       if (_zwCookieJar[ji].key !== key) continue;
       if (expiry !== null && expiry <= now) { _zwCookieJar.splice(ji, 1); return; }
-      _zwCookieJar[ji] = { key: key, name: name, value: value, domain: domain, hostOnly: hostOnly, path: cookiePath, secure: secure, httpOnly: false, expiry: expiry };
+      _zwCookieJar[ji] = { key: key, name: name, value: value, domain: domain, hostOnly: hostOnly, path: cookiePath, secure: secure, httpOnly: httpOnlyAttr, expiry: expiry };
       return;
     }
     if (expiry !== null && expiry <= now) return;
-    _zwCookieJar.push({ key: key, name: name, value: value, domain: domain, hostOnly: hostOnly, path: cookiePath, secure: secure, httpOnly: false, expiry: expiry });
+    _zwCookieJar.push({ key: key, name: name, value: value, domain: domain, hostOnly: hostOnly, path: cookiePath, secure: secure, httpOnly: httpOnlyAttr, expiry: expiry });
   }
+
+  // document.cookie setter 入口（non-HTTP API——scope 取 document.location）。
+  function _zwCookieSetFromDocument(raw) {
+    var loc = globalThis.location || {};
+    _zwCookieStoreSet(raw, {
+      host: String(loc.hostname || '').toLowerCase(),
+      requestPath: String(loc.pathname || '/'),
+      secureContext: _zwCookieIsSecureContext(),
+      viaHttpApi: false,
+    });
+  }
+
+  // WS 101 响应 Set-Cookie 存储入口（M5-S3，HTTP API——request-uri = 连接 URL，
+  // wss/https 计安全上下文；HttpOnly 按 bis §5.3 置位存储）。宿主 cookie wire 每条
+  // Set-Cookie 头派发一次，恒先于 open 事件（cookies/007 执行序断言面）。
+  function _zwCookieSetFromWs(raw, connUrl) {
+    var u;
+    try { u = new URL(String(connUrl || '')); } catch (_eWsCk) { return; }
+    if (u.protocol !== 'ws:' && u.protocol !== 'wss:') return;
+    _zwCookieStoreSet(raw, {
+      host: String(u.hostname || '').toLowerCase(),
+      requestPath: String(u.pathname || '/'),
+      secureContext: u.protocol === 'wss:',
+      viaHttpApi: true,
+    });
+  }
+
+  // —— RFC 6265 §5.4 Cookie 头检索（握手出站面，M5-S3）：jar 中 domain/path/secure
+  // 匹配连接 URL 的条目（**含 HttpOnly**——HTTP-facing），长路径优先、同路径创建序。
+  function _zwCookieHeaderForUrl(urlStr) {
+    var u;
+    try { u = new URL(String(urlStr || '')); } catch (_eWsCkH) { return ''; }
+    var host = String(u.hostname || '').toLowerCase();
+    var reqPath = String(u.pathname || '/');
+    var isTls = u.protocol === 'wss:' || u.protocol === 'https:';
+    var now = Date.now();
+    var hits = [];
+    for (var i = 0; i < _zwCookieJar.length; i++) {
+      var c = _zwCookieJar[i];
+      if (c.expiry !== null && c.expiry <= now) continue;
+      if (c.secure && !isTls) continue;
+      if (!_zwCookieDomainMatch(host, c.domain, c.hostOnly)) continue;
+      if (!_zwCookiePathMatch(reqPath, c.path)) continue;
+      hits.push(c);
+    }
+    hits.sort(function (a, b) { return b.path.length - a.path.length; });
+    var out = [];
+    for (var hi = 0; hi < hits.length; hi++) out.push(hits[hi].name + '=' + hits[hi].value);
+    return out.join('; ');
+  }
+
+  // M5-S3：WS 段位于本文件 IIFE（止于下方 `})();`）之外的独立闭包，不可直引本闭包
+  // 成员——挂 globalThis 桥接（part03 _zwFireTracksAdded 跨段口同款）。
+  try {
+    globalThis._zwCookieSetFromWs = _zwCookieSetFromWs;
+    globalThis._zwCookieHeaderForUrl = _zwCookieHeaderForUrl;
+  } catch (_eWsCkBridge) {}
 
   // —— RFC 6265bis §5.6 检索（document.cookie getter）：过期清除 + httpOnly/secure/
   // domain/path 可见性过滤，创建序拼接 "name=value; …"。
@@ -15461,6 +15520,15 @@ function _zwCaretFromPoint(x, y) {
         var bytes = csvToBytes(data);
         var payload = self.binaryType === 'arraybuffer' ? bytes.buffer : new Blob([bytes]);
         self._dispatch('message', new MessageEvent('message', { data: payload, origin: self._messageOrigin }));
+      } else if (kind === 'cookie') {
+        // M5-S3 内部事件：101 响应 Set-Cookie → 页面 jar（HTTP API 面，HttpOnly 可置位）。
+        // 不向页面派发任何事件；恒先于 open wire 到达（宿主保证序）。函数经 globalThis
+        // 桥（cookie 段闭包在外侧 IIFE 内）。
+        try {
+          if (typeof globalThis._zwCookieSetFromWs === 'function') {
+            globalThis._zwCookieSetFromWs(data, self.url);
+          }
+        } catch (_eWsCkStore) {}
       } else if (kind === 'sent') {
         var sentBytes = parseInt(data, 10);
         if (!isNaN(sentBytes) && sentBytes > 0) {
@@ -15492,7 +15560,16 @@ function _zwCaretFromPoint(x, y) {
         wsOrigin = String(globalThis.location.origin);
       }
     } catch (_eWsOrigin) {}
-    __zw_ws_connect(connId, resolved.href, protoList.join(','), wsOrigin, '');
+    // 握手 Cookie（M5-S3）：JS jar（document.cookie / WS 响应 Set-Cookie 面）按连接
+    // URL 检索出站——cookie 段在 IIFE 内闭包，经 globalThis 桥取函数；宿主侧再与 Rust
+    // jar 双源合并（merge_handshake_cookie）。
+    var wsCookieHdr = '';
+    try {
+      if (typeof globalThis._zwCookieHeaderForUrl === 'function') {
+        wsCookieHdr = globalThis._zwCookieHeaderForUrl(resolved.href);
+      }
+    } catch (_eWsCkHdr) {}
+    __zw_ws_connect(connId, resolved.href, protoList.join(','), wsOrigin, wsCookieHdr);
   }
   WebSocket.CONNECTING = 0;
   WebSocket.OPEN = 1;

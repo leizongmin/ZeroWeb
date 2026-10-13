@@ -98,6 +98,9 @@ pub struct WebSocket {
     inner: Option<TungWebSocket<WsStream>>,
     /// 101 响应选定的子协议（`Sec-WebSocket-Protocol` 响应头；未协商为空串）。
     selected_protocol: String,
+    /// 101 响应全部 `Set-Cookie` 头值（RFC 6455 §4.2 —WS 响应可置 cookie，归宿主层
+    /// cookie jar；M5-S3 net-api cookies/002/007/cross-origin 断言面）。
+    response_cookies: Vec<String>,
 }
 
 impl WebSocket {
@@ -110,6 +113,7 @@ impl WebSocket {
             state: WebSocketState::Connecting,
             inner: None,
             selected_protocol: String::new(),
+            response_cookies: Vec::new(),
         }
     }
 
@@ -187,6 +191,13 @@ impl WebSocket {
             .and_then(|v| v.to_str().ok())
             .unwrap_or_default()
             .to_string();
+        // 101 响应 Set-Cookie 全量透出（重复头逐条收集——RFC 6265 §5.3 逐条走存储模型）。
+        self.response_cookies = response
+            .headers()
+            .get_all("set-cookie")
+            .iter()
+            .filter_map(|v| v.to_str().ok().map(str::to_string))
+            .collect();
 
         self.inner = Some(socket);
         self.state = WebSocketState::Open;
@@ -333,6 +344,11 @@ impl WebSocket {
     /// 101 响应选定的子协议（未协商为空串）。
     pub fn selected_protocol(&self) -> &str {
         &self.selected_protocol
+    }
+
+    /// 101 响应全部 `Set-Cookie` 头值（未置 cookie 为空表）。
+    pub fn response_cookies(&self) -> &[String] {
+        &self.response_cookies
     }
 
     /// 返回连接的 URL。

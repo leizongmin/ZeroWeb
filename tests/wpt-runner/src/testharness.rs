@@ -6430,6 +6430,13 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 // cors.py）。ACAO ← ?origin=（缺省回显请求 Origin 头）+ ACAC ← ?credentials=
                 // （默认 true）；?run=cache-control → text/event-stream + cache-control
                 // 模板体（回显请求 Cache-Control 头）。其余 run 值上游返空体。
+                // net-api M5-S3：OPTIONS preflight 应答面——ES 请求恒携带 Cache-Control:
+                // no-cache（非 CORS-safelisted，fetch spec §3.1.1）→ 跨源必须先过 preflight；
+                // 上游 cors.py 无 OPTIONS 分支（真实 wptserve 部署由服务端配置补），本 runner
+                // fixture 按「支持 ES 跨源的合规 CORS 服务端」语义应答：ACAM ← 回显 ACRM
+                // （缺省 GET）+ ACAH ← 回显 ACRH（缺省 cache-control）。缺此则 ES 跨源恒
+                // Failed to fetch → request-cache-control 跨源腿 onerror 未接线 → 页级
+                // Timeout（M5-S2 轮归因，evidence/2026-10-14-m5-s3-*.md）。
                 let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
                 let req_origin = req
                     .headers
@@ -6443,6 +6450,22 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 let mut headers: Vec<(String, String)> = Vec::new();
                 headers.push(("access-control-allow-origin".into(), acao));
                 headers.push(("access-control-allow-credentials".into(), acac));
+                if req.method == "OPTIONS" {
+                    let acrm = req
+                        .headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-method"))
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_else(|| "GET".into());
+                    let acrh = req
+                        .headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_else(|| "cache-control".into());
+                    headers.push(("access-control-allow-methods".into(), acrm));
+                    headers.push(("access-control-allow-headers".into(), acrh));
+                }
                 let body = if run == "cache-control" {
                     headers.push(("content-type".into(), "text/event-stream".into()));
                     let echoed = req
