@@ -496,7 +496,12 @@ impl BrowserApp {
                 // 主菜单 hit-test
                 let hovered = self.context_menu_hit_test(x, y);
                 // 分段行（Zoom 行）落段随 x 实时更新；非分段行返回 None。
-                self.context_menu.hovered_segment = hovered.and_then(|i| self.context_menu_segment_at(i, x));
+                // 落段变化必须重绘，否则行内扫动时高亮滞留在旧段。
+                let segment = hovered.and_then(|i| self.context_menu_segment_at(i, x));
+                if segment != self.context_menu.hovered_segment {
+                    self.context_menu.hovered_segment = segment;
+                    self.needs_redraw = true;
+                }
                 // 鼠标不在主菜单项上、但有子菜单展开时，判断是否在桥接区
                 // （主菜单与子菜单面板之间）。若是则视为"仍在前往子菜单的路上"，
                 // 保留当前展开状态，不触发 hover 重算导致子菜单收起。

@@ -477,13 +477,17 @@ impl BrowserShell {
 
     /// 页面加载完成回调。
     ///
-    /// 更新标签页状态并记录到历史。
+    /// 更新标签页状态并记录到历史；`zero://newtab` 欢迎页除外——每次启动/
+    /// 新标签都会装载它，不是用户访问（Chrome 同样不把 NTP 记入历史），
+    /// 入史会污染历史页首位并混入地址栏建议。
     pub fn on_page_loaded(&mut self, title: &str) {
         if let Some(tab) = self.tabs.active_tab_mut() {
             tab.set_loading(false);
             tab.set_title(title);
 
-            if let Some(url) = tab.url().map(|s| s.to_string()) {
+            if let Some(url) = tab.url().map(|s| s.to_string())
+                && url != "zero://newtab"
+            {
                 self.history.record(&url, title);
             }
         }

@@ -4100,11 +4100,93 @@ fn browser_menu_contains_zoom_row() {
         .context_menu_segments_for_test("browser_menu_zoom")
         .expect("zoom row should be segmented");
     assert_eq!(
-        segments
-            .iter()
-            .map(|(id, _)| id.as_str())
-            .collect::<Vec<_>>(),
-        vec!["browser_menu_zoom_out", "browser_menu_zoom_reset", "browser_menu_zoom_in"]
+        segments.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(),
+        vec![
+            "browser_menu_zoom_out",
+            "browser_menu_zoom_reset",
+            "browser_menu_zoom_in"
+        ]
     );
     assert_eq!(segments[1].1, "150%", "indicator segment shows current zoom");
+}
+
+/// T6-I2（返修 F1）：菜单原点翻转表格——贴右缘向左展开、贴下缘向上展开、
+/// 自由区不翻转。经真实右键路径（handle_mouse_click，与 e2e/driver 同输入），
+/// 断言存储的菜单原点（渲染与命中测试读同一坐标）。Page 菜单高 = 7 普通行
+/// × 32 + 2 分隔行 × 10 = 244（scale 1），宽 240。
+#[test]
+fn context_menu_origin_flips_at_window_edges() {
+    // (窗口 (w, h), 右键点击 (x, y), 期望原点 (mx, my), 场景)
+    let cases = [
+        (
+            (602.0, 920.0),
+            (512.0, 400.0),
+            (272.0, 400.0),
+            "贴右缘：x+240 超窗，向左展开",
+        ),
+        (
+            (602.0, 920.0),
+            (300.0, 800.0),
+            (300.0, 556.0),
+            "贴下缘：y+244 超窗，向上展开",
+        ),
+        ((602.0, 920.0), (150.0, 400.0), (150.0, 400.0), "自由区：不翻转"),
+    ];
+    for ((win_w, win_h), (x, y), (expected_mx, expected_my), label) in cases {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.physical_size = (win_w as u32, win_h as u32);
+        app.scale_factor = 1.0;
+        app.handle_mouse_click(x, y, true, "Right");
+        assert!(
+            app.is_context_menu_visible_for_test(),
+            "{label}: right-click should open the page menu"
+        );
+        let Some((mx, my)) = app.smoke_context_menu_origin() else {
+            panic!("{label}: menu origin should be stored");
+        };
+        assert_eq!(mx, expected_mx, "{label}: menu x origin");
+        assert_eq!(my, expected_my, "{label}: menu y origin");
+    }
+}
+
+/// 返修（defects minor#3）：Zoom 行内跨段移动（落段变化）必须置 needs_redraw，
+/// 否则扫动（− → % → +）时高亮滞留在旧段。经真实 mousemove 路径断言：
+/// 首次进入行后的第二次移动中，落段变化是唯一重绘源。
+#[test]
+fn zoom_segment_hover_change_sets_needs_redraw() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+
+    let (btn_x, btn_y, btn_w, bar_h) = app.toolbar_menu_button_rect_for_test();
+    let cx = (btn_x + btn_w * 0.5) as f64;
+    let cy = (btn_y + bar_h * 0.5) as f64;
+    app.handle_mouse_click(cx, cy, true, "Left");
+    app.handle_mouse_click(cx, cy, false, "Left");
+    assert!(app.is_context_menu_visible_for_test(), "browser menu should open");
+
+    // Zoom 行中心 y 与三段中心 x（菜单原点 + 逐行累积行高/等分段几何，与
+    // context_menu_hit_test 同源：分隔行按紧凑高度累加）。
+    let ids = app.smoke_context_menu_item_ids();
+    let zoom_idx = ids
+        .iter()
+        .position(|id| id == "browser_menu_zoom")
+        .expect("main menu should contain the zoom row");
+    let (menu_x, menu_y) = app.smoke_context_menu_origin().expect("menu origin");
+    let row_h = layout::CONTEXT_MENU_ROW_HEIGHT;
+    let sep_h = layout::CONTEXT_MENU_SEPARATOR_HEIGHT;
+    let row_offset: f32 = ids[..zoom_idx]
+        .iter()
+        .map(|id| if id == "-" { sep_h } else { row_h })
+        .sum();
+    let y = (menu_y + row_offset + row_h * 0.5) as f64;
+    let seg_cx = |seg: usize| (menu_x + (seg as f32 + 0.5) * layout::CONTEXT_MENU_WIDTH / 3.0) as f64;
+
+    app.handle_mouse_move(seg_cx(0), y);
+    app.needs_redraw = false; // 清掉菜单打开/首次 hover 的重绘标记
+    app.handle_mouse_move(seg_cx(2), y);
+    assert!(
+        app.needs_redraw,
+        "segment change within the zoom row must request redraw"
+    );
 }
