@@ -114,14 +114,17 @@ export async function attachmentAccessible(url, fetchImpl = fetch) {
 /** curl 传输探活兜底（见 attachmentAccessible 的网络错误分支）：仍按当前可达性
  * 判定（最终 2xx + image 类型），不放宽任何证据语义。 */
 function curlAccessible(url) {
-  try {
-    // GET + range（S3 预签名链接只签 GET，HEAD 会 403）；最终响应须 2xx + image 类型。
-    const out = execFileSync('curl', ['-4', '-sL', '--max-time', '60', '-r', '0-15',
-      '-D', '-', '-o', '/dev/null', url], { encoding: 'utf8', timeout: 70_000 });
-    return /^HTTP\/\S+\s+20\d/m.test(out) && /content-type:\s*image\//i.test(out);
-  } catch {
-    return false;
+  // GET + range（S3 预签名链接只签 GET，HEAD 会 403）；最终响应须 2xx + image 类型。
+  // duck-t2（site-optimizer 2026-10-13）：WSL2 NAT 下 `-4`+range 组合对附件域整体
+  // 失败（无 -4 或无 range 形态均可达）——追加无 `-4` 第二形态，检查语义不变。
+  for (const extra of [['-4'], []]) {
+    try {
+      const out = execFileSync('curl', [...extra, '-sL', '--max-time', '60', '-r', '0-15',
+        '-D', '-', '-o', '/dev/null', url], { encoding: 'utf8', timeout: 70_000 });
+      if (/^HTTP\/\S+\s+20\d/m.test(out) && /content-type:\s*image\//i.test(out)) return true;
+    } catch { /* 下一形态 */ }
   }
+  return false;
 }
 
 /** 核验回读正文、当前汇总和截图映射；实际下载/呈现由所引用的人机证据证明。
