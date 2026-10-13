@@ -203,8 +203,9 @@ pub struct ProcessTabBackend {
     compositor_status: crate::compositor_client::CompositorStatus,
     /// Browser 窗口 GPU 渲染器是否可用（dma-buf 导入 vs RGBA 回退）。
     browser_gpu_present: bool,
-    /// 待落盘的附件下载（Content-Disposition: attachment 拦截；由 TabManager 转交
-    /// BrowserApp 消费——backend 不持有 shell/settings）。
+    /// 待落盘的下载（Content-Disposition: attachment 或顶层文档导航的不可内联
+    /// Content-Type 拦截；由 TabManager 转交 BrowserApp 消费——backend 不持有
+    /// shell/settings）。
     pending_downloads: Vec<PendingAttachmentDownload>,
 }
 
@@ -729,27 +730,44 @@ impl ProcessTabBackend {
     fn drain_pending_fetches(&mut self) {
         for item in self.fetch_proxy.drain() {
             self.update_pending_indexed_db_navigation_from_fetch(item.tab_id, &item.headers);
-            if let Some(download) = Self::take_attachment_download(&item) {
-                // 附件响应不进渲染管线：拦截落盘，给 renderer 一个良性占位页
-                // （多进程边界内 browser 侧可独决，不外溢 net/renderer crate）。
-                self.pending_downloads.push(download);
-                let stub_headers = vec![("Content-Type".to_string(), "text/html; charset=utf-8".to_string())];
-                let stub_body = b"<!DOCTYPE html><title>Downloaded</title>".to_vec();
-                self.send_fetch_response_now(item.tab_id, item.request_id, item.status, stub_headers, stub_body);
-                continue;
-            }
-            self.send_fetch_response_now(item.tab_id, item.request_id, item.status, item.headers, item.body);
+            self.deliver_fetch_or_download(item);
         }
     }
 
-    /// Content-Disposition: attachment 响应 → 附件下载（文件名解析含回退链）。
+    /// 附件/不可内联文档响应拦截落盘，其余原样回传 renderer。网络响应与 SW
+    /// respondWith 的页面 fetch 共用此路由，避免同一导航因是否经过 SW 产生两种结局。
+    fn deliver_fetch_or_download(&mut self, item: crate::fetch_proxy::CompletedFetch) {
+        if let Some(download) = Self::take_attachment_download(&item) {
+            // 附件响应不进渲染管线：拦截落盘，给 renderer 一个良性占位页
+            // （多进程边界内 browser 侧可独决，不外溢 net/renderer crate）。
+            self.pending_downloads.push(download);
+            let stub_headers = vec![("Content-Type".to_string(), "text/html; charset=utf-8".to_string())];
+            let stub_body = b"<!DOCTYPE html><title>Downloaded</title>".to_vec();
+            self.send_fetch_response_now(item.tab_id, item.request_id, item.status, stub_headers, stub_body);
+            return;
+        }
+        self.send_fetch_response_now(item.tab_id, item.request_id, item.status, item.headers, item.body);
+    }
+
+    /// 完成的响应 → 待下载条目。两条并行路由共用同一落盘管线（附件与不可内联
+    /// Content-Type）：
+    /// 1. Content-Disposition: attachment——HTML 标准导航处理的「Handle as a download」
+    ///    步骤，该分支文档保持 null 不渲染
+    ///    （https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigation-as-a-download）；
+    /// 2. 顶层文档导航 + 2xx + Content-Type 不可内联渲染——非 attachment 响应由 UA
+    ///    裁量渲染或移交外部处理（同算法「loading a document … e.g., when handing-off
+    ///    to external software」，https://html.spec.whatwg.org/multipage/browsing-the-web.html#populating-a-session-history-entry），
+    ///    浏览器无渲染能力的类型以下载呈现。
     fn take_attachment_download(item: &crate::fetch_proxy::CompletedFetch) -> Option<PendingAttachmentDownload> {
         let disposition = item
             .headers
             .iter()
             .find(|(name, _)| name.eq_ignore_ascii_case("content-disposition"))
-            .map(|(_, value)| value.trim().to_string())?;
-        if !disposition.to_ascii_lowercase().starts_with("attachment") {
+            .map(|(_, value)| value.trim().to_string());
+        let is_attachment = disposition
+            .as_deref()
+            .is_some_and(|value| value.to_ascii_lowercase().starts_with("attachment"));
+        if !is_attachment && !Self::is_document_download_response(item) {
             return None;
         }
         // 成功路径的响应已带 X-Zero-Final-URL（fetch_proxy 推入）。
@@ -759,13 +777,45 @@ impl ProcessTabBackend {
             .find(|(name, _)| name.eq_ignore_ascii_case("x-zero-final-url"))
             .map(|(_, value)| value.clone())
             .unwrap_or_default();
-        let filename = parse_attachment_filename(&disposition, &url);
+        let filename = parse_attachment_filename(disposition.as_deref().unwrap_or(""), &url);
         Some(PendingAttachmentDownload {
             tab_id: item.tab_id,
             url,
             filename,
             body: item.body.clone(),
         })
+    }
+
+    /// 顶层文档导航的响应是否因 Content-Type 走下载：仅限 document 资源类型
+    /// （fetch_proxy 为每个完成响应推入 X-Zero-Resource-Type，且已先剥离服务器
+    /// 可伪造的同名实例——列表中的实例均为浏览器写入，`any()` 判定不受外部
+    /// 响应头伪造影响）+ 2xx；页面内 fetch()/子资源不受影响。Content-Type 缺失时
+    /// 保守保持渲染路径——fetch 规范「extract a MIME type」对无 Content-Type 头
+    /// 返回 null
+    /// （https://fetch.spec.whatwg.org/#concept-header-extract-mime-type）；
+    /// 未实现 MIME sniffing（https://mimesniff.spec.whatwg.org/），不扩大拦截。
+    fn is_document_download_response(item: &crate::fetch_proxy::CompletedFetch) -> bool {
+        if !(200..300).contains(&item.status) {
+            return false;
+        }
+        let is_document = item
+            .headers
+            .iter()
+            .any(|(name, value)| name.eq_ignore_ascii_case("x-zero-resource-type") && value == "document");
+        if !is_document {
+            return false;
+        }
+        let Some(raw) = item
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+            .map(|(_, value)| value.trim())
+        else {
+            return false;
+        };
+        // 媒体类型 essence：';' 之前的部分，大小写不敏感（参数如 charset 忽略）。
+        let essence = raw.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+        !is_inline_renderable_content_type(&essence)
     }
 
     /// 取出待落盘的附件下载（TabManager 转交 BrowserApp 消费）。
@@ -885,7 +935,15 @@ impl ProcessTabBackend {
                     body,
                 } => {
                     self.update_pending_indexed_db_navigation_from_fetch(tab_id, &headers);
-                    self.send_fetch_response_now(tab_id, request_id, status, headers, body);
+                    // SW 响应头已由 owner 剥离伪造的内部头并重推真实资源类型，
+                    // 与网络响应同走附件/不可内联文档路由。
+                    self.deliver_fetch_or_download(crate::fetch_proxy::CompletedFetch {
+                        tab_id,
+                        request_id,
+                        status,
+                        headers,
+                        body,
+                    });
                 }
                 CompletedServiceWorkerPageFetch::PassThrough { tab_id, params } => {
                     self.fetch_proxy.enqueue(tab_id, &params);
@@ -2480,8 +2538,329 @@ mod compositor_fallback_tests {
     }
 }
 
+#[cfg(test)]
+mod download_route_tests {
+    use super::{ProcessTabBackend, is_inline_renderable_content_type};
+    use crate::fetch_proxy::CompletedFetch;
+    use zero_browser_shell::TabId;
+
+    fn completed(status: u16, headers: Vec<(&str, &str)>) -> CompletedFetch {
+        CompletedFetch {
+            tab_id: TabId(1),
+            request_id: 1,
+            status,
+            headers: headers
+                .into_iter()
+                .map(|(name, value)| (name.to_string(), value.to_string()))
+                .collect(),
+            body: vec![0_u8; 16],
+        }
+    }
+
+    fn document_headers(content_type: Option<&'static str>) -> Vec<(&'static str, &'static str)> {
+        let mut headers = vec![
+            ("X-Zero-Resource-Type", "document"),
+            ("X-Zero-Final-URL", "http://127.0.0.1:9/files/bigfile.bin"),
+        ];
+        if let Some(ct) = content_type {
+            headers.push(("Content-Type", ct));
+        }
+        headers
+    }
+
+    /// Content-Type 判定表格：顶层文档导航（200）按 essence 分流；CT 缺失与畸形值
+    /// 保守渲染；attachment 由独立分支覆盖（见 attachment 系列）。
+    #[test]
+    fn content_type_table_routes_document_responses() {
+        let cases: &[(&str, Option<&str>, bool)] = &[
+            ("octet-stream", Some("application/octet-stream"), true),
+            (
+                "octet-stream with params",
+                Some("application/octet-stream; charset=binary"),
+                true,
+            ),
+            ("octet-stream uppercase", Some("APPLICATION/OCTET-STREAM"), true),
+            ("text/html", Some("text/html; charset=utf-8"), false),
+            ("text/plain", Some("text/plain"), false),
+            ("image/png", Some("image/png"), false),
+            ("audio/mpeg", Some("audio/mpeg"), false),
+            ("video/mp4", Some("video/mp4"), false),
+            ("application/json", Some("application/json"), false),
+            ("application/xhtml+xml", Some("application/xhtml+xml"), false),
+            ("application/rss+xml", Some("application/rss+xml"), false),
+            ("application/zip", Some("application/zip"), true),
+            ("application/pdf", Some("application/pdf"), true),
+            ("font/woff2", Some("font/woff2"), true),
+            ("ct missing", None, false),
+            ("ct malformed", Some("octet-stream"), false),
+        ];
+        for (name, content_type, expect_download) in cases {
+            let item = completed(200, document_headers(*content_type));
+            let routed = ProcessTabBackend::take_attachment_download(&item).is_some();
+            assert_eq!(routed, *expect_download, "case {name}: routed={routed}");
+        }
+    }
+
+    #[test]
+    fn octet_stream_document_download_uses_url_filename() {
+        let item = completed(200, document_headers(Some("application/octet-stream")));
+        let download = ProcessTabBackend::take_attachment_download(&item).unwrap();
+        assert_eq!(download.tab_id, TabId(1));
+        assert_eq!(download.url, "http://127.0.0.1:9/files/bigfile.bin");
+        assert_eq!(download.filename, "bigfile.bin");
+        assert_eq!(download.body, item.body);
+    }
+
+    #[test]
+    fn filename_falls_back_to_download_bin_without_url_segment() {
+        let item = completed(
+            200,
+            vec![
+                ("X-Zero-Resource-Type", "document"),
+                ("X-Zero-Final-URL", "http://127.0.0.1:9/dir/"),
+                ("Content-Type", "application/octet-stream"),
+            ],
+        );
+        let download = ProcessTabBackend::take_attachment_download(&item).unwrap();
+        assert_eq!(download.filename, "download.bin");
+    }
+
+    #[test]
+    fn content_disposition_attachment_takes_priority_and_filename() {
+        let item = completed(
+            200,
+            vec![
+                ("X-Zero-Resource-Type", "document"),
+                ("X-Zero-Final-URL", "http://127.0.0.1:9/files/bigfile.bin"),
+                ("Content-Type", "application/octet-stream"),
+                ("Content-Disposition", "attachment; filename=\"report.zip\""),
+            ],
+        );
+        let download = ProcessTabBackend::take_attachment_download(&item).unwrap();
+        assert_eq!(download.filename, "report.zip");
+    }
+
+    #[test]
+    fn attachment_routes_any_resource_type_as_before() {
+        // 既有行为保持：attachment 与资源类型无关（本次改动只新增 document+CT 路由）。
+        let item = completed(
+            200,
+            vec![
+                ("X-Zero-Resource-Type", "other"),
+                ("X-Zero-Final-URL", "http://127.0.0.1:9/file.zip"),
+                ("Content-Type", "application/zip"),
+                ("Content-Disposition", "attachment"),
+            ],
+        );
+        assert!(ProcessTabBackend::take_attachment_download(&item).is_some());
+    }
+
+    #[test]
+    fn content_disposition_inline_value_still_renders() {
+        // form-data 等 inline disposition 不是附件，text/html 照常渲染。
+        let item = completed(
+            200,
+            vec![
+                ("X-Zero-Resource-Type", "document"),
+                ("X-Zero-Final-URL", "http://127.0.0.1:9/page.html"),
+                ("Content-Type", "text/html"),
+                ("Content-Disposition", "inline"),
+            ],
+        );
+        assert!(ProcessTabBackend::take_attachment_download(&item).is_none());
+    }
+
+    #[test]
+    fn non_renderable_content_type_ignores_subresource_and_error_status() {
+        // 页面内 fetch()/子资源不拦：二进制必须原样回传页面（XHR 语义）。
+        let subresource = completed(
+            200,
+            vec![
+                ("X-Zero-Resource-Type", "other"),
+                ("X-Zero-Final-URL", "http://127.0.0.1:9/api/blob"),
+                ("Content-Type", "application/octet-stream"),
+            ],
+        );
+        assert!(ProcessTabBackend::take_attachment_download(&subresource).is_none());
+
+        // 错误响应不落盘：octet-stream 的 404 仍走错误页。
+        let error = completed(404, document_headers(Some("application/octet-stream")));
+        assert!(ProcessTabBackend::take_attachment_download(&error).is_none());
+    }
+
+    #[test]
+    fn inline_renderable_essence_table() {
+        for essence in [
+            "text/html",
+            "text/plain",
+            "image/png",
+            "audio/ogg",
+            "video/webm",
+            "application/json",
+            "application/xml",
+            "application/xhtml+xml",
+            "application/rss+xml",
+        ] {
+            assert!(is_inline_renderable_content_type(essence), "{essence} 应可渲染");
+        }
+        for essence in [
+            "application/octet-stream",
+            "application/zip",
+            "application/wasm",
+            "font/woff2",
+            "model/gltf-binary",
+            "multipart/form-data",
+        ] {
+            assert!(!is_inline_renderable_content_type(essence), "{essence} 应下载");
+        }
+        // 畸形 essence（无 '/'）保守渲染。
+        assert!(is_inline_renderable_content_type("octet-stream"));
+    }
+
+    #[test]
+    fn url_fallback_filename_strips_query_and_fragment() {
+        // 常见签名下载链形态：文件名取 URL 路径末段，不含 query/fragment——
+        // `?` 在 Windows 文件名中非法，落盘会直接失败。
+        for (url, expect) in [
+            ("http://127.0.0.1:9/download?file=report.zip", "download"),
+            ("http://127.0.0.1:9/files/bigfile.bin?token=x", "bigfile.bin"),
+            ("http://127.0.0.1:9/files/bigfile.bin#frag", "bigfile.bin"),
+            ("http://127.0.0.1:9/files/bigfile.bin?token=x#frag", "bigfile.bin"),
+        ] {
+            let item = completed(
+                200,
+                vec![
+                    ("X-Zero-Resource-Type", "document"),
+                    ("X-Zero-Final-URL", url),
+                    ("Content-Type", "application/octet-stream"),
+                ],
+            );
+            let download = ProcessTabBackend::take_attachment_download(&item).unwrap();
+            assert_eq!(download.filename, expect, "url={url}");
+        }
+    }
+
+    /// F1 信任边界：恶意服务器对子资源回 2xx + octet-stream + 伪造 document 头，
+    /// 不得劫持为下载——fetch_proxy drain 先剥离服务器伪造的内部命名空间头，
+    /// 路由决策只认浏览器推入的真实资源类型；对照：浏览器推入 document 照常下载。
+    #[test]
+    fn spoofed_resource_type_header_cannot_hijack_download_route() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            // 顺序应答两个请求：先伪造头的子资源，后无伪造的对照响应。
+            for response in [
+                "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\
+                 X-Zero-Resource-Type: document\r\nX-Zero-Final-URL: https://evil.example/forged\r\n\
+                 Content-Length: 2\r\n\r\nok",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: 2\r\n\r\nok",
+            ] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0_u8; 1024];
+                let _ = stream.read(&mut request).unwrap();
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+
+        let mut proxy = crate::fetch_proxy::TabFetchProxy::new();
+        proxy.on_navigate(TabId(1), &base_url);
+        // 请求 1：script 子资源 + 服务器伪造 document 头 → 不走下载。
+        let sub_url = format!("{base_url}/evil.bin");
+        proxy.enqueue(
+            TabId(1),
+            &zero_protocol::message::FetchParams {
+                request_id: 1,
+                url: sub_url.clone(),
+                method: "GET".into(),
+                headers: vec![("X-Zero-Resource-Type".into(), "script".into())],
+                body: None,
+            },
+        );
+        let subresource = wait_for_completed_fetch(&mut proxy);
+        let resource_types: Vec<&str> = subresource
+            .headers
+            .iter()
+            .filter(|(name, _)| name.eq_ignore_ascii_case("x-zero-resource-type"))
+            .map(|(_, value)| value.as_str())
+            .collect();
+        assert_eq!(
+            resource_types,
+            vec!["script"],
+            "服务器伪造实例须剥离，仅存浏览器推入实例"
+        );
+        assert!(
+            !subresource
+                .headers
+                .iter()
+                .any(|(name, value)| name.eq_ignore_ascii_case("x-zero-final-url")
+                    && value == "https://evil.example/forged"),
+            "伪造的 X-Zero-Final-URL 同样须剥离"
+        );
+        assert!(
+            ProcessTabBackend::take_attachment_download(&subresource).is_none(),
+            "伪造 document 头不得劫持子资源为下载"
+        );
+
+        // 请求 2：浏览器推入 document 资源类型 + octet-stream → 照常走下载。
+        let doc_url = format!("{base_url}/doc.bin");
+        proxy.enqueue(
+            TabId(1),
+            &zero_protocol::message::FetchParams {
+                request_id: 2,
+                url: doc_url,
+                method: "GET".into(),
+                headers: vec![("X-Zero-Resource-Type".into(), "document".into())],
+                body: None,
+            },
+        );
+        let document = wait_for_completed_fetch(&mut proxy);
+        let download = ProcessTabBackend::take_attachment_download(&document)
+            .expect("浏览器推入 document + octet-stream 应走下载");
+        assert_eq!(download.filename, "doc.bin");
+        server.join().unwrap();
+    }
+
+    fn wait_for_completed_fetch(proxy: &mut crate::fetch_proxy::TabFetchProxy) -> CompletedFetch {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let mut done = proxy.drain();
+            if let Some(item) = done.pop() {
+                return item;
+            }
+            assert!(std::time::Instant::now() < deadline, "fetch did not complete in time");
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+    }
+}
+
+/// 顶层文档导航可内联渲染的 Content-Type essence 白名单：主类 text/image/audio/
+/// video 全量可渲染；application 仅放行已知可渲染子类（含 `+xml` 后缀的 XML 派生
+/// 类型）。其余 application 子类（octet-stream/zip/pdf 等）与其他主类浏览器无内联
+/// 渲染能力 → 下载。无 '/' 的畸形值保守按可渲染处理，不扩大拦截。
+fn is_inline_renderable_content_type(essence: &str) -> bool {
+    let Some((main, sub)) = essence.split_once('/') else {
+        return true;
+    };
+    match main {
+        "text" | "image" | "audio" | "video" => true,
+        "application" => {
+            sub.ends_with("+xml")
+                || matches!(
+                    sub,
+                    "xhtml+xml" | "xml" | "json" | "javascript" | "x-javascript" | "ecmascript"
+                )
+        }
+        _ => false,
+    }
+}
+
 /// 从 Content-Disposition 解析 filename，回退 URL 路径末段，再回退 download.bin。
-/// 拒绝路径分隔符与空值（信任边界：响应头来自外部服务器）。
+/// 拒绝路径分隔符与空值（信任边界：响应头来自外部服务器）。URL 回退先剥
+/// query/fragment 再取末段（如 `/download?file=report.zip` 落盘 `download`）——
+/// `?`/`#` 不是合法文件名字符，Windows 写入会直接失败。
 fn parse_attachment_filename(disposition: &str, url: &str) -> String {
     let sanitize = |raw: &str| -> Option<String> {
         let trimmed = raw.trim().trim_matches('"').trim();
@@ -2507,7 +2886,10 @@ fn parse_attachment_filename(disposition: &str, url: &str) -> String {
             return name;
         }
     }
-    if let Some(last) = url.split('/').next_back()
+    // RFC 3986：query（`?...`）与 fragment（`#...`）不属于 path，先剥离。
+    let no_fragment = url.split('#').next().unwrap_or(url);
+    let path = no_fragment.split('?').next().unwrap_or(no_fragment);
+    if let Some(last) = path.split('/').next_back()
         && let Some(name) = sanitize(last)
     {
         return name;

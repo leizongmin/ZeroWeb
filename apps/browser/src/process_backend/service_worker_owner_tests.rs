@@ -810,3 +810,119 @@ fn internal_dns_prefetch_is_not_routed_through_service_worker() {
 
     assert_eq!(backend.pending_fetch_count_for_test(), 1);
 }
+
+#[test]
+fn service_worker_respond_with_octet_stream_document_routes_to_download() {
+    // SW respondWith 的顶层文档响应与网络响应同走附件/不可内联文档路由
+    // （owner 已剥离响应侧伪造的内部头并按请求参数重推真实资源类型），
+    // 不再按旧渲染路径把 octet-stream 产出为乱码页。
+    let mut owner = BrowserServiceWorkerOwner::with_local_hosts();
+    let document_url = "https://example.test/app/page";
+    let ServiceWorkerRequestDisposition::Fetch(plan) = owner.begin_request(
+        TabId(814),
+        false,
+        1,
+        Some(document_url),
+        ServiceWorkerRequestParams {
+            operation: ServiceWorkerOperation::Register {
+                script_url: "/sw.js".into(),
+                scope: Some("/app/".into()),
+                document_url: document_url.into(),
+                update_via_cache: ServiceWorkerUpdateViaCacheWire::Imports,
+                script_type: ServiceWorkerScriptTypeWire::Classic,
+            },
+        },
+    ) else {
+        panic!("registration must fetch script");
+    };
+    let (sender, receiver) = std::sync::mpsc::channel();
+    sender
+        .send(Ok(zero_net::HttpResponse {
+            status_code: 200,
+            headers: vec![("Content-Type".into(), "application/javascript".into())],
+            body: b"addEventListener('fetch', event => { \
+                    event.respondWith(new Response('BINARY', \
+                    {headers: {'Content-Type': 'application/octet-stream'}})); });"
+                .to_vec(),
+            url: plan.script_url().to_string(),
+            redirect_count: 0,
+        }))
+        .unwrap();
+    owner.attach_fetch(plan, receiver);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let registration_id = loop {
+        let responses = owner.poll();
+        if let Some(registration_id) = responses.iter().find_map(|response| {
+            if let Ok(ServiceWorkerResult::Registered { registration_id }) = response.params.result {
+                Some(registration_id)
+            } else {
+                None
+            }
+        }) {
+            break registration_id;
+        }
+        assert!(Instant::now() < deadline, "local registration did not complete");
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    loop {
+        let _ = owner.poll();
+        let ServiceWorkerRequestDisposition::Respond(snapshot) = owner.begin_request(
+            TabId(814),
+            false,
+            2,
+            Some(document_url),
+            ServiceWorkerRequestParams {
+                operation: ServiceWorkerOperation::Snapshot { registration_id },
+            },
+        ) else {
+            panic!("snapshot query must not fetch");
+        };
+        if matches!(
+            snapshot.params.result,
+            Ok(ServiceWorkerResult::Snapshot(ServiceWorkerSnapshot {
+                state: ServiceWorkerStateWire::Activated,
+                ..
+            }))
+        ) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "local registration did not activate");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    let mut backend =
+        ProcessTabBackend::with_renderer_bin_and_service_worker_owner(PathBuf::from("unused-renderer"), owner);
+    let tab_id = TabId(814);
+    let renderer_id = 114;
+    backend.tab_to_renderer.insert(tab_id, renderer_id);
+    backend.committed_document_urls.insert(renderer_id, document_url.into());
+    backend.committed_document_epochs.insert(renderer_id, 7);
+
+    backend.handle_fetch_request(
+        tab_id,
+        FetchParams {
+            request_id: 88,
+            url: "https://example.test/app/report.bin".into(),
+            method: "GET".into(),
+            headers: vec![("X-Zero-Resource-Type".into(), "document".into())],
+            body: None,
+        },
+    );
+
+    let download = loop {
+        backend.drain_service_worker_responses();
+        let mut pending = backend.take_pending_downloads();
+        if let Some(download) = pending.pop() {
+            break download;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "SW octet-stream document did not route to download"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    assert_eq!(download.tab_id, tab_id);
+    assert_eq!(download.url, "https://example.test/app/report.bin");
+    assert_eq!(download.filename, "report.bin");
+    assert_eq!(download.body, b"BINARY");
+}
