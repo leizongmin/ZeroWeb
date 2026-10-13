@@ -2,14 +2,16 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-14（**M5-S10 执行**——XHR timeout 族 3 腿销账 +
-setter 重排附带 2 腿：`_zwFetchSimDelay` 共享延迟模型 + timeout setter 重排 +
-finite 模型静态判定 + on* handler 抛上报 + runner preflight 应答/到期序派发；
-六 corpus 受控 A/B **xhr +6P/−4F/−2T，其余逐字节持平**）。
-此前：同日 M5-S9（bad-chunk 注入 2 腿销账）；M5-S8（formdata 簇 +14 / sync XHR
-销账）；M5-S7（URL 反射基址接线）；2026-10-13 M5-S6（url 基址链 +215）；
-M5-S5（scheme 翻转 +179）；M5-S4（P6 二期收口）；M5-S3（eventsource + WS
-cookie jar）；2026-10-13（M5-S2/S1）；2026-10-01（M4-S29 收口判定）
+**最后更新**: 2026-10-14（**M5-S11 执行**——XHR 小残量四腿销账：bad-chunk XHR
+面（M5-S9 标记头扩 XHR——异步 request error steps / 同步抛 NetworkError）+
+wire 响应头保真（phantom content-type 摘除）+ open() 响应重置 + fixture 后缀
+匹配；六 corpus 受控 A/B **xhr 571P/22F/1T → 575P/18F/1T（+4P/−4F），其余逐字
+节持平**——xhr 域 goal 内可实施面清空）。
+此前：同日 M5-S10（timeout 族 3 腿 + setter 重排 2 腿）；M5-S9（bad-chunk 注入
+2 腿）；M5-S8（formdata 簇 +14 / sync XHR 销账）；M5-S7（URL 反射基址接线）；
+2026-10-13 M5-S6（url 基址链 +215）；M5-S5（scheme 翻转 +179）；M5-S4（P6
+二期收口）；M5-S3（eventsource + WS cookie jar）；2026-10-13（M5-S2/S1）；
+2026-10-01（M4-S29 收口判定）
 
 ---
 
@@ -36,6 +38,19 @@ IDL 校验 19（shim）、`ws.protocol` 属性面 4 案（shim+bridge）、WS co
 1（017 执行序）。证据
 [evidence/2026-10-13-m5-s1-ws-fixture-baseline.md](evidence/2026-10-13-m5-s1-ws-fixture-baseline.md)。
 不测面：wss/h2 变体、`.https.*` 5 案（TLS）、multi-globals/unload-a-document（结构面）。
+
+**M5-S11 执行（同日）**：XHR 小残量四腿销账（response-body-errors 2 +
+event-error.sub 1 + getallresponseheaders-after-reuse 1）。四处修齐：①
+bad-chunk XHR 面（M5-S9 `x-zero-body-error-after` 标记扩 XHR fill——异步按
+LOADING 兑现 good 字节后走 request error steps、同步 send 抛 NetworkError、
+解码链提取 `_zwXhrDecode` 共享）；② fixture 后缀匹配扩 `/xhr/resources/`
+（event-error 相对 URL 落点——精确匹配 404 → load 照发根因）；③ wire 响应头
+保真（Response ctor 的 spec 默认 content-type 注入属页面构造语义——wire 头无
+content-type 时摘除 phantom 头，getallresponseheaders「仅 foo-test」面根因；
+fetch 1504P 持平 = 零回归实证）；④ open() 响应面重置（spec：response 置
+network error——复用对象头表叠加根因）。六 corpus 受控 A/B **xhr 571P/22F/1T →
+575P/18F/1T（+4P/−4F），其余五 corpus + websockets 逐字节持平**。证据
+[evidence/2026-10-14-m5-s11-xhr-residuals.md](evidence/2026-10-14-m5-s11-xhr-residuals.md)。
 
 **M5-S10 执行（同日）**：XHR timeout 族 3 腿销账（timeout-multiple-fetches /
 thrown-error-in-events / xhr-timeout-longtask——M4-S21 记账）+ setter 重排附带
@@ -217,7 +232,7 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
 |---|------|------|
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口 + M4-S23~S26 cors 域收口（fetch **1491/2081 = 71.6%** / mimesniff 100%）；残余：credentials/cookie 管道腿 ~13（跨域挂账）、response-error 族（10） |
-| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口；page-scheme 失配已解（M5-S5 翻转）；bad-chunk 注入 2 已销账（M5-S9）；**timeout 族 3 已销账（M5-S10，setter 重排附带 overrides 族 2 腿）**——**残余：XML 文档面（engine XML DOM 深度——template-element 族）、formdata 残余 5F（iframe 编排 structural 2 + surrogate wire 1 + input-image 几何跨域 2——M5-S8 精确记账）**；sync XHR 结构面 4 已实测全绿销账（M5-S8——残 2 案为 permissions-policy API 面跨域记账） |
+| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口；page-scheme 失配已解（M5-S5 翻转）；bad-chunk 注入 2 已销账（M5-S9）；timeout 族 3 已销账（M5-S10，setter 重排附带 overrides 族 2 腿）；**XHR 小残量 4 已销账（M5-S11——bad-chunk XHR 面 + wire 头保真 + open() 重置）——goal 内可实施面清空**；残余：XML 文档面（engine XML DOM 深度——template-element 族）、formdata 残余 5F（iframe 编排 structural 2 + surrogate wire 1 + input-image 几何跨域 2——M5-S8 精确记账）、overridemimetype shift-jis 8（encoding 域）、permissions-policy 2（跨域）；sync XHR 结构面 4 已实测全绿销账（M5-S8——残 2 案为 permissions-policy API 面跨域记账） |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 基址链已清偿（M5-S6 +215 零回归）+ URL 反射基址接线已清偿（M5-S7——反射/请求/导航五面接 `_zwDocBaseURL`，无 base 元素行为不变）——残余：urltestdata 全量解析深水（IDNA/toASCII/file: 特例/host 校验）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | ✅ M4-S11 收口（88.6%）+ M4-S28 flow-control 清偿（**88.7%**，piping 全绿含 flow-control 5/5）；**残余：transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿，JS 层不可表达）** |
 | P6 | WebSocket 二期切片（runner WS fixture 端点 + websockets corpus 基线 + 语义修齐） | ✅ **收口（2026-10-14，M5-S1→S4 四切片）**：**376/376 = 100% / case 106/106 = 100%**（基线 334/375 = 89.1%）；不测面维持记账（wss/h2 变体、.https.* TLS、multi-globals/unload-a-document/bfcache 结构面） |
@@ -225,6 +240,12 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
 
 ## 已完成切片
 
+- **M5-S11（2026-10-14）**：XHR 小残量四腿销账（xhr 571P/22F/1T → **575P/18F/1T
+  = +4P/−4F**，其余 corpus 逐字节持平）：bad-chunk XHR 面（标记头扩 fill——异步
+  request error steps / 同步抛 NetworkError）+ fixture 后缀匹配扩 xhr/resources +
+  wire 响应头保真（phantom content-type 摘除）+ open() 响应面重置。make test
+  全绿（20664P/0F）。见
+  [evidence/2026-10-14-m5-s11-xhr-residuals.md](evidence/2026-10-14-m5-s11-xhr-residuals.md)。
 - **M5-S10（2026-10-14）**：XHR timeout 族 3 腿销账 + setter 重排附带 2 腿（xhr
   565P/26F/3T → **571P/22F/1T = +6P/−4F/−2T**，其余 corpus 逐字节持平）：共享延迟
   模型 `_zwFetchSimDelay`（bare delay.py 缺省 1000ms + redirect 链折叠）+ timeout
@@ -666,13 +687,12 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
    request-cache-control Timeout **已修复归档**（M5-S3——runner fixture preflight
    应答面，非产品缺口）；url crate panic 防护调用点审计（一次性 panic 未复现，
    低优先观察项）
-3. **goal 内结构性挂账（M5-S10 后余量）**：XML 文档解析（engine XML DOM——
-   template-element 族）；formdata 残余 5F（structural/wire/跨域几何——M5-S8
-   精确记账，本 goal 不再实施）。timeout 族 3 腿 **已销账（M5-S10，2026-10-14）**
-   ——setter 重排附带 overrides 族 2 腿一并回绿。**下一候选切片（M5-S11）**：
-   XHR 小残量三簇——response-body-errors 2 腿（XHR bad-chunk 面，可复用 M5-S9
-   `x-zero-body-error-after` 机制扩 XHR 路径）+ getallresponseheaders-after-reuse
-   1 腿（复用响应头表重置）+ event-error.sub 1 腿（先甄别归属）；XML DOM 深水
-   切片在其后
+3. **goal 内结构性挂账（M5-S11 后余量）**：XML 文档解析（engine XML DOM——
+   template-element 3 腿，xhr 域唯一 goal 内可实施深水切片）；formdata 残余 5F
+   （structural/wire/跨域几何——M5-S8 精确记账，本 goal 不再实施）；overridemimetype
+   shift-jis 8（encoding 域邻接）。XHR 小残量 4 腿 **已销账（M5-S11，2026-10-14）**
+   ——xhr 域 goal 内可实施面清空。**下一候选切片（M5-S12）**：XML 文档解析
+   （responseType='document' + XML Content-Type → XML DOM 树——engine 侧 XML
+   parser + template-element 3 腿；若 engine XML 底座缺席则评估最小实现域并记账）
 
 **待用户决策清单**：（空）

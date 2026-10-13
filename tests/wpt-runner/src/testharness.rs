@@ -6860,7 +6860,10 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
             // "garbage"，`x-zero-body-error-after` 内部标记头承载「N 字节后流错误」
             // 语义（shim 侧消费后从可见 header list 剥离；error-after-response
             // 两腿 = 首 read 得 TEST_CHUNK、次 read/closed 拒 TypeError）。
-            if clean == "fetch/api/resources/bad-chunk-encoding.py" {
+            if clean.ends_with("/bad-chunk-encoding.py") {
+                // net-api M5-S11：后缀匹配扩 xhr/resources/（event-error.sub 相对 URL
+                // 「resources/bad-chunk-encoding.py」→ /xhr/resources/ 面——上游两目录
+                // 各有一份同型端点，语义同构）。
                 let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
                 let count = wpt_query_value(query, "count")
                     .and_then(|value| value.parse::<usize>().ok())

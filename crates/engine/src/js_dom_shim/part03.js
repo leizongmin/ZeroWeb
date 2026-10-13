@@ -150,6 +150,15 @@
       }
       self._zwXhrAborted = false;
       self._zwXhrSent = false;
+      // net-api M5-S11：open() 重置响应（xhr.spec §the open()-method——response 置
+      // network error，响应面全清——getallresponseheaders-after-reuse「复用对象不得
+      // 返回上一响应的头」面）。
+      self.status = 0;
+      self.statusText = '';
+      self.responseText = '';
+      self.response = '';
+      self.responseURL = '';
+      self._zwXhrResponseHeaders = {};
       // net-api M4-S21：open() 步骤 11——upload listener 置 false（upload 完成标记同随
       // send 重置）。
       self._zwUploadListener = false;
@@ -193,6 +202,33 @@
         }
       }
     };
+    // net-api M5-S11：响应体解码共享链（fill 主路径与 bad-chunk 部分体同构——
+    // BOM 嗅探 + override/replacement 语义一处维护）。
+    function _zwXhrDecode(bytes) {
+      var overrideCharset = self._zwXhrOverrideCharset;
+      // encoding-compat M3：xhr.spec get a final encoding + Encoding #decode 的 BOM 嗅探
+      // 序——响应字节首部 BOM（UTF-8/UTF-16LE/BE）优先于 override/response charset 定
+      // 解码器（unsupported-encodings：override=utf-32 表外回退后 FF FE BOM → utf-16le
+      // 面）。replacement（csiso2022kr 族）按 final encoding = replacement 语义整段单
+      // U+FFFD（M2 面）。
+      var bomEnc = (bytes[0] === 0xFF && bytes[1] === 0xFE) ? 'utf-16le'
+        : (bytes[0] === 0xFE && bytes[1] === 0xFF) ? 'utf-16be'
+        : (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) ? 'utf-8' : null;
+      var replacementFace = typeof __zw_text_encoding_of === 'function' && overrideCharset
+        && __zw_text_encoding_of(overrideCharset) === 'replacement';
+      if (replacementFace) {
+        return bytes.length ? '�' : '';
+      }
+      if (bomEnc) {
+        return new TextDecoder(bomEnc).decode(bytes);
+      }
+      if (overrideCharset) {
+        // override encoding 优先于 response charset（overridemimetype「enforcing
+        // Shift-JIS」面）；表外 override → 回落 UTF-8。
+        try { return new TextDecoder(overrideCharset).decode(bytes); } catch (_eXhrCharset) { return new TextDecoder().decode(bytes); }
+      }
+      return new TextDecoder().decode(bytes);
+    }
     // net-api M3-S2：响应填充共享路径（async .then 与 sync __zw_fetch 同构）。
     // responseType 效果：json → 解析（失败 null）；arraybuffer → Uint8Array；blob →
     // Blob（type = final MIME——CT 解析，null 回落 override，仍 null → text/xml，
@@ -232,29 +268,39 @@
       var bytes = bytesOverride != null ? bytesOverride
         : (response._bodyBytes != null ? response._bodyBytes
         : _zw_utf8_encode(response._bodyText == null ? '' : String(response._bodyText)));
-      var overrideCharset = self._zwXhrOverrideCharset;
-      // encoding-compat M3：xhr.spec get a final encoding + Encoding #decode 的 BOM 嗅探
-      // 序——响应字节首部 BOM（UTF-8/UTF-16LE/BE）优先于 override/response charset 定
-      // 解码器（unsupported-encodings：override=utf-32 表外回退后 FF FE BOM → utf-16le
-      // 面）。replacement（csiso2022kr 族）按 final encoding = replacement 语义整段单
-      // U+FFFD（M2 面）。
-      var bomEnc = (bytes[0] === 0xFF && bytes[1] === 0xFE) ? 'utf-16le'
-        : (bytes[0] === 0xFE && bytes[1] === 0xFF) ? 'utf-16be'
-        : (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) ? 'utf-8' : null;
-      var replacementFace = typeof __zw_text_encoding_of === 'function' && overrideCharset
-        && __zw_text_encoding_of(overrideCharset) === 'replacement';
-      var text;
-      if (replacementFace) {
-        text = bytes.length ? '�' : '';
-      } else if (bomEnc) {
-        text = new TextDecoder(bomEnc).decode(bytes);
-      } else if (overrideCharset) {
-        // override encoding 优先于 response charset（overridemimetype「enforcing
-        // Shift-JIS」面）；表外 override → 回落 UTF-8。
-        try { text = new TextDecoder(overrideCharset).decode(bytes); } catch (_eXhrCharset) { text = new TextDecoder().decode(bytes); }
-      } else {
-        text = new TextDecoder().decode(bytes);
+      // net-api M5-S11：bad-chunk XHR 面（M5-S9 标记头扩 XHR 路径）——异步中段网络
+      // 错误：good 字节先按 HEADERS_RECEIVED + LOADING 面兑现（部分体可见——
+      // response-body-errors rs3「TEST_CHUNK 可见」断言面），随后 request error
+      // steps（响应全清 + rs4 + error/loadend (0,0,false)——「clear response on bad
+      // chunk」+ event-error「zeros」面）。同步路径在 send 调用点直接抛 NetworkError。
+      if (self._zwXhrAsync && response._bodyErrorAfter != null) {
+        self.responseText = _zwXhrDecode(bytes.slice(0, response._bodyErrorAfter | 0));
+        changeReadyState(3);
+        var bcGen = self._zwReqGen;
+        setTimeout(function () {
+          if (bcGen !== self._zwReqGen || self._zwXhrAborted) return;
+          self._zwXhrSent = false; // request error steps 步骤 2：send() invoked 撤销
+          self.status = 0;
+          self.statusText = '';
+          self.responseText = '';
+          self.response = '';
+          self.responseURL = '';
+          self._zwXhrResponseHeaders = {};
+          changeReadyState(4);
+          if (self._zwHadBody && self._zwUploadListener && self._zwUpload) {
+            try {
+              self._zwUpload.dispatchEvent(
+                new ProgressEvent('error', { lengthComputable: false, loaded: 0, total: 0 }));
+              self._zwUpload.dispatchEvent(
+                new ProgressEvent('loadend', { lengthComputable: false, loaded: 0, total: 0 }));
+            } catch (_eUeBc) {}
+          }
+          fireP('error', 0, 0, false);
+          fireP('loadend', 0, 0, false);
+        }, 0);
+        return;
       }
+      var text = _zwXhrDecode(bytes);
       self.responseText = text;
       var rt = self._zwXhrResponseType || '';
       if (rt === 'json') {
@@ -514,6 +560,12 @@
             syncLoc = syncProbe.headers.get('Location');
           }
           if (!syncLoc || syncHops >= 20) {
+            // net-api M5-S11：sync XHR bad-chunk（体中段网络错误）——send() 同步抛
+            // NetworkError（response-body-errors sync 腿；spec：fetch 出错 → 同步
+            // send 抛网络错误）。
+            if (syncProbe._bodyErrorAfter != null) {
+              throw new (globalThis.DOMException || Error)('Failed to fetch', 'NetworkError');
+            }
             if (syncHops > 0 && syncLoc === null) {
               try { syncProbe.url = syncUrl; } catch (_eSyncUrl) {}
               self._zwFillFromResponse(syncProbe, null);

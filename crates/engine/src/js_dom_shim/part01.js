@@ -1788,9 +1788,21 @@
     // R3021：二进制 response body 经 `__zw_bytes:` csv-decimal wire → Uint8Array（response.blob()/arrayBuffer() 保真）；
     // 文本 body 原样字符串。
     var bodyArg = body.indexOf('__zw_bytes:') === 0 ? _zwDecodeBytesPrefix(body) : body;
+    // net-api M5-S11：wire 头保真判定（须在构造前——Response ctor 对 string body 的
+    // spec 默认 content-type 注入不适用于网络响应：wire 头无 content-type → 可见头表
+    // 不得凭空出现，getallresponseheaders-after-reuse headers-basic.asis「仅 foo-test」
+    // 期望面）。
+    var _wireHasCT = false;
+    for (var _ctK in headers) {
+      if (Object.prototype.hasOwnProperty.call(headers, _ctK) &&
+          String(_ctK).toLowerCase() === 'content-type') { _wireHasCT = true; break; }
+    }
     // R2968：经 new Response 构造（fetch 结果 instanceof Response）。字段 shape 与旧 plain object 一致
     //（headers 经 new Response 封装为 Headers 实例，R2977；body getter 同 R2967）。
     var response = new Response(bodyArg, { status: status, statusText: statusText, headers: headers });
+    if (!_wireHasCT) {
+      try { response.headers.delete('content-type'); } catch (_eCtWire) {}
+    }
     if (swFetchId) response.__zwSwFetchId = swFetchId;
     // Resource Timing（performance-api-compat M3-S2）：net 元数据挂在响应对象上
     // （fetch 包裹/sync XHR 发射时读取）——encodedBodySize = content-length 优先，
