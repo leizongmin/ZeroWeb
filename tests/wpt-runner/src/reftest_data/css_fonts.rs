@@ -434,6 +434,20 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><div style=\"font-family:sans-serif;font-weight:700;font-size:32px\">Bold heading text</div></body></html>",
         is_match: true,
     },
+    // ── P9-8（R5105）：无效 @font-face 不得吞吃后续规则（CSS Syntax 3
+    // §consume_an_at_rule）──回归形态：@font-face 两条 None 路径（无 `{`；族名或
+    // url() 源为空，如 src:local(Arial)）都已消费完自身 extent，caller 再走
+    // skip_malformed_qualified_rule 吞掉下一条合法规则——github.com marketing.css
+    // MonaSansFallback 后邻 face 被吞。缺陷态：test 页 div 规则被吞（无绿底），
+    // 与 ref 像素不等；修复态两页逐像素相等。文件孪生：
+    // tests/wpt-runner/local-reftests/css/css-fonts/font-face-invalid-no-eat-zw-001*.html。
+    InlineReftestDef {
+        id: "css-fonts/font-face-invalid-no-eat-zw-001",
+        category: ReftestCategory::Text,
+        test_html: "<html><head><style>@font-face { font-family: Fb; src: local(Arial); }\ndiv { background-color: rgb(0, 128, 0); color: rgb(255, 255, 255); font-size: 32px; }</style></head><body style=\"margin:0\"><div>survivor rule</div></body></html>",
+        ref_html: "<html><head><style>div { background-color: rgb(0, 128, 0); color: rgb(255, 255, 255); font-size: 32px; }</style></head><body style=\"margin:0\"><div>survivor rule</div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {

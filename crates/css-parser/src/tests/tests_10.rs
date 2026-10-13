@@ -613,6 +613,57 @@ fn test_font_face_missing_family_or_src_dropped() {
     assert_eq!(ws.rules.len(), 0, "font-face without src is dropped");
 }
 
+#[test]
+fn test_font_face_invalid_does_not_eat_next_rule() {
+    // R39xx（CSS Syntax 3 §consume_an_at-rule）：无效 @font-face 只丢弃自身 extent。
+    // 两条 None 路径（src:local 无 url() → sources 空；非 `{` 语句形）都已消费完
+    // 自身 extent，解析器位于干净边界——不得触发 caller 的 skip_malformed_qualified_rule
+    // 吞掉下一条合法规则（github.com marketing.css：MonaSansFallback 后邻 face 被吞）。
+    // local-only face 后邻规则存活：
+    let css = "@font-face { font-family: Fallback; src: local(Arial); }\nbody { font-size: 32px; }";
+    let ws = Parser::parse_stylesheet(css);
+    assert_eq!(ws.rules.len(), 1, "style rule after invalid font-face survives: {ws:?}");
+    match &ws.rules[0] {
+        Rule::Style(rule) => {
+            assert_eq!(rule.declarations.len(), 1);
+            assert_eq!(rule.declarations[0].property, "font-size");
+        }
+        other => panic!("expected StyleRule, got {other:?}"),
+    }
+
+    // s23.css（github.com marketing.css）形状：url face + local face + url face +
+    // local face + url face → 3 条 url face 全部存活（此前中间 local face 会吞邻）：
+    let css = "@font-face { font-family: A; src: url(a.woff); }\
+               @font-face { font-family: Fb; size-adjust: 104.5%; src: local(Arial); }\
+               @font-face { font-family: B; src: url(b.woff); }\
+               @font-face { font-family: Fb2; src: local(Arial Bold); }\
+               @font-face { font-family: C; src: url(c.woff); }";
+    let ws = Parser::parse_stylesheet(css);
+    let faces: Vec<&str> = ws
+        .rules
+        .iter()
+        .filter_map(|r| match r {
+            Rule::FontFace(f) => Some(f.family.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        faces,
+        vec!["A", "B", "C"],
+        "interleaved invalid faces drop only themselves"
+    );
+
+    // 无 `{` 语句形（extent 已自行吃到 `;`）后邻规则同样存活：
+    let css = "@font-face;\nbody { color: red; }";
+    let ws = Parser::parse_stylesheet(css);
+    assert_eq!(
+        ws.rules.len(),
+        1,
+        "style rule after brace-less font-face survives: {ws:?}"
+    );
+    assert!(matches!(ws.rules[0], Rule::Style(_)));
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // parser.rs — @page 规则解析（R2010 P4：CSS Paged Media `size` 描述符）
 // ═══════════════════════════════════════════════════════════════════════

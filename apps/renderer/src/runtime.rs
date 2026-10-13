@@ -1701,15 +1701,7 @@ impl RendererRuntime {
                     Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
                 }
             };
-            if let IpcMessageKind::KeyboardEvent(ref kp) = msg.kind {
-                let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-                if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "drain-fetch ENCOUNTERED key={}", kp.key); }
-            }
             if self.inflight_fetches.try_complete(&msg) {
-                if let IpcMessageKind::KeyboardEvent(ref kp) = msg.kind {
-                    let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-                    if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "drain-fetch CONSUMED key={}", kp.key); }
-                }
                 continue;
             }
             // t3-pd6：push_front 保持 deferred 队列顺序——此前 push_back 将非 fetch
@@ -2129,10 +2121,6 @@ impl RendererRuntime {
             head = Self::promote_pending_navigation(head, &mut self.deferred_inbound, || {
                 let mut drained = Vec::new();
                 while let Ok(later) = self.inbound_rx.try_recv() {
-                    if let IpcMessageKind::KeyboardEvent(ref kp) = later.kind {
-                        let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-                        if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "nav-drain DRAINED key={} type={:?}", kp.key, kp.event_type); }
-                    }
                     drained.push(later);
                 }
                 drained
@@ -2838,7 +2826,6 @@ impl RendererRuntime {
 
     fn handle_keyboard_event(&mut self, params: KeyboardEventParams) -> Result<(), String> {
         use zero_protocol::message::KeyboardEventType;
-        { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok(); if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "handle key={} type={:?}", params.key, params.event_type); } }
         let event_type = match params.event_type {
             KeyboardEventType::Down => "keydown",
             KeyboardEventType::Up => "keyup",
@@ -2855,7 +2842,6 @@ impl RendererRuntime {
             .unwrap_or_else(|| self.interaction.pointer_target())
             .to_string();
         let result = self.dispatch_dom_at(Some(target.clone()), 0.0, 0.0, event_type, Some(detail));
-        { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok(); if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "result key={} allowed={}", params.key, result.default_allowed); } }
         if matches!(params.event_type, KeyboardEventType::Down) && result.default_allowed {
             // UI Events 键序：keydown 未取消且该键产生字符值（`text` 非 None）→ 在字符插入
             // 默认动作（beforeinput/input）之前派发 `keypress`（legacy KeyboardEvent 面）。
@@ -2988,7 +2974,6 @@ impl RendererRuntime {
                 self.run_frame_transaction(|runtime| runtime.handle_mouse_event(params))
             }
             IpcMessageKind::KeyboardEvent(params) => {
-                { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok(); if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "dispatch key={} type={:?}", params.key, params.event_type); } }
                 self.run_frame_transaction(|runtime| runtime.handle_keyboard_event(params))
             }
             IpcMessageKind::ImeEvent(params) => self.run_frame_transaction(|runtime| runtime.handle_ime_event(params)),
@@ -3172,15 +3157,7 @@ impl RendererRuntime {
 
             match self.recv_next_or_timeout(LOAD_TICK_INTERVAL) {
                 Ok(Some(msg)) => {
-                    if let IpcMessageKind::KeyboardEvent(ref kp) = msg.kind {
-                        let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-                        if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "main-recv key={} type={:?}", kp.key, kp.event_type); }
-                    }
                     if self.inflight_fetches.try_complete(&msg) {
-                        if let IpcMessageKind::KeyboardEvent(ref kp) = msg.kind {
-                            let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-                            if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "FETCH-COMPLETE CONSUMED key={}", kp.key); }
-                        }
                         continue;
                     }
                     if let Err(e) = self.dispatch_message(msg) {
