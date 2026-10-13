@@ -708,3 +708,5 @@ mod r5108_max_height_margin_box_tests;
 /// R5109 诊断探针（临时）：margin-collapse-157/142 形态 margin 泄漏路径。
 /// R5109 clearance 修正 extent 缩减祖先传播 + 空块末链自折叠剔除测试。
 mod r5109_clearance_extent_propagation_tests;
+/// R5110 替换元素 max 侧 min-content/max-content 关键字钳制测试。
+mod r5110_replaced_mincontent_tests;

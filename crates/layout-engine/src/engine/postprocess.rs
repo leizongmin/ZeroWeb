@@ -2610,6 +2610,92 @@ pub(super) fn clamp_transferred_min_width_to_max(box_node: &mut LayoutBox, style
     }
 }
 
+/// R5110（css-sizing-3 §5.2 + csswg #3973）：替换元素上 `max-width/max-height:
+/// min-content`（及同位 max-content）关键字的钳制。converter 把 max 侧关键字映射
+/// taffy auto（不钳制，替换元素无内容可测）——chrome 对替换元素的 min-content 尺寸
+/// 定义：有内在比（HTML dimension attributes 比或 CSS aspect-ratio）且另一轴有
+/// 确定尺寸 → 按比**转递**（transferred size）；否则取该轴**内在尺寸**（attr 值）。
+/// driving: replaced-max-width-min-content（canvas w:1000 h:100 max-width:min-content
+/// 应 100×100）、replaced-max-height-min-content、svg-no-ar-max-height-min-content
+/// （无比 svg 按 attr 高 100 钳）。仅替换元素命中；非替换的 min-content 测量域
+/// （R1304 width 侧）不在此列。kill-switch `ZW_REPLACED_MINCONTENT_CLAMP=0`
+///（default-on，OnceLock 进程级单读）。
+pub(super) fn clamp_replaced_min_content_keywords(
+    box_node: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    static ON: OnceLock<bool> = OnceLock::new();
+    // OPTIMIZATION：kill-switch 进程级单读（R5108 教训）。
+    let on = *ON.get_or_init(|| std::env::var("ZW_REPLACED_MINCONTENT_CLAMP").as_deref() != Ok("0"));
+    if !on {
+        return;
+    }
+    for child in &mut box_node.children {
+        clamp_replaced_min_content_keywords(child, doc, styles);
+    }
+    if !box_node.is_replaced {
+        return;
+    }
+    let Some(nid) = box_node.node_id else {
+        return;
+    };
+    let Some(style) = styles.get(&nid) else {
+        return;
+    };
+    // HTML dimension attributes（canvas/svg/img 通用；0 与缺失同等——比需双轴 >0）。
+    let (attr_w, attr_h) = doc
+        .get(nid)
+        .and_then(|n| match &n.kind {
+            zero_dom::NodeKind::Element(elem) => {
+                let parse = |name: &str| {
+                    elem.get_attribute(name)
+                        .and_then(|v| v.trim().parse::<f32>().ok())
+                        .filter(|f| f.is_finite())
+                };
+                Some((parse("width"), parse("height")))
+            }
+            _ => None,
+        })
+        .unwrap_or((None, None));
+    // 内在比：attr 双轴 >0 优先，其次 CSS aspect-ratio。
+    let ratio = match (attr_w, attr_h) {
+        (Some(w), Some(h)) if w > 0.0 && h > 0.0 => w / h,
+        _ => style.aspect_ratio.filter(|_| !style.aspect_ratio_auto).unwrap_or(0.0),
+    };
+    if matches!(style.max_width, LengthValue::MinContent | LengthValue::MaxContent) {
+        // 有比 → 另一轴确定尺寸转递；无比 → 本轴 attr 内在值。
+        let mcw = if ratio > 0.0 {
+            resolve_postprocess_real_length(&style.height, style).map(|h| h * ratio)
+        } else {
+            attr_w.filter(|w| *w > 0.0)
+        };
+        if let Some(mcw) = mcw.filter(|v| *v > 0.0) {
+            let target = box_node.content_width.min(mcw);
+            let delta = box_node.content_width - target;
+            if delta > 0.5 {
+                box_node.content_width = target;
+                box_node.width = (box_node.width - delta).max(0.0);
+            }
+        }
+    }
+    if matches!(style.max_height, LengthValue::MinContent | LengthValue::MaxContent) {
+        let mch = if ratio > 0.0 {
+            resolve_postprocess_real_length(&style.width, style).map(|w| w / ratio)
+        } else {
+            attr_h.filter(|h| *h > 0.0)
+        };
+        if let Some(mch) = mch.filter(|v| *v > 0.0) {
+            let target = box_node.content_height.min(mch);
+            let delta = box_node.content_height - target;
+            if delta > 0.5 {
+                box_node.content_height = target;
+                box_node.height = (box_node.height - delta).max(0.0);
+            }
+        }
+    }
+}
+
 /// 从 calc 表达式中提取百分比和 px 偏移量。
 ///
 /// 对于 `calc(100% - 6px)`，返回 `Some((100.0, -6.0))`。

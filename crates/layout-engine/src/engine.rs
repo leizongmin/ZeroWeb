@@ -1347,6 +1347,11 @@ impl LayoutEngine {
         //（block-aspect-ratio-022）。收回到 max。
         clamp_transferred_min_width_to_max(&mut root_box, styles);
 
+        // 12.6.1 后处理（R5110，css-sizing-3 §5.2 + csswg #3973）：替换元素 max 侧
+        // min-content/max-content 关键字钳制（converter 映射 auto 不钳制；转递/内在
+        // 双臂，详见函数头）。
+        clamp_replaced_min_content_keywords(&mut root_box, doc, styles);
+
         // 12.x R3768：跨块盒 line-clamp（css-overflow-4）。clamp 容器含 block 子时累计
         // 各子 IFC 行数定位 clamp 点、超预算子内截断、后续 in-flow 子盒跳过（几何清零 +
         // line_clamp_hidden，paint 据此跳过整子树）。须在各子 IFC 终化（compute_final_inline_
