@@ -1117,10 +1117,18 @@ fn scan_top_level_decl_exports(code: &str, is_strict: bool) -> String {
                                 j += 1;
                             }
                             let name: String = src[s..j].iter().collect();
-                            // 声明符后（允许空白）须 `=` 或行尾（伪匹配 `letName` 排除）。
+                            // 声明符后（允许空白）须 `=` / `;` / `,` 或源尾（伪匹配
+                            // `letName` 排除）。net-api M5-S4：`let x;`（无初始化器、
+                            // 后续赋值）同属顶层声明——WPT websockets/constants.sub.js
+                            // `let __SCHEME; let __PORT;` if/else 赋值后由 017 顶层
+                            // `__SCHEME + ':'` 直读（constructor/017 断言面）。导出为
+                            // accessor（let 语义，后缀在源体后执行——读到赋值后的终值，
+                            // getter 闭包持活 eval 词法绑定跨脚本读写）。`,` 收首声明符
+                            //（`let a, b = 2` 链后续声明符保守漏导出，与现状一致）；
+                            // 无分号 ASI 形态（`let x\n`）仍不导出（保守，未语料化）。
                             let mut k = j;
                             skip_ws_comments(&src, &mut k);
-                            if !name.is_empty() && (k >= n || src[k] == '=') {
+                            if !name.is_empty() && (k >= n || matches!(src[k], '=' | ';' | ',')) {
                                 push_export(&mut out, &mut seen, &name, word == "let");
                             }
                             prev_sig = 'x';

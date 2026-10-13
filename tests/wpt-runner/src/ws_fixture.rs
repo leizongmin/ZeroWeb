@@ -109,15 +109,25 @@ fn rewrite_wpt_authority(url: &str) -> String {
         Some((a, t)) => (a, Some(t)),
         None => (rest, None),
     };
-    let host_part = authority.split('@').next().unwrap_or(authority);
+    // net-api M5-S4：userinfo 感知（`ws://foo:bar@wpt.test:port/…`——basic-auth 面）。
+    // 权威段按**最后一个** `@` 切 userinfo 与 host:port（userinfo 本身可含 `@` 的
+    // 百分号编码形态不计——裸 `@` 分隔即权威段终结符）。
+    let (userinfo, host_part) = match authority.rsplit_once('@') {
+        Some((ui, hp)) => (Some(ui), hp),
+        None => (None, authority),
+    };
     let host = host_part.rsplit_once(':').map_or(host_part, |(h, _)| h);
     let is_wpt = host == "wpt.test" || host.ends_with(".wpt.test");
     if !is_wpt {
         return url.to_string();
     }
-    let rewritten_authority = match host_part.rsplit_once(':') {
+    let rewritten_hostport = match host_part.rsplit_once(':') {
         Some((_, port)) => format!("127.0.0.1:{port}"),
         None => "127.0.0.1".to_string(),
+    };
+    let rewritten_authority = match userinfo {
+        Some(ui) => format!("{ui}@{rewritten_hostport}"),
+        None => rewritten_hostport,
     };
     match tail {
         Some(t) => format!("{scheme}://{rewritten_authority}/{t}"),
@@ -183,6 +193,19 @@ fn handshake_response(path: &str, query: &str, hs: &Handshake) -> Vec<u8> {
     }
     if path == "/handshake_sleep_2" {
         std::thread::sleep(Duration::from_secs(2));
+    }
+    // `/basic_auth`（net-api M5-S4）：401 挑战流——`Authorization: Basic base64(foo:bar)`
+    // （上游 basic-auth.any.js 的 URL userinfo 凭据）正确 → 101 走常规握手；缺失/错误
+    // → 401 + `WWW-Authenticate: Basic`（客户端按握手失败收场——zero-net 预置凭据
+    // 一步直发，无挑战重试语义）。
+    if path == "/basic_auth" {
+        use base64::Engine as _;
+        let expected = format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(b"foo:bar"));
+        let got = hs.headers.get("authorization").cloned().unwrap_or_default();
+        if got != expected {
+            return b"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"wpt\"\r\nContent-Length: 0\r\n\r\n"
+                .to_vec();
+        }
     }
     let key = hs.headers.get("sec-websocket-key").cloned().unwrap_or_default();
     // `/wrong_accept_key`：accept 用错误值（`wrong_accept_key` 端点语义——客户端
@@ -566,6 +589,7 @@ const KNOWN_PATHS: &[&str] = &[
     "/set-cookie_http",
     "/simple_handshake",
     "/delayed-passive-close",
+    "/basic_auth",
 ];
 
 fn handle_conn(sock: TcpStream) {

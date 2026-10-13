@@ -358,3 +358,55 @@ fn t2_destructuring_regex_initializer_no_false_export_d1d2d3() {
         "D3：含数字伪名场景脚本完整存活"
     );
 }
+
+/// net-api M5-S4（websockets constructor/017 断言面）：顶层 `let x;`（无初始化器、
+/// 后续赋值）声明导出——constants.sub.js `let __SCHEME; let __PORT;` if/else 赋值
+/// 后由另一 `<script>` 顶层直读。旧扫描仅认 `let x =` 初始化形态 → __SCHEME/__PORT
+/// 跨脚本蒸发（`__SCHEME is not defined`）。accessor 导出在源体后执行，读到赋值后
+/// 终值；getter 闭包持活 eval 词法绑定（后续脚本可读，sloppy/strict 双态）。
+#[test]
+fn m5s4_uninit_let_decl_exports_cross_script() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    // strict 形态（017 页面脚本无 'use strict'，但 constants.sub.js 亦无——sloppy
+    // 是实际语料态；strict 双态另行断言）。
+    for directive in ["", "'use strict';\n"] {
+        let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        let first = crate::js_dom_bridge::script_run_classic_page(
+            &format!(
+                "{directive}let __SCHEME;\nlet __PORT;\nif (false) {{ __SCHEME = 'wss'; }} else {{ __SCHEME = 'ws'; __PORT = '8111'; }}\nconst SCHEME_DOMAIN_PORT = __SCHEME + '://' + __PORT;"
+            ),
+            0,
+            None,
+        );
+        sandbox.execute(&first).unwrap();
+        let err = sandbox
+            .execute(&crate::js_dom_bridge::page_script_error_check())
+            .unwrap()
+            .value;
+        assert_eq!(err, "", "sentinel clean ({directive:?})");
+        // 跨脚本直读（017 形态：`__SCHEME + ':'` 裸标识符）。
+        let second = crate::js_dom_bridge::script_run_classic_page(
+            "globalThis.__r = [__SCHEME, __PORT, SCHEME_DOMAIN_PORT].join('|');",
+            1,
+            None,
+        );
+        sandbox.execute(&second).unwrap();
+        assert_eq!(
+            sandbox.execute("globalThis.__r").unwrap().value,
+            "ws|8111|ws://8111",
+            "uninit let 声明导出后跨脚本可见（{directive:?}）"
+        );
+        // `,` 链首声明符导出（`let a, b = 2;`——b 保守漏导出，a 须可见）。
+        let third = crate::js_dom_bridge::script_run_classic_page("let chainA, chainB = 2;", 2, None);
+        sandbox.execute(&third).unwrap();
+        assert_eq!(
+            sandbox.execute("typeof chainA + '|' + (typeof chainB)").unwrap().value,
+            "undefined|undefined",
+            "`,` 链：chainA 经 accessor 可读（未赋值 undefined）、chainB 保守漏导出"
+        );
+    }
+}

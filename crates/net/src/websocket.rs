@@ -14,6 +14,46 @@ use url::Url;
 /// `Sec-WebSocket-Protocol` 请求头名（tungstenite http 常量表未收录，自定义）。
 const SEC_WEBSOCKET_PROTOCOL: &str = "sec-websocket-protocol";
 
+/// RFC 4648 标准 base64 编码（`Authorization: Basic` 凭据用——零新依赖，
+/// data-url 仅解码面）。`ws://foo:bar@…` userinfo 凭据 3 字节组 → 4 字符 + `=` 补位。
+fn base64_encode(input: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        out.push(ALPHABET[(n >> 18) as usize & 63] as char);
+        out.push(ALPHABET[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 {
+            ALPHABET[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            ALPHABET[n as usize & 63] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+/// URL userinfo 凭据提取（`ws://user:pass@host/…` → `user:pass`）。手工解析
+/// authority（url crate `username()/password()` 对不一致 URL 有 panic 史——M3
+/// serialize_url catch_unwind 同源教训）。无 userinfo / 无 `:` 分隔 → None。
+fn url_credentials(url: &str) -> Option<String> {
+    let rest = url.split_once("://")?.1;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+    let (userinfo, _hostport) = authority.rsplit_once('@')?;
+    if userinfo.is_empty() {
+        return None;
+    }
+    match userinfo.split_once(':') {
+        Some((user, pass)) => Some(format!("{user}:{pass}")),
+        None => Some(userinfo.to_string()),
+    }
+}
+
 /// 可选 WebSocket 握手请求头（WHATWG HTML「establish a WebSocket connection」）。
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct WebSocketHandshake {
@@ -177,6 +217,20 @@ impl WebSocket {
                 handshake.protocols.join(", ").parse().map_err(|e| {
                     WebSocketError::ConnectionFailed(format!("invalid Sec-WebSocket-Protocol header: {e}"))
                 })?,
+            );
+        }
+
+        // WHATWG HTML「establish a WebSocket connection」凭据步骤：URL 含 userinfo
+        // → **预置** `Authorization: Basic base64(user:pass)`（一步直发，无 401 挑战
+        // 往返——上游 basic-auth.any.js 断言面；服务端拒凭据时 401 按握手失败收场）。
+        // userinfo 百分号编码面（%XX 凭据）保守不解码——语料无此形态，记账。
+        if let Some(cred) = url_credentials(&self.url) {
+            let basic = format!("Basic {}", base64_encode(cred.as_bytes()));
+            request.headers_mut().insert(
+                "authorization",
+                basic
+                    .parse()
+                    .map_err(|e| WebSocketError::ConnectionFailed(format!("invalid Authorization header: {e}")))?,
             );
         }
 
@@ -552,5 +606,31 @@ mod tests {
             }
             other => panic!("expected ConnectionFailed, got: {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod basic_auth_tests {
+    use super::*;
+
+    /// M5-S4 basic-auth 面：userinfo 凭据提取 + base64 known-answer。
+    /// 端到端 401/凭据校验语义由 ws_fixture /basic_auth + basic-auth.any.js 语料覆盖。
+    #[test]
+    fn url_credentials_and_base64() {
+        assert_eq!(
+            url_credentials("ws://foo:bar@wpt.test:8111/basic_auth").as_deref(),
+            Some("foo:bar")
+        );
+        assert_eq!(
+            url_credentials("ws://foo:bar@127.0.0.1:8111/basic_auth").as_deref(),
+            Some("foo:bar")
+        );
+        assert_eq!(url_credentials("ws://wpt.test:8111/basic_auth"), None);
+        assert_eq!(url_credentials("ws://@wpt.test:8111/x"), None);
+        assert_eq!(base64_encode(b"foo:bar"), "Zm9vOmJhcg==");
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"a"), "YQ==");
+        assert_eq!(base64_encode(b"ab"), "YWI=");
+        assert_eq!(base64_encode(b"abc"), "YWJj");
     }
 }

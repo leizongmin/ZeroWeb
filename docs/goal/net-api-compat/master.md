@@ -2,12 +2,13 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-14（**M5-S3 执行**——eventsource request-cache-control
-Timeout 归因修复（runner cors.py preflight 应答面）+ WS cookie jar 集成 4 案修齐
-（双 jar 断缝三面接线）：websockets **373/375 = 99.5%**（case 104/106）+
-eventsource 回归 **35/35 = 100%**）。
-此前：2026-10-13（M5-S2 IDL/构造器/状态机修齐 369/375 = 98.4%；M5-S1 通道+基线
-334/375 = 89.1%）；2026-10-01（M4-S29 收口判定——DC-1~4 全满足，目标 Completed）
+**最后更新**: 2026-10-14（**M5-S4 执行——P6 二期收口**：websockets corpus
+**376/376 = 100%，case 106/106 = 100%**（M5-S1 基线 89.1% 起步四切片收口）——
+constructor/017 根因修齐（classic 脚本顶层 `let x;` 无初始化声明导出缺口）+
+basic-auth（WS URL userinfo 预置 Authorization + fixture 401 挑战端点））。
+此前：2026-10-14（M5-S3 eventsource 漂移归因修复 + WS cookie jar 集成）；
+2026-10-13（M5-S2 IDL/构造器/状态机修齐；M5-S1 通道+基线）；
+2026-10-01（M4-S29 收口判定——DC-1~4 全满足，目标 Completed）
 
 ---
 
@@ -34,6 +35,17 @@ IDL 校验 19（shim）、`ws.protocol` 属性面 4 案（shim+bridge）、WS co
 1（017 执行序）。证据
 [evidence/2026-10-13-m5-s1-ws-fixture-baseline.md](evidence/2026-10-13-m5-s1-ws-fixture-baseline.md)。
 不测面：wss/h2 变体、`.https.*` 5 案（TLS）、multi-globals/unload-a-document（结构面）。
+
+**M5-S4 执行（同日）**：① constructor/017 归因翻案——M5-S1 所记「runner 预处理
+工件」实为**产品缺口**：classic 页面脚本经间接 eval 的顶层声明导出扫描
+（scan_top_level_decl_exports）只认 `let x =` 初始化形态，`let x;`（无初始化器
+后续赋值——constants.sub.js 即此形态）不导出 → 跨脚本蒸发。声明符接受集
+`= | ; | ,`（accessor 导出，getter 闭包持活绑定）；② basic-auth：net 预置
+`Authorization: Basic`（URL userinfo 手工解析 + 零依赖 base64）+ fixture
+/basic_auth（401 挑战/凭据 101）+ 宿主改写 userinfo 感知（旧 split('@').next()
+把 userinfo 当 host）。**websockets 376/376 = 100% / case 106/106 = 100%——P6
+二期收口**。make test 全绿（**20649P/0F**）。证据
+[evidence/2026-10-14-m5-s4-ws-complete.md](evidence/2026-10-14-m5-s4-ws-complete.md)。
 
 **M5-S3 执行（2026-10-14）**：① eventsource request-cache-control Timeout 归因——
 探针页三级定位（跨源 fetch 同 URL 正常 → ES onerror → `Cache-Control: no-cache`
@@ -106,11 +118,22 @@ streams/url/eventsource/xhr 与收口一致。逐字节仲裁证据见
 | P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **557/584 = 95.4%**——状态机/事件序/upload ProgressEvent/preflight cache/redirect/preflight/expose/FormData/timeout 面 spec 化）——**残余：page-scheme 失配 2（http vs https 宇宙——需 runner 页面 scheme 对齐）、sync XHR 结构面 4、XML 文档面（engine XML DOM 深度——template-element 族）、bad-chunk 注入 2、formdata FormDataEvent/submitter 族 5、timeout 族 3** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.0%（新分母 6058）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | ✅ M4-S11 收口（88.6%）+ M4-S28 flow-control 清偿（**88.7%**，piping 全绿含 flow-control 5/5）；**残余：transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿，JS 层不可表达）** |
-| P6 | WebSocket 二期切片（runner WS fixture 端点 + websockets corpus 基线 + 语义修齐） | ✅ M5-S1 通道+基线（334/375 = 89.1%）→ M5-S2 修齐（98.4%）→ **M5-S3 cookie jar 集成（373/375 = 99.5% / case 104/106 = 98.1%）**；残余：basic-auth 1 案（zero-net）+ 017 工件 1 案（runner 预处理） |
+| P6 | WebSocket 二期切片（runner WS fixture 端点 + websockets corpus 基线 + 语义修齐） | ✅ **收口（2026-10-14，M5-S1→S4 四切片）**：**376/376 = 100% / case 106/106 = 100%**（基线 334/375 = 89.1%）；不测面维持记账（wss/h2 变体、.https.* TLS、multi-globals/unload-a-document/bfcache 结构面） |
 | P7 | runner fixture 通道（.py 端点最小 fixture 集） | ✅ 累计 24+ 端点（M4-S21 增 echo-headers/xhr trickle/form/echo-content-type/access-control-origin-header/over-1-meg.txt；M4-S22 增 preflight cache 族 ×3 等九件；M4-S23 增 preflight.py/clean-stash.py——fetch/api/cors 域页拉取已随域导入收口） |
 
 ## 已完成切片
 
+- **M5-S4（2026-10-14）**：websockets corpus 收口（**376/376 = 100% / case
+  106/106**）。① constructor/017 翻案为产品缺口：classic 间接 eval 顶层声明导出
+  扫描（script_gen.rs scan_top_level_decl_exports）`const|let` 分支声明符接受集
+  补 `;`/`,`——`let x;` 无初始化形态 accessor 导出（getter 闭包持活 eval 词法
+  绑定，017/constants.sub.js 断言面）；part50 双态回归测试。② basic-auth：net
+  预置 Authorization（userinfo 手工解析 + 零依赖 base64 编码——url crate panic
+  面规避）+ ws_fixture /basic_auth（401 挑战/凭据 101）+ rewrite_wpt_authority
+  userinfo 感知；net known-answer 单测。P6 二期四切片（M5-S1 通道 89.1% → S2
+  IDL/状态机 98.4% → S3 cookie jar 99.5% → S4 收口 100%）。make test 全绿 +
+  clippy + fmt 干净。见
+  [evidence/2026-10-14-m5-s4-ws-complete.md](evidence/2026-10-14-m5-s4-ws-complete.md)。
 - **M5-S3（2026-10-14）**：eventsource 漂移归因修复 + WS cookie jar 集成（websockets
   **373/375 = 99.5%** / case **104/106 = 98.1%**；eventsource 35/35 = 100% 回归）。
   ① request-cache-control Timeout：探针页三级归因（`Cache-Control: no-cache` 非
@@ -492,11 +515,11 @@ streams/url/eventsource/xhr 与收口一致。逐字节仲裁证据见
    TransferArrayBuffer——需宿主 V8 detach 能力，JS 层不可表达——bad-buffers 10
    + non-transferable 4；engine 宿主能力面）；cors credentials/cookie jar +
    Authorization 重定向流 ~13 腿（storage goal / security-hardening 邻域）；
-   WS 残余（M5-S4 候选）：① basic-auth 401 挑战流 1 案（zero-net WWW-Authenticate
-   挑战/凭据流，跨域记账）② runner 工件 017 执行序 1 案（inlined constants
-   `__SCHEME` 预处理面）；eventsource request-cache-control Timeout **已修复归档**
-   （M5-S3——runner fixture preflight 应答面，非产品缺口）；③ url crate panic
-   防护调用点审计（一次性 panic 未复现，低优先观察项）
+   WS 残余 **已全部清偿（M5-S4 收口）**——P6 二期记账仅余不测面（wss/h2 变体、
+   TLS、结构面）与 userinfo 百分号编码凭据解码（语料无此形态）；eventsource
+   request-cache-control Timeout **已修复归档**（M5-S3——runner fixture preflight
+   应答面，非产品缺口）；url crate panic 防护调用点审计（一次性 panic 未复现，
+   低优先观察项）
 3. **goal 内结构性挂账**：sync XHR 窗口 onload 阻塞语义 4 腿；bad-chunk 注入
    2 腿（需 .asis + chunked 解析面）；formdata FormDataEvent.entries live 面 +
    submitter 坐标族 5 腿；XML 文档解析（engine XML DOM——template-element 族）
