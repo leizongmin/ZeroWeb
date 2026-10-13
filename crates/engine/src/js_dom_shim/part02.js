@@ -2878,12 +2878,20 @@
     if (!(this instanceof FormData)) return new FormData(form, submitter);
     this._p = [];
     if (form == null) {
-      if (submitter != null) {
-        throw new TypeError("Failed to construct 'FormData': submitter was specified but form was not");
+      if (form === undefined) {
+        if (submitter != null) {
+          throw new TypeError("Failed to construct 'FormData': submitter was specified but form was not");
+        }
+        return;
       }
-      return;
+      // net-api M5-S8：WebIDL 接口形参非 Nullable——null 实参 → TypeError
+      //（constructor.any.js 'new FormData(null)' 面；undefined = 缺参仍合法）。
+      throw new TypeError("Failed to construct 'FormData': parameter 1 is not of type 'HTMLFormElement'");
     }
-    if (typeof form !== 'object' || typeof form.querySelectorAll !== 'function') return;
+    if (typeof form !== 'object' || typeof form.querySelectorAll !== 'function') {
+      // net-api M5-S8：非 form 对象（'string' 等）→ TypeError（spec 接口转换）。
+      throw new TypeError("Failed to construct 'FormData': parameter 1 is not of type 'HTMLFormElement'");
+    }
     // submitter 校验（spec：非 submit 按钮 → TypeError；非本 form 属主 → NotFoundError）。
     if (submitter != null && typeof submitter === 'object') {
       var sTag = String(submitter._realTag || submitter.tagName || '').toLowerCase();
@@ -2939,9 +2947,11 @@
           } catch (_eOwn2) {}
           if (owner !== form) continue;
           var name = f.getAttribute ? f.getAttribute('name') : f.name;
-          if (!name) continue;
           var type = ((f.getAttribute ? f.getAttribute('type') : f.type) || '').toLowerCase();
           var tag = String(f._realTag || f.tagName || '').toLowerCase();
+          // net-api M5-S8：image 按钮无 name 亦可为 submitter 贡献 bare x/y（spec
+          //「name 前缀为空」）——不因 nameless 跳过；其余 nameless 控件照旧不入列。
+          if (!name && !(tag === 'input' && type === 'image')) continue;
           var fKey = null;
           try { fKey = (typeof _elKey === 'function') ? _elKey(f.__zwSelector || null, f.__zwHandle || null) : null; } catch (_eFk) {}
           var isSub = (subKey !== null && fKey !== null && subKey === fKey) || (f === submitter);
@@ -2949,8 +2959,16 @@
             if (isSub) this._p.push([String(name), f.value != null ? String(f.value) : '', undefined]);
           } else if (tag === 'input' && type === 'image') {
             if (isSub) {
-              this._p.push([String(name) + '.x', '0', undefined]);
-              this._p.push([String(name) + '.y', '0', undefined]);
+              // net-api M5-S8：坐标 = click 激活记录的 selected coordinates
+              //（_zwImgSelCoords，非指针激活/未激活 → '0'——requestSubmit/submit()
+              // 语义与 unactivated 面不变）。
+              var _imgC = null;
+              try {
+                _imgC = (fKey != null && globalThis._zwImgSelCoords) ? globalThis._zwImgSelCoords[fKey] : null;
+              } catch (_eImg) { _imgC = null; }
+              var _imgNm = (name != null && name !== '') ? String(name) + '.' : '';
+              this._p.push([_imgNm + 'x', String((_imgC && _imgC[0] != null) ? _imgC[0] : 0), undefined]);
+              this._p.push([_imgNm + 'y', String((_imgC && _imgC[1] != null) ? _imgC[1] : 0), undefined]);
             }
           } else if (tag === 'button') {
             if (isSub) this._p.push([String(name), f.value != null ? String(f.value) : '', undefined]);

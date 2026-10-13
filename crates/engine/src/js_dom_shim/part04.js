@@ -4168,6 +4168,34 @@
                 var _r106dt = _realTag(sel, handle);
                 if (_r106dt === 'A' || _r106dt === 'AREA') _zwAnchorActivate(sel, handle);
               } catch (_e106da) {}
+              // net-api M5-S8：submit 按钮派发 click 默认动作（spec submit button
+              // activation behavior——R106 锚面同语义扩展；INPUT[type=image] 先记
+              // selected coordinates 再经共享入口提交）。
+              try {
+                var _r106st = _realTag(sel, handle);
+                if (_r106st === 'INPUT' || _r106st === 'BUTTON') {
+                  var _r106ty = '';
+                  try {
+                    _r106ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type');
+                  } catch (_e106s1) { _r106ty = ''; }
+                  _r106ty = String(_r106ty || '').toLowerCase();
+                  var _r106is = (_r106st === 'BUTTON' && (_r106ty === 'submit' || _r106ty === ''))
+                    || (_r106st === 'INPUT' && (_r106ty === 'submit' || _r106ty === 'image'));
+                  if (_r106is) {
+                    var _r106dis = '0';
+                    try {
+                      _r106dis = handle ? __zw_has_attr_handle(handle, 'disabled') : __zw_has_attr(sel, 'disabled');
+                    } catch (_e106s2) { _r106dis = '0'; }
+                    if (_r106dis === '1') _r106is = false;
+                  }
+                  if (_r106is) {
+                    if (_r106st === 'INPUT' && _r106ty === 'image') {
+                      _zwImgRecordClickCoords(sel, handle, event);
+                    }
+                    _zwSubmitBtnDefaultAction(sel, handle);
+                  }
+                }
+              } catch (_e106ds) {}
             }
             return notPrevented;
           };
@@ -4253,7 +4281,7 @@
               // submit button activation behavior：form owner 为 null → no-op；经共享
               // _zwRunFormSubmit（interactive validation + submit 派发 + 重入守卫）——
               // form-requestsubmit 的 click()+requestSubmit() 重入用例）。
-              var _subFrm = null;
+              // M5-S8：form 反查 + 提交走共享入口 `_zwSubmitBtnDefaultAction`。
               var _subTag = _realTag(sel, handle);
               if (_subTag === 'INPUT' || _subTag === 'BUTTON') {
                 var _subTy = '';
@@ -4271,39 +4299,15 @@
                   } catch (_e7) {}
                 }
                 if (_subIsBtn) {
-                  try { _subFrm = _makeProxy(sel, handle).form; } catch (_e8) { _subFrm = null; }
-                  // R108：handle 子的 form owner 兜底——`.form` getter 对 handle 元素返
-                  // undefined（generic 路径），经 `_zwNodeParent` 反链上行找最近 FORM
-                  //（WPT Event-dispatch-click part2：form.appendChild(button) 后
-                  // button.click() 须触发 onsubmit）。
-                  if (!_subFrm) {
-                    var _fH = handle, _fS = sel, _fHops = 0;
-                    while (_fHops < 32) {
-                      _fHops++;
-                      var _fTag = null;
-                      try { _fTag = _realTag(_fS, _fH); } catch (_eF1) { _fTag = null; }
-                      if (_fTag === 'FORM') { _subFrm = _makeProxy(_fS, _fH); break; }
-                      if (_fS && typeof __zw_parent === 'function') {
-                        var _fP = '';
-                        try { _fP = __zw_parent(_fS); } catch (_eF2) {}
-                        if (_fP) { _fS = _fP; _fH = null; continue; }
-                      }
-                      if (_fH && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
-                        var _fL = _zwNodeParent[_fH];
-                        if (_fL) {
-                          if (_fL.parentHandle) { _fH = _fL.parentHandle; _fS = _fL.parentSel || null; continue; }
-                          if (_fL.parentSel) { _fS = _fL.parentSel; _fH = null; continue; }
-                        }
-                      }
-                      break;
-                    }
+                  // net-api M5-S8：form 反查 + 提交经共享入口（原内联 `.form` 直取 +
+                  // handle 反链上行 walk 同逻辑抽出——dispatchEvent 派发 click 默认
+                  // 动作扩面共用）；image 按钮先记 selected coordinates（合成 click
+                  // 坐标 0 → 记 0，spec selected-coordinates 持久语义）。
+                  if (_subTag === 'INPUT' && _subTy === 'image') {
+                    _zwImgRecordClickCoords(sel, handle, ev);
                   }
+                  _zwSubmitBtnDefaultAction(sel, handle);
                 }
-              }
-              if (_subFrm) {
-                var _subFrmSel = _subFrm.__zwSelector || null;
-                var _subFrmH = _subFrm.__zwHandle || null;
-                _zwRunFormSubmit(_elKey(_subFrmSel, _subFrmH), _subFrmSel, _subFrmH, _makeProxy(sel, handle));
               }
               // R3072：popovertarget 声明式触发——click default action（未 preventDefault 时）。找最近含 popovertarget
               // 祖先 → 按 popovertargetaction 触发目标 popover show/hide/toggle。无 popovertarget 时 no-op（零回归）。
@@ -8528,6 +8532,62 @@
             } catch (_efna) {}
           }
         }
+        // net-api M5-S8：image 按钮「selected coordinates」记录（spec image button
+        // activation behavior——click 激活时从事件 clientX/clientY 相对按钮盒原点取值，
+        // 负值钳 0；.click() 合成事件坐标 0 → 记 0）。键 = _elKey；FormData 构造器与
+        // 提交导航 entry（name.x/name.y）消费（selected coordinates 随元素状态持久——
+        // spec：未激活/合成提交复用最近记录或 0）。
+        function _zwImgRecordClickCoords(sel, handle, ev) {
+          try {
+            var cx = (ev && typeof ev.clientX === 'number') ? ev.clientX : 0;
+            var cy = (ev && typeof ev.clientY === 'number') ? ev.clientY : 0;
+            var x = 0, y = 0;
+            if (typeof __zw_getBoundingClientRect === 'function' && sel) {
+              var rStr = String(__zw_getBoundingClientRect(sel) || '');
+              var rp = rStr.split(',');
+              var rx = Number(rp[0]), ry = Number(rp[1]);
+              if (isFinite(rx) && isFinite(ry)) {
+                x = Math.max(0, Math.round(cx - rx));
+                y = Math.max(0, Math.round(cy - ry));
+              }
+            }
+            globalThis._zwImgSelCoords = globalThis._zwImgSelCoords || {};
+            globalThis._zwImgSelCoords[_elKey(sel, handle)] = [x, y];
+          } catch (_eImgC) {}
+        }
+        // net-api M5-S8：submit 按钮（INPUT submit/image + BUTTON submit）click 默认
+        // 动作共享入口——.click() API 门（R57）与 dispatchEvent 派发 click 默认动作
+        //（R106 扩面）共用：最近 form 祖先反链 + _zwRunFormSubmit（submitter = 本元素
+        // proxy，form owner null → no-op）。
+        function _zwSubmitBtnDefaultAction(sel, handle) {
+          var frm = null;
+          try { frm = _makeProxy(sel, handle).form; } catch (_eSf0) { frm = null; }
+          var frmSel = sel, frmHandle = handle, hops = 0;
+          while (!frm && hops < 32) {
+            hops++;
+            var tg = null;
+            try { tg = _realTag(frmSel, frmHandle); } catch (_eSf) { tg = null; }
+            if (tg === 'FORM') { frm = _makeProxy(frmSel, frmHandle); break; }
+            var moved = false;
+            if (frmSel && typeof __zw_parent === 'function') {
+              var ps = '';
+              try { ps = __zw_parent(frmSel); } catch (_eSf2) {}
+              if (ps) { frmSel = ps; frmHandle = null; moved = true; continue; }
+            }
+            if (!moved && frmHandle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+              var link = _zwNodeParent[frmHandle];
+              if (link) {
+                if (link.parentHandle) { frmHandle = link.parentHandle; frmSel = link.parentSel || null; continue; }
+                if (link.parentSel) { frmSel = link.parentSel; frmHandle = null; continue; }
+              }
+            }
+            break;
+          }
+          if (frm) {
+            var fs = frm.__zwSelector || null, fh = frm.__zwHandle || null;
+            _zwRunFormSubmit(_elKey(fs, fh), fs, fh, _makeProxy(sel, handle));
+          }
+        }
         // R57（FV M3）：form 提交共享路径（requestSubmit + submit 按钮 click 默认动作共用）——
         // spec §4.10.5.4 的 submit 算法：novalidate 属性 / submitter 的 formnovalidate 跳过
         // interactive validation；invalid 时首个控件派发 invalid 事件 + 中止提交（headless
@@ -8721,11 +8781,19 @@
               if (submitter && String(submitter.tagName || '').toUpperCase() === 'INPUT') {
                 var _subImgTy = String(submitter.getAttribute('type') || '').toLowerCase();
                 if (_subImgTy === 'image') {
+                  // net-api M5-S8：无 name → bare x/y（spec name 前缀为空）；坐标 =
+                  // click 激活记录的 selected coordinates（非指针激活 → '0' 语义不变）。
                   var _subImgNm = submitter.getAttribute('name');
-                  if (_subImgNm != null && _subImgNm !== '') {
-                    _pairs.push([_subImgNm + '.x', '0']);
-                    _pairs.push([_subImgNm + '.y', '0']);
-                  }
+                  var _subImgKey = null;
+                  try {
+                    _subImgKey = (typeof _elKey === 'function')
+                      ? _elKey(submitter.__zwSelector || null, submitter.__zwHandle || null) : null;
+                  } catch (_eSiK) { _subImgKey = null; }
+                  var _subImgC = (_subImgKey != null && globalThis._zwImgSelCoords)
+                    ? globalThis._zwImgSelCoords[_subImgKey] : null;
+                  var _imgPref = (_subImgNm != null && _subImgNm !== '') ? String(_subImgNm) + '.' : '';
+                  _pairs.push([_imgPref + 'x', String((_subImgC && _subImgC[0] != null) ? _subImgC[0] : 0)]);
+                  _pairs.push([_imgPref + 'y', String((_subImgC && _subImgC[1] != null) ? _subImgC[1] : 0)]);
                 }
               }
             } catch (_eImg) {}

@@ -80,6 +80,11 @@ DIRS=(
   "websockets/resources"
 )
 
+# M5-S8：formdata image submitter 坐标腿 fixture（上游原件——期望值 23/46 的几何
+# 标定源 200×200 svg + 1x1 png；wpt-data 不跟踪，经本脚本随语料续拉）。
+fetch_raw "images/100px-green-rect.svg" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "media/1x1-green.png" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+
 goals_fetch_all
 goals_inventory
 goals_next_steps "${GOAL}"

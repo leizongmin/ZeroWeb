@@ -2,14 +2,14 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-14（**M5-S7 执行**——URL 反射基址接线：`_zwResolveFetchUrl`
-共享解析器（fetch/XHR/track/media 加载链）+ form.action + _zwFormSubmitNavigate +
-`_REFLECTED_URL_TAGS` 通用 URL 反射 getter（img/script/frame.src/cite/poster/
-object.data 族）+ formAction + Attr.baseURI 逐点接 `_zwDocBaseURL`；六 corpus 受控
-A/B 逐页字节级持平（无 base 元素行为不变）+ 探针 6/6）。
-此前：2026-10-13 M5-S6（url 基址链 +215 零回归）；M5-S5（scheme 翻转 +179）；
-M5-S4（P6 二期收口——websockets 100%）；M5-S3（eventsource + WS cookie jar）；
-2026-10-13（M5-S2/S1）；2026-10-01（M4-S29 收口判定）
+**最后更新**: 2026-10-14（**M5-S8 执行**——formdata/FormDataEvent/submitter 簇
+修齐 + sync XHR 账面修正：ctor WebIDL TypeError / nameless image submitter bare
+x/y + selected coordinates / dispatchEvent 派发 click 提交扩面 / Request
+FormData·Blob body 共享序列化 / multipart part 头大小写+File 化；六 corpus
+受控 A/B **+14P/−14F 零回归**；「sync XHR 结构面 4」实测全绿销账）。
+此前：同日 M5-S7（URL 反射基址接线）；2026-10-13 M5-S6（url 基址链 +215）；
+M5-S5（scheme 翻转 +179）；M5-S4（P6 二期收口）；M5-S3（eventsource + WS
+cookie jar）；2026-10-13（M5-S2/S1）；2026-10-01（M4-S29 收口判定）
 
 ---
 
@@ -36,6 +36,26 @@ IDL 校验 19（shim）、`ws.protocol` 属性面 4 案（shim+bridge）、WS co
 1（017 执行序）。证据
 [evidence/2026-10-13-m5-s1-ws-fixture-baseline.md](evidence/2026-10-13-m5-s1-ws-fixture-baseline.md)。
 不测面：wss/h2 变体、`.https.*` 5 案（TLS）、multi-globals/unload-a-document（结构面）。
+
+**M5-S8 执行（同日）**：formdata 簇修齐 + sync XHR 账面修正。修齐七处：ctor
+WebIDL TypeError（null/'string'）；ctor nameless image submitter bare x/y +
+selected coordinates 消费；`_zwImgRecordClickCoords`/`_zwSubmitBtnDefaultAction`
+共享 helper（.click() 门内联 walk 抽出）；dispatchEvent 派发 click 默认动作扩面
+（submit 按钮——R106 锚面同语义）；`_zwFormSubmitNavigate` 坐标 entry；Request
+FormData/Blob body 共享序列化（CT 派生）；multipart parser part 头大小写不敏感 +
+filename → File。fixture 补上游 200×200 svg + 1x1 png（期望值 23/46 几何标定源，
+`round(clientX−left)` 推导实证）。六 corpus 受控 A/B **+14P/−14F 零回归**
+（formdata 4 腿 + Request body 路径附带解锁 fetch/api 10 腿）；make test 全绿
+（20657P/0F）+ clippy + fmt 干净；bench-gate 同代码跨轮 FAIL 集 0/5/10 摆动
+（并行流域负载噪声实证，不放宽）。**「sync XHR 结构面 4」实测全绿销账**
+（FILTER=sync 全 PASS；残 2 案 = permissions-policy API 面 tentative，security-
+hardening 邻域跨域记账）。残余 5F 精确记账：xhr/formdata.html 2（populateForm
+iframe 编排 structural——iframe 字面量在外部资源内绕过通道筛减，观察项）、
+constructor-formelement 1（unpaired surrogate wire 层 lossy，R121 同型）、坐标
+2 腿（input[type=image] 图片加载 + **layout-engine replaced sizing（渲染流域
+§9 碰头记账）** + SVG intrinsic sizing——激活/坐标/消费接线已就位，几何对齐
+即通）。证据
+[evidence/2026-10-14-m5-s8-formdata-cluster.md](evidence/2026-10-14-m5-s8-formdata-cluster.md)。
 
 **M5-S7 执行（2026-10-14）**：URL 反射基址接线（M5-S6 残余记账清偿）——五处
 逐点接 `_zwDocBaseURL`：① `_zwResolveFetchUrl` 共享解析器（一次覆盖 fetch 请求
@@ -165,7 +185,7 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
 |---|------|------|
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口 + M4-S23~S26 cors 域收口（fetch **1491/2081 = 71.6%** / mimesniff 100%）；残余：credentials/cookie 管道腿 ~13（跨域挂账）、response-error 族（10） |
-| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **557/584 = 95.4%**——状态机/事件序/upload ProgressEvent/preflight cache/redirect/preflight/expose/FormData/timeout 面 spec 化）——**残余：page-scheme 失配 2（http vs https 宇宙——需 runner 页面 scheme 对齐）、sync XHR 结构面 4、XML 文档面（engine XML DOM 深度——template-element 族）、bad-chunk 注入 2、formdata FormDataEvent/submitter 族 5、timeout 族 3** |
+| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口；page-scheme 失配已解（M5-S5 翻转）——**残余：XML 文档面（engine XML DOM 深度——template-element 族）、bad-chunk 注入 2、formdata 残余 5F（iframe 编排 structural 2 + surrogate wire 1 + input-image 几何跨域 2——M5-S8 精确记账）、timeout 族 3**；sync XHR 结构面 4 已实测全绿销账（M5-S8——残 2 案为 permissions-policy API 面跨域记账） |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 基址链已清偿（M5-S6 +215 零回归）+ URL 反射基址接线已清偿（M5-S7——反射/请求/导航五面接 `_zwDocBaseURL`，无 base 元素行为不变）——残余：urltestdata 全量解析深水（IDNA/toASCII/file: 特例/host 校验）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | ✅ M4-S11 收口（88.6%）+ M4-S28 flow-control 清偿（**88.7%**，piping 全绿含 flow-control 5/5）；**残余：transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿，JS 层不可表达）** |
 | P6 | WebSocket 二期切片（runner WS fixture 端点 + websockets corpus 基线 + 语义修齐） | ✅ **收口（2026-10-14，M5-S1→S4 四切片）**：**376/376 = 100% / case 106/106 = 100%**（基线 334/375 = 89.1%）；不测面维持记账（wss/h2 变体、.https.* TLS、multi-globals/unload-a-document/bfcache 结构面） |
@@ -173,6 +193,12 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
 
 ## 已完成切片
 
+- **M5-S8（2026-10-14）**：formdata/FormDataEvent/submitter 簇修齐（ctor WebIDL
+  TypeError / nameless image submitter + selected coordinates / dispatchEvent
+  提交扩面 / Request FormData·Blob body 序列化 / multipart part 头解析）+ sync
+  XHR 账面销账。六 corpus 受控 A/B **+14P/−14F 零回归**；make test 全绿
+  （20657P/0F）+ clippy + fmt 干净。见
+  [evidence/2026-10-14-m5-s8-formdata-cluster.md](evidence/2026-10-14-m5-s8-formdata-cluster.md)。
 - **M5-S7（2026-10-14）**：URL 反射基址接线（form.action / `_REFLECTED_URL_TAGS`
   全族 src·cite·poster·data / formAction / Attr.baseURI / `_zwFormSubmitNavigate`
   / `_zwResolveFetchUrl` 共享解析器逐点接 `_zwDocBaseURL`）。六 corpus 受控 A/B
@@ -595,8 +621,9 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
    request-cache-control Timeout **已修复归档**（M5-S3——runner fixture preflight
    应答面，非产品缺口）；url crate panic 防护调用点审计（一次性 panic 未复现，
    低优先观察项）
-3. **goal 内结构性挂账**：sync XHR 窗口 onload 阻塞语义 4 腿；bad-chunk 注入
-   2 腿（需 .asis + chunked 解析面）；formdata FormDataEvent.entries live 面 +
-   submitter 坐标族 5 腿；XML 文档解析（engine XML DOM——template-element 族）
+3. **goal 内结构性挂账（M5-S8 后余量）**：bad-chunk 注入 2 腿（需 .asis +
+   chunked 解析面）；XML 文档解析（engine XML DOM——template-element 族）；
+   timeout 族 3 腿；formdata 残余 5F（structural/wire/跨域几何——M5-S8 精确
+   记账，本 goal 不再实施）
 
 **待用户决策清单**：（空）

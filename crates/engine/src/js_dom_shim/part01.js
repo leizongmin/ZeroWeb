@@ -3357,7 +3357,18 @@
       var content = part.slice(headerEnd + 4);
       if (content.slice(-2) === '\r\n') content = content.slice(0, -2);
       var nameMatch = headerText.match(/(?:^|\r\n)content-disposition:[^\r\n]*\bname="([^"]*)"/i);
-      if (nameMatch) fd.append(nameMatch[1], content);
+      if (nameMatch) {
+        // net-api M5-S8：part 头 filename + Content-Type 大小写不敏感（spec multipart
+        // 解析规则；consume-multipart-headers-case-insensitively 面——body 全小写化后
+        // 仍须解析出 File.type）。带 filename → File（part CT，缺省 ''）；无 → 字符串。
+        var fnMatch = headerText.match(/\bfilename="([^"]*)"/i);
+        if (fnMatch && typeof File === 'function') {
+          var ctMatch = headerText.match(/(?:^|\r\n)content-type:[ \t]*([^\r\n]*)/i);
+          fd.append(nameMatch[1], new File([content], fnMatch[1], { type: ctMatch ? ctMatch[1].trim() : '' }));
+        } else {
+          fd.append(nameMatch[1], content);
+        }
+      }
     }
     if (!sawClosing) throw new TypeError('Missing multipart/form-data close-delimiter');
     return fd;
@@ -3568,6 +3579,18 @@
     // text/json/bytes/blob/arrayBuffer 按 _bodyBytes 保真，非 String(ArrayBuffer)）。
     var reqRawBody = init.body != null ? init.body : (isRequestLike && input.body != null ? input.body : null);
     this._bodyBytes = _zwResponseBodyBytes(reqRawBody);
+    // net-api M5-S8：FormData/Blob body 走共享序列化（multipart 编码 + CT 派生）——
+    // 此前 FormData 被 String() 化为 '[object FormData]' 且无 Content-Type，
+    // request.formData() 恒 TypeError（fetch consume-empty request.formData() 面；
+    // fetch 包装库 / SW 拦截构造 multipart Request 高频）。
+    if (this._bodyBytes == null && (typeof Blob === 'function' && reqRawBody instanceof Blob
+        || typeof FormData === 'function' && reqRawBody instanceof FormData)) {
+      this._bodyBytes = _zwBodyBytesAndContentType(reqRawBody, this.headers);
+      if (this._bodyBytes != null) {
+        this._bodyText = new TextDecoder().decode(this._bodyBytes);
+        this.body = this._bodyText;
+      }
+    }
     this.cache = init.cache || (isRequestLike ? input.cache : '') || 'default';
     this.mode = init.mode || (isRequestLike ? input.mode : '') || 'cors';
     this.redirect = init.redirect || (isRequestLike ? input.redirect : '') || 'follow';
