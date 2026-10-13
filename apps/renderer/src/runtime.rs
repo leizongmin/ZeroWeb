@@ -1064,8 +1064,6 @@ impl RendererRuntime {
             .as_ref()
             .and_then(|webview| webview.page_node_ref_for_selector(selector))
         else {
-            { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-              if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "exec-shared NO-NODEREF sel={selector}"); } }
             return Ok(None);
         };
         let sync_text = matches!(
@@ -1422,20 +1420,12 @@ return JSON.stringify({{action:action,name:name,val:val}});\
     }
 
     fn submit_form_on_enter_at(&mut self, selector: &str) -> Result<(), String> {
-        { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-          if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "submit-enter: sel={selector}"); } }
         let r = self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::Submit)?;
         // t3-pd6：Submit 的 Navigate 效果含 SERP URL——推入 pending_navigations
         // 让主循环 tick_pending_navigation 消费并调用 handle_navigate。
         if let Some(result) = &r {
-            { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-              if let Some(f) = &mut f { use std::io::Write;
-                let _ = writeln!(f, "submit-enter: r.is_some={} effects={:?}", result.effects.len(), result.effects);
-              } }
             for effect in &result.effects {
                 if let zero_page_runtime::PageEffect::Navigate(intent) = effect {
-                    { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-                      if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "submit-navigate: pushing {}", intent.url); } }
                     if let Ok(mut q) = self.js_worker.pending_navigations().lock() {
                         q.push(intent.url.clone());
                     }
@@ -1902,11 +1892,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             .lock()
             .map(|mut q| std::mem::take(&mut *q))
             .unwrap_or_default();
-        { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-          if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "tick-pending-nav: {} items", pending.len()); } }
         if let Some(url) = pending.into_iter().last() {
-            { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-              if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "tick-pending-nav NAVIGATING to {url}"); } }
             // JS 发起的导航走 GET（fetch 新文档）。referrer = 当前页；epoch 递增（同 anchor 导航）。
             self.handle_navigate(zero_protocol::message::NavigateParams {
                 url,

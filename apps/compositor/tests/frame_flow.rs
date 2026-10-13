@@ -1109,9 +1109,26 @@ fn compositor_gpu_dmabuf_browser_import_round_trips() {
         return;
     }
     let (mut transport, _comp) = spawn_compositor_gpu_dmabuf();
-    let frame = make_frame(4, 4, [255, 128, 0, 255]);
-    assert_eq!(submit_frame(&mut transport, 1, 14, 1, 1, frame), (14, 1, 1));
-    let (width, height, resolved) = get_frame_delivery(&mut transport, 2, 14, 1, 1);
+    // t9：compositor 启动时在后台线程预热 GPU 上下文，就绪前的帧走 CPU 光栅、
+    // Get 交付回落 Rgba。轮询提交递增帧直到预热完成、恢复 dma-buf 交付；
+    // 断言仍验证同一契约：GPU 就绪后交付必须是 Dmabuf。
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let mut frame_id: u64 = 1;
+    let (width, height, resolved) = loop {
+        frame_id += 1;
+        let frame = make_frame(4, 4, [255, 128, 0, 255]);
+        assert_eq!(
+            submit_frame(&mut transport, frame_id, 14, 1, frame_id, frame),
+            (14, 1, frame_id)
+        );
+        let delivery = get_frame_delivery(&mut transport, frame_id + 1_000_000, 14, 1, frame_id);
+        match delivery.2 {
+            zero_protocol::CompositorResolvedFrame::Rgba(_) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            _ => break delivery,
+        }
+    };
     assert_eq!((width, height), (4, 4));
     match resolved {
         zero_protocol::CompositorResolvedFrame::Dmabuf {
@@ -1142,20 +1159,76 @@ fn compositor_gpu_dmabuf_browser_import_round_trips() {
 }
 
 /// RFC 4.3-S5：GPU 纹理 dma-buf fd 导出（memfd 回退）round-trip（CPU 读回路径）。
+///
+/// t9：compositor 启动时后台预热 GPU 上下文，就绪前的帧走 CPU 光栅、交付回落 GPU
+/// mailbox（ShmRgba）。轮询提交递增帧，直到交付描述符变为 DmaBuf（预热收编且最新
+/// 帧确由 GPU 光栅化）或 15s 超时；断言仍验证同一契约：memfd 导出经 fd socket
+/// round-trip 后像素与帧一致。导出门控要求关闭 scroll transform（默认启用）。
 #[test]
 fn compositor_gpu_texture_export_dma_buf_round_trips() {
+    if zero_render_foundation::gpu::renderer::GpuRenderer::new_headless(1, 1).is_err() {
+        return;
+    }
     let (mut transport, _comp) = spawn_compositor_with_env(&[
         ("ZW_COMPOSITOR_GPU", "1"),
         ("ZW_COMPOSITOR_GPU_IMAGE", "1"),
         ("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "1"),
+        // dma-buf 导出门控要求 `!scroll_transform_enabled`——缺这条时交付始终
+        // 回落 GPU mailbox，本测声称的导出路径不会被走到。
+        ("ZW_COMPOSITOR_SCROLL_TRANSFORM", "0"),
     ]);
-    let frame = make_frame(4, 4, [255, 128, 0, 255]);
-    assert_eq!(submit_frame(&mut transport, 1, 13, 1, 1, frame), (13, 1, 1));
-    let got = get_frame(&mut transport, 2, 13, 1, 1);
-    assert_eq!((got.width, got.height), (4, 4));
-    assert_eq!(got.rgba[0], 255, "R channel");
-    assert!(got.rgba[1] >= 100, "expected orange G, got {}", got.rgba[1]);
-    assert_eq!(got.rgba[3], 255, "alpha");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let mut frame_id: u64 = 1;
+    let (width, height, rgba) = loop {
+        frame_id += 1;
+        let frame = make_frame(4, 4, [255, 128, 0, 255]);
+        assert_eq!(
+            submit_frame(&mut transport, frame_id, 13, 1, frame_id, frame),
+            (13, 1, frame_id)
+        );
+        transport
+            .send(IpcMessage {
+                id: frame_id + 1_000_000,
+                kind: IpcMessageKind::GetCompositorFrame {
+                    surface_id: 13,
+                    navigation_epoch: 1,
+                    frame_id,
+                },
+            })
+            .expect("send get frame");
+        let resp: IpcMessage = transport.recv().expect("recv frame data");
+        match resp.kind {
+            IpcMessageKind::CompositorFrameData {
+                width,
+                height,
+                rgba,
+                shm_name,
+                gpu_image,
+                ..
+            } => {
+                let via_dma_buf = gpu_image
+                    .as_ref()
+                    .is_some_and(|desc| desc.transport == zero_protocol::GpuImageTransport::DmaBuf);
+                if !via_dma_buf && std::time::Instant::now() < deadline {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    continue;
+                }
+                assert!(
+                    via_dma_buf,
+                    "expected dma-buf delivery when ZW_COMPOSITOR_GPU_TEXTURE_EXPORT=1"
+                );
+                let pixels = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name, gpu_image)
+                    .expect("resolve compositor frame rgba");
+                break (width, height, pixels);
+            }
+            other => panic!("意外消息: {other:?}"),
+        }
+    };
+    assert_eq!((width, height), (4, 4));
+    assert_eq!(rgba.len(), 64);
+    assert_eq!(rgba[0], 255, "R channel");
+    assert!(rgba[1] >= 100, "expected orange G, got {}", rgba[1]);
+    assert_eq!(rgba[3], 255, "alpha");
 }
 
 /// #6 整链契约：renderer 真实产出格式（FrameModel → PaintSnapshotParams 全字段：

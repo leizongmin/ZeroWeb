@@ -56,6 +56,10 @@ struct SurfaceState {
     paint: Option<zero_protocol::paint_snapshot::PaintSnapshotParams>,
     image_cache: zero_render_foundation::image_cache::ImageCache,
     fonts: zero_paint_convert::fonts::PaintFonts,
+    /// 最新已合成帧是否由 GPU 光栅化（GPU 成功置位、CPU 回退清除）。Get 路径的
+    /// dma-buf 导出仅在此时允许：预热窗口内的 CPU 帧之后，收编完成的 wgpu 上下文
+    /// 纹理仍是未渲染的 1x1 空白，无此门控会以该帧 frame_id 冒充导出空白帧（t9 F1）。
+    frame_gpu_rasterized: bool,
 }
 
 struct UiSurfaceState {
@@ -104,6 +108,27 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
     // 现状：GPU 渲染器覆盖 fills/glyphs 图元子集（render_scene_ext）。
     let gpu_enabled = zero_protocol::compositor_gpu_enabled();
     let mut gpu_renderer: Option<zero_render_foundation::gpu::renderer::GpuRenderer> = None;
+    // t9 首帧预热：wgpu 适配器/设备枚举在 WSL2 等环境可达秒级，原先挂在首个页面帧的
+    // 光栅化路径内惰性创建（gpu_raster::rasterize_gpu），会阻塞整个 compositor 消息循环
+    // ——页面与窗口 chrome 一并停顿，浏览器侧只剩标题占位（首启近空白页 flake）。
+    // 改为启动时后台线程预建上下文；就绪前的帧走下方 CPU 回退路径，循环不阻塞。
+    // 预热失败不吞错：记 warn 后回到原帧内惰性重试语义。
+    let mut gpu_warmup: Option<
+        std::thread::JoinHandle<Result<zero_render_foundation::gpu::renderer::GpuRenderer, String>>,
+    > = if gpu_enabled {
+        match std::thread::Builder::new()
+            .name("compositor-gpu-warmup".into())
+            .spawn(|| zero_render_foundation::gpu::renderer::GpuRenderer::new_headless(1, 1))
+        {
+            Ok(handle) => Some(handle),
+            Err(error) => {
+                tracing::warn!("compositor: GPU 预热线程启动失败，回落帧内惰性初始化: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     tracing::info!(
         "zero-compositor 就绪（C2：IPC 图元 → 线程化光栅化 → 双缓冲；GPU={}）",
@@ -122,6 +147,21 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 continue;
             }
         };
+
+        // 收编已完成的预热结果（任何消息处理前检查，预热完成即对全部路径可见）。
+        if gpu_warmup.as_ref().is_some_and(std::thread::JoinHandle::is_finished) {
+            let handle = gpu_warmup.take().expect("warmup handle checked above");
+            match handle.join() {
+                Ok(Ok(renderer)) => gpu_renderer = Some(renderer),
+                Ok(Err(error)) => {
+                    tracing::warn!("compositor: GPU 上下文预热失败，回落帧内惰性初始化: {error}");
+                }
+                Err(_) => tracing::warn!("compositor: GPU 预热线程异常退出，回落帧内惰性初始化"),
+            }
+        }
+        // 仍在预热：本帧直接走 CPU 回退，不在消息循环内阻塞等待 wgpu 初始化
+        //（t9：阻塞即首帧近空白）。
+        let gpu_warming = gpu_warmup.is_some();
 
         match msg.kind {
             IpcMessageKind::CompositorFrame {
@@ -174,6 +214,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                     paint: None,
                     image_cache: zero_render_foundation::image_cache::ImageCache::new(2048, 256 * 1024 * 1024),
                     fonts: zero_paint_convert::fonts::PaintFonts::new(base_fonts.clone()),
+                    frame_gpu_rasterized: false,
                 });
                 if surface.navigation_epoch != navigation_epoch {
                     surface.image_cache.clear();
@@ -243,7 +284,10 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                     surface.backing.copy_front_to_back();
                 }
 
-                if gpu_enabled {
+                // 最新帧是否由 GPU 光栅化成功；失败或 CPU 回退保持 false，
+                // 供 Get 路径 dma-buf 导出门控使用（见 SurfaceState::frame_gpu_rasterized）。
+                let mut gpu_rasterized = false;
+                if gpu_enabled && !gpu_warming {
                     let gpu_ok = if is_partial {
                         gpu_raster::try_rasterize_partial_into_back(
                             &mut gpu_renderer,
@@ -270,6 +314,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                             rasterize::device_scale_factor(&paint),
                         )
                     };
+                    gpu_rasterized = gpu_ok;
                     if !gpu_ok {
                         rasterize::rasterize_into_back(
                             &raster_paint,
@@ -301,6 +346,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 surface.image_cache.gc();
                 surface.navigation_epoch = navigation_epoch;
                 surface.frame_id = frame_id;
+                surface.frame_gpu_rasterized = gpu_rasterized;
                 surface.rasterized_scroll_x = surface.scroll_x;
                 surface.rasterized_scroll_y = surface.scroll_y;
                 surface.paint = Some(*paint);
@@ -391,6 +437,10 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                                     && zero_protocol::compositor_gpu_texture_export_enabled()
                                     && zero_protocol::compositor_gpu_image_enabled()
                                     && gpu_enabled
+                                    // t9 F1：只导出确由 GPU 光栅化的最新帧。预热收编边界上
+                                    // GPU 纹理可能仍是未渲染的 1x1 空白（最近一帧走了 CPU），
+                                    // 此时回落 Rgba 交付，不得以旧 frame_id 冒充导出。
+                                    && surface.frame_gpu_rasterized
                                     && let Some(gpu) = gpu_renderer.as_ref()
                                     && let Ok(exported) = zero_render_foundation::gpu::try_export_headless(gpu)
                                 {
