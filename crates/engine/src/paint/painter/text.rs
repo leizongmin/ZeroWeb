@@ -1546,6 +1546,40 @@ impl super::Painter {
                 if !float_ids.is_empty() {
                     ctx.set_float_child_nodes(float_ids);
                 }
+                // CSS2 §9.7：OOF 直接子集（abs/fixed）——Path B 空 styles 时 OOF skip 臂
+                // 不可达，abspos 子被收入行内流推进行宽（run-in-contains-abspos-001）。
+                // run-in 前缀子的 OOF 语义同级：前缀收集遍历 run-in 元素的 DOM 子，
+                // 其 abspos 子同样推进行宽，一并入集。vertical 模式不注入（镜像
+                // layout 期 skip 臂的 vertical 例外：vertical-rl 的 abspos
+                // shrink-to-fit 依赖 IFC 内测量）。
+                if !ctx.vertical {
+                    let oof_ids: std::collections::HashSet<zero_dom::NodeId> = styles
+                        .map(|s| {
+                            let is_oof = |id: zero_dom::NodeId| {
+                                s.get(&id).is_some_and(|cs| {
+                                    matches!(
+                                        cs.position,
+                                        zero_css_parser::values::PositionValue::Absolute
+                                            | zero_css_parser::values::PositionValue::Fixed
+                                    )
+                                })
+                            };
+                            let mut ids: std::collections::HashSet<zero_dom::NodeId> = box_node
+                                .children
+                                .iter()
+                                .filter_map(|c| c.node_id)
+                                .filter(|&id| is_oof(id))
+                                .collect();
+                            if let Some(run_in_id) = box_node.run_in_prepended {
+                                ids.extend(doc.child_nodes(run_in_id).iter().copied().filter(|&id| is_oof(id)));
+                            }
+                            ids
+                        })
+                        .unwrap_or_default();
+                    if !oof_ids.is_empty() {
+                        ctx.set_oof_child_nodes(oof_ids);
+                    }
+                }
                 ctx.layout(doc, node_id, &HashMap::new());
                 // R4417：Path B（空 styles 重跑）无行数语义（resolve_line_clamp 对
                 // line-clamp:Auto 恒 None，paint 侧 style 亦不可用）——按盒存 cap 补

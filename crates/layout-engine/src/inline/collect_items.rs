@@ -379,11 +379,17 @@ impl InlineFormattingContext {
                         // 仅 horizontal 模式跳过：vertical-rl 的 abspos shrink-to-fit 尺寸依赖
                         // IFC 内测量（writing_mode_tests），且 vertical 是 R1043 已知结构性缺口。
                         let style = styles.get(&child_id);
-                        if !self.vertical
-                            && runtime_flags::skip_oof()
-                            && style
-                                .is_some_and(|s| matches!(s.position, PositionValue::Absolute | PositionValue::Fixed))
-                        {
+                        // Path B（空 styles）臂：布局期分类的 OOF 子集（painter 注入）
+                        // 与有 styles 臂同语义——缺失时 abspos 子被收入行内流推进行宽
+                        // （run-in-contains-abspos-001）。
+                        let is_oof_child = style
+                            .is_some_and(|s| matches!(s.position, PositionValue::Absolute | PositionValue::Fixed))
+                            || (styles.is_empty()
+                                && self
+                                    .oof_child_nodes
+                                    .as_ref()
+                                    .is_some_and(|ids| ids.contains(&child_id)));
+                        if !self.vertical && runtime_flags::skip_oof() && is_oof_child {
                             continue;
                         }
 

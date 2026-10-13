@@ -291,6 +291,12 @@ pub struct InlineFormattingContext {
     /// abs/fixed 交集（§9.7 abs 时 float 计算为 none，归 abspos pass；vertical
     /// 例外同镜像）。注入后与 R3784 有 styles 臂同发 FloatAnchor。
     pub float_child_nodes: Option<std::collections::HashSet<zero_dom::NodeId>>,
+    /// CSS2 §9.7：布局期已分类的 out-of-flow（position:absolute/fixed）直接子 dom id 集
+    ///（painter 从真实 computed styles 注入）——paint Path B 空 styles 无法识别 OOF 子，
+    /// collect_inline_items 的 OOF skip 臂（有 styles）不可达，abspos 子被当 inline
+    /// 盒收入容器行内流推进行宽（run-in-contains-abspos-001：abspos header 推进 ~47px，
+    /// 后继文本右移一行宽）。注入集与 float_child_nodes 同源消费（OOF 归 abspos pass）。
+    pub oof_child_nodes: Option<std::collections::HashSet<zero_dom::NodeId>>,
     /// R4330：并入 run-in 的分裂边框载荷（collect 后处理折入前/末 run 水平 margin
     /// 完成推进 + paint 侧绘条几何）。
     pub run_in_border: Option<crate::types::RunInBorder>,
@@ -400,6 +406,7 @@ impl InlineFormattingContext {
             run_in_prepended: None,
             block_child_nodes: None,
             float_child_nodes: None,
+            oof_child_nodes: None,
             run_in_border: None,
             font_metric_provider: None,
             advance_source: None,
@@ -441,6 +448,12 @@ impl InlineFormattingContext {
     /// CSS2 §9.5 out-of-flow；见 `float_child_nodes` 字段注释）。
     pub fn set_float_child_nodes(&mut self, ids: std::collections::HashSet<zero_dom::NodeId>) {
         self.float_child_nodes = Some(ids);
+    }
+
+    /// 注入布局期分类的 out-of-flow 子集（paint Path B OOF skip 真值源，
+    /// CSS2 §9.7；见 `oof_child_nodes` 字段注释）。
+    pub fn set_oof_child_nodes(&mut self, ids: std::collections::HashSet<zero_dom::NodeId>) {
+        self.oof_child_nodes = Some(ids);
     }
 
     /// 设置文本对齐方式。
