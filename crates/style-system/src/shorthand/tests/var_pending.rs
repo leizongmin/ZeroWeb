@@ -185,3 +185,35 @@ fn test_non_pending_values_pass_through_unchanged() {
     assert_eq!(out.get("color").map(String::as_str), Some("red"));
     assert_eq!(out.get("margin-top").map(String::as_str), Some("10px"));
 }
+
+/// R5106：vars-background-shorthand-001 d4 形——级联层 var 代入 + background
+/// 简写重展开。R5106 歧义门后冲突名的 var()（含空回退）原样保留到此层解析，
+/// 位置/尺寸分量不得丢失。
+#[test]
+fn background_d4_position_size_survive_cascade_layer() {
+    let mut props = std::collections::HashMap::new();
+    props.insert("--foo".to_string(), "center / 0 0".to_string());
+    let sub = crate::resolve_env_and_var("green linear-gradient(red, red) var(--foo, )", &props);
+    assert_eq!(
+        sub.trim(),
+        "green linear-gradient(red, red) center / 0 0",
+        "var 代入须还原位置/尺寸分量"
+    );
+    let expanded = expand_one("background", sub.trim(), false, (0, 0, 0));
+    assert_eq!(
+        expanded
+            .iter()
+            .find(|(p, _, _, _)| p == "background-position")
+            .map(|(_, v, _, _)| v.as_str()),
+        Some("center"),
+        "background-position 分量须存活，out = {expanded:?}"
+    );
+    assert_eq!(
+        expanded
+            .iter()
+            .find(|(p, _, _, _)| p == "background-size")
+            .map(|(_, v, _, _)| v.as_str()),
+        Some("0 0"),
+        "background-size 分量不得塌 Auto，out = {expanded:?}"
+    );
+}

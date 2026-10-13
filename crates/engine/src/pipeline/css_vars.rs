@@ -107,18 +107,187 @@ fn split_important(value: &str) -> (&str, bool) {
     (t, false)
 }
 
+/// R5106（css-variables-1 §2 级联语义）：值冲突名收集——同名自定义属性被页面文本中
+/// 不同规则声明为**不同值**时，文本级 last-wins 替换对命中非末位规则的元素是错值
+///（vars-font-shorthand-001：--foo 六规则六值，d4 被代入末位值 "150px/1 Ahem" →
+/// `font: 150px/1 150px/1 Ahem, sans-serif` 展开出畸形族列表）。冲突名的 var()
+/// 不做文本替换，交由级联层（resolve_env_and_var + R2873 pending 简写）按元素
+/// 正确解析。单值名（bing 主题形态：同名一致值）替换行为不变。
+pub fn conflicting_custom_property_names(css: &str) -> Vec<String> {
+    // name → 顺序去重的 distinct 非空值列表（!important 差异不算冲突——同值不同
+    // importance 的 last-wins 与级联结果一致）。
+    let mut seen: Vec<(String, Vec<String>)> = Vec::new();
+    let bytes = css.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut depth: i32 = 0;
+
+    while i < len {
+        let c = bytes[i];
+        match c {
+            b'/' if i + 1 < len && bytes[i + 1] == b'*' => {
+                i += 2;
+                while i + 1 < len && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                    i += 1;
+                }
+                i += 2;
+            }
+            b'{' => {
+                depth += 1;
+                i += 1;
+            }
+            b'}' => {
+                depth -= 1;
+                i += 1;
+            }
+            b'-' if i + 1 < len && bytes[i + 1] == b'-' && depth >= 1 => {
+                let start = i;
+                let mut j = i + 2;
+                while j < len && bytes[j] != b':' && bytes[j] != b'{' && bytes[j] != b'}' && bytes[j] != b';' {
+                    j += 1;
+                }
+                if j < len && bytes[j] == b':' {
+                    let name = css[start..j].trim();
+                    if is_valid_custom_prop_name(name) {
+                        let val_start = j + 1;
+                        let mut k = val_start;
+                        let mut local_depth = 0;
+                        while k < len {
+                            match bytes[k] {
+                                b'(' | b'[' => local_depth += 1,
+                                b')' | b']' => local_depth -= 1,
+                                b';' if local_depth <= 0 => break,
+                                b'}' if local_depth <= 0 => break,
+                                _ => {}
+                            }
+                            k += 1;
+                        }
+                        let raw = css[val_start..k].trim();
+                        let (value, _) = split_important(raw);
+                        if !value.is_empty() {
+                            let name_s = name.to_string();
+                            if let Some(entry) = seen.iter_mut().find(|(n, _)| *n == name_s) {
+                                if !entry.1.iter().any(|v| v == value) {
+                                    entry.1.push(value.to_string());
+                                }
+                            } else {
+                                seen.push((name_s, vec![value.to_string()]));
+                            }
+                        }
+                        i = if k < len && bytes[k] == b';' { k + 1 } else { k };
+                        continue;
+                    }
+                }
+                i = j;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    seen.into_iter()
+        .filter(|(_, values)| values.len() > 1)
+        .map(|(n, _)| n)
+        .collect()
+}
+
 /// 替换 CSS 文本中所有 `var(--name)` 和 `var(--name, fallback)` 引用。
 /// 迭代解析嵌套 `var(var(--a), var(--b))`（最多 8 层，防止循环）。
 pub fn substitute_vars(css: &str, props: &[(String, String)]) -> String {
+    substitute_vars_with_skip(css, props, &[])
+}
+
+/// 带跳过名的替换：`skip` 中的名字的 `var()` 引用**原样保留**（含回退）——
+/// R5106 歧义门配套。冲突名（同名多值）被门排除出替换表后，若仅删表项，
+/// `var(--foo, )` 的**空回退**仍会被消费（missing → fallback），整段 var() 消失
+/// 使声明丢分量（vars-background-shorthand-001 d4：`center / 0 0` 位置/尺寸分量
+/// 被吃掉 → background-size 塌 Auto）。跳过语义 = 引用保持原文，交由级联层
+/// 按元素解析。
+pub fn substitute_vars_with_skip(css: &str, props: &[(String, String)], skip: &[String]) -> String {
+    if skip.is_empty() {
+        let mut result = css.to_string();
+        for _ in 0..8 {
+            let substituted = substitute_vars_once(&result, props);
+            if substituted == result {
+                break;
+            }
+            result = substituted;
+        }
+        return result;
+    }
     let mut result = css.to_string();
     for _ in 0..8 {
-        let substituted = substitute_vars_once(&result, props);
+        let substituted = substitute_vars_once_skip(&result, props, skip);
         if substituted == result {
             break;
         }
         result = substituted;
     }
     result
+}
+
+fn substitute_vars_once_skip(css: &str, props: &[(String, String)], skip: &[String]) -> String {
+    // 与 substitute_vars_once 同构，但 skip 名的 var() 引用原样回写。
+    let mut out = String::with_capacity(css.len());
+    let mut search_from = 0;
+
+    while search_from < css.len() {
+        match css[search_from..].find("var(") {
+            Some(rel) => {
+                let var_start = search_from + rel;
+                out.push_str(&css[search_from..var_start]);
+
+                let open = var_start + 3;
+                let bytes = css.as_bytes();
+                let mut depth = 0usize;
+                let mut j = open;
+                let mut found = false;
+                while j < bytes.len() {
+                    match bytes[j] {
+                        b'(' => depth += 1,
+                        b')' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                found = true;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    j += 1;
+                }
+                if !found {
+                    out.push_str(&css[var_start..]);
+                    break;
+                }
+
+                let inner = &css[open + 1..j];
+                if let Some((name, _fallback)) = parse_var_ref(inner) {
+                    if skip.contains(&name) {
+                        // 跳过名：原样保留整段 var(...)（含回退）。
+                        out.push_str(&css[var_start..=j]);
+                        search_from = j + 1;
+                        continue;
+                    }
+                    if let Some((_, val)) = props.iter().find(|(n, _)| *n == name) {
+                        out.push_str(val);
+                    } else if let Some(fb) = _fallback {
+                        out.push_str(fb.trim());
+                    } else {
+                        out.push_str(&css[var_start..=j]);
+                    }
+                } else {
+                    out.push_str(&css[var_start..=j]);
+                }
+                search_from = j + 1;
+            }
+            None => {
+                out.push_str(&css[search_from..]);
+                break;
+            }
+        }
+    }
+    out
 }
 
 /// 单层 var() 替换。
@@ -364,5 +533,40 @@ mod tests {
         assert!(out.contains("box-shadow:0 0 0 1px"), "mpm 替换");
         assert!(out.contains("font-size:16px"), "lqb fallback 替换");
         assert!(!out.contains("var(--"), "无残余 var()");
+    }
+
+    /// R5106（css-variables-1 §2）：同名多值冲突检测——vars-font-shorthand-001 形
+    /// （--foo 六规则六值）。
+    #[test]
+    fn r5106_conflicting_names_detected() {
+        let css = r#"
+div#a { --foo: Ahem; }
+div#b { --foo: 0 Ahem; }
+div#c { --foo: 150px/1 Ahem; }
+"#;
+        let conflicts = conflicting_custom_property_names(css);
+        assert_eq!(conflicts, vec!["--foo".to_string()]);
+        // 单值名（bing 主题形态）不报冲突。
+        let single = r#"div { --theme: dark; span { --theme: dark; } }"#;
+        assert!(conflicting_custom_property_names(single).is_empty());
+    }
+
+    /// R5106：跳过语义——skip 名的 var() 引用原样保留（含空回退），非 skip 名正常替换。
+    #[test]
+    fn r5106_substitute_with_skip_preserves_var_text() {
+        let css = "background: green linear-gradient(red, red) var(--foo, ); color: var(--bar)";
+        let props = vec![
+            ("--bar".to_string(), "navy".to_string()),
+            // --foo 故意不在表中（门已滤除）。
+        ];
+        let out = substitute_vars_with_skip(css, &props, &["--foo".to_string()]);
+        assert!(
+            out.contains("var(--foo, )"),
+            "skip 名的 var() 含空回退必须原样保留，out = {out:?}"
+        );
+        assert!(out.contains("color: navy"), "非 skip 名正常替换，out = {out:?}");
+        // 无 skip：空回退被消费（旧行为，即 R5106 前的分量丢失路径）。
+        let legacy = substitute_vars(css, &props);
+        assert!(!legacy.contains("var(--foo"), "旧行为空回退被消费");
     }
 }

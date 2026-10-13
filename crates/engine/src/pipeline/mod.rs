@@ -1371,22 +1371,45 @@ impl RenderPipeline {
     pub fn render_html(&mut self, html: &str, css: &str) -> RenderResult {
         // bing-t5（C3+C4 根因，2026-10-11）：CSS Custom Properties 文本级 var() 替换。
         // 替换作用于合并后的 CSS（含 HTML <style> 块 + 外链 CSS inline 化后）。
-        let css = &crate::pipeline::css_vars::substitute_vars(
-            css,
-            &crate::pipeline::css_vars::collect_custom_properties(css),
-        );
+        // R5106（css-variables-1 §2 级联语义）：歧义门——同名自定义属性被不同规则声明
+        // 为不同值时，文本级 last-wins 单值代入对命中非末位规则的元素是错值
+        //（vars-font-shorthand-001 d4：--foo 六规则六值，代入末位值产生畸形族列表恒红）。
+        // 冲突名不入替换表，其 var() 留给级联层（resolve_env_and_var + R2873 pending
+        // 简写）按元素正确解析；单值名（bing 主题形态）替换行为不变。
+        // kill-switch `ZW_VARS_TEXT_CONFLICT_GATE=0` 回退无条件替换。
+        let conflict_gate = std::env::var("ZW_VARS_TEXT_CONFLICT_GATE").as_deref() != Ok("0");
+        let mut css_conflicts: Vec<String> = Vec::new();
+        let mut css_props = crate::pipeline::css_vars::collect_custom_properties(css);
+        if conflict_gate {
+            css_conflicts = crate::pipeline::css_vars::conflicting_custom_property_names(css);
+            let conflicts = &css_conflicts;
+            css_props.retain(|(n, _)| !conflicts.contains(n));
+        }
+        let css = &crate::pipeline::css_vars::substitute_vars_with_skip(css, &css_props, &css_conflicts);
         // 同时替换 HTML <style> 块内的 var()（外链 CSS + 内联 CSS 都受影响）
         let html_owned;
         let html = if html.contains("var(--") {
-            let css_props = crate::pipeline::css_vars::collect_custom_properties(css);
-            let html_props = crate::pipeline::css_vars::collect_custom_properties(html);
+            let mut css_props = crate::pipeline::css_vars::collect_custom_properties(css);
+            let mut html_props = crate::pipeline::css_vars::collect_custom_properties(html);
+            let mut skip = css_conflicts.clone();
+            if conflict_gate {
+                let html_conflicts = crate::pipeline::css_vars::conflicting_custom_property_names(html);
+                for hc in &html_conflicts {
+                    if !skip.contains(hc) {
+                        skip.push(hc.clone());
+                    }
+                }
+                let conflicts = &skip;
+                css_props.retain(|(n, _)| !conflicts.contains(n));
+                html_props.retain(|(n, _)| !conflicts.contains(n));
+            }
             let mut all_props = css_props;
             for (n, v) in html_props {
                 if !all_props.iter().any(|(en, _)| *en == n) {
                     all_props.push((n, v));
                 }
             }
-            html_owned = crate::pipeline::css_vars::substitute_vars(html, &all_props);
+            html_owned = crate::pipeline::css_vars::substitute_vars_with_skip(html, &all_props, &skip);
             html_owned.as_str()
         } else {
             html
@@ -1413,7 +1436,6 @@ impl RenderPipeline {
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
         let mut styles = self.style_system.compute_styles(&doc, &stylesheets);
-
         // 3.2 R3882：静态动画首帧（CSS Animations §4 未知时间轴下的渲染近似）——
         // `render_html` 是无时间轴的静态渲染路径（reftest 截图、首帧绘制），对声明了
         // animation-name 的元素按 t=0 求值一次插值（fill-mode/backwards 与负 delay
