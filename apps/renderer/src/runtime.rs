@@ -1024,6 +1024,7 @@ impl RendererRuntime {
     /// P1a form input：向 selector 指向的焦点 input/textarea 注入一个字符（更新 value + 派发
     /// 'input' 事件）；回调改了 DOM 则单次 rerender。调用方须先判定 key 为可打印单字符。
     fn apply_text_input_at(&mut self, selector: &str, key: &str) -> Result<(), String> {
+        eprintln!("KB:INSERT sel={selector} key={key}");
         self.execute_shared_action(
             selector,
             zero_page_runtime::HtmlUserAction::InsertText { text: key.to_string() },
@@ -1063,8 +1064,6 @@ impl RendererRuntime {
             .as_ref()
             .and_then(|webview| webview.page_node_ref_for_selector(selector))
         else {
-            { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-              if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "exec-shared NO-NODEREF sel={selector}"); } }
             return Ok(None);
         };
         let sync_text = matches!(
@@ -1189,20 +1188,25 @@ impl RendererRuntime {
         } else if key == "Backspace" {
             self.apply_text_delete_at(target)?;
         } else if key == "Enter" {
-            // t3-pd6：Enter 触发隐式表单提交——textarea 与 input 均适用。
-            // 先通过 execute_dom_script 从 shim 读取活值构造 GET URL，
-            // 再 handle_navigate。此前 textarea 走换行插入而丢导航。
-            let submit_url = self.build_implicit_submit_url(target)?;
-            if let Some(url) = submit_url {
-                self.handle_navigate(zero_protocol::message::NavigateParams {
-                    url,
-                    referrer: self.current_url.clone(),
-                    navigation_epoch: self.navigation_epoch.wrapping_add(1),
-                })?;
-                return Ok(());
-            }
-            // 无表单 → 降级到旧 submit 路径
-            self.submit_form_on_enter_at(target)?;
+            // t3-pd6：Enter 在表单控件中触发隐式表单提交——
+            // 通过 `__zw_request_navigate` 回调（既有导航桥）从 shim 读取
+            // form action + 活值 → 推入 navigations 队列 → 主循环消费。
+            let nav_script = r#"(function(){
+var form=document.querySelector('form');
+if(!form)return null;
+var action=form.getAttribute('action')||'';
+if(!action)return null;
+var inputs=form.querySelectorAll('input,textarea,select');
+var params=[];
+for(var i=0;i<inputs.length;i++){
+    if(inputs[i].name&&inputs[i].value)params.push(encodeURIComponent(inputs[i].name)+'='+encodeURIComponent(inputs[i].value));
+}
+if(!params.length)return null;
+var url=action+(action.indexOf('?')>=0?'&':'?')+params.join('&');
+__zw_request_navigate(url);
+return 'navigated';
+})()"#;
+            let _ = self.js_worker.execute_script_direct(nav_script);
         } else if key == "Escape" {
             // R3254-K3（keyboard-default-actions goal M2 切片 2）：Esc 默认动作——
             // open dialog 的 cancel/close（cancelable，preventDefault 阻断关闭）。
@@ -1364,82 +1368,6 @@ impl RendererRuntime {
 
     /// P1a form submit：Enter 在单行 input → 解析 enclosing `<form>` 派发 'submit' 事件。
     /// R3054：未 preventDefault 且 method=GET → 导航到 action?query（闭合 click 默认动作族）。
-    /// t3-pd6：读取 shim 活值构造隐式表单提交 GET URL。
-    /// 从 shim 读 target 的 name/value + enclosing form 的 action，
-    /// 拼接 `action?name=value` 返回。target 不在表单中 → None。
-    fn build_implicit_submit_url(&mut self, selector: &str) -> Result<Option<String>, String> {
-        // 1) 找 enclosing form 的 action
-        let Some(form_sel) = zero_engine::enclosing_form_selector(&self.cached_html, selector) else {
-            return Ok(None);
-        };
-        let action = zero_engine::query_attr_from_html(&self.cached_html, &form_sel, "action");
-        if action.is_empty() {
-            return Ok(None);
-        }
-        // 2) 从 shim 读 target 的 name 和 value（活值）
-        let esc_sel = selector.replace('\\', "\\\\").replace('"', "\\\"");
-        let info_script = format!(
-            "(function(){{var el=document.querySelector(\"{esc_sel}\");\
-if(!el)return null;\
-var form=el.closest('form');\
-if(!form)return null;\
-var action=form.getAttribute('action')||'';\
-var name=el.name||'';\
-var val=el.value||'';\
-return JSON.stringify({{action:action,name:name,val:val}});\
-}})()"
-        );
-        let info_json = self.js_worker.execute_script_direct(&info_script)?;
-        let parsed: serde_json::Value = serde_json::from_str(info_json.trim())
-            .unwrap_or(serde_json::Value::Null);
-        let name = parsed["name"].as_str().unwrap_or("").to_string();
-        let val = parsed["val"].as_str().unwrap_or("").to_string();
-        let form_action = parsed["action"].as_str().unwrap_or(&action).to_string();
-        if form_action.is_empty() {
-            return Ok(None);
-        }
-        // 3) 构造 URL：action + separator + name=val（UTF-16 安全的 encode）
-        let encoded: String = val.bytes().map(|b| {
-            if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'~' {
-                (b as char).to_string()
-            } else {
-                format!("%{:02X}", b)
-            }
-        }).collect();
-        let sep = if form_action.contains('?') { '&' } else { '?' };
-        let url = if name.is_empty() {
-            format!("{form_action}{sep}{encoded}")
-        } else {
-            format!("{form_action}{sep}{name}={encoded}")
-        };
-        Ok(Some(url))
-    }
-
-    fn submit_form_on_enter_at(&mut self, selector: &str) -> Result<(), String> {
-        { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-          if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "submit-enter: sel={selector}"); } }
-        let r = self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::Submit)?;
-        // t3-pd6：Submit 的 Navigate 效果含 SERP URL——推入 pending_navigations
-        // 让主循环 tick_pending_navigation 消费并调用 handle_navigate。
-        if let Some(result) = &r {
-            { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-              if let Some(f) = &mut f { use std::io::Write;
-                let _ = writeln!(f, "submit-enter: r.is_some={} effects={:?}", result.effects.len(), result.effects);
-              } }
-            for effect in &result.effects {
-                if let zero_page_runtime::PageEffect::Navigate(intent) = effect {
-                    { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-                      if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "submit-navigate: pushing {}", intent.url); } }
-                    if let Ok(mut q) = self.js_worker.pending_navigations().lock() {
-                        q.push(intent.url.clone());
-                    }
-                    return Ok(());
-                }
-            }
-        }
-        Ok(())
-    }
-
     /// P1a form submit：click 命中 submit button → 解析 enclosing `<form>` 派发 'submit' 事件。
     /// R3054：未 preventDefault 且 method=GET → 导航到 action?query（submitter name=value 入 query）。
     fn submit_form_on_click_at(&mut self, selector: &str) -> Result<(), String> {
@@ -1896,11 +1824,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             .lock()
             .map(|mut q| std::mem::take(&mut *q))
             .unwrap_or_default();
-        { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-          if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "tick-pending-nav: {} items", pending.len()); } }
         if let Some(url) = pending.into_iter().last() {
-            { let mut f = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/kbtrace.log").ok();
-              if let Some(f) = &mut f { use std::io::Write; let _ = writeln!(f, "tick-pending-nav NAVIGATING to {url}"); } }
             // JS 发起的导航走 GET（fetch 新文档）。referrer = 当前页；epoch 递增（同 anchor 导航）。
             self.handle_navigate(zero_protocol::message::NavigateParams {
                 url,
@@ -2908,6 +2832,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
 
     fn handle_keyboard_event(&mut self, params: KeyboardEventParams) -> Result<(), String> {
         use zero_protocol::message::KeyboardEventType;
+        eprintln!("KB:HANDLE key={} type={:?}", params.key, params.event_type);
         let event_type = match params.event_type {
             KeyboardEventType::Down => "keydown",
             KeyboardEventType::Up => "keyup",
@@ -3056,6 +2981,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 self.run_frame_transaction(|runtime| runtime.handle_mouse_event(params))
             }
             IpcMessageKind::KeyboardEvent(params) => {
+                eprintln!("KB:DISPATCH key={} type={:?}", params.key, params.event_type);
                 self.run_frame_transaction(|runtime| runtime.handle_keyboard_event(params))
             }
             IpcMessageKind::ImeEvent(params) => self.run_frame_transaction(|runtime| runtime.handle_ime_event(params)),
