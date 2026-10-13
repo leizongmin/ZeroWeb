@@ -2,12 +2,13 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-14（**M5-S5 执行**——M4-S27 两前置审计实证清偿，页面
-scheme 对齐翻转落定（net-api 六 corpus 页锚 http，其余通道 https）：六 corpus
-总账 **+179 子测试**（url +186P / fetch −9P / xhr +2P）；Authorization 重定向簇
-21 case 转入既有跨域记账）。
-此前：同日 M5-S4（P6 二期收口——websockets 100%）；M5-S3（eventsource 修复 +
-WS cookie jar）；2026-10-13（M5-S2/S1）；2026-10-01（M4-S29 收口判定）
+**最后更新**: 2026-10-13（**M5-S6 执行**——url 基址链清偿：`_zwDocBaseURL`
+helper（首个带 href 的 `<base>` 元素 frozen base URL）+ A/AREA accessor 组件族 +
+element/document `baseURI` 接线；受控 A/B 六 corpus **+215 子测试零回归**
+（a-element +132P / a-element-origin +83P，其余逐页字节级持平））。
+此前：同日 M5-S5（scheme 翻转 +179）；M5-S4（P6 二期收口——websockets 100%）；
+M5-S3（eventsource 修复 + WS cookie jar）；2026-10-13（M5-S2/S1）；
+2026-10-01（M4-S29 收口判定）
 
 ---
 
@@ -34,6 +35,22 @@ IDL 校验 19（shim）、`ws.protocol` 属性面 4 案（shim+bridge）、WS co
 1（017 执行序）。证据
 [evidence/2026-10-13-m5-s1-ws-fixture-baseline.md](evidence/2026-10-13-m5-s1-ws-fixture-baseline.md)。
 不测面：wss/h2 变体、`.https.*` 5 案（TLS）、multi-globals/unload-a-document（结构面）。
+
+**M5-S6 执行（同日）**：url 基址链清偿（M5-S5 残差记账落账）——探针实证四处
+缺口（`a.href` 无视 `<base>` / `document.baseURI` undefined / about:blank 基解析
+失败面）后接线：`globalThis._zwDocBaseURL` helper（首个带 href 的 `<base>` 元素
+frozen base URL，树序 + 解析失败回落文档地址）+ A/AREA accessor 组件族 + element
+baseURI（part04 R130）+ document.baseURI getter（part06）。受控 A/B（同树 stash
+对照六 corpus 全通道）：**8826P/3239F/10T → 9041P/3024F/10T = +215 子测试零回归**
+（a-element 412→544P、a-element-origin 316→399P，origin 簇 96F→13F 随基址对齐；
+其余五 corpus 逐页字节级持平；a-element 两页分母不变）。语料漂移注记：wpt-data
+未跟踪随 fetch 刷新（IdnaTestV2.json 2671 条吻合本树分母），跨轮次对比以同树
+A/B 为准。门禁：make test 全绿（**20649P/0F**）+ clippy + fmt 本流 crate 干净；
+bench-gate（zero-engine 定向）FAIL 两 paint 指标经 stash 对照实证为机器态漂移
+既有（无修改对照同 FAIL，基线 2026-09-15），不放宽。残余：其余 URL 反射
+（form.action/img.src/script.src 等）仍以页面 location 为基（helper 已就位，
+逐点接线独立切片）。证据
+[evidence/2026-10-13-m5-s6-base-url.md](evidence/2026-10-13-m5-s6-base-url.md)。
 
 **M5-S5 执行（同日）**：M4-S27 两前置审计实证清偿，scheme 翻转落定。① url 基址
 回退「×20 回归」未复现（M4-S26 后 shim 演进消化）——url **+186P/+10F（净 +176）**；
@@ -114,6 +131,12 @@ streams/url/eventsource/xhr 与收口一致。逐字节仲裁证据见
 - zero-web P1a — URL/URLSearchParams 既有实现为本 goal 修齐对象（改动走本 goal 账本）
 - rendering-compat 及渲染流 — 无共享 crate 面
 
+**碰头观察（2026-10-13，渲染流域，重开）**：渲染流 PR #154（9223cb5e4，t3
+-navigate-effect）在 7f5a46587 自修**之后**重新把 `/tmp/kbtrace.log` 调试残留
+带回 `apps/renderer/src/runtime.rs`（6 处，rustfmt 不洁）——本流 `cargo fmt
+--all -- --check` 门禁再次被域外文件挡住；按 §9 留域内处置不硬解（本流相关
+crate 的 fmt 已单测干净）。渲染流需再次自清。
+
 **碰头观察（2026-10-14，渲染流域，已闭环）**：渲染流 156219d2d 落地的
 `apps/renderer/src/runtime.rs` 曾含 `/tmp/kbtrace.log` 调试残留且未过 rustfmt——
 本流 `cargo fmt --all` 触及该文件（未提交，按 §9 留域内处置）；渲染流已自修
@@ -126,13 +149,20 @@ streams/url/eventsource/xhr 与收口一致。逐字节仲裁证据见
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口 + M4-S23~S26 cors 域收口（fetch **1491/2081 = 71.6%** / mimesniff 100%）；残余：credentials/cookie 管道腿 ~13（跨域挂账）、response-error 族（10） |
 | P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **557/584 = 95.4%**——状态机/事件序/upload ProgressEvent/preflight cache/redirect/preflight/expose/FormData/timeout 面 spec 化）——**残余：page-scheme 失配 2（http vs https 宇宙——需 runner 页面 scheme 对齐）、sync XHR 结构面 4、XML 文档面（engine XML DOM 深度——template-element 族）、bad-chunk 注入 2、formdata FormDataEvent/submitter 族 5、timeout 族 3** |
-| P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.0%（新分母 6058）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
+| P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 基址链已清偿（M5-S6 +215 零回归，本树 4639P/1426F）——残余：urltestdata 全量解析深水（IDNA/toASCII/file: 特例/host 校验）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）+ 其余 URL 反射基址接线（form.action/img.src/script.src 等，helper 已就位）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | ✅ M4-S11 收口（88.6%）+ M4-S28 flow-control 清偿（**88.7%**，piping 全绿含 flow-control 5/5）；**残余：transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿，JS 层不可表达）** |
 | P6 | WebSocket 二期切片（runner WS fixture 端点 + websockets corpus 基线 + 语义修齐） | ✅ **收口（2026-10-14，M5-S1→S4 四切片）**：**376/376 = 100% / case 106/106 = 100%**（基线 334/375 = 89.1%）；不测面维持记账（wss/h2 变体、.https.* TLS、multi-globals/unload-a-document/bfcache 结构面） |
 | P7 | runner fixture 通道（.py 端点最小 fixture 集） | ✅ 累计 24+ 端点（M4-S21 增 echo-headers/xhr trickle/form/echo-content-type/access-control-origin-header/over-1-meg.txt；M4-S22 增 preflight cache 族 ×3 等九件；M4-S23 增 preflight.py/clean-stash.py——fetch/api/cors 域页拉取已随域导入收口） |
 
 ## 已完成切片
 
+- **M5-S6（2026-10-13）**：url 基址链（`<base>` 元素 + document.baseURI）：shim
+  `_zwDocBaseURL` helper（首个带 href 的 base 元素 frozen base URL，树序 +
+  失败回落）+ A/AREA accessor 组件族 + element/document baseURI 接线。受控 A/B
+  六 corpus **+215 子测试零回归**（a-element +132P / a-element-origin +83P，
+  origin 簇 96F→13F；其余逐页持平）。make test 全绿（20649P/0F）+ clippy + fmt
+  干净。残余记账：其余 URL 反射（form.action/img.src 等）独立切片。见
+  [evidence/2026-10-13-m5-s6-base-url.md](evidence/2026-10-13-m5-s6-base-url.md)。
 - **M5-S5（2026-10-14）**：页面 scheme 对齐翻转（M4-S27 两前置审计实证清偿——
   重入条件闭合）：net-api 六 corpus 页锚 http（NET_API_CORPUS_SUBDIRS 前缀判定，
   其余通道 secure-context https 不动）+ fetcher strip 双 scheme + 响应类型同源
@@ -528,8 +558,12 @@ streams/url/eventsource/xhr 与收口一致。逐字节仲裁证据见
 
 目标已收口（Completed，2026-10-01）。重入条件在案：
 1. **scheme 对齐两前置审计 → 已清偿（M5-S5，2026-10-14）**——翻转落定（六 corpus
-   总账 +179）；残差记账：url 基址链（锚点 accessor `<base>`/document.baseURI
-   面 +5 子测试）+ Authorization 重定向保留流 21 case（security-hardening 邻域）
+   总账 +179）；残差：url 基址链 **已清偿（M5-S6，同日 +215 零回归）**；
+   Authorization 重定向保留流 21 case（security-hardening 邻域）
+1.5. **url 基址链续片（M5-S6 清偿主干）**：其余 URL 反射属性的基址接线
+   （form.action / img.src / script.src / link.href / iframe.src——spec 同走文档
+   基 URL，`_zwDocBaseURL` helper 已就位，逐点接线为独立小切片）；a-element 残余
+   348F + a-element-origin 13F = 解析器深水簇（P4 既有记账，非基址面）
 2. **结构性残余跨域认领**：streams transfer/detach 14 腿（spec
    TransferArrayBuffer——需宿主 V8 detach 能力，JS 层不可表达——bad-buffers 10
    + non-transferable 4；engine 宿主能力面）；cors credentials/cookie jar +

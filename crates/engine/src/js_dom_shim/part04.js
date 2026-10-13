@@ -2581,10 +2581,11 @@
           };
         }
         // R130（js-dom M4）：`baseURI`（spec dom-node-baseuri——node 文档的 URL；WPT
-        // Node-baseURI 全簇 9F 旧 undefined）。页面 location.href 为权威源（含 <base>
-        // 时 spec 按 base 元素解析——本沙箱暂无 <base> 处理，href 即近似）。
+        // Node-baseURI 全簇 9F 旧 undefined）。M5-S6：文档基 URL（含 <base> 元素——
+        // `_zwDocBaseURL` 共享 helper），无 base 元素时 = 页面 location.href。
         if (prop === 'baseURI') {
           try {
+            if (typeof globalThis._zwDocBaseURL === 'function') return globalThis._zwDocBaseURL();
             return globalThis.location ? String(globalThis.location.href) : 'about:blank';
           } catch (_e130bu) { return 'about:blank'; }
         }

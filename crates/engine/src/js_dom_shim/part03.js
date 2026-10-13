@@ -1876,6 +1876,38 @@
       } catch (_eAStr) {}
     }
   });
+  // net-api M5-S6：文档基 URL（HTML spec "document base URL"——
+  // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-url）。
+  // 首个带 href 内容属性的 <base> 元素（树序）的 frozen base URL：href 对 fallback base
+  // URL（文档地址 = 页面 location）解析，解析失败回落 fallback；无 base 元素 → fallback。
+  // 锚点 accessor（A/AREA href/组件族）与 document.baseURI / element.baseURI 共用。
+  // 此前三处均以页面 location 为基——WPT url/a-element 面经 `<base id=base>` 动态设基
+  //（setBase），相对输入簇全挂（探针实证：基址 = 页面 location、document.baseURI undefined）。
+  globalThis._zwDocBaseURL = function () {
+    var fallback = globalThis.location ? String(globalThis.location.href) : 'about:blank';
+    try {
+      var doc = globalThis.document;
+      if (!doc || typeof doc.querySelectorAll !== 'function') return fallback;
+      var bases = doc.querySelectorAll('base');
+      for (var i = 0; i < bases.length; i++) {
+        // spec「first base element in tree order that has an href attribute」——缺 href
+        // 的 base 元素跳过（querySelectorAll 树序枚举；模板内容不计入文档树）。
+        var has = false;
+        try {
+          has = typeof bases[i].hasAttribute === 'function' && bases[i].hasAttribute('href');
+        } catch (_eDb0) { has = false; }
+        if (!has) continue;
+        var raw = '';
+        try { raw = bases[i].getAttribute('href'); } catch (_eDb1) { return fallback; }
+        if (typeof __zw_parse_url !== 'function') return fallback;
+        var j = __zw_parse_url(String(raw), fallback);
+        if (!j) return fallback; // frozen base URL 解析失败 → fallback base URL
+        var parsed = JSON.parse(j);
+        return parsed && parsed.href ? String(parsed.href) : fallback;
+      }
+    } catch (_eDb) {}
+    return fallback;
+  };
   // spec tag → HTML 元素接口名映射（HTMLElement 接口表，html.spec.whatwg.org#toc-named-given）。
   // getPrototypeOf（part05）按元素 tag 查此表返对应子类 prototype；未知/自定义元素 → HTMLUnknownElement。
   // R11：使 `document.createElement('div') instanceof HTMLDivElement` 为 true（Node-cloneNode 用例）。
@@ -16836,7 +16868,10 @@ return e;
           }
           if (typeof __zw_parse_url !== 'function') return prop === 'href' ? aRaw : '';
           try {
-            var aBase = globalThis.location ? globalThis.location.href : '';
+            // M5-S6：基 = 文档基 URL（<base href> 首元素优先，回落页面 location）。
+            var aBase = typeof globalThis._zwDocBaseURL === 'function'
+              ? globalThis._zwDocBaseURL()
+              : (globalThis.location ? globalThis.location.href : '');
             var aJson = __zw_parse_url(aRaw, aBase);
             if (!aJson) return prop === 'href' ? aRaw : '';
             var aVal = JSON.parse(aJson)[prop];

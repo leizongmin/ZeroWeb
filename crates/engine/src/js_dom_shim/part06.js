@@ -4543,6 +4543,14 @@
     // net-layer defer；standalone 渲染/reftest 无来源页，spec 空串可接受）。
     get URL() { return globalThis.location ? globalThis.location.href : ''; },
     get documentURI() { return globalThis.location ? globalThis.location.href : ''; },
+    // M5-S6：document.baseURI = 文档基 URL（dom spec node base URL——文档即其 document
+    // base URL，含 <base> 元素面；旧 undefined，探针实证）。https://dom.spec.whatwg.org/#dom-node-baseuri
+    get baseURI() {
+      try {
+        if (typeof globalThis._zwDocBaseURL === 'function') return globalThis._zwDocBaseURL();
+      } catch (_eDbu) {}
+      return globalThis.location ? globalThis.location.href : '';
+    },
     get referrer() { return ''; },
     // document.domain——getter 返 origin 的 domain（host 去端口，spec；opaque origin 回 ''）。
     // setter 已废弃（Chrome 115+ 禁用）不实现。读路径是站点兼容面：bilibili reporter-pb
