@@ -56,6 +56,10 @@ struct SurfaceState {
     paint: Option<zero_protocol::paint_snapshot::PaintSnapshotParams>,
     image_cache: zero_render_foundation::image_cache::ImageCache,
     fonts: zero_paint_convert::fonts::PaintFonts,
+    /// 最新已合成帧是否由 GPU 光栅化（GPU 成功置位、CPU 回退清除）。Get 路径的
+    /// dma-buf 导出仅在此时允许：预热窗口内的 CPU 帧之后，收编完成的 wgpu 上下文
+    /// 纹理仍是未渲染的 1x1 空白，无此门控会以该帧 frame_id 冒充导出空白帧（t9 F1）。
+    frame_gpu_rasterized: bool,
 }
 
 struct UiSurfaceState {
@@ -210,6 +214,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                     paint: None,
                     image_cache: zero_render_foundation::image_cache::ImageCache::new(2048, 256 * 1024 * 1024),
                     fonts: zero_paint_convert::fonts::PaintFonts::new(base_fonts.clone()),
+                    frame_gpu_rasterized: false,
                 });
                 if surface.navigation_epoch != navigation_epoch {
                     surface.image_cache.clear();
@@ -279,6 +284,9 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                     surface.backing.copy_front_to_back();
                 }
 
+                // 最新帧是否由 GPU 光栅化成功；失败或 CPU 回退保持 false，
+                // 供 Get 路径 dma-buf 导出门控使用（见 SurfaceState::frame_gpu_rasterized）。
+                let mut gpu_rasterized = false;
                 if gpu_enabled && !gpu_warming {
                     let gpu_ok = if is_partial {
                         gpu_raster::try_rasterize_partial_into_back(
@@ -306,6 +314,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                             rasterize::device_scale_factor(&paint),
                         )
                     };
+                    gpu_rasterized = gpu_ok;
                     if !gpu_ok {
                         rasterize::rasterize_into_back(
                             &raster_paint,
@@ -337,6 +346,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 surface.image_cache.gc();
                 surface.navigation_epoch = navigation_epoch;
                 surface.frame_id = frame_id;
+                surface.frame_gpu_rasterized = gpu_rasterized;
                 surface.rasterized_scroll_x = surface.scroll_x;
                 surface.rasterized_scroll_y = surface.scroll_y;
                 surface.paint = Some(*paint);
@@ -427,6 +437,10 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                                     && zero_protocol::compositor_gpu_texture_export_enabled()
                                     && zero_protocol::compositor_gpu_image_enabled()
                                     && gpu_enabled
+                                    // t9 F1：只导出确由 GPU 光栅化的最新帧。预热收编边界上
+                                    // GPU 纹理可能仍是未渲染的 1x1 空白（最近一帧走了 CPU），
+                                    // 此时回落 Rgba 交付，不得以旧 frame_id 冒充导出。
+                                    && surface.frame_gpu_rasterized
                                     && let Some(gpu) = gpu_renderer.as_ref()
                                     && let Ok(exported) = zero_render_foundation::gpu::try_export_headless(gpu)
                                 {
