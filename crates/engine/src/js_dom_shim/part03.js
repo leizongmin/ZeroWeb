@@ -29,10 +29,33 @@
         }
         var n = Number(v);
         _zwTimeoutMs = isNaN(n) || n < 0 ? 0 : n;
+        // net-api M5-S10：send() 进行中改值 → 重排计时器（spec timeout setter——
+        // deadline = send 起点 + 新值，剩余 = 新值 − 已流逝；已过 → 立即异步 fire；
+        // 0 = 禁用 → 仅解除待发计时器）。旧计时器经 token 失效（runner stub
+        // clearTimeout 为 no-op，不依赖移除；fire 闭包 gen/aborted/readyState 守卫
+        // 兜底迟到旧火）。
+        if (self._zwXhrSent && self._zwXhrAsync) {
+          if (_zwTimeoutMs === 0) {
+            self._zwTimeoutToken = (self._zwTimeoutToken || 0) + 1;
+          } else if (typeof self._zwArmTimeout === 'function') {
+            self._zwArmTimeout(_zwTimeoutMs - (Date.now() - (self._zwSendEpoch || Date.now())));
+          }
+        }
       },
       enumerable: true,
       configurable: true,
     });
+    // net-api M5-S10：timeout 计时器重挂——token 单调递增使前序待发计时器全部失活
+    //（重挂/禁用双语义）；remaining ≤ 0 → 0ms 异步 fire（不阻塞 setter）。
+    self._zwArmTimeout = function (remaining) {
+      var fire = self._zwTimeoutFire;
+      if (typeof fire !== 'function') return;
+      var token = (self._zwTimeoutToken = (self._zwTimeoutToken || 0) + 1);
+      setTimeout(function () {
+        if (self._zwTimeoutToken !== token) return;
+        fire();
+      }, Math.max(0, remaining));
+    };
     var _zwWithCreds = false;
     Object.defineProperty(self, 'withCredentials', {
       get: function () { return _zwWithCreds; },
@@ -566,9 +589,20 @@
       // net-api M4-S20：timeout 计时器（spec：timeout 非零且到达 → abort + request error
       // steps for TimeoutError——DONE + readystatechange + fire('timeout') + loadend；
       // 迟到响应由 _zwXhrAborted/gen 守卫丢弃）。
+      // net-api M5-S10：计时器挂在 `self._zwTimeoutFire`（闭包提取）——timeout setter
+      // 于 send() 进行中改值时按「send 起点 + 新值」重排（spec timeout setter：剩余
+      // 时间 = 新值 − 已流逝；已过 → 立即异步走 request error steps）。
       if (_zwTimeoutMs > 0) {
         var timeoutGen = self._zwReqGen;
-        setTimeout(function () {
+        self._zwSendEpoch = Date.now();
+        // net-api M5-S10：finite 模型静态判定——目标为延迟端点且模拟延迟 D <
+        // timeout T → 响应必先至（load 于 send+D 完成，readyState 守卫本就拦住
+        // T 时超时）→ 不挂计时器。真实网络语义中服务端延迟不占主线程预算
+        //（xhr-timeout-longtask：busy loop 把发题计时器推迟到 T 之后，陈旧
+        // 计时器伪 ontimeout——取消即还原真实序）。
+        var _simDelay = (typeof globalThis._zwFetchSimDelay === 'function')
+          ? globalThis._zwFetchSimDelay(String(self._zwXhrUrl || '')) : 0;
+        self._zwTimeoutFire = function () {
           if (timeoutGen !== self._zwReqGen || self._zwXhrAborted || self.readyState === 4) return;
           self._zwXhrAborted = true;
           self._zwXhrSent = false; // request error steps 步骤 2：send() invoked 撤销
@@ -591,7 +625,10 @@
           }
           fireP('timeout', 0, 0, false);
           fireP('loadend', 0, 0, false);
-        }, _zwTimeoutMs);
+        };
+        if (!(_simDelay > 0 && _simDelay < _zwTimeoutMs)) {
+          self._zwArmTimeout(_zwTimeoutMs);
+        }
       }
       // net-api M4-S21：被后继 send 取代（loadstart handler 内 re-open + re-send）→
       // 不再发题（迟发响应会被代际守卫丢弃，省一次空放）。

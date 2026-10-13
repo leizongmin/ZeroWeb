@@ -3252,10 +3252,9 @@
         var _delayMs = 0;
         if (url) {
           var _us = String(url);
-          var _dm = /[?&]ms=(\d+)/.exec(_us);
-          if (_dm && _us.indexOf('delay.py') >= 0) {
-            _delayMs = Math.min(parseInt(_dm[1], 10) || 0, 30000);
-          } else {
+          _delayMs = (typeof globalThis._zwFetchSimDelay === 'function')
+            ? globalThis._zwFetchSimDelay(_us) : 0;
+          if (_delayMs === 0 && !/delay\.py|redirect\.py/.test(_us)) {
             // wptserve trickle 语法：trickle(d1) / trickle(1)——字母前缀可选。
             var _tp = /[?&]pipe=trickle\((?:[a-z]+)?(\d+)\)/.exec(_us);
             if (_tp) _delayMs = Math.min(parseInt(_tp[1], 10) * 1000 || 0, 30000);
@@ -3303,6 +3302,37 @@
           _issueFetch();
         }
       });
+    };
+    // net-api M5-S10：wptserve 延迟端点的 finite 模型延迟计算（fetch wrapper 与 XHR
+    // send 计时器判定共用——`D < T` 时 load 先至、不挂 timeout 计时器，见彼处注记）。
+    globalThis._zwFetchSimDelay = function (_us) {
+      try {
+        var _dm = /[?&]ms=(\d+)/.exec(_us);
+        if (_dm && _us.indexOf('delay.py') >= 0) {
+          return Math.min(parseInt(_dm[1], 10) || 0, 30000);
+        }
+        if (_us.indexOf('delay.py') >= 0) {
+          // bare delay.py → 上游 wptserve 缺省 1000ms（request.GET.first(b"ms", 1000)；
+          // timeout-multiple-fetches 二跳面）。
+          return Math.min(1000, 30000);
+        }
+        if (/redirect\.py/.test(_us)) {
+          // redirect 链 finite 模型折叠——首跳 delay=N +（location 为 delay.py → 其
+          // ms 或缺省 1000）发题前一次延迟。重定向循环为同步 host 契约就地结算
+          //（M4-S17），逐跳延迟不可行——「redirects should not reset the timer」面。
+          var _rd = /[?&]delay=(\d+)/.exec(_us);
+          var _hop = 0;
+          var _lm = /[?&]location=([^&#]+)/.exec(_us);
+          if (_lm) {
+            var _loc = _lm[1];
+            try { _loc = decodeURIComponent(_loc); } catch (_eS10d) {}
+            var _ldm = /[?&]ms=(\d+)/.exec(_loc);
+            if (_loc.indexOf('delay.py') >= 0) _hop = _ldm ? (parseInt(_ldm[1], 10) || 0) : 1000;
+          }
+          return Math.min(((_rd ? parseInt(_rd[1], 10) : 0) || 0) + _hop, 30000);
+        }
+      } catch (_eS10p) {}
+      return 0;
     };
     // M2-S2：fetch() 同步异常（Headers init 校验等——fetch 方法步骤 step 2 ctor throw →
     // reject p，非同步抛出）→ 已拒绝 Promise。

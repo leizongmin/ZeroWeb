@@ -13633,7 +13633,19 @@
         try {
           var _r114R = _r114On.call(target, event);
           if (_r114R === true && event.type === 'error') { try { event.preventDefault(); } catch (_e114p) {} }
-        } catch (_e114o) {}
+        } catch (_e114o) {
+          // net-api M5-S10：on* event handler 抛按 spec report the exception（与上方
+          // listener R139/R140 同机——HTML §report the exception；xhr.spec
+          // thrown-error-in-events「onload 抛 → window 'error' 事件 error 身份」面；
+          // 原版吞掉 → promise_test 永不结算页级 Timeout）。stamp null = 页面同 realm。
+          try {
+            if (typeof globalThis._zwReportListenerError === 'function') {
+              globalThis._zwReportListenerError(
+                (typeof globalThis._zwWrapCallError === 'function')
+                  ? globalThis._zwWrapCallError(_e114o, null) : _e114o, null);
+            }
+          } catch (_e114rp) {}
+        }
       }
     }
     globalThis.event = _r114Prev;

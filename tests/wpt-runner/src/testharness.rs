@@ -5672,6 +5672,53 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 // 下 host sleep 冻结 JS，此处立即应答）。
                 let mut headers: Vec<(String, String)> = Vec::new();
                 headers.push(("content-type".into(), "text/plain".into()));
+                // net-api M5-S10：OPTIONS preflight 应答（ACAO 回显 + ACAM/ACAH ACRM/ACRH
+                // 并入——上游 wptserve 自动应答 preflight 的合规 CORS 服务端语义；
+                // timeout-multiple-fetches「CORS preflights should not reset the timer」
+                // YO 方法面——无此分支时 OPTIONS 落入本 200 应答无 CORS 头 → preflight
+                // 拒 → onerror 而非 ontimeout。M5-S3 eventsource cors.py 同先例）。
+                if req.method == "OPTIONS" {
+                    headers.push((
+                        "access-control-allow-origin".into(),
+                        req.headers
+                            .iter()
+                            .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+                            .map(|(_, v)| v.clone())
+                            .unwrap_or_else(|| "*".into()),
+                    ));
+                    let mut allow_methods: Vec<String> = ["GET", "POST", "HEAD", "OPTIONS"]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect();
+                    if let Some(acrm) = req
+                        .headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-method"))
+                        .map(|(_, v)| v.trim().to_ascii_uppercase())
+                        && !acrm.is_empty()
+                        && !allow_methods.contains(&acrm)
+                    {
+                        allow_methods.push(acrm);
+                    }
+                    headers.push(("access-control-allow-methods".into(), allow_methods.join(", ")));
+                    if let Some(acrh) = req
+                        .headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
+                        .map(|(_, v)| v.trim().to_string())
+                        .filter(|v| !v.is_empty())
+                    {
+                        headers.push(("access-control-allow-headers".into(), acrh));
+                    }
+                    wpt_add_fetch_metadata(&mut headers, req, 200);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 200,
+                        status_text: "OK".to_string(),
+                        headers,
+                        body: String::new(),
+                        body_bytes: Some(Vec::new()),
+                    });
+                }
                 wpt_add_fetch_metadata(&mut headers, req, 200);
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
                     status: 200,
@@ -6693,7 +6740,35 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                         .map(|(_, v)| v.clone())
                         .unwrap_or_else(|| "*".into()),
                 ));
-                headers.push(("access-control-allow-methods".into(), "GET, POST, HEAD, OPTIONS".into()));
+                // net-api M5-S10：ACAM/ACAH 回显（ACRM/ACRH 请求头并入——上游 wptserve
+                // 自动应答 preflight 的合规 CORS 服务端语义；timeout-multiple-fetches
+                // 「CORS preflights should not reset the timer」YO 方法面——固定集不覆盖
+                // 自定义方法 → preflight 拒 → onerror 而非 ontimeout。M5-S3 eventsource
+                // cors.py 同先例）。
+                let mut allow_methods: Vec<String> = ["GET", "POST", "HEAD", "OPTIONS"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
+                if let Some(acrm) = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-method"))
+                    .map(|(_, v)| v.trim().to_ascii_uppercase())
+                    && !acrm.is_empty()
+                    && !allow_methods.contains(&acrm)
+                {
+                    allow_methods.push(acrm);
+                }
+                headers.push(("access-control-allow-methods".into(), allow_methods.join(", ")));
+                if let Some(acrh) = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
+                    .map(|(_, v)| v.trim().to_string())
+                    .filter(|v| !v.is_empty())
+                {
+                    headers.push(("access-control-allow-headers".into(), acrh));
+                }
                 wpt_add_fetch_metadata(&mut headers, req, 200);
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
                     status: 200,
@@ -7979,6 +8054,13 @@ add_completion_callback(function() {
         for (var i = 0; i < timers.length; i++) {\n\
           if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]);\n\
         }\n\
+        // net-api M5-S10：到期序派发（at 升序——HTML event loop timers 语义：先到期
+        // 先跑；push 序在「send() 先挂长 timeout 计时器、后挂 0ms 派发/其回调再挂
+        // fetch-issue」形态下会让未到期判定后的到期集乱序——busy loop 阻塞后
+        // timeout 计时器先于更早到期的 fetch-issue 派发 → 伪 ontimeout。XHR 侧
+        // finite 模型静态判定（D < T 不挂计时器）为主修，此排序为通用事件循环
+        // 语义兜底）。\n\
+        due.sort(function(a, b) { return a.at - b.at; });\n\
         // event-loop-spec M3-S1：per-task 模式（__ZW_TIMER_PER_TASK，runner env\n\
         // ZW_TESTHARNESS_TIMER_PER_TASK 置位）只派发首个到期 timer——未派发的 due\n\
         // 保留队列（下一 probe 迭代再派），一 timer 一 execute 一 checkpoint。\n\

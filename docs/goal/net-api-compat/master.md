@@ -2,14 +2,14 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-14（**M5-S9 执行**——bad-chunk 注入 2 腿销账：
-`bad-chunk-encoding.py` 内置 fixture + `x-zero-body-error-after` 标记头 → 流
-中段网络错误面（首 N 字节合法、首 read 兑现后 error、consume 族同拒）；
-六 corpus 受控 A/B **+2P/−2F 零回归**）。
-此前：同日 M5-S8（formdata 簇 +14 / sync XHR 销账）；M5-S7（URL 反射基址接线）；
-2026-10-13 M5-S6（url 基址链 +215）；M5-S5（scheme 翻转 +179）；M5-S4（P6
-二期收口）；M5-S3（eventsource + WS cookie jar）；2026-10-13（M5-S2/S1）；
-2026-10-01（M4-S29 收口判定）
+**最后更新**: 2026-10-14（**M5-S10 执行**——XHR timeout 族 3 腿销账 +
+setter 重排附带 2 腿：`_zwFetchSimDelay` 共享延迟模型 + timeout setter 重排 +
+finite 模型静态判定 + on* handler 抛上报 + runner preflight 应答/到期序派发；
+六 corpus 受控 A/B **xhr +6P/−4F/−2T，其余逐字节持平**）。
+此前：同日 M5-S9（bad-chunk 注入 2 腿销账）；M5-S8（formdata 簇 +14 / sync XHR
+销账）；M5-S7（URL 反射基址接线）；2026-10-13 M5-S6（url 基址链 +215）；
+M5-S5（scheme 翻转 +179）；M5-S4（P6 二期收口）；M5-S3（eventsource + WS
+cookie jar）；2026-10-13（M5-S2/S1）；2026-10-01（M4-S29 收口判定）
 
 ---
 
@@ -36,6 +36,20 @@ IDL 校验 19（shim）、`ws.protocol` 属性面 4 案（shim+bridge）、WS co
 1（017 执行序）。证据
 [evidence/2026-10-13-m5-s1-ws-fixture-baseline.md](evidence/2026-10-13-m5-s1-ws-fixture-baseline.md)。
 不测面：wss/h2 变体、`.https.*` 5 案（TLS）、multi-globals/unload-a-document（结构面）。
+
+**M5-S10 执行（同日）**：XHR timeout 族 3 腿销账（timeout-multiple-fetches /
+thrown-error-in-events / xhr-timeout-longtask——M4-S21 记账）+ setter 重排附带
+2 腿（overrides/overridesexpires）。五处修齐：① `_zwFetchSimDelay` 共享延迟模型
+（fetch wrapper 与 XHR send 判定共用；bare delay.py 缺省 1000ms——subtest 2 期望
+面钉死；redirect.py 链折叠一次延迟）；② timeout setter send 中改值重排（spec：
+deadline = send 起点 + 新值，`_zwArmTimeout` token 失效旧计时器）；③ finite 模型
+静态判定（D < T 不挂计时器——longtask busy loop 伪 ontimeout 根因）；④ part05
+R114 on* handler 抛按 spec report（`_zwReportListenerError`——原吞掉致 promise 永不
+结算页级 Timeout）；⑤ runner delay.py OPTIONS preflight 应答 + 泛化兜底 ACAM/ACAH
+回显（探针三级定位：delay.py 分支先于兜底返回裸 200 → preflight 拒 → onerror）+
+timer 到期序派发。六 corpus 受控 A/B **xhr 565P/26F/3T → 571P/22F/1T（+6P/−4F/
+−2T），其余五 corpus + websockets 逐字节持平**。探针页已清理。证据
+[evidence/2026-10-14-m5-s10-timeout-family.md](evidence/2026-10-14-m5-s10-timeout-family.md)。
 
 **M5-S9 执行（同日）**：bad-chunk 注入 2 腿销账（error-after-response
 0P/2F → 2P/0F）——`bad-chunk-encoding.py` 内置等价 fixture（TEST_CHUNK×count +
@@ -185,6 +199,13 @@ streams/url/eventsource/xhr 与收口一致。逐字节仲裁证据见
 --all -- --check` 门禁再次被域外文件挡住；按 §9 留域内处置不硬解（本流相关
 crate 的 fmt 已单测干净）。渲染流需再次自清。
 
+**碰头观察（2026-10-14，渲染流域，第三轮）**：T9 merge（fb3873802）带入
+`apps/renderer/src/runtime.rs` fmt 不洁 2 处 + clippy dead-code 1（
+`build_implicit_submit_url`/`submit_form_on_enter_at` never used）；R5108（
+4fc38b7d2）带入 `crates/layout-engine/src/engine/postprocess.rs` fmt 不洁 1 处
+——workspace fmt/clippy 门禁再次被域外文件挡住；按 §9 留域内处置不硬解
+（本流相关 crate fmt/clippy 已单测干净）。渲染流需自清。
+
 **碰头观察（2026-10-14，渲染流域，已闭环）**：渲染流 156219d2d 落地的
 `apps/renderer/src/runtime.rs` 曾含 `/tmp/kbtrace.log` 调试残留且未过 rustfmt——
 本流 `cargo fmt --all` 触及该文件（未提交，按 §9 留域内处置）；渲染流已自修
@@ -196,7 +217,7 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
 |---|------|------|
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口 + M4-S23~S26 cors 域收口（fetch **1491/2081 = 71.6%** / mimesniff 100%）；残余：credentials/cookie 管道腿 ~13（跨域挂账）、response-error 族（10） |
-| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口；page-scheme 失配已解（M5-S5 翻转）；bad-chunk 注入 2 已销账（M5-S9）——**残余：XML 文档面（engine XML DOM 深度——template-element 族）、formdata 残余 5F（iframe 编排 structural 2 + surrogate wire 1 + input-image 几何跨域 2——M5-S8 精确记账）、timeout 族 3**；sync XHR 结构面 4 已实测全绿销账（M5-S8——残 2 案为 permissions-policy API 面跨域记账） |
+| P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口；page-scheme 失配已解（M5-S5 翻转）；bad-chunk 注入 2 已销账（M5-S9）；**timeout 族 3 已销账（M5-S10，setter 重排附带 overrides 族 2 腿）**——**残余：XML 文档面（engine XML DOM 深度——template-element 族）、formdata 残余 5F（iframe 编排 structural 2 + surrogate wire 1 + input-image 几何跨域 2——M5-S8 精确记账）**；sync XHR 结构面 4 已实测全绿销账（M5-S8——残 2 案为 permissions-policy API 面跨域记账） |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 基址链已清偿（M5-S6 +215 零回归）+ URL 反射基址接线已清偿（M5-S7——反射/请求/导航五面接 `_zwDocBaseURL`，无 base 元素行为不变）——残余：urltestdata 全量解析深水（IDNA/toASCII/file: 特例/host 校验）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | ✅ M4-S11 收口（88.6%）+ M4-S28 flow-control 清偿（**88.7%**，piping 全绿含 flow-control 5/5）；**残余：transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿，JS 层不可表达）** |
 | P6 | WebSocket 二期切片（runner WS fixture 端点 + websockets corpus 基线 + 语义修齐） | ✅ **收口（2026-10-14，M5-S1→S4 四切片）**：**376/376 = 100% / case 106/106 = 100%**（基线 334/375 = 89.1%）；不测面维持记账（wss/h2 变体、.https.* TLS、multi-globals/unload-a-document/bfcache 结构面） |
@@ -204,6 +225,14 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
 
 ## 已完成切片
 
+- **M5-S10（2026-10-14）**：XHR timeout 族 3 腿销账 + setter 重排附带 2 腿（xhr
+  565P/26F/3T → **571P/22F/1T = +6P/−4F/−2T**，其余 corpus 逐字节持平）：共享延迟
+  模型 `_zwFetchSimDelay`（bare delay.py 缺省 1000ms + redirect 链折叠）+ timeout
+  setter send 中改值重排（token 失效旧计时器）+ finite 模型静态判定（D < T 不挂
+  计时器）+ on* handler 抛按 spec report + runner preflight 应答（delay.py OPTIONS
+  分支 + 泛化兜底 ACAM/ACAH 回显）+ timer 到期序派发。make test 全绿（20664P/0F，
+  +3 = 随 pull 并入的渲染流 R5108 测试）。见
+  [evidence/2026-10-14-m5-s10-timeout-family.md](evidence/2026-10-14-m5-s10-timeout-family.md)。
 - **M5-S9（2026-10-14）**：bad-chunk 注入 2 腿销账（error-after-response 2/2）：
   内置 bad-chunk-encoding fixture + `x-zero-body-error-after` 流中段网络错误面
   （首 read 兑现后 error + consume 族同拒）。六 corpus 受控 A/B **+2P/−2F 零
@@ -637,8 +666,9 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
    request-cache-control Timeout **已修复归档**（M5-S3——runner fixture preflight
    应答面，非产品缺口）；url crate panic 防护调用点审计（一次性 panic 未复现，
    低优先观察项）
-3. **goal 内结构性挂账（M5-S9 后余量）**：XML 文档解析（engine XML DOM——
-   template-element 族）；timeout 族 3 腿；formdata 残余 5F（structural/wire/
-   跨域几何——M5-S8 精确记账，本 goal 不再实施）
+3. **goal 内结构性挂账（M5-S10 后余量）**：XML 文档解析（engine XML DOM——
+   template-element 族）；formdata 残余 5F（structural/wire/跨域几何——M5-S8
+   精确记账，本 goal 不再实施）。timeout 族 3 腿 **已销账（M5-S10，2026-10-14）**
+   ——setter 重排附带 overrides 族 2 腿一并回绿
 
 **待用户决策清单**：（空）
