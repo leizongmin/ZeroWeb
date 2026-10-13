@@ -2231,9 +2231,9 @@ impl BrowserApp {
     }
 
     /// 打开下载管理页面。
-    /// 附件下载落盘 + 下载管理器记账（backend 拦截 Content-Disposition: attachment 后
-    /// 经 TabManager 转交）。整包到达 → 进度两跳（0/N → N/N），状态链 Pending →
-    /// Downloading → Completed。
+    /// 下载落盘 + 下载管理器记账（backend 拦截 Content-Disposition: attachment 或
+    /// 顶层文档导航的不可内联 Content-Type 后经 TabManager 转交）。整包到达 →
+    /// 进度两跳（0/N → N/N），状态链 Pending → Downloading → Completed。
     fn save_attachment_download(&mut self, download: crate::process_backend::PendingAttachmentDownload) {
         let total = download.body.len() as u64;
         let id = self

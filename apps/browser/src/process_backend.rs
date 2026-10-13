@@ -203,8 +203,9 @@ pub struct ProcessTabBackend {
     compositor_status: crate::compositor_client::CompositorStatus,
     /// Browser 窗口 GPU 渲染器是否可用（dma-buf 导入 vs RGBA 回退）。
     browser_gpu_present: bool,
-    /// 待落盘的附件下载（Content-Disposition: attachment 拦截；由 TabManager 转交
-    /// BrowserApp 消费——backend 不持有 shell/settings）。
+    /// 待落盘的下载（Content-Disposition: attachment 或顶层文档导航的不可内联
+    /// Content-Type 拦截；由 TabManager 转交 BrowserApp 消费——backend 不持有
+    /// shell/settings）。
     pending_downloads: Vec<PendingAttachmentDownload>,
 }
 
@@ -742,14 +743,25 @@ impl ProcessTabBackend {
         }
     }
 
-    /// Content-Disposition: attachment 响应 → 附件下载（文件名解析含回退链）。
+    /// 完成的响应 → 待下载条目。两条并行路由共用同一落盘管线（附件与不可内联
+    /// Content-Type）：
+    /// 1. Content-Disposition: attachment——HTML 标准导航处理的「Handle as a download」
+    ///    步骤，该分支文档保持 null 不渲染
+    ///    （https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigation-as-a-download）；
+    /// 2. 顶层文档导航 + 2xx + Content-Type 不可内联渲染——非 attachment 响应由 UA
+    ///    裁量渲染或移交外部处理（同算法「loading a document … e.g., when handing-off
+    ///    to external software」，https://html.spec.whatwg.org/multipage/browsing-the-web.html#populating-a-session-history-entry），
+    ///    浏览器无渲染能力的类型以下载呈现。
     fn take_attachment_download(item: &crate::fetch_proxy::CompletedFetch) -> Option<PendingAttachmentDownload> {
         let disposition = item
             .headers
             .iter()
             .find(|(name, _)| name.eq_ignore_ascii_case("content-disposition"))
-            .map(|(_, value)| value.trim().to_string())?;
-        if !disposition.to_ascii_lowercase().starts_with("attachment") {
+            .map(|(_, value)| value.trim().to_string());
+        let is_attachment = disposition
+            .as_deref()
+            .is_some_and(|value| value.to_ascii_lowercase().starts_with("attachment"));
+        if !is_attachment && !Self::is_document_download_response(item) {
             return None;
         }
         // 成功路径的响应已带 X-Zero-Final-URL（fetch_proxy 推入）。
@@ -759,13 +771,43 @@ impl ProcessTabBackend {
             .find(|(name, _)| name.eq_ignore_ascii_case("x-zero-final-url"))
             .map(|(_, value)| value.clone())
             .unwrap_or_default();
-        let filename = parse_attachment_filename(&disposition, &url);
+        let filename = parse_attachment_filename(disposition.as_deref().unwrap_or(""), &url);
         Some(PendingAttachmentDownload {
             tab_id: item.tab_id,
             url,
             filename,
             body: item.body.clone(),
         })
+    }
+
+    /// 顶层文档导航的响应是否因 Content-Type 走下载：仅限 document 资源类型
+    /// （fetch_proxy 为每个完成响应推入 X-Zero-Resource-Type）+ 2xx；页面内
+    /// fetch()/子资源不受影响。Content-Type 缺失时保守保持渲染路径——fetch 规范
+    /// 「extract a MIME type」对无 Content-Type 头返回 null
+    /// （https://fetch.spec.whatwg.org/#concept-header-extract-mime-type）；
+    /// 未实现 MIME sniffing（https://mimesniff.spec.whatwg.org/），不扩大拦截。
+    fn is_document_download_response(item: &crate::fetch_proxy::CompletedFetch) -> bool {
+        if !(200..300).contains(&item.status) {
+            return false;
+        }
+        let is_document = item
+            .headers
+            .iter()
+            .any(|(name, value)| name.eq_ignore_ascii_case("x-zero-resource-type") && value == "document");
+        if !is_document {
+            return false;
+        }
+        let Some(raw) = item
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+            .map(|(_, value)| value.trim())
+        else {
+            return false;
+        };
+        // 媒体类型 essence：';' 之前的部分，大小写不敏感（参数如 charset 忽略）。
+        let essence = raw.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+        !is_inline_renderable_content_type(&essence)
     }
 
     /// 取出待落盘的附件下载（TabManager 转交 BrowserApp 消费）。
@@ -2477,6 +2519,207 @@ mod compositor_fallback_tests {
 
         assert!(snap.last_render.is_some(), "Legacy ViewPainted 应恢复页面渲染");
         assert!(snap.compositor_submission.is_none() || snap.should_composite_paint());
+    }
+}
+
+#[cfg(test)]
+mod download_route_tests {
+    use super::{ProcessTabBackend, is_inline_renderable_content_type};
+    use crate::fetch_proxy::CompletedFetch;
+    use zero_browser_shell::TabId;
+
+    fn completed(status: u16, headers: Vec<(&str, &str)>) -> CompletedFetch {
+        CompletedFetch {
+            tab_id: TabId(1),
+            request_id: 1,
+            status,
+            headers: headers
+                .into_iter()
+                .map(|(name, value)| (name.to_string(), value.to_string()))
+                .collect(),
+            body: vec![0_u8; 16],
+        }
+    }
+
+    fn document_headers(content_type: Option<&'static str>) -> Vec<(&'static str, &'static str)> {
+        let mut headers = vec![
+            ("X-Zero-Resource-Type", "document"),
+            ("X-Zero-Final-URL", "http://127.0.0.1:9/files/bigfile.bin"),
+        ];
+        if let Some(ct) = content_type {
+            headers.push(("Content-Type", ct));
+        }
+        headers
+    }
+
+    /// Content-Type 判定表格：顶层文档导航（200）按 essence 分流；CT 缺失与畸形值
+    /// 保守渲染；attachment 由独立分支覆盖（见 attachment 系列）。
+    #[test]
+    fn content_type_table_routes_document_responses() {
+        let cases: &[(&str, Option<&str>, bool)] = &[
+            ("octet-stream", Some("application/octet-stream"), true),
+            (
+                "octet-stream with params",
+                Some("application/octet-stream; charset=binary"),
+                true,
+            ),
+            ("octet-stream uppercase", Some("APPLICATION/OCTET-STREAM"), true),
+            ("text/html", Some("text/html; charset=utf-8"), false),
+            ("text/plain", Some("text/plain"), false),
+            ("image/png", Some("image/png"), false),
+            ("audio/mpeg", Some("audio/mpeg"), false),
+            ("video/mp4", Some("video/mp4"), false),
+            ("application/json", Some("application/json"), false),
+            ("application/xhtml+xml", Some("application/xhtml+xml"), false),
+            ("application/rss+xml", Some("application/rss+xml"), false),
+            ("application/zip", Some("application/zip"), true),
+            ("application/pdf", Some("application/pdf"), true),
+            ("font/woff2", Some("font/woff2"), true),
+            ("ct missing", None, false),
+            ("ct malformed", Some("octet-stream"), false),
+        ];
+        for (name, content_type, expect_download) in cases {
+            let item = completed(200, document_headers(*content_type));
+            let routed = ProcessTabBackend::take_attachment_download(&item).is_some();
+            assert_eq!(routed, *expect_download, "case {name}: routed={routed}");
+        }
+    }
+
+    #[test]
+    fn octet_stream_document_download_uses_url_filename() {
+        let item = completed(200, document_headers(Some("application/octet-stream")));
+        let download = ProcessTabBackend::take_attachment_download(&item).unwrap();
+        assert_eq!(download.tab_id, TabId(1));
+        assert_eq!(download.url, "http://127.0.0.1:9/files/bigfile.bin");
+        assert_eq!(download.filename, "bigfile.bin");
+        assert_eq!(download.body, item.body);
+    }
+
+    #[test]
+    fn filename_falls_back_to_download_bin_without_url_segment() {
+        let item = completed(
+            200,
+            vec![
+                ("X-Zero-Resource-Type", "document"),
+                ("X-Zero-Final-URL", "http://127.0.0.1:9/dir/"),
+                ("Content-Type", "application/octet-stream"),
+            ],
+        );
+        let download = ProcessTabBackend::take_attachment_download(&item).unwrap();
+        assert_eq!(download.filename, "download.bin");
+    }
+
+    #[test]
+    fn content_disposition_attachment_takes_priority_and_filename() {
+        let item = completed(
+            200,
+            vec![
+                ("X-Zero-Resource-Type", "document"),
+                ("X-Zero-Final-URL", "http://127.0.0.1:9/files/bigfile.bin"),
+                ("Content-Type", "application/octet-stream"),
+                ("Content-Disposition", "attachment; filename=\"report.zip\""),
+            ],
+        );
+        let download = ProcessTabBackend::take_attachment_download(&item).unwrap();
+        assert_eq!(download.filename, "report.zip");
+    }
+
+    #[test]
+    fn attachment_routes_any_resource_type_as_before() {
+        // 既有行为保持：attachment 与资源类型无关（本次改动只新增 document+CT 路由）。
+        let item = completed(
+            200,
+            vec![
+                ("X-Zero-Resource-Type", "other"),
+                ("X-Zero-Final-URL", "http://127.0.0.1:9/file.zip"),
+                ("Content-Type", "application/zip"),
+                ("Content-Disposition", "attachment"),
+            ],
+        );
+        assert!(ProcessTabBackend::take_attachment_download(&item).is_some());
+    }
+
+    #[test]
+    fn content_disposition_inline_value_still_renders() {
+        // form-data 等 inline disposition 不是附件，text/html 照常渲染。
+        let item = completed(
+            200,
+            vec![
+                ("X-Zero-Resource-Type", "document"),
+                ("X-Zero-Final-URL", "http://127.0.0.1:9/page.html"),
+                ("Content-Type", "text/html"),
+                ("Content-Disposition", "inline"),
+            ],
+        );
+        assert!(ProcessTabBackend::take_attachment_download(&item).is_none());
+    }
+
+    #[test]
+    fn non_renderable_content_type_ignores_subresource_and_error_status() {
+        // 页面内 fetch()/子资源不拦：二进制必须原样回传页面（XHR 语义）。
+        let subresource = completed(
+            200,
+            vec![
+                ("X-Zero-Resource-Type", "other"),
+                ("X-Zero-Final-URL", "http://127.0.0.1:9/api/blob"),
+                ("Content-Type", "application/octet-stream"),
+            ],
+        );
+        assert!(ProcessTabBackend::take_attachment_download(&subresource).is_none());
+
+        // 错误响应不落盘：octet-stream 的 404 仍走错误页。
+        let error = completed(404, document_headers(Some("application/octet-stream")));
+        assert!(ProcessTabBackend::take_attachment_download(&error).is_none());
+    }
+
+    #[test]
+    fn inline_renderable_essence_table() {
+        for essence in [
+            "text/html",
+            "text/plain",
+            "image/png",
+            "audio/ogg",
+            "video/webm",
+            "application/json",
+            "application/xml",
+            "application/xhtml+xml",
+            "application/rss+xml",
+        ] {
+            assert!(is_inline_renderable_content_type(essence), "{essence} 应可渲染");
+        }
+        for essence in [
+            "application/octet-stream",
+            "application/zip",
+            "application/wasm",
+            "font/woff2",
+            "model/gltf-binary",
+            "multipart/form-data",
+        ] {
+            assert!(!is_inline_renderable_content_type(essence), "{essence} 应下载");
+        }
+        // 畸形 essence（无 '/'）保守渲染。
+        assert!(is_inline_renderable_content_type("octet-stream"));
+    }
+}
+
+/// 顶层文档导航可内联渲染的 Content-Type essence 白名单：主类 text/image/audio/
+/// video 全量可渲染；application 仅放行已知可渲染子类（含 `+xml` 后缀的 XML 派生
+/// 类型）。其余 application 子类（octet-stream/zip/pdf 等）与其他主类浏览器无内联
+/// 渲染能力 → 下载。无 '/' 的畸形值保守按可渲染处理，不扩大拦截。
+fn is_inline_renderable_content_type(essence: &str) -> bool {
+    let Some((main, sub)) = essence.split_once('/') else {
+        return true;
+    };
+    match main {
+        "text" | "image" | "audio" | "video" => true,
+        "application" => {
+            sub.ends_with("+xml")
+                || matches!(
+                    sub,
+                    "xhtml+xml" | "xml" | "json" | "javascript" | "x-javascript" | "ecmascript"
+                )
+        }
+        _ => false,
     }
 }
 
