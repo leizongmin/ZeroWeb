@@ -446,6 +446,19 @@ impl BrowserShell {
         }
     }
 
+    /// 为指定标签补记首次导航（欢迎页/新标签页）。
+    ///
+    /// 空标签的欢迎页此前只进页面运行时，shell 历史无条目——首次导航后
+    /// 返回箭头不可用，按钮态与可见历史差一。仅在该标签尚无 URL 时记账，
+    /// 避免与 `navigate()` 重复条目（地址栏路径会先 navigate 再载入欢迎页）。
+    pub fn record_initial_navigation(&mut self, id: TabId, url: &str) {
+        if let Some(tab) = self.tabs.get_tab_mut(id)
+            && tab.url().is_none()
+        {
+            tab.navigate(url);
+        }
+    }
+
     /// 刷新当前页面。
     pub fn refresh(&mut self) {
         if let Some(tab) = self.tabs.active_tab_mut()
@@ -464,13 +477,17 @@ impl BrowserShell {
 
     /// 页面加载完成回调。
     ///
-    /// 更新标签页状态并记录到历史。
+    /// 更新标签页状态并记录到历史；`zero://newtab` 欢迎页除外——每次启动/
+    /// 新标签都会装载它，不是用户访问（Chrome 同样不把 NTP 记入历史），
+    /// 入史会污染历史页首位并混入地址栏建议。
     pub fn on_page_loaded(&mut self, title: &str) {
         if let Some(tab) = self.tabs.active_tab_mut() {
             tab.set_loading(false);
             tab.set_title(title);
 
-            if let Some(url) = tab.url().map(|s| s.to_string()) {
+            if let Some(url) = tab.url().map(|s| s.to_string())
+                && url != "zero://newtab"
+            {
                 self.history.record(&url, title);
             }
         }

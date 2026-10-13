@@ -15,6 +15,8 @@
 //! {"op":"assert_url","contains":"page2.html"}
 //! {"op":"assert_url","contains":"view-source:http://…","mode":"prefix"}
 //! {"op":"assert_menu","open":true}
+//! {"op":"assert_nav","back":true,"forward":false}
+//! {"op":"assert_status","contains":"http://127.0.0.1:18080/page2.html"}
 //! {"op":"log","msg":"menu opened"}
 //! ```
 
@@ -52,19 +54,59 @@ impl UiDriverConfig {
 /// 单条脚本动作。
 #[derive(Clone, Debug, PartialEq)]
 enum Step {
-    WaitMs { ms: u64 },
-    WaitIdle { ms: u64, settle: u64 },
-    Click { x: f64, y: f64, button: String },
-    Move { x: f64, y: f64 },
-    Key { key: String, mods: Vec<String> },
-    Type { text: String },
-    Shot { name: String },
-    Log { msg: String },
+    WaitMs {
+        ms: u64,
+    },
+    WaitIdle {
+        ms: u64,
+        settle: u64,
+    },
+    Click {
+        x: f64,
+        y: f64,
+        button: String,
+    },
+    Move {
+        x: f64,
+        y: f64,
+    },
+    Key {
+        key: String,
+        mods: Vec<String>,
+    },
+    Type {
+        text: String,
+    },
+    Shot {
+        name: String,
+    },
+    Log {
+        msg: String,
+    },
     // `mode` 为 `"prefix"` 时按前缀匹配（可判别 `https://view-source:…` 类错误形态），
     // 缺省 `"contains"` 按子串匹配。不用 doc 注释：variant doc 会使 rustfmt 把整个
     // enum 强制展开为多行。
-    AssertUrl { pattern: String, prefix: bool },
-    AssertMenu { open: bool },
+    AssertUrl {
+        pattern: String,
+        prefix: bool,
+    },
+    AssertMenu {
+        open: bool,
+    },
+    /// 导航箭头启用态断言（app_smoke_state 只读面，与渲染同源）。
+    AssertNav {
+        back: bool,
+        forward: bool,
+    },
+    /// 悬停链接状态栏断言：`contains` 按子串匹配显示文本；`absent` 断言已清除。
+    AssertStatus {
+        pattern: String,
+        absent: bool,
+    },
+    /// 页面缩放断言（与 Ctrl± 同一状态源）。
+    AssertZoom {
+        zoom: f32,
+    },
 }
 
 impl Step {
@@ -136,6 +178,34 @@ impl Step {
                     .get("open")
                     .and_then(Value::as_bool)
                     .ok_or_else(|| bad("assert_menu requires boolean field \"open\""))?,
+            }),
+            "assert_nav" => Ok(Self::AssertNav {
+                back: value
+                    .get("back")
+                    .and_then(Value::as_bool)
+                    .ok_or_else(|| bad("assert_nav requires boolean field \"back\""))?,
+                forward: value
+                    .get("forward")
+                    .and_then(Value::as_bool)
+                    .ok_or_else(|| bad("assert_nav requires boolean field \"forward\""))?,
+            }),
+            "assert_status" => {
+                let absent = value.get("absent").and_then(Value::as_bool).unwrap_or(false);
+                if !absent {
+                    // absent 模式不要求 contains；非 absent 必须给出匹配串。
+                    text("contains")?;
+                }
+                Ok(Self::AssertStatus {
+                    pattern: value
+                        .get("contains")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    absent,
+                })
+            }
+            "assert_zoom" => Ok(Self::AssertZoom {
+                zoom: num("zoom")? as f32,
             }),
             other => Err(bad(format!("unknown op \"{other}\"").as_str())),
         }
@@ -331,6 +401,59 @@ impl UiDriver {
                 }
                 tracing::info!(
                     "UI_DRIVER_STEP step={} assert_menu={visible} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertNav { back, forward } => {
+                let (actual_back, actual_forward) = (app.smoke_can_go_back(), app.smoke_can_go_forward());
+                if actual_back != *back || actual_forward != *forward {
+                    return Err(format!(
+                        "assert_nav failed: back={actual_back} forward={actual_forward}, expected back={back} forward={forward}"
+                    ));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_nav back={actual_back} forward={actual_forward} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertStatus { pattern, absent } => {
+                if *absent {
+                    if let Some(url) = app.smoke_hovered_link_url() {
+                        return Err(format!(
+                            "assert_status failed: status still shows {url}, expected cleared"
+                        ));
+                    }
+                    tracing::info!(
+                        "UI_DRIVER_STEP step={} assert_status=cleared status=passed",
+                        self.next + 1
+                    );
+                    return Ok(());
+                }
+                let Some(url) = app.smoke_hovered_link_url() else {
+                    return Err(format!(
+                        "assert_status failed: no hovered link, expected to contain {pattern}"
+                    ));
+                };
+                if !url.contains(pattern.as_str()) {
+                    return Err(format!(
+                        "assert_status failed: status is {url}, expected to contain {pattern}"
+                    ));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_status={url} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertZoom { zoom } => {
+                let actual = app.smoke_page_zoom();
+                if (actual - zoom).abs() > f32::EPSILON {
+                    return Err(format!("assert_zoom failed: zoom is {actual}, expected {zoom}"));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_zoom={actual} status=passed",
                     self.next + 1
                 );
                 Ok(())

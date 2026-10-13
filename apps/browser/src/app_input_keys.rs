@@ -200,6 +200,7 @@ impl BrowserApp {
                         }
                     }
                     self.context_menu.hovered_index = Some(next);
+                    self.context_menu.hovered_segment = None;
                     // 移动到 sub_menu 项时展开；移到普通项时收起
                     self.sync_open_sub_menu_with_hover();
                     self.needs_redraw = true;
@@ -216,6 +217,7 @@ impl BrowserApp {
                         }
                     }
                     self.context_menu.hovered_index = Some(next);
+                    self.context_menu.hovered_segment = None;
                     self.sync_open_sub_menu_with_hover();
                     self.needs_redraw = true;
                 }
@@ -560,6 +562,11 @@ impl BrowserApp {
                         self.sync_webview_viewport();
                     }
                     self.needs_redraw = true;
+                }
+                "b" | "B" if self.shift_pressed => {
+                    // Ctrl+Shift+B：切换书签栏。与主菜单"切换书签栏"项同一动作
+                    // （T7-I10：菜单宣传的快捷键此前未接线）。
+                    self.toggle_bookmarks_bar();
                 }
                 "+" | "=" => {
                     self.shell.zoom_in();

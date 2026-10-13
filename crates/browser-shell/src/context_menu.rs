@@ -158,6 +158,9 @@ pub enum MenuItemType {
     Separator,
     /// Submenu with children.
     SubMenu(Vec<MenuItem>),
+    /// 单行内多个等宽可点击段（如主菜单 Zoom 行：− / 百分比 / +）。
+    /// 段按行宽等分，GUI 按点击 x 落段并以子项 id 分发动作。
+    Segmented(Vec<MenuItem>),
 }
 
 impl MenuItem {
@@ -200,6 +203,17 @@ impl MenuItem {
             id: id.to_string(),
             label: label.to_string(),
             item_type: MenuItemType::SubMenu(children),
+            enabled: true,
+            shortcut: None,
+        }
+    }
+
+    /// Create a segmented row item（行内等宽分段，子项各自携带 id/label）。
+    pub fn segmented(id: &str, segments: Vec<MenuItem>) -> Self {
+        Self {
+            id: id.to_string(),
+            label: String::new(),
+            item_type: MenuItemType::Segmented(segments),
             enabled: true,
             shortcut: None,
         }
@@ -248,10 +262,23 @@ impl MenuItem {
         matches!(self.item_type, MenuItemType::SubMenu(_))
     }
 
+    /// Whether this item is a segmented row（行内多段可点击）。
+    pub fn is_segmented(&self) -> bool {
+        matches!(self.item_type, MenuItemType::Segmented(_))
+    }
+
     /// Children if this item is a submenu.
     pub fn children(&self) -> Option<&[MenuItem]> {
         match &self.item_type {
             MenuItemType::SubMenu(children) => Some(children),
+            _ => None,
+        }
+    }
+
+    /// Segments if this item is a segmented row.
+    pub fn segments(&self) -> Option<&[MenuItem]> {
+        match &self.item_type {
+            MenuItemType::Segmented(segments) => Some(segments),
             _ => None,
         }
     }

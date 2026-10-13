@@ -110,6 +110,21 @@ impl BrowserApp {
             .collect()
     }
 
+    /// 演示流用：活动标签是否可后退（与渲染按钮启用态同源：Tab::can_go_back）。
+    pub fn smoke_can_go_back(&self) -> bool {
+        self.shell.active_tab().is_some_and(|tab| tab.can_go_back())
+    }
+
+    /// 演示流用：活动标签是否可前进（与渲染按钮启用态同源：Tab::can_go_forward）。
+    pub fn smoke_can_go_forward(&self) -> bool {
+        self.shell.active_tab().is_some_and(|tab| tab.can_go_forward())
+    }
+
+    /// 演示流用：当前悬停链接状态栏内容（None = 未显示；T6-I7 断言面）。
+    pub fn smoke_hovered_link_url(&self) -> Option<String> {
+        self.hovered_link_url.clone()
+    }
+
     /// 演示流用：系统剪贴板文本（arboard；X11 selection 同进程读回）。
     pub fn smoke_clipboard_text(&self) -> Option<String> {
         crate::clipboard::read_text()

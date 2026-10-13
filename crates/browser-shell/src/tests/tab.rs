@@ -529,3 +529,108 @@ fn test_tab_manager_close_tabs_to_right_keeps_left() {
     let urls: Vec<_> = mgr.tabs().map(|t| t.url().unwrap_or("")).collect();
     assert_eq!(urls, &["https://a.com", "https://b.com"]);
 }
+
+// ── T4-I6：导航箭头启用态与历史记账一致性 ──
+
+/// 历史序列期望态表格：启动空标签欢迎页记账 → 地址栏导航 → 链接点击 →
+/// Alt+返回 → Alt+前进。每个点位断言 (历史长度, 索引, 可后退, 可前进, 当前 URL)，
+/// 与 app_render.rs 导航按钮禁用判断同源（Tab::can_go_back/forward）。
+#[test]
+fn test_tab_nav_arrow_states_table() {
+    // 启动空标签（BrowserShell::new 同模型：无 URL、无历史）。
+    let mut tab = Tab::new_empty();
+
+    // 欢迎页记账（shell::record_initial_navigation 的 Tab 层语义）。
+    tab.navigate("zero://newtab");
+    assert_eq!(
+        (
+            tab.history_len(),
+            tab.history_index(),
+            tab.can_go_back(),
+            tab.can_go_forward()
+        ),
+        (1, 0, false, false),
+        "点位0 欢迎页：无后退无前进"
+    );
+
+    // 地址栏导航 index.html。
+    tab.navigate("http://127.0.0.1:18080/index.html");
+    assert_eq!(
+        (
+            tab.history_len(),
+            tab.history_index(),
+            tab.can_go_back(),
+            tab.can_go_forward()
+        ),
+        (2, 1, true, false),
+        "点位1 地址栏导航：可返回欢迎页"
+    );
+
+    // 链接点击 page2.html。
+    tab.navigate("http://127.0.0.1:18080/page2.html");
+    assert_eq!(
+        (
+            tab.history_len(),
+            tab.history_index(),
+            tab.can_go_back(),
+            tab.can_go_forward()
+        ),
+        (3, 2, true, false),
+        "点位2 链接点击：可后退、无前进"
+    );
+
+    // Alt+Left 返回。
+    assert!(tab.go_back());
+    assert_eq!(tab.url(), Some("http://127.0.0.1:18080/index.html"));
+    assert_eq!(
+        (
+            tab.history_len(),
+            tab.history_index(),
+            tab.can_go_back(),
+            tab.can_go_forward()
+        ),
+        (3, 1, true, true),
+        "点位3 Alt+返回：双向可用"
+    );
+
+    // Alt+Right 前进。
+    assert!(tab.go_forward());
+    assert_eq!(tab.url(), Some("http://127.0.0.1:18080/page2.html"));
+    assert_eq!(
+        (
+            tab.history_len(),
+            tab.history_index(),
+            tab.can_go_back(),
+            tab.can_go_forward()
+        ),
+        (3, 2, true, false),
+        "点位4 Alt+前进：回到末尾，前进禁用"
+    );
+
+    // 边界：首位不可再退、末尾不可再进。
+    let mut tab = Tab::new("https://a.com");
+    tab.navigate("https://b.com");
+    assert!(tab.go_back());
+    assert!(!tab.go_back(), "首位再退应失败");
+    assert!(!tab.can_go_back());
+    assert!(tab.can_go_forward());
+}
+
+/// record_initial_navigation：仅当标签无 URL 时记账；已有 URL（如地址栏路径
+/// 已 navigate 过）不产生重复条目。
+#[test]
+fn test_record_initial_navigation_only_when_no_url() {
+    let mut shell = BrowserShell::new();
+    let id = shell.active_tab_id().expect("启动含一个空标签");
+
+    shell.record_initial_navigation(id, "zero://newtab");
+    let tab = shell.tab(id).expect("标签存在");
+    assert_eq!(tab.url(), Some("zero://newtab"));
+    assert_eq!(tab.history_len(), 1);
+    assert!(!tab.can_go_back());
+
+    // 已有 URL 时再次补记应无操作（地址栏路径已 navigate 过）。
+    shell.record_initial_navigation(id, "zero://newtab");
+    let tab = shell.tab(id).expect("标签存在");
+    assert_eq!(tab.history_len(), 1, "不应产生重复历史条目");
+}

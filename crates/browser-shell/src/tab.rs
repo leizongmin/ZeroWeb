@@ -264,6 +264,19 @@ impl Tab {
         }
     }
 
+    /// 是否可后退（历史索引不在首位）。
+    ///
+    /// 导航按钮启用态的唯一判定源：渲染与 smoke 断言面都从这里取值，
+    /// 避免索引算式在消费侧重复走样。
+    pub fn can_go_back(&self) -> bool {
+        self.history_index > 0
+    }
+
+    /// 是否可前进（历史索引之后还有条目）。
+    pub fn can_go_forward(&self) -> bool {
+        !self.history.is_empty() && self.history_index < self.history.len() - 1
+    }
+
     /// 获取导航历史长度。
     pub fn history_len(&self) -> usize {
         self.history.len()

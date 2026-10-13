@@ -909,3 +909,44 @@ fn test_session_roundtrip_with_titles() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ── zero://newtab 历史过滤 ──
+
+/// 欢迎页装载（record_initial_navigation → on_page_loaded）不入全局历史；
+/// 同一标签随后导航真实页面照常入史；其他 zero:// 内部页保持现状入史。
+#[test]
+fn test_on_page_loaded_skips_newtab_history() {
+    let mut shell = BrowserShell::new();
+
+    // 启动空标签：补记首次导航后装载欢迎页，历史仍为空。
+    let id = shell.active_tab_id().expect("default tab");
+    shell.record_initial_navigation(id, "zero://newtab");
+    shell.on_page_loaded("ZeroBrowser");
+    assert!(
+        shell.history().is_empty(),
+        "zero://newtab must not enter history, got {:?}",
+        shell.history().iter().map(|e| e.url()).collect::<Vec<_>>()
+    );
+
+    // 再开一个欢迎页标签（Ctrl+T 路径），同样不入史。
+    shell.new_tab(None);
+    let new_id = shell.active_tab_id().expect("new tab");
+    shell.record_initial_navigation(new_id, "zero://newtab");
+    shell.on_page_loaded("ZeroBrowser");
+    assert!(
+        shell.history().is_empty(),
+        "repeated newtab loads must not enter history"
+    );
+
+    // 真实页面照常入史。
+    shell.navigate("https://example.com");
+    shell.on_page_loaded("Example");
+    let urls: Vec<_> = shell.history().iter().map(|e| e.url().to_string()).collect();
+    assert_eq!(urls, vec!["https://example.com"]);
+
+    // 其他 zero:// 内部页保持现状：照常入史。
+    shell.navigate("zero://history");
+    shell.on_page_loaded("History");
+    let urls: Vec<_> = shell.history().iter().map(|e| e.url().to_string()).collect();
+    assert_eq!(urls, vec!["zero://history", "https://example.com"]);
+}
