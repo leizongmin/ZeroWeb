@@ -15186,9 +15186,13 @@ return e;
     });
     // R130（js-dom M4）：Attr 的 baseURI（WPT Node-baseURI "attributes ..." 三形态——
     // 与元素同源读 document URL；spec dom-node-baseuri：非文档节点回落 node document）。
+    // net-api M5-S7：读数 = 文档基 URL（<base href> 优先，同元素 baseURI 口径）。
     Object.defineProperty(a, 'baseURI', {
       get: function () {
-        try { return globalThis.location ? String(globalThis.location.href) : 'about:blank'; }
+        try {
+          if (typeof globalThis._zwDocBaseURL === 'function') return globalThis._zwDocBaseURL();
+          return globalThis.location ? String(globalThis.location.href) : 'about:blank';
+        }
         catch (_e130au) { return 'about:blank'; }
       },
       configurable: true, enumerable: true,
@@ -16909,7 +16913,11 @@ return e;
             // 期望解析绝对 URL）。R5009 片 d：missing/空 → **文档 URL**（spec：form
             // action 缺省 = 文档地址——WPT 'form.action IDL get with DOM attribute
             // unset' 期望页面 URL）。与 A/AREA href 同用 `__zw_parse_url`。
-            var _fActBase = globalThis.location ? globalThis.location.href : '';
+            // net-api M5-S7：解析基 = 文档基 URL（<base href> 优先——spec form
+            // action 对 document base URL 解析）。
+            var _fActBase = (typeof globalThis._zwDocBaseURL === 'function')
+              ? globalThis._zwDocBaseURL()
+              : (globalThis.location ? globalThis.location.href : '');
             if (typeof __zw_parse_url === 'function') {
               try {
                 var _fActJson = __zw_parse_url(fv, _fActBase);

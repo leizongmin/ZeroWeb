@@ -2091,7 +2091,13 @@
   function _zwResolveFetchUrl(inputUrl) {
     var url = String(inputUrl == null ? '' : inputUrl);
     if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(url)) return url;
-    var base = _zwCurrentHref();
+    // net-api M5-S7：基 = 文档基 URL（<base href> 首元素优先）——fetch/XHR/资源反射
+    // 的相对 URL 解析基 = API base URL = document base URL（html spec）。
+    // `_zwDocBaseURL` 定义于 part03 注册区（shim load 期先于任何页面脚本执行）；
+    // 未注册（worker 形态等）回落页面地址。
+    var base = (typeof globalThis._zwDocBaseURL === 'function')
+      ? globalThis._zwDocBaseURL()
+      : _zwCurrentHref();
     if (typeof URL === 'function') {
       try { return new URL(url, base).href; } catch (_eUrl) {}
     }

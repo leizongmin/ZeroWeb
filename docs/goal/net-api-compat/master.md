@@ -2,13 +2,14 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-13（**M5-S6 执行**——url 基址链清偿：`_zwDocBaseURL`
-helper（首个带 href 的 `<base>` 元素 frozen base URL）+ A/AREA accessor 组件族 +
-element/document `baseURI` 接线；受控 A/B 六 corpus **+215 子测试零回归**
-（a-element +132P / a-element-origin +83P，其余逐页字节级持平））。
-此前：同日 M5-S5（scheme 翻转 +179）；M5-S4（P6 二期收口——websockets 100%）；
-M5-S3（eventsource 修复 + WS cookie jar）；2026-10-13（M5-S2/S1）；
-2026-10-01（M4-S29 收口判定）
+**最后更新**: 2026-10-14（**M5-S7 执行**——URL 反射基址接线：`_zwResolveFetchUrl`
+共享解析器（fetch/XHR/track/media 加载链）+ form.action + _zwFormSubmitNavigate +
+`_REFLECTED_URL_TAGS` 通用 URL 反射 getter（img/script/frame.src/cite/poster/
+object.data 族）+ formAction + Attr.baseURI 逐点接 `_zwDocBaseURL`；六 corpus 受控
+A/B 逐页字节级持平（无 base 元素行为不变）+ 探针 6/6）。
+此前：2026-10-13 M5-S6（url 基址链 +215 零回归）；M5-S5（scheme 翻转 +179）；
+M5-S4（P6 二期收口——websockets 100%）；M5-S3（eventsource + WS cookie jar）；
+2026-10-13（M5-S2/S1）；2026-10-01（M4-S29 收口判定）
 
 ---
 
@@ -35,6 +36,22 @@ IDL 校验 19（shim）、`ws.protocol` 属性面 4 案（shim+bridge）、WS co
 1（017 执行序）。证据
 [evidence/2026-10-13-m5-s1-ws-fixture-baseline.md](evidence/2026-10-13-m5-s1-ws-fixture-baseline.md)。
 不测面：wss/h2 变体、`.https.*` 5 案（TLS）、multi-globals/unload-a-document（结构面）。
+
+**M5-S7 执行（2026-10-14）**：URL 反射基址接线（M5-S6 残余记账清偿）——五处
+逐点接 `_zwDocBaseURL`：① `_zwResolveFetchUrl` 共享解析器（一次覆盖 fetch 请求
+派发 / XHR 相对 URL / track·SOURCE·media·iframe src 加载链 / img CSP·media 钩子
+路径）；② form.action getter；③ `_zwFormSubmitNavigate` 提交导航基；④
+`_REFLECTED_URL_TAGS` 通用 URL 反射 getter（img·iframe·script·frame·input·track
+src / cite / poster / object.data / lowsrc / longDesc / codeBase）；⑤ formAction +
+Attr.baseURI。探针 6/6（img.src 首版期望写错非缺陷，双形态基址复跑全绿；探针
+页含 `createElement("iframe")` 字面量会被通道 iframe 筛减静默跳过——须避开）。
+六 corpus 受控 A/B 对 M5-S6 树**逐页字节级持平**（无 base 元素时全部接线点纯
+回落，预期零位移成立）；make test 全绿（**20657P/0F**）+ clippy + fmt 干净；
+bench-gate FAIL 五项全为纯 Rust 微基准（M5-S6 轮已 stash 对照实证机器态漂移，
+本轮 FAIL 集扩大属跨轮噪声）。BASE/LINK href getter 维持 fallback 解析（spec 防
+自引用）；`_zwCurrentHref`（Origin/Referer）不改。残余：fixture 通道 URL 改写
+第三形态基址域（语料无此形态，观察项）。证据
+[evidence/2026-10-14-m5-s7-url-reflection-base.md](evidence/2026-10-14-m5-s7-url-reflection-base.md)。
 
 **M5-S6 执行（同日）**：url 基址链清偿（M5-S5 残差记账落账）——探针实证四处
 缺口（`a.href` 无视 `<base>` / `document.baseURI` undefined / about:blank 基解析
@@ -149,13 +166,18 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
 | P1 | 六 corpus fetch 脚本 + 导入 + 基线 | ✅ M1（2026-09-28，基线 1297/5019 = 25.8%） |
 | P2 | fetch/Request/Response/Headers/Body 语义收敛 | ✅ M2 主体收口 + M4-S23~S26 cors 域收口（fetch **1491/2081 = 71.6%** / mimesniff 100%）；残余：credentials/cookie 管道腿 ~13（跨域挂账）、response-error 族（10） |
 | P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **557/584 = 95.4%**——状态机/事件序/upload ProgressEvent/preflight cache/redirect/preflight/expose/FormData/timeout 面 spec 化）——**残余：page-scheme 失配 2（http vs https 宇宙——需 runner 页面 scheme 对齐）、sync XHR 结构面 4、XML 文档面（engine XML DOM 深度——template-element 族）、bad-chunk 注入 2、formdata FormDataEvent/submitter 族 5、timeout 族 3** |
-| P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 基址链已清偿（M5-S6 +215 零回归，本树 4639P/1426F）——残余：urltestdata 全量解析深水（IDNA/toASCII/file: 特例/host 校验）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）+ 其余 URL 反射基址接线（form.action/img.src/script.src 等，helper 已就位）挂账 |
+| P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 基址链已清偿（M5-S6 +215 零回归）+ URL 反射基址接线已清偿（M5-S7——反射/请求/导航五面接 `_zwDocBaseURL`，无 base 元素行为不变）——残余：urltestdata 全量解析深水（IDNA/toASCII/file: 特例/host 校验）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | ✅ M4-S11 收口（88.6%）+ M4-S28 flow-control 清偿（**88.7%**，piping 全绿含 flow-control 5/5）；**残余：transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿，JS 层不可表达）** |
 | P6 | WebSocket 二期切片（runner WS fixture 端点 + websockets corpus 基线 + 语义修齐） | ✅ **收口（2026-10-14，M5-S1→S4 四切片）**：**376/376 = 100% / case 106/106 = 100%**（基线 334/375 = 89.1%）；不测面维持记账（wss/h2 变体、.https.* TLS、multi-globals/unload-a-document/bfcache 结构面） |
 | P7 | runner fixture 通道（.py 端点最小 fixture 集） | ✅ 累计 24+ 端点（M4-S21 增 echo-headers/xhr trickle/form/echo-content-type/access-control-origin-header/over-1-meg.txt；M4-S22 增 preflight cache 族 ×3 等九件；M4-S23 增 preflight.py/clean-stash.py——fetch/api/cors 域页拉取已随域导入收口） |
 
 ## 已完成切片
 
+- **M5-S7（2026-10-14）**：URL 反射基址接线（form.action / `_REFLECTED_URL_TAGS`
+  全族 src·cite·poster·data / formAction / Attr.baseURI / `_zwFormSubmitNavigate`
+  / `_zwResolveFetchUrl` 共享解析器逐点接 `_zwDocBaseURL`）。六 corpus 受控 A/B
+  逐页字节级持平 + 探针 6/6；make test 全绿（20657P/0F）+ clippy + fmt 干净。
+  见 [evidence/2026-10-14-m5-s7-url-reflection-base.md](evidence/2026-10-14-m5-s7-url-reflection-base.md)。
 - **M5-S6（2026-10-13）**：url 基址链（`<base>` 元素 + document.baseURI）：shim
   `_zwDocBaseURL` helper（首个带 href 的 base 元素 frozen base URL，树序 +
   失败回落）+ A/AREA accessor 组件族 + element/document baseURI 接线。受控 A/B
@@ -560,10 +582,10 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
 1. **scheme 对齐两前置审计 → 已清偿（M5-S5，2026-10-14）**——翻转落定（六 corpus
    总账 +179）；残差：url 基址链 **已清偿（M5-S6，同日 +215 零回归）**；
    Authorization 重定向保留流 21 case（security-hardening 邻域）
-1.5. **url 基址链续片（M5-S6 清偿主干）**：其余 URL 反射属性的基址接线
-   （form.action / img.src / script.src / link.href / iframe.src——spec 同走文档
-   基 URL，`_zwDocBaseURL` helper 已就位，逐点接线为独立小切片）；a-element 残余
-   348F + a-element-origin 13F = 解析器深水簇（P4 既有记账，非基址面）
+1.5. **url 基址链续片 → 已清偿（M5-S7，2026-10-14）**：URL 反射/请求/导航五面
+   基址接线落定；残余仅 fixture 通道 URL 改写第三形态基址域（语料无此形态，
+   观察项）。a-element 残余 348F + a-element-origin 13F = 解析器深水簇
+   （P4 既有记账，非基址面）
 2. **结构性残余跨域认领**：streams transfer/detach 14 腿（spec
    TransferArrayBuffer——需宿主 V8 detach 能力，JS 层不可表达——bad-buffers 10
    + non-transferable 4；engine 宿主能力面）；cors credentials/cookie jar +

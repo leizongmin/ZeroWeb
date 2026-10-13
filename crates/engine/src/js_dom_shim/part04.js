@@ -8612,7 +8612,11 @@
             // M2-S4J：__zw_request_navigate 缺失不再前置早退（navigate 事件/intercept 面
             // 不依赖 host 回调——WPT navigate-form 族在 testharness 沙箱无该回调时仍须
             // 派发；host 传输仅在默认分支 typeof-guard）。
-            var _base = String(globalThis.location.href || 'about:blank');
+            // net-api M5-S7：提交导航基 = 文档基 URL（spec form submission algorithm
+            // 对 document base URL mutate action URL）。
+            var _base = (typeof globalThis._zwDocBaseURL === 'function')
+              ? globalThis._zwDocBaseURL()
+              : String(globalThis.location.href || 'about:blank');
             // ① action：submitter formaction > form action 属性 > 文档地址（spec：无
             // action 属性 → 文档地址；空串 resolve 即 base）。
             var _actionRaw = null;
@@ -9220,7 +9224,11 @@
             if (!_r5uHas || _r5uRaw == null || _r5uRaw === '') return '';
             if (typeof __zw_parse_url === 'function') {
               try {
-                var _r5uBase = globalThis.location ? globalThis.location.href : '';
+                // net-api M5-S7：解析基 = 文档基 URL（<base href> 优先——url 型反射
+                // spec 对 document base URL 解析；无 base 元素回落页面 location）。
+                var _r5uBase = (typeof globalThis._zwDocBaseURL === 'function')
+                  ? globalThis._zwDocBaseURL()
+                  : (globalThis.location ? globalThis.location.href : '');
                 var _r5uJson = __zw_parse_url(String(_r5uRaw), _r5uBase);
                 if (_r5uJson) return JSON.parse(_r5uJson).href || String(_r5uRaw);
               } catch (_eR5u) {}
@@ -9249,7 +9257,10 @@
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, _p5fAttr) : __zw_get_attr(sel, _p5fAttr));
             if (prop === 'formAction') {
               // 非空解析绝对 URL；空/missing → 文档 URL（parse('') + base = base 自身）。
-              var _p5fBase = globalThis.location ? globalThis.location.href : '';
+              // net-api M5-S7：解析基 = 文档基 URL（<base href> 优先）。
+              var _p5fBase = (typeof globalThis._zwDocBaseURL === 'function')
+                ? globalThis._zwDocBaseURL()
+                : (globalThis.location ? globalThis.location.href : '');
               if (typeof __zw_parse_url === 'function') {
                 try {
                   var _p5fJson = __zw_parse_url(_p5fHas && _p5fRaw != null && _p5fRaw !== '' ? String(_p5fRaw) : '', _p5fBase);
