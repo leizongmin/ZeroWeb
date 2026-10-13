@@ -95,25 +95,25 @@
 
 ### DC-1: WPT 导入与基线
 
-- [ ] 六 corpus（fetch/xhr/url/mimesniff/streams/eventsource）window 可执行子集导入
+- [x] 六 corpus（fetch/xhr/url/mimesniff/streams/eventsource）window 可执行子集导入
       （fetch 脚本 + 常驻通道 + imported 账本）
-- [ ] 分类通过率基线（文本 + JSON）落 evidence/，并回填
+- [x] 分类通过率基线（文本 + JSON）落 evidence/，并回填
       docs/compat/trends/wpt-suites.csv planned 行
 
 ### DC-2: fetch 面收敛
 
-- [ ] Request/Response/Headers/Body + fetch 方法语义逐簇修齐，通过率有可追踪提升
-- [ ] 错误面（网络错误/abort/超时语义）与 spec 对齐
+- [x] Request/Response/Headers/Body + fetch 方法语义逐簇修齐，通过率有可追踪提升
+- [x] 错误面（网络错误/abort/超时语义）与 spec 对齐
 
 ### DC-3: XHR / EventSource / URL / mimesniff / streams 收敛
 
-- [ ] XHR 状态机与事件序修齐；EventSource 解析/重连；URL 边缘语义；mimesniff 对齐
-- [ ] streams 底座一致性（fetch body 流式读的基础）
+- [x] XHR 状态机与事件序修齐；EventSource 解析/重连；URL 边缘语义；mimesniff 对齐
+- [x] streams 底座一致性（fetch body 流式读的基础）
 
 ### DC-4: 测试与质量不可退让
 
-- [ ] `make test` 全绿零失败 + clippy `-D warnings` + fmt 干净
-- [ ] 每语义切片带单测/集成测试；`make reftest` 零回归（网络面不触无关节点渲染）
+- [x] `make test` 全绿零失败 + clippy `-D warnings` + fmt 干净
+- [x] 每语义切片带单测/集成测试；`make reftest` 零回归（网络面不触无关节点渲染）
 
 ---
 
