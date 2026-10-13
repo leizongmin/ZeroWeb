@@ -4,8 +4,9 @@
 **日期**: 2026-09-12
 **状态**: Completed（2026-10-01 收口——六 corpus 9292/11659 = 79.7%，DC-1~4
 逐项核对通过；控制面见 `net-api-compat/master.md`，收口判定见
-`net-api-compat/evidence/2026-10-01-m4-s29-closure.md`；结构性残余与 WebSocket
-二期为跨域记账项，重入条件在案）
+`net-api-compat/evidence/2026-10-01-m4-s29-closure.md`；结构性残余为跨域记账项；
+WebSocket 二期（P6）重入条件「zero-net WS 底座就位」已于 2026-10-09 兑现
+（zero-web 流账本），M5 切片待立案）
 **执行模式**: WPT 驱动（上游网络面 corpus 为验收标尺）+ 语义修齐；
 照 event-loop-spec / web-components / web-api-batch2 通用打法
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络 API 面）
@@ -32,6 +33,14 @@
 > - **WebSocket：全 shim 0 处，完全缺**——需宿主层 socket 升级握手 + 帧协议
 >     （zero-net 有 TCP/TLS 底座），挂二期切片（重入条件见 Mission 约束）
 > - **mimesniff**：zero-net 已有 Content-Type 判别基础，WPT mimesniff/ 面未对齐
+>
+> **▶ P6 重入核记（2026-10-13）**：上列立项基线「WebSocket 全 shim 0 处」已过时——
+> zero-web 流已于 2026-10-08~09 落地 WebSocket 页面 API + zero-net 底座（tungstenite
+> 实现 + `engine/ws_bridge.rs` + shim part06.js，commit b2a0e502c 系六提交，
+> ZRG-2026-10-09-01 巡检在案）。Mission 约束 2 重入条件「zero-net WS 底座就位」兑现，
+> P6 二期切片可立案。可执行前置：runner fixture 通道为请求/响应拦截合成、无 WS 持久
+> 端点——M5-S1 = runner 内嵌 tungstenite fixture 端点 + `websockets/` corpus 拉取甄别
+> + 基线（WS 语义修齐若触 shim part06.js，与 zero-web 流碰头核对）。
 
 ---
 

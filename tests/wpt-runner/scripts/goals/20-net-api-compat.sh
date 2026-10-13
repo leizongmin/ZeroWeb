@@ -22,6 +22,8 @@
 # - streams/transferable（postMessage transfer 面——runner 无跨窗/worker 结构化克隆管道）
 # - mimesniff/sniffing（字节嗅探 .py 支持面——M3 重评估）
 # - eventsource/dedicated-worker（worker 面）
+# - websockets/（P6 二期切片——重入条件 2026-10-13 兑现：zero-web 流已落 WS 页面
+#   API + zero-net 底座；可执行需 runner 内嵌 WS fixture 端点，M5 立案后拉取）
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

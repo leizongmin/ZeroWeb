@@ -3,7 +3,8 @@
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
 **最后更新**: 2026-10-13（补记收口后漂移——fileapi-compat 仲裁致 net-api 通道
-mimesniff (Blob/File) 865 腿转失败，非回归；目标状态仍 Completed）。
+mimesniff (Blob/File) 865 腿转失败，非回归；同日核记 **P6 重入条件兑现**——zero-web
+流 2026-10-08~09 落地 WebSocket 页面 API + zero-net 底座，M5 切片立案）。
 此前：2026-10-01（M4-S29 **收口判定**——DC-1~4 全满足，目标 Completed；
 同日清理下一步计划收口残文并对齐缺口清单至收口口径）
 
@@ -13,6 +14,15 @@ mimesniff (Blob/File) 865 腿转失败，非回归；目标状态仍 Completed�
 
 **专项定位**：网络 API（fetch/XHR/URL/mimesniff/streams/EventSource）一致性收敛，
 WPT 六 corpus 为验收标尺。WebSocket 二期挂账（需宿主 socket 面 + 帧协议）。
+
+**P6 重入核记（2026-10-13）**：Mission 约束 2 重入条件「zero-net WS 底座就位」已兑现——
+zero-web 流 2026-10-08~09 落地 WebSocket 页面 API + 底座（tungstenite 实现
+`crates/net/src/websocket.rs` + `engine/ws_bridge.rs` + shim part06.js，commit
+b2a0e502c / 2b95db8ba / 395a2ea00 / 95072f30b / 9a1f1c1e1 / 030bcebd7，
+ZRG-2026-10-09-01 巡检在案）。可执行前置：runner fixture 通道为请求/响应拦截合成、
+无 WS 持久端点——**M5-S1 = runner 内嵌 tungstenite fixture 端点 + `websockets/`
+corpus 拉取甄别 + 基线**；WS 语义修齐若触 shim part06.js（engine 共享面），
+与 zero-web 流按 run-rules §9 碰头核对。
 
 **当前进度**：M1（25.8%）→ M2 收口（66.1% / 67.9% / 70.8%）→ M3 收口（73.6% /
 75.7% / 76.9% / 收尾 74.6% 分母重锚）→ M4-S1（74.7%）→ M4-S2（零净变化）→
@@ -55,7 +65,7 @@ streams/url/eventsource/xhr 与收口一致。逐字节仲裁证据见
 | P3 | XHR 状态机 + EventSource 解析/重连 | ✅ EventSource 100% 收口（M4-S13）；XHR 主体收口（xhr **557/584 = 95.4%**——状态机/事件序/upload ProgressEvent/preflight cache/redirect/preflight/expose/FormData/timeout 面 spec 化）——**残余：page-scheme 失配 2（http vs https 宇宙——需 runner 页面 scheme 对齐）、sync XHR 结构面 4、XML 文档面（engine XML DOM 深度——template-element 族）、bad-chunk 注入 2、formdata FormDataEvent/submitter 族 5、timeout 族 3** |
 | P4 | URL 边缘语义 + mimesniff 对齐 | ✅ mimesniff 100%；url 73.0%（新分母 6058）——残余：urltestdata 全量解析深水（IDNA/toASCII）+ setters-stripping host c0 保留面（Chromium bug-compat，url crate 不可表达）挂账 |
 | P5 | streams 底座一致性（fetch body 依赖） | ✅ M4-S11 收口（88.6%）+ M4-S28 flow-control 清偿（**88.7%**，piping 全绿含 flow-control 5/5）；**残余：transfer/detach 族结构性挂账（需宿主 V8 detach——14 腿，JS 层不可表达）** |
-| P6 | WebSocket 二期切片（宿主 socket + 升级握手/帧协议） | 🚫 挂账，用户点名重入 |
+| P6 | WebSocket 二期切片（runner WS fixture 端点 + websockets corpus 基线） | 🔁 重入条件兑现（2026-10-13 核记），M5 待立案 |
 | P7 | runner fixture 通道（.py 端点最小 fixture 集） | ✅ 累计 24+ 端点（M4-S21 增 echo-headers/xhr trickle/form/echo-content-type/access-control-origin-header/over-1-meg.txt；M4-S22 增 preflight cache 族 ×3 等九件；M4-S23 增 preflight.py/clean-stash.py——fetch/api/cors 域页拉取已随域导入收口） |
 
 ## 已完成切片
@@ -415,7 +425,8 @@ streams/url/eventsource/xhr 与收口一致。逐字节仲裁证据见
    TransferArrayBuffer——需宿主 V8 detach 能力，JS 层不可表达——bad-buffers 10
    + non-transferable 4；engine 宿主能力面）；cors credentials/cookie jar +
    Authorization 重定向流 ~13 腿（storage goal / security-hardening 邻域）；
-   WebSocket 二期 P6（宿主 socket 面 + 升级握手/帧协议，用户点名重入）
+   WebSocket 二期 P6（重入条件 2026-10-13 兑现——zero-web 流已落 WS 页面 API +
+   底座；下一步 = runner 内嵌 WS fixture 端点 + corpus 基线，见 P6 重入核记）
 3. **goal 内结构性挂账**：sync XHR 窗口 onload 阻塞语义 4 腿；bad-chunk 注入
    2 腿（需 .asis + chunked 解析面）；formdata FormDataEvent.entries live 面 +
    submitter 坐标族 5 腿；XML 文档解析（engine XML DOM——template-element 族）
