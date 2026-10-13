@@ -703,3 +703,5 @@ mod r5099_row_spec_floor_tests;
 mod r5100_collapse_border_box_growth_tests;
 /// R5104 auto 宽 abspos 单行测量宽度上取整（CSS2 §10.3.7 shrink-to-fit）测试。
 mod r5104_abspos_shrink_to_fit_ceil_tests;
+/// R5108 块盒 px max-height 钳制 + 塌穿泄漏 margin 的容器 margin-box 计入测试。
+mod r5108_max_height_margin_box_tests;

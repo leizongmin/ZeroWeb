@@ -2046,6 +2046,9 @@ pub(super) fn clamp_percentage_max_height(
     img_sizes: &HashMap<NodeId, (f32, f32)>,
 ) {
     use zero_css_parser::values::{BoxSizingValue, LengthValue};
+    use zero_style_system::property::types::{
+        ColumnCountComputedValue, ColumnWidthComputedValue, LineClampComputedValue,
+    };
 
     // absolute 元素的包含块语义不同（由 positioned ancestor / 视口决定），
     // 不在此处处理百分比 max-height（避免与 adjust_absolute_pct_to_viewport 重叠）。
@@ -2122,6 +2125,75 @@ pub(super) fn clamp_percentage_max_height(
             let clamped = max_content_h;
             box_node.content_height = clamped;
             box_node.height = clamped + pb;
+        }
+    }
+
+    // 1c) R5108（CSS2 §10.4）：px（及可解析长度）max-height 对块盒的钳制——converter
+    // 把 max_height 映射 taffy max_size，但 taffy 仅在 definite 约束路径消费（auto 高
+    // 块盒 = 子 extent，不经 max clamp：margin-collapse-038 父 max-height:99px 渲 300
+    // 应 99，探针 #a/#f 同谱；height definite 臂 #b 正常 50）。taffy 后在此补 max 侧
+    // 钳制（与 1a) min 对称；spec §10.4 再运行次序 max 先 min 后，冲突时 min 胜——
+    // 本臂置于 1a) 之前即此序）。content 关键字（1b)）/百分比（1)）disjoint，
+    // resolve_postprocess_real_length 天然排除（含默认 none = Px(INFINITY) → None）。
+    // 垂直盒跳过：max_height 槽被 wm-blind parse 的 max-block-size 别名共用，物理高
+    // 钳制会错轴（R4566 同门）。kill-switch `ZW_BLOCK_MAXH_CLAMP=0` 回退。
+    let vert_px_nocap = box_node.writing_mode.is_vertical_block_flow();
+    // kill-switch 进程级读一次（bench-gate wide-tree：per-node env::var 线性查找致
+    // block/flex_layout_1000_elements +54%/+36% 超预算）。
+    static BLOCK_MAXH_CLAMP: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let block_maxh_clamp =
+        *BLOCK_MAXH_CLAMP.get_or_init(|| std::env::var("ZW_BLOCK_MAXH_CLAMP").as_deref() != Ok("0"));
+    // 表族全门（含 table 本身——R1570：max-height 不压缩 table 固有内容，行高 75
+    // 保持，max 语义由表 sizing 链处理）。
+    let table_internal_1c = |s: &ComputedStyle| {
+        matches!(
+            s.display,
+            DisplayValue::Table
+                | DisplayValue::InlineTable
+                | DisplayValue::TableRow
+                | DisplayValue::TableRowGroup
+                | DisplayValue::TableHeaderGroup
+                | DisplayValue::TableFooterGroup
+                | DisplayValue::TableCell
+                | DisplayValue::TableCaption
+                | DisplayValue::TableColumn
+                | DisplayValue::TableColumnGroup
+        )
+    };
+    if block_maxh_clamp
+        && let Some(style) = style.as_ref().filter(|s| {
+            !box_node.is_absolute
+                    && !vert_px_nocap
+                    && !column_vsize_box(s)
+                    // R5108 门：本臂补 auto 高块盒的钳制；definite/stretch 高 taffy 已消费
+                    // max_size（重钳致 block-height-010 stretch / table-cell-overflow-
+                    // explicit-height-002 cell / max-height-stretch-relayout multicol 新红）。
+                    // aspect-ratio 盒的高由 taffy 比传递 + maybe_clamp(min,max) 解析
+                    //（fieldset-element-002 fieldset max-block-size × ratio 20/1，重钳
+                    // 与 legend 特殊布局互扰 0.52%→1.40%），归 taffy 链，本臂跳过。
+                    // line-clamp 宿主的块尺寸约束由 apply_cross_block_line_clamp 消费
+                    //（R3766/R4181：截断行数 = 约束预算推导），本臂先行钳制会改写
+                    // 预算输入（line-clamp-auto-with-ruby-005 新红），跳过。
+                    && matches!(s.height, LengthValue::Auto)
+                    && s.aspect_ratio.is_none()
+                    && matches!(s.line_clamp, LineClampComputedValue::None)
+                    && !table_internal_1c(s)
+                    && matches!(s.column_count, ColumnCountComputedValue::Auto)
+                    && matches!(s.column_width, ColumnWidthComputedValue::Auto)
+        })
+        && let Some(max_box_h) = resolve_postprocess_real_length(&style.max_height, style)
+    {
+        let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+        let is_border_box = matches!(style.box_sizing, BoxSizingValue::BorderBox);
+        // max-height 按 box-sizing 作用在边框盒或内容盒（与 1) 百分比臂同式）。
+        let max_content_h = if is_border_box {
+            (max_box_h - pb).max(0.0)
+        } else {
+            max_box_h
+        };
+        if box_node.content_height > max_content_h {
+            box_node.content_height = max_content_h;
+            box_node.height = max_content_h + pb;
         }
     }
 
@@ -2327,6 +2399,82 @@ pub(super) fn clamp_percentage_max_height(
             box_node.content_height = (box_node.content_height + delta).max(0.0);
             let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
             box_node.height = (box_node.height + delta).max(pb);
+        }
+    }
+
+    // 3) R5108（CSS2 §10.6.3 + §8.3.1 adjoining）：本盒 bottom margin 与末 in-flow 子
+    // bottom margin **不 adjoining**（本盒有 bottom border/padding——冒泡阻断点）且
+    // height:auto 时，内容高须延伸到末子 **margin-box 底缘**（含塌穿链泄漏到
+    // margin_bottom 的折叠值：margin-collapse-038 父 max-height:99 + 子 mb 100 塌穿
+    // → 绿底容器内容高 199 = 99 + 100，非 99）。taffy 的 bottom_y_margin_offset 在
+    // 两段式重跑/上方 delta 收缩传播后可能不存，此处按最终子盒态修复（仅延伸不收缩）。
+    // 直接子 mb 场景（无塌穿）taffy 已含，max 守卫下 no-op。
+    // 门：contain:size（内容不参与尺寸——css-contain contain-size-* 22 案新红源）、
+    // flex/grid item（cross 由 flex 算法管理）、multicol 容器（列碎片化语义）、
+    // table 内部盒（表布局管理行高）均跳过。
+    let table_internal = |s: &ComputedStyle| {
+        matches!(
+            s.display,
+            DisplayValue::TableRow
+                | DisplayValue::TableRowGroup
+                | DisplayValue::TableHeaderGroup
+                | DisplayValue::TableFooterGroup
+                | DisplayValue::TableCell
+                | DisplayValue::TableCaption
+                | DisplayValue::TableColumn
+                | DisplayValue::TableColumnGroup
+        )
+    };
+    static MARGIN_BOX_REPAIR: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let margin_box_repair =
+        *MARGIN_BOX_REPAIR.get_or_init(|| std::env::var("ZW_MARGIN_BOX_REPAIR").as_deref() != Ok("0"));
+    if margin_box_repair
+        && let Some(s) = style.as_ref().filter(|s| {
+            !box_node.is_absolute
+                && !box_node.writing_mode.is_vertical_block_flow()
+                && !s.contain.has_size()
+                && !box_node.is_flex_grid_item
+                // flex/grid 容器：item margin 不折叠，taffy 已计入容器高。
+                && !matches!(
+                    s.display,
+                    DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+                )
+                && matches!(s.column_count, ColumnCountComputedValue::Auto)
+                && matches!(s.column_width, ColumnWidthComputedValue::Auto)
+                && !table_internal(s)
+        })
+        && matches!(s.height, LengthValue::Auto)
+        && (box_node.padding_bottom > 0.0 || box_node.border_bottom > 0.0)
+    {
+        if let Some(last_inflow) = box_node
+            .children
+            .iter()
+            .rev()
+            .find(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
+        {
+            // 因果门：仅当末子自身带可解析 max-height（即 1c) 臂刚对其钳制、taffy 的
+            // bottom_y_margin_offset 含集不存于本盒高）时延伸——产品页 welcome 的
+            // 塌穿泄漏末子（无 max-height）chromium 不延伸（修复致 21.91% smoke 回归），
+            // 而 max-height 钳制形态（margin-collapse-038 父 99 + 泄漏 100）chromium
+            // 按 §10.6.3 计入。泄漏门（mb > 声明值）防直接子声明 mb 重叠延伸
+            //（border-dynamic-001/002 等五案新红域）。
+            let last_mb_and_maxh = last_inflow.node_id.and_then(|id| styles.get(&id)).map(|cs| {
+                (
+                    resolve_postprocess_real_length(&cs.margin_bottom, cs),
+                    resolve_postprocess_real_length(&cs.max_height, cs).is_some(),
+                )
+            });
+            if let Some((Some(declared_mb), true)) = last_mb_and_maxh
+                && last_inflow.margin_bottom > declared_mb + 0.5
+            {
+                let margin_box_bottom = last_inflow.y + last_inflow.height + last_inflow.margin_bottom;
+                if margin_box_bottom > box_node.content_height + 0.5 {
+                    box_node.content_height = margin_box_bottom;
+                    let pb =
+                        box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+                    box_node.height = margin_box_bottom + pb;
+                }
+            }
         }
     }
 }
