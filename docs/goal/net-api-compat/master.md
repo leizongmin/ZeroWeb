@@ -2,13 +2,12 @@
 
 **入口文档**: [../net-api-compat.md](../net-api-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-14（**M5-S4 执行——P6 二期收口**：websockets corpus
-**376/376 = 100%，case 106/106 = 100%**（M5-S1 基线 89.1% 起步四切片收口）——
-constructor/017 根因修齐（classic 脚本顶层 `let x;` 无初始化声明导出缺口）+
-basic-auth（WS URL userinfo 预置 Authorization + fixture 401 挑战端点））。
-此前：2026-10-14（M5-S3 eventsource 漂移归因修复 + WS cookie jar 集成）；
-2026-10-13（M5-S2 IDL/构造器/状态机修齐；M5-S1 通道+基线）；
-2026-10-01（M4-S29 收口判定——DC-1~4 全满足，目标 Completed）
+**最后更新**: 2026-10-14（**M5-S5 执行**——M4-S27 两前置审计实证清偿，页面
+scheme 对齐翻转落定（net-api 六 corpus 页锚 http，其余通道 https）：六 corpus
+总账 **+179 子测试**（url +186P / fetch −9P / xhr +2P）；Authorization 重定向簇
+21 case 转入既有跨域记账）。
+此前：同日 M5-S4（P6 二期收口——websockets 100%）；M5-S3（eventsource 修复 +
+WS cookie jar）；2026-10-13（M5-S2/S1）；2026-10-01（M4-S29 收口判定）
 
 ---
 
@@ -35,6 +34,17 @@ IDL 校验 19（shim）、`ws.protocol` 属性面 4 案（shim+bridge）、WS co
 1（017 执行序）。证据
 [evidence/2026-10-13-m5-s1-ws-fixture-baseline.md](evidence/2026-10-13-m5-s1-ws-fixture-baseline.md)。
 不测面：wss/h2 变体、`.https.*` 5 案（TLS）、multi-globals/unload-a-document（结构面）。
+
+**M5-S5 执行（同日）**：M4-S27 两前置审计实证清偿，scheme 翻转落定。① url 基址
+回退「×20 回归」未复现（M4-S26 后 shim 演进消化）——url **+186P/+10F（净 +176）**；
+② fetch −9P 集中于 Authorization 重定向保留流 21 case（cors-redirect-credentials
+15 + cors-redirect 5 + authentication-redirection 1）= M4-S27 评估一已回流
+security-hardening 邻域的既有记账簇（非新增缺陷）；解锁 cors-origin +8 /
+cors-basic +2 / integrity +1 / response-url +1。实施 = 页锚 scheme 域内双态
+（net-api corpus http / 其余通道 https）+ fetcher strip 双 scheme + 响应类型
+同源判定双 scheme。六 corpus 总账 **+179**。url 基址链残差（锚点 accessor
+`<base>`/document.baseURI 未实现，+5 子测试）记账独立切片。证据
+[evidence/2026-10-14-m5-s5-scheme-flip.md](evidence/2026-10-14-m5-s5-scheme-flip.md)。
 
 **M5-S4 执行（同日）**：① constructor/017 归因翻案——M5-S1 所记「runner 预处理
 工件」实为**产品缺口**：classic 页面脚本经间接 eval 的顶层声明导出扫描
@@ -123,6 +133,17 @@ streams/url/eventsource/xhr 与收口一致。逐字节仲裁证据见
 
 ## 已完成切片
 
+- **M5-S5（2026-10-14）**：页面 scheme 对齐翻转（M4-S27 两前置审计实证清偿——
+  重入条件闭合）：net-api 六 corpus 页锚 http（NET_API_CORPUS_SUBDIRS 前缀判定，
+  其余通道 secure-context https 不动）+ fetcher strip 双 scheme + 响应类型同源
+  双 scheme。六 corpus 总账 **+179 子测试**（url +186P/+10F、fetch −9P、xhr +2P、
+  mimesniff/streams/eventsource 持平）。①「×20 基址回退回归」未复现（残差 +5
+  子测试 = url 基址链记账：锚点 accessor 基址 = 页面 location、`<base>` 元素/
+  document.baseURI 未实现——探针实证，独立切片）；② fetch −9P = Authorization
+  重定向保留流 21 case 转入既有 security-hardening 邻域记账簇；解锁 cors-origin
+  +8 / cors-basic +2 / integrity +1 / response-url +1。make test 全绿
+  （20649P/0F）+ clippy + fmt 干净。见
+  [evidence/2026-10-14-m5-s5-scheme-flip.md](evidence/2026-10-14-m5-s5-scheme-flip.md)。
 - **M5-S4（2026-10-14）**：websockets corpus 收口（**376/376 = 100% / case
   106/106**）。① constructor/017 翻案为产品缺口：classic 间接 eval 顶层声明导出
   扫描（script_gen.rs scan_top_level_decl_exports）`const|let` 分支声明符接受集
@@ -506,11 +527,9 @@ streams/url/eventsource/xhr 与收口一致。逐字节仲裁证据见
 ## 下一步计划
 
 目标已收口（Completed，2026-10-01）。重入条件在案：
-1. **scheme 对齐两前置审计**（+29 连带入袋，见 M4-S27 evidence）：url shim 文档
-   基址回退审计（a-element about:blank 面 ×20）+ credentials/Authorization 流程
-   审计（×21）→ 完成后翻页面锚 `https://wpt.test` → `http://wpt.test`
-   （testharness.rs 34 处 + shim iframe 解析 1 处统一 http——跨切面，先评估回归
-   面再动；解同源判定/Origin 回显跨 scheme 失配 2 腿）
+1. **scheme 对齐两前置审计 → 已清偿（M5-S5，2026-10-14）**——翻转落定（六 corpus
+   总账 +179）；残差记账：url 基址链（锚点 accessor `<base>`/document.baseURI
+   面 +5 子测试）+ Authorization 重定向保留流 21 case（security-hardening 邻域）
 2. **结构性残余跨域认领**：streams transfer/detach 14 腿（spec
    TransferArrayBuffer——需宿主 V8 detach 能力，JS 层不可表达——bad-buffers 10
    + non-transferable 4；engine 宿主能力面）；cors credentials/cookie jar +

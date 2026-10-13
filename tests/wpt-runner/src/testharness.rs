@@ -3730,6 +3730,14 @@ pub const NET_API_CORPUS_SUBDIRS: &[&str] = &[
     "websockets/security",
 ];
 
+/// net-api corpus 页面 scheme 判定（M5-S5，M4-S27 记账翻转）：六 corpus 用例页锚
+/// `http://wpt.test`（上游 ?default 变体语义）；其余通道（service-workers 等
+/// secure-context 面）维持 https 页锚不动。websockets 已在此列（M5-S1 特例被
+/// 覆盖，语义不变）。子串前缀匹配与 [`run_net_api_cases`] 的通道枚举同口径。
+fn net_api_case_uses_http_page(case_name: &str) -> bool {
+    NET_API_CORPUS_SUBDIRS.iter().any(|dir| case_name.starts_with(dir))
+}
+
 /// net-api 六 corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
 /// - `*/resources/`（helper 资产——fetch/api/resources、xhr/resources、url/resources、
 ///   eventsource/resources、streams/resources 等，META script / inline 消费不按案跑）
@@ -4418,8 +4426,11 @@ fn is_long_timeout_case(source: &str) -> bool {
 fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::ImageSourceFetcher> {
     let root = wpt_root.to_path_buf();
     Some(std::sync::Arc::new(move |url: &str| {
-        // 仅 wpt.test 域名（测试资源）；其他 URL 回退网络。
-        let path_part = url.strip_prefix("https://wpt.test")?;
+        // 仅 wpt.test 域名（测试资源）；其他 URL 回退网络。M5-S5：页锚 scheme 双态
+        // （net-api corpus http、其余通道 https）——strip 双 scheme。
+        let path_part = url
+            .strip_prefix("https://wpt.test")
+            .or_else(|| url.strip_prefix("http://wpt.test"))?;
         let path_part = path_part.strip_prefix('/').unwrap_or(path_part);
         // 去查询串/片段。
         let clean = path_part.split(['?', '#']).next()?;
@@ -4435,7 +4446,10 @@ fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::Im
 fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::ScriptSourceFetcher> {
     let root = wpt_root.to_path_buf();
     Some(std::sync::Arc::new(move |page_url: &str, src: &str| {
-        let path_part = match src.strip_prefix("https://wpt.test") {
+        let path_part = match src
+            .strip_prefix("https://wpt.test")
+            .or_else(|| src.strip_prefix("http://wpt.test"))
+        {
             Some(path) => path.to_string(),
             None if src.starts_with("http://") || src.starts_with("https://") => {
                 return Err(format!("external script origin is not available in WPT runner: {src}"));
@@ -7095,15 +7109,18 @@ fn wpt_fetch_response_type(req: &zero_engine::fetch_bridge::FetchRequest, status
     // https://fetch.spec.whatwg.org/#concept-filtered-response-cors
     // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque
     // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque-redirect
+    // M5-S5：页锚 scheme 双态（net-api corpus http / 其余通道 https）——同源判定按
+    // wpt.test 权威双 scheme 成员（本 runner 页面域恒 wpt.test）。
     let page_origin = "https://wpt.test";
     let response_origin = wpt_url_origin(&req.url);
+    let same_origin = response_origin == page_origin || response_origin == "http://wpt.test";
     let mode = req.mode.as_deref().unwrap_or("");
     let redirect = req.redirect.as_deref().unwrap_or("");
     if redirect == "manual" && matches!(status, 301 | 302 | 303 | 307 | 308) {
         "opaqueredirect"
-    } else if mode == "no-cors" && response_origin != page_origin {
+    } else if mode == "no-cors" && !same_origin {
         "opaque"
-    } else if !response_origin.is_empty() && response_origin != page_origin {
+    } else if !response_origin.is_empty() && !same_origin {
         "cors"
     } else {
         "basic"
@@ -7268,7 +7285,11 @@ pub(crate) fn run_testharness_html_inner(
     // 即 http 页面 + ws 连接（constants.sub.js 判 `location.protocol === 'https:'`
     // 翻 wss 分支；runner 无 TLS fixture，wss 变体不在度量面）。通道级 scheme 翻转
     // 是 P3 挂账另案（两前置审计），此处仅 websockets 用例局部生效。
-    let page_scheme = if case_name.starts_with("websockets/") {
+    // net-api M5-S5（M4-S27 记账翻转）：net-api 六 corpus 页锚 http（上游 ?default
+    // 变体语义——access-control/cors-origin/integrity/response-url/url a-element 的
+    // http: 形态期望面解锁）；其余通道维持 https（service-workers 等 secure-context
+    // 面 scheme 门不动）。websockets 先行特例被本判定覆盖（同 http）。
+    let page_scheme = if net_api_case_uses_http_page(case_name) {
         "http"
     } else {
         "https"
