@@ -761,7 +761,16 @@ pub(crate) fn resolve_collapsed_borders(
                         } else {
                             None
                         };
-                        overrides.push(((row_idx, cell_idx), 1, win_w, Some(win_color), style_ov));
+                        // R5100：行/行组胜出右缘 → side 4（= side 1 + cell 宽增长，
+                        // §17.6.1 边框区外扩；border-right-width-applies-to-001..004
+                        // 族实证）。Table/ColumnGroup/Column 胜出维持 side 1（带绘于
+                        // 表内容区内缘——005 colgroup 胜出 A/B 判例，外扩翻红）。
+                        let side = if matches!(win_src, BorderSource::Row | BorderSource::RowGroup) {
+                            4
+                        } else {
+                            1
+                        };
+                        overrides.push(((row_idx, cell_idx), side, win_w, Some(win_color), style_ov));
                     }
                 } else if matches!(cb.right_s, BorderStyleValue::Hidden) {
                     overrides.push(((row_idx, cell_idx), 1, 0.0, None, None));
@@ -808,8 +817,34 @@ pub(crate) fn resolve_collapsed_borders(
                     cell_box.collapsed_border_style_overrides[1] = Some(s);
                 }
             }
+            // R5100：side 4 = 右缘 + cell 宽增长（行/行组胜出右缘，§17.6.1 边框区
+            // 外扩语义）。colgroup/column/table 胜出走 side 1（带绘于内容区内缘，
+            // 005 A/B 判例）。side 4 仅由右缘外边缘 section 发射。
+            4 => {
+                let prev = cell_box.border_right;
+                cell_box.border_right = width;
+                if width > prev {
+                    cell_box.width += width - prev;
+                }
+                if let Some(c) = color_override {
+                    cell_box.collapsed_border_color_overrides[1] = Some(c);
+                }
+                if let Some(s) = style_override {
+                    cell_box.collapsed_border_style_overrides[1] = Some(s);
+                }
+            }
             2 => {
+                // R5100（CSS2 §17.6.1 collapsing border model）：胜出边框宽入 cell
+                // border-box——底缘 override 变宽时 cell 高同步增长（converter 侧按
+                // 原 border 记账），行高/表高随 Σ cell 增长（border-bottom-width-
+                // applies-to-001 族：rowgroup border-bottom 96px 胜出但 cell 高 0，
+                // 底缘带绘于 cell 底边之 upside 方块错位顶部）。缩窄（delta<0）不收缩
+                // 高（converter 记账的 border 分量不动，仅变宽切片）。
+                let prev = cell_box.border_bottom;
                 cell_box.border_bottom = width;
+                if width > prev {
+                    cell_box.height += width - prev;
+                }
                 if let Some(c) = color_override {
                     cell_box.collapsed_border_color_overrides[2] = Some(c);
                 }

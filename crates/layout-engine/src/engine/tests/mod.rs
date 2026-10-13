@@ -699,3 +699,5 @@ mod r5095_inline_table_line_box_tests;
 mod r5097_table_raw_text_anon_cell_tests;
 /// R5099 行指定高 floor（css-tables-3 §3.10.1 / CSS2 §17.5.3）测试。
 mod r5099_row_spec_floor_tests;
+/// R5100 collapse 边框胜出宽度入 cell border-box（CSS2 §17.6.1）测试。
+mod r5100_collapse_border_box_growth_tests;
