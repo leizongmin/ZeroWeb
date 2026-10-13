@@ -1956,6 +1956,12 @@ impl WebView {
         self.pipeline.clear_detached_sel_nodes();
     }
 
+    /// 当前外部样式表文本（P9-9/R5107：renderer 同步进 js worker，getComputedStyle
+    /// 合成源与布局管线同源——读侧不触发渲染，纯字段访问）。
+    pub fn cached_css(&self) -> &str {
+        &self.cached_css
+    }
+
     /// 已缓存图片固有尺寸。
     pub fn cached_image_sizes(&self) -> &HashMap<u64, (f32, f32)> {
         &self.cached_image_sizes

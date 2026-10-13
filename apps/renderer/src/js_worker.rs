@@ -80,6 +80,9 @@ enum JsWorkerCommand {
     SetDomSnapshot {
         html: String,
         url: String,
+        /// P9-9/R5107：本代外部样式表文本（webview cached_css 发送时钉版）——js worker
+        /// 线程装填线程局部，getComputedStyle 合成源与布局管线同源。空串 = 无外部 CSS。
+        external_css: std::sync::Arc<str>,
         /// t2-pb1 fix#21：应用完成回执（None = fire-and-forget，优先通道快照用）。
         reply: Option<Sender<()>>,
         /// t2-pb1 F1：文档代际序号（同 [`JsWorkerCommand::Execute`]）。
@@ -150,6 +153,9 @@ pub struct RendererJsWorker {
     /// t2-pb1 F1：文档代际序号源——文档类命令提交时在此分配单调 seq（宿主侧顺序即
     /// 代际顺序；ResetDocumentState 携带自己的 seq 作清队界）。
     cmd_seq: Arc<AtomicU64>,
+    /// P9-9/R5107：当前外部样式表文本（webview cached_css 经 runtime sync 推入）。
+    /// set_dom_snapshot 提交时钉版进命令（同代快照/脚本读到一致版本，无撕裂）。
+    external_css: Arc<std::sync::Mutex<String>>,
     /// S11：page console 输出队列（worker 回调推入，runtime drain）。
     console_logs: Arc<std::sync::Mutex<Vec<(String, String, String)>>>,
     /// R-baidu2/P3：未捕获脚本错误队列（page_scripts 推入，runtime drain 后
@@ -357,6 +363,7 @@ impl RendererJsWorker {
             cmd_tx,
             prio_tx: prio_tx_for_struct,
             cmd_seq,
+            external_css: Arc::default(),
             join: Some(join),
             executor,
             prio_executor,
@@ -529,6 +536,25 @@ impl RendererJsWorker {
             .unwrap_or(0)
     }
 
+    /// P9-9/R5107：更新当前外部样式表文本（webview `cached_css`，runtime 同步咽喉推入）。
+    /// 不立即下发——由下一次 `set_dom_snapshot` 钉版随命令进 worker（快照/同批脚本
+    /// 读到一致版本；无快照则无 gCS 新代，无需独立命令）。
+    pub fn set_external_css(&self, css: &str) {
+        if let Ok(mut slot) = self.external_css.lock()
+            && slot.as_str() != css
+        {
+            *slot = css.to_string();
+        }
+    }
+
+    /// 当前外部 CSS 的钉版快照（发送时读，进 SetDomSnapshot 命令）。
+    fn pinned_external_css(&self) -> std::sync::Arc<str> {
+        self.external_css
+            .lock()
+            .map(|css| -> std::sync::Arc<str> { Arc::from(css.as_str()) })
+            .unwrap_or_default()
+    }
+
     /// 脚本执行前更新 DOM HTML 快照与页面 URL。
     pub fn set_dom_snapshot(&self, html: &str, url: &str) {
         let (reply_tx, reply_rx) = std::sync::mpsc::channel();
@@ -537,6 +563,7 @@ impl RendererJsWorker {
             .send(JsWorkerCommand::SetDomSnapshot {
                 html: html.to_string(),
                 url: url.to_string(),
+                external_css: self.pinned_external_css(),
                 reply: Some(reply_tx),
                 seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
             })
@@ -560,6 +587,7 @@ impl RendererJsWorker {
         let _ = self.prio_tx.send(JsWorkerCommand::SetDomSnapshot {
             html: html.to_string(),
             url: url.to_string(),
+            external_css: self.pinned_external_css(),
             reply: None,
             seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
         });
@@ -1405,7 +1433,17 @@ fn js_worker_main(
                 let result = execute_module_in_sandbox(&mut *sandbox, &source, &url, &deps, map_opt.as_ref());
                 let _ = reply.send(result);
             }
-            JsWorkerCommand::SetDomSnapshot { html, url, reply, .. } => {
+            JsWorkerCommand::SetDomSnapshot {
+                html,
+                url,
+                external_css,
+                reply,
+                ..
+            } => {
+                // P9-9/R5107：装本代外部 CSS 线程局部——getComputedStyle 合成源
+                // （collect_stylesheets css 参数）与布局管线同源。每快照无条件覆盖
+                //（含清空，跨文档残留不可能存活）；先于同代 gCS（同通道 FIFO）。
+                zero_engine::js_dom_bridge::set_active_external_css(&external_css);
                 // P6 import map：快照换代即从页面 HTML 重取 `<script type="importmap">`——
                 // 后续 ExecuteModule 编译与动态 import 均按本代 map 解析。每代无条件清空
                 // 重设（无 map/解析失败 → None，按规范整张不注册；保留上一代会跨页污染）。
@@ -2320,6 +2358,45 @@ mod tests {
                 .unwrap(),
             "SPAN",
             "reset_context 后下一快照重 install 原生绑定"
+        );
+        worker.shutdown();
+    }
+
+    /// P9-9/R5107（多进程生产路径）：`set_external_css`（runtime 同步咽喉的消费端）
+    /// → `set_dom_snapshot` 钉版下发 → worker 线程局部装填 → 页面脚本 getComputedStyle
+    /// 读外部 CSS，与布局管线（pipeline render 的同一 cached_css）合成源同源。
+    #[test]
+    fn renderer_js_worker_external_css_feeds_computed_style_p99() {
+        let mut worker = RendererJsWorker::spawn(62);
+        let html = "<html><head><style></style></head><body><h1>t</h1></body></html>";
+        // css 未同步（LoadHtml 内联形态 / webview 尚未产出外部表）：合成源仅内联。
+        worker.set_dom_snapshot(html, "https://zero.test/p99");
+        assert_eq!(
+            worker
+                .execute_script_direct("getComputedStyle(document.querySelector('h1')).getPropertyValue('font-family')")
+                .unwrap(),
+            "",
+            "未同步外部 CSS 时合成源不变"
+        );
+        // runtime sync 咽喉推入 → 下一次快照钉版 → gCS 反映（含换代失效：同 html 新 css）。
+        worker.set_external_css("h1 { font-family: GithubMono, monospace; }");
+        worker.set_dom_snapshot(html, "https://zero.test/p99");
+        assert_eq!(
+            worker
+                .execute_script_direct("getComputedStyle(document.querySelector('h1')).getPropertyValue('font-family')")
+                .unwrap(),
+            "GithubMono, monospace",
+            "外部 CSS 经快照钉版进 gCS 合成源"
+        );
+        // 跨文档清空：worker 臂每次快照无条件覆盖 → 残留不可能存活。
+        worker.set_external_css("");
+        worker.set_dom_snapshot("<html><body><h1>u</h1></body></html>", "https://zero.test/p99b");
+        assert_eq!(
+            worker
+                .execute_script_direct("getComputedStyle(document.querySelector('h1')).getPropertyValue('font-family')")
+                .unwrap(),
+            "",
+            "跨文档 css 清空后旧规则不得残留"
         );
         worker.shutdown();
     }

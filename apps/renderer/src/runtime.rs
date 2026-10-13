@@ -1696,6 +1696,10 @@ impl RendererRuntime {
             if !html.is_empty() {
                 self.cached_html = html;
             }
+            // P9-9/R5107：外部 CSS 同步进 js worker（progressive paint publish 咽喉——
+            // fetch_page_images 装入 cached_css 后先于脚本阶段到达）。worker 在下一次
+            // set_dom_snapshot 钉版下发；LoadHtml 内联形态 cached_css 为空，行为不变。
+            self.js_worker.set_external_css(wv.cached_css());
         }
     }
 

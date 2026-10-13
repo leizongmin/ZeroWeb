@@ -1152,7 +1152,9 @@ pub fn register_dom_callbacks(
     // 提取并存入。html 变（新 snapshot）/ drain 前进 / inline style mutation 变 → 换代重算。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
-    let cs_cache: Arc<Mutex<Option<(String, usize, usize, HashMap<String, ComputedStyle>)>>> =
+    // P9-9/R5107：键并入外部 CSS（Arc<str>）——同 html 同代但 css 换代（快照臂重装）
+    // 时 per-selector 短路不得返旧代样式。
+    let cs_cache: Arc<Mutex<Option<(String, usize, usize, Arc<str>, HashMap<String, ComputedStyle>)>>> =
         Arc::new(Mutex::new(None));
     sandbox.register_callback(
         "__zw_get_computed_style",
@@ -1170,17 +1172,19 @@ pub fn register_dom_callbacks(
             // E14：drain 代际并入 doc 缓存键——mutation 队列 drain 后重长回同 len 但内容
             // 可不同（与视图缓存精确命中键同理由，见 MUT_DRAIN_GEN 注）。
             let doc_drain_gen = MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
+            // P9-9：当前代外部 CSS（快照臂装填，同代内稳定）。
+            let css = crate::js_dom_bridge::active_external_css();
             let mut cache = cs_cache.lock().unwrap_or_else(|e| e.into_inner());
-            // html 变 / drain 前进 / style_version 变 → 清空 per-selector 缓存，重置 key。
-            // drain_gen 并键（PR #83 复核遗留收口）：drain 后队列重长回同 len 但内容可不同，
-            // 已缓存 selector 走本 map 短路先于 doc 级代际缓存，键不含 drain_gen 则返 stale。
+            // html 变 / drain 前进 / style_version 变 / 外部 CSS 变 → 清空 per-selector 缓存，
+            // 重置 key。drain_gen 并键（PR #83 复核遗留收口）：drain 后队列重长回同 len 但内容
+            // 可不同，已缓存 selector 走本 map 短路先于 doc 级代际缓存，键不含 drain_gen 则返 stale。
             let need_reset = cache
                 .as_ref()
-                .is_none_or(|(h, g, v, _)| h != &*snap || *g != doc_drain_gen || *v != style_version);
+                .is_none_or(|(h, g, v, c, _)| h != &*snap || *g != doc_drain_gen || *v != style_version || *c != css);
             if need_reset {
-                *cache = Some(((*snap).clone(), doc_drain_gen, style_version, HashMap::new()));
+                *cache = Some(((*snap).clone(), doc_drain_gen, style_version, css, HashMap::new()));
             }
-            let (_, _, _, map) = cache.as_mut().expect("cs cache populated");
+            let (_, _, _, _, map) = cache.as_mut().expect("cs cache populated");
             // 同 selector 命中 → 直接 serialize（O(1)）。
             if let Some(style) = map.get(sel) {
                 return serialize_computed_property(style, prop);
