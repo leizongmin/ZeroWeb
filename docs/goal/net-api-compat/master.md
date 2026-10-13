@@ -92,10 +92,10 @@ streams/url/eventsource/xhr 与收口一致。逐字节仲裁证据见
 - zero-web P1a — URL/URLSearchParams 既有实现为本 goal 修齐对象（改动走本 goal 账本）
 - rendering-compat 及渲染流 — 无共享 crate 面
 
-**碰头观察（2026-10-14，渲染流域）**：渲染流 commit 156219d2d/829e90ca3 落地的
-`apps/renderer/src/runtime.rs` 内含 `/tmp/kbtrace.log` 调试残留且未过 rustfmt——
-本流 `cargo fmt --all` 产出该文件 78 行纯格式 diff（工作树未提交，留渲染流处置：
-fmt 补提交 + kbtrace 调试残留清理）。本流未改其域内文件。
+**碰头观察（2026-10-14，渲染流域，已闭环）**：渲染流 156219d2d 落地的
+`apps/renderer/src/runtime.rs` 曾含 `/tmp/kbtrace.log` 调试残留且未过 rustfmt——
+本流 `cargo fmt --all` 触及该文件（未提交，按 §9 留域内处置）；渲染流已自修
+（commit 7f5a46587——移除调试行 + 恢复 fmt/clippy 门禁），本流无残留。
 
 ## 缺口清单
 
