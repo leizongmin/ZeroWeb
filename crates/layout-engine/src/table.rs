@@ -395,6 +395,93 @@ fn size_vertical_orphan_caption(
     true
 }
 
+/// R5097（CSS Tables §17.2.1 匿名 cell）：display:table/inline-table 根的**直接散文本子**
+///（无 cell/row 元素包装）——build_grid 零行落入空表臂时，按匿名 cell 语义把表收缩适应到
+/// 文本的 max-content 宽 + IFC 高。旧路径落 shrink_table_to_block_content 无块子可收
+///（文本子从未入 LayoutBox children——表容器非 IFC 消费语境且不走 flex 文本 leaf 臂）→
+/// shrink_empty_table_to_padding_border 清零塌 0×0、文本绘于表 y 处与后继块重叠
+///（run-in-table-between-001/002 / run-in-inline-table-between-001/002 族 3.17% +
+/// `<table>raw text</table>` 形态）。单行 max-content 语义（多行长文本折行不在本切片，
+/// 无 driving 案）。kill-switch `ZW_TABLE_RAW_TEXT_ANON_CELL=0`。
+fn size_table_with_raw_text_content(
+    table_box: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+) -> bool {
+    if std::env::var("ZW_TABLE_RAW_TEXT_ANON_CELL").as_deref() == Ok("0") {
+        return false;
+    }
+    let Some(dom_id) = table_box.node_id else {
+        return false;
+    };
+    // 仅 width/height 均 auto（definite 宽表文本折行 / definite 高（如 R4436 孤儿
+    // caption 的行内 extent）语义归后续切片；显式尺寸不走本臂，维持既有收缩路径）
+    let is_auto_size = styles.get(&dom_id).is_some_and(|s| {
+        matches!(s.width, zero_css_parser::values::LengthValue::Auto)
+            && matches!(s.height, zero_css_parser::values::LengthValue::Auto)
+    });
+    if !is_auto_size {
+        return false;
+    }
+    // 仅**纯文本表**（DOM 子全为文本节点）：混合行内容表（text+inline 元素子，如
+    // bidi-008a 的 `p{display:table}` 带边框 span——全 inline 子使表 taffy leaf 化、
+    // LayoutBox children 恒空，children 判定不可分）旧路径经 shrink_table_to_block_
+    // content 的 no-op 臂保留 taffy IFC 几何而通过——本测量只覆盖直属文本，不混测
+    // 元素子，扩门会把那类表缩错（实测 bidi-008a/008b、size-adjust-03 新红）。混合
+    // 内容的匿名 cell 收缩适应归后续切片。
+    let children = doc.child_nodes(dom_id);
+    let mut has_direct_text = false;
+    for &c in children.iter() {
+        let Some(n) = doc.get(c) else {
+            continue;
+        };
+        match &n.kind {
+            zero_dom::NodeKind::Text(t) if !t.content.trim().is_empty() => has_direct_text = true,
+            zero_dom::NodeKind::Element(_) => {
+                return false;
+            }
+            _ => {}
+        }
+    }
+    if !has_direct_text {
+        return false;
+    }
+    let size = crate::inline_finalization::measure_text_content(
+        doc,
+        styles,
+        dom_id,
+        taffy::geometry::Size {
+            width: None,
+            height: None,
+        },
+        taffy::geometry::Size {
+            width: taffy::style::AvailableSpace::MaxContent,
+            height: taffy::style::AvailableSpace::MaxContent,
+        },
+        &HashMap::new(),
+        inline_fonts,
+        None,
+    );
+    if !(size.width > 0.0 && size.height > 0.0) {
+        return false;
+    }
+    let frame_w = table_box.border_left + table_box.border_right + table_box.padding_left + table_box.padding_right;
+    let frame_h = table_box.border_top + table_box.border_bottom + table_box.padding_top + table_box.padding_bottom;
+    // 测量值取整到整数相位——表盒自定尺寸路径绕过 taffy round_layout，未取整的
+    // 小数高会把错相位固化进后继兄弟流（R4333 判例：run-in-clear-001 45.62 无 AA
+    // 边框画 3 行 vs ref 2 行）。行盒高向下取整对齐块容器终末行盒高语义
+    //（ref 探针 probe-r5097-r：普通 div 直排文本行高 18.0，测量 IFC 18.624——
+    // round 会取 19 反而错相位 1px，run-in-table-between-001 A/B 实证）。
+    let content_w = size.width.floor();
+    let content_h = size.height.floor();
+    table_box.content_width = content_w;
+    table_box.content_height = content_h;
+    table_box.width = content_w + frame_w;
+    table_box.height = content_h + frame_h;
+    true
+}
+
 /// R4495：嵌套表高度预 pass——后序递归，对子树内 Table/InlineTable 节点触发
 /// layout_table（自含子树：自身 grid/行高/格位仅依赖自身子树），使节点高度在其
 /// 父级（cell → 外层表行高）消费前已是修正值。见 layout_table_inner 调用点注释。
@@ -441,6 +528,10 @@ fn layout_table_inner(
         //（R4432 cell 固有宽 viv 臂同谱系，ZW_VIV_SIZING kill-switch 同族）。
         // 仅纯 inline 内容（无子盒）触达；含 block 子的 caption 维持既有 shrink 路径。
         if size_vertical_orphan_caption(table_box, doc, styles, inline_fonts) {
+            return;
+        }
+        // R5097：直接散文本子 → 匿名 cell 收缩适应（CSS Tables §17.2.1）。
+        if size_table_with_raw_text_content(table_box, doc, styles, inline_fonts) {
             return;
         }
         // 没有正规表格子元素（无 row/cell/row-group），但可能存在 block 级子元素。

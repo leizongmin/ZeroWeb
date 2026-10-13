@@ -695,3 +695,5 @@ mod r5080_column_vsize_tests;
 mod r5081_pseudo_ws_tests;
 /// R5095 原子行内级盒行盒组装（inline-table va 对齐豁免重叠下推）测试。
 mod r5095_inline_table_line_box_tests;
+/// R5097 display:table 直接散文本子匿名 cell 收缩适应（CSS Tables §17.2.1）测试。
+mod r5097_table_raw_text_anon_cell_tests;
