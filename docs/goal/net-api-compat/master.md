@@ -669,6 +669,10 @@ crate 的 fmt 已单测干净）。渲染流需再次自清。
 3. **goal 内结构性挂账（M5-S10 后余量）**：XML 文档解析（engine XML DOM——
    template-element 族）；formdata 残余 5F（structural/wire/跨域几何——M5-S8
    精确记账，本 goal 不再实施）。timeout 族 3 腿 **已销账（M5-S10，2026-10-14）**
-   ——setter 重排附带 overrides 族 2 腿一并回绿
+   ——setter 重排附带 overrides 族 2 腿一并回绿。**下一候选切片（M5-S11）**：
+   XHR 小残量三簇——response-body-errors 2 腿（XHR bad-chunk 面，可复用 M5-S9
+   `x-zero-body-error-after` 机制扩 XHR 路径）+ getallresponseheaders-after-reuse
+   1 腿（复用响应头表重置）+ event-error.sub 1 腿（先甄别归属）；XML DOM 深水
+   切片在其后
 
 **待用户决策清单**：（空）
