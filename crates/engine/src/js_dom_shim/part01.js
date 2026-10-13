@@ -4842,23 +4842,59 @@
 
   // https://w3c.github.io/input-events/#input-event-order-during-user-initiated-editing
   // host 在 keydown 默认动作阶段调用：先派 cancelable beforeinput；未取消才更新 value/selection，
-  // 再派不可取消 input。非 input/textarea 目标 → no-op。
+  // 再派 textInput(legacy) 与不可取消 input。非 input/textarea 目标 → no-op。
+  // t2-pd2a：readonly/maxlength 守卫从宿主侧计划（快照读）下沉到本函数——原子插入路径
+  // 与守卫同一活状态读取点，消除「快照计划→迟到应用」的 lost-update 窗（DDG 首页实测：
+  // 击键重叠时按陈旧快照覆盖写入，"rust"→"rsut"/24 字符落 2 字符）。
   globalThis.__zw_text_input = function(sel, ch) {
     var target = _resolveInputTarget(sel);
     if (!target) return;
     var el = target.element;
     var cur = el.value || '';
+    // t2-pd2a：readonly（live）——同 plan_text_insert 的 ReadOnlyTarget 语义。
+    try { if (typeof el.hasAttribute === 'function' && el.hasAttribute('readonly')) return; } catch (_eRo) {}
     var state = _textSelection[target.key];
     var start = state ? Math.max(0, Math.min(cur.length, state.start)) : cur.length;
     var end = state ? Math.max(start, Math.min(cur.length, state.end)) : cur.length;
     var inserted = String(ch);
+    // t2-pd2a：maxlength（live，UTF-16 计）——同 plan_text_insert 的截断语义
+    //（retained = value.len16 − 选区宽；allowed = max − retained；超出截断，空则 no-op）。
+    // https://html.spec.whatwg.org/multipage/input.html#attr-input-maxlength
+    var maxLen = null;
+    try {
+      var ml = el.getAttribute && el.getAttribute('maxlength');
+      if (ml != null && /^\d+$/.test(String(ml).trim())) maxLen = parseInt(String(ml).trim(), 10);
+    } catch (_eMl) {}
+    if (maxLen != null) {
+      var retained = cur.length - (end - start);
+      var allowed = maxLen - retained;
+      if (allowed <= 0) return;
+      if (inserted.length > allowed) {
+        inserted = inserted.slice(0, allowed);
+        // 代理对安全：半截高代理丢弃（同宿主 truncate_to_utf16 语义）。
+        var last16 = inserted.charCodeAt(inserted.length - 1);
+        if (last16 >= 0xD800 && last16 <= 0xDBFF) inserted = inserted.slice(0, -1);
+      }
+      if (inserted.length === 0) return;
+    }
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, data: inserted, inputType: 'insertText', isComposing: false
     });
-    if (el.dispatchEvent(before) === false) return;
+    if (el.dispatchEvent(before) === false) return 'prevented';
+    // 尾簇 31：legacy textInput 夹在 beforeinput 与 DOM 变更之间（UI Events legacy
+    // 附录；WPT textInput/basic 断言面——原宿主计划管道 followup 通道派发，本原子
+    // 路径同序同形态；取消不回滚插入——headless 近似，同计划管道语义）。
+    if (globalThis._zwTextEventCtorRef) {
+      el.dispatchEvent(new globalThis._zwTextEventCtorRef('textInput', {
+        bubbles: true, cancelable: true, view: globalThis, data: inserted
+      }));
+    }
     el.value = cur.slice(0, start) + inserted + cur.slice(end);
     var caret = start + inserted.length;
     _textSelection[target.key] = { start: caret, end: caret, direction: 'none' };
+    // t2-pd2a：用户编辑标记（validity tooShort 面依赖——同计划管道
+    // script_set_text_control_state 的 mark_user_edited）。
+    if (typeof __zw_mark_user_edited === 'function') __zw_mark_user_edited(sel);
     var input = new InputEvent('input', {
       bubbles: true, cancelable: false, data: inserted, inputType: 'insertText', isComposing: false
     });
@@ -4870,6 +4906,8 @@
     var target = _resolveInputTarget(sel);
     if (!target) return;
     var el = target.element;
+    // t2-pd2a：readonly（live）——同 plan_text_delete 的 ReadOnlyTarget 语义（原子路径守卫）。
+    try { if (typeof el.hasAttribute === 'function' && el.hasAttribute('readonly')) return; } catch (_eRo) {}
     var cur = el.value || '';
     var state = _textSelection[target.key];
     var start = state ? Math.max(0, Math.min(cur.length, state.start)) : cur.length;
@@ -4887,9 +4925,13 @@
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, data: null, inputType: 'deleteContentBackward', isComposing: false
     });
-    if (el.dispatchEvent(before) === false) return;
+    // t2-pd2a 复核 D2：取消语义与 `__zw_text_input` 对齐——返回 'prevented' 供宿主
+    // canceled 契约传播（DeleteBackward 的 canceled 面不回退）。
+    if (el.dispatchEvent(before) === false) return 'prevented';
     el.value = cur.slice(0, start) + cur.slice(end);
     _textSelection[target.key] = { start: start, end: start, direction: 'none' };
+    // t2-pd2a：用户编辑标记（同计划管道 script_set_text_control_state）。
+    if (typeof __zw_mark_user_edited === 'function') __zw_mark_user_edited(sel);
     var input = new InputEvent('input', {
       bubbles: true, cancelable: false, data: null, inputType: 'deleteContentBackward', isComposing: false
     });

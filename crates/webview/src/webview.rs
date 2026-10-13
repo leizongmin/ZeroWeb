@@ -7352,6 +7352,30 @@ mod tests {
     // 测试直呼（测试内均为 `wv.` 形）。
     // PR #84 testeff 轮 S-1 加固：注释化删行（`// self.evict_…` 惯用禁用手法）原文
     // 计数不变形——先剔除整行 `//` 注释再计数，注释化与硬删行同判红。
+    /// t2-pd2a：文本控件编辑原子路径钉——InsertText/DeleteBackward 必须经
+    /// `__zw_text_input`/`__zw_text_delete` 单脚本活状态执行（旧「快照计划→内嵌全值
+    /// SetText」三段管线在击键重叠时按陈旧快照整值覆盖，lost-update 丢字）。
+    /// 删行/注释化本分支即红。
+    #[test]
+    fn text_edit_atomic_path_present_t2pd2a() {
+        let src = include_str!("webview/user_actions.rs");
+        let live = src
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            live.matches("script_text_input(&selector, text)").count(),
+            1,
+            "Text 臂 InsertText 原子脚本调用点必须存在（t2-pd2a）"
+        );
+        assert_eq!(
+            live.matches("script_text_delete(&selector)").count(),
+            1,
+            "Text 臂 DeleteBackward 原子脚本调用点必须存在（t2-pd2a）"
+        );
+    }
+
     #[test]
     fn execute_dom_script_path_evict_call_site_present_s35() {
         let src = include_str!("webview/user_actions.rs");

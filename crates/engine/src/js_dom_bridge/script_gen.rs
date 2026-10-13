@@ -440,6 +440,7 @@ if(!Number.isFinite(s))s=v.length;if(!Number.isFinite(n))n=s;\
 s=Math.max(0,Math.min(v.length,s));n=Math.max(s,Math.min(v.length,n));\
 var x='{esc_text}';e.value=v.slice(0,s)+x+v.slice(n);\
 var c=s+x.length;if(typeof e.setSelectionRange==='function')e.setSelectionRange(c,c);\
+if(typeof __zw_mark_user_edited==='function')__zw_mark_user_edited('{esc_sel}');\
 }})()"
     )
 }
