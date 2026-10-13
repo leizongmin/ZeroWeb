@@ -705,3 +705,6 @@ mod r5100_collapse_border_box_growth_tests;
 mod r5104_abspos_shrink_to_fit_ceil_tests;
 /// R5108 块盒 px max-height 钳制 + 塌穿泄漏 margin 的容器 margin-box 计入测试。
 mod r5108_max_height_margin_box_tests;
+/// R5109 诊断探针（临时）：margin-collapse-157/142 形态 margin 泄漏路径。
+/// R5109 clearance 修正 extent 缩减祖先传播 + 空块末链自折叠剔除测试。
+mod r5109_clearance_extent_propagation_tests;

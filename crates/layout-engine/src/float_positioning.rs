@@ -2210,11 +2210,20 @@ pub(crate) fn adjust_float_positions_with_context(
                             && content_y_offset == 0.0
                             && box_node.margin_top > box_node.declared_margin_top + 0.01
                             && (box_node.margin_top - child.margin_top).abs() < 0.01
-                            && (child.margin_top - child.declared_margin_top).abs() < 0.01
+                            // R5109：子 mt 允许被其自身子树折叠膨胀（max(声明, 末链)——
+                            // margin-collapse-157 row2：.clear 自身 mt 声明 0 但被内部
+                            // empty 自折叠 16 抬到 16）。§8.3.1「child has clearance」阻止
+                            // 该组与容器 top 折叠，组应以子的自身 margin 留父内——撤销容器
+                            // 膨胀量仍正确（组不消失，仅从容器 margin 槽归位）。仅拒绝
+                            // 子 mt 小于声明（负向异常不属本签名）。
+                            && child.margin_top >= child.declared_margin_top - 0.01
                         {
                             let over_collapse = box_node.margin_top - box_node.declared_margin_top;
                             box_node.y -= over_collapse;
                             box_node.margin_top = box_node.declared_margin_top;
+                            // R5109：容器 extent（含 mt）缩减 over_collapse，记录供祖先
+                            // 传播（taffy 祖先高按膨胀前的 margin-box 计）。
+                            box_node.clearance_extent_reduction += over_collapse;
                             parent_mt_reverted = true;
                         }
                         // R1316 defect ①/②：正 clearance 被应用 → 该子的 margin 不再
@@ -2271,11 +2280,15 @@ pub(crate) fn adjust_float_positions_with_context(
                             && content_y_offset == 0.0
                             && box_node.margin_top > box_node.declared_margin_top + 0.01
                             && (box_node.margin_top - child.margin_top).abs() < 0.01
-                            && (child.margin_top - child.declared_margin_top).abs() < 0.01
+                            // R5109：同正 clearance 臂——子 mt 允许被其自身子树折叠膨胀
+                            //（§8.3.1「child has clearance」语义下撤销容器膨胀仍正确）。
+                            && child.margin_top >= child.declared_margin_top - 0.01
                         {
                             let over_collapse = box_node.margin_top - box_node.declared_margin_top;
                             box_node.y -= over_collapse;
                             box_node.margin_top = box_node.declared_margin_top;
+                            // R5109：同正 clearance 臂——记录供祖先传播。
+                            box_node.clearance_extent_reduction += over_collapse;
                             parent_mt_reverted = true;
                         }
                     } else {
@@ -2902,6 +2915,12 @@ pub(crate) fn adjust_float_positions_with_context(
                     };
                     // 如果内容区域实际高度小于 taffy 计算的高度，收缩容器
                     if content_height < box_node.content_height {
+                        // R5109：clearance 相关容器（clearance_active 已置位）的高度收缩
+                        // 须记录缩减量——祖先盒的 taffy 高度按收缩前的子 extent 计算，
+                        // 不向上传播则祖先残留泄漏段（margin-collapse-157 row1-b 的
+                        // .test 多 16px / margin-collapse-142 的 td 多 64px 露红底）。
+                        // 非 clearance 容器（纯 float 子收缩）不记录，行为不变。
+                        let shrink = box_node.content_height - content_height;
                         box_node.content_height = content_height;
                         // 更新总高度（包含 padding + border）
                         let new_total = content_height
@@ -2912,6 +2931,9 @@ pub(crate) fn adjust_float_positions_with_context(
                         // 仅当新高度更小时才更新（不扩大容器）
                         if new_total < box_node.height {
                             box_node.height = new_total;
+                        }
+                        if box_node.clearance_active {
+                            box_node.clearance_extent_reduction += shrink;
                         }
                     }
                 }

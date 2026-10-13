@@ -340,6 +340,13 @@ pub struct LayoutBox {
     /// margin_bottom → sibling-shift 仍须火。配合 declared_margin_bottom 区分泄漏 vs
     /// declared mb（避 margin-collapse-027 #div2{margin-bottom:2em} 回归）。
     pub clearance_active: bool,
+    /// R5109 §8.3.1/§9.5.2 clearance 修正后的 extent 缩减量：本盒在 taffy 布局之后被
+    /// clearance 相关修正（R3808 collapsed-mt 泄漏撤销、containment 收缩臂）缩小的
+    /// margin-box extent 总量。祖先盒的 taffy 高度按修正前的子 extent 计算（taffy 不
+    /// 建模 clearance），若不向上传播则祖先残留泄漏 margin 高（margin-collapse-157/142：
+    /// test/td 内容高多出 16/64px 露红底）。`shift_siblings_after_clearance_containment`
+    /// 消费本值（后序上浮：后续兄弟上移 + 祖先缩高），消费后清零防重入双计。
+    pub clearance_extent_reduction: f32,
     /// 是否为「孤立 table-internal 元素」（display:table-row-group/table-row/table-cell 等，
     /// 且父元素非 table/table-internal）——CSS Tables §2.4 应为其生成匿名 table 包装盒。
     /// 此标记让该元素在 establishes_bfc 中被视为匿名 table（建立 BFC，隔离 margin 折叠
@@ -707,6 +714,7 @@ impl Default for LayoutBox {
             had_clearance: false,
             has_size_containment: false,
             clearance_active: false,
+            clearance_extent_reduction: 0.0,
             is_anon_table_root: false,
             column_gap: 0.0,
             is_block_level: false,

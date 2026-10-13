@@ -15,7 +15,7 @@ use zero_css_parser::values::{
 
 use zero_dom::{Document, NodeId};
 
-use zero_style_system::{ComputedStyle, WhiteSpaceValue};
+use zero_style_system::{ComputedStyle, WhiteSpaceValue, WritingModeValue};
 
 use crate::NodeIdSet;
 use crate::types::{LayoutBox, OverflowClip};
@@ -1101,6 +1101,78 @@ pub(super) fn fix_abspos_cb_border(root: &mut LayoutBox, styles: &HashMap<NodeId
 /// 镜像 R109 backfill 的 cumulative_shift 模式（方向相反：缩高而非增高）。
 ///
 /// 返回本 box 的高度缩减量（供父盒累加缩高 + 位移后续兄弟）。
+/// R5109（CSS2 §8.3.1 + §10.6.3）：唯一 in-flow 子为空块（自折叠）的 auto 高块容器，
+/// 若带 block-end 框边（border/padding-bottom > 0），末链穿透 margin 不计入容器高。
+///
+/// 空块自身 mt/mb adjoining → 自折叠为一组（§8.3.1）；该组经容器 top 边（无
+/// border/padding-top）并入容器 top 折叠组后即在 top 侧消耗，不再以「末子
+/// margin-box」形态存在于 bottom 侧（§10.6.3 的末子 margin-box 计入以该 margin 仍
+/// 处 bottom 组为前提）。容器有 bottom 框边时 taffy 把该组计入 content 高
+///（margin-collapse-157 row2：.clear 内 .empty{margin:1em} → .clear ch=16 h=80，
+/// chromium .clear ch=0 h=64——红底条纹泄漏）。剔除量记入
+/// `clearance_extent_reduction`，由 shift_siblings_after_clearance_containment 统一
+/// 向祖先传播（taffy 祖先高按剔除前的 margin-box extent 计算）。
+///
+/// 仅唯一 in-flow 子命中（[A, empty] 形态的空块组属 bottom 折叠链，计入父高是
+/// 正确语义）；horizontal-tb；非 BFC 容器；kill-switch `ZW_EMPTY_LAST_SELF_COLLAPSE=0`
+/// （default-on）。
+pub(super) fn strip_empty_only_child_self_collapse(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    static ON: OnceLock<bool> = OnceLock::new();
+    // OPTIMIZATION：kill-switch 进程级单读（R5108 教训：per-node env::var 致
+    // bench-gate 微基准超预算）。
+    let on = *ON.get_or_init(|| std::env::var("ZW_EMPTY_LAST_SELF_COLLAPSE").as_deref() != Ok("0"));
+    if !on {
+        return;
+    }
+    for child in &mut box_node.children {
+        strip_empty_only_child_self_collapse(child, styles);
+    }
+    if !matches!(box_node.writing_mode, WritingModeValue::HorizontalTb)
+        || !box_node.is_block_level
+        || box_node.is_absolute
+        || box_node.is_fixed
+        || crate::margin_collapse::establishes_bfc(box_node)
+    {
+        return;
+    }
+    // auto 高（内容决定型）+ bottom 框边在场（阻断 bottom 折叠组的边）。
+    let auto_height = box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.height, LengthValue::Auto));
+    if !auto_height || box_node.padding_bottom <= 0.0 && box_node.border_bottom <= 0.0 {
+        return;
+    }
+    // 唯一 in-flow 子且为空块（自折叠）。OPTIMIZATION：单趟计数定位（免
+    // collect<Vec> 分配——本 walk 全树遍历，per-box 分配在 1000 元素微基准可测）。
+    let mut in_flow: Option<&mut LayoutBox> = None;
+    let mut in_flow_count = 0usize;
+    for c in box_node.children.iter_mut() {
+        if is_shiftable_in_flow_block(c) {
+            in_flow_count += 1;
+            if in_flow_count > 1 {
+                break;
+            }
+            in_flow = Some(c);
+        }
+    }
+    if in_flow_count != 1 {
+        return;
+    }
+    let only = in_flow.expect("count == 1 保证 Some");
+    if !crate::margin_collapse::is_empty_block(only) {
+        return;
+    }
+    // 剔除末链 margin 计入量：content 高应终于子 border-box 底（空块 h=0）。
+    let strip = box_node.content_height - (only.y + only.height);
+    if strip <= 0.5 {
+        return;
+    }
+    box_node.content_height = (box_node.content_height - strip).max(0.0);
+    box_node.height = (box_node.height - strip).max(0.0);
+    box_node.clearance_extent_reduction += strip;
+}
+
 pub(super) fn shift_siblings_after_clearance_containment(box_node: &mut LayoutBox) -> f32 {
     use zero_css_parser::values::FloatValue;
     let mut child_reduction: f32 = 0.0; // 子树总缩减（用于本盒缩高）
@@ -1109,7 +1181,16 @@ pub(super) fn shift_siblings_after_clearance_containment(box_node: &mut LayoutBo
         if cumulative_shift > 0.0 && !child.is_absolute && !child.is_fixed && matches!(child.float, FloatValue::None) {
             child.y -= cumulative_shift;
         }
-        let cr = shift_siblings_after_clearance_containment(child);
+        let mut cr = shift_siblings_after_clearance_containment(child);
+        // R5109：消费 clearance 修正记录的 extent 缩减量（R3808 collapsed-mt 撤销 +
+        // containment 收缩臂）。taffy 祖先高按修正前的子 margin-box extent 计算，
+        // 该差值与 R1319 的子树缩减同构：后续兄弟上移 + 本层缩高并继续上浮。
+        // 仅 clearance 相关容器会记录（记录点门控 clearance_active / clearance 臂），
+        // 纯 float 收缩路径行为不变。消费后清零防重入双计。
+        if child.clearance_extent_reduction > 0.0 {
+            cr += child.clearance_extent_reduction;
+            child.clearance_extent_reduction = 0.0;
+        }
         if cr > 0.0 && !child.is_absolute && !child.is_fixed {
             cumulative_shift += cr;
             child_reduction += cr;
@@ -2141,8 +2222,7 @@ pub(super) fn clamp_percentage_max_height(
     // kill-switch 进程级读一次（bench-gate wide-tree：per-node env::var 线性查找致
     // block/flex_layout_1000_elements +54%/+36% 超预算）。
     static BLOCK_MAXH_CLAMP: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let block_maxh_clamp =
-        *BLOCK_MAXH_CLAMP.get_or_init(|| std::env::var("ZW_BLOCK_MAXH_CLAMP").as_deref() != Ok("0"));
+    let block_maxh_clamp = *BLOCK_MAXH_CLAMP.get_or_init(|| std::env::var("ZW_BLOCK_MAXH_CLAMP").as_deref() != Ok("0"));
     // 表族全门（含 table 本身——R1570：max-height 不压缩 table 固有内容，行高 75
     // 保持，max 语义由表 sizing 链处理）。
     let table_internal_1c = |s: &ComputedStyle| {

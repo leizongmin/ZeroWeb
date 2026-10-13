@@ -1014,6 +1014,11 @@ impl LayoutEngine {
         // kill-switch `ZW_ABSPOS_STRETCH=0`（default-on）。
         stretch_abspos_direct_cb(&mut root_box, styles);
 
+        // 5.2a-0 后处理（R5109 §8.3.1/§10.6.3）：唯一 in-flow 空块子 + block-end 框边的
+        // auto 高容器，末链自折叠 margin 不计入容器高（先于 5.1 containment 收缩与
+        // 5.2a 传播，使缩减量单点记录一次）。
+        strip_empty_only_child_self_collapse(&mut root_box, styles);
+
         // 5.2a 后处理（R1319 §8.3.1 containment 兄弟位移）：clearance containment 已把
         // cleared 元素的 trailing collapse-through 链含入其 content_height，但 taffy 此前已
         // 按「泄漏的 mb」定位后续兄弟（偏低）。位移后续兄弟 + 祖先缩高（delta 传播）。
@@ -2533,6 +2538,7 @@ impl LayoutEngine {
             is_layout_container,
             had_clearance: false,
             clearance_active: false,
+            clearance_extent_reduction: 0.0,
             is_anon_table_root: false,
             column_gap: 0.0,
             is_block_level,
