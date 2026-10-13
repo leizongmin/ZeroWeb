@@ -1024,6 +1024,7 @@ impl RendererRuntime {
     /// P1a form input：向 selector 指向的焦点 input/textarea 注入一个字符（更新 value + 派发
     /// 'input' 事件）；回调改了 DOM 则单次 rerender。调用方须先判定 key 为可打印单字符。
     fn apply_text_input_at(&mut self, selector: &str, key: &str) -> Result<(), String> {
+        eprintln!("KB:INSERT sel={selector} key={key}");
         self.execute_shared_action(
             selector,
             zero_page_runtime::HtmlUserAction::InsertText { text: key.to_string() },
@@ -1189,20 +1190,25 @@ impl RendererRuntime {
         } else if key == "Backspace" {
             self.apply_text_delete_at(target)?;
         } else if key == "Enter" {
-            // t3-pd6：Enter 触发隐式表单提交——textarea 与 input 均适用。
-            // 先通过 execute_dom_script 从 shim 读取活值构造 GET URL，
-            // 再 handle_navigate。此前 textarea 走换行插入而丢导航。
-            let submit_url = self.build_implicit_submit_url(target)?;
-            if let Some(url) = submit_url {
-                self.handle_navigate(zero_protocol::message::NavigateParams {
-                    url,
-                    referrer: self.current_url.clone(),
-                    navigation_epoch: self.navigation_epoch.wrapping_add(1),
-                })?;
-                return Ok(());
-            }
-            // 无表单 → 降级到旧 submit 路径
-            self.submit_form_on_enter_at(target)?;
+            // t3-pd6：Enter 在表单控件中触发隐式表单提交——
+            // 通过 `__zw_request_navigate` 回调（既有导航桥）从 shim 读取
+            // form action + 活值 → 推入 navigations 队列 → 主循环消费。
+            let nav_script = r#"(function(){
+var form=document.querySelector('form');
+if(!form)return null;
+var action=form.getAttribute('action')||'';
+if(!action)return null;
+var inputs=form.querySelectorAll('input,textarea,select');
+var params=[];
+for(var i=0;i<inputs.length;i++){
+    if(inputs[i].name&&inputs[i].value)params.push(encodeURIComponent(inputs[i].name)+'='+encodeURIComponent(inputs[i].value));
+}
+if(!params.length)return null;
+var url=action+(action.indexOf('?')>=0?'&':'?')+params.join('&');
+__zw_request_navigate(url);
+return 'navigated';
+})()"#;
+            let _ = self.js_worker.execute_script_direct(nav_script);
         } else if key == "Escape" {
             // R3254-K3（keyboard-default-actions goal M2 切片 2）：Esc 默认动作——
             // open dialog 的 cancel/close（cancelable，preventDefault 阻断关闭）。
@@ -2908,6 +2914,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
 
     fn handle_keyboard_event(&mut self, params: KeyboardEventParams) -> Result<(), String> {
         use zero_protocol::message::KeyboardEventType;
+        eprintln!("KB:HANDLE key={} type={:?}", params.key, params.event_type);
         let event_type = match params.event_type {
             KeyboardEventType::Down => "keydown",
             KeyboardEventType::Up => "keyup",
@@ -3056,6 +3063,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 self.run_frame_transaction(|runtime| runtime.handle_mouse_event(params))
             }
             IpcMessageKind::KeyboardEvent(params) => {
+                eprintln!("KB:DISPATCH key={} type={:?}", params.key, params.event_type);
                 self.run_frame_transaction(|runtime| runtime.handle_keyboard_event(params))
             }
             IpcMessageKind::ImeEvent(params) => self.run_frame_transaction(|runtime| runtime.handle_ime_event(params)),
