@@ -4566,6 +4566,190 @@
     if (!impl || typeof impl.createHTMLDocument !== 'function') return this;
     return impl.createHTMLDocument('');
   };
+  // net-api M5-S12（net-api-compat）：XHR responseXML 的 XML 文档解析（xhr.spec
+  // set a document response——XML essence 面；template-element 三腿 + XML 默认
+  // xmlns 语义最小域）。手写最小 tokenizer：prolog（<?xml?>/PI/<!DOCTYPE>/注释）
+  // 跳过 + 元素/属性（双引号形态）/自闭合/文本（五具名实体 + 数字实体）/CDATA +
+  // 默认 xmlns 命名空间栈继承。HTML spec：template 仅 HTML ns 有 content
+  // DocumentFragment（子元素移入）；XML no-ns / SVG ns template 为普通元素。
+  // 容忍解析（well-formed 错误检查 / parsererror 文档 / 前缀 xmlns 绑定面挂账）。
+  var _ZW_XML_XHTML_NS = 'http://www.w3.org/1999/xhtml';
+  function _zwXmlDecodeEntities(s) {
+    if (s.indexOf('&') < 0) return s;
+    return s.replace(/&(lt|gt|amp|quot|apos|#x[0-9A-Fa-f]+|#[0-9]+);/g, function (_m, e) {
+      if (e === 'lt') return '<';
+      if (e === 'gt') return '>';
+      if (e === 'amp') return '&';
+      if (e === 'quot') return '"';
+      if (e === 'apos') return "'";
+      if (e.charAt(1) === 'x' || e.charAt(1) === 'X') {
+        try { return String.fromCodePoint(parseInt(e.slice(2), 16)); } catch (_eXc) { return _m; }
+      }
+      try { return String.fromCodePoint(parseInt(e.slice(1), 10)); } catch (_eDc) { return _m; }
+    });
+  }
+  function _zwXmlNode(type, name) {
+    this.nodeType = type;
+    this.nodeName = name;
+    var ci = name.indexOf(':');
+    this.localName = ci >= 0 ? name.slice(ci + 1) : name;
+    this.childNodes = [];
+    this.parentNode = null;
+    this.namespaceURI = null;
+    this.nodeValue = type === 3 ? '' : null;
+    this._attrs = {};
+  }
+  _zwXmlNode.prototype.appendChild = function (c) {
+    c.parentNode = this;
+    this.childNodes.push(c);
+    return c;
+  };
+  Object.defineProperty(_zwXmlNode.prototype, 'firstChild', {
+    get: function () { return this.childNodes.length ? this.childNodes[0] : null; },
+    configurable: true,
+  });
+  Object.defineProperty(_zwXmlNode.prototype, 'lastChild', {
+    get: function () { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
+    configurable: true,
+  });
+  Object.defineProperty(_zwXmlNode.prototype, 'childElementCount', {
+    get: function () {
+      var c = 0;
+      for (var i = 0; i < this.childNodes.length; i++) if (this.childNodes[i].nodeType === 1) c++;
+      return c;
+    },
+    configurable: true,
+  });
+  Object.defineProperty(_zwXmlNode.prototype, 'textContent', {
+    get: function () {
+      var out = '';
+      var walk = function (n) {
+        if (n.nodeType === 3) { out += n.nodeValue; return; }
+        for (var i = 0; i < n.childNodes.length; i++) walk(n.childNodes[i]);
+      };
+      walk(this);
+      return out;
+    },
+    configurable: true,
+  });
+  _zwXmlNode.prototype.getAttribute = function (n) {
+    var v = this._attrs[String(n)];
+    return v == null ? null : v;
+  };
+  // HTML spec：template.content——仅 HTML ns template 有 content DocumentFragment
+  //（_zwXmlParseDoc 开标签时建 _content）；其余元素 null（template-element 腿 1 面）。
+  Object.defineProperty(_zwXmlNode.prototype, 'content', {
+    get: function () { return this._content || null; },
+    configurable: true,
+  });
+  globalThis._zwXmlParseDoc = function (src) {
+    src = String(src == null ? '' : src);
+    var n = src.length;
+    var doc = new _zwXmlNode(9, '#document');
+    var stack = [doc];
+    var i = 0;
+    function insertTarget() {
+      var top = stack[stack.length - 1];
+      return top._content || top; // HTML ns template：子入 content fragment
+    }
+    function addText(raw, decodeEntities) {
+      if (!raw) return;
+      var t = new _zwXmlNode(3, '#text');
+      t.nodeValue = decodeEntities ? _zwXmlDecodeEntities(raw) : raw;
+      insertTarget().appendChild(t);
+    }
+    while (i < n) {
+      var lt = src.indexOf('<', i);
+      if (lt < 0) { addText(src.slice(i, n), true); break; }
+      if (lt > i) addText(src.slice(i, lt), true);
+      var c1 = src.charAt(lt + 1);
+      if (c1 === '!') {
+        if (src.indexOf('<![CDATA[', lt) === lt) {
+          var ce = src.indexOf(']]>', lt + 9);
+          var rawEnd = ce < 0 ? n : ce;
+          addText(src.slice(lt + 9, rawEnd), false); // CDATA 不做实体解码
+          i = ce < 0 ? n : ce + 3;
+          continue;
+        }
+        var de = src.indexOf('>', lt); // 注释 / DOCTYPE（宽松——不解析内部）
+        i = de < 0 ? n : de + 1;
+        continue;
+      }
+      if (c1 === '?') { // xml 声明 / PI
+        var pe = src.indexOf('?>', lt);
+        i = pe < 0 ? n : pe + 2;
+        continue;
+      }
+      if (c1 === '/') { // 闭标签
+        var cle = src.indexOf('>', lt);
+        if (cle < 0) break;
+        i = cle + 1;
+        if (stack.length > 1) stack.pop();
+        continue;
+      }
+      // 开标签：名 + 属性 + 自闭判
+      var nm = /^[-A-Za-z0-9_.:]+/.exec(src.slice(lt + 1, lt + 257));
+      if (!nm) { addText('<', false); i = lt + 1; continue; }
+      var name = nm[0];
+      var j = lt + 1 + name.length;
+      var attrs = {};
+      var selfClose = false;
+      for (;;) {
+        while (j < n && /\s/.test(src.charAt(j))) j++;
+        if (j >= n) break;
+        var ch = src.charAt(j);
+        if (ch === '>') { j++; break; }
+        if (ch === '/') {
+          if (src.charAt(j + 1) === '>') { j += 2; selfClose = true; break; }
+          j++;
+          continue;
+        }
+        var am = /^[^\s=/>]+/.exec(src.slice(j, j + 257));
+        if (!am) { j++; continue; }
+        var an = am[0];
+        j += an.length;
+        while (j < n && /\s/.test(src.charAt(j))) j++;
+        var av = '';
+        if (src.charAt(j) === '=') {
+          j++;
+          while (j < n && /\s/.test(src.charAt(j))) j++;
+          var q = src.charAt(j);
+          if (q === '"' || q === "'") {
+            var ve = src.indexOf(q, j + 1);
+            av = src.slice(j + 1, ve < 0 ? n : ve);
+            j = ve < 0 ? n : ve + 1;
+          } else {
+            var um = /^[^\s>]*/.exec(src.slice(j));
+            av = um ? um[0] : '';
+            j += av.length;
+          }
+        }
+        attrs[an] = _zwXmlDecodeEntities(av);
+      }
+      var parentNs = stack.length > 1 ? stack[stack.length - 1].namespaceURI : null;
+      var el = new _zwXmlNode(1, name);
+      el.namespaceURI = ('xmlns' in attrs) ? attrs['xmlns'] : parentNs;
+      el._attrs = attrs;
+      if (el.namespaceURI === _ZW_XML_XHTML_NS && el.localName === 'template') {
+        el._content = new _zwXmlNode(11, '#document-fragment');
+      }
+      insertTarget().appendChild(el);
+      if (!selfClose) stack.push(el);
+      i = j;
+    }
+    for (var di = 0; di < doc.childNodes.length; di++) {
+      if (doc.childNodes[di].nodeType === 1) { doc.documentElement = doc.childNodes[di]; break; }
+    }
+    doc.contentType = 'application/xml';
+    return doc;
+  };
+  // net-api M5-S12：XML essence 判定（xhr.spec set a document response——text/xml /
+  // application/xml / +xml 后缀；application/xhtml+xml 由 HTML 分支先行消费）。
+  globalThis._zwXhrIsXmlMime = function (mime) {
+    var e = /^([^;\s]+)/.exec(String(mime || '').toLowerCase());
+    var ess = e ? e[1] : '';
+    return ess === 'text/xml' || ess === 'application/xml' || /\/[a-z0-9._-]+\+xml$/.test(ess);
+  };
   globalThis.DOMParser = globalThis.DOMParser || function DOMParser() {};
   globalThis.DOMParser.prototype.parseFromString = function (str, mimeType) {
     // text/html | text/xml | application/xml | application/xhtml+xml | image/svg+xml 统一按 HTML 解析。

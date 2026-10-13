@@ -328,25 +328,40 @@
         // 复用 DOMParser 的 `_zwParsedDoc` 工厂（scripting disabled 印记——响应文档无
         // browsing context，noscript 按 markup 解析 + 序列化转义分支；body/firstChild/
         // getElementById 查询面全通）。WPT escaping.html 'XMLHttpRequest' 面：
-        // data:text/html 响应的 body.firstChild 解码 + 再转义双断言。XML MIME 文档解析
-        // 仍挂账（FIXME: XML parser 面）。
+        // data:text/html 响应的 body.firstChild 解码 + 再转义双断言。
+        // net-api M5-S12：XML MIME 文档解析面（responseXML 挂账清偿——`_zwXmlParseDoc`
+        // 最小 XML parser；final MIME 无 CT 不再回落 text/xml——spec 无 MIME → null，
+        // responsexml-invalid-type top.txt 面回归防线）。
         var docMime = self._zwXhrOverrideMime;
         if (!docMime) {
           var docCtRaw = self._zwXhrResponseHeaders['content-type'];
           var docParsed = docCtRaw ? _zwParseMimeType(docCtRaw) : null;
-          docMime = docParsed ? _zwSerializeMimeType(docParsed) : 'text/xml';
+          docMime = docParsed ? _zwSerializeMimeType(docParsed) : null;
         }
         if (typeof _zwParsedDoc === 'function'
             && (docMime === 'text/html' || docMime === 'application/xhtml+xml')) {
           self.response = new _zwParsedDoc(text);
           self.responseXML = self.response;
+        } else if (_zwXhrIsXmlMime(docMime) && typeof _zwXmlParseDoc === 'function') {
+          self.responseXML = _zwXmlParseDoc(text);
+          self.response = self.responseXML;
         } else {
-          // 非 HTML/XML MIME（含 XML 解析挂账）→ response/responseXML 保持 null
+          // 非 HTML/XML MIME → response/responseXML 保持 null
           //（spec set a document response 的 return 分支）。
           self.response = null;
         }
       } else {
         self.response = text;
+        // net-api M5-S12：rt '' + XML MIME → responseXML（spec responseXML getter——
+        // ''/document 类型运行 set a document response；template-element 三腿经
+        // data:text/xml 默认类型访问）。无 CT 不猜 MIME → responseXML 保持 null。
+        if (rt === '' && typeof _zwXmlParseDoc === 'function') {
+          var xCtRaw = self._zwXhrOverrideMime || self._zwXhrResponseHeaders['content-type'];
+          var xParsed = xCtRaw ? _zwParseMimeType(xCtRaw) : null;
+          if (xParsed && _zwXhrIsXmlMime(_zwSerializeMimeType(xParsed))) {
+            self.responseXML = _zwXmlParseDoc(text);
+          }
+        }
       }
       changeReadyState(3);
       // net-api M4-S21：LOADING readystatechange 可多次发射（spec processBodyChunk——
