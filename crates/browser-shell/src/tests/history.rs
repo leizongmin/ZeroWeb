@@ -74,6 +74,27 @@ fn test_history_clear() {
 }
 
 #[test]
+fn test_history_remove_by_url() {
+    let mut history = History::new();
+    history.record("https://example.com", "Example");
+    history.record("https://github.com", "GitHub");
+
+    assert!(
+        history.remove("https://example.com"),
+        "existing entry should be removed"
+    );
+    assert_eq!(history.len(), 1);
+    let remaining: Vec<_> = history.iter().map(|e| e.url()).collect();
+    assert_eq!(remaining, vec!["https://github.com"]);
+
+    assert!(
+        !history.remove("https://example.com"),
+        "removing again should report false"
+    );
+    assert_eq!(history.len(), 1);
+}
+
+#[test]
 fn test_history_multiple_entries() {
     let mut history = History::new();
     for i in 0..10 {

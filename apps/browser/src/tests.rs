@@ -1386,6 +1386,9 @@ fn ctrl_d_adds_bookmark() {
     app.shell.navigate("https://example.com");
     app.shell.on_page_loaded("Example");
 
+    // Ctrl+D 现为切换语义（t12-t14）：先清除持久化文件里可能已存在的同 URL 书签，
+    // 保证首次按键必然是「添加」（测试共享真实 XDG bookmarks.json，须先隔离状态）。
+    app.shell.bookmarks_mut().remove_by_url("https://example.com");
     let count_before = app.shell.bookmarks().len();
     app.handle_key(BrowserApp::test_modifier_key_name(), true, None);
     app.handle_key("d", true, None);
@@ -4234,6 +4237,173 @@ fn ctrl_shift_b_toggles_bookmarks_bar() {
     app.handle_key("Shift", false, None);
     app.handle_key(mod_key, false, None);
     assert_eq!(app.shell.settings().show_bookmarks_bar, initial);
+}
+
+/// T12-T14：同一页面重复 Ctrl+D 在添加/移除间切换（Chrome 收藏切换行为）。
+#[test]
+fn ctrl_d_toggles_bookmark() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.ensure_webview(tab_id);
+    app.shell.navigate("https://example.com");
+    app.shell.on_page_loaded("Example");
+    let mod_key = BrowserApp::test_modifier_key_name();
+
+    // 测试共享真实 XDG bookmarks.json：先清除同 URL 书签，保证首按为「添加」。
+    app.shell.bookmarks_mut().remove_by_url("https://example.com");
+    let count_before = app.shell.bookmarks().len();
+    app.handle_key(mod_key, true, None);
+    app.handle_key("d", true, None);
+    app.handle_key("d", false, None);
+    app.handle_key(mod_key, false, None);
+    assert_eq!(app.shell.bookmarks().len(), count_before + 1, "first Ctrl+D should add");
+
+    app.handle_key(mod_key, true, None);
+    app.handle_key("d", true, None);
+    app.handle_key("d", false, None);
+    app.handle_key(mod_key, false, None);
+    assert_eq!(app.shell.bookmarks().len(), count_before, "second Ctrl+D should remove");
+}
+
+/// T12-T14：地址栏聚焦时 Ctrl+Shift+B 仍切换书签栏（Ctrl 分支透传全局快捷键）。
+#[test]
+fn address_bar_focused_ctrl_shift_b_still_toggles_bookmarks_bar() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let mod_key = BrowserApp::test_modifier_key_name();
+    let initial = app.shell.settings().show_bookmarks_bar;
+
+    // Ctrl+L 聚焦地址栏。
+    app.handle_key(mod_key, true, None);
+    app.handle_key("l", true, None);
+    app.handle_key("l", false, None);
+    app.handle_key(mod_key, false, None);
+
+    // 聚焦态下 Ctrl+Shift+B：切换；再按一次还原。
+    app.handle_key(mod_key, true, None);
+    app.handle_key("Shift", true, None);
+    app.handle_key("b", true, None);
+    app.handle_key("b", false, None);
+    app.handle_key("Shift", false, None);
+    app.handle_key(mod_key, false, None);
+    assert_eq!(
+        app.shell.settings().show_bookmarks_bar,
+        !initial,
+        "Ctrl+Shift+B must toggle the bookmarks bar while the address bar is focused"
+    );
+}
+
+/// T12-T14：地址栏聚焦时 Ctrl+T / Ctrl+W / Ctrl+H 仍生效（系统性透传）。
+#[test]
+fn address_bar_focused_ctrl_global_shortcuts_pass_through() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let mod_key = BrowserApp::test_modifier_key_name();
+
+    let focus_address_bar = |app: &mut BrowserApp| {
+        app.handle_key(mod_key, true, None);
+        app.handle_key("l", true, None);
+        app.handle_key("l", false, None);
+        app.handle_key(mod_key, false, None);
+    };
+
+    // Ctrl+T：新标签页。
+    let tabs_before = app.shell.tab_count();
+    focus_address_bar(&mut app);
+    app.handle_key(mod_key, true, None);
+    app.handle_key("t", true, None);
+    app.handle_key("t", false, None);
+    app.handle_key(mod_key, false, None);
+    assert_eq!(
+        app.shell.tab_count(),
+        tabs_before + 1,
+        "Ctrl+T must open a tab while focused"
+    );
+
+    // Ctrl+W：关闭标签页。
+    focus_address_bar(&mut app);
+    app.handle_key(mod_key, true, None);
+    app.handle_key("w", true, None);
+    app.handle_key("w", false, None);
+    app.handle_key(mod_key, false, None);
+    assert_eq!(
+        app.shell.tab_count(),
+        tabs_before,
+        "Ctrl+W must close the tab while focused"
+    );
+
+    // Ctrl+H：打开历史页（地址栏同步为 zero://history）。
+    focus_address_bar(&mut app);
+    app.handle_key(mod_key, true, None);
+    app.handle_key("h", true, None);
+    app.handle_key("h", false, None);
+    app.handle_key(mod_key, false, None);
+    assert_eq!(
+        app.address_bar_text(),
+        "zero://history",
+        "Ctrl+H must open history while focused"
+    );
+}
+
+/// T12-T14：地址栏聚焦时 Ctrl+D 仍切换书签。
+#[test]
+fn address_bar_focused_ctrl_d_toggles_bookmark() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.ensure_webview(tab_id);
+    app.shell.navigate("https://example.com");
+    app.shell.on_page_loaded("Example");
+    let mod_key = BrowserApp::test_modifier_key_name();
+    // 测试共享真实 XDG bookmarks.json：先清除同 URL 书签，保证首按为「添加」。
+    app.shell.bookmarks_mut().remove_by_url("https://example.com");
+    let count_before = app.shell.bookmarks().len();
+
+    app.handle_key(mod_key, true, None);
+    app.handle_key("l", true, None);
+    app.handle_key("l", false, None);
+    app.handle_key(mod_key, false, None);
+
+    app.handle_key(mod_key, true, None);
+    app.handle_key("d", true, None);
+    app.handle_key("d", false, None);
+    app.handle_key(mod_key, false, None);
+    assert_eq!(
+        app.shell.bookmarks().len(),
+        count_before + 1,
+        "Ctrl+D must still bookmark while the address bar is focused"
+    );
+}
+
+/// T12-T14：地址栏聚焦时 Ctrl+Home/End 保持文本编辑语义（光标移到行首/行尾），
+/// 不透传为文档滚动。
+#[test]
+fn address_bar_focused_ctrl_home_end_move_caret() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let mod_key = BrowserApp::test_modifier_key_name();
+
+    app.handle_key(mod_key, true, None);
+    app.handle_key("l", true, None);
+    app.handle_key("l", false, None);
+    app.handle_key(mod_key, false, None);
+    for ch in "abc".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+        app.handle_key(&ch.to_string(), false, None);
+    }
+    assert_eq!(app.address_bar_cursor(), 3);
+
+    app.handle_key(mod_key, true, None);
+    app.handle_key("Home", true, None);
+    app.handle_key("Home", false, None);
+    app.handle_key(mod_key, false, None);
+    assert_eq!(
+        app.address_bar_cursor(),
+        0,
+        "Ctrl+Home should move the caret to the start"
+    );
+
+    app.handle_key(mod_key, true, None);
+    app.handle_key("End", true, None);
+    app.handle_key("End", false, None);
+    app.handle_key(mod_key, false, None);
+    assert_eq!(app.address_bar_cursor(), 3, "Ctrl+End should move the caret to the end");
 }
 
 /// T7-I11：Ctrl+,（逗号键名 ","）打开设置页。
