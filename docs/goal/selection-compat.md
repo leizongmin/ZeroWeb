@@ -10,8 +10,11 @@
 > 做过 Range 三件套、editing-contenteditable 做过编辑语义，但 Selection API 面
 > （getSelection/collapse/extend/modify/方向语义）从未 goal 化度量。
 >
-> **▶ 基线事实（立项时点，M1 盘点复核）**：getSelection 返回对象存在性、
-> Selection 与 Range 的换算关系、anchor/focus 方向语义、isCollapsed——M1 盘点。
+> **▶ 基线事实（2026-10-14 M1 实测）**：`make testharness-selection` 全量
+> **2965/2970（99.83%）**；Selection 对象存在性/方向语义/isCollapsed 面已大
+> 体收敛，余缺口为 toString rendered text 语义（已修，2966/2970）、Actions
+> 拖选选区构建 + live-range 边界吸附、document.open 依赖（跨域挂账）。证据：
+> `docs/goal/selection-compat/evidence/2026-10-14-m1-baseline.md`。
 
 ## Mission
 
