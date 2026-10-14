@@ -208,6 +208,12 @@ impl HttpCache {
                 etag: entry.etag.clone(),
                 last_modified: entry.last_modified.clone(),
             };
+            if parse_cache_control(response).no_store {
+                merge_not_modified_metadata(&mut cached, response);
+                self.remove(&key);
+                tracing::info!(url = %key, "HTTP cache 304 no-store invalidated entry");
+                return Some(cached);
+            }
             if let Some(mode) = storable_mode(response)
                 && let Some(e) = self.entries.get_mut(&key)
             {
@@ -225,31 +231,8 @@ impl HttpCache {
                 // R3233：304 可携新 Age/Date（CDN 重报）→ 重算 initial_age（与 R3231/R3232 头并入一致）。
                 e.initial_age_secs = crate::cache_policy::compute_initial_age(response);
                 e.must_revalidate = parse_cache_control(response).must_revalidate;
-                if let Some(etag) = response.header("etag") {
-                    e.etag = Some(etag.to_string());
-                    cached.etag = e.etag.clone();
-                }
-                if let Some(lm) = response.header("last-modified") {
-                    e.last_modified = Some(lm.to_string());
-                    cached.last_modified = e.last_modified.clone();
-                }
-                // R3231：RFC 9111 §4.3.4——304 的元数据字段须并入存储 + 返回的 headers（同名替换，
-                // 缺则追加）。旧实现仅更 etag/last_modified 便捷字段，headers Vec 保留旧 Cache-Control/
-                // Expires/Date/Vary——返回给调用方（JS response.headers）+ 内存持久化的头为旧值。
-                for field in [
-                    "cache-control",
-                    "content-location",
-                    "date",
-                    "expires",
-                    "vary",
-                    "etag",
-                    "last-modified",
-                ] {
-                    if let Some(val) = response.header(field) {
-                        merge_header(&mut e.headers, field, val);
-                        merge_header(&mut cached.headers, field, val);
-                    }
-                }
+                merge_304_headers(&mut e.headers, response);
+                merge_not_modified_metadata(&mut cached, response);
             }
             if let Some(disk) = self.disk.as_mut() {
                 let _ = disk.refresh_not_modified(&key, response);
@@ -259,12 +242,19 @@ impl HttpCache {
         }
         if let Some(disk) = self.disk.as_mut()
             && let Some(hit) = disk.read(&key)
-            && disk.refresh_not_modified(&key, response)
         {
-            let cached = cached_from_disk_hit(&hit);
-            self.insert_memory_from_hit(&key, &cached, hit);
-            tracing::info!(url = %key, "HTTP disk cache 304 revalidated");
-            return Some(cached);
+            let mut cached = cached_from_disk_hit(&hit);
+            if parse_cache_control(response).no_store {
+                merge_not_modified_metadata(&mut cached, response);
+                let _ = disk.remove(&key);
+                tracing::info!(url = %key, "HTTP disk cache 304 no-store invalidated entry");
+                return Some(cached);
+            }
+            if disk.refresh_not_modified(&key, response) {
+                self.insert_memory_from_hit(&key, &cached, hit);
+                tracing::info!(url = %key, "HTTP disk cache 304 revalidated");
+                return Some(cached);
+            }
         }
         None
     }
@@ -701,6 +691,33 @@ fn merge_header(headers: &mut Vec<(String, String)>, name: &str, value: &str) {
     headers.push((name.to_string(), value.to_string()));
 }
 
+fn merge_304_headers(headers: &mut Vec<(String, String)>, response: &HttpResponse) {
+    // RFC 9111 §4.3.4: https://www.rfc-editor.org/rfc/rfc9111#section-4.3.4
+    for field in [
+        "cache-control",
+        "content-location",
+        "date",
+        "expires",
+        "vary",
+        "etag",
+        "last-modified",
+    ] {
+        if let Some(value) = response.header(field) {
+            merge_header(headers, field, value);
+        }
+    }
+}
+
+fn merge_not_modified_metadata(cached: &mut CachedResponse, response: &HttpResponse) {
+    if let Some(etag) = response.header("etag") {
+        cached.etag = Some(etag.to_string());
+    }
+    if let Some(last_modified) = response.header("last-modified") {
+        cached.last_modified = Some(last_modified.to_string());
+    }
+    merge_304_headers(&mut cached.headers, response);
+}
+
 fn conditional_from_validators(etag: &Option<String>, last_modified: &Option<String>) -> Vec<(String, String)> {
     let mut headers = Vec::new();
     if let Some(e) = etag {
@@ -898,6 +915,32 @@ mod tests {
         // body + status 仍为缓存的 200（304 仅 revalidate，不替换 body）。
         assert_eq!(cached.body, b"hello");
         assert_eq!(cached.status_code, 200);
+    }
+
+    #[test]
+    fn test_cache_304_no_store_returns_body_and_invalidates_entry() {
+        let mut cache = HttpCache::new();
+        let url = "https://example.com/no-store.js";
+        let original = make_response(
+            200,
+            b"validated body",
+            vec![("cache-control", "max-age=3600"), ("etag", "\"v1\"")],
+        );
+        assert!(cache.put(url, &original));
+
+        let not_modified = make_response(304, b"", vec![("cache-control", "no-store")]);
+        let cached = cache
+            .not_modified(url, &[], &not_modified)
+            .expect("304 should use the stored body for this request");
+
+        assert_eq!(cached.body, b"validated body");
+        assert!(
+            cached
+                .headers
+                .iter()
+                .any(|(name, value)| name.eq_ignore_ascii_case("cache-control") && value == "no-store")
+        );
+        assert!(matches!(cache.lookup(url, &[]), CacheLookup::Miss));
     }
 
     /// R3233：RFC 9111 §4.2.3——响应的 `Age` 头（CDN/共享缓存上报）须计入新鲜度：

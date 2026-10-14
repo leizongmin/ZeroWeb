@@ -148,6 +148,9 @@ impl DiskHttpCache {
 
     /// 304 Not Modified — 延长新鲜期并更新验证器。
     pub fn refresh_not_modified(&mut self, key: &str, response: &HttpResponse) -> bool {
+        if crate::cache_policy::parse_cache_control(response).no_store {
+            return self.remove(key);
+        }
         let paths = self.entry_paths(key);
         let Ok(meta_text) = fs::read_to_string(&paths.meta) else {
             return false;
@@ -526,6 +529,27 @@ mod tests {
             url: "https://example.com/app.js".to_string(),
             redirect_count: 0,
         }
+    }
+
+    #[test]
+    fn not_modified_no_store_removes_persistent_entry() {
+        let (mut cache, dir) = temp_cache();
+        let url = "https://example.com/app.js";
+        let original = sample_response(b"cached body");
+        assert!(cache.put(url, &original));
+        assert!(cache.read(url).is_some());
+
+        let no_store = HttpResponse {
+            status_code: 304,
+            headers: vec![("Cache-Control".into(), "no-store".into())],
+            body: Vec::new(),
+            url: url.into(),
+            redirect_count: 0,
+        };
+        assert!(cache.refresh_not_modified(url, &no_store));
+        assert!(cache.read(url).is_none());
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

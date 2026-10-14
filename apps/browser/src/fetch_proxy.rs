@@ -1522,6 +1522,76 @@ mod tests {
     }
 
     #[test]
+    fn revalidated_304_no_store_does_not_keep_streamed_image_cached() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/revalidated-no-store.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for index in 0..3 {
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(accepted) => break accepted,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(std::time::Instant::now() < deadline, "request {index} was not received");
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("accept failed: {error}"),
+                    }
+                };
+                let mut request = [0_u8; 2048];
+                let size = stream.read(&mut request).unwrap();
+                let request = String::from_utf8_lossy(&request[..size]).to_ascii_lowercase();
+                match index {
+                    0 => {
+                        assert!(!request.contains("\r\nif-none-match:"));
+                        stream
+                            .write_all(
+                                b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nETag: \"image-v1\"\r\nConnection: close\r\nContent-Length: 7\r\n\r\nimgdata",
+                            )
+                            .unwrap();
+                    }
+                    1 => {
+                        assert!(request.contains("\r\ncache-control: no-cache\r\n"));
+                        assert!(request.contains("\r\nif-none-match: \"image-v1\"\r\n"));
+                        stream
+                            .write_all(
+                                b"HTTP/1.1 304 Not Modified\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+                            )
+                            .unwrap();
+                    }
+                    _ => {
+                        assert!(
+                            !request.contains("\r\nif-none-match:"),
+                            "no-store 304 must invalidate the old validator"
+                        );
+                        stream
+                            .write_all(
+                                b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: 7\r\n\r\nnewdata",
+                            )
+                            .unwrap();
+                    }
+                }
+            }
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(32), &url);
+        let first = drain_streamed_image(&mut proxy, TabId(32), &streamed_image_params(901, &url, Vec::new()));
+        let revalidated = drain_streamed_image(
+            &mut proxy,
+            TabId(32),
+            &streamed_image_params(902, &url, vec![("Cache-Control".into(), "no-cache".into())]),
+        );
+        let after_no_store = drain_streamed_image(&mut proxy, TabId(32), &streamed_image_params(903, &url, Vec::new()));
+        server.join().unwrap();
+
+        assert_eq!(streamed_image_body(&first), b"imgdata");
+        assert_eq!(streamed_image_body(&revalidated), b"imgdata");
+        assert_eq!(streamed_image_body(&after_no_store), b"newdata");
+    }
+
+    #[test]
     fn only_if_cached_image_miss_does_not_start_network_request() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();

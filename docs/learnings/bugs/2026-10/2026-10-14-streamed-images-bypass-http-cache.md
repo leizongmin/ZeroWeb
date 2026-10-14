@@ -17,7 +17,9 @@ modules: apps/browser, crates/net
 
 流式请求先查分区缓存。新鲜命中直接返回缓存响应；过期项转入常规加载器发送验证器并合并 304；未命中继续渐进传输，成功后才写入缓存。流式缓存副本限制为 8 MiB；更大的图片继续渐进传输但不保留额外缓存副本。`no-store` 不写入缓存，`only-if-cached` 未命中不发网络请求。
 
-常驻本地回归用真实 loopback HTTP 请求计数与响应体断言覆盖首次 GET、热命中、ETag/304、`no-store`、`only-if-cached` 及流式分块。仅测 `ResourceLoader` 本身不足以发现此类绕过，因为缺陷位于 browser 的特殊图片分支。
+条件请求收到带 `Cache-Control: no-store` 的 304 时，缓存 body 仍可用于完成当前响应，但必须立即删除先前存储的表示（内存和磁盘层）。只跳过新响应写入会留下旧的 `max-age` 与验证器，下一次请求仍可能绕过源站复用旧 body。
+
+常驻本地回归用真实 loopback HTTP 请求计数与响应体断言覆盖首次 GET、热命中、ETag/304、304 `no-store` 后移除验证器并重新 GET、`only-if-cached` 及流式分块。仅测 `ResourceLoader` 本身不足以发现特殊图片分支绕过；测试下一次请求可验证 `no-store` 不只影响新写入，也阻止旧缓存继续复用。
 
 ## 避免
 
