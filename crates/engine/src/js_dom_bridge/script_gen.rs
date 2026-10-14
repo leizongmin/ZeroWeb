@@ -1476,3 +1476,48 @@ pub fn script_scroll_key_default(selector: &str, key: &str) -> String {
     let esc_key = escape_js_string(key);
     format!("__zw_scroll_key_default && __zw_scroll_key_default('{esc_sel}', '{esc_key}')")
 }
+
+/// 构造「表单提交导航 URL」的宿主脚本（t7，Enter/click 隐式提交的 SubmitForm 效果消费）。
+///
+/// HTML §4.10.22 form submission algorithm 的 GET 切片：按 form 定位（调用方经效果携带的
+/// 节点句柄换 selector，避免首 form 启发式误取）；entry list 按 tree order 收集可提交控件
+/// （text-like/textarea 值、checked 的 checkbox/radio、select 选中项；disabled/无名/按钮与
+/// file 类排除，submitter 经第二参数按身份纳入）；action 相对解析与 query 替换走 shim 原生
+/// `new URL`（§4.10.22 步骤 6：query 置换而非追加）。method=POST 返回 null——POST 管线
+/// （R3055 fetch_post）切片外，维持既有不导航行为。FIXME: file/image 编码与
+/// enctype=multipart 未实现。
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
+pub fn script_form_submission_url(form_selector: &str, submitter_selector: Option<&str>) -> String {
+    let esc_sel = escape_js_string(form_selector);
+    let esc_sub = escape_js_string(submitter_selector.unwrap_or(""));
+    format!(
+        "(function(){{\
+var form=document.querySelector('{esc_sel}');\
+if(!form)return null;\
+var method=(form.getAttribute('method')||'get').toLowerCase();\
+if(method!=='get')return null;\
+var submitter='{esc_sub}';\
+var entries=[];\
+var push=function(n,v){{if(n)entries.push(encodeURIComponent(n)+'='+encodeURIComponent(v));}};\
+var ctrls=form.querySelectorAll('input,textarea,select');\
+for(var i=0;i<ctrls.length;i++){{\
+var c=ctrls[i];\
+if(!c.name||c.disabled)continue;\
+var tag=c.tagName,type=(c.type||'').toLowerCase();\
+if(tag==='INPUT'){{\
+if(type==='checkbox'||type==='radio'){{if(c.checked)push(c.name,c.value||'on');}}\
+else if(type==='submit'){{if(submitter&&c===document.querySelector(submitter))push(c.name,c.value||'');}}\
+else if(type==='reset'||type==='button'||type==='image'||type==='file'){{}}\
+else{{push(c.name,c.value||'');}}\
+}}else if(tag==='TEXTAREA'){{\
+push(c.name,c.value||'');\
+}}else if(tag==='SELECT'){{\
+for(var o=0;o<c.options.length;o++){{if(c.options[o].selected)push(c.name,c.options[o].value||c.options[o].text);}}\
+}}\
+}}\
+var u=new URL(form.getAttribute('action')||location.href,location.href);\
+u.search=entries.join('&');\
+return u.href;\
+}})()"
+    )
+}

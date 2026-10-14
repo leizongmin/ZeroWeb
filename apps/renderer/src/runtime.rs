@@ -126,6 +126,44 @@ const LOAD_TICK_INTERVAL: Duration = Duration::from_millis(16);
 #[cfg(not(target_os = "macos"))]
 const RENDERER_RUNTIME_STACK_SIZE: usize = 16 * 1024 * 1024;
 
+/// 用户动作管线的有界执行器视图（t7，fix#13 模式推广到动作管线）。
+///
+/// 动作派发内的脚本（submit 事件族、entry-list 读取等）此前经
+/// [`zero_page_runtime::JsExecutor::execute_script_direct`] 无界同步等待——页面回调长臂
+/// 占住 worker 时永久阻塞 renderer 主循环（DDG 首页 Enter 实证 7/7 整机挂死）。本适配器
+/// 把动作管线全部脚本改走优先通道有界等待：超时脚本滞留队列照常执行（结果晚至，由
+/// worker 继续消费），调用方按「结果未知」降级，主循环回 recv 保持导航 IPC 响应。
+/// 快照与脚本成对走优先通道（同通道 FIFO 防顺序倒置，同 fix#13）。
+struct BoundedActionExecutor<'a> {
+    inner: &'a RendererJsWorker,
+}
+
+impl zero_page_runtime::JsExecutor for BoundedActionExecutor<'_> {
+    fn set_dom_snapshot(&self, html: &str, url: &str) {
+        self.inner.set_dom_snapshot_priority(html, url);
+    }
+    fn execute_script_direct(&self, script: &str) -> Result<String, String> {
+        zero_page_runtime::JsExecutor::execute_script_priority_bounded(
+            self.inner,
+            script,
+            zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+        )
+    }
+    fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String> {
+        // 动作管线不派发 module（事件派发与 entry-list 均为函数脚本）；直通保持语义。
+        self.inner.execute_module(source, url, deps)
+    }
+    fn mutations(&self) -> Arc<std::sync::Mutex<Vec<zero_engine::DomMutation>>> {
+        self.inner.mutations()
+    }
+    fn execute_script_priority_bounded(&self, script: &str, timeout: std::time::Duration) -> Result<String, String> {
+        zero_page_runtime::JsExecutor::execute_script_priority_bounded(self.inner, script, timeout)
+    }
+    fn set_dom_snapshot_priority(&self, html: &str, url: &str) {
+        self.inner.set_dom_snapshot_priority(html, url);
+    }
+}
+
 /// 单个 renderer surface 的帧发布状态。
 struct FramePublishState {
     /// 页面绘制帧的 Browser IPC 发布模式。
@@ -1137,7 +1175,11 @@ impl RendererRuntime {
             .webview
             .as_mut()
             .expect("webview")
-            .dispatch_external_user_action_with_javascript(&self.js_worker, self.javascript_enabled, request)
+            .dispatch_external_user_action_with_javascript(
+                &BoundedActionExecutor { inner: &self.js_worker },
+                self.javascript_enabled,
+                request,
+            )
             .map_err(|error| error.to_string())?;
         self.sync_cached_html_from_webview();
         if sync_text {
@@ -1212,7 +1254,51 @@ impl RendererRuntime {
                     navigated = true;
                 }
                 zero_page_runtime::PageEffect::SetFragment { .. } => {}
-                zero_page_runtime::PageEffect::SubmitForm { .. } => {}
+                zero_page_runtime::PageEffect::SubmitForm { form, submitter } => {
+                    // HTML §4.10.22（GET 切片）：submit 事件未取消后到达此处——按 form 节点
+                    // 定位（效果携带句柄，避免首 form 启发式误取）构造 action?entry-list 并
+                    // 导航；action 相对解析与 query 置换在 shim 原生 `new URL` 内完成。POST
+                    // 表单脚本返回 null，维持既有不导航行为（FIXME: 对接 R3055 fetch_post）。
+                    // t7：此前此臂为空，SubmitForm 效果被静默丢弃——Enter/click 提交均不导航。
+                    let form_sel = self
+                        .webview
+                        .as_ref()
+                        .and_then(|wv| wv.selector_for_page_node_handle(form.node().get()));
+                    let Some(form_sel) = form_sel else {
+                        continue;
+                    };
+                    let submitter_sel = submitter.as_ref().and_then(|s| {
+                        self.webview
+                            .as_ref()
+                            .and_then(|wv| wv.selector_for_page_node_handle(s.node().get()))
+                    });
+                    let script = zero_engine::script_form_submission_url(&form_sel, submitter_sel.as_deref());
+                    let url = match zero_page_runtime::JsExecutor::execute_script_priority_bounded(
+                        &self.js_worker,
+                        &script,
+                        zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+                    ) {
+                        Ok(raw) => raw,
+                        Err(e) => {
+                            tracing::warn!("form submission url: {e}");
+                            continue;
+                        }
+                    };
+                    let trimmed = url.trim().trim_matches('"');
+                    if trimmed.is_empty() || trimmed == "null" {
+                        continue;
+                    }
+                    self.navigate_with(
+                        zero_protocol::message::NavigateParams {
+                            url: trimmed.to_string(),
+                            referrer: self.current_url.clone(),
+                            navigation_epoch: self.navigation_epoch.wrapping_add(1),
+                        },
+                        "GET",
+                        None,
+                    )?;
+                    navigated = true;
+                }
             }
         }
         Ok(navigated)
@@ -1243,47 +1329,16 @@ impl RendererRuntime {
         } else if key == "Backspace" {
             self.apply_text_delete_at(target)?;
         } else if key == "Enter" {
-            // t3-pd6：Enter 在表单控件中触发隐式表单提交——
-            // 直接从 shim 读取 form action + 活值构造 GET URL 并调用 handle_navigate。
-            let nav_script = r#"(function(){
-var form=document.querySelector('form');
-if(!form)return null;
-var action=form.getAttribute('action')||'';
-if(!action)return null;
-var inputs=form.querySelectorAll('input,textarea,select');
-var params=[];
-for(var i=0;i<inputs.length;i++){
-    if(inputs[i].name&&inputs[i].value)params.push(encodeURIComponent(inputs[i].name)+'='+encodeURIComponent(inputs[i].value));
-}
-if(!params.length)return null;
-var url=action+(action.indexOf('?')>=0?'&':'?')+params.join('&');
-return url;
-})()"#;
-            let nav_result = self.js_worker.execute_script_direct(nav_script);
-            if let Ok(url) = nav_result {
-                let trimmed = url.trim().strip_prefix('"').unwrap_or(&url).strip_suffix('"').unwrap_or(&url);
-                if !trimmed.is_empty() && trimmed != "null" {
-                    // 相对 URL → 绝对 URL（基于 current_url 的 origin）
-                    let abs_url = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-                        trimmed.to_string()
-                    } else if let Some(current) = &self.current_url {
-                        if let Some(origin_end) = current
-                            .find("://")
-                            .and_then(|i| current[i + 3..].find('/').map(|j| i + 3 + j))
-                        {
-                            format!("{}{}", &current[..origin_end], trimmed)
-                        } else {
-                            format!("{current}/{trimmed}")
-                        }
-                    } else {
-                        trimmed.to_string()
-                    };
-                    return self.handle_navigate(zero_protocol::message::NavigateParams {
-                        url: abs_url,
-                        referrer: None,
-                        navigation_epoch: self.navigation_epoch.wrapping_add(1),
-                    });
-                }
+            // HTML §4.10.2 implicit submission：Enter 在表单控件上派发 submit 事件，未取消
+            // 则按 §4.10.22 提交（SubmitForm 效果在 apply_webview_action_effects 消费导航）。
+            // t7：恢复 #154 语义路径——#155/#168 的首 form 启发式脚本已在合并中取代调用点，
+            // 且其 `execute_script_direct` 无界等待在页面回调长臂下永久阻塞主循环（DDG 首页
+            // Enter 实证 7/7 整机挂死）。textarea Enter 提交为已知偏离（规范默认换行），
+            // 沿用 #154 的站点兼容决策。
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#implicit-submission
+            if let Err(e) = self.submit_form_on_enter_at(target) {
+                // 有界超时按「结果未知」降级（fix#13 同语义）：动作不重试，主循环保持响应。
+                tracing::warn!("enter implicit submission: {e}");
             }
         } else if key == "Escape" {
             // R3254-K3（keyboard-default-actions goal M2 切片 2）：Esc 默认动作——
@@ -1500,22 +1555,12 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         Ok(Some(url))
     }
 
-    #[allow(dead_code)] // Enter 提交链路改造中间态（PR#158）
+    /// P1a form submit：Enter 在表单控件上 → 解析 enclosing `<form>` 派发 'submit' 事件。
+    /// R3054：未 preventDefault 且 method=GET → 导航到 action?entry-list（SubmitForm 效果
+    /// 由 [`Self::apply_webview_action_effects`] 统一消费，Enter 与 click 提交按钮同路）。
     fn submit_form_on_enter_at(&mut self, selector: &str) -> Result<(), String> {
-        let r = self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::Submit)?;
-        // t3-pd6：Submit 的 Navigate 效果含 SERP URL——推入 pending_navigations
-        // 让主循环 tick_pending_navigation 消费并调用 handle_navigate。
-        if let Some(result) = &r {
-            for effect in &result.effects {
-                if let zero_page_runtime::PageEffect::Navigate(intent) = effect {
-                    if let Ok(mut q) = self.js_worker.pending_navigations().lock() {
-                        q.push(intent.url.clone());
-                    }
-                    return Ok(());
-                }
-            }
-        }
-        Ok(())
+        self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::Submit)
+            .map(|_| ())
     }
 
     /// P1a form submit：click 命中 submit button → 解析 enclosing `<form>` 派发 'submit' 事件。
@@ -3071,7 +3116,6 @@ return JSON.stringify({{action:action,name:name,val:val}});\
 
     fn handle_keyboard_event(&mut self, params: KeyboardEventParams) -> Result<(), String> {
         use zero_protocol::message::KeyboardEventType;
-        eprintln!("KB:HANDLE key={} type={:?}", params.key, params.event_type);
         let event_type = match params.event_type {
             KeyboardEventType::Down => "keydown",
             KeyboardEventType::Up => "keyup",
@@ -3220,7 +3264,6 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 self.run_frame_transaction(|runtime| runtime.handle_mouse_event(params))
             }
             IpcMessageKind::KeyboardEvent(params) => {
-                eprintln!("KB:DISPATCH key={} type={:?}", params.key, params.event_type);
                 self.run_frame_transaction(|runtime| runtime.handle_keyboard_event(params))
             }
             IpcMessageKind::ImeEvent(params) => self.run_frame_transaction(|runtime| runtime.handle_ime_event(params)),

@@ -586,3 +586,104 @@ fn navigation_snapshot_still_resets_form_state_t2pd2() {
         "导航换页必须清空上一文档的值缓存（防跨页 stale value）"
     );
 }
+
+/// t7 提交导航共享夹具：form + 指定控件焦点。
+fn runtime_with_submit_form(renderer_id: u64, body_html: &str) -> RendererRuntime {
+    let html = format!(r#"<html><body>{body_html}</body></html>"#);
+    let url = "https://zero.test/dir/page";
+    let mut runtime = RendererRuntime::new(renderer_id);
+    runtime.compositor_publish = None;
+    runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
+    runtime.current_url = Some(url.to_string());
+    runtime.cached_html = html.clone();
+    runtime.webview.as_mut().unwrap().prepare_document_state(url);
+    runtime.webview.as_mut().unwrap().load_html(&html, None);
+    {
+        let mut ctx = PageScriptContext {
+            html: &mut runtime.cached_html,
+            url,
+            js_worker: &runtime.js_worker,
+            webview: runtime.webview.as_mut(),
+        };
+        page_scripts::run_page_scripts(&mut ctx, true, |_url| Err::<String, String>("no fetch".into()));
+    }
+    runtime
+}
+
+fn press_enter(runtime: &mut RendererRuntime) {
+    runtime
+        .handle_keyboard_event(KeyboardEventParams {
+            key: "Enter".to_string(),
+            code: "Enter".to_string(),
+            text: None,
+            ctrl: false,
+            shift: false,
+            alt: false,
+            meta: false,
+            event_type: zero_protocol::message::KeyboardEventType::Down,
+        })
+        .unwrap();
+}
+
+#[test]
+fn enter_on_form_input_navigates_to_action_query() {
+    let mut runtime = runtime_with_submit_form(
+        920,
+        r#"<form id="f" action="/search"><input id="q" name="q" value="rust"><input type="hidden" name="src" value="web"></form>"#,
+    );
+    runtime.focus_target("#q").unwrap();
+    press_enter(&mut runtime);
+    assert_eq!(
+        runtime.current_url.as_deref(),
+        Some("https://zero.test/search?q=rust&src=web"),
+        "Enter 隐式提交必须导航到 action?entry-list（tree order，query 置换语义见脚本）"
+    );
+}
+
+#[test]
+fn prevented_submit_keeps_url() {
+    let mut runtime = runtime_with_submit_form(
+        921,
+        r#"<form id="f" action="/search"><input id="q" name="q" value="x">
+<script>document.querySelector('#f').addEventListener('submit', function (e) { e.preventDefault(); });</script></form>"#,
+    );
+    runtime.focus_target("#q").unwrap();
+    press_enter(&mut runtime);
+    assert_eq!(
+        runtime.current_url.as_deref(),
+        Some("https://zero.test/dir/page"),
+        "submit 事件被 preventDefault 后不得导航（HTML §4.10.22 步骤 5 取消面）"
+    );
+}
+
+#[test]
+fn enter_on_textarea_submits_site_compat() {
+    // 已知偏离（#154 决策沿用）：规范默认 textarea Enter 换行，此处提交——DDG 等
+    // textarea 搜索框站点的主路径，行为钉防回退。
+    let mut runtime = runtime_with_submit_form(
+        922,
+        r#"<form id="f" action="/search"><textarea id="q" name="q">rust programming</textarea></form>"#,
+    );
+    runtime.focus_target("#q").unwrap();
+    press_enter(&mut runtime);
+    assert_eq!(
+        runtime.current_url.as_deref(),
+        Some("https://zero.test/search?q=rust+programming"),
+        "textarea Enter 沿 #154 站点兼容决策走隐式提交"
+    );
+}
+
+#[test]
+fn relative_action_resolves_and_replaces_query() {
+    let mut runtime = runtime_with_submit_form(
+        923,
+        r#"<form id="f" action="search?src=old"><input id="q" name="q" value="x"></form>"#,
+    );
+    runtime.focus_target("#q").unwrap();
+    press_enter(&mut runtime);
+    assert_eq!(
+        runtime.current_url.as_deref(),
+        Some("https://zero.test/dir/search?q=x"),
+        "相对 action 按当前 URL 解析（shim new URL），query 按规范置换而非追加"
+    );
+}
