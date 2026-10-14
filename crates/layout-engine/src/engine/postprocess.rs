@@ -822,8 +822,39 @@ pub(super) fn apply_relative_offsets_inline(root: &mut LayoutBox, styles: &HashM
 /// taffy 按百分比计算出正确的基准尺寸，但缺少 px 偏移量的修正。
 /// 此函数遍历布局树，对使用了 calc 的 width/height 属性施加 px 偏移量修正。
 pub(super) fn apply_calc_size_adjustments(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    apply_calc_size_adjustments_inner(root, styles, None, None);
+}
+
+/// R5117（css-values-4 §8.5 + CSS2 §10.5）：calc(P% ± Npx) 的百分比基准 = **包含块**
+/// 的 content 尺寸（width ↔ 包含块 content 宽、height ↔ content 高）。旧实现以
+/// `root.width`（盒子自身布局宽——taffy 已把百分比部分解析进去）为基 → 百分比被
+/// **二次应用**（calc(50%-10px) 于 300 容器：taffy 150 → 0.5×150−10=65，应 140；
+/// box-sizing-content-box-002 float 对、普通块同病）。abspos/fixed 子的包含块为
+/// 最近 positioned 祖先（本 walk 不可见）→ 保持旧基（root.width）不变。
+/// kill-switch `ZW_CALC_CB_BASE=0`（default-on，OnceLock 进程级单读——R5108 教训）。
+fn apply_calc_size_adjustments_inner(
+    root: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    cb_width: Option<f32>,
+    cb_height: Option<f32>,
+) {
+    static CB_BASE_ON: OnceLock<bool> = OnceLock::new();
+    let cb_base_on = *CB_BASE_ON.get_or_init(|| std::env::var("ZW_CALC_CB_BASE").as_deref() != Ok("0"));
+
     for child in &mut root.children {
-        apply_calc_size_adjustments(child, styles);
+        // 子的包含块 = 本盒（content 尺寸）——除非脱流（abspos/fixed 的包含块为
+        // positioned 祖先，本 walk 不可见 → 不传基准）。
+        let child_cb_w = if child.is_absolute || child.is_fixed {
+            None
+        } else {
+            Some(root.content_width)
+        };
+        let child_cb_h = if child.is_absolute || child.is_fixed {
+            None
+        } else {
+            Some(root.content_height)
+        };
+        apply_calc_size_adjustments_inner(child, styles, child_cb_w, child_cb_h);
     }
 
     let Some(node_id) = root.node_id else { return };
@@ -832,12 +863,31 @@ pub(super) fn apply_calc_size_adjustments(root: &mut LayoutBox, styles: &HashMap
     // 检查 width 是否为 calc(P% ± Npx) 模式
     if let LengthValue::Calc(expr) = &style.width {
         if let Some((pct, px_offset)) = extract_calc_percentage_and_offset(expr) {
-            let base_width = pct / 100.0 * root.width as f64;
-            let adjusted = (base_width + px_offset).max(0.0) as f32;
+            // R5117：基准 = 包含块 content 宽（cb_base_on）；缺包含块基准
+            //（abspos/根）→ 旧基 root.width（taffy 已解析的百分比部分）。
+            let base_width = if cb_base_on {
+                cb_width.unwrap_or(root.width) as f64
+            } else {
+                root.width as f64
+            };
+            let adjusted = (pct / 100.0 * base_width + px_offset).max(0.0) as f32;
             if (adjusted - root.width).abs() > 0.01 {
-                let diff = adjusted - root.width;
-                root.width = adjusted;
-                root.content_width = (root.content_width + diff).max(0.0);
+                // 帧感知（css-sizing-3 §4.1）：content-box 时 calc 值为 content 宽
+                //（box-sizing-content-box-002：adjusted 140 应为 content，border-box
+                // = 140 + padding/border 框架）；border-box 时 calc 值即 border-box。
+                let content_box = matches!(
+                    style.box_sizing,
+                    zero_style_system::property::types::BoxSizingValue::ContentBox
+                );
+                if content_box {
+                    let frame = (root.width - root.content_width).max(0.0);
+                    root.content_width = adjusted;
+                    root.width = adjusted + frame;
+                } else {
+                    let diff = adjusted - root.width;
+                    root.width = adjusted;
+                    root.content_width = (root.content_width + diff).max(0.0);
+                }
             }
         }
     }
@@ -845,12 +895,26 @@ pub(super) fn apply_calc_size_adjustments(root: &mut LayoutBox, styles: &HashMap
     // 检查 height 是否为 calc(P% ± Npx) 模式
     if let LengthValue::Calc(expr) = &style.height {
         if let Some((pct, px_offset)) = extract_calc_percentage_and_offset(expr) {
-            let base_height = pct / 100.0 * root.height as f64;
-            let adjusted = (base_height + px_offset).max(0.0) as f32;
+            let base_height = if cb_base_on {
+                cb_height.unwrap_or(root.height) as f64
+            } else {
+                root.height as f64
+            };
+            let adjusted = (pct / 100.0 * base_height + px_offset).max(0.0) as f32;
             if (adjusted - root.height).abs() > 0.01 {
-                let diff = adjusted - root.height;
-                root.height = adjusted;
-                root.content_height = (root.content_height + diff).max(0.0);
+                let content_box = matches!(
+                    style.box_sizing,
+                    zero_style_system::property::types::BoxSizingValue::ContentBox
+                );
+                if content_box {
+                    let frame = (root.height - root.content_height).max(0.0);
+                    root.content_height = adjusted;
+                    root.height = adjusted + frame;
+                } else {
+                    let diff = adjusted - root.height;
+                    root.height = adjusted;
+                    root.content_height = (root.content_height + diff).max(0.0);
+                }
             }
         }
     }

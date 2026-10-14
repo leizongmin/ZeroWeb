@@ -975,6 +975,12 @@ impl LayoutEngine {
         // ~20µs，同 R3858/R4215 量级）——无 float 页走快速路径（仅保留 R4140 unhoist +
         // BFC auto-height 重算两个无 float 亦生效的臂），跳过 Phase 1/2 float 机制逐节点
         // 空转。float 在场页走全 walk，行为零变化。
+        // 5a.1.5（R5117，css-values-4 §8.5）：calc(P% ± Npx) 宽高按包含块 content
+        // 尺寸消解 px 偏移——须先于 float 定位（box-sizing-content-box-002：float
+        // 对 calc(50%-10px) 宽度后置修正晚于 float 摆位 → 纵叠）。abspos/fixed 子
+        // 保持旧基（包含块为 positioned 祖先，本 walk 不可见）。
+        apply_calc_size_adjustments(&mut root_box, styles);
+
         let page_has_float = styles.values().any(|s| !matches!(s.float, FloatValue::None));
         if page_has_float {
             // 5a.2（R4226，css22 §17.5.2.2 + §9.5）：float 表格 sizing 预 pass——float 定位
@@ -1321,7 +1327,6 @@ impl LayoutEngine {
         // 12.5 后处理：修正 calc(P% ± Npx) 尺寸。
         // taffy 不支持 calc 表达式，convert 层将 calc(100% - 6px) 近似为 Percent(1.0)。
         // 此步骤根据实际百分比计算值和 px 偏移量修正最终尺寸。
-        apply_calc_size_adjustments(&mut root_box, styles);
 
         // 12.5b 后处理（R4136，css-values-4 §calc）：calc(P% ± Npx) margin 的 px 部分补齐。
         // convert 层对 margin 的 calc 只保留百分比部分（convert_length_to_lpa），px 偏移

@@ -710,3 +710,4 @@ mod r5108_max_height_margin_box_tests;
 mod r5109_clearance_extent_propagation_tests;
 /// R5110 替换元素 max 侧 min-content/max-content 关键字钳制测试。
 mod r5110_replaced_mincontent_tests;
+mod r5117_calc_cb_base_tests;
