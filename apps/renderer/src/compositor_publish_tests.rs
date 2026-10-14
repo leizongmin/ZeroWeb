@@ -336,17 +336,20 @@ fn oversize_image_payloads_split_into_batches_before_frame() {
         .iter()
         .filter_map(|message| match &message.kind {
             IpcMessageKind::ImagePayloadBatch {
+                surface_id,
                 navigation_epoch,
                 payloads,
-            } => Some((*navigation_epoch, payloads)),
+            } => Some((*surface_id, *navigation_epoch, payloads)),
             _ => None,
         })
         .collect();
     assert_eq!(batches.len(), 2);
-    assert!(batches.iter().all(|(epoch, _)| *epoch == 7));
+    // Legacy 发布（ViewPainted）无 surface 归属，批 surface_id 为 None。
+    assert!(batches.iter().all(|(surface_id, _, _)| surface_id.is_none()));
+    assert!(batches.iter().all(|(_, epoch, _)| *epoch == 7));
     let keys: Vec<_> = batches
         .iter()
-        .map(|(_, payloads)| payloads.iter().map(|p| p.image_key).collect::<Vec<_>>())
+        .map(|(_, _, payloads)| payloads.iter().map(|p| p.image_key).collect::<Vec<_>>())
         .collect();
     assert_eq!(keys, vec![vec![11], vec![12]]);
     // 帧本体不携带像素（批已先发），同步回传含全部已发出 key。
@@ -467,6 +470,16 @@ fn compositor_mode_batches_flow_through_publish_thread() {
     let mut messages = drain_messages(&thread_buf.lock().unwrap());
     assert_eq!(messages.len(), 3);
     let frame_message = messages.pop().expect("帧消息");
+    // P100 返修（F1）：compositor 模式批必须带所属 surface（浏览器据此中继
+    // 给 compositor 进程），与帧同 surface。
+    let batch_surface_ids: Vec<Option<u64>> = messages
+        .iter()
+        .map(|message| match &message.kind {
+            IpcMessageKind::ImagePayloadBatch { surface_id, .. } => *surface_id,
+            other => panic!("批先于帧，实际 {other:?}"),
+        })
+        .collect();
+    assert_eq!(batch_surface_ids, vec![Some(73), Some(73)]);
     let batch_keys: Vec<Vec<u64>> = messages
         .iter()
         .map(|message| match &message.kind {

@@ -595,6 +595,7 @@ impl Session {
                         continue;
                     }
                     if let IpcMessageKind::ImagePayloadBatch {
+                        surface_id: _,
                         navigation_epoch,
                         payloads,
                     } = message.kind
@@ -653,6 +654,7 @@ impl Session {
                         return Ok(());
                     }
                     if let IpcMessageKind::ImagePayloadBatch {
+                        surface_id: _,
                         navigation_epoch,
                         payloads,
                     } = &message.kind
@@ -1083,6 +1085,47 @@ fn resolve_renderer_binary() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn batch_payload(key: u64) -> IpcImagePayload {
+        IpcImagePayload {
+            image_key: key,
+            width: 1,
+            height: 1,
+            rgba: vec![0, 0, 0, 255],
+        }
+    }
+
+    /// P100 返修（TV-1）：webdriver 导航循环（session.rs 导航 try_recv 臂）与
+    /// 自动化回调（request 臂）共用本注入——同 epoch 批按 key 注入且幂等，
+    /// 截图取图与 GUI 同源 ImageCache。
+    #[test]
+    fn image_batch_injects_by_key_idempotently() {
+        let mut cache = ImageCache::new(64, 64 << 20);
+        record_image_batch(&mut cache, 7, 7, &[batch_payload(42), batch_payload(43)]);
+        let key = |k: u64| zero_render_foundation::image_cache::ImageKey::new(k);
+        assert!(cache.get(&key(42)).is_some());
+        assert!(cache.get(&key(43)).is_some());
+        // 重复批幂等（批先于/后于帧重复到达均无害）。
+        record_image_batch(&mut cache, 7, 7, &[batch_payload(42)]);
+        assert!(cache.get(&key(42)).is_some());
+    }
+
+    /// P100 返修（TV-1）：过期 epoch 批随帧失效，不注入（与 record_paint_snapshot
+    /// 同规则；导航换页后迟到的旧批不得污染新页截图）。
+    #[test]
+    fn stale_image_batch_is_dropped() {
+        let mut cache = ImageCache::new(64, 64 << 20);
+        record_image_batch(&mut cache, 7, 6, &[batch_payload(42)]);
+        let key = zero_render_foundation::image_cache::ImageKey::new(42);
+        assert!(cache.get(&key).is_none());
+        // 回绕邻界：等值判等下 MAX-1 批对 MAX 会话过期。
+        record_image_batch(&mut cache, u64::MAX, u64::MAX - 1, &[batch_payload(9)]);
+        assert!(
+            cache
+                .get(&zero_render_foundation::image_cache::ImageKey::new(9))
+                .is_none()
+        );
+    }
 
     #[test]
     fn webdriver_special_keys_are_typed() {

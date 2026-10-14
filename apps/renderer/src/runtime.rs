@@ -3503,6 +3503,10 @@ fn publish_render_with_layout(
             IpcMessage {
                 id,
                 kind: IpcMessageKind::ImagePayloadBatch {
+                    // compositor 发布模式下批与帧同 surface：浏览器收到批后按
+                    // surface_id 中继给 compositor 进程，帧到达时按 epoch 注入。
+                    surface_id: (publish_state.mode == FramePublishMode::Compositor)
+                        .then_some(publish_state.surface_id),
                     navigation_epoch,
                     payloads,
                 },

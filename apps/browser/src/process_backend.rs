@@ -443,6 +443,7 @@ impl ProcessTabBackend {
                 }
             }
             IpcMessageKind::ImagePayloadBatch {
+                surface_id,
                 navigation_epoch,
                 payloads,
             } => {
@@ -458,6 +459,15 @@ impl ProcessTabBackend {
                         payloads.len()
                     );
                     return;
+                }
+                // P100 返修（F1）：compositor 发布模式下批带 surface_id，中继给
+                // compositor 进程——其 surface.image_cache 只认帧内 image_payloads，
+                // 帧载荷已被置空，不中继则超限页在 compositor 呈现路径全部图片空白。
+                // 中继与帧走同一 FIFO（批先于帧上线），过期批已在此拦截。
+                // 克隆仅发生在超限页（>48MiB）路径，换取 TabSnapshot 缓存与
+                // compositor 双消费端各自持有像素。
+                if let Some(surface_id) = surface_id {
+                    crate::compositor_client::forward_image_batch(surface_id, navigation_epoch, payloads.clone());
                 }
                 for payload in payloads {
                     if let Ok(data) = ImageData::from_rgba(payload.rgba, payload.width, payload.height) {
@@ -2161,6 +2171,9 @@ mod navigation_contract_tests {
                 tab_id,
                 &mut snap,
                 IpcMessageKind::ImagePayloadBatch {
+                    // surface_id None（Legacy 回退发布）不触发中继；compositor
+                    // 模式批携带 Some，走下方中继。
+                    surface_id: None,
                     navigation_epoch: epoch,
                     payloads: vec![payload.clone()],
                 },
@@ -2195,6 +2208,7 @@ mod navigation_contract_tests {
             tab_id,
             &mut snap,
             IpcMessageKind::ImagePayloadBatch {
+                surface_id: None,
                 navigation_epoch: epoch.wrapping_sub(1),
                 payloads: vec![IpcImagePayload {
                     image_key: 42,

@@ -373,6 +373,7 @@ mod tests {
         let batch = |id, keys: &[u64]| IpcMessage {
             id,
             kind: zero_protocol::IpcMessageKind::ImagePayloadBatch {
+                surface_id: Some(1),
                 navigation_epoch: 1,
                 payloads: keys
                     .iter()
