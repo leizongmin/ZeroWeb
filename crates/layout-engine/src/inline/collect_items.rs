@@ -33,9 +33,11 @@ impl InlineFormattingContext {
         *ON.get_or_init(|| std::env::var("ZW_SEGMENT_BREAK_CJK").as_deref() != Ok("0"))
     }
 
-    /// R5114（css-text-3 §4.1.3）：段断行（标记 U+000B）在 **collector 内**按上下文
-    /// 消解——方案 A（R5113 定界：哨兵不落 run，intrinsic/measurement 等消费面无泄漏）。
-    /// 每 MARK 的邻字符：节点内就近取；节点边界取 DOM 跨节点扫描（前向=后继文本的
+    /// R5114（css-text-3 §4.1.3）：段断行在 **collector 内**按上下文消解——方案 A
+    /// （R5113 定界：标记不落 run，intrinsic/measurement 等消费面无泄漏）。
+    /// `break_slots` = `collapse_whitespace_mark_segment_breaks` 记录的段断行位置
+    /// （R5119 起弃用 U+000B 字符哨兵——与真实 U+000B Cc 内容冲突，位置旁路表示）。
+    /// 每槽位的邻字符：节点内就近取；节点边界取 DOM 跨节点扫描（前向=后继文本的
     /// 首个非空白字符；后向=前驱文本的末个非空白字符；块级/原子 inline/IFC 容器边界
     /// → None 保守取空格语义）。两侧均 CJK → 段断行连同紧邻空格整体移除；否则退化
     /// 为空格。kill-switch `ZW_SEGMENT_BREAK_CJK=0`（default-on）。
@@ -45,9 +47,9 @@ impl InlineFormattingContext {
         text_node: NodeId,
         styles: &HashMap<NodeId, ComputedStyle>,
         text: &mut String,
+        break_slots: &[usize],
     ) {
-        const MARK: char = '\u{000B}';
-        if !text.contains(MARK) {
+        if break_slots.is_empty() {
             return;
         }
         // ruby 子树豁免：css-ruby-1 §ruby-overhang 的空格悬挂模型（R4357 谱系）按
@@ -69,14 +71,16 @@ impl InlineFormattingContext {
         let next = Self::boundary_text_char(doc, container, text_node, styles, true);
         let chars: Vec<char> = text.chars().collect();
         let mut out = String::with_capacity(text.len());
+        let mut slots = break_slots.iter().copied().peekable();
         for (i, c) in chars.iter().copied().enumerate() {
-            if c != MARK {
+            if slots.peek() != Some(&i) {
                 out.push(c);
                 continue;
             }
-            // 节点内就近非空白、非标记字符。
-            let intra_left = chars[..i].iter().rev().copied().find(|c| *c != MARK && !c.is_whitespace());
-            let intra_right = chars[i + 1..].iter().copied().find(|c| *c != MARK && !c.is_whitespace());
+            slots.next();
+            // 节点内就近非空白字符（槽位本身已折叠为空格，被 is_whitespace 过滤）。
+            let intra_left = chars[..i].iter().rev().copied().find(|c| !c.is_whitespace());
+            let intra_right = chars[i + 1..].iter().copied().find(|c| !c.is_whitespace());
             let left = intra_left.or(prev);
             let right = intra_right.or(next);
             let remove = matches!((left, right), (Some(l), Some(r)) if crate::inline::is_cjk_for_segment_break(l) && crate::inline::is_cjk_for_segment_break(r));
@@ -381,8 +385,9 @@ impl InlineFormattingContext {
                             crate::inline::collapse_whitespace_keep_newlines(&text_data.content)
                         } else if Self::segment_break_cjk_enabled() {
                             // R5114（css-text-3 §4.1.3 方案 A）：段断行标记 + collector
-                            // 内上下文消解（哨兵不落 run，见 resolver 文档）。
-                            let mut marked =
+                            // 内上下文消解（标记不落 run，见 resolver 文档；R5119 起槽位
+                            // 位置旁路，不再占用 U+000B 字符值）。
+                            let (mut marked, break_slots) =
                                 crate::inline::collapse_whitespace_mark_segment_breaks(&text_data.content);
                             Self::resolve_segment_breaks_in_node_text(
                                 doc,
@@ -390,6 +395,7 @@ impl InlineFormattingContext {
                                 child_id,
                                 styles,
                                 &mut marked,
+                                &break_slots,
                             );
                             marked
                         } else {

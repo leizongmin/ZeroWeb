@@ -451,31 +451,42 @@ pub(crate) fn is_cjk_for_segment_break(ch: char) -> bool {
     )
 }
 
-/// R5114：段断行标记折叠——`\n` 折叠为 U+000B 哨兵（普通可折叠空白 → 空格）。
-/// **仅在 collector 内使用**：哨兵由 `resolve_segment_breaks_in_node_text` 按
-/// §4.1.3 上下文消解后 produce 最终 run 文本（哨兵不落 run——R5113 泄漏教训：
-/// run.text 消费面含 intrinsic/measurement 等非断行器路径）。
-pub(crate) fn collapse_whitespace_mark_segment_breaks(text: &str) -> String {
-    const MARK: char = '\u{000B}';
+/// R5114：段断行标记折叠——`\n` 折叠为空格并在 `break_slots` 记录其位置
+///（普通可折叠空白 → 空格）。**仅在 collector 内使用**：槽位由
+/// `resolve_segment_breaks_in_node_text` 按 §4.1.3 上下文消解后 produce 最终
+/// run 文本（标记不落 run——R5113 泄漏教训：run.text 消费面含 intrinsic/
+/// measurement 等非断行器路径）。
+///
+/// R5119：弃用 U+000B 字符哨兵——与**真实** U+000B Cc 内容冲突（CSS
+/// `content: "\000B"` / HTML `&#11;` 注入的 VT 经旧解析臂被当作段断行标记
+/// 折叠成空格，R644 Cc 可见占位框永不触发，control-chars-00B mismatch 族
+/// 全灭）。槽位以「折叠空格 + 位置旁路」表示，不占用任何字符值。
+pub(crate) fn collapse_whitespace_mark_segment_breaks(text: &str) -> (String, Vec<usize>) {
     let mut result = String::with_capacity(text.len());
+    let mut break_slots: Vec<usize> = Vec::new();
     let mut last_was_space = false;
+    let mut char_idx = 0usize;
     for ch in text.chars() {
         if ch == '\n' {
             if !last_was_space {
-                result.push(MARK);
+                break_slots.push(char_idx);
+                result.push(' ');
+                char_idx += 1;
                 last_was_space = true;
             }
         } else if is_collapsible_ws(ch) {
             if !last_was_space {
                 result.push(' ');
+                char_idx += 1;
                 last_was_space = true;
             }
         } else {
             result.push(ch);
+            char_idx += 1;
             last_was_space = false;
         }
     }
-    result
+    (result, break_slots)
 }
 
 /// R4398（css-text-3 §4.1.2 + §white-space-phase-1）：pre-line 语境的**换行保留式**
@@ -633,6 +644,52 @@ mod tests {
         // 交叉验证：无 `\n` 时与 collapse_whitespace 逐字节一致。
         for s in ["", " ", "a b  c", "\u{00A0}x"] {
             assert_eq!(collapse_whitespace_keep_newlines(s), collapse_whitespace(s));
+        }
+    }
+
+    /// R5119：段断行标记 = 折叠空格 + 位置旁路（弃用 U+000B 字符哨兵）。
+    /// 哨兵与真实 U+000B Cc 内容冲突：`content: "\000B"`（control-chars-00B）
+    /// 被旧解析臂当段断行折叠成空格 → Cc 可见占位框永不触发。
+    #[test]
+    fn segment_break_marking_preserves_real_vt() {
+        // 真实 VT 不是段断行：原样保留、零槽位（R644 Cc 占位框依赖原字符落 run）。
+        assert_eq!(
+            collapse_whitespace_mark_segment_breaks("\u{000B}"),
+            ("\u{000B}".to_string(), vec![])
+        );
+        assert_eq!(
+            collapse_whitespace_mark_segment_breaks("a\u{000B}b"),
+            ("a\u{000B}b".to_string(), vec![])
+        );
+        // `\n` 折叠为空格 + 槽位记录（按输出串字符索引）。
+        assert_eq!(
+            collapse_whitespace_mark_segment_breaks("汉\n字"),
+            ("汉 字".to_string(), vec![1])
+        );
+        // 连续 `\n` 折叠为一个槽位；`\n` 与空格序列合并。
+        assert_eq!(
+            collapse_whitespace_mark_segment_breaks("a\n\nb"),
+            ("a b".to_string(), vec![1])
+        );
+        assert_eq!(
+            collapse_whitespace_mark_segment_breaks("a\n b"),
+            ("a b".to_string(), vec![1])
+        );
+        assert_eq!(
+            collapse_whitespace_mark_segment_breaks("a \nb"),
+            ("a b".to_string(), vec![])
+        );
+        // 多槽位索引不受合并空白影响（char_idx 只在推送字符时前进）。
+        assert_eq!(
+            collapse_whitespace_mark_segment_breaks("汉\n字\n汉"),
+            ("汉 字 汉".to_string(), vec![1, 3])
+        );
+        // 槽位语义守恒：无槽位时输出与 collapse_whitespace 逐字节一致。
+        for s in ["", " ", "a b  c", "\u{00A0}x", "a\nb"] {
+            let (out, slots) = collapse_whitespace_mark_segment_breaks(s);
+            if slots.is_empty() {
+                assert_eq!(out, collapse_whitespace(s), "{s:?} 无槽位应等价 collapse");
+            }
         }
     }
 

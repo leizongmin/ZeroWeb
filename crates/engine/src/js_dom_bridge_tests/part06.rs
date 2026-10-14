@@ -1357,8 +1357,10 @@ fn test_selection_surface_r3254_m1() {
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__d3)").unwrap().value,
-        "helloworld",
-        "selectAllChildren(#r) toString 须为两段子树文本"
+        "hello\nworld",
+        "selectAllChildren(#r) toString 须为渲染文本（selection-compat M2 切片 1：\
+         Selection.toString 走 rendered text 语义——selection-api §stringifier，\
+         块级 <p> 边界产出换行；Range.toString 保持 raw 拼接不受影响）"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__e9)").unwrap().value,
@@ -1380,8 +1382,10 @@ fn test_selection_surface_r3254_m1() {
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__s1)").unwrap().value,
-        "elloworld".chars().take(4).collect::<String>() + &"world".chars().take(3).collect::<String>(),
-        "setBaseAndExtent(t1,1,t2,3) toString 须为 'ello'+'wor'"
+        "elloworld".chars().take(4).collect::<String>() + "\n"
+            + &"world".chars().take(3).collect::<String>(),
+        "setBaseAndExtent(t1,1,t2,3) toString 须为 'ello'+'\\n'+'wor'（跨 <p> 块边界，\
+         rendered text 语义同 selectAllChildren 断言）"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__s2)").unwrap().value,

@@ -8409,6 +8409,140 @@
       fire();
     }
   };
+  // selection-api §Selection stringifier（https://w3c.github.io/selection-api/#dom-selection-stringifier）：
+  // stringification = 「concatenation of the rendered text」；textarea/input 内选区例外
+  // （返回 value 的选中子串）。rendered text 按 HTML 渲染节 rendered text collection
+  // steps 做选区切片近似（https://html.spec.whatwg.org/multipage/dom.html#rendered-text-collection-steps）：
+  // ① display:none 子树不产出（「not being rendered → return items」——
+  //    script-and-style-elements.html 断言面：script/style UA 默认 none 不入串，
+  //    作者/inline 翻 block 后内容入串）；
+  // ② Text 段按 CSS white-space 处理近似：连续可折叠空白折为单空格；段首空白挂起
+  //    （输出空/已换行则弃）、段尾空白挂起到下一段结算；纯空白且含换行的段产出
+  //    1 个块间换行（required line break 精简模型，同位不重复发）；
+  // ③ 进入可见块级元素补 1 个换行（out 非空且未以 \n 结尾时）；pre 族
+  //    （pre/listing/plaintext/xmp，HTML 渲染节 preformatted 元素）边界换行不与
+  //    相邻空白合并（white-space:pre 不折叠）→ 无条件发。
+  // 期望串核对（WPT selection/script-and-style-elements.html，测试内 \r\n→\n 归一）：
+  // "\n" + style 块文本 + "\n" + script 块文本 + "\n\n" + pre 文本。
+  // 已知互操作分叉：现代 Chromium 对同文档产出 "A\nB\nPASS"（无首行换行、pre 前
+  // 单换行，v-pw chromium-1243 实测）——WPT 期望串编码旧引擎（\r\n 时代，测试内
+  // replace(/\r\n/g,"\n") 即其痕迹）行为；本实现以 WPT 期望串为准（M1 evidence 记档）。
+  // 注意：Range.toString 保持 DOM Standard raw data 拼接（WPT Range-stringifier
+  // 断言 raw 形态），不共用此路径——两套语义分属 selection-api 与 DOM Standard。
+  function _zwRangeRenderedText(range) {
+    if (!range) return '';
+    var sc = range.startContainer, ec = range.endContainer;
+    if (!sc || !ec) return '';
+    var so = range.startOffset | 0, eo = range.endOffset | 0;
+    var _isText = function (n) { return !!n && (n.nodeType === 3 || n.__zwIsText); };
+    // textarea/input 内选区：spec 例外返 value 子串。控件选区边界模型未对齐
+    // value 子串形态 → 回落 raw toString（FIXME：document.open 用例族之外无
+    // 消费面，维持既有 raw 行为零回归）。
+    for (var anc = sc; anc; anc = anc.parentNode) {
+      var ancTag = anc.tagName ? String(anc.tagName).toLowerCase() : '';
+      if (ancTag === 'textarea' || ancTag === 'input') return range.toString();
+    }
+    var cac;
+    if (sc === ec) {
+      if (_isText(sc)) {
+        var par0 = sc.parentNode;
+        var disp0 = '';
+        if (par0 && globalThis.getComputedStyle) {
+          try { disp0 = String(globalThis.getComputedStyle(par0).display || ''); } catch (_eD0) {}
+        }
+        if (disp0 === 'none') return '';
+        return String(sc.nodeValue || '').slice(Math.min(so, eo), Math.max(so, eo));
+      }
+      cac = sc; // selectNodeContents 形态：同元素容器，从该子树走（根不做块边界换行）
+    } else {
+      cac = range.commonAncestorContainer;
+    }
+    if (!cac) return '';
+    var out = '';
+    var pendingSpace = false;
+    var _displayOf = function (el) {
+      if (!el || !globalThis.getComputedStyle) return '';
+      try { return String(globalThis.getComputedStyle(el).display || ''); } catch (_eD1) { return ''; }
+    };
+    var _isPreformatted = function (el) {
+      var tag = el && el.tagName ? String(el.tagName).toLowerCase() : '';
+      return tag === 'pre' || tag === 'listing' || tag === 'plaintext' || tag === 'xmp';
+    };
+    var _elIndex = function (el) {
+      var p = el.parentNode;
+      if (!p || !p.childNodes) return -1;
+      for (var i = 0; i < p.childNodes.length; i++) if (p.childNodes[i] === el) return i;
+      return -1;
+    };
+    // 元素区间 [ (p,idx), (p,idx+1) ) 与 range 重叠判定——range 外的块级兄弟不得触发边界换行
+    var _elIntersects = function (el) {
+      var p = el.parentNode;
+      if (!p) return true;
+      var idx = _elIndex(el);
+      if (idx < 0) return true;
+      if (!_zwRangeBpAfter(p, idx + 1, sc, so)) return false; // elEnd <= rangeStart
+      if (!_zwRangeBpAfter(ec, eo, p, idx)) return false; // rangeEnd <= elStart
+      return true;
+    };
+    var _emitText = function (tn, from, to) {
+      if (to <= from) return;
+      var raw = String(tn.nodeValue || '').slice(from, to);
+      if (raw === '') return;
+      if (/^[\t\n\v\f\r ]*$/.test(raw)) {
+        // 纯空白段：含换行 → 块间换行（同位合并）；不含 → 挂起空格
+        if (raw.indexOf('\n') >= 0) {
+          if (out === '' || out.charAt(out.length - 1) !== '\n') { out += '\n'; pendingSpace = false; }
+        } else if (out !== '' && out.charAt(out.length - 1) !== '\n') {
+          pendingSpace = true;
+        }
+        return;
+      }
+      var core = raw.replace(/[\t\n\v\f\r ]+/g, ' ');
+      // 段尾空白先剥出 core（折叠产物仍带尾空格）——入挂起态，不入输出
+      if (core.charAt(core.length - 1) === ' ') core = core.slice(0, -1);
+      if (core.charAt(0) === ' ') {
+        core = core.slice(1);
+        if (out !== '' && out.charAt(out.length - 1) !== '\n') pendingSpace = true;
+      }
+      if (core !== '') {
+        if (pendingSpace && out !== '' && out.charAt(out.length - 1) !== '\n') out += ' ';
+        pendingSpace = false;
+        out += core;
+        if (raw.charAt(raw.length - 1) === ' ' || /[\t\n\v\f\r]$/.test(raw)) pendingSpace = true;
+      }
+    };
+    var _bpInside = function (tn, from, to) {
+      // (tn,from) >= (sc,so) 且 (tn,to) <= (ec,eo)（端点相等按含）
+      if (_zwRangeBpAfter(sc, so, tn, from)) return false;
+      if (_zwRangeBpAfter(tn, to, ec, eo)) return false;
+      return true;
+    };
+    (function walk(node) {
+      if (_isText(node)) {
+        var len = String(node.nodeValue || '').length;
+        var from = 0, to = len;
+        if (node === sc) from = so;
+        if (node === ec) to = eo;
+        if (from > to) { var tmp = from; from = to; to = tmp; }
+        if (_bpInside(node, from, to)) _emitText(node, from, to);
+        return;
+      }
+      if (!node.childNodes) return;
+      var disp = _displayOf(node);
+      if (disp === 'none') return; // not being rendered → 子树不产出（也无边界换行）
+      if (node !== cac && _elIntersects(node) && disp !== '' &&
+          { block: 1, 'list-item': 1, table: 1, flex: 1, grid: 1, 'flow-root': 1, 'table-caption': 1 }[disp] === 1) {
+        // 块级边界换行（required line break）；pre 族无条件（white-space:pre 不折叠）
+        if (_isPreformatted(node) || (out !== '' && out.charAt(out.length - 1) !== '\n')) {
+          out += '\n';
+          pendingSpace = false;
+        }
+      }
+      var kids = node.childNodes;
+      for (var i = 0; i < kids.length; i++) walk(kids[i]);
+    })(cac);
+    return out;
+  }
   function _getSelection() {
     if (_selection) return _selection;
     _selection = Object.create(globalThis.Selection.prototype);
@@ -8443,7 +8577,9 @@
       focusOffset: { get: function () { return this._ranges[0] ? this._focusOffset : 0; } },
       type: { get: function () { return this._ranges.length === 0 ? 'None' : (this.isCollapsed ? 'Caret' : 'Range'); } },
     });
-    _selection.toString = function () { return this._ranges.map(function (r) { return r.toString(); }).join(''); };
+    // selection-api stringifier：rendered text 拼接（见 _zwRangeRenderedText 注释——
+    // 与 Range.toString 的 raw data 语义分流；script-and-style-elements 断言面）。
+    _selection.toString = function () { return this._ranges.map(function (r) { return _zwRangeRenderedText(r); }).join(''); };
     // spec getRangeAt(index)：越界抛 IndexSizeError（上游 getRangeAt.html 断言族）；
     // 旧版越界返 null（WPT 期望 throw）。
     _selection.getRangeAt = function (i) {
