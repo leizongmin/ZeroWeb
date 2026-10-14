@@ -38,6 +38,24 @@ use crate::view_source_fetch::ViewSourceFetchState;
 
 const TAB_BAR_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(450);
 
+/// ZW_RESIZE_TRACE 置位时启用窗口 resize 链路诊断（t11，值可为 "1" 或 trace 文件
+/// 路径——renderer 子进程走文件）。进程级快照：入口读一次，热路径只做 bool 判断
+/// （不做逐事件 getenv）。
+pub(crate) static RESIZE_TRACE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_RESIZE_TRACE").is_ok());
+
+/// ZW_RESIZE_TRACE 诊断输出。时间戳用 epoch 毫秒——browser 与 renderer（子进程，
+/// stderr 同流）跨进程对齐时序用。
+pub(crate) fn resize_trace(component: &str, msg: impl std::fmt::Display) {
+    if *RESIZE_TRACE {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or_default();
+        eprintln!("[ZW_RESIZE_TRACE] t={now} {component} {msg}");
+    }
+}
+
 /// 浏览器 UI 场景图元包：`(fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows)`。
 /// `overlay_*` 在所有 fills/glyphs 之后绘制；`chrome_shadows` 是壳层阴影（如页面视口）。
 pub(crate) type ChromeScene = (
