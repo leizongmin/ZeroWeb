@@ -1,0 +1,1682 @@
+[
+  [
+    "compression/compression-bad-chunks.any.js",
+    [
+      {
+        "name": "chunk of type undefined should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type null should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type numeric should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type object, not BufferSource should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type array should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type SharedArrayBuffer should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type shared Uint8Array should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type undefined should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type null should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type numeric should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type object, not BufferSource should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type array should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type SharedArrayBuffer should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type shared Uint8Array should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type undefined should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type null should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type numeric should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type object, not BufferSource should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type array should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type SharedArrayBuffer should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type shared Uint8Array should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type undefined should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type null should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type numeric should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type object, not BufferSource should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type array should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type SharedArrayBuffer should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type shared Uint8Array should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      }
+    ]
+  ],
+  [
+    "compression/compression-constructor-error.any.js",
+    [
+      {
+        "name": "\"a\" should cause the constructor to throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "no input should cause the constructor to throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "non-string input should cause the constructor to throw",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "compression/compression-including-empty-chunk.any.js",
+    [
+      {
+        "name": "the result of compressing [,Hello,Hello] with deflate should be 'HelloHello'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the result of compressing [Hello,,Hello] with deflate should be 'HelloHello'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the result of compressing [Hello,Hello,] with deflate should be 'HelloHello'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the result of compressing [,Hello,Hello] with deflate-raw should be 'HelloHello'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the result of compressing [Hello,,Hello] with deflate-raw should be 'HelloHello'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the result of compressing [Hello,Hello,] with deflate-raw should be 'HelloHello'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the result of compressing [,Hello,Hello] with gzip should be 'HelloHello'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the result of compressing [Hello,,Hello] with gzip should be 'HelloHello'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the result of compressing [Hello,Hello,] with gzip should be 'HelloHello'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the result of compressing [,Hello,Hello] with brotli should be 'HelloHello'",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "the result of compressing [Hello,,Hello] with brotli should be 'HelloHello'",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "the result of compressing [Hello,Hello,] with brotli should be 'HelloHello'",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      }
+    ]
+  ],
+  [
+    "compression/compression-large-flush-output.any.js",
+    [
+      {
+        "name": "deflate compression with large flush output",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "deflate-raw compression with large flush output",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "gzip compression with large flush output",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "brotli compression with large flush output",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      }
+    ]
+  ],
+  [
+    "compression/compression-multiple-chunks.any.js",
+    [
+      {
+        "name": "compressing 2 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 3 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 4 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 5 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 6 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 7 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 8 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 9 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 10 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 11 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 12 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 13 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 14 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 15 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 16 chunks with deflate should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 2 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 3 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 4 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 5 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 6 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 7 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 8 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 9 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 10 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 11 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 12 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 13 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 14 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 15 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 16 chunks with deflate-raw should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 2 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 3 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 4 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 5 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 6 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 7 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 8 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 9 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 10 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 11 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 12 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 13 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 14 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 15 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 16 chunks with gzip should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "compressing 2 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "compressing 3 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "compressing 4 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "compressing 5 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "compressing 6 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "compressing 7 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "compressing 8 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "compressing 9 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "compressing 10 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "compressing 11 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "compressing 12 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "compressing 13 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "compressing 14 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "compressing 15 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "compressing 16 chunks with brotli should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      }
+    ]
+  ],
+  [
+    "compression/compression-output-length.any.js",
+    [
+      {
+        "name": "the length of deflate data should be shorter than that of the original data",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the length of deflate-raw data should be shorter than that of the original data",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the length of gzip data should be shorter than that of the original data",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the length of brotli data should be shorter than that of the original data",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      }
+    ]
+  ],
+  [
+    "compression/compression-stream.any.js",
+    [
+      {
+        "name": "CompressionStream constructor should throw on invalid format",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "deflate empty data should be reinflated back to its origin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "deflate small amount data should be reinflated back to its origin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "deflate large amount data should be reinflated back to its origin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "deflate-raw empty data should be reinflated back to its origin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "deflate-raw small amount data should be reinflated back to its origin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "deflate-raw large amount data should be reinflated back to its origin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "gzip empty data should be reinflated back to its origin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "gzip small amount data should be reinflated back to its origin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "gzip large amount data should be reinflated back to its origin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "brotli empty data should be reinflated back to its origin",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "brotli small amount data should be reinflated back to its origin",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "brotli large amount data should be reinflated back to its origin",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'CompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      }
+    ]
+  ],
+  [
+    "compression/compression-with-detach.any.js",
+    [
+      {
+        "name": "data should be correctly compressed even if input is detached partway",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "compression/decompression-bad-chunks.any.js",
+    [
+      {
+        "name": "chunk of type undefined should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type null should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type numeric should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type object, not BufferSource should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type array should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type SharedArrayBuffer should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type shared Uint8Array should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type invalid deflate bytes should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type invalid gzip bytes should error the stream for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type undefined should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type null should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type numeric should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type object, not BufferSource should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type array should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type SharedArrayBuffer should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type shared Uint8Array should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type invalid deflate bytes should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type invalid gzip bytes should error the stream for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type undefined should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type null should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type numeric should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type object, not BufferSource should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type array should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type SharedArrayBuffer should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type shared Uint8Array should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type invalid deflate bytes should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type invalid gzip bytes should error the stream for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type undefined should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type null should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type numeric should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type object, not BufferSource should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type array should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type SharedArrayBuffer should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type shared Uint8Array should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type invalid deflate bytes should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type invalid gzip bytes should error the stream for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      }
+    ]
+  ],
+  [
+    "compression/decompression-buffersource.any.js",
+    [
+      {
+        "name": "chunk of type ArrayBuffer should work for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Int8Array should work for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Uint8Array should work for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Uint8ClampedArray should work for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Int16Array should work for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Uint16Array should work for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Int32Array should work for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Uint32Array should work for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Float16Array should work for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Float32Array should work for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Float64Array should work for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type DataView should work for deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type ArrayBuffer should work for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Int8Array should work for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Uint8Array should work for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Uint8ClampedArray should work for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Int16Array should work for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Uint16Array should work for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Int32Array should work for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Uint32Array should work for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Float16Array should work for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Float32Array should work for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Float64Array should work for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type DataView should work for gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type ArrayBuffer should work for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Int8Array should work for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Uint8Array should work for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Uint8ClampedArray should work for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Int16Array should work for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Uint16Array should work for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Int32Array should work for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Uint32Array should work for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Float16Array should work for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Float32Array should work for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type Float64Array should work for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type DataView should work for deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "chunk of type ArrayBuffer should work for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type Int8Array should work for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type Uint8Array should work for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type Uint8ClampedArray should work for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type Int16Array should work for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type Uint16Array should work for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type Int32Array should work for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type Uint32Array should work for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type Float16Array should work for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type Float32Array should work for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type Float64Array should work for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "chunk of type DataView should work for brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      }
+    ]
+  ],
+  [
+    "compression/decompression-constructor-error.any.js",
+    [
+      {
+        "name": "\"a\" should cause the constructor to throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "no input should cause the constructor to throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "non-string input should cause the constructor to throw",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "compression/decompression-correct-input.any.js",
+    [
+      {
+        "name": "decompressing deflate input should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing gzip input should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing deflate-raw input should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing brotli input should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      }
+    ]
+  ],
+  [
+    "compression/decompression-corrupt-input.any.js",
+    [
+      {
+        "name": "the unchanged input for 'deflate' should decompress successfully",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "truncating the input for 'deflate' should give an error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "trailing junk for 'deflate' should give an error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'deflate' field CMF should be error for 0",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'deflate' field FLG should be success for 218",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'deflate' field FLG should be success for 1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'deflate' field FLG should be success for 94",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'deflate' field FLG should be error for 157",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'deflate' field DATA should be success for 4",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'deflate' field DATA should be error for 5",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'deflate' field ADLER should be error for 255",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the unchanged input for 'gzip' should decompress successfully",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "truncating the input for 'gzip' should give an error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "trailing junk for 'gzip' should give an error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'gzip' field ID should be error for 255",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'gzip' field CM should be error for 0",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'gzip' field FLG should be success for 1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'gzip' field FLG should be error for 2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'gzip' field MTIME should be success for 255",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'gzip' field XFL should be success for 255",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'gzip' field OS should be success for 128",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'gzip' field DATA should be error for 3",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'gzip' field DATA should be success for 4",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'gzip' field CRC should be error for 0",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "format 'gzip' field ISIZE should be error for 1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the unchanged input for 'brotli' should decompress successfully",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "truncating the input for 'brotli' should give an error",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "trailing junk for 'brotli' should give an error",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "the deflate input compressed with dictionary should give an error",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "compression/decompression-empty-input.any.js",
+    [
+      {
+        "name": "decompressing gzip empty input should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing deflate empty input should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing deflate-raw empty input should work",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing brotli empty input should work",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      }
+    ]
+  ],
+  [
+    "compression/decompression-extra-input.any.js",
+    [
+      {
+        "name": "decompressing deflate input with extra pad should still give the output",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing gzip input with extra pad should still give the output",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing deflate-raw input with extra pad should still give the output",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing brotli input with extra pad should still give the output",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      }
+    ]
+  ],
+  [
+    "compression/decompression-split-chunk.any.js",
+    [
+      {
+        "name": "decompressing splitted chunk into pieces of size 1 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 2 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 3 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 4 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 5 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 6 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 7 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 8 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 9 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 10 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 11 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 12 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 13 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 14 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 15 should work in deflate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 1 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 2 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 3 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 4 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 5 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 6 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 7 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 8 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 9 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 10 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 11 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 12 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 13 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 14 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 15 should work in gzip",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 1 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 2 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 3 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 4 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 5 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 6 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 7 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 8 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 9 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 10 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 11 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 12 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 13 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 14 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 15 should work in deflate-raw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 1 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 2 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 3 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 4 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 5 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 6 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 7 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 8 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 9 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 10 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 11 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 12 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 13 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 14 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      },
+      {
+        "name": "decompressing splitted chunk into pieces of size 15 should work in brotli",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      }
+    ]
+  ],
+  [
+    "compression/decompression-uint8array-output.any.js",
+    [
+      {
+        "name": "decompressing deflate output should give Uint8Array chunks",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing gzip output should give Uint8Array chunks",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing deflate-raw output should give Uint8Array chunks",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "decompressing brotli output should give Uint8Array chunks",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to construct 'DecompressionStream': Unsupported compression format, 'brotli'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.\""
+      }
+    ]
+  ],
+  [
+    "compression/decompression-with-detach.any.js",
+    [
+      {
+        "name": "data should be correctly decompressed even if input is detached partway",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]
