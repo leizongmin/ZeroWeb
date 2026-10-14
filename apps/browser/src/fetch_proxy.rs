@@ -159,11 +159,13 @@ impl TabFetchProxy {
     pub fn enqueue(&mut self, tab_id: TabId, params: &FetchParams) {
         self.ensure_tab(tab_id);
         let mut url = params.url.clone();
-        let request_headers = params.headers.clone();
+        let mut request_headers = params.headers.clone();
         let (priority, resource_type) = FetchPriority::from_fetch_headers(&request_headers, &url);
         let stream_image = request_headers
             .iter()
             .any(|(name, value)| name.eq_ignore_ascii_case("x-zero-stream-image") && value == "1");
+        // Renderer routing hints are browser-internal metadata, never origin request headers.
+        request_headers.retain(|(name, _)| !name.to_ascii_lowercase().starts_with("x-zero-"));
 
         if let Some(ctx) = self.security.get_mut(&tab_id) {
             match ctx.check_resource_url(&url, resource_type) {
@@ -1128,6 +1130,7 @@ mod tests {
             request.headers = vec![
                 ("X-Zero-Resource-Type".into(), "image".into()),
                 ("X-Zero-Stream-Image".into(), "1".into()),
+                ("X-Zero-Priority".into(), "high".into()),
             ];
             proxy.enqueue(TabId(23), &request);
 
@@ -1183,6 +1186,12 @@ mod tests {
                 let mut request = [0_u8; 2048];
                 let size = stream.read(&mut request).unwrap();
                 let request = String::from_utf8_lossy(&request[..size]).to_ascii_lowercase();
+                assert!(
+                    !request.contains("\r\nx-zero-resource-type:")
+                        && !request.contains("\r\nx-zero-stream-image:")
+                        && !request.contains("\r\nx-zero-priority:"),
+                    "browser-internal headers must not reach the origin: {request}"
+                );
                 if index == 0 {
                     stream
                         .write_all(
@@ -1265,6 +1274,12 @@ mod tests {
                 let mut request = [0_u8; 2048];
                 let size = stream.read(&mut request).unwrap();
                 let request = String::from_utf8_lossy(&request[..size]).to_ascii_lowercase();
+                assert!(
+                    !request.contains("\r\nx-zero-resource-type:")
+                        && !request.contains("\r\nx-zero-stream-image:")
+                        && !request.contains("\r\nx-zero-priority:"),
+                    "browser-internal headers must not reach the origin: {request}"
+                );
                 if index == 0 {
                     stream
                         .write_all(
@@ -1285,11 +1300,22 @@ mod tests {
 
         let mut proxy = TabFetchProxy::new();
         proxy.on_navigate(TabId(27), &url);
-        let first = drain_streamed_image(&mut proxy, TabId(27), &streamed_image_params(501, &url, Vec::new()));
+        let first = drain_streamed_image(
+            &mut proxy,
+            TabId(27),
+            &streamed_image_params(501, &url, vec![("X-Zero-Priority".into(), "high".into())]),
+        );
         let second = drain_streamed_image(
             &mut proxy,
             TabId(27),
-            &streamed_image_params(502, &url, vec![("Cache-Control".into(), "no-cache".into())]),
+            &streamed_image_params(
+                502,
+                &url,
+                vec![
+                    ("Cache-Control".into(), "no-cache".into()),
+                    ("X-Zero-Priority".into(), "high".into()),
+                ],
+            ),
         );
         server.join().unwrap();
 
