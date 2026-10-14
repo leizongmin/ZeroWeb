@@ -2624,38 +2624,76 @@
   globalThis.TextDecoderStream.prototype = Object.create(globalThis.TransformStream.prototype);
   globalThis.TextDecoderStream.prototype.constructor = globalThis.TextDecoderStream;
 
-  // ── P1a CompressionStream / DecompressionStream（gzip/deflate/deflate-raw，R2986）──
+  // ── P1a CompressionStream / DecompressionStream（gzip/deflate/deflate-raw）──
   // spec 通用压缩/解压转换流（Compression Streams API）。常用于 `response.body.pipeThrough(new
-  // DecompressionStream('gzip'))` 解压服务端 gzip 流，或压缩上传载荷。host 经 flate2（既有 workspace crate）
-  // 压缩/解压；字节经逗号分隔十进制串 wire（同 crypto byte wire）。**buffer-then-process**：transform 累积
-  // 全部 chunk（压缩须见全输入产合法 gzip/deflate 帧——逐 chunk 独立压缩会产多帧错误输出），flush 整体
-  // 压缩/解压 + enqueue 单输出 chunk。headless finite 流模型正确。
-  // 不支持 format → 构造抛 DOMException NotSupportedError（spec）；host 未注册（engine polyfill/reftest）→ no-op。
-  // **已知限制**：① 非增量（buffer 全输入再处理，大流内存峰值 = 输入大小，headless finite 可接受）；
-  // ② CSV byte wire 4× 开销（V8 字符串往返，大流慢）；③ 仅 gzip/deflate/deflate-raw（brotli defer，需 brotli crate）。
+  // DecompressionStream('gzip'))` 解压服务端 gzip 流，或压缩上传载荷。compression-compat M2
+  //（2026-10-15）重写为**流式**（R2986 buffer-then-process 替换——write 后未 close 读不到
+  // 产出致 corpus 3 案 read() 永挂）：构造 host 建流态取 handle；transform 逐 chunk
+  // __zw_{compress,decompress}_update、flush finish——write 后未 close 即可读出已处理产出。
+  // 解压帧校验（zlib CMF/FLG/FDICT/adler32、gzip CRC32/ISIZE、截断/多余输入）在 host 手工
+  // 状态机（flate2 读路径不校验 trailer），模块 doc 见 js_dom_bridge/compress.rs。
+  // 语义要点（WPT corpus 判定面）：
+  // - 构造 = WebIDL enum 转换：String(format)（toString 异常传播）+ 精确匹配（大小写
+  //   敏感，无 toLowerCase），失败 → TypeError（原 NotSupportedError 为 R2986 误用）；
+  // - chunk = 严格 BufferSource：ArrayBuffer 或 ArrayBufferView，排除 SharedArrayBuffer
+  //   背书（spec BufferSource 不含 shared）——数组/原始值/SAB → transform 抛 TypeError
+  //   （双侧 error，write/read 双 reject——bad-chunks 面）；
+  // - 解压错误全量 TypeError（corrupt-input 以 e instanceof TypeError 判定）；out/err
+  //   可并存 wire（trailing junk 面：错误前产出先 enqueue 再 throw——enqueue-then-throw）。
+  // brotli mission-defer 挂账（需 brotli crate，不引重依赖）——枚举不含即 TypeError。
+  // host 未注册（engine polyfill/reftest 无 script-runtime）→ transform/flush no-op（零回归）。
+  // **已知限制**：CSV byte wire ~4× 开销（V8 字符串往返，大流慢）；流表 64 条封顶
+  //（超期逐出 → TypeError，见 STREAM_TABLE_CAP）。
   var _CS_FORMATS = { gzip: 1, deflate: 1, 'deflate-raw': 1 };
-  function _csEnqueueBytes(controller, csv) {
-    if (!csv) return;
-    var parts = String(csv).split(',');
-    var arr = new Uint8Array(parts.length);
-    for (var i = 0; i < parts.length; i++) arr[i] = parseInt(parts[i], 10) || 0;
-    if (arr.length) controller.enqueue(arr);
+  // WebIDL enum 转换：ToString + 枚举精确匹配（大小写敏感），失败 → TypeError。
+  function _csFormat(which, format) {
+    var fmt = String(format); // toString 抛错原样传播（enum 转换第一步）
+    if (!_CS_FORMATS[fmt]) {
+      throw new TypeError("Failed to construct '" + which + "': Unsupported compression format, '" + fmt + "'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.");
+    }
+    return fmt;
+  }
+  // 严格 BufferSource → 字节 csv（逗号分隔十进制串）；非 BufferSource → null（抛 TypeError）。
+  function _csChunkCsv(chunk) {
+    if (typeof SharedArrayBuffer !== 'undefined' && (chunk instanceof SharedArrayBuffer ||
+        (ArrayBuffer.isView(chunk) && chunk.buffer instanceof SharedArrayBuffer))) {
+      return null; // spec BufferSource 不含 shared（whatwg/html#5380）
+    }
+    var view;
+    if (chunk instanceof ArrayBuffer) view = new Uint8Array(chunk);
+    else if (ArrayBuffer.isView(chunk)) view = new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+    else return null;
+    var parts = new Array(view.length);
+    for (var i = 0; i < view.length; i++) parts[i] = view[i];
+    return parts.join(',');
+  }
+  // 结果 wire `{"out":csv,"err":msg}` → 产出 chunk（csv 空跳过）+ 终态错误 TypeError。
+  function _csWireChunks(controller, wire) {
+    var r = JSON.parse(wire);
+    if (r.out) {
+      var arr = new Uint8Array(r.out.split(','));
+      if (arr.length) controller.enqueue(arr);
+    }
+    if (r.err) throw new TypeError(r.err); // enqueue-then-throw：错误前产出先可见
   }
   globalThis.CompressionStream = globalThis.CompressionStream || function CompressionStream(format) {
     if (!(this instanceof CompressionStream)) return new CompressionStream(format);
-    var fmt = String(format == null ? '' : format).toLowerCase();
-    if (!_CS_FORMATS[fmt]) {
-      throw new DOMException("Failed to construct 'CompressionStream': Unsupported compression format, '" + format + "'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.", 'NotSupportedError');
-    }
-    var bufs = [];
+    var fmt = _csFormat('CompressionStream', format);
+    var live = typeof __zw_compress_new === 'function';
+    var handle = live ? __zw_compress_new(fmt) : '';
     TransformStream.call(this, {
       transform: function (chunk, controller) {
-        var b = _zw_bufToBytes(chunk);
-        for (var i = 0; i < b.length; i++) bufs.push(b[i]);
+        if (!live) return; // host 缺席降级 no-op（polyfill/reftest 构建零回归）
+        var csv = _csChunkCsv(chunk);
+        if (csv === null) {
+          throw new TypeError("Failed to execute 'transform' on 'CompressionStream': the provided chunk is not a BufferSource.");
+        }
+        if (handle === '') return; // host 建流失败（不应发生：format 已验）
+        _csWireChunks(controller, __zw_compress_update(parseInt(handle, 10), csv));
       },
       flush: function (controller) {
-        if (typeof __zw_compress !== 'function') return;
-        try { _csEnqueueBytes(controller, __zw_compress(fmt, bufs.join(','))); } catch (_e) {}
+        if (!live || handle === '') return;
+        _csWireChunks(controller, __zw_compress_finish(parseInt(handle, 10)));
       }
     });
   };
@@ -2663,23 +2701,22 @@
   globalThis.CompressionStream.prototype.constructor = globalThis.CompressionStream;
   globalThis.DecompressionStream = globalThis.DecompressionStream || function DecompressionStream(format) {
     if (!(this instanceof DecompressionStream)) return new DecompressionStream(format);
-    var fmt = String(format == null ? '' : format).toLowerCase();
-    if (!_CS_FORMATS[fmt]) {
-      throw new DOMException("Failed to construct 'DecompressionStream': Unsupported compression format, '" + format + "'. Supported values are: 'gzip', 'deflate', 'deflate-raw'.", 'NotSupportedError');
-    }
-    var bufs = [];
+    var fmt = _csFormat('DecompressionStream', format);
+    var live = typeof __zw_decompress_new === 'function';
+    var handle = live ? __zw_decompress_new(fmt) : '';
     TransformStream.call(this, {
       transform: function (chunk, controller) {
-        var b = _zw_bufToBytes(chunk);
-        for (var i = 0; i < b.length; i++) bufs.push(b[i]);
+        if (!live) return; // host 缺席降级 no-op
+        var csv = _csChunkCsv(chunk);
+        if (csv === null) {
+          throw new TypeError("Failed to execute 'transform' on 'DecompressionStream': the provided chunk is not a BufferSource.");
+        }
+        if (handle === '') return;
+        _csWireChunks(controller, __zw_decompress_update(parseInt(handle, 10), csv));
       },
       flush: function (controller) {
-        if (typeof __zw_decompress !== 'function') return;
-        try {
-          var out = __zw_decompress(fmt, bufs.join(','));
-          if (!out && bufs.length) { controller.error(new DOMException('Decompression failed: corrupt ' + fmt + ' stream', 'DataError')); return; }
-          _csEnqueueBytes(controller, out);
-        } catch (_e) { controller.error(_e); }
+        if (!live || handle === '') return;
+        _csWireChunks(controller, __zw_decompress_finish(parseInt(handle, 10)));
       }
     });
   };

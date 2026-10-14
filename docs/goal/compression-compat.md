@@ -1,20 +1,18 @@
 # Compression 兼容 — CompressionStream / DecompressionStream
 
-**版本**: v1.1
+**版本**: v1.2
 **日期**: 2026-10-15（v1.0 立项 2026-10-08）
-**状态**: Active——**M1 完成**（基线 165/309 = 53.40%），M2 实现轮进行中
+**状态**: Active——**M2 实现轮完成**（245/318 = 77.04%，非 brotli 面 245/245 全绿），M3 收口待 DC-2 两轮观察
 **执行模式**: WPT 驱动（上游 compression corpus 为验收标尺）+ 实现
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——数据面）
 
-> **▶ 当前状态（2026-10-15 M1 收）**：corpus 19 案导入（18 执行，idlharness 规则
-> 排除），基线 165P/141F/3T = 53.40%，失败六簇全归因（evidence/
-> [2026-10-15-m1-baseline.md](compression-compat/evidence/2026-10-15-m1-baseline.md)）。
-> **M2 五项修复**：①构造器 TypeError（WebIDL enum 转换）；②严格 BufferSource
-> chunk 校验；③流式 update/finish 状态机（替 buffer-then-flush——3 案死锁根因）；
-> ④解压错误全量 TypeError 化 + 手工帧校验（zlib CMF/FLG/FDICT/adler32、gzip
-> CRC32/ISIZE、截断/多余输入检测——flate2 读路径不校验 trailer）；⑤空流 done
-> 语义。brotli 70 子测试 mission-defer 挂账（不新引重依赖）。依赖复用：flate2 =
-> engine 既有直接依赖，M2 零新增。
+> **▶ 当前状态（2026-10-15 M2 收）**：五项修复全落地（构造 TypeError、严格
+> BufferSource、流式 update/finish 状态机、手工帧校验 + 错误 TypeError 化、
+> 空流 done），245/318 = 77.04%——**非 brotli 面 245/245 全绿**，M1 三案
+> Timeout 清零；73 Fail 全为 brotli mission-defer 挂账（evidence/
+> [2026-10-15-m2-implement.md](compression-compat/evidence/2026-10-15-m2-implement.md)）。
+> 子测试分母 309 → 318（Timeout 解锁 +9）。零新增依赖（CRC32 = `flate2::Crc`，
+> adler32 内联）。
 >
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：streams
 > 底座由 net-api M4 修齐（CountQueuing/pipeTo/品牌检查等），CompressionStream/
@@ -49,4 +47,11 @@ M1 导入与基线（✅ 2026-10-15）→ M2 实现与语义对齐（进行中�
 - **2026-10-15 M1**：runner 通道（`testharness-compression` 子命令 + skip 规则
   + Makefile target + fetch 脚本补 pako/media 依赖）；基线 53.40%，六簇归因，
   evidence 落档；csv 数据行回填。M2 五项修复清单见文件头当前状态。
+- **2026-10-15 M2**：host 流式状态机重写（`js_dom_bridge/compress.rs`——handle
+  表 + `Decompress::new(false)` 裸 inflate + 手工帧校验 zlib CMF/FLG/FDICT/
+  adler32、gzip 头/CRC32/ISIZE/多成员串联、截断/多余输入检测）+ shim 流式化
+  （`part02.js`——enum TypeError、严格 BufferSource、update/finish 逐 chunk 回
+  传）+ 六回调（`callbacks.rs`）；77.04%（245/318，非 brotli 全绿，Timeout
+  清零）；engine lib 3049 绿 + compress 单测 10 项；csv 数据行回填。brotli 73
+  挂账不变。
 

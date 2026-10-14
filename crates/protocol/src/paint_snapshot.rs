@@ -177,6 +177,13 @@ pub const MAX_PAINT_FONT_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_PAINT_FONTS_BYTES: usize = 32 * 1024 * 1024;
 /// 单帧字体资源数量上限。
 pub const MAX_PAINT_FONTS: usize = 128;
+/// 单个图片批消息的像素字节上限。
+///
+/// transport 帧上限 64MiB（`crate::transport::MAX_FRAME_SIZE`）；图片像素拆为
+/// 独立批消息传输时单批不得超过此值，留出帧封装与同帧其余字段余量。单个解码图
+/// 超过此上限（RGBA 字节数）时跳过不发送——与字体 payload 超限行为一致
+/// （`MAX_PAINT_FONT_BYTES`，超限即丢）。
+pub const MAX_PAINT_IMAGE_BATCH_BYTES: usize = 48 * 1024 * 1024;
 
 /// IPC 渐变色标。
 #[derive(Debug, Clone, Serialize, Deserialize)]

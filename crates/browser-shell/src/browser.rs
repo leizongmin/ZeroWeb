@@ -758,7 +758,8 @@ impl BrowserShell {
 
     /// 将当前标签页状态保存为会话快照。
     ///
-    /// 保存所有打开标签页的 URL、标题和导航历史。
+    /// 保存所有打开标签页的 URL、标题和导航历史；`clean_exit=true`——会话
+    /// 只在干净退出路径（`persist_user_data`）落盘，无痕标签除外。
     pub fn save_session(&self) -> SessionState {
         use crate::tab::NavigationEntry;
         fn nav_to_snapshot(entry: &NavigationEntry) -> NavigationSnapshot {
@@ -782,7 +783,9 @@ impl BrowserShell {
                 history_index: tab.history_index(),
             });
         }
-        SessionState::from_tabs(tabs.into_iter(), active_tab_index)
+        let mut session = SessionState::from_tabs(tabs.into_iter(), active_tab_index);
+        session.clean_exit = true;
+        session
     }
 
     /// 将当前会话保存到指定路径。

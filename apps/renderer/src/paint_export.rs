@@ -221,6 +221,45 @@ where
     out
 }
 
+/// 按像素字节上限把图片 payload 贪心切批，用于超出单帧上限的全页图片传输。
+///
+/// 返回 `(batches, skipped_keys)`：`batches` 内每批像素字节总量 ≤
+/// `max_batch_bytes`（顺序保持）；单个 payload 超过上限时整图跳过并记入
+/// `skipped_keys`——key 不进任何 sent 集合，下帧 publish 重试仍跳过。与字体
+/// payload 超限行为一致（`MAX_PAINT_FONT_BYTES` 超限即丢）。
+pub fn split_image_payload_batches(
+    payloads: Vec<IpcImagePayload>,
+    max_batch_bytes: usize,
+) -> (Vec<Vec<IpcImagePayload>>, Vec<u64>) {
+    let mut batches: Vec<Vec<IpcImagePayload>> = Vec::new();
+    let mut skipped_keys = Vec::new();
+    let mut current: Vec<IpcImagePayload> = Vec::new();
+    let mut current_bytes = 0usize;
+    for payload in payloads {
+        let bytes = payload.rgba.len();
+        if bytes > max_batch_bytes {
+            tracing::warn!(
+                "跳过超大图片 payload key={} bytes={bytes}（单批上限 {max_batch_bytes}）",
+                payload.image_key
+            );
+            // FIXME(p100-image-batch): 单 payload 超批上限整图丢弃（该图空白）；
+            // 后续可引入单图分块传输或下采样。
+            skipped_keys.push(payload.image_key);
+            continue;
+        }
+        if !current.is_empty() && current_bytes + bytes > max_batch_bytes {
+            batches.push(std::mem::take(&mut current));
+            current_bytes = 0;
+        }
+        current_bytes += bytes;
+        current.push(payload);
+    }
+    if !current.is_empty() {
+        batches.push(current);
+    }
+    (batches, skipped_keys)
+}
+
 /// 从渲染图元构建 IPC 绘制快照。
 #[allow(clippy::too_many_arguments)] // 构造器：图元快照字段多，逐参数透传 PaintSnapshotParams
 pub fn paint_snapshot_from_primitives(
@@ -559,5 +598,106 @@ mod tests {
         assert_eq!(snapshot.font_variations[0][0].tag, *b"wdth");
         assert_eq!(snapshot.font_variations[0][0].value, 125.0);
         assert_eq!(snapshot.document_generation, 2);
+    }
+
+    fn p100_payload(key: u64, rgba_len: usize) -> IpcImagePayload {
+        IpcImagePayload {
+            image_key: key,
+            width: 1,
+            height: 1,
+            rgba: vec![0u8; rgba_len],
+        }
+    }
+
+    #[test]
+    fn split_image_batches_empty_input_yields_nothing() {
+        let (batches, skipped) = split_image_payload_batches(Vec::new(), 100);
+        assert!(batches.is_empty());
+        assert!(skipped.is_empty());
+    }
+
+    #[test]
+    fn split_image_batches_greedy_fill_respects_cap_and_order() {
+        // 40+40+40，上限 80：批 1 = [1,2]（80），批 2 = [3]（40）；顺序保持。
+        let payloads = vec![p100_payload(1, 40), p100_payload(2, 40), p100_payload(3, 40)];
+        let (batches, skipped) = split_image_payload_batches(payloads, 80);
+        assert_eq!(skipped, Vec::<u64>::new());
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].iter().map(|p| p.image_key).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(batches[1].iter().map(|p| p.image_key).collect::<Vec<_>>(), vec![3]);
+        for batch in &batches {
+            assert!(batch.iter().map(|p| p.rgba.len()).sum::<usize>() <= 80);
+        }
+    }
+
+    #[test]
+    fn split_image_batches_exact_cap_payload_gets_own_batch() {
+        let payloads = vec![p100_payload(7, 80), p100_payload(8, 10)];
+        let (batches, skipped) = split_image_payload_batches(payloads, 80);
+        assert!(skipped.is_empty());
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].len(), 1);
+        assert_eq!(batches[0][0].image_key, 7);
+        assert_eq!(batches[1][0].image_key, 8);
+    }
+
+    #[test]
+    fn split_image_batches_oversize_payload_skipped_with_key() {
+        let payloads = vec![p100_payload(1, 10), p100_payload(2, 200), p100_payload(3, 10)];
+        let (batches, skipped) = split_image_payload_batches(payloads, 80);
+        assert_eq!(skipped, vec![2]);
+        // 跳过不中断切批：其余两个 payload 仍合为一批。
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].len(), 2);
+    }
+
+    /// P100：生产者→消费者契约——切批输出的每个 payload 必须能经消费端解码路径
+    /// （`ImageData::from_rgba` 要求 len == w*h*4）无损还原尺寸与像素。两侧字段
+    /// 或尺寸语义漂移时，浏览器端只会看到 from_rgba Err（图片静默缺失），故在
+    /// 生产者一侧钉住往返一致。
+    #[test]
+    fn split_output_payloads_roundtrip_through_consumer_decode() {
+        let payloads = vec![
+            IpcImagePayload {
+                image_key: 1,
+                width: 2,
+                height: 3,
+                rgba: (0..24).map(|i| i as u8).collect(),
+            },
+            IpcImagePayload {
+                image_key: 2,
+                width: 4,
+                height: 1,
+                rgba: vec![9; 16],
+            },
+            IpcImagePayload {
+                image_key: 3,
+                width: 1,
+                height: 1,
+                rgba: vec![0; 4],
+            },
+        ];
+        let original: Vec<(u64, u32, u32, Vec<u8>)> = payloads
+            .iter()
+            .map(|p| (p.image_key, p.width, p.height, p.rgba.clone()))
+            .collect();
+        let (batches, skipped) = split_image_payload_batches(payloads, 24);
+        assert!(skipped.is_empty());
+        let round: Vec<&IpcImagePayload> = batches.iter().flatten().collect();
+        assert_eq!(round.len(), original.len());
+        for (payload, (key, width, height, rgba)) in round.iter().zip(&original) {
+            assert_eq!(payload.image_key, *key);
+            assert_eq!(payload.width, *width);
+            assert_eq!(payload.height, *height);
+            let data = zero_render_foundation::image_cache::ImageData::from_rgba(
+                payload.rgba.clone(),
+                payload.width,
+                payload.height,
+            )
+            .expect("消费端解码必须接受生产者切批输出");
+            assert_eq!(data.width, *width);
+            assert_eq!(data.height, *height);
+            assert_eq!(data.pixels, *rgba);
+        }
     }
 }

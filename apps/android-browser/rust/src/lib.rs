@@ -531,6 +531,16 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeAttachRenderer(
                     IpcMessageKind::FetchRequest(params) => {
                         let _ = proxy_renderer_fetch(slot, params);
                     }
+                    IpcMessageKind::ImagePayloadBatch {
+                        // P100 返修（F1）：compositor 模式帧载荷置空、像素经批
+                        // 先行到达，原 `_ => {}` 会静默丢批——Android 同为
+                        // Compositor 发布模式，丢批即超限页全部图片空白。
+                        surface_id: Some(surface_id),
+                        navigation_epoch,
+                        payloads,
+                    } => {
+                        let _ = forward_renderer_image_batch(surface_id, navigation_epoch, payloads);
+                    }
                     IpcMessageKind::TitleChanged(title) => {
                         let _ = facade::page_loaded(&title);
                     }
@@ -1162,6 +1172,31 @@ fn forward_renderer_frame(
         .map_err(|_| "Android page metadata lock poisoned".to_string())? =
         Some((surface_id, navigation_epoch, frame_id, 0.0));
     Ok(())
+}
+
+/// P100 返修（F1）：renderer 拆批像素中继给 compositor Service。批先于其帧
+/// 转发（消息循环按到达序逐条 round trip），compositor 收批挂起、帧到达时按
+/// epoch 注入 surface 缓存。
+#[cfg(target_os = "android")]
+fn forward_renderer_image_batch(
+    surface_id: u64,
+    navigation_epoch: u64,
+    payloads: Vec<zero_protocol::paint_snapshot::IpcImagePayload>,
+) -> Result<(), String> {
+    match compositor_round(
+        12,
+        IpcMessageKind::ImagePayloadBatch {
+            surface_id: Some(surface_id),
+            navigation_epoch,
+            payloads,
+        },
+    )? {
+        IpcMessage {
+            id: 12,
+            kind: IpcMessageKind::Ok,
+        } => Ok(()),
+        _ => Err("Android compositor rejected renderer image batch".to_string()),
+    }
 }
 
 /// Runs one send/recv round trip against the compositor Service. A transport

@@ -93,7 +93,8 @@ fn compensate_tag_scale(tag: &str) -> Option<String> {
 
 /// 定位标签文本中 `name="value"` 的 value span（`[start, end)`，不含引号）；
 /// 仅双引号（DOM 序列化形态），且 attr 名前须为空白（防值内误配）。找不到返回 `None`。
-fn find_attr_value_span(tag: &str, attr: &str) -> Option<(usize, usize)> {
+/// R5124 起供 svg_filter_functions 复用。
+pub(crate) fn find_attr_value_span(tag: &str, attr: &str) -> Option<(usize, usize)> {
     let needle = format!("{attr}=\"");
     let mut from = 0usize;
     while let Some(rel) = tag[from..].find(&needle) {
