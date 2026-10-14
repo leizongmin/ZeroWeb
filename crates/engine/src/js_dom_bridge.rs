@@ -1615,21 +1615,27 @@ fn apply_style_property(doc: &mut Document, node: NodeId, property: &str, value:
     doc.set_attribute(node, "style", &merged);
 }
 
+/// style 声明去重键：css-variables-1 自定义属性名 case-sensitive——`--` 前缀名保留
+/// 原样（DF-5，R5114 返修：旧全 lowercase 归一使 `--Foo`/`--foo` 在 inline style 去重
+/// 时互相覆盖）；其余属性名仍 ASCII lowercase（HTML inline style 既有归一语义）。
+fn style_prop_key(property: &str) -> String {
+    let t = property.trim();
+    if t.starts_with("--") {
+        t.to_string()
+    } else {
+        t.to_ascii_lowercase()
+    }
+}
+
 fn merge_style_property(style: &str, property: &str, value: &str) -> String {
-    let prop_key = property.trim().to_ascii_lowercase();
+    let prop_key = style_prop_key(property);
     let mut parts: Vec<String> = style
         .split(';')
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(String::from)
         .collect();
-    parts.retain(|p| {
-        p.split(':')
-            .next()
-            .map(|k| k.trim().to_ascii_lowercase())
-            .unwrap_or_default()
-            != prop_key
-    });
+    parts.retain(|p| p.split(':').next().map(style_prop_key).unwrap_or_default() != prop_key);
     // R3211：空值语义 = 移除声明（spec `dom-cssstyledeclaration-setproperty` + IDL setter：setProperty 空
     // 值 / `el.style.color = ''` 移除声明，而非留 `color: ` 空值串）。`el.style.display = ''` 是 reset
     // inline 样式的事实标准高频用法——旧实现恒 push `prop: ` 致 dangling 空值，`el.style.length`/`item()`
@@ -1645,18 +1651,12 @@ fn merge_style_property(style: &str, property: &str, value: &str) -> String {
 /// 真移除一条 style 声明（`removeProperty`）——滤除匹配属性名的段，不 push 空值
 ///（区别于 [`merge_style_property`] 对空值仍 push `prop: `）。
 fn remove_style_property(style: &str, property: &str) -> String {
-    let prop_key = property.trim().to_ascii_lowercase();
+    let prop_key = style_prop_key(property);
     style
         .split(';')
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .filter(|p| {
-            p.split(':')
-                .next()
-                .map(|k| k.trim().to_ascii_lowercase())
-                .unwrap_or_default()
-                != prop_key
-        })
+        .filter(|p| p.split(':').next().map(style_prop_key).unwrap_or_default() != prop_key)
         .collect::<Vec<&str>>()
         .join("; ")
 }

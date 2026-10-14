@@ -279,8 +279,11 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
     // 元素自身 custom_properties；环检测 resolve_var 既有）。未声明返 ''（同标准属性）。
     let raw_name = prop.trim();
     if raw_name.starts_with("--") {
+        // DF-2（R5114 返修）：环引用/未定义无 fallback → resolve_var_checked 返 None =
+        // css-variables-1 guaranteed-invalid，序列化为空串（Chrome 同）。常规属性路径
+        // 维持 resolve_var 现状（invalid → 初始/继承值）。
         return style.custom_properties.get(raw_name).map_or_else(String::new, |v| {
-            zero_style_system::resolve_var(v, &style.custom_properties)
+            zero_style_system::resolve_var_checked(v, &style.custom_properties).unwrap_or_default()
         });
     }
     let p = raw_name.to_ascii_lowercase();

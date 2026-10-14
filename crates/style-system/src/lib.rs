@@ -427,7 +427,7 @@ impl StyleSystem {
             stylesheets,
             &rule_index,
             None,
-            &HashMap::new(),
+            &ComputedStyle::empty_custom_properties(),
             &mut styles,
             quirks_mode,
             has_pseudo_rules,
@@ -563,7 +563,7 @@ impl StyleSystem {
         stylesheets: &[Stylesheet],
         rule_index: &matcher::StylesheetIndex,
         parent_style: Option<&ComputedStyle>,
-        parent_custom: &HashMap<String, String>,
+        parent_custom: &CustomProperties,
         styles: &mut HashMap<NodeId, ComputedStyle>,
         quirks_mode: QuirksMode,
         has_pseudo_rules: bool,
@@ -1048,9 +1048,10 @@ impl StyleSystem {
         let current_custom = if is_element {
             self.custom_properties.clone()
         } else {
-            // 非元素节点：父链传入的是 `&HashMap`（compute_element_style_internal 签名
-            // 经 Deref 借用）——升级为共享 Arc（内容同，免复制；R5114）。
-            CustomProperties::new(parent_custom.clone())
+            // 非元素节点：父链传入的是共享 Arc（DF-1 返修后全链穿线 &CustomProperties）
+            // ——Arc 克隆共享（旧 `CustomProperties::new(parent.clone())` 是全量深拷贝，
+            // 与注释宣称相反；文本节点密集页同样逐节点膨胀）。
+            parent_custom.clone()
         };
 
         // R4124（css-conditional-5 §container-queries）：本元素是 container-type ≠
@@ -1130,7 +1131,7 @@ impl StyleSystem {
         stylesheets: &[Stylesheet],
         rule_index: &matcher::StylesheetIndex,
         elem_style: &ComputedStyle,
-        parent_custom: &HashMap<String, String>,
+        parent_custom: &CustomProperties,
         quirks_mode: QuirksMode,
     ) -> Option<Box<ComputedStyle>> {
         let fl_media_ctx = match (self.viewport_width, self.viewport_height) {
@@ -1187,7 +1188,7 @@ impl StyleSystem {
             stylesheets,
             &rule_index,
             parent_style,
-            &HashMap::new(),
+            &ComputedStyle::empty_custom_properties(),
             doc.quirks_mode(),
             None,
         )
@@ -1206,7 +1207,7 @@ impl StyleSystem {
         stylesheets: &[Stylesheet],
         rule_index: &matcher::StylesheetIndex,
         parent_style: Option<&ComputedStyle>,
-        parent_custom: &HashMap<String, String>,
+        parent_custom: &CustomProperties,
         quirks_mode: QuirksMode,
         pseudo: Option<&str>,
     ) -> Box<ComputedStyle> {
@@ -1934,11 +1935,32 @@ impl StyleSystem {
         // 4. 收集自定义属性（继承父元素 + 当前元素自身声明覆盖）
         // CSS 自定义属性是继承属性：`:root { --x }` 定义的变量需对后代可见。
         // R5114：装配为不可变共享表（子链经 Arc 克隆继承；ComputedStyle 随计算样式持有同 Arc）。
-        self.custom_properties = CustomProperties::new(gather_custom_properties(
-            &cascaded,
-            parent_custom,
-            &self.registered_properties,
-        ));
+        // DF-1（R5114 返修）：元素级联无自身 `--` 声明、且注册表对父表无增删时，gather
+        // 结果与父表逐键相同——直接共享父 Arc。旧实现逐元素全量深拷贝（注释宣称共享
+        // 实则零共享），内存随「元素数 × 继承变量数」线性膨胀（3000 元素 × 300 变量
+        // 实测 293MB 保留；github.com 形态根声明主题变量、全树继承，估算上百 MB）。
+        let no_own_custom = cascaded.keys().all(|k| !k.starts_with("--"));
+        let parent_shareable = no_own_custom
+            && self.registered_properties.iter().all(|(name, reg)| {
+                let present = parent_custom.contains_key(name);
+                if reg.inherits {
+                    // 步骤 3 初值兜底仅父表缺名时插入：父表已有 → no-op，可共享。
+                    reg.initial_value.is_none() || present
+                } else {
+                    // 非继承：父表含名须剔除（gather 步骤 1）、父表缺名且有初值须补
+                    // （步骤 3）——任一成立都改变父表，不可共享。
+                    !present && reg.initial_value.is_none()
+                }
+            });
+        self.custom_properties = if parent_shareable {
+            parent_custom.clone()
+        } else {
+            CustomProperties::new(gather_custom_properties(
+                &cascaded,
+                parent_custom,
+                &self.registered_properties,
+            ))
+        };
 
         // 4.5. 在级联值中解析 var() 引用
         let resolved_cascaded = resolve_var_in_cascaded(&cascaded, &self.custom_properties);

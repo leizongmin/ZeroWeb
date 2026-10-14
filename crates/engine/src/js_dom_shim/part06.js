@@ -1578,6 +1578,8 @@
   // CSS Declaration 块文本（`prop: value; prop2: value2`）→ 有序 [{name, value}]。name 归一小写。
   // 供 [`_makeRuleStyle`] 解析 rule.cssText body 与 style.cssText 整体写。
   function _parseDeclarations(text) {
+    // css-variables-1：`--` 前缀名 case-sensitive——DF-5（R5114 返修）保留原样，
+    // 其余属性名维持既有 lowercase 归一。
     var decls = [];
     var segs = String(text == null ? '' : text).split(';');
     for (var i = 0; i < segs.length; i++) {
@@ -1586,9 +1588,17 @@
       if (c < 0) continue;
       var name = seg.slice(0, c).trim();
       var val = seg.slice(c + 1).trim();
-      if (name) decls.push({ name: name.toLowerCase(), value: val });
+      if (name) decls.push({ name: _styleDeclName(name), value: val });
     }
     return decls;
+  }
+
+  // 规则/元素样式声明名归一（DF-5，R5114 返修）：`--` 前缀名 case-sensitive 保留原样；
+  // 其余维持既有 `_stylePropName` camelCase→kebab + lowercase（R2810 语义不变）。
+  // 写读两侧同函数保证键一致。
+  function _styleDeclName(name) {
+    var s = String(name);
+    return s.charAt(0) === '-' && s.charAt(1) === '-' ? s : _stylePropName(s).toLowerCase();
   }
 
   // CSSRule.style per-rule CSSStyleDeclaration（R2810）——backed by 规则声明块（从 rule.cssText 的 `{ ... }`
@@ -1607,7 +1617,7 @@
     };
     var decls = _parseDeclarations(bodyText());
     function findIdx(name) {
-      var want = String(name).toLowerCase();
+      var want = _styleDeclName(name);
       for (var i = 0; i < decls.length; i++) if (decls[i].name === want) return i;
       return -1;
     }
@@ -1620,11 +1630,11 @@
       if (typeof flushFn === 'function') { try { flushFn(); } catch (_e) {} }
     }
     function readProp(name) {
-      var i = findIdx(_stylePropName(name));
+      var i = findIdx(name);
       return i >= 0 ? decls[i].value : '';
     }
     function setProp(name, value) {
-      var prop = _stylePropName(name).toLowerCase();
+      var prop = _styleDeclName(name);
       var v = String(value == null ? '' : value).trim();
       var idx = findIdx(prop);
       if (v === '') { // 空串 = remove（spec 一致）
@@ -1636,7 +1646,7 @@
       rebuild();
     }
     function removeProp(name) {
-      var prop = _stylePropName(name).toLowerCase();
+      var prop = _styleDeclName(name);
       var i = findIdx(prop);
       if (i < 0) return '';
       var prev = decls[i].value;
@@ -1743,7 +1753,16 @@
       get cssRules() { return getRules(); },
       get rules() { return getRules(); },
       // insertRule(ruleText, index?)：splice 新规则入 cache + flush 重建 `<style>` 文本；返插入 index。
+      // DF-3（R5114 返修）：外部合成条目只读——显式抛 NoModificationAllowedError（CSSOM
+      // 不可修改样式表语义）。旧实现静默 splice 进本次访问的临时 cache，跨访问即失且
+      // 从不影响渲染；此前 index 0 是可持久写回的首个内联表，合成条目置表头后索引位移
+      // 使页面脚本按旧习惯的写入正好落进只读条目。
       insertRule: function (ruleText, index) {
+        if (external) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to execute 'insertRule' on 'CSSStyleSheet': No allowed modification.",
+            'NoModificationAllowedError');
+        }
         getRules(); // 确保从 host 填充 cache（若未读）
         var rule = _ruleFromText(ruleText, ss, flushToOwner);
         var idx = (index == null) ? rulesCache.length : (index | 0);
@@ -1753,8 +1772,13 @@
         flushToOwner();
         return idx;
       },
-      // deleteRule(index)：移除 cache[index] + flush 重建。
+      // deleteRule(index)：移除 cache[index] + flush 重建。外部合成条目同 insertRule 只读拒绝。
       deleteRule: function (index) {
+        if (external) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to execute 'deleteRule' on 'CSSStyleSheet': No allowed modification.",
+            'NoModificationAllowedError');
+        }
         getRules();
         var idx = (index | 0);
         if (idx >= 0 && idx < rulesCache.length) {

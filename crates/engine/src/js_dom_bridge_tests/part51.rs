@@ -113,6 +113,13 @@ fn test_p99_pure_path_unaffected_by_ambient_css() {
 
 // ── P9-9 切片 2（R5114）：外部样式表进 document.styleSheets + gCS 自定义属性暴露 ──
 
+/// gCS camelCase 属性直读助手（`--` 名免 kebab 归一分支的哨兵面，TV-1）。
+fn p51_gcs_camel(sandbox: &mut zero_script_sandbox::V8Sandbox, sel: &str, prop: &str) -> String {
+    use zero_script_sandbox::Sandbox;
+    let script = format!("getComputedStyle(document.querySelector('{sel}'))['{prop}']");
+    sandbox.execute(&script).unwrap().value
+}
+
 #[test]
 fn test_p99s_gcs_custom_property_from_external_sheet() {
     // :root 自定义属性经外部 CSS 声明 → gCS `--` 查询暴露；继承属性（html/body 同值）。
@@ -131,6 +138,108 @@ fn test_p99s_gcs_custom_property_from_external_sheet() {
     let mut sb = p51_sandbox_with_html(html);
     assert_eq!(p51_gcs(&mut sb, "html", "--Zw-X"), "1px");
     assert_eq!(p51_gcs(&mut sb, "html", "--zw-x"), "2px");
+    // TV-1（返修补哨兵）：camelCase 直读与 getPropertyValue 分属两个归一分支，
+    // 各自需独立断言（属性访问分支 part01.js 免 kebab 归一）。
+    assert_eq!(p51_gcs_camel(&mut sb, "html", "--Zw-X"), "1px");
+    assert_eq!(p51_gcs_camel(&mut sb, "html", "--zw-x"), "2px");
+}
+
+#[test]
+fn test_p99s_gcs_custom_property_invalid_is_empty() {
+    // DF-2（R5114 返修）：环引用 / 未定义且无 fallback → css-variables-1 §3.1
+    // guaranteed-invalid，gCS 序列化为空串（Chrome 同）。合法链式替换不受影响。
+    let html = "<html><head><style></style></head><body></body></html>";
+    crate::js_dom_bridge::clear_generation_cache();
+    crate::js_dom_bridge::set_active_external_css(
+        ":root { --cyc-a: var(--cyc-b); --cyc-b: var(--cyc-a); --undef: var(--zw-missing-var); }",
+    );
+    let mut sb = p51_sandbox_with_html(html);
+    assert_eq!(p51_gcs(&mut sb, "html", "--cyc-a"), "", "环引用 → guaranteed-invalid 空串");
+    assert_eq!(p51_gcs(&mut sb, "html", "--undef"), "", "未定义无 fallback → 空串");
+    crate::js_dom_bridge::set_active_external_css(":root { --a: var(--b); --b: green; }");
+    crate::js_dom_bridge::clear_generation_cache();
+    let mut sb = p51_sandbox_with_html(html);
+    assert_eq!(p51_gcs(&mut sb, "html", "--a"), "green", "合法 var() 链不受 invalid 语义影响");
+}
+
+#[test]
+fn test_p99s_external_sheet_entry_is_read_only() {
+    // DF-3（R5114 返修）：外部合成条目 insertRule/deleteRule 显式抛
+    // NoModificationAllowedError（CSSOM 不可修改样式表语义）——旧实现静默写本次访问的
+    // 临时 cache，跨访问即失且从不影响渲染；合成条目置表头后索引位移使页面脚本按旧
+    // 习惯的 index 0 写入正好落进只读条目。内联表（ownerNode 非空）写路径不受影响。
+    let html = "<html><head><style>body { color: black }</style></head><body></body></html>";
+    crate::js_dom_bridge::clear_generation_cache();
+    crate::js_dom_bridge::set_active_external_css("h1 { color: red; }");
+    let mut sb = p51_sandbox_with_html(html);
+    let eval = |sb: &mut zero_script_sandbox::V8Sandbox, js: &str| {
+        use zero_script_sandbox::Sandbox;
+        sb.execute(js).unwrap().value
+    };
+    assert_eq!(eval(&mut sb, "document.styleSheets[0].ownerNode === null"), "true");
+    assert_eq!(
+        eval(&mut sb,
+            r#"(()=>{try{document.styleSheets[0].insertRule('p { color: blue }', 0);return 'no-throw';}catch(e){return e.name||String(e);}})()"#),
+        "NoModificationAllowedError",
+        "外部条目 insertRule 必须显式拒绝"
+    );
+    assert_eq!(
+        eval(&mut sb,
+            r#"(()=>{try{document.styleSheets[0].deleteRule(0);return 'no-throw';}catch(e){return e.name||String(e);}})()"#),
+        "NoModificationAllowedError",
+        "外部条目 deleteRule 必须显式拒绝"
+    );
+    assert_eq!(eval(&mut sb, "document.styleSheets[1].ownerNode !== null"), "true");
+    // 内联表写回（shim client cache 语义）：insertRule 返插入位、cache 同步读回真值。
+    // 注意 shim 已知限制③——每次 styleSheets 访问重新查询（live DOM），故写读断言
+    // 收敛在同一 sheet 对象引用上（flush 写回 `<style>` 文本的视觉生效路径由 R2809 既有覆盖）。
+    assert_eq!(
+        eval(&mut sb,
+            r#"(()=>{
+              const inline = document.styleSheets[1];
+              const ret = inline.insertRule('h2 { color: green }', 0);
+              return JSON.stringify({ ret, len: inline.cssRules.length,
+                first: inline.cssRules[0].selectorText });
+            })()"#),
+        r#"{"ret":0,"len":2,"first":"h2"}"#,
+        "内联表 insertRule 返 index + cache 同步读回"
+    );
+}
+
+#[test]
+fn test_p99s_rule_style_preserves_custom_property_case() {
+    // DF-5（R5114 返修）：CSSRule.style 写 `--` 前缀名 case-sensitive 保留原样落 cssText
+    //（旧写路径 lowercase 归一使 --Zw-R 落盘 --zw-r，与 gCS 大小写敏感读分裂）；
+    // 非 `--` 名维持既有 `_stylePropName` camelCase→kebab + lowercase（R2810 语义，
+    // camelCase 直读写由 test_stylesheets_rule_style_r2810 覆盖）。host 侧 inline
+    // style 去重键同款语义（style_prop_key）。
+    let html = "<html><head><style>h1 { color: black; }</style></head><body><h1>t</h1></body></html>";
+    crate::js_dom_bridge::clear_generation_cache();
+    crate::js_dom_bridge::set_active_external_css("");
+    let mut sb = p51_sandbox_with_html(html);
+    let script = r#"
+      (() => {
+        const rule = document.styleSheets[document.styleSheets.length - 1].cssRules[0];
+        rule.style.setProperty('--Zw-R', 'blue');
+        rule.style.setProperty('color', 'red');
+        rule.style.fontSize = '14px';
+        return JSON.stringify({ cssText: rule.cssText, readBack: rule.style.getPropertyValue('--Zw-R'),
+          camel: rule.style.fontSize });
+      })()
+    "#;
+    use zero_script_sandbox::Sandbox;
+    let v = Sandbox::execute(&mut sb, script).unwrap().value;
+    assert_eq!(
+        v,
+        r#"{"cssText":"h1 { color: red; --Zw-R: blue; font-size: 14px }","readBack":"blue","camel":"14px"}"#,
+        "`--` 名 case 保留 + 非 `--` 名 kebab 归一与 camelCase IDL 读写不变"
+    );
+    // host 侧 style 去重键（style_prop_key）：--Foo/--foo 为独立声明互不覆盖；
+    // 常规属性名仍按既有语义去重替换。
+    let merged = super::merge_style_property("--Foo: red", "--foo", "blue");
+    assert_eq!(merged, "--Foo: red; --foo: blue");
+    let merged = super::merge_style_property("color: red", "color", "blue");
+    assert_eq!(merged, "color: blue", "常规名维持既有去重语义");
 }
 
 #[test]

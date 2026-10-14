@@ -756,6 +756,13 @@ pub fn register_dom_callbacks(
     // R5114（P9-9 切片 2）：外部样式表（引擎合并 blob，ambient external css）规则 wire——
     // 供 shim document.styleSheets 的外部表条目读 cssRules（级联源同款 StyleRule 序列化）。
     // 空外部 CSS 返空串（shim 据此省略条目：无外部 CSS 的文档 styleSheets 语义逐位不变）。
+    // DF-4（R5114 返修）：shim 的 styleSheets getter 每次访问都调本回调——wire 按精确
+    // css 文本单槽记忆化（镜像 computed_style_cache 的 EXTERNAL_CSS_SHEET_MEMO 形态），
+    // 同版本访问零重 parse；css 换版键失配即重算，无 stale 面。
+    thread_local! {
+        static EXTERNAL_STYLE_RULES_WIRE_MEMO: RefCell<Option<(std::sync::Arc<str>, std::sync::Arc<String>)>> =
+            const { RefCell::new(None) };
+    }
     sandbox.register_callback(
         "__zw_style_rules_external",
         Box::new(|_args: &[String]| {
@@ -763,7 +770,16 @@ pub fn register_dom_callbacks(
             if css.is_empty() {
                 return String::new();
             }
-            style_rules_text(&css)
+            EXTERNAL_STYLE_RULES_WIRE_MEMO.with(|cell| {
+                if let Some((key, wire)) = cell.borrow().as_ref()
+                    && **key == *css
+                {
+                    return (**wire).clone();
+                }
+                let wire = std::sync::Arc::new(style_rules_text(&css));
+                *cell.borrow_mut() = Some((std::sync::Arc::clone(&css), std::sync::Arc::clone(&wire)));
+                (*wire).clone()
+            })
         }),
     );
 

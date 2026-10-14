@@ -294,6 +294,15 @@ pub fn resolve_var(value: &str, custom_properties: &HashMap<String, String>) -> 
     resolve_var_recursive(value, custom_properties, &mut visiting).unwrap_or_else(|| value.to_string())
 }
 
+/// [`resolve_var`] 的 Option 变体（DF-2，R5114 返修）：环引用或未定义且无 fallback 时
+/// 返 `None`（css-variables-1 guaranteed-invalid），供序列化面（gCS 自定义属性读值）
+/// 映射为空串。常规属性路径仍用 [`resolve_var`]（`None` → 原值 → invalid at
+/// computed-value time → 初始/继承值语义不变）。
+pub fn resolve_var_checked(value: &str, custom_properties: &HashMap<String, String>) -> Option<String> {
+    let mut visiting = Vec::new();
+    resolve_var_recursive(value, custom_properties, &mut visiting)
+}
+
 /// https://www.w3.org/TR/css-variables-1/#using-variables
 /// CSS function names are ASCII case-insensitive; custom property names remain case-sensitive.
 pub(crate) fn contains_var_function(value: &str) -> bool {
