@@ -719,60 +719,6 @@ fn bidi_reorder_paragraphs(
     }
 }
 
-/// R5121：按**段落级** UBA resolved level（`para_bidi::resolve` 拼接解析的产物）
-/// 做 L2 重排——控制符嵌入/覆盖作用域跨 run 边界时不 per-run `BidiInfo::new`
-///（那会把作用域截断在 run 边界，R5120 bidi-001 取证）。
-/// L2：从最高 level 降到最低奇 level，反转所有「该 level 及以上」的连续序列。
-/// 不做 L4 镜像（对齐既有 `bidi_reorder_paragraphs` 校准口径；FIXME(phase 2)）。
-/// https://unicode.org/reports/tr9/#L2
-fn bidi_reorder_with_levels(text: &str, levels: &[u8]) -> BidiReorderedText {
-    debug_assert_eq!(text.chars().count(), levels.len(), "level 序列必须逐字符对齐");
-    // 无奇 level → L2 无反转（偶 level 序列不重排），identity。
-    let Some(lowest_odd) = levels.iter().copied().filter(|l| l % 2 == 1).min() else {
-        return identity_bidi_mapping(text);
-    };
-    let max_level = levels.iter().copied().max().unwrap_or(0);
-    let mut chars: Vec<(char, Range<usize>, u8)> = text
-        .char_indices()
-        .zip(levels.iter().copied())
-        .map(|((start, ch), level)| (ch, start..start + ch.len_utf8(), level))
-        .collect();
-    let mut level = max_level;
-    loop {
-        let mut i = 0;
-        while i < chars.len() {
-            if chars[i].2 >= level {
-                let mut j = i + 1;
-                while j < chars.len() && chars[j].2 >= level {
-                    j += 1;
-                }
-                chars[i..j].reverse();
-                i = j;
-            } else {
-                i += 1;
-            }
-        }
-        if level == 0 || level == lowest_odd {
-            break;
-        }
-        level -= 1;
-    }
-    let mut visual_text = String::with_capacity(text.len());
-    let mut visual_to_logical = Vec::with_capacity(chars.len());
-    let mut visual_is_rtl = Vec::with_capacity(chars.len());
-    for (ch, range, lv) in chars {
-        visual_text.push(ch);
-        visual_to_logical.push(range);
-        // visual_is_rtl 按**源字符** level parity（断词分组的行级 L2 消费）。
-        visual_is_rtl.push(lv % 2 == 1);
-    }
-    BidiReorderedText {
-        visual_text,
-        visual_to_logical,
-        visual_is_rtl,
-    }
-}
-
 /// 按视觉顺序为断词后的片段提取逻辑源码映射。
 pub(crate) struct BidiFragmentCursor {
     source_text: Option<Arc<str>>,
@@ -858,19 +804,21 @@ impl BidiFragmentCursor {
         }
     }
 
-    /// R5121：段落级 UBA 游标——`levels` 来自 `para_bidi::resolve`（IFC 全 run
-    /// 拼接一次解析），视觉序按显式 level L2 重排，替代 per-run 作用域截断。
-    pub(crate) fn with_levels(text: &str, levels: &[u8]) -> Self {
+    /// R5122（phase 2）：段落级 UBA **逻辑序**游标——断行消费逻辑序文本
+    /// （css-writing-modes-3 §2.4 / UAX #9：先按逻辑序断行，再逐行 bidi 重排；
+    /// R5121 v3 断行前视觉重排使贪心折行点偏离，bidi-004 实证），视觉重排
+    /// 延迟到行级 `reorder_lines_l2_for_para_bidi` 消费。
+    /// `visual_is_rtl` 携带逐字符段落级 parity（供行级 pass 分类与片段内反转）。
+    /// https://unicode.org/reports/tr9/#L2
+    pub(crate) fn with_levels_logical(text: &str, levels: &[u8]) -> Self {
+        debug_assert_eq!(text.chars().count(), levels.len(), "level 序列必须逐字符对齐");
         let enabled = super::runtime_flags::bidi_fragment_source();
-        let reordered = bidi_reorder_with_levels(text, levels);
-        let identity = reordered.visual_text == text
-            && reordered
-                .visual_to_logical
-                .iter()
-                .cloned()
-                .eq(text.char_indices().map(|(start, ch)| start..start + ch.len_utf8()));
+        let mut reordered = identity_bidi_mapping(text);
+        for (rtl, level) in reordered.visual_is_rtl.iter_mut().zip(levels.iter()) {
+            *rtl = level % 2 == 1;
+        }
         Self {
-            source_text: (enabled && !identity).then(|| Arc::<str>::from(text)),
+            source_text: enabled.then(|| Arc::<str>::from(text)),
             reordered,
             visual_byte_offset: 0,
             visual_char_offset: 0,
@@ -1049,5 +997,23 @@ mod tests {
         let source = cursor.take_source("foo ").expect("synthetic-space fragment maps");
         assert_eq!(source.visual_to_logical, vec![Some(0..1), Some(1..2), Some(2..3), None]);
         assert_eq!(source.visual_is_rtl, vec![false; 4]);
+    }
+
+    /// R5122 phase 2：逻辑序游标——visual_text 恒等（断行消费逻辑序），
+    /// 逐字符段落级 parity 随 source 携带（行级 pass 消费）。
+    #[test]
+    fn with_levels_logical_keeps_text_and_carries_parity() {
+        let text = "ab\u{05D0}\u{05D1}c";
+        // levels: a/b=0, א/ב=1, c=0（段落级 UBA 解析产物形态）。
+        let levels: Vec<u8> = vec![0, 0, 1, 1, 0];
+        let mut cursor = BidiFragmentCursor::with_levels_logical(text, &levels);
+        assert_eq!(cursor.visual_text(), text, "逻辑序游标不做视觉重排");
+        let source = cursor.take_source("\u{05D0}\u{05D1}").expect("中段片段映射");
+        assert_eq!(source.visual_to_logical, vec![Some(2..4), Some(4..6)]);
+        assert_eq!(source.visual_is_rtl, vec![true, true]);
+        let mut cursor = BidiFragmentCursor::with_levels_logical(text, &levels);
+        let source = cursor.take_source("ab").expect("首段片段映射");
+        assert_eq!(source.visual_to_logical, vec![Some(0..1), Some(1..2)]);
+        assert_eq!(source.visual_is_rtl, vec![false, false]);
     }
 }
