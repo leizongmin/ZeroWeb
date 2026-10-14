@@ -163,6 +163,12 @@ pub struct Painter {
     /// R4276：filter url() 非常量链 isolate（主遍已抑制元素、旁路绘制子树图元），
     /// paint 后由 pipeline 离屏栅格化 + resvg 链应用（svg_filter_chain 模块）。
     pub(crate) filter_isolates: Vec<crate::paint::svg_filter_chain::FilterIsolate>,
+    /// R5125（filter-effects-1 §filter region）：本帧 filter 输出画布扩展生效的
+    /// inline svg 节点——输出以 filter region 为裁剪边界（chromium 实测：filter
+    /// 输出不被自身 overflow:hidden 裁剪），其自盒 overflow 回溯裁剪跳过
+    ///（shadow-clipped-by-own-box 实证：扩展画布被 clip_all_primitives_to_rect
+    /// 裁回 padding box）。contain:paint 不入集（containment 裁剪不可豁免）。
+    pub(crate) svg_filter_canvas_nodes: HashSet<NodeId>,
     /// R4276：pipeline 侧信号——渲染侧 FontLoader 可用（isolate 离屏栅格化前提）；
     /// 不可用时 isolate 机制整体旁路（行为回 R4273 态）。
     pub(crate) font_loader_ready: bool,
@@ -611,6 +617,7 @@ impl Painter {
             canvas_registry: None,
             canvas_images: Vec::new(),
             filter_isolates: Vec::new(),
+            svg_filter_canvas_nodes: HashSet::new(),
             font_loader_ready: false,
             filter_key_cursor: 0,
             isolate_specs: Vec::new(),
@@ -717,6 +724,14 @@ impl Painter {
         self.canvas_images.push((ctx_id, cw, ch, rgba));
     }
 
+    /// R5125：本盒是否跳过自 overflow 回溯裁剪（filter 输出画布扩展节点——输出以
+    /// filter region 为裁剪边界，见 [`Self::svg_filter_canvas_nodes`] 字段注释）。
+    fn svg_filter_canvas_skip(&self, box_node: &LayoutBox) -> bool {
+        box_node
+            .node_id
+            .is_some_and(|id| self.svg_filter_canvas_nodes.contains(&id))
+    }
+
     /// R3933（CSS2 replaced elements + SVG2）：inline `<svg>` 元素内容栅格化绘制。
     ///
     /// inline `<svg>` 无外部 URL——序列化其 DOM 子树为 SVG 文本（zero-dom serializer，
@@ -797,6 +812,13 @@ impl Painter {
         // R4274（SVG2 shapes/paths）：零尺寸/空几何形状元素禁用渲染（含 filter 输出）
         // ——序列化源级移除，resvg 无从渲染。kill-switch ZW_SVG_SHAPE_DISABLE=0。
         source = crate::paint::svg_shape_disable::disable_empty_shapes(&source);
+        // R5125（filter-effects-1 §7.1）：CSS filter 声明计算值注入序列化——样式
+        // 规则形式不进 DOM attr、inline style 形式绕过下方 R5124 attr 改写
+        //（color-mix 等 usvg 不可解析，invalidation-css-dropshadow-002 无阴影
+        // 实证）。计算值（currentcolor/color-mix 按元素 color 解析）注入为
+        // filter presentation attr 并剥离 style 形式声明；函数形式随后由 R5124
+        // 改写。共用 kill-switch ZW_SVG_FILTER_FN=0。
+        source = apply_css_computed_filters_to_source(&source, doc, node_id, styles);
         // R5124（filter-effects-1 §7.1/§7.2）：resvg 0.47 CSS filter 函数形式两缺陷
         //（region bbox×(-50%..200%) 硬编码 + feDropShadow sRGB 终点二次转换）——
         // 序列化改写为等价 <filter> 元素（大 region + 手工展开原语链）。置于
@@ -836,21 +858,44 @@ impl Painter {
         let contained = style.is_some_and(|s| s.contain.has_paint());
         let overflow_x_visible = !contained && style.is_some_and(|s| axis_visible(&s.overflow_x));
         let overflow_y_visible = !contained && style.is_some_and(|s| axis_visible(&s.overflow_y));
-        let rasterize_result = if overflow_x_visible || overflow_y_visible {
+        // R5125（filter-effects-1 §filter region）：filter 输出画布扩展——resvg 实证
+        // usvg viewport 不裁 filter 输出，裁剪发生在栅格画布（= 元素盒）→ 阴影等输出
+        // 在盒外被切（drop-shadow-currentcolor-dynamic-002 1.04% = 阴影带缺失实证；
+        // chromium 把 filter 输出合成在根 overflow 裁剪之外，headless 实测锚定）。
+        // 源含 <filter>（R5124 改写产物或 authored）时按 filter region 并集右/下边
+        // 扩展画布；负方向位移不覆盖（FIXME：需画布原点平移，与 R4174 扩展同限）。
+        let filter_edge = if source.contains("<filter") {
+            zero_render_foundation::image_cache::svg_filter_extents(source.as_bytes(), target_w, target_h)
+        } else {
+            None
+        };
+        let filter_w = filter_edge.map_or(0.0, |e| e.0.ceil());
+        let filter_h = filter_edge.map_or(0.0, |e| e.1.ceil());
+        let filter_overflow = !contained && (filter_w > container_w || filter_h > container_h);
+        if filter_overflow && let Some(id) = box_node.node_id {
+            // filter region 裁剪语义生效：本盒自 overflow 回溯裁剪须跳过（字段注释）。
+            self.svg_filter_canvas_nodes.insert(id);
+        }
+        let rasterize_result = if overflow_x_visible || overflow_y_visible || filter_overflow {
             // 内容包围盒（canvas 坐标，树尺寸 = 注入视口），可见轴画布外扩到内容边。
-            let content_edge =
+            let content_edge = if overflow_x_visible || overflow_y_visible {
                 zero_render_foundation::image_cache::svg_content_extents(source.as_bytes(), target_w, target_h)
-                    .unwrap_or((container_w, container_h));
+                    .unwrap_or((container_w, container_h))
+            } else {
+                (container_w, container_h)
+            };
             let x_extent = if overflow_x_visible {
                 (content_edge.0.ceil().max(container_w) as u32).max(target_w)
             } else {
                 target_w
-            };
+            }
+            .max(filter_w as u32);
             let y_extent = if overflow_y_visible {
                 (content_edge.1.ceil().max(container_h) as u32).max(target_h)
             } else {
                 target_h
-            };
+            }
+            .max(filter_h as u32);
             zero_render_foundation::image_cache::rasterize_svg_with_overflow(
                 source.as_bytes(),
                 target_w,
@@ -866,8 +911,8 @@ impl Painter {
         };
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
-        let (draw_w, draw_h) = if overflow_x_visible || overflow_y_visible {
-            // 扩展画布路径：绘制矩形 = 画布尺寸（可见轴外溢 / 裁剪轴 = 视口）。
+        let (draw_w, draw_h) = if overflow_x_visible || overflow_y_visible || filter_overflow {
+            // 扩展画布路径：绘制矩形 = 画布尺寸（可见轴外溢 / 裁剪轴 = 视口 / filter 输出）。
             (data.width as f32, data.height as f32)
         } else {
             (container_w, container_h)
@@ -2005,7 +2050,7 @@ impl Painter {
             self.paint_node_in_rect(child, styles, child_offset_x, child_offset_y, dirty_rect, doc);
         }
 
-        if needs_clip {
+        if needs_clip && !self.svg_filter_canvas_skip(box_node) {
             // R793：CSS §11.1.1 — overflow 裁剪到 **padding box**（内容 + padding，border 之内），
             // 非 content box。原实现按 content box 裁剪（起点加 padding、尺寸=content），致溢出内容
             // 落在 content 边与 padding 边之间的条带时被多裁（chromium 保留到 padding 边）。
@@ -2954,7 +2999,7 @@ impl Painter {
         // overflow:hidden 并按自身 40px 盒裁剪，列 1..N 全被切掉（multicol-span-all-002：
         // 容器 overflow:hidden 时区域内容只剩 col 0）。语义：overflow 属主是宿主容器
         // （其 padding-box 裁剪在上层 paint_node 已应用，仍覆盖区域全部列位）。
-        if needs_clip && !box_node.is_multicol_region_fragment {
+        if needs_clip && !box_node.is_multicol_region_fragment && !self.svg_filter_canvas_skip(box_node) {
             // R793：CSS §11.1.1 — overflow 裁剪到 **padding box**（内容 + padding，border 之内），
             // 非 content box。原实现按 content box 裁剪（起点加 padding、尺寸=content），致溢出内容
             // 落在 content 边与 padding 边之间的条带时被多裁（chromium 保留到 padding 边）。
@@ -4475,6 +4520,357 @@ fn merge_style_fill_in_tag(tag_text: &str, fill_value: &str) -> String {
         format!("{stripped} style=\"{decl}\"/>")
     } else {
         format!("{} style=\"{decl}\">", &tag_text[..tag_text.len() - 1])
+    }
+}
+
+/// R5125（filter-effects-1 §7.1）：CSS `filter` 声明的计算值注入 SVG 序列化源。
+/// 样式规则形式的 filter 不进 DOM attr（序列化文本无从携带，drop-shadow-
+/// currentcolor-dynamic-002 阴影整体缺失实证）；inline style 的 authored 声明
+/// 又绕过 R5124 attr 改写且 color-mix 等 usvg 不可解析（invalidation-css-
+/// dropshadow-002 无阴影实证）。注入 = 计算值序列化为 filter presentation attr
+///（drop-shadow 颜色按元素计算 color 经 `resolve_color_current` 解析
+/// currentcolor/color-mix，css-color-4 §resolving）+ 剥离 style attr 中的 filter
+/// 声明（usvg style attr 优先级高于 presentation attr）。kill-switch 共用
+/// ZW_SVG_FILTER_FN=0（只注入不改写会走 usvg 函数形式缺陷路径，等价旧行为）。
+pub(crate) fn apply_css_computed_filters_to_source(
+    source: &str,
+    doc: &Document,
+    subtree_root: NodeId,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> String {
+    if std::env::var("ZW_SVG_FILTER_FN").as_deref() == Ok("0") {
+        return source.to_string();
+    }
+    let mut filters: Vec<(NodeId, String)> = Vec::new();
+    collect_css_svg_filters(doc, subtree_root, styles, &mut filters);
+    let mut out = source.to_string();
+    for (node_id, value) in filters {
+        if let Some(next) = apply_css_svg_filter_for_node(&out, node_id, &value, doc, subtree_root) {
+            out = next;
+        }
+    }
+    out
+}
+
+/// 子树遍历收集带 CSS filter 声明的元素（全 None 视为无声明）。
+fn collect_css_svg_filters(
+    doc: &Document,
+    node_id: NodeId,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    out: &mut Vec<(NodeId, String)>,
+) {
+    if let Some(st) = styles.get(&node_id)
+        && !st.filter.is_empty()
+        && !st.filter.iter().all(|v| matches!(v, FilterComputedValue::None))
+        && let Some(s) = serialize_computed_filter_list(&st.filter, &st.color)
+    {
+        out.push((node_id, s));
+    }
+    for child in doc.child_nodes(node_id) {
+        collect_css_svg_filters(doc, child, styles, out);
+    }
+}
+
+/// FilterComputedValue 列表 → filter 函数列表文本（attr 形式）。无可序列化项
+/// → `None`（不注入）。数值单位：blur/offsets px、hue-rotate deg、其余为 number
+///（filter-effects-1 §7.1 函数参数语法）。
+fn serialize_computed_filter_list(
+    list: &[FilterComputedValue],
+    element_color: &zero_css_parser::values::ColorValue,
+) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    for v in list {
+        match v {
+            FilterComputedValue::None => {}
+            FilterComputedValue::Blur(n) => {
+                parts.push(format!("blur({}px)", crate::paint::svg_filter_functions::fmt_num(*n)))
+            }
+            FilterComputedValue::Brightness(n) => parts.push(format!(
+                "brightness({})",
+                crate::paint::svg_filter_functions::fmt_num(*n)
+            )),
+            FilterComputedValue::Contrast(n) => {
+                parts.push(format!("contrast({})", crate::paint::svg_filter_functions::fmt_num(*n)))
+            }
+            FilterComputedValue::Grayscale(n) => parts.push(format!(
+                "grayscale({})",
+                crate::paint::svg_filter_functions::fmt_num(*n)
+            )),
+            FilterComputedValue::HueRotate(n) => parts.push(format!(
+                "hue-rotate({}deg)",
+                crate::paint::svg_filter_functions::fmt_num(*n)
+            )),
+            FilterComputedValue::Invert(n) => {
+                parts.push(format!("invert({})", crate::paint::svg_filter_functions::fmt_num(*n)))
+            }
+            FilterComputedValue::Opacity(n) => {
+                parts.push(format!("opacity({})", crate::paint::svg_filter_functions::fmt_num(*n)))
+            }
+            FilterComputedValue::Saturate(n) => {
+                parts.push(format!("saturate({})", crate::paint::svg_filter_functions::fmt_num(*n)))
+            }
+            FilterComputedValue::Sepia(n) => {
+                parts.push(format!("sepia({})", crate::paint::svg_filter_functions::fmt_num(*n)))
+            }
+            FilterComputedValue::DropShadow(x, y, b, c) => {
+                let col = resolve_color_current(c, element_color);
+                let f = crate::paint::svg_filter_functions::fmt_num;
+                parts.push(format!(
+                    "drop-shadow({}px {}px {}px {})",
+                    f(*x),
+                    f(*y),
+                    f(*b),
+                    render_color_to_css(col)
+                ));
+            }
+            // HTML isolate 路径存储去 `#` 的 fragment，此处还原引用形式。
+            FilterComputedValue::Url(r) => parts.push(format!("url(#{})", r.trim().trim_start_matches('#'))),
+        }
+    }
+    if parts.is_empty() { None } else { Some(parts.join(" ")) }
+}
+
+/// Color → css 色串（alpha=255 → rgb()，否则 rgba()；与 fill 注入同款格式，
+/// usvg/R5124 flood_color_attrs 均可回解析）。
+fn render_color_to_css(c: Color) -> String {
+    if c.a == 255 {
+        format!("rgb({}, {}, {})", c.r, c.g, c.b)
+    } else {
+        format!("rgba({}, {}, {}, {:.3})", c.r, c.g, c.b, c.a as f32 / 255.0)
+    }
+}
+
+/// R5125：单节点注入——剥离 style attr 中 filter 声明后设 filter presentation
+/// attr（CSS 声明覆盖 authored attr 的级联语义；attr 设置复用 R4280 几何 attr
+/// 注入的定位 + set/replace 机制）。
+fn apply_css_svg_filter_for_node(
+    source: &str,
+    node_id: NodeId,
+    value: &str,
+    doc: &Document,
+    subtree_root: NodeId,
+) -> Option<String> {
+    let stripped = strip_style_filter_decl(source, node_id, doc, subtree_root);
+    // 无效 url 引用 → 整个 filter 属性忽略：只剥离 CSS 声明，不注入 attr
+    //（注入悬垂引用会触发 usvg 的 SVG 1.1「元素不渲染」语义，filter-invalid 实证）。
+    if !filter_url_refs_resolve(source, value) {
+        return Some(stripped);
+    }
+    rewrite_geometry_attr_for_node(&stripped, node_id, "filter", value, doc, subtree_root)
+}
+
+/// R5125（filter-effects-1 §7.1 #typedef-filter-url）：url 项引用有效性——引用
+/// 不存在或指向非 `<filter>` 元素 → 整个 filter 属性忽略（元素按无 filter 绘制）。
+/// 只认 `url(#frag)` 形式（serialize_computed_filter_list 的唯一产物形态），
+/// 任一项无效即整体无效。
+fn filter_url_refs_resolve(source: &str, value: &str) -> bool {
+    let mut rest = value;
+    while let Some(pos) = rest.find("url(#") {
+        let after = &rest[pos + 5..];
+        let Some(close) = after.find(')') else {
+            return false;
+        };
+        if !svg_source_has_filter_id(source, after[..close].trim()) {
+            return false;
+        }
+        rest = &after[close + 1..];
+    }
+    true
+}
+
+/// source 中是否存在 `id="{frag}"` 的 `<filter>` 开标签（单/双引号均可）。
+/// `<filter` 须后随空白、`>` 或 `/`（排除 `<filters` 等标签名前缀）。
+fn svg_source_has_filter_id(source: &str, frag: &str) -> bool {
+    let needle_d = format!("id=\"{frag}\"");
+    let needle_s = format!("id='{frag}'");
+    let mut from = 0usize;
+    while let Some(rel) = source[from..].find("<filter") {
+        let start = from + rel;
+        let after = &source[start + "<filter".len()..];
+        if !after.starts_with(|c: char| c.is_whitespace() || c == '>' || c == '/') {
+            from = start + 1;
+            continue;
+        }
+        let tag_end = source[start..].find('>').map_or(source.len(), |e| start + e);
+        let tag = &source[start..tag_end];
+        if tag.contains(&needle_d) || tag.contains(&needle_s) {
+            return true;
+        }
+        from = tag_end;
+    }
+    false
+}
+
+/// 剥离元素开标签 style attr 中的 `filter: ...` 声明（精确匹配 `filter:` 前缀，
+/// `backdrop-filter:` 不受影响）；声明清空则整体移除 style attr。无 style attr
+/// 或无 filter 声明 → 原文返回。
+fn strip_style_filter_decl(source: &str, node_id: NodeId, doc: &Document, subtree_root: NodeId) -> String {
+    let Some((lt, tag_end)) = locate_svg_open_tag(source, node_id, doc, subtree_root) else {
+        return source.to_string();
+    };
+    let tag_text = &source[lt..=tag_end];
+    let Some(new_tag) = strip_style_filter_decl_in_tag(tag_text) else {
+        return source.to_string();
+    };
+    format!("{}{}{}", &source[..lt], new_tag, &source[tag_end + 1..])
+}
+
+/// 开标签文本内剥离 style attr 的 filter 声明。无变化 → `None`。
+fn strip_style_filter_decl_in_tag(tag_text: &str) -> Option<String> {
+    let spos = tag_text.find("style=\"")?;
+    let vstart = spos + "style=\"".len();
+    let vend_rel = tag_text[vstart..].find('"')?;
+    let vend = vstart + vend_rel;
+    let style_val = &tag_text[vstart..vend];
+    let mut kept: Vec<&str> = Vec::new();
+    let mut dropped = false;
+    for d in style_val.split(';') {
+        let dt = d.trim();
+        if dt.to_ascii_lowercase().starts_with("filter:") {
+            dropped = true;
+        } else if !dt.is_empty() {
+            kept.push(dt);
+        }
+    }
+    if !dropped {
+        return None;
+    }
+    let new_tag = if kept.is_empty() {
+        // style 声明清空 → 整个 attr 移除（含前置空白）。
+        let mut start = spos;
+        while start > 0 && tag_text[..start].ends_with(|c: char| c.is_ascii_whitespace()) {
+            start -= 1;
+        }
+        format!("{}{}", &tag_text[..start], &tag_text[vend + 1..])
+    } else {
+        format!(
+            "{}style=\"{}\"{}",
+            &tag_text[..spos],
+            kept.join("; "),
+            &tag_text[vend + 1..]
+        )
+    };
+    Some(new_tag)
+}
+
+/// 定位元素开标签文本 span（`[lt, tag_end]` 含两端；id/class 指纹，子树根退化
+/// 为首个同标签——与 R4280 fill/geometry 注入同一指纹近似）。
+fn locate_svg_open_tag(source: &str, node_id: NodeId, doc: &Document, subtree_root: NodeId) -> Option<(usize, usize)> {
+    let node = doc.get(node_id)?;
+    let NodeKind::Element(elem) = &node.kind else {
+        return None;
+    };
+    let tag = elem.local_name().to_string();
+    let needle = if node_id == subtree_root {
+        format!("<{tag}")
+    } else if let Some(id) = elem.get_attribute("id") {
+        format!(r#"<{tag} id="{id}""#)
+    } else if let Some(cls) = elem.get_attribute("class") {
+        let first = cls.split_whitespace().next().unwrap_or("");
+        format!(r#"<{tag} class="{first}"#)
+    } else {
+        format!("<{tag}")
+    };
+    let pos = source.find(&needle)?;
+    let gt_rel = source[pos..].find('>')?;
+    let tag_end = pos + gt_rel;
+    let lt = source[pos..=tag_end].rfind('<').map(|r| pos + r).unwrap_or(pos);
+    Some((lt, tag_end))
+}
+
+#[cfg(test)]
+mod r5125_computed_filter_inject_tests {
+    use super::*;
+
+    #[test]
+    fn drop_shadow_currentcolor_resolves_to_element_color() {
+        let list = vec![FilterComputedValue::DropShadow(
+            50.0,
+            0.0,
+            0.0,
+            zero_css_parser::values::ColorValue::CurrentColor,
+        )];
+        let out = serialize_computed_filter_list(&list, &zero_css_parser::values::ColorValue::Rgba(0, 128, 0, 255))
+            .expect("serialized");
+        assert_eq!(out, "drop-shadow(50px 0px 0px rgb(0, 128, 0))");
+    }
+
+    #[test]
+    fn drop_shadow_color_mix_resolves_via_element_color() {
+        // color-mix(in srgb, currentcolor 100%, black) @ color=lime → lime。
+        let mix =
+            zero_css_parser::values::parse_color("color-mix(in srgb, currentcolor 100%, black)").expect("mix parsed");
+        let list = vec![FilterComputedValue::DropShadow(50.0, 0.0, 0.0, mix)];
+        let out = serialize_computed_filter_list(&list, &zero_css_parser::values::ColorValue::Rgba(0, 255, 0, 255))
+            .expect("serialized");
+        assert_eq!(out, "drop-shadow(50px 0px 0px rgb(0, 255, 0))");
+    }
+
+    #[test]
+    fn mixed_list_with_url_and_none() {
+        let list = vec![
+            FilterComputedValue::Url("f".to_string()),
+            FilterComputedValue::None,
+            FilterComputedValue::Blur(2.5),
+        ];
+        let out = serialize_computed_filter_list(&list, &zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255))
+            .expect("serialized");
+        assert_eq!(out, "url(#f) blur(2.5px)");
+    }
+
+    #[test]
+    fn all_none_yields_no_injection() {
+        let list = vec![FilterComputedValue::None];
+        assert_eq!(
+            serialize_computed_filter_list(&list, &zero_css_parser::values::ColorValue::Rgba(0, 0, 0, 255)),
+            None
+        );
+    }
+
+    #[test]
+    fn strip_style_filter_decl_preserves_other_decls() {
+        let tag = r#"<rect width="50" style="filter: drop-shadow(1px 2px 0px red); color: rgb(0, 255, 0)"></rect>"#;
+        let out = strip_style_filter_decl_in_tag(tag).expect("stripped");
+        assert!(out.contains(r#"style="color: rgb(0, 255, 0)""#), "{out}");
+        assert!(!out.contains("drop-shadow"), "{out}");
+        // backdrop-filter 声明不受影响。
+        let tag2 = r#"<div style="backdrop-filter: blur(2px); filter: none"></div>"#;
+        let out2 = strip_style_filter_decl_in_tag(tag2).expect("stripped");
+        assert!(out2.contains("backdrop-filter: blur(2px)"), "{out2}");
+        assert!(!out2.contains("filter: none"), "{out2}");
+    }
+
+    #[test]
+    fn strip_removes_empty_style_attr() {
+        let tag = r#"<rect style="filter: blur(1px)"/>"#;
+        let out = strip_style_filter_decl_in_tag(tag).expect("stripped");
+        assert_eq!(out, r#"<rect/>"#);
+    }
+
+    #[test]
+    fn strip_noop_without_filter_decl() {
+        let tag = r#"<rect style="fill: red"></rect>"#;
+        assert_eq!(strip_style_filter_decl_in_tag(tag), None);
+        let tag2 = r#"<rect fill="red"></rect>"#;
+        assert_eq!(strip_style_filter_decl_in_tag(tag2), None);
+    }
+
+    #[test]
+    fn url_ref_resolves_against_source_filters() {
+        let src = r#"<svg xmlns="http://www.w3.org/2000/svg"><defs><filter id="f"><feGaussianBlur stdDeviation="1"/></filter></defs><rect width="10" height="10"/></svg>"#;
+        assert!(filter_url_refs_resolve(src, "url(#f)"));
+        // 引用不存在 → 整个 filter 属性忽略（filter-effects-1 §7.1）。
+        assert!(!filter_url_refs_resolve(src, "url(#not-found)"));
+        // 指向非 filter 元素 → 同样无效。
+        let grad = r#"<svg xmlns="http://www.w3.org/2000/svg"><linearGradient id="g"/></svg>"#;
+        assert!(!filter_url_refs_resolve(grad, "url(#g)"));
+        // 混合列表任一 url 项无效 → 整体无效。
+        assert!(!filter_url_refs_resolve(src, "blur(2px) url(#not-found)"));
+        // 无 url 项（纯函数列表）不受影响。
+        assert!(filter_url_refs_resolve(src, "blur(2px) drop-shadow(1px 1px 0px red)"));
+        // 单引号 id 形式。
+        let single = "<svg><filter id='q'/></svg>";
+        assert!(filter_url_refs_resolve(single, "url(#q)"));
     }
 }
 
