@@ -151,6 +151,11 @@ impl BrowserApp {
         (self.tab_overflow_open, self.tab_overflow_ids.len())
     }
 
+    /// 演示流用：崩溃恢复气泡可见性（T20 driver 断言源）。
+    pub fn smoke_session_restore_prompt(&self) -> bool {
+        self.session_restore_prompt_visible
+    }
+
     /// 演示流用：溢出 ▾ 按钮矩形（T18 driver 点击定位）。
     pub fn smoke_tab_overflow_button_rect(&self) -> Option<(f32, f32, f32, f32)> {
         self.tab_overflow_button_rect()
