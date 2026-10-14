@@ -79,6 +79,13 @@ impl InlineFormattingContext {
         // 用于将连续纯空白 run（如 inline-block 之间被注释分隔的两个文本节点）
         // 按 CSS Text §4.1 折叠为单个空格。
         let mut last_was_collapsible_ws = false;
+        // R5112/R5115（css-text-3 §5.5）：元素边界折行治理追踪——上一内容词所属
+        // run、是否以可折叠空白结尾、该空格所属 run 的 no_wrap。跨 run 边界的断点
+        // 由**空格所属 run** 治理；空白词（纯空格 word）按自身 run 治理（§5.5
+        // 「box directly containing that character」；white-space-mixed-001）。
+        let mut last_content_owner: Option<zero_dom::NodeId> = None;
+        let mut last_ended_collapsible_ws = false;
+        let mut last_ws_no_wrap = false;
         // R3784：连续 float 锚继承——上一个被推行盒是否由 FloatAnchor 推行（连续 float
         // 的后继与前者同源序行槽，锚继承前 float 的锚 y）。
         let mut last_push_was_float_anchor = false;
@@ -196,6 +203,9 @@ impl InlineFormattingContext {
                             current_x += self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font)
                                 + run.letter_spacing;
                             last_was_collapsible_ws = true;
+                            last_content_owner = Some(run.node_id);
+                            last_ended_collapsible_ws = true;
+                            last_ws_no_wrap = run_no_wrap;
                         }
                         continue;
                     }
@@ -523,8 +533,23 @@ impl InlineFormattingContext {
                             && is_ws_word
                             && run.ws_override.is_some_and(|ws| ws.hang_trailing))
                             || (is_ideographic_space_word && !run_preserve);
+                        // R5115（css-text-3 §5.5）：词前断点治理——内容词的跨 run
+                        // 边界（上一 run 尾空格 + 本 run 首词）由**空格所属 run**
+                        // 治理；空白词与本 run 内部按自身 no_wrap。
+                        // mixed-001：空白词（pre 保留空格/nowrap 内空格）误用边界
+                        // 治理曾 26.20% 翻红，空白词门修复。
+                        let word_is_ws = !content_word.is_empty()
+                            && content_word.chars().all(char::is_whitespace);
+                        let boundary_ws_break = !word_is_ws
+                            && last_ended_collapsible_ws
+                            && last_content_owner != Some(run.node_id);
+                        let wrap_allowed = if boundary_ws_break {
+                            !last_ws_no_wrap
+                        } else {
+                            !run_no_wrap
+                        };
                         if !hang_trailing_space
-                            && !run_no_wrap
+                            && wrap_allowed
                             && current_x + lead_gap + word_width > left_offset + avail_width
                             && !current_line.runs.is_empty()
                         {
@@ -660,6 +685,12 @@ impl InlineFormattingContext {
                                 baseline: run.font_size,
                             });
 
+                        // R5115：词级 owner/结尾空白态更新（边界判定消费于下一词）。
+                        last_content_owner = Some(run.node_id);
+                        last_ended_collapsible_ws = trailing_space_width > 0.0;
+                        if trailing_space_width > 0.0 {
+                            last_ws_no_wrap = run_no_wrap;
+                        }
                             current_x += word_width + trailing_space_width;
                             // 行盒高度需容纳 inline 元素的完整盒体（含 padding+border）
                             // R4359（css-ruby-1）：ruby 注音行高（rt 0.5em 行盒）参与行盒高度
