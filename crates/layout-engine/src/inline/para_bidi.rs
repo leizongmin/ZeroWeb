@@ -8,20 +8,24 @@
 //!
 //! 本模块把 UBA 提升到 **IFC 段落级**：全部 Text run 的逻辑文本一次拼接解析，
 //! 按字符取 resolved level；**不拆分 items**（拆分会新增词间折行机会——
-//! line-breaking-bidi-001 1.07%→76% 实证），改由 `BidiFragmentCursor::with_levels`
-//! 按显式 level 在 run 内部做 L2 重排；行级组序重排见
-//! `reorder_lines_l2_for_para_bidi`（fragment 粒度）。
+//! line-breaking-bidi-001 1.07%→76% 实证）。R5122 起（phase 2）标记 run 走
+//! `BidiFragmentCursor::with_levels_logical`——**断行消费逻辑序文本**（规范顺序：
+//! 先按逻辑序断行，再逐行 bidi 重排；R5121 v3 的断行前视觉重排使贪心折行点
+//! 偏离，bidi-004 2.07%→6.19% 实证），视觉重排延迟到行级
+//! `reorder_lines_l2_for_para_bidi`：片段内逐字符 parity L2 +
+//! 极大奇 parity 片段序列反序（x 镜像）。
 //!
-//! phase 1 边界（FIXME 谱系，翻默认前置逐项收口）：
+//! 边界（FIXME 谱系，翻默认前置逐项收口）：
 //! - 段落基方向取**首个** Text run 的 CSS direction（未直读容器 style；direction
 //!   为继承属性，无 inline 覆盖页等价）；
 //! - 行级 L2 为 **parity 近似**（`uniform_resolved_rtl` 布尔）——基 LTR（level
-//!   0/1 两级）精确；RTL 基内嵌套 ≥2 层偶 level 的组序不重排；
+//!   0/1 两级）精确；RTL 基内嵌套 ≥2 层偶 level 的组序不重排；混合 parity
+//!   片段按偶处理（不参与序列反序，仅片段内反转）；
 //! - 元素级 `unicode-bidi: embed/isolate` 未映射为显式 level（UAX #9 X5-X8）；
 //!   含 `bidi_override`/`plaintext` run 的 IFC **整体回退**既有 per-run 校准路径；
 //! - 仅当至少一个 run 段落级 level 非 0 才激活——纯 LTR 信号面零扰动；
-//! - level 边界落在空白串内部会改变视觉文本的词形（→ 折行点可能移动，A/B 监视；
-//!   不新增断点——断点仍只由空白产生）。
+//! - 反转片段宽度不变（字符集恒等，advance 求和可交换）；shaped kerning 级
+//!   度量漂移为接受近似（reftest 主面 Ahem 等宽零差异）。
 //!
 //! kill-switch `ZW_PARA_BIDI`（opt-in `=1`，**默认关**）——dormant 同 R5120
 //! `ZW_INLINE_SINGLE_FRAG_BOX_BORDER`：翻默认前置 = 旗标开全量 A/B 零新红。
@@ -134,6 +138,32 @@ pub(crate) fn fragment_is_rtl_parity(source: Option<&TextFragmentSource>) -> boo
     source.and_then(|s| s.uniform_resolved_rtl()).unwrap_or(false)
 }
 
+/// R5122（phase 2）：片段内 parity L2——反转极大奇 parity 字符 run，返回
+/// 视觉位 → 逻辑字符索引的置换（`None` = 恒等：无奇字符或反转无变化）。
+/// 基 LTR（level 0/1）下与 UAX #9 L2 精确一致；奇偶嵌套（≥2 层）为 parity
+/// 近似（FIXME：完整 level 栈按层反转）。
+/// https://unicode.org/reports/tr9/#L2
+pub(crate) fn parity_l2_permutation(parities: &[bool]) -> Option<Vec<usize>> {
+    if !parities.iter().any(|&p| p) {
+        return None;
+    }
+    let mut order: Vec<usize> = (0..parities.len()).collect();
+    let mut i = 0;
+    while i < parities.len() {
+        if !parities[i] {
+            i += 1;
+            continue;
+        }
+        let mut j = i + 1;
+        while j < parities.len() && parities[j] {
+            j += 1;
+        }
+        order[i..j].reverse();
+        i = j;
+    }
+    (order.iter().enumerate().any(|(a, b)| a != *b)).then_some(order)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,5 +234,18 @@ mod tests {
         overridden.bidi_override = Some(true);
         let items = vec![InlineItem::Text(overridden), text_item("\u{05D0}\u{05D1}")];
         assert!(resolve(&items).is_none());
+    }
+
+    /// R5122 phase 2：片段内 parity L2——奇字符 run 反转，偶字符不动。
+    #[test]
+    fn parity_l2_reverses_odd_runs_only() {
+        // [偶×3, 奇×3, 偶×1] → 奇段反转，其余原位。
+        let perm = parity_l2_permutation(&[false, false, false, true, true, true, false]).expect("含奇字符必有置换");
+        assert_eq!(perm, vec![0, 1, 2, 5, 4, 3, 6]);
+        // 无奇字符 → 恒等（None）。
+        assert_eq!(parity_l2_permutation(&[false, false]), None);
+        // 单一奇 run 恰跨全串 → 整体反转。
+        let perm = parity_l2_permutation(&[true, true, true]).expect("全奇串有置换");
+        assert_eq!(perm, vec![2, 1, 0]);
     }
 }
