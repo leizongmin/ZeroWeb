@@ -11,7 +11,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 
 - 触发后整个编码任务期间持续生效，不因多轮对话或任务切换遗忘；仅当用户明确说「跳过准则」时暂停，恢复编码后自动重新生效。
 - 动代码前按改动选择主题，CR 时对照触碰到的条目；先核对适用条件，不把局部经验扩展为无条件禁令。
-- **权衡**：这些不变式倾向谨慎而非速度。小改动不必全量过 31 条，自行判断。
+- **权衡**：这些不变式倾向谨慎而非速度。小改动不必全量过 32 条，自行判断。
 - 本 skill 是领域层，叠加在 AGENTS.md 编码准则 / `lei-code-guidelines`（行为层）之上，不复述其行为规则。
 
 | 改动入口 | 必读条目 |
@@ -20,7 +20,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 | 字体 / shaping / 缓存 | #3–5、#8；性能改动加 #11 |
 | 绘制 / 合成 / 帧复用 | #6–8、#12–14、#17 |
 | 布局 / 后处理 pass | #18、#29 |
-| IPC / 同步脚本 / 宿主桥 | #12–15、#24–25、#30 |
+| IPC / 同步脚本 / 宿主桥 | #12–15、#24–25、#30、#32 |
 | 存储 / 并发缓存 | #16、#19、#22 |
 | 性能 / 测试工具 | #9–11、#17–20、#23、#27–28、#31；shim 循环加 #26 |
 
@@ -197,3 +197,9 @@ FileReader、XHR 进度族、IDB request 族、MediaElement 族等多事件异�
 测试语料（wpt-data 等）的可再生性由 git 跟踪、pinned 快照、manifest 三处台账共同决定，三者皆外的本地案只有一份副本，删除即永久丢失。维护工具（导入/下载/重建目录）的失败与清理路径不得 `rm -f` 或覆盖写「本次产物」——同一目标路径可能正是语料既有案的唯一副本；目标已存在时先备份到资产目录外或拒绝执行，导入后核对分母与逐案结果未漂移。corpus 的权威源是 pinned 快照，live 上游 master 只是补充源：上游持续改名/归并 ref，master 下载的失败率随导入时点推迟必然上升——失败路径被触发是常态而非例外，不能按「罕见分支」降低其安全等级。
 
 依据：[import-wpt ref 404 连带删除既有案](../../../docs/learnings/bugs/2026-10/2026-10-13-import-wpt-master-pinned-mismatch.md)、[空 REF 触发失败路径删文件](../../../docs/learnings/bugs/2026-09/2026-09-12-import-wpt-empty-ref-deletes-test-file.md)、[连锁 fetch-wpt-data 抹掉未入 tag fixture](../../../docs/learnings/bugs/2026-10/2026-10-06-wpt-data-refetch-wipes-untracked-fixtures.md)。
+
+### 32. shim 同一树节点可并存多族稳定 JS 包装：identity 操作先认来源族，写回保持原对象
+
+js_dom_shim 里「同一 DOM 节点 = 同一个 JS 对象」不成立，且多族并存是设计使然：树行走/getElementById/querySelector 返回按 `(sel, handle)` 缓存的 sel-proxy，innerHTML 解析经 named-prop 写入的 `globalThis[id]` 就是活树真实节点对象，文本节点包装逐访问新建——跨族 `===` 恒为 false。涉及节点 identity 的保存/断言路径先确认对象来源族；跨族匹配用「双侧重投影到同一族再比」的 match-only 模式，凡写回端点/容器的值保持调用方路径原对象——重投影对象作写入目标反而丢 identity。`globalThis[id] = node` 型注册的 guard 不能只查 `undefined`：同一文档重复解析是常态，注册值必须自带世代标记并可覆盖刷新，否则上一代死 wrapper 滞留，方法落空、删除断言静默失真。
+
+依据：[js_dom_shim 多族包装 identity 恒败与吸附目标重投影陷阱](../../../docs/learnings/bugs/2026-10/2026-10-14-js-dom-wrapper-family-identity.md)。
