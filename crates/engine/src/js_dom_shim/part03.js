@@ -15332,16 +15332,28 @@ return e;
   // slice26：元素 ns 解析提为共享 helper——R190 派生与 part04 NS 读族限定名兜底的
   // 有效 ns 判定（D2 守卫）共此一路（原先内联在 _zwDeriveAttrNS，提全局避免双份漂移）。
   // handle 元素读 _nsHandles 印记；sel 元素沿祖先链找首个非 HTML ns（svg/math 子继承根 ns）。
+  // R5126：per-element memo——R5126 起 part04 属性族 `_r116AttrName` 的 HTML-ns 判定也走
+  // 本 helper，attr 读写是热路径，未命中链路 O(depth) 次 `__zw_get_ns` 宿主往返不可承受，
+  // memo 后退化 Map 查。元素 namespaceURI 创建后不可变；sel→元素重绑定（改名/重建）由
+  // tree 代际印章兜住（childList/换代 bump 清表——与 `_zwParentLinkCache` 同模式；attr 级
+  // id 改名不 bump，与 `__zw_get_ns` 宿主 NS_MEMO 同等边界，不更差）。
+  var _zwElNsMemo = { gen: -1, map: new Map() };
   globalThis._zwElementNsFor = function (sel, handle) {
     var elNs = handle && _nsHandles[handle] ? _nsHandles[handle].namespace : null;
-    if (elNs == null && typeof __zw_get_ns === 'function' && typeof _ancestorChain === 'function') {
-      if (sel) {
+    if (elNs == null) {
+      var mkey = handle || sel || '';
+      if (typeof _zwParentLinkGen !== 'undefined') {
+        if (_zwElNsMemo.gen !== _zwParentLinkGen) { _zwElNsMemo.gen = _zwParentLinkGen; _zwElNsMemo.map.clear(); }
+        if (_zwElNsMemo.map.has(mkey)) return _zwElNsMemo.map.get(mkey);
+      }
+      if (typeof __zw_get_ns === 'function' && typeof _ancestorChain === 'function' && sel) {
         var chain = _ancestorChain(sel);
         for (var i = 0; i < chain.length; i++) {
           var gn = String(__zw_get_ns(chain[i]) || '');
           if (gn && gn !== 'http://www.w3.org/1999/xhtml') { elNs = gn; break; }
         }
       }
+      if (typeof _zwParentLinkGen !== 'undefined') _zwElNsMemo.map.set(mkey, elNs);
     }
     return elNs;
   };
