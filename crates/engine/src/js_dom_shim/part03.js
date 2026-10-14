@@ -15735,14 +15735,19 @@ return e;
     var readDeclValue = function(name) {
       var raw = readRaw();
       if (!raw) return null;
-      var want = _stylePropName(name).toLowerCase();
+      var want = _stylePropName(name);
+      // DF-6（R5114 返修二轮）：`--` 自定义属性名大小写敏感（css-variables-1 §2）——与 host
+      // style_prop_key 的写存储/删除（保留原 case）精确比对；跨 case 查询不命中。常规属性名
+      // 维持既有大小写不敏感比对（R3213 末次非空匹配语义不变）。
+      var custom = want.charAt(0) === '-' && want.charAt(1) === '-';
       var parts = raw.split(';');
       var found = null;
       for (var i = 0; i < parts.length; i++) {
         var decl = parts[i];
         var colon = decl.indexOf(':');
         if (colon < 0) continue;
-        if (decl.slice(0, colon).trim().toLowerCase() === want) {
+        var dname = decl.slice(0, colon).trim();
+        if (custom ? dname === want : dname.toLowerCase() === want.toLowerCase()) {
           var val = decl.slice(colon + 1).trim();
           if (val) found = val; // 末次非空匹配覆盖
         }

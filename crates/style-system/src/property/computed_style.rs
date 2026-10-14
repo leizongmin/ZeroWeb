@@ -633,9 +633,23 @@ pub struct ComputedStyle {
     /// paint 侧把块容器首个文本片段的首字符按本样式绘制（不改几何——font/metrics
     /// 类属性需 IFC 分词切片，FIXME 挂账）。伪元素不参与继承传播。
     pub first_letter_pseudo: Option<Box<ComputedStyle>>,
+    /// css-variables-1：本元素的自定义属性（`--name` → 级联胜者指定值，var() 未替换——
+    /// 使用点经 [`resolve_var`](crate::resolve_var) 完整解析）。继承属性：子元素共享父链
+    /// Arc（自身声明覆盖时才重建）。供 getComputedStyle `--` 查询暴露（R5114）。
+    pub custom_properties: CustomProperties,
 }
 
+/// 自定义属性共享表（不可变；父子链经 `Arc` 共享避免逐元素克隆）。
+pub type CustomProperties = std::sync::Arc<std::collections::HashMap<String, String>>;
+
 impl ComputedStyle {
+    /// 空自定义属性表（构造面缺省臂——LazyLock 静态零分配共享）。
+    pub fn empty_custom_properties() -> CustomProperties {
+        static EMPTY: std::sync::LazyLock<CustomProperties> =
+            std::sync::LazyLock::new(|| std::sync::Arc::new(std::collections::HashMap::new()));
+        std::sync::Arc::clone(&*EMPTY)
+    }
+
     /// R4528：第 `layer` 层的 background-clip（列表短于层数时按 CSS 规则 `i % len` 循环）。
     pub fn background_clip_for_layer(&self, layer: usize) -> &BackgroundClipComputedValue {
         match self.background_clip.len() {

@@ -6,6 +6,7 @@ mod apply_coverage_extra;
 mod basic;
 mod color_scheme_synthesis;
 mod coverage_round3;
+mod custom_properties_sharing;
 mod edge;
 mod first_letter;
 mod font_feature_values;

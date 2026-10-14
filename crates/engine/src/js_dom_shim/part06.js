@@ -1578,6 +1578,8 @@
   // CSS Declaration 块文本（`prop: value; prop2: value2`）→ 有序 [{name, value}]。name 归一小写。
   // 供 [`_makeRuleStyle`] 解析 rule.cssText body 与 style.cssText 整体写。
   function _parseDeclarations(text) {
+    // css-variables-1：`--` 前缀名 case-sensitive——DF-5（R5114 返修）保留原样，
+    // 其余属性名维持既有 lowercase 归一。
     var decls = [];
     var segs = String(text == null ? '' : text).split(';');
     for (var i = 0; i < segs.length; i++) {
@@ -1586,9 +1588,17 @@
       if (c < 0) continue;
       var name = seg.slice(0, c).trim();
       var val = seg.slice(c + 1).trim();
-      if (name) decls.push({ name: name.toLowerCase(), value: val });
+      if (name) decls.push({ name: _styleDeclName(name), value: val });
     }
     return decls;
+  }
+
+  // 规则/元素样式声明名归一（DF-5，R5114 返修）：`--` 前缀名 case-sensitive 保留原样；
+  // 其余维持既有 `_stylePropName` camelCase→kebab + lowercase（R2810 语义不变）。
+  // 写读两侧同函数保证键一致。
+  function _styleDeclName(name) {
+    var s = String(name);
+    return s.charAt(0) === '-' && s.charAt(1) === '-' ? s : _stylePropName(s).toLowerCase();
   }
 
   // CSSRule.style per-rule CSSStyleDeclaration（R2810）——backed by 规则声明块（从 rule.cssText 的 `{ ... }`
@@ -1607,7 +1617,7 @@
     };
     var decls = _parseDeclarations(bodyText());
     function findIdx(name) {
-      var want = String(name).toLowerCase();
+      var want = _styleDeclName(name);
       for (var i = 0; i < decls.length; i++) if (decls[i].name === want) return i;
       return -1;
     }
@@ -1620,11 +1630,11 @@
       if (typeof flushFn === 'function') { try { flushFn(); } catch (_e) {} }
     }
     function readProp(name) {
-      var i = findIdx(_stylePropName(name));
+      var i = findIdx(name);
       return i >= 0 ? decls[i].value : '';
     }
     function setProp(name, value) {
-      var prop = _stylePropName(name).toLowerCase();
+      var prop = _styleDeclName(name);
       var v = String(value == null ? '' : value).trim();
       var idx = findIdx(prop);
       if (v === '') { // 空串 = remove（spec 一致）
@@ -1636,7 +1646,7 @@
       rebuild();
     }
     function removeProp(name) {
-      var prop = _stylePropName(name).toLowerCase();
+      var prop = _styleDeclName(name);
       var i = findIdx(prop);
       if (i < 0) return '';
       var prev = decls[i].value;
@@ -1679,18 +1689,26 @@
     rule.style = _makeRuleStyle(rule, flushFn);
     return rule;
   }
-  function _makeStyleSheet(owner) {
+  function _makeStyleSheet(owner, externalWire) {
     var sel = owner && owner.__zwSelector;
     // js-dom M4 R113：handle-based owner（createElement('style') 后 append——CSS-in-JS /
     // WPT prefixed-animation 形态）。初始规则经 `__zw_style_rules_handle`（host 从 mutation
     // 历史解析该 handle 的 style 文本），写回经 `__zw_set_text_handle`（SetTextOnHandle）。
     var handle = !sel && owner ? owner.__zwHandle : null;
+    // R5114（P9-9 切片 2）：owner=null + externalWire → 外部样式表合成条目（引擎合并
+    // blob——collect_stylesheets 级联源顺序在 <style> 表之前，此处同序）。href/ownerNode
+    // 为 null（per-link 拆分需 per-link CSS 文本穿线，引擎暂无该数据——documented
+    // limitation）；规则只读（insertRule/deleteRule 仅内存 cache，无宿主写回——blob 由
+    // runtime 管线同步管）。
+    var external = owner == null;
     var rulesCache = null;
     function getRules() {
       if (rulesCache) return rulesCache;
       rulesCache = [];
       var wire = '';
-      if (sel && typeof __zw_style_rules === 'function') {
+      if (external) {
+        wire = String(externalWire == null ? '' : externalWire);
+      } else if (sel && typeof __zw_style_rules === 'function') {
         try { wire = String(__zw_style_rules(sel)); } catch (_e0) { wire = ''; }
       } else if (handle && typeof __zw_style_rules_handle === 'function') {
         try { wire = String(__zw_style_rules_handle(handle)); } catch (_e0h) { wire = ''; }
@@ -1716,6 +1734,7 @@
     }
     // 从 cache 重建 `<style>` 文本（join cssText）+ 写回 owner 元素（下次 render 重解析 cascade）。
     function flushToOwner() {
+      if (external) return; // R5114：外部表只读——blob 由 runtime 管线同步管，无宿主写回。
       var text = getRules().map(function (r) { return r.cssText; }).join('\n');
       if (sel && typeof __zw_set_text === 'function') {
         try { __zw_set_text(sel, text); } catch (_e) {}
@@ -1734,7 +1753,16 @@
       get cssRules() { return getRules(); },
       get rules() { return getRules(); },
       // insertRule(ruleText, index?)：splice 新规则入 cache + flush 重建 `<style>` 文本；返插入 index。
+      // DF-3（R5114 返修）：外部合成条目只读——显式抛 NoModificationAllowedError（CSSOM
+      // 不可修改样式表语义）。旧实现静默 splice 进本次访问的临时 cache，跨访问即失且
+      // 从不影响渲染；此前 index 0 是可持久写回的首个内联表，合成条目置表头后索引位移
+      // 使页面脚本按旧习惯的写入正好落进只读条目。
       insertRule: function (ruleText, index) {
+        if (external) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to execute 'insertRule' on 'CSSStyleSheet': No allowed modification.",
+            'NoModificationAllowedError');
+        }
         getRules(); // 确保从 host 填充 cache（若未读）
         var rule = _ruleFromText(ruleText, ss, flushToOwner);
         var idx = (index == null) ? rulesCache.length : (index | 0);
@@ -1744,8 +1772,13 @@
         flushToOwner();
         return idx;
       },
-      // deleteRule(index)：移除 cache[index] + flush 重建。
+      // deleteRule(index)：移除 cache[index] + flush 重建。外部合成条目同 insertRule 只读拒绝。
       deleteRule: function (index) {
+        if (external) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to execute 'deleteRule' on 'CSSStyleSheet': No allowed modification.",
+            'NoModificationAllowedError');
+        }
         getRules();
         var idx = (index | 0);
         if (idx >= 0 && idx < rulesCache.length) {
@@ -4611,10 +4644,18 @@
     },
     // `document.styleSheets`（R2808）——真 backing：`<style>` 元素 → CSSStyleSheet 数组（经
     // `__zw_query_all('style')` 查询 + `_makeStyleSheet`）。每次访问重新查询（live DOM）。
+    // R5114（P9-9 切片 2）：外部样式表（合并 blob）以**单条合成条目**置于表头（级联源
+    // 同序，cssom/#document-stylesheets 顺序语义 = 级联应用序）；空外部 CSS 不产条目
+    //（既有 WPT/测试语义逐位不变）。
     get styleSheets() {
+      var out = [];
+      if (typeof __zw_style_rules_external === 'function') {
+        var _extWire = '';
+        try { _extWire = String(__zw_style_rules_external()); } catch (_eExtR) { _extWire = ''; }
+        if (_extWire) out.push(_makeStyleSheet(null, _extWire));
+      }
       var sels = (typeof __zw_query_all === 'function')
         ? String(__zw_query_all('style')).split('|').filter(Boolean) : [];
-      var out = [];
       for (var i = 0; i < sels.length; i++) out.push(_makeStyleSheet(_wrapSelector(sels[i])));
       return out;
     },

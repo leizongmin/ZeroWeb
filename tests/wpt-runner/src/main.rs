@@ -79,6 +79,7 @@ Commands:
   testharness-clipboard-apis  Run imported Clipboard API testharness cases
                        (web-api-batch2 goal M1 / DC-1)
   testharness-fullscreen  Run imported Fullscreen testharness cases
+  testharness-css-variables  Run upstream css-variables testharness cases
                        (web-api-batch2 goal M1 / DC-1)
   testharness-csp  Run imported Content-Security-Policy testharness cases
                        (security-hardening goal M1 / DC-1)
@@ -326,6 +327,7 @@ fn main() {
         "testharness-resize-observer" => cmd_testharness_resize_observer(&options, filter.as_deref()),
         "testharness-clipboard-apis" => cmd_testharness_clipboard_apis(&options, filter.as_deref()),
         "testharness-fullscreen" => cmd_testharness_fullscreen(&options, filter.as_deref()),
+        "testharness-css-variables" => cmd_testharness_css_variables(&options, filter.as_deref()),
         "testharness-csp" => cmd_testharness_content_security_policy(&options, filter.as_deref()),
         "testharness-mixed-content" => cmd_testharness_mixed_content(&options, filter.as_deref()),
         "testharness-secure-contexts" => cmd_testharness_secure_contexts(&options, filter.as_deref()),
@@ -1229,6 +1231,12 @@ fn cmd_testharness_clipboard_apis(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_fullscreen(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_fullscreen_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_variables(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_css_variables_cases(wpt_root, filter)
     });
 }
 
