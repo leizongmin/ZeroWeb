@@ -1261,7 +1261,12 @@ return url;
 })()"#;
             let nav_result = self.js_worker.execute_script_direct(nav_script);
             if let Ok(url) = nav_result {
-                let trimmed = url.trim().strip_prefix('"').unwrap_or(&url).strip_suffix('"').unwrap_or(&url);
+                let trimmed = url
+                    .trim()
+                    .strip_prefix('"')
+                    .unwrap_or(&url)
+                    .strip_suffix('"')
+                    .unwrap_or(&url);
                 if !trimmed.is_empty() && trimmed != "null" {
                     // 相对 URL → 绝对 URL（基于 current_url 的 origin）
                     let abs_url = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {

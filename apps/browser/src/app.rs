@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 
 use zero_browser_shell::{
     BrowserMenuLabel, BrowserSettings, BrowserShell, ColorThemePreference, ContextMenu, ContextType, FindWrapHint,
-    MenuItem, SearchEngine, SuggestionSource, TabId, TabMenuLabel, UiLanguage, browser_menu_label, tab_menu_label,
+    MenuItem, SearchEngine, SessionState, SuggestionSource, TabId, TabMenuLabel, UiLanguage, browser_menu_label,
+    tab_menu_label,
 };
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::{set_char_measure_fn, set_fallback_line_metrics_fn, set_text_shape_fn};
@@ -244,9 +245,19 @@ pub struct BrowserApp {
     find_match_ranges: Vec<FindMatchRange>,
     /// 匹配缓存对应的查询词。
     find_matches_query: String,
+    /// T20：崩溃恢复候选会话（启动读到 `clean_exit=false` 时保留，
+    /// 气泡「恢复标签」/「关闭」后清空）。
+    pending_session_restore: Option<SessionState>,
+    /// T20：崩溃恢复气泡（"Restore pages?"）是否可见。
+    session_restore_prompt_visible: bool,
+    /// T20：启动会话恢复检查只执行一次（`ensure_startup_tab` 可能多次调用）。
+    session_startup_handled: bool,
     #[cfg(test)]
     compositor_status_override: Option<crate::compositor_client::CompositorStatus>,
 }
+
+/// 屏幕矩形 `(x, y, w, h)`（物理像素）；崩溃恢复气泡按钮几何签名用别名。
+type ScreenRect = (f32, f32, f32, f32);
 
 impl BrowserApp {
     /// 测试路径的系统字体加载：进程级缓存 + `duplicate`（Arc 共享已解析字体）。
@@ -362,6 +373,9 @@ impl BrowserApp {
             last_opened_download_dir: None,
             find_match_ranges: Vec::new(),
             find_matches_query: String::new(),
+            pending_session_restore: None,
+            session_restore_prompt_visible: false,
+            session_startup_handled: false,
             permissions: zero_security::permission::PermissionManager::new(),
             #[cfg(test)]
             compositor_status_override: None,
@@ -2020,6 +2034,11 @@ impl BrowserApp {
 
     /// 在窗口物理尺寸已知后创建默认标签页的 WebView（避免以 1024 默认视口渲染）
     pub fn ensure_startup_tab(&mut self) {
+        // T20：会话恢复只在首次启动检查（干净退出 → 直接恢复；崩溃残留 → 气泡）。
+        if !self.session_startup_handled {
+            self.session_startup_handled = true;
+            self.restore_session_at_startup();
+        }
         let Some(tab_id) = self.shell.active_tab_id() else {
             return;
         };
@@ -2032,6 +2051,105 @@ impl BrowserApp {
         if let Some(url) = self.startup_url.take() {
             self.navigate_to(&url);
         }
+    }
+
+    /// T20：启动时会话恢复检查。
+    ///
+    /// 会话文件存在且 `clean_exit=true`（上次干净退出）→ 直接恢复全部标签；
+    /// `clean_exit=false`（上次异常退出）→ 保留快照并显示「恢复标签？」气泡
+    /// （Chrome "Restore pages?" 同款），由用户决定是否恢复。检查完成后立即写回
+    /// `clean_exit=false` 运行中标记：本次运行若再崩溃，下次启动仍能检测到。
+    fn restore_session_at_startup(&mut self) {
+        let path = SessionState::default_session_path();
+        let Some(session) = SessionState::load(&path) else {
+            return;
+        };
+        if !session.is_empty() {
+            if session.clean_exit {
+                self.apply_restored_session(&session);
+            } else {
+                tracing::info!("previous session did not exit cleanly, offering restore");
+                self.pending_session_restore = Some(session);
+                self.session_restore_prompt_visible = true;
+                self.needs_redraw = true;
+            }
+        }
+        let mut running = self.shell.save_session();
+        running.clean_exit = false;
+        if let Err(err) = running.save(&path) {
+            tracing::warn!(%err, "failed to write session running marker");
+        }
+    }
+
+    /// 将会话快照落到 shell 标签并逐标签装载（T20）。
+    ///
+    /// `restore_session` 只重建 shell 标签（URL/标题/历史，替换现有标签），
+    /// 渲染端 runtime 与页面加载由这里补齐：http(s) 走 `tabs.navigate`；
+    /// 活跃标签的 `zero://` 内部页按 URL 分发；非活跃标签的内部页快照按欢迎页
+    /// 装载（内部页生成器只作用于活跃标签；FIXME：内部页快照恢复后续切片），
+    /// 此时绕过 `finish_tab_load`——`on_page_loaded` 只改活跃标签状态，
+    /// 快照里已带标题。
+    fn apply_restored_session(&mut self, session: &SessionState) -> usize {
+        let count = self.shell.restore_session(session);
+        let active_id = self.shell.active_tab_id();
+        let restored: Vec<(TabId, Option<String>)> = self
+            .shell
+            .tabs()
+            .map(|tab| (tab.id(), tab.url().map(str::to_string)))
+            .collect();
+        for (tab_id, url) in restored {
+            self.tabs.ensure_tab(tab_id);
+            self.scroll.insert(tab_id, TabScrollState::default());
+            let Some(url) = url else { continue };
+            if url.starts_with("http://") || url.starts_with("https://") {
+                self.tabs.navigate(tab_id, url);
+            } else if Some(tab_id) == active_id && url.starts_with("zero://") {
+                self.load_local_tab_url(tab_id, &url);
+            } else {
+                let html = pages::generate_welcome_html(self.shell.history());
+                self.tabs.load_html(tab_id, &html, None, Some("zero://newtab"));
+            }
+        }
+        self.tabs.on_active_tab_changed(self.shell.active_tab_id());
+        self.sync_webview_viewport();
+        self.needs_redraw = true;
+        count
+    }
+
+    /// T20：恢复崩溃前会话（气泡「恢复标签」按钮）。替换当前标签。
+    fn restore_pending_session(&mut self) {
+        if let Some(session) = self.pending_session_restore.take() {
+            self.apply_restored_session(&session);
+        }
+        self.session_restore_prompt_visible = false;
+        self.needs_redraw = true;
+    }
+
+    /// T20：关闭崩溃恢复气泡（不恢复）。
+    pub fn dismiss_session_restore(&mut self) {
+        self.pending_session_restore = None;
+        self.session_restore_prompt_visible = false;
+        self.needs_redraw = true;
+    }
+
+    /// T20：崩溃恢复气泡矩形（内容区左上角浮层；渲染与命中测试同源）。
+    pub(crate) fn session_restore_bubble_rect_for(&self, width: u32, height: u32) -> (f32, f32, f32, f32) {
+        let s = self.scale_factor;
+        let (content_x, content_y, _content_w, _content_h) = self.page_content_rect_for(width, height);
+        (content_x + 12.0 * s, content_y + 12.0 * s, 380.0 * s, 118.0 * s)
+    }
+
+    /// T20：气泡按钮矩形 `([恢复标签], [关闭])`，与渲染同源。
+    pub(crate) fn session_restore_button_rects(bubble: ScreenRect, s: f32) -> (ScreenRect, ScreenRect) {
+        let (bx, by, _bw, bh) = bubble;
+        let btn_w = 112.0 * s;
+        let btn_h = 28.0 * s;
+        let pad = 12.0 * s;
+        let y = by + bh - btn_h - pad;
+        (
+            (bx + pad, y, btn_w, btn_h),
+            (bx + pad + btn_w + 10.0 * s, y, btn_w, btn_h),
+        )
     }
 
     /// 设置 CLI 位置参数给出的启动 URL（窗口就绪后由 `ensure_startup_tab` 消费）。
@@ -2832,13 +2950,19 @@ impl BrowserApp {
         }
     }
 
-    /// 将用户数据（设置、书签等）写入默认配置文件。
+    /// 将用户数据（设置、书签、会话）写入默认配置文件。
+    ///
+    /// T20：会话（全部标签 + `clean_exit=true`）在干净退出时持久化，
+    /// 下次启动按 `restore_session_at_startup` 恢复。
     pub fn persist_user_data(&self) {
         if let Err(err) = self.shell.save_settings() {
             tracing::warn!(%err, "failed to save settings");
         }
         if let Err(err) = self.shell.save_bookmarks() {
             tracing::warn!(%err, "failed to save bookmarks");
+        }
+        if let Err(err) = self.shell.save_session_to(&SessionState::default_session_path()) {
+            tracing::warn!(%err, "failed to save session");
         }
     }
 

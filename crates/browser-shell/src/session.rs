@@ -22,6 +22,14 @@ pub struct SessionState {
     pub tabs: Vec<TabSnapshot>,
     /// 活跃标签页索引（None 表示无活跃标签）。
     pub active_tab_index: Option<usize>,
+    /// 是否为干净退出。
+    ///
+    /// 启动恢复检查完成后即以 `false` 落盘（运行中标记），干净退出时随会话
+    /// 写回 `true`；下次启动读到 `false` 表示上次异常退出（崩溃/被杀），
+    /// 按崩溃恢复处理（Chrome `exited_cleanly` 同款）。缺省 `false`：旧版本
+    /// 写入的会话文件视为未正常关闭。
+    #[serde(default)]
+    pub clean_exit: bool,
 }
 
 /// 单个标签页的快照。
@@ -55,12 +63,14 @@ impl SessionState {
         Self {
             tabs: Vec::new(),
             active_tab_index: None,
+            clean_exit: false,
         }
     }
 
     /// 从标签页信息构建会话状态。
     ///
-    /// 接受标签页迭代器和活跃标签索引。
+    /// 接受标签页迭代器和活跃标签索引；`clean_exit` 由调用方按退出语义覆盖
+    /// （干净退出持久化路径写 `true`）。
     pub fn from_tabs(tabs: impl Iterator<Item = TabInfo>, active_tab_index: Option<usize>) -> Self {
         Self {
             tabs: tabs
@@ -72,6 +82,7 @@ impl SessionState {
                 })
                 .collect(),
             active_tab_index,
+            clean_exit: false,
         }
     }
 
@@ -227,6 +238,7 @@ mod tests {
                 history_index: 0,
             }],
             active_tab_index: Some(0),
+            clean_exit: false,
         };
         let json = serde_json::to_string_pretty(&session).unwrap();
         let deserialized: SessionState = serde_json::from_str(&json).unwrap();
@@ -263,6 +275,7 @@ mod tests {
                 },
             ],
             active_tab_index: Some(1),
+            clean_exit: false,
         };
 
         session.save(&path).expect("save should succeed");
@@ -328,6 +341,7 @@ mod tests {
                 history_index: 2,
             }],
             active_tab_index: Some(0),
+            clean_exit: false,
         };
         let json = serde_json::to_string(&session).unwrap();
         let loaded: SessionState = serde_json::from_str(&json).unwrap();
@@ -364,6 +378,7 @@ mod tests {
                 history_index: 0,
             }],
             active_tab_index: Some(5), // 超出范围
+            clean_exit: false,
         };
         let json = serde_json::to_string(&session).unwrap();
         let loaded: SessionState = serde_json::from_str(&json).unwrap();
