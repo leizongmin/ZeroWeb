@@ -834,6 +834,39 @@ impl BrowserApp {
         let tab_close_size = layout::TAB_CLOSE_SIZE * s;
         let autocomplete_row_h = layout::AUTOCOMPLETE_ROW_HEIGHT * s;
 
+        // 0. 标签溢出 ▾ 按钮与下拉面板命中（T18）。先于标签条/工具栏/内容区：
+        //    面板悬浮在其上；点面板外仅收起下拉，本次点击继续走后续区域。
+        if let Some((bx, by, bw, bh)) = self.tab_overflow_button_rect()
+            && y_f >= by
+            && y_f < by + bh
+            && x_f >= bx
+            && x_f < bx + bw
+        {
+            self.tab_overflow_open = !self.tab_overflow_open;
+            self.needs_redraw = true;
+            return;
+        }
+        if self.tab_overflow_open {
+            if let Some(idx) = self.tab_overflow_row_at(x, y) {
+                if let Some(tab_id) = self.tab_overflow_ids.get(idx).copied()
+                    && self.shell.tabs().any(|t| t.id() == tab_id)
+                {
+                    // 与标签条点击同一切换路径（attention 清零 / 地址栏 / 视口同步）。
+                    self.shell.switch_tab(tab_id);
+                    self.shell.set_tab_needs_attention(tab_id, false);
+                    self.tabs.on_active_tab_changed(self.shell.active_tab_id());
+                    self.set_hovered_link_url(None);
+                    self.update_address_bar_from_active_tab();
+                    self.sync_webview_viewport();
+                }
+                self.tab_overflow_open = false;
+                self.needs_redraw = true;
+                return;
+            }
+            self.tab_overflow_open = false;
+            self.needs_redraw = true;
+        }
+
         // 1. 自动补全下拉区域点击
         if self.address_bar_focused && !self.autocomplete.suggestions.is_empty() {
             if let Some(idx) = self.autocomplete_hit_test(x, y) {
