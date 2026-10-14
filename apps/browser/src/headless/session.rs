@@ -298,6 +298,29 @@ impl HeadlessSession {
                 crate::paint_ipc::apply_paint_snapshot(&mut self.snapshot, paint);
                 Ok(None)
             }
+            IpcMessageKind::ImagePayloadBatch {
+                navigation_epoch,
+                payloads,
+            } => {
+                // P100：帧内图片超批上限时，像素经 regular FIFO 批消息先行到达，
+                // 帧本体只带 key 引用；此处按 key 注入缓存（幂等）。epoch 过期批
+                // 随帧失效（同 GUI 路径 apply_inbound_message 规则）。
+                if navigation_epoch == self.snapshot.navigation_epoch {
+                    for payload in payloads {
+                        if let Ok(data) = zero_render_foundation::image_cache::ImageData::from_rgba(
+                            payload.rgba,
+                            payload.width,
+                            payload.height,
+                        ) {
+                            self.snapshot.image_cache.insert_with_key(
+                                zero_render_foundation::image_cache::ImageKey::new(payload.image_key),
+                                data,
+                            );
+                        }
+                    }
+                }
+                Ok(None)
+            }
             // DCL 先返语义：navigate 在 DomContentLoaded 即返回（文档可交互，图片/字体
             // 可续加载）；全量 load 生命周期族延迟到 LoadComplete 到达时经
             // pending_network_events 补发（同 S16 document.write 通道）。

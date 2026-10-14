@@ -63,6 +63,18 @@ pub enum IpcMessageKind {
     /// 装箱以缩小枚举体积（`PaintSnapshotParams` 含 10+ Vec 字段，
     /// 否则 `IpcMessageKind` 每个值都背上快照栈体积）。serde 透明，不影响 IPC 线格式。
     ViewPainted(Box<crate::paint_snapshot::PaintSnapshotParams>),
+    /// 图片像素批量传输（渲染→浏览器）。
+    ///
+    /// 帧内 `image_payloads` 总量超过 `MAX_PAINT_IMAGE_BATCH_BYTES` 时，像素拆为
+    /// 多个批消息经 regular FIFO（不被 latest-wins 替换）**先于帧**发送，帧本体仅
+    /// 携带 key 引用；浏览器按 key 注入 ImageCache，与帧内携带等效。批与帧同
+    /// navigation_epoch，过期批随帧一起失效。
+    ImagePayloadBatch {
+        /// 批所属导航世代（与目标帧一致，过期批被浏览器丢弃）。
+        navigation_epoch: u64,
+        /// 本批图片像素负载。
+        payloads: Vec<crate::paint_snapshot::IpcImagePayload>,
+    },
     /// 链接命中测试（浏览器→渲染）。
     HitTestLink(HitTestLinkParams),
     /// 链接命中测试结果（渲染→浏览器）。

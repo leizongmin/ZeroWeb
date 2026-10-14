@@ -189,10 +189,16 @@ impl LatestFrameMailbox {
 }
 
 /// 提取帧消息携带的图片 payload key 列表（M1 回传用）；非帧消息返回空。
+///
+/// P100：`ImagePayloadBatch` regular 消息同样携带像素，写出成功后一并回传 key
+/// （其不被 latest-wins 替换，FIFO 保证必被写出或连接死亡）。
 fn frame_image_keys(message: &IpcMessage) -> Vec<u64> {
     match &message.kind {
         IpcMessageKind::ViewPainted(paint) | IpcMessageKind::CompositorFrame { paint, .. } => {
             paint.image_payloads.iter().map(|payload| payload.image_key).collect()
+        }
+        IpcMessageKind::ImagePayloadBatch { payloads, .. } => {
+            payloads.iter().map(|payload| payload.image_key).collect()
         }
         _ => Vec::new(),
     }

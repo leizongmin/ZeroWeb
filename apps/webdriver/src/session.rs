@@ -13,7 +13,7 @@ use zero_protocol::message::{
     ServiceWorkerErrorCode, ServiceWorkerOperation, ServiceWorkerRequestParams, ServiceWorkerResponseParams,
     ServiceWorkerResult, ServiceWorkerStateChanges, SetViewportParams,
 };
-use zero_protocol::paint_snapshot::PaintSnapshotParams;
+use zero_protocol::paint_snapshot::{IpcImagePayload, PaintSnapshotParams};
 use zero_protocol::process::RendererHandle;
 use zero_render_foundation::font::cache::GlyphCache;
 use zero_render_foundation::font::loader::FontLoader;
@@ -594,6 +594,19 @@ impl Session {
                         );
                         continue;
                     }
+                    if let IpcMessageKind::ImagePayloadBatch {
+                        navigation_epoch,
+                        payloads,
+                    } = message.kind
+                    {
+                        record_image_batch(
+                            &mut self.image_cache,
+                            self.navigation_epoch,
+                            navigation_epoch,
+                            &payloads,
+                        );
+                        continue;
+                    }
                     match handle_renderer_message(
                         &self.http,
                         &mut self.title,
@@ -637,6 +650,14 @@ impl Session {
                 |renderer, message| {
                     if let IpcMessageKind::ViewPainted(paint) = &message.kind {
                         record_paint_snapshot(last_paint, image_cache, epoch, paint);
+                        return Ok(());
+                    }
+                    if let IpcMessageKind::ImagePayloadBatch {
+                        navigation_epoch,
+                        payloads,
+                    } = &message.kind
+                    {
+                        record_image_batch(image_cache, epoch, *navigation_epoch, payloads);
                         return Ok(());
                     }
                     handle_renderer_message(http, title, url, renderer, message)
@@ -718,6 +739,33 @@ fn record_paint_snapshot(
         }
     }
     *last_paint = Some((*paint).clone());
+}
+
+/// P100：帧内图片超批上限时像素经 `ImagePayloadBatch` regular FIFO 先行到达，
+/// 帧本体只带 key 引用；webdriver 截图走同一 ImageCache，按 key 注入（幂等）。
+/// epoch 过期批随帧失效（与 `record_paint_snapshot` 同规则）。
+fn record_image_batch(
+    image_cache: &mut ImageCache,
+    session_epoch: u64,
+    navigation_epoch: u64,
+    payloads: &[IpcImagePayload],
+) {
+    if navigation_epoch != session_epoch {
+        tracing::debug!(
+            "忽略 stale ImagePayloadBatch epoch {} != {}",
+            navigation_epoch,
+            session_epoch
+        );
+        return;
+    }
+    for payload in payloads {
+        if let Ok(data) = ImageData::from_rgba(payload.rgba.clone(), payload.width, payload.height) {
+            image_cache.insert_with_key(
+                zero_render_foundation::image_cache::ImageKey::new(payload.image_key),
+                data,
+            );
+        }
+    }
 }
 
 /// GET /session/{id}/screenshot 的会话侧实现。

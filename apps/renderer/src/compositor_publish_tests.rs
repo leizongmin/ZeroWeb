@@ -280,3 +280,124 @@ fn one_input_transaction_publishes_at_most_one_page_frame() {
         .count();
     assert_eq!(frame_count, 1);
 }
+
+/// P100：帧内图片总量超过 `MAX_PAINT_IMAGE_BATCH_BYTES` 时拆批先行——批消息
+/// FIFO 先于帧、帧本体载荷置空、同步路径回传全部已发出 key。各 payload 25MiB
+/// （两个合计 50MiB 超批上限 48MiB，各自 ≤ 上限），每批一个 payload。
+#[test]
+fn oversize_image_payloads_split_into_batches_before_frame() {
+    let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+    let mut outbound = PipeTransport::new(std::io::empty(), Box::new(buf.clone()) as Box<dyn Write + Send>);
+    let mut next_msg_id = 1_u64;
+    let mut publish_state = FramePublishState::new(41, FramePublishMode::Legacy);
+    let frame = sample_frame();
+    let batch_cap = zero_protocol::MAX_PAINT_IMAGE_BATCH_BYTES;
+    let payload_bytes = batch_cap * 25 / 48;
+    let payloads = vec![
+        zero_protocol::IpcImagePayload {
+            image_key: 11,
+            width: 1,
+            height: 1,
+            rgba: vec![0u8; payload_bytes],
+        },
+        zero_protocol::IpcImagePayload {
+            image_key: 12,
+            width: 1,
+            height: 1,
+            rgba: vec![0u8; payload_bytes],
+        },
+    ];
+
+    let sent_now = publish_render_with_layout(
+        &mut outbound,
+        None,
+        &mut next_msg_id,
+        &mut publish_state,
+        &frame,
+        1.0,
+        None,
+        payloads,
+        7,
+        1,
+        Vec::new(),
+    )
+    .expect("publish with oversize images");
+
+    let mut messages = drain_messages(&buf.0.lock().unwrap());
+    // 批先于帧：取出末尾 ViewPainted 后，其余应为按序两条 ImagePayloadBatch。
+    let painted = match messages.pop() {
+        Some(message) => match message.kind {
+            IpcMessageKind::ViewPainted(paint) => paint,
+            other => panic!("末尾应为 ViewPainted，实际 {other:?}"),
+        },
+        None => panic!("无消息"),
+    };
+    let batches: Vec<_> = messages
+        .iter()
+        .filter_map(|message| match &message.kind {
+            IpcMessageKind::ImagePayloadBatch {
+                navigation_epoch,
+                payloads,
+            } => Some((*navigation_epoch, payloads)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(batches.len(), 2);
+    assert!(batches.iter().all(|(epoch, _)| *epoch == 7));
+    let keys: Vec<_> = batches
+        .iter()
+        .map(|(_, payloads)| payloads.iter().map(|p| p.image_key).collect::<Vec<_>>())
+        .collect();
+    assert_eq!(keys, vec![vec![11], vec![12]]);
+    // 帧本体不携带像素（批已先发），同步回传含全部已发出 key。
+    assert!(painted.image_payloads.is_empty());
+    assert_eq!(sent_now, vec![11, 12]);
+}
+
+/// P100：帧内图片未超批上限时维持现状——载荷随帧携带、不产生批消息。
+#[test]
+fn small_image_payloads_stay_in_frame() {
+    let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+    let mut outbound = PipeTransport::new(std::io::empty(), Box::new(buf.clone()) as Box<dyn Write + Send>);
+    let mut next_msg_id = 1_u64;
+    let mut publish_state = FramePublishState::new(41, FramePublishMode::Legacy);
+    let frame = sample_frame();
+    let payloads = vec![zero_protocol::IpcImagePayload {
+        image_key: 21,
+        width: 1,
+        height: 1,
+        rgba: vec![0u8; 16],
+    }];
+
+    let sent_now = publish_render_with_layout(
+        &mut outbound,
+        None,
+        &mut next_msg_id,
+        &mut publish_state,
+        &frame,
+        1.0,
+        None,
+        payloads,
+        7,
+        1,
+        Vec::new(),
+    )
+    .expect("publish with small images");
+
+    let messages = drain_messages(&buf.0.lock().unwrap());
+    assert!(
+        messages
+            .iter()
+            .all(|message| !matches!(message.kind, IpcMessageKind::ImagePayloadBatch { .. }))
+    );
+    let painted = messages
+        .iter()
+        .find_map(|message| match &message.kind {
+            IpcMessageKind::ViewPainted(paint) => Some(paint.as_ref()),
+            _ => None,
+        })
+        .expect("ViewPainted");
+    assert_eq!(painted.image_payloads.len(), 1);
+    assert_eq!(painted.image_payloads[0].image_key, 21);
+    assert_eq!(sent_now, vec![21]);
+}
