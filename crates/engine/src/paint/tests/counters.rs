@@ -378,3 +378,48 @@ fn r3911_marker_letter_spacing_zero_no_extra_advance() {
         "no letter-spacing → advance = bare glyph width (~13-15px), got {advance}"
     );
 }
+
+// ── R5111：inside marker content-box 原点 ────────────────────────────
+
+/// inside marker x 须起于 content-box 原点（border + padding 之后，CSS Lists 3
+/// §list-style-position：marker 为首行第一个 inline）。旧实现缺 padding_left：
+/// 带 padding-left 的 li marker 停在边框内缘（WPT list-style-position-023/024
+/// 的 3em 缩进域）。
+#[test]
+fn r5111_inside_marker_x_starts_at_content_origin() {
+    use zero_css_parser::values::{LengthValue, ListStylePositionValue, ListStyleTypeValue};
+
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+    let ol = doc.create_element("ol");
+    let nid = doc.create_element("li");
+    let _ = doc.append_child(root, ol);
+    let _ = doc.append_child(ol, nid);
+    // li 位于 (0,0)，border 4px + padding-left 48px → content 原点 x=52。
+    let mut layout = super::visual::make_box(Some(nid), 0.0, 0.0, 200.0, 40.0);
+    layout.border_left = 4.0;
+    layout.padding_left = 48.0;
+
+    let mut style = ComputedStyle::default();
+    style.list_style_type = ListStyleTypeValue::Decimal;
+    style.list_style_position = ListStylePositionValue::Inside;
+    style.font_size = LengthValue::Px(16.0);
+
+    let mut styles = std::collections::HashMap::new();
+    styles.insert(nid, style);
+    let mut painter = Painter::new();
+    painter.paint(&layout, &styles, Some(&doc));
+
+    let mut glyph_xs: Vec<f32> = painter.primitives().glyphs.iter().map(|g| g.x).collect();
+    glyph_xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert!(
+        glyph_xs.len() >= 2,
+        "decimal marker should emit ≥2 glyphs, got {glyph_xs:?}"
+    );
+    // marker 首字形 x = content 原点 52（含 padding），不得停在边框内缘 4。
+    assert!(
+        (glyph_xs[0] - 52.0).abs() < 1.0,
+        "inside marker must start at content origin 52 (border 4 + padding 48), got {}",
+        glyph_xs[0]
+    );
+}

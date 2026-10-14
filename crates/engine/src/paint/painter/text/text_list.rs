@@ -1378,13 +1378,20 @@ impl super::super::Painter {
         let marker_x = abs_x + box_node.border_left;
         let marker_y = abs_y + box_node.border_top + box_node.padding_top;
 
+        // R5111（CSS Lists 3 §list-style-position）：inside marker 是首行行盒第一个
+        // inline，x 须起于 **content-box 原点**（border + padding 之后）——与 marker_y
+        // （已含 padding_top）及 R3835 内容起点（border+padding+advance）同一参照。
+        // 旧实现缺 padding_left：带 padding-left 的 li（WPT list-style-position-023/
+        // 024 的 3em 缩进）marker 停在边框内缘、与内容错开一个 padding。
+        // Outside marker 悬挂在边框外缘（不含 padding）语义不变。
+        let inside_content_x = marker_x + box_node.padding_left;
         let actual_marker_x = match style.list_style_position {
             zero_css_parser::values::ListStylePositionValue::Outside => marker_x - marker_size * 2.5,
-            zero_css_parser::values::ListStylePositionValue::Inside => marker_x + marker_size * 0.5,
+            zero_css_parser::values::ListStylePositionValue::Inside => inside_content_x + marker_size * 0.5,
         };
         let text_marker_x = match style.list_style_position {
             zero_css_parser::values::ListStylePositionValue::Outside => actual_marker_x,
-            zero_css_parser::values::ListStylePositionValue::Inside => marker_x,
+            zero_css_parser::values::ListStylePositionValue::Inside => inside_content_x,
         };
         let text_marker_font_size = font_size;
         // R4375：marker 基线与行内文本同步——li 行文本回退链垂直度量撑开行盒基线时
