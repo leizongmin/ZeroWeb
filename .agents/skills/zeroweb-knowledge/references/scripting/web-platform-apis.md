@@ -15,7 +15,7 @@
 | storage、Service Worker | [存储](../web-data/storage/index.md)、[Service Worker](../web-data/service-workers/index.md) |
 | Canvas、媒体 | [Canvas](../graphics/canvas/index.md)、[媒体](../media/index.md) |
 | 通用 API | `js_dom_bridge/crypto.rs` / `text_encoding.rs` / `compress.rs` 内嵌测试，WPT `testharness.rs` 的对应通道 |
-| 产品验证 | [zeroweb-verify](../../../zeroweb-verify/SKILL.md)，入口未提交、本轮未实跑 |
+| 产品验证 | [zeroweb-verify](../../../zeroweb-verify/SKILL.md)，初始化资产已在 d0f281d509de3bf4f9dcd7e8dd01dac3464a663b 提交，本域未实跑 |
 
 ## Gotchas
 - WebCrypto 与 compression 的宿主 byte wire 是逗号分隔十进制字节，不是 UTF-8 文本；BufferSource 的 byteOffset/byteLength 必须随视图截取，不能对整个底层 buffer 计算。 (`crates/engine/src/js_dom_bridge/crypto.rs`, `crates/engine/src/js_dom_bridge/compress.rs`, `crates/engine/src/js_dom_shim/part01b.js`)

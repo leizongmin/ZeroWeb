@@ -12,8 +12,9 @@ ZeroWeb 用 Rust 构建浏览器内核，同时交付嵌入式 `ZeroWebView` 与
 项目仍处于实验阶段；知识记录定位和修改决策，不把历史 goal 收口当作完整产品成熟。
 源码汇总基线为上方 commit；历史导出始于 e523b1c73b96360a6451948f0b748b7b4657750f，
 期间共享工作区新增浏览器、脚本、布局与工程提交，受影响条目补读当前源码；
-各主题保留实际核验版本。本次 AGENTS.md、README.md、docs/engineering 与两个
-项目 Skill 的未提交变化不归为源码 commit。
+各主题保留实际核验版本。初始化时 AGENTS.md、README.md、docs/engineering 与两个
+项目 Skill 的工作区材料已在 d0f281d509de3bf4f9dcd7e8dd01dac3464a663b 提交，
+不归为上述旧源码基线；后续局部补充在条目中标明适用 commit。
 
 Rust edition 2024、MSRV 1.85、MIT；workspace 有 32 个 member。
 HTML 解析采用 html5ever，布局接入本地 Taffy patch，脚本有 V8/QuickJS 分支，
@@ -69,23 +70,25 @@ HTML 解析采用 html5ever，布局接入本地 Taffy patch，脚本有 V8/Quic
 ## Generation Metadata
 
 - 生成日期：2026-10-14；源码汇总基线：`1217776cc9cf179b93aca8b1557f0dab44b8e498`；历史导出基线：`e523b1c73b96360a6451948f0b748b7b4657750f`。
-- 覆盖：全仓 8 个领域，124 份知识文档、86 个叶子，逻辑深度 5；共 1217 条有来源知识。
-- 范围依据：4058 个 Git 可见文件、4174647 行；忽略的依赖、构建产物和捕获资料不参与源码扫描。关键实现、消费者、测试、配置与领域 Git 历史按节点核对，未逐行穷尽全仓。
+- 覆盖：全仓 8 个领域，124 份知识文档、86 个叶子，逻辑深度 5；共 1223 条有来源知识。
+- 初始化范围依据：4058 个 Git 可见文件、4174647 行；忽略的依赖、构建产物和捕获资料不参与源码扫描。关键实现、消费者、测试、配置与领域 Git 历史按节点核对，未逐行穷尽全仓。
 - 未覆盖：全部 Web 规范符合性、所有平台/feature 的运行行为和主入口宿主发现；知识核验不代表产品功能验收。
-- 核验：来源路径与结构 PASS；独立语义核验 PASS。结果包含来源、覆盖、共享消费者、分支差异及任务导航检查。
-- 功能实跑：zeroweb-verify 的存储生产 API 独立 7/7 通过；GUI、JS/IPC、Chrome parity、OPFS、Service Worker、媒体和 Android 等本轮 NOT_RUN。
-- 工作区变更：本次知识、验证和工程规则资产尚未提交，不能把其写入归为上述源码 commit；运行报告与历史材料留在本地被忽略的任务目录。
+- 初始化核验：来源路径与结构 PASS；独立语义核验 PASS。结果包含来源、覆盖、共享消费者、分支差异及任务导航检查；该历史回执不覆盖后续增量。
+- 功能实跑：zeroweb-verify 的存储生产 API 历史独立 7/7 通过，保留原运行版本；GUI、JS/IPC、Chrome parity、OPFS、Service Worker、媒体和 Android 等保持 NOT_RUN。
+- 局部维护：2026-10-14 按 HEAD `d0f281d509de3bf4f9dcd7e8dd01dac3464a663b` 核对 R5117 calc 实现与两个回归断言，补充 R5118 历史缺口边界，共新增6条；Touch 已有知识不重复，验证地图补定向入口。本次未刷新整篇源码基线，未实跑产品。
+- 增量核验：来源路径、树结构、243个修改文档本地链接及逐分类/文档计数自查 PASS，导航清单与现有124个节点一致；新增条目由作者对照源码与历史来源核对，未另做独立语义复验。
+- 工作区变更：初始化资产已在 `d0f281d509de3bf4f9dcd7e8dd01dac3464a663b` 提交，本次增量尚未提交；运行报告与历史材料留在本地被忽略的任务目录。
 - 导航清单：[node-catalog.json](node-catalog.json) 只列文档，不注册子 Skill。
 
 逐分类条目总数：
 
 | 分类 | 条目 |
 |---|---:|
-| Gotchas | 670 |
+| Gotchas | 675 |
 | Architecture | 343 |
 | Conventions | 11 |
 | Branching Behavior | 17 |
-| Decisions | 49 |
+| Decisions | 50 |
 | Patterns | 82 |
 | Testing Strategy | 20 |
 | Security | 2 |
@@ -135,19 +138,19 @@ HTML 解析采用 html5ever，布局接入本地 Taffy patch，脚本有 V8/Quic
 | [references/page-core/document/mutations-and-shadow.md](references/page-core/document/mutations-and-shadow.md) | 13 | Gotchas 11；Architecture 2 |
 | [references/page-core/document/tree-and-parsing.md](references/page-core/document/tree-and-parsing.md) | 13 | Gotchas 9；Architecture 3；Decisions 1 |
 | [references/page-core/index.md](references/page-core/index.md) | 6 | Gotchas 3；Architecture 3 |
-| [references/page-core/layout/boxes-and-positioning.md](references/page-core/layout/boxes-and-positioning.md) | 15 | Gotchas 7；Architecture 3；Decisions 2；Patterns 3 |
+| [references/page-core/layout/boxes-and-positioning.md](references/page-core/layout/boxes-and-positioning.md) | 19 | Gotchas 10；Architecture 3；Decisions 3；Patterns 3 |
 | [references/page-core/layout/flex-grid-and-taffy.md](references/page-core/layout/flex-grid-and-taffy.md) | 12 | Gotchas 6；Architecture 3；Decisions 2；Dependencies 1 |
 | [references/page-core/layout/fragmentation.md](references/page-core/layout/fragmentation.md) | 14 | Gotchas 8；Architecture 4；Decisions 2 |
 | [references/page-core/layout/index.md](references/page-core/layout/index.md) | 3 | Gotchas 1；Architecture 2 |
 | [references/page-core/layout/inline/collection-and-line-breaking.md](references/page-core/layout/inline/collection-and-line-breaking.md) | 17 | Gotchas 11；Architecture 3；Patterns 3 |
 | [references/page-core/layout/inline/finalization-and-reuse.md](references/page-core/layout/inline/finalization-and-reuse.md) | 12 | Gotchas 7；Architecture 3；Patterns 2 |
 | [references/page-core/layout/inline/index.md](references/page-core/layout/inline/index.md) | 2 | Architecture 2 |
-| [references/page-core/layout/inline/metrics-and-writing-modes.md](references/page-core/layout/inline/metrics-and-writing-modes.md) | 14 | Gotchas 8；Architecture 4；Decisions 2 |
+| [references/page-core/layout/inline/metrics-and-writing-modes.md](references/page-core/layout/inline/metrics-and-writing-modes.md) | 15 | Gotchas 9；Architecture 4；Decisions 2 |
 | [references/page-core/layout/invalidation-and-budget.md](references/page-core/layout/invalidation-and-budget.md) | 11 | Gotchas 6；Architecture 3；Patterns 2 |
 | [references/page-core/layout/tables.md](references/page-core/layout/tables.md) | 13 | Gotchas 8；Architecture 3；Patterns 2 |
 | [references/page-core/paint/animation-and-hit-testing.md](references/page-core/paint/animation-and-hit-testing.md) | 15 | Gotchas 8；Architecture 5；Patterns 2 |
 | [references/page-core/paint/index.md](references/page-core/paint/index.md) | 6 | Gotchas 3；Architecture 3 |
-| [references/page-core/paint/painter.md](references/page-core/paint/painter.md) | 17 | Gotchas 8；Architecture 5；Decisions 2；Patterns 2 |
+| [references/page-core/paint/painter.md](references/page-core/paint/painter.md) | 18 | Gotchas 9；Architecture 5；Decisions 2；Patterns 2 |
 | [references/page-core/paint/svg-and-filters.md](references/page-core/paint/svg-and-filters.md) | 14 | Gotchas 7；Architecture 4；Decisions 3 |
 | [references/page-core/pipeline.md](references/page-core/pipeline.md) | 12 | Gotchas 6；Architecture 3；Decisions 1；Patterns 2 |
 | [references/page-core/styles/cascade-and-matching.md](references/page-core/styles/cascade-and-matching.md) | 16 | Gotchas 12；Architecture 3；Patterns 1 |

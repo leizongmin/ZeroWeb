@@ -18,7 +18,7 @@
 | Canvas、媒体 | 页面桥与对应底座 | [图形](../graphics/index.md)、[媒体](../media/index.md) |
 | feature 与宿主模式差异 | Cargo 门控、运行时开关 | [脚本分支](../runtime/conditions/script-features.md) |
 
-验证入口为 [zeroweb-verify](../../../zeroweb-verify/SKILL.md) 及各叶子的实际测试文件。本验证入口为并行创建的未提交资产，不归本页 HEAD；本域本轮仅来源/内容自查，未实跑产品，待独立语义核验。
+验证入口为 [zeroweb-verify](../../../zeroweb-verify/SKILL.md) 及各叶子的实际测试文件。初始化资产已在 d0f281d509de3bf4f9dcd7e8dd01dac3464a663b 提交，不归本页旧源码基线；本域未实跑产品，初始化独立语义核验结果见知识根元数据。
 
 ## Architecture
 - 页面 JS 能力是引擎、native DOM、shim 与宿主 bridge 的组合；只安装原生模板或只构造某 API 对象，不能证明宿主能力及异步完成通路存在。 (`crates/engine/src/dom_bindings/mod.rs`, `crates/engine/src/js_dom_shim/part05.js`, `crates/webview/src/webview.rs`)

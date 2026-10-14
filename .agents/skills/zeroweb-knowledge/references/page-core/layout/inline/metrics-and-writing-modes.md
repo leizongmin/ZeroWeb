@@ -16,6 +16,7 @@
 - 竖排 fragment 的 width 是列宽/line-height，height 是 inline advance；向 paint 的 line-height 槽存 frag.height 会让列位置以 advance 作为行高。 (`crates/layout-engine/src/inline_metric_storage.rs`)
 - vertical IFC 可用深度取 content_height，而 block extent 取 content_width；有 text-decoration/emphasis 的子树仍有旧宽度 gate，不能无条件应用轴交换。 (`crates/layout-engine/src/inline_finalization.rs`)
 - `vertical_block_flow.rs` 头部 dormant 状态和 inline/block 轴命名已落后；现行函数明确物理 width 为 block-size，且协调器有 sizing 与位置接线，应按当前实现判读。 (`crates/layout-engine/src/vertical_block_flow.rs`, `crates/layout-engine/src/engine.rs`)
+- R5118 历史报告把 border-width-applies-to-008 的 inline 盒 h=90、Chrome 期望270归入非替换 inline 垂直边框几何缺口；这不是给行高直接加上下 border 的新契约，须分别核对行盒、装饰盒与基线。break_lines.rs 的水平 padding 推进和空 inline 注释不能证明此分支完整；该轮没有代码修复，本次只核对来源，未复现。 (`docs/goal/rendering-compat.md`, `crates/layout-engine/src/inline/break_lines.rs`, `git:3b548ed7804ecf0e050da00557ee8adb654e615e`)
 
 ## Architecture
 - AdvanceSource 分单字符、整文本、ordered face list 和含 size-adjust/variation context 的接口；默认整文本只是逐字相加，实现需覆写才能提供 shaping 上下文。 (`crates/layout-engine/src/inline/text_metrics.rs`)

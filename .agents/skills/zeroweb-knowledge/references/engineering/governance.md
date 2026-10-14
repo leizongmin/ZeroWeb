@@ -2,7 +2,7 @@
 
 <!-- verified_commit: 1217776cc9cf179b93aca8b1557f0dab44b8e498 -->
 <!-- verified_at: 2026-10-14 -->
-<!-- working_tree_evidence: README.md 与 docs/engineering/agents-maintenance.md 为本轮可见未提交材料，相关变化不归属于上述 HEAD。 -->
+<!-- initialization_evidence: README.md 与 docs/engineering/agents-maintenance.md 在初始化核对时为工作区材料，已在 d0f281d509de3bf4f9dcd7e8dd01dac3464a663b 提交；不归属于上述旧源码基线。 -->
 
 ## Module Structure
 

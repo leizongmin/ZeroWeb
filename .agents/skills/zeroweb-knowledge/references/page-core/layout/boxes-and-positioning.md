@@ -15,6 +15,9 @@
 - `is_fixed_cb_containment` 识别真实 layout/paint containment，却不让 `container-type` 隐含 containment 捕获 fixed 后代；视觉 filter/transform/perspective 又有独立包含块谓词。 (`crates/layout-engine/src/engine/abspos.rs`)
 - 根节点缺少父布局上下文，水平根的 inset、auto margin 居中和固定 margin 分别补算；table 根跳过普通根居中，留给表格收缩后的居中路径。 (`crates/layout-engine/src/engine.rs`)
 - intrinsic 模块“仅诊断、不参与布局”的头注释已落后：协调器调用 `apply_intrinsic_content_sizing`；定位尺寸实际行为须跟调用链，而不是照抄模块简介。 (`crates/layout-engine/src/intrinsic_sizing.rs`, `crates/layout-engine/src/engine.rs`)
+- R5117 后 calc(P% ± Npx) 宽高后处理向普通子盒传父盒 content 尺寸，避免以自身已解析百分比的尺寸再次应用百分比；根与 absolute/fixed 子不获此基准，仍回退自身宽高，不能把该修复视为完整定位包含块解析。 (`crates/layout-engine/src/engine/postprocess.rs`, `git:50190390123d763e9bdc141a45942810ef9e0ff0`)
+- calc 后处理先递归子盒再修正父盒，子盒拿到的是父盒修正前的 content 尺寸；ZW_CALC_CB_BASE 默认开启、仅0关闭且 OnceLock 按进程单读，嵌套 calc 和开关对照须另验，不能从两个简单宽度用例推断全覆盖。 (`crates/layout-engine/src/engine/postprocess.rs`, `crates/layout-engine/src/engine/tests/r5117_calc_cb_base_tests.rs`, `git:50190390123d763e9bdc141a45942810ef9e0ff0`)
+- calc 尺寸回写区分 box-sizing：content-box 把求值结果写入 content 并加原 frame 得 border-box，border-box 按宽高差同步 content；回写门槛仍比较求值结果与旧 border-box 的差值，不能概括为无条件重算 frame。 (`crates/layout-engine/src/engine/postprocess.rs`, `git:50190390123d763e9bdc141a45942810ef9e0ff0`)
 
 ## Architecture
 - `LayoutBox.width/height` 表示 border-box，而 `content_*` 单独存储；abspos 百分比重解析同时回写两个口径，避免纠正包含块后留下旧内容尺寸。 (`crates/layout-engine/src/engine/abspos.rs`)
@@ -24,6 +27,7 @@
 ## Decisions
 - 非 BFC 的 auto-height 在浮动定位之后自底向上排除浮动贡献，再按最终收缩宽度做 plain block aspect-ratio 传高，阶段顺序防止旧宽度推导错误高度。 (`crates/layout-engine/src/engine.rs`)
 - intrinsic advance 与字体 resolver 从布局线程发布到线程本地上下文；未注入时回落字符估算，`ZW_INTRINSIC_REAL_ADVANCE=0` 阻止发布，独立布局测试和生产字体口径不能混为一谈。 (`crates/layout-engine/src/intrinsic_sizing.rs`)
+- R5117 将 calc 宽高修正从末端移到 5a.1.5、浮动定位之前，使浮动按修正后的 border-box 判断能否并排；300px 容器内 calc(50% - 10px) 加左右5px padding 的回归约束为 content 140px、border-box 150px 和两浮动同 y 相接。 (`crates/layout-engine/src/engine.rs`, `crates/layout-engine/src/engine/tests/r5117_calc_cb_base_tests.rs`, `git:50190390123d763e9bdc141a45942810ef9e0ff0`)
 
 ## Patterns
 - 基础尺寸纠正先分别求值各 pass，再合并 changed 标记重跑 Taffy；直接用 `||` 串执行有副作用的 pass 会让前一成功跳过后一。 (`crates/layout-engine/src/engine.rs`)

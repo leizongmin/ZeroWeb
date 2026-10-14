@@ -9,7 +9,7 @@
 
 ### User Task Navigation
 
-`crates/webview/src/tests/user_actions.rs` / `event_dispatch.rs` 是宿主事件与动作判据；`dom_bindings/tests_events.rs` 是不经 shim 的 native 事件判据。真实指针验收从 [zeroweb-verify](../../../../zeroweb-verify/SKILL.md) 导航，入口未提交、本轮未实跑。
+`crates/webview/src/tests/user_actions.rs` / `event_dispatch.rs` 是宿主事件与动作判据；`dom_bindings/tests_events.rs` 是不经 shim 的 native 事件判据。真实指针验收从 [zeroweb-verify](../../../../zeroweb-verify/SKILL.md) 导航，初始化资产已在 d0f281d509de3bf4f9dcd7e8dd01dac3464a663b 提交，本域未实跑。
 
 ## Gotchas
 - checkbox/radio 激活先 prepare checkedness 再派 cancelable click，让 listener 看见预激活态；取消时走 rollback，不能把所有 mutation 延后到 listener 返回之后。 (`crates/page-runtime/src/html_actions.rs`, `crates/webview/src/webview/user_actions.rs`)

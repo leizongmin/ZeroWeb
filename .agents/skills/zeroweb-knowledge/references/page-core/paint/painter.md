@@ -9,7 +9,7 @@
 
 ### User Task Navigation
 - 顺序、坐标、效果窗口：`crates/engine/src/paint/painter/mod.rs`；文本、边框、控件分别在同目录 `text.rs`、`border.rs`、`controls.rs`。
-- 验证参考：`crates/engine/src/paint/tests/css_remaining.rs` 守护空子树 transform 和背景传播，`tests/wpt-runner/src/reftest.rs` 消费图元与 canvas_images；见 [验证入口](../../../../zeroweb-verify/SKILL.md)，该入口是未提交导航资产，本次未实跑。
+- 验证参考：`crates/engine/src/paint/tests/css_remaining.rs` 守护空子树 transform 和背景传播，`tests/wpt-runner/src/reftest.rs` 消费图元与 canvas_images；见 [验证入口](../../../../zeroweb-verify/SKILL.md)，初始化资产已在 d0f281d509de3bf4f9dcd7e8dd01dac3464a663b 提交，本域未实跑。
 
 ## Gotchas
 - 画布背景传播须有正 viewport 宽高及 DOM：html 背景优先，否则透明 html 借用 body 背景，传播节点自己的背景随后跳绘以避免图像相位重复；单独构造 Painter 不设置 viewport 会漏掉此路径。 (`crates/engine/src/paint/painter/mod.rs`, `crates/engine/src/paint/tests/css_remaining.rs`)
@@ -20,6 +20,7 @@
 - clip:text 当前是恒色背景的字形染色近似，不是真正任意背景 mask；多色渐变或未获纯色缓存的 URL 不激活，URL 还须默认 repeat/size/attachment，透明背景也不激活。 (`crates/engine/src/paint/painter/text.rs`)
 - progress/meter 的条必须晚于文本绘制，用后绘覆盖 fallback；缺失或非有限 value 不绘条，progress 无 value 的条纹动画尚未实现。 (`crates/engine/src/paint/painter/controls.rs`)
 - color_value_to_render 没有元素上下文，currentColor 回落黑色；背景、边框等应走 resolve_color_current，Mix 与 RelativeColor 也须在当前元素色上下文递归解析。 (`crates/engine/src/paint/color.rs`)
+- control-chars-00B 是 test 必须异于空白 ref 的 mismatch 案，相同像素是失败；R5118 历史报告记录伪元素注入 VT 不可见、0/7 失败，并归因于 R644 Cc 占位框未覆盖该路径。当前 text.rs 有 Cc 方块分支仍不足以证明伪元素链路经过它；该提交仅更新报告，根因与当前像素需定向复核，不能写成已修复或本轮实跑。 (`docs/goal/rendering-compat.md`, `crates/engine/src/paint/painter/text.rs`, `git:3b548ed7804ecf0e050da00557ee8adb654e615e`)
 
 ## Architecture
 - positioned 元素、真实 stacking context 和根是收集 scope：负 z、普通流/float、z=0、正 z 分段绘制；真实 SC 必须自成 scope，才能让 opacity/filter 等新增图元窗口覆盖 positioned 后代。 (`crates/engine/src/paint/painter/mod.rs`)

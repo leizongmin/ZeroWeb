@@ -12,7 +12,9 @@
 浏览器操作和产品验收参见 [验证入口](../../zeroweb-verify/SKILL.md)、
 [功能地图](../../zeroweb-verify/features/index.md)。本知识库记录代码事实与修改约束；
 这些导航不表示 GUI、JS/IPC、GPU 或 Android 已在本次初始化中运行通过。
-本次新建知识、验证及工程规则资产属于未提交工作区，不归为上方源码基线。
+初始化知识、验证及工程规则资产已在 d0f281d509de3bf4f9dcd7e8dd01dac3464a663b 提交，
+各页源码基线仍保留原核验版本。随后局部补充 calc 修正及 R5118 历史缺口，
+验证入口新增定向操作与判据，未新增产品实跑结果。
 
 ## Child Knowledge Nodes
 

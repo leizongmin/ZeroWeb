@@ -13,7 +13,7 @@
 | --- | --- |
 | 重复执行后回调变慢、旧函数调用异常 | `v8_runtime.rs` / `quickjs_runtime.rs` 的回调注册及同名替换测试 |
 | 引擎组合与 feature 优先级 | [跨宿主脚本 feature](../../runtime/conditions/script-features.md) |
-| 产品验证 | [zeroweb-verify](../../../../zeroweb-verify/SKILL.md)，本入口未提交且本轮未实跑 |
+| 产品验证 | [zeroweb-verify](../../../../zeroweb-verify/SKILL.md)，初始化资产已在 d0f281d509de3bf4f9dcd7e8dd01dac3464a663b 提交，本域未实跑 |
 
 ## Gotchas
 - `persistent_context` 默认关闭，每次执行重新建 Context；WebView 和页面 worker 显式开启持久上下文，因此孤立沙箱测试的全局变量寿命不能代表页面。 (`crates/script-sandbox/src/lib.rs`, `crates/script-sandbox/src/v8_runtime.rs`, `crates/script-sandbox/src/quickjs_runtime.rs`, `crates/webview/src/webview.rs`)

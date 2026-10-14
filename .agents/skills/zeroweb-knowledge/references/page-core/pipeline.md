@@ -10,7 +10,7 @@
 ### User Task Navigation
 - 外链、脚本、图片和字体发现：`crates/engine/src/pipeline/extract.rs`；宿主获取见 [页面加载契约](../runtime/page-runtime/hosts-and-loading.md)，脚本执行见 [页面事件循环](../scripting/event-loop/tasks-and-checkpoints.md)。
 - 字体解析与度量注入：`RenderPipeline::set_font_resolver` / `set_font_metric_map`；见 [字体匹配](../graphics/render-foundation/fonts/loading-and-matching.md)。
-- 管线回归入口：`crates/engine/src/tests/pipeline.rs`；真实像素消费者为 `tests/wpt-runner/src/reftest.rs`。验证资产见 [项目验证入口](../../../zeroweb-verify/SKILL.md)，该入口是未提交导航资产，本文仅核对源码，未实跑。
+- 管线回归入口：`crates/engine/src/tests/pipeline.rs`；真实像素消费者为 `tests/wpt-runner/src/reftest.rs`。验证资产见 [项目验证入口](../../../zeroweb-verify/SKILL.md)，初始化资产已在 d0f281d509de3bf4f9dcd7e8dd01dac3464a663b 提交，本文仅核对源码，未实跑。
 
 ## Gotchas
 - `render_html` 与 `render_html_animated` 不是只差时间参数：静态路径有文本级 vars 预处理、伪元素文本注入、`content:url()` 尺寸修正和 filter isolate 回填；动画路径未同样调用这些步骤，不能据静态入口通过推断动画入口等价。 (`crates/engine/src/pipeline/mod.rs`)

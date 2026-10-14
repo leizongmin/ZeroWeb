@@ -16,7 +16,7 @@
 | 首帧缺资源、DOM 换代或静态/动画入口分歧 | `crates/engine/src/pipeline/mod.rs` | pipeline |
 | 内容盖字、SVG/过滤丢像素、点击或 rect 偏移 | `crates/engine/src/paint/painter/mod.rs`、`crates/engine/src/hit_test.rs` | paint |
 
-验证入口复用 `crates/engine/src/tests/pipeline.rs`、相关 crate 常驻测试与 `tests/wpt-runner/src/reftest.rs`；[项目验证入口](../../../zeroweb-verify/SKILL.md) 是当前未提交的导航资产，不作为 HEAD 产品行为证据。本次不运行验证流程。
+验证入口复用 `crates/engine/src/tests/pipeline.rs`、相关 crate 常驻测试与 `tests/wpt-runner/src/reftest.rs`；[项目验证入口](../../../zeroweb-verify/SKILL.md) 的初始化资产已在 d0f281d509de3bf4f9dcd7e8dd01dac3464a663b 提交。导航不作为产品行为证据；本次不运行验证流程。
 
 ## Gotchas
 - DOM NodeId 只能在所属 Document 的节点表内证明存活；fresh HTML 重建后旧 handle 映射失效，跨阶段缓存不能仅因 ID 数值相同继续使用。 (`crates/dom/src/node.rs`, `crates/dom/src/document/mod.rs`, `crates/engine/src/pipeline/mod.rs`)
