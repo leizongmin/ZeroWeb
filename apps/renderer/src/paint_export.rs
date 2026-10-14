@@ -650,4 +650,54 @@ mod tests {
         assert_eq!(batches.len(), 1);
         assert_eq!(batches[0].len(), 2);
     }
+
+    /// P100：生产者→消费者契约——切批输出的每个 payload 必须能经消费端解码路径
+    /// （`ImageData::from_rgba` 要求 len == w*h*4）无损还原尺寸与像素。两侧字段
+    /// 或尺寸语义漂移时，浏览器端只会看到 from_rgba Err（图片静默缺失），故在
+    /// 生产者一侧钉住往返一致。
+    #[test]
+    fn split_output_payloads_roundtrip_through_consumer_decode() {
+        let payloads = vec![
+            IpcImagePayload {
+                image_key: 1,
+                width: 2,
+                height: 3,
+                rgba: (0..24).map(|i| i as u8).collect(),
+            },
+            IpcImagePayload {
+                image_key: 2,
+                width: 4,
+                height: 1,
+                rgba: vec![9; 16],
+            },
+            IpcImagePayload {
+                image_key: 3,
+                width: 1,
+                height: 1,
+                rgba: vec![0; 4],
+            },
+        ];
+        let original: Vec<(u64, u32, u32, Vec<u8>)> = payloads
+            .iter()
+            .map(|p| (p.image_key, p.width, p.height, p.rgba.clone()))
+            .collect();
+        let (batches, skipped) = split_image_payload_batches(payloads, 24);
+        assert!(skipped.is_empty());
+        let round: Vec<&IpcImagePayload> = batches.iter().flatten().collect();
+        assert_eq!(round.len(), original.len());
+        for (payload, (key, width, height, rgba)) in round.iter().zip(&original) {
+            assert_eq!(payload.image_key, *key);
+            assert_eq!(payload.width, *width);
+            assert_eq!(payload.height, *height);
+            let data = zero_render_foundation::image_cache::ImageData::from_rgba(
+                payload.rgba.clone(),
+                payload.width,
+                payload.height,
+            )
+            .expect("消费端解码必须接受生产者切批输出");
+            assert_eq!(data.width, *width);
+            assert_eq!(data.height, *height);
+            assert_eq!(data.pixels, *rgba);
+        }
+    }
 }

@@ -401,3 +401,205 @@ fn small_image_payloads_stay_in_frame() {
     assert_eq!(painted.image_payloads[0].image_key, 21);
     assert_eq!(sent_now, vec![21]);
 }
+
+/// P100：生产默认异步路径（Compositor 模式 + 发布线程）——批经 regular FIFO 先于
+/// 帧写出，批 key 由发布线程回传（drain_sent_image_keys），主线程同步回传为空，
+/// 主 outbound 直发通道无任何消息。删除发布线程批 key 回传分支时本测试失败。
+#[test]
+fn compositor_mode_batches_flow_through_publish_thread() {
+    let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+    let mut outbound = PipeTransport::new(std::io::empty(), Box::new(buf.clone()) as Box<dyn Write + Send>);
+    let thread_buf = Arc::new(Mutex::new(Vec::new()));
+    let writer: Box<dyn Write + Send> = Box::new(SharedBuf(Arc::clone(&thread_buf)));
+    let thread = compositor_publish_thread::CompositorPublishThread::spawn(Arc::new(Mutex::new(writer)));
+    let mut next_msg_id = 1_u64;
+    let mut publish_state = FramePublishState::new(73, FramePublishMode::Compositor);
+    let frame = sample_frame();
+    let batch_cap = zero_protocol::MAX_PAINT_IMAGE_BATCH_BYTES;
+    let payload_bytes = batch_cap * 25 / 48;
+    let payloads = vec![
+        zero_protocol::IpcImagePayload {
+            image_key: 31,
+            width: 1,
+            height: 1,
+            rgba: vec![0u8; payload_bytes],
+        },
+        zero_protocol::IpcImagePayload {
+            image_key: 32,
+            width: 1,
+            height: 1,
+            rgba: vec![0u8; payload_bytes],
+        },
+    ];
+
+    let sent_now = publish_render_with_layout(
+        &mut outbound,
+        Some(&thread),
+        &mut next_msg_id,
+        &mut publish_state,
+        &frame,
+        1.0,
+        None,
+        payloads,
+        7,
+        1,
+        Vec::new(),
+    )
+    .expect("publish with oversize images via publish thread");
+
+    // 纯异步：批全部入队成功，主线程无同步直发 key。
+    assert!(sent_now.is_empty());
+    // 发布线程按 FIFO 写出两条批 + 一帧并回传批 key。
+    // 每批约 26MiB 的序列化走逐字节 serde 路径，秒级耗时属预期（非挂死），
+    // 预留 30s 预算；正常数秒内完成。
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let mut sent = Vec::new();
+    loop {
+        let got = thread.drain_sent_image_keys();
+        sent.extend(got);
+        if sent.len() >= 2 {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "发布线程必须回传全部批 key");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    drop(thread); // join worker 后再读共享 buffer，避免并发写
+    let mut messages = drain_messages(&thread_buf.lock().unwrap());
+    assert_eq!(messages.len(), 3);
+    let frame_message = messages.pop().expect("帧消息");
+    let batch_keys: Vec<Vec<u64>> = messages
+        .iter()
+        .map(|message| match &message.kind {
+            IpcMessageKind::ImagePayloadBatch { payloads, .. } => payloads.iter().map(|p| p.image_key).collect(),
+            other => panic!("批先于帧，实际 {other:?}"),
+        })
+        .collect();
+    assert_eq!(batch_keys, vec![vec![31], vec![32]]);
+    let IpcMessageKind::CompositorFrame { paint, .. } = frame_message.kind else {
+        panic!("Compositor 模式末尾应为 CompositorFrame");
+    };
+    assert!(paint.image_payloads.is_empty());
+    // 主 outbound 直发通道无任何消息（全部经发布线程）。
+    assert!(buf.0.lock().unwrap().is_empty());
+}
+
+/// P100：图片总量恰等于批上限时不拆批——阈值是严格大于，边界行为钉死。
+#[test]
+fn total_image_bytes_exactly_at_cap_stays_in_frame() {
+    let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+    let mut outbound = PipeTransport::new(std::io::empty(), Box::new(buf.clone()) as Box<dyn Write + Send>);
+    let mut next_msg_id = 1_u64;
+    let mut publish_state = FramePublishState::new(41, FramePublishMode::Legacy);
+    let frame = sample_frame();
+    let batch_cap = zero_protocol::MAX_PAINT_IMAGE_BATCH_BYTES;
+    let half = batch_cap / 2;
+    let payloads = vec![
+        zero_protocol::IpcImagePayload {
+            image_key: 41,
+            width: 1,
+            height: 1,
+            rgba: vec![0u8; half],
+        },
+        zero_protocol::IpcImagePayload {
+            image_key: 42,
+            width: 1,
+            height: 1,
+            rgba: vec![0u8; batch_cap - half],
+        },
+    ];
+
+    let sent_now = publish_render_with_layout(
+        &mut outbound,
+        None,
+        &mut next_msg_id,
+        &mut publish_state,
+        &frame,
+        1.0,
+        None,
+        payloads,
+        7,
+        1,
+        Vec::new(),
+    )
+    .expect("publish at exact cap");
+
+    let messages = drain_messages(&buf.0.lock().unwrap());
+    assert!(
+        messages
+            .iter()
+            .all(|message| !matches!(message.kind, IpcMessageKind::ImagePayloadBatch { .. }))
+    );
+    let painted = messages
+        .iter()
+        .find_map(|message| match &message.kind {
+            IpcMessageKind::ViewPainted(paint) => Some(paint.as_ref()),
+            _ => None,
+        })
+        .expect("ViewPainted");
+    // 帧本体携带全部像素，key 随帧同步标记。
+    assert_eq!(
+        painted.image_payloads.iter().map(|p| p.image_key).collect::<Vec<_>>(),
+        vec![41, 42]
+    );
+    assert_eq!(sent_now, vec![41, 42]);
+}
+
+/// P100：总量恰超上限 1 字节即拆批——阈值边界另一侧。
+#[test]
+fn total_image_bytes_one_over_cap_splits() {
+    let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+    let mut outbound = PipeTransport::new(std::io::empty(), Box::new(buf.clone()) as Box<dyn Write + Send>);
+    let mut next_msg_id = 1_u64;
+    let mut publish_state = FramePublishState::new(41, FramePublishMode::Legacy);
+    let frame = sample_frame();
+    let batch_cap = zero_protocol::MAX_PAINT_IMAGE_BATCH_BYTES;
+    let half = batch_cap / 2;
+    let payloads = vec![
+        zero_protocol::IpcImagePayload {
+            image_key: 51,
+            width: 1,
+            height: 1,
+            rgba: vec![0u8; half],
+        },
+        zero_protocol::IpcImagePayload {
+            image_key: 52,
+            width: 1,
+            height: 1,
+            rgba: vec![0u8; batch_cap - half + 1],
+        },
+    ];
+
+    let sent_now = publish_render_with_layout(
+        &mut outbound,
+        None,
+        &mut next_msg_id,
+        &mut publish_state,
+        &frame,
+        1.0,
+        None,
+        payloads,
+        7,
+        1,
+        Vec::new(),
+    )
+    .expect("publish one byte over cap");
+
+    let mut messages = drain_messages(&buf.0.lock().unwrap());
+    let painted = match messages.pop() {
+        Some(message) => match message.kind {
+            IpcMessageKind::ViewPainted(paint) => paint,
+            other => panic!("末尾应为 ViewPainted，实际 {other:?}"),
+        },
+        None => panic!("无消息"),
+    };
+    let batch_keys: Vec<Vec<u64>> = messages
+        .iter()
+        .filter_map(|message| match &message.kind {
+            IpcMessageKind::ImagePayloadBatch { payloads, .. } => Some(payloads.iter().map(|p| p.image_key).collect()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(batch_keys, vec![vec![51], vec![52]]);
+    assert!(painted.image_payloads.is_empty());
+    assert_eq!(sent_now, vec![51, 52]);
+}
