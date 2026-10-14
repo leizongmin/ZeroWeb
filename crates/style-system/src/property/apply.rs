@@ -155,16 +155,23 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
-        // 逻辑尺寸属性 inline-size / block-size（CSS Logical Properties §1）。
-        // 这里映射到水平书写模式的物理等价（inline-size→width、block-size→height）；
-        // 垂直书写模式的轴交换由 converter 的 swap_writing_mode_axes 负责
-        //（width↔height 互换），故无需在此感知 writing-mode。
+        // 逻辑尺寸属性 inline-size / block-size 及 min/max 变体（CSS Logical Properties
+        // §1/§7 + css-writing-modes-3 §7.1）。R5128：按**元素最终 writing-mode** 定轴——
+        // inline 轴 = horizontal-tb 物理 width / 垂直模式物理 height；block 轴反之。
+        // 旧实现钉死 horizontal-tb（级联 canonical 化）+ converter 轴交换把映射值当物理值
+        // 再交换 → 垂直模式落行内轴（multicol-span-all-rule-002 block-size 全隐实证）。
+        // R4448/R4449 延迟臂保证调用点 writing-mode 已定态；kill-switch ZW_LOGICAL_SIZE=0
+        // 时级联已 canonical 化，本组臂仅剩 horizontal-tb 路径可达（语义不变）。
         "inline-size" => {
             if let Some(v) = parse_length_fn(value) {
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
-                style.width = v;
+                if style.writing_mode.is_vertical_block_flow() {
+                    style.height = v;
+                } else {
+                    style.width = v;
+                }
                 return true;
             }
         }
@@ -173,18 +180,24 @@ pub fn apply_property_value_with_quirks(
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
-                style.height = v;
+                if style.writing_mode.is_vertical_block_flow() {
+                    style.width = v;
+                } else {
+                    style.height = v;
+                }
                 return true;
             }
         }
-        // CSS Logical Properties §7：min/max 逻辑尺寸——水平模式等价 min/max-width/height
-        //（垂直模式轴交换由 converter 的 swap_writing_mode_axes 负责，同 inline-size/block-size）。
         "min-inline-size" => {
             if let Some(v) = parse_length_fn(value) {
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
-                style.min_width = v;
+                if style.writing_mode.is_vertical_block_flow() {
+                    style.min_height = v;
+                } else {
+                    style.min_width = v;
+                }
                 return true;
             }
         }
@@ -193,33 +206,53 @@ pub fn apply_property_value_with_quirks(
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
-                style.min_height = v;
+                if style.writing_mode.is_vertical_block_flow() {
+                    style.min_width = v;
+                } else {
+                    style.min_height = v;
+                }
                 return true;
             }
         }
         "max-inline-size" => {
             if value.eq_ignore_ascii_case("none") {
-                style.max_width = LengthValue::Px(f64::INFINITY);
+                if style.writing_mode.is_vertical_block_flow() {
+                    style.max_height = LengthValue::Px(f64::INFINITY);
+                } else {
+                    style.max_width = LengthValue::Px(f64::INFINITY);
+                }
                 return true;
             }
             if let Some(v) = parse_length_fn(value) {
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
-                style.max_width = v;
+                if style.writing_mode.is_vertical_block_flow() {
+                    style.max_height = v;
+                } else {
+                    style.max_width = v;
+                }
                 return true;
             }
         }
         "max-block-size" => {
             if value.eq_ignore_ascii_case("none") {
-                style.max_height = LengthValue::Px(f64::INFINITY);
+                if style.writing_mode.is_vertical_block_flow() {
+                    style.max_width = LengthValue::Px(f64::INFINITY);
+                } else {
+                    style.max_height = LengthValue::Px(f64::INFINITY);
+                }
                 return true;
             }
             if let Some(v) = parse_length_fn(value) {
                 if !sizing_length_is_valid(value, &v) {
                     return false;
                 }
-                style.max_height = v;
+                if style.writing_mode.is_vertical_block_flow() {
+                    style.max_width = v;
+                } else {
+                    style.max_height = v;
+                }
                 return true;
             }
         }

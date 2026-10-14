@@ -2291,7 +2291,37 @@ enum PhysicalSide {
 /// css-cascade overlapping aliases：逻辑声明与映射到的物理槽位别名是同一 computed
 /// 槽位的竞争声明，须按 CascadeOrder 择一。返回 None = 非逻辑属性（或 border 家族
 /// 以外的三段名无法静态映射）。
-pub(crate) fn logical_alias_physical_slot(property: &str, style: &ComputedStyle) -> Option<String> {
+pub(crate) fn logical_alias_physical_slot(
+    property: &str,
+    style: &ComputedStyle,
+    frame_vertical: bool,
+) -> Option<String> {
+    // R5128：sizing 族（css-logical-1 §2 + css-writing-modes-3 §7.1）——尺寸轴无起/止侧
+    // 语义，sideways 标记不影响轴向。有效垂直轴向 = **帧交换**（父 wm vertical，tree.rs
+    // 同判）且自身 wm vertical；正交根（自身 vertical + 父 htb，帧不交换）周边机制按 htb
+    // 槽约定（div-*-orthogonal-* 族 A/B 实证），保持 htb 槽映射。
+    let sizing_vertical = frame_vertical && style.writing_mode.is_vertical_block_flow();
+    match property {
+        "inline-size" => {
+            return Some(if sizing_vertical { "height" } else { "width" }.to_string());
+        }
+        "block-size" => {
+            return Some(if sizing_vertical { "width" } else { "height" }.to_string());
+        }
+        "min-inline-size" => {
+            return Some(if sizing_vertical { "min-height" } else { "min-width" }.to_string());
+        }
+        "min-block-size" => {
+            return Some(if sizing_vertical { "min-width" } else { "min-height" }.to_string());
+        }
+        "max-inline-size" => {
+            return Some(if sizing_vertical { "max-height" } else { "max-width" }.to_string());
+        }
+        "max-block-size" => {
+            return Some(if sizing_vertical { "max-width" } else { "max-height" }.to_string());
+        }
+        _ => {}
+    }
     let side_str = |axis_inline: bool, start: bool| -> &'static str {
         match logical_physical_side(axis_inline, start, &style.writing_mode, style.writing_mode_sideways_lr) {
             PhysicalSide::Top => "top",
@@ -2300,8 +2330,13 @@ pub(crate) fn logical_alias_physical_slot(property: &str, style: &ComputedStyle)
             PhysicalSide::Left => "left",
         }
     };
+    logical_alias_physical_slot_side(property, &side_str)
+}
+
+/// side 族逻辑属性（margin/padding/inset/border 的 -inline-/-block- 系列）物理槽位。
+/// 由 [`logical_alias_physical_slot`] 在 writing-mode 分派后调用。
+fn logical_alias_physical_slot_side(property: &str, side_str: &impl Fn(bool, bool) -> &'static str) -> Option<String> {
     Some(match property {
-        "margin-block-start" => format!("margin-{}", side_str(false, true)),
         "margin-block-end" => format!("margin-{}", side_str(false, false)),
         "margin-inline-start" => format!("margin-{}", side_str(true, true)),
         "margin-inline-end" => format!("margin-{}", side_str(true, false)),

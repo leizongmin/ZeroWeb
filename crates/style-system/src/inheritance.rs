@@ -266,17 +266,40 @@ pub fn compute_inherited_style_with_quirks(
     // 被级联淘汰（如 author `padding-bottom: 0` 压 UA `padding-inline-start: 40px`）；
     // 无物理别名共存（或逻辑更晚）时逻辑正常应用。R4448 A/B 实证缺此消解时 UA logical
     // 反向覆盖 author 物理声明（marker-*/counter-styles −9 翻红 + slr-060 ul h=220）。
+    // R5128：sizing 族（inline-size/block-size 及 min/max 变体）物理槽位按**帧朝向**定——
+    // taffy 帧是否轴交换由父 wm 判（layout tree.rs is_vertical 同判）：交换帧（父 vertical）
+    // 按自身 wm 定轴（css-writing-modes-3 §7.1）；正交根（自身 vertical + 父 htb，帧不交换）
+    // 周边机制按 htb 槽约定（div-*-orthogonal-* 族 A/B 实证）。消解与应用同槽（物理名直应）。
+    let frame_vertical = parent_style.is_some_and(|p| p.writing_mode.is_vertical_block_flow());
     for (property, value) in deferred_logical {
-        if let Some(physical_slot) = logical_alias_physical_slot(property, &style)
-            && let Some(phys_order) = cascade_orders.get(&physical_slot)
+        let physical_slot = logical_alias_physical_slot(property, &style, frame_vertical);
+        if let Some(physical_slot) = physical_slot.as_ref()
+            && let Some(phys_order) = cascade_orders.get(physical_slot)
             && let Some(logical_order) = cascade_orders.get(property)
             && phys_order > logical_order
         {
             continue;
         }
+        // sizing 族把胜出值直落物理槽（该轴唯一生效字段；side 族仍按逻辑名走 apply 臂）。
+        let apply_name: &str = match physical_slot.as_deref() {
+            Some(slot)
+                if matches!(
+                    property,
+                    "inline-size"
+                        | "block-size"
+                        | "min-inline-size"
+                        | "min-block-size"
+                        | "max-inline-size"
+                        | "max-block-size"
+                ) =>
+            {
+                slot
+            }
+            _ => property,
+        };
         apply_property_value_with_quirks(
             &mut style,
-            property,
+            apply_name,
             value,
             quirks_mode == QuirksMode::Quirks,
             prefers_dark,
@@ -339,6 +362,14 @@ fn is_logical_property_name(property: &str) -> bool {
             | "border-block-end-color"
             | "border-inline-start-color"
             | "border-inline-end-color"
+            // R5128：sizing 族延迟（物理映射依赖元素最终 writing-mode，同上）——
+            // 级联 canonical 化移除后（ZW_LOGICAL_SIZE）这些名字以本名到达此处。
+            | "inline-size"
+            | "block-size"
+            | "min-inline-size"
+            | "min-block-size"
+            | "max-inline-size"
+            | "max-block-size"
     )
 }
 
