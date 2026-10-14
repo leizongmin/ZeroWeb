@@ -1,19 +1,21 @@
 # Touch Events 兼容 — TouchEvent 构造器与属性面
 
-**版本**: v1.2
+**版本**: v1.3
 **日期**: 2026-10-14
-**状态**: Active（M1+M2 已落地——可执行面 30/32 非中性 100%；余 M3 注入面挂账带数字收口）
+**状态**: Completed（可执行面收口，2026-10-14；注入面挂宿主触摸注入管线重入）
 **执行模式**: WPT 驱动（上游 touch-events corpus 为验收标尺）+ 实现/语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——输入事件面）
 
-> **▶ 当前状态（2026-10-14，M2 收口轮）**：可执行面 4 案 32 子测试 = 30P + 2 中性
-> PreconditionFailed（非中性 100%；基线 20P 同日 +10P 零回归）。Touch/TouchList/
-> TouchEvent 按 spec 落 engine shim（part05.js）；`ontouch*` 曝出面按桌面 Chrome
-> 保持缺席（GEH 2 中性 PF + expose-legacy 16P 一致性面不变）。门禁：make test
-> 71 suites 全绿 + reftest 710/710。证据：
+> **▶ 收口（2026-10-14，M3 轮）**：DC-1~3 逐项核对通过——可执行面 30P + 2 中性
+> PF（非中性 100%）；make test 71 suites 全绿、reftest 710/710、product-smoke
+> 15.35% 恒值（struct-check PASS）。注入面 9 案 28 子测试带数字挂账（1P/23F/4T，
+> 根因 = 宿主 touch 真值流缺失），重入条件 = 宿主触摸注入管线。证据：
+> [evidence/2026-10-14-m3-closure.md](touch-events-compat/evidence/2026-10-14-m3-closure.md)。
+> **重入**：多点触控硬件集成 / `ontouch*` 曝出面（随宿主触摸能力声明）。
+>
+> **▶ M2（2026-10-14）**：Touch/TouchList/TouchEvent 按 spec 落 engine shim
+> （part05.js），可执行面 20P→30P 非中性 100%，historical 双向门 8/8 保持——
 > [evidence/2026-10-14-m2-constructors.md](touch-events-compat/evidence/2026-10-14-m2-constructors.md)。
-> **余项**：M3 注入面 9 案带数字收口（宿主 touch 真值流为重入门槛）+ product-smoke
-> 补齐 + 归档。
 >
 > **▶ M1（2026-10-14）**：语料 18 资产导入（pin 315976933），runner 通道
 > `make testharness-touch-events` 落地；可执行子集甄别 4 案 / 排除 12 资产逐类挂
@@ -41,14 +43,15 @@
         [M2 evidence](touch-events-compat/evidence/2026-10-14-m2-constructors.md)）
 - **DC-3** 回归测试账本纪律；make test 全绿、make reftest 零回归、product-smoke
   逐字节恒值
-  - [x] make test 71 suites 全绿 + reftest 710/710 零回归（2026-10-14）；M3 收口
-        轮补 product-smoke 恒值核验
+  - [x] make test 71 suites 全绿 + reftest 710/710 零回归 + product-smoke 15.35%
+        恒值（struct-check PASS；2026-10-14，
+        [收口 evidence](touch-events-compat/evidence/2026-10-14-m3-closure.md)）
 
 ## 里程碑
 
 M1 导入与甄别（✅ 2026-10-14，20/32）→ M2 构造器/属性面收敛（✅ 2026-10-14，
-30/32 非中性 100%，historical 双向门保持）→ M3 注入面挂账带数字收口（9 案 +
-manual/crashtest/idlharness 记账复认）+ product-smoke 补齐 + 归档。
+30/32 非中性 100%，historical 双向门保持）→ M3 注入面带数字收口 + 归档（✅
+2026-10-14，9 案 28 子测试 1P/23F/4T 挂宿主触摸注入管线重入）。
 
 ## 依赖约束（run-rules §9）
 

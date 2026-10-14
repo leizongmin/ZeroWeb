@@ -1,0 +1,60 @@
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchstart' in [object Window]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchstart' in [object Object]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchstart' in [object Object]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchstart' in [object Object]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchmove' in [object Window]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchmove' in [object Object]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchmove' in [object Object]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchmove' in [object Object]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchend' in [object Window]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchend' in [object Object]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchend' in [object Object]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchend' in [object Object]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchcancel' in [object Window]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchcancel' in [object Object]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchcancel' in [object Object]
+Pass touch-events/expose-legacy-touch-event-apis.html :: 'ontouchcancel' in [object Object]
+Pass touch-events/historical.html :: Touch::webkitRadiusX
+Pass touch-events/historical.html :: Touch::webkitRadiusY
+Pass touch-events/historical.html :: Touch::webkitRotationAngle
+Pass touch-events/historical.html :: Touch::webkitForce
+Pass touch-events/historical.html :: TouchList::identifiedTouch
+Pass touch-events/historical.html :: TouchEvent::initTouchEvent
+Pass touch-events/historical.html :: Document::createTouch
+Pass touch-events/historical.html :: Document::createTouchList
+Fail touch-events/hover-state-caused-by-compatibility-mouse-events.tentative.html :: The compatibility mouse events should set :hover: mouseover: The tapped element should  have :hover state
+Fail touch-events/hover-state-caused-by-compatibility-mouse-events.tentative.html :: The compatibility mouse events should set :hover: mousemove: The tapped element should  have :hover state
+Fail touch-events/hover-state-caused-by-compatibility-mouse-events.tentative.html :: The compatibility mouse events should set :hover: mousedown: The tapped element should  have :hover state
+Fail touch-events/hover-state-caused-by-compatibility-mouse-events.tentative.html :: The compatibility mouse events should set :hover: mouseup: The tapped element should  have :hover state
+Fail touch-events/hover-state-caused-by-compatibility-mouse-events.tentative.html :: The compatibility mouse events should set :hover: click: The tapped element should  have :hover state
+Pass touch-events/hover-state-caused-by-compatibility-mouse-events.tentative.html :: The compatibility mouse events should set :hover: The compatibility mouse events should be fired
+Fail touch-events/hover-state-caused-by-compatibility-mouse-events.tentative.html :: The compatibility mouse events should set :hover
+Fail touch-events/hover-state-caused-by-compatibility-mouse-events.tentative.html :: The compatibility mouse events should set :hover, but shouldn't be preserved after the target is replaced: mousedown: The tapped element should  have :hover state
+Fail touch-events/hover-state-caused-by-compatibility-mouse-events.tentative.html :: The compatibility mouse events should set :hover, but shouldn't be preserved after the target is replaced: mouseup: The tapped element should  have :hover state
+Fail touch-events/hover-state-caused-by-compatibility-mouse-events.tentative.html :: The compatibility mouse events should set :hover, but shouldn't be preserved after the target is replaced: click: The tapped element should  have :hover state
+Fail touch-events/hover-state-caused-by-compatibility-mouse-events.tentative.html :: The compatibility mouse events should set :hover, but shouldn't be preserved after the target is replaced: The compatibility mouse events should be fired
+Fail touch-events/hover-state-caused-by-compatibility-mouse-events.tentative.html :: The compatibility mouse events should set :hover, but shouldn't be preserved after the target is replaced
+Fail touch-events/mouseevents-after-touchend.tentative.html :: Single tap should cause a click
+Fail touch-events/mouseevents-after-touchend.tentative.html :: Single tap whose touchstart is consumed should not cause a click
+Fail touch-events/mouseevents-after-touchend.tentative.html :: Single tap whose touchend is consumed should not cause a click
+Fail touch-events/mouseevents-after-touchend.tentative.html :: Double tap should cause single-click twice or a double-click
+Fail touch-events/mouseevents-after-touchend.tentative.html :: Tapping twice slowly should not cause a dblclick
+Fail touch-events/mouseevents-after-touchend.tentative.html :: Tapping too far points should not cause a dblclick
+Fail touch-events/mouseevents-after-touchend.tentative.html :: Multi tap should not cause mouse events
+Fail touch-events/multi-touch-interactions.html :: Interaction with mouse events
+Timeout touch-events/multi-touch-interactions.html :: touch-events/multi-touch-interactions.html
+Fail touch-events/multi-touch-interfaces.html :: Interaction with mouse events
+Timeout touch-events/multi-touch-interfaces.html :: touch-events/multi-touch-interfaces.html
+Fail touch-events/multi-touch-touchmove.html :: Touchmove events should track multiple pointers
+Fail touch-events/pinch-zoom-change.html :: Pinch-zoom immediately followed by touch-up stability
+Timeout touch-events/single-tap-when-touchend-listener-use-sync-xhr.html :: touch-events/single-tap-when-touchend-listener-use-sync-xhr.html
+Timeout touch-events/single-touch-vertical-rl.html :: touch-events/single-touch-vertical-rl.html
+Fail touch-events/single-touch.html :: Verify touch events for a single touch drag operation
+PreconditionFailed touch-events/touch-globaleventhandler-interface.html :: Touch events in GlobalEventHandlers
+PreconditionFailed touch-events/touch-globaleventhandler-interface.html :: Touch events are GlobalEventHandlers' own property
+Pass touch-events/touch-globaleventhandler-interface.html :: Touch events not in Element.prototype
+Pass touch-events/touch-touchevent-constructor.html :: Touch constructor with insufficient properties
+Pass touch-events/touch-touchevent-constructor.html :: Touch constructor with non-EventTarget target
+Pass touch-events/touch-touchevent-constructor.html :: Touch constructor exists and creates a Touch object with minimum properties
+Pass touch-events/touch-touchevent-constructor.html :: Touch constructor exists and creates a Touch object with requested properties
+Pass touch-events/touch-touchevent-constructor.html :: TouchEvent constructor exists and creates a TouchEvent object with requested properties

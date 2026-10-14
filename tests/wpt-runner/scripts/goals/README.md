@@ -27,7 +27,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 19 | [performance-api-compat](../../../../docs/goal/performance-api-compat.md) | performance-api（resource/navigation/event/longtask） | 缺面甄别在 M1（host 数据管道） |
 | 20 | [net-api-compat](../../../../docs/goal/net-api-compat.md) | fetch; xhr; url; mimesniff; streams; eventsource | **已收口**（2026-10-04）；WebSocket 二期挂账 |
 | 21 | [console-compat](../../../../docs/goal/console-compat.md) | console | 无（极小快赢；console 捕获通道 M1 甄别，触面先与 devtools 流协调） |
-| 22 | [touch-events-compat](../../../../docs/goal/touch-events-compat.md) | touch-events | 构造器面自主；注入面 M1 甄别 |
+| 22 | [touch-events-compat](../../../../docs/goal/touch-events-compat.md) | touch-events | **已收口**（2026-10-14）；注入面挂宿主触摸注入管线重入 |
 | 23 | [selection-compat](../../../../docs/goal/selection-compat.md) | selection | 无（2026-10-08 立项） |
 | 24 | [compression-compat](../../../../docs/goal/compression-compat.md) | compression | 无（实现型小套件，M2 实现轮） |
 | 25 | [html-semantics-compat](../../../../docs/goal/html-semantics-compat.md) | html/semantics 十子域 | **主攻大域**（分域切片收口制） |
@@ -37,7 +37,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 29 | [pointerlock-compat](../../../../docs/goal/pointerlock-compat.md) | pointerlock | **门控 goal**（M1 盘点自主；指针捕获管线须用户点名） |
 | 30 | [encoding-compat](../../../../docs/goal/encoding-compat.md) | encoding | **已收口**（2026-10-04） |
 | 40 | [html-syntax-compat](../../../../docs/goal/html-syntax-compat.md) | html/syntax; html/dom | **已收口**（2026-10-04） |
-| 50 | [uievents-compat](../../../../docs/goal/uievents-compat.md) | uievents; pointerevents | **已收口**（2026-10-07）；touch/pointerlock/IME 挂账 |
+| 50 | [uievents-compat](../../../../docs/goal/uievents-compat.md) | uievents; pointerevents | **已收口**（2026-10-07）；touch 挂账已由编号 22 收口（2026-10-14）；pointerlock/IME 挂账 |
 | 60 | [navigation-compat](../../../../docs/goal/navigation-compat.md) | history; navigation-api; html/browsers | M2 轻面推进中；**M3 iframe 切片用户门控** |
 | 70 | [workers-compat](../../../../docs/goal/workers-compat.md) | workers; dedicated-workers | 推进中；zero-page-runtime 契约先行 |
 | 80 | [svg-compat](../../../../docs/goal/svg-compat.md) | svg | 推进中；渲染面归 rendering-compat |
