@@ -43,9 +43,7 @@ fn test_r5117_float_content_box_calc_side_by_side() {
         </div></body></html>"#,
     );
     // 找两个 float 盒（同层兄弟、宽度 >100）。
-    fn find_pair(
-        b: &crate::types::LayoutBox,
-    ) -> Option<(&crate::types::LayoutBox, &crate::types::LayoutBox)> {
+    fn find_pair(b: &crate::types::LayoutBox) -> Option<(&crate::types::LayoutBox, &crate::types::LayoutBox)> {
         for w in b.children.windows(2) {
             if w[0].width > 100.0 && w[1].width > 100.0 {
                 return Some((&w[0], &w[1]));
