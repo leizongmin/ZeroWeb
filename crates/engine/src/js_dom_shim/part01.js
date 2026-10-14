@@ -5580,7 +5580,9 @@
         var p = String(prop);
         if (p === 'getPropertyValue') {
           return function(name) {
-            var kp = _camelToKebab(String(name));
+            // css-variables-1：自定义属性名 case-sensitive——`--` 起始名禁 kebab 归一（R5114）。
+            var kp = String(name);
+            if (kp.slice(0, 2) !== '--') kp = _camelToKebab(kp);
             if (kp === 'display') {
               var hv = query(kp);
               if (hv !== '') return hv;
@@ -5613,7 +5615,8 @@
         // R5009 片 e（M4 片 e）：float 计算值初始 'none'（spec CSS2§9.3.1——host 未
         // 覆盖返 '' 曾使 computed cssFloat 空，WPT historical 'applet is not styled'
         // 期望 'none'；host 真值非空时不变）。
-        var _csV = query(_camelToKebab(p));
+        // css-variables-1：`--` 起始 camelCase 属性访问同 getPropertyValue 免归一（R5114）。
+        var _csV = query(p.slice(0, 2) === '--' ? p : _camelToKebab(p));
         if (_csV === '' && (p === 'cssFloat' || p === 'float')) return 'none';
         return _csV;
       }

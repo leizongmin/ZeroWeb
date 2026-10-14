@@ -10,6 +10,8 @@ impl Default for ComputedStyle {
         let transparent = ColorValue::Transparent;
 
         Self {
+            // R5114：自定义属性共享表（css-variables-1；缺省空静态实例）。
+            custom_properties: ComputedStyle::empty_custom_properties(),
             // 盒模型
             display: DisplayValue::Inline,
             position: PositionValue::Static,

@@ -274,7 +274,16 @@ pub fn lookup_computed_property(
 /// 此处无 layout 故返计算值；对 font-size/border-radius/gap/letter-spacing 等非 geometric 属性
 /// 与 real browser 一致）。
 pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String {
-    let p = prop.trim().to_ascii_lowercase();
+    // css-variables-1：自定义属性名 case-sensitive（禁 lowercase 归一），且不经
+    // kebab 属性分支——计算值 = 指定 token 流经 var() 完整替换（使用点上下文 =
+    // 元素自身 custom_properties；环检测 resolve_var 既有）。未声明返 ''（同标准属性）。
+    let raw_name = prop.trim();
+    if raw_name.starts_with("--") {
+        return style.custom_properties.get(raw_name).map_or_else(String::new, |v| {
+            zero_style_system::resolve_var(v, &style.custom_properties)
+        });
+    }
+    let p = raw_name.to_ascii_lowercase();
     // 元素自身计算 color，作 currentColor 解析上下文（color 属性本身则 currentColor→自解析）。
     let element_color = &style.color;
     // 元素 font-size（resolve 阶段已为 Px）供长度族兜底解析残余相对单位（em/rem/vw 等）。

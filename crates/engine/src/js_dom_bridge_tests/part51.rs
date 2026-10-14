@@ -110,3 +110,84 @@ fn test_p99_pure_path_unaffected_by_ambient_css() {
         "纯路径不吃 ambient css"
     );
 }
+
+// ── P9-9 切片 2（R5114）：外部样式表进 document.styleSheets + gCS 自定义属性暴露 ──
+
+#[test]
+fn test_p99s_gcs_custom_property_from_external_sheet() {
+    // :root 自定义属性经外部 CSS 声明 → gCS `--` 查询暴露；继承属性（html/body 同值）。
+    let html = "<html><head><style></style></head><body><p>p</p></body></html>";
+    crate::js_dom_bridge::clear_generation_cache();
+    crate::js_dom_bridge::set_active_external_css(":root { --zw-accent: rgb(9, 105, 218); }");
+    let mut sb = p51_sandbox_with_html(html);
+    assert_eq!(p51_gcs(&mut sb, "html", "--zw-accent"), "rgb(9, 105, 218)");
+    assert_eq!(p51_gcs(&mut sb, "body", "--zw-accent"), "rgb(9, 105, 218)", "自定义属性继承到后代");
+    assert_eq!(p51_gcs(&mut sb, "p", "--zw-accent"), "rgb(9, 105, 218)");
+    // 未声明属性返 ''（同标准属性 host miss 语义）。
+    assert_eq!(p51_gcs(&mut sb, "html", "--zw-missing"), "");
+    // css-variables-1：名称 case-sensitive（serializer 不做 lowercase 归一）。
+    crate::js_dom_bridge::set_active_external_css(":root { --Zw-X: 1px; --zw-x: 2px; }");
+    crate::js_dom_bridge::clear_generation_cache();
+    let mut sb = p51_sandbox_with_html(html);
+    assert_eq!(p51_gcs(&mut sb, "html", "--Zw-X"), "1px");
+    assert_eq!(p51_gcs(&mut sb, "html", "--zw-x"), "2px");
+}
+
+#[test]
+fn test_p99s_gcs_custom_property_var_chain_resolved() {
+    // css-variables-1 §2：计算值 = 指定值经 var() 完整替换（链式 --a: var(--b)）。
+    let html = "<html><head><style></style></head><body></body></html>";
+    crate::js_dom_bridge::clear_generation_cache();
+    crate::js_dom_bridge::set_active_external_css(":root { --a: var(--b); --b: green; }");
+    let mut sb = p51_sandbox_with_html(html);
+    assert_eq!(p51_gcs(&mut sb, "html", "--a"), "green");
+    assert_eq!(p51_gcs(&mut sb, "html", "--b"), "green");
+}
+
+#[test]
+fn test_p99s_style_sheets_includes_external_entry() {
+    // 空外部 CSS：styleSheets 仅内联 <style>（既有语义，逐位不变）。
+    let html = "<html><head><style>body { color: black }</style></head><body></body></html>";
+    crate::js_dom_bridge::clear_generation_cache();
+    crate::js_dom_bridge::set_active_external_css("");
+    let mut sb = p51_sandbox_with_html(html);
+    let summary = |sb: &mut zero_script_sandbox::V8Sandbox| -> String {
+        use zero_script_sandbox::Sandbox;
+        sb.execute(
+            "(function(){ var ss = document.styleSheets; var out = { len: ss.length }; \
+             if (ss.length) { out.first = { sel: ss[0].cssRules.length ? ss[0].cssRules[0].selectorText : null, \
+             owner: ss[0].ownerNode === null ? 'null' : 'node' }; } return JSON.stringify(out); })()",
+        )
+        .unwrap()
+        .value
+    };
+    assert_eq!(summary(&mut sb), r#"{"len":1,"first":{"sel":"body","owner":"node"}}"#);
+
+    // 装外部 CSS：合成条目在表头（级联源同序），规则可读，ownerNode null。
+    crate::js_dom_bridge::set_active_external_css("h1 { font-family: GithubMono, monospace; }");
+    crate::js_dom_bridge::clear_generation_cache();
+    let mut sb = p51_sandbox_with_html(html);
+    assert_eq!(
+        summary(&mut sb),
+        r#"{"len":2,"first":{"sel":"h1","owner":"null"}}"#
+    );
+}
+
+#[test]
+fn test_p99s_pure_path_inline_custom_property() {
+    // 纯快照路径（无 ambient css）：内联 <style> 的自定义属性经字段下发后 gCS 可读
+    //（字段装配语义与外部 css 无关）；ambient 外部 css 仍不进纯路径（切片 1 语义不变）。
+    let html = "<html><head><style>:root { --inline-x: red; }</style></head><body></body></html>";
+    crate::js_dom_bridge::clear_generation_cache();
+    crate::js_dom_bridge::set_active_external_css(":root { --ext-only: blue; }");
+    assert_eq!(
+        crate::js_dom_bridge::computed_style_property(html, "html", "--inline-x"),
+        "red",
+        "内联自定义属性经 ComputedStyle 字段暴露"
+    );
+    assert_eq!(
+        crate::js_dom_bridge::computed_style_property(html, "html", "--ext-only"),
+        "",
+        "纯路径不吃 ambient css（既有语义不变）"
+    );
+}

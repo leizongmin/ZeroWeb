@@ -753,6 +753,20 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // R5114（P9-9 切片 2）：外部样式表（引擎合并 blob，ambient external css）规则 wire——
+    // 供 shim document.styleSheets 的外部表条目读 cssRules（级联源同款 StyleRule 序列化）。
+    // 空外部 CSS 返空串（shim 据此省略条目：无外部 CSS 的文档 styleSheets 语义逐位不变）。
+    sandbox.register_callback(
+        "__zw_style_rules_external",
+        Box::new(|_args: &[String]| {
+            let css = crate::js_dom_bridge::active_external_css();
+            if css.is_empty() {
+                return String::new();
+            }
+            style_rules_text(&css)
+        }),
+    );
+
     // js-dom M4 R113：`CSSStyleSheet.cssRules` 的 handle 版——createElement('style') 后 append 入
     // head 的 CSS-in-JS / WPT prefixed-animation 形态（无 selector，owner 是 handle）。规则源 =
     // mutation 历史（CreateElement 后的 SetTextOnHandle / SetInnerHtmlOnHandle latest-wins），

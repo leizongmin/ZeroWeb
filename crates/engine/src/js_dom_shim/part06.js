@@ -1679,18 +1679,26 @@
     rule.style = _makeRuleStyle(rule, flushFn);
     return rule;
   }
-  function _makeStyleSheet(owner) {
+  function _makeStyleSheet(owner, externalWire) {
     var sel = owner && owner.__zwSelector;
     // js-dom M4 R113：handle-based owner（createElement('style') 后 append——CSS-in-JS /
     // WPT prefixed-animation 形态）。初始规则经 `__zw_style_rules_handle`（host 从 mutation
     // 历史解析该 handle 的 style 文本），写回经 `__zw_set_text_handle`（SetTextOnHandle）。
     var handle = !sel && owner ? owner.__zwHandle : null;
+    // R5114（P9-9 切片 2）：owner=null + externalWire → 外部样式表合成条目（引擎合并
+    // blob——collect_stylesheets 级联源顺序在 <style> 表之前，此处同序）。href/ownerNode
+    // 为 null（per-link 拆分需 per-link CSS 文本穿线，引擎暂无该数据——documented
+    // limitation）；规则只读（insertRule/deleteRule 仅内存 cache，无宿主写回——blob 由
+    // runtime 管线同步管）。
+    var external = owner == null;
     var rulesCache = null;
     function getRules() {
       if (rulesCache) return rulesCache;
       rulesCache = [];
       var wire = '';
-      if (sel && typeof __zw_style_rules === 'function') {
+      if (external) {
+        wire = String(externalWire == null ? '' : externalWire);
+      } else if (sel && typeof __zw_style_rules === 'function') {
         try { wire = String(__zw_style_rules(sel)); } catch (_e0) { wire = ''; }
       } else if (handle && typeof __zw_style_rules_handle === 'function') {
         try { wire = String(__zw_style_rules_handle(handle)); } catch (_e0h) { wire = ''; }
@@ -1716,6 +1724,7 @@
     }
     // 从 cache 重建 `<style>` 文本（join cssText）+ 写回 owner 元素（下次 render 重解析 cascade）。
     function flushToOwner() {
+      if (external) return; // R5114：外部表只读——blob 由 runtime 管线同步管，无宿主写回。
       var text = getRules().map(function (r) { return r.cssText; }).join('\n');
       if (sel && typeof __zw_set_text === 'function') {
         try { __zw_set_text(sel, text); } catch (_e) {}
@@ -4611,10 +4620,18 @@
     },
     // `document.styleSheets`（R2808）——真 backing：`<style>` 元素 → CSSStyleSheet 数组（经
     // `__zw_query_all('style')` 查询 + `_makeStyleSheet`）。每次访问重新查询（live DOM）。
+    // R5114（P9-9 切片 2）：外部样式表（合并 blob）以**单条合成条目**置于表头（级联源
+    // 同序，cssom/#document-stylesheets 顺序语义 = 级联应用序）；空外部 CSS 不产条目
+    //（既有 WPT/测试语义逐位不变）。
     get styleSheets() {
+      var out = [];
+      if (typeof __zw_style_rules_external === 'function') {
+        var _extWire = '';
+        try { _extWire = String(__zw_style_rules_external()); } catch (_eExtR) { _extWire = ''; }
+        if (_extWire) out.push(_makeStyleSheet(null, _extWire));
+      }
       var sels = (typeof __zw_query_all === 'function')
         ? String(__zw_query_all('style')).split('|').filter(Boolean) : [];
-      var out = [];
       for (var i = 0; i < sels.length; i++) out.push(_makeStyleSheet(_wrapSelector(sels[i])));
       return out;
     },

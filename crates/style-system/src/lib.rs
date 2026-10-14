@@ -271,8 +271,9 @@ fn parse_positive_finite_html_dimension_attr(value: &str) -> Option<f32> {
 ///
 /// 整合选择器匹配、级联、继承和计算值生成。
 pub struct StyleSystem {
-    /// 自定义属性存储（--variable）。
-    custom_properties: HashMap<String, String>,
+    /// 自定义属性存储（--variable）。R5114：`Arc` 共享——每元素 `compute` 装配不可变表，
+    /// 随 `ComputedStyle.custom_properties` 一并下发（子链继承 Arc 克隆，免全量 map 复制）。
+    custom_properties: CustomProperties,
     /// `@property` 注册的自定义属性（名称 → 注册信息）。由 `compute_styles` 预扫描
     /// 样式表填充，在 `gather_custom_properties` 中为未显式声明的注册属性提供
     /// `initial-value` 兜底默认值（并按 `inherits` 控制继承）。
@@ -308,7 +309,8 @@ impl StyleSystem {
     /// 创建新的样式系统实例。
     pub fn new() -> Self {
         Self {
-            custom_properties: HashMap::new(),
+            // R5114：空共享表起步（LazyLock 静态，零分配）。
+            custom_properties: ComputedStyle::empty_custom_properties(),
             registered_properties: HashMap::new(),
             font_feature_values: HashMap::new(),
             font_relative_metrics: HashMap::new(),
@@ -488,7 +490,7 @@ impl StyleSystem {
             }
             chain.reverse();
             let mut parent_style: Option<ComputedStyle> = None;
-            let mut parent_custom: HashMap<String, String> = HashMap::new();
+            let mut parent_custom: CustomProperties = ComputedStyle::empty_custom_properties();
             for &cid in &chain {
                 if matches!(doc.get(cid).map(|n| &n.kind), Some(NodeKind::Element(_))) {
                     let s = *self.compute_element_style_internal(
@@ -1046,7 +1048,9 @@ impl StyleSystem {
         let current_custom = if is_element {
             self.custom_properties.clone()
         } else {
-            parent_custom.clone()
+            // 非元素节点：父链传入的是 `&HashMap`（compute_element_style_internal 签名
+            // 经 Deref 借用）——升级为共享 Arc（内容同，免复制；R5114）。
+            CustomProperties::new(parent_custom.clone())
         };
 
         // R4124（css-conditional-5 §container-queries）：本元素是 container-type ≠
@@ -1069,7 +1073,8 @@ impl StyleSystem {
                 }
                 Some(container_entry_for(
                     elem_style,
-                    Some(std::sync::Arc::new(current_custom.clone())),
+                    // R5114：current_custom 已是共享 Arc，直传（旧径在此处克隆全量 map）。
+                    Some(std::sync::Arc::clone(&current_custom)),
                 ))
             })
             .flatten();
@@ -1928,7 +1933,12 @@ impl StyleSystem {
 
         // 4. 收集自定义属性（继承父元素 + 当前元素自身声明覆盖）
         // CSS 自定义属性是继承属性：`:root { --x }` 定义的变量需对后代可见。
-        self.custom_properties = gather_custom_properties(&cascaded, parent_custom, &self.registered_properties);
+        // R5114：装配为不可变共享表（子链经 Arc 克隆继承；ComputedStyle 随计算样式持有同 Arc）。
+        self.custom_properties = CustomProperties::new(gather_custom_properties(
+            &cascaded,
+            parent_custom,
+            &self.registered_properties,
+        ));
 
         // 4.5. 在级联值中解析 var() 引用
         let resolved_cascaded = resolve_var_in_cascaded(&cascaded, &self.custom_properties);
@@ -2180,6 +2190,9 @@ impl StyleSystem {
             self.root_ch_width = Some(root_font_size * root_metrics.map_or(0.5, |metrics| metrics.ch_width));
             self.root_ic_width = Some(root_font_size * root_metrics.map_or(1.0, |metrics| metrics.ic_width));
         }
+        // R5114（css-variables-1）：本元素自定义属性随计算样式下发（getComputedStyle
+        // `--` 查询暴露）。Arc 共享——调用方子链捕获（current_custom）与本字段同 Arc。
+        resolved.custom_properties = std::sync::Arc::clone(&self.custom_properties);
         Box::new(resolved)
     }
 }
