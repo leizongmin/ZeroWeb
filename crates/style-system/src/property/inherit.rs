@@ -513,6 +513,9 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
         // ZeroWeb multicol 列分布的结构性缺口（multicol-inherit-002 +1.24pp），
         // 属 R750「spec-correct 但暴露正交缺口」模式。column-rule-* 是视觉属性，
         // 风险低，保留。
+        // R5129 复测：inherit 臂已实证可达且语义生效，但该案渲染逐像素不变
+        //（内层 div 基线已渲 3 列）——约束在外层/嵌套 multicol 列分布，非关键字；
+        // 启用使 002 14.92→15.68% 同形微涨、零翻绿，维持缓办待嵌套分布修复同落。
         "column-rule-width" => {
             child.column_rule_width = parent.column_rule_width.clone();
             true
