@@ -3834,7 +3834,7 @@ fn encoding_case_skipped(relative: &str, source: &str) -> bool {
 /// flat 布局 corpus 通用扫描执行，.html + .any.js window 变体双形态（web-api-batch2
 /// [`run_corpus_subdirs`] 为 html-only 变体；timing 专用的 absolute-helper extras
 /// 分支不适用 net/encoding 面——.html 案直接 [`run_testharness_html`]）。
-fn run_any_js_corpus_subdirs(
+pub(crate) fn run_any_js_corpus_subdirs(
     wpt_root: &Path,
     subdirs: &[&str],
     filter: Option<&str>,

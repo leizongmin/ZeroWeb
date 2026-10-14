@@ -1,10 +1,22 @@
 # Console 兼容 — console IDL 与格式化语义面
 
-**版本**: v1.0
-**日期**: 2026-10-08
-**状态**: Active（已立项，极小快赢切片——无用户门控项）
+**版本**: v1.1
+**日期**: 2026-10-14
+**状态**: Active——M1 收口（2026-10-14），M2 语义收敛推进中
 **执行模式**: WPT 驱动（上游 console corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——开发者面）
+
+> **▶ 当前状态（2026-10-14，M1 收口）**
+> - **M1 完成**：console corpus 通道（`testharness-console` 子命令 + Makefile
+>     target）+ 可执行子集甄别 + 捕获通道结论落 evidence/。基线 **8/28 =
+>     28.6%**（可执行面 8/23 = 34.8%；BiDi `log.entryAdded` 5 案 Unsupported
+>     如实记账）。证据：[evidence/2026-10-14-m1-baseline.md](evidence/2026-10-14-m1-baseline.md)。
+> - **M2 失败簇**：① WebIDL namespace IDL 面（空原型中间层 + `Symbol.toStringTag`，
+>     5 子测试）；② count/time 家族 label ToString 转换 + 转换异常再抛（10 子测试）。
+> - **卡点**：无（BiDi 捕获通道为 M2 后续切片，落地路径已定——shim 页内事件面
+>     + testdriver `bidi` 白名单，不动 `__zw_console_log` 宿主回调契约）。
+> - **下一步**：M2 切片 1（namespace IDL 面 + label 转换语义）→ 基线对比落
+>     evidence/ → BiDi 捕获通道切片。
 
 > **说明**
 > 本文档是 ZeroWeb「Console 兼容」专项目标执行契约。console 是网页调试与
@@ -72,8 +84,8 @@
 
 ### DC-1: WPT 导入与基线
 
-- [ ] console corpus 导入 + 可执行子集甄别（console 捕获通道需求结论落 evidence/）
-- [ ] 分类通过率基线落 evidence/，并回填 docs/compat/trends/wpt-suites.csv planned 行
+- [x] console corpus 导入 + 可执行子集甄别（console 捕获通道需求结论落 evidence/）——2026-10-14，[evidence/2026-10-14-m1-baseline.md](evidence/2026-10-14-m1-baseline.md)
+- [x] 分类通过率基线落 evidence/，并回填 docs/compat/trends/wpt-suites.csv planned 行——8/28 = 28.6%（可执行面 8/23 = 34.8%）
 
 ### DC-2: IDL 与格式化语义收敛
 
@@ -88,7 +100,7 @@
 
 ## 活跃里程碑
 
-### M1 — WPT 导入与基线（含捕获通道甄别）
+### M1 — WPT 导入与基线（含捕获通道甄别）✅ 2026-10-14
 
 ### M2 — IDL/格式化/状态语义收敛（DC-2 清单逐项）
 

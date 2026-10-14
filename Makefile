@@ -519,6 +519,17 @@ fetch-wpt-cookies:
 testharness-cookies: target-disk-guard fetch-wpt-cookies target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-cookies $(if $(FILTER),$(FILTER),)
 
+# Console goal M1 / DC-1（docs/goal/console-compat.md）：语料 fetch 走 goals/21
+# 预置脚本。BiDi log.entryAdded 捕获通道依赖案（count/timing/format-specifier
+# logging 面）整案 Unsupported——通道甄别结论见
+# docs/goal/console-compat/evidence/2026-10-14-m1-baseline.md。
+# make testharness-console FILTER=count。
+fetch-wpt-console:
+	bash tests/wpt-runner/scripts/goals/21-console-compat.sh
+
+testharness-console: target-disk-guard fetch-wpt-console target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-console $(if $(FILTER),$(FILTER),)
+
 # Performance API goal M1 / DC-1（docs/goal/performance-api-compat.md）：语料 fetch 走
 # goals/19 预置脚本（WPT 无 performance-api 顶层目录——resource/navigation/event/
 # longtask 四独立套件，goals/19 DIRS 记账）；runner 可执行子集 skip 域见

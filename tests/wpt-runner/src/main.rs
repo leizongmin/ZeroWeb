@@ -16,6 +16,7 @@ mod report;
 mod runner;
 mod runner_text_metrics;
 mod testharness;
+mod testharness_console;
 mod testharness_cookies;
 mod testharness_fileapi;
 mod testharness_webmessaging;
@@ -57,6 +58,8 @@ Commands:
                        window testharness cases (webmessaging-compat goal M1 / DC-1)
   testharness-cookies  Run imported cookies (document.cookie semantics) window testharness
                        cases (cookies-compat goal M1 / DC-1)
+  testharness-console  Run pinned console corpus (namespace/label-conversion/format-tolerance)
+                       window testharness cases (console-compat goal M1 / DC-1)
   testharness-resource-timing  Run pinned resource-timing window testharness cases
                        (performance-api-compat goal M1 / DC-1)
   testharness-navigation-timing  Run pinned navigation-timing window testharness cases
@@ -311,6 +314,9 @@ fn main() {
         }),
         "testharness-cookies" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_cookies::run_cookies_cases(wpt_root, filter)
+        }),
+        "testharness-console" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness_console::run_console_cases(wpt_root, filter)
         }),
         "testharness-web-components" => cmd_testharness_web_components(&options, filter.as_deref()),
         "testharness-intersection-observer" => cmd_testharness_intersection_observer(&options, filter.as_deref()),
