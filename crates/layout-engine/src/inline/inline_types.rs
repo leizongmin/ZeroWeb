@@ -436,6 +436,48 @@ pub(crate) fn collapse_whitespace(text: &str) -> String {
     result
 }
 
+/// R5114（css-text-3 §4.1.3）：段断行上下文 CJK 判定（chromium 口径）——假名
+/// （平/片/半角片假名，含长音记号）、CJK 统一表意（含扩展 A/兼容）、迭字/圈号。
+/// 两侧字符均命中 → 段断行整体移除（无空格亦无折行机会）。
+pub(crate) fn is_cjk_for_segment_break(ch: char) -> bool {
+    matches!(ch,
+        '\u{3040}'..='\u{30FF}'   // 平假名 + 片假名（含长音记号 U+30FC）
+        | '\u{31F0}'..='\u{31FF}' // 片假名音标扩展
+        | '\u{3400}'..='\u{4DBF}' // CJK 扩展 A
+        | '\u{4E00}'..='\u{9FFF}' // CJK 统一表意
+        | '\u{F900}'..='\u{FAFF}' // CJK 兼容表意
+        | '\u{FF66}'..='\u{FF9F}' // 半角片假名
+        | '\u{3005}'..='\u{3007}' // 々〻〆〇
+    )
+}
+
+/// R5114：段断行标记折叠——`\n` 折叠为 U+000B 哨兵（普通可折叠空白 → 空格）。
+/// **仅在 collector 内使用**：哨兵由 `resolve_segment_breaks_in_node_text` 按
+/// §4.1.3 上下文消解后 produce 最终 run 文本（哨兵不落 run——R5113 泄漏教训：
+/// run.text 消费面含 intrinsic/measurement 等非断行器路径）。
+pub(crate) fn collapse_whitespace_mark_segment_breaks(text: &str) -> String {
+    const MARK: char = '\u{000B}';
+    let mut result = String::with_capacity(text.len());
+    let mut last_was_space = false;
+    for ch in text.chars() {
+        if ch == '\n' {
+            if !last_was_space {
+                result.push(MARK);
+                last_was_space = true;
+            }
+        } else if is_collapsible_ws(ch) {
+            if !last_was_space {
+                result.push(' ');
+                last_was_space = true;
+            }
+        } else {
+            result.push(ch);
+            last_was_space = false;
+        }
+    }
+    result
+}
+
 /// R4398（css-text-3 §4.1.2 + §white-space-phase-1）：pre-line 语境的**换行保留式**
 /// 白空格折叠——连续可折叠空白折叠为单个空格，但 `\n` 原样保留（强制断行 identity，
 /// 供 `split_into_words_with_ws` 的 break_at_newline 分支切段产出空词标记）。

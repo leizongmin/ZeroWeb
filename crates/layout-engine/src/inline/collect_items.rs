@@ -26,6 +26,202 @@ impl InlineFormattingContext {
     ///（preserve / break_at_newline / no_wrap）。与 inline_finalization 容器级映射同源
     ///（Pre=(T,T,T) 的 `\n` 断行由 preserve 模式的 split_into_words 承载，故
     /// break_at_newline 恒随 preserve 置位以简化 run 侧判定）。
+    // OPTIMIZATION：kill-switch 进程级单读（R5108 教训——per-node env::var 致
+    // bench-gate 微基准超预算）。
+    fn segment_break_cjk_enabled() -> bool {
+        static ON: OnceLock<bool> = OnceLock::new();
+        *ON.get_or_init(|| std::env::var("ZW_SEGMENT_BREAK_CJK").as_deref() != Ok("0"))
+    }
+
+    /// R5114（css-text-3 §4.1.3）：段断行（标记 U+000B）在 **collector 内**按上下文
+    /// 消解——方案 A（R5113 定界：哨兵不落 run，intrinsic/measurement 等消费面无泄漏）。
+    /// 每 MARK 的邻字符：节点内就近取；节点边界取 DOM 跨节点扫描（前向=后继文本的
+    /// 首个非空白字符；后向=前驱文本的末个非空白字符；块级/原子 inline/IFC 容器边界
+    /// → None 保守取空格语义）。两侧均 CJK → 段断行连同紧邻空格整体移除；否则退化
+    /// 为空格。kill-switch `ZW_SEGMENT_BREAK_CJK=0`（default-on）。
+    fn resolve_segment_breaks_in_node_text(
+        doc: &Document,
+        container: NodeId,
+        text_node: NodeId,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        text: &mut String,
+    ) {
+        const MARK: char = '\u{000B}';
+        if !text.contains(MARK) {
+            return;
+        }
+        // ruby 子树豁免：css-ruby-1 §ruby-overhang 的空格悬挂模型（R4357 谱系）按
+        // 空格计测 overhang pads——段断行移除会扰动 pad 校准
+        //（ruby-overhang-spaces-007 1.15% 实证）。ruby 域空格语义归 overhang 模型。
+        let mut anc = doc.parent_node(text_node);
+        while let Some(a) = anc {
+            if a == container {
+                break;
+            }
+            if doc.get(a).is_some_and(|n| {
+                matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("ruby"))
+            }) {
+                return;
+            }
+            anc = doc.parent_node(a);
+        }
+        let prev = Self::boundary_text_char(doc, container, text_node, styles, false);
+        let next = Self::boundary_text_char(doc, container, text_node, styles, true);
+        let chars: Vec<char> = text.chars().collect();
+        let mut out = String::with_capacity(text.len());
+        for (i, c) in chars.iter().copied().enumerate() {
+            if c != MARK {
+                out.push(c);
+                continue;
+            }
+            // 节点内就近非空白、非标记字符。
+            let intra_left = chars[..i].iter().rev().copied().find(|c| *c != MARK && !c.is_whitespace());
+            let intra_right = chars[i + 1..].iter().copied().find(|c| *c != MARK && !c.is_whitespace());
+            let left = intra_left.or(prev);
+            let right = intra_right.or(next);
+            let remove = matches!((left, right), (Some(l), Some(r)) if crate::inline::is_cjk_for_segment_break(l) && crate::inline::is_cjk_for_segment_break(r));
+            if !remove {
+                out.push(' ');
+            }
+            // remove：MARK 与贴邻空格（折叠期已并入 MARK 的序列）一并消失。
+        }
+        *text = out;
+    }
+
+    /// 段断行边界字符的 DOM 跨节点扫描（forward=true 取后继文本首字符，false 取
+    /// 前驱文本末字符）。停在：块级元素、原子 inline（img/br/input 等）、IFC 容器。
+    fn boundary_text_char(
+        doc: &Document,
+        container: NodeId,
+        from_node: NodeId,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        forward: bool,
+    ) -> Option<char> {
+        // 原子/空文本元素：不产生可扫描文本且自身构成折行边界。
+        fn is_atomic_void(local: &str) -> bool {
+            matches!(
+                local,
+                "img" | "br" | "input" | "canvas" | "svg" | "video" | "audio" | "iframe"
+                    | "object" | "embed" | "hr" | "textarea" | "select" | "button"
+            )
+        }
+        fn is_block_elem(styles: &HashMap<NodeId, ComputedStyle>, id: NodeId) -> bool {
+            styles.get(&id).is_some_and(|s| {
+                matches!(
+                    s.display,
+                    DisplayValue::Block
+                        | DisplayValue::FlowRoot
+                        | DisplayValue::ListItem
+                        | DisplayValue::Flex
+                        | DisplayValue::InlineFlex
+                        | DisplayValue::Grid
+                        | DisplayValue::InlineGrid
+                        | DisplayValue::Table
+                        | DisplayValue::InlineTable
+                )
+            })
+        }
+        // 元素子树内首个（forward）/末个（backward）非空白字符。
+        fn subtree_boundary_char(
+            doc: &Document,
+            root: NodeId,
+            styles: &HashMap<NodeId, ComputedStyle>,
+            forward: bool,
+            depth: usize,
+        ) -> Option<char> {
+            if depth > 32 {
+                return None;
+            }
+            let children = doc.child_nodes(root);
+            let ordered: Vec<NodeId> = if forward {
+                children.to_vec()
+            } else {
+                children.iter().rev().copied().collect()
+            };
+            for &child in &ordered {
+                match doc.get(child).map(|n| &n.kind) {
+                    Some(NodeKind::Text(t)) => {
+                        let scanned: Vec<char> = if forward {
+                            t.content.chars().skip_while(|c: &char| c.is_whitespace()).collect()
+                        } else {
+                            t.content.chars().rev().skip_while(|c: &char| c.is_whitespace()).collect()
+                        };
+                        if let Some(c) = scanned.into_iter().next() {
+                            return Some(c);
+                        }
+                    }
+                    Some(NodeKind::Element(e)) => {
+                        if is_atomic_void(e.local_name())
+                            || e.local_name().eq_ignore_ascii_case("ruby")
+                            || is_block_elem(styles, child)
+                        {
+                            return None;
+                        }
+                        if let Some(c) = subtree_boundary_char(doc, child, styles, forward, depth + 1) {
+                            return Some(c);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+        let mut cur = from_node;
+        loop {
+            // 相邻兄弟（经 parent child_nodes 定位）。
+            let (parent, sibs): (Option<NodeId>, Vec<NodeId>) = doc
+                .parent_node(cur)
+                .map(|p| (Some(p), doc.child_nodes(p).to_vec()))
+                .unwrap_or((None, Vec::new()));
+            let idx = sibs.iter().position(|&c| c == cur);
+            let adjacent: Option<NodeId> = idx.and_then(|i| {
+                if forward {
+                    sibs.get(i + 1).copied()
+                } else {
+                    i.checked_sub(1).and_then(|j| sibs.get(j).copied())
+                }
+            });
+            match adjacent {
+                Some(sib) => match doc.get(sib).map(|n| &n.kind) {
+                    Some(NodeKind::Text(t)) => {
+                        let scanned: Vec<char> = if forward {
+                            t.content.chars().skip_while(|c: &char| c.is_whitespace()).collect()
+                        } else {
+                            t.content.chars().rev().skip_while(|c: &char| c.is_whitespace()).collect()
+                        };
+                        if let Some(c) = scanned.into_iter().next() {
+                            return Some(c);
+                        }
+                        cur = sib;
+                    }
+                    Some(NodeKind::Element(e)) => {
+                        if is_atomic_void(e.local_name())
+                            || e.local_name().eq_ignore_ascii_case("ruby")
+                            || is_block_elem(styles, sib)
+                        {
+                            return None;
+                        }
+                        if let Some(c) = subtree_boundary_char(doc, sib, styles, forward, 0) {
+                            return Some(c);
+                        }
+                        cur = sib;
+                    }
+                    _ => {
+                        return None;
+                    }
+                },
+                None => {
+                    // 无兄弟：上溯。容器或块级祖先 → None（IFC/块边界）。
+                    let p = parent?;
+                    if p == container || is_block_elem(styles, p) {
+                        return None;
+                    }
+                    cur = p;
+                }
+            }
+        }
+    }
+
     fn run_white_space(ws: &zero_style_system::WhiteSpaceValue) -> crate::inline::RunWhiteSpace {
         use zero_style_system::WhiteSpaceValue;
         match ws {
@@ -183,6 +379,19 @@ impl InlineFormattingContext {
                             // 保留式折叠；段内折叠由 break_lines 的 break_at_newline
                             // 分支按段完成（对已折叠文本幂等）。
                             crate::inline::collapse_whitespace_keep_newlines(&text_data.content)
+                        } else if Self::segment_break_cjk_enabled() {
+                            // R5114（css-text-3 §4.1.3 方案 A）：段断行标记 + collector
+                            // 内上下文消解（哨兵不落 run，见 resolver 文档）。
+                            let mut marked =
+                                crate::inline::collapse_whitespace_mark_segment_breaks(&text_data.content);
+                            Self::resolve_segment_breaks_in_node_text(
+                                doc,
+                                container,
+                                child_id,
+                                styles,
+                                &mut marked,
+                            );
+                            marked
                         } else {
                             collapse_whitespace(&text_data.content)
                         };

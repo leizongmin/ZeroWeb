@@ -36,6 +36,7 @@ pub use column_fragmentation_flow::*;
 
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 use zero_css_parser::values::{DisplayValue, LengthValue, OverflowValue, PositionValue, VerticalAlignValue};
 
