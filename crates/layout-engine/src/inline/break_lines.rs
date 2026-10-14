@@ -17,6 +17,9 @@ impl InlineFormattingContext {
     /// 和 `InlineItem::Br`（强制换行）。浮动排除区域会缩小每行的可用宽度。
     pub fn break_items_into_lines(&mut self, items: Vec<InlineItem>) {
         self.lines.clear();
+        // R5121：段落级 UBA 计划消费（layout() 期 resolve）。take() 防跨次复用
+        //（measure/竖排等无计划调用 = 零扰动，走既有 per-run bidi 路径）。
+        let para_bidi_plan = self.para_bidi_plan.take();
         let plaintext_enabled = runtime_flags::plaintext_line_direction()
             && items
                 .iter()
@@ -94,7 +97,7 @@ impl InlineFormattingContext {
         // 新行上紧随的 `\n` 不再推空行盒（断行机会不重复）。
         let mut last_push_was_block_break = false;
 
-        for item in items {
+        for (item_idx, item) in items.into_iter().enumerate() {
             match item {
                 InlineItem::Text(run) => {
                     // 应用 BiDi 重排序（RTL 文本需要视觉顺序）
@@ -102,9 +105,17 @@ impl InlineFormattingContext {
                     // plaintext 必须先按逻辑内容断行，再逐行应用段落方向；整段预重排会把
                     // 后续 Latin 词搬到 RTL 段首，改变软换行结果。
                     let logical_plaintext = plaintext_enabled && run.is_plaintext_bidi;
+                    // R5121：段落级 UBA——计划在场的 run 改走段落级 level 光标（控制符
+                    // 嵌入/覆盖作用域跨 run 边界，per-run 解析会截断；不拆分 item，
+                    // 折行机会面不变）。
+                    let para_levels = para_bidi_plan
+                        .as_ref()
+                        .and_then(|plan| plan.item_levels[item_idx].as_deref());
                     // R3840：元素级 bidi-override 优先于容器级（自身子树强制方向，
                     // UAX #9 X2/X3；容器级 R3319 兜底其余 run）。
-                    let mut source_cursor = if let Some(is_rtl) = run.bidi_override.or(self.bidi_override_direction) {
+                    let mut source_cursor = if let Some(levels) = para_levels {
+                        BidiFragmentCursor::with_levels(&run.text, levels)
+                    } else if let Some(is_rtl) = run.bidi_override.or(self.bidi_override_direction) {
                         BidiFragmentCursor::with_override(&run.text, is_rtl)
                     } else if logical_plaintext {
                         BidiFragmentCursor::logical(&run.text)
@@ -1014,6 +1025,110 @@ impl InlineFormattingContext {
 
         // 应用 vertical-align 对齐
         self.apply_vertical_alignment();
+    }
+
+    /// R5121（css-writing-modes-3 §2.4 bidi box model slice·phase 1）：段落级 UBA
+    /// 的**行级 L2 组序重排**（parity 近似）。
+    ///
+    /// fragment 携带 uniform resolved parity（`TextFragmentSource::visual_is_rtl`；
+    /// identity 偶 level → source 缺省 = 偶）。对每行按「连续同 parity **且同源
+    /// run**」切组，对**极大奇 parity 组序列**整组反序并在原占用跨度内镜像重排
+    /// x（组内片段偏移不动；组间几何 gap 随反序镜像）。
+    ///
+    /// 组边界含源 run（`TextFragmentSource.text` 的 Arc 指针身份——同 run 的
+    /// fragment 共享 clone）：`with_levels` 已按段落级 level 完成 **run 内** L2
+    /// 全量（含词序反转），行级只需补**跨 run 段序**——奇组若合并跨 run 片段，
+    /// 段序重排失活；若按片段反序则与 run 内词序双重反转相消（bidi-004 取证
+    /// 2.07%→6.20%）。单 run 奇序列 = 单组 = 恒等（run 内已就位）。
+    ///
+    /// 基 LTR（level 0/1）下与 UAX #9 L2 精确一致；偶 level 嵌套（RTL 基内 LTR
+    /// 组序）为 phase 1 近似（FIXME：per-fragment 携带完整 level 后按 level 栈重排）。
+    /// span 局部交换保持行盒总宽/跨度不变 → text-align 前后皆稳定，无需重跑对齐。
+    /// 几何 gap 吸收 margin（phase 1 近似；margin 与 bidi 混排罕见，A/B 监视）。
+    /// UAX #9 L2：https://unicode.org/reports/tr9/#L2
+    pub(crate) fn reorder_lines_l2_for_para_bidi(&mut self) {
+        for line in &mut self.lines {
+            if line.runs.len() < 2 {
+                continue;
+            }
+            // 连续同 parity 且同源 run 切组（identity/mixed → 偶）。
+            let mut groups: Vec<(usize, usize, bool)> = Vec::new(); // (start, end, is_rtl)
+            let mut prev_source: Option<&std::sync::Arc<str>> = None;
+            for (i, run) in line.runs.iter().enumerate() {
+                let rtl = para_bidi::fragment_is_rtl_parity(run.source.as_ref());
+                let mut same_group = false;
+                if let Some((_, end, g_rtl)) = groups.last_mut() {
+                    if *g_rtl == rtl {
+                        match (prev_source, run.source.as_ref().map(|s| &s.text)) {
+                            (Some(prev), Some(src)) if std::sync::Arc::ptr_eq(prev, src) => {
+                                *end = i + 1;
+                                same_group = true;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                if !same_group {
+                    groups.push((i, i + 1, rtl));
+                }
+                prev_source = run.source.as_ref().map(|s| &s.text);
+            }
+            // 极大奇 parity 组序列整组反序（parity L2）。
+            let mut order: Vec<usize> = (0..groups.len()).collect();
+            let mut g = 0;
+            while g < groups.len() {
+                if !groups[g].2 {
+                    g += 1;
+                    continue;
+                }
+                let mut seq_end = g;
+                while seq_end < groups.len() && groups[seq_end].2 {
+                    seq_end += 1;
+                }
+                order[g..seq_end].reverse();
+                g = seq_end;
+            }
+            if order.iter().enumerate().all(|(a, b)| a == *b) {
+                continue;
+            }
+            // 组元数据：组内片段偏移（相对组首 x）+ 组间几何 gap（随反序镜像）。
+            struct GroupLayout {
+                offsets: Vec<f32>,
+                gap_before: f32,
+            }
+            let mut metas: Vec<GroupLayout> = Vec::with_capacity(groups.len());
+            for (start, end, _) in &groups {
+                let group_x = line.runs[*start].x;
+                metas.push(GroupLayout {
+                    offsets: line.runs[*start..*end].iter().map(|r| r.x - group_x).collect(),
+                    gap_before: 0.0,
+                });
+            }
+            for k in 1..groups.len() {
+                let prev = &line.runs[groups[k - 1].1 - 1];
+                metas[k].gap_before = line.runs[groups[k].0].x - (prev.x + prev.width);
+            }
+            // 占用跨度守恒：新序首组锚定原首组 x；新相邻对 (prev, cur) 的物理
+            // gap = 原 prev 组之前的几何间隙（metas[prev].gap_before，镜像映射——
+            // 原 [g_i, gap(i+1), g_{i+1}, …, gap(j), g_j] 镜像为
+            // [g_j, gap(j), g_{j-1}, …, gap(i+1), g_i]）。
+            let mut reordered: Vec<TextFragment> = Vec::with_capacity(line.runs.len());
+            let mut cursor = line.runs[0].x;
+            for (seq_pos, &gi) in order.iter().enumerate() {
+                if seq_pos > 0 {
+                    cursor += metas[order[seq_pos - 1]].gap_before;
+                }
+                let (start, end, _) = groups[gi];
+                for (run, offset) in line.runs[start..end].iter().zip(metas[gi].offsets.iter()) {
+                    let mut frag = run.clone();
+                    frag.x = cursor + offset;
+                    reordered.push(frag);
+                }
+                let last = &reordered[reordered.len() - 1];
+                cursor = last.x + last.width;
+            }
+            line.runs = reordered;
+        }
     }
 
     fn emit_vertical_text_runs(

@@ -22,6 +22,10 @@ pub(crate) fn content_visibility_enabled() -> bool {
 mod inline_types;
 pub use inline_types::*;
 
+// R5121（css-writing-modes-3 §2.4 bidi box model slice·phase 1）：段落级 UBA
+// 裂解 + 行级 L2 组序重排。dormant（`ZW_PARA_BIDI` opt-in，默认关）——见模块头。
+mod para_bidi;
+
 // Phase A §12.6 step-1：font-metric 桥接，默认 dormant。
 mod font_metrics;
 pub use font_metrics::*;
@@ -350,6 +354,11 @@ pub struct InlineFormattingContext {
     /// `Some` = step-2 在 `break_items_into_lines` 后按本上下文把行盒分配到列
     /// （respected 列高 budget，整行不裁断）。step-1 仅持有字段、不读取 → 行为不变。
     pub column_fragmentation: Option<ColumnFragmentationContext>,
+    /// R5121：段落级 UBA 计划（`ZW_PARA_BIDI` opt-in，默认 `None` = 既有 per-run
+    /// bidi 路径）。`layout()` 期 `para_bidi::resolve` 产物（与 items 逐位平行的
+    /// 逐字符 level）；`break_items_into_lines` 开头 `take()` 消费（Text run 改走
+    /// `BidiFragmentCursor::with_levels`），`has_rtl` 供行级 L2 组序重排门。
+    pub(crate) para_bidi_plan: Option<para_bidi::ParaBidiPlan>,
 }
 
 /// 默认 tab-size 值（8 个空格宽度，对应浏览器默认值）。
@@ -423,6 +432,7 @@ impl InlineFormattingContext {
             ascent_ratio_overrides: HashMap::new(),
             text_transform_overrides: NodeIdMap::default(),
             column_fragmentation: None,
+            para_bidi_plan: None,
         }
     }
 
@@ -1192,7 +1202,23 @@ impl InlineFormattingContext {
         }
         let items = self.collect_inline_items(doc, container, styles);
         self.capture_downloaded_font_metrics(&items, doc, styles);
+        // R5121（css-writing-modes-3 §2.4 bidi box model slice·phase 1）：段落级 UBA
+        //（ZW_PARA_BIDI opt-in，默认关）。门：容器级 bidi-override 关闭（R3319/R3836
+        // 校准路径不混排）+ resolve 内部门（无元素级 override/plaintext run + 存在
+        // bidi 信号 + 任一 run level 非 0）。不拆分 items（拆分会新增词间折行机会），
+        // 计划经 `para_bidi_plan` 字段交 `break_items_into_lines` 消费（with_levels
+        // 光标）。详见 inline/para_bidi.rs 模块头。
+        self.para_bidi_plan = if self.bidi_override_direction.is_none() && runtime_flags::para_bidi() {
+            para_bidi::resolve(&items)
+        } else {
+            None
+        };
+        // 行级组序重排门先读（break 开头 take() 消费计划）。
+        let para_has_rtl = self.para_bidi_plan.as_ref().is_some_and(|plan| plan.has_rtl);
         self.break_items_into_lines(items);
+        if para_has_rtl {
+            self.reorder_lines_l2_for_para_bidi();
+        }
         // R3836：容器级 RTL bidi-override 的行级 run 序反转（UAX #9 L2——重排按行
         // 反转整个显示序，非仅 run 内字符）。旧实现逐 run 反转字符但 run 序保持逻辑序，
         // 多 run 行（如 bidi-box-model-013 的 [span:dnoceS][␣tsriF]）视觉序错误
