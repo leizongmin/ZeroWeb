@@ -9227,7 +9227,7 @@
   // R3256：console 桥接宿主——page console.log/warn/error 等经 `__zw_console_log(level,msg)` 回调转发到宿主日志
   //（tracing）。旧实现全 no-op（page console 输出完全丢失，排障/WPT console 断言不可见）。序列化：string 直传，
   // 其余 JSON.stringify（对象/数组可读），JSON 失败（function/circular）回退 String()。`typeof` 守卫：回调未注册
-  //（shim 未配 host）时 no-op，**向后兼容**（不抛 ReferenceError）。count/group/time 等非输出类保持 no-op。
+  //（shim 未配 host）时 no-op，**向后兼容**（不抛 ReferenceError）。
   // **无条件覆盖**（非 `||`）：V8 默认上下文自带 native console（`function log(){[native code]}`，不桥接宿主，
   // 输出丢失），`||` 会保留它 → 桥接失效。故强制覆盖为桥接版；typeof 守卫保证无回调时与 native 同效（皆 vanishing）。
   function _zwSerializeConsoleArg(a) {
@@ -9272,39 +9272,166 @@
     try { return JSON.parse(JSON.stringify(a)); } catch (_) {}
     try { return String(a); } catch (_) { return '[unknown]'; }
   }
+  // M2 切片 2（console-compat）：Formatter（console.spec §2.2）——格式化首参中的
+  // 占位符，返回新参数列表（首参为格式化结果串）。递归至无占位符或参数耗尽；
+  // 首参非 string 不格式化（Chrome 口径：console.log(42, '%d') → "42 %d"）。
+  // %s → String(current)；%d/%i → Symbol ? NaN : parseInt(current, 10)；
+  // %f → Symbol ? NaN : parseFloat(current)；%o/%O → 序列化串（optimally useful
+  // formatting 实现定义——对象走 JSON 可读形态）；%c → CSS 样式参数，消费不产出
+  //（spec TODO，Chrome 口径）；%% → '%'（Chrome 扩展）。
+  // 转换异常（对象 toString 抛）不向页面抛——console 不得破页面（R3256 不变量）。
+  // https://console.spec.whatwg.org/#formatter
+  function _zwConsoleFormatFirst(args) {
+    if (args.length < 2) return args;
+    var target = args[0];
+    if (typeof target !== 'string') return args;
+    var match = /%[sdiOofc%]/.exec(target);
+    if (!match) return args;
+    var token = match[0];
+    var current = args[1];
+    var converted;
+    try {
+      if (token === '%%') converted = '%';
+      else if (token === '%s') converted = String(current);
+      else if (token === '%d' || token === '%i') converted = typeof current === 'symbol' ? NaN : parseInt(current, 10);
+      else if (token === '%f') converted = typeof current === 'symbol' ? NaN : parseFloat(current);
+      else if (token === '%o' || token === '%O') converted = _zwSerializeConsoleArg(current);
+      else converted = ''; // %c
+    } catch (_eConv) { converted = NaN; }
+    // %% 不消耗参数（无对应 arg）；其余占位符消耗 args[1]。
+    var consumed = token === '%%' ? 1 : 2;
+    var rest = [target.slice(0, match.index) + String(converted) + target.slice(match.index + 2)]
+      .concat(args.slice(consumed));
+    return _zwConsoleFormatFirst(rest);
+  }
   function _zwConsoleEmit(level, args) {
     if (typeof __zw_console_log !== 'function') return; // 宿主未注册 → no-op（向后兼容）
+    // Arguments 对象 → 真数组（formatter 递归用 .slice/.concat）。
+    args = Array.prototype.slice.call(args);
+    var formatted = _zwConsoleFormatFirst(args);
     var parts = [];
     var values = [];
-    for (var i = 0; i < args.length; i++) {
-      parts.push(_zwSerializeConsoleArg(args[i]));
-      values.push(_zwSerializeConsoleValue(args[i]));
-    }
+    for (var i = 0; i < formatted.length; i++) parts.push(_zwSerializeConsoleArg(formatted[i]));
+    for (var j = 0; j < args.length; j++) values.push(_zwSerializeConsoleValue(args[j]));
+    var text = parts.join(' ');
     var valuesJson = '[]';
     try { valuesJson = JSON.stringify(values); } catch (_) {}
-    try { __zw_console_log(level, parts.join(' '), valuesJson); } catch (_) {}
+    try { __zw_console_log(level, text, valuesJson); } catch (_) {}
+    // M2 切片 2：BiDi log.entryAdded 页内派发（runner testdriver stub 消费；
+    // WPT console corpus count/timing/format-specifier logging 观测面）。text 为
+    // 格式化后单行，args 为**未格式化** value-only remoteObject 列表（CDP
+    // consoleAPICalled 同口径——Chrome args 传原参）。无监听器零成本。
+    // https://w3c.github.io/webdriver-bidi/#log-entryAdded
+    if (globalThis.__zwConsoleBidiListeners && globalThis.__zwConsoleBidiListeners.length) {
+      var entryArgs = [];
+      for (var k = 0; k < values.length; k++) entryArgs.push(_zwConsoleBidiArg(values[k]));
+      var entry = { type: 'console', method: level, text: text, args: entryArgs };
+      var listeners = globalThis.__zwConsoleBidiListeners.slice();
+      for (var m = 0; m < listeners.length; m++) {
+        try { listeners[m](entry); } catch (_eL) {}
+      }
+    }
   }
-  globalThis.console = {
-    log: function() { _zwConsoleEmit('log', arguments); },
-    info: function() { _zwConsoleEmit('info', arguments); },
-    warn: function() { _zwConsoleEmit('warn', arguments); },
-    error: function() { _zwConsoleEmit('error', arguments); },
-    debug: function() { _zwConsoleEmit('debug', arguments); },
-    trace: function() { _zwConsoleEmit('trace', arguments); },
-    dir: function() { _zwConsoleEmit('dir', arguments); },
-    dirxml: function() { _zwConsoleEmit('dirxml', arguments); },
-    table: function() { _zwConsoleEmit('table', arguments); },
-    clear: function() {},
-    count: function() {},
-    countReset: function() {},
-    group: function() {},
-    groupCollapsed: function() {},
-    groupEnd: function() {},
-    time: function() {},
-    timeLog: function() {},
-    timeEnd: function() {},
-    assert: function() {}
+  // BiDi 值 → value-only remoteObject（`__zw_undefined__` 标记串还原 type:"undefined"；
+  // null 走 object+subtype；JSON-safe 平面/原始值直挂 value——Error 已展开为
+  // {name,message,stack} 对象形态）。
+  function _zwConsoleBidiArg(v) {
+    if (v === '__zw_undefined__') return { type: 'undefined' };
+    if (v === null) return { type: 'object', subtype: 'null', value: null };
+    var t = typeof v;
+    if (t === 'object') return { type: 'object', value: v };
+    return { type: t, value: v };
+  }
+
+  // M2 切片 1（console-compat）：count map / timer table / group stack——console
+  // namespace 的关联状态（console.spec §1.2/§1.3/§1.4），初始皆空。
+  var _zwConsoleCounts = {};
+  var _zwConsoleTimers = {};
+  var _zwConsoleGroups = [];
+  // M2 切片 2：BiDi log.entryAdded 页内监听器注册表（runner testdriver stub 注册；
+  // `_zwConsoleEmit` 派发——页内 console 观测通道，宿主回调/tracing 面不变）。
+  globalThis.__zwConsoleBidiListeners = [];
+
+  // WebIDL `optional DOMString label = "default"`：缺参或 undefined 取默认值；
+  // 其余 ToString(label)——**不带守卫**，label.toString() 抛出必须向外传播
+  //（console-label-conversion 口径：五方法 label 转换异常原样再抛）。
+  // https://webidl.spec.whatwg.org/#es-operations
+  function _zwConsoleLabel(args) {
+    if (args.length === 0 || args[0] === undefined) return 'default';
+    return String(args[0]);
+  }
+
+  // console namespace 对象（WebIDL es-namespaces）：[[Prototype]] 为**空原型中间层**
+  //（自有成员直挂对象、中间层 0 自有属性、中间层 [[Prototype]] = %ObjectPrototype%
+  // ——console-is-a-namespace 原型链口径）+ `Symbol.toStringTag = "console"`
+  //（{writable:false, enumerable:false, configurable:true}——
+  // console-namespace-object-class-string 口径，delete/defineProperty 均可操作）。
+  // https://webidl.spec.whatwg.org/#es-namespaces
+  // https://console.spec.whatwg.org/#console-namespace
+  var _zwConsoleNamespace = Object.create(Object.create(Object.prototype));
+  _zwConsoleNamespace.log = function() { _zwConsoleEmit('log', arguments); };
+  _zwConsoleNamespace.info = function() { _zwConsoleEmit('info', arguments); };
+  _zwConsoleNamespace.warn = function() { _zwConsoleEmit('warn', arguments); };
+  _zwConsoleNamespace.error = function() { _zwConsoleEmit('error', arguments); };
+  _zwConsoleNamespace.debug = function() { _zwConsoleEmit('debug', arguments); };
+  _zwConsoleNamespace.trace = function() { _zwConsoleEmit('trace', arguments); };
+  _zwConsoleNamespace.dir = function() { _zwConsoleEmit('dir', arguments); };
+  _zwConsoleNamespace.dirxml = function() { _zwConsoleEmit('dirxml', arguments); };
+  _zwConsoleNamespace.table = function() { _zwConsoleEmit('table', arguments); };
+  _zwConsoleNamespace.clear = function() {};
+  // https://console.spec.whatwg.org/#count
+  _zwConsoleNamespace.count = function() {
+    var label = _zwConsoleLabel(arguments);
+    _zwConsoleCounts[label] = (_zwConsoleCounts.hasOwnProperty(label) ? _zwConsoleCounts[label] : 0) + 1;
+    _zwConsoleEmit('count', [label + ': ' + _zwConsoleCounts[label]]);
   };
+  // https://console.spec.whatwg.org/#countreset
+  _zwConsoleNamespace.countReset = function() {
+    var label = _zwConsoleLabel(arguments);
+    if (_zwConsoleCounts.hasOwnProperty(label)) { _zwConsoleCounts[label] = 0; return; }
+    _zwConsoleEmit('warn', ["Count for '" + label + "' does not exist"]);
+  };
+  // https://console.spec.whatwg.org/#group
+  _zwConsoleNamespace.group = function() { _zwConsoleGroups.push(1); _zwConsoleEmit('group', arguments); };
+  _zwConsoleNamespace.groupCollapsed = function() { _zwConsoleGroups.push(1); _zwConsoleEmit('groupCollapsed', arguments); };
+  _zwConsoleNamespace.groupEnd = function() { _zwConsoleGroups.pop(); };
+  // https://console.spec.whatwg.org/#time ——已存在同 label timer 只告警不重置。
+  _zwConsoleNamespace.time = function() {
+    var label = _zwConsoleLabel(arguments);
+    if (_zwConsoleTimers.hasOwnProperty(label)) {
+      _zwConsoleEmit('warn', ["Timer '" + label + "' already exists"]);
+      return;
+    }
+    _zwConsoleTimers[label] = Date.now();
+  };
+  // https://console.spec.whatwg.org/#timelog ——duration 实现定义格式（spec 认可
+  // "4650.69 ms" 形态）；label: duration 后拼接额外 data 参数。
+  _zwConsoleNamespace.timeLog = function() {
+    var label = _zwConsoleLabel(arguments);
+    if (!_zwConsoleTimers.hasOwnProperty(label)) {
+      _zwConsoleEmit('warn', ["Timer '" + label + "' does not exist"]);
+      return;
+    }
+    var parts = [label + ': ' + (Date.now() - _zwConsoleTimers[label]) + ' ms'];
+    for (var i = 1; i < arguments.length; i++) parts.push(arguments[i]);
+    _zwConsoleEmit('timeLog', parts);
+  };
+  // https://console.spec.whatwg.org/#timeend ——输出后移除 timer 条目。
+  _zwConsoleNamespace.timeEnd = function() {
+    var label = _zwConsoleLabel(arguments);
+    if (!_zwConsoleTimers.hasOwnProperty(label)) {
+      _zwConsoleEmit('warn', ["Timer '" + label + "' does not exist"]);
+      return;
+    }
+    _zwConsoleEmit('timeEnd', [label + ': ' + (Date.now() - _zwConsoleTimers[label]) + ' ms']);
+    delete _zwConsoleTimers[label];
+  };
+  _zwConsoleNamespace.assert = function() {};
+  Object.defineProperty(_zwConsoleNamespace, Symbol.toStringTag, {
+    value: 'console', writable: false, enumerable: false, configurable: true
+  });
+  // 无条件覆盖（R3256 注记——描述符/原型链口径随本对象整体生效）。
+  globalThis.console = _zwConsoleNamespace;
 
   // `new Image(width, height)`（HTMLImageElement 构造器，R2834）——图片预加载（`new Image().src = url` 预取 /
   // onload 探测）+ DOM 挂载（`document.body.appendChild(img)`）高频；WPT css-images / css-backgrounds /

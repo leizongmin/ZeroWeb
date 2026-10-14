@@ -348,11 +348,38 @@ fn test_console_host_bridge_r3256() {
     assert_eq!(got[2].0, "error", "level=error");
     assert_eq!(got[2].1, "broken");
 
-    // ③ typeof 守卫：删掉回调后 console.log 不抛、不产生新条目（向后兼容）。
-    //（V8 sandbox 无 deregister，改在无回调的独立 sandbox 验证 no-op——此处仅验证序列化未误触。）
+    // ③ console-compat M2 切片 1（count/time 状态语义，console.spec §1.2/§1.4）：
+    // count 走 count map 记账并输出 "label: N"（level=count）；time 首建仅记时不输出；
+    // group 派发（level=group）。旧口径「count/group/time 非 output 类全 no-op」由
+    // WPT console-label-conversion（label ToString 转换可观测）+ count-logging
+    // （"default: 1..N" 输出面）作废。timeLog/timeEnd/告警面（missing-label warn）
+    // 由 WPT BiDi 通道解封后随通道切片补钉。
     let before = captured.lock().unwrap().len();
-    sandbox.execute("console.count('x'); console.group('g'); console.time('t');").unwrap();
-    assert_eq!(captured.lock().unwrap().len(), before, "count/group/time 非输出类 → no-op，不调回调");
+    sandbox
+        .execute("console.count('x'); console.count('x'); console.time('t'); console.group('g');")
+        .unwrap();
+    let got = captured.lock().unwrap().clone();
+    assert_eq!(got.len() - before, 3, "count×2（输出）+ time（无输出）+ group（输出）→ 3 条回调");
+    assert_eq!(got[before].0, "count", "count 派发 level=count");
+    assert_eq!(got[before].1, "x: 1", "count 记账首值 1");
+    assert_eq!(got[before + 1].1, "x: 2", "count 同 label 递增");
+    assert_eq!(got[before + 2].0, "group", "group 派发 level=group");
+    // label ToString 转换（WebIDL optional DOMString）：undefined/缺参 → "default"；
+    // 转换异常（toString 抛）原样再抛——console-label-conversion 10 子测试口径。
+    let before = captured.lock().unwrap().len();
+    sandbox
+        .execute(
+            "globalThis.__thrown = 0;\
+             try { console.count({ toString() { throw new RangeError('conv'); } }); }\
+             catch (e) { globalThis.__thrown = (e instanceof RangeError) ? 1 : -1; }\
+             console.count(undefined); console.countReset(); console.count(undefined);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__thrown").unwrap().value, "1", "label.toString() 异常向外传播");
+    let got = captured.lock().unwrap().clone();
+    assert_eq!(got.len() - before, 2, "异常案不计账不输出；countReset 存在 label 静默重置");
+    assert_eq!(got[before].1, "default: 1", "undefined → 'default'");
+    assert_eq!(got[before + 1].1, "default: 1", "countReset 后重新从 1 计数");
 
     // ④ t8h（console 桥 Error 保真）：Error 实例经 `_zwSerializeConsoleValue` 展开为
     // {name,message,stack} 平面（JSON round-trip 对 Error 产出 '{}'，宿主面全盲——
@@ -407,6 +434,68 @@ fn test_console_host_bridge_r3256() {
     assert!(
         !values.contains(r#""name":"TypeError","#),
         "revoked Proxy 非真实 Error，不产出展开三键（回退序列化），got: {values}"
+    );
+
+    // ⑦ M2 切片 2 Formatter（console.spec §2.2）：%s String 转换 / %d %i parseInt /
+    // %f parseFloat / %o 原样透传 / %c 消费不产出 / 未知占位缺参字面保留。Symbol 入
+    // %d/%i/%f → NaN（spec 特例——parseInt(Symbol) 本会抛 TypeError）。
+    let before = captured.lock().unwrap().len();
+    sandbox
+        .execute(
+            "console.log('n=%d f=%f s=%s', 42, 1.5, 'x');\
+             console.log('i=%i o=%O c=%c', '7', { a: 1 }, 'red', 'tail');\
+             console.log('sym %d %s', Symbol('q'), 'ok');\
+             console.log('keep 100%% %d missing', 9);",
+        )
+        .unwrap();
+    let got = captured.lock().unwrap().clone();
+    assert_eq!(got[before].1, "n=42 f=1.5 s=x", "%d/%f/%s 数值与字符串转换");
+    assert_eq!(
+        got[before + 1].1, "i=7 o={\"a\":1} c= tail",
+        "%i 整数化；%O 对象 JSON 形态；%c 消费不产出；余参后置空格拼接"
+    );
+    assert_eq!(got[before + 2].1, "sym NaN ok", "Symbol 入 %d → NaN（spec 特例，parseInt 本会抛）");
+    assert_eq!(got[before + 3].1, "keep 100% 9 missing", "%% 转义 + 占位符消耗后字面保留");
+    // valuesJson（CDP S11 面）保持**未格式化**原参——args[0] 即占位符原文。
+    assert_eq!(got[before].2, r#"["n=%d f=%f s=%s",42,1.5,"x"]"#, "valuesJson 未格式化原参");
+
+    // ⑧ M2 切片 2 BiDi log.entryAdded 页内捕获通道：stub 经
+    // `globalThis.__zwConsoleBidiListeners` 注册，`_zwConsoleEmit` 派发
+    // {type:"console", method, text, args}——text 为格式化后单行，args 为未格式化
+    // value-only remoteObject 列表（arg[0] type/value 保真；listener 异常不外溢）。
+    sandbox
+        .execute(
+            "globalThis.__zwBidi = []; \
+             globalThis.__zwConsoleBidiListeners.push(function (e) { globalThis.__zwBidi.push(e); throw new Error('listener boom'); });\
+             console.count('k'); console.log('%d', 42);",
+        )
+        .unwrap();
+    let count = sandbox
+        .execute("globalThis.__zwBidi.length")
+        .unwrap()
+        .value;
+    assert_eq!(count, "2", "每条 console 输出派发一个 BiDi 条目（listener 抛错不中断派发）");
+    assert_eq!(
+        sandbox
+            .execute(
+                "var e0 = globalThis.__zwBidi[0]; \
+                 [e0.type, e0.method, e0.text, e0.args.length, e0.args[0].type, e0.args[0].value].join('|')"
+            )
+            .unwrap()
+            .value,
+        "console|count|k: 1|1|string|k: 1",
+        "BiDi 条目形态：type/method/text/args——count 的 Logger 参数即 spec concat 单串"
+    );
+    assert_eq!(
+        sandbox
+            .execute(
+                "var e1 = globalThis.__zwBidi[1]; \
+                 [e1.method, e1.text, e1.args[0].value, e1.args[1].type + ':' + e1.args[1].value].join('|')"
+            )
+            .unwrap()
+            .value,
+        "log|42|%d|number:42",
+        "BiDi text 已格式化 / args 未格式化原参（remoteObject 形态）"
     );
 
     // ⑦ 审查 B-3 钉：无自有 stack/message 的 Error 子类实例（Object.create(Error.prototype)）

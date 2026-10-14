@@ -8366,6 +8366,11 @@ fn unsupported_testdriver_dependencies(source: &str) -> Vec<String> {
         // cookies-compat M1（2026-10-12）：delete_all_cookies 白名单——stub 转发 shim
         // `__zwDeleteAllCookies` 钩子（清 in-JS cookie store）；上游 corpus 的
         // domCookieTest 每子测试前后清 jar 是 exact-match 断言的隔离前提。
+        // console-compat M2 切片 2（2026-10-14）：bidi 白名单——stub 提供
+        // `bidi.log.entry_added` 页内捕获面（on 注册进 shim `__zwConsoleBidiListeners`，
+        // `_zwConsoleEmit` 派发）；console corpus 的 count/countReset/timing/
+        // format-specifier logging 观测案（BiDi log.entryAdded 依赖）解除整体
+        // Unsupported。
         if !name.is_empty()
             && name != "click"
             && name != "send_keys"
@@ -8373,6 +8378,7 @@ fn unsupported_testdriver_dependencies(source: &str) -> Vec<String> {
             && name != "set_permission"
             && name != "bless"
             && name != "delete_all_cookies"
+            && name != "bidi"
             && !dependencies.contains(&name)
         {
             dependencies.push(name);
@@ -9468,6 +9474,30 @@ const TESTDRIVER_STUB: &str = r#"<script>
         return Promise.resolve();
       } catch (e) {
         return Promise.reject(e);
+      }
+    },
+    // console-compat M2 切片 2（2026-10-14）：bidi.log.entry_added——页内 console 观测
+    // 通道（WebDriver BiDi log.entryAdded 的 runner 等价面）。`on` 把 handler 注册进
+    // shim `__zwConsoleBidiListeners`（`_zwConsoleEmit` 逐条目派发
+    // {type:"console", method, text, args}）；`subscribe` 无真 BiDi session 语义，
+    // 返 resolve(unsubscribe)（测试先 subscribe 后 on 的时序前提，清理 no-op）。
+    // shim 未加载（极老宿主）→ on 仍可注册（派发面自守卫）。
+    // https://w3c.github.io/webdriver-bidi/#log-entryAdded
+    bidi: {
+      log: {
+        entry_added: {
+          subscribe: function() {
+            return Promise.resolve(function() {});
+          },
+          on: function(handler) {
+            if (typeof handler !== 'function') return function() {};
+            globalThis.__zwConsoleBidiListeners.push(handler);
+            return function() {
+              var idx = globalThis.__zwConsoleBidiListeners.indexOf(handler);
+              if (idx !== -1) globalThis.__zwConsoleBidiListeners.splice(idx, 1);
+            };
+          }
+        }
       }
     }
   };
