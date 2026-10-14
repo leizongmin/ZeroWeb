@@ -1791,6 +1791,47 @@ fn rounded_rect_with_all_corners() {
     assert_eq!(corner, [255, 255, 255, 255], "corner should be white (outside radius)");
 }
 
+/// pill 形圆角矩形（四角半径 = 半边长，如徽章 `border-radius` 收缩后的 used value）
+/// 中心必须实心填充——圆角光栅化以「角部曲线不重叠（半径 ≤ 半边长）」为前提，
+/// 该前提由 engine 侧 css-backgrounds-3 §5.5 used-value 收缩保证。
+#[test]
+fn rounded_rect_pill_half_size_radius_fills() {
+    let mut primitives = RenderPrimitives::new();
+    primitives.add_rounded_rect(RoundedRectPrimitive {
+        rect: Rect::new(10.0, 10.0, 66.0, 27.0),
+        color: Color::rgb(232, 234, 237),
+        top_left_radius: 13.5,
+        top_right_radius: 13.5,
+        bottom_right_radius: 13.5,
+        bottom_left_radius: 13.5,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(
+        100,
+        50,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    // pill 中心应为 #e8eaed（严格三通道断言，避免白底 r=255 误报通过）
+    let center = fb.get_pixel(43, 24);
+    assert_eq!(
+        center,
+        [232, 234, 237, 255],
+        "pill center should be #e8eaed, got {center:?}"
+    );
+    // 圆角外侧象限应保持背景白（收缩半径的曲线真实生效）
+    let outside = fb.get_pixel(12, 12);
+    assert_eq!(outside, [255, 255, 255, 255], "outside pill curve should stay white");
+}
+
 /// 半透明圆角矩形背景必须按 alpha 与底色合成，不能硬编码 alpha=255 渲染为实色。
 ///
 /// 回归用例：旧 `fill_rounded_rect` 用 `set_pixel([r,g,b,255])` 直接覆盖，

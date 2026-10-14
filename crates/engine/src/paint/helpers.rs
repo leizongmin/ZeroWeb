@@ -1363,15 +1363,49 @@ impl BorderRadiusSpec {
     /// border-box 解析。不含百分比的长度（含 calc）已在 computed 阶段解析为 Px，
     /// 经此路径原值返回（byte-identical 于 [`Self::from_style`]）。
     ///
+    /// 解析后按 css-backgrounds-3 §5.5 对相邻圆角做重叠收缩（见
+    /// [`Self::shrink_overlapping_corners`]）。
+    ///
     /// driving：R2314 border-radius 百分比（`border-radius: 50%` 圆形）与含百分比 calc。
     pub fn from_style_with_box(style: &ComputedStyle, box_w: f32, box_h: f32) -> Self {
         let max_r = (box_w.min(box_h) / 2.0).max(0.0);
         let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
-        Self {
+        let mut spec = Self {
             top_left: resolve_radius_length(&style.border_top_left_radius, box_w, max_r, font_size_px),
             top_right: resolve_radius_length(&style.border_top_right_radius, box_w, max_r, font_size_px),
             bottom_right: resolve_radius_length(&style.border_bottom_right_radius, box_w, max_r, font_size_px),
             bottom_left: resolve_radius_length(&style.border_bottom_left_radius, box_w, max_r, font_size_px),
+        };
+        spec.shrink_overlapping_corners(box_w, box_h);
+        spec
+    }
+
+    /// css-backgrounds-3 §5.5（corner overlap）：相邻两角半径之和超过所在边长时，
+    /// 四角半径按 f = min(Li/Si) 等比收缩（Li = 边长：上/下取宽、左/右取高；
+    /// Si = 该边两角半径之和；Si=0 的边不参与）。
+    ///
+    /// 圆角光栅化以「角部曲线不重叠（半径 ≤ 半边长）」为前提——pill 习语
+    /// `border-radius: 999px` 依赖本收缩：未收缩半径会使每个像素都落入角部
+    /// 判定分支且距圆心远超半径，背景整体丢失（welcome 页 v0.1.0 徽章根因）。
+    /// 不重叠（f ≥ 1 或全零）时保持原值。
+    fn shrink_overlapping_corners(&mut self, box_w: f32, box_h: f32) {
+        let sides = [
+            (box_w, self.top_left + self.top_right),
+            (box_h, self.top_right + self.bottom_right),
+            (box_w, self.bottom_right + self.bottom_left),
+            (box_h, self.bottom_left + self.top_left),
+        ];
+        let mut scale = f32::INFINITY;
+        for (length, sum) in sides {
+            if sum > 0.0 {
+                scale = scale.min(length / sum);
+            }
+        }
+        if scale.is_finite() && scale < 1.0 {
+            self.top_left *= scale;
+            self.top_right *= scale;
+            self.bottom_right *= scale;
+            self.bottom_left *= scale;
         }
     }
 
@@ -3019,6 +3053,55 @@ mod tests {
         let style = ComputedStyle::default();
         let spec = BorderRadiusSpec::from_style_with_box(&style, 100.0, 100.0);
         assert!(spec.is_zero());
+    }
+
+    // ── css-backgrounds-3 §5.5 相邻圆角重叠收缩 ─────────────────────────
+
+    #[test]
+    fn test_border_radius_pill_overlap_shrunk_to_half_height() {
+        // pill 习语 `border-radius: 999px` on 66×27：四角收缩到 min(w,h)/2 = 13.5
+        //（welcome 页 .version 徽章；修复前 Px 原样 999，圆角光栅化整体失效）
+        let mut style = ComputedStyle::default();
+        for r in [
+            &mut style.border_top_left_radius,
+            &mut style.border_top_right_radius,
+            &mut style.border_bottom_right_radius,
+            &mut style.border_bottom_left_radius,
+        ] {
+            *r = LengthValue::Px(999.0);
+        }
+        let spec = BorderRadiusSpec::from_style_with_box(&style, 66.0, 27.0);
+        let half = 13.5;
+        assert!((spec.top_left - half).abs() < 1e-4, "tl={}", spec.top_left);
+        assert!((spec.top_right - half).abs() < 1e-4, "tr={}", spec.top_right);
+        assert!((spec.bottom_right - half).abs() < 1e-4, "br={}", spec.bottom_right);
+        assert!((spec.bottom_left - half).abs() < 1e-4, "bl={}", spec.bottom_left);
+    }
+
+    #[test]
+    fn test_border_radius_overlapping_pair_scaled_proportionally() {
+        // tl=tr=60 on 100×50：f = min(100/120, 50/60) = 0.8̄ → 两角各 50
+        let mut style = ComputedStyle::default();
+        style.border_top_left_radius = LengthValue::Px(60.0);
+        style.border_top_right_radius = LengthValue::Px(60.0);
+        let spec = BorderRadiusSpec::from_style_with_box(&style, 100.0, 50.0);
+        assert!((spec.top_left - 50.0).abs() < 1e-3, "tl={}", spec.top_left);
+        assert!((spec.top_right - 50.0).abs() < 1e-3, "tr={}", spec.top_right);
+        assert_eq!(spec.bottom_right, 0.0);
+        assert_eq!(spec.bottom_left, 0.0);
+    }
+
+    #[test]
+    fn test_border_radius_no_overlap_unchanged() {
+        // 不重叠（各边之和 ≤ 边长）时保持原值——R2314 px byte-identical 契约的前提
+        let mut style = ComputedStyle::default();
+        style.border_top_left_radius = LengthValue::Px(40.0);
+        style.border_top_right_radius = LengthValue::Px(20.0);
+        let spec = BorderRadiusSpec::from_style_with_box(&style, 100.0, 100.0);
+        assert_eq!(spec.top_left, 40.0);
+        assert_eq!(spec.top_right, 20.0);
+        assert_eq!(spec.bottom_right, 0.0);
+        assert_eq!(spec.bottom_left, 0.0);
     }
 
     // ── length_to_f32 ───────────────────────────────────────────────────
