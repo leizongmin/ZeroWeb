@@ -163,6 +163,9 @@ pub struct BrowserApp {
     /// 当前加载动画起始时刻（is_loading 从 false→true 时记录）。
     /// 用于模拟 Chrome 风格的加载进度条动画。
     loading_anim_start: Option<Instant>,
+    /// 菜单打开动画起始时刻（context_menu.visible false→true 时记录）。
+    /// 用于打开时的透明度渐入（150ms 内，Chrome 同款；关闭立即消失）。
+    menu_anim_start: Option<Instant>,
     /// 缩放百分比浮层显示起始时刻。None 表示不显示。
     /// zoom_in/out/reset 触发时记录，3 秒后由渲染层清除。
     zoom_indicator_start: Option<Instant>,
@@ -306,6 +309,7 @@ impl BrowserApp {
             tab_bar_drag_press: None,
             chrome_anim_start: Instant::now(),
             loading_anim_start: None,
+            menu_anim_start: None,
             zoom_indicator_start: None,
             last_window_title: String::new(),
             last_tab_click_time: None,
@@ -1584,14 +1588,82 @@ impl BrowserApp {
         (cx + cw - bar_w - margin, cy + margin, bar_w, bar_h)
     }
 
-    /// 浮动下载面板外框（物理像素）。
+    /// 浮动下载面板外框（物理像素）。有活动下载时高度随行数增长（T8），
+    /// 完成视图保持固定高度。
     pub(crate) fn download_panel_rect_for(&self, width: u32, height: u32) -> (f32, f32, f32, f32) {
         let s = self.scale_factor;
         let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
         let panel_w = layout::DOWNLOAD_PANEL_WIDTH * s;
-        let panel_h = layout::DOWNLOAD_PANEL_HEIGHT * s;
+        let panel_h = self.download_panel_height_for(s);
         let margin = layout::DOWNLOAD_PANEL_FLOAT_MARGIN * s;
         (cx + cw - panel_w - margin, cy + ch - panel_h - margin, panel_w, panel_h)
+    }
+
+    /// 下载面板高度：活动视图 = 头部 + 可见行数 × 行高（超出折叠为计数行）+ 底部留白。
+    fn download_panel_height_for(&self, s: f32) -> f32 {
+        let active = self.active_download_count();
+        if active == 0 {
+            return layout::DOWNLOAD_PANEL_HEIGHT * s;
+        }
+        let rows = active.min(layout::DOWNLOAD_PANEL_MAX_VISIBLE_ROWS) as f32;
+        let mut h = layout::DOWNLOAD_PANEL_HEADER_HEIGHT
+            + rows * layout::DOWNLOAD_PANEL_ROW_HEIGHT
+            + layout::DOWNLOAD_PANEL_BOTTOM_PAD;
+        if active > layout::DOWNLOAD_PANEL_MAX_VISIBLE_ROWS {
+            h += layout::DOWNLOAD_PANEL_OVERFLOW_HEIGHT;
+        }
+        h * s
+    }
+
+    /// 活动下载条数。
+    fn active_download_count(&self) -> usize {
+        self.shell.downloads().active_count()
+    }
+
+    /// 下载面板第 `index` 行的顶边 y（物理像素；渲染与命中测试同源）。
+    pub(crate) fn download_panel_row_y(panel_y: f32, index: usize, s: f32) -> f32 {
+        panel_y + (layout::DOWNLOAD_PANEL_HEADER_HEIGHT + index as f32 * layout::DOWNLOAD_PANEL_ROW_HEIGHT) * s
+    }
+
+    /// 下载面板行内暂停/取消按钮矩形 `(pause_x, cancel_x, btn_y, btn_size)`（物理像素；
+    /// 渲染与命中测试同源）。
+    pub(crate) fn download_panel_button_rects(panel_x: f32, panel_w: f32, row_y: f32, s: f32) -> (f32, f32, f32, f32) {
+        let size = layout::DOWNLOAD_PANEL_BUTTON_SIZE * s;
+        let cancel_x = panel_x + panel_w - layout::DOWNLOAD_PANEL_BUTTON_MARGIN * s - size;
+        let pause_x = cancel_x - layout::DOWNLOAD_PANEL_BUTTON_GAP * s - size;
+        let btn_y = row_y + (layout::DOWNLOAD_PANEL_ROW_HEIGHT * s - size) * 0.5;
+        (pause_x, cancel_x, btn_y, size)
+    }
+
+    /// 下载面板行按钮命中测试：返回 `(下载 id, 是否取消)`。矩形与渲染同源。
+    pub(crate) fn download_panel_button_hit_at(
+        &self,
+        x_f: f32,
+        y_f: f32,
+    ) -> Option<(zero_browser_shell::DownloadId, bool)> {
+        if !self.should_show_download_panel() || self.active_download_count() == 0 {
+            return None;
+        }
+        let (panel_x, panel_y, panel_w, _) = self.download_panel_rect_for(self.physical_size.0, self.physical_size.1);
+        let s = self.scale_factor;
+        let visible = self
+            .shell
+            .downloads()
+            .iter()
+            .filter(|d| d.is_active())
+            .take(layout::DOWNLOAD_PANEL_MAX_VISIBLE_ROWS);
+        for (index, dl) in visible.enumerate() {
+            let row_y = Self::download_panel_row_y(panel_y, index, s);
+            let (pause_x, cancel_x, btn_y, size) = Self::download_panel_button_rects(panel_x, panel_w, row_y, s);
+            let in_box = |bx: f32| x_f >= bx && x_f < bx + size && y_f >= btn_y && y_f < btn_y + size;
+            if in_box(cancel_x) {
+                return Some((dl.id(), true));
+            }
+            if in_box(pause_x) {
+                return Some((dl.id(), false));
+            }
+        }
+        None
     }
 
     /// 下载面板「Show in folder」命中区（与渲染同源：面板可见且最近完成项存在时
