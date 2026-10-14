@@ -505,6 +505,15 @@ impl ProcessTabBackend {
             ) else {
                 continue;
             };
+            if *crate::app::RESIZE_TRACE {
+                crate::app::resize_trace(
+                    "browser",
+                    format!(
+                        "adopt compositor frame surface={} epoch={} frame={} {}x{}",
+                        frame.surface_id, frame.navigation_epoch, frame.frame_id, frame.width, frame.height
+                    ),
+                );
+            }
             let completed = CompositorSubmission {
                 surface_id: frame.surface_id,
                 navigation_epoch: frame.navigation_epoch,
@@ -1587,9 +1596,22 @@ impl ProcessTabBackend {
 
     /// 调整所有 live 渲染进程视口。
     pub fn resize_all(&mut self, width: u32, height: u32, device_scale_factor: f32) {
+        // t11：视口+dsf 均未变化时跳过广播——winit 偶发重复 Resized（同尺寸）不再
+        // 触发 renderer 全量重排版。新 renderer 的初始 SetViewport 由 ensure_renderer
+        // 无条件发送，不受此去重影响。
+        if self.viewport == (width, height) && (self.device_scale_factor - device_scale_factor).abs() < f32::EPSILON {
+            return;
+        }
         self.viewport = (width, height);
         self.device_scale_factor = device_scale_factor;
         let tabs: Vec<TabId> = self.tab_to_renderer.keys().copied().collect();
+        crate::app::resize_trace(
+            "browser",
+            format!(
+                "send SetViewport {width}x{height} dsf={device_scale_factor:.2} -> {} renderers",
+                tabs.len()
+            ),
+        );
         for tab_id in tabs {
             self.send_to_renderer(
                 tab_id,

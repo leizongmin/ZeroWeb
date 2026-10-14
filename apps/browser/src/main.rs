@@ -74,7 +74,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use zero_host_runtime::event::AppEvent;
 use zero_host_runtime::window::{HostRuntime, WindowConfig};
@@ -1558,6 +1558,7 @@ fn main() {
             }
             AppEvent::Resized { width, height } if width > 0 && height > 0 => {
                 tracing::debug!("Window resized: {width}x{height}");
+                app::resize_trace("browser", format!("resized {width}x{height}"));
                 app.physical_size = (width, height);
                 if let Some(ref win) = window {
                     let scale_factor = scale_override.unwrap_or_else(|| normalized_window_scale(win.scale_factor()));
@@ -1575,7 +1576,15 @@ fn main() {
                 if app.window_focused
                     && let Some(ref mut gpu) = app.gpu_renderer_as_mut()
                 {
+                    let configure_start = Instant::now();
                     gpu.configure_surface(width, height);
+                    app::resize_trace(
+                        "browser",
+                        format!(
+                            "configure_surface {width}x{height} in {}us",
+                            configure_start.elapsed().as_micros()
+                        ),
+                    );
                 } else {
                     app.gpu_surface_stale = true;
                 }
