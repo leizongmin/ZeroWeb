@@ -177,7 +177,10 @@ pub fn extract_html_title(html: &str) -> Option<String> {
     }
 }
 
-/// 生成设置页面 HTML（含可点击开关，通过 `zero://settings/toggle/<key>` 切换）。
+/// 生成设置页面 HTML（Chrome 风格：CSS toggle switch 开关 + 分组卡片 + pill 选择器）。
+///
+/// 开关与选择器仍是 `<a>` 链接（`zero://settings/toggle/<key>` 等既有动作 URL 不变），
+/// 仅替换视觉控件；无 JS 依赖，纯内联样式。
 pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) -> String {
     use zero_browser_shell::SearchEngine;
     use zero_browser_shell::UiLanguage;
@@ -190,64 +193,82 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         SearchEngine::Baidu => "百度",
     };
 
-    let (page_title, section_search, section_home, section_privacy, section_appearance, toggle, current_label) =
-        match lang {
-            UiLanguage::ZhCn => (
-                "设置 — ZeroBrowser",
-                "搜索引擎",
-                "主页",
-                "隐私与安全",
-                "外观",
-                "切换",
-                "当前",
-            ),
-            UiLanguage::EnUs => (
-                "Settings — ZeroBrowser",
-                "Search Engine",
-                "Home Page",
-                "Privacy & Security",
-                "Appearance",
-                "Toggle",
-                "Current",
-            ),
-        };
+    let (page_title, section_search, section_home, section_privacy, section_appearance) = match lang {
+        UiLanguage::ZhCn => ("设置 — ZeroBrowser", "搜索引擎", "主页", "隐私与安全", "外观"),
+        UiLanguage::EnUs => (
+            "Settings — ZeroBrowser",
+            "Search Engine",
+            "Home Page",
+            "Privacy & Security",
+            "Appearance",
+        ),
+    };
 
-    let yes_no = |value: bool| match lang {
+    // 开关状态文字与 aria 属性随语言/状态取值（对齐 Chrome：开关 + 状态文本）。
+    let on_off = |value: bool| match lang {
         UiLanguage::ZhCn => {
             if value {
-                "是"
+                "开"
             } else {
-                "否"
+                "关"
             }
         }
         UiLanguage::EnUs => {
             if value {
-                "Yes"
+                "On"
             } else {
-                "No"
+                "Off"
             }
         }
     };
 
-    let toggle_link = |key: &str, label: &str, value: bool| {
+    // CSS toggle switch（Chrome/M3 风格 36×14 圆角轨道 + 10px 圆形滑块）。
+    // 开=蓝色轨道、滑块居右；关=灰色轨道、滑块居左。对齐引擎已验证的
+    // inline-flex + justify-content + align-items 能力（welcome 页同款）。
+    let switch_link = |key: &str, label: &str, value: bool| {
+        let (track_bg, knob_bg, justify) = if value {
+            ("#1a73e8", "#ffffff", "flex-end")
+        } else {
+            ("#bdc1c6", "#5f6368", "flex-start")
+        };
         format!(
-            r#"<div style="display:flex;justify-content:space-between;align-items:center;line-height:2;">
-  <span>{label}</span>
-  <span>{current_label}: <strong>{value}</strong>
-    <a href="zero://settings/toggle/{key}" style="margin-left:12px;color:#1a73e8;text-decoration:none;">{toggle}</a>
-  </span>
-</div>"#,
-            value = yes_no(value),
+            r#"<a href="zero://settings/toggle/{key}" role="switch" aria-checked="{value}" aria-label="{label}" style="display:inline-flex;width:36px;height:14px;border-radius:7px;background:{track_bg};align-items:center;justify-content:{justify};padding:2px;text-decoration:none;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{knob_bg};"></span></a>"#,
         )
     };
 
-    let action_link = |href: &str, label: &str| {
-        format!(r#"<a href="{href}" style="margin-left:12px;color:#1a73e8;text-decoration:none;">{label}</a>"#)
+    // 设置行：标签居左，状态文字 + 开关居右。
+    let toggle_link = |key: &str, label: &str, value: bool| {
+        format!(
+            r#"<div style="display:flex;justify-content:space-between;align-items:center;min-height:32px;font-size:14px;color:#3c4043;">
+  <span>{label}</span>
+  <span style="display:flex;align-items:center;gap:10px;">
+    <span style="font-size:12px;color:#80868b;">{state}</span>
+    {switch}
+  </span>
+</div>"#,
+            state = on_off(value),
+            switch = switch_link(key, label, value),
+        )
     };
+
+    // 可选项 pill（Chrome 分段选择风格）：选中=蓝底白字，未选=灰底深字。
+    let pill_link = |href: &str, label: &str, selected: bool| {
+        let (bg, fg) = if selected {
+            ("#1a73e8", "#ffffff")
+        } else {
+            ("#f1f3f4", "#3c4043")
+        };
+        format!(
+            r#"<a href="{href}" style="display:inline-block;padding:6px 14px;margin:0 8px 8px 0;border-radius:16px;background:{bg};color:{fg};font-size:13px;text-decoration:none;">{label}</a>"#,
+        )
+    };
+
+    // 动作 pill（缩放增减、自定义等非选中态按钮，与选项 pill 同一视觉语言）。
+    let action_link = |href: &str, label: &str| pill_link(href, label, false);
 
     let (cycle_search, home_presets_title, home_example, home_newtab, edit_home, home_edit_hint) = match lang {
         UiLanguage::ZhCn => (
-            "切换搜索引擎",
+            "轮换",
             "常用主页",
             "example.com",
             "欢迎页 (zero://newtab)",
@@ -255,7 +276,7 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
             "点击后在地址栏输入主页 URL，按 Enter 保存",
         ),
         UiLanguage::EnUs => (
-            "Cycle Search Engine",
+            "Cycle",
             "Common Home Pages",
             "example.com",
             "Welcome (zero://newtab)",
@@ -270,36 +291,58 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
     };
 
     let search_actions = format!(
-        r#"<span style="margin-left:12px;">{google}{bing}{ddg}{baidu}{cycle}</span>"#,
-        google = action_link("zero://settings/set/search_engine/Google", "Google"),
-        bing = action_link("zero://settings/set/search_engine/Bing", "Bing"),
-        ddg = action_link("zero://settings/set/search_engine/DuckDuckGo", "DDG"),
-        baidu = action_link(
+        r#"<div style="display:flex;align-items:center;flex-wrap:wrap;">{google}{bing}{ddg}{baidu}{cycle}</div>"#,
+        google = pill_link(
+            "zero://settings/set/search_engine/Google",
+            "Google",
+            settings.search_engine == SearchEngine::Google
+        ),
+        bing = pill_link(
+            "zero://settings/set/search_engine/Bing",
+            "Bing",
+            settings.search_engine == SearchEngine::Bing
+        ),
+        ddg = pill_link(
+            "zero://settings/set/search_engine/DuckDuckGo",
+            "DDG",
+            settings.search_engine == SearchEngine::DuckDuckGo
+        ),
+        baidu = pill_link(
             "zero://settings/set/search_engine/Baidu",
             if matches!(lang, UiLanguage::ZhCn) {
                 "百度"
             } else {
                 "Baidu"
-            }
+            },
+            settings.search_engine == SearchEngine::Baidu,
         ),
-        cycle = action_link("zero://settings/cycle/search_engine", cycle_search),
+        cycle = pill_link("zero://settings/cycle/search_engine", cycle_search, false),
     );
     let home_actions = format!(
-        r#"<p style="font-size:13px;color:#80868b;margin:12px 0 4px;">{home_presets_title}</p>
-<p style="font-size:14px;color:#666;line-height:2;">
+        r#"<p style="font-size:13px;color:#80868b;margin:12px 0 8px;">{home_presets_title}</p>
+<div style="display:flex;align-items:center;flex-wrap:wrap;">
   {example_link}{newtab_link}{custom_link}
-</p>
+</div>
 <p style="font-size:12px;color:#80868b;margin:8px 0 0;">{home_edit_hint}</p>"#,
-        example_link = action_link("zero://settings/set/home_url/https%3A%2F%2Fexample.com", home_example,),
-        newtab_link = action_link("zero://settings/set/home_url/zero%3A%2F%2Fnewtab", home_newtab),
+        example_link = pill_link(
+            "zero://settings/set/home_url/https%3A%2F%2Fexample.com",
+            home_example,
+            settings.home_url == "https://example.com",
+        ),
+        newtab_link = pill_link(
+            "zero://settings/set/home_url/zero%3A%2F%2Fnewtab",
+            home_newtab,
+            settings.home_url == "zero://newtab",
+        ),
         custom_link = action_link("zero://settings/edit/home_url", edit_home),
     );
 
     let zoom = (settings.default_zoom * 100.0) as u32;
 
     let zoom_actions = format!(
-        r#"<div style="line-height:2;">{current_label} zoom: <strong>{zoom}%</strong>
-  {decrease}{increase}{reset}
+        r#"<div style="display:flex;justify-content:space-between;align-items:center;min-height:32px;font-size:14px;color:#3c4043;">
+  <span style="white-space:nowrap;">Zoom: <strong>{zoom}%</strong></span>
+  <span style="display:flex;align-items:center;">{decrease}{increase}{reset}</span>
 </div>"#,
         decrease = action_link("zero://settings/adjust/default_zoom/down", zoom_decrease),
         increase = action_link("zero://settings/adjust/default_zoom/up", zoom_increase),
@@ -316,7 +359,10 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         settings.download_directory.clone()
     };
     let download_dir_row = format!(
-        r#"<div style="line-height:2;">{download_dir_label}: <code>{dir}</code>{edit}</div>"#,
+        r#"<div style="display:flex;justify-content:space-between;align-items:center;min-height:32px;font-size:14px;color:#3c4043;">
+  <span>{download_dir_label}: <code>{dir}</code></span>
+  <span>{edit}</span>
+</div>"#,
         edit = action_link("zero://settings/edit/download_directory", edit_download_dir),
         dir = download_dir_display,
     );
@@ -325,19 +371,111 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         UiLanguage::ZhCn => ("主题", "自动", "亮色", "暗色", "轮换"),
         UiLanguage::EnUs => ("Theme", "Auto", "Light", "Dark", "Cycle"),
     };
-    let theme_name = match settings.color_theme {
-        zero_browser_shell::ColorThemePreference::Auto => theme_auto,
-        zero_browser_shell::ColorThemePreference::Light => theme_light,
-        zero_browser_shell::ColorThemePreference::Dark => theme_dark,
-    };
+    let theme_selected = |want: zero_browser_shell::ColorThemePreference| settings.color_theme == want;
     let theme_row = format!(
-        r#"<div style="line-height:2;">{theme_section_label}: <strong>{theme_name}</strong>
-  {auto_link}{light_link}{dark_link}{cycle_link}
+        r#"<div style="display:flex;justify-content:space-between;align-items:center;min-height:32px;font-size:14px;color:#3c4043;">
+  <span>{theme_section_label}</span>
+  <span style="display:flex;align-items:center;">{auto_link}{light_link}{dark_link}{cycle_link}</span>
 </div>"#,
-        auto_link = action_link("zero://settings/set/color_theme/auto", theme_auto),
-        light_link = action_link("zero://settings/set/color_theme/light", theme_light),
-        dark_link = action_link("zero://settings/set/color_theme/dark", theme_dark),
+        auto_link = pill_link(
+            "zero://settings/set/color_theme/auto",
+            theme_auto,
+            theme_selected(zero_browser_shell::ColorThemePreference::Auto),
+        ),
+        light_link = pill_link(
+            "zero://settings/set/color_theme/light",
+            theme_light,
+            theme_selected(zero_browser_shell::ColorThemePreference::Light),
+        ),
+        dark_link = pill_link(
+            "zero://settings/set/color_theme/dark",
+            theme_dark,
+            theme_selected(zero_browser_shell::ColorThemePreference::Dark),
+        ),
         cycle_link = action_link("zero://settings/cycle/color_theme", theme_cycle),
+    );
+
+    let js_row = toggle_link(
+        "javascript_enabled",
+        if matches!(lang, UiLanguage::ZhCn) {
+            "允许 JavaScript"
+        } else {
+            "Allow JavaScript"
+        },
+        settings.javascript_enabled,
+    );
+    let cookies_row = toggle_link(
+        "cookies_enabled",
+        if matches!(lang, UiLanguage::ZhCn) {
+            "允许 Cookie"
+        } else {
+            "Allow Cookies"
+        },
+        settings.cookies_enabled,
+    );
+    let block_3p_row = toggle_link(
+        "block_third_party_cookies",
+        if matches!(lang, UiLanguage::ZhCn) {
+            "阻止第三方 Cookie"
+        } else {
+            "Block Third-Party Cookies"
+        },
+        settings.block_third_party_cookies,
+    );
+    let dnt_row = toggle_link(
+        "do_not_track",
+        if matches!(lang, UiLanguage::ZhCn) {
+            "发送 Do Not Track"
+        } else {
+            "Send Do Not Track"
+        },
+        settings.do_not_track,
+    );
+    let bookmarks_row = toggle_link(
+        "show_bookmarks_bar",
+        if matches!(lang, UiLanguage::ZhCn) {
+            "显示书签栏"
+        } else {
+            "Show Bookmarks Bar"
+        },
+        settings.show_bookmarks_bar,
+    );
+
+    // 分组卡片：Chrome 设置风格——大圆角白卡 + 小号大写分组标题（蓝色强调）。
+    let section_card = |title: &str, body: &str| {
+        format!(
+            r#"<div style="background: white; border-radius: 12px; padding: 20px 24px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+  <h2 style="font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #1a73e8; margin: 0 0 12px;">{title}</h2>
+  {body}
+</div>"#,
+        )
+    };
+
+    let current_label = if matches!(lang, UiLanguage::ZhCn) {
+        "当前"
+    } else {
+        "Current"
+    };
+    let search_card = section_card(
+        section_search,
+        &format!(
+            r#"<p style="font-size:14px;color:#3c4043;margin:0 0 12px;">{current_label}: <strong>{se_name}</strong></p>{search_actions}"#,
+        ),
+    );
+    let home_card = section_card(
+        section_home,
+        &format!(
+            r#"<p style="font-size:14px;color:#3c4043;margin:0 0 8px;"><code>{}</code></p>{home_actions}"#,
+            settings.home_url,
+        ),
+    );
+    let privacy_card = section_card(
+        section_privacy,
+        &format!("{js_row}{cookies_row}{block_3p_row}{dnt_row}"),
+    );
+    let appearance_card = section_card(
+        section_appearance,
+        &format!("{bookmarks_row}{theme_row}{zoom_actions}{download_dir_row}"),
     );
 
     format!(
@@ -347,94 +485,16 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
 <body style="font-family: Segoe UI, sans-serif; margin: 0; padding: 40px; background: #f8f9fa; color: #333;">
   <div style="max-width: 600px; margin: 0 auto;">
     <h1 style="font-size: 28px; color: #1a73e8; margin-bottom: 24px;">{page_title}</h1>
-
-    <div style="background: white; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-      <h2 style="font-size: 18px; margin-top: 0; color: #555;">{section_search}</h2>
-      <p style="font-size: 14px; color: #666;">{current_label}: <strong>{se_name}</strong>{search_actions}</p>
-    </div>
-
-    <div style="background: white; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-      <h2 style="font-size: 18px; margin-top: 0; color: #555;">{section_home}</h2>
-      <p style="font-size: 14px; color: #666;"><code>{home}</code></p>
-      {home_actions}
-    </div>
-
-    <div style="background: white; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-      <h2 style="font-size: 18px; margin-top: 0; color: #555;">{section_privacy}</h2>
-      <div style="font-size: 14px; color: #666;">
-        {js_row}
-        {cookies_row}
-        {block_3p_row}
-        {dnt_row}
-      </div>
-    </div>
-
-    <div style="background: white; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-      <h2 style="font-size: 18px; margin-top: 0; color: #555;">{section_appearance}</h2>
-      <div style="font-size: 14px; color: #666;">
-        {bookmarks_row}
-        {theme_row}
-        {zoom_actions}
-        {download_dir_row}
-      </div>
-    </div>
-
+    {search_card}
+    {home_card}
+    {privacy_card}
+    {appearance_card}
     <p style="text-align: center; color: #999; font-size: 12px; margin-top: 32px;">
       ZeroBrowser v{version}
     </p>
   </div>
 </body>
 </html>"#,
-        js_row = toggle_link(
-            "javascript_enabled",
-            if matches!(lang, UiLanguage::ZhCn) {
-                "允许 JavaScript"
-            } else {
-                "Allow JavaScript"
-            },
-            settings.javascript_enabled,
-        ),
-        cookies_row = toggle_link(
-            "cookies_enabled",
-            if matches!(lang, UiLanguage::ZhCn) {
-                "允许 Cookie"
-            } else {
-                "Allow Cookies"
-            },
-            settings.cookies_enabled,
-        ),
-        block_3p_row = toggle_link(
-            "block_third_party_cookies",
-            if matches!(lang, UiLanguage::ZhCn) {
-                "阻止第三方 Cookie"
-            } else {
-                "Block Third-Party Cookies"
-            },
-            settings.block_third_party_cookies,
-        ),
-        dnt_row = toggle_link(
-            "do_not_track",
-            if matches!(lang, UiLanguage::ZhCn) {
-                "发送 Do Not Track"
-            } else {
-                "Send Do Not Track"
-            },
-            settings.do_not_track,
-        ),
-        bookmarks_row = toggle_link(
-            "show_bookmarks_bar",
-            if matches!(lang, UiLanguage::ZhCn) {
-                "显示书签栏"
-            } else {
-                "Show Bookmarks Bar"
-            },
-            settings.show_bookmarks_bar,
-        ),
-        home = settings.home_url,
-        search_actions = search_actions,
-        home_actions = home_actions,
-        zoom_actions = zoom_actions,
-        download_dir_row = download_dir_row,
         version = zero_product_version::VERSION,
     )
 }
@@ -778,6 +838,23 @@ mod tests {
         assert_eq!(url_host("http://127.0.0.1:18080/x"), Some("127.0.0.1:18080"));
         assert_eq!(url_host("zero://newtab"), Some("newtab"));
         assert_eq!(url_host("https:///path-only"), None);
+    }
+
+    #[test]
+    fn generate_settings_html_renders_switch_controls_with_aria() {
+        let mut settings = zero_browser_shell::BrowserSettings::new();
+        settings.javascript_enabled = true;
+        settings.do_not_track = false;
+        let html = generate_settings_html(&settings);
+        // 开=蓝色轨道 + aria-checked=true；关=灰色轨道 + aria-checked=false。
+        assert!(html.contains(r#"role="switch""#));
+        assert!(html.contains("aria-checked=\"true\""));
+        assert!(html.contains("aria-checked=\"false\""));
+        assert!(html.contains("background:#1a73e8;align-items:center;justify-content:flex-end"));
+        assert!(html.contains("background:#bdc1c6;align-items:center;justify-content:flex-start"));
+        // 状态文字与既有动作 URL 仍在。
+        assert!(html.contains("zero://settings/toggle/javascript_enabled"));
+        assert!(html.contains("zero://settings/cycle/color_theme"));
     }
 
     #[test]

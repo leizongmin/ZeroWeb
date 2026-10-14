@@ -144,6 +144,12 @@ pub struct BrowserApp {
     last_find_query: String,
     /// 标签页布局缓存：每个标签页的 (x, width) 位置信息
     tab_layout: Vec<(TabId, f32, f32)>,
+    /// 标签溢出 ▾ 按钮的 x（物理像素）；None=无溢出，按钮未渲染。渲染帧刷新。
+    tab_overflow_btn_x: Option<f32>,
+    /// 标签溢出下拉是否展开（▾ 点击切换）。
+    tab_overflow_open: bool,
+    /// 溢出隐藏的标签 id（渲染帧刷新，与 tab_layout 同生命周期）。
+    tab_overflow_ids: Vec<TabId>,
     /// 右键上下文菜单状态
     context_menu: ContextMenuState,
     /// 打开菜单的同一次左键按下后，忽略紧随其后的左键释放（避免按下 `...` 打开菜单时被立即关闭）。
@@ -310,6 +316,9 @@ impl BrowserApp {
             find_input: String::new(),
             last_find_query: String::new(),
             tab_layout: Vec::new(),
+            tab_overflow_btn_x: None,
+            tab_overflow_open: false,
+            tab_overflow_ids: Vec::new(),
             context_menu: ContextMenuState::new(),
             context_menu_suppress_left_up: false,
             scroll: HashMap::new(),
@@ -726,13 +735,68 @@ impl BrowserApp {
     }
 
     fn new_tab_button_x(&self) -> f32 {
+        // 溢出时「+」按钮位于 ▾ 溢出按钮右侧（render_tabs 同一布局）。
+        if let Some(btn_x) = self.tab_overflow_btn_x {
+            return btn_x + layout::NEW_TAB_BTN_WIDTH * self.scale_factor;
+        }
         self.tab_layout.last().map(|&(_, x, w)| x + w).unwrap_or(0.0)
+    }
+
+    /// 标签溢出 ▾ 按钮矩形 `(x, y, w, h)`（物理像素）；无溢出时 None。
+    pub(crate) fn tab_overflow_button_rect(&self) -> Option<(f32, f32, f32, f32)> {
+        let s = self.scale_factor;
+        self.tab_overflow_btn_x.map(|x| {
+            (
+                x,
+                layout::TAB_BAR_TOP_INSET * s,
+                layout::NEW_TAB_BTN_WIDTH * s,
+                layout::TAB_BAR_HEIGHT * s,
+            )
+        })
+    }
+
+    /// 溢出下拉最多可见行数（隐藏标签数与上限取小）。
+    fn tab_overflow_visible_rows(&self) -> usize {
+        self.tab_overflow_ids.len().min(layout::TAB_OVERFLOW_MAX_ROWS)
+    }
+
+    /// 溢出下拉面板矩形 `(x, y, w, h)`（物理像素），渲染与命中测试同源；
+    /// 面板按 ▾ 按钮右对齐并夹到窗口内。无溢出/未渲染按钮时 None。
+    fn tab_overflow_panel_rect(&self) -> Option<(f32, f32, f32, f32)> {
+        let btn_x = self.tab_overflow_btn_x?;
+        let s = self.scale_factor;
+        let width = self.physical_size.0 as f32;
+        let panel_w = layout::TAB_OVERFLOW_PANEL_WIDTH * s;
+        let panel_h = self.tab_overflow_visible_rows() as f32 * layout::TAB_OVERFLOW_ROW_HEIGHT * s;
+        let x = (btn_x + layout::NEW_TAB_BTN_WIDTH * s - panel_w).clamp(0.0, (width - panel_w).max(0.0));
+        Some((x, layout::TAB_STRIP_HEIGHT * s, panel_w, panel_h))
+    }
+
+    /// 溢出下拉行命中测试：返回命中的隐藏标签下标（仅展开时生效）。
+    pub(crate) fn tab_overflow_row_at(&self, x: f64, y: f64) -> Option<usize> {
+        if !self.tab_overflow_open {
+            return None;
+        }
+        let (px, py, pw, _) = self.tab_overflow_panel_rect()?;
+        let row_h = layout::TAB_OVERFLOW_ROW_HEIGHT * self.scale_factor;
+        let (x_f, y_f) = (x as f32, y as f32);
+        if x_f < px || x_f >= px + pw || y_f < py {
+            return None;
+        }
+        let row = ((y_f - py) / row_h) as usize;
+        (row < self.tab_overflow_visible_rows()).then_some(row)
     }
 
     /// 测试 helper：暴露「+」按钮 x 坐标。
     #[cfg(test)]
     pub fn new_tab_button_x_for_test(&self) -> f32 {
         self.new_tab_button_x()
+    }
+
+    /// 测试 helper：溢出下拉面板矩形（T18 溢出下拉命中测试用）。
+    #[cfg(test)]
+    pub fn tab_overflow_panel_rect_for_test(&self) -> Option<(f32, f32, f32, f32)> {
+        self.tab_overflow_panel_rect()
     }
 
     /// 测试 helper：显式回退单进程 worker 路径（R3254——测试默认单进程，

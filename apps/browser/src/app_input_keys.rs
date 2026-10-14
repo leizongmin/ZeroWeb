@@ -84,6 +84,13 @@ impl BrowserApp {
             return;
         }
 
+        // Escape 收起标签溢出下拉（T18）。
+        if key == "Escape" && pressed && self.tab_overflow_open {
+            self.tab_overflow_open = false;
+            self.needs_redraw = true;
+            return;
+        }
+
         // Escape 取消正在进行的标签拖拽。
         if key == "Escape" && pressed && self.tab_drag.is_some() {
             self.tab_drag = None;
@@ -285,6 +292,11 @@ impl BrowserApp {
                 } else if self.shell.find_state().total_matches() == 0 {
                     self.shell.find_start(&self.find_input.clone());
                     self.refresh_find_matches();
+                } else if self.shift_pressed {
+                    // Shift+Enter：上一个匹配（Chrome 行为；Enter/Shift+Enter 首次触发前
+                    // 需 current≥1，find_set_matches 已保证首个匹配落地后 current=1）。
+                    self.shell.find_previous();
+                    self.scroll_to_current_match();
                 } else {
                     self.shell.find_next();
                     self.scroll_to_current_match();
