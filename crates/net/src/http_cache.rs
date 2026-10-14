@@ -13,6 +13,9 @@ use crate::disk_cache::DiskHttpCache;
 use crate::private_mode::private_browsing_enabled;
 use crate::request::HttpResponse;
 
+/// Default maximum total body size of the in-memory HTTP cache.
+const DEFAULT_HTTP_CACHE_MAX_BYTES: usize = 50 * 1024 * 1024;
+
 /// 缓存查找结果。
 #[derive(Debug, Clone)]
 pub enum CacheLookup {
@@ -77,7 +80,7 @@ impl HttpCache {
     ///
     /// 默认配置：最大 1000 条目，最大总大小 50MB。
     pub fn new() -> Self {
-        Self::with_config(1000, 50 * 1024 * 1024)
+        Self::with_config(1000, DEFAULT_HTTP_CACHE_MAX_BYTES)
     }
 
     /// 创建指定配置的 HTTP 缓存。

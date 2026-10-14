@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use crate::fetch_scheduler::FetchTelemetry;
 use crate::{
-    CacheLookup, FetchJobResult, FetchPriority, HttpCache, HttpClient, HttpMethod, HttpRequest,
+    CacheLookup, FetchJobResult, FetchPriority, HttpCache, HttpClient, HttpMethod, HttpRequest, HttpResponse,
     PerOriginFetchScheduler, shared_cookie_store, shared_http_cache, store_set_cookie_headers,
 };
 
@@ -274,6 +274,46 @@ impl ResourceLoader {
     /// 返回当前加载器的匿名聚合计数。
     pub fn stats(&self) -> ResourceLoadStats {
         *self.stats.lock().expect("resource loader stats lock")
+    }
+
+    /// Check an HTTP cache entry before a caller starts a progressive resource transfer.
+    pub fn lookup_cache(&self, request: &ResourceRequest) -> CacheLookup {
+        let mut request = request.clone();
+        if request.partition == "default" {
+            request.partition = self.partition.clone();
+        }
+        request.cache_mode = request_cache_mode(&request.headers).unwrap_or(request.cache_mode);
+        if request.cache_mode == CacheMode::NoStore {
+            return CacheLookup::Miss;
+        }
+
+        let lookup = self
+            .cache_for_partition(&request.partition)
+            .lock()
+            .expect("HTTP cache lock")
+            .lookup(&request.url, &request.headers);
+        if matches!(lookup, CacheLookup::Hit(_)) {
+            self.stats.lock().expect("resource loader stats lock").fresh_hits += 1;
+            self.record_event(&request, CacheOutcome::FreshHit, None, 0);
+        }
+        lookup
+    }
+
+    /// Store a fully received response body from a progressive GET transfer.
+    pub fn store_streamed_response(&self, request: &ResourceRequest, response: &HttpResponse) -> bool {
+        let mode = request_cache_mode(&request.headers).unwrap_or(request.cache_mode);
+        if matches!(mode, CacheMode::NoStore | CacheMode::OnlyIfCached) || !response.is_success() {
+            return false;
+        }
+        let partition = if request.partition == "default" {
+            &self.partition
+        } else {
+            &request.partition
+        };
+        self.cache_for_partition(partition)
+            .lock()
+            .expect("HTTP cache lock")
+            .put_with_headers(&request.url, &request.headers, response)
     }
 
     /// 返回最近的匿名加载事件，按完成顺序排列。
