@@ -20,6 +20,7 @@
 //! | `StarFilled`           | `star-filled.svg`     | 已收藏当前页         |
 //! | `Lock`                 | `lock.svg`            | HTTPS 安全锁         |
 //! | `Download`             | `download.svg`        | 下载管理             |
+//! | `Pause`                | `pause.svg`           | 下载面板暂停下载     |
 //! | `Shield`               | `shield.svg`          | 站点权限             |
 //! | `VolumeOff`            | `volume-off.svg`      | 标签静音状态         |
 //! | `AlertTriangle`        | `alert-triangle.svg`  | 标签崩溃状态         |
@@ -66,6 +67,7 @@ pub enum Icon {
     StarFilled,
     Lock,
     Download,
+    Pause,
     Shield,
     VolumeOff,
     AlertTriangle,
@@ -78,7 +80,7 @@ pub enum Icon {
 
 impl Icon {
     /// 所有图标变体，用于测试与一致性校验。新增变体时只需在此处追加。
-    pub const ALL: [Icon; 21] = [
+    pub const ALL: [Icon; 22] = [
         Icon::ChevronLeft,
         Icon::ChevronRight,
         Icon::Refresh,
@@ -92,6 +94,7 @@ impl Icon {
         Icon::StarFilled,
         Icon::Lock,
         Icon::Download,
+        Icon::Pause,
         Icon::Shield,
         Icon::VolumeOff,
         Icon::AlertTriangle,
@@ -117,6 +120,7 @@ impl Icon {
             Icon::StarFilled => include_bytes!("../assets/icons/star-filled.svg"),
             Icon::Lock => include_bytes!("../assets/icons/lock.svg"),
             Icon::Download => include_bytes!("../assets/icons/download.svg"),
+            Icon::Pause => include_bytes!("../assets/icons/pause.svg"),
             Icon::Shield => include_bytes!("../assets/icons/shield.svg"),
             Icon::VolumeOff => include_bytes!("../assets/icons/volume-off.svg"),
             Icon::AlertTriangle => include_bytes!("../assets/icons/alert-triangle.svg"),

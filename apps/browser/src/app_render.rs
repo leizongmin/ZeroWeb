@@ -13,6 +13,28 @@ pub(crate) fn compositor_controls_page(status: crate::compositor_client::Composi
     )
 }
 
+/// 提取 URL 的主机名用于状态栏加载反馈（如 `http://a.b/c` → `a.b`）；
+/// 无法解析出主机时返回 `None`（调用方回退为整个 URL）。
+fn url_display_host(url: &str) -> Option<String> {
+    url::Url::parse(url).ok().and_then(|parsed| parsed.host_str().map(str::to_string))
+}
+
+/// 菜单打开渐入时长（秒）：150ms 内 alpha 从 0 渐到 1，Chrome 同款。
+const MENU_FADE_IN_SECONDS: f32 = 0.15;
+
+/// 按 `opacity`（0.0~1.0）收缩颜色 alpha 通道（菜单渐入动画用）；
+/// `opacity >= 1.0` 时原样返回，避免无谓的浮点换算。
+fn fade_color(color: Color, opacity: f32) -> Color {
+    if opacity >= 1.0 {
+        color
+    } else {
+        Color {
+            a: ((color.a as f32 * opacity).round().clamp(0.0, 255.0)) as u8,
+            ..color
+        }
+    }
+}
+
 impl BrowserApp {
     /// 鼠标指针是否落在矩形区域内（物理像素坐标）
     fn pointer_in_rect(&self, x: f32, y: f32, w: f32, h: f32) -> bool {
@@ -48,6 +70,16 @@ impl BrowserApp {
         // 加载期间持续请求重绘，驱动进度条动画。
         if is_loading {
             self.needs_redraw = true;
+        }
+
+        // 0b. 同步菜单渐入动画起始时刻：context_menu.visible 从 false→true 时记录，
+        //    从 true→false 时清除（关闭无过渡，立即消失，Chrome 同款）。
+        if self.context_menu.visible {
+            if self.menu_anim_start.is_none() {
+                self.menu_anim_start = Some(Instant::now());
+            }
+        } else {
+            self.menu_anim_start = None;
         }
 
         // 1. 整体背景
@@ -1777,6 +1809,17 @@ impl BrowserApp {
             return;
         }
 
+        // 打开渐入（Chrome 同款）：150ms 内 alpha 渐到 1；渐入期间持续请求重绘
+        // 驱动下一帧。关闭无过渡（menu_anim_start 已随 visible=false 清除）。
+        let opacity = match self.menu_anim_start {
+            Some(start) => (start.elapsed().as_secs_f32() / MENU_FADE_IN_SECONDS).min(1.0),
+            None => 1.0,
+        };
+        if opacity < 1.0 {
+            self.needs_redraw = true;
+        }
+        let fade = |color: Color| fade_color(color, opacity);
+
         let menu_x = self.context_menu.x;
         let menu_y = self.context_menu.y;
         let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
@@ -1787,7 +1830,7 @@ impl BrowserApp {
         let border = s.max(1.0);
         let pad_h = layout::CONTEXT_MENU_PAD_H * s;
 
-        push_rounded_rect_fill(fills, menu_x, menu_y, menu_w, menu_h, radius, self.chrome_palette.context_menu_separator);
+        push_rounded_rect_fill(fills, menu_x, menu_y, menu_w, menu_h, radius, fade(self.chrome_palette.context_menu_separator));
         push_rounded_rect_fill(
             fills,
             menu_x + border,
@@ -1795,7 +1838,7 @@ impl BrowserApp {
             menu_w - 2.0 * border,
             menu_h - 2.0 * border,
             (radius - border).max(0.0),
-            self.chrome_palette.context_menu_bg,
+            fade(self.chrome_palette.context_menu_bg),
         );
 
         for (i, item) in self.context_menu.items.iter().enumerate() {
@@ -1810,7 +1853,7 @@ impl BrowserApp {
                     sep_y,
                     menu_w - 2.0 * pad_h,
                     border,
-                    self.chrome_palette.context_menu_separator,
+                    fade(self.chrome_palette.context_menu_separator),
                 ));
                 continue;
             }
@@ -1831,7 +1874,7 @@ impl BrowserApp {
                             row_y,
                             (seg_w - 2.0 * border).max(0.0),
                             row_h,
-                            self.chrome_palette.context_menu_hover_bg,
+                            fade(self.chrome_palette.context_menu_hover_bg),
                         ));
                     }
                     let label_w = self.measure_ui_text_width(seg.label(), font_size);
@@ -1840,7 +1883,7 @@ impl BrowserApp {
                         seg_x + (seg_w - label_w) * 0.5,
                         row_y + (row_h - font_size) * 0.5,
                         font_size,
-                        self.chrome_palette.context_menu_text,
+                        fade(self.chrome_palette.context_menu_text),
                         glyphs,
                     );
                 }
@@ -1858,14 +1901,14 @@ impl BrowserApp {
                     row_y,
                     menu_w - 2.0 * border,
                     row_h,
-                    self.chrome_palette.context_menu_hover_bg,
+                    fade(self.chrome_palette.context_menu_hover_bg),
                 ));
             }
 
             let text_color = if is_disabled {
-                self.chrome_palette.page_hint
+                fade(self.chrome_palette.page_hint)
             } else {
-                self.chrome_palette.context_menu_text
+                fade(self.chrome_palette.context_menu_text)
             };
 
             let label = {
@@ -1897,7 +1940,7 @@ impl BrowserApp {
                         x,
                         row_y + (row_h - font_size) * 0.5,
                         font_size,
-                        self.chrome_palette.page_hint,
+                        fade(self.chrome_palette.page_hint),
                         glyphs,
                     );
                 }
@@ -1925,7 +1968,7 @@ impl BrowserApp {
             && !children.is_empty()
         {
             let (sub_x, sub_y, sub_w, sub_h) = self.sub_menu_panel_rect(parent_idx);
-            push_rounded_rect_fill(fills, sub_x, sub_y, sub_w, sub_h, radius, self.chrome_palette.context_menu_separator);
+            push_rounded_rect_fill(fills, sub_x, sub_y, sub_w, sub_h, radius, fade(self.chrome_palette.context_menu_separator));
             push_rounded_rect_fill(
                 fills,
                 sub_x + border,
@@ -1933,7 +1976,7 @@ impl BrowserApp {
                 sub_w - 2.0 * border,
                 sub_h - 2.0 * border,
                 (radius - border).max(0.0),
-                self.chrome_palette.context_menu_bg,
+                fade(self.chrome_palette.context_menu_bg),
             );
 
             for (ci, child) in children.iter().enumerate() {
@@ -1946,7 +1989,7 @@ impl BrowserApp {
                         sep_y,
                         sub_w - 2.0 * pad_h,
                         border,
-                        self.chrome_palette.context_menu_separator,
+                        fade(self.chrome_palette.context_menu_separator),
                     ));
                     continue;
                 }
@@ -1958,13 +2001,13 @@ impl BrowserApp {
                         crow_y,
                         sub_w - 2.0 * border,
                         row_h,
-                        self.chrome_palette.context_menu_hover_bg,
+                        fade(self.chrome_palette.context_menu_hover_bg),
                     ));
                 }
                 let c_color = if c_disabled {
-                    self.chrome_palette.page_hint
+                    fade(self.chrome_palette.page_hint)
                 } else {
-                    self.chrome_palette.context_menu_text
+                    fade(self.chrome_palette.context_menu_text)
                 };
                 self.draw_ui_text(
                     child.label(),
@@ -1978,7 +2021,10 @@ impl BrowserApp {
         }
     }
 
-    /// 渲染链接悬停浮动状态栏（Chrome 风格：左下角胶囊，宽度随 URL 内容）
+    /// 渲染链接悬停浮动状态栏（Chrome 风格：左下角胶囊，宽度随内容）。
+    ///
+    /// 显示内容优先级：悬停链接 URL → 页面加载中时的「正在加载 {域名}…」反馈（加载
+    /// 完成即消失，T8）；两者皆无时不渲染。
     fn render_floating_link_status(
         &mut self,
         fills: &mut Vec<FillPrimitive>,
@@ -1987,7 +2033,25 @@ impl BrowserApp {
         height: u32,
         s: f32,
     ) {
-        let Some(url) = self.hovered_link_url.as_deref() else {
+        let is_loading = self.shell.active_tab().is_some_and(|t| t.is_loading());
+        let display: String = if let Some(url) = self.hovered_link_url.as_deref() {
+            url.to_string()
+        } else if is_loading {
+            let Some(url) = self.shell.active_tab().and_then(|t| t.url()) else {
+                return;
+            };
+            let language = UiLanguage::detect_from_env();
+            match url_display_host(url) {
+                Some(host) => match language {
+                    UiLanguage::ZhCn => format!("正在加载 {host}…"),
+                    UiLanguage::EnUs => format!("Loading {host}…"),
+                },
+                None => match language {
+                    UiLanguage::ZhCn => format!("正在加载 {url}…"),
+                    UiLanguage::EnUs => format!("Loading {url}…"),
+                },
+            }
+        } else {
             return;
         };
         if self.font_id.is_none() {
@@ -2004,7 +2068,7 @@ impl BrowserApp {
         let status_h = layout::STATUS_BAR_HEIGHT * s;
         let font_size = 11.0 * s;
         let max_text_w = (cw - 2.0 * margin - 2.0 * pad_h).max(0.0);
-        let text = self.truncate_ui_text(url, max_text_w, font_size);
+        let text = self.truncate_ui_text(&display, max_text_w, font_size);
         let text_w = self.measure_ui_text_width(&text, font_size);
         let pill_w = text_w + 2.0 * pad_h;
         let pill_x = cx + margin;
@@ -2044,7 +2108,7 @@ impl BrowserApp {
 
     /// 渲染浮动下载面板（右下角）
     fn render_download_panel(
-        &self,
+        &mut self,
         fills: &mut Vec<FillPrimitive>,
         glyphs: &mut Vec<GlyphDraw>,
         width: u32,
@@ -2073,7 +2137,7 @@ impl BrowserApp {
 
         let downloads = self.shell.downloads();
         let active: Vec<_> = downloads.iter().filter(|d| d.is_active()).collect();
-        if let Some(dl) = active.first() {
+        if !active.is_empty() {
             let font_size = 11.0 * s;
             let title_size = 12.0 * s;
 
@@ -2086,47 +2150,95 @@ impl BrowserApp {
                 glyphs,
             );
 
-            let name_text = dl.filename();
-            self.draw_ui_text(
-                name_text,
-                panel_x + 12.0 * s,
-                panel_y + 28.0 * s,
-                font_size,
-                self.chrome_palette.download_bar_text,
-                glyphs,
-            );
+            // 最多 3 行可见，超出折叠为计数行；行/按钮矩形与命中测试同源
+            //（download_panel_row_y / download_panel_button_rects）。
+            let visible = active.len().min(layout::DOWNLOAD_PANEL_MAX_VISIBLE_ROWS);
+            for (index, dl) in active.iter().take(visible).enumerate() {
+                let row_y = Self::download_panel_row_y(panel_y, index, s);
+                let (pause_x, cancel_x, btn_y, btn_size) =
+                    Self::download_panel_button_rects(panel_x, panel_w, row_y, s);
 
-            let progress = dl.progress();
-            let bar_width = panel_w - 24.0 * s;
-            let bar_start_x = panel_x + 12.0 * s;
-            let bar_top = panel_y + panel_h - 18.0 * s;
-            let bar_inner_h = 6.0 * s;
+                // 文件名（右侧避开按钮区截断）。
+                let name_max_w = pause_x - 8.0 * s - (panel_x + 12.0 * s);
+                let name_text = self.truncate_ui_text(dl.filename(), name_max_w, font_size);
+                self.draw_ui_text(
+                    &name_text,
+                    panel_x + 12.0 * s,
+                    row_y + 5.0 * s,
+                    font_size,
+                    self.chrome_palette.download_bar_text,
+                    glyphs,
+                );
 
-            fills.push(rect_fill(
-                bar_start_x,
-                bar_top,
-                bar_width,
-                bar_inner_h,
-                self.chrome_palette.separator,
-            ));
-            fills.push(rect_fill(
-                bar_start_x,
-                bar_top,
-                bar_width * progress,
-                bar_inner_h,
-                self.chrome_palette.download_bar_fill,
-            ));
+                // 进度条 + 百分比（百分比右对齐到按钮区左侧）。
+                let progress = dl.progress();
+                let bar_start_x = panel_x + 12.0 * s;
+                let bar_right = pause_x - 8.0 * s;
+                let pct_text = format!("{:.0}%", progress * 100.0);
+                let pct_w = self.measure_ui_text_width(&pct_text, font_size);
+                let bar_width = (bar_right - bar_start_x - pct_w - 6.0 * s).max(0.0);
+                let bar_top = row_y + 29.0 * s;
+                let bar_inner_h = 5.0 * s;
+                fills.push(rect_fill(
+                    bar_start_x,
+                    bar_top,
+                    bar_width,
+                    bar_inner_h,
+                    self.chrome_palette.separator,
+                ));
+                fills.push(rect_fill(
+                    bar_start_x,
+                    bar_top,
+                    bar_width * progress,
+                    bar_inner_h,
+                    self.chrome_palette.download_bar_fill,
+                ));
+                self.draw_ui_text(
+                    &pct_text,
+                    bar_right - pct_w,
+                    bar_top - 4.0 * s,
+                    font_size,
+                    self.chrome_palette.download_bar_text,
+                    glyphs,
+                );
 
-            let pct_text = format!("{:.0}%", progress * 100.0);
-            let pct_w = self.measure_ui_text_width(&pct_text, font_size);
-            self.draw_ui_text(
-                &pct_text,
-                panel_x + panel_w - 12.0 * s - pct_w,
-                panel_y + 10.0 * s,
-                font_size,
-                self.chrome_palette.download_bar_text,
-                glyphs,
-            );
+                // 暂停/取消按钮（图标；命中矩形见 download_panel_button_hit_at）。
+                let btn_cy = btn_y + btn_size * 0.5;
+                let icon_size = 16.0 * s;
+                crate::ui_icons::render_icon(
+                    &mut self.font_loader,
+                    glyphs,
+                    crate::ui_icons::Icon::Pause,
+                    pause_x + btn_size * 0.5,
+                    btn_cy,
+                    icon_size,
+                    self.chrome_palette.download_bar_text,
+                );
+                crate::ui_icons::render_icon(
+                    &mut self.font_loader,
+                    glyphs,
+                    crate::ui_icons::Icon::Close,
+                    cancel_x + btn_size * 0.5,
+                    btn_cy,
+                    icon_size,
+                    self.chrome_palette.download_bar_text,
+                );
+            }
+
+            // 折叠计数行：超出可见行数的活动下载数。
+            let overflow = active.len() - visible;
+            if overflow > 0 {
+                let more_text = format!("+{overflow} more");
+                self.draw_ui_text(
+                    &more_text,
+                    panel_x + 12.0 * s,
+                    panel_y + (layout::DOWNLOAD_PANEL_HEADER_HEIGHT + visible as f32 * layout::DOWNLOAD_PANEL_ROW_HEIGHT) * s
+                        + 2.0 * s,
+                    font_size,
+                    self.chrome_palette.page_hint,
+                    glyphs,
+                );
+            }
         } else if let Some(done) = downloads.iter().filter(|d| d.is_completed()).last() {
             // 无活动下载时展示最近完成项 + 「在文件夹中显示」入口（按钮矩形与
             // download_panel_action_rect_for 同源计算，命中测试据此分发）。

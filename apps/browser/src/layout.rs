@@ -129,8 +129,24 @@ pub const STATUS_BAR_FLOAT_RADIUS: f32 = 8.0;
 pub const DOWNLOAD_BAR_HEIGHT: f32 = 28.0;
 /// Width of the floating download panel.
 pub const DOWNLOAD_PANEL_WIDTH: f32 = 280.0;
-/// Height of the floating download panel.
+/// Height of the floating download panel (completed view; active view height follows row count).
 pub const DOWNLOAD_PANEL_HEIGHT: f32 = 72.0;
+/// Height of the download panel header (title row, incl. top padding).
+pub const DOWNLOAD_PANEL_HEADER_HEIGHT: f32 = 30.0;
+/// Height of one active download row in the download panel.
+pub const DOWNLOAD_PANEL_ROW_HEIGHT: f32 = 44.0;
+/// Bottom padding of the download panel.
+pub const DOWNLOAD_PANEL_BOTTOM_PAD: f32 = 8.0;
+/// Height of the collapsed "+N more" overflow row.
+pub const DOWNLOAD_PANEL_OVERFLOW_HEIGHT: f32 = 16.0;
+/// Maximum visible active-download rows in the download panel; extras collapse into a count row.
+pub const DOWNLOAD_PANEL_MAX_VISIBLE_ROWS: usize = 3;
+/// Side length of the pause/cancel icon buttons in a download row.
+pub const DOWNLOAD_PANEL_BUTTON_SIZE: f32 = 24.0;
+/// Gap between the pause and cancel buttons.
+pub const DOWNLOAD_PANEL_BUTTON_GAP: f32 = 4.0;
+/// Right margin between the cancel button and the panel edge.
+pub const DOWNLOAD_PANEL_BUTTON_MARGIN: f32 = 10.0;
 /// Margin from the content frame edge for the floating download panel.
 pub const DOWNLOAD_PANEL_FLOAT_MARGIN: f32 = 12.0;
 /// Corner radius of the floating download panel.

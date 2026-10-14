@@ -1464,6 +1464,112 @@ fn download_bar_renders_when_active() {
     let _ = (fills, glyphs, overlay_glyphs);
 }
 
+/// 下载面板应显示全部活动下载（T8：此前仅 `active.first()` 一条）。
+#[test]
+fn download_panel_lists_all_active_downloads() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    for name in ["a.zip", "b.zip", "c.zip"] {
+        app.shell
+            .downloads_mut()
+            .start_download(&format!("https://example.com/{name}"), name);
+    }
+
+    let (_, glyphs, _, overlay_glyphs, _, _) = app.build_scene_for_test(1280, 900);
+    let text: String = overlay_glyphs.iter().chain(glyphs.iter()).map(|g| g.ch).collect();
+    for name in ["a.zip", "b.zip", "c.zip"] {
+        assert!(text.contains(name), "panel should list active download {name}");
+    }
+
+    // 高度随行数变化：3 条活动行高于暂停后仅剩 1 条的面板。
+    let (_, _, _, three_rows_h) = app.download_panel_rect_for(1280, 900);
+    let ids: Vec<_> = app.shell.downloads().iter().map(|d| d.id()).collect();
+    for id in ids.iter().skip(1) {
+        app.shell.downloads_mut().pause(*id);
+    }
+    let (_, _, _, one_row_h) = app.download_panel_rect_for(1280, 900);
+    assert!(
+        three_rows_h > one_row_h,
+        "panel with 3 active rows ({three_rows_h}) should be taller than 1 row ({one_row_h})"
+    );
+}
+
+/// 超过 3 条活动下载时折叠为「+N more」计数行，面板高度封顶。
+#[test]
+fn download_panel_collapses_overflow_rows() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    for index in 0..5 {
+        let name = format!("f{index}.zip");
+        app.shell
+            .downloads_mut()
+            .start_download(&format!("https://example.com/{name}"), &name);
+    }
+
+    let (_, _, _, height) = app.download_panel_rect_for(1280, 900);
+    let expected = (layout::DOWNLOAD_PANEL_HEADER_HEIGHT
+        + 3.0 * layout::DOWNLOAD_PANEL_ROW_HEIGHT
+        + layout::DOWNLOAD_PANEL_OVERFLOW_HEIGHT
+        + layout::DOWNLOAD_PANEL_BOTTOM_PAD)
+        * app.scale_factor;
+    assert!(
+        (height - expected).abs() < f32::EPSILON,
+        "5 active downloads should collapse to 3 rows + overflow count, got {height}"
+    );
+
+    let (_, glyphs, overlay, overlay_glyphs, _, _) = app.build_scene_for_test(1280, 900);
+    let text: String = overlay_glyphs.iter().chain(glyphs.iter()).map(|g| g.ch).collect();
+    assert!(
+        text.contains("+2 more"),
+        "overflow count row should render, got: {}",
+        &text[..text.len().min(300)]
+    );
+}
+
+/// 下载行暂停/取消按钮真实点击路径：暂停/取消经 DownloadManager 记账（T8）。
+#[test]
+fn download_panel_pause_and_cancel_buttons_act() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let first = app
+        .shell
+        .downloads_mut()
+        .start_download("https://example.com/a.zip", "a.zip");
+    let second = app
+        .shell
+        .downloads_mut()
+        .start_download("https://example.com/b.zip", "b.zip");
+
+    // 第 0 行暂停按钮中心真实点击。
+    let (px, py, pw, _) = app.download_panel_rect_for(1280, 900);
+    let row_y = BrowserApp::download_panel_row_y(py, 0, 1.0);
+    let (pause_x, _, btn_y, size) = BrowserApp::download_panel_button_rects(px, pw, row_y, 1.0);
+    let cx = f64::from(pause_x + size * 0.5);
+    let cy = f64::from(btn_y + size * 0.5);
+    app.handle_mouse_click(cx, cy, true, "Left");
+    app.handle_mouse_click(cx, cy, false, "Left");
+    assert_eq!(
+        app.shell.downloads().get(first).unwrap().state(),
+        zero_browser_shell::DownloadState::Paused
+    );
+
+    // 第 1 行暂停后只剩第 2 条活动（仍在行 0）：取消按钮中心真实点击。
+    let (px, py, pw, _) = app.download_panel_rect_for(1280, 900);
+    let row_y = BrowserApp::download_panel_row_y(py, 0, 1.0);
+    let (_, cancel_x, btn_y, size) = BrowserApp::download_panel_button_rects(px, pw, row_y, 1.0);
+    let cx = f64::from(cancel_x + size * 0.5);
+    let cy = f64::from(btn_y + size * 0.5);
+    app.handle_mouse_click(cx, cy, true, "Left");
+    app.handle_mouse_click(cx, cy, false, "Left");
+    assert_eq!(
+        app.shell.downloads().get(second).unwrap().state(),
+        zero_browser_shell::DownloadState::Cancelled
+    );
+}
+
 /// 默认不显示底部状态栏；WebView 高度不受状态栏占用。
 #[test]
 fn floating_link_status_hidden_by_default() {
@@ -1480,6 +1586,76 @@ fn floating_link_status_hidden_by_default() {
                 && f.color == app.chrome_palette().background
         }),
         "should not render full-width bottom status bar"
+    );
+}
+
+/// 页面加载中时状态栏显示「正在加载/Loading {域名}…」反馈，加载完成即清除（T8）。
+#[test]
+fn status_bar_shows_loading_domain_while_loading() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (800, 600);
+    app.scale_factor = 1.0;
+    if let Some(tab) = app.shell.active_tab_mut() {
+        tab.set_url("http://127.0.0.1:18080/index.html");
+        tab.set_loading(true);
+    }
+
+    let (_, glyphs, _, _, _, _) = app.build_scene_for_test(800, 600);
+    let text: String = glyphs.iter().map(|g| g.ch).collect();
+    // 整串匹配「Loading + 域名」：域名提取若误带端口/路径（如 127.0.0.1:18080）则不匹配。
+    assert!(
+        text.contains("Loading 127.0.0.1…") || text.contains("正在加载 127.0.0.1…"),
+        "loading status should show host only, got: {text}"
+    );
+
+    if let Some(tab) = app.shell.active_tab_mut() {
+        tab.set_loading(false);
+    }
+    let (_, glyphs, _, _, _, _) = app.build_scene_for_test(800, 600);
+    let text: String = glyphs.iter().map(|g| g.ch).collect();
+    assert!(
+        !text.contains("Loading") && !text.contains("正在加载"),
+        "loading status should clear after load completes"
+    );
+}
+
+/// 菜单打开时透明度渐入（150ms 内，Chrome 同款）：打开瞬间不出现完全不透明的
+/// 菜单背景，渐入完成后出现；关闭无过渡（T8）。
+#[test]
+fn context_menu_fades_in_on_open() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1024, 768);
+    app.scale_factor = 1.0;
+    app.show_context_menu_for_test(400.0, 300.0);
+    assert!(app.is_context_menu_visible_for_test());
+
+    let bg = app.chrome_palette().context_menu_bg;
+    let menu_x = app.context_menu_x_for_test();
+    let menu_y = app.context_menu_y_for_test();
+    let menu_w = layout::CONTEXT_MENU_WIDTH * app.scale_factor;
+    // 菜单背景直行填充（避开圆角行；外圈是 separator 色边框）。
+    let has_opaque_menu_bg = |overlay: &[FillPrimitive]| {
+        overlay.iter().any(|f| {
+            f.color == bg
+                && f.rect.origin.x == menu_x + 1.0
+                && f.rect.origin.y >= menu_y + 1.0
+                && f.rect.size.width == menu_w - 2.0
+        })
+    };
+
+    // 打开后立即构建场景：渐入尚未完成，不应出现完全不透明的菜单背景。
+    let (_, _, overlay, _, _, _) = app.build_scene_for_test(1024, 768);
+    assert!(
+        !has_opaque_menu_bg(&overlay),
+        "menu should not be fully opaque right after open"
+    );
+
+    // 渐入完成后（>150ms）：完全不透明的菜单背景出现。
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let (_, _, overlay, _, _, _) = app.build_scene_for_test(1024, 768);
+    assert!(
+        has_opaque_menu_bg(&overlay),
+        "menu background should be fully opaque after fade-in completes"
     );
 }
 

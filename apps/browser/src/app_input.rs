@@ -1049,6 +1049,20 @@ impl BrowserApp {
         let (content_x, content_y, content_w, content_h) = self.page_content_rect();
         let page_top = content_y;
 
+        // 下载面板行按钮命中（暂停/取消；矩形与渲染同源，先于「Show in folder」）。
+        if button == "Left"
+            && pressed
+            && let Some((download_id, cancel)) = self.download_panel_button_hit_at(x_f, y_f)
+        {
+            if cancel {
+                self.shell.downloads_mut().cancel(download_id);
+            } else {
+                self.shell.downloads_mut().pause(download_id);
+            }
+            self.needs_redraw = true;
+            return;
+        }
+
         // 下载面板「Show in folder」按钮命中（面板悬浮于页面区右下，先于页面派发）。
         if button == "Left"
             && pressed
