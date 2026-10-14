@@ -8595,6 +8595,14 @@
               if (hKey != null && typeof n.__zwHandle === 'string' && n.__zwHandle === hKey) return true;
               if (sKey != null && typeof n.__zwSelector === 'string' && n.__zwSelector === sKey) return true;
             } catch (_eKc) {}
+            // NA 族桥：锚点/removed 分属树族、proxy 域、named-prop 族时直键皆不命中
+            // ——双侧经 _zwSelNAHome 重投影到 named-prop 族再比 identity（拖选 caret
+            // 锚点为树族、removed 为 proxy 域的 anchor-removal 实证面）。
+            try {
+              var nh262 = _zwSelNAHome(n);
+              var rh262 = _zwSelNAHome(removed262);
+              if (nh262 && rh262 && nh262 === rh262) return true;
+            } catch (_eKna) {}
             return false;
           };
           var inSubtree = function (n) {
@@ -8616,11 +8624,20 @@
               if (phKey != null && typeof n.__zwHandle === 'string' && n.__zwHandle === phKey) return true;
               if (psKey != null && typeof n.__zwSelector === 'string' && n.__zwSelector === psKey) return true;
             } catch (_ePc) {}
+            try {
+              var nh262p = _zwSelNAHome(n);
+              var ph262p = _zwSelNAHome(oldParent262);
+              if (nh262p && ph262p && nh262p === ph262p) return true;
+            } catch (_ePna) {}
             return false;
           };
           var adj = function (isAnchor) {
             var n = isAnchor ? _selection._anchorNode : _selection._focusNode;
             var off = isAnchor ? _selection._anchorOffset : _selection._focusOffset;
+            // 吸附目标保持 oldParent262 原对象：R262 上行路径的 parent 与 live
+            // range 吸附同源（part03 同一 oldParent），identity 面天然一致；
+            // 不做 NA 重投影——globalThis[id] 即便连通也可能是异族孪生（parse
+            // wrapper vs 查询 proxy），换对象反而丢 identity（bridge test 实证）。
             if (inSubtree(n)) { n = oldParent262; off = oldIndex262; }
             else if (sameParent(n) && off > oldIndex262) { off = off - 1; }
             else { return; }
@@ -13770,6 +13787,7 @@
   };
   globalThis.__zw_pointer_move = function (sel, x, y, chordBtn19) {
     var st = _zwPtrState;
+    var _dragSelM = sel; // 拖选 sel 键回落锚（retarget 前的 origin 元素）
     // 尾簇 23：捕获期 portal 路由——inner 捕获激活时全部事件随捕获目标（视口出框
     // 不丢）；外层捕获（真实 st.capture/pending）优先于 portal（subtest 3 面）。
     // 尾簇 23：捕获期 portal 路由——inner 捕获激活时全部事件随捕获目标（视口出框
@@ -13944,6 +13962,26 @@
     // 尾簇 18：range input 拖拽持续取值（按下键位非零 + down 落在 range 上）。
     if (st.buttons && st.downSel && _zwIsRangeInput(st.downSel, null)) {
       _zwRangeApplyFromPoint(st.downSel, null, x, y);
+    }
+    // selection-compat M2 拖选切片：拖拽中（主键按下）mousemove 默认动作 = 选区
+    // **extend** 到 caret 命中点（anchor 保持、focus 随动——起点为 down 的 collapse）。
+    // pointerdown 取消（compat 抑制）与 range input 拖拽不接管；命中空（down 未建
+    // 选区）时 extend 抛 InvalidStateError 由 try 吸收为 no-op。命中键 body/html =
+    // runner 零布局回落（同 down——垃圾点不走坐标路径）。
+    if (!st.compatSuppressed && (st.buttons & 1)
+        && !(st.downSel && _zwIsRangeInput(st.downSel, null))) {
+      try {
+        var _mvSelKey = _dragSelM || st.downSel;
+        var _mvCaret = (_mvSelKey !== 'body' && _mvSelKey !== 'html'
+                        && typeof _zwCaretFromPointDoc === 'function')
+          ? _zwCaretFromPointDoc(x || 0, y || 0) : null;
+        if (!_mvCaret && typeof _zwCaretFromSelText === 'function') {
+          _mvCaret = _zwCaretFromSelText(_mvSelKey, 1);
+        }
+        if (_mvCaret && _mvCaret.offsetNode && _zwDocDragSelectAllowed(_mvCaret.offsetNode)) {
+          _getSelection().extend(_mvCaret.offsetNode, _mvCaret.offset);
+        }
+      } catch (_eSelMove) {}
     }
     return 'ok';
   };
@@ -14175,6 +14213,7 @@
   // pointerevent_element_haspointercapture ?touch expected_default_capture 面）。
   globalThis.__zw_pointer_down_sequence = function (sel, x, y, pointerType, button) {
     var st = _zwPtrState;
+    var _dragSel0 = sel; // 拖选 sel 键回落锚（retarget 前的 origin 元素）
     button = button | 0;
     if (st.portalCap) {
       // 捕获期 portal down——事件随捕获目标（chorded down 走 move 语义前已分流）。
@@ -14277,6 +14316,27 @@
     // prevents its default action；Chromium canceling pointerdown 同效）。
     if (!prevented && !mdownPrevented && typeof globalThis._zwFocusSel === 'function') {
       globalThis._zwFocusSel(downEff);
+    }
+    // selection-compat M2 拖选切片：mousedown 默认动作 = **caret 落点**（UI Events
+    // §5.2.2 mouse 左键 press 语义——命中文本则选区折叠到命中点，拖拽 extend 的
+    // anchor 起点；未命中不改既有选区）。touch 面不接管（无拖选）；文本控件/
+    // contenteditable 子树不接管（_zwDocDragSelectAllowed——编辑域自有 caret 面）。
+    // pointerdown/mousedown 取消时连带抑制（与焦点迁移同款默认动作门）。
+    // 命中键为 body/html = runner 零布局回落（origin gBCR 全零 → 点退化为 (0,0)），
+    // 坐标路径的最近元素语义对垃圾点无意义 → 直接走 sel 键回落（文档序首文本）。
+    if (!prevented && !mdownPrevented && button === 0
+        && (pointerType || 'mouse') === 'mouse') {
+      try {
+        var _selCaret = (_dragSel0 !== 'body' && _dragSel0 !== 'html'
+                         && typeof _zwCaretFromPointDoc === 'function')
+          ? _zwCaretFromPointDoc(x || 0, y || 0) : null;
+        if (!_selCaret && typeof _zwCaretFromSelText === 'function') {
+          _selCaret = _zwCaretFromSelText(_dragSel0, 0);
+        }
+        if (_selCaret && _selCaret.offsetNode && _zwDocDragSelectAllowed(_selCaret.offsetNode)) {
+          _getSelection().collapse(_selCaret.offsetNode, _selCaret.offset);
+        }
+      } catch (_eSelDown) {}
     }
     // touch 隐式捕获（无显式 pending 时）——于 mousedown 后登记，下一 pointer 系
     // 事件派发前结算（gotpointercapture 站序与显式 setPointerCapture 一致）。
@@ -15549,6 +15609,221 @@ function _zwCaretFromPoint(x, y) {
     return { offsetNode: e.node, offset: cnt };
   }
   return null;
+}
+// selection-compat M2 拖选切片：**文档级 caret 命中**（视口 CSS 像素 → 文本节点 +
+// offset）——Actions 拖选（mousedown/mousemove 默认动作）构建文本选区的命中底座。
+// 元素命中：host `__zw_elementFromPoint`（R2924 HitTestCache）优先，gBCR 最小盒
+// 回落（_zwHitTestSel 同策略；此处需元素对象本体故内联）；盒未含点时按盒距最近
+// 回落（真实浏览器拖出文本行末端时 caret 吸附行尾的近似——x 超出末端 advance 时
+// clamp 到文本长度，语义同「拖过行尾选到行尾」）。字形测量复用 _zwTextElGeometry
+//（与 R34xx caretPositionFromPoint 同中点规则）；多文本子按 advance 累计路由，
+// 内联元素子间隙暂不计宽（FIXME：混排内联命中）；行盒垂直带取元素盒近似
+//（FIXME：多行折行的行级路由）。与 R34xx caretPositionFromPoint 域无关（后者 =
+// 注册表域）；本函数服务 UA 拖选默认动作。
+function _zwCaretFromPointDoc(x, y) {
+  x = +x || 0; y = +y || 0;
+  // 候选资格：有**非空白**直接文本子（纯空白文本子是块级排版的 inter-element
+  // 空白——选区锚进恒错误，anchor-removal 面：host 命中/最小盒落在容器 div，
+  // 路由 clamp 进 "\n    " 空白文本节点的教训）。
+  var _hasSelText = function (e) {
+    var ks = null;
+    try { ks = e.childNodes; } catch (_eHs) { return false; }
+    if (!ks) return false;
+    for (var i = 0; i < ks.length; i++) {
+      var n = ks[i];
+      if (!n || n.nodeType !== 3) continue;
+      var t = '';
+      try { t = String(n.data != null ? n.data : n.textContent || ''); } catch (_eHt2) { continue; }
+      if (/\S/.test(t)) return true;
+    }
+    return false;
+  };
+  var el = null;
+  try {
+    if (typeof __zw_elementFromPoint === 'function') {
+      var hsel = __zw_elementFromPoint(String(x), String(y));
+      if (hsel && typeof document.querySelector === 'function') {
+        var hel = document.querySelector(hsel);
+        if (hel && _hasSelText(hel)) el = hel; // 容器/无文本命中 → 落 walk 精选
+      }
+    }
+  } catch (_eHtD) {}
+  try {
+    if (!el && document.querySelectorAll) {
+      var all = document.querySelectorAll('body, body *');
+      var best = null, bestArea = Infinity, bestD = Infinity;
+      for (var i = 0; i < all.length; i++) {
+        var e = all[i];
+        if (!e.getBoundingClientRect) continue;
+        if (!_hasSelText(e)) continue;
+        var r = e.getBoundingClientRect();
+        if (!r || !(r.width > 0) || !(r.height > 0)) continue;
+        var dx = x < r.left ? r.left - x : (x > r.right ? x - r.right : 0);
+        var dy = y < r.top ? r.top - y : (y > r.bottom ? y - r.bottom : 0);
+        var d = dx + dy;
+        if (d > bestD) continue;
+        var area = r.width * r.height;
+        if (d < bestD || area < bestArea) { bestD = d; bestArea = area; best = e; }
+      }
+      el = best;
+    }
+  } catch (_eWkD) {}
+  if (!el) return null;
+  var gr = null;
+  try { gr = el.getBoundingClientRect(); } catch (_eGrD) {}
+  if (!gr) return null;
+  // 零面积盒 = 无布局证据（runner headless innerHTML 子树 gBCR 恒 0——实测）：
+  // 坐标映射无意义，返 null 让调用方落 sel 键回落（_zwCaretFromSelText）。
+  if (!(gr.width > 0) || !(gr.height > 0)) return null;
+  // 距离闸：点距元素盒超过盒自身尺寸 → 不命中（远点不建选区）。
+  var dxG = x < gr.left ? gr.left - x : (x > gr.right ? x - gr.right : 0);
+  var dyG = y < gr.top ? gr.top - y : (y > gr.bottom ? y - gr.bottom : 0);
+  if (dxG + dyG > Math.max(gr.width, gr.height, 1)) return null;
+  var kids = null;
+  try { kids = el.childNodes; } catch (_eKdD) {}
+  if (!kids || !kids.length) return null;
+  var lx = x - gr.left;
+  var st = _zwTextElStyle({ el: el });
+  var rtl = (st.direction === 'rtl');
+  var lastNode = null, lastOff = 0;
+  for (var ki = 0; ki < kids.length; ki++) {
+    var tn = kids[ki];
+    if (!tn || tn.nodeType !== 3) continue; // FIXME: 内联元素子混排的路由宽度
+    var text = '';
+    try { text = String(tn.data != null ? tn.data : tn.textContent || ''); } catch (_eTdD) { continue; }
+    if (!text || !/\S/.test(text)) continue; // 纯空白子不入路由（块级 inter-element 空白）
+    var geom = _zwTextElGeometry(text, st.font, st.direction, st.spacing);
+    if (!geom) continue;
+    var cnt = 0;
+    for (var gi = 0; gi < geom.rects.length; gi++) {
+      var g = geom.rects[gi];
+      if (g[2] <= g[0] && g[3] <= g[1]) continue;
+      if (rtl) { if (g[0] > lx) cnt++; }
+      else {
+        var nextPen = (gi + 1 < geom.pens.length) ? geom.pens[gi + 1] : geom.width;
+        if ((geom.pens[gi] + nextPen) / 2 < lx) cnt++;
+      }
+    }
+    if (lx <= geom.width) return { offsetNode: _zwSelNAHome(tn), offset: cnt };
+    lastNode = tn; lastOff = cnt;
+    lx -= geom.width;
+  }
+  // x 超出全部文本 advance（拖出行尾）→ clamp 末文本节点末端。
+  if (lastNode) return { offsetNode: _zwSelNAHome(lastNode), offset: lastOff };
+  return null;
+}
+// 拖选默认动作的作用域闸：文本控件（input/textarea——选区是 value 内部形态）与
+// contenteditable 子树（编辑域自有 caret 语义）不接管；其余文本命中建/延选区。
+function _zwDocDragSelectAllowed(node) {
+  try {
+    var cur = node && node.parentNode;
+    for (var i = 0; cur && i < 32; i++) {
+      var tag = String(cur.nodeName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return false;
+      var ce = cur.getAttribute ? cur.getAttribute('contenteditable') : null;
+      if (ce != null && String(ce) !== 'false') return false;
+      try { cur = cur.parentNode; } catch (_eUpG) { return true; }
+    }
+  } catch (_eGd) {}
+  return true;
+}
+// NA 域同置重投影（拖选 caret 家族桥）：同一家生节点在 shim 内有**两族稳定 JS
+// 对象**——树行走/getElementById 族与 named-prop 全局族（探针实证
+// `document.getElementById('parentParagraph') !== parentParagraph`、两侧各自
+// firstChildStable=true）。Selection 保存的 anchor/focus 若落在树族，WPT 的
+// `anchorNode === parentParagraph.firstChild`（named-prop 引用）identity 必败；
+// R262 删除吸附（removed 来自 proxy 域调用方）同理跨族不命中。桥语义：取节点
+// **最近 id 祖先**（含自身），经 `globalThis[id]`（named-prop 可见性按次访问，
+// 内联刷新后代各新）取 NA 族孪生，按子索引路径重投影回等位节点；重投影结果以
+// nodeType + 文本 nodeValue 双重校验防误配（页面同名自有全局/异节点），并要求
+// 孪生仍连通当下文档树（globalThis[id] 历史代残留不接）。无 id
+// 祖先或任一步失配 → 原对象原样返回（单族环境零影响）。
+function _zwSelNAHome(node) {
+  try {
+    if (!node || !node.nodeType) return node;
+    var id0 = null;
+    try { id0 = node.id ? String(node.id) : null; } catch (_eH0) { id0 = null; }
+    if (id0) {
+      var na0 = null;
+      try { na0 = globalThis[id0]; } catch (_eH1) { na0 = null; }
+      // 连通性门：globalThis[id] 可能是历史代残留（上一轮 innerHTML 的死 proxy/
+      // 场景级 var）——树已重建则该孪生与活树 identity 无意义（bridge test 实证：
+      // 场景① var r 留下 globalThis.r，场景②重建后吸附到死 proxy 致断言败）。
+      // 仅接受仍在当下文档树中的孪生；不连通按未命中落入祖先回退。
+      if (na0 && na0 !== node && na0.nodeType === node.nodeType
+          && (typeof _zwDocContains36 !== 'function' || _zwDocContains36(na0))) return na0;
+    }
+    var anc = node, path = [];
+    for (var i = 0; anc && i < 64; i++) {
+      var p = null;
+      try { p = anc.parentNode; } catch (_eH2) { p = null; }
+      if (!p) break;
+      var idx = -1, ks = null;
+      try { ks = p.childNodes; } catch (_eH3) { ks = null; }
+      if (ks) { for (var j = 0; j < ks.length; j++) { if (ks[j] === anc) { idx = j; break; } } }
+      if (idx < 0) break;
+      path.unshift(idx);
+      anc = p;
+      var idv = null;
+      try { idv = anc.id ? String(anc.id) : null; } catch (_eH4) { idv = null; }
+      if (!idv) continue;
+      var na = null;
+      try { na = globalThis[idv]; } catch (_eH5) { na = null; }
+      if (!na || na === anc || na.nodeType !== anc.nodeType) continue;
+      var cur = na, ok = true;
+      for (var k = 0; k < path.length; k++) {
+        var ks2 = null;
+        try { ks2 = cur.childNodes; } catch (_eH6) { ks2 = null; }
+        if (!ks2 || path[k] >= ks2.length) { ok = false; break; }
+        cur = ks2[path[k]];
+      }
+      if (ok && cur && cur.nodeType === node.nodeType
+          && (typeof _zwDocContains36 !== 'function' || _zwDocContains36(cur))) {
+        if (node.nodeType !== 3 || String(cur.nodeValue) === String(node.nodeValue)) return cur;
+      }
+    }
+  } catch (_eHome) {}
+  return node;
+}
+// sel 键 caret 回落（无布局环境——坐标路径零面积盒 null 后的确定性语义）：
+// end=0 → 首 selectable 文本子@0（down 落点近似「点元素即选其文首」）；
+// end=1 → 末 selectable 文本子末端（拖出近似「拖至元素即选其文尾」）。
+// 无 selectable 文本（容器/控件）→ null（不接管）。直接文本子优先，缺则下一层
+// 元素子（FIXME：深子树路由）。落点经 _zwSelNAHome 重投影到 named-prop 族
+//（WPT 断言引用家族——identity 面见该函数注）。
+function _zwCaretFromSelText(sel, end) {
+  try {
+    if (!sel) return null;
+    var el = null;
+    if (sel === 'body' || sel === 'html') {
+      el = sel === 'body' ? document.body : document.documentElement;
+    } else if (typeof document.querySelector === 'function') {
+      el = document.querySelector(sel);
+    }
+    if (!el) return null;
+    var pick = null;
+    (function scan(n, depth) {
+      if (pick || depth > 4) return;
+      var ks = null;
+      try { ks = n.childNodes; } catch (_eCs) { return; }
+      if (!ks) return;
+      for (var i = 0; i < ks.length; i++) {
+        var c = ks[i];
+        if (!c) continue;
+        if (c.nodeType === 3) {
+          var t = '';
+          try { t = String(c.data != null ? c.data : c.textContent || ''); } catch (_eCt) { continue; }
+          if (!/\S/.test(t)) continue;
+          if (end) pick = { offsetNode: c, offset: t.length }; // 末位语义：后者覆盖
+          else { pick = { offsetNode: c, offset: 0 }; return; }
+          continue;
+        }
+        if (c.nodeType === 1) scan(c, depth + 1);
+      }
+    })(el, 0);
+    if (pick && pick.offsetNode) return { offsetNode: _zwSelNAHome(pick.offsetNode), offset: pick.offset };
+    return pick;
+  } catch (_eSelT) { return null; }
 }
 
   // ═══ WebSocket（t8k：WHATWG HTML §network Web sockets + RFC 6455 客户端面）═══

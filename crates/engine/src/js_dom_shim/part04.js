@@ -9921,14 +9921,27 @@
               // 后 id 无全局注册 → ReferenceError）。守卫：仅 globalThis[id] ===
               // undefined 时注册（不遮蔽内建属性；真浏览器的 WindowProperties 原
               // 型层语义以 undefined 门近似）。递归 walk 子树（id 可在任意深度）。
+              // selection-compat M2（anchor-removal 语义面）：**换代刷新**——注册值
+              // 打 `__zwR3kNamedId` 标记；同名现值带同标记 = 本机制上一代注册（上一轮
+              // innerHTML 的解析 wrapper），树已重建则其 `.remove()` 等方法落在死节点
+              // 上（探针实证：第二次 innerHTML 后 remove 不触达活树、无删除事件）——
+              // spec named objects 按当下文档树求值，覆盖刷新。脚本自有值（无标记）
+              // 仍不遮蔽。
               if (typeof globalThis !== 'undefined') {
                 var _r3kReg = function (node) {
                   while (node) {
                     try {
                       if (node.nodeType === 1) {
                         var nid = node.id || (node.getAttribute && node.getAttribute('id')) || '';
-                        if (nid && globalThis[nid] === undefined) {
-                          globalThis[nid] = node;
+                        if (nid) {
+                          var cur3k = undefined;
+                          try { cur3k = globalThis[nid]; } catch (_eR3kG) { cur3k = undefined; }
+                          var ours3k = false;
+                          try { ours3k = !!cur3k && cur3k.__zwR3kNamedId === nid; } catch (_eR3kT) { ours3k = false; }
+                          if (cur3k === undefined || ours3k) {
+                            try { node.__zwR3kNamedId = nid; } catch (_eR3kTag) {}
+                            globalThis[nid] = node;
+                          }
                         }
                         var kids = node.childNodes || [];
                         for (var ki = 0; ki < kids.length; ki++) _r3kReg(kids[ki]);

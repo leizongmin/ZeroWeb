@@ -13,8 +13,10 @@
 > **▶ 基线事实（2026-10-14 M1 实测）**：`make testharness-selection` 全量
 > **2965/2970（99.83%）**；Selection 对象存在性/方向语义/isCollapsed 面已大
 > 体收敛，余缺口为 toString rendered text 语义（已修，2966/2970）、Actions
-> 拖选选区构建 + live-range 边界吸附、document.open 依赖（跨域挂账）。证据：
-> `docs/goal/selection-compat/evidence/2026-10-14-m1-baseline.md`。
+> 拖选选区构建 + live-range 边界吸附（已修，**2968/2970**，M2 切片 2）、
+> document.open 依赖（跨域挂账）。证据：
+> `docs/goal/selection-compat/evidence/2026-10-14-m1-baseline.md`、
+> `evidence/2026-10-14-m2s2-anchor-removal.md`。
 
 ## Mission
 
