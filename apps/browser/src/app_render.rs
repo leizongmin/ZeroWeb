@@ -202,8 +202,14 @@ impl BrowserApp {
         self.render_floating_link_status(&mut fills, &mut glyphs, width, height, s);
 
         // 15–17. 浮动查找栏、下载面板、上下文菜单（overlay 顶层）
+        // 查找高亮最先入 overlay（位于查找栏之下，仍在页面内容之上）。
         if self.shell.find_state().is_active() {
+            self.render_find_highlight_overlay(&mut overlay_fills, width, height);
             self.render_find_bar(&mut overlay_fills, &mut overlay_glyphs, width, height, font_size, s);
+        }
+        // 18. 标签溢出下拉（T18：▾ 展开时覆盖页面内容，与自动补全同层）
+        if self.tab_overflow_open && !self.tab_overflow_ids.is_empty() {
+            self.render_tab_overflow_dropdown(&mut overlay_fills, &mut overlay_glyphs, width, font_size, s);
         }
         if self.should_show_download_panel() {
             self.render_download_panel(&mut overlay_fills, &mut overlay_glyphs, width, height, font_size, s);
@@ -602,22 +608,53 @@ impl BrowserApp {
             x += tab_w;
         }
 
-        for tab in tabs.iter().filter(|t| !t.is_active && !t.is_dragging) {
+        // 标签溢出（T18）：压缩到极限最小宽度仍放不下时，放不下的标签（含其后全部）
+        // 溢出到 ▾ 下拉列表，不再画出标签条。strip_limit 为 ▾ 按钮的右缘——
+        // 可见标签 + ▾ + 「+」按钮恰好填满标签条可用宽度。
+        let overflow_btn_w = layout::NEW_TAB_BTN_WIDTH * s;
+        let strip_limit = tabs_max_width - overflow_btn_w;
+        let mut visible_end = tabs.len();
+        for (i, tab) in tabs.iter().enumerate() {
+            if tab.x + tab.tab_w > strip_limit {
+                visible_end = i;
+                break;
+            }
+        }
+        let has_overflow = visible_end < tabs.len();
+        // 溢出隐藏集合（标签序）：放不下的全部标签。活动标签在集合中时与可见区
+        // 最后一个非拖拽普通槽位互换——活动标签沿用让出槽位的 x 保持可见
+        //（Chrome 语义），被让出的标签按标签序排在隐藏列表最前。
+        let mut hidden_ids: Vec<TabId> = tabs[visible_end..].iter().map(|t| t.id).collect();
+        if has_overflow
+            && let Some(pos) = hidden_ids.iter().position(|&id| Some(id) == active_id)
+            && let Some(evict_idx) = tabs[..visible_end].iter().rposition(|t| !t.is_active && !t.is_dragging)
+        {
+            let evicted_id = tabs[evict_idx].id;
+            let evict_x = tabs[evict_idx].x;
+            tabs.swap(evict_idx, visible_end + pos);
+            tabs[evict_idx].x = evict_x;
+            hidden_ids.remove(pos);
+            hidden_ids.insert(0, evicted_id);
+        }
+        let visible = &tabs[..visible_end];
+        let visible_end_x = visible.last().map(|t| t.x + t.tab_w).unwrap_or(leading);
+
+        for tab in visible.iter().filter(|t| !t.is_active && !t.is_dragging) {
             crate::tab_chrome::push_inactive_tab_fill(fills, tab.x, tab_y, tab.tab_body_w, tab_bar_h, s, tab.bg);
         }
 
-        if let Some(active) = tabs.iter().find(|t| t.is_active) {
+        if let Some(active) = visible.iter().find(|t| t.is_active) {
             crate::tab_chrome::push_active_tab_fill(fills, active.x, tab_y, active.tab_body_w, tab_bar_h, s, active.bg);
         }
 
         // 被拖拽的标签最后绘制（顶层），用 active 样式突出。
-        for tab in tabs.iter().filter(|t| t.is_dragging) {
+        for tab in visible.iter().filter(|t| t.is_dragging) {
             crate::tab_chrome::push_active_tab_fill(fills, tab.x, tab_y, tab.tab_body_w, tab_bar_h, s, tab.bg);
         }
 
         // 相邻非激活标签之间的竖线（在标签底色之上、文本图标之下）
-        for i in 0..tabs.len().saturating_sub(1) {
-            if !tabs[i].is_active && !tabs[i + 1].is_active {
+        for i in 0..visible.len().saturating_sub(1) {
+            if !visible[i].is_active && !visible[i + 1].is_active {
                 let gap_center = tabs[i].x + tabs[i].tab_w - s * 0.5;
                 let inset = layout::TAB_SEPARATOR_INSET * s;
                 let sep_w = s.max(1.0);
@@ -631,7 +668,7 @@ impl BrowserApp {
             }
         }
 
-        for tab in &tabs {
+        for tab in visible {
             let tab_text_color = if tab.is_crashed {
                 self.chrome_palette.tab_crashed
             } else if tab.is_active {
@@ -766,9 +803,44 @@ impl BrowserApp {
             self.tab_layout.push((tab.id, tab.x, tab.tab_w));
         }
 
-        // 新建标签按钮 (+)，紧跟最后一个标签
+        // 溢出 ▾ 按钮（T18）：存在被隐藏标签时出现在最后一个可见标签之后；
+        // 下拉面板本体在 overlay 层绘制（覆盖页面内容）。
+        self.tab_overflow_ids = hidden_ids;
+        if has_overflow {
+            let ob_x = visible_end_x;
+            self.tab_overflow_btn_x = Some(ob_x);
+            let is_hovered = self.pointer_in_rect(ob_x, tab_y, overflow_btn_w, tab_bar_h);
+            if is_hovered {
+                push_circle_fill(
+                    fills,
+                    ob_x + overflow_btn_w / 2.0,
+                    tab_y + tab_bar_h / 2.0,
+                    layout::NAV_BUTTON_HOVER_DIAMETER * s,
+                    self.chrome_palette.tab_hover_bg,
+                );
+            }
+            let chevron_color = if is_hovered {
+                self.chrome_palette.address_bar_text
+            } else {
+                self.chrome_palette.new_tab_button
+            };
+            crate::ui_icons::render_icon(
+                &mut self.font_loader,
+                glyphs,
+                crate::ui_icons::Icon::ChevronDown,
+                ob_x + overflow_btn_w / 2.0,
+                tab_y + tab_bar_h / 2.0,
+                layout::CHROME_ICON_SIZE * s,
+                chevron_color,
+            );
+        } else {
+            self.tab_overflow_btn_x = None;
+            self.tab_overflow_open = false;
+        }
+
+        // 新建标签按钮 (+)，溢出时位于 ▾ 按钮右侧，否则紧跟最后一个标签
         {
-            let btn_x = x;
+            let btn_x = if has_overflow { visible_end_x + overflow_btn_w } else { visible_end_x };
             let is_hovered = {
                 let mx = self.mouse_pos.0 as f32;
                 let my = self.mouse_pos.1 as f32;
@@ -801,6 +873,157 @@ impl BrowserApp {
 
         if self.uses_custom_window_controls() {
             self.render_window_controls(fills, glyphs, width, tab_y, s);
+        }
+    }
+
+    /// 渲染页面内查找高亮（overlay 层；T15-d）。
+    ///
+    /// 全部匹配淡黄底、当前匹配橙底 + 描边（Chrome 习惯：半透明标记叠于文字上）。
+    /// 用 `find_match_ranges` 缓存的文档坐标包围盒（与 `refresh_find_matches`
+    /// 同源），按内容区 + 滚动偏移换算屏幕坐标并裁剪到视口。
+    fn render_find_highlight_overlay(
+        &mut self,
+        overlay_fills: &mut Vec<FillPrimitive>,
+        width: u32,
+        height: u32,
+    ) {
+        if self.find_match_ranges.is_empty() {
+            return;
+        }
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            return;
+        };
+        let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
+        let scroll = self.tab_scroll_state(tab_id);
+        // CSS 图元 × device scale × 页面 zoom（与 append_webview_primitives 同一换算）。
+        let s = self.page_render_scale();
+        let content_x_draw = cx - scroll.x;
+        let content_y_draw = cy - scroll.y;
+        let clip_top = cy;
+        let clip_bottom = cy + ch;
+        let clip_left = cx;
+        let clip_right = cx + cw;
+        let current = self.shell.find_state().current_match();
+        for (idx, (_range, (x, top, w, h))) in self.find_match_ranges.iter().enumerate() {
+            let (fill, is_current) = if Some(idx + 1) == Some(current) {
+                (self.chrome_palette.find_current_match_bg, true)
+            } else {
+                (self.chrome_palette.find_other_match_bg, false)
+            };
+            // 文档坐标包围盒 → 屏幕矩形，裁剪到页面视口（部分可见时截断）。
+            let dx = x * s + content_x_draw;
+            let mut dt = top * s + content_y_draw;
+            let mut dw = w * s;
+            let mut dh = h * s;
+            let right = dx + dw;
+            let bottom = dt + dh;
+            if bottom <= clip_top || dt >= clip_bottom || right <= clip_left || dx >= clip_right {
+                continue;
+            }
+            let clipped_left = dx.max(clip_left);
+            let clipped_top = dt.max(clip_top);
+            let clipped_right = right.min(clip_right);
+            let clipped_bottom = bottom.min(clip_bottom);
+            dw = clipped_right - clipped_left;
+            dh = clipped_bottom - clipped_top;
+            dt = clipped_top;
+            let dx = clipped_left;
+            if dw <= 0.0 || dh <= 0.0 {
+                continue;
+            }
+            if is_current {
+                // 当前匹配加描边便于区分（1 物理像素内框 + 外框）。
+                overlay_fills.push(rect_fill(
+                    dx - 1.0,
+                    dt - 1.0,
+                    dw + 2.0,
+                    dh + 2.0,
+                    self.chrome_palette.find_current_match_border,
+                ));
+            }
+            overlay_fills.push(rect_fill(dx, dt, dw.max(1.0), dh, fill));
+        }
+    }
+
+    /// 渲染标签溢出下拉面板（▾ 展开；overlay 层，覆盖页面内容）。
+    ///
+    /// 列出被隐藏标签的 favicon + 标题，悬停行高亮；点击切换到该标签
+    /// （命中测试走 `tab_overflow_row_at`，与面板矩形同源）。行数超过
+    /// `TAB_OVERFLOW_MAX_ROWS` 时截断（FIXME：滚动列表后续切片）。
+    fn render_tab_overflow_dropdown(
+        &mut self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        _width: u32,
+        font_size: f32,
+        s: f32,
+    ) {
+        if self.font_id.is_none() {
+            return;
+        }
+        let Some((px, py, pw, ph)) = self.tab_overflow_panel_rect() else {
+            return;
+        };
+        let border = s.max(1.0);
+        let radius = layout::AUTOCOMPLETE_DROPDOWN_RADIUS * s;
+        push_rounded_rect_fill(fills, px, py, pw, ph, radius, self.chrome_palette.separator);
+        push_rounded_rect_fill(
+            fills,
+            px + border,
+            py + border,
+            pw - 2.0 * border,
+            ph - 2.0 * border,
+            (radius - border).max(0.0),
+            self.chrome_palette.autocomplete_bg,
+        );
+
+        let row_h = layout::TAB_OVERFLOW_ROW_HEIGHT * s;
+        let icon_size = layout::TAB_ICON_SIZE * s;
+        let rows = self.tab_overflow_visible_rows();
+        for (i, tab_id) in self.tab_overflow_ids.iter().take(rows).enumerate() {
+            let row_y = py + i as f32 * row_h;
+            if self.pointer_in_rect(px, row_y, pw, row_h) {
+                fills.push(rect_fill(
+                    px + border,
+                    row_y,
+                    pw - 2.0 * border,
+                    row_h,
+                    self.chrome_palette.tab_hover_bg,
+                ));
+            }
+            let Some(tab) = self.shell.tabs().find(|t| t.id() == *tab_id) else {
+                continue;
+            };
+            let favicon_url = tab.url().or(Some("zero://newtab"));
+            let html_hint = Self::tab_html_hint(tab.url());
+            let icon_cx = px + 12.0 * s + icon_size * 0.5;
+            let cy = row_y + row_h * 0.5;
+            crate::tab_favicon::render_tab_favicon(
+                &mut self.font_loader,
+                glyphs,
+                *tab_id,
+                favicon_url,
+                html_hint,
+                icon_cx,
+                cy,
+                icon_size,
+                self.chrome_palette.page_hint,
+            );
+            let mut label = tab.title().or(tab.url()).unwrap_or("New Tab").to_string();
+            if tab.is_private() {
+                label = format!("无痕 · {label}");
+            }
+            let text_x = px + 12.0 * s + icon_size + 8.0 * s;
+            let text_area_w = pw - (text_x - px) - 12.0 * s;
+            let truncated = self.truncate_ui_text(&label, text_area_w.max(0.0), font_size);
+            self.draw_ui_text(
+                &truncated,
+                text_x,
+                row_y + (row_h - font_size) * 0.5,
+                font_size,
+                self.chrome_palette.address_bar_text,
+                glyphs,
+            );
         }
     }
 
@@ -1352,38 +1575,9 @@ impl BrowserApp {
         let radius = (self.effective_page_frame_radius() - border).max(0.0);
         let clip_rounded = Some((viewport_x, viewport_y, viewport_w, viewport_h, radius));
 
-        // 页面内查找高亮：全部匹配淡黄底，当前匹配橙底（绘制在页面 glyph 之前，
-        // 与选区高亮同款几何：glyph.x × s + content 偏移，字宽 × 0.55）。
-        if self.shell.find_state().is_active() && !self.find_match_ranges.is_empty() {
-            let current = self.shell.find_state().current_match();
-            for (idx, (range, _rect)) in self.find_match_ranges.iter().enumerate() {
-                let (fill, is_current) = if Some(idx + 1) == Some(current) {
-                    (self.chrome_palette.find_current_match_bg, true)
-                } else {
-                    (self.chrome_palette.find_other_match_bg, false)
-                };
-                for glyph in &page_primitives.glyphs[range.clone()] {
-                    let x = glyph.x * s + content_x_draw;
-                    let top = glyph.y * s + content_y_draw - glyph.font_size * s;
-                    let w = glyph.font_size * s * 0.55;
-                    let h = glyph.font_size * s;
-                    if top + h <= clip_top || top >= clip_bottom {
-                        continue;
-                    }
-                    if is_current {
-                        // 当前匹配加描边便于区分（1 物理像素内框 + 外框）。
-                        fills.push(rect_fill(
-                            x - 1.0,
-                            top - 1.0,
-                            w.max(1.0) + 2.0,
-                            h + 2.0,
-                            self.chrome_palette.find_current_match_border,
-                        ));
-                    }
-                    fills.push(rect_fill(x, top, w.max(1.0), h, fill));
-                }
-            }
-        }
+        // 页面内查找高亮已移至 overlay 层（render_find_highlight_overlay）：
+        // 画在 chrome fills 层会被页面自身背景 fill（append 在其后）与
+        // compositor 位图整面覆盖——overlay 层是唯一两侧路径都可见的位置。
 
         if let Some(sel) = self.page_selection.get(&tab_id)
             && !sel.is_collapsed()

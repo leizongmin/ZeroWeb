@@ -81,6 +81,13 @@ pub const TAB_FOOT_RADIUS: f32 = 7.0;
 pub const TAB_ICON_SIZE: f32 = 14.0;
 /// Vertical inset of separators between adjacent inactive tabs.
 pub const TAB_SEPARATOR_INSET: f32 = 8.0;
+/// Width of the tab overflow dropdown panel (▾ 展开后列出被隐藏的标签)。
+pub const TAB_OVERFLOW_PANEL_WIDTH: f32 = 260.0;
+/// Height of one row in the tab overflow dropdown.
+pub const TAB_OVERFLOW_ROW_HEIGHT: f32 = 32.0;
+/// Maximum visible rows in the tab overflow dropdown.
+// FIXME: 超出行数的溢出标签需要滚动列表（Chrome 同款）；当前切片暂不可达。
+pub const TAB_OVERFLOW_MAX_ROWS: usize = 16;
 /// Maximum visible rows in the autocomplete dropdown.
 pub const AUTOCOMPLETE_MAX_VISIBLE: usize = 6;
 /// Height of one autocomplete row.

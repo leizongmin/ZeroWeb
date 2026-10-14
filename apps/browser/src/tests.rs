@@ -4536,3 +4536,232 @@ fn zoom_segment_hover_change_sets_needs_redraw() {
         "segment change within the zoom row must request redraw"
     );
 }
+
+/// T15 查找栏增强：Enter=下一个、Shift+Enter=上一个（Chrome 行为）。
+/// 经真实键路径（Ctrl+F → 逐字键入 → Enter/Shift+Enter）断言 find_state
+/// 的 current 推进/回退；页面 glyph 匹配数无渲染环境，注入 find_set_matches。
+#[test]
+fn find_enter_navigates_next_and_shift_enter_previous() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    // Ctrl+F 打开查找栏。
+    app.handle_key("Control", true, None);
+    app.handle_key("f", true, None);
+    app.handle_key("f", false, None);
+    app.handle_key("Control", false, None);
+    assert!(app.smoke_find_state().0, "Ctrl+F must activate the find bar");
+
+    // 键入查询词（每字符触发 find_start；无页面 glyph 时计数为 0）。
+    for ch in "needle".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+    }
+    // 渲染层 refresh_find_matches 的计数写回（单元测试无 glyph，注入 3 个匹配）。
+    app.shell.find_set_matches(3);
+    assert_eq!(app.smoke_find_state(), (true, "needle".to_string(), 1, 3));
+
+    // Enter → 下一个：current 1→2。
+    app.handle_key("Enter", true, None);
+    assert_eq!(app.smoke_find_state().2, 2, "Enter must advance to the next match");
+    // Shift+Enter → 上一个：current 2→1。
+    app.handle_key("Shift", true, None);
+    app.handle_key("Enter", true, None);
+    app.handle_key("Shift", false, None);
+    let (active, _, current, total) = app.smoke_find_state();
+    assert!(active, "find bar must stay active while navigating");
+    assert_eq!(current, 1, "Shift+Enter must go back to the previous match");
+    assert_eq!(total, 3);
+
+    // Shift+Enter 在首个匹配上回绕到最后一个（Chrome 循环语义）。
+    app.handle_key("Shift", true, None);
+    app.handle_key("Enter", true, None);
+    app.handle_key("Shift", false, None);
+    assert_eq!(
+        app.smoke_find_state(),
+        (true, "needle".to_string(), 3, 3),
+        "Shift+Enter from the first match must wrap to the last"
+    );
+
+    // Esc 关闭并复位（T15-c 既有行为，键路径回归）。
+    app.handle_key("Escape", true, None);
+    assert_eq!(app.smoke_find_state(), (false, String::new(), 0, 0));
+}
+
+/// T18 标签溢出：极限压缩仍放不下时，多余标签隐藏进溢出列表（▾），
+/// 不再画出标签条；活动标签必须保持可见（Chrome 语义）。
+#[test]
+fn tab_overflow_hides_excess_tabs_and_keeps_active_visible() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (640, 900);
+    app.scale_factor = 1.0;
+    for _ in 0..20 {
+        app.new_tab(None);
+    }
+    let all_ids = app.smoke_tab_ids();
+    let total = all_ids.len();
+    assert_eq!(total, 21, "startup tab + 20 new tabs");
+    let _ = app.build_scene_for_test(640, 900);
+
+    let (open, hidden) = app.smoke_tab_overflow();
+    assert!(!open, "dropdown starts closed");
+    assert!(hidden > 0, "21 tabs at 640px must overflow past ▾ button");
+    let visible_ids: Vec<_> = all_ids
+        .iter()
+        .copied()
+        .filter(|id| app.smoke_tab_rect(*id).is_some())
+        .collect();
+    assert_eq!(
+        visible_ids.len() + hidden,
+        total,
+        "visible + hidden must cover all tabs"
+    );
+    // 无溢出的常规场景不渲染 ▾。
+    assert!(
+        app.tab_overflow_button_rect().is_some(),
+        "▾ button rendered on overflow"
+    );
+
+    // 活动标签（最后一个）不可见时被换入可见区。
+    let active = app.shell.active_tab_id().unwrap();
+    assert!(
+        app.smoke_tab_rect(active).is_some(),
+        "active tab must remain visible when overflowing"
+    );
+
+    // 切到必然被隐藏的首个标签后，活动标签仍可见。
+    let first = all_ids[0];
+    app.shell.switch_tab(first);
+    let _ = app.build_scene_for_test(640, 900);
+    assert!(
+        app.smoke_tab_rect(first).is_some(),
+        "newly activated hidden tab must be swapped into the visible strip"
+    );
+}
+
+/// T18 标签溢出下拉：真实点击路径 ▾ 展开 → 行点击切换并收起 →
+/// Escape 收起 → 面板外点击收起。
+#[test]
+fn tab_overflow_dropdown_click_switches_and_closes() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (640, 900);
+    app.scale_factor = 1.0;
+    for _ in 0..20 {
+        app.new_tab(None);
+    }
+    let all_ids = app.smoke_tab_ids();
+    let hidden_count = |app: &BrowserApp, visible_len: usize| all_ids.len() - visible_len;
+    let _ = app.build_scene_for_test(640, 900);
+    let visible_before: std::collections::HashSet<_> = all_ids
+        .iter()
+        .copied()
+        .filter(|id| app.smoke_tab_rect(*id).is_some())
+        .collect();
+    let hidden_target = *all_ids
+        .iter()
+        .find(|id| !visible_before.contains(id))
+        .expect("overflow must hide at least one tab");
+
+    let Some((bx, by, bw, bh)) = app.tab_overflow_button_rect() else {
+        panic!("▾ button must be rendered on overflow");
+    };
+    let btn_cx = ((bx + bw / 2.0) as f64, (by + bh / 2.0) as f64);
+    // 点击 ▾ 展开。
+    app.handle_mouse_click(btn_cx.0, btn_cx.1, true, "Left");
+    app.handle_mouse_click(btn_cx.0, btn_cx.1, false, "Left");
+    assert_eq!(
+        app.smoke_tab_overflow(),
+        (true, hidden_count(&app, visible_before.len())),
+        "▾ click must open the overflow dropdown"
+    );
+
+    // 点击第一行 → 切换到首个隐藏标签并收起下拉。
+    let Some((px, py, _, _)) = app.tab_overflow_panel_rect_for_test() else {
+        panic!("panel rect must exist while open");
+    };
+    let row_cy = (py + layout::TAB_OVERFLOW_ROW_HEIGHT * 0.5) as f64;
+    app.handle_mouse_click((px + 10.0) as f64, row_cy, true, "Left");
+    app.handle_mouse_click((px + 10.0) as f64, row_cy, false, "Left");
+    assert_eq!(
+        app.smoke_tab_overflow(),
+        (false, hidden_count(&app, visible_before.len())),
+        "row click must close the dropdown"
+    );
+    assert_eq!(
+        app.shell.active_tab_id(),
+        Some(hidden_target),
+        "first dropdown row must activate the first hidden tab"
+    );
+
+    // Escape 收起；面板外点击收起。
+    app.handle_mouse_click(btn_cx.0, btn_cx.1, true, "Left");
+    app.handle_mouse_click(btn_cx.0, btn_cx.1, false, "Left");
+    assert!(app.smoke_tab_overflow().0, "▾ click reopens");
+    app.handle_key("Escape", true, None);
+    assert!(!app.smoke_tab_overflow().0, "Escape must close the dropdown");
+
+    app.handle_mouse_click(btn_cx.0, btn_cx.1, true, "Left");
+    app.handle_mouse_click(btn_cx.0, btn_cx.1, false, "Left");
+    assert!(app.smoke_tab_overflow().0, "▾ click reopens again");
+    app.handle_mouse_click(320.0, 600.0, true, "Left");
+    app.handle_mouse_click(320.0, 600.0, false, "Left");
+    assert!(
+        !app.smoke_tab_overflow().0,
+        "click outside the panel must close the dropdown"
+    );
+}
+
+/// T15-d：查找高亮必须真实绘制——全部匹配淡黄底、当前匹配橙底描边，
+/// 且绘制在 overlay 层（chrome fills 层会被页面背景 fill / compositor 位图
+/// 整面覆盖，高亮将不可见——overlay 是唯一两侧路径都可见的位置）。
+#[test]
+fn find_highlight_paints_current_and_other_matches() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.ensure_webview(tab_id);
+    app.shell.navigate("https://example.test");
+    app.load_webview_html(
+        tab_id,
+        "<html><body><p>needle one needle two</p></body></html>",
+        Some("body { color: black; } p { color: black; font-size: 16px; }"),
+    );
+    app.shell.on_page_loaded("Example");
+    let _ = app.build_scene_for_test(1280, 900);
+
+    // Ctrl+F + 键入触发真实查找路径（渲染层按 last_render glyph 计数）。
+    app.handle_key("Control", true, None);
+    app.handle_key("f", true, None);
+    app.handle_key("f", false, None);
+    app.handle_key("Control", false, None);
+    for ch in "needle".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+    }
+    assert_eq!(app.smoke_find_state().3, 2, "fixture must contain two needles");
+    app.shell.find_next(); // current = 2
+    app.needs_redraw = true;
+
+    let (_, _, overlay_fills, _, _, _) = app.build_scene_for_test(1280, 900);
+    let current_bg = app.chrome_palette().find_current_match_bg;
+    let other_bg = app.chrome_palette().find_other_match_bg;
+    let border = app.chrome_palette().find_current_match_border;
+    let current_hits = overlay_fills.iter().filter(|f| f.color == current_bg).count();
+    let other_hits = overlay_fills.iter().filter(|f| f.color == other_bg).count();
+    let border_hits = overlay_fills.iter().filter(|f| f.color == border).count();
+    assert!(current_hits > 0, "current match must paint the orange highlight fill");
+    assert!(
+        other_hits > 0,
+        "other matches must paint the light-yellow highlight fill"
+    );
+    assert!(border_hits > 0, "current match must paint the border stroke");
+    // 高亮必须落在页面内容视口内（可见性前提：不越出 chrome 区域）。
+    for f in overlay_fills
+        .iter()
+        .filter(|f| f.color == current_bg || f.color == other_bg)
+    {
+        assert!(
+            f.rect.origin.y >= crate::layout::TOOLBAR_HEIGHT,
+            "highlight must start below the toolbar, got y={:?}",
+            f.rect.origin.y
+        );
+    }
+}

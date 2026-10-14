@@ -146,6 +146,37 @@ impl BrowserApp {
         )
     }
 
+    /// 演示流用：标签溢出状态 `(下拉展开, 隐藏标签数)`（T18 断言面）。
+    pub fn smoke_tab_overflow(&self) -> (bool, usize) {
+        (self.tab_overflow_open, self.tab_overflow_ids.len())
+    }
+
+    /// 演示流用：溢出 ▾ 按钮矩形（T18 driver 点击定位）。
+    pub fn smoke_tab_overflow_button_rect(&self) -> Option<(f32, f32, f32, f32)> {
+        self.tab_overflow_button_rect()
+    }
+
+    /// 演示流用：溢出下拉面板矩形（T18 driver 行点击定位）。
+    pub fn smoke_tab_overflow_panel_rect(&self) -> Option<(f32, f32, f32, f32)> {
+        self.tab_overflow_panel_rect()
+    }
+
+    /// 演示流用：当前渲染媒体类型（"Print"/"Screen"，打印预览断言面）。
+    pub fn smoke_media_type(&self) -> String {
+        format!("{:?}", self.tabs.media_type())
+    }
+
+    /// 演示流用：隐私开关快照 `(js, cookies, block_3p, dnt)`（T16 断言面）。
+    pub fn smoke_settings_toggles(&self) -> (bool, bool, bool, bool) {
+        let settings = self.shell.settings();
+        (
+            settings.javascript_enabled,
+            settings.cookies_enabled,
+            settings.block_third_party_cookies,
+            settings.do_not_track,
+        )
+    }
+
     /// 演示流用：活动标签页垂直滚动偏移（物理像素，滚动定位断言面）。
     pub fn smoke_scroll_y(&self) -> f32 {
         self.shell

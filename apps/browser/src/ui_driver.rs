@@ -107,6 +107,35 @@ enum Step {
     AssertZoom {
         zoom: f32,
     },
+    /// 页面查找状态断言（T15）：给定字段逐一校验，缺省字段不校验。
+    AssertFind {
+        active: Option<bool>,
+        query: Option<String>,
+        current: Option<usize>,
+        total: Option<usize>,
+    },
+    /// 标签溢出断言（T18）：`open=下拉展开`；`hidden_min` 为隐藏标签数下限。
+    AssertTabOverflow {
+        open: bool,
+        hidden_min: usize,
+    },
+    /// 打印预览断言（T17）：`on=true` 时渲染媒体类型应为 Print。
+    AssertPrintPreview {
+        on: bool,
+    },
+    /// 隐私开关断言（T16）：给定字段逐一校验，缺省不校验。
+    AssertSettingsToggles {
+        js: Option<bool>,
+        cookies: Option<bool>,
+        block_3p: Option<bool>,
+        dnt: Option<bool>,
+    },
+    /// 点击标签溢出 ▾ 按钮（T18；几何取自渲染缓存，未渲染时报错）。
+    ClickOverflowButton,
+    /// 点击溢出下拉第 `index` 行（T18；要求下拉已展开）。
+    ClickOverflowRow {
+        index: usize,
+    },
 }
 
 impl Step {
@@ -206,6 +235,29 @@ impl Step {
             }
             "assert_zoom" => Ok(Self::AssertZoom {
                 zoom: num("zoom")? as f32,
+            }),
+            "assert_find" => Ok(Self::AssertFind {
+                active: value.get("active").and_then(Value::as_bool),
+                query: value.get("query").and_then(Value::as_str).map(str::to_string),
+                current: value.get("current").and_then(Value::as_u64).map(|v| v as usize),
+                total: value.get("total").and_then(Value::as_u64).map(|v| v as usize),
+            }),
+            "assert_tab_overflow" => Ok(Self::AssertTabOverflow {
+                open: value.get("open").and_then(Value::as_bool).unwrap_or(false),
+                hidden_min: value.get("hidden_min").and_then(Value::as_u64).unwrap_or(0) as usize,
+            }),
+            "assert_print_preview" => Ok(Self::AssertPrintPreview {
+                on: value.get("on").and_then(Value::as_bool).unwrap_or(true),
+            }),
+            "assert_settings_toggles" => Ok(Self::AssertSettingsToggles {
+                js: value.get("js").and_then(Value::as_bool),
+                cookies: value.get("cookies").and_then(Value::as_bool),
+                block_3p: value.get("block_3p").and_then(Value::as_bool),
+                dnt: value.get("dnt").and_then(Value::as_bool),
+            }),
+            "click_tab_overflow_button" => Ok(Self::ClickOverflowButton),
+            "click_tab_overflow_row" => Ok(Self::ClickOverflowRow {
+                index: num("index")? as usize,
             }),
             other => Err(bad(format!("unknown op \"{other}\"").as_str())),
         }
@@ -362,6 +414,7 @@ impl UiDriver {
             }
             Step::Shot { name } => {
                 let (width, height) = app.physical_size;
+                tracing::info!("UI_DRIVER_SHOT {name} find_state={:?}", app.smoke_find_state());
                 let frame = app
                     .render_full_scene_gpu_capture(width, height)
                     .map_err(|error| format!("shot {name}: {error}"))?;
@@ -454,6 +507,124 @@ impl UiDriver {
                 }
                 tracing::info!(
                     "UI_DRIVER_STEP step={} assert_zoom={actual} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertFind {
+                active,
+                query,
+                current,
+                total,
+            } => {
+                let (a, q, c, t) = app.smoke_find_state();
+                if let Some(want) = active
+                    && a != *want
+                {
+                    return Err(format!("assert_find failed: active is {a}, expected {want}"));
+                }
+                if let Some(want) = query
+                    && q != *want
+                {
+                    return Err(format!("assert_find failed: query is {q:?}, expected {want:?}"));
+                }
+                if let Some(want) = current
+                    && c != *want
+                {
+                    return Err(format!("assert_find failed: current is {c}, expected {want}"));
+                }
+                if let Some(want) = total
+                    && t != *want
+                {
+                    return Err(format!("assert_find failed: total is {t}, expected {want}"));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_find active={a} query={q:?} current={c} total={t} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertTabOverflow { open, hidden_min } => {
+                let (o, hidden) = app.smoke_tab_overflow();
+                if o != *open || hidden < *hidden_min {
+                    return Err(format!(
+                        "assert_tab_overflow failed: open={o} hidden={hidden}, expected open={} hidden>={hidden_min}",
+                        open
+                    ));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_tab_overflow open={o} hidden={hidden} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertPrintPreview { on } => {
+                let media = app.smoke_media_type();
+                let want = if *on { "Print" } else { "Screen" };
+                if media != want {
+                    return Err(format!(
+                        "assert_print_preview failed: media type is {media}, expected {want}"
+                    ));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_print_preview media={media} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertSettingsToggles {
+                js,
+                cookies,
+                block_3p,
+                dnt,
+            } => {
+                let (a_js, a_cookies, a_3p, a_dnt) = app.smoke_settings_toggles();
+                for (name, actual, want) in [
+                    ("js", a_js, *js),
+                    ("cookies", a_cookies, *cookies),
+                    ("block_3p", a_3p, *block_3p),
+                    ("dnt", a_dnt, *dnt),
+                ] {
+                    if let Some(want) = want
+                        && actual != want
+                    {
+                        return Err(format!(
+                            "assert_settings_toggles failed: {name} is {actual}, expected {want}"
+                        ));
+                    }
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_settings_toggles js={a_js} cookies={a_cookies} block_3p={a_3p} dnt={a_dnt} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::ClickOverflowButton => {
+                let Some((bx, by, bw, bh)) = app.smoke_tab_overflow_button_rect() else {
+                    return Err("click_tab_overflow_button: no overflow button rendered".to_string());
+                };
+                let (cx, cy) = ((bx + bw / 2.0) as f64, (by + bh / 2.0) as f64);
+                app.handle_mouse_click(cx, cy, true, "Left");
+                app.handle_mouse_click(cx, cy, false, "Left");
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} click_tab_overflow_button cx={cx} cy={cy}",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::ClickOverflowRow { index } => {
+                if !app.smoke_tab_overflow().0 {
+                    return Err("click_tab_overflow_row: overflow dropdown is not open".to_string());
+                }
+                let Some((px, py, _, _)) = app.smoke_tab_overflow_panel_rect() else {
+                    return Err("click_tab_overflow_row: no panel rect".to_string());
+                };
+                let row_h = crate::layout::TAB_OVERFLOW_ROW_HEIGHT * app.scale_factor;
+                let (cx, cy) = ((px + 10.0) as f64, (py + row_h * (*index as f32 + 0.5)) as f64);
+                app.handle_mouse_click(cx, cy, true, "Left");
+                app.handle_mouse_click(cx, cy, false, "Left");
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} click_tab_overflow_row index={index} cx={cx} cy={cy}",
                     self.next + 1
                 );
                 Ok(())
