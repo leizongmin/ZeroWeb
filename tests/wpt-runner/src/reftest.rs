@@ -368,10 +368,10 @@ pub fn run_reftest_with_base(case: &ReftestCase, config: &ReftestConfig, base_di
     } else {
         format!(
             "Mismatch failed: only {}/{} pixels differ ({:.2}%), expected > {:.2}%",
-            config.min_mismatch_ratio * 100.0,
             diff_pixels,
             total_pixels,
-            diff_ratio * 100.0
+            diff_ratio * 100.0,
+            config.min_mismatch_ratio * 100.0
         )
     };
 
@@ -462,10 +462,10 @@ pub fn run_reftest_gpu_with_base(case: &ReftestCase, config: &ReftestConfig, bas
     } else {
         format!(
             "Mismatch failed: only {}/{} pixels differ ({:.2}%), expected > {:.2}%",
-            config.min_mismatch_ratio * 100.0,
             diff_pixels,
             total_pixels,
-            diff_ratio * 100.0
+            diff_ratio * 100.0,
+            config.min_mismatch_ratio * 100.0
         )
     };
 
