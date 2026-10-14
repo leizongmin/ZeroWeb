@@ -7053,6 +7053,10 @@
             // 剔除 + 反链断 + 迭代器通知 + record；旧落元素分支对 handle-only 文本
             // 父 registry 不生效 → parent.childNodes 残留）。元素路径不受影响（下方原逻辑）。
             if (isText || isComment || isPI) {
+              // selection-compat M2 切片 2：pre-remove live-range 边界调整（R262——
+              // spec concept-node-pre-remove 末段；边界在被移除文本内 → (parent, index)）。
+              // 与元素分支同款，须在实际摘除前（parentNode/child 链仍完整）调用。
+              try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(_makeProxy(sel, handle)); } catch (_eR262tr) {}
               var _r129Parent = (handle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent)
                 ? _zwNodeParent[handle] : null;
               if (_r129Parent && _r129Parent.parentHandle && _handleChildren[_r129Parent.parentHandle]) {
@@ -7097,6 +7101,12 @@
             // R2994：移除自身（含 handle 子树）→ 断连（仅此前已连入的 custom element 分派 disconnectedCallback）。
             // R34xx：本地移除标记（同步脚本内 parentNode 立即返 null——host mutation 异步应用）。
             var ceSelf = _makeProxy(sel, handle);
+            // selection-compat M2 切片 2：el.remove() 的 pre-remove live-range 边界调整
+            //（R262——spec concept-node-pre-remove；removeChild 域已覆盖而 remove() 面
+            // 缺失：选区端点在被移除子树时不吸附，WPT selection/anchor-removal
+            // 「anchorNode snaps up to parent」断言面）。须在 host 移除/断连派发前
+            // 调用（parentNode/childIndex 读移除前形态）。
+            try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(ceSelf); } catch (_eR262rm) {}
             // M2-S4E：el.remove() 移除聚焦元素 → unfocus（同 removeChild 面配套——
             // WPT change-focus-then-remove 走 el.remove()）。
             try { if (typeof _zwUnfocusIfFocused === 'function') _zwUnfocusIfFocused({ __zwSelector: sel, __zwHandle: handle }); } catch (_eUfRm) {}

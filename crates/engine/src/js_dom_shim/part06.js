@@ -8568,6 +8568,69 @@
       this._focusNode = fNode; this._focusOffset = fOff;
       _zwScheduleSelectionChange(globalThis.document);
     };
+    // selection-compat M2 切片 2：**节点移除时保存边界点随 live range 吸附**——
+    // getter 读保存值（R3254-M1 切片 2 的方向语义载体），part03 R262 只调
+    // __zwLiveRanges 注册表内的 range 容器，保存点不在其列：remove() 后 range
+    // 已吸附到 (oldParent, oldIndex) 而 anchorNode 仍指被移除节点（WPT
+    // anchor-removal「anchorNode snaps up to parent」断言面）。本钩子由 R262
+    // 删除事件通知，对 anchor/focus **独立**应用同两条 pre-remove 规则
+    //（backward 方向时二者分属 range 两端，不能从 range 单端重算）：
+    // ① 边界节点是 removed 节点或其子孙 → (oldParent, oldIndex)；
+    // ② 边界节点是 oldParent 且 offset > oldIndex → offset−1。
+    // 身份匹配与 R262 同源四域键：identity / __zwHandle / __zwSelector；
+    // oldParent 匹配加键旁路（sameParent262 同款）。子树判定沿 parentNode 上行。
+    // https://dom.spec.whatwg.org/#concept-node-pre-remove
+    if (!globalThis.__zwSelectionFollowRemoval) {
+      globalThis.__zwSelectionFollowRemoval = function (removed262, oldParent262, oldIndex262) {
+        try {
+          if (!_selection || !_selection._ranges || _selection._ranges.length === 0) return;
+          if (!removed262 || !oldParent262 || !(oldIndex262 >= 0)) return;
+          var hKey = null, sKey = null;
+          try { hKey = typeof removed262.__zwHandle === 'string' ? removed262.__zwHandle : null; } catch (_eHk) {}
+          try { sKey = typeof removed262.__zwSelector === 'string' ? removed262.__zwSelector : null; } catch (_eSk) {}
+          var same = function (n) {
+            if (n === removed262) return true;
+            if (!n) return false;
+            try {
+              if (hKey != null && typeof n.__zwHandle === 'string' && n.__zwHandle === hKey) return true;
+              if (sKey != null && typeof n.__zwSelector === 'string' && n.__zwSelector === sKey) return true;
+            } catch (_eKc) {}
+            return false;
+          };
+          var inSubtree = function (n) {
+            var cur = n, hops = 0;
+            while (cur && hops++ < 128) {
+              if (same(cur)) return true;
+              try { cur = cur.parentNode; } catch (_eUp) { return false; }
+            }
+            return false;
+          };
+          // oldParent 三键（identity / handle / selector——R262 sameParent262 同源）。
+          var phKey = null, psKey = null;
+          try { phKey = typeof oldParent262.__zwHandle === 'string' ? oldParent262.__zwHandle : null; } catch (_ePh) {}
+          try { psKey = typeof oldParent262.__zwSelector === 'string' ? oldParent262.__zwSelector : null; } catch (_ePs) {}
+          var sameParent = function (n) {
+            if (n === oldParent262) return true;
+            if (!n) return false;
+            try {
+              if (phKey != null && typeof n.__zwHandle === 'string' && n.__zwHandle === phKey) return true;
+              if (psKey != null && typeof n.__zwSelector === 'string' && n.__zwSelector === psKey) return true;
+            } catch (_ePc) {}
+            return false;
+          };
+          var adj = function (isAnchor) {
+            var n = isAnchor ? _selection._anchorNode : _selection._focusNode;
+            var off = isAnchor ? _selection._anchorOffset : _selection._focusOffset;
+            if (inSubtree(n)) { n = oldParent262; off = oldIndex262; }
+            else if (sameParent(n) && off > oldIndex262) { off = off - 1; }
+            else { return; }
+            if (isAnchor) { _selection._anchorNode = n; _selection._anchorOffset = off; }
+            else { _selection._focusNode = n; _selection._focusOffset = off; }
+          };
+          adj(true); adj(false);
+        } catch (_eSelFollow) {}
+      };
+    }
     Object.defineProperties(_selection, {
       rangeCount: { get: function () { return this._ranges.length; } },
       isCollapsed: { get: function () { return this._ranges.length === 0 || this._ranges.every(function (r) { return r.collapsed; }); } },

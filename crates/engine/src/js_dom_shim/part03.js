@@ -11959,6 +11959,16 @@
           }
         } catch (_e262rg) {}
       }
+      // selection-compat M2 切片 2：Selection 与其 range 同为 live——保存的
+      // anchor/focus 边界点（getter 直读值，不在 __zwLiveRanges）须随同一删除
+      // 事件吸附，否则 range 已吸附而 anchorNode 仍指被移除节点。消费方
+      // part06 `__zwSelectionFollowRemoval`（Selection 单例注册；未注册跳过）。
+      // https://dom.spec.whatwg.org/#concept-node-pre-remove
+      try {
+        if (typeof globalThis.__zwSelectionFollowRemoval === 'function') {
+          globalThis.__zwSelectionFollowRemoval(removed262, oldParent262, oldIndex262);
+        }
+      } catch (_e262selN) {}
     } catch (_e262a) {}
   }
   try { globalThis.__zwAdjustRangesForRemove = _zwAdjustRangesForRemove; } catch (_eR262ex) {}
