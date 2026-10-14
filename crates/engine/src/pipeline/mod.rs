@@ -3066,6 +3066,18 @@ fn generic_font_ids_from_resolver(resolver: &HashMap<String, u32>) -> std::colle
 }
 
 pub(crate) fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> {
+    collect_stylesheets_with_parsed_external(doc, css, None)
+}
+
+/// 同 [`collect_stylesheets`]，但外部 `css` 表用调用方提供的已解析结果（`css` 非空
+/// 且 `parsed_css` 为 `Some` 时跳过重复 parse）。js_dom_bridge 全量兜底路径每代重建
+/// sheets（R5107）——按 css 文本记忆化解析后在注入，免每代 tokenize+parse 全量外部
+/// CSS；`None` 时与 [`collect_stylesheets`] 逐位一致。
+pub(crate) fn collect_stylesheets_with_parsed_external(
+    doc: &Document,
+    css: &str,
+    parsed_css: Option<&Stylesheet>,
+) -> Vec<Stylesheet> {
     let mut stylesheets = Vec::new();
     // HTML presentational hint（HTML §4.2.5）：首个（树序）`<meta name="color-scheme"
     // content="...">` 等价于在根元素声明 color-scheme。注入为最低优先级 stylesheet
@@ -3090,7 +3102,10 @@ pub(crate) fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> 
         }
     }
     if !css.is_empty() {
-        stylesheets.push(zero_css_parser::Parser::parse_stylesheet(css));
+        match parsed_css {
+            Some(sheet) => stylesheets.push(sheet.clone()),
+            None => stylesheets.push(zero_css_parser::Parser::parse_stylesheet(css)),
+        }
     }
     for style_id in style_ids {
         let Some(css_text) = doc.text_content(style_id) else {

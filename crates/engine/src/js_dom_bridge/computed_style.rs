@@ -64,18 +64,28 @@ pub fn computed_style_property(html: &str, selector: &str, prop: &str) -> String
 /// （O(文档) + O(规则×节点)）。viewport 固定 1280×800（同 getComputedStyle 既有默认）。
 pub fn compute_document_styles(html: &str) -> (Document, HashMap<NodeId, ComputedStyle>) {
     let doc = parse_html(html);
-    let styles = compute_styles_for_doc(&doc);
+    // 纯快照路径：外部 CSS 恒空串（无 ambient 状态——WPT/测试语义不变；页面快照路径
+    // 走 with_cached_document_styles → css 变体显式注入）。
+    let (styles, _) = compute_styles_for_doc(&doc, "");
     (doc, styles)
 }
 
 /// [`compute_document_styles`] 的共享尾部：收集 `<style>` 表并计算样式（viewport 1280×800）。
-/// 供纯快照路径与 inline-style override 路径复用。
-fn compute_styles_for_doc(doc: &Document) -> HashMap<NodeId, ComputedStyle> {
-    let sheets = crate::pipeline::collect_stylesheets(doc, "");
+/// 供纯快照路径与 inline-style override 路径复用。`css` = 外部样式表文本（P9-9：与布局
+/// 管线同源注入；纯路径传空串）。返回 `(styles, sheets)`——sheets 随级联一并产出，供
+/// 代际槽缓存复用（全量兜底免二次 parse）。
+fn compute_styles_for_doc(
+    doc: &Document,
+    css: &str,
+) -> (HashMap<NodeId, ComputedStyle>, Vec<zero_css_parser::Stylesheet>) {
+    // 外部表经记忆化（R5107）：全量兜底路径每代重建，同 css 文本免重复 parse。
+    let parsed = super::computed_style_cache::memoized_external_sheet(css);
+    let sheets = crate::pipeline::collect_stylesheets_with_parsed_external(doc, css, parsed.as_ref());
     let mut sys = StyleSystem::new();
     // 设默认 viewport（length 属性 % 解析需要；首批属性 viewport 无关，但为后续 length 扩展设）。
     sys.set_viewport(1280.0, 800.0);
-    sys.compute_styles(doc, &sheets)
+    let styles = sys.compute_styles(doc, &sheets);
+    (styles, sheets)
 }
 
 /// R3030：把 `mutations` 中影响元素 inline `style` 的子集顺序应用到 parsed `doc` 的匹配节点，
@@ -141,11 +151,27 @@ pub fn compute_document_styles_with_inline_overrides(
     html: &str,
     mutations: &[DomMutation],
 ) -> (Document, HashMap<NodeId, ComputedStyle>) {
+    let (doc, styles, _) = compute_document_styles_with_inline_overrides_css(html, mutations, "");
+    (doc, styles)
+}
+
+/// P9-9：上函数的外部 CSS 注入变体（代际缓存全量兜底专用）——`css` = 当前代外部
+/// 样式表文本（[`super::computed_style_cache::active_external_css`]），与布局管线
+/// `session.css` 同源。返回 sheets 供代际槽随 (doc, styles) 一并缓存（免二次 parse）。
+pub(super) fn compute_document_styles_with_inline_overrides_css(
+    html: &str,
+    mutations: &[DomMutation],
+    css: &str,
+) -> (
+    Document,
+    HashMap<NodeId, ComputedStyle>,
+    Vec<zero_css_parser::Stylesheet>,
+) {
     let mut doc = parse_html(html);
     apply_inline_style_overrides(&mut doc, mutations);
-    let mut styles = compute_styles_for_doc(&doc);
+    let (mut styles, sheets) = compute_styles_for_doc(&doc, css);
     apply_intrinsic_size_overrides(&doc, &mut styles);
-    (doc, styles)
+    (doc, styles, sheets)
 }
 
 /// R34xx + media-elements M3 扩批 XXXVII：canvas/video 固有尺寸 → 计算样式 auto 侧

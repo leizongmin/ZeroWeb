@@ -55,10 +55,10 @@ use zero_style_system::{ComputedStyle, StyleSystem};
 use super::{
     DomMutation,
     computed_style::{
-        apply_inline_style_overrides, apply_intrinsic_size_overrides, compute_document_styles_with_inline_overrides,
+        apply_inline_style_overrides, apply_intrinsic_size_overrides, compute_document_styles_with_inline_overrides_css,
     },
 };
-use crate::pipeline::collect_stylesheets;
+use crate::pipeline::collect_stylesheets_with_parsed_external;
 
 /// drain 应用记录（t6）：`apply_recorded_mutations` 成功路径发布，gCS 代际缓存于
 /// js 线程消费——把「cached doc + 本批 drained mutations」推进到新代，免全量 re-parse
@@ -74,6 +74,57 @@ pub struct GcsDrainRecord {
 }
 
 static DRAIN_RECORD: Mutex<Option<Arc<GcsDrainRecord>>> = Mutex::new(None);
+
+thread_local! {
+    /// 本代外部样式表文本（P9-9/R5107）：页面 `<link rel=stylesheet>` 聚合 CSS
+    /// （webview `cached_css`），经 `SetDomSnapshot` 钉版下发、js worker 线程装填。
+    /// getComputedStyle 合成源（[`crate::pipeline::collect_stylesheets`] 的 `css`
+    /// 参数）与布局管线（`session.css` 同一文本）同源——JS 读样式与布局级联一致。
+    /// 空串 = 无外部 CSS（纯快照/测试线程、LoadHtml 内联形态），行为与修复前逐位一致。
+    /// 与代际槽同架构（host 回调仅 js worker 单线程执行，thread_local 规避 `Send`）。
+    static ACTIVE_EXTERNAL_CSS: RefCell<Arc<str>> = RefCell::new(Arc::from(""));
+}
+
+/// js worker `SetDomSnapshot` 臂调用：装本代外部 CSS。每次快照无条件覆盖
+///（含清空——跨文档残留不可能存活），先于同代 gCS 查询生效（同通道 FIFO）。
+pub fn set_active_external_css(css: &str) {
+    ACTIVE_EXTERNAL_CSS.with(|cell| *cell.borrow_mut() = Arc::from(css));
+}
+
+/// gCS 合成源消费点读取当前代外部 CSS。`Arc` 克隆——持有跨 collect 过程，避免
+/// 借用跨 re-entrant 调用（collect 内部无回流，防御性约束与代际槽 `f` 契约同向）。
+pub(crate) fn active_external_css() -> Arc<str> {
+    ACTIVE_EXTERNAL_CSS.with(|cell| cell.borrow().clone())
+}
+
+thread_local! {
+    /// 外部 CSS 解析记忆化（P9-9/R5107 定向门禁缓解）：全量兜底路径与 sheets 脏
+    /// 重建每代重跑 [`collect_stylesheets`]，css 文本不变也重复 tokenize+parse
+    /// （200KB 量级 parse ~9ms/代 → 代际耗时 4.9x 超阈值；克隆 AST ~1ms）。按精确
+    /// css 文本存单份解析结果，命中克隆注入。与 ACTIVE_EXTERNAL_CSS 同架构。
+    static EXTERNAL_CSS_SHEET_MEMO: RefCell<Option<(Arc<str>, Arc<zero_css_parser::Stylesheet>)>> =
+        const { RefCell::new(None) };
+}
+
+/// 取（或建立）css 文本对应的已解析外部表：命中克隆 AST，未命中解析并存档再克隆
+/// （每 css 版本多付一次克隆，换同版本后续代免 parse）。空串返 `None`（无外部表，
+/// collect 侧同语义）；键为精确文本，css 换版即重解析，无 stale 面。
+pub(super) fn memoized_external_sheet(css: &str) -> Option<zero_css_parser::Stylesheet> {
+    if css.is_empty() {
+        return None;
+    }
+    EXTERNAL_CSS_SHEET_MEMO.with(|cell| {
+        let mut memo = cell.borrow_mut();
+        if let Some((key, sheet)) = memo.as_ref()
+            && **key == *css
+        {
+            return Some((**sheet).clone());
+        }
+        let sheet = Arc::new(zero_css_parser::Parser::parse_stylesheet(css));
+        *memo = Some((Arc::from(css), Arc::clone(&sheet)));
+        Some((*sheet).clone())
+    })
+}
 
 /// drain 站点（`apply_recorded_mutations` webview/HTML 回写两成功路径）发布本批
 /// 应用记录。只留最新一条（gCS 只消费「从自己当前代出发」的一次推进；中间多代
@@ -119,6 +170,7 @@ fn try_sync_with_drain_record(
         Document,
         HashMap<NodeId, ComputedStyle>,
         Vec<Stylesheet>,
+        Arc<str>,
     ),
     html: &str,
     drain_gen: usize,
@@ -310,6 +362,7 @@ fn finish_generation_update(
         Document,
         HashMap<NodeId, ComputedStyle>,
         Vec<Stylesheet>,
+        Arc<str>,
     ),
     html: &str,
     drain_gen: usize,
@@ -324,8 +377,15 @@ fn finish_generation_update(
     // 全量 parse 一次都不发生，无自愈点）。重收集后还需把根元素推入变更集：新规则
     // 可匹配任意元素、根级声明经继承传播，影响面不限于变更子树——根子树=全文档，
     // 免 HTML 重 parse 的全量级联。
+    // P9-9：外部 CSS 变化（同 html 晚到/更新样式表）同判脏——css 是级联源之一，
+    // 沿用旧代表会 stale 整个会话。当前 css 经 active_external_css() 读取（快照臂
+    // 先于同代 gCS 装填，同代内稳定）。
+    let css = active_external_css();
+    let sheets_dirty = sheets_dirty || slot.6 != css;
     if sheets_dirty {
-        slot.5 = collect_stylesheets(&slot.3, "");
+        let parsed = memoized_external_sheet(&css);
+        slot.5 = collect_stylesheets_with_parsed_external(&slot.3, &css, parsed.as_ref());
+        slot.6 = css;
         match slot.3.get_elements_by_tag_names(&["html"]).first().copied() {
             Some(root) => changed.push(root),
             None => return false,
@@ -345,11 +405,12 @@ fn finish_generation_update(
 
 thread_local! {
     /// `(html 快照, drain 代际, style_version, parsed doc, NodeId→ComputedStyle,
-    /// stylesheets)` 代际槽。stylesheets 随 doc 缓存（html 未变的增量换代不重收集/
-    /// 重解析 CSS）。非 `Send` 类型（`Document`）仅存于创建线程（js worker），无跨
+    /// stylesheets, 外部 CSS)` 代际槽。stylesheets 随 doc 缓存（html 未变的增量换代不重收集/
+    /// 重解析 CSS）；外部 CSS 作键分量（P9-9：css 变化 ⇒ sheets 重收集 + 全文档重算）。
+    /// 非 `Send` 类型（`Document`）仅存于创建线程（js worker），无跨
     /// 线程共享。
     static GENERATION_CACHE: RefCell<
-        Option<(String, usize, usize, Document, HashMap<NodeId, ComputedStyle>, Vec<Stylesheet>)>,
+        Option<(String, usize, usize, Document, HashMap<NodeId, ComputedStyle>, Vec<Stylesheet>, Arc<str>)>,
     > = const { RefCell::new(None) };
 
     /// 测试观测点：本线程换代重算次数（全量或增量；仅 `cfg(test)` 编译，生产零开销）。
@@ -404,17 +465,22 @@ pub fn with_cached_document_styles<T>(
     f: impl FnOnce(&Document, &HashMap<NodeId, ComputedStyle>) -> T,
 ) -> T {
     GENERATION_CACHE.with(|cell| {
+        // P9-9：当前代外部 CSS（快照臂装填）作键分量——css 变化即换代（走下方
+        // html 同分支，finish_generation_update 经 css 对比判 sheets 脏重收集）。
+        let css = active_external_css();
         {
             let mut slot = cell.borrow_mut();
             let same_gen = matches!(
                 &*slot,
-                Some((h, g, v, ..)) if h == html && *g == drain_gen && *v == style_version
+                Some((h, g, v, .., c)) if h == html && *g == drain_gen && *v == style_version && **c == *css
             );
             if !same_gen {
                 #[cfg(test)]
                 GENERATION_RECOMPUTE_COUNT.with(|c| c.set(c.get() + 1));
                 let advanced = if matches!(&*slot, Some((h, ..)) if h == html) {
-                    // html 同、键前进：幂等 replay pending 收集变更节点 → 增量换代。
+                    // html 同、键前进（drain_gen / style_version / 外部 CSS）：幂等 replay
+                    // pending 收集变更节点 → 增量换代。css 变化由 finish_generation_update
+                    // 的 css 对比判 sheets 脏（重收集 + 根全文档重算）。
                     let s = slot.as_mut().expect("html 匹配守卫已保证槽为 Some");
                     let changed = apply_inline_style_overrides(&mut s.3, mutations);
                     // pending attr 写到 meta/style 上会改样式面 → 判脏。
@@ -435,15 +501,16 @@ pub fn with_cached_document_styles<T>(
                     // 冷槽 / 记录不衔接 / 批次含不支持变体 / 收尾失败：全量 parse 兜底。
                     #[cfg(test)]
                     GENERATION_FULL_PARSE_COUNT.with(|c| c.set(c.get() + 1));
-                    let (doc, styles) = compute_document_styles_with_inline_overrides(html, mutations);
-                    let sheets = collect_stylesheets(&doc, "");
-                    *slot = Some((html.to_string(), drain_gen, style_version, doc, styles, sheets));
+                    // P9-9：css 变体一次 parse 同时产出级联与代际槽 sheets。
+                    let (doc, styles, sheets) =
+                        compute_document_styles_with_inline_overrides_css(html, mutations, &css);
+                    *slot = Some((html.to_string(), drain_gen, style_version, doc, styles, sheets, css));
                 }
             }
         }
         // 不变式：上方 borrow_mut 块保证槽必为 Some（命中沿用或换代重填），故 expect 不可达。
         let binding = cell.borrow();
-        let (_, _, _, doc, styles, _) = binding.as_ref().expect("generation cache populated");
+        let (_, _, _, doc, styles, ..) = binding.as_ref().expect("generation cache populated");
         f(doc, styles)
     })
 }
