@@ -1,22 +1,21 @@
 # Console 兼容 — console IDL 与格式化语义面
 
-**版本**: v1.2
+**版本**: v1.3
 **日期**: 2026-10-14
-**状态**: Active——M1/M2 收口（2026-10-14，corpus 28/28 = 100%），M3 待收口
+**状态**: Completed——M1/M2/M3 收口（2026-10-14，corpus 28/28 = 100%）
 **执行模式**: WPT 驱动（上游 console corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——开发者面）
 
-> **▶ 当前状态（2026-10-14，M2 收口）**
-> - **结果**：全 corpus **28/28 = 100%**（同日基线 8/28 = 28.6%，无下行轮次）。
->     namespace IDL（空原型中间层 + `Symbol.toStringTag`）、count/time 状态记账
->     + label ToString、Formatter（%s/%d/%i/%f/%o/%O/%c/%%）、BiDi
->     log.entryAdded 页内捕获通道（5 个原 Unsupported 案解封全绿）。
->     证据：[evidence/2026-10-14-m2-semantics.md](evidence/2026-10-14-m2-semantics.md)。
-> - **验证**：make test 71 套件全绿；fmt/clippy（zero-engine +
->     zero-wpt-runner）干净；R3256 单测扩段钉 Formatter/BiDi 形态。
-> - **卡点**：无。
-> - **下一步（M3）**：`make reftest` 零回归 + product-smoke welcome 恒值核对 →
->     wpt-suites.csv 终态行 → 收口归档。
+> **▶ 当前状态（2026-10-14，M3 收口）**
+> - **结果**：DC-1/2/3 全满足。全 corpus **28/28 = 100%**（同日基线 8/28 =
+>     28.6%）；`make test` 71 套件全绿、`make reftest` 710/710、
+>     `make product-smoke` exit 0（welcome oracle 15.35% < 20 门）。
+>     证据：[evidence/2026-10-14-m3-close.md](evidence/2026-10-14-m3-close.md)。
+> - **语义面**：WebIDL namespace IDL（空原型中间层 + `Symbol.toStringTag`）、
+>     count map/timer table 状态记账 + label ToString 异常传播、Formatter
+>     （%s/%d/%i/%f/%o/%O/%c/%%）、BiDi log.entryAdded 页内捕获通道。
+> - **排除面挂账**：devtools 面板呈现（devtools goal 域）、console 持久化/
+>     远程采集（未立项）、非标准扩展（不做）——重入条件见 M3 收口文档。
 
 > **说明**
 > 本文档是 ZeroWeb「Console 兼容」专项目标执行契约。console 是网页调试与
@@ -93,8 +92,8 @@
 
 ### DC-3: 测试与质量不可退让
 
-- [ ] 每个语义修复附带回归测试（imported-tests.txt 账本纪律）
-- [ ] make test 全绿、make reftest 零回归、product-smoke welcome 逐字节恒值
+- [x] 每个语义修复附带回归测试（R3256 单测扩段钉 Formatter/BiDi/count-time 形态；corpus suite 常驻 `make testharness-console`）——testharness corpus goal 无 imported-tests.txt 条目（cookies 先例，fetch 通道 + evidence 即资产记录）
+- [x] make test 全绿、make reftest 零回归、product-smoke welcome 逐字节恒值——2026-10-14：71 套件全绿 / reftest 710/710 / smoke exit 0（oracle 15.35% < 20 门）
 
 ---
 
@@ -104,4 +103,4 @@
 
 ### M2 — IDL/格式化/状态语义收敛（DC-2 清单逐项）✅ 2026-10-14——28/28 = 100%（切片 1：namespace IDL + label 转换；切片 2：Formatter + count/time 状态记账 + BiDi 捕获通道）
 
-### M3 — 收口（最终账本 + 归档）
+### M3 — 收口（最终账本 + 归档）✅ 2026-10-14
