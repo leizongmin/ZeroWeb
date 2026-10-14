@@ -287,11 +287,24 @@ impl ResourceLoader {
             return CacheLookup::Miss;
         }
 
-        let lookup = self
-            .cache_for_partition(&request.partition)
+        let cache = self.cache_for_partition(&request.partition);
+        let lookup = cache
             .lock()
             .expect("HTTP cache lock")
             .lookup(&request.url, &request.headers);
+        let lookup = match lookup {
+            CacheLookup::Hit(cached) if request.cache_mode == CacheMode::NoCache => {
+                let conditional_headers = cache
+                    .lock()
+                    .expect("HTTP cache lock")
+                    .conditional_headers_with_request(&request.url, &request.headers);
+                CacheLookup::Revalidate {
+                    cached,
+                    conditional_headers,
+                }
+            }
+            lookup => lookup,
+        };
         if matches!(lookup, CacheLookup::Hit(_)) {
             self.stats.lock().expect("resource loader stats lock").fresh_hits += 1;
             self.record_event(&request, CacheOutcome::FreshHit, None, 0);
@@ -705,6 +718,44 @@ mod tests {
             Some(CacheMode::NoStore)
         );
         assert_eq!(request_cache_mode(&[]), None);
+    }
+
+    #[test]
+    fn lookup_cache_no_cache_fresh_entry_requires_revalidation() {
+        let cache = Arc::new(Mutex::new(HttpCache::new()));
+        let loader = ResourceLoader::new(Arc::clone(&cache), "site-a");
+        let url = "https://cdn.example/no-cache.png";
+        assert!(cache.lock().unwrap().put(
+            url,
+            &crate::HttpResponse {
+                status_code: 200,
+                headers: vec![
+                    ("Cache-Control".into(), "max-age=3600".into()),
+                    ("ETag".into(), "image-v1".into()),
+                ],
+                body: b"cached image".to_vec(),
+                url: url.into(),
+                redirect_count: 0,
+            }
+        ));
+        let request = ResourceRequest::get(url, FetchPriority::HIGH)
+            .with_headers(vec![("Cache-Control".into(), "no-cache".into())]);
+
+        match loader.lookup_cache(&request) {
+            CacheLookup::Revalidate {
+                cached,
+                conditional_headers,
+            } => {
+                assert_eq!(cached.body, b"cached image");
+                assert!(
+                    conditional_headers
+                        .iter()
+                        .any(|(name, value)| { name.eq_ignore_ascii_case("if-none-match") && value == "image-v1" })
+                );
+            }
+            CacheLookup::Hit(_) => panic!("no-cache must not return a fresh cache hit"),
+            CacheLookup::Miss => panic!("the existing cache entry should be revalidated"),
+        }
     }
 
     #[test]

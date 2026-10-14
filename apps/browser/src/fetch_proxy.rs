@@ -714,7 +714,7 @@ fn dns_prefetch(origin: String) -> Receiver<Result<HttpResponse, String>> {
 mod tests {
     use super::*;
     use std::io::{Read, Write};
-    use std::net::TcpListener;
+    use std::net::{Shutdown, TcpListener};
     use std::time::Duration;
     use zero_protocol::message::FetchParams;
 
@@ -726,6 +726,48 @@ mod tests {
             headers: Vec::new(),
             body: None,
         }
+    }
+
+    fn streamed_image_params(request_id: u64, url: &str, extra_headers: Vec<(String, String)>) -> FetchParams {
+        let mut request = params(request_id, url);
+        request.headers = vec![
+            ("X-Zero-Resource-Type".into(), "image".into()),
+            ("X-Zero-Stream-Image".into(), "1".into()),
+        ];
+        request.headers.extend(extra_headers);
+        request
+    }
+
+    fn drain_streamed_image(proxy: &mut TabFetchProxy, tab_id: TabId, request: &FetchParams) -> Vec<CompletedFetch> {
+        proxy.enqueue(tab_id, request);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut completed = Vec::new();
+        while std::time::Instant::now() < deadline {
+            completed.extend(proxy.drain());
+            if completed
+                .iter()
+                .any(|item| item.request_id == request.request_id && !is_stream_chunk(&item.headers))
+            {
+                return completed;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("streamed image request {} did not complete", request.request_id);
+    }
+
+    fn streamed_image_body(completed: &[CompletedFetch]) -> Vec<u8> {
+        completed
+            .iter()
+            .filter(|item| is_stream_chunk(&item.headers))
+            .flat_map(|item| item.body.iter().copied())
+            .chain(
+                completed
+                    .iter()
+                    .find(|item| !is_stream_chunk(&item.headers) && (200..300).contains(&item.status))
+                    .into_iter()
+                    .flat_map(|item| item.body.iter().copied()),
+            )
+            .collect()
     }
 
     #[test]
@@ -1200,6 +1242,228 @@ mod tests {
                 .iter()
                 .any(|(name, value)| { name.eq_ignore_ascii_case("cache-control") && value == "max-age=3600" })
         );
+    }
+
+    #[test]
+    fn fresh_streamed_image_no_cache_request_revalidates_before_using_body() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/no-cache.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for index in 0..2 {
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(accepted) => break accepted,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(std::time::Instant::now() < deadline, "request {index} was not received");
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("accept failed: {error}"),
+                    }
+                };
+                let mut request = [0_u8; 2048];
+                let size = stream.read(&mut request).unwrap();
+                let request = String::from_utf8_lossy(&request[..size]).to_ascii_lowercase();
+                if index == 0 {
+                    stream
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nETag: \"image-v1\"\r\nConnection: close\r\nContent-Length: 7\r\n\r\nimgdata",
+                        )
+                        .unwrap();
+                } else {
+                    assert!(request.contains("\r\ncache-control: no-cache\r\n"));
+                    assert!(request.contains("\r\nif-none-match: \"image-v1\"\r\n"));
+                    stream
+                        .write_all(
+                            b"HTTP/1.1 304 Not Modified\r\nCache-Control: max-age=3600\r\nETag: \"image-v1\"\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+                        )
+                        .unwrap();
+                }
+            }
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(27), &url);
+        let first = drain_streamed_image(&mut proxy, TabId(27), &streamed_image_params(501, &url, Vec::new()));
+        let second = drain_streamed_image(
+            &mut proxy,
+            TabId(27),
+            &streamed_image_params(502, &url, vec![("Cache-Control".into(), "no-cache".into())]),
+        );
+        server.join().unwrap();
+
+        assert_eq!(
+            first
+                .iter()
+                .find(|item| !is_stream_chunk(&item.headers))
+                .unwrap()
+                .status,
+            200
+        );
+        let final_response = second.iter().find(|item| !is_stream_chunk(&item.headers)).unwrap();
+        assert_eq!(final_response.status, 200);
+        assert_eq!(streamed_image_body(&first), b"imgdata");
+        assert_eq!(streamed_image_body(&second), b"imgdata");
+    }
+
+    #[test]
+    fn streamed_image_cache_respects_vary_request_headers() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/vary.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for (language, body) in [("en", "english"), ("zh", "chinese")] {
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(accepted) => break accepted,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(
+                                std::time::Instant::now() < deadline,
+                                "Vary request {language} was not received"
+                            );
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("accept failed: {error}"),
+                    }
+                };
+                let mut request = [0_u8; 2048];
+                let size = stream.read(&mut request).unwrap();
+                let request_text = String::from_utf8_lossy(&request[..size]).to_ascii_lowercase();
+                assert!(request_text.contains(&format!("\r\naccept-language: {language}\r\n")));
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nVary: Accept-Language\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(28), &url);
+        let english = drain_streamed_image(
+            &mut proxy,
+            TabId(28),
+            &streamed_image_params(601, &url, vec![("Accept-Language".into(), "en".into())]),
+        );
+        let chinese = drain_streamed_image(
+            &mut proxy,
+            TabId(28),
+            &streamed_image_params(602, &url, vec![("Accept-Language".into(), "zh".into())]),
+        );
+        server.join().unwrap();
+
+        assert_eq!(streamed_image_body(&english), b"english");
+        assert_eq!(streamed_image_body(&chinese), b"chinese");
+    }
+
+    #[test]
+    fn streamed_image_cache_isolated_by_top_level_site_and_private_context() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/partitioned.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for body in ["site-a", "site-b", "private"] {
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(accepted) => break accepted,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(
+                                std::time::Instant::now() < deadline,
+                                "partition request {body} was not received"
+                            );
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("accept failed: {error}"),
+                    }
+                };
+                let mut request = [0_u8; 2048];
+                let _ = stream.read(&mut request).unwrap();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nETag: {body}\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(29), "http://site-a.example/page");
+        let site_a = drain_streamed_image(&mut proxy, TabId(29), &streamed_image_params(701, &url, Vec::new()));
+        proxy.on_navigate(TabId(29), "http://site-b.example/page");
+        let site_b = drain_streamed_image(&mut proxy, TabId(29), &streamed_image_params(702, &url, Vec::new()));
+        proxy.set_tab_private(TabId(29), true);
+        let private = drain_streamed_image(&mut proxy, TabId(29), &streamed_image_params(703, &url, Vec::new()));
+        server.join().unwrap();
+
+        assert_eq!(streamed_image_body(&site_a), b"site-a");
+        assert_eq!(streamed_image_body(&site_b), b"site-b");
+        assert_eq!(streamed_image_body(&private), b"private");
+    }
+
+    #[test]
+    fn partial_stream_failure_is_not_cached_and_later_retry_completes() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/interrupted.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut first, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 2048];
+            let _ = first.read(&mut request).unwrap();
+            first
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nETag: partial-v1\r\nConnection: close\r\nContent-Length: 16\r\n\r\npart",
+                )
+                .unwrap();
+            first.flush().unwrap();
+            first.shutdown(Shutdown::Write).unwrap();
+            drop(first);
+
+            let (mut retry, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 2048];
+            let size = retry.read(&mut request).unwrap();
+            let request = String::from_utf8_lossy(&request[..size]).to_ascii_lowercase();
+            assert!(
+                !request.contains("\r\nif-none-match:"),
+                "a partial transfer must not leave a cache validator"
+            );
+            retry
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nConnection: close\r\nContent-Length: 8\r\n\r\ncomplete",
+                )
+                .unwrap();
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(30), &url);
+        let failed = drain_streamed_image(&mut proxy, TabId(30), &streamed_image_params(801, &url, Vec::new()));
+        let failed_chunks: Vec<_> = failed.iter().filter(|item| is_stream_chunk(&item.headers)).collect();
+        let failure = failed.iter().find(|item| !is_stream_chunk(&item.headers)).unwrap();
+        assert!(
+            !failed_chunks.is_empty(),
+            "the server should deliver at least one partial chunk"
+        );
+        assert_eq!(failure.status, 0, "short body must complete as a network failure");
+        assert_eq!(
+            failed_chunks
+                .iter()
+                .flat_map(|item| item.body.iter().copied())
+                .collect::<Vec<_>>(),
+            b"part"
+        );
+
+        let retry = drain_streamed_image(&mut proxy, TabId(30), &streamed_image_params(802, &url, Vec::new()));
+        server.join().unwrap();
+        assert_eq!(
+            retry
+                .iter()
+                .find(|item| !is_stream_chunk(&item.headers))
+                .unwrap()
+                .status,
+            200
+        );
+        assert_eq!(streamed_image_body(&retry), b"complete");
     }
 
     #[test]
