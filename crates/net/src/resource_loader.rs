@@ -180,10 +180,8 @@ pub struct ResourceLoader {
     scheduler: Arc<Mutex<PerOriginFetchScheduler>>,
     /// 默认分区的缓存。普通 profile 可在此使用持久化缓存；私密 profile 传入内存缓存。
     default_cache: Arc<Mutex<HttpCache>>,
-    /// 非默认顶级站点分区的独立内存缓存。
-    ///
-    /// P0 保守地不把这些分区写入共享磁盘缓存：磁盘索引尚未携带 partition key 时，
-    /// 宁可降低跨会话命中率，也不能让不同顶级站点复用同一条目。
+    persistent_partition_root: Option<std::path::PathBuf>,
+    /// 非默认顶级站点分区的独立缓存；普通 profile 按分区持久化，无痕 profile 仅驻留内存。
     partition_caches: Mutex<HashMap<String, Arc<Mutex<HttpCache>>>>,
     partition: String,
     stats: Arc<Mutex<ResourceLoadStats>>,
@@ -201,9 +199,11 @@ impl ResourceLoader {
 
     /// 用指定缓存和分区创建加载器（无痕 profile 使用独立内存缓存）。
     pub fn new(cache: Arc<Mutex<HttpCache>>, partition: impl Into<String>) -> Self {
+        let persistent_partition_root = cache.lock().ok().and_then(|cache| cache.persistent_root());
         Self {
             scheduler: PerOriginFetchScheduler::new_shared(),
             default_cache: cache,
+            persistent_partition_root,
             partition_caches: Mutex::new(HashMap::new()),
             partition: partition.into(),
             stats: Arc::new(Mutex::new(ResourceLoadStats::default())),
@@ -509,7 +509,14 @@ impl ResourceLoader {
         let mut caches = self.partition_caches.lock().expect("HTTP cache partition lock");
         caches
             .entry(partition.to_string())
-            .or_insert_with(|| Arc::new(Mutex::new(HttpCache::new())))
+            .or_insert_with(|| {
+                let cache = self
+                    .persistent_partition_root
+                    .as_deref()
+                    .map(|root| HttpCache::open_persistent_partition(root, partition))
+                    .unwrap_or_default();
+                Arc::new(Mutex::new(cache))
+            })
             .clone()
     }
 
@@ -768,6 +775,44 @@ mod tests {
         let second_site_b = loader.cache_for_partition("site-b");
         assert!(Arc::ptr_eq(&first_site_b, &second_site_b));
         assert!(!Arc::ptr_eq(&first_site_b, &default_cache));
+    }
+
+    #[test]
+    fn persistent_partition_cache_survives_loader_recreation_and_stays_isolated() {
+        let root = std::env::temp_dir().join(format!(
+            "zero-resource-cache-partitions-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let url = "https://cdn.example/partitioned.css";
+        let site_a = "https://site-a.example:443";
+        let site_b = "https://site-b.example:443";
+        {
+            let cache = Arc::new(Mutex::new(HttpCache::open_persistent_at(&root)));
+            let loader = ResourceLoader::new(cache, "default");
+            assert!(
+                loader
+                    .cache_for_partition(site_a)
+                    .lock()
+                    .unwrap()
+                    .put(url, &fresh_response(url))
+            );
+        }
+
+        let reopened = ResourceLoader::new(Arc::new(Mutex::new(HttpCache::open_persistent_at(&root))), "default");
+        match reopened.lookup_cache(&ResourceRequest::get(url, FetchPriority::MEDIUM).with_partition(site_a)) {
+            CacheLookup::Hit(cached) => assert_eq!(cached.body, b"cached"),
+            CacheLookup::Revalidate { .. } => panic!("fresh persistent entry should be a hit"),
+            CacheLookup::Miss => panic!("same partition should reopen its disk entry"),
+        }
+        assert!(matches!(
+            reopened.lookup_cache(&ResourceRequest::get(url, FetchPriority::MEDIUM).with_partition(site_b)),
+            CacheLookup::Miss
+        ));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

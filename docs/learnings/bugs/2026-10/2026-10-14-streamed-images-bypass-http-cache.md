@@ -8,10 +8,12 @@ modules: apps/browser, crates/net
 ## 表现
 
 同一页面重复请求带 `Cache-Control: max-age` 的图片时，服务器仍收到完整 GET；有 ETag 的图片也无法通过 304 复用旧 body。
+普通重访在浏览器进程重建后仍需要重复下载顶级站点分区中的资源。
 
 ## 根因
 
 `TabFetchProxy::enqueue` 把带 `X-Zero-Stream-Image` 的图片请求直接送入 `start_image_stream`，该函数调用 `HttpClient::send_async_stream_with_timeout`，绕过了 `ResourceLoader` 的缓存查找、条件再验证和写入。
+此外，`ResourceLoader` 将非默认顶级站点分区放在独立的 `HttpCache::new()`；磁盘索引按 URL 查找且不记录分区。直接共用默认磁盘条目会跨站误命中，因此这些分区原本只在内存保留。
 
 ## 修复
 
@@ -20,6 +22,8 @@ modules: apps/browser, crates/net
 条件请求收到带 `Cache-Control: no-store` 的 304 时，缓存 body 仍可用于完成当前响应，但必须立即删除先前存储的表示（内存和磁盘层）。只跳过新响应写入会留下旧的 `max-age` 与验证器，下一次请求仍可能绕过源站复用旧 body。
 
 常驻本地回归用真实 loopback HTTP 请求计数与响应体断言覆盖首次 GET、热命中、ETag/304、304 `no-store` 后移除验证器并重新 GET、`only-if-cached` 及流式分块。仅测 `ResourceLoader` 本身不足以发现特殊图片分支绕过；测试下一次请求可验证 `no-store` 不只影响新写入，也阻止旧缓存继续复用。
+
+磁盘条目现在同时绑定缓存分区与 URL：同一顶级站点在重建 loader 后可复用持久条目，其他顶级站点不能读到该条目；所有分区共享 200 MiB 总配额，单 origin 配额在各自分区内计算。默认分区可读旧版无分区元数据，无痕 loader 仍无磁盘层。loopback 图片回归关闭并重建 proxy/loader 后检查热命中，再以第二个顶级站点确认隔离。该分区身份属于浏览器缓存策略；缓存 freshness、validator 与 304 元数据处理遵循 [RFC 9111](https://www.rfc-editor.org/rfc/rfc9111)。
 
 ## 避免
 

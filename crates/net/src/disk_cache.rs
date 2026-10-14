@@ -3,6 +3,7 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -17,9 +18,13 @@ const DEFAULT_DISK_MAX_BYTES: u64 = 200 * 1024 * 1024;
 /// 每个 origin 的磁盘配额（50 MiB）。
 const DEFAULT_ORIGIN_MAX_BYTES: u64 = 50 * 1024 * 1024;
 
+static DISK_CACHE_WRITE_LOCK: Mutex<()> = Mutex::new(());
+
 /// 磁盘缓存元数据（JSON 侧车文件）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DiskEntryMeta {
+    #[serde(default)]
+    partition: String,
     url: String,
     resource_url: Option<String>,
     origin: Option<String>,
@@ -55,6 +60,7 @@ pub struct DiskIndexEntry {
 #[derive(Debug)]
 pub struct DiskHttpCache {
     root: PathBuf,
+    partition: String,
     max_bytes: u64,
     origin_max_bytes: u64,
 }
@@ -62,10 +68,23 @@ pub struct DiskHttpCache {
 impl DiskHttpCache {
     /// 打开或创建指定目录下的磁盘缓存。
     pub fn open(root: impl AsRef<Path>) -> io::Result<Self> {
+        Self::open_for_partition(root, "default")
+    }
+
+    /// 打开共享磁盘缓存根目录中的一个隔离分区。
+    pub fn open_for_partition(root: impl AsRef<Path>, partition: impl Into<String>) -> io::Result<Self> {
+        let partition = partition.into();
+        if partition.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cache partition must not be empty",
+            ));
+        }
         let root = root.as_ref().to_path_buf();
         fs::create_dir_all(&root)?;
         Ok(Self {
             root,
+            partition,
             max_bytes: DEFAULT_DISK_MAX_BYTES,
             origin_max_bytes: DEFAULT_ORIGIN_MAX_BYTES,
         })
@@ -76,6 +95,10 @@ impl DiskHttpCache {
         Self::open(default_cache_dir())
     }
 
+    pub(crate) fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// 枚举磁盘条目元数据（用于重建内存索引）。
     pub fn list_index_entries(&self) -> Vec<DiskIndexEntry> {
         walk_disk_entries(&self.root)
@@ -83,6 +106,9 @@ impl DiskHttpCache {
             .filter_map(|paths| {
                 let text = fs::read_to_string(&paths.meta).ok()?;
                 let meta: DiskEntryMeta = serde_json::from_str(&text).ok()?;
+                if !self.matches_partition(&meta) {
+                    return None;
+                }
                 Some(DiskIndexEntry {
                     key: meta.url,
                     resource_url: meta.resource_url,
@@ -97,7 +123,7 @@ impl DiskHttpCache {
         let paths = self.entry_paths(key);
         let text = fs::read_to_string(&paths.meta).ok()?;
         let meta: DiskEntryMeta = serde_json::from_str(&text).ok()?;
-        if meta.url != key {
+        if meta.url != key || !self.matches_partition(&meta) {
             return None;
         }
         meta.vary
@@ -108,7 +134,7 @@ impl DiskHttpCache {
         let paths = self.entry_paths(key);
         let meta_text = fs::read_to_string(&paths.meta).ok()?;
         let mut meta: DiskEntryMeta = serde_json::from_str(&meta_text).ok()?;
-        if meta.url != key {
+        if meta.url != key || !self.matches_partition(&meta) {
             return None;
         }
         let body = fs::read(&paths.body).ok()?;
@@ -151,6 +177,7 @@ impl DiskHttpCache {
         if crate::cache_policy::parse_cache_control(response).no_store {
             return self.remove(key);
         }
+        let _write_guard = DISK_CACHE_WRITE_LOCK.lock().expect("HTTP disk cache write lock");
         let paths = self.entry_paths(key);
         let Ok(meta_text) = fs::read_to_string(&paths.meta) else {
             return false;
@@ -158,7 +185,7 @@ impl DiskHttpCache {
         let Ok(mut meta) = serde_json::from_str::<DiskEntryMeta>(&meta_text) else {
             return false;
         };
-        if meta.url != key {
+        if meta.url != key || !self.matches_partition(&meta) {
             return false;
         }
         let now = unix_now();
@@ -213,7 +240,7 @@ impl DiskHttpCache {
         let Ok(meta) = serde_json::from_str::<DiskEntryMeta>(&meta_text) else {
             return Vec::new();
         };
-        if meta.url != key {
+        if meta.url != key || !self.matches_partition(&meta) {
             return Vec::new();
         }
         let mut headers = Vec::new();
@@ -228,6 +255,7 @@ impl DiskHttpCache {
 
     /// 存储可缓存响应；`key` 为 [`cache_store_key`] 结果。
     pub fn put(&mut self, key: &str, response: &HttpResponse) -> bool {
+        let _write_guard = DISK_CACHE_WRITE_LOCK.lock().expect("HTTP disk cache write lock");
         let mode = match storable_mode(response) {
             Some(m) => m,
             None => return false,
@@ -243,6 +271,7 @@ impl DiskHttpCache {
         let resource_url = response.url.clone();
         let origin = Some(origin_from_url(&resource_url));
         let meta = DiskEntryMeta {
+            partition: self.partition.clone(),
             url: key.to_string(),
             resource_url: Some(resource_url),
             origin: origin.clone(),
@@ -274,11 +303,34 @@ impl DiskHttpCache {
 
     /// 移除单条缓存。
     pub fn remove(&mut self, url: &str) -> bool {
-        self.remove_files(&self.entry_paths(url))
+        let _write_guard = DISK_CACHE_WRITE_LOCK.lock().expect("HTTP disk cache write lock");
+        let paths = self.entry_paths(url);
+        let Ok(text) = fs::read_to_string(&paths.meta) else {
+            return false;
+        };
+        let Ok(meta) = serde_json::from_str::<DiskEntryMeta>(&text) else {
+            return false;
+        };
+        meta.url == url && self.matches_partition(&meta) && self.remove_files(&paths)
     }
 
     /// 清空磁盘缓存目录内容。
     pub fn clear(&mut self) -> io::Result<()> {
+        let _write_guard = DISK_CACHE_WRITE_LOCK.lock().expect("HTTP disk cache write lock");
+        if self.partition != "default" {
+            for paths in walk_disk_entries(&self.root) {
+                let Ok(text) = fs::read_to_string(&paths.meta) else {
+                    continue;
+                };
+                let Ok(meta) = serde_json::from_str::<DiskEntryMeta>(&text) else {
+                    continue;
+                };
+                if self.matches_partition(&meta) {
+                    let _ = self.remove_files(&paths);
+                }
+            }
+            return Ok(());
+        }
         if self.root.exists() {
             fs::remove_dir_all(&self.root)?;
         }
@@ -294,13 +346,25 @@ impl DiskHttpCache {
     }
 
     fn entry_paths(&self, url: &str) -> EntryPaths {
-        let key = cache_key(url);
+        let key = if self.partition == "default" {
+            cache_key(url)
+        } else {
+            cache_key(&format!("{}\0{url}", self.partition))
+        };
         let shard_a = &key[..2];
         let shard_b = &key[2..4];
         let dir = self.root.join(shard_a).join(shard_b);
         EntryPaths {
             meta: dir.join(format!("{key}.json")),
             body: dir.join(format!("{key}.bin")),
+        }
+    }
+
+    fn matches_partition(&self, meta: &DiskEntryMeta) -> bool {
+        if meta.partition.is_empty() {
+            self.partition == "default"
+        } else {
+            meta.partition == self.partition
         }
     }
 
@@ -330,7 +394,7 @@ impl DiskHttpCache {
             .filter_map(|paths| {
                 let text = fs::read_to_string(&paths.meta).ok()?;
                 let meta: DiskEntryMeta = serde_json::from_str(&text).ok()?;
-                if meta.origin.as_deref() == Some(origin) {
+                if self.matches_partition(&meta) && meta.origin.as_deref() == Some(origin) {
                     fs::metadata(&paths.body).ok().map(|m| m.len())
                 } else {
                     None
@@ -345,7 +409,7 @@ impl DiskHttpCache {
             .filter_map(|paths| {
                 let text = fs::read_to_string(&paths.meta).ok()?;
                 let meta: DiskEntryMeta = serde_json::from_str(&text).ok()?;
-                if meta.origin.as_deref() == Some(origin) {
+                if self.matches_partition(&meta) && meta.origin.as_deref() == Some(origin) {
                     Some((paths, meta.last_access))
                 } else {
                     None
@@ -565,6 +629,44 @@ mod tests {
     }
 
     #[test]
+    fn partitioned_disk_entries_survive_reopen_without_cross_partition_reuse() {
+        let dir = std::env::temp_dir().join(format!(
+            "zero-disk-cache-partitions-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let key = "https://cdn.example/image.png";
+        {
+            let mut site_a = DiskHttpCache::open_for_partition(&dir, "https://site-a.example:443").unwrap();
+            assert!(site_a.put(key, &sample_response(b"site-a")));
+        }
+
+        let mut site_a = DiskHttpCache::open_for_partition(&dir, "https://site-a.example:443").unwrap();
+        assert_eq!(site_a.get(key).unwrap().body, b"site-a");
+        let mut site_b = DiskHttpCache::open_for_partition(&dir, "https://site-b.example:443").unwrap();
+        assert!(
+            site_b.get(key).is_none(),
+            "another top-level partition must not see the entry"
+        );
+        assert!(site_b.put(key, &sample_response(b"site-b")));
+        assert_eq!(site_a.get(key).unwrap().body, b"site-a");
+        assert_eq!(site_b.get(key).unwrap().body, b"site-b");
+
+        site_a.clear().unwrap();
+        assert!(site_a.get(key).is_none());
+        assert_eq!(site_b.get(key).unwrap().body, b"site-b");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn empty_disk_cache_partition_is_rejected() {
+        let root = std::env::temp_dir().join(format!("zero-disk-cache-empty-partition-{}", std::process::id()));
+        let error = DiskHttpCache::open_for_partition(root, "").unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
     fn disk_no_store_not_persisted() {
         let (mut cache, dir) = temp_cache();
         let url = "https://example.com/private";
@@ -611,6 +713,7 @@ mod tests {
             fs::create_dir_all(parent).unwrap();
         }
         let expired = DiskEntryMeta {
+            partition: "default".to_string(),
             url: key.to_string(),
             resource_url: Some("https://example.com/old.css".to_string()),
             origin: Some("https://example.com".into()),
@@ -806,6 +909,7 @@ mod tests {
         let (cache, dir) = temp_cache();
         let mut cache = DiskHttpCache {
             root: cache.root,
+            partition: "default".to_string(),
             max_bytes: DEFAULT_DISK_MAX_BYTES,
             origin_max_bytes: 100,
         };

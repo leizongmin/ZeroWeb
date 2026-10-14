@@ -98,19 +98,39 @@ impl HttpCache {
 
     /// 打开带磁盘持久层的缓存（浏览器默认路径；隐私模式仅内存）。
     pub fn open_persistent() -> Self {
+        Self::open_persistent_at(crate::disk_cache::default_cache_dir())
+    }
+
+    /// 打开指定磁盘目录中的持久 HTTP 缓存。
+    pub fn open_persistent_at(root: impl AsRef<std::path::Path>) -> Self {
         let mut cache = Self::new();
         if private_browsing_enabled() {
             tracing::info!("private browsing: HTTP disk cache disabled");
             return cache;
         }
-        match DiskHttpCache::open_default() {
+        match DiskHttpCache::open(root) {
             Ok(disk) => {
-                tracing::info!(dir = %crate::disk_cache::default_cache_dir().display(), "HTTP disk cache opened");
                 cache.disk = Some(disk);
             }
             Err(e) => tracing::warn!("HTTP disk cache unavailable: {e}"),
         }
         cache
+    }
+
+    pub(crate) fn open_persistent_partition(root: &std::path::Path, partition: &str) -> Self {
+        let mut cache = Self::new();
+        if private_browsing_enabled() {
+            return cache;
+        }
+        match DiskHttpCache::open_for_partition(root, partition) {
+            Ok(disk) => cache.disk = Some(disk),
+            Err(e) => tracing::warn!("HTTP disk cache unavailable for partition: {e}"),
+        }
+        cache
+    }
+
+    pub(crate) fn persistent_root(&self) -> Option<std::path::PathBuf> {
+        self.disk.as_ref().map(|disk| disk.root().to_path_buf())
     }
 
     /// 查找缓存（新鲜命中 / 需再验证 / 未命中）。

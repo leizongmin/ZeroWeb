@@ -730,6 +730,13 @@ mod tests {
         }
     }
 
+    fn with_persistent_cache_dir(root: &std::path::Path) -> TabFetchProxy {
+        let cache = Arc::new(Mutex::new(HttpCache::open_persistent_at(root)));
+        let mut proxy = TabFetchProxy::new();
+        proxy.normal_loader = Arc::new(ResourceLoader::new(cache, "default"));
+        proxy
+    }
+
     fn streamed_image_params(request_id: u64, url: &str, extra_headers: Vec<(String, String)>) -> FetchParams {
         let mut request = params(request_id, url);
         request.headers = vec![
@@ -1163,6 +1170,71 @@ mod tests {
             1,
             "fresh image should be reused without a second request"
         );
+    }
+
+    #[test]
+    fn streamed_image_disk_cache_survives_loader_recreation_and_is_partitioned() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/partitioned.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for body in ["site-a", "site-b"] {
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(accepted) => break accepted,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(
+                                std::time::Instant::now() < deadline,
+                                "request for {body} was not received"
+                            );
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("accept failed: {error}"),
+                    }
+                };
+                let mut request = [0_u8; 2048];
+                let _ = stream.read(&mut request).unwrap();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nETag: \"{body}\"\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+
+        let cache_dir = std::env::temp_dir().join(format!(
+            "zero-stream-image-cache-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut site_a = with_persistent_cache_dir(&cache_dir);
+        site_a.on_navigate(TabId(91), "http://site-a.example/page");
+        let first = drain_streamed_image(&mut site_a, TabId(91), &streamed_image_params(9101, &url, Vec::new()));
+        assert_eq!(streamed_image_body(&first), b"site-a");
+        drop(site_a);
+
+        let mut reopened_site_a = with_persistent_cache_dir(&cache_dir);
+        reopened_site_a.on_navigate(TabId(92), "http://site-a.example/another-page");
+        let reopened = drain_streamed_image(
+            &mut reopened_site_a,
+            TabId(92),
+            &streamed_image_params(9102, &url, Vec::new()),
+        );
+        assert_eq!(streamed_image_body(&reopened), b"site-a");
+        drop(reopened_site_a);
+
+        let mut site_b = with_persistent_cache_dir(&cache_dir);
+        site_b.on_navigate(TabId(93), "http://site-b.example/page");
+        let isolated = drain_streamed_image(&mut site_b, TabId(93), &streamed_image_params(9103, &url, Vec::new()));
+        assert_eq!(streamed_image_body(&isolated), b"site-b");
+        drop(site_b);
+
+        server.join().unwrap();
+        let _ = std::fs::remove_dir_all(cache_dir);
     }
 
     #[test]
