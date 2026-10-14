@@ -13340,7 +13340,115 @@
     TextEvent31.prototype = _tec31.prototype;
     globalThis.TextEvent = TextEvent31;
   })();
-  _defineEventSubclass('TouchEvent', 'UIEvent', []);
+
+  // Touch/TouchList/TouchEvent 构造器面（touch-events-compat goal M2，
+  // https://w3c.github.io/touch-events/）。构造器是纯 JS API（桌面 Chrome 无触摸
+  // 硬件同样暴露）；`ontouch*` GlobalEventHandlers 曝出面与本块解耦——按桌面
+  // Chrome 保持缺席（'ontouchstart' in document === false，GEH/expose-legacy
+  // 两案的中性/一致性基线，M1 evidence 记录）。
+
+  // TouchList——spec https://w3c.github.io/touch-events/#touchlist-interface：
+  // 无 [Constructor]（new TouchList() 抛 TypeError）；length + getter item（越界
+  // → null）。historical 面双向门：identifiedTouch 不在原型。
+  function TouchList() {
+    throw new TypeError("Illegal constructor");
+  }
+  Object.defineProperty(TouchList, 'length', { value: 0 }); // WebIDL 必参个数
+  TouchList.prototype.item = function (index) {
+    var list = this._zwTouchItems || [];
+    var t = list[index >>> 0];
+    return t != null ? t : null; // spec：越界 → null
+  };
+  Object.defineProperty(TouchList.prototype, 'length', {
+    get: function () { return (this._zwTouchItems || []).length; },
+    set: function (v) { /* IDL unsigned long 只读——静默忽略（FileList R2830 同款 lenient） */ },
+    enumerable: true,
+    configurable: true
+  });
+  Object.defineProperty(TouchList.prototype, Symbol.toStringTag, { value: 'TouchList', configurable: true });
+  globalThis.TouchList = TouchList;
+  // 内部工厂（TouchEvent init 面消费）：supported indices 以 own 属性承载
+  // （WebIDL getter 索引口径——touches[0] 与传入 Touch 对象恒等，构造器测试钉）。
+  function _zwMakeTouchList(items) {
+    var inst = Object.create(TouchList.prototype);
+    var list = [];
+    for (var it of items) list.push(it); // sequence<Touch> 转换——非可迭代自然 TypeError
+    for (var i = 0; i < list.length; i++) {
+      Object.defineProperty(inst, i, { value: list[i], enumerable: true, configurable: true });
+    }
+    inst._zwTouchItems = list;
+    return inst;
+  }
+  var _zwEmptyTouchList = _zwMakeTouchList([]);
+
+  // Touch——spec https://w3c.github.io/touch-events/#touch-interface：
+  // TouchInit 必填 identifier（long）+ target（EventTarget）；坐标/半径/压力缺省 0
+  //（double/float 保小数——构造器测试 assert_approx_equals 20.2/35.34 面）。
+  // historical 面双向门：webkitRadiusX/webkitRadiusY/webkitRotationAngle/webkitForce
+  // 不在原型（Chromium 旧扩展，spec 已移除）。
+  function _zwTouchLong(v) { return Number(v) | 0; }
+  function _zwTouchDouble(v) { var n = Number(v); return isFinite(n) ? n : 0; }
+  function Touch(init) {
+    if (init == null || typeof init !== 'object') {
+      throw new TypeError("Failed to construct 'Touch': The provided value is not of type 'TouchInit'.");
+    }
+    // 必填成员缺席（{}.identifier / {target}.identifier）→ TypeError（WebIDL required）。
+    if (!('identifier' in init)) {
+      throw new TypeError("Failed to construct 'Touch': required member identifier is undefined.");
+    }
+    // target ∈ EventTarget（null/undefined/Location 非 EventTarget → TypeError）。
+    // shim 元素/document/window 各走独立 listener 路径（无公共 EventTarget 原型链，
+    // 本文件 EventTarget 构造器注释「元素 / document / window 经各自 addEventListener
+    // 路径」）——品牌判据 = listener API 可达性；Location 为 exotic proxy 无 listener 面。
+    if (init.target == null || typeof init.target.addEventListener !== 'function') {
+      throw new TypeError("Failed to construct 'Touch': Failed to read the 'target' property from 'TouchInit': The provided value is not of type 'EventTarget'.");
+    }
+    this._zwT_identifier = _zwTouchLong(init.identifier);
+    this._zwT_target = init.target;
+    this._zwT_screenX = _zwTouchDouble(init.screenX);
+    this._zwT_screenY = _zwTouchDouble(init.screenY);
+    this._zwT_clientX = _zwTouchDouble(init.clientX);
+    this._zwT_clientY = _zwTouchDouble(init.clientY);
+    this._zwT_pageX = _zwTouchDouble(init.pageX);
+    this._zwT_pageY = _zwTouchDouble(init.pageY);
+    this._zwT_radiusX = _zwTouchDouble(init.radiusX);
+    this._zwT_radiusY = _zwTouchDouble(init.radiusY);
+    this._zwT_rotationAngle = _zwTouchDouble(init.rotationAngle);
+    this._zwT_force = _zwTouchDouble(init.force);
+    this._zwT_altitudeAngle = _zwTouchDouble(init.altitudeAngle);
+    this._zwT_azimuthAngle = _zwTouchDouble(init.azimuthAngle);
+    this._zwT_touchType = init.touchType == null ? 'direct' : String(init.touchType);
+  }
+  var _zwTouchAttrs = ['identifier', 'target', 'screenX', 'screenY', 'clientX', 'clientY',
+    'pageX', 'pageY', 'radiusX', 'radiusY', 'rotationAngle', 'force',
+    'altitudeAngle', 'azimuthAngle', 'touchType'];
+  for (var _zwTai = 0; _zwTai < _zwTouchAttrs.length; _zwTai++) {
+    (function (attr) {
+      Object.defineProperty(Touch.prototype, attr, {
+        get: function () { return this['_zwT_' + attr]; },
+        set: function (v) { /* IDL readonly——静默忽略（lenient 先例） */ },
+        enumerable: true,
+        configurable: true
+      });
+    })(_zwTouchAttrs[_zwTai]);
+  }
+  Object.defineProperty(Touch.prototype, Symbol.toStringTag, { value: 'Touch', configurable: true });
+  Object.defineProperty(Touch, 'length', { value: 1 }); // WebIDL 必参个数（touchInitDict）
+  globalThis.Touch = Touch;
+
+  // TouchEvent——TouchEventInit : EventModifierInit（4 修饰键缺省 false）+ 三序列
+  // TouchList 化（缺省空列表——historical `new TouchEvent("touchstart", {}).touches`
+  // 面；converter 第 4 元，net-api M3-S2 先例）。getModifierState spec 面未实现
+  //（FIXME: 语料未度量）。
+  _defineEventSubclass('TouchEvent', 'UIEvent', [
+    ['touches', 'touches', _zwEmptyTouchList, _zwMakeTouchList],
+    ['targetTouches', 'targetTouches', _zwEmptyTouchList, _zwMakeTouchList],
+    ['changedTouches', 'changedTouches', _zwEmptyTouchList, _zwMakeTouchList],
+    ['altKey', 'altKey', false],
+    ['metaKey', 'metaKey', false],
+    ['ctrlKey', 'ctrlKey', false],
+    ['shiftKey', 'shiftKey', false],
+  ]);
 
   // R2937 DataTransfer——拖放载荷容器（format→string map + effectAllowed/dropEffect + files/items 只读视图）。
   // headless 无真拖拽源（无 OS 文件 / 无 pointer-drag 几何），但 D&D 库（SortableJS / react-dnd fallback /
