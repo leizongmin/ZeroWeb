@@ -299,7 +299,8 @@ fn flood_color_attrs(color: &ColorValue) -> Option<String> {
 }
 
 /// f32 → 最短十进制串（整数去 `.0`；小数原样）。
-fn fmt_num(v: f32) -> String {
+/// 数值 → 紧凑文本（整数去小数尾零）。R5125 起供 painter 计算值 filter 注入复用。
+pub(crate) fn fmt_num(v: f32) -> String {
     if v.is_finite() && (v - v.round()).abs() < f32::EPSILON {
         format!("{}", v as i64)
     } else {

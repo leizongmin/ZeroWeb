@@ -1,0 +1,1138 @@
+{
+  "schema_version": 1,
+  "kind": "bench-report",
+  "generated_at": "20261014_193628",
+  "git_sha": "384dfa1",
+  "git_dirty": false,
+  "suspect": false,
+  "run_config": {
+    "config_hash": "a3bd66703cd27bd2752673846b8199c4465a732a1b98816b4284499baf79ff1f",
+    "profile": "release",
+    "bench_list": [
+      "zero-browser-shell:browser_shell_bench",
+      "zero-canvas:canvas_bench",
+      "zero-css-parser:css_bench",
+      "zero-dom:dom_bench",
+      "zero-engine:engine_bench",
+      "zero-host-runtime:host_runtime_bench",
+      "zero-layout-engine:layout_bench",
+      "zero-net:net_bench",
+      "zero-protocol:protocol_bench",
+      "zero-render-foundation:render_bench",
+      "zero-script-sandbox:script_sandbox_bench",
+      "zero-security:security_bench",
+      "zero-storage:storage_bench",
+      "zero-style-system:style_bench",
+      "zero-wasm-sandbox:wasm_bench",
+      "zero-webview:webview_bench"
+    ],
+    "page_scenarios": [
+      "medium",
+      "morning",
+      "welcome\n"
+    ],
+    "viewport": [
+      800,
+      600
+    ],
+    "iterations": 15
+  },
+  "platform": {
+    "platform_class": "github-ubuntu-latest-amd-epyc-9v74-80-core",
+    "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+    "cpu_cores": 4,
+    "os": "linux"
+  },
+  "microbenches": [
+    {
+      "id": "zero-browser-shell/autocomplete_suggest_500history",
+      "crate": "zero-browser-shell",
+      "bench": "browser_shell_bench",
+      "unit": "ns",
+      "p50": 126811.52192982456,
+      "p95": 127173.71228070176,
+      "max": 138092.30030959751,
+      "samples": 20
+    },
+    {
+      "id": "zero-browser-shell/bookmark_add_1000",
+      "crate": "zero-browser-shell",
+      "bench": "browser_shell_bench",
+      "unit": "ns",
+      "p50": 123447.56513409961,
+      "p95": 123985.31465517242,
+      "max": 125455.50862068965,
+      "samples": 20
+    },
+    {
+      "id": "zero-browser-shell/download_manager_100",
+      "crate": "zero-browser-shell",
+      "bench": "browser_shell_bench",
+      "unit": "ns",
+      "p50": 14730.359456295526,
+      "p95": 14869.225522656325,
+      "max": 15298.871227887617,
+      "samples": 20
+    },
+    {
+      "id": "zero-browser-shell/history_search_1k",
+      "crate": "zero-browser-shell",
+      "bench": "browser_shell_bench",
+      "unit": "ns",
+      "p50": 17.234926405266275,
+      "p95": 17.30336458335846,
+      "max": 17.39218922223857,
+      "samples": 20
+    },
+    {
+      "id": "zero-browser-shell/tab_creation_100",
+      "crate": "zero-browser-shell",
+      "bench": "browser_shell_bench",
+      "unit": "ns",
+      "p50": 6149.504725085911,
+      "p95": 6170.549350897289,
+      "max": 6185.259941089838,
+      "samples": 20
+    },
+    {
+      "id": "zero-canvas/fill_rect_1000",
+      "crate": "zero-canvas",
+      "bench": "canvas_bench",
+      "unit": "ns",
+      "p50": 6008199.818181818,
+      "p95": 6079867.4,
+      "max": 6091580.333333333,
+      "samples": 20
+    },
+    {
+      "id": "zero-canvas/path_ops_1000_segments",
+      "crate": "zero-canvas",
+      "bench": "canvas_bench",
+      "unit": "ns",
+      "p50": 9226.286011529148,
+      "p95": 9267.004686175782,
+      "max": 9274.193269141746,
+      "samples": 20
+    },
+    {
+      "id": "zero-canvas/save_restore_100_deep",
+      "crate": "zero-canvas",
+      "bench": "canvas_bench",
+      "unit": "ns",
+      "p50": 37293.99098548511,
+      "p95": 37592.37662337662,
+      "max": 39743.01836734694,
+      "samples": 20
+    },
+    {
+      "id": "zero-canvas/stroke_rect_1000",
+      "crate": "zero-canvas",
+      "bench": "canvas_bench",
+      "unit": "ns",
+      "p50": 4706339.970588235,
+      "p95": 4722197.538461538,
+      "max": 4728526.7727272725,
+      "samples": 20
+    },
+    {
+      "id": "zero-canvas/transform_chain_100",
+      "crate": "zero-canvas",
+      "bench": "canvas_bench",
+      "unit": "ns",
+      "p50": 20945.525507677066,
+      "p95": 21004.945365184594,
+      "max": 21264.150074294204,
+      "samples": 20
+    },
+    {
+      "id": "zero-css-parser/complex_selector_parse_100",
+      "crate": "zero-css-parser",
+      "bench": "css_bench",
+      "unit": "ns",
+      "p50": 318339.4397993311,
+      "p95": 321807.9673913043,
+      "max": 321821.6304347826,
+      "samples": 20
+    },
+    {
+      "id": "zero-css-parser/css_parse_100kb",
+      "crate": "zero-css-parser",
+      "bench": "css_bench",
+      "unit": "ns",
+      "p50": 2144969,
+      "p95": 2163002.7523809522,
+      "max": 2285787.3,
+      "samples": 20
+    },
+    {
+      "id": "zero-css-parser/css_parse_by_size/rules/100",
+      "crate": "zero-css-parser",
+      "bench": "css_bench",
+      "unit": "ns",
+      "p50": 293905.2574568289,
+      "p95": 308542.4232008593,
+      "max": 314356.5806122449,
+      "samples": 20
+    },
+    {
+      "id": "zero-css-parser/css_parse_by_size/rules/1000",
+      "crate": "zero-css-parser",
+      "bench": "css_bench",
+      "unit": "ns",
+      "p50": 3000331.65,
+      "p95": 3012379.953846154,
+      "max": 3012602.4,
+      "samples": 20
+    },
+    {
+      "id": "zero-css-parser/css_parse_by_size/rules/500",
+      "crate": "zero-css-parser",
+      "bench": "css_bench",
+      "unit": "ns",
+      "p50": 1492376.18,
+      "p95": 1506401.7647058824,
+      "max": 1517852.853846154,
+      "samples": 20
+    },
+    {
+      "id": "zero-css-parser/css_parse_by_size/rules/5000",
+      "crate": "zero-css-parser",
+      "bench": "css_bench",
+      "unit": "ns",
+      "p50": 14964330.7,
+      "p95": 15119364.181818182,
+      "max": 15167098.529411765,
+      "samples": 20
+    },
+    {
+      "id": "zero-css-parser/tokenizer_1000_rules",
+      "crate": "zero-css-parser",
+      "bench": "css_bench",
+      "unit": "ns",
+      "p50": 1262524.1282051282,
+      "p95": 1282268,
+      "max": 1282989.9226190476,
+      "samples": 20
+    },
+    {
+      "id": "zero-dom/dom/batch_append_child_1000",
+      "crate": "zero-dom",
+      "bench": "dom_bench",
+      "unit": "ns",
+      "p50": 267989.5828092243,
+      "p95": 274029.25471698114,
+      "max": 297982.32246998284,
+      "samples": 20
+    },
+    {
+      "id": "zero-dom/dom/get_element_by_id_indexed",
+      "crate": "zero-dom",
+      "bench": "dom_bench",
+      "unit": "ns",
+      "p50": 6.026844401853767,
+      "p95": 6.054737956575851,
+      "max": 6.058709861350747,
+      "samples": 20
+    },
+    {
+      "id": "zero-dom/dom/get_elements_by_tag_name_1000",
+      "crate": "zero-dom",
+      "bench": "dom_bench",
+      "unit": "ns",
+      "p50": 9017.471994965386,
+      "p95": 9105.998846234528,
+      "max": 9751.093140339837,
+      "samples": 20
+    },
+    {
+      "id": "zero-dom/dom/parse_html_nested_50",
+      "crate": "zero-dom",
+      "bench": "dom_bench",
+      "unit": "ns",
+      "p50": 33620.32387706856,
+      "p95": 34042.26639293269,
+      "max": 34255.66477541371,
+      "samples": 20
+    },
+    {
+      "id": "zero-dom/dom/parse_html_wide_5000",
+      "crate": "zero-dom",
+      "bench": "dom_bench",
+      "unit": "ns",
+      "p50": 6219531.444444444,
+      "p95": 6380096.666666667,
+      "max": 6680875.642857143,
+      "samples": 20
+    },
+    {
+      "id": "zero-dom/dom/query_selector_1000_elements_by_class",
+      "crate": "zero-dom",
+      "bench": "dom_bench",
+      "unit": "ns",
+      "p50": 317.38845209444514,
+      "p95": 338.3306128597153,
+      "max": 384.5186498128153,
+      "samples": 20
+    },
+    {
+      "id": "zero-dom/dom/query_selector_1000_elements_by_id",
+      "crate": "zero-dom",
+      "bench": "dom_bench",
+      "unit": "ns",
+      "p50": 13028.72913242009,
+      "p95": 13070.348401826484,
+      "max": 13100.60327692721,
+      "samples": 20
+    },
+    {
+      "id": "zero-dom/dom/query_selector_1000_elements_by_tag",
+      "crate": "zero-dom",
+      "bench": "dom_bench",
+      "unit": "ns",
+      "p50": 284.4086652662554,
+      "p95": 291.71293175654114,
+      "max": 337.43263686297746,
+      "samples": 20
+    },
+    {
+      "id": "zero-dom/dom/tree_construction_10k_nodes",
+      "crate": "zero-dom",
+      "bench": "dom_bench",
+      "unit": "ns",
+      "p50": 14921988,
+      "p95": 15309234.5,
+      "max": 15740463,
+      "samples": 20
+    },
+    {
+      "id": "zero-engine/compositing_layer_analysis_200",
+      "crate": "zero-engine",
+      "bench": "engine_bench",
+      "unit": "ns",
+      "p50": 84483.96134453782,
+      "p95": 85705.03529411765,
+      "max": 89536.3830449827,
+      "samples": 20
+    },
+    {
+      "id": "zero-engine/dirty_tracking/mark_100_nodes_and_merge",
+      "crate": "zero-engine",
+      "bench": "engine_bench",
+      "unit": "ns",
+      "p50": 2242.0160380718694,
+      "p95": 2268.6480924489474,
+      "max": 2519.2684331656947,
+      "samples": 20
+    },
+    {
+      "id": "zero-engine/end_to_end_pipeline",
+      "crate": "zero-engine",
+      "bench": "engine_bench",
+      "unit": "ns",
+      "p50": 408029.4801587302,
+      "p95": 418692.8425925926,
+      "max": 458195.1666666667,
+      "samples": 20
+    },
+    {
+      "id": "zero-engine/medium_complexity_page/first_paint",
+      "crate": "zero-engine",
+      "bench": "engine_bench",
+      "unit": "ns",
+      "p50": 1901752.0096153845,
+      "p95": 1950086.25,
+      "max": 1967710.515625,
+      "samples": 20
+    },
+    {
+      "id": "zero-engine/medium_complexity_page/incremental_vs_full",
+      "crate": "zero-engine",
+      "bench": "engine_bench",
+      "unit": "ns",
+      "p50": 3901039.21875,
+      "p95": 3960654.1666666665,
+      "max": 4007904.5,
+      "samples": 20
+    },
+    {
+      "id": "zero-engine/paint_complex_page_500_elements",
+      "crate": "zero-engine",
+      "bench": "engine_bench",
+      "unit": "ns",
+      "p50": 774508.7631578947,
+      "p95": 800024.9912280702,
+      "max": 826750.0197368421,
+      "samples": 20
+    },
+    {
+      "id": "zero-engine/paint_simple_page_100_elements",
+      "crate": "zero-engine",
+      "bench": "engine_bench",
+      "unit": "ns",
+      "p50": 151570.05041551247,
+      "p95": 152466.94736842104,
+      "max": 171099.71315789473,
+      "samples": 20
+    },
+    {
+      "id": "zero-host-runtime/create_100_window_configs",
+      "crate": "zero-host-runtime",
+      "bench": "host_runtime_bench",
+      "unit": "ns",
+      "p50": 4890.120006887052,
+      "p95": 4917.930637544274,
+      "max": 5363.635743801653,
+      "samples": 20
+    },
+    {
+      "id": "zero-host-runtime/host_runtime_new",
+      "crate": "zero-host-runtime",
+      "bench": "host_runtime_bench",
+      "unit": "ns",
+      "p50": 14.736777994261914,
+      "p95": 14.831607826758741,
+      "max": 14.843282539571506,
+      "samples": 20
+    },
+    {
+      "id": "zero-host-runtime/window_config_builder_chain",
+      "crate": "zero-host-runtime",
+      "bench": "host_runtime_bench",
+      "unit": "ns",
+      "p50": 13.638208992146449,
+      "p95": 13.651957283368754,
+      "max": 13.73456799047743,
+      "samples": 20
+    },
+    {
+      "id": "zero-host-runtime/window_config_default",
+      "crate": "zero-host-runtime",
+      "bench": "host_runtime_bench",
+      "unit": "ns",
+      "p50": 1.6361428587792204,
+      "p95": 1.6836931791391991,
+      "max": 1.6874728358933477,
+      "samples": 20
+    },
+    {
+      "id": "zero-layout-engine/block_layout_1000_elements",
+      "crate": "zero-layout-engine",
+      "bench": "layout_bench",
+      "unit": "ns",
+      "p50": 5003281.222222222,
+      "p95": 5450666.49122807,
+      "max": 5675770.583333333,
+      "samples": 20
+    },
+    {
+      "id": "zero-layout-engine/deep_nesting_50_levels",
+      "crate": "zero-layout-engine",
+      "bench": "layout_bench",
+      "unit": "ns",
+      "p50": 339411.82857142854,
+      "p95": 341116.0595238095,
+      "max": 341804.3596491228,
+      "samples": 20
+    },
+    {
+      "id": "zero-layout-engine/flex_layout_1000_elements",
+      "crate": "zero-layout-engine",
+      "bench": "layout_bench",
+      "unit": "ns",
+      "p50": 4924804,
+      "p95": 5158665.976190476,
+      "max": 5218351.743589744,
+      "samples": 20
+    },
+    {
+      "id": "zero-layout-engine/grid_layout_100_elements",
+      "crate": "zero-layout-engine",
+      "bench": "layout_bench",
+      "unit": "ns",
+      "p50": 467304,
+      "p95": 468446.3483870968,
+      "max": 472454.9811827957,
+      "samples": 20
+    },
+    {
+      "id": "zero-layout-engine/incremental_layout",
+      "crate": "zero-layout-engine",
+      "bench": "layout_bench",
+      "unit": "ns",
+      "p50": 4848428.666666667,
+      "p95": 5003443.444444444,
+      "max": 5007611.98245614,
+      "samples": 20
+    },
+    {
+      "id": "zero-layout-engine/wide_tree_500_children",
+      "crate": "zero-layout-engine",
+      "bench": "layout_bench",
+      "unit": "ns",
+      "p50": 281955.00784313725,
+      "p95": 283113.63437139563,
+      "max": 283652.841503268,
+      "samples": 20
+    },
+    {
+      "id": "zero-net/cookie_parse",
+      "crate": "zero-net",
+      "bench": "net_bench",
+      "unit": "ns",
+      "p50": 278.4669157000506,
+      "p95": 278.99859595077766,
+      "max": 283.2652652123868,
+      "samples": 20
+    },
+    {
+      "id": "zero-net/navigation_navigate",
+      "crate": "zero-net",
+      "bench": "net_bench",
+      "unit": "ns",
+      "p50": 94.55662008692808,
+      "p95": 94.77103243222793,
+      "max": 94.7874320797554,
+      "samples": 20
+    },
+    {
+      "id": "zero-net/parse_url",
+      "crate": "zero-net",
+      "bench": "net_bench",
+      "unit": "ns",
+      "p50": 315.4539176153452,
+      "p95": 316.5329661149108,
+      "max": 328.6091444441969,
+      "samples": 20
+    },
+    {
+      "id": "zero-protocol/ipc_deserialize_10000",
+      "crate": "zero-protocol",
+      "bench": "protocol_bench",
+      "unit": "ns",
+      "p50": 1139228.673076923,
+      "p95": 1143823,
+      "max": 1205455.7651821862,
+      "samples": 20
+    },
+    {
+      "id": "zero-protocol/ipc_large_message_serialize_1000",
+      "crate": "zero-protocol",
+      "bench": "protocol_bench",
+      "unit": "ns",
+      "p50": 643603.5933503837,
+      "p95": 706372.8152173914,
+      "max": 721636.8260869565,
+      "samples": 20
+    },
+    {
+      "id": "zero-protocol/ipc_roundtrip_10000",
+      "crate": "zero-protocol",
+      "bench": "protocol_bench",
+      "unit": "ns",
+      "p50": 872074.4208144796,
+      "p95": 887939.3790849673,
+      "max": 903258.0808823529,
+      "samples": 20
+    },
+    {
+      "id": "zero-protocol/ipc_serialize_10000",
+      "crate": "zero-protocol",
+      "bench": "protocol_bench",
+      "unit": "ns",
+      "p50": 348620.6875,
+      "p95": 378774.85833333334,
+      "max": 396170.8375,
+      "samples": 20
+    },
+    {
+      "id": "zero-render-foundation/damage_tracker/add_damage/100",
+      "crate": "zero-render-foundation",
+      "bench": "render_bench",
+      "unit": "ns",
+      "p50": 1212.9431335936174,
+      "p95": 1240.2586997114242,
+      "max": 1266.9359722457987,
+      "samples": 20
+    },
+    {
+      "id": "zero-render-foundation/damage_tracker/add_damage/1000",
+      "crate": "zero-render-foundation",
+      "bench": "render_bench",
+      "unit": "ns",
+      "p50": 18061.392189914313,
+      "p95": 18113.37439046415,
+      "max": 18892.85011061947,
+      "samples": 20
+    },
+    {
+      "id": "zero-render-foundation/damage_tracker/add_damage/500",
+      "crate": "zero-render-foundation",
+      "bench": "render_bench",
+      "unit": "ns",
+      "p50": 7378.2073089701,
+      "p95": 7397.82842377261,
+      "max": 7452.268087855297,
+      "samples": 20
+    },
+    {
+      "id": "zero-render-foundation/damage_tracker/damage_all",
+      "crate": "zero-render-foundation",
+      "bench": "render_bench",
+      "unit": "ns",
+      "p50": 1.6464714288693298,
+      "p95": 1.6613341976477687,
+      "max": 1.6648883081224135,
+      "samples": 20
+    },
+    {
+      "id": "zero-render-foundation/frame_buffer/clear_1080p",
+      "crate": "zero-render-foundation",
+      "bench": "render_bench",
+      "unit": "ns",
+      "p50": 1136870.325443787,
+      "p95": 1138564.868131868,
+      "max": 1143931.5384615385,
+      "samples": 20
+    },
+    {
+      "id": "zero-render-foundation/full_scene/raster_1500_fills_1080p",
+      "crate": "zero-render-foundation",
+      "bench": "render_bench",
+      "unit": "ns",
+      "p50": 5880403.461538462,
+      "p95": 6003210.166666667,
+      "max": 6015554.958333333,
+      "samples": 20
+    },
+    {
+      "id": "zero-render-foundation/glyph_cache/insert",
+      "crate": "zero-render-foundation",
+      "bench": "render_bench",
+      "unit": "ns",
+      "p50": 28352.52261904762,
+      "p95": 28397.73115079365,
+      "max": 28412.20625,
+      "samples": 20
+    },
+    {
+      "id": "zero-render-foundation/primitives/build_1000_fills",
+      "crate": "zero-render-foundation",
+      "bench": "render_bench",
+      "unit": "ns",
+      "p50": 4398.131634539213,
+      "p95": 4458.619586096916,
+      "max": 4660.423581159718,
+      "samples": 20
+    },
+    {
+      "id": "zero-script-sandbox/es_module_simple_export",
+      "crate": "zero-script-sandbox",
+      "bench": "script_sandbox_bench",
+      "unit": "ns",
+      "p50": 212932.38602941178,
+      "p95": 229097.6911764706,
+      "max": 229363.1989619377,
+      "samples": 20
+    },
+    {
+      "id": "zero-script-sandbox/es_module_with_import",
+      "crate": "zero-script-sandbox",
+      "bench": "script_sandbox_bench",
+      "unit": "ns",
+      "p50": 218586.61978021977,
+      "p95": 225339.73846153845,
+      "max": 243378.93846153846,
+      "samples": 20
+    },
+    {
+      "id": "zero-script-sandbox/execute_json_object",
+      "crate": "zero-script-sandbox",
+      "bench": "script_sandbox_bench",
+      "unit": "ns",
+      "p50": 205764.97875816992,
+      "p95": 208703.90073529413,
+      "max": 209336.52205882352,
+      "samples": 20
+    },
+    {
+      "id": "zero-script-sandbox/execute_loop_1k",
+      "crate": "zero-script-sandbox",
+      "bench": "script_sandbox_bench",
+      "unit": "ns",
+      "p50": 302057.6884057971,
+      "p95": 380749.347826087,
+      "max": 535009.7391304348,
+      "samples": 20
+    },
+    {
+      "id": "zero-script-sandbox/execute_simple_expression",
+      "crate": "zero-script-sandbox",
+      "bench": "script_sandbox_bench",
+      "unit": "ns",
+      "p50": 201531.0782828283,
+      "p95": 203784.75,
+      "max": 204043.44191919192,
+      "samples": 20
+    },
+    {
+      "id": "zero-script-sandbox/execute_string_ops",
+      "crate": "zero-script-sandbox",
+      "bench": "script_sandbox_bench",
+      "unit": "ns",
+      "p50": 205567.69112318842,
+      "p95": 221404.46376811594,
+      "max": 225523.89049919485,
+      "samples": 20
+    },
+    {
+      "id": "zero-script-sandbox/sandbox_creation",
+      "crate": "zero-script-sandbox",
+      "bench": "script_sandbox_bench",
+      "unit": "ns",
+      "p50": 1290520.028708134,
+      "p95": 1337489.1363636365,
+      "max": 1373280.6363636365,
+      "samples": 20
+    },
+    {
+      "id": "zero-script-sandbox/sandbox_with_config",
+      "crate": "zero-script-sandbox",
+      "bench": "script_sandbox_bench",
+      "unit": "ns",
+      "p50": 1232717,
+      "p95": 1265886.263888889,
+      "max": 1274110.9487179487,
+      "samples": 20
+    },
+    {
+      "id": "zero-script-sandbox/worker_create_terminate",
+      "crate": "zero-script-sandbox",
+      "bench": "script_sandbox_bench",
+      "unit": "ns",
+      "p50": 2996277.08,
+      "p95": 3031343.211764706,
+      "max": 3052075,
+      "samples": 20
+    },
+    {
+      "id": "zero-security/cors_check_1000",
+      "crate": "zero-security",
+      "bench": "security_bench",
+      "unit": "ns",
+      "p50": 74041.51374570446,
+      "p95": 75440.70412371134,
+      "max": 82432.74900872323,
+      "samples": 20
+    },
+    {
+      "id": "zero-security/csp_parse_1000",
+      "crate": "zero-security",
+      "bench": "security_bench",
+      "unit": "ns",
+      "p50": 593579.6736111111,
+      "p95": 607036.9810606061,
+      "max": 608564.3125,
+      "samples": 20
+    },
+    {
+      "id": "zero-security/csp_resource_check_1000",
+      "crate": "zero-security",
+      "bench": "security_bench",
+      "unit": "ns",
+      "p50": 190060.02592592593,
+      "p95": 190978.93333333332,
+      "max": 191363.86,
+      "samples": 20
+    },
+    {
+      "id": "zero-security/origin_parse_1000",
+      "crate": "zero-security",
+      "bench": "security_bench",
+      "unit": "ns",
+      "p50": 304627.69444444444,
+      "p95": 321467.2083333333,
+      "max": 326700.2931547619,
+      "samples": 20
+    },
+    {
+      "id": "zero-security/same_origin_check_1000",
+      "crate": "zero-security",
+      "bench": "security_bench",
+      "unit": "ns",
+      "p50": 2458.9341323807885,
+      "p95": 2463.3106960463647,
+      "max": 2464.3422937881537,
+      "samples": 20
+    },
+    {
+      "id": "zero-storage/indexeddb_write_100",
+      "crate": "zero-storage",
+      "bench": "storage_bench",
+      "unit": "ns",
+      "p50": 35475.16424394319,
+      "p95": 36186.76023391813,
+      "max": 36868.75821131777,
+      "samples": 20
+    },
+    {
+      "id": "zero-storage/local_storage_read_1000",
+      "crate": "zero-storage",
+      "bench": "storage_bench",
+      "unit": "ns",
+      "p50": 55073.54927133935,
+      "p95": 55604.189567430025,
+      "max": 60019.551738761664,
+      "samples": 20
+    },
+    {
+      "id": "zero-storage/local_storage_write_1000",
+      "crate": "zero-storage",
+      "bench": "storage_bench",
+      "unit": "ns",
+      "p50": 186245.63636363635,
+      "p95": 186749.1082251082,
+      "max": 187114.7142857143,
+      "samples": 20
+    },
+    {
+      "id": "zero-style-system/cascade/declarations/10",
+      "crate": "zero-style-system",
+      "bench": "style_bench",
+      "unit": "ns",
+      "p50": 2104.388489952719,
+      "p95": 2122.690967297084,
+      "max": 2186.299156664848,
+      "samples": 20
+    },
+    {
+      "id": "zero-style-system/cascade/declarations/100",
+      "crate": "zero-style-system",
+      "bench": "style_bench",
+      "unit": "ns",
+      "p50": 10317.438407662994,
+      "p95": 10336.033886085075,
+      "max": 10338.799527357205,
+      "samples": 20
+    },
+    {
+      "id": "zero-style-system/cascade/declarations/50",
+      "crate": "zero-style-system",
+      "bench": "style_bench",
+      "unit": "ns",
+      "p50": 5848.725532207114,
+      "p95": 5872.149068592371,
+      "max": 5873.903543469303,
+      "samples": 20
+    },
+    {
+      "id": "zero-style-system/cascade/declarations/500",
+      "crate": "zero-style-system",
+      "bench": "style_bench",
+      "unit": "ns",
+      "p50": 43081.34672021419,
+      "p95": 43142.25410733844,
+      "max": 43292.0843373494,
+      "samples": 20
+    },
+    {
+      "id": "zero-style-system/compute_styles_200_elements",
+      "crate": "zero-style-system",
+      "bench": "style_bench",
+      "unit": "ns",
+      "p50": 11309312.1,
+      "p95": 11499793.458333334,
+      "max": 11549875.725,
+      "samples": 20
+    },
+    {
+      "id": "zero-style-system/compute_styles_50_elements",
+      "crate": "zero-style-system",
+      "bench": "style_bench",
+      "unit": "ns",
+      "p50": 2235221.3095238097,
+      "p95": 2249553.9285714286,
+      "max": 2259231.904761905,
+      "samples": 20
+    },
+    {
+      "id": "zero-style-system/computed_style_default",
+      "crate": "zero-style-system",
+      "bench": "style_bench",
+      "unit": "ns",
+      "p50": 257.7582744187682,
+      "p95": 258.746821739963,
+      "max": 271.3347314551018,
+      "samples": 20
+    },
+    {
+      "id": "zero-style-system/selector_matching_100_elements",
+      "crate": "zero-style-system",
+      "bench": "style_bench",
+      "unit": "ns",
+      "p50": 8031.4055987865995,
+      "p95": 8086.100896860987,
+      "max": 8095.846692825112,
+      "samples": 20
+    },
+    {
+      "id": "zero-wasm-sandbox/wasm_call_add_i32_1000",
+      "crate": "zero-wasm-sandbox",
+      "bench": "wasm_bench",
+      "unit": "ns",
+      "p50": 109895.866759195,
+      "p95": 110479.5326547922,
+      "max": 120905.89694656488,
+      "samples": 20
+    },
+    {
+      "id": "zero-wasm-sandbox/wasm_factorial_100_calls",
+      "crate": "zero-wasm-sandbox",
+      "bench": "wasm_bench",
+      "unit": "ns",
+      "p50": 54135.92788790157,
+      "p95": 60108.802005012534,
+      "max": 62144.6795112782,
+      "samples": 20
+    },
+    {
+      "id": "zero-wasm-sandbox/wasm_module_compile",
+      "crate": "zero-wasm-sandbox",
+      "bench": "wasm_bench",
+      "unit": "ns",
+      "p50": 2553.6103754076194,
+      "p95": 2581.0887488495755,
+      "max": 2587.2245884037225,
+      "samples": 20
+    },
+    {
+      "id": "zero-wasm-sandbox/wasm_module_instantiate",
+      "crate": "zero-wasm-sandbox",
+      "bench": "wasm_bench",
+      "unit": "ns",
+      "p50": 271.72942678557814,
+      "p95": 273.16183588688165,
+      "max": 273.214078816983,
+      "samples": 20
+    },
+    {
+      "id": "zero-webview/webview_builder_create",
+      "crate": "zero-webview",
+      "bench": "webview_bench",
+      "unit": "ns",
+      "p50": 6118.914505231038,
+      "p95": 6124.439788578901,
+      "max": 6131.852964254577,
+      "samples": 20
+    },
+    {
+      "id": "zero-webview/webview_complex_page",
+      "crate": "zero-webview",
+      "bench": "webview_bench",
+      "unit": "ns",
+      "p50": 742895.50625,
+      "p95": 745145.8166666667,
+      "max": 745208.6818181818,
+      "samples": 20
+    },
+    {
+      "id": "zero-webview/webview_inject_css",
+      "crate": "zero-webview",
+      "bench": "webview_bench",
+      "unit": "ns",
+      "p50": 350647.73170731706,
+      "p95": 358281.50110864744,
+      "max": 361920.88211382116,
+      "samples": 20
+    },
+    {
+      "id": "zero-webview/webview_load_html_simple",
+      "crate": "zero-webview",
+      "bench": "webview_bench",
+      "unit": "ns",
+      "p50": 177818.8784425451,
+      "p95": 178640.7448559671,
+      "max": 186460.17501815542,
+      "samples": 20
+    },
+    {
+      "id": "zero-webview/webview_load_html_with_css",
+      "crate": "zero-webview",
+      "bench": "webview_bench",
+      "unit": "ns",
+      "p50": 212819.65955882354,
+      "p95": 218310.756302521,
+      "max": 232333.54864253395,
+      "samples": 20
+    },
+    {
+      "id": "zero-webview/webview_render",
+      "crate": "zero-webview",
+      "bench": "webview_bench",
+      "unit": "ns",
+      "p50": 337487.592248062,
+      "p95": 340299.1317829457,
+      "max": 344924.3976744186,
+      "samples": 20
+    },
+    {
+      "id": "zero-webview/webview_resize_and_render",
+      "crate": "zero-webview",
+      "bench": "webview_bench",
+      "unit": "ns",
+      "p50": 334287.9761904762,
+      "p95": 338452.33928571426,
+      "max": 361482.25132275134,
+      "samples": 20
+    }
+  ],
+  "pages": [
+    {
+      "scenario": "welcome",
+      "fixture": "apps/browser/assets/welcome.html",
+      "viewport": [
+        800,
+        600
+      ],
+      "samples": 14,
+      "stages": {
+        "parse_ms": {
+          "p50": 0.141729,
+          "p95": 0.144784,
+          "max": 0.145144
+        },
+        "style_ms": {
+          "p50": 1.97537,
+          "p95": 2.027217,
+          "max": 2.045604
+        },
+        "layout_ms": {
+          "p50": 3.694392,
+          "p95": 3.7375860000000003,
+          "max": 3.9912009999999998
+        },
+        "paint_ms": {
+          "p50": 4.866054,
+          "p95": 4.899032999999999,
+          "max": 4.95798
+        },
+        "total_ms": {
+          "p50": 10.800756999999999,
+          "p95": 11.00497,
+          "max": 11.03231
+        }
+      },
+      "first_paint_wall_ms": {
+        "p50": 19.170811999999998,
+        "p95": 19.724149,
+        "max": 19.853741
+      }
+    },
+    {
+      "scenario": "medium",
+      "fixture": "tests/benchmarks/fixtures/medium.html",
+      "viewport": [
+        800,
+        600
+      ],
+      "samples": 14,
+      "stages": {
+        "parse_ms": {
+          "p50": 7.256157,
+          "p95": 7.290158,
+          "max": 7.326751000000001
+        },
+        "style_ms": {
+          "p50": 17.424619999999997,
+          "p95": 17.621171,
+          "max": 18.101641
+        },
+        "layout_ms": {
+          "p50": 179.999877,
+          "p95": 195.831363,
+          "max": 241.014851
+        },
+        "paint_ms": {
+          "p50": 131.580566,
+          "p95": 133.98902700000002,
+          "max": 149.78171300000002
+        },
+        "total_ms": {
+          "p50": 336.124238,
+          "p95": 352.981279,
+          "max": 398.66393500000004
+        }
+      },
+      "first_paint_wall_ms": {
+        "p50": 420.876033,
+        "p95": 457.250828,
+        "max": 482.40106
+      }
+    },
+    {
+      "scenario": "morning",
+      "fixture": "apps/browser/assets/morning-work/article.html",
+      "viewport": [
+        800,
+        600
+      ],
+      "samples": 14,
+      "stages": {
+        "parse_ms": {
+          "p50": 0.33999300000000005,
+          "p95": 0.377679,
+          "max": 0.432369
+        },
+        "style_ms": {
+          "p50": 9.618701999999999,
+          "p95": 9.932245,
+          "max": 11.832773
+        },
+        "layout_ms": {
+          "p50": 25.329470999999998,
+          "p95": 27.359883,
+          "max": 28.308747
+        },
+        "paint_ms": {
+          "p50": 60.211274,
+          "p95": 65.79817200000001,
+          "max": 66.62536
+        },
+        "total_ms": {
+          "p50": 95.822592,
+          "p95": 102.14187299999999,
+          "max": 104.776645
+        }
+      },
+      "first_paint_wall_ms": {
+        "p50": 184.68768699999998,
+        "p95": 194.406533,
+        "max": 206.913115
+      }
+    }
+  ],
+  "resource": {
+    "method": "vmhwm",
+    "peak_rss_mb": 153.92578125
+  },
+  "startup_ms": 113.03706299999999,
+  "form_input": {
+    "input_to_publish_ms": {
+      "max": 0.071375,
+      "p50": 0.023004,
+      "p95": 0.024556
+    },
+    "iterations": 200,
+    "jank_20ms_ratio": 0.0,
+    "max_counts_per_input": {
+      "full_layout": 0,
+      "paint": 1,
+      "parse": 0,
+      "publish": 1,
+      "style": 0
+    },
+    "platform_class": "linux-x86_64",
+    "profile": "release",
+    "scenario": "retained_fixed_size_input_value",
+    "schema_version": 1
+  }
+}
