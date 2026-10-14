@@ -5,6 +5,7 @@ mod helpers;
 pub(crate) mod painter;
 pub(crate) mod svg_displacement_scale;
 pub(crate) mod svg_filter_chain;
+pub(crate) mod svg_filter_functions;
 pub(crate) mod svg_filter_taint;
 pub(crate) mod svg_shape_disable;
 

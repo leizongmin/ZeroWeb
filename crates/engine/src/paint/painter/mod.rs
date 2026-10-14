@@ -797,6 +797,12 @@ impl Painter {
         // R4274（SVG2 shapes/paths）：零尺寸/空几何形状元素禁用渲染（含 filter 输出）
         // ——序列化源级移除，resvg 无从渲染。kill-switch ZW_SVG_SHAPE_DISABLE=0。
         source = crate::paint::svg_shape_disable::disable_empty_shapes(&source);
+        // R5124（filter-effects-1 §7.1/§7.2）：resvg 0.47 CSS filter 函数形式两缺陷
+        //（region bbox×(-50%..200%) 硬编码 + feDropShadow sRGB 终点二次转换）——
+        // 序列化改写为等价 <filter> 元素（大 region + 手工展开原语链）。置于
+        // taint/shape_disable 之后——内联 url 项取到的是 taint 改写后的原语。
+        // kill-switch ZW_SVG_FILTER_FN=0。
+        source = crate::paint::svg_filter_functions::rewrite_css_function_filters(&source);
         // R4280（SVG2 presentation）：CSS `fill`/`width`/`height` 声明注入序列化
         // style/geometry attr——css-parser 尚无 fill 属性管道（R4280 V1），CSS 声明经
         // style attr 让 usvg 采纳（style > presentation attr，与 CSS 优先级语义一致）；
