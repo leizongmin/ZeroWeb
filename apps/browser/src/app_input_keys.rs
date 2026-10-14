@@ -348,8 +348,25 @@ impl BrowserApp {
                     }
                     return;
                 }
+                // 文本编辑语义优先：Ctrl+Home/End 与纯 Home/End 同为光标移动
+                // （Chrome 地址栏同款；页面无焦点，不透传为文档滚动）。
+                k if key_matches(k, "Home") => {
+                    self.address_bar.move_home(extend);
+                    self.needs_redraw = true;
+                    return;
+                }
+                k if key_matches(k, "End") => {
+                    self.address_bar.move_end(extend);
+                    self.needs_redraw = true;
+                    return;
+                }
                 _ => {}
             }
+            // 其余 Ctrl 组合键透传全局快捷键（Chrome 行为：地址栏聚焦不吞浏览器级
+            // 快捷键，如 Ctrl+Shift+B / Ctrl+D / Ctrl+T / Ctrl+W / Ctrl+J / Ctrl+H /
+            // Ctrl+R / Ctrl+1~9）。
+            self.handle_global_key(key);
+            return;
         }
 
         match key {
@@ -556,8 +573,10 @@ impl BrowserApp {
                     }
                 }
                 "d" | "D" => {
+                    // Chrome 行为：同一页面重复 Ctrl+D 在收藏/取消收藏间切换；
+                    // 地址栏星形图标经 is_current_page_bookmarked 同步实心/空心。
                     let was_visible = self.bookmarks_bar_visible();
-                    self.shell.add_bookmark();
+                    self.shell.toggle_current_bookmark();
                     if self.bookmarks_bar_visible() != was_visible {
                         self.sync_webview_viewport();
                     }

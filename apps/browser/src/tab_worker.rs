@@ -901,7 +901,7 @@ fn tab_worker_main(
                         wv.load_html(&error_page, None);
                     });
                     let _ = msg_tx.send(TabWorkerMessage::LoadError(err));
-                    let _ = msg_tx.send(TabWorkerMessage::Title("加载失败".to_string()));
+                    let _ = msg_tx.send(TabWorkerMessage::Title(pages::error_page_tab_title().to_string()));
                 } else {
                     page_script_runner = tab_scripts::PageScriptRunner::start(&wv, javascript_enabled);
                     // t8m：脚本阶段起点 readyState → "loading"（先于首个 tick 的首条页面脚本）。

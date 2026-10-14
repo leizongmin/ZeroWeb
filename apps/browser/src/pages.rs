@@ -3,20 +3,52 @@
 /// 欢迎页 HTML（编译期嵌入，样式内联于 `<style>`）
 pub const WELCOME_HTML: &str = include_str!("../assets/welcome.html");
 
-/// 生成错误页面 HTML
+/// 错误页标签标题（与错误页主标题同源；Chrome 用错误标题作 tab 标题）。
+pub fn error_page_tab_title() -> &'static str {
+    match zero_browser_shell::UiLanguage::detect_from_env() {
+        zero_browser_shell::UiLanguage::ZhCn => "无法访问此网站",
+        zero_browser_shell::UiLanguage::EnUs => "This site can’t be reached",
+    }
+}
+
+/// 生成错误页面 HTML。
+///
+/// Chrome 风格：标题 + 建议 + 可点击 URL + 重试按钮（重试 = 再次导航到原 URL）。
+/// URL 与错误文字均经 HTML 转义——错误文字可能内嵌远端派生内容，属不可信输入。
 pub fn generate_error_page(url: &str, error: &str) -> String {
+    use zero_browser_shell::UiLanguage;
+    let lang = UiLanguage::detect_from_env();
+    let heading = error_page_tab_title();
+    let (url_label, suggestions, reload_label) = match lang {
+        UiLanguage::ZhCn => ("目标地址", ["检查网络连接。", "检查网址是否正确。"], "重新加载"),
+        UiLanguage::EnUs => (
+            "Address",
+            ["Check your network connection.", "Check the web address."],
+            "Reload",
+        ),
+    };
+    let escaped_url = html_escape(url);
+    let suggestions_html = suggestions
+        .iter()
+        .map(|text| format!("<li style=\"margin:4px 0;\">{text}</li>"))
+        .collect::<String>();
     format!(
         r#"<!DOCTYPE html>
 <html>
-<head><title>加载失败</title></head>
-<body style="font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #fff3f3;">
-  <div style="text-align: center;">
-    <h1 style="color: #c62828;">页面加载失败</h1>
-    <p style="color: #555;">无法加载: <code>{url}</code></p>
-    <p style="color: #888; font-size: 14px;">错误: {error}</p>
+<head><title>{heading}</title></head>
+<body style="font-family: Segoe UI, sans-serif; margin: 0; background: #fff; color: #202124; display: flex; justify-content: center;">
+  <div style="max-width: 600px; margin-top: 12vh;">
+    <h1 style="font-size: 22px; font-weight: 400; color: #202124; margin: 0 0 16px;">{heading}</h1>
+    <p style="font-size: 14px; color: #5f6368; margin: 0 0 16px;">{url_label}: <a href="{href}" style="color: #1a73e8; text-decoration: none;"><code>{escaped_url}</code></a></p>
+    <ul style="font-size: 14px; color: #5f6368; padding-left: 20px; margin: 0 0 24px;">{suggestions_html}</ul>
+    <p style="font-size: 12px; color: #9aa0a6; margin: 0 0 24px;">{error_detail}</p>
+    <a href="{href}" style="display: inline-block; background: #1a73e8; color: #fff; font-size: 14px; padding: 9px 22px; border-radius: 4px; text-decoration: none;">{reload_label}</a>
   </div>
 </body>
-</html>"#
+</html>"#,
+        href = escaped_url,
+        error_detail = html_escape(error),
+        suggestions_html = suggestions_html,
     )
 }
 
@@ -26,6 +58,21 @@ pub fn html_escape(text: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+/// 内部页 query 参数值的 percent-encode（仅保留 RFC 3986 unreserved 字符）。
+///
+/// 历史页删除链接把原 URL 作为 `?url=` 参数携带：`&`/`?`/`=` 等必须转义，
+/// 否则会被当作 query 分隔符截断；解码侧先按 `&`/`=` 切分再 percent-decode。
+pub fn percent_encode_query_value(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(byte as char),
+            other => out.push_str(&format!("%{other:02X}")),
+        }
+    }
+    out
 }
 
 /// 生成「查看源代码」页面。
@@ -408,31 +455,118 @@ fn internal_page_shell(title: &str, body: &str) -> String {
 }
 
 /// 生成历史记录页面 HTML。
-pub fn generate_history_html(history: &zero_browser_shell::History) -> String {
+///
+/// `query` 为地址栏/搜索框提交的过滤词（`zero://history?q=…`）；非空时按 URL
+/// 或标题子串过滤（`History::search`，大小写不敏感）。每条记录附带单条删除链接
+///（`zero://history/remove?url=…`），删除后回跳时保留当前过滤词。
+pub fn generate_history_html(history: &zero_browser_shell::History, query: Option<&str>) -> String {
     use zero_browser_shell::UiLanguage;
     let lang = UiLanguage::detect_from_env();
-    let (title, empty, clear_label) = match lang {
-        UiLanguage::ZhCn => ("历史记录 — ZeroBrowser", "暂无历史记录。", "清除历史"),
-        UiLanguage::EnUs => ("History — ZeroBrowser", "No history yet.", "Clear History"),
+    let (title, empty, clear_label, search_placeholder, search_label, delete_label, no_match) = match lang {
+        UiLanguage::ZhCn => (
+            "历史记录 — ZeroBrowser",
+            "暂无历史记录。",
+            "清除历史",
+            "搜索历史记录",
+            "搜索",
+            "删除",
+            "没有匹配的历史记录。",
+        ),
+        UiLanguage::EnUs => (
+            "History — ZeroBrowser",
+            "No history yet.",
+            "Clear History",
+            "Search history",
+            "Search",
+            "Delete",
+            "No matching history entries.",
+        ),
+    };
+    let active_query = query.unwrap_or("").trim();
+    let entries: Vec<&zero_browser_shell::HistoryEntry> = if active_query.is_empty() {
+        history.iter().take(100).collect()
+    } else {
+        history.search(active_query).take(100).collect()
+    };
+    // 删除链接回跳时携带当前过滤词，删除一条后仍停留在同一过滤视图。
+    let remove_suffix = if active_query.is_empty() {
+        String::new()
+    } else {
+        format!("&q={}", percent_encode_query_value(active_query))
     };
     let mut rows = String::new();
-    for entry in history.iter().take(100) {
+    for entry in entries {
         rows.push_str(&format!(
-            r#"<li style="margin:8px 0;"><a href="{url}" style="color:#1a73e8;text-decoration:none;">{label}</a><br><span style="font-size:12px;color:#80868b;">{url}</span></li>"#,
+            r#"<li style="margin:8px 0;"><a href="{href}" style="color:#1a73e8;text-decoration:none;">{label}</a><br><span style="font-size:12px;color:#80868b;">{url}</span> <a href="zero://history/remove?url={encoded}{remove_suffix}" style="font-size:12px;color:#d93025;text-decoration:none;margin-left:8px;">{delete_label}</a></li>"#,
+            href = html_escape(entry.url()),
             label = html_escape(entry.title()),
             url = html_escape(entry.url()),
+            encoded = percent_encode_query_value(entry.url()),
         ));
     }
+    let search_box = format!(
+        r#"<form action="zero://history" method="get" style="margin:0 0 16px;">
+  <input type="text" name="q" value="{value}" placeholder="{search_placeholder}" style="font-size:14px;padding:6px 10px;border:1px solid #dadce0;border-radius:4px;width:320px;">
+  <button type="submit" style="font-size:14px;padding:6px 16px;margin-left:8px;background:#1a73e8;color:#fff;border:none;border-radius:4px;">{search_label}</button>
+  <a href="zero://history/clear" style="margin-left:12px;color:#1a73e8;text-decoration:none;font-size:13px;">{clear_all}</a>
+</form>"#,
+        value = html_escape(active_query),
+        clear_all = clear_label,
+    );
     let body = if rows.is_empty() {
-        format!(
-            r#"<p style="color:#666;">{empty}</p><p><a href="zero://history/clear" style="color:#1a73e8;text-decoration:none;">{clear_label}</a></p>"#
-        )
+        let empty_text = if active_query.is_empty() { empty } else { no_match };
+        format!(r#"{search_box}<p style="color:#666;">{empty_text}</p>"#)
     } else {
-        format!(
-            r#"<p><a href="zero://history/clear" style="color:#1a73e8;text-decoration:none;">{clear_label}</a></p><ul style="padding-left:20px;">{rows}</ul>"#
-        )
+        format!(r#"{search_box}<ul style="padding-left:20px;">{rows}</ul>"#)
     };
     internal_page_shell(title, &body)
+}
+
+/// 生成新标签页 HTML。
+///
+/// 在静态欢迎页模板基础上，把历史记录中最新的站点（按 host 去重、时间倒序，
+/// 最多 5 个，仅 http/https）注入 Explore 区域上方；无历史时保持原模板不变，
+/// 默认快捷方式始终保留在下方。
+pub fn generate_welcome_html(history: &zero_browser_shell::History) -> String {
+    let mut seen_hosts = std::collections::HashSet::new();
+    let mut tiles = String::new();
+    for entry in history.iter() {
+        let url = entry.url();
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            continue;
+        }
+        let Some(host) = url_host(url) else {
+            continue;
+        };
+        if !seen_hosts.insert(host) {
+            continue;
+        }
+        let host_display = host.to_string();
+        let title = entry.title().trim();
+        let title = if title.is_empty() { &host_display } else { title };
+        tiles.push_str(&format!(
+            r#"<a class="link-tile" href="{href}"><span class="link-title">{label}</span><span class="link-sub">{sub}</span></a>"#,
+            href = html_escape(url),
+            label = html_escape(title),
+            sub = html_escape(&host_display),
+        ));
+        if seen_hosts.len() >= 5 {
+            break;
+        }
+    }
+    let recent = if tiles.is_empty() {
+        String::new()
+    } else {
+        format!(r#"<div class="links" style="margin-bottom:14px;">{tiles}</div>"#)
+    };
+    WELCOME_HTML.replace("<!-- recent-sites -->", &recent)
+}
+
+/// 提取 http/https URL 的 host 段（含端口；无 `://` 前缀或空 host 返回 None）。
+fn url_host(url: &str) -> Option<&str> {
+    let rest = url.split_once("://")?.1;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    if authority.is_empty() { None } else { Some(authority) }
 }
 
 /// 生成下载管理页面 HTML。
@@ -558,11 +692,92 @@ mod tests {
     #[test]
     fn generate_history_html_includes_clear_link() {
         let history = zero_browser_shell::History::default();
-        let html = generate_history_html(&history);
+        let html = generate_history_html(&history, None);
         assert!(html.contains("zero://history/clear"));
         // 标题随 UiLanguage::detect_from_env() 变化（EnUs "History" / ZhCn "历史"），
         // 须同时接受两种 locale（与 generate_downloads_html_renders_empty_state 同模式）。
         assert!(html.contains("History") || html.contains("历史"));
+    }
+
+    #[test]
+    fn generate_history_html_lists_entries_with_delete_links() {
+        let mut history = zero_browser_shell::History::default();
+        history.record("https://example.com/page?a=1&b=2", "Example");
+        let html = generate_history_html(&history, None);
+        // 单条删除链接：原 URL 作为 query 值时 `&`/`?`/`=` 必须已转义。
+        assert!(html.contains("zero://history/remove?url="));
+        assert!(html.contains("a%3D1%26b%3D2"));
+        // 搜索框提交回 zero://history。
+        assert!(html.contains(r#"action="zero://history""#));
+        assert!(html.contains(r#"name="q""#));
+    }
+
+    #[test]
+    fn generate_history_html_filters_by_query() {
+        let mut history = zero_browser_shell::History::default();
+        history.record("https://example.com/a", "Example");
+        history.record("https://www.rust-lang.org/", "Rust Blog");
+        let html = generate_history_html(&history, Some("rust"));
+        assert!(html.contains("rust-lang.org"));
+        assert!(
+            !html.contains("example.com/a"),
+            "non-matching entry must be filtered out"
+        );
+        // 过滤视图下的删除链接保留过滤词。
+        assert!(html.contains("&q=rust"));
+    }
+
+    #[test]
+    fn generate_error_page_has_retry_and_escaped_error() {
+        let html = generate_error_page("http://127.0.0.1:9/x", "<script>alert(1)</script>");
+        // 重试按钮与可点击 URL 均指向原 URL。
+        assert_eq!(html.matches(r#"href="http://127.0.0.1:9/x""#).count(), 2);
+        // 错误文字（远端派生）必须转义，不得注入标签。
+        assert!(!html.contains("<script>alert(1)</script>"));
+        assert!(html.contains("&lt;script&gt;"));
+        // 标题与 tab 标题同源。
+        assert!(html.contains(error_page_tab_title()));
+    }
+
+    #[test]
+    fn generate_welcome_html_injects_recent_sites_deduped_by_host() {
+        let mut history = zero_browser_shell::History::default();
+        history.record("https://example.com/second", "Example Second");
+        history.record("https://example.com/first", "Example First");
+        history.record("https://www.rust-lang.org/", "Rust");
+        history.record("zero://settings", "Settings");
+        let html = generate_welcome_html(&history);
+        // 同 host 去重：保留时间最新的一条（record 前插，最新在前）。
+        assert!(html.contains("https://example.com/first"));
+        assert!(!html.contains("https://example.com/second"));
+        assert!(html.contains("https://www.rust-lang.org/"));
+        // 默认快捷方式仍保留在下方。
+        assert!(html.contains("https://github.com/leizongmin/ZeroWeb"));
+    }
+
+    #[test]
+    fn generate_welcome_html_without_history_keeps_template() {
+        let history = zero_browser_shell::History::default();
+        let html = generate_welcome_html(&history);
+        // 无历史时占位符替换为空串，除占位符注释外与原模板逐字一致。
+        assert_eq!(html, WELCOME_HTML.replace("<!-- recent-sites -->", ""));
+    }
+
+    #[test]
+    fn percent_encode_query_value_escapes_delimiters() {
+        assert_eq!(
+            percent_encode_query_value("http://127.0.0.1:9/page?a=1&b=2"),
+            "http%3A%2F%2F127.0.0.1%3A9%2Fpage%3Fa%3D1%26b%3D2"
+        );
+        assert_eq!(percent_encode_query_value("safe-._~"), "safe-._~");
+    }
+
+    #[test]
+    fn url_host_extracts_authority() {
+        assert_eq!(url_host("https://example.com/a?b=c"), Some("example.com"));
+        assert_eq!(url_host("http://127.0.0.1:18080/x"), Some("127.0.0.1:18080"));
+        assert_eq!(url_host("zero://newtab"), Some("newtab"));
+        assert_eq!(url_host("https:///path-only"), None);
     }
 
     #[test]
