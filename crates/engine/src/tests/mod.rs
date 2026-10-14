@@ -1,5 +1,6 @@
 //! engine 模块的集成测试。
 
+mod badge_pill_background_tests;
 mod color;
 mod composite;
 mod dirty;

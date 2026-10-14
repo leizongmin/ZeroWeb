@@ -1371,6 +1371,7 @@ return 'navigated';
     /// t3-pd6：读取 shim 活值构造隐式表单提交 GET URL。
     /// 从 shim 读 target 的 name/value + enclosing form 的 action，
     /// 拼接 `action?name=value` 返回。target 不在表单中 → None。
+    #[allow(dead_code)] // Enter 提交链路改造中间态（PR#158）
     fn build_implicit_submit_url(&mut self, selector: &str) -> Result<Option<String>, String> {
         // 1) 找 enclosing form 的 action
         let Some(form_sel) = zero_engine::enclosing_form_selector(&self.cached_html, selector) else {
@@ -1394,8 +1395,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
 }})()"
         );
         let info_json = self.js_worker.execute_script_direct(&info_script)?;
-        let parsed: serde_json::Value = serde_json::from_str(info_json.trim())
-            .unwrap_or(serde_json::Value::Null);
+        let parsed: serde_json::Value = serde_json::from_str(info_json.trim()).unwrap_or(serde_json::Value::Null);
         let name = parsed["name"].as_str().unwrap_or("").to_string();
         let val = parsed["val"].as_str().unwrap_or("").to_string();
         let form_action = parsed["action"].as_str().unwrap_or(&action).to_string();
@@ -1403,13 +1403,16 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             return Ok(None);
         }
         // 3) 构造 URL：action + separator + name=val（UTF-16 安全的 encode）
-        let encoded: String = val.bytes().map(|b| {
-            if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'~' {
-                (b as char).to_string()
-            } else {
-                format!("%{:02X}", b)
-            }
-        }).collect();
+        let encoded: String = val
+            .bytes()
+            .map(|b| {
+                if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'~' {
+                    (b as char).to_string()
+                } else {
+                    format!("%{:02X}", b)
+                }
+            })
+            .collect();
         let sep = if form_action.contains('?') { '&' } else { '?' };
         let url = if name.is_empty() {
             format!("{form_action}{sep}{encoded}")
@@ -1419,6 +1422,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         Ok(Some(url))
     }
 
+    #[allow(dead_code)] // Enter 提交链路改造中间态（PR#158）
     fn submit_form_on_enter_at(&mut self, selector: &str) -> Result<(), String> {
         let r = self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::Submit)?;
         // t3-pd6：Submit 的 Navigate 效果含 SERP URL——推入 pending_navigations
