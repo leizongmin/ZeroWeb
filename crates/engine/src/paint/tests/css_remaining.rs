@@ -1,5 +1,8 @@
 //! CSS contain / unicode-bidi / box-decoration-break / overflow-wrap / text-align-last /
 //! break / scroll-area / scroll-snap-stop / container-type 渲染指示器单元测试。
+//!
+//! 指示器在生产渲染中默认关闭（`Painter::skip_indicators` 默认 true），统一在
+//! `paint_with_style` 辅助函数中显式置 false 开启。
 
 #![allow(clippy::field_reassign_with_default)]
 
@@ -60,6 +63,7 @@ fn paint_with_style(style: &ComputedStyle) -> Painter {
     styles.insert(elem, style.clone());
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
     painter
 }

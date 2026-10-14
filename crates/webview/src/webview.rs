@@ -653,6 +653,9 @@ pub struct WebView {
     prefers_color_scheme: PrefersColorSchemeValue,
     /// 渲染媒体类型（DC-12 @media print/screen；R1992）。默认 `Screen` = 零行为变更。
     media_type: MediaType,
+    /// 是否跳过调试属性指示器（R1996）。默认 true：指示器不属于网页内容。
+    /// 持久化到字段，resize 重建 pipeline 后按下推，避免设置丢失。
+    skip_indicators: bool,
     /// 安全上下文（HSTS + 混合内容 + CSP）。
     security_context: SecurityContext,
 }
@@ -673,10 +676,9 @@ impl WebView {
             std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
         pipeline.set_canvas_registry(Some(canvas_registry.clone()));
         // R1996：调试属性指示器（border-collapse/border-spacing/break/overflow-wrap 等，
-        // 绘制于元素边角的彩色标记）默认**跳过**——WebView 是生产嵌入 API，不应默认显示
-        // 调试标记（与 reftest/product-smoke 的 skip_indicators=true 一致；旧默认 false 致
-        // zero-browser 产品页含 table/direction 等属性的元素显示调试标记）。需要指示器的
-        // 嵌入者（dev 工具）可调 `set_skip_indicators(false)` 重新开启。
+        // 绘制于元素边角的彩色标记）默认**跳过**——WebView 是生产嵌入 API，不应显示
+        // 调试标记。需要指示器的嵌入者（dev 工具）可调 `set_skip_indicators(false)`
+        // 开启；该选择持久化在 WebView 字段中，resize 重建 pipeline 后会重新下推。
         pipeline.set_skip_indicators(true);
         let http_client = match config.http_timeout_secs {
             Some(secs) => HttpClient::with_timeout(secs),
@@ -788,6 +790,7 @@ impl WebView {
             font_metric_map: HashMap::new(),
             prefers_color_scheme: PrefersColorSchemeValue::Light,
             media_type: MediaType::Screen,
+            skip_indicators: true,
             security_context: SecurityContext::new(),
         }
     }
@@ -2089,6 +2092,7 @@ impl WebView {
         self.config.width = width;
         self.config.height = height;
         self.pipeline = RenderPipeline::new(width as f32, height as f32);
+        self.pipeline.set_skip_indicators(self.skip_indicators);
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
         self.pipeline.set_document_url(doc_url.as_deref());
@@ -2140,8 +2144,10 @@ impl WebView {
     /// 设置是否跳过调试属性指示器（R1996）。
     ///
     /// 默认 `true`（跳过，生产嵌入干净渲染）。dev 工具需要可视化 CSS 属性指示器
-    ///（border-collapse/break/overflow-wrap 等元素边角标记）时可传 `false` 重新开启。
+    ///（border-collapse/break/overflow-wrap 等元素边角标记）时可传 `false` 开启；
+    /// 设置持久化，resize 重建 pipeline 后仍然生效。
     pub fn set_skip_indicators(&mut self, skip: bool) {
+        self.skip_indicators = skip;
         self.pipeline.set_skip_indicators(skip);
     }
 

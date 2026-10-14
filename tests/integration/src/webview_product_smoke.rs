@@ -478,6 +478,43 @@ fn webview_skips_debug_indicators_by_default() {
     );
 }
 
+/// `resize` 会重建内部 `RenderPipeline`，重建后 `skip_indicators` 选择必须保持：
+/// 默认仍跳过指示器；显式 `set_skip_indicators(false)` 开启后也不被重置。
+/// 回归背景：resize 路径曾漏下推该设置，重建后 pipeline 回到旧默认（绘制指示器），
+/// 导致浏览器页面长期显示 border-collapse 橙色双线等调试标记。
+#[test]
+fn skip_indicators_persists_across_resize() {
+    // direction:rtl 触发 paint_direction_indicator（箭头 3 stroke + 标记方块 1 fill）。
+    let html = concat!(
+        "<html><head><style>",
+        ".b { direction: rtl; }",
+        "</style></head><body><div class=\"b\">hello indicator</div></body></html>"
+    );
+
+    // 默认跳过：resize（尺寸不同才会真正重建 pipeline）后仍然干净。
+    let mut wv_default = create_webview();
+    wv_default.resize(900, 700);
+    let r_default_resized = wv_default.load_html(html, None);
+
+    let mut wv_enabled = create_webview();
+    wv_enabled.set_skip_indicators(false);
+    wv_enabled.resize(900, 700);
+    let r_enabled_resized = wv_enabled.load_html(html, None);
+
+    assert!(
+        r_enabled_resized.primitives().fills.len() > r_default_resized.primitives().fills.len(),
+        "resize 后 skip=false 仍应绘制指示器（fills 更多）；got enabled={} vs default={}",
+        r_enabled_resized.primitives().fills.len(),
+        r_default_resized.primitives().fills.len()
+    );
+    assert!(
+        r_enabled_resized.primitives().strokes.len() > r_default_resized.primitives().strokes.len(),
+        "resize 后 skip=false 仍应绘制方向箭头 strokes；got enabled={} vs default={}",
+        r_enabled_resized.primitives().strokes.len(),
+        r_default_resized.primitives().strokes.len()
+    );
+}
+
 // ── Phase 4: WASM 执行验证 ──
 
 /// R1997：inline `page-break-before:always`（**合法** CSS2）经 inline style 正确 populate

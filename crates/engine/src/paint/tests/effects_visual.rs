@@ -1026,6 +1026,7 @@ fn test_paint_direction_ltr_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // ltr 不应产生任何 stroke
@@ -1045,6 +1046,7 @@ fn test_paint_direction_rtl_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -1068,6 +1070,7 @@ fn test_paint_tab_size_default_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     assert!(painter.primitives().fills.is_empty(), "默认 tab-size 8 不应渲染指示器");
@@ -1086,6 +1089,7 @@ fn test_paint_tab_size_four() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // 应产生 4 个 fill（每个 tab 一个小方块）
@@ -1105,6 +1109,7 @@ fn test_paint_tab_size_zero() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     assert!(painter.primitives().fills.is_empty(), "tab-size:0 不应渲染指示器");
@@ -1125,6 +1130,7 @@ fn test_paint_border_collapse_separate_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     assert!(
@@ -1146,6 +1152,7 @@ fn test_paint_border_collapse_collapse_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // 应产生 2 条 stroke（双线标记）
@@ -1167,6 +1174,7 @@ fn test_paint_table_layout_auto_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     assert!(painter.primitives().fills.is_empty(), "auto 不应渲染表格布局指示器");
@@ -1185,6 +1193,7 @@ fn test_paint_table_layout_fixed_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // 应产生 ≥4 个 fill（网格外框 + 2 竖线 + 1 横线）
@@ -1206,6 +1215,7 @@ fn test_paint_font_variant_numeric_normal_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     assert!(painter.primitives().fills.is_empty(), "normal 不应渲染数字变体指示器");
@@ -1224,6 +1234,7 @@ fn test_paint_font_variant_numeric_tabular_nums() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // 应产生 2 个 fill（背景 + 标记方块）
@@ -1246,6 +1257,7 @@ fn test_paint_font_variant_numeric_slashed_zero() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     assert!(painter.primitives().fills.len() >= 2, "slashed-zero 应渲染指示器");
@@ -1264,6 +1276,7 @@ fn test_paint_font_variant_numeric_diagonal_fractions() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     assert!(painter.primitives().fills.len() >= 2, "diagonal-fractions 应渲染指示器");
@@ -1305,6 +1318,8 @@ fn test_paint_clip_path_polygon_rewrite_z_order_inplace() {
     styles.insert(child_elem, child_style);
 
     let mut painter = Painter::new();
+    // 本用例的 5-op 断言把 3 条 clip-path 指示器 stroke 计入既有行为，显式开启指示器。
+    painter.skip_indicators = false;
     painter.paint(&parent, &styles, None);
 
     let prims = painter.primitives();

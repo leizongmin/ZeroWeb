@@ -1,4 +1,7 @@
 //! CSS accent-color / caret-color / scrollbar-width / appearance 渲染测试。
+//!
+//! 指示器在生产渲染中默认关闭（`Painter::skip_indicators` 默认 true），本模块
+//! 每个用例显式置 false 开启，以验证对应 CSS 值确实会生成指示器。
 
 #![allow(clippy::field_reassign_with_default)]
 
@@ -102,6 +105,7 @@ fn test_accent_color_auto_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // accent-color: Auto 不应生成额外图元
@@ -128,6 +132,7 @@ fn test_accent_color_custom_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -151,6 +156,7 @@ fn test_accent_color_named_color() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -174,6 +180,7 @@ fn test_caret_color_auto_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -194,6 +201,7 @@ fn test_caret_color_custom_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -219,6 +227,7 @@ fn test_caret_color_position_respects_border() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -247,6 +256,7 @@ fn test_scrollbar_width_none_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -270,6 +280,7 @@ fn test_scrollbar_width_auto_generates_track() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -290,6 +301,7 @@ fn test_scrollbar_width_thin_generates_thin_track() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -311,6 +323,7 @@ fn test_scrollbar_width_no_overflow_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -335,6 +348,7 @@ fn test_appearance_none_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // appearance: none 不应生成原生控件外观
@@ -355,6 +369,7 @@ fn test_appearance_checkbox_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, Some(&doc));
 
     let prims = painter.primitives();
@@ -380,6 +395,7 @@ fn test_appearance_button_does_not_cover_standard_paint() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -401,6 +417,7 @@ fn test_appearance_textfield_generates_border() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -427,6 +444,7 @@ fn test_appearance_radio_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     doc.set_attribute(elem, "checked", "");
     painter.paint(&layout, &styles, Some(&doc));
 
@@ -453,6 +471,7 @@ fn test_appearance_13px_radio_floors_fractional_y() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     doc.set_attribute(elem, "checked", "");
     painter.paint(&layout, &styles, Some(&doc));
 
@@ -478,6 +497,7 @@ fn test_appearance_with_accent_color_override() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     doc.set_attribute(elem, "checked", "");
     painter.paint(&layout, &styles, Some(&doc));
 
@@ -495,6 +515,7 @@ fn test_appearance_with_accent_color_override() {
 
     // Chrome 真值（R3877，2026-08-31 GUI Chrome 151 探针）：焦点态不调暗 accent 填充。
     let mut focused_painter = Painter::new();
+    focused_painter.skip_indicators = false;
     focused_painter.set_focused_node(Some(elem));
     focused_painter.paint(&layout, &styles, Some(&doc));
     assert!(
@@ -523,6 +544,7 @@ fn test_accent_color_no_node_id_no_panic() {
     let styles = HashMap::new();
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // 不应崩溃
@@ -537,6 +559,7 @@ fn test_scrollbar_no_node_id_no_panic() {
     let styles = HashMap::new();
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // 不应崩溃

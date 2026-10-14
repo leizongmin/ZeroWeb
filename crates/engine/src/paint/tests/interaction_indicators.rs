@@ -1,5 +1,8 @@
 //! CSS cursor / image-rendering / isolation / will-change / pointer-events /
 //! user-select / overscroll-behavior / touch-action 渲染指示器测试。
+//!
+//! 指示器在生产渲染中默认关闭（`Painter::skip_indicators` 默认 true），本模块
+//! 每个用例显式置 false 开启，以验证对应 CSS 值确实会生成指示器。
 
 #![allow(clippy::field_reassign_with_default)]
 
@@ -65,6 +68,7 @@ fn test_cursor_auto_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // cursor: Auto 不应生成指示器（4×4 方块在右上角附近）
@@ -90,6 +94,7 @@ fn test_cursor_pointer_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -112,6 +117,7 @@ fn test_cursor_crosshair_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -133,6 +139,7 @@ fn test_cursor_not_allowed_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -155,6 +162,7 @@ fn test_cursor_none_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -179,6 +187,7 @@ fn test_image_rendering_auto_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -202,6 +211,7 @@ fn test_image_rendering_pixelated_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -224,6 +234,7 @@ fn test_image_rendering_crisp_edges_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -247,6 +258,7 @@ fn test_image_rendering_smooth_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -270,6 +282,7 @@ fn test_isolation_auto_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -292,6 +305,7 @@ fn test_isolation_isolate_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -331,6 +345,7 @@ fn test_will_change_auto_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -353,6 +368,7 @@ fn test_will_change_scroll_position_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -376,6 +392,7 @@ fn test_will_change_custom_property_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -402,6 +419,7 @@ fn test_will_change_multiple_idents_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -425,6 +443,7 @@ fn test_pointer_events_auto_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -447,6 +466,7 @@ fn test_pointer_events_none_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -476,6 +496,7 @@ fn test_user_select_auto_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -501,6 +522,7 @@ fn test_user_select_none_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -535,6 +557,7 @@ fn test_overscroll_behavior_auto_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -556,6 +579,7 @@ fn test_overscroll_behavior_contain_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -578,6 +602,7 @@ fn test_overscroll_behavior_none_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -601,6 +626,7 @@ fn test_touch_action_auto_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -622,6 +648,7 @@ fn test_touch_action_none_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -648,6 +675,7 @@ fn test_touch_action_pan_x_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -676,6 +704,7 @@ fn test_multiple_indicators_together() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -727,6 +756,7 @@ fn test_all_default_no_extra_primitives() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     let prims_before = painter.primitives().fills.len();
     painter.paint(&layout, &styles, None);
     let prims = painter.primitives();

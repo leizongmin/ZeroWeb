@@ -2,6 +2,9 @@
 //!
 //! 覆盖 scroll-snap、perspective、backface-visibility、transform-style、
 //! border-spacing、caption-side 指示器渲染。
+//!
+//! 指示器在生产渲染中默认关闭（`Painter::skip_indicators` 默认 true），本模块
+//! 每个用例显式置 false 开启，以验证对应 CSS 值确实会生成指示器。
 
 #![allow(clippy::field_reassign_with_default)]
 
@@ -74,6 +77,7 @@ fn test_scroll_snap_mandatory_x_axis() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // Mandatory X 应在底部生成水平吸附线
@@ -101,6 +105,7 @@ fn test_scroll_snap_proximity_y_axis() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // Proximity Y 应在右侧生成垂直吸附线
@@ -128,6 +133,7 @@ fn test_scroll_snap_both_axes() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // Both 轴应生成水平和垂直两条线
@@ -160,6 +166,7 @@ fn test_scroll_snap_none_no_render() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // None strictness 不应有 2px 高/宽的吸附线
@@ -188,6 +195,7 @@ fn test_scroll_snap_align_start_point() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // Start align 应在左上角生成 4×4 小方块
@@ -215,6 +223,7 @@ fn test_scroll_snap_align_center_point() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -242,6 +251,7 @@ fn test_perspective_indicator_renders() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // perspective 应生成消失点标记（1×1 或 1×6 等 fill）
@@ -262,6 +272,7 @@ fn test_perspective_indicator_renders_relative_length() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -284,6 +295,7 @@ fn test_perspective_zero_no_render() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // perspective=0 只应有背景 fill，无消失点标记
@@ -306,6 +318,7 @@ fn test_backface_visibility_hidden_renders() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // hidden 应生成虚线边框（多条短 fill）
@@ -328,6 +341,7 @@ fn test_transform_style_preserve3d_renders() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // preserve-3d 应生成 3D 立方体图标（3 fills：正面+顶面+右面）
@@ -354,6 +368,7 @@ fn test_border_spacing_renders() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // border-spacing 应生成 2 条间距标记线（1px 高的 + 1px 宽的）
@@ -386,6 +401,7 @@ fn test_border_spacing_zero_no_render() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -407,6 +423,7 @@ fn test_caption_side_bottom_renders() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // bottom 应生成底部指示条（y > 50）
@@ -431,6 +448,7 @@ fn test_caption_side_top_is_default_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // Top 是默认值，不应额外渲染指示条

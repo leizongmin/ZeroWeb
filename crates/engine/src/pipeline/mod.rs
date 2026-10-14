@@ -183,7 +183,8 @@ pub struct RenderPipeline {
     /// R4241/R4353 模式）——paint 期经 doc 解析 selector → NodeId，消费 ::selection
     /// 伪样式绘制选中行高亮与字形色。
     text_selections: Vec<(String, usize, usize)>,
-    /// 是否跳过属性指示器（用于 reftest 精确像素对比）。
+    /// 是否跳过属性指示器（默认跳过：指示器是调试标记，不属于网页内容；
+    /// reftest 像素对比与生产渲染均保持关闭，仅指示器专项测试显式开启）。
     pub(crate) skip_indicators: bool,
     /// 图像固有尺寸缓存（image_key hash → (width, height)）。
     pub(crate) image_sizes: HashMap<u64, (f32, f32)>,
@@ -417,7 +418,7 @@ impl RenderPipeline {
             cached_doc: None,
             cached_css_text: None,
             cached_stylesheets: Vec::new(),
-            skip_indicators: false,
+            skip_indicators: true,
             image_sizes: HashMap::new(),
             image_solid_colors: HashMap::new(),
             image_natural_sizes: HashMap::new(),
@@ -454,8 +455,9 @@ impl RenderPipeline {
 
     /// 设置是否跳过属性指示器。
     ///
-    /// 用于 reftest 精确像素对比——指示器是绘制在元素边角的调试标记，
-    /// 会干扰像素级对比。
+    /// 指示器是绘制在元素边角的调试标记（如 border-collapse 橙色双线），
+    /// 不属于网页内容，新建 pipeline 默认跳过（生产/reftest 干净渲染）；
+    /// 调试可视化或指示器专项测试可调 `set_skip_indicators(false)` 显式开启。
     pub fn set_skip_indicators(&mut self, skip: bool) {
         self.skip_indicators = skip;
     }

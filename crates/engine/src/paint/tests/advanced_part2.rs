@@ -1013,7 +1013,7 @@ fn test_paint_border_collapse_halves_thickness() {
     let mut painter = Painter::new();
     painter.paint(&layout, &styles, None);
 
-    // 背景填充 + 4 个边框 stroke + 2 个 border-collapse 指示器 stroke
+    // 背景填充 + 4 个边框 stroke（指示器默认关闭，不计入 stroke 数）
     assert!(!painter.primitives().fills.is_empty(), "collapse 边框应产生背景 fill");
     assert!(
         painter.primitives().strokes.len() >= 4,

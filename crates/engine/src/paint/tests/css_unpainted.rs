@@ -64,6 +64,7 @@ fn test_scrollbar_gutter_auto_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     // scrollbar-gutter: auto 不应生成 gutter 指示器
@@ -87,6 +88,7 @@ fn test_scrollbar_gutter_stable_generates_fill() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -110,6 +112,7 @@ fn test_scrollbar_gutter_stable_both_edges_generates_two() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -137,6 +140,7 @@ fn test_scrollbar_gutter_thin_scrollbar_width() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -161,6 +165,7 @@ fn test_background_attachment_scroll_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -183,6 +188,7 @@ fn test_background_attachment_fixed_generates_pin() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -206,6 +212,7 @@ fn test_background_attachment_local_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -230,6 +237,7 @@ fn test_hyphens_auto_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -252,6 +260,7 @@ fn test_hyphens_none_no_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
@@ -377,6 +386,7 @@ fn test_scrollbar_gutter_no_node_id_no_panic() {
     let styles = HashMap::new();
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
     // 不应崩溃
 }
@@ -387,6 +397,7 @@ fn test_background_attachment_no_node_id_no_panic() {
     let styles = HashMap::new();
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
     // 不应崩溃
 }
@@ -397,6 +408,7 @@ fn test_hyphens_no_node_id_no_panic() {
     let styles = HashMap::new();
 
     let mut painter = Painter::new();
+    painter.skip_indicators = false;
     painter.paint(&layout, &styles, None);
     // 不应崩溃
 }

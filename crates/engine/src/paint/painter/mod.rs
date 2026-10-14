@@ -90,10 +90,11 @@ pub struct Painter {
     /// 模式，ImageData::solid_color）；clip:text url 背景层恒色性判定消费（css-backgrounds-4
     /// §background-clip:text）。未填/未命中 → url 层恒色性不可判 → v1.5 禁用（现状）。
     pub image_solid_colors: HashMap<u64, [u8; 4]>,
-    /// 是否跳过属性指示器（用于 reftest 精确对比）。
+    /// 是否跳过属性指示器（默认跳过）。
     ///
     /// 指示器是绘制在元素边角的调试标记（如 border-collapse 橙色双线），
-    /// 会干扰像素级 reftest 对比。设为 true 时跳过所有指示器。
+    /// 不属于网页内容，生产渲染必须默认关闭；仅调试可视化或指示器专项测试
+    /// 显式设为 false 时才绘制。设为 true 时跳过所有指示器。
     pub skip_indicators: bool,
     /// 图像固有尺寸缓存（image_key hash → (width, height)）。
     ///
@@ -592,7 +593,7 @@ impl Painter {
             counters: HashMap::new(),
             bg_clip_text_color: Vec::new(),
             image_solid_colors: HashMap::new(),
-            skip_indicators: false,
+            skip_indicators: true,
             image_sizes: HashMap::new(),
             image_no_ratio_keys: std::collections::HashMap::new(),
             image_ratio_keys: std::collections::HashMap::new(),

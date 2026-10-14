@@ -436,11 +436,12 @@ and newlines within the constrained box.</div>
 </body></html>"#
                 .to_string(),
             css: String::new(),
+            // gutter 仅在调试指示器开启时产生 fill；生产路径默认关闭指示器，
+            // 指示器本体由引擎 paint 单测显式开启覆盖，这里只验证正常渲染出图。
             assertions: vec![
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
                 "nonzero_primitives".to_string(),
-                "has_fill_primitives".to_string(),
             ],
         },
 
@@ -455,10 +456,11 @@ and newlines within the constrained box.</div>
 </body></html>"#
                 .to_string(),
             css: String::new(),
+            // 两侧 gutter fill 仅来自调试指示器，生产路径默认关闭（见引擎 paint 单测）。
             assertions: vec![
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
-                "fill_count_ge:2".to_string(),
+                "nonzero_primitives".to_string(),
             ],
         },
 
@@ -473,11 +475,11 @@ and newlines within the constrained box.</div>
 </body></html>"#
                 .to_string(),
             css: String::new(),
+            // 固定背景图钉 fill 仅来自调试指示器，生产路径默认关闭（见引擎 paint 单测）。
             assertions: vec![
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
                 "nonzero_primitives".to_string(),
-                "has_fill_primitives".to_string(),
             ],
         },
 
@@ -492,11 +494,11 @@ and newlines within the constrained box.</div>
 </body></html>"#
                 .to_string(),
             css: String::new(),
+            // hyphens 横线 fill 仅来自调试指示器，生产路径默认关闭（见引擎 paint 单测）。
             assertions: vec![
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
                 "nonzero_primitives".to_string(),
-                "has_fill_primitives".to_string(),
             ],
         },
 
@@ -548,10 +550,11 @@ and newlines within the constrained box.</div>
 </body></html>"#
                 .to_string(),
             css: String::new(),
+            // gutter fill 仅来自调试指示器，生产路径默认关闭（见引擎 paint 单测）。
             assertions: vec![
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
-                "has_fill_primitives".to_string(),
+                "nonzero_primitives".to_string(),
             ],
         },
 
