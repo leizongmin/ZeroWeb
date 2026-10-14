@@ -200,7 +200,10 @@ struct CrcState {
 
 impl CrcState {
     fn new() -> Self {
-        CrcState { crc: flate2::Crc::new(), isize: 0 }
+        CrcState {
+            crc: flate2::Crc::new(),
+            isize: 0,
+        }
     }
     fn update(&mut self, data: &[u8]) {
         self.crc.update(data);
@@ -217,7 +220,9 @@ struct InflateCore {
 impl InflateCore {
     fn new() -> Self {
         // 裸 deflate——zlib/gzip 帧校验由本模块手工承接（miniz wrapper 校验不完整）。
-        InflateCore { dz: Decompress::new(false) }
+        InflateCore {
+            dz: Decompress::new(false),
+        }
     }
 
     fn feed(&mut self, input: &[u8], out: &mut Vec<u8>) -> Result<(bool, usize), String> {
@@ -269,7 +274,10 @@ struct DeflateDec {
 
 impl DeflateDec {
     fn new() -> Self {
-        DeflateDec { core: InflateCore::new(), stage: DeflateStage::Head([0; 2], 0) }
+        DeflateDec {
+            core: InflateCore::new(),
+            stage: DeflateStage::Head([0; 2], 0),
+        }
     }
 
     fn feed(&mut self, mut data: &[u8], out: &mut Vec<u8>) -> Result<(), String> {
@@ -343,7 +351,10 @@ struct GzipDec {
 
 impl GzipDec {
     fn new() -> Self {
-        GzipDec { core: InflateCore::new(), stage: Some(GzStage::Header(Vec::new())) }
+        GzipDec {
+            core: InflateCore::new(),
+            stage: Some(GzStage::Header(Vec::new())),
+        }
     }
 
     fn feed(&mut self, mut data: &[u8], out: &mut Vec<u8>) -> Result<(), String> {
@@ -417,7 +428,10 @@ struct RawDec {
 
 impl RawDec {
     fn new() -> Self {
-        RawDec { core: InflateCore::new(), done: false }
+        RawDec {
+            core: InflateCore::new(),
+            done: false,
+        }
     }
 
     fn feed(&mut self, mut data: &[u8], out: &mut Vec<u8>) -> Result<(), String> {
@@ -505,7 +519,12 @@ pub fn decompress_new(format: &str) -> String {
             table.slots.remove(&oldest);
         }
     }
-    table.slots.insert(id, DecompressSlot { decomp: Decompressor::new(fmt) });
+    table.slots.insert(
+        id,
+        DecompressSlot {
+            decomp: Decompressor::new(fmt),
+        },
+    );
     id.to_string()
 }
 
@@ -717,7 +736,11 @@ mod tests {
     #[test]
     fn test_decompress_output_before_finish() {
         // corpus decompression-correct-input 语义：write 后未 finish 即可读出产出。
-        for (fmt, frame) in [("gzip", gzip_frame()), ("deflate", zlib_frame()), ("deflate-raw", RAW_BODY.to_vec())] {
+        for (fmt, frame) in [
+            ("gzip", gzip_frame()),
+            ("deflate", zlib_frame()),
+            ("deflate-raw", RAW_BODY.to_vec()),
+        ] {
             let mut d = Decompressor::new(parse_format(fmt).unwrap());
             let mut out = Vec::new();
             d.feed(&frame, &mut out).unwrap_or_else(|e| panic!("{fmt}: {e}"));
@@ -730,7 +753,12 @@ mod tests {
         // corpus decompression-empty-input：合法空流 → done 无输出无错误。
         let cases: &[(&str, Vec<u8>)] = &[
             // gzip 空成员（头 + stored 空 raw 块 + CRC=0 + ISIZE=0）
-            ("gzip", vec![0x1f, 0x8b, 0x08, 0, 0, 0, 0, 0, 0, 0x03, 0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            (
+                "gzip",
+                vec![
+                    0x1f, 0x8b, 0x08, 0, 0, 0, 0, 0, 0, 0x03, 0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                ],
+            ),
             ("deflate", vec![0x78, 0x9c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]),
             ("deflate-raw", vec![0x01, 0x00, 0x00, 0xff, 0xff]),
         ];
@@ -743,7 +771,11 @@ mod tests {
 
     #[test]
     fn test_truncated_and_trailing_junk() {
-        for (fmt, frame) in [("gzip", gzip_frame()), ("deflate", zlib_frame()), ("deflate-raw", RAW_BODY.to_vec())] {
+        for (fmt, frame) in [
+            ("gzip", gzip_frame()),
+            ("deflate", zlib_frame()),
+            ("deflate-raw", RAW_BODY.to_vec()),
+        ] {
             // 截断（去尾 1 字节）→ finish 报错。
             let mut d = Decompressor::new(parse_format(fmt).unwrap());
             let err = drive(&mut d, &frame[..frame.len() - 1], 4).unwrap_err();
@@ -781,7 +813,9 @@ mod tests {
         let mut d = Decompressor::new(Fmt::Deflate);
         assert!(drive(&mut d, &bad, 3).is_err(), "FCHECK 坏 → 错");
         // FDICT 位 → 错（corpus dictionary 向量：preset dictionary 不支持）。
-        let dict_frame: [u8; 15] = [0x78, 0xbb, 0x74, 0xee, 0x09, 0x59, 0x2b, 0xc1, 0x2e, 0x0c, 0x00, 0x74, 0xee, 0x09, 0x59];
+        let dict_frame: [u8; 15] = [
+            0x78, 0xbb, 0x74, 0xee, 0x09, 0x59, 0x2b, 0xc1, 0x2e, 0x0c, 0x00, 0x74, 0xee, 0x09, 0x59,
+        ];
         let mut d = Decompressor::new(Fmt::Deflate);
         assert!(drive(&mut d, &dict_frame, 3).is_err(), "FDICT → 错");
         // adler 篡改 → 错。
@@ -883,9 +917,18 @@ mod tests {
         assert!(!decompress_new("deflate-raw").is_empty());
         assert!(decompress_new("brotli").is_empty());
         // 未知 handle → 错误 wire（slot 逐出后使用不静默续跑——防数据丢失）。
-        assert!(!err_of(&decompress_update(u64::MAX, "")).is_empty(), "未知 handle → err");
-        assert!(!err_of(&decompress_finish(u64::MAX)).is_empty(), "未知 handle finish → err");
+        assert!(
+            !err_of(&decompress_update(u64::MAX, "")).is_empty(),
+            "未知 handle → err"
+        );
+        assert!(
+            !err_of(&decompress_finish(u64::MAX)).is_empty(),
+            "未知 handle finish → err"
+        );
         assert!(!err_of(&compress_update(u64::MAX, "")).is_empty(), "未知 handle → err");
-        assert!(!err_of(&compress_finish(u64::MAX)).is_empty(), "未知 handle finish → err");
+        assert!(
+            !err_of(&compress_finish(u64::MAX)).is_empty(),
+            "未知 handle finish → err"
+        );
     }
 }
