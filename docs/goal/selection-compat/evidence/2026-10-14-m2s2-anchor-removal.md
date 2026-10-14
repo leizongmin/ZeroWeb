@@ -81,9 +81,12 @@ innerHTML 的解析 wrapper），树已重建则其 `.remove()` 等方法落在�
 ## 门禁
 
 - shim 拼接 `node --check` 通过（part01…part07 全量 concat）。
-- `make testharness-uievents`：uievents 无基线且历史撞 1200s guard 墙
-  （fileapi-compat 2026-10-11 行记账「下轮 TIME_LIMIT=2400 建基线」），本轮
-  按账 TIME_LIMIT=2400 复跑并落首份结果（结果见 master.md 状态头与本文末
-  补记）。
+- `make testharness-uievents`（TIME_LIMIT=2400，按 fileapi-compat
+  2026-10-11 行记账）：**仍无完成结果**——runner 跑满 2400s guard 墙后被
+  终止，0 条用例输出（该 runner 结果至结束才刷出），双侧依旧无基线。墙钟
+  撞击为套件级既有状况（切片 B 之前已存在，见 csv fileapi 行），非本切片
+  回归。暴露面以 selection 套件覆盖佐证：testdriver Actions 拖选端到端
+  驱动同一 pointer 路径（本切片钩子全量在环）且 2968/2 绿；engine lib
+  3044/0。uievents 专项基线（更大 TIME_LIMIT 或 FILTER 分片）另行记账。
 - 本切片纯 .js shim 变更，无 .rs 变更；受影响构建（engine lib）与行为
   （selection/uievents testharness）已验证。

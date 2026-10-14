@@ -14,7 +14,10 @@ Chromium 换行分叉记档
 [evidence/2026-10-14-m2s1-tostring.md](evidence/2026-10-14-m2s1-tostring.md)。
 
 **卡点**：本切片无。uievents 暴露检查按 2026-10-11 fileapi 行记账以
-TIME_LIMIT=2400 复跑（无基线侧，结果补记 evidence 门禁节）。
+TIME_LIMIT=2400 复跑：跑满 guard 墙仍 0 输出、双侧无基线（套件级既有
+状况，非本切片回归；暴露面由 selection 套件同路径在环佐证）——详见
+[evidence/2026-10-14-m2s2-anchor-removal.md](evidence/2026-10-14-m2s2-anchor-removal.md)
+门禁节，专项基线另行记账。
 
 **下一步**：M2 余量收口评估——Document-open（跨域挂账，待
 document.open 落地复测）与 editing/event（排除域）之外 corpus 已全绿；
