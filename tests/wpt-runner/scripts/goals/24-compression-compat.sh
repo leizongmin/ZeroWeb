@@ -16,5 +16,14 @@ DIRS=( "compression" )
 
 GOAL_PULL_ANY_JS=1
 goals_fetch_all
+# 用例运行依赖（fetch_dir_html 子目录只递归一层，third_party/pako 在两层深处）：
+# - compression/third_party/pako/pako_inflate.min.js——compression-stream /
+#   multiple-chunks / including-empty-chunk / large-flush-output 经
+#   resources/decompress.js 用 pako 交叉解压实现输出（pako_inflate.min.js 22.7KB）。
+# - media/foo.vtt + media/test-av-384k-*.webm——compression-stream / output-length
+#   的 fetch('/media/...') 输入（空数据外的另两档数据量；单文件 fetch 不整拉 media/）。
+fetch_raw "compression/third_party/pako/pako_inflate.min.js"
+fetch_raw "media/foo.vtt"
+fetch_raw "media/test-av-384k-44100Hz-1ch-320x240-30fps-10kfr.webm"
 goals_inventory
 goals_next_steps "${GOAL}"
