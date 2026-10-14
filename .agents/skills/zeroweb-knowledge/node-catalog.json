@@ -1,0 +1,623 @@
+[
+  {
+    "type": "skill",
+    "name": "zeroweb-knowledge",
+    "description": "ZeroWeb 项目知识。定位和修改 Rust 浏览器、嵌入式 WebView、Android/JNI、DOM/CSS/布局、V8/QuickJS、网络存储安全、字体与 GPU/CPU、媒体、IPC/CDP/WebDriver、构建测试及 Agent 工具时，按领域查约束、历史原因和源码；不表示所有 Web 规范已实现或功能已验收。",
+    "path": "SKILL.md"
+  },
+  {
+    "type": "index",
+    "title": "Agent 工作流与证据工具",
+    "path": "references/engineering/agent-tools/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "Chrome 一致性、巡检与证据契约",
+    "path": "references/engineering/agent-tools/parity-and-regression.md"
+  },
+  {
+    "type": "topic",
+    "title": "Rally、任务文档与经验维护",
+    "path": "references/engineering/agent-tools/rally-and-learnings.md"
+  },
+  {
+    "type": "topic",
+    "title": "网站优化任务、恢复账本与交付检查",
+    "path": "references/engineering/agent-tools/site-optimizer.md"
+  },
+  {
+    "type": "topic",
+    "title": "CI、安全、内存、超时与磁盘门禁",
+    "path": "references/engineering/build-and-release/guards-and-ci.md"
+  },
+  {
+    "type": "index",
+    "title": "构建、门禁与交付资源",
+    "path": "references/engineering/build-and-release/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "日期版本、图标、平台打包与发布",
+    "path": "references/engineering/build-and-release/packaging.md"
+  },
+  {
+    "type": "topic",
+    "title": "构建矩阵、依赖准备与 Android 工具链",
+    "path": "references/engineering/build-and-release/toolchains.md"
+  },
+  {
+    "type": "topic",
+    "title": "文档、许可证、贡献与证据来源边界",
+    "path": "references/engineering/governance.md"
+  },
+  {
+    "type": "index",
+    "title": "测试、构建、官网与 Agent 工程工具",
+    "path": "references/engineering/index.md"
+  },
+  {
+    "type": "index",
+    "title": "兼容性与回归证据",
+    "path": "references/engineering/testing/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "跨 crate、产品、多进程与协议测试",
+    "path": "references/engineering/testing/integration-and-product.md"
+  },
+  {
+    "type": "topic",
+    "title": "字体 oracle、基准、性能趋势与覆盖",
+    "path": "references/engineering/testing/performance-and-oracles.md"
+  },
+  {
+    "type": "topic",
+    "title": "WPT、testharness、reftest 与资产账本",
+    "path": "references/engineering/testing/wpt-and-reftest.md"
+  },
+  {
+    "type": "topic",
+    "title": "官网页面、进度数据与发布链",
+    "path": "references/engineering/website.md"
+  },
+  {
+    "type": "topic",
+    "title": "路径、状态、像素与 OffscreenCanvas",
+    "path": "references/graphics/canvas/context-and-raster.md"
+  },
+  {
+    "type": "topic",
+    "title": "DOM Canvas、文字、图像桥与上屏",
+    "path": "references/graphics/canvas/dom-bridge.md"
+  },
+  {
+    "type": "index",
+    "title": "Canvas 2D 与页面桥",
+    "path": "references/graphics/canvas/index.md"
+  },
+  {
+    "type": "index",
+    "title": "图形基础设施、字体与 Canvas",
+    "path": "references/graphics/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "共享图元转换与字体命名空间",
+    "path": "references/graphics/paint-convert.md"
+  },
+  {
+    "type": "topic",
+    "title": "CPU 光栅化、颜色与增量 backing store",
+    "path": "references/graphics/render-foundation/cpu-and-backing.md"
+  },
+  {
+    "type": "index",
+    "title": "字体加载、整形与字形缓存",
+    "path": "references/graphics/render-foundation/fonts/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "系统字体、下载字体、匹配与 WOFF",
+    "path": "references/graphics/render-foundation/fonts/loading-and-matching.md"
+  },
+  {
+    "type": "topic",
+    "title": "OpenType、fallback、度量与光栅化",
+    "path": "references/graphics/render-foundation/fonts/shaping-and-raster.md"
+  },
+  {
+    "type": "topic",
+    "title": "GPU 管线、atlas、纹理与 surface",
+    "path": "references/graphics/render-foundation/gpu.md"
+  },
+  {
+    "type": "topic",
+    "title": "图像解码、缓存与资源身份",
+    "path": "references/graphics/render-foundation/images.md"
+  },
+  {
+    "type": "index",
+    "title": "共享渲染基础设施",
+    "path": "references/graphics/render-foundation/index.md"
+  },
+  {
+    "type": "index",
+    "title": "ZeroWeb 知识索引",
+    "path": "references/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "音频解码、输出、混音与 Web Audio",
+    "path": "references/media/audio.md"
+  },
+  {
+    "type": "index",
+    "title": "媒体解码、播放与 Web Audio",
+    "path": "references/media/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "MSE、流式输入与 feature 覆盖",
+    "path": "references/media/mse-and-streaming.md"
+  },
+  {
+    "type": "topic",
+    "title": "播放时钟、HTMLMediaElement 与帧注入",
+    "path": "references/media/playback.md"
+  },
+  {
+    "type": "topic",
+    "title": "容器、视频解码与 codec 路由",
+    "path": "references/media/video-decode.md"
+  },
+  {
+    "type": "topic",
+    "title": "焦点、表单状态、校验与事件模型",
+    "path": "references/page-core/document/forms-and-focus.md"
+  },
+  {
+    "type": "index",
+    "title": "文档模型与 HTML 语义",
+    "path": "references/page-core/document/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "Mutation、Range 与 Shadow DOM",
+    "path": "references/page-core/document/mutations-and-shadow.md"
+  },
+  {
+    "type": "topic",
+    "title": "解析、序列化、树身份与查询",
+    "path": "references/page-core/document/tree-and-parsing.md"
+  },
+  {
+    "type": "index",
+    "title": "页面内核：文档、样式、布局与绘制",
+    "path": "references/page-core/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "盒树、尺寸、定位、浮动与 margin",
+    "path": "references/page-core/layout/boxes-and-positioning.md"
+  },
+  {
+    "type": "topic",
+    "title": "Flex、Grid 与本地 Taffy 契约",
+    "path": "references/page-core/layout/flex-grid-and-taffy.md"
+  },
+  {
+    "type": "topic",
+    "title": "多列、碎片化与分页",
+    "path": "references/page-core/layout/fragmentation.md"
+  },
+  {
+    "type": "index",
+    "title": "格式化上下文与布局算法",
+    "path": "references/page-core/layout/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "文本收集、空白、断行与双向文字",
+    "path": "references/page-core/layout/inline/collection-and-line-breaking.md"
+  },
+  {
+    "type": "topic",
+    "title": "最终 IFC、几何缓存与绘制一致性",
+    "path": "references/page-core/layout/inline/finalization-and-reuse.md"
+  },
+  {
+    "type": "index",
+    "title": "行内格式化与布局结果复用",
+    "path": "references/page-core/layout/inline/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "度量、基线、竖排、ruby 与替换元素",
+    "path": "references/page-core/layout/inline/metrics-and-writing-modes.md"
+  },
+  {
+    "type": "topic",
+    "title": "增量布局、脏标记与受控管线",
+    "path": "references/page-core/layout/invalidation-and-budget.md"
+  },
+  {
+    "type": "topic",
+    "title": "表格网格、边框与可见性",
+    "path": "references/page-core/layout/tables.md"
+  },
+  {
+    "type": "topic",
+    "title": "动画、过渡、命中与 DOM 几何",
+    "path": "references/page-core/paint/animation-and-hit-testing.md"
+  },
+  {
+    "type": "index",
+    "title": "页面绘制、合成与命中几何",
+    "path": "references/page-core/paint/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "绘制顺序、文本、控件与视觉效果",
+    "path": "references/page-core/paint/painter.md"
+  },
+  {
+    "type": "topic",
+    "title": "SVG、过滤链与资源污点",
+    "path": "references/page-core/paint/svg-and-filters.md"
+  },
+  {
+    "type": "topic",
+    "title": "HTML 到绘制结果的管线与资源抽取",
+    "path": "references/page-core/pipeline.md"
+  },
+  {
+    "type": "topic",
+    "title": "层叠、匹配、继承与伪元素",
+    "path": "references/page-core/styles/cascade-and-matching.md"
+  },
+  {
+    "type": "index",
+    "title": "CSS 解析与样式计算",
+    "path": "references/page-core/styles/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "CSS token、规则、选择器与条件",
+    "path": "references/page-core/styles/syntax-and-selectors.md"
+  },
+  {
+    "type": "topic",
+    "title": "属性、简写、计算值与自定义属性",
+    "path": "references/page-core/styles/values-and-properties.md"
+  },
+  {
+    "type": "topic",
+    "title": "Compose 界面、Rust 状态与系统集成",
+    "path": "references/products/android/chrome-and-state.md"
+  },
+  {
+    "type": "index",
+    "title": "Android 浏览器宿主",
+    "path": "references/products/android/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "触摸、IME、视口与页面帧",
+    "path": "references/products/android/page-input-and-surface.md"
+  },
+  {
+    "type": "topic",
+    "title": "JNI、隔离 Service、槽位与恢复",
+    "path": "references/products/android/roles-and-jni.md"
+  },
+  {
+    "type": "topic",
+    "title": "CDP、BiDi、会话与远程对象",
+    "path": "references/products/automation/cdp-and-bidi.md"
+  },
+  {
+    "type": "index",
+    "title": "自动化与开发者协议",
+    "path": "references/products/automation/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "真实 UI 驱动、DevTools 与自动化兼容边界",
+    "path": "references/products/automation/ui-driver-and-devtools.md"
+  },
+  {
+    "type": "topic",
+    "title": "WebDriver 会话与 renderer 命令桥",
+    "path": "references/products/automation/webdriver.md"
+  },
+  {
+    "type": "index",
+    "title": "跨宿主浏览器数据模型",
+    "path": "references/products/browser-state/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "标签、历史、书签、会话与 profile",
+    "path": "references/products/browser-state/profile-and-tabs.md"
+  },
+  {
+    "type": "topic",
+    "title": "下载、设置、补全与菜单",
+    "path": "references/products/browser-state/user-services.md"
+  },
+  {
+    "type": "topic",
+    "title": "窗口、浏览器 UI 与平台行为",
+    "path": "references/products/desktop/chrome-and-window.md"
+  },
+  {
+    "type": "index",
+    "title": "桌面浏览器交互",
+    "path": "references/products/desktop/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "标签导航与页面输入",
+    "path": "references/products/desktop/navigation-and-input.md"
+  },
+  {
+    "type": "topic",
+    "title": "嵌入式 WebView API 与宿主集成",
+    "path": "references/products/embedded-webview.md"
+  },
+  {
+    "type": "topic",
+    "title": "窗口与事件宿主",
+    "path": "references/products/host-runtime.md"
+  },
+  {
+    "type": "index",
+    "title": "产品入口、浏览器状态与平台宿主",
+    "path": "references/products/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "GPU/CPU 回退、沙箱与故障恢复",
+    "path": "references/runtime/compositor/fallback-and-recovery.md"
+  },
+  {
+    "type": "index",
+    "title": "compositor、呈现与恢复",
+    "path": "references/runtime/compositor/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "surface、frame、滚动与最终呈现",
+    "path": "references/runtime/compositor/surfaces-and-present.md"
+  },
+  {
+    "type": "index",
+    "title": "跨域环境与构建分支",
+    "path": "references/runtime/conditions/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "平台、发布路径、测试宿主与 GPU 交付分支",
+    "path": "references/runtime/conditions/platform-and-product-modes.md"
+  },
+  {
+    "type": "topic",
+    "title": "运行时配置的入口、默认值与生效时机",
+    "path": "references/runtime/conditions/runtime-environment.md"
+  },
+  {
+    "type": "topic",
+    "title": "脚本后端、无引擎构建与 feature 并集",
+    "path": "references/runtime/conditions/script-features.md"
+  },
+  {
+    "type": "index",
+    "title": "多进程运行、共享契约与跨域配置",
+    "path": "references/runtime/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "宿主 trait、异步加载、资源阶段与帧事务",
+    "path": "references/runtime/page-runtime/hosts-and-loading.md"
+  },
+  {
+    "type": "index",
+    "title": "共享页面运行时契约",
+    "path": "references/runtime/page-runtime/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "交互状态、HTML 动作与宿主副作用契约",
+    "path": "references/runtime/page-runtime/interaction-contract.md"
+  },
+  {
+    "type": "topic",
+    "title": "绘制快照、共享帧、mailbox 与 FD 交付",
+    "path": "references/runtime/protocol/frame-delivery.md"
+  },
+  {
+    "type": "index",
+    "title": "共享 IPC 与进程协议",
+    "path": "references/runtime/protocol/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "消息、序列化、路由、进程与断连",
+    "path": "references/runtime/protocol/messages-and-lifecycle.md"
+  },
+  {
+    "type": "index",
+    "title": "renderer 与浏览器进程协调",
+    "path": "references/runtime/renderer/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "导航 epoch、加载抢占、预算与消息循环",
+    "path": "references/runtime/renderer/navigation-and-loop.md"
+  },
+  {
+    "type": "topic",
+    "title": "帧发布、字体资源与渲染进程隔离",
+    "path": "references/runtime/renderer/publication-and-isolation.md"
+  },
+  {
+    "type": "topic",
+    "title": "节点、元素、集合、CSSOM 与自定义元素",
+    "path": "references/scripting/dom-binding/api-surface.md"
+  },
+  {
+    "type": "topic",
+    "title": "NodeId、对象缓存、代际与 GC",
+    "path": "references/scripting/dom-binding/identity/handles-and-generations.md"
+  },
+  {
+    "type": "index",
+    "title": "身份桥、活文档与引擎对象生命周期",
+    "path": "references/scripting/dom-binding/identity/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "快照、live DOM、mutation 读回与原生路由",
+    "path": "references/scripting/dom-binding/identity/snapshot-and-live-dom.md"
+  },
+  {
+    "type": "index",
+    "title": "原生 DOM 与 shim 协作",
+    "path": "references/scripting/dom-binding/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "事件分发、默认动作、焦点与表单激活",
+    "path": "references/scripting/event-loop/events-and-default-actions.md"
+  },
+  {
+    "type": "index",
+    "title": "页面事件循环与用户动作",
+    "path": "references/scripting/event-loop/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "脚本顺序、microtask、定时器与观察者",
+    "path": "references/scripting/event-loop/tasks-and-checkpoints.md"
+  },
+  {
+    "type": "index",
+    "title": "JavaScript、DOM 绑定与脚本沙箱",
+    "path": "references/scripting/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "ES module、import map 与动态脚本",
+    "path": "references/scripting/modules.md"
+  },
+  {
+    "type": "topic",
+    "title": "V8、QuickJS 与沙箱宿主回调",
+    "path": "references/scripting/runtimes/engines-and-sandbox.md"
+  },
+  {
+    "type": "index",
+    "title": "脚本执行器与线程运行时",
+    "path": "references/scripting/runtimes/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "线程亲和、任务队列、中断与销毁",
+    "path": "references/scripting/runtimes/threading-and-disposal.md"
+  },
+  {
+    "type": "topic",
+    "title": "非页面 WASM 沙箱与页面 WASM 的边界",
+    "path": "references/scripting/wasm.md"
+  },
+  {
+    "type": "topic",
+    "title": "Web API shim、宿主桥与实现边界",
+    "path": "references/scripting/web-platform-apis.md"
+  },
+  {
+    "type": "topic",
+    "title": "Dedicated Worker 与消息传递",
+    "path": "references/scripting/workers.md"
+  },
+  {
+    "type": "index",
+    "title": "网络、持久存储与安全边界",
+    "path": "references/web-data/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "HTTP 缓存、连接策略、Cookie 与隐私",
+    "path": "references/web-data/network/cache-cookie-and-privacy.md"
+  },
+  {
+    "type": "topic",
+    "title": "请求、重定向、URL、编码与抓取调度",
+    "path": "references/web-data/network/fetch-and-navigation.md"
+  },
+  {
+    "type": "index",
+    "title": "资源网络与导航",
+    "path": "references/web-data/network/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "WebSocket、文件资源与响应策略",
+    "path": "references/web-data/network/websocket-and-resource-policy.md"
+  },
+  {
+    "type": "index",
+    "title": "来源、策略与隔离",
+    "path": "references/web-data/security/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "Sandbox、权限、COOP 与 COEP",
+    "path": "references/web-data/security/isolation-and-permissions.md"
+  },
+  {
+    "type": "topic",
+    "title": "Origin、PSL、同站与站点隔离",
+    "path": "references/web-data/security/origin-and-site.md"
+  },
+  {
+    "type": "topic",
+    "title": "CORS、CSP、混合内容与 HSTS",
+    "path": "references/web-data/security/resource-gates.md"
+  },
+  {
+    "type": "topic",
+    "title": "fetch 拦截、客户端、消息与宿主路由",
+    "path": "references/web-data/service-workers/fetch-and-clients.md"
+  },
+  {
+    "type": "index",
+    "title": "Service Worker 跨层生命周期",
+    "path": "references/web-data/service-workers/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "注册、安装、激活、更新与 controller",
+    "path": "references/web-data/service-workers/registration-and-lifecycle.md"
+  },
+  {
+    "type": "topic",
+    "title": "Cache API、OPFS 与跨进程存储桥",
+    "path": "references/web-data/storage/cache-api-and-opfs.md"
+  },
+  {
+    "type": "index",
+    "title": "存储后端与宿主所有权",
+    "path": "references/web-data/storage/index.md"
+  },
+  {
+    "type": "topic",
+    "title": "IndexedDB 事务、游标与连接事件",
+    "path": "references/web-data/storage/indexeddb.md"
+  },
+  {
+    "type": "topic",
+    "title": "Web Storage、profile、持久化与配额",
+    "path": "references/web-data/storage/web-storage-and-persistence.md"
+  }
+]

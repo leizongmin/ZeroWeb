@@ -184,6 +184,8 @@ macOS 下载产物要免除 Gatekeeper 手工放行，必须使用 Apple Develop
 | [ROADMAP.md](ROADMAP.md) | 对外路线图，说明已经做完什么、正在推什么、接下来补什么 |
 | [CHANGELOG.md](CHANGELOG.md) | 对外发布层面的变更记录 |
 | [docs/architecture.md](docs/architecture.md) | 面向贡献者的整体架构与阅读路径 |
+| [zeroweb-knowledge](.agents/skills/zeroweb-knowledge/SKILL.md) | 按领域定位源码、架构约束和历史原因 |
+| [zeroweb-verify](.agents/skills/zeroweb-verify/SKILL.md) | 按用户任务选择验证流程、判据和证据范围 |
 | [docs/development/linux-macos.md](docs/development/linux-macos.md) | Linux 和 macOS 开发环境配置 |
 | [docs/development/windows.md](docs/development/windows.md) | Windows 开发环境配置 |
 | [docs/governance/contribution-responsibility.md](docs/governance/contribution-responsibility.md) | 贡献责任、风险等级、责任域和 owner 路由 |
