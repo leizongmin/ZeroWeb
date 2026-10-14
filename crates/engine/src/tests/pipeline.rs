@@ -1183,17 +1183,24 @@ fn test_pipeline_balanced_multicol_growth_pushes_following_content_down() {
 ///
 /// 栈前提：管线的样式/布局/paint 按树深递归（debug 帧大，paint 侧 R4248 注释
 /// 「栈余量以字节计」），20 层嵌套在 libtest 缺省 2MiB 测试线程栈下会栈溢出
-/// abort，≥4MiB 通过（2026-10-09 slice48 实测）；须在 `RUST_MIN_STACK`≥4MiB
-/// 下运行——`make test` 已设 32MiB（Makefile），裸 `cargo test` 不具备此前提。
+/// abort。用自管 32MiB 栈线程运行（与 `make test` 的 RUST_MIN_STACK、renderer
+/// 运行线程栈口径一致），裸 `cargo test` 无需额外环境变量即可通过。
 #[test]
 fn test_pipeline_deeply_nested_html() {
-    let mut pipeline = RenderPipeline::new(800.0, 600.0);
-    // 20 层嵌套
-    let open: String = (0..20).map(|i| format!("<div class=\"l{i}\">")).collect();
-    let close: String = (0..20).map(|_| "</div>").collect();
-    let html = format!("<html><body>{open}Deep{close}</body></html>");
-    let result = pipeline.render_html(&html, "");
-    assert!(result.timings.total_ms >= 0.0, "深嵌套应正常完成");
+    let handle = std::thread::Builder::new()
+        .name("deep-nest-test".to_string())
+        .stack_size(32 * 1024 * 1024)
+        .spawn(|| {
+            let mut pipeline = RenderPipeline::new(800.0, 600.0);
+            // 20 层嵌套
+            let open: String = (0..20).map(|i| format!("<div class=\"l{i}\">")).collect();
+            let close: String = (0..20).map(|_| "</div>").collect();
+            let html = format!("<html><body>{open}Deep{close}</body></html>");
+            let result = pipeline.render_html(&html, "");
+            assert!(result.timings.total_ms >= 0.0, "深嵌套应正常完成");
+        })
+        .expect("启动深嵌套测试线程");
+    handle.join().expect("深嵌套测试线程不应 panic");
 }
 /// 测试渲染管线处理含特殊字符的文本。
 #[test]
