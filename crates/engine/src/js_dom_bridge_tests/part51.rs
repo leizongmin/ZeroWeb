@@ -300,3 +300,30 @@ fn test_p99s_pure_path_inline_custom_property() {
         "纯路径不吃 ambient css（既有语义不变）"
     );
 }
+
+#[test]
+fn test_p99s_style_rules_external_memo_recomputes_on_css_change() {
+    // TV-2（R5114 返修二轮补测）：__zw_style_rules_external 单槽记忆化的「css 换代键失配
+    // 即重算」路径——同一沙箱先装非空 css A 读 cssRules，再换非空 css B 重读：wire 必须按
+    // B 重算（非 stale 命中）；内容路径（同 css 命中）由既有 test_p99s_style_sheets_* 覆盖。
+    let html = "<html><head><style></style></head><body></body></html>";
+    crate::js_dom_bridge::clear_generation_cache();
+    crate::js_dom_bridge::set_active_external_css("h1 { color: red; }");
+    let mut sb = p51_sandbox_with_html(html);
+    let eval = |sb: &mut zero_script_sandbox::V8Sandbox, js: &str| {
+        use zero_script_sandbox::Sandbox;
+        sb.execute(js).unwrap().value
+    };
+    assert_eq!(
+        eval(&mut sb, "document.styleSheets[0].cssRules[0].selectorText"),
+        "h1",
+        "css A 的 wire 命中"
+    );
+    crate::js_dom_bridge::set_active_external_css("h2 { color: blue; }");
+    assert_eq!(
+        eval(&mut sb, "document.styleSheets[0].cssRules[0].selectorText"),
+        "h2",
+        "css 换代（非空 A → 非空 B）键失配必须重算 wire，不得 stale 命中"
+    );
+    assert_eq!(eval(&mut sb, "document.styleSheets[0].cssRules.length"), "1", "重算后规则数按 B");
+}

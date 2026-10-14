@@ -3922,3 +3922,59 @@ fn test_init_while_dispatching_and_legacy_init_family_r110() {
         "⑤ 非派发态 initMouseEvent 全字段生效"
     );
 }
+
+#[test]
+fn test_p99s_el_style_custom_property_case_sensitive() {
+    // DF-6（R5114 返修二轮）：el.style 内联 API 的 `--` 名与 host style_prop_key 写存储对齐——
+    // css-variables-1 §2 名称大小写敏感：`--Foo` 与 `--foo` 为独立声明，跨 case 查询不命中、
+    // 按名删除只删精确匹配项；常规属性名维持既有大小写不敏感语义（R3213 不变）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"d\" style=\"COLOR: black\">t</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let v = sandbox
+        .execute(
+            r#"(() => {
+              const d = document.querySelector('#d');
+              const out = {};
+              out.regularCI = d.style.getPropertyValue('color');
+              d.style.setProperty('--Foo', 'red');
+              d.style.setProperty('--foo', 'blue');
+              out.upper = d.style.getPropertyValue('--Foo');
+              out.lower = d.style.getPropertyValue('--foo');
+              out.cross = d.style.getPropertyValue('--FOO');
+              out.removedUpper = d.style.removeProperty('--Foo');
+              out.afterRemoveUpper = d.style.getPropertyValue('--Foo');
+              out.afterRemoveLower = d.style.getPropertyValue('--foo');
+              out.removeMissing = d.style.removeProperty('--Foo');
+              d.style.setProperty('color', 'green');
+              out.regularSet = d.style.getPropertyValue('color');
+              out.length = d.style.length;
+              return JSON.stringify(out);
+            })()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        v,
+        r#"{"regularCI":"black","upper":"red","lower":"blue","cross":"","removedUpper":"red","afterRemoveUpper":"","afterRemoveLower":"blue","removeMissing":"","regularSet":"green","length":2}"#,
+        "el.style `--` 名大小写敏感（跨 case 不命中、按名删除只删精确项）；常规属性名大小写不敏感语义不变"
+    );
+    // 持久化面：两条跨 case 声明独立共存于 style 属性，删除 `--Foo` 后仅剩 `--foo`（color 被替换为小写形态）。
+    let ms = mutations.lock().unwrap().clone();
+    let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
+    assert!(out.contains("--foo: blue"), "删除后 `--foo` 声明保留\n{out}");
+    assert!(!out.contains("--Foo"), "`--Foo` 声明应被精确移除\n{out}");
+}
