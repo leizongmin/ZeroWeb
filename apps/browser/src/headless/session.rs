@@ -18,6 +18,7 @@ use zero_protocol::message::{
     IpcMessageKind, KeyboardEventParams, KeyboardEventType, MouseEventParams, MouseEventType, PreDocumentScriptsParams,
     ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams,
 };
+use zero_protocol::paint_snapshot::IpcImagePayload;
 #[cfg(not(test))]
 use zero_protocol::process::RendererHandle;
 #[cfg(test)]
@@ -281,6 +282,30 @@ fn new_session_paint_fonts() -> zero_paint_convert::fonts::PaintFonts {
     zero_paint_convert::fonts::PaintFonts::new(std::sync::Arc::new(system_fonts))
 }
 
+/// P100：拆批像素按 key 注入 headless 缓存（幂等）；epoch 过期批随帧失效
+/// （同 GUI 路径 apply_inbound_message 规则）。独立纯函数以便 cfg(test) 覆盖
+/// （`handle_renderer_message` 所在 impl 为 cfg(not(test))：会话构造依赖
+/// renderer 子进程）。
+fn inject_image_batch(
+    snapshot: &mut crate::tab_snapshot::TabSnapshot,
+    navigation_epoch: u64,
+    payloads: Vec<IpcImagePayload>,
+) {
+    if navigation_epoch != snapshot.navigation_epoch {
+        return;
+    }
+    for payload in payloads {
+        if let Ok(data) =
+            zero_render_foundation::image_cache::ImageData::from_rgba(payload.rgba, payload.width, payload.height)
+        {
+            snapshot.image_cache.insert_with_key(
+                zero_render_foundation::image_cache::ImageKey::new(payload.image_key),
+                data,
+            );
+        }
+    }
+}
+
 #[cfg(not(test))]
 impl HeadlessSession {
     pub(super) fn handle_renderer_message(
@@ -296,6 +321,19 @@ impl HeadlessSession {
                 let mut paint = *paint;
                 apply_frame_fonts(&mut self.paint_fonts, &paint.font_payloads, &mut paint.glyphs);
                 crate::paint_ipc::apply_paint_snapshot(&mut self.snapshot, paint);
+                Ok(None)
+            }
+            IpcMessageKind::ImagePayloadBatch {
+                // headless 无 compositor 进程（snapshot 即渲染源），批携带的
+                // surface_id 在此无用，按 key 注入本会话缓存即可。
+                surface_id: _,
+                navigation_epoch,
+                payloads,
+            } => {
+                // P100：帧内图片超批上限时，像素经 regular FIFO 批消息先行到达，
+                // 帧本体只带 key 引用；此处按 key 注入缓存（幂等）。epoch 过期批
+                // 随帧失效（同 GUI 路径 apply_inbound_message 规则）。
+                inject_image_batch(&mut self.snapshot, navigation_epoch, payloads);
                 Ok(None)
             }
             // DCL 先返语义：navigate 在 DomContentLoaded 即返回（文档可交互，图片/字体
@@ -1223,4 +1261,44 @@ thread_local! {
     /// （None = 复位后未发送）。headless/tests.rs 的发送面守卫钉消费并复位。
     pub(super) static LAST_PREDOC_SEND: std::cell::RefCell<Option<Vec<String>>> =
         const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn batch_payload(key: u64) -> IpcImagePayload {
+        IpcImagePayload {
+            image_key: key,
+            width: 1,
+            height: 1,
+            rgba: vec![0, 0, 0, 255],
+        }
+    }
+
+    /// P100 返修（TV-1）：headless 消费路径——同 epoch 批按 key 注入且幂等。
+    #[test]
+    fn image_batch_injects_by_key_idempotently() {
+        let mut snapshot = crate::tab_snapshot::TabSnapshot::default();
+        snapshot.begin_navigation("https://example.com/".into());
+        let epoch = snapshot.navigation_epoch;
+        inject_image_batch(&mut snapshot, epoch, vec![batch_payload(42), batch_payload(43)]);
+        let key = |k: u64| zero_render_foundation::image_cache::ImageKey::new(k);
+        assert!(snapshot.image_cache.get(&key(42)).is_some());
+        assert!(snapshot.image_cache.get(&key(43)).is_some());
+        // 重复批幂等（批先于/后于帧重复到达均无害）。
+        inject_image_batch(&mut snapshot, epoch, vec![batch_payload(42)]);
+        assert!(snapshot.image_cache.get(&key(42)).is_some());
+    }
+
+    /// P100 返修（TV-1）：过期 epoch 批随帧失效，不注入。
+    #[test]
+    fn stale_image_batch_is_dropped() {
+        let mut snapshot = crate::tab_snapshot::TabSnapshot::default();
+        snapshot.begin_navigation("https://example.com/".into());
+        let epoch = snapshot.navigation_epoch;
+        inject_image_batch(&mut snapshot, epoch.wrapping_sub(1), vec![batch_payload(42)]);
+        let key = zero_render_foundation::image_cache::ImageKey::new(42);
+        assert!(snapshot.image_cache.get(&key).is_none());
+    }
 }

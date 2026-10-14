@@ -85,6 +85,46 @@ fn load_compositor_fonts() -> FontLoader {
     platform.loader
 }
 
+/// P100：图片像素按 key 注入 surface 缓存（帧内载荷与拆批消息共用；幂等）。
+fn insert_image_payloads(surface: &mut SurfaceState, payloads: &[zero_protocol::paint_snapshot::IpcImagePayload]) {
+    for image in payloads {
+        let Ok(data) =
+            zero_render_foundation::image_cache::ImageData::from_rgba(image.rgba.clone(), image.width, image.height)
+        else {
+            tracing::warn!("compositor: image payload {} is invalid", image.image_key);
+            continue;
+        };
+        surface.image_cache.insert_with_key(
+            zero_render_foundation::image_cache::ImageKey::new(image.image_key),
+            data,
+        );
+    }
+}
+
+/// P100 返修（F1）：帧到达时注入先期挂起的拆批像素，epoch 不匹配的批随帧
+/// 失效丢弃（与浏览器侧同规则）；处理后清空该 surface 全部挂起批。独立函数
+/// 以便 cfg(test) 覆盖注入语义（run_role 消息循环依赖 transport）。
+fn drain_pending_image_batches(
+    pending_image_batches: &mut HashMap<u64, Vec<(u64, Vec<zero_protocol::paint_snapshot::IpcImagePayload>)>>,
+    surface: &mut SurfaceState,
+    surface_id: u64,
+    navigation_epoch: u64,
+) {
+    let Some(pending) = pending_image_batches.get_mut(&surface_id) else {
+        return;
+    };
+    for (batch_epoch, payloads) in pending.drain(..) {
+        if batch_epoch == navigation_epoch {
+            insert_image_payloads(surface, &payloads);
+        } else {
+            tracing::debug!(
+                "compositor: 丢弃 stale image batch surface {surface_id} epoch {batch_epoch} != {navigation_epoch} n={}",
+                payloads.len()
+            );
+        }
+    }
+}
+
 /// Runs the compositor role until its IPC peer disconnects.
 ///
 /// The platform bootstrap owns logging and selects a transport. Desktop uses
@@ -94,6 +134,10 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
 
     // 每个页面 surface 独立维护帧序列和双缓冲；字体/字形缓存由进程共享。
     let mut surfaces: HashMap<u64, SurfaceState> = HashMap::new();
+    // P100 返修（F1）：批先于其帧到达且 surface 可能尚未由帧惰性创建，挂起
+    // 队列独立于 SurfaceState 按 surface_id 收批；帧到达时按 epoch 注入后清空。
+    let mut pending_image_batches: HashMap<u64, Vec<(u64, Vec<zero_protocol::paint_snapshot::IpcImagePayload>)>> =
+        HashMap::new();
     let mut ui_surfaces: HashMap<u64, UiSurfaceState> = HashMap::new();
     let mut window_surface: Option<zero_protocol::CompositorWindowSurfaceInfo> = None;
     let base_fonts = Arc::new(load_compositor_fonts());
@@ -252,22 +296,12 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                     &mut gpu_renderer,
                     &mut render_thread,
                 );
-                for image in &paint.image_payloads {
-                    let Ok(data) = zero_render_foundation::image_cache::ImageData::from_rgba(
-                        image.rgba.clone(),
-                        image.width,
-                        image.height,
-                    ) else {
-                        tracing::warn!("compositor: image payload {} is invalid", image.image_key);
-                        continue;
-                    };
-                    surface.image_cache.insert_with_key(
-                        zero_render_foundation::image_cache::ImageKey::new(image.image_key),
-                        data,
-                    );
-                }
+                insert_image_payloads(surface, &paint.image_payloads);
+                // P100 返修（F1）：注入先于帧到达的拆批像素；epoch 不匹配的批
+                // 随帧失效丢弃（与浏览器侧同规则），其余注入后清空。挂起队列
+                // 独立于 surface（surface 由帧惰性创建，批可能先到）。
+                drain_pending_image_batches(&mut pending_image_batches, surface, surface_id, navigation_epoch);
                 surface.backing.resize(w, h);
-
                 let mut raster_paint = if zero_protocol::compositor_scroll_transform_enabled() {
                     let scale = rasterize::device_scale_factor(&paint);
                     scroll_transform::paint_for_viewport(&paint, surface.scroll_x / scale, surface.scroll_y / scale)
@@ -528,7 +562,45 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                     tracing::warn!("compositor: dma-buf fd 发布失败: {error}");
                 }
             }
+            IpcMessageKind::ImagePayloadBatch {
+                // P100 返修（F1）：compositor 发布模式帧载荷置空，像素经批先行
+                // 到达；挂起至同 epoch 帧到达时注入（帧处理处），过期批随帧失效。
+                // surface 尚未由帧创建也照常挂起。Legacy 批（None）不应到此进程。
+                surface_id: Some(surface_id),
+                navigation_epoch,
+                payloads,
+            } => {
+                // 单 surface 挂起批上界：一个发布周期的批数（133MiB/48MiB ≈ 3）。
+                // surface 释放后迟到的批无人排空，超界丢最旧并留痕，防像素滞留。
+                const MAX_PENDING_BATCHES_PER_SURFACE: usize = 8;
+                let entry = pending_image_batches.entry(surface_id).or_default();
+                if entry.len() >= MAX_PENDING_BATCHES_PER_SURFACE {
+                    entry.remove(0);
+                    tracing::warn!("compositor: surface {surface_id} 挂起批超界，丢弃最旧批");
+                }
+                entry.push((navigation_epoch, payloads));
+                let resp = IpcMessage {
+                    id: msg.id,
+                    kind: IpcMessageKind::Ok,
+                };
+                if let Err(e) = transport.send(resp) {
+                    tracing::warn!("compositor: image batch 响应失败: {e}");
+                    break;
+                }
+            }
+            IpcMessageKind::ImagePayloadBatch {
+                surface_id: None,
+                navigation_epoch,
+                payloads,
+            } => {
+                tracing::debug!(
+                    "compositor: 忽略无 surface 的 image batch epoch {navigation_epoch} n={}",
+                    payloads.len()
+                );
+            }
             IpcMessageKind::ReleaseCompositorSurface { surface_id } => {
+                // 挂起批随 surface 一起清理，避免 tab 关闭后像素滞留。
+                pending_image_batches.remove(&surface_id);
                 if font_namespace.is_some_and(|(id, _, _)| id == surface_id) {
                     font_resources::activate(
                         None,
@@ -801,5 +873,64 @@ mod tests {
         assert!(bitmap.width > 0);
         assert!(bitmap.height > 0);
         assert!(bitmap.data.iter().any(|alpha| *alpha != 0));
+    }
+
+    fn test_surface(navigation_epoch: u64) -> SurfaceState {
+        SurfaceState {
+            navigation_epoch,
+            frame_id: 0,
+            backing: BackingStoreManager::new(1, 1),
+            scroll_x: 0.0,
+            scroll_y: 0.0,
+            rasterized_scroll_x: 0.0,
+            rasterized_scroll_y: 0.0,
+            paint: None,
+            image_cache: zero_render_foundation::image_cache::ImageCache::new(16, 1024 * 1024),
+            fonts: zero_paint_convert::fonts::PaintFonts::new(std::sync::Arc::new(load_compositor_fonts())),
+            frame_gpu_rasterized: false,
+        }
+    }
+
+    fn payload(key: u64) -> zero_protocol::paint_snapshot::IpcImagePayload {
+        zero_protocol::paint_snapshot::IpcImagePayload {
+            image_key: key,
+            width: 1,
+            height: 1,
+            rgba: vec![255, 0, 0, 255],
+        }
+    }
+
+    /// P100 返修（F1）：批先于帧到达（surface 可能尚未由帧创建）也照常挂起；
+    /// 同 epoch 帧到达时按 key 注入。
+    #[test]
+    fn pending_batch_injects_when_matching_frame_arrives() {
+        let mut pending: HashMap<u64, Vec<(u64, Vec<_>)>> = HashMap::new();
+        // surface 尚不存在也先挂起（帧惰性建 surface 前像素已到）。
+        pending.entry(5).or_default().push((3, vec![payload(42)]));
+        let mut surface = test_surface(3);
+        drain_pending_image_batches(&mut pending, &mut surface, 5, 3);
+        assert!(
+            surface
+                .image_cache
+                .get(&zero_render_foundation::image_cache::ImageKey::new(42))
+                .is_some()
+        );
+        // 注入后挂起清空，重复帧不重复注入残留。
+        assert!(pending.get(&5).is_none_or(|v| v.is_empty()));
+    }
+
+    /// P100 返修（F1）：过期 epoch 批随帧失效丢弃（不污染新导航画面）。
+    #[test]
+    fn stale_pending_batch_is_dropped_on_epoch_mismatch() {
+        let mut pending: HashMap<u64, Vec<(u64, Vec<_>)>> = HashMap::new();
+        pending.entry(5).or_default().push((2, vec![payload(42)]));
+        let mut surface = test_surface(3);
+        drain_pending_image_batches(&mut pending, &mut surface, 5, 3);
+        assert!(
+            surface
+                .image_cache
+                .get(&zero_render_foundation::image_cache::ImageKey::new(42))
+                .is_none()
+        );
     }
 }
