@@ -146,6 +146,16 @@ pub(super) fn inline_neg_margin_on() -> bool {
     selected(*VALUE, || default_on("ZW_INLINE_NEG_MARGIN"))
 }
 
+/// R5121（css-writing-modes-3 §2.4 bidi box model slice·phase 1）：段落级 UBA——
+/// 控制符嵌入/覆盖作用域跨 run 边界 + level 边界 run 裂解 + 行级 L2 组序重排。
+/// **opt-in 默认关**（`ZW_PARA_BIDI=1` 启用）——dormant 同 R5120
+/// `ZW_INLINE_SINGLE_FRAG_BOX_BORDER`；翻默认前置 = 旗标开全量 A/B 零新红 +
+/// per-fragment 完整 level 栈（parity 近似收口）。
+pub(super) fn para_bidi() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| opt_in("ZW_PARA_BIDI"));
+    selected(*VALUE, || opt_in("ZW_PARA_BIDI"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::select_value;
