@@ -11,7 +11,8 @@ fn render_pipeline(html: &str, css: &str) -> zero_engine::RenderResult {
     pipeline.render_html(html, css)
 }
 
-/// 完整管线辅助函数：显式打开仅供调试检查的 CSS 属性指示器。
+/// 指示器专项辅助：调试属性指示器生产默认关闭（`skip_indicators` 默认 true，
+/// 578bb8c75），断言指示器 fill/stroke 的测试经此显式开启。
 fn render_pipeline_with_indicators(html: &str, css: &str) -> zero_engine::RenderResult {
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
     pipeline.set_skip_indicators(false);

@@ -2078,36 +2078,21 @@ impl WebView {
 
     /// 调整大小。
     pub fn resize(&mut self, width: u32, height: u32) {
-        // 同尺寸 no-op：重建 RenderPipeline 会丢弃渲染状态、触发重解析与图片
-        // 重解码（解码完成不保证触发重绘——曾致 parity 采集位图回退到缺图帧且
-        // 永不恢复）。视口未变时无需任何处理。
+        // 同尺寸 no-op：重设视口会丢弃渲染状态、触发重解析与图片重解码（解码完成
+        // 不保证触发重绘——曾致 parity 采集位图回退到缺图帧且永不恢复）。视口未变时
+        // 无需任何处理。
         if self.config.width == width && self.config.height == height {
             return;
         }
-        let doc_url = self.current_url.clone();
-        let focused_selector = self.pipeline.focused_selector().map(str::to_string);
-        let image_sizes = self.cached_image_sizes.clone();
-        let image_ratios = self.cached_image_ratios.clone();
-        let image_no_ratio = self.cached_image_no_ratio.clone();
         self.config.width = width;
         self.config.height = height;
-        self.pipeline = RenderPipeline::new(width as f32, height as f32);
-        self.pipeline.set_skip_indicators(self.skip_indicators);
-        self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
-        self.pipeline.set_media_type(self.media_type);
-        self.pipeline.set_document_url(doc_url.as_deref());
-        self.pipeline.set_focused_selector(focused_selector.as_deref());
-        if !image_sizes.is_empty() {
-            self.pipeline.set_image_sizes(image_sizes);
-        }
-        if !image_ratios.is_empty() {
-            self.pipeline.set_image_ratios(image_ratios);
-        }
-        if !image_no_ratio.is_empty() {
-            self.pipeline.set_image_no_ratio(image_no_ratio);
-        }
-        self.pipeline.set_font_resolver(self.font_resolver.clone());
-        self.pipeline.set_font_metric_map(self.font_metric_map.clone());
+        // t11 resize 性能：仅更新视口尺寸，保留管线缓存（cached_doc/cached_stylesheets/
+        // cached_layout 等）——后续 `render_incremental()` 才能命中免重解析的增量路径。
+        // 旧实现整管 `RenderPipeline::new` 重建，每次 resize 全量重解析 HTML+CSS；
+        // 拖拽窗口时每步 ~数百 ms，是页面适应滞后（"幻灯片"）的主根因之一。
+        // URL/字体/图片等管线状态由 `render()` 入口的 `sync_pipeline_page_state`
+        // 与 resize 后调用方的 render 路径重新下推，无需在此重放。
+        self.pipeline.set_viewport(width as f32, height as f32);
     }
 
     /// 设置 CSS font-family 查找表（由宿主从 `FontLoader::build_font_resolver()` 构建）。

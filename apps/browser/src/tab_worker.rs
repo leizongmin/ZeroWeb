@@ -337,7 +337,9 @@ fn tab_worker_main(
         }
     };
     loop {
-        while let Ok(cmd) = cmd_rx.try_recv() {
+        // t11：Resize 合并吸收到的下一条命令暂存于此，先于新入队命令处理（保持到达序）。
+        let mut pending_cmd: Option<TabWorkerCommand> = None;
+        while let Some(cmd) = pending_cmd.take().or_else(|| cmd_rx.try_recv().ok()) {
             match cmd {
                 TabWorkerCommand::Navigate(url) => {
                     tracing::info!("Tab {} navigate: {url}", tab_id.0);
@@ -362,6 +364,28 @@ fn tab_worker_main(
                     page_script_runner = None;
                 }
                 TabWorkerCommand::Resize { width, height } => {
+                    // t11 resize 风暴（guideline #13）：连续 Resize 是可替代的完整视口
+                    // 状态，逐条全量重排版会让陈旧 resize 在命令队列堆积（拖拽时
+                    // winit 以 vsync 级频率重发）。吸收后续连续 Resize（latest-wins），
+                    // 遇首个其他命令即停，暂存后按到达序处理。
+                    let mut width = width;
+                    let mut height = height;
+                    loop {
+                        match cmd_rx.try_recv() {
+                            Ok(TabWorkerCommand::Resize {
+                                width: latest_w,
+                                height: latest_h,
+                            }) => {
+                                width = latest_w;
+                                height = latest_h;
+                            }
+                            Ok(other) => {
+                                pending_cmd = Some(other);
+                                break;
+                            }
+                            Err(_) => break,
+                        }
+                    }
                     with_measure(&font_loader, font_id, || wv.resize(width, height));
                     if wv.last_render().is_some() {
                         with_measure(&font_loader, font_id, || {

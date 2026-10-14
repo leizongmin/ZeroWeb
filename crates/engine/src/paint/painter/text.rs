@@ -34,6 +34,19 @@ fn direct_text_seed_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_PAINT_DIRECT_TEXT_SEED").as_deref() != Ok("0"))
 }
 
+/// R5120：单行 inline border/padding 整盒几何开关。**默认关（dormant）**——
+/// 几何已实现且自洽（`ZW_INLINE_SINGLE_FRAG_BOX_BORDER=1` 时
+/// border-width-applies-to-008 15.53%→100%），但 bidi 控制页（css/CSS2/bidi-text/
+/// bidi-001 族）在自源 reftest 口径下被正确几何暴露 css-writing-modes-3 bidi box
+/// model 缺口（inline 不在 bidi level 边界裂解、RLO 反转不跨 run——test 页单盒
+/// vs ref 页双盒 1.03~1.24% > 阈值 1.00%；HEAD 双页同错细条 0.64~0.97% 反而
+/// 「绿」）。翻默认前置 = bidi 裂解 slice 落地；届时须缓存 per-(font,size) 度量
+/// （fallback_line_metrics_for_paint 现每次 Face::parse，见 r5120_content_box）。
+fn single_frag_box_border_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_INLINE_SINGLE_FRAG_BOX_BORDER").as_deref() == Ok("1"))
+}
+
 use super::super::color::{color_value_to_render, resolve_color_current};
 
 /// R4525/R4549/R4553（css-backgrounds-4 §background-clip:text）：clip:text 的「恒色背景」提取。
@@ -2541,6 +2554,11 @@ impl super::Painter {
                             // 无双绘。orphan 信号（owner_h==0）天然耦合 part1。
                             let phasea_orphan_fire = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() != Ok("0")
                                 && owner_h == 0.0;
+                            let shaping_font_ids = self.fragment_shaping_font_ids(
+                                owner_style_opt,
+                                text_node_shaping_font_ids.get(&$frag_nid).map(Vec::as_slice),
+                                frag_font_id,
+                            );
                             if !is_vertical
                                 && !box_node.is_absolute
                                 && !box_node.is_fixed
@@ -2630,12 +2648,36 @@ impl super::Painter {
                                         zero_style_system::property::types::BoxDecorationBreakValue::Slice
                                     )
                                     && owner_style.background_image.is_empty();
-                                // R4332 双轨：**多片段**（真跨行）owner 走 chromium slice 语义
-                                //（行盒顶锚 + 横条含角 + 首/末竖边）；**单片段** owner（含
-                                // line-height 撑大 content_height 的单行形态）维持基线绘制口径
-                                //（基线锚横条 + 无竖边——基线双自洽形态，bidi-003 族实证，
-                                // 单边改动即翻红）。
+                                // R5120（css-break-3 §5.3：slice 单片段 ≡ 整盒）：**单行** owner
+                                // 的 border/padding bleed 与多片段 slice 同几何——整盒锚横条
+                                //（单行=内容区，见 r5120_content_box；多片段=行盒；均含角外延）
+                                // + 首/末竖边。旧 R4332 单片段「基线锚横条 + 无竖边」
+                                // 双轨在单行 inline border 全灭：横条落字高中部 [b−bt,b]、
+                                // [b+line_h,+bb]、x/宽缺 bl/br 外延、竖边缺失
+                                //（border-width-applies-to-008 实测 2 fill vs ref 4 fill 15.53%）。
+                                // 多行 clone / bg-image owner 仍走基线口径（合成语义未实现）。
+                                // kill-switch `ZW_INLINE_SINGLE_FRAG_BOX_BORDER=1`（OnceLock 单读）
+                                // 启用整盒几何；默认关 = 基线锚双轨（R4332 口径，见函数文档）。
+                                let r4332_whole_box = single_frag_box_border_enabled()
+                                    && (!r4332_is_multi_line || r4332_multi_fragment);
                                 let legacy_line_top = content_y + $frag_y + $baseline_offset + ty;
+                                // R5120（CSS2.1 §10.8.1 content area）：单行整盒竖直锚 = **内容区**
+                                // [baseline−ascent, baseline+descent]（字体原始度量），非行盒——
+                                // 显式 line-height 只拉伸行盒，inline 的 border/padding/bg 仍贴内容区
+                                //（bidi-003 lh:3em 实证：行盒锚把横条推出 ~0.9em，6 案翻红）。
+                                // 度量缺失（宿主未注册 / `ZW_FALLBACK_LINE_METRICS=0`）回退行盒锚；
+                                // 多片段 slice 维持 R4332 行盒锚不动。size-adjust 生效片段的内容区
+                                // 未随缩放——FIXME 遇案再修。
+                                let r5120_content_box = if r4332_whole_box && !r4332_is_multi_line {
+                                    zero_layout_engine::fallback_line_metrics_for_paint(
+                                        &shaping_font_ids,
+                                        &transformed,
+                                        $frag_fs,
+                                    )
+                                    .map(|(a, d)| (legacy_line_top - a, a + d))
+                                } else {
+                                    None
+                                };
                                 if has_bg || has_bleed {
                                     let line_h = box_node
                                         .text_node_line_heights
@@ -2647,17 +2689,21 @@ impl super::Painter {
                                     // 当 line_top，横条落 [基线-bt_w, 基线] = 字高中部；多片段
                                     // 语义 = 边框/背景贴片段所在行盒外沿（chromium 同）。
                                     let line_top = content_y + $frag_line_top + ty;
+                                    // 整盒竖直域（R5120）：单行=内容区锚（度量缺失回退行盒锚），
+                                    // 多片段 slice / 非整盒 = 行盒域（box_top/box_h 退化为 line 值）。
+                                    let (box_top, box_h) =
+                                        r5120_content_box.unwrap_or((line_top, line_h));
                                     let bleed_top = pad_top + bt_w;
                                     let bleed_bot = pad_bot + bb_w;
-                                    // bg（has_bg 时）：has_bleed 外延对齐 line box 边（多片段）/
-                                    // 基线锚（单片段基线口径），否则 R639 旧位（frag.y）。
+                                    // bg（has_bg 时）：has_bleed 外延对齐整盒边（单行=内容区锚 /
+                                    // 多片段=行盒锚，R5120），否则 R639 旧位（frag.y）。
                                     if has_bg {
                                         let (bg_y, bg_h) = if has_bleed {
-                                            (
-                                                if r4332_multi_fragment { line_top } else { legacy_line_top }
-                                                    - bleed_top,
-                                                line_h + bleed_top + bleed_bot,
-                                            )
+                                            if r4332_whole_box {
+                                                (box_top - bleed_top, box_h + bleed_top + bleed_bot)
+                                            } else {
+                                                (legacy_line_top - bleed_top, line_h + bleed_top + bleed_bot)
+                                            }
                                         } else {
                                             (content_y + $frag_y + ty, line_h)
                                         };
@@ -2666,9 +2712,10 @@ impl super::Painter {
                                             color_value_to_render(&owner_style.background_color),
                                         );
                                     }
-                                    // 横条：多片段 = 行盒顶锚 + 含角；单片段 = 基线锚旧几何。
-                                    let (strip_top, strip_x, strip_w) = if r4332_multi_fragment {
-                                        (line_top - pad_top - bt_w, frag_base_x - lead_ext, text_width + lead_ext + trail_ext)
+                                    // 横条：整盒几何（多片段 slice=行盒锚 / 单行=内容区锚）+ 含角；
+                                    // 多行 clone 等未实现合成域 = 基线锚旧几何。
+                                    let (strip_top, strip_x, strip_w) = if r4332_whole_box {
+                                        (box_top - pad_top - bt_w, frag_base_x - lead_ext, text_width + lead_ext + trail_ext)
                                     } else {
                                         (legacy_line_top - bt_w, frag_base_x, text_width)
                                     };
@@ -2686,16 +2733,17 @@ impl super::Painter {
                                         } else {
                                             color_value_to_render(&owner_style.border_bottom_color)
                                         };
-                                        let strip_y = if r4332_multi_fragment {
-                                            line_top + line_h + pad_bot
+                                        let strip_y = if r4332_whole_box {
+                                            box_top + box_h + pad_bot
                                         } else {
                                             legacy_line_top + line_h + pad_bot
                                         };
                                         self.primitives.add_fill(Rect::new(strip_x, strip_y, strip_w, bb_w), c);
                                     }
-                                    // 竖边：仅多片段——左竖边仅首片段、右竖边仅末片段；纵跨 =
-                                    // 行盒高 + 垂直 pad + 顶/底边框（与横条锚同域，覆盖邻接行）。
-                                    if r4332_multi_fragment {
+                                    // 竖边：整盒几何——左竖边仅首片段、右竖边仅末片段；纵跨 =
+                                    // 整盒高（单行=内容区 / 多片段=行盒）+ 垂直 pad + 顶/底边框
+                                    //（与横条锚同域，覆盖邻接行）。
+                                    if r4332_whole_box {
                                         if bl_w > 0.0 && r4332_is_first {
                                             let c = if matches!(
                                                 owner_style.border_left_color,
@@ -2708,9 +2756,9 @@ impl super::Painter {
                                             self.primitives.add_fill(
                                                 Rect::new(
                                                     frag_base_x - pad_left - bl_w,
-                                                    line_top - pad_top - bt_w,
+                                                    box_top - pad_top - bt_w,
                                                     bl_w,
-                                                    line_h + pad_top + pad_bot + bt_w + bb_w,
+                                                    box_h + pad_top + pad_bot + bt_w + bb_w,
                                                 ),
                                                 c,
                                             );
@@ -2727,9 +2775,9 @@ impl super::Painter {
                                             self.primitives.add_fill(
                                                 Rect::new(
                                                     frag_base_x + text_width + pad_right,
-                                                    line_top - pad_top - bt_w,
+                                                    box_top - pad_top - bt_w,
                                                     br_w,
-                                                    line_h + pad_top + pad_bot + bt_w + bb_w,
+                                                    box_h + pad_top + pad_bot + bt_w + bb_w,
                                                 ),
                                                 c,
                                             );
@@ -2782,11 +2830,6 @@ impl super::Painter {
                             let generic_font = self.generic_font_ids.contains(&frag_font_id.0);
                             let shaped_advance_eligible =
                                 text_shaping::fragment_shaped_advance_eligible(generic_font, size_adjust);
-                            let shaping_font_ids = self.fragment_shaping_font_ids(
-                                owner_style_opt,
-                                text_node_shaping_font_ids.get(&$frag_nid).map(Vec::as_slice),
-                                frag_font_id,
-                            );
                             let open_type_features = style_open_type_features(shaping_style);
                             let advance_trace = fragment_advance_trace(
                                 &shaping_font_ids,

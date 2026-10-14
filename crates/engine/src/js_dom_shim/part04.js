@@ -7053,6 +7053,10 @@
             // 剔除 + 反链断 + 迭代器通知 + record；旧落元素分支对 handle-only 文本
             // 父 registry 不生效 → parent.childNodes 残留）。元素路径不受影响（下方原逻辑）。
             if (isText || isComment || isPI) {
+              // selection-compat M2 切片 2：pre-remove live-range 边界调整（R262——
+              // spec concept-node-pre-remove 末段；边界在被移除文本内 → (parent, index)）。
+              // 与元素分支同款，须在实际摘除前（parentNode/child 链仍完整）调用。
+              try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(_makeProxy(sel, handle)); } catch (_eR262tr) {}
               var _r129Parent = (handle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent)
                 ? _zwNodeParent[handle] : null;
               if (_r129Parent && _r129Parent.parentHandle && _handleChildren[_r129Parent.parentHandle]) {
@@ -7097,6 +7101,12 @@
             // R2994：移除自身（含 handle 子树）→ 断连（仅此前已连入的 custom element 分派 disconnectedCallback）。
             // R34xx：本地移除标记（同步脚本内 parentNode 立即返 null——host mutation 异步应用）。
             var ceSelf = _makeProxy(sel, handle);
+            // selection-compat M2 切片 2：el.remove() 的 pre-remove live-range 边界调整
+            //（R262——spec concept-node-pre-remove；removeChild 域已覆盖而 remove() 面
+            // 缺失：选区端点在被移除子树时不吸附，WPT selection/anchor-removal
+            // 「anchorNode snaps up to parent」断言面）。须在 host 移除/断连派发前
+            // 调用（parentNode/childIndex 读移除前形态）。
+            try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(ceSelf); } catch (_eR262rm) {}
             // M2-S4E：el.remove() 移除聚焦元素 → unfocus（同 removeChild 面配套——
             // WPT change-focus-then-remove 走 el.remove()）。
             try { if (typeof _zwUnfocusIfFocused === 'function') _zwUnfocusIfFocused({ __zwSelector: sel, __zwHandle: handle }); } catch (_eUfRm) {}
@@ -9911,14 +9921,27 @@
               // 后 id 无全局注册 → ReferenceError）。守卫：仅 globalThis[id] ===
               // undefined 时注册（不遮蔽内建属性；真浏览器的 WindowProperties 原
               // 型层语义以 undefined 门近似）。递归 walk 子树（id 可在任意深度）。
+              // selection-compat M2（anchor-removal 语义面）：**换代刷新**——注册值
+              // 打 `__zwR3kNamedId` 标记；同名现值带同标记 = 本机制上一代注册（上一轮
+              // innerHTML 的解析 wrapper），树已重建则其 `.remove()` 等方法落在死节点
+              // 上（探针实证：第二次 innerHTML 后 remove 不触达活树、无删除事件）——
+              // spec named objects 按当下文档树求值，覆盖刷新。脚本自有值（无标记）
+              // 仍不遮蔽。
               if (typeof globalThis !== 'undefined') {
                 var _r3kReg = function (node) {
                   while (node) {
                     try {
                       if (node.nodeType === 1) {
                         var nid = node.id || (node.getAttribute && node.getAttribute('id')) || '';
-                        if (nid && globalThis[nid] === undefined) {
-                          globalThis[nid] = node;
+                        if (nid) {
+                          var cur3k = undefined;
+                          try { cur3k = globalThis[nid]; } catch (_eR3kG) { cur3k = undefined; }
+                          var ours3k = false;
+                          try { ours3k = !!cur3k && cur3k.__zwR3kNamedId === nid; } catch (_eR3kT) { ours3k = false; }
+                          if (cur3k === undefined || ours3k) {
+                            try { node.__zwR3kNamedId = nid; } catch (_eR3kTag) {}
+                            globalThis[nid] = node;
+                          }
                         }
                         var kids = node.childNodes || [];
                         for (var ki = 0; ki < kids.length; ki++) _r3kReg(kids[ki]);

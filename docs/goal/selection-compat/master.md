@@ -1,30 +1,32 @@
 # selection-compat — 运行时控制面
 
-> 状态头（2026-10-14——M1 完成，M2 切片 1 完成）
+> 状态头（2026-10-14——M1 完成，M2 切片 1、2 完成）
 
-**当前状态**：M1 导入与基线完成（2965/2970，99.83%）；M2 切片 1 完成——
-`Selection.toString` rendered text 语义落地（display:none 剔除 + 空白折叠 +
-块级边界折行 + pre 族不合并 + 控件例外回落），`make testharness-selection`
-**2966 Pass / 4 Fail**（+1，`script-and-style-elements.html` 转绿）。
-Range.toString 保持 raw 语义未动；2 个 bridge 断言随语义迁移更新。
-已知互操作分叉（现代 Chromium 对同文档少 2 处换行）记档 evidence。
+**当前状态**：M2 切片 2 完成——`anchor-removal.html` ×2 转绿（2966 →
+**2968 Pass / 2 Fail**）。拖选默认动作落地（mousedown collapse /
+pointermove extend，坐标命中 + sel 键回落 + body/html 零布局门），
+`__zwSelectionFollowRemoval` 匹配器补 NA 族桥（match-only），吸附目标保持
+`oldParent262` 原对象；part04 R3K 换代刷新修同名 global 世代滞留（测试 2
+remove 不触达活树的根因，跨段共享根因）。家族分立与回归修复链见
+[evidence/2026-10-14-m2s2-anchor-removal.md](evidence/2026-10-14-m2s2-anchor-removal.md)。
+engine lib 3044/0。切片 1（toString rendered text，2965 → 2966）与已知
+Chromium 换行分叉记档
+[evidence/2026-10-14-m2s1-tostring.md](evidence/2026-10-14-m2s1-tostring.md)。
 
-**卡点**：本切片无。环境面（非本 goal）：integration `css_properties` 8 个
-「渲染指示器」测试在 HEAD 既有红（stash A/B 实证与本切片无关，疑似
-578bb8c75 波及）——make test workspace 无法全绿，归 render 面处理，见
-[evidence/2026-10-14-m2s1-tostring.md](evidence/2026-10-14-m2s1-tostring.md)
-门禁节。
+**卡点**：本切片无。uievents 暴露检查按 2026-10-11 fileapi 行记账以
+TIME_LIMIT=2400 复跑（无基线侧，结果补记 evidence 门禁节）。
 
-**下一步**：DC-2 续切片——`anchor-removal` ×2 的 live-range 边界吸附
-（节点移除时选区边界点按 DOM Standard 吸附到父节点；shim mutation 路径）；
-拖选命中测试（坐标→文本偏移）体量另估。Document-open 跨域挂账不动。
+**下一步**：M2 余量收口评估——Document-open（跨域挂账，待
+document.open 落地复测）与 editing/event（排除域）之外 corpus 已全绿；
+评估是否进 M3（分级通过率两轮不下行 + 账本纪律 + make test 全绿 +
+make reftest 零回归）。
 
-## 缺口清单（M1 基线定性，2026-10-14；切片 1 后余 4）
+## 缺口清单（M1 基线定性，2026-10-14；切片 2 后余 2）
 
 | 失败用例 | 定性 | 归属 | 处置 |
 |---|---|---|---|
 | ~~`selection/script-and-style-elements.html`~~ | ~~toString 未按 rendered text 语义~~ | 本 goal | ✅ **已修复**（M2 切片 1，2026-10-14） |
-| `selection/anchor-removal.html` ×2 | testdriver Actions 拖选（pointer 按下-移动-抬起）未构建文本选区（runner Actions shim 无坐标→文本偏移 caret 命中能力，engine 无 caretRangeFromPoint）+ 节点移除时选区未按 live range 规则把边界点吸附到父节点（DOM Standard §mutate 后 range 边界更新） | 本 goal 深水区 | M2 后续切片：先做 live-range 边界吸附（shim mutation 路径），拖选命中测试另立切片评估 |
+| ~~`selection/anchor-removal.html` ×2~~ | ~~Actions 拖选未构建文本选区 + 节点移除时边界点未吸附~~ | 本 goal | ✅ **已修复**（M2 切片 2，2026-10-14——拖选默认动作 + R3K 换代刷新 + NA 族桥） |
 | `selection/Document-open.html` | `document.open()` 缺失（`iframe.contentDocument.open is not a function`）；用例本体断言 document.open 后 Selection 单例不变 | 跨域挂账（HTML 文档生命周期，navigation/html-syntax 域基建） | 记账不修，待 document.open 落地后复测 |
 | `editing/event.html :: Changing selection from handler: input event` | execCommand 触发的 input 事件 target 语义（期望 handler 内改选区后 target 落到最终编辑宿主） | **显式排除域**（goal 边界：execCommand 命令语义归 editing 域，已归档） | 记账不修（继承 editing-contenteditable 已知失败，与 csv 历史行一致） |
 
@@ -33,7 +35,7 @@ Range.toString 保持 raw 语义未动；2 个 bridge 断言随语义迁移更�
 | 里程碑 | 状态 | 证据 |
 |---|---|---|
 | M1 导入与基线 | ✅ 完成（2026-10-14） | [evidence/2026-10-14-m1-baseline.md](evidence/2026-10-14-m1-baseline.md) |
-| M2 语义收敛 | 进行中（切片 1 ✅ 2026-10-14：2966/4） | [evidence/2026-10-14-m2s1-tostring.md](evidence/2026-10-14-m2s1-tostring.md)；余：live-range 吸附切片 → 分级通过率两轮不下行 |
+| M2 语义收敛 | 进行中（切片 1 ✅ 2026-10-14：2966/4；切片 2 ✅ 2026-10-14：2968/2） | [evidence/2026-10-14-m2s1-tostring.md](evidence/2026-10-14-m2s1-tostring.md)、[evidence/2026-10-14-m2s2-anchor-removal.md](evidence/2026-10-14-m2s2-anchor-removal.md)；余：分级通过率两轮不下行 → M3 |
 | M3 收口归档 | 未开始 | DC-3：账本纪律 + make test 全绿 + make reftest 零回归 |
 
 ## 碰撞管理（run-rules §9）
