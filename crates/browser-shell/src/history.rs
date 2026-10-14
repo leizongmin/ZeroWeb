@@ -85,6 +85,15 @@ impl History {
         self.entries.clear();
     }
 
+    /// 按 URL 移除单条历史记录（历史页「删除」链接）。
+    ///
+    /// 返回是否成功移除。
+    pub fn remove(&mut self, url: &str) -> bool {
+        let before = self.entries.len();
+        self.entries.retain(|e| e.url != url);
+        self.entries.len() != before
+    }
+
     /// 遍历所有历史记录。
     pub fn iter(&self) -> impl Iterator<Item = &HistoryEntry> {
         self.entries.iter()

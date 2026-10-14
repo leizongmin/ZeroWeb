@@ -56,6 +56,40 @@ fn browser_ipc_disconnected(err: &str) -> bool {
     is_disconnected_channel_message(err)
 }
 
+/// ZW_RESIZE_TRACE=1 时启用窗口 resize 链路诊断（t11）。进程级快照：入口读一次，
+/// 热路径只做 bool 判断（不做逐事件 getenv）。
+static RESIZE_TRACE: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| std::env::var("ZW_RESIZE_TRACE").is_ok());
+
+/// ZW_RESIZE_TRACE=路径 时追加写该文件——桌面 renderer 的 stderr 被浏览器按
+/// 16KB 截尾捕获，跨进程时序分析需要完整时间线；`=1` 时走 stderr（单测/headless）。
+static RESIZE_TRACE_FILE: std::sync::LazyLock<std::sync::Mutex<Option<std::fs::File>>> =
+    std::sync::LazyLock::new(|| match std::env::var("ZW_RESIZE_TRACE") {
+        Ok(path) if path != "1" => {
+            std::sync::Mutex::new(std::fs::OpenOptions::new().create(true).append(true).open(path).ok())
+        }
+        _ => std::sync::Mutex::new(None),
+    });
+
+/// ZW_RESIZE_TRACE 诊断输出（epoch 毫秒时间戳，与 browser 侧 trace 对齐时序）。
+fn resize_trace(msg: impl std::fmt::Display) {
+    if !*RESIZE_TRACE {
+        return;
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default();
+    let line = format!("[ZW_RESIZE_TRACE] t={now} renderer {msg}\n");
+    if let Ok(mut guard) = RESIZE_TRACE_FILE.lock()
+        && let Some(file) = guard.as_mut()
+    {
+        use std::io::Write;
+        let _ = file.write_all(line.as_bytes());
+    } else {
+        eprint!("{line}");
+    }
+}
+
 /// Legacy DispatchDomEvent 键盘通道专用：判定 key 是否为单字符可打印键（向 input/
 /// textarea 注入字符）。多字符 key 名（"Enter"/"Backspace"/"ArrowLeft"/"Shift"/"Tab"…）
 /// 与控制字符排除。CDP KeyboardEvent 通道不再用此启发式（text 字段为忠实判据）。
@@ -847,6 +881,7 @@ impl RendererRuntime {
 
     /// 从 WebView 当前渲染产出发布 IPC frame（ViewPainted + 可选 Title）。B3：发布源切到 WebView。
     fn publish_webview_now(&mut self, title: Option<String>, allow_network_fetch: bool) -> Result<(), String> {
+        let publish_start = Instant::now();
         // R3254-M1：发布线程确认已写出的帧，其图片像素已在线上 → 标记 sent（不再重传）。
         // 被 latest-wins 替换、从未写出的帧不标记——下帧重传像素（保守，正确）。
         if let Some(thread) = &self.compositor_publish {
@@ -972,6 +1007,17 @@ impl RendererRuntime {
             dirty_rects,
             hit_test,
         };
+        if *RESIZE_TRACE {
+            resize_trace(format!(
+                "publish assemble {}x{} fills={} glyphs={} images={} in {}us",
+                vw,
+                vh,
+                frame.primitives.fills.len(),
+                frame.primitives.glyphs.len(),
+                frame.primitives.images.len(),
+                publish_start.elapsed().as_micros()
+            ));
+        }
         let sent_now = publish_render_with_layout(
             &mut self.outbound,
             self.compositor_publish.as_ref(),
@@ -985,6 +1031,15 @@ impl RendererRuntime {
             self.document_generation,
             crate::font_payloads::for_primitives(&self.font_loader, &self.downloaded_font_ids, &frame.primitives)?,
         )?;
+        resize_trace(format!(
+            "publish {}x{} fills={} glyphs={} images={} in {}us",
+            vw,
+            vh,
+            frame.primitives.fills.len(),
+            frame.primitives.glyphs.len(),
+            frame.primitives.images.len(),
+            publish_start.elapsed().as_micros()
+        ));
         // R3254-M1：legacy 同步路径写出的帧在此标记 sent（compositor 路径由发布线程回传）。
         self.sent_image_keys.extend(sent_now);
         // P1a Slice 2b：render 填完 rect snapshot 后触发 observer 重算——IO `_crossed`（threshold
@@ -2208,6 +2263,46 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 drained
             });
         }
+        // t11 resize 风暴（guideline #13）：连续 SetViewport 是可替代的完整视口状态，
+        // 拖拽时 winit 以 vsync 级频率重发，而每条全量重排版 ~百 ms 级——不合并会让
+        // 陈旧 resize 在入站队列线性堆积（1s 拖拽 → 级联数十秒追帧，"幻灯片"）。
+        // 队首是 SetViewport 时吸收后续连续 SetViewport（latest-wins），遇首个非
+        // SetViewport 消息即停（其后消息保持到达序，避免输入读到超前视口）。
+        if let Some(msg) = head.as_ref()
+            && matches!(msg.kind, IpcMessageKind::SetViewport(_))
+        {
+            let mut dropped = 0usize;
+            loop {
+                let front_is_set_viewport = self
+                    .deferred_inbound
+                    .front()
+                    .is_some_and(|later| matches!(later.kind, IpcMessageKind::SetViewport(_)));
+                if !front_is_set_viewport {
+                    break;
+                }
+                head = self.deferred_inbound.pop_front();
+                dropped += 1;
+            }
+            while let Ok(later) = self.inbound_rx.try_recv() {
+                if matches!(later.kind, IpcMessageKind::SetViewport(_)) {
+                    head = Some(later);
+                    dropped += 1;
+                } else {
+                    // 迟于 head 到达：排在 deferred 队尾，下一轮先于更新入站消息派发。
+                    self.deferred_inbound.push_back(later);
+                    break;
+                }
+            }
+            if dropped > 0
+                && let Some(head_msg) = head.as_ref()
+                && let IpcMessageKind::SetViewport(params) = &head_msg.kind
+            {
+                resize_trace(format!(
+                    "coalesced {dropped} stale SetViewport, latest {}x{}",
+                    params.width, params.height
+                ));
+            }
+        }
         Ok(head)
     }
 
@@ -2498,16 +2593,23 @@ return JSON.stringify({{action:action,name:name,val:val}});\
     }
 
     fn try_republish_cached(&mut self) -> Result<(), String> {
+        let republish_start = Instant::now();
         let font_loader = &self.font_loader;
         let font_id = self.font_id;
         let wv = self.webview.as_mut().expect("webview");
         text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
             wv.render();
         });
+        resize_trace(format!("full render in {}us", republish_start.elapsed().as_micros()));
         self.publish_webview(None, true)
     }
 
     fn handle_set_viewport(&mut self, params: SetViewportParams) -> Result<(), String> {
+        let resize_trace_start = Instant::now();
+        resize_trace(format!(
+            "set_viewport {}x{} dsf={:.2}",
+            params.width, params.height, params.device_scale_factor
+        ));
         self.viewport = (params.width, params.height);
         self.device_scale_factor = if params.device_scale_factor.is_finite() && params.device_scale_factor > 0.0 {
             params.device_scale_factor
@@ -2524,6 +2626,10 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             .as_ref()
             .is_none_or(|webview| webview.last_render().is_none())
         {
+            resize_trace(format!(
+                "set_viewport done (no prior render) in {}us",
+                resize_trace_start.elapsed().as_micros()
+            ));
             return Ok(());
         }
         // R3254（CSSOM View §resizing / UI Events §resize）：视口尺寸变化注入 `__zw_user_resize(w,h)` →
@@ -2535,7 +2641,41 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 tracing::warn!("dispatch user resize: {e}");
             }
         }
-        self.try_republish_cached()
+        let result = self.try_republish_after_resize();
+        resize_trace(format!(
+            "set_viewport done in {}us (render+publish)",
+            resize_trace_start.elapsed().as_micros()
+        ));
+        result
+    }
+
+    /// resize 后的重发布：优先增量渲染（保留 DOM/CSS 解析缓存，免整页重解析——
+    /// t11 resize "幻灯片"主根因之一），无缓存（首帧/导航中）时回退全量。
+    fn try_republish_after_resize(&mut self) -> Result<(), String> {
+        let republish_start = Instant::now();
+        let font_loader = &self.font_loader;
+        let font_id = self.font_id;
+        let (incremental, timings) = {
+            let wv = self.webview.as_mut().expect("webview");
+            text_metrics::with_measure_ctx_opt(font_loader, font_id, || match wv.render_incremental() {
+                Some(result) => (true, result.timings),
+                None => {
+                    let result = wv.render();
+                    (false, result.timings)
+                }
+            })
+        };
+        resize_trace(format!(
+            "{} render in {}us (parse={:.1}ms style={:.1}ms layout={:.1}ms paint={:.1}ms total={:.1}ms)",
+            if incremental { "incremental" } else { "full" },
+            republish_start.elapsed().as_micros(),
+            timings.parse_ms,
+            timings.style_ms,
+            timings.layout_ms,
+            timings.paint_ms,
+            timings.total_ms
+        ));
+        self.publish_webview(None, true)
     }
 
     fn handle_set_color_scheme(&mut self, params: SetColorSchemeParams) -> Result<(), String> {

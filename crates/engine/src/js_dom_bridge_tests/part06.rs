@@ -1405,6 +1405,170 @@ fn test_selection_surface_r3254_m1() {
 }
 
 #[test]
+fn test_selection_live_range_removal_snap_m2s2() {
+    // selection-compat M2 切片 2：节点移除时 Selection 保存的 anchor/focus 边界点
+    // 随 live range 吸附（DOM Standard concept-node-pre-remove 末段，R262 删除
+    // 事件经 __zwSelectionFollowRemoval 通知 Selection 保存值）——
+    // ① forward 选区跨被移除节点：anchorNode 吸附 (oldParent, oldIndex)，
+    //   focusNode 不动；② anchor 在 oldParent 且 offset > oldIndex → offset−1，
+    //   focus 在被移除子树 → 吸附；③ backward 方向（anchor/focus 分属两端）：
+    //   被移除侧吸附、另一侧不动——两规则对双端点独立应用；
+    // ④ 空 selection 删除不崩（anchorNode 恒 null）。
+    // 驱动用例：WPT selection/anchor-removal.html「anchorNode snaps up to
+    // parent when removed」（拖选前置面由 Actions 命中测试切片另测）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=r><p id=p1>hello</p><p id=p2>world</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① forward：anchor=(p1.firstChild,0)、focus=(p2.firstChild,3)，移除 p1
+    //（r 的 child 0）→ anchor 吸附 (r,0)，focus 不动。
+    sandbox
+        .execute(
+            "var r = document.querySelector('#r'); var p1 = document.querySelector('#p1');\
+             var p2 = document.querySelector('#p2');\
+             getSelection().removeAllRanges();\
+             getSelection().setBaseAndExtent(p1.firstChild, 0, p2.firstChild, 3);\
+             p1.remove();\
+             globalThis.__a1 = getSelection().anchorNode === r;\
+             globalThis.__a2 = getSelection().anchorOffset;\
+             globalThis.__a3 = getSelection().focusNode === p2.firstChild;\
+             globalThis.__a4 = getSelection().focusOffset;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a1)").unwrap().value,
+        "true",
+        "移除 anchor 所在 p1 后 anchorNode 须吸附到父 r（WPT anchor-removal「snaps up to parent」）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a2)").unwrap().value,
+        "0",
+        "anchorOffset 须吸附到 p1 原 index 0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a3)").unwrap().value,
+        "true",
+        "focus 端不在被移除子树须保持 p2.firstChild"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a4)").unwrap().value,
+        "3",
+        "focusOffset 须保持 3"
+    );
+
+    // ② oldParent offset−1 + 子树吸附：anchor=(r,2)（> index 0）→ 1；
+    // focus=(p1.firstChild,1)（重建后 p1 再移除）→ (r,0)。
+    sandbox
+        .execute(
+            "document.body.innerHTML = '<div id=r><p id=p1>hello</p><p id=p2>world</p></div>';\
+             var r2 = document.querySelector('#r'); var p1b = document.querySelector('#p1');\
+             getSelection().setBaseAndExtent(r2, 2, p1b.firstChild, 1);\
+             p1b.remove();\
+             globalThis.__b1 = getSelection().anchorNode === r2;\
+             globalThis.__b2 = getSelection().anchorOffset;\
+             globalThis.__b3 = getSelection().focusNode === r2;\
+             globalThis.__b4 = getSelection().focusOffset;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b1)").unwrap().value,
+        "true",
+        "anchor 在 oldParent r 时 anchorNode 保持 r"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b2)").unwrap().value,
+        "1",
+        "anchorOffset 2 > oldIndex 0 须减 1（pre-remove 规则②）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b3)").unwrap().value,
+        "true",
+        "focus 在被移除子树须吸附到 r"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b4)").unwrap().value,
+        "0",
+        "focusOffset 须吸附到 oldIndex 0"
+    );
+
+    // ③ backward 方向：anchor=(p2.firstChild,1)、focus=(p1.firstChild,2)（focus
+    // 在前）→ 移除 p1：focus 侧吸附 (r,0)、anchor 侧不动——独立应用。
+    sandbox
+        .execute(
+            "document.body.innerHTML = '<div id=r><p id=p1>hello</p><p id=p2>world</p></div>';\
+             var r3 = document.querySelector('#r'); var p1c = document.querySelector('#p1');\
+             var p2c = document.querySelector('#p2');\
+             getSelection().setBaseAndExtent(p2c.firstChild, 1, p1c.firstChild, 2);\
+             p1c.remove();\
+             globalThis.__c1 = getSelection().anchorNode === p2c.firstChild;\
+             globalThis.__c2 = getSelection().anchorOffset;\
+             globalThis.__c3 = getSelection().focusNode === r3;\
+             globalThis.__c4 = getSelection().focusOffset;\
+             globalThis.__c5 = getSelection().getRangeAt(0).startContainer === r3;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c1)").unwrap().value,
+        "true",
+        "backward 方向 anchor 端不在被移除子树须保持 p2.firstChild"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c2)").unwrap().value,
+        "1",
+        "backward anchorOffset 须保持 1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c3)").unwrap().value,
+        "true",
+        "backward focus 端在被移除子树须吸附到 r"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c4)").unwrap().value,
+        "0",
+        "backward focusOffset 须吸附到 oldIndex 0"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c5)").unwrap().value,
+        "true",
+        "底层 live range start 须同步吸附到 r（R262 既有行为，与保存端点一致）"
+    );
+
+    // ④ 空 selection：removeAllRanges 后移除节点不崩、端点恒 null。
+    sandbox
+        .execute(
+            "getSelection().removeAllRanges();\
+             var p2d = document.querySelector('#p2');\
+             p2d.remove();\
+             globalThis.__d1 = getSelection().anchorNode;\
+             globalThis.__d2 = getSelection().focusNode;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d1)").unwrap().value,
+        "null",
+        "空 selection 删除后 anchorNode 须为 null"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d2)").unwrap().value,
+        "null",
+        "空 selection 删除后 focusNode 须为 null"
+    );
+}
+
+#[test]
 fn test_execcommand_editing_host_events_r3254_m2() {
     // R3254-M2（editing goal M2 切片 1，2026-09-07）：execCommand 编辑类命令的
     // editing host 事件序——① 选区在 contenteditable 宿主内 → beforeinput（cancelable，

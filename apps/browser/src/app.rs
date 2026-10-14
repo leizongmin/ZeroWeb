@@ -38,6 +38,24 @@ use crate::view_source_fetch::ViewSourceFetchState;
 
 const TAB_BAR_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(450);
 
+/// ZW_RESIZE_TRACE 置位时启用窗口 resize 链路诊断（t11，值可为 "1" 或 trace 文件
+/// 路径——renderer 子进程走文件）。进程级快照：入口读一次，热路径只做 bool 判断
+/// （不做逐事件 getenv）。
+pub(crate) static RESIZE_TRACE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_RESIZE_TRACE").is_ok());
+
+/// ZW_RESIZE_TRACE 诊断输出。时间戳用 epoch 毫秒——browser 与 renderer（子进程，
+/// stderr 同流）跨进程对齐时序用。
+pub(crate) fn resize_trace(component: &str, msg: impl std::fmt::Display) {
+    if *RESIZE_TRACE {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or_default();
+        eprintln!("[ZW_RESIZE_TRACE] t={now} {component} {msg}");
+    }
+}
+
 /// 浏览器 UI 场景图元包：`(fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows)`。
 /// `overlay_*` 在所有 fills/glyphs 之后绘制；`chrome_shadows` 是壳层阴影（如页面视口）。
 pub(crate) type ChromeScene = (
@@ -1264,6 +1282,12 @@ impl BrowserApp {
         self.address_bar.text()
     }
 
+    /// 测试用：获取地址栏光标位置
+    #[cfg(test)]
+    pub fn address_bar_cursor(&self) -> usize {
+        self.address_bar.cursor()
+    }
+
     /// 测试用：获取标签页垂直滚动偏移（物理像素）
     #[cfg(test)]
     pub fn scroll_offset_for_tab(&self, tab_id: TabId) -> f32 {
@@ -1707,7 +1731,12 @@ impl BrowserApp {
     fn load_local_tab_url(&mut self, tab_id: TabId, url: &str) {
         match url {
             "zero://settings" => self.open_settings_page(),
+            // 历史页（含 `?q=` 过滤形态，F5 刷新走这里而非 try_apply_internal_url）。
             "zero://history" => self.open_history_page(),
+            u if u.starts_with("zero://history?q=") => {
+                let query = Self::percent_decode(u.strip_prefix("zero://history?q=").unwrap_or(u));
+                self.open_history_page_filtered(Some(&query));
+            }
             "zero://downloads" => self.open_downloads_page(),
             "zero://bookmarks" => self.open_bookmarks_page(),
             u if u.starts_with("zero://") => self.load_welcome_page(tab_id),
@@ -1816,8 +1845,9 @@ impl BrowserApp {
         // 尚无 URL；地址栏路径已先 shell.navigate，不会重复入账）。
         self.shell.record_initial_navigation(tab_id, "zero://newtab");
         self.tabs.ensure_tab(tab_id);
-        self.tabs
-            .load_html(tab_id, pages::WELCOME_HTML, None, Some("zero://newtab"));
+        // 每次装载都按当前历史重新生成（t12-t14：新标签页展示最近访问站点）。
+        let html = pages::generate_welcome_html(self.shell.history());
+        self.tabs.load_html(tab_id, &html, None, Some("zero://newtab"));
         self.finish_tab_load(tab_id, "zero://newtab", "ZeroBrowser");
     }
 
@@ -2316,8 +2346,17 @@ impl BrowserApp {
 
     /// 打开历史记录页面。
     pub fn open_history_page(&mut self) {
-        let html = pages::generate_history_html(self.shell.history());
-        self.open_internal_list_page("zero://history", html, "History");
+        self.open_history_page_filtered(None);
+    }
+
+    /// 打开带过滤词的历史记录页面（地址栏 URL 为 `zero://history?q=…`）。
+    fn open_history_page_filtered(&mut self, query: Option<&str>) {
+        let html = pages::generate_history_html(self.shell.history(), query);
+        let url = match query.map(str::trim).filter(|q| !q.is_empty()) {
+            Some(q) => format!("zero://history?q={}", pages::percent_encode_query_value(q)),
+            None => "zero://history".to_string(),
+        };
+        self.open_internal_list_page(&url, html, "History");
     }
 
     /// 打开下载管理页面。
@@ -2498,6 +2537,24 @@ impl BrowserApp {
         if self.try_apply_settings_url(url) {
             return true;
         }
+        if let Some(rest) = url.strip_prefix("zero://history?q=") {
+            // 历史页搜索框 GET 提交 / 地址栏直输：按过滤词重开历史页。
+            let query = Self::percent_decode(rest);
+            self.open_history_page_filtered(Some(&query));
+            return true;
+        }
+        if let Some(rest) = url.strip_prefix("zero://history/remove?url=") {
+            // 单条删除：`url=` 值经 percent-encode_query_value 编码（原 URL 内的
+            // `&` 已转义为 %26），先按字面分隔符切参、再解码，顺序不可反。
+            let (encoded_url, query) = match rest.split_once("&q=") {
+                Some((value, q)) => (value, Some(Self::percent_decode(q))),
+                None => (rest, None),
+            };
+            let target = Self::percent_decode(encoded_url);
+            self.shell.history_mut().remove(&target);
+            self.open_history_page_filtered(query.as_deref());
+            return true;
+        }
         match url {
             "zero://history/clear" => {
                 self.shell.history_mut().clear();
@@ -2558,22 +2615,24 @@ impl BrowserApp {
     }
 
     fn percent_decode(input: &str) -> String {
-        let mut out = String::with_capacity(input.len());
+        // 先按 %XX 还原为字节序列，再整体按 UTF-8 解码：搜索词等参数含中文时
+        // 逐字节 `char::from(u8)` 会把 UTF-8 序列拆成 Latin-1 乱码。
         let bytes = input.as_bytes();
+        let mut decoded = Vec::with_capacity(bytes.len());
         let mut i = 0;
         while i < bytes.len() {
             if bytes[i] == b'%' && i + 2 < bytes.len() {
                 let hex = &input[i + 1..i + 3];
                 if let Ok(value) = u8::from_str_radix(hex, 16) {
-                    out.push(char::from(value));
+                    decoded.push(value);
                     i += 3;
                     continue;
                 }
             }
-            out.push(char::from(bytes[i]));
+            decoded.push(bytes[i]);
             i += 1;
         }
-        out
+        String::from_utf8_lossy(&decoded).into_owned()
     }
 
     /// 轮换默认搜索引擎。

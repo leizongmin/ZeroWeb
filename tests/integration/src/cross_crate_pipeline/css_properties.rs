@@ -11,6 +11,14 @@ fn render_pipeline(html: &str, css: &str) -> zero_engine::RenderResult {
     pipeline.render_html(html, css)
 }
 
+/// 指示器专项辅助：调试属性指示器生产默认关闭（`skip_indicators` 默认 true，
+/// 578bb8c75），断言指示器 fill/stroke 的测试经此显式开启。
+fn render_pipeline_with_indicators(html: &str, css: &str) -> zero_engine::RenderResult {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.set_skip_indicators(false);
+    pipeline.render_html(html, css)
+}
+
 /// 辅助函数：创建管线并渲染带动画的 HTML。
 fn render_pipeline_animated(html: &str, css: &str, current_time: f64) -> zero_engine::RenderResult {
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
@@ -1372,7 +1380,7 @@ fn test_direction_rtl_pipeline() {
             font-size: 14px;
         }
     "#;
-    let result = render_pipeline(html, css);
+    let result = render_pipeline_with_indicators(html, css);
     // rtl 应生成方向指示器 stroke
     assert!(!result.primitives().strokes.is_empty(), "rtl 应渲染方向指示器 stroke");
 }
@@ -1404,7 +1412,7 @@ fn test_tab_size_pipeline() {
             font-size: 14px;
         }
     "#;
-    let result = render_pipeline(html, css);
+    let result = render_pipeline_with_indicators(html, css);
     // tab-size:4 应生成指示器 fill
     assert!(!result.primitives().fills.is_empty(), "tab-size:4 应渲染指示器");
 }
@@ -1418,7 +1426,7 @@ fn test_border_collapse_pipeline() {
             border-collapse: collapse;
         }
     "#;
-    let result = render_pipeline(html, css);
+    let result = render_pipeline_with_indicators(html, css);
     // collapse 应生成边框合并指示器 stroke
     assert!(!result.primitives().strokes.is_empty(), "collapse 应渲染边框合并指示器");
 }
@@ -1432,7 +1440,7 @@ fn test_table_layout_fixed_pipeline() {
             table-layout: fixed;
         }
     "#;
-    let result = render_pipeline(html, css);
+    let result = render_pipeline_with_indicators(html, css);
     // fixed 应生成表格布局指示器 fill
     assert!(!result.primitives().fills.is_empty(), "fixed 应渲染表格布局指示器");
 }
@@ -1448,7 +1456,7 @@ fn test_font_variant_numeric_pipeline() {
             font-size: 14px;
         }
     "#;
-    let result = render_pipeline(html, css);
+    let result = render_pipeline_with_indicators(html, css);
     // tabular-nums 应生成数字变体指示器 fill
     assert!(
         !result.primitives().fills.is_empty(),
@@ -1472,7 +1480,7 @@ fn test_contain_strict_render_pipeline() {
             height: 50px;
         }
     "#;
-    let result = render_pipeline(html, css);
+    let result = render_pipeline_with_indicators(html, css);
     // contain:strict 应生成包含指示器
     assert!(!result.primitives().fills.is_empty(), "contain:strict 应渲染指示器");
 }
@@ -1489,7 +1497,7 @@ fn test_unicode_bidi_override_pipeline() {
             font-size: 14px;
         }
     "#;
-    let result = render_pipeline(html, css);
+    let result = render_pipeline_with_indicators(html, css);
     // bidi-override 应生成双向文本指示器
     assert!(!result.primitives().fills.is_empty(), "bidi-override 应渲染指示器");
 }
@@ -1521,7 +1529,7 @@ fn test_overflow_wrap_break_word_pipeline() {
             font-size: 14px;
         }
     "#;
-    let result = render_pipeline(html, css);
+    let result = render_pipeline_with_indicators(html, css);
     // break-word 应生成断词指示器
     assert!(!result.primitives().fills.is_empty(), "break-word 应渲染指示器");
 }
