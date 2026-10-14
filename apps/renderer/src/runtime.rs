@@ -1244,8 +1244,7 @@ impl RendererRuntime {
             self.apply_text_delete_at(target)?;
         } else if key == "Enter" {
             // t3-pd6：Enter 在表单控件中触发隐式表单提交——
-            // 通过 `__zw_request_navigate` 回调（既有导航桥）从 shim 读取
-            // form action + 活值 → 推入 navigations 队列 → 主循环消费。
+            // 直接从 shim 读取 form action + 活值构造 GET URL 并调用 handle_navigate。
             let nav_script = r#"(function(){
 var form=document.querySelector('form');
 if(!form)return null;
@@ -1258,10 +1257,34 @@ for(var i=0;i<inputs.length;i++){
 }
 if(!params.length)return null;
 var url=action+(action.indexOf('?')>=0?'&':'?')+params.join('&');
-__zw_request_navigate(url);
-return 'navigated';
+return url;
 })()"#;
-            let _ = self.js_worker.execute_script_direct(nav_script);
+            let nav_result = self.js_worker.execute_script_direct(nav_script);
+            if let Ok(url) = nav_result {
+                let trimmed = url.trim().strip_prefix('"').unwrap_or(&url).strip_suffix('"').unwrap_or(&url);
+                if !trimmed.is_empty() && trimmed != "null" {
+                    // 相对 URL → 绝对 URL（基于 current_url 的 origin）
+                    let abs_url = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+                        trimmed.to_string()
+                    } else if let Some(current) = &self.current_url {
+                        if let Some(origin_end) = current
+                            .find("://")
+                            .and_then(|i| current[i + 3..].find('/').map(|j| i + 3 + j))
+                        {
+                            format!("{}{}", &current[..origin_end], trimmed)
+                        } else {
+                            format!("{current}/{trimmed}")
+                        }
+                    } else {
+                        trimmed.to_string()
+                    };
+                    return self.handle_navigate(zero_protocol::message::NavigateParams {
+                        url: abs_url,
+                        referrer: None,
+                        navigation_epoch: self.navigation_epoch.wrapping_add(1),
+                    });
+                }
+            }
         } else if key == "Escape" {
             // R3254-K3（keyboard-default-actions goal M2 切片 2）：Esc 默认动作——
             // open dialog 的 cancel/close（cancelable，preventDefault 阻断关闭）。
