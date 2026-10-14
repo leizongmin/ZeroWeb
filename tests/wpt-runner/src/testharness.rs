@@ -1753,6 +1753,42 @@ fn case_variants(source: &str) -> Vec<String> {
     out
 }
 
+/// touch-events-compat goal corpus subdir（M1 / DC-1）：上游 `touch-events/` flat 布局。
+pub const TOUCH_EVENTS_TEST_SUBDIRS: &[&str] = &["touch-events"];
+
+/// touch-events-compat 语料跳过规则（非静默丢弃——逐类记入 evidence 导入清单）：
+/// - `*-manual.html`：真实多点触控硬件交互（uievents manual 先例）
+/// - `touch-action-document-crash.html`：crashtest 形态（无 testharness，「不崩即过」；
+///   uievents crashtests 先例）
+/// - source 含 `test_driver` / `testdriver.js`：宿主触摸注入面——test_driver Actions
+///   触摸链依赖宿主 touch 真值流（runner 内 pointerType 'touch' 仅作标签透传，无
+///   touchstart/touchend 派发）。两类标记都要查：test_driver 调用可能落在同目录
+///   helper（multi-touch-interactions.js 先例——.html 只带 script src）。单指/多指/
+///   pinch/compat-mouse/tap+sync-xhr 十案挂 M3 注入面带数字收口，重入条件 = 宿主
+///   触摸注入管线
+///
+/// `idlharness.window.js` 不经此规则——collector 只扫 `.html`；不跑的原因同仓
+/// 先例：/resources/WebIDLParser.js 为 build 期生成资产，repo 内不存在
+/// （clipboard/timing/net-api idlharness 先例）。
+fn touch_events_case_skipped(relative: &str, source: &str) -> bool {
+    let file_name = relative.rsplit('/').next().unwrap_or(relative);
+    if file_name.ends_with("-manual.html") || file_name == "touch-action-document-crash.html" {
+        return true;
+    }
+    source.contains("test_driver") || source.contains("testdriver.js")
+}
+
+/// Run the upstream touch-events constructor/attribute face corpus under `wpt_root`
+/// （touch-events-compat goal M1 / DC-1——Touch/TouchEvent 构造器 + 列表属性语义基线）。
+///
+/// flat 布局走共享 [`run_corpus_subdirs`] 收集器；跳过规则见
+/// [`touch_events_case_skipped`]（manual/crashtest/宿主触摸注入面，逐类记账）。
+/// 用例由 `scripts/goals/22-touch-events-compat.sh` 按需拉取（gitignored）。
+/// filter 按路径子串透传：`make testharness-touch-events FILTER=constructor`。
+pub fn run_touch_events_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, TOUCH_EVENTS_TEST_SUBDIRS, filter, touch_events_case_skipped)
+}
+
 /// Media elements goal（docs/goal/archive/media-elements.md，M1 / DC-1）导入的上游
 /// `html/semantics/embedded-content/media-elements` testharness 用例面。
 ///

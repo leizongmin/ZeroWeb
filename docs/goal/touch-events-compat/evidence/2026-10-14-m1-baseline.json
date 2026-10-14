@@ -1,0 +1,182 @@
+[
+  [
+    "touch-events/expose-legacy-touch-event-apis.html",
+    [
+      {
+        "name": "'ontouchstart' in [object Window]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchstart' in [object Object]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchstart' in [object Object]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchstart' in [object Object]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchmove' in [object Window]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchmove' in [object Object]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchmove' in [object Object]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchmove' in [object Object]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchend' in [object Window]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchend' in [object Object]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchend' in [object Object]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchend' in [object Object]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchcancel' in [object Window]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchcancel' in [object Object]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchcancel' in [object Object]",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'ontouchcancel' in [object Object]",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "touch-events/historical.html",
+    [
+      {
+        "name": "Touch::webkitRadiusX",
+        "status": "Fail",
+        "message": "Touch is not defined"
+      },
+      {
+        "name": "Touch::webkitRadiusY",
+        "status": "Fail",
+        "message": "Touch is not defined"
+      },
+      {
+        "name": "Touch::webkitRotationAngle",
+        "status": "Fail",
+        "message": "Touch is not defined"
+      },
+      {
+        "name": "Touch::webkitForce",
+        "status": "Fail",
+        "message": "Touch is not defined"
+      },
+      {
+        "name": "TouchList::identifiedTouch",
+        "status": "Fail",
+        "message": "TouchList is not defined"
+      },
+      {
+        "name": "TouchEvent::initTouchEvent",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document::createTouch",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Document::createTouchList",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "touch-events/touch-globaleventhandler-interface.html",
+    [
+      {
+        "name": "Touch events in GlobalEventHandlers",
+        "status": "PreconditionFailed",
+        "message": "'expose legacy touch event APIs'"
+      },
+      {
+        "name": "Touch events are GlobalEventHandlers' own property",
+        "status": "PreconditionFailed",
+        "message": "'expose legacy touch event APIs'"
+      },
+      {
+        "name": "Touch events not in Element.prototype",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "touch-events/touch-touchevent-constructor.html",
+    [
+      {
+        "name": "Touch constructor with insufficient properties",
+        "status": "Fail",
+        "message": "assert_throws_js: Touch constructor with no argument function \"function() {new Touch();}\" threw object \"ReferenceError: Touch is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "Touch constructor with non-EventTarget target",
+        "status": "Fail",
+        "message": "assert_throws_js: Touch constructor with null target function \"function() {new Touch({\n        identifier: testIdentifier,\n        target: null\n    });}\" threw object \"ReferenceError: Touch is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "Touch constructor exists and creates a Touch object with minimum properties",
+        "status": "Fail",
+        "message": "Touch is not defined"
+      },
+      {
+        "name": "Touch constructor exists and creates a Touch object with requested properties",
+        "status": "Fail",
+        "message": "Touch is not defined"
+      },
+      {
+        "name": "TouchEvent constructor exists and creates a TouchEvent object with requested properties",
+        "status": "Fail",
+        "message": "Touch is not defined"
+      }
+    ]
+  ]
+]

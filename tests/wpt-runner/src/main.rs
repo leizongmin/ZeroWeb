@@ -46,6 +46,8 @@ Commands:
   testharness-selection  Run imported selection/ testharness cases (editing goal M1 / DC-1)
   testharness-keyboard  Run imported keyboard testharness cases (keyboard-default-actions goal M1 / DC-1)
   testharness-uievents  Run imported uievents/pointerevents testharness corpus (uievents-compat goal M1 / DC-1)
+  testharness-touch-events  Run imported touch-events constructor/attribute face testharness
+                       corpus (touch-events-compat goal M1 / DC-1)
   testharness-media  Run imported media-elements testharness cases (media-elements goal M1 / DC-1)
   testharness-webaudio  Run imported Web Audio testharness cases (media-audio goal M3)
   testharness-indexeddb  Run imported IndexedDB testharness cases (storage-indexeddb goal M1)
@@ -299,6 +301,7 @@ fn main() {
         "testharness-selection" => cmd_testharness_selection(&options, filter.as_deref()),
         "testharness-keyboard" => cmd_testharness_keyboard(&options, filter.as_deref()),
         "testharness-uievents" => cmd_testharness_uievents(&options, filter.as_deref()),
+        "testharness-touch-events" => cmd_testharness_touch_events(&options, filter.as_deref()),
         "testharness-media" => cmd_testharness_media(&options, filter.as_deref()),
         "testharness-webaudio" => cmd_testharness_webaudio(&options, filter.as_deref()),
         "testharness-indexeddb" => cmd_testharness_indexeddb(&options, filter.as_deref()),
@@ -829,6 +832,51 @@ fn cmd_testharness_uievents(options: &CliOptions, filter: Option<&str>) {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
     let cases = testharness::run_uievents_cases(&wpt_root, filter);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+/// `testharness-touch-events` 子命令 — 跑导入的上游 touch-events 构造器/属性面
+/// testharness corpus（touch-events-compat goal M1 / DC-1——Touch/TouchEvent 构造器
+/// + touches/targetTouches/changedTouches 列表语义基线）。
+///
+/// 用例由 `scripts/goals/22-touch-events-compat.sh` 按需拉到 `wpt-data/touch-events/`
+/// （gitignored）；跳过规则见 `testharness::touch_events_case_skipped`（manual/
+/// crashtest/宿主触摸注入面——testdriver touch Actions 十案挂 M3 带数字收口）。
+/// 退出码：有用例非 Pass 或用例集为空 → 1（与 testharness-uievents 一致）。
+/// filter 按路径子串透传：`make testharness-touch-events FILTER=constructor`。
+fn cmd_testharness_touch_events(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let cases = testharness::run_touch_events_cases(&wpt_root, filter);
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()
