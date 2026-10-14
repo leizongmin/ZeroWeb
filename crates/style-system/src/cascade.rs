@@ -252,19 +252,28 @@ fn is_invalid_enum_value(property: &str, value: &str) -> bool {
 fn canonical_property_name(property: &str) -> &str {
     match property {
         "word-wrap" => "overflow-wrap",
-        // CSS Logical Properties（sizing 族）canonical 化：logical 尺寸属性须规范化为
-        // 水平书写模式的物理等价，使 logical 与 physical 声明在级联中按 specificity/order
-        // 竞争（CSS Logical Props：computed value 由 logical+physical 共同声明的级联决定）。
-        // 否则二者各占独立 canonical 槽位 → 都被应用 → specificity 丢失，终值由 apply 顺序/
-        // HashMap 迭代序决定（错误）。垂直书写模式的轴交换由 converter swap_writing_mode_axes
-        // 在 apply 之后处理（width↔height 互换），不受此处 canonical 化影响。
-        // driving: css-logical/cascading-001。
-        "inline-size" => "width",
-        "block-size" => "height",
-        "min-inline-size" => "min-width",
-        "min-block-size" => "min-height",
-        "max-inline-size" => "max-width",
-        "max-block-size" => "max-height",
+        // CSS Logical Properties（sizing 族）：R5128 起不再在此 canonical 化——canonical
+        // 化把映射钉死在 horizontal-tb（block-size→height），垂直书写模式经 converter 轴
+        // 交换后落在行内轴（block-size 在 vertical-lr 应为物理宽，实证渲染为物理高 →
+        // css-writing-modes 族 block-size 案全隐）。改走 R4448/R4449 延迟臂：级联保持
+        // logical 名独立槽位（与 physical 声明按 specificity/order 竞争，css-logical
+        // cascading-001 语义不变），继承完成后按元素最终 writing-mode 映射物理槽位应用
+        //（logical_alias_physical_slot + is_logical_property_name size 族分支）。
+        // kill-switch ZW_LOGICAL_SIZE=0 回落旧 canonical 化（horizontal-tb 语义）。
+        // driving: css/css-multicol/multicol-span-all-rule-002（vertical-lr section 子元素
+        // block-size 全隐）。
+        "inline-size" | "block-size" | "min-inline-size" | "min-block-size" | "max-inline-size" | "max-block-size"
+            if !logical_size_deferred_enabled() =>
+        {
+            match property {
+                "inline-size" => "width",
+                "block-size" => "height",
+                "min-inline-size" => "min-width",
+                "min-block-size" => "min-height",
+                "max-inline-size" => "max-width",
+                _ => "max-height",
+            }
+        }
         // R2919：vendor 前缀 longhand 别名 canonical 化（legacy static web 兼容，DC-13 Tier 1）。
         // 2010s 老式静态页面大量用 `-webkit-` 前缀属性；parser 容忍 vendor 前缀（不丢弃声明），
         // 但未规范化前这些声明在 apply 阶段无匹配槽位 → 静默 no-op。此处把**值语法与标准
@@ -318,6 +327,24 @@ fn canonical_property_name(property: &str) -> &str {
 fn is_legacy_webkit_box_value(value: &str) -> bool {
     let v = value.trim();
     v.eq_ignore_ascii_case("-webkit-box") || v.eq_ignore_ascii_case("-webkit-inline-box")
+}
+
+/// R5128：logical sizing 族（inline-size/block-size 及 min/max 变体）延迟臂开关。
+///
+/// 开启（`ZW_LOGICAL_SIZE=1`）时级联不 canonical 化这六个属性名——保持独立槽位，
+/// 由继承完成后的 R4448/R4449 延迟臂按元素最终 writing-mode 映射物理槽位
+/// （css-logical-1 §2 + css-writing-modes-3 §7.1 轴语义）。
+///
+/// 默认关闭：回落 horizontal-tb canonical 化旧路径（css-writing-modes-3 §7.3
+/// 正交流中的物理轴行为）。原因是正交根本地机制（vertical_block_flow 正交填充、
+/// abspos 尺寸解析、table/replaced intrinsic）按 htb 槽位约定读取 cs.width/height，
+/// 纯 own-wm 映射会致 css/css-sizing/div-*-orthogonal-* 族（13 案）复红；
+/// 而旧映射又使 css-grid/firefox-bug-1881495 等 grid/multicol/table 垂直上下文
+/// 案例无法修复。待正交根本地机制支持 own-wm 尺寸读取后再默认开启。
+pub(crate) fn logical_size_deferred_enabled() -> bool {
+    static ENABLED: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_LOGICAL_SIZE").as_deref() == Ok("1"));
+    *ENABLED
 }
 
 /// 级联算法。
@@ -984,12 +1011,15 @@ mod tests {
         assert!(!result.contains_key("word-wrap"));
     }
 
-    /// R2499：CSS Logical Properties sizing 族 canonical 化——logical 尺寸属性须规范化为
-    /// 其水平书写模式的物理等价，使 logical 与 physical 在级联中按 specificity 竞争。
-    /// driving: css-logical/cascading-001（physical+logical 同元素须 cascade 共解）。
+    /// R5128：sizing 族不再在级联 canonical 化（默认 ZW_LOGICAL_SIZE 开）——logical 名
+    /// 保持独立槽位，由继承完成后的 R4448/R4449 延迟臂按元素最终 writing-mode 映射物理
+    /// 槽位（旧 canonical 化把映射钉死 horizontal-tb，垂直模式错轴）。kill-switch 路径
+    /// （ZW_LOGICAL_SIZE=0 → canonical 化回落）进程内 env 惰性缓存不可翻转，由 corpus
+    /// 端到端把守。
     #[test]
     fn test_canonical_logical_size_aliases() {
-        // inline-size↔width、block-size↔height 及 min/max 变体。
+        // 默认（延迟臂关闭）canonical 化为物理名；ZW_LOGICAL_SIZE=1 时原样返回，
+        // 由 R4448/R4449 延迟臂映射。
         assert_eq!(canonical_property_name("inline-size"), "width");
         assert_eq!(canonical_property_name("block-size"), "height");
         assert_eq!(canonical_property_name("min-inline-size"), "min-width");
@@ -1081,6 +1111,8 @@ mod tests {
     /// R2499：logical 与 physical 尺寸属性共享同一 canonical 槽位 → 按 specificity 竞争，
     /// 而非各占独立槽位双双应用（致 specificity 丢失、终值由 apply/HashMap 序决定）。
     /// driving: css-logical/cascading-001（class inline-size:100px vs ID width:10px → ID 须胜）。
+    /// R5128 延迟臂开启（ZW_LOGICAL_SIZE=1）时键分离、由 CascadeOrder 消解，见
+    /// `logical_size_deferred_enabled` 文档。
     #[test]
     fn test_cascade_logical_and_physical_size_share_slot() {
         // class（specificity 0,1,0）inline-size:100px vs ID（1,0,0）width:10px → ID 胜。
