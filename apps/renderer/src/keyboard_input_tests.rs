@@ -636,7 +636,7 @@ fn enter_on_form_input_navigates_to_action_query() {
     assert_eq!(
         runtime.current_url.as_deref(),
         Some("https://zero.test/search?q=rust&src=web"),
-        "Enter 隐式提交必须导航到 action?entry-list（tree order，query 置换语义见脚本）"
+        "Enter 隐式提交必须导航到 action?entry-list（webview 层 SubmitForm→Navigate 转换，Rust 端构造）"
     );
 }
 
@@ -684,6 +684,6 @@ fn relative_action_resolves_and_replaces_query() {
     assert_eq!(
         runtime.current_url.as_deref(),
         Some("https://zero.test/dir/search?q=x"),
-        "相对 action 按当前 URL 解析（shim new URL），query 按规范置换而非追加"
+        "相对 action 按当前 URL 解析（上游 Rust form_get_submission_url_with_values），query 按规范置换而非追加"
     );
 }

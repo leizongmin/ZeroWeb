@@ -126,44 +126,6 @@ const LOAD_TICK_INTERVAL: Duration = Duration::from_millis(16);
 #[cfg(not(target_os = "macos"))]
 const RENDERER_RUNTIME_STACK_SIZE: usize = 16 * 1024 * 1024;
 
-/// 用户动作管线的有界执行器视图（t7，fix#13 模式推广到动作管线）。
-///
-/// 动作派发内的脚本（submit 事件族、entry-list 读取等）此前经
-/// [`zero_page_runtime::JsExecutor::execute_script_direct`] 无界同步等待——页面回调长臂
-/// 占住 worker 时永久阻塞 renderer 主循环（DDG 首页 Enter 实证 7/7 整机挂死）。本适配器
-/// 把动作管线全部脚本改走优先通道有界等待：超时脚本滞留队列照常执行（结果晚至，由
-/// worker 继续消费），调用方按「结果未知」降级，主循环回 recv 保持导航 IPC 响应。
-/// 快照与脚本成对走优先通道（同通道 FIFO 防顺序倒置，同 fix#13）。
-struct BoundedActionExecutor<'a> {
-    inner: &'a RendererJsWorker,
-}
-
-impl zero_page_runtime::JsExecutor for BoundedActionExecutor<'_> {
-    fn set_dom_snapshot(&self, html: &str, url: &str) {
-        self.inner.set_dom_snapshot_priority(html, url);
-    }
-    fn execute_script_direct(&self, script: &str) -> Result<String, String> {
-        zero_page_runtime::JsExecutor::execute_script_priority_bounded(
-            self.inner,
-            script,
-            zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
-        )
-    }
-    fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String> {
-        // 动作管线不派发 module（事件派发与 entry-list 均为函数脚本）；直通保持语义。
-        self.inner.execute_module(source, url, deps)
-    }
-    fn mutations(&self) -> Arc<std::sync::Mutex<Vec<zero_engine::DomMutation>>> {
-        self.inner.mutations()
-    }
-    fn execute_script_priority_bounded(&self, script: &str, timeout: std::time::Duration) -> Result<String, String> {
-        zero_page_runtime::JsExecutor::execute_script_priority_bounded(self.inner, script, timeout)
-    }
-    fn set_dom_snapshot_priority(&self, html: &str, url: &str) {
-        self.inner.set_dom_snapshot_priority(html, url);
-    }
-}
-
 /// 单个 renderer surface 的帧发布状态。
 struct FramePublishState {
     /// 页面绘制帧的 Browser IPC 发布模式。
@@ -1175,11 +1137,7 @@ impl RendererRuntime {
             .webview
             .as_mut()
             .expect("webview")
-            .dispatch_external_user_action_with_javascript(
-                &BoundedActionExecutor { inner: &self.js_worker },
-                self.javascript_enabled,
-                request,
-            )
+            .dispatch_external_user_action_with_javascript(&self.js_worker, self.javascript_enabled, request)
             .map_err(|error| error.to_string())?;
         self.sync_cached_html_from_webview();
         if sync_text {
@@ -1254,51 +1212,10 @@ impl RendererRuntime {
                     navigated = true;
                 }
                 zero_page_runtime::PageEffect::SetFragment { .. } => {}
-                zero_page_runtime::PageEffect::SubmitForm { form, submitter } => {
-                    // HTML §4.10.22（GET 切片）：submit 事件未取消后到达此处——按 form 节点
-                    // 定位（效果携带句柄，避免首 form 启发式误取）构造 action?entry-list 并
-                    // 导航；action 相对解析与 query 置换在 shim 原生 `new URL` 内完成。POST
-                    // 表单脚本返回 null，维持既有不导航行为（FIXME: 对接 R3055 fetch_post）。
-                    // t7：此前此臂为空，SubmitForm 效果被静默丢弃——Enter/click 提交均不导航。
-                    let form_sel = self
-                        .webview
-                        .as_ref()
-                        .and_then(|wv| wv.selector_for_page_node_handle(form.node().get()));
-                    let Some(form_sel) = form_sel else {
-                        continue;
-                    };
-                    let submitter_sel = submitter.as_ref().and_then(|s| {
-                        self.webview
-                            .as_ref()
-                            .and_then(|wv| wv.selector_for_page_node_handle(s.node().get()))
-                    });
-                    let script = zero_engine::script_form_submission_url(&form_sel, submitter_sel.as_deref());
-                    let url = match zero_page_runtime::JsExecutor::execute_script_priority_bounded(
-                        &self.js_worker,
-                        &script,
-                        zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
-                    ) {
-                        Ok(raw) => raw,
-                        Err(e) => {
-                            tracing::warn!("form submission url: {e}");
-                            continue;
-                        }
-                    };
-                    let trimmed = url.trim().trim_matches('"');
-                    if trimmed.is_empty() || trimmed == "null" {
-                        continue;
-                    }
-                    self.navigate_with(
-                        zero_protocol::message::NavigateParams {
-                            url: trimmed.to_string(),
-                            referrer: self.current_url.clone(),
-                            navigation_epoch: self.navigation_epoch.wrapping_add(1),
-                        },
-                        "GET",
-                        None,
-                    )?;
-                    navigated = true;
-                }
+                // SubmitForm 到达此处必为兜底 no-op：webview 层 dispatch_user_action_impl
+                // 已把 SubmitForm 无条件转换为 Navigate（user_actions.rs，form_navigation_intent
+                // 构造 action?entry-list），导航经上方 Navigate 臂完成。
+                zero_page_runtime::PageEffect::SubmitForm { .. } => {}
             }
         }
         Ok(navigated)
@@ -1330,11 +1247,13 @@ impl RendererRuntime {
             self.apply_text_delete_at(target)?;
         } else if key == "Enter" {
             // HTML §4.10.2 implicit submission：Enter 在表单控件上派发 submit 事件，未取消
-            // 则按 §4.10.22 提交（SubmitForm 效果在 apply_webview_action_effects 消费导航）。
-            // t7：恢复 #154 语义路径——#155/#168 的首 form 启发式脚本已在合并中取代调用点，
-            // 且其 `execute_script_direct` 无界等待在页面回调长臂下永久阻塞主循环（DDG 首页
-            // Enter 实证 7/7 整机挂死）。textarea Enter 提交为已知偏离（规范默认换行），
-            // 沿用 #154 的站点兼容决策。
+            // 则按 §4.10.22 提交——SubmitForm 效果由 webview 层转换为 Navigate（Rust 端
+            // form_get_submission_url_with_values 构造 action?entry-list），经
+            // apply_webview_action_effects 的 Navigate 臂导航。
+            // t7：恢复 #154 语义调用——此前合并中被首 form 启发式脚本取代且调用点丢失，
+            // 该脚本走无界 `execute_script_direct`，页面回调长臂下永久阻塞主循环（DDG
+            // 首页 Enter 实证 7/7 整机挂死）。textarea Enter 提交为已知偏离（规范默认
+            // 换行），沿用 #154 的站点兼容决策。
             // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#implicit-submission
             if let Err(e) = self.submit_form_on_enter_at(target) {
                 // 有界超时按「结果未知」降级（fix#13 同语义）：动作不重试，主循环保持响应。
