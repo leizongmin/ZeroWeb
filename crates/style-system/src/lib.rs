@@ -126,6 +126,11 @@ fn lang_quote_table(lang: &str) -> Option<&'static [(&'static str, &'static str)
         "fi" => &[("\u{201D}", "\u{201D}")],                           // "
         "he" => &[("\u{201D}", "\u{201D}")],                           // "
         "ja" => &[("\u{300C}", "\u{300D}"), ("\u{300E}", "\u{300F}")], // 「 」 / 『 』
+        // R5146（CSS Content 3 §quotes-default）：zh-Hant 用角引号，与 ja 同形；
+        // zh/zh-Hans 惯用弯引号（WPT quotes-025/026/027 实证）。「zh-hans」经 BCP 47
+        // 前缀 fallback 落到「zh」，无需单列。
+        "zh" => &[("\u{201C}", "\u{201D}"), ("\u{2018}", "\u{2019}")], // " " / ' '
+        "zh-hant" => &[("\u{300C}", "\u{300D}"), ("\u{300E}", "\u{300F}")], // 「 」 / 『 』
         _ => return None,
     };
     Some(pairs)
@@ -3264,6 +3269,23 @@ mod q_quotes_tests {
         assert_eq!((o.as_str(), c.as_str()), ("\u{201D}", "\u{201D}"), "fi → ” ”");
         let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("ja"), 0).unwrap();
         assert_eq!((o.as_str(), c.as_str()), ("\u{300C}", "\u{300D}"), "ja → 「 」");
+        // R5146：zh-Hant 角引号；zh / zh-Hans 弯引号（zh-hans 经前缀 fallback 落 zh）。
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("zh-Hant"), 0).unwrap();
+        assert_eq!((o.as_str(), c.as_str()), ("\u{300C}", "\u{300D}"), "zh-Hant → 「 」");
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("zh-Hant"), 1).unwrap();
+        assert_eq!(
+            (o.as_str(), c.as_str()),
+            ("\u{300E}", "\u{300F}"),
+            "zh-Hant depth 1 → 『 』"
+        );
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("zh"), 0).unwrap();
+        assert_eq!((o.as_str(), c.as_str()), ("\u{201C}", "\u{201D}"), "zh → “ ”");
+        let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("zh-Hans"), 0).unwrap();
+        assert_eq!(
+            (o.as_str(), c.as_str()),
+            ("\u{201C}", "\u{201D}"),
+            "zh-Hans → zh fallback “ ”"
+        );
         let (o, c) = resolve_q_quotes(&QuotesComputedValue::Auto, Some("aa"), 0).unwrap();
         assert_eq!(
             (o.as_str(), c.as_str()),
