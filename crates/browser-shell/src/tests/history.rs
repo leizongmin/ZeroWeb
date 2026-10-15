@@ -186,3 +186,21 @@ fn test_history_default() {
     assert!(hist.is_empty());
     assert_eq!(hist.len(), 0);
 }
+
+#[test]
+fn test_history_record_sets_timestamp() {
+    let mut history = History::new();
+    history.record("https://example.com", "Example");
+    let entry = history.iter().next().unwrap();
+    assert!(entry.visited_at() > 0, "record 应写入当前 Unix 时间秒");
+}
+
+#[test]
+fn test_history_deserialize_legacy_without_timestamp() {
+    // 旧版档案条目无 visited_at 字段：serde default 补 0（时间未知），
+    // 不得导致整份历史解析失败。
+    let history: History = serde_json::from_str(r#"{"entries":[{"url":"https://example.com","title":"Example"}]}"#)
+        .expect("legacy history JSON must deserialize");
+    assert_eq!(history.len(), 1);
+    assert_eq!(history.iter().next().unwrap().visited_at(), 0);
+}

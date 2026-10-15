@@ -1947,6 +1947,7 @@ impl BrowserApp {
             }
             "zero://downloads" => self.open_downloads_page(),
             "zero://bookmarks" => self.open_bookmarks_page(),
+            "zero://shortcuts" => self.open_shortcuts_page(),
             u if u.starts_with("zero://") => self.load_welcome_page(tab_id),
             _ => self.tabs.navigate(tab_id, url.to_string()),
         }
@@ -2057,8 +2058,9 @@ impl BrowserApp {
         // 尚无 URL；地址栏路径已先 shell.navigate，不会重复入账）。
         self.shell.record_initial_navigation(tab_id, "zero://newtab");
         self.tabs.ensure_tab(tab_id);
-        // 每次装载都按当前历史重新生成（t12-t14：新标签页展示最近访问站点）。
-        let html = pages::generate_welcome_html(self.shell.history());
+        // 每次装载都按当前历史与搜索引擎重新生成（t12-t14：新标签页展示最近访问
+        // 站点；t31-t33：中央搜索框以当前搜索引擎为表单 action）。
+        let html = pages::generate_welcome_html(self.shell.history(), self.shell.settings().search_engine);
         self.tabs.load_html(tab_id, &html, None, Some("zero://newtab"));
         self.finish_tab_load(tab_id, "zero://newtab", "ZeroBrowser");
     }
@@ -2244,7 +2246,7 @@ impl BrowserApp {
             } else if Some(tab_id) == active_id && url.starts_with("zero://") {
                 self.load_local_tab_url(tab_id, &url);
             } else {
-                let html = pages::generate_welcome_html(self.shell.history());
+                let html = pages::generate_welcome_html(self.shell.history(), self.shell.settings().search_engine);
                 self.tabs.load_html(tab_id, &html, None, Some("zero://newtab"));
             }
         }
@@ -2666,6 +2668,11 @@ impl BrowserApp {
             pages::generate_settings_html(self.shell.settings()),
             "设置",
         );
+    }
+
+    /// 打开键盘快捷键帮助页（`zero://shortcuts`，Ctrl+/ 快捷键）。
+    pub fn open_shortcuts_page(&mut self) {
+        self.open_internal_list_page("zero://shortcuts", pages::generate_shortcuts_html(), "快捷键");
     }
 
     /// 打开历史记录页面。
