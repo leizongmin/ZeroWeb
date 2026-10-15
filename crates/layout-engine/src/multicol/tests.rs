@@ -2,6 +2,10 @@
 
 use super::*;
 
+// R5141 拆分后部分被测函数迁入子模块（`use super::*` 不穿透私有 use 导入）。
+use super::assign::constrain_subtree_width;
+use super::info::{compute_column_count, compute_single_column_width, length_to_px};
+
 /// R904：em 单位按 element font-size 解析（非 root 16）。column-width:2em 在
 /// font-size 20px 容器内 = 40px（旧实现误为 32px = 2×16）。
 #[test]

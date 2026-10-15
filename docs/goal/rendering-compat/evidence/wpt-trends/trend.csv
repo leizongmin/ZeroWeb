@@ -55,3 +55,4 @@
 2026-10-15,upstream,v1.10,16590,15408,92.9,failed=1182;skipped=0,561454b12,R5138 multicol 列宽约束链不入 OOF 子树——fixed 显式宽不再被 OOF 链钳 0，oof-inline-cb-001 翻绿
 2026-10-15,upstream,v1.10,16590,15415,92.9,failed=1175;skipped=0,5aabded7d,R5139 碎片化 multicol 全-auto inset OOF 静态位置列流映射——7 案翻绿（transform-CB 两案 + static-pos 三案 + autopos-000 + after-spanner）
 2026-10-15,upstream,v1.10,16590,15419,92.9,failed=1171;skipped=0,e7e5b8c8d,R5140 碎片化嵌套 multicol avoid-stay 行限钳制——nested-015/019/020 真翻绿 + 016 擦线近似（0.91%，真值仍半绿挂账）
+2026-10-15,upstream,v1.10,16590,15419,92.9,failed=1171;skipped=0,dfb52e202,R5141 multicol.rs 按职责拆分（assign.rs 640+info.rs 237，主文件 2813→1968 解 2000 行债）——corpus 1171 持平零行为变化
