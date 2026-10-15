@@ -521,6 +521,23 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><head><style>body{margin:0}</style></head><body><div style=\"display:inline-block;height:46px;background:#008000\"><div style=\"font:36px/46px Arial,sans-serif\"><a style=\"display:block\"><span>ZERO Browser minimal fast</span></a></div></div></body></html>",
         is_match: true,
     },
+    // ── R5106：inline svg（HTML width/height attr + CSS width:auto + height definite(Px)）
+    // 在 width:auto flex-item wrapper 内 transferred 宽 = height × 固有比（css-sizing-4
+    // §4.1 default size→transferred size mapping）。回归形态：旧 path 把 auto 宽交 taffy
+    // aspect_ratio，flow 下能推，但父级 flex max-content base 测量被 indefinite/0 CB 塌成 0
+    //（google 首页 logo `.ESTs9d{width:auto;max-height:100%;...}` 渲 272×92 实测 0 宽）。
+    // test 页 = wrapper（width:auto flex item, height:100%, max-height:92）内 inline svg
+    //（attr 272×92 + CSS width:auto + height 定级）+ max-width/max-height:100%；
+    // ref 页唯一差异 = svg 显式 width:272px（等价 used 尺寸）。断言逐像素相等，缺陷态 svg
+    // 与 wrapper 0 宽 → 判红。文件孪生：
+    // tests/wpt-runner/local-reftests/css/css-sizing/svg-width-auto-height-definite-flex-zw-001*.html。
+    InlineReftestDef {
+        id: "css-box/svg-width-auto-height-definite-flex-zw-001",
+        category: ReftestCategory::Layout,
+        test_html: "<html><head><style>body{margin:0}.c{display:flex;align-items:center;width:400px;height:120px}.w{display:block;position:relative;height:100%;max-height:92px;background:#eee}</style></head><body><div class=\"c\"><div class=\"w\"><svg width=\"272\" height=\"92\" viewBox=\"0 0 272 92\" style=\"width:auto;max-width:100%;max-height:100%;object-fit:contain\" xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"272\" height=\"92\" fill=\"#3186FF\"/></svg></div></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0}.c{display:flex;align-items:center;width:400px;height:120px}.w{display:block;position:relative;height:100%;max-height:92px;background:#eee}</style></head><body><div class=\"c\"><div class=\"w\"><svg width=\"272\" height=\"92\" viewBox=\"0 0 272 92\" style=\"width:272px;max-width:100%;max-height:100%;object-fit:contain\" xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"272\" height=\"92\" fill=\"#3186FF\"/></svg></div></div></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {

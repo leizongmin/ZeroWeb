@@ -1042,6 +1042,27 @@ fn apply_replaced_element_sizing(
             }
             return;
         }
+        // R5106（css-sizing-4 §4.1 + csswg #623）：svg 带 HTML width/height attr 且 CSS
+        // width:auto + height definite(Px) → 显式写入 transferred 宽（= height × 固有比），
+        // 避免 auto 宽在父级 flex/缩紧容器 max-content base 测量中被 indefinite/0 CB
+        // 塌成 0（google 首页 logo `.ESTs9d{width:auto;max-height:100%;...}` 渲 272×92
+        // 实测 0 宽；attr 272×92 + width:auto + height:92 应 272）。max-width 仍留 taffy
+        // 节点，flow 下照常钳制（写 definite 不取消 max-width 语义）。
+        if matches!(computed.width, LengthValue::Auto)
+            && let LengthValue::Px(dh) = computed.height
+            && dh.is_finite()
+            && dh > 0.0
+        {
+            let ratio = computed
+                .aspect_ratio
+                .or_else(|| crate::svg_default_size::svg_ratio_value(elem, computed));
+            if let Some(r) = ratio
+                && r.is_finite()
+                && r > 0.0
+            {
+                taffy_style.size.width = taffy::style::Dimension::length((dh as f32 * r).max(0.5));
+            }
+        }
     }
     // R5001：+ audio（无固有尺寸替换元素，CSS aspect-ratio 走 default object size 臂）
     // R5078：+ iframe（无固有尺寸替换元素，default object size 300×150 + height attr
