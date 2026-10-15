@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::cache_policy::{CacheStoreMode, storable_mode, vary_field_changed};
+use crate::cache_policy::{CacheStoreMode, storable_mode, vary_field_changed, vary_header_value};
 use crate::request::HttpResponse;
 use crate::resource_policy::origin_from_url;
 
@@ -188,7 +188,8 @@ impl DiskHttpCache {
         if meta.url != key || !self.matches_partition(&meta) {
             return false;
         }
-        if vary_field_changed(meta.vary.as_deref(), response.header("vary")) {
+        let updated_vary = vary_header_value(response);
+        if vary_field_changed(meta.vary.as_deref(), updated_vary.as_deref()) {
             // The cached key still reflects the old Vary dimensions. Keep this body only
             // for the in-flight validated response; it cannot safely serve later requests.
             return self.remove_files(&paths);
@@ -228,7 +229,12 @@ impl DiskHttpCache {
             "etag",
             "last-modified",
         ] {
-            if let Some(val) = response.header(field) {
+            if field == "vary" {
+                if let Some(value) = vary_header_value(response) {
+                    meta.headers.retain(|(name, _)| !name.eq_ignore_ascii_case("vary"));
+                    meta.headers.push((field.to_string(), value));
+                }
+            } else if let Some(val) = response.header(field) {
                 merge_header(&mut meta.headers, field, val);
             }
         }
@@ -280,7 +286,7 @@ impl DiskHttpCache {
             url: key.to_string(),
             resource_url: Some(resource_url),
             origin: origin.clone(),
-            vary: response.header("vary").map(str::to_string),
+            vary: vary_header_value(response),
             revalidate_only,
             status_code: response.status_code,
             headers: response.headers.clone(),
@@ -881,6 +887,43 @@ mod tests {
         };
         assert!(cache.refresh_not_modified(key, &not_modified));
         assert!(cache.read(key).is_none(), "old key cannot represent the new Vary field");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn disk_refresh_not_modified_combines_repeated_vary_fields_before_comparing() {
+        let (mut cache, dir) = temp_cache();
+        let key = "https://example.com/repeated-vary-transition";
+        let original = HttpResponse {
+            status_code: 200,
+            headers: vec![
+                ("Cache-Control".into(), "no-cache".into()),
+                ("ETag".into(), "\"shared\"".into()),
+                ("Vary".into(), "Accept-Language".into()),
+            ],
+            body: b"english gzip representation".to_vec(),
+            url: key.to_string(),
+            redirect_count: 0,
+        };
+        assert!(cache.put(key, &original));
+
+        let not_modified = HttpResponse {
+            status_code: 304,
+            headers: vec![
+                ("Cache-Control".into(), "max-age=60".into()),
+                ("ETag".into(), "\"shared\"".into()),
+                ("Vary".into(), "Accept-Language".into()),
+                ("vary".into(), "Accept-Encoding".into()),
+            ],
+            body: Vec::new(),
+            url: key.to_string(),
+            redirect_count: 0,
+        };
+        assert!(cache.refresh_not_modified(key, &not_modified));
+        assert!(
+            cache.read(key).is_none(),
+            "a repeated Vary line adds a cache-key dimension"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 

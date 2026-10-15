@@ -8,7 +8,7 @@ use std::time::Instant;
 use crate::cache_key::{cache_lookup_key, cache_store_key, strip_url_fragment};
 use crate::cache_policy::{
     CacheStoreMode, RequestCacheControl, parse_cache_control, parse_request_cache_control, storable_mode,
-    vary_field_changed,
+    vary_field_changed, vary_header_value,
 };
 use crate::disk_cache::DiskHttpCache;
 use crate::private_mode::private_browsing_enabled;
@@ -236,7 +236,8 @@ impl HttpCache {
                 tracing::info!(url = %key, "HTTP cache 304 no-store invalidated entry");
                 return Some(cached);
             }
-            if vary_field_changed(stored_vary.as_deref(), response.header("vary")) {
+            let updated_vary = vary_header_value(response);
+            if vary_field_changed(stored_vary.as_deref(), updated_vary.as_deref()) {
                 merge_not_modified_metadata(&mut cached, response);
                 self.remove(&key);
                 tracing::info!(url = %key, "HTTP cache 304 Vary changed, invalidated entry");
@@ -279,7 +280,8 @@ impl HttpCache {
                 tracing::info!(url = %key, "HTTP disk cache 304 no-store invalidated entry");
                 return Some(cached);
             }
-            if vary_field_changed(hit.vary.as_deref(), response.header("vary")) {
+            let updated_vary = vary_header_value(response);
+            if vary_field_changed(hit.vary.as_deref(), updated_vary.as_deref()) {
                 merge_not_modified_metadata(&mut cached, response);
                 if let Some(disk) = self.disk.as_mut() {
                     let _ = disk.remove(&key);
@@ -441,7 +443,7 @@ impl HttpCache {
         let last_modified = response.header("last-modified").map(|s| s.to_string());
         let resource_url = response.url.clone();
         let resource_base = strip_url_fragment(&resource_url);
-        let vary = response.header("vary").map(|s| s.to_string());
+        let vary = vary_header_value(response);
 
         if self.max_entries > 0 {
             self.evict_if_needed(response.body.len());
@@ -745,7 +747,14 @@ fn merge_304_headers(headers: &mut Vec<(String, String)>, response: &HttpRespons
         "etag",
         "last-modified",
     ] {
-        if let Some(value) = response.header(field) {
+        if field == "vary" {
+            if let Some(value) = vary_header_value(response) {
+                // Vary is a list field and may arrive on repeated field lines. Store its combined
+                // value once so the returned response cannot retain stale dimensions.
+                headers.retain(|(name, _)| !name.eq_ignore_ascii_case("vary"));
+                headers.push((field.to_string(), value));
+            }
+        } else if let Some(value) = response.header(field) {
             merge_header(headers, field, value);
         }
     }
@@ -998,6 +1007,57 @@ mod tests {
     }
 
     #[test]
+    fn cache_304_repeated_vary_lines_invalidate_old_memory_key() {
+        let mut cache = HttpCache::new();
+        let url = "https://example.com/encoded-language";
+        let english_gzip = vec![
+            ("Accept-Language".into(), "en".into()),
+            ("Accept-Encoding".into(), "gzip".into()),
+        ];
+        let english_br = vec![
+            ("Accept-Language".into(), "en".into()),
+            ("Accept-Encoding".into(), "br".into()),
+        ];
+        let mut original = make_response(
+            200,
+            b"english gzip representation",
+            vec![
+                ("cache-control", "no-cache"),
+                ("etag", "\"shared\""),
+                ("vary", "Accept-Language"),
+            ],
+        );
+        original.url = url.to_string();
+        assert!(cache.put_with_headers(url, &english_gzip, &original));
+
+        let mut not_modified = make_response(
+            304,
+            b"",
+            vec![
+                ("cache-control", "max-age=60"),
+                ("etag", "\"shared\""),
+                ("vary", "Accept-Language"),
+                ("Vary", "Accept-Encoding"),
+            ],
+        );
+        not_modified.url = url.to_string();
+        let validated = cache
+            .not_modified(url, &english_gzip, &not_modified)
+            .expect("the in-flight validated request may use its cached body");
+        assert_eq!(validated.body, b"english gzip representation");
+        let vary_headers = validated
+            .headers
+            .iter()
+            .filter(|(name, _)| name.eq_ignore_ascii_case("vary"))
+            .map(|(_, value)| value.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(vary_headers, ["Accept-Language, Accept-Encoding"]);
+
+        assert!(matches!(cache.lookup(url, &english_gzip), CacheLookup::Miss));
+        assert!(matches!(cache.lookup(url, &english_br), CacheLookup::Miss));
+    }
+
+    #[test]
     fn cache_304_vary_change_invalidates_persistent_variant() {
         let dir = std::env::temp_dir().join(format!(
             "zero-http-cache-vary-304-{}-{}",
@@ -1040,6 +1100,72 @@ mod tests {
 
         let mut disk = DiskHttpCache::open(&dir).unwrap();
         assert!(disk.read(url).is_none(), "changed Vary must remove the old disk key");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn cache_304_repeated_vary_lines_invalidate_old_persistent_key() {
+        let dir = std::env::temp_dir().join(format!(
+            "zero-http-cache-repeated-vary-304-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let url = "https://example.com/encoded-language";
+        let english_gzip = vec![
+            ("Accept-Language".into(), "en".into()),
+            ("Accept-Encoding".into(), "gzip".into()),
+        ];
+        let english_br = vec![
+            ("Accept-Language".into(), "en".into()),
+            ("Accept-Encoding".into(), "br".into()),
+        ];
+        let mut original = make_response(
+            200,
+            b"english gzip representation",
+            vec![
+                ("cache-control", "no-cache"),
+                ("etag", "\"shared\""),
+                ("vary", "Accept-Language"),
+            ],
+        );
+        original.url = url.to_string();
+        let old_key = cache_store_key(url, &english_gzip, &original);
+        {
+            let mut cache = HttpCache::open_persistent_at(&dir);
+            assert!(cache.put_with_headers(url, &english_gzip, &original));
+        }
+
+        let mut reopened = HttpCache::open_persistent_at(&dir);
+        assert!(matches!(
+            reopened.lookup(url, &english_gzip),
+            CacheLookup::Revalidate { .. }
+        ));
+        let mut not_modified = make_response(
+            304,
+            b"",
+            vec![
+                ("cache-control", "max-age=60"),
+                ("etag", "\"shared\""),
+                ("vary", "Accept-Language"),
+                ("Vary", "Accept-Encoding"),
+            ],
+        );
+        not_modified.url = url.to_string();
+        let validated = reopened
+            .not_modified(url, &english_gzip, &not_modified)
+            .expect("the in-flight validated request may use its cached body");
+        assert_eq!(validated.body, b"english gzip representation");
+        assert!(matches!(reopened.lookup(url, &english_br), CacheLookup::Miss));
+        drop(reopened);
+
+        let mut disk = DiskHttpCache::open(&dir).unwrap();
+        assert!(
+            disk.read(&old_key).is_none(),
+            "old key must not ignore the new Vary dimension"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 
