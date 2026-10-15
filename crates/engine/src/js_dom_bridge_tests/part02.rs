@@ -2769,6 +2769,31 @@ fn test_default_submit_button_selector_r3254_k3() {
 }
 
 #[test]
+fn test_default_submit_button_selector_first_in_tree_order_p1() {
+    // P1（site-opt google，2026-10-15）：default button = spec「tree order 首个 submit
+    // button」。回归：多 submit button 表单必须选中**首个**（<input name=btnK> 在前、
+    // <input name=btnI> 在后 → btnK；含嵌套祖先也应保持 tree order 先序命中）。
+    use crate::js_dom_bridge::{default_submit_button_selector, enclosing_form_selector};
+    // flat：q、btnK、btnI 三兄弟，tree order 首个 submit = btnK。
+    let flat = r#"<html><body>
+<form id="f1"><input name="q"><input type="submit" id="btnK" name="btnK" value="Google Search"><input type="submit" id="btnI" name="btnI" value="Lucky"></form>
+</body></html>"#;
+    let f1 = enclosing_form_selector(flat, "input[name=q]").unwrap();
+    let got = default_submit_button_selector(flat, &f1).expect("f1 default button");
+    assert!(got.contains("#btnK"), "flat 表单首个 submit 应为 btnK（got {got}）");
+    assert!(!got.contains("#btnI"), "不得选中 btnI（末尾 submit，got {got}）");
+
+    // 嵌套：div 内 btnK 后于... btnK 在 btnI 之前（tree order），首个仍为 btnK。
+    let nested = r#"<html><body>
+<form id="f2"><div><input type="submit" id="btnK" name="btnK"></div><input type="submit" id="btnI" name="btnI"></form>
+</body></html>"#;
+    let f2 = enclosing_form_selector(nested, "input[name=btnI]").unwrap();
+    let got2 = default_submit_button_selector(nested, &f2).expect("f2 default button");
+    assert!(got2.contains("#btnK"), "嵌套表单首个 submit 应为 btnK（got {got2}）");
+    assert!(!got2.contains("#btnI"), "不得选中 btnI（got {got2}）");
+}
+
+#[test]
 fn test_serialization_form_roundtrip_r3254_k3_probe() {
     // R3254-K3 切片 C 探针：连续两次 insertAdjacentHTML(form) 后 serialize→re-parse 的
     // 保真度——form element pointer 语义下 form 结构是否丢失（WPT implicit-submission
