@@ -31,8 +31,8 @@ use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
 use zero_style_system::WritingModeValue;
 use zero_style_system::property::types::{
-    BreakInsideValue, BreakValue, ColumnCountComputedValue, ColumnFillComputedValue, ColumnSpanComputedValue,
-    ColumnWidthComputedValue,
+    BreakInsideValue, BreakValue, ColumnCountComputedValue, ColumnFillComputedValue, ColumnHeightComputedValue,
+    ColumnSpanComputedValue, ColumnWidthComputedValue, ColumnWrapComputedValue,
 };
 
 use crate::types::{LayoutBox, OverflowClip};
@@ -1114,6 +1114,36 @@ fn layout_multicol(
         return;
     }
 
+    // R1341 同族 log-only 诊断（ZW_MULTICOL_DEBUG_NESTED）：嵌套 multicol 子的高度
+    // 时间线（外层分配用 taffy 高 vs 内层平衡写回高）。
+    if std::env::var("ZW_MULTICOL_DEBUG_NESTED").is_ok() {
+        let nested: Vec<(usize, f32)> = child_info
+            .iter()
+            .filter(|&&(idx, _)| {
+                container.children[idx]
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .is_some_and(|s| {
+                        matches!(s.column_count, ColumnCountComputedValue::Number(_))
+                            || matches!(s.column_width, ColumnWidthComputedValue::Length(_))
+                    })
+            })
+            .map(|&(idx, h)| (idx, h))
+            .collect();
+        if !nested.is_empty() {
+            eprintln!(
+                "[mc-nested] container cw={:.1} ch={:.1} info(count={}, colw={:.1}, gap={:.1}, seq={}) children={:?}",
+                container.content_width,
+                container.content_height,
+                info.count,
+                info.column_width,
+                info.gap,
+                info.sequential_fill,
+                child_info,
+            );
+        }
+    }
+
     // column-span:all spanner 路径：独立处理（区域分割 + 全宽 spanner），不走走单区域路径。
     if has_spanner {
         // R4250：adjoining-margin 模型与容器高写回仅在 margin-trim 生效的容器启用
@@ -1135,8 +1165,62 @@ fn layout_multicol(
     // 列高限制：当 column-fill: auto 且容器有明确高度时生效
     let height_limit = column_height_limit(container, info);
 
+    // ── R5130：column-height（css-multicol-2 #ch）固定列高 ──
+    // <length> 直接给定每列块向高度，优先于 column-fill auto/balance 的推导。
+    // 溢出列去向由 column-wrap（#cwr）决定：auto/wrap → 换行到容器下方新列行
+    //（行距 = 列高 + column-gap）；nowrap → 沿 inline 方向延伸（css-multicol-1
+    // 既有 inline 溢出语义，row_height=0）。分配复用
+    // assign_children_to_columns_multirow 顺序填（max_col_height = 列高，超
+    // col_count 自动 push 新列）；gate 同 R1074/R1076：monolithic 子不可分、
+    // forced break 须 _with_breaking 尊重、nested multicol 子须独立碎片化模型。
+    // 列高 <=0（非法值/解析失败）回既有路径。
+    // FIXME：count==1 + nested multicol 子未镜像 R4524 溢出行剪裁 cap（现走
+    // breaking 回退；corpus 无此形态，随嵌套分布专项补齐）。
+    // https://drafts.csswg.org/css-multicol-2/#ch
+    // https://drafts.csswg.org/css-multicol-2/#cwr
+    let container_style_ch = container.node_id.and_then(|id| styles.get(&id));
+    let fixed_column_height: Option<f32> = container_style_ch.and_then(|style| match &style.column_height {
+        ColumnHeightComputedValue::Length(len) => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None) as f32;
+            let px = length_to_px(len, container.content_width, font_size_px);
+            (px > 0.0).then_some(px)
+        }
+        ColumnHeightComputedValue::Auto => None,
+    });
+    // wrap（auto/wrap）→ 行距 = 列高 + gap；nowrap → None（inline 溢出，row_height=0）。
+    let wrap_row_pitch = match (fixed_column_height, container_style_ch.map(|s| &s.column_wrap)) {
+        (Some(_), Some(ColumnWrapComputedValue::Nowrap)) => None,
+        (Some(col_h), _) => Some(col_h + info.gap),
+        (None, _) => None,
+    };
     // 根据 column-fill 模式分配子元素到各列
-    let assignments = if info.sequential_fill && height_limit > 0.0 {
+    let assignments = if let Some(col_h) = fixed_column_height {
+        let has_monolithic_ch = child_info.iter().any(|&(idx, _)| {
+            let c = &container.children[idx];
+            c.overflow_x != OverflowClip::Visible || c.overflow_y != OverflowClip::Visible
+        });
+        let has_forced_break_ch = forced_breaks.iter().any(|&b| b) || forced_breaks_after.iter().any(|&b| b);
+        let has_nested_multicol_ch = child_info.iter().any(|&(idx, _)| {
+            container.children[idx]
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| {
+                    matches!(s.column_count, ColumnCountComputedValue::Number(_))
+                        || matches!(s.column_width, ColumnWidthComputedValue::Length(_))
+                })
+        });
+        if !has_monolithic_ch && !has_forced_break_ch && (info.count == 1 || !has_nested_multicol_ch) {
+            assign_children_to_columns_multirow(&child_info, info.count, col_h, &[])
+        } else {
+            assign_children_to_columns_with_breaking(
+                &child_info,
+                info.count,
+                col_h,
+                &forced_breaks,
+                &forced_breaks_after,
+            )
+        }
+    } else if info.sequential_fill && height_limit > 0.0 {
         // column-fill: auto — 顺序填充，考虑列高限制（column breaking）
         //
         // R1076：definite 高度 + 内容超 col_count×列高时走 **inline 列溢出**（chromium 实测确认：
@@ -1329,7 +1413,31 @@ fn layout_multicol(
     };
 
     // 定位子元素（y_base=0：单区域，整个 multicol 内容在一行列内）
-    let region_height = position_multicol_children(container, &assignments, info, 0.0, 0.0);
+    // R5130：column-height + wrap（auto/wrap）时 row_height = 列高 + gap，溢出列换行
+    // 到下方列行；nowrap/非固定列高保持 row_height=0（单行 inline 溢出）。
+    let row_pitch = wrap_row_pitch.unwrap_or(0.0);
+    let region_height = position_multicol_children(container, &assignments, info, 0.0, row_pitch);
+    // R1341 同族 log-only 诊断（ZW_MULTICOL_DEBUG_NESTED）：分配结果与子终态几何。
+    if std::env::var("ZW_MULTICOL_DEBUG_NESTED").is_ok() {
+        eprintln!(
+            "[mc-out] cw={:.1} assignments={:?}",
+            container.content_width,
+            assignments
+                .iter()
+                .map(|col| col.iter().map(|f| (f.child_idx, f.visual_height)).collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+        );
+        for (i, c) in container.children.iter().enumerate() {
+            eprintln!(
+                "[mc-out]   child[{i}] x={:.1} y={:.1} w={:.1} h={:.1} frags={}",
+                c.x,
+                c.y,
+                c.width,
+                c.height,
+                c.column_span_offsets.len(),
+            );
+        }
+    }
     let container_explicit = container
         .node_id
         .and_then(|id| styles.get(&id))
@@ -1355,7 +1463,19 @@ fn layout_multicol(
     // 不受抑制（gap-002：inline 平衡 = 40 = region，60 → 40 收缩保持）。无 inline 流
     // （inline_balanced = None）时行为同 R4508。
     let effective_region = inline_balanced.map_or(region_height, |ib| region_height.max(ib));
-    if !container_explicit
+    // R5130：固定列高路径的容器高 = 行数 × 列高 + (行数−1) × gap——列行恒占满
+    // 列高（末行未填满也占位；column-height-009 ref 总高 160px = 3×40 + 2×20 实证），
+    // 通用 region 写回（R4508/R1820）的单行列内容高语义不含行距，须绕开。
+    // nowrap 无行距，容器高 = 列高（溢出列 inline 延伸）。
+    let wrap_total_height = fixed_column_height.map(|col_h| match wrap_row_pitch {
+        None => col_h,
+        Some(pitch) => {
+            let rows = assignments.len().div_ceil(info.count.max(1)).max(1);
+            rows as f32 * col_h + (rows as f32 - 1.0) * (pitch - col_h)
+        }
+    });
+    if wrap_total_height.is_none()
+        && !container_explicit
         && !info.sequential_fill
         && effective_region > 0.5
         && (effective_region - container.content_height).abs() > 0.5
@@ -1370,6 +1490,7 @@ fn layout_multicol(
     // column-fill:auto + 容器 auto-height（非 explicit）+ 列分配结果比自然和短时收紧容器高
     //（只缩不胀），限 blast radius（balance / explicit-height 路径不变）。随 R1820 kill-switch default-on。
     if forced_overflow_enabled()
+        && wrap_total_height.is_none()
         && info.sequential_fill
         && region_height > 0.0
         && region_height < container.content_height
@@ -1379,6 +1500,14 @@ fn layout_multicol(
             container.content_height = region_height;
             container.height -= delta;
         }
+    }
+    if let Some(total) = wrap_total_height
+        && !container_explicit
+        && (total - container.content_height).abs() > 0.5
+    {
+        let delta = total - container.content_height;
+        container.content_height = total;
+        container.height += delta;
     }
 }
 

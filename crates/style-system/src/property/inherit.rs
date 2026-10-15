@@ -1395,6 +1395,16 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.column_fill = default_style.column_fill;
             true
         }
+        // column-height/column-wrap 均为非继承（css-multicol-2 #ch/#cwr），
+        // initial/unset 时回 auto。
+        "column-height" => {
+            style.column_height = default_style.column_height;
+            true
+        }
+        "column-wrap" => {
+            style.column_wrap = default_style.column_wrap;
+            true
+        }
         "column-span" => {
             style.column_span = default_style.column_span;
             true

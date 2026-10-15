@@ -277,6 +277,9 @@ impl PropertyRegistry {
             "column-count" => Some(ColumnCount(ColumnCountComputedValue::Auto)),
             "column-width" => Some(ColumnWidth(ColumnWidthComputedValue::Auto)),
             "column-fill" => Some(ColumnFill(ColumnFillComputedValue::Balance)),
+            // column-height/column-wrap（css-multicol-2）初始均为 auto。
+            "column-height" => Some(ColumnHeight(ColumnHeightComputedValue::Auto)),
+            "column-wrap" => Some(ColumnWrap(ColumnWrapComputedValue::Auto)),
             "column-span" => Some(ColumnSpan(ColumnSpanComputedValue::None)),
 
             // Object Fit / Filter
@@ -630,6 +633,8 @@ impl PropertyRegistry {
             "column-count",
             "column-width",
             "column-fill",
+            "column-height",
+            "column-wrap",
             "column-span",
             "object-fit",
             "object-position",
