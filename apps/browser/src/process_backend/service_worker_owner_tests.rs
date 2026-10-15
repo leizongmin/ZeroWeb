@@ -516,6 +516,13 @@ fn multiprocess_restart_restores_persisted_controller_without_refetch() {
         }
         assert!(persistence.is_file());
         backend.remove_renderer(tab_id);
+        let compositor_exit = backend
+            .shutdown_all()
+            .expect("first compositor child exit status should be available");
+        assert!(
+            compositor_exit.success(),
+            "first compositor exited abnormally: {compositor_exit}"
+        );
     }
     server.join().unwrap();
 
@@ -553,6 +560,13 @@ fn multiprocess_restart_restores_persisted_controller_without_refetch() {
             AutomationValue::String(format!("activated|http://{authority}/sw.js"))
         );
         backend.remove_renderer(tab_id);
+        let compositor_exit = backend
+            .shutdown_all()
+            .expect("second compositor child exit status should be available");
+        assert!(
+            compositor_exit.success(),
+            "second compositor exited abnormally: {compositor_exit}"
+        );
     }
     std::fs::remove_dir_all(persistence.parent().unwrap()).unwrap();
 }

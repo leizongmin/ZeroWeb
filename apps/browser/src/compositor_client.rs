@@ -628,7 +628,7 @@ impl Client {
         if let Some(worker) = self.worker.take() {
             exit_status = exit_status.or_else(|| worker.join().ok().flatten());
         }
-        if self.status.load() != CompositorStatus::Disconnected && exit_status.is_some_and(|status| !status.success()) {
+        if exit_status.is_some_and(|status| !status.success()) {
             tracing::error!(?exit_status, "compositor exited unsuccessfully during shutdown");
         }
         exit_status
@@ -637,7 +637,7 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        self.shutdown();
+        let _ = self.shutdown();
     }
 }
 
@@ -1325,11 +1325,10 @@ pub fn release_surface(surface_id: u64) {
 /// 终止 compositor 子进程并等待 worker 退出。
 ///
 /// Client 会先移出全局槽位，再执行 kill、join 和 wait，避免持有全局锁等待 worker。
-pub fn shutdown() {
+/// 有子进程时返回其退出状态；异常退出会记录为 error。
+pub fn shutdown() -> Option<ExitStatus> {
     let client = CLIENT.lock().unwrap_or_else(|error| error.into_inner()).take();
-    if let Some(mut client) = client {
-        let _ = client.shutdown();
-    }
+    client.and_then(|mut client| client.shutdown())
 }
 
 /// 测试：kill compositor 子进程以模拟 crash（不 shutdown worker）。
@@ -1916,7 +1915,7 @@ mod tests {
             child: Arc::new(Mutex::new(None)),
             worker: Some(worker),
         };
-        client.shutdown();
+        let _ = client.shutdown();
 
         assert!(client.worker.is_none());
         assert_eq!(status.load(), CompositorStatus::Healthy);

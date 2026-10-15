@@ -7,7 +7,7 @@
 
 ## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（156）
 
-- 2026-10-15 [compositor 关闭不能先杀进程再读取退出状态](bugs/2026-10/2026-10-15-compositor-graceful-shutdown-exit-status.md) — apps/browser compositor_client, apps/compositor process shutdown
+- 2026-10-15 [compositor 关闭不能先杀进程再读取退出状态](bugs/2026-10/2026-10-15-compositor-graceful-shutdown-exit-status.md) — apps/browser compositor_client, apps/browser process_backend, apps/compositor shutdown
 - 2026-10-14 [流式图片路径绕过 HTTP 缓存](bugs/2026-10/2026-10-14-streamed-images-bypass-http-cache.md) — apps/browser, crates/net
 - 2026-10-14 [js_dom_shim 同一树节点存在多族稳定 JS 包装——跨族 identity 恒败与吸附目标重投影陷阱](bugs/2026-10/2026-10-14-js-dom-wrapper-family-identity.md) — crates/engine
 - 2026-10-13 [import-wpt 从 upstream master 下载与 pinned 快照不一致——ref 404 时连带删除本地既有案](bugs/2026-10/2026-10-13-import-wpt-master-pinned-mismatch.md) — tests/wpt-runner
