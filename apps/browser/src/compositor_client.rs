@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
@@ -17,6 +17,7 @@ use zero_protocol::{IpcChannel, ProcessRole, ProtocolError, child_process_args};
 
 const MAX_PENDING_SURFACES: usize = 64;
 const MAX_COMPLETED_SURFACES: usize = 64;
+const CHILD_SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Compositor 完成帧（含可选 dma-buf GPU 导入）。
 pub struct CompositorFrameResult {
@@ -467,7 +468,7 @@ struct Client {
     present: Arc<PresentFrameChannel>,
     status: Arc<SharedStatus>,
     child: Arc<Mutex<Option<Child>>>,
-    worker: Option<JoinHandle<()>>,
+    worker: Option<JoinHandle<Option<ExitStatus>>>,
     /// 帧响应看门狗；仅由 IPC worker 在真实请求开始、推进和完成时更新。
     frame_watchdog: Arc<Mutex<FrameWatchdog>>,
 }
@@ -499,7 +500,7 @@ impl Client {
                     worker_frame_watchdog,
                     || spawn_transport(connection_child),
                 );
-                reap_child(&worker_child);
+                reap_child(&worker_child)
             })
             .ok();
         if worker.is_none() {
@@ -621,13 +622,16 @@ impl Client {
         })
     }
 
-    fn shutdown(&mut self) {
+    fn shutdown(&mut self) -> Option<ExitStatus> {
         self.commands.close();
-        kill_child(&self.child);
+        let mut exit_status = wait_child_exit(&self.child, CHILD_SHUTDOWN_GRACE);
         if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
+            exit_status = exit_status.or_else(|| worker.join().ok().flatten());
         }
-        reap_child(&self.child);
+        if self.status.load() != CompositorStatus::Disconnected && exit_status.is_some_and(|status| !status.success()) {
+            tracing::error!(?exit_status, "compositor exited unsuccessfully during shutdown");
+        }
+        exit_status
     }
 }
 
@@ -739,13 +743,38 @@ fn kill_child(child_slot: &Mutex<Option<Child>>) {
     }
 }
 
-fn reap_child(child_slot: &Mutex<Option<Child>>) {
-    if let Some(mut child) = child_slot.lock().unwrap_or_else(|error| error.into_inner()).take() {
-        if child.try_wait().ok().flatten().is_none() {
-            let _ = child.kill();
+fn wait_child_exit(child_slot: &Mutex<Option<Child>>, grace: std::time::Duration) -> Option<ExitStatus> {
+    let deadline = std::time::Instant::now() + grace;
+    loop {
+        let mut child_guard = child_slot.lock().unwrap_or_else(|error| error.into_inner());
+        let child = child_guard.as_mut()?;
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                child_guard.take();
+                return Some(status);
+            }
+            Ok(None) if std::time::Instant::now() < deadline => {}
+            Ok(None) => {
+                let _ = child.kill();
+                let status = child.wait().ok();
+                child_guard.take();
+                return status;
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to inspect compositor child exit status");
+                let _ = child.kill();
+                let status = child.wait().ok();
+                child_guard.take();
+                return status;
+            }
         }
-        let _ = child.wait();
+        drop(child_guard);
+        thread::sleep(std::time::Duration::from_millis(10));
     }
+}
+
+fn reap_child(child_slot: &Mutex<Option<Child>>) -> Option<ExitStatus> {
+    wait_child_exit(child_slot, CHILD_SHUTDOWN_GRACE)
 }
 
 enum ExpectedResponse {
@@ -1299,7 +1328,7 @@ pub fn release_surface(surface_id: u64) {
 pub fn shutdown() {
     let client = CLIENT.lock().unwrap_or_else(|error| error.into_inner()).take();
     if let Some(mut client) = client {
-        client.shutdown();
+        let _ = client.shutdown();
     }
 }
 
@@ -1336,6 +1365,23 @@ mod tests {
             candidates.first(),
             Some(&PathBuf::from("/workspace/target/release").join(compositor_binary_filename()))
         );
+    }
+
+    #[test]
+    fn shutdown_gracefully_reaps_compositor_and_reports_exit_status() {
+        let mut client = Client::start();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while client.status.load() == CompositorStatus::Starting && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            client.status.load(),
+            CompositorStatus::Healthy,
+            "compositor failed to start"
+        );
+
+        let status = client.shutdown().expect("compositor child status was not captured");
+        assert!(status.success(), "compositor exited abnormally: {status}");
     }
 
     #[cfg(target_os = "macos")]
@@ -1855,6 +1901,7 @@ mod tests {
                     }))
                 },
             );
+            None
         });
 
         while status.load() == CompositorStatus::Starting {
