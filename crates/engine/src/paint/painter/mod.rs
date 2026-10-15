@@ -207,6 +207,10 @@ pub struct Painter {
     /// `scroll` 对待（transform 建立包含块，fixed 定位区被拉进变换坐标系）。driving:
     /// background-attachment-fixed-inside-transform-1（transform 祖先内 fixed 须同 scroll）。
     pub(crate) transform_depth: u32,
+    /// R5139：multicol 片段循环 k>0 迭代 / R5137 续片重绘期间为真——列流映射 OOF
+    ///（`oof_static_mapped`，CB 在 multicol 之外）不参与本容器碎片复制，其子树在此
+    /// 类重绘中整体抑制；映射位的一次绘制由 k=0 迭代照常完成。paint_node 入口判定。
+    pub(crate) suppress_mapped_oof: bool,
     /// R3835：`list-style-position: inside` 文本型 marker 的步进宽度（li NodeId → advance）。
     /// CSS Lists 3 §list-style-position：inside marker 是首行行盒的第一个 inline，内容排
     /// 其后——paint 侧 marker 独立绘字，首片段须右移 marker 宽度避免重叠
@@ -225,6 +229,13 @@ pub struct Painter {
 
 fn is_positioned_child(box_node: &LayoutBox) -> bool {
     box_node.is_absolute || box_node.is_fixed || box_node.is_relative || box_node.is_sticky
+}
+
+/// R5139：子树内是否存在列流映射 OOF（含自身）。multicol 片段循环用其分流迟延
+/// positioned 项——含映射后代的项须在片段窗口裁剪之后 flush（映射落点在源列窗口
+/// 之外，窗口裁剪会整体截掉；CB 在 multicol 之外本就不参与碎片复制）。
+fn subtree_has_mapped_oof(box_node: &LayoutBox) -> bool {
+    box_node.oof_static_mapped || box_node.children.iter().any(subtree_has_mapped_oof)
 }
 
 /// 画布背景传播判定：background-image 图层列表是否含至少一个**可绘制**图层
@@ -558,6 +569,62 @@ fn collect_positioned_descendants_inner<'a>(
     }
 }
 
+/// R5139：采 multicol 容器片段循环领地内含列流映射 OOF（`oof_static_mapped`）的
+/// positioned 项，供容器级 flush 统一施绘（paint_as_multicol 片段循环后唯一施绘位）。
+/// 常规 `collect_positioned_descendants` 对 multicol 的 cso 子元素 skip（交其自身片段
+/// 循环），映射项因此常规路径不可达；嵌套 multicol 时内层（自身亦 cso 子）整层可能被
+/// 溢出行跳过、其片段循环永不运行——只能自最外层容器深采。只走片段循环领地（cso 非空
+/// 子）：无 cso 子由主 collect 覆盖，避免双采（FIXME：嵌套内层的非 cso 直接 positioned
+/// 映射子两项均不入，corpus 未涉，挂账）；positioned 自成 scope 不下钻；SC 子树由其
+/// 自身 scope 收集绘制，不重复。项坐标按**未位移**主片段位（child.x/y，position_multi
+/// col_children 保真）组合——布局期列流映射把映射项坐标改写为容器相对最终位，未位移链
+/// 即落映射位。携带裁剪置 None：映射 OOF 的 CB 在 multicol 之外，容器链上的中间
+/// overflow 裁剪祖先对其不适用（css-overflow-3：裁剪不作用于 CB 在其外的 positioned
+/// 后代）。
+fn collect_mapped_oof_in_multicol<'a>(
+    box_node: &'a LayoutBox,
+    content_x: f32,
+    content_y: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    out: &mut Vec<DeferredPositioned<'a>>,
+    doc: Option<&zero_dom::Document>,
+) {
+    for child in &box_node.children {
+        // 无 cso 子不经片段循环，主 collect 已覆盖。
+        if child.column_span_offsets.is_empty() {
+            continue;
+        }
+        let child_abs_x = content_x + child.x;
+        let child_abs_y = content_y + child.y;
+        if is_positioned_child(child) {
+            if subtree_has_mapped_oof(child) {
+                out.push(DeferredPositioned {
+                    node: child,
+                    abs_x: child_abs_x,
+                    abs_y: child_abs_y,
+                    clip_rect: None,
+                });
+            }
+        } else if child.creates_stacking_context {
+            continue;
+        } else if child.is_multicol {
+            // 内层 multicol：以其内容原点递归（border/padding 补回，镜像 content_x 定义）。
+            collect_mapped_oof_in_multicol(
+                child,
+                child_abs_x + child.border_left + child.padding_left,
+                child_abs_y + child.border_top + child.padding_top,
+                styles,
+                out,
+                doc,
+            );
+        } else {
+            let mut sub: Vec<DeferredPositioned> = Vec::new();
+            collect_positioned_descendants_inner(child, child_abs_x, child_abs_y, styles, None, false, &mut sub, doc);
+            out.extend(sub.into_iter().filter(|i| subtree_has_mapped_oof(i.node)));
+        }
+    }
+}
+
 fn ordered_child_indices<F>(children: &[LayoutBox], mut include: F) -> Vec<usize>
 where
     F: FnMut(&LayoutBox) -> bool,
@@ -639,6 +706,7 @@ impl Painter {
             document_url: None,
             counter_styles: HashMap::new(),
             transform_depth: 0,
+            suppress_mapped_oof: false,
             list_inside_marker_advance: HashMap::new(),
             pending_scroll_offsets: Vec::new(),
             scroll_offsets: HashMap::new(),
@@ -2150,6 +2218,12 @@ impl Painter {
         {
             return;
         }
+        // R5139：列流映射 OOF（CB 在 multicol 之外）不参与 multicol 碎片复制——
+        // 片段循环 k>0 迭代与 R5137 续片重绘期间整子树抑制；映射位一次绘制由
+        // k=0 迭代照常完成（入口单点判定覆盖全部递归/迟延路径）。
+        if self.suppress_mapped_oof && box_node.oof_static_mapped {
+            return;
+        }
         // R2197 Phase A slice 3：orphan inline LayoutBox（paint_skip_nodes）跳过递归绘制。
         // 其文本/背景已由父 IFC 片段绘制（R639 part2），此处跳过避免双绘 + 避免 approximate
         // 几何盒被当独立盒误绘。default 空集 → 不触发，零行为变更。
@@ -2917,6 +2991,11 @@ impl Painter {
                     .unwrap_or(0.0)
             };
 
+            // R5139：整个列循环期间恒抑制列流映射 OOF 施绘——片段重绘位（k>0 带片段
+            // 位移、溢出行/溢出列被跳过）均非映射项归属；其唯一施绘位是循环后的容器级
+            // flush（nesting==0 时），见循环尾注释。
+            let prev_mapped_oof_suppress = self.suppress_mapped_oof;
+            self.suppress_mapped_oof = true;
             for child in &box_node.children {
                 if child.column_span_offsets.is_empty() {
                     continue;
@@ -2946,7 +3025,7 @@ impl Painter {
 
                 let is_breaking = child.column_span_offsets.len() > 1;
 
-                for &(frag_x, frag_y, col_x, col_w, col_top, col_h) in &child.column_span_offsets {
+                for &(frag_x, frag_y, col_x, col_w, col_top, col_h) in child.column_span_offsets.iter() {
                     let frag_abs_x = content_x + frag_x;
                     let frag_abs_y = content_y + frag_y;
 
@@ -3016,9 +3095,13 @@ impl Painter {
                     //（修 R1079 简单 collection 的 over-render——flush 须带列子元素 clip）。
                     let mut local_positioned: Vec<DeferredPositioned> = Vec::new();
                     collect_positioned_descendants(child, frag_abs_x, frag_abs_y, styles, &mut local_positioned, doc);
+                    // R5139：列流映射 OOF 项与常规项分流——映射项（CB 在 multicol 之外）
+                    // 不入片段施绘（恒抑制，见循环头），延至循环后的容器级 flush 统一施绘。
+                    let (_mapped_items, plain_items): (Vec<&DeferredPositioned>, Vec<&DeferredPositioned>) =
+                        local_positioned.iter().partition(|i| subtree_has_mapped_oof(i.node));
                     if !local_positioned.is_empty() {
                         let counts_before_local = PrimitiveCounts::snapshot(&self.primitives);
-                        for item in &local_positioned {
+                        for item in &plain_items {
                             let off_x = item.abs_x - item.node.x;
                             let off_y = item.abs_y - item.node.y;
                             // R3922：逐项补裁收集项自带的最近 overflow 裁剪矩形（collect
@@ -3071,10 +3154,16 @@ impl Painter {
                     // fragmentainer 内且底部越界（未溢出不复制）；④目标列不越容器内容
                     // 右缘（溢出列不入）。置于 fragment clip（上行）之后：续片 x 落在源
                     // 列窗口之外，须自带目标窗口裁剪，仍受外层片段 clip 兜底（纵向）。
+                    // R5139：续片重绘均为「附加列」位，恒抑制列流映射 OOF（其不碎片化）。
+                    self.suppress_mapped_oof = true;
                     if !box_node.column_span_offsets.is_empty() && col_w > 0.0 {
                         let pitch = col_w + gap;
                         let n_cols = ((box_node.content_width + gap) / pitch).round().max(1.0) as usize;
                         for item in &local_positioned {
+                            // R5139：映射 OOF（CB 在 multicol 之外）不碎片化，不参与续切。
+                            if subtree_has_mapped_oof(item.node) {
+                                continue;
+                            }
                             if !item.node.is_absolute {
                                 continue;
                             }
@@ -3123,6 +3212,30 @@ impl Painter {
                                 );
                             }
                         }
+                    }
+                }
+            }
+
+            // R5139：容器级映射 OOF 唯一施绘位。片段循环期间恒抑制（映射项 CB 在容器
+            // 外，不参与碎片复制；片段重绘位 k>0 带位移、溢出行/列整段跳过——fixed-in-
+            // nested-multicol-with-transform-container 实证：内层 multicol 4 片段全落
+            // 溢出行被 R1039 跳过，片段内 flush 永不触发）。此处按**未位移**主片段位
+            // （child.x/y）统一施绘一次：布局期列流映射已把坐标改写为容器相对最终位，
+            // 未位移链组合即落映射位。nesting>0（R5135 嵌套语境）不施绘——内层产物
+            // 会被外层片段窗口/裁剪截掉，统一由最外层容器在本处施绘。
+            // 置于片段循环后、容器 overflow 裁剪（R793）之前，与既有片段 flush 同语境
+            // （映射项 CB 在容器外，overflow 裁剪语义上不适用；corpus 容器均无 overflow）。
+            self.suppress_mapped_oof = prev_mapped_oof_suppress;
+            if self.mc_paint_nesting == 0 {
+                let mut mapped_items: Vec<DeferredPositioned> = Vec::new();
+                collect_mapped_oof_in_multicol(box_node, content_x, content_y, styles, &mut mapped_items, doc);
+                for item in &mapped_items {
+                    let off_x = item.abs_x - item.node.x;
+                    let off_y = item.abs_y - item.node.y;
+                    let counts_before_item = PrimitiveCounts::snapshot(&self.primitives);
+                    self.paint_node(item.node, styles, off_x, off_y, doc, false);
+                    if let Some(clip) = item.clip_rect {
+                        super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_item, &clip);
                     }
                 }
             }
