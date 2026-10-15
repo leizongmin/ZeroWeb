@@ -479,15 +479,28 @@ impl QuickJSSandbox {
         timeout_ms: u64,
         timeout_deadline: &Arc<Mutex<Option<Instant>>>,
     ) {
+        // P103 返修 DEF-2：首次属性查找也须在超时保护内——页面可把 shim 全局重定义
+        // 为自旋 getter，无保护的 globals().get 会触发 getter 执行任意 JS 且不受
+        // 中断约束（与逐次 execute 的 run_eval arm 语义对齐）。
+        let _lookup_guard = TimeoutGuard::arm(timeout_deadline, timeout_ms);
         let cb: rquickjs::Function = match ctx.globals().get("__zwResolveCallback") {
             Ok(f) => f,
-            Err(_) => return,
+            // 查找被中断/抛错（DEF-2 getter 场景）：取走异常不留滞留态。
+            Err(_) => {
+                let _ = ctx.catch();
+                return;
+            }
         };
+        drop(_lookup_guard);
         for (id, result) in items {
             // 每跳独立超时装载（与逐次 execute 的 run_eval arm 语义一致）。
             let _guard = TimeoutGuard::arm(timeout_deadline, timeout_ms);
             let called: Result<rquickjs::Value, _> = cb.call((id.as_str(), result.as_str()));
-            let _ = called;
+            if called.is_err() {
+                // P103 返修 DEF-3：取走滞留异常（含超时中断异常），与字符串路径
+                // 的 ctx.catch() 消费对称；异常不跨条目/跨批滞留 rt。
+                let _ = ctx.catch();
+            }
             // 本跳的微任务整链排空后才处理下一跳（spec checkpoint 语义）。
             let mut jobs = 0;
             while jobs < 10_000 && ctx.execute_pending_job() {
@@ -642,6 +655,114 @@ mod tests {
         // 沙箱仍可用（批内异常被隔离，无遗留异常态）。
         let r = sandbox.execute("1 + 1").unwrap();
         assert_eq!(r.value, "2");
+    }
+
+    #[test]
+    fn test_resolve_batch_lookup_under_timeout_p103() {
+        // t-p103 返修 DEF-2：批路径首次 `__zwResolveCallback` 属性查找也须在超时
+        // 保护内——页面可把 shim 全局重定义为自旋 getter，无保护的 globals().get
+        // 在零超时窗执行任意 JS（interrupt handler 读到 deadline=None 恒放行）。
+        // 修复后查找前装载 TimeoutGuard，getter 被中断、批整体返回，沙箱可复用。
+        let config = SandboxConfig {
+            persistent_context: true,
+            timeout_ms: 500,
+            ..Default::default()
+        };
+        let mut sandbox = QuickJSSandbox::with_config(config).unwrap();
+        use crate::Sandbox;
+        sandbox
+            .execute("globalThis.__zwResolveCallback = function(id, result) {};")
+            .unwrap();
+        sandbox
+            .execute(
+                "Object.defineProperty(globalThis, '__zwResolveCallback', {
+                     get() { const t = Date.now(); while (Date.now() - t < 5000) {} },
+                     configurable: true,
+                 });",
+            )
+            .unwrap();
+        let start = std::time::Instant::now();
+        sandbox.resolve_async_callbacks_batch(&[("x".to_string(), "v".to_string())]);
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(3),
+            "自旋 getter 须被超时中断而非跑满 5s: {elapsed:?}"
+        );
+        // 沙箱可复用（中断异常已被取走，无滞留态）。
+        let r = sandbox.execute("1 + 1").unwrap();
+        assert_eq!(r.value, "2");
+    }
+
+    #[test]
+    fn test_resolve_batch_per_item_timeout_isolation_p103() {
+        // t-p103 返修 TV-2：批内每跳独立装载 TimeoutGuard（arm 每次重设
+        // deadline = now + timeout_ms）——批 [正常, 自旋, 正常] 须整体在超时窗内
+        // 返回，自旋条目被中断，其余条目照常执行、沙箱不受污染。
+        // 与 DEF-2 测试互补：DEF-2 钉首查保护，本条钉循环内每跳保护。
+        let config = SandboxConfig {
+            persistent_context: true,
+            timeout_ms: 500,
+            ..Default::default()
+        };
+        let mut sandbox = QuickJSSandbox::with_config(config).unwrap();
+        use crate::Sandbox;
+        sandbox
+            .execute(
+                "globalThis.__resolved = [];
+                 globalThis.__zwResolveCallback = function(id) {
+                     if (id === 'spin') { const t = Date.now(); while (Date.now() - t < 5000) {} }
+                     globalThis.__resolved.push(id);
+                 };",
+            )
+            .unwrap();
+        let start = std::time::Instant::now();
+        sandbox.resolve_async_callbacks_batch(&[
+            ("a".to_string(), "1".to_string()),
+            ("spin".to_string(), "x".to_string()),
+            ("c".to_string(), "3".to_string()),
+        ]);
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(3),
+            "自旋条目须被中断而非整批卡满 5s: {elapsed:?}"
+        );
+        // 自旋条目中断（push 未执行），同批其余条目不受阻断。
+        let r = sandbox.execute("globalThis.__resolved.join(',')").unwrap();
+        assert_eq!(r.value, "a,c");
+        // 沙箱可复用（中断异常已被取走，无滞留态）。
+        let r = sandbox.execute("1 + 1").unwrap();
+        assert_eq!(r.value, "2");
+    }
+
+    #[test]
+    fn test_resolve_batch_per_item_checkpoint_order_p103() {
+        // t-p103 返修 TV-4：逐条 checkpoint 的 sandbox 层确定性断言——每条决议后
+        // 本跳注册的 .then 微任务整链排空才处理下一跳（HTML 事件循环 checkpoint
+        // 语义，event_loop_mixed_async_order_r2953 同型回归下沉到 sandbox 层）。
+        // 被否决的批末统一 drain 形态会得到 id1,id2,id1m1,id2m1（item2 的 resolve
+        // 抢在 item1 的 .then 前，判别）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#perform-a-microtask-checkpoint
+        let config = SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = QuickJSSandbox::with_config(config).unwrap();
+        use crate::Sandbox;
+        sandbox
+            .execute(
+                "globalThis.__ords = [];
+                 globalThis.__zwResolveCallback = function(id) {
+                     globalThis.__ords.push(id);
+                     Promise.resolve().then(function() { globalThis.__ords.push(id + 'm1'); });
+                 };",
+            )
+            .unwrap();
+        sandbox.resolve_async_callbacks_batch(&[
+            ("id1".to_string(), "v".to_string()),
+            ("id2".to_string(), "v".to_string()),
+        ]);
+        let r = sandbox.execute("globalThis.__ords.join(',')").unwrap();
+        assert_eq!(r.value, "id1,id1m1,id2,id2m1");
     }
 
     #[test]

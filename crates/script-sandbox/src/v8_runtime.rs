@@ -486,13 +486,36 @@ impl V8Sandbox {
         let context = unsafe { resolve_context(persistent, cached_ptr, hs) };
         let mut ctx_scope = v8::ContextScope::new(hs, context);
         v8::tc_scope!(let try_catch, &mut ctx_scope);
+        // P103 返修 DEF-2：首次属性查找也须在看门狗保护内——页面可把 shim 全局
+        // 重定义为自旋 getter，无保护的 global.get 会执行任意 JS 且不受终止约束
+        // （与逐次 execute 的 arm/disarm 语义对齐）。
+        let _lookup_guard: Option<WatchdogGuard> = if self.config.timeout_ms > 0 {
+            let seq = self.watchdog_seq;
+            self.watchdog_seq += 1;
+            watchdog_tx.as_ref().and_then(|tx| {
+                tx.send(WatchdogMsg::Arm {
+                    seq,
+                    timeout_ms: self.config.timeout_ms,
+                    handle: thread_safe_handle.clone(),
+                })
+                .ok()
+                .map(|_| WatchdogGuard { tx: tx.clone(), seq })
+            })
+        } else {
+            None
+        };
         // shim 未注入 = 整批 no-op（逐次 execute 的外层 if 守卫等价）。
         let Some(key) = v8::String::new(try_catch, "__zwResolveCallback") else {
             return;
         };
         let Some(cb_val) = context.global(try_catch).get(try_catch, key.into()) else {
+            // 查找被终止/抛错（DEF-2 getter 场景）：取走异常不留滞留态。
+            if try_catch.has_caught() {
+                try_catch.reset();
+            }
             return;
         };
+        drop(_lookup_guard);
         let Ok(cb) = v8::Local::<v8::Function>::try_from(cb_val) else {
             return;
         };
@@ -1476,6 +1499,111 @@ mod tests {
         // 沙箱仍可用（批内异常被隔离，无遗留异常态）。
         let r = sandbox.execute("1 + 1").unwrap();
         assert_eq!(r.value, "2");
+    }
+
+    #[test]
+    fn test_resolve_batch_lookup_under_watchdog_p103() {
+        // t-p103 返修 DEF-2：批路径首次 `__zwResolveCallback` 属性查找也须在看门狗
+        // 保护内——页面可把 shim 全局重定义为自旋 getter，无保护的 global.get 会在
+        // 零超时窗执行任意 JS（改前实测 40s 自旋完整越过 30s 沙箱超时）。修复后
+        // 查找前装载 Arm，getter 被终止、批整体返回，沙箱可复用。
+        let config = SandboxConfig {
+            persistent_context: true,
+            timeout_ms: 300,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).unwrap();
+        sandbox
+            .execute("globalThis.__zwResolveCallback = function(id, result) {};")
+            .unwrap();
+        sandbox
+            .execute(
+                "Object.defineProperty(globalThis, '__zwResolveCallback', {
+                     get() { const t = Date.now(); while (Date.now() - t < 5000) {} },
+                     configurable: true,
+                 });",
+            )
+            .unwrap();
+        let start = std::time::Instant::now();
+        sandbox.resolve_async_callbacks_batch(&[("x".to_string(), "v".to_string())]);
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed.as_millis() < 3_000,
+            "自旋 getter 须被看门狗终止而非跑满 5s: {elapsed:?}"
+        );
+        // 沙箱可复用（终止异常已被取走，无残留 terminate 误伤）。
+        let r = sandbox.execute("1 + 1").unwrap();
+        assert_eq!(r.value, "2");
+    }
+
+    #[test]
+    fn test_resolve_batch_per_item_watchdog_isolation_p103() {
+        // t-p103 返修 TV-2：批内每跳独立装载看门狗（Arm 每跳重设超时窗）——批
+        // [正常, 自旋, 正常] 须整体在超时窗内返回，自旋条目被终止，其余条目照常
+        // 执行、沙箱不受污染。与 DEF-2 测试互补：DEF-2 钉首查保护，本条钉循环内
+        // 每跳保护。
+        let config = SandboxConfig {
+            persistent_context: true,
+            timeout_ms: 300,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).unwrap();
+        sandbox
+            .execute(
+                "globalThis.__resolved = [];
+                 globalThis.__zwResolveCallback = function(id) {
+                     if (id === 'spin') { const t = Date.now(); while (Date.now() - t < 5000) {} }
+                     globalThis.__resolved.push(id);
+                 };",
+            )
+            .unwrap();
+        let start = std::time::Instant::now();
+        sandbox.resolve_async_callbacks_batch(&[
+            ("a".to_string(), "1".to_string()),
+            ("spin".to_string(), "x".to_string()),
+            ("c".to_string(), "3".to_string()),
+        ]);
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed.as_millis() < 3_000,
+            "自旋条目须被终止而非整批卡满 5s: {elapsed:?}"
+        );
+        // 自旋条目终止（push 未执行），同批其余条目不受阻断。
+        let r = sandbox.execute("globalThis.__resolved.join(',')").unwrap();
+        assert_eq!(r.value, "a,c");
+        // 沙箱可复用（终止异常已被取走，无残留 terminate 误伤）。
+        let r = sandbox.execute("1 + 1").unwrap();
+        assert_eq!(r.value, "2");
+    }
+
+    #[test]
+    fn test_resolve_batch_per_item_checkpoint_order_p103() {
+        // t-p103 返修 TV-4：逐条 checkpoint 的 sandbox 层确定性断言——每条决议后
+        // 本跳注册的 .then 微任务整链排空才处理下一跳（HTML 事件循环 checkpoint
+        // 语义，event_loop_mixed_async_order_r2953 同型回归下沉到 sandbox 层）。
+        // 被否决的批末统一 drain 形态会得到 id1,id2,id1m1,id2m1（item2 的 resolve
+        // 抢在 item1 的 .then 前，判别）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#perform-a-microtask-checkpoint
+        let config = SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).unwrap();
+        sandbox
+            .execute(
+                "globalThis.__ords = [];
+                 globalThis.__zwResolveCallback = function(id) {
+                     globalThis.__ords.push(id);
+                     Promise.resolve().then(function() { globalThis.__ords.push(id + 'm1'); });
+                 };",
+            )
+            .unwrap();
+        sandbox.resolve_async_callbacks_batch(&[
+            ("id1".to_string(), "v".to_string()),
+            ("id2".to_string(), "v".to_string()),
+        ]);
+        let r = sandbox.execute("globalThis.__ords.join(',')").unwrap();
+        assert_eq!(r.value, "id1,id1m1,id2,id2m1");
     }
 
     #[test]
