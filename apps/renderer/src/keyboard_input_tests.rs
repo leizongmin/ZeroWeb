@@ -687,3 +687,30 @@ fn relative_action_resolves_and_replaces_query() {
         "相对 action 按当前 URL 解析（上游 Rust form_get_submission_url_with_values），query 按规范置换而非追加"
     );
 }
+
+/// t8/F1 回归钉：worker 忙臂占住时，输入路径的有界调用必须按 USER_ACTION_SCRIPT_TIMEOUT
+/// 超时降级（text_control_state_from_worker → None）并在超时上限附近返回，而不是无界
+/// 阻塞至忙臂结束——键盘/交互路径的无界直呼正是 DDG 楔死（键入后求值 35s 无响应）的
+/// 根因形态。回退为无界直呼时本钉红（elapsed ≥ 忙臂时长且返回 Some）。
+#[test]
+fn busy_worker_bounded_input_call_degrades_instead_of_blocking_t8() {
+    let mut runtime = runtime_with_submit_form(
+        924,
+        r#"<form id="f" action="/search"><input id="q" name="q" value="x"></form>"#,
+    );
+    runtime.focus_target("#q").unwrap();
+    // ① 3s 忙臂经 50ms 有界等待放行：worker 占用至 t0+3000（超过 2s 有界上限）。
+    let _ = runtime.js_worker.execute_script_direct_bounded(
+        "const __t_arm = Date.now(); while (Date.now() - __t_arm < 3000) {}",
+        std::time::Duration::from_millis(50),
+    );
+    // ② 有界调用：2s 上限到期必返回（降级 None），不得等忙臂走完（≥3s）。
+    let t0 = std::time::Instant::now();
+    let snap = runtime.text_control_state_from_worker("#q");
+    let elapsed = t0.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_millis(2900),
+        "忙臂下有界调用须在超时上限附近返回（实际 {elapsed:?}；≥3s 即回退为无界直呼）"
+    );
+    assert!(snap.is_none(), "超时按「结果未知」降级为 None（fix#13 同语义）");
+}
