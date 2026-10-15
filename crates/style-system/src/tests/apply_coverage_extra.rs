@@ -785,6 +785,14 @@ fn test_apply_grid_line_shorthands() {
     assert!(ok);
 }
 
+#[test]
+fn test_apply_grid_template_columns_with_named_lines() {
+    let template = "[full-start left-sidebar-start] minmax(15rem, 1fr) [left-sidebar-end] 2rem [content-start] minmax(0, 48rem) [content-end] 2rem [right-sidebar-start] minmax(15rem, 1fr) [full-end right-sidebar-end]";
+    let (ok, style) = apply("grid-template-columns", template);
+    assert!(ok, "valid named grid lines must not invalidate the track list");
+    assert_eq!(style.grid_template_columns.as_deref(), Some(template));
+}
+
 // === transform-style / backface-visibility 非法值 ===
 
 #[test]

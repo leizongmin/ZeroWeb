@@ -51,6 +51,28 @@ fn test_grid_area_shorthand_1_value() {
 }
 
 #[test]
+fn test_grid_area_shorthand_single_name_sets_all_four_lines() {
+    let result = expand_one("grid-area", "header", false, (0, 0, 1));
+    assert_eq!(result.len(), 4);
+    assert_eq!(
+        result[0],
+        ("grid-row-start".to_string(), "header".to_string(), false, (0, 0, 1))
+    );
+    assert_eq!(
+        result[1],
+        ("grid-row-end".to_string(), "header".to_string(), false, (0, 0, 1))
+    );
+    assert_eq!(
+        result[2],
+        ("grid-column-start".to_string(), "header".to_string(), false, (0, 0, 1))
+    );
+    assert_eq!(
+        result[3],
+        ("grid-column-end".to_string(), "header".to_string(), false, (0, 0, 1))
+    );
+}
+
+#[test]
 fn test_grid_area_shorthand_2_values() {
     let result = expand_one("grid-area", "1 / 3", false, (0, 0, 1));
     assert_eq!(result.len(), 4);

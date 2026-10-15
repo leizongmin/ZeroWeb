@@ -5,8 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（161）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（163）
 
+- 2026-10-16 [命名 Grid 轨道与单命名区域简写不可丢弃](bugs/2026-10/2026-10-16-mdn-named-grid-track-list-and-area-shorthand.md) — crates/style-system, crates/layout-engine
+- 2026-10-16 [HTMLCollection 的 Proxy 必须接受 Symbol 键并实现迭代](bugs/2026-10/2026-10-16-htmlcollection-proxy-symbol-iterator.md) — crates/engine, apps/renderer
 - 2026-10-15 [WPT runner 单案超时网对同步循环/状态污染无效——守卫墙钟是最后防线](bugs/2026-10/2026-10-15-wpt-runner-sync-loop-hang-defeats-case-timeout.md) — tests/wpt-runner
 - 2026-10-15 [内联 SVG（替换元素）在 shrink-to-fit/auto 尺寸链里 used width 被算成 0——google 首页 logo 不绘制的根因方向](bugs/2026-10/2026-10-15-svg-replaced-used-width-collapse-google-logo.md) — crates/layout-engine,crates/engine
 - 2026-10-15 [切出 setter 子分支时误删兄弟路径首行副作用——textarea value 缓存写](bugs/2026-10/2026-10-15-shim-branch-carve-sibling-side-effects.md) — engine/js-dom-shim

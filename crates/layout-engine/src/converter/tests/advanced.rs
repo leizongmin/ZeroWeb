@@ -1,6 +1,28 @@
 // Auto-generated test file — split from layout-engine/converter.rs
 use super::super::*;
 
+#[test]
+fn test_convert_grid_tracks_ignores_named_line_blocks_for_track_sizing() {
+    let mut style = ComputedStyle::default();
+    style.grid_template_columns = Some(
+        "[full-start left-sidebar-start] minmax(15rem, 1fr) [left-sidebar-end] 2rem [content-start] minmax(0, 48rem) [content-end] 2rem [right-sidebar-start] minmax(15rem, 1fr) [full-end right-sidebar-end]".to_string(),
+    );
+    let taffy_style = computed_style_to_taffy(&style, None, 1366.0, 768.0);
+    assert_eq!(
+        taffy_style.grid_template_columns.len(),
+        5,
+        "named-line blocks describe track boundaries and do not create tracks"
+    );
+    assert_eq!(
+        parse_length_percentage("15rem", 16.0, 1366.0, 768.0),
+        Some((240.0, false))
+    );
+    assert_eq!(
+        parse_length_percentage("2rem", 16.0, 1366.0, 768.0),
+        Some((32.0, false))
+    );
+}
+
 /// 测试 InlineFlex display 映射为 taffy::Display::Flex。
 #[test]
 fn test_convert_inline_flex_display() {

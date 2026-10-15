@@ -34,6 +34,8 @@ pub fn computed_style_to_taffy(
 ) -> taffy::Style {
     let vw = viewport_w;
     let vh = viewport_h;
+    let grid_font_size =
+        zero_style_system::resolve_length(&style.font_size, 16.0, Some(vw as f64), Some(vh as f64)) as f32;
 
     // CSS 2.1 §10.3.5: 浮动非替换元素的 margin-left/right: auto 解析为 0
     let is_float = matches!(style.float, FloatValue::Left | FloatValue::Right);
@@ -612,11 +614,11 @@ pub fn computed_style_to_taffy(
                 }
             },
         },
-        grid_template_rows: parse_grid_tracks(&style.grid_template_rows),
-        grid_template_columns: parse_grid_tracks(&style.grid_template_columns),
+        grid_template_rows: parse_grid_tracks_with_context(&style.grid_template_rows, grid_font_size, vw, vh),
+        grid_template_columns: parse_grid_tracks_with_context(&style.grid_template_columns, grid_font_size, vw, vh),
         grid_auto_flow: convert_grid_auto_flow(&style.grid_auto_flow),
-        grid_auto_rows: parse_grid_auto_tracks(&style.grid_auto_rows),
-        grid_auto_columns: parse_grid_auto_tracks(&style.grid_auto_columns),
+        grid_auto_rows: parse_grid_auto_tracks_with_context(&style.grid_auto_rows, grid_font_size, vw, vh),
+        grid_auto_columns: parse_grid_auto_tracks_with_context(&style.grid_auto_columns, grid_font_size, vw, vh),
         grid_row: {
             let rs = resolve_named_area(&style.grid_row_start, parent_areas, "row-start");
             let re = resolve_named_area(&style.grid_row_end, parent_areas, "row-end");
@@ -1177,7 +1179,17 @@ fn convert_justify_self(value: &JustifySelfValue) -> Option<taffy::style::AlignS
 /// - `minmax(100px, 1fr)` — 最小最大
 /// - `repeat(3, 100px)` — 重复
 /// - `repeat(auto-fill, 200px)` — 自动填充（传递给 taffy 原生 auto-fill）
+#[cfg(test)]
 fn parse_grid_tracks(value: &Option<String>) -> Vec<taffy::style::GridTemplateComponent<String>> {
+    parse_grid_tracks_with_context(value, 16.0, 0.0, 0.0)
+}
+
+fn parse_grid_tracks_with_context(
+    value: &Option<String>,
+    font_size: f32,
+    vw: f32,
+    vh: f32,
+) -> Vec<taffy::style::GridTemplateComponent<String>> {
     let Some(value) = value else {
         return vec![];
     };
@@ -1186,10 +1198,14 @@ fn parse_grid_tracks(value: &Option<String>) -> Vec<taffy::style::GridTemplateCo
     let mut result = Vec::new();
 
     for token in tokens {
+        // Named line blocks mark track boundaries but are not Taffy track components.
+        if is_grid_line_names_token(&token) {
+            continue;
+        }
         if let Some(inner) = grid_track_function_inner(&token, "repeat") {
-            result.extend(parse_repeat(inner));
+            result.extend(parse_repeat_with_context(inner, font_size, vw, vh));
         } else {
-            result.push(parse_single_track(&token));
+            result.push(parse_single_track_with_context(&token, font_size, vw, vh));
         }
     }
 
@@ -1204,9 +1220,20 @@ fn tokenize_track_list(value: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
     let mut depth: u32 = 0;
+    let mut line_names = false;
 
     for ch in value.chars() {
         match ch {
+            '[' if !line_names => {
+                line_names = true;
+                current.push(ch);
+            }
+            '[' => current.push(ch),
+            ']' if line_names => {
+                line_names = false;
+                current.push(ch);
+            }
+            ']' => current.push(ch),
             '(' => {
                 depth += 1;
                 current.push(ch);
@@ -1215,7 +1242,7 @@ fn tokenize_track_list(value: &str) -> Vec<String> {
                 depth = depth.saturating_sub(1);
                 current.push(ch);
             }
-            ' ' | '\t' if depth == 0 => {
+            c if c.is_whitespace() && depth == 0 && !line_names => {
                 if !current.is_empty() {
                     tokens.push(std::mem::take(&mut current));
                 }
@@ -1233,6 +1260,10 @@ fn tokenize_track_list(value: &str) -> Vec<String> {
     tokens
 }
 
+fn is_grid_line_names_token(token: &str) -> bool {
+    token.starts_with('[') && token.ends_with(']')
+}
+
 /// 解析 repeat() 函数内部内容为 track sizing function 列表。
 ///
 /// 格式：`3, 100px` 或 `auto-fill, 200px` 或 `2, 1fr auto`。
@@ -1240,7 +1271,17 @@ fn tokenize_track_list(value: &str) -> Vec<String> {
 /// 对于 auto-fill/auto-fit，生成 `TrackSizingFunction::Repeat` 变体，
 /// 利用 taffy 原生的 auto-fill 支持，根据容器宽度自动计算轨道数量。
 /// 对于固定次数，直接展开为对应数量的轨道。
+#[cfg(test)]
 fn parse_repeat(inner: &str) -> Vec<taffy::style::GridTemplateComponent<String>> {
+    parse_repeat_with_context(inner, 16.0, 0.0, 0.0)
+}
+
+fn parse_repeat_with_context(
+    inner: &str,
+    font_size: f32,
+    vw: f32,
+    vh: f32,
+) -> Vec<taffy::style::GridTemplateComponent<String>> {
     use taffy::style::{GridTemplateComponent, GridTemplateRepetition, RepetitionCount, TrackSizingFunction};
 
     // 找到第一个不在括号内的逗号
@@ -1256,7 +1297,8 @@ fn parse_repeat(inner: &str) -> Vec<taffy::style::GridTemplateComponent<String>>
     let inner_tokens = tokenize_track_list(track_list_str);
     let inner_tracks: Vec<TrackSizingFunction> = inner_tokens
         .iter()
-        .map(|t| parse_single_track_as_non_repeated(t))
+        .filter(|token| !is_grid_line_names_token(token))
+        .map(|t| parse_single_track_as_non_repeated(t, font_size, vw, vh))
         .collect();
 
     if count_str.eq_ignore_ascii_case("auto-fill") {
@@ -1293,7 +1335,7 @@ fn parse_repeat(inner: &str) -> Vec<taffy::style::GridTemplateComponent<String>>
 /// 将单个 track 值解析为 TrackSizingFunction。
 ///
 /// 用于 repeat() 内部轨道列表的解析。
-fn parse_single_track_as_non_repeated(s: &str) -> taffy::style::TrackSizingFunction {
+fn parse_single_track_as_non_repeated(s: &str, font_size: f32, vw: f32, vh: f32) -> taffy::style::TrackSizingFunction {
     use taffy::style::TrackSizingFunction;
 
     let s = s.trim();
@@ -1322,11 +1364,11 @@ fn parse_single_track_as_non_repeated(s: &str) -> taffy::style::TrackSizingFunct
         return TrackSizingFunction::from_percent(pct / 100.0);
     }
     if let Some(inner) = grid_track_function_inner(s, "minmax") {
-        return parse_minmax_as_non_repeated(inner);
+        return parse_minmax_as_non_repeated_with_context(inner, font_size, vw, vh);
     }
     // fit-content() 函数
     if let Some(inner) = grid_track_function_inner(s, "fit-content") {
-        if let Some((val, is_pct)) = parse_length_percentage(inner.trim()) {
+        if let Some((val, is_pct)) = parse_length_percentage(inner.trim(), font_size, vw, vh) {
             return TrackSizingFunction {
                 min: taffy::style::MinTrackSizingFunction::auto(),
                 max: if is_pct {
@@ -1337,11 +1379,12 @@ fn parse_single_track_as_non_repeated(s: &str) -> taffy::style::TrackSizingFunct
             };
         }
     }
-    if let Some(px) = parse_non_negative_number_with_suffix(s, "px") {
-        return TrackSizingFunction::from_length(px);
-    }
-    if let Some(px) = parse_non_negative_number(s) {
-        return TrackSizingFunction::from_length(px);
+    if let Some((value, is_percent)) = parse_length_percentage(s, font_size, vw, vh) {
+        return if is_percent {
+            TrackSizingFunction::from_percent(value)
+        } else {
+            TrackSizingFunction::from_length(value)
+        };
     }
 
     TrackSizingFunction::AUTO
@@ -1365,7 +1408,17 @@ fn find_top_level_comma(s: &str) -> Option<usize> {
 ///
 /// 与 parse_grid_tracks 类似，但返回 TrackSizingFunction
 /// （不包含 repeat 变体），用于 taffy 的 grid_auto_rows/grid_auto_columns 字段。
+#[cfg(test)]
 fn parse_grid_auto_tracks(value: &Option<String>) -> Vec<taffy::style::TrackSizingFunction> {
+    parse_grid_auto_tracks_with_context(value, 16.0, 0.0, 0.0)
+}
+
+fn parse_grid_auto_tracks_with_context(
+    value: &Option<String>,
+    font_size: f32,
+    vw: f32,
+    vh: f32,
+) -> Vec<taffy::style::TrackSizingFunction> {
     let Some(value) = value else {
         return vec![];
     };
@@ -1373,12 +1426,22 @@ fn parse_grid_auto_tracks(value: &Option<String>) -> Vec<taffy::style::TrackSizi
     value
         .split_whitespace()
         .filter(|s| !s.is_empty())
-        .map(parse_single_auto_track)
+        .map(|token| parse_single_auto_track_with_context(token, font_size, vw, vh))
         .collect()
 }
 
 /// 解析单个 TrackSizingFunction 值。
+#[cfg(test)]
 fn parse_single_auto_track(s: &str) -> taffy::style::TrackSizingFunction {
+    parse_single_auto_track_with_context(s, 16.0, 0.0, 0.0)
+}
+
+fn parse_single_auto_track_with_context(
+    s: &str,
+    font_size: f32,
+    vw: f32,
+    vh: f32,
+) -> taffy::style::TrackSizingFunction {
     use taffy::style::TrackSizingFunction;
 
     let s = s.trim();
@@ -1393,33 +1456,54 @@ fn parse_single_auto_track(s: &str) -> taffy::style::TrackSizingFunction {
         return TrackSizingFunction::from_percent(pct / 100.0);
     }
     if let Some(inner) = grid_track_function_inner(s, "minmax") {
-        return parse_minmax_as_non_repeated(inner);
+        return parse_minmax_as_non_repeated_with_context(inner, font_size, vw, vh);
     }
-    if let Some(px) = parse_non_negative_number_with_suffix(s, "px") {
-        return TrackSizingFunction::from_length(px);
-    }
-    if let Some(px) = parse_non_negative_number(s) {
-        return TrackSizingFunction::from_length(px);
+    if let Some((value, is_percent)) = parse_length_percentage(s, font_size, vw, vh) {
+        return if is_percent {
+            TrackSizingFunction::from_percent(value)
+        } else {
+            TrackSizingFunction::from_length(value)
+        };
     }
 
     TrackSizingFunction::AUTO
 }
 
 /// 解析 minmax() 函数内部，返回 TrackSizingFunction。
+#[cfg(test)]
 fn parse_minmax_as_non_repeated(inner: &str) -> taffy::style::TrackSizingFunction {
+    parse_minmax_as_non_repeated_with_context(inner, 16.0, 0.0, 0.0)
+}
+
+fn parse_minmax_as_non_repeated_with_context(
+    inner: &str,
+    font_size: f32,
+    vw: f32,
+    vh: f32,
+) -> taffy::style::TrackSizingFunction {
     let parts: Vec<&str> = inner.split(',').collect();
     if parts.len() != 2 {
         return taffy::style::TrackSizingFunction::AUTO;
     }
 
-    let min = parse_min_track(parts[0].trim());
-    let max = parse_max_track(parts[1].trim());
+    let min = parse_min_track_with_context(parts[0].trim(), font_size, vw, vh);
+    let max = parse_max_track_with_context(parts[1].trim(), font_size, vw, vh);
 
     taffy::geometry::MinMax { min, max }
 }
 
 /// 解析单个 grid track 值。
+#[cfg(test)]
 fn parse_single_track(s: &str) -> taffy::style::GridTemplateComponent<String> {
+    parse_single_track_with_context(s, 16.0, 0.0, 0.0)
+}
+
+fn parse_single_track_with_context(
+    s: &str,
+    font_size: f32,
+    vw: f32,
+    vh: f32,
+) -> taffy::style::GridTemplateComponent<String> {
     use taffy::style::TrackSizingFunction;
 
     let s = s.trim();
@@ -1450,11 +1534,11 @@ fn parse_single_track(s: &str) -> taffy::style::GridTemplateComponent<String> {
         return TrackSizingFunction::from_percent(pct / 100.0).into();
     }
     if let Some(inner) = grid_track_function_inner(s, "minmax") {
-        return parse_minmax(inner).into();
+        return parse_minmax_with_context(inner, font_size, vw, vh).into();
     }
     // fit-content() 函数：映射为 taffy 的 FitContent 轨道尺寸
     if let Some(inner) = grid_track_function_inner(s, "fit-content") {
-        if let Some((val, is_pct)) = parse_length_percentage(inner.trim()) {
+        if let Some((val, is_pct)) = parse_length_percentage(inner.trim(), font_size, vw, vh) {
             return taffy::style::GridTemplateComponent::Single(taffy::geometry::MinMax {
                 min: taffy::style::MinTrackSizingFunction::auto(),
                 max: if is_pct {
@@ -1466,50 +1550,73 @@ fn parse_single_track(s: &str) -> taffy::style::GridTemplateComponent<String> {
         }
     }
     // 默认尝试解析为长度
-    if let Some(px) = parse_non_negative_number_with_suffix(s, "px") {
-        return TrackSizingFunction::from_length(px).into();
-    }
-    if let Some(px) = parse_non_negative_number(s) {
-        return TrackSizingFunction::from_length(px).into();
+    if let Some((value, is_percent)) = parse_length_percentage(s, font_size, vw, vh) {
+        return if is_percent {
+            TrackSizingFunction::from_percent(value).into()
+        } else {
+            TrackSizingFunction::from_length(value).into()
+        };
     }
 
     // 无法解析，默认 auto
     TrackSizingFunction::AUTO.into()
 }
 
-/// 解析长度或百分比，返回 (值, 是否百分比)。
+/// 解析并解析 CSS Grid 轨道的 length-percentage，返回 (值, 是否百分比)。
 ///
-/// 支持 px、%、纯数字（视为 px）。供 fit-content 轨道尺寸用（0.8.3 fit_content_px/percent 取 f32）。
-fn parse_length_percentage(s: &str) -> Option<(f32, bool)> {
-    let s = s.trim();
-    if let Some(px) = parse_non_negative_number_with_suffix(s, "px") {
-        return Some((px, false));
+/// em/rem 与 viewport 单位按现有样式系统计算值转换，再交给 Taffy。
+/// https://drafts.csswg.org/css-grid-2/#typedef-track-breadth
+/// https://drafts.csswg.org/css-values-4/#lengths
+/// fit-content 轨道使用同一转换（Taffy 0.12.1 接受 px/percent 的 f32）。
+fn parse_length_percentage(s: &str, font_size: f32, vw: f32, vh: f32) -> Option<(f32, bool)> {
+    let Some(value) = zero_css_parser::values::parse_length(s.trim()) else {
+        return Some((parse_non_negative_number(s)?, false));
+    };
+    if let LengthValue::Percentage(percent) = value {
+        return (percent.is_finite() && percent >= 0.0).then_some((percent as f32 / 100.0, true));
     }
-    if let Some(pct) = parse_non_negative_number_with_suffix(s, "%") {
-        return Some((pct / 100.0, true));
+    if !matches!(
+        value,
+        LengthValue::Px(_)
+            | LengthValue::Em(_)
+            | LengthValue::Rem(_)
+            | LengthValue::Vh(_)
+            | LengthValue::Vw(_)
+            | LengthValue::Vmin(_)
+            | LengthValue::Vmax(_)
+    ) {
+        return None;
     }
-    if let Some(px) = parse_non_negative_number(s) {
-        return Some((px, false));
-    }
-    None
+    let resolved = zero_style_system::resolve_length(&value, font_size as f64, Some(vw as f64), Some(vh as f64)) as f32;
+    (resolved.is_finite() && resolved >= 0.0).then_some((resolved, false))
 }
 
+#[cfg(test)]
 fn parse_minmax(inner: &str) -> taffy::style::TrackSizingFunction {
+    parse_minmax_with_context(inner, 16.0, 0.0, 0.0)
+}
+
+fn parse_minmax_with_context(inner: &str, font_size: f32, vw: f32, vh: f32) -> taffy::style::TrackSizingFunction {
     let parts: Vec<&str> = inner.split(',').collect();
     if parts.len() != 2 {
         return taffy::style::TrackSizingFunction::AUTO;
     }
 
-    let min = parse_min_track(parts[0].trim());
-    let max = parse_max_track(parts[1].trim());
+    let min = parse_min_track_with_context(parts[0].trim(), font_size, vw, vh);
+    let max = parse_max_track_with_context(parts[1].trim(), font_size, vw, vh);
 
     taffy::geometry::MinMax { min, max }
 }
 
 /// 解析 minmax 的最小值。
 ///
-/// 支持 auto、px、百分比（%）和纯数字。
+/// 支持 auto、内容关键字及 CSS length-percentage 值。
+#[cfg(test)]
 fn parse_min_track(s: &str) -> taffy::style::MinTrackSizingFunction {
+    parse_min_track_with_context(s, 16.0, 0.0, 0.0)
+}
+
+fn parse_min_track_with_context(s: &str, font_size: f32, vw: f32, vh: f32) -> taffy::style::MinTrackSizingFunction {
     use taffy::style::MinTrackSizingFunction;
 
     if s.eq_ignore_ascii_case("auto") {
@@ -1522,14 +1629,12 @@ fn parse_min_track(s: &str) -> taffy::style::MinTrackSizingFunction {
     if s.eq_ignore_ascii_case("max-content") {
         return MinTrackSizingFunction::MAX_CONTENT;
     }
-    if let Some(pct) = parse_non_negative_number_with_suffix(s, "%") {
-        return MinTrackSizingFunction::percent(pct / 100.0);
-    }
-    if let Some(px) = parse_non_negative_number_with_suffix(s, "px") {
-        return MinTrackSizingFunction::length(px);
-    }
-    if let Some(px) = parse_non_negative_number(s) {
-        return MinTrackSizingFunction::length(px);
+    if let Some((value, is_percent)) = parse_length_percentage(s, font_size, vw, vh) {
+        return if is_percent {
+            MinTrackSizingFunction::percent(value)
+        } else {
+            MinTrackSizingFunction::length(value)
+        };
     }
 
     MinTrackSizingFunction::auto()
@@ -1537,8 +1642,13 @@ fn parse_min_track(s: &str) -> taffy::style::MinTrackSizingFunction {
 
 /// 解析 minmax 的最大值。
 ///
-/// 支持 auto、fr、px、百分比（%）和纯数字。
+/// 支持 auto、fr、内容关键字及 CSS length-percentage 值。
+#[cfg(test)]
 fn parse_max_track(s: &str) -> taffy::style::MaxTrackSizingFunction {
+    parse_max_track_with_context(s, 16.0, 0.0, 0.0)
+}
+
+fn parse_max_track_with_context(s: &str, font_size: f32, vw: f32, vh: f32) -> taffy::style::MaxTrackSizingFunction {
     use taffy::style::MaxTrackSizingFunction;
 
     if s.eq_ignore_ascii_case("auto") {
@@ -1554,14 +1664,12 @@ fn parse_max_track(s: &str) -> taffy::style::MaxTrackSizingFunction {
     if let Some(flex) = parse_non_negative_number_with_suffix(s, "fr") {
         return MaxTrackSizingFunction::from_fr(flex);
     }
-    if let Some(pct) = parse_non_negative_number_with_suffix(s, "%") {
-        return MaxTrackSizingFunction::percent(pct / 100.0);
-    }
-    if let Some(px) = parse_non_negative_number_with_suffix(s, "px") {
-        return MaxTrackSizingFunction::length(px);
-    }
-    if let Some(px) = parse_non_negative_number(s) {
-        return MaxTrackSizingFunction::length(px);
+    if let Some((value, is_percent)) = parse_length_percentage(s, font_size, vw, vh) {
+        return if is_percent {
+            MaxTrackSizingFunction::percent(value)
+        } else {
+            MaxTrackSizingFunction::length(value)
+        };
     }
 
     MaxTrackSizingFunction::auto()
