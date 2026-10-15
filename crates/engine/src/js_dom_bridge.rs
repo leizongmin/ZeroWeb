@@ -2830,35 +2830,40 @@ pub fn is_submit_button(html: &str, elem_sel: &str) -> bool {
 pub fn default_submit_button_selector(html: &str, form_sel: &str) -> Option<String> {
     let doc = parse_html(html);
     let form = find_by_selector(&doc, form_sel)?;
+    // 显式栈 DFS：反向入栈 → 弹出顺序即 tree order；在**弹出**时判 is_submit，先序首个命中。
+    // P1 勘误（2026-10-15）：旧实现 `children.reverse()` 后直接在入栈循环里判并立即 return，
+    // reversed children 首元素是**最后**一个子节点 → 返回表单内**最后** submit button，
+    // 非 spec「tree order 首个」（flat `[q, btnK, btnI]` 误中 btnI，google 首页 GET 序列化 btnI
+    // → 落 search 而非 redirect-notice 受制于 Lucky——错误 submitter）。
     let mut stack = vec![form];
     while let Some(node) = stack.pop() {
-        let mut children: Vec<NodeId> = doc.get(node).map(|n| n.children.clone()).unwrap_or_default();
-        children.reverse(); // pop 末位 → 先入后出保持 tree order
-        for child in children {
-            let is_element = matches!(doc.get(child).map(|n| &n.kind), Some(zero_dom::NodeKind::Element(_)));
-            if !is_element {
-                continue;
-            }
-            // R3254-K3 切片 B 勘误：逐节点判定直读 DOM 属性（`element_local_name` +
-            // `get_attribute`），不经字符串 selector 重解析——无 id 控件的
-            // `stable_selector_for_node` 恒落 tag 回落（"input"），querySelector 恒命中
-            // **首个**同 tag 节点，submit button 判定错位。
-            let tag = element_local_name(&doc, child);
-            let ty = doc
-                .get_attribute(child, "type")
-                .unwrap_or_default()
-                .to_ascii_lowercase();
-            let is_submit = if tag.eq_ignore_ascii_case("input") {
-                ty == "submit" || ty == "image"
-            } else if tag.eq_ignore_ascii_case("button") {
-                ty != "button" && ty != "reset"
-            } else {
-                false
-            };
-            if is_submit {
-                return unique_selector_for_node(&doc, child);
-            }
+        let children: Vec<NodeId> = doc.get(node).map(|n| n.children.clone()).unwrap_or_default();
+        // 反向入栈，令下次 pop 取到 tree order 首个子节点（先入后出保持 tree order）。
+        for child in children.into_iter().rev() {
             stack.push(child);
+        }
+        if node == form {
+            continue; // form 自身不参与 default button 判定
+        }
+        let is_element = matches!(doc.get(node).map(|n| &n.kind), Some(zero_dom::NodeKind::Element(_)));
+        if !is_element {
+            continue;
+        }
+        // R3254-K3 切片 B 勘误：逐节点判定直读 DOM 属性（`element_local_name` +
+        // `get_attribute`），不经字符串 selector 重解析——无 id 控件的
+        // `stable_selector_for_node` 恒落 tag 回落（"input"），querySelector 恒命中
+        // **首个**同 tag 节点，submit button 判定错位。
+        let tag = element_local_name(&doc, node);
+        let ty = doc.get_attribute(node, "type").unwrap_or_default().to_ascii_lowercase();
+        let is_submit = if tag.eq_ignore_ascii_case("input") {
+            ty == "submit" || ty == "image"
+        } else if tag.eq_ignore_ascii_case("button") {
+            ty != "button" && ty != "reset"
+        } else {
+            false
+        };
+        if is_submit {
+            return unique_selector_for_node(&doc, node);
         }
     }
     None
