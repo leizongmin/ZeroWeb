@@ -94,6 +94,8 @@ pub struct BrowserApp {
     gpu_renderer: Option<GpuRenderer>,
     /// 上次渲染时活跃标签页（R3254-M4：标签切换时清 GPU 图片纹理缓存，防跨标签滞留）。
     last_rendered_tab: Option<TabId>,
+    /// 已真实呈现的帧计数（GPU/CPU present 路径各计一次；ui_driver 滚动帧率基准用）。
+    presented_frames: u64,
     /// 渲染模式
     render_mode: RenderMode,
     /// 字体加载器
@@ -156,6 +158,9 @@ pub struct BrowserApp {
     tab_overflow_btn_x: Option<f32>,
     /// 标签溢出下拉是否展开（▾ 点击切换）。
     tab_overflow_open: bool,
+    /// 压缩标签悬停 tooltip：`(标签 id, 悬停起始时刻)`。悬停进入压缩标签时记录，
+    /// 移开/点击/标签消失时清除；延迟到期后由渲染层显示。
+    tab_tooltip: Option<(TabId, Instant)>,
     /// 溢出隐藏的标签 id（渲染帧刷新，与 tab_layout 同生命周期）。
     tab_overflow_ids: Vec<TabId>,
     /// 右键上下文菜单状态
@@ -203,6 +208,10 @@ pub struct BrowserApp {
     /// 缩放百分比浮层显示起始时刻。None 表示不显示。
     /// zoom_in/out/reset 触发时记录，3 秒后由渲染层清除。
     zoom_indicator_start: Option<Instant>,
+    /// 下载完成 toast：`(文件名, 显示起始时刻)`。下载完成时记录，3 秒后由渲染层清除。
+    download_toast: Option<(String, Instant)>,
+    /// 最近提交给 compositor 的 UI surface 位图（T36 滚动帧 IPC 跳过用）。
+    ui_forward_cache: Option<UiForwardCache>,
     /// 上次设置的窗口标题缓存，用于检测变化避免重复 set_title。
     last_window_title: String,
     /// 上次左键点击标签的时间，用于判定双击关闭。
@@ -275,6 +284,25 @@ pub struct BrowserApp {
 /// 屏幕矩形 `(x, y, w, h)`（物理像素）；崩溃恢复气泡按钮几何签名用别名。
 type ScreenRect = (f32, f32, f32, f32);
 
+/// Chrome UI 转发缓存（T36）：最近提交给 compositor 的 UI surface 位图，
+/// 用于逐字节比对跳过无变化帧的整帧 IPC。
+#[derive(Debug)]
+struct UiForwardCache {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+}
+
+impl UiForwardCache {
+    fn new() -> Self {
+        Self {
+            width: 0,
+            height: 0,
+            rgba: Vec::new(),
+        }
+    }
+}
+
 impl BrowserApp {
     /// 测试路径的系统字体加载：进程级缓存 + `duplicate`（Arc 共享已解析字体）。
     ///
@@ -317,6 +345,7 @@ impl BrowserApp {
             tabs: TabManager::new((800, 600), color_scheme),
             gpu_renderer: None,
             last_rendered_tab: None,
+            presented_frames: 0,
             render_mode,
             font_loader,
             page_font_imports: HashMap::new(),
@@ -347,6 +376,7 @@ impl BrowserApp {
             tab_layout: Vec::new(),
             tab_overflow_btn_x: None,
             tab_overflow_open: false,
+            tab_tooltip: None,
             tab_overflow_ids: Vec::new(),
             context_menu: ContextMenuState::new(),
             context_menu_suppress_left_up: false,
@@ -368,6 +398,8 @@ impl BrowserApp {
             loading_anim_start: None,
             menu_anim_start: None,
             zoom_indicator_start: None,
+            download_toast: None,
+            ui_forward_cache: None,
             last_window_title: String::new(),
             last_tab_click_time: None,
             last_tab_click_id: None,
@@ -824,6 +856,44 @@ impl BrowserApp {
         }
         let row = ((y_f - py) / row_h) as usize;
         (row < self.tab_overflow_visible_rows()).then_some(row)
+    }
+
+    /// 压缩标签悬停 tooltip 内容 `(标题, URL)`。悬停延迟未到期或来源标签已关闭时
+    /// 返回 None（隐藏）；无痕标签标题加前缀。渲染与 smoke 断言面同源。
+    fn tab_tooltip_content(&self) -> Option<(String, String)> {
+        let (tab_id, since) = self.tab_tooltip.as_ref()?;
+        if since.elapsed().as_millis() < u128::from(layout::TAB_TOOLTIP_DELAY_MS) {
+            return None;
+        }
+        let tab = self.shell.tabs().find(|t| t.id() == *tab_id)?;
+        let mut title = tab.title().or(tab.url()).unwrap_or("New Tab").to_string();
+        if tab.is_private() {
+            title = format!("无痕 · {title}");
+        }
+        Some((title, tab.url().unwrap_or_default().to_string()))
+    }
+
+    /// 压缩标签 tooltip 外框 `(x, y, w, h)`（物理像素）：悬停标签槽位下方、
+    /// 水平对齐标签并夹到窗口内。渲染与 smoke 断言面同源；隐藏 = None。
+    fn tab_tooltip_rect_for(&self, width: u32, height: u32) -> Option<(f32, f32, f32, f32)> {
+        let (title, url) = self.tab_tooltip_content()?;
+        let (tab_id, _) = self.tab_tooltip.as_ref()?;
+        let (_, tx, tw) = self.tab_layout.iter().find(|(id, _, _)| id == tab_id)?;
+        self.font_id?;
+        let s = self.scale_factor;
+        let font_size = layout::CHROME_FONT_SIZE * s;
+        let pad_h = 12.0 * s;
+        let max_text_w = layout::TAB_TOOLTIP_MAX_WIDTH * s;
+        let text_w = self
+            .measure_ui_text_width(&title, font_size)
+            .max(self.measure_ui_text_width(&url, font_size))
+            .min(max_text_w);
+        let box_w = text_w + pad_h * 2.0;
+        let line_gap = 4.0 * s;
+        let box_h = font_size * 2.0 + line_gap + 12.0 * s;
+        let x = (tx + tw * 0.5 - box_w * 0.5).clamp(0.0, (width as f32 - box_w).max(0.0));
+        let y = (layout::TAB_STRIP_HEIGHT * s + 2.0 * s).min((height as f32 - box_h).max(0.0));
+        Some((x, y, box_w, box_h))
     }
 
     /// 测试 helper：暴露「+」按钮 x 坐标。
@@ -1568,6 +1638,14 @@ impl BrowserApp {
         for (tab_id, anim) in &self.scroll_anim {
             let done = anim.is_finished(now);
             let value = if done { anim.target() } else { anim.value_at(now) };
+            // T36：中间帧取整到整数物理像素。滚动呈现是位图平移，亚像素偏移会让
+            // translate-blit（can_blit 的 same_fraction 守卫）逐帧失效，滚动动画期
+            // 退化为全量重光栅（长页面单帧 ~40ms）；取整后动画帧与既有整数滚轮
+            // 路径共享同一 blit 机制，终值仍精确落在整数目标上。
+            let value = page_scroll::TabScrollState {
+                x: value.x.round(),
+                y: value.y.round(),
+            };
             // 滚轮可能早于任何直接滚动：写入时补建条目（与增量路径 or_default 同语义）。
             *self.scroll.entry(*tab_id).or_default() = value;
             if crate::compositor_client::async_scroll_enabled()
@@ -1844,6 +1922,39 @@ impl BrowserApp {
         let box_x = width as f32 - box_w - margin - scrollbar_w;
         let box_y = height as f32 - box_h - margin;
         Some((box_x, box_y, box_w, box_h))
+    }
+
+    /// 下载完成 toast 外框 `(x, y, w, h)`（物理像素）。未显示（无 toast、已超 3 秒
+    /// 或字体未就绪）返回 None。几何与 render_download_toast / smoke 断言面同源。
+    pub(crate) fn download_toast_rect_for(&self, width: u32, height: u32) -> Option<(f32, f32, f32, f32)> {
+        let (filename, start) = self.download_toast.as_ref()?;
+        if start.elapsed().as_secs_f32() > layout::DOWNLOAD_TOAST_DURATION_SECS || self.font_id.is_none() {
+            return None;
+        }
+        let s = self.scale_factor;
+        let font_size = layout::CHROME_FONT_SIZE * s;
+        let status = Self::download_toast_status_label();
+        let pad_h = 14.0 * s;
+        let text_w = self
+            .measure_ui_text_width(filename, font_size)
+            .max(self.measure_ui_text_width(&status, font_size))
+            .min(layout::DOWNLOAD_TOAST_MAX_WIDTH * s);
+        let box_w = (text_w + pad_h * 2.0).min(layout::DOWNLOAD_TOAST_MAX_WIDTH * s + pad_h * 2.0);
+        let line_gap = 4.0 * s;
+        let box_h = font_size * 2.0 + line_gap + 12.0 * s;
+        let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
+        // 页面内容区底部居中（Chrome snackbar 位）；右下角留给下载面板，左下角留给状态栏。
+        let box_x = cx + (cw - box_w) * 0.5;
+        let box_y = cy + ch - box_h - 16.0 * s;
+        Some((box_x, box_y, box_w, box_h))
+    }
+
+    /// 下载完成 toast 的状态行文案（渲染与几何同源）。
+    fn download_toast_status_label() -> String {
+        match UiLanguage::detect_from_env() {
+            UiLanguage::ZhCn => "下载完成".to_string(),
+            UiLanguage::EnUs => "Download complete".to_string(),
+        }
     }
 
     /// 浮动下载面板外框（物理像素）。有活动下载时高度随行数增长（T8），
@@ -2734,6 +2845,8 @@ impl BrowserApp {
         match write_result {
             Ok(()) => {
                 self.shell.downloads_mut().mark_completed(id);
+                // 下载完成 toast（3 秒自动消失；渲染层清除）。
+                self.download_toast = Some((download.filename.clone(), Instant::now()));
                 tracing::info!(
                     "SMOKE_EVENT component=browser event=download_completed tab={} file={} bytes={} path={}",
                     download.tab_id.0,

@@ -158,6 +158,18 @@ pub const DOWNLOAD_PANEL_BUTTON_MARGIN: f32 = 10.0;
 pub const DOWNLOAD_PANEL_FLOAT_MARGIN: f32 = 12.0;
 /// Corner radius of the floating download panel.
 pub const DOWNLOAD_PANEL_RADIUS: f32 = 8.0;
+/// Download completion toast display window in seconds (3s auto-dismiss, Chrome snackbar-like).
+pub const DOWNLOAD_TOAST_DURATION_SECS: f32 = 3.0;
+/// Download completion toast fade-in duration in seconds (T8 menu fade-in duration).
+pub const DOWNLOAD_TOAST_FADE_IN_SECS: f32 = 0.15;
+/// Download completion toast fade-out duration in seconds (tail of the display window).
+pub const DOWNLOAD_TOAST_FADE_OUT_SECS: f32 = 0.25;
+/// Maximum width of the download completion toast before the filename is truncated.
+pub const DOWNLOAD_TOAST_MAX_WIDTH: f32 = 360.0;
+/// Delay before a hover tooltip appears on a compressed tab (Chrome tooltip delay).
+pub const TAB_TOOLTIP_DELAY_MS: u64 = 500;
+/// Maximum width of the compressed-tab tooltip before title/URL are truncated.
+pub const TAB_TOOLTIP_MAX_WIDTH: f32 = 320.0;
 /// Width of the context menu panel.
 /// 240：容纳英文 "Hide Bookmarks Bar" + "Ctrl+Shift+B" 快捷键提示不截断（T7）。
 pub const CONTEXT_MENU_WIDTH: f32 = 240.0;
