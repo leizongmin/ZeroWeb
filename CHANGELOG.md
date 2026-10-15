@@ -8,11 +8,16 @@
 
 ### 变更
 
+- **TLS 栈安全升级**：rustls 升至 0.23.45，修复 GHSA-2mjx-qc3c-rqvc（reqwest/WebSocket 传输侧依赖，Cargo.lock 层升级）。
 - **浏览器进程模型固定化**：`zero-browser` 不再支持 `--single-process` / `--multi-process` 或相应环境变量开关；tab 固定使用 `zero-renderer`，页面帧固定经 `zero-compositor`，栅格图像固定由 renderer 启动 `zero-image-decoder`。`ZeroWebView` 仍保持进程内嵌入实现。
 - **浏览器二进制瘦身**：发布版 `zero-browser` 不再编译进程内 `tab_worker`、页面脚本 worker 和页面脚本调度，也不再链接 `zero-webview`、V8、QuickJS 或脚本 sandbox；headless 的导航、内联 HTML、脚本执行及截图改由 `zero-renderer` IPC 驱动，browser 只保留宿主、网络代理、绘制快照导入和 chrome 呈现职责。默认 Windows release 从 71.4 MB 降至 18.5 MB；renderer 继续独占 V8 页面脚本执行。
 
 ### 新增
 
+- **四个候选 goal 收口（2026-10-14/15）**：selection-compat（Selection.toString 走 rendered text 语义 + 节点移除 live-range 边界吸附 + 拖选默认动作，终态 **2968/2970 = 99.93%**，残余 2 案跨域挂账）、touch-events-compat（Touch/TouchList/TouchEvent 按 spec 落 engine shim，可执行面 20P→30P 非中性 100%，注入面挂宿主触摸注入管线重入）、console-compat（WebIDL namespace IDL + count/timer 状态记账 + Formatter 占位符 + BiDi log.entryAdded 页内捕获，corpus **28/28 = 100%**）、compression-compat（CompressionStream/DecompressionStream 流式状态机 + 手工帧校验 + 错误 TypeError 化，**245/318 = 77.04%**，非 brotli 面 245/245，brotli mission-defer 挂账）——DC 逐项核对通过；html-semantics / webcrypto / page-state 三 goal Active 推进。
+- **渲染兼容性续推（R5109–R5124，2026-10-14/15）**：calc(P%±Npx) 百分比基准改包含块（CSS2 §10.1）、段断行弃用 U+000B 哨兵改位置旁路 break_slots、空格盒治理臂、SVG feDisplacementMap scale 平方补偿序列化 shim（tainting-* 16 案全清）、SVG CSS filter 函数形式序列化改写为等价 `<filter>` 元素（绕开 resvg region 裁剪与 feDropShadow sRGB 双转换，svg-mutation 10 案 + drop-shadow 翻绿）——全量 16,590 案 fail 1,236→1,202（≈92.75%）零新增红；段落级 UBA dormant 落地（`ZW_PARA_BIDI` 默认关，控制符跨 run 作用域 + 行级视觉重排，flag-off 逐字节等价）。
+- **浏览器体验批次（2026-10-14/15，PR #162/#165/#166/#169/#170）**：下载面板多任务/暂停/取消 + 状态栏加载反馈 + 菜单渐入动效（T8）；窗口 resize 增量路径 + latest-wins 合并——消除幻灯片式适应延迟（T11）；书签切换/错误页/地址栏透传/历史搜索/最近访问（T12–T14）；查找高亮 overlay + Shift+Enter 反向、设置 toggle 开关、Tab 溢出下拉（T15–T18）；文本选区高亮 + 会话恢复——标签持久化/崩溃恢复（T19–T20）。
+- **渲染传输拆批（2026-10-14）**：全页图片超帧上限拆批传输——修复大图页面空白与帧过大重试死循环；像素中继拆批至 compositor/Android 消费端并补齐三处消费测试。
 - **网络 API 兼容 M5 重入推进（net-api-compat，2026-10-13/14）**：P6 重入条件兑现——M5-S1 runner 内嵌 tungstenite WS fixture 端点 + websockets corpus 基线 334/375（89.1%）、M5-S2 WS IDL/构造器/状态机修齐（98.4%）、M5-S3 eventsource 漂移归因修复 + WS cookie jar 集成（eventsource 100%）、**M5-S4 websockets corpus 收口——376/376 = 100%**；M5-S5 页面 scheme 对齐翻转（+179 子测试）、M5-S6 `<base>` 元素 + document.baseURI 基址链（+215）、M5-S7 URL 反射五面接基址、M5-S8 formdata/FormDataEvent/submitter 簇修齐 + sync XHR 账面销账、M5-S9 bad-chunk 流中段网络错误面。
 - **渲染兼容性续推（R5095–R5108，2026-10-13/14）**：run-in 动态域与 abspos 行宽族（paint Path B OOF 直接子 skip、扁平化 walk OOF 后代剪枝、auto 宽 abspos 单行测量宽度上取整）、vars 文本级替换冲突门（同名多值交级联层按元素解析）、渐变层伪固有比移除 + contrast-color() 落地、块盒 px max-height 钳制 + 塌穿泄漏 margin-box 计入——全量 16,594 案 fail 1,277→1,236（≈92.55%）零新增红。
 - **浏览器体验与输入修复批次（2026-10-13/14，PR #151/#154/#155/#157/#158）**：compositor wgpu 上下文后台预热——消除首启近空白页（含预热竞态 Get 路径防护返修）；renderer Enter 隐式表单提交 + Submit Navigate 效果消费——DDG 搜索导航链路打通；壳层 UI 修复批次——导航箭头/菜单翻转/状态栏/快捷键/Zoom 行/贴下缘翻转/zero://newtab 历史过滤；deferred 输入队列 push_back→push_front——消除负载下键盘事件轮转丢字；无效 @font-face 不再吞噬后邻规则（CSS Syntax 3 无效 at-rule 只弃自身）。
