@@ -9,10 +9,14 @@
 //! {"op":"wait_idle","ms":15000,"settle":400}
 //! {"op":"click","x":640,"y":75,"button":"Left"}
 //! {"op":"move","x":640,"y":75}
+//! {"op":"down","x":40,"y":160}
+//! {"op":"move","x":300,"y":160}
+//! {"op":"up","x":300,"y":160}
 //! {"op":"key","key":"l","mods":["ctrl"]}
 //! {"op":"type","text":"http://127.0.0.1:18080/page2.html"}
 //! {"op":"shot","name":"01-home.png"}
 //! {"op":"assert_url","contains":"page2.html"}
+//! {"op":"assert_tabs","count":3}
 //! {"op":"assert_url","contains":"view-source:http://…","mode":"prefix"}
 //! {"op":"assert_menu","open":true}
 //! {"op":"assert_nav","back":true,"forward":false}
@@ -62,6 +66,18 @@ enum Step {
         settle: u64,
     },
     Click {
+        x: f64,
+        y: f64,
+        button: String,
+    },
+    /// 左/右键按下（不释放）：与 `up` 组合成拖拽（如页面文本拖选）。
+    Down {
+        x: f64,
+        y: f64,
+        button: String,
+    },
+    /// 按键释放：与 `down` 组合成拖拽。
+    Up {
         x: f64,
         y: f64,
         button: String,
@@ -119,6 +135,24 @@ enum Step {
         open: bool,
         hidden_min: usize,
     },
+    /// 标签数断言（T20 会话恢复）：`count` 为期望的标签页数量。
+    AssertTabs {
+        count: usize,
+    },
+    /// 剪贴板文本断言：`contains` 子串匹配（读回系统剪贴板）。
+    AssertClipboard {
+        pattern: String,
+    },
+    /// 地址栏文本断言：`contains` 子串匹配。
+    AssertAddressBar {
+        pattern: String,
+    },
+    /// 崩溃恢复气泡断言（T20）：`visible` 为期望可见性。
+    AssertSessionRestore {
+        visible: bool,
+    },
+    /// 点击崩溃恢复气泡「恢复标签」按钮（T20；气泡未显示时报错）。
+    ClickSessionRestoreButton,
     /// 打印预览断言（T17）：`on=true` 时渲染媒体类型应为 Print。
     AssertPrintPreview {
         on: bool,
@@ -175,6 +209,30 @@ impl Step {
                     .unwrap_or("Left")
                     .to_string(),
             }),
+            "down" | "up" => {
+                let pressed = op == "down";
+                Ok(if pressed {
+                    Self::Down {
+                        x: num("x")?,
+                        y: num("y")?,
+                        button: value
+                            .get("button")
+                            .and_then(Value::as_str)
+                            .unwrap_or("Left")
+                            .to_string(),
+                    }
+                } else {
+                    Self::Up {
+                        x: num("x")?,
+                        y: num("y")?,
+                        button: value
+                            .get("button")
+                            .and_then(Value::as_str)
+                            .unwrap_or("Left")
+                            .to_string(),
+                    }
+                })
+            }
             "move" => Ok(Self::Move {
                 x: num("x")?,
                 y: num("y")?,
@@ -259,6 +317,22 @@ impl Step {
             "click_tab_overflow_row" => Ok(Self::ClickOverflowRow {
                 index: num("index")? as usize,
             }),
+            "assert_tabs" => Ok(Self::AssertTabs {
+                count: num("count")? as usize,
+            }),
+            "assert_clipboard" => Ok(Self::AssertClipboard {
+                pattern: text("contains")?,
+            }),
+            "assert_addressbar" => Ok(Self::AssertAddressBar {
+                pattern: text("contains")?,
+            }),
+            "assert_session_restore" => Ok(Self::AssertSessionRestore {
+                visible: value
+                    .get("visible")
+                    .and_then(Value::as_bool)
+                    .ok_or_else(|| bad("assert_session_restore requires boolean field \"visible\""))?,
+            }),
+            "click_session_restore_button" => Ok(Self::ClickSessionRestoreButton),
             other => Err(bad(format!("unknown op \"{other}\"").as_str())),
         }
     }
@@ -393,6 +467,19 @@ impl UiDriver {
                 app.handle_mouse_click(*x, *y, true, button);
                 app.handle_mouse_click(*x, *y, false, button);
                 tracing::info!("UI_DRIVER_STEP step={} x={x} y={y} button={button}", self.next + 1);
+                Ok(())
+            }
+            Step::Down { x, y, button } => {
+                // 与 main 窗口事件同一顺序：先 move 再 press（保证 hover 状态一致）。
+                app.handle_mouse_move(*x, *y);
+                app.handle_mouse_click(*x, *y, true, button);
+                tracing::info!("UI_DRIVER_STEP step={} down x={x} y={y} button={button}", self.next + 1);
+                Ok(())
+            }
+            Step::Up { x, y, button } => {
+                app.handle_mouse_move(*x, *y);
+                app.handle_mouse_click(*x, *y, false, button);
+                tracing::info!("UI_DRIVER_STEP step={} up x={x} y={y} button={button}", self.next + 1);
                 Ok(())
             }
             Step::Move { x, y } => {
@@ -554,6 +641,72 @@ impl UiDriver {
                 }
                 tracing::info!(
                     "UI_DRIVER_STEP step={} assert_tab_overflow open={o} hidden={hidden} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertTabs { count } => {
+                let actual = app.smoke_tab_ids().len();
+                if actual != *count {
+                    return Err(format!("assert_tabs failed: tab count is {actual}, expected {count}"));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_tabs count={actual} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertClipboard { pattern } => {
+                let actual = app.smoke_clipboard_text().unwrap_or_default();
+                if !actual.contains(pattern.as_str()) {
+                    return Err(format!(
+                        "assert_clipboard failed: clipboard is {actual:?}, expected to contain {pattern}"
+                    ));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_clipboard len={} status=passed",
+                    self.next + 1,
+                    actual.len()
+                );
+                Ok(())
+            }
+            Step::AssertAddressBar { pattern } => {
+                let actual = app.smoke_address_bar_text().to_string();
+                if !actual.contains(pattern.as_str()) {
+                    return Err(format!(
+                        "assert_addressbar failed: address bar is {actual:?}, expected to contain {pattern}"
+                    ));
+                }
+                tracing::info!("UI_DRIVER_STEP step={} assert_addressbar status=passed", self.next + 1);
+                Ok(())
+            }
+            Step::AssertSessionRestore { visible } => {
+                let actual = app.smoke_session_restore_prompt();
+                if actual != *visible {
+                    return Err(format!(
+                        "assert_session_restore failed: prompt visible={actual}, expected {visible}"
+                    ));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_session_restore visible={actual} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::ClickSessionRestoreButton => {
+                let (bx, by, bw, bh) = app.session_restore_bubble_rect_for(app.physical_size.0, app.physical_size.1);
+                if !app.smoke_session_restore_prompt() {
+                    return Err("click_session_restore_button: restore prompt is not visible".to_string());
+                }
+                let s = app.scale_factor;
+                let (restore, _) = BrowserApp::session_restore_button_rects((bx, by, bw, bh), s);
+                let cx = restore.0 + restore.2 / 2.0;
+                let cy = restore.1 + restore.3 / 2.0;
+                app.handle_mouse_move(cx as f64, cy as f64);
+                app.handle_mouse_click(cx as f64, cy as f64, true, "Left");
+                app.handle_mouse_click(cx as f64, cy as f64, false, "Left");
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} click_session_restore x={cx} y={cy}",
                     self.next + 1
                 );
                 Ok(())

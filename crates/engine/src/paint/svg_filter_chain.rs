@@ -320,6 +320,9 @@ pub(crate) fn build_wrapper_svg(
     inline_feimage_hrefs(doc, filter_node_id, &mut chain_xml, document_base);
     // R4285：feImage 文档内元素引用（href="#id"）——引用元素子树进 wrapper defs。
     inline_feimage_element_refs(doc, filter_node_id, &mut chain_xml);
+    // R5123：resvg 0.47 位移 scale 平方缺陷补偿（同 svg-element 序列化路径，
+    // url() 链包装 SVG 同样经 resvg 渲染）。
+    let mut chain_xml = crate::paint::svg_displacement_scale::compensate_displacement_scale(&chain_xml);
     // color-interpolation-filters 为**可继承**属性：声明在祖先（常见于 `<svg>` 根）
     // 时 outer_html 序列化不含它 → resvg 按缺省 linearRGB 计算，与引用页 sRGB 语义
     // 相左（effect-reference-lighting-no-light 4.17% 实证）。沿祖先链取首个显式

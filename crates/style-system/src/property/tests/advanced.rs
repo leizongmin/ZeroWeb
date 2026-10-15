@@ -1967,3 +1967,42 @@ fn test_apply_content_gradient() {
     ));
     assert!(matches!(style2.content, ContentComputedValue::Gradient(_)));
 }
+
+#[test]
+/// R5130（css-multicol-2 #ch/#cwr）：column-height（auto/<length>）与
+/// column-wrap（auto/wrap/nowrap）解析；initial 回 auto（非继承）。
+fn test_apply_property_column_height_and_wrap() {
+    let mut style = ComputedStyle::default();
+    assert_eq!(style.column_height, ColumnHeightComputedValue::Auto);
+    assert_eq!(style.column_wrap, ColumnWrapComputedValue::Auto);
+    assert!(PropertyRegistry::initial_value("column-height").is_some());
+    assert!(PropertyRegistry::initial_value("column-wrap").is_some());
+
+    // https://drafts.csswg.org/css-multicol-2/#ch
+    assert!(apply_property_value(&mut style, "column-height", "40px"));
+    assert_eq!(
+        style.column_height,
+        ColumnHeightComputedValue::Length(LengthValue::Px(40.0))
+    );
+    assert!(apply_property_value(&mut style, "column-height", "auto"));
+    assert_eq!(style.column_height, ColumnHeightComputedValue::Auto);
+    assert!(!apply_property_value(&mut style, "column-height", "invalid"));
+
+    // https://drafts.csswg.org/css-multicol-2/#cwr
+    assert!(apply_property_value(&mut style, "column-wrap", "wrap"));
+    assert_eq!(style.column_wrap, ColumnWrapComputedValue::Wrap);
+    assert!(apply_property_value(&mut style, "column-wrap", "nowrap"));
+    assert_eq!(style.column_wrap, ColumnWrapComputedValue::Nowrap);
+    assert!(apply_property_value(&mut style, "column-wrap", "auto"));
+    assert_eq!(style.column_wrap, ColumnWrapComputedValue::Auto);
+    assert!(!apply_property_value(&mut style, "column-wrap", "invalid"));
+
+    // initial/unset 回 auto（两属性均非继承；关键字在 cascade 层解析，
+    // 单属性 apply 拒绝关键字，重置走 apply_initial_value）。
+    assert!(apply_property_value(&mut style, "column-height", "40px"));
+    assert!(apply_initial_value(&mut style, "column-height"));
+    assert_eq!(style.column_height, ColumnHeightComputedValue::Auto);
+    assert!(apply_property_value(&mut style, "column-wrap", "wrap"));
+    assert!(apply_initial_value(&mut style, "column-wrap"));
+    assert_eq!(style.column_wrap, ColumnWrapComputedValue::Auto);
+}

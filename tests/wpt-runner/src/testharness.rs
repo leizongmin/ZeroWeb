@@ -2835,6 +2835,94 @@ pub fn run_webstorage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Strin
         .collect()
 }
 
+/// compression-compat goal（24 / DC-1）corpus 目录——fetch 脚本
+/// `scripts/goals/24-compression-compat.sh`（同 WPT_REV pin）拉取 `.any.js` 用例与
+/// `resources/`、`third_party/pako/` 依赖到 `wpt-data/compression/`（gitignored）。
+const COMPRESSION_TEST_DIR: &str = "compression";
+
+/// [`COMPRESSION_TEST_DIR`] 用例名排除规则（runner 侧记账排除，fetch 侧全量拉取）。
+fn compression_case_skipped(relative: &str) -> bool {
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    // idlharness.*：依赖 /resources/WebIDLParser.js 与 /interfaces/compression.idl
+    // build 期生成资产，repo 内不存在，window 不可执行（clipboard/timing/net-api
+    // idlharness 先例）。
+    name.starts_with("idlharness.")
+}
+
+/// Run the pinned upstream compression window subset
+/// （compression-compat goal M1 / DC-1——CompressionStream/DecompressionStream 语义基线）。
+/// 目录扫描 `.any.js`（用例唯一形态，无 .html），META script 自动解析（fs/wasm 先例；
+/// `third_party/pako/pako_inflate.min.js` 相对用例目录解析），[`any_js_window_wrapper`]
+/// window 变体执行。filter 按路径子串过滤。
+pub fn run_compression_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                format!("{COMPRESSION_TEST_DIR}/"),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+    let mut cases = Vec::new();
+    let Ok(entries) = std::fs::read_dir(wpt_root.join(COMPRESSION_TEST_DIR)) else {
+        return cases;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if path.is_dir() || !name.ends_with(".any.js") {
+            continue;
+        }
+        let relative = format!("{COMPRESSION_TEST_DIR}/{name}");
+        if filter.is_some_and(|filter| !relative.contains(filter)) || compression_case_skipped(&relative) {
+            continue;
+        }
+        let Ok(case_source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let case_dir = Path::new(&relative).parent().unwrap_or_else(|| Path::new(""));
+        let mut support_sources = Vec::new();
+        let mut support_failed = false;
+        for script in wpt_meta_scripts(&relative, &case_source) {
+            let support_path = match script.strip_prefix('/') {
+                Some(root_relative) => wpt_root.join(root_relative),
+                None => wpt_root.join(case_dir).join(&script),
+            };
+            match std::fs::read_to_string(support_path) {
+                Ok(source) => support_sources.push((script, source)),
+                Err(error) => {
+                    cases.push((
+                        relative.clone(),
+                        vec![HarnessSubtestResult {
+                            name: format!("load compression support {script}"),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    ));
+                    support_failed = true;
+                    break;
+                }
+            }
+        }
+        if support_failed {
+            continue;
+        }
+        let support_refs = support_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let html = any_js_window_wrapper(&relative, &support_refs, &case_source);
+        let results = run_testharness_html(wpt_root, &relative, &html, &harness_source, CASE_TIMEOUT);
+        cases.push((relative, results));
+    }
+    cases
+}
+
 /// Web Components goal（web-components M1 / DC-1）pinned upstream subset——三个目录的
 /// 递归 .html 用例清单。Cases are fetched by `fetch-web-components-subset.sh`（WPT
 /// 315976933870b34d6ea30e3f6643403edae678ba）into `wpt-data/`（gitignored）.

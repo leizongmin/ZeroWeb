@@ -134,6 +134,14 @@ enum WorkerCommand {
     },
     RegisterUiSurface(zero_protocol::CompositorUiSurfaceInfo),
     RegisterWindowSurface(zero_protocol::CompositorWindowSurfaceInfo),
+    /// P100 返修（F1）：拆批像素中继（渲染→浏览器→compositor）。批不可被同
+    /// surface 新命令替换、也不可替换已排队批（像素丢了 renderer 不会重发），
+    /// 入队语义与帧不同，见 `CommandChannel::send`。
+    ImagePayloadBatch {
+        surface_id: u64,
+        navigation_epoch: u64,
+        payloads: Vec<zero_protocol::paint_snapshot::IpcImagePayload>,
+    },
     UiFrame {
         surface_id: u64,
         width: u32,
@@ -158,6 +166,7 @@ impl WorkerCommand {
             Self::RegisterWindowSurface(info) => info.surface_id,
             Self::UiFrame { surface_id, .. } => *surface_id,
             Self::FetchPresent { page_surface_id, .. } => *page_surface_id,
+            Self::ImagePayloadBatch { surface_id, .. } => *surface_id,
         }
     }
 }
@@ -207,6 +216,19 @@ impl CommandChannel {
         self.send(WorkerCommand::Frame(Box::new(frame)))
     }
 
+    fn send_image_batch(
+        &self,
+        surface_id: u64,
+        navigation_epoch: u64,
+        payloads: Vec<zero_protocol::paint_snapshot::IpcImagePayload>,
+    ) -> bool {
+        self.send(WorkerCommand::ImagePayloadBatch {
+            surface_id,
+            navigation_epoch,
+            payloads,
+        })
+    }
+
     fn release_surface(&self, surface_id: u64) -> bool {
         self.send(WorkerCommand::ReleaseSurface(surface_id))
     }
@@ -252,15 +274,33 @@ impl CommandChannel {
         if state.closed {
             return false;
         }
+        // 满时逐出候补：优先丢最旧帧（下游 compositor accepts() latest-wins 会
+        // 用新帧取代旧帧，丢帧无损），无帧可逐才退回队首。
+        let oldest_frame_index = |state: &CommandState| -> Option<usize> {
+            state
+                .pending
+                .iter()
+                .position(|pending| matches!(pending, WorkerCommand::Frame(_)))
+        };
         let surface_id = command.surface_id();
-        if let Some(index) = state
-            .pending
-            .iter()
-            .position(|pending| pending.surface_id() == surface_id)
-        {
+        if matches!(command, WorkerCommand::ImagePayloadBatch { .. }) {
+            // P100 返修（F1）：批不可合并也不可被替换——像素丢弃后 renderer
+            // 不会重发（key 已标记 sent），必须与同 surface 帧各自独立排队，
+            // 保持批先于其帧到达 compositor。
+            if state.pending.len() == self.capacity {
+                let index = oldest_frame_index(&state).unwrap_or_else(|| {
+                    tracing::warn!("compositor 命令队列满且无帧可逐：丢弃最旧批（像素丢失至下帧重绘）");
+                    0
+                });
+                state.pending.remove(index);
+            }
+        } else if let Some(index) = state.pending.iter().position(|pending| {
+            pending.surface_id() == surface_id && !matches!(pending, WorkerCommand::ImagePayloadBatch { .. })
+        }) {
             state.pending.remove(index);
         } else if state.pending.len() == self.capacity {
-            state.pending.pop_front();
+            let index = oldest_frame_index(&state).unwrap_or(0);
+            state.pending.remove(index);
         }
         state.pending.push_back(command);
         self.ready.notify_one();
@@ -508,6 +548,18 @@ impl Client {
         });
     }
 
+    fn send_image_batch(
+        &self,
+        surface_id: u64,
+        navigation_epoch: u64,
+        payloads: Vec<zero_protocol::paint_snapshot::IpcImagePayload>,
+    ) {
+        if self.status.load() == CompositorStatus::Disconnected {
+            return;
+        }
+        let _ = self.commands.send_image_batch(surface_id, navigation_epoch, payloads);
+    }
+
     fn release_surface(&self, surface_id: u64) {
         if self.status.load() != CompositorStatus::Disconnected {
             let _ = self.commands.release_surface(surface_id);
@@ -701,7 +753,11 @@ enum ExpectedResponse {
     Data(FrameKey),
     Scroll(FrameKey),
     ReleaseSurface,
-    PresentData { page_surface_id: u64 },
+    /// P100 返修（F1）：批中继等待 compositor Ok 回执（像素已入挂起队列）。
+    Batch,
+    PresentData {
+        page_surface_id: u64,
+    },
 }
 
 fn worker_main<F>(
@@ -793,6 +849,23 @@ fn process_batch(
                     kind: IpcMessageKind::ReleaseCompositorSurface { surface_id },
                 })?;
                 outstanding.insert(message_id, ExpectedResponse::ReleaseSurface);
+            }
+            WorkerCommand::ImagePayloadBatch {
+                surface_id,
+                navigation_epoch,
+                payloads,
+            } => {
+                // P100 返修（F1）：批先于其帧上线（同通道 FIFO）。compositor 以
+                // Ok 确认接收；批无帧语义，不推进帧看门狗（同 Scroll 先例）。
+                transport.send(IpcMessage {
+                    id: message_id,
+                    kind: IpcMessageKind::ImagePayloadBatch {
+                        surface_id: Some(surface_id),
+                        navigation_epoch,
+                        payloads,
+                    },
+                })?;
+                outstanding.insert(message_id, ExpectedResponse::Batch);
             }
             WorkerCommand::SetScroll {
                 surface_id,
@@ -923,6 +996,7 @@ fn process_batch(
                     })?;
                     outstanding.insert(message_id, ExpectedResponse::Data(expected));
                 }
+                (ExpectedResponse::Batch, IpcMessageKind::Ok) => {}
                 (
                     ExpectedResponse::Data(expected),
                     IpcMessageKind::CompositorFrameData {
@@ -1086,6 +1160,19 @@ pub fn forward_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64, pain
     client
         .get_or_insert_with(Client::start)
         .send(surface_id, navigation_epoch, frame_id, paint);
+}
+
+/// P100 返修（F1）：把 renderer 拆批像素中继给 compositor 进程。批消息与帧走
+/// 同一命令通道 FIFO，先于其帧到达；compositor 收批挂起、帧到达时按 epoch 注入。
+pub fn forward_image_batch(
+    surface_id: u64,
+    navigation_epoch: u64,
+    payloads: Vec<zero_protocol::paint_snapshot::IpcImagePayload>,
+) {
+    let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    client
+        .get_or_insert_with(Client::start)
+        .send_image_batch(surface_id, navigation_epoch, payloads);
 }
 
 /// 非阻塞读取指定 surface 的最新完成位图。
@@ -1421,6 +1508,52 @@ mod tests {
             .map(|command| command.surface_id())
             .collect();
         assert_eq!(surfaces, vec![2, 3]);
+    }
+
+    fn batch_payload(key: u64) -> zero_protocol::paint_snapshot::IpcImagePayload {
+        zero_protocol::paint_snapshot::IpcImagePayload {
+            image_key: key,
+            width: 1,
+            height: 1,
+            rgba: vec![0, 0, 0, 255],
+        }
+    }
+
+    /// P100 返修（F1）：批与同 surface 帧各自独立排队（帧不吞批、批不吞帧），
+    /// recv 按 FIFO 保序——compositor 因此先收像素后收帧。
+    #[test]
+    fn image_batches_queue_independently_of_frames_in_fifo_order() {
+        let commands = CommandChannel::new(8);
+        assert!(commands.send_image_batch(1, 1, vec![batch_payload(11)]));
+        assert!(commands.send_image_batch(1, 1, vec![batch_payload(12)]));
+        assert!(commands.send_frame(pending(1, 1, 1)));
+        assert!(commands.send_frame(pending(1, 1, 2)));
+        // 同 surface 帧合并为最新；两条批都保留且在帧之前。
+        let drained = commands.recv().unwrap();
+        assert_eq!(drained.len(), 3);
+        assert!(matches!(drained[0], WorkerCommand::ImagePayloadBatch { .. }));
+        assert!(matches!(drained[1], WorkerCommand::ImagePayloadBatch { .. }));
+        assert!(matches!(
+            &drained[2],
+            WorkerCommand::Frame(frame) if frame.frame_id == 2
+        ));
+    }
+
+    /// P100 返修（F1）：满时逐出优先丢最旧帧（下游 latest-wins 无损），批保留。
+    #[test]
+    fn full_channel_evicts_oldest_frame_before_batches() {
+        let commands = CommandChannel::new(2);
+        assert!(commands.send_frame(pending(1, 1, 1)));
+        assert!(commands.send_image_batch(2, 1, vec![batch_payload(7)]));
+        assert!(commands.send_frame(pending(3, 1, 1)));
+        let drained = commands.recv().unwrap();
+        // surface 1 的旧帧被逐出；批与后入帧保留。
+        assert_eq!(drained.len(), 2);
+        assert!(matches!(drained[0], WorkerCommand::ImagePayloadBatch { .. }));
+        assert!(matches!(
+            &drained[1],
+            WorkerCommand::Frame(frame) if frame.surface_id == 3
+        ));
     }
 
     #[test]

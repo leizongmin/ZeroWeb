@@ -22,6 +22,9 @@ fn url_display_host(url: &str) -> Option<String> {
 /// 菜单打开渐入时长（秒）：150ms 内 alpha 从 0 渐到 1，Chrome 同款。
 const MENU_FADE_IN_SECONDS: f32 = 0.15;
 
+/// 标签拖拽提起时的投影色（半透明黑，亮/暗主题共用）。
+const TAB_DRAG_SHADOW: Color = Color { r: 0, g: 0, b: 0, a: 70 };
+
 /// 按 `opacity`（0.0~1.0）收缩颜色 alpha 通道（菜单渐入动画用）；
 /// `opacity >= 1.0` 时原样返回，避免无谓的浮点换算。
 fn fade_color(color: Color, opacity: f32) -> Color {
@@ -202,6 +205,8 @@ impl BrowserApp {
         self.render_floating_link_status(&mut fills, &mut glyphs, width, height, s);
 
         // 15–17. 浮动查找栏、下载面板、上下文菜单（overlay 顶层）
+        // 文本选区高亮最先入 overlay（T19：位于查找高亮与查找栏之下，仍在页面内容之上）。
+        self.render_selection_highlight_overlay(&mut overlay_fills, width, height);
         // 查找高亮最先入 overlay（位于查找栏之下，仍在页面内容之上）。
         if self.shell.find_state().is_active() {
             self.render_find_highlight_overlay(&mut overlay_fills, width, height);
@@ -210,6 +215,10 @@ impl BrowserApp {
         // 18. 标签溢出下拉（T18：▾ 展开时覆盖页面内容，与自动补全同层）
         if self.tab_overflow_open && !self.tab_overflow_ids.is_empty() {
             self.render_tab_overflow_dropdown(&mut overlay_fills, &mut overlay_glyphs, width, font_size, s);
+        }
+        // 18b. 崩溃恢复气泡（T20：Chrome "Restore pages?" 同款，覆盖页面内容）
+        if self.session_restore_prompt_visible {
+            self.render_session_restore_bubble(&mut overlay_fills, &mut overlay_glyphs, width, height, font_size, s);
         }
         if self.should_show_download_panel() {
             self.render_download_panel(&mut overlay_fills, &mut overlay_glyphs, width, height, font_size, s);
@@ -495,6 +504,8 @@ impl BrowserApp {
         if tab_count == 0 {
             return;
         }
+        // 让位动画推进：未收敛时保持重绘（拖拽中松开鼠标后兄弟标签继续平滑落位）。
+        let tab_drag_settled = self.advance_tab_drag_yield();
 
         let new_tab_btn_w = layout::NEW_TAB_BTN_WIDTH * s;
         let window_controls_w = if self.uses_custom_window_controls() {
@@ -541,6 +552,10 @@ impl BrowserApp {
         struct TabPaint {
             id: TabId,
             x: f32,
+            /// 未含拖拽跟随/让位位移的稳定槽位（tab_layout 记录用，点击命中、
+            /// 释放重排与让位目标共用同一布局，保证松手落位与拖拽中排列一致）。
+            slot_x: f32,
+            slot_w: f32,
             tab_w: f32,
             tab_body_w: f32,
             bg: Color,
@@ -551,6 +566,8 @@ impl BrowserApp {
             is_crashed: bool,
             needs_attention: bool,
             is_dragging: bool,
+            /// 拖拽视觉提起量（物理像素）；非拖拽标签为 0。
+            lift: f32,
             label: String,
             page_url: Option<String>,
             html_hint: Option<&'static str>,
@@ -580,19 +597,29 @@ impl BrowserApp {
             if tab.is_private() {
                 label = format!("无痕 · {label}");
             }
-            // 被拖拽的标签：x 跟随鼠标，绘制时置于顶层。
-            let (paint_x, is_dragging) = match &self.tab_drag {
+            // 被拖拽的标签：x 跟随鼠标并轻微提起（加宽 + 上移 + 阴影），绘制时置于顶层；
+            // 兄弟标签按让位动画位移平滑让出空槽。
+            let (drag_follow, is_dragging) = match &self.tab_drag {
                 Some(d) if d.active && d.tab_id == tab.id() => {
                     let offset = d.current_x - d.press_x;
-                    (x + offset, true)
+                    (Some(offset), true)
                 }
-                _ => (x, false),
+                _ => (None, false),
             };
+            let lift = if is_dragging { 2.0 * s } else { 0.0 };
+            // 拖拽提起时标签体围绕中心轻微放大（加宽 3s），内容随 tab.x/tab_w 自动跟随。
+            let (paint_x, paint_w) = match drag_follow {
+                Some(offset) => (x + offset - 1.5 * s, tab_w + 3.0 * s),
+                None => (x, tab_w),
+            };
+            let paint_x = paint_x + self.tab_drag_paint_offsets.get(&tab.id()).copied().unwrap_or(0.0);
             tabs.push(TabPaint {
                 id: tab.id(),
                 x: paint_x,
-                tab_w,
-                tab_body_w: tab_w - s,
+                slot_x: x,
+                slot_w: tab_w,
+                tab_w: paint_w,
+                tab_body_w: paint_w - s,
                 bg: if is_dragging { self.chrome_palette.tab_active_bg } else { bg },
                 is_active,
                 is_loading: tab.is_loading(),
@@ -601,6 +628,7 @@ impl BrowserApp {
                 is_crashed: tab.is_crashed(),
                 needs_attention: tab.needs_attention(),
                 is_dragging,
+                lift,
                 label,
                 page_url: tab.url().map(str::to_string),
                 html_hint: Self::tab_html_hint(tab.url()),
@@ -647,9 +675,19 @@ impl BrowserApp {
             crate::tab_chrome::push_active_tab_fill(fills, active.x, tab_y, active.tab_body_w, tab_bar_h, s, active.bg);
         }
 
-        // 被拖拽的标签最后绘制（顶层），用 active 样式突出。
+        // 被拖拽的标签最后绘制（顶层），提起 + 半透明投影（视觉拿起）。
         for tab in visible.iter().filter(|t| t.is_dragging) {
-            crate::tab_chrome::push_active_tab_fill(fills, tab.x, tab_y, tab.tab_body_w, tab_bar_h, s, tab.bg);
+            // 投影画在原槽位位置（贴标签条底缘），提起的标签体叠于其上。
+            crate::tab_chrome::push_inactive_tab_fill(
+                fills,
+                tab.x + 2.0 * s,
+                tab_y + 2.0 * s,
+                tab.tab_body_w,
+                tab_bar_h,
+                s,
+                TAB_DRAG_SHADOW,
+            );
+            crate::tab_chrome::push_active_tab_fill(fills, tab.x, tab_y - tab.lift, tab.tab_body_w, tab_bar_h, s, tab.bg);
         }
 
         // 相邻非激活标签之间的竖线（在标签底色之上、文本图标之下）
@@ -669,6 +707,8 @@ impl BrowserApp {
         }
 
         for tab in visible {
+            // 拖拽提起的标签：内容（图标/标题/按钮）随标签体一起上移。
+            let tab_y = tab_y - tab.lift;
             let tab_text_color = if tab.is_crashed {
                 self.chrome_palette.tab_crashed
             } else if tab.is_active {
@@ -800,7 +840,9 @@ impl BrowserApp {
                 );
             }
 
-            self.tab_layout.push((tab.id, tab.x, tab.tab_w));
+            // tab_layout 记录未含拖拽跟随/让位位移的稳定槽位（点击命中、释放重排、
+            // 让位目标共用同一布局，保证松手落位与拖拽中显示的排列一致）。
+            self.tab_layout.push((tab.id, tab.slot_x, tab.slot_w));
         }
 
         // 溢出 ▾ 按钮（T18）：存在被隐藏标签时出现在最后一个可见标签之后；
@@ -874,6 +916,11 @@ impl BrowserApp {
         if self.uses_custom_window_controls() {
             self.render_window_controls(fills, glyphs, width, tab_y, s);
         }
+
+        if !tab_drag_settled {
+            // 让位动画未收敛：保持请求重绘，兄弟标签继续平滑落位。
+            self.needs_redraw = true;
+        }
     }
 
     /// 渲染页面内查找高亮（overlay 层；T15-d）。
@@ -943,6 +990,124 @@ impl BrowserApp {
             }
             overlay_fills.push(rect_fill(dx, dt, dw.max(1.0), dh, fill));
         }
+    }
+
+    /// 渲染页面文本选区高亮（overlay 层；T19）。
+    ///
+    /// 与查找高亮同款 overlay 层渲染：此前画在 chrome fills 层会被页面自身
+    /// 背景 fill（append 在其后）与 compositor 位图整面覆盖，拖选/Ctrl+A 后
+    /// 高亮不可见（同 T15 前的查找高亮问题）。选区按 glyph 生成半透明蓝底
+    /// （`text_selection_bg`，alpha 混合保证文字可读），文档坐标按内容区 +
+    /// 滚动偏移换算屏幕坐标并裁剪到页面视口。
+    fn render_selection_highlight_overlay(&self, overlay_fills: &mut Vec<FillPrimitive>, width: u32, height: u32) {
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            return;
+        };
+        let Some(sel) = self.page_selection.get(&tab_id) else {
+            return;
+        };
+        if sel.is_collapsed() {
+            return;
+        }
+        let Some(primitives) = self.tabs.last_render(tab_id).map(|render| &render.primitives) else {
+            return;
+        };
+        let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
+        let scroll = self.tab_scroll_state(tab_id);
+        // CSS 图元 × device scale × 页面 zoom（与 append_webview_primitives 同一换算）。
+        let s = self.page_render_scale();
+        let content_x_draw = cx - scroll.x;
+        let content_y_draw = cy - scroll.y;
+        let clip_top = cy;
+        let clip_bottom = cy + ch;
+        let clip_left = cx;
+        let clip_right = cx + cw;
+        let std::ops::Range { start, end } = sel.glyph_range(primitives.glyphs.len());
+        if start >= end {
+            return;
+        }
+        for glyph in &primitives.glyphs[start..end] {
+            let x = glyph.x * s + content_x_draw;
+            let top = glyph.y * s + content_y_draw - glyph.font_size * s;
+            let w = glyph.font_size * s * 0.55;
+            let h = glyph.font_size * s;
+            let right = x + w;
+            let bottom = top + h;
+            if bottom <= clip_top || top >= clip_bottom || right <= clip_left || x >= clip_right {
+                continue;
+            }
+            // 文档坐标包围盒 → 屏幕矩形，裁剪到页面视口（与 render_find_highlight_overlay 同款截断）。
+            let dx = x.max(clip_left);
+            let dt = top.max(clip_top);
+            let dw = (right.min(clip_right) - dx).max(1.0);
+            let dh = (bottom.min(clip_bottom) - dt).max(1.0);
+            overlay_fills.push(rect_fill(dx, dt, dw, dh, self.chrome_palette.text_selection_bg));
+        }
+    }
+
+    /// 渲染崩溃恢复气泡（T20；overlay 层，覆盖页面内容）。
+    ///
+    /// Chrome "Restore pages?" 同款：上次异常退出（`clean_exit=false`）时询问
+    /// 是否恢复会话。标题 + 说明 + 「恢复标签」主按钮 + 「关闭」次按钮；
+    /// 矩形与按钮几何由 `session_restore_bubble_rect_for` /
+    /// `session_restore_button_rects` 提供（与命中测试同源）。
+    fn render_session_restore_bubble(
+        &mut self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        width: u32,
+        height: u32,
+        font_size: f32,
+        s: f32,
+    ) {
+        if self.font_id.is_none() {
+            return;
+        }
+        let (bx, by, bw, bh) = self.session_restore_bubble_rect_for(width, height);
+        let border = s.max(1.0);
+        let radius = layout::FIND_BAR_FLOAT_RADIUS * s;
+        let pad = 12.0 * s;
+        push_rounded_rect_fill(fills, bx, by, bw, bh, radius, self.chrome_palette.separator);
+        push_rounded_rect_fill(
+            fills,
+            bx + border,
+            by + border,
+            bw - 2.0 * border,
+            bh - 2.0 * border,
+            (radius - border).max(0.0),
+            self.chrome_palette.autocomplete_bg,
+        );
+        self.draw_ui_text(
+            "恢复标签？",
+            bx + pad,
+            by + pad,
+            font_size,
+            self.chrome_palette.tab_text,
+            glyphs,
+        );
+        self.draw_ui_text(
+            "ZeroBrowser 未正常关闭，可恢复上次会话的标签页。",
+            bx + pad,
+            by + pad + font_size + 6.0 * s,
+            font_size,
+            self.chrome_palette.address_bar_placeholder,
+            glyphs,
+        );
+        let (restore, dismiss) = Self::session_restore_button_rects((bx, by, bw, bh), s);
+        let btn_radius = 4.0 * s;
+        // 主按钮：页面加载蓝底白字；次按钮：工具栏底 + 常规文字。
+        push_rounded_rect_fill(fills, restore.0, restore.1, restore.2, restore.3, btn_radius, self.chrome_palette.loading_indicator);
+        push_rounded_rect_fill(fills, dismiss.0, dismiss.1, dismiss.2, dismiss.3, btn_radius, self.chrome_palette.toolbar_bg);
+        let btn_text_y = restore.1 + (restore.3 - font_size) / 2.0;
+        self.draw_ui_text("恢复标签", restore.0 + 14.0 * s, btn_text_y, font_size, Color::WHITE, glyphs);
+        self.draw_ui_text(
+            "关闭",
+            dismiss.0 + (dismiss.2 - self.measure_ui_text_width("关闭", font_size)) / 2.0,
+            btn_text_y,
+            font_size,
+            self.chrome_palette.tab_text,
+            glyphs,
+        );
     }
 
     /// 渲染标签溢出下拉面板（▾ 展开；overlay 层，覆盖页面内容）。
@@ -1569,8 +1734,6 @@ impl BrowserApp {
         let clip_bottom = viewport_y + viewport_h;
         let content_y_draw = viewport_y - scroll_y;
         let content_x_draw = viewport_x - scroll_x;
-        // CSS 图元 × device scale × 页面 zoom。
-        let s = self.page_render_scale();
         let border = self.effective_page_frame_border();
         let radius = (self.effective_page_frame_radius() - border).max(0.0);
         let clip_rounded = Some((viewport_x, viewport_y, viewport_w, viewport_h, radius));
@@ -1578,40 +1741,7 @@ impl BrowserApp {
         // 页面内查找高亮已移至 overlay 层（render_find_highlight_overlay）：
         // 画在 chrome fills 层会被页面自身背景 fill（append 在其后）与
         // compositor 位图整面覆盖——overlay 层是唯一两侧路径都可见的位置。
-
-        if let Some(sel) = self.page_selection.get(&tab_id)
-            && !sel.is_collapsed()
-        {
-            let std::ops::Range { start, end } = sel.glyph_range(page_primitives.glyphs.len());
-            if start < end {
-                for glyph in &page_primitives.glyphs[start..end] {
-                    let x = glyph.x * s + content_x_draw;
-                    let top = glyph.y * s + content_y_draw - glyph.font_size * s;
-                    let w = glyph.font_size * s * 0.55;
-                    let h = glyph.font_size * s;
-                    if top + h <= clip_top || top >= clip_bottom {
-                        continue;
-                    }
-                    if let Some((rx, ry, rw, rh, rr)) = clip_rounded {
-                        push_fill_clipped_to_rounded_rect(
-                            fills,
-                            x,
-                            top,
-                            w.max(1.0),
-                            h,
-                            self.chrome_palette.text_selection_bg,
-                            rx,
-                            ry,
-                            rw,
-                            rh,
-                            rr,
-                        );
-                    } else {
-                        fills.push(rect_fill(x, top, w.max(1.0), h, self.chrome_palette.text_selection_bg));
-                    }
-                }
-            }
-        }
+        // 文本选区高亮同理，见 render_selection_highlight_overlay（T19）。
 
         let page_glyph_start = glyphs.len();
         let rendered = append_webview_primitives(

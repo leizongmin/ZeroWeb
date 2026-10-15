@@ -346,6 +346,100 @@ fn assert_compositor_retains_image_payload(extra_env: &[(&str, &str)]) {
     assert_eq!(&second_pixels.rgba[..4], &[255, 0, 0, 255]);
 }
 
+/// P100-F1（真实合成器进程）：超限页像素经 ImagePayloadBatch 先于帧到达。
+/// compositor 发布模式下帧载荷置空、像素拆批先行；surface 尚未由帧创建时批挂起，
+/// 同 epoch 帧到达时注入并参与光栅化；epoch 不匹配的批随帧失效丢弃。
+#[test]
+fn image_batch_before_frame_injects_pixels_and_stale_epoch_drops() {
+    let (mut transport, _comp) = spawn_compositor();
+    let image = IpcImage {
+        rect: IpcRect {
+            x: 0.0,
+            y: 0.0,
+            width: 8.0,
+            height: 8.0,
+        },
+        image_key: 44,
+        clip: None,
+    };
+
+    // 批先于帧上线：surface 7 尚不存在，批必须挂起而非丢弃。
+    transport
+        .send(IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::ImagePayloadBatch {
+                surface_id: Some(7),
+                navigation_epoch: 1,
+                payloads: vec![IpcImagePayload {
+                    image_key: 44,
+                    width: 1,
+                    height: 1,
+                    rgba: vec![255, 0, 0, 255],
+                }],
+            },
+        })
+        .expect("send image batch");
+    let resp: IpcMessage = transport.recv().expect("recv batch ack");
+    assert_eq!(resp.id, 1);
+    assert!(
+        matches!(resp.kind, IpcMessageKind::Ok),
+        "批应由 compositor 确认: {resp:?}"
+    );
+
+    // 同 epoch 帧到达（载荷为空——m1 拆批语义），光栅化应消费挂起批像素。
+    let frame = PaintSnapshotParams {
+        viewport_width: 8,
+        viewport_height: 8,
+        document_height: 8.0,
+        images: vec![image.clone()],
+        image_payloads: Vec::new(),
+        ..Default::default()
+    };
+    assert_eq!(submit_frame(&mut transport, 2, 7, 1, 1, frame), (7, 1, 1));
+    let pixels = get_frame(&mut transport, 3, 7, 1, 1);
+    assert_eq!(&pixels.rgba[..4], &[255, 0, 0, 255], "批像素应出现在合成输出");
+
+    // 过期批（epoch 2）对后续 epoch 3 的帧必须失效：图像区不得出现批像素。
+    transport
+        .send(IpcMessage {
+            id: 4,
+            kind: IpcMessageKind::ImagePayloadBatch {
+                surface_id: Some(7),
+                navigation_epoch: 2,
+                payloads: vec![IpcImagePayload {
+                    image_key: 44,
+                    width: 1,
+                    height: 1,
+                    rgba: vec![0, 255, 0, 255],
+                }],
+            },
+        })
+        .expect("send stale image batch");
+    let resp: IpcMessage = transport.recv().expect("recv stale batch ack");
+    assert_eq!(resp.id, 4);
+    assert!(
+        matches!(resp.kind, IpcMessageKind::Ok),
+        "过期批同样确认后按 epoch 失效: {resp:?}"
+    );
+
+    let frame3 = PaintSnapshotParams {
+        viewport_width: 8,
+        viewport_height: 8,
+        document_height: 8.0,
+        images: vec![image],
+        ..Default::default()
+    };
+    assert_eq!(submit_frame(&mut transport, 5, 7, 3, 3, frame3), (7, 3, 3));
+    let pixels3 = get_frame(&mut transport, 6, 7, 3, 3);
+    // epoch 3 切换导航世代清空 image_cache，过期批不得注入——图像区回落到
+    // 未解码像素，绝不能出现批里的纯绿。
+    assert_ne!(
+        &pixels3.rgba[..4],
+        &[0, 255, 0, 255],
+        "过期批像素不得出现在新 epoch 帧的合成输出"
+    );
+}
+
 /// S3：部分 dirty 帧经 compositor 进程 copy_front + 区域重绘，区外像素保留。
 #[test]
 fn compositor_partial_dirty_preserves_pixels_outside_region() {

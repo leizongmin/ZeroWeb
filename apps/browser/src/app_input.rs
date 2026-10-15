@@ -1109,6 +1109,29 @@ impl BrowserApp {
             return;
         }
 
+        // T20：崩溃恢复气泡命中（浮层先于页面派发）。气泡内按钮分发；
+        // 气泡外左键按下按 Chrome 行为关闭气泡（不恢复），继续原点击处理。
+        if self.session_restore_prompt_visible {
+            let bubble = self.session_restore_bubble_rect_for(self.physical_size.0, self.physical_size.1);
+            let (bx, by, bw, bh) = bubble;
+            let inside = x_f >= bx && x_f < bx + bw && y_f >= by && y_f < by + bh;
+            if inside {
+                if button == "Left" && pressed {
+                    let s = self.scale_factor;
+                    let (restore, dismiss) = Self::session_restore_button_rects(bubble, s);
+                    if x_f >= restore.0 && x_f < restore.0 + restore.2 && y_f >= restore.1 && y_f < restore.1 + restore.3 {
+                        self.restore_pending_session();
+                    } else if x_f >= dismiss.0 && x_f < dismiss.0 + dismiss.2 && y_f >= dismiss.1 && y_f < dismiss.1 + dismiss.3 {
+                        self.dismiss_session_restore();
+                    }
+                }
+                return;
+            }
+            if button == "Left" && pressed {
+                self.dismiss_session_restore();
+            }
+        }
+
         if y_f >= content_y
             && y_f < content_y + content_h
             && x_f >= content_x
@@ -1323,7 +1346,16 @@ impl BrowserApp {
             return None;
         }
         let glyphs = self.page_glyphs(tab_id)?;
-        let text = GlyphSelection::selected_text(&glyphs, sel);
+        // advance 与 paint 布局同源：字形 font_id 先映射 browser 本地 registry
+        //（@font-face 走 page_font_imports，系统字体共享同一 ID 空间）再实测。
+        let text = GlyphSelection::selected_text(&glyphs, sel, |glyph, ch| {
+            let font_id = self
+                .page_font_imports
+                .get(&glyph.font_id.0)
+                .copied()
+                .unwrap_or(glyph.font_id.0);
+            self.font_loader.measure_advance(font_id, ch, glyph.font_size)
+        });
         if text.is_empty() {
             None
         } else {

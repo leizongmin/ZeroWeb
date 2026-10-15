@@ -189,10 +189,16 @@ impl LatestFrameMailbox {
 }
 
 /// 提取帧消息携带的图片 payload key 列表（M1 回传用）；非帧消息返回空。
+///
+/// P100：`ImagePayloadBatch` regular 消息同样携带像素，写出成功后一并回传 key
+/// （其不被 latest-wins 替换，FIFO 保证必被写出或连接死亡）。
 fn frame_image_keys(message: &IpcMessage) -> Vec<u64> {
     match &message.kind {
         IpcMessageKind::ViewPainted(paint) | IpcMessageKind::CompositorFrame { paint, .. } => {
             paint.image_payloads.iter().map(|payload| payload.image_key).collect()
+        }
+        IpcMessageKind::ImagePayloadBatch { payloads, .. } => {
+            payloads.iter().map(|payload| payload.image_key).collect()
         }
         _ => Vec::new(),
     }
@@ -354,6 +360,59 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         drop(pt);
+    }
+
+    /// P100：`ImagePayloadBatch` regular 消息写出成功后同样回传全部 key 且按 FIFO
+    /// 顺序完整落线。生产默认异步路径（Compositor + 发布线程）批 key 的 sent 标记
+    /// 完全依赖 `frame_image_keys` 对批消息的回传分支，缺失时批每帧幂等重传。
+    #[test]
+    fn batch_keys_reported_after_actual_write() {
+        let buf = Arc::new(Mutex::new(Vec::new()));
+        let writer: Box<dyn Write + Send> = Box::new(SharedBuf(Arc::clone(&buf)));
+        let pt = CompositorPublishThread::spawn(Arc::new(Mutex::new(writer)));
+        let batch = |id, keys: &[u64]| IpcMessage {
+            id,
+            kind: zero_protocol::IpcMessageKind::ImagePayloadBatch {
+                surface_id: Some(1),
+                navigation_epoch: 1,
+                payloads: keys
+                    .iter()
+                    .map(|key| zero_protocol::IpcImagePayload {
+                        image_key: *key,
+                        width: 1,
+                        height: 1,
+                        rgba: vec![0, 0, 0, 255],
+                    })
+                    .collect(),
+            },
+        };
+        assert!(pt.enqueue_regular(batch(1, &[11, 12])));
+        assert!(pt.enqueue_regular(batch(2, &[13])));
+        // 等待 worker 写出并回传（最多 2s）。
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        let mut sent = Vec::new();
+        loop {
+            sent.extend(pt.drain_sent_image_keys());
+            if sent.contains(&11) && sent.contains(&12) && sent.contains(&13) {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "批写出后必须回传全部 key");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        // 回传按写出顺序聚合：批 1 全部 key 在批 2 之前。
+        assert_eq!(sent, vec![11, 12, 13]);
+        drop(pt);
+        // 两条批按 FIFO 顺序完整写出。
+        let bytes = buf.lock().unwrap().clone();
+        let mut transport = PipeTransport::new(io::Cursor::new(bytes), io::empty());
+        let mut batch_keys = Vec::new();
+        while let Ok(message) = transport.recv() {
+            let zero_protocol::IpcMessageKind::ImagePayloadBatch { payloads, .. } = message.kind else {
+                panic!("落线消息应全部为 ImagePayloadBatch");
+            };
+            batch_keys.push(payloads.iter().map(|p| p.image_key).collect::<Vec<_>>());
+        }
+        assert_eq!(batch_keys, vec![vec![11, 12], vec![13]]);
     }
 
     /// R3254-M6：worker 因写失败死亡后，入队返回 false（主线程据此回退同步发送）。

@@ -619,24 +619,43 @@ pub fn register_dom_callbacks(
         }),
     );
 
-    // `new CompressionStream(format)`（R2986）——gzip/deflate/deflate-raw 压缩。
-    // arg[0]=format，arg[1]=输入字节 csv。返压缩字节 csv（unsupported → 空串，shim reject）。
+    // CompressionStream/DecompressionStream 流式 host 面（compression-compat M2，
+    // 2026-10-15——R2986 一次性 compress/decompress 桥替换为 handle 状态机；模块 doc
+    // 记手工帧校验与错误语义）。new(format) 返 handle 十进制串（unsupported → 空，
+    // shim 抛 TypeError）；update(handle, 字节 csv) / finish(handle) 返 JSON
+    // {"out":csv,"err":msg}（err 非空 = 终态错误；out/err 可并存）。
     sandbox.register_callback(
-        "__zw_compress",
+        "__zw_compress_new",
+        Box::new(|args: &[String]| -> String { compress_new(args.first().map(String::as_str).unwrap_or("")) }),
+    );
+    sandbox.register_callback(
+        "__zw_compress_update",
         Box::new(|args: &[String]| -> String {
-            let format = args.first().map(String::as_str).unwrap_or("");
-            let data = args.get(1).map(String::as_str).unwrap_or("");
-            compress_bytes(format, data)
+            let handle: u64 = args.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+            compress_update(handle, args.get(1).map(String::as_str).unwrap_or(""))
         }),
     );
-    // `new DecompressionStream(format)`（R2986）——gzip/deflate/deflate-raw 解压。
-    // arg[0]=format，arg[1]=压缩字节 csv。返解压字节 csv（损坏/unsupported → 空串，shim error）。
     sandbox.register_callback(
-        "__zw_decompress",
+        "__zw_compress_finish",
         Box::new(|args: &[String]| -> String {
-            let format = args.first().map(String::as_str).unwrap_or("");
-            let data = args.get(1).map(String::as_str).unwrap_or("");
-            decompress_bytes(format, data)
+            compress_finish(args.first().and_then(|s| s.parse().ok()).unwrap_or(0))
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_decompress_new",
+        Box::new(|args: &[String]| -> String { decompress_new(args.first().map(String::as_str).unwrap_or("")) }),
+    );
+    sandbox.register_callback(
+        "__zw_decompress_update",
+        Box::new(|args: &[String]| -> String {
+            let handle: u64 = args.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+            decompress_update(handle, args.get(1).map(String::as_str).unwrap_or(""))
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_decompress_finish",
+        Box::new(|args: &[String]| -> String {
+            decompress_finish(args.first().and_then(|s| s.parse().ok()).unwrap_or(0))
         }),
     );
 

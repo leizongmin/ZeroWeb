@@ -316,6 +316,8 @@ impl Default for ComputedStyle {
             column_count: ColumnCountComputedValue::Auto,
             column_width: ColumnWidthComputedValue::Auto,
             column_fill: ColumnFillComputedValue::Balance,
+            column_height: ColumnHeightComputedValue::Auto,
+            column_wrap: ColumnWrapComputedValue::Auto,
             column_span: ColumnSpanComputedValue::None,
 
             // Object Fit / Filter

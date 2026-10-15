@@ -52,6 +52,83 @@ pub struct TabDragState {
     pub active: bool,
 }
 
+impl BrowserApp {
+    /// 拖拽让位目标位移表（视觉层，不改变 move_tab 重排语义）。
+    ///
+    /// 目标 index 用与 `finish_tab_drag` 同一规则求出（鼠标 x 对原槽位中点，
+    /// tab_layout 记录未含让位位移的稳定槽位），被跨过的兄弟向空出的槽位方向
+    /// 让出一格——松手落位与拖拽中显示的排列一致。
+    fn tab_drag_yield_targets(&self) -> HashMap<TabId, f32> {
+        let mut targets = HashMap::new();
+        let Some(drag) = self.tab_drag.as_ref().filter(|drag| drag.active) else {
+            return targets;
+        };
+        let Some(drag_index) = self.tab_layout.iter().position(|(id, _, _)| *id == drag.tab_id) else {
+            return targets;
+        };
+        let Some((_, _, drag_w)) = self.tab_layout.get(drag_index).copied() else {
+            return targets;
+        };
+        let mut target_index = self.tab_layout.len().saturating_sub(1);
+        for (i, &(_id, tx, tw)) in self.tab_layout.iter().enumerate() {
+            if drag.current_x < tx + tw * 0.5 {
+                target_index = i;
+                break;
+            }
+        }
+        if target_index < drag_index {
+            // 左移：[target, drag) 的兄弟右移一格让位。
+            for &(id, _, _) in &self.tab_layout[target_index..drag_index] {
+                targets.insert(id, drag_w);
+            }
+        } else if target_index > drag_index {
+            // 右移：(drag, target] 的兄弟左移一格让位。
+            for &(id, _, _) in &self.tab_layout[drag_index + 1..=target_index] {
+                targets.insert(id, -drag_w);
+            }
+        }
+        targets
+    }
+
+    /// 朝目标位移推进让位动画（指数平滑，按帧时长换算系数）。
+    /// 返回是否未收敛（未收敛时渲染帧置 needs_redraw 维持连续帧）。
+    fn advance_tab_drag_yield(&mut self) -> bool {
+        if !self.tab_drag.as_ref().is_some_and(|drag| drag.active) {
+            self.tab_drag_paint_offsets.clear();
+            self.tab_drag_anim_last = None;
+            return false;
+        }
+        let targets = self.tab_drag_yield_targets();
+        let now = Instant::now();
+        let dt = self
+            .tab_drag_anim_last
+            .replace(now)
+            .map_or(0.016, |last| now.duration_since(last).as_secs_f32());
+        // 时间常数 ~45ms：肉眼平滑且停顿后续帧快速跟上（dt 大 → k→1）。
+        let k = 1.0 - (-dt * 22.0).exp();
+        const SETTLE_EPSILON: f32 = 0.5;
+        let mut settled = true;
+        let ids: Vec<TabId> = self
+            .tab_drag_paint_offsets
+            .keys()
+            .copied()
+            .chain(targets.keys().copied())
+            .collect();
+        for id in ids {
+            let target = targets.get(&id).copied().unwrap_or(0.0);
+            let current = self.tab_drag_paint_offsets.get(&id).copied().unwrap_or(0.0);
+            let mut next = current + (target - current) * k;
+            if (target - next).abs() <= SETTLE_EPSILON {
+                next = target;
+            } else {
+                settled = false;
+            }
+            self.tab_drag_paint_offsets.insert(id, next);
+        }
+        settled
+    }
+}
+
 /// 自动补全建议缓存
 struct AutocompleteState {
     /// 当前显示的建议列表

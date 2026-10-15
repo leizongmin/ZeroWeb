@@ -514,6 +514,10 @@ pub struct ComputedStyle {
     pub column_width: ColumnWidthComputedValue,
     /// column-fill 属性（balance 或 auto）。
     pub column_fill: ColumnFillComputedValue,
+    /// column-height 属性（css-multicol-2，固定每列块向高度；Auto = 不固定）。
+    pub column_height: ColumnHeightComputedValue,
+    /// column-wrap 属性（css-multicol-2，列溢出是否换行到下方列行）。
+    pub column_wrap: ColumnWrapComputedValue,
     /// column-span 属性（none 或 all）。`all` 使元素成为 spanner 跨越全宽。
     pub column_span: ColumnSpanComputedValue,
 

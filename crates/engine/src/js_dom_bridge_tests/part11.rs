@@ -1018,10 +1018,11 @@ fn test_canvas_get_transform_dommatrix_r2985() {
 
 #[test]
 fn test_compression_stream_r2986() {
-    // R2986：CompressionStream/DecompressionStream（gzip/deflate/deflate-raw）。Compression Streams API
-    // 此前全缺——`response.body.pipeThrough(new DecompressionStream('gzip'))` 解压服务端 gzip 流 / 压缩上传
-    // 载荷不可用。本切片经 flate2（既有 workspace crate）补 gzip/deflate/deflate-raw，buffer-then-process
-    //（transform 累积 chunk，flush 整体压缩/解压），完成 Streams API 转换流表面。
+    // R2986 初版（gzip/deflate/deflate-raw 往返）+ compression-compat M2（2026-10-15）流式重写
+    // 对齐：构造 enum 转换 TypeError（原 NotSupportedError 误用）；流式 update/finish（write 后
+    // 未 close 即可读出产出）；解压帧校验错误全量 TypeError。Compression Streams API 常用于
+    // `response.body.pipeThrough(new DecompressionStream('gzip'))` 解压服务端 gzip 流 / 压缩上传
+    // 载荷；host flate2（既有 workspace crate）+ 手工帧状态机（js_dom_bridge/compress.rs）。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -1056,8 +1057,33 @@ fn test_compression_stream_r2986() {
         "CompressionStream instanceof TransformStream"
     );
 
+    // 流式产出可能分多 chunk（M2 前为 buffer-then-flush 单 chunk）——读到 done 聚合 decode。
+    sandbox
+        .execute(
+            "globalThis.__zwReadAll = function (reader, cb) {\
+               var chunks = [];\
+               function step() {\
+                 return reader.read().then(function (c) {\
+                   if (c.done) { cb(chunks); return; }\
+                   chunks.push(c.value);\
+                   return step();\
+                 });\
+               }\
+               return step();\
+             };\
+             globalThis.__zwDecode = function (chunks) {\
+               var total = 0;\
+               for (var i = 0; i < chunks.length; i++) total += chunks[i].length;\
+               var all = new Uint8Array(total);\
+               var off = 0;\
+               for (var j = 0; j < chunks.length; j++) { all.set(chunks[j], off); off += chunks[j].length; }\
+               return new TextDecoder().decode(all);\
+             };",
+        )
+        .unwrap();
+
     // gzip 往返：源字节流 → CompressionStream('gzip') → DecompressionStream('gzip') → 还原文本。
-    // 经 pipeThrough 串联两个转换流；ReadableStream pipeTo Writable（transform 的 writable）异步 drain。
+    // 经 pipeTo 串联两个转换流；ReadableStream pipeTo Writable（transform 的 writable）异步 drain。
     sandbox
         .execute(
             "globalThis.__out = '(none)';\
@@ -1069,14 +1095,11 @@ fn test_compression_stream_r2986() {
              });\
              var comp = new CompressionStream('gzip');\
              var decomp = new DecompressionStream('gzip');\
-             // src → comp.writable（压缩），comp.readable → decomp.writable（解压），decomp.readable 读取。
+             // src → comp.writable（压缩），comp.readable → decomp.writable（解压），decomp.readable 读到 done。
              src.pipeTo(comp.writable);\
              comp.readable.pipeTo(decomp.writable);\
-             var reader = decomp.readable.getReader();\
-             reader.read().then(function (c) {\
-               if (c.done) { globalThis.__out = '(empty)'; return; }\
-               globalThis.__out = new TextDecoder().decode(c.value);\
-               return reader.read();\
+             globalThis.__zwReadAll(decomp.readable.getReader(), function (chunks) {\
+               globalThis.__out = __zwDecode(chunks);\
              });",
         )
         .unwrap();
@@ -1100,10 +1123,8 @@ fn test_compression_stream_r2986() {
              var d2 = new DecompressionStream('deflate');\
              src2.pipeTo(c2.writable);\
              c2.readable.pipeTo(d2.writable);\
-             var r2 = d2.readable.getReader();\
-             r2.read().then(function (c) {\
-               if (c.done) { globalThis.__out2 = '(empty)'; return; }\
-               globalThis.__out2 = new TextDecoder().decode(c.value);\
+             globalThis.__zwReadAll(d2.readable.getReader(), function (chunks) {\
+               globalThis.__out2 = __zwDecode(chunks);\
              });",
         )
         .unwrap();
@@ -1127,10 +1148,8 @@ fn test_compression_stream_r2986() {
              var d3 = new DecompressionStream('deflate-raw');\
              src3.pipeTo(c3.writable);\
              c3.readable.pipeTo(d3.writable);\
-             var r3 = d3.readable.getReader();\
-             r3.read().then(function (c) {\
-               if (c.done) { globalThis.__out3 = '(empty)'; return; }\
-               globalThis.__out3 = new TextDecoder().decode(c.value);\
+             globalThis.__zwReadAll(d3.readable.getReader(), function (chunks) {\
+               globalThis.__out3 = __zwDecode(chunks);\
              });",
         )
         .unwrap();
@@ -1140,7 +1159,27 @@ fn test_compression_stream_r2986() {
         "deflate-raw 压缩→解压往返还原原文"
     );
 
-    // 不支持 format → 构造抛 DOMException NotSupportedError。
+    // write 后未 close 即可读出解压产出（M2 流式语义——corpus decompression-correct-input 面）。
+    sandbox
+        .execute(
+            "globalThis.__out4 = '(none)';\
+             var frame = new Uint8Array([120, 156, 75, 173, 40, 72, 77, 46, 73, 77, 81, 200, 47, 45, 41, 40, 45, 1, 0, 48, 173, 6, 36]);\
+             var ds4 = new DecompressionStream('deflate');\
+             var w4 = ds4.writable.getWriter();\
+             var r4 = ds4.readable.getReader();\
+             w4.write(frame);\
+             r4.read().then(function (c) {\
+               globalThis.__out4 = c.done ? '(empty)' : new TextDecoder().decode(c.value);\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__out4)").unwrap().value,
+        "expected output",
+        "write 后未 close 即读出解压产出（流式）"
+    );
+
+    // 不支持 format → 构造抛 TypeError（WebIDL enum 转换——spec；M2 前 NotSupportedError 误用）。
     sandbox
         .execute(
             "globalThis.__threw = 'no'; globalThis.__errName = '';\
@@ -1155,8 +1194,8 @@ fn test_compression_stream_r2986() {
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__errName)").unwrap().value,
-        "NotSupportedError",
-        "不支持 format → NotSupportedError"
+        "TypeError",
+        "不支持 format → TypeError"
     );
 }
 
@@ -1164,9 +1203,10 @@ fn test_compression_stream_r2986() {
 fn test_decompression_stream_error_r2991() {
     // R2991：DecompressionStream 损坏输入端到端错误契约（R2986 driving test 仅覆盖 happy-path 往返，
     // corrupt 路径未测）。DecompressionStream 消费任意不可信字节（服务端响应 / 上传载荷），corrupt 输入是
-    // 常态：host decompress_bytes 对非法字节返空串（flate2 Err，已由 compress::tests 锁定不 panic），
-    // shim flush 见「输入非空但输出空」→ controller.error(DataError) → readable 出错 → reader.read() reject。
-    // 本测试验证整条链路：reader.read() 以 DataError reject（不静默吞 / 不挂起），且错误经 reader 可观察。
+    // 常态：compression-compat M2（2026-10-15）后 host 手工帧状态机对非法字节返错误 wire（gzip magic /
+    // zlib CMF 校验，js_dom_bridge/compress.rs），shim transform 先 enqueue 已产出再抛 TypeError
+    //（spec DecompressionStream 错误面全量 TypeError——M2 前 DataError 误用）→ readable 出错 →
+    // reader.read() reject。本测试验证整条链路：reader.read() 以 TypeError reject（不静默吞 / 不挂起）。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -1182,7 +1222,7 @@ fn test_decompression_stream_error_r2991() {
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
-    // 垃圾字节（无合法 gzip magic）→ DecompressionStream('gzip') → reader.read() reject DataError。
+    // 垃圾字节（无合法 gzip magic）→ DecompressionStream('gzip') → reader.read() reject TypeError。
     sandbox
         .execute(
             "globalThis.__res = '(none)'; globalThis.__errName = '';\
@@ -1206,11 +1246,11 @@ fn test_decompression_stream_error_r2991() {
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__errName)").unwrap().value,
-        "DataError",
-        "损坏 gzip 流 → DataError"
+        "TypeError",
+        "损坏 gzip 流 → TypeError"
     );
 
-    // 格式错配：gzip 压缩字节喂给 DecompressionStream('deflate')（zlib 期望 0x78 头）→ reject DataError。
+    // 格式错配：gzip 压缩字节喂给 DecompressionStream('deflate')（zlib 期望 0x78 头）→ reject TypeError。
     // 先用 CompressionStream('gzip') 产出合法 gzip 字节，再喂错 deflate 解码器。
     sandbox
         .execute(
@@ -1244,8 +1284,8 @@ fn test_decompression_stream_error_r2991() {
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__errName2)").unwrap().value,
-        "DataError",
-        "格式错配 → DataError"
+        "TypeError",
+        "格式错配 → TypeError"
     );
 }
 

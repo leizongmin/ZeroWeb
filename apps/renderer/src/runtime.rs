@@ -3129,6 +3129,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             IpcMessageKind::FetchObserved(_) => Ok(()),
             // document.write 落定是 renderer → browser 单向事件，本进程不消费。
             IpcMessageKind::DocumentWriteSettled(_) => Ok(()),
+            // 图片像素批是 renderer → browser 单向事件（P100），本进程不消费。
+            IpcMessageKind::ImagePayloadBatch { .. } => Ok(()),
             IpcMessageKind::Navigate(params) => self.handle_navigate(params),
             IpcMessageKind::LoadHtml(params) => self.handle_load_html(params),
             IpcMessageKind::SetViewport(params) => self.handle_set_viewport(params),
@@ -3415,8 +3417,21 @@ fn publish_render_with_layout(
     document_generation: u64,
     font_payloads: Vec<zero_protocol::IpcFontPayload>,
 ) -> Result<Vec<u64>, String> {
+    // P100：帧内图片总量超过单批上限时拆为 `ImagePayloadBatch` regular 消息
+    // （FIFO、不被 latest-wins 替换）先于帧发送，帧本体置空——否则超大全页
+    // 图片帧被 transport 64MiB 帧上限整体拒绝且 key 永不标记 sent，每次 publish
+    // 全量重试、图片永久缺失。批写出成功的 key 同样走 sent 标记（R3254-M1）。
+    let total_image_bytes = image_payloads.iter().map(|p| p.rgba.len()).sum::<usize>();
+    let (image_batches, frame_image_payloads) = if total_image_bytes > zero_protocol::MAX_PAINT_IMAGE_BATCH_BYTES {
+        let (batches, _skipped) =
+            paint_export::split_image_payload_batches(image_payloads, zero_protocol::MAX_PAINT_IMAGE_BATCH_BYTES);
+        (batches, Vec::new())
+    } else {
+        (Vec::new(), image_payloads)
+    };
     // R3254-M1：同步写出成功后才标记这些 key（sent 标记 = 实际在线上）。
-    let sync_sent_keys = image_payloads
+    // 按帧实际携带的 payload 取 key：拆批时帧载荷为空，批 key 由各批发送路径补齐。
+    let sync_sent_keys = frame_image_payloads
         .iter()
         .map(|payload| payload.image_key)
         .collect::<Vec<u64>>();
@@ -3427,7 +3442,7 @@ fn publish_render_with_layout(
         frame.document_height,
         &frame.primitives,
         &frame.dirty_rects,
-        image_payloads,
+        frame_image_payloads,
         frame.hit_test.clone(),
         navigation_epoch,
         document_generation,
@@ -3462,12 +3477,60 @@ fn publish_render_with_layout(
             },
         },
     };
+    // P100：批消息先于帧上线（regular FIFO 保序）。异步入队逐条尝试，任一失败
+    // （发布线程死亡/关闭）即对剩余批回退同步直发——已入队但未写出的批随死信箱
+    // 丢失，其 key 不标记 sent，下帧 publish 幂等重发（browser 侧缓存按 key 注入）。
+    let mut batch_msgs: std::collections::VecDeque<IpcMessage> = image_batches
+        .into_iter()
+        .map(|payloads| {
+            let id = *next_msg_id;
+            *next_msg_id += 1;
+            IpcMessage {
+                id,
+                kind: IpcMessageKind::ImagePayloadBatch {
+                    // compositor 发布模式下批与帧同 surface：浏览器收到批后按
+                    // surface_id 中继给 compositor 进程，帧到达时按 epoch 注入。
+                    surface_id: (publish_state.mode == FramePublishMode::Compositor)
+                        .then_some(publish_state.surface_id),
+                    navigation_epoch,
+                    payloads,
+                },
+            }
+        })
+        .collect();
+    let mut sync_batch_keys: Vec<u64> = Vec::new();
+    if !batch_msgs.is_empty() {
+        let mut async_enqueued = false;
+        if let Some(thread) = compositor_publish
+            && publish_state.mode == FramePublishMode::Compositor
+        {
+            async_enqueued = true;
+            while let Some(front) = batch_msgs.front() {
+                if !thread.enqueue_regular(front.clone()) {
+                    async_enqueued = false;
+                    break;
+                }
+                batch_msgs.pop_front();
+            }
+        }
+        if !async_enqueued {
+            for msg in batch_msgs {
+                let IpcMessageKind::ImagePayloadBatch { payloads, .. } = &msg.kind else {
+                    continue;
+                };
+                let keys = payloads.iter().map(|p| p.image_key).collect::<Vec<u64>>();
+                outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+                sync_batch_keys.extend(keys);
+            }
+        }
+    }
     let compositor_async_sent = publish_state.mode == FramePublishMode::Compositor
         && compositor_publish.is_some_and(|thread| thread.try_enqueue(msg.clone()));
     if !compositor_async_sent {
         // R3254-M1：同步写出成功后才标记该帧图片 key（sent 标记 = 实际在线上）。
         outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
-        let sent_now = sync_sent_keys;
+        let mut sent_now = sync_batch_keys;
+        sent_now.extend(sync_sent_keys);
         if let Some(title) = title {
             let msg = IpcMessage {
                 id: {
@@ -3497,7 +3560,9 @@ fn publish_render_with_layout(
             outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
         }
     }
-    Ok(Vec::new())
+    // P100：批经同步直发（异步入队部分失败回退）而帧走异步时，已写出的批 key
+    // 同样标记 sent（R3254-M1：实际写出即标记）；纯异步路径此集合为空。
+    Ok(sync_batch_keys)
 }
 
 fn ipc_fetch_error(status_code: u16, body: &[u8]) -> String {

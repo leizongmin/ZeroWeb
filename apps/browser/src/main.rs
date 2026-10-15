@@ -34,6 +34,7 @@ mod fetch_proxy;
 mod find_smoke;
 mod gui_smoke;
 mod headless;
+mod image_save_fetch;
 mod input_keys;
 mod layout;
 mod menu_zoom_smoke;

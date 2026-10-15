@@ -844,6 +844,52 @@ pub fn svg_content_extents(source: &[u8], viewport_w: u32, viewport_h: u32) -> O
     Some((bbox.right(), bbox.bottom()))
 }
 
+/// R5125（filter-effects-1 §filter region）：SVG filter 输出区域并集的右/下边
+///（canvas 坐标，视口 = 注入 `viewport_w/h`）。
+///
+/// 供 paint 侧判定「源含 filter 时输出是否越元素盒、越到哪」。resvg 实证：usvg
+/// viewport **不裁** filter 输出（裁剪只发生在栅格画布）——与 chromium 把 filter
+/// 输出合成在根 overflow 裁剪之外的语义一致（drop-shadow-currentcolor-dynamic-002
+/// 阴影渲染到 box 外）。逐 Group 取 `filters_bounding_box()`（filter region，
+/// object 坐标）经 `abs_transform` 仿射映射两角取包围。负方向（左/上越界）不覆盖
+///（FIXME：需画布原点平移，与 R4174 扩展同限）；无 filter / 解析失败返 None。
+/// 与 [`rasterize_svg_with_overflow`] 同预处理链。
+pub fn svg_filter_extents(source: &[u8], viewport_w: u32, viewport_h: u32) -> Option<(f32, f32)> {
+    let (bytes, _) = promote_svg_root_background(source);
+    let bytes = preprocess_svg_style_transform(&bytes);
+    let bytes = preprocess_svg_transform_attr_syntax(&bytes);
+    let bytes = preprocess_svg_transform_origin(&bytes);
+    let bytes = inject_svg_target_dims(&bytes, viewport_w, viewport_h);
+    let tree = resvg::usvg::Tree::from_data(&bytes, &resvg::usvg::Options::default()).ok()?;
+    fn walk_group(group: &resvg::usvg::Group, right: &mut f32, bottom: &mut f32, found: &mut bool) {
+        if !group.filters().is_empty()
+            && let Some(region) = group.filters_bounding_box()
+        {
+            // filter region（object 坐标）→ abs 仿射映射两角，取右/下包围。
+            let t = group.abs_transform();
+            let (x0, y0) = (region.x(), region.y());
+            let (x1, y1) = (region.x() + region.width(), region.y() + region.height());
+            let ax = t.sx * x0 + t.kx * y0 + t.tx;
+            let ay = t.ky * x0 + t.sy * y0 + t.ty;
+            let bx = t.sx * x1 + t.kx * y1 + t.tx;
+            let by = t.ky * x1 + t.sy * y1 + t.ty;
+            *right = (*right).max(ax.max(bx));
+            *bottom = (*bottom).max(ay.max(by));
+            *found = true;
+        }
+        for child in group.children() {
+            if let resvg::usvg::Node::Group(g) = child {
+                walk_group(g, right, bottom, found);
+            }
+        }
+    }
+    let mut right = 0.0f32;
+    let mut bottom = 0.0f32;
+    let mut found = false;
+    walk_group(tree.root(), &mut right, &mut bottom, &mut found);
+    if found { Some((right, bottom)) } else { None }
+}
+
 /// R3933（inline `<svg>` paint）：按目标尺寸矢量栅格化 SVG 源字节——
 /// inline `<svg>` 元素无外部 URL，painter 序列化其 DOM 子树后直接调用本函数产像素
 /// （canvas/video 同款两段式：painter 产 rgba + ImagePrimitive，调用方注入 ImageCache）。
@@ -3583,5 +3629,25 @@ mod r3937_tests {
             .filter(|(p, q)| p != q)
             .count();
         assert_eq!(diff, 0, "预处理后 style 覆盖应与纯 attr rotate 一致（diff={diff}）");
+    }
+}
+
+#[cfg(test)]
+mod r5125_filter_extents_tests {
+    use super::*;
+
+    #[test]
+    fn drop_shadow_region_extends_right() {
+        // R5124 改写产物形态：region -200%..300% of 50×100 bbox → 右边 150、下边 300。
+        let src = r##"<svg xmlns="http://www.w3.org/2000/svg" width="50" height="100"><defs><filter id="f" x="-200%" y="-200%" width="500%" height="500%" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="0 0" result="b1"/><feOffset in="b1" dx="50" dy="0" result="o1"/><feFlood flood-color="#008000" result="f1"/><feComposite in="f1" in2="o1" operator="in" result="s1"/><feMerge result="m1"><feMergeNode in="s1"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><rect width="50" height="100" fill="rgb(0, 128, 0)" filter="url(#f)"/></svg>"##;
+        let (right, bottom) = svg_filter_extents(src.as_bytes(), 50, 100).expect("extents");
+        assert!((right - 150.0).abs() < 0.5, "right={right}");
+        assert!((bottom - 300.0).abs() < 0.5, "bottom={bottom}");
+    }
+
+    #[test]
+    fn no_filter_returns_none() {
+        let src = r#"<svg xmlns="http://www.w3.org/2000/svg" width="50" height="100"><rect width="50" height="100" fill="green"/></svg>"#;
+        assert_eq!(svg_filter_extents(src.as_bytes(), 50, 100), None);
     }
 }

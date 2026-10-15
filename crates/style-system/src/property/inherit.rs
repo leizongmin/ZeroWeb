@@ -404,6 +404,17 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.max_height = parent.max_height.clone();
             true
         }
+        // R5128：logical sizing 族 `inherit` 关键字——按子元素 writing-mode 映射物理槽位
+        // 后委托物理臂。主循环期 writing-mode 未定态时回落 horizontal-tb（与旧 canonical
+        // 化等价；Concrete 值走 R4448 延迟臂才是定态映射）。
+        "inline-size" | "block-size" | "min-inline-size" | "min-block-size" | "max-inline-size" | "max-block-size"
+            if crate::cascade::logical_size_deferred_enabled() =>
+        {
+            match crate::property::apply_advanced::logical_alias_physical_slot(property, child, false) {
+                Some(physical) => inherit_property(parent, child, &physical),
+                None => false,
+            }
+        }
         // 定位 inset（非继承属性，但 `inherit` 关键字显式要求从父元素复制计算值）。
         // 此前遗漏致 `left:inherit` 等静默失败（CSS2 inherit-static-offset-001/002/003：
         // static 父 left:50px + relative 子 left:inherit 应继承 50px 偏移，却得 auto）。
@@ -498,10 +509,19 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             true
         }
         // columns
-        // 注：column-count/column-width 的 inherit 暂不支持——强制继承列数会暴露
-        // ZeroWeb multicol 列分布的结构性缺口（multicol-inherit-002 +1.24pp），
-        // 属 R750「spec-correct 但暴露正交缺口」模式。column-rule-* 是视觉属性，
-        // 风险低，保留。
+        // R5133：column-count/column-width inherit 臂落地（R750 缓办解除）——前置的
+        // 嵌套 multicol 列分布机制已落（R5132：平衡高重测/先推后放/列顶 margin 截断/
+        // 宽度约束扣 margin）。R5129 复测时启用臂「可达且语义生效但渲染逐像素不变、
+        // 002 同形微涨」的约束面已被机制修复移除。
+        // https://www.w3.org/TR/css3-multicol/#cc
+        "column-count" => {
+            child.column_count = parent.column_count.clone();
+            true
+        }
+        "column-width" => {
+            child.column_width = parent.column_width.clone();
+            true
+        }
         "column-rule-width" => {
             child.column_rule_width = parent.column_rule_width.clone();
             true
@@ -610,6 +630,16 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         "max-height" => {
             style.max_height = default_style.max_height;
             true
+        }
+        // R5128：logical sizing 族 `initial`/`unset`——按元素 writing-mode 映射物理槽位
+        // 后委托物理臂（主循环期未定态回落 horizontal-tb，同上 inherit 臂说明）。
+        "inline-size" | "block-size" | "min-inline-size" | "min-block-size" | "max-inline-size" | "max-block-size"
+            if crate::cascade::logical_size_deferred_enabled() =>
+        {
+            match crate::property::apply_advanced::logical_alias_physical_slot(property, style, false) {
+                Some(physical) => apply_initial_value(style, &physical),
+                None => false,
+            }
         }
         "margin-top" => {
             style.margin_top = default_style.margin_top;
@@ -1369,6 +1399,16 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "column-fill" => {
             style.column_fill = default_style.column_fill;
+            true
+        }
+        // column-height/column-wrap 均为非继承（css-multicol-2 #ch/#cwr），
+        // initial/unset 时回 auto。
+        "column-height" => {
+            style.column_height = default_style.column_height;
+            true
+        }
+        "column-wrap" => {
+            style.column_wrap = default_style.column_wrap;
             true
         }
         "column-span" => {

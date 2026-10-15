@@ -2661,8 +2661,21 @@
           // 敏感保留**——WPT "Non-HTML element with upper-case attribute"：
           // setAttribute('A') 后 hasAttribute('A')/getAttributeNS('','A') 命中原大写）。
           // HTML-ns 判定与 supportedNames（part03）同源：无 _nsHandles 条目 = 隐式 HTML ns。
-          var _r122IsHtmlNs = !(handle && _nsHandles[handle]
-            && _nsHandles[handle].namespace !== 'http://www.w3.org/1999/xhtml');
+          // R5126 修正：sel-based 元素（getElementById/querySelector 产物——无 _nsHandles
+          // 条目）旧判定恒当 HTML ns 小写属性名，HTML 文档 inline SVG 解析产物全为 SVG ns
+          // → setAttribute('stdDeviation') 落成小写**第二条**属性，XML 大小写敏感语义下原
+          // 属性永不更新（filter-effects svg-mutation-fedropshadow-stddeviation 实证：
+          // stdDeviation="2 2" 与 stddeviation="20 20" 并存渲染）。spec 小写条件只看元素
+          // ns 与地址形态无关——无印记条目时经 _zwElementNsFor 沿链判 ns（per-element
+          // memo 化，见其定义），链上无非 HTML ns（真 HTML 元素）回落旧行为。
+          // 直线分支不包 IIFE——attr 族是热路径，QuickJS 无逃逸分析，闭包分配即 GC 压力。
+          var _r122IsHtmlNs = true;
+          if (handle && _nsHandles[handle]) {
+            _r122IsHtmlNs = _nsHandles[handle].namespace === 'http://www.w3.org/1999/xhtml';
+          } else if (typeof globalThis._zwElementNsFor === 'function') {
+            var _r122Ns = globalThis._zwElementNsFor(sel, handle);
+            if (_r122Ns != null) _r122IsHtmlNs = _r122Ns === 'http://www.w3.org/1999/xhtml';
+          }
           if (_r122IsHtmlNs) {
             return n.replace(/[A-Z]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 32); });
           }

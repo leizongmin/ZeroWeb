@@ -456,4 +456,17 @@ mod tests {
         ));
         assert!(!is_disconnected_channel_message("帧过大: 999 字节"));
     }
+
+    /// P100：图片批上限必须低于 transport 帧上限——单批消息（载荷 ≤ 批上限加
+    /// 信封开销）才能通过 validate_frame_size；常量漂移会让生产端拆出的每一批
+    /// 都在消费端被整帧拒绝，回到图片永久空白。
+    #[allow(clippy::assertions_on_constants)] // 跨常量不变式钉版：两侧任一漂移即失败
+    #[test]
+    fn paint_batch_cap_below_transport_frame_limit() {
+        assert!(
+            crate::paint_snapshot::MAX_PAINT_IMAGE_BATCH_BYTES < MAX_FRAME_SIZE,
+            "MAX_PAINT_IMAGE_BATCH_BYTES ({}) 必须小于帧上限 {MAX_FRAME_SIZE}",
+            crate::paint_snapshot::MAX_PAINT_IMAGE_BATCH_BYTES
+        );
+    }
 }

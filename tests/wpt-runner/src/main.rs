@@ -44,6 +44,7 @@ Commands:
   testharness-canvas  Run imported html/canvas testharness cases (Canvas 2D goal M1)
   testharness-dom  Run imported dom/ testharness cases (js-dom goal M4 / DC-3)
   testharness-selection  Run imported selection/ testharness cases (editing goal M1 / DC-1)
+  testharness-compression  Run imported compression/ testharness cases (compression-compat goal M1 / DC-1)
   testharness-keyboard  Run imported keyboard testharness cases (keyboard-default-actions goal M1 / DC-1)
   testharness-uievents  Run imported uievents/pointerevents testharness corpus (uievents-compat goal M1 / DC-1)
   testharness-touch-events  Run imported touch-events constructor/attribute face testharness
@@ -310,6 +311,7 @@ fn main() {
         "testharness-fs" => cmd_testharness_fs(&options, filter.as_deref()),
         "testharness-wasm" => cmd_testharness_wasm(&options, filter.as_deref()),
         "testharness-webstorage" => cmd_testharness_webstorage(&options, filter.as_deref()),
+        "testharness-compression" => cmd_testharness_compression(&options, filter.as_deref()),
         "testharness-fileapi" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_fileapi::run_fileapi_cases(wpt_root, filter)
         }),
@@ -1076,6 +1078,51 @@ fn cmd_testharness_webstorage(options: &CliOptions, filter: Option<&str>) {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
     let cases = testharness::run_webstorage_cases(&wpt_root, filter);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+/// `testharness-compression` 子命令 — 跑导入的上游 `compression/` testharness 用例
+/// （compression-compat goal M1 / DC-1——CompressionStream/DecompressionStream 基线）。
+///
+/// 用例由 `scripts/goals/24-compression-compat.sh` 按需拉到 `wpt-data/compression/`
+/// （gitignored；含 resources/ 与 third_party/pako/ 依赖）；跳过规则见
+/// `testharness::compression_case_skipped`（idlharness 记账排除）。退出码：有用例
+/// 非 Pass 或用例集为空 → 1（与 testharness-webstorage 一致）。基线首跑即便大量
+/// Fail 也只用于记录通过率（`--format json` 捕获后写 evidence/），不作为 land 门禁。
+/// filter 按路径子串透传：`make testharness-compression FILTER=decompression`。
+fn cmd_testharness_compression(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let cases = testharness::run_compression_cases(&wpt_root, filter);
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()

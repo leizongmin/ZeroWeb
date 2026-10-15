@@ -105,6 +105,12 @@ pub(super) fn extended_visual_or_layout_property_supported(property: &str, value
             "balance" | "balance-all" | "auto"
         ),
         "column-span" => matches!(value.trim().to_ascii_lowercase().as_str(), "none" | "all"),
+        // https://drafts.csswg.org/css-multicol-2/#ch
+        "column-height" => {
+            matches!(value.trim().to_ascii_lowercase().as_str(), "auto") || values::parse_length(value).is_some()
+        }
+        // https://drafts.csswg.org/css-multicol-2/#cwr
+        "column-wrap" => matches!(value.trim().to_ascii_lowercase().as_str(), "auto" | "wrap" | "nowrap"),
         "column-rule-width" => values::parse_column_rule_width(value).is_some(),
         "column-rule-style" => values::parse_column_rule_style(value).is_some(),
         "column-rule-color" => values::parse_color(value).is_some(),

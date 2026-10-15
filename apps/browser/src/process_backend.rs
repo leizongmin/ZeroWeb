@@ -20,6 +20,7 @@ use zero_protocol::message::{
     StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
+use zero_render_foundation::image_cache::{ImageData, ImageKey};
 use zero_storage::StorageManager;
 
 use crate::fetch_proxy::{ServiceWorkerScriptRequestMode, TabFetchProxy};
@@ -439,6 +440,39 @@ impl ProcessTabBackend {
                     let title = snap.title.clone().unwrap_or_else(|| "页面".to_string());
                     let url = snap.url.clone().unwrap_or_default();
                     pending_loaded.push((tab_id, title, url));
+                }
+            }
+            IpcMessageKind::ImagePayloadBatch {
+                surface_id,
+                navigation_epoch,
+                payloads,
+            } => {
+                // P100：拆批图片像素先于帧到达；epoch 过期批随帧一起失效（同
+                // ViewPainted 规则）。缓存按 key 注入、幂等，批重复或先于/后于
+                // 帧到达均无害。
+                if navigation_epoch != snap.navigation_epoch {
+                    tracing::debug!(
+                        "忽略 stale ImagePayloadBatch tab {} epoch {} != {} n={}",
+                        tab_id.0,
+                        navigation_epoch,
+                        snap.navigation_epoch,
+                        payloads.len()
+                    );
+                    return;
+                }
+                // P100 返修（F1）：compositor 发布模式下批带 surface_id，中继给
+                // compositor 进程——其 surface.image_cache 只认帧内 image_payloads，
+                // 帧载荷已被置空，不中继则超限页在 compositor 呈现路径全部图片空白。
+                // 中继与帧走同一 FIFO（批先于帧上线），过期批已在此拦截。
+                // 克隆仅发生在超限页（>48MiB）路径，换取 TabSnapshot 缓存与
+                // compositor 双消费端各自持有像素。
+                if let Some(surface_id) = surface_id {
+                    crate::compositor_client::forward_image_batch(surface_id, navigation_epoch, payloads.clone());
+                }
+                for payload in payloads {
+                    if let Ok(data) = ImageData::from_rgba(payload.rgba, payload.width, payload.height) {
+                        snap.image_cache.insert_with_key(ImageKey::new(payload.image_key), data);
+                    }
                 }
             }
             IpcMessageKind::CompositorFrame {
@@ -1993,7 +2027,8 @@ mod navigation_contract_tests {
     use zero_browser_shell::TabId;
     use zero_protocol::message::IpcMessageKind;
     use zero_protocol::{
-        IpcColor, IpcFill, IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcRect, PaintSnapshotParams,
+        IpcColor, IpcFill, IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcImagePayload, IpcRect,
+        PaintSnapshotParams,
     };
     use zero_render_foundation::color::Color;
     use zero_render_foundation::geometry::Rect;
@@ -2112,6 +2147,86 @@ mod navigation_contract_tests {
         assert_eq!(fill.color.g, 0);
         assert_eq!(pending_loaded.len(), 1);
         assert!(pending_errors.is_empty());
+    }
+
+    /// P100：拆批图片像素注入 TabSnapshot.image_cache，重复批幂等。
+    #[test]
+    fn image_payload_batch_inserts_pixels_into_image_cache() {
+        let tab_id = TabId(1);
+        let mut snap = TabSnapshot::default();
+        snap.begin_navigation("https://example.com".into());
+        let epoch = snap.navigation_epoch;
+        let mut pending_loaded = Vec::new();
+        let mut pending_errors = Vec::new();
+        let mut snapshot_seq = std::collections::HashMap::new();
+
+        let payload = IpcImagePayload {
+            image_key: 42,
+            width: 2,
+            height: 2,
+            rgba: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        };
+        for _ in 0..2 {
+            ProcessTabBackend::apply_inbound_message(
+                tab_id,
+                &mut snap,
+                IpcMessageKind::ImagePayloadBatch {
+                    // surface_id None（Legacy 回退发布）不触发中继；compositor
+                    // 模式批携带 Some，走下方中继。
+                    surface_id: None,
+                    navigation_epoch: epoch,
+                    payloads: vec![payload.clone()],
+                },
+                &mut snapshot_seq,
+                &mut pending_loaded,
+                &mut pending_errors,
+            );
+        }
+
+        let cached = snap
+            .image_cache
+            .get(&zero_render_foundation::image_cache::ImageKey::new(42));
+        assert!(cached.is_some());
+        // 图片批不结束 loading、不产生 paint/loaded 事件。
+        assert!(snap.loading);
+        assert!(pending_loaded.is_empty());
+        assert!(pending_errors.is_empty());
+    }
+
+    /// P100：过期 epoch 的图片批随帧一起失效。
+    #[test]
+    fn stale_image_payload_batch_is_ignored() {
+        let tab_id = TabId(1);
+        let mut snap = TabSnapshot::default();
+        snap.begin_navigation("https://example.com".into());
+        let epoch = snap.navigation_epoch;
+        let mut pending_loaded = Vec::new();
+        let mut pending_errors = Vec::new();
+        let mut snapshot_seq = std::collections::HashMap::new();
+
+        ProcessTabBackend::apply_inbound_message(
+            tab_id,
+            &mut snap,
+            IpcMessageKind::ImagePayloadBatch {
+                surface_id: None,
+                navigation_epoch: epoch.wrapping_sub(1),
+                payloads: vec![IpcImagePayload {
+                    image_key: 42,
+                    width: 1,
+                    height: 1,
+                    rgba: vec![0, 0, 0, 255],
+                }],
+            },
+            &mut snapshot_seq,
+            &mut pending_loaded,
+            &mut pending_errors,
+        );
+
+        assert!(
+            snap.image_cache
+                .get(&zero_render_foundation::image_cache::ImageKey::new(42))
+                .is_none()
+        );
     }
 
     #[test]
@@ -2883,7 +2998,7 @@ fn is_inline_renderable_content_type(essence: &str) -> bool {
 /// 拒绝路径分隔符与空值（信任边界：响应头来自外部服务器）。URL 回退先剥
 /// query/fragment 再取末段（如 `/download?file=report.zip` 落盘 `download`）——
 /// `?`/`#` 不是合法文件名字符，Windows 写入会直接失败。
-fn parse_attachment_filename(disposition: &str, url: &str) -> String {
+pub(crate) fn parse_attachment_filename(disposition: &str, url: &str) -> String {
     let sanitize = |raw: &str| -> Option<String> {
         let trimmed = raw.trim().trim_matches('"').trim();
         if trimmed.is_empty() {
