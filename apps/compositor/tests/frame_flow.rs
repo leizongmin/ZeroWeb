@@ -1488,6 +1488,7 @@ fn compositor_gpu_partial_dirty_draws_glyphs() {
 }
 
 /// 白底 + 单个 'A'（32px @ baseline (16,32)）的全视口帧。
+#[cfg(target_os = "linux")]
 fn frame_with_glyph(color: IpcColor) -> PaintSnapshotParams {
     let (w, h) = (64u32, 48u32);
     PaintSnapshotParams {
@@ -1526,6 +1527,7 @@ fn frame_with_glyph(color: IpcColor) -> PaintSnapshotParams {
 }
 
 /// T34 测试辅助：帧内容与 `frame_with_glyph` 一致，另带 partial dirty rect。
+#[cfg(target_os = "linux")]
 fn frame_with_dirty_glyph(color: IpcColor, dirty: IpcRect) -> PaintSnapshotParams {
     let mut frame = frame_with_glyph(color);
     frame.dirty_rects = vec![dirty];
@@ -1533,6 +1535,7 @@ fn frame_with_dirty_glyph(color: IpcColor, dirty: IpcRect) -> PaintSnapshotParam
 }
 
 /// 统计 rect（物理像素坐标）内满足谓词的像素数。
+#[cfg(target_os = "linux")]
 fn count_colored_pixels(rgba: &[u8], width: u32, rect: IpcRect, pred: fn((u8, u8, u8)) -> bool) -> usize {
     let mut count = 0;
     let x0 = rect.x.max(0.0) as u32;
