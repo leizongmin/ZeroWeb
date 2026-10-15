@@ -38,6 +38,7 @@ use zero_style_system::property::types::{
 use crate::types::{LayoutBox, OverflowClip};
 
 mod bordered_region_fragments;
+mod oof_static;
 
 /// 列分配中的一个片段。
 ///
@@ -67,6 +68,9 @@ pub(crate) fn adjust_multicol_layout(
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) {
     adjust_multicol_layout_rec(root, styles, false, doc, inline_fonts);
+    // R5139：碎片化完成后按容器自底向上映射全-auto inset OOF 后代的静态位置
+    //（css-position-3 static position × css-break 碎片映射；详见 multicol/oof_static.rs）。
+    oof_static::remap_oof_static_positions(root, styles);
 }
 
 /// `nested_in_multicol`：祖先链上已有 multicol 容器（R4509 不可分下限的软约束

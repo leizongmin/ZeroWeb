@@ -102,7 +102,7 @@ pub(super) fn is_fixed_cb_containment(s: &ComputedStyle) -> bool {
 ///（同 positioned 祖先语义）。driving: backdrop-filter-containing-block（backdrop-filter
 /// 容器捕获 fixed/absolute 子）、filter-cb-abspos-inline-001/002/003（filter/perspective
 /// 的 inline span）、同测试 ref 页 will-change:transform。
-pub(super) fn creates_cb_for_abspos_descendants(s: &ComputedStyle) -> bool {
+pub(crate) fn creates_cb_for_abspos_descendants(s: &ComputedStyle) -> bool {
     !s.filter.is_empty()
         || !s.backdrop_filter.is_empty()
         || !matches!(s.transform, zero_css_parser::values::TransformValue::None)
@@ -119,7 +119,7 @@ pub(super) fn creates_cb_for_abspos_descendants(s: &ComputedStyle) -> bool {
 /// fixed 后代 CB 判定（树遍历点用）：containment（R4122/csswg #10544）∪ 视觉 CB
 ///（R4295）。根元素检查点（engine.rs step 4/11.6 的 root_under_containment）保持
 /// containment-only——filter-effects-1 §3 根元素例外（root 的 CB 本就是 ICB）。
-pub(super) fn is_fixed_cb_ancestor(s: &ComputedStyle) -> bool {
+pub(crate) fn is_fixed_cb_ancestor(s: &ComputedStyle) -> bool {
     is_fixed_cb_containment(s) || creates_cb_for_abspos_descendants(s)
 }
 
@@ -851,6 +851,12 @@ pub(super) fn fix_abspos_static_position_y(box_node: &mut LayoutBox, styles: &Ha
             continue;
         };
         if !matches!(style.top, LengthValue::Auto) || !matches!(style.bottom, LengthValue::Auto) {
+            continue;
+        }
+        // R5139：列流映射 OOF（multicol/oof_static.rs）的垂直静态位已按列流改写为
+        // 映射位，不再是「前 in-flow 兄弟 margin-box 底」流组合值——重算会回退映射
+        //（abspos-autopos-contained-by-viewport-001 实证：y 70.6 被回写 170.6）。
+        if child.oof_static_mapped {
             continue;
         }
         // R4017 gate：abspos 自带 margin-top 非零时不介入——taffy absolute 布局对 static

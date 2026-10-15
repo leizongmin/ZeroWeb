@@ -150,7 +150,7 @@ use crate::inline_finalization::*;
 // 经 glob 引入保持 engine.rs 内 18 处调用点不变（纯移动，零行为变化）。
 // R4988：abspos.rs 超 2000 行规则续拆——尺寸/居中修正域（height 内容关键字/
 // aspect-ratio 三臂/垂直 margin:auto 居中 + 既有单测）分出 abspos_sizing.rs。
-mod abspos;
+pub(crate) mod abspos;
 use abspos::*;
 mod abspos_sizing;
 use abspos_sizing::*;
@@ -2561,6 +2561,7 @@ impl LayoutEngine {
             is_anonymous_text_item,
             css_order: computed.as_ref().map(|s| s.order).unwrap_or(0),
             column_span_offsets: Vec::new(),
+            oof_static_mapped: false,
             inline_layout: None,
             inline_layout_width: 0.0,
             line_clamp_clamped: false,

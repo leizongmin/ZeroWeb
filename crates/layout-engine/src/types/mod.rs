@@ -229,6 +229,11 @@ pub struct LayoutBox {
     pub fixed_x_insets_all_auto: bool,
     /// `position: fixed` 且**垂直**两 inset（top/bottom）全 auto。见 [`fixed_x_insets_all_auto`]。
     pub fixed_y_insets_all_auto: bool,
+    /// R5139：碎片化 multicol 中全-auto inset OOF 后代的静态位置已经列流映射改写
+    ///（multicol/oof_static.rs）。paint 侧据此在 multicol 片段循环 k>0 迭代中抑制重绘
+    ///（CB 在 multicol 之外 → 不参与本容器碎片复制，只在映射位绘制一次；
+    /// css-position-3 §static position + css-break 碎片映射）。
+    pub oof_static_mapped: bool,
     /// 是否为 sticky 定位（需宿主层在滚动时动态调整偏移）。
     pub is_sticky: bool,
     /// 是否为 flex/grid 容器的布局项（R3903）。
@@ -689,6 +694,7 @@ impl Default for LayoutBox {
             is_fixed: false,
             fixed_x_insets_all_auto: false,
             fixed_y_insets_all_auto: false,
+            oof_static_mapped: false,
             is_sticky: false,
             is_flex_grid_item: false,
             is_abspos_cb: false,
