@@ -50,7 +50,8 @@ impl BrowserApp {
             bg,
         );
 
-        let text = self.address_bar.text();
+        // owned：`clamp_address_bar_scroll` 需 &mut self，长借用 &str 会冲突。
+        let text = self.address_bar.text().to_string();
         let show_placeholder = text.is_empty() && !self.address_bar_focused && self.address_bar_ime_preedit.is_empty();
 
         if self.font_id.is_some() {
@@ -147,9 +148,9 @@ impl BrowserApp {
 
             if self.address_bar_focused && self.address_bar.has_selection() {
                 let (sel_start, sel_end) = self.address_bar.selection_char_range();
-                let before = Self::chars_slice(text, 0, sel_start);
-                let selected = Self::chars_slice(text, sel_start, sel_end);
-                let sel_x = text_x + self.measure_ui_text_width(before, font_size);
+                let before = Self::chars_slice(&text, 0, sel_start);
+                let selected = Self::chars_slice(&text, sel_start, sel_end);
+                let sel_x = text_x + self.measure_ui_text_width(before, font_size) - self.address_bar_scroll_x;
                 let sel_w = self.measure_ui_text_width(selected, font_size).max(1.0);
                 let (_, descent) = self.ui_line_metrics(font_size);
                 let selection_h = text_ascent - descent;
@@ -168,7 +169,7 @@ impl BrowserApp {
                 self.chrome_palette.address_bar_text
             };
             let visible = if show_placeholder {
-                if self.address_bar_focused && Self::looks_like_search_query(text) {
+                if self.address_bar_focused && Self::looks_like_search_query(&text) {
                     let engine = match self.shell.settings().search_engine {
                         zero_browser_shell::SearchEngine::Google => "Google",
                         zero_browser_shell::SearchEngine::Bing => "Bing",
@@ -187,12 +188,18 @@ impl BrowserApp {
                 - layout::ADDRESS_BAR_TRAILING_SLOTS * s
                 - text_x)
                 .max(0.0);
-            let visible = self.truncate_ui_text(&visible, available_text_w, font_size);
-            self.draw_ui_text(&visible, text_x, text_top, font_size, color, glyphs);
+            // T37：编辑态水平滚动跟随光标（Chrome 同款）——超宽文本时滚动偏移钳制到
+            // 光标可见窗口；失焦/未超宽时复位 0。选区/IME/光标 x 均为全文坐标减
+            // `address_bar_scroll_x`，文本经 `address_bar_scrolled_text` 裁剪。
+            self.clamp_address_bar_scroll(font_size, available_text_w);
+            let (visible, visible_origin_x) =
+                self.address_bar_scrolled_text(&visible, text_x, font_size, available_text_w);
+            self.draw_ui_text(&visible, visible_origin_x, text_top, font_size, color, glyphs);
 
             if !self.address_bar_ime_preedit.is_empty() {
-                let before = Self::chars_slice(text, 0, self.address_bar.cursor());
-                let preedit_x = text_x + self.measure_ui_text_width(before, font_size);
+                let before = Self::chars_slice(&text, 0, self.address_bar.cursor());
+                let preedit_x =
+                    text_x + self.measure_ui_text_width(before, font_size) - self.address_bar_scroll_x;
                 self.draw_ui_text(
                     &self.address_bar_ime_preedit,
                     preedit_x,
@@ -203,14 +210,15 @@ impl BrowserApp {
                 );
             }
 
-            let cursor_visible = (self.chrome_anim_start.elapsed().as_millis() / 500) & 1 == 0;
+            let cursor_visible = (self.address_bar_cursor_phase.elapsed().as_millis() / 500) & 1 == 0;
             if self.address_bar_focused
                 && !self.address_bar.has_selection()
                 && self.address_bar_ime_preedit.is_empty()
                 && cursor_visible
             {
-                let before = Self::chars_slice(text, 0, self.address_bar.cursor());
-                let cursor_x = text_x + self.measure_ui_text_width(before, font_size);
+                let before = Self::chars_slice(&text, 0, self.address_bar.cursor());
+                let cursor_x =
+                    text_x + self.measure_ui_text_width(before, font_size) - self.address_bar_scroll_x;
                 fills.push(rect_fill(
                     cursor_x,
                     text_top + text_ascent * 0.12,
@@ -390,5 +398,74 @@ impl BrowserApp {
                 self.chrome_palette.nav_button
             },
         );
+    }
+
+    /// T37：编辑态水平滚动钳制（渲染帧调用，输入侧免维护）——光标前后各留约 1.5
+    /// 字号余量，保证光标与即将输入的字符可见；文本未超宽或失焦时复位 0。
+    /// 选区/IME/光标 x 与 `address_bar_scrolled_text` 均以该偏移换算。
+    fn clamp_address_bar_scroll(&mut self, font_size: f32, avail_w: f32) {
+        if !self.address_bar_focused || avail_w <= 0.0 {
+            self.address_bar_scroll_x = 0.0;
+            return;
+        }
+        let cursor_chars = self.address_bar.cursor();
+        let text = self.address_bar.text().to_string();
+        let total_w = self.measure_ui_text_width(&text, font_size);
+        if total_w <= avail_w {
+            self.address_bar_scroll_x = 0.0;
+            return;
+        }
+        let before = Self::chars_slice(&text, 0, cursor_chars);
+        let cursor_px = self.measure_ui_text_width(before, font_size);
+        let margin = font_size * 1.5;
+        if cursor_px - margin < self.address_bar_scroll_x {
+            self.address_bar_scroll_x = (cursor_px - margin).max(0.0);
+        }
+        let max_scroll = (cursor_px + margin - avail_w).max(0.0);
+        if self.address_bar_scroll_x < max_scroll {
+            self.address_bar_scroll_x = max_scroll;
+        }
+        self.address_bar_scroll_x = self
+            .address_bar_scroll_x
+            .clamp(0.0, (total_w - avail_w).max(0.0));
+    }
+
+    /// T37：编辑态按滚动偏移（`address_bar_scroll_x`，全文像素坐标）裁剪可见文本，
+    /// 返回 `(可见文本, 绘制起点 x)`。滚动跨过的整字符被跳过；`scroll_x` 落在字符
+    /// 中间时首可见字符起点左移（左缘半字符裁剪，单行编辑常规表现）。
+    /// 失焦/未滚动时退化为 `truncate_ui_text` 整体绘制。
+    fn address_bar_scrolled_text(
+        &self,
+        text: &str,
+        text_x: f32,
+        font_size: f32,
+        avail_w: f32,
+    ) -> (String, f32) {
+        let scroll = self.address_bar_scroll_x;
+        if scroll <= 0.0 {
+            return (self.truncate_ui_text(text, avail_w, font_size), text_x);
+        }
+        let Some(primary) = self.font_id else {
+            return (self.truncate_ui_text(text, avail_w, font_size), text_x);
+        };
+        let mut hidden_px = 0.0;
+        let mut skip_bytes = 0usize;
+        for ch in text.chars() {
+            let advance = self.font_loader.measure_advance(primary, ch, font_size);
+            if hidden_px + advance > scroll {
+                break;
+            }
+            hidden_px += advance;
+            skip_bytes += ch.len_utf8();
+        }
+        if skip_bytes == 0 {
+            return (self.truncate_ui_text(text, avail_w, font_size), text_x);
+        }
+        let clip = scroll - hidden_px;
+        let suffix = &text[skip_bytes..];
+        (
+            self.truncate_ui_text(suffix, avail_w + clip, font_size),
+            text_x - clip,
+        )
     }
 }

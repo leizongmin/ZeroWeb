@@ -55,11 +55,21 @@ pub fn try_rasterize_partial_into_back(
     if dirty_rects.is_empty() {
         return false;
     }
+    // T34：脏区 clip 路径只有 fill+glyph 管线；帧内出现其他图元类型（渐变/圆角/
+    // 描边/阴影/图片/滤镜等）或 z 序需 fill 盖 glyph 时整帧拒绝，由调用方回退 CPU
+    // 脏区渲染（慢但对）。此前 glyphs 在此被静默丢弃（clip 分支传空数组）——脏区内
+    // 文字整块消失。
+    if !zero_render_foundation::gpu::scene_support::clip_scene_supported(primitives) {
+        return false;
+    }
     for &(x, y, rw, rh) in dirty_rects {
         if rw <= 0.0 || rh <= 0.0 {
             continue;
         }
-        let region = Rect::new(x * scale_factor, y * scale_factor, rw * scale_factor, rh * scale_factor);
+        // clip 传逻辑坐标：renderer 内部按 scale 换算 scissor（此前传物理坐标被再次
+        // 缩放，scale≠1 时 scissor 偏移 ×scale² 漂移）；blit 用物理 region，在
+        // rasterize_gpu 内换算。
+        let clip_logical = Rect::new(x, y, rw, rh);
         if !rasterize_gpu(
             gpu_renderer,
             width,
@@ -69,7 +79,7 @@ pub fn try_rasterize_partial_into_back(
             glyph_cache,
             image_cache,
             back,
-            Some(region),
+            Some(clip_logical),
             scale_factor,
         ) {
             return false;
@@ -78,6 +88,7 @@ pub fn try_rasterize_partial_into_back(
     true
 }
 
+/// `clip` 为脏区逻辑坐标（renderer 内部换算 scissor，blit 换算物理 region）；`None` 走全量。
 #[allow(clippy::too_many_arguments)]
 fn rasterize_gpu(
     gpu_renderer: &mut Option<GpuRenderer>,
@@ -105,20 +116,8 @@ fn rasterize_gpu(
         return false;
     };
     gpu.configure_surface(width, height);
-    if let Some(clip_rect) = clip {
-        if !primitives.images.is_empty() {
-            return false;
-        }
-        gpu.render_scene_with_clip_scaled(
-            &primitives.fills,
-            font_loader,
-            glyph_cache,
-            &[],
-            &[],
-            &[],
-            Some(clip_rect),
-            scale_factor,
-        );
+    if let Some(clip_logical) = clip {
+        gpu.render_page_scene_with_clip_scaled(primitives, font_loader, glyph_cache, clip_logical, scale_factor);
     } else {
         // P0-1：GPU 生产路径未实现的特性（clips/blend/半透明/带模糊阴影）时
         // render_full_scene_gpu 返回 false → 本函数返回 false → 调用方回退 CPU 栅格化。
@@ -139,7 +138,14 @@ fn rasterize_gpu(
     let Some(pixels) = gpu.read_pixels() else {
         return false;
     };
-    if let Some(region) = clip {
+    if let Some(clip_logical) = clip {
+        // 调用方传入的 scale_factor 已按 rasterize::device_scale_factor 归一化。
+        let region = Rect::new(
+            clip_logical.origin.x * scale_factor,
+            clip_logical.origin.y * scale_factor,
+            clip_logical.size.width * scale_factor,
+            clip_logical.size.height * scale_factor,
+        );
         blit_region_from_rgba(back, &pixels, width, region);
     } else {
         let len = back.data.len().min(pixels.len());
@@ -168,9 +174,54 @@ fn blit_region_from_rgba(dst: &mut FrameBuffer, src: &[u8], width: u32, region: 
 mod tests {
     use zero_render_foundation::color::Color;
     use zero_render_foundation::geometry::Rect;
-    use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives};
+    use zero_render_foundation::primitive::{FillPrimitive, FontId, GlyphPrimitive, RenderPrimitives};
 
     use super::*;
+
+    /// 带系统字体的 loader（FontLoader::new 为空，glyph 光栅化需真实字体）。
+    fn font_loader_with_system_fonts() -> FontLoader {
+        zero_render_foundation::font::system::load_platform_fonts().loader
+    }
+
+    /// 白底 + 黑色 'A'（baseline 32px @ (8,32)），无其他图元。
+    fn fills_plus_glyph_primitives(width: f32, height: f32) -> RenderPrimitives {
+        let mut primitives = RenderPrimitives::new();
+        primitives.fills.push(FillPrimitive {
+            rect: Rect::new(0.0, 0.0, width, height),
+            color: Color::rgb(255, 255, 255),
+        });
+        primitives.glyphs.push(GlyphPrimitive {
+            x: 8.0,
+            y: 32.0,
+            font_size: 32.0,
+            color: Color::rgb(0, 0, 0),
+            glyph_id: 'A' as u32,
+            font_glyph_index: None,
+            source: None,
+            font_id: FontId(0),
+            font_variation_id: None,
+            bitmap_width: None,
+            bitmap_height: None,
+            rotation: 0.0,
+            synthetic_italic: false,
+        });
+        primitives
+    }
+
+    /// 矩形区域内深色像素计数（glyph 笔画核心，含抗锯齿边缘余量）。
+    fn dark_pixel_count(back: &FrameBuffer, x0: u32, y0: u32, x1: u32, y1: u32) -> usize {
+        let mut count = 0;
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let off = ((y * back.width + x) * 4) as usize;
+                let (r, g, b) = (back.data[off], back.data[off + 1], back.data[off + 2]);
+                if r < 100 && g < 100 && b < 100 {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
 
     /// C3：headless GPU 纯色 fill 可读回（GPU 不可用时跳过）。
     #[test]
@@ -236,5 +287,133 @@ mod tests {
         let outside = (20 * 32 + 20) * 4;
         assert_eq!(back.data[outside], 0, "脏区外 R 应保留蓝");
         assert_eq!(back.data[outside + 2], 255, "脏区外 B 应保留蓝");
+    }
+
+    /// T34：GPU 脏区路径须与 fills 同等地位绘制 glyphs——脏区覆盖文字时不得整块
+    /// 抹掉（此前 clip 分支传空 glyphs 数组，文字消失）。GPU 不可用时跳过。
+    #[test]
+    fn gpu_partial_dirty_draws_glyphs() {
+        // 先探测 GPU 可用性（fill 全量路径），不可用则本测无意义。
+        let mut gpu: Option<GpuRenderer> = None;
+        {
+            let probe = RenderPrimitives::new();
+            let mut back = FrameBuffer::new(4, 4);
+            let font_loader = font_loader_with_system_fonts();
+            let mut glyph_cache = GlyphCache::new(64);
+            let mut image_cache = ImageCache::new(8, 1 << 20);
+            if !try_rasterize_fills_into_back(
+                &mut gpu,
+                4,
+                4,
+                &probe,
+                &font_loader,
+                &mut glyph_cache,
+                &mut image_cache,
+                &mut back,
+                1.0,
+            ) {
+                return;
+            }
+        }
+
+        let font_loader = font_loader_with_system_fonts();
+        let mut glyph_cache = GlyphCache::new(1024);
+        let mut image_cache = ImageCache::new(8, 1 << 20);
+        let primitives = fills_plus_glyph_primitives(48.0, 48.0);
+        // back 预填蓝（脏区外保留），脏区 (0,0,40,40) 覆盖字形。
+        let mut back = FrameBuffer::new_filled(48, 48, 0, 0, 255, 255);
+        assert!(
+            try_rasterize_partial_into_back(
+                &mut gpu,
+                48,
+                48,
+                &primitives,
+                &font_loader,
+                &mut glyph_cache,
+                &mut image_cache,
+                &mut back,
+                &[(0.0, 0.0, 40.0, 40.0)],
+                1.0,
+            ),
+            "fills+glyphs 场景脏区 GPU 光栅化必须成功"
+        );
+        let dark = dark_pixel_count(&back, 0, 0, 40, 40);
+        assert!(dark >= 10, "脏区内应保留字形笔画深色像素，got {dark}");
+        let outside = ((44 * 48 + 44) * 4) as usize;
+        assert_eq!(back.data[outside], 0, "脏区外 R 应保留蓝");
+        assert_eq!(back.data[outside + 2], 255, "脏区外 B 应保留蓝");
+    }
+
+    /// T34：脏区路径对 fills/glyphs 之外的图元类型（此处渐变）整帧拒绝（返回
+    /// false → 调用方回退 CPU），不再静默丢弃脏区内内容。GPU 不可用时跳过。
+    #[test]
+    fn gpu_partial_dirty_rejects_unsupported_primitive_types() {
+        let mut gpu: Option<GpuRenderer> = None;
+        let font_loader = font_loader_with_system_fonts();
+        let mut glyph_cache = GlyphCache::new(64);
+        let mut image_cache = ImageCache::new(8, 1 << 20);
+        {
+            let mut probe = RenderPrimitives::new();
+            probe.fills.push(FillPrimitive {
+                rect: Rect::new(0.0, 0.0, 4.0, 4.0),
+                color: Color::rgb(255, 0, 0),
+            });
+            let mut back = FrameBuffer::new(4, 4);
+            if !try_rasterize_fills_into_back(
+                &mut gpu,
+                4,
+                4,
+                &probe,
+                &font_loader,
+                &mut glyph_cache,
+                &mut image_cache,
+                &mut back,
+                1.0,
+            ) {
+                return;
+            }
+        }
+
+        let mut primitives = fills_plus_glyph_primitives(32.0, 32.0);
+        primitives
+            .gradients
+            .push(zero_render_foundation::primitive::GradientPrimitive {
+                rect: Rect::new(0.0, 0.0, 16.0, 16.0),
+                kind: zero_render_foundation::primitive::GradientKind::Linear {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: 16.0,
+                    y1: 16.0,
+                },
+                stops: vec![
+                    zero_render_foundation::primitive::GradientStop {
+                        offset: 0.0,
+                        color: Color::rgb(255, 0, 0),
+                    },
+                    zero_render_foundation::primitive::GradientStop {
+                        offset: 1.0,
+                        color: Color::rgb(0, 0, 255),
+                    },
+                ],
+                repeating: false,
+                interpolation: zero_render_foundation::primitive::GradientInterpolation::default(),
+                clip: None,
+            });
+        let mut back = FrameBuffer::new(32, 32);
+        assert!(
+            !try_rasterize_partial_into_back(
+                &mut gpu,
+                32,
+                32,
+                &primitives,
+                &font_loader,
+                &mut glyph_cache,
+                &mut image_cache,
+                &mut back,
+                &[(0.0, 0.0, 16.0, 16.0)],
+                1.0,
+            ),
+            "含渐变的帧脏区 GPU 路径必须拒绝（回退 CPU），不得静默丢内容"
+        );
     }
 }

@@ -965,6 +965,35 @@ impl GpuRenderer {
         self.render_vertices(&vertices, clip_rect.map(|clip| scale_rect(clip, scale)));
     }
 
+    /// T34：合成器脏区 clip 渲染——画页面 fills + glyphs（GlyphPrimitive 全特性：
+    /// indexed glyph / variations / 合成斜体，与全量路径同一收集器），scissor 限定
+    /// 逻辑坐标 `clip_rect` 区域。
+    ///
+    /// 与 [`Self::render_scene_with_clip_scaled`]（消费外部 `GlyphDraw` 数组）不同，
+    /// 本方法直接消费 `RenderPrimitives` 内完整 glyph 列表，脏区文字与全量路径同源。
+    /// fills/glyphs 之外的图元类型须先经 `scene_support::clip_scene_supported` 拒绝
+    /// 并由调用方回退 CPU，否则会在此被静默丢弃。
+    pub fn render_page_scene_with_clip_scaled(
+        &mut self,
+        primitives: &RenderPrimitives,
+        font_loader: &FontLoader,
+        glyph_cache: &mut GlyphCache,
+        clip_rect: Rect,
+        scale_factor: f32,
+    ) {
+        let scale = normalize_scale_factor(scale_factor);
+        let mut vertices: Vec<f32> = Vec::new();
+        for batch in self.collect_fill_vertices(&primitives.fills, scale) {
+            vertices.extend_from_slice(&batch);
+        }
+        // atlas 溢出在收集器内按 glyph 丢弃（PAGE_DROP），不做整帧顶点重试：脏区
+        // 每帧全量重收集，下一帧自动使用重建后的 atlas。
+        for batch in self.collect_glyph_vertices_from_primitives(primitives, font_loader, glyph_cache, scale) {
+            vertices.extend_from_slice(&batch);
+        }
+        self.render_vertices(&vertices, Some(scale_rect(clip_rect, scale)));
+    }
+
     /// 渲染全部 13 种图元类型到当前表面（GPU 全量渲染）
     ///
     /// 遵循 CSS painting order：shadows → backgrounds → borders → content → overlay → post-processing

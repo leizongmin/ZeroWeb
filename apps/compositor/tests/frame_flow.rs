@@ -1352,6 +1352,207 @@ fn compositor_consumes_full_renderer_style_frame() {
     assert_eq!(&frame.rgba[..4], &[0, 128, 255, 255], "全字段帧应正确光栅化");
 }
 
+/// T34（真实合成器进程）：GPU 脏区路径须与 fills 同等地位绘制 glyphs——partial
+/// dirty 帧覆盖文字时不得整块抹掉。此前 clip 分支向 `render_scene_with_clip_scaled`
+/// 传空 glyphs 数组，脏区内文字消失。
+///
+/// 交付通道以 dma-buf 为准（`ZW_BROWSER_GPU_DMABUF_IMPORT=1`）：compositor 仅在
+/// 「最新帧确由 GPU 光栅化」时导出 dma-buf（t9 F1 门控），故轮询到 dma-buf 交付
+/// 即排除 CPU 回退假绿（预热完成前的帧走 CPU，glyphs 同样正确）；进程内单测
+/// `gpu_raster::tests::gpu_partial_dirty_draws_glyphs` 另行钉住 GPU 函数本身。
+#[test]
+#[cfg(target_os = "linux")]
+#[serial_test::serial]
+fn compositor_gpu_partial_dirty_draws_glyphs() {
+    if zero_render_foundation::gpu::renderer::GpuRenderer::new_headless(1, 1).is_err() {
+        return;
+    }
+    let (mut transport, _comp) = spawn_compositor_with_env(&[
+        ("ZW_COMPOSITOR_GPU", "1"),
+        ("ZW_COMPOSITOR_GPU_IMAGE", "1"),
+        ("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "1"),
+        ("ZW_BROWSER_GPU_DMABUF_IMPORT", "1"),
+        // is_partial 仅在 scroll transform 关闭时成立（默认开启时恒全量）。
+        ("ZW_COMPOSITOR_SCROLL_TRANSFORM", "0"),
+    ]);
+    let w = 64u32;
+    let glyph_rect = IpcRect {
+        x: 8.0,
+        y: 4.0,
+        width: 40.0,
+        height: 36.0,
+    };
+
+    // 帧 1（黑 'A' 全量）：轮询提交递增帧直到交付变 dma-buf（GPU 预热完成且最新
+    // 帧确由 GPU 光栅化），随后用同一帧的映射像素确认字形管线出深色笔画。
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let mut frame_id: u64 = 1;
+    let first = loop {
+        frame_id += 1;
+        let frame = frame_with_glyph(IpcColor {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        });
+        assert_eq!(
+            submit_frame(&mut transport, frame_id, 21, 1, frame_id, frame),
+            (21, 1, frame_id)
+        );
+        let (gw, gh, resolved) = get_frame_delivery(&mut transport, frame_id + 1_000_000, 21, 1, frame_id);
+        match resolved {
+            zero_protocol::CompositorResolvedFrame::Rgba(_) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            zero_protocol::CompositorResolvedFrame::Rgba(_) => {
+                panic!("15s 内未等到 GPU 光栅化交付（dma-buf），无法验证 GPU 脏区路径");
+            }
+            zero_protocol::CompositorResolvedFrame::Dmabuf {
+                fd,
+                stride,
+                drm_fourcc: _,
+                drm_modifier,
+                ..
+            } => {
+                assert_eq!((gw, gh), (w, 48));
+                use zero_render_foundation::gpu::{DRM_FORMAT_ABGR8888, ExportedGpuFrame, map_linear_rgba};
+                let export = ExportedGpuFrame {
+                    fd,
+                    width: gw,
+                    height: gh,
+                    stride,
+                    drm_fourcc: DRM_FORMAT_ABGR8888,
+                    drm_modifier,
+                    sync_fd: None,
+                };
+                break map_linear_rgba(&export).expect("map frame-1 rgba");
+            }
+        }
+    };
+    assert!(
+        count_colored_pixels(&first, w, glyph_rect, |(r, g, b)| r < 100 && g < 100 && b < 100) >= 5,
+        "GPU 全量帧字形区应有深色笔画像素"
+    );
+
+    // 帧 2：同一内容但 'A' 变红，dirty 只覆盖字形区——脏区 GPU 重绘必须重画 glyphs。
+    let frame_id = frame_id + 1;
+    assert_eq!(
+        submit_frame(
+            &mut transport,
+            frame_id,
+            21,
+            1,
+            frame_id,
+            frame_with_dirty_glyph(
+                IpcColor {
+                    r: 220,
+                    g: 0,
+                    b: 0,
+                    a: 255
+                },
+                glyph_rect
+            ),
+        ),
+        (21, 1, frame_id)
+    );
+    let (_, _, resolved) = get_frame_delivery(&mut transport, frame_id + 1_000_000, 21, 1, frame_id);
+    let second = match resolved {
+        zero_protocol::CompositorResolvedFrame::Dmabuf {
+            fd,
+            stride,
+            drm_fourcc: _,
+            drm_modifier,
+            ..
+        } => {
+            use zero_render_foundation::gpu::{DRM_FORMAT_ABGR8888, ExportedGpuFrame, map_linear_rgba};
+            let export = ExportedGpuFrame {
+                fd,
+                width: w,
+                height: 48,
+                stride,
+                drm_fourcc: DRM_FORMAT_ABGR8888,
+                drm_modifier,
+                sync_fd: None,
+            };
+            map_linear_rgba(&export).expect("map frame-2 rgba")
+        }
+        zero_protocol::CompositorResolvedFrame::Rgba(_) => {
+            panic!("脏区帧应延续 GPU 光栅化交付（dma-buf），CPU 回退会使本测无法区分路径");
+        }
+    };
+    let red = count_colored_pixels(&second, w, glyph_rect, |(r, g, b)| r > 180 && g < 80 && b < 80);
+    assert!(
+        red >= 5,
+        "GPU 脏区帧字形区应保留红色笔画像素（bug 时整块被抹白），got {red}"
+    );
+}
+
+/// 白底 + 单个 'A'（32px @ baseline (16,32)）的全视口帧。
+fn frame_with_glyph(color: IpcColor) -> PaintSnapshotParams {
+    let (w, h) = (64u32, 48u32);
+    PaintSnapshotParams {
+        viewport_width: w,
+        viewport_height: h,
+        document_height: h as f32,
+        fills: vec![IpcFill {
+            rect: IpcRect {
+                x: 0.0,
+                y: 0.0,
+                width: w as f32,
+                height: h as f32,
+            },
+            color: IpcColor {
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+            },
+        }],
+        glyphs: vec![zero_protocol::paint_snapshot::IpcGlyph {
+            x: 16.0,
+            y: 32.0,
+            font_size: 32.0,
+            glyph_id: 'A' as u32,
+            font_glyph_index: None,
+            source: None,
+            font_id: 0,
+            font_variation_id: None,
+            color,
+            rotation: 0.0,
+            synthetic_italic: false,
+        }],
+        ..Default::default()
+    }
+}
+
+/// T34 测试辅助：帧内容与 `frame_with_glyph` 一致，另带 partial dirty rect。
+fn frame_with_dirty_glyph(color: IpcColor, dirty: IpcRect) -> PaintSnapshotParams {
+    let mut frame = frame_with_glyph(color);
+    frame.dirty_rects = vec![dirty];
+    frame
+}
+
+/// 统计 rect（物理像素坐标）内满足谓词的像素数。
+fn count_colored_pixels(rgba: &[u8], width: u32, rect: IpcRect, pred: fn((u8, u8, u8)) -> bool) -> usize {
+    let mut count = 0;
+    let x0 = rect.x.max(0.0) as u32;
+    let y0 = rect.y.max(0.0) as u32;
+    let x1 = (rect.x + rect.width).ceil() as u32;
+    let y1 = (rect.y + rect.height).ceil() as u32;
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let off = ((y * width + x) * 4) as usize;
+            if off + 3 >= rgba.len() {
+                continue;
+            }
+            if pred((rgba[off], rgba[off + 1], rgba[off + 2])) {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
 /// R3285：合成器 GPU 初始光栅后，滚动重绘的 RGBA 回读须正确反映文档坐标。
 #[test]
 fn compositor_gpu_scroll_transform_rasterizes_scrolled_viewport() {

@@ -609,7 +609,8 @@ impl BrowserApp {
                 let s = self.scale_factor;
                 let font_size = layout::CHROME_FONT_SIZE * s;
                 let text_x = self.address_bar_text_origin_x();
-                let rel_x = (x as f32 - text_x).max(0.0);
+                // T37：拖选换算回全文坐标（+滚动偏移）。
+                let rel_x = (x as f32 - text_x + self.address_bar_scroll_x).max(0.0);
                 let idx = self
                     .address_bar
                     .x_to_cursor(rel_x, |t| self.measure_ui_text_width(t, font_size));
@@ -761,6 +762,8 @@ impl BrowserApp {
                                 false,
                             );
                             self.address_bar_focused = true;
+                            // T37：聚焦重置光标闪烁相位，光标立即可见。
+                            self.address_bar_cursor_phase = Instant::now();
                             self.address_bar.select_all();
                             self.update_autocomplete();
                             self.needs_redraw = true;
@@ -2077,9 +2080,12 @@ impl BrowserApp {
         let s = self.scale_factor;
         let font_size = layout::CHROME_FONT_SIZE * s;
         let text_x = self.address_bar_text_origin_x();
-        let rel_x = (x as f32 - text_x).max(0.0);
+        // T37：命中换算回全文坐标（+滚动偏移）——超宽文本滚动后点击/拖选定位仍准确。
+        let rel_x = (x as f32 - text_x + self.address_bar_scroll_x).max(0.0);
         let measure = |t: &str| self.measure_ui_text_width(t, font_size);
         let idx = self.address_bar.x_to_cursor(rel_x, measure);
+        // T37：点击定位/拖选同样重置光标闪烁相位（Chrome 同款）。
+        self.address_bar_cursor_phase = Instant::now();
         let extend = self.shift_pressed;
         if let Some((last_t, last_x, last_y)) = self.address_bar_last_click
             && last_t.elapsed() < TAB_BAR_DOUBLE_CLICK_INTERVAL
