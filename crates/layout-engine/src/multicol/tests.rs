@@ -633,3 +633,53 @@ fn unbreakable_children_advance_before_overshoot() {
     let legacy = assign_children_to_columns_balanced(&children, 3, &[false; 3], &[false; 3], &[], &[], 93.4);
     assert_eq!(legacy[0].len(), 2, "可分语义保持放置后推进旧序");
 }
+
+/// R5136：sequential 路径嵌套 multicol 子的**首不可断单元**（contain:size 首子）放不进
+/// 部分填充列剩余空间 → 先推进下一列再整子单片段放置（css-break-3 Class A2；
+/// multicol-nested-024 chromium 实证：内层 mc 首子 100 > 外层 col0 剩余 50 → 内层整体
+/// 落 col1，col0 底部留空，不切片）。旗标 = 首不可断单元高（100），非子全高（200）。
+#[test]
+fn nested_seq_unbreakable_advances_partial_column() {
+    // 子 0 普通块 100 高 → col0 部分填充；子 1 嵌套 mc 全高 200、首不可断单元 100
+    //（剩余 50 < 100）→ 推进 col1 整子放置。
+    let children = vec![(0usize, 100.0f32), (1usize, 200.0f32)];
+    let cols = assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false; 2], &[false; 2], &[0.0, 100.0]);
+    assert_eq!(cols[0].len(), 1, "普通块留在 col0");
+    assert_eq!(cols[1].len(), 1, "嵌套 mc 推进 col1 整子放置");
+    let frag = &cols[1][0];
+    assert_eq!(frag.child_idx, 1);
+    assert!((frag.fragment_y_offset - 0.0).abs() < 0.01, "整子单片段，无切片偏移");
+    assert!((frag.visual_height - 200.0).abs() < 0.01, "visual_height 取全高");
+    assert!(cols[2].is_empty());
+}
+
+/// R5136：同旗标在 **fresh 列**（首子、当前列无内容）不推进——不可断单元高于
+/// fragmentainer 时原地整放溢出（css-break-3 Class C3；multicol-nested-011 R5135
+/// 语义保持，防止新臂把 011 推进空列产生错位）。
+#[test]
+fn nested_seq_unbreakable_fresh_column_stays_in_place() {
+    // 单嵌套 mc 子全高 200、首不可断单元 100，fresh 列高 150：臂 3 gate
+    // current_col_height > 0.0 不满足 → R5135 原位整放臂（visual_height 全高溢出）。
+    let children = vec![(0usize, 200.0f32)];
+    let cols = assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false], &[false], &[100.0]);
+    assert_eq!(cols.len(), 3);
+    assert_eq!(cols[0].len(), 1, "fresh 列原地整放，不推进");
+    assert!((cols[0][0].visual_height - 200.0).abs() < 0.01);
+    assert!(cols[1].is_empty());
+}
+
+/// R5136：balance 路径 contain:size 子并入先推后放旗标（css-contain §3.1 整体化，
+/// multicol-nested-024 内层 balance mc 实证：contain:size 子一子一列）。旗标计算
+///（含显式高子，高度来源无关）由 layout_multicol corpus 校准，此处校验放置机制。
+#[test]
+fn balanced_contain_size_child_pushes_before_place() {
+    // 子 0 可分 50 高 → col0（target 75）；子 1 contain:size 100 高放不下剩余 25
+    // → 先推进 col1 再整子放置。
+    let children: Vec<(usize, f32)> = vec![(0, 50.0), (1, 100.0)];
+    let unbreakable = [false, true];
+    let cols = assign_children_to_columns_balanced(&children, 2, &[false; 2], &[false; 2], &[], &unbreakable, 0.0);
+    assert_eq!(cols[0].len(), 1, "可分子留 col0");
+    assert_eq!(cols[1].len(), 1, "contain:size 子推进 col1");
+    assert_eq!(cols[1][0].child_idx, 1);
+    assert!((cols[1][0].visual_height - 100.0).abs() < 0.01, "整子放置不切片");
+}
