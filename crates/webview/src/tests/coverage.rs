@@ -487,6 +487,53 @@ fn test_element_inner_text_excludes_hidden_scripts() {
     let _ = wv.execute_script("String(globalThis.__ivLen)").unwrap();
 }
 
+// ── element.innerText：同 turn 写后读 + 隐藏根（P2 返修 B1/B2，R3260 第 2 版）──
+// B1：sel 路径 `el.textContent='X'` 后同 turn 读 `el.innerText` 须返 latest-wins 新文本 'X'
+// （不能读 stale host 快照旧值，回归 R3028）。B2：隐藏根（display:none / visibility:hidden）
+// 元素 innerText 应为空串（根自身可见性须判定，不只排除后代）。
+#[test]
+fn test_element_inner_text_same_turn_write_and_hidden_root() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html(
+        "<html><body>\
+         <div id=\"w\"><span>old text</span></div>\
+         <div id=\"hdn\" style=\"display:none\">hidden root</div>\
+         <div id=\"vhid\" style=\"visibility:hidden\">vis-hidden root</div>\
+         <script>\
+         var _w = document.getElementById('w');\
+         _w.textContent = 'changed text';\
+         globalThis.__b1 = String(_w.innerText);\
+         globalThis.__b1OldGone = String(_w.innerText.indexOf('old text') < 0);\
+         globalThis.__b2Empty = String(document.getElementById('hdn').innerText === '');\
+         globalThis.__b3Empty = String(document.getElementById('vhid').innerText === '');\
+         </script>\
+         </body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "classic script 应无异常执行, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__b1)").unwrap(),
+        "changed text",
+        "同 turn textContent= 后读 innerText 返 latest-wins 新文本（B1）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__b1OldGone)").unwrap(),
+        "true",
+        "旧文本已从 innerText 消失（同 turn 替换已反映）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__b2Empty)").unwrap(),
+        "true",
+        "display:none 隐藏根 innerText 为空串（B2 根可见性）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__b3Empty)").unwrap(),
+        "true",
+        "visibility:hidden 隐藏根 innerText 为空串（B2 根可见性）"
+    );
+}
+
 // ── document.designMode（R3261，HTML §3.2.5）──
 // 文档级 contentEditable 开关，默认 'off'。headless 不真启用编辑 → 惰性 setter（仅存储）。
 // 覆盖：默认 off、'on'/'off' setter round-trip、case-insensitive、'inherit'/garbage → off。
