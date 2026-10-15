@@ -33,6 +33,9 @@ use crate::app::BrowserApp;
 
 const DRIVER_TIMEOUT: Duration = Duration::from_secs(600);
 
+/// 滚动帧率基准收尾静置：等最后一次滚动的平滑动画帧落盘再统计。
+const SCROLL_BENCH_SETTLE: Duration = Duration::from_millis(300);
+
 /// UI 驱动器配置。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UiDriverConfig {
@@ -218,6 +221,31 @@ enum Step {
     AssertCookies {
         count: usize,
     },
+    /// 下载完成 toast 断言（T34）：`visible` 为期望可见性；`contains` 可选校验文件名。
+    AssertDownloadToast {
+        visible: bool,
+        contains: Option<String>,
+    },
+    /// 压缩标签悬停 tooltip 断言（T35）：`visible` 为期望可见性；`contains` 可选
+    /// 校验标题/URL。
+    AssertTabTooltip {
+        visible: bool,
+        contains: Option<String>,
+    },
+    /// 悬停第 `index` 个标签槽位中心（几何取自渲染缓存 tab_layout；只移动不点击）。
+    HoverTab {
+        index: usize,
+    },
+    /// 滚轮滚动帧率基准（T36）：`steps` 次滚轮按 `interval_ms` 间隔派发，统计区间
+    /// 呈现帧数与墙钟得平均 fps；`min_fps` > 0 时低于下限报错。结果写入 bench-scroll.json。
+    BenchScroll {
+        x: f64,
+        y: f64,
+        dy: f32,
+        steps: usize,
+        interval_ms: u64,
+        min_fps: f32,
+    },
 }
 
 impl Step {
@@ -398,6 +426,31 @@ impl Step {
             "assert_cookies" => Ok(Self::AssertCookies {
                 count: num("count")? as usize,
             }),
+            "assert_download_toast" => Ok(Self::AssertDownloadToast {
+                visible: value
+                    .get("visible")
+                    .and_then(Value::as_bool)
+                    .ok_or_else(|| bad("assert_download_toast requires boolean field \"visible\""))?,
+                contains: value.get("contains").and_then(Value::as_str).map(str::to_string),
+            }),
+            "assert_tab_tooltip" => Ok(Self::AssertTabTooltip {
+                visible: value
+                    .get("visible")
+                    .and_then(Value::as_bool)
+                    .ok_or_else(|| bad("assert_tab_tooltip requires boolean field \"visible\""))?,
+                contains: value.get("contains").and_then(Value::as_str).map(str::to_string),
+            }),
+            "hover_tab" => Ok(Self::HoverTab {
+                index: num("index")? as usize,
+            }),
+            "bench_scroll" => Ok(Self::BenchScroll {
+                x: num("x")?,
+                y: num("y")?,
+                dy: value.get("dy").and_then(Value::as_f64).unwrap_or(-3.0) as f32,
+                steps: value.get("steps").and_then(Value::as_u64).unwrap_or(60) as usize,
+                interval_ms: value.get("interval_ms").and_then(Value::as_u64).unwrap_or(16),
+                min_fps: value.get("min_fps").and_then(Value::as_f64).unwrap_or(0.0) as f32,
+            }),
             "assert_tabs" => Ok(Self::AssertTabs {
                 count: num("count")? as usize,
             }),
@@ -435,6 +488,19 @@ enum Pending {
         deadline: Instant,
         settle: Duration,
         quiet_since: Option<Instant>,
+    },
+    /// 滚轮帧率基准进行态（T26 平滑滚动同帧循环驱动）。
+    BenchScroll {
+        x: f64,
+        y: f64,
+        dy: f32,
+        remaining: usize,
+        interval: Duration,
+        next_fire: Instant,
+        first_fire: Option<Instant>,
+        last_fire: Option<Instant>,
+        start_frames: u64,
+        min_fps: f32,
     },
 }
 
@@ -501,6 +567,15 @@ impl UiDriver {
             tracing::info!("UI_DRIVER_COMPLETE steps={}", self.steps.len());
             return Ok(true);
         }
+        if matches!(self.pending, Some(Pending::BenchScroll { .. })) {
+            // 基准完成时清 pending 并落回下方主流程继续下一步；未完成直接等下一 tick。
+            if self.advance_scroll_bench(app)? {
+                self.pending = None;
+            } else {
+                app.needs_redraw = true;
+                return Ok(false);
+            }
+        }
         if let Some(pending) = &mut self.pending {
             let due = match pending {
                 Pending::Until(at) => Instant::now() >= *at,
@@ -517,6 +592,8 @@ impl UiDriver {
                     let quiet = quiet_since.is_some_and(|since| since.elapsed() >= *settle);
                     quiet || Instant::now() >= *deadline
                 }
+                // BenchScroll 在上方分支独立推进，不会落入本 match。
+                Pending::BenchScroll { .. } => true,
             };
             if !due {
                 app.needs_redraw = true;
@@ -1036,7 +1113,183 @@ impl UiDriver {
                 );
                 Ok(())
             }
+            Step::AssertDownloadToast { visible, contains } => {
+                let actual = app.smoke_download_toast();
+                match (visible, actual.as_ref()) {
+                    (true, None) => {
+                        return Err("assert_download_toast failed: toast not visible".to_string());
+                    }
+                    (false, Some(name)) => {
+                        return Err(format!(
+                            "assert_download_toast failed: toast still visible with {name:?}"
+                        ));
+                    }
+                    (true, Some(name)) => {
+                        if let Some(pattern) = contains
+                            && !name.contains(pattern.as_str())
+                        {
+                            return Err(format!(
+                                "assert_download_toast failed: filename {name:?} does not contain {pattern:?}"
+                            ));
+                        }
+                    }
+                    (false, None) => {}
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_download_toast visible={visible} name={actual:?} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertTabTooltip { visible, contains } => {
+                let actual = app.smoke_tab_tooltip();
+                match (visible, actual.as_ref()) {
+                    (true, None) => {
+                        return Err("assert_tab_tooltip failed: tooltip not visible".to_string());
+                    }
+                    (false, Some(content)) => {
+                        return Err(format!(
+                            "assert_tab_tooltip failed: tooltip still visible with {content:?}"
+                        ));
+                    }
+                    (true, Some((title, url))) => {
+                        if let Some(pattern) = contains
+                            && !title.contains(pattern.as_str())
+                            && !url.contains(pattern.as_str())
+                        {
+                            return Err(format!(
+                                "assert_tab_tooltip failed: tooltip ({title:?}, {url:?}) does not contain {pattern:?}"
+                            ));
+                        }
+                    }
+                    (false, None) => {}
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_tab_tooltip visible={visible} content={actual:?} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::HoverTab { index } => {
+                let Some((cx, cy)) = app.smoke_tab_center(*index) else {
+                    return Err(format!(
+                        "hover_tab: no tab at index {index} (rendered layout has {} tabs)",
+                        app.smoke_tab_ids().len()
+                    ));
+                };
+                app.handle_mouse_move(cx, cy);
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} hover_tab index={index} cx={cx} cy={cy}",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::BenchScroll {
+                x,
+                y,
+                dy,
+                steps,
+                interval_ms,
+                min_fps,
+            } => {
+                self.pending = Some(Pending::BenchScroll {
+                    x: *x,
+                    y: *y,
+                    dy: *dy,
+                    remaining: *steps,
+                    interval: Duration::from_millis(*interval_ms),
+                    next_fire: Instant::now(),
+                    first_fire: None,
+                    last_fire: None,
+                    start_frames: app.smoke_presented_frames(),
+                    min_fps: *min_fps,
+                });
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} bench_scroll x={x} y={y} dy={dy} steps={steps} interval_ms={interval_ms} min_fps={min_fps}",
+                    self.next + 1
+                );
+                Ok(())
+            }
         }
+    }
+
+    /// 推进滚动帧率基准：按间隔派发到期滚轮事件；全部派发并静置后统计区间
+    /// 呈现帧数与墙钟，写入 bench-scroll.json 并按 `min_fps` 下限裁决。
+    /// 返回 `true` 表示基准完成。
+    fn advance_scroll_bench(&mut self, app: &mut BrowserApp) -> Result<bool, String> {
+        {
+            let Some(Pending::BenchScroll {
+                x,
+                y,
+                dy,
+                remaining,
+                interval,
+                next_fire,
+                first_fire,
+                last_fire,
+                ..
+            }) = &mut self.pending
+            else {
+                return Ok(true);
+            };
+            let now = Instant::now();
+            while *remaining > 0 && now >= *next_fire {
+                let delta = zero_host_runtime::event::MouseScrollDelta::LineDelta(0.0, *dy);
+                app.handle_scroll(delta, *x, *y);
+                if first_fire.is_none() {
+                    *first_fire = Some(now);
+                }
+                *last_fire = Some(now);
+                *remaining -= 1;
+                *next_fire += *interval;
+            }
+        }
+        let Some(Pending::BenchScroll {
+            remaining,
+            first_fire,
+            last_fire,
+            start_frames,
+            min_fps,
+            ..
+        }) = &self.pending
+        else {
+            return Ok(true);
+        };
+        let (Some(first), Some(last)) = (*first_fire, *last_fire) else {
+            return Ok(false);
+        };
+        if *remaining > 0 || Instant::now() < last + SCROLL_BENCH_SETTLE {
+            return Ok(false);
+        }
+        let frames = app.smoke_presented_frames().saturating_sub(*start_frames);
+        let elapsed = Instant::now().duration_since(first);
+        let fps = frames as f32 / elapsed.as_secs_f32().max(0.001);
+        tracing::info!(
+            "UI_DRIVER_SCROLL_BENCH frames={frames} elapsed_ms={} fps={fps:.1}",
+            elapsed.as_millis()
+        );
+        self.write_bench_result(frames, elapsed, fps);
+        if fps < *min_fps {
+            return Err(format!(
+                "bench_scroll failed: {frames} frames in {} ms = {fps:.1} fps, below min_fps {min_fps}",
+                elapsed.as_millis()
+            ));
+        }
+        Ok(true)
+    }
+
+    fn write_bench_result(&self, frames: u64, elapsed: Duration, fps: f32) {
+        let path = self.output_dir.join("bench-scroll.json");
+        let payload = serde_json::json!({
+            "schema_version": 1,
+            "frames": frames,
+            "elapsed_ms": elapsed.as_millis() as u64,
+            "fps": (fps * 10.0).round() / 10.0,
+        });
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, serde_json::to_vec_pretty(&payload).unwrap_or_default());
     }
 
     fn save_png(&self, frame: &zero_render_foundation::surface::FrameBuffer, name: &str) -> Result<(), String> {

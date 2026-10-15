@@ -626,6 +626,7 @@ impl BrowserApp {
                 self.update_window_control_hover(x, y);
             }
             self.update_tab_bar_drag(x, y);
+            self.update_tab_tooltip_hover(x, y);
         }
 
         if self.left_button_down {
@@ -712,11 +713,47 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
+    /// 压缩标签悬停 tooltip 候选更新：仅标签条区域、非拖拽、无菜单/下拉时计入；
+    /// 悬停目标变化即重置延迟计时，移出压缩标签即隐藏（Chrome tooltip 同语义）。
+    fn update_tab_tooltip_hover(&mut self, x: f64, y: f64) {
+        let candidate = if self.tab_drag.is_none()
+            && !self.context_menu.visible
+            && !self.tab_overflow_open
+            && (y as f32) < layout::TAB_STRIP_HEIGHT * self.scale_factor
+        {
+            let mx = x as f32;
+            self.tab_layout
+                .iter()
+                .find_map(|&(id, tx, tw)| (mx >= tx && mx < tx + tw).then_some((id, tw)))
+        } else {
+            None
+        };
+        // 压缩判定与标签条压缩逻辑同界：低于正常最小宽度（100 逻辑像素）即压缩态。
+        let hovered = candidate.filter(|&(_, tw)| tw < layout::TAB_MIN_WIDTH * self.scale_factor);
+        match hovered {
+            Some((id, _)) => {
+                if self.tab_tooltip.as_ref().map(|(cur, _)| *cur) != Some(id) {
+                    self.tab_tooltip = Some((id, Instant::now()));
+                    self.needs_redraw = true;
+                }
+            }
+            None => {
+                if self.tab_tooltip.take().is_some() {
+                    self.needs_redraw = true;
+                }
+            }
+        }
+    }
+
     /// 处理鼠标点击（物理像素坐标）
     pub fn handle_mouse_click(&mut self, x: f64, y: f64, pressed: bool, button: &str) {
         if button == "Left" {
             if pressed {
                 self.left_button_down = true;
+                // 点击即隐藏 tooltip（Chrome 同语义），避免标签切换/页面导航后残留。
+                if self.tab_tooltip.take().is_some() {
+                    self.needs_redraw = true;
+                }
             } else {
                 self.left_button_down = false;
                 if self.context_menu.visible && self.context_menu_suppress_left_up {
