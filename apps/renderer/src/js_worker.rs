@@ -967,6 +967,16 @@ impl WorkerCensus {
         }
     }
 
+    /// 追加一行到 census sink 文件（truthy 模式无 sink，静默跳过）。
+    fn write_sink(&self, line: &str) {
+        if let Some(path) = &self.sink
+            && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path)
+        {
+            use std::io::Write as _;
+            let _ = writeln!(f, "{line}");
+        }
+    }
+
     fn kind(cmd: &JsWorkerCommand) -> &'static str {
         match cmd {
             JsWorkerCommand::Execute { .. } => "Execute",
@@ -1001,6 +1011,8 @@ impl WorkerCensus {
 struct WorkerCensusGuard<'a> {
     census: &'a mut WorkerCensus,
     kind: &'static str,
+    /// P102 诊断：Execute 臂的脚本标识（len+head）；非 Execute 或无 sink 时为 None。
+    identity: Option<String>,
     started: std::time::Instant,
 }
 
@@ -1025,14 +1037,21 @@ impl WorkerCensusGuard<'_> {
         let busy = 100 * total_ns / wall.as_nanos().max(1);
         let line = format!("worker busy={busy}% wall={}ms {}", wall.as_millis(), parts.join(" "));
         tracing::info!(target: "js_worker_census", "{line}");
-        if let Some(path) = &census.sink
-            && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path)
-        {
-            use std::io::Write as _;
-            let _ = writeln!(f, "{line}");
-        }
+        census.write_sink(&line);
         census.window_start = std::time::Instant::now();
     }
+}
+
+/// P102 诊断：Execute 臂脚本标识——长度 + 头部片段（控制字符折空格，Debug 转义保单行）。
+/// 仅 census sink 模式落盘，用于把 30s 看门狗臂归因到提交方（scroll 脚本 / observer
+/// tick / 页面回调 / 自动化求值）。
+fn execute_script_label(script: &str) -> String {
+    let head: String = script
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .take(120)
+        .collect();
+    format!("len={} head={head:?}", script.len())
 }
 
 impl Drop for WorkerCensusGuard<'_> {
@@ -1042,6 +1061,12 @@ impl Drop for WorkerCensusGuard<'_> {
         entry.0 += 1;
         entry.1 += elapsed.as_nanos();
         entry.2 = entry.2.max(elapsed.as_nanos());
+        // P102 诊断：臂完成行与 `arm start` 成对——只有 start 没有 done = 卡在
+        // 原生宿主回调（V8 terminate_execution 不中断原生代码，看门狗无法终止）。
+        if let Some(identity) = &self.identity {
+            let line = format!("arm done {} {identity} elapsed_ms={}", self.kind, elapsed.as_millis());
+            self.census.write_sink(&line);
+        }
         Self::report(self.census);
     }
 }
@@ -1373,9 +1398,19 @@ fn js_worker_main(
         };
         let Some(cmd) = next_cmd else { break };
         // t7 诊断基座：命令处理全程计时，Drop 入账（关闭时零开销跳过）。
+        // P102 诊断：Execute 臂起始即落脚本标识（len+head），完成时落耗时——
+        // 30s 看门狗臂归因到提交方；start 无配对 done = 卡在原生宿主回调。
+        let identity = match (&cmd, census.sink.is_some()) {
+            (JsWorkerCommand::Execute { script, .. }, true) => Some(execute_script_label(script)),
+            _ => None,
+        };
+        if let Some(identity) = &identity {
+            census.write_sink(&format!("arm start Execute {identity}"));
+        }
         let _census = census.enabled.then(|| WorkerCensusGuard {
             census: &mut census,
             kind: WorkerCensus::kind(&cmd),
+            identity,
             started: std::time::Instant::now(),
         });
         match cmd {
