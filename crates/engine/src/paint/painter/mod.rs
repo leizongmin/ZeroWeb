@@ -71,6 +71,12 @@ pub struct Painter {
     /// 盒于容器首行原点（层②缺陷），盒位错误时外延放大错位墨水（bleed-001/002 翻红
     /// 实证），待行位锚定切片落地后 default-on。构造期单次读取，热路径零 env 查询。
     pub(crate) inline_bleed_enabled: bool,
+    /// R5135：multicol 嵌套绘制深度——外层 cso 循环绘制嵌套 multicol 子树时 +1，
+    /// paint_node 返回后 −1。深度 ≥1 的 cso 循环对列内容横向不裁剪（chromium 实测
+    /// 2026-10-15 probeI/011：嵌套列内容溢出可见至最外层容器内容右缘——内层列
+    /// 裁剪会切掉溢出几何），纵向溢出已由非 breaking 路径豁免；外边界由发起嵌套
+    /// 绘制的外层片段 clip 兜底。
+    pub(crate) mc_paint_nesting: usize,
     /// R2197 Phase A slice 3：paint 期须跳过递归绘制的 orphan inline 元素 NodeId 集合。
     ///
     /// 这些元素经 `ZW_PHASEA_MULTI_INLINE` gate 跳过 taffy 节点，layout 期已回填 LayoutBox
@@ -595,6 +601,7 @@ impl Painter {
             inline_frag_visibility_enabled: std::env::var("ZW_INLINE_FRAG_VISIBILITY").as_deref() != Ok("0"),
             inline_wrapper_bg_enabled: std::env::var("ZW_INLINE_WRAPPER_BG").as_deref() != Ok("0"),
             inline_bleed_enabled: std::env::var("ZW_INLINE_BLEED").as_deref() == Ok("1"),
+            mc_paint_nesting: 0,
             paint_skip_nodes: HashSet::new(),
             counters: HashMap::new(),
             bg_clip_text_color: Vec::new(),
@@ -2911,7 +2918,20 @@ impl Painter {
                     // 而非容器全高——修 balance-breaking/multi-row 片段全高覆盖 spanner/邻区
                     //（span-all-children-height-002 block1 全 200px 覆盖 spanner）。
                     // col_top 是片段在列内的起始 y（容器内容相对），col_h 是 slice 高。
-                    let clip_w = col_w + gap / 2.0;
+                    // R5135：嵌套 multicol 子（自身碎片化上下文，非 breaking = 单片段整放）
+                    // 横向裁剪放宽——chromium headless 实测（2026-10-15，probeI/011）：列内容
+                    // 溢出可见至最外层容器内容右缘，列宽裁剪会截断溢出几何（011 绿方残半）。
+                    // breaking 嵌套子（multirow cap 路径，R4522/R4523 校准）维持原裁剪。
+                    let nested_mc_child = child.is_multicol && !is_breaking;
+                    let clip_w = if nested_mc_child {
+                        (box_node.content_width - col_x).max(col_w + gap / 2.0)
+                    } else if self.mc_paint_nesting > 0 {
+                        // 嵌套语境（外层嵌套 mc 子树内部）：横向不裁剪，外边界由发起
+                        // 嵌套绘制的外层片段 clip 兜底。
+                        box_node.content_width + 100_000.0
+                    } else {
+                        col_w + gap / 2.0
+                    };
                     // R4515：零空间 fragmentainer（容器 content_height≈0，如 004b-ref
                     // article3：container h:0 唯一子 → 全区域零预算）——子树不可见。
                     // 仅容器整体零空间时跳过；有空间的 fragmentainer 里 0 高盒（如 012 的
@@ -2940,7 +2960,16 @@ impl Painter {
 
                     let frag_offset_x = frag_abs_x - child.x;
                     let frag_offset_y = frag_abs_y - child.y;
+                    // R5135：嵌套 multicol 子树绘制期间抬升嵌套深度——子树内部 cso 循环
+                    // 由此识别嵌套语境（横向不裁剪）。仅非 breaking 嵌套子（multirow
+                    // cap 切片子维持原语境，见上）。
+                    if nested_mc_child {
+                        self.mc_paint_nesting += 1;
+                    }
                     self.paint_node(child, styles, frag_offset_x, frag_offset_y, doc, false);
+                    if nested_mc_child {
+                        self.mc_paint_nesting -= 1;
+                    }
 
                     // R1080：flush 列子元素的 positioned 后代（本地，带 clip context）。
                     // collect_positioned_descendants（line 184）对 multicol 列子元素 skip 交本循环；

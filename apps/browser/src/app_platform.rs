@@ -1149,6 +1149,20 @@ fn host_is_local_or_private(host: &str) -> bool {
     }
 }
 
+/// 提取 URL 的按站点缩放持久化键（origin 序列化，Chrome per-site zoom 语义）。
+///
+/// http/https 用 `scheme://host[:port]`（默认端口省略）；file: 无 host 概念，
+/// 按整体 scheme 桶记（Chromium 对 file: 的站点缩放同为 scheme 级）；其余
+/// scheme（zero:// 内部页等）无站点语义，返回 `None` 不参与持久化。
+pub fn zoom_origin_key(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    match parsed.scheme() {
+        "http" | "https" => Some(parsed.origin().ascii_serialization()),
+        "file" => Some("file://".to_string()),
+        _ => None,
+    }
+}
+
 /// URL 规范化 — 支持 URL 和搜索引擎回退。
 ///
 /// 无 scheme 输入的 scheme 启发式（对齐 Chrome 地址栏，https://url.spec.whatwg.org/）：

@@ -9120,7 +9120,13 @@
           } catch (_e) {}
         }
         if (resolved === target) {
-          __zw_dispatch_event(sel, type, null); // 元素自身 selector → listener key 匹配
+          // 元素自身 selector → listener key 匹配。元素资源 load/error 按 spec 派在
+          // 元素自身、非 bubble 不可取消（https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
+          // 与 https://html.spec.whatwg.org/multipage/scripting.html#script-processing-model
+          // 的 load/error 走 fire an event 缺省 flags）。此前经泛型缺省 bubbles:true
+          // 冒泡到 window/document，误触页面全局 load 监听器（github.com 两张样式表
+          // 分发即因冒泡执行全局初始化重活被看门狗 30s 强停，见 P101 问题卡）。
+          __zw_dispatch_event(sel, type, { bubbles: false, cancelable: false });
         }
       }
     } catch (_e) {}
@@ -13232,7 +13238,14 @@
       // 过渡值一致。
       ev = _makeEvent(type, { bubbles: false, cancelable: false });
     } else {
-      ev = _makeEvent(type, { bubbles: true, cancelable: true });
+      // 泛型缺省 bubbles/cancelable:true（用户与宿主事件既有语义）；调用方经 detail
+      // 显式传 false 时收敛（与上方 pointer/mouse 分支的 detail 覆盖约定一致）——
+      // 元素资源 load/error（__zw_dispatch_element_event）经此关闭冒泡，符合
+      // https://dom.spec.whatwg.org/#concept-event-fire 的缺省 flags（非 bubble、
+      // 不可取消）。
+      var _genBub = !(detail && detail.bubbles === false);
+      var _genCan = !(detail && detail.cancelable === false);
+      ev = _makeEvent(type, { bubbles: _genBub, cancelable: _genCan });
       // uievents-compat M2 片 1：泛型分支 detail 注入（UIEvent.detail——click 连击
       // 计数；dblclick 走上支 MouseEvent 后 detail 走构造器）。泛型 Event 无
       // detail getter，own property 注入满足 `event.detail === N` 断言面。

@@ -2732,6 +2732,94 @@ fn test_link_script_element_events_r2944() {
 }
 
 #[test]
+fn test_resource_element_events_not_bubbling_p101() {
+    // P101：元素资源 load/error 按 spec 派在元素自身、非 bubble 不可取消
+    //（https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet 与
+    // https://html.spec.whatwg.org/multipage/scripting.html#script-processing-model
+    // 走 fire an event 缺省 flags；https://dom.spec.whatwg.org/#concept-event-fire）。
+    // 此前泛型缺省 bubbles:true 冒泡到 window/document，误触页面全局 load 监听器
+    //（github.com 两张样式表分发因冒泡执行全局初始化重活被看门狗 30s 强停并产生
+    // pageerror「Execution timeout」，见 P101 问题卡）。回归面：window/document 的
+    // load/error 监听器不得被元素资源事件触发；泛型类型（无 detail flags）保持冒泡。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head>\
+         <link rel='stylesheet' href='https://example.com/a.css'>\
+         </head><body></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__winLoad = 0; globalThis.__winError = 0;\
+             globalThis.__evProps = null;\
+             window.addEventListener('load', function(){ globalThis.__winLoad++; });\
+             window.addEventListener('error', function(){ globalThis.__winError++; });\
+             var link = document.querySelectorAll('link')[0];\
+             link.onload = function(ev){ globalThis.__evProps = [ev.bubbles, ev.cancelable]; };",
+        )
+        .unwrap();
+
+    // host 派发 link load（匹配 URL）→ 元素 handler 触发，window 侧不触发。
+    sandbox
+        .execute("__zw_dispatch_link_event('https://example.com/a.css', 'load');")
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__evProps === null ? 'none' : String(globalThis.__evProps))")
+            .unwrap()
+            .value,
+        "false,false",
+        "元素资源 load 事件 bubbles=false、cancelable=false"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__winLoad)")
+            .unwrap()
+            .value,
+        "0",
+        "link load 不冒泡到 window load 监听器"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__winError)")
+            .unwrap()
+            .value,
+        "0",
+        "link load 不冒泡到 window error 监听器"
+    );
+
+    // 相邻边界：泛型类型（无 detail flags 覆盖）保持既有冒泡语义——window 监听器触发。
+    sandbox
+        .execute(
+            "globalThis.__winPing = 0;\
+             window.addEventListener('p101ping', function(){ globalThis.__winPing++; });\
+             __zw_dispatch_event('html', 'p101ping', null);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__winPing)")
+            .unwrap()
+            .value,
+        "1",
+        "泛型类型无 detail flags 时保持 bubbles:true（用户/宿主事件语义不变）"
+    );
+}
+
+#[test]
 fn test_body_onload_reflection_r2946() {
     // R2946 <body on*> → window.on* 反射（HTML spec body→window event handler reflection）。
     // <body onload="..."> 经 __zw_reflect_body_handlers（__zw_begin_script 内 / lifecycle 派发前调用）

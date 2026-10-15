@@ -2158,6 +2158,80 @@ fn settings_adjust_default_zoom_updates_shell() {
     assert!((app.shell.settings().default_zoom - 1.0).abs() < f32::EPSILON);
 }
 
+/// T24：缩放持久化键按 origin 分桶——http(s) 为 `scheme://host[:port]`（默认端口
+/// 省略），file 为 scheme 级桶，zero:// 内部页不参与。
+#[test]
+fn zoom_origin_key_buckets_by_origin() {
+    assert_eq!(
+        crate::app::zoom_origin_key("http://127.0.0.1:18080/a/b?q=1"),
+        Some("http://127.0.0.1:18080".to_string())
+    );
+    assert_eq!(
+        crate::app::zoom_origin_key("https://example.com:443/x"),
+        Some("https://example.com".to_string())
+    );
+    assert_eq!(
+        crate::app::zoom_origin_key("https://example.com:8443/"),
+        Some("https://example.com:8443".to_string())
+    );
+    assert_eq!(
+        crate::app::zoom_origin_key("file:///tmp/x.html"),
+        Some("file://".to_string())
+    );
+    assert_eq!(crate::app::zoom_origin_key("zero://settings"), None);
+    assert_eq!(crate::app::zoom_origin_key("about:blank"), None);
+}
+
+/// T24：Ctrl± 缩放按 origin 记入设置；导航到无记录 origin 回默认缩放，
+/// 回到原站恢复记录值（Chrome per-site zoom 语义）。
+#[test]
+fn zoom_by_origin_restores_across_navigations() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.shell.apply_settings(|settings| {
+        settings.default_zoom = 1.0;
+        settings.zoom_by_origin.clear();
+    });
+
+    // 站点 A（127.0.0.1:18080）Ctrl+= 两步 → ~1.2，经缩放生效路径记入按站点表。
+    app.navigate_to("http://127.0.0.1:18080/");
+    let ctrl = BrowserApp::test_modifier_key_name();
+    for _ in 0..2 {
+        app.handle_key(ctrl, true, None);
+        app.handle_key("+", true, None);
+        app.handle_key("+", false, None);
+        app.handle_key(ctrl, false, None);
+    }
+    assert!(
+        (app.shell.zoom() - 1.2).abs() < 1e-4,
+        "zoom after Ctrl+= x2 is {}",
+        app.shell.zoom()
+    );
+    let stored = app
+        .shell
+        .settings()
+        .zoom_by_origin
+        .get("http://127.0.0.1:18080")
+        .copied()
+        .unwrap_or(0.0);
+    assert!((stored - 1.2).abs() < 1e-4, "stored zoom for site A is {stored}");
+
+    // 无记录站点（不同端口 = 不同 origin）→ 导航后回默认缩放。
+    app.navigate_to("http://127.0.0.1:9/");
+    assert!(
+        (app.shell.zoom() - 1.0).abs() < 1e-5,
+        "zoom on site B is {}",
+        app.shell.zoom()
+    );
+
+    // 回到站点 A → 恢复记录值。
+    app.navigate_to("http://127.0.0.1:18080/");
+    assert!(
+        (app.shell.zoom() - 1.2).abs() < 1e-4,
+        "restored zoom is {}",
+        app.shell.zoom()
+    );
+}
+
 /// 设置页 toggle URL 应切换对应选项并留在设置页。
 #[test]
 fn settings_toggle_url_flips_option_and_stays_on_settings() {
@@ -2423,9 +2497,23 @@ fn handle_scroll_updates_offset_for_tall_page() {
     // Linux/WSL 滚轮向下通常为负 LineDelta
     app.handle_scroll(zero_host_runtime::event::MouseScrollDelta::LineDelta(0.0, -3.0), x, y);
 
+    // T26：滚轮走平滑滚动动画——推进动画帧后偏移增长（非瞬跳：首帧在动画起点）。
+    assert_eq!(
+        app.scroll_offset_for_tab(tab_id),
+        0.0,
+        "wheel starts animation from current offset"
+    );
+    std::thread::sleep(std::time::Duration::from_millis(60));
+    app.tick_smooth_scroll();
     assert!(
         app.scroll_offset_for_tab(tab_id) > 0.0,
         "tall page should scroll with negative line delta (scroll down on Linux)"
+    );
+    std::thread::sleep(std::time::Duration::from_millis(220));
+    app.tick_smooth_scroll();
+    assert!(
+        !app.tick_smooth_scroll_has_animation(),
+        "animation should finish after ~200ms duration"
     );
 
     let content_top = content_y;

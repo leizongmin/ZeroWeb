@@ -32,7 +32,7 @@ use zero_style_system::ComputedStyle;
 use zero_style_system::WritingModeValue;
 use zero_style_system::property::types::{
     BreakInsideValue, BreakValue, ColumnCountComputedValue, ColumnFillComputedValue, ColumnHeightComputedValue,
-    ColumnSpanComputedValue, ColumnWidthComputedValue, ColumnWrapComputedValue,
+    ColumnSpanComputedValue, ColumnWidthComputedValue, ColumnWrapComputedValue, ContainComputedValue,
 };
 
 use crate::types::{LayoutBox, OverflowClip};
@@ -966,6 +966,7 @@ fn try_layout_single_child_block_frag(
         100_000.0,
         &forced_breaks,
         &forced_breaks_after,
+        &[],
     );
     // 4. 定位 wrapper 子到列 x + 设 wrapper 宽/高（bg 填满）。
     let wrapper = &mut container.children[wrapper_idx];
@@ -1221,6 +1222,7 @@ fn layout_multicol(
                 col_h,
                 &forced_breaks,
                 &forced_breaks_after,
+                &[],
             )
         }
     } else if info.sequential_fill && height_limit > 0.0 {
@@ -1277,12 +1279,48 @@ fn layout_multicol(
         {
             assign_children_to_columns_multirow(&child_info, info.count, height_limit, &cap_nested_seq)
         } else {
+            // R5135：顶层容器的 sequential 路径嵌套 multicol 子不可分旗标（限单
+            // monolithic 内容）。chromium headless 实测（2026-10-15，probeA/011/
+            // probeG/H）：内层 mc 内容为单 contain:size 盒（整体化，无断点机会）时
+            // 外层不切片，整子推入下一列（011 内层单 contain:size 子 100 高 > 外列
+            // 50 → 整放）；内容多子（spanner-fragmentation-000 内层 4 子：40+60×3）
+            // 或单普通块（column-height-025 内层单 div 900 高）有断点机会，
+            // chromium 照常跨外层列切片——旗标若不限内容断点会使 spanner 全带
+            // （+9）与 column-height（+3）等 14+ 案回归（R5135 A/B 两轮实测）。
+            // 判据：嵌套 mc 子（自身 column-count/width 非初始）且盒树子数 = 1 且
+            // 该子带 size containment（css-contain §3.1；probeG/H 平衡流整体化实证）。
+            // 多子/普通子嵌套 mc 维持切片基线；嵌套容器（nested_in_multicol）传空
+            // （同 R5132 balance 路径 !nested gate 的级联教训）。不设 explicit-height
+            // 例外：sequential 语境下 chromium 按内容断点定谳（011 内层 height:100
+            // 单 contain:size 子整放实证），与 balance 路径 R1037 语义分叉。
+            let unbreakable_nested_seq: Vec<bool> = if !nested_in_multicol {
+                child_info
+                    .iter()
+                    .map(|&(idx, _)| {
+                        let child_box = &container.children[idx];
+                        let single_monolithic = match child_box.children.as_slice() {
+                            [grand] => grand.node_id.and_then(|id| styles.get(&id)).is_some_and(|gs| {
+                                matches!(gs.contain, ContainComputedValue::Size | ContainComputedValue::Strict)
+                            }),
+                            _ => false,
+                        };
+                        single_monolithic
+                            && child_box.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                                matches!(s.column_count, ColumnCountComputedValue::Number(_))
+                                    || matches!(s.column_width, ColumnWidthComputedValue::Length(_))
+                            })
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             assign_children_to_columns_with_breaking(
                 &child_info,
                 info.count,
                 height_limit,
                 &forced_breaks,
                 &forced_breaks_after,
+                &unbreakable_nested_seq,
             )
         }
     } else if info.sequential_fill {
@@ -1448,7 +1486,15 @@ fn layout_multicol(
     // R5130：column-height + wrap（auto/wrap）时 row_height = 列高 + gap，溢出列换行
     // 到下方列行；nowrap/非固定列高保持 row_height=0（单行 inline 溢出）。
     let row_pitch = wrap_row_pitch.unwrap_or(0.0);
-    let region_height = position_multicol_children(container, &assignments, info, 0.0, row_pitch, balanced_placement);
+    let region_height = position_multicol_children(
+        container,
+        &assignments,
+        info,
+        0.0,
+        row_pitch,
+        balanced_placement,
+        styles,
+    );
     // R1341 同族 log-only 诊断（ZW_MULTICOL_DEBUG_NESTED）：分配结果与子终态几何。
     if std::env::var("ZW_MULTICOL_DEBUG_NESTED").is_ok() {
         eprintln!(
@@ -1937,7 +1983,8 @@ fn layout_multicol_with_spanners_inner(
             any_split = true;
         }
         // 定位该区域子元素（列内 y 从 y_base 起），返回该区域高度。
-        let region_height = position_multicol_children(container, &assignments, info, y_base, row_height, false);
+        let region_height =
+            position_multicol_children(container, &assignments, info, y_base, row_height, false, styles);
         // R4499：区域平衡 inline 片段自绘容器列组（paint_text 多列分支按 4 列分配行），
         // 不再是容器的单列片段——清 cso 使 paint 走常规子盒路径（cso 非空的子盒被
         // paint_as_multicol 循环按单列 slice 裁剪，会切掉片段自绘的列 1..N）。
@@ -2212,6 +2259,7 @@ fn assign_children_to_columns_with_breaking(
     max_col_height: f32,
     forced_breaks: &[bool],
     forced_breaks_after: &[bool],
+    nested_unbreakable: &[bool],
 ) -> Vec<Vec<ColumnFragment>> {
     let mut columns: Vec<Vec<ColumnFragment>> = vec![Vec::new(); col_count];
     let mut current_col = 0usize;
@@ -2256,6 +2304,19 @@ fn assign_children_to_columns_with_breaking(
                 visual_height: child_height.min(max_col_height),
             });
             current_col_height += child_height.min(max_col_height);
+        } else if nested_unbreakable.get(i).copied().unwrap_or(false) {
+            // R5135：嵌套 multicol 子（自身为碎片化上下文）超高（> 列高）→ 整子单片段
+            // 原地放置，不跨外层列切片。chromium headless 实测（2026-10-15，probeA/011）：
+            // 外层不对嵌套碎片化上下文做 block 方向切片续排（probeA 蓝块落内层 col1
+            // x25..50 而非外层 col1；011 内层 mc 单片段整放，其子纵向溢出绘制）。
+            // visual_height 取全高：flow 上盒子占据全高（后续子接排），paint 层非
+            // breaking 路径（cso len=1）纵向不裁剪，子树溢出列底可见。
+            columns[current_col].push(ColumnFragment {
+                child_idx,
+                fragment_y_offset: 0.0,
+                visual_height: child_height,
+            });
+            current_col_height += child_height;
         } else {
             // 子元素超高（> max_col_height）— 需要 column breaking
             // 先消耗当前列剩余空间
@@ -2475,6 +2536,7 @@ fn position_multicol_children(
     y_base: f32,
     row_height: f32,
     truncate_leading_margin: bool,
+    styles: &HashMap<NodeId, ComputedStyle>,
 ) -> f32 {
     // 跟踪每个子元素已出现的片段数（用于区分主片段和额外片段）
     let mut child_fragment_count: HashMap<usize, usize> = HashMap::new();
@@ -2541,19 +2603,46 @@ fn position_multicol_children(
             // R5132：border-box 可用宽 = 列宽 − 水平 margin（css-multicol §4 与
             // BFC 块宽方程同式；nested-005 实证：内层 div ml/mr=20 时 border-box
             // 260 → 内列 73.3px，ref 220 → 60px）。
+            // R5135：约束按指定 width 分类——百分比宽以**列宽**为基准重导出
+            // （chromium probeI 实测：100px 容器 2 列下子 width:100% 绘 50px = 列宽、
+            // 150% 绘 75px，taffy 以容器内容宽解析须换算；011 width:400% 溢出几何
+            // 不可灭）；其余（auto/显式长度）维持基线 clamp——span-all 全带
+            // div{width:11em} 实证：显式长度保持溢出 +6 红，corpus 校准优先。
+            let specified_width = child.node_id.and_then(|id| styles.get(&id)).map(|s| &s.width);
             let avail_border_box = (info.column_width - child.margin_left - child.margin_right).max(0.0);
             if frag_idx == 0 && child.width > avail_border_box {
-                let _old_width = child.width;
-                child.width = avail_border_box;
-                let new_content_w = (avail_border_box
-                    - child.border_left
-                    - child.border_right
-                    - child.padding_left
-                    - child.padding_right)
-                    .max(0.0);
-                child.content_width = new_content_w;
-                child.content_x = child.border_left + child.padding_left;
-                constrain_subtree_width(child, new_content_w);
+                if let Some(LengthValue::Percentage(p)) = specified_width {
+                    // R5135：百分比宽以**列宽**为基准重导出（chromium probeI 实测：
+                    // 100px 容器 2 列下子 width:100% 绘 50px = 列宽、150% 绘 75px；
+                    // taffy 以容器内容宽解析且上游 auto clamp 的
+                    // constrain_subtree_width 级联已压盒宽——011 实证 400% 盒宽被压
+                    // 至 50 后再缩放得 25，故必须由指定百分比直接重导出，不得缩放
+                    // 既有盒宽）。显式长度宽（Px/Em 归一）不在此臂——span-all 全带
+                    // 实证（div{width:11em} 4 列容器，保持溢出会使 6 案回归），维持
+                    // 基线 clamp。
+                    child.width = (*p as f32 * info.column_width / 100.0).max(0.0);
+                    let new_content_w = (child.width
+                        - child.border_left
+                        - child.border_right
+                        - child.padding_left
+                        - child.padding_right)
+                        .max(0.0);
+                    child.content_width = new_content_w;
+                    child.content_x = child.border_left + child.padding_left;
+                    constrain_subtree_width(child, new_content_w);
+                } else {
+                    let _old_width = child.width;
+                    child.width = avail_border_box;
+                    let new_content_w = (avail_border_box
+                        - child.border_left
+                        - child.border_right
+                        - child.padding_left
+                        - child.padding_right)
+                        .max(0.0);
+                    child.content_width = new_content_w;
+                    child.content_x = child.border_left + child.padding_left;
+                    constrain_subtree_width(child, new_content_w);
+                }
             }
         }
         // region 高度 = 各列达到的最大 y（相对 y_base）。各列 balance 后高度相近。
