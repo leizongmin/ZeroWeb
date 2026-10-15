@@ -158,6 +158,8 @@ pub struct BrowserApp {
     context_menu_suppress_left_up: bool,
     /// 页面滚动偏移（物理像素）
     scroll: HashMap<TabId, TabScrollState>,
+    /// T26：进行中的滚轮平滑滚动动画（每帧由 `tick_smooth_scroll` 推进）。
+    scroll_anim: HashMap<TabId, page_scroll::ScrollAnimation>,
     /// 保留帧缓冲 + 滚动 blit 缓存（性能门禁优化 S1，2026-08-08）：
     /// 纯滚动帧平移上一帧内容像素 + 只重绘新露条带，避免全量光栅。
     /// `fb_cache_epoch` = (快照序号, 宽, 高, 缩放)——任一变化即失效走全量渲染。
@@ -341,6 +343,7 @@ impl BrowserApp {
             context_menu: ContextMenuState::new(),
             context_menu_suppress_left_up: false,
             scroll: HashMap::new(),
+            scroll_anim: HashMap::new(),
             retained_fb: None,
             fb_cache_scroll: (0.0, 0.0),
             fb_cache_epoch: (0, 0, 0, 0.0),
@@ -1422,7 +1425,49 @@ impl BrowserApp {
 
     /// 页面 zoom 变化后的统一入口：钳制滚动 + 重推 CSS 视口（renderer 随新视口
     /// 重布局出新帧）+ 重绘。zoom 键与 Ctrl+滚轮缩放共用。
+    /// T24：缩放经此生效的按当前页 origin 记入 `zoom_by_origin` 并持久化。
     fn apply_page_zoom_change(&mut self) {
+        if let Some(tab_id) = self.shell.active_tab_id() {
+            self.clamp_tab_scroll(tab_id);
+        }
+        self.sync_webview_viewport();
+        self.record_zoom_override_for_active_page();
+        self.needs_redraw = true;
+    }
+
+    /// T24：把当前活动页的缩放按 origin 记入设置（Chrome per-site zoom）。
+    /// 非 http(s)/file 页面（zero:// 内部页等）无站点语义，不记录。
+    fn record_zoom_override_for_active_page(&mut self) {
+        let Some(url) = self.shell.active_tab().and_then(|tab| tab.url().map(str::to_string)) else {
+            return;
+        };
+        let Some(origin) = zoom_origin_key(&url) else {
+            return;
+        };
+        let zoom = self.shell.zoom();
+        self.shell.apply_settings(|settings| {
+            settings.zoom_by_origin.insert(origin, zoom);
+        });
+    }
+
+    /// T24：导航时恢复目标 origin 的持久化缩放；无记录的 http(s)/file 页面回
+    /// 设置默认缩放（Chrome 行为：切到别的站点不带上一站的缩放）。zero:// 内部
+    /// 页等无站点语义的 URL 不干预。
+    fn restore_zoom_for_url(&mut self, url: &str) {
+        let Some(origin) = zoom_origin_key(url) else {
+            return;
+        };
+        let want = self
+            .shell
+            .settings()
+            .zoom_by_origin
+            .get(&origin)
+            .copied()
+            .unwrap_or(self.shell.settings().default_zoom);
+        if (self.shell.zoom() - want).abs() <= f32::EPSILON {
+            return;
+        }
+        self.shell.set_zoom(want);
         if let Some(tab_id) = self.shell.active_tab_id() {
             self.clamp_tab_scroll(tab_id);
         }
@@ -1483,6 +1528,48 @@ impl BrowserApp {
         let layout = self.page_scroll_layout(tab_id);
         let entry = self.scroll.entry(tab_id).or_default();
         *entry = page_scroll::clamp_scroll(*entry, &layout);
+    }
+
+    /// T26：帧循环推进滚轮平滑滚动动画——各动画标签的当前偏移设为 eased 值，
+    /// 完成时落到目标并钳制；合成器路径逐帧推送异步滚动。仍有标签在动画时保持
+    /// 重绘请求。主循环每次事件迭代调用（动画期间经 request_redraw 连续成帧）。
+    pub fn tick_smooth_scroll(&mut self) {
+        if self.scroll_anim.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        let mut finished: Vec<TabId> = Vec::new();
+        for (tab_id, anim) in &self.scroll_anim {
+            let done = anim.is_finished(now);
+            let value = if done { anim.target() } else { anim.value_at(now) };
+            // 滚轮可能早于任何直接滚动：写入时补建条目（与增量路径 or_default 同语义）。
+            *self.scroll.entry(*tab_id).or_default() = value;
+            if crate::compositor_client::async_scroll_enabled()
+                && let Some(submission) = self.tabs.snapshot(*tab_id).and_then(|snap| snap.compositor_submission)
+            {
+                crate::compositor_client::set_scroll(
+                    submission.surface_id,
+                    submission.navigation_epoch,
+                    submission.frame_id,
+                    value.x,
+                    value.y,
+                );
+            }
+            if done {
+                finished.push(*tab_id);
+            }
+        }
+        for tab_id in finished {
+            self.scroll_anim.remove(&tab_id);
+            self.clamp_tab_scroll(tab_id);
+        }
+        self.needs_redraw = true;
+    }
+
+    /// 测试用：是否有进行中的平滑滚动动画。
+    #[cfg(test)]
+    pub fn tick_smooth_scroll_has_animation(&self) -> bool {
+        !self.scroll_anim.is_empty()
     }
 
     /// 计算网页内容区域物理像素尺寸（用于滚动、合成区域）
@@ -1858,6 +1945,9 @@ impl BrowserApp {
     }
 
     fn start_tab_request(&mut self, tab_id: TabId, url: String, method: String, body: Option<String>) {
+        // T24：导航换页先按目标 origin 恢复持久化缩放（在推视口前生效，
+        // 首帧即用恢复后的 zoom 渲染）。
+        self.restore_zoom_for_url(&url);
         if self.shell.active_tab_id() == Some(tab_id)
             && let Some(tab) = self.shell.active_tab_mut()
         {
@@ -1925,6 +2015,7 @@ impl BrowserApp {
 
         // 重置滚动偏移与页面选区
         self.scroll.insert(tab_id, TabScrollState::default());
+        self.scroll_anim.remove(&tab_id);
         self.page_selection.remove(&tab_id);
         self.clear_tab_favicon(tab_id);
 
@@ -2115,6 +2206,10 @@ impl BrowserApp {
             self.tabs.ensure_tab(tab_id);
             self.scroll.insert(tab_id, TabScrollState::default());
             let Some(url) = url else { continue };
+            // T24：仅活动标签恢复按站点缩放（set_zoom 作用于活动标签）。
+            if Some(tab_id) == active_id {
+                self.restore_zoom_for_url(&url);
+            }
             if url.starts_with("http://") || url.starts_with("https://") {
                 self.tabs.navigate(tab_id, url);
             } else if Some(tab_id) == active_id && url.starts_with("zero://") {
@@ -2235,6 +2330,7 @@ impl BrowserApp {
         if let Some(tab_id) = self.shell.active_tab_id() {
             self.tabs.remove_tab(tab_id);
             self.scroll.remove(&tab_id);
+            self.scroll_anim.remove(&tab_id);
             self.shell.close_tab(tab_id);
 
             if self.shell.is_empty() {
@@ -2252,6 +2348,7 @@ impl BrowserApp {
     fn close_tab_by_id(&mut self, id: TabId) {
         self.tabs.remove_tab(id);
         self.scroll.remove(&id);
+        self.scroll_anim.remove(&id);
         self.background_tab_titles.remove(&id);
         self.shell.close_tab(id);
 
@@ -2281,6 +2378,7 @@ impl BrowserApp {
         for tid in to_close {
             self.tabs.remove_tab(tid);
             self.scroll.remove(&tid);
+            self.scroll_anim.remove(&tid);
         }
         self.shell.close_other_tabs(id);
 
@@ -2314,6 +2412,7 @@ impl BrowserApp {
         for tid in to_close {
             self.tabs.remove_tab(tid);
             self.scroll.remove(&tid);
+            self.scroll_anim.remove(&tid);
         }
         self.shell.close_tabs_to_right(id);
 

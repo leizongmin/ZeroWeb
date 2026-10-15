@@ -1227,6 +1227,8 @@ fn main() {
 
         app.poll_tab_fetch();
         app.expire_scrollbar_overlay();
+        // T26：推进滚轮平滑滚动动画（动画期间置 needs_redraw → 下方 request_redraw 连续成帧）。
+        app.tick_smooth_scroll();
         #[cfg(target_os = "windows")]
         app.sync_windows_caption_hover();
         match event {

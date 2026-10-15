@@ -245,6 +245,7 @@ fn test_settings_roundtrip_preserves_all_fields() {
     settings.default_zoom = 2.0;
     settings.download_directory = "/tmp/downloads".to_string();
     settings.color_theme = ColorThemePreference::Dark;
+    settings.zoom_by_origin.insert("https://zoomed.test".to_string(), 1.25);
 
     let dir = std::env::temp_dir().join(format!("zeroweb-test-roundtrip-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -263,6 +264,23 @@ fn test_settings_roundtrip_preserves_all_fields() {
     assert!((loaded.default_zoom - 2.0).abs() < 0.01);
     assert_eq!(loaded.download_directory, "/tmp/downloads");
     assert_eq!(loaded.color_theme, ColorThemePreference::Dark);
+    assert_eq!(loaded.zoom_by_origin.get("https://zoomed.test"), Some(&1.25));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 旧格式 settings.json（无 `zoom_by_origin` 字段）应能加载且按站点缩放表为空。
+#[test]
+fn test_settings_load_legacy_without_zoom_by_origin() {
+    let dir = std::env::temp_dir().join(format!("zeroweb-test-legacy-zoom-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("settings.json");
+    std::fs::write(&path, r#"{"search_engine":"Google","home_url":"https://example.com"}"#).unwrap();
+
+    let loaded = BrowserSettings::load(&path);
+    assert_eq!(loaded.search_engine, SearchEngine::Google);
+    assert!(loaded.zoom_by_origin.is_empty());
 
     let _ = std::fs::remove_dir_all(&dir);
 }

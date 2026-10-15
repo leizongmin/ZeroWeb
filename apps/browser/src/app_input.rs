@@ -48,7 +48,8 @@ impl BrowserApp {
             return;
         }
 
-        self.apply_page_scroll_delta(tab_id, delta_x, delta_y);
+        // T26：滚轮走平滑滚动动画（ZW_SMOOTH_SCROLL=0 时退回瞬时滚动）。
+        self.apply_wheel_scroll_delta(tab_id, delta_x, delta_y);
     }
 
     /// 处理触摸板/触摸屏平移手势（winit `PanGesture`）
@@ -156,6 +157,9 @@ impl BrowserApp {
             return;
         }
 
+        // T26：触摸/键盘/回执等直接操纵接管时丢弃进行中的滚轮动画（直接操纵优先）。
+        self.scroll_anim.remove(&tab_id);
+
         self.ensure_webview(tab_id);
 
         let layout = self.page_scroll_layout(tab_id);
@@ -165,25 +169,9 @@ impl BrowserApp {
         self.show_scrollbar_overlay();
 
         // R3293（S0）：派发用户滚动 'scroll' 事件到页面 JS（闭合 R3253 主路径不可达 gap）。
-        // 主线程已完成视觉滚动（entry.x/y 更新 + 重绘），本调用仅补「页面 JS 可观察」半边——
         // infinite scroll / lazy load / sticky nav / parallax 的用户滚动触发依赖。kill-switch
         // `ZW_USER_SCROLL_EVENT=0` 关闭（default-on）。fire-and-forget，无回执不阻塞 UI。
-        //
-        // R3298（S1）：附带滚轮发生处的视口光标坐标（相对 WebView 内容区原点），供 renderer S2/S4
-        // 命中可滚动祖先容器（元素级滚动视觉依赖 S3 layout 几何，渲染流域协调点，未实现）。
-        // 光标取 `self.mouse_pos`（各滚动入口——滚轮/触摸/平移/滚动条拖拽——均已更新），减去
-        // 内容区原点得内容相对视口坐标。
-        if std::env::var("ZW_USER_SCROLL_EVENT").as_deref() != Ok("0") {
-            let (content_x, content_y, _, _) = self.page_content_rect();
-            let (mx, my) = self.mouse_pos;
-            self.tabs.dispatch_user_scroll(
-                tab_id,
-                delta_x,
-                delta_y,
-                (mx as f32 - content_x).max(0.0),
-                (my as f32 - content_y).max(0.0),
-            );
-        }
+        self.dispatch_user_scroll_for(tab_id, delta_x, delta_y);
 
         if crate::compositor_client::async_scroll_enabled() {
             if let Some(submission) = self
@@ -203,6 +191,59 @@ impl BrowserApp {
         }
 
         self.needs_redraw = true;
+    }
+
+    /// 滚轮滚动入口（T26）：默认走平滑动画（目标位置 easing 插值，
+    /// `tick_smooth_scroll` 帧循环推进）；`ZW_SMOOTH_SCROLL=0` 时退回瞬时滚动。
+    /// 触摸/键盘等直接操纵不经此（`apply_page_scroll_delta`）。
+    fn apply_wheel_scroll_delta(&mut self, tab_id: zero_browser_shell::TabId, delta_x: f32, delta_y: f32) {
+        if delta_x == 0.0 && delta_y == 0.0 {
+            return;
+        }
+        if !page_scroll::smooth_scroll_enabled() {
+            self.apply_page_scroll_delta(tab_id, delta_x, delta_y);
+            return;
+        }
+        self.ensure_webview(tab_id);
+        let layout = self.page_scroll_layout(tab_id);
+        let current = self.tab_scroll_state(tab_id);
+        // 连续滚轮在既有动画目标上累积位移，以当前视觉位置为新起点重启动画。
+        let target = self.scroll_anim.get(&tab_id).map(page_scroll::ScrollAnimation::target).unwrap_or(current);
+        let to = page_scroll::clamp_scroll(
+            TabScrollState {
+                x: target.x + delta_x,
+                y: target.y + delta_y,
+            },
+            &layout,
+        );
+        if (to.x - current.x).abs() < f32::EPSILON && (to.y - current.y).abs() < f32::EPSILON {
+            // 已在边界继续同向滚动：无位移，不起动画。
+            return;
+        }
+        self.scroll_anim.insert(
+            tab_id,
+            page_scroll::ScrollAnimation::new(current, to, Instant::now(), page_scroll::WHEEL_SMOOTH_DURATION),
+        );
+        self.show_scrollbar_overlay();
+        // 页面 JS 滚动语义按滚轮事件粒度派发（与关闭平滑滚动时同频）。
+        self.dispatch_user_scroll_for(tab_id, delta_x, delta_y);
+        self.needs_redraw = true;
+    }
+
+    /// R3293（S0）用户滚动 'scroll' 事件派发（滚轮/触摸/平移/回执共用）：
+    /// 附带滚动发生处的视口光标坐标（R3298 S1，相对 WebView 内容区原点）。
+    fn dispatch_user_scroll_for(&mut self, tab_id: zero_browser_shell::TabId, delta_x: f32, delta_y: f32) {
+        if std::env::var("ZW_USER_SCROLL_EVENT").as_deref() != Ok("0") {
+            let (content_x, content_y, _, _) = self.page_content_rect();
+            let (mx, my) = self.mouse_pos;
+            self.tabs.dispatch_user_scroll(
+                tab_id,
+                delta_x,
+                delta_y,
+                (mx as f32 - content_x).max(0.0),
+                (my as f32 - content_y).max(0.0),
+            );
+        }
     }
 
     fn scrollbar_hit_at(&self, x: f32, y: f32) -> Option<(zero_browser_shell::TabId, page_scroll::ScrollbarHit)> {
