@@ -187,8 +187,17 @@ impl PageScriptRunner {
             dispatch_resource_element_event(js_worker, event);
         }
         // R2944：stylesheet 元素级 load/error，位于 DOMContentLoaded 与 window load 之间。
-        for (url, ty) in &self.link_events {
-            dispatch_link_event(js_worker, url, ty);
+        // P102：与 renderer page_scripts 同款——保序去重 + 整批单次执行（见
+        // `zero_engine::script_dispatch_link_events_batch`）；此处逐条为同步臂，多样式表页面
+        // 线性放大 finish 阻塞。
+        let deduped_links = dedupe_link_events(&self.link_events);
+        if !deduped_links.is_empty()
+            && let Some(worker) = js_worker
+        {
+            let batch = zero_engine::script_dispatch_link_events_batch(&deduped_links);
+            if let Err(e) = worker.execute_script_direct(&batch) {
+                warn!("dispatch link events batch ({}): {e}", deduped_links.len());
+            }
         }
         // R2947：@font-face 加载 settle——经 `__zw_font_settle` 派 FontFaceSet 'loadingdone'/'loadingerror'
         // + 解析 document.fonts.ready。无 @font-face 页面仍 settle（仅 resolve ready，不派事件）。
@@ -287,15 +296,15 @@ fn dispatch_resource_element_event(js_worker: Option<&TabJsWorkerHandle>, event:
     }
 }
 
-/// R2944：派发 stylesheet 元素级 load/error 事件进 shim。经 `script_dispatch_link_event` 生成
-/// `__zw_dispatch_link_event(url, type)`——shim 按 href 绝对 URL 匹配 `<link>` 元素 proxy 派发
-///（link.onload/onerror 触发）。`ty` = "load" / "error"。best-effort。
-fn dispatch_link_event(js_worker: Option<&TabJsWorkerHandle>, url: &str, ty: &str) {
-    let Some(worker) = js_worker else { return };
-    let report = zero_engine::script_dispatch_link_event(url, ty);
-    if let Err(e) = worker.execute_script_direct(&report) {
-        warn!("dispatch link event ({ty} {url}): {e}");
-    }
+/// P102：按 `(url, type)` 保序去重 link 事件（同 renderer `page_scripts::dedupe_link_events`）。
+/// spec HTML：每元素 load/error 至多触发一次；重复入队只加臂量，不改变语义。
+fn dedupe_link_events(link_events: &[(String, &'static str)]) -> Vec<(String, &'static str)> {
+    let mut seen = std::collections::HashSet::new();
+    link_events
+        .iter()
+        .filter(|(url, ty)| seen.insert((url.clone(), *ty)))
+        .cloned()
+        .collect()
 }
 
 /// R2944：派发外部 `<script src>` 元素级 load/error 事件进 shim。经 `script_dispatch_script_event` 生成

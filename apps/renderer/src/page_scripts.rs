@@ -8,7 +8,7 @@ use zero_engine::{
     DomEventDetail, DomMutation, PageScript, anchor_hash_target, anchor_javascript_target,
     apply_mutations_to_html_with_handles, extract_page_scripts_indexed, page_script_error_check, resolve_document_url,
     script_call_set_location_hash, script_commit_resource_element_state, script_dispatch_dom_event,
-    script_dispatch_link_event, script_dispatch_script_event, script_host_focus, script_report_error,
+    script_dispatch_link_events_batch, script_dispatch_script_event, script_host_focus, script_report_error,
     script_run_classic_page, script_transition_ready_state,
 };
 #[cfg(test)]
@@ -317,8 +317,16 @@ fn dispatch_resource_outcomes(
         dispatch_resource_element_event(js_worker, event);
     }
     // R2944：stylesheet 元素级 load/error，位于 DOMContentLoaded 与 window load 之间。
-    for (url, ty) in &link_events {
-        dispatch_link_event(js_worker, url, ty);
+    // P102：先按 (url, type) 保序去重（spec HTML：每元素 load/error 至少至多触发一次，重复入队
+    // 只加臂量不加语义——github 同一 URL 观察到 ≥2 次），再整批单臂执行，见
+    // [`zero_engine::script_dispatch_link_events_batch`]。
+    let link_events = dedupe_link_events(&link_events);
+    if !link_events.is_empty() {
+        let batch = script_dispatch_link_events_batch(&link_events);
+        // t2-pb1 fix#5/#12：优先队列 + fire-and-forget（同 dispatch_page_lifecycle）。
+        if let Err(e) = js_worker.submit_script_priority(&batch) {
+            warn!("dispatch link events batch ({}): {e}", link_events.len());
+        }
     }
     // R2947：@font-face 加载 settle——派 FontFaceSet 'loadingdone'/'loadingerror' + 解析 document.fonts.ready。
     // 无 @font-face 页面（font_events 空）仍 settle（仅 resolve ready，不派事件）。
@@ -467,14 +475,15 @@ fn dispatch_resource_element_event(js_worker: &RendererJsWorker, event: &Resourc
     }
 }
 
-/// R2944 mirror：派发 stylesheet 元素级 load/error 事件进 shim。经 `script_dispatch_link_event` 生成
-/// `__zw_dispatch_link_event(url, type)`——shim 按 href 绝对 URL 匹配 `<link>` 元素 proxy 派发。best-effort。
-fn dispatch_link_event(js_worker: &RendererJsWorker, url: &str, ty: &str) {
-    let report = script_dispatch_link_event(url, ty);
-    // t2-pb1 fix#5/#12：优先队列 + fire-and-forget（同 dispatch_page_lifecycle）。
-    if let Err(e) = js_worker.submit_script_priority(&report) {
-        warn!("dispatch link event ({ty} {url}): {e}");
-    }
+/// P102：按 `(url, type)` 保序去重 link 事件。spec HTML：每元素 load/error 至多触发一次；
+/// 同一 URL 重复入队（finish 与迟到 drain 叠加）只增加派发臂量，不改变语义。
+fn dedupe_link_events(link_events: &[(String, &'static str)]) -> Vec<(String, &'static str)> {
+    let mut seen = std::collections::HashSet::new();
+    link_events
+        .iter()
+        .filter(|(url, ty)| seen.insert((url.clone(), *ty)))
+        .cloned()
+        .collect()
 }
 
 /// R2944 mirror：派发外部 `<script src>` 元素级 load/error 事件进 shim。经 `script_dispatch_script_event`
@@ -2597,6 +2606,63 @@ mod tests {
             "link load 元素级事件派发"
         );
         worker.shutdown();
+    }
+
+    /// P102 mirror：同批多条 link 事件整批单臂派发——两条样式表各自 onload 触发且保序，
+    /// 同 URL 重复条目去重后不重复触发（spec HTML：每元素 load 至多触发一次）。
+    #[test]
+    fn finish_page_load_batches_and_dedupes_link_events_p102() {
+        let mut worker = RendererJsWorker::spawn(121);
+        let html = "<html><body>\
+            <link rel='stylesheet' href='https://example.com/a.css'>\
+            <link rel='stylesheet' href='https://example.com/b.css'>\
+            <script>\
+              globalThis.__order = [];\
+              var links = document.querySelectorAll('link');\
+              links[0].addEventListener('load', function(){ globalThis.__order.push('a'); });\
+              links[1].addEventListener('load', function(){ globalThis.__order.push('b'); });\
+            </script>\
+            </body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        // 重复条目（a.css 两次）必须只触发一次；顺序 a→b。
+        finish_page_load(
+            &worker,
+            Vec::new(),
+            Vec::new(),
+            vec![
+                ("https://example.com/a.css".to_string(), "load"),
+                ("https://example.com/b.css".to_string(), "load"),
+                ("https://example.com/a.css".to_string(), "load"),
+            ],
+            Vec::new(),
+        );
+        assert_eq!(
+            wait_for_global(&worker, "__order.join(',')", 1000),
+            "a,b",
+            "批量 link 事件保序派发且重复条目去重"
+        );
+        worker.shutdown();
+    }
+
+    /// P102：`dedupe_link_events` 保序去重——同 (url, type) 只留首个，同 URL 不同 type 保留。
+    #[test]
+    fn dedupe_link_events_keeps_first_and_distinct_types() {
+        let deduped = dedupe_link_events(&[
+            ("https://e.com/a.css".to_string(), "load"),
+            ("https://e.com/b.css".to_string(), "load"),
+            ("https://e.com/a.css".to_string(), "load"),
+            ("https://e.com/a.css".to_string(), "error"),
+            ("https://e.com/b.css".to_string(), "load"),
+        ]);
+        assert_eq!(
+            deduped,
+            vec![
+                ("https://e.com/a.css".to_string(), "load"),
+                ("https://e.com/b.css".to_string(), "load"),
+                ("https://e.com/a.css".to_string(), "error"),
+            ]
+        );
     }
 
     /// R2947 mirror：`document.fonts.ready` Promise 在 finish_page_load 后解析（字体加载库 / FOUT 处理高频 hook）。

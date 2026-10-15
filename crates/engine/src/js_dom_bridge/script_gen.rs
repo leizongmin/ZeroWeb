@@ -591,6 +591,22 @@ pub fn script_dispatch_link_event(abs_href: &str, ty: &str) -> String {
     format!("__zw_dispatch_link_event('{esc_url}', '{esc_ty}')")
 }
 
+/// 构造「批量派发 `<link>` 元素级 load/error 事件」的脚本（P102）。宿主把同批 `(href, type)` 对拼为
+/// 单次执行，原序逐对调用 shim `__zw_dispatch_link_event(absHref, type)`——事件序列与逐条提交一致，
+/// 但只占用一个 worker 臂：真实站点（github 15+ 样式表，含同 URL 重复）逐条 fire-and-forget 优先臂
+/// 组成车队，臂间反复付出视图重建成本（每臂 3.2s→24s→30s 击杀），把 worker 埋分钟级，是导航后
+/// 帧停摆/交互失聪的直接根因；单臂化后每批只付一次。同类先例：t2-pb1 fix#6 的 @font-face 批处理。
+/// 字符串用单引号字面量（[`escape_js_string`] 转义 `'`）；条目为嵌套 `[url, type]` 对——
+/// 扁平数组会让 forEach 把 `p` 迭代成单个字符串，`p[0]/p[1]` 退化为首字符。
+pub fn script_dispatch_link_events_batch(pairs: &[(String, &str)]) -> String {
+    let items = pairs
+        .iter()
+        .map(|(url, ty)| format!("['{}','{}']", escape_js_string(url), escape_js_string(ty)))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("[{items}].forEach(function(p){{__zw_dispatch_link_event(p[0],p[1]);}})")
+}
+
 /// 构造「派发外部 `<script src>` 元素级 load/error 事件」的 shim 脚本（R2944）。宿主在外部脚本 fetch 完成
 ///（成功+执行 → "load" / fetch 失败 → "error"）时执行：shim `__zw_dispatch_script_event(absSrc, type)` 按
 /// src 绝对 URL 匹配 `<script>` 元素 proxy 并用其自身 selector 派发（script.onload/onerror 触发）。
