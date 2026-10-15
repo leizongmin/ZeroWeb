@@ -6,6 +6,6 @@
   "passed": 15420,
   "rate_pct": 92.9,
   "extra": "failed=1170;skipped=0",
-  "git_sha": "0f7780098",
-  "note": "R5142 碎片化嵌套 multicol 末列 cap-breaking——change-transform-in-nested 真翻绿（0.00% 逐像素），corpus 1171→1170"
+  "git_sha": "bd5564377",
+  "note": "R5143 multicol 列内百分比宽后代按约束后包含块重导出——nested-016 0.91→0.77、fill-balance-030 0.53→0.02（零新增红，failed 集合不变）"
 }
