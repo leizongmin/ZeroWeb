@@ -1063,6 +1063,12 @@ impl BrowserApp {
                     self.show_site_permissions_menu();
                     return;
                 }
+                // 前导 shield/lock 图标：弹出站点信息面板（Chrome 点击地址栏左侧锁图标同款）。
+                // 仅非编辑态响应——编辑态该位置画 ZeroWeb 标识，仍走地址栏光标定位。
+                if !self.address_bar_focused && self.address_bar_leading_slot_hit_test(x_f, y_f) {
+                    self.show_site_info_menu();
+                    return;
+                }
                 self.handle_address_bar_press(x, y);
                 return;
             }
@@ -1094,6 +1100,9 @@ impl BrowserApp {
                 self.shell.find_toggle_case_sensitive();
                 if !self.find_input.is_empty() {
                     self.shell.find_start(&self.find_input.clone());
+                    // 与键入路径同源：选项切换后按新选项重算匹配数/高亮（toggle 会
+                    // 先清零计数，不重算会停在 0 且高亮残留旧选项）。
+                    self.refresh_find_matches();
                 }
                 self.needs_redraw = true;
                 return;
@@ -1102,6 +1111,7 @@ impl BrowserApp {
                 self.shell.find_toggle_whole_word();
                 if !self.find_input.is_empty() {
                     self.shell.find_start(&self.find_input.clone());
+                    self.refresh_find_matches();
                 }
                 self.needs_redraw = true;
                 return;
@@ -1116,6 +1126,20 @@ impl BrowserApp {
                 self.needs_redraw = true;
                 return;
             }
+            return;
+        }
+
+        // 5b. 缩放百分比浮层点击：复位到 100%（Chrome zoom bubble 同款交互；
+        //     与 Ctrl+0 同一动作路径，复位后浮层短暂提示 100%）。
+        if let Some((bx, by, bw, bh)) = self.zoom_indicator_rect_for(self.physical_size.0, self.physical_size.1)
+            && x_f >= bx
+            && x_f < bx + bw
+            && y_f >= by
+            && y_f < by + bh
+        {
+            self.shell.zoom_reset();
+            self.show_zoom_indicator();
+            self.apply_page_zoom_change();
             return;
         }
 
@@ -1547,6 +1571,21 @@ impl BrowserApp {
         (slot_x, inner_y, slot_w, inner_h)
     }
 
+    /// 地址栏前导 slot（shield/lock 安全状态图标）外框（物理像素）。
+    /// 几何与 render_address_bar 的 status_cx 同源：
+    /// `inner_x + INNER_PAD_H + LEADING_SLOT_WIDTH/2` 为图标中心。
+    fn address_bar_leading_slot_rect(&self) -> (f32, f32, f32, f32) {
+        let s = self.scale_factor;
+        let (bar_x, bar_y, _bar_w, bar_h) = self.address_bar_layout();
+        let border = s.max(1.0);
+        let inner_x = bar_x + border;
+        let inner_y = bar_y + border;
+        let inner_h = bar_h - 2.0 * border;
+        let slot_w = layout::ADDRESS_BAR_LEADING_SLOT_WIDTH * s;
+        let slot_x = inner_x + layout::ADDRESS_BAR_INNER_PAD_H * s;
+        (slot_x, inner_y, slot_w, inner_h)
+    }
+
     fn address_bar_bookmark_hit_test(&self, x_f: f32, y_f: f32) -> bool {
         self.address_bar_trailing_slot_hit_test(x_f, y_f, 0)
     }
@@ -1814,6 +1853,95 @@ impl BrowserApp {
         // 贴右/下缘翻转（T6-I2），几何与渲染/命中测试同源。
         let (menu_x, menu_y) = self.flipped_menu_origin(
             (slot_x + slot_w - layout::CONTEXT_MENU_WIDTH * s) as f64,
+            (slot_y + slot_h + 4.0 * s) as f64,
+            &items,
+        );
+        self.context_menu = ContextMenuState {
+            visible: true,
+            context_type: ContextType::Page,
+            items,
+            hovered_index: None,
+            hovered_segment: None,
+            open_sub_menu: None,
+            sub_menu_hovered: None,
+            x: menu_x,
+            y: menu_y,
+            source_tab_id: self.shell.active_tab_id(),
+            page_doc_x: 0.0,
+            page_doc_y: 0.0,
+            bookmark_url: None,
+            bookmark_title: None,
+            image_url: None,
+            link_url: None,
+        };
+        self.context_menu_suppress_left_up = true;
+        self.needs_redraw = true;
+    }
+
+    fn address_bar_leading_slot_hit_test(&self, x_f: f32, y_f: f32) -> bool {
+        let (slot_x, slot_y, slot_w, slot_h) = self.address_bar_leading_slot_rect();
+        x_f >= slot_x && x_f < slot_x + slot_w && y_f >= slot_y && y_f < slot_y + slot_h
+    }
+
+    /// 前导 shield/lock 图标的站点信息面板（Chrome 行为基础版）：
+    /// 协议/连接类型 + 是否书签 + Cookie 开关状态。均为展示项（action_disabled），
+    /// 权限列表走尾随 shield 的 `show_site_permissions_menu`。
+    fn show_site_info_menu(&mut self) {
+        let s = self.scale_factor;
+        let (slot_x, slot_y, _slot_w, slot_h) = self.address_bar_leading_slot_rect();
+        let language = UiLanguage::detect_from_env();
+        let page_kind = Self::address_bar_page_kind(
+            self.shell
+                .active_tab()
+                .and_then(|tab| tab.url()),
+        );
+        let (protocol_label, bookmark_label, cookie_label) = match language {
+            UiLanguage::ZhCn => (
+                match page_kind {
+                    AddressBarPageKind::Secure => "连接是安全的（HTTPS）",
+                    AddressBarPageKind::Insecure => "不安全连接（HTTP）",
+                    AddressBarPageKind::Local => "本地文件（file://）",
+                    AddressBarPageKind::Internal | AddressBarPageKind::Unknown => "ZeroWeb 内部页面",
+                },
+                if self.shell.is_current_page_bookmarked() {
+                    "已收藏此页"
+                } else {
+                    "未收藏此页"
+                },
+                if self.shell.settings().cookies_enabled {
+                    "Cookie：已允许"
+                } else {
+                    "Cookie：已阻止"
+                },
+            ),
+            UiLanguage::EnUs => (
+                match page_kind {
+                    AddressBarPageKind::Secure => "Connection is secure (HTTPS)",
+                    AddressBarPageKind::Insecure => "Connection is not secure (HTTP)",
+                    AddressBarPageKind::Local => "Local file (file://)",
+                    AddressBarPageKind::Internal | AddressBarPageKind::Unknown => "ZeroWeb internal page",
+                },
+                if self.shell.is_current_page_bookmarked() {
+                    "Bookmarked"
+                } else {
+                    "Not bookmarked"
+                },
+                if self.shell.settings().cookies_enabled {
+                    "Cookies: allowed"
+                } else {
+                    "Cookies: blocked"
+                },
+            ),
+        };
+        let items = vec![
+            MenuItem::action_disabled("site_info_protocol", protocol_label),
+            MenuItem::action_disabled("site_info_bookmark", bookmark_label),
+            MenuItem::action_disabled("site_info_cookies", cookie_label),
+        ];
+
+        // 贴左/下缘翻转（与 show_site_permissions_menu 同一几何策略）。
+        let (menu_x, menu_y) = self.flipped_menu_origin(
+            slot_x as f64,
             (slot_y + slot_h + 4.0 * s) as f64,
             &items,
         );

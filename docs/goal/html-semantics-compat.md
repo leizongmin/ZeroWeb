@@ -1,10 +1,20 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
-**版本**: v1.0
-**日期**: 2026-10-08
-**状态**: Active（已立项——主攻候选，分域切片推进）
+**版本**: v1.1
+**日期**: 2026-10-15（v1.0 立项 2026-10-08）
+**状态**: Active——M1 收口（基线 42.63%），M2 forms 域切片待启动
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
+
+> **▶ 当前状态（2026-10-15 M1）**：九域语料导入 + runner 通道
+> （`testharness-html-semantics` + Makefile target + skip 规则）落地；基线
+> **2715/6369 = 42.63%**（1151 案；分域账见
+> [evidence/2026-10-15-m1-baseline.md](html-semantics-compat/evidence/2026-10-15-m1-baseline.md)）。
+> microdata 上游不存在记空域。两处 runner 挂死挂账排除（tabular span-limits
+> 同步循环、links downloading-resources 状态污染——FIXME 待 M2 排查）。
+> **卡点**：无阻塞。**下一步**：M2 forms 域首切片 the-input-element IDL/类型面
+> （1059F 单簇最大杠杆）；同轮排查两处挂死根因。
+
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
 > net-api（79.7% 收口）之后的下一个"整域收割"级主攻——html/semantics 覆盖
@@ -79,8 +89,17 @@ scripting-1 / links / microdata。
 
 ## 里程碑
 
-M1 导入与分域基线（含深层子目录补拉）→ M2 forms 域（最大杠杆，多切片）→
+M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，多切片）→
 M3 其余九域依序推进 → M4 总收口归档。
+
+## 轮次账
+
+- **2026-10-15 M1**：fetch 脚本九域+叶子助资产（jsdelivr CDN 回落先落入
+  lib.sh 共享路径）；runner 通道 `testharness-html-semantics`（九域顶层递归
+  扫描 + skip 规则双侧同源）；基线 42.63%（2715/6369，1151 案），分域账与
+  失败簇归因 evidence 落档；csv 数据行回填。挂账：span-limits /
+  downloading-resources 两处挂死排除（FIXME）。`make test` 全绿、
+  clippy/fmt 过、零新增依赖。
 
 ## 依赖约束备注
 

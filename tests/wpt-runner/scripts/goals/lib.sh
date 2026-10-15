@@ -35,10 +35,17 @@ fetch_raw() {
   fi
   mkdir -p "$(dirname "${target}")"
   local temporary="${target}.tmp"
-  if ! curl --fail --location --silent --show-error \
+  # jsdelivr CDN（同 pin rev 锁定）优先——raw.githubusercontent.com 在部分网络下
+  # 吞吐极慢/超时（fetch-wasm-subset.sh 先例，jsdelivr 实测秒级）；失败回落 raw
+  # （权威源）。
+  if ! { curl --fail --location --silent --show-error \
+    --retry 2 --retry-all-errors --retry-delay 2 \
+    --connect-timeout 10 --max-time 60 \
+    "https://cdn.jsdelivr.net/gh/web-platform-tests/wpt@${WPT_REV}/${relative}" \
+    -o "${temporary}" || curl --fail --location --silent --show-error \
     --retry 4 --retry-all-errors --retry-delay 2 \
     --connect-timeout 10 --max-time 60 \
-    "${RAW_ROOT}/${relative}" -o "${temporary}"; then
+    "${RAW_ROOT}/${relative}" -o "${temporary}"; }; then
     rm -f "${temporary}"
     echo "fetch failed: ${relative}" >&2
     return 1

@@ -683,3 +683,41 @@ fn balanced_contain_size_child_pushes_before_place() {
     assert_eq!(cols[1][0].child_idx, 1);
     assert!((cols[1][0].visual_height - 100.0).abs() < 0.01, "整子放置不切片");
 }
+
+/// R5138：列宽约束链不入 OOF 子树——absolute/fixed 宽按自身 containing block
+/// 解析（css-position §10.1），不随 in-flow 祖先 content 宽传导。此前 auto 宽
+/// absolute 中间层（shrink-to-fit 0）把 fixed 子显式 width 也钳 0
+///（fixed-in-multicol-with-transform-container 三案 fixed 绿方整体消失）。
+#[test]
+fn constrain_subtree_width_skips_oof_subtree() {
+    // 结构：in-flow 子（content 50）> absolute（shrink 0）> fixed（显式 100）。
+    let fixed_box = LayoutBox {
+        width: 100.0,
+        content_width: 100.0,
+        is_fixed: true,
+        ..Default::default()
+    };
+    let mut abs_box = LayoutBox {
+        width: 0.0,
+        content_width: 0.0,
+        is_absolute: true,
+        ..Default::default()
+    };
+    abs_box.children.push(fixed_box);
+    let mut in_flow = LayoutBox {
+        width: 50.0,
+        content_width: 50.0,
+        ..Default::default()
+    };
+    in_flow.children.push(abs_box);
+
+    constrain_subtree_width(&mut in_flow, 50.0);
+
+    assert_eq!(
+        in_flow.children[0].children[0].width, 100.0,
+        "fixed 显式宽不被 OOF 链钳 0"
+    );
+    assert_eq!(in_flow.children[0].children[0].content_width, 100.0);
+    // in-flow 自身约束不变（50 ≤ 50 不触发；子 50 保留）。
+    assert_eq!(in_flow.width, 50.0);
+}

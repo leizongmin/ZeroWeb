@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（156）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（157）
 
+- 2026-10-15 [outline-width 初始值是 medium(3px) 非 0，不能当「作者已声明」信号](bugs/2026-10/2026-10-15-outline-width-initial-medium-not-declared-signal.md) — style-system,engine/paint
 - 2026-10-15 [compositor 关闭不能先杀进程再读取退出状态](bugs/2026-10/2026-10-15-compositor-graceful-shutdown-exit-status.md) — apps/browser compositor_client, apps/browser process_backend, apps/compositor shutdown
 - 2026-10-14 [流式图片路径绕过 HTTP 缓存](bugs/2026-10/2026-10-14-streamed-images-bypass-http-cache.md) — apps/browser, crates/net
 - 2026-10-14 [js_dom_shim 同一树节点存在多族稳定 JS 包装——跨族 identity 恒败与吸附目标重投影陷阱](bugs/2026-10/2026-10-14-js-dom-wrapper-family-identity.md) — crates/engine

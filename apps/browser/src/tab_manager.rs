@@ -865,6 +865,12 @@ impl TabManager {
         self.focused_text_input.contains(&tab_id)
     }
 
+    /// 当前事件派发目标选择器（Tab 焦点导航/点击聚焦经 FocusChanged 同步，
+    /// R3254-M10；ui_driver assert_focus 断言源）。
+    pub fn focused_event_target(&self, tab_id: TabId) -> Option<&str> {
+        self.event_targets.get(&tab_id).map(String::as_str)
+    }
+
     /// Document height in CSS pixels.
     pub fn document_height(&self, tab_id: TabId) -> Option<f32> {
         self.snapshots.get(&tab_id)?.document_height
