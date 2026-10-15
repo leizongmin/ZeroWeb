@@ -799,7 +799,17 @@ mod tests {
             .map_err(|error| format!("failed to spawn cache test child: {error}"))?;
         let deadline = std::time::Instant::now() + Duration::from_secs(12);
         loop {
-            if child.try_wait().map_err(|error| error.to_string())?.is_some() {
+            let status = match child.try_wait() {
+                Ok(status) => status,
+                Err(error) => {
+                    let kill_result = child.kill();
+                    let wait_result = child.wait();
+                    return Err(format!(
+                        "failed to inspect cache test child status: {error}; kill: {kill_result:?}; wait: {wait_result:?}"
+                    ));
+                }
+            };
+            if status.is_some() {
                 let output = child.wait_with_output().map_err(|error| error.to_string())?;
                 if output.status.success() {
                     return Ok(output);
@@ -838,14 +848,17 @@ mod tests {
             match listener.accept() {
                 Ok((mut stream, _)) => {
                     requests += 1;
+                    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                    stream.set_write_timeout(Some(Duration::from_secs(2))).unwrap();
                     let mut request = [0_u8; 4096];
                     let _ = stream.read(&mut request);
                     let headers = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nETag: \"process-cache\"\r\nConnection: close\r\nContent-Length: {}\r\n\r\n",
                         body.len()
                     );
-                    stream.write_all(headers.as_bytes()).unwrap();
-                    stream.write_all(body).unwrap();
+                    if stream.write_all(headers.as_bytes()).is_ok() {
+                        let _ = stream.write_all(body);
+                    }
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                     std::thread::sleep(Duration::from_millis(5));
