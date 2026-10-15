@@ -1818,6 +1818,10 @@ pub enum PropertyValue {
     ColumnWidth(ColumnWidthComputedValue),
     /// column-fill 值。
     ColumnFill(ColumnFillComputedValue),
+    /// column-height 值（css-multicol-2）。
+    ColumnHeight(ColumnHeightComputedValue),
+    /// column-wrap 值（css-multicol-2）。
+    ColumnWrap(ColumnWrapComputedValue),
     /// column-span 值。
     ColumnSpan(ColumnSpanComputedValue),
     /// object-fit 值。
@@ -1947,6 +1951,33 @@ pub enum ColumnFillComputedValue {
     Balance,
     /// auto — 按顺序填充列。
     Auto,
+}
+
+/// CSS column-height 属性值（css-multicol-2 <https://drafts.csswg.org/css-multicol-2/#ch>）。
+///
+/// 固定每个 column box 的块向高度（区别于容器 height / 平衡列高）。
+/// `auto`（默认）= 不固定，列高由平衡/容器高决定（css-multicol-1 行为）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnHeightComputedValue {
+    /// auto — 不固定列高（默认）。
+    Auto,
+    /// 长度值 — 每列块向高度。
+    Length(LengthValue),
+}
+
+/// CSS column-wrap 属性值（css-multicol-2 <https://drafts.csswg.org/css-multicol-2/#cwr>）。
+///
+/// 列溢出容器行宽时是否换行到下方新列行（column row）。`auto`（默认）
+/// 由 UA 决定——chromium 在 column-height 固定列高时按 wrap 处理
+/// （column-height-010 实证「column-wrap:auto - should wrap」）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnWrapComputedValue {
+    /// auto — UA 决定（布局层按 wrap 处理）。
+    Auto,
+    /// wrap — 溢出列换行到下方新列行。
+    Wrap,
+    /// nowrap — 溢出列沿 inline 方向延伸（css-multicol-1 行为）。
+    Nowrap,
 }
 
 /// CSS column-span 属性值。

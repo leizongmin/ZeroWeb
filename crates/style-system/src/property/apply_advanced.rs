@@ -1425,6 +1425,41 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 _ => {}
             }
         }
+        // ── ColumnHeight 属性（css-multicol-2 #ch：auto 或长度，固定每列块向高）──
+        "column-height" => {
+            let v = value.trim();
+            if v.eq_ignore_ascii_case("auto") {
+                style.column_height = ColumnHeightComputedValue::Auto;
+                return true;
+            }
+            // https://drafts.csswg.org/css-multicol-2/#ch
+            // <length> 的 math 形式（如 calc(10em + 20px)）同样接受。
+            if let Some(len) = values::parse_length(v)
+                .or_else(|| values::parse_math_function(v).map(|expr| LengthValue::Calc(Box::new(expr))))
+            {
+                style.column_height = ColumnHeightComputedValue::Length(len);
+                return true;
+            }
+        }
+        // ── ColumnWrap 属性（css-multicol-2 #cwr：auto/wrap/nowrap）──
+        "column-wrap" => {
+            let v = value.trim().to_ascii_lowercase();
+            match v.as_str() {
+                "auto" => {
+                    style.column_wrap = ColumnWrapComputedValue::Auto;
+                    return true;
+                }
+                "wrap" => {
+                    style.column_wrap = ColumnWrapComputedValue::Wrap;
+                    return true;
+                }
+                "nowrap" => {
+                    style.column_wrap = ColumnWrapComputedValue::Nowrap;
+                    return true;
+                }
+                _ => {}
+            }
+        }
         // ── ColumnSpan 属性（§6.1：none 留在列流，all 跨越全宽成 spanner）──
         "column-span" => {
             let v = value.trim().to_ascii_lowercase();
