@@ -1,4 +1,58 @@
 (function() {
+  // ── innerText（P2 innerText 语义 / R3260 第 2 版）实现 ──
+  // real innerText 是 layout/CSS 感知（https://html.spec.whatwg.org/#the-innertext-idl-attribute）：
+  // 排除 display:none / visibility:hidden 与 script/style/noscript/template/head/title（这些在
+  // textContent 里仍全部含入），替换元素取 value，<br>/block 换行。旧 headless 近似 innerText===
+  // textContent 使 google 首页 document.body.innerText 达 76508（Chrome 真实约 48）——凡读 innerText
+  // 的页面脚本都会吃到海量隐藏/脚本文本。此收集器按规范子集实现：无法判定可见性（getComputedStyle
+  // 缺位/异常/分离节点）时保守包含，不退化为旧全含语义。定义在外层 IIFE（shim 加载即执行），
+  // 供 part04 内 textContent/innerText 分支与 dom_bridge createElement 句柄共用。
+  globalThis._zwGetInnerText = globalThis._zwGetInnerText || function (root) {
+    var _out = [];
+    (function collect(node) {
+      if (!node) return;
+      var t = node.nodeType;
+      if (t === 3 || t === 4) {
+        var _txt = node.nodeValue != null ? node.nodeValue
+          : (node.data != null ? node.data : (node.textContent != null ? node.textContent : ''));
+        _out.push(String(_txt)); return;
+      }
+      if (t === 9) t = 1; // Document 子列表按元素遍历
+      if (t !== 1) return;
+      // 根元素自身可见性：可解析（有 selector）时 display:none / visibility hidden 直接空。
+      var _rCs = null;
+      try { _rCs = globalThis.getComputedStyle ? globalThis.getComputedStyle(node) : null; } catch (_eR) {}
+      if (_rCs && (_rCs.display === 'none' || _rCs.visibility === 'hidden' || _rCs.visibility === 'collapse')) return;
+      var kids = (Array.isArray(node.childNodes)) ? node.childNodes
+        : (Array.isArray(node.children) ? node.children : null);
+      if (!kids) return;
+      for (var i = 0; i < kids.length; i++) {
+        var c = kids[i]; if (!c) continue;
+        var ct = c.nodeType;
+        if (ct === 3 || ct === 4) {
+          var ctxt = c.nodeValue != null ? c.nodeValue
+            : (c.data != null ? c.data : (c.textContent != null ? c.textContent : ''));
+          _out.push(String(ctxt)); continue;
+        }
+        if (ct !== 1) continue;
+        var tag = c.tagName ? String(c.tagName).toLowerCase() : '';
+        if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'template' || tag === 'head' || tag === 'title') continue;
+        if (tag === 'br') { _out.push('\n'); continue; }
+        if (tag === 'textarea' || tag === 'select' || tag === 'input') {
+          var iv = c.value; _out.push(iv != null ? String(iv) : ''); continue;
+        }
+        var cs = null;
+        try { cs = globalThis.getComputedStyle ? globalThis.getComputedStyle(c) : null; } catch (_e) {}
+        if (cs) {
+          if (cs.display === 'none' || cs.visibility === 'hidden' || cs.visibility === 'collapse') continue;
+          var d = cs.display;
+          if (d === 'block' || d === 'flex' || d === 'grid' || d === 'table' || d === 'list-item' || d === 'table-row' || d === 'inline-block' || /^block/.test(d)) _out.push('\n');
+        }
+        collect(c);
+      }
+    })(root);
+    return _out.join('');
+  };
   var _listenerStore = {};
   // R2933 element 级 IDL on-event handler 存储（per-element-key → { eventType: fn }）。on* setter 把 fn
   // 同时记此 + 注册进 _listenerStore[key]（使 dispatchEvent 触发）；getter 返此存储 fn（或 null）。

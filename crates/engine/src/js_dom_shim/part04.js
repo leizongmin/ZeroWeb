@@ -832,6 +832,12 @@
               }
               return _childNodeList(sel, handle);
             })();
+            // R3260 第 2 版：innerText ≠ textContent。用渲染感知收集器（排除隐藏/脚本/样式/模板，
+            // 替换元素取 value，<br>/block 换行）。收集器返回非 null 即有效；助手缺位时回落 textContent。
+            if (prop === 'innerText') {
+              var _itVal = globalThis._zwGetInnerText ? globalThis._zwGetInnerText({ nodeType: 1, childNodes: _tcKids }) : null;
+              if (_itVal !== null) return _itVal;
+            }
             var _tcOut = '';
             for (var _tci = 0; _tci < _tcKids.length; _tci++) {
               var _tcn = _tcKids[_tci];
@@ -854,6 +860,15 @@
               return _zwTextWritten[handle];
             }
             return __zw_get_text_handle(handle);
+          }
+          // R3260 第 2 版：sel-based（no-handle）innerText 同样走渲染感知收集器——旧近似
+          // innerText==textContent 使 sel-only 读（CDP/element proxy 无 handle）吃到隐藏/脚本
+          // 文本。用 _childNodeList(sel, null) 取子（带 __zwSelector，getComputedStyle 可用），
+          // 收集器返非 null 即有效；助手缺位回落 __zw_get_text。
+          if (prop === 'innerText' && globalThis._zwGetInnerText) {
+            var _itKids = (typeof _childNodeList === 'function') ? _childNodeList(sel, null) : [];
+            var _itSelVal = globalThis._zwGetInnerText({ nodeType: 1, childNodes: _itKids });
+            if (_itSelVal !== null) return _itSelVal;
           }
           return typeof __zw_get_text_lw === 'function' ? __zw_get_text_lw(sel) : __zw_get_text(sel);
         }

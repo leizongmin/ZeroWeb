@@ -369,8 +369,9 @@ fn test_document_scrolling_element_r3259() {
 
 // ── element.innerText（R3260）──
 // innerText 此前完全缺失（0 命中）→ `el.innerText` 读元素渲染文本返 undefined。real innerText 是
-// layout/CSS-aware（排除 hidden、<br>/block→换行）；headless 无 layout 透出，作 textContent 近似（documented）。
-// 覆盖：handle（createElement）+ sel（parsed body）两路径的 get/set。
+// layout/CSS-aware（排除 hidden/script/style、textContent 拼接原文）。
+// 本用例只含可见文本 → innerText === textContent 仍成立（P2 隐藏/脚本排除见下方
+// test_element_inner_text_excludes_hidden_scripts）。覆盖 handle（createElement）+ sel（parsed body）两路径 get/set。
 #[test]
 fn test_element_inner_text_r3260() {
     let mut wv = WebView::new(WebViewConfig::default());
@@ -416,6 +417,74 @@ fn test_element_inner_text_r3260() {
         "fresh",
         "handle-based innerText setter 经 textContent readback 一致"
     );
+}
+
+// ── element.innerText 排除隐藏/脚本（P2，R3260 第 2 版）──
+// real innerText 排除 display:none / visibility:hidden 与 script/style/noscript 等
+// （https://html.spec.whatwg.org/#the-innertext-idl-attribute），textContent 仍全含。
+// google 首页 body.innerText 由 76508（旧 ≈textContent）降到 Chrome 真实量级。替换元素取 value。
+#[test]
+fn test_element_inner_text_excludes_hidden_scripts() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html(
+        "<html><body>\
+         <div id=\"vis\">visible text</div>\
+         <div id=\"hid\" style=\"display:none\">hidden text</div>\
+         <span id=\"vh\" style=\"visibility:hidden\">vis-hidden text</span>\
+         <textarea id=\"ta\">area content</textarea>\
+         <style>.markerStyle{color:red}</style>\
+         <script>\
+         globalThis.__ivLen = String(document.body.innerText.length);\
+         globalThis.__ivEqTC = String(document.body.innerText === document.body.textContent);\
+         globalThis.__ivHasVis = String(document.body.innerText.indexOf('visible text') >= 0);\
+         globalThis.__ivHasHidden = String(document.body.innerText.indexOf('hidden text') >= 0);\
+         globalThis.__ivHasVH = String(document.body.innerText.indexOf('vis-hidden') >= 0);\
+         globalThis.__ivHasScript = String(document.body.innerText.indexOf('innerTextMarkerText') >= 0);\
+         globalThis.__ivHasStyle = String(document.body.innerText.indexOf('markerStyle') >= 0);\
+         globalThis.__ivTa = String(document.getElementById('ta').innerText);\
+         </script>\
+         <script>var innerTextMarkerText = 1;</script>\
+         </body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "classic script 应无异常执行, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ivHasVis)").unwrap(),
+        "true",
+        "可见文本仍在 body.innerText"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ivHasHidden)").unwrap(),
+        "false",
+        "display:none 元素文本被排除"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ivHasVH)").unwrap(),
+        "false",
+        "visibility:hidden 元素文本被排除"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ivHasScript)").unwrap(),
+        "false",
+        "script 文本被排除"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ivHasStyle)").unwrap(),
+        "false",
+        "style 文本被排除"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ivEqTC)").unwrap(),
+        "false",
+        "innerText ≠ textContent（隐藏/脚本已剔除）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ivTa)").unwrap(),
+        "area content",
+        "textarea.innerText 取 value"
+    );
+    let _ = wv.execute_script("String(globalThis.__ivLen)").unwrap();
 }
 
 // ── document.designMode（R3261，HTML §3.2.5）──
