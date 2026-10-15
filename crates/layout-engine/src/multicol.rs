@@ -96,7 +96,7 @@ fn adjust_multicol_layout_rec(
                 styles,
                 inline_fonts,
             );
-            layout_multicol(root, &info, styles, nested_in_multicol, inline_balanced);
+            layout_multicol(root, &info, styles, nested_in_multicol, inline_balanced, doc);
             self_is_multicol = true;
         }
     }
@@ -971,6 +971,7 @@ fn try_layout_single_child_block_frag(
         &forced_breaks,
         &forced_breaks_after,
         &[],
+        &[],
     );
     // 4. 定位 wrapper 子到列 x + 设 wrapper 宽/高（bg 填满）。
     let wrapper = &mut container.children[wrapper_idx];
@@ -1013,6 +1014,7 @@ fn layout_multicol(
     styles: &HashMap<NodeId, ComputedStyle>,
     nested_in_multicol: bool,
     inline_balanced: Option<f32>,
+    doc: &zero_dom::Document,
 ) {
     if container.children.is_empty() || info.count == 0 {
         return;
@@ -1020,8 +1022,10 @@ fn layout_multicol(
 
     // 本函数可在列宽收窄后的文本重测量后再次运行。旧的 fragment offsets
     // 已不再对应新的列分配，必须先清除，避免 painter 重复绘制过期片段。
+    // R5140：上 pass 的 avoid-stay 行限注入同步清零（本 pass 重新判定）。
     for child in &mut container.children {
         child.column_span_offsets.clear();
+        child.nested_row_limit = 0.0;
     }
 
     // R4250（css-box-4 §margin-trim）：multicol 容器 extends——旧 bounded gate
@@ -1097,6 +1101,11 @@ fn layout_multicol(
     let mut forced_breaks: Vec<bool> = Vec::new();
     let mut forced_breaks_after: Vec<bool> = Vec::new();
     let mut explicit_height: Vec<bool> = Vec::new();
+    // R5140：嵌套 multicol 子 + break-before:avoid（avoid-stay 候选，仅 sequential
+    // 路径消费）。css-break-3 #unforced-breaks：盒前断点被 avoid 禁止时不可为放下
+    // 整子而推进下一列——留在当前列以剩余空间为行 1 限高（碎片化 auto 高 mc 盒高 =
+    // min(堆叠高, 余量)，Chrome probe 019/020/015 定谳）。
+    let mut nested_avoid: Vec<bool> = Vec::new();
     let mut has_spanner = false;
     for (i, c) in container.children.iter().enumerate() {
         if c.is_absolute || c.is_fixed {
@@ -1107,6 +1116,14 @@ fn layout_multicol(
         if style.is_some_and(|s| matches!(s.column_span, ColumnSpanComputedValue::All)) {
             has_spanner = true;
         }
+        nested_avoid.push(
+            std::env::var("ZW_MULTICOL_AVOID_STAY").as_deref() != Ok("0")
+                && style.is_some_and(|s| {
+                    matches!(s.break_before, BreakValue::Avoid | BreakValue::AvoidColumn)
+                        && (matches!(s.column_count, ColumnCountComputedValue::Number(_))
+                            || matches!(s.column_width, ColumnWidthComputedValue::Length(_)))
+                }),
+        );
         let force = style.is_some_and(|s| matches!(s.break_before, BreakValue::Column | BreakValue::Page));
         forced_breaks.push(force);
         let force_after = style.is_some_and(|s| matches!(s.break_after, BreakValue::Column | BreakValue::Page));
@@ -1167,8 +1184,14 @@ fn layout_multicol(
         return;
     }
 
-    // 列高限制：当 column-fill: auto 且容器有明确高度时生效
-    let height_limit = column_height_limit(container, info);
+    // 列高限制：当 column-fill: auto 且容器有明确高度时生效。
+    // R5140：外层 avoid-stay 注入的行 1 限高优先（碎片化嵌套 mc 的行高 = min(堆叠高，
+    // fragmentainer 余量)，子自身重分布以余量为列高上限；taffy 堆叠高不作上限）。
+    let height_limit = if container.nested_row_limit > 0.0 {
+        container.nested_row_limit
+    } else {
+        column_height_limit(container, info)
+    };
 
     // ── R5130：column-height（css-multicol-2 #ch）固定列高 ──
     // <length> 直接给定每列块向高度，优先于 column-fill auto/balance 的推导。
@@ -1227,6 +1250,7 @@ fn layout_multicol(
                 &forced_breaks,
                 &forced_breaks_after,
                 &[],
+                &[],
             )
         }
     } else if info.sequential_fill && height_limit > 0.0 {
@@ -1240,6 +1264,37 @@ fn layout_multicol(
         //（子元素自身 column-count/width → nested fragmentation 须独立模型，同 R1035 守卫）。
         // 注：column-wrap:wrap（css-multicol-2 draft，ZW 未解析）的垂直换行语义不被本 gate 覆盖，
         // 这类案（column-height-004/025/026/027）仍 FAIL（unsupported feature，非本路径可解）。
+        // R5140：行限注入（avoid-stay 嵌套 mc 自身 pass）或本容器含 avoid-stay 候选
+        // 时，br 行终结子不占列分配空间——行盒语义由 inline 终结处理，taffy 给 br 的
+        // 独立行高（015 实测 18-19px、019 外层 25px）会挤占列槽位（015 s3 被推出第 5
+        // 列；019 外层 3×ib+br 对被算成 6 行填满 col0，inner 恰好「放得下」落 col1，
+        // avoid-stay 失效）。Chrome 中 ib+br 同行（br 仅终结行盒），一对只占一行高。
+        // br 不入分配、原位保留（无可绘背景）。
+        let (child_info, forced_breaks, forced_breaks_after, nested_avoid) = if container.nested_row_limit > 0.0
+            || nested_avoid.iter().any(|&a| a)
+        {
+            let mut ci = Vec::new();
+            let mut fbv = Vec::new();
+            let mut fav = Vec::new();
+            let mut nav = Vec::new();
+            for (k, &(idx, h)) in child_info.iter().enumerate() {
+                let is_br = container.children[idx].node_id.is_some_and(|id| {
+                        doc.get(id).is_some_and(|n| {
+                            matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br"))
+                        })
+                    });
+                if is_br {
+                    continue;
+                }
+                ci.push((idx, h));
+                fbv.push(forced_breaks[k]);
+                fav.push(forced_breaks_after[k]);
+                nav.push(nested_avoid[k]);
+            }
+            (ci, fbv, fav, nav)
+        } else {
+            (child_info, forced_breaks, forced_breaks_after, nested_avoid)
+        };
         let total_child_height_seq: f32 = child_info.iter().map(|&(_, h)| h).sum();
         let has_monolithic_child_seq = child_info.iter().any(|&(idx, _)| {
             let c = &container.children[idx];
@@ -1327,14 +1382,32 @@ fn layout_multicol(
             } else {
                 Vec::new()
             };
-            assign_children_to_columns_with_breaking(
+            let assignments = assign_children_to_columns_with_breaking(
                 &child_info,
                 info.count,
                 height_limit,
                 &forced_breaks,
                 &forced_breaks_after,
                 &unbreakable_nested_seq,
-            )
+                &nested_avoid,
+            );
+            // R5140：avoid-stay 子（单片段且被行限钳制 → 行 1 高 = 片段 visual）记录
+            // nested_row_limit，供子自身 adjust pass（递归随后到达）以余量为列高上限
+            // 重分布内层列。其他分支形态（整放/多片段切片）不注入，维持既有行为。
+            for (k, &av) in nested_avoid.iter().enumerate() {
+                if !av {
+                    continue;
+                }
+                let (idx, h) = child_info[k];
+                let mut frags = assignments.iter().flatten().filter(|f| f.child_idx == idx);
+                let (Some(first), None) = (frags.next(), frags.next()) else {
+                    continue;
+                };
+                if first.visual_height < h - 0.5 {
+                    container.children[idx].nested_row_limit = first.visual_height;
+                }
+            }
+            assignments
         }
     } else if info.sequential_fill {
         // column-fill: auto 但无明确高度限制
@@ -2280,6 +2353,8 @@ fn assign_children_to_columns_with_breaking(
     forced_breaks_after: &[bool],
     // R5135/R5136：嵌套 mc 子的首不可断单元高（0 = 可断，照常切片/整放）。
     nested_unbreakable: &[f32],
+    // R5140：嵌套 mc 子 + break-before:avoid（avoid-stay 候选；其余路径传空）。
+    nested_avoid: &[bool],
 ) -> Vec<Vec<ColumnFragment>> {
     let mut columns: Vec<Vec<ColumnFragment>> = vec![Vec::new(); col_count];
     let mut current_col = 0usize;
@@ -2311,6 +2386,19 @@ fn assign_children_to_columns_with_breaking(
                 visual_height: child_height,
             });
             current_col_height += child_height;
+        } else if nested_avoid.get(i).copied().unwrap_or(false) && current_col_height > 0.0 && available > 0.0 {
+            // R5140：嵌套 mc 子 break-before:avoid + 当前列部分填充 + 整子放不下 →
+            // 留在当前列（avoid 禁止盒前非受迫断点，css-break-3 §possible-breaks
+            // Class A），行 1 限高 = 剩余空间、列消耗到底——碎片化语境 auto 高
+            // sequential mc 盒高 = min(堆叠高, fragmentainer 余量)（Chrome probe
+            // 定谳：nested-015/019/020 全一致）。nested_row_limit 由调用方写回，
+            // 驱动子自身 adjust pass 重分布内层列；盒高不截断（兄弟由列满自然接排）。
+            columns[current_col].push(ColumnFragment {
+                child_idx,
+                fragment_y_offset: 0.0,
+                visual_height: available,
+            });
+            current_col_height = max_col_height;
         } else if child_height <= max_col_height {
             // 子元素可以整体放入下一列（当列剩余不够但列高足够）
             if current_col + 1 < col_count {

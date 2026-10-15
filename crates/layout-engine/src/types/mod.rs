@@ -284,6 +284,11 @@ pub struct LayoutBox {
     /// 是否为多列容器（column-count 或 column-width 非 auto）。
     /// 多列容器建立 BFC，阻止与子元素的 margin 折叠（CSS §2）。
     pub is_multicol: bool,
+    /// R5140：外层 sequential 分配对本嵌套 multicol 子注入的**行 1 限高**（碎片化
+    /// 语境下 auto 高 sequential mc 盒高 = min(堆叠高, fragmentainer 余量)，Chrome
+    /// probe 定谳）。子自身 adjust pass 以此为列高上限重分布内层列；0 = 无注入。
+    /// 由 `layout_multicol` avoid-stay 分支写入，每 pass 先行清零。
+    pub nested_row_limit: f32,
     /// R1429：column-fill:auto + 明确高度 + **inline 内容溢出** column-count 时实际创建的列数
     ///（含溢出列）。仅当内容溢出（实际列数 > style column-count）时由 layout 侧
     /// `store_inline_multicol_columns` 置 `Some`。paint `paint_column_rules` 据此在每个间隙
@@ -710,6 +715,7 @@ impl Default for LayoutBox {
             scroll_y: 0.0,
             is_flow_root: false,
             is_multicol: false,
+            nested_row_limit: 0.0,
             is_table_caption: false,
             multicol_overflow_column_count: None,
             is_nested_spanner_wrapper: false,

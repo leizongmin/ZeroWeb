@@ -2538,6 +2538,7 @@ impl LayoutEngine {
             scroll_y: 0.0,
             is_flow_root,
             is_multicol,
+            nested_row_limit: 0.0,
             is_table_caption,
             multicol_overflow_column_count: None,
             is_nested_spanner_wrapper: false,
