@@ -50,3 +50,4 @@
 2026-10-15,upstream,v1.10,16590,15399,92.8,failed=1191;skipped=0,b0a028324,R5131 balance 先推后放（ZW_MC_BALANCE_FIT）中间态 A/B
 2026-10-15,upstream,v1.10,16590,15404,92.9,failed=1186;skipped=0,60b3b502d,R5132 嵌套 multicol 碎片感知机制落地——族 B +5 翻绿
 2026-10-15,upstream,v1.10,16590,15405,92.9,failed=1185;skipped=0,95cae52cf,R5135 域① nested-011 翻绿——sequential 单 monolithic 嵌套 mc 整放 + 百分比宽列重导出 + 嵌套绘制横向放宽
+2026-10-15,upstream,v1.10,16590,15406,92.9,failed=1184;skipped=0,3023bd732,R5136 域① nested-024 翻绿——contain:size 不可断下限（sequential 部分列推进整放 + balance 先推后放并入）

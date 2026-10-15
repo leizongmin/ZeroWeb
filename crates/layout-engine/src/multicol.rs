@@ -32,7 +32,7 @@ use zero_style_system::ComputedStyle;
 use zero_style_system::WritingModeValue;
 use zero_style_system::property::types::{
     BreakInsideValue, BreakValue, ColumnCountComputedValue, ColumnFillComputedValue, ColumnHeightComputedValue,
-    ColumnSpanComputedValue, ColumnWidthComputedValue, ColumnWrapComputedValue, ContainComputedValue,
+    ColumnSpanComputedValue, ColumnWidthComputedValue, ColumnWrapComputedValue,
 };
 
 use crate::types::{LayoutBox, OverflowClip};
@@ -1279,36 +1279,45 @@ fn layout_multicol(
         {
             assign_children_to_columns_multirow(&child_info, info.count, height_limit, &cap_nested_seq)
         } else {
-            // R5135：顶层容器的 sequential 路径嵌套 multicol 子不可分旗标（限单
-            // monolithic 内容）。chromium headless 实测（2026-10-15，probeA/011/
-            // probeG/H）：内层 mc 内容为单 contain:size 盒（整体化，无断点机会）时
-            // 外层不切片，整子推入下一列（011 内层单 contain:size 子 100 高 > 外列
-            // 50 → 整放）；内容多子（spanner-fragmentation-000 内层 4 子：40+60×3）
-            // 或单普通块（column-height-025 内层单 div 900 高）有断点机会，
-            // chromium 照常跨外层列切片——旗标若不限内容断点会使 spanner 全带
-            // （+9）与 column-height（+3）等 14+ 案回归（R5135 A/B 两轮实测）。
-            // 判据：嵌套 mc 子（自身 column-count/width 非初始）且盒树子数 = 1 且
-            // 该子带 size containment（css-contain §3.1；probeG/H 平衡流整体化实证）。
-            // 多子/普通子嵌套 mc 维持切片基线；嵌套容器（nested_in_multicol）传空
-            // （同 R5132 balance 路径 !nested gate 的级联教训）。不设 explicit-height
-            // 例外：sequential 语境下 chromium 按内容断点定谳（011 内层 height:100
-            // 单 contain:size 子整放实证），与 balance 路径 R1037 语义分叉。
-            let unbreakable_nested_seq: Vec<bool> = if !nested_in_multicol {
+            // R5135/R5136：顶层容器的 sequential 路径嵌套 multicol 子**首不可断单元**
+            // 高度旗标。chromium headless 实测（2026-10-15，probeA/011/024/probeG/H）：
+            // 内层 mc 首子带 size containment（css-contain §3.1，整体化无断点机会）时
+            // 外层不在其内部断——首单元放不进当前列剩余空间则整子先推进下一列
+            //（css-break-3 Class A2 unforced break-before），fresh 列则整子溢出整放
+            //（Class C3：不可断单元高于 fragmentainer 原地溢出，011 实证）。内容多子
+            //（spanner-fragmentation-000 内层 4 子：40+60×3）或单普通块
+            //（column-height-025 内层单 div 900 高）有断点机会，chromium 照常跨外层
+            // 列切片——旗标若不限首单元断点会使 spanner 全带（+9）与 column-height
+            //（+3）等 14+ 案回归（R5135 A/B 两轮实测）。判据：嵌套 mc 子（自身
+            // column-count/width 非初始）且首个 in-flow 子带 size containment（024
+            // 内层 mc 三 contain:size 子、首子 100 > 剩余 50 → 推进实证）。嵌套容器
+            //（nested_in_multicol）传空（同 R5132 balance 路径 !nested gate 的级联
+            // 教训）。不设 explicit-height 例外：sequential 语境下 chromium 按内容
+            // 断点定谳（011 内层 height:100 单 contain:size 子整放实证），与 balance
+            // 路径 R1037 语义分叉。
+            let unbreakable_nested_seq: Vec<f32> = if !nested_in_multicol {
                 child_info
                     .iter()
                     .map(|&(idx, _)| {
                         let child_box = &container.children[idx];
-                        let single_monolithic = match child_box.children.as_slice() {
-                            [grand] => grand.node_id.and_then(|id| styles.get(&id)).is_some_and(|gs| {
-                                matches!(gs.contain, ContainComputedValue::Size | ContainComputedValue::Strict)
-                            }),
-                            _ => false,
-                        };
-                        single_monolithic
-                            && child_box.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
-                                matches!(s.column_count, ColumnCountComputedValue::Number(_))
-                                    || matches!(s.column_width, ColumnWidthComputedValue::Length(_))
+                        let is_nested_mc = child_box.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                            matches!(s.column_count, ColumnCountComputedValue::Number(_))
+                                || matches!(s.column_width, ColumnWidthComputedValue::Length(_))
+                        });
+                        if !is_nested_mc {
+                            return 0.0;
+                        }
+                        child_box
+                            .children
+                            .iter()
+                            .find(|c| !c.is_absolute && !c.is_fixed)
+                            .filter(|grand| {
+                                grand
+                                    .node_id
+                                    .and_then(|id| styles.get(&id))
+                                    .is_some_and(|gs| gs.contain.has_size())
                             })
+                            .map_or(0.0, |grand| grand.height + grand.margin_top + grand.margin_bottom)
                     })
                     .collect()
             } else {
@@ -1457,18 +1466,24 @@ fn layout_multicol(
             } else {
                 &[]
             };
-            // R5132：不可分子（嵌套 multicol）先推后放旗标——仅顶层容器（同 floor 的
-            // !nested gate）；嵌套容器传空（nested-030 教训：级联强抬放大 region）。
-            // explicit-height 嵌套子不入（同 floor：维持 R1037 可碎片语义）。
-            let unbreakable_nested: Vec<bool> = if nested_in_multicol {
-                Vec::new()
-            } else {
-                child_info
-                    .iter()
-                    .enumerate()
-                    .map(|(pos, &(idx, _))| nested_mc(idx) && !explicit_height.get(pos).copied().unwrap_or(false))
-                    .collect()
-            };
+            // R5132：不可分子（嵌套 multicol）先推后放旗标——nested-mc 分量仅顶层
+            // 容器（同 floor 的 !nested gate）且 explicit-height 子不入（同 floor：维持
+            // R1037 可碎片语义）。R5136：contain:size 子并入旗标（css-contain §3.1
+            // 整体化，probeG/H 平衡流不可断实证，高度来源无关——显式高的 contain:size
+            // 子同样整体化，压过 R1037 explicit 可碎片语义）——**含嵌套容器**
+            //（chromium 024 实证：嵌套 balance mc 的 contain:size 子一子一列先推后放；
+            // 嵌套上下文里该语义由内层自身 fragmentainer 语义决定，不级联放大外层
+            // region——nested-030 的教训针对 avoid 软约束 floor 强抬 target，与硬不可
+            // 断的放置推进不同）。
+            let unbreakable_nested: Vec<bool> = child_info
+                .iter()
+                .enumerate()
+                .map(|(pos, &(idx, _))| {
+                    let explicit = explicit_height.get(pos).copied().unwrap_or(false);
+                    (nested_mc(idx) && !explicit && !nested_in_multicol)
+                        || child_style(idx).is_some_and(|s| s.contain.has_size())
+                })
+                .collect();
             balanced_placement = true;
             assign_children_to_columns_balanced(
                 &child_info,
@@ -2259,7 +2274,8 @@ fn assign_children_to_columns_with_breaking(
     max_col_height: f32,
     forced_breaks: &[bool],
     forced_breaks_after: &[bool],
-    nested_unbreakable: &[bool],
+    // R5135/R5136：嵌套 mc 子的首不可断单元高（0 = 可断，照常切片/整放）。
+    nested_unbreakable: &[f32],
 ) -> Vec<Vec<ColumnFragment>> {
     let mut columns: Vec<Vec<ColumnFragment>> = vec![Vec::new(); col_count];
     let mut current_col = 0usize;
@@ -2304,13 +2320,30 @@ fn assign_children_to_columns_with_breaking(
                 visual_height: child_height.min(max_col_height),
             });
             current_col_height += child_height.min(max_col_height);
-        } else if nested_unbreakable.get(i).copied().unwrap_or(false) {
+        } else if nested_unbreakable.get(i).copied().unwrap_or(0.0) > available
+            && current_col_height > 0.0
+            && current_col + 1 < col_count
+        {
+            // R5136：嵌套 multicol 子首不可断单元放不进当前列**剩余空间**（部分填充
+            // 列）→ 先推进下一列再整子放置（css-break-3 §possible-breaks Class A2：
+            // unforced break 落在盒前；chromium 024 实证：内层 mc 首子 contain:size
+            // 100 > 剩余 50 → 内层整体落外层 col1，col0 底部留空）。整子单片段
+            //（不可断单元内部无断点机会，不跨外层列切片）。
+            current_col += 1;
+            current_col_height = 0.0;
+            columns[current_col].push(ColumnFragment {
+                child_idx,
+                fragment_y_offset: 0.0,
+                visual_height: child_height,
+            });
+            current_col_height += child_height;
+        } else if nested_unbreakable.get(i).copied().unwrap_or(0.0) > 0.0 {
             // R5135：嵌套 multicol 子（自身为碎片化上下文）超高（> 列高）→ 整子单片段
             // 原地放置，不跨外层列切片。chromium headless 实测（2026-10-15，probeA/011）：
-            // 外层不对嵌套碎片化上下文做 block 方向切片续排（probeA 蓝块落内层 col1
-            // x25..50 而非外层 col1；011 内层 mc 单片段整放，其子纵向溢出绘制）。
-            // visual_height 取全高：flow 上盒子占据全高（后续子接排），paint 层非
-            // breaking 路径（cso len=1）纵向不裁剪，子树溢出列底可见。
+            // 外层不对嵌套碎片化上下文做 block 方向切片续排（011 内层 mc 单片段整放，
+            // 其子纵向溢出绘制——fresh 列 Class C3：不可断单元高于 fragmentainer 原地
+            // 溢出，不推进）。visual_height 取全高：flow 上盒子占据全高（后续子接排），
+            // paint 层非 breaking 路径（cso len=1）纵向不裁剪，子树溢出列底可见。
             columns[current_col].push(ColumnFragment {
                 child_idx,
                 fragment_y_offset: 0.0,
