@@ -143,9 +143,9 @@ impl TabManager {
     /// 之前子进程被 kill；`Drop` 不会被 `process::exit` 触发。
     pub fn shutdown_child_processes(&mut self) {
         if let Some(ref mut backend) = self.process_backend {
-            backend.shutdown_all();
+            let _ = backend.shutdown_all();
         } else {
-            crate::compositor_client::shutdown();
+            let _ = crate::compositor_client::shutdown();
         }
     }
 

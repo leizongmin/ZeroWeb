@@ -28,6 +28,45 @@ pub(crate) struct RequestCacheControl {
     pub max_stale: Option<Option<u64>>,
 }
 
+/// Combine repeated Vary field lines in their received order, as required by HTTP field semantics.
+/// https://www.rfc-editor.org/rfc/rfc9110#section-5.2
+pub(crate) fn vary_header_value(response: &HttpResponse) -> Option<String> {
+    let mut values = response
+        .headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("vary"))
+        .map(|(_, value)| value.as_str());
+    let mut combined = values.next()?.to_string();
+    for value in values {
+        combined.push_str(", ");
+        combined.push_str(value);
+    }
+    Some(combined)
+}
+
+/// A changed Vary field changes which request headers identify a stored representation.
+/// https://www.rfc-editor.org/rfc/rfc9111#section-4.1
+pub(crate) fn vary_field_changed(stored: Option<&str>, updated: Option<&str>) -> bool {
+    let Some(updated) = updated else {
+        return false;
+    };
+
+    fn normalized_fields(value: Option<&str>) -> Vec<String> {
+        let mut fields = value
+            .into_iter()
+            .flat_map(|value| value.split(','))
+            .map(str::trim)
+            .filter(|field| !field.is_empty())
+            .map(str::to_ascii_lowercase)
+            .collect::<Vec<_>>();
+        fields.sort_unstable();
+        fields.dedup();
+        fields
+    }
+
+    normalized_fields(stored) != normalized_fields(Some(updated))
+}
+
 /// 解析请求头中的 Cache-Control。
 pub(crate) fn parse_request_cache_control(headers: &[(String, String)]) -> RequestCacheControl {
     let mut result = RequestCacheControl::default();
@@ -185,7 +224,7 @@ pub(crate) fn storable_mode(response: &HttpResponse) -> Option<CacheStoreMode> {
     // https://www.rfc-editor.org/rfc/rfc9111#section-4.1
     // Vary: * 永不匹配后续请求，私有缓存不得存为可复用条目。
     if cc.no_store
-        || response.header("vary").is_some_and(|vary| vary.trim() == "*")
+        || vary_header_value(response).is_some_and(|vary| vary.split(',').any(|field| field.trim() == "*"))
         || !is_cacheable_status(response.status_code)
     {
         return None;
@@ -248,6 +287,33 @@ mod tests {
     fn vary_star_is_not_storable() {
         let r = resp(vec![("cache-control", "max-age=60"), ("vary", "*")]);
         assert_eq!(storable_mode(&r), None);
+    }
+
+    #[test]
+    fn repeated_vary_field_lines_are_combined_and_vary_star_remains_unstorable() {
+        let r = resp(vec![("vary", "Accept-Language"), ("Vary", "Accept-Encoding")]);
+        assert_eq!(
+            vary_header_value(&r).as_deref(),
+            Some("Accept-Language, Accept-Encoding")
+        );
+
+        let star = resp(vec![
+            ("cache-control", "max-age=60"),
+            ("vary", "Accept-Language"),
+            ("vary", "*"),
+        ]);
+        assert_eq!(storable_mode(&star), None);
+    }
+
+    #[test]
+    fn vary_field_change_ignores_case_order_and_whitespace() {
+        assert!(!vary_field_changed(
+            Some("Accept-Encoding, Accept-Language"),
+            Some(" accept-language,accept-encoding "),
+        ));
+        assert!(vary_field_changed(None, Some("Accept-Language")));
+        assert!(vary_field_changed(Some("Accept-Language"), Some("Accept-Encoding")));
+        assert!(!vary_field_changed(Some("Accept-Language"), None));
     }
 
     /// R3233：compute_initial_age 对照 RFC 9111 §4.2.3——`corrected_initial_age = max(apparent_age, age_value)`。

@@ -434,6 +434,83 @@ mod tests {
     }
 
     #[test]
+    fn streamed_image_failure_discards_partial_body_and_allows_retry() {
+        let url = "https://example.com/interrupted.png";
+        let mut inflight = InflightIpcFetches::new();
+        let (failed_tx, failed_rx) = channel();
+        inflight.pending.insert(
+            42,
+            InflightEntry {
+                reply: InflightReply::StreamBytes {
+                    tx: failed_tx,
+                    body: Vec::new(),
+                },
+                request_url: url.into(),
+            },
+        );
+
+        let partial = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 42,
+                status_code: 200,
+                headers: vec![("X-Zero-Stream-Chunk".into(), "1".into())],
+                body: b"partial".to_vec(),
+            }),
+        };
+        assert!(inflight.try_complete(&partial));
+        assert!(failed_rx.try_recv().is_err());
+        assert!(inflight.pending.contains_key(&42));
+
+        let failure = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 42,
+                status_code: 0,
+                headers: Vec::new(),
+                body: b"network failure".to_vec(),
+            }),
+        };
+        assert!(inflight.try_complete(&failure));
+        assert!(failed_rx.try_recv().unwrap().is_err());
+        assert!(!inflight.pending.contains_key(&42));
+
+        let (retry_tx, retry_rx) = channel();
+        inflight.pending.insert(
+            43,
+            InflightEntry {
+                reply: InflightReply::StreamBytes {
+                    tx: retry_tx,
+                    body: Vec::new(),
+                },
+                request_url: url.into(),
+            },
+        );
+        let retry_chunk = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 43,
+                status_code: 200,
+                headers: vec![("X-Zero-Stream-Chunk".into(), "1".into())],
+                body: b"complete".to_vec(),
+            }),
+        };
+        assert!(inflight.try_complete(&retry_chunk));
+        let retry_final = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 43,
+                status_code: 200,
+                headers: Vec::new(),
+                body: Vec::new(),
+            }),
+        };
+        assert!(inflight.try_complete(&retry_final));
+        assert_eq!(retry_rx.try_recv().unwrap().unwrap(), b"complete");
+        assert!(inflight.pending.is_empty());
+    }
+
+    #[test]
     fn unknown_request_id_is_ignored() {
         let mut inflight = InflightIpcFetches::new();
         let msg = IpcMessage {

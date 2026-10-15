@@ -66,7 +66,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
       const body = await readBody(extra ?? new URL('../templates/github-pr.md', import.meta.url));
       const section = await reviewSection(root, task, state);
       if (!/^## 独立审查$/m.test(body)) throw new Error('Missing review section');
-      console.log(body.replace(/^## 独立审查\n[\s\S]*?(?=^## |$(?![\s\S]))/m, `${section}\n`));
+      console.log(body.replace(/^## 独立审查\r?\n[\s\S]*?(?=^## |(?![\s\S]))/m, `${section}\n`));
     } else if (command === 'ready' && file && taskId) {
       console.log(JSON.stringify(await deliveryCheck(file, taskId, extra ?? null), null, 2));
     } else throw new Error('Invalid arguments');

@@ -1148,6 +1148,27 @@ test('delivery CLI reads remote body, rejects edits and checks stop before query
   assert.ok(!render.stdout.includes('{{用 delivery-check'));
 });
 
+test('render CLI replaces the review section in a CRLF body', async t => {
+  const f = await remoteFixture(t);
+  await f.review();
+  const bodyPath = path.join(f.root, 'body-crlf.md');
+  const body = [
+    '## 解决了什么', '缓存可复用。',
+    '## 怎么验证', '候选行为回归通过。',
+    '## 还有什么问题', '整体现代网页目标仍在继续。',
+    '## 优化前后截图', '不适用：纯合成测试 fixture。',
+    '## 独立审查', '旧状态占位文本',
+  ].join('\r\n');
+  await writeFile(bodyPath, body);
+  const cli = fileURLToPath(new URL('./delivery-check.mjs', import.meta.url));
+  const render = spawnSync(process.execPath, [cli, 'render', await f.flush(), f.task.id, bodyPath],
+    { encoding: 'utf8', timeout: 5000 });
+
+  assert.equal(render.status, 0, render.stderr);
+  assert.ok(render.stdout.includes('测试有效性首轮 | PASS'));
+  assert.ok(!render.stdout.includes('旧状态占位文本'));
+});
+
 test('review-stage body update can persist a publish operation without reopening implementation', async t => {
   const f = await remoteFixture(t);
   await f.review();

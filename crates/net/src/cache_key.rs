@@ -1,5 +1,6 @@
 //! HTTP 缓存键 — URL 规范化与 Vary 维度。
 
+use crate::cache_policy::vary_header_value;
 use crate::request::HttpResponse;
 
 /// 去掉 URL fragment。
@@ -26,13 +27,14 @@ pub fn cache_lookup_key(url: &str, request_headers: &[(String, String)], vary_he
 
 /// 构造缓存存储键（根据响应 `Vary` 与本次请求头）。
 pub fn cache_store_key(url: &str, request_headers: &[(String, String)], response: &HttpResponse) -> String {
-    cache_lookup_key(url, request_headers, response.header("vary"))
+    let vary = vary_header_value(response);
+    cache_lookup_key(url, request_headers, vary.as_deref())
 }
 
 /// 根据响应 `Vary` 头与本次请求头生成 vary 后缀（存储时写入条目）。
 pub fn vary_suffix_for_store(response: &HttpResponse, request_headers: &[(String, String)]) -> Option<String> {
-    let vary = response.header("vary")?;
-    vary_suffix_from_fields(vary, request_headers)
+    let vary = vary_header_value(response)?;
+    vary_suffix_from_fields(&vary, request_headers)
 }
 
 fn vary_suffix_from_fields(vary: &str, request_headers: &[(String, String)]) -> Option<String> {
@@ -105,6 +107,28 @@ mod tests {
         assert_eq!(
             cache_store_key("https://example.com/", &req, &resp),
             "https://example.com/\0vary=Accept-Encoding=gzip"
+        );
+    }
+
+    #[test]
+    fn repeated_vary_field_lines_include_every_request_dimension_in_store_key() {
+        let response = HttpResponse {
+            status_code: 200,
+            headers: vec![
+                ("Vary".into(), "Accept-Language".into()),
+                ("vary".into(), "Accept-Encoding".into()),
+            ],
+            body: vec![],
+            url: "https://example.com/".into(),
+            redirect_count: 0,
+        };
+        let request = vec![
+            ("Accept-Language".into(), "en".into()),
+            ("Accept-Encoding".into(), "gzip".into()),
+        ];
+        assert_eq!(
+            cache_store_key("https://example.com/", &request, &response),
+            "https://example.com/\0vary=Accept-Language=en;Accept-Encoding=gzip"
         );
     }
 

@@ -7,8 +7,8 @@ use tokio::sync::Semaphore;
 
 use zero_browser_shell::TabId;
 use zero_net::{
-    FetchPriority, HttpCache, HttpClient, HttpMethod, HttpRequest, HttpResponse, ResourceLoader, is_file_url,
-    read_file_url,
+    CacheLookup, FetchPriority, HttpCache, HttpClient, HttpMethod, HttpRequest, HttpResponse, ResourceLoader,
+    ResourceRequest, is_file_url, read_file_url,
 };
 use zero_protocol::message::FetchParams;
 use zero_script_sandbox::ServiceWorkerFetchRequest;
@@ -36,7 +36,14 @@ struct PendingFetch {
     rx: Receiver<Result<HttpResponse, String>>,
 }
 
+struct ImageStreamCache {
+    loader: Arc<ResourceLoader>,
+    request: ResourceRequest,
+}
+
 const MAX_IPC_STREAM_CHUNK_BYTES: usize = 64 * 1024;
+// Bound the extra body copy retained for cache insertion while images stream to the renderer.
+const MAX_STREAM_IMAGE_CACHE_BODY_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Clone, Copy)]
 pub(crate) enum ServiceWorkerScriptRequestMode {
@@ -152,11 +159,13 @@ impl TabFetchProxy {
     pub fn enqueue(&mut self, tab_id: TabId, params: &FetchParams) {
         self.ensure_tab(tab_id);
         let mut url = params.url.clone();
-        let request_headers = params.headers.clone();
+        let mut request_headers = params.headers.clone();
         let (priority, resource_type) = FetchPriority::from_fetch_headers(&request_headers, &url);
         let stream_image = request_headers
             .iter()
             .any(|(name, value)| name.eq_ignore_ascii_case("x-zero-stream-image") && value == "1");
+        // Renderer routing hints are browser-internal metadata, never origin request headers.
+        request_headers.retain(|(name, _)| !name.to_ascii_lowercase().starts_with("x-zero-"));
 
         if let Some(ctx) = self.security.get_mut(&tab_id) {
             match ctx.check_resource_url(&url, resource_type) {
@@ -233,7 +242,67 @@ impl TabFetchProxy {
         }
 
         if stream_image && resource_type == "image" && params.method.eq_ignore_ascii_case("GET") {
-            self.start_image_stream(tab_id, params.request_id, url, request_headers, priority);
+            let partition = self
+                .security
+                .get(&tab_id)
+                .and_then(|context| context.page_origin())
+                .map(|origin| format!("{}://{}:{}", origin.scheme, origin.host, origin.port))
+                .unwrap_or_else(|| "default".to_string());
+            let mut cache_request = ResourceRequest::get(url.clone(), priority)
+                .with_headers(request_headers.clone())
+                .with_partition(partition)
+                .with_destination(resource_type);
+            if let Some(navigation_id) = self.tab_epochs.get(&tab_id).copied() {
+                cache_request = cache_request.with_navigation_id(navigation_id);
+            }
+            let loader = self.loader_for(tab_id);
+            match loader.lookup_cache(&cache_request) {
+                CacheLookup::Hit(cached) => {
+                    self.pending.push(PendingFetch {
+                        tab_id,
+                        request_id: params.request_id,
+                        url,
+                        resource_type,
+                        rx: immediate_response(cached.into_response()),
+                    });
+                    return;
+                }
+                CacheLookup::Revalidate { .. } => {
+                    let rx = loader.submit(cache_request);
+                    self.pending.push(PendingFetch {
+                        tab_id,
+                        request_id: params.request_id,
+                        url,
+                        resource_type,
+                        rx,
+                    });
+                    return;
+                }
+                CacheLookup::Miss if request_requires_only_if_cached(&request_headers) => {
+                    let rx = loader.submit(cache_request);
+                    self.pending.push(PendingFetch {
+                        tab_id,
+                        request_id: params.request_id,
+                        url,
+                        resource_type,
+                        rx,
+                    });
+                    return;
+                }
+                CacheLookup::Miss => {
+                    self.start_image_stream(
+                        tab_id,
+                        params.request_id,
+                        url,
+                        request_headers,
+                        priority,
+                        ImageStreamCache {
+                            loader,
+                            request: cache_request,
+                        },
+                    );
+                }
+            }
             return;
         }
 
@@ -481,6 +550,7 @@ impl TabFetchProxy {
         url: String,
         request_headers: Vec<(String, String)>,
         priority: FetchPriority,
+        cache: ImageStreamCache,
     ) {
         let max_pending = zero_net::max_connections_total().saturating_mul(16).clamp(64, 1024);
         if self.stream_pending.len() >= max_pending {
@@ -517,6 +587,8 @@ impl TabFetchProxy {
                 headers.push(("Priority".into(), priority.rfc9218_header_value().into()));
             }
             let chunk_tx = tx.clone();
+            let mut cache_body = Vec::new();
+            let mut cache_body_within_limit = true;
             let result = HttpClient::send_async_stream_with_timeout(
                 30,
                 HttpRequest {
@@ -525,7 +597,15 @@ impl TabFetchProxy {
                     headers,
                     body: None,
                 },
-                move |chunk| {
+                |chunk| {
+                    if cache_body_within_limit {
+                        if cache_body.len().saturating_add(chunk.len()) <= MAX_STREAM_IMAGE_CACHE_BODY_BYTES {
+                            cache_body.extend_from_slice(chunk);
+                        } else {
+                            cache_body.clear();
+                            cache_body_within_limit = false;
+                        }
+                    }
                     for part in chunk.chunks(MAX_IPC_STREAM_CHUNK_BYTES) {
                         let _ = chunk_tx.send(CompletedFetch {
                             tab_id,
@@ -539,13 +619,25 @@ impl TabFetchProxy {
             )
             .await;
             let completed = match result {
-                Ok(head) => CompletedFetch {
-                    tab_id,
-                    request_id,
-                    status: head.status_code,
-                    headers: head.headers,
-                    body: Vec::new(),
-                },
+                Ok(head) => {
+                    if cache_body_within_limit && (200..300).contains(&head.status_code) {
+                        let response = HttpResponse {
+                            status_code: head.status_code,
+                            headers: head.headers.clone(),
+                            body: std::mem::take(&mut cache_body),
+                            url: head.url.clone(),
+                            redirect_count: head.redirect_count,
+                        };
+                        let _ = cache.loader.store_streamed_response(&cache.request, &response);
+                    }
+                    CompletedFetch {
+                        tab_id,
+                        request_id,
+                        status: head.status_code,
+                        headers: head.headers,
+                        body: Vec::new(),
+                    }
+                }
                 Err(error) => CompletedFetch {
                     tab_id,
                     request_id,
@@ -557,6 +649,14 @@ impl TabFetchProxy {
             let _ = tx.send(completed);
         });
     }
+}
+
+fn request_requires_only_if_cached(headers: &[(String, String)]) -> bool {
+    headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("cache-control"))
+        .flat_map(|(_, value)| value.split(','))
+        .any(|directive| directive.trim().eq_ignore_ascii_case("only-if-cached"))
 }
 
 fn is_stream_chunk(headers: &[(String, String)]) -> bool {
@@ -579,6 +679,12 @@ impl Default for TabFetchProxy {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn immediate_response(response: HttpResponse) -> Receiver<Result<HttpResponse, String>> {
+    let (tx, rx) = channel();
+    let _ = tx.send(Ok(response));
+    rx
 }
 
 fn immediate_err(msg: String) -> Receiver<Result<HttpResponse, String>> {
@@ -610,9 +716,17 @@ fn dns_prefetch(origin: String) -> Receiver<Result<HttpResponse, String>> {
 mod tests {
     use super::*;
     use std::io::{Read, Write};
-    use std::net::TcpListener;
+    use std::net::{Shutdown, TcpListener};
+    use std::process::{Command, Output, Stdio};
+    use std::sync::mpsc::{Receiver, channel};
     use std::time::Duration;
     use zero_protocol::message::FetchParams;
+
+    const STREAMED_IMAGE_CACHE_CHILD_MODE: &str = "ZERO_STREAMED_IMAGE_CACHE_CHILD_MODE";
+    const STREAMED_IMAGE_CACHE_CHILD_DIR: &str = "ZERO_STREAMED_IMAGE_CACHE_CHILD_DIR";
+    const STREAMED_IMAGE_CACHE_CHILD_URL: &str = "ZERO_STREAMED_IMAGE_CACHE_CHILD_URL";
+    const STREAMED_IMAGE_CACHE_RESTART_TEST: &str =
+        "fetch_proxy::tests::streamed_image_disk_cache_survives_process_restart";
 
     fn params(request_id: u64, url: &str) -> FetchParams {
         FetchParams {
@@ -621,6 +735,136 @@ mod tests {
             method: "GET".into(),
             headers: Vec::new(),
             body: None,
+        }
+    }
+
+    fn with_persistent_cache_dir(root: &std::path::Path) -> TabFetchProxy {
+        let cache = Arc::new(Mutex::new(HttpCache::open_persistent_at(root)));
+        let mut proxy = TabFetchProxy::new();
+        proxy.normal_loader = Arc::new(ResourceLoader::new(cache, "default"));
+        proxy
+    }
+
+    fn streamed_image_params(request_id: u64, url: &str, extra_headers: Vec<(String, String)>) -> FetchParams {
+        let mut request = params(request_id, url);
+        request.headers = vec![
+            ("X-Zero-Resource-Type".into(), "image".into()),
+            ("X-Zero-Stream-Image".into(), "1".into()),
+        ];
+        request.headers.extend(extra_headers);
+        request
+    }
+
+    fn drain_streamed_image(proxy: &mut TabFetchProxy, tab_id: TabId, request: &FetchParams) -> Vec<CompletedFetch> {
+        proxy.enqueue(tab_id, request);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut completed = Vec::new();
+        while std::time::Instant::now() < deadline {
+            completed.extend(proxy.drain());
+            if completed
+                .iter()
+                .any(|item| item.request_id == request.request_id && !is_stream_chunk(&item.headers))
+            {
+                return completed;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("streamed image request {} did not complete", request.request_id);
+    }
+
+    fn streamed_image_body(completed: &[CompletedFetch]) -> Vec<u8> {
+        completed
+            .iter()
+            .filter(|item| is_stream_chunk(&item.headers))
+            .flat_map(|item| item.body.iter().copied())
+            .chain(
+                completed
+                    .iter()
+                    .find(|item| !is_stream_chunk(&item.headers) && (200..300).contains(&item.status))
+                    .into_iter()
+                    .flat_map(|item| item.body.iter().copied()),
+            )
+            .collect()
+    }
+
+    fn run_streamed_image_cache_child(cache_dir: &std::path::Path, url: &str, mode: &str) -> Result<Output, String> {
+        let mut child = Command::new(std::env::current_exe().map_err(|error| error.to_string())?)
+            .args(["--exact", STREAMED_IMAGE_CACHE_RESTART_TEST, "--nocapture"])
+            .env(STREAMED_IMAGE_CACHE_CHILD_MODE, mode)
+            .env(STREAMED_IMAGE_CACHE_CHILD_DIR, cache_dir)
+            .env(STREAMED_IMAGE_CACHE_CHILD_URL, url)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("failed to spawn cache test child: {error}"))?;
+        let deadline = std::time::Instant::now() + Duration::from_secs(12);
+        loop {
+            let status = match child.try_wait() {
+                Ok(status) => status,
+                Err(error) => {
+                    let kill_result = child.kill();
+                    let wait_result = child.wait();
+                    return Err(format!(
+                        "failed to inspect cache test child status: {error}; kill: {kill_result:?}; wait: {wait_result:?}"
+                    ));
+                }
+            };
+            if status.is_some() {
+                let output = child.wait_with_output().map_err(|error| error.to_string())?;
+                if output.status.success() {
+                    return Ok(output);
+                }
+                return Err(format!(
+                    "cache test child exited with {}; stderr: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let output = child.wait_with_output().map_err(|error| error.to_string())?;
+                return Err(format!(
+                    "cache test child exceeded 12 seconds; stderr: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn serve_persistent_image_until_stopped(listener: TcpListener, stop: Receiver<()>) -> usize {
+        let body = b"process-persistent-image";
+        let stop_deadline = std::time::Instant::now() + Duration::from_secs(15);
+        let mut stop_quiet_deadline = None;
+        let mut requests = 0;
+        loop {
+            if stop_quiet_deadline.is_none() && stop.try_recv().is_ok() {
+                stop_quiet_deadline = Some(std::time::Instant::now() + Duration::from_millis(200));
+            }
+            let now = std::time::Instant::now();
+            if now >= stop_deadline || stop_quiet_deadline.is_some_and(|deadline| now >= deadline) {
+                return requests;
+            }
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    requests += 1;
+                    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                    stream.set_write_timeout(Some(Duration::from_secs(2))).unwrap();
+                    let mut request = [0_u8; 4096];
+                    let _ = stream.read(&mut request);
+                    let headers = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nETag: \"process-cache\"\r\nConnection: close\r\nContent-Length: {}\r\n\r\n",
+                        body.len()
+                    );
+                    if stream.write_all(headers.as_bytes()).is_ok() {
+                        let _ = stream.write_all(body);
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("persistent image server accept failed: {error}"),
+            }
         }
     }
 
@@ -876,12 +1120,18 @@ mod tests {
             proxy.stream_pending.insert((TabId(1), request_id));
         }
 
+        let loader = proxy.loader_for(TabId(1));
+        let cache_request = ResourceRequest::get("http://127.0.0.1/overflow.png", FetchPriority::MEDIUM);
         proxy.start_image_stream(
             TabId(1),
             max_pending as u64,
             "http://127.0.0.1/overflow.png".to_string(),
             Vec::new(),
             FetchPriority::MEDIUM,
+            ImageStreamCache {
+                loader,
+                request: cache_request,
+            },
         );
 
         let completed = proxy.drain();
@@ -935,5 +1185,661 @@ mod tests {
                 .iter()
                 .any(|item| !is_stream_chunk(&item.headers) && item.status == 200)
         );
+    }
+
+    #[test]
+    fn repeated_streamed_image_reuses_fresh_http_cache_entry() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/cached.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + Duration::from_millis(750);
+            let mut request_count = 0;
+            while std::time::Instant::now() < deadline {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        request_count += 1;
+                        let mut request = [0_u8; 1024];
+                        let _ = stream.read(&mut request).unwrap();
+                        stream
+                            .write_all(
+                                b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nETag: \"image-v1\"\r\nConnection: close\r\nContent-Length: 7\r\n\r\nimgdata",
+                            )
+                            .unwrap();
+                        if request_count > 1 {
+                            break;
+                        }
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("accept failed: {error}"),
+                }
+            }
+            request_count
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(23), &url);
+        for request_id in [101, 102] {
+            let mut request = params(request_id, &url);
+            request.headers = vec![
+                ("X-Zero-Resource-Type".into(), "image".into()),
+                ("X-Zero-Stream-Image".into(), "1".into()),
+                ("X-Zero-Priority".into(), "high".into()),
+            ];
+            proxy.enqueue(TabId(23), &request);
+
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let mut completed = Vec::new();
+            while std::time::Instant::now() < deadline {
+                completed.extend(proxy.drain());
+                if completed.iter().any(|item| !is_stream_chunk(&item.headers)) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let final_response = completed
+                .iter()
+                .find(|item| !is_stream_chunk(&item.headers))
+                .expect("image response completes");
+            assert_eq!(final_response.request_id, request_id);
+            assert_eq!(final_response.status, 200);
+            let body: Vec<u8> = completed
+                .iter()
+                .filter(|item| is_stream_chunk(&item.headers))
+                .flat_map(|item| item.body.iter().copied())
+                .chain(final_response.body.iter().copied())
+                .collect();
+            assert_eq!(body, b"imgdata");
+        }
+
+        assert_eq!(
+            server.join().unwrap(),
+            1,
+            "fresh image should be reused without a second request"
+        );
+    }
+
+    #[test]
+    fn streamed_image_disk_cache_survives_loader_recreation_and_is_partitioned() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/partitioned.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for body in ["site-a", "site-b"] {
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(accepted) => break accepted,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(
+                                std::time::Instant::now() < deadline,
+                                "request for {body} was not received"
+                            );
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("accept failed: {error}"),
+                    }
+                };
+                let mut request = [0_u8; 2048];
+                let _ = stream.read(&mut request).unwrap();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nETag: \"{body}\"\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+
+        let cache_dir = std::env::temp_dir().join(format!(
+            "zero-stream-image-cache-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut site_a = with_persistent_cache_dir(&cache_dir);
+        site_a.on_navigate(TabId(91), "http://site-a.example/page");
+        let first = drain_streamed_image(&mut site_a, TabId(91), &streamed_image_params(9101, &url, Vec::new()));
+        assert_eq!(streamed_image_body(&first), b"site-a");
+        drop(site_a);
+
+        let mut reopened_site_a = with_persistent_cache_dir(&cache_dir);
+        reopened_site_a.on_navigate(TabId(92), "http://site-a.example/another-page");
+        let reopened = drain_streamed_image(
+            &mut reopened_site_a,
+            TabId(92),
+            &streamed_image_params(9102, &url, Vec::new()),
+        );
+        assert_eq!(streamed_image_body(&reopened), b"site-a");
+        drop(reopened_site_a);
+
+        let mut site_b = with_persistent_cache_dir(&cache_dir);
+        site_b.on_navigate(TabId(93), "http://site-b.example/page");
+        let isolated = drain_streamed_image(&mut site_b, TabId(93), &streamed_image_params(9103, &url, Vec::new()));
+        assert_eq!(streamed_image_body(&isolated), b"site-b");
+        drop(site_b);
+
+        server.join().unwrap();
+        let _ = std::fs::remove_dir_all(cache_dir);
+    }
+
+    #[test]
+    fn streamed_image_disk_cache_survives_process_restart() {
+        if let Ok(mode) = std::env::var(STREAMED_IMAGE_CACHE_CHILD_MODE) {
+            assert!(mode == "write-cache" || mode == "read-cache");
+            let cache_dir = std::path::PathBuf::from(
+                std::env::var_os(STREAMED_IMAGE_CACHE_CHILD_DIR).expect("cache directory is required"),
+            );
+            let url = std::env::var(STREAMED_IMAGE_CACHE_CHILD_URL).expect("image URL is required");
+            let mut proxy = with_persistent_cache_dir(&cache_dir);
+            proxy.on_navigate(TabId(94), "http://site-a.example/process-restart");
+            let completed = drain_streamed_image(&mut proxy, TabId(94), &streamed_image_params(9401, &url, Vec::new()));
+            assert_eq!(streamed_image_body(&completed), b"process-persistent-image");
+            return;
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/process-restart.png", listener.local_addr().unwrap());
+        let (stop_tx, stop_rx) = channel();
+        let server = std::thread::spawn(move || serve_persistent_image_until_stopped(listener, stop_rx));
+        let cache_dir = std::env::temp_dir().join(format!(
+            "zero-stream-image-process-restart-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        let writer = run_streamed_image_cache_child(&cache_dir, &url, "write-cache");
+        let reader = run_streamed_image_cache_child(&cache_dir, &url, "read-cache");
+        let _ = stop_tx.send(());
+        let origin_requests = server.join().unwrap();
+        let _ = std::fs::remove_dir_all(cache_dir);
+
+        assert!(writer.is_ok(), "cache writer process failed: {writer:?}");
+        assert!(reader.is_ok(), "cache reader process failed: {reader:?}");
+        assert_eq!(origin_requests, 1, "a fresh process must reuse the disk cache");
+    }
+
+    #[test]
+    fn expired_streamed_image_revalidates_and_uses_cached_body_on_304() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/revalidated.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for index in 0..2 {
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(accepted) => break accepted,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(std::time::Instant::now() < deadline, "request {index} was not received");
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("accept failed: {error}"),
+                    }
+                };
+                let mut request = [0_u8; 2048];
+                let size = stream.read(&mut request).unwrap();
+                let request = String::from_utf8_lossy(&request[..size]).to_ascii_lowercase();
+                assert!(
+                    !request.contains("\r\nx-zero-resource-type:")
+                        && !request.contains("\r\nx-zero-stream-image:")
+                        && !request.contains("\r\nx-zero-priority:"),
+                    "browser-internal headers must not reach the origin: {request}"
+                );
+                if index == 0 {
+                    stream
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: no-cache\r\nETag: \"image-v1\"\r\nConnection: close\r\nContent-Length: 7\r\n\r\nimgdata",
+                        )
+                        .unwrap();
+                } else {
+                    assert!(
+                        request.contains("\r\nif-none-match: \"image-v1\"\r\n"),
+                        "revalidation request was missing the validator: {request}"
+                    );
+                    stream
+                        .write_all(
+                            b"HTTP/1.1 304 Not Modified\r\nCache-Control: max-age=3600\r\nETag: \"image-v1\"\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+                        )
+                        .unwrap();
+                }
+            }
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(24), &url);
+        let mut final_responses = Vec::new();
+        for request_id in [201, 202] {
+            let mut request = params(request_id, &url);
+            request.headers = vec![
+                ("X-Zero-Resource-Type".into(), "image".into()),
+                ("X-Zero-Stream-Image".into(), "1".into()),
+            ];
+            proxy.enqueue(TabId(24), &request);
+
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let mut completed = Vec::new();
+            while std::time::Instant::now() < deadline {
+                completed.extend(proxy.drain());
+                if completed.iter().any(|item| !is_stream_chunk(&item.headers)) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            final_responses.push(
+                completed
+                    .into_iter()
+                    .find(|item| !is_stream_chunk(&item.headers))
+                    .expect("image response completes"),
+            );
+        }
+        server.join().unwrap();
+
+        assert_eq!(final_responses[0].status, 200);
+        assert_eq!(final_responses[1].request_id, 202);
+        assert_eq!(final_responses[1].status, 200);
+        assert_eq!(final_responses[1].body, b"imgdata");
+        assert!(
+            final_responses[1]
+                .headers
+                .iter()
+                .any(|(name, value)| { name.eq_ignore_ascii_case("cache-control") && value == "max-age=3600" })
+        );
+    }
+
+    #[test]
+    fn fresh_streamed_image_no_cache_request_revalidates_before_using_body() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/no-cache.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for index in 0..2 {
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(accepted) => break accepted,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(std::time::Instant::now() < deadline, "request {index} was not received");
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("accept failed: {error}"),
+                    }
+                };
+                let mut request = [0_u8; 2048];
+                let size = stream.read(&mut request).unwrap();
+                let request = String::from_utf8_lossy(&request[..size]).to_ascii_lowercase();
+                assert!(
+                    !request.contains("\r\nx-zero-resource-type:")
+                        && !request.contains("\r\nx-zero-stream-image:")
+                        && !request.contains("\r\nx-zero-priority:"),
+                    "browser-internal headers must not reach the origin: {request}"
+                );
+                if index == 0 {
+                    stream
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nETag: \"image-v1\"\r\nConnection: close\r\nContent-Length: 7\r\n\r\nimgdata",
+                        )
+                        .unwrap();
+                } else {
+                    assert!(request.contains("\r\ncache-control: no-cache\r\n"));
+                    assert!(request.contains("\r\nif-none-match: \"image-v1\"\r\n"));
+                    stream
+                        .write_all(
+                            b"HTTP/1.1 304 Not Modified\r\nCache-Control: max-age=3600\r\nETag: \"image-v1\"\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+                        )
+                        .unwrap();
+                }
+            }
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(27), &url);
+        let first = drain_streamed_image(
+            &mut proxy,
+            TabId(27),
+            &streamed_image_params(501, &url, vec![("X-Zero-Priority".into(), "high".into())]),
+        );
+        let second = drain_streamed_image(
+            &mut proxy,
+            TabId(27),
+            &streamed_image_params(
+                502,
+                &url,
+                vec![
+                    ("Cache-Control".into(), "no-cache".into()),
+                    ("X-Zero-Priority".into(), "high".into()),
+                ],
+            ),
+        );
+        server.join().unwrap();
+
+        assert_eq!(
+            first
+                .iter()
+                .find(|item| !is_stream_chunk(&item.headers))
+                .unwrap()
+                .status,
+            200
+        );
+        let final_response = second.iter().find(|item| !is_stream_chunk(&item.headers)).unwrap();
+        assert_eq!(final_response.status, 200);
+        assert_eq!(streamed_image_body(&first), b"imgdata");
+        assert_eq!(streamed_image_body(&second), b"imgdata");
+    }
+
+    #[test]
+    fn streamed_image_cache_respects_vary_request_headers() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/vary.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for (language, body) in [("en", "english"), ("zh", "chinese")] {
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(accepted) => break accepted,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(
+                                std::time::Instant::now() < deadline,
+                                "Vary request {language} was not received"
+                            );
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("accept failed: {error}"),
+                    }
+                };
+                let mut request = [0_u8; 2048];
+                let size = stream.read(&mut request).unwrap();
+                let request_text = String::from_utf8_lossy(&request[..size]).to_ascii_lowercase();
+                assert!(request_text.contains(&format!("\r\naccept-language: {language}\r\n")));
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nVary: Accept-Language\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(28), &url);
+        let english = drain_streamed_image(
+            &mut proxy,
+            TabId(28),
+            &streamed_image_params(601, &url, vec![("Accept-Language".into(), "en".into())]),
+        );
+        let chinese = drain_streamed_image(
+            &mut proxy,
+            TabId(28),
+            &streamed_image_params(602, &url, vec![("Accept-Language".into(), "zh".into())]),
+        );
+        server.join().unwrap();
+
+        assert_eq!(streamed_image_body(&english), b"english");
+        assert_eq!(streamed_image_body(&chinese), b"chinese");
+    }
+
+    #[test]
+    fn streamed_image_cache_isolated_by_top_level_site_and_private_context() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/partitioned.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for body in ["site-a", "site-b", "private"] {
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(accepted) => break accepted,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(
+                                std::time::Instant::now() < deadline,
+                                "partition request {body} was not received"
+                            );
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("accept failed: {error}"),
+                    }
+                };
+                let mut request = [0_u8; 2048];
+                let _ = stream.read(&mut request).unwrap();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nETag: {body}\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(29), "http://site-a.example/page");
+        let site_a = drain_streamed_image(&mut proxy, TabId(29), &streamed_image_params(701, &url, Vec::new()));
+        proxy.on_navigate(TabId(29), "http://site-b.example/page");
+        let site_b = drain_streamed_image(&mut proxy, TabId(29), &streamed_image_params(702, &url, Vec::new()));
+        proxy.set_tab_private(TabId(29), true);
+        let private = drain_streamed_image(&mut proxy, TabId(29), &streamed_image_params(703, &url, Vec::new()));
+        server.join().unwrap();
+
+        assert_eq!(streamed_image_body(&site_a), b"site-a");
+        assert_eq!(streamed_image_body(&site_b), b"site-b");
+        assert_eq!(streamed_image_body(&private), b"private");
+    }
+
+    #[test]
+    fn partial_stream_failure_is_not_cached_and_later_retry_completes() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/interrupted.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut first, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 2048];
+            let _ = first.read(&mut request).unwrap();
+            first
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nETag: partial-v1\r\nConnection: close\r\nContent-Length: 16\r\n\r\npart",
+                )
+                .unwrap();
+            first.flush().unwrap();
+            first.shutdown(Shutdown::Write).unwrap();
+            drop(first);
+
+            let (mut retry, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 2048];
+            let size = retry.read(&mut request).unwrap();
+            let request = String::from_utf8_lossy(&request[..size]).to_ascii_lowercase();
+            assert!(
+                !request.contains("\r\nif-none-match:"),
+                "a partial transfer must not leave a cache validator"
+            );
+            retry
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nConnection: close\r\nContent-Length: 8\r\n\r\ncomplete",
+                )
+                .unwrap();
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(30), &url);
+        let failed = drain_streamed_image(&mut proxy, TabId(30), &streamed_image_params(801, &url, Vec::new()));
+        let failed_chunks: Vec<_> = failed.iter().filter(|item| is_stream_chunk(&item.headers)).collect();
+        let failure = failed.iter().find(|item| !is_stream_chunk(&item.headers)).unwrap();
+        assert!(
+            !failed_chunks.is_empty(),
+            "the server should deliver at least one partial chunk"
+        );
+        assert_eq!(failure.status, 0, "short body must complete as a network failure");
+        assert_eq!(
+            failed_chunks
+                .iter()
+                .flat_map(|item| item.body.iter().copied())
+                .collect::<Vec<_>>(),
+            b"part"
+        );
+
+        let retry = drain_streamed_image(&mut proxy, TabId(30), &streamed_image_params(802, &url, Vec::new()));
+        server.join().unwrap();
+        assert_eq!(
+            retry
+                .iter()
+                .find(|item| !is_stream_chunk(&item.headers))
+                .unwrap()
+                .status,
+            200
+        );
+        assert_eq!(streamed_image_body(&retry), b"complete");
+    }
+
+    #[test]
+    fn no_store_streamed_image_is_requested_again() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/no-store.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for index in 0..2 {
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(accepted) => break accepted,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(std::time::Instant::now() < deadline, "request {index} was not received");
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("accept failed: {error}"),
+                    }
+                };
+                let mut request = [0_u8; 1024];
+                let _ = stream.read(&mut request).unwrap();
+                stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nConnection: close\r\nContent-Length: 7\r\n\r\nimgdata",
+                    )
+                    .unwrap();
+            }
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(25), &url);
+        for request_id in [301, 302] {
+            let mut request = params(request_id, &url);
+            request.headers = vec![
+                ("X-Zero-Resource-Type".into(), "image".into()),
+                ("X-Zero-Stream-Image".into(), "1".into()),
+                ("Cache-Control".into(), "no-store".into()),
+            ];
+            proxy.enqueue(TabId(25), &request);
+
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let mut completed = Vec::new();
+            while std::time::Instant::now() < deadline {
+                completed.extend(proxy.drain());
+                if completed.iter().any(|item| !is_stream_chunk(&item.headers)) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert!(completed.iter().any(|item| {
+                !is_stream_chunk(&item.headers) && item.request_id == request_id && item.status == 200
+            }));
+        }
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn revalidated_304_no_store_does_not_keep_streamed_image_cached() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/revalidated-no-store.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for index in 0..3 {
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(accepted) => break accepted,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(std::time::Instant::now() < deadline, "request {index} was not received");
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("accept failed: {error}"),
+                    }
+                };
+                let mut request = [0_u8; 2048];
+                let size = stream.read(&mut request).unwrap();
+                let request = String::from_utf8_lossy(&request[..size]).to_ascii_lowercase();
+                match index {
+                    0 => {
+                        assert!(!request.contains("\r\nif-none-match:"));
+                        stream
+                            .write_all(
+                                b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nETag: \"image-v1\"\r\nConnection: close\r\nContent-Length: 7\r\n\r\nimgdata",
+                            )
+                            .unwrap();
+                    }
+                    1 => {
+                        assert!(request.contains("\r\ncache-control: no-cache\r\n"));
+                        assert!(request.contains("\r\nif-none-match: \"image-v1\"\r\n"));
+                        stream
+                            .write_all(
+                                b"HTTP/1.1 304 Not Modified\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+                            )
+                            .unwrap();
+                    }
+                    _ => {
+                        assert!(
+                            !request.contains("\r\nif-none-match:"),
+                            "no-store 304 must invalidate the old validator"
+                        );
+                        stream
+                            .write_all(
+                                b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: 7\r\n\r\nnewdata",
+                            )
+                            .unwrap();
+                    }
+                }
+            }
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(32), &url);
+        let first = drain_streamed_image(&mut proxy, TabId(32), &streamed_image_params(901, &url, Vec::new()));
+        let revalidated = drain_streamed_image(
+            &mut proxy,
+            TabId(32),
+            &streamed_image_params(902, &url, vec![("Cache-Control".into(), "no-cache".into())]),
+        );
+        let after_no_store = drain_streamed_image(&mut proxy, TabId(32), &streamed_image_params(903, &url, Vec::new()));
+        server.join().unwrap();
+
+        assert_eq!(streamed_image_body(&first), b"imgdata");
+        assert_eq!(streamed_image_body(&revalidated), b"imgdata");
+        assert_eq!(streamed_image_body(&after_no_store), b"newdata");
+    }
+
+    #[test]
+    fn only_if_cached_image_miss_does_not_start_network_request() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/offline.png", listener.local_addr().unwrap());
+        let mut request = params(401, &url);
+        request.headers = vec![
+            ("X-Zero-Resource-Type".into(), "image".into()),
+            ("X-Zero-Stream-Image".into(), "1".into()),
+            ("Cache-Control".into(), "only-if-cached".into()),
+        ];
+        let mut proxy = TabFetchProxy::new();
+        proxy.on_navigate(TabId(26), &url);
+        proxy.enqueue(TabId(26), &request);
+
+        let completed = proxy.drain();
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0].status, 0);
+        assert!(String::from_utf8_lossy(&completed[0].body).contains("504"));
+        assert!(matches!(
+            listener.accept(),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+        ));
     }
 }

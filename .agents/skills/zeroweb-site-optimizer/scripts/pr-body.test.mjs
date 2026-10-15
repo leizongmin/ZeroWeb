@@ -57,6 +57,17 @@ test('draft accepts explicit gaps but rejects blank, hidden or unfilled sections
   assert.throws(() => checkBody(template), /Unfilled/);
 });
 
+test('legacy review reports without PR identity remain visible but cannot satisfy a review stage', async t => {
+  const f = await fixture(t);
+  const legacy = await f.save({ stage: 'first', role: 'test_validity', verdict: 'PASS' });
+  f.state.operations.push({ task_id: f.task.id, kind: 'review', status: 'completed', result: legacy });
+
+  const body = await reviewSection(f.root, f.task, f.state);
+  assert.match(body, /PASS（历史报告；身份字段缺失）/);
+  assert.match(body, /\| 测试有效性首轮 \| 待执行 \|/);
+  assert.match(body, /\| 汇总 \| 待执行 \|/);
+});
+
 test('attachment URLs reject local, raw, signed and lookalike hosts', () => {
   assert.equal(attachmentUrl(before), true);
   for (const url of ['before.png', 'file:///tmp/a.png', 'https://github.com.evil.test/user-attachments/assets/a',

@@ -1973,15 +1973,24 @@ impl ProcessTabBackend {
     /// （窗口关闭按钮、Ctrl+C、事件循环错误）都必须显式调用此方法，
     /// 否则 `zero-renderer.exe` 子进程会成为孤儿，持有自身可执行文件句柄，
     /// 导致下次 `cargo build` 时无法覆盖二进制（Windows `os error 5`）。
-    pub fn shutdown_all(&mut self) {
+    /// 如果 compositor 已启动，返回其退出状态。
+    pub fn shutdown_all(&mut self) -> Option<std::process::ExitStatus> {
         self.manager.shutdown_all();
-        crate::compositor_client::shutdown();
+        crate::compositor_client::shutdown()
     }
 }
 
 impl Drop for ProcessTabBackend {
     fn drop(&mut self) {
-        self.shutdown_all();
+        let exit_status = self.shutdown_all();
+        #[cfg(test)]
+        if !std::thread::panicking()
+            && let Some(status) = exit_status
+        {
+            assert!(status.success(), "compositor exited abnormally: {status}");
+        }
+        #[cfg(not(test))]
+        let _ = exit_status;
     }
 }
 

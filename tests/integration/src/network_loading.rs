@@ -153,6 +153,7 @@ fn stale_etag_revalidation_is_coalesced() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind fixture");
     let address = listener.local_addr().expect("fixture address");
     let (request_tx, request_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
     let server = thread::spawn(move || {
         for response_index in 0..2 {
             let (mut stream, _) = listener.accept().expect("accept fixture request");
@@ -171,6 +172,9 @@ fn stale_etag_revalidation_is_coalesced() {
                     )
                     .expect("write seed response");
             } else {
+                release_rx
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("release revalidation response after subscribers attach");
                 stream
                     .write_all(
                         b"HTTP/1.1 304 Not Modified\r\nCache-Control: max-age=60\r\nETag: \"v1\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
@@ -195,6 +199,16 @@ fn stale_etag_revalidation_is_coalesced() {
     );
     let first = loader.submit(ResourceRequest::get(url.clone(), FetchPriority::HIGH));
     let second = loader.submit(ResourceRequest::get(url, FetchPriority::HIGH));
+    let stats_before_response = loader.stats();
+    release_tx.send(()).expect("release 304 response");
+    assert_eq!(
+        stats_before_response.revalidations, 1,
+        "the two consumers share one conditional request"
+    );
+    assert_eq!(
+        stats_before_response.network_requests, 2,
+        "seed plus one shared revalidation"
+    );
     for response in [first, second] {
         let response = response
             .recv_timeout(Duration::from_secs(2))

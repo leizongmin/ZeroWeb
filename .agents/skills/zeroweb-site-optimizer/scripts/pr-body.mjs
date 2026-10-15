@@ -35,18 +35,18 @@ export async function reviewSection(root, task, state) {
     && op.kind === 'review' && op.status === 'completed')) {
     const report = await readJson(await evidence(root, op.result));
     if (!['first', 'recheck', 'summary'].includes(report.stage)) continue;
-    requireValue(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(report.head_sha)
-      && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(report.base_sha),
-      'Invalid visible review identity');
+    const validIdentity = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(report.head_sha)
+      && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(report.base_sha);
     const selected = report.stage !== 'summary' || op.result.sha256 === task.delivery?.review?.sha256;
     const label = report.stage === 'summary' ? '汇总'
       : `${report.role === 'test_validity' ? '测试有效性' : '缺陷'}${report.stage === 'first' ? '首轮' : '复核'}`;
-    const current = selected && report.head_sha === task.delivery.head_sha
+    const current = validIdentity && selected && report.head_sha === task.delivery.head_sha
       && report.base_sha === task.delivery.base_sha;
-    if (report.stage !== 'summary' || current) {
+    if (validIdentity && (report.stage !== 'summary' || current)) {
       completed.add(report.stage === 'summary' ? 'summary' : `${report.stage}:${report.role}`);
     }
-    rows.push(`| ${label} | ${report.verdict === 'PASS' ? 'PASS' : 'CHANGES_REQUIRED'}${current ? '' : '（历史报告）'} | ${report.head_sha} / ${report.base_sha} | 本地证据 SHA-256：${op.result.sha256} |`);
+    const historical = validIdentity ? (current ? '' : '（历史报告）') : '（历史报告；身份字段缺失）';
+    rows.push(`| ${label} | ${report.verdict === 'PASS' ? 'PASS' : 'CHANGES_REQUIRED'}${historical} | ${validIdentity ? `${report.head_sha} / ${report.base_sha}` : '—'} | 本地证据 SHA-256：${op.result.sha256} |`);
   }
   const summary = task.delivery?.review
     ? await readJson(await evidence(root, task.delivery.review)) : null;

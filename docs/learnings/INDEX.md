@@ -5,9 +5,15 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（155）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（161）
 
+- 2026-10-15 [WPT runner 单案超时网对同步循环/状态污染无效——守卫墙钟是最后防线](bugs/2026-10/2026-10-15-wpt-runner-sync-loop-hang-defeats-case-timeout.md) — tests/wpt-runner
+- 2026-10-15 [内联 SVG（替换元素）在 shrink-to-fit/auto 尺寸链里 used width 被算成 0——google 首页 logo 不绘制的根因方向](bugs/2026-10/2026-10-15-svg-replaced-used-width-collapse-google-logo.md) — crates/layout-engine,crates/engine
+- 2026-10-15 [切出 setter 子分支时误删兄弟路径首行副作用——textarea value 缓存写](bugs/2026-10/2026-10-15-shim-branch-carve-sibling-side-effects.md) — engine/js-dom-shim
 - 2026-10-15 [outline-width 初始值是 medium(3px) 非 0，不能当「作者已声明」信号](bugs/2026-10/2026-10-15-outline-width-initial-medium-not-declared-signal.md) — style-system,engine/paint
+- 2026-10-15 [重建 loader 不等于进程重启后的缓存复用](bugs/2026-10/2026-10-15-disk-cache-loader-reopen-not-process-restart.md) — apps/browser, crates/net
+- 2026-10-15 [compositor 关闭不能先杀进程再读取退出状态](bugs/2026-10/2026-10-15-compositor-graceful-shutdown-exit-status.md) — apps/browser compositor_client, apps/browser process_backend, apps/compositor shutdown
+- 2026-10-14 [流式图片路径绕过 HTTP 缓存](bugs/2026-10/2026-10-14-streamed-images-bypass-http-cache.md) — apps/browser, crates/net
 - 2026-10-14 [js_dom_shim 同一树节点存在多族稳定 JS 包装——跨族 identity 恒败与吸附目标重投影陷阱](bugs/2026-10/2026-10-14-js-dom-wrapper-family-identity.md) — crates/engine
 - 2026-10-13 [import-wpt 从 upstream master 下载与 pinned 快照不一致——ref 404 时连带删除本地既有案](bugs/2026-10/2026-10-13-import-wpt-master-pinned-mismatch.md) — tests/wpt-runner
 - 2026-10-11 [QuickJS 全局词法作用域重复 `const` 声明使脚本静默死亡](bugs/2026-10/2026-10-11-quickjs-global-const-redeclaration.md) — apps/renderer

@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use crate::fetch_scheduler::FetchTelemetry;
 use crate::{
-    CacheLookup, FetchJobResult, FetchPriority, HttpCache, HttpClient, HttpMethod, HttpRequest,
+    CacheLookup, FetchJobResult, FetchPriority, HttpCache, HttpClient, HttpMethod, HttpRequest, HttpResponse,
     PerOriginFetchScheduler, shared_cookie_store, shared_http_cache, store_set_cookie_headers,
 };
 
@@ -180,10 +180,8 @@ pub struct ResourceLoader {
     scheduler: Arc<Mutex<PerOriginFetchScheduler>>,
     /// 默认分区的缓存。普通 profile 可在此使用持久化缓存；私密 profile 传入内存缓存。
     default_cache: Arc<Mutex<HttpCache>>,
-    /// 非默认顶级站点分区的独立内存缓存。
-    ///
-    /// P0 保守地不把这些分区写入共享磁盘缓存：磁盘索引尚未携带 partition key 时，
-    /// 宁可降低跨会话命中率，也不能让不同顶级站点复用同一条目。
+    persistent_partition_root: Option<std::path::PathBuf>,
+    /// 非默认顶级站点分区的独立缓存；普通 profile 按分区持久化，无痕 profile 仅驻留内存。
     partition_caches: Mutex<HashMap<String, Arc<Mutex<HttpCache>>>>,
     partition: String,
     stats: Arc<Mutex<ResourceLoadStats>>,
@@ -201,9 +199,11 @@ impl ResourceLoader {
 
     /// 用指定缓存和分区创建加载器（无痕 profile 使用独立内存缓存）。
     pub fn new(cache: Arc<Mutex<HttpCache>>, partition: impl Into<String>) -> Self {
+        let persistent_partition_root = cache.lock().ok().and_then(|cache| cache.persistent_root());
         Self {
             scheduler: PerOriginFetchScheduler::new_shared(),
             default_cache: cache,
+            persistent_partition_root,
             partition_caches: Mutex::new(HashMap::new()),
             partition: partition.into(),
             stats: Arc::new(Mutex::new(ResourceLoadStats::default())),
@@ -274,6 +274,59 @@ impl ResourceLoader {
     /// 返回当前加载器的匿名聚合计数。
     pub fn stats(&self) -> ResourceLoadStats {
         *self.stats.lock().expect("resource loader stats lock")
+    }
+
+    /// Check an HTTP cache entry before a caller starts a progressive resource transfer.
+    pub fn lookup_cache(&self, request: &ResourceRequest) -> CacheLookup {
+        let mut request = request.clone();
+        if request.partition == "default" {
+            request.partition = self.partition.clone();
+        }
+        request.cache_mode = request_cache_mode(&request.headers).unwrap_or(request.cache_mode);
+        if request.cache_mode == CacheMode::NoStore {
+            return CacheLookup::Miss;
+        }
+
+        let cache = self.cache_for_partition(&request.partition);
+        let lookup = cache
+            .lock()
+            .expect("HTTP cache lock")
+            .lookup(&request.url, &request.headers);
+        let lookup = match lookup {
+            CacheLookup::Hit(cached) if request.cache_mode == CacheMode::NoCache => {
+                let conditional_headers = cache
+                    .lock()
+                    .expect("HTTP cache lock")
+                    .conditional_headers_with_request(&request.url, &request.headers);
+                CacheLookup::Revalidate {
+                    cached,
+                    conditional_headers,
+                }
+            }
+            lookup => lookup,
+        };
+        if matches!(lookup, CacheLookup::Hit(_)) {
+            self.stats.lock().expect("resource loader stats lock").fresh_hits += 1;
+            self.record_event(&request, CacheOutcome::FreshHit, None, 0);
+        }
+        lookup
+    }
+
+    /// Store a fully received response body from a progressive GET transfer.
+    pub fn store_streamed_response(&self, request: &ResourceRequest, response: &HttpResponse) -> bool {
+        let mode = request_cache_mode(&request.headers).unwrap_or(request.cache_mode);
+        if matches!(mode, CacheMode::NoStore | CacheMode::OnlyIfCached) || !response.is_success() {
+            return false;
+        }
+        let partition = if request.partition == "default" {
+            &self.partition
+        } else {
+            &request.partition
+        };
+        self.cache_for_partition(partition)
+            .lock()
+            .expect("HTTP cache lock")
+            .put_with_headers(&request.url, &request.headers, response)
     }
 
     /// 返回最近的匿名加载事件，按完成顺序排列。
@@ -456,7 +509,14 @@ impl ResourceLoader {
         let mut caches = self.partition_caches.lock().expect("HTTP cache partition lock");
         caches
             .entry(partition.to_string())
-            .or_insert_with(|| Arc::new(Mutex::new(HttpCache::new())))
+            .or_insert_with(|| {
+                let cache = self
+                    .persistent_partition_root
+                    .as_deref()
+                    .map(|root| HttpCache::open_persistent_partition(root, partition))
+                    .unwrap_or_default();
+                Arc::new(Mutex::new(cache))
+            })
             .clone()
     }
 
@@ -668,6 +728,44 @@ mod tests {
     }
 
     #[test]
+    fn lookup_cache_no_cache_fresh_entry_requires_revalidation() {
+        let cache = Arc::new(Mutex::new(HttpCache::new()));
+        let loader = ResourceLoader::new(Arc::clone(&cache), "site-a");
+        let url = "https://cdn.example/no-cache.png";
+        assert!(cache.lock().unwrap().put(
+            url,
+            &crate::HttpResponse {
+                status_code: 200,
+                headers: vec![
+                    ("Cache-Control".into(), "max-age=3600".into()),
+                    ("ETag".into(), "image-v1".into()),
+                ],
+                body: b"cached image".to_vec(),
+                url: url.into(),
+                redirect_count: 0,
+            }
+        ));
+        let request = ResourceRequest::get(url, FetchPriority::HIGH)
+            .with_headers(vec![("Cache-Control".into(), "no-cache".into())]);
+
+        match loader.lookup_cache(&request) {
+            CacheLookup::Revalidate {
+                cached,
+                conditional_headers,
+            } => {
+                assert_eq!(cached.body, b"cached image");
+                assert!(
+                    conditional_headers
+                        .iter()
+                        .any(|(name, value)| { name.eq_ignore_ascii_case("if-none-match") && value == "image-v1" })
+                );
+            }
+            CacheLookup::Hit(_) => panic!("no-cache must not return a fresh cache hit"),
+            CacheLookup::Miss => panic!("the existing cache entry should be revalidated"),
+        }
+    }
+
+    #[test]
     fn partition_cache_instances_are_stable_and_isolated() {
         let default_cache = Arc::new(Mutex::new(HttpCache::new()));
         let loader = ResourceLoader::new(Arc::clone(&default_cache), "site-a");
@@ -677,6 +775,44 @@ mod tests {
         let second_site_b = loader.cache_for_partition("site-b");
         assert!(Arc::ptr_eq(&first_site_b, &second_site_b));
         assert!(!Arc::ptr_eq(&first_site_b, &default_cache));
+    }
+
+    #[test]
+    fn persistent_partition_cache_survives_loader_recreation_and_stays_isolated() {
+        let root = std::env::temp_dir().join(format!(
+            "zero-resource-cache-partitions-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let url = "https://cdn.example/partitioned.css";
+        let site_a = "https://site-a.example:443";
+        let site_b = "https://site-b.example:443";
+        {
+            let cache = Arc::new(Mutex::new(HttpCache::open_persistent_at(&root)));
+            let loader = ResourceLoader::new(cache, "default");
+            assert!(
+                loader
+                    .cache_for_partition(site_a)
+                    .lock()
+                    .unwrap()
+                    .put(url, &fresh_response(url))
+            );
+        }
+
+        let reopened = ResourceLoader::new(Arc::new(Mutex::new(HttpCache::open_persistent_at(&root))), "default");
+        match reopened.lookup_cache(&ResourceRequest::get(url, FetchPriority::MEDIUM).with_partition(site_a)) {
+            CacheLookup::Hit(cached) => assert_eq!(cached.body, b"cached"),
+            CacheLookup::Revalidate { .. } => panic!("fresh persistent entry should be a hit"),
+            CacheLookup::Miss => panic!("same partition should reopen its disk entry"),
+        }
+        assert!(matches!(
+            reopened.lookup_cache(&ResourceRequest::get(url, FetchPriority::MEDIUM).with_partition(site_b)),
+            CacheLookup::Miss
+        ));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
