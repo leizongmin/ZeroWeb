@@ -192,7 +192,7 @@ fn test_auto_height_balanced_multicol_does_not_create_overflow_columns() {
     };
     let info = compute_column_info(styles.get(&container_id).unwrap(), container.content_width).unwrap();
 
-    layout_multicol(&mut container, &info, &styles, false, None);
+    layout_multicol(&mut container, &info, &styles, false, None, &doc);
 
     assert!(
         container
@@ -230,7 +230,7 @@ fn test_auto_height_balanced_multicol_uses_tallest_column_height() {
     };
     let info = compute_column_info(styles.get(&container_id).unwrap(), container.content_width).unwrap();
 
-    layout_multicol(&mut container, &info, &styles, false, None);
+    layout_multicol(&mut container, &info, &styles, false, None, &doc);
 
     assert!(
         (container.content_height - 200.0).abs() < 0.01,
@@ -248,7 +248,7 @@ fn test_assign_children_with_breaking() {
     // child2(100): col1=200 > 150, move to col2 → col2=[2]
     // child3(100): col2=200 > 150, no more cols, stays → col2=[2,3]
     let children = vec![(0, 100.0), (1, 100.0), (2, 100.0), (3, 100.0)];
-    let cols = assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false; 4], &[false; 4], &[]);
+    let cols = assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false; 4], &[false; 4], &[], &[]);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1);
     assert_eq!(cols[1].len(), 1);
@@ -259,7 +259,7 @@ fn test_assign_children_with_breaking() {
 fn test_assign_children_with_breaking_oversized() {
     // Single child larger than column height — stays in current column
     let children = vec![(0, 300.0)];
-    let cols = assign_children_to_columns_with_breaking(&children, 3, 100.0, &[false; 4], &[false; 4], &[]);
+    let cols = assign_children_to_columns_with_breaking(&children, 3, 100.0, &[false; 4], &[false; 4], &[], &[]);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1); // oversized child stays in first column
 }
@@ -271,7 +271,7 @@ fn test_assign_children_with_breaking_single_col_oversized_no_panic() {
     // 使后续子元素 columns[current_col].push 在 line 350 panic（index OOB, len 1 idx 1）。
     // 修复后：单列时 oversized 内容 clip 到唯一列，后续子元素也落入唯一列，无 panic。
     let children = vec![(0, 300.0), (1, 50.0)];
-    let cols = assign_children_to_columns_with_breaking(&children, 1, 100.0, &[false; 4], &[false; 4], &[]);
+    let cols = assign_children_to_columns_with_breaking(&children, 1, 100.0, &[false; 4], &[false; 4], &[], &[]);
     assert_eq!(cols.len(), 1);
     // 两子元素都分配到唯一列（clip），不应 panic
     assert!(cols[0].iter().any(|f| f.child_idx == 0));
@@ -397,7 +397,8 @@ fn test_break_before_column_forces_new_column_balanced() {
 fn test_break_before_column_forces_new_column_breaking() {
     // max_col_height=200 容纳全部 3 子（各 50），但 forced break 强制换列。
     let children = vec![(0, 50.0), (1, 50.0), (2, 50.0)];
-    let cols = assign_children_to_columns_with_breaking(&children, 3, 200.0, &[false, true, true], &[false; 3], &[]);
+    let cols =
+        assign_children_to_columns_with_breaking(&children, 3, 200.0, &[false, true, true], &[false; 3], &[], &[]);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1); // child0 无 forced break → col0
     assert_eq!(cols[1].len(), 1); // child1 forced → col1
@@ -442,7 +443,8 @@ fn test_break_after_column_forces_new_column_balanced() {
 #[test]
 fn test_break_after_column_forces_new_column_breaking() {
     let children = vec![(0, 50.0), (1, 50.0), (2, 50.0)];
-    let cols = assign_children_to_columns_with_breaking(&children, 3, 200.0, &[false; 3], &[true, true, true], &[]);
+    let cols =
+        assign_children_to_columns_with_breaking(&children, 3, 200.0, &[false; 3], &[true, true, true], &[], &[]);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1);
     assert_eq!(cols[1].len(), 1);
@@ -643,7 +645,8 @@ fn nested_seq_unbreakable_advances_partial_column() {
     // 子 0 普通块 100 高 → col0 部分填充；子 1 嵌套 mc 全高 200、首不可断单元 100
     //（剩余 50 < 100）→ 推进 col1 整子放置。
     let children = vec![(0usize, 100.0f32), (1usize, 200.0f32)];
-    let cols = assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false; 2], &[false; 2], &[0.0, 100.0]);
+    let cols =
+        assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false; 2], &[false; 2], &[0.0, 100.0], &[]);
     assert_eq!(cols[0].len(), 1, "普通块留在 col0");
     assert_eq!(cols[1].len(), 1, "嵌套 mc 推进 col1 整子放置");
     let frag = &cols[1][0];
@@ -661,7 +664,7 @@ fn nested_seq_unbreakable_fresh_column_stays_in_place() {
     // 单嵌套 mc 子全高 200、首不可断单元 100，fresh 列高 150：臂 3 gate
     // current_col_height > 0.0 不满足 → R5135 原位整放臂（visual_height 全高溢出）。
     let children = vec![(0usize, 200.0f32)];
-    let cols = assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false], &[false], &[100.0]);
+    let cols = assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false], &[false], &[100.0], &[]);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1, "fresh 列原地整放，不推进");
     assert!((cols[0][0].visual_height - 200.0).abs() < 0.01);

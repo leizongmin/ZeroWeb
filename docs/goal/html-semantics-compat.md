@@ -1,19 +1,23 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
-**版本**: v1.1
+**版本**: v1.2
 **日期**: 2026-10-15（v1.0 立项 2026-10-08）
-**状态**: Active——M1 收口（基线 42.63%），M2 forms 域切片待启动
+**状态**: Active——M2 切片 1 收口（input value IDL 面 +423P），切片 2 待启动
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-15 M1）**：九域语料导入 + runner 通道
-> （`testharness-html-semantics` + Makefile target + skip 规则）落地；基线
-> **2715/6369 = 42.63%**（1151 案；分域账见
-> [evidence/2026-10-15-m1-baseline.md](html-semantics-compat/evidence/2026-10-15-m1-baseline.md)）。
-> microdata 上游不存在记空域。两处 runner 挂死挂账排除（tabular span-limits
-> 同步循环、links downloading-resources 状态污染——FIXME 待 M2 排查）。
-> **卡点**：无阻塞。**下一步**：M2 forms 域首切片 the-input-element IDL/类型面
-> （1059F 单簇最大杠杆）；同轮排查两处挂死根因。
+> **▶ 当前状态（2026-10-15 M2 切片 1）**：the-input-element IDL/类型面收口——
+> `HTMLInputElement.value` 四值模式（value/default/default-on/filename）+
+> 净化算法 + type 变更步骤 + 克隆步骤（shim R3901；spec 链接在
+> part01 助手块）。the-input-element 面 528→**951P**（+423）；forms 域
+> 1897→**2320P**；九域全量 2715→**3248P**（+533，3248/6609 = 49.15%），
+> 对 M1 基线逐 subtest diff **九域零回归**、81 文件提升。账本见
+> [evidence/2026-10-15-m2-input-value-modes.md](html-semantics-compat/evidence/2026-10-15-m2-input-value-modes.md)。
+> 两处 runner 挂死仍挂账（tabular span-limits、links downloading-resources）。
+> **卡点**：无阻塞。**下一步**：切片 2 按簇杠杆序——focus-dynamic-type-change
+> （73F）→ untrusted-key-event（42F）→ stepUp/stepDown（43F）→ showPicker
+> （~130F，或有引擎面依赖）→ files null-for-non-file（23F）；同轮排查两处
+> 挂死根因。
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
@@ -94,6 +98,14 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-15 M2 切片 1**：input value IDL 面（R3901）——part01 四值模式/
+  净化/类型迁移助手，part03 getter 模式分派，part04 setter 分派 + setAttribute/
+  cloneNode 接线，part05 `input.type=` setter，用户编辑通道
+  （`__zw_text_input`/`__zw_text_delete`/execCommand/script_gen 三脚本）净化
+  绕行旗标。the-input-element 528→951P、forms 1897→2320P、九域全量
+  2715→3248P（+533，零回归）。中途 13 回归（textarea 缓存写误删）当日定位
+  恢复（经验已沉淀 docs/learnings/bugs/2026-10/）。`make test` 全绿、
+  clippy/fmt 过；csv 行回填全量数字。零新增依赖。
 - **2026-10-15 M1**：fetch 脚本九域+叶子助资产（jsdelivr CDN 回落先落入
   lib.sh 共享路径）；runner 通道 `testharness-html-semantics`（九域顶层递归
   扫描 + skip 规则双侧同源）；基线 42.63%（2715/6369，1151 案），分域账与

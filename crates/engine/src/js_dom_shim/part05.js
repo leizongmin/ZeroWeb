@@ -1,4 +1,14 @@
           }
+        } else if (p === 'type' && _realTag(sel, handle) === 'INPUT') {
+          // R3901（html-semantics M2）：input.type IDL set——attr 逐字反射（getter 侧
+          // R3189 规范化，非法 → "text"）+ type 内容属性变更步骤（value 模式迁移/净化，
+          // part01 _zwApplyInputTypeChange）。旧落 R3069 generic 只写 attr 不跑变更步骤
+          //（type-change-state 全矩阵 254F 主簇）。旧类型在写入前捕（枚举 getter 读 attr）。
+          var _r3901TyOld = _reflectedTypeEnum(sel, handle);
+          if (handle) __zw_set_attr_handle(handle, 'type', String(value));
+          else __zw_set_attr(sel, 'type', String(value));
+          moAttr = 'type';
+          _zwApplyInputTypeChange(key, sel, handle, _r3901TyOld, String(value));
         } else if (p === 'currentTime' || p === 'playbackRate' || p === 'defaultPlaybackRate' || p === 'volume' || p === 'preservesPitch') {
           // media-elements M1 切片 3：HTMLMediaElement 播放状态 setter——per-element
           // `_mediaState` 镜像（get trap 同源读回）。仅 AUDIO/VIDEO。volume clamp [0,1]
