@@ -1,23 +1,27 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
-**版本**: v1.2
-**日期**: 2026-10-15（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 1 收口（input value IDL 面 +423P），切片 2 待启动
+**版本**: v1.3
+**日期**: 2026-10-16（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 2a 收口（focus/focus-visible + rAF 预算 +121P），切片 2b 进行中
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-15 M2 切片 1）**：the-input-element IDL/类型面收口——
-> `HTMLInputElement.value` 四值模式（value/default/default-on/filename）+
-> 净化算法 + type 变更步骤 + 克隆步骤（shim R3901；spec 链接在
-> part01 助手块）。the-input-element 面 528→**951P**（+423）；forms 域
-> 1897→**2320P**；九域全量 2715→**3248P**（+533，3248/6609 = 49.15%），
-> 对 M1 基线逐 subtest diff **九域零回归**、81 文件提升。账本见
-> [evidence/2026-10-15-m2-input-value-modes.md](html-semantics-compat/evidence/2026-10-15-m2-input-value-modes.md)。
+> **▶ 当前状态（2026-10-16 M2 切片 2a）**：focus-dynamic-type-change 73F 主簇
+> 清零——`:focus`/`:focus-visible` 伪类 JS 侧 matches 判定（R3902，Selectors
+> L4 §13/§14）+ rAF 单脚本预算 64→512（promise_test 串行链 double-rAF 断链
+> 根因）。forms 2320→**2441P**；九域全量 3248→**3369P**（3369/6656 =
+> 50.62%），对切片 1 账本逐 subtest diff **九域零回归**。账本见
+> [evidence/2026-10-16-m2s2-focus-visible.md](html-semantics-compat/evidence/2026-10-16-m2s2-focus-visible.md)。
 > 两处 runner 挂死仍挂账（tabular span-limits、links downloading-resources）。
-> **卡点**：无阻塞。**下一步**：切片 2 按簇杠杆序——focus-dynamic-type-change
-> （73F）→ untrusted-key-event（42F）→ stepUp/stepDown（43F）→ showPicker
-> （~130F，或有引擎面依赖）→ files null-for-non-file（23F）；同轮排查两处
-> 挂死根因。
+> **卡点**：无阻塞。**下一步**：切片 2b 按簇杠杆序（根因已静态归因，探针
+> 已备 /tmp 探针树待跑）——cloning-steps 45F（`_isTag` sel-only 门致
+> detached 元素 indeterminate/files IDL undefined + clone 不传播 dirty
+> checkedness/indeterminate + setAttribute('value') 覆写 dirty 缓存）→
+> untrusted-key-event 42F（createElement→IDL type=→append 产物对
+> `input[type=X]` 选择器不可见）→ checkable-active-space 8F（JS 侧选择器
+> 白名单缺 `:active`）→ stepUp/stepDown 43F（现仅 number/range 桩，spec 全
+> 类型 InvalidStateError + 步进算法）→ showPicker ~130F → files
+> null-for-non-file 23F。
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
@@ -98,6 +102,12 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-16 M2 切片 2a**：focus/focus-visible 面（R3902）——part06
+  focus-visible 模态旗标，part04 焦点派发接线 + matches() `:focus`/
+  `:focus-visible` 分支（isConnected 连接性判定），part01 rAF 预算
+  64→512（promise_test 串行链 double-rAF 断链根因）。focus
+  -dynamic-type-change 双文件 0→120P、forms +121P、九域 3248→3369P
+  （零回归）。`make test` 全绿、clippy/fmt 过、零新增依赖。
 - **2026-10-15 M2 切片 1**：input value IDL 面（R3901）——part01 四值模式/
   净化/类型迁移助手，part03 getter 模式分派，part04 setter 分派 + setAttribute/
   cloneNode 接线，part05 `input.type=` setter，用户编辑通道
