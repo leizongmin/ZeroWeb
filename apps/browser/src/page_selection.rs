@@ -60,6 +60,21 @@ fn append_source_run(text: &mut String, sources: &mut Vec<&GlyphSource>) {
     }
 }
 
+/// 判断同一行上前后两个字形之间的空白 advance 区域是否对应被布局折叠掉的词间空格。
+///
+/// 行内折行把词间空格消费为片段间推进、不发射 glyph（字形序列只剩前进间隙），
+/// 复制文本时按「超出前字形 advance 的富余量 ≈ 空格宽度」补插一个空格：
+/// 下限避开 kerning/字距噪声，上限避开无关元素同行摆放的布局级大间隙。
+fn glyph_gap_has_space(previous: &GlyphPrimitive, previous_advance: f32, current: &GlyphPrimitive) -> bool {
+    // 仅同一行基线（基线 y 相同）且 x 前进的相邻字形之间补插；换行与 RTL 视觉序不适用。
+    if current.x <= previous.x || (current.y - previous.y).abs() > 0.5 {
+        return false;
+    }
+    let font_size = previous.font_size.max(1.0);
+    let extra = current.x - previous.x - previous_advance;
+    extra >= font_size * 0.12 && extra < font_size * 0.75
+}
+
 /// 页面 glyph caret boundary 选区；端点范围为 `0..=glyphs.len()`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GlyphSelection {
@@ -93,7 +108,13 @@ impl GlyphSelection {
         start.min(glyph_count)..end.min(glyph_count)
     }
 
-    pub fn selected_text(glyphs: &[GlyphPrimitive], sel: &GlyphSelection) -> String {
+    /// 重构选区文本。`measure_advance` 返回字形内单字符的实际前进宽度（须与
+    /// paint 布局同源），用于识别词间被折叠的空格 advance 区域。
+    pub fn selected_text(
+        glyphs: &[GlyphPrimitive],
+        sel: &GlyphSelection,
+        measure_advance: impl Fn(&GlyphPrimitive, char) -> f32,
+    ) -> String {
         if glyphs.is_empty() || sel.is_collapsed() {
             return String::new();
         }
@@ -103,19 +124,40 @@ impl GlyphSelection {
         }
         let mut text = String::new();
         let mut source_run = Vec::new();
+        // 上一个已计位字形与其已消费 advance；词间空格不发射 glyph，仅在 x 推进中
+        // 留下空格宽度（glyph_gap_has_space 补插）。
+        let mut previous: Option<(&GlyphPrimitive, f32)> = None;
         for glyph in &glyphs[start..end] {
+            let gap_space = previous.is_some_and(|(previous_glyph, previous_advance)| {
+                glyph_gap_has_space(previous_glyph, previous_advance, glyph)
+            });
             if let Some(source) = &glyph.source {
+                // 簇文本按逻辑源字节序在 run 结束时统一输出；补插空格前先落盘 run，
+                // 保证空格落在已输出的 run 文本之后。
                 if source_run
                     .first()
                     .is_some_and(|first: &&GlyphSource| !first.same_text_run(source))
+                    || gap_space
                 {
                     append_source_run(&mut text, &mut source_run);
                 }
+                if gap_space {
+                    text.push(' ');
+                }
                 source_run.push(source);
+                let cluster_advance: f32 = source.as_str().chars().map(|ch| measure_advance(glyph, ch)).sum();
+                previous = Some((glyph, cluster_advance));
             } else {
                 append_source_run(&mut text, &mut source_run);
                 if let Some(ch) = char::from_u32(glyph.glyph_id) {
+                    if gap_space {
+                        text.push(' ');
+                    }
                     text.push(ch);
+                    previous = Some((glyph, measure_advance(glyph, ch)));
+                } else {
+                    // 无效码点无法估计宽度，重置锚点避免误判下一间隙。
+                    previous = None;
                 }
             }
         }
@@ -258,6 +300,11 @@ mod tests {
         }
     }
 
+    /// 测量闭包：与布局估算同源的按字符 advance（无字体数据时 paint 用同一比例表）。
+    fn ratio_advance(glyph: &GlyphPrimitive, ch: char) -> f32 {
+        glyph.font_size * glyph_advance_ratio(ch)
+    }
+
     #[test]
     fn hit_test_returns_nearest_glyph_outside_tight_bounds() {
         let glyphs = vec![sample_glyph(0.0, 'H'), sample_glyph(10.0, 'i')];
@@ -269,7 +316,66 @@ mod tests {
         let glyphs = vec![sample_glyph(0.0, 'a'), sample_glyph(10.0, 'b'), sample_glyph(20.0, 'c')];
         let sel = GlyphSelection { anchor: 0, focus: 3 };
         assert_eq!(sel.glyph_range(glyphs.len()), 0..3);
-        assert_eq!(GlyphSelection::selected_text(&glyphs, &sel), "abc");
+        assert_eq!(GlyphSelection::selected_text(&glyphs, &sel, ratio_advance), "abc");
+    }
+
+    #[test]
+    fn selected_text_reconstructs_spaces_from_advance_gaps() {
+        // 行内折行把词间空格消费为片段间推进、不发射 glyph（gui 探针页 h1 实证）；
+        // 复制文本须按 advance 富余量补插空格。
+        let mut glyphs = Vec::new();
+        let mut x = 0.0;
+        for (i, word) in ["ZeroBrowser", "GUI", "Probe"].iter().enumerate() {
+            if i > 0 {
+                x += 16.0 * 0.25; // 词间空格 advance（无 glyph）
+            }
+            for ch in word.chars() {
+                glyphs.push(sample_glyph(x, ch));
+                x += 16.0 * 0.55;
+            }
+        }
+        let sel = GlyphSelection {
+            anchor: 0,
+            focus: glyphs.len(),
+        };
+        assert_eq!(
+            GlyphSelection::selected_text(&glyphs, &sel, ratio_advance),
+            "ZeroBrowser GUI Probe"
+        );
+    }
+
+    #[test]
+    fn selected_text_does_not_insert_space_for_contiguous_or_layout_scale_gaps() {
+        // 紧邻字形（kerning 级微差）与大布局间隙（同行无关元素）都不补插空格。
+        let glyphs = vec![
+            sample_glyph(0.0, 'a'),
+            sample_glyph(16.0 * 0.55, 'b'),
+            sample_glyph(100.0, 'c'),
+        ];
+        let sel = GlyphSelection {
+            anchor: 0,
+            focus: glyphs.len(),
+        };
+        assert_eq!(GlyphSelection::selected_text(&glyphs, &sel, ratio_advance), "abc");
+    }
+
+    #[test]
+    fn selected_text_inserts_space_between_source_runs_from_advance_gap() {
+        // 跨片段的 sourced 簇同样受词间空格折叠影响；补插空格落在已输出的 run 之后。
+        let text_a: Arc<str> = Arc::from("AB");
+        let text_b: Arc<str> = Arc::from("CD");
+        let mut first = sample_glyph(0.0, 'A');
+        first.source = GlyphSource::new(text_a.clone(), 0, 1);
+        let mut second = sample_glyph(16.0 * 0.55, 'B');
+        second.source = GlyphSource::new(text_a, 1, 2);
+        let mut third = sample_glyph(16.0 * (0.55 + 0.55 + 0.25), 'C');
+        third.source = GlyphSource::new(text_b, 0, 2);
+
+        let sel = GlyphSelection { anchor: 0, focus: 3 };
+        assert_eq!(
+            GlyphSelection::selected_text(&[first, second, third], &sel, ratio_advance),
+            "AB CD"
+        );
     }
 
     #[test]
@@ -277,7 +383,7 @@ mod tests {
         let mut ligature = sample_glyph(0.0, 'f');
         ligature.source = GlyphSource::new(Arc::from("fi"), 0, 2);
         let sel = GlyphSelection { anchor: 0, focus: 1 };
-        assert_eq!(GlyphSelection::selected_text(&[ligature], &sel), "fi");
+        assert_eq!(GlyphSelection::selected_text(&[ligature], &sel, ratio_advance), "fi");
 
         let source = GlyphSource::new(Arc::from("A\u{301}"), 0, 3).expect("valid source");
         let mut base = sample_glyph(0.0, 'A');
@@ -285,7 +391,10 @@ mod tests {
         let mut mark = sample_glyph(10.0, '\u{301}');
         mark.source = Some(source);
         let sel = GlyphSelection { anchor: 0, focus: 2 };
-        assert_eq!(GlyphSelection::selected_text(&[base, mark], &sel), "A\u{301}");
+        assert_eq!(
+            GlyphSelection::selected_text(&[base, mark], &sel, ratio_advance),
+            "A\u{301}"
+        );
     }
 
     #[test]
@@ -297,7 +406,7 @@ mod tests {
 
         let sel = GlyphSelection { anchor: 0, focus: 2 };
         assert_eq!(
-            GlyphSelection::selected_text(&[first, second], &sel),
+            GlyphSelection::selected_text(&[first, second], &sel, ratio_advance),
             "A\u{301}A\u{301}"
         );
     }
@@ -314,11 +423,11 @@ mod tests {
         let glyphs = [gimel, bet, alef];
 
         assert_eq!(
-            GlyphSelection::selected_text(&glyphs, &GlyphSelection { anchor: 0, focus: 3 }),
+            GlyphSelection::selected_text(&glyphs, &GlyphSelection { anchor: 0, focus: 3 }, ratio_advance),
             "אבג"
         );
         assert_eq!(
-            GlyphSelection::selected_text(&glyphs, &GlyphSelection { anchor: 0, focus: 2 }),
+            GlyphSelection::selected_text(&glyphs, &GlyphSelection { anchor: 0, focus: 2 }, ratio_advance),
             "בג"
         );
     }

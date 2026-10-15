@@ -1346,7 +1346,16 @@ impl BrowserApp {
             return None;
         }
         let glyphs = self.page_glyphs(tab_id)?;
-        let text = GlyphSelection::selected_text(&glyphs, sel);
+        // advance 与 paint 布局同源：字形 font_id 先映射 browser 本地 registry
+        //（@font-face 走 page_font_imports，系统字体共享同一 ID 空间）再实测。
+        let text = GlyphSelection::selected_text(&glyphs, sel, |glyph, ch| {
+            let font_id = self
+                .page_font_imports
+                .get(&glyph.font_id.0)
+                .copied()
+                .unwrap_or(glyph.font_id.0);
+            self.font_loader.measure_advance(font_id, ch, glyph.font_size)
+        });
         if text.is_empty() {
             None
         } else {
