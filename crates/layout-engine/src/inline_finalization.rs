@@ -3669,12 +3669,14 @@ pub(crate) fn remeasure_multicol_text_blocks(
         inline_fonts: InlineFontContext<'_>,
         inside_multicol: bool,
     ) -> bool {
-        let is_multicol = box_node
+        let nested_in_multicol = inside_multicol;
+        let self_col_info = box_node
             .node_id
             .and_then(|id| styles.get(&id))
             .and_then(|style| crate::multicol::compute_column_info(style, box_node.content_width))
-            .is_some_and(|info| info.count >= 2);
-        let inside_multicol = inside_multicol || is_multicol;
+            .filter(|info| info.count >= 2);
+        let is_multicol = self_col_info.is_some();
+        let inside_multicol = nested_in_multicol || is_multicol;
         let mut changed = false;
 
         for child in &mut box_node.children {
@@ -3696,6 +3698,38 @@ pub(crate) fn remeasure_multicol_text_blocks(
         // 由 balance_multicol_spanner_regions 重写，此处不得再动。
         if box_node.is_multicol_region_fragment {
             return changed;
+        }
+
+        // R5132：嵌套 multicol（祖先亦 multicol、自身亦 multicol）的直排 inline 内容块，
+        // 盒高 = **内层列宽下的平衡列高**。multicol 块的内容按内列宽折行并平衡到 N 列，
+        // 按盒宽测单列高得到的是「全部内容纵向堆叠」高（nested-005：220px 盒宽测 2 行
+        // 40px，内列宽 60px 下 8 行平衡 3/3/2 列应为 60px）；外层列分配（child_info）与
+        // paint 侧列分布（R1423 region）都消费该盒高，须按平衡语义重写。IFC 构造与
+        // R4510 multicol_inline_flow_balanced_height 同式。顶层 inline multicol 不入本臂
+        // （嵌套 gate），维持既有高度链（R88 写回 / 旧重测）。
+        // Gate：水平书写模式（vertical IFC 帧语义未接，同 R4437 域）；仅长高不收缩。
+        // https://drafts.csswg.org/css-multicol/#column-height
+        if nested_in_multicol && is_multicol && matches!(style.writing_mode, WritingModeValue::HorizontalTb) {
+            if let Some(info) = self_col_info.filter(|i| i.column_width > 0.0) {
+                let mut inline_ctx = InlineFormattingContext::new(info.column_width)
+                    .with_no_wrap(resolve_no_wrap_for_ifc_measure(Some(style)))
+                    .with_preserve_whitespace(resolve_preserve_for_ifc_measure(Some(style)))
+                    .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(Some(style)));
+                inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
+                inline_ctx.layout(doc, node_id, styles);
+                let num_lines = inline_ctx.lines.len();
+                if num_lines > 0 {
+                    let total = inline_ctx.total_height();
+                    let balanced = (num_lines.div_ceil(info.count) as f32) * (total / num_lines as f32);
+                    if balanced > box_node.content_height + 0.5 {
+                        let delta = balanced - box_node.content_height;
+                        box_node.content_height = balanced;
+                        box_node.height += delta;
+                        changed = true;
+                    }
+                    return changed;
+                }
+            }
         }
 
         let measured = measure_text_content(

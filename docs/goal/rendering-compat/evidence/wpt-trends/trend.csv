@@ -48,3 +48,4 @@
 2026-10-10,upstream,v1.10,16058,14820,92.3,failed=1238;skipped=0,7fd20cb,
 2026-10-15,upstream,v1.10,16590,15399,92.8,failed=1191;skipped=0,415273148,R5130 css-multicol-2 column-height/column-wrap 落地：族 C +8 翻绿
 2026-10-15,upstream,v1.10,16590,15399,92.8,failed=1191;skipped=0,b0a028324,R5131 balance 先推后放（ZW_MC_BALANCE_FIT）中间态 A/B
+2026-10-15,upstream,v1.10,16590,15404,92.9,failed=1186;skipped=0,60b3b502d,R5132 嵌套 multicol 碎片感知机制落地——族 B +5 翻绿
