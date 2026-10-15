@@ -33,6 +33,10 @@ const TAB_JS_CHANNEL_TIMEOUT: Duration = Duration::from_millis(TAB_JS_EXEC_TIMEO
 /// 延迟一个间隔（导航里程碑派发对此不敏感）。20 次/秒的空转开销可忽略。
 const WORKER_IDLE_POLL: Duration = Duration::from_millis(50);
 
+/// t-p103 D2-1：单次批决议最多吸取的连续 ResolveAsyncCallback 兄弟数——上限防
+/// 密集风暴期间其他命令（eval/快照/导航）长时间得不到命令边界。
+const RESOLVE_BATCH_MAX: usize = 64;
+
 /// 看门狗超时错误附加脚本上下文（长度+头部片段）——页面回调超时（P7b 家族）定性
 /// 需要脚本身份；`ScriptError` 本体不携带脚本信息（沙箱边界隔离），只能在 worker
 /// 侧错误转字符串时附加。非超时错误原样透传（不污染既有错误文本消费方）。
@@ -983,17 +987,7 @@ impl WorkerCensus {
             JsWorkerCommand::ExecuteModule { .. } => "ExecuteModule",
             JsWorkerCommand::SetDomSnapshot { .. } => "SetDomSnapshot",
             // 响应派发按 payload 规模分桶——区分「少量巨大响应」与「每个响应都贵」。
-            JsWorkerCommand::ResolveAsyncCallback { result, .. } => {
-                if result.len() < 1_000 {
-                    "ResolveAsyncCallback[<1KB]"
-                } else if result.len() < 10_000 {
-                    "ResolveAsyncCallback[1-10KB]"
-                } else if result.len() < 100_000 {
-                    "ResolveAsyncCallback[10-100KB]"
-                } else {
-                    "ResolveAsyncCallback[>100KB]"
-                }
-            }
+            JsWorkerCommand::ResolveAsyncCallback { result, .. } => resolve_async_kind(result.len()),
             JsWorkerCommand::SetFetchHandler { .. } => "SetFetchHandler",
             JsWorkerCommand::SetWsHandler { .. } => "SetWsHandler",
             JsWorkerCommand::SetVideoPlayers { .. } => "SetVideoPlayers",
@@ -1040,6 +1034,14 @@ impl WorkerCensusGuard<'_> {
         census.write_sink(&line);
         census.window_start = std::time::Instant::now();
     }
+
+    /// t-p103 D2-1：批决议附加条目入账——n= 计真实决议总量（耗时归批首命令臂）。
+    fn record_batch_extras(&mut self, kinds: &[&'static str]) {
+        for kind in kinds {
+            let entry = self.census.buckets.entry(kind).or_insert((0, 0, 0));
+            entry.0 += 1;
+        }
+    }
 }
 
 /// P102 诊断：Execute 臂脚本标识——长度 + 头部片段（控制字符折空格，Debug 转义保单行）。
@@ -1052,6 +1054,20 @@ fn execute_script_label(script: &str) -> String {
         .take(120)
         .collect();
     format!("len={} head={head:?}", script.len())
+}
+
+/// t-p103 D2-1：决议响应按 payload 规模分桶——区分「少量巨大响应」与「每个响应都贵」。
+/// [`WorkerCensus::kind`] 与批决议附加条目入账共用同一阈值。
+fn resolve_async_kind(result_len: usize) -> &'static str {
+    if result_len < 1_000 {
+        "ResolveAsyncCallback[<1KB]"
+    } else if result_len < 10_000 {
+        "ResolveAsyncCallback[1-10KB]"
+    } else if result_len < 100_000 {
+        "ResolveAsyncCallback[10-100KB]"
+    } else {
+        "ResolveAsyncCallback[>100KB]"
+    }
 }
 
 impl Drop for WorkerCensusGuard<'_> {
@@ -1407,7 +1423,8 @@ fn js_worker_main(
         if let Some(identity) = &identity {
             census.write_sink(&format!("arm start Execute {identity}"));
         }
-        let _census = census.enabled.then(|| WorkerCensusGuard {
+        // t-p103 D2-1：批决议附加条目经 as_mut 入账，故需 mut。
+        let mut _census = census.enabled.then(|| WorkerCensusGuard {
             census: &mut census,
             kind: WorkerCensus::kind(&cmd),
             identity,
@@ -1670,8 +1687,42 @@ fn js_worker_main(
             JsWorkerCommand::ResolveAsyncCallback { id, result } => {
                 // P1b S1：跨线程 marshal 到此——在 JS worker 线程调 resolve_async_callback
                 // （执行 shim 的 __zwResolveCallback resolve Promise）。
-                sandbox.resolve_async_callback(&id, &result);
+                // t-p103 D2-1：promise 密集页面（fetch/定时器续体链）每跳 = 一次命令
+                // 往返 + 一次完整 shim 求值（~0.24ms/跳），密集期 5s 窗 ~2 万跳把
+                // worker 顶到 busy=99%，eval/定时器/帧发布全部饿死。此处先把连续
+                // 兄弟决议吸取成一批（上限 [`RESOLVE_BATCH_MAX`] 防饿死其他命令；
+                // 先收集后处理——2026-10-02 排空循环自馈送 learning 模板），单次
+                // sandbox 批执行；批内保序 = FIFO 提交序。吸取遇非 Resolve 命令即停，
+                // 压回 deferred_normal 队尾（P103 返修 DEF-1）：deferred_normal 存的是
+                // 前轮屏障扫描 stash 的命令，提交序先于本轮从通道 drain 到的一切
+                // （含本 aside，见 F1 返修注释），aside 必须排在其后；该命令相对
+                // 之后才 drain 到的命令仍更早（FIFO），push_back 同时保持这一侧序
+                // （禁同通道重排队）。census n= 经 record_batch_extras 计真实决议总量。
+                let mut batch = vec![(id, result)];
+                let mut aside = None;
+                while batch.len() < RESOLVE_BATCH_MAX {
+                    match cmd_rx.try_recv() {
+                        Ok(JsWorkerCommand::ResolveAsyncCallback { id, result }) => batch.push((id, result)),
+                        Ok(other) => {
+                            aside = Some(other);
+                            break;
+                        }
+                        Err(_) => break,
+                    }
+                }
+                if let Some(guard) = _census.as_mut() {
+                    let kinds: Vec<&'static str> =
+                        batch[1..].iter().map(|(_, r)| resolve_async_kind(r.len())).collect();
+                    guard.record_batch_extras(&kinds);
+                }
+                sandbox.resolve_async_callbacks_batch(&batch);
                 async_callbacks_ready.store(true, Ordering::Release);
+                if let Some(other) = aside {
+                    // DEF-1：aside 提交序晚于 deferred_normal 既有 stash（前轮 drain
+                    // 尾部），只能 push_back；push_front 会让更晚提交的命令先执行
+                    // （实测 ords 逆序 3/3 复现）。
+                    deferred_normal.push_back(other);
+                }
             }
             JsWorkerCommand::SetFetchHandler { handler } => {
                 // P1b S3：注入 fetch handler（renderer 在 WebView 初始化后发送）。
@@ -2157,6 +2208,115 @@ impl zero_page_runtime::JsExecutor for RendererJsWorker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// t-p103 D2-1：决议批吸取行为钉——保序（= FIFO 提交序）、普通通道非 Resolve
+    /// 兄弟不丢（吸取遇非 Resolve 停下走 deferred_normal aside）、其余决议照常
+    /// 处理、checkpoint 置位契约（P1b S2）延续。批吞吐由 script-sandbox 批实现
+    /// 单测兜底；此处钉 worker 侧编排语义。
+    #[test]
+    fn resolve_batch_drain_preserves_order_and_keeps_aside_command_p103() {
+        let worker = RendererJsWorker::spawn(6143);
+        let resolver = worker.async_resolver();
+        worker
+            .execute_script_direct(
+                "globalThis.__zw_ords=[];globalThis.__zwResolveCallback=function(id){globalThis.__zw_ords.push(id);};",
+            )
+            .expect("注入探针 shim");
+        // 风暴夹普通通道 Execute：吸取若在此处撞上非 Resolve 命令，必须停下且不丢。
+        for i in 0..50 {
+            resolver.resolve(&format!("a{i}"), "v");
+        }
+        worker
+            .execute_script_direct("globalThis.__zw_aside_seen=true;")
+            .expect("普通通道 Execute 必须执行（aside 不丢）");
+        for i in 0..50 {
+            resolver.resolve(&format!("b{i}"), "v");
+        }
+        // 有界等待全部决议到位（worker 串行消费，到达序 = 提交序）。
+        let expected: String = (0..50)
+            .map(|i| format!("a{i}"))
+            .chain((0..50).map(|i| format!("b{i}")))
+            .collect::<Vec<_>>()
+            .join(",");
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut joined = String::new();
+        while std::time::Instant::now() < deadline {
+            joined = worker
+                .execute_script_direct("globalThis.__zw_ords.join(',')")
+                .expect("探针执行");
+            if joined == expected {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(joined, expected, "批吸取必须保序且全量到达");
+        let aside = worker
+            .execute_script_direct("String(globalThis.__zw_aside_seen===true)")
+            .expect("aside 探针执行");
+        assert_eq!(aside, "true", "夹在风暴中的普通通道命令必须被执行");
+        // P1b S2 契约：worker 实际处理决议后置位 microtask checkpoint 机会。
+        assert!(
+            worker.take_pending_async_callbacks(),
+            "批处理后须置位 async checkpoint 机会"
+        );
+    }
+
+    /// t-p103 返修 DEF-1：aside 不得越过 deferred_normal 既有 stash——屏障扫描把
+    /// 提交序更早的普通命令（Z）切进 deferred_normal（无更早快照时 prefix 为空、
+    /// drain 尾部整体 extend），随后 Resolve 臂吸取撞见的 aside（A，提交序晚于 Z）
+    /// 必须 push_back 排在 Z 之后（FIFO 提交序；与 F1 屏障合流「旧 stash 在前」
+    /// 同向）。改前 push_front 实测 ords="P,R1,A,Z"（A 晚提交却先执行，3/3 稳定），
+    /// 修复后应为 "P,R1,Z,A"。
+    #[test]
+    fn resolve_aside_preserves_fifo_behind_stash_p103() {
+        let worker = std::sync::Arc::new(RendererJsWorker::spawn(6141));
+        let resolver = worker.async_resolver();
+        worker
+            .execute_script_direct(
+                "globalThis.__ords=[];globalThis.__zwResolveCallback=function(id){globalThis.__ords.push(id);};",
+            )
+            .expect("注入探针 shim");
+        // t0：优先通道 busy(400ms) 占住 worker——保证 R1/Z 在 worker 空闲前排齐。
+        worker
+            .submit_script_priority("const t0=Date.now();while(Date.now()-t0<400){}")
+            .expect("提交 busy 占位");
+        std::thread::sleep(Duration::from_millis(50));
+        // t≈50：R1（决议）入普通通道。
+        resolver.resolve("R1", "v");
+        // t≈90：Z（普通 Execute）入普通通道；有界等待只放弃 reply，命令照常排队。
+        let _ = worker.execute_script_direct_bounded("globalThis.__ords.push('Z');", Duration::from_millis(30));
+        // A 在 P 的执行臂内（P 臂约 415-815ms，A 于 ≈595ms 到达）进入普通通道——
+        // 独立线程提交，落点取臂中段留 ±180ms 调度容差。
+        let aside_worker = std::sync::Arc::clone(&worker);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(500));
+            aside_worker
+                .execute_script_direct("globalThis.__ords.push('A');")
+                .expect("aside 提交");
+        });
+        // t≈95：worker 空闲后，优先 Execute P（带 seq）触发屏障扫描：drain [R1,Z]
+        // 无更早快照 → deferred_normal=[R1,Z]，P 开始 busy(400ms)。
+        worker
+            .execute_script_direct_priority(
+                "globalThis.__ords.push('P');const t1=Date.now();while(Date.now()-t1<400){}",
+            )
+            .expect("优先屏障触发执行");
+        // 期望序（push_back 修复）：P（优先）→ R1（deferred 队首，吸取批）→
+        // Z（既有 stash，提交序早于 A）→ A（aside）。push_front 缺陷序为 P,R1,A,Z。
+        let expected = "P,R1,Z,A";
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut joined = String::new();
+        while std::time::Instant::now() < deadline {
+            joined = worker
+                .execute_script_direct("globalThis.__ords.join(',')")
+                .expect("探针执行");
+            if joined == expected {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(joined, expected, "aside 必须按 FIFO 提交序排在既有 stash 之后");
+    }
 
     /// R342（siteopt t2-pb3nm）：clear_mutations_fresh 的 drain⇒bump 不变式钉——
     /// 队列清空同时 MUT_DRAIN_GEN 前进（查询视图增量链的「只增长+代际未变」前提

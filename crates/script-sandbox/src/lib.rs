@@ -183,6 +183,24 @@ pub trait Sandbox {
     /// QuickJS 保持同步）。后续切片接通 `tab_js_worker` marshal channel 后，跨线程异步
     /// 完成（net fetch / setTimeout）经 marshal 回 JS worker 线程再调本方法。
     fn resolve_async_callback(&mut self, _id: &str, _result: &str) {}
+    /// t-p103 D2-1 批决议：与逐条调 [`Sandbox::resolve_async_callback`] 语义相同
+    /// （按 `items` 顺序逐条 `__zwResolveCallback(id, result)`），但合并为尽量少的
+    /// 脚本求值。promise 密集页面（fetch/定时器续体链）下每跳一次完整 shim 求值
+    /// 会把 JS worker 顶满（实测 github 5s 窗 ~2 万跳、worker busy=99%，eval/
+    /// 定时器/帧发布全部饿死）；批处理把 2 万次求值缩为数十次。
+    ///
+    /// **语义边界**：与逐条调 [`Sandbox::resolve_async_callback`] 精确一致——批内
+    /// 保序（= FIFO 提交序）、每条后执行 microtask checkpoint（task 后整链排空
+    /// 微任务的 spec 语义，返修确立：批末统一 drain 会让后一条 resolve 抢在前一
+    /// 条的 `.then` 微任务前执行）、逐条错误隔离。
+    ///
+    /// **默认实现**：逐条回退调 [`Sandbox::resolve_async_callback`]（行为等价，
+    /// 为无原生批实现的后端兜底）。
+    fn resolve_async_callbacks_batch(&mut self, items: &[(String, String)]) {
+        for (id, result) in items {
+            self.resolve_async_callback(id, result);
+        }
+    }
     /// 设置脚本执行超时（毫秒），0 表示无超时。
     fn set_timeout_ms(&mut self, timeout_ms: u64);
     /// performance-api-compat M2-S1：注册 long task 观察器——单次 `execute` 墙钟
