@@ -248,7 +248,7 @@ fn test_assign_children_with_breaking() {
     // child2(100): col1=200 > 150, move to col2 → col2=[2]
     // child3(100): col2=200 > 150, no more cols, stays → col2=[2,3]
     let children = vec![(0, 100.0), (1, 100.0), (2, 100.0), (3, 100.0)];
-    let cols = assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false; 4], &[false; 4]);
+    let cols = assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false; 4], &[false; 4], &[]);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1);
     assert_eq!(cols[1].len(), 1);
@@ -259,7 +259,7 @@ fn test_assign_children_with_breaking() {
 fn test_assign_children_with_breaking_oversized() {
     // Single child larger than column height — stays in current column
     let children = vec![(0, 300.0)];
-    let cols = assign_children_to_columns_with_breaking(&children, 3, 100.0, &[false; 4], &[false; 4]);
+    let cols = assign_children_to_columns_with_breaking(&children, 3, 100.0, &[false; 4], &[false; 4], &[]);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1); // oversized child stays in first column
 }
@@ -271,7 +271,7 @@ fn test_assign_children_with_breaking_single_col_oversized_no_panic() {
     // 使后续子元素 columns[current_col].push 在 line 350 panic（index OOB, len 1 idx 1）。
     // 修复后：单列时 oversized 内容 clip 到唯一列，后续子元素也落入唯一列，无 panic。
     let children = vec![(0, 300.0), (1, 50.0)];
-    let cols = assign_children_to_columns_with_breaking(&children, 1, 100.0, &[false; 4], &[false; 4]);
+    let cols = assign_children_to_columns_with_breaking(&children, 1, 100.0, &[false; 4], &[false; 4], &[]);
     assert_eq!(cols.len(), 1);
     // 两子元素都分配到唯一列（clip），不应 panic
     assert!(cols[0].iter().any(|f| f.child_idx == 0));
@@ -307,7 +307,15 @@ fn test_position_multicol_inline_overflow_row_height_zero() {
         })
         .collect();
 
-    let region_height = position_multicol_children(&mut container, &assignments, &info, 0.0, 0.0, false);
+    let region_height = position_multicol_children(
+        &mut container,
+        &assignments,
+        &info,
+        0.0,
+        0.0,
+        false,
+        &std::collections::HashMap::new(),
+    );
     // 行高 50（单行），未向下堆叠。
     assert!(
         (region_height - 50.0).abs() < 0.01,
@@ -389,7 +397,7 @@ fn test_break_before_column_forces_new_column_balanced() {
 fn test_break_before_column_forces_new_column_breaking() {
     // max_col_height=200 容纳全部 3 子（各 50），但 forced break 强制换列。
     let children = vec![(0, 50.0), (1, 50.0), (2, 50.0)];
-    let cols = assign_children_to_columns_with_breaking(&children, 3, 200.0, &[false, true, true], &[false; 3]);
+    let cols = assign_children_to_columns_with_breaking(&children, 3, 200.0, &[false, true, true], &[false; 3], &[]);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1); // child0 无 forced break → col0
     assert_eq!(cols[1].len(), 1); // child1 forced → col1
@@ -434,7 +442,7 @@ fn test_break_after_column_forces_new_column_balanced() {
 #[test]
 fn test_break_after_column_forces_new_column_breaking() {
     let children = vec![(0, 50.0), (1, 50.0), (2, 50.0)];
-    let cols = assign_children_to_columns_with_breaking(&children, 3, 200.0, &[false; 3], &[true, true, true]);
+    let cols = assign_children_to_columns_with_breaking(&children, 3, 200.0, &[false; 3], &[true, true, true], &[]);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1);
     assert_eq!(cols[1].len(), 1);
