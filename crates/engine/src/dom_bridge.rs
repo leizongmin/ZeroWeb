@@ -1323,9 +1323,18 @@ pub fn generate_dom_api_polyfill() -> String {
       set: function(value) { this.setTextContent(value); },
       configurable: true
     });
-    // ── innerText getter+setter（简化：等同 textContent） ──
+    // ── innerText getter+setter ──
+    // https://html.spec.whatwg.org/#the-innertext-idl-attribute
+    // innerText 是「渲染感知」的：隐藏元素、script/style 文本不应包含。
+    // 语义收集逻辑统一放在全局 _zwGetInnerText，失败时回退 textContent。
     Object.defineProperty(node, 'innerText', {
-      get: function() { return this.getTextContent(); },
+      get: function() {
+        if (typeof globalThis !== 'undefined' && globalThis._zwGetInnerText) {
+          var v = globalThis._zwGetInnerText(this);
+          if (v !== null) return v;
+        }
+        return this.getTextContent();
+      },
       set: function(value) { this.setTextContent(value); },
       configurable: true
     });

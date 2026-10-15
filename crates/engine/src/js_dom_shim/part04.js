@@ -832,6 +832,18 @@
               }
               return _childNodeList(sel, handle);
             })();
+            // R3260 第 2 版：innerText ≠ textContent。用渲染感知收集器（排除隐藏/脚本/样式/模板，
+            // 替换元素取 value，<br>/block 换行）。收集器返回非 null 即有效；助手缺位时回落 textContent。
+            if (prop === 'innerText') {
+              // B2：根元素自身可见性——给根 mock 接 __zwSelector + 真实 style，getComputedStyle 才能
+              // 解析根自身（handle 有双身份 sel 时尤其），隐藏根（display:none / visibility:hidden）判空。
+              var _itProxyH = (typeof _makeProxy === 'function') ? _makeProxy(sel, handle) : null;
+              var _itRootH = { nodeType: 1, childNodes: _tcKids };
+              if (sel) _itRootH.__zwSelector = sel;
+              if (_itProxyH && _itProxyH.style) _itRootH.style = _itProxyH.style;
+              var _itVal = globalThis._zwGetInnerText ? globalThis._zwGetInnerText(_itRootH) : null;
+              if (_itVal !== null) return _itVal;
+            }
             var _tcOut = '';
             for (var _tci = 0; _tci < _tcKids.length; _tci++) {
               var _tcn = _tcKids[_tci];
@@ -854,6 +866,34 @@
               return _zwTextWritten[handle];
             }
             return __zw_get_text_handle(handle);
+          }
+          // R3260 第 2 版：sel-based（no-handle）innerText 同样走渲染感知收集器——旧近似
+          // innerText==textContent 使 sel-only 读（CDP/element proxy 无 handle）吃到隐藏/脚本
+          // 文本。用 _childNodeList(sel, null) 取子（带 __zwSelector，getComputedStyle 可用），
+          // 收集器返非 null 即有效；助手缺位回落 __zw_get_text。
+          if (prop === 'innerText' && globalThis._zwGetInnerText) {
+            // B1（同 turn 写后读）：一元素的 textContent=/innerHTML= 写是「替换全部子为文本」——
+            // latest-wins（__zw_get_text_lw，consult 变更列表）与纯快照（__zw_get_text）对**本元素**
+            // sel 的差异即此写入。时代码 sel innerText === textContent 走 __zw_get_text_lw（latest-wins，
+            // R3028）；本收集器走 _childNodeList 快照会读到写入前旧值（stale），回归 R3028。此场景渲染内容
+            // 已是单文本节点（无隐藏/脚本可排除），直接返 latest-wins 即可；后代子树写不改父 sel，不外溢，
+            // 未写入时 lw===快照 且零行为变化。
+            if (typeof __zw_get_text_lw === 'function' && typeof __zw_get_text === 'function') {
+              var _itLw = __zw_get_text_lw(sel);
+              var _itSnap = __zw_get_text(sel);
+              if (_itLw !== _itSnap) return _itLw;
+            }
+            var _itKids = (typeof _childNodeList === 'function') ? _childNodeList(sel, null) : [];
+            // B2（根元素自身可见性）：旧实现把根以 `{nodeType:1, childNodes:_itKids}` 传入，无 __zwSelector
+            // 无 style，getComputedStyle 无法解析根 → 隐藏根（display:none / visibility:hidden）仍返回全部
+            // 可见子树文本。给根 mock 接 __zwSelector（host 计算样式可解析）+ 真实 style（inline 回落），
+            // 隐藏根据此判空。
+            var _itProxy = (typeof _makeProxy === 'function') ? _makeProxy(sel, null) : null;
+            var _itRoot = { nodeType: 1, childNodes: _itKids };
+            if (sel) _itRoot.__zwSelector = sel;
+            if (_itProxy && _itProxy.style) _itRoot.style = _itProxy.style;
+            var _itSelVal = globalThis._zwGetInnerText(_itRoot);
+            if (_itSelVal !== null) return _itSelVal;
           }
           return typeof __zw_get_text_lw === 'function' ? __zw_get_text_lw(sel) : __zw_get_text(sel);
         }
