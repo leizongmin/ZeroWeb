@@ -123,14 +123,17 @@ impl BrowserApp {
         }
 
         if self.address_bar_focused {
-            let nav_w = layout::NAV_SECTION_LEADING_PAD
-                + layout::NAV_BUTTON_WIDTH * 4.0
-                + layout::NAV_SECTION_TRAILING_GAP;
-            let bar_x = nav_w + layout::ADDRESS_BAR_PADDING;
-            let bar_y = layout::TAB_STRIP_HEIGHT + layout::ADDRESS_BAR_INPUT_V_INSET;
+            // T37：候选窗跟随地址栏文本光标（此前固定 pill 左上角 480 逻辑宽区域，
+            // 光标在文本中后段时与合成窗口脱节）。
+            let s = self.scale_factor;
+            let (_, bar_y, _, bar_h) = self.address_bar_layout();
+            let text_x = self.address_bar_text_origin_x();
+            let font_size = layout::CHROME_FONT_SIZE * s;
+            let before = Self::chars_slice(self.address_bar.text(), 0, self.address_bar.cursor());
+            let cursor_px = text_x + self.measure_ui_text_width(before, font_size) - self.address_bar_scroll_x;
             window.set_ime_cursor_area(
-                LogicalPosition::new(bar_x, bar_y),
-                LogicalSize::new(480.0, layout::ADDRESS_BAR_HEIGHT),
+                LogicalPosition::new(cursor_px / s, bar_y / s),
+                LogicalSize::new(2.0 * s, bar_h / s),
             );
         } else if self.shell.find_state().is_active() {
             let (bar_x, bar_y, bar_w, bar_h) =

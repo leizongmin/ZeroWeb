@@ -213,3 +213,49 @@ fn score_match(url: &str, title: &str, query_lower: &str) -> u32 {
 
     url_score + title_score
 }
+
+/// 查找 query（大小写不敏感）在 text 中首次出现的字节区间 `(start, end)`，
+/// 供下拉渲染匹配文字高亮（T36，对照 Chrome omnibox 匹配加深）。
+///
+/// 偏移经字符序号映射回原串——`to_lowercase` 少数映射会改变字符数（如 İ → i̇），
+/// 字节偏移不可直接复用；映射不一致时优雅降级为无高亮（返回 `None`，仅影响观感）。
+pub fn find_match_range(text: &str, query: &str) -> Option<(usize, usize)> {
+    let query_lower = query.trim().to_lowercase();
+    if query_lower.is_empty() {
+        return None;
+    }
+    let text_lower = text.to_lowercase();
+    let match_byte = text_lower.find(&query_lower)?;
+    let char_offset = text_lower[..match_byte].chars().count();
+    let match_chars = query_lower.chars().count();
+    if text_lower.chars().count() < char_offset + match_chars {
+        return None;
+    }
+    let start = text.char_indices().nth(char_offset)?.0;
+    let end = text
+        .char_indices()
+        .nth(char_offset + match_chars)
+        .map_or(text.len(), |(i, _)| i);
+    Some((start, end))
+}
+
+#[cfg(test)]
+mod t36_match_range_tests {
+    use super::*;
+
+    #[test]
+    fn find_match_range_locates_case_insensitive_match() {
+        assert_eq!(find_match_range("http://127.0.0.1:18080/", "127"), Some((7, 10)));
+        assert_eq!(find_match_range("Example Domain", "example"), Some((0, 7)));
+        assert_eq!(find_match_range("Example Domain", "DOMAIN"), Some((8, 14)));
+        assert_eq!(find_match_range("Example Domain", "zzz"), None);
+        assert_eq!(find_match_range("abc", ""), None);
+        assert_eq!(find_match_range("abc", "   "), None);
+    }
+
+    #[test]
+    fn find_match_range_maps_multibyte_offsets() {
+        assert_eq!(find_match_range("https://example.com/Path", "path"), Some((20, 24)));
+        assert_eq!(find_match_range("https://example.com/中文", "中文"), Some((20, 26)));
+    }
+}

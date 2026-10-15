@@ -1779,6 +1779,79 @@ impl Painter {
         }
     }
 
+    /// 元素特化绘制（自身文本之前的部分）——替换内容 / 表单控件值 / CSS content。
+    /// 主走查（[`Self::paint_node_inner`]）与脏矩形走查（[`Self::paint_node_in_rect`]）共用；
+    /// progress-meter 在文本之后，见 [`Self::paint_element_specials_after_text`]。
+    ///
+    /// T35 根因修复：脏矩形走查此前缺这一族绘制——窗口打开时 renderer 初始视口
+    /// （800x600）先出首帧，真实窗口尺寸 SetViewport 到达后经 `repaint_cached_viewport`
+    /// → `incremental_paint` → `paint_in_rect` 重发布，`<input>` 的 value/placeholder
+    /// 文本被静默丢弃（LoadHtml welcome 页搜索框占位文字不显示的根因；HTTP 导航因
+    /// 首帧晚于 resize 未触发该路径）。图片/视频/select 标签同族绘制一并补齐对齐。
+    /// 调用方须已判定 `!hidden`。
+    fn paint_element_specials_before_text(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        doc: Option<&Document>,
+        content_hidden: bool,
+    ) {
+        if let Some(doc) = doc {
+            // R4058（css-contain-2 §content-visibility）：hidden 元素的**替换内容**
+            //（img 位图 / canvas 位图 / svg 栅格 / video 帧）不绘制——元素自身盒
+            //（背景/边框）照常（cv-021/022/canvas：hidden img/svg/canvas 露出图内容，
+            // ref 为纯 background+border 盒）。R2251 只挡了直属文本（paint_text），
+            // 替换内容漏挡。
+            if !content_hidden {
+                // 4b. <img> 元素绘制（含 object-fit）
+                self.paint_img_element(box_node, abs_x, abs_y, style, doc);
+
+                // 4b0. <canvas> 元素绘制（R3268 canvas 显示链路——canvas 像素 →
+                // ImagePrimitive → 渲染侧 ImageCache）
+                self.paint_canvas_element(box_node, abs_x, abs_y, styles, doc);
+
+                // 4b0c. inline <svg> 元素绘制（R3933——DOM 子树序列化 → 栅格化 →
+                // ImagePrimitive，canvas 同款两段式通路）
+                self.paint_svg_element(box_node, abs_x, abs_y, doc, styles);
+
+                // 4b0b. <video> 当前帧绘制（media-playback M1b——解码像素 →
+                // ImagePrimitive → 渲染侧 ImageCache，canvas/img 同款通路）
+                self.paint_video_element(box_node, abs_x, abs_y, style, doc);
+            }
+
+            // 4b2. <input> value 文本绘制（submit/reset/button 标签 + text/password
+            // 预填值；R1660 form-control slice-2）。input 是 void 无文本子节点，value
+            // 属性须显式 paint（R1659 已给正确几何宽）。
+            self.paint_input_value(box_node, abs_x, abs_y, style, doc);
+
+            // 4b4. <select> selected option 标签绘制（R1679 form-control slice-3，
+            // ≡ R1660 paint_input_value 谱系）。option/optgroup 经 UA display:none 抑制
+            // 不生成盒，select 按钮内无文本，须显式绘 selected option 标签。
+            self.paint_select_value(box_node, abs_x, abs_y, style, doc);
+        }
+
+        // 4c. CSS `content` 属性生成的文本（在普通文本之前）
+        self.paint_content(box_node, abs_x, abs_y, style);
+    }
+
+    /// 元素特化绘制（自身文本之后的部分）——progress/meter 填充条（须盖住
+    /// fallback 文本，见 [`Self::paint_element_specials_before_text`]）。
+    fn paint_element_specials_after_text(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        doc: Option<&Document>,
+    ) {
+        if let Some(doc) = doc {
+            self.paint_progress_meter_value(box_node, abs_x, abs_y, style, doc);
+        }
+    }
+
     /// 仅绘制与脏区域相交的节点（增量绘制）。
     ///
     /// 遍历布局树时跳过与脏区域完全不相交的子树，
@@ -2134,9 +2207,15 @@ impl Painter {
                     // R1686：<summary> disclosure 标记（▶/▼），≡ list marker 同位。
                     self.paint_summary_marker(box_node, abs_x, abs_y, style, doc);
                 }
+                // T35：替换内容 + 表单控件值 + CSS content（与主走查 paint_node_inner
+                // 共用）——此前本路径缺这一族绘制，resize 重发布后 <input> value/
+                // placeholder 与图片等被静默丢弃（welcome 页搜索框占位消失根因）。
+                self.paint_element_specials_before_text(box_node, abs_x, abs_y, style, styles, doc, content_hidden);
                 if !content_hidden {
                     self.paint_text(box_node, abs_x, abs_y, style, doc, Some(styles));
                 }
+                // progress/meter 填充条须在 paint_text 之后（盖 fallback 文本）。
+                self.paint_element_specials_after_text(box_node, abs_x, abs_y, style, doc);
             }
 
             hidden
@@ -2751,42 +2830,10 @@ impl Painter {
 
                     // R1686：<summary> disclosure 标记（▶闭合/▼开启），≡ list marker 同位。
                     self.paint_summary_marker(box_node, abs_x, abs_y, style, doc);
-
-                    // R4058（css-contain-2 §content-visibility）：hidden 元素的**替换内容**
-                    //（img 位图 / canvas 位图 / svg 栅格 / video 帧）不绘制——元素自身盒
-                    //（背景/边框）照常（cv-021/022/canvas：hidden img/svg/canvas 露出图内容，
-                    // ref 为纯 background+border 盒）。R2251 只挡了直属文本（paint_text），
-                    // 替换内容漏挡。
-                    if !content_hidden {
-                        // 4b. <img> 元素绘制（含 object-fit）
-                        self.paint_img_element(box_node, abs_x, abs_y, style, doc);
-
-                        // 4b0. <canvas> 元素绘制（R3268 canvas 显示链路——canvas 像素 →
-                        // ImagePrimitive → 渲染侧 ImageCache）
-                        self.paint_canvas_element(box_node, abs_x, abs_y, styles, doc);
-
-                        // 4b0c. inline <svg> 元素绘制（R3933——DOM 子树序列化 → 栅格化 →
-                        // ImagePrimitive，canvas 同款两段式通路）
-                        self.paint_svg_element(box_node, abs_x, abs_y, doc, styles);
-
-                        // 4b0b. <video> 当前帧绘制（media-playback M1b——解码像素 →
-                        // ImagePrimitive → 渲染侧 ImageCache，canvas/img 同款通路）
-                        self.paint_video_element(box_node, abs_x, abs_y, style, doc);
-                    }
-
-                    // 4b2. <input> value 文本绘制（submit/reset/button 标签 + text/password
-                    // 预填值；R1660 form-control slice-2）。input 是 void 无文本子节点，value
-                    // 属性须显式 paint（R1659 已给正确几何宽）。
-                    self.paint_input_value(box_node, abs_x, abs_y, style, doc);
-
-                    // 4b4. <select> selected option 标签绘制（R1679 form-control slice-3，
-                    // ≡ R1660 paint_input_value 谱系）。option/optgroup 经 UA display:none 抑制
-                    // 不生成盒，select 按钮内无文本，须显式绘 selected option 标签。
-                    self.paint_select_value(box_node, abs_x, abs_y, style, doc);
                 }
 
-                // 4c. CSS `content` 属性生成的文本（在普通文本之前）
-                self.paint_content(box_node, abs_x, abs_y, style);
+                // 4b/4b2/4b4/4c. 替换内容 + 表单控件值 + CSS content（与脏矩形走查共用）。
+                self.paint_element_specials_before_text(box_node, abs_x, abs_y, style, styles, doc, content_hidden);
 
                 // 5. 文本内容绘制（含 text-shadow，使用行内格式化上下文处理换行）
                 // R2251 content-visibility:hidden → 直属文本跳过（元素盒装饰仍绘）。
@@ -2794,13 +2841,8 @@ impl Painter {
                     self.paint_text(box_node, abs_x, abs_y, style, doc, Some(styles));
                 }
 
-                // 5b3. <progress>/<meter> value 填充条绘制（R1671 paint 半，≡ R1660
-                // paint_input_value 的 form-control slice-2）。**须在 paint_text 之后**——bar
-                // 覆盖 fallback 文本（ZW 无 replaced 子节点抑制机制，select/option 同 latent gap；
-                // fallback 仍 layout+paint，bar 后绘覆盖之，近似 chromium 不显示 fallback）。
-                if let Some(doc) = doc {
-                    self.paint_progress_meter_value(box_node, abs_x, abs_y, style, doc);
-                }
+                // 5b3. <progress>/<meter> value 填充条（须在 paint_text 之后盖 fallback）。
+                self.paint_element_specials_after_text(box_node, abs_x, abs_y, style, doc);
             }
 
             hidden

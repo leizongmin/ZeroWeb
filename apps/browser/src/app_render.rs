@@ -1944,6 +1944,40 @@ impl BrowserApp {
     }
 
     /// 渲染自动补全下拉
+    /// 绘制带匹配高亮的 URL：匹配段用 `autocomplete_text` 深色、其余 `autocomplete_url`
+    /// 灰（T36，对照 Chrome omnibox 匹配文字加深）。匹配区间在**截断后**的文本上重找
+    /// ——截断点之后的匹配自然不标（首现语义与全长一致）。
+    #[allow(clippy::too_many_arguments)]
+    fn draw_url_with_match_highlight(
+        &self,
+        url: &str,
+        query: &str,
+        x: f32,
+        y: f32,
+        font_size: f32,
+        area_w: f32,
+        glyphs: &mut Vec<GlyphDraw>,
+    ) {
+        let truncated = self.truncate_ui_text(url, area_w, font_size);
+        let Some((start, end)) = zero_browser_shell::find_match_range(&truncated, query) else {
+            self.draw_ui_text(&truncated, x, y, font_size, self.chrome_palette.autocomplete_url, glyphs);
+            return;
+        };
+        let segments = [
+            (&truncated[..start], self.chrome_palette.autocomplete_url),
+            (&truncated[start..end], self.chrome_palette.autocomplete_text),
+            (&truncated[end..], self.chrome_palette.autocomplete_url),
+        ];
+        let mut cursor = x;
+        for (segment, color) in segments {
+            if segment.is_empty() {
+                continue;
+            }
+            self.draw_ui_text(segment, cursor, y, font_size, color, glyphs);
+            cursor += self.measure_ui_text_width(segment, font_size);
+        }
+    }
+
     fn render_autocomplete(
         &mut self,
         fills: &mut Vec<FillPrimitive>,
@@ -2076,13 +2110,13 @@ impl BrowserApp {
                         glyphs,
                     );
                     let url = sug.url();
-                    let truncated_url = self.truncate_ui_text(url, title_area_w, url_size);
-                    self.draw_ui_text(
-                        &truncated_url,
+                    self.draw_url_with_match_highlight(
+                        url,
+                        self.address_bar.text(),
                         text_x,
                         row_y + pad_v + title_size + 2.0 * s,
                         url_size,
-                        self.chrome_palette.autocomplete_url,
+                        title_area_w,
                         glyphs,
                     );
                 }
@@ -2107,13 +2141,13 @@ impl BrowserApp {
                         glyphs,
                     );
                     let url = sug.url();
-                    let truncated_url = self.truncate_ui_text(url, title_area_w, url_size);
-                    self.draw_ui_text(
-                        &truncated_url,
+                    self.draw_url_with_match_highlight(
+                        url,
+                        self.address_bar.text(),
                         text_x,
                         row_y + pad_v + title_size + 2.0 * s,
                         url_size,
-                        self.chrome_palette.autocomplete_url,
+                        title_area_w,
                         glyphs,
                     );
                 }

@@ -334,6 +334,9 @@ impl BrowserApp {
     }
 
     fn handle_address_bar_key(&mut self, key: &str, text: Option<&str>) {
+        // T37：地址栏按键重置光标闪烁相位——编辑/移动光标后短暂常显再闪烁
+        // （Chrome 同款；此前复用全局动画相位，输入后光标可能立即隐没）。
+        self.address_bar_cursor_phase = Instant::now();
         let extend = self.shift_pressed;
         if self.is_modifier_pressed() {
             match key {
@@ -493,6 +496,8 @@ impl BrowserApp {
             match key {
                 "l" | "L" => {
                     self.address_bar_focused = true;
+                    // T37：聚焦重置光标闪烁相位，光标立即可见。
+                    self.address_bar_cursor_phase = Instant::now();
                     self.address_bar.select_all();
                     self.needs_redraw = true;
                 }
@@ -661,6 +666,8 @@ impl BrowserApp {
         match key {
             "l" => {
                 self.address_bar_focused = true;
+                // T37：聚焦重置光标闪烁相位，光标立即可见。
+                self.address_bar_cursor_phase = Instant::now();
                 self.needs_redraw = true;
             }
             "t" => {

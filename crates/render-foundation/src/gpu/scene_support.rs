@@ -6,7 +6,7 @@
 //!
 //! 基线：docs/learnings/bugs/2026-08/2026-08-12-cpu-gpu-path-divergence.md（P0-1 回退项）。
 
-use crate::primitive::RenderPrimitives;
+use crate::primitive::{DrawOp, RenderPrimitives};
 
 /// GPU 能否正确渲染本帧；`false` 时调用方应回退 CPU 渲染。
 ///
@@ -31,5 +31,41 @@ pub fn scene_supported(primitives: &RenderPrimitives) -> bool {
     // 与 CPU 折叠等效，不再回退。
     // D/R3279：filter/transform 后处理已支持窗口模式（离屏纹理 ping-pong + blit 回
     // surface）——不再回退。
+    true
+}
+
+/// T34：合成器脏区 clip 路径（fill+glyph 双图元管线，`render_page_scene_with_clip_scaled`）
+/// 能否正确绘制本帧；`false` 时调用方应回退 CPU 脏区渲染。
+///
+/// clip 路径只有 fill+glyph 一条管线，帧内出现其他图元类型时继续渲染会把脏区内
+/// 对应内容静默抹掉（此前只守卫 images、glyphs 直接传空数组——脏区文字整块消失，
+/// 渐变/圆角/描边同样会丢），故整帧拒绝回退 CPU（慢但对，同 P0-1 理由）。
+///
+/// z 序同时校验：clip 路径按「全部 fills → 全部 glyphs」类型分桶绘制，`draw_order`
+/// 中存在 glyph 之后的 fill（fill 应盖住文字）时分桶序会画错，也须拒绝。
+/// `draw_order` 为空（旧快照）时类型分桶即既定回退语义，视为安全。
+pub fn clip_scene_supported(primitives: &RenderPrimitives) -> bool {
+    let only_fills_glyphs = primitives.clips.is_empty()
+        && primitives.rounded_rects.is_empty()
+        && primitives.path_fills.is_empty()
+        && primitives.path_strokes.is_empty()
+        && primitives.strokes.is_empty()
+        && primitives.gradients.is_empty()
+        && primitives.shadows.is_empty()
+        && primitives.images.is_empty()
+        && primitives.filters.is_empty()
+        && primitives.blend_modes.is_empty()
+        && primitives.transforms.is_empty();
+    if !only_fills_glyphs {
+        return false;
+    }
+    let mut seen_glyph = false;
+    for op in &primitives.draw_order {
+        match op {
+            DrawOp::Glyph(_) => seen_glyph = true,
+            DrawOp::Fill(_) if seen_glyph => return false,
+            _ => {}
+        }
+    }
     true
 }

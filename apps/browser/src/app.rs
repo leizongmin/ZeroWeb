@@ -122,6 +122,12 @@ pub struct BrowserApp {
     address_bar_drag: bool,
     /// 地址栏双击检测
     address_bar_last_click: Option<(Instant, f64, f64)>,
+    /// 地址栏编辑态水平滚动偏移（全文像素坐标；T37 光标跟随滚动，渲染帧钳制，
+    /// 见 `clamp_address_bar_scroll`）
+    address_bar_scroll_x: f32,
+    /// 地址栏光标闪烁相位基准（编辑/移动光标时重置——输入后短暂常显再闪烁，
+    /// Chrome 同款；此前复用 `chrome_anim_start` 全局相位，输入后可能立即隐没）
+    address_bar_cursor_phase: Instant,
     /// 窗口物理像素尺寸
     pub physical_size: (u32, u32),
     /// 窗口缩放因子
@@ -325,6 +331,8 @@ impl BrowserApp {
             address_bar_ime_preedit: String::new(),
             address_bar_drag: false,
             address_bar_last_click: None,
+            address_bar_scroll_x: 0.0,
+            address_bar_cursor_phase: Instant::now(),
             physical_size: (1024, 768),
             scale_factor: 1.0,
             needs_redraw: true,
@@ -1381,6 +1389,24 @@ impl BrowserApp {
     #[cfg(test)]
     pub fn address_bar_cursor(&self) -> usize {
         self.address_bar.cursor()
+    }
+
+    /// 测试用：地址栏编辑态水平滚动偏移（全文像素坐标，T37 光标跟随滚动）
+    #[cfg(test)]
+    pub fn address_bar_scroll_x_for_test(&self) -> f32 {
+        self.address_bar_scroll_x
+    }
+
+    /// 测试用：地址栏文本绘制起点 x（物理像素）
+    #[cfg(test)]
+    pub fn address_bar_text_origin_x_for_test(&self) -> f32 {
+        self.address_bar_text_origin_x()
+    }
+
+    /// 测试用：地址栏光标闪烁相位基准（T37 编辑/聚焦重置）
+    #[cfg(test)]
+    pub fn address_bar_cursor_phase_for_test(&self) -> std::time::Instant {
+        self.address_bar_cursor_phase
     }
 
     /// 测试用：获取标签页垂直滚动偏移（物理像素）
@@ -2624,6 +2650,8 @@ impl BrowserApp {
             self.new_tab(None);
         }
         self.address_bar_focused = true;
+        // T37：聚焦重置光标闪烁相位，光标立即可见。
+        self.address_bar_cursor_phase = Instant::now();
         self.address_bar.select_all();
         self.needs_redraw = true;
     }
@@ -3031,6 +3059,8 @@ impl BrowserApp {
     fn apply_settings_edit_home_url(&mut self) {
         self.address_bar.set_text("zero://settings/set/home_url/".to_string());
         self.address_bar_focused = true;
+        // T37：聚焦重置光标闪烁相位，光标立即可见。
+        self.address_bar_cursor_phase = Instant::now();
         self.autocomplete.clear();
         self.needs_redraw = true;
     }
@@ -3076,6 +3106,8 @@ impl BrowserApp {
         self.address_bar
             .set_text("zero://settings/set/download_directory/".to_string());
         self.address_bar_focused = true;
+        // T37：聚焦重置光标闪烁相位，光标立即可见。
+        self.address_bar_cursor_phase = Instant::now();
         self.autocomplete.clear();
         self.needs_redraw = true;
     }

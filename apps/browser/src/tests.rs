@@ -4853,3 +4853,171 @@ fn find_highlight_paints_current_and_other_matches() {
         );
     }
 }
+
+/// T36：地址栏下拉历史项 URL 的匹配段（输入 "127"）应使用深色
+/// （autocomplete_text），其余 URL 字段保持灰（autocomplete_url）——对照
+/// Chrome omnibox 匹配文字加深。
+#[test]
+fn autocomplete_url_match_segment_uses_text_color() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    app.shell.navigate("http://127.0.0.1:18080/");
+    app.shell.on_page_loaded("GUI Probe Home");
+    app.address_bar_focused = true;
+    for ch in ["1", "2", "7"] {
+        app.handle_key(ch, true, None);
+    }
+
+    let (_, glyphs, _, _, _, _) = app.build_scene_for_test(1280, 900);
+    let palette = app.chrome_palette();
+    // URL 行 = 灰色（autocomplete_url）字形所在的基线带；同带内的深色字形
+    // 应恰为匹配段 "127"（搜索建议行的 "127" 标题在另一基线带，被过滤）。
+    let gray_url: Vec<_> = glyphs.iter().filter(|g| g.color == palette.autocomplete_url).collect();
+    assert!(
+        gray_url.iter().any(|g| g.ch == 'h') && gray_url.iter().any(|g| g.ch == '/'),
+        "下拉应绘制 URL 灰色字形"
+    );
+    // 只取含 ':' 的灰色字形基线（URL 行专属；搜索行提示无 scheme 冒号）。
+    let url_band: Vec<f32> = gray_url.iter().filter(|g| g.ch == ':').map(|g| g.baseline_y).collect();
+    let y_min = url_band.iter().cloned().fold(f32::MAX, f32::min);
+    let y_max = url_band.iter().cloned().fold(f32::MIN, f32::max);
+    let mut dark_in_url_line: String = glyphs
+        .iter()
+        .filter(|g| g.color == palette.autocomplete_text)
+        .filter(|g| g.baseline_y >= y_min - 0.5 && g.baseline_y <= y_max + 0.5)
+        .map(|g| g.ch)
+        .collect();
+    dark_in_url_line.retain(|c| c.is_ascii_digit());
+    assert_eq!(
+        dark_in_url_line, "127",
+        "URL 行内深色数字应为匹配段 127, got {dark_in_url_line:?}"
+    );
+    // URL 前缀 "http://"（不含数字）应保持灰色：同带内无其他深色非数字字符以外，
+    // 再验证灰字形里含 URL 专属字符 ':'（搜索行无）。
+    assert!(
+        gray_url
+            .iter()
+            .filter(|g| g.baseline_y >= y_min - 0.5 && g.baseline_y <= y_max + 0.5)
+            .any(|g| g.ch == ':'),
+        "URL 行灰色字形应含 scheme 冒号"
+    );
+}
+
+/// T37：地址栏超长文本编辑态水平滚动跟随光标——光标须保持可见（此前文本超宽时
+/// 只截断显示头部，光标 x 按全文前缀测量画出可见区甚至 pill 之外）。
+#[test]
+fn address_bar_long_text_scrolls_to_keep_cursor_visible() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let mod_key = BrowserApp::test_modifier_key_name();
+    app.handle_key(mod_key, true, None);
+    app.handle_key("l", true, None);
+    app.handle_key("l", false, None);
+    app.handle_key(mod_key, false, None);
+    assert!(app.address_bar_focused);
+
+    let long_text = format!("http://example.com/{}", "x".repeat(200));
+    for ch in long_text.chars() {
+        app.handle_key(&ch.to_string(), true, None);
+        app.handle_key(&ch.to_string(), false, None);
+    }
+    assert_eq!(app.address_bar_text(), long_text);
+
+    let (fills, glyphs, _, _, _, _) = app.build_scene_for_test(1280, 900);
+    let (bar_x, bar_y, bar_w, bar_h) = app.address_bar_layout_for_test();
+    let scroll = app.address_bar_scroll_x_for_test();
+    assert!(scroll > 0.0, "超长文本光标在末尾时应有正向滚动偏移");
+
+    // 可见文本从滚过首字符之后开始：地址栏基线带内不应再出现文本首字符 'h'。
+    let bar_glyphs: String = glyphs
+        .iter()
+        .filter(|g| g.baseline_y >= bar_y && g.baseline_y <= bar_y + bar_h)
+        .map(|g| g.ch)
+        .collect();
+    assert!(
+        !bar_glyphs.contains('h'),
+        "滚动后首字符 h 应被滚出可见区, got {bar_glyphs:?}"
+    );
+
+    // 光标（1.5px 宽 fill，地址栏内唯一）不得越出 pill 右缘（修复前恒越界）。
+    let cursors: Vec<_> = fills
+        .iter()
+        .filter(|f| (f.rect.size.width - 1.5).abs() < 0.01)
+        .filter(|f| f.rect.origin.y >= bar_y && f.rect.origin.y <= bar_y + bar_h)
+        .collect();
+    assert_eq!(cursors.len(), 1, "地址栏内应恰有一个光标 fill");
+    let cursor_right = cursors[0].rect.origin.x + cursors[0].rect.size.width;
+    assert!(
+        cursor_right <= bar_x + bar_w,
+        "光标须在地址栏可见区内, cursor_right={cursor_right}, bar_right={}",
+        bar_x + bar_w
+    );
+}
+
+/// T37：Home 复位滚动显示行首、End 跟随光标回行尾（配合滚动偏移钳制）。
+#[test]
+fn address_bar_home_end_scroll_follows_caret() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let mod_key = BrowserApp::test_modifier_key_name();
+    app.handle_key(mod_key, true, None);
+    app.handle_key("l", true, None);
+    app.handle_key("l", false, None);
+    app.handle_key(mod_key, false, None);
+
+    let long_text = format!("http://example.com/{}", "y".repeat(200));
+    for ch in long_text.chars() {
+        app.handle_key(&ch.to_string(), true, None);
+        app.handle_key(&ch.to_string(), false, None);
+    }
+    // 滚动钳制在渲染帧执行（clamp_address_bar_scroll 于 build_scene 调用）。
+    let _ = app.build_scene_for_test(1280, 900);
+    assert!(
+        app.address_bar_scroll_x_for_test() > 0.0,
+        "前置：光标在末尾应有滚动偏移"
+    );
+
+    app.handle_key("Home", true, None);
+    app.handle_key("Home", false, None);
+    let _ = app.build_scene_for_test(1280, 900);
+    assert_eq!(app.address_bar_scroll_x_for_test(), 0.0, "Home 后滚动应复位到行首");
+    let (_, glyphs, _, _, _, _) = app.build_scene_for_test(1280, 900);
+    let (bar_x, bar_y, bar_w, bar_h) = app.address_bar_layout_for_test();
+    let bar_glyphs: String = glyphs
+        .iter()
+        .filter(|g| g.baseline_y >= bar_y && g.baseline_y <= bar_y + bar_h)
+        .map(|g| g.ch)
+        .collect();
+    assert!(
+        bar_glyphs.contains("http://example.com/"),
+        "Home 后可见文本应以行首 scheme 开头（基线带含 PUA 图标字形，取 scheme 前缀判定）, got {bar_glyphs:?}"
+    );
+
+    app.handle_key("End", true, None);
+    app.handle_key("End", false, None);
+    let _ = app.build_scene_for_test(1280, 900);
+    assert!(app.address_bar_scroll_x_for_test() > 0.0, "End 后滚动应跟随光标到行尾");
+    assert_eq!(app.address_bar_cursor(), long_text.chars().count());
+}
+
+/// T37：地址栏聚焦/编辑重置光标闪烁相位——聚焦（Ctrl+L）与任意地址栏按键后相位
+/// 基准更新（此前复用全局动画相位，输入后 500ms 窗口内光标可能立即隐没）。
+#[test]
+fn address_bar_focus_and_editing_reset_cursor_blink_phase() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let mod_key = BrowserApp::test_modifier_key_name();
+    app.handle_key(mod_key, true, None);
+    app.handle_key("l", true, None);
+    app.handle_key("l", false, None);
+    app.handle_key(mod_key, false, None);
+    assert!(app.address_bar_focused);
+    let focused_phase = app.address_bar_cursor_phase_for_test();
+
+    app.handle_key("a", true, None);
+    app.handle_key("a", false, None);
+    let edited_phase = app.address_bar_cursor_phase_for_test();
+    assert!(edited_phase > focused_phase, "地址栏按键应重置光标闪烁相位");
+}
