@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>R5106: inline svg (width:auto + CSS height definite + attrs) in a width:auto flex-item wrapper keeps transferred width</title>
+<!-- zw-local: R5106 修复（PR 对应 google 首页 logo `.ESTs9d{width:auto;max-height:100%;max-width:100%;object-fit:contain}`）。
+     wrapper 为 flex item（width:auto，height:100% 定级，max-height:92px），内含 inline svg
+     （HTML width=272 height=92 属性 + CSS width:auto + height:92px + max-width/max-height:100%）。
+     期望 used 272×92（=height × 固有比 transferred width）；旧路径 auto 宽在父级 flex max-content
+     base 测量被 collapse 成 0（wrapper 0 → svg 0）。css-sizing-4 §4.1 transferred size。
+     断言：与 ref（svg 显式 width:272px）逐像素一致。 -->
+<style>
+body { margin: 0; }
+.c { display: flex; align-items: center; width: 400px; height: 120px; }
+.w { display: block; position: relative; height: 100%; max-height: 92px; background: #eee; }
+</style>
+</head>
+<body>
+<div class="c"><div class="w">
+  <svg width="272" height="92" viewBox="0 0 272 92" style="width:auto;max-width:100%;max-height:100%;object-fit:contain" xmlns="http://www.w3.org/2000/svg"><rect width="272" height="92" fill="#3186FF"/></svg>
+</div></div>
+</body>
+</html>
