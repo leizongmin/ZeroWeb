@@ -2237,6 +2237,31 @@ impl super::Painter {
                             {
                                 continue;
                             }
+                            // 键盘焦点环（UA 默认）：a/span 等行内元素无独立盒、不经
+                            // paint_node 盒路径的焦点环块——在此按片段行盒逐行绘制。
+                            // 作者已声明 outline 的 owner 不叠加（focus_ring_applicable
+                            // 与盒路径同判定）；focused_from_keyboard=false 时零开销短路。
+                            if self.focused_from_keyboard
+                                && !$frag_text.is_empty()
+                                && self.focused_node == Some(owner_id)
+                                && owner_style_opt.is_none_or(|s| {
+                                    // 仅行内 display 走片段环：inline-block 等原子内联
+                                    // 有独立盒，由 paint_node 盒路径焦点环覆盖，避免双环。
+                                    self.focus_ring_applicable(s)
+                                        && matches!(s.display, DisplayValue::Inline)
+                                })
+                            {
+                                // 片段行盒入队（paint() 末尾按行合并成整环）：
+                                // top = 行顶，bottom = 基线 + 0.25em descent。
+                                let ring_top = content_y + $frag_line_top;
+                                let ring_bottom = content_y + $frag_y + $baseline_offset + $frag_fs * 0.25;
+                                self.focus_ring_bands.push((
+                                    content_x + $frag_x,
+                                    ring_top,
+                                    $frag_width,
+                                    (ring_bottom - ring_top).max($frag_fs),
+                                ));
+                            }
                             let dutch_digraph = {
                                 let mut found = false;
                                 let mut cur = Some(owner_id);

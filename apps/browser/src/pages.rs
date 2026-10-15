@@ -431,6 +431,18 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         },
         settings.do_not_track,
     );
+    let (clear_data_label, clear_history_label, clear_cookies_label) = match lang {
+        UiLanguage::ZhCn => ("清除浏览数据", "清除历史记录", "清除 Cookie"),
+        UiLanguage::EnUs => ("Clear Browsing Data", "Clear History", "Clear Cookies"),
+    };
+    let clear_data_row = format!(
+        r#"<div style="display:flex;justify-content:space-between;align-items:center;min-height:32px;font-size:14px;color:#3c4043;">
+  <span>{clear_data_label}</span>
+  <span style="display:flex;align-items:center;">{history_link}{cookies_link}</span>
+</div>"#,
+        history_link = action_link("zero://settings/clear/history", clear_history_label),
+        cookies_link = action_link("zero://settings/clear/cookies", clear_cookies_label),
+    );
     let bookmarks_row = toggle_link(
         "show_bookmarks_bar",
         if matches!(lang, UiLanguage::ZhCn) {
@@ -471,7 +483,7 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
     );
     let privacy_card = section_card(
         section_privacy,
-        &format!("{js_row}{cookies_row}{block_3p_row}{dnt_row}"),
+        &format!("{js_row}{cookies_row}{block_3p_row}{dnt_row}{clear_data_row}"),
     );
     let appearance_card = section_card(
         section_appearance,

@@ -184,6 +184,40 @@ enum Step {
     ClickOverflowRow {
         index: usize,
     },
+    /// 点击地址栏前导 shield/lock 图标（T27-T30 站点信息面板；几何取自渲染同源 helper）。
+    ClickSiteInfoIcon,
+    /// 点击缩放百分比浮层（T27-T30 点击复位；浮层未显示时报错）。
+    ClickZoomIndicator,
+    /// 缩放百分比浮层显示断言：`visible` 为期望显示状态（3 秒窗口内）。
+    AssertZoomIndicator {
+        visible: bool,
+    },
+    /// 历史条目数断言（T27-T30 清除浏览数据）。`count` 精确匹配，`min`/`max` 边界，
+    /// 至少给一个。
+    AssertHistory {
+        count: Option<usize>,
+        min: Option<usize>,
+        max: Option<usize>,
+    },
+    /// 页面焦点选择器断言：`contains` 子串匹配（Tab 焦点导航）。
+    AssertFocus {
+        pattern: String,
+    },
+    /// 点击查找栏选项按钮：`"case"` = Aa（区分大小写），`"whole"` = W•（全字匹配）。
+    /// 几何与查找栏点击处理同源（bar 右缘偏移 160/130）。
+    ClickFindOption {
+        option: String,
+    },
+    /// 点击地址栏尾随 shield 图标（站点权限菜单；既有功能回归）。
+    ClickSitePermissionsIcon,
+    /// 上下文菜单项 id 断言：`contains` 须匹配任一菜单项 id。
+    AssertMenuItems {
+        pattern: String,
+    },
+    /// 共享 Cookie jar 条目数断言（清除浏览数据）。
+    AssertCookies {
+        count: usize,
+    },
 }
 
 impl Step {
@@ -337,6 +371,32 @@ impl Step {
             "click_tab_overflow_button" => Ok(Self::ClickOverflowButton),
             "click_tab_overflow_row" => Ok(Self::ClickOverflowRow {
                 index: num("index")? as usize,
+            }),
+            "click_site_info_icon" => Ok(Self::ClickSiteInfoIcon),
+            "click_zoom_indicator" => Ok(Self::ClickZoomIndicator),
+            "assert_zoom_indicator" => Ok(Self::AssertZoomIndicator {
+                visible: value
+                    .get("visible")
+                    .and_then(Value::as_bool)
+                    .ok_or_else(|| bad("assert_zoom_indicator requires boolean field \"visible\""))?,
+            }),
+            "assert_history" => Ok(Self::AssertHistory {
+                count: value.get("count").and_then(Value::as_u64).map(|v| v as usize),
+                min: value.get("min").and_then(Value::as_u64).map(|v| v as usize),
+                max: value.get("max").and_then(Value::as_u64).map(|v| v as usize),
+            }),
+            "assert_focus" => Ok(Self::AssertFocus {
+                pattern: text("contains")?,
+            }),
+            "click_find_option" => Ok(Self::ClickFindOption {
+                option: text("option")?,
+            }),
+            "click_site_permissions_icon" => Ok(Self::ClickSitePermissionsIcon),
+            "assert_menu_items" => Ok(Self::AssertMenuItems {
+                pattern: text("contains")?,
+            }),
+            "assert_cookies" => Ok(Self::AssertCookies {
+                count: num("count")? as usize,
             }),
             "assert_tabs" => Ok(Self::AssertTabs {
                 count: num("count")? as usize,
@@ -834,6 +894,144 @@ impl UiDriver {
                 app.handle_mouse_click(cx, cy, false, "Left");
                 tracing::info!(
                     "UI_DRIVER_STEP step={} click_tab_overflow_row index={index} cx={cx} cy={cy}",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::ClickSiteInfoIcon => {
+                let (slot_x, slot_y, slot_w, slot_h) = app.smoke_address_bar_leading_slot_rect();
+                let (cx, cy) = ((slot_x + slot_w / 2.0) as f64, (slot_y + slot_h / 2.0) as f64);
+                app.handle_mouse_click(cx, cy, true, "Left");
+                app.handle_mouse_click(cx, cy, false, "Left");
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} click_site_info_icon cx={cx} cy={cy}",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::ClickZoomIndicator => {
+                let Some((bx, by, bw, bh)) = app.zoom_indicator_rect_for(app.physical_size.0, app.physical_size.1)
+                else {
+                    return Err("click_zoom_indicator: zoom indicator is not visible".to_string());
+                };
+                let (cx, cy) = ((bx + bw / 2.0) as f64, (by + bh / 2.0) as f64);
+                app.handle_mouse_click(cx, cy, true, "Left");
+                app.handle_mouse_click(cx, cy, false, "Left");
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} click_zoom_indicator cx={cx} cy={cy}",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertZoomIndicator { visible } => {
+                let actual = app.smoke_zoom_indicator_visible();
+                if actual != *visible {
+                    return Err(format!(
+                        "assert_zoom_indicator failed: visible={actual}, expected {visible}"
+                    ));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_zoom_indicator visible={actual} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertHistory { count, min, max } => {
+                if count.is_none() && min.is_none() && max.is_none() {
+                    return Err("assert_history requires one of count/min/max".to_string());
+                }
+                let actual = app.smoke_history_len();
+                if let Some(want) = count
+                    && actual != *want
+                {
+                    return Err(format!("assert_history failed: len is {actual}, expected {want}"));
+                }
+                if let Some(want) = min
+                    && actual < *want
+                {
+                    return Err(format!("assert_history failed: len is {actual}, expected >= {want}"));
+                }
+                if let Some(want) = max
+                    && actual > *want
+                {
+                    return Err(format!("assert_history failed: len is {actual}, expected <= {want}"));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_history len={actual} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertFocus { pattern } => {
+                let Some(actual) = app.smoke_focus_target() else {
+                    return Err(format!(
+                        "assert_focus failed: no focus target, expected to contain {pattern}"
+                    ));
+                };
+                if !actual.contains(pattern.as_str()) {
+                    return Err(format!(
+                        "assert_focus failed: focus target is {actual:?}, expected to contain {pattern}"
+                    ));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_focus target={actual:?} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::ClickFindOption { option } => {
+                let s = app.scale_factor;
+                let offset = match option.as_str() {
+                    "case" => 160.0,
+                    "whole" => 130.0,
+                    other => return Err(format!("click_find_option: unknown option {other:?}")),
+                };
+                let (bar_x, bar_y, bar_w, bar_h) = app.find_bar_rect_for(app.physical_size.0, app.physical_size.1);
+                let (cx, cy) = (
+                    (bar_x + bar_w - offset * s + 14.0 * s) as f64,
+                    (bar_y + bar_h / 2.0) as f64,
+                );
+                app.handle_mouse_click(cx, cy, true, "Left");
+                app.handle_mouse_click(cx, cy, false, "Left");
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} click_find_option={option} cx={cx} cy={cy}",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::ClickSitePermissionsIcon => {
+                let (slot_x, slot_y, slot_w, slot_h) = app.smoke_address_bar_trailing_slot_rect(1);
+                let (cx, cy) = ((slot_x + slot_w / 2.0) as f64, (slot_y + slot_h / 2.0) as f64);
+                app.handle_mouse_click(cx, cy, true, "Left");
+                app.handle_mouse_click(cx, cy, false, "Left");
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} click_site_permissions_icon cx={cx} cy={cy}",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertMenuItems { pattern } => {
+                let ids = app.smoke_context_menu_item_ids();
+                if !ids.iter().any(|id| id.contains(pattern.as_str())) {
+                    return Err(format!(
+                        "assert_menu_items failed: items are {ids:?}, expected one to contain {pattern}"
+                    ));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_menu_items contains={pattern} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertCookies { count } => {
+                let actual = app.smoke_cookie_count();
+                if actual != *count {
+                    return Err(format!(
+                        "assert_cookies failed: cookie jar len is {actual}, expected {count}"
+                    ));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_cookies len={actual} status=passed",
                     self.next + 1
                 );
                 Ok(())

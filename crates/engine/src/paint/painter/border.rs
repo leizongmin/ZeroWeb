@@ -1409,6 +1409,73 @@ impl super::Painter {
         }
     }
 
+    /// UA 默认键盘焦点环宽度（px）。paint() 末尾合并冲刷同用。
+    pub(super) const FOCUS_RING_WIDTH: f32 = 2.0;
+
+    /// 键盘焦点环适用判定：作者未声明非 none 的 outline-style 即适用。
+    /// outline-width 初始值 = medium（3px，非零），不能作为「作者已声明」信号；
+    /// style=None 时 paint_outline 本就不绘制。「未声明」与「显式 none」在 computed
+    /// 层不可区分，保守按作者去除环的意图处理（声明非 none 由 paint_outline 绘制，
+    /// 不叠加焦点环）。
+    pub(super) fn focus_ring_applicable(&self, style: &ComputedStyle) -> bool {
+        use zero_style_system::OutlineStyleValue;
+        style.outline_style == OutlineStyleValue::None
+    }
+
+    /// 绘制 UA 默认键盘焦点环：作者未声明 outline 的聚焦元素外画 2px 实线环。
+    ///
+    /// 几何复用 paint_outline 的外侧矩形推导（width=2px、offset=0）；作者已声明
+    /// `outline-style`（含显式 none）或 `outline-width` 时不叠加——声明非 none 由
+    /// paint_outline 正常绘制，显式 none 视为作者去除环的意图（「未声明」与
+    /// 「显式 none」在 computed 层不可区分，保守按作者意图处理）。
+    pub(super) fn paint_focus_ring_indicator(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        if !self.focus_ring_applicable(style) {
+            return;
+        }
+        let width = Self::FOCUS_RING_WIDTH;
+        let color = zero_render_foundation::color::Color::rgb(0x1a, 0x73, 0xe8);
+        let w = box_node.width;
+        let h = box_node.height;
+        let ow = (w + 2.0 * width).max(2.0 * width);
+        let oh = (h + 2.0 * width).max(2.0 * width);
+        let ox = abs_x + w / 2.0 - ow / 2.0;
+        let oy = abs_y + h / 2.0 - oh / 2.0;
+        self.paint_ring_rects(ox, oy, ow, oh, width, color);
+    }
+
+    /// 行内聚焦元素的焦点环（paint_node 盒路径不覆盖 a/span 等无独立盒的 inline
+    /// 元素）：render_fragment 逐行片段调用，几何 = 片段行盒外扩 ring width。
+    pub(super) fn paint_inline_focus_ring(&mut self, x: f32, y: f32, w: f32, h: f32) {
+        let width = Self::FOCUS_RING_WIDTH;
+        let color = zero_render_foundation::color::Color::rgb(0x1a, 0x73, 0xe8);
+        self.paint_ring_rects(x - width, y - width, w + 2.0 * width, h + 2.0 * width, width, color);
+    }
+
+    /// 焦点环四边填充（盒路径与行内片段路径共用）。
+    fn paint_ring_rects(
+        &mut self,
+        ox: f32,
+        oy: f32,
+        ow: f32,
+        oh: f32,
+        width: f32,
+        color: zero_render_foundation::color::Color,
+    ) {
+        self.primitives.add_fill(Rect::new(ox, oy, ow, width), color);
+        self.primitives
+            .add_fill(Rect::new(ox, oy + oh - width, ow, width), color);
+        self.primitives
+            .add_fill(Rect::new(ox, oy + width, width, oh - 2.0 * width), color);
+        self.primitives
+            .add_fill(Rect::new(ox + ow - width, oy + width, width, oh - 2.0 * width), color);
+    }
+
     /// 绘制 outline（位于 border 外侧，支持多种 outline-style）。
     ///
     /// outline 绘制为 4 条边框段，根据 outline-style 生成不同图元类型。

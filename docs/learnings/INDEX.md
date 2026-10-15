@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（154）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（155）
 
+- 2026-10-15 [outline-width 初始值是 medium(3px) 非 0，不能当「作者已声明」信号](bugs/2026-10/2026-10-15-outline-width-initial-medium-not-declared-signal.md) — style-system,engine/paint
 - 2026-10-14 [js_dom_shim 同一树节点存在多族稳定 JS 包装——跨族 identity 恒败与吸附目标重投影陷阱](bugs/2026-10/2026-10-14-js-dom-wrapper-family-identity.md) — crates/engine
 - 2026-10-13 [import-wpt 从 upstream master 下载与 pinned 快照不一致——ref 404 时连带删除本地既有案](bugs/2026-10/2026-10-13-import-wpt-master-pinned-mismatch.md) — tests/wpt-runner
 - 2026-10-11 [QuickJS 全局词法作用域重复 `const` 声明使脚本静默死亡](bugs/2026-10/2026-10-11-quickjs-global-const-redeclaration.md) — apps/renderer

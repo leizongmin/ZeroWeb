@@ -1791,6 +1791,35 @@ impl BrowserApp {
         (cx + cw - bar_w - margin, cy + margin, bar_w, bar_h)
     }
 
+    /// 缩放百分比浮层外框（物理像素）。未显示（无 zoom 操作或已超 3 秒）返回 None。
+    /// 几何与 render_zoom_indicator 同源（渲染与点击命中共用，避免两处漂移）。
+    pub(crate) fn zoom_indicator_rect_for(&self, width: u32, height: u32) -> Option<(f32, f32, f32, f32)> {
+        let start = self.zoom_indicator_start?;
+        if start.elapsed().as_secs_f32() > 3.0 || self.font_id.is_none() {
+            return None;
+        }
+        let s = self.scale_factor;
+        let zoom = self.shell.zoom();
+        // 100% 时不显示（zoom_reset 到 100% 仍短暂提示，便于用户确认复位）。
+        let label = if (zoom - 1.0).abs() < 0.001 {
+            "100%".to_string()
+        } else {
+            format!("{:.0}%", (zoom * 100.0).round())
+        };
+        let font_size = layout::CHROME_FONT_SIZE * s;
+        let label_w = self.measure_ui_text_width(&label, font_size);
+        let pad_h = 12.0 * s;
+        let pad_v = 8.0 * s;
+        let box_w = label_w + pad_h * 2.0;
+        let box_h = font_size + pad_v * 2.0;
+        let margin = 16.0 * s;
+        // 右下角，避开滚动条。
+        let scrollbar_w = layout::SCROLLBAR_THICKNESS * s;
+        let box_x = width as f32 - box_w - margin - scrollbar_w;
+        let box_y = height as f32 - box_h - margin;
+        Some((box_x, box_y, box_w, box_h))
+    }
+
     /// 浮动下载面板外框（物理像素）。有活动下载时高度随行数增长（T8），
     /// 完成视图保持固定高度。
     pub(crate) fn download_panel_rect_for(&self, width: u32, height: u32) -> (f32, f32, f32, f32) {
@@ -2866,6 +2895,14 @@ impl BrowserApp {
             self.apply_settings_toggle(key);
             return true;
         }
+        if url == "zero://settings/clear/history" {
+            self.apply_settings_clear_history();
+            return true;
+        }
+        if url == "zero://settings/clear/cookies" {
+            self.apply_settings_clear_cookies();
+            return true;
+        }
         if url == "zero://settings/cycle/search_engine" {
             self.apply_settings_cycle_search_engine();
             return true;
@@ -2907,6 +2944,24 @@ impl BrowserApp {
             return true;
         }
         false
+    }
+
+    /// 清除浏览历史（`zero://settings/clear/history`；设置页「清除浏览数据」行）。
+    /// 与历史页 `zero://history/clear` 同一存储路径；磁盘落盘仍走退出时 persist_user_data。
+    fn apply_settings_clear_history(&mut self) {
+        self.shell.history_mut().clear();
+        self.open_settings_page();
+    }
+
+    /// 清除共享 Cookie jar（`zero://settings/clear/cookies`）。
+    /// 覆盖 browser 进程权威 jar（顶层导航与 fetch 代理路径）；renderer 子进程本地
+    /// jar 的跨进程清理需要新增 IPC 消息，属后续切片。
+    fn apply_settings_clear_cookies(&mut self) {
+        zero_net::shared_cookie_store()
+            .lock()
+            .expect("shared cookie store lock")
+            .clear();
+        self.open_settings_page();
     }
 
     fn percent_decode(input: &str) -> String {

@@ -2035,6 +2035,14 @@ impl WebView {
         self.pipeline.set_focused_selector(selector);
     }
 
+    /// 同步页面焦点 selector 及其来源（是否键盘导航）。仅键盘焦点绘制 UA 默认
+    /// 焦点环（pipeline `set_focused_from_keyboard` 透传 painter）。
+    #[doc(hidden)]
+    pub fn set_focused_selector_with_origin(&mut self, selector: Option<&str>, from_keyboard: bool) {
+        self.pipeline.set_focused_selector(selector);
+        self.pipeline.set_focused_from_keyboard(from_keyboard);
+    }
+
     /// R4353：脚本化滚动偏移（reftest harness scrollTop/scrollLeft 记录回流）。
     pub fn set_scroll_offsets(&mut self, offsets: Vec<(String, f32, f32)>) {
         self.pipeline.set_scroll_offsets(offsets);

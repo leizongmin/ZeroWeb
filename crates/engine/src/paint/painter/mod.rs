@@ -128,6 +128,10 @@ pub struct Painter {
     pub(crate) form_control_compositions: HashMap<NodeId, (String, usize, usize)>,
     /// 当前页面焦点所有者，用于原生控件状态外观。
     pub(crate) focused_node: Option<NodeId>,
+    /// 当前焦点是否来自键盘导航（Tab/Shift+Tab）——UA 默认键盘焦点环绘制条件。
+    pub(crate) focused_from_keyboard: bool,
+    /// 键盘焦点环待绘制带（render_fragment 行内片段累积；paint() 末尾合并冲刷）。
+    pub(crate) focus_ring_bands: Vec<(f32, f32, f32, f32)>,
     /// CSS font-family 查找表（字体族名 → FontId）。
     ///
     /// 由调用方从 FontLoader.build_font_resolver() 构建并传入。
@@ -614,6 +618,8 @@ impl Painter {
             form_control_values: HashMap::new(),
             form_control_compositions: HashMap::new(),
             focused_node: None,
+            focused_from_keyboard: false,
+            focus_ring_bands: Vec::new(),
             font_resolver: HashMap::new(),
             font_resolver_lower: HashMap::new(),
             font_id_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
@@ -976,6 +982,11 @@ impl Painter {
         self.focused_node = node;
     }
 
+    /// 设置当前焦点是否来自键盘导航（UA 默认键盘焦点环绘制条件；pipeline 透传）。
+    pub fn set_focused_from_keyboard(&mut self, from_keyboard: bool) {
+        self.focused_from_keyboard = from_keyboard;
+    }
+
     /// R2392：从 stylesheets 收集 `@counter-style` 定义注册到 painter。
     /// R3881：接受条件展开后的规则序列（调用方经 `flatten_conditional_rules` 求值
     /// @media/@supports 后传入），使条件块内的 @counter-style 生效。
@@ -1278,6 +1289,32 @@ impl Painter {
             if spec.region.is_some() {
                 self.paint_isolate_subtree(spec, layout, styles, doc);
             }
+        }
+        // 键盘焦点环（UA 默认）冲刷：render_fragment 把行内聚焦元素的片段行盒
+        // 累积为带状矩形，此处按同行相邻合并后统一绘制——逐词片段各画一圈会碎成
+        // 竖线分隔的点线观感（Chrome 按行盒整体描边）。
+        let mut bands = std::mem::take(&mut self.focus_ring_bands);
+        bands.sort_by(|a, b| {
+            a.1.partial_cmp(&b.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+        });
+        let mut merged: Vec<(f32, f32, f32, f32)> = Vec::new();
+        for (x, y, w, h) in bands {
+            match merged.last_mut() {
+                // 同一行（y/h 一致）且水平间隙不超过环宽 → 合并为一条带。
+                Some(last)
+                    if (last.1 - y).abs() < 0.5
+                        && (last.3 - h).abs() < 0.5
+                        && x - (last.0 + last.2) <= Self::FOCUS_RING_WIDTH * 2.0 =>
+                {
+                    last.2 = last.2.max(x + w - last.0);
+                }
+                _ => merged.push((x, y, w, h)),
+            }
+        }
+        for (x, y, w, h) in merged {
+            self.paint_inline_focus_ring(x, y, w, h);
         }
     }
 
@@ -3455,6 +3492,19 @@ impl Painter {
             && !matches!(style.resize, ResizeValue::None)
         {
             self.paint_resize_handle(box_node, abs_x, abs_y, style);
+        }
+
+        // ── 键盘焦点环（UA 默认 focus ring）──
+        // Tab/Shift+Tab 导航聚焦且作者未声明 outline 时画 2px 焦点环（UA 焦点反馈，
+        // 非调试指示器——生产 skip_indicators=true，故不放入下方 skip 块）。
+        // 点击/JS 聚焦不画：focused_from_keyboard 仅键盘焦点路径置位，保守替代
+        // :focus-visible 键盘启发式（ZW matcher 无运行时交互信号，见 matcher/mod.rs）。
+        if self.focused_from_keyboard
+            && let Some(node_id) = box_node.node_id
+            && self.focused_node == Some(node_id)
+            && let Some(style) = styles.get(&node_id)
+        {
+            self.paint_focus_ring_indicator(box_node, abs_x, abs_y, style);
         }
 
         // ── 属性指示器（reftest 模式下跳过，避免干扰像素对比）──
