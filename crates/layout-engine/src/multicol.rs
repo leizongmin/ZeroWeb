@@ -752,6 +752,7 @@ fn try_layout_single_child_block_frag(
         &forced_breaks_after,
         &[],
         &[],
+        &[],
     );
     // 4. 定位 wrapper 子到列 x + 设 wrapper 宽/高（bg 填满）。
     let wrapper = &mut container.children[wrapper_idx];
@@ -1031,6 +1032,7 @@ fn layout_multicol(
                 &forced_breaks_after,
                 &[],
                 &[],
+                &[],
             )
         }
     } else if info.sequential_fill && height_limit > 0.0 {
@@ -1162,6 +1164,26 @@ fn layout_multicol(
             } else {
                 Vec::new()
             };
+            // R5142：嵌套 mc 子旗标（自身 column-count/width 非初始）——with_breaking
+            // 超高分支末列有起点空间时单片段整放（Class C3 溢出可见）、续片填满末列后
+            // 丢弃剩余；起点越列底维持堆积（paint 层 R1039 跳过）。kill-switch
+            // `ZW_NESTED_MC_CAP_BREAKING=0`。
+            let cap_nested_breaking: Vec<bool> = if std::env::var("ZW_NESTED_MC_CAP_BREAKING").as_deref() != Ok("0") {
+                child_info
+                    .iter()
+                    .map(|&(idx, _)| {
+                        container.children[idx]
+                            .node_id
+                            .and_then(|id| styles.get(&id))
+                            .is_some_and(|s| {
+                                matches!(s.column_count, ColumnCountComputedValue::Number(_))
+                                    || matches!(s.column_width, ColumnWidthComputedValue::Length(_))
+                            })
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             let assignments = assign_children_to_columns_with_breaking(
                 &child_info,
                 info.count,
@@ -1170,6 +1192,7 @@ fn layout_multicol(
                 &forced_breaks_after,
                 &unbreakable_nested_seq,
                 &nested_avoid,
+                &cap_nested_breaking,
             );
             // R5140：avoid-stay 子（单片段且被行限钳制 → 行 1 高 = 片段 visual）记录
             // nested_row_limit，供子自身 adjust pass（递归随后到达）以余量为列高上限

@@ -175,6 +175,7 @@ pub(super) fn assign_children_to_columns_balanced(
 ///
 /// CSS Multi-column Layout §2 "column breaking"：
 /// 当一个块级子元素高度超过列高时，内容应自动延续到后续列中。
+#[allow(clippy::too_many_arguments)]
 pub(super) fn assign_children_to_columns_with_breaking(
     children: &[(usize, f32)],
     col_count: usize,
@@ -185,6 +186,8 @@ pub(super) fn assign_children_to_columns_with_breaking(
     nested_unbreakable: &[f32],
     // R5140：嵌套 mc 子 + break-before:avoid（avoid-stay 候选；其余路径传空）。
     nested_avoid: &[bool],
+    // R5142：嵌套 mc 子（自身碎片化上下文）旗标——末列超高不切片（见分支尾注释）。
+    cap_nested_breaking: &[bool],
 ) -> Vec<Vec<ColumnFragment>> {
     let mut columns: Vec<Vec<ColumnFragment>> = vec![Vec::new(); col_count];
     let mut current_col = 0usize;
@@ -274,37 +277,60 @@ pub(super) fn assign_children_to_columns_with_breaking(
             current_col_height += child_height;
         } else {
             // 子元素超高（> max_col_height）— 需要 column breaking
-            // 先消耗当前列剩余空间
-            if available > 0.0 {
+            // R5142：嵌套 mc 子（自身碎片化上下文）在**末列**超高且列内有起点空间
+            //（available > 0）→ 单片段整子原地放置（css-break-3 Class C3 原地溢出；
+            // chromium 实测：probeA/011 fresh 列整子溢出可见、children-height-007 对
+            // 嵌套碎片化上下文无内联溢出列（R4522 同模型））。此前续片堆积同列——
+            // 两片段同 x 入 cso 使 paint 层由 cso 推导的 gap 为负、clip_w 收缩，整子树
+            // 被误裁（change-transform-in-nested 全链白屏实证）。有下一列时维持跨列
+            // 切片（spanner-fragmentation-000 系：嵌套子跨既有列碎片化 chromium 照常）。
+            let nested_cap = cap_nested_breaking.get(i).copied().unwrap_or(false);
+            if nested_cap && current_col + 1 >= col_count && available > 0.0 {
                 columns[current_col].push(ColumnFragment {
                     child_idx,
                     fragment_y_offset: 0.0,
-                    visual_height: available,
+                    visual_height: child_height,
                 });
-                // 仅当还有更多列时才推进；单列或末列时保留在当前列（clip 处理），
-                // 否则 current_col 越界使后续子元素 columns[current_col].push panic。
-                if current_col + 1 < col_count {
-                    current_col += 1;
+                current_col_height += child_height;
+            } else {
+                // 先消耗当前列剩余空间
+                if available > 0.0 {
+                    columns[current_col].push(ColumnFragment {
+                        child_idx,
+                        fragment_y_offset: 0.0,
+                        visual_height: available,
+                    });
+                    // 仅当还有更多列时才推进；单列或末列时保留在当前列（clip 处理），
+                    // 否则 current_col 越界使后续子元素 columns[current_col].push panic。
+                    if current_col + 1 < col_count {
+                        current_col += 1;
+                    }
                 }
-            }
 
-            // 后续片段填满整列。
-            // max_col_height > 0.0 守卫：若列高为 0（height:0 multicol 或计算得 0），
-            // offset += max_col_height(0) 永不前进会无限循环——此时无法细分，clip 跳出。
-            let mut offset = available;
-            while offset < child_height && current_col < col_count && max_col_height > 0.0 {
-                let remaining = child_height - offset;
-                let frag_height = remaining.min(max_col_height);
-                columns[current_col].push(ColumnFragment {
-                    child_idx,
-                    fragment_y_offset: offset,
-                    visual_height: frag_height,
-                });
-                offset += max_col_height;
-                current_col_height = frag_height;
-                if frag_height >= max_col_height && current_col + 1 < col_count {
-                    current_col += 1;
-                    current_col_height = 0.0;
+                // 后续片段填满整列。
+                // max_col_height > 0.0 守卫：若列高为 0（height:0 multicol 或计算得 0），
+                // offset += max_col_height(0) 永不前进会无限循环——此时无法细分，clip 跳出。
+                let mut offset = available;
+                while offset < child_height && current_col < col_count && max_col_height > 0.0 {
+                    let remaining = child_height - offset;
+                    let frag_height = remaining.min(max_col_height);
+                    columns[current_col].push(ColumnFragment {
+                        child_idx,
+                        fragment_y_offset: offset,
+                        visual_height: frag_height,
+                    });
+                    offset += max_col_height;
+                    current_col_height = frag_height;
+                    if frag_height >= max_col_height && current_col + 1 < col_count {
+                        current_col += 1;
+                        current_col_height = 0.0;
+                    } else if nested_cap && available > 0.0 {
+                        // R5142：cap 子起点在列内（available > 0）而续片填满末列且无
+                        // 下一列 → 剩余丢弃。起点已越列底（available <= 0）不 break——
+                        // 保持 breaking 多片段堆积，paint 层 R1039 按溢出行跳过（零片段
+                        // 会漏进通用施绘路径整宽误绘，007-ref 5.83% 实证）。
+                        break;
+                    }
                 }
             }
         }

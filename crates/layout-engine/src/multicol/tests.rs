@@ -252,7 +252,7 @@ fn test_assign_children_with_breaking() {
     // child2(100): col1=200 > 150, move to col2 → col2=[2]
     // child3(100): col2=200 > 150, no more cols, stays → col2=[2,3]
     let children = vec![(0, 100.0), (1, 100.0), (2, 100.0), (3, 100.0)];
-    let cols = assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false; 4], &[false; 4], &[], &[]);
+    let cols = assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false; 4], &[false; 4], &[], &[], &[]);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1);
     assert_eq!(cols[1].len(), 1);
@@ -263,7 +263,7 @@ fn test_assign_children_with_breaking() {
 fn test_assign_children_with_breaking_oversized() {
     // Single child larger than column height — stays in current column
     let children = vec![(0, 300.0)];
-    let cols = assign_children_to_columns_with_breaking(&children, 3, 100.0, &[false; 4], &[false; 4], &[], &[]);
+    let cols = assign_children_to_columns_with_breaking(&children, 3, 100.0, &[false; 4], &[false; 4], &[], &[], &[]);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1); // oversized child stays in first column
 }
@@ -275,7 +275,7 @@ fn test_assign_children_with_breaking_single_col_oversized_no_panic() {
     // 使后续子元素 columns[current_col].push 在 line 350 panic（index OOB, len 1 idx 1）。
     // 修复后：单列时 oversized 内容 clip 到唯一列，后续子元素也落入唯一列，无 panic。
     let children = vec![(0, 300.0), (1, 50.0)];
-    let cols = assign_children_to_columns_with_breaking(&children, 1, 100.0, &[false; 4], &[false; 4], &[], &[]);
+    let cols = assign_children_to_columns_with_breaking(&children, 1, 100.0, &[false; 4], &[false; 4], &[], &[], &[]);
     assert_eq!(cols.len(), 1);
     // 两子元素都分配到唯一列（clip），不应 panic
     assert!(cols[0].iter().any(|f| f.child_idx == 0));
@@ -402,7 +402,7 @@ fn test_break_before_column_forces_new_column_breaking() {
     // max_col_height=200 容纳全部 3 子（各 50），但 forced break 强制换列。
     let children = vec![(0, 50.0), (1, 50.0), (2, 50.0)];
     let cols =
-        assign_children_to_columns_with_breaking(&children, 3, 200.0, &[false, true, true], &[false; 3], &[], &[]);
+        assign_children_to_columns_with_breaking(&children, 3, 200.0, &[false, true, true], &[false; 3], &[], &[], &[]);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1); // child0 无 forced break → col0
     assert_eq!(cols[1].len(), 1); // child1 forced → col1
@@ -448,7 +448,7 @@ fn test_break_after_column_forces_new_column_balanced() {
 fn test_break_after_column_forces_new_column_breaking() {
     let children = vec![(0, 50.0), (1, 50.0), (2, 50.0)];
     let cols =
-        assign_children_to_columns_with_breaking(&children, 3, 200.0, &[false; 3], &[true, true, true], &[], &[]);
+        assign_children_to_columns_with_breaking(&children, 3, 200.0, &[false; 3], &[true, true, true], &[], &[], &[]);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1);
     assert_eq!(cols[1].len(), 1);
@@ -649,8 +649,16 @@ fn nested_seq_unbreakable_advances_partial_column() {
     // 子 0 普通块 100 高 → col0 部分填充；子 1 嵌套 mc 全高 200、首不可断单元 100
     //（剩余 50 < 100）→ 推进 col1 整子放置。
     let children = vec![(0usize, 100.0f32), (1usize, 200.0f32)];
-    let cols =
-        assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false; 2], &[false; 2], &[0.0, 100.0], &[]);
+    let cols = assign_children_to_columns_with_breaking(
+        &children,
+        3,
+        150.0,
+        &[false; 2],
+        &[false; 2],
+        &[0.0, 100.0],
+        &[],
+        &[],
+    );
     assert_eq!(cols[0].len(), 1, "普通块留在 col0");
     assert_eq!(cols[1].len(), 1, "嵌套 mc 推进 col1 整子放置");
     let frag = &cols[1][0];
@@ -668,11 +676,95 @@ fn nested_seq_unbreakable_fresh_column_stays_in_place() {
     // 单嵌套 mc 子全高 200、首不可断单元 100，fresh 列高 150：臂 3 gate
     // current_col_height > 0.0 不满足 → R5135 原位整放臂（visual_height 全高溢出）。
     let children = vec![(0usize, 200.0f32)];
-    let cols = assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false], &[false], &[100.0], &[]);
+    let cols = assign_children_to_columns_with_breaking(&children, 3, 150.0, &[false], &[false], &[100.0], &[], &[]);
     assert_eq!(cols.len(), 3);
     assert_eq!(cols[0].len(), 1, "fresh 列原地整放，不推进");
     assert!((cols[0][0].visual_height - 200.0).abs() < 0.01);
     assert!(cols[1].is_empty());
+}
+
+/// R5142：嵌套 mc 子在**末列**超高（forced break 先推进到末列，余 100 < 全高 200）
+/// → 单片段整子原地放置（css-break-3 Class C3；chromium children-height-007：外层
+/// 不为嵌套碎片化上下文创建内联溢出列）。此前续片堆积同列（两片段同 x 入 cso）→
+/// paint 层 cso 推导 gap 为负、clip_w 收缩误裁整子树（change-transform-in-nested
+/// 全链白屏实证）。
+#[test]
+fn nested_seq_cap_last_column_no_pileup() {
+    // 子 0 break-after:column 1 高 → col0 后推进 col1；子 1 嵌套 mc 全高 200 旗标置位
+    // → col1（末列）单片段全高，无续片堆积。
+    let children = vec![(0usize, 1.0f32), (1usize, 200.0f32)];
+    let cols = assign_children_to_columns_with_breaking(
+        &children,
+        2,
+        100.0,
+        &[false; 2],
+        &[true, false],
+        &[],
+        &[],
+        &[false, true],
+    );
+    assert_eq!(cols[0].len(), 1, "break 子留 col0");
+    assert_eq!(cols[1].len(), 1, "嵌套 mc 末列单片段，无续片堆积");
+    let frag = &cols[1][0];
+    assert_eq!(frag.child_idx, 1);
+    assert!((frag.visual_height - 200.0).abs() < 0.01, "C3 整子全高溢出");
+}
+
+/// R5142：末列超高但旗标未置位（平铺可分子）→ 维持切片堆积行为（R1039 paint 层
+/// 按溢出行跳过续片；平铺子内联溢出列是独立域，不在本轮范围）。
+#[test]
+fn seq_cap_off_tiled_child_slices_unchanged() {
+    let children = vec![(0usize, 1.0f32), (1usize, 200.0f32)];
+    let cols = assign_children_to_columns_with_breaking(
+        &children,
+        2,
+        100.0,
+        &[false; 2],
+        &[true, false],
+        &[],
+        &[],
+        &[false, false],
+    );
+    assert_eq!(cols[0].len(), 1, "break 子留 col0");
+    assert_eq!(cols[1].len(), 2, "平铺子维持末列切片堆积（既有行为）");
+}
+
+/// R5142：嵌套 mc 子在**非末列**超高 → 维持跨列切片（spanner-fragmentation-000 系
+/// chromium 实证：嵌套子跨既有列碎片化照常），仅无下一列可续时丢弃剩余。
+#[test]
+fn nested_seq_cap_slices_across_existing_columns() {
+    // 单嵌套 mc 子全高 220，col_count=2 列高 100：col0 切 100 → col1 切 100 →
+    // 末列已满且无下一列 → 剩余 20 丢弃。
+    let children = vec![(0usize, 220.0f32)];
+    let cols = assign_children_to_columns_with_breaking(&children, 2, 100.0, &[false], &[false], &[], &[], &[true]);
+    assert_eq!(cols[0].len(), 1, "col0 首片 100");
+    assert_eq!(cols[1].len(), 1, "col1 次片 100，剩余 20 丢弃");
+}
+
+/// R5142：嵌套 mc 子超高且**起点已越末列列底**（前序兄弟已填满）→ 维持堆积切片
+///（breaking 多片段 → paint 层 R1039 按溢出行跳过）。不可降为零片段——cso 空的
+/// mc 子会漏进通用施绘路径整宽误绘（007-ref 5.83% 实证）。
+#[test]
+fn nested_seq_cap_beyond_column_bottom_keeps_pile() {
+    // 110 + 110 恰填 col0/col1（max 110）；子 2 全高 130 嵌套 mc 起点 available=0
+    // → col1 堆积两片段（110 + 20），R1039 双跳过。
+    let children = vec![(0usize, 110.0f32), (1usize, 110.0f32), (2usize, 130.0f32)];
+    let cols = assign_children_to_columns_with_breaking(
+        &children,
+        2,
+        110.0,
+        &[false; 3],
+        &[false; 3],
+        &[],
+        &[],
+        &[true, true, true],
+    );
+    assert_eq!(cols[0].len(), 1, "子 0 恰填 col0");
+    assert_eq!(cols[1].len(), 3, "子 1 恰填 col1 + 子 2 堆积两片段（breaking）");
+    assert_eq!(cols[1][0].child_idx, 1);
+    assert_eq!(cols[1][1].child_idx, 2);
+    assert!((cols[1][1].visual_height - 110.0).abs() < 0.01);
+    assert!((cols[1][2].visual_height - 20.0).abs() < 0.01);
 }
 
 /// R5136：balance 路径 contain:size 子并入先推后放旗标（css-contain §3.1 整体化，
