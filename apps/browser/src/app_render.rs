@@ -22,6 +22,9 @@ fn url_display_host(url: &str) -> Option<String> {
 /// 菜单打开渐入时长（秒）：150ms 内 alpha 从 0 渐到 1，Chrome 同款。
 const MENU_FADE_IN_SECONDS: f32 = 0.15;
 
+/// 标签拖拽提起时的投影色（半透明黑，亮/暗主题共用）。
+const TAB_DRAG_SHADOW: Color = Color { r: 0, g: 0, b: 0, a: 70 };
+
 /// 按 `opacity`（0.0~1.0）收缩颜色 alpha 通道（菜单渐入动画用）；
 /// `opacity >= 1.0` 时原样返回，避免无谓的浮点换算。
 fn fade_color(color: Color, opacity: f32) -> Color {
@@ -501,6 +504,8 @@ impl BrowserApp {
         if tab_count == 0 {
             return;
         }
+        // 让位动画推进：未收敛时保持重绘（拖拽中松开鼠标后兄弟标签继续平滑落位）。
+        let tab_drag_settled = self.advance_tab_drag_yield();
 
         let new_tab_btn_w = layout::NEW_TAB_BTN_WIDTH * s;
         let window_controls_w = if self.uses_custom_window_controls() {
@@ -547,6 +552,10 @@ impl BrowserApp {
         struct TabPaint {
             id: TabId,
             x: f32,
+            /// 未含拖拽跟随/让位位移的稳定槽位（tab_layout 记录用，点击命中、
+            /// 释放重排与让位目标共用同一布局，保证松手落位与拖拽中排列一致）。
+            slot_x: f32,
+            slot_w: f32,
             tab_w: f32,
             tab_body_w: f32,
             bg: Color,
@@ -557,6 +566,8 @@ impl BrowserApp {
             is_crashed: bool,
             needs_attention: bool,
             is_dragging: bool,
+            /// 拖拽视觉提起量（物理像素）；非拖拽标签为 0。
+            lift: f32,
             label: String,
             page_url: Option<String>,
             html_hint: Option<&'static str>,
@@ -586,19 +597,29 @@ impl BrowserApp {
             if tab.is_private() {
                 label = format!("无痕 · {label}");
             }
-            // 被拖拽的标签：x 跟随鼠标，绘制时置于顶层。
-            let (paint_x, is_dragging) = match &self.tab_drag {
+            // 被拖拽的标签：x 跟随鼠标并轻微提起（加宽 + 上移 + 阴影），绘制时置于顶层；
+            // 兄弟标签按让位动画位移平滑让出空槽。
+            let (drag_follow, is_dragging) = match &self.tab_drag {
                 Some(d) if d.active && d.tab_id == tab.id() => {
                     let offset = d.current_x - d.press_x;
-                    (x + offset, true)
+                    (Some(offset), true)
                 }
-                _ => (x, false),
+                _ => (None, false),
             };
+            let lift = if is_dragging { 2.0 * s } else { 0.0 };
+            // 拖拽提起时标签体围绕中心轻微放大（加宽 3s），内容随 tab.x/tab_w 自动跟随。
+            let (paint_x, paint_w) = match drag_follow {
+                Some(offset) => (x + offset - 1.5 * s, tab_w + 3.0 * s),
+                None => (x, tab_w),
+            };
+            let paint_x = paint_x + self.tab_drag_paint_offsets.get(&tab.id()).copied().unwrap_or(0.0);
             tabs.push(TabPaint {
                 id: tab.id(),
                 x: paint_x,
-                tab_w,
-                tab_body_w: tab_w - s,
+                slot_x: x,
+                slot_w: tab_w,
+                tab_w: paint_w,
+                tab_body_w: paint_w - s,
                 bg: if is_dragging { self.chrome_palette.tab_active_bg } else { bg },
                 is_active,
                 is_loading: tab.is_loading(),
@@ -607,6 +628,7 @@ impl BrowserApp {
                 is_crashed: tab.is_crashed(),
                 needs_attention: tab.needs_attention(),
                 is_dragging,
+                lift,
                 label,
                 page_url: tab.url().map(str::to_string),
                 html_hint: Self::tab_html_hint(tab.url()),
@@ -653,9 +675,19 @@ impl BrowserApp {
             crate::tab_chrome::push_active_tab_fill(fills, active.x, tab_y, active.tab_body_w, tab_bar_h, s, active.bg);
         }
 
-        // 被拖拽的标签最后绘制（顶层），用 active 样式突出。
+        // 被拖拽的标签最后绘制（顶层），提起 + 半透明投影（视觉拿起）。
         for tab in visible.iter().filter(|t| t.is_dragging) {
-            crate::tab_chrome::push_active_tab_fill(fills, tab.x, tab_y, tab.tab_body_w, tab_bar_h, s, tab.bg);
+            // 投影画在原槽位位置（贴标签条底缘），提起的标签体叠于其上。
+            crate::tab_chrome::push_inactive_tab_fill(
+                fills,
+                tab.x + 2.0 * s,
+                tab_y + 2.0 * s,
+                tab.tab_body_w,
+                tab_bar_h,
+                s,
+                TAB_DRAG_SHADOW,
+            );
+            crate::tab_chrome::push_active_tab_fill(fills, tab.x, tab_y - tab.lift, tab.tab_body_w, tab_bar_h, s, tab.bg);
         }
 
         // 相邻非激活标签之间的竖线（在标签底色之上、文本图标之下）
@@ -675,6 +707,8 @@ impl BrowserApp {
         }
 
         for tab in visible {
+            // 拖拽提起的标签：内容（图标/标题/按钮）随标签体一起上移。
+            let tab_y = tab_y - tab.lift;
             let tab_text_color = if tab.is_crashed {
                 self.chrome_palette.tab_crashed
             } else if tab.is_active {
@@ -806,7 +840,9 @@ impl BrowserApp {
                 );
             }
 
-            self.tab_layout.push((tab.id, tab.x, tab.tab_w));
+            // tab_layout 记录未含拖拽跟随/让位位移的稳定槽位（点击命中、释放重排、
+            // 让位目标共用同一布局，保证松手落位与拖拽中显示的排列一致）。
+            self.tab_layout.push((tab.id, tab.slot_x, tab.slot_w));
         }
 
         // 溢出 ▾ 按钮（T18）：存在被隐藏标签时出现在最后一个可见标签之后；
@@ -879,6 +915,11 @@ impl BrowserApp {
 
         if self.uses_custom_window_controls() {
             self.render_window_controls(fills, glyphs, width, tab_y, s);
+        }
+
+        if !tab_drag_settled {
+            // 让位动画未收敛：保持请求重绘，兄弟标签继续平滑落位。
+            self.needs_redraw = true;
         }
     }
 

@@ -31,10 +31,14 @@ impl BrowserApp {
         }
 
         // 预先解析页面点击点的图片 src 与链接 href，用于上下文菜单判定。
+        // 图片 src 按文档 URL 绝对化（与链接点击导航同一 join 逻辑）——
+        // open_image / copy_image_url / save_image 都需要可独立寻址的绝对 URL。
         let (image_url, link_url): (Option<String>, Option<String>) =
             if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f) {
-                let img = self.tabs.hit_test_image(tab_id, doc_x, doc_y);
-                let lnk = self.tabs.hit_test_link(tab_id, doc_x, doc_y);
+                let document_url = self.shell.tab(tab_id).and_then(|tab| tab.url());
+                let absolutize = |raw: String| resolve_clicked_link_url(&raw, document_url);
+                let img = self.tabs.hit_test_image(tab_id, doc_x, doc_y).map(absolutize);
+                let lnk = self.tabs.hit_test_link(tab_id, doc_x, doc_y).map(absolutize);
                 (img, lnk)
             } else {
                 (None, None)
@@ -110,12 +114,10 @@ impl BrowserApp {
             }
         }
 
-        // 需要文件对话框或图片原始数据的 action 暂未实现，统一禁用。
+        // 需要文件对话框或图片原始数据的 action 暂未实现，统一禁用
+        //（save_image 已走后台抓取 + 下载管线，见 app_image_save.rs）。
         for item in items.iter_mut() {
-            if matches!(
-                item.id(),
-                "save_link" | "save_image" | "copy_image" | "print"
-            ) {
+            if matches!(item.id(), "save_link" | "copy_image" | "print") {
                 item.set_enabled(false);
             }
         }
@@ -350,6 +352,11 @@ impl BrowserApp {
             "copy_image_url" => {
                 if let Some(src) = &image_url {
                     crate::clipboard::write_text(src);
+                }
+            }
+            "save_image" => {
+                if let Some(src) = &image_url {
+                    self.start_image_save(source_tab_id, src);
                 }
             }
             // ── 选中文本右键菜单 ──
