@@ -1181,10 +1181,15 @@ impl RendererRuntime {
     }
 
     fn text_control_state_from_worker(&self, selector: &str) -> Option<(String, usize, usize)> {
-        self.js_worker
-            .execute_script_direct(&zero_engine::script_text_control_snapshot(selector))
-            .ok()
-            .and_then(|snapshot| serde_json::from_str::<(String, usize, usize)>(&snapshot).ok())
+        // t8：有界等待——本函数在键盘路径每键调用（is_composing_at/活值快照），无界等待
+        // 在页面回调长臂下阻塞主循环（DDG 实测楔死变体）。
+        zero_page_runtime::JsExecutor::execute_script_priority_bounded(
+            &self.js_worker,
+            &zero_engine::script_text_control_snapshot(selector),
+            zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+        )
+        .ok()
+        .and_then(|snapshot| serde_json::from_str::<(String, usize, usize)>(&snapshot).ok())
     }
 
     fn apply_webview_action_effects(&mut self, effects: &[zero_page_runtime::PageEffect]) -> Result<bool, String> {
@@ -1266,7 +1271,12 @@ impl RendererRuntime {
             // R3254-K3（keyboard-default-actions goal M2 切片 2）：Esc 默认动作——
             // open dialog 的 cancel/close（cancelable，preventDefault 阻断关闭）。
             let script = zero_engine::script_esc_dialog_cancel();
-            if let Err(e) = self.js_worker.execute_script_direct(&script) {
+            // t8：有界（同键路径有界化）。
+            if let Err(e) = zero_page_runtime::JsExecutor::execute_script_priority_bounded(
+                &self.js_worker,
+                &script,
+                zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+            ) {
                 tracing::debug!("esc dialog cancel: {e}");
             }
         } else if matches!(key, "ArrowDown" | "ArrowUp" | "Home" | "End")
@@ -1278,7 +1288,12 @@ impl RendererRuntime {
             // input+change 事件 JS 可观察面。arrow 键常规走滚动默认动作——可导航
             // 控件焦点时优先消费。
             let script = zero_engine::script_select_key_action(target, key);
-            if let Err(e) = self.js_worker.execute_script_direct(&script) {
+            // t8：有界（同键路径有界化）。
+            if let Err(e) = zero_page_runtime::JsExecutor::execute_script_priority_bounded(
+                &self.js_worker,
+                &script,
+                zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+            ) {
                 tracing::debug!("select key action: {e}");
             }
         } else if accel && key.eq_ignore_ascii_case("a") {
@@ -1690,9 +1705,12 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 .unwrap_or_else(|| read_input_value_for_change(&self.cached_html, selector));
             let end = val.encode_utf16().count();
             self.form_controls.focus(selector, val, end, end);
-            let _ = self
-                .js_worker
-                .execute_script_direct(&zero_engine::script_set_text_control_selection(selector, end, end));
+            // t8：有界（指针选区路径，无界等待同族）。
+            let _ = zero_page_runtime::JsExecutor::execute_script_priority_bounded(
+                &self.js_worker,
+                &zero_engine::script_set_text_control_selection(selector, end, end),
+                zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+            );
         }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let changed = {
@@ -2641,7 +2659,12 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         // gate javascript_enabled + best-effort（先于 republish，使本帧派发）。
         if self.javascript_enabled {
             let script = zero_engine::script_user_resize(params.width as f64, params.height as f64);
-            if let Err(e) = self.js_worker.execute_script_direct(&script) {
+            // t8：有界（用户 resize 路径，t11 风暴面同族）。
+            if let Err(e) = zero_page_runtime::JsExecutor::execute_script_priority_bounded(
+                &self.js_worker,
+                &script,
+                zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+            ) {
                 tracing::warn!("dispatch user resize: {e}");
             }
         }
@@ -3109,7 +3132,12 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         // 故当前仍走文档级 `__zw_user_scroll` 路径。cursor 默认 0.0（旧发送端）退化为既有行为。
         if self.javascript_enabled {
             let script = zero_engine::script_user_scroll(params.delta_x as f64, params.delta_y as f64);
-            if let Err(e) = self.js_worker.execute_script_direct(&script) {
+            // t8：有界（用户滚动路径，无界等待同族）。
+            if let Err(e) = zero_page_runtime::JsExecutor::execute_script_priority_bounded(
+                &self.js_worker,
+                &script,
+                zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+            ) {
                 tracing::warn!("dispatch user scroll: {e}");
             }
         }
