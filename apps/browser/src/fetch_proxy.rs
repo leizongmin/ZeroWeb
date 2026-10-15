@@ -717,8 +717,16 @@ mod tests {
     use super::*;
     use std::io::{Read, Write};
     use std::net::{Shutdown, TcpListener};
+    use std::process::{Command, Output, Stdio};
+    use std::sync::mpsc::{Receiver, channel};
     use std::time::Duration;
     use zero_protocol::message::FetchParams;
+
+    const STREAMED_IMAGE_CACHE_CHILD_MODE: &str = "ZERO_STREAMED_IMAGE_CACHE_CHILD_MODE";
+    const STREAMED_IMAGE_CACHE_CHILD_DIR: &str = "ZERO_STREAMED_IMAGE_CACHE_CHILD_DIR";
+    const STREAMED_IMAGE_CACHE_CHILD_URL: &str = "ZERO_STREAMED_IMAGE_CACHE_CHILD_URL";
+    const STREAMED_IMAGE_CACHE_RESTART_TEST: &str =
+        "fetch_proxy::tests::streamed_image_disk_cache_survives_process_restart";
 
     fn params(request_id: u64, url: &str) -> FetchParams {
         FetchParams {
@@ -777,6 +785,74 @@ mod tests {
                     .flat_map(|item| item.body.iter().copied()),
             )
             .collect()
+    }
+
+    fn run_streamed_image_cache_child(cache_dir: &std::path::Path, url: &str, mode: &str) -> Result<Output, String> {
+        let mut child = Command::new(std::env::current_exe().map_err(|error| error.to_string())?)
+            .args(["--exact", STREAMED_IMAGE_CACHE_RESTART_TEST, "--nocapture"])
+            .env(STREAMED_IMAGE_CACHE_CHILD_MODE, mode)
+            .env(STREAMED_IMAGE_CACHE_CHILD_DIR, cache_dir)
+            .env(STREAMED_IMAGE_CACHE_CHILD_URL, url)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("failed to spawn cache test child: {error}"))?;
+        let deadline = std::time::Instant::now() + Duration::from_secs(12);
+        loop {
+            if child.try_wait().map_err(|error| error.to_string())?.is_some() {
+                let output = child.wait_with_output().map_err(|error| error.to_string())?;
+                if output.status.success() {
+                    return Ok(output);
+                }
+                return Err(format!(
+                    "cache test child exited with {}; stderr: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let output = child.wait_with_output().map_err(|error| error.to_string())?;
+                return Err(format!(
+                    "cache test child exceeded 12 seconds; stderr: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn serve_persistent_image_until_stopped(listener: TcpListener, stop: Receiver<()>) -> usize {
+        let body = b"process-persistent-image";
+        let stop_deadline = std::time::Instant::now() + Duration::from_secs(15);
+        let mut stop_quiet_deadline = None;
+        let mut requests = 0;
+        loop {
+            if stop_quiet_deadline.is_none() && stop.try_recv().is_ok() {
+                stop_quiet_deadline = Some(std::time::Instant::now() + Duration::from_millis(200));
+            }
+            let now = std::time::Instant::now();
+            if now >= stop_deadline || stop_quiet_deadline.is_some_and(|deadline| now >= deadline) {
+                return requests;
+            }
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    requests += 1;
+                    let mut request = [0_u8; 4096];
+                    let _ = stream.read(&mut request);
+                    let headers = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: max-age=3600\r\nETag: \"process-cache\"\r\nConnection: close\r\nContent-Length: {}\r\n\r\n",
+                        body.len()
+                    );
+                    stream.write_all(headers.as_bytes()).unwrap();
+                    stream.write_all(body).unwrap();
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("persistent image server accept failed: {error}"),
+            }
+        }
     }
 
     #[test]
@@ -1235,6 +1311,46 @@ mod tests {
 
         server.join().unwrap();
         let _ = std::fs::remove_dir_all(cache_dir);
+    }
+
+    #[test]
+    fn streamed_image_disk_cache_survives_process_restart() {
+        if let Ok(mode) = std::env::var(STREAMED_IMAGE_CACHE_CHILD_MODE) {
+            assert!(mode == "write-cache" || mode == "read-cache");
+            let cache_dir = std::path::PathBuf::from(
+                std::env::var_os(STREAMED_IMAGE_CACHE_CHILD_DIR).expect("cache directory is required"),
+            );
+            let url = std::env::var(STREAMED_IMAGE_CACHE_CHILD_URL).expect("image URL is required");
+            let mut proxy = with_persistent_cache_dir(&cache_dir);
+            proxy.on_navigate(TabId(94), "http://site-a.example/process-restart");
+            let completed = drain_streamed_image(&mut proxy, TabId(94), &streamed_image_params(9401, &url, Vec::new()));
+            assert_eq!(streamed_image_body(&completed), b"process-persistent-image");
+            return;
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/process-restart.png", listener.local_addr().unwrap());
+        let (stop_tx, stop_rx) = channel();
+        let server = std::thread::spawn(move || serve_persistent_image_until_stopped(listener, stop_rx));
+        let cache_dir = std::env::temp_dir().join(format!(
+            "zero-stream-image-process-restart-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        let writer = run_streamed_image_cache_child(&cache_dir, &url, "write-cache");
+        let reader = run_streamed_image_cache_child(&cache_dir, &url, "read-cache");
+        let _ = stop_tx.send(());
+        let origin_requests = server.join().unwrap();
+        let _ = std::fs::remove_dir_all(cache_dir);
+
+        assert!(writer.is_ok(), "cache writer process failed: {writer:?}");
+        assert!(reader.is_ok(), "cache reader process failed: {reader:?}");
+        assert_eq!(origin_requests, 1, "a fresh process must reuse the disk cache");
     }
 
     #[test]
