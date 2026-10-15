@@ -19,6 +19,7 @@ mod testharness;
 mod testharness_console;
 mod testharness_cookies;
 mod testharness_fileapi;
+mod testharness_html_semantics;
 mod testharness_webmessaging;
 mod wpt_file_loader;
 mod ws_fixture;
@@ -45,6 +46,8 @@ Commands:
   testharness-dom  Run imported dom/ testharness cases (js-dom goal M4 / DC-3)
   testharness-selection  Run imported selection/ testharness cases (editing goal M1 / DC-1)
   testharness-compression  Run imported compression/ testharness cases (compression-compat goal M1 / DC-1)
+  testharness-html-semantics  Run imported html/semantics nine-domain testharness corpus
+                       (html-semantics-compat goal M1 / DC-1)
   testharness-keyboard  Run imported keyboard testharness cases (keyboard-default-actions goal M1 / DC-1)
   testharness-uievents  Run imported uievents/pointerevents testharness corpus (uievents-compat goal M1 / DC-1)
   testharness-touch-events  Run imported touch-events constructor/attribute face testharness
@@ -312,6 +315,7 @@ fn main() {
         "testharness-wasm" => cmd_testharness_wasm(&options, filter.as_deref()),
         "testharness-webstorage" => cmd_testharness_webstorage(&options, filter.as_deref()),
         "testharness-compression" => cmd_testharness_compression(&options, filter.as_deref()),
+        "testharness-html-semantics" => cmd_testharness_html_semantics(&options, filter.as_deref()),
         "testharness-fileapi" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_fileapi::run_fileapi_cases(wpt_root, filter)
         }),
@@ -1123,6 +1127,53 @@ fn cmd_testharness_compression(options: &CliOptions, filter: Option<&str>) {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
     let cases = testharness::run_compression_cases(&wpt_root, filter);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+/// `testharness-html-semantics` 子命令 — 递归跑导入的上游 `html/semantics/` 九子域
+/// testharness 用例（html-semantics-compat goal M1 / DC-1——forms /
+/// embedded-content / tabular-data 等分域语义基线）。
+///
+/// 用例由 `scripts/goals/25-html-semantics-compat.sh` 按需拉到
+/// `wpt-data/html/semantics/`（gitignored）；扫描根与 skip 规则见
+/// `testharness_html_semantics`（media-elements/iframe/template 排除域零执行记账，
+/// 防跨 goal 重复计账）。退出码：有用例非 Pass 或用例集为空 → 1（与
+/// testharness-compression 一致）。基线首跑即便大量 Fail 也只用于记录通过率
+/// （`--format json` 捕获后写 evidence/），不作为 land 门禁。
+/// filter 按路径子串透传：`make testharness-html-semantics FILTER=forms/`。
+fn cmd_testharness_html_semantics(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let cases = testharness_html_semantics::run_html_semantics_cases(&wpt_root, filter);
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()
