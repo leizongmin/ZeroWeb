@@ -16,6 +16,10 @@ pub struct HistoryEntry {
     url: String,
     /// 页面标题。
     title: String,
+    /// 最近访问时间（Unix 秒）。旧版档案无此字段，缺省 0 表示时间未知
+    ///（历史页时间分组将其归入「更早」组）。
+    #[serde(default)]
+    visited_at: u64,
 }
 
 impl HistoryEntry {
@@ -28,6 +32,19 @@ impl HistoryEntry {
     pub fn title(&self) -> &str {
         &self.title
     }
+
+    /// 获取最近访问时间（Unix 秒；0 表示旧版档案中未记录的未知时间）。
+    pub fn visited_at(&self) -> u64 {
+        self.visited_at
+    }
+}
+
+/// 当前 Unix 时间秒（系统时钟早于 epoch 时按 0 记，归入时间未知组）。
+fn now_unix_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
 }
 
 /// 历史记录管理器。
@@ -65,6 +82,7 @@ impl History {
             HistoryEntry {
                 url: url.to_string(),
                 title: title.to_string(),
+                visited_at: now_unix_seconds(),
             },
         );
         self.entries.truncate(MAX_ENTRIES);

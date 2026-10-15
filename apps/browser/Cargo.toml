@@ -51,6 +51,10 @@ base64 = "0.22"
 url = { workspace = true }
 ico = "0.5.0"
 
+# Unix：历史页时间分组取本地时区（localtime_r）；非 Unix 回退 UTC。
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 serial_test = { workspace = true }
 # P1a gBCR driving test：解析 html 取 NodeId 填 rect snapshot（与渲染管线确定性一致）。
