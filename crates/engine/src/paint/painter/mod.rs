@@ -3018,6 +3018,75 @@ impl Painter {
                     }
 
                     super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_frag, &clip_rect);
+
+                    // R5137：嵌套 multicol 语境中 absolute 后代超出 fragmentainer 底部时
+                    // 向后续列续切（css-position-3 §abspos-breaking + css-break 碎片续耗；
+                    // chromium nested-032 headless 实测 2026-10-15：abspos 400 高按
+                    // 「外层片段 × 内层列」切 4 片 25×100——每外层片段内内层 col0/col1
+                    // 各一片，纵向续耗 abspos 后续段，铺满 100×100；ZW 基线仅绘内层
+                    // col0 位 2/4 片，col1 位红底泄漏）。续片 = 同一 flush 几何右移
+                    // k×列距、纵向 −k×fragmentainer 高取后续 slice（top:0 起点下与 spec
+                    // 逐段一致；非零起点近似，FIXME），先按项自身携带裁剪（随位移平移）
+                    // 再裁到目标列窗口。gate：①本容器自身是外层 multicol 的片段子
+                    //（column_span_offsets 非空）——顶层 multicol 容器不入，顶层 OOF×
+                    // multicol 为域③独立挂账，不扩面；②仅 absolute（relative/sticky 属
+                    // 常规流不碎片化，fixed 包含块为 viewport 不碎片化）；③项起点在本
+                    // fragmentainer 内且底部越界（未溢出不复制）；④目标列不越容器内容
+                    // 右缘（溢出列不入）。置于 fragment clip（上行）之后：续片 x 落在源
+                    // 列窗口之外，须自带目标窗口裁剪，仍受外层片段 clip 兜底（纵向）。
+                    if !box_node.column_span_offsets.is_empty() && col_w > 0.0 {
+                        let pitch = col_w + gap;
+                        let n_cols = ((box_node.content_width + gap) / pitch).round().max(1.0) as usize;
+                        for item in &local_positioned {
+                            if !item.node.is_absolute {
+                                continue;
+                            }
+                            let item_top_rel = item.abs_y - frag_abs_y;
+                            if item_top_rel >= box_node.content_height
+                                || item_top_rel + item.node.height <= box_node.content_height
+                            {
+                                continue;
+                            }
+                            for k in 1..n_cols {
+                                let dest_col_x = col_x + k as f32 * pitch;
+                                if dest_col_x + col_w > box_node.content_width + 0.5 {
+                                    break;
+                                }
+                                let dy = -(k as f32 * box_node.content_height);
+                                if item_top_rel + dy >= box_node.content_height {
+                                    break;
+                                }
+                                let dx = k as f32 * pitch;
+                                let counts_before_copy = PrimitiveCounts::snapshot(&self.primitives);
+                                self.paint_node(
+                                    item.node,
+                                    styles,
+                                    item.abs_x - item.node.x + dx,
+                                    item.abs_y - item.node.y + dy,
+                                    doc,
+                                    false,
+                                );
+                                if let Some(clip) = item.clip_rect {
+                                    super::helpers::clip_all_primitives_to_rect(
+                                        &mut self.primitives,
+                                        &counts_before_copy,
+                                        &Rect::new(
+                                            clip.origin.x + dx,
+                                            clip.origin.y + dy,
+                                            clip.size.width,
+                                            clip.size.height,
+                                        ),
+                                    );
+                                }
+                                let dest_window = Rect::new(content_x + dest_col_x, clip_y, col_w + gap / 2.0, clip_h);
+                                super::helpers::clip_all_primitives_to_rect(
+                                    &mut self.primitives,
+                                    &counts_before_copy,
+                                    &dest_window,
+                                );
+                            }
+                        }
+                    }
                 }
             }
         }
