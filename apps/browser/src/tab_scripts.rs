@@ -298,7 +298,8 @@ fn dispatch_resource_element_event(js_worker: Option<&TabJsWorkerHandle>, event:
 }
 
 /// P102：按 `(url, type)` 保序去重 link 事件（同 renderer `page_scripts::dedupe_link_events`）。
-/// spec HTML：每元素 load/error 至多触发一次；重复入队只加臂量，不改变语义。
+/// spec HTML：每元素 load/error 至多触发一次；shim 派发无 at-most-once 守卫，重复入队条目会
+/// 重复派发、handler 重复执行——去重是向 spec 收敛的语义修复（审查 DEF-2）。
 fn dedupe_link_events(link_events: &[(String, &'static str)]) -> Vec<(String, &'static str)> {
     let mut seen = std::collections::HashSet::new();
     link_events
