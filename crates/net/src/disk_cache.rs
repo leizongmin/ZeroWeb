@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::cache_policy::{CacheStoreMode, storable_mode};
+use crate::cache_policy::{CacheStoreMode, storable_mode, vary_field_changed};
 use crate::request::HttpResponse;
 use crate::resource_policy::origin_from_url;
 
@@ -187,6 +187,11 @@ impl DiskHttpCache {
         };
         if meta.url != key || !self.matches_partition(&meta) {
             return false;
+        }
+        if vary_field_changed(meta.vary.as_deref(), response.header("vary")) {
+            // The cached key still reflects the old Vary dimensions. Keep this body only
+            // for the in-flight validated response; it cannot safely serve later requests.
+            return self.remove_files(&paths);
         }
         let now = unix_now();
         // R3233：304 可携新 Age/Date（CDN 重报）→ 重算 initial_age，并在 expires_at 中抵扣。
@@ -782,13 +787,14 @@ mod tests {
     fn test_disk_refresh_not_modified_merges_headers_r3232() {
         let (mut cache, dir) = temp_cache();
         let key = "https://example.com/r3232";
-        // 存 200：Cache-Control: max-age=60 + ETag "v1" + 旧 Expires。
+        // 存 200：Cache-Control: max-age=60 + ETag "v1" + 旧 Expires + Vary。
         let resp = HttpResponse {
             status_code: 200,
             headers: vec![
                 ("Cache-Control".into(), "max-age=60".into()),
                 ("ETag".into(), "\"v1\"".into()),
                 ("Expires".into(), "Wed, 21 Oct 2015 07:28:00 GMT".into()),
+                ("Vary".into(), "Accept-Encoding".into()),
             ],
             body: b"hello".to_vec(),
             url: key.to_string(),
@@ -796,7 +802,7 @@ mod tests {
         };
         assert!(cache.put(key, &resp));
 
-        // 304 携新 Cache-Control: max-age=300 + ETag "v2" + 新 Vary（追加）。
+        // 304 携新 Cache-Control: max-age=300 + ETag "v2"，并保留相同 Vary。
         let not_mod = HttpResponse {
             status_code: 304,
             headers: vec![
@@ -810,7 +816,7 @@ mod tests {
         };
         assert!(cache.refresh_not_modified(key, &not_mod), "304 须刷新磁盘缓存条目");
 
-        // 读回：headers 须反映 304 的元数据（旧 max-age=60 / "v1" 被替换；Vary 追加）。
+        // 读回：headers 须反映 304 的元数据（旧 max-age=60 / "v1" 被替换）。
         let hit = cache.read(key).expect("disk 可读");
         assert_eq!(
             header_val(&hit, "cache-control"),
@@ -826,7 +832,7 @@ mod tests {
         assert_eq!(
             header_val(&hit, "vary"),
             Some("Accept-Encoding"),
-            "304 新增的 Vary 须追加到 meta.headers"
+            "现有 Vary 须保留在 meta.headers"
         );
         // body + status 仍为缓存的 200（304 仅 revalidate，不替换 body）。
         assert_eq!(hit.body, b"hello");
@@ -843,6 +849,38 @@ mod tests {
             "并入的头须持久化到 meta 文件"
         );
         assert_eq!(header_val(&hit2, "etag"), Some("\"v2\""));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn disk_refresh_not_modified_invalidates_changed_vary() {
+        let (mut cache, dir) = temp_cache();
+        let key = "https://example.com/vary-transition";
+        let original = HttpResponse {
+            status_code: 200,
+            headers: vec![
+                ("Cache-Control".into(), "no-cache".into()),
+                ("ETag".into(), "\"shared\"".into()),
+            ],
+            body: b"english body".to_vec(),
+            url: key.to_string(),
+            redirect_count: 0,
+        };
+        assert!(cache.put(key, &original));
+
+        let not_modified = HttpResponse {
+            status_code: 304,
+            headers: vec![
+                ("Cache-Control".into(), "max-age=60".into()),
+                ("ETag".into(), "\"shared\"".into()),
+                ("Vary".into(), "Accept-Language".into()),
+            ],
+            body: Vec::new(),
+            url: key.to_string(),
+            redirect_count: 0,
+        };
+        assert!(cache.refresh_not_modified(key, &not_modified));
+        assert!(cache.read(key).is_none(), "old key cannot represent the new Vary field");
         let _ = fs::remove_dir_all(dir);
     }
 

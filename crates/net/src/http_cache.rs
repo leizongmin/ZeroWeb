@@ -8,6 +8,7 @@ use std::time::Instant;
 use crate::cache_key::{cache_lookup_key, cache_store_key, strip_url_fragment};
 use crate::cache_policy::{
     CacheStoreMode, RequestCacheControl, parse_cache_control, parse_request_cache_control, storable_mode,
+    vary_field_changed,
 };
 use crate::disk_cache::DiskHttpCache;
 use crate::private_mode::private_browsing_enabled;
@@ -220,6 +221,7 @@ impl HttpCache {
     ) -> Option<CachedResponse> {
         let key = self.resolve_lookup_key(url, request_headers)?;
         if let Some(entry) = self.entries.get(&key) {
+            let stored_vary = entry.vary.clone();
             let mut cached = CachedResponse {
                 body: entry.body.clone(),
                 headers: entry.headers.clone(),
@@ -232,6 +234,12 @@ impl HttpCache {
                 merge_not_modified_metadata(&mut cached, response);
                 self.remove(&key);
                 tracing::info!(url = %key, "HTTP cache 304 no-store invalidated entry");
+                return Some(cached);
+            }
+            if vary_field_changed(stored_vary.as_deref(), response.header("vary")) {
+                merge_not_modified_metadata(&mut cached, response);
+                self.remove(&key);
+                tracing::info!(url = %key, "HTTP cache 304 Vary changed, invalidated entry");
                 return Some(cached);
             }
             if let Some(mode) = storable_mode(response)
@@ -260,17 +268,32 @@ impl HttpCache {
             tracing::info!(url = %key, "HTTP cache 304 revalidated");
             return Some(cached);
         }
-        if let Some(disk) = self.disk.as_mut()
-            && let Some(hit) = disk.read(&key)
-        {
+        let disk_hit = self.disk.as_mut().and_then(|disk| disk.read(&key));
+        if let Some(hit) = disk_hit {
             let mut cached = cached_from_disk_hit(&hit);
             if parse_cache_control(response).no_store {
                 merge_not_modified_metadata(&mut cached, response);
-                let _ = disk.remove(&key);
+                if let Some(disk) = self.disk.as_mut() {
+                    let _ = disk.remove(&key);
+                }
                 tracing::info!(url = %key, "HTTP disk cache 304 no-store invalidated entry");
                 return Some(cached);
             }
-            if disk.refresh_not_modified(&key, response) {
+            if vary_field_changed(hit.vary.as_deref(), response.header("vary")) {
+                merge_not_modified_metadata(&mut cached, response);
+                if let Some(disk) = self.disk.as_mut() {
+                    let _ = disk.remove(&key);
+                }
+                let resource_base = strip_url_fragment(hit.resource_url.as_deref().unwrap_or(&hit.url));
+                self.unregister_resource_key(&resource_base, &key);
+                tracing::info!(url = %key, "HTTP disk cache 304 Vary changed, invalidated entry");
+                return Some(cached);
+            }
+            if self
+                .disk
+                .as_mut()
+                .is_some_and(|disk| disk.refresh_not_modified(&key, response))
+            {
                 self.insert_memory_from_hit(&key, &cached, hit);
                 tracing::info!(url = %key, "HTTP disk cache 304 revalidated");
                 return Some(cached);
@@ -935,6 +958,89 @@ mod tests {
         // body + status 仍为缓存的 200（304 仅 revalidate，不替换 body）。
         assert_eq!(cached.body, b"hello");
         assert_eq!(cached.status_code, 200);
+    }
+
+    #[test]
+    fn cache_304_vary_change_invalidates_old_memory_variant() {
+        let mut cache = HttpCache::new();
+        let url = "https://example.com/language";
+        let english = [("Accept-Language".into(), "en".into())];
+        let french = [("Accept-Language".into(), "fr".into())];
+        let original = make_response(
+            200,
+            b"english body",
+            vec![("cache-control", "no-cache"), ("etag", "\"shared\"")],
+        );
+        assert!(cache.put_with_headers(url, &english, &original));
+
+        let not_modified = make_response(
+            304,
+            b"",
+            vec![
+                ("cache-control", "max-age=60"),
+                ("etag", "\"shared\""),
+                ("vary", "Accept-Language"),
+            ],
+        );
+        let validated = cache
+            .not_modified(url, &english, &not_modified)
+            .expect("304 uses the stored representation for this request");
+        assert_eq!(validated.body, b"english body");
+        assert!(
+            validated
+                .headers
+                .iter()
+                .any(|(name, value)| name.eq_ignore_ascii_case("vary") && value == "Accept-Language")
+        );
+
+        assert!(matches!(cache.lookup(url, &english), CacheLookup::Miss));
+        assert!(matches!(cache.lookup(url, &french), CacheLookup::Miss));
+    }
+
+    #[test]
+    fn cache_304_vary_change_invalidates_persistent_variant() {
+        let dir = std::env::temp_dir().join(format!(
+            "zero-http-cache-vary-304-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let url = "https://example.com/language";
+        let english = [("Accept-Language".into(), "en".into())];
+        let french = [("Accept-Language".into(), "fr".into())];
+        {
+            let mut cache = HttpCache::open_persistent_at(&dir);
+            let original = make_response(
+                200,
+                b"english body",
+                vec![("cache-control", "no-cache"), ("etag", "\"shared\"")],
+            );
+            assert!(cache.put_with_headers(url, &english, &original));
+        }
+
+        let mut reopened = HttpCache::open_persistent_at(&dir);
+        assert!(matches!(reopened.lookup(url, &english), CacheLookup::Revalidate { .. }));
+        let not_modified = make_response(
+            304,
+            b"",
+            vec![
+                ("cache-control", "max-age=60"),
+                ("etag", "\"shared\""),
+                ("vary", "Accept-Language"),
+            ],
+        );
+        let validated = reopened
+            .not_modified(url, &english, &not_modified)
+            .expect("304 uses the stored representation for this request");
+        assert_eq!(validated.body, b"english body");
+        assert!(matches!(reopened.lookup(url, &french), CacheLookup::Miss));
+        drop(reopened);
+
+        let mut disk = DiskHttpCache::open(&dir).unwrap();
+        assert!(disk.read(url).is_none(), "changed Vary must remove the old disk key");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

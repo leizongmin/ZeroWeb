@@ -716,16 +716,59 @@ fn submit_shared_coalesces_duplicate_url() {
 
 #[test]
 fn submit_shared_broadcasts_result_to_subscribers() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
     use std::time::Duration;
-    // 结果广播路径：fetch 完成后 on_complete 广播同一结果给全部订阅者并清空 pending。
-    // 用 127.0.0.1:1（连接立即拒绝，fast Err）使 fetch 快速完成；recv_timeout 等待完成（非竞态）。
+
+    // Hold the local response until both subscribers are attached; a refused connection can
+    // finish before the second submit runs when the workspace test process is under load.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local response server");
+    let port = listener.local_addr().expect("local address").port();
+    let (accepted_tx, accepted_rx) = mpsc::sync_channel(1);
+    let (release_tx, release_rx) = mpsc::sync_channel(1);
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept coalesced request");
+        let mut request = [0_u8; 1024];
+        let _ = stream.read(&mut request).expect("read request headers");
+        accepted_tx.send(()).expect("notify accepted request");
+        release_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("test releases response");
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\nshared")
+            .expect("write shared response");
+    });
+
     let sched = PerOriginFetchScheduler::new_shared();
-    let r1 = PerOriginFetchScheduler::submit_shared(&sched, "http://127.0.0.1:1/broadcast-me");
-    let r2 = PerOriginFetchScheduler::submit_shared(&sched, "http://127.0.0.1:1/broadcast-me");
-    let r1v = r1.recv_timeout(Duration::from_secs(5));
-    let r2v = r2.recv_timeout(Duration::from_secs(5));
-    // 两次都收到同一结果（连接拒绝的 Err 字符串一致）。
-    assert_eq!(r1v.as_ref().err(), r2v.as_ref().err(), "coalesced results must match");
+    let url = format!("http://127.0.0.1:{port}/broadcast-me");
+    let r1 = PerOriginFetchScheduler::submit_shared(&sched, &url);
+    let r2 = PerOriginFetchScheduler::submit_shared(&sched, &url);
+    accepted_rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("request reaches local server");
+    let subscriber_count = sched
+        .lock()
+        .unwrap()
+        .pending
+        .get(&url)
+        .map(Vec::len)
+        .unwrap_or_default();
+    release_tx.send(()).expect("release response");
+
+    let first = r1
+        .recv_timeout(Duration::from_secs(10))
+        .expect("first subscriber receives result")
+        .expect("local response succeeds");
+    let second = r2
+        .recv_timeout(Duration::from_secs(10))
+        .expect("second subscriber receives result")
+        .expect("coalesced local response succeeds");
+    server.join().expect("local server exits");
+    assert_eq!(subscriber_count, 2, "both receivers share one network request");
+    assert_eq!(first.status_code, second.status_code);
+    assert_eq!(first.body, b"shared");
+    assert_eq!(second.body, first.body);
     // 完成后 pending 清空（poll 至 drain，robust 抗调度延迟）。
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
