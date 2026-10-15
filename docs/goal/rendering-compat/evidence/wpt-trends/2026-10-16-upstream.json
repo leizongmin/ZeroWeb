@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-16",
+  "mode": "upstream",
+  "wpt_data_ref": "v1.10",
+  "total": 16590,
+  "passed": 15420,
+  "rate_pct": 92.9,
+  "extra": "failed=1170;skipped=0",
+  "git_sha": "0f7780098",
+  "note": "R5142 碎片化嵌套 multicol 末列 cap-breaking——change-transform-in-nested 真翻绿（0.00% 逐像素），corpus 1171→1170"
+}
