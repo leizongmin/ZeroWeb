@@ -3399,7 +3399,10 @@
               return false;
             }
             try { before57._zwUaDispatch = false; } catch (_eTb57c) {}
-            tgt.value = combined;
+            // R3901：UA 合成编辑不走 value 净化（旗标见 part04 value setter——用户
+            // 编辑中间态是合法 badInput 值）。
+            globalThis.__zwSkipValueSanitize = true;
+            try { tgt.value = combined; } finally { globalThis.__zwSkipValueSanitize = false; }
             var input57 = new InputEvent('input', {
               bubbles: true, cancelable: false, data: ins, inputType: 'insertText', isComposing: false
             });

@@ -16145,6 +16145,31 @@ return e;
             return '';
           }
           if (!_rvSkip3) {
+          // R3901（html-semantics M2）：INPUT value getter 按模式分派（HTML §4.10.5.4
+          // dom-input-value）——default（submit/image/reset/button）读 value 内容属性
+          //（缺省 ''）；default/on（checkbox/radio）读内容属性（缺省 "on"）。default 族
+          // 存储即内容属性（setter/类型迁移同源写），不走 dirty 缓存——否则 value→
+          // default/on 迁移后 attr 缺省的 "on" 回落被读成空缓存串（type-change-state
+          // 'temporal→checkbox dirty ""' 期望 "on" 主簇）。
+          if (_realTag(sel, handle) === 'INPUT') {
+            // type 读走 latest-wins（detached 元素 pending SetAttr 只在 lw 变体可见——
+            // 快照读恒 miss，同 `_reflectedTypeEnum` 的理由）。
+            var _rvMdG = _zwInputValueMode(_zwNormalizeInputType(
+              handle ? __zw_get_attr_handle(handle, 'type')
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'))));
+            // filename（file）：getter 返 fakepath 形，**与 value 内容属性无关**（attr
+            // 存在也返 ''——valueMode 'file with value attribute' 断言面）。本引擎无文件
+            // 选择，选中文件集恒空 → 恒 ''。
+            if (_rvMdG === 'filename') return '';
+            if (_rvMdG === 'default' || _rvMdG === 'default/on') {
+              var _rvHasG = (handle ? __zw_has_attr_handle(handle, 'value')
+                : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'value') : __zw_has_attr(sel, 'value'))) === '1';
+              if (!_rvHasG) return (_rvMdG === 'default/on') ? 'on' : '';
+              var _rvRawG = handle ? __zw_get_attr_handle(handle, 'value')
+                : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'value') : __zw_get_attr(sel, 'value'));
+              return (_rvRawG == null) ? '' : String(_rvRawG);
+            }
+          }
           // P1a form input：value get——per-element 缓存，lazy-init。
           // textarea 的 value 是其**文本内容**（非 value 属性，HTML spec）；input 是 value 属性。
           // R57（FV M3）：缓存读——setter 写入（_inputValuesSet 标记——JS-set 值/typed 值，

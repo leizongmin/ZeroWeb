@@ -438,7 +438,8 @@ if(!e||(e.tagName!=='INPUT'&&e.tagName!=='TEXTAREA'))return;\
 var v=String(e.value||''),s=Number(e.selectionStart),n=Number(e.selectionEnd);\
 if(!Number.isFinite(s))s=v.length;if(!Number.isFinite(n))n=s;\
 s=Math.max(0,Math.min(v.length,s));n=Math.max(s,Math.min(v.length,n));\
-var x='{esc_text}';e.value=v.slice(0,s)+x+v.slice(n);\
+var x='{esc_text}';globalThis.__zwSkipValueSanitize=true;\
+try{{e.value=v.slice(0,s)+x+v.slice(n);}}finally{{globalThis.__zwSkipValueSanitize=false;}}\
 var c=s+x.length;if(typeof e.setSelectionRange==='function')e.setSelectionRange(c,c);\
 if(typeof __zw_mark_user_edited==='function')__zw_mark_user_edited('{esc_sel}');\
 }})()"
@@ -465,7 +466,8 @@ var v=String(e.value||''),s=Number(e.selectionStart),n=Number(e.selectionEnd);\
 if(!Number.isFinite(s))s=v.length;if(!Number.isFinite(n))n=s;\
 s=Math.max(0,Math.min(v.length,s));n=Math.max(s,Math.min(v.length,n));\
 if(s===n){{if(s===0)return;s--;}}\
-e.value=v.slice(0,s)+v.slice(n);\
+globalThis.__zwSkipValueSanitize=true;\
+try{{e.value=v.slice(0,s)+v.slice(n);}}finally{{globalThis.__zwSkipValueSanitize=false;}}\
 if(typeof e.setSelectionRange==='function')e.setSelectionRange(s,s);\
 }})()"
     )
@@ -483,7 +485,8 @@ pub fn script_set_text_control_state(
     format!(
         "(function(){{var e=document.querySelector('{esc_sel}');\
 if(!e||(e.tagName!=='INPUT'&&e.tagName!=='TEXTAREA'))return;\
-e.value='{esc_value}';\
+globalThis.__zwSkipValueSanitize=true;\
+try{{e.value='{esc_value}';}}finally{{globalThis.__zwSkipValueSanitize=false;}}\
 if(typeof e.setSelectionRange==='function')e.setSelectionRange({selection_start},{selection_end});\
 if(typeof __zw_mark_user_edited==='function')__zw_mark_user_edited('{esc_sel}');\
 }})()"

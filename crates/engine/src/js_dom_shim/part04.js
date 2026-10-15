@@ -2956,8 +2956,13 @@
               try { _r125OldPid = proxy.id == null ? '' : String(proxy.id); } catch (_eO) { _r125OldPid = ''; }
               _zwPAIdRemove(proxy);
             }
+            // R3901（html-semantics M2）：input type 变更步骤旧类型须在写入前捕
+            //（_reflectedTypeEnum 读 attr——写入后读即新值）。写后应用见 set_attr 之后。
+            var _r3901OldTy = (n === 'type' && _realTag(sel, handle) === 'INPUT')
+              ? _reflectedTypeEnum(sel, handle) : null;
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
+            if (_r3901OldTy != null) _zwApplyInputTypeChange(key, sel, handle, _r3901OldTy, v);
             // uievents-compat 尾簇 9：悬停元素自身的属性变异（coords/width/style 等可
             // 改几何）或 img 的 image-map 绑定/尺寸属性（usemap/coords/shape/width/
             // height——命中面随绑定变化，WPT mouse_boundary_events_on_image_map 的
@@ -4889,6 +4894,18 @@
                 });
               }
             } catch (_e) {}
+            // R3901（html-semantics M2）：input 克隆步骤（HTML §4.10.5.4 cloning steps）——
+            // value IDL 值与 dirty 旗标随克隆复制。value 模式 IDL set 不写内容属性（R3901），
+            // 脏值只在 `_inputValues` 缓存——上面的属性复制循环读不到，克隆 value 丢
+            //（WPT cloning-steps 'input element's value should be cloned' 回归面）。
+            // textarea 的 value 走 child text/innerHTML 复制面，不在此列。
+            try {
+              if (_realTag(sel, handle) === 'INPUT' && _inputValues[key] != null) {
+                var _r3901DstKey = _elKey(null, nh);
+                _inputValues[_r3901DstKey] = _inputValues[key];
+                _inputValuesSet[_r3901DstKey] = _inputValuesSet[key] === true;
+              }
+            } catch (_e3901cl) {}
             // deep：复制后代（innerHTML）。
             if (deep) {
               var _cnd = false;
@@ -10673,16 +10690,62 @@
             _outputValue[key] = _ov;
             if (handle) __zw_set_text_handle(handle, _ov);
             else __zw_set_text(sel, _ov);
+          } else if (_realTag(sel, handle) === 'INPUT') {
+            // R3901（html-semantics M2）：INPUT value IDL set 按 value 模式分派（HTML
+            // §4.10.5.4 dom-input-value）。filename（file）：空串清空选中文件（本引擎无
+            // 选择面，元素值恒 ''）、非空串抛 InvalidStateError；default/default-on
+            //（submit/image/reset/button/checkbox/radio）：写 value 内容属性（getter 同源
+            // 读 attr——sel 路径补写，旧仅 form-value getter 读不到）；value 模式：dirty
+            // 缓存 + 净化算法（part01 _zwSanitizeInputValue）。cursor-to-end（值变更移
+            // 光标）略——无实时光标面。
+            _captureInputDefault(key, sel, handle); // R2996/R3049：首次写前捕获 defaultValue
+            // type 读走 latest-wins（detached 元素 pending SetAttr 只在 lw 变体可见）。
+            var _ivTy = _zwNormalizeInputType(handle ? __zw_get_attr_handle(handle, 'type')
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type')));
+            var _ivMd = _zwInputValueMode(_ivTy);
+            // [LegacyNullToEmptyString] DOMString（HTMLInputElement.value）——null → ''（非
+            // "null" 串；valueMode file 面 `input.value = null` 期望按空串清空、不抛）。
+            var _ivVal = (value === null) ? '' : String(value);
+            if (_ivMd === 'filename') {
+              if (_ivVal !== '') {
+                _throwDom('InvalidStateError', "Failed to set the 'value' property on 'HTMLInputElement': This input element accepts a file name; the value may only be set to the empty string.");
+              }
+              _inputValues[key] = ''; _inputValuesSet[key] = true;
+            } else if (_ivMd === 'default' || _ivMd === 'default/on') {
+              _inputValues[key] = _ivVal; _inputValuesSet[key] = true;
+              if (handle) {
+                __zw_set_attr_handle(handle, 'value', _ivVal);
+              } else {
+                __zw_set_form_value(sel, _ivVal); // 渲染面同步（既有）
+                __zw_set_attr(sel, 'value', _ivVal); // spec：default 族写内容属性（getter 同源）
+              }
+            } else {
+              // 用户键入组合通道（__zw_text_input/__zw_text_delete/
+              // script_set_text_control_state）经 `__zwSkipValueSanitize` 旗标绕行净化——
+              // spec：净化算法只服务 IDL set/内容属性变更/创建/类型迁移，用户编辑的
+              // 中间态（number 键入 '1e'/'1e+'）是合法 badInput 值，净化会打断键入序
+              //（WPT number-invalid-scientific-key-events 回归面）。
+              var _ivSan = (globalThis.__zwSkipValueSanitize === true)
+                ? _ivVal : _zwSanitizeInputValue(_ivVal, _ivTy, sel, handle);
+              _inputValues[key] = _ivSan; _inputValuesSet[key] = true;
+              // value 模式**不写内容属性**（spec：IDL set 走元素当前值，attr 不动——
+              // getAttribute('value') 保持 null/作者值。旧 handle 路径 attr 镜像会让
+              // default 族 hasAttribute 读到幻影值——R3901 probe 'temporal→checkbox'
+              // value attr absent 断言面）。读回走 dirty 缓存；sel 路径同步渲染面。
+              if (!handle && sel) __zw_set_form_value(sel, _ivSan);
+            }
           } else {
             _inputValues[key] = String(value); _inputValuesSet[key] = true;
             // input/textarea 的 IDL value 是 retained 当前值，不改 HTML 内容属性/textarea 默认文本。
             // https://html.spec.whatwg.org/multipage/input.html#dom-input-value
             // R2996/R3049：首次写前仍捕获 defaultValue，供 getter + form.reset。
+            //（R3901：INPUT 已上提模式分派分支——本 else 仅 TEXTAREA 与其余元素；
+            // 首行缓存写必须保留——textarea 无专属缓存面，getter 靠它读回（R3901
+            // 回归面：reset-form/setRangeText/validity textarea 曾全数 stale）。）
             if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
               if (_textareaDefault[key] == null) _textareaDefault[key] = __zw_get_text(sel) || '';
               __zw_set_form_value(sel, String(value));
             } else {
-              if (_realTag(sel, handle) === 'INPUT') _captureInputDefault(key, sel, handle);
               if (handle) {
                 __zw_set_attr_handle(handle, 'value', String(value));
               } else {

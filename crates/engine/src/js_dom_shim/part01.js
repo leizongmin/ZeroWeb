@@ -1016,6 +1016,123 @@
     // BUTTON：submit/reset/button 关键字；缺省/非法 → "submit"（spec missing & invalid default）。
     return (lo === 'submit' || lo === 'reset' || lo === 'button') ? lo : 'submit';
   }
+  // R3901（html-semantics M2）：input value IDL 四模式（HTML §4.10.5.4 dom-input-value：
+  // value/default/default-on/filename）。value 模式（hidden/text/search/tel/url/email/
+  // password/date/month/week/time/datetime-local/number/range/color）getter/setter 走
+  // 元素当前值（dirty 缓存面）；default（submit/image/reset/button）与 default/on
+  //（checkbox/radio）走 value 内容属性（getter 缺省 ''/"on"，setter 写内容属性）；
+  // filename（file）getter 返 "C:\fakepath\文件名" 形（本引擎无文件选择，恒 ''）、
+  // setter 非空串抛 InvalidStateError。类型实参须先经 _zwNormalizeInputType 规范化。
+  function _zwInputValueMode(type) {
+    switch (type) {
+      case 'submit': case 'image': case 'reset': case 'button':
+        return 'default';
+      case 'checkbox': case 'radio':
+        return 'default/on';
+      case 'file':
+        return 'filename';
+      default:
+        return 'value';
+    }
+  }
+  // R3901：input type 关键字规范化（_reflectedTypeEnum 同规则：ASCII 小写 + 白名单；
+  // 缺省/非法 → "text"，spec Text 状态为 missing/invalid value default）。
+  function _zwNormalizeInputType(raw) {
+    var lo = (raw == null || raw === '') ? '' : _zwASCIILower(String(raw));
+    return (lo !== '' && _INPUT_TYPE_KEYWORDS.indexOf(' ' + lo + ' ') >= 0) ? lo : 'text';
+  }
+  // R3901：value 净化算法（HTML §4.10.5.5，按状态分派）。文本族剥 \r\n；url/email 再剥
+  // 首尾 ASCII 空白；date/month/week/time 非法串 → ''；datetime-local 非法 → ''；number
+  // 非法浮点 → ''；range 夹取 [min,max]（非法 → (min+max)/2，min>max → min；缺省
+  // min/max 0/100 → "50"）；color 非法 → "#000000"；hidden/checkbox/radio/submit/image/
+  // reset/button 无净化算法（原样返回）。
+  // FIXME(html-semantics M2)：datetime-local 校验宽松（未验月日范围/闰日）；week 的 W53
+  // 未按年份实有周数收紧；time 串未拒时区后缀（_parseHtmlDateValue 接受 Z/±HH:MM）。
+  function _zwSanitizeInputValue(v, type, sel, handle) {
+    v = String(v);
+    switch (type) {
+      case 'text': case 'search': case 'tel': case 'password':
+        return v.replace(/[\r\n]/g, '');
+      case 'url': case 'email':
+        return v.replace(/[\r\n]/g, '').replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '');
+      case 'date': case 'month': case 'week': case 'time':
+        return _parseHtmlDateValue(v, type) != null ? v : '';
+      case 'datetime-local':
+        return /^\d{4,}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(v) ? v : '';
+      case 'number':
+        return /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(v) ? v : '';
+      case 'range': {
+        var mn = parseFloat(handle ? __zw_get_attr_handle(handle, 'min')
+          : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'min') : __zw_get_attr(sel, 'min')));
+        if (isNaN(mn)) mn = 0;
+        var mx = parseFloat(handle ? __zw_get_attr_handle(handle, 'max')
+          : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'max') : __zw_get_attr(sel, 'max')));
+        if (isNaN(mx)) mx = 100;
+        var n = parseFloat(v);
+        if (v === '' || isNaN(n) || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(v)) {
+          return String(mn > mx ? mn : (mn + mx) / 2);
+        }
+        if (n > mx) return String(mx);
+        if (n < mn) return String(mn);
+        return v;
+      }
+      case 'color':
+        return /^#[0-9a-f]{6}$/.test(v) ? v : '#000000';
+      default:
+        return v;
+    }
+  }
+  // R3901：input type 内容属性变更步骤（HTML §4.10.5.4 input type change steps；
+  // set/changed/removed 均走——同态再设时三迁移分支自然 no-op，净化算法仍执行，
+  // spec 步骤 4 无条件）。oldTypeRaw 须在 attr 写入**前**捕（caller 取
+  // _reflectedTypeEnum——写入后读即新值）；newTypeRaw 原串（内部规范化）。
+  // 元素当前值：dirty 缓存优先，回落 value 内容属性（缺省 ''）。
+  function _zwApplyInputTypeChange(key, sel, handle, oldTypeRaw, newTypeRaw) {
+    var oldTy = _zwNormalizeInputType(oldTypeRaw);
+    var oldM = _zwInputValueMode(oldTy);
+    var newTy = _zwNormalizeInputType(newTypeRaw);
+    var newM = _zwInputValueMode(newTy);
+    var cur = _inputValues[key];
+    if (cur == null || !(_inputValuesSet[key] === true || _stableValueKey(key))) {
+      // attr 回落读走 latest-wins（detached 元素的 pending SetAttr 只在 lw 变体可见——
+      // 快照读恒 miss，同 `_reflectedTypeEnum` 用 `__zw_get_attr_lw` 的理由）。
+      cur = (handle ? __zw_get_attr_handle(handle, 'value')
+        : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'value') : __zw_get_attr(sel, 'value'))) || '';
+    }
+    // 步骤 1：value 模式 → default/default-on 且当前值非空 → 内容属性接收当前值。
+    if (oldM === 'value' && cur !== '' && (newM === 'default' || newM === 'default/on')) {
+      if (handle) __zw_set_attr_handle(handle, 'value', cur);
+      else __zw_set_attr(sel, 'value', cur);
+    }
+    // 步骤 2（非 value 模式 → value 模式）：元素值回落内容属性（cur 缺省面已取 attr || ''）。
+    // 步骤 3（非 file → file）：元素值置空串。
+    var next = cur;
+    if (newM === 'filename') next = '';
+    // 步骤 4：调用新状态的 value 净化算法。
+    next = _zwSanitizeInputValue(next, newTy, sel, handle);
+    _inputValues[key] = next;
+    _inputValuesSet[key] = true;
+    // 读回面：default/default-on 存储即内容属性（步骤 1 已写；attr 缺省的 "on"/''
+    // 回落由 getter 判 attr 存在性——此处不补写，避免把缺省面读成空串）。value/filename
+    // 目标走 dirty 缓存读回，sel 路径同步渲染面 form-value。
+    // FIXME(html-semantics M2)：spec 步骤 2 的 dirty=false 与「value 模式类型变更不写
+    // 内容属性」在镜像实现下不成立（attr 承担 default 族读回存储）；removeAttribute
+    // ('type') 路径未接变更步骤（IDL + setAttribute 两路已覆盖当前测试面）。
+    if (newM === 'value' && !handle && sel) {
+      __zw_set_form_value(sel, next);
+    }
+    // 选区复位：非可选 → 可选状态迁移，选区归零且 direction 'none'（type-change-state
+    // 'hidden→text' 族断言面——selectionStart/End 0 + selectionDirection 'none'；可选→可选
+    // 保持不变，不可选态选区 getter 本就返 null）。文本可选型判定复用 R2844 `_TEXT_SEL_TYPES`
+    //（text/search/url/tel/password；email/temporal/number/range/color 不可选）。
+    if (typeof _TEXT_SEL_TYPES === 'object' && typeof _selObj === 'function' && typeof _textSelKey === 'function'
+        && !_TEXT_SEL_TYPES.hasOwnProperty(oldTy) && _TEXT_SEL_TYPES.hasOwnProperty(newTy)) {
+      var soR = _selObj(_textSelKey(sel, handle));
+      soR.start = 0;
+      soR.end = 0;
+      soR.direction = 'none';
+    }
+  }
   // R3038/R3041：reflected unsigned-long（numeric）+ boolean 属性读（R3037 follow-up——string 已在 R3037 覆盖）。
   // 数值型 spec 返 number（缺省 default，colSpan/rowSpan spec default 1 且 min 1；maxLength/minLength default -1
   // = 不限制；cols/rows/start R3041——textarea cols default 20 / rows default 2，ol start default 1，无 min 故
@@ -5065,7 +5182,13 @@
         bubbles: true, cancelable: true, view: globalThis, data: inserted
       }));
     }
-    el.value = cur.slice(0, start) + inserted + cur.slice(end);
+    // R3901：键入组合**不走 value 净化**——中间态（number '1e'/'1e+'）是合法 badInput
+    // 值，净化会打断键入序（WPT number-invalid-scientific-key-events）。旗标绕行见
+    // part04 value setter。
+    globalThis.__zwSkipValueSanitize = true;
+    try {
+      el.value = cur.slice(0, start) + inserted + cur.slice(end);
+    } finally { globalThis.__zwSkipValueSanitize = false; }
     var caret = start + inserted.length;
     _textSelection[target.key] = { start: caret, end: caret, direction: 'none' };
     // t2-pd2a：用户编辑标记（validity tooShort 面依赖——同计划管道
@@ -5104,7 +5227,11 @@
     // t2-pd2a 复核 D2：取消语义与 `__zw_text_input` 对齐——返回 'prevented' 供宿主
     // canceled 契约传播（DeleteBackward 的 canceled 面不回退）。
     if (el.dispatchEvent(before) === false) return 'prevented';
-    el.value = cur.slice(0, start) + cur.slice(end);
+    // R3901：删除组合同不走净化（旗标见 __zw_text_input 注）。
+    globalThis.__zwSkipValueSanitize = true;
+    try {
+      el.value = cur.slice(0, start) + cur.slice(end);
+    } finally { globalThis.__zwSkipValueSanitize = false; }
     _textSelection[target.key] = { start: start, end: start, direction: 'none' };
     // t2-pd2a：用户编辑标记（同计划管道 script_set_text_control_state）。
     if (typeof __zw_mark_user_edited === 'function') __zw_mark_user_edited(sel);
