@@ -261,6 +261,12 @@ impl HttpCache {
                 e.initial_age_secs = crate::cache_policy::compute_initial_age(response);
                 e.must_revalidate = parse_cache_control(response).must_revalidate;
                 merge_304_headers(&mut e.headers, response);
+                if let Some(etag) = response.header("etag") {
+                    e.etag = Some(etag.to_string());
+                }
+                if let Some(last_modified) = response.header("last-modified") {
+                    e.last_modified = Some(last_modified.to_string());
+                }
                 merge_not_modified_metadata(&mut cached, response);
             }
             if let Some(disk) = self.disk.as_mut() {
@@ -296,7 +302,10 @@ impl HttpCache {
                 .as_mut()
                 .is_some_and(|disk| disk.refresh_not_modified(&key, response))
             {
-                self.insert_memory_from_hit(&key, &cached, hit);
+                merge_not_modified_metadata(&mut cached, response);
+                if let Some(refreshed_hit) = self.disk.as_mut().and_then(|disk| disk.read(&key)) {
+                    self.insert_memory_from_hit(&key, &cached, refreshed_hit);
+                }
                 tracing::info!(url = %key, "HTTP disk cache 304 revalidated");
                 return Some(cached);
             }
@@ -967,6 +976,114 @@ mod tests {
         // body + status 仍为缓存的 200（304 仅 revalidate，不替换 body）。
         assert_eq!(cached.body, b"hello");
         assert_eq!(cached.status_code, 200);
+    }
+
+    #[test]
+    fn memory_304_refreshes_validators_for_the_next_request() {
+        let mut cache = HttpCache::new();
+        let url = "https://example.com/rotating-validator";
+        let original = make_response(
+            200,
+            b"body",
+            vec![
+                ("cache-control", "no-cache"),
+                ("etag", "\"v1\""),
+                ("last-modified", "Wed, 21 Oct 2015 07:28:00 GMT"),
+            ],
+        );
+        assert!(cache.put(url, &original));
+        assert_eq!(
+            cache.conditional_headers(url),
+            vec![
+                ("If-None-Match".to_string(), "\"v1\"".to_string()),
+                (
+                    "If-Modified-Since".to_string(),
+                    "Wed, 21 Oct 2015 07:28:00 GMT".to_string(),
+                ),
+            ]
+        );
+
+        let not_modified = make_response(
+            304,
+            b"",
+            vec![
+                ("cache-control", "no-cache"),
+                ("etag", "\"v2\""),
+                ("last-modified", "Thu, 22 Oct 2015 07:28:00 GMT"),
+            ],
+        );
+        let validated = cache
+            .not_modified(url, &[], &not_modified)
+            .expect("304 must reuse the stored representation");
+        assert_eq!(validated.body, b"body");
+        assert_eq!(validated.etag.as_deref(), Some("\"v2\""));
+        assert_eq!(
+            cache.conditional_headers(url),
+            vec![
+                ("If-None-Match".to_string(), "\"v2\"".to_string()),
+                (
+                    "If-Modified-Since".to_string(),
+                    "Thu, 22 Oct 2015 07:28:00 GMT".to_string(),
+                ),
+            ],
+            "later revalidation must use validators returned by the 304"
+        );
+    }
+
+    #[test]
+    fn disk_304_promotion_uses_refreshed_validators() {
+        let dir = std::env::temp_dir().join(format!(
+            "zero-http-cache-304-promoted-validators-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let url = "https://example.com/disk-rotating-validator";
+        let original = make_response(
+            200,
+            b"disk body",
+            vec![
+                ("cache-control", "no-cache"),
+                ("etag", "\"v1\""),
+                ("last-modified", "Wed, 21 Oct 2015 07:28:00 GMT"),
+            ],
+        );
+        {
+            let mut writer = HttpCache::open_persistent_at(&dir);
+            assert!(writer.put(url, &original));
+        }
+
+        let mut reopened = HttpCache::open_persistent_at(&dir);
+        assert!(matches!(reopened.lookup(url, &[]), CacheLookup::Revalidate { .. }));
+        let not_modified = make_response(
+            304,
+            b"",
+            vec![
+                ("cache-control", "no-cache"),
+                ("etag", "\"v2\""),
+                ("last-modified", "Thu, 22 Oct 2015 07:28:00 GMT"),
+            ],
+        );
+        let validated = reopened
+            .not_modified(url, &[], &not_modified)
+            .expect("304 must reuse the disk representation");
+        assert_eq!(validated.body, b"disk body");
+        assert_eq!(validated.etag.as_deref(), Some("\"v2\""));
+        assert_eq!(
+            reopened.conditional_headers(url),
+            vec![
+                ("If-None-Match".to_string(), "\"v2\"".to_string()),
+                (
+                    "If-Modified-Since".to_string(),
+                    "Thu, 22 Oct 2015 07:28:00 GMT".to_string(),
+                ),
+            ],
+            "disk-only revalidation promoted into memory must use updated validators"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
