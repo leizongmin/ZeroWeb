@@ -187,8 +187,18 @@ impl PageScriptRunner {
             dispatch_resource_element_event(js_worker, event);
         }
         // R2944：stylesheet 元素级 load/error，位于 DOMContentLoaded 与 window load 之间。
-        for (url, ty) in &self.link_events {
-            dispatch_link_event(js_worker, url, ty);
+        // P102：与 renderer page_scripts 同款——保序去重 + 整批单次执行（见
+        // `zero_engine::script_dispatch_link_events_batch`）；修复前此处逐条为同步臂，多样式表
+        // 页面线性放大 finish 阻塞。shim 派发无 at-most-once 守卫，重复入队条目会重复触发
+        // handler，去重使每元素 load/error 收敛到 spec 至多一次（审查 DEF-2）。
+        let deduped_links = dedupe_link_events(&self.link_events);
+        if !deduped_links.is_empty()
+            && let Some(worker) = js_worker
+        {
+            let batch = zero_engine::script_dispatch_link_events_batch(&deduped_links);
+            if let Err(e) = worker.execute_script_direct(&batch) {
+                warn!("dispatch link events batch ({}): {e}", deduped_links.len());
+            }
         }
         // R2947：@font-face 加载 settle——经 `__zw_font_settle` 派 FontFaceSet 'loadingdone'/'loadingerror'
         // + 解析 document.fonts.ready。无 @font-face 页面仍 settle（仅 resolve ready，不派事件）。
@@ -287,15 +297,16 @@ fn dispatch_resource_element_event(js_worker: Option<&TabJsWorkerHandle>, event:
     }
 }
 
-/// R2944：派发 stylesheet 元素级 load/error 事件进 shim。经 `script_dispatch_link_event` 生成
-/// `__zw_dispatch_link_event(url, type)`——shim 按 href 绝对 URL 匹配 `<link>` 元素 proxy 派发
-///（link.onload/onerror 触发）。`ty` = "load" / "error"。best-effort。
-fn dispatch_link_event(js_worker: Option<&TabJsWorkerHandle>, url: &str, ty: &str) {
-    let Some(worker) = js_worker else { return };
-    let report = zero_engine::script_dispatch_link_event(url, ty);
-    if let Err(e) = worker.execute_script_direct(&report) {
-        warn!("dispatch link event ({ty} {url}): {e}");
-    }
+/// P102：按 `(url, type)` 保序去重 link 事件（同 renderer `page_scripts::dedupe_link_events`）。
+/// spec HTML：每元素 load/error 至多触发一次；shim 派发无 at-most-once 守卫，重复入队条目会
+/// 重复派发、handler 重复执行——去重是向 spec 收敛的语义修复（审查 DEF-2）。
+fn dedupe_link_events(link_events: &[(String, &'static str)]) -> Vec<(String, &'static str)> {
+    let mut seen = std::collections::HashSet::new();
+    link_events
+        .iter()
+        .filter(|(url, ty)| seen.insert((url.clone(), *ty)))
+        .cloned()
+        .collect()
 }
 
 /// R2944：派发外部 `<script src>` 元素级 load/error 事件进 shim。经 `script_dispatch_script_event` 生成
@@ -597,5 +608,70 @@ fn page_script_label(script: &PageScript) -> String {
         }
         PageScript::External(src) => format!("external: {src}"),
         PageScript::ExternalModule(src) => format!("external module: {src}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dedupe_link_events;
+    use crate::tab_js_worker::TabJsWorkerHandle;
+    use zero_browser_shell::TabId;
+
+    /// P102（TV-1）：browser 侧 `dedupe_link_events` 副本与 renderer 同款语义——保序、
+    /// 同 (url, type) 只留首个、同 URL 不同 type 保留。两份副本靠复制粘贴维持一致，
+    /// 本测试钉住 browser 份不静默回退。
+    #[test]
+    fn dedupe_link_events_keeps_first_and_distinct_types_p102() {
+        let deduped = dedupe_link_events(&[
+            ("https://e.com/a.css".to_string(), "load"),
+            ("https://e.com/b.css".to_string(), "load"),
+            ("https://e.com/a.css".to_string(), "load"),
+            ("https://e.com/a.css".to_string(), "error"),
+            ("https://e.com/b.css".to_string(), "load"),
+        ]);
+        assert_eq!(
+            deduped,
+            vec![
+                ("https://e.com/a.css".to_string(), "load"),
+                ("https://e.com/b.css".to_string(), "load"),
+                ("https://e.com/a.css".to_string(), "error"),
+            ]
+        );
+    }
+
+    /// P102（TV-1）：browser worker 路径整批 parity——真 `TabJsWorkerHandle` 驱动共享生成器
+    /// 批脚本（`script_dispatch_link_events_batch`），重复条目经 browser 份去重后各元素至多
+    /// 触发一次且保序，含单引号 URL 转义。不覆盖 `finish()` 的 WebView 组装行（headless 无
+    /// 窗口依赖不可建），覆盖其调用的去重副本 + 生成器 + `execute_script_direct` 通道。
+    #[cfg(any(feature = "v8", all(feature = "quickjs", not(feature = "v8"))))]
+    #[test]
+    fn link_batch_via_tab_worker_dedupes_and_orders_p102() {
+        let mut worker = TabJsWorkerHandle::spawn(TabId(9153));
+        let html = "<html><body>\
+            <link rel=\"stylesheet\" href=\"https://example.com/it's.css\">\
+            <link rel='stylesheet' href='https://example.com/a.css'>\
+            <link rel='stylesheet' href='https://example.com/b.css'>\
+            </body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        worker
+            .execute_page_script(
+                "globalThis.__order = [];\
+                 var links = document.querySelectorAll('link');\
+                 links[0].addEventListener('load', function(){ globalThis.__order.push('q'); });\
+                 links[1].addEventListener('load', function(){ globalThis.__order.push('a'); });\
+                 links[2].addEventListener('load', function(){ globalThis.__order.push('b'); });",
+            )
+            .unwrap();
+        let deduped = dedupe_link_events(&[
+            ("https://example.com/it's.css".to_string(), "load"),
+            ("https://example.com/a.css".to_string(), "load"),
+            ("https://example.com/b.css".to_string(), "load"),
+            ("https://example.com/it's.css".to_string(), "load"),
+        ]);
+        let batch = zero_engine::script_dispatch_link_events_batch(&deduped);
+        worker.execute_script_direct(&batch).unwrap();
+        let order = worker.execute_script_direct("globalThis.__order.join(',')").unwrap();
+        assert_eq!(order, "q,a,b", "整批 link 事件保序、去重、含引号 URL 转义");
+        worker.shutdown();
     }
 }
