@@ -1212,6 +1212,9 @@ impl RendererRuntime {
                     navigated = true;
                 }
                 zero_page_runtime::PageEffect::SetFragment { .. } => {}
+                // SubmitForm 到达此处必为兜底 no-op：webview 层 dispatch_user_action_impl
+                // 已把 SubmitForm 无条件转换为 Navigate（user_actions.rs，form_navigation_intent
+                // 构造 action?entry-list），导航经上方 Navigate 臂完成。
                 zero_page_runtime::PageEffect::SubmitForm { .. } => {}
             }
         }
@@ -1243,52 +1246,18 @@ impl RendererRuntime {
         } else if key == "Backspace" {
             self.apply_text_delete_at(target)?;
         } else if key == "Enter" {
-            // t3-pd6：Enter 在表单控件中触发隐式表单提交——
-            // 直接从 shim 读取 form action + 活值构造 GET URL 并调用 handle_navigate。
-            let nav_script = r#"(function(){
-var form=document.querySelector('form');
-if(!form)return null;
-var action=form.getAttribute('action')||'';
-if(!action)return null;
-var inputs=form.querySelectorAll('input,textarea,select');
-var params=[];
-for(var i=0;i<inputs.length;i++){
-    if(inputs[i].name&&inputs[i].value)params.push(encodeURIComponent(inputs[i].name)+'='+encodeURIComponent(inputs[i].value));
-}
-if(!params.length)return null;
-var url=action+(action.indexOf('?')>=0?'&':'?')+params.join('&');
-return url;
-})()"#;
-            let nav_result = self.js_worker.execute_script_direct(nav_script);
-            if let Ok(url) = nav_result {
-                let trimmed = url
-                    .trim()
-                    .strip_prefix('"')
-                    .unwrap_or(&url)
-                    .strip_suffix('"')
-                    .unwrap_or(&url);
-                if !trimmed.is_empty() && trimmed != "null" {
-                    // 相对 URL → 绝对 URL（基于 current_url 的 origin）
-                    let abs_url = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-                        trimmed.to_string()
-                    } else if let Some(current) = &self.current_url {
-                        if let Some(origin_end) = current
-                            .find("://")
-                            .and_then(|i| current[i + 3..].find('/').map(|j| i + 3 + j))
-                        {
-                            format!("{}{}", &current[..origin_end], trimmed)
-                        } else {
-                            format!("{current}/{trimmed}")
-                        }
-                    } else {
-                        trimmed.to_string()
-                    };
-                    return self.handle_navigate(zero_protocol::message::NavigateParams {
-                        url: abs_url,
-                        referrer: None,
-                        navigation_epoch: self.navigation_epoch.wrapping_add(1),
-                    });
-                }
+            // HTML §4.10.2 implicit submission：Enter 在表单控件上派发 submit 事件，未取消
+            // 则按 §4.10.22 提交——SubmitForm 效果由 webview 层转换为 Navigate（Rust 端
+            // form_get_submission_url_with_values 构造 action?entry-list），经
+            // apply_webview_action_effects 的 Navigate 臂导航。
+            // t7：恢复 #154 语义调用——此前合并中被首 form 启发式脚本取代且调用点丢失，
+            // 该脚本走无界 `execute_script_direct`，页面回调长臂下永久阻塞主循环（DDG
+            // 首页 Enter 实证 7/7 整机挂死）。textarea Enter 提交为已知偏离（规范默认
+            // 换行），沿用 #154 的站点兼容决策。
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#implicit-submission
+            if let Err(e) = self.submit_form_on_enter_at(target) {
+                // 有界超时按「结果未知」降级（fix#13 同语义）：动作不重试，主循环保持响应。
+                tracing::warn!("enter implicit submission: {e}");
             }
         } else if key == "Escape" {
             // R3254-K3（keyboard-default-actions goal M2 切片 2）：Esc 默认动作——
@@ -1505,22 +1474,12 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         Ok(Some(url))
     }
 
-    #[allow(dead_code)] // Enter 提交链路改造中间态（PR#158）
+    /// P1a form submit：Enter 在表单控件上 → 解析 enclosing `<form>` 派发 'submit' 事件。
+    /// R3054：未 preventDefault 且 method=GET → 导航到 action?entry-list（SubmitForm 效果
+    /// 由 [`Self::apply_webview_action_effects`] 统一消费，Enter 与 click 提交按钮同路）。
     fn submit_form_on_enter_at(&mut self, selector: &str) -> Result<(), String> {
-        let r = self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::Submit)?;
-        // t3-pd6：Submit 的 Navigate 效果含 SERP URL——推入 pending_navigations
-        // 让主循环 tick_pending_navigation 消费并调用 handle_navigate。
-        if let Some(result) = &r {
-            for effect in &result.effects {
-                if let zero_page_runtime::PageEffect::Navigate(intent) = effect {
-                    if let Ok(mut q) = self.js_worker.pending_navigations().lock() {
-                        q.push(intent.url.clone());
-                    }
-                    return Ok(());
-                }
-            }
-        }
-        Ok(())
+        self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::Submit)
+            .map(|_| ())
     }
 
     /// P1a form submit：click 命中 submit button → 解析 enclosing `<form>` 派发 'submit' 事件。
@@ -3076,7 +3035,6 @@ return JSON.stringify({{action:action,name:name,val:val}});\
 
     fn handle_keyboard_event(&mut self, params: KeyboardEventParams) -> Result<(), String> {
         use zero_protocol::message::KeyboardEventType;
-        eprintln!("KB:HANDLE key={} type={:?}", params.key, params.event_type);
         let event_type = match params.event_type {
             KeyboardEventType::Down => "keydown",
             KeyboardEventType::Up => "keyup",
@@ -3227,7 +3185,6 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 self.run_frame_transaction(|runtime| runtime.handle_mouse_event(params))
             }
             IpcMessageKind::KeyboardEvent(params) => {
-                eprintln!("KB:DISPATCH key={} type={:?}", params.key, params.event_type);
                 self.run_frame_transaction(|runtime| runtime.handle_keyboard_event(params))
             }
             IpcMessageKind::ImeEvent(params) => self.run_frame_transaction(|runtime| runtime.handle_ime_event(params)),
