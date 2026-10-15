@@ -2691,6 +2691,13 @@ fn position_multicol_children(
 /// 用于 multicol 列宽约束：子元素被 taffy 按容器全宽布局，
 /// 但实际需要约束到列宽。此函数递归更新所有后代的 width
 /// 和 content_width，确保内部布局不会溢出列边界。
+///
+/// R5138：OOF（absolute/fixed）子树不入约束链——列宽约束只作用于 in-flow
+/// 内容（css-multicol §4 约束的是列内布局；css-position §10.1 OOF 宽按其
+/// containing block 解析，与其 DOM 祖先内容宽无关）。此前约束经 OOF 链
+/// content 宽传导：OOF 中间层 shrink-to-fit 宽 0（如 auto 宽 absolute 容器）
+/// → 其下 fixed 子的显式 width 也被钳 0（fixed-in-multicol-with-transform-
+/// container 等三案 fixed 绿方整体消失）。
 fn constrain_subtree_width(box_node: &mut LayoutBox, max_width: f32) {
     if box_node.width > max_width {
         let new_width = max_width;
@@ -2703,6 +2710,9 @@ fn constrain_subtree_width(box_node: &mut LayoutBox, max_width: f32) {
     // 递归约束子元素
     let child_max = box_node.content_width;
     for child in &mut box_node.children {
+        if child.is_absolute || child.is_fixed {
+            continue;
+        }
         constrain_subtree_width(child, child_max);
     }
 }
