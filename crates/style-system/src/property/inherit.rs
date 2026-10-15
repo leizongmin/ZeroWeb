@@ -509,13 +509,19 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             true
         }
         // columns
-        // 注：column-count/column-width 的 inherit 暂不支持——强制继承列数会暴露
-        // ZeroWeb multicol 列分布的结构性缺口（multicol-inherit-002 +1.24pp），
-        // 属 R750「spec-correct 但暴露正交缺口」模式。column-rule-* 是视觉属性，
-        // 风险低，保留。
-        // R5129 复测：inherit 臂已实证可达且语义生效，但该案渲染逐像素不变
-        //（内层 div 基线已渲 3 列）——约束在外层/嵌套 multicol 列分布，非关键字；
-        // 启用使 002 14.92→15.68% 同形微涨、零翻绿，维持缓办待嵌套分布修复同落。
+        // R5133：column-count/column-width inherit 臂落地（R750 缓办解除）——前置的
+        // 嵌套 multicol 列分布机制已落（R5132：平衡高重测/先推后放/列顶 margin 截断/
+        // 宽度约束扣 margin）。R5129 复测时启用臂「可达且语义生效但渲染逐像素不变、
+        // 002 同形微涨」的约束面已被机制修复移除。
+        // https://www.w3.org/TR/css3-multicol/#cc
+        "column-count" => {
+            child.column_count = parent.column_count.clone();
+            true
+        }
+        "column-width" => {
+            child.column_width = parent.column_width.clone();
+            true
+        }
         "column-rule-width" => {
             child.column_rule_width = parent.column_rule_width.clone();
             true
