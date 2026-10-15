@@ -317,9 +317,9 @@ fn dispatch_resource_outcomes(
         dispatch_resource_element_event(js_worker, event);
     }
     // R2944：stylesheet 元素级 load/error，位于 DOMContentLoaded 与 window load 之间。
-    // P102：先按 (url, type) 保序去重（spec HTML：每元素 load/error 至少至多触发一次，重复入队
-    // 只加臂量不加语义——github 同一 URL 观察到 ≥2 次），再整批单臂执行，见
-    // [`zero_engine::script_dispatch_link_events_batch`]。
+    // P102：先按 (url, type) 保序去重——shim 派发无 at-most-once 守卫，重复入队条目会重复
+    // 触发 handler；去重使每元素 load/error 收敛到 spec 至多一次（github 同一 URL 观察到
+    // ≥2 次入队）。再整批单臂执行，见 [`zero_engine::script_dispatch_link_events_batch`]。
     let link_events = dedupe_link_events(&link_events);
     if !link_events.is_empty() {
         let batch = script_dispatch_link_events_batch(&link_events);
@@ -476,7 +476,8 @@ fn dispatch_resource_element_event(js_worker: &RendererJsWorker, event: &Resourc
 }
 
 /// P102：按 `(url, type)` 保序去重 link 事件。spec HTML：每元素 load/error 至多触发一次；
-/// 同一 URL 重复入队（finish 与迟到 drain 叠加）只增加派发臂量，不改变语义。
+/// shim 派发无 at-most-once 守卫，同一 (url, type) 重复入队（finish 与迟到 drain 叠加）会
+/// 重复派发、handler 重复执行——去重是向 spec 收敛的语义修复（审查 DEF-2）。
 fn dedupe_link_events(link_events: &[(String, &'static str)]) -> Vec<(String, &'static str)> {
     let mut seen = std::collections::HashSet::new();
     link_events
@@ -2609,38 +2610,43 @@ mod tests {
     }
 
     /// P102 mirror：同批多条 link 事件整批单臂派发——两条样式表各自 onload 触发且保序，
-    /// 同 URL 重复条目去重后不重复触发（spec HTML：每元素 load 至多触发一次）。
+    /// 同 URL 重复条目去重后不重复触发（spec HTML：每元素 load 至多触发一次）。含单引号
+    /// URL 条目钉住生成器转义（TV-3：`escape_js_string` 在最廉价层级无引擎级单测，此处
+    /// 端到端兜底；RFC 3986 允许 `'` 入 path）。
     #[test]
     fn finish_page_load_batches_and_dedupes_link_events_p102() {
         let mut worker = RendererJsWorker::spawn(121);
         let html = "<html><body>\
+            <link rel=\"stylesheet\" href=\"https://example.com/it's.css\">\
             <link rel='stylesheet' href='https://example.com/a.css'>\
             <link rel='stylesheet' href='https://example.com/b.css'>\
             <script>\
               globalThis.__order = [];\
               var links = document.querySelectorAll('link');\
-              links[0].addEventListener('load', function(){ globalThis.__order.push('a'); });\
-              links[1].addEventListener('load', function(){ globalThis.__order.push('b'); });\
+              links[0].addEventListener('load', function(){ globalThis.__order.push('q'); });\
+              links[1].addEventListener('load', function(){ globalThis.__order.push('a'); });\
+              links[2].addEventListener('load', function(){ globalThis.__order.push('b'); });\
             </script>\
             </body></html>";
         worker.set_dom_snapshot(html, "https://example.com/page");
         run_scripts(html, &worker);
-        // 重复条目（a.css 两次）必须只触发一次；顺序 a→b。
+        // 重复条目（it's.css 与 a.css 各两次）必须只触发一次；顺序 q→a→b。
         finish_page_load(
             &worker,
             Vec::new(),
             Vec::new(),
             vec![
+                ("https://example.com/it's.css".to_string(), "load"),
                 ("https://example.com/a.css".to_string(), "load"),
                 ("https://example.com/b.css".to_string(), "load"),
-                ("https://example.com/a.css".to_string(), "load"),
+                ("https://example.com/it's.css".to_string(), "load"),
             ],
             Vec::new(),
         );
         assert_eq!(
             wait_for_global(&worker, "__order.join(',')", 1000),
-            "a,b",
-            "批量 link 事件保序派发且重复条目去重"
+            "q,a,b",
+            "批量 link 事件保序派发、重复条目去重、含引号 URL 正确转义"
         );
         worker.shutdown();
     }
