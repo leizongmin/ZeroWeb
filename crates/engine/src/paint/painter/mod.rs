@@ -3080,13 +3080,20 @@ impl Painter {
                     // 横向裁剪放宽——chromium headless 实测（2026-10-15，probeI/011）：列内容
                     // 溢出可见至最外层容器内容右缘，列宽裁剪会截断溢出几何（011 绿方残半）。
                     // breaking 嵌套子（multirow cap 路径，R4522/R4523 校准）维持原裁剪。
+                    // R5144：非 breaking 平铺子自身宽超列宽（显式/百分比宽溢出）同样右溢
+                    // 可见至容器内容右缘（css-multicol-1 列盒不裁剪、overflow:visible；
+                    // columnfill-auto-max-height-003 width:200% 子应覆盖 col1——列宽裁剪
+                    // 使 col1 残红）。breaking 子维持原裁剪（片段横向越列会重复覆盖邻列
+                    // 内容，002 系 corpus 校准）。嵌套语境分支优先级保持最高（R5144 首版
+                    // 曾置于其后，011 的 400% 子在嵌套绘制内被钳容器右缘残红）。
                     let nested_mc_child = child.is_multicol && !is_breaking;
-                    let clip_w = if nested_mc_child {
-                        (box_node.content_width - col_x).max(col_w + gap / 2.0)
-                    } else if self.mc_paint_nesting > 0 {
+                    let overflow_wide_child = !is_breaking && child.width > col_w + 0.5;
+                    let clip_w = if self.mc_paint_nesting > 0 {
                         // 嵌套语境（外层嵌套 mc 子树内部）：横向不裁剪，外边界由发起
                         // 嵌套绘制的外层片段 clip 兜底。
                         box_node.content_width + 100_000.0
+                    } else if nested_mc_child || overflow_wide_child {
+                        (box_node.content_width - col_x).max(col_w + gap / 2.0)
                     } else {
                         col_w + gap / 2.0
                     };
