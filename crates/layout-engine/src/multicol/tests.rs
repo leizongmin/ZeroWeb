@@ -810,7 +810,7 @@ fn constrain_subtree_width_skips_oof_subtree() {
     };
     in_flow.children.push(abs_box);
 
-    constrain_subtree_width(&mut in_flow, 50.0);
+    constrain_subtree_width(&mut in_flow, 50.0, &std::collections::HashMap::new());
 
     assert_eq!(
         in_flow.children[0].children[0].width, 100.0,
@@ -819,4 +819,86 @@ fn constrain_subtree_width_skips_oof_subtree() {
     assert_eq!(in_flow.children[0].children[0].content_width, 100.0);
     // in-flow 自身约束不变（50 ≤ 50 不触发；子 50 保留）。
     assert_eq!(in_flow.width, 50.0);
+}
+
+/// R5143：百分比指定宽后代以**约束后父内容宽**为基准重导出而非钳到父宽
+/// （css-multicol-1 §1 列盒为列内后代包含块，used 宽可超父宽右溢）。
+/// nested-016 实证：wrap 钳 10px 后 ib `width:500%` 应 500%×10=50px；既有
+/// 级联把 taffy 按容器全宽解析的 250 钳到 10。display:inline（CSS2 §10.3.1
+/// width 不适用）与显式长度（R5135 corpus 校准）维持既有钳制。
+#[test]
+fn constrain_subtree_width_rederives_percentage_descendant() {
+    use zero_css_parser::values::DisplayValue;
+    use zero_dom::Document;
+    let mut doc = Document::new();
+    let ib_id = doc.create_element("div");
+
+    // 结构：mc 子 wrap（auto 宽 100 > 约束 10 → 钳 10）> ib（width:500%，taffy 解析 250）。
+    let ib_style = ComputedStyle {
+        width: LengthValue::Percentage(500.0),
+        display: DisplayValue::InlineBlock,
+        ..Default::default()
+    };
+    let mut styles = std::collections::HashMap::new();
+    styles.insert(ib_id, ib_style);
+
+    let ib = LayoutBox {
+        node_id: Some(ib_id),
+        width: 250.0,
+        content_width: 250.0,
+        ..Default::default()
+    };
+    let mut wrap = LayoutBox {
+        width: 100.0,
+        content_width: 100.0,
+        ..Default::default()
+    };
+    wrap.children.push(ib);
+
+    constrain_subtree_width(&mut wrap, 10.0, &styles);
+
+    assert_eq!(wrap.width, 10.0, "auto 宽 wrap 钳到列宽 10");
+    assert_eq!(
+        wrap.children[0].width, 50.0,
+        "ib 500% 按约束后 wrap content 10 重导出 = 50，非钳 10"
+    );
+    assert_eq!(wrap.children[0].content_width, 50.0);
+}
+
+/// R5143：display:inline 子的百分比 width 不适用（CSS2 §10.3.1），维持既有
+/// 钳制路径不重导出。
+#[test]
+fn constrain_subtree_width_keeps_clamp_for_inline_percentage() {
+    use zero_css_parser::values::DisplayValue;
+    use zero_dom::Document;
+    let mut doc = Document::new();
+    let span_id = doc.create_element("span");
+
+    let span_style = ComputedStyle {
+        width: LengthValue::Percentage(500.0),
+        display: DisplayValue::Inline,
+        ..Default::default()
+    };
+    let mut styles = std::collections::HashMap::new();
+    styles.insert(span_id, span_style);
+
+    let span = LayoutBox {
+        node_id: Some(span_id),
+        width: 250.0,
+        content_width: 250.0,
+        ..Default::default()
+    };
+    let mut wrap = LayoutBox {
+        width: 100.0,
+        content_width: 100.0,
+        ..Default::default()
+    };
+    wrap.children.push(span);
+
+    constrain_subtree_width(&mut wrap, 10.0, &styles);
+
+    assert_eq!(
+        wrap.children[0].width, 10.0,
+        "inline 百分比宽维持既有钳制（width 不适用语义由上游保证）"
+    );
 }

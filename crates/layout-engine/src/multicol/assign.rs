@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::LengthValue;
+use zero_css_parser::values::{DisplayValue, LengthValue};
 use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
 
@@ -610,7 +610,7 @@ pub(super) fn position_multicol_children(
                         .max(0.0);
                     child.content_width = new_content_w;
                     child.content_x = child.border_left + child.padding_left;
-                    constrain_subtree_width(child, new_content_w);
+                    constrain_subtree_width(child, new_content_w, styles);
                 } else {
                     let _old_width = child.width;
                     child.width = avail_border_box;
@@ -622,7 +622,7 @@ pub(super) fn position_multicol_children(
                         .max(0.0);
                     child.content_width = new_content_w;
                     child.content_x = child.border_left + child.padding_left;
-                    constrain_subtree_width(child, new_content_w);
+                    constrain_subtree_width(child, new_content_w, styles);
                 }
             }
         }
@@ -646,7 +646,19 @@ pub(super) fn position_multicol_children(
 /// content 宽传导：OOF 中间层 shrink-to-fit 宽 0（如 auto 宽 absolute 容器）
 /// → 其下 fixed 子的显式 width 也被钳 0（fixed-in-multicol-with-transform-
 /// container 等三案 fixed 绿方整体消失）。
-pub(super) fn constrain_subtree_width(box_node: &mut LayoutBox, max_width: f32) {
+///
+/// R5143：百分比指定宽的后代以**约束后父内容宽**为基准重导出而非钳到父宽
+/// （css-multicol-1 §1 列盒为列内后代包含块，百分比沿包含块链解析、used 宽
+/// 可超父宽右溢；nested-016 实证：wrap 钳 10px 后 ib `width:500%` 应
+/// 500%×10=50px 右溢，级联钳制却把 taffy 按容器全宽解析的 250 压到 10）。
+/// display:inline（CSS2 §10.3.1 width 不适用）维持既有钳制。显式长度/auto
+/// 维持钳制（R5135 corpus 校准：span-all 全带 div{width:11em} 保持溢出会
+/// 回归 6 案）。
+pub(super) fn constrain_subtree_width(
+    box_node: &mut LayoutBox,
+    max_width: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
     if box_node.width > max_width {
         let new_width = max_width;
         let new_content_w =
@@ -661,6 +673,19 @@ pub(super) fn constrain_subtree_width(box_node: &mut LayoutBox, max_width: f32) 
         if child.is_absolute || child.is_fixed {
             continue;
         }
-        constrain_subtree_width(child, child_max);
+        if let Some(style) = child.node_id.and_then(|id| styles.get(&id)) {
+            if let LengthValue::Percentage(p) = &style.width {
+                if style.display != DisplayValue::Inline {
+                    let w = (*p as f32 * child_max / 100.0).max(0.0);
+                    child.width = w;
+                    child.content_width =
+                        (w - child.border_left - child.border_right - child.padding_left - child.padding_right)
+                            .max(0.0);
+                    constrain_subtree_width(child, child.content_width, styles);
+                    continue;
+                }
+            }
+        }
+        constrain_subtree_width(child, child_max, styles);
     }
 }
