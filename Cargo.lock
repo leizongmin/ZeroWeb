@@ -6821,6 +6821,7 @@ dependencies = [
  "arboard",
  "base64",
  "ico",
+ "libc",
  "png 0.17.16",
  "reqwest",
  "resvg",

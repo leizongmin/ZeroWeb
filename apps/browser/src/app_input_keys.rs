@@ -618,6 +618,10 @@ impl BrowserApp {
                     // Ctrl+, 打开设置页面
                     self.open_settings_page();
                 }
+                "/" => {
+                    // Ctrl+/ 打开键盘快捷键帮助页（zero://shortcuts）。
+                    self.open_shortcuts_page();
+                }
                 "h" | "H" => {
                     self.open_history_page();
                 }

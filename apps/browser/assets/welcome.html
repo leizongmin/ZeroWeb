@@ -78,6 +78,33 @@ body {
   color: #5f6368;
 }
 
+.search-area {
+  margin: 4px auto 8px;
+}
+
+.search-form {
+  display: flex;
+  justify-content: center;
+}
+
+.search-input {
+  /* 固定 px 宽：width:100% 百分宽下引擎输入框文本/占位渲染异常（input-probe 实测）。 */
+  width: 560px;
+  height: 44px;
+  padding: 0 22px;
+  font-size: 15px;
+  color: #202124;
+  background: #ffffff;
+  border: 1px solid #dfe1e5;
+  border-radius: 24px;
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: #1a73e8;
+  box-shadow: 0 1px 6px rgba(32, 33, 36, 0.28);
+}
+
 .content {
   display: flex;
   flex-direction: column;
@@ -220,6 +247,16 @@ body {
   .card h3 { color: #e8eaed; }
   .card-desc { color: #9aa0a6; }
 
+  .search-input {
+    background: #1a1d24;
+    border-color: #3c4043;
+    color: #e8eaed;
+  }
+
+  .search-input:focus {
+    border-color: #8ab4f8;
+  }
+
   .shortcut { color: #bdc1c6; }
   .shortcut kbd {
     background: #2d2f36;
@@ -254,6 +291,10 @@ body {
         <p class="tagline">A cross-platform browser built in Rust<br>基于 Rust 的跨平台浏览器</p>
       </div>
     </header>
+
+    <section class="search-area">
+      <!-- search-box -->
+    </section>
 
     <main class="content">
       <section class="section">
