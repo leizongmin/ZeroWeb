@@ -315,24 +315,9 @@ impl BrowserApp {
         // 显示期间持续重绘（用于倒计时消失）。
         self.needs_redraw = true;
 
-        let zoom = self.shell.zoom();
-        // 100% 时不显示（zoom_reset 到 100% 仍短暂提示，便于用户确认复位）。
-        let label = if (zoom - 1.0).abs() < 0.001 {
-            "100%".to_string()
-        } else {
-            format!("{:.0}%", (zoom * 100.0).round())
+        let Some((box_x, box_y, box_w, box_h)) = self.zoom_indicator_rect_for(width, height) else {
+            return;
         };
-        let font_size = layout::CHROME_FONT_SIZE * s;
-        let label_w = self.measure_ui_text_width(&label, font_size);
-        let pad_h = 12.0 * s;
-        let pad_v = 8.0 * s;
-        let box_w = label_w + pad_h * 2.0;
-        let box_h = font_size + pad_v * 2.0;
-        let margin = 16.0 * s;
-        // 右下角，避开滚动条。
-        let scrollbar_w = layout::SCROLLBAR_THICKNESS * s;
-        let box_x = width as f32 - box_w - margin - scrollbar_w;
-        let box_y = height as f32 - box_h - margin;
         let radius = 8.0 * s;
         let border = s.max(1.0);
 
@@ -347,6 +332,15 @@ impl BrowserApp {
             self.chrome_palette.find_bar_bg,
         );
         if self.font_id.is_some() {
+            let zoom = self.shell.zoom();
+            // 100% 时不显示（zoom_reset 到 100% 仍短暂提示，便于用户确认复位）。
+            let label = if (zoom - 1.0).abs() < 0.001 {
+                "100%".to_string()
+            } else {
+                format!("{:.0}%", (zoom * 100.0).round())
+            };
+            let font_size = layout::CHROME_FONT_SIZE * s;
+            let label_w = self.measure_ui_text_width(&label, font_size);
             let (text_top, _) = self.ui_text_centered_in_height(box_h, font_size);
             self.draw_ui_text(
                 &label,

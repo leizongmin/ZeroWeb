@@ -239,4 +239,36 @@ impl BrowserApp {
     pub fn smoke_bookmarks_bar_visible(&self) -> bool {
         self.bookmarks_bar_visible()
     }
+
+    /// 演示流用：缩放百分比浮层是否处于 3 秒显示窗口内（zoom 浮层断言面）。
+    pub fn smoke_zoom_indicator_visible(&self) -> bool {
+        self.zoom_indicator_rect_for(self.physical_size.0, self.physical_size.1)
+            .is_some()
+    }
+
+    /// 演示流用：活动标签页当前焦点选择器（Tab 焦点导航断言面；None = 无焦点）。
+    pub fn smoke_focus_target(&self) -> Option<String> {
+        self.shell
+            .active_tab_id()
+            .and_then(|id| self.tabs.focused_event_target(id))
+            .map(str::to_string)
+    }
+
+    /// 演示流用：地址栏前导 shield/lock slot 矩形（站点信息图标点击定位）。
+    pub fn smoke_address_bar_leading_slot_rect(&self) -> (f32, f32, f32, f32) {
+        self.address_bar_leading_slot_rect()
+    }
+
+    /// 演示流用：地址栏尾随 slot 矩形（站点权限图标点击定位；index 同渲染序）。
+    pub fn smoke_address_bar_trailing_slot_rect(&self, slot_index: u32) -> (f32, f32, f32, f32) {
+        self.address_bar_trailing_slot_rect(slot_index)
+    }
+
+    /// 演示流用：browser 进程共享 Cookie jar 条目数（清除浏览数据断言面）。
+    pub fn smoke_cookie_count(&self) -> usize {
+        zero_net::shared_cookie_store()
+            .lock()
+            .expect("shared cookie store lock")
+            .len()
+    }
 }

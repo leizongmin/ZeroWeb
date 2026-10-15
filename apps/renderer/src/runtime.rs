@@ -228,6 +228,8 @@ pub(crate) struct RendererRuntime {
     /// 最近一次交互目标选择器（键盘事件）。
     /// 页面指针与键盘/IME 焦点的统一路由状态。
     interaction: PageInteractionState,
+    /// 当前焦点是否来自键盘导航（Tab/Shift+Tab）——UA 默认键盘焦点环的绘制条件。
+    focus_from_keyboard: bool,
     /// 与浏览器 TabSnapshot 对齐的导航世代。
     navigation_epoch: u64,
     /// 当前导航内的 Document 世代；新建 Document 时递增。
@@ -481,6 +483,7 @@ impl RendererRuntime {
             js_worker,
             javascript_enabled: true,
             interaction: PageInteractionState::new(),
+            focus_from_keyboard: false,
             navigation_epoch: 0,
             document_generation: 0,
             // 性能门禁优化 S8（2026-08-08）：已发送图片 key——browser 端 ImageCache
@@ -1620,6 +1623,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         let Some(old) = self.interaction.set_focus_owner(None) else {
             return Ok(());
         };
+        self.focus_from_keyboard = false;
         self.sync_webview_focus_owner();
         // R3254-H1：焦点回执（仅实际失焦时）。
         self.send_focus_change(None)?;
@@ -1671,6 +1675,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             return Ok(());
         }
         let old = self.interaction.set_focus_owner(Some(selector.to_string()));
+        // 键盘标记随焦点转移清零——focus_via_tab 在 Tab 路径成功后重新置位。
+        self.focus_from_keyboard = false;
         self.sync_webview_focus_owner();
         if old.as_deref() != Some(selector) {
             // R3254-H1：焦点回执（仅焦点所有者实际变化时，避免重复聚焦刷屏）。
@@ -1787,13 +1793,24 @@ return JSON.stringify({{action:action,name:name,val:val}});\
     fn sync_webview_focus_owner(&mut self) {
         let focused = self.interaction.focus_owner().map(str::to_string);
         if let Some(webview) = self.webview.as_mut() {
-            webview.set_focused_selector(focused.as_deref());
+            webview.set_focused_selector_with_origin(focused.as_deref(), self.focus_from_keyboard);
         }
     }
 
     /// P1a Tab 焦点导航：更新唯一 focus owner 并派发 'focus'。
     fn focus_via_tab(&mut self, selector: &str) -> Result<(), String> {
-        self.focus_target(selector)
+        // 仅焦点实际移动到新目标时置位键盘标记（focus_target 默认清零）：
+        // Tab 无下一可聚焦元素时焦点不变，标记保持原状。
+        let moved = self.interaction.focus_owner() != Some(selector);
+        self.focus_target(selector)?;
+        if moved && self.interaction.focus_owner() == Some(selector) {
+            self.focus_from_keyboard = true;
+            self.sync_webview_focus_owner();
+            // 焦点转移不改 DOM、不产生样式失效——不主动重发布则合成器沿用旧帧，
+            // UA 键盘焦点环不会出现（键盘焦点必须可见，HTML §6.6.1 焦点反馈）。
+            self.rerender_publish_webview()?;
+        }
+        Ok(())
     }
 
     fn sync_cached_html_from_webview(&mut self) {

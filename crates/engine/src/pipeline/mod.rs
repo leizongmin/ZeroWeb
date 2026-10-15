@@ -176,6 +176,9 @@ pub struct RenderPipeline {
     defer_render: bool,
     /// 宿主维护的页面焦点所有者 selector。
     focused_selector: Option<String>,
+    /// 当前焦点是否来自键盘导航（Tab/Shift+Tab）——UA 默认键盘焦点环的绘制条件
+    ///（点击/JS 聚焦不画环，对齐 Chrome :focus-visible 键盘启发式的保守替代）。
+    focused_from_keyboard: bool,
     /// R4353：脚本化滚动偏移（selector 未解析态）——paint 期解析 NodeId 并应用
     /// 内容 origin 平移 + local 背景相位。
     scroll_offsets: Vec<(String, f32, f32)>,
@@ -348,6 +351,12 @@ impl RenderPipeline {
         self.focused_selector = selector.map(str::to_string);
     }
 
+    /// 设置当前焦点是否来自键盘导航（Tab/Shift+Tab）。仅键盘焦点绘制 UA 默认
+    /// 焦点环（点击/JS 聚焦不画，对齐 Chrome :focus-visible 行为）。
+    pub fn set_focused_from_keyboard(&mut self, from_keyboard: bool) {
+        self.focused_from_keyboard = from_keyboard;
+    }
+
     /// R4353：脚本化滚动偏移（reftest harness 自 scrollTop/scrollLeft 记录回流）。
     /// paint 期经 doc 解析 selector → NodeId，应用内容 origin 平移 + local 背景相位。
     pub fn set_scroll_offsets(&mut self, offsets: Vec<(String, f32, f32)>) {
@@ -412,6 +421,7 @@ impl RenderPipeline {
             form_control_compositions: HashMap::new(),
             defer_render: false,
             focused_selector: None,
+            focused_from_keyboard: false,
             scroll_offsets: Vec::new(),
             text_selections: Vec::new(),
             cached_layout: None,
@@ -1179,6 +1189,7 @@ impl RenderPipeline {
                 .as_deref()
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
+        painter.set_focused_from_keyboard(self.focused_from_keyboard);
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
         // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
@@ -1494,6 +1505,7 @@ impl RenderPipeline {
                 .as_deref()
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
+        painter.set_focused_from_keyboard(self.focused_from_keyboard);
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
         // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
@@ -1716,6 +1728,7 @@ impl RenderPipeline {
                 .as_deref()
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
+        painter.set_focused_from_keyboard(self.focused_from_keyboard);
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
         // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
@@ -2092,6 +2105,7 @@ impl RenderPipeline {
                 .as_deref()
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
+        painter.set_focused_from_keyboard(self.focused_from_keyboard);
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
         // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
@@ -2216,6 +2230,7 @@ impl RenderPipeline {
                 .as_deref()
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
+        painter.set_focused_from_keyboard(self.focused_from_keyboard);
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
         // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
