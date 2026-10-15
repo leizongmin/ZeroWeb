@@ -27,6 +27,7 @@ use zero_render_foundation::primitive::{
 
 use crate::colors;
 use crate::favicon_fetch::FaviconFetchState;
+use crate::image_save_fetch::ImageSaveFetchState;
 use crate::input_keys::key_matches;
 use crate::layout;
 use crate::page_scroll::{self, TabScrollState};
@@ -205,6 +206,11 @@ pub struct BrowserApp {
     background_tab_titles: HashMap<TabId, String>,
     /// 当前标签拖拽状态。None 表示未拖拽。
     tab_drag: Option<TabDragState>,
+    /// 标签拖拽让位动画：各标签当前视觉位移（物理像素，0 = 原槽位）。
+    /// 渲染帧朝目标位移指数平滑，拖拽结束/取消后首次渲染清零。
+    tab_drag_paint_offsets: HashMap<TabId, f32>,
+    /// 让位动画上一帧时间戳（帧率无关平滑）。
+    tab_drag_anim_last: Option<Instant>,
     /// 触摸 tap 候选：Started 时记录，Ended 时若移动 <阈值则合成为左键 click。
     /// 仅 chrome UI 区（非页面内容）走此路径；页面内容区用 touch_scroll。
     touch_tap_candidate: Option<(u64, f64, f64)>,
@@ -236,6 +242,8 @@ pub struct BrowserApp {
     favicon_fetch: FaviconFetchState,
     /// 进行中的 view-source 源码异步抓取（后台线程 + 主循环 poll）。
     view_source_fetch: ViewSourceFetchState,
+    /// 进行中的图片另存为异步抓取（后台线程 + 主循环 poll，走下载管线落盘）。
+    image_save_fetch: ImageSaveFetchState,
     /// 是否显示下载浮动面板（也可因活动下载自动展开）。
     download_panel_open: bool,
     /// 最近一次「在文件夹中显示」动作打开的目录（演示流断言面）。
@@ -354,6 +362,8 @@ impl BrowserApp {
             last_tab_click_id: None,
             background_tab_titles: HashMap::new(),
             tab_drag: None,
+            tab_drag_paint_offsets: HashMap::new(),
+            tab_drag_anim_last: None,
             touch_tap_candidate: None,
             touch_long_press: None,
             color_scheme,
@@ -369,6 +379,7 @@ impl BrowserApp {
             scrollbar_visible_until: None,
             favicon_fetch: FaviconFetchState::new(),
             view_source_fetch: ViewSourceFetchState::new(),
+            image_save_fetch: ImageSaveFetchState::new(),
             download_panel_open: false,
             last_opened_download_dir: None,
             find_match_ranges: Vec::new(),
@@ -530,6 +541,9 @@ impl BrowserApp {
         }
         for download in self.tabs.take_pending_downloads() {
             self.save_attachment_download(download);
+        }
+        for (tab_id, url, result) in self.image_save_fetch.take_completed() {
+            self.save_image_fetch_result(tab_id, url, result);
         }
 
         // 检测后台标签 title 变化（如聊天应用收到消息改 title 加 "(3)"），
@@ -3008,5 +3022,6 @@ include!("app_render_address.rs");
 // 平台相关独立函数（is_wayland、字体加载、颜色方案检测等）
 // 拆分到独立文件以控制 app.rs 体积
 include!("app_platform.rs");
+include!("app_image_save.rs");
 include!("app_page_fonts.rs");
 include!("app_smoke_state.rs");

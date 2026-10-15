@@ -2998,7 +2998,7 @@ fn is_inline_renderable_content_type(essence: &str) -> bool {
 /// 拒绝路径分隔符与空值（信任边界：响应头来自外部服务器）。URL 回退先剥
 /// query/fragment 再取末段（如 `/download?file=report.zip` 落盘 `download`）——
 /// `?`/`#` 不是合法文件名字符，Windows 写入会直接失败。
-fn parse_attachment_filename(disposition: &str, url: &str) -> String {
+pub(crate) fn parse_attachment_filename(disposition: &str, url: &str) -> String {
     let sanitize = |raw: &str| -> Option<String> {
         let trimmed = raw.trim().trim_matches('"').trim();
         if trimmed.is_empty() {
