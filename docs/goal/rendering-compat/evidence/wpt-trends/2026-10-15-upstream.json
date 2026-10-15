@@ -6,6 +6,6 @@
   "passed": 15399,
   "rate_pct": 92.8,
   "extra": "failed=1191;skipped=0",
-  "git_sha": "415273148",
-  "note": "R5130 css-multicol-2 column-height/column-wrap 落地：族 C +8 翻绿"
+  "git_sha": "b0a028324",
+  "note": "R5131 balance 先推后放（ZW_MC_BALANCE_FIT）中间态 A/B"
 }

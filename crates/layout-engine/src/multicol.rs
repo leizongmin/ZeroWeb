@@ -1114,6 +1114,36 @@ fn layout_multicol(
         return;
     }
 
+    // R1341 同族 log-only 诊断（ZW_MULTICOL_DEBUG_NESTED）：嵌套 multicol 子的高度
+    // 时间线（外层分配用 taffy 高 vs 内层平衡写回高）。
+    if std::env::var("ZW_MULTICOL_DEBUG_NESTED").is_ok() {
+        let nested: Vec<(usize, f32)> = child_info
+            .iter()
+            .filter(|&&(idx, _)| {
+                container.children[idx]
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .is_some_and(|s| {
+                        matches!(s.column_count, ColumnCountComputedValue::Number(_))
+                            || matches!(s.column_width, ColumnWidthComputedValue::Length(_))
+                    })
+            })
+            .map(|&(idx, h)| (idx, h))
+            .collect();
+        if !nested.is_empty() {
+            eprintln!(
+                "[mc-nested] container cw={:.1} ch={:.1} info(count={}, colw={:.1}, gap={:.1}, seq={}) children={:?}",
+                container.content_width,
+                container.content_height,
+                info.count,
+                info.column_width,
+                info.gap,
+                info.sequential_fill,
+                child_info,
+            );
+        }
+    }
+
     // column-span:all spanner 路径：独立处理（区域分割 + 全宽 spanner），不走走单区域路径。
     if has_spanner {
         // R4250：adjoining-margin 模型与容器高写回仅在 margin-trim 生效的容器启用
@@ -1387,6 +1417,27 @@ fn layout_multicol(
     // 到下方列行；nowrap/非固定列高保持 row_height=0（单行 inline 溢出）。
     let row_pitch = wrap_row_pitch.unwrap_or(0.0);
     let region_height = position_multicol_children(container, &assignments, info, 0.0, row_pitch);
+    // R1341 同族 log-only 诊断（ZW_MULTICOL_DEBUG_NESTED）：分配结果与子终态几何。
+    if std::env::var("ZW_MULTICOL_DEBUG_NESTED").is_ok() {
+        eprintln!(
+            "[mc-out] cw={:.1} assignments={:?}",
+            container.content_width,
+            assignments
+                .iter()
+                .map(|col| col.iter().map(|f| (f.child_idx, f.visual_height)).collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+        );
+        for (i, c) in container.children.iter().enumerate() {
+            eprintln!(
+                "[mc-out]   child[{i}] x={:.1} y={:.1} w={:.1} h={:.1} frags={}",
+                c.x,
+                c.y,
+                c.width,
+                c.height,
+                c.column_span_offsets.len(),
+            );
+        }
+    }
     let container_explicit = container
         .node_id
         .and_then(|id| styles.get(&id))
