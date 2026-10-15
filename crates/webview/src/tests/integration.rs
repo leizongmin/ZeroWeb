@@ -2,6 +2,7 @@
 use super::super::*;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 // ── 事件系统集成测试（通过 V8 + DOM polyfill 端到端验证）──
 
@@ -446,12 +447,25 @@ fn test_webview_set_timeout_calls_fn() {
 fn test_webview_set_interval_calls_fn() {
     let mut wv = WebView::new(WebViewConfig::default());
     // R100：shim 真 setInterval（spec 异步）——首次回调经 host tick 派发后可观察。
-    let _ = wv.execute_script_with_dom(
-        "globalThis.__cnt = 0; setInterval(function() { globalThis.__cnt++; }, 10); globalThis.__cnt;",
+    let result = wv.execute_script_with_dom(
+        "globalThis.__cnt = 0; globalThis.__iv = setInterval(function() { globalThis.__cnt++; }, 10); globalThis.__cnt;",
     );
-    let result = wv.execute_script_with_dom("globalThis.__cnt;");
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), "1", "setInterval callback should run after first tick");
+
+    // Host timers dispatch asynchronously. A single immediate execute can arrive before
+    // the timer thread posts its resolver while the workspace is under parallel load.
+    // Poll through normal WebView turns with a bounded deadline, as the renderer timer
+    // regression does, instead of assuming the first turn always spans 10 ms.
+    let deadline = Instant::now() + Duration::from_secs(1);
+    let mut count = 0;
+    while count == 0 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+        let result = wv.execute_script_with_dom("String(globalThis.__cnt);");
+        assert!(result.is_ok());
+        count = result.unwrap().parse::<u32>().unwrap_or(0);
+    }
+    let _ = wv.execute_script_with_dom("clearInterval(globalThis.__iv);");
+    assert!(count >= 1, "setInterval callback should run after first tick");
 }
 
 // ── Web Storage API 集成测试（通过 V8 + DOM polyfill 端到端验证）──
