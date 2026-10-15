@@ -451,6 +451,84 @@ impl V8Sandbox {
         let _ = self.execute(&js);
     }
 
+    /// t-p103 D2-1 批决议：原生按序逐条 call `__zwResolveCallback`，每条后立即
+    /// `perform_microtask_checkpoint`（= 逐次 execute 的逐跳语义，仅省每跳脚本
+    /// 编译）；逐条 try/catch 隔离 + 每跳独立看门狗装载。实现注释含 spec 依据与
+    /// 返修记录（字符串批方案的 checkpoint 时机缺陷）。
+    pub fn resolve_async_callbacks_batch(&mut self, items: &[(String, String)]) {
+        if items.is_empty() {
+            return;
+        }
+        // t-p103 D2-1（返修）：原生逐条 call + 每条后 microtask checkpoint——字符串批
+        // （单脚本连调 N 次 + execute 末统一 drain）会让后一条 macrotask 级 resolve
+        // 抢在前一条的 .then 微任务前执行，违反 HTML 事件循环「task 完成后执行
+        // microtask checkpoint 整链排空」语义（event_loop_mixed_async_order_r2953
+        // 实测红）。逐条 call + checkpoint 与逐次 execute 逐跳语义精确一致，
+        // 仅省每跳脚本编译（风暴 ~2 万跳的收益本体）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#perform-a-microtask-checkpoint
+        let persistent = self.config.persistent_context;
+        let watchdog_tx = self.watchdog_tx.clone();
+        let Some(isolate) = self.isolate.as_mut() else {
+            return;
+        };
+        // SAFETY: 与 execute 一致——OwnedIsolate 创建时已 enter，此处配对
+        // IsolateEnterGuard 维持栈式 enter/exit 纪律。
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
+        // thread_safe_handle 须在 scope!（可变借用 isolate）之前取——批内每跳看门狗
+        // Arm 都要用，而 scope 存续期无法再借 isolate。
+        let thread_safe_handle = isolate.thread_safe_handle();
+        let cached_ptr: *mut _ = &mut self.cached_context;
+        v8::scope!(let hs, isolate);
+        // SAFETY: cached_ptr 指向 self.cached_context，与 self.isolate 不重叠。
+        let context = unsafe { resolve_context(persistent, cached_ptr, hs) };
+        let mut ctx_scope = v8::ContextScope::new(hs, context);
+        v8::tc_scope!(let try_catch, &mut ctx_scope);
+        // shim 未注入 = 整批 no-op（逐次 execute 的外层 if 守卫等价）。
+        let Some(key) = v8::String::new(try_catch, "__zwResolveCallback") else {
+            return;
+        };
+        let Some(cb_val) = context.global(try_catch).get(try_catch, key.into()) else {
+            return;
+        };
+        let Ok(cb) = v8::Local::<v8::Function>::try_from(cb_val) else {
+            return;
+        };
+        for (id, result) in items {
+            // 每跳独立看门狗装载（与逐次 execute 的 arm/disarm 语义一致；
+            // Drop 统一撤除，早退无残留）。
+            let _timeout_guard: Option<WatchdogGuard> = if self.config.timeout_ms > 0 {
+                let seq = self.watchdog_seq;
+                self.watchdog_seq += 1;
+                if let Some(tx) = &watchdog_tx {
+                    let _ = tx.send(WatchdogMsg::Arm {
+                        seq,
+                        timeout_ms: self.config.timeout_ms,
+                        handle: thread_safe_handle.clone(),
+                    });
+                    Some(WatchdogGuard { tx: tx.clone(), seq })
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let (Some(id_s), Some(r_s)) = (v8::String::new(try_catch, id), v8::String::new(try_catch, result)) else {
+                continue;
+            };
+            let undef = v8::undefined(try_catch);
+            // 逐条隔离：单条 call 抛错（含超时终止异常）不阻断同批其余条目。
+            let _ = cb.call(try_catch, undef.into(), &[id_s.into(), r_s.into()]);
+            // 本跳的微任务整链排空后才处理下一跳（spec checkpoint 语义）。
+            try_catch.perform_microtask_checkpoint();
+            if try_catch.has_caught() {
+                try_catch.reset();
+            }
+        }
+    }
+
     /// 设置脚本执行超时（毫秒）；0 表示无超时。
     pub fn set_timeout_ms(&mut self, timeout_ms: u64) {
         self.config.timeout_ms = timeout_ms;
@@ -861,6 +939,9 @@ impl crate::Sandbox for V8Sandbox {
     }
     fn resolve_async_callback(&mut self, id: &str, result: &str) {
         V8Sandbox::resolve_async_callback(self, id, result);
+    }
+    fn resolve_async_callbacks_batch(&mut self, items: &[(String, String)]) {
+        V8Sandbox::resolve_async_callbacks_batch(self, items);
     }
     fn set_timeout_ms(&mut self, timeout_ms: u64) {
         V8Sandbox::set_timeout_ms(self, timeout_ms)
@@ -1364,6 +1445,37 @@ mod tests {
         assert_eq!(evil.value, "false");
         let received = sandbox.execute("globalThis.__zw_received").unwrap();
         assert_eq!(received.value, "x\"); evil");
+    }
+
+    #[test]
+    fn test_resolve_async_callbacks_batch_order_and_isolation() {
+        // t-p103 D2-1：批决议保序（= FIFO 提交序）+ 逐条 try/catch 隔离——单条
+        // resolve 抛错不阻断同批其余条目；空批 no-op。
+        let config = SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = V8Sandbox::with_config(config).unwrap();
+        sandbox
+            .execute(
+                "globalThis.__resolved = [];
+                 globalThis.__zwResolveCallback = function(id, result) {
+                     if (id === 'boom') { throw new Error('sentinel'); }
+                     globalThis.__resolved.push(id + '=' + result);
+                 };",
+            )
+            .unwrap();
+        sandbox.resolve_async_callbacks_batch(&[]);
+        sandbox.resolve_async_callbacks_batch(&[
+            ("a".to_string(), "1".to_string()),
+            ("boom".to_string(), "x".to_string()),
+            ("c".to_string(), "3".to_string()),
+        ]);
+        let r = sandbox.execute("globalThis.__resolved.join(',')").unwrap();
+        assert_eq!(r.value, "a=1,c=3");
+        // 沙箱仍可用（批内异常被隔离，无遗留异常态）。
+        let r = sandbox.execute("1 + 1").unwrap();
+        assert_eq!(r.value, "2");
     }
 
     #[test]
