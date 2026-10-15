@@ -1,5 +1,6 @@
 //! 浏览器设置 — 用户偏好和配置管理。
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -119,6 +120,9 @@ pub struct BrowserSettings {
     /// 浏览器外壳主题（Auto 跟随系统）。
     #[serde(default)]
     pub color_theme: ColorThemePreference,
+    /// 按站点记住的页面缩放（origin → zoom；Chrome per-site zoom 语义）。
+    #[serde(default)]
+    pub zoom_by_origin: HashMap<String, f32>,
 }
 
 impl Default for BrowserSettings {
@@ -134,6 +138,7 @@ impl Default for BrowserSettings {
             default_zoom: 1.0,
             download_directory: String::new(),
             color_theme: ColorThemePreference::Auto,
+            zoom_by_origin: HashMap::new(),
         }
     }
 }

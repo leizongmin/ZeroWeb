@@ -93,6 +93,15 @@ enum Step {
     Type {
         text: String,
     },
+    /// 滚轮滚动（真实 `handle_scroll` 路径）：`line` 模式（默认）传 LineDelta，
+    /// `pixel` 模式传 PixelDelta；`dy` 正值向上（winit 符号约定）。
+    Wheel {
+        x: f64,
+        y: f64,
+        dx: f32,
+        dy: f32,
+        pixel: bool,
+    },
     Shot {
         name: String,
     },
@@ -146,6 +155,11 @@ enum Step {
     /// 地址栏文本断言：`contains` 子串匹配。
     AssertAddressBar {
         pattern: String,
+    },
+    /// 垂直滚动偏移断言（T26 平滑滚动）：当前偏移须落在 `[min, max]`（物理像素）。
+    AssertScrollY {
+        min: f32,
+        max: f32,
     },
     /// 崩溃恢复气泡断言（T20）：`visible` 为期望可见性。
     AssertSessionRestore {
@@ -246,6 +260,13 @@ impl Step {
                     .unwrap_or_default(),
             }),
             "type" => Ok(Self::Type { text: text("text")? }),
+            "wheel" => Ok(Self::Wheel {
+                x: num("x")?,
+                y: num("y")?,
+                dx: value.get("dx").and_then(Value::as_f64).unwrap_or(0.0) as f32,
+                dy: value.get("dy").and_then(Value::as_f64).unwrap_or(0.0) as f32,
+                pixel: value.get("mode").and_then(Value::as_str) == Some("pixel"),
+            }),
             "shot" => Ok(Self::Shot { name: text("name")? }),
             "log" => Ok(Self::Log { msg: text("msg")? }),
             "assert_url" => {
@@ -326,6 +347,15 @@ impl Step {
             "assert_addressbar" => Ok(Self::AssertAddressBar {
                 pattern: text("contains")?,
             }),
+            "assert_scroll_y" => {
+                let min = value.get("min").and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                let max = value
+                    .get("max")
+                    .and_then(Value::as_f64)
+                    .map(|v| v as f32)
+                    .ok_or_else(|| bad("assert_scroll_y requires number field \"max\""))?;
+                Ok(Self::AssertScrollY { min, max })
+            }
             "assert_session_restore" => Ok(Self::AssertSessionRestore {
                 visible: value
                     .get("visible")
@@ -497,6 +527,19 @@ impl UiDriver {
                     app.handle_key(&ch.to_string(), true, None);
                     app.handle_key(&ch.to_string(), false, None);
                 }
+                Ok(())
+            }
+            Step::Wheel { x, y, dx, dy, pixel } => {
+                let delta = if *pixel {
+                    zero_host_runtime::event::MouseScrollDelta::PixelDelta(*dx as f64, *dy as f64)
+                } else {
+                    zero_host_runtime::event::MouseScrollDelta::LineDelta(*dx, *dy)
+                };
+                app.handle_scroll(delta, *x, *y);
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} wheel x={x} y={y} dx={dx} dy={dy} pixel={pixel}",
+                    self.next + 1
+                );
                 Ok(())
             }
             Step::Shot { name } => {
@@ -678,6 +721,19 @@ impl UiDriver {
                     ));
                 }
                 tracing::info!("UI_DRIVER_STEP step={} assert_addressbar status=passed", self.next + 1);
+                Ok(())
+            }
+            Step::AssertScrollY { min, max } => {
+                let actual = app.smoke_scroll_offset_y();
+                if actual < *min || actual > *max {
+                    return Err(format!(
+                        "assert_scroll_y failed: scroll y is {actual}, expected within [{min}, {max}]"
+                    ));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_scroll_y={actual} status=passed",
+                    self.next + 1
+                );
                 Ok(())
             }
             Step::AssertSessionRestore { visible } => {

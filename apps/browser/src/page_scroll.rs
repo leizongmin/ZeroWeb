@@ -1,5 +1,7 @@
 //! 页面视口滚动状态与滚动条布局。
 
+use std::time::{Duration, Instant};
+
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives, RoundedRectPrimitive};
@@ -13,6 +15,70 @@ pub struct TabScrollState {
     pub x: f32,
     /// 垂直偏移。
     pub y: f32,
+}
+
+/// 滚轮平滑滚动是否启用（Chrome 同款滚轮动画；env `ZW_SMOOTH_SCROLL=0` 关闭）。
+pub fn smooth_scroll_enabled() -> bool {
+    static ENABLED: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_SMOOTH_SCROLL").as_deref() != Ok("0"));
+    *ENABLED
+}
+
+/// 单次滚轮平滑滚动的动画时长（Chrome ~200ms easing）。
+pub const WHEEL_SMOOTH_DURATION: Duration = Duration::from_millis(200);
+
+/// 滚轮平滑滚动动画：起点到目标偏移的 ease-out 插值（帧循环驱动）。
+///
+/// 连续滚轮以当前视觉位置为新起点、累积位移为新目标重启动画——目标跳变但
+/// 视觉位置连续，无跳帧。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScrollAnimation {
+    from: TabScrollState,
+    to: TabScrollState,
+    start: Instant,
+    duration: Duration,
+}
+
+impl ScrollAnimation {
+    /// 创建从 `from` 到 `to` 的动画（`start` 为起始时刻）。
+    pub fn new(from: TabScrollState, to: TabScrollState, start: Instant, duration: Duration) -> Self {
+        Self {
+            from,
+            to,
+            start,
+            duration,
+        }
+    }
+
+    /// 动画目标偏移（新滚轮输入在其上累积）。
+    pub fn target(&self) -> TabScrollState {
+        self.to
+    }
+
+    /// `now` 时刻应显示的偏移（完成后停在目标）。
+    pub fn value_at(&self, now: Instant) -> TabScrollState {
+        let t = if self.duration.is_zero() {
+            1.0
+        } else {
+            (now.duration_since(self.start).as_secs_f32() / self.duration.as_secs_f32()).clamp(0.0, 1.0)
+        };
+        let k = Self::ease_out_cubic(t);
+        TabScrollState {
+            x: self.from.x + (self.to.x - self.from.x) * k,
+            y: self.from.y + (self.to.y - self.from.y) * k,
+        }
+    }
+
+    /// 动画是否已到达目标。
+    pub fn is_finished(&self, now: Instant) -> bool {
+        now.duration_since(self.start) >= self.duration
+    }
+
+    /// ease-out cubic：起步快、收尾缓（Chrome 滚轮动画同族曲线）。
+    fn ease_out_cubic(t: f32) -> f32 {
+        let u = 1.0 - t;
+        1.0 - u * u * u
+    }
 }
 
 /// 当前帧的视口与滚动条几何（物理像素）。
@@ -535,5 +601,27 @@ mod tests {
         assert!(!layout.show_horizontal);
         assert_eq!(layout.viewport_w, 100.0);
         assert_eq!(layout.max_scroll_x, 0.0);
+    }
+
+    /// T26：平滑滚动动画从原位起步、中间帧介于起点与目标之间（非瞬跳）、
+    /// ease-out 前半程过半、完成后停在目标。
+    #[test]
+    fn scroll_animation_eases_toward_target_and_finishes() {
+        let start = Instant::now();
+        let from = TabScrollState { x: 0.0, y: 0.0 };
+        let to = TabScrollState { x: 0.0, y: 400.0 };
+        let anim = ScrollAnimation::new(from, to, start, Duration::from_millis(200));
+
+        assert_eq!(anim.value_at(start), from);
+        let mid = anim.value_at(start + Duration::from_millis(60));
+        assert!(mid.y > 0.0 && mid.y < 400.0, "mid y = {}", mid.y);
+        assert!(
+            mid.y > 200.0,
+            "ease-out should cover over half early: mid y = {}",
+            mid.y
+        );
+        assert!(anim.is_finished(start + Duration::from_millis(200)));
+        assert_eq!(anim.value_at(start + Duration::from_millis(250)), to);
+        assert_eq!(anim.target(), to);
     }
 }

@@ -135,6 +135,15 @@ impl BrowserApp {
         self.shell.zoom()
     }
 
+    /// 演示流用：活动标签页当前垂直滚动偏移（物理像素；平滑滚动断言面）。
+    pub fn smoke_scroll_offset_y(&self) -> f32 {
+        self.shell
+            .active_tab_id()
+            .and_then(|id| self.scroll.get(&id))
+            .map(|state| state.y)
+            .unwrap_or(0.0)
+    }
+
     /// 演示流用：页面查找状态 `(active, query, current, total)`。
     pub fn smoke_find_state(&self) -> (bool, String, usize, usize) {
         let state = self.shell.find_state();
