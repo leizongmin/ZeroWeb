@@ -725,3 +725,6 @@ mod r5154_last_baseline_fallback_tests;
 /// R5156 multicol 空盒（无流内内容 → 无断点机会）不可断——超高单片段原地溢出
 ///（css-break-3 §5.1 × css-multicol-1；contain-size-breaks-001-ref 驱动）。
 mod r5156_multicol_empty_unbreakable_tests;
+/// R5157 contain:size 的 grid track 几何尺寸化 + grid-gap legacy 别名
+///（css-contain-1 §3.1 × css-align-3；contain-size-grid-002 驱动）。
+mod r5157_contain_size_grid_tests;

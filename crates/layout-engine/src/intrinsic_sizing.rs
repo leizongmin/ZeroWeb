@@ -2617,6 +2617,102 @@ fn is_flex_grid_container(s: &ComputedStyle) -> bool {
     )
 }
 
+/// R5157 kill-switch 读取（进程级缓存）：`ZW_GRID_CONTAIN_SIZE_TRACKS=0` 回退
+/// containment grid track 几何尺寸化（abs shrink-to-fit 宽/高两臂）。
+pub(crate) fn grid_contain_size_tracks_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_GRID_CONTAIN_SIZE_TRACKS").as_deref() != Ok("0"))
+}
+
+/// 解析显式 grid-template track 串为 `(definite px 和, 总 track 数)`：definite px
+/// track 计入和；auto/fr/百分比/minmax()/repeat()/fit-content() track 各计 1 个、
+/// 贡献 0（containment 抑制内容贡献 → auto track 0；fr/% 在收缩语境自由空间/基准
+/// 为 0；repeat() 保守计 1，同 [`count_explicit_grid_columns`] 口径）。
+/// line-name `[a]` 跳过不计。返回 `None` = 无显式 track 定义（none/空）。
+fn parse_grid_track_extent(template: &str) -> Option<(f32, usize)> {
+    let template = template.trim();
+    if template.is_empty() || template.eq_ignore_ascii_case("none") {
+        return None;
+    }
+    let mut tokens: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut depth = 0i32;
+    for ch in template.chars() {
+        match ch {
+            '(' | ')' => {
+                depth += if ch == '(' { 1 } else { -1 };
+                cur.push(ch);
+            }
+            c if c.is_whitespace() && depth == 0 => {
+                if !cur.is_empty() {
+                    tokens.push(std::mem::take(&mut cur));
+                }
+            }
+            c => cur.push(c),
+        }
+    }
+    if !cur.is_empty() {
+        tokens.push(cur);
+    }
+    let mut sum = 0.0f32;
+    let mut n = 0usize;
+    for t in &tokens {
+        // line-name 片段（"[a]"、"['a" 与 "b']" 皆可能跨 token）不计 track 数——
+        // track 词法不会以 '[' 开头或 ']' 结尾。
+        if t.starts_with('[') || t.ends_with(']') {
+            continue;
+        }
+        n += 1;
+        if let Some(v) = t
+            .strip_suffix("px")
+            .map(str::trim)
+            .filter(|x| !x.is_empty())
+            .and_then(|x| x.parse::<f32>().ok())
+            .filter(|v| *v >= 0.0)
+        {
+            sum += v;
+        }
+    }
+    (n > 0).then_some((sum, n))
+}
+
+/// R5157（css-contain-1 §3.1）：contain:size 的 grid 按「无内容」尺寸化时 track 几何
+/// 仍参与——grid-template-columns/rows 与 gap 是尺寸声明非内容（"grid-gap,
+/// grid-template-columns, and grid-template-rows do affect the size of the grid, even
+/// with size containment"）。definite px track 计入、其余 track 贡献 0。definite CIS
+/// 声明优先于 track 几何（R4008 判例，converter/既有臂已按 CIS 解析）→ 返回 None
+/// 不落本 helper。返回内容盒 track 和（frame 由调用方按侧加）。
+/// contain-size-grid-002：contained abs grid 旧塌 0×0 → 红块全露。
+pub(crate) fn contained_grid_track_extent(
+    box_node: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    rows: bool,
+) -> Option<f32> {
+    if !grid_contain_size_tracks_enabled() {
+        return None;
+    }
+    let s = box_node.node_id.and_then(|id| styles.get(&id))?;
+    if !s.contain.has_size() || !matches!(s.display, DisplayValue::Grid | DisplayValue::InlineGrid) {
+        return None;
+    }
+    let cis = if rows {
+        s.contain_intrinsic_height.as_ref()
+    } else {
+        s.contain_intrinsic_width.as_ref()
+    };
+    if cis.is_some_and(|v| resolve_intrinsic_real_length(v, s).is_some()) {
+        return None;
+    }
+    let template = if rows {
+        s.grid_template_rows.as_deref()?
+    } else {
+        s.grid_template_columns.as_deref()?
+    };
+    let (def_sum, n) = parse_grid_track_extent(template)?;
+    let gap = resolve_intrinsic_real_length(if rows { &s.row_gap } else { &s.column_gap }, s).unwrap_or(0.0);
+    Some((def_sum + gap * (n as f32 - 1.0)).max(0.0))
+}
+
 /// 诊断：遍历布局树，对 shrink-to-fit 候选容器打印测得的固有宽度 vs 当前宽度。
 ///
 /// 候选 = flex/grid 容器且（width 为 auto/max-content/min-content，或容器本身是 inline-level
@@ -2829,6 +2925,93 @@ AAAA</div></body></html>"#,
         assert!(
             a > 0.0 && (a - b).abs() < 1.0,
             "pre-line max-content must equal widest line: split={a}, widest={b}"
+        );
+    }
+
+    // ── R5157（css-contain-1 §3.1）：contain:size 的 grid track 几何尺寸化 ──
+
+    /// 用 DOM 解析真实 HTML 计算样式并布局，返回（文档，样式表，#t 盒克隆）供
+    /// `contained_grid_track_extent` 直调。
+    fn layout_case(
+        html: &str,
+    ) -> (
+        zero_dom::Document,
+        HashMap<zero_dom::NodeId, zero_style_system::ComputedStyle>,
+        LayoutBox,
+    ) {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(doc: &zero_dom::Document, b: &'a LayoutBox) -> Option<&'a LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some("t")
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(doc, c))
+        }
+        let box_ = find(&doc, &result.root).expect("目标盒 #t 不存在").clone();
+        (doc, styles, box_)
+    }
+
+    /// 显式 track 串解析：definite px 计入和，auto/fr/minmax 各计 1 个贡献 0，line-name 不计。
+    #[test]
+    fn r5157_parse_grid_track_extent_definite_and_counts() {
+        assert_eq!(parse_grid_track_extent("auto 80px"), Some((80.0, 2)));
+        assert_eq!(parse_grid_track_extent("40px 40px"), Some((80.0, 2)));
+        assert_eq!(parse_grid_track_extent("[a] 10px [b c] 1fr"), Some((10.0, 2)));
+        // paren 内空白不切分：minmax(...) 整体 1 token、贡献 0。
+        assert_eq!(parse_grid_track_extent("minmax(10px, 20px) 30px"), Some((30.0, 2)));
+        assert_eq!(parse_grid_track_extent("none"), None);
+        assert_eq!(parse_grid_track_extent("   "), None);
+    }
+
+    /// contain:size grid 的列/行 track 几何：grid-002 形（auto 80px + gap 20 / 40px×2 +
+    /// gap 20）→ 两轴各 100（gap 20 计入 n-1=1 次）。
+    #[test]
+    fn r5157_contained_grid_track_extent_columns_and_rows() {
+        let (doc, styles, box_) = layout_case(
+            r#"<html><body style="margin:0"><div id="t" style="contain:size; display:grid; grid-gap:20px; grid-template-columns:auto 80px; grid-template-rows:40px 40px"></div></body></html>"#,
+        );
+        let w = contained_grid_track_extent(&box_, &styles, false).expect("列 track 几何应存在");
+        assert!((w - 100.0).abs() < 0.5, "列和应 0+20+80=100，实际 {w}");
+        let h = contained_grid_track_extent(&box_, &styles, true).expect("行 track 几何应存在");
+        assert!((h - 100.0).abs() < 0.5, "行和应 40+20+40=100，实际 {h}");
+        let _ = doc;
+    }
+
+    /// R4008 判例优先：definite CIS 在位时 track 几何不参与（helper 返回 None，由既有
+    /// CIS 臂解析）；无 containment 或非 grid 均不落本 helper。
+    #[test]
+    fn r5157_contained_grid_track_extent_gates() {
+        let (_, styles, box_) = layout_case(
+            r#"<html><body style="margin:0"><div id="t" style="contain:size; contain-intrinsic-size:111px 222px; display:grid; grid-template-columns:auto 80px"></div></body></html>"#,
+        );
+        assert_eq!(
+            contained_grid_track_extent(&box_, &styles, false),
+            None,
+            "definite CIS 优先于 track 几何（R4008）"
+        );
+        let (_, styles, box_) = layout_case(
+            r#"<html><body style="margin:0"><div id="t" style="display:grid; grid-template-columns:auto 80px"></div></body></html>"#,
+        );
+        assert_eq!(
+            contained_grid_track_extent(&box_, &styles, false),
+            None,
+            "无 containment 不落本 helper（正常 grid 尺寸化路径）"
+        );
+        let (_, styles, box_) = layout_case(
+            r#"<html><body style="margin:0"><div id="t" style="contain:size; grid-template-columns:auto 80px"></div></body></html>"#,
+        );
+        assert_eq!(
+            contained_grid_track_extent(&box_, &styles, false),
+            None,
+            "非 grid 容器不落本 helper"
         );
     }
 

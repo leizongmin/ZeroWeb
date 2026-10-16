@@ -307,6 +307,16 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         "-webkit-flex" => "flex",
         "-webkit-transition" => "transition",
         "-webkit-animation" => "animation",
+        // R5157：gap 簇 legacy 别名（css-align-3 §8 gap 属性 Legacy alias：grid-gap/
+        // grid-row-gap/grid-column-gap，值语法与标准名完全一致）。grid-gap 为 1:1 简写
+        // 别名，须在简写展开前 canonical 化——否则落下方 match 无分支 → 当 longhand
+        // 透传 → apply 无 "grid-gap" 槽位 → 静默 no-op（contain-size-grid-002 的
+        // `grid-gap: 20px` 实证 row_gap/column_gap 全落初始值）。grid-row-gap/
+        // grid-column-gap 为 longhand 别名，canonical 化后经 `_ =>` 透传路径正常应用。
+        // driving: css/css-contain/contain-size-grid-002。
+        "grid-gap" => "gap",
+        "grid-row-gap" => "row-gap",
+        "grid-column-gap" => "column-gap",
         other => other,
     };
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };

@@ -744,7 +744,17 @@ impl LayoutEngine {
             // 不参与，col-width auto 时 R5152 臂归零内容。
             // https://drafts.csswg.org/css-contain-1/#containment-size
             let mc_contain_size_fix = crate::intrinsic_sizing::mc_contain_size_fix_enabled();
-            if s.contain.has_size() && (!mc_contain_size_fix || !b.is_multicol) {
+            // R5157：grid 例外——containment 只抑制内容贡献，track 几何仍参与
+            //（css-contain-1 §3.1：grid-gap, grid-template-columns/rows do affect the
+            // size of the grid, even with size containment；contain-size-grid-002：
+            // contained abs grid 旧塌 0×0 → 红块全露）。测量走
+            // contained_grid_track_extent（definite px track + gap，其余 track 0）。
+            let grid_tracks_fix = crate::intrinsic_sizing::grid_contain_size_tracks_enabled()
+                && matches!(
+                    s.display,
+                    zero_css_parser::values::DisplayValue::Grid | zero_css_parser::values::DisplayValue::InlineGrid
+                );
+            if s.contain.has_size() && (!mc_contain_size_fix || !b.is_multicol) && !grid_tracks_fix {
                 continue;
             }
             // 内含 float 后代时跳过：float 子的 max-width/约束宽度参与 shrink-to-fit
@@ -772,8 +782,9 @@ impl LayoutEngine {
             let mut height_fix = matches!(s.height, LengthValue::Auto) && !(top_def.is_some() && bottom_def.is_some());
             // R5152：multicol 例外只放开宽侧（列几何参与 shrink-to-fit）——高侧维持
             // R4034b containment 语义（auto 高已由 converter 解析 0/CIS），行高近似
-            // 不得把内容拉回。
-            if s.contain.has_size() {
+            // 不得把内容拉回。R5157：grid 例外两侧同放（row track 几何是尺寸声明，
+            // grid-template-rows do affect the size，contain-size-grid-002 高 40+20+40）。
+            if s.contain.has_size() && !grid_tracks_fix {
                 height_fix = false;
             }
             // taffy 已解出非 0 宽/高（如 width-019 的 float 内容、margin-applies-to 族）时不
@@ -813,6 +824,11 @@ impl LayoutEngine {
                     //（css-sizing-3：无固有宽/比 → 300；% 宽 → 300；ratio-only → 0）。
                     let measured = if replaced_collapsed {
                         crate::intrinsic_sizing::abspos_replaced_max_content(b, doc, styles)
+                    } else if grid_tracks_fix {
+                        // R5157：contained grid 宽 = 列 track 几何（内容盒，frame 由
+                        // 下方 target_bw 统一加）；无显式列定义 → 0（无内容贡献，同
+                        // containment 塌 0 语义）。
+                        crate::intrinsic_sizing::contained_grid_track_extent(b, styles, false).unwrap_or(0.0)
                     } else {
                         crate::intrinsic_sizing::block_max_content_width(b, doc, styles)
                     }
@@ -835,9 +851,14 @@ impl LayoutEngine {
                     // 时优先用之（009/023/030：height="50" attr = 固有高 50，default 150 错），
                     // 无固有高回落 default object size 高 150（004：无任何尺寸来源 → 300×150）；
                     // 文本叶 line-height 近似不适用（svg 无行盒语义）。
+                    // R5157：contained grid 高 = 行 track 几何 + frame（尺寸声明非内容；
+                    // 无显式行定义 → 0，同 containment 塌 0 语义）。
                     let h = if replaced_collapsed {
                         crate::svg_default_size::svg_attr_intrinsic_height(b.node_id, doc, s)
                             .unwrap_or(crate::svg_default_size::SVG_DEFAULT_H)
+                    } else if grid_tracks_fix {
+                        let frame_h = b.padding_top + b.padding_bottom + b.border_top + b.border_bottom;
+                        crate::intrinsic_sizing::contained_grid_track_extent(b, styles, true).unwrap_or(0.0) + frame_h
                     } else {
                         let (fs, lh) = crate::inline::resolve_font_metrics(Some(s));
                         lh.max(fs).max(1.0)

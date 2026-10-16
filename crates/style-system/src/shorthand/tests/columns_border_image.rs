@@ -256,6 +256,50 @@ fn test_gap_shorthand_preserves_important() {
     assert!(result.iter().all(|(_, _, _, spec)| *spec == (0, 1, 0)));
 }
 
+// ── grid-gap 簇 legacy 别名（R5157，css-align-3 §8 Legacy alias）──
+
+#[test]
+/// grid-gap 单值别名与 gap 展开一致：三声明（legacy gap + row-gap + column-gap）
+fn test_grid_gap_alias_single_value() {
+    let result = expand_one("grid-gap", "10px", false, (0, 0, 1));
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0], ("gap".to_string(), "10px".to_string(), false, (0, 0, 1)));
+    assert_eq!(result[1], ("row-gap".to_string(), "10px".to_string(), false, (0, 0, 1)));
+    assert_eq!(
+        result[2],
+        ("column-gap".to_string(), "10px".to_string(), false, (0, 0, 1))
+    );
+}
+
+#[test]
+/// grid-gap 双值别名走 gap 双值形态（R4252：不下发 legacy gap）
+fn test_grid_gap_alias_two_values() {
+    let result = expand_one("grid-gap", "10px 20px", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "row-gap");
+    assert_eq!(result[0].1, "10px");
+    assert_eq!(result[1].0, "column-gap");
+    assert_eq!(result[1].1, "20px");
+}
+
+#[test]
+/// grid-gap 别名非法值同样整条丢弃
+fn test_grid_gap_alias_rejects_invalid() {
+    assert!(expand_one("grid-gap", "sparkle", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("grid-gap", "10px 20px 30px", false, (0, 0, 1)).is_empty());
+}
+
+#[test]
+/// grid-row-gap / grid-column-gap longhand 别名 canonical 化后透传
+fn test_grid_gap_longhand_aliases() {
+    let row = expand_one("grid-row-gap", "7px", false, (0, 0, 1));
+    assert_eq!(row.len(), 1);
+    assert_eq!(row[0], ("row-gap".to_string(), "7px".to_string(), false, (0, 0, 1)));
+    let col = expand_one("grid-column-gap", "9px", false, (0, 0, 1));
+    assert_eq!(col.len(), 1);
+    assert_eq!(col[0], ("column-gap".to_string(), "9px".to_string(), false, (0, 0, 1)));
+}
+
 // ── border-image 简写测试 ──
 
 #[test]
