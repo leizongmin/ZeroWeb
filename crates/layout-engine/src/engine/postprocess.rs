@@ -1517,8 +1517,10 @@ fn shift_siblings_after_ifc_grow_inner(
             .node_id
             .and_then(|id| styles.get(&id))
             .is_some_and(|s| {
-                s.contain.has_size()
-                    || (s.contain.has_inline_size()
+                // R5153：container-type 蕴含 containment（css-contain-5 §3.1）——同源
+                // kill-switch `ZW_CONTAINER_TYPE_CONTAIN=0`（converter ct_*_containment）。
+                crate::converter::ct_size_containment(s)
+                    || (crate::converter::ct_inline_size_containment(s)
                         && matches!(
                             s.writing_mode,
                             zero_style_system::WritingModeValue::VerticalRl

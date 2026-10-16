@@ -3154,7 +3154,10 @@ pub(crate) fn remeasure_inline_only_containers(
         .node_id
         .and_then(|id| {
             styles.get(&id).map(|s| {
-                s.contain.has_size()
+                // R5153：container-type 蕴含 size containment（css-contain-5 §3.1）——
+                // 同门豁免 DOM 文本重测（重测按内容长高，contained 容器 definite 高胜）。
+                // kill-switch 同源 `ZW_CONTAINER_TYPE_CONTAIN=0`。
+                crate::converter::ct_size_containment(s)
                     && !doc.get(id).is_some_and(|n| match &n.kind {
                         NodeKind::Element(e) => {
                             matches!(e.local_name(), "input" | "select" | "textarea")

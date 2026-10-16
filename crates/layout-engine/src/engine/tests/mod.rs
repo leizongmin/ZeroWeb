@@ -717,3 +717,7 @@ mod r5148_fieldset_legend_multicol_tests;
 /// R5152 contain:size 的 multicol 按「无内容」尺寸化、列几何仍参与（css-contain-1 §3.1
 /// × css-multicol-1；contain-size-multicol-001/002/003 驱动）。
 mod r5152_contain_size_multicol_sizing_tests;
+/// R5153 container-type 蕴含 containment 布局接入 + containment 下 aspect-ratio
+/// 高转移（css-contain-5 §3.1 × css-sizing-4 §4.1；contain-size-014 /
+/// canvas-contain-size 驱动）。
+mod r5153_container_type_containment_tests;

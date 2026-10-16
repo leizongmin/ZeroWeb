@@ -160,7 +160,9 @@ impl LayoutEngine {
             // 内联尺寸 content 抑制（converter 已置 CIS-or-0）——intrinsic 测量趟须跳过，
             // 否则测量值覆盖受控宽（regular-container：fit-content→MaxContent 测得 200
             // 覆盖 CIS-or-0 的 0 → 容器 300 应 100 纯边框）。
-            if s.contain.has_inline_size() {
+            // R5153：container-type 蕴含 inline-size containment（css-contain-5 §3.1）——
+            // 同门跳过（converter 已置 CIS-or-0，测量不得覆盖）。kill-switch 同源。
+            if crate::converter::ct_inline_size_containment(s) {
                 continue;
             }
             // R1018：block-level 仅在 width:MaxContent 或 auto-float 时触发（bare fit-content 经

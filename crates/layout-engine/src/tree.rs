@@ -1114,10 +1114,14 @@ fn apply_replaced_element_sizing(
     // auto 三门齐备时，把 definite 宽 × attr 比写为 definite 高——**不经 computed
     // aspect_ratio**（R4055-N 教训：hint 注入会全链激活 R3997/R4006/tree.rs 比消费方）。
     // 其余 contain:size 路径维持 R2429 早返回（013 无 attr，不受影响）。
+    // R5153：+ canvas——HTML §attributes-for-embedded-content-and-images：canvas 的
+    // width/height 属性**只**映射 aspect ratio（不映射 CSS 宽高，canvas-contain-size
+    // assert 即此语义），本臂只消费比值，语义恰合（20×20 attrs + width:100px +
+    // contain:size 应 100×100）。
     // kill-switch `ZW_CONTAIN_ATTR_RATIO=0`。
     if computed.contain.has_size()
         && std::env::var("ZW_CONTAIN_ATTR_RATIO").as_deref() != Ok("0")
-        && tag == "img"
+        && (tag == "img" || tag == "canvas")
         && matches!(computed.width, LengthValue::Px(w) if w.is_finite() && w > 0.0)
         && matches!(computed.height, LengthValue::Auto)
         && let (Some(aw), Some(ah)) = (

@@ -16,8 +16,43 @@ use zero_style_system::{
 
 use taffy::prelude::*;
 
+use zero_style_system::property::types::ContainerType;
+
 mod grid;
 use grid::*;
+
+/// R5153 kill-switch 读取（进程级缓存）：`ZW_CONTAINER_TYPE_CONTAIN=0` 回退
+/// container-type 蕴含 containment 的布局消费点。热路径（converter 每 box 一次）
+/// 不耐受 `std::env::var` 线性扫描——OnceLock 首读后原子加载；env 需在进程启动前
+/// 设置（A/B 与单测均满足）。
+pub(crate) fn container_type_contain_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_CONTAINER_TYPE_CONTAIN").as_deref() != Ok("0"))
+}
+
+/// R5153（css-contain-5 §3.1 query container containment）：container-type 蕴含
+/// containment——`size` 型施加 layout+style+**size**、`inline-size` 型施加
+/// layout+style+**inline-size**。布局尺寸化消费点按「声明 contain ∪ container-type
+/// 蕴含」取 effective 口径；`contain`/`container-type` 两声明保持独立序列化，
+/// 不互相合成（消费点：converter 尺寸/min_size 臂 + engine has_size_containment
+/// 物化；float/multicol/inline 侧 `contain.has_size()` 消费点暂未接入，FIXME）。
+/// https://drafts.csswg.org/css-contain-5/#container-type
+pub(crate) fn ct_size_containment(style: &ComputedStyle) -> bool {
+    style.contain.has_size() || (container_type_contain_enabled() && style.container_type == ContainerType::Size)
+}
+
+/// R5153：同 [`ct_size_containment`]，inline-size 型。
+pub(crate) fn ct_inline_size_containment(style: &ComputedStyle) -> bool {
+    style.contain.has_inline_size()
+        || (container_type_contain_enabled() && style.container_type == ContainerType::InlineSize)
+}
+
+/// R5153 kill-switch 读取：`ZW_CONTAIN_AR_TRANSFER=0` 回退 containment 下 CSS
+/// aspect-ratio 高转移臂（converter 尺寸臂 height Auto 分支）。
+fn contain_ar_transfer_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_CONTAIN_AR_TRANSFER").as_deref() != Ok("0"))
+}
 
 /// grid-template-areas 区域映射类型。
 ///
@@ -211,7 +246,7 @@ pub fn computed_style_to_taffy(
                 }
             }
         },
-        size: if style.contain.has_size() || style.contain.has_inline_size() {
+        size: if ct_size_containment(style) || ct_inline_size_containment(style) {
             // R2239：contain:size — content-based auto 尺寸解析为 0（content 不贡献 size），显式尺寸保留。
             // R2256：contain-intrinsic-size 覆盖 content-based auto 维的 0（CSS Sizing 4）。
             // R2257：block-level auto-width 维持 fill-CB（stretch-fit）——size containment 只折叠
@@ -296,7 +331,7 @@ pub fn computed_style_to_taffy(
             //（contain-inline-size-vertical-rl：vertical-rl + fit-content + border
             // 50px 0 应高 = 纯边框 100；contain-inline-size-intrinsic 第二盒
             // width:100 + CIS-inline:50 + vertical-rl 内联子 height:35 不参与）。
-            let inline_only = !style.contain.has_size() && style.contain.has_inline_size();
+            let inline_only = !ct_size_containment(style) && ct_inline_size_containment(style);
             // WritingModeValue 随 ComputedStyle（style-system re-export css-parser values）可用。
             let vertical_inline = inline_only && style.writing_mode.is_vertical_block_flow();
             taffy::geometry::Size {
@@ -355,6 +390,31 @@ pub fn computed_style_to_taffy(
                     }
                 } else {
                     match &style.height {
+                        // R5153（css-sizing-4 §4.1 + css-contain-1 §containment-size）：containment
+                        // 只抑制 content-based auto 高——元素自身 aspect-ratio 非 content 派生，
+                        // definite 宽下转移出高（contain-size-014：container-type:size +
+                        // aspect-ratio:1 + width:100px 应 100×100，img height=200 内容不参与）。
+                        // CIS 高声明优先（R2256 语义不变）；CSS 声明比值（replaced 固有比走
+                        // tree 侧 R4055/R5153 臂）；仅水平书写臂（vertical 轴映射 FIXME）。
+                        // kill-switch `ZW_CONTAIN_AR_TRANSFER=0` 回退。
+                        LengthValue::Auto
+                            if contain_ar_transfer_enabled()
+                                && style.contain_intrinsic_height.is_none()
+                                && style.aspect_ratio.is_some_and(|r| r.is_finite() && r > 0.0)
+                                && matches!(&style.width, LengthValue::Px(w) if w.is_finite() && *w > 0.0) =>
+                        {
+                            let ratio = style.aspect_ratio.unwrap_or(1.0);
+                            let css_w = match &style.width {
+                                LengthValue::Px(w) => *w as f32,
+                                _ => unreachable!("guard 已保证 Px"),
+                            };
+                            let transferred = css_w / ratio;
+                            if transferred.is_finite() && transferred > 0.0 {
+                                taffy::style::Dimension::length(transferred.max(0.5))
+                            } else {
+                                cis_dim_boxed(&style.contain_intrinsic_height, frame_y)
+                            }
+                        }
                         LengthValue::Auto => cis_dim_boxed(&style.contain_intrinsic_height, frame_y),
                         LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => {
                             cis_dim_boxed(&style.contain_intrinsic_height, frame_y)
@@ -449,7 +509,7 @@ pub fn computed_style_to_taffy(
         // containment 下内联轴的 auto min 须钳 0，否则 flex-basis 被内容 min-content 地板
         // 撑开（contain-inline-size-flexitem：item flex-basis:100 + 300px 子应 100，
         // 旧 min-width:auto→auto 测内容 300 撑开）。block 轴无 containment，min_height 照常。
-        min_size: if style.contain.has_size() {
+        min_size: if ct_size_containment(style) {
             taffy::geometry::Size {
                 width: match &style.min_width {
                     LengthValue::Auto => taffy::style::Dimension::length(0.0),
@@ -461,7 +521,7 @@ pub fn computed_style_to_taffy(
                     _ => convert_min_length_to_dimension(&style.min_height, vw, vh),
                 },
             }
-        } else if style.contain.has_inline_size() {
+        } else if ct_inline_size_containment(style) {
             taffy::geometry::Size {
                 // 内联轴：水平书写 = width（auto min → 0）；vertical 书写 = height。
                 // 显式 min 长度保留（containment 只抑制 content-based auto）。
