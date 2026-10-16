@@ -61,3 +61,4 @@
 2026-10-16,upstream,v1.10,16590,15421,93.0,failed=1169;skipped=0,285fdfbf8,R5144 multicol 列内溢出宽平铺子右溢可见——columnfill-auto-max-height-003 翻绿 0.00%，nested-013/014/021 附带改善，corpus 1170→1169
 2026-10-16,upstream,v1.10,16590,15431,93.0,failed=1159;skipped=0,25b878175,R5145 svg premult demultiply——缝隙族(skewy/rotate45/skewxy/nested-008)10案0.00%翻绿
 2026-10-16,upstream,v1.10,16590,15444,93.09,failed=1146;skipped=0,570f63675,R5147 行度量整数化二级落地——quotes-025/026/027 + border-image-slice-fill-001 0.00%翻绿，run-in ×8 等 +14，新红 4（multicol-span-all-fieldset ×3 spanner 移位 + line-breaking-023 != 全等非退化），净 −10
+2026-10-16,upstream,v1.10,16590,15447,93.11,failed=1143;skipped=0,23e7f0030,R5148 fieldset multicol legend 排除——multicol-span-all-fieldset ×3 翻绿（001/002 0.002026-10-16,upstream,v1.10,16590,15447,93.11,failed=1143;skipped=0,23e7f0030,R5148 fieldset multicol legend 排除——multicol-span-all-fieldset ×3 翻绿（001/002 0.00%、003 0.11%），零新增红
