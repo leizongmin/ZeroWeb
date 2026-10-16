@@ -70,6 +70,18 @@ static RESIZE_TRACE_FILE: std::sync::LazyLock<std::sync::Mutex<Option<std::fs::F
         _ => std::sync::Mutex::new(None),
     });
 
+/// t8 诊断基座：主循环消息分发计时（`ZW_MAINLOOP_TRACE` 启用，三态模式同上）。
+/// 每次 dispatch_message 计墙钟，>200ms 落一行「消息 kind + 耗时」——用于把 DDG
+/// 键入后 35s 无响应归因到具体 handle_* 分支（worker 长臂已被
+/// ZW_JS_WORKER_CENSUS 排除：247 臂全 0-1ms，卡顿在主循环自身）。
+static MAINLOOP_TRACE_FILE: std::sync::LazyLock<std::sync::Mutex<Option<std::fs::File>>> =
+    std::sync::LazyLock::new(|| match std::env::var("ZW_MAINLOOP_TRACE") {
+        Ok(path) if path != "1" => {
+            std::sync::Mutex::new(std::fs::OpenOptions::new().create(true).append(true).open(path).ok())
+        }
+        _ => std::sync::Mutex::new(None),
+    });
+
 /// ZW_RESIZE_TRACE 诊断输出（epoch 毫秒时间戳，与 browser 侧 trace 对齐时序）。
 fn resize_trace(msg: impl std::fmt::Display) {
     if !*RESIZE_TRACE {
@@ -3416,7 +3428,23 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                     if self.inflight_fetches.try_complete(&msg) {
                         continue;
                     }
-                    if let Err(e) = self.dispatch_message(msg) {
+                    // t8 诊断基座：分发计时——>200ms 落 kind+耗时（MAINLOOP_TRACE_FILE）。
+                    let mainloop_t0 = MAINLOOP_TRACE_FILE.lock().is_ok().then(std::time::Instant::now);
+                    let mainloop_kind =
+                        mainloop_t0.map(|_| format!("{:?}", msg.kind).chars().take(64).collect::<String>());
+                    let dispatch_result = self.dispatch_message(msg);
+                    if let Some(t0) = mainloop_t0 {
+                        let elapsed = t0.elapsed();
+                        if elapsed > std::time::Duration::from_millis(200)
+                            && let Ok(mut guard) = MAINLOOP_TRACE_FILE.lock()
+                            && let Some(sink) = guard.as_mut()
+                            && let Some(kind) = &mainloop_kind
+                        {
+                            use std::io::Write as _;
+                            let _ = writeln!(sink, "slow dispatch {elapsed:?} {kind}");
+                        }
+                    }
+                    if let Err(e) = dispatch_result {
                         if browser_ipc_disconnected(&e) {
                             tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
                             return Ok(());
