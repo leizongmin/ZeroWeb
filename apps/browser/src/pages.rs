@@ -75,6 +75,32 @@ pub fn percent_encode_query_value(value: &str) -> String {
     out
 }
 
+/// 表单 `application/x-www-form-urlencoded` 参数值解码（`+`→空格，`%XX` 还原）。
+///
+/// 书签编辑表单经渲染端表单序列化提交（GET query，WHATWG urlencoded serializer）：
+/// 原文空格编码为 `+`、`+` 本身编码为 `%2B`，故先替换 `+` 再做 %XX 还原，顺序不可反
+///（反序会把 `%2B` 还原出的 `+` 二次吞成空格）。
+///
+/// https://url.spec.whatwg.org/#concept-urlencoded-serializer
+pub fn percent_decode_form_value(value: &str) -> String {
+    let bytes = value.replace('+', " ").into_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or("");
+            if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                decoded.push(byte);
+                i += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
 /// 生成「查看源代码」页面。
 pub fn generate_view_source_page(source_url: &str, html: &str) -> String {
     format!(
@@ -897,26 +923,109 @@ pub fn generate_downloads_html(downloads: &zero_browser_shell::DownloadManager) 
 }
 
 /// 生成书签管理页面 HTML。
-pub fn generate_bookmarks_html(bookmarks: &zero_browser_shell::Bookmarks) -> String {
+///
+/// `query` 为搜索框提交的过滤词（`zero://bookmarks?q=…`）；非空时按标题或 URL
+/// 子串过滤（`Bookmarks::search`，大小写不敏感，同历史页模式）。每条书签附带编辑
+///（`zero://bookmarks/edit?id=…`）与删除（`zero://bookmarks/delete?id=…`）链接；
+/// 删除/编辑链接回跳时携带当前过滤词，操作一条后仍停留在同一过滤视图。
+pub fn generate_bookmarks_html(bookmarks: &zero_browser_shell::Bookmarks, query: Option<&str>) -> String {
     use zero_browser_shell::UiLanguage;
     let lang = UiLanguage::detect_from_env();
-    let (title, empty) = match lang {
-        UiLanguage::ZhCn => ("书签 — ZeroBrowser", "暂无书签。"),
-        UiLanguage::EnUs => ("Bookmarks — ZeroBrowser", "No bookmarks yet."),
+    let (title, empty, search_placeholder, search_label, edit_label, delete_label, no_match) = match lang {
+        UiLanguage::ZhCn => (
+            "书签 — ZeroBrowser",
+            "暂无书签。",
+            "搜索书签",
+            "搜索",
+            "编辑",
+            "删除",
+            "没有匹配的书签。",
+        ),
+        UiLanguage::EnUs => (
+            "Bookmarks — ZeroBrowser",
+            "No bookmarks yet.",
+            "Search bookmarks",
+            "Search",
+            "Edit",
+            "Delete",
+            "No matching bookmarks.",
+        ),
     };
-    let mut rows = String::new();
-    for bookmark in bookmarks.list_root() {
-        rows.push_str(&format!(
-            r#"<li style="margin:8px 0;"><a href="{url}" style="color:#1a73e8;text-decoration:none;">{title}</a><br><span style="font-size:12px;color:#80868b;">{url}</span></li>"#,
-            title = html_escape(bookmark.title()),
-            url = html_escape(bookmark.url()),
-        ));
-    }
-    let body = if rows.is_empty() {
-        format!("<p style=\"color:#666;\">{empty}</p>")
+    let active_query = query.unwrap_or("").trim();
+    let rows: Vec<&zero_browser_shell::Bookmark> = if active_query.is_empty() {
+        bookmarks.list_root().into_iter().collect()
     } else {
-        format!("<ul style=\"padding-left:20px;\">{rows}</ul>")
+        bookmarks.search(active_query).collect()
     };
+    // 编辑/删除链接回跳时携带当前过滤词，操作一条后仍停留在同一过滤视图。
+    let query_suffix = if active_query.is_empty() {
+        String::new()
+    } else {
+        format!("&q={}", percent_encode_query_value(active_query))
+    };
+    let search_box = format!(
+        r#"<form action="zero://bookmarks" method="get" style="margin:0 0 16px;">
+  <input type="text" name="q" value="{value}" placeholder="{search_placeholder}" aria-label="{search_placeholder}" style="font-size:14px;padding:6px 10px;border:1px solid #dadce0;border-radius:4px;width:320px;">
+  <button type="submit" style="font-size:14px;padding:6px 16px;margin-left:8px;background:#1a73e8;color:#fff;border:none;border-radius:4px;">{search_label}</button>
+</form>"#,
+        value = html_escape(active_query),
+    );
+    let body = if rows.is_empty() {
+        let empty_text = if active_query.is_empty() { empty } else { no_match };
+        format!(r#"{search_box}<p style="color:#666;">{empty_text}</p>"#)
+    } else {
+        let mut items = String::new();
+        for bookmark in rows {
+            items.push_str(&format!(
+                r#"<li style="margin:8px 0;"><a href="{href}" style="color:#1a73e8;text-decoration:none;">{label}</a><br><span style="font-size:12px;color:#80868b;">{href}</span> <a href="zero://bookmarks/edit?id={id}{query_suffix}" style="font-size:12px;color:#1a73e8;text-decoration:none;margin-left:8px;">{edit_label}</a> <a href="zero://bookmarks/delete?id={id}{query_suffix}" style="font-size:12px;color:#d93025;text-decoration:none;margin-left:8px;">{delete_label}</a></li>"#,
+                href = html_escape(bookmark.url()),
+                label = html_escape(bookmark.title()),
+                id = bookmark.id().0,
+            ));
+        }
+        format!(r#"{search_box}<ul style="padding-left:20px;">{items}</ul>"#)
+    };
+    internal_page_shell(title, &body)
+}
+
+/// 生成书签编辑表单页 HTML（`zero://bookmarks/edit?id=…`）。
+///
+/// 表单 GET 提交到 `zero://bookmarks/save`（id/title/url + 隐藏 `q` 保留过滤词）；
+/// 取消链接回书签列表（同样保留过滤词）。
+pub fn generate_bookmarks_edit_html(bookmark: &zero_browser_shell::Bookmark, query: Option<&str>) -> String {
+    use zero_browser_shell::UiLanguage;
+    let lang = UiLanguage::detect_from_env();
+    let (title, name_label, url_label, save_label, cancel_label) = match lang {
+        UiLanguage::ZhCn => ("编辑书签 — ZeroBrowser", "名称", "网址", "保存", "取消"),
+        UiLanguage::EnUs => ("Edit Bookmark — ZeroBrowser", "Name", "URL", "Save", "Cancel"),
+    };
+    let active_query = query.unwrap_or("").trim();
+    let query_suffix = if active_query.is_empty() {
+        String::new()
+    } else {
+        format!("?q={}", percent_encode_query_value(active_query))
+    };
+    let q_hidden = if active_query.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"  <input type="hidden" name="q" value="{}">"#,
+            html_escape(active_query)
+        )
+    };
+    let body = format!(
+        r#"<form action="zero://bookmarks/save" method="get">
+  <input type="hidden" name="id" value="{id}">
+{q_hidden}
+  <p><label>{name_label}: <input type="text" name="title" value="{title_value}" aria-label="{name_label}" style="font-size:14px;padding:6px 10px;border:1px solid #dadce0;border-radius:4px;width:420px;"></label></p>
+  <p><label>{url_label}: <input type="text" name="url" value="{url_value}" aria-label="{url_label}" style="font-size:14px;padding:6px 10px;border:1px solid #dadce0;border-radius:4px;width:420px;"></label></p>
+  <button type="submit" style="font-size:14px;padding:6px 16px;background:#1a73e8;color:#fff;border:none;border-radius:4px;">{save_label}</button>
+  <a href="zero://bookmarks{query_suffix}" style="margin-left:12px;color:#1a73e8;text-decoration:none;font-size:13px;">{cancel_label}</a>
+</form>"#,
+        id = bookmark.id().0,
+        title_value = html_escape(bookmark.title()),
+        url_value = html_escape(bookmark.url()),
+    );
     internal_page_shell(title, &body)
 }
 
@@ -1408,7 +1517,65 @@ mod tests {
     #[test]
     fn generate_bookmarks_html_renders_empty_state() {
         let bookmarks = zero_browser_shell::Bookmarks::default();
-        let html = generate_bookmarks_html(&bookmarks);
+        let html = generate_bookmarks_html(&bookmarks, None);
         assert!(html.contains("Bookmarks") || html.contains("书签"));
+    }
+
+    #[test]
+    fn generate_bookmarks_html_lists_entries_with_edit_delete_links() {
+        let mut bookmarks = zero_browser_shell::Bookmarks::default();
+        let id = bookmarks.add("Example", "https://example.com/page?a=1&b=2", None);
+        let html = generate_bookmarks_html(&bookmarks, None);
+        // 编辑/删除链接按数字 ID 携带，回跳保留过滤词的挂点在链接尾。
+        assert!(html.contains(&format!("zero://bookmarks/edit?id={}", id.0)));
+        assert!(html.contains(&format!("zero://bookmarks/delete?id={}", id.0)));
+        // 搜索框提交回 zero://bookmarks。
+        assert!(html.contains(r#"action="zero://bookmarks""#));
+        assert!(html.contains(r#"name="q""#));
+    }
+
+    #[test]
+    fn generate_bookmarks_html_filters_by_query() {
+        let mut bookmarks = zero_browser_shell::Bookmarks::default();
+        bookmarks.add("Example", "https://example.com/a", None);
+        bookmarks.add("Rust Blog", "https://www.rust-lang.org/", None);
+        let html = generate_bookmarks_html(&bookmarks, Some("rust"));
+        assert!(html.contains("rust-lang.org"));
+        assert!(
+            !html.contains("example.com/a"),
+            "non-matching entry must be filtered out"
+        );
+        // 过滤视图下的编辑/删除链接保留过滤词（`&q=` 由 percent_encode 编码）。
+        assert!(html.contains("&q=rust"));
+    }
+
+    #[test]
+    fn generate_bookmarks_edit_html_prefills_form() {
+        let mut bookmarks = zero_browser_shell::Bookmarks::default();
+        let id = bookmarks.add("My Site", "https://example.com/x?y=1", None);
+        let bookmark = bookmarks.get(id).unwrap();
+        let html = generate_bookmarks_edit_html(bookmark, Some("rust"));
+        assert!(html.contains(r#"action="zero://bookmarks/save""#));
+        assert!(html.contains(&format!(r#"name="id" value="{}""#, id.0)));
+        // 属性值经 HTML 转义（URL 含 `?`/`&` 类字符不破坏属性边界）。
+        assert!(html.contains(r#"name="url" value="https://example.com/x?y=1""#));
+        assert!(html.contains(r#"name="title" value="My Site""#));
+        // 过滤词经隐藏域随表单保留。
+        assert!(html.contains(r#"name="q" value="rust""#));
+        // 取消链接回书签列表（保留过滤词）。
+        assert!(html.contains(r#"href="zero://bookmarks?q=rust""#));
+    }
+
+    #[test]
+    fn percent_decode_form_value_roundtrip() {
+        // 表单 urlencoded 语义：空格→`+`、`+`→`%2B`；解码顺序 `+` 先替换。
+        assert_eq!(percent_decode_form_value("a+b"), "a b");
+        assert_eq!(percent_decode_form_value("C%2B%2B+%E6%95%99%E7%A8%8B"), "C++ 教程");
+        assert_eq!(
+            percent_decode_form_value("https%3A%2F%2Fexample.com%2Fx"),
+            "https://example.com/x"
+        );
+        // 截断的 %XX 按字面保留。
+        assert_eq!(percent_decode_form_value("100%"), "100%");
     }
 }

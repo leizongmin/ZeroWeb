@@ -1165,6 +1165,119 @@ fn open_history_page_sets_url() {
     assert_eq!(app.address_bar_text(), "zero://history");
 }
 
+/// T40 书签管理页：列表页含搜索框与每条书签的编辑/删除链接。
+#[test]
+fn open_bookmarks_page_lists_search_edit_delete() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let id = app.shell.bookmarks_mut().add("Example", "https://example.com/a", None);
+    app.open_bookmarks_page();
+    assert_eq!(app.address_bar_text(), "zero://bookmarks");
+    let tab_id = app.shell.active_tab_id().unwrap();
+    // load_html 经 tab worker 线程异步发布快照，读页面前等待内容就绪。
+    app.wait_for_tab_content_ready(tab_id);
+    let html = app.page_html_for_test(tab_id).unwrap_or_default();
+    assert!(html.contains(r#"action="zero://bookmarks""#), "搜索框 GET 提交");
+    assert!(html.contains(&format!("zero://bookmarks/edit?id={}", id.0)));
+    assert!(html.contains(&format!("zero://bookmarks/delete?id={}", id.0)));
+}
+
+/// T40 书签搜索：过滤词进地址栏 URL，页面仅留匹配项。
+#[test]
+fn bookmarks_search_filters_by_query() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    // 唯一标记 URL，避免真实 XDG 档案预置书签造成「不匹配项」误命中。
+    app.shell
+        .bookmarks_mut()
+        .add("Filter Mark", "https://zw-bm-filter.test/a", None);
+    app.shell
+        .bookmarks_mut()
+        .add("Rust Blog", "https://www.rust-lang.org/", None);
+    app.navigate_to("zero://bookmarks?q=rust");
+    assert_eq!(app.address_bar_text(), "zero://bookmarks?q=rust");
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.wait_for_tab_content_ready(tab_id);
+    let html = app.page_html_for_test(tab_id).unwrap_or_default();
+    assert!(html.contains("rust-lang.org"));
+    assert!(!html.contains("zw-bm-filter.test"), "不匹配项应被过滤");
+}
+
+/// T40 书签删除链接：按 ID 删除并停留在原过滤视图。
+#[test]
+fn bookmarks_delete_link_removes_bookmark_keeps_query() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    // 测试共享真实 XDG 档案（BrowserApp::new 从磁盘加载书签），长度断言用相对值。
+    let len_before = app.shell.bookmarks().len();
+    let id = app
+        .shell
+        .bookmarks_mut()
+        .add("Rust Blog", "https://www.rust-lang.org/", None);
+    app.navigate_to(&format!("zero://bookmarks/delete?id={}&q=rust", id.0));
+    assert!(app.shell.bookmarks().get(id).is_none(), "书签应被删除");
+    assert_eq!(
+        app.shell.bookmarks().len(),
+        len_before,
+        "仅删除目标书签（磁盘预置书签不受影响）"
+    );
+    assert_eq!(app.address_bar_text(), "zero://bookmarks?q=rust", "回跳保留过滤词");
+}
+
+/// T40 书签编辑：表单页预填，save 提交更新标题与 URL。
+#[test]
+fn bookmarks_edit_and_save_update_bookmark() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let id = app.shell.bookmarks_mut().add("Old", "https://old.example.com", None);
+
+    // 编辑表单页：地址栏为 edit 路由，表单 action=save 且预填现值。
+    app.navigate_to(&format!("zero://bookmarks/edit?id={}", id.0));
+    assert_eq!(app.address_bar_text(), format!("zero://bookmarks/edit?id={}", id.0));
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.wait_for_tab_content_ready(tab_id);
+    let html = app.page_html_for_test(tab_id).unwrap_or_default();
+    assert!(html.contains(r#"action="zero://bookmarks/save""#));
+    assert!(html.contains(r#"value="https://old.example.com""#));
+
+    // 保存提交（渲染端表单 GET 语义：值经 form-urlencoded 编码）。
+    app.navigate_to(&format!(
+        "zero://bookmarks/save?id={}&title=New&url=https%3A%2F%2Fnew.example.com",
+        id.0
+    ));
+    let bookmark = app.shell.bookmarks().get(id).unwrap();
+    assert_eq!(bookmark.title(), "New");
+    assert_eq!(bookmark.url(), "https://new.example.com");
+    assert_eq!(app.address_bar_text(), "zero://bookmarks", "保存后回书签列表");
+
+    // 收尾：save_default 已把编辑结果写入共享档案（BrowserApp::new 的磁盘集合 + 本条），
+    // 移除后回写，避免测试残留。
+    app.shell.bookmarks_mut().remove_by_url("https://new.example.com");
+    let _ = app.shell.bookmarks().save_default();
+}
+
+/// T40 书签编辑保存的 form-urlencoded 解码：`+`→空格、`%2B`→字面 `+`。
+#[test]
+fn bookmarks_save_decodes_form_values() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let id = app.shell.bookmarks_mut().add("Old", "https://old.example.com", None);
+    app.navigate_to(&format!(
+        "zero://bookmarks/save?id={}&title=C%2B%2B+%E6%95%99%E7%A8%8B&url=https%3A%2F%2Fcpp.example.com",
+        id.0
+    ));
+    let bookmark = app.shell.bookmarks().get(id).unwrap();
+    assert_eq!(bookmark.title(), "C++ 教程");
+    assert_eq!(bookmark.url(), "https://cpp.example.com");
+
+    // 收尾：save_default 已写入共享档案，移除后回写，避免测试残留。
+    app.shell.bookmarks_mut().remove_by_url("https://cpp.example.com");
+    let _ = app.shell.bookmarks().save_default();
+}
+
+/// T40 书签编辑：无效 ID 回书签列表（不 panic、不空白页）。
+#[test]
+fn bookmarks_edit_unknown_id_falls_back_to_list() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.navigate_to("zero://bookmarks/edit?id=99999");
+    assert_eq!(app.address_bar_text(), "zero://bookmarks");
+}
+
 /// 工具栏应渲染主题切换按钮（默认 Auto 为日月图标）。
 #[test]
 fn toolbar_renders_theme_button() {
@@ -1395,6 +1508,45 @@ fn bookmark_context_menu_open_in_new_tab_loads_url() {
     assert_eq!(address, "https://zw-menu-tab.test/");
 }
 
+/// T42 链接右键菜单：含「在新窗口中打开」（灰显）与「复制链接文本」（链接有文本时可用）。
+#[test]
+fn link_context_menu_includes_new_window_and_copy_link_text() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (800, 600);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.ensure_webview(tab_id);
+    app.load_webview_html(
+        tab_id,
+        r#"<html><body style="margin:0"><a href="https://example.com/test" style="display:block;padding:10px">Example Link</a></body></html>"#,
+        None,
+    );
+
+    let (cx, cy, _, _) = app.page_content_rect();
+    app.handle_mouse_click((cx + 50.0) as f64, (cy + 25.0) as f64, true, "Right");
+    assert!(app.is_context_menu_visible_for_test(), "右键链接应打开菜单");
+
+    let ids = app.smoke_context_menu_item_ids();
+    assert!(ids.iter().any(|id| id == "open_link"), "既有「在新标签页打开」仍在");
+    assert!(ids.iter().any(|id| id == "copy_link"), "既有「复制链接地址」仍在");
+    assert!(
+        ids.iter().any(|id| id == "open_link_new_window"),
+        "应包含「在新窗口中打开链接」"
+    );
+    assert!(ids.iter().any(|id| id == "copy_link_text"), "应包含「复制链接文本」");
+    // 启用态：链接有文本 → 「复制链接文本」可用（锚文本随命中缓存走快照，
+    // 多进程主进程无 DOM 不能回查页面 HTML）；「在新窗口打开」未实现保持灰显。
+    assert!(
+        app.smoke_context_menu_item_enabled("copy_link_text") == Some(true),
+        "链接有文本时「复制链接文本」应可用"
+    );
+    assert_eq!(
+        app.smoke_context_menu_item_enabled("open_link_new_window"),
+        Some(false),
+        "「在新窗口中打开链接」应灰显"
+    );
+}
+
 /// 键盘 ↓ 选中自动补全首项时应使用 selected 背景色。
 #[test]
 fn autocomplete_keyboard_selection_uses_selected_bg() {
@@ -1497,6 +1649,33 @@ fn ctrl_w_closes_tab() {
         app.shell.tab_count(),
         count_before - 1,
         "Ctrl+W should close active tab"
+    );
+}
+
+/// T41：Ctrl+T 新标签后地址栏聚焦且为空（Chrome 行为：新标签全新输入）。
+///
+/// 任务包设想的「地址栏已有文字（从上一标签继承）」在当前实现中不存在：
+/// `new_tab(None)` 显式清空地址栏，`new_blank_tab_focused` 随后的 select_all
+/// 覆盖「若仍有文字则全选、直接输入替换」的语义（有文字时生效，为空时无害）。
+#[test]
+fn ctrl_t_focuses_empty_address_bar() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let first = app.shell.active_tab_id().unwrap();
+    app.shell.navigate("https://example.com/page");
+    app.shell.on_page_loaded("Page");
+
+    app.handle_key(BrowserApp::test_modifier_key_name(), true, None);
+    app.handle_key("t", true, None);
+    assert_eq!(app.shell.tab_count(), 2, "Ctrl+T 应新建标签页");
+    assert_ne!(app.shell.active_tab_id().unwrap(), first);
+    assert!(app.address_bar_focused, "Ctrl+T 后地址栏应聚焦");
+    // 新标签地址栏重置为空（Chrome 同款）：无可选文字，光标在起点。
+    assert!(app.address_bar_text().is_empty());
+    assert_eq!(app.address_bar_cursor(), 0);
+    // 原标签 URL 不受影响（继承只发生在显式切回时）。
+    assert_eq!(
+        app.shell.tab(first).and_then(|t| t.url()),
+        Some("https://example.com/page")
     );
 }
 

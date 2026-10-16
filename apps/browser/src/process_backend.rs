@@ -2371,6 +2371,7 @@ mod navigation_contract_tests {
                         selector: "div".to_string(),
                         href: None,
                         src: None,
+                        link_text: None,
                     },
                 ),
                 (
@@ -2382,6 +2383,7 @@ mod navigation_contract_tests {
                         selector: "a".to_string(),
                         href: Some("https://example.com".to_string()),
                         src: None,
+                        link_text: None,
                     },
                 ),
             ]

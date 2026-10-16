@@ -102,6 +102,8 @@ struct HitTestNodeMeta {
     href: Option<String>,
     /// 图片 `src`（仅 `img` 元素，绝对化后存储）。
     src: Option<String>,
+    /// 链接锚文本（仅 `a` 元素，textContent trim，空→None；右键菜单「复制链接文本」）。
+    link_text: Option<String>,
 }
 
 impl HitTestCache {
@@ -152,6 +154,23 @@ impl HitTestCache {
         let mut best = (0, self.doc_root);
         deepest_node_at(&self.layout_root, 0.0, 0.0, 0, &mut best, &walk);
         find_link_href_cached(best.1, &self.nodes, &self.parents)
+    }
+
+    /// 命中测试链接，返回激活锚点的文本内容（trim，空文本→`None`）。
+    ///
+    /// 右键菜单「复制链接文本」数据源：命中点向上取最近 `a` 元素（与
+    /// [`Self::hit_test_link`] 同一行走语义），纯图片链接等无文本锚点返回 `None`，
+    /// 由调用方禁用复制项。
+    pub fn hit_test_link_text(&self, x: f32, y: f32) -> Option<String> {
+        let walk = HitWalk {
+            point_x: x,
+            point_y: y,
+            is_hidden: &|n| self.hidden.contains(&n),
+            is_pe_none: &|n| self.pe_none.contains(&n),
+        };
+        let mut best = (0, self.doc_root);
+        deepest_node_at(&self.layout_root, 0.0, 0.0, 0, &mut best, &walk);
+        find_link_text_cached(best.1, &self.nodes, &self.parents)
     }
 
     /// 命中测试图片，返回 `src`（若点中 img 或其子元素）。
@@ -228,6 +247,7 @@ impl HitTestCache {
                             selector: meta.selector.clone(),
                             href: meta.href.clone(),
                             src: meta.src.clone(),
+                            link_text: meta.link_text.clone(),
                         },
                     )
                 })
@@ -256,6 +276,7 @@ impl HitTestCache {
                             selector: meta.selector,
                             href: meta.href,
                             src: meta.src,
+                            link_text: meta.link_text,
                         },
                     )
                 })
@@ -340,6 +361,8 @@ pub struct HitTestNodeSnapshot {
     pub href: Option<String>,
     /// 图片 `src`（仅 `img` 元素）。
     pub src: Option<String>,
+    /// 链接锚文本（仅 `a` 元素，textContent trim，空→`None`）。
+    pub link_text: Option<String>,
 }
 
 /// IPC / 快照可传输的完整命中测试缓存。
@@ -438,10 +461,20 @@ fn collect_hit_test_nodes(
             } else {
                 None
             };
+            // 锚文本随 meta 走快照/IPC（右键菜单「复制链接文本」）：多进程模式主进程
+            // 无 DOM、paint 快照不携带 HTML，不能靠 html_source 回查。textContent trim，
+            // 空文本（如纯图片链接）→ None，由调用方禁用复制项。
+            let link_text = if tag == "a" {
+                doc.text_content(node_id)
+                    .map(|text| text.trim().to_string())
+                    .filter(|text| !text.is_empty())
+            } else {
+                None
+            };
             nodes.insert(
                 node_id,
                 HitTestNodeMeta {
-                    tag_name: tag,
+                    tag_name: tag.clone(),
                     id: doc.get_attribute(node_id, "id"),
                     class_name: doc.get_attribute(node_id, "class"),
                     // FIXME(R3254-L8)：每节点唯一选择器随每帧 PaintSnapshot 全量传输——
@@ -451,6 +484,7 @@ fn collect_hit_test_nodes(
                         .unwrap_or_else(|| elem.local_name().to_ascii_lowercase()),
                     href,
                     src,
+                    link_text,
                 },
             );
         }
@@ -477,6 +511,25 @@ fn find_link_href_cached(
             if !href.is_empty() && href != "#" {
                 return Some(href.to_string());
             }
+        }
+        node = parents.get(&node).copied()?;
+    }
+}
+
+/// 从命中节点向上查找最近 `a` 元素的锚文本（trim，空→`None`）。
+///
+/// 与 [`find_link_href_cached`] 同一行走语义但止于首个 `a`：锚点无文本（纯图片链接）
+/// 返回 `None`，不继续向外层找（HTML 解析器不嵌套 `a`，首个即激活锚点）。
+fn find_link_text_cached(
+    mut node: NodeId,
+    nodes: &HashMap<NodeId, HitTestNodeMeta>,
+    parents: &HashMap<NodeId, NodeId>,
+) -> Option<String> {
+    loop {
+        if let Some(meta) = nodes.get(&node)
+            && meta.tag_name == "a"
+        {
+            return meta.link_text.clone();
         }
         node = parents.get(&node).copied()?;
     }
@@ -1047,6 +1100,80 @@ mod tests {
             Some(&(0.0, 24.0, 26.0, 15.132)),
             "gBCR 面经快照往返仍上报 content area（多进程主进程路径）"
         );
+    }
+
+    /// T42「复制链接文本」：锚文本随 HitTestNodeMeta 走快照往返（多进程主进程无 DOM，
+    /// 查询落在 from_snapshot 恢复的缓存上）。hit_test_link_text 取激活锚点
+    /// textContent（trim）：命中锚点内层后代经祖先行走取文本，纯图片链接（无文本）
+    /// 返回 `None`，非锚元素返回 `None`；href 查询不受影响。
+    #[test]
+    fn hit_test_link_text_snapshot_round_trip_trim_and_empty() {
+        let doc = zero_dom::parse_html(
+            r#"<html><body><a id="t" href="/text">  Go to page  </a><a id="imglink" href="/img-link"><img id="im" src="/a.png"></a><p id="plain">plain</p></body></html>"#,
+        );
+        let body = doc.get_elements_by_tag_name("body")[0];
+        let anchor_t = doc.get_element_by_id("t").expect("text anchor");
+        let anchor_img = doc.get_element_by_id("imglink").expect("image link anchor");
+        let img = doc.get_element_by_id("im").expect("img");
+        let plain = doc.get_element_by_id("plain").expect("plain p");
+        let mut root = LayoutBox {
+            node_id: Some(body),
+            width: 800.0,
+            height: 600.0,
+            ..LayoutBox::default()
+        };
+        root.children.push(LayoutBox {
+            node_id: Some(anchor_t),
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 20.0,
+            ..LayoutBox::default()
+        });
+        root.children.push(LayoutBox {
+            node_id: Some(anchor_img),
+            x: 0.0,
+            y: 20.0,
+            width: 100.0,
+            height: 20.0,
+            children: vec![LayoutBox {
+                node_id: Some(img),
+                x: 0.0,
+                y: 0.0,
+                width: 20.0,
+                height: 20.0,
+                ..LayoutBox::default()
+            }],
+            ..LayoutBox::default()
+        });
+        root.children.push(LayoutBox {
+            node_id: Some(plain),
+            x: 0.0,
+            y: 40.0,
+            width: 100.0,
+            height: 20.0,
+            ..LayoutBox::default()
+        });
+        let live = HitTestCache::from_document(&doc, &root, &HashMap::new());
+        let restored = HitTestCache::from_snapshot(live.snapshot());
+        for (cache, label) in [(&live, "from_document"), (&restored, "from_snapshot")] {
+            assert_eq!(
+                cache.hit_test_link_text(5.0, 10.0).as_deref(),
+                Some("Go to page"),
+                "{label}: 锚点文本 trim 首尾空白"
+            );
+            assert_eq!(
+                cache.hit_test_link_text(5.0, 30.0),
+                None,
+                "{label}: 纯图片链接无文本 → None"
+            );
+            assert_eq!(cache.hit_test_link_text(5.0, 50.0), None, "{label}: 非锚元素 → None");
+            assert_eq!(
+                cache.hit_test_link(5.0, 30.0).as_deref(),
+                Some("/img-link"),
+                "{label}: 图片链接 href 查询不受影响"
+            );
+        }
     }
 
     /// slice15（R4384）：命中面含 padding/border——上报 border box 超出旧树 content

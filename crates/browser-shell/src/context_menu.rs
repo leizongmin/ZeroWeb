@@ -412,14 +412,20 @@ fn default_items_for_context(context_type: ContextType) -> Vec<MenuItem> {
         ContextType::Link => match lang {
             UiLanguage::ZhCn => vec![
                 MenuItem::action("open_link", "在新标签页中打开链接"),
+                // 单窗口应用暂无多窗口面，先按既有未实现动作惯例灰显（同 save_link）。
+                MenuItem::action_disabled("open_link_new_window", "在新窗口中打开链接"),
                 MenuItem::action("copy_link", "复制链接地址"),
+                // 「复制链接文本」按链接是否有文本动态禁用（app 侧 set_enabled）。
+                MenuItem::action("copy_link_text", "复制链接文本"),
                 MenuItem::separator(),
                 MenuItem::action("save_link", "将链接另存为..."),
                 MenuItem::action("bookmark_link", "将链接添加为书签"),
             ],
             UiLanguage::EnUs => vec![
                 MenuItem::action("open_link", "Open Link in New Tab"),
+                MenuItem::action_disabled("open_link_new_window", "Open Link in New Window"),
                 MenuItem::action("copy_link", "Copy Link Address"),
+                MenuItem::action("copy_link_text", "Copy Link Text"),
                 MenuItem::separator(),
                 MenuItem::action("save_link", "Save Link As..."),
                 MenuItem::action("bookmark_link", "Bookmark Link"),

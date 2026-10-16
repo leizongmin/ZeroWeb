@@ -133,6 +133,15 @@ impl BrowserApp {
             .collect()
     }
 
+    /// 演示流用：上下文菜单项启用态（`None` = 菜单未开或无此项）。
+    pub fn smoke_context_menu_item_enabled(&self, id: &str) -> Option<bool> {
+        self.context_menu
+            .items
+            .iter()
+            .find(|item| !item.is_separator() && item.id() == id)
+            .map(|item| item.enabled())
+    }
+
     /// 演示流用：活动标签是否可后退（与渲染按钮启用态同源：Tab::can_go_back）。
     pub fn smoke_can_go_back(&self) -> bool {
         self.shell.active_tab().is_some_and(|tab| tab.can_go_back())

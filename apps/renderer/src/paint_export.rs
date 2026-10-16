@@ -518,6 +518,7 @@ fn hit_test_cache_to_ipc(cache: HitTestCache) -> IpcHitTestCache {
                         selector: meta.selector,
                         href: meta.href,
                         src: meta.src,
+                        link_text: meta.link_text,
                     },
                 )
             })

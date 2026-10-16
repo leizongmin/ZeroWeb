@@ -71,6 +71,7 @@ fn hit_test_cache_from_ipc(cache: IpcHitTestCache) -> Option<HitTestCache> {
                 selector: meta.selector,
                 href: meta.href,
                 src: meta.src,
+                link_text: meta.link_text,
             },
         ));
     }
@@ -151,6 +152,7 @@ mod tests {
                             selector: "div".to_string(),
                             href: None,
                             src: None,
+                            link_text: None,
                         },
                     ),
                     (
@@ -162,6 +164,7 @@ mod tests {
                             selector: "a".to_string(),
                             href: Some("https://example.com".to_string()),
                             src: None,
+                            link_text: Some("Example Link".to_string()),
                         },
                     ),
                 ]
@@ -204,6 +207,13 @@ mod tests {
             hit.node_handle,
             zero_engine::node_id_to_u64(zero_engine::node_id_from_u64(2)),
             "上报 border box 带内命中锚本体"
+        );
+        // T42「复制链接文本」：锚文本随 IPC 快照往返，主进程可查（wire 丢字段会让
+        // 该项在生产模式恒灰显）。
+        assert_eq!(
+            cache.hit_test_link_text(1.0, 5.0).as_deref(),
+            Some("Example Link"),
+            "IPC 往返必须保留链接锚文本"
         );
     }
 

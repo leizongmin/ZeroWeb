@@ -64,6 +64,7 @@ fn sample_frame() -> zero_page_runtime::FrameModel {
                     selector: "body".into(),
                     href: None,
                     src: None,
+                    link_text: None,
                 },
             )],
             parents: Vec::new(),

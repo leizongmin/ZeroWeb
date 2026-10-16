@@ -1375,6 +1375,7 @@ impl BrowserApp {
             bookmark_title: Some(title),
             image_url: None,
             link_url: None,
+            link_text: None,
         };
         self.needs_redraw = true;
     }
@@ -1864,6 +1865,7 @@ impl BrowserApp {
             bookmark_title: None,
             image_url: None,
             link_url: None,
+            link_text: None,
         };
         self.context_menu_suppress_left_up = true;
         self.needs_redraw = true;
@@ -1939,6 +1941,7 @@ impl BrowserApp {
             bookmark_title: None,
             image_url: None,
             link_url: None,
+            link_text: None,
         };
         self.context_menu_suppress_left_up = true;
         self.needs_redraw = true;
@@ -2028,6 +2031,7 @@ impl BrowserApp {
             bookmark_title: None,
             image_url: None,
             link_url: None,
+            link_text: None,
         };
         self.context_menu_suppress_left_up = true;
         self.needs_redraw = true;
@@ -2126,6 +2130,7 @@ impl BrowserApp {
             bookmark_title: None,
             image_url: None,
             link_url: None,
+            link_text: None,
         };
         self.needs_redraw = true;
     }

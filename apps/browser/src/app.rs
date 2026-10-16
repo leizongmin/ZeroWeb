@@ -2084,6 +2084,15 @@ impl BrowserApp {
             }
             "zero://downloads" => self.open_downloads_page(),
             "zero://bookmarks" => self.open_bookmarks_page(),
+            // 书签页过滤/编辑/删除/保存路由与地址栏入口共用同一分派（F5 刷新与
+            // 渲染端表单 GET 提交走这里而非 try_apply_internal_url，同历史页模式）。
+            u if u.starts_with("zero://bookmarks?")
+                || u.starts_with("zero://bookmarks/edit?id=")
+                || u.starts_with("zero://bookmarks/delete?id=")
+                || u.starts_with("zero://bookmarks/save?") =>
+            {
+                self.try_apply_bookmarks_url(u);
+            }
             "zero://shortcuts" => self.open_shortcuts_page(),
             u if u.starts_with("zero://") => self.load_welcome_page(tab_id),
             _ => self.tabs.navigate(tab_id, url.to_string()),
@@ -2974,8 +2983,100 @@ impl BrowserApp {
 
     /// 打开书签管理页面。
     pub fn open_bookmarks_page(&mut self) {
-        let html = pages::generate_bookmarks_html(self.shell.bookmarks());
-        self.open_internal_list_page("zero://bookmarks", html, "Bookmarks");
+        self.open_bookmarks_page_filtered(None);
+    }
+
+    /// 打开带过滤词的书签管理页面（地址栏 URL 为 `zero://bookmarks?q=…`）。
+    fn open_bookmarks_page_filtered(&mut self, query: Option<&str>) {
+        let html = pages::generate_bookmarks_html(self.shell.bookmarks(), query);
+        let url = match query.map(str::trim).filter(|q| !q.is_empty()) {
+            Some(q) => format!("zero://bookmarks?q={}", pages::percent_encode_query_value(q)),
+            None => "zero://bookmarks".to_string(),
+        };
+        self.open_internal_list_page(&url, html, "Bookmarks");
+    }
+
+    /// 打开书签编辑表单页（`zero://bookmarks/edit?id=…`）；ID 无效时回书签列表。
+    fn open_bookmarks_edit_page(&mut self, id: zero_browser_shell::BookmarkId, query: Option<&str>) {
+        let Some(bookmark) = self.shell.bookmarks().get(id) else {
+            self.open_bookmarks_page_filtered(query);
+            return;
+        };
+        let html = pages::generate_bookmarks_edit_html(bookmark, query);
+        let query_suffix = match query.map(str::trim).filter(|q| !q.is_empty()) {
+            Some(q) => format!("&q={}", pages::percent_encode_query_value(q)),
+            None => String::new(),
+        };
+        let url = format!("zero://bookmarks/edit?id={}{}", id.0, query_suffix);
+        self.open_internal_list_page(&url, html, "Bookmarks");
+    }
+
+    /// 处理书签管理页内部动作 URL（过滤 / 编辑表单 / 删除 / 保存提交）。
+    ///
+    /// `zero://bookmarks` 精确路径不在此处理（列表页经 [`Self::load_local_tab_url`] 装载）。
+    fn try_apply_bookmarks_url(&mut self, url: &str) -> bool {
+        if let Some(rest) = url.strip_prefix("zero://bookmarks?q=") {
+            // 搜索框 GET 提交 / 地址栏直输：按过滤词重开书签页。
+            let query = pages::percent_decode_form_value(rest);
+            self.open_bookmarks_page_filtered(Some(&query));
+            return true;
+        }
+        if let Some(rest) = url.strip_prefix("zero://bookmarks/delete?id=") {
+            // 单条删除：可选 `&q=` 保留过滤词（值已 percent-encode，先切参再解码，顺序不可反）。
+            let (encoded_id, query) = match rest.split_once("&q=") {
+                Some((value, q)) => (value, Some(pages::percent_decode_form_value(q))),
+                None => (rest, None),
+            };
+            if let Ok(id) = encoded_id.parse::<u64>() {
+                self.shell.remove_bookmark_by_id(zero_browser_shell::BookmarkId(id));
+            }
+            self.open_bookmarks_page_filtered(query.as_deref());
+            return true;
+        }
+        if let Some(rest) = url.strip_prefix("zero://bookmarks/edit?id=") {
+            let (encoded_id, query) = match rest.split_once("&q=") {
+                Some((value, q)) => (value, Some(pages::percent_decode_form_value(q))),
+                None => (rest, None),
+            };
+            match encoded_id.parse::<u64>() {
+                Ok(id) => self.open_bookmarks_edit_page(zero_browser_shell::BookmarkId(id), query.as_deref()),
+                Err(_) => self.open_bookmarks_page_filtered(query.as_deref()),
+            }
+            return true;
+        }
+        if let Some(rest) = url.strip_prefix("zero://bookmarks/save?") {
+            // 编辑表单 GET 提交：id/title/url + 隐藏 q（过滤词）。
+            let params = Self::parse_form_query(rest);
+            let param = |name: &str| -> Option<String> {
+                params
+                    .iter()
+                    .find(|(key, _)| key == name)
+                    .map(|(_, value)| value.trim().to_string())
+            };
+            if let (Some(id), Some(title), Some(target)) = (
+                param("id").and_then(|v| v.parse::<u64>().ok()),
+                param("title").filter(|v| !v.is_empty()),
+                param("url").filter(|v| !v.is_empty()),
+            ) {
+                self.shell
+                    .update_bookmark(zero_browser_shell::BookmarkId(id), &title, &target);
+            }
+            self.open_bookmarks_page_filtered(param("q").as_deref());
+            return true;
+        }
+        false
+    }
+
+    /// 解析渲染端表单 GET 提交的 query（`k=v&k=v`，值经 form-urlencoded 编码）。
+    fn parse_form_query(query: &str) -> Vec<(String, String)> {
+        query
+            .split('&')
+            .filter(|pair| !pair.is_empty())
+            .map(|pair| match pair.split_once('=') {
+                Some((key, value)) => (key.to_string(), pages::percent_decode_form_value(value)),
+                None => (pair.to_string(), String::new()),
+            })
+            .collect()
     }
 
     fn open_internal_list_page(&mut self, url: &str, html: String, title: &str) {
@@ -3013,6 +3114,9 @@ impl BrowserApp {
     /// 处理 `zero://` 内部动作链接，成功时返回 `true`。
     fn try_apply_internal_url(&mut self, url: &str) -> bool {
         if self.try_apply_settings_url(url) {
+            return true;
+        }
+        if self.try_apply_bookmarks_url(url) {
             return true;
         }
         if let Some(rest) = url.strip_prefix("zero://history?q=") {

@@ -68,6 +68,10 @@ fn test_context_menu_link() {
     assert_eq!(menu.context_type(), ContextType::Link);
     assert!(menu.find_item("open_link").is_some());
     assert!(menu.find_item("copy_link").is_some());
+    // T42：Chrome 链接菜单补齐——「在新窗口中打开」（单窗口应用先灰显）与「复制链接文本」。
+    let new_window = menu.find_item("open_link_new_window").expect("open_link_new_window");
+    assert!(!new_window.enabled(), "单窗口应用暂无多窗口面，应灰显");
+    assert!(menu.find_item("copy_link_text").is_some());
 }
 
 #[test]
