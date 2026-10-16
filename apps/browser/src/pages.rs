@@ -102,6 +102,8 @@ pub fn percent_decode_form_value(value: &str) -> String {
 }
 
 /// 生成「查看源代码」页面。
+///
+/// 正文经 [`highlight_html`] 做 HTML 语法着色（Chrome view-source 行为）。
 pub fn generate_view_source_page(source_url: &str, html: &str) -> String {
     format!(
         r#"<!DOCTYPE html>
@@ -112,8 +114,141 @@ pub fn generate_view_source_page(source_url: &str, html: &str) -> String {
 </body>
 </html>"#,
         title = html_escape(source_url),
-        body = html_escape(html),
+        body = highlight_html(html),
     )
+}
+
+/// 查看源代码页各语法类别的着色（对齐任务包 Chrome 语义：标签蓝、属性棕、
+/// 字符串红、注释灰；正文用页面默认前景色，不包 span）。
+const VIEW_SOURCE_TAG_COLOR: &str = "#0000c8";
+const VIEW_SOURCE_ATTR_COLOR: &str = "#994500";
+const VIEW_SOURCE_STRING_COLOR: &str = "#a31515";
+const VIEW_SOURCE_COMMENT_COLOR: &str = "#808080";
+
+/// 转义并按类别包 span（`color == None` 表示默认文本色，不包 span）。
+fn push_view_source_token(out: &mut String, color: Option<&str>, text: &str) {
+    match color {
+        Some(color) => {
+            out.push_str(&format!(r#"<span style="color:{color};">{}</span>"#, html_escape(text)));
+        }
+        None => out.push_str(&html_escape(text)),
+    }
+}
+
+/// 查看源代码 HTML 着色：简单 tokenizer，五类 token——注释、标签、属性名、
+/// 引号/裸属性值、文本（Chrome view-source 行为，不解析 DOM）。
+///
+/// 注释 `<!--…-->` 整体灰色；进入 `<tag` 后标签名蓝色、属性名棕色、`=` 后的
+/// 引号或裸值红色；`<` 后不是字母/`/`/`!`/`?` 时按普通文本处理（如 `a < b`）。
+/// 末尾截断结构（未闭合的标签/注释）按已进入的类别着色到 EOF。所有原文片段
+/// 逐一转义后才包 span，输出可直接内嵌 `<pre>`。
+pub fn highlight_html(html: &str) -> String {
+    let bytes = html.as_bytes();
+    let mut out = String::with_capacity(html.len() + 64);
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'<' {
+            let end = html[i..].find('<').map_or(bytes.len(), |p| i + p);
+            push_view_source_token(&mut out, None, &html[i..end]);
+            i = end;
+            continue;
+        }
+        if html[i..].starts_with("<!--") {
+            // 注释：到 `-->` 或 EOF。
+            let end = html[i + 4..].find("-->").map_or(bytes.len(), |p| i + 4 + p + 3);
+            push_view_source_token(&mut out, Some(VIEW_SOURCE_COMMENT_COLOR), &html[i..end]);
+            i = end;
+            continue;
+        }
+        let is_tag_start = bytes
+            .get(i + 1)
+            .is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'/' | b'!' | b'?'));
+        if !is_tag_start {
+            push_view_source_token(&mut out, None, "<");
+            i += 1;
+            continue;
+        }
+        i = highlight_view_source_tag(html, i, &mut out);
+    }
+    out
+}
+
+/// 着色一个标签（`html[i]` 是 `<` 且已判定为标签开始），返回扫描停止的下标。
+fn highlight_view_source_tag(html: &str, start: usize, out: &mut String) -> usize {
+    let bytes = html.as_bytes();
+    push_view_source_token(out, Some(VIEW_SOURCE_TAG_COLOR), "<");
+    let mut i = start + 1;
+    // 标签名：可选 `/` 后的字母数字序列（含 `!DOCTYPE` / `?xml` 头）。
+    if bytes.get(i) == Some(&b'/') {
+        push_view_source_token(out, Some(VIEW_SOURCE_TAG_COLOR), "/");
+        i += 1;
+    }
+    let name_end = bytes[i..]
+        .iter()
+        .position(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'-' | b':' | b'!' | b'?')))
+        .map_or(html.len(), |p| i + p);
+    if name_end > i {
+        push_view_source_token(out, Some(VIEW_SOURCE_TAG_COLOR), &html[i..name_end]);
+        i = name_end;
+    }
+    // 属性区：直到 `>`（蓝色，标签结束）或 EOF。
+    while i < bytes.len() {
+        match bytes[i] {
+            b'>' => {
+                push_view_source_token(out, Some(VIEW_SOURCE_TAG_COLOR), ">");
+                return i + 1;
+            }
+            b'=' => {
+                i += 1;
+                // 值：引号包裹（连同引号整体红色）或裸值（到空白/`>`）。
+                let quote = bytes.get(i).copied().filter(|b| *b == b'"' || *b == b'\'');
+                if let Some(quote) = quote {
+                    let end = html[i + 1..].find(quote as char).map_or(bytes.len(), |p| i + 1 + p + 1);
+                    push_view_source_token(out, Some(VIEW_SOURCE_STRING_COLOR), &html[i..end]);
+                    i = end;
+                } else {
+                    let end = bytes[i..]
+                        .iter()
+                        .position(|b| b.is_ascii_whitespace() || *b == b'>')
+                        .map_or(html.len(), |p| i + p);
+                    if end > i {
+                        push_view_source_token(out, Some(VIEW_SOURCE_STRING_COLOR), &html[i..end]);
+                        i = end;
+                    }
+                }
+            }
+            b if b.is_ascii_whitespace() => {
+                let end = bytes[i..]
+                    .iter()
+                    .position(|b| !b.is_ascii_whitespace())
+                    .map_or(html.len(), |p| i + p);
+                push_view_source_token(out, None, &html[i..end]);
+                i = end;
+            }
+            _ => {
+                // 属性名（字母开头）棕色；其余字符（如 `/`、非 ASCII 字符）按默认色
+                // 逐字输出——多字节字符按 UTF-8 边界整字前进，避免按字节切片 panic。
+                let is_name_start = bytes[i].is_ascii_alphabetic();
+                let end = bytes[i..]
+                    .iter()
+                    .position(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b':')))
+                    .map_or(html.len(), |p| i + p);
+                let end = if end > i {
+                    end
+                } else {
+                    html[i..].chars().next().map_or(i + 1, |c| i + c.len_utf8())
+                };
+                let color = if is_name_start {
+                    Some(VIEW_SOURCE_ATTR_COLOR)
+                } else {
+                    None
+                };
+                push_view_source_token(out, color, &html[i..end]);
+                i = end;
+            }
+        }
+    }
+    i
 }
 
 /// 生成「检查元素」信息页。
@@ -478,6 +613,18 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         },
         settings.show_bookmarks_bar,
     );
+    // 书签批量导出：Netscape bookmark 格式 HTML，经下载管线落为 bookmarks.html。
+    let (bookmarks_export_label, bookmarks_export_action) = match lang {
+        UiLanguage::ZhCn => ("书签", "导出书签"),
+        UiLanguage::EnUs => ("Bookmarks", "Export Bookmarks"),
+    };
+    let bookmarks_export_row = format!(
+        r#"<div style="display:flex;justify-content:space-between;align-items:center;min-height:32px;font-size:14px;color:#3c4043;">
+  <span>{bookmarks_export_label}</span>
+  <span>{export_link}</span>
+</div>"#,
+        export_link = action_link("zero://settings/export_bookmarks", bookmarks_export_action),
+    );
 
     // 分组卡片：Chrome 设置风格——大圆角白卡 + 小号大写分组标题（蓝色强调）。
     let section_card = |title: &str, body: &str| {
@@ -513,7 +660,7 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
     );
     let appearance_card = section_card(
         section_appearance,
-        &format!("{bookmarks_row}{theme_row}{zoom_actions}{download_dir_row}"),
+        &format!("{bookmarks_row}{bookmarks_export_row}{theme_row}{zoom_actions}{download_dir_row}"),
     );
 
     format!(
@@ -1027,6 +1174,46 @@ pub fn generate_bookmarks_edit_html(bookmark: &zero_browser_shell::Bookmark, que
         url_value = html_escape(bookmark.url()),
     );
     internal_page_shell(title, &body)
+}
+
+/// 生成 Netscape bookmark 格式导出 HTML（设置页「导出书签」→ 下载为 bookmarks.html）。
+///
+/// 经典 Netscape Bookmark File Format：`<!DOCTYPE NETSCAPE-Bookmark-file-1>` 头 +
+/// `<DL><p>` 列表；根级书签平铺，各文件夹输出 `<H3>` 子列表。书签存储不含创建
+/// 时间，故不写 `ADD_DATE`——该属性在格式中可选，Chrome/Firefox 导入器均可缺省。
+/// 标题与 URL 均经 HTML 转义后写入。
+pub fn generate_bookmarks_export_html(bookmarks: &zero_browser_shell::Bookmarks) -> String {
+    let entry_line = |bookmark: &zero_browser_shell::Bookmark| {
+        format!(
+            "    <DT><A HREF=\"{href}\">{title}</A>\n",
+            href = html_escape(bookmark.url()),
+            title = html_escape(bookmark.title()),
+        )
+    };
+    let mut items = String::new();
+    for bookmark in bookmarks.list_root() {
+        items.push_str(&entry_line(bookmark));
+    }
+    for folder in bookmarks.folders() {
+        let mut children = String::new();
+        for bookmark in bookmarks.list_in_folder(folder.id()) {
+            children.push_str(&entry_line(bookmark));
+        }
+        items.push_str(&format!(
+            "    <DT><H3>{name}</H3>\n    <DL><p>\n{children}    </DL><p>\n",
+            name = html_escape(folder.name()),
+        ));
+    }
+    format!(
+        "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n\
+         <!-- This is an automatically generated file.
+     It will be read and overwritten.
+     DO NOT EDIT! -->\n\
+         <META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">\n\
+         <TITLE>Bookmarks</TITLE>\n\
+         <H1>Bookmarks</H1>\n\
+         <DL><p>\n{items}</DL><p>\n"
+    )
 }
 
 /// 生成键盘快捷键帮助页 HTML（`zero://shortcuts`，Ctrl+/ 打开）。
@@ -1567,6 +1754,52 @@ mod tests {
     }
 
     #[test]
+    fn generate_settings_html_links_bookmark_export() {
+        let settings = zero_browser_shell::BrowserSettings::new();
+        let html = generate_settings_html(&settings);
+        assert!(html.contains(r#"href="zero://settings/export_bookmarks""#));
+    }
+
+    #[test]
+    fn generate_bookmarks_export_html_netscape_format() {
+        let mut bookmarks = zero_browser_shell::Bookmarks::default();
+        bookmarks.add("Example", "https://example.com/a?b=1&c=2", None);
+        let folder = bookmarks.create_folder("Dev");
+        bookmarks.add("Rust", "https://www.rust-lang.org/", Some(folder));
+        let out = generate_bookmarks_export_html(&bookmarks);
+        // 格式头与根列表。
+        assert!(out.starts_with("<!DOCTYPE NETSCAPE-Bookmark-file-1>"), "{out}");
+        assert!(out.contains(r#"<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">"#));
+        assert!(out.contains("<DL><p>"));
+        assert!(out.trim_end().ends_with("</DL><p>"));
+        // 根级条目；URL 经 HTML 转义（`&` → `&amp;`）。
+        assert!(
+            out.contains(r#"<DT><A HREF="https://example.com/a?b=1&amp;c=2">Example</A>"#),
+            "{out}"
+        );
+        // 文件夹为 H3 子列表。
+        assert!(out.contains("<DT><H3>Dev</H3>"), "{out}");
+        assert!(
+            out.contains(r#"<DT><A HREF="https://www.rust-lang.org/">Rust</A>"#),
+            "{out}"
+        );
+        // 标题含 HTML 特殊字符时转义，不注入标记。
+        bookmarks.add("<b>x&y</b>", "https://example.com/esc", None);
+        let escaped = generate_bookmarks_export_html(&bookmarks);
+        assert!(escaped.contains("&lt;b&gt;x&amp;y&lt;/b&gt;"), "{escaped}");
+        assert!(!escaped.contains("<b>x&y</b>"));
+    }
+
+    #[test]
+    fn generate_bookmarks_export_html_empty_list_is_valid() {
+        let bookmarks = zero_browser_shell::Bookmarks::default();
+        let out = generate_bookmarks_export_html(&bookmarks);
+        assert!(out.contains("<DL><p>"));
+        assert!(out.trim_end().ends_with("</DL><p>"));
+        assert!(!out.contains("<DT>"), "empty store must export no entries: {out}");
+    }
+
+    #[test]
     fn percent_decode_form_value_roundtrip() {
         // 表单 urlencoded 语义：空格→`+`、`+`→`%2B`；解码顺序 `+` 先替换。
         assert_eq!(percent_decode_form_value("a+b"), "a b");
@@ -1577,5 +1810,83 @@ mod tests {
         );
         // 截断的 %XX 按字面保留。
         assert_eq!(percent_decode_form_value("100%"), "100%");
+    }
+
+    #[test]
+    fn highlight_html_colors_tag_attr_string_and_text() {
+        let out = highlight_html(r#"<a href="x">hi</a>"#);
+        // 标签与结束符蓝色、属性名棕色、引号字符串（含引号，转义为 &quot;）红色、
+        // 文本不着色。
+        assert!(out.contains(r#"<span style="color:#0000c8;">&lt;</span>"#), "{out}");
+        assert!(out.contains(r#"<span style="color:#0000c8;">a</span>"#), "{out}");
+        assert!(out.contains(r#"<span style="color:#994500;">href</span>"#), "{out}");
+        assert!(
+            out.contains(r#"<span style="color:#a31515;">&quot;x&quot;</span>"#),
+            "{out}"
+        );
+        assert!(out.contains(r#"<span style="color:#0000c8;">&gt;</span>"#), "{out}");
+        assert!(out.contains("hi"), "plain text stays unstyled: {out}");
+        assert!(out.contains(r#"<span style="color:#0000c8;">/</span>"#), "{out}");
+    }
+
+    #[test]
+    fn highlight_html_colors_comment_and_handles_unclosed() {
+        let out = highlight_html("a<!-- note -->b");
+        assert!(
+            out.contains(r#"<span style="color:#808080;">&lt;!-- note --&gt;</span>"#),
+            "{out}"
+        );
+        // 未闭合注释着色到 EOF，不 panic。
+        let open = highlight_html("<!-- trailing");
+        assert!(open.contains(r#"color:#808080;"#), "{open}");
+    }
+
+    #[test]
+    fn highlight_html_keeps_stray_lt_as_text() {
+        // `<` 后非标记字符按文本（转义）输出，不进入标签态。
+        let out = highlight_html("1 < 2 and <br> x");
+        assert!(out.contains("1 &lt; 2 and "), "{out}");
+        assert!(out.contains(r#"color:#0000c8;"#), "{out}");
+    }
+
+    #[test]
+    fn highlight_html_survives_non_ascii_in_tag_position() {
+        // 属性名/标签头位置出现非 ASCII 字符（多字节 UTF-8）：ASCII 段照常着色，
+        // 非 ASCII 字符整字按默认色输出，不越界 panic，后续着色继续。
+        let out = highlight_html(r#"<p café="x">v</p>"#);
+        assert!(out.contains(r#"<span style="color:#994500;">caf</span>é"#), "{out}");
+        assert!(out.contains("&quot;x&quot;"), "{out}");
+        let out = highlight_html("<div 数据=1>t</div>");
+        assert!(out.contains("数据"), "{out}");
+        assert!(out.contains(r#"color:#a31515;">1<"#), "{out}");
+    }
+
+    #[test]
+    fn highlight_html_supports_single_quotes_and_bare_values() {
+        let out = highlight_html("<p data-k='v' disabled>x");
+        assert!(out.contains(r#"<span style="color:#a31515;">'v'</span>"#), "{out}");
+        assert!(out.contains(r#"<span style="color:#994500;">data-k</span>"#), "{out}");
+        // 裸属性值（无引号）红色，布尔属性名棕色。
+        assert!(out.contains(r#"<span style="color:#994500;">disabled</span>"#), "{out}");
+    }
+
+    #[test]
+    fn highlight_html_escapes_inside_spans_and_keeps_doctype() {
+        let out = highlight_html(r#"<!DOCTYPE html><img src=a?b&c>"#);
+        // span 内原文转义：`&` → `&amp;`，不注入裸标记。
+        assert!(
+            out.contains(r#"<span style="color:#a31515;">a?b&amp;c</span>"#),
+            "{out}"
+        );
+        // DOCTYPE 进入标签态：`<` 与 `!DOCTYPE` 分别为蓝色 span。
+        assert!(out.contains(r#"<span style="color:#0000c8;">&lt;</span>"#), "{out}");
+        assert!(out.contains(r#"<span style="color:#0000c8;">!DOCTYPE</span>"#), "{out}");
+    }
+
+    #[test]
+    fn generate_view_source_page_highlights_body_and_escapes_title() {
+        let html = generate_view_source_page("http://a?x=1&y=2", r#"<p class="k">v</p>"#);
+        assert!(html.contains("view-source") || html.contains("http://a?x=1&amp;y=2"));
+        assert!(html.contains(r#"color:#0000c8;"#), "body must be highlighted");
     }
 }
