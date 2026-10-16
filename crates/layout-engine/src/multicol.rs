@@ -454,7 +454,8 @@ fn try_layout_nested_spanner(
             None
         }
     };
-    layout_multicol_with_spanners(&mut synth, info, styles, false, wrapper_budget);
+    // R5148：synthetic 容器非真实 fieldset（wrapper 子提升），legend 排除不适用（None）。
+    layout_multicol_with_spanners(&mut synth, info, styles, false, wrapper_budget, None);
 
     // 回填位置到真实 wrapper 子（补偿 wrapper 偏移 dx/dy）。
     let wrapper = &mut container.children[wrapper_idx];
@@ -782,6 +783,33 @@ fn try_layout_single_child_block_frag(
     true
 }
 
+/// R5148（HTML 渲染规范 fieldset/legend 特殊布局 × css-multicol）：fieldset 自身是
+/// multicol 容器时，其渲染 legend **不入列流**——chromium oracle（multicol-span-all-
+/// fieldset-001）legend 独占容器顶部行，列区平衡其余子（[block1|block2|空]）；ZW 旧版把
+/// legend 作普通列项（[legend|block1|block2]），与 ref 页（legend 在 multicol 容器外）
+/// 自源失配 0.35%→1.59%（R5147 行高整数化放大相位差越 1% 阈）。仅匹配「首子为 legend
+/// 元素的 fieldset 容器」（HTML 规范 legend 定义；非首子 legend 按普通内容流）。
+/// 非 multicol fieldset 不受影响（legend 首子堆叠语义不变）。调用方对排除 legend：
+/// 不入列分配、容器内容以 legend 外尺寸为列流 y 原点、legend 盒保持顶部原位。
+/// FIXME：R4514 fragmentainer 顺序预算不含 legend（嵌套 mc 内 fieldset 场景 corpus 无覆盖）；
+/// R1341/R1869 synthetic 路径（try_layout_nested_spanner / try_layout_single_child_block_frag）
+/// 未接入排除。kill-switch `ZW_MULTICOL_FIELDSET_LEGEND=0`。
+fn fieldset_legend_excluded_child(container: &LayoutBox, doc: &zero_dom::Document) -> Option<usize> {
+    if std::env::var("ZW_MULTICOL_FIELDSET_LEGEND").as_deref() == Ok("0") {
+        return None;
+    }
+    let is_element = |id: Option<NodeId>, tag: &str| {
+        id.is_some_and(|nid| {
+            doc.get(nid).is_some_and(
+                |n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case(tag)),
+            )
+        })
+    };
+    let first = container.children.first()?;
+    let is_fieldset = is_element(container.node_id, "fieldset");
+    (is_fieldset && is_element(first.node_id, "legend")).then_some(0)
+}
+
 /// 对单个 multicol 容器执行布局。
 ///
 /// 算法：
@@ -888,8 +916,20 @@ fn layout_multicol(
     // min(堆叠高, 余量)，Chrome probe 019/020/015 定谳）。
     let mut nested_avoid: Vec<bool> = Vec::new();
     let mut has_spanner = false;
+    // R5148：fieldset 自身 multicol 容器时，首子 legend 不入列流（见 helper 文档）；
+    // 列流 y 原点 = legend 外尺寸（legend 盒保持容器顶部原位）。
+    let legend_excluded_idx = fieldset_legend_excluded_child(container, doc);
+    let legend_outer = legend_excluded_idx
+        .and_then(|i| container.children.get(i))
+        .map(|lg| lg.height + lg.margin_top + lg.margin_bottom)
+        .unwrap_or(0.0);
+    if let Some(li) = legend_excluded_idx {
+        let legend = &mut container.children[li];
+        legend.x = legend.margin_left;
+        legend.y = legend.margin_top;
+    }
     for (i, c) in container.children.iter().enumerate() {
-        if c.is_absolute || c.is_fixed {
+        if c.is_absolute || c.is_fixed || Some(i) == legend_excluded_idx {
             continue;
         }
         child_info.push((i, c.height + c.margin_top + c.margin_bottom));
@@ -961,7 +1001,7 @@ fn layout_multicol(
         if try_flatten_nested_spanner_wrappers(container, info, styles, trim_active) {
             return;
         }
-        layout_multicol_with_spanners(container, info, styles, trim_active, None);
+        layout_multicol_with_spanners(container, info, styles, trim_active, None, legend_excluded_idx);
         return;
     }
 
@@ -1377,7 +1417,8 @@ fn layout_multicol(
         }
     };
 
-    // 定位子元素（y_base=0：单区域，整个 multicol 内容在一行列内）
+    // 定位子元素（y_base：单区域，整个 multicol 内容在一行列内；R5148 fieldset legend
+    // 排除时以 legend 外尺寸为列流原点，legend 盒保持容器顶部原位）
     // R5130：column-height + wrap（auto/wrap）时 row_height = 列高 + gap，溢出列换行
     // 到下方列行；nowrap/非固定列高保持 row_height=0（单行 inline 溢出）。
     let row_pitch = wrap_row_pitch.unwrap_or(0.0);
@@ -1385,11 +1426,14 @@ fn layout_multicol(
         container,
         &assignments,
         info,
-        0.0,
+        legend_outer,
         row_pitch,
         balanced_placement,
         styles,
     );
+    // R5148：容器内容总高含 legend 行（taffy 堆叠语义本就含它——写回量对称加上，
+    // 防 R4508/R1820 收缩把 fieldset 高度丢掉 legend 行）。
+    let flow_total = legend_outer + region_height;
     // R1341 同族 log-only 诊断（ZW_MULTICOL_DEBUG_NESTED）：分配结果与子终态几何。
     if std::env::var("ZW_MULTICOL_DEBUG_NESTED").is_ok() {
         eprintln!(
@@ -1435,16 +1479,16 @@ fn layout_multicol(
     // 参与（gap-large-002：max(40, 80) = 80，抑制有害收缩），块级 region 的合法收缩
     // 不受抑制（gap-002：inline 平衡 = 40 = region，60 → 40 收缩保持）。无 inline 流
     // （inline_balanced = None）时行为同 R4508。
-    let effective_region = inline_balanced.map_or(region_height, |ib| region_height.max(ib));
+    let effective_region = legend_outer + inline_balanced.map_or(region_height, |ib| region_height.max(ib));
     // R5130：固定列高路径的容器高 = 行数 × 列高 + (行数−1) × gap——列行恒占满
     // 列高（末行未填满也占位；column-height-009 ref 总高 160px = 3×40 + 2×20 实证），
     // 通用 region 写回（R4508/R1820）的单行列内容高语义不含行距，须绕开。
     // nowrap 无行距，容器高 = 列高（溢出列 inline 延伸）。
     let wrap_total_height = fixed_column_height.map(|col_h| match wrap_row_pitch {
-        None => col_h,
+        None => legend_outer + col_h,
         Some(pitch) => {
             let rows = assignments.len().div_ceil(info.count.max(1)).max(1);
-            rows as f32 * col_h + (rows as f32 - 1.0) * (pitch - col_h)
+            legend_outer + rows as f32 * col_h + (rows as f32 - 1.0) * (pitch - col_h)
         }
     });
     if wrap_total_height.is_none()
@@ -1465,12 +1509,12 @@ fn layout_multicol(
     if forced_overflow_enabled()
         && wrap_total_height.is_none()
         && info.sequential_fill
-        && region_height > 0.0
-        && region_height < container.content_height
+        && flow_total > 0.0
+        && flow_total < container.content_height
     {
         if !container_explicit {
-            let delta = container.content_height - region_height;
-            container.content_height = region_height;
+            let delta = container.content_height - flow_total;
+            container.content_height = flow_total;
             container.height -= delta;
         }
     }
@@ -1617,7 +1661,9 @@ fn try_flatten_nested_spanner_wrappers(
     let mut synth = container.clone();
     synth.children = mapping.iter().map(|(_, c)| c.clone()).collect();
     // R4504：synthetic 走 sum 模式（wrapper 阻断折叠——spanner 间隙 = mb+mt 相加）。
-    layout_multicol_with_spanners_inner(&mut synth, info, styles, trim_active, true, None);
+    // R5148：legend 排除不接入本路径（mapping 直通真实子，含 fieldset legend——
+    // 该形态 corpus 无覆盖，维持旧行为，见 fieldset_legend_excluded_child FIXME）。
+    layout_multicol_with_spanners_inner(&mut synth, info, styles, trim_active, true, None, None);
 
     // 容器高写回（spanner 路径在 synth 上写 trim/flagged 高，镜像回真实容器）。
     container.content_height = synth.content_height;
@@ -1699,8 +1745,17 @@ fn layout_multicol_with_spanners(
     styles: &HashMap<NodeId, ComputedStyle>,
     trim_active: bool,
     block_budget: Option<f32>,
+    legend_excluded_idx: Option<usize>,
 ) {
-    layout_multicol_with_spanners_inner(container, info, styles, trim_active, false, block_budget)
+    layout_multicol_with_spanners_inner(
+        container,
+        info,
+        styles,
+        trim_active,
+        false,
+        block_budget,
+        legend_excluded_idx,
+    )
 }
 
 /// `spanner_margins_sum`：R4504 扁平化 synthetic 专用——wrapper 扁平化后 spanner 间的
@@ -1713,19 +1768,32 @@ fn layout_multicol_with_spanners_inner(
     trim_active: bool,
     spanner_margins_sum: bool,
     block_budget: Option<f32>,
+    legend_excluded_idx: Option<usize>,
 ) {
     let col_count = info.count;
     if col_count == 0 {
         return;
     }
 
-    // 1. 划分区域：遍历直接子元素（非 abspos/fixed），spanner 作区域边界。
+    // R5148：fieldset 自身 multicol 容器时，首子 legend 不入列流（layout_multicol 主
+    // 路径同判）——列流 y 原点 = legend 外尺寸，legend 盒保持容器顶部原位。
+    let legend_outer = legend_excluded_idx
+        .and_then(|i| container.children.get(i))
+        .map(|lg| lg.height + lg.margin_top + lg.margin_bottom)
+        .unwrap_or(0.0);
+    if let Some(li) = legend_excluded_idx {
+        let legend = &mut container.children[li];
+        legend.x = legend.margin_left;
+        legend.y = legend.margin_top;
+    }
+
+    // 1. 划分区域：遍历直接子元素（非 abspos/fixed、非 legend 排除），spanner 作区域边界。
     //    regions[i] = 第 i 段非 spanner 子元素索引；spanners[i] = 第 i 个 spanner 索引。
     //    区域数 = spanner 数 + 1（首尾各一段，相邻 spanner 间可能有空区域）。
     let mut regions: Vec<Vec<usize>> = vec![Vec::new()];
     let mut spanners: Vec<usize> = Vec::new();
     for (i, c) in container.children.iter().enumerate() {
-        if c.is_absolute || c.is_fixed {
+        if c.is_absolute || c.is_fixed || Some(i) == legend_excluded_idx {
             continue;
         }
         let is_spanner = c
@@ -1740,8 +1808,8 @@ fn layout_multicol_with_spanners_inner(
         }
     }
 
-    // 2. 逐区域分配 + 定位，spanner 全宽插入其後。
-    let mut y_base = 0.0f32;
+    // 2. 逐区域分配 + 定位，spanner 全宽插入其後（R5148：y 原点 = legend 外尺寸）。
+    let mut y_base = legend_outer;
     // R4250：尚未与下一元素顶边合并的末元素 margin_bottom（CSS2 §8.3.1 adjoining
     // margins：prev.mb ⊔ next.mt = max）。spanner 与区域首子边界均按合并推进。
     let mut pending_mb = 0.0f32;
