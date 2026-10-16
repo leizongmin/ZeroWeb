@@ -136,6 +136,16 @@ impl Bookmarks {
         self.bookmarks.iter().find(|b| b.url == url)
     }
 
+    /// 搜索书签（按标题或 URL 子串匹配，大小写不敏感）。
+    ///
+    /// 书签管理页搜索框（`zero://bookmarks?q=…`）的数据源，语义与 [`crate::History::search`] 一致。
+    pub fn search<'a>(&'a self, query: &str) -> impl Iterator<Item = &'a Bookmark> {
+        let query_lower = query.to_lowercase();
+        self.bookmarks.iter().filter(move |b| {
+            b.title.to_lowercase().contains(&query_lower) || b.url.to_lowercase().contains(&query_lower)
+        })
+    }
+
     /// 按 URL 移除书签。返回是否成功移除。
     pub fn remove_by_url(&mut self, url: &str) -> bool {
         if let Some(index) = self.bookmarks.iter().position(|b| b.url == url) {
@@ -167,6 +177,24 @@ impl Bookmarks {
     pub fn update_title(&mut self, id: BookmarkId, title: &str) {
         if let Some(bookmark) = self.bookmarks.iter_mut().find(|b| b.id == id) {
             bookmark.title = title.to_string();
+        }
+    }
+
+    /// 更新书签标题与 URL（书签管理页编辑表单提交）。
+    ///
+    /// 返回 `true` 表示找到并更新；未找到或标题/URL 超过 [`MAX_TEXT_BYTES`]
+    ///（快照校验上限，超限文件会在下次加载被整体丢弃）时不改动并返回 `false`。
+    pub fn update(&mut self, id: BookmarkId, title: &str, url: &str) -> bool {
+        if title.len() > MAX_TEXT_BYTES || url.len() > MAX_TEXT_BYTES {
+            return false;
+        }
+        match self.bookmarks.iter_mut().find(|b| b.id == id) {
+            Some(bookmark) => {
+                bookmark.title = title.to_string();
+                bookmark.url = url.to_string();
+                true
+            }
+            None => false,
         }
     }
 

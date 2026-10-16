@@ -161,6 +161,7 @@ mod tests {
                         selector: "div".to_string(),
                         href: None,
                         src: None,
+                        link_text: None,
                     },
                 ),
                 (
@@ -172,6 +173,7 @@ mod tests {
                         selector: "#inner".to_string(),
                         href: None,
                         src: None,
+                        link_text: None,
                     },
                 ),
             ],

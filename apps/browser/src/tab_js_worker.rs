@@ -1486,6 +1486,7 @@ mod tests {
                         selector: "div".into(),
                         href: None,
                         src: None,
+                        link_text: None,
                     },
                 ),
                 (
@@ -1497,6 +1498,7 @@ mod tests {
                         selector: "#inner".into(),
                         href: None,
                         src: None,
+                        link_text: None,
                     },
                 ),
             ],
@@ -1576,6 +1578,7 @@ mod tests {
                         selector: "div".into(),
                         href: None,
                         src: None,
+                        link_text: None,
                     },
                 ),
                 (
@@ -1587,6 +1590,7 @@ mod tests {
                         selector: "#inner".into(),
                         href: None,
                         src: None,
+                        link_text: None,
                     },
                 ),
             ],

@@ -534,6 +534,15 @@ impl TabManager {
         hit_test.hit_test_link(x, y)
     }
 
+    /// 链接锚文本命中测试：返回激活锚点 textContent（trim，空文本 `None`，主线程快照）。
+    ///
+    /// 右键菜单「复制链接文本」数据源；缓存 miss 同样返回 `None`，不发同步 IPC。
+    pub fn hit_test_link_text(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<String> {
+        let snap = self.snapshots.get(&tab_id)?;
+        let hit_test = snap.hit_test.as_ref()?;
+        hit_test.hit_test_link_text(x, y)
+    }
+
     /// 图片命中测试：返回 `src`（绝对化，主线程快照）。
     pub fn hit_test_image(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<String> {
         let snap = self.snapshots.get(&tab_id)?;

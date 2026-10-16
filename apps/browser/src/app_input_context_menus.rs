@@ -33,15 +33,23 @@ impl BrowserApp {
         // 预先解析页面点击点的图片 src 与链接 href，用于上下文菜单判定。
         // 图片 src 按文档 URL 绝对化（与链接点击导航同一 join 逻辑）——
         // open_image / copy_image_url / save_image 都需要可独立寻址的绝对 URL。
-        let (image_url, link_url): (Option<String>, Option<String>) =
+        let (image_url, link_url, link_text): (Option<String>, Option<String>, Option<String>) =
             if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f) {
                 let document_url = self.shell.tab(tab_id).and_then(|tab| tab.url());
                 let absolutize = |raw: String| resolve_clicked_link_url(&raw, document_url);
                 let img = self.tabs.hit_test_image(tab_id, doc_x, doc_y).map(absolutize);
                 let lnk = self.tabs.hit_test_link(tab_id, doc_x, doc_y).map(absolutize);
-                (img, lnk)
+                // 链接文本取激活锚点的 textContent（hit_test_link_text 祖先行走，
+                // 随命中缓存走快照/IPC——多进程模式主进程无 DOM，不能回查页面 HTML），
+                // 供「复制链接文本」。
+                let link_text = if lnk.is_some() {
+                    self.tabs.hit_test_link_text(tab_id, doc_x, doc_y)
+                } else {
+                    None
+                };
+                (img, lnk, link_text)
             } else {
-                (None, None)
+                (None, None, None)
             };
 
         let context_type = if self.address_bar_hit_test(x_f, y_f) {
@@ -120,6 +128,10 @@ impl BrowserApp {
             if matches!(item.id(), "save_link" | "copy_image" | "print") {
                 item.set_enabled(false);
             }
+            // Chrome 行为：链接无文本（如纯图片链接）时「复制链接文本」不可用。
+            if item.id() == "copy_link_text" && link_text.is_none() {
+                item.set_enabled(false);
+            }
         }
 
         let (page_doc_x, page_doc_y) = if context_type == ContextType::Page
@@ -156,6 +168,7 @@ impl BrowserApp {
             bookmark_title: None,
             image_url,
             link_url,
+            link_text,
         };
         self.needs_redraw = true;
     }
@@ -193,6 +206,7 @@ impl BrowserApp {
         let context_type = self.context_menu.context_type;
         let bookmark_url = self.context_menu.bookmark_url.clone();
         let link_url = self.context_menu.link_url.clone();
+        let link_text = self.context_menu.link_text.clone();
         let image_url = self.context_menu.image_url.clone();
 
         self.context_menu.close();
@@ -335,6 +349,11 @@ impl BrowserApp {
             "copy_link" => {
                 if let Some(href) = &link_url {
                     crate::clipboard::write_text(href);
+                }
+            }
+            "copy_link_text" => {
+                if let Some(text) = &link_text {
+                    crate::clipboard::write_text(text);
                 }
             }
             "bookmark_link" => {

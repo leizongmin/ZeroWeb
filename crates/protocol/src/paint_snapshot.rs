@@ -651,6 +651,9 @@ pub struct IpcHitTestNodeMeta {
     /// 图片 `src`（仅 `img` 元素，绝对化后）。
     #[serde(default)]
     pub src: Option<String>,
+    /// 链接锚文本（仅 `a` 元素，textContent trim，空→`None`；右键菜单「复制链接文本」）。
+    #[serde(default)]
+    pub link_text: Option<String>,
 }
 
 /// IPC 命中测试缓存。

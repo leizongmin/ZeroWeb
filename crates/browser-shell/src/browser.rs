@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use std::path::Path;
 
 use crate::autocomplete::Autocomplete;
-use crate::bookmarks::Bookmarks;
+use crate::bookmarks::{BookmarkId, Bookmarks};
 use crate::download::DownloadManager;
 use crate::history::History;
 use crate::profile::ProfilePaths;
@@ -593,6 +593,24 @@ impl BrowserShell {
             tracing::warn!(%err, "failed to save bookmarks");
         }
         removed
+    }
+
+    /// 按 ID 删除书签（书签管理页「删除」链接），并持久化。返回是否确实删除。
+    pub fn remove_bookmark_by_id(&mut self, id: BookmarkId) -> bool {
+        let removed = self.bookmarks.remove(id);
+        if removed && let Err(err) = self.bookmarks.save_default() {
+            tracing::warn!(%err, "failed to save bookmarks");
+        }
+        removed
+    }
+
+    /// 更新书签标题与 URL（书签管理页编辑表单提交），并持久化。返回是否找到该 ID。
+    pub fn update_bookmark(&mut self, id: BookmarkId, title: &str, url: &str) -> bool {
+        let updated = self.bookmarks.update(id, title, url);
+        if updated && let Err(err) = self.bookmarks.save_default() {
+            tracing::warn!(%err, "failed to save bookmarks");
+        }
+        updated
     }
 
     // ── 历史操作 ──

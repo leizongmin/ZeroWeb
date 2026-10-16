@@ -197,6 +197,8 @@ pub struct ContextMenuState {
     pub image_url: Option<String>,
     /// 链接右键菜单的目标链接 URL（绝对化后的 href）。
     pub link_url: Option<String>,
+    /// 链接右键菜单的目标链接文本（激活锚点的 textContent，trim；无文本为 None）。
+    pub link_text: Option<String>,
 }
 
 impl ContextMenuState {
@@ -218,6 +220,7 @@ impl ContextMenuState {
             bookmark_title: None,
             image_url: None,
             link_url: None,
+            link_text: None,
         }
     }
 
@@ -233,5 +236,6 @@ impl ContextMenuState {
         self.bookmark_title = None;
         self.image_url = None;
         self.link_url = None;
+        self.link_text = None;
     }
 }

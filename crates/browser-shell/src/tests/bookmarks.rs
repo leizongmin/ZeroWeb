@@ -74,6 +74,54 @@ fn test_bookmarks_update_title() {
     assert_eq!(bm.get(id).unwrap().title(), "New Title");
 }
 
+// T40 书签管理页：search（搜索框过滤）与 update（编辑表单提交）。
+#[test]
+fn test_bookmarks_search_matches_title_or_url_case_insensitive() {
+    let mut bm = Bookmarks::new();
+    bm.add("Example", "https://example.com/a", None);
+    bm.add("Rust Blog", "https://www.rust-lang.org/", None);
+
+    let by_title: Vec<_> = bm.search("rust").collect();
+    assert_eq!(by_title.len(), 1, "标题子串命中（大小写不敏感）");
+    assert_eq!(by_title[0].url(), "https://www.rust-lang.org/");
+
+    let by_url: Vec<_> = bm.search("EXAMPLE.COM").collect();
+    assert_eq!(by_url.len(), 1, "URL 子串命中（大小写不敏感）");
+    assert_eq!(by_url[0].title(), "Example");
+
+    assert_eq!(bm.search("nomatch-xyz").count(), 0);
+}
+
+#[test]
+fn test_bookmarks_update_title_and_url() {
+    let mut bm = Bookmarks::new();
+    let id = bm.add("Old", "https://old.example.com", None);
+    assert!(bm.update(id, "New", "https://new.example.com"));
+    let bookmark = bm.get(id).unwrap();
+    assert_eq!(bookmark.title(), "New");
+    assert_eq!(bookmark.url(), "https://new.example.com");
+}
+
+#[test]
+fn test_bookmarks_update_nonexistent_returns_false() {
+    let mut bm = Bookmarks::new();
+    assert!(!bm.update(BookmarkId(99999), "New", "https://new.example.com"));
+}
+
+#[test]
+fn test_bookmarks_update_rejects_oversize_text() {
+    // 快照校验上限（MAX_TEXT_BYTES = 16KiB）以上拒写：超限书签会让整个
+    // bookmarks.json 在下次加载时被 is_valid 整体丢弃（防数据丢失）。
+    let mut bm = Bookmarks::new();
+    let id = bm.add("Keep", "https://example.com", None);
+    let oversize = "x".repeat(16 * 1024 + 1);
+    assert!(!bm.update(id, &oversize, "https://example.com"));
+    assert!(!bm.update(id, "Title", &oversize));
+    let bookmark = bm.get(id).unwrap();
+    assert_eq!(bookmark.title(), "Keep", "拒写时不改动原值");
+    assert_eq!(bookmark.url(), "https://example.com");
+}
+
 #[test]
 fn test_bookmarks_list_root() {
     let mut bm = Bookmarks::new();
