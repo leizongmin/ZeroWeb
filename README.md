@@ -2,220 +2,91 @@
 
 <img src="./banner.svg" alt="ZeroWeb" width="100%">
 
+[![CI](https://github.com/leizongmin/ZeroWeb/actions/workflows/ci.yml/badge.svg)](https://github.com/leizongmin/ZeroWeb/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/leizongmin/ZeroWeb?include_prereleases&label=prerelease)](https://github.com/leizongmin/ZeroWeb/releases)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-experimental-brown.svg)](#当前状态)
-[![CI](https://img.shields.io/badge/ci-github--actions-black.svg)](.github/workflows/ci.yml)
+[![Status](https://img.shields.io/badge/status-experimental-brown.svg)](#现在做到哪了)
 [![Website](https://img.shields.io/badge/website-zeroweb.leizm.com-155eef.svg)](https://zeroweb.leizm.com)
 
-ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库同时在做两件事：
+ZeroWeb 是一个用 Rust 从头写的实验性跨平台浏览器，支持 macOS、Linux、Windows 和 Android。它交付两样东西：
 
-官网：[zeroweb.leizm.com](https://zeroweb.leizm.com)
+- **`ZeroWebView`**：可嵌入其他应用的网页渲染库
+- **`ZeroBrowser`**：基于同一内核的完整浏览器应用
 
-- 一个可嵌入、可复用的 `ZeroWebView` 库
-- 一个完整的 `ZeroBrowser` 浏览器应用
+DOM、CSS、布局、渲染、JavaScript 绑定、网络和安全边界都在这个仓库里实现，主要依赖宽松许可证的 Rust 组件。
 
-项目主线会尽量把核心代码和依赖边界握在自己手里，所以页面内核主要基于宽松许可证的 Rust 组件慢慢搭起来。DOM、CSS、布局、渲染、导航和安全边界，都在这个仓库里一层层补。
-
-这也是个 AI-first 的工程实验：人只负责方案设计、关键决策和结果验证，代码开发几乎全部由 AI 自主完成。我们想看看，在架构边界、测试和验收都写清楚的前提下，AI 到底能把这种复杂系统推进到什么程度。
+这也是一个 AI-first 的工程实验：人只负责方案设计、关键决策和结果验证，代码几乎全部由 AI 编写。我们想看看，在架构边界、测试和验收都写清楚的前提下，AI 能把浏览器这种复杂系统推进到什么程度。
 
 > [!IMPORTANT]
-> 这个仓库还在实验阶段，主要用来学习、研究和做工程探索。核心 crate 和测试已经有不少东西，但浏览器 shell、完整的页面 JavaScript 运行时、真实站点兼容性都还在路上。它现在不是一个日常可用的浏览器。商用或其他生产用途，请自己评估功能、安全、兼容性、性能和许可证边界风险。
+> 项目处于实验阶段，**不是日常可用的浏览器**。它适合学习、研究和工程探索。商用或生产用途请自行评估功能、安全、兼容性、性能和许可证风险。
 
-**快速导航**
+<img src="./docs/images/zerobrowser-newtab.webp" alt="ZeroBrowser 在 macOS 上的新标签页" width="100%">
 
-- [路线图](ROADMAP.md)
-- [官网](https://zeroweb.leizm.com)
-- [当前状态](#当前状态)
-- [快速开始](#快速开始)
-- [仓库结构](#仓库结构)
-- [文档导航](#文档导航)
-- [参与贡献](#参与贡献)
-- [许可证](#许可证)
+## 为什么做这个项目
 
-## 项目定位
+- **嵌入优先**：除了浏览器应用，还要提供稳定的 Rust `ZeroWebView` API，方便其他应用直接集成。
+- **许可证边界清楚**：主线依赖优先选 MIT、Apache-2.0、BSD 等宽松许可证，核心能力不受 copyleft 约束。
+- **Rust 全栈**：页面内核、宿主层和渲染基础设施尽量都在 Rust 生态内完成。
+- **AI 可以写，但要能审**：每个改动都要讲得清、测得到、看得见。
 
-- **以嵌入为先**: 除浏览器应用外，项目还要交付稳定的 Rust `ZeroWebView` API，方便其他应用直接集成。
-- **许可证边界优先**: 主线依赖优先选择 MIT、Apache-2.0、BSD 等宽松许可证，避免核心能力受不合适的 copyleft 依赖约束。
-- **Rust 全栈路线**: 页面内核、宿主层和渲染基础设施都尽量在 Rust 生态内完成。
-- **AI 可以写，但要能审**: 欢迎 AI 辅助贡献，但提交上来的改动必须能讲清楚、测清楚、看清楚。
+## 现在做到哪了
 
-## 当前状态
+状态说明：✅ 基础能力可用并有测试覆盖；🚧 在推进，还不完整；⏳ 计划中。
 
-| 方向 | 现状 |
-|------|------|
-| `ZeroWebView` | 已有稳定嵌入 API、可运行 demo，以及跨 crate 和产品层 smoke 测试；Service Worker、WASM 桥接与 `SecurityContext` 安全检查等页面级能力已接入其中 |
-| 浏览器应用 | `zero-browser` 固定经 `zero-renderer`、`zero-image-decoder` 与 `zero-compositor` 子进程工作；browser 仅保留窗口、浏览器 chrome、网络代理、IPC 帧导入与呈现，默认发布版不链接 WebView、脚本 sandbox 或任何 JS 引擎，页面脚本由 renderer 独占执行。headless 调试同样通过 renderer IPC 完成导航、脚本和截图，并已提供 CDP 协议雏形（cdp-protocol goal 2026-09-16 DONE，Playwright `connectOverCDP` 驱动绿步 33 守成维持）；页面下载字体（@font-face 网络字体）经 renderer→browser→compositor 字体载荷管线送达合成器参与生产渲染与截图。`ZeroWebView` 作为嵌入 API 保持进程内实现；Android 端可用化目标已完成（`apps/android-browser`，android-browser goal 2026-09-13 DONE——多标签槽位、视口真值、键盘/IME 输入、下载/通知/SAF 导出、双语与无障碍、CI 模拟器冒烟 + chaos 断连恢复，DC-1~4 ✅）；桌面产品化已完成（desktop-browser goal 2026-09-27 M5 收口 DONE，DC-1~5 ✅——真窗口主链路 + 多标签/地址栏导航 + 下载/右键菜单/缩放/页面查找 + 收藏/历史/设置/主页数据面，`scripts/desktop-browser-m1~m4-smoke.sh` 四演示流守成门）；整体仍处于实验阶段 |
-| 页面 JavaScript（当前主线） | `script-sandbox` 已提供 V8/QuickJS feature gate（含 V8 持久化 Context 复用）、Web Worker、ES Modules、WebAssembly JS API 到 `wasm-sandbox` 的自动桥接。**P1a DOM/JS Bridge 原生化已主体落地**：fetch 真实化（GET 端到端 + 二进制响应 body 真实字节）、setTimeout 真实延迟、MutationObserver（characterData 变化 / childList addedNodes 回填 / attributeFilter / subtree）与 IntersectionObserver/ResizeObserver 已真实触发回调；表单控件事件、Selectors L4、DOM 遍历/变异 API（含 innerHTML/outerHTML childList emission）、布局几何、`getComputedStyle` 动态 inline 覆盖 + 计算值序列化、classList 完整 DOMTokenList、HTMLCollection/NodeList item/namedItem。**Clipboard API 与 Fullscreen API 已接通**（web-api-batch2 goal 2026-09-24 M4 收口——`navigator.clipboard` 读写/ClipboardItem 富 MIME/权限拒绝语义、requestFullscreen/exitFullscreen 异步状态机 + fullscreenchange 事件 + 节点移除全屏联动，WPT clipboard-apis 83.6% / fullscreen 88.0%）。**P1b V8 原生 DOM 绑定已达成 default-on（js-dom M1-M5）**（2026-08-09 RFC 获批后 R3095 起持续落地）：S0 PoC 验证 → S1 原生只读属性族 + NodeId↔对象映射（native 比 polyfill 快 ~15.6×）→ S2 生产接线 + 树写/属性写原生 → live Document 共享（原生写触发重渲染）→ S3 查询原生 → S4 EventTarget 原生 + 事件派发/冒泡/stopPropagation 原生化，dom_bindings 五子模块化闭合；命名空间/序列化 spec 合规（R3181–R3208）；**S5 customElements/Web Components 里程碑完成（R3262–R3269：native HTMLElement 基类 + class 继承、customElements.upgrade/createElement 原生实例、connected/disconnected 生命周期、attributeChangedCallback、子树 upgrade）**；DOM/CSS 表单状态选择器族一致化（R3277–R3284）；**R383/R384（2026-08-31）：V8 与 QuickJS 双引擎 `native_dom` default-on land，kill-switch（`ZW_NATIVE_DOM` env / `WebViewConfig::native_dom`）已删除**——workspace v8 16814P/0F + quickjs 矩阵全绿。js-dom goal 已完成归档（2026-08-31，DC-1~8 ✅），已知 Fail 集收敛至 6 个文件（详见 [docs/goal/archive/js-dom/master.md](docs/goal/archive/js-dom/master.md)）。**Performance API 计时面已收口**（performance-api-compat goal 2026-10-13 Done：longtask / event-timing / navigation-timing / resource-timing 收口快照 191/293 = 65.2%）；**Selection / Touch Events / Console / CompressionStreams 四面已收口**（selection-compat 2968/2970 = 99.93%、touch-events-compat 可执行面 30P 非中性 100%、console-compat corpus 28/28 = 100%、compression-compat 245/318 = 77.04%（非 brotli 面 245/245），2026-10-14/15 收口）；完整 Web API 与站点兼容性仍在推进（后续优先级见 [路线图](ROADMAP.md)） |
-| 渲染兼容性（恢复主动实施） | 以 WPT/CSSWG reftest 对齐 Chromium 为验收标准，Chromium Oracle 像素一致率（`make reftest-oracle`）为诚实度量（同源 reftest 存在假通过，仅作自一致性参考）。上游 WPT reftest corpus default **15,431/16,590 ≈ 93.0%**（2026-10-16，R5145 轮口径，fail 1,159——R5006–R5145 修复族分段回收）；**ruby-overhang gate 系列推进**（ZW_MIXED_BARE_TEXT 第七次实测零损失后 default-on 开门（R4408）、bare-text walker 加固与交错 walk 切换、rtc 注音容器语义、注音排除泛化、ruby 内层布局三件套、ruby-position 属性解析 + rt 高度方向分向（R4412）、overhang 空白串悬挂容量、under rt 行堆叠生长、clamp 边界与 cap prefix、intrinsic/collect base_w 契约对齐、rt 内 float 元素按 ruby 前兄弟 hoist（R4421，float-handling 翻绿））、**pre-line 强制断行 identity 三站贯通 + Path B 断行投影**（R4398–R4400）、float 行组合模型（R4397）、字体栈与垂直度量重建大族（R4365–R4379）、content-height 严格翻绿系列（R4379–R4384）、**ruby-overhang 模型 flip default-on**（roadmap 既定 flip 实测零新翻红，R4422）与 **vertical writing modes 线开动**（R1043 深域持续推进：vrl 根盒右缘锚定与深层列化、sideways-lr 字形取向 −90° + 列内自下而上、正交流纯 IFC block 收缩臂 + inline-size fill 臂、vertical line_height 槽转置、table-cell LR 排除解除、vertical abs-pos 容器子流放、vertical float 双臂、cascade 别名消解 + UA ul/ol 切 logical、vertical inline-block 块级子行内尺寸泄漏修正、vertical 纯文本 float 列宽 IFC 测量转正，R4425–R4463）、**multicol-span-all / multicol 平衡与 region-distribution 线**（spanner 区域列平衡、nested spanner 扁平化 pre-step、auto-height balance 容器高对称写回、region-distribution 分段与收缩兄弟重排收割 004a/b/006 族（R4511–R4524）、溢出语义第三律，R4499–R4524）、**边框/裁剪渲染线**（clip 多边形条带 v2、per-layer clip border 墨迹环带、border-shape slice 2 内容/replaced 内形状裁剪、corner-shape × overflow 内形状裁剪、clip-path 覆盖改写 z 序原位修复——corner-shape 凹角簇解锁，R4525–R4547）、**background-clip:text 恒色染色线**（恒色等价染色 v1.5 + 祖先链染色臂 + url 背景纯色通路——clip-text 族 12→4 fail，R4548–R4553）、**尺寸关键字与垂直 width 族线**（块轴 content 关键字求解 hori-2a/2b、paint Path B 直系文本度量种子 hori-1、垂直 width 族块轴镜像臂——vert-1 翻绿 0.00%（R4556–R4568）、corner-shape A 族评估修正 + video poster 帧绘制（R4569））、**corner-shape 族延伸与圆角裁剪边勘察线**（canvas Path2D 绘制期 CTM 修复、伪元素盒化 gate 切片、斜杠 border-radius 两轴存储、box-shadow 墨迹随形角/圆角裁剪边协同试作耦合定谳回退——升级专项战役挂账，R4570–R4579）、R3928 翻负真因修复（掩蔽 unmask 定谳 + 块级装饰伪元素 element 化通用化，R4581）与 **@container style() 廉价子切片**（串等值 + not + 具名容器 + 嵌套接通，R4582）、**font-size 计算值确定性线**——box-shadow-overlapping-003 渲染双相（同输入不同输出）根因修复：font-size 预应用 pass 消除胜者 HashMap 迭代序依赖（R4642）+ em/percentage/larger/smaller 按父元素 font-size 归一化以 Px 存储（净 +2，R4643）等系列持续收口（R3936–R5146，近期：**run-in / abspos 行宽与塌穿族**——paint Path B OOF 剪枝、abspos 单行测量上取整、块盒 px max-height 钳制、vars 冲突门、contrast-color() 落地（R5095–R5108 fail 1,277→1,236）、calc(P%±Npx) 百分比基准改包含块、段断行弃用 U+000B 哨兵改位置旁路、SVG feDisplacementMap scale 平方补偿 + CSS filter 函数形式序列化改写为等价 `<filter>` 元素（R5109–R5124 fail 1,236→1,202）、multicol 嵌套碎片化战役 + svg premult 直通修复与 zh/zh-Hant 默认引号入表（R5125–R5146 fail 1,202→1,159））。布局依赖值两遍样式解析深域已立案待用户点名（R4189）。详见 [路线图](ROADMAP.md) 与 [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md) |
-| HTML 行为兼容（新赛道） | 2026-08-12 启动：以表单场景为起点的规范驱动并行开发线（源码深潜 + 官方规范交叉验证），范围为基础 HTML 元素的解析、DOM/IDL、交互状态、事件与默认动作；已建立表单兼容性基线 + 共享动作事务核心（form 动作/文本编辑/焦点经共享计划路由，可取消文本输入事件、form POST 导航、无 JS 保留默认动作、稳定页面节点身份），配套 [`html-behavior-compatibility-spec-rfc.md`](docs/specs/html-behavior-compatibility-spec-rfc.md) 规格与 `tests/integration/src/html_compat.rs` 常驻断言 |
-| 安全与可访问性 | CSP 完整实现、HSTS 预加载、混合内容阻止 / 升级、权限模型与站点隔离已落地并统一接入 `SecurityContext`（R3342/R3343 修复 CSP source-expr 前缀匹配与 mixed-content 大小写绕过）；security-hardening goal 已完成（2026-09-25 R11 终判 DONE，DC-1~4 ✅）——CSP 运行时强制接线 default-on（meta 装配 + script/style/img 元素与运行时/attr/connect/eval 全检查点 + `SecurityPolicyViolationEvent` 事件上报，WPT csp corpus subtests 16.3%→28.8%、74/445 案全绿零丢失）、Mixed Content 分级阻止 default-on（stylesheet/img/script 三面，`ZW_MIXED_CONTENT_ENFORCEMENT=0` 回退）、HSTS 响应注册接线、`navigator.permissions` 语义层 + change 事件；可访问性基础（`FocusManager` Tab 导航 + ARIA）已起步 |
-| 媒体（解码管线起步，三 goal 已完成） | `crates/media`（zero-media）已落地：webm/Matroska demux、VP9 纯 Rust 解码、AV1（`decode-av1` feature）、H.264 mp4（`decode-h264` feature，AAC 音频链 + 伴生轨 + precise-seek 随切片 2 落地）、音频解码（mp3/ogg-vorbis/opus/webm 音轨 + AAC/wav）、`VideoPlayer` 播放驱动、renderer 播放泵事件循环节拍、混音总线与 Web Audio 最小面。媒体三 goal 已完成（2026-09-05 收口归档）：[media-playback](docs/goal/archive/media-playback/master.md)（M0 选型 RFC 路线 C + M1-M3 帧上屏/连续播放/多格式，DC-1~5 ✅）、[media-audio](docs/goal/archive/media-audio/master.md)（cpal 输出 + A/V 同步 + volume/muted 真控制 + AudioContext 最小面 webaudio 50 用例 1418P/0F，DC-1~5 ✅）、[media-elements](docs/goal/archive/media-elements/master.md)（HTMLMediaElement 语义面 WPT 640P/0F/13PF = 98.01%，DC-1~4 ✅） |
-| 存储与 Service Worker | 存储 `caches`/`Cache` 全 API 接 zero-storage 真实实现 + per-origin 持久化（WPT cache-storage 39 case / 449 subtest 全绿）；Service Worker 真实生命周期 + fetch 拦截 respondWith + Cache API 集成 + registration-local CacheStorage 持久化（WPT 三 runner 121 case / 652 subtest 全绿）；OPFS 已真实化——`navigator.storage.getDirectory()` 从 JS shim 内存树升级为 zero-storage `opfs` 模块真实实现 + per-origin 持久化（WPT `fs/` 通道 `make testharness-fs`，基线 48P/85F → Rust 后端落毕）。存储三件套（IndexedDB / Cache API / OPFS）三 goal 均已完成收口归档（storage-opfs 2026-09-09 完成，DC-1~4 ✅）；`document.cookie` 语义重写与 webstorage corpus 全绿（cookies / webstorage 两 goal 2026-10-12 收口，cookies 533/533、webstorage 1251/1251 = 100%）。详见 [docs/goal/archive/storage-opfs/](docs/goal/archive/storage-opfs/master.md) |
-| HTML 编辑与键盘 | contenteditable/execCommand/Selection 编辑管线（WPT selection 套件 2994P/5F = 99.8%，execCommand bold/italic/underline/delete 实应用 + queryCommandState 反射 + insertHTML/insertParagraph，CE 键入/删除/Enter 换行/innerHTML 注册落 DOM）；键盘——Space/Enter/Esc/方向键/type-ahead 激活与导航、隐式表单提交（implicit-submission 3/3 全 Pass）、Ctrl+Home/End 与滚动键 JS 滚动默认动作。keyboard/editing 三 goal 已完成（2026-09-08 收口归档，详见 [docs/goal/archive/](docs/goal/archive/README.md)） |
-| 浏览器自动化 | `zero-webdriver` W3C 协议 9 → 36 endpoint（session/导航/超时/元素族/execute sync+async/source/window 族/screenshot），CI 双 feature 矩阵接线 + 11 个 HTTP 全链路集成测试；webdriver 与 webdriver-screenshot 两 goal 均已收口归档（2026-09-08 / 2026-09-09，DC-1~4 ✅）。CDP 协议兼容已完成（cdp-protocol goal，2026-09-12 立案、2026-09-16 M5 定稿收口 DONE）——Playwright `connectOverCDP` 经 headless CDP 通道驱动 ZeroWeb：objectId 全量 remoteObject 桥（Runtime/DOM 域句柄面）、console、Emulation 视口/媒体仿真、Network 事件（FetchObserved 观测管线 + dataReceived）、Storage cookie 域、keyboard Ctrl+A 全选、子帧元数据探测、点击 hit-target 修复，Playwright 命令账本绿步 6→33（S39 后静默监测轮维持）。DevTools 调试面已完成（devtools goal 2026-09-17 DONE 转守成）——复用 Chrome DevTools frontend（bundle pin + BSD-3）：Elements 活 DOM 树 + Computed 侧栏、Console REPL、Network 请求行演示流 + cookie 面板、GUI 模式 CDP server 可开关（`--remote-debugging-port` 显式传参即开，仅绑 loopback），DC-1~3 ✅。详见 [docs/goal/cdp-protocol.md](docs/goal/cdp-protocol.md) |
-| 项目定位 | 适合学习、研究、工程探索，不适合直接当成生产浏览器 |
+| 能力 | 状态 | 现状 |
+|------|------|------|
+| 桌面浏览器 | ✅ | macOS / Linux / Windows 真窗口；多标签、地址栏、下载、右键菜单、缩放、页面查找、收藏、历史、设置 |
+| Android 浏览器 | ✅ | Kotlin/Compose 界面 + Rust 内核；多标签、键盘与输入法、下载、通知、中英双语 |
+| 多进程架构 | ✅ | 渲染、图像解码、合成分别在独立进程；页面脚本只在渲染进程内运行 |
+| 嵌入 API `ZeroWebView` | ✅ | 稳定 API 与 demo，接入 Service Worker、WASM 和安全检查 |
+| HTML / CSS 渲染 | 🚧 | 上游 WPT reftest 约 93% 通过（15,431 / 16,590，2026-10-16） |
+| JavaScript 与 DOM | 🚧 | V8 / QuickJS 双引擎，原生 DOM 绑定，Web Components、Worker、ES Modules |
+| 网络、存储与安全 | ✅ | HTTP/1.1 和 HTTP/2、Cookie、IndexedDB、Cache API、OPFS、Service Worker；CSP、HSTS、混合内容阻止、站点隔离 |
+| 编辑与输入 | ✅ | contenteditable、Selection、键盘默认动作、剪贴板、全屏 |
+| 媒体 | 🚧 | VP9 / AV1 / H.264 视频，MP3 / Vorbis / Opus / AAC 音频，基础 Web Audio |
+| 自动化与调试 | ✅ | WebDriver、CDP（可被 Playwright 驱动）、复用 Chrome DevTools 前端的调试面板 |
+| WebGL / WebGPU | ⏳ | 尚未进入主线 |
 
-各模块现状见上方表格，未完成的工作见 [路线图](ROADMAP.md)。
+上表是概要。按里程碑的进度见 [路线图](ROADMAP.md)，各领域的兼容性数字见 [官网进度页](https://zeroweb.leizm.com/progress.html)。
 
-## 快速开始
+## 还缺什么
 
-### 1. 前置要求
+- **真实网站兼容性**：静态页面渲染接近可用，但登录、复杂脚本、长会话等真实站点交互还没系统验收。
+- **Web API 覆盖**：部分 API 还在补齐，例如拖放、Pointer Lock、Web Crypto；WebGL / WebGPU 尚未开始。
+- **性能**：还没用 Speedometer、JetStream 等基准做系统优化。
+- **完整产品体验**：没有扩展系统、没有 WebRTC，完整媒体播放体验也不是近期重点。
+- **正式发布**：目前只有每周预发布构建，还没有稳定版本。
 
-- Rust `1.85` 或更新版本，包含 `rustfmt` 和 `clippy`
-- Linux 和 macOS 请按 [Linux 和 macOS 开发环境](docs/development/linux-macos.md) 配置。
-- Windows 开发环境（MSVC、LLVM/libclang、rusty_v8）请按 [Windows 开发环境](docs/development/windows.md) 配置。
+## 试一下
 
-### 2. 构建与测试
+**下载预构建包**：在 [Releases](https://github.com/leizongmin/ZeroWeb/releases) 下载每周构建（`weekly-*`），提供 Linux、macOS、Windows 版本。这些都是实验性预发布，macOS 版可能需要在“系统设置 → 隐私与安全性”里手动放行。
+
+**从源码运行**：先按 [Linux 和 macOS](docs/development/linux-macos.md) 或 [Windows](docs/development/windows.md) 文档配置环境，然后：
 
 ```bash
-make build                                 # 准备 rusty_v8 并构建整个 workspace
-make test                                  # 完整测试门禁（经 test-guard 包裹）
-make fetch-wpt-data                        # 首次跑 reftest 前先拉取上游 WPT 测试数据（~2 万文件，独立 repo；reftest target 会自动触发）
-make reftest                               # = WPT reftest（release 构建，经 test-guard 包裹）
-make reftest-oracle                        # ZeroWeb 渲染 vs Chromium Oracle 像素一致率（诚实通过率度量）
-make browser                               # 启动浏览器（GPU 模式）
-make browser-cpu                           # CPU + scale 1.0 的 WPT 对齐模式
-make product-smoke                         # 产品静态页（welcome.html）vs Chromium Oracle 像素回归门禁
-make product-smoke-legacy                  # HTML 3.2/4 + CSS1/2 静态页（42 个 fixture）vs Chromium Oracle 趋势门禁
-cargo clippy --workspace --all-targets -- -D warnings
+git clone https://github.com/leizongmin/ZeroWeb.git
+cd ZeroWeb
+make browser
 ```
 
-> [!NOTE]
-> 跑测试和 WPT reftest 请用 `make test` / `make reftest`，不要裸跑 `cargo test` 或 `cargo run --bin zero-wpt-runner -- reftest`。入口会先在不设内存阈值的阶段编译，随后由 `scripts/test-guard.rs` 只包裹运行阶段；运行时单进程 RSS 超过 6 GB、全树内存超过 16 GB 或总时长超过 1800 s 时杀掉整棵进程树，避免内存型 bug（如 CSS parser 未闭合括号死循环）或长时间挂起触发系统级 OOM 连累整台机器。阈值可在命令行覆盖，例如大目录 reftest 需放宽超时：`cargo build --release --bin zero-wpt-runner && ./target/test-guard --time-limit 7200 -- ./target/release/zero-wpt-runner reftest`。
+更多构建、测试和运行方式见 [构建、测试与本地运行](docs/development/building-and-testing.md)。
 
-> 涉及渲染 / 布局变更时，建议额外跑 `make product-smoke`：它把产品静态页 `apps/browser/assets/welcome.html` 渲染后与 Chromium Oracle 像素截图对比（默认 diff 超过 20% 即失败，可用 `make product-smoke MAX_DIFF=22` 调阈值），用来捕获 `make test` / `make reftest` 覆盖不到的产品可见回归。
-
-`freetype-raster` feature（默认开启）在非 Ahem 字体路径上用 FreeType 替代 fontdue 光栅化，是 broad 一致率显著提升的关键（R1094 实测全 corpus oracle +232 零回归）。需纯 Rust 构建时：`cargo build --no-default-features -p zero-render-foundation`。
-
-### 3. 运行本地入口
-
-```bash
-# rendering pipeline demo (render-foundation + host-runtime)
-cargo run --bin webview-demo
-
-# Browser app entrypoint
-cargo run --bin zero-browser
-
-# Headless mode: WebSocket remote debugging protocol (default port 9222)
-cargo run --bin zero-browser -- --headless --remote-debugging-port=9222
-```
-
-想先验证最短渲染链路，可以先跑 `webview-demo`；想直接看浏览器壳、多进程和 GPU 路径，就跑 `make browser`。需要 CPU + scale 1.0 的 WPT 对齐模式时使用 `make browser-cpu`。Windows 对应入口见 [Windows 开发环境](docs/development/windows.md)。
-
-### 4. 打包为可分发产物
-
-需要把 `zero-browser` 打成各平台安装包时，可以用仓库里的打包脚本（产物输出到 `target/packages/`）：
-
-```bash
-./scripts/package-linux.sh                                              # Linux：.AppImage / .deb（--appimage|--deb|--all）
-./scripts/package-macos.sh                                              # macOS：ZeroBrowser.app + .zip（需在 macOS 上运行）
-powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1    # Windows：.zip（-Installer 生成 NSIS 安装器）
-```
-
-macOS 下载产物要免除 Gatekeeper 手工放行，必须使用 Apple Developer ID 签名并完成公证。release/weekly workflow 支持仓库 Secrets：`MACOS_CERTIFICATE`（base64 编码的 `.p12`）、`MACOS_CERTIFICATE_PASSWORD`、`MACOS_KEYCHAIN_PASSWORD`、`APPLE_ID`、`APPLE_TEAM_ID`、`APPLE_APP_PASSWORD`。未配置时仍会生成 ad-hoc 签名的 `.app` zip，但首次运行仍可能被 macOS 拦截。
-
-发布 GitHub Release（published）或手动 `workflow_dispatch` 触发时，`.github/workflows/release.yml` 会在 Linux、macOS、Windows 上自动构建并附带产物。项目仍在实验阶段，这些产物仅供本地测试与体验，不代表正式发布。
-
-## 仓库结构
-
-整个工作区共 32 个 workspace member：22 个库 crate、7 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 核心引擎 / 基础设施 / 产品层与测试」分组列出。
-
-### 应用与进程入口
-
-| Path | 用途 |
-|------|------|
-| `apps/browser` | 桌面浏览器入口，支持窗口模式和 `--headless` / remote debugging |
-| `apps/renderer` | 独立渲染进程入口，负责多进程 IPC 下的页面渲染与脚本执行 |
-| `apps/image-decoder` | 图像解码独立进程（PNG/JPEG/WebP，隔离编解码器漏洞），浏览器产品路径强制启用 |
-| `apps/compositor` | 合成器进程：protocol 消息族 + 真实光栅化（C2） |
-| `apps/webdriver` | WebDriver 服务（W3C 协议 36 endpoint，含 screenshot 与 CI 全链路测试；webdriver / webdriver-screenshot 两 goal 均已完成） |
-| `apps/webview-demo` | 最小渲染管线演示程序（wgpu/CPU 渲染静态文本，演示 render-foundation 与 host-runtime 集成） |
-| `apps/android-browser` | Android 浏览器应用（Kotlin/Jetpack Compose chrome + Rust JNI 桥接层 `zero-android-browser`：28 JNI 导出面，四进程角色 renderer×8/compositor/image-decoder，decoder/compositor 经 Android socket 复用共享 role 循环；可用化 goal 已完成 2026-09-13） |
-
-### 核心引擎
-
-| Path | 用途 |
-|------|------|
-| `crates/dom` | DOM 树与 HTML 集成 |
-| `crates/css-parser` | CSS tokenizer、parser 与值解析 |
-| `crates/style-system` | 级联、继承与计算值 |
-| `crates/layout-engine` | 布局整合层 |
-| `crates/engine` | 渲染管线、paint、dirty tracking、compositing |
-| `crates/canvas` | Canvas 2D 能力 |
-| `crates/media` | 媒体解码管线 — webm/Matroska demux、VP9/AV1 解码、音频解码、播放驱动与音频输出面 |
-
-### 基础设施
-
-| Path | 用途 |
-|------|------|
-| `crates/render-foundation` | GPU/CPU 渲染基础设施、字体、图片缓存 |
-| `crates/paint-convert` | IPC 图元快照（PaintSnapshotParams）→ 渲染图元（RenderPrimitives）公共转换层（compositor/browser/webdriver 三端共享） |
-| `crates/host-runtime` | 窗口、事件循环、平台宿主能力 |
-| `crates/net` | HTTP/HTTPS、导航、Cookie |
-| `crates/security` | 同源策略、CORS、CSP |
-| `crates/storage` | localStorage、sessionStorage、IndexedDB、Cache API、OPFS 真实化 Rust 底座（storage-opfs goal M1） |
-| `crates/protocol` | IPC 与多进程消息模型 |
-| `crates/product-version` | 产品版本号（从构建日期推导） |
-| `crates/runtime-config` | 运行时环境变量配置的唯一入口（渲染后端、多进程、沙箱等开关的集中定义与解析） |
-| `crates/psl` | 公共后缀列表（PSL）解析与注册域名（eTLD+1）提取（接入 site-isolation） |
-| `crates/wasm-sandbox` | WASM 执行与沙箱能力 |
-| `crates/script-sandbox` | 页面 JavaScript 与扩展 / 用户脚本运行时（V8 / QuickJS feature gate） |
-| `crates/page-runtime` | WPT / TabWorker / zero-renderer 三条页面路径共享的页面加载与运行时契约（运行时统一） |
-
-### 产品层与测试
-
-| Path | 用途 |
-|------|------|
-| `crates/webview` | 对外暴露的稳定嵌入 API |
-| `crates/browser-shell` | 浏览器产品层数据模型（标签页、书签、历史、设置，UI-agnostic） |
-| `docs` | 规格、研究、路线图和架构文档 |
-| `tests/integration` | 跨 crate 集成测试 |
-| `tests/wpt-runner` | WPT / reftest / 兼容性基础设施 |
-| `tests/benchmarks` | benchmark 结果产物 |
-| `tools/icon-gen` | 图标资产生成工具（`zero-icon-gen`）：从源 SVG 产出 Linux / Windows / macOS 三端图标（PNG / ICO / iconset / 运行时窗口 RGBA），不随发布产物分发 |
-
-想先了解整体分层，可以看 [docs/architecture.md](docs/architecture.md)。
-
-## 文档导航
+## 了解更多
 
 | 文档 | 说明 |
 |------|------|
-| [ROADMAP.md](ROADMAP.md) | 对外路线图，说明已经做完什么、正在推什么、接下来补什么 |
-| [CHANGELOG.md](CHANGELOG.md) | 对外发布层面的变更记录 |
-| [docs/architecture.md](docs/architecture.md) | 面向贡献者的整体架构与阅读路径 |
-| [zeroweb-knowledge](.agents/skills/zeroweb-knowledge/SKILL.md) | 按领域定位源码、架构约束和历史原因 |
-| [zeroweb-verify](.agents/skills/zeroweb-verify/SKILL.md) | 按用户任务选择验证流程、判据和证据范围 |
-| [docs/development/linux-macos.md](docs/development/linux-macos.md) | Linux 和 macOS 开发环境配置 |
-| [docs/development/windows.md](docs/development/windows.md) | Windows 开发环境配置 |
-| [docs/governance/contribution-responsibility.md](docs/governance/contribution-responsibility.md) | 贡献责任、风险等级、责任域和 owner 路由 |
-| [docs/releases/github-metadata.md](docs/releases/github-metadata.md) | GitHub 仓库介绍、Topics、tag 和 release 标题建议 |
-| [docs/releases/v0.1.0-alpha.0.md](docs/releases/v0.1.0-alpha.0.md) | 首个预发布版本的 release 文案草稿 |
-| [docs/specs/zero-web-spec-rfc.md](docs/specs/zero-web-spec-rfc.md) | 主规格与技术 RFC |
-| [docs/goal/zero-web/master.md](docs/goal/zero-web/master.md) | 当前实现状态与里程碑控制面 |
-| [docs/goal/rendering-compat.md](docs/goal/rendering-compat.md) | 渲染兼容性（reftest / WPT 兼容性）执行控制面与进展记录 |
-| [docs/research/rust-cross-platform-browser-research.md](docs/research/rust-cross-platform-browser-research.md) | 早期技术路线与许可证调研 |
-| `crates/*/README.md` | 各子系统的细节说明 |
+| [架构总览](docs/architecture.md) | 整体分层、32 个 workspace member 的职责、从请求到像素的链路 |
+| [路线图](ROADMAP.md) | 已完成、进行中和计划中的里程碑 |
+| [构建、测试与本地运行](docs/development/building-and-testing.md) | make 命令、测试门禁、reftest、本地入口 |
+| [打包与发布](docs/releases/packaging.md) | 各平台打包、macOS 签名公证、自动发布 |
+| [文档索引](docs/README.md) | 规格、进度控制面、调研和治理文档 |
+| [CHANGELOG.md](CHANGELOG.md) | 对外变更记录 |
 
 ## 参与贡献
 
-想提改动的话，先看这几份文档：
-
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-- [docs/governance/contribution-responsibility.md](docs/governance/contribution-responsibility.md)
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- [SECURITY.md](SECURITY.md)
-
-提 PR 前，至少把这几件事做了：
-
-- 变更目标和边界清晰
-- 风险等级和责任域已说明；合入前有人类责任维护者接管
-- 改动范围尽量小且聚焦
-- 对应测试和文档同步更新
-- `make test` 与 `cargo clippy` 通过
+欢迎贡献，包括 AI 辅助的贡献。提交前请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [贡献责任说明](docs/governance/contribution-responsibility.md)，并遵守 [行为准则](CODE_OF_CONDUCT.md)。安全问题请按 [SECURITY.md](SECURITY.md) 私下报告。
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE)。
-
-MIT 许可证允许商用和二次集成，但这不等于这个仓库已经适合直接上线。它目前仍是实验项目，默认还是面向学习、研究和工程探索。真要拿去商用或放进生产环境，风险得你自己评估。新增第三方依赖前，也请先确认许可证是否和项目策略兼容。
+本项目采用 [MIT License](LICENSE)。MIT 允许商用和二次集成，但项目仍是实验性质，用于生产前请自行评估风险。新增第三方依赖前请先确认许可证与项目策略兼容。
