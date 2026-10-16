@@ -104,6 +104,32 @@ impl BrowserApp {
             }
         }
 
+        // Chrome 行为：选区菜单搜索项带选中文本（"Search Google for '…'"）。
+        // 文本提取失败（glyphs 未就绪）回退静态标签；展示文本截断防菜单行溢出，
+        // 实际搜索仍用激活时的完整选区文本（page_selection_text）。
+        if context_type == ContextType::Selection
+            && let Some(idx) = items.iter().position(|it| it.id() == "search_selection")
+        {
+            let engine = self.shell.settings().search_engine.display_name();
+            let label = match self.page_selection_text() {
+                Some(text) if !text.is_empty() => {
+                    let mut display: String = text.trim().chars().take(40).collect();
+                    if text.trim().chars().count() > 40 {
+                        display.push('…');
+                    }
+                    match language {
+                        UiLanguage::ZhCn => format!("使用 {engine} 搜索“{display}”"),
+                        UiLanguage::EnUs => format!("Search {engine} for “{display}”"),
+                    }
+                }
+                _ => match language {
+                    UiLanguage::ZhCn => format!("使用 {engine} 搜索"),
+                    UiLanguage::EnUs => format!("Search {engine}"),
+                },
+            };
+            items[idx] = MenuItem::action("search_selection", &label);
+        }
+
         // 根据当前页面能力禁用部分菜单项。
         // about:blank / 无 URL / zero:// 内部页 没有"源代码"或"可审查 DOM"概念，
         // 应禁用 view_source / inspect / save_as / print，避免无效操作。

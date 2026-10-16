@@ -2547,6 +2547,12 @@ impl BrowserApp {
     fn duplicate_tab_by_id(&mut self, id: TabId) {
         if let Some(new_id) = self.shell.duplicate_tab(id) {
             self.tabs.ensure_tab(new_id);
+            // 同 [`Self::new_tab`] / [`Self::new_tab_background`]：`Tab::duplicate` 只把
+            // URL 记进 shell 模型，不向 renderer 派发导航命令，副本会停在"Loading…"。
+            // 按当前 URL 走地址栏同款标签级装载路径（内部页由 load_local_tab_url 分派）。
+            if let Some(url) = self.shell.tab(new_id).and_then(|t| t.url().map(str::to_string)) {
+                self.start_tab_request(new_id, url, "GET".to_string(), None);
+            }
             self.scroll.insert(new_id, TabScrollState::default());
             self.tabs.on_active_tab_changed(self.shell.active_tab_id());
             self.sync_webview_viewport();
@@ -3197,6 +3203,10 @@ impl BrowserApp {
             self.apply_settings_cycle_color_theme();
             return true;
         }
+        if url == "zero://settings/export_bookmarks" {
+            self.apply_settings_export_bookmarks();
+            return true;
+        }
         if let Some(name) = url.strip_prefix("zero://settings/set/color_theme/") {
             self.apply_settings_color_theme(name);
             return true;
@@ -3209,6 +3219,23 @@ impl BrowserApp {
     fn apply_settings_clear_history(&mut self) {
         self.shell.history_mut().clear();
         self.open_settings_page();
+    }
+
+    /// 导出书签为 Netscape bookmark 格式 HTML（`zero://settings/export_bookmarks`；
+    /// 设置页「导出书签」）。生成整包后复用 attachment 下载管线落盘
+    ///（与图片另存为同一路径，写入下载目录 bookmarks.html 并弹下载气泡）。
+    fn apply_settings_export_bookmarks(&mut self) {
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            tracing::debug!("export_bookmarks ignored: no active tab");
+            return;
+        };
+        let body = pages::generate_bookmarks_export_html(self.shell.bookmarks()).into_bytes();
+        self.save_attachment_download(crate::process_backend::PendingAttachmentDownload {
+            tab_id,
+            url: "zero://settings/export_bookmarks".to_string(),
+            filename: "bookmarks.html".to_string(),
+            body,
+        });
     }
 
     /// 清除共享 Cookie jar（`zero://settings/clear/cookies`）。
