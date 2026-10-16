@@ -1,33 +1,31 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
-**版本**: v1.6
-**日期**: 2026-10-16（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 3 收口（input.showPicker() spec 检查序 + 瞬态激活消费 +129P），下一切片候选 setter 抛错面 + select/textarea showPicker
+**版本**: v1.7
+**日期**: 2026-10-17（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 4 收口（valueAsNumber/valueAsDate setter 抛错面 +11P），下一切片候选 select/textarea showPicker
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-16 M2 切片 3）**：showPicker 族清零——part03 方法
-> 分发区（stepUp/stepDown 同款模式）新增 `input.showPicker()`（R3903，
-> HTML §4.10.5.4 method steps）：不可变检查（disabled / readonly 适用 12
-> 类型）→ InvalidStateError 先于激活检查与消费（readonly 抛错**不消费**
-> 激活——WPT「User activation is not consumed」断言面）；无瞬态激活 →
-> NotAllowedError（hidden/button 等 mutable 类型同面）；有激活同步消费
-> `_zwTransientActive`（复用 part06 `__zwUserActivate` 注入 / part02
-> `navigator.userActivation` / part04 fullscreen 消费通道，零新增状态），
-> headless 无 picker UI 静默返回且不触发 focus。属性读 latest-wins 三级
-> 回落（同 turn setAttribute 不漏 pending 写）；part16 补
-> `test_input_show_picker_r3903` 契约单测。user-gesture +63P、
-> disabled-readonly +44P、does-not-focus +22P。forms 2697→**2829P**；九域
-> 全量 3626→**3788P**（3788/6913 = 54.80%；分母 +257 系 img
-> naturalWidth 文件本轮完整上报，非语料变更），对切片 2c 账本逐 subtest
-> diff **九域零回归**。账本见
-> [evidence/2026-10-16-m2s3-r3903.md](html-semantics-compat/evidence/2026-10-16-m2s3-r3903.md)。
-> 两处 runner 挂死仍挂账（tabular span-limits、links downloading-resources）。
-> 仓库既有 `paint/tests/r5151_*.rs` fmt 违规系并行会话 commit 25cae3f9b
-> 遗留，非本切片引入。
-> **卡点**：无阻塞。**下一步**：valueAsDate/Number setter 抛错面 9F
->（typeerror 两文件 8F + datetime-local-valueasdate 1F）→ select/textarea
-> showPicker（spec 同族 NotSupportedError「not being rendered」步）。
+> **▶ 当前状态（2026-10-17 M2 切片 4）**：setter 抛错面清零——part04
+> valueAsNumber/valueAsDate setter 按 spec setter steps 重排（R3904，HTML
+> §4.10.5.4）：valueAsNumber ±Infinity→TypeError **先于适用性**（checkbox
+> + Infinity 亦 TypeError）→ 不适用 type→InvalidStateError → NaN→''；
+> valueAsDate WebIDL `Date?` 转换先行（非 null/undefined 非 Date→TypeError，
+> 不适用 type + 非 Date 亦 TypeError；undefined→null 同 null 面）→ 不适用
+> type（含 datetime-local，§4.10.5.1.11 do-not-apply 表）→
+> InvalidStateError → null/undefined/Invalid Date→清空。part16 补
+> `test_input_value_as_setter_throw_r3904` 契约单测（步序钉针 + 三清空
+> 面）。typeerror 两文件 8F + datetime-local-valueasdate 1F 全翻绿，
+> 同族 invalidstateerr 两文件联带 +2P。forms 2829→**2840P**；九域全量
+> 3788→**3799P**（3799/6913 = 54.95%；分母与上轮完全一致，diff 无机时
+> 噪声），对切片 3 账本逐 subtest diff **九域零回归**。账本见
+> [evidence/2026-10-16-m2s4-r3904.md](html-semantics-compat/evidence/2026-10-16-m2s4-r3904.md)。
+> 两处 runner 挂死仍挂账（tabular span-limits 间歇、links
+> downloading-resources skip 排除）。仓库既有 `paint/tests/r5151_*.rs`
+> fmt 违规系并行会话 commit 25cae3f9b 遗留，非本切片引入。
+> **卡点**：无阻塞。**下一步**：select/textarea showPicker（spec 同族
+> NotSupportedError「not being rendered」步）→ forms 域余簇归因选片。
+
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
@@ -108,6 +106,15 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-17 M2 切片 4**：valueAsNumber/valueAsDate setter 抛错面
+  （R3904）——part04 两 setter 按 spec setter steps 重排（valueAsNumber
+  ±Infinity→TypeError 先于适用性、不适用→InvalidStateError、NaN→''；
+  valueAsDate WebIDL `Date?` 转换先行（undefined→null）、不适用
+  （含 datetime-local）→InvalidStateError、null/undefined/Invalid Date
+  →清空），part16 R3904 契约单测（步序钉针 + 三清空面）。typeerror
+  两文件 8F + datetime-local-valueasdate 1F 翻绿、同族 invalidstateerr
+  两文件联带 +2P，九域 3788→3799P（零回归；分母 6913 不变）。
+  `make test` 全绿、guarded-clippy/fmt 过、零新增依赖。
 - **2026-10-16 M2 切片 3**：input.showPicker() spec 检查序 + 瞬态激活消费
   （R3903）——part03 方法分发区新支（不可变检查先于激活门/消费、readonly
   适用 12 类型表、NotAllowedError 门、`_zwTransientActive` 同步消费、无

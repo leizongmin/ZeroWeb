@@ -10807,47 +10807,67 @@
             }
           }
         } else if (p === 'valueAsNumber') {
-          // `input.valueAsNumber = n`（HTMLInputElement，R2836/R3902c）——number/range：NaN→''，
-          // 否则 String(n)→设 value 属性 + 缓存（复用 value 同步路径）。date/time/week/
-          // datetime-local：ms→格式化串；month：1970-01 起月数→YYYY-MM（与 valueAsNumber getter
-          // 互逆，WPT valueasnumber-stepping 断言面）。其他 type / 非 INPUT：no-op（分支终止不
-          // fallthrough 致误设 'valueAsNumber' 内容属性）。仅 INPUT（_realTag gate）。
+          // `input.valueAsNumber = n`（HTMLInputElement，R2836/R3902c/R3904）——spec setter 步
+          //（HTML §4.10.5.4
+          // https://html.spec.whatwg.org/multipage/input.html#dom-input-valueasnumber）：
+          // ①新值无限（±Infinity）→ TypeError，先于适用性检查——checkbox + Infinity 亦
+          // TypeError（WPT input-valueasnumber-typeerror 断言面）；②不适用 type
+          //（hidden/text/checkbox 等非步进面七类型之外）→ InvalidStateError；③NaN→''；
+          // ④数值→字符串设值。number/range：String(n)；date/time/week/datetime-local：
+          // ms→格式化串；month：1970-01 起月数→YYYY-MM（与 valueAsNumber getter 互逆，
+          // WPT valueasnumber-stepping 断言面）。仅 INPUT（_realTag gate）。
           if (_realTag(sel, handle) === 'INPUT') {
             var vsT = (handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '';
             vsT = vsT.toLowerCase();
-            var vsS = null;
+            var vsN = Number(value); // WebIDL unrestricted double 转换
+            if (vsN === Infinity || vsN === -Infinity) {
+              throw new TypeError("Failed to set the 'valueAsNumber' property on 'HTMLInputElement': The value provided is infinite.");
+            }
+            if (vsT !== 'date' && vsT !== 'datetime-local' && vsT !== 'month'
+              && vsT !== 'number' && vsT !== 'range' && vsT !== 'time' && vsT !== 'week') {
+              throw new (globalThis.DOMException || Error)("Failed to set the 'valueAsNumber' property on 'HTMLInputElement': This input element does not support Number values.", 'InvalidStateError');
+            }
+            var vsS;
             if (vsT === 'number' || vsT === 'range') {
               vsS = (typeof value === 'number' && isNaN(value)) ? '' : String(value);
-            } else if (vsT === 'date' || vsT === 'time' || vsT === 'week' || vsT === 'datetime-local') {
-              var vsN = Number(value);
-              vsS = (typeof value === 'number' && isNaN(value)) ? '' : _formatHtmlDateValue(new Date(vsN), vsT);
             } else if (vsT === 'month') {
-              var vsMn = Number(value);
               vsS = (typeof value === 'number' && isNaN(value)) ? ''
-                : _formatHtmlDateValue(new Date(Date.UTC(1970, 0 + vsMn, 1)), 'month');
+                : _formatHtmlDateValue(new Date(Date.UTC(1970, 0 + vsN, 1)), 'month');
+            } else {
+              vsS = (typeof value === 'number' && isNaN(value)) ? '' : _formatHtmlDateValue(new Date(vsN), vsT);
             }
-            if (vsS !== null) {
-              _inputValues[key] = vsS; _inputValuesSet[key] = true;
-              _captureInputDefault(key, sel, handle); // R2996：valueAsNumber= 等同 .value=，捕获 defaultValue
-              if (handle) __zw_set_attr_handle(handle, 'value', vsS);
-              else __zw_set_form_value(sel, vsS);
-            }
+            _inputValues[key] = vsS; _inputValuesSet[key] = true;
+            _captureInputDefault(key, sel, handle); // R2996：valueAsNumber= 等同 .value=，捕获 defaultValue
+            if (handle) __zw_set_attr_handle(handle, 'value', vsS);
+            else __zw_set_form_value(sel, vsS);
           }
         } else if (p === 'valueAsDate') {
-          // `input.valueAsDate = date`（HTMLInputElement，R3317）——date/month/week/time 输入 Date→串。
-          // spec：仅 date/month/week/time type 接受（其他 type setter no-op）；有效 Date→格式化串设 value；
-          // 无效值（非 Date / Invalid Date）→抛 InvalidStateError（这里近似：非 Date 静默 no-op，Invalid Date 清空）。
-          // 复用 value 同步路径（_inputValues + _captureInputDefault + attr/form-value 双路径）。仅 INPUT。
+          // `input.valueAsDate = date`（HTMLInputElement，R3317/R3904）——spec setter 步
+          //（HTML §4.10.5.4
+          // https://html.spec.whatwg.org/multipage/input.html#dom-input-valueasdate）：
+          // ①非 null/undefined 且非 Date 对象 → TypeError（WebIDL Date? 转换先于
+          // setter steps——不适用 type + 非 Date 亦 TypeError；undefined→null 与 null
+          // 同面。WPT input-valueasdate-typeerror「non-Date object」断言面）；
+          // ②仅 date/month/week/time 适用，其余 type（含 datetime-local——不适用，
+          // §4.10.5.1.11 do-not-apply 表 + WPT datetime-local-valueasdate 断言面）→
+          // InvalidStateError；③null/undefined 或 Invalid Date（NaN time value）→
+          // 清空 value；④有效 Date→格式化串。
+          // 复用 value 同步路径（_inputValues + _captureInputDefault + attr/form-value
+          // 双路径）。仅 INPUT（_realTag gate）。
           if (_realTag(sel, handle) === 'INPUT') {
             var vadTs = (handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '';
             vadTs = vadTs.toLowerCase();
-            if (vadTs === 'date' || vadTs === 'month' || vadTs === 'week' || vadTs === 'time') {
-              var vadStr = _formatHtmlDateValue(value, vadTs);
-              _inputValues[key] = vadStr; _inputValuesSet[key] = true;
-              _captureInputDefault(key, sel, handle);
-              if (handle) __zw_set_attr_handle(handle, 'value', vadStr);
-              else __zw_set_form_value(sel, vadStr);
+            if (value != null && !(value instanceof Date)) {
+              throw new TypeError("Failed to set the 'valueAsDate' property on 'HTMLInputElement': The provided value is not a Date.");
             }
+            if (vadTs !== 'date' && vadTs !== 'month' && vadTs !== 'week' && vadTs !== 'time') {
+              throw new (globalThis.DOMException || Error)("Failed to set the 'valueAsDate' property on 'HTMLInputElement': This input element does not support Date values.", 'InvalidStateError');
+            }
+            var vadStr = (value == null || isNaN(value.getTime())) ? '' : _formatHtmlDateValue(value, vadTs);
+            _inputValues[key] = vadStr; _inputValuesSet[key] = true;
+            _captureInputDefault(key, sel, handle);
+            if (handle) __zw_set_attr_handle(handle, 'value', vadStr);
+            else __zw_set_form_value(sel, vadStr);
           }
         } else if (p === 'indeterminate') {
           // JS-only IDL 布尔（非 reflected attr）—— per-element state map（默认 false）。无属性 mutation。
