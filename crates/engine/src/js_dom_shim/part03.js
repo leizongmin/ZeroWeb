@@ -16559,6 +16559,47 @@ return e;
             return undefined;
           };
         }
+        // `input.showPicker()`（HTMLInputElement，R3903）——spec method steps（HTML §4.10.5.4）：
+        // ①不可变（disabled，或 readonly 适用 12 类型的 readonly）→ InvalidStateError——此检查在
+        // 激活检查与消费之前，readonly 抛错**不消费**激活（WPT show-picker-disabled-readonly
+        // 「User activation is not consumed」断言面）；②跨源 SecurityError 面归 navigation-compat
+        // M3 iframe 门控域，本 headless 同源环境不实现；③无瞬态激活 → NotAllowedError（hidden/
+        // button 等 mutable 类型同面——WPT show-picker-user-gesture）；④show the picker：同步
+        // 消费瞬态激活后返回（headless 无 picker UI；spec「consume user activation」在
+        // 「does not support a picker → return」之前，消费不变）；不触发 focus
+        //（show-picker-does-not-focus 断言面）。
+        // https://html.spec.whatwg.org/multipage/input.html#dom-input-showpicker
+        if (prop === 'showPicker' && _realTag(sel, handle) === 'INPUT') {
+          // 类型走枚举反射（同 stepUp——缺省 Text / 非法回退 / ASCII 小写）。
+          var spT = String(_reflectedTypeEnum(sel, handle) || '');
+          // readonly 适用面（HTML §4.10.5 内容属性表 12 状态；WPT noReadonlySupport 10 类型之反面）。
+          var spRoApplies = spT === 'text' || spT === 'search' || spT === 'tel' || spT === 'url'
+            || spT === 'email' || spT === 'password' || spT === 'date' || spT === 'month'
+            || spT === 'week' || spT === 'time' || spT === 'datetime-local' || spT === 'number';
+          var spHasAttr = function(name) {
+            // 同 turn setAttribute 后立即调用 → latest-wins 读（disabled 属性分支 R2997 同款三级回落）。
+            if (handle && typeof __zw_has_attr_handle === 'function') {
+              try { return __zw_has_attr_handle(handle, name) === '1'; } catch (_e) {}
+            }
+            if (!handle && sel && typeof __zw_has_attr_lw === 'function') {
+              try { return __zw_has_attr_lw(sel, name) === '1'; } catch (_e) {}
+            }
+            if (!handle && sel && typeof __zw_has_attr === 'function') {
+              try { return __zw_has_attr(sel, name) === '1'; } catch (_e) {}
+            }
+            return false;
+          };
+          return function() {
+            if (spHasAttr('disabled') || (spRoApplies && spHasAttr('readonly'))) {
+              throw new (globalThis.DOMException || Error)("Failed to execute 'showPicker' on 'HTMLInputElement': The input element is not mutable.", 'InvalidStateError');
+            }
+            if (!_zwTransientActive) {
+              throw new (globalThis.DOMException || Error)("Failed to execute 'showPicker' on 'HTMLInputElement': A user gesture is required.", 'NotAllowedError');
+            }
+            _zwTransientActive = false; // transient activation 消费（spec show the picker step 3）
+            return undefined;
+          };
+        }
         // `input.files`（HTMLInputElement，R2830）——FileList（上传表单读 length/迭代）。headless
         // 无真文件 → 共享空 FileList（length 0）。spec：files 只在 type=file 有值（空 FileList），
         // **其余 type 恒 null**（HTML §4.10.5.4 https://html.spec.whatwg.org/multipage/input.html#dom-input-files

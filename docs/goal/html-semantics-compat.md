@@ -1,30 +1,33 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
-**版本**: v1.5
+**版本**: v1.6
 **日期**: 2026-10-16（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 2c 收口（stepUp/stepDown 全七类型 spec 步进 + valueAsNumber/Date IDL 面 +132P），下一切片候选 showPicker 族 + setter 抛错面
+**状态**: Active——M2 切片 3 收口（input.showPicker() spec 检查序 + 瞬态激活消费 +129P），下一切片候选 setter 抛错面 + select/textarea showPicker
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-16 M2 切片 2c）**：stepping 簇清零——stepUp/stepDown
-> 从 number/range 桩升级为 HTML §4.10.5.4 全七类型步进算法（date/
-> datetime-local/month/number/range/time/week；R3902c）——非步进类型与
-> `step='any'` 抛 InvalidStateError、缺省步长表×比例因子、步进基 min→value
-> 内容属性→类型缺省基、离格向步进方向 snap、越界对齐界内格点（非 clamp 界
-> 值）、反向回退（当前值解析失败例外，Chromium `ApplyStep` 源码实证）；
-> valueAsNumber getter/setter 全类型（数值 parseFloat / date 族 ms / month
-> 月数）、valueAsDate date/month/week/time 门；date/week/datetime-local 解析
-> 补真实日历与 ISO 周回读校验，week/datetime-local 格式化新支。stepup +43P、
-> stepdown 系 +12P、valueas*-stepping +9P、weekmonth/datetime +8P、联带 IDL
-> 面 +64P。forms 2565→**2697P**；九域全量 3494→**3626P**（3626/6656 =
-> 54.48%），对切片 2b 账本逐 subtest diff **九域零回归**。账本见
-> [evidence/2026-10-16-m2s2c-r3902c.md](html-semantics-compat/evidence/2026-10-16-m2s2c-r3902c.md)。
+> **▶ 当前状态（2026-10-16 M2 切片 3）**：showPicker 族清零——part03 方法
+> 分发区（stepUp/stepDown 同款模式）新增 `input.showPicker()`（R3903，
+> HTML §4.10.5.4 method steps）：不可变检查（disabled / readonly 适用 12
+> 类型）→ InvalidStateError 先于激活检查与消费（readonly 抛错**不消费**
+> 激活——WPT「User activation is not consumed」断言面）；无瞬态激活 →
+> NotAllowedError（hidden/button 等 mutable 类型同面）；有激活同步消费
+> `_zwTransientActive`（复用 part06 `__zwUserActivate` 注入 / part02
+> `navigator.userActivation` / part04 fullscreen 消费通道，零新增状态），
+> headless 无 picker UI 静默返回且不触发 focus。属性读 latest-wins 三级
+> 回落（同 turn setAttribute 不漏 pending 写）；part16 补
+> `test_input_show_picker_r3903` 契约单测。user-gesture +63P、
+> disabled-readonly +44P、does-not-focus +22P。forms 2697→**2829P**；九域
+> 全量 3626→**3788P**（3788/6913 = 54.80%；分母 +257 系 img
+> naturalWidth 文件本轮完整上报，非语料变更），对切片 2c 账本逐 subtest
+> diff **九域零回归**。账本见
+> [evidence/2026-10-16-m2s3-r3903.md](html-semantics-compat/evidence/2026-10-16-m2s3-r3903.md)。
 > 两处 runner 挂死仍挂账（tabular span-limits、links downloading-resources）。
-> R3317 unit test「text 无 stepUp」「range 前值+2n」契约随 spec 算法接入修正
-> （WPT input-stepup 锚定）。
-> **卡点**：无阻塞。**下一步**：showPicker 族 ~136F（show-picker-user-gesture
-> 63F / disabled-readonly 44F / does-not-focus 22F）→ valueAsDate/Number
-> setter 抛错面 9F（typeerror 两文件 8F + datetime-local-valueasdate 1F）。
+> 仓库既有 `paint/tests/r5151_*.rs` fmt 违规系并行会话 commit 25cae3f9b
+> 遗留，非本切片引入。
+> **卡点**：无阻塞。**下一步**：valueAsDate/Number setter 抛错面 9F
+>（typeerror 两文件 8F + datetime-local-valueasdate 1F）→ select/textarea
+> showPicker（spec 同族 NotSupportedError「not being rendered」步）。
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
@@ -105,6 +108,14 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-16 M2 切片 3**：input.showPicker() spec 检查序 + 瞬态激活消费
+  （R3903）——part03 方法分发区新支（不可变检查先于激活门/消费、readonly
+  适用 12 类型表、NotAllowedError 门、`_zwTransientActive` 同步消费、无
+  focus），latest-wins 属性读三级回落，part16 契约单测。show-picker 三文件
+  0→129P（user-gesture 63 / disabled-readonly 44 / does-not-focus 22），
+  forms 2697→2829P、九域 3626→3788P（零回归；分母 6656→6913 系 img
+  naturalWidth 文件完整上报）。`make test` 全绿、guarded-clippy/fmt 过
+  （fmt 既有违规系并行会话遗留，见切片账本）、零新增依赖。
 - **2026-10-16 M2 切片 2c**：stepUp/stepDown 全七类型 spec 步进算法 +
   valueAsNumber/valueAsDate IDL 全类型面（R3902c）——part03 `_parseHtmlDateValue`
   date/week/datetime-local 回读校验 + `_formatHtmlDateValue` week/
