@@ -31,8 +31,8 @@
 3. 内层执行入口的探索、复现、通用修复、回归、原站对照与候选门禁。
 4. accept 后更新 best，复测受影响的已通过用户任务；将可验收切片提交为任务 PR。
    按 [双审查](independent-review.md) 完成两个独立首轮，再同一 PR 返修、重验和非作者复核。
-5. 主控按 github-delivery 合并并验证集成版本后标 done，报告阶段成果并立即领取
-   下一项，不等待用户回复。全部任务 done 时在最新集成版本做整体验收。
+5. 主控按 github-delivery 合并并验证集成版本后标 done，阶段成果写入 run.md，在同一
+   回复中用工具调用领取下一项，不等待用户回复。全部任务 done 时在最新集成版本做整体验收。
 6. 整体验收发现缺陷，追加关联原目标的修复任务；保留原 done 历史，继续循环。
 
 同簇连续两次无新证据，暂停该簇并尝试新假设、规范研究、最小复现、前置能力拆分
@@ -46,10 +46,24 @@
 
 先核对实际工具 schema 和可用能力，不臆造 spawn/wait/cancel 参数。持续运行需要
 宿主在目标未完成时继续当前任务，支持有界等待、停止、进程回收和检查点恢复。
-有 Goal/自动续行能力且已获授权时复用；没有时在当前前台会话继续执行。
-启动长期目标时，在宿主允许且用户明确要求长期目标的前提下建立该目标；只改本 skill
-不创建运行目标。上下文将满时先保存检查点和精确下一动作，再交接到新上下文继续，
-不能用“已有阶段成果”“建议下一步”作为目标未完成时的正常结束。
+续行方式在 intake 启动摘要中确认：宿主 Goal/自动续行优先，确认摘要即为建立该目标
+的明确请求；其次是已授权的定时恢复；都没有时仅前台执行，并告知受宿主回合上限
+影响。只改本 skill 不创建运行目标。
+
+### 回合保持
+
+无工具调用的纯文本回复通常结束本轮；Goal 未激活时没有人会再唤醒主控。
+因此运行中：
+
+- 只有 `next=stop`、用户停止，或剩余工作全依赖用户决定时，才输出纯文本收尾。
+- 阶段汇报、进度和待决事项写 run.md 或已授权通知渠道；回复用户时同时带下一步工具调用。
+- 串行 worker/reviewer 用前台阻塞方式派发并等待结果（例如 `run_in_background: false`）；
+  长命令用带超时的阻塞调用或有界轮询。除非宿主保证完成后唤醒且 Goal 已激活，
+  不结束回合等通知。
+- 上下文将满时先保存检查点和精确下一动作，只用宿主能自动接续的上下文切换工具
+  （如 new_context）继续；不能写完交接文档就结束回合，也不能用“已有阶段成果”
+  “建议下一步”作为目标未完成时的正常结束。
+
 会话退出、宿主失联或无法续行时保存下一动作并如实报告停止/unknown，不声称后台
 仍会运行，也不为此自动安装 cron 或 tmux 控制器。
 
@@ -73,6 +87,9 @@ local/pr_only 模式的成果尚未集成时，后续工作沿用当前 best 及
 不能将各切片的 PASS 相加；仅有截图不能证明交互目标。
 verification_mode 控制产品验收；任务 PR 的适用双审查始终需要独立上下文，
 不能用 deterministic 绕过。能力暂不可用时先做独立可推进工作，再按真实缺口处理。
+宿主有无独立子 Agent 在首次预检冻结。没有时该 PR 停在 pr_review 并写明缺口，
+下一任务基于当前 best 及其分支继续（同上文 local/pr_only 规则），不空等合并；
+所有剩余任务都依赖未合并 PR 时才按真实阻塞处理。
 
 ## 状态与单写者
 
@@ -120,7 +137,8 @@ operation.kind 为 implement/review/publish/merge/integrate/final_acceptance，
 status 为 intended/running/completed：
 先持久化 intended，取得真实宿主 ID 后写 running；结束后写 completed 和不可变
 result。失败也是 completed，但结果明确失败，不据此将任务记 done。
-当前 Agent 自行执行时 executor_ref 使用可核对的宿主任务身份，同样记录开始/结束。
+当前 Agent 自行执行时 executor_ref 使用可核对的宿主任务身份；宿主不提供任务 ID 时
+用前台会话身份（同 checkpoint 的 foreground_session），同样记录开始/结束。
 completed 后不能改 result，重试用新 ID。结果未知时保留未决操作。
 首次 publish 在 verifying；已有 PR 的正文、附件和审查状态更新也可在 pr_review 派发
 publish，无须重开实施。代码 review 在 pr_review、merge 在 merging、integrate 在
@@ -206,10 +224,20 @@ node .agents/skills/zeroweb-site-optimizer/scripts/verify-workflow.mjs \
   "$RUN_DIR/workflow-next.json" "$RUN_DIR/workflow-previous.json"
 ```
 
-退出 0 = 整体目标证据就绪；1 = 合法但未完成（正常执行中通常为 1）；2 = 结构、
-转换或证据错误，不可推进。`next` 是阶段建议，不是权限或实际调度：
-continue、wait_or_recover、estimate_budget、verify_executor、final_acceptance、replan、stop。
-必须实际核对宿主、原始报告、授权及预算。检查器不证明 Agent 已持续执行。
+退出 0 = 整体目标证据就绪；1 = 合法但未完成（正常执行中通常为 1，输出
+`status: "in_progress"`，不是失败）；2 = 结构、转换或证据错误，不可推进。
+`next` 是阶段建议，不是权限或实际调度。必须实际核对宿主、原始报告、授权及预算；
+检查器不证明 Agent 已持续执行。除 stop 外都不能结束回合：
+
+| next | 主控动作 |
+|---|---|
+| continue | 派发 ready_tasks 中的下一项 |
+| wait_or_recover | 按下文恢复表查询未决操作，前台有界等待或收回 |
+| estimate_budget | 估算下一步与验证成本并写回 checkpoint，再检查 |
+| verify_executor | 核对并写入当前执行者身份（前台会话见 checkpoint），不是停止信号 |
+| final_acceptance | 派发目标级最终验收 |
+| replan | 重新规划：新假设、规范研究、拆前置能力或追加任务 |
+| stop | 收回在途操作、保存终态，按停止原因收尾 |
 
 升级前的回执没有 stage/review_scope，且 delivery 没有 presentation 字段时，按旧格式
 核验 previous 快照。当前快照只保留两类旧交付：与 previous 完全一致的 done 任务，

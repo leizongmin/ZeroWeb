@@ -209,6 +209,16 @@ test('missing executor, future heartbeat and invalid counters are rejected', asy
   await assert.rejects(f.check(), /budget counters/);
 });
 
+test('foreground session identity counts as a checked executor', async t => {
+  const f = await fixture(t);
+  f.state.activity.executor = { kind: 'foreground_session', ref: 'controller-1:session-1' };
+  assert.equal((await f.check()).can_start_candidate, true);
+  f.state.activity.executor = { kind: 'background_guess', ref: 'controller-1' };
+  await assert.rejects(f.check(), /executor identity/);
+  f.state.activity.executor = { kind: 'foreground_session', ref: '' };
+  await assert.rejects(f.check(), /executor identity/);
+});
+
 test('a standalone target or engineering gate cannot claim delivery readiness', async t => {
   const f = await fixture(t);
   const allGates = f.state.required_gates;

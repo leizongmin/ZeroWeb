@@ -51,7 +51,7 @@ ZeroWeb 是 MIT 许可的 Rust 跨平台浏览器项目，交付嵌入式 `ZeroW
 
 ## 网站长任务
 
-启动/继续 `zeroweb-site-optimizer` 时必须读取 [恢复入口](.agents/skills/zeroweb-site-optimizer/references/recovery.md)，从原运行目录生成恢复导航。压缩、交接、新会话及发布/审查/合并阶段切换后重新读取当前阶段原规则；摘要中的“已读/已完成”不能替代原账本和证据。只讨论或修改 Skill 时不启动或恢复网站任务。
+启动/继续 `zeroweb-site-optimizer` 时必须读取 [恢复入口](.agents/skills/zeroweb-site-optimizer/references/recovery.md)，从原运行目录生成恢复导航。压缩、交接、新会话及发布/审查/合并阶段切换后重新读取当前阶段原规则；摘要中的“已读/已完成”不能替代原账本和证据。只讨论或修改 Skill 时不启动或恢复网站任务。运行中自进化提案和无法自行修复的提交门禁 BLOCK 按该 Skill 的 [启动授权](.agents/skills/zeroweb-site-optimizer/references/intake.md) 记入待决清单、继续其他任务，停止或交付时集中提出；BLOCK 项仍不得提交。
 
 网站任务 PR 创建后及返修/交付前，必须读取并执行 [双审查流程](.agents/skills/zeroweb-site-optimizer/references/independent-review.md) 和 [GitHub 交付规则](.agents/skills/zeroweb-site-optimizer/references/github-delivery.md)。执行独立双首轮、统一返修和非作者复核，证据及正文绑定当前版本；就绪、pr_only 完成或合并前核验远端与适用截图。具体角色、输入隔离、回执和例外以原流程为准；本地检查器不替代真实审查、CI 或 GitHub 审批，不扩大为所有本地提交前提。
 

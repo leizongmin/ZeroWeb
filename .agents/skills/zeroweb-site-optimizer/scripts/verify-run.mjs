@@ -57,8 +57,8 @@ export async function verifyRun(checkpointPath, now = Date.now()) {
   requireValue(activity && ['running', 'awaiting_user', 'stopped', 'unknown'].includes(activity.state),
     'Invalid activity state');
   if (activity.executor !== null) {
-    requireValue(activity.executor && ['host_task', 'owned_process'].includes(activity.executor.kind)
-      && nonempty(activity.executor.ref), 'Invalid executor identity');
+    requireValue(activity.executor && ['host_task', 'owned_process', 'foreground_session']
+      .includes(activity.executor.kind) && nonempty(activity.executor.ref), 'Invalid executor identity');
   }
   if (activity.checked_at !== null) {
     const checked = timestamp(activity.checked_at);

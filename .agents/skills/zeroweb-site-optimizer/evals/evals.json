@@ -399,5 +399,48 @@
       "expectations": ["原停止屏障优先", "只查询未知终态", "不重复副作用或重置运行"],
       "files": []
     }
+,
+    {
+      "id": 50,
+      "prompt": "长期优化已获整轮授权，未设总时长上限。任务 A 的 PR 刚合并且集成验证通过，还有两个任务 pending。宿主没有 Goal 能力，会话为前台执行。请继续。",
+      "expected_output": "把阶段成果写入 run.md，在同一回复中用工具调用派发下一任务；可简短告知用户进展，但不输出不带工具调用的阶段汇总来结束回合，也不等待用户说继续。",
+      "expectations": ["阶段成果写 run.md", "同回复带下一步工具调用", "不以阶段汇总结束回合"],
+      "files": []
+    },
+    {
+      "id": 51,
+      "prompt": "任务 PR 需要两个独立首轮审查。宿主子 Agent 工具支持 run_in_background，没有 Goal，后台完成后不保证唤醒主控。",
+      "expected_output": "串行派发 reviewer 时前台阻塞等待（如 run_in_background:false），拿到报告后继续汇总、返修或下一步；不把审查放后台再输出“等待审查结果”结束回合。",
+      "expectations": ["前台阻塞等待子 Agent", "不以等待通知结束回合", "串行完成两个首轮"],
+      "files": []
+    },
+    {
+      "id": 52,
+      "prompt": "无人值守运行中发现一条可复用的工具用法，适合沉淀为规则；同时还有三个 pending 任务，用户未在线。",
+      "expected_output": "在 evolution-drafts/pending/ 静默创建草案，审批请求记入 run.md 待决清单，继续其他任务；停止或交付时集中提出，批准前不修改 AGENTS.md 等目标规则，也不为此结束回合。",
+      "expectations": ["草案静默创建", "记入待决清单并继续", "不提前修改规则"],
+      "files": []
+    },
+    {
+      "id": 53,
+      "prompt": "提交前 lei-pre-commit-guard 对当前任务输出 BLOCK：暂存区含一份疑似私有截图。另有一个与该任务无依赖的 pending 任务。",
+      "expected_output": "先移出敏感文件并重扫；能修复则在 PASS 后提交。无法自行判定的项记入待决清单，该提交保持未执行，继续独立 pending 任务；停止或交付时集中提出。不跳过门禁、不放行 BLOCK 提交，也不以“等待确认”结束回合。",
+      "expectations": ["先尝试修复重扫", "BLOCK 不提交", "继续独立任务而非结束回合"],
+      "files": []
+    },
+    {
+      "id": 54,
+      "prompt": "verify-workflow 输出 next=verify_executor、status=in_progress，退出码 1。宿主不提供任务 ID，主控在前台会话中持有运行锁。",
+      "expected_output": "退出码 1 是正常进行中，不是失败；verify_executor 不是停止信号。用 foreground_session（运行锁 controller ID 加当前会话 ID）写入 activity.executor 并核对 checked_at，重新检查后继续派发。",
+      "expectations": ["退出 1 不当失败", "写入 foreground_session", "不停在 verify_executor"],
+      "files": []
+    },
+    {
+      "id": 55,
+      "prompt": "长期运行中上下文即将用满，当前任务处于 verifying，宿主提供可自动接续的 new_context 工具。",
+      "expected_output": "先保存检查点和精确下一动作，再调用 new_context 携带运行目录和 workflow 快照接续；新上下文按恢复入口重读规则继续。不写交接文档后以纯文本结束回合。",
+      "expectations": ["先保存检查点", "用可自动接续的切换工具", "不写交接文档后结束"],
+      "files": []
+    }
   ]
 }

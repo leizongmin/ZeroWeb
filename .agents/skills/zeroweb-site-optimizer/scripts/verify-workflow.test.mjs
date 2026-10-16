@@ -85,6 +85,21 @@ test('more than five candidates and twenty discovery periods still continue with
   assert.equal(result.next, 'continue');
   assert.deepEqual(result.ready_tasks, ['search-fix', 'read-fix']);
   assert.equal(result.goal_verdict, 'INCOMPLETE');
+  assert.equal(result.status, 'in_progress');
+});
+
+test('status separates in-progress, stopped and completed runs', async t => {
+  const f = await fixture(t);
+  f.cp.activity.state = 'stopped';
+  const unchecked = await f.check();
+  assert.equal(unchecked.next, 'verify_executor');
+  assert.equal(unchecked.status, 'in_progress');
+  f.workflow.stop_reason = 'user_stopped';
+  assert.equal((await f.check()).status, 'stopped');
+  f.workflow.stop_reason = null;
+  f.cp.activity.state = 'running';
+  await f.finish();
+  assert.equal((await f.check()).status, 'completed');
 });
 
 test('local gates passing cannot establish global completion', async t => {

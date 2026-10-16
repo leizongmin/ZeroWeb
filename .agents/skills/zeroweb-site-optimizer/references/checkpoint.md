@@ -33,8 +33,10 @@ JSON 写到同目录临时文件，解析并校验后原子 rename；保留前�
   缺少字段仍为格式错误。有限截止时间从首次启动沿用，延长或改为 null 须记授权修订，
   不能因新默认值迁移掉旧限制。
 - `activity.state` 为 `running|awaiting_user|stopped|unknown`；running 需要 executor
-  的 `kind`（`host_task|owned_process`）、`ref`（工具任务 ID 或 PID 加启动身份）和
-  `checked_at`。退出回复前核对宿主是否还会执行；有浏览器残留不代表 Agent 正在优化。
+  的 `kind`（`host_task|owned_process|foreground_session`）、`ref`（工具任务 ID、PID 加
+  启动身份，或运行锁 controller ID 加当前会话 ID）和 `checked_at`。宿主不提供任务 ID
+  时用 foreground_session，不能因缺少 ID 停在 verify_executor。
+  退出回复前核对宿主是否还会执行；有浏览器残留不代表 Agent 正在优化。
 - 校验器只显示最后一次活动记录，不查询进程或调度器，输出始终声明
   `live_verified: false`。回答“正在跑”前另查拥有的工具任务；失联写 unknown。
 - `budget.pr_iteration_limit` 为非负整数或 null（默认不限）；已用次数由 workflow

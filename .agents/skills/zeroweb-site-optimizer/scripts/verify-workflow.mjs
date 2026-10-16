@@ -364,7 +364,8 @@ export async function verifyWorkflow(file, previousFile = null, now = Date.now()
   else next = 'replan';
   return {
     schema_version: 1, run_id: state.run_id, revision: state.revision,
-    goal_verdict: completed ? 'PASS' : 'INCOMPLETE', next, reason,
+    goal_verdict: completed ? 'PASS' : 'INCOMPLETE',
+    status: completed ? 'completed' : next === 'stop' ? 'stopped' : 'in_progress', next, reason,
     ready_tasks: next === 'continue' ? ready.map(task => task.id) : [],
     pr_iterations_used: current.prUsed, pr_iteration_limit: current.prLimit,
     pr_iteration_available: current.prAvailable,
