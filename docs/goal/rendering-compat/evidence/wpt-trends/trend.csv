@@ -63,4 +63,4 @@
 2026-10-16,upstream,v1.10,16590,15444,93.09,failed=1146;skipped=0,570f63675,R5147 行度量整数化二级落地——quotes-025/026/027 + border-image-slice-fill-001 0.00%翻绿，run-in ×8 等 +14，新红 4（multicol-span-all-fieldset ×3 spanner 移位 + line-breaking-023 != 全等非退化），净 −10
 2026-10-16,upstream,v1.10,16590,15447,93.11,failed=1143;skipped=0,23e7f0030,R5148 fieldset multicol legend 排除——multicol-span-all-fieldset ×3 翻绿（001/002 0.00%、003 0.11%），零新增红
 2026-10-16,upstream,v1.10,16590,15448,93.1,failed=1142;skipped=0,fda0e92c9,R5149 无词间空格复杂文字 fallback 断行（UAX #14 SA 全集+东南亚婆罗米系）——line-breaking-023 != 翻绿 2.88% 两侧分化，零新增红
-2026-10-16,upstream,v1.10,16590,15449,93.1,failed=1141;skipped=0,6c497312a,R5150 contain:size 列子豁免 R4515 零空间 fragmentainer skip——contain-size-monolithic-001 0.00% 翻绿 corpus 1142→1141 零新增红
+2026-10-16,upstream,v1.10,16590,15449,93.1,failed=1141;skipped=0,6be8ee7c1,R5150 contain:size 列子豁免 R4515 零空间 fragmentainer skip——contain-size-monolithic-001 0.00% 翻绿 corpus 1142→1141 零新增红

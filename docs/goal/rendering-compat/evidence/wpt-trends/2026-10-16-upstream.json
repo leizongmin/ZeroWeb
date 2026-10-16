@@ -6,6 +6,6 @@
   "passed": 15449,
   "rate_pct": 93.1,
   "extra": "failed=1141;skipped=0",
-  "git_sha": "6c497312a",
-  "note": "R5150 contain:size 列子豁免 R4515 零空间 fragmentainer skip——contain-size-monolithic-001 0.00% 翻绿，corpus 1142→1141 零新增红，组合态 df94f6082 复核 failure 集逐位一致"
+  "git_sha": "6be8ee7c1",
+  "note": "R5150 contain:size 列子豁免 R4515 零空间 fragmentainer skip——contain-size-monolithic-001 0.00% 翻绿，corpus 1142→1141 零新增红，组合态（rebase 含 grid converter 拆分 PR #185）复跑 failure 集逐位一致"
 }
