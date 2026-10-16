@@ -7,23 +7,40 @@ use serde::{Deserialize, Serialize};
 
 use crate::profile::{atomic_write, read_profile};
 
-const MAX_ENTRIES: usize = 10_000;
-const MAX_TEXT_BYTES: usize = 16 * 1024;
+/// 书签/文件夹数量快照上限（`BookmarksSnapshot::is_valid` 校验，超限整个文件
+/// 在下次加载时被丢弃——导入等批量写入必须遵守，防止超限造成数据丢失）。
+pub const MAX_ENTRIES: usize = 10_000;
+/// 单条标题/URL/文件夹名的字节数快照上限（同上，`is_valid` 校验）。
+pub const MAX_TEXT_BYTES: usize = 16 * 1024;
+
+/// 导入解析出的单条书签（Netscape bookmark HTML → 存储的中间表示）。
+///
+/// 标题、URL 与文件夹名均为 HTML 实体解码后的纯文本；`folder == None` 表示根级。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BookmarkImportEntry {
+    /// 书签标题（源文件缺失标题时通常以 URL 代替）。
+    pub title: String,
+    /// 书签 URL。
+    pub url: String,
+    /// 所属文件夹名（None = 根级；同名文件夹合并到既有文件夹）。
+    pub folder: Option<String>,
+}
 
 /// 书签唯一标识符。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BookmarkId(pub u64);
 
+/// BookmarkId 全局计数器：next() 与 sync_counter() 共用同一实例。
+static COUNTER: AtomicU64 = AtomicU64::new(1);
+
 impl BookmarkId {
     /// 生成下一个唯一 ID。
     fn next() -> Self {
-        static COUNTER: AtomicU64 = AtomicU64::new(1);
         Self(COUNTER.fetch_add(1, Ordering::Relaxed))
     }
 
     /// 确保持久化恢复后新 ID 不会与已有 ID 冲突。
     fn sync_counter(min_next: u64) {
-        static COUNTER: AtomicU64 = AtomicU64::new(1);
         let mut current = COUNTER.load(Ordering::Relaxed);
         while current < min_next {
             match COUNTER.compare_exchange_weak(current, min_next, Ordering::Relaxed, Ordering::Relaxed) {

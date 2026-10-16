@@ -613,17 +613,19 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         },
         settings.show_bookmarks_bar,
     );
-    // 书签批量导出：Netscape bookmark 格式 HTML，经下载管线落为 bookmarks.html。
-    let (bookmarks_export_label, bookmarks_export_action) = match lang {
-        UiLanguage::ZhCn => ("书签", "导出书签"),
-        UiLanguage::EnUs => ("Bookmarks", "Export Bookmarks"),
+    // 书签批量导入/导出：导出为 Netscape bookmark 格式 HTML（经下载管线落为
+    // bookmarks.html）；导入从剪贴板读取同格式内容合并（导入页逐步指引）。
+    let (bookmarks_label, bookmarks_import_label, bookmarks_export_label) = match lang {
+        UiLanguage::ZhCn => ("书签", "导入书签", "导出书签"),
+        UiLanguage::EnUs => ("Bookmarks", "Import Bookmarks", "Export Bookmarks"),
     };
-    let bookmarks_export_row = format!(
+    let bookmarks_actions_row = format!(
         r#"<div style="display:flex;justify-content:space-between;align-items:center;min-height:32px;font-size:14px;color:#3c4043;">
-  <span>{bookmarks_export_label}</span>
-  <span>{export_link}</span>
+  <span>{bookmarks_label}</span>
+  <span style="display:flex;align-items:center;">{import_link}{export_link}</span>
 </div>"#,
-        export_link = action_link("zero://settings/export_bookmarks", bookmarks_export_action),
+        import_link = action_link("zero://bookmarks/import", bookmarks_import_label),
+        export_link = action_link("zero://settings/export_bookmarks", bookmarks_export_label),
     );
 
     // 分组卡片：Chrome 设置风格——大圆角白卡 + 小号大写分组标题（蓝色强调）。
@@ -660,7 +662,7 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
     );
     let appearance_card = section_card(
         section_appearance,
-        &format!("{bookmarks_row}{bookmarks_export_row}{theme_row}{zoom_actions}{download_dir_row}"),
+        &format!("{bookmarks_row}{bookmarks_actions_row}{theme_row}{zoom_actions}{download_dir_row}"),
     );
 
     format!(
@@ -1214,6 +1216,312 @@ pub fn generate_bookmarks_export_html(bookmarks: &zero_browser_shell::Bookmarks)
          <H1>Bookmarks</H1>\n\
          <DL><p>\n{items}</DL><p>\n"
     )
+}
+
+/// 单次导入解析的书签条目上限。与书签存储快照条目上限同量级：超出即停止解析，
+/// 防止超大剪贴板文本被展开成无界条目列表。
+const MAX_IMPORT_ENTRIES: usize = zero_browser_shell::MAX_ENTRIES;
+
+/// 解析 Netscape bookmark 格式 HTML（设置页「导入书签」→ 剪贴板内容）。
+///
+/// 与 [`generate_bookmarks_export_html`] 输出对称：扫描 `<A HREF="…">标题</A>`
+/// 条目，`<H3>名称</H3>` 后的 `<DL>` 列表归入该文件夹（更深嵌套拍平到最近祖先
+/// 文件夹——书签存储只有根级 + 一层文件夹）。标签与属性名大小写不敏感（经典
+/// Netscape 格式为大写标签）；标题与 URL 做 HTML 实体解码；href 为空的条目跳过；
+/// 解析容错——缺闭合标签等畸形片段只影响该条目，不中止整体。
+pub fn parse_bookmarks_import_html(html: &str) -> Vec<zero_browser_shell::BookmarkImportEntry> {
+    // 与原文等长的小写副本用于标签/属性名匹配，内容切片仍取原文（保留大小写）。
+    let lower = html.to_ascii_lowercase();
+    let mut entries = Vec::new();
+    // `<DL>` 栈：每层记录该列表生效的文件夹名（None = 根级或无 H3 前导的列表）。
+    let mut folder_stack: Vec<Option<String>> = vec![None];
+    // `<H3>` 捕获的文件夹名，等下一个 `<DL>` 开启时生效。
+    let mut pending_folder: Option<String> = None;
+    let mut i = 0usize;
+    while i < lower.len() && entries.len() < MAX_IMPORT_ENTRIES {
+        let Some(offset) = lower[i..].find('<') else {
+            break;
+        };
+        let start = i + offset;
+        let rest = &lower[start..];
+        let tag_boundary = |after: usize| {
+            rest.as_bytes()
+                .get(after)
+                .is_none_or(|byte| *byte == b'>' || byte.is_ascii_whitespace())
+        };
+        if rest.starts_with("<dl") && tag_boundary(3) {
+            folder_stack.push(pending_folder.take());
+            i = start + 3;
+            continue;
+        }
+        if rest.starts_with("</dl") && tag_boundary(4) {
+            if folder_stack.len() > 1 {
+                folder_stack.pop();
+            }
+            i = start + 4;
+            continue;
+        }
+        if rest.starts_with("<h3") && tag_boundary(3) {
+            let Some(content_end) = lower[start..].find("</h3").map(|p| start + p) else {
+                i = start + 3;
+                continue;
+            };
+            // 开标签 `>` 缺失（畸形）时 text_start 越过 content_end，钳到内容起点。
+            let text_start = html[start..]
+                .find('>')
+                .map_or(start + 3, |p| start + p + 1)
+                .min(content_end);
+            let name = decode_html_entities(html[text_start..content_end].trim());
+            pending_folder = if name.is_empty() { None } else { Some(name) };
+            i = content_end;
+            continue;
+        }
+        if !(rest.starts_with("<a") && tag_boundary(2)) {
+            i = start + 1;
+            continue;
+        }
+        let Some((href, attr_end)) = parse_anchor_href(html, &lower, start) else {
+            i = start + 2;
+            continue;
+        };
+        // 条目文本到闭合 `</a>` 为止；缺闭合视为畸形条目跳过。
+        let Some(text_end) = lower[attr_end..].find("</a").map(|p| attr_end + p) else {
+            i = attr_end;
+            continue;
+        };
+        let url = decode_html_entities(href.trim());
+        if url.is_empty() {
+            i = text_end + 3;
+            continue;
+        }
+        let title_text = strip_inline_tags(&html[attr_end..text_end]);
+        let title = decode_html_entities(title_text.trim());
+        let title = if title.is_empty() { url.clone() } else { title };
+        let folder = folder_stack.iter().rev().find_map(|folder| folder.clone());
+        entries.push(zero_browser_shell::BookmarkImportEntry { title, url, folder });
+        i = text_end + 3;
+    }
+    entries
+}
+
+/// 从 `<a` 起始处解析 `href` 属性值（原文切片），返回 `(值, 属性区结束下标)`；
+/// 无 `>` 或无 `href` 返回 None。属性名大小写不敏感，值支持引号包裹与裸值。
+fn parse_anchor_href(html: &str, lower: &str, start: usize) -> Option<(String, usize)> {
+    let tag_end = html[start..].find('>')? + start;
+    let mut i = start + 2;
+    let bytes = lower.as_bytes();
+    while i < tag_end {
+        while i < tag_end && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        let name_start = i;
+        while i < tag_end && !bytes[i].is_ascii_whitespace() && bytes[i] != b'=' {
+            i += 1;
+        }
+        let name = &lower[name_start..i];
+        while i < tag_end && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i < tag_end && bytes[i] == b'=' {
+            i += 1;
+            while i < tag_end && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            let quote = bytes.get(i).copied().filter(|byte| *byte == b'"' || *byte == b'\'');
+            let value;
+            if let Some(quote) = quote {
+                let value_start = i + 1;
+                let value_end = html[value_start..tag_end]
+                    .find(quote as char)
+                    .map_or(tag_end, |p| value_start + p);
+                value = &html[value_start..value_end];
+                i = value_end + 1;
+            } else {
+                let value_start = i;
+                while i < tag_end && !bytes[i].is_ascii_whitespace() {
+                    i += 1;
+                }
+                value = &html[value_start..i];
+            }
+            if name == "href" {
+                return Some((value.to_string(), tag_end + 1));
+            }
+        } else if name == "href" {
+            // 布尔形态的 href（无值）不是可用 URL。
+            return None;
+        }
+    }
+    None
+}
+
+/// 去掉条目文本中的内联标签（如 `<img>` 徽标），保留纯文本。
+fn strip_inline_tags(text: &str) -> String {
+    if !text.contains('<') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some((before, after)) = rest.split_once('<') {
+        out.push_str(before);
+        match after.find('>') {
+            Some(end) => rest = &after[end + 1..],
+            None => {
+                // 未闭合的 `<` 按字面保留。
+                out.push('<');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// HTML 实体解码（导入条目文本/URL）：五个命名实体 + 十进制/十六进制数字实体；
+/// 未知实体按字面保留。书签文件经 HTML 序列化写出，`&` 已转义为 `&amp;`。
+fn decode_html_entities(text: &str) -> String {
+    if !text.contains('&') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some((before, after)) = rest.split_once('&') {
+        out.push_str(before);
+        // 命中实体时返回 `(解码字符, 实体之后剩余原文)`，避免回算消费长度。
+        let decoded: Option<(char, &str)> = if let Some(value) = after.strip_prefix("amp;") {
+            Some(('&', value))
+        } else if let Some(value) = after.strip_prefix("lt;") {
+            Some(('<', value))
+        } else if let Some(value) = after.strip_prefix("gt;") {
+            Some(('>', value))
+        } else if let Some(value) = after.strip_prefix("quot;") {
+            Some(('"', value))
+        } else if let Some(value) = after.strip_prefix("apos;").or_else(|| after.strip_prefix("#39;")) {
+            Some(('\'', value))
+        } else if let Some(value) = after.strip_prefix("#x").or_else(|| after.strip_prefix("#X")) {
+            let hex: String = value.chars().take_while(|c| c.is_ascii_hexdigit()).collect();
+            numeric_entity(&hex, 16, value)
+        } else if let Some(value) = after.strip_prefix('#') {
+            let digits: String = value.chars().take_while(|c| c.is_ascii_digit()).collect();
+            numeric_entity(&digits, 10, value)
+        } else {
+            None
+        };
+        match decoded {
+            Some((decoded, remaining)) => {
+                out.push(decoded);
+                rest = remaining;
+            }
+            None => {
+                // 未知/畸形实体按字面保留 `&`，从其后继续扫描。
+                out.push('&');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// 数字实体解码：`digits` 为已收集的数字串（十或十六进制），`tail` 为原文中
+/// 数字串起点。数字与十六进制位均为 ASCII，字符数即字节数，可按个数切片。
+/// 空数字串、溢出或非法码点（含代理区）按字面保留。
+fn numeric_entity<'a>(digits: &str, radix: u32, tail: &'a str) -> Option<(char, &'a str)> {
+    if digits.is_empty() {
+        return None;
+    }
+    let mut remaining = tail.get(digits.len()..)?;
+    let value = u32::from_str_radix(digits, radix).ok()?;
+    let decoded = char::from_u32(value)?;
+    // 终止 `;` 一并消费；缺失时仍按已解码处理（容错）。
+    if let Some(rest) = remaining.strip_prefix(';') {
+        remaining = rest;
+    }
+    Some((decoded, remaining))
+}
+
+/// 书签导入结果（导入页结果区）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BookmarkImportOutcome {
+    /// 剪贴板不可用（无显示服务或系统拒绝读取）。
+    ClipboardUnavailable,
+    /// 剪贴板内容未解析出任何书签条目（非书签 HTML）。
+    NoEntries,
+    /// 导入完成：`added` 新增、`skipped` 跳过（URL 重复或超限）。
+    Imported { added: usize, skipped: usize },
+}
+
+/// 生成书签导入页 HTML（`zero://bookmarks/import`；设置页「导入书签」入口）。
+///
+/// 引擎内部页无文件选择能力，导入源为系统剪贴板：用户先复制书签 HTML 文件的
+/// 全部文本，再点「从剪贴板导入」（`zero://bookmarks/import/apply`）。
+/// `outcome` 非空时在页首展示上次导入结果。
+pub fn generate_bookmarks_import_html(outcome: Option<&BookmarkImportOutcome>) -> String {
+    use zero_browser_shell::UiLanguage;
+    let lang = UiLanguage::detect_from_env();
+    let (title, step1, step2, step3, import_label, view_label) = match lang {
+        UiLanguage::ZhCn => (
+            "导入书签 — ZeroBrowser",
+            "在原浏览器中把书签导出为 HTML 文件（Netscape 书签格式）。",
+            "用文本编辑器打开该文件，全选并复制全部内容。",
+            "回到本页点击下方按钮，从剪贴板导入。",
+            "从剪贴板导入",
+            "查看书签",
+        ),
+        UiLanguage::EnUs => (
+            "Import Bookmarks — ZeroBrowser",
+            "Export bookmarks as an HTML file (Netscape format) from your previous browser.",
+            "Open the file in a text editor and copy its entire contents.",
+            "Come back here and press the button below to import from the clipboard.",
+            "Import from Clipboard",
+            "View Bookmarks",
+        ),
+    };
+    let result_html = match outcome {
+        Some(BookmarkImportOutcome::Imported { added, skipped }) => {
+            let text = match lang {
+                UiLanguage::ZhCn => format!("导入完成：新增 {added} 条，跳过 {skipped} 条（重复或超限）。"),
+                UiLanguage::EnUs => {
+                    format!("Import finished: {added} added, {skipped} skipped (duplicates or over limit).")
+                }
+            };
+            format!(
+                r#"<p style="background:#e6f4ea;border:1px solid #1e8e3e;border-radius:6px;padding:10px 14px;color:#137333;font-size:14px;">{text}</p>"#
+            )
+        }
+        Some(outcome) => {
+            let text = match lang {
+                UiLanguage::ZhCn => match outcome {
+                    BookmarkImportOutcome::ClipboardUnavailable => "无法读取剪贴板，请确认桌面会话后重试。",
+                    _ => "剪贴板内容中没有识别到书签条目。",
+                },
+                UiLanguage::EnUs => match outcome {
+                    BookmarkImportOutcome::ClipboardUnavailable => {
+                        "Could not read the clipboard; check your desktop session and retry."
+                    }
+                    _ => "No bookmark entries recognized in the clipboard contents.",
+                },
+            };
+            format!(
+                r#"<p style="background:#fce8e6;border:1px solid #d93025;border-radius:6px;padding:10px 14px;color:#d93025;font-size:14px;">{text}</p>"#
+            )
+        }
+        None => String::new(),
+    };
+    let body = format!(
+        r#"{result_html}<ol style="font-size:14px;color:#3c4043;line-height:1.9;padding-left:20px;">
+  <li>{step1}</li>
+  <li>{step2}</li>
+  <li>{step3}</li>
+</ol>
+<p><a href="zero://bookmarks/import/apply" style="display:inline-block;background:#1a73e8;color:#fff;font-size:14px;padding:9px 22px;border-radius:4px;text-decoration:none;">{import_label}</a>
+<a href="zero://bookmarks" style="margin-left:12px;color:#1a73e8;text-decoration:none;font-size:13px;">{view_label}</a></p>"#,
+        step1 = step1,
+        step2 = step2,
+        step3 = step3,
+        import_label = import_label,
+        view_label = view_label,
+    );
+    internal_page_shell(title, &body)
 }
 
 /// 生成键盘快捷键帮助页 HTML（`zero://shortcuts`，Ctrl+/ 打开）。
@@ -1797,6 +2105,134 @@ mod tests {
         assert!(out.contains("<DL><p>"));
         assert!(out.trim_end().ends_with("</DL><p>"));
         assert!(!out.contains("<DT>"), "empty store must export no entries: {out}");
+    }
+
+    #[test]
+    fn parse_bookmarks_import_html_flat_netscape_uppercase() {
+        // 经典 Netscape 格式：大写标签 + 引号属性 + &amp; 转义；额外属性（ADD_DATE）忽略。
+        let html = r#"<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<DL><p>
+    <DT><A HREF="https://example.com/a?b=1&amp;c=2">Example</A>
+    <DT><A HREF="https://www.rust-lang.org/" ADD_DATE="1700000000">Rust</A>
+</DL><p>"#;
+        let entries = parse_bookmarks_import_html(html);
+        assert_eq!(entries.len(), 2, "{entries:?}");
+        assert_eq!(entries[0].url, "https://example.com/a?b=1&c=2");
+        assert_eq!(entries[0].title, "Example");
+        assert_eq!(entries[0].folder, None);
+        assert_eq!(entries[1].title, "Rust");
+    }
+
+    #[test]
+    fn parse_bookmarks_import_html_assigns_folder_and_flattens_nesting() {
+        let html = r#"<DL><p>
+  <DT><H3>Dev</H3>
+  <DL><p>
+    <DT><A HREF="https://www.rust-lang.org/">Rust</A>
+    <DL><p>
+      <DT><A HREF="https://crates.io/">Crates</A>
+    </DL><p>
+  </DL><p>
+  <DT><A HREF="https://example.com/">Example</A>
+</DL><p>"#;
+        let entries = parse_bookmarks_import_html(html);
+        assert_eq!(entries.len(), 3, "{entries:?}");
+        assert_eq!(entries[0].folder.as_deref(), Some("Dev"));
+        // 更深嵌套拍平到最近祖先文件夹（书签存储只有一层文件夹）。
+        assert_eq!(entries[1].folder.as_deref(), Some("Dev"));
+        assert_eq!(entries[2].folder, None);
+    }
+
+    #[test]
+    fn parse_bookmarks_import_html_empty_href_and_missing_title() {
+        let html = "<DL><p>\
+<DT><A HREF=\"\">Empty href</A>\
+<DT><A HREF=\"https://example.com/\"></A>\
+<DT><A>No href</A>\
+</DL>";
+        let entries = parse_bookmarks_import_html(html);
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        // 缺标题以 URL 代替（Chrome 导入行为）。
+        assert_eq!(entries[0].title, "https://example.com/");
+    }
+
+    #[test]
+    fn parse_bookmarks_import_html_survives_malformed_fragment() {
+        // 尾部截断（复制缺尾）：最后一个无闭合 `</a>` 的条目跳过，不 panic。
+        let unclosed = "<DT><A HREF=\"https://broken.example/\">Broken";
+        assert!(parse_bookmarks_import_html(unclosed).is_empty());
+        // 未闭合锚点后跟合法条目：未闭合条目按 HTML 语义吸收到下一闭合
+        //（容错不中止），其后合法条目仍各自解析。
+        let html = "<DT><A HREF=\"https://broken.example/\">Broken <DT><A HREF=\"https://ok.example/\">Ok</A>";
+        let entries = parse_bookmarks_import_html(html);
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        // 非 HTML 文本与空输入返回空。
+        assert!(parse_bookmarks_import_html("plain clipboard text").is_empty());
+        assert!(parse_bookmarks_import_html("").is_empty());
+    }
+
+    #[test]
+    fn bookmarks_export_import_roundtrip() {
+        let mut bookmarks = zero_browser_shell::Bookmarks::default();
+        bookmarks.add("Example", "https://example.com/a?b=1&c=2", None);
+        let folder = bookmarks.create_folder("Dev");
+        bookmarks.add("Rust", "https://www.rust-lang.org/", Some(folder));
+        let exported = generate_bookmarks_export_html(&bookmarks);
+        let entries = parse_bookmarks_import_html(&exported);
+        assert_eq!(entries.len(), 2, "{entries:?}");
+        assert_eq!(entries[0].title, "Example");
+        assert_eq!(entries[0].url, "https://example.com/a?b=1&c=2");
+        assert_eq!(entries[0].folder, None);
+        assert_eq!(entries[1].title, "Rust");
+        assert_eq!(entries[1].folder.as_deref(), Some("Dev"));
+    }
+
+    #[test]
+    fn parse_bookmarks_import_html_caps_entry_count() {
+        let anchor = "<DT><A HREF=\"https://example.com/x\">X</A>";
+        let html = format!("<DL><p>{}</DL>", anchor.repeat(MAX_IMPORT_ENTRIES + 5));
+        let entries = parse_bookmarks_import_html(&html);
+        assert_eq!(entries.len(), MAX_IMPORT_ENTRIES);
+    }
+
+    #[test]
+    fn decode_html_entities_named_numeric_and_literal() {
+        assert_eq!(decode_html_entities("a&amp;b"), "a&b");
+        assert_eq!(
+            decode_html_entities("&lt;tag&gt; &quot;q&quot; &apos;a&#39;"),
+            "<tag> \"q\" 'a'"
+        );
+        assert_eq!(decode_html_entities("&#x4E2D;&#25991;"), "中文");
+        // 未知/畸形实体按字面保留。
+        assert_eq!(
+            decode_html_entities("100% &unknown; &#; &#x; a&amp"),
+            "100% &unknown; &#; &#x; a&amp"
+        );
+    }
+
+    #[test]
+    fn generate_bookmarks_import_html_links_apply_and_shows_result() {
+        let plain = generate_bookmarks_import_html(None);
+        assert!(plain.contains(r#"href="zero://bookmarks/import/apply""#));
+        assert!(plain.contains(r#"href="zero://bookmarks""#));
+        let done = generate_bookmarks_import_html(Some(&BookmarkImportOutcome::Imported { added: 3, skipped: 1 }));
+        assert!(
+            done.contains("新增 3 条") || done.contains("3 added"),
+            "result summary missing: {done}"
+        );
+        let failed = generate_bookmarks_import_html(Some(&BookmarkImportOutcome::NoEntries));
+        assert!(
+            !failed.contains("导入完成") && !failed.contains("Import finished"),
+            "{failed}"
+        );
+    }
+
+    #[test]
+    fn generate_settings_html_links_bookmark_import() {
+        let settings = zero_browser_shell::BrowserSettings::new();
+        let html = generate_settings_html(&settings);
+        assert!(html.contains(r#"href="zero://bookmarks/import""#));
+        assert!(html.contains(r#"href="zero://settings/export_bookmarks""#));
     }
 
     #[test]

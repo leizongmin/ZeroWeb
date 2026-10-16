@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use std::path::Path;
 
 use crate::autocomplete::Autocomplete;
-use crate::bookmarks::{BookmarkId, Bookmarks};
+use crate::bookmarks::{BookmarkFolder, BookmarkId, BookmarkImportEntry, Bookmarks, MAX_ENTRIES, MAX_TEXT_BYTES};
 use crate::download::DownloadManager;
 use crate::history::History;
 use crate::profile::ProfilePaths;
@@ -544,6 +544,44 @@ impl BrowserShell {
             tracing::warn!(%err, "failed to save bookmarks");
         }
     }
+
+    /// 合并导入解析好的书签条目（书签导入页「从剪贴板导入」）。
+    ///
+    /// 合并语义：URL 已存在（精确匹配）则跳过；同名文件夹复用既有文件夹；单条
+    /// 标题/URL/文件夹名超 [`MAX_TEXT_BYTES`] 或存储已达 [`MAX_ENTRIES`] 时跳过——
+    /// 快照校验（`Bookmarks::is_valid`）对超限文件整体丢弃，导入不得写出超限快照。
+    /// 返回 `(新增条数, 跳过条数)`；有新增时立即持久化。
+    pub fn import_bookmarks(&mut self, entries: &[BookmarkImportEntry]) -> (usize, usize) {
+        let mut added = 0usize;
+        let mut skipped = 0usize;
+        for entry in entries {
+            let over_limit = self.bookmarks.len() >= MAX_ENTRIES
+                || entry.title.len() > MAX_TEXT_BYTES
+                || entry.url.len() > MAX_TEXT_BYTES
+                || entry.folder.as_ref().is_some_and(|name| name.len() > MAX_TEXT_BYTES);
+            if over_limit || self.bookmarks.find_by_url(&entry.url).is_some() {
+                skipped += 1;
+                continue;
+            }
+            let folder_id = entry.folder.as_ref().map(|name| {
+                self.bookmarks
+                    .folders()
+                    .iter()
+                    .find(|folder| folder.name() == name)
+                    .map(BookmarkFolder::id)
+                    .unwrap_or_else(|| self.bookmarks.create_folder(name))
+            });
+            self.bookmarks.add(&entry.title, &entry.url, folder_id);
+            added += 1;
+        }
+        if added > 0
+            && let Err(err) = self.bookmarks.save_default()
+        {
+            tracing::warn!(%err, "failed to save bookmarks after import");
+        }
+        (added, skipped)
+    }
+
     /// 切换当前页面书签状态：未收藏则添加，已收藏则移除。返回最终是否已收藏。
     pub fn toggle_current_bookmark(&mut self) -> bool {
         if let Some(tab) = self.tabs.active_tab()

@@ -241,6 +241,15 @@ impl BrowserApp {
             .collect()
     }
 
+    /// 演示流用：全库书签列表 `(title, url)`（含文件夹内条目；书签导入断言）。
+    pub fn smoke_bookmarks_all(&self) -> Vec<(String, String)> {
+        self.shell
+            .bookmarks()
+            .iter()
+            .map(|bm| (bm.title().to_string(), bm.url().to_string()))
+            .collect()
+    }
+
     /// 演示流用：历史条目数。
     pub fn smoke_history_len(&self) -> usize {
         self.shell.history().len()
