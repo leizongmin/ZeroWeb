@@ -9,8 +9,8 @@
     },
     // importKey(format, keyData, algorithm, extractable, usages) → Promise<CryptoKey>。HMAC：format 须 "raw"
     //（jwk/pkcs8/spki defer）；algorithm {name:"HMAC",hash:"SHA-XXX"}，usages ⊆ {sign,verify}。PBKDF2：
-    // {name:"PBKDF2"}，usages ⊆ {deriveBits,deriveKey}。AES-GCM：{name:"AES-GCM"}，usages ⊆ {encrypt,decrypt}，
-    // key 须 128/256 位（16/32 字节）。含非法 usage → SyntaxError，bad key 长度 → DataError。
+    // {name:"PBKDF2"}，usages ⊆ {deriveBits,deriveKey}。AES-GCM/CBC/CTR：usages ⊆ {encrypt,decrypt}，
+    // key 须 128/256 位（16/32 字节；CBC/CTR 另支持 192 位/24 字节）。含非法 usage → SyntaxError，bad key 长度 → DataError。
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-importKey
     importKey: function (format, keyData, algorithm, extractable, usages) {
       return new Promise(function (resolve, reject) {
@@ -23,12 +23,16 @@
           reject(new _zw_subtleDE("Unsupported importKey format: '" + fmt + "' (only 'raw' supported)", 'NotSupportedError')); return;
         }
         var raw = _zw_bufToBytes(keyData);
-        // AES-GCM 密钥长度校验（spec：128/256 位；192 位本实现不支持）。
-        if (algo.name === 'AES-GCM' && raw.length !== 16 && raw.length !== 32) {
-          reject(new _zw_subtleDE('AES-GCM key must be 128 or 256 bits (16/32 bytes)', 'DataError')); return;
+        // AES 密钥长度校验（spec：AES-CBC/CTR 128/192/256 位；AES-GCM 192 位因 aes-gcm crate
+        // 未导出 Aes192Gcm 不支持，同 R2957 限制）。
+        if (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR') {
+          var klen = raw.length;
+          if (klen !== 16 && klen !== 32 && !(algo.name !== 'AES-GCM' && klen === 24)) {
+            reject(new _zw_subtleDE('AES key must be 128, 192 or 256 bits (16/24/32 bytes)', 'DataError')); return;
+          }
         }
         var allowedUsages = (algo.name === 'PBKDF2' || algo.name === 'HKDF') ? ['deriveBits', 'deriveKey']
-          : algo.name === 'AES-GCM' ? ['encrypt', 'decrypt']
+          : (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR') ? ['encrypt', 'decrypt']
           : ['sign', 'verify'];
         var u = _zw_normalizeUsages(usages, allowedUsages);
         if (!u) {
@@ -120,39 +124,58 @@
       });
     },
     // encrypt(algorithm, key, data) → Promise<ArrayBuffer>。AES-GCM：algorithm {name:"AES-GCM", iv, additionalData?, tagLength?}，
-    // 返 ct||tag（tag 固定 128 位）。key.usages 须含 "encrypt"。https://w3c.github.io/webcrypto/#SubtleCrypto-method-encrypt
+    // 返 ct||tag（tag 固定 128 位）。AES-CBC/CTR（M2b）：{name, iv|counter(16B)}，CBC 返 PKCS#7 填充密文。
+    // key.usages 须含 "encrypt"。https://w3c.github.io/webcrypto/#SubtleCrypto-method-encrypt
     encrypt: function (algorithm, key, data) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
         name = _zw_upperAscii(String(name == null ? '' : name));
-        if (name !== 'AES-GCM' || !key || key.algorithm.name !== 'AES-GCM') {
-          reject(new _zw_subtleDE('Unsupported encrypt algorithm or key', 'NotSupportedError')); return;
+        var isBlock = (name === 'AES-CBC' || name === 'AES-CTR');
+        if (name !== 'AES-GCM' && !isBlock) {
+          reject(new _zw_subtleDE('Unsupported encrypt algorithm: ' + name, 'NotSupportedError')); return;
+        }
+        if (!key || key.algorithm.name !== name) {
+          // spec：key.algorithm.name 与算法名不匹配 → InvalidAccessError（WPT「mismatched
+          // key and algorithm」组断言 InvalidAccessError，非 NotSupportedError）。
+          reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
         }
         if (!key.usages || key.usages.indexOf('encrypt') < 0) {
           reject(new _zw_subtleDE('Key usages do not include "encrypt"', 'InvalidAccessError')); return;
         }
-        var arr = _zw_aesGcmCall('encrypt', algorithm, key, _zw_bufToBytes(data), reject);
+        var bytes = _zw_bufToBytes(data);
+        var arr = isBlock
+          ? _zw_aesBlockCall(name === 'AES-CTR' ? 'ctr' : 'cbc', 'encrypt', algorithm, key, bytes, reject)
+          : _zw_aesGcmCall('encrypt', algorithm, key, bytes, reject);
         if (arr) resolve(arr);
       });
     },
-    // decrypt(algorithm, key, data) → Promise<ArrayBuffer>。data 为 ct||tag（tag 校验失败 → reject OperationError）。
+    // decrypt(algorithm, key, data) → Promise<ArrayBuffer>。AES-GCM data 为 ct||tag（tag 校验失败 →
+    // reject OperationError）；AES-CBC data 末块 padding 非法 → OperationError。
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-decrypt
     decrypt: function (algorithm, key, data) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
         name = _zw_upperAscii(String(name == null ? '' : name));
-        if (name !== 'AES-GCM' || !key || key.algorithm.name !== 'AES-GCM') {
-          reject(new _zw_subtleDE('Unsupported decrypt algorithm or key', 'NotSupportedError')); return;
+        var isBlock = (name === 'AES-CBC' || name === 'AES-CTR');
+        if (name !== 'AES-GCM' && !isBlock) {
+          reject(new _zw_subtleDE('Unsupported decrypt algorithm: ' + name, 'NotSupportedError')); return;
+        }
+        if (!key || key.algorithm.name !== name) {
+          reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
         }
         if (!key.usages || key.usages.indexOf('decrypt') < 0) {
           reject(new _zw_subtleDE('Key usages do not include "decrypt"', 'InvalidAccessError')); return;
         }
-        var arr = _zw_aesGcmCall('decrypt', algorithm, key, _zw_bufToBytes(data), reject);
+        var bytes = _zw_bufToBytes(data);
+        var arr = isBlock
+          ? _zw_aesBlockCall(name === 'AES-CTR' ? 'ctr' : 'cbc', 'decrypt', algorithm, key, bytes, reject)
+          : _zw_aesGcmCall('decrypt', algorithm, key, bytes, reject);
         if (arr) resolve(arr);
       });
     },
-    // generateKey(algorithm, extractable, usages) → Promise<CryptoKey>。AES-GCM → 256 位随机密钥；
-    // HMAC → hash 块大小随机密钥。**随机源 = crypto.getRandomValues（Math.random 非 CSPRNG，已知限制）**。
+    // generateKey(algorithm, extractable, usages) → Promise<CryptoKey>。AES-GCM/CBC/CTR → 随机密钥
+    //（length ∈ {128,192,256}，缺省 256；越界 → OperationError）；HMAC → hash 块大小随机密钥。
+    // **随机源 = crypto.getRandomValues（Math.random 非 CSPRNG，已知限制）**。
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-generateKey
     generateKey: function (algorithm, extractable, usages) {
       return new Promise(function (resolve, reject) {
@@ -160,10 +183,15 @@
         if (!algo) {
           reject(new _zw_subtleDE('Unsupported or missing algorithm', 'NotSupportedError')); return;
         }
-        if (algo.name === 'AES-GCM') {
+        if (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR') {
           var u = _zw_normalizeUsages(usages, ['encrypt', 'decrypt']);
-          if (!u) { reject(new _zw_subtleDE('Invalid key usages for AES-GCM', 'SyntaxError')); return; }
-          resolve(new CryptoKey('secret', extractable, algo, u, Array.from(_zw_randomBytes(32))));
+          if (!u) { reject(new _zw_subtleDE('Invalid key usages for ' + algo.name, 'SyntaxError')); return; }
+          var bits = (typeof algorithm === 'object' && algorithm && algorithm.length != null)
+            ? Number(algorithm.length) : 256;
+          if (bits !== 128 && bits !== 192 && bits !== 256) {
+            reject(new _zw_subtleDE('Invalid AES key length: ' + algorithm.length, 'OperationError')); return;
+          }
+          resolve(new CryptoKey('secret', extractable, algo, u, Array.from(_zw_randomBytes(bits / 8))));
         } else if (algo.name === 'HMAC') {
           var hu = _zw_normalizeUsages(usages, ['sign', 'verify']);
           if (!hu) { reject(new _zw_subtleDE('Invalid key usages for HMAC', 'SyntaxError')); return; }

@@ -1,0 +1,878 @@
+{
+ "meta": {
+  "date": "2026-10-17",
+  "slice": "M2b-aes-cbc-ctr",
+  "pin": "315976933870b34d6ea30e3f6643403edae678ba",
+  "totals": {
+   "cases": 123,
+   "subtests": 32717,
+   "pass": 9421,
+   "fail": 23295,
+   "timeout": 1,
+   "all_green_cases": 11
+  }
+ },
+ "cases": [
+  {
+   "file": "WebCryptoAPI/algorithm-discards-context.https.window.js",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "total": 1
+  },
+  {
+   "file": "WebCryptoAPI/crypto_key_cached_slots.https.any.js",
+   "pass": 2,
+   "fail": 0,
+   "timeout": 0,
+   "total": 2
+  },
+  {
+   "file": "WebCryptoAPI/derive_bits_keys/argon2.tentative.https.any.js",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "total": 1
+  },
+  {
+   "file": "WebCryptoAPI/derive_bits_keys/cfrg_curves_bits_curve25519.https.any.js",
+   "pass": 0,
+   "fail": 7,
+   "timeout": 0,
+   "total": 7
+  },
+  {
+   "file": "WebCryptoAPI/derive_bits_keys/cfrg_curves_bits_curve448.tentative.https.any.js",
+   "pass": 0,
+   "fail": 6,
+   "timeout": 0,
+   "total": 6
+  },
+  {
+   "file": "WebCryptoAPI/derive_bits_keys/cfrg_curves_keys_curve25519.https.any.js",
+   "pass": 0,
+   "fail": 8,
+   "timeout": 0,
+   "total": 8
+  },
+  {
+   "file": "WebCryptoAPI/derive_bits_keys/cfrg_curves_keys_curve448.tentative.https.any.js",
+   "pass": 0,
+   "fail": 7,
+   "timeout": 0,
+   "total": 7
+  },
+  {
+   "file": "WebCryptoAPI/derive_bits_keys/derive_key_and_encrypt.https.any.js",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "total": 1
+  },
+  {
+   "file": "WebCryptoAPI/derive_bits_keys/derived_bits_length.https.any.js",
+   "pass": 13,
+   "fail": 16,
+   "timeout": 0,
+   "total": 29
+  },
+  {
+   "file": "WebCryptoAPI/derive_bits_keys/ecdh_bits.https.any.js",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "total": 1
+  },
+  {
+   "file": "WebCryptoAPI/derive_bits_keys/ecdh_keys.https.any.js",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "total": 1
+  },
+  {
+   "file": "WebCryptoAPI/derive_bits_keys/hkdf.https.any.js",
+   "pass": 1885,
+   "fail": 1776,
+   "timeout": 0,
+   "total": 3661
+  },
+  {
+   "file": "WebCryptoAPI/derive_bits_keys/pbkdf2.https.any.js",
+   "pass": 4744,
+   "fail": 3888,
+   "timeout": 0,
+   "total": 8632
+  },
+  {
+   "file": "WebCryptoAPI/digest/cshake.tentative.https.any.js",
+   "pass": 0,
+   "fail": 88,
+   "timeout": 0,
+   "total": 88
+  },
+  {
+   "file": "WebCryptoAPI/digest/digest.https.any.js",
+   "pass": 116,
+   "fail": 0,
+   "timeout": 0,
+   "total": 116
+  },
+  {
+   "file": "WebCryptoAPI/digest/kangarootwelve.tentative.https.any.js",
+   "pass": 0,
+   "fail": 148,
+   "timeout": 0,
+   "total": 148
+  },
+  {
+   "file": "WebCryptoAPI/digest/sha3.tentative.https.any.js",
+   "pass": 0,
+   "fail": 48,
+   "timeout": 0,
+   "total": 48
+  },
+  {
+   "file": "WebCryptoAPI/digest/turboshake.tentative.https.any.js",
+   "pass": 0,
+   "fail": 135,
+   "timeout": 0,
+   "total": 135
+  },
+  {
+   "file": "WebCryptoAPI/encap_decap/encap_decap_bits.tentative.https.any.js",
+   "pass": 0,
+   "fail": 9,
+   "timeout": 0,
+   "total": 9
+  },
+  {
+   "file": "WebCryptoAPI/encap_decap/encap_decap_keys.tentative.https.any.js",
+   "pass": 0,
+   "fail": 120,
+   "timeout": 0,
+   "total": 120
+  },
+  {
+   "file": "WebCryptoAPI/encrypt_decrypt/aes_cbc.https.any.js",
+   "pass": 61,
+   "fail": 0,
+   "timeout": 0,
+   "total": 61
+  },
+  {
+   "file": "WebCryptoAPI/encrypt_decrypt/aes_ctr.https.any.js",
+   "pass": 52,
+   "fail": 0,
+   "timeout": 0,
+   "total": 52
+  },
+  {
+   "file": "WebCryptoAPI/encrypt_decrypt/aes_gcm.https.any.js",
+   "pass": 125,
+   "fail": 452,
+   "timeout": 0,
+   "total": 577
+  },
+  {
+   "file": "WebCryptoAPI/encrypt_decrypt/aes_gcm_256_iv.https.any.js",
+   "pass": 133,
+   "fail": 444,
+   "timeout": 0,
+   "total": 577
+  },
+  {
+   "file": "WebCryptoAPI/encrypt_decrypt/aes_ocb.tentative.https.any.js",
+   "pass": 1,
+   "fail": 276,
+   "timeout": 0,
+   "total": 277
+  },
+  {
+   "file": "WebCryptoAPI/encrypt_decrypt/chacha20_poly1305.tentative.https.any.js",
+   "pass": 0,
+   "fail": 28,
+   "timeout": 0,
+   "total": 28
+  },
+  {
+   "file": "WebCryptoAPI/encrypt_decrypt/rsa_oaep.https.any.js",
+   "pass": 1,
+   "fail": 180,
+   "timeout": 0,
+   "total": 181
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_AES-CBC.https.any.js",
+   "pass": 456,
+   "fail": 162,
+   "timeout": 0,
+   "total": 618
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_AES-CTR.https.any.js",
+   "pass": 456,
+   "fail": 162,
+   "timeout": 0,
+   "total": 618
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_AES-GCM.https.any.js",
+   "pass": 456,
+   "fail": 162,
+   "timeout": 0,
+   "total": 618
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_AES-KW.https.any.js",
+   "pass": 0,
+   "fail": 216,
+   "timeout": 0,
+   "total": 216
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_AES-OCB.tentative.https.any.js",
+   "pass": 0,
+   "fail": 618,
+   "timeout": 0,
+   "total": 618
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_ECDH.https.any.js",
+   "pass": 20,
+   "fail": 156,
+   "timeout": 0,
+   "total": 176
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_ECDSA.https.any.js",
+   "pass": 16,
+   "fail": 126,
+   "timeout": 0,
+   "total": 142
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_Ed25519.https.any.js",
+   "pass": 0,
+   "fail": 84,
+   "timeout": 0,
+   "total": 84
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_Ed448.tentative.https.any.js",
+   "pass": 0,
+   "fail": 84,
+   "timeout": 0,
+   "total": 84
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_HMAC.https.any.js",
+   "pass": 400,
+   "fail": 16,
+   "timeout": 0,
+   "total": 416
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_ML-DSA.tentative.https.any.js",
+   "pass": 0,
+   "fail": 252,
+   "timeout": 0,
+   "total": 252
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_ML-KEM.tentative.https.any.js",
+   "pass": 0,
+   "fail": 684,
+   "timeout": 0,
+   "total": 684
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_RSA-OAEP.https.any.js",
+   "pass": 0,
+   "fail": 284,
+   "timeout": 0,
+   "total": 284
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_RSA-PSS.https.any.js",
+   "pass": 0,
+   "fail": 100,
+   "timeout": 0,
+   "total": 100
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_RSASSA-PKCS1-v1_5.https.any.js",
+   "pass": 0,
+   "fail": 100,
+   "timeout": 0,
+   "total": 100
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_X25519.https.any.js",
+   "pass": 0,
+   "fail": 104,
+   "timeout": 0,
+   "total": 104
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_X448.tentative.https.any.js",
+   "pass": 0,
+   "fail": 104,
+   "timeout": 0,
+   "total": 104
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_bad_algorithm.https.any.js",
+   "pass": 288,
+   "fail": 72,
+   "timeout": 0,
+   "total": 360
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_chacha20_poly1305.tentative.https.any.js",
+   "pass": 0,
+   "fail": 276,
+   "timeout": 0,
+   "total": 276
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/failures_kmac.tentative.https.any.js",
+   "pass": 0,
+   "fail": 312,
+   "timeout": 0,
+   "total": 312
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_AES-CBC.https.any.js",
+   "pass": 0,
+   "fail": 288,
+   "timeout": 0,
+   "total": 288
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_AES-CTR.https.any.js",
+   "pass": 0,
+   "fail": 288,
+   "timeout": 0,
+   "total": 288
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_AES-GCM.https.any.js",
+   "pass": 0,
+   "fail": 288,
+   "timeout": 0,
+   "total": 288
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_AES-KW.https.any.js",
+   "pass": 0,
+   "fail": 72,
+   "timeout": 0,
+   "total": 72
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_AES-OCB.tentative.https.any.js",
+   "pass": 0,
+   "fail": 288,
+   "timeout": 0,
+   "total": 288
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_ECDH.https.any.js",
+   "pass": 0,
+   "fail": 108,
+   "timeout": 0,
+   "total": 108
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_ECDSA.https.any.js",
+   "pass": 0,
+   "fail": 81,
+   "timeout": 0,
+   "total": 81
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_Ed25519.https.any.js",
+   "pass": 0,
+   "fail": 36,
+   "timeout": 0,
+   "total": 36
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_Ed448.tentative.https.any.js",
+   "pass": 0,
+   "fail": 36,
+   "timeout": 0,
+   "total": 36
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_HMAC.https.any.js",
+   "pass": 0,
+   "fail": 192,
+   "timeout": 0,
+   "total": 192
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_ML-DSA.tentative.https.any.js",
+   "pass": 0,
+   "fail": 108,
+   "timeout": 0,
+   "total": 108
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_ML-KEM.tentative.https.any.js",
+   "pass": 0,
+   "fail": 468,
+   "timeout": 0,
+   "total": 468
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_RSA-OAEP.https.any.js",
+   "pass": 0,
+   "fail": 156,
+   "timeout": 0,
+   "total": 156
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_RSA-PSS.https.any.js",
+   "pass": 0,
+   "fail": 36,
+   "timeout": 0,
+   "total": 36
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_RSASSA-PKCS1-v1_5.https.any.js",
+   "pass": 0,
+   "fail": 36,
+   "timeout": 0,
+   "total": 36
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_X25519.https.any.js",
+   "pass": 0,
+   "fail": 32,
+   "timeout": 0,
+   "total": 32
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_X448.tentative.https.any.js",
+   "pass": 0,
+   "fail": 32,
+   "timeout": 0,
+   "total": 32
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_chacha20_poly1305.tentative.https.any.js",
+   "pass": 0,
+   "fail": 192,
+   "timeout": 0,
+   "total": 192
+  },
+  {
+   "file": "WebCryptoAPI/generateKey/successes_kmac.tentative.https.any.js",
+   "pass": 0,
+   "fail": 144,
+   "timeout": 0,
+   "total": 144
+  },
+  {
+   "file": "WebCryptoAPI/getPublicKey.tentative.https.any.js",
+   "pass": 0,
+   "fail": 37,
+   "timeout": 0,
+   "total": 37
+  },
+  {
+   "file": "WebCryptoAPI/getRandomValues.any.js",
+   "pass": 39,
+   "fail": 0,
+   "timeout": 0,
+   "total": 39
+  },
+  {
+   "file": "WebCryptoAPI/historical.any.js",
+   "pass": 1,
+   "fail": 2,
+   "timeout": 0,
+   "total": 3
+  },
+  {
+   "file": "WebCryptoAPI/import_export/AES-OCB_importKey.tentative.https.any.js",
+   "pass": 0,
+   "fail": 72,
+   "timeout": 0,
+   "total": 72
+  },
+  {
+   "file": "WebCryptoAPI/import_export/Argon2_importKey.tentative.https.any.js",
+   "pass": 0,
+   "fail": 45,
+   "timeout": 0,
+   "total": 45
+  },
+  {
+   "file": "WebCryptoAPI/import_export/ChaCha20-Poly1305_importKey.tentative.https.any.js",
+   "pass": 0,
+   "fail": 24,
+   "timeout": 0,
+   "total": 24
+  },
+  {
+   "file": "WebCryptoAPI/import_export/KMAC_importKey.tentative.https.any.js",
+   "pass": 0,
+   "fail": 144,
+   "timeout": 0,
+   "total": 144
+  },
+  {
+   "file": "WebCryptoAPI/import_export/ML-DSA_importKey.tentative.https.any.js",
+   "pass": 0,
+   "fail": 180,
+   "timeout": 0,
+   "total": 180
+  },
+  {
+   "file": "WebCryptoAPI/import_export/ML-KEM_importKey.tentative.https.any.js",
+   "pass": 0,
+   "fail": 324,
+   "timeout": 0,
+   "total": 324
+  },
+  {
+   "file": "WebCryptoAPI/import_export/crashtests/importKey-unsettled-promise.https.any.js",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "total": 1
+  },
+  {
+   "file": "WebCryptoAPI/import_export/ec_importKey.https.any.js",
+   "pass": 0,
+   "fail": 264,
+   "timeout": 0,
+   "total": 264
+  },
+  {
+   "file": "WebCryptoAPI/import_export/ec_importKey_failures_ECDH.https.any.js",
+   "pass": 0,
+   "fail": 908,
+   "timeout": 0,
+   "total": 908
+  },
+  {
+   "file": "WebCryptoAPI/import_export/ec_importKey_failures_ECDSA.https.any.js",
+   "pass": 0,
+   "fail": 908,
+   "timeout": 0,
+   "total": 908
+  },
+  {
+   "file": "WebCryptoAPI/import_export/okp_importKey_Ed25519.https.any.js",
+   "pass": 0,
+   "fail": 72,
+   "timeout": 0,
+   "total": 72
+  },
+  {
+   "file": "WebCryptoAPI/import_export/okp_importKey_Ed448.tentative.https.any.js",
+   "pass": 0,
+   "fail": 72,
+   "timeout": 0,
+   "total": 72
+  },
+  {
+   "file": "WebCryptoAPI/import_export/okp_importKey_X25519.https.any.js",
+   "pass": 0,
+   "fail": 54,
+   "timeout": 0,
+   "total": 54
+  },
+  {
+   "file": "WebCryptoAPI/import_export/okp_importKey_X448.tentative.https.any.js",
+   "pass": 0,
+   "fail": 54,
+   "timeout": 0,
+   "total": 54
+  },
+  {
+   "file": "WebCryptoAPI/import_export/okp_importKey_failures_Ed25519.https.any.js",
+   "pass": 0,
+   "fail": 770,
+   "timeout": 0,
+   "total": 770
+  },
+  {
+   "file": "WebCryptoAPI/import_export/okp_importKey_failures_Ed448.tentative.https.any.js",
+   "pass": 0,
+   "fail": 770,
+   "timeout": 0,
+   "total": 770
+  },
+  {
+   "file": "WebCryptoAPI/import_export/okp_importKey_failures_X25519.https.any.js",
+   "pass": 0,
+   "fail": 662,
+   "timeout": 0,
+   "total": 662
+  },
+  {
+   "file": "WebCryptoAPI/import_export/okp_importKey_failures_X448.tentative.https.any.js",
+   "pass": 0,
+   "fail": 662,
+   "timeout": 0,
+   "total": 662
+  },
+  {
+   "file": "WebCryptoAPI/import_export/raw_format_aliases.tentative.https.any.js",
+   "pass": 0,
+   "fail": 20,
+   "timeout": 0,
+   "total": 20
+  },
+  {
+   "file": "WebCryptoAPI/import_export/rsa_importKey.https.any.js",
+   "pass": 0,
+   "fail": 1056,
+   "timeout": 0,
+   "total": 1056
+  },
+  {
+   "file": "WebCryptoAPI/import_export/symmetric_importKey.https.any.js",
+   "pass": 80,
+   "fail": 526,
+   "timeout": 0,
+   "total": 606
+  },
+  {
+   "file": "WebCryptoAPI/normalize-algorithm-name.https.any.js",
+   "pass": 4,
+   "fail": 0,
+   "timeout": 0,
+   "total": 4
+  },
+  {
+   "file": "WebCryptoAPI/randomUUID.https.any.js",
+   "pass": 3,
+   "fail": 0,
+   "timeout": 0,
+   "total": 3
+  },
+  {
+   "file": "WebCryptoAPI/serialization/aes-cbc.https.any.js",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "total": 3
+  },
+  {
+   "file": "WebCryptoAPI/serialization/aes-ctr.https.any.js",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "total": 3
+  },
+  {
+   "file": "WebCryptoAPI/serialization/aes-gcm.https.any.js",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "total": 3
+  },
+  {
+   "file": "WebCryptoAPI/serialization/aes-kw.https.any.js",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "total": 3
+  },
+  {
+   "file": "WebCryptoAPI/serialization/aes-ocb.tentative.https.any.js",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "total": 3
+  },
+  {
+   "file": "WebCryptoAPI/serialization/chacha20-poly1305.tentative.https.any.js",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "total": 2
+  },
+  {
+   "file": "WebCryptoAPI/serialization/ecdh.https.any.js",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "total": 3
+  },
+  {
+   "file": "WebCryptoAPI/serialization/ecdsa.https.any.js",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "total": 3
+  },
+  {
+   "file": "WebCryptoAPI/serialization/ed25519.https.any.js",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "total": 2
+  },
+  {
+   "file": "WebCryptoAPI/serialization/ed448.tentative.https.any.js",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "total": 2
+  },
+  {
+   "file": "WebCryptoAPI/serialization/hmac.https.any.js",
+   "pass": 8,
+   "fail": 0,
+   "timeout": 0,
+   "total": 8
+  },
+  {
+   "file": "WebCryptoAPI/serialization/kmac.tentative.https.any.js",
+   "pass": 0,
+   "fail": 6,
+   "timeout": 0,
+   "total": 6
+  },
+  {
+   "file": "WebCryptoAPI/serialization/mldsa.tentative.https.any.js",
+   "pass": 0,
+   "fail": 6,
+   "timeout": 0,
+   "total": 6
+  },
+  {
+   "file": "WebCryptoAPI/serialization/mlkem.tentative.https.any.js",
+   "pass": 0,
+   "fail": 6,
+   "timeout": 0,
+   "total": 6
+  },
+  {
+   "file": "WebCryptoAPI/serialization/rsa-oaep.https.any.js",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "total": 2
+  },
+  {
+   "file": "WebCryptoAPI/serialization/rsa-pss.https.any.js",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "total": 2
+  },
+  {
+   "file": "WebCryptoAPI/serialization/rsassa-pkcs1-v1_5.https.any.js",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "total": 2
+  },
+  {
+   "file": "WebCryptoAPI/serialization/x25519.https.any.js",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "total": 2
+  },
+  {
+   "file": "WebCryptoAPI/serialization/x448.tentative.https.any.js",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "total": 2
+  },
+  {
+   "file": "WebCryptoAPI/sign_verify/ecdsa.https.any.js",
+   "pass": 0,
+   "fail": 324,
+   "timeout": 0,
+   "total": 324
+  },
+  {
+   "file": "WebCryptoAPI/sign_verify/eddsa_curve25519.https.any.js",
+   "pass": 0,
+   "fail": 19,
+   "timeout": 0,
+   "total": 19
+  },
+  {
+   "file": "WebCryptoAPI/sign_verify/eddsa_curve448.tentative.https.any.js",
+   "pass": 0,
+   "fail": 19,
+   "timeout": 0,
+   "total": 19
+  },
+  {
+   "file": "WebCryptoAPI/sign_verify/eddsa_small_order_points.https.any.js",
+   "pass": 0,
+   "fail": 14,
+   "timeout": 0,
+   "total": 14
+  },
+  {
+   "file": "WebCryptoAPI/sign_verify/hmac.https.any.js",
+   "pass": 57,
+   "fail": 8,
+   "timeout": 0,
+   "total": 65
+  },
+  {
+   "file": "WebCryptoAPI/sign_verify/kmac.tentative.https.any.js",
+   "pass": 1,
+   "fail": 102,
+   "timeout": 0,
+   "total": 103
+  },
+  {
+   "file": "WebCryptoAPI/sign_verify/mldsa.tentative.https.any.js",
+   "pass": 0,
+   "fail": 57,
+   "timeout": 0,
+   "total": 57
+  },
+  {
+   "file": "WebCryptoAPI/sign_verify/rsa_pkcs.https.any.js",
+   "pass": 0,
+   "fail": 68,
+   "timeout": 0,
+   "total": 68
+  },
+  {
+   "file": "WebCryptoAPI/sign_verify/rsa_pss.https.any.js",
+   "pass": 0,
+   "fail": 144,
+   "timeout": 0,
+   "total": 144
+  },
+  {
+   "file": "WebCryptoAPI/supports-modern.tentative.https.any.js",
+   "pass": 0,
+   "fail": 94,
+   "timeout": 0,
+   "total": 94
+  },
+  {
+   "file": "WebCryptoAPI/supports.tentative.https.any.js",
+   "pass": 0,
+   "fail": 171,
+   "timeout": 0,
+   "total": 171
+  },
+  {
+   "file": "WebCryptoAPI/wrapKey_unwrapKey/wrapKey_unwrapKey.https.any.js",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "total": 1
+  }
+ ]
+}

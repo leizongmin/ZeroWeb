@@ -139,6 +139,13 @@ sha2 = "0.10"
 # 对称加密（crypto.subtle AES-GCM：AES-128/192/256-GCM，RustCrypto；R2957）
 aes-gcm = "0.10"
 
+# AES 分组模式（crypto.subtle AES-CBC/AES-CTR，webcrypto M2b；选型见
+# docs/goal/webcrypto-compat/evidence/2026-10-17-m2b-deps.md——与 aes-gcm 同构建于
+# cipher 0.4，aes 为 aes-gcm 传递依赖转正）
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc", "block-padding"] }
+ctr = "0.9"
+
 # CSPRNG（crypto.getRandomValues/randomUUID OS 随机源，R2960）
 getrandom = "0.3"
 

@@ -2357,8 +2357,8 @@
     if (name === 'PBKDF2') {
       return { name: 'PBKDF2' };
     }
-    if (name === 'AES-GCM') {
-      return { name: 'AES-GCM' };
+    if (name === 'AES-GCM' || name === 'AES-CBC' || name === 'AES-CTR') {
+      return { name: name };
     }
     if (name === 'HKDF') {
       return { name: 'HKDF' };
@@ -2425,6 +2425,44 @@
     return res;
   }
 
+  // AES-CBC/CTR 调用（encrypt/decrypt 共用，webcrypto M2b）：iv/counter 须 16 字节（spec：≠16 →
+  // OperationError）；CTR length 成员（计数器递增位宽）缺省 128，0 或 >128 → OperationError
+  //（位宽 <128 的回绕递增未实现，恒按 128 位全块递增——WPT fixtures 未覆盖）；CBC 解密
+  // padding 非法 host 返空串 → OperationError（填充校验在 host 侧 RustCrypto cbc crate，
+  // 不经手写 unpad）；CTR 无 padding、加解密同路径。
+  // https://w3c.github.io/webcrypto/#aes-cbc-operations  https://w3c.github.io/webcrypto/#aes-ctr-operations
+  function _zw_aesBlockCall(kind, op, algorithm, key, dataBytes, reject) {
+    var iv = _zw_bufToBytes(kind === 'ctr' ? algorithm.counter : algorithm.iv);
+    if (iv.length !== 16) {
+      reject(_zw_subtleDE('AES-' + (kind === 'ctr' ? 'CTR counter' : 'CBC iv') + ' must be 16 bytes (128 bits)', 'OperationError')); return null;
+    }
+    if (kind === 'ctr') {
+      var ctrBits = (algorithm.length != null) ? Number(algorithm.length) : 128;
+      // FIXME(spec)：length ∈ (0,128) 时计数器仅右 length 位回绕递增；现恒 128 位全块递增。
+      if (!(ctrBits > 0 && ctrBits <= 128)) {
+        reject(_zw_subtleDE('AES-CTR counter length must be 1-128 bits', 'OperationError')); return null;
+      }
+      // spec：CTR 空明文/密文 → 空输出（无 padding，合法）——host 以空串兼作错误信号，
+      // 空输入在此短路（WPT「transferred plaintext during call」组断言空结果）。
+      if (dataBytes.length === 0) {
+        return new Uint8Array(0);
+      }
+    }
+    var cb = (kind === 'ctr') ? __zw_crypto_subtle_aes_ctr : __zw_crypto_subtle_aes_cbc;
+    if (typeof cb !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle AES-' + (kind === 'ctr' ? 'CTR' : 'CBC') + ' requires host callback', 'NotSupportedError')); return null;
+    }
+    var keyCsv = (key._raw || []).map(String).join(',');
+    var out = cb(op, keyCsv, iv.join(','), dataBytes.join(','));
+    if (!out) {
+      reject(_zw_subtleDE('AES-' + (kind === 'ctr' ? 'CTR' : 'CBC') + ' ' + op + ' failed (bad key/iv/padding)', 'OperationError')); return null;
+    }
+    var parts = out.split(',');
+    var res = new Uint8Array(parts.length);
+    for (var i = 0; i < parts.length; i++) res[i] = +parts[i];
+    return res;
+  }
+
   // 派生核心（deriveBits/deriveKey 共用）：PBKDF2/HKDF 分派 + host 调用 + csv→arr，**不做 usage 校验**
   //（usage 校验由调用方负责——deriveBits 检 "deriveBits"，deriveKey 检 "deriveKey"）。
   // name 匹配 ASCII 折叠；**未知派生算法 reject NotSupportedError**（不得落入 HKDF 分支——
@@ -2467,10 +2505,14 @@
     });
   }
 
-  // 派生/生成的目标密钥长度（位）。AES → 256（spec 默认）；HMAC → hash 块大小（SHA-1/256=512，SHA-384/512=1024）。
+  // 派生/生成的目标密钥长度（位）。AES → 显式 length ∈ {128,192,256} 优先（spec deriveKey
+  // AES 目标按 length 成员取长），缺省 256；HMAC → hash 块大小（SHA-1/256=512，SHA-384/512=1024）。
   function _zw_keyLengthBits(algo) {
     var n = _zw_upperAscii(String((typeof algo === 'object' && algo) ? algo.name : algo));
-    if (n === 'AES-GCM' || n === 'AES-CBC' || n === 'AES-CTR' || n === 'AES-KW') return 256;
+    if (n === 'AES-GCM' || n === 'AES-CBC' || n === 'AES-CTR' || n === 'AES-KW') {
+      var len = (typeof algo === 'object' && algo) ? Number(algo.length) : NaN;
+      return (len === 128 || len === 192 || len === 256) ? len : 256;
+    }
     if (n === 'HMAC') {
       var h = _zw_hashName(typeof algo === 'object' ? algo.hash : null);
       return (h === 'SHA-384' || h === 'SHA-512') ? 1024 : 512;

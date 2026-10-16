@@ -2,16 +2,24 @@
 
 **版本**: v1.1
 **日期**: 2026-10-17
-**状态**: Active——M2a 收口（随机源/normalize/digest 语义修齐 +76P，2026-10-17）；
-下一步 M2b AES-CBC/CTR 补面（依赖选型先行）
+**状态**: Active——M2b 收口（AES-CBC/CTR 补面 +2,617P，2026-10-17）；
+下一步 M3（AES-GCM tagLength/IV 矩阵评估、wrapKey/unwrapKey、spki/pkcs8/jwk 格式）
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
+
+> **▶ M2b AES-CBC/CTR 补面（2026-10-17）**：RustCrypto cbc/ctr/aes（与 aes-gcm 同
+> cipher 0.4 族）接入 encrypt/decrypt/generateKey/importKey/deriveKey；aes_cbc
+> 61/61、aes_ctr 52/52 全绿；AES 家族解锁级联 generateKey +960 / derive +1,464。
+> 全量 **32,717 = Pass 9,421（28.8%）+ Fail 23,295 + Timeout 1**（M2a 6,804 →
+> +2,617，零回归）；全绿案 8→11。spec 错误语义修齐（iv ≠16 OperationError、
+> key/算法不匹配 InvalidAccessError、CTR length 位宽校验）。明细见
+> [M2b evidence](webcrypto-compat/evidence/2026-10-17-m2b-aes-block.md)。
 
 > **▶ M2a 语义修齐（2026-10-17）**：M1 失败簇 1-3 全修（随机源 ×12、normalize ×4、
 > digest ×16）+ 错误实例身份修复（subtle reject 经全局 DOMException——R384 同族，
 > encrypt_decrypt +36 / sign_verify +8 额外收益）；原生 DOMException 补
-> TypeMismatchError code 17。全量 **32,717 = Pass 6,804（20.8%）+ Fail 25,912 +
-> Timeout 1**（M1 6,728 → +76，零回归）；全绿案 5→8。分域与改动明细见
+> TypeMismatchError code 17。全量 32,717 = Pass 6,804（20.8%）+ Fail 25,912 +
+> Timeout 1（M1 6,728 → +76，零回归）；全绿案 5→8。分域与改动明细见
 > [M2a evidence](webcrypto-compat/evidence/2026-10-17-m2a-semantics.md)。
 
 > **▶ M1 基线（2026-10-17）**：subtests 32,717 = Pass 6,728（20.6%）+ Fail 25,988 +

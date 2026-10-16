@@ -193,6 +193,74 @@ pub fn crypto_subtle_aes_gcm(mode: &str, key_csv: &str, iv_csv: &str, data_csv: 
     }
 }
 
+/// `crypto.subtle.encrypt/decrypt` 的 AES-CBC/CTR 实现（webcrypto M2b）——AES-128/192/256
+/// CBC（PKCS#7 填充）与 CTR（16 字节大端计数器，NIST SP 800-38A）。RustCrypto
+/// `cbc`/`ctr` crate（选型见 docs/goal/webcrypto-compat/evidence/2026-10-17-m2b-deps.md）。
+/// kind "cbc"/"ctr"，mode "encrypt"/"decrypt"（CTR 加解密同路径）；key 16/24/32 字节；
+/// iv/counter 16 字节（长度由 shim 校验）；CBC 解密 padding 非法（含密文非块对齐/空串）→
+/// 空串（shim reject OperationError，填充校验在 crate 内不经手写 unpad）。CTR 无认证，
+/// 空输入返空输出（合法）。返 csv。
+/// https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf
+pub fn crypto_subtle_aes_block(kind: &str, mode: &str, key_csv: &str, iv_csv: &str, data_csv: &str) -> String {
+    use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit, block_padding::Pkcs7};
+    use ctr::cipher::StreamCipher;
+    let key = bytes_from_csv(key_csv);
+    let iv = bytes_from_csv(iv_csv);
+    let mut data = bytes_from_csv(data_csv);
+    if iv.len() != 16 {
+        return String::new();
+    }
+    if kind == "ctr" {
+        let applied = match key.len() {
+            16 => ctr::Ctr128BE::<aes::Aes128>::new_from_slices(&key, &iv).map(|mut c| c.apply_keystream(&mut data)),
+            24 => ctr::Ctr128BE::<aes::Aes192>::new_from_slices(&key, &iv).map(|mut c| c.apply_keystream(&mut data)),
+            32 => ctr::Ctr128BE::<aes::Aes256>::new_from_slices(&key, &iv).map(|mut c| c.apply_keystream(&mut data)),
+            _ => Err(cbc::cipher::InvalidLength),
+        };
+        if applied.is_err() {
+            return String::new();
+        }
+        return bytes_to_csv(&data);
+    }
+    if mode == "encrypt" {
+        let out = match key.len() {
+            16 => cbc::Encryptor::<aes::Aes128>::new_from_slices(&key, &iv)
+                .ok()
+                .map(|e| e.encrypt_padded_vec_mut::<Pkcs7>(&data)),
+            24 => cbc::Encryptor::<aes::Aes192>::new_from_slices(&key, &iv)
+                .ok()
+                .map(|e| e.encrypt_padded_vec_mut::<Pkcs7>(&data)),
+            32 => cbc::Encryptor::<aes::Aes256>::new_from_slices(&key, &iv)
+                .ok()
+                .map(|e| e.encrypt_padded_vec_mut::<Pkcs7>(&data)),
+            _ => None,
+        };
+        match out {
+            Some(v) => bytes_to_csv(&v),
+            None => String::new(),
+        }
+    } else if mode == "decrypt" {
+        let out = match key.len() {
+            16 => cbc::Decryptor::<aes::Aes128>::new_from_slices(&key, &iv)
+                .ok()
+                .and_then(|d| d.decrypt_padded_vec_mut::<Pkcs7>(&data).ok()),
+            24 => cbc::Decryptor::<aes::Aes192>::new_from_slices(&key, &iv)
+                .ok()
+                .and_then(|d| d.decrypt_padded_vec_mut::<Pkcs7>(&data).ok()),
+            32 => cbc::Decryptor::<aes::Aes256>::new_from_slices(&key, &iv)
+                .ok()
+                .and_then(|d| d.decrypt_padded_vec_mut::<Pkcs7>(&data).ok()),
+            _ => None,
+        };
+        match out {
+            Some(v) => bytes_to_csv(&v),
+            None => String::new(),
+        }
+    } else {
+        String::new()
+    }
+}
+
 /// `crypto.subtle.deriveBits` 的 HKDF 实现（R2958）——HKDF-SHA-1/256/384/512（RFC 5869）。**密钥协商派生**
 /// 高频（TLS 1.3 / MLS / WebRTC DTLS-SRTP / E2EE 协议的输入密钥材料→会话密钥）。PRF = HMAC-<hash>（复用
 /// `compute_hmac`）。Extract：`PRK = HMAC(salt, IKM)`（空 salt → HashLen 零）；Expand：`T(i)=HMAC(PRK, T(i-1)||info||i)`，

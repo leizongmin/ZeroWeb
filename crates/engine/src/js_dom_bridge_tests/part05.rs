@@ -556,11 +556,12 @@ fn test_crypto_subtle_hmac_r2955() {
         sandbox.execute("String(globalThis.__e2)").unwrap().value,
         "NotSupportedError"
     );
-    // importKey 不支持的算法（'AES-CBC'，本实现仅 HMAC/PBKDF2/AES-GCM）→ reject NotSupportedError。
+    // importKey 不支持的算法（'RSA-OAEP'，本实现仅 HMAC/PBKDF2/HKDF/AES-GCM/CBC/CTR）→
+    // reject NotSupportedError（webcrypto M2b 落地 AES-CBC/CTR 后原 'AES-CBC' 反例失效）。
     sandbox
         .execute(
             "globalThis.__e4='(pending)';\
-             crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-CBC'}, false, ['encrypt'])\
+             crypto.subtle.importKey('raw', new Uint8Array(16), {name:'RSA-OAEP'}, false, ['encrypt'])\
                .catch(function(e){ globalThis.__e4 = e.name; });",
         )
         .unwrap();
@@ -2186,4 +2187,155 @@ fn test_canvas_float16_overlay_roundtrip_r34xx() {
             "DOM canvas channel {i} 往返 ≈ {v}"
         );
     }
+}
+
+// webcrypto M2b：crypto.subtle AES-CBC / AES-CTR——encrypt/decrypt + generateKey/importKey 扩展。
+// host RustCrypto cbc/ctr（选型 docs/goal/webcrypto-compat/evidence/2026-10-17-m2b-deps.md）。
+// 向量锚定 NIST SP 800-38A：CBC-AES128 F.2.1 / CBC-AES256 F.2.5 / CTR-AES128 F.5.1 首块
+// + 192 位 round-trip + 坏 padding OperationError + iv/counter ≠16 DataError + generateKey
+// length 语义（128/192/256 合法、越界 OperationError、缺省 256）。
+// https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf  https://w3c.github.io/webcrypto/
+#[test]
+fn test_crypto_subtle_aes_cbc_ctr_m2b() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // hex 辅助。
+    sandbox
+        .execute(
+            "function hex2b(h){var a=[];for(var i=0;i<h.length;i+=2)a.push(parseInt(h.substr(i,2),16));return new Uint8Array(a);}\
+             function b2hex(u){var s='';for(var i=0;i<u.length;i++){s+=('0'+u[i].toString(16)).slice(-2);}return s;}\
+             function errname(p){return p.then(function(){return 'no-throw';}, function(e){return e.name;});}",
+        )
+        .unwrap();
+
+    // CBC-AES128 F.2.1 首块：K=2b7e..4f3c IV=000102..0e0f PT=6bc1bee2..7393172a → CT1=7649abac..12e9197d
+    //（PKCS#7 补块故密文 32 字节，首 16 字节对齐 NIST 向量）+ decrypt round-trip。
+    sandbox
+        .execute(
+            "globalThis.__cbc1='(pending)'; globalThis.__cbck='(pending)';\
+             crypto.subtle.importKey('raw', hex2b('2b7e151628aed2a6abf7158809cf4f3c'), {name:'AES-CBC'}, false, ['encrypt','decrypt'])\
+               .then(function(k){ globalThis.__cbck=k;\
+                 return crypto.subtle.encrypt({name:'AES-CBC', iv:hex2b('000102030405060708090a0b0c0d0e0f')}, k, hex2b('6bc1bee22e409f96e93d7e117393172a')); })\
+               .then(function(ct){ globalThis.__cbcct=new Uint8Array(ct);\
+                 return crypto.subtle.decrypt({name:'AES-CBC', iv:hex2b('000102030405060708090a0b0c0d0e0f')}, globalThis.__cbck, globalThis.__cbcct); })\
+               .then(function(pt){ globalThis.__cbc1=String(b2hex(new Uint8Array(pt)).slice(0,32)+'|'+globalThis.__cbcct.length); });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cbc1)").unwrap().value,
+        "6bc1bee22e409f96e93d7e117393172a|32"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(b2hex(globalThis.__cbcct).slice(0, 32))")
+            .unwrap()
+            .value,
+        "7649abac8119b246cee98e9b12e9197d",
+        "CBC-AES128 首块 == NIST SP 800-38A F.2.1 CT1"
+    );
+
+    // CBC 坏 padding（末字节翻转）→ OperationError；CBC 256 位向量 F.2.5 首块。
+    sandbox
+        .execute(
+            "globalThis.__badpad='(pending)'; globalThis.__cbc256='(pending)';\
+             var bad=new Uint8Array(globalThis.__cbcct); bad[31]^=0xff;\
+             var p1=errname(crypto.subtle.decrypt({name:'AES-CBC', iv:hex2b('000102030405060708090a0b0c0d0e0f')}, globalThis.__cbck, bad))\
+               .then(function(n){ globalThis.__badpad=n; });\
+             var p2=crypto.subtle.importKey('raw', hex2b('603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4'), {name:'AES-CBC'}, false, ['encrypt'])\
+               .then(function(k){ return crypto.subtle.encrypt({name:'AES-CBC', iv:hex2b('000102030405060708090a0b0c0d0e0f')}, k, hex2b('6bc1bee22e409f96e93d7e117393172a')); })\
+               .then(function(ct){ globalThis.__cbc256=String(b2hex(new Uint8Array(ct)).slice(0,32)); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__badpad)").unwrap().value, "OperationError");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cbc256)").unwrap().value,
+        "f58c4c04d6e5f1ba779eabfb5f7bfbd6",
+        "CBC-AES256 首块 == NIST SP 800-38A F.2.5 CT1"
+    );
+
+    // CBC-192 import + round-trip；iv ≠16 → OperationError（spec aes-cbc-operations）；
+    // CTR length 成员 0/129 位 → OperationError；CTR 空明文 → 空输出；
+    // CTR-AES128 F.5.1 首块 + round-trip；key/算法不匹配 → InvalidAccessError。
+    sandbox
+        .execute(
+            "globalThis.__cbc192='(pending)'; globalThis.__cbciv='(pending)';\
+             globalThis.__ctr1='(pending)'; globalThis.__ctrlen0='(pending)'; globalThis.__ctrlen129='(pending)';\
+             globalThis.__ctrempty='(pending)'; globalThis.__mismatch='(pending)';\
+             var k192=hex2b('8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b');\
+             var p1=crypto.subtle.importKey('raw', k192, {name:'AES-CBC'}, false, ['encrypt','decrypt'])\
+               .then(function(k){ globalThis.__k192=k; return crypto.subtle.encrypt({name:'AES-CBC', iv:new Uint8Array(16)}, k, new TextEncoder().encode('abc')); })\
+               .then(function(ct){ return crypto.subtle.decrypt({name:'AES-CBC', iv:new Uint8Array(16)}, globalThis.__k192, ct); })\
+               .then(function(pt){ globalThis.__cbc192=String(new TextDecoder().decode(pt)); });\
+             var p2=errname(crypto.subtle.encrypt({name:'AES-CBC', iv:new Uint8Array(12)}, globalThis.__cbck, new Uint8Array(4)))\
+               .then(function(n){ globalThis.__cbciv=n; });\
+             var p3=crypto.subtle.importKey('raw', hex2b('2b7e151628aed2a6abf7158809cf4f3c'), {name:'AES-CTR'}, false, ['encrypt','decrypt'])\
+               .then(function(k){ globalThis.__ctrk=k;\
+                 var ctr={name:'AES-CTR', counter:hex2b('f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff')};\
+                 var q1=crypto.subtle.encrypt(ctr, k, hex2b('6bc1bee22e409f96e93d7e117393172a'))\
+                   .then(function(ct){ globalThis.__ctrct=new Uint8Array(ct);\
+                     return crypto.subtle.decrypt(ctr, globalThis.__ctrk, globalThis.__ctrct); })\
+                   .then(function(pt){ globalThis.__ctr1=String(b2hex(new Uint8Array(pt)).slice(0,32)); });\
+                 var q2=errname(crypto.subtle.encrypt({name:'AES-CTR', counter:new Uint8Array(16), length:0}, k, new Uint8Array(4)))\
+                   .then(function(n){ globalThis.__ctrlen0=n; });\
+                 var q3=errname(crypto.subtle.encrypt({name:'AES-CTR', counter:new Uint8Array(16), length:129}, k, new Uint8Array(4)))\
+                   .then(function(n){ globalThis.__ctrlen129=n; });\
+                 var q4=crypto.subtle.encrypt(ctr, k, new Uint8Array(0))\
+                   .then(function(out){ globalThis.__ctrempty=String(new Uint8Array(out).length); });\
+                 return Promise.all([q1,q2,q3,q4])\
+                   .then(function(){ return errname(crypto.subtle.encrypt({name:'AES-CBC', iv:new Uint8Array(16)}, globalThis.__ctrk, new Uint8Array(4))); })\
+                   .then(function(n){ globalThis.__mismatch=n; }); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__cbc192)").unwrap().value, "abc");
+    assert_eq!(sandbox.execute("String(globalThis.__cbciv)").unwrap().value, "OperationError");
+    assert_eq!(
+        sandbox
+            .execute("String(b2hex(globalThis.__ctrct).slice(0, 32))")
+            .unwrap()
+            .value,
+        "874d6191b620e3261bef6864990db6ce",
+        "CTR-AES128 首块 == NIST SP 800-38A F.5.1 CT1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ctr1)").unwrap().value,
+        "6bc1bee22e409f96e93d7e117393172a"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__ctrlen0)").unwrap().value, "OperationError");
+    assert_eq!(sandbox.execute("String(globalThis.__ctrlen129)").unwrap().value, "OperationError");
+    assert_eq!(sandbox.execute("String(globalThis.__ctrempty)").unwrap().value, "0");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__mismatch)").unwrap().value,
+        "InvalidAccessError",
+        "key/算法不匹配 → InvalidAccessError（spec aes-cbc-operations）"
+    );
+
+    // generateKey length 语义：AES-CBC{length:128} → 16 字节；AES-CTR 缺省 → 32 字节；
+    // 越界 length → OperationError。
+    sandbox
+        .execute(
+            "globalThis.__gk128='(pending)'; globalThis.__gkdef='(pending)'; globalThis.__gkbad='(pending)';\
+             var p1=crypto.subtle.generateKey({name:'AES-CBC', length:128}, true, ['encrypt','decrypt'])\
+               .then(function(k){ globalThis.__gk128=String(k._raw.length); });\
+             var p2=crypto.subtle.generateKey({name:'AES-CTR'}, true, ['encrypt','decrypt'])\
+               .then(function(k){ globalThis.__gkdef=String(k._raw.length); });\
+             var p3=errname(crypto.subtle.generateKey({name:'AES-CBC', length:100}, true, ['encrypt','decrypt']))\
+               .then(function(n){ globalThis.__gkbad=n; });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__gk128)").unwrap().value, "16");
+    assert_eq!(sandbox.execute("String(globalThis.__gkdef)").unwrap().value, "32");
+    assert_eq!(sandbox.execute("String(globalThis.__gkbad)").unwrap().value, "OperationError");
 }

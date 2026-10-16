@@ -729,6 +729,30 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // `crypto.subtle.encrypt/decrypt("AES-CBC"/"AES-CTR", ...)`（webcrypto M2b）——AES-128/192/256
+    // CBC/CTR。arg[0]=mode("encrypt"/"decrypt")，arg[1]=key csv，arg[2]=iv/counter csv，arg[3]=data csv。
+    // 返 csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_aes_cbc",
+        Box::new(|args: &[String]| -> String {
+            let mode = args.first().map(String::as_str).unwrap_or("");
+            let key = args.get(1).map(String::as_str).unwrap_or("");
+            let iv = args.get(2).map(String::as_str).unwrap_or("");
+            let data = args.get(3).map(String::as_str).unwrap_or("");
+            crypto_subtle_aes_block("cbc", mode, key, iv, data)
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_crypto_subtle_aes_ctr",
+        Box::new(|args: &[String]| -> String {
+            let mode = args.first().map(String::as_str).unwrap_or("");
+            let key = args.get(1).map(String::as_str).unwrap_or("");
+            let counter = args.get(2).map(String::as_str).unwrap_or("");
+            let data = args.get(3).map(String::as_str).unwrap_or("");
+            crypto_subtle_aes_block("ctr", mode, key, counter, data)
+        }),
+    );
+
     // `crypto.subtle.deriveBits("HKDF", ...)`（R2958）——HKDF-SHA-1/256/384/512（RFC 5869）。
     // arg[0]=hash 名，arg[1]=ikm csv，arg[2]=salt csv，arg[3]=info csv，arg[4]=dklen（字节）。返派生密钥 csv。
     sandbox.register_callback(
