@@ -721,3 +721,4 @@ mod r5152_contain_size_multicol_sizing_tests;
 /// 高转移（css-contain-5 §3.1 × css-sizing-4 §4.1；contain-size-014 /
 /// canvas-contain-size 驱动）。
 mod r5153_container_type_containment_tests;
+mod r5154_last_baseline_fallback_tests;

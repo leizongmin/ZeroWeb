@@ -2778,6 +2778,13 @@ fn rt_float_descendants(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>,
     out
 }
 
+/// R5154 kill-switch 读取：`ZW_GRID_LAST_BASELINE_END=0` 回退 grid item
+/// `align-self: last baseline` 的 fallback-end 接入（css-align-3 §4.2）。
+fn grid_last_baseline_end_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_GRID_LAST_BASELINE_END").as_deref() != Ok("0"))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_subtree(
     ctx: &mut BuildContext,
@@ -2813,6 +2820,28 @@ fn build_subtree(
 
     // 转换为 taffy 样式（传入父级区域映射）
     let mut taffy_style = computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h);
+
+    // R5154（css-align-3 §4.2 baseline fall-back）：grid item 的 align-self: last
+    // baseline 在基线共享不可行时按 fallback alignment 定位——last baseline →
+    // safe self-end（first baseline → safe self-start 恰为 taffy grid 对 Baseline
+    // 的现行为，无需改写）。taffy-local 未实现 grid 基线共享（compute/grid/
+    // alignment.rs TODO），sole participant 全靠回退值定位，不改写则贴行首与
+    // Chromium 不符（contain-size-grid-indefinite-height-min-height-flex-row）。
+    // 仅父为 grid 容器时生效；converter 无父 display 可判。kill-switch
+    // `ZW_GRID_LAST_BASELINE_END=0`（default-on）。
+    if grid_last_baseline_end_enabled()
+        && matches!(
+            computed.align_self,
+            zero_css_parser::values::AlignmentValue::LastBaseline
+        )
+        && doc.parent_node(dom_id).is_some_and(|pid| {
+            styles
+                .get(&pid)
+                .is_some_and(|ps| matches!(ps.display, DisplayValue::Grid | DisplayValue::InlineGrid))
+        })
+    {
+        taffy_style.align_self = Some(taffy::style::AlignSelf::END);
+    }
 
     // R4073（css-position-3 §abspos-auto-size）：abspos 元素按 content-based 尺寸
     //（width/height 为 fit-content/max-content/min-content 或 auto shrink-to-fit）度量时，

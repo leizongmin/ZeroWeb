@@ -1861,6 +1861,7 @@ fn alignment_str(a: &AlignmentValue) -> String {
         AlignmentValue::Start => "start",
         AlignmentValue::End => "end",
         AlignmentValue::Baseline => "baseline",
+        AlignmentValue::LastBaseline => "last baseline",
     }
     .to_string()
 }

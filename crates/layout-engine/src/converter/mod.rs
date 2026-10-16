@@ -1097,6 +1097,11 @@ fn convert_alignment_to_align_items(value: &AlignmentValue) -> Option<taffy::sty
         AlignmentValue::Baseline => Some(taffy::style::AlignItems::BASELINE),
         AlignmentValue::Start => Some(taffy::style::AlignItems::START),
         AlignmentValue::End => Some(taffy::style::AlignItems::END),
+        // R5154：容器级 last baseline 未实现基线共享，维持解析失败时代理值
+        // stretch（default_impl 初始值）；item 级 fallback-end 见 tree.rs build_subtree。
+        // FIXME(css-align-3 §4.2): 容器级 last baseline 应使 item 参与 last-baseline
+        // 组并按 safe self-end 回退。
+        AlignmentValue::LastBaseline => Some(taffy::style::AlignItems::STRETCH),
         // space-between, space-around, space-evenly 不适用于 align-items
         AlignmentValue::SpaceBetween | AlignmentValue::SpaceAround | AlignmentValue::SpaceEvenly => None,
     }
@@ -1116,6 +1121,10 @@ fn convert_alignment_to_align_self(value: &AlignmentValue) -> Option<taffy::styl
         AlignmentValue::Baseline => Some(taffy::style::AlignSelf::BASELINE),
         AlignmentValue::Start => Some(taffy::style::AlignSelf::START),
         AlignmentValue::End => Some(taffy::style::AlignSelf::END),
+        // R5154：last baseline 单节点转换维持 Auto（≡ 解析失败时的有效值，flex/
+        // block 零行为变化）；grid item 的 fallback safe self-end 在 tree.rs
+        // build_subtree 父上下文处改写（此处无父 display 可判）。
+        AlignmentValue::LastBaseline => None,
         AlignmentValue::SpaceBetween | AlignmentValue::SpaceAround | AlignmentValue::SpaceEvenly => None,
     }
 }
@@ -1136,6 +1145,9 @@ fn convert_alignment_to_justify_content(value: &AlignmentValue) -> Option<taffy:
         AlignmentValue::End => Some(taffy::style::JustifyContent::END),
         AlignmentValue::Stretch => Some(taffy::style::JustifyContent::STRETCH),
         AlignmentValue::Baseline => None, // baseline 不适用于 justify-content
+        // R5154：last baseline 不适用于 justify-content（维持初始 flex-start，
+        // ≡ 解析失败时的有效值）。
+        AlignmentValue::LastBaseline => None,
     }
 }
 

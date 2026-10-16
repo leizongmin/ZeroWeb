@@ -387,6 +387,7 @@ pub fn parse_alignment(value: &str) -> Option<AlignmentValue> {
         "start" => Some(AlignmentValue::Start),
         "end" => Some(AlignmentValue::End),
         "baseline" => Some(AlignmentValue::Baseline),
+        "last baseline" => Some(AlignmentValue::LastBaseline),
         _ => None,
     }
 }
