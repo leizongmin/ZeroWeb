@@ -722,3 +722,6 @@ mod r5152_contain_size_multicol_sizing_tests;
 /// canvas-contain-size 驱动）。
 mod r5153_container_type_containment_tests;
 mod r5154_last_baseline_fallback_tests;
+/// R5156 multicol 空盒（无流内内容 → 无断点机会）不可断——超高单片段原地溢出
+///（css-break-3 §5.1 × css-multicol-1；contain-size-breaks-001-ref 驱动）。
+mod r5156_multicol_empty_unbreakable_tests;

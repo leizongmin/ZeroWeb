@@ -52,6 +52,26 @@ use assign::{
 pub use info::{ColumnInfo, balance_column_geometry, compute_column_info};
 use info::{column_height_limit, is_explicit_height, length_to_px};
 
+/// R5156：multicol 空盒不可断开关（无流内子 → 无断点机会，css-break-3 §5.1）。
+/// `ZW_MC_EMPTY_UNBREAKABLE=0` 回退为既有的跨列几何切片。
+fn empty_unbreakable_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_MC_EMPTY_UNBREAKABLE").as_deref() != Ok("0"))
+}
+
+/// R5156：元素是否无文本内容子（仅注释/空白文本子视为空；元素子不计入——其可断性
+/// 由 `content_height == 0` 联用门界定：含子盒时内容区间非零即照常切片）。
+/// 联用界定「零内容区间」空盒（不产行盒、无可断内容区间，
+/// multicol 语境下内部无 Class A/B 断点机会，css-break-3 §5.1）。
+fn element_is_contentless(doc: &zero_dom::Document, id: NodeId) -> bool {
+    let Some(node) = doc.get(id) else {
+        return false;
+    };
+    node.children.iter().all(
+        |&c| !matches!(doc.get(c).map(|n| &n.kind), Some(zero_dom::NodeKind::Text(t)) if !t.content.trim().is_empty()),
+    )
+}
+
 /// 列分配中的一个片段。
 ///
 /// 对于普通（未拆分的）子元素，一个子元素对应一个片段。
@@ -1186,6 +1206,24 @@ fn layout_multicol(
                                 || matches!(s.column_width, ColumnWidthComputedValue::Length(_))
                         });
                         if !is_nested_mc {
+                            // R5156：零内容区间空盒不可断——DOM 无内容子节点（不产行盒）
+                            // 且 content_height=0（盒高全来自 padding/border，不存在任何
+                            // 可断的内容区间，内部无 Class A/B 断点机会，css-break-3 §5.1
+                            // unforced break 仅落允许断点）→ 首不可断单元 = 盒自身高（走
+                            // R5135 既有臂：部分列放不下先推进下一列 Class A2 / fresh 列
+                            // 单片段原地溢出 Class C3）。chromium contain-size-breaks-001
+                            // -ref 实证：空 div padding-top 5em 整体留 col0 溢出成 1×5em
+                            // 矩形。对照可断形（A/B 实证不得触碰）：definite 内容高的空
+                            // 盒照常跨列切片——change-fragmentainer-size-002 高 400 空 div
+                            // 切满 4 列、block-aspect-ratio-05x、resize-multicol-with-
+                            // fixed-size-children-002 等 15 案（首轮宽谓词「仅判 DOM 空」
+                            // 误触全数回归）。kill-switch `ZW_MC_EMPTY_UNBREAKABLE=0`。
+                            if empty_unbreakable_enabled()
+                                && child_box.content_height <= 0.5
+                                && child_box.node_id.is_some_and(|id| element_is_contentless(doc, id))
+                            {
+                                return child_box.height + child_box.margin_top + child_box.margin_bottom;
+                            }
                             return 0.0;
                         }
                         child_box

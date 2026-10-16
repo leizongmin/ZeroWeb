@@ -902,3 +902,43 @@ fn constrain_subtree_width_keeps_clamp_for_inline_percentage() {
         "inline 百分比宽维持既有钳制（width 不适用语义由上游保证）"
     );
 }
+
+#[test]
+fn test_assign_empty_unbreakable_oversized_single_fragment() {
+    // R5156：空盒（无断点机会）超高 → 单片段全高原地溢出（Class C3），不跨列切片。
+    // nested_unbreakable = 盒自身高（R5135 既有臂复用）。
+    let children = vec![(0, 200.0)];
+    let cols = assign_children_to_columns_with_breaking(&children, 3, 100.0, &[false], &[false], &[200.0], &[], &[]);
+    assert_eq!(cols[0].len(), 1, "空盒应单片段留在 col0");
+    assert_eq!(cols[0][0].fragment_y_offset, 0.0);
+    assert!(
+        (cols[0][0].visual_height - 200.0).abs() < 0.01,
+        "片段应为全高 200（原地溢出），实际 {}",
+        cols[0][0].visual_height
+    );
+    assert!(cols[1].is_empty() && cols[2].is_empty(), "不可断盒不跨列切片");
+}
+
+#[test]
+fn test_assign_empty_unbreakable_advances_to_next_column() {
+    // R5156：部分填充列剩余空间放不下不可断空盒 → 先推进下一列再整子放置（Class A2）。
+    let children = vec![(0, 50.0), (1, 200.0)];
+    let cols = assign_children_to_columns_with_breaking(
+        &children,
+        3,
+        100.0,
+        &[false; 2],
+        &[false; 2],
+        &[0.0, 200.0],
+        &[],
+        &[],
+    );
+    assert_eq!(cols[0].len(), 1, "前导兄弟照常落 col0");
+    assert_eq!(cols[1].len(), 1, "不可断空盒应整子推进 col1");
+    assert!(
+        (cols[1][0].visual_height - 200.0).abs() < 0.01,
+        "整子放置应为全高 200，实际 {}",
+        cols[1][0].visual_height
+    );
+    assert!(cols[2].is_empty());
+}
