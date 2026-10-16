@@ -262,7 +262,7 @@ fn grid_line_names_supported(value: &str) -> bool {
             Token::Ident(name)
                 if !matches!(
                     name.to_ascii_lowercase().as_str(),
-                    "auto" | "span" | "none" | "default" | "inherit" | "initial" | "unset" | "revert" | "revert-layer"
+                    "auto" | "span" | "default" | "inherit" | "initial" | "unset" | "revert" | "revert-layer"
                 ) =>
             {
                 count += 1;
@@ -1417,5 +1417,16 @@ mod tests {
         // 近似拼写仍拒绝
         assert!(parse_grid_template_track_list("min-contentt").is_none());
         assert!(parse_grid_template_track_list("max-contentt").is_none());
+    }
+
+    #[test]
+    fn parse_grid_track_list_accepts_none_as_line_name() {
+        // CSS Grid 2 line names use <custom-ident>, which excludes auto and span but allows none.
+        assert_eq!(
+            parse_grid_template_track_list("[none] 1fr"),
+            Some(Some("[none] 1fr".to_string()))
+        );
+        assert!(parse_grid_template_track_list("[auto] 1fr").is_none());
+        assert!(parse_grid_template_track_list("[span] 1fr").is_none());
     }
 }

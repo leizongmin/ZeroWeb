@@ -16,6 +16,7 @@ Windows 上用 ZeroWeb release 与 Chrome 对照 MDN Web 首页时，标题原�
 ## 修复
 
 - 将非空 `[<custom-ident> …]` 识别为轨道边界标注，允许其中 CSS Grid 规定的名称；它不创建轨道。
+- `[none]` 是合法线名；校验器只排除 Grid 线名语法禁止的 `auto`、`span`，以及 `<custom-ident>` 禁止的 CSS-wide / `default`。
 - 将轨道尺寸和同一显式网格线上的名称一起转换：尺寸进入 Taffy track list，边界名进入平行的 `grid_template_*_names` 列表；固定 repeat 展开边界名，auto-fill/auto-fit 名称保留在 repetition 中。子项命名线保留为 Taffy `NamedLine`，由其 resolver 按容器线名放置。
 - 保留真正的 `minmax()` 与间距轨道；长度通过样式系统转换 `em`、`rem` 和 viewport 单位。
 - `grid-area` 单个命名区域展开为 row/column 的 start/end 四条命名线；单个数字仍只设置 row-start。
