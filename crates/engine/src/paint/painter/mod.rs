@@ -2253,6 +2253,57 @@ impl Painter {
         let _ = is_hidden;
     }
 
+    /// R1080/R5151：flush multicol 列子元素的 positioned 后代（本地项）。
+    ///
+    /// `collect_positioned_descendants` 对 multicol 列子元素 skip（交本调用方处理），
+    /// 其 positioned 后代由此统一施绘：逐项补裁自带 overflow 裁剪矩形（R3922），
+    /// 列子元素自身为裁剪祖先且收集项均无矩形时按其 padding box 兜底（R1080 原语义）。
+    /// R5139：列流映射 OOF 项（CB 在 multicol 之外）不入片段施绘（循环期恒抑制），
+    /// 延至片段循环后的容器级 flush 统一施绘。`local_positioned` 由调用方收集
+    ///（R5137 续片段同列表）。
+    fn flush_fragment_local_positioned(
+        &mut self,
+        local_positioned: &[DeferredPositioned],
+        child: &LayoutBox,
+        frag_abs_x: f32,
+        frag_abs_y: f32,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        doc: Option<&Document>,
+    ) {
+        // R5139：列流映射 OOF 项与常规项分流——映射项（CB 在 multicol 之外）
+        // 不入片段施绘（恒抑制，见循环头），延至循环后的容器级 flush 统一施绘。
+        let (_mapped_items, plain_items): (Vec<&DeferredPositioned>, Vec<&DeferredPositioned>) =
+            local_positioned.iter().partition(|i| subtree_has_mapped_oof(i.node));
+        if local_positioned.is_empty() {
+            return;
+        }
+        let counts_before_local = PrimitiveCounts::snapshot(&self.primitives);
+        for item in &plain_items {
+            let off_x = item.abs_x - item.node.x;
+            let off_y = item.abs_y - item.node.y;
+            // R3922：逐项补裁收集项自带的最近 overflow 裁剪矩形（collect
+            // 时经 overflow_clip_rect 计算，含 overflow-clip-margin，语义
+            // 覆盖原整批 child_clip padding-box 裁剪——列子元素自身为
+            // 裁剪祖先时其矩形已进 item.clip_rect）。
+            let counts_before_item = PrimitiveCounts::snapshot(&self.primitives);
+            self.paint_node(item.node, styles, off_x, off_y, doc, false);
+            if let Some(clip) = item.clip_rect {
+                super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_item, &clip);
+            }
+        }
+        // 列子元素自身为裁剪祖先但个别收集项不带矩形（理论不可达，防御
+        // R1080 原语义：整批 child_clip 兜底）。
+        if compute_needs_clip(child, styles, doc) && local_positioned.iter().all(|i| i.clip_rect.is_none()) {
+            let child_clip = Rect::new(
+                frag_abs_x + child.border_left,
+                frag_abs_y + child.border_top,
+                child.padding_left + child.content_width + child.padding_right,
+                child.padding_top + child.content_height + child.padding_bottom,
+            );
+            super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_local, &child_clip);
+        }
+    }
+
     /// 绘制单个节点（递归）。
     ///
     /// 根据节点的计算样式生成背景色填充和边框填充图元，
@@ -3106,7 +3157,32 @@ impl Painter {
                     // 无内容计（contain-size-monolithic-001：chromium test 页 0 高容器下方
                     // overflow 绘 4 行文本；ref 页同位同形）。普通子（无内容溢出语义）维持
                     // R4515 跳过。
+                    // R5151（css-multicol-1 §abspos-position / css-position-3）：跳过仅豁免
+                    // in-flow 子树——positioned 后代不参与碎片化，照常 flush
+                    //（contain-size-monolithic-002：0 高 #container 内 abs 绿块 chromium
+                    // 全绘制、无列裁剪；probe 实证无 contain 同样丢块，域为 R4515×R1080
+                    // 交互非 containment）。kill-switch ZW_MC_ZEROH_OOF_FLUSH=0 回旧行为。
+                    // 0 高盒 in-flow 内容本无预算可绘，R4515 意图不受影响。
                     if !is_breaking && col_h < 0.5 && box_node.content_height < 0.5 && !child.has_size_containment {
+                        if std::env::var("ZW_MC_ZEROH_OOF_FLUSH").as_deref() != Ok("0") {
+                            let mut local_positioned: Vec<DeferredPositioned> = Vec::new();
+                            collect_positioned_descendants(
+                                child,
+                                frag_abs_x,
+                                frag_abs_y,
+                                styles,
+                                &mut local_positioned,
+                                doc,
+                            );
+                            self.flush_fragment_local_positioned(
+                                &local_positioned,
+                                child,
+                                frag_abs_x,
+                                frag_abs_y,
+                                styles,
+                                doc,
+                            );
+                        }
                         continue;
                     }
                     let (clip_y, clip_h) = if is_breaking {
@@ -3141,55 +3217,13 @@ impl Painter {
                         self.mc_paint_nesting -= 1;
                     }
 
-                    // R1080：flush 列子元素的 positioned 后代（本地，带 clip context）。
-                    // collect_positioned_descendants（line 184）对 multicol 列子元素 skip 交本循环；
-                    // 列子元素自身多非 scope（overflow:hidden 不建 SC），其 positioned 后代
-                    //（如 position:relative/abspos 子元素）原本被 drop（multicol-overflow-clip-positioned
-                    // 蓝块完全不渲染）。在此本地收集 + flush，并裁到列子元素的 overflow padding box
-                    //（修 R1079 简单 collection 的 over-render——flush 须带列子元素 clip）。
+                    // R1080：flush 列子元素的 positioned 后代（本地，带 clip context）——
+                    // collect_positioned_descendants 对 multicol 列子元素 skip 交本循环，
+                    // 逻辑见 flush_fragment_local_positioned（R5151 提取共用，含 R3922
+                    // 逐项裁剪与 R1080 child_clip 兜底、R5139 映射项分流）。
                     let mut local_positioned: Vec<DeferredPositioned> = Vec::new();
                     collect_positioned_descendants(child, frag_abs_x, frag_abs_y, styles, &mut local_positioned, doc);
-                    // R5139：列流映射 OOF 项与常规项分流——映射项（CB 在 multicol 之外）
-                    // 不入片段施绘（恒抑制，见循环头），延至循环后的容器级 flush 统一施绘。
-                    let (_mapped_items, plain_items): (Vec<&DeferredPositioned>, Vec<&DeferredPositioned>) =
-                        local_positioned.iter().partition(|i| subtree_has_mapped_oof(i.node));
-                    if !local_positioned.is_empty() {
-                        let counts_before_local = PrimitiveCounts::snapshot(&self.primitives);
-                        for item in &plain_items {
-                            let off_x = item.abs_x - item.node.x;
-                            let off_y = item.abs_y - item.node.y;
-                            // R3922：逐项补裁收集项自带的最近 overflow 裁剪矩形（collect
-                            // 时经 overflow_clip_rect 计算，含 overflow-clip-margin，语义
-                            // 覆盖原整批 child_clip padding-box 裁剪——列子元素自身为
-                            // 裁剪祖先时其矩形已进 item.clip_rect）。
-                            let counts_before_item = PrimitiveCounts::snapshot(&self.primitives);
-                            self.paint_node(item.node, styles, off_x, off_y, doc, false);
-                            if let Some(clip) = item.clip_rect {
-                                super::helpers::clip_all_primitives_to_rect(
-                                    &mut self.primitives,
-                                    &counts_before_item,
-                                    &clip,
-                                );
-                            }
-                        }
-                        // 列子元素自身为裁剪祖先但个别收集项不带矩形（理论不可达，防御
-                        // R1080 原语义：整批 child_clip 兜底）。
-                        if compute_needs_clip(child, styles, doc)
-                            && local_positioned.iter().all(|i| i.clip_rect.is_none())
-                        {
-                            let child_clip = Rect::new(
-                                frag_abs_x + child.border_left,
-                                frag_abs_y + child.border_top,
-                                child.padding_left + child.content_width + child.padding_right,
-                                child.padding_top + child.content_height + child.padding_bottom,
-                            );
-                            super::helpers::clip_all_primitives_to_rect(
-                                &mut self.primitives,
-                                &counts_before_local,
-                                &child_clip,
-                            );
-                        }
-                    }
+                    self.flush_fragment_local_positioned(&local_positioned, child, frag_abs_x, frag_abs_y, styles, doc);
 
                     super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_frag, &clip_rect);
 

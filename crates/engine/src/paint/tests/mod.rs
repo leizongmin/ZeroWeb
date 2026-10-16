@@ -24,6 +24,7 @@ mod r4068_bfc_empty_child_margin_tests;
 mod r4073_abspos_intrinsic_pct_box_side_tests;
 mod r4074_ar_transfer_ife_reclaim_tests;
 mod r5150_contain_size_multicol_paint;
+mod r5151_zeroh_fragmentainer_oof_flush;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
