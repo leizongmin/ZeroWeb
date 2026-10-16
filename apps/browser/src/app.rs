@@ -2084,6 +2084,9 @@ impl BrowserApp {
             }
             "zero://downloads" => self.open_downloads_page(),
             "zero://bookmarks" => self.open_bookmarks_page(),
+            // 导入页（设置页「导入书签」入口；F5 刷新走这里而非 try_apply_internal_url，
+            // 同历史页模式）。apply 为一次性动作 URL，不进刷新分派。
+            "zero://bookmarks/import" => self.open_bookmarks_import_page(None),
             // 书签页过滤/编辑/删除/保存路由与地址栏入口共用同一分派（F5 刷新与
             // 渲染端表单 GET 提交走这里而非 try_apply_internal_url，同历史页模式）。
             u if u.starts_with("zero://bookmarks?")
@@ -3017,10 +3020,51 @@ impl BrowserApp {
         self.open_internal_list_page(&url, html, "Bookmarks");
     }
 
-    /// 处理书签管理页内部动作 URL（过滤 / 编辑表单 / 删除 / 保存提交）。
+    /// 打开书签导入页（`zero://bookmarks/import`；设置页「导入书签」入口）。
+    /// `outcome` 非空时展示上一次导入结果。
+    fn open_bookmarks_import_page(&mut self, outcome: Option<pages::BookmarkImportOutcome>) {
+        let html = pages::generate_bookmarks_import_html(outcome.as_ref());
+        self.open_internal_list_page("zero://bookmarks/import", html, "Bookmarks");
+    }
+
+    /// 从剪贴板导入书签（`zero://bookmarks/import/apply`）。
+    ///
+    /// 剪贴板文本按 Netscape bookmark 格式解析（[`pages::parse_bookmarks_import_html`]），
+    /// 解析出的条目经 shell 合并（URL 去重、文件夹同名复用、快照上限内截断），
+    /// 完成后回导入页展示结果；书签栏随 shell 状态刷新。
+    fn apply_bookmarks_import(&mut self) {
+        let outcome = match crate::clipboard::read_text() {
+            Some(text) => {
+                let entries = pages::parse_bookmarks_import_html(&text);
+                if entries.is_empty() {
+                    tracing::info!("bookmarks import: no entries parsed from clipboard");
+                    pages::BookmarkImportOutcome::NoEntries
+                } else {
+                    let (added, skipped) = self.shell.import_bookmarks(&entries);
+                    tracing::info!("bookmarks import: added={added} skipped={skipped}");
+                    pages::BookmarkImportOutcome::Imported { added, skipped }
+                }
+            }
+            None => {
+                tracing::warn!("bookmarks import: clipboard unavailable");
+                pages::BookmarkImportOutcome::ClipboardUnavailable
+            }
+        };
+        self.open_bookmarks_import_page(Some(outcome));
+    }
+
+    /// 处理书签管理页内部动作 URL（过滤 / 编辑表单 / 删除 / 保存提交 / 导入）。
     ///
     /// `zero://bookmarks` 精确路径不在此处理（列表页经 [`Self::load_local_tab_url`] 装载）。
     fn try_apply_bookmarks_url(&mut self, url: &str) -> bool {
+        if url == "zero://bookmarks/import" {
+            self.open_bookmarks_import_page(None);
+            return true;
+        }
+        if url == "zero://bookmarks/import/apply" {
+            self.apply_bookmarks_import();
+            return true;
+        }
         if let Some(rest) = url.strip_prefix("zero://bookmarks?q=") {
             // 搜索框 GET 提交 / 地址栏直输：按过滤词重开书签页。
             let query = pages::percent_decode_form_value(rest);

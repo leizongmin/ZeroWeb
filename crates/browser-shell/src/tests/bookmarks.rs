@@ -354,3 +354,78 @@ fn test_bookmarks_load_max_u64_folder_id_no_overflow_r3363() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ── BrowserShell::import_bookmarks（T46b 书签导入合并）──
+
+#[test]
+fn test_shell_import_bookmarks_merges_dedups_and_reuses_folder() {
+    let mut shell = BrowserShell::new();
+    shell.add_bookmark_with_url("https://example.com/old");
+
+    let entries = vec![
+        BookmarkImportEntry {
+            title: "Old".to_string(),
+            url: "https://example.com/old".to_string(),
+            folder: None,
+        },
+        BookmarkImportEntry {
+            title: "Rust".to_string(),
+            url: "https://www.rust-lang.org/".to_string(),
+            folder: Some("Dev".to_string()),
+        },
+        BookmarkImportEntry {
+            title: "Rust Again".to_string(),
+            url: "https://www.rust-lang.org/".to_string(),
+            folder: Some("Dev".to_string()),
+        },
+    ];
+    let (added, skipped) = shell.import_bookmarks(&entries);
+    assert_eq!((added, skipped), (1, 2), "URL 重复与既有条目都计入跳过");
+    assert_eq!(shell.bookmarks().len(), 2);
+
+    // 再次导入同名文件夹：复用既有文件夹，不新建。
+    let more = vec![BookmarkImportEntry {
+        title: "Crates".to_string(),
+        url: "https://crates.io/".to_string(),
+        folder: Some("Dev".to_string()),
+    }];
+    let (added_more, skipped_more) = shell.import_bookmarks(&more);
+    assert_eq!((added_more, skipped_more), (1, 0));
+    assert_eq!(shell.bookmarks().folders().len(), 1, "同名文件夹必须复用");
+    let folder_id = shell.bookmarks().folders()[0].id();
+    assert_eq!(shell.bookmarks().list_in_folder(folder_id).len(), 2);
+}
+
+#[test]
+fn test_shell_import_bookmarks_skips_over_limit_text() {
+    let mut shell = BrowserShell::new();
+    // 超过 MAX_TEXT_BYTES 的标题：快照校验会整体丢弃超限文件，导入必须跳过。
+    let entries = vec![BookmarkImportEntry {
+        title: "x".repeat(MAX_TEXT_BYTES + 1),
+        url: "https://example.com/big".to_string(),
+        folder: None,
+    }];
+    let (added, skipped) = shell.import_bookmarks(&entries);
+    assert_eq!((added, skipped), (0, 1));
+    assert!(shell.bookmarks().is_empty());
+}
+
+#[test]
+fn test_shell_import_bookmarks_stops_at_store_capacity() {
+    let mut shell = BrowserShell::new();
+    // 预填到上限（直写存储，不经 add_bookmark_with_url 的逐条落盘）：
+    // 随后整批导入全部跳过，不得写出超限快照。
+    for index in 0..MAX_ENTRIES {
+        shell
+            .bookmarks_mut()
+            .add("Filler", &format!("https://example.com/{index}"), None);
+    }
+    let entries = vec![BookmarkImportEntry {
+        title: "Overflow".to_string(),
+        url: "https://example.com/overflow".to_string(),
+        folder: None,
+    }];
+    let (added, skipped) = shell.import_bookmarks(&entries);
+    assert_eq!((added, skipped), (0, 1));
+    assert_eq!(shell.bookmarks().len(), MAX_ENTRIES);
+}

@@ -155,6 +155,16 @@ enum Step {
     AssertClipboard {
         pattern: String,
     },
+    /// 写入剪贴板文本（T46b 书签导入等以剪贴板为输入源的用例探针）。
+    SetClipboard {
+        text: String,
+    },
+    /// 全库书签断言（T46b 导入）：`count` 精确总数（含文件夹内条目）；
+    /// `contains` 任一条目标题或 URL 子串命中即可。至少给一个。
+    AssertBookmarks {
+        count: Option<usize>,
+        contains: Option<String>,
+    },
     /// 地址栏文本断言：`contains` 子串匹配。
     AssertAddressBar {
         pattern: String,
@@ -457,6 +467,17 @@ impl Step {
             "assert_clipboard" => Ok(Self::AssertClipboard {
                 pattern: text("contains")?,
             }),
+            "set_clipboard" => Ok(Self::SetClipboard { text: text("text")? }),
+            "assert_bookmarks" => {
+                let count = value.get("count").and_then(Value::as_u64).map(|v| v as usize);
+                let contains = value.get("contains").and_then(Value::as_str).map(str::to_string);
+                if count.is_none() && contains.is_none() {
+                    return Err(format!(
+                        "script line {line_no}: assert_bookmarks requires \"count\" or \"contains\""
+                    ));
+                }
+                Ok(Self::AssertBookmarks { count, contains })
+            }
             "assert_addressbar" => Ok(Self::AssertAddressBar {
                 pattern: text("contains")?,
             }),
@@ -847,6 +868,40 @@ impl UiDriver {
                     "UI_DRIVER_STEP step={} assert_clipboard len={} status=passed",
                     self.next + 1,
                     actual.len()
+                );
+                Ok(())
+            }
+            Step::SetClipboard { text } => {
+                if !crate::clipboard::write_text(text) {
+                    return Err("set_clipboard: clipboard unavailable".to_string());
+                }
+                tracing::info!("UI_DRIVER_STEP step={} set_clipboard len={}", self.next + 1, text.len());
+                Ok(())
+            }
+            Step::AssertBookmarks { count, contains } => {
+                let items = app.smoke_bookmarks_all();
+                if let Some(want) = count
+                    && items.len() != *want
+                {
+                    return Err(format!(
+                        "assert_bookmarks failed: store has {} bookmarks, expected {want}",
+                        items.len()
+                    ));
+                }
+                if let Some(pattern) = contains
+                    && !items
+                        .iter()
+                        .any(|(title, url)| title.contains(pattern.as_str()) || url.contains(pattern.as_str()))
+                {
+                    return Err(format!(
+                        "assert_bookmarks failed: no bookmark title/url contains {pattern:?} ({} total)",
+                        items.len()
+                    ));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_bookmarks total={} status=passed",
+                    self.next + 1,
+                    items.len()
                 );
                 Ok(())
             }
