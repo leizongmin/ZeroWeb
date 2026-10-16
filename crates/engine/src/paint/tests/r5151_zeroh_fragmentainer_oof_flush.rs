@@ -42,9 +42,7 @@ fn find_multicol(b: &LayoutBox) -> Option<&LayoutBox> {
 /// 100×100 绿块（#008000）完整入图元（含尺寸守卫：无列窗口裁剪）。
 #[test]
 fn r5151_abs_descendant_painted_in_zero_space_fragmentainer() {
-    let (prims, root) = paint_page(
-        r#"<div id="multicol"><div id="container"><div id="abs"></div></div></div>"#,
-    );
+    let (prims, root) = paint_page(r#"<div id="multicol"><div id="container"><div id="abs"></div></div></div>"#);
     // 前置守卫：确入 R4515 域——容器唯一列子无 in-flow 内容（abs 不占流）塌 0，
     // multicol 平衡列高 0。
     let mc = find_multicol(&root).expect("multicol 容器");
@@ -56,11 +54,7 @@ fn r5151_abs_descendant_painted_in_zero_space_fragmentainer() {
     // chromium oracle（css_css-contain_contain-size-monolithic-002_html.png）：
     // 100×100 绿块全绘制、无列裁剪。green = #008000。
     let green_square = prims.fills.iter().any(|f| {
-        f.color.r == 0
-            && f.color.g == 128
-            && f.color.b == 0
-            && f.rect.size.width >= 99.0
-            && f.rect.size.height >= 99.0
+        f.color.r == 0 && f.color.g == 128 && f.color.b == 0 && f.rect.size.width >= 99.0 && f.rect.size.height >= 99.0
     });
     assert!(
         green_square,
