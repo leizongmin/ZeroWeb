@@ -11,9 +11,18 @@
 > ≤65536 上下限与 TypedArray 类型限定语义），`crypto.subtle` 全系
 > （digest/importKey/exportKey/encrypt/decrypt/wrapKey）缺失。
 >
-> **▶ 基线事实（立项时点，M1 盘点复核）**：随机源面已有（bridge crypto.rs + shim
-> part01b）；subtle 面零；`WebCryptoAPI/` corpus 含 AlgorithmMissingParams/
-**  digest/importKey/encrypt-decrypt 等子域。
+> **▶ 基线事实（2026-10-17 M1 盘点复核，修正立项时「subtle 面零」的过期判断）**：
+> 随机源面已有（bridge crypto.rs + shim part01b）；subtle 面并非零——digest
+> SHA-1/256/384/512（R2793）、HMAC sign/verify + importKey raw（R2955）、
+> PBKDF2（R2956）、AES-GCM encrypt/decrypt（R2957）、HKDF（R2958）、exportKey raw
+> + generateKey + deriveKey 均已落地（shim part01b + part02，宿主 callbacks 六个
+> `__zw_crypto_subtle_*`）。**未实现**：RSA 家族（OAEP/PSS/RSASSA-PKCS1-v1_5）、
+> EC 家族（ECDSA/ECDH/Ed25519/X25519）、AES-CBC/CTR/KW、jwk/pkcs8/spki 导入格式、
+> wrapKey/unwrapKey。WPT corpus 基线尚未建立——已有实现未对齐 WPT 断言，
+> 通过率未知；后续里程碑按 corpus 分域失败分类驱动，不是从零实现。
+> `WebCryptoAPI/` corpus（pin 31597693）202 文件，入口 .any.js/.window.js 约 120，
+> 子域 digest/sign_verify/import_export/generateKey/encrypt_decrypt/derive_bits_keys/
+> serialization/wrapKey_unwrapKey/util 等。
 
 ## Mission
 
@@ -39,8 +48,14 @@
 
 ## 里程碑
 
-M1 导入与基线 → M2 digest 片（最快收益）→ M3 importKey/exportKey + AES-GCM →
-M4 签名系 + 收口归档。
+M1 导入与基线（corpus + runner 通道 + csv 回填）→ M2 已实现面 WPT 对齐
+（digest/HMAC/PBKDF2/HKDF/AES-GCM 逐域修失败；随机源零回归）→ M3 补面
+（AES-CBC/CTR、wrapKey/unwrapKey、spki/pkcs8/jwk 格式）→ M4 签名系
+（ECDSA/RSASSA-PKCS1-v1_5/RSA-PSS…）+ 收口归档。
+
+> 原里程碑（M2 digest 从零实现 / M3 importKey+AES-GCM 从零实现）已被
+> 2026-10-17 盘点修正——相应实现 R2793/R2955-R2958 立项前已存在，里程碑
+> 改为「WPT 对齐 + 补面」。
 
 ## 依赖约束（run-rules §9）
 
