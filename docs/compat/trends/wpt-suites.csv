@@ -9,6 +9,7 @@
 #      Fail/Timeout/部分通过（PF）一律计入分母；分母构成特殊时写入 note。
 #   4) 任何字段内禁止半角逗号（本文件不做引号转义）；多目录用分号";"分隔。
 #   5) rate 列留空由生成器按 passed/total 重算；若手工填写则必须与 passed/total 一致（偏差>0.05 生成器报错）。
+#   6) 只允许行级追加或精确行替换，禁止用 csv/表格模块整体读入回写（会改写注释行、补引号转义）；列数与类型由 tests/wpt-runner 的 trend_csv_check 单测在 CI 校验（契约镜像 scripts/generate-website-metrics.py）。
 # date,suite_id,name_en,name_zh,wpt_dirs,harness,unit,total,passed,rate,status,goal,evidence,note_en,note_zh
 2026-10-11,rendering-compat,CSS rendering compatibility,CSS 渲染兼容（reftest）,css2;CSS2;flexbox;grid;position;tables;multicol;text;writing-modes;fonts;text-decor,reftest,tests,16594,15265,,active,95,docs/goal/rendering-compat.md,R5051-round accounting (fail 1329) as synced to README/ROADMAP on 10-11; the later R5052-R5054 rounds cut failures further to 1323.,R5051 轮口径账（fail 1329）；10-11 已同步 README/ROADMAP；其后 R5052-R5054 又把失败数压到 1323。
 2026-10-07,uievents-compat,UI & pointer events,UI 与指针事件,uievents;pointerevents,testharness,subtests,2060,1794,,completed,,docs/goal/uievents-compat.md,Goal closed at tail cluster 41 (DC-1~4 met); 170 failures + 96 timeouts cataloged as parked debt in 14 categories with re-entry conditions.,尾簇 41 收口（DC-1~4 全满足）；170 Fail + 96 Timeout 按 14 类编目为挂账并附重入条件。

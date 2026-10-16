@@ -24,6 +24,10 @@ mod testharness_webmessaging;
 mod wpt_file_loader;
 mod ws_fixture;
 
+/// wpt-suites.csv 列数与类型防护校验（GB-20261014 ① 批复落地；仅测试构建编译）。
+#[cfg(test)]
+mod trend_csv_check;
+
 use rayon::prelude::*;
 use runner::{TestContext, builtin_tests, filter_tests_by_category, filter_tests_by_pattern};
 
