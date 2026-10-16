@@ -659,8 +659,7 @@ impl BrowserApp {
             return;
         }
         if let Some(url) = item_id.strip_prefix("closed_tab:") {
-            self.shell.reopen_closed_by_url(url);
-            self.needs_redraw = true;
+            self.reopen_closed_tab_by_url(url);
             return;
         }
         match item_id.as_str() {

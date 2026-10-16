@@ -210,6 +210,15 @@ pub struct BrowserApp {
     zoom_indicator_start: Option<Instant>,
     /// 下载完成 toast：`(文件名, 显示起始时刻)`。下载完成时记录，3 秒后由渲染层清除。
     download_toast: Option<(String, Instant)>,
+    /// 关闭标签撤销 toast 显示起始时刻。关闭标签时记录，5 秒后由渲染层清除；
+    /// 撤销动作走 [`BrowserApp::reopen_last_closed_tab`]（弹出 shell 的 recently_closed 栈）。
+    closed_tab_toast: Option<Instant>,
+    /// 每标签导航历史条目的滚动偏移（物理像素），键为 `(标签 id, 历史索引)`。
+    /// 离开条目前保存、back/forward 回到时恢复（Chrome 同款会话内滚动位置保持）。
+    history_scroll: HashMap<(TabId, usize), f32>,
+    /// back/forward 待应用的滚动恢复 `(标签 id, 目标偏移)`。目标文档装载完成
+    /// （page_loaded）后才落地——立即写入会在空白文档期被 clamp_tab_scroll 压回 0。
+    pending_scroll_restore: Option<(TabId, f32)>,
     /// 最近提交给 compositor 的 UI surface 位图（T36 滚动帧 IPC 跳过用）。
     ui_forward_cache: Option<UiForwardCache>,
     /// 上次设置的窗口标题缓存，用于检测变化避免重复 set_title。
@@ -399,6 +408,9 @@ impl BrowserApp {
             menu_anim_start: None,
             zoom_indicator_start: None,
             download_toast: None,
+            closed_tab_toast: None,
+            history_scroll: HashMap::new(),
+            pending_scroll_restore: None,
             ui_forward_cache: None,
             last_window_title: String::new(),
             last_tab_click_time: None,
@@ -560,6 +572,8 @@ impl BrowserApp {
             }
             self.refresh_tab_favicon(tab_id, &url);
             self.shell.set_tab_crashed(tab_id, false);
+            // back/forward 滚动恢复：目标文档就绪后落地（Chrome 同款时机）。
+            self.apply_pending_scroll_restore(tab_id);
             if self.shell.active_tab_id() == Some(tab_id) {
                 if let Some(tab) = self.shell.active_tab_mut() {
                     tab.set_loading(false);
@@ -1957,6 +1971,57 @@ impl BrowserApp {
         }
     }
 
+    /// 关闭标签撤销 toast 外框 `(x, y, w, h)`（物理像素）。未显示（无 toast、已超
+    /// 5 秒或字体未就绪）返回 None。几何与 render_closed_tab_toast / smoke 断言面同源。
+    pub(crate) fn closed_tab_toast_rect_for(&self, width: u32, height: u32) -> Option<(f32, f32, f32, f32)> {
+        let start = self.closed_tab_toast?;
+        if start.elapsed().as_secs_f32() > layout::CLOSED_TAB_TOAST_DURATION_SECS || self.font_id.is_none() {
+            return None;
+        }
+        let s = self.scale_factor;
+        let font_size = layout::CHROME_FONT_SIZE * s;
+        let pad_h = 14.0 * s;
+        let gap = 18.0 * s;
+        let text_w = self.measure_ui_text_width(&Self::closed_tab_toast_label(), font_size)
+            + gap
+            + self.measure_ui_text_width(&Self::closed_tab_toast_undo_label(), font_size);
+        let box_w = text_w + pad_h * 2.0;
+        let box_h = font_size + 12.0 * s;
+        let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
+        // 页面内容区底部居中（下载完成 toast 同位；两者同时出现的概率低，
+        // 且撤销 toast 只持续 5 秒）。
+        let box_x = cx + (cw - box_w) * 0.5;
+        let box_y = cy + ch - box_h - 16.0 * s;
+        Some((box_x, box_y, box_w, box_h))
+    }
+
+    /// 撤销 toast 的「撤销」动作命中区（toast 右段，物理像素；渲染与点击、
+    /// ui_driver 点击定位同源）。未显示返回 None。
+    pub(crate) fn closed_tab_toast_undo_rect_for(&self, width: u32, height: u32) -> Option<(f32, f32, f32, f32)> {
+        let (box_x, box_y, box_w, box_h) = self.closed_tab_toast_rect_for(width, height)?;
+        let s = self.scale_factor;
+        let font_size = layout::CHROME_FONT_SIZE * s;
+        let undo_w = self.measure_ui_text_width(&Self::closed_tab_toast_undo_label(), font_size);
+        let pad_h = 14.0 * s;
+        Some((box_x + box_w - pad_h - undo_w, box_y, undo_w + pad_h * 0.5, box_h))
+    }
+
+    /// 关闭标签撤销 toast 的主文案（渲染与几何同源）。
+    fn closed_tab_toast_label() -> String {
+        match UiLanguage::detect_from_env() {
+            UiLanguage::ZhCn => "标签已关闭".to_string(),
+            UiLanguage::EnUs => "Tab closed".to_string(),
+        }
+    }
+
+    /// 关闭标签撤销 toast 的动作文案（渲染与几何同源）。
+    fn closed_tab_toast_undo_label() -> String {
+        match UiLanguage::detect_from_env() {
+            UiLanguage::ZhCn => "撤销".to_string(),
+            UiLanguage::EnUs => "Undo".to_string(),
+        }
+    }
+
     /// 浮动下载面板外框（物理像素）。有活动下载时高度随行数增长（T8），
     /// 完成视图保持固定高度。
     pub(crate) fn download_panel_rect_for(&self, width: u32, height: u32) -> (f32, f32, f32, f32) {
@@ -2179,6 +2244,12 @@ impl BrowserApp {
 
         tracing::info!("Navigating to: {method} {url}");
 
+        // 离开当前历史条目前保存滚动位置（back/forward 回到时恢复，Chrome 同款）。
+        // 新导航使任何挂起的 back/forward 恢复失效（该条目将按新访问从顶部开始）。
+        self.pending_scroll_restore = None;
+        if let Some(tab_id) = self.shell.active_tab_id() {
+            self.save_history_scroll(tab_id);
+        }
         self.shell.navigate(&url);
         self.address_bar.set_text(url.clone());
         self.autocomplete.clear();
@@ -2192,8 +2263,12 @@ impl BrowserApp {
         };
         self.ensure_webview(tab_id);
 
-        // 重置滚动偏移与页面选区
+        // 重置滚动偏移与页面选区。新条目从顶部开始：清除该索引位可能残留的
+        // 旧偏移（前进历史被截断后索引会被新条目复用）。
         self.scroll.insert(tab_id, TabScrollState::default());
+        if let Some(index) = self.shell.tab(tab_id).map(|t| t.history_index()) {
+            self.history_scroll.remove(&(tab_id, index));
+        }
         self.scroll_anim.remove(&tab_id);
         self.page_selection.remove(&tab_id);
         self.clear_tab_favicon(tab_id);
@@ -2518,6 +2593,7 @@ impl BrowserApp {
             self.scroll.remove(&tab_id);
             self.scroll_anim.remove(&tab_id);
             self.shell.close_tab(tab_id);
+            self.on_tab_closed_show_undo_toast(tab_id);
 
             if self.shell.is_empty() {
                 self.new_tab(None);
@@ -2537,11 +2613,61 @@ impl BrowserApp {
         self.scroll_anim.remove(&id);
         self.background_tab_titles.remove(&id);
         self.shell.close_tab(id);
+        self.on_tab_closed_show_undo_toast(id);
 
         if self.shell.is_empty() {
             self.new_tab(None);
         }
 
+        self.update_address_bar_from_active_tab();
+        self.needs_redraw = true;
+    }
+
+    /// 关闭标签后的收尾：启动撤销 toast、清理该标签的按历史条目滚动缓存。
+    /// 多标签批量关闭（关闭其他/右侧）不弹 toast——撤销一次只恢复一个，
+    /// 提示会误导（栈里已入账，Ctrl+Shift+T 仍可逐个恢复）。
+    fn on_tab_closed_show_undo_toast(&mut self, id: TabId) {
+        self.history_scroll.retain(|(tab_id, _), _| *tab_id != id);
+        if matches!(self.pending_scroll_restore, Some((closed, _)) if closed == id) {
+            self.pending_scroll_restore = None;
+        }
+        self.closed_tab_toast = Some(Instant::now());
+    }
+
+    /// 恢复最近关闭的标签（Ctrl+Shift+T / 撤销 toast 共用）。返回是否恢复成功。
+    ///
+    /// shell 侧建标签并入账导航；app 侧须补齐 renderer 装载与 UI 同步——
+    /// 与 [`Self::new_tab`] 同理：shell 记 URL 不等于 renderer 开始装载。
+    pub fn reopen_last_closed_tab(&mut self) -> bool {
+        let Some(new_id) = self.shell.reopen_last_closed_tab() else {
+            return false;
+        };
+        self.finish_reopen_closed_tab(new_id);
+        true
+    }
+
+    /// 恢复菜单「最近关闭的标签」点选的指定 URL 标签。返回是否恢复成功。
+    pub fn reopen_closed_tab_by_url(&mut self, url: &str) -> bool {
+        let Some(new_id) = self.shell.reopen_closed_by_url(url) else {
+            return false;
+        };
+        self.finish_reopen_closed_tab(new_id);
+        true
+    }
+
+    /// 补齐恢复标签的 app 侧装载与 UI 同步（两类恢复入口的共享路径）。
+    fn finish_reopen_closed_tab(&mut self, new_id: TabId) {
+        self.closed_tab_toast = None;
+        self.tabs.ensure_tab(new_id);
+        self.scroll.insert(new_id, TabScrollState::default());
+        if let Some(url) = self.shell.tab(new_id).and_then(|t| t.url().map(str::to_string)) {
+            // 地址栏同款标签级装载路径（zero:// 内部页由 load_local_tab_url 分派）。
+            self.start_tab_request(new_id, url, "GET".to_string(), None);
+        } else {
+            self.load_welcome_page(new_id);
+        }
+        self.tabs.on_active_tab_changed(self.shell.active_tab_id());
+        self.sync_webview_viewport();
         self.update_address_bar_from_active_tab();
         self.needs_redraw = true;
     }
@@ -2573,6 +2699,11 @@ impl BrowserApp {
             self.scroll_anim.remove(&tid);
         }
         self.shell.close_other_tabs(id);
+        self.history_scroll
+            .retain(|(tab_id, _), _| self.shell.tab(*tab_id).is_some());
+        if matches!(self.pending_scroll_restore, Some((closed, _)) if self.shell.tab(closed).is_none()) {
+            self.pending_scroll_restore = None;
+        }
 
         if self.shell.is_empty() {
             self.new_tab(None);
@@ -2607,6 +2738,11 @@ impl BrowserApp {
             self.scroll_anim.remove(&tid);
         }
         self.shell.close_tabs_to_right(id);
+        self.history_scroll
+            .retain(|(tab_id, _), _| self.shell.tab(*tab_id).is_some());
+        if matches!(self.pending_scroll_restore, Some((closed, _)) if self.shell.tab(closed).is_none()) {
+            self.pending_scroll_restore = None;
+        }
 
         if self.shell.is_empty() {
             self.new_tab(None);
@@ -2792,6 +2928,9 @@ impl BrowserApp {
     }
 
     pub fn go_back(&mut self) {
+        if let Some(tab_id) = self.shell.active_tab_id() {
+            self.save_history_scroll(tab_id);
+        }
         if !self.shell.go_back() {
             return;
         }
@@ -2803,12 +2942,16 @@ impl BrowserApp {
 
         self.address_bar.set_text(url.clone());
         let tab_id = self.shell.active_tab_id().unwrap();
+        self.restore_history_scroll(tab_id);
 
         self.start_tab_load(tab_id, url);
     }
 
     /// 执行前进导航
     pub fn go_forward(&mut self) {
+        if let Some(tab_id) = self.shell.active_tab_id() {
+            self.save_history_scroll(tab_id);
+        }
         if !self.shell.go_forward() {
             return;
         }
@@ -2820,8 +2963,76 @@ impl BrowserApp {
 
         self.address_bar.set_text(url.clone());
         let tab_id = self.shell.active_tab_id().unwrap();
+        self.restore_history_scroll(tab_id);
 
         self.start_tab_load(tab_id, url);
+    }
+
+    /// 离开历史条目前保存当前滚动偏移（按 `(标签 id, 历史索引)` 记账）。
+    fn save_history_scroll(&mut self, tab_id: TabId) {
+        let Some(index) = self.shell.tab(tab_id).map(|t| t.history_index()) else {
+            return;
+        };
+        if let Some(state) = self.scroll.get(&tab_id) {
+            self.history_scroll.insert((tab_id, index), state.y);
+        }
+    }
+
+    /// 回到历史条目（back/forward）时恢复该条目的滚动偏移；
+    /// 无记录（首次访问）则从顶部开始。有记录时挂起待页面装载完成后落地——
+    /// 立即写入会在新文档布局就绪前被每帧的 clamp_tab_scroll 压回 0。
+    fn restore_history_scroll(&mut self, tab_id: TabId) {
+        let y = self
+            .shell
+            .tab(tab_id)
+            .map(|t| t.history_index())
+            .and_then(|index| self.history_scroll.get(&(tab_id, index)).copied());
+        self.scroll_anim.remove(&tab_id);
+        match y {
+            Some(y) if y > 0.0 => {
+                self.pending_scroll_restore = Some((tab_id, y));
+                self.scroll.insert(tab_id, TabScrollState::default());
+            }
+            _ => {
+                self.pending_scroll_restore = None;
+                self.scroll.insert(tab_id, TabScrollState::default());
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    /// 落地待应用的滚动恢复（页面装载完成时调用）：按当前文档布局钳制后写入。
+    fn apply_pending_scroll_restore(&mut self, tab_id: TabId) {
+        let Some((pending_tab, y)) = self.pending_scroll_restore else {
+            return;
+        };
+        if pending_tab != tab_id {
+            return;
+        }
+        self.pending_scroll_restore = None;
+        let max_scroll_y = self.page_scroll_layout(tab_id).max_scroll_y;
+        let state = self.tab_scroll_state(tab_id);
+        self.scroll.insert(
+            tab_id,
+            TabScrollState {
+                x: state.x,
+                y: y.min(max_scroll_y),
+            },
+        );
+        self.needs_redraw = true;
+    }
+
+    /// 单元测试面：back/forward 后的待应用滚动恢复（None = 无挂起恢复）。
+    #[cfg(test)]
+    pub fn pending_scroll_restore_for_test(&self) -> Option<(TabId, f32)> {
+        self.pending_scroll_restore
+    }
+
+    /// 单元测试面：手动落地待应用恢复（stub worker 无 page_loaded 事件，
+    /// 真实事件驱动路径由 ui_driver e2e 覆盖）。
+    #[cfg(test)]
+    pub fn apply_pending_scroll_restore_for_test(&mut self, tab_id: TabId) {
+        self.apply_pending_scroll_restore(tab_id);
     }
 
     /// 打开设置页面（about:preferences）

@@ -166,6 +166,8 @@ pub const DOWNLOAD_TOAST_FADE_IN_SECS: f32 = 0.15;
 pub const DOWNLOAD_TOAST_FADE_OUT_SECS: f32 = 0.25;
 /// Maximum width of the download completion toast before the filename is truncated.
 pub const DOWNLOAD_TOAST_MAX_WIDTH: f32 = 360.0;
+/// Closed-tab undo toast display window in seconds (5s auto-dismiss, same snackbar family).
+pub const CLOSED_TAB_TOAST_DURATION_SECS: f32 = 5.0;
 /// Delay before a hover tooltip appears on a compressed tab (Chrome tooltip delay).
 pub const TAB_TOOLTIP_DELAY_MS: u64 = 500;
 /// Maximum width of the compressed-tab tooltip before title/URL are truncated.

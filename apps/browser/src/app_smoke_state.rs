@@ -89,6 +89,12 @@ impl BrowserApp {
         Some(self.download_toast.as_ref()?.0.clone())
     }
 
+    /// 演示流用：关闭标签撤销 toast 当前文案（5 秒显示窗口内；None = 未显示）。
+    pub fn smoke_closed_tab_toast(&self) -> Option<String> {
+        self.closed_tab_toast_rect_for(self.physical_size.0, self.physical_size.1)?;
+        Some(Self::closed_tab_toast_label())
+    }
+
     /// 演示流用：压缩标签悬停 tooltip 内容 `(标题, URL)`（延迟到期后；None = 未显示）。
     pub fn smoke_tab_tooltip(&self) -> Option<(String, String)> {
         self.tab_tooltip_content()
