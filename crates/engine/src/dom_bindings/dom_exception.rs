@@ -30,6 +30,7 @@ fn code_for_name(name: &str) -> u32 {
         "InvalidModificationError" => 13,
         "NamespaceError" => 14,
         "InvalidAccessError" => 15,
+        "TypeMismatchError" => 17,
         "SecurityError" => 18,
         "NetworkError" => 19,
         "AbortError" => 20,
@@ -179,6 +180,7 @@ pub(super) fn build_and_register(scope: &mut v8::PinScope, global: v8::Local<v8:
     register_const("INVALID_MODIFICATION_ERR", 13);
     register_const("NAMESPACE_ERR", 14);
     register_const("INVALID_ACCESS_ERR", 15);
+    register_const("TYPE_MISMATCH_ERR", 17);
     register_const("SECURITY_ERR", 18);
     register_const("NETWORK_ERR", 19);
     register_const("ABORT_ERR", 20);

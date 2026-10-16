@@ -2245,14 +2245,28 @@
       }
       return s;
     },
-    // getRandomValues(typedArray)：spec 限定 TypedArray（Int8..Uint32 / BigInt64/BigUint64），≤65536
-    // 字节。填**底层字节 buffer**（Uint8Array 视图）→ 任意 typed 视图得随机值（含多字节 / 共享 buffer 偏移）。
+    // getRandomValues(typedArray)：spec 限定**整数** TypedArray（Int8..Uint32 / BigInt64/BigUint64，
+    // 含子类），≤65536 字节。Float16/32/64 与 DataView 抛 TypeMismatchError；>65536 抛
+    // QuotaExceededError（webstorage 同名接口，带 requested/quota 属性——WPT
+    // assert_throws_quotaexceedederror 校验 e.constructor === self.QuotaExceededError）。
+    // 填**底层字节 buffer**（Uint8Array 视图）→ 任意 typed 视图得随机值（含多字节 / 共享 buffer 偏移）。
+    // https://w3c.github.io/webcrypto/#CryptoOperation-getRandomValues  https://webidl.spec.whatwg.org/#quotaexceedederror
     getRandomValues: function (arr) {
       if (typeof ArrayBuffer === 'undefined' || !ArrayBuffer.isView(arr)) {
         throw new TypeError('getRandomValues: argument must be a TypedArray');
       }
+      // 整数 TypedArray 白名单（instanceof 放行子类——WPT「Subclass of X」组）。
+      var isIntegerView = (arr instanceof Int8Array) || (arr instanceof Int16Array) ||
+        (arr instanceof Int32Array) || (arr instanceof Uint8Array) || (arr instanceof Uint8ClampedArray) ||
+        (arr instanceof Uint16Array) || (arr instanceof Uint32Array);
+      if (typeof BigInt64Array === 'function') {
+        isIntegerView = isIntegerView || (arr instanceof BigInt64Array) || (arr instanceof BigUint64Array);
+      }
+      if (!isIntegerView) {
+        throw new (globalThis.DOMException || DOMException)('Unsupported TypedArray type for getRandomValues', 'TypeMismatchError');
+      }
       if (arr.byteLength > 65536)
-        throw new DOMException("The ArrayBufferView byte length (" + arr.byteLength + ") exceeds 65536.", 'QuotaExceededError');
+        throw new (globalThis.QuotaExceededError || globalThis.DOMException || DOMException)("The ArrayBufferView byte length (" + arr.byteLength + ") exceeds 65536.");
       _zw_randomFill(new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength));
       return arr;
     }
@@ -2260,14 +2274,21 @@
 
   // BufferSource → number[]（字节值，0-255）：ArrayBuffer / TypedArray / DataView / array-like / string（经
   // TextEncoder）。供 crypto.subtle.digest 把 data 传 host（逗号分隔十进制串，避免 UTF-8 编码歧义）。
+  // **detached buffer → 空字节**（spec：digest 取 buffer source 字节副本，已转移 buffer 为零字节——
+  // WPT digest.js「transferred buffer during call」组；V8 对 detached buffer Construct 抛 TypeError，
+  // 须捕获转空，不得让操作 reject）。
   function _zw_bufToBytes(data) {
     if (typeof data === 'string') data = new TextEncoder().encode(data);
     if (data == null) return [];
     var view;
-    if (data instanceof ArrayBuffer) view = new Uint8Array(data);
-    else if (data && data.buffer) view = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength != null ? data.byteLength : data.length);
-    else if (typeof data.length === 'number') view = data; // array-like（含 TypedArray 已覆盖上一支）
-    else return [];
+    try {
+      if (data instanceof ArrayBuffer) view = new Uint8Array(data);
+      else if (data && data.buffer) view = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength != null ? data.byteLength : data.length);
+      else if (typeof data.length === 'number') view = data; // array-like（含 TypedArray 已覆盖上一支）
+      else return [];
+    } catch (_detached) {
+      return []; // detached ArrayBuffer（buffer transfer 后）→ 零字节副本
+    }
     var out = [];
     for (var i = 0; i < view.length; i++) out.push(view[i] & 0xff);
     return out;
@@ -2295,16 +2316,39 @@
   function _zw_hashName(h) {
     var n = (typeof h === 'object' && h) ? h.name : h;
     if (n == null) return null;
-    return String(n).toUpperCase();
+    return _zw_upperAscii(String(n));
+  }
+
+  // ASCII-only 大写折叠（WebCrypto 算法名归一，spec：ASCII 大小写不敏感匹配——仅 a-z
+  // 映射 A-Z，不做 Unicode 全大写折叠，非 ASCII 字符原样保留）。`toUpperCase()` 会把
+  // U+212A KELVIN SIGN 等 Unicode 字符语义混入（如土耳其 ı→I），WPT
+  // normalize-algorithm-name 断言 "PB<U+212A>DF2" 不得匹配 "PBKDF2"。
+  // https://w3c.github.io/webcrypto/#algorithm-normalization
+  function _zw_upperAscii(s) {
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      out += (c >= 97 && c <= 122) ? String.fromCharCode(c - 32) : s.charAt(i);
+    }
+    return out;
+  }
+
+  // R384 同族（webcrypto M2）：subtle 各操作 reject 的 DOMException 须为**全局**构造器
+  // 实例——词法 `new DOMException` 落 shim 闭包 polyfill，WPT promise_rejects_dom 断言
+  // `e.constructor === win.DOMException`（flip 后 = 原生构造器）恒 false（AbortSignal
+  // throwIfAborted 同款修正先例）。调用时求值（flip 时点不假设早于 shim init）。
+  function _zw_subtleDE(message, name) {
+    var DE = globalThis.DOMException || DOMException;
+    return new DE(message, name);
   }
 
   // importKey 的 algorithm 归一化：{name:"HMAC", hash:"SHA-XXX"} / {name:"PBKDF2"} / null（unsupported）。
-  // HMAC 需 hash；PBKDF2 不需（hash 在 deriveBits 参数里）。
+  // HMAC 需 hash；PBKDF2 不需（hash 在 deriveBits 参数里）。name 匹配 ASCII 折叠（_zw_upperAscii）。
   function _zw_normalizeImportAlgorithm(algo) {
     if (!algo) return null;
     var name = (typeof algo === 'object' && algo) ? algo.name : algo;
     if (!name) return null;
-    name = String(name).toUpperCase();
+    name = _zw_upperAscii(String(name));
     if (name === 'HMAC') {
       var hash = _zw_hashName(typeof algo === 'object' ? algo.hash : null);
       if (!hash) return null;
@@ -2341,13 +2385,13 @@
   // HMAC MAC 计算（sign/verify 复用）：返 Uint8Array；host 未注册 / unsupported hash → 调 reject 返 null。
   function _zw_hmacMac(algo, key, dataBytes, reject) {
     if (typeof __zw_crypto_subtle_hmac !== 'function') {
-      reject(new DOMException('crypto.subtle HMAC requires host callback', 'NotSupportedError'));
+      reject(_zw_subtleDE('crypto.subtle HMAC requires host callback', 'NotSupportedError'));
       return null;
     }
     var keyCsv = (key._raw || []).map(String).join(',');
     var macCsv = __zw_crypto_subtle_hmac(algo.hash, keyCsv, dataBytes.join(','));
     if (!macCsv) {
-      reject(new DOMException("Unsupported HMAC hash: '" + algo.hash + "'", 'NotSupportedError'));
+      reject(_zw_subtleDE("Unsupported HMAC hash: '" + algo.hash + "'", 'NotSupportedError'));
       return null;
     }
     var parts = macCsv.split(',');
@@ -2361,19 +2405,19 @@
   function _zw_aesGcmCall(op, algorithm, key, dataBytes, reject) {
     var iv = _zw_bufToBytes(algorithm.iv);
     if (iv.length !== 12) {
-      reject(new DOMException('AES-GCM iv must be 12 bytes (96 bits)', 'OperationError')); return null;
+      reject(_zw_subtleDE('AES-GCM iv must be 12 bytes (96 bits)', 'OperationError')); return null;
     }
     if (algorithm.tagLength != null && (algorithm.tagLength | 0) !== 128) {
-      reject(new DOMException('Only AES-GCM tagLength=128 supported', 'NotSupportedError')); return null;
+      reject(_zw_subtleDE('Only AES-GCM tagLength=128 supported', 'NotSupportedError')); return null;
     }
     var aadBytes = algorithm.additionalData != null ? _zw_bufToBytes(algorithm.additionalData) : [];
     if (typeof __zw_crypto_subtle_aes_gcm !== 'function') {
-      reject(new DOMException('crypto.subtle AES-GCM requires host callback', 'NotSupportedError')); return null;
+      reject(_zw_subtleDE('crypto.subtle AES-GCM requires host callback', 'NotSupportedError')); return null;
     }
     var keyCsv = (key._raw || []).map(String).join(',');
     var out = __zw_crypto_subtle_aes_gcm(op, keyCsv, iv.join(','), dataBytes.join(','), aadBytes.join(','));
     if (!out) {
-      reject(new DOMException('AES-GCM ' + op + ' failed (bad key/iv/tag)', 'OperationError')); return null;
+      reject(_zw_subtleDE('AES-GCM ' + op + ' failed (bad key/iv/tag)', 'OperationError')); return null;
     }
     var parts = out.split(',');
     var res = new Uint8Array(parts.length);
@@ -2383,10 +2427,15 @@
 
   // 派生核心（deriveBits/deriveKey 共用）：PBKDF2/HKDF 分派 + host 调用 + csv→arr，**不做 usage 校验**
   //（usage 校验由调用方负责——deriveBits 检 "deriveBits"，deriveKey 检 "deriveKey"）。
+  // name 匹配 ASCII 折叠；**未知派生算法 reject NotSupportedError**（不得落入 HKDF 分支——
+  // WPT normalize-algorithm-name "PB<U+212A>DF2" 组断言 NotSupportedError）。
   function _zw_performDerive(algorithm, key, length) {
     return new Promise(function (resolve, reject) {
       var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
-      name = String(name == null ? '' : name).toUpperCase();
+      name = _zw_upperAscii(String(name == null ? '' : name));
+      if (name !== 'PBKDF2' && name !== 'HKDF') {
+        reject(_zw_subtleDE('Unsupported derive algorithm: ' + name, 'NotSupportedError')); return;
+      }
       var dkLen = length / 8;
       var keyCsv = (key._raw || []).map(String).join(',');
       var hash = _zw_hashName(typeof algorithm === 'object' ? algorithm.hash : null);
@@ -2395,21 +2444,21 @@
       if (name === 'PBKDF2') {
         var iters = Math.floor(Number(algorithm.iterations));
         if (!hash || !(iters > 0)) {
-          reject(new DOMException('PBKDF2 requires salt/iterations/hash', 'OperationError')); return;
+          reject(_zw_subtleDE('PBKDF2 requires salt/iterations/hash', 'OperationError')); return;
         }
         if (typeof __zw_crypto_subtle_pbkdf2 !== 'function') {
-          reject(new DOMException('crypto.subtle deriveBits requires host callback', 'NotSupportedError')); return;
+          reject(_zw_subtleDE('crypto.subtle deriveBits requires host callback', 'NotSupportedError')); return;
         }
         out = __zw_crypto_subtle_pbkdf2(hash, keyCsv, saltBytes.join(','), String(iters), String(dkLen));
       } else { // HKDF
         if (!hash || typeof __zw_crypto_subtle_hkdf !== 'function') {
-          reject(new DOMException('HKDF requires hash + host callback', 'NotSupportedError')); return;
+          reject(_zw_subtleDE('HKDF requires hash + host callback', 'NotSupportedError')); return;
         }
         var infoBytes = _zw_bufToBytes(algorithm.info);
         out = __zw_crypto_subtle_hkdf(hash, keyCsv, saltBytes.join(','), infoBytes.join(','), String(dkLen));
       }
       if (!out) {
-        reject(new DOMException("Unsupported deriveBits hash: '" + hash + "'", 'NotSupportedError')); return;
+        reject(_zw_subtleDE("Unsupported deriveBits hash: '" + hash + "'", 'NotSupportedError')); return;
       }
       var parts = out.split(',');
       var arr = new Uint8Array(parts.length);
@@ -2420,7 +2469,7 @@
 
   // 派生/生成的目标密钥长度（位）。AES → 256（spec 默认）；HMAC → hash 块大小（SHA-1/256=512，SHA-384/512=1024）。
   function _zw_keyLengthBits(algo) {
-    var n = String((typeof algo === 'object' && algo) ? algo.name : algo).toUpperCase();
+    var n = _zw_upperAscii(String((typeof algo === 'object' && algo) ? algo.name : algo));
     if (n === 'AES-GCM' || n === 'AES-CBC' || n === 'AES-CTR' || n === 'AES-KW') return 256;
     if (n === 'HMAC') {
       var h = _zw_hashName(typeof algo === 'object' ? algo.hash : null);
@@ -2439,12 +2488,19 @@
 
   globalThis.crypto.subtle = globalThis.crypto.subtle || {
     digest: function (algo, data) {
-      var a = (typeof algo === 'object' && algo) ? algo.name : algo;
-      a = (a == null ? '' : String(a)).toUpperCase();
+      // spec normalizeAlgorithm：AlgorithmIdentifier 串合法；对象缺 name 成员（含 {}）→
+      // TypeError（WPT digest.js「empty algorithm object」组）；null/undefined/非串非对象 → TypeError。
+      if (typeof algo === 'string') {
+        algo = { name: algo };
+      }
+      if (algo == null || typeof algo !== 'object' || algo.name == null) {
+        return Promise.reject(new TypeError('Algorithm name is required'));
+      }
+      var a = _zw_upperAscii(String(algo.name));
       return new Promise(function (resolve, reject) {
         var bytes = _zw_bufToBytes(data);
         if (typeof __zw_crypto_subtle_digest !== 'function') {
-          reject(new DOMException('crypto.subtle.digest requires host callback', 'NotSupportedError'));
+          reject(_zw_subtleDE('crypto.subtle.digest requires host callback', 'NotSupportedError'));
           return;
         }
         var out = __zw_crypto_subtle_digest(a, bytes.join(','));

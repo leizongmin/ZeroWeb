@@ -1,4 +1,4 @@
-          reject(new DOMException("Unsupported hash algorithm: '" + a + "'", 'NotSupportedError'));
+          reject(new _zw_subtleDE("Unsupported hash algorithm: '" + a + "'", 'NotSupportedError'));
           return;
         }
         var parts = out.split(',');
@@ -16,23 +16,23 @@
       return new Promise(function (resolve, reject) {
         var algo = _zw_normalizeImportAlgorithm(algorithm);
         if (!algo) {
-          reject(new DOMException('Unsupported or missing algorithm', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Unsupported or missing algorithm', 'NotSupportedError')); return;
         }
-        var fmt = String(format == null ? '' : format).toUpperCase();
+        var fmt = _zw_upperAscii(String(format == null ? '' : format));
         if (fmt !== 'RAW') {
-          reject(new DOMException("Unsupported importKey format: '" + fmt + "' (only 'raw' supported)", 'NotSupportedError')); return;
+          reject(new _zw_subtleDE("Unsupported importKey format: '" + fmt + "' (only 'raw' supported)", 'NotSupportedError')); return;
         }
         var raw = _zw_bufToBytes(keyData);
         // AES-GCM 密钥长度校验（spec：128/256 位；192 位本实现不支持）。
         if (algo.name === 'AES-GCM' && raw.length !== 16 && raw.length !== 32) {
-          reject(new DOMException('AES-GCM key must be 128 or 256 bits (16/32 bytes)', 'DataError')); return;
+          reject(new _zw_subtleDE('AES-GCM key must be 128 or 256 bits (16/32 bytes)', 'DataError')); return;
         }
         var allowedUsages = (algo.name === 'PBKDF2' || algo.name === 'HKDF') ? ['deriveBits', 'deriveKey']
           : algo.name === 'AES-GCM' ? ['encrypt', 'decrypt']
           : ['sign', 'verify'];
         var u = _zw_normalizeUsages(usages, allowedUsages);
         if (!u) {
-          reject(new DOMException("Invalid key usages for " + algo.name, 'SyntaxError')); return;
+          reject(new _zw_subtleDE("Invalid key usages for " + algo.name, 'SyntaxError')); return;
         }
         resolve(new CryptoKey('secret', extractable, algo, u, raw));
       });
@@ -42,12 +42,12 @@
     sign: function (algorithm, key, data) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
-        name = String(name == null ? '' : name).toUpperCase();
+        name = _zw_upperAscii(String(name == null ? '' : name));
         if (name !== 'HMAC' || !key || key.algorithm.name !== 'HMAC') {
-          reject(new DOMException('Unsupported sign algorithm or key', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Unsupported sign algorithm or key', 'NotSupportedError')); return;
         }
         if (!key.usages || key.usages.indexOf('sign') < 0) {
-          reject(new DOMException('Key usages do not include "sign"', 'InvalidAccessError')); return;
+          reject(new _zw_subtleDE('Key usages do not include "sign"', 'InvalidAccessError')); return;
         }
         var mac = _zw_hmacMac(key.algorithm, key, _zw_bufToBytes(data), reject);
         if (mac) resolve(mac);
@@ -58,12 +58,12 @@
     verify: function (algorithm, key, signature, data) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
-        name = String(name == null ? '' : name).toUpperCase();
+        name = _zw_upperAscii(String(name == null ? '' : name));
         if (name !== 'HMAC' || !key || key.algorithm.name !== 'HMAC') {
-          reject(new DOMException('Unsupported verify algorithm or key', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Unsupported verify algorithm or key', 'NotSupportedError')); return;
         }
         if (!key.usages || key.usages.indexOf('verify') < 0) {
-          reject(new DOMException('Key usages do not include "verify"', 'InvalidAccessError')); return;
+          reject(new _zw_subtleDE('Key usages do not include "verify"', 'InvalidAccessError')); return;
         }
         var mac = _zw_hmacMac(key.algorithm, key, _zw_bufToBytes(data), reject);
         if (!mac) return;
@@ -85,15 +85,15 @@
     deriveBits: function (algorithm, key, length) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
-        name = String(name == null ? '' : name).toUpperCase();
+        name = _zw_upperAscii(String(name == null ? '' : name));
         if ((name !== 'PBKDF2' && name !== 'HKDF') || !key || key.algorithm.name !== name) {
-          reject(new DOMException('Unsupported deriveBits algorithm or key', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Unsupported deriveBits algorithm or key', 'NotSupportedError')); return;
         }
         if (!key.usages || key.usages.indexOf('deriveBits') < 0) {
-          reject(new DOMException('Key usages do not include "deriveBits"', 'InvalidAccessError')); return;
+          reject(new _zw_subtleDE('Key usages do not include "deriveBits"', 'InvalidAccessError')); return;
         }
         if (typeof length !== 'number' || length <= 0 || length % 8 !== 0) {
-          reject(new DOMException('deriveBits length must be a positive multiple of 8', 'OperationError')); return;
+          reject(new _zw_subtleDE('deriveBits length must be a positive multiple of 8', 'OperationError')); return;
         }
         _zw_performDerive(algorithm, key, length).then(resolve, reject);
       });
@@ -105,14 +105,14 @@
       return new Promise(function (resolve, reject) {
         var dka = _zw_normalizeImportAlgorithm(derivedKeyAlgo);
         if (!dka) {
-          reject(new DOMException('Unsupported derived key algorithm', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Unsupported derived key algorithm', 'NotSupportedError')); return;
         }
         var lenBits = _zw_keyLengthBits(dka);
         if (!lenBits) {
-          reject(new DOMException('Cannot determine derived key length', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Cannot determine derived key length', 'NotSupportedError')); return;
         }
         if (!baseKey || !baseKey.usages || baseKey.usages.indexOf('deriveKey') < 0) {
-          reject(new DOMException('Key usages do not include "deriveKey"', 'InvalidAccessError')); return;
+          reject(new _zw_subtleDE('Key usages do not include "deriveKey"', 'InvalidAccessError')); return;
         }
         _zw_performDerive(algorithm, baseKey, lenBits).then(function (bits) {
           return crypto.subtle.importKey('raw', bits, dka, extractable, usages);
@@ -124,12 +124,12 @@
     encrypt: function (algorithm, key, data) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
-        name = String(name == null ? '' : name).toUpperCase();
+        name = _zw_upperAscii(String(name == null ? '' : name));
         if (name !== 'AES-GCM' || !key || key.algorithm.name !== 'AES-GCM') {
-          reject(new DOMException('Unsupported encrypt algorithm or key', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Unsupported encrypt algorithm or key', 'NotSupportedError')); return;
         }
         if (!key.usages || key.usages.indexOf('encrypt') < 0) {
-          reject(new DOMException('Key usages do not include "encrypt"', 'InvalidAccessError')); return;
+          reject(new _zw_subtleDE('Key usages do not include "encrypt"', 'InvalidAccessError')); return;
         }
         var arr = _zw_aesGcmCall('encrypt', algorithm, key, _zw_bufToBytes(data), reject);
         if (arr) resolve(arr);
@@ -140,12 +140,12 @@
     decrypt: function (algorithm, key, data) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
-        name = String(name == null ? '' : name).toUpperCase();
+        name = _zw_upperAscii(String(name == null ? '' : name));
         if (name !== 'AES-GCM' || !key || key.algorithm.name !== 'AES-GCM') {
-          reject(new DOMException('Unsupported decrypt algorithm or key', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Unsupported decrypt algorithm or key', 'NotSupportedError')); return;
         }
         if (!key.usages || key.usages.indexOf('decrypt') < 0) {
-          reject(new DOMException('Key usages do not include "decrypt"', 'InvalidAccessError')); return;
+          reject(new _zw_subtleDE('Key usages do not include "decrypt"', 'InvalidAccessError')); return;
         }
         var arr = _zw_aesGcmCall('decrypt', algorithm, key, _zw_bufToBytes(data), reject);
         if (arr) resolve(arr);
@@ -158,18 +158,18 @@
       return new Promise(function (resolve, reject) {
         var algo = _zw_normalizeImportAlgorithm(algorithm);
         if (!algo) {
-          reject(new DOMException('Unsupported or missing algorithm', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Unsupported or missing algorithm', 'NotSupportedError')); return;
         }
         if (algo.name === 'AES-GCM') {
           var u = _zw_normalizeUsages(usages, ['encrypt', 'decrypt']);
-          if (!u) { reject(new DOMException('Invalid key usages for AES-GCM', 'SyntaxError')); return; }
+          if (!u) { reject(new _zw_subtleDE('Invalid key usages for AES-GCM', 'SyntaxError')); return; }
           resolve(new CryptoKey('secret', extractable, algo, u, Array.from(_zw_randomBytes(32))));
         } else if (algo.name === 'HMAC') {
           var hu = _zw_normalizeUsages(usages, ['sign', 'verify']);
-          if (!hu) { reject(new DOMException('Invalid key usages for HMAC', 'SyntaxError')); return; }
+          if (!hu) { reject(new _zw_subtleDE('Invalid key usages for HMAC', 'SyntaxError')); return; }
           resolve(new CryptoKey('secret', extractable, algo, hu, Array.from(_zw_randomBytes(_zw_keyLengthBits(algo) / 8))));
         } else {
-          reject(new DOMException('Unsupported generateKey algorithm', 'NotSupportedError'));
+          reject(new _zw_subtleDE('Unsupported generateKey algorithm', 'NotSupportedError'));
         }
       });
     },
@@ -177,12 +177,12 @@
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-exportKey
     exportKey: function (format, key) {
       return new Promise(function (resolve, reject) {
-        var fmt = String(format == null ? '' : format).toUpperCase();
+        var fmt = _zw_upperAscii(String(format == null ? '' : format));
         if (fmt !== 'RAW') {
-          reject(new DOMException("Unsupported exportKey format: '" + fmt + "' (only 'raw' supported)", 'NotSupportedError')); return;
+          reject(new _zw_subtleDE("Unsupported exportKey format: '" + fmt + "' (only 'raw' supported)", 'NotSupportedError')); return;
         }
         if (!key || !key.extractable) {
-          reject(new DOMException('Key is not extractable', 'InvalidAccessError')); return;
+          reject(new _zw_subtleDE('Key is not extractable', 'InvalidAccessError')); return;
         }
         var raw = key._raw || [];
         resolve(new Uint8Array(raw));
