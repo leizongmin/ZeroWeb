@@ -666,6 +666,7 @@ impl super::Painter {
             image_key: ImageKey::new(key),
             clip: None,
             source: src,
+            clip_radius: None,
         };
         // 按片取源矩形的便捷闭包（nine_slice 为 None 时返回 None → 整图映射）。
         let src_of = |pick: fn(&NineSliceSources) -> &Rect| -> Option<Rect> { nine_slice.as_ref().map(|s| *pick(s)) };

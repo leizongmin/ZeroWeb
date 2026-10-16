@@ -35,6 +35,7 @@ fn test_draw_order_records_insertion_order() {
         image_key: ImageKey::new(1),
         clip: None,
         source: None,
+        clip_radius: None,
     }); // parent bg image — must paint BEFORE child fill
     p.add_fill(Rect::new(2.0, 2.0, 4.0, 4.0), Color::GREEN); // child content fill
     p.add_stroke(StrokePrimitive {
@@ -198,6 +199,7 @@ fn test_image_primitive() {
         image_key: ImageKey::new(42),
         clip: None,
         source: None,
+        clip_radius: None,
     });
     assert_eq!(p.images.len(), 1);
 }
@@ -479,6 +481,7 @@ fn test_bounding_box_with_images() {
         image_key: ImageKey::new(1),
         clip: None,
         source: None,
+        clip_radius: None,
     });
     let bb = p.bounding_box().unwrap();
     assert_eq!(bb.left(), 50.0);
@@ -635,6 +638,7 @@ fn test_len_all_primitive_types() {
         image_key: ImageKey::new(0),
         clip: None,
         source: None,
+        clip_radius: None,
     });
     p.add_glyph(GlyphPrimitive {
         x: 0.0,
@@ -868,12 +872,14 @@ fn test_edge_image_primitive_different_keys() {
         image_key: key_a,
         clip: None,
         source: None,
+        clip_radius: None,
     });
     p.add_image(ImagePrimitive {
         rect: Rect::new(10.0, 10.0, 50.0, 50.0),
         image_key: key_b,
         clip: None,
         source: None,
+        clip_radius: None,
     });
     assert_eq!(p.images.len(), 2);
     assert_ne!(p.images[0].image_key, p.images[1].image_key);
@@ -914,18 +920,21 @@ fn test_edge_len_with_shadows_and_images() {
         image_key: ImageKey::new(1),
         clip: None,
         source: None,
+        clip_radius: None,
     });
     p.add_image(ImagePrimitive {
         rect: Rect::new(10.0, 10.0, 150.0, 150.0),
         image_key: ImageKey::new(2),
         clip: None,
         source: None,
+        clip_radius: None,
     });
     p.add_image(ImagePrimitive {
         rect: Rect::new(20.0, 20.0, 100.0, 100.0),
         image_key: ImageKey::new(3),
         clip: None,
         source: None,
+        clip_radius: None,
     });
     assert_eq!(p.shadows.len(), 2);
     assert_eq!(p.images.len(), 3);

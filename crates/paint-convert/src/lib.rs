@@ -239,6 +239,9 @@ pub fn to_render_primitives(params: PaintSnapshotParams) -> RenderPrimitives {
             image_key: ImageKey::new(image.image_key),
             clip: image.clip.map(ipc_rect_to_rect),
             source: None,
+            // R5155：clip_radius IPC 面未传递（多进程 renderer 退化矩形裁剪 = 既有
+            // 行为）；FIXME: IPC 协议加字段后透传。
+            clip_radius: None,
         });
     }
     for stroke in params.strokes {

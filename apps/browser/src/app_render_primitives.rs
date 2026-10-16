@@ -39,6 +39,7 @@ pub(crate) fn compositor_frame_primitives(
         image_key: frame.image_key.clone(),
         clip: None,
         source: None,
+        clip_radius: None,
         });
     transform_webview_primitives_extra(&source, x_offset, y_offset, scale, Some(clip_viewport))
 }

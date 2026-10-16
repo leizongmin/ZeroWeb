@@ -1339,6 +1339,7 @@ impl super::super::Painter {
                     image_key: ImageKey::new(image_resource_key(url, self.document_url.as_deref())),
                     clip: None,
                     source: None,
+                    clip_radius: None,
                 });
                 return;
             }

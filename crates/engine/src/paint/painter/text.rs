@@ -754,6 +754,7 @@ impl super::Painter {
             image_key,
             clip: Some(Rect::new(content_x, content_y, container_w, container_h)),
             source: None,
+            clip_radius: None,
         });
 
         // R5022：filter() 图像函数（filter-effects-1 #FilterCSSImageValue）——滤镜图元
@@ -882,6 +883,7 @@ impl super::Painter {
             image_key,
             clip: Some(Rect::new(content_x, content_y, container_w, container_h)),
             source: None,
+            clip_radius: None,
         });
     }
 

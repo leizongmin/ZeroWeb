@@ -946,6 +946,7 @@ fn clip_images_to_polygon_inplace(
                             image_key: key.clone(),
                             clip: Some(strip.rect),
                             source: None,
+                            clip_radius: None,
                         });
                     primitives.draw_order.push(DrawOp::Image(idx));
                     let tail = primitives.draw_order.pop();
@@ -1124,6 +1125,34 @@ pub fn clip_all_primitives_to_rect(primitives: &mut RenderPrimitives, from: &Pri
         if p1_outside && p2_outside {
             stroke.width = 0.0;
         }
+    }
+}
+
+/// R5155（css-contain-1 §3.1 paint containment 圆角裁剪）：对快照之后新增的
+/// image 图元施加「矩形窗口 + 圆角」裁剪——窗口照旧矩形交集（crop 语义），
+/// 另设 `clip_radius` 供渲染端逐像素圆角剔除。仅接图片内容（contain:paint 圆角
+/// 裁剪驱动案 contain-paint-clip-015/016 的越界主体）；fill/rounded_rect 背景
+/// 自身已按圆角绘制、glyph 文本圆角剔除无案面（FIXME 案驱动再接）。
+/// `radii` = 四角半径 [tl, tr, br, bl]（CSS px，相对 clip_rect；border 宽已扣减）。
+pub fn clip_images_to_rounded_rect(
+    primitives: &mut RenderPrimitives,
+    from: &PrimitiveCounts,
+    clip_rect: &Rect,
+    radii: [f32; 4],
+) {
+    for img in primitives.images.iter_mut().skip(from.images) {
+        let rect = img.rect;
+        let cur = img.clip.unwrap_or(rect);
+        let left = cur.left().max(clip_rect.left());
+        let top = cur.top().max(clip_rect.top());
+        let right = cur.right().min(clip_rect.right());
+        let bottom = cur.bottom().min(clip_rect.bottom());
+        if right <= left || bottom <= top {
+            img.clip = Some(Rect::new(left, top, 0.0, 0.0));
+            continue;
+        }
+        img.clip = Some(Rect::new(left, top, right - left, bottom - top));
+        img.clip_radius = Some(radii);
     }
 }
 
@@ -3696,6 +3725,7 @@ mod tests {
             image_key: ImageKey(1),
             clip: None,
             source: None,
+            clip_radius: None,
         });
         // 矩形多边形 [0,8]×[2,6]：与 image 部分相交。
         let polygon = vec![(0.0_f32, 2.0_f32), (8.0, 2.0), (8.0, 6.0), (0.0, 6.0)];
