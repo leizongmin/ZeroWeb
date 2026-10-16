@@ -16075,6 +16075,30 @@ return e;
         // undefined 行为等价（truthy 判定恒 false 与 R98 走查回落一致）。
         if (prop === '__zwIsText') return undefined;
         if (prop === '__zwChildIndex') return undefined;
+        // R-t2qq（constructable stylesheets，siteopt qq-20261016-r1）：ShadowRoot
+        // 原型 accessor 派发——`ShadowRoot.prototype.adoptedStyleSheets` 的 getter。
+        // shadow root 产物是 `_wrapHandle` proxy：get trap 全权拦截（R98 原型走查仅
+        // CE 门控，ShadowRoot 原型不经 customElements），不派发则 getter 永不可达。
+        // 仅本属性名走原型 getter 派发（own accessor 命中以 proxy 为 this；普通元素
+        // 原型链无此名 → undefined 落常规分支，语义不变）。R95 constructor 顶部短路
+        // 同款 while 原型走查形态。
+        if (prop === 'adoptedStyleSheets') {
+          var _asrGChain = null;
+          try { _asrGChain = Object.getPrototypeOf(_makeProxy(sel, handle)); } catch (_eAsrGp) { _asrGChain = null; }
+          var _asrGGuard = 0;
+          while (_asrGChain && _asrGGuard < 8) {
+            var _asrGDesc = null;
+            try { _asrGDesc = Object.getOwnPropertyDescriptor(_asrGChain, 'adoptedStyleSheets'); } catch (_eAsrGd) { _asrGDesc = null; }
+            if (_asrGDesc) {
+              if (typeof _asrGDesc.get === 'function') {
+                try { return _asrGDesc.get.call(_makeProxy(sel, handle)); } catch (_eAsrGc) { return undefined; }
+              }
+              break; // data property → 交回常规分支
+            }
+            _asrGChain = Object.getPrototypeOf(_asrGChain);
+            _asrGGuard++;
+          }
+        }
         // js-dom M3 R95：`constructor` 顶部短路（原型链 own 命中，限 8 层）。真实 DOM 中
         // `el.constructor` 沿原型链命中（custom element 返用户类）——lit ReactiveElement 的
         // 实例方法 `_$E_` 读 `this.constructor.elementProperties`（e2e 实证：旧 get trap 对

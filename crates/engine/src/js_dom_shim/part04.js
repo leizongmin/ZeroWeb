@@ -5724,6 +5724,35 @@
         // dom-node-replace-child 步骤 3）需同源判定，提升到 get trap 作用域。
         // 返回 false = 确非子（抛 NotFound）；true = 是子；'lenient-*' = shim 视图
         // 限制下的合法形态（穿透不抛）。
+        // 跨族节点同一性 match-only 比较（guidelines #32：同一树节点可并存多族稳定 JS
+        // 包装——sel-proxy / handle-proxy / named-prop 解析 wrapper 跨族 `===` 恒 false）。
+        // identity **断言**路径先 raw `===`（同族快路径），未命中再按 `(sel, handle)` 锚定键
+        // 双侧重投影比较；仅作判定、不产出替换值（写回端点保持调用方原对象——重投影对象
+        // 作写入目标反而丢 identity，见 docs/learnings/bugs/2026-10/2026-10-14-js-dom-wrapper-
+        // family-identity.md）。handle ↔ sel 交叉经 R100 正反查（`__zw_handle_for_selector`
+        // / `_r100SelOfHandle` 注册表）收敛同节点。
+        function _zwSameNodeIdentity(a, b) {
+          if (a === b) return true;
+          if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+          var as = null, ah = null, bs = null, bh = null;
+          try { as = a.__zwSelector; } catch (_eSnA1) {}
+          try { ah = a.__zwHandle; } catch (_eSnA2) {}
+          try { bs = b.__zwSelector; } catch (_eSnB1) {}
+          try { bh = b.__zwHandle; } catch (_eSnB2) {}
+          if (ah != null && bh != null) return ah === bh;
+          if (as != null && bs != null) return as === bs;
+          if (ah != null && bs != null) {
+            try { if (typeof __zw_handle_for_selector === 'function' && __zw_handle_for_selector(bs) === ah) return true; } catch (_eSnX1) {}
+            try { var _snS1 = (typeof _r100SelOfHandle === 'function') ? _r100SelOfHandle(ah) : null; if (_snS1 != null && _snS1 === bs) return true; } catch (_eSnX2) {}
+            return false;
+          }
+          if (as != null && bh != null) {
+            try { var _snS2 = (typeof _r100SelOfHandle === 'function') ? _r100SelOfHandle(bh) : null; if (_snS2 != null && _snS2 === as) return true; } catch (_eSnX3) {}
+            try { if (typeof __zw_handle_for_selector === 'function' && __zw_handle_for_selector(as) === bh) return true; } catch (_eSnX4) {}
+            return false;
+          }
+          return false;
+        }
         function _r126IsChildOf(parentSel, parentHandle, target) {
           // R126：已移除节点（sel 标记 / pending-removed——同批先前 removeChild 后
           // shim 的 parentNode 读 host 快照仍指旧父，调用方按旧父再 remove 是 shim
@@ -6216,10 +6245,23 @@
             // a type..."——非法 node + 非 child ref 双违时须报 NotFound 非 HRE）。
             // 判定与 R296 版相同（refNode.parentNode identity）；仅位置前移到类型
             // 检查之前（步骤序），无新抛出条件。
+            // R-t2qq（siteopt qq-20261016-r1）：多族包装 identity 对齐（guidelines #32）
+            // ——raw `===` 之外补两类 match-only 命中臂（不放宽真负例：真非子 ref 的
+            // parentNode 与本容器跨族也不同节点、且不在融合子列表 → 照抛 NotFound）：
+            // ① refNode.parentNode 与本容器跨族同节点（`_zwSameNodeIdentity`——挂载期
+            //    parentSel 与 handle 双登记下 `_parentNodeFor` 返 sel 族 proxy、调用方
+            //    持 handle 族 proxy 的 React reconcile 形态）；
+            // ② refNode 在本容器融合子列表（`_r126IsChildOf` 与 removeChild/replaceChild
+            //    同源——文本/解析 wrapper 子每次访问新建，`parentNode` 同族但子列表
+            //    迭代产物异对象）。
             if (refNode != null && typeof refNode === 'object') {
               var _r300rp = null;
               try { _r300rp = refNode.parentNode; } catch (_e300rp) { _r300rp = undefined; }
-              if (_r300rp !== _makeProxy(sel, handle)) {
+              var _r300self = _makeProxy(sel, handle);
+              var _r300isChild = _r300rp === _r300self
+                || _zwSameNodeIdentity(_r300rp, _r300self)
+                || _r126IsChildOf(sel, handle, refNode) === true;
+              if (!_r300isChild) {
                 throw _zwDomException(
                   "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
                   'NotFoundError');
@@ -9688,6 +9730,32 @@
       },
       set: function(_t, prop, value) {
         var p = String(prop);
+        // R-t2qq（constructable stylesheets，siteopt qq-20261016-r1）：ShadowRoot
+        // 原型 accessor 派发——`ShadowRoot.prototype.adoptedStyleSheets` 的 setter。
+        // R98 set 派发仅 CE 门控（ShadowRoot 原型不经 customElements），不派发则
+        // setter 永不可达（写落 expando、校验/下发全失）。仅本属性名走原型 setter
+        // 派发（own accessor 命中以 proxy 为 this；普通元素原型链无此名 → 常规
+        // expando 语义不变）。R98 同款 while 原型走查形态。
+        if (p === 'adoptedStyleSheets') {
+          var _asrSChain = null;
+          try { _asrSChain = Object.getPrototypeOf(_makeProxy(sel, handle)); } catch (_eAsrSp) { _asrSChain = null; }
+          var _asrSGuard = 0;
+          while (_asrSChain && _asrSGuard < 8) {
+            var _asrSDesc = null;
+            try { _asrSDesc = Object.getOwnPropertyDescriptor(_asrSChain, 'adoptedStyleSheets'); } catch (_eAsrSd) { _asrSDesc = null; }
+            if (_asrSDesc) {
+              if (typeof _asrSDesc.set === 'function') {
+                // spec TypeError（adopted 表元素校验失败）必须传播——不 try 吞
+                //（R98 CE setter best-effort 吞法会吞掉 IDL 校验异常）。
+                _asrSDesc.set.call(_makeProxy(sel, handle), value);
+                return true;
+              }
+              break; // getter-only / data property → 交回常规分支
+            }
+            _asrSChain = Object.getPrototypeOf(_asrSChain);
+            _asrSGuard++;
+          }
+        }
         // js-dom M3 R98：symbol-keyed 写直入 expando（普通对象语义——symbol 永不映射内容
         // 属性）。lit createProperty 的 accessor fallback `set(t){this[s]=t}`（s = Symbol()）
         // 经 R98 accessor-setter 派发后以 symbol key 写回本 proxy——旧 generic fallthrough

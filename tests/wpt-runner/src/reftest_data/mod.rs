@@ -5,6 +5,7 @@
 
 mod css21;
 mod css_box;
+mod css_cssom;
 mod css_display;
 mod css_flexbox;
 mod css_float;
@@ -90,5 +91,6 @@ fn all_reftests() -> Vec<&'static InlineReftestDef> {
     all.extend(css_text_decor::reftests().iter());
     all.extend(css_values::reftests().iter());
     all.extend(css_writing_modes::reftests().iter());
+    all.extend(css_cssom::reftests().iter());
     all
 }

@@ -1500,6 +1500,10 @@ fn js_worker_main(
                 // （collect_stylesheets css 参数）与布局管线同源。每快照无条件覆盖
                 //（含清空，跨文档残留不可能存活）；先于同代 gCS（同通道 FIFO）。
                 zero_engine::js_dom_bridge::set_active_external_css(&external_css);
+                // Constructable stylesheets：adopted 规则文本同点无条件清空（跨代残留
+                // 清理对齐 external css 代际装填；新文档 shim 尚未重设前合成源无 adopted
+                // 表，页面重设 adoptedStyleSheets 后经 __zw_set_adopted_css 再装填）。
+                zero_engine::js_dom_bridge::set_active_adopted_css("");
                 // P6 import map：快照换代即从页面 HTML 重取 `<script type="importmap">`——
                 // 后续 ExecuteModule 编译与动态 import 均按本代 map 解析。每代无条件清空
                 // 重设（无 map/解析失败 → None，按规范整张不注册；保留上一代会跨页污染）。

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="match" href="adopted-stylesheet-background-zw-001-ref.html">
+<title>adoptedStyleSheets rules apply to the document</title>
+<!-- 本地自建 reftest（2026-10-17 siteopt qq-20261016-r1 切片 A）：constructable
+     stylesheets（CSSOM）——`new CSSStyleSheet()` + `replaceSync` +
+     `document.adoptedStyleSheets` 赋值后规则进入 cascade。qq.com 首页
+     `CSSStyleSheet is not defined` pageerror 的最小视觉判据（E1 P2）。
+     缺陷态：构造器缺失/规则不进合成源 → div 无绿底，与 ref 像素不等。
+     spec：https://drafts.csswg.org/cssom/#dom-cssstylesheet-cssstylesheet 、
+     https://drafts.csswg.org/cssom/#dom-documentorshadowroot-adoptedstylesheets 。
+     账本：tests/wpt-runner/imported-tests.txt；wpt-data 为独立 repo（gitignored），
+     重拉后按主仓 tests/wpt-runner/local-reftests/ 同路径文件恢复并重跑
+     make import-wpt 重建 manifest。本页另有内联孪生（make reftest 常驻集）：
+     tests/wpt-runner/src/reftest_data/css_cssom.rs
+     id css-cssom/adopted-stylesheet-background-zw-001——两处需同步维护。 -->
+<script>
+try {
+  var s = new CSSStyleSheet();
+  s.replaceSync('div { background: rgb(0, 128, 0); width: 100px; height: 50px; }');
+  document.adoptedStyleSheets = [s];
+} catch (e) { }
+</script>
+</head>
+<body>
+<div></div>
+</body>
+</html>

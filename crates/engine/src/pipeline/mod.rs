@@ -3144,6 +3144,16 @@ pub(crate) fn collect_stylesheets_with_parsed_external(
             stylesheets.push(zero_css_parser::Parser::parse_stylesheet(&css_text));
         }
     }
+    // Constructable stylesheets（CSSOM）：`document.adoptedStyleSheets` /
+    // `ShadowRoot.adoptedStyleSheets` 的汇总规则文本（js worker 线程局部，shim 经
+    // `__zw_set_adopted_css` 下发）。级联序 = document sheets **之后**（CSSOM author
+    // 源顺序，https://drafts.csswg.org/cssom/#dom-documentorshadowroot-adoptedstylesheets
+    // ——document 表、adopted 表同属 author origin，adopted 按文档序尾接）。空串不产表
+    //（无 adopted 语义逐位不变）。
+    let adopted_css = crate::js_dom_bridge::active_adopted_css();
+    if !adopted_css.is_empty() {
+        stylesheets.push(zero_css_parser::Parser::parse_stylesheet(&adopted_css));
+    }
     stylesheets
 }
 
