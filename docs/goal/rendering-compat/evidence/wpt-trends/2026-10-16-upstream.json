@@ -6,6 +6,6 @@
   "passed": 15453,
   "rate_pct": 93.1,
   "extra": "failed=1137;skipped=0",
-  "git_sha": "a2c0a05ae",
+  "git_sha": "7aeeea4c6",
   "note": "R5152 contain:size multicol 按「无内容」尺寸化、列几何仍参与——contain-size-multicol-001/002/003 翻绿（001 2.08%→0.00%、002 9.38%→0.00%、003 16.05%→0.75% 近似带），corpus 1140→1137 零新增红"
 }
